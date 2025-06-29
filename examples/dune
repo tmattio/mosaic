@@ -1,0 +1,4 @@
+(executables
+ (public_names simple interactive layout_demo)
+ (names simple interactive layout_demo)
+ (libraries mosaic eio_main))

@@ -1,0 +1,13 @@
+(library
+ (public_name mosaic)
+ (name mosaic)
+ (libraries
+  terminal
+  ansi
+  input
+  render
+  event_source
+  unix
+  eio
+  eio.unix
+  eio_main))

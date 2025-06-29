@@ -1,0 +1,4 @@
+(library
+ (name input)
+ (public_name mosaic.input)
+ (libraries uutf))

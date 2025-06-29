@@ -1,0 +1,4 @@
+(library
+ (name render)
+ (public_name mosaic.render)
+ (libraries ansi uutf uucp))
