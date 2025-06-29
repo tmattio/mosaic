@@ -2,6 +2,8 @@
 
 A delightful OCaml framework for building modern terminal user interfaces. Inspired by The Elm Architecture and Bubble Tea.
 
+> **Status: Prototype** - This is an early prototype exploring ideas for a modern OCaml TUI framework. It is not yet functional. APIs will change significantly.
+
 ## Features
 
 - **Elm Architecture** - Simple, scalable app structure with model-view-update
