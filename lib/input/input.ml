@@ -133,7 +133,11 @@ let parse_x10_mouse bytes start =
   else None
 
 let parse_sgr_mouse s start end_ =
-  match parse_csi_params s start (end_ - 1) with
+  (* Skip the '<' character if present *)
+  let params_start =
+    if start < end_ && s.[start] = '<' then start + 1 else start
+  in
+  match parse_csi_params s params_start (end_ - 1) with
   | [ Some btn; Some x; Some y ]
     when end_ > start && (s.[end_ - 1] = 'M' || s.[end_ - 1] = 'm') ->
       let button_code = btn land 0b11111 in
@@ -490,7 +494,8 @@ let parse_csi s start end_ =
           (String.sub s start (!intermediate_end - start + 1))
           0
           (!intermediate_end - start + 1)
-    | ('M' | 'm') when !params_end = start ->
+    | ('M' | 'm') when start < String.length s && s.[start] = '<' ->
+        (* SGR mouse format: ESC [ < params M/m *)
         parse_sgr_mouse s start (!intermediate_end + 1)
     | _ -> None
   else None
@@ -567,8 +572,8 @@ let feed parser bytes offset length =
           Buffer.add_char parser.paste_buffer c;
           process_buffer acc (pos + 1))
       else if c = '\x1b' then
-        (* Check for X10 mouse protocol first *)
         if
+          (* Check for X10 mouse protocol first *)
           pos + 1 < parser.length
           && Bytes.get parser.buffer (pos + 1) = '['
           && pos + 2 < parser.length
@@ -585,9 +590,11 @@ let feed parser bytes offset length =
                 if i >= parser.length then i
                 else
                   let c = Bytes.get parser.buffer i in
-                  if is_csi_final c || (i = pos + 2 && c >= 'A' && c <= 'Z')
+                  if i = pos + 1 && c <> '[' && c <> 'O' then i + 1
+                  else if
+                    i > pos + 1
+                    && (is_csi_final c || (i = pos + 2 && c >= 'A' && c <= 'Z'))
                   then i + 1
-                  else if i = pos + 1 && c <> '[' && c <> 'O' then i + 1
                   else find_end (i + 1)
               in
               let seq_end = find_end (pos + 1) in
@@ -602,10 +609,16 @@ let feed parser bytes offset length =
                     process_buffer (Paste_start :: acc) seq_end
                 | Some event -> process_buffer (event :: acc) seq_end
                 | None ->
-                    if seq_end = pos + 2 then
-                      process_buffer
-                        (Key { key = Escape; modifier = no_modifier } :: acc)
-                        (pos + 1)
+                    if seq_end = pos + 2 && pos + 1 < parser.length then
+                      let next_char = Bytes.get parser.buffer (pos + 1) in
+                      if next_char = '[' || next_char = 'O' then
+                        (* Incomplete escape sequence, keep buffering *)
+                        List.rev acc
+                      else
+                        (* ESC followed by non-sequence character *)
+                        process_buffer
+                          (Key { key = Escape; modifier = no_modifier } :: acc)
+                          (pos + 1)
                     else process_buffer acc (pos + 1)
               else List.rev acc
         else
@@ -613,9 +626,11 @@ let feed parser bytes offset length =
             if i >= parser.length then i
             else
               let c = Bytes.get parser.buffer i in
-              if is_csi_final c || (i = pos + 2 && c >= 'A' && c <= 'Z') then
-                i + 1
-              else if i = pos + 1 && c <> '[' && c <> 'O' then i + 1
+              if i = pos + 1 && c <> '[' && c <> 'O' then i + 1
+              else if
+                i > pos + 1
+                && (is_csi_final c || (i = pos + 2 && c >= 'A' && c <= 'Z'))
+              then i + 1
               else find_end (i + 1)
           in
           let seq_end = find_end (pos + 1) in
@@ -630,10 +645,16 @@ let feed parser bytes offset length =
                 process_buffer (Paste_start :: acc) seq_end
             | Some event -> process_buffer (event :: acc) seq_end
             | None ->
-                if seq_end = pos + 2 then
-                  process_buffer
-                    (Key { key = Escape; modifier = no_modifier } :: acc)
-                    (pos + 1)
+                if seq_end = pos + 2 && pos + 1 < parser.length then
+                  let next_char = Bytes.get parser.buffer (pos + 1) in
+                  if next_char = '[' || next_char = 'O' then
+                    (* Incomplete escape sequence, keep buffering *)
+                    List.rev acc
+                  else
+                    (* ESC followed by non-sequence character *)
+                    process_buffer
+                      (Key { key = Escape; modifier = no_modifier } :: acc)
+                      (pos + 1)
                 else process_buffer acc (pos + 1)
           else List.rev acc
       else if c = '\x00' then
@@ -644,6 +665,11 @@ let feed parser bytes offset length =
                modifier = { ctrl = true; alt = false; shift = false };
              }
           :: acc)
+          (pos + 1)
+      else if c = '\r' || c = '\n' || c = '\t' || c = '\x7f' then
+        (* Handle special keys before control character processing *)
+        process_buffer
+          (Key { key = key_of_char c; modifier = no_modifier } :: acc)
           (pos + 1)
       else if c >= '\x01' && c <= '\x1a' then
         let ch = Char.chr (Char.code c + 64) in

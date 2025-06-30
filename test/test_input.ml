@@ -73,15 +73,17 @@ let test_parse_special_keys () =
   assert_events_equal events
     [ Input.Key { key = Tab; modifier = Input.no_modifier } ];
 
-  (* Test Escape *)
+  (* Test Escape - in a streaming parser, a single escape is buffered *)
   let events = Input.feed parser (Bytes.of_string "\x1b") 0 1 in
-  assert_events_equal events
-    [ Input.Key { key = Escape; modifier = Input.no_modifier } ];
+  assert_events_equal events [];
 
-  (* Test Backspace *)
+  (* Test Backspace - this will also emit the buffered escape *)
   let events = Input.feed parser (Bytes.of_string "\x7f") 0 1 in
   assert_events_equal events
-    [ Input.Key { key = Backspace; modifier = Input.no_modifier } ]
+    [
+      Input.Key { key = Escape; modifier = Input.no_modifier };
+      Input.Key { key = Backspace; modifier = Input.no_modifier };
+    ]
 
 let test_parse_arrow_keys () =
   let parser = Input.create () in
@@ -136,7 +138,7 @@ let test_parse_modifiers () =
     ];
 
   (* Test Ctrl+Up *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[1;5A") 0 7 in
+  let events = Input.feed parser (Bytes.of_string "\x1b[1;5A") 0 6 in
   assert_events_equal events
     [
       Input.Key
@@ -144,7 +146,7 @@ let test_parse_modifiers () =
     ];
 
   (* Test Alt+Left *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[1;3D") 0 7 in
+  let events = Input.feed parser (Bytes.of_string "\x1b[1;3D") 0 6 in
   assert_events_equal events
     [
       Input.Key
@@ -155,17 +157,17 @@ let test_parse_mouse_sgr () =
   let parser = Input.create () in
 
   (* Test mouse click at (10, 20) *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[<0;10;20M") 0 13 in
+  let events = Input.feed parser (Bytes.of_string "\x1b[<0;10;20M") 0 11 in
   assert_events_equal events
     [ Input.Mouse (Press (9, 19, Left, Input.no_modifier)) ];
 
   (* Test mouse release *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[<0;10;20m") 0 13 in
+  let events = Input.feed parser (Bytes.of_string "\x1b[<0;10;20m") 0 11 in
   assert_events_equal events
     [ Input.Mouse (Release (9, 19, Left, Input.no_modifier)) ];
 
   (* Test mouse motion *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[<32;15;25M") 0 14 in
+  let events = Input.feed parser (Bytes.of_string "\x1b[<32;15;25M") 0 12 in
   assert_events_equal events
     [
       Input.Mouse
@@ -185,19 +187,24 @@ let test_parse_paste_mode () =
     Input.feed parser (Bytes.of_string input) 0 (String.length input)
   in
 
-  (* Should get paste start, characters, and paste end *)
+  (* Should get paste start, paste end, and paste content *)
   match events with
-  | Input.Paste_start :: rest ->
-      (* Find paste end *)
-      let rec find_paste_end acc = function
-        | [] -> Alcotest.fail "No paste end found"
-        | Input.Paste_end :: _ -> List.rev acc
-        | Input.Key k :: rest -> find_paste_end (k :: acc) rest
-        | _ :: rest -> find_paste_end acc rest
+  | [ Input.Paste_start; Input.Paste_end; Input.Paste content ] ->
+      Alcotest.(check string) "paste content" "Hello, World!" content
+  | _ ->
+      let event_str =
+        List.map
+          (function
+            | Input.Paste_start -> "Paste_start"
+            | Input.Paste_end -> "Paste_end"
+            | Input.Paste s -> Printf.sprintf "Paste(%S)" s
+            | Input.Key _ -> "Key"
+            | _ -> "Other")
+          events
+        |> String.concat ", "
       in
-      let pasted_keys = find_paste_end [] rest in
-      Alcotest.(check int) "paste length" 13 (List.length pasted_keys)
-  | _ -> Alcotest.fail "Expected paste start"
+      Alcotest.failf
+        "Expected [Paste_start; Paste_end; Paste(content)], got [%s]" event_str
 
 let test_parse_utf8 () =
   let parser = Input.create () in

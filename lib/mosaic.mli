@@ -131,7 +131,7 @@ module Ui : sig
 
   val expand : element -> element
   (** Make element expand to fill available space *)
-  
+
   val render : Render.buffer -> element -> unit
   (** Render an element to a Render buffer *)
 end
@@ -247,29 +247,27 @@ module Sub : sig
   val on_focus : 'msg -> 'msg t
   val on_blur : 'msg -> 'msg t
   val map : ('a -> 'b) -> 'a t -> 'b t
-  
+
   (** {2 Internal Functions} *)
-  
+
   type window_size = { width : int; height : int }
-  
+
   val collect_keyboard :
-    (key_event -> 'msg option) list ->
-    'msg t ->
-    (key_event -> 'msg option) list
-  
+    (key_event -> 'msg option) list -> 'msg t -> (key_event -> 'msg option) list
+
   val collect_mouse :
     (mouse_event -> 'msg option) list ->
     'msg t ->
     (mouse_event -> 'msg option) list
-  
+
   val collect_window :
     (window_size -> 'msg option) list ->
     'msg t ->
     (window_size -> 'msg option) list
-  
+
   val collect_focus :
     (unit -> 'msg option) list -> 'msg t -> (unit -> 'msg option) list
-  
+
   val collect_blur :
     (unit -> 'msg option) list -> 'msg t -> (unit -> 'msg option) list
 end
@@ -284,7 +282,6 @@ val char : ?ctrl:bool -> ?alt:bool -> ?shift:bool -> char -> key_event
 
 module Input = Input
 module Event_source = Event_source
-
 module Terminal = Terminal
 
 (** {1 Building Applications} *)

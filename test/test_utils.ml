@@ -1,10 +1,9 @@
 (** Test utilities for Mosaic tests *)
 
-
 open Mosaic
 
 (** Create a test terminal with predefined input *)
-let make_test_terminal input = 
+let make_test_terminal input =
   let term, get_output = Terminal.create_from_strings input in
   (term, get_output)
 
@@ -163,20 +162,21 @@ module TestApp = struct
     Mosaic.app ~init ~update ~view ~subscriptions ()
 end
 
-(** Run an app with a test terminal and return rendered frames and final model *)
+(** Run an app with a test terminal and return rendered frames and final model
+*)
 let run_app_with_terminal term ~init ~update ~view ~subscriptions =
   (* We'll run the app with a custom runner that doesn't use Eio *)
   let rendered_frames = ref [] in
   let quit_requested = ref false in
   let final_model = ref None in
-  
+
   (* Create event source *)
   let event_source = Event_source.create term in
-  
+
   (* Capture the initial model *)
   let initial_model, initial_cmd = init () in
   final_model := Some initial_model;
-  
+
   (* Simple synchronous loop *)
   let rec process_events model =
     if !quit_requested then model
@@ -185,7 +185,7 @@ let run_app_with_terminal term ~init ~update ~view ~subscriptions =
       let view_output = view model in
       let buffer = Render.create 80 24 in
       Ui.render buffer view_output;
-      
+
       (* Capture the rendered frame *)
       let frame_str = Buffer.create 1024 in
       for y = 0 to 23 do
@@ -198,40 +198,43 @@ let run_app_with_terminal term ~init ~update ~view ~subscriptions =
         if y < 23 then Buffer.add_char frame_str '\n'
       done;
       rendered_frames := Buffer.contents frame_str :: !rendered_frames;
-      
+
       (* Try to read an event *)
       match Event_source.read event_source ~timeout:(Some 0.001) with
-      | `Event event ->
+      | `Event event -> (
           (* Process event through subscriptions *)
           let sub = subscriptions model in
-          let msg_opt = match event with
-          | Input.Key key_event ->
-              let handlers = Sub.collect_keyboard [] sub in
-              let ke : Mosaic.key_event = Obj.magic key_event in
-              List.find_map (fun f -> f ke) handlers
-          | Input.Mouse mouse_event ->
-              let handlers = Sub.collect_mouse [] sub in
-              let me : Mosaic.mouse_event = Obj.magic mouse_event in
-              List.find_map (fun f -> f me) handlers
-          | Input.Resize (w, h) ->
-              let handlers = Sub.collect_window [] sub in
-              List.find_map (fun f -> f { Mosaic.Sub.width = w; height = h }) handlers
-          | Input.Focus ->
-              let handlers = Sub.collect_focus [] sub in
-              List.find_map (fun f -> f ()) handlers
-          | Input.Blur ->
-              let handlers = Sub.collect_blur [] sub in
-              List.find_map (fun f -> f ()) handlers
-          | _ -> None
+          let msg_opt =
+            match event with
+            | Input.Key key_event ->
+                let handlers = Sub.collect_keyboard [] sub in
+                let ke : Mosaic.key_event = Obj.magic key_event in
+                List.find_map (fun f -> f ke) handlers
+            | Input.Mouse mouse_event ->
+                let handlers = Sub.collect_mouse [] sub in
+                let me : Mosaic.mouse_event = Obj.magic mouse_event in
+                List.find_map (fun f -> f me) handlers
+            | Input.Resize (w, h) ->
+                let handlers = Sub.collect_window [] sub in
+                List.find_map
+                  (fun f -> f { Mosaic.Sub.width = w; height = h })
+                  handlers
+            | Input.Focus ->
+                let handlers = Sub.collect_focus [] sub in
+                List.find_map (fun f -> f ()) handlers
+            | Input.Blur ->
+                let handlers = Sub.collect_blur [] sub in
+                List.find_map (fun f -> f ()) handlers
+            | _ -> None
           in
-          
-          (match msg_opt with
-          | Some msg ->
+
+          match msg_opt with
+          | Some msg -> (
               let new_model, cmd = update msg model in
               final_model := Some new_model;
               (* Check if quit was requested *)
-              (match cmd with
-              | cmd when cmd = Cmd.quit -> 
+              match cmd with
+              | cmd when cmd = Cmd.quit ->
                   quit_requested := true;
                   new_model
               | _ -> process_events new_model)
@@ -240,19 +243,22 @@ let run_app_with_terminal term ~init ~update ~view ~subscriptions =
           (* No more events, check initial window size *)
           let sub = subscriptions model in
           let window_handlers = Sub.collect_window [] sub in
-          if window_handlers <> [] then begin
+          if window_handlers <> [] then
             let w, h = Terminal.size term in
-            match List.find_map (fun f -> f { Mosaic.Sub.width = w; height = h }) window_handlers with
+            match
+              List.find_map
+                (fun f -> f { Mosaic.Sub.width = w; height = h })
+                window_handlers
+            with
             | Some msg ->
                 let new_model, cmd = update msg model in
                 final_model := Some new_model;
                 if cmd = Cmd.quit then quit_requested := true;
                 model
             | None -> model
-          end else
-            model
+          else model
   in
-  
+
   (* Process initial command if any *)
   (match initial_cmd with
   | cmd when cmd = Cmd.quit -> quit_requested := true
@@ -260,10 +266,10 @@ let run_app_with_terminal term ~init ~update ~view ~subscriptions =
       (* For testing, we'll process simple messages synchronously *)
       ()
   | _ -> ());
-  
+
   (* Run the event loop *)
   let _ = process_events initial_model in
-  
+
   (* Return frames and final model *)
   match !final_model with
   | Some model -> (List.rev !rendered_frames, model)

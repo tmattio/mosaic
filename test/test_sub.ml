@@ -14,8 +14,10 @@ let test_keyboard_sub () =
 
 let test_keyboard_filter () =
   (* Test keyboard filter creation *)
-  let _ = Sub.keyboard_filter (fun key ->
-      if key.key = Enter then Some `Enter else None) in
+  let _ =
+    Sub.keyboard_filter (fun key ->
+        if key.key = Enter then Some `Enter else None)
+  in
   ()
 
 let test_on_key () =
@@ -66,31 +68,43 @@ let test_map_sub () =
   (* Map over None *)
   let _ = Sub.map (fun x -> x) Sub.none in
   (* Map over Batch *)
-  let _ = Sub.map (fun `A -> `B) (Sub.batch [ Sub.on_key Enter `A; Sub.on_focus `A ]) in
+  let _ =
+    Sub.map (fun `A -> `B) (Sub.batch [ Sub.on_key Enter `A; Sub.on_focus `A ])
+  in
   ()
 
 let test_collectors () =
   (* Test keyboard collector *)
-  let sub = Sub.batch [ Sub.on_key Enter `Enter; Sub.on_key Tab `Tab; Sub.on_focus `Focus ] in
+  let sub =
+    Sub.batch
+      [ Sub.on_key Enter `Enter; Sub.on_key Tab `Tab; Sub.on_focus `Focus ]
+  in
   let handlers = Sub.collect_keyboard [] sub in
   Alcotest.(check int) "keyboard handlers" 2 (List.length handlers);
 
   (* Test mouse collector *)
-  let sub = Sub.batch [
-    Sub.on_click (fun _ _ _ -> `Click);
-    Sub.mouse (fun _ -> `Mouse);
-    Sub.on_key Enter `Enter;
-  ] in
+  let sub =
+    Sub.batch
+      [
+        Sub.on_click (fun _ _ _ -> `Click);
+        Sub.mouse (fun _ -> `Mouse);
+        Sub.on_key Enter `Enter;
+      ]
+  in
   let handlers = Sub.collect_mouse [] sub in
   Alcotest.(check int) "mouse handlers" 2 (List.length handlers);
 
   (* Test window collector *)
-  let sub = Sub.batch [ Sub.on_resize (fun _ _ -> `Resize); Sub.on_focus `Focus ] in
+  let sub =
+    Sub.batch [ Sub.on_resize (fun _ _ -> `Resize); Sub.on_focus `Focus ]
+  in
   let handlers = Sub.collect_window [] sub in
   Alcotest.(check int) "window handlers" 1 (List.length handlers);
 
   (* Test focus collector *)
-  let sub = Sub.batch [ Sub.on_focus `Focus1; Sub.on_focus `Focus2; Sub.on_blur `Blur ] in
+  let sub =
+    Sub.batch [ Sub.on_focus `Focus1; Sub.on_focus `Focus2; Sub.on_blur `Blur ]
+  in
   let handlers = Sub.collect_focus [] sub in
   Alcotest.(check int) "focus handlers" 2 (List.length handlers);
 
