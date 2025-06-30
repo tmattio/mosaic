@@ -3,7 +3,6 @@ type t = {
   output : Unix.file_descr;
   original_termios : Unix.terminal_io option;
   mutable saved_termios : Unix.terminal_io option;
-  read_buffer : bytes;
   is_tty : bool;
 }
 
@@ -37,16 +36,7 @@ let create ?(tty = true) input output =
       try Some (Unix.tcgetattr input) with Unix.Unix_error _ -> None
     else None
   in
-  let t =
-    {
-      input;
-      output;
-      original_termios;
-      saved_termios = None;
-      read_buffer = Bytes.create 4096;
-      is_tty;
-    }
-  in
+  let t = { input; output; original_termios; saved_termios = None; is_tty } in
   (* Set raw mode by default for TTY *)
   (if is_tty then
      let termios = Unix.tcgetattr t.input in
@@ -113,19 +103,6 @@ let release t =
     | None -> ())
 
 let flush _ = ()
-
-let read_input t ~timeout =
-  let ready_fds =
-    match timeout with
-    | None -> Unix.select [ t.input ] [] [] (-1.0)
-    | Some timeout_val -> Unix.select [ t.input ] [] [] timeout_val
-  in
-  match ready_fds with
-  | [], _, _ -> `Timeout
-  | _ -> (
-      match Unix.read t.input t.read_buffer 0 4096 with
-      | 0 -> `Eof
-      | n -> `Input (t.read_buffer, n))
 
 type sigwinch_handler = int * int -> unit
 

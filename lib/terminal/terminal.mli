@@ -65,10 +65,6 @@ val output_fd : t -> Unix.file_descr
 val write : t -> bytes -> int -> int -> unit
 (** Write bytes to the terminal *)
 
-val read_input :
-  t -> timeout:float option -> [ `Input of bytes * int | `Timeout | `Eof ]
-(** Read input with optional timeout in seconds *)
-
 val flush : t -> unit
 (** Flush output *)
 

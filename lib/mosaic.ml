@@ -68,7 +68,6 @@ module Program = struct
     alt_screen : bool;
     mouse : bool;
     fps : int;
-    mutable current_buffer : Render.buffer option;
     mutable previous_buffer : Render.buffer option;
     msg_stream : 'msg Eio.Stream.t;
     clock : float Eio.Time.clock_ty Eio.Std.r;
@@ -95,7 +94,6 @@ module Program = struct
       alt_screen;
       mouse;
       fps;
-      current_buffer = None;
       previous_buffer = None;
       msg_stream;
       clock = Eio.Stdenv.clock env;
@@ -225,13 +223,15 @@ module Program = struct
       (String.length output);
     Terminal.flush program.term;
 
-    program.previous_buffer <- program.current_buffer;
-    program.current_buffer <- Some buffer
+    program.previous_buffer <- Some buffer
 
   let input_loop program =
     while program.running do
       let timeout = Some (1.0 /. float_of_int program.fps) in
-      match Event_source.read program.event_source ~timeout with
+      match
+        Event_source.read program.event_source ~sw:program.sw
+          ~clock:program.clock ~timeout
+      with
       | `Event event -> handle_input_event program event
       | `Timeout -> ()
       | `Eof ->

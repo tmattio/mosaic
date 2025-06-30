@@ -1,7 +1,7 @@
 (library
  (name event_source)
  (public_name mosaic.event)
- (libraries terminal input unix)
+ (libraries terminal input unix eio eio.unix)
  (foreign_stubs
   (language c)
   (names event_win)))

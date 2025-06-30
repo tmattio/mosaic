@@ -170,6 +170,11 @@ let run_app_with_terminal term ~init ~update ~view ~subscriptions =
   let quit_requested = ref false in
   let final_model = ref None in
 
+  (* Run within Eio context *)
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let clock = Eio.Stdenv.clock env in
+
   (* Create event source *)
   let event_source = Event_source.create term in
 
@@ -200,7 +205,7 @@ let run_app_with_terminal term ~init ~update ~view ~subscriptions =
       rendered_frames := Buffer.contents frame_str :: !rendered_frames;
 
       (* Try to read an event *)
-      match Event_source.read event_source ~timeout:(Some 0.001) with
+      match Event_source.read event_source ~sw ~clock ~timeout:(Some 0.001) with
       | `Event event -> (
           (* Process event through subscriptions *)
           let sub = subscriptions model in

@@ -9,7 +9,7 @@ let create ?(mouse = false) terminal =
     (* Unix source doesn't need the mouse flag - mouse is controlled via terminal escape codes *)
     Unix (Unix_source.create terminal)
 
-let read t ~timeout =
+let read t ~sw ~clock ~timeout =
   match t with
-  | Unix u -> Unix_source.read u ~timeout
-  | Windows w -> Windows_source.read w ~timeout
+  | Unix u -> Unix_source.read u ~sw ~clock ~timeout
+  | Windows w -> Windows_source.read w ~sw ~clock ~timeout

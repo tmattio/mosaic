@@ -109,65 +109,50 @@ let handle_paste_detection detector event =
       let flushed = flush_paste_buffer detector in
       flushed @ [ event ]
 
-let rec read t ~timeout =
-  initialize t;
-  let timeout_ms =
-    match timeout with
-    | None -> -1 (* Block indefinitely *)
-    | Some t when t <= 0.0 -> 0 (* Poll without blocking *)
-    | Some t -> int_of_float (t *. 1000.0)
-  in
+let read t ~sw:_ ~clock:_ ~timeout =
+  (* The entire original read logic is blocking, so we run it in a systhread.
+     The `read_loop` function is a direct copy of the old `read` function,
+     with recursive calls changed to be tail-recursive. *)
+  Eio_unix.run_in_systhread (fun () ->
+      let rec read_loop ~timeout =
+        initialize t;
+        let timeout_ms =
+          match timeout with
+          | None -> -1 (* Block indefinitely *)
+          | Some t when t <= 0.0 -> 0 (* Poll without blocking *)
+          | Some t -> int_of_float (t *. 1000.0)
+        in
 
-  (* Check if we have characters buffered from a potential paste operation.
-     If so, we need special handling to ensure we don't block for too long
-     while waiting for more paste characters. *)
-  if t.paste_detector.buffer <> [] then
-    let now = Unix.gettimeofday () in
-    let time_since_last = now -. t.paste_detector.last_event_time in
-    if time_since_last > paste_threshold then
-      (* Inactivity timeout exceeded. The paste operation (if any) is complete.
-         Flush the buffer and return the first event immediately. *)
-      match flush_paste_buffer t.paste_detector with
-      | event :: _ -> `Event event
-      | [] -> (
-          (* Buffer was empty after flush (shouldn't happen).
-             Continue with a normal read. *)
+        if t.paste_detector.buffer <> [] then
+          let now = Unix.gettimeofday () in
+          let time_since_last = now -. t.paste_detector.last_event_time in
+          if time_since_last > paste_threshold then
+            match flush_paste_buffer t.paste_detector with
+            | event :: _ -> `Event event
+            | [] -> (
+                match read_console_input t.handle timeout_ms with
+                | None -> `Timeout
+                | Some event -> (
+                    match handle_paste_detection t.paste_detector event with
+                    | event :: _ -> `Event event
+                    | [] -> read_loop ~timeout:(Some 0.0)))
+          else
+            let adjusted_timeout = int_of_float (paste_threshold *. 1000.0) in
+            match read_console_input t.handle adjusted_timeout with
+            | None -> (
+                match flush_paste_buffer t.paste_detector with
+                | event :: _ -> `Event event
+                | [] -> `Timeout)
+            | Some event -> (
+                match handle_paste_detection t.paste_detector event with
+                | event :: _ -> `Event event
+                | [] -> read_loop ~timeout:(Some 0.0))
+        else
           match read_console_input t.handle timeout_ms with
           | None -> `Timeout
           | Some event -> (
               match handle_paste_detection t.paste_detector event with
               | event :: _ -> `Event event
-              | [] -> read t ~timeout:(Some 0.0))) (* Try again immediately *)
-    else
-      (* Still within the paste time window. We wait for a short period
-         (paste_threshold) for more characters to arrive, rather than blocking
-         for the full user-specified timeout. This ensures paste detection
-         remains responsive. *)
-      let adjusted_timeout = int_of_float (paste_threshold *. 1000.0) in
-      match read_console_input t.handle adjusted_timeout with
-      | None -> (
-          (* Short timeout expired. Assume the paste is complete and flush
-             the buffer to emit the paste event. *)
-          match flush_paste_buffer t.paste_detector with
-          | event :: _ -> `Event event
-          | [] -> `Timeout)
-      | Some event -> (
-          (* Another event arrived within the paste window. Process it through
-             the paste detector, which will either add it to the buffer or
-             flush if it's not a character. *)
-          match handle_paste_detection t.paste_detector event with
-          | event :: _ -> `Event event
-          | [] -> read t ~timeout:(Some 0.0)) (* Try again immediately *)
-  else
-    (* No pending paste buffer. Perform a normal read with the user's
-       requested timeout. Any character events will be routed through
-       paste detection. *)
-    match read_console_input t.handle timeout_ms with
-    | None -> `Timeout
-    | Some event -> (
-        match handle_paste_detection t.paste_detector event with
-        | event :: _ -> `Event event
-        | [] ->
-            (* Event was buffered for paste detection. Recursively read
-               with zero timeout to check for more events immediately. *)
-            read t ~timeout:(Some 0.0))
+              | [] -> read_loop ~timeout:(Some 0.0))
+      in
+      read_loop ~timeout)

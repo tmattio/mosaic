@@ -8,7 +8,11 @@ val create : ?mouse:bool -> Terminal.t -> t
     @param mouse Enable mouse event capture (default: false) *)
 
 val read :
-  t -> timeout:float option -> [ `Event of Input.event | `Timeout | `Eof ]
+  t ->
+  sw:Eio.Switch.t ->
+  clock:float Eio.Time.clock_ty Eio.Std.r ->
+  timeout:float option ->
+  [ `Event of Input.event | `Timeout | `Eof ]
 (** Read the next event with optional timeout in seconds.
 
     Platform differences:
