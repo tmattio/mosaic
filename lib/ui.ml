@@ -125,11 +125,38 @@ let border ?(style = Solid) ?color () = { style; color }
 
 type align = Start | Center | End | Stretch
 
-type element =
+(* Cache for layout results *)
+type layout_cache = {
+  (* The context in which this was rendered *)
+  ctx_width : int;
+  ctx_height : int;
+  (* The computed result *)
+  computed_width : int;
+  computed_height : int;
+  (* The full computed layout of children for redraw *)
+  children_layouts : computed_element list;
+}
+
+and computed_element = {
+  element : element;
+  x : int;
+  y : int;
+  width : int;
+  height : int;
+}
+
+and element =
   | Text of string * Style.t
-  | Box of element list * layout_options
+  | Box of box_data
   | Spacer of int
   | Expand of element (* Wrapper to mark expandable elements *)
+
+and box_data = {
+  children : element list;
+  options : layout_options;
+  (* Add a mutable cache field to every box *)
+  mutable cache : layout_cache option;
+}
 
 and layout_options = {
   direction : [ `Horizontal | `Vertical ];
@@ -147,33 +174,35 @@ let no_padding = padding ()
 
 let hbox ?(gap = 0) ?width ?height ?(padding = no_padding) ?border
     ?(align_items = Start) ?(justify_content = Start) children =
-  Box
-    ( children,
-      {
-        direction = `Horizontal;
-        gap;
-        width;
-        height;
-        padding;
-        border;
-        align = align_items;
-        justify = justify_content;
-      } )
+  let options =
+    {
+      direction = `Horizontal;
+      gap;
+      width;
+      height;
+      padding;
+      border;
+      align = align_items;
+      justify = justify_content;
+    }
+  in
+  Box { children; options; cache = None }
 
 let vbox ?(gap = 0) ?width ?height ?(padding = no_padding) ?border
     ?(align_items = Start) ?(justify_content = Start) children =
-  Box
-    ( children,
-      {
-        direction = `Vertical;
-        gap;
-        width;
-        height;
-        padding;
-        border;
-        align = align_items;
-        justify = justify_content;
-      } )
+  let options =
+    {
+      direction = `Vertical;
+      gap;
+      width;
+      height;
+      padding;
+      border;
+      align = align_items;
+      justify = justify_content;
+    }
+  in
+  Box { children; options; cache = None }
 
 let spacer n = Spacer n
 let space = spacer (* Alias for API compatibility *)
@@ -231,7 +260,7 @@ let rec measure_element element =
   | Text (s, _) -> (Render.measure_string s, 1)
   | Spacer n -> (n, 1)
   | Expand e -> measure_element e
-  | Box (children, opts) -> (
+  | Box { children; options = opts; _ } -> (
       let children_sizes = List.map measure_element children in
       let border_space = if opts.border = None then 0 else 2 in
       let padding_h = opts.padding.left + opts.padding.right in
@@ -276,6 +305,15 @@ let rec measure_element element =
 (* Check if element is expandable *)
 let is_expandable = function Expand _ -> true | _ -> false
 
+(* Clear layout caches from previous frame *)
+let rec clear_cache element =
+  match element with
+  | Text _ | Spacer _ -> ()
+  | Expand e -> clear_cache e
+  | Box data ->
+      data.cache <- None;
+      List.iter clear_cache data.children
+
 (* Apply alignment offset *)
 let align_offset available used align =
   match align with
@@ -284,7 +322,167 @@ let align_offset available used align =
   | End -> available - used
   | Stretch -> 0
 
-let rec render_at ctx buffer element =
+(* Calculate box layout without rendering - pure function *)
+let rec calculate_box_layout ctx children (opts : layout_options) =
+  let box_width = Option.value opts.width ~default:ctx.width in
+  let box_height = Option.value opts.height ~default:ctx.height in
+
+  (* Calculate content area after border and padding *)
+  let border_offset = if opts.border = None then 0 else 1 in
+  let content_x = ctx.x + border_offset + opts.padding.left in
+  let content_y = ctx.y + border_offset + opts.padding.top in
+  let content_width =
+    box_width - (2 * border_offset) - opts.padding.left - opts.padding.right
+  in
+  let content_height =
+    box_height - (2 * border_offset) - opts.padding.top - opts.padding.bottom
+  in
+
+  (* Count expandable children *)
+  let expandable_count = List.filter is_expandable children |> List.length in
+
+  (* Measure non-expandable children *)
+  let measured_children =
+    List.map
+      (fun child ->
+        if is_expandable child then (child, 0, 0)
+        else
+          let w, h = measure_element child in
+          (child, w, h))
+      children
+  in
+
+  match opts.direction with
+  | `Horizontal ->
+      (* Calculate space for expandable items *)
+      let fixed_width =
+        List.fold_left (fun acc (_, w, _) -> acc + w) 0 measured_children
+      in
+      let gap_space = opts.gap * max 0 (List.length children - 1) in
+      let available_expand = max 0 (content_width - fixed_width - gap_space) in
+      let expand_each =
+        if expandable_count > 0 then available_expand / expandable_count else 0
+      in
+
+      (* Calculate children layouts *)
+      let total_children_width =
+        fixed_width + (expand_each * expandable_count) + gap_space
+      in
+      let x_offset =
+        align_offset content_width total_children_width opts.justify
+      in
+
+      let rec calc_h x children_with_sizes acc =
+        match children_with_sizes with
+        | [] -> List.rev acc
+        | (child, _, _) :: rest ->
+            let child_width =
+              if is_expandable child then expand_each
+              else
+                let w, _ = measure_element child in
+                w
+            in
+            let child_height = content_height in
+
+            (* Apply vertical alignment *)
+            let measured_h = snd (measure_element child) in
+            let y_offset = align_offset child_height measured_h opts.align in
+
+            let computed =
+              {
+                element = child;
+                x;
+                y = content_y + y_offset;
+                width = child_width;
+                height = min child_height measured_h;
+              }
+            in
+
+            let next_x = x + child_width + if rest = [] then 0 else opts.gap in
+            calc_h next_x rest (computed :: acc)
+      in
+
+      let children_layouts =
+        calc_h (content_x + x_offset) measured_children []
+      in
+      (box_width, box_height, children_layouts)
+  | `Vertical ->
+      (* Calculate space for expandable items *)
+      let fixed_height =
+        List.fold_left (fun acc (_, _, h) -> acc + h) 0 measured_children
+      in
+      let gap_space = opts.gap * max 0 (List.length children - 1) in
+      let available_expand =
+        max 0 (content_height - fixed_height - gap_space)
+      in
+      let expand_each =
+        if expandable_count > 0 then available_expand / expandable_count else 0
+      in
+
+      (* Calculate children layouts *)
+      let total_children_height =
+        fixed_height + (expand_each * expandable_count) + gap_space
+      in
+      let y_offset =
+        align_offset content_height total_children_height opts.justify
+      in
+
+      let rec calc_v y children_with_sizes acc =
+        match children_with_sizes with
+        | [] -> List.rev acc
+        | (child, _, _) :: rest ->
+            let child_width = content_width in
+            let child_height =
+              if is_expandable child then expand_each
+              else
+                let _, h = measure_element child in
+                h
+            in
+
+            (* Apply horizontal alignment *)
+            let measured_w = fst (measure_element child) in
+            let x_offset = align_offset child_width measured_w opts.align in
+
+            let computed =
+              {
+                element = child;
+                x = content_x + x_offset;
+                y;
+                width = min child_width measured_w;
+                height = child_height;
+              }
+            in
+
+            let next_y = y + child_height + if rest = [] then 0 else opts.gap in
+            calc_v next_y rest (computed :: acc)
+      in
+
+      let children_layouts =
+        calc_v (content_y + y_offset) measured_children []
+      in
+      (box_width, box_height, children_layouts)
+
+(* Redraw from cached layout information *)
+and redraw_from_cache ctx buffer opts cache =
+  (* Draw the border for the parent box if needed *)
+  (match opts.border with
+  | Some border_spec when cache.computed_width > 2 && cache.computed_height > 2
+    ->
+      draw_border buffer ctx.x ctx.y cache.computed_width cache.computed_height
+        border_spec
+  | _ -> ());
+
+  (* Recursively render children using computed geometry *)
+  List.iter
+    (fun (cl : computed_element) ->
+      let child_ctx =
+        { x = cl.x; y = cl.y; width = cl.width; height = cl.height }
+      in
+      ignore (render_at child_ctx buffer cl.element))
+    cache.children_layouts
+
+(* Main render function with caching *)
+and render_at ctx buffer element =
   match element with
   | Text (s, style) ->
       Render.set_string buffer ctx.x ctx.y s style;
@@ -295,163 +493,36 @@ let rec render_at ctx buffer element =
       (* Expanded elements fill available space *)
       let _w, _h = render_at ctx buffer e in
       (ctx.width, ctx.height)
-  | Box (children, opts) -> (
-      let box_width = Option.value opts.width ~default:ctx.width in
-      let box_height = Option.value opts.height ~default:ctx.height in
-
-      (* Draw border if specified *)
-      let border_offset = if opts.border = None then 0 else 1 in
-      let () =
-        match opts.border with
-        | Some border_spec when box_width > 2 && box_height > 2 ->
-            draw_border buffer ctx.x ctx.y box_width box_height border_spec
-        | _ -> ()
-      in
-
-      (* Calculate content area after border and padding *)
-      let content_x = ctx.x + border_offset + opts.padding.left in
-      let content_y = ctx.y + border_offset + opts.padding.top in
-      let content_width =
-        box_width - (2 * border_offset) - opts.padding.left - opts.padding.right
-      in
-      let content_height =
-        box_height - (2 * border_offset) - opts.padding.top
-        - opts.padding.bottom
-      in
-
-      (* Count expandable children *)
-      let expandable_count =
-        List.filter is_expandable children |> List.length
-      in
-
-      (* Measure non-expandable children *)
-      let measured_children =
-        List.map
-          (fun child ->
-            if is_expandable child then (child, 0, 0)
-            else
-              let w, h = measure_element child in
-              (child, w, h))
-          children
-      in
-
-      match opts.direction with
-      | `Horizontal ->
-          (* Calculate space for expandable items *)
-          let fixed_width =
-            List.fold_left (fun acc (_, w, _) -> acc + w) 0 measured_children
-          in
-          let gap_space = opts.gap * max 0 (List.length children - 1) in
-          let available_expand =
-            max 0 (content_width - fixed_width - gap_space)
-          in
-          let expand_each =
-            if expandable_count > 0 then available_expand / expandable_count
-            else 0
+  | Box data -> (
+      (* 1. Check the cache *)
+      match data.cache with
+      | Some cache
+        when cache.ctx_width = ctx.width && cache.ctx_height = ctx.height ->
+          (* Cache hit! The box has been laid out in this context before.
+             We can skip all calculations and just redraw. *)
+          redraw_from_cache ctx buffer data.options cache;
+          (cache.computed_width, cache.computed_height)
+      | _ ->
+          (* Cache miss. We must perform the full layout calculation. *)
+          let computed_width, computed_height, children_layouts =
+            calculate_box_layout ctx data.children data.options
           in
 
-          (* Render children *)
-          let rec render_h x y children_with_sizes =
-            match children_with_sizes with
-            | [] -> ()
-            | (child, _, _) :: rest ->
-                let child_width =
-                  if is_expandable child then expand_each
-                  else
-                    let w, _ = measure_element child in
-                    w
-                in
-                let child_height = content_height in
+          (* 2. Store the result in the cache *)
+          data.cache <-
+            Some
+              {
+                ctx_width = ctx.width;
+                ctx_height = ctx.height;
+                computed_width;
+                computed_height;
+                children_layouts;
+              };
 
-                (* Apply vertical alignment *)
-                let measured_h = snd (measure_element child) in
-                let y_offset =
-                  align_offset child_height measured_h opts.align
-                in
+          (* 3. Render the box and its children for the first time *)
+          redraw_from_cache ctx buffer data.options (Option.get data.cache);
 
-                let child_ctx =
-                  {
-                    x;
-                    y = y + y_offset;
-                    width = child_width;
-                    height = min child_height measured_h;
-                  }
-                in
-                let _w, _h = render_at child_ctx buffer child in
-
-                let next_x =
-                  x + child_width + if rest = [] then 0 else opts.gap
-                in
-                render_h next_x y rest
-          in
-
-          (* Apply horizontal justification *)
-          let total_children_width =
-            fixed_width + (expand_each * expandable_count) + gap_space
-          in
-          let x_offset =
-            align_offset content_width total_children_width opts.justify
-          in
-
-          render_h (content_x + x_offset) content_y measured_children;
-          (box_width, box_height)
-      | `Vertical ->
-          (* Calculate space for expandable items *)
-          let fixed_height =
-            List.fold_left (fun acc (_, _, h) -> acc + h) 0 measured_children
-          in
-          let gap_space = opts.gap * max 0 (List.length children - 1) in
-          let available_expand =
-            max 0 (content_height - fixed_height - gap_space)
-          in
-          let expand_each =
-            if expandable_count > 0 then available_expand / expandable_count
-            else 0
-          in
-
-          (* Render children *)
-          let rec render_v x y children_with_sizes =
-            match children_with_sizes with
-            | [] -> ()
-            | (child, _, _) :: rest ->
-                let child_width = content_width in
-                let child_height =
-                  if is_expandable child then expand_each
-                  else
-                    let _, h = measure_element child in
-                    h
-                in
-
-                (* Apply horizontal alignment *)
-                let measured_w = fst (measure_element child) in
-                let x_offset = align_offset child_width measured_w opts.align in
-
-                let child_ctx =
-                  {
-                    x = x + x_offset;
-                    y;
-                    width = min child_width measured_w;
-                    height = child_height;
-                  }
-                in
-                let _w, _h = render_at child_ctx buffer child in
-
-                let next_y =
-                  y + child_height + if rest = [] then 0 else opts.gap
-                in
-                render_v x next_y rest
-          in
-
-          (* Apply vertical justification *)
-          let total_children_height =
-            fixed_height + (expand_each * expandable_count) + gap_space
-          in
-          let y_offset =
-            align_offset content_height total_children_height opts.justify
-          in
-
-          render_v content_x (content_y + y_offset) measured_children;
-          (box_width, box_height))
+          (computed_width, computed_height))
 
 let render buffer element =
   let width, height = Render.dimensions buffer in

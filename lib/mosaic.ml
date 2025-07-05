@@ -198,6 +198,9 @@ module Program = struct
   let render program =
     let element = program.app.view program.model in
 
+    (* Clear all caches before rendering *)
+    Ui.clear_cache element;
+
     (* Create a new buffer for this frame *)
     let width, height = Terminal.size program.term in
     let buffer = Render.create width height in

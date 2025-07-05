@@ -175,3 +175,7 @@ val expand : element -> element
 
 val render : Render.buffer -> element -> unit
 (** Render an element to a Render buffer with proper layout support *)
+
+val clear_cache : element -> unit
+(** Clear layout caches from previous frame. This should be called before
+    rendering each frame to invalidate cached layout calculations. *)
