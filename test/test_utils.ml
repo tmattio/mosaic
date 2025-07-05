@@ -84,6 +84,12 @@ and show_button = function
   | Wheel_down -> "Wheel_down"
   | Button n -> Printf.sprintf "Button%d" n
 
+(** Pretty printer for events for use with Alcotest *)
+let pp_event fmt event = Fmt.string fmt (show_event event)
+
+(** Alcotest testable for events *)
+let event_testable = Alcotest.testable pp_event event_equal
+
 (** Assert that two event lists are equal *)
 let assert_events_equal actual expected =
   let rec compare_lists actual expected =
@@ -98,6 +104,20 @@ let assert_events_equal actual expected =
         else compare_lists as' es'
   in
   compare_lists actual expected
+
+(** Run a function within Eio context - helper to reduce boilerplate *)
+let run_eio f =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw -> f env sw
+
+(** Run read_event with a test terminal - reduces Event_source test boilerplate
+*)
+let run_read_event ?(timeout = 0.1) input_str =
+  run_eio @@ fun env sw ->
+  let term, _ = make_test_terminal input_str in
+  let source = Event_source.create term in
+  Event_source.read source ~sw ~clock:(Eio.Stdenv.clock env)
+    ~timeout:(Some timeout)
 
 (** Capture stderr output during a function execution *)
 let capture_stderr f =
