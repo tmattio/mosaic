@@ -1,9 +1,0 @@
-(library
- (name test_utils)
- (modules test_utils)
- (libraries mosaic alcotest str eio_main))
-
-(tests
- (names test_cmd test_event_source test_input test_sub test_ui)
- (modules :standard \ test_utils)
- (libraries mosaic eio_main alcotest test_utils))
