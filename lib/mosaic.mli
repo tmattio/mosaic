@@ -30,6 +30,21 @@ module Style : sig
     | Index of int  (** 256-color palette (0-255) *)
     | RGB of int * int * int  (** 24-bit color (0-255 each) *)
 
+  (** {2 Style Attributes} *)
+
+  (** Style attributes for building styles from lists *)
+  type attr =
+    | Fg of color
+    | Bg of color
+    | Bold
+    | Dim
+    | Italic
+    | Underline
+    | Blink
+    | Reverse
+    | Strikethrough
+    | Link of string
+
   (** {2 Creating Styles} *)
 
   val empty : t
@@ -43,6 +58,9 @@ module Style : sig
   val reverse : t
   val strikethrough : t
   val link : string -> t
+
+  val of_list : attr list -> t
+  (** Create a style from a list of attributes *)
 
   val ( ++ ) : t -> t -> t
   (** Combine styles. Right side takes precedence. *)

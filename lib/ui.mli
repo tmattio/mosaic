@@ -3,6 +3,19 @@
 module Style : sig
   type t
 
+  (** Style attributes for building styles from lists *)
+  type attr =
+    | Fg of Ansi.color
+    | Bg of Ansi.color
+    | Bold
+    | Dim
+    | Italic
+    | Underline
+    | Blink
+    | Reverse
+    | Strikethrough
+    | Link of string
+
   val empty : t
   val fg : Ansi.color -> t
   val bg : Ansi.color -> t
@@ -16,6 +29,9 @@ module Style : sig
 
   val link : string -> t
   (** Create a hyperlink style *)
+
+  val of_list : attr list -> t
+  (** Create a style from a list of attributes *)
 
   val ( ++ ) : t -> t -> t
   (** Combine two styles, with the second taking precedence *)

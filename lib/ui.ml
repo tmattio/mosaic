@@ -3,6 +3,19 @@
 module Style = struct
   type t = Render.style
 
+  (* Attribute type for building styles from lists *)
+  type attr =
+    | Fg of Ansi.color
+    | Bg of Ansi.color
+    | Bold
+    | Dim
+    | Italic
+    | Underline
+    | Blink
+    | Reverse
+    | Strikethrough
+    | Link of string
+
   let empty = Render.default_style
   let fg color = { empty with fg = Some color }
   let bg color = { empty with bg = Some color }
@@ -14,6 +27,24 @@ module Style = struct
   let reverse = { empty with reverse = true }
   let strikethrough = { empty with strikethrough = true }
   let link uri = { empty with uri = Some uri }
+
+  (* Create a style from a list of attributes *)
+  let of_list attrs =
+    List.fold_left
+      (fun style attr ->
+        let open Render in
+        match attr with
+        | Fg color -> { style with fg = Some color }
+        | Bg color -> { style with bg = Some color }
+        | Bold -> { style with bold = true }
+        | Dim -> { style with dim = true }
+        | Italic -> { style with italic = true }
+        | Underline -> { style with underline = true }
+        | Blink -> { style with blink = true }
+        | Reverse -> { style with reverse = true }
+        | Strikethrough -> { style with strikethrough = true }
+        | Link uri -> { style with uri = Some uri })
+      empty attrs
 
   let ( ++ ) (a : t) (b : t) : t =
     let open Render in
