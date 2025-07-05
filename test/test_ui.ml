@@ -136,7 +136,7 @@ let test_borders () =
 let test_alignment () =
   (* Test horizontal alignment in vbox *)
   let buffer = Render.create 10 3 in
-  let element = Ui.vbox ~align:Center ~width:10 [ Ui.text "Hi" ] in
+  let element = Ui.vbox ~align_items:Center ~width:10 [ Ui.text "Hi" ] in
   Ui.render buffer element;
 
   (* "Hi" should be centered (at position 4) *)
@@ -147,7 +147,7 @@ let test_alignment () =
 
   (* Test End alignment *)
   let buffer = Render.create 10 1 in
-  let element = Ui.vbox ~align:End ~width:10 [ Ui.text "End" ] in
+  let element = Ui.vbox ~align_items:End ~width:10 [ Ui.text "End" ] in
   Ui.render buffer element;
 
   (* "End" should be at the right (position 7) *)
@@ -160,7 +160,7 @@ let test_justify () =
   (* Test vertical justification in vbox *)
   let buffer = Render.create 5 10 in
   let element =
-    Ui.vbox ~justify:Center ~height:10 [ Ui.text "A"; Ui.text "B" ]
+    Ui.vbox ~justify_content:Center ~height:10 [ Ui.text "A"; Ui.text "B" ]
   in
   Ui.render buffer element;
 

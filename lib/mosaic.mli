@@ -89,6 +89,13 @@ module Ui : sig
   (** Create padding. [all] sets all sides. [x]/[y] set horizontal/vertical.
       Individual sides override [all]/[x]/[y]. All default to 0. *)
 
+  val padding_all : int -> padding
+  (** [padding_all n] creates uniform padding on all sides *)
+
+  val padding_xy : int -> int -> padding
+  (** [padding_xy x y] creates padding with x for left/right, y for top/bottom
+  *)
+
   type border_style = Solid | Rounded | Double | Thick | ASCII
   type border = { style : border_style; color : Style.color option }
 
@@ -107,10 +114,10 @@ module Ui : sig
     ?height:int ->
     ?padding:padding ->
     ?border:border ->
-    ?align:align ->
-    (* vertical alignment *)
-    ?justify:align ->
-    (* horizontal distribution *)
+    ?align_items:align ->
+    (* How items are aligned on the cross-axis (vertically) *)
+    ?justify_content:align ->
+    (* How items are distributed on the main-axis (horizontally) *)
     element list ->
     element
   (** Horizontal box. Children laid out left-to-right. *)
@@ -121,10 +128,10 @@ module Ui : sig
     ?height:int ->
     ?padding:padding ->
     ?border:border ->
-    ?align:align ->
-    (* horizontal alignment *)
-    ?justify:align ->
-    (* vertical distribution *)
+    ?align_items:align ->
+    (* How items are aligned on the cross-axis (horizontally) *)
+    ?justify_content:align ->
+    (* How items are distributed on the main-axis (vertically) *)
     element list ->
     element
   (** Vertical box. Children laid out top-to-bottom. *)
@@ -158,6 +165,11 @@ module Cmd : sig
 
   val exec : (unit -> unit) -> 'msg -> 'msg t
   (** Run external command with full terminal control *)
+
+  val release_and_run : (unit -> unit) -> 'msg -> 'msg t
+  (** [release_and_run f msg] temporarily releases the terminal, executes
+      function f, restores terminal, and produces msg when complete. Useful for
+      running external editors, pagers, etc. This is an alias for [exec]. *)
 
   val after : float -> 'msg -> 'msg t
   (** Send a message after delay (seconds) *)
@@ -238,6 +250,18 @@ module Sub : sig
 
   val on_click : (int -> int -> mouse_button -> 'msg) -> 'msg t
   (** Just mouse clicks, not motion or release *)
+
+  val on_left_click : (int -> int -> 'msg) -> 'msg t
+  (** [on_left_click f] triggers on left mouse button presses *)
+
+  val on_right_click : (int -> int -> 'msg) -> 'msg t
+  (** [on_right_click f] triggers on right mouse button presses *)
+
+  val on_scroll_up : (int -> int -> 'msg) -> 'msg t
+  (** [on_scroll_up f] triggers on mouse wheel up events *)
+
+  val on_scroll_down : (int -> int -> 'msg) -> 'msg t
+  (** [on_scroll_down f] triggers on mouse wheel down events *)
 
   (** {2 Window} *)
 

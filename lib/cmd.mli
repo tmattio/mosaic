@@ -31,6 +31,11 @@ val exec : (unit -> unit) -> 'msg -> 'msg t
 (** [exec f msg] temporarily releases the terminal, executes function f,
     restores terminal, and produces msg when complete *)
 
+val release_and_run : (unit -> unit) -> 'msg -> 'msg t
+(** [release_and_run f msg] temporarily releases the terminal, executes function
+    f, restores terminal, and produces msg when complete. Useful for running
+    external editors, pagers, etc. This is an alias for [exec]. *)
+
 val quit : 'msg t
 (** A command that quits the program *)
 

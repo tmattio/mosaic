@@ -65,6 +65,26 @@ let on_click f =
     | Input.Press (x, y, button, _) -> Some (f x y button)
     | _ -> None)
 
+let on_left_click f =
+  mouse_filter (function
+    | Input.Press (x, y, Input.Left, _) -> Some (f x y)
+    | _ -> None)
+
+let on_right_click f =
+  mouse_filter (function
+    | Input.Press (x, y, Input.Right, _) -> Some (f x y)
+    | _ -> None)
+
+let on_scroll_up f =
+  mouse_filter (function
+    | Input.Press (x, y, Input.Wheel_up, _) -> Some (f x y)
+    | _ -> None)
+
+let on_scroll_down f =
+  mouse_filter (function
+    | Input.Press (x, y, Input.Wheel_down, _) -> Some (f x y)
+    | _ -> None)
+
 let on_resize f = window_resize f
 let on_focus msg = focus (fun () -> msg)
 let on_blur msg = blur (fun () -> msg)

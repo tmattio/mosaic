@@ -27,7 +27,7 @@ let view model =
       (* Header with border *)
       hbox
         ~border:(border ~style:Rounded ~color:(Style.Index 6) ())
-        ~padding:(pad ~all:1 ()) ~justify:Center
+        ~padding:(padding_all 1) ~justify_content:Center
         [ text ~style:Style.(fg (Index 6) ++ bold) "Layout Demo" ];
       (* Main content area *)
       hbox ~gap:2
@@ -45,7 +45,7 @@ let view model =
           (* Main content with different alignment *)
           vbox
             ~border:(border ~style:Double ~color:(Style.Index 5) ())
-            ~padding:(pad ~all:2 ()) ~align:Center ~width:40 ~height:15
+            ~padding:(padding_all 2) ~align_items:Center ~width:40 ~height:15
             [
               text ~style:Style.(fg (Index 3) ++ bold) "Content Area";
               space 2;
@@ -62,7 +62,7 @@ let view model =
             ];
           (* Right panel with ASCII border *)
           vbox ~width:20 ~border:(border ~style:ASCII ())
-            ~padding:(pad ~x:1 ~y:1 ())
+            ~padding:(padding_xy 1 1)
             [
               text ~style:Style.bold "Info";
               space 1;
@@ -71,7 +71,7 @@ let view model =
             ];
         ];
       (* Footer *)
-      hbox ~padding:(pad ~top:1 ()) ~justify:End
+      hbox ~padding:(pad ~top:1 ()) ~justify_content:End
         [ text ~style:Style.dim "Press 'q' to quit" ];
     ]
 

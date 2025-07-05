@@ -114,8 +114,8 @@ val hbox :
   ?height:int ->
   ?padding:padding ->
   ?border:border ->
-  ?align:align ->
-  ?justify:align ->
+  ?align_items:align ->
+  ?justify_content:align ->
   element list ->
   element
 (** Create a horizontal box.
@@ -123,8 +123,10 @@ val hbox :
     - [width], [height]: Fixed dimensions
     - [padding]: Inner padding
     - [border]: Border style
-    - [align]: Vertical alignment of items (default: Start)
-    - [justify]: Horizontal distribution of items (default: Start) *)
+    - [align_items]: How items are aligned on the cross-axis (vertically)
+      (default: Start)
+    - [justify_content]: How items are distributed on the main-axis
+      (horizontally) (default: Start) *)
 
 val vbox :
   ?gap:int ->
@@ -132,8 +134,8 @@ val vbox :
   ?height:int ->
   ?padding:padding ->
   ?border:border ->
-  ?align:align ->
-  ?justify:align ->
+  ?align_items:align ->
+  ?justify_content:align ->
   element list ->
   element
 (** Create a vertical box.
@@ -141,8 +143,10 @@ val vbox :
     - [width], [height]: Fixed dimensions
     - [padding]: Inner padding
     - [border]: Border style
-    - [align]: Horizontal alignment of items (default: Start)
-    - [justify]: Vertical distribution of items (default: Start) *)
+    - [align_items]: How items are aligned on the cross-axis (horizontally)
+      (default: Start)
+    - [justify_content]: How items are distributed on the main-axis (vertically)
+      (default: Start) *)
 
 val spacer : int -> element
 (** Create a spacer element that consumes space without rendering *)

@@ -179,7 +179,7 @@ let subscriptions _ =
       Sub.mouse_filter (function
         | Motion (x, y, _, _) -> Some (`MouseMove (x, y))
         | _ -> None);
-      Sub.on_click (fun x y _ -> `MouseClick (x, y));
+      Sub.on_left_click (fun x y -> `MouseClick (x, y));
       Sub.on_resize (fun width height -> `Resize (width, height));
       Sub.on_focus `Focus;
       Sub.on_blur `Blur;

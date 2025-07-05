@@ -51,6 +51,18 @@ val on_char : ?ctrl:bool -> ?alt:bool -> ?shift:bool -> char -> 'msg -> 'msg t
 val on_click : (int -> int -> Input.mouse_button -> 'msg) -> 'msg t
 (** Just mouse clicks, not motion or release *)
 
+val on_left_click : (int -> int -> 'msg) -> 'msg t
+(** [on_left_click f] triggers on left mouse button presses *)
+
+val on_right_click : (int -> int -> 'msg) -> 'msg t
+(** [on_right_click f] triggers on right mouse button presses *)
+
+val on_scroll_up : (int -> int -> 'msg) -> 'msg t
+(** [on_scroll_up f] triggers on mouse wheel up events *)
+
+val on_scroll_down : (int -> int -> 'msg) -> 'msg t
+(** [on_scroll_down f] triggers on mouse wheel down events *)
+
 val on_resize : (int -> int -> 'msg) -> 'msg t
 (** Window resize with width and height *)
 

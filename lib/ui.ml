@@ -115,7 +115,7 @@ let text ?(style = Style.empty) s = Text (s, style)
 let no_padding = padding ()
 
 let hbox ?(gap = 0) ?width ?height ?(padding = no_padding) ?border
-    ?(align = Start) ?(justify = Start) children =
+    ?(align_items = Start) ?(justify_content = Start) children =
   Box
     ( children,
       {
@@ -125,12 +125,12 @@ let hbox ?(gap = 0) ?width ?height ?(padding = no_padding) ?border
         height;
         padding;
         border;
-        align;
-        justify;
+        align = align_items;
+        justify = justify_content;
       } )
 
 let vbox ?(gap = 0) ?width ?height ?(padding = no_padding) ?border
-    ?(align = Start) ?(justify = Start) children =
+    ?(align_items = Start) ?(justify_content = Start) children =
   Box
     ( children,
       {
@@ -140,8 +140,8 @@ let vbox ?(gap = 0) ?width ?height ?(padding = no_padding) ?border
         height;
         padding;
         border;
-        align;
-        justify;
+        align = align_items;
+        justify = justify_content;
       } )
 
 let spacer n = Spacer n

@@ -23,6 +23,7 @@ let batch cmds =
 
 let perform f = Perform f
 let exec f msg = Exec { run = f; on_complete = msg }
+let release_and_run = exec (* Alias for better discoverability *)
 let quit = Quit
 let tick duration f = Tick (duration, f)
 let log message = Log message
