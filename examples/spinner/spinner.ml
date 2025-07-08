@@ -45,17 +45,15 @@ let view model =
     [
       text "";
       text "";
-      text "";
-      hbox 
+      hbox ~gap:1
         [
           text "   ";
           Mosaic_tiles.Spinner.view model.spinner;
-          text " Loading forever...press q to quit";
+          text "Loading forever...press q to quit";
         ];
       text "";
       text "";
-      text ~style:Style.(fg (Index 8)) "   (press q to quit)";
-      if model.quitting then text "" else text "";
+      if model.quitting then text "Quitting..." else text "";
     ]
 
 let subscriptions model =
