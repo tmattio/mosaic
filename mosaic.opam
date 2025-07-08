@@ -14,6 +14,7 @@ depends: [
   "dune" {>= "3.19"}
   "uutf"
   "uucp"
+  "cmarkit"
   "eio"
   "eio_main"
   "alcotest" {with-test}

@@ -1,0 +1,4 @@
+(library
+ (name mosaic_markdown)
+ (public_name mosaic.markdown)
+ (libraries mosaic cmarkit uutf uucp))

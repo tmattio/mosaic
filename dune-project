@@ -24,6 +24,7 @@
   dune
   uutf
   uucp
+  cmarkit
   eio
   eio_main
   (alcotest :with-test))
