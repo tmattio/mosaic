@@ -4,6 +4,14 @@
  (libraries mosaic alcotest str eio_main))
 
 (tests
- (names test_ansi test_cmd test_event_source test_input test_render test_sub test_ui)
+ (names
+  test_ansi
+  test_cmd
+  test_event_source
+  test_input
+  test_render
+  test_sub
+  test_ui
+  test_markdown)
  (modules :standard \ test_utils)
- (libraries mosaic ansi render eio_main alcotest test_utils))
+ (libraries mosaic mosaic.markdown ansi render eio_main alcotest test_utils))
