@@ -1,0 +1,4 @@
+(executable
+ (public_name spinner)
+ (name spinner)
+ (libraries mosaic mosaic.tiles eio_main))
