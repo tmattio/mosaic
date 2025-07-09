@@ -747,3 +747,75 @@ let reset parser =
   parser.length <- 0;
   parser.in_paste <- false;
   Buffer.clear parser.paste_buffer
+
+(* Pretty-printing *)
+let pp_key fmt = function
+  | Char u ->
+      let b = Buffer.create 4 in
+      Uutf.Buffer.add_utf_8 b u;
+      Format.fprintf fmt "Char(%s)" (Buffer.contents b)
+  | Enter -> Format.fprintf fmt "Enter"
+  | Tab -> Format.fprintf fmt "Tab"
+  | Backspace -> Format.fprintf fmt "Backspace"
+  | Delete -> Format.fprintf fmt "Delete"
+  | Escape -> Format.fprintf fmt "Escape"
+  | Up -> Format.fprintf fmt "Up"
+  | Down -> Format.fprintf fmt "Down"
+  | Left -> Format.fprintf fmt "Left"
+  | Right -> Format.fprintf fmt "Right"
+  | Home -> Format.fprintf fmt "Home"
+  | End -> Format.fprintf fmt "End"
+  | Page_up -> Format.fprintf fmt "Page_up"
+  | Page_down -> Format.fprintf fmt "Page_down"
+  | Insert -> Format.fprintf fmt "Insert"
+  | F n -> Format.fprintf fmt "F%d" n
+
+let pp_modifier fmt m =
+  let mods = [] in
+  let mods = if m.ctrl then "ctrl" :: mods else mods in
+  let mods = if m.alt then "alt" :: mods else mods in
+  let mods = if m.shift then "shift" :: mods else mods in
+  match mods with
+  | [] -> Format.fprintf fmt "no_modifier"
+  | _ -> Format.fprintf fmt "{%s}" (String.concat "+" mods)
+
+let pp_key_event fmt e =
+  Format.fprintf fmt "{key=%a; modifier=%a}" pp_key e.key pp_modifier e.modifier
+
+let pp_mouse_button fmt = function
+  | Left -> Format.fprintf fmt "Left"
+  | Middle -> Format.fprintf fmt "Middle"
+  | Right -> Format.fprintf fmt "Right"
+  | Wheel_up -> Format.fprintf fmt "Wheel_up"
+  | Wheel_down -> Format.fprintf fmt "Wheel_down"
+  | Button n -> Format.fprintf fmt "Button(%d)" n
+
+let pp_mouse_button_state fmt s =
+  let buttons = [] in
+  let buttons = if s.left then "left" :: buttons else buttons in
+  let buttons = if s.middle then "middle" :: buttons else buttons in
+  let buttons = if s.right then "right" :: buttons else buttons in
+  match buttons with
+  | [] -> Format.fprintf fmt "{}"
+  | _ -> Format.fprintf fmt "{%s}" (String.concat "," buttons)
+
+let pp_mouse_event fmt = function
+  | Press (x, y, btn, mods) ->
+      Format.fprintf fmt "Press(%d,%d,%a,%a)" x y pp_mouse_button btn
+        pp_modifier mods
+  | Release (x, y, btn, mods) ->
+      Format.fprintf fmt "Release(%d,%d,%a,%a)" x y pp_mouse_button btn
+        pp_modifier mods
+  | Motion (x, y, state, mods) ->
+      Format.fprintf fmt "Motion(%d,%d,%a,%a)" x y pp_mouse_button_state state
+        pp_modifier mods
+
+let pp_event fmt = function
+  | Key k -> Format.fprintf fmt "Key(%a)" pp_key_event k
+  | Mouse m -> Format.fprintf fmt "Mouse(%a)" pp_mouse_event m
+  | Resize (w, h) -> Format.fprintf fmt "Resize(%d,%d)" w h
+  | Focus -> Format.fprintf fmt "Focus"
+  | Blur -> Format.fprintf fmt "Blur"
+  | Paste_start -> Format.fprintf fmt "Paste_start"
+  | Paste_end -> Format.fprintf fmt "Paste_end"
+  | Paste s -> Format.fprintf fmt "Paste(%S)" s

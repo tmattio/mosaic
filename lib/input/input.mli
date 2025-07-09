@@ -93,3 +93,13 @@ val pending : parser -> bytes
 
 val reset : parser -> unit
 (** Reset parser state, clearing any incomplete sequences. *)
+
+val pp_key : Format.formatter -> key -> unit
+(** Pretty-printing *)
+
+val pp_modifier : Format.formatter -> modifier -> unit
+val pp_key_event : Format.formatter -> key_event -> unit
+val pp_mouse_button : Format.formatter -> mouse_button -> unit
+val pp_mouse_button_state : Format.formatter -> mouse_button_state -> unit
+val pp_mouse_event : Format.formatter -> mouse_event -> unit
+val pp_event : Format.formatter -> event -> unit

@@ -219,6 +219,10 @@ module Cmd : sig
 
   val map : ('a -> 'b) -> 'a t -> 'b t
   (** Map a function over the message type in a command *)
+
+  val pp :
+    (Format.formatter -> 'msg -> unit) -> Format.formatter -> 'msg t -> unit
+  (** Pretty-printing *)
 end
 
 (** {1 Input Events} *)
@@ -331,6 +335,10 @@ module Sub : sig
 
   val collect_blur :
     (unit -> 'msg option) list -> 'msg t -> (unit -> 'msg option) list
+
+  val pp :
+    (Format.formatter -> 'msg -> unit) -> Format.formatter -> 'msg t -> unit
+  (** Pretty-printing *)
 end
 
 val key : ?ctrl:bool -> ?alt:bool -> ?shift:bool -> key -> key_event
@@ -369,6 +377,7 @@ val run :
   ?alt_screen:bool ->
   ?mouse:bool ->
   ?fps:int ->
+  ?debug:bool ->
   ('model, 'msg) app ->
   unit
 (** Run an application.
@@ -377,6 +386,7 @@ val run :
     @param alt_screen Use alternate screen buffer (default: true)
     @param mouse Enable mouse support (default: false)
     @param fps Target frames per second (default: 60)
+    @param debug Enable debug logging to mosaic-debug.log (default: false)
 
     Note: Requires [Eio_main.run] context. *)
 
@@ -387,6 +397,7 @@ val run_eio :
   ?alt_screen:bool ->
   ?mouse:bool ->
   ?fps:int ->
+  ?debug:bool ->
   ('model, 'msg) app ->
   unit
 (** Run with explicit Eio environment. Most users should use [run] instead. *)

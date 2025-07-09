@@ -134,3 +134,20 @@ let rec collect_blur acc = function
   | Blur fn -> fn :: acc
   | Keyboard _ | Mouse _ | Window _ | Focus _ -> acc
   | Batch subs -> List.fold_left collect_blur acc subs
+
+(* Pretty-printing *)
+let pp _pp_msg fmt sub =
+  let open Format in
+  let rec pp_sub fmt = function
+    | None -> fprintf fmt "None"
+    | Keyboard _ -> fprintf fmt "Keyboard(<fun>)"
+    | Mouse _ -> fprintf fmt "Mouse(<fun>)"
+    | Window _ -> fprintf fmt "Window(<fun>)"
+    | Focus _ -> fprintf fmt "Focus(<fun>)"
+    | Blur _ -> fprintf fmt "Blur(<fun>)"
+    | Batch subs ->
+        fprintf fmt "Batch[@[<hv>%a@]]"
+          (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ";@ ") pp_sub)
+          subs
+  in
+  pp_sub fmt sub

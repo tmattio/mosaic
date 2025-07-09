@@ -172,7 +172,8 @@ let render_patches ?cursor_pos patches =
 
       if patch.new_cell.style <> !last_style then (
         let attrs = style_to_attrs patch.new_cell.style in
-        Buffer.add_string buf (Ansi.sgr attrs);
+        if attrs = [] then Buffer.add_string buf Ansi.reset
+        else Buffer.add_string buf (Ansi.sgr attrs);
         last_style := patch.new_cell.style);
 
       let char_str =
@@ -192,7 +193,8 @@ let render_patches ?cursor_pos patches =
       last_col := patch.col + patch.new_cell.width - 1)
     by_row;
 
-  Buffer.add_string buf Ansi.reset;
+  (* Only add reset if we actually rendered something *)
+  if patches <> [] then Buffer.add_string buf Ansi.reset;
 
   (* Position cursor if requested *)
   (match cursor_pos with
@@ -208,7 +210,9 @@ let render_full ?cursor_pos buffer =
   let buf = Buffer.create (buffer.width * buffer.height * 10) in
   Buffer.add_string buf (Ansi.cursor_position 1 1);
   Buffer.add_string buf Ansi.clear_screen;
+  Buffer.add_string buf Ansi.reset;
 
+  (* Ensure we start with a clean slate *)
   let last_style = ref default_style in
 
   for y = 0 to buffer.height - 1 do
@@ -218,7 +222,8 @@ let render_full ?cursor_pos buffer =
       if cell.width > 0 then (
         if cell.style <> !last_style then (
           let attrs = style_to_attrs cell.style in
-          Buffer.add_string buf (Ansi.sgr attrs);
+          if attrs = [] then Buffer.add_string buf Ansi.reset
+          else Buffer.add_string buf (Ansi.sgr attrs);
           last_style := cell.style);
         let char_str =
           match cell.chars with

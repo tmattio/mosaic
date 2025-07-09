@@ -73,10 +73,18 @@ module Program = struct
     clock : float Eio.Time.clock_ty Eio.Std.r;
     sw : Eio.Switch.t;
     cmd_queue : 'msg Cmd.t Queue.t; (* Command queue for sequential execution *)
+    debug_log : out_channel option; (* Debug logging *)
   }
 
+  let log_debug program s =
+    match program.debug_log with
+    | Some chan ->
+        let time = Unix.gettimeofday () in
+        Printf.fprintf chan "[%f] %s\n%!" time s
+    | None -> ()
+
   let create_program ~env ~sw ?terminal ?(alt_screen = true) ?(mouse = false)
-      ?(fps = 60) app =
+      ?(fps = 60) ?debug_log app =
     let term =
       match terminal with
       | Some t -> t
@@ -99,6 +107,7 @@ module Program = struct
       clock = Eio.Stdenv.clock env;
       sw;
       cmd_queue = Queue.create ();
+      debug_log;
     }
 
   let send_msg program msg =
@@ -178,6 +187,7 @@ module Program = struct
         Terminal.flush program.term
 
   let handle_input_event program event =
+    log_debug program (Format.asprintf "Input event: %a" Input.pp_event event);
     let subs = program.app.subscriptions program.model in
     let msgs =
       match event with
@@ -205,10 +215,15 @@ module Program = struct
           List.filter_map (fun f -> f size) window_handlers
       | _ -> []
     in
+    log_debug program
+      (Format.asprintf "Generated %d messages from input event"
+         (List.length msgs));
     List.iter (Eio.Stream.add program.msg_stream) msgs
 
   let render program =
+    log_debug program "Render: Starting render pass";
     let element = program.app.view program.model in
+    log_debug program (Format.asprintf "View element: %a" Ui.pp_element element);
 
     (* Clear all caches before rendering *)
     Ui.clear_cache element;
@@ -220,19 +235,58 @@ module Program = struct
     (* Render the UI element tree into the buffer using the layout engine *)
     Ui.render buffer element;
 
+    (* Calculate a simple hash of buffer content for debugging *)
+    let buffer_hash buffer =
+      let w, h = Render.dimensions buffer in
+      let hash = ref 0 in
+      for y = 0 to h - 1 do
+        for x = 0 to w - 1 do
+          let cell = Render.get buffer x y in
+          match cell.Render.chars with
+          | [] -> ()
+          | c :: _ -> hash := !hash + Uchar.to_int c + x + (y * 1000)
+        done
+      done;
+      !hash
+    in
+    log_debug program
+      (Printf.sprintf "Current buffer hash: %d" (buffer_hash buffer));
+
     (* Now diff and patch as intended *)
     let output =
       match program.previous_buffer with
       | None ->
-          Terminal.write program.term
-            (Bytes.of_string (Ansi.cursor_position 1 1 ^ Ansi.clear_screen))
-            0
-            (String.length (Ansi.cursor_position 1 1 ^ Ansi.clear_screen));
-          Render.render_full buffer
+          log_debug program "Render: Full redraw (no previous buffer)";
+          (* Don't write clear sequence separately - render_full already includes it *)
+          let full_output = Render.render_full buffer in
+          log_debug program
+            (Printf.sprintf "Full render output length: %d bytes"
+               (String.length full_output));
+          full_output
       | Some prev_buf ->
+          log_debug program
+            (Printf.sprintf "Previous buffer hash: %d" (buffer_hash prev_buf));
           let patches = Render.diff prev_buf buffer in
-          Render.render_patches patches
+          if patches = [] then (
+            log_debug program "Render: No changes detected (0 patches)";
+            "" (* Return empty string when no changes *))
+          else (
+            log_debug program
+              (Printf.sprintf "Render: %d patches detected"
+                 (List.length patches));
+            Render.render_patches patches)
     in
+
+    (* Log output with preview for debugging *)
+    if String.length output > 0 then
+      let preview =
+        if String.length output > 50 then
+          String.escaped (String.sub output 0 50) ^ "..."
+        else String.escaped output
+      in
+      log_debug program
+        (Printf.sprintf "Writing %d bytes: %s" (String.length output) preview)
+    else log_debug program "Writing 0 bytes (no output)";
 
     Terminal.write program.term (Bytes.of_string output) 0
       (String.length output);
@@ -255,6 +309,7 @@ module Program = struct
     done
 
   let render_loop program =
+    log_debug program "Starting render loop";
     let frame_duration = 1.0 /. float_of_int program.fps in
     while program.running do
       render program;
@@ -272,17 +327,26 @@ module Program = struct
       (* Block until a new message arrives *)
       if program.running then (* Check again before blocking *)
         let msg = Eio.Stream.take program.msg_stream in
-        if program.running then (* Check again after waking up *)
+        if program.running then (
+          (* Check again after waking up *)
+          log_debug program "Processing message";
           let cmd = send_msg program msg in
+          log_debug program
+            (Format.asprintf "Command generated: %a"
+               (Cmd.pp (fun fmt _ -> Format.fprintf fmt "<msg>"))
+               cmd);
           (* If it's a sequence, it will be added to the queue.
              Otherwise, process it immediately *)
-          process_cmd program cmd
+          process_cmd program cmd)
     done
 
   let setup_terminal program =
+    log_debug program "Setting up terminal";
     Terminal.set_mode program.term `Raw;
     Terminal.hide_cursor program.term;
-    if program.alt_screen then Terminal.enable_alternate_screen program.term;
+    if program.alt_screen then (
+      log_debug program "Enabling alternate screen";
+      Terminal.enable_alternate_screen program.term);
     if program.mouse then Terminal.enable_mouse program.term;
 
     (* Setup SIGWINCH handler *)
@@ -301,14 +365,20 @@ module Program = struct
     Terminal.release program.term
 
   let run ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
-      app =
+      ?debug_log app =
     let open Eio.Std in
     let program =
-      create_program ~env ~sw ?terminal ~alt_screen ~mouse ~fps app
+      create_program ~env ~sw ?terminal ~alt_screen ~mouse ~fps ?debug_log app
     in
+
+    log_debug program "===== Program Start =====";
 
     (* Initialize with init command *)
     let init_cmd = snd (app.init ()) in
+    log_debug program
+      (Format.asprintf "Initial command: %a"
+         (Cmd.pp (fun fmt _ -> Format.fprintf fmt "<msg>"))
+         init_cmd);
     Queue.add init_cmd program.cmd_queue;
 
     setup_terminal program;
@@ -327,14 +397,23 @@ end
 let app ~init ~update ~view ?(subscriptions = fun _ -> Sub.none) () =
   { init; update; view; subscriptions }
 
-let run ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60) app =
+let run ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
+    ?(debug = false) app =
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
-  Program.run ~sw ~env ?terminal ~alt_screen ~mouse ~fps app
+  let debug_log = if debug then Some (open_out "mosaic-debug.log") else None in
+  Fun.protect
+    ~finally:(fun () -> Option.iter close_out debug_log)
+    (fun () ->
+      Program.run ~sw ~env ?terminal ~alt_screen ~mouse ~fps ?debug_log app)
 
 let run_eio ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
-    app =
-  Program.run ~sw ~env ?terminal ~alt_screen ~mouse ~fps app
+    ?(debug = false) app =
+  let debug_log = if debug then Some (open_out "mosaic-debug.log") else None in
+  Fun.protect
+    ~finally:(fun () -> Option.iter close_out debug_log)
+    (fun () ->
+      Program.run ~sw ~env ?terminal ~alt_screen ~mouse ~fps ?debug_log app)
 
 (* Helper functions *)
 let key ?(ctrl = false) ?(alt = false) ?(shift = false) k =

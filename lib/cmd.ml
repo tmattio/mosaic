@@ -38,6 +38,30 @@ let sequence cmds =
 let seq = sequence (* Alias for API compatibility *)
 let after delay msg = tick delay (fun _ -> msg)
 
+(* Pretty-printing *)
+let pp pp_msg fmt cmd =
+  let open Format in
+  let rec pp_cmd fmt = function
+    | None -> fprintf fmt "None"
+    | Msg m -> fprintf fmt "Msg(%a)" pp_msg m
+    | Batch cmds ->
+        fprintf fmt "Batch[@[<hv>%a@]]"
+          (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ";@ ") pp_cmd)
+          cmds
+    | Perform _ -> fprintf fmt "Perform(<fun>)"
+    | Exec { on_complete; _ } ->
+        fprintf fmt "Exec{on_complete=%a}" pp_msg on_complete
+    | Tick (duration, _) -> fprintf fmt "Tick(%.3f, <fun>)" duration
+    | Sequence cmds ->
+        fprintf fmt "Sequence[@[<hv>%a@]]"
+          (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ";@ ") pp_cmd)
+          cmds
+    | Quit -> fprintf fmt "Quit"
+    | Log message -> fprintf fmt "Log(%S)" message
+    | SetWindowTitle title -> fprintf fmt "SetWindowTitle(%S)" title
+  in
+  pp_cmd fmt cmd
+
 let rec to_list = function
   | None -> []
   | Msg m -> [ Msg m ]

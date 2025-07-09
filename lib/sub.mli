@@ -99,3 +99,7 @@ val collect_focus :
 
 val collect_blur :
   (unit -> 'msg option) list -> 'msg t -> (unit -> 'msg option) list
+
+val pp :
+  (Format.formatter -> 'msg -> unit) -> Format.formatter -> 'msg t -> unit
+(** Pretty-printing *)

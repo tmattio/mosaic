@@ -539,3 +539,18 @@ let render buffer element =
   let width, height = Render.dimensions buffer in
   let ctx = { x = 0; y = 0; width; height } in
   ignore (render_at ctx buffer element)
+
+(* Pretty-printing *)
+let rec pp_element fmt = function
+  | Text (s, _) -> Format.fprintf fmt "Text(%S)" s
+  | Box { children; options; _ } ->
+      let dir =
+        match options.direction with `Horizontal -> "H" | `Vertical -> "V"
+      in
+      Format.fprintf fmt "%sBox[@[<hv>%a@]]" dir
+        (Format.pp_print_list
+           ~pp_sep:(fun fmt () -> Format.fprintf fmt ";@ ")
+           pp_element)
+        children
+  | Spacer n -> Format.fprintf fmt "Spacer(%d)" n
+  | Expand e -> Format.fprintf fmt "Expand(%a)" pp_element e

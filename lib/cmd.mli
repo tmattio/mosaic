@@ -67,3 +67,7 @@ val map : ('a -> 'b) -> 'a t -> 'b t
 
 val to_list : 'msg t -> 'msg t list
 (** Internal: flatten a command to a list of atomic commands *)
+
+val pp :
+  (Format.formatter -> 'msg -> unit) -> Format.formatter -> 'msg t -> unit
+(** Pretty-printing *)
