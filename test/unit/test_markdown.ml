@@ -23,7 +23,7 @@ let test_paragraphs () =
   let ui = Mosaic_markdown.render md in
   let output = render_to_string ui in
   assert_output_contains output "This is a simple paragraph.";
-  
+
   let md = "First paragraph.\n\nSecond paragraph." in
   let ui = Mosaic_markdown.render md in
   let output = render_to_string ui in
@@ -37,7 +37,7 @@ let test_headings () =
     let output = render_to_string ui in
     assert_output_contains output ("Heading " ^ string_of_int level)
   in
-  List.iter test_heading [1; 2; 3; 4; 5; 6]
+  List.iter test_heading [ 1; 2; 3; 4; 5; 6 ]
 
 let test_emphasis () =
   let md = "This has *emphasis* and **strong emphasis**." in
@@ -45,7 +45,7 @@ let test_emphasis () =
   let output = render_to_string ui in
   assert_output_contains output "emphasis";
   assert_output_contains output "strong emphasis";
-  
+
   let md = "Also works with _underscore_ and __double underscore__." in
   let ui = Mosaic_markdown.render md in
   let output = render_to_string ui in
@@ -57,7 +57,7 @@ let test_inline_code () =
   let ui = Mosaic_markdown.render md in
   let output = render_to_string ui in
   assert_output_contains output " code";
-  
+
   let md = "Multiple backticks: ``code with ` backtick``" in
   let ui = Mosaic_markdown.render md in
   let output = render_to_string ui in
@@ -68,7 +68,7 @@ let test_links () =
   let ui = Mosaic_markdown.render md in
   let output = render_to_string ui in
   assert_output_contains output "this link";
-  
+
   let md = "![Alt text](image.png)" in
   let ui = Mosaic_markdown.render md in
   let output = render_to_string ui in
@@ -81,7 +81,7 @@ let test_unordered_lists () =
   assert_output_contains output "• First item";
   assert_output_contains output "• Second item";
   assert_output_contains output "• Third item";
-  
+
   let md = "* Using asterisks\n* Also works\n  * Nested item" in
   let ui = Mosaic_markdown.render md in
   let output = render_to_string ui in
@@ -95,7 +95,7 @@ let test_ordered_lists () =
   assert_output_contains output "1. First";
   assert_output_contains output "2. Second";
   assert_output_contains output "3. Third";
-  
+
   let md = "1. Starting at one\n1. All ones\n1. Still increments" in
   let ui = Mosaic_markdown.render md in
   let output = render_to_string ui in
@@ -110,7 +110,7 @@ let test_code_blocks () =
   assert_output_contains output "```";
   assert_output_contains output "plain code block";
   assert_output_contains output "with multiple lines";
-  
+
   let md = "```ocaml\nlet x = 42\nlet y = x + 1\n```" in
   let ui = Mosaic_markdown.render md in
   let output = render_to_string ui in
@@ -124,7 +124,7 @@ let test_blockquotes () =
   (* In CommonMark, consecutive lines form a single paragraph *)
   assert_output_contains output "│";
   assert_output_contains output "This is a quote";
-  
+
   let md = "> Level 1\n> > Level 2 nested" in
   let ui = Mosaic_markdown.render md in
   let output = render_to_string ui in
@@ -137,14 +137,15 @@ let test_horizontal_rules () =
   let ui = Mosaic_markdown.render md in
   let output = render_to_string ui in
   assert_output_contains output "----";
-  
+
   let md = "***" in
   let ui = Mosaic_markdown.render md in
   let output = render_to_string ui in
   assert_output_contains output "----"
 
 let test_mixed_content () =
-  let md = {|# Main Title
+  let md =
+    {|# Main Title
 
 This is a paragraph with **bold** and *italic* text.
 
@@ -163,10 +164,11 @@ let greet name =
 
 ---
 
-Final paragraph.|} in
+Final paragraph.|}
+  in
   let ui = Mosaic_markdown.render md in
   let output = render_to_string ui in
-  
+
   assert_output_contains output "# Main Title";
   assert_output_contains output "bold";
   assert_output_contains output "italic";
@@ -180,19 +182,20 @@ Final paragraph.|} in
   assert_output_contains output "Final paragraph."
 
 let test_custom_style () =
-  let custom_style = 
+  let custom_style =
     let open Mosaic_markdown.Style in
-    { default with
+    {
+      default with
       paragraph = { default.paragraph with margin_bottom = 3 };
       h1 = { default.h1 with style = Mosaic.Style.(bold ++ fg Red) };
       list = { default.list with item_prefix = "→" };
     }
   in
-  
+
   let md = "# Red Heading\n\nParagraph\n\n- Custom bullet" in
   let ui = Mosaic_markdown.render ~style:custom_style md in
   let output = render_to_string ui in
-  
+
   assert_output_contains output "# Red Heading";
   assert_output_contains output "→ Custom bullet"
 
@@ -217,7 +220,7 @@ let test_special_characters () =
   let ui = Mosaic_markdown.render md in
   let output = render_to_string ui in
   assert_output_contains output "Special: < > & \" ' chars";
-  
+
   let md = "Escaped: \\* \\_ \\` \\[" in
   let ui = Mosaic_markdown.render md in
   let output = render_to_string ui in
@@ -231,7 +234,8 @@ let test_nested_emphasis () =
   assert_output_contains output "nested italic"
 
 let test_complex_lists () =
-  let md = {|1. First ordered item
+  let md =
+    {|1. First ordered item
    - Nested unordered
    - Another nested
 2. Second ordered item
@@ -241,7 +245,8 @@ let test_complex_lists () =
 
    This is a paragraph in the list.
    
-   - And a nested list after paragraph|} in
+   - And a nested list after paragraph|}
+  in
   let ui = Mosaic_markdown.render md in
   let output = render_to_string ui in
   assert_output_contains output "First ordered item";
@@ -274,7 +279,7 @@ let test_line_breaks () =
   let output = render_to_string ui in
   assert_output_contains output "Line one";
   assert_output_contains output "Line two";
-  
+
   let md = "Soft\nbreak" in
   let ui = Mosaic_markdown.render md in
   let output = render_to_string ui in
@@ -284,35 +289,40 @@ let test_line_breaks () =
 let () =
   run "Markdown"
     [
-      ("Basic elements", [
-        test_case "paragraphs" `Quick test_paragraphs;
-        test_case "headings" `Quick test_headings;
-        test_case "horizontal rules" `Quick test_horizontal_rules;
-      ]);
-      ("Inline elements", [
-        test_case "emphasis" `Quick test_emphasis;
-        test_case "inline code" `Quick test_inline_code;
-        test_case "links" `Quick test_links;
-        test_case "reference links" `Quick test_reference_links;
-        test_case "autolinks" `Quick test_autolinks;
-        test_case "line breaks" `Quick test_line_breaks;
-      ]);
-      ("Block elements", [
-        test_case "unordered lists" `Quick test_unordered_lists;
-        test_case "ordered lists" `Quick test_ordered_lists;
-        test_case "code blocks" `Quick test_code_blocks;
-        test_case "blockquotes" `Quick test_blockquotes;
-      ]);
-      ("Advanced features", [
-        test_case "mixed content" `Quick test_mixed_content;
-        test_case "custom style" `Quick test_custom_style;
-        test_case "nested emphasis" `Quick test_nested_emphasis;
-        test_case "complex lists" `Quick test_complex_lists;
-      ]);
-      ("Edge cases", [
-        test_case "empty markdown" `Quick test_empty_markdown;
-        test_case "width parameter" `Quick test_width_parameter;
-        test_case "special characters" `Quick test_special_characters;
-        test_case "string of inlines" `Quick test_string_of_inlines;
-      ]);
+      ( "Basic elements",
+        [
+          test_case "paragraphs" `Quick test_paragraphs;
+          test_case "headings" `Quick test_headings;
+          test_case "horizontal rules" `Quick test_horizontal_rules;
+        ] );
+      ( "Inline elements",
+        [
+          test_case "emphasis" `Quick test_emphasis;
+          test_case "inline code" `Quick test_inline_code;
+          test_case "links" `Quick test_links;
+          test_case "reference links" `Quick test_reference_links;
+          test_case "autolinks" `Quick test_autolinks;
+          test_case "line breaks" `Quick test_line_breaks;
+        ] );
+      ( "Block elements",
+        [
+          test_case "unordered lists" `Quick test_unordered_lists;
+          test_case "ordered lists" `Quick test_ordered_lists;
+          test_case "code blocks" `Quick test_code_blocks;
+          test_case "blockquotes" `Quick test_blockquotes;
+        ] );
+      ( "Advanced features",
+        [
+          test_case "mixed content" `Quick test_mixed_content;
+          test_case "custom style" `Quick test_custom_style;
+          test_case "nested emphasis" `Quick test_nested_emphasis;
+          test_case "complex lists" `Quick test_complex_lists;
+        ] );
+      ( "Edge cases",
+        [
+          test_case "empty markdown" `Quick test_empty_markdown;
+          test_case "width parameter" `Quick test_width_parameter;
+          test_case "special characters" `Quick test_special_characters;
+          test_case "string of inlines" `Quick test_string_of_inlines;
+        ] );
     ]

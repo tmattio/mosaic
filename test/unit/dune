@@ -1,8 +1,3 @@
-(library
- (name test_utils)
- (modules test_utils)
- (libraries mosaic alcotest str eio_main))
-
 (tests
  (names
   test_ansi
@@ -13,5 +8,4 @@
   test_sub
   test_ui
   test_markdown)
- (modules :standard \ test_utils)
  (libraries mosaic mosaic.markdown ansi render eio_main alcotest test_utils))
