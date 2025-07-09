@@ -27,6 +27,7 @@
   cmarkit
   eio
   eio_main
-  (alcotest :with-test))
+  (alcotest :with-test)
+  (ppx_expect :with-test))
  (tags
   (tui terminal "user interface" elm)))
