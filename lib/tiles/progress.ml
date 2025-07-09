@@ -87,8 +87,8 @@ let render_bar model =
 
   match model.style_mode with
   | Solid color ->
-      let filled = String.make filled_width model.theme.full_char.[0] in
-      let empty = String.make empty_width model.theme.empty_char.[0] in
+      let filled = String.concat "" (List.init filled_width (fun _ -> model.theme.full_char)) in
+      let empty = String.concat "" (List.init empty_width (fun _ -> model.theme.empty_char)) in
       Ui.hbox
         [
           Ui.text ~style:Style.(fg color ++ model.theme.bar_style) filled;
@@ -113,7 +113,7 @@ let render_bar model =
       let filled_part = Ui.hbox (List.rev !chars) in
       let empty_part =
         Ui.text ~style:model.theme.bar_style
-          (String.make empty_width model.theme.empty_char.[0])
+          (String.concat "" (List.init empty_width (fun _ -> model.theme.empty_char)))
       in
       Ui.hbox [ filled_part; empty_part ]
 

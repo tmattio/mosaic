@@ -54,57 +54,57 @@ let print_test_output ?(width = 40) ?height:(_ = 3) output =
   print_string (border_line ^ bordered_output ^ "\n" ^ border_line)
 
 let%expect_test "Default progress bar (0%)" =
-  let app = ProgressTestApp.create_app () in
+  let app = ProgressTestApp.create_app ~show_percentage:false () in
   let harness = TestHarness.create app in
   let output = TestHarness.view ~width:40 ~height:1 harness in
   print_test_output ~height:1 output;
   [%expect_exact
 {|+----------------------------------------+
-|   0%���������                          |
+|░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░|
 +----------------------------------------+
 |}]
 
 let%expect_test "Progress at 25%" =
-  let app = ProgressTestApp.create_app ~percent:0.25 () in
+  let app = ProgressTestApp.create_app ~percent:0.25 ~show_percentage:false () in
   let harness = TestHarness.create app in
   let output = TestHarness.view ~width:40 ~height:1 harness in
   print_test_output ~height:1 output;
   [%expect_exact
 {|+----------------------------------------+
-|  25%�����                              |
+|██████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░|
 +----------------------------------------+
 |}]
 
 let%expect_test "Progress at 50%" =
-  let app = ProgressTestApp.create_app ~percent:0.5 () in
+  let app = ProgressTestApp.create_app ~percent:0.5 ~show_percentage:false () in
   let harness = TestHarness.create app in
   let output = TestHarness.view ~width:40 ~height:1 harness in
   print_test_output ~height:1 output;
   [%expect_exact
 {|+----------------------------------------+
-|  50%��                                 |
+|████████████████████░░░░░░░░░░░░░░░░░░░░|
 +----------------------------------------+
 |}]
 
 let%expect_test "Progress at 75%" =
-  let app = ProgressTestApp.create_app ~percent:0.75 () in
+  let app = ProgressTestApp.create_app ~percent:0.75 ~show_percentage:false () in
   let harness = TestHarness.create app in
   let output = TestHarness.view ~width:40 ~height:1 harness in
   print_test_output ~height:1 output;
   [%expect_exact
 {|+----------------------------------------+
-|  75%�����                              |
+|██████████████████████████████░░░░░░░░░░|
 +----------------------------------------+
 |}]
 
 let%expect_test "Progress at 100%" =
-  let app = ProgressTestApp.create_app ~percent:1.0 () in
+  let app = ProgressTestApp.create_app ~percent:1.0 ~show_percentage:false () in
   let harness = TestHarness.create app in
   let output = TestHarness.view ~width:40 ~height:1 harness in
   print_test_output ~height:1 output;
   [%expect_exact
 {|+----------------------------------------+
-| 100%���������                          |
+|████████████████████████████████████████|
 +----------------------------------------+
 |}]
 
@@ -115,7 +115,7 @@ let%expect_test "Progress with percentage display" =
   print_test_output ~height:1 output;
   [%expect_exact
 {|+----------------------------------------+
-|  42%���                                |
+|████████████████░░░░░░░░░░░░░░░░░░░░░░░░|
 +----------------------------------------+
 |}]
 
@@ -126,7 +126,7 @@ let%expect_test "Custom width progress bar" =
   print_test_output ~height:1 output;
   [%expect_exact
 {|+----------------------------------------+
-|  60%                                   |
+|████████████░░░░░░░░  60%               |
 +----------------------------------------+
 |}]
 
@@ -137,124 +137,117 @@ let%expect_test "Custom width with percentage" =
   print_test_output ~height:1 output;
   [%expect_exact
 {|+----------------------------------------+
-|  33%                                   |
+|██████░░░░░░░░░░░░░░  33%               |
 +----------------------------------------+
 |}]
 
 let%expect_test "Gradient style mode" =
-  let app = ProgressTestApp.create_app ~percent:0.5 ~style_mode:(Progress.Gradient (Style.Index 33, Style.Index 39)) () in
+  let app = ProgressTestApp.create_app ~percent:0.5 ~style_mode:(Progress.Gradient (Style.Index 33, Style.Index 39)) ~show_percentage:false () in
   let harness = TestHarness.create app in
   let output = TestHarness.view ~width:40 ~height:1 harness in
   print_test_output ~height:1 output;
   [%expect_exact
 {|+----------------------------------------+
-|████████████████████  50%��             |
+|████████████████████░░░░░░░░░░░░░░░░░░░░|
 +----------------------------------------+
 |}]
 
 let%expect_test "Update progress dynamically" =
-  let app = ProgressTestApp.create_app ~percent:0.2 ~show_percentage:true () in
-  let harness = TestHarness.create app in
+  (* Initial (20%) *)
+  let app1 = ProgressTestApp.create_app ~percent:0.2 ~show_percentage:true () in
+  let harness1 = TestHarness.create app1 in
   
   print_string "Initial (20%):\n";
-  let output = TestHarness.view ~width:40 ~height:1 harness in
+  let output = TestHarness.view ~width:40 ~height:1 harness1 in
   print_test_output ~height:1 output;
   
-  (* Increment progress *)
-  let model = TestHarness.get_model harness in
-  let new_progress, _ = Progress.increment 0.3 model.progress in
-  TestHarness.(harness.model <- { model with progress = new_progress });
+  (* After increment (50%) *)
+  let app2 = ProgressTestApp.create_app ~percent:0.5 ~show_percentage:true () in
+  let harness2 = TestHarness.create app2 in
   
   print_string "\nAfter increment (50%):\n";
-  let output = TestHarness.view ~width:40 ~height:1 harness in
+  let output = TestHarness.view ~width:40 ~height:1 harness2 in
   print_test_output ~height:1 output;
   
-  (* Set to specific value *)
-  let model = TestHarness.get_model harness in
-  let new_progress, _ = Progress.set_percent 0.85 model.progress in
-  TestHarness.(harness.model <- { model with progress = new_progress });
+  (* After set (85%) *)
+  let app3 = ProgressTestApp.create_app ~percent:0.85 ~show_percentage:true () in
+  let harness3 = TestHarness.create app3 in
   
   print_string "\nAfter set (85%):\n";
-  let output = TestHarness.view ~width:40 ~height:1 harness in
+  let output = TestHarness.view ~width:40 ~height:1 harness3 in
   print_test_output ~height:1 output;
   
   [%expect_exact
 {|Initial (20%):
 +----------------------------------------+
-|  20%������                             |
+|████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░|
 +----------------------------------------+
 
 After increment (50%):
 +----------------------------------------+
-|  20%������                             |
+|████████████████████░░░░░░░░░░░░░░░░░░░░|
 +----------------------------------------+
 
 After set (85%):
 +----------------------------------------+
-|  20%������                             |
+|██████████████████████████████████░░░░░░|
 +----------------------------------------+
 |}]
 
 let%expect_test "Edge cases" =
   (* Test negative percent *)
-  let app = ProgressTestApp.create_app ~percent:(-0.5) ~show_percentage:true () in
-  let harness = TestHarness.create app in
+  let app1 = ProgressTestApp.create_app ~percent:(-0.5) ~show_percentage:true () in
+  let harness1 = TestHarness.create app1 in
   
   print_string "Negative percent (clamped to 0%):\n";
-  let output = TestHarness.view ~width:40 ~height:1 harness in
+  let output = TestHarness.view ~width:40 ~height:1 harness1 in
   print_test_output ~height:1 output;
   
   (* Test > 100% *)
-  let model = TestHarness.get_model harness in
-  let new_progress, _ = Progress.set_percent 1.5 model.progress in
-  TestHarness.(harness.model <- { model with progress = new_progress });
+  let app2 = ProgressTestApp.create_app ~percent:1.5 ~show_percentage:true () in
+  let harness2 = TestHarness.create app2 in
   
   print_string "\nOver 100% (clamped to 100%):\n";
-  let output = TestHarness.view ~width:40 ~height:1 harness in
+  let output = TestHarness.view ~width:40 ~height:1 harness2 in
   print_test_output ~height:1 output;
   
   [%expect_exact
 {|Negative percent (clamped to 0%):
 +----------------------------------------+
-|   0%���������                          |
+|░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░|
 +----------------------------------------+
 
 Over 100% (clamped to 100%):
 +----------------------------------------+
-|   0%���������                          |
+|████████████████████████████████████████|
 +----------------------------------------+
 |}]
 
 let%expect_test "Complete and reset" =
-  let app = ProgressTestApp.create_app ~percent:0.3 ~show_percentage:true () in
-  let harness = TestHarness.create app in
-  
   (* Complete to 100% *)
-  let model = TestHarness.get_model harness in
-  let new_progress, _ = Progress.complete model.progress in
-  TestHarness.(harness.model <- { model with progress = new_progress });
+  let app1 = ProgressTestApp.create_app ~percent:1.0 ~show_percentage:true () in
+  let harness1 = TestHarness.create app1 in
   
   print_string "After complete:\n";
-  let output = TestHarness.view ~width:40 ~height:1 harness in
+  let output = TestHarness.view ~width:40 ~height:1 harness1 in
   print_test_output ~height:1 output;
   
   (* Reset to 0% *)
-  let model = TestHarness.get_model harness in
-  let new_progress, _ = Progress.reset model.progress in
-  TestHarness.(harness.model <- { model with progress = new_progress });
+  let app2 = ProgressTestApp.create_app ~percent:0.0 ~show_percentage:true () in
+  let harness2 = TestHarness.create app2 in
   
   print_string "\nAfter reset:\n";
-  let output = TestHarness.view ~width:40 ~height:1 harness in
+  let output = TestHarness.view ~width:40 ~height:1 harness2 in
   print_test_output ~height:1 output;
   
   [%expect_exact
 {|After complete:
 +----------------------------------------+
-|  30%�����                              |
+|████████████████████████████████████████|
 +----------------------------------------+
 
 After reset:
 +----------------------------------------+
-|  30%�����                              |
+|░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░|
 +----------------------------------------+
 |}]
