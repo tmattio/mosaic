@@ -314,7 +314,11 @@ let view model =
             let is_selected = Some value = model.selected_value in
             let is_highlighted = actual_idx = model.highlighted_index in
 
-            let prefix = if is_selected then "✓ " else "  " in
+            let prefix =
+              if is_highlighted then "▸ "
+              else if is_selected then "✓ "
+              else "  "
+            in
 
             let style =
               if is_highlighted then model.theme.highlighted_style
