@@ -150,14 +150,9 @@ let update msg model =
 (* View *)
 
 let truncate_string str max_width =
-  let len = String.length str in
-  if len <= max_width then str
-  else if max_width <= 3 then String.sub str 0 max_width
-  else String.sub str 0 (max_width - 3) ^ "..."
+  Render.truncate_string_with_ellipsis str max_width "..."
 
-let pad_string str width =
-  let len = String.length str in
-  if len >= width then str else str ^ String.make (width - len) ' '
+let pad_string = Render.pad_string
 
 let render_header model =
   if model.columns = [] then []

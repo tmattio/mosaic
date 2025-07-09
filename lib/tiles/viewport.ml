@@ -249,16 +249,42 @@ let update msg model =
 (* View *)
 
 let truncate_string str start_col width =
-  let len = String.length str in
-  if start_col >= len then ""
-  else
-    let available = len - start_col in
-    let take = min width available in
-    String.sub str start_col take
+  (* UTF-8 safe string truncation with starting column offset *)
+  let decoder = Uutf.decoder ~encoding:`UTF_8 (`String str) in
+  let buf = Buffer.create (String.length str) in
+  let rec skip_cols cols =
+    if cols <= 0 then true
+    else
+      match Uutf.decode decoder with
+      | `Uchar u ->
+          let w =
+            match Uucp.Break.tty_width_hint u with
+            | -1 -> 1 (* Control characters *)
+            | n -> n
+          in
+          skip_cols (cols - w)
+      | `End | `Malformed _ | `Await -> false
+  in
+  let rec take_width w =
+    if w <= 0 then ()
+    else
+      match Uutf.decode decoder with
+      | `Uchar u ->
+          let char_width =
+            match Uucp.Break.tty_width_hint u with
+            | -1 -> 1 (* Control characters *)
+            | n -> n
+          in
+          if char_width <= w then (
+            Uutf.Buffer.add_utf_8 buf u;
+            take_width (w - char_width))
+          else ()
+      | `End | `Malformed _ | `Await -> ()
+  in
+  if skip_cols start_col then take_width width;
+  Buffer.contents buf
 
-let pad_string str width =
-  let len = String.length str in
-  if len >= width then str else str ^ String.make (width - len) ' '
+let pad_string = Render.pad_string
 
 let view model =
   match model.content with

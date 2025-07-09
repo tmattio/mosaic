@@ -56,8 +56,7 @@ let make_group ?title bindings = { title; bindings }
 
 (* View helpers *)
 
-let string_width s =
-  String.length s (* Simplified - should use proper unicode width *)
+let string_width s = Render.measure_string s
 
 let render_binding theme binding =
   let key_elem = Ui.text ~style:theme.key_style binding.key in
