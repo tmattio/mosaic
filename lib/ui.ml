@@ -350,12 +350,13 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
     List.map
       (fun child ->
         if is_expandable child then (child, 0, 0)
-        else match child with
+        else
+          match child with
           | Spacer n ->
               let w = if opts.direction = `Horizontal then n else 1 in
               let h = if opts.direction = `Vertical then n else 1 in
               (child, w, h)
-          | _ -> 
+          | _ ->
               let w, h = measure_element child in
               (child, w, h))
       children
@@ -404,7 +405,8 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
                 y = content_y + y_offset;
                 width = child_width;
                 height =
-                  if opts.align = Stretch then child_height else min child_height measured_h;
+                  (if opts.align = Stretch then child_height
+                   else min child_height measured_h);
               }
             in
 
@@ -459,7 +461,8 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
                 x = content_x + x_offset;
                 y;
                 width =
-                  if opts.align = Stretch then child_width else min child_width measured_w;
+                  (if opts.align = Stretch then child_width
+                   else min child_width measured_w);
                 height = child_height;
               }
             in
