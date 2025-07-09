@@ -275,3 +275,19 @@ let truncate_string str max_width =
   in
   let _ = loop 0 in
   Buffer.contents buf
+
+(* Pad a string with spaces to reach the specified width *)
+let pad_string str width =
+  let str_width = measure_string str in
+  if str_width >= width then str else str ^ String.make (width - str_width) ' '
+
+(* Truncate a string with ellipsis if it exceeds the specified width *)
+let truncate_string_with_ellipsis str max_width ellipsis =
+  let str_width = measure_string str in
+  if str_width <= max_width then str
+  else
+    let ellipsis_width = measure_string ellipsis in
+    if ellipsis_width >= max_width then truncate_string str max_width
+    else
+      let truncated = truncate_string str (max_width - ellipsis_width) in
+      truncated ^ ellipsis

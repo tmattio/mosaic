@@ -93,3 +93,11 @@ val measure_string : string -> int
 
 val truncate_string : string -> int -> string
 (** [truncate_string s width] truncates string to fit within width *)
+
+val pad_string : string -> int -> string
+(** [pad_string s width] pads string with spaces to reach the specified width *)
+
+val truncate_string_with_ellipsis : string -> int -> string -> string
+(** [truncate_string_with_ellipsis s max_width ellipsis] truncates string and
+    appends ellipsis if it exceeds max_width. The ellipsis itself counts towards
+    the max_width. *)
