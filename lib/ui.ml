@@ -261,7 +261,15 @@ let rec measure_element element =
   | Spacer n -> (n, 1)
   | Expand e -> measure_element e
   | Box { children; options = opts; _ } -> (
-      let children_sizes = List.map measure_element children in
+      let children_sizes =
+        List.map
+          (fun child ->
+            match child with
+            | Spacer n ->
+                if opts.direction = `Horizontal then (n, 1) else (1, n)
+            | _ -> measure_element child)
+          children
+      in
       let border_space = if opts.border = None then 0 else 2 in
       let padding_h = opts.padding.left + opts.padding.right in
       let padding_v = opts.padding.top + opts.padding.bottom in
@@ -385,12 +393,10 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
       let rec calc_h x children_with_sizes acc =
         match children_with_sizes with
         | [] -> List.rev acc
-        | (child, _, _) :: rest ->
+        | (child, w, _) :: rest ->
             let child_width =
               if is_expandable child then expand_each
-              else
-                let w, _ = measure_element child in
-                w
+              else w
             in
             let child_height = content_height in
 
@@ -442,13 +448,11 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
       let rec calc_v y children_with_sizes acc =
         match children_with_sizes with
         | [] -> List.rev acc
-        | (child, _, _) :: rest ->
+        | (child, _, h) :: rest ->
             let child_width = content_width in
             let child_height =
               if is_expandable child then expand_each
-              else
-                let _, h = measure_element child in
-                h
+              else h
             in
 
             (* Apply horizontal alignment *)
