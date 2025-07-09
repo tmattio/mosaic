@@ -106,7 +106,9 @@ let update msg model =
       match key with
       | Char c when modifier.ctrl && Uchar.to_char c = 'u' ->
           (* Clear input on Ctrl+U *)
-          let model = { model with value = ""; cursor_pos = 0; show_suggestions = false } in
+          let model =
+            { model with value = ""; cursor_pos = 0; show_suggestions = false }
+          in
           (validate_value model, Cmd.none)
       | Char c
         when Uchar.to_int c >= 32

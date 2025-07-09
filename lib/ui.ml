@@ -265,8 +265,7 @@ let rec measure_element element =
         List.map
           (fun child ->
             match child with
-            | Spacer n ->
-                if opts.direction = `Horizontal then (n, 1) else (1, n)
+            | Spacer n -> if opts.direction = `Horizontal then (n, 1) else (1, n)
             | _ -> measure_element child)
           children
       in
@@ -394,10 +393,7 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
         match children_with_sizes with
         | [] -> List.rev acc
         | (child, w, _) :: rest ->
-            let child_width =
-              if is_expandable child then expand_each
-              else w
-            in
+            let child_width = if is_expandable child then expand_each else w in
             let child_height = content_height in
 
             (* Apply vertical alignment *)
@@ -450,10 +446,7 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
         | [] -> List.rev acc
         | (child, _, h) :: rest ->
             let child_width = content_width in
-            let child_height =
-              if is_expandable child then expand_each
-              else h
-            in
+            let child_height = if is_expandable child then expand_each else h in
 
             (* Apply horizontal alignment *)
             let measured_w = fst (measure_element (unwrap_expand child)) in
