@@ -16,11 +16,7 @@ type list_block = {
   level_indent : int;
 }
 
-type code_block = {
-  block : block;
-  lang_style : Style.t;
-  fence_style : Style.t;
-}
+type code_block = { block : block; lang_style : Style.t; fence_style : Style.t }
 
 type t = {
   document : block;
