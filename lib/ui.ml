@@ -173,7 +173,7 @@ let text ?(style = Style.empty) s = Text (s, style)
 let no_padding = padding ()
 
 let hbox ?(gap = 0) ?width ?height ?(padding = no_padding) ?border
-    ?(align_items = Start) ?(justify_content = Start) children =
+    ?(align_items = Stretch) ?(justify_content = Start) children =
   let options =
     {
       direction = `Horizontal;
@@ -189,7 +189,7 @@ let hbox ?(gap = 0) ?width ?height ?(padding = no_padding) ?border
   Box { children; options; cache = None }
 
 let vbox ?(gap = 0) ?width ?height ?(padding = no_padding) ?border
-    ?(align_items = Start) ?(justify_content = Start) children =
+    ?(align_items = Stretch) ?(justify_content = Start) children =
   let options =
     {
       direction = `Vertical;
@@ -302,6 +302,10 @@ let rec measure_element element =
           in
           (width, height))
 
+(* Unwrap all layers of Expand *)
+let rec unwrap_expand element =
+  match element with Expand e -> unwrap_expand e | _ -> element
+
 (* Check if element is expandable *)
 let is_expandable = function Expand _ -> true | _ -> false
 
@@ -346,9 +350,14 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
     List.map
       (fun child ->
         if is_expandable child then (child, 0, 0)
-        else
-          let w, h = measure_element child in
-          (child, w, h))
+        else match child with
+          | Spacer n ->
+              let w = if opts.direction = `Horizontal then n else 1 in
+              let h = if opts.direction = `Vertical then n else 1 in
+              (child, w, h)
+          | _ -> 
+              let w, h = measure_element child in
+              (child, w, h))
       children
   in
 
@@ -385,7 +394,7 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
             let child_height = content_height in
 
             (* Apply vertical alignment *)
-            let measured_h = snd (measure_element child) in
+            let measured_h = snd (measure_element (unwrap_expand child)) in
             let y_offset = align_offset child_height measured_h opts.align in
 
             let computed =
@@ -394,7 +403,8 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
                 x;
                 y = content_y + y_offset;
                 width = child_width;
-                height = min child_height measured_h;
+                height =
+                  if opts.align = Stretch then child_height else min child_height measured_h;
               }
             in
 
@@ -440,7 +450,7 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
             in
 
             (* Apply horizontal alignment *)
-            let measured_w = fst (measure_element child) in
+            let measured_w = fst (measure_element (unwrap_expand child)) in
             let x_offset = align_offset child_width measured_w opts.align in
 
             let computed =
@@ -448,7 +458,8 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
                 element = child;
                 x = content_x + x_offset;
                 y;
-                width = min child_width measured_w;
+                width =
+                  if opts.align = Stretch then child_width else min child_width measured_w;
                 height = child_height;
               }
             in
