@@ -1,5 +1,5 @@
 (library
- (name test_layout)
+ (name test_expect)
  (inline_tests)
  (libraries test_utils mosaic mosaic.tiles)
  (preprocess
