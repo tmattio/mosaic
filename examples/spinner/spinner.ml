@@ -1,20 +1,13 @@
 open Mosaic
 
-type model = {
-  spinner : Mosaic_tiles.Spinner.model;
-  quitting : bool;
-}
+type model = { spinner : Mosaic_tiles.Spinner.model; quitting : bool }
 
 type msg =
-  [ `SpinnerMsg of Mosaic_tiles.Spinner.msg
-  | `Quit
-  | `KeyEvent of key_event
-  ]
+  [ `SpinnerMsg of Mosaic_tiles.Spinner.msg | `Quit | `KeyEvent of key_event ]
 
 let init () : model * msg Cmd.t =
   let spinner_model, spinner_cmd =
-    Mosaic_tiles.Spinner.init
-      ~style:Mosaic_tiles.Spinner.dots
+    Mosaic_tiles.Spinner.init ~style:Mosaic_tiles.Spinner.dots
       ~color:Style.(fg (Index 205))
       ()
   in
@@ -27,7 +20,8 @@ let update (msg : msg) (model : model) : model * msg Cmd.t =
       let new_spinner, cmd =
         Mosaic_tiles.Spinner.update spinner_msg model.spinner
       in
-      ({ model with spinner = new_spinner }, Cmd.map (fun m -> `SpinnerMsg m) cmd)
+      ( { model with spinner = new_spinner },
+        Cmd.map (fun m -> `SpinnerMsg m) cmd )
   | `Quit -> ({ model with quitting = true }, Cmd.quit)
   | `KeyEvent { key; modifier } -> (
       match (key, modifier) with
@@ -53,13 +47,15 @@ let view model =
         ];
       text "";
       text "";
-      if model.quitting then text "Quitting..." else text "";
+      (if model.quitting then text "Quitting..." else text "");
     ]
 
 let subscriptions model =
   Sub.batch
     [
-      Sub.map (fun m -> `SpinnerMsg m) (Mosaic_tiles.Spinner.subscriptions model.spinner);
+      Sub.map
+        (fun m -> `SpinnerMsg m)
+        (Mosaic_tiles.Spinner.subscriptions model.spinner);
       Sub.keyboard (fun key_event -> `KeyEvent key_event);
     ]
 

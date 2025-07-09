@@ -108,3 +108,14 @@ val from_string : string -> spinner_style
     frame. Useful for simple spinners.
 
     Example: [from_string "◴◷◶◵"] creates a clock spinner. *)
+
+(** {2 Component Interface} *)
+
+val update : msg -> model -> model * msg Cmd.t
+(** Update function for the component *)
+
+val view : model -> Ui.element
+(** View function for the component *)
+
+val subscriptions : model -> msg Sub.t
+(** Subscriptions for the component *)
