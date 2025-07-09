@@ -1,0 +1,6 @@
+(library
+ (name test_layout)
+ (inline_tests)
+ (libraries test_utils mosaic mosaic.tiles)
+ (preprocess
+  (pps ppx_expect)))
