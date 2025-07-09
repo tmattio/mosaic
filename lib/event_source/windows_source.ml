@@ -135,7 +135,10 @@ let read t ~sw:_ ~clock:_ ~timeout =
                 | Some event -> (
                     match handle_paste_detection t.paste_detector event with
                     | event :: _ -> `Event event
-                    | [] -> read_loop ~timeout:(Some 0.0)))
+                    | [] ->
+                        (* Wait for paste threshold to avoid busy-waiting *)
+                        Unix.sleepf paste_threshold;
+                        read_loop ~timeout:(Some 0.0)))
           else
             let adjusted_timeout = int_of_float (paste_threshold *. 1000.0) in
             match read_console_input t.handle adjusted_timeout with
@@ -146,13 +149,19 @@ let read t ~sw:_ ~clock:_ ~timeout =
             | Some event -> (
                 match handle_paste_detection t.paste_detector event with
                 | event :: _ -> `Event event
-                | [] -> read_loop ~timeout:(Some 0.0))
+                | [] ->
+                    (* Wait for paste threshold to avoid busy-waiting *)
+                    Unix.sleepf paste_threshold;
+                    read_loop ~timeout:(Some 0.0))
         else
           match read_console_input t.handle timeout_ms with
           | None -> `Timeout
           | Some event -> (
               match handle_paste_detection t.paste_detector event with
               | event :: _ -> `Event event
-              | [] -> read_loop ~timeout:(Some 0.0))
+              | [] ->
+                  (* Wait for paste threshold to avoid busy-waiting *)
+                  Unix.sleepf paste_threshold;
+                  read_loop ~timeout:(Some 0.0))
       in
       read_loop ~timeout)
