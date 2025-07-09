@@ -9,7 +9,7 @@ module Style : sig
   type t
   (** A style is a collection of attributes *)
 
-  type color =
+  type color = Ansi.color =
     | Black
     | Red
     | Green
@@ -166,7 +166,19 @@ end
 module Cmd : sig
   (** Commands represent effects like async I/O, timers, or quitting *)
 
-  type 'msg t
+  type 'msg exec_cmd = { run : unit -> unit; on_complete : 'msg }
+  
+  type 'msg t =
+    | None
+    | Msg of 'msg
+    | Batch of 'msg t list
+    | Perform of (unit -> 'msg option)
+    | Exec of 'msg exec_cmd
+    | Tick of float * (float -> 'msg)
+    | Sequence of 'msg t list
+    | Quit
+    | Log of string
+    | SetWindowTitle of string
 
   val none : 'msg t
   val msg : 'msg -> 'msg t
@@ -199,7 +211,10 @@ module Cmd : sig
   (** Debug print to stderr *)
 
   val set_window_title : string -> 'msg t
+  (** Set the terminal window title *)
+
   val map : ('a -> 'b) -> 'a t -> 'b t
+  (** Map a function over the message type in a command *)
 end
 
 (** {1 Input Events} *)

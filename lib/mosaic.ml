@@ -154,9 +154,15 @@ module Program = struct
             Eio.Time.sleep program.clock duration;
             let elapsed = Eio.Time.now program.clock -. start_time in
             Eio.Stream.add program.msg_stream (f elapsed))
-    | Cmd.Sequence cmds ->
-        (* Add commands to the front of the queue to execute in order *)
-        List.iter (fun cmd -> Queue.add cmd program.cmd_queue) cmds
+    | Cmd.Sequence cmds -> (
+        (* Process commands sequentially - only the first command goes to the queue,
+           the rest are wrapped in a new Sequence command that will be processed after *)
+        match cmds with
+        | [] -> ()
+        | [ cmd ] -> Queue.add cmd program.cmd_queue
+        | h :: t ->
+            Queue.add h program.cmd_queue;
+            Queue.add (Cmd.Sequence t) program.cmd_queue)
     | Cmd.Quit ->
         program.running <- false;
         ()
@@ -188,6 +194,12 @@ module Program = struct
           let mouse_handlers = Sub.collect_mouse [] subs in
           List.filter_map (fun f -> f mouse_event) mouse_handlers
       | Input.Resize (w, h) ->
+          (* Invalidate the previous buffer on resize.
+             This prevents the diffing logic in the render loop from comparing
+             buffers of two different sizes, which would cause a crash.
+             By setting it to None, we force a full redraw on the next frame. *)
+          program.previous_buffer <- None;
+
           let window_handlers = Sub.collect_window [] subs in
           let size = { Sub.width = w; Sub.height = h } in
           List.filter_map (fun f -> f size) window_handlers
@@ -257,16 +269,14 @@ module Program = struct
         process_cmd program cmd
       done;
 
-      (* Wait for a new message *)
-      match Eio.Stream.take_nonblocking program.msg_stream with
-      | Some msg ->
+      (* Block until a new message arrives *)
+      if program.running then (* Check again before blocking *)
+        let msg = Eio.Stream.take program.msg_stream in
+        if program.running then (* Check again after waking up *)
           let cmd = send_msg program msg in
           (* If it's a sequence, it will be added to the queue.
              Otherwise, process it immediately *)
           process_cmd program cmd
-      | None ->
-          (* No message available, wait a bit *)
-          Eio.Time.sleep program.clock 0.001
     done
 
   let setup_terminal program =
