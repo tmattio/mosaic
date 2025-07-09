@@ -159,6 +159,10 @@ module Ui : sig
 
   val render : Render.buffer -> element -> unit
   (** Render an element to a Render buffer *)
+
+  val clear_cache : element -> unit
+  (** Clear layout caches from previous frame. This should be called before
+      rendering each frame to invalidate cached layout calculations. *)
 end
 
 (** {1 Commands (Effects)} *)
@@ -167,7 +171,7 @@ module Cmd : sig
   (** Commands represent effects like async I/O, timers, or quitting *)
 
   type 'msg exec_cmd = { run : unit -> unit; on_complete : 'msg }
-  
+
   type 'msg t =
     | None
     | Msg of 'msg

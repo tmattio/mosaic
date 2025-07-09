@@ -5,10 +5,10 @@ open Test_utils
 
 (** Helper to create source and read event *)
 let read_event_from_string input ~timeout =
-  run_eio @@ fun env sw ->
-  let term, _ = make_test_terminal input in
-  let source = Event_source.create term in
-  Event_source.read source ~sw ~clock:(Eio.Stdenv.clock env) ~timeout
+  run_eio (fun env sw ->
+      let term, _ = make_test_terminal input in
+      let source = Event_source.create term in
+      Event_source.read source ~sw ~clock:(Eio.Stdenv.clock env) ~timeout)
 
 let test_single_key_event () =
   match read_event_from_string "a" ~timeout:(Some 0.1) with

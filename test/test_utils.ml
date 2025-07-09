@@ -2,14 +2,18 @@
 
 open Mosaic
 
-(** Create a test terminal with predefined input *)
+(** Create a test terminal with predefined input for unit testing low-level
+    components like the event source or input parser. *)
 let make_test_terminal input =
   let term, get_output = Terminal.create_from_strings input in
   (term, get_output)
 
-(** Renders a UI element to a string for snapshot testing. *)
+(** Renders a UI element to a raw string representation of the terminal grid.
+    This is the foundation for visual snapshot and expect testing. *)
 let render_to_string ?(width = 80) ?(height = 24) element =
   let buffer = Render.create width height in
+  (* IMPORTANT: Clear cache before each render, just like the real runtime *)
+  Ui.clear_cache element;
   Ui.render buffer element;
   let buf = Buffer.create ((width + 1) * height) in
   for y = 0 to height - 1 do
@@ -28,13 +32,10 @@ let render_to_string ?(width = 80) ?(height = 24) element =
   done;
   Buffer.contents buf
 
-(** A helper for writing concise layout tests. *)
+(** A helper for writing concise Alcotest-based layout tests. *)
 let assert_renders_to ?width ?height element expected =
   let output = render_to_string ?width ?height element in
   Alcotest.(check string) "Rendered output matches" expected output
-
-(** Global test log handler *)
-let test_log_handler : (string -> unit) ref = ref (fun _ -> ())
 
 (** Assert that output contains a substring *)
 let assert_output_contains output expected =
@@ -116,239 +117,13 @@ let pp_event fmt event = Fmt.string fmt (show_event event)
 (** Alcotest testable for events *)
 let event_testable = Alcotest.testable pp_event event_equal
 
-(** Assert that two event lists are equal *)
-let assert_events_equal actual expected =
-  let rec compare_lists actual expected =
-    match (actual, expected) with
-    | [], [] -> ()
-    | [], _ -> Alcotest.fail "Actual event list is shorter than expected"
-    | _, [] -> Alcotest.fail "Actual event list is longer than expected"
-    | a :: as', e :: es' ->
-        if not (event_equal a e) then
-          Alcotest.failf "Events do not match: actual=%s, expected=%s"
-            (show_event a) (show_event e)
-        else compare_lists as' es'
-  in
-  compare_lists actual expected
-
 (** Run a function within Eio context - helper to reduce boilerplate *)
-let run_eio f =
-  Eio_main.run @@ fun env ->
-  Eio.Switch.run @@ fun sw -> f env sw
+let run_eio f = Eio_main.run (fun env -> Eio.Switch.run (fun sw -> f env sw))
 
-(** Run read_event with a test terminal - reduces Event_source test boilerplate
-*)
-let run_read_event ?(timeout = 0.1) input_str =
-  run_eio @@ fun env sw ->
-  let term, _ = make_test_terminal input_str in
-  let source = Event_source.create term in
-  Event_source.read source ~sw ~clock:(Eio.Stdenv.clock env)
-    ~timeout:(Some timeout)
-
-(** Capture stderr output during a function execution *)
-let capture_stderr f =
-  let temp_file = Filename.temp_file "mosaic_test_" ".err" in
-  let old_stderr = Unix.dup Unix.stderr in
-  let new_stderr =
-    Unix.openfile temp_file [ Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC ] 0o600
-  in
-  Unix.dup2 new_stderr Unix.stderr;
-  Unix.close new_stderr;
-
-  let result =
-    try
-      let r = f () in
-      Unix.dup2 old_stderr Unix.stderr;
-      Unix.close old_stderr;
-      r
-    with e ->
-      Unix.dup2 old_stderr Unix.stderr;
-      Unix.close old_stderr;
-      raise e
-  in
-
-  let content =
-    let ic = open_in temp_file in
-    let content = really_input_string ic (in_channel_length ic) in
-    close_in ic;
-    Sys.remove temp_file;
-    content
-  in
-
-  (result, content)
-
-(** Test app builder helpers *)
-module TestApp = struct
-  type 'model t = {
-    init : unit -> 'model * unit Cmd.t;
-    update : [ `Msg ] -> 'model -> 'model * unit Cmd.t;
-    view : 'model -> Ui.element;
-    subscriptions : 'model -> unit Sub.t;
-  }
-
-  let simple_counter () =
-    let init () = (0, Cmd.none) in
-    let update msg model =
-      match msg with
-      | `Increment -> (model + 1, Cmd.none)
-      | `Decrement -> (model - 1, Cmd.none)
-      | `Quit -> (model, Cmd.quit)
-    in
-    let view model = Ui.text (Printf.sprintf "Counter: %d" model) in
-    let subscriptions _ =
-      Sub.keyboard_filter (function
-        | { key = Char c; modifier = { ctrl = true; _ } }
-          when Uchar.to_int c = Char.code 'C' ->
-            Some `Quit
-        | { key = Char c; _ } when Uchar.to_char c = '+' -> Some `Increment
-        | { key = Char c; _ } when Uchar.to_char c = '-' -> Some `Decrement
-        | { key = Char c; _ } when Uchar.to_char c = 'q' -> Some `Quit
-        | _ -> None)
-    in
-    Mosaic.app ~init ~update ~view ~subscriptions ()
-end
-
-(** Run an app with a test terminal and return rendered frames and final model
-*)
-let run_app_with_terminal term ~init ~update ~view ~subscriptions =
-  (* We'll run the app with a custom runner that doesn't use Eio *)
-  let rendered_frames = ref [] in
-  let quit_requested = ref false in
-  let final_model = ref None in
-
-  (* Run within Eio context *)
-  Eio_main.run @@ fun env ->
-  Eio.Switch.run @@ fun sw ->
-  let clock = Eio.Stdenv.clock env in
-
-  (* Create event source *)
-  let event_source = Event_source.create term in
-
-  (* Capture the initial model *)
-  let initial_model, initial_cmd = init () in
-  final_model := Some initial_model;
-
-  (* Simple synchronous loop *)
-  let rec process_events model =
-    if !quit_requested then model
-    else
-      (* Render the view *)
-      let view_output = view model in
-      let buffer = Render.create 80 24 in
-      Ui.render buffer view_output;
-
-      (* Capture the rendered frame *)
-      let frame_str = Buffer.create 1024 in
-      for y = 0 to 23 do
-        for x = 0 to 79 do
-          let cell = Render.get buffer x y in
-          match cell.Render.chars with
-          | [] -> Buffer.add_char frame_str ' '
-          | ch :: _ -> Buffer.add_utf_8_uchar frame_str ch
-        done;
-        if y < 23 then Buffer.add_char frame_str '\n'
-      done;
-      rendered_frames := Buffer.contents frame_str :: !rendered_frames;
-
-      (* Try to read an event *)
-      match Event_source.read event_source ~sw ~clock ~timeout:(Some 0.001) with
-      | `Event event -> (
-          (* Process event through subscriptions *)
-          let sub = subscriptions model in
-          let msg_opt =
-            match event with
-            | Input.Key key_event ->
-                let handlers = Sub.collect_keyboard [] sub in
-                let ke : Mosaic.key_event = Obj.magic key_event in
-                List.find_map (fun f -> f ke) handlers
-            | Input.Mouse mouse_event ->
-                let handlers = Sub.collect_mouse [] sub in
-                let me : Mosaic.mouse_event = Obj.magic mouse_event in
-                List.find_map (fun f -> f me) handlers
-            | Input.Resize (w, h) ->
-                let handlers = Sub.collect_window [] sub in
-                List.find_map
-                  (fun f -> f { Mosaic.Sub.width = w; height = h })
-                  handlers
-            | Input.Focus ->
-                let handlers = Sub.collect_focus [] sub in
-                List.find_map (fun f -> f ()) handlers
-            | Input.Blur ->
-                let handlers = Sub.collect_blur [] sub in
-                List.find_map (fun f -> f ()) handlers
-            | _ -> None
-          in
-
-          match msg_opt with
-          | Some msg -> (
-              let new_model, cmd = update msg model in
-              final_model := Some new_model;
-              (* Check if quit was requested *)
-              match cmd with
-              | cmd when cmd = Cmd.quit ->
-                  quit_requested := true;
-                  new_model
-              | _ -> process_events new_model)
-          | None -> process_events model)
-      | `Timeout | `Eof ->
-          (* No more events, check initial window size *)
-          let sub = subscriptions model in
-          let window_handlers = Sub.collect_window [] sub in
-          if window_handlers <> [] then
-            let w, h = Terminal.size term in
-            match
-              List.find_map
-                (fun f -> f { Mosaic.Sub.width = w; height = h })
-                window_handlers
-            with
-            | Some msg ->
-                let new_model, cmd = update msg model in
-                final_model := Some new_model;
-                if cmd = Cmd.quit then quit_requested := true;
-                model
-            | None -> model
-          else model
-  in
-
-  (* Process initial command if any *)
-  (match initial_cmd with
-  | cmd when cmd = Cmd.quit -> quit_requested := true
-  | cmd when cmd <> Cmd.none ->
-      (* For testing, we'll process simple messages synchronously *)
-      ()
-  | _ -> ());
-
-  (* Run the event loop *)
-  let _ = process_events initial_model in
-
-  (* Return frames and final model *)
-  match !final_model with
-  | Some model -> (List.rev !rendered_frames, model)
-  | None -> (List.rev !rendered_frames, initial_model)
-
-(** Run an app with predefined input and capture output *)
-let run_app_with_input input ~init ~update ~view ~subscriptions =
-  let term, _ = Terminal.create_from_strings input in
-  run_app_with_terminal term ~init ~update ~view ~subscriptions
-
-(** Render a UI element to a string buffer *)
-let render_to_string ?(width = 80) ?(height = 24) element =
-  let buffer = Render.create width height in
-  Ui.render buffer element;
-  
-  let output = Buffer.create ((width + 1) * height) in
-  for y = 0 to height - 1 do
-    for x = 0 to width - 1 do
-      let cell = Render.get buffer x y in
-      match cell.Render.chars with
-      | [] -> Buffer.add_char output ' '
-      | ch :: _ -> Buffer.add_utf_8_uchar output ch
-    done;
-    if y < height - 1 then Buffer.add_char output '\n'
-  done;
-  Buffer.contents output
-
-(** A synchronous test harness for running Mosaic applications. *)
+(** A synchronous test harness for running Mosaic applications. This provides a
+    controlled way to test an application's `init`, `update`, `view`, and
+    `subscriptions` logic without the full async runtime. It's the recommended
+    way to write integration tests for applications. *)
 module TestHarness = struct
   type ('model, 'msg) t = {
     app : ('model, 'msg) Mosaic.app;
@@ -371,12 +146,13 @@ module TestHarness = struct
   let is_quit h =
     match h.last_cmd with
     | Cmd.Quit -> true
-    | Cmd.Batch cmds -> 
+    | Cmd.Batch cmds ->
         List.exists (function Cmd.Quit -> true | _ -> false) cmds
     | _ -> false
 
   (** Render the current view to a string. *)
-  let view ?width ?height h = render_to_string ?width ?height (h.app.view h.model)
+  let view ?width ?height h =
+    render_to_string ?width ?height (h.app.view h.model)
 
   (** Push a message into the update loop. *)
   let push_msg msg h =
@@ -384,7 +160,8 @@ module TestHarness = struct
     h.model <- new_model;
     h.last_cmd <- cmd
 
-  (** Simulate a keyboard event. *)
+  (** Simulate a keyboard event by processing it through the app's
+      subscriptions. *)
   let push_key_event event h =
     let subs = h.app.subscriptions h.model in
     let handlers = Sub.collect_keyboard [] subs in
@@ -392,15 +169,16 @@ module TestHarness = struct
     | Some msg -> push_msg msg h
     | None -> ()
 
-  (** Simulate a key press from a string representation (e.g., "q", "\x1b[A"). *)
+  (** Simulate a key press from a raw string (e.g., "q", "\x1b[A").
+      This uses the input parser to generate events. *)
   let push_input s h =
     let parser = Input.create () in
     let events = Input.feed parser (Bytes.of_string s) 0 (String.length s) in
     List.iter
-      (function 
-       | Input.Key event -> 
-           (* Input and Mosaic key types are the same *)
-           push_key_event (Obj.magic event) h 
-       | _ -> ())
+      (function
+        | Input.Key event ->
+            (* The key event types are the same, we can just cast *)
+            push_key_event (Obj.magic event) h
+        | _ -> ())
       events
 end
