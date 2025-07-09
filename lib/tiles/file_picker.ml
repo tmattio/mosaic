@@ -114,102 +114,67 @@ let ensure_highlight_visible model =
     { model with scroll_offset = model.highlighted_index - model.height + 1 }
   else model
 
-(* Simulated file loading - in real implementation would use Eio *)
+(* Load directory files using Unix file system APIs *)
 let load_directory_files path =
-  (* This is a mock implementation - replace with actual file system access *)
-  if path = "/" then
-    [
-      {
-        name = "home";
-        path = "/home";
-        file_type = `Directory;
-        size = 0L;
-        permissions = "drwxr-xr-x";
-      };
-      {
-        name = "etc";
-        path = "/etc";
-        file_type = `Directory;
-        size = 0L;
-        permissions = "drwxr-xr-x";
-      };
-      {
-        name = "usr";
-        path = "/usr";
-        file_type = `Directory;
-        size = 0L;
-        permissions = "drwxr-xr-x";
-      };
-      {
-        name = "var";
-        path = "/var";
-        file_type = `Directory;
-        size = 0L;
-        permissions = "drwxr-xr-x";
-      };
-    ]
-  else if path = "." || path = "./" then
-    [
-      {
-        name = "src";
-        path = "./src";
-        file_type = `Directory;
-        size = 0L;
-        permissions = "drwxr-xr-x";
-      };
-      {
-        name = "lib";
-        path = "./lib";
-        file_type = `Directory;
-        size = 0L;
-        permissions = "drwxr-xr-x";
-      };
-      {
-        name = "README.md";
-        path = "./README.md";
-        file_type = `File;
-        size = 1024L;
-        permissions = "-rw-r--r--";
-      };
-      {
-        name = "dune-project";
-        path = "./dune-project";
-        file_type = `File;
-        size = 256L;
-        permissions = "-rw-r--r--";
-      };
-      {
-        name = ".gitignore";
-        path = "./.gitignore";
-        file_type = `File;
-        size = 128L;
-        permissions = "-rw-r--r--";
-      };
-    ]
-  else
-    [
-      {
-        name = "file1.ml";
-        path = path ^ "/file1.ml";
-        file_type = `File;
-        size = 2048L;
-        permissions = "-rw-r--r--";
-      };
-      {
-        name = "file2.mli";
-        path = path ^ "/file2.mli";
-        file_type = `File;
-        size = 512L;
-        permissions = "-rw-r--r--";
-      };
-      {
-        name = "subdir";
-        path = path ^ "/subdir";
-        file_type = `Directory;
-        size = 0L;
-        permissions = "drwxr-xr-x";
-      };
-    ]
+  try
+    let dir_handle = Unix.opendir path in
+    let rec read_entries acc =
+      try
+        let name = Unix.readdir dir_handle in
+        (* Skip . and .. *)
+        if name = "." || name = ".." then read_entries acc
+        else
+          let full_path = Filename.concat path name in
+          try
+            let stat = Unix.stat full_path in
+            let file_type =
+              match stat.st_kind with
+              | Unix.S_REG -> `File
+              | Unix.S_DIR -> `Directory
+              | Unix.S_LNK -> `Symlink
+              | _ -> `File (* Treat other types as files *)
+            in
+            let permissions =
+              Printf.sprintf "%c%c%c%c%c%c%c%c%c%c"
+                (match stat.st_kind with
+                | Unix.S_REG -> '-'
+                | Unix.S_DIR -> 'd'
+                | Unix.S_LNK -> 'l'
+                | Unix.S_CHR -> 'c'
+                | Unix.S_BLK -> 'b'
+                | Unix.S_FIFO -> 'p'
+                | Unix.S_SOCK -> 's')
+                (if stat.st_perm land 0o400 <> 0 then 'r' else '-')
+                (if stat.st_perm land 0o200 <> 0 then 'w' else '-')
+                (if stat.st_perm land 0o100 <> 0 then 'x' else '-')
+                (if stat.st_perm land 0o040 <> 0 then 'r' else '-')
+                (if stat.st_perm land 0o020 <> 0 then 'w' else '-')
+                (if stat.st_perm land 0o010 <> 0 then 'x' else '-')
+                (if stat.st_perm land 0o004 <> 0 then 'r' else '-')
+                (if stat.st_perm land 0o002 <> 0 then 'w' else '-')
+                (if stat.st_perm land 0o001 <> 0 then 'x' else '-')
+            in
+            let file_info =
+              {
+                name;
+                path = full_path;
+                file_type;
+                size = Int64.of_int stat.st_size;
+                permissions;
+              }
+            in
+            read_entries (file_info :: acc)
+          with Unix.Unix_error _ ->
+            (* Skip files we can't stat *)
+            read_entries acc
+      with End_of_file ->
+        Unix.closedir dir_handle;
+        acc
+    in
+    read_entries []
+  with Unix.Unix_error (_err, _, _) ->
+    (* Return empty list on error, caller will handle via LoadError message *)
+    []
 
 (* Helper to get parent directory *)
 let parent_directory path =
