@@ -105,6 +105,9 @@ val reset : string
 val reset_bold_dim : string
 (** Reset bold and dim attributes *)
 
+val reset_italic : string
+(** Reset italic attribute *)
+
 val reset_underline : string
 (** Reset underline attributes *)
 

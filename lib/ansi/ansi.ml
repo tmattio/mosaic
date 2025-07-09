@@ -125,6 +125,7 @@ let sgr attrs =
 
 let reset = sgr [ `Reset ]
 let reset_bold_dim = esc ^ "22m"
+let reset_italic = esc ^ "23m"
 let reset_underline = esc ^ "24m"
 let reset_blink = esc ^ "25m"
 let reset_reverse = esc ^ "27m"
@@ -190,4 +191,31 @@ let strip str =
 let hyperlink ~uri text =
   Printf.sprintf "\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\" uri text
 
-let style attrs str = sgr attrs ^ str ^ reset
+let style attrs str =
+  (* Generate specific reset codes for the attributes that were set *)
+  let reset_codes =
+    List.concat_map
+      (function
+        | `Fg _ -> [ 39 ] (* Reset foreground color *)
+        | `Bg _ -> [ 49 ] (* Reset background color *)
+        | `Bold | `Dim -> [ 22 ] (* Reset bold/dim *)
+        | `Italic -> [ 23 ] (* Reset italic *)
+        | `Underline | `Double_underline -> [ 24 ] (* Reset underline *)
+        | `Blink -> [ 25 ] (* Reset blink *)
+        | `Reverse -> [ 27 ] (* Reset reverse *)
+        | `Strikethrough -> [ 29 ] (* Reset strikethrough *)
+        | `Overline -> [ 55 ] (* Reset overline *)
+        | `Reset -> [ 0 ] (* Full reset *))
+      attrs
+    |> List.sort_uniq compare (* Remove duplicates *)
+  in
+  let reset_str =
+    if List.mem 0 reset_codes then
+      reset (* If full reset was requested, use it *)
+    else if reset_codes = [] then
+      "" (* No attributes to reset *)
+    else
+      let code_str = String.concat ";" (List.map string_of_int reset_codes) in
+      esc ^ code_str ^ "m"
+  in
+  sgr attrs ^ str ^ reset_str
