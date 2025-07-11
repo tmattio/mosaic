@@ -116,65 +116,63 @@ let ensure_highlight_visible model =
 
 (* Load directory files using Unix file system APIs *)
 let load_directory_files path =
-  try
-    let dir_handle = Unix.opendir path in
-    let rec read_entries acc =
-      try
-        let name = Unix.readdir dir_handle in
-        (* Skip . and .. *)
-        if name = "." || name = ".." then read_entries acc
-        else
-          let full_path = Filename.concat path name in
-          try
-            let stat = Unix.stat full_path in
-            let file_type =
-              match stat.st_kind with
-              | Unix.S_REG -> `File
-              | Unix.S_DIR -> `Directory
-              | Unix.S_LNK -> `Symlink
-              | _ -> `File (* Treat other types as files *)
-            in
-            let permissions =
-              Printf.sprintf "%c%c%c%c%c%c%c%c%c%c"
-                (match stat.st_kind with
-                | Unix.S_REG -> '-'
-                | Unix.S_DIR -> 'd'
-                | Unix.S_LNK -> 'l'
-                | Unix.S_CHR -> 'c'
-                | Unix.S_BLK -> 'b'
-                | Unix.S_FIFO -> 'p'
-                | Unix.S_SOCK -> 's')
-                (if stat.st_perm land 0o400 <> 0 then 'r' else '-')
-                (if stat.st_perm land 0o200 <> 0 then 'w' else '-')
-                (if stat.st_perm land 0o100 <> 0 then 'x' else '-')
-                (if stat.st_perm land 0o040 <> 0 then 'r' else '-')
-                (if stat.st_perm land 0o020 <> 0 then 'w' else '-')
-                (if stat.st_perm land 0o010 <> 0 then 'x' else '-')
-                (if stat.st_perm land 0o004 <> 0 then 'r' else '-')
-                (if stat.st_perm land 0o002 <> 0 then 'w' else '-')
-                (if stat.st_perm land 0o001 <> 0 then 'x' else '-')
-            in
-            let file_info =
-              {
-                name;
-                path = full_path;
-                file_type;
-                size = Int64.of_int stat.st_size;
-                permissions;
-              }
-            in
-            read_entries (file_info :: acc)
-          with Unix.Unix_error _ ->
-            (* Skip files we can't stat *)
-            read_entries acc
-      with End_of_file ->
-        Unix.closedir dir_handle;
-        acc
-    in
-    read_entries []
-  with Unix.Unix_error (_err, _, _) ->
-    (* Return empty list on error, caller will handle via LoadError message *)
-    []
+  let dir_handle = Unix.opendir path in
+  let rec read_entries acc =
+    try
+      let name = Unix.readdir dir_handle in
+      (* Skip . and .. *)
+      if name = "." || name = ".." then read_entries acc
+      else
+        let full_path = Filename.concat path name in
+        try
+          let stat = Unix.stat full_path in
+          let file_type =
+            match stat.st_kind with
+            | Unix.S_REG -> `File
+            | Unix.S_DIR -> `Directory
+            | Unix.S_LNK -> `Symlink
+            | _ -> `File (* Treat other types as files *)
+          in
+          let permissions =
+            Printf.sprintf "%c%c%c%c%c%c%c%c%c%c"
+              (match stat.st_kind with
+              | Unix.S_REG -> '-'
+              | Unix.S_DIR -> 'd'
+              | Unix.S_LNK -> 'l'
+              | Unix.S_CHR -> 'c'
+              | Unix.S_BLK -> 'b'
+              | Unix.S_FIFO -> 'p'
+              | Unix.S_SOCK -> 's')
+              (if stat.st_perm land 0o400 <> 0 then 'r' else '-')
+              (if stat.st_perm land 0o200 <> 0 then 'w' else '-')
+              (if stat.st_perm land 0o100 <> 0 then 'x' else '-')
+              (if stat.st_perm land 0o040 <> 0 then 'r' else '-')
+              (if stat.st_perm land 0o020 <> 0 then 'w' else '-')
+              (if stat.st_perm land 0o010 <> 0 then 'x' else '-')
+              (if stat.st_perm land 0o004 <> 0 then 'r' else '-')
+              (if stat.st_perm land 0o002 <> 0 then 'w' else '-')
+              (if stat.st_perm land 0o001 <> 0 then 'x' else '-')
+          in
+          let file_info =
+            {
+              name;
+              path = full_path;
+              file_type;
+              size = Int64.of_int stat.st_size;
+              permissions;
+            }
+          in
+          read_entries (file_info :: acc)
+        with Unix.Unix_error _ ->
+          (* Skip files we can't stat *)
+          read_entries acc
+    with End_of_file ->
+      Unix.closedir dir_handle;
+      acc
+  in
+  Fun.protect 
+    ~finally:(fun () -> try Unix.closedir dir_handle with _ -> ())
+    (fun () -> read_entries [])
 
 (* Helper to get parent directory *)
 let parent_directory path =
@@ -279,7 +277,15 @@ let update msg model =
             try
               let files = load_directory_files path in
               Some (DirectoryLoaded files)
-            with _ -> Some (LoadError ("Failed to load directory: " ^ path))) )
+            with 
+            | Unix.Unix_error (Unix.ENOENT, _, _) -> 
+                Some (LoadError (Printf.sprintf "Directory not found: %s" path))
+            | Unix.Unix_error (Unix.EACCES, _, _) -> 
+                Some (LoadError (Printf.sprintf "Permission denied: %s" path))
+            | Unix.Unix_error (err, _, _) -> 
+                Some (LoadError (Printf.sprintf "Error accessing %s: %s" path (Unix.error_message err)))
+            | exn -> 
+                Some (LoadError (Printf.sprintf "Failed to load directory %s: %s" path (Printexc.to_string exn)))) )
   | DirectoryLoaded files -> ({ model with files; error = None }, Cmd.none)
   | LoadError error -> ({ model with error = Some error }, Cmd.none)
   | Select path -> ({ model with selected_path = Some path }, Cmd.none)
