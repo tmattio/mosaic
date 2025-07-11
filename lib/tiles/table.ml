@@ -58,10 +58,7 @@ let init ?(columns = []) ?(rows = []) ?(height = 10) ?(focused = false) () =
 
 (* Accessors *)
 
-let selected_row model =
-  if model.cursor >= 0 && model.cursor < List.length model.rows then
-    Some (List.nth model.rows model.cursor)
-  else None
+let selected_row model = List.nth_opt model.rows model.cursor
 
 let cursor model = model.cursor
 let rows model = model.rows
@@ -177,11 +174,11 @@ let render_row model row_idx row =
   let cells =
     List.mapi
       (fun col_idx cell ->
-        if col_idx < List.length model.columns then
-          let col = List.nth model.columns col_idx in
-          let text = pad_string (truncate_string cell col.width) col.width in
-          Ui.text ~style text
-        else Ui.text ~style cell)
+        match List.nth_opt model.columns col_idx with
+        | Some col ->
+            let text = pad_string (truncate_string cell col.width) col.width in
+            Ui.text ~style text
+        | None -> Ui.text ~style cell)
       row
   in
 

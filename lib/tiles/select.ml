@@ -158,18 +158,18 @@ let update msg model =
               }
             in
             (clamp_highlight model, Cmd.none)
-        | Enter | Tab ->
+        | Enter | Tab -> (
             let filtered = get_filtered_options model in
-            if model.highlighted_index < List.length filtered then
-              let value, _ = List.nth filtered model.highlighted_index in
-              ( {
-                  model with
-                  selected_value = Some value;
-                  is_open = false;
-                  filter_text = "";
-                },
-                Cmd.none )
-            else (model, Cmd.none)
+            match List.nth_opt filtered model.highlighted_index with
+            | Some (value, _) ->
+                ( {
+                    model with
+                    selected_value = Some value;
+                    is_open = false;
+                    filter_text = "";
+                  },
+                  Cmd.none )
+            | None -> (model, Cmd.none))
         | Escape -> ({ model with is_open = false; filter_text = "" }, Cmd.none)
         | Char c
           when model.filterable
@@ -213,18 +213,18 @@ let update msg model =
   | Open -> ({ model with is_open = true }, Cmd.none)
   | Close -> ({ model with is_open = false; filter_text = "" }, Cmd.none)
   | Toggle -> ({ model with is_open = not model.is_open }, Cmd.none)
-  | Select idx ->
+  | Select idx -> (
       let filtered = get_filtered_options model in
-      if idx < List.length filtered then
-        let value, _ = List.nth filtered idx in
-        ( {
-            model with
-            selected_value = Some value;
-            is_open = false;
-            filter_text = "";
-          },
-          Cmd.none )
-      else (model, Cmd.none)
+      match List.nth_opt filtered idx with
+      | Some (value, _) ->
+          ( {
+              model with
+              selected_value = Some value;
+              is_open = false;
+              filter_text = "";
+            },
+            Cmd.none )
+      | None -> (model, Cmd.none))
   | UpdateFilter text ->
       let model =
         {
@@ -385,15 +385,15 @@ let select value model =
   | None -> model
 
 let select_index idx model =
-  if idx >= 0 && idx < List.length model.options then
-    let value, _ = List.nth model.options idx in
-    {
-      model with
-      selected_value = Some value;
-      is_open = false;
-      filter_text = "";
-    }
-  else model
+  match List.nth_opt model.options idx with
+  | Some (value, _) ->
+      {
+        model with
+        selected_value = Some value;
+        is_open = false;
+        filter_text = "";
+      }
+  | None -> model
 
 let clear model = { model with selected_value = None }
 

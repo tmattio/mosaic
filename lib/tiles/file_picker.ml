@@ -246,18 +246,18 @@ let update msg model =
             }
           in
           (clamp_highlight model, Cmd.none)
-      | Enter ->
+      | Enter -> (
           let visible = get_visible_files model in
-          if model.highlighted_index < List.length visible then
-            let file = List.nth visible model.highlighted_index in
-            match file.file_type with
-            | `Directory ->
-                (* Navigate into directory *)
-                (model, Cmd.msg (LoadDirectory file.path))
-            | `File | `Symlink ->
-                (* Select file *)
-                (model, Cmd.msg (Select file.path))
-          else (model, Cmd.none)
+          match List.nth_opt visible model.highlighted_index with
+          | Some file -> (
+              match file.file_type with
+              | `Directory ->
+                  (* Navigate into directory *)
+                  (model, Cmd.msg (LoadDirectory file.path))
+              | `File | `Symlink ->
+                  (* Select file *)
+                  (model, Cmd.msg (Select file.path)))
+          | None -> (model, Cmd.none))
       | Backspace ->
           (* Go to parent directory *)
           let parent = parent_directory model.current_directory in

@@ -197,7 +197,7 @@ let rec render_block (r : renderer) block : Ui.element list =
           (fun (item, _) -> render_list_item r item)
           (Block.List'.items l)
       in
-      r.list_stack <- List.tl r.list_stack;
+      r.list_stack <- (match r.list_stack with _ :: tl -> tl | [] -> []);
       let l_style = r.style.list in
       let content =
         Ui.vbox ~padding:(Ui.padding_all l_style.block.padding_left) items

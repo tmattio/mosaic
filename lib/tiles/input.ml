@@ -188,19 +188,21 @@ let update msg model =
       | Tab when model.show_suggestions && model.suggestion_index <> None -> (
           let suggestions = filter_suggestions model in
           match model.suggestion_index with
-          | Some idx when idx < List.length suggestions ->
-              let value = List.nth suggestions idx in
-              let model =
-                {
-                  model with
-                  value;
-                  cursor_pos = String.length value;
-                  show_suggestions = false;
-                  suggestion_index = None;
-                }
-              in
-              (validate_value model, Cmd.none)
-          | _ -> (model, Cmd.none))
+          | Some idx -> (
+              match List.nth_opt suggestions idx with
+              | Some value ->
+                  let model =
+                    {
+                      model with
+                      value;
+                      cursor_pos = String.length value;
+                      show_suggestions = false;
+                      suggestion_index = None;
+                    }
+                  in
+                  (validate_value model, Cmd.none)
+              | None -> (model, Cmd.none))
+          | None -> (model, Cmd.none))
       | Enter -> ({ model with show_suggestions = false }, Cmd.none)
       | Escape when model.show_suggestions ->
           ( { model with show_suggestions = false; suggestion_index = None },
@@ -216,21 +218,21 @@ let update msg model =
           suggestion_index = None;
         },
         Cmd.none )
-  | SelectSuggestion idx ->
+  | SelectSuggestion idx -> (
       let suggestions = filter_suggestions model in
-      if idx < List.length suggestions then
-        let value = List.nth suggestions idx in
-        let model =
-          {
-            model with
-            value;
-            cursor_pos = String.length value;
-            show_suggestions = false;
-            suggestion_index = None;
-          }
-        in
-        (validate_value model, Cmd.none)
-      else (model, Cmd.none)
+      match List.nth_opt suggestions idx with
+      | Some value ->
+          let model =
+            {
+              model with
+              value;
+              cursor_pos = String.length value;
+              show_suggestions = false;
+              suggestion_index = None;
+            }
+          in
+          (validate_value model, Cmd.none)
+      | None -> (model, Cmd.none))
   | HideSuggestions ->
       ( { model with show_suggestions = false; suggestion_index = None },
         Cmd.none )

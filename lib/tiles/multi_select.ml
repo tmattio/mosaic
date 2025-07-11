@@ -182,25 +182,25 @@ let rec update msg model =
       | _ -> (model, Cmd.none))
   | Focus -> ({ model with is_focused = true }, Cmd.none)
   | Blur -> ({ model with is_focused = false }, Cmd.none)
-  | Toggle idx ->
+  | Toggle idx -> (
       let filtered = get_filtered_options model in
-      if idx < List.length filtered then
-        let value, _ = List.nth filtered idx in
-        let is_selected = is_value_selected value model.selected_values in
+      match List.nth_opt filtered idx with
+      | Some (value, _) ->
+          let is_selected = is_value_selected value model.selected_values in
 
-        let selected_values =
-          if is_selected then
-            (* Deselect *)
-            List.filter (fun v -> v <> value) model.selected_values
-          else if
-            (* Select if not at limit *)
-            model.limit = 0 || List.length model.selected_values < model.limit
-          then value :: model.selected_values
-          else model.selected_values
-        in
+          let selected_values =
+            if is_selected then
+              (* Deselect *)
+              List.filter (fun v -> v <> value) model.selected_values
+            else if
+              (* Select if not at limit *)
+              model.limit = 0 || List.length model.selected_values < model.limit
+            then value :: model.selected_values
+            else model.selected_values
+          in
 
-        ({ model with selected_values }, Cmd.none)
-      else (model, Cmd.none)
+          ({ model with selected_values }, Cmd.none)
+      | None -> (model, Cmd.none))
   | SelectAll ->
       let filtered = get_filtered_options model in
       let all_values = List.map fst filtered in
@@ -347,10 +347,9 @@ let toggle value model =
   else model
 
 let toggle_index idx model =
-  if idx >= 0 && idx < List.length model.options then
-    let value, _ = List.nth model.options idx in
-    toggle value model
-  else model
+  match List.nth_opt model.options idx with
+  | Some (value, _) -> toggle value model
+  | None -> model
 
 let select value model =
   if
