@@ -89,6 +89,30 @@ let on_resize f = window_resize f
 let on_focus msg = focus (fun () -> msg)
 let on_blur msg = blur (fun () -> msg)
 
+(* Common key event shorthands *)
+let on_enter msg = on_key Input.Enter msg
+let on_escape msg = on_key Input.Escape msg
+let on_tab msg = on_key Input.Tab msg
+let on_backspace msg = on_key Input.Backspace msg
+let on_delete msg = on_key Input.Delete msg
+let on_up msg = on_key Input.Up msg
+let on_down msg = on_key Input.Down msg
+let on_left msg = on_key Input.Left msg
+let on_right msg = on_key Input.Right msg
+let on_page_up msg = on_key Input.Page_up msg
+let on_page_down msg = on_key Input.Page_down msg
+let on_home msg = on_key Input.Home msg
+let on_end msg = on_key Input.End msg
+
+(* Common ctrl key combinations *)
+let on_ctrl_c msg = on_char ~ctrl:true 'c' msg
+let on_ctrl_x msg = on_char ~ctrl:true 'x' msg
+let on_ctrl_v msg = on_char ~ctrl:true 'v' msg
+let on_ctrl_z msg = on_char ~ctrl:true 'z' msg
+let on_ctrl_a msg = on_char ~ctrl:true 'a' msg
+let on_ctrl_s msg = on_char ~ctrl:true 's' msg
+let on_ctrl_d msg = on_char ~ctrl:true 'd' msg
+
 let batch subs =
   match List.filter (function None -> false | _ -> true) subs with
   | [] -> None

@@ -35,7 +35,15 @@ type model = {
 }
 
 (* Messages *)
-type msg = Key of key_event | Focus | Blur | Select of bool | Submit
+type msg = 
+  | MoveLeft
+  | MoveRight
+  | Toggle
+  | Submit
+  | QuickSelect of char
+  | Focus
+  | Blur
+  | Select of bool
 
 (* Initialization *)
 let init ?(affirmative = "Yes") ?(negative = "No") ?(default = true)
@@ -63,31 +71,26 @@ let update msg model =
     | _ -> (model, Cmd.none)
   else
     match msg with
-    | Key { key; _ } -> (
-        match key with
-        | Left | Up -> ({ model with current_selection = true }, Cmd.none)
-        | Right | Down -> ({ model with current_selection = false }, Cmd.none)
-        | Tab ->
-            (* Toggle selection *)
-            ( { model with current_selection = not model.current_selection },
-              Cmd.none )
-        | Enter -> ({ model with is_submitted = true }, Cmd.none)
-        | Char c when Uchar.to_int c >= 32 && Uchar.to_int c < 127 ->
-            let char = Char.lowercase_ascii (Uchar.to_char c) in
-            (* Quick select with first letter *)
-            if char = Char.lowercase_ascii model.affirmative.[0] then
-              ( { model with current_selection = true; is_submitted = true },
-                Cmd.none )
-            else if char = Char.lowercase_ascii model.negative.[0] then
-              ( { model with current_selection = false; is_submitted = true },
-                Cmd.none )
-            else (model, Cmd.none)
-        | _ -> (model, Cmd.none))
+    | MoveLeft -> ({ model with current_selection = true }, Cmd.none)
+    | MoveRight -> ({ model with current_selection = false }, Cmd.none)
+    | Toggle ->
+        (* Toggle selection *)
+        ( { model with current_selection = not model.current_selection },
+          Cmd.none )
+    | Submit -> ({ model with is_submitted = true }, Cmd.none)
+    | QuickSelect char ->
+        (* Quick select with first letter *)
+        if char = Char.lowercase_ascii model.affirmative.[0] then
+          ( { model with current_selection = true; is_submitted = true },
+            Cmd.none )
+        else if char = Char.lowercase_ascii model.negative.[0] then
+          ( { model with current_selection = false; is_submitted = true },
+            Cmd.none )
+        else (model, Cmd.none)
     | Focus -> ({ model with is_focused = true }, Cmd.none)
     | Blur -> ({ model with is_focused = false }, Cmd.none)
     | Select selection ->
         ({ model with current_selection = selection }, Cmd.none)
-    | Submit -> ({ model with is_submitted = true }, Cmd.none)
 
 (* View *)
 let view model =
@@ -129,7 +132,22 @@ let view model =
 
 (* Subscriptions *)
 let subscriptions model =
-  if model.is_focused then Sub.keyboard (fun k -> Key k) else Sub.none
+  if model.is_focused then
+    Sub.batch
+      [
+        Sub.on_left MoveLeft;
+        Sub.on_up MoveLeft;
+        Sub.on_right MoveRight;
+        Sub.on_down MoveRight;
+        Sub.on_tab Toggle;
+        Sub.on_enter Submit;
+        Sub.keyboard_filter (fun event ->
+            match event.key with
+            | Char c when Uchar.to_int c >= 32 && Uchar.to_int c < 127 ->
+                Some (QuickSelect (Char.lowercase_ascii (Uchar.to_char c)))
+            | _ -> None);
+      ]
+  else Sub.none
 
 (* Component export *)
 let component = Mosaic.app ~init ~update ~view ~subscriptions ()

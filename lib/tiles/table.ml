@@ -29,16 +29,7 @@ type model = {
   theme : theme;
 }
 
-type msg =
-  | MoveUp
-  | MoveDown
-  | PageUp
-  | PageDown
-  | Home
-  | End
-  | Focus
-  | Blur
-  | NoOp
+type msg = MoveUp | MoveDown | PageUp | PageDown | Home | End | Focus | Blur
 
 let clamp value min_val max_val = max min_val (min max_val value)
 
@@ -59,7 +50,6 @@ let init ?(columns = []) ?(rows = []) ?(height = 10) ?(focused = false) () =
 (* Accessors *)
 
 let selected_row model = List.nth_opt model.rows model.cursor
-
 let cursor model = model.cursor
 let rows model = model.rows
 let columns model = model.columns
@@ -142,7 +132,6 @@ let update msg model =
   | End -> (go_to_end model, Cmd.none)
   | Focus -> focus model
   | Blur -> (blur model, Cmd.none)
-  | NoOp -> (model, Cmd.none)
 
 (* View *)
 
@@ -215,19 +204,19 @@ let view model =
 
 let subscriptions model =
   if model.focused then
-    Sub.keyboard (fun event ->
-        match event.key with
-        | Up -> MoveUp
-        | Down -> MoveDown
-        | Page_up -> PageUp
-        | Page_down -> PageDown
-        | Home -> Home
-        | End -> End
-        | Char c when Uchar.to_char c = 'k' -> MoveUp
-        | Char c when Uchar.to_char c = 'j' -> MoveDown
-        | Char c when Uchar.to_char c = 'g' -> Home
-        | Char c when Uchar.to_char c = 'G' -> End
-        | _ -> NoOp)
+    Sub.batch
+      [
+        Sub.on_up MoveUp;
+        Sub.on_down MoveDown;
+        Sub.on_page_up PageUp;
+        Sub.on_page_down PageDown;
+        Sub.on_home Home;
+        Sub.on_end End;
+        Sub.on_char 'k' MoveUp;
+        Sub.on_char 'j' MoveDown;
+        Sub.on_char 'g' Home;
+        Sub.on_char ~shift:true 'G' End;
+      ]
   else Sub.none
 
 (* Redefine component with actual functions *)

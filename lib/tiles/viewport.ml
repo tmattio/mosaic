@@ -30,7 +30,6 @@ type msg =
   | End
   | ScrollToLeft
   | ScrollToRight
-  | NoOp
 
 (* Helper functions *)
 
@@ -244,7 +243,6 @@ let update msg model =
   | End -> (go_to_bottom model, Cmd.none)
   | ScrollToLeft -> (go_to_left model, Cmd.none)
   | ScrollToRight -> (go_to_right model, Cmd.none)
-  | NoOp -> (model, Cmd.none)
 
 (* View *)
 
@@ -344,23 +342,29 @@ let view model =
 (* Subscriptions *)
 
 let subscriptions model =
-  Sub.keyboard (fun event ->
-      match event.key with
-      | Up -> ScrollUp 1
-      | Down -> ScrollDown 1
-      | Left -> ScrollLeft 1
-      | Right -> ScrollRight 1
-      | Page_up -> PageUp
-      | Page_down -> PageDown
-      | Home -> Home
-      | End -> End
-      | Char c when Uchar.to_char c = 'u' && event.modifier.ctrl -> HalfPageUp
-      | Char c when Uchar.to_char c = 'd' && event.modifier.ctrl -> HalfPageDown
-      | Char c when Uchar.to_char c = 'h' && model.horizontal_scroll ->
-          ScrollLeft 1
-      | Char c when Uchar.to_char c = 'l' && model.horizontal_scroll ->
-          ScrollRight 1
-      | _ -> NoOp)
+  let base_subs =
+    [
+      Sub.on_up (ScrollUp 1);
+      Sub.on_down (ScrollDown 1);
+      Sub.on_page_up PageUp;
+      Sub.on_page_down PageDown;
+      Sub.on_home Home;
+      Sub.on_end End;
+      Sub.on_char ~ctrl:true 'u' HalfPageUp;
+      Sub.on_char ~ctrl:true 'd' HalfPageDown;
+    ]
+  in
+  let horizontal_subs =
+    if model.horizontal_scroll then
+      [
+        Sub.on_left (ScrollLeft 1);
+        Sub.on_right (ScrollRight 1);
+        Sub.on_char 'h' (ScrollLeft 1);
+        Sub.on_char 'l' (ScrollRight 1);
+      ]
+    else []
+  in
+  Sub.batch (base_subs @ horizontal_subs)
 
 (* Redefine component with actual functions *)
 let component = Mosaic.app ~init ~update ~view ~subscriptions ()

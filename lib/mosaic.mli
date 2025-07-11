@@ -284,6 +284,70 @@ module Sub : sig
   val on_char : ?ctrl:bool -> ?alt:bool -> ?shift:bool -> char -> 'msg -> 'msg t
   (** Subscribe to a specific character *)
 
+  (** {3 Common key event shorthands} *)
+
+  val on_enter : 'msg -> 'msg t
+  (** Subscribe to Enter key press *)
+
+  val on_escape : 'msg -> 'msg t
+  (** Subscribe to Escape key press *)
+
+  val on_tab : 'msg -> 'msg t
+  (** Subscribe to Tab key press *)
+
+  val on_backspace : 'msg -> 'msg t
+  (** Subscribe to Backspace key press *)
+
+  val on_delete : 'msg -> 'msg t
+  (** Subscribe to Delete key press *)
+
+  val on_up : 'msg -> 'msg t
+  (** Subscribe to Up arrow key press *)
+
+  val on_down : 'msg -> 'msg t
+  (** Subscribe to Down arrow key press *)
+
+  val on_left : 'msg -> 'msg t
+  (** Subscribe to Left arrow key press *)
+
+  val on_right : 'msg -> 'msg t
+  (** Subscribe to Right arrow key press *)
+
+  val on_page_up : 'msg -> 'msg t
+  (** Subscribe to Page Up key press *)
+
+  val on_page_down : 'msg -> 'msg t
+  (** Subscribe to Page Down key press *)
+
+  val on_home : 'msg -> 'msg t
+  (** Subscribe to Home key press *)
+
+  val on_end : 'msg -> 'msg t
+  (** Subscribe to End key press *)
+
+  (** {3 Common ctrl key combinations} *)
+
+  val on_ctrl_c : 'msg -> 'msg t
+  (** Subscribe to Ctrl+C key press *)
+
+  val on_ctrl_x : 'msg -> 'msg t
+  (** Subscribe to Ctrl+X key press *)
+
+  val on_ctrl_v : 'msg -> 'msg t
+  (** Subscribe to Ctrl+V key press *)
+
+  val on_ctrl_z : 'msg -> 'msg t
+  (** Subscribe to Ctrl+Z key press *)
+
+  val on_ctrl_a : 'msg -> 'msg t
+  (** Subscribe to Ctrl+A key press *)
+
+  val on_ctrl_s : 'msg -> 'msg t
+  (** Subscribe to Ctrl+S key press *)
+
+  val on_ctrl_d : 'msg -> 'msg t
+  (** Subscribe to Ctrl+D key press *)
+
   (** {2 Mouse} *)
 
   val mouse : (mouse_event -> 'msg) -> 'msg t
