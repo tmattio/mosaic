@@ -223,7 +223,6 @@ module Program = struct
   let render program =
     log_debug program "Render: Starting render pass";
     let element = program.app.view program.model in
-    log_debug program (Format.asprintf "View element: %a" Ui.pp_element element);
 
     (* Clear all caches before rendering *)
     Ui.clear_cache element;
