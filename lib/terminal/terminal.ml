@@ -26,7 +26,7 @@ let make_raw termios =
     (* Disable special character processing *)
     c_ixon = false;
     c_icrnl = false;
-    c_opost = false;
+    c_opost = true;
   }
 
 let create ?(tty = true) input output =
