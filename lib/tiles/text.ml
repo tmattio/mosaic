@@ -69,7 +69,7 @@ let ensure_cursor_visible model =
 let clamp_cursor model =
   let line_count = List.length model.lines in
   let cursor_line = max 0 (min (line_count - 1) model.cursor_line) in
-  let current_line = 
+  let current_line =
     match List.nth_opt model.lines cursor_line with
     | Some line -> line
     | None -> ""
@@ -110,7 +110,7 @@ let update msg model =
              && Uchar.to_int c < 127
              && (not modifier.ctrl) && not modifier.alt ->
           let char = String.make 1 (Uchar.to_char c) in
-          let current_line = 
+          let current_line =
             match List.nth_opt model.lines model.cursor_line with
             | Some line -> line
             | None -> ""
@@ -129,7 +129,7 @@ let update msg model =
           let model = { model with lines; cursor_col = model.cursor_col + 1 } in
           (validate_value model |> ensure_cursor_visible, Cmd.none)
       | Enter ->
-          let current_line = 
+          let current_line =
             match List.nth_opt model.lines model.cursor_line with
             | Some line -> line
             | None -> ""
@@ -164,7 +164,7 @@ let update msg model =
       | Backspace when model.cursor_col > 0 || model.cursor_line > 0 ->
           if model.cursor_col > 0 then
             (* Delete character in current line *)
-            let current_line = 
+            let current_line =
               match List.nth_opt model.lines model.cursor_line with
               | Some line -> line
               | None -> ""
@@ -186,12 +186,12 @@ let update msg model =
             (validate_value model, Cmd.none)
           else
             (* Join with previous line *)
-            let prev_line = 
+            let prev_line =
               match List.nth_opt model.lines (model.cursor_line - 1) with
               | Some line -> line
               | None -> ""
             in
-            let current_line = 
+            let current_line =
               match List.nth_opt model.lines model.cursor_line with
               | Some line -> line
               | None -> ""
@@ -216,7 +216,7 @@ let update msg model =
             in
             (validate_value model |> ensure_cursor_visible, Cmd.none)
       | Delete when model.cursor_line < List.length model.lines ->
-          let current_line = 
+          let current_line =
             match List.nth_opt model.lines model.cursor_line with
             | Some line -> line
             | None -> ""
@@ -239,7 +239,7 @@ let update msg model =
             (validate_value { model with lines }, Cmd.none)
           else if model.cursor_line < List.length model.lines - 1 then
             (* Join with next line *)
-            let next_line = 
+            let next_line =
               match List.nth_opt model.lines (model.cursor_line + 1) with
               | Some line -> line
               | None -> ""
@@ -264,7 +264,7 @@ let update msg model =
       | Left when model.cursor_col > 0 ->
           ({ model with cursor_col = model.cursor_col - 1 }, Cmd.none)
       | Left when model.cursor_line > 0 ->
-          let prev_line = 
+          let prev_line =
             match List.nth_opt model.lines (model.cursor_line - 1) with
             | Some line -> line
             | None -> ""
@@ -278,7 +278,7 @@ let update msg model =
           in
           (ensure_cursor_visible model, Cmd.none)
       | Right ->
-          let current_line = 
+          let current_line =
             match List.nth_opt model.lines model.cursor_line with
             | Some line -> line
             | None -> ""
@@ -293,7 +293,7 @@ let update msg model =
           else (model, Cmd.none)
       | Home -> ({ model with cursor_col = 0 }, Cmd.none)
       | End ->
-          let current_line = 
+          let current_line =
             match List.nth_opt model.lines model.cursor_line with
             | Some line -> line
             | None -> ""
@@ -459,7 +459,7 @@ let set_value value model =
 let clear model = set_value "" model
 
 let insert_at_cursor text model =
-  let current_line = 
+  let current_line =
     match List.nth_opt model.lines model.cursor_line with
     | Some line -> line
     | None -> ""

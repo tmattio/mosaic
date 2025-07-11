@@ -170,7 +170,7 @@ let load_directory_files path =
       Unix.closedir dir_handle;
       acc
   in
-  Fun.protect 
+  Fun.protect
     ~finally:(fun () -> try Unix.closedir dir_handle with _ -> ())
     (fun () -> read_entries [])
 
@@ -277,15 +277,21 @@ let update msg model =
             try
               let files = load_directory_files path in
               Some (DirectoryLoaded files)
-            with 
-            | Unix.Unix_error (Unix.ENOENT, _, _) -> 
+            with
+            | Unix.Unix_error (Unix.ENOENT, _, _) ->
                 Some (LoadError (Printf.sprintf "Directory not found: %s" path))
-            | Unix.Unix_error (Unix.EACCES, _, _) -> 
+            | Unix.Unix_error (Unix.EACCES, _, _) ->
                 Some (LoadError (Printf.sprintf "Permission denied: %s" path))
-            | Unix.Unix_error (err, _, _) -> 
-                Some (LoadError (Printf.sprintf "Error accessing %s: %s" path (Unix.error_message err)))
-            | exn -> 
-                Some (LoadError (Printf.sprintf "Failed to load directory %s: %s" path (Printexc.to_string exn)))) )
+            | Unix.Unix_error (err, _, _) ->
+                Some
+                  (LoadError
+                     (Printf.sprintf "Error accessing %s: %s" path
+                        (Unix.error_message err)))
+            | exn ->
+                Some
+                  (LoadError
+                     (Printf.sprintf "Failed to load directory %s: %s" path
+                        (Printexc.to_string exn)))) )
   | DirectoryLoaded files -> ({ model with files; error = None }, Cmd.none)
   | LoadError error -> ({ model with error = Some error }, Cmd.none)
   | Select path -> ({ model with selected_path = Some path }, Cmd.none)

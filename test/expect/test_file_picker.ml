@@ -7,10 +7,12 @@ module FilePickerTestApp = struct
   type model = { file_picker : File_picker.model; quit : bool }
   type msg = FilePickerMsg of File_picker.msg | Quit
 
-  let create_app ?start_path ?show_hidden ?directories_only ?extensions ?height () =
+  let create_app ?start_path ?show_hidden ?directories_only ?extensions ?height
+      () =
     let init () =
       let file_picker_model, file_picker_cmd =
-        File_picker.init ?start_path ?show_hidden ?directories_only ?extensions ?height ()
+        File_picker.init ?start_path ?show_hidden ?directories_only ?extensions
+          ?height ()
       in
       (* Focus the file picker by default so keyboard events work *)
       let focused_model, focus_cmd = File_picker.focus file_picker_model in
@@ -35,7 +37,8 @@ module FilePickerTestApp = struct
     let subscriptions model =
       Sub.batch
         [
-          Sub.map (fun m -> FilePickerMsg m)
+          Sub.map
+            (fun m -> FilePickerMsg m)
             (File_picker.subscriptions model.file_picker);
           Sub.on_key ~ctrl:true (Char (Uchar.of_char 'c')) Quit;
         ]
@@ -61,7 +64,9 @@ let print_test_output ?(width = 60) ?height:(_ = 10) output =
   print_string (border_line ^ bordered_output ^ "\n" ^ border_line)
 
 let%expect_test "File picker with nonexistent directory" =
-  let app = FilePickerTestApp.create_app ~start_path:"/nonexistent_directory_xyz123" () in
+  let app =
+    FilePickerTestApp.create_app ~start_path:"/nonexistent_directory_xyz123" ()
+  in
   let harness = TestHarness.create app in
   let output = TestHarness.view ~width:60 ~height:12 harness in
   print_test_output ~height:12 output;
@@ -90,7 +95,8 @@ let%expect_test "File picker with current directory" =
   print_string "File picker shows current directory contents:\n";
   print_test_output ~height:10 output;
   (* Should show actual files in current directory *)
-  [%expect {|
+  [%expect
+    {|
     File picker shows current directory contents:
     +------------------------------------------------------------+
     |Path: .                                                     |
@@ -117,7 +123,8 @@ let%expect_test "Navigate with arrow keys" =
   let output = TestHarness.view ~width:60 ~height:10 harness in
   print_string "After navigating down:\n";
   print_test_output ~height:10 output;
-  [%expect {|
+  [%expect
+    {|
     After navigating down:
     +------------------------------------------------------------+
     |Path: .                                                     |
@@ -143,7 +150,8 @@ let%expect_test "Toggle hidden files" =
   let output = TestHarness.view ~width:60 ~height:10 harness in
   print_string "After toggling hidden files:\n";
   print_test_output ~height:10 output;
-  [%expect {|
+  [%expect
+    {|
     After toggling hidden files:
     +------------------------------------------------------------+
     |Path: .                                                     |
@@ -161,19 +169,23 @@ let%expect_test "Toggle hidden files" =
 
 let%expect_test "Permission denied directory" =
   (* Create a directory with no read permissions *)
-  let temp_dir = Filename.temp_dir ~temp_dir:(Sys.getcwd ()) "test_file_picker" "" in
+  let temp_dir =
+    Filename.temp_dir ~temp_dir:(Sys.getcwd ()) "test_file_picker" ""
+  in
   Unix.chmod temp_dir 0o000;
-  Fun.protect ~finally:(fun () -> 
-    Unix.chmod temp_dir 0o755;
-    Unix.rmdir temp_dir
-  ) (fun () ->
-    let app = FilePickerTestApp.create_app ~start_path:temp_dir () in
-    let harness = TestHarness.create app in
-    let output = TestHarness.view ~width:60 ~height:12 harness in
-    print_string "Permission denied directory shows empty (bug):\n";
-    print_test_output ~height:12 output;
-    (* This shows the bug - empty directory instead of error *)
-    [%expect {|
+  Fun.protect
+    ~finally:(fun () ->
+      Unix.chmod temp_dir 0o755;
+      Unix.rmdir temp_dir)
+    (fun () ->
+      let app = FilePickerTestApp.create_app ~start_path:temp_dir () in
+      let harness = TestHarness.create app in
+      let output = TestHarness.view ~width:60 ~height:12 harness in
+      print_string "Permission denied directory shows empty (bug):\n";
+      print_test_output ~height:12 output;
+      (* This shows the bug - empty directory instead of error *)
+      [%expect
+        {|
       Permission denied directory shows empty (bug):
       +------------------------------------------------------------+
       |Path: /Users/tmattio/Workspace/mosaic/_build/.sandbox/9d671b|
@@ -189,5 +201,4 @@ let%expect_test "Permission denied directory" =
       |│                                                          │|
       |│                                                          │|
       +------------------------------------------------------------+
-      |}]
-  )
+      |}])

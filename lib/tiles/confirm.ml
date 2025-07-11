@@ -35,7 +35,7 @@ type model = {
 }
 
 (* Messages *)
-type msg = 
+type msg =
   | MoveLeft
   | MoveRight
   | Toggle
