@@ -29,7 +29,7 @@ type model = {
   theme : theme;
 }
 
-type msg = MoveUp | MoveDown | PageUp | PageDown | Home | End | Focus | Blur
+type msg = Move_up | Move_down | Page_up | Page_down | Home | End | Focus | Blur
 
 let clamp value min_val max_val = max min_val (min max_val value)
 
@@ -124,10 +124,10 @@ let with_theme theme model = { model with theme }
 
 let update msg model =
   match msg with
-  | MoveUp -> (move_up 1 model, Cmd.none)
-  | MoveDown -> (move_down 1 model, Cmd.none)
-  | PageUp -> (move_up model.height model, Cmd.none)
-  | PageDown -> (move_down model.height model, Cmd.none)
+  | Move_up -> (move_up 1 model, Cmd.none)
+  | Move_down -> (move_down 1 model, Cmd.none)
+  | Page_up -> (move_up model.height model, Cmd.none)
+  | Page_down -> (move_down model.height model, Cmd.none)
   | Home -> (go_to_start model, Cmd.none)
   | End -> (go_to_end model, Cmd.none)
   | Focus -> focus model
@@ -206,14 +206,14 @@ let subscriptions model =
   if model.focused then
     Sub.batch
       [
-        Sub.on_up MoveUp;
-        Sub.on_down MoveDown;
-        Sub.on_page_up PageUp;
-        Sub.on_page_down PageDown;
+        Sub.on_up Move_up;
+        Sub.on_down Move_down;
+        Sub.on_page_up Page_up;
+        Sub.on_page_down Page_down;
         Sub.on_home Home;
         Sub.on_end End;
-        Sub.on_char 'k' MoveUp;
-        Sub.on_char 'j' MoveDown;
+        Sub.on_char 'k' Move_up;
+        Sub.on_char 'j' Move_down;
         Sub.on_char 'g' Home;
         Sub.on_char ~shift:true 'G' End;
       ]

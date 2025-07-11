@@ -2,9 +2,9 @@ open Mosaic
 module Ui = Mosaic.Ui
 
 type format =
-  | HoursMinutesSeconds
-  | MinutesSeconds
-  | TotalSeconds
+  | Hours_minutes_seconds
+  | Minutes_seconds
+  | Total_seconds
   | Milliseconds
   | Custom of (float -> string)
 
@@ -64,15 +64,15 @@ let format_time_millis seconds =
 
 let format_time format seconds =
   match format with
-  | HoursMinutesSeconds -> format_time_hms seconds
-  | MinutesSeconds -> format_time_ms seconds
-  | TotalSeconds -> Printf.sprintf "%.1f" seconds
+  | Hours_minutes_seconds -> format_time_hms seconds
+  | Minutes_seconds -> format_time_ms seconds
+  | Total_seconds -> Printf.sprintf "%.1f" seconds
   | Milliseconds -> format_time_millis seconds
   | Custom f -> f seconds
 
 (* Initialization *)
 
-let init ?(format = MinutesSeconds) ?(auto_start = false) () =
+let init ?(format = Minutes_seconds) ?(auto_start = false) () =
   let model =
     {
       start_time = None;

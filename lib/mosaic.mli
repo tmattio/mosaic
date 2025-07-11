@@ -182,7 +182,7 @@ module Cmd : sig
     | Sequence of 'msg t list
     | Quit
     | Log of string
-    | SetWindowTitle of string
+    | Set_window_title of string
 
   val none : 'msg t
   val msg : 'msg -> 'msg t

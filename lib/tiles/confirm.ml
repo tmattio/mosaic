@@ -36,11 +36,11 @@ type model = {
 
 (* Messages *)
 type msg =
-  | MoveLeft
-  | MoveRight
+  | Move_left
+  | Move_right
   | Toggle
   | Submit
-  | QuickSelect of char
+  | Quick_select of char
   | Focus
   | Blur
   | Select of bool
@@ -71,14 +71,14 @@ let update msg model =
     | _ -> (model, Cmd.none)
   else
     match msg with
-    | MoveLeft -> ({ model with current_selection = true }, Cmd.none)
-    | MoveRight -> ({ model with current_selection = false }, Cmd.none)
+    | Move_left -> ({ model with current_selection = true }, Cmd.none)
+    | Move_right -> ({ model with current_selection = false }, Cmd.none)
     | Toggle ->
         (* Toggle selection *)
         ( { model with current_selection = not model.current_selection },
           Cmd.none )
     | Submit -> ({ model with is_submitted = true }, Cmd.none)
-    | QuickSelect char ->
+    | Quick_select char ->
         (* Quick select with first letter *)
         if char = Char.lowercase_ascii model.affirmative.[0] then
           ( { model with current_selection = true; is_submitted = true },
@@ -135,16 +135,16 @@ let subscriptions model =
   if model.is_focused then
     Sub.batch
       [
-        Sub.on_left MoveLeft;
-        Sub.on_up MoveLeft;
-        Sub.on_right MoveRight;
-        Sub.on_down MoveRight;
+        Sub.on_left Move_left;
+        Sub.on_up Move_left;
+        Sub.on_right Move_right;
+        Sub.on_down Move_right;
         Sub.on_tab Toggle;
         Sub.on_enter Submit;
         Sub.keyboard_filter (fun event ->
             match event.key with
             | Char c when Uchar.to_int c >= 32 && Uchar.to_int c < 127 ->
-                Some (QuickSelect (Char.lowercase_ascii (Uchar.to_char c)))
+                Some (Quick_select (Char.lowercase_ascii (Uchar.to_char c)))
             | _ -> None);
       ]
   else Sub.none

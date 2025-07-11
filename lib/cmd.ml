@@ -10,7 +10,7 @@ type 'msg t =
   | Sequence of 'msg t list
   | Quit
   | Log of string
-  | SetWindowTitle of string
+  | Set_window_title of string
 
 let none = None
 let msg m = Msg m
@@ -27,7 +27,7 @@ let release_and_run = exec (* Alias for better discoverability *)
 let quit = Quit
 let tick duration f = Tick (duration, f)
 let log message = Log message
-let set_window_title title = SetWindowTitle title
+let set_window_title title = Set_window_title title
 
 let sequence cmds =
   match List.filter (function None -> false | _ -> true) cmds with
@@ -58,7 +58,7 @@ let pp pp_msg fmt cmd =
           cmds
     | Quit -> fprintf fmt "Quit"
     | Log message -> fprintf fmt "Log(%S)" message
-    | SetWindowTitle title -> fprintf fmt "SetWindowTitle(%S)" title
+    | Set_window_title title -> fprintf fmt "Set_window_title(%S)" title
   in
   pp_cmd fmt cmd
 
@@ -73,7 +73,7 @@ let rec to_list = function
       [ Sequence cmds ] (* Keep as atomic for sequential execution *)
   | Quit -> [ Quit ]
   | Log _ as l -> [ l ]
-  | SetWindowTitle _ as s -> [ s ]
+  | Set_window_title _ as s -> [ s ]
 
 let map f cmd =
   let rec go = function
@@ -87,7 +87,7 @@ let map f cmd =
     | Sequence cmds -> sequence (List.map go cmds)
     | Quit -> Quit
     | Log _ as l -> l (* Log commands are not affected by map *)
-    | SetWindowTitle _ as s ->
-        s (* SetWindowTitle commands are not affected by map *)
+    | Set_window_title _ as s ->
+        s (* Set_window_title commands are not affected by map *)
   in
   go cmd

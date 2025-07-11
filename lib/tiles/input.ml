@@ -47,8 +47,8 @@ type msg =
   | Key of key_event
   | Focus
   | Blur
-  | SelectSuggestion of int
-  | HideSuggestions
+  | Select_suggestion of int
+  | Hide_suggestions
 
 (* Initialization *)
 let init ?(placeholder = "") ?(initial_value = "") ?(is_password = false)
@@ -218,7 +218,7 @@ let update msg model =
           suggestion_index = None;
         },
         Cmd.none )
-  | SelectSuggestion idx -> (
+  | Select_suggestion idx -> (
       let suggestions = filter_suggestions model in
       match List.nth_opt suggestions idx with
       | Some value ->
@@ -233,7 +233,7 @@ let update msg model =
           in
           (validate_value model, Cmd.none)
       | None -> (model, Cmd.none))
-  | HideSuggestions ->
+  | Hide_suggestions ->
       ( { model with show_suggestions = false; suggestion_index = None },
         Cmd.none )
 
@@ -355,8 +355,8 @@ let clear model =
 
 let set_suggestions suggestions model = { model with suggestions }
 let validate model = validate_value model
-let select_suggestion idx model = (model, Cmd.msg (SelectSuggestion idx))
-let hide_suggestions model = (model, Cmd.msg HideSuggestions)
+let select_suggestion idx model = (model, Cmd.msg (Select_suggestion idx))
+let hide_suggestions model = (model, Cmd.msg Hide_suggestions)
 
 (* Theming *)
 let with_theme theme model = { model with theme }

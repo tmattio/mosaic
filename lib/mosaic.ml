@@ -178,7 +178,7 @@ module Program = struct
     | Cmd.Log message ->
         (* Write to stderr to avoid corrupting the UI *)
         Printf.eprintf "%s\n%!" message
-    | Cmd.SetWindowTitle title ->
+    | Cmd.Set_window_title title ->
         (* Write the escape sequence to set window title *)
         Terminal.write program.term
           (Bytes.of_string (Ansi.set_window_title title))

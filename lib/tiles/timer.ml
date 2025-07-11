@@ -2,9 +2,9 @@ open Mosaic
 module Ui = Mosaic.Ui
 
 type format =
-  | HoursMinutesSeconds
-  | MinutesSeconds
-  | TotalSeconds
+  | Hours_minutes_seconds
+  | Minutes_seconds
+  | Total_seconds
   | Custom of (float -> string)
 
 type msg = Tick of float | Start | Stop | Reset | Expired
@@ -50,14 +50,14 @@ let format_time_ms seconds =
 
 let format_time format seconds =
   match format with
-  | HoursMinutesSeconds -> format_time_hms seconds
-  | MinutesSeconds -> format_time_ms seconds
-  | TotalSeconds -> Printf.sprintf "%.0f" seconds
+  | Hours_minutes_seconds -> format_time_hms seconds
+  | Minutes_seconds -> format_time_ms seconds
+  | Total_seconds -> Printf.sprintf "%.0f" seconds
   | Custom f -> f seconds
 
 (* Initialization *)
 
-let init ?(duration = 60.0) ?(format = MinutesSeconds) ?(auto_start = false) ()
+let init ?(duration = 60.0) ?(format = Minutes_seconds) ?(auto_start = false) ()
     =
   let model =
     {

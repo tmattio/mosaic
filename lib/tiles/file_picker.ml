@@ -63,9 +63,9 @@ type msg =
   | Key of key_event
   | Focus
   | Blur
-  | LoadDirectory of string
-  | DirectoryLoaded of file_info list
-  | LoadError of string
+  | Load_directory of string
+  | Directory_loaded of file_info list
+  | Load_error of string
   | Select of string
 
 (* Helper to check if file should be shown *)
@@ -205,7 +205,7 @@ let init ?(start_path = ".") ?(show_hidden = false) ?(directories_only = false)
     }
   in
   (* Load initial directory asynchronously *)
-  (model, Cmd.msg (LoadDirectory start_path))
+  (model, Cmd.msg (Load_directory start_path))
 
 (* Update *)
 let update msg model =
@@ -253,7 +253,7 @@ let update msg model =
               match file.file_type with
               | `Directory ->
                   (* Navigate into directory *)
-                  (model, Cmd.msg (LoadDirectory file.path))
+                  (model, Cmd.msg (Load_directory file.path))
               | `File | `Symlink ->
                   (* Select file *)
                   (model, Cmd.msg (Select file.path)))
@@ -262,7 +262,7 @@ let update msg model =
           (* Go to parent directory *)
           let parent = parent_directory model.current_directory in
           if parent <> model.current_directory then
-            (model, Cmd.msg (LoadDirectory parent))
+            (model, Cmd.msg (Load_directory parent))
           else (model, Cmd.none)
       | Char c when Uchar.to_char c = 'h' ->
           (* Toggle hidden files *)
@@ -270,30 +270,30 @@ let update msg model =
       | _ -> (model, Cmd.none))
   | Focus -> ({ model with is_focused = true }, Cmd.none)
   | Blur -> ({ model with is_focused = false }, Cmd.none)
-  | LoadDirectory path ->
+  | Load_directory path ->
       (* Start async loading *)
       ( { model with current_directory = path; files = []; error = None },
         Cmd.perform (fun () ->
             try
               let files = load_directory_files path in
-              Some (DirectoryLoaded files)
+              Some (Directory_loaded files)
             with
             | Unix.Unix_error (Unix.ENOENT, _, _) ->
-                Some (LoadError (Printf.sprintf "Directory not found: %s" path))
+                Some (Load_error (Printf.sprintf "Directory not found: %s" path))
             | Unix.Unix_error (Unix.EACCES, _, _) ->
-                Some (LoadError (Printf.sprintf "Permission denied: %s" path))
+                Some (Load_error (Printf.sprintf "Permission denied: %s" path))
             | Unix.Unix_error (err, _, _) ->
                 Some
-                  (LoadError
+                  (Load_error
                      (Printf.sprintf "Error accessing %s: %s" path
                         (Unix.error_message err)))
             | exn ->
                 Some
-                  (LoadError
+                  (Load_error
                      (Printf.sprintf "Failed to load directory %s: %s" path
                         (Printexc.to_string exn)))) )
-  | DirectoryLoaded files -> ({ model with files; error = None }, Cmd.none)
-  | LoadError error -> ({ model with error = Some error }, Cmd.none)
+  | Directory_loaded files -> ({ model with files; error = None }, Cmd.none)
+  | Load_error error -> ({ model with error = Some error }, Cmd.none)
   | Select path -> ({ model with selected_path = Some path }, Cmd.none)
 
 (* View *)
@@ -398,7 +398,7 @@ let subscriptions model =
 let component = Mosaic.app ~init ~update ~view ~subscriptions ()
 
 (* Actions *)
-let load_directory path model = (model, Cmd.msg (LoadDirectory path))
+let load_directory path model = (model, Cmd.msg (Load_directory path))
 let select_file path model = (model, Cmd.msg (Select path))
 
 (* Accessors *)

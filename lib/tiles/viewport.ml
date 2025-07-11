@@ -18,18 +18,18 @@ type model = {
 }
 
 type msg =
-  | ScrollUp of int
-  | ScrollDown of int
-  | ScrollLeft of int
-  | ScrollRight of int
-  | PageUp
-  | PageDown
-  | HalfPageUp
-  | HalfPageDown
+  | Scroll_up of int
+  | Scroll_down of int
+  | Scroll_left of int
+  | Scroll_right of int
+  | Page_up
+  | Page_down
+  | Half_page_up
+  | Half_page_down
   | Home
   | End
-  | ScrollToLeft
-  | ScrollToRight
+  | Scroll_to_left
+  | Scroll_to_right
 
 (* Helper functions *)
 
@@ -224,25 +224,25 @@ let set_horizontal_scroll enabled model =
   let model = { model with horizontal_scroll = enabled } in
   if not enabled then { model with x_offset = 0 } else model
 
-let scroll_to_left model = (model, Cmd.msg ScrollToLeft)
-let scroll_to_right model = (model, Cmd.msg ScrollToRight)
+let scroll_to_left model = (model, Cmd.msg Scroll_to_left)
+let scroll_to_right model = (model, Cmd.msg Scroll_to_right)
 
 (* Update *)
 
 let update msg model =
   match msg with
-  | ScrollUp n -> (scroll_up n model, Cmd.none)
-  | ScrollDown n -> (scroll_down n model, Cmd.none)
-  | ScrollLeft n -> (scroll_left n model, Cmd.none)
-  | ScrollRight n -> (scroll_right n model, Cmd.none)
-  | PageUp -> (page_up model, Cmd.none)
-  | PageDown -> (page_down model, Cmd.none)
-  | HalfPageUp -> (half_page_up model, Cmd.none)
-  | HalfPageDown -> (half_page_down model, Cmd.none)
+  | Scroll_up n -> (scroll_up n model, Cmd.none)
+  | Scroll_down n -> (scroll_down n model, Cmd.none)
+  | Scroll_left n -> (scroll_left n model, Cmd.none)
+  | Scroll_right n -> (scroll_right n model, Cmd.none)
+  | Page_up -> (page_up model, Cmd.none)
+  | Page_down -> (page_down model, Cmd.none)
+  | Half_page_up -> (half_page_up model, Cmd.none)
+  | Half_page_down -> (half_page_down model, Cmd.none)
   | Home -> (go_to_top model, Cmd.none)
   | End -> (go_to_bottom model, Cmd.none)
-  | ScrollToLeft -> (go_to_left model, Cmd.none)
-  | ScrollToRight -> (go_to_right model, Cmd.none)
+  | Scroll_to_left -> (go_to_left model, Cmd.none)
+  | Scroll_to_right -> (go_to_right model, Cmd.none)
 
 (* View *)
 
@@ -344,23 +344,23 @@ let view model =
 let subscriptions model =
   let base_subs =
     [
-      Sub.on_up (ScrollUp 1);
-      Sub.on_down (ScrollDown 1);
-      Sub.on_page_up PageUp;
-      Sub.on_page_down PageDown;
+      Sub.on_up (Scroll_up 1);
+      Sub.on_down (Scroll_down 1);
+      Sub.on_page_up Page_up;
+      Sub.on_page_down Page_down;
       Sub.on_home Home;
       Sub.on_end End;
-      Sub.on_char ~ctrl:true 'u' HalfPageUp;
-      Sub.on_char ~ctrl:true 'd' HalfPageDown;
+      Sub.on_char ~ctrl:true 'u' Half_page_up;
+      Sub.on_char ~ctrl:true 'd' Half_page_down;
     ]
   in
   let horizontal_subs =
     if model.horizontal_scroll then
       [
-        Sub.on_left (ScrollLeft 1);
-        Sub.on_right (ScrollRight 1);
-        Sub.on_char 'h' (ScrollLeft 1);
-        Sub.on_char 'l' (ScrollRight 1);
+        Sub.on_left (Scroll_left 1);
+        Sub.on_right (Scroll_right 1);
+        Sub.on_char 'h' (Scroll_left 1);
+        Sub.on_char 'l' (Scroll_right 1);
       ]
     else []
   in

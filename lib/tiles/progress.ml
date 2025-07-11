@@ -26,7 +26,7 @@ type model = {
   theme : theme;
 }
 
-type msg = SetPercent of float
+type msg = Set_percent of float
 
 let clamp_percent p = max 0.0 (min 1.0 p)
 
@@ -51,7 +51,7 @@ let width model = model.width
 
 (* Actions *)
 
-let set_percent percent model = (model, Cmd.msg (SetPercent percent))
+let set_percent percent model = (model, Cmd.msg (Set_percent percent))
 let increment amount model = set_percent (model.percent +. amount) model
 let decrement amount model = set_percent (model.percent -. amount) model
 let complete model = set_percent 1.0 model
@@ -65,7 +65,7 @@ let with_theme theme model = { model with theme }
 
 let update msg model =
   match msg with
-  | SetPercent p -> ({ model with percent = clamp_percent p }, Cmd.none)
+  | Set_percent p -> ({ model with percent = clamp_percent p }, Cmd.none)
 
 (* View helpers *)
 

@@ -16,9 +16,9 @@ type msg
 
 (** Timer display format *)
 type format =
-  | HoursMinutesSeconds  (** Display as HH:MM:SS *)
-  | MinutesSeconds  (** Display as MM:SS *)
-  | TotalSeconds  (** Display as total seconds *)
+  | Hours_minutes_seconds  (** Display as HH:MM:SS *)
+  | Minutes_seconds  (** Display as MM:SS *)
+  | Total_seconds  (** Display as total seconds *)
   | Custom of (float -> string)  (** Custom formatting function *)
 
 val component : (model, msg) Mosaic.app

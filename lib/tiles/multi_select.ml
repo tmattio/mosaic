@@ -47,9 +47,9 @@ type msg =
   | Focus
   | Blur
   | Toggle of int
-  | SelectAll
-  | ClearAll
-  | UpdateFilter of string
+  | Select_all
+  | Clear_all
+  | Update_filter of string
 
 (* Helper to get filtered options *)
 let get_filtered_options model =
@@ -156,9 +156,9 @@ let rec update msg model =
         when Uchar.to_char c = ' ' && (not modifier.ctrl) && not modifier.alt ->
           update (Toggle model.highlighted_index) model
       | Char c when Uchar.to_char c = 'a' && modifier.ctrl ->
-          update SelectAll model
+          update Select_all model
       | Char c when Uchar.to_char c = 'd' && modifier.ctrl ->
-          update ClearAll model
+          update Clear_all model
       | Char c
         when model.filterable
              && Uchar.to_int c >= 32
@@ -201,7 +201,7 @@ let rec update msg model =
 
           ({ model with selected_values }, Cmd.none)
       | None -> (model, Cmd.none))
-  | SelectAll ->
+  | Select_all ->
       let filtered = get_filtered_options model in
       let all_values = List.map fst filtered in
       let selected_values =
@@ -215,8 +215,8 @@ let rec update msg model =
           take model.limit all_values
       in
       ({ model with selected_values }, Cmd.none)
-  | ClearAll -> ({ model with selected_values = [] }, Cmd.none)
-  | UpdateFilter text ->
+  | Clear_all -> ({ model with selected_values = [] }, Cmd.none)
+  | Update_filter text ->
       let model =
         {
           model with
@@ -401,7 +401,7 @@ let set_filter text model =
     |> clamp_highlight
   else model
 
-let update_filter text model = (model, Cmd.msg (UpdateFilter text))
+let update_filter text model = (model, Cmd.msg (Update_filter text))
 
 (* Theming *)
 let with_theme theme model = { model with theme }

@@ -49,7 +49,7 @@ type msg =
   | Close
   | Toggle
   | Select of int
-  | UpdateFilter of string
+  | Update_filter of string
 
 (* Helper to get filtered options *)
 let get_filtered_options model =
@@ -225,7 +225,7 @@ let update msg model =
             },
             Cmd.none )
       | None -> (model, Cmd.none))
-  | UpdateFilter text ->
+  | Update_filter text ->
       let model =
         {
           model with
@@ -371,7 +371,7 @@ let open_dropdown model = (model, Cmd.msg Open)
 let close_dropdown model = (model, Cmd.msg Close)
 let toggle_dropdown model = (model, Cmd.msg Toggle)
 let select_option idx model = (model, Cmd.msg (Select idx))
-let update_filter text model = (model, Cmd.msg (UpdateFilter text))
+let update_filter text model = (model, Cmd.msg (Update_filter text))
 
 let select value model =
   match List.find_opt (fun (v, _) -> v = value) model.options with

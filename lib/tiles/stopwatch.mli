@@ -15,9 +15,9 @@ type msg
 
 (** Stopwatch display format *)
 type format =
-  | HoursMinutesSeconds  (** Display as HH:MM:SS *)
-  | MinutesSeconds  (** Display as MM:SS *)
-  | TotalSeconds  (** Display as total seconds *)
+  | Hours_minutes_seconds  (** Display as HH:MM:SS *)
+  | Minutes_seconds  (** Display as MM:SS *)
+  | Total_seconds  (** Display as total seconds *)
   | Milliseconds  (** Display with millisecond precision *)
   | Custom of (float -> string)  (** Custom formatting function *)
 
@@ -29,7 +29,7 @@ val component : (model, msg) Mosaic.app
 val init : ?format:format -> ?auto_start:bool -> unit -> model * msg Cmd.t
 (** [init ?format ?auto_start ()] creates a new stopwatch.
 
-    @param format Display format (default: MinutesSeconds)
+    @param format Display format (default: Minutes_seconds)
     @param auto_start Start immediately after init (default: false) *)
 
 (** {2 Accessors} *)

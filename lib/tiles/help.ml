@@ -26,7 +26,7 @@ let default_theme =
   }
 
 type model = { show_full : bool; width : int; theme : theme }
-type msg = ToggleFull
+type msg = Toggle_full
 
 (* Initialization *)
 
@@ -42,7 +42,7 @@ let width model = model.width
 (* Actions *)
 
 let toggle_full model = { model with show_full = not model.show_full }
-let toggle model = (model, Cmd.msg ToggleFull)
+let toggle model = (model, Cmd.msg Toggle_full)
 let show_full show model = { model with show_full = show }
 let set_width width model = { model with width = max 1 width }
 let with_theme theme model = { model with theme }
@@ -173,7 +173,7 @@ let view_full groups model =
 (* Update *)
 
 let update msg model =
-  match msg with ToggleFull -> (toggle_full model, Cmd.none)
+  match msg with Toggle_full -> (toggle_full model, Cmd.none)
 
 (* View *)
 
