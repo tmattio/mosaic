@@ -51,4 +51,4 @@ let subscriptions model =
 
 let () =
   let app = Mosaic.app ~init ~update ~view ~subscriptions () in
-  Mosaic.run app
+  Mosaic.run ~debug:true app
