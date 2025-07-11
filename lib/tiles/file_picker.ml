@@ -60,7 +60,7 @@ type model = {
 
 (* Messages *)
 type msg =
-  | Key of key_event
+  | Key of Input.key_event
   | Focus
   | Blur
   | Load_directory of string
@@ -279,7 +279,8 @@ let update msg model =
               Some (Directory_loaded files)
             with
             | Unix.Unix_error (Unix.ENOENT, _, _) ->
-                Some (Load_error (Printf.sprintf "Directory not found: %s" path))
+                Some
+                  (Load_error (Printf.sprintf "Directory not found: %s" path))
             | Unix.Unix_error (Unix.EACCES, _, _) ->
                 Some (Load_error (Printf.sprintf "Permission denied: %s" path))
             | Unix.Unix_error (err, _, _) ->

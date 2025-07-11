@@ -1,45 +1,73 @@
-(** A multiple-choice selection component
+(** A multiple-choice selection component for selecting multiple items from a
+    list of options.
 
-    This component provides a list of options where the user can select multiple
-    items. Similar to huh's MultiSelect field.
+    This component provides an interactive list where users can select multiple
+    items, with optional filtering, selection limits, and custom theming. It
+    supports keyboard navigation and maintains focus state for accessibility.
 
-    Example:
+    {2 Architecture}
+
+    State tracks multiple selections, highlight position, and filter text.
+    Supports min/max selection limits. Filter uses case-insensitive substring
+    matching.
+
+    {2 Key Invariants}
+
+    - Selection count never exceeds the specified limit (if set)
+    - Filtered options always reflect the current filter text
+    - The cursor position is always within valid bounds
+    - Only visible options are rendered for performance
+    - Toggle operations respect the selection limit
+
+    {2 Example}
+
     {[
-      (* Initialize a multi-select with options *)
+      (* Initialize a multi-select with programming languages *)
       let multi_model, multi_cmd =
         Multi_select.init
-          ~title:"Choose your skills"
           ~options:[
             ("ocaml", "OCaml");
             ("rust", "Rust");
             ("go", "Go");
             ("python", "Python");
             ("js", "JavaScript");
+            ("ts", "TypeScript");
+            ("haskell", "Haskell");
           ]
+          ~default:["ocaml"; "rust"]
           ~limit:3
+          ~filterable:true
           ()
 
       (* In your update function *)
-      | MultiMsg msg ->
+      | Multi_msg msg ->
           let new_multi, cmd = Multi_select.update msg model.multi in
           ({ model with multi = new_multi },
-           Cmd.map (fun m -> MultiMsg m) cmd)
+           Cmd.map (fun m -> Multi_msg m) cmd)
 
       (* In your view *)
       Multi_select.view model.multi
 
       (* Get selected values *)
       let selected = Multi_select.values model.multi in
-      List.iter (Printf.printf "Selected: %s\n") selected
+      Printf.printf "Selected %d languages: %s\n"
+        (Multi_select.selection_count model.multi)
+        (String.concat ", " selected)
+
+      (* Check if at selection limit *)
+      if Multi_select.is_at_limit model.multi then
+        print_endline "Maximum selection reached"
     ]} *)
 
 open Mosaic
 
 type 'a model
-(** The internal state of the multi-select, parameterized by option type *)
+(** The internal state of the multi-select, parameterized by the option value
+    type. Contains selected items, options, filter state, and theme. *)
 
 type msg
-(** Messages the multi-select can handle *)
+(** Messages that the multi-select can handle, including selection changes and
+    filter updates. *)
 
 (** {2 Initialization} *)
 
@@ -63,66 +91,77 @@ val init :
 (** {2 Accessors} *)
 
 val values : 'a model -> 'a list
-(** Get the currently selected values *)
+(** [values model] returns the list of currently selected values. *)
 
 val selected_indices : 'a model -> int list
-(** Get the indices of selected items *)
+(** [selected_indices model] returns the indices of selected items in the
+    options list. *)
 
 val options : 'a model -> ('a * string) list
-(** Get all available options *)
+(** [options model] returns all available options as [(value, label)] pairs. *)
 
 val filtered_options : 'a model -> ('a * string) list
-(** Get currently visible options (after filtering) *)
+(** [filtered_options model] returns the currently visible options after
+    applying any filter text. *)
 
 val is_selected : 'a -> 'a model -> bool
-(** Check if a specific value is selected *)
+(** [is_selected value model] returns whether the specific value is currently
+    selected. *)
 
 val selection_count : 'a model -> int
-(** Get the number of selected items *)
+(** [selection_count model] returns the current number of selected items. *)
 
 val is_at_limit : 'a model -> bool
-(** Check if selection limit has been reached *)
+(** [is_at_limit model] returns whether the selection limit has been reached.
+    Always returns false if no limit is set. *)
 
 val is_focused : 'a model -> bool
-(** Check if the multi-select is currently focused *)
+(** [is_focused model] returns whether the multi-select has keyboard focus. *)
 
 val filter_text : 'a model -> string
-(** Get the current filter text (if filterable) *)
+(** [filter_text model] returns the current filter text. Returns empty string if
+    filtering is not enabled. *)
 
 (** {2 Actions} *)
 
 val focus : 'a model -> 'a model * msg Cmd.t
-(** Focus the multi-select *)
+(** [focus model] sets keyboard focus on the multi-select component. *)
 
 val blur : 'a model -> 'a model * msg Cmd.t
-(** Remove focus from the multi-select *)
+(** [blur model] removes keyboard focus from the multi-select component. *)
 
 val toggle : 'a -> 'a model -> 'a model
-(** Toggle selection of a specific value *)
+(** [toggle value model] toggles the selection state of a specific value,
+    respecting any selection limit. *)
 
 val toggle_index : int -> 'a model -> 'a model
-(** Toggle selection by index *)
+(** [toggle_index idx model] toggles the selection state of the option at the
+    given index. *)
 
 val select : 'a -> 'a model -> 'a model
-(** Select a specific value (if not at limit) *)
+(** [select value model] selects a specific value if the selection limit has not
+    been reached. *)
 
 val deselect : 'a -> 'a model -> 'a model
-(** Deselect a specific value *)
+(** [deselect value model] removes a specific value from the selection. *)
 
 val select_all : 'a model -> 'a model
-(** Select all options (respecting limit) *)
+(** [select_all model] selects all options up to the selection limit. *)
 
 val clear : 'a model -> 'a model
-(** Clear all selections *)
+(** [clear model] clears all current selections. *)
 
 val set_options : ('a * string) list -> 'a model -> 'a model
-(** Update the list of options *)
+(** [set_options options model] replaces the current options list. Selections
+    for values not in the new options are removed. *)
 
 val set_filter : string -> 'a model -> 'a model
-(** Update the filter text (for filterable multi-selects) *)
+(** [set_filter text model] updates the filter text for filterable
+    multi-selects. *)
 
 val update_filter : string -> 'a model -> 'a model * msg Cmd.t
-(** Update the filter text through a message *)
+(** [update_filter text model] updates the filter text, returning a message for
+    component updates. *)
 
 (** {2 Theming} *)
 
@@ -135,17 +174,31 @@ type theme = {
   limit_style : Style.t;
   filter_style : Style.t;
 }
+(** Theme configuration for customizing the multi-select appearance.
+
+    - [focused_style] - Style when the component has focus
+    - [blurred_style] - Style when the component lacks focus
+    - [selected_style] - Style for selected items
+    - [unselected_style] - Style for unselected items
+    - [highlighted_style] - Style for the currently highlighted item
+    - [limit_style] - Style for the selection limit indicator
+    - [filter_style] - Style for the filter input *)
 
 val default_theme : theme
+(** The default theme with standard styling for multi-select states. *)
+
 val with_theme : theme -> 'a model -> 'a model
+(** [with_theme theme model] applies a custom theme to the multi-select. *)
 
 (** {2 Component Interface} *)
 
 val update : msg -> 'a model -> 'a model * msg Cmd.t
-(** Update function for the component *)
+(** [update msg model] handles messages and updates the multi-select state. *)
 
 val view : 'a model -> Ui.element
-(** View function for the component *)
+(** [view model] renders the multi-select component with the current selection
+    state. *)
 
 val subscriptions : 'a model -> msg Sub.t
-(** Subscriptions for the component *)
+(** [subscriptions model] returns keyboard event subscriptions when the
+    component has focus. *)

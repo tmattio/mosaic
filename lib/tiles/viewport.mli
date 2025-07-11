@@ -1,27 +1,71 @@
-(** A generic viewport component for displaying scrollable content.
+(** A generic viewport component for displaying and scrolling through content
+    that exceeds the visible area.
 
-    This is a foundational component that provides scrolling functionality for
-    large content that doesn't fit in the visible area. It can be used by other
-    components like Text, Table, and Select for consistent scrolling behavior.
-*)
+    This foundational component provides scrolling functionality for large
+    content, supporting both vertical and horizontal scrolling. It serves as a
+    base for other scrollable components like Text, Table, and Select, ensuring
+    consistent scrolling behavior across the framework.
+
+    {2 Architecture}
+
+    State tracks content, scroll position, and viewport dimensions. Renders only
+    visible portion. Supports both wrapped text and UI elements.
+
+    {2 Key Invariants}
+
+    - Scroll position is always within valid bounds (0 to content size -
+      viewport size)
+    - Text content is automatically split into lines for rendering
+    - Only visible content is rendered for performance
+    - Scroll percentage is normalized between 0.0 and 1.0
+    - Page-based scrolling respects viewport height
+
+    {2 Example}
+
+    {[
+      (* Initialize a viewport with text content *)
+      let viewport_model, viewport_cmd =
+        Viewport.init ~content:(Text "Long text content here...") ~width:80
+          ~height:10 ~wrap_text:true ()
+
+      (* Scroll operations *)
+      let model = Viewport.scroll_down 5 model
+      let model = Viewport.page_down model
+      let model = Viewport.go_to_bottom model
+
+      (* Check scroll position *)
+      let at_bottom = Viewport.at_bottom model
+      let x_offset, y_offset = Viewport.scroll_position model
+      let h_percent, v_percent = Viewport.scroll_percentage model
+
+      (* Update content *)
+      let model =
+        Viewport.set_content
+          (Elements [ Ui.text "Line 1"; Ui.text "Line 2" ])
+          model
+    ]} *)
 
 open Mosaic
 
 (** {2 Types} *)
 
 type model
-(** The internal state of the viewport *)
+(** The internal state of the viewport containing content, scroll position,
+    dimensions, and configuration. *)
 
 type msg
-(** Messages the viewport can handle *)
+(** Messages that the viewport can handle for scrolling and content updates. *)
 
 type content =
   | Text of string
   | Elements of Ui.element list
-      (** Content can be either plain text or a list of UI elements *)
+      (** Content types supported by the viewport.
+
+          - [Text s] - Plain text content that will be split into lines
+          - [Elements els] - List of UI elements to display *)
 
 val component : (model, msg) Mosaic.app
-(** The component definition *)
+(** The viewport component definition following The Elm Architecture. *)
 
 (** {2 Initialization} *)
 
@@ -45,103 +89,112 @@ val init :
 (** {2 Accessors} *)
 
 val content : model -> content
-(** Get the current content *)
+(** [content model] returns the current viewport content. *)
 
 val scroll_position : model -> int * int
-(** Get the current scroll position (x_offset, y_offset) *)
+(** [scroll_position model] returns the current scroll position as
+    [(x_offset, y_offset)]. *)
 
 val dimensions : model -> int * int
-(** Get the viewport dimensions (width, height) *)
+(** [dimensions model] returns the viewport dimensions as [(width, height)]. *)
 
 val at_top : model -> bool
-(** Check if viewport is at the top *)
+(** [at_top model] returns whether the viewport is scrolled to the top. *)
 
 val at_bottom : model -> bool
-(** Check if viewport is at the bottom *)
+(** [at_bottom model] returns whether the viewport is scrolled to the bottom. *)
 
 val at_left : model -> bool
-(** Check if viewport is at the leftmost position *)
+(** [at_left model] returns whether the viewport is at the leftmost position. *)
 
 val at_right : model -> bool
-(** Check if viewport is at the rightmost position *)
+(** [at_right model] returns whether the viewport is at the rightmost position.
+*)
 
 val visible_lines : model -> string list
-(** Get the currently visible lines (for text content) *)
+(** [visible_lines model] returns the currently visible lines for text content.
+*)
 
 val total_lines : model -> int
-(** Get the total number of lines in the content *)
+(** [total_lines model] returns the total number of lines in the content. *)
 
 val scroll_percentage : model -> float * float
-(** Get scroll percentage (horizontal, vertical) from 0.0 to 1.0 *)
+(** [scroll_percentage model] returns the scroll percentage as
+    [(horizontal, vertical)] where each value is between 0.0 and 1.0. *)
 
 (** {2 Actions} *)
 
 val set_content : content -> model -> model
-(** Update the viewport content *)
+(** [set_content content model] updates the viewport content. *)
 
 val set_dimensions : int -> int -> model -> model
-(** Set viewport width and height *)
+(** [set_dimensions width height model] sets the viewport dimensions. *)
 
 val scroll_to : int -> int -> model -> model
-(** Scroll to specific position (x, y) *)
+(** [scroll_to x y model] scrolls to the specific position [(x, y)]. *)
 
 val scroll_up : int -> model -> model
-(** Scroll up by the given number of lines *)
+(** [scroll_up n model] scrolls up by [n] lines. *)
 
 val scroll_down : int -> model -> model
-(** Scroll down by the given number of lines *)
+(** [scroll_down n model] scrolls down by [n] lines. *)
 
 val scroll_left : int -> model -> model
-(** Scroll left by the given number of columns *)
+(** [scroll_left n model] scrolls left by [n] columns. *)
 
 val scroll_right : int -> model -> model
-(** Scroll right by the given number of columns *)
+(** [scroll_right n model] scrolls right by [n] columns. *)
 
 val page_up : model -> model
-(** Scroll up by one page (viewport height) *)
+(** [page_up model] scrolls up by one full viewport height. *)
 
 val page_down : model -> model
-(** Scroll down by one page (viewport height) *)
+(** [page_down model] scrolls down by one full viewport height. *)
 
 val half_page_up : model -> model
-(** Scroll up by half a page *)
+(** [half_page_up model] scrolls up by half the viewport height. *)
 
 val half_page_down : model -> model
-(** Scroll down by half a page *)
+(** [half_page_down model] scrolls down by half the viewport height. *)
 
 val go_to_top : model -> model
-(** Scroll to the top of the content *)
+(** [go_to_top model] scrolls to the top of the content. *)
 
 val go_to_bottom : model -> model
-(** Scroll to the bottom of the content *)
+(** [go_to_bottom model] scrolls to the bottom of the content. *)
 
 val go_to_left : model -> model
-(** Scroll to the leftmost position *)
+(** [go_to_left model] scrolls to the leftmost position. *)
 
 val go_to_right : model -> model
-(** Scroll to the rightmost position *)
+(** [go_to_right model] scrolls to the rightmost position. *)
 
 val scroll_to_left : model -> model * msg Cmd.t
-(** Scroll to the leftmost position with message *)
+(** [scroll_to_left model] scrolls to the leftmost position, returning a message
+    for component updates. *)
 
 val scroll_to_right : model -> model * msg Cmd.t
-(** Scroll to the rightmost position with message *)
+(** [scroll_to_right model] scrolls to the rightmost position, returning a
+    message for component updates. *)
 
 (** {2 Configuration} *)
 
 val set_wrap_text : bool -> model -> model
-(** Enable or disable text wrapping *)
+(** [set_wrap_text enabled model] enables or disables text wrapping for text
+    content. *)
 
 val set_horizontal_scroll : bool -> model -> model
-(** Enable or disable horizontal scrolling *)
+(** [set_horizontal_scroll enabled model] enables or disables horizontal
+    scrolling. *)
 
 (** {2 Component Interface} *)
 
 val update : msg -> model -> model * msg Cmd.t
-(** Handle messages and update the viewport state *)
+(** [update msg model] handles messages and updates the viewport state. *)
 
 val view : model -> Ui.element
-(** Render the viewport *)
+(** [view model] renders the viewport with visible content. *)
 
 val subscriptions : model -> msg Sub.t
-(** Subscribe to keyboard/mouse events for scrolling *)
+(** [subscriptions model] returns subscriptions for keyboard and mouse events
+    for scrolling. *)

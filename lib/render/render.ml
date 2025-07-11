@@ -1,38 +1,132 @@
-type style = {
-  fg : Ansi.color option;
-  bg : Ansi.color option;
-  bold : bool;
-  dim : bool;
-  italic : bool;
-  underline : bool;
-  double_underline : bool;
-  blink : bool;
-  reverse : bool;
-  strikethrough : bool;
-  overline : bool;
-  uri : string option;
-}
-
-let default_style =
-  {
-    fg = None;
-    bg = None;
-    bold = false;
-    dim = false;
-    italic = false;
-    underline = false;
-    double_underline = false;
-    blink = false;
-    reverse = false;
-    strikethrough = false;
-    overline = false;
-    uri = None;
+module Style = struct
+  type t = {
+    fg : Ansi.color option;
+    bg : Ansi.color option;
+    bold : bool;
+    dim : bool;
+    italic : bool;
+    underline : bool;
+    double_underline : bool;
+    blink : bool;
+    reverse : bool;
+    strikethrough : bool;
+    overline : bool;
+    uri : string option;
   }
 
-type cell = { chars : Uchar.t list; style : style; width : int }
+  let default =
+    {
+      fg = None;
+      bg = None;
+      bold = false;
+      dim = false;
+      italic = false;
+      underline = false;
+      double_underline = false;
+      blink = false;
+      reverse = false;
+      strikethrough = false;
+      overline = false;
+      uri = None;
+    }
+
+  (* Attribute type for building styles from lists *)
+  type attr =
+    | Fg of Ansi.color
+    | Bg of Ansi.color
+    | Bold
+    | Dim
+    | Italic
+    | Underline
+    | Blink
+    | Reverse
+    | Strikethrough
+    | Link of string
+
+  let empty = default
+  let fg color = { empty with fg = Some color }
+  let bg color = { empty with bg = Some color }
+  let bold = { empty with bold = true }
+  let dim = { empty with dim = true }
+  let italic = { empty with italic = true }
+  let underline = { empty with underline = true }
+  let blink = { empty with blink = true }
+  let reverse = { empty with reverse = true }
+  let strikethrough = { empty with strikethrough = true }
+  let link uri = { empty with uri = Some uri }
+
+  (* Create a style from a list of attributes *)
+  let of_list attrs =
+    List.fold_left
+      (fun style attr ->
+        match attr with
+        | Fg color -> { style with fg = Some color }
+        | Bg color -> { style with bg = Some color }
+        | Bold -> { style with bold = true }
+        | Dim -> { style with dim = true }
+        | Italic -> { style with italic = true }
+        | Underline -> { style with underline = true }
+        | Blink -> { style with blink = true }
+        | Reverse -> { style with reverse = true }
+        | Strikethrough -> { style with strikethrough = true }
+        | Link uri -> { style with uri = Some uri })
+      empty attrs
+
+  let ( ++ ) (a : t) (b : t) : t =
+    {
+      fg = (match b.fg with Some _ -> b.fg | None -> a.fg);
+      bg = (match b.bg with Some _ -> b.bg | None -> a.bg);
+      bold = a.bold || b.bold;
+      dim = a.dim || b.dim;
+      italic = a.italic || b.italic;
+      underline = a.underline || b.underline;
+      double_underline = a.double_underline || b.double_underline;
+      blink = a.blink || b.blink;
+      reverse = a.reverse || b.reverse;
+      strikethrough = a.strikethrough || b.strikethrough;
+      overline = a.overline || b.overline;
+      uri = (match b.uri with Some _ -> b.uri | None -> a.uri);
+    }
+
+  let ansi256 n = Ansi.Index n
+  let rgb r g b = Ansi.RGB (r, g, b)
+
+  (* Color type export *)
+  type color = Ansi.color =
+    | Black
+    | Red
+    | Green
+    | Yellow
+    | Blue
+    | Magenta
+    | Cyan
+    | White
+    | Default
+    | Bright_black
+    | Bright_red
+    | Bright_green
+    | Bright_yellow
+    | Bright_blue
+    | Bright_magenta
+    | Bright_cyan
+    | Bright_white
+    | Index of int (* 256-color palette (0-255) *)
+    | RGB of int * int * int (* 24-bit color (0-255 each) *)
+
+  (* Color helpers *)
+  let gray n = Index (232 + min 23 (max 0 n))
+
+  let rgb_hex hex =
+    let r = (hex lsr 16) land 0xFF in
+    let g = (hex lsr 8) land 0xFF in
+    let b = hex land 0xFF in
+    RGB (r, g, b)
+end
+
+type cell = { chars : Uchar.t list; style : Style.t; width : int }
 
 let empty_cell =
-  { chars = [ Uchar.of_int 0x20 ]; style = default_style; width = 1 }
+  { chars = [ Uchar.of_int 0x20 ]; style = Style.default; width = 1 }
 
 type buffer = { width : int; height : int; cells : cell array }
 
@@ -118,6 +212,7 @@ let diff old_buffer new_buffer =
   List.rev !patches
 
 let style_to_attrs style =
+  let open Style in
   let attrs = ref [] in
   if style.overline then attrs := `Overline :: !attrs;
   if style.strikethrough then attrs := `Strikethrough :: !attrs;
@@ -160,7 +255,7 @@ let render_patches ?cursor_pos patches =
   in
 
   let buf = Buffer.create 1024 in
-  let last_style = ref default_style in
+  let last_style = ref Style.default in
   let last_row = ref (-1) in
   let last_col = ref (-1) in
 
@@ -213,7 +308,7 @@ let render_full ?cursor_pos buffer =
   Buffer.add_string buf Ansi.reset;
 
   (* Ensure we start with a clean slate *)
-  let last_style = ref default_style in
+  let last_style = ref Style.default in
 
   for y = 0 to buffer.height - 1 do
     if y > 0 then Buffer.add_char buf '\n';

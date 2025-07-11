@@ -12,46 +12,9 @@ type ('model, 'msg) app = {
   subscriptions : 'model -> 'msg Sub.t;
 }
 
-(* Input event types - re-export from Input module *)
-type key = Input.key =
-  | Char of Uchar.t
-  | Enter
-  | Tab
-  | Backspace
-  | Delete
-  | Escape
-  | Up
-  | Down
-  | Left
-  | Right
-  | Home
-  | End
-  | Page_up
-  | Page_down
-  | Insert
-  | F of int (* F1-F20 *)
-
-type modifier = Input.modifier = { ctrl : bool; alt : bool; shift : bool }
-type key_event = Input.key_event = { key : key; modifier : modifier }
-
-type mouse_button = Input.mouse_button =
-  | Left
-  | Middle
-  | Right
-  | Wheel_up
-  | Wheel_down
-  | Button of int (* Extended buttons 4-11 *)
-
-type mouse_event = Input.mouse_event =
-  | Press of int * int * mouse_button * modifier
-  | Release of int * int * mouse_button * modifier
-  | Motion of int * int * Input.mouse_button_state * modifier
-
 (* Public modules *)
+module Style = Render.Style
 module Ui = Ui
-module Style = Ui.Style
-(* Style is exported as top-level, but implemented in Ui *)
-
 module Cmd = Cmd
 module Sub = Sub
 module Terminal = Terminal
@@ -413,10 +376,3 @@ let run_eio ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
     ~finally:(fun () -> Option.iter close_out debug_log)
     (fun () ->
       Program.run ~sw ~env ?terminal ~alt_screen ~mouse ~fps ?debug_log app)
-
-(* Helper functions *)
-let key ?(ctrl = false) ?(alt = false) ?(shift = false) k =
-  { key = k; modifier = { ctrl; alt; shift } }
-
-let char ?(ctrl = false) ?(alt = false) ?(shift = false) c =
-  { key = Char (Uchar.of_char c); modifier = { ctrl; alt; shift } }

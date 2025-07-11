@@ -124,7 +124,7 @@ let run_eio f = Eio_main.run (fun env -> Eio.Switch.run (fun sw -> f env sw))
     controlled way to test an application's `init`, `update`, `view`, and
     `subscriptions` logic without the full async runtime. It's the recommended
     way to write integration tests for applications. *)
-module TestHarness = struct
+module Test_harness = struct
   type ('model, 'msg) t = {
     app : ('model, 'msg) Mosaic.app;
     mutable model : 'model;

@@ -3,7 +3,9 @@ open Mosaic
 type model = { spinner : Mosaic_tiles.Spinner.model; quitting : bool }
 
 type msg =
-  [ `SpinnerMsg of Mosaic_tiles.Spinner.msg | `Quit | `KeyEvent of key_event ]
+  [ `Spinner_msg of Mosaic_tiles.Spinner.msg
+  | `Key_event of Input.key_event
+  | `Quit ]
 
 let init () : model * msg Cmd.t =
   let spinner_model, spinner_cmd =
@@ -12,18 +14,18 @@ let init () : model * msg Cmd.t =
       ()
   in
   ( { spinner = spinner_model; quitting = false },
-    Cmd.map (fun m -> `SpinnerMsg m) spinner_cmd )
+    Cmd.map (fun m -> `Spinner_msg m) spinner_cmd )
 
 let update (msg : msg) (model : model) : model * msg Cmd.t =
   match msg with
-  | `SpinnerMsg spinner_msg ->
+  | `Spinner_msg spinner_msg ->
       let new_spinner, cmd =
         Mosaic_tiles.Spinner.update spinner_msg model.spinner
       in
       ( { model with spinner = new_spinner },
-        Cmd.map (fun m -> `SpinnerMsg m) cmd )
+        Cmd.map (fun m -> `Spinner_msg m) cmd )
   | `Quit -> ({ model with quitting = true }, Cmd.quit)
-  | `KeyEvent { key; modifier } -> (
+  | `Key_event { key; modifier } -> (
       match (key, modifier) with
       | Char c, { ctrl = true; _ } when Uchar.to_int c = Char.code 'C' ->
           ({ model with quitting = true }, Cmd.quit)
@@ -54,9 +56,9 @@ let subscriptions model =
   Sub.batch
     [
       Sub.map
-        (fun m -> `SpinnerMsg m)
+        (fun m -> `Spinner_msg m)
         (Mosaic_tiles.Spinner.subscriptions model.spinner);
-      Sub.keyboard (fun key_event -> `KeyEvent key_event);
+      Sub.keyboard (fun key_event -> `Key_event key_event);
     ]
 
 let () =

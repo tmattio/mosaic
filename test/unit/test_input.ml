@@ -1,6 +1,5 @@
 (** Tests for the Input module *)
 
-open Mosaic
 open Test_utils
 
 let test_parse_regular_chars () =

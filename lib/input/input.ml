@@ -22,6 +22,12 @@ let no_modifier = { ctrl = false; alt = false; shift = false }
 
 type key_event = { key : key; modifier : modifier }
 
+let key ?(ctrl = false) ?(alt = false) ?(shift = false) k =
+  { key = k; modifier = { ctrl; alt; shift } }
+
+let char ?(ctrl = false) ?(alt = false) ?(shift = false) c =
+  { key = Char (Uchar.of_char c); modifier = { ctrl; alt; shift } }
+
 type mouse_button =
   | Left
   | Middle

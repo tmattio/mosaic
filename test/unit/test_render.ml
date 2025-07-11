@@ -5,7 +5,7 @@ open Render
 let test_style ?(fg = None) ?(bg = None) ?(bold = false) ?(italic = false)
     ?(underline = false) ?(uri = None) () =
   {
-    fg;
+    Style.fg;
     bg;
     bold;
     dim = false;

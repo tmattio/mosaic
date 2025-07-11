@@ -1,6 +1,20 @@
-(** Commands represent asynchronous operations that produce messages *)
+(** Commands represent side effects and asynchronous operations.
+
+    This module provides declarative effect descriptions that are executed by
+    the Mosaic runtime. Commands can produce messages, perform I/O, manage
+    timers, or trigger application lifecycle events.
+
+    Commands are pure values describing effects, not performing them. The
+    runtime interprets commands after each update cycle. Batch commands execute
+    in parallel while sequence commands execute serially. Commands can be
+    composed and transformed with [map]. *)
 
 type 'msg exec_cmd = { run : unit -> unit; on_complete : 'msg }
+(** [exec_cmd] describes an operation that temporarily releases terminal
+    control.
+
+    The [run] function executes with the terminal in normal mode. The
+    [on_complete] message is produced after execution. *)
 
 type 'msg t =
   | None
@@ -13,61 +27,185 @@ type 'msg t =
   | Quit
   | Log of string
   | Set_window_title of string
+      (** [t] represents a command that may produce messages of type ['msg].
+
+          None performs no operation. Msg immediately produces a message. Batch
+          runs commands in parallel. Perform executes an async function. Exec
+          releases terminal for external programs. Tick creates a timer.
+          Sequence runs commands serially. Quit terminates the application. Log
+          writes debug output. Set_window_title updates the terminal title. *)
 
 val none : 'msg t
-(** A command that does nothing *)
+(** [none] represents the absence of any command.
+
+    Use when update functions need to return a command but have no effects to
+    perform. *)
 
 val msg : 'msg -> 'msg t
-(** Create a command that immediately produces the given message *)
+(** [msg m] creates a command that immediately produces message [m].
+
+    The message is processed in the same update cycle. Useful for triggering
+    immediate state transitions.
+
+    Example: Chains multiple updates.
+    {[
+      match msg with LoadData -> (Loading, Cmd.msg DataLoaded)
+    ]} *)
 
 val batch : 'msg t list -> 'msg t
-(** Batch multiple commands to run in parallel *)
+(** [batch cmds] combines multiple commands for parallel execution.
+
+    All commands in the batch execute concurrently. Empty lists and lists
+    containing only [none] return [none]. Single-element lists return the
+    command directly. Messages from batched commands arrive in non-deterministic
+    order.
+
+    Example: Loads multiple resources simultaneously.
+    {[
+      Cmd.batch
+        [
+          Cmd.perform (fun () -> load_user_data ());
+          Cmd.perform (fun () -> load_settings ());
+          Cmd.tick 2.0 (fun _ -> `Timeout);
+        ]
+    ]} *)
 
 val perform : (unit -> 'msg option) -> 'msg t
-(** Create a command from a function that performs IO and optionally produces a
-    message *)
+(** [perform f] creates a command that executes [f] asynchronously.
+
+    The function [f] runs in a separate fiber. If it returns [Some msg], that
+    message is delivered to the update function. Returning [None] produces no
+    message. Exceptions in [f] are caught and logged.
+
+    Example: Performs async HTTP request.
+    {[
+      Cmd.perform (fun () ->
+          match fetch_data url with
+          | Ok data -> Some (`DataFetched data)
+          | Error _ -> Some `FetchFailed)
+    ]} *)
 
 val exec : (unit -> unit) -> 'msg -> 'msg t
-(** [exec f msg] temporarily releases the terminal, executes function f,
-    restores terminal, and produces msg when complete *)
+(** [exec f msg] temporarily releases terminal control to execute [f].
+
+    The terminal is restored to normal mode before calling [f], allowing
+    external programs to run with full terminal access. After [f] completes, the
+    terminal returns to alternate screen mode and [msg] is produced.
+
+    Example: Opens external editor.
+    {[
+      Cmd.exec
+        (fun () -> Sys.command "vim /tmp/file.txt" |> ignore)
+        `EditorClosed
+    ]} *)
 
 val release_and_run : (unit -> unit) -> 'msg -> 'msg t
-(** [release_and_run f msg] temporarily releases the terminal, executes function
-    f, restores terminal, and produces msg when complete. Useful for running
-    external editors, pagers, etc. This is an alias for [exec]. *)
+(** [release_and_run f msg] temporarily releases terminal for external commands.
+
+    Alias for [exec]. Provides a more descriptive name when launching
+    interactive programs.
+
+    Example: Opens pager to view logs.
+    {[
+      Cmd.release_and_run
+        (fun () -> Sys.command "less /var/log/app.log" |> ignore)
+        `PagerClosed
+    ]} *)
 
 val quit : 'msg t
-(** A command that quits the program *)
+(** [quit] creates a command that terminates the application gracefully.
+
+    The runtime performs cleanup operations including restoring terminal state
+    before exit. *)
 
 val tick : float -> (float -> 'msg) -> 'msg t
-(** [tick duration f] creates a command that waits for [duration] seconds, then
-    calls [f] with the actual elapsed time to produce a message *)
+(** [tick delay f] creates a timer that calls [f] after [delay] seconds.
+
+    The function [f] receives the actual elapsed time, which may differ slightly
+    from [delay] due to runtime scheduling. Multiple tick commands can run
+    concurrently. Negative delays are treated as 0.
+
+    Example: Implements a timeout with actual duration logging.
+    {[
+      Cmd.tick 5.0 (fun elapsed ->
+          `Timeout (Printf.sprintf "Timed out after %.2fs" elapsed))
+    ]} *)
 
 val sequence : 'msg t list -> 'msg t
-(** [sequence cmds] creates a command that runs commands sequentially, waiting
-    for each command to complete before starting the next *)
+(** [sequence cmds] creates a command that executes [cmds] in order.
+
+    Each command must complete before the next begins. Empty lists return
+    [none]. Single-element lists return the command directly. Useful for
+    operations that depend on previous results.
+
+    Example: Saves data then shows confirmation.
+    {[
+      Cmd.sequence [ Cmd.perform save_to_disk; Cmd.msg `ShowSaveConfirmation ]
+    ]} *)
 
 val seq : 'msg t list -> 'msg t
-(** Alias for [sequence] *)
+(** [seq cmds] runs commands in sequence.
+
+    Alias for [sequence]. Provides shorter name for common sequential
+    operations. *)
 
 val after : float -> 'msg -> 'msg t
-(** [after delay msg] sends a message after delay (seconds) *)
+(** [after delay msg] produces [msg] after [delay] seconds.
+
+    Convenience function equivalent to [tick delay (fun _ -> msg)]. Use when
+    elapsed time is not needed.
+
+    Example: Auto-dismisses notification after 3 seconds.
+    {[
+      Cmd.after 3.0 `DismissNotification
+    ]} *)
 
 val log : string -> 'msg t
-(** [log message] creates a command that prints a message outside the main
-    application view. This is useful for debugging without corrupting the UI.
-    The message is written directly to stderr with a newline appended. *)
+(** [log s] writes debug message [s] to stderr.
+
+    Messages are written directly to avoid interfering with the alternate screen
+    buffer. In debug mode, logs also append to mosaic-debug.log with timestamps.
+
+    Example: Logs state transitions for debugging.
+    {[
+      match msg with
+      | Click (x, y) -> (model, Cmd.log (Printf.sprintf "Click at (%d, %d)" x y))
+    ]} *)
 
 val set_window_title : string -> 'msg t
-(** [set_window_title title] creates a command that sets the terminal window
-    title. Note: Not all terminals support this feature. *)
+(** [set_window_title title] updates the terminal window title to [title].
+
+    Uses ANSI escape sequences. Support varies by terminal emulator. Has no
+    effect on terminals without title support.
+
+    Example: Shows current file in title bar.
+    {[
+      Cmd.set_window_title (Printf.sprintf "Editor - %s" filename)
+    ]} *)
 
 val map : ('a -> 'b) -> 'a t -> 'b t
-(** Transform messages produced by a command *)
+(** [map f cmd] transforms all messages produced by [cmd] using function [f].
+
+    Preserves command structure while changing message types. Essential for
+    component composition. Commands that don't produce messages ([quit], [log],
+    [set_window_title]) pass through unchanged.
+
+    Example: Wraps component messages.
+    {[
+      let cmd = Select.init options in
+      Cmd.map (fun msg -> `Select_msg msg) cmd
+    ]} *)
 
 val to_list : 'msg t -> 'msg t list
-(** Internal: flatten a command to a list of atomic commands *)
+(** [to_list cmd] flattens [cmd] into a list of atomic commands.
+
+    Expands [Batch] commands while preserving [Sequence] as atomic units. Used
+    internally by the runtime for command execution. *)
 
 val pp :
   (Format.formatter -> 'msg -> unit) -> Format.formatter -> 'msg t -> unit
-(** Pretty-printing *)
+(** [pp pp_msg fmt cmd] pretty-prints command structure for debugging.
+
+    The [pp_msg] function formats message values. Shows command constructors and
+    parameters. Functions are displayed as "<fun>". Useful for logging command
+    flow during development. *)

@@ -1,38 +1,68 @@
-(** A multiline text area component
+(** Multiline text editor component with scrolling and validation.
 
-    This component provides a multiline text editor with support for scrolling,
-    word wrapping, and syntax highlighting. Similar to huh's Text field.
+    This component provides a text area for multiline input. Features include
+    keyboard navigation, scrolling for long content, word wrapping, cursor
+    positioning, and optional validation.
 
-    Example:
+    {2 Architecture}
+
+    State tracks text lines, cursor position (line/column), and viewport scroll.
+    Word wrapping recalculates on width change. Cursor auto-scrolls into view.
+
+    {2 Key Invariants}
+
+    Cursor position always points to a valid location within the text. Scroll
+    offset ensures the cursor remains visible. Line breaks are normalized to LF.
+    Validation runs on every content change when a validator is provided.
+
+    {2 Example}
+
+    Creates a description editor with validation.
     {[
-      (* Initialize a text area *)
-      let text_model, text_cmd =
-        Text.init
-          ~title:"Enter description"
-          ~placeholder:"Type here..."
-          ~height:10
-          ()
+      (* Initialize with constraints *)
+      let model, cmd = Text.init
+        ~placeholder:"Enter a detailed description..."
+        ~height:10
+        ~validate:(fun s ->
+          if String.length s < 10 then
+            Error "Description must be at least 10 characters"
+          else Ok ())
+        ()
 
-      (* In your update function *)
-      | TextMsg msg ->
-          let new_text, cmd = Text.update msg model.text in
-          ({ model with text = new_text },
-           Cmd.map (fun m -> TextMsg m) cmd)
+      (* Handle messages in update *)
+      | Text_msg msg ->
+          let model', cmd = Text.update msg model.text in
+          { model with text = model' }, Cmd.map (fun m -> Text_msg m) cmd
 
-      (* In your view *)
+      (* Render in view *)
       Text.view model.text
+
+      (* Access the content *)
+      let content = Text.value model.text in
+      Printf.printf "Entered: %s" content
     ]} *)
 
 open Mosaic
 
 type model
-(** The internal state of the text area *)
+(** [model] represents the internal state of a text area component.
+
+    The model tracks text content, cursor position, scroll offset, focus state,
+    and validation results. Models are immutable and updated through the
+    [update] function. *)
 
 type msg
-(** Messages the text area can handle *)
+(** [msg] represents internal messages processed by the text area component.
+
+    Messages include keyboard events, focus changes, content modifications, and
+    cursor movements. Use [update] to process messages and produce new states.
+*)
 
 val component : (model, msg) Mosaic.app
-(** The component definition *)
+(** [component] provides the complete application interface for the text area.
+
+    Bundles the [init], [update], [view], and [subscriptions] functions into a
+    single record for use with the Mosaic framework. *)
 
 (** {2 Initialization} *)
 
@@ -46,57 +76,118 @@ val init :
   unit ->
   model * msg Cmd.t
 (** [init ?placeholder ?initial_value ?height ?width ?word_wrap ?validate ()]
-    creates a new text area.
+    creates a new text area component.
 
-    @param placeholder Text shown when empty
-    @param initial_value Initial text content
-    @param height Number of visible lines (default: 5)
-    @param width Fixed width for the text area (default: 60)
-    @param word_wrap Enable word wrapping (default: true)
-    @param validate Validation function *)
+    The component starts unfocused with cursor at the beginning. If
+    [initial_value] is provided, it becomes the content and cursor moves to the
+    end. Validation runs immediately if a validator is provided. Returns initial
+    model and startup command.
+
+    @param placeholder
+      Text displayed when content is empty and unfocused (default: "")
+    @param initial_value
+      Initial text content, with cursor positioned at end (default: "")
+    @param height
+      Number of visible lines, clamped to positive values (default: 5)
+    @param width Fixed character width for the text area (default: 60)
+    @param word_wrap
+      Whether to wrap long lines at word boundaries (default: true)
+    @param validate
+      Function to validate content, returning [Ok ()] or [Error message]
+      (default: always valid)
+
+    Example: Creates a commit message editor.
+    {[
+      let model, cmd =
+        Text.init ~placeholder:"Enter commit message..." ~height:3
+          ~validate:(fun s ->
+            if String.length s = 0 then Error "Message required"
+            else if String.length s > 72 then Error "First line too long"
+            else Ok ())
+          ()
+    ]} *)
 
 (** {2 Accessors} *)
 
 val value : model -> string
-(** Get the current text value *)
+(** [value model] returns the current text content.
+
+    Returns the complete text including all line breaks. Line endings are
+    normalized to LF regardless of platform. *)
 
 val lines : model -> string list
-(** Get the text split into lines *)
+(** [lines model] returns the text content split by line breaks.
+
+    Each element represents one line without trailing newlines. Empty text
+    returns a single empty string. Preserves empty lines. *)
 
 val line_count : model -> int
-(** Get the total number of lines *)
+(** [line_count model] returns the total number of lines in the text.
+
+    Empty text has 1 line. Each newline character increases the count by 1. *)
 
 val cursor_position : model -> int * int
-(** Get cursor position as (line, column) *)
+(** [cursor_position model] returns the cursor location as [(line, column)].
+
+    Both line and column are 0-indexed. Column represents the character offset
+    within the line. Position is always valid within the text bounds. *)
 
 val is_focused : model -> bool
-(** Check if the text area is currently focused *)
+(** [is_focused model] checks whether the text area has keyboard focus.
+
+    Focus affects visual styling and enables keyboard input. Focus is gained
+    through [focus] action or user interaction. *)
 
 val is_valid : model -> bool
-(** Check if the current value passes validation *)
+(** [is_valid model] checks whether the current content passes validation.
+
+    Always returns true if no validator was provided. Validation runs on every
+    content change. *)
 
 val error : model -> string option
-(** Get the current validation error message *)
+(** [error model] returns the current validation error message.
+
+    Returns [None] if content is valid or no validator provided. Returns
+    [Some message] when validation fails. Updates automatically on content
+    changes. *)
 
 (** {2 Actions} *)
 
 val focus : model -> model * msg Cmd.t
-(** Focus the text area *)
+(** [focus model] gives keyboard focus to the text area.
+
+    Updates visual styling to focused state. Enables keyboard input and
+    navigation. Returns updated model and no command. *)
 
 val blur : model -> model * msg Cmd.t
-(** Remove focus from the text area *)
+(** [blur model] removes keyboard focus from the text area.
+
+    Updates visual styling to blurred state. Disables keyboard input. Returns
+    updated model and no command. *)
 
 val set_value : string -> model -> model
-(** Set the text area's value programmatically *)
+(** [set_value text model] replaces the entire content with new text.
+
+    Moves cursor to end of new text. Runs validation if configured. Adjusts
+    scroll to show cursor. *)
 
 val clear : model -> model
-(** Clear the text area's value *)
+(** [clear model] removes all text content.
+
+    Sets content to empty string. Moves cursor to beginning. Resets scroll
+    position. Runs validation. *)
 
 val insert_at_cursor : string -> model -> model
-(** Insert text at the current cursor position *)
+(** [insert_at_cursor text model] inserts text at the current cursor position.
+
+    Preserves existing content before and after cursor. Moves cursor to end of
+    inserted text. Runs validation and adjusts scroll. *)
 
 val go_to_line : int -> model -> model
-(** Move cursor to a specific line (1-based) *)
+(** [go_to_line line_num model] moves the cursor to the beginning of a line.
+
+    Line numbers are 1-based. Clamps to valid range if out of bounds. Adjusts
+    scroll to ensure line is visible. *)
 
 (** {2 Theming} *)
 
@@ -108,17 +199,63 @@ type theme = {
   line_numbers_style : Style.t;
   cursor_style : Style.t;
 }
+(** [theme] controls the visual appearance of the text area component.
+
+    Each style applies to different states: focused_style for active editing,
+    blurred_style for inactive state, error_style for validation failures,
+    placeholder_style for empty state hint, line_numbers_style for optional line
+    numbers, and cursor_style for the text insertion point. *)
 
 val default_theme : theme
+(** [default_theme] provides a standard color scheme.
+
+    Uses ANSI indexed colors for compatibility. Blue for focus, gray for blur,
+    red for errors, dim for placeholder. *)
+
 val with_theme : theme -> model -> model
+(** [with_theme theme model] applies a custom theme to the text area.
+
+    Updates all visual styles. Changes take effect immediately in next render.
+*)
 
 (** {2 Component Interface} *)
 
 val update : msg -> model -> model * msg Cmd.t
-(** Update function for the component *)
+(** [update msg model] processes a message to produce a new model state.
+
+    Handles keyboard input, cursor movement, content changes, and focus events.
+    Runs validation after content modifications. Returns updated model and any
+    commands to execute.
+
+    Example: Integrates with parent update function.
+    {[
+      | Text_msg msg ->
+          let model', cmd = Text.update msg model.text in
+          { model with text = model' }, Cmd.map (fun m -> Text_msg m) cmd
+    ]} *)
 
 val view : model -> Ui.element
-(** View function for the component *)
+(** [view model] renders the text area as a UI element.
+
+    Displays text content with cursor, scroll bars when needed, and validation
+    errors. Shows placeholder when empty and unfocused. Applies theme styles
+    based on state.
+
+    The rendered element includes the text area with optional line numbers and
+    error messages. *)
 
 val subscriptions : model -> msg Sub.t
-(** Subscriptions for the component *)
+(** [subscriptions model] returns event subscriptions based on current state.
+
+    Subscribes to keyboard events when focused for text input and navigation
+    (arrows, home, end, page up/down). No subscriptions when blurred.
+    Automatically managed based on focus state.
+
+    Example: Combines with other subscriptions.
+    {[
+      Sub.batch
+        [
+          Text.subscriptions model.text |> Sub.map (fun m -> Text_msg m);
+          Sub.on_key Escape `Cancel;
+        ]
+    ]} *)

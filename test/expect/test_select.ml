@@ -1,11 +1,12 @@
 open Mosaic
-open Mosaic_tiles
 open Test_utils
 
 (** Test app that wraps a Select component *)
 module App = struct
+  open Mosaic_tiles
+
   type model = { select : string Select.model; quit : bool }
-  type msg = SelectMsg of Select.msg | Quit
+  type msg = Select_msg of Select.msg | Quit
 
   let create_app ?options ?default ?height ?filterable ?placeholder () =
     let init () =
@@ -17,23 +18,23 @@ module App = struct
       ( { select = focused_model; quit = false },
         Cmd.batch
           [
-            Cmd.map (fun m -> SelectMsg m) select_cmd;
-            Cmd.map (fun m -> SelectMsg m) focus_cmd;
+            Cmd.map (fun m -> Select_msg m) select_cmd;
+            Cmd.map (fun m -> Select_msg m) focus_cmd;
           ] )
     in
     let update msg model =
       match msg with
-      | SelectMsg select_msg ->
+      | Select_msg select_msg ->
           let new_select, select_cmd = Select.update select_msg model.select in
           ( { model with select = new_select },
-            Cmd.map (fun m -> SelectMsg m) select_cmd )
+            Cmd.map (fun m -> Select_msg m) select_cmd )
       | Quit -> ({ model with quit = true }, Cmd.quit)
     in
     let view model = Select.view model.select in
     let subscriptions model =
       Sub.batch
         [
-          Sub.map (fun m -> SelectMsg m) (Select.subscriptions model.select);
+          Sub.map (fun m -> Select_msg m) (Select.subscriptions model.select);
           Sub.on_key ~ctrl:true (Char (Uchar.of_char 'c')) Quit;
         ]
     in
@@ -69,8 +70,8 @@ let%expect_test "Basic select - closed dropdown" =
         ]
       ~placeholder:"Choose a language..." ()
   in
-  let harness = TestHarness.create app in
-  let output = TestHarness.view ~width:40 ~height:10 harness in
+  let harness = Test_harness.create app in
+  let output = Test_harness.view ~width:40 ~height:10 harness in
   print_test_output output;
   [%expect_exact
     {|+----------------------------------------+
@@ -99,8 +100,8 @@ let%expect_test "Select with default value" =
         ]
       ~default:"rust" ()
   in
-  let harness = TestHarness.create app in
-  let output = TestHarness.view ~width:40 ~height:10 harness in
+  let harness = Test_harness.create app in
+  let output = Test_harness.view ~width:40 ~height:10 harness in
   print_test_output output;
   [%expect_exact
     {|+----------------------------------------+
@@ -129,12 +130,12 @@ let%expect_test "Open dropdown with keyboard" =
         ]
       ~height:5 ()
   in
-  let harness = TestHarness.create app in
+  let harness = Test_harness.create app in
 
   (* Press Enter to open dropdown *)
-  TestHarness.push_key_event (key Enter) harness;
+  Test_harness.push_key_event (Input.key Enter) harness;
 
-  let output = TestHarness.view ~width:40 ~height:10 harness in
+  let output = Test_harness.view ~width:40 ~height:10 harness in
   print_test_output output;
   [%expect_exact
     {|+----------------------------------------+
@@ -163,16 +164,16 @@ let%expect_test "Navigate with arrow keys" =
         ]
       ()
   in
-  let harness = TestHarness.create app in
+  let harness = Test_harness.create app in
 
   (* Open dropdown *)
-  TestHarness.push_key_event (key Enter) harness;
+  Test_harness.push_key_event (Input.key Enter) harness;
 
   (* Navigate down twice *)
-  TestHarness.push_key_event (key Down) harness;
-  TestHarness.push_key_event (key Down) harness;
+  Test_harness.push_key_event (Input.key Down) harness;
+  Test_harness.push_key_event (Input.key Down) harness;
 
-  let output = TestHarness.view ~width:40 ~height:10 harness in
+  let output = Test_harness.view ~width:40 ~height:10 harness in
   print_test_output output;
   [%expect_exact
     {|+----------------------------------------+
@@ -201,16 +202,16 @@ let%expect_test "Select item and close dropdown" =
         ]
       ()
   in
-  let harness = TestHarness.create app in
+  let harness = Test_harness.create app in
 
   (* Open dropdown *)
-  TestHarness.push_key_event (key Enter) harness;
+  Test_harness.push_key_event (Input.key Enter) harness;
 
   (* Navigate to Rust and select it *)
-  TestHarness.push_key_event (key Down) harness;
-  TestHarness.push_key_event (key Enter) harness;
+  Test_harness.push_key_event (Input.key Down) harness;
+  Test_harness.push_key_event (Input.key Enter) harness;
 
-  let output = TestHarness.view ~width:40 ~height:10 harness in
+  let output = Test_harness.view ~width:40 ~height:10 harness in
   print_test_output output;
   [%expect_exact
     {|+----------------------------------------+
@@ -241,15 +242,15 @@ let%expect_test "Filterable select - typing to filter" =
         ]
       ~filterable:true ~height:4 ()
   in
-  let harness = TestHarness.create app in
+  let harness = Test_harness.create app in
 
   (* Open dropdown *)
-  TestHarness.push_key_event (key Enter) harness;
+  Test_harness.push_key_event (Input.key Enter) harness;
 
   (* Type "script" to filter *)
-  TestHarness.push_input "script" harness;
+  Test_harness.push_input "script" harness;
 
-  let output = TestHarness.view ~width:40 ~height:8 harness in
+  let output = Test_harness.view ~width:40 ~height:8 harness in
   print_test_output ~height:8 output;
   [%expect_exact
     {|+----------------------------------------+
@@ -270,21 +271,21 @@ let%expect_test "Escape key closes dropdown" =
       ~options:[ ("ocaml", "OCaml"); ("rust", "Rust"); ("go", "Go") ]
       ()
   in
-  let harness = TestHarness.create app in
+  let harness = Test_harness.create app in
 
   (* Open dropdown *)
-  TestHarness.push_key_event (key Enter) harness;
+  Test_harness.push_key_event (Input.key Enter) harness;
 
   (* Verify it's open *)
-  let output1 = TestHarness.view ~width:40 ~height:6 harness in
+  let output1 = Test_harness.view ~width:40 ~height:6 harness in
   print_string "Dropdown open:\n";
   print_test_output ~height:6 output1;
 
   (* Press Escape to close *)
-  TestHarness.push_key_event (key Escape) harness;
+  Test_harness.push_key_event (Input.key Escape) harness;
 
   (* Verify it's closed *)
-  let output2 = TestHarness.view ~width:40 ~height:6 harness in
+  let output2 = Test_harness.view ~width:40 ~height:6 harness in
   print_string "\nDropdown closed:\n";
   print_test_output ~height:6 output2;
 
@@ -317,20 +318,20 @@ let%expect_test "Page navigation in long list" =
         (string_of_int n, Printf.sprintf "Option %d" n))
   in
   let app = App.create_app ~options ~height:5 () in
-  let harness = TestHarness.create app in
+  let harness = Test_harness.create app in
 
   (* Open dropdown *)
-  TestHarness.push_key_event (key Enter) harness;
+  Test_harness.push_key_event (Input.key Enter) harness;
 
   print_string "Initial view:\n";
-  let output1 = TestHarness.view ~width:40 ~height:8 harness in
+  let output1 = Test_harness.view ~width:40 ~height:8 harness in
   print_test_output ~height:8 output1;
 
   (* Page down *)
-  TestHarness.push_key_event (key Page_down) harness;
+  Test_harness.push_key_event (Input.key Page_down) harness;
 
   print_string "\nAfter Page Down:\n";
-  let output2 = TestHarness.view ~width:40 ~height:8 harness in
+  let output2 = Test_harness.view ~width:40 ~height:8 harness in
   print_test_output ~height:8 output2;
 
   [%expect_exact
@@ -361,12 +362,12 @@ After Page Down:
 
 let%expect_test "Empty select behavior" =
   let app = App.create_app ~options:[] ~placeholder:"No options available" () in
-  let harness = TestHarness.create app in
+  let harness = Test_harness.create app in
 
   (* Try to open dropdown *)
-  TestHarness.push_key_event (key Enter) harness;
+  Test_harness.push_key_event (Input.key Enter) harness;
 
-  let output = TestHarness.view ~width:40 ~height:10 harness in
+  let output = Test_harness.view ~width:40 ~height:10 harness in
   print_test_output output;
   [%expect_exact
     {|+----------------------------------------+
@@ -396,23 +397,23 @@ let%expect_test "Home and End key navigation" =
         ]
       ()
   in
-  let harness = TestHarness.create app in
+  let harness = Test_harness.create app in
 
   (* Open dropdown *)
-  TestHarness.push_key_event (key Enter) harness;
+  Test_harness.push_key_event (Input.key Enter) harness;
 
   (* Go to end *)
-  TestHarness.push_key_event (key End) harness;
+  Test_harness.push_key_event (Input.key End) harness;
 
   print_string "After End key:\n";
-  let output1 = TestHarness.view ~width:40 ~height:8 harness in
+  let output1 = Test_harness.view ~width:40 ~height:8 harness in
   print_test_output ~height:8 output1;
 
   (* Go to home *)
-  TestHarness.push_key_event (key Home) harness;
+  Test_harness.push_key_event (Input.key Home) harness;
 
   print_string "\nAfter Home key:\n";
-  let output2 = TestHarness.view ~width:40 ~height:8 harness in
+  let output2 = Test_harness.view ~width:40 ~height:8 harness in
   print_test_output ~height:8 output2;
 
   [%expect_exact
@@ -445,18 +446,18 @@ let%expect_test "Tab key behavior" =
   let app =
     App.create_app ~options:[ ("ocaml", "OCaml"); ("rust", "Rust") ] ()
   in
-  let harness = TestHarness.create app in
+  let harness = Test_harness.create app in
 
   (* Open dropdown *)
-  TestHarness.push_key_event (key Enter) harness;
+  Test_harness.push_key_event (Input.key Enter) harness;
 
   (* Navigate to Rust *)
-  TestHarness.push_key_event (key Down) harness;
+  Test_harness.push_key_event (Input.key Down) harness;
 
   (* Press Tab to select and close *)
-  TestHarness.push_key_event (key Tab) harness;
+  Test_harness.push_key_event (Input.key Tab) harness;
 
-  let output = TestHarness.view ~width:40 ~height:10 harness in
+  let output = Test_harness.view ~width:40 ~height:10 harness in
   print_test_output output;
   [%expect_exact
     {|+----------------------------------------+
@@ -485,12 +486,12 @@ let%expect_test "Unicode and long labels" =
         ]
       ~height:5 ()
   in
-  let harness = TestHarness.create app in
+  let harness = Test_harness.create app in
 
   (* Open dropdown *)
-  TestHarness.push_key_event (key Enter) harness;
+  Test_harness.push_key_event (Input.key Enter) harness;
 
-  let output = TestHarness.view ~width:40 ~height:8 harness in
+  let output = Test_harness.view ~width:40 ~height:8 harness in
   print_test_output ~height:8 output;
   [%expect_exact
     {|+----------------------------------------+

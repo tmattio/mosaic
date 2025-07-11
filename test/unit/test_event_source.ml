@@ -1,6 +1,5 @@
 (** Tests for the Event_source module *)
 
-open Mosaic
 open Test_utils
 
 (** Helper to create source and read event *)

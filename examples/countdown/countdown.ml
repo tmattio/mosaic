@@ -1,7 +1,7 @@
 open Mosaic
 
 type model = int
-type msg = [ `Tick | `Quit | `KeyEvent of key_event ]
+type msg = [ `Key_event of Input.key_event | `Tick | `Quit ]
 
 let init () : model * msg Cmd.t = (5, Cmd.after 1.0 `Tick)
 
@@ -12,7 +12,7 @@ let update (msg : msg) (model : model) : model * msg Cmd.t =
       if new_count <= 0 then (new_count, Cmd.quit)
       else (new_count, Cmd.after 1.0 `Tick)
   | `Quit -> (model, Cmd.quit)
-  | `KeyEvent { key; modifier } -> (
+  | `Key_event { key; modifier } -> (
       match (key, modifier) with
       | Char c, { ctrl = true; _ } when Uchar.to_int c = Char.code 'C' ->
           (model, Cmd.quit)
@@ -38,7 +38,7 @@ let view model =
         "To quit sooner press ctrl-c, or q to quit...";
     ]
 
-let subscriptions _model = Sub.keyboard (fun key_event -> `KeyEvent key_event)
+let subscriptions _model = Sub.keyboard (fun key_event -> `Key_event key_event)
 
 let () =
   let app = Mosaic.app ~init ~update ~view ~subscriptions () in

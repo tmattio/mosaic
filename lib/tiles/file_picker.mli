@@ -1,52 +1,93 @@
-(** A file picker component
+(** A file picker component for browsing and selecting files from the file
+    system.
 
-    This component provides a file browser with navigation capabilities. Similar
-    to huh's FilePicker field.
+    This component provides a navigable file browser with support for filtering
+    by extensions, showing/hiding hidden files, and directory-only selection. It
+    includes keyboard navigation and maintains file metadata for display.
 
-    Example:
+    {2 Architecture}
+
+    State tracks current directory, selected file, and extension filters.
+    Directory loading is asynchronous. Files filtered by extension whitelist when
+    provided.
+
+    {2 Key Invariants}
+
+    - The current directory always exists and is accessible
+    - File listings are sorted with directories first, then files alphabetically
+    - Hidden files (starting with '.') are only shown when enabled
+    - Extension filtering only applies to files, not directories
+    - Navigation respects file system permissions
+
+    {2 Example}
+
     {[
-      (* Initialize a file picker *)
+      (* Initialize a file picker for OCaml files *)
       let picker_model, picker_cmd =
         File_picker.init
-          ~start_path:"."
+          ~start_path:"./src"
           ~show_hidden:false
           ~extensions:[".ml"; ".mli"]
+          ~height:15
           ()
 
       (* In your update function *)
-      | PickerMsg msg ->
+      | Picker_msg msg ->
           let new_picker, cmd = File_picker.update msg model.picker in
           ({ model with picker = new_picker },
-           Cmd.map (fun m -> PickerMsg m) cmd)
+           Cmd.map (fun m -> Picker_msg m) cmd)
 
-      (* In your view - compose with labels as needed *)
+      (* In your view with navigation hints *)
       let open Ui in
       vbox ~gap:1 [
-        text ~style:Style.bold "Select a file";
+        text ~style:Style.bold "Select an OCaml file:";
+        text ~style:Style.(fg (Index 8))
+          (File_picker.current_directory model.picker);
         File_picker.view model.picker;
-        text ~style:Style.(fg (Index 8)) "(Enter to open/select, Backspace for parent)";
+        text ~style:Style.(fg (Index 8))
+          "↑/↓: Navigate • Enter: Open/Select • Backspace: Parent • h: Toggle hidden";
       ]
 
-      (* Get selected file *)
+      (* Handle selected file *)
       match File_picker.selected model.picker with
-      | Some path -> Printf.printf "Selected: %s" path
-      | None -> Printf.printf "No file selected"
+      | Some path ->
+          Printf.printf "Selected: %s\n" path;
+          (* Process the selected file *)
+      | None -> ()
+
+      (* Get file info *)
+      match File_picker.selected_file_info model.picker with
+      | Some info ->
+          Printf.printf "File: %s, Size: %Ld bytes, Type: %s\n"
+            info.name info.size
+            (match info.file_type with
+             | `File -> "file"
+             | `Directory -> "directory"
+             | `Symlink -> "symlink")
+      | None -> ()
     ]} *)
 
 open Mosaic
 
 type model
-(** The internal state of the file picker *)
+(** The internal state of the file picker containing current directory, file
+    list, selection state, and configuration. *)
 
 type msg
-(** Messages the file picker can handle *)
+(** Messages that the file picker can handle, including navigation and selection
+    actions. *)
 
 val component : (model, msg) Mosaic.app
-(** The component definition *)
+(** The file picker component definition following The Elm Architecture. *)
 
 (** {2 File Types} *)
 
 type file_type = [ `File | `Directory | `Symlink ]
+(** File types distinguished by the file picker.
+
+    - [`File] - Regular file
+    - [`Directory] - Directory that can be navigated into
+    - [`Symlink] - Symbolic link *)
 
 type file_info = {
   name : string;
@@ -55,6 +96,13 @@ type file_info = {
   size : int64;
   permissions : string;
 }
+(** Information about a file or directory.
+
+    - [name] - The file or directory name
+    - [path] - Full absolute path
+    - [file_type] - Type of file system entry
+    - [size] - Size in bytes
+    - [permissions] - Unix permission string *)
 
 (** {2 Initialization} *)
 
@@ -78,39 +126,42 @@ val init :
 (** {2 Accessors} *)
 
 val selected : model -> string option
-(** Get the currently selected file path *)
+(** [selected model] returns the currently selected file path, if any. *)
 
 val current_directory : model -> string
-(** Get the current directory being browsed *)
+(** [current_directory model] returns the path of the current directory. *)
 
 val files : model -> file_info list
-(** Get the list of files in current directory *)
+(** [files model] returns the list of files and directories in the current
+    directory, filtered according to the current settings. *)
 
 val is_focused : model -> bool
-(** Check if the file picker is currently focused *)
+(** [is_focused model] returns whether the file picker has keyboard focus. *)
 
 val selected_file_info : model -> file_info option
-(** Get detailed info about the selected file *)
+(** [selected_file_info model] returns detailed information about the currently
+    selected file or directory. *)
 
 (** {2 Actions} *)
 
 val focus : model -> model * msg Cmd.t
-(** Focus the file picker *)
+(** [focus model] sets keyboard focus on the file picker. *)
 
 val blur : model -> model * msg Cmd.t
-(** Remove focus from the file picker *)
+(** [blur model] removes keyboard focus from the file picker. *)
 
 val navigate_to : string -> model -> model * msg Cmd.t
-(** Navigate to a specific directory *)
+(** [navigate_to path model] navigates to the specified directory path. *)
 
 val go_up : model -> model * msg Cmd.t
-(** Navigate to parent directory *)
+(** [go_up model] navigates to the parent directory. *)
 
 val refresh : model -> model * msg Cmd.t
-(** Refresh the current directory listing *)
+(** [refresh model] reloads the current directory listing. *)
 
 val toggle_hidden : model -> model * msg Cmd.t
-(** Toggle showing hidden files *)
+(** [toggle_hidden model] toggles the visibility of hidden files (files starting
+    with '.'). *)
 
 (** {2 Theming} *)
 
@@ -125,25 +176,40 @@ type theme = {
   path_style : Style.t;
   info_style : Style.t;
 }
+(** Theme configuration for customizing the file picker appearance.
+
+    - [focused_style] - Style when the component has focus
+    - [blurred_style] - Style when the component lacks focus
+    - [directory_style] - Style for directory entries
+    - [file_style] - Style for file entries
+    - [symlink_style] - Style for symbolic links
+    - [selected_style] - Style for the selected item
+    - [highlighted_style] - Style for the highlighted item under cursor
+    - [path_style] - Style for the current path display
+    - [info_style] - Style for file information display *)
 
 val default_theme : theme
+(** The default theme with standard styling for file types. *)
+
 val with_theme : theme -> model -> model
+(** [with_theme theme model] applies a custom theme to the file picker. *)
 
 (** {2 Component Interface} *)
 
 val update : msg -> model -> model * msg Cmd.t
-(** Update function for the component *)
+(** [update msg model] handles messages and updates the file picker state. *)
 
 val view : model -> Ui.element
-(** View function for the component *)
+(** [view model] renders the file picker with the current directory listing. *)
 
 val subscriptions : model -> msg Sub.t
-(** Subscriptions for the component *)
+(** [subscriptions model] returns keyboard event subscriptions when focused. *)
 
 (** {2 File Operations} *)
 
 val load_directory : string -> model -> model * msg Cmd.t
-(** Load a directory asynchronously *)
+(** [load_directory path model] asynchronously loads the contents of the
+    specified directory. *)
 
 val select_file : string -> model -> model * msg Cmd.t
-(** Select a file *)
+(** [select_file path model] selects the file at the given path. *)

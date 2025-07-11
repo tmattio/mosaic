@@ -1,103 +1,5 @@
 (* High-level rendering API *)
 
-module Style = struct
-  type t = Render.style
-
-  (* Attribute type for building styles from lists *)
-  type attr =
-    | Fg of Ansi.color
-    | Bg of Ansi.color
-    | Bold
-    | Dim
-    | Italic
-    | Underline
-    | Blink
-    | Reverse
-    | Strikethrough
-    | Link of string
-
-  let empty = Render.default_style
-  let fg color = { empty with fg = Some color }
-  let bg color = { empty with bg = Some color }
-  let bold = { empty with bold = true }
-  let dim = { empty with dim = true }
-  let italic = { empty with italic = true }
-  let underline = { empty with underline = true }
-  let blink = { empty with blink = true }
-  let reverse = { empty with reverse = true }
-  let strikethrough = { empty with strikethrough = true }
-  let link uri = { empty with uri = Some uri }
-
-  (* Create a style from a list of attributes *)
-  let of_list attrs =
-    List.fold_left
-      (fun style attr ->
-        let open Render in
-        match attr with
-        | Fg color -> { style with fg = Some color }
-        | Bg color -> { style with bg = Some color }
-        | Bold -> { style with bold = true }
-        | Dim -> { style with dim = true }
-        | Italic -> { style with italic = true }
-        | Underline -> { style with underline = true }
-        | Blink -> { style with blink = true }
-        | Reverse -> { style with reverse = true }
-        | Strikethrough -> { style with strikethrough = true }
-        | Link uri -> { style with uri = Some uri })
-      empty attrs
-
-  let ( ++ ) (a : t) (b : t) : t =
-    let open Render in
-    {
-      fg = (match b.fg with Some _ -> b.fg | None -> a.fg);
-      bg = (match b.bg with Some _ -> b.bg | None -> a.bg);
-      bold = a.bold || b.bold;
-      dim = a.dim || b.dim;
-      italic = a.italic || b.italic;
-      underline = a.underline || b.underline;
-      double_underline = a.double_underline || b.double_underline;
-      blink = a.blink || b.blink;
-      reverse = a.reverse || b.reverse;
-      strikethrough = a.strikethrough || b.strikethrough;
-      overline = a.overline || b.overline;
-      uri = (match b.uri with Some _ -> b.uri | None -> a.uri);
-    }
-
-  let ansi256 n = Ansi.Index n
-  let rgb r g b = Ansi.RGB (r, g, b)
-
-  (* Color type export *)
-  type color = Ansi.color =
-    | Black
-    | Red
-    | Green
-    | Yellow
-    | Blue
-    | Magenta
-    | Cyan
-    | White
-    | Default
-    | Bright_black
-    | Bright_red
-    | Bright_green
-    | Bright_yellow
-    | Bright_blue
-    | Bright_magenta
-    | Bright_cyan
-    | Bright_white
-    | Index of int (* 256-color palette (0-255) *)
-    | RGB of int * int * int (* 24-bit color (0-255 each) *)
-
-  (* Color helpers *)
-  let gray n = Index (232 + min 23 (max 0 n))
-
-  let rgb_hex hex =
-    let r = (hex lsr 16) land 0xFF in
-    let g = (hex lsr 8) land 0xFF in
-    let b = hex land 0xFF in
-    RGB (r, g, b)
-end
-
 (* Layout types *)
 type padding = { top : int; right : int; bottom : int; left : int }
 
@@ -146,7 +48,7 @@ and computed_element = {
 }
 
 and element =
-  | Text of string * Style.t
+  | Text of string * Render.Style.t
   | Box of box_data
   | Spacer of int
   | Expand of element (* Wrapper to mark expandable elements *)
@@ -169,7 +71,7 @@ and layout_options = {
   justify : align;
 }
 
-let text ?(style = Style.empty) s = Text (s, style)
+let text ?(style = Render.Style.empty) s = Text (s, style)
 let no_padding = padding ()
 
 let hbox ?(gap = 0) ?width ?height ?(padding = no_padding) ?border
@@ -230,8 +132,8 @@ let draw_border buffer x y width height border_spec =
   let tl, t, tr, r, bl, b, br, l = border_chars border_spec.style in
   let style =
     match border_spec.color with
-    | Some color -> Style.fg color
-    | None -> Style.empty
+    | Some color -> Render.Style.fg color
+    | None -> Render.Style.empty
   in
 
   (* Top border *)

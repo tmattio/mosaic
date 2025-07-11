@@ -9,7 +9,7 @@ let test_none_cmd () =
 
 let test_msg_cmd () =
   (* We can't pattern match on abstract types, just check it compiles *)
-  let _ = Cmd.msg `TestMsg in
+  let _ = Cmd.msg `Test_msg in
   ()
 
 let test_quit_cmd () =
@@ -34,7 +34,7 @@ let test_seq_cmd () =
 
 let test_after_cmd () =
   (* Test after creation compiles *)
-  let _ = Cmd.after 1.0 `DelayedMsg in
+  let _ = Cmd.after 1.0 `Delayed_msg in
   ()
 
 let test_tick_cmd () =

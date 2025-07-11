@@ -42,7 +42,7 @@ type 'a model = {
 
 (* Messages *)
 type msg =
-  | Key of key_event
+  | Key of Input.key_event
   | Focus
   | Blur
   | Open

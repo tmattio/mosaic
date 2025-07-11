@@ -3,10 +3,10 @@ open Mosaic
 type model = { progress : Mosaic_tiles.Progress.model; percent : float }
 
 type msg =
-  [ `ProgressMsg of Mosaic_tiles.Progress.msg
+  [ `Progress_msg of Mosaic_tiles.Progress.msg
+  | `Key_event of Input.key_event
   | `Tick
-  | `Quit
-  | `KeyEvent of key_event ]
+  | `Quit ]
 
 let init () : model * msg Cmd.t =
   let progress_model, progress_cmd =
@@ -16,16 +16,17 @@ let init () : model * msg Cmd.t =
   in
   ( { progress = progress_model; percent = 0.0 },
     Cmd.batch
-      [ Cmd.map (fun m -> `ProgressMsg m) progress_cmd; Cmd.after 1.0 `Tick ] )
+      [ Cmd.map (fun m -> `Progress_msg m) progress_cmd; Cmd.after 1.0 `Tick ]
+  )
 
 let update (msg : msg) (model : model) : model * msg Cmd.t =
   match msg with
-  | `ProgressMsg progress_msg ->
+  | `Progress_msg progress_msg ->
       let new_progress, cmd =
         Mosaic_tiles.Progress.update progress_msg model.progress
       in
       ( { model with progress = new_progress },
-        Cmd.map (fun m -> `ProgressMsg m) cmd )
+        Cmd.map (fun m -> `Progress_msg m) cmd )
   | `Tick ->
       let new_percent = model.percent +. 0.25 in
       if new_percent >= 1.0 then
@@ -33,16 +34,16 @@ let update (msg : msg) (model : model) : model * msg Cmd.t =
           Mosaic_tiles.Progress.set_percent 1.0 model.progress
         in
         ( { progress = new_progress; percent = 1.0 },
-          Cmd.batch [ Cmd.map (fun m -> `ProgressMsg m) cmd; Cmd.quit ] )
+          Cmd.batch [ Cmd.map (fun m -> `Progress_msg m) cmd; Cmd.quit ] )
       else
         let new_progress, cmd =
           Mosaic_tiles.Progress.set_percent new_percent model.progress
         in
         ( { progress = new_progress; percent = new_percent },
           Cmd.batch
-            [ Cmd.map (fun m -> `ProgressMsg m) cmd; Cmd.after 1.0 `Tick ] )
+            [ Cmd.map (fun m -> `Progress_msg m) cmd; Cmd.after 1.0 `Tick ] )
   | `Quit -> (model, Cmd.quit)
-  | `KeyEvent _ -> (model, Cmd.quit)
+  | `Key_event _ -> (model, Cmd.quit)
 
 let view model =
   let open Ui in
@@ -58,9 +59,9 @@ let subscriptions model =
   Sub.batch
     [
       Sub.map
-        (fun m -> `ProgressMsg m)
+        (fun m -> `Progress_msg m)
         (Mosaic_tiles.Progress.subscriptions model.progress);
-      Sub.keyboard (fun key_event -> `KeyEvent key_event);
+      Sub.keyboard (fun key_event -> `Key_event key_event);
     ]
 
 let () =

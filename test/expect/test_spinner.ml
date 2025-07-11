@@ -3,9 +3,9 @@ open Mosaic_tiles
 open Test_utils
 
 (** Test app that wraps a Spinner component *)
-module SpinnerTestApp = struct
+module App = struct
   type model = { spinner : Spinner.model; frame_count : int; quit : bool }
-  type msg = SpinnerMsg of Spinner.msg | NextFrame | Quit
+  type msg = Spinner_msg of Spinner.msg | NextFrame | Quit
 
   let create_app ?style ?color () =
     let init () =
@@ -15,18 +15,18 @@ module SpinnerTestApp = struct
       ( { spinner = started_model; frame_count = 0; quit = false },
         Cmd.batch
           [
-            Cmd.map (fun m -> SpinnerMsg m) spinner_cmd;
-            Cmd.map (fun m -> SpinnerMsg m) start_cmd;
+            Cmd.map (fun m -> Spinner_msg m) spinner_cmd;
+            Cmd.map (fun m -> Spinner_msg m) start_cmd;
           ] )
     in
     let update msg model =
       match msg with
-      | SpinnerMsg spinner_msg ->
+      | Spinner_msg spinner_msg ->
           let new_spinner, spinner_cmd =
             Spinner.update spinner_msg model.spinner
           in
           ( { model with spinner = new_spinner },
-            Cmd.map (fun m -> SpinnerMsg m) spinner_cmd )
+            Cmd.map (fun m -> Spinner_msg m) spinner_cmd )
       | NextFrame ->
           (* Simulate time passing to trigger spinner animation *)
           ({ model with frame_count = model.frame_count + 1 }, Cmd.none)
@@ -43,7 +43,7 @@ module SpinnerTestApp = struct
     let subscriptions model =
       Sub.batch
         [
-          Sub.map (fun m -> SpinnerMsg m) (Spinner.subscriptions model.spinner);
+          Sub.map (fun m -> Spinner_msg m) (Spinner.subscriptions model.spinner);
           Sub.on_key ~ctrl:true (Char (Uchar.of_char 'c')) Quit;
         ]
     in
@@ -68,9 +68,9 @@ let print_test_output ?(width = 20) ?height:(_ = 3) output =
   print_string (border_line ^ bordered_output ^ "\n" ^ border_line)
 
 let%expect_test "Default dots spinner" =
-  let app = SpinnerTestApp.create_app () in
-  let harness = TestHarness.create app in
-  let output = TestHarness.view ~width:20 ~height:3 harness in
+  let app = App.create_app () in
+  let harness = Test_harness.create app in
+  let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
     {|+--------------------+
@@ -81,9 +81,9 @@ let%expect_test "Default dots spinner" =
 |}]
 
 let%expect_test "Line spinner style" =
-  let app = SpinnerTestApp.create_app ~style:Spinner.line () in
-  let harness = TestHarness.create app in
-  let output = TestHarness.view ~width:20 ~height:3 harness in
+  let app = App.create_app ~style:Spinner.line () in
+  let harness = Test_harness.create app in
+  let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
     {|+--------------------+
@@ -95,11 +95,10 @@ let%expect_test "Line spinner style" =
 
 let%expect_test "Arrow spinner with color" =
   let app =
-    SpinnerTestApp.create_app ~style:Spinner.arrow ~color:(Style.fg Style.Green)
-      ()
+    App.create_app ~style:Spinner.arrow ~color:(Style.fg Style.Green) ()
   in
-  let harness = TestHarness.create app in
-  let output = TestHarness.view ~width:20 ~height:3 harness in
+  let harness = Test_harness.create app in
+  let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
     {|+--------------------+
@@ -110,9 +109,9 @@ let%expect_test "Arrow spinner with color" =
 |}]
 
 let%expect_test "Box bounce spinner" =
-  let app = SpinnerTestApp.create_app ~style:Spinner.box_bounce () in
-  let harness = TestHarness.create app in
-  let output = TestHarness.view ~width:20 ~height:3 harness in
+  let app = App.create_app ~style:Spinner.box_bounce () in
+  let harness = Test_harness.create app in
+  let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
     {|+--------------------+
@@ -123,9 +122,9 @@ let%expect_test "Box bounce spinner" =
 |}]
 
 let%expect_test "Circle spinner" =
-  let app = SpinnerTestApp.create_app ~style:Spinner.circle () in
-  let harness = TestHarness.create app in
-  let output = TestHarness.view ~width:20 ~height:3 harness in
+  let app = App.create_app ~style:Spinner.circle () in
+  let harness = Test_harness.create app in
+  let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
     {|+--------------------+
@@ -136,9 +135,9 @@ let%expect_test "Circle spinner" =
 |}]
 
 let%expect_test "Bar spinner" =
-  let app = SpinnerTestApp.create_app ~style:Spinner.bar () in
-  let harness = TestHarness.create app in
-  let output = TestHarness.view ~width:20 ~height:3 harness in
+  let app = App.create_app ~style:Spinner.bar () in
+  let harness = Test_harness.create app in
+  let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
     {|+--------------------+
@@ -149,9 +148,9 @@ let%expect_test "Bar spinner" =
 |}]
 
 let%expect_test "Pulse spinner" =
-  let app = SpinnerTestApp.create_app ~style:Spinner.pulse () in
-  let harness = TestHarness.create app in
-  let output = TestHarness.view ~width:20 ~height:3 harness in
+  let app = App.create_app ~style:Spinner.pulse () in
+  let harness = Test_harness.create app in
+  let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
     {|+--------------------+
@@ -162,9 +161,9 @@ let%expect_test "Pulse spinner" =
 |}]
 
 let%expect_test "Bounce spinner" =
-  let app = SpinnerTestApp.create_app ~style:Spinner.bounce () in
-  let harness = TestHarness.create app in
-  let output = TestHarness.view ~width:20 ~height:3 harness in
+  let app = App.create_app ~style:Spinner.bounce () in
+  let harness = Test_harness.create app in
+  let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
     {|+--------------------+
@@ -176,9 +175,9 @@ let%expect_test "Bounce spinner" =
 
 let%expect_test "Custom spinner from string" =
   let custom = Spinner.from_string "|/-\\" in
-  let app = SpinnerTestApp.create_app ~style:custom () in
-  let harness = TestHarness.create app in
-  let output = TestHarness.view ~width:20 ~height:3 harness in
+  let app = App.create_app ~style:custom () in
+  let harness = Test_harness.create app in
+  let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
     {|+--------------------+
@@ -190,9 +189,9 @@ let%expect_test "Custom spinner from string" =
 
 let%expect_test "Custom spinner with frames" =
   let custom = Spinner.custom [| "◐"; "◓"; "◑"; "◒" |] 0.2 in
-  let app = SpinnerTestApp.create_app ~style:custom () in
-  let harness = TestHarness.create app in
-  let output = TestHarness.view ~width:20 ~height:3 harness in
+  let app = App.create_app ~style:custom () in
+  let harness = Test_harness.create app in
+  let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
     {|+--------------------+
@@ -208,48 +207,44 @@ let%expect_test "Stopped spinner" =
       let spinner_model, spinner_cmd = Spinner.init () in
       (* Stop the spinner (it starts automatically) *)
       let stopped_spinner = Spinner.stop spinner_model in
-      ( {
-          SpinnerTestApp.spinner = stopped_spinner;
-          frame_count = 0;
-          quit = false;
-        },
-        Cmd.map (fun m -> SpinnerTestApp.SpinnerMsg m) spinner_cmd )
+      ( { App.spinner = stopped_spinner; frame_count = 0; quit = false },
+        Cmd.map (fun m -> App.Spinner_msg m) spinner_cmd )
     in
     let update msg model =
       match msg with
-      | SpinnerTestApp.SpinnerMsg spinner_msg ->
+      | App.Spinner_msg spinner_msg ->
           let new_spinner, spinner_cmd =
-            Spinner.update spinner_msg model.SpinnerTestApp.spinner
+            Spinner.update spinner_msg model.App.spinner
           in
-          ( { model with SpinnerTestApp.spinner = new_spinner },
-            Cmd.map (fun m -> SpinnerTestApp.SpinnerMsg m) spinner_cmd )
-      | SpinnerTestApp.NextFrame ->
+          ( { model with App.spinner = new_spinner },
+            Cmd.map (fun m -> App.Spinner_msg m) spinner_cmd )
+      | App.NextFrame ->
           ({ model with frame_count = model.frame_count + 1 }, Cmd.none)
-      | SpinnerTestApp.Quit -> ({ model with quit = true }, Cmd.quit)
+      | App.Quit -> ({ model with quit = true }, Cmd.quit)
     in
     let view model =
       let open Ui in
       vbox
         [
           text
-            (if Spinner.is_spinning model.SpinnerTestApp.spinner then "Spinning"
+            (if Spinner.is_spinning model.App.spinner then "Spinning"
              else "Stopped");
-          Spinner.view model.SpinnerTestApp.spinner;
+          Spinner.view model.App.spinner;
         ]
     in
     let subscriptions model =
       Sub.batch
         [
           Sub.map
-            (fun m -> SpinnerTestApp.SpinnerMsg m)
-            (Spinner.subscriptions model.SpinnerTestApp.spinner);
-          Sub.on_key ~ctrl:true (Char (Uchar.of_char 'c')) SpinnerTestApp.Quit;
+            (fun m -> App.Spinner_msg m)
+            (Spinner.subscriptions model.App.spinner);
+          Sub.on_key ~ctrl:true (Char (Uchar.of_char 'c')) App.Quit;
         ]
     in
     Mosaic.app ~init ~update ~view ~subscriptions ()
   in
-  let harness = TestHarness.create app in
-  let output = TestHarness.view ~width:20 ~height:3 harness in
+  let harness = Test_harness.create app in
+  let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
     {|+--------------------+

@@ -3,25 +3,25 @@ open Mosaic
 type model = { input : Mosaic_tiles.Input.model }
 
 type msg =
-  [ `InputMsg of Mosaic_tiles.Input.msg
-  | `Quit
-  | `KeyEvent of key_event
-  | `Submit ]
+  [ `Input_msg of Mosaic_tiles.Input.msg
+  | `Key_event of Input.key_event
+  | `Submit
+  | `Quit ]
 
 let init () : model * msg Cmd.t =
   let input_model, input_cmd =
     Mosaic_tiles.Input.init ~placeholder:"Pikachu" ~width:20 ()
   in
   let input_model = Mosaic_tiles.Input.focus input_model |> fst in
-  ({ input = input_model }, Cmd.map (fun m -> `InputMsg m) input_cmd)
+  ({ input = input_model }, Cmd.map (fun m -> `Input_msg m) input_cmd)
 
 let update (msg : msg) (model : model) : model * msg Cmd.t =
   match msg with
-  | `InputMsg input_msg ->
+  | `Input_msg input_msg ->
       let new_input, cmd = Mosaic_tiles.Input.update input_msg model.input in
-      ({ input = new_input }, Cmd.map (fun m -> `InputMsg m) cmd)
+      ({ input = new_input }, Cmd.map (fun m -> `Input_msg m) cmd)
   | `Submit | `Quit -> (model, Cmd.quit)
-  | `KeyEvent { key; modifier } -> (
+  | `Key_event { key; modifier } -> (
       match (key, modifier) with
       | Char c, { ctrl = true; _ } when Uchar.to_int c = Char.code 'C' ->
           (model, Cmd.quit)
@@ -44,9 +44,9 @@ let subscriptions model =
   Sub.batch
     [
       Sub.map
-        (fun m -> `InputMsg m)
+        (fun m -> `Input_msg m)
         (Mosaic_tiles.Input.subscriptions model.input);
-      Sub.keyboard (fun key_event -> `KeyEvent key_event);
+      Sub.keyboard (fun key_event -> `Key_event key_event);
     ]
 
 let () =

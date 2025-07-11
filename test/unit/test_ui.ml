@@ -34,8 +34,9 @@ let test_style_application () =
   match cell.Render.chars with
   | ch :: _ when Uchar.to_char ch = 'T' -> (
       (* Style should have color index 5 and bold *)
-      Alcotest.(check bool) "bold applied" true cell.Render.style.Render.bold;
-      match cell.Render.style.Render.fg with
+      Alcotest.(check bool)
+        "bold applied" true cell.Render.style.Render.Style.bold;
+      match cell.Render.style.Render.Style.fg with
       | Some (Ansi.Index 5) -> ()
       | _ -> Alcotest.fail "color not applied")
   | _ -> Alcotest.fail "text not rendered"

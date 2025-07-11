@@ -29,7 +29,15 @@ type model = {
   theme : theme;
 }
 
-type msg = Move_up | Move_down | Page_up | Page_down | Home | End | Focus | Blur
+type msg =
+  | Move_up
+  | Move_down
+  | Page_up
+  | Page_down
+  | Home
+  | End
+  | Focus
+  | Blur
 
 let clamp value min_val max_val = max min_val (min max_val value)
 

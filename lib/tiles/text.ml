@@ -43,7 +43,7 @@ type model = {
 }
 
 (* Messages *)
-type msg = Key of key_event | Focus | Blur
+type msg = Key of Input.key_event | Focus | Blur
 
 (* Helpers *)
 let string_of_lines lines = String.concat "\n" lines

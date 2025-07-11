@@ -196,24 +196,43 @@ let style attrs str =
   let reset_codes =
     List.concat_map
       (function
-        | `Fg _ -> [ 39 ] (* Reset foreground color *)
-        | `Bg _ -> [ 49 ] (* Reset background color *)
-        | `Bold | `Dim -> [ 22 ] (* Reset bold/dim *)
-        | `Italic -> [ 23 ] (* Reset italic *)
-        | `Underline | `Double_underline -> [ 24 ] (* Reset underline *)
-        | `Blink -> [ 25 ] (* Reset blink *)
-        | `Reverse -> [ 27 ] (* Reset reverse *)
-        | `Strikethrough -> [ 29 ] (* Reset strikethrough *)
-        | `Overline -> [ 55 ] (* Reset overline *)
-        | `Reset -> [ 0 ] (* Full reset *))
+        | `Fg _ ->
+            (* Reset foreground color *)
+            [ 39 ]
+        | `Bg _ ->
+            (* Reset background color *)
+            [ 49 ]
+        | `Bold | `Dim ->
+            (* Reset bold/dim *)
+            [ 22 ]
+        | `Italic ->
+            (* Reset italic *)
+            [ 23 ]
+        | `Underline | `Double_underline ->
+            (* Reset underline *)
+            [ 24 ]
+        | `Blink ->
+            (* Reset blink *)
+            [ 25 ]
+        | `Reverse ->
+            (* Reset reverse *)
+            [ 27 ]
+        | `Strikethrough ->
+            (* Reset strikethrough *)
+            [ 29 ]
+        | `Overline ->
+            (* Reset overline *)
+            [ 55 ]
+        | `Reset ->
+            (* Full reset *)
+            [ 0 ])
       attrs
     |> List.sort_uniq compare (* Remove duplicates *)
   in
   let reset_str =
-    if List.mem 0 reset_codes then
-      reset (* If full reset was requested, use it *)
-    else if reset_codes = [] then
-      "" (* No attributes to reset *)
+    if List.mem 0 reset_codes then reset
+      (* If full reset was requested, use it *)
+    else if reset_codes = [] then "" (* No attributes to reset *)
     else
       let code_str = String.concat ";" (List.map string_of_int reset_codes) in
       esc ^ code_str ^ "m"

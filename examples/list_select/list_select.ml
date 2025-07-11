@@ -7,10 +7,10 @@ type model = {
 }
 
 type msg =
-  [ `SelectMsg of Mosaic_tiles.Select.msg
-  | `Quit
-  | `KeyEvent of key_event
-  | `Choose ]
+  [ `Select_msg of Mosaic_tiles.Select.msg
+  | `Key_event of Input.key_event
+  | `Choose
+  | `Quit ]
 
 let food_items =
   [
@@ -35,23 +35,23 @@ let init () : model * msg Cmd.t =
   ( { select = select_model; choice = None; quitting = false },
     Cmd.batch
       [
-        Cmd.map (fun m -> `SelectMsg m) select_cmd;
-        Cmd.map (fun m -> `SelectMsg m) focus_cmd;
+        Cmd.map (fun m -> `Select_msg m) select_cmd;
+        Cmd.map (fun m -> `Select_msg m) focus_cmd;
       ] )
 
 let update (msg : msg) (model : model) : model * msg Cmd.t =
   match msg with
-  | `SelectMsg select_msg ->
+  | `Select_msg select_msg ->
       let new_select, cmd =
         Mosaic_tiles.Select.update select_msg model.select
       in
-      ({ model with select = new_select }, Cmd.map (fun m -> `SelectMsg m) cmd)
+      ({ model with select = new_select }, Cmd.map (fun m -> `Select_msg m) cmd)
   | `Choose -> (
       match Mosaic_tiles.Select.value model.select with
       | Some value -> ({ model with choice = Some value }, Cmd.quit)
       | None -> (model, Cmd.none))
   | `Quit -> ({ model with quitting = true }, Cmd.quit)
-  | `KeyEvent { key; modifier } -> (
+  | `Key_event { key; modifier } -> (
       match (key, modifier) with
       | Char c, { ctrl = true; _ } when Uchar.to_int c = Char.code 'C' ->
           ({ model with quitting = true }, Cmd.quit)
@@ -103,9 +103,9 @@ let subscriptions model =
   Sub.batch
     [
       Sub.map
-        (fun m -> `SelectMsg m)
+        (fun m -> `Select_msg m)
         (Mosaic_tiles.Select.subscriptions model.select);
-      Sub.keyboard (fun key_event -> `KeyEvent key_event);
+      Sub.keyboard (fun key_event -> `Key_event key_event);
     ]
 
 let () =
