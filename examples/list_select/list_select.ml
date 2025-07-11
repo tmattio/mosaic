@@ -31,8 +31,13 @@ let init () : model * msg Cmd.t =
     Mosaic_tiles.Select.init ~placeholder:"What do you want for dinner?"
       ~options:food_items ~height:10 ()
   in
+  let select_model, focus_cmd = Mosaic_tiles.Select.focus select_model in
   ( { select = select_model; choice = None; quitting = false },
-    Cmd.map (fun m -> `SelectMsg m) select_cmd )
+    Cmd.batch
+      [
+        Cmd.map (fun m -> `SelectMsg m) select_cmd;
+        Cmd.map (fun m -> `SelectMsg m) focus_cmd;
+      ] )
 
 let update (msg : msg) (model : model) : model * msg Cmd.t =
   match msg with
