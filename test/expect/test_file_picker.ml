@@ -166,6 +166,14 @@ let%expect_test "Toggle hidden files" =
     +------------------------------------------------------------+
     |}]
 
+let redact_path_line line =
+  let prefix = "|Path: " in
+  if String.starts_with ~prefix line then prefix ^ "<REDACTED>" else line
+
+let redact_path_output output =
+  List.map redact_path_line (String.split_on_char '\n' output)
+  |> String.concat "\n"
+
 let%expect_test "Permission denied directory" =
   (* Create a directory with no read permissions *)
   let temp_dir =
@@ -182,12 +190,13 @@ let%expect_test "Permission denied directory" =
       let output = Test_harness.view ~width:60 ~height:12 harness in
       print_string "Permission denied directory shows empty (bug):\n";
       print_test_output ~height:12 output;
+      print_endline (redact_path_output [%expect.output]);
       (* This shows the bug - empty directory instead of error *)
       [%expect
         {|
       Permission denied directory shows empty (bug):
       +------------------------------------------------------------+
-      |Path: /Users/tmattio/Workspace/mosaic/_build/.sandbox/9d671b|
+      |Path: <REDACTED>
       |┌──────────────────────────────────────────────────────────┐|
       |│                                                          │|
       |│                                                          │|

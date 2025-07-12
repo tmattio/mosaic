@@ -138,11 +138,11 @@ let test_hyperlink () =
 
 (** Test style function *)
 let test_style_function () =
-  check string "styled text" "\x1b[31mRed Text\x1b[0m"
+  check string "styled text" "\x1b[31mRed Text\x1b[39m"
     (style [ `Fg Red ] "Red Text");
-  check string "multiple styles" "\x1b[1;4;31mBold Underline Red\x1b[0m"
+  check string "multiple styles" "\x1b[1;4;31mBold Underline Red\x1b[22;24;39m"
     (style [ `Bold; `Underline; `Fg Red ] "Bold Underline Red");
-  check string "empty attrs" "Plain\x1b[0m" (style [] "Plain")
+  check string "empty attrs" "Plain" (style [] "Plain")
 
 (** Test reset sequences *)
 let test_reset_sequences () =
