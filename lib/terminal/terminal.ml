@@ -90,8 +90,17 @@ let disable_bracketed_paste t =
 let show_cursor t = if t.is_tty then write_escape t Ansi.cursor_show
 let hide_cursor t = if t.is_tty then write_escape t Ansi.cursor_hide
 
+let flush t = 
+  (* Force any pending output to be written *)
+  try 
+    ignore (Unix.write t.output (Bytes.create 0) 0 0);
+    Unix.fsync t.output
+  with _ -> ()
+
 let release t =
   if t.is_tty then (
+    (* Flush any pending output first *)
+    flush t;
     (* Restore visual state before restoring termios *)
     disable_alternate_screen t;
     show_cursor t;
@@ -101,8 +110,6 @@ let release t =
     match t.original_termios with
     | Some termios -> Unix.tcsetattr t.input Unix.TCSANOW termios
     | None -> ())
-
-let flush _ = ()
 
 type sigwinch_handler = int * int -> unit
 

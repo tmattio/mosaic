@@ -137,6 +137,8 @@ module Program = struct
             Queue.add (Cmd.Sequence t) program.cmd_queue)
     | Cmd.Quit ->
         program.running <- false;
+        (* Give other loops a chance to exit *)
+        Eio.Fiber.yield ();
         ()
     | Cmd.Log message ->
         (* Write to stderr to avoid corrupting the UI *)
@@ -250,9 +252,11 @@ module Program = struct
         (Printf.sprintf "Writing %d bytes: %s" (String.length output) preview)
     else log_debug program "Writing 0 bytes (no output)";
 
-    Terminal.write program.term (Bytes.of_string output) 0
-      (String.length output);
-    Terminal.flush program.term;
+    (* Only write to terminal if program is still running *)
+    if program.running then (
+      Terminal.write program.term (Bytes.of_string output) 0
+        (String.length output);
+      Terminal.flush program.term);
 
     program.previous_buffer <- Some buffer
 
@@ -339,6 +343,7 @@ module Program = struct
 
   let cleanup_terminal program =
     Terminal.set_sigwinch_handler None;
+    Terminal.flush program.term;
     Terminal.show_cursor program.term;
     Terminal.disable_mouse program.term;
     Terminal.disable_alternate_screen program.term;
