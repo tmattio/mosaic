@@ -44,12 +44,7 @@
 
 open Mosaic
 
-type model
-(** [model] represents the internal state of a text area component.
-
-    The model tracks text content, cursor position, scroll offset, focus state,
-    and validation results. Models are immutable and updated through the
-    [update] function. *)
+(** {2 Key Binding Configuration} *)
 
 type msg
 (** [msg] represents internal messages processed by the text area component.
@@ -57,6 +52,24 @@ type msg
     Messages include keyboard events, focus changes, content modifications, and
     cursor movements. Use [update] to process messages and produce new states.
 *)
+
+type key_binding = msg Key_binding.action
+(** [key_binding] is an alias for the key binding action type from Key_binding.
+*)
+
+type key_config = msg Key_binding.config
+(** [key_config] is an alias for the key binding configuration from Key_binding.
+*)
+
+val default_key_config : key_config
+(** [default_key_config] inserts all keys as text with no special handling. *)
+
+type model
+(** [model] represents the internal state of a text area component.
+
+    The model tracks text content, cursor position, scroll offset, focus state,
+    and validation results. Models are immutable and updated through the
+    [update] function. *)
 
 val component : (model, msg) Mosaic.app
 (** [component] provides the complete application interface for the text area.
@@ -73,6 +86,7 @@ val init :
   ?width:int ->
   ?word_wrap:bool ->
   ?validate:(string -> (unit, string) result) ->
+  ?key_config:key_config ->
   unit ->
   model * msg Cmd.t
 (** [init ?placeholder ?initial_value ?height ?width ?word_wrap ?validate ()]
@@ -95,6 +109,9 @@ val init :
     @param validate
       Function to validate content, returning [Ok ()] or [Error message]
       (default: always valid)
+    @param key_config
+      Key binding configuration for handling keyboard events (default: all keys
+      are inserted as text)
 
     Example: Creates a commit message editor.
     {[

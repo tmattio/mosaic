@@ -67,6 +67,12 @@
             save_profile ()
     ]} *)
 
+(** {2 Common Types} *)
+
+module Key_binding = Key_binding
+(** Common key binding configuration for text input components. See
+    {!Key_binding}. *)
+
 (** {2 Basic Components} *)
 
 module Spinner = Spinner

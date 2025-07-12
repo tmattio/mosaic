@@ -49,6 +49,15 @@
 
 open Mosaic
 
+(** {2 Key Binding Configuration} *)
+
+type key_config = Input.key_event list
+(** Key binding configuration - list of keys to pass through instead of
+    handling. *)
+
+val default_key_config : key_config
+(** Default key configuration - empty list (handles all keys). *)
+
 type 'a model
 (** [model] represents the internal state of a select component.
 
@@ -72,10 +81,11 @@ val init :
   ?height:int ->
   ?filterable:bool ->
   ?placeholder:string ->
+  ?key_config:key_config ->
   unit ->
   'a model * msg Cmd.t
-(** [init ?options ?default ?height ?filterable ?placeholder ()] creates a new
-    select component.
+(** [init ?options ?default ?height ?filterable ?placeholder ?key_config ()]
+    creates a new select component.
 
     The component starts with dropdown closed and no focus. If [default] matches
     an option value, it becomes selected. The highlighted index starts at the
@@ -93,6 +103,9 @@ val init :
       Whether to show search input when dropdown opens (default: false)
     @param placeholder
       Text displayed when no selection exists (default: "Select...")
+    @param key_config
+      Key binding configuration for filtering pass-through keys (default:
+      handles all keys)
 
     Example: Creates country selector with default.
     {[

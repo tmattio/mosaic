@@ -8,8 +8,8 @@
     {2 Architecture}
 
     State tracks current directory, selected file, and extension filters.
-    Directory loading is asynchronous. Files filtered by extension whitelist when
-    provided.
+    Directory loading is asynchronous. Files filtered by extension whitelist
+    when provided.
 
     {2 Key Invariants}
 

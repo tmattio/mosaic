@@ -2,6 +2,11 @@
 
 open Mosaic
 
+(* Key binding configuration - just a list of keys to pass through *)
+type key_config = Input.key_event list
+
+let default_key_config = []
+
 (* Theme configuration *)
 type theme = {
   focused_style : Style.t;
@@ -31,6 +36,7 @@ type 'a model = {
   limit : int; (* 0 = unlimited *)
   height : int;
   filterable : bool;
+  key_config : key_config;
   (* State *)
   selected_values : 'a list;
   highlighted_index : int;
@@ -94,13 +100,14 @@ let is_value_selected value selected_values =
 
 (* Initialization *)
 let init ?(options = []) ?(default = []) ?(limit = 0) ?(height = 5)
-    ?(filterable = false) () =
+    ?(filterable = false) ?(key_config = default_key_config) () =
   let model =
     {
       options;
       limit;
       height;
       filterable;
+      key_config;
       selected_values = default;
       highlighted_index = 0;
       is_focused = false;
@@ -305,8 +312,22 @@ let view model =
     (filter_elem @ option_items @ limit_info)
 
 (* Subscriptions *)
+(* Helper to check if a key should be passed through *)
+let should_pass_through event pass_through_keys =
+  let key_event_equal e1 e2 =
+    e1.Input.key = e2.Input.key
+    && e1.modifier.ctrl = e2.modifier.ctrl
+    && e1.modifier.alt = e2.modifier.alt
+    && e1.modifier.shift = e2.modifier.shift
+  in
+  List.exists (key_event_equal event) pass_through_keys
+
 let subscriptions model =
-  if model.is_focused then Sub.keyboard (fun k -> Key k) else Sub.none
+  if model.is_focused then
+    Sub.keyboard_filter (fun event ->
+        if should_pass_through event model.key_config then None
+        else Some (Key event))
+  else Sub.none
 
 (* Component not exported due to polymorphic type *)
 

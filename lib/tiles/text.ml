@@ -22,6 +22,15 @@ let default_theme =
     cursor_style = Style.reverse;
   }
 
+(* Messages *)
+type msg = Key of Input.key_event | Focus | Blur
+
+(* Key binding configuration *)
+type key_binding = msg Key_binding.action
+type key_config = msg Key_binding.config
+
+let default_key_config = Key_binding.default_config
+
 (* Model *)
 type model = {
   (* Content *)
@@ -40,10 +49,9 @@ type model = {
   scroll_offset : int;
   (* Theme *)
   theme : theme;
+  (* Key bindings *)
+  key_config : key_config;
 }
-
-(* Messages *)
-type msg = Key of Input.key_event | Focus | Blur
 
 (* Helpers *)
 let string_of_lines lines = String.concat "\n" lines
@@ -79,7 +87,7 @@ let clamp_cursor model =
 
 (* Initialization *)
 let init ?(placeholder = "") ?(initial_value = "") ?(height = 5) ?(width = 60)
-    ?(word_wrap = true) ?validate () =
+    ?(word_wrap = true) ?validate ?(key_config = default_key_config) () =
   let lines = lines_of_string initial_value in
   let model =
     {
@@ -95,6 +103,7 @@ let init ?(placeholder = "") ?(initial_value = "") ?(height = 5) ?(width = 60)
       error = None;
       scroll_offset = 0;
       theme = default_theme;
+      key_config;
     }
   in
   let model = validate_value model in
@@ -428,7 +437,20 @@ let view model =
 
 (* Subscriptions *)
 let subscriptions model =
-  if model.is_focused then Sub.keyboard (fun k -> Key k) else Sub.none
+  if model.is_focused then
+    Sub.keyboard_filter (fun event ->
+        (* Check if this key has an explicit binding *)
+        match Key_binding.find_binding event model.key_config with
+        | Some (_, Key_binding.Handle msg) -> Some msg
+        | Some (_, Key_binding.Pass_through) -> None
+        | Some (_, Key_binding.Insert) -> Some (Key event)
+        | None -> (
+            (* No explicit binding, use default behavior *)
+            match model.key_config.default with
+            | Key_binding.Handle msg -> Some msg
+            | Key_binding.Pass_through -> None
+            | Key_binding.Insert -> Some (Key event)))
+  else Sub.none
 
 (* Component export *)
 let component = Mosaic.app ~init ~update ~view ~subscriptions ()

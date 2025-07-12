@@ -61,6 +61,15 @@
 
 open Mosaic
 
+(** {2 Key Binding Configuration} *)
+
+type key_config = Input.key_event list
+(** Key binding configuration - list of keys to pass through instead of
+    handling. *)
+
+val default_key_config : key_config
+(** Default key configuration - empty list (handles all keys). *)
+
 type 'a model
 (** The internal state of the multi-select, parameterized by the option value
     type. Contains selected items, options, filter state, and theme. *)
@@ -77,6 +86,7 @@ val init :
   ?limit:int ->
   ?height:int ->
   ?filterable:bool ->
+  ?key_config:key_config ->
   unit ->
   'a model * msg Cmd.t
 (** [init ?options ?default ?limit ?height ?filterable ()] creates a new
@@ -86,7 +96,10 @@ val init :
     @param default Initially selected values
     @param limit Maximum number of selections allowed (0 = unlimited)
     @param height Maximum visible items (default: 5)
-    @param filterable Enable search/filter input (default: false) *)
+    @param filterable Enable search/filter input (default: false)
+    @param key_config
+      Key binding configuration for filtering pass-through keys (default:
+      handles all keys) *)
 
 (** {2 Accessors} *)
 

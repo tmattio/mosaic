@@ -71,6 +71,15 @@ type msg
 (** Messages that the input can handle, including text changes, focus events,
     and suggestion selection. *)
 
+type key_binding = msg Key_binding.action
+(** Key binding action type for the input component. *)
+
+type key_config = msg Key_binding.config
+(** Key binding configuration for the input component. *)
+
+val default_key_config : key_config
+(** Default key configuration - inserts all keys as text. *)
+
 val component : (model, msg) Mosaic.app
 (** The input component definition following The Elm Architecture. *)
 
@@ -83,6 +92,7 @@ val init :
   ?suggestions:string list ->
   ?validate:(string -> (unit, string) result) ->
   ?width:int ->
+  ?key_config:key_config ->
   unit ->
   model * msg Cmd.t
 (** [init ?placeholder ?initial_value ?is_password ?suggestions ?validate ?width
@@ -93,7 +103,9 @@ val init :
     @param is_password Display asterisks instead of characters
     @param suggestions List of autocomplete suggestions
     @param validate Validation function returning Error with message on failure
-    @param width Fixed width for the input field *)
+    @param width Fixed width for the input field
+    @param key_config Key binding configuration (default: all keys insert text)
+*)
 
 (** {2 Accessors} *)
 

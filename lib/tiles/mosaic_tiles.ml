@@ -1,5 +1,6 @@
 (** Implementation exporting all tiles *)
 
+module Key_binding = Key_binding
 module Spinner = Spinner
 module Input = Input
 module Text = Text
