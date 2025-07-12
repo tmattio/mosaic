@@ -316,7 +316,26 @@ module Program = struct
       let resize_event = Input.Resize (w, h) in
       handle_input_event program resize_event
     in
-    Terminal.set_sigwinch_handler (Some sigwinch_handler)
+    Terminal.set_sigwinch_handler (Some sigwinch_handler);
+
+    (* Setup termination signal handlers to ensure terminal cleanup *)
+    let termination_handler _ =
+      (* Ensure terminal is cleaned up before exit *)
+      Terminal.set_sigwinch_handler None;
+      Terminal.show_cursor program.term;
+      Terminal.disable_mouse program.term;
+      Terminal.disable_alternate_screen program.term;
+      Terminal.set_mode program.term `Cooked;
+      Terminal.release program.term;
+      exit 0
+    in
+    (* Install handlers for common termination signals *)
+    (try Sys.set_signal Sys.sigterm (Sys.Signal_handle termination_handler)
+     with _ -> ());
+    (try Sys.set_signal Sys.sigint (Sys.Signal_handle termination_handler)
+     with _ -> ());
+    try Sys.set_signal Sys.sighup (Sys.Signal_handle termination_handler)
+    with _ -> ()
 
   let cleanup_terminal program =
     Terminal.set_sigwinch_handler None;
