@@ -121,11 +121,15 @@ module Program = struct
             (* Send completion message *)
             Eio.Stream.add program.msg_stream exec_cmd.on_complete)
     | Cmd.Tick (duration, f) ->
-        Fiber.fork ~sw:program.sw (fun () ->
+        (* Use fork_daemon so the timer doesn't block program shutdown *)
+        Fiber.fork_daemon ~sw:program.sw (fun () ->
             let start_time = Eio.Time.now program.clock in
             Eio.Time.sleep program.clock duration;
             let elapsed = Eio.Time.now program.clock -. start_time in
-            Eio.Stream.add program.msg_stream (f elapsed))
+            (* Only send message if program is still running *)
+            if program.running then
+              Eio.Stream.add program.msg_stream (f elapsed);
+            `Stop_daemon)
     | Cmd.Sequence cmds -> (
         (* Process commands sequentially - only the first command goes to the queue,
            the rest are wrapped in a new Sequence command that will be processed after *)
