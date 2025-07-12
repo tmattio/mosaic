@@ -12,6 +12,9 @@ type 'msg t =
   | Log of string
   | Print of string
   | Set_window_title of string
+  | Enter_alt_screen
+  | Exit_alt_screen
+  | Repaint
 
 let none = None
 let msg m = Msg m
@@ -30,6 +33,9 @@ let tick duration f = Tick (duration, f)
 let log message = Log message
 let print message = Print message
 let set_window_title title = Set_window_title title
+let enter_alt_screen = Enter_alt_screen
+let exit_alt_screen = Exit_alt_screen
+let repaint = Repaint
 
 let sequence cmds =
   match List.filter (function None -> false | _ -> true) cmds with
@@ -62,6 +68,9 @@ let pp pp_msg fmt cmd =
     | Log message -> fprintf fmt "Log(%S)" message
     | Print message -> fprintf fmt "Print(%S)" message
     | Set_window_title title -> fprintf fmt "Set_window_title(%S)" title
+    | Enter_alt_screen -> fprintf fmt "Enter_alt_screen"
+    | Exit_alt_screen -> fprintf fmt "Exit_alt_screen"
+    | Repaint -> fprintf fmt "Repaint"
   in
   pp_cmd fmt cmd
 
@@ -78,6 +87,9 @@ let rec to_list = function
   | Log _ as l -> [ l ]
   | Print _ as p -> [ p ]
   | Set_window_title _ as s -> [ s ]
+  | Enter_alt_screen -> [ Enter_alt_screen ]
+  | Exit_alt_screen -> [ Exit_alt_screen ]
+  | Repaint -> [ Repaint ]
 
 let map f cmd =
   let rec go = function
@@ -94,5 +106,8 @@ let map f cmd =
     | Print _ as p -> p (* Print commands are not affected by map *)
     | Set_window_title _ as s ->
         s (* Set_window_title commands are not affected by map *)
+    | Enter_alt_screen -> Enter_alt_screen
+    | Exit_alt_screen -> Exit_alt_screen
+    | Repaint -> Repaint
   in
   go cmd

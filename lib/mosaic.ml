@@ -28,7 +28,7 @@ module Program = struct
     app : ('model, 'msg) app;
     term : Terminal.t;
     event_source : Event_source.t;
-    alt_screen : bool;
+    mutable alt_screen : bool;
     mouse : bool;
     fps : int;
     mutable previous_buffer : Render.buffer option;
@@ -167,6 +167,25 @@ module Program = struct
           0
           (String.length (Ansi.set_window_title title));
         Terminal.flush program.term
+    | Cmd.Enter_alt_screen ->
+        if not program.alt_screen then (
+          log_debug program "Entering alternate screen";
+          Terminal.enable_alternate_screen program.term;
+          program.alt_screen <- true;
+          (* Force a full repaint since the screen is now blank *)
+          program.previous_buffer <- None)
+    | Cmd.Exit_alt_screen ->
+        if program.alt_screen then (
+          log_debug program "Exiting alternate screen";
+          Terminal.disable_alternate_screen program.term;
+          program.alt_screen <- false;
+          (* Force a full repaint to redraw the inline UI *)
+          program.previous_buffer <- None;
+          (* Reset the line count for the inline view *)
+          program.lines_rendered <- 0)
+    | Cmd.Repaint ->
+        log_debug program "Forcing repaint";
+        program.previous_buffer <- None
 
   let handle_input_event program event =
     log_debug program (Format.asprintf "Input event: %a" Input.pp_event event);

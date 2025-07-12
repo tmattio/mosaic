@@ -28,6 +28,9 @@ type 'msg t =
   | Log of string
   | Print of string
   | Set_window_title of string
+  | Enter_alt_screen
+  | Exit_alt_screen
+  | Repaint
       (** [t] represents a command that may produce messages of type ['msg].
 
           None performs no operation. Msg immediately produces a message. Batch
@@ -35,7 +38,9 @@ type 'msg t =
           releases terminal for external programs. Tick creates a timer.
           Sequence runs commands serially. Quit terminates the application. Log
           writes debug output. Print writes to stdout for scrollback history.
-          Set_window_title updates the terminal title. *)
+          Set_window_title updates the terminal title. Enter_alt_screen switches
+          to alternate screen buffer. Exit_alt_screen returns to normal screen.
+          Repaint forces a full screen redraw. *)
 
 val none : 'msg t
 (** [none] represents the absence of any command.
@@ -196,6 +201,44 @@ val set_window_title : string -> 'msg t
     Example: Shows current file in title bar.
     {[
       Cmd.set_window_title (Printf.sprintf "Editor - %s" filename)
+    ]} *)
+
+val enter_alt_screen : 'msg t
+(** [enter_alt_screen] switches the terminal to alternate screen buffer.
+
+    The alternate screen provides a clean canvas for fullscreen applications.
+    Previous terminal content is preserved and will be restored when exiting
+    alternate screen mode. This command only takes effect if the program is
+    currently in normal screen mode.
+
+    Example: Switches to fullscreen mode for a file picker.
+    {[
+      Cmd.batch [ Cmd.enter_alt_screen; Cmd.msg `ShowFilePicker ]
+    ]} *)
+
+val exit_alt_screen : 'msg t
+(** [exit_alt_screen] returns the terminal to normal screen buffer.
+
+    Restores the terminal content that was present before entering alternate
+    screen mode. This command only takes effect if the program is currently in
+    alternate screen mode. Typically paired with [repaint] to redraw the inline
+    UI.
+
+    Example: Returns from fullscreen mode.
+    {[
+      Cmd.batch [ Cmd.exit_alt_screen; Cmd.repaint; Cmd.msg `FileSelected path ]
+    ]} *)
+
+val repaint : 'msg t
+(** [repaint] forces a full redraw of the current view.
+
+    Clears internal render caches and triggers a complete repaint. Useful after
+    screen mode switches or when recovering from terminal corruption. This is
+    more efficient than clearing and redrawing manually.
+
+    Example: Refreshes display after returning from external program.
+    {[
+      Cmd.batch [ Cmd.repaint; Cmd.msg `EditorClosed ]
     ]} *)
 
 val map : ('a -> 'b) -> 'a t -> 'b t
