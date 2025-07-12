@@ -90,9 +90,9 @@ let disable_bracketed_paste t =
 let show_cursor t = if t.is_tty then write_escape t Ansi.cursor_show
 let hide_cursor t = if t.is_tty then write_escape t Ansi.cursor_hide
 
-let flush t = 
+let flush t =
   (* Force any pending output to be written *)
-  try 
+  try
     ignore (Unix.write t.output (Bytes.create 0) 0 0);
     Unix.fsync t.output
   with _ -> ()

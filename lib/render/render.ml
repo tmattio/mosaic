@@ -242,11 +242,13 @@ let render_cell cell =
   | Some uri -> sgr ^ Ansi.hyperlink ~uri char_str
   | None -> sgr ^ char_str
 
+type render_mode = Absolute | Relative
+
 let render_patch patch =
   let cursor_pos = Ansi.cursor_position (patch.row + 1) (patch.col + 1) in
   cursor_pos ^ render_cell patch.new_cell
 
-let render_patches ?cursor_pos patches =
+let render_patches ?cursor_pos ?(mode = Absolute) patches =
   let by_row =
     List.stable_sort
       (fun p1 p2 ->
@@ -256,56 +258,117 @@ let render_patches ?cursor_pos patches =
 
   let buf = Buffer.create 1024 in
   let last_style = ref Style.default in
-  let last_row = ref (-1) in
-  let last_col = ref (-1) in
+  let current_row = ref (if mode = Relative then 0 else -1) in
+  let current_col = ref (if mode = Relative then 0 else -1) in
 
   List.iter
     (fun patch ->
-      if patch.row <> !last_row || patch.col <> !last_col + 1 then
-        Buffer.add_string buf
-          (Ansi.cursor_position (patch.row + 1) (patch.col + 1));
+      (* Position cursor *)
+      (match mode with
+      | Absolute ->
+          if patch.row <> !current_row || patch.col <> !current_col + 1 then
+            Buffer.add_string buf
+              (Ansi.cursor_position (patch.row + 1) (patch.col + 1))
+      | Relative ->
+          (* Move vertically if needed *)
+          let row_diff = patch.row - !current_row in
+          if row_diff > 0 then (
+            Buffer.add_string buf (Ansi.cursor_down row_diff);
+            (* When moving to a new line, always reset horizontal position *)
+            Buffer.add_string buf "\r";
+            current_col := 0)
+          else if row_diff < 0 then (
+            (* This case is less common but included for completeness *)
+            Buffer.add_string buf (Ansi.cursor_up (-row_diff));
+            Buffer.add_string buf "\r";
+            current_col := 0);
+          current_row := patch.row;
 
-      if patch.new_cell.style <> !last_style then (
-        let attrs = style_to_attrs patch.new_cell.style in
-        if attrs = [] then Buffer.add_string buf Ansi.reset
-        else Buffer.add_string buf (Ansi.sgr attrs);
-        last_style := patch.new_cell.style);
+          (* Move horizontally if needed *)
+          let col_diff = patch.col - !current_col in
+          if col_diff > 0 then
+            Buffer.add_string buf (Ansi.cursor_forward col_diff);
+          current_col := patch.col);
 
+      (* Apply style - more aggressive reset in Relative mode *)
+      (match mode with
+      | Absolute ->
+          if patch.new_cell.style <> !last_style then (
+            let attrs = style_to_attrs patch.new_cell.style in
+            if attrs = [] then Buffer.add_string buf Ansi.reset
+            else Buffer.add_string buf (Ansi.sgr attrs);
+            last_style := patch.new_cell.style)
+      | Relative ->
+          (* Apply style with reset to prevent bleeding *)
+          if patch.new_cell.style <> !last_style then (
+            (* Always reset before applying new style to prevent bleeding attributes *)
+            if !last_style <> Style.default then
+              Buffer.add_string buf Ansi.reset;
+            let attrs = style_to_attrs patch.new_cell.style in
+            if attrs <> [] then Buffer.add_string buf (Ansi.sgr attrs);
+            last_style := patch.new_cell.style));
+
+      (* Render content *)
       let char_str =
         match patch.new_cell.chars with
         | [] -> " "
         | chars ->
-            let buf = Buffer.create 8 in
-            List.iter (Uutf.Buffer.add_utf_8 buf) chars;
-            Buffer.contents buf
+            let b = Buffer.create 8 in
+            List.iter (Uutf.Buffer.add_utf_8 b) chars;
+            Buffer.contents b
       in
 
       (match patch.new_cell.style.uri with
       | Some uri -> Buffer.add_string buf (Ansi.hyperlink ~uri char_str)
       | None -> Buffer.add_string buf char_str);
 
-      last_row := patch.row;
-      last_col := patch.col + patch.new_cell.width - 1)
+      (* Update position tracking based on mode *)
+      match mode with
+      | Absolute ->
+          current_row := patch.row;
+          current_col := patch.col + patch.new_cell.width - 1
+      | Relative ->
+          (* In Relative mode, we already updated row and col during positioning *)
+          current_col := !current_col + patch.new_cell.width)
     by_row;
 
-  (* Only add reset if we actually rendered something *)
-  if patches <> [] then Buffer.add_string buf Ansi.reset;
+  (* Reset style at the end *)
+  if patches <> [] && (!last_style <> Style.default || mode = Relative) then
+    Buffer.add_string buf Ansi.reset;
 
   (* Position cursor if requested *)
   (match cursor_pos with
   | None -> ()
   | Some `Hide -> Buffer.add_string buf Ansi.cursor_hide
   | Some (`Move (x, y)) ->
-      Buffer.add_string buf (Ansi.cursor_position (y + 1) (x + 1));
+      (match mode with
+      | Absolute -> Buffer.add_string buf (Ansi.cursor_position (y + 1) (x + 1))
+      | Relative ->
+          let row_diff = y - !current_row in
+          let col_diff = x - !current_col in
+          if row_diff > 0 then Buffer.add_string buf (Ansi.cursor_down row_diff)
+          else if row_diff < 0 then
+            Buffer.add_string buf (Ansi.cursor_up (-row_diff));
+          if col_diff > 0 then
+            Buffer.add_string buf (Ansi.cursor_forward col_diff)
+          else if col_diff < 0 then
+            Buffer.add_string buf (Ansi.cursor_back (-col_diff)));
       Buffer.add_string buf Ansi.cursor_show);
 
   Buffer.contents buf
 
-let render_full ?cursor_pos buffer =
+let render_full ?cursor_pos ?(mode = Absolute) buffer =
   let buf = Buffer.create (buffer.width * buffer.height * 10) in
-  Buffer.add_string buf (Ansi.cursor_position 1 1);
-  Buffer.add_string buf Ansi.clear_screen;
-  Buffer.add_string buf Ansi.reset;
+
+  (* Initial setup based on mode *)
+  (match mode with
+  | Absolute ->
+      Buffer.add_string buf (Ansi.cursor_position 1 1);
+      Buffer.add_string buf Ansi.clear_screen;
+      Buffer.add_string buf Ansi.reset
+  | Relative ->
+      (* In relative mode, assume we're already at the correct position *)
+      Buffer.add_string buf Ansi.reset);
 
   (* Ensure we start with a clean slate *)
   let last_style = ref Style.default in
@@ -315,19 +378,33 @@ let render_full ?cursor_pos buffer =
     for x = 0 to buffer.width - 1 do
       let cell = get buffer x y in
       if cell.width > 0 then (
-        if cell.style <> !last_style then (
-          let attrs = style_to_attrs cell.style in
-          if attrs = [] then Buffer.add_string buf Ansi.reset
-          else Buffer.add_string buf (Ansi.sgr attrs);
-          last_style := cell.style);
+        (* Style handling - more aggressive in Relative mode *)
+        (match mode with
+        | Absolute ->
+            if cell.style <> !last_style then (
+              let attrs = style_to_attrs cell.style in
+              if attrs = [] then Buffer.add_string buf Ansi.reset
+              else Buffer.add_string buf (Ansi.sgr attrs);
+              last_style := cell.style)
+        | Relative ->
+            (* Always reset before styled cells to prevent bleeding *)
+            if cell.style <> Style.default then (
+              Buffer.add_string buf Ansi.reset;
+              let attrs = style_to_attrs cell.style in
+              Buffer.add_string buf (Ansi.sgr attrs);
+              last_style := cell.style)
+            else if !last_style <> Style.default then (
+              Buffer.add_string buf Ansi.reset;
+              last_style := Style.default));
+
         let char_str =
           match cell.chars with
           | [ c ] when Uchar.to_int c = 0x20 -> " "
           | [] -> " "
           | chars ->
-              let buf = Buffer.create 8 in
-              List.iter (Uutf.Buffer.add_utf_8 buf) chars;
-              Buffer.contents buf
+              let b = Buffer.create 8 in
+              List.iter (Uutf.Buffer.add_utf_8 b) chars;
+              Buffer.contents b
         in
         match cell.style.uri with
         | Some uri -> Buffer.add_string buf (Ansi.hyperlink ~uri char_str)
@@ -342,7 +419,19 @@ let render_full ?cursor_pos buffer =
   | None -> ()
   | Some `Hide -> Buffer.add_string buf Ansi.cursor_hide
   | Some (`Move (x, y)) ->
-      Buffer.add_string buf (Ansi.cursor_position (y + 1) (x + 1));
+      (match mode with
+      | Absolute -> Buffer.add_string buf (Ansi.cursor_position (y + 1) (x + 1))
+      | Relative ->
+          (* In relative mode, we're at the bottom right, so move to target *)
+          let row_diff = y - (buffer.height - 1) in
+          let col_diff = x - (buffer.width - 1) in
+          if row_diff > 0 then Buffer.add_string buf (Ansi.cursor_down row_diff)
+          else if row_diff < 0 then
+            Buffer.add_string buf (Ansi.cursor_up (-row_diff));
+          if col_diff > 0 then
+            Buffer.add_string buf (Ansi.cursor_forward col_diff)
+          else if col_diff < 0 then
+            Buffer.add_string buf (Ansi.cursor_back (-col_diff)));
       Buffer.add_string buf Ansi.cursor_show);
 
   Buffer.contents buf

@@ -304,24 +304,35 @@ val render_patch : patch -> string
     [render_patches] for multiple changes due to repeated cursor moves. Useful
     for debugging or real-time single cell updates. *)
 
-val render_patches : ?cursor_pos:cursor_pos -> patch list -> string
-(** [render_patches ?cursor_pos patches] optimally renders multiple changes.
+(** Rendering mode for different terminal contexts *)
+type render_mode =
+  | Absolute  (** Use absolute positioning (for alt-screen mode) *)
+  | Relative
+      (** Use relative positioning with aggressive style resets (for
+          non-alt-screen mode) *)
+
+val render_patches :
+  ?cursor_pos:cursor_pos -> ?mode:render_mode -> patch list -> string
+(** [render_patches ?cursor_pos ?mode patches] optimally renders multiple
+    changes.
 
     Minimizes cursor movements by grouping nearby changes. Coalesces style
-    changes for efficiency. Handles wide characters and combining marks
-    correctly. Final cursor position controlled by [cursor_pos] parameter.
+    changes for efficiency when safe. Handles wide characters and combining
+    marks correctly. Final cursor position controlled by [cursor_pos] parameter.
 
-    @param cursor_pos Final cursor state (default: `Hide) *)
+    @param cursor_pos Final cursor state (default: `Hide)
+    @param mode Rendering mode (default: `Absolute) *)
 
-val render_full : ?cursor_pos:cursor_pos -> buffer -> string
-(** [render_full ?cursor_pos buffer] renders complete buffer contents.
+val render_full :
+  ?cursor_pos:cursor_pos -> ?mode:render_mode -> buffer -> string
+(** [render_full ?cursor_pos ?mode buffer] renders complete buffer contents.
 
-    Generates escape sequences for entire screen. Starts from home position
-    (0,0). More efficient than patches for complete redraws. Use after
-    clear_screen or for initial render. Optimizes by coalescing adjacent cells
-    with same style.
+    Generates escape sequences for entire screen. In Absolute mode, starts from
+    home position (0,0). In Relative mode, starts from current cursor position.
+    Optimizes by coalescing adjacent cells with same style when safe.
 
-    @param cursor_pos Final cursor state (default: `Hide) *)
+    @param cursor_pos Final cursor state (default: `Hide)
+    @param mode Rendering mode (default: `Absolute) *)
 
 (** {1 Utilities} *)
 

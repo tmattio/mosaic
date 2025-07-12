@@ -37,6 +37,10 @@ module Program = struct
     sw : Eio.Switch.t;
     cmd_queue : 'msg Cmd.t Queue.t; (* Command queue for sequential execution *)
     debug_log : out_channel option; (* Debug logging *)
+    mutable lines_rendered : int;
+        (* Track lines rendered in non-alt-screen mode *)
+    mutable print_queue : string list;
+        (* Queue for print messages in non-alt-screen mode *)
   }
 
   let log_debug program s =
@@ -71,6 +75,8 @@ module Program = struct
       sw;
       cmd_queue = Queue.create ();
       debug_log;
+      lines_rendered = 0;
+      print_queue = [];
     }
 
   let send_msg program msg =
@@ -147,6 +153,13 @@ module Program = struct
     | Cmd.Log message ->
         (* Write to stderr to avoid corrupting the UI *)
         Printf.eprintf "%s\n%!" message
+    | Cmd.Print message ->
+        if program.alt_screen then
+          (* In alt-screen mode, print to stderr like Log *)
+          Printf.eprintf "%s\n%!" message
+        else
+          (* In non-alt-screen mode, queue for later printing *)
+          program.print_queue <- program.print_queue @ [ message ]
     | Cmd.Set_window_title title ->
         (* Write the escape sequence to set window title *)
         Terminal.write program.term
@@ -190,6 +203,18 @@ module Program = struct
     List.iter (Eio.Stream.add program.msg_stream) msgs
 
   let render program =
+    (* Flush any queued print messages before rendering the main view *)
+    if program.print_queue <> [] && not program.alt_screen then (
+      let output = String.concat "\r\n" program.print_queue ^ "\r\n" in
+      (* Write directly, this will scroll the terminal *)
+      Terminal.write program.term (Bytes.of_string output) 0
+        (String.length output);
+      Terminal.flush program.term;
+      program.print_queue <- [];
+      (* After printing, the old view is gone, so we must force a full repaint
+         of the TUI below the new printed lines. *)
+      program.previous_buffer <- None);
+
     log_debug program "Render: Starting render pass";
     let element = program.app.view program.model in
 
@@ -198,7 +223,14 @@ module Program = struct
 
     (* Create a new buffer for this frame *)
     let width, height = Terminal.size program.term in
-    let buffer = Render.create width height in
+    (* For non-alt-screen mode, use a reasonable height *)
+    let actual_height =
+      if not program.alt_screen then
+        (* Use enough height for the UI but not too much *)
+        min height 20 (* Limit to 20 lines for inline mode *)
+      else height
+    in
+    let buffer = Render.create width actual_height in
 
     (* Render the UI element tree into the buffer using the layout engine *)
     Ui.render buffer element;
@@ -220,18 +252,31 @@ module Program = struct
     log_debug program
       (Printf.sprintf "Current buffer hash: %d" (buffer_hash buffer));
 
-    (* Now diff and patch as intended *)
+    (* Prepare output based on mode *)
     let output =
       match program.previous_buffer with
       | None ->
+          (* First render *)
           log_debug program "Render: Full redraw (no previous buffer)";
-          (* Don't write clear sequence separately - render_full already includes it *)
-          let full_output = Render.render_full buffer in
-          log_debug program
-            (Printf.sprintf "Full render output length: %d bytes"
-               (String.length full_output));
-          full_output
+          if not program.alt_screen then (
+            (* Non-alt-screen mode - first render *)
+            let buf = Buffer.create 1024 in
+            (* Clear from cursor down *)
+            Buffer.add_string buf Ansi.clear_screen_below;
+
+            (* Use render_full with Relative mode for non-alt-screen *)
+            let rendered = Render.render_full ~mode:Render.Relative buffer in
+            Buffer.add_string buf rendered;
+
+            (* After a full relative render, move to the next line and save position *)
+            let _, height = Render.dimensions buffer in
+            program.lines_rendered <- height;
+            Buffer.add_string buf "\r\n";
+
+            Buffer.contents buf)
+          else Render.render_full buffer
       | Some prev_buf ->
+          (* Subsequent renders - use diff *)
           log_debug program
             (Printf.sprintf "Previous buffer hash: %d" (buffer_hash prev_buf));
           let patches = Render.diff prev_buf buffer in
@@ -242,7 +287,52 @@ module Program = struct
             log_debug program
               (Printf.sprintf "Render: %d patches detected"
                  (List.length patches));
-            Render.render_patches patches)
+            if not program.alt_screen then (
+              (* START of REPLACEMENT LOGIC from the plan *)
+              let buf = Buffer.create 1024 in
+              let prev_height = program.lines_rendered in
+              let new_height = snd (Render.dimensions buffer) in
+
+              (* 1. Reposition cursor to the start of the old view area. *)
+              if prev_height > 0 then (
+                Buffer.add_string buf (Ansi.cursor_up prev_height);
+                Buffer.add_string buf "\r");
+
+              (* Save cursor position so we can return here later *)
+              Buffer.add_string buf Ansi.cursor_save;
+
+              (* 2. Render the patches, which will move the cursor around. *)
+              let patch_str =
+                Render.render_patches ~mode:Render.Relative patches
+              in
+              Buffer.add_string buf patch_str;
+
+              (* 3. If the new view is shorter, clear any leftover lines. *)
+              if new_height < prev_height then (
+                (* To clear correctly, we must reposition to the end of the new content *)
+                Buffer.add_string buf (Ansi.cursor_up prev_height);
+                Buffer.add_string buf "\r";
+                if new_height > 0 then
+                  Buffer.add_string buf (Ansi.cursor_down new_height);
+                Buffer.add_string buf Ansi.clear_screen_below);
+
+              (* 4. After all drawing and clearing, explicitly move the cursor
+                 to a known, consistent position for the *next* frame. This position
+                 should be the beginning of the line AFTER our rendered content. *)
+
+              (* Restore to the saved position (start of our render area) *)
+              Buffer.add_string buf Ansi.cursor_restore;
+
+              (* Now, move down to the line just after the new content. *)
+              if new_height > 0 then
+                Buffer.add_string buf (Ansi.cursor_down new_height);
+              Buffer.add_string buf "\r";
+
+              (* 5. Update state for the next frame. *)
+              program.lines_rendered <- new_height;
+
+              Buffer.contents buf)
+            else Render.render_patches patches)
     in
 
     (* Log output with preview for debugging *)
@@ -256,8 +346,8 @@ module Program = struct
         (Printf.sprintf "Writing %d bytes: %s" (String.length output) preview)
     else log_debug program "Writing 0 bytes (no output)";
 
-    (* Only write to terminal if program is still running *)
-    if program.running then (
+    (* Only write to terminal if program is still running AND there's output *)
+    if program.running && String.length output > 0 then (
       Terminal.write program.term (Bytes.of_string output) 0
         (String.length output);
       Terminal.flush program.term);

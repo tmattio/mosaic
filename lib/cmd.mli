@@ -26,6 +26,7 @@ type 'msg t =
   | Sequence of 'msg t list
   | Quit
   | Log of string
+  | Print of string
   | Set_window_title of string
       (** [t] represents a command that may produce messages of type ['msg].
 
@@ -33,7 +34,8 @@ type 'msg t =
           runs commands in parallel. Perform executes an async function. Exec
           releases terminal for external programs. Tick creates a timer.
           Sequence runs commands serially. Quit terminates the application. Log
-          writes debug output. Set_window_title updates the terminal title. *)
+          writes debug output. Print writes to stdout for scrollback history.
+          Set_window_title updates the terminal title. *)
 
 val none : 'msg t
 (** [none] represents the absence of any command.
@@ -170,6 +172,19 @@ val log : string -> 'msg t
     {[
       match msg with
       | Click (x, y) -> (model, Cmd.log (Printf.sprintf "Click at (%d, %d)" x y))
+    ]} *)
+
+val print : string -> 'msg t
+(** [print s] writes message [s] to stdout in non-alt-screen mode.
+
+    In non-alternate screen mode, the message is written above the TUI view and
+    becomes part of the terminal's scrollback history. In alternate screen mode,
+    this behaves like [log]. Use for persistent output that should remain
+    visible after the app exits.
+
+    Example: Shows completion message in scrollback.
+    {[
+      Cmd.print "Task completed successfully!"
     ]} *)
 
 val set_window_title : string -> 'msg t
