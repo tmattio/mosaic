@@ -159,12 +159,16 @@ type element
     layout calculation and efficient caching. The rendering engine converts
     elements to terminal output while preserving layout constraints. *)
 
-val text : ?style:Render.Style.t -> string -> element
-(** [text ?style s] creates a text element displaying [s].
+val text : ?style:Render.Style.t -> ?align:align -> ?tab_width:int -> string -> element
+(** [text ?style ?align ?tab_width s] creates a text element displaying [s].
 
     Text elements have natural dimensions based on string width and line count.
     Newlines create multiple lines. The optional [style] applies color,
     attributes, and formatting. Multi-byte Unicode is handled correctly.
+
+    @param style Style for text rendering
+    @param align Alignment for multi-line text within its bounds (default: Start)
+    @param tab_width Number of spaces to expand tabs to (default: 4)
 
     Example: Creates bold red error text.
     {[

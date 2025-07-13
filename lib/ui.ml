@@ -67,7 +67,7 @@ and computed_element = {
 }
 
 and element =
-  | Text of string * Render.Style.t
+  | Text of text_data
   | Box of box_data
   | Spacer of int
   | Expand of element (* Wrapper to mark expandable elements *)
@@ -75,6 +75,13 @@ and element =
   | Z_stack of z_stack_data
   | Flow of flow_data
   | Grid of grid_data
+
+and text_data = {
+  content : string;
+  style : Render.Style.t;
+  align : align;
+  tab_width : int;
+}
 
 and box_data = {
   children : element list;
@@ -131,7 +138,8 @@ and grid_data = {
   mutable cache : layout_cache option;
 }
 
-let text ?(style = Render.Style.empty) s = Text (s, style)
+let text ?(style = Render.Style.empty) ?(align = Start) ?(tab_width = 4) content = 
+  Text { content; style; align; tab_width }
 let no_padding = padding ()
 
 let hbox ?(gap = 0) ?width ?height ?min_width ?min_height ?max_width ?max_height 
@@ -224,9 +232,9 @@ type layout_context = {
 }
 
 (* Helper to draw a border with per-side control *)
-let draw_border buffer x y width height border_spec =
+let draw_border buffer x y width height (border_spec : border_spec) =
   let tl, t, tr, r, bl, b, br, l = border_chars border_spec.style in
-  let style =
+  let border_style =
     match border_spec.color with
     | Some color -> Render.Style.fg color
     | None -> Render.Style.empty
@@ -264,33 +272,50 @@ let draw_border buffer x y width height border_spec =
 
   (* Draw corners *)
   if border_spec.top || border_spec.left then
-    Render.set_string buffer x y top_left style;
+    Render.set_string buffer x y top_left border_style;
   if border_spec.top || border_spec.right then
-    Render.set_string buffer (x + width - 1) y top_right style;
+    Render.set_string buffer (x + width - 1) y top_right border_style;
   if border_spec.bottom || border_spec.left then
-    Render.set_string buffer x (y + height - 1) bottom_left style;
+    Render.set_string buffer x (y + height - 1) bottom_left border_style;
   if border_spec.bottom || border_spec.right then
-    Render.set_string buffer (x + width - 1) (y + height - 1) bottom_right style;
+    Render.set_string buffer (x + width - 1) (y + height - 1) bottom_right border_style;
 
   (* Top border *)
   if border_spec.top then
     for i = 1 to width - 2 do
-      Render.set_string buffer (x + i) y t style
+      Render.set_string buffer (x + i) y t border_style
     done;
 
   (* Bottom border *)
   if border_spec.bottom then
     for i = 1 to width - 2 do
-      Render.set_string buffer (x + i) (y + height - 1) b style
+      Render.set_string buffer (x + i) (y + height - 1) b border_style
     done;
 
   (* Side borders *)
   for i = 1 to height - 2 do
     if border_spec.left then
-      Render.set_string buffer x (y + i) l style;
+      Render.set_string buffer x (y + i) l border_style;
     if border_spec.right then
-      Render.set_string buffer (x + width - 1) (y + i) r style
+      Render.set_string buffer (x + width - 1) (y + i) r border_style
   done
+
+(* Helper to expand tabs to spaces *)
+let expand_tabs s tab_width =
+  let rec expand_line line =
+    match String.index_opt line '\t' with
+    | None -> line
+    | Some idx ->
+        let before = String.sub line 0 idx in
+        let after = String.sub line (idx + 1) (String.length line - idx - 1) in
+        let col = Render.measure_string before in
+        let spaces_needed = tab_width - (col mod tab_width) in
+        let spaces = String.make spaces_needed ' ' in
+        expand_line (before ^ spaces ^ after)
+  in
+  String.split_on_char '\n' s
+  |> List.map expand_line
+  |> String.concat "\n"
 
 (* Calculate border space based on which sides are enabled *)
 let border_space_h border_opt =
@@ -306,7 +331,12 @@ let border_space_v border_opt =
 (* Get natural size of element without rendering *)
 let rec measure_element element =
   match element with
-  | Text (s, _) -> (Render.measure_string s, 1)
+  | Text { content; tab_width; _ } -> 
+      let expanded = expand_tabs content tab_width in
+      let lines = String.split_on_char '\n' expanded in
+      let max_width = List.fold_left (fun acc line -> max acc (Render.measure_string line)) 0 lines in
+      let height = List.length lines in
+      (max_width, max height 1)
   | Spacer n -> (n, 1)
   | Expand e -> measure_element e
   | Rich_text segments ->
@@ -755,10 +785,19 @@ and calculate_grid_layout ctx children columns rows col_spacing row_spacing =
 (* Main render function with caching *)
 and render_at ctx buffer element =
   match element with
-  | Text (s, style) ->
-      Render.set_string buffer ctx.x ctx.y s style;
-      let width = Render.measure_string s in
-      (width, 1)
+  | Text { content; style; align; tab_width } ->
+      let expanded = expand_tabs content tab_width in
+      let lines = String.split_on_char '\n' expanded in
+      let max_width = List.fold_left (fun acc line -> max acc (Render.measure_string line)) 0 lines in
+      
+      (* Render each line with alignment *)
+      List.iteri (fun i line ->
+        let line_width = Render.measure_string line in
+        let x_offset = align_offset ctx.width line_width align in
+        Render.set_string buffer (ctx.x + x_offset) (ctx.y + i) line style
+      ) lines;
+      
+      (max_width, List.length lines)
   | Rich_text segments ->
       let rec render_segments x segments total_width =
         match segments with
@@ -886,7 +925,7 @@ let render buffer element =
 
 (* Pretty-printing *)
 let rec pp_element fmt = function
-  | Text (s, _) -> Format.fprintf fmt "Text(%S)" s
+  | Text { content; _ } -> Format.fprintf fmt "Text(%S)" content
   | Rich_text segments -> 
       Format.fprintf fmt "Rich_text[@[<hv>%a@]]"
         (Format.pp_print_list
