@@ -175,9 +175,14 @@ val hbox :
   ?gap:int ->
   ?width:int ->
   ?height:int ->
+  ?min_width:int ->
+  ?min_height:int ->
+  ?max_width:int ->
+  ?max_height:int ->
   ?margin:padding ->
   ?padding:padding ->
   ?border:border ->
+  ?background:Render.Style.t ->
   ?align_items:align ->
   ?justify_content:align ->
   element list ->
@@ -217,9 +222,14 @@ val vbox :
   ?gap:int ->
   ?width:int ->
   ?height:int ->
+  ?min_width:int ->
+  ?min_height:int ->
+  ?max_width:int ->
+  ?max_height:int ->
   ?margin:padding ->
   ?padding:padding ->
   ?border:border ->
+  ?background:Render.Style.t ->
   ?align_items:align ->
   ?justify_content:align ->
   element list ->
@@ -260,6 +270,152 @@ val space : int -> element
 
 val expand : element -> element
 (** [expand elem] makes elem fill available space *)
+
+(** {2 Advanced Layout Elements} *)
+
+type z_align = 
+  | Top_left | Top | Top_right 
+  | Left | Center | Right 
+  | Bottom_left | Bottom | Bottom_right
+(** [z_align] controls alignment of children in a z-stack layout *)
+
+val zstack : ?align:z_align -> element list -> element
+(** [zstack ?align children] creates a z-stack layout where children are overlaid
+    at the same position.
+    
+    Children are rendered in order, with later children appearing on top.
+    The stack's size is determined by the largest child unless explicitly sized.
+    
+    @param align Controls alignment of children within the stack (default: Top_left)
+    
+    Example: Overlay a notification on the main UI.
+    {[
+      let ui_with_notification =
+        Ui.zstack ~align:Center [
+          main_ui;
+          notification_box;
+        ]
+    ]} *)
+
+val flow : ?h_gap:int -> ?v_gap:int -> element list -> element  
+(** [flow ?h_gap ?v_gap children] creates a flow layout that wraps children
+    onto multiple lines when they exceed available width.
+    
+    Children are arranged left-to-right and wrap to the next line when needed.
+    Each line is independently aligned according to the flow's alignment settings.
+    
+    @param h_gap Horizontal spacing between children (default: 0)
+    @param v_gap Vertical spacing between lines (default: 0)
+    
+    Example: Display tags that wrap to fit the container.
+    {[
+      let tags = 
+        Ui.flow ~h_gap:1 ~v_gap:1 [
+          Ui.text "ocaml";
+          Ui.text "functional";
+          Ui.text "type-safe";
+          Ui.text "expressive";
+        ]
+    ]} *)
+
+type size_def = Fixed of int | Flex of int
+(** [size_def] specifies sizing for grid columns and rows.
+    Fixed size has a specific dimension in cells.
+    Flex size shares remaining space proportionally by weight. *)
+
+type col_def = size_def
+(** [col_def] specifies column sizing in a grid layout. *)
+
+type row_def = size_def
+(** [row_def] specifies row sizing in a grid layout. *)
+
+val grid :
+  ?col_spacing:int ->
+  ?row_spacing:int ->
+  columns:col_def list ->
+  rows:row_def list ->
+  element list ->
+  element
+(** [grid ?col_spacing ?row_spacing ~columns ~rows children] creates a grid layout
+    with specified column and row definitions.
+    
+    Children are placed in cells from left to right, top to bottom.
+    The number of columns and rows must accommodate all children.
+    
+    @param col_spacing Horizontal spacing between columns (default: 0)
+    @param row_spacing Vertical spacing between rows (default: 0)
+    @param columns List of column definitions
+    @param rows List of row definitions
+    
+    Example: Create a 2x2 grid with flexible sizing.
+    {[
+      let grid =
+        Ui.grid
+          ~columns:[Flex 1; Flex 2]
+          ~rows:[Fixed 3; Flex 1]
+          [
+            Ui.text "Name:";
+            Ui.text "John Doe";
+            Ui.text "Status:";
+            Ui.text "Active";
+          ]
+    ]} *)
+
+(** {2 Text Elements} *)
+
+val rich_text : (string * Render.Style.t) list -> element
+(** [rich_text segments] creates a text element with multiple styled segments.
+    
+    Each segment is a pair of text content and its style. Segments are 
+    concatenated without spacing. Useful for syntax highlighting or inline
+    emphasis.
+    
+    Example: Create text with mixed styles.
+    {[
+      let status = 
+        Ui.rich_text [
+          ("Status: ", Style.empty);
+          ("OK", Style.(fg green ++ bold));
+          (" (200)", Style.(fg (gray 12)));
+        ]
+    ]} *)
+
+(** {2 Helper Functions} *)
+
+val flex_spacer : unit -> element
+(** [flex_spacer ()] creates an expandable spacer that fills available space.
+    
+    Equivalent to [expand (spacer 0)]. Useful for pushing content apart
+    in boxes.
+    
+    Example: Right-align items in an hbox.
+    {[
+      let header = 
+        Ui.hbox [
+          Ui.text "Title";
+          Ui.flex_spacer ();
+          Ui.text "Close";
+        ]
+    ]} *)
+
+val divider : ?style:Render.Style.t -> ?char:string -> unit -> element
+(** [divider ?style ?char ()] creates a horizontal divider line.
+    
+    The divider expands to fill available width in a vbox.
+    
+    @param style Style for the divider line (default: gray)
+    @param char Character to use for the line (default: "─")
+    
+    Example: Separate sections in a menu.
+    {[
+      let menu = 
+        Ui.vbox [
+          Ui.text "File Operations";
+          Ui.divider ();
+          Ui.text "New";
+          Ui.text "Open";
+        ]
+    ]} *)
 
 val render : Render.buffer -> element -> unit
 (** [render buf elem] renders elem to buf with layout support *)

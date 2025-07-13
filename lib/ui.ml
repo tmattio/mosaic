@@ -71,6 +71,10 @@ and element =
   | Box of box_data
   | Spacer of int
   | Expand of element (* Wrapper to mark expandable elements *)
+  | Rich_text of (string * Render.Style.t) list
+  | Z_stack of z_stack_data
+  | Flow of flow_data
+  | Grid of grid_data
 
 and box_data = {
   children : element list;
@@ -84,17 +88,54 @@ and layout_options = {
   gap : int;
   width : int option;
   height : int option;
+  min_width : int option;
+  min_height : int option;
+  max_width : int option;
+  max_height : int option;
   margin : padding;
   padding : padding;
   border : border option;
+  background : Render.Style.t option;
   align : align;
   justify : align;
+}
+
+and z_align = 
+  | Top_left | Top | Top_right 
+  | Left | Center | Right 
+  | Bottom_left | Bottom | Bottom_right
+
+and z_stack_data = {
+  children : element list;
+  align : z_align;
+  mutable cache : layout_cache option;
+}
+
+and flow_data = {
+  children : element list;
+  h_gap : int;
+  v_gap : int;
+  mutable cache : layout_cache option;
+}
+
+and size_def = Fixed of int | Flex of int
+and col_def = size_def
+and row_def = size_def
+
+and grid_data = {
+  children : element list;
+  columns : col_def list;
+  rows : row_def list;
+  col_spacing : int;
+  row_spacing : int;
+  mutable cache : layout_cache option;
 }
 
 let text ?(style = Render.Style.empty) s = Text (s, style)
 let no_padding = padding ()
 
-let hbox ?(gap = 0) ?width ?height ?(margin = no_padding) ?(padding = no_padding) ?border
+let hbox ?(gap = 0) ?width ?height ?min_width ?min_height ?max_width ?max_height 
+    ?(margin = no_padding) ?(padding = no_padding) ?border ?background
     ?(align_items = Stretch) ?(justify_content = Start) children =
   let options =
     {
@@ -102,16 +143,22 @@ let hbox ?(gap = 0) ?width ?height ?(margin = no_padding) ?(padding = no_padding
       gap;
       width;
       height;
+      min_width;
+      min_height;
+      max_width;
+      max_height;
       margin;
       padding;
       border;
+      background;
       align = align_items;
       justify = justify_content;
     }
   in
   Box { children; options; cache = None }
 
-let vbox ?(gap = 0) ?width ?height ?(margin = no_padding) ?(padding = no_padding) ?border
+let vbox ?(gap = 0) ?width ?height ?min_width ?min_height ?max_width ?max_height
+    ?(margin = no_padding) ?(padding = no_padding) ?border ?background
     ?(align_items = Stretch) ?(justify_content = Start) children =
   let options =
     {
@@ -119,9 +166,14 @@ let vbox ?(gap = 0) ?width ?height ?(margin = no_padding) ?(padding = no_padding
       gap;
       width;
       height;
+      min_width;
+      min_height;
+      max_width;
+      max_height;
       margin;
       padding;
       border;
+      background;
       align = align_items;
       justify = justify_content;
     }
@@ -131,6 +183,28 @@ let vbox ?(gap = 0) ?width ?height ?(margin = no_padding) ?(padding = no_padding
 let spacer n = Spacer n
 let space = spacer (* Alias for API compatibility *)
 let expand element = Expand element
+
+(* Rich text element *)
+let rich_text segments = Rich_text segments
+
+(* Z-stack layout *)
+let zstack ?(align = Top_left) children =
+  Z_stack { children; align; cache = None }
+
+(* Flow layout *)
+let flow ?(h_gap = 0) ?(v_gap = 0) children =
+  Flow { children; h_gap; v_gap; cache = None }
+
+(* Grid layout *)
+let grid ?(col_spacing = 0) ?(row_spacing = 0) ~columns ~rows children =
+  Grid { children; columns; rows; col_spacing; row_spacing; cache = None }
+
+(* Helper functions *)
+let flex_spacer () = expand (spacer 0)
+
+let divider ?(style = Render.Style.(fg (gray 8))) ?(char = "─") () =
+  let content = String.make 1000 (if String.length char > 0 then char.[0] else '-') in
+  expand (text ~style content)
 
 (* Border drawing characters *)
 let border_chars style =
@@ -235,6 +309,41 @@ let rec measure_element element =
   | Text (s, _) -> (Render.measure_string s, 1)
   | Spacer n -> (n, 1)
   | Expand e -> measure_element e
+  | Rich_text segments ->
+      let width = List.fold_left (fun acc (s, _) -> acc + Render.measure_string s) 0 segments in
+      (width, 1)
+  | Z_stack { children; _ } ->
+      (* Z-stack size is the maximum of all children *)
+      List.fold_left 
+        (fun (max_w, max_h) child ->
+          let w, h = measure_element child in
+          (max max_w w, max max_h h))
+        (0, 0) children
+  | Flow { children; h_gap; v_gap = _; _ } ->
+      (* Flow layout needs context width to calculate wrapping, so return sum for now *)
+      let total_width = List.fold_left 
+        (fun acc child -> 
+          let w, _ = measure_element child in
+          acc + w) 
+        0 children in
+      let max_height = List.fold_left
+        (fun acc child ->
+          let _, h = measure_element child in
+          max acc h)
+        0 children in
+      let gap_space = h_gap * max 0 (List.length children - 1) in
+      (total_width + gap_space, max_height)
+  | Grid { children = _; columns; rows; col_spacing; row_spacing; _ } ->
+      (* Grid natural size based on column/row definitions *)
+      let fixed_width = List.fold_left
+        (fun acc col -> match col with Fixed w -> acc + w | Flex _ -> acc)
+        0 columns in
+      let fixed_height = List.fold_left  
+        (fun acc row -> match row with Fixed h -> acc + h | Flex _ -> acc)
+        0 rows in
+      let col_gaps = col_spacing * max 0 (List.length columns - 1) in
+      let row_gaps = row_spacing * max 0 (List.length rows - 1) in
+      (fixed_width + col_gaps, fixed_height + row_gaps)
   | Box { children; options = opts; _ } -> (
       let children_sizes =
         List.map
@@ -297,9 +406,18 @@ let is_expandable = function Expand _ -> true | _ -> false
 (* Clear layout caches from previous frame *)
 let rec clear_cache element =
   match element with
-  | Text _ | Spacer _ -> ()
+  | Text _ | Spacer _ | Rich_text _ -> ()
   | Expand e -> clear_cache e
   | Box data ->
+      data.cache <- None;
+      List.iter clear_cache data.children
+  | Z_stack data ->
+      data.cache <- None;
+      List.iter clear_cache data.children
+  | Flow data ->
+      data.cache <- None;
+      List.iter clear_cache data.children
+  | Grid data ->
       data.cache <- None;
       List.iter clear_cache data.children
 
@@ -321,8 +439,22 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
     height = ctx.height - opts.margin.top - opts.margin.bottom;
   } in
   
-  let box_width = Option.value opts.width ~default:margin_ctx.width in
-  let box_height = Option.value opts.height ~default:margin_ctx.height in
+  (* Calculate box dimensions with min/max constraints *)
+  let natural_width, natural_height = measure_element (Box { children; options = opts; cache = None }) in
+  
+  let resolve_dimension value min_val max_val available natural =
+    let resolved = Option.value value ~default:(min available natural) in
+    let with_min = match min_val with
+      | Some m -> max m resolved
+      | None -> resolved
+    in
+    match max_val with
+    | Some m -> min m with_min  
+    | None -> with_min
+  in
+  
+  let box_width = resolve_dimension opts.width opts.min_width opts.max_width margin_ctx.width natural_width in
+  let box_height = resolve_dimension opts.height opts.min_height opts.max_height margin_ctx.height natural_height in
 
   (* Calculate content area after border and padding *)
   let border_left = match opts.border with None -> 0 | Some b -> if b.left then 1 else 0 in
@@ -469,6 +601,16 @@ and redraw_from_cache ctx buffer opts cache =
   let draw_x = ctx.x + opts.margin.left in
   let draw_y = ctx.y + opts.margin.top in
   
+  (* Draw background if specified *)
+  (match opts.background with
+  | Some bg_style ->
+      for y = 0 to cache.computed_height - 1 do
+        for x = 0 to cache.computed_width - 1 do
+          Render.set_string buffer (draw_x + x) (draw_y + y) " " bg_style
+        done
+      done
+  | None -> ());
+  
   (* Draw the border for the parent box if needed *)
   (match opts.border with
   | Some border_spec when cache.computed_width > 2 && cache.computed_height > 2
@@ -486,6 +628,130 @@ and redraw_from_cache ctx buffer opts cache =
       ignore (render_at child_ctx buffer cl.element))
     cache.children_layouts
 
+(* Layout calculation for z-stack *)
+and calculate_z_stack_layout ctx children align =
+  let width = ctx.width in
+  let height = ctx.height in
+  
+  (* Calculate position based on alignment *)
+  let align_child child =
+    let child_w, child_h = measure_element child in
+    let x_offset = match align with
+      | Top_left | Left | Bottom_left -> 0
+      | Top | Center | Bottom -> (width - child_w) / 2
+      | Top_right | Right | Bottom_right -> width - child_w
+    in
+    let y_offset = match align with
+      | Top_left | Top | Top_right -> 0
+      | Left | Center | Right -> (height - child_h) / 2  
+      | Bottom_left | Bottom | Bottom_right -> height - child_h
+    in
+    {
+      element = child;
+      x = ctx.x + x_offset;
+      y = ctx.y + y_offset;
+      width = min child_w width;
+      height = min child_h height;
+    }
+  in
+  
+  let children_layouts = List.map align_child children in
+  (width, height, children_layouts)
+
+(* Layout calculation for flow *)
+and calculate_flow_layout ctx children h_gap v_gap =
+  let width = ctx.width in
+  
+  (* Measure all children *)
+  let measured = List.map (fun child -> 
+    let w, h = measure_element child in
+    (child, w, h)) children in
+    
+  (* Calculate wrapped lines *)
+  let rec wrap_lines x y current_line remaining acc_lines max_h =
+    match remaining with
+    | [] -> 
+        let lines = if current_line = [] then acc_lines else current_line :: acc_lines in
+        (List.rev lines, y + max_h)
+    | (child, w, h) :: rest ->
+        if x + w <= width || current_line = [] then
+          (* Add to current line *)
+          let item = { element = child; x = ctx.x + x; y = ctx.y + y; width = w; height = h } in
+          wrap_lines (x + w + h_gap) y (item :: current_line) rest acc_lines (max max_h h)
+        else
+          (* Start new line *)
+          let lines = if current_line = [] then acc_lines else current_line :: acc_lines in
+          let item = { element = child; x = ctx.x; y = ctx.y + y + max_h + v_gap; width = w; height = h } in
+          wrap_lines (w + h_gap) (y + max_h + v_gap) [item] rest lines h
+  in
+  
+  let lines, total_height = wrap_lines 0 0 [] measured [] 0 in
+  let all_items = List.concat (List.map List.rev lines) in
+  (width, total_height, all_items)
+
+(* Layout calculation for grid *)
+and calculate_grid_layout ctx children columns rows col_spacing row_spacing =
+  let width = ctx.width in
+  let height = ctx.height in
+  
+  (* Calculate column widths *)
+  let flex_cols = List.filter (function Flex _ -> true | _ -> false) columns in
+  let fixed_col_width = List.fold_left (fun acc col -> 
+    match col with Fixed w -> acc + w | _ -> acc) 0 columns in
+  let col_gaps = col_spacing * max 0 (List.length columns - 1) in
+  let available_col_flex = max 0 (width - fixed_col_width - col_gaps) in
+  let flex_col_unit = 
+    if flex_cols = [] then 0 
+    else available_col_flex / List.fold_left (fun acc col ->
+      match col with Flex n -> acc + n | _ -> acc) 0 columns in
+      
+  let col_widths = List.map (function
+    | Fixed w -> w
+    | Flex n -> n * flex_col_unit) columns in
+    
+  (* Calculate row heights similarly *)
+  let flex_rows = List.filter (function Flex _ -> true | _ -> false) rows in
+  let fixed_row_height = List.fold_left (fun acc row ->
+    match row with Fixed h -> acc + h | _ -> acc) 0 rows in
+  let row_gaps = row_spacing * max 0 (List.length rows - 1) in  
+  let available_row_flex = max 0 (height - fixed_row_height - row_gaps) in
+  let flex_row_unit =
+    if flex_rows = [] then 0
+    else available_row_flex / List.fold_left (fun acc row ->
+      match row with Flex n -> acc + n | _ -> acc) 0 rows in
+      
+  let row_heights = List.map (function
+    | Fixed h -> h
+    | Flex n -> n * flex_row_unit) rows in
+    
+  (* Calculate cell positions *)
+  let rec calc_positions col row x y col_widths row_heights acc children =
+    match children with
+    | [] -> List.rev acc
+    | child :: rest ->
+        if col >= List.length columns then
+          calc_positions 0 (row + 1) ctx.x 
+            (y + List.nth row_heights row + row_spacing)
+            col_widths row_heights acc children
+        else if row >= List.length rows then
+          List.rev acc (* Ignore extra children *)
+        else
+          let w = List.nth col_widths col in
+          let h = List.nth row_heights row in
+          let item = {
+            element = child;
+            x = x;
+            y = y;
+            width = w;
+            height = h;
+          } in
+          let next_x = x + w + col_spacing in
+          calc_positions (col + 1) row next_x y col_widths row_heights (item :: acc) rest
+  in
+  
+  let children_layouts = calc_positions 0 0 ctx.x ctx.y col_widths row_heights [] children in
+  (width, height, children_layouts)
+
 (* Main render function with caching *)
 and render_at ctx buffer element =
   match element with
@@ -493,11 +759,95 @@ and render_at ctx buffer element =
       Render.set_string buffer ctx.x ctx.y s style;
       let width = Render.measure_string s in
       (width, 1)
+  | Rich_text segments ->
+      let rec render_segments x segments total_width =
+        match segments with
+        | [] -> total_width
+        | (s, style) :: rest ->
+            Render.set_string buffer x ctx.y s style;
+            let w = Render.measure_string s in
+            render_segments (x + w) rest (total_width + w)
+      in
+      let width = render_segments ctx.x segments 0 in
+      (width, 1)
   | Spacer n -> (n, 1)
   | Expand e ->
       (* Expanded elements fill available space *)
       let _w, _h = render_at ctx buffer e in
       (ctx.width, ctx.height)
+  | Z_stack data -> (
+      match data.cache with
+      | Some cache when cache.ctx_width = ctx.width && cache.ctx_height = ctx.height ->
+          List.iter (fun (cl : computed_element) ->
+            let child_ctx = { x = cl.x; y = cl.y; width = cl.width; height = cl.height } in
+            ignore (render_at child_ctx buffer cl.element))
+            cache.children_layouts;
+          (cache.computed_width, cache.computed_height)
+      | _ ->
+          let computed_width, computed_height, children_layouts =
+            calculate_z_stack_layout ctx data.children data.align
+          in
+          data.cache <- Some {
+            ctx_width = ctx.width;
+            ctx_height = ctx.height;
+            computed_width;
+            computed_height;
+            children_layouts;
+          };
+          List.iter (fun (cl : computed_element) ->
+            let child_ctx = { x = cl.x; y = cl.y; width = cl.width; height = cl.height } in
+            ignore (render_at child_ctx buffer cl.element))
+            children_layouts;
+          (computed_width, computed_height))
+  | Flow data -> (
+      match data.cache with
+      | Some cache when cache.ctx_width = ctx.width && cache.ctx_height = ctx.height ->
+          List.iter (fun (cl : computed_element) ->
+            let child_ctx = { x = cl.x; y = cl.y; width = cl.width; height = cl.height } in
+            ignore (render_at child_ctx buffer cl.element))
+            cache.children_layouts;
+          (cache.computed_width, cache.computed_height)
+      | _ ->
+          let computed_width, computed_height, children_layouts =
+            calculate_flow_layout ctx data.children data.h_gap data.v_gap
+          in
+          data.cache <- Some {
+            ctx_width = ctx.width;
+            ctx_height = ctx.height;
+            computed_width;
+            computed_height;
+            children_layouts;
+          };
+          List.iter (fun (cl : computed_element) ->
+            let child_ctx = { x = cl.x; y = cl.y; width = cl.width; height = cl.height } in
+            ignore (render_at child_ctx buffer cl.element))
+            children_layouts;
+          (computed_width, computed_height))
+  | Grid data -> (
+      match data.cache with  
+      | Some cache when cache.ctx_width = ctx.width && cache.ctx_height = ctx.height ->
+          List.iter (fun (cl : computed_element) ->
+            let child_ctx = { x = cl.x; y = cl.y; width = cl.width; height = cl.height } in
+            ignore (render_at child_ctx buffer cl.element))
+            cache.children_layouts;
+          (cache.computed_width, cache.computed_height)
+      | _ ->
+          let computed_width, computed_height, children_layouts =
+            calculate_grid_layout ctx data.children data.columns data.rows 
+              data.col_spacing data.row_spacing
+          in
+          data.cache <- Some {
+            ctx_width = ctx.width;
+            ctx_height = ctx.height;
+            computed_width;
+            computed_height;
+            children_layouts;
+          };
+          List.iter (fun (cl : computed_element) ->
+            let child_ctx = { x = cl.x; y = cl.y; width = cl.width; height = cl.height } in  
+            ignore (render_at child_ctx buffer cl.element))
+            children_layouts;
+          (computed_width, computed_height))
   | Box data -> (
       (* 1. Check the cache *)
       match data.cache with
@@ -537,11 +887,40 @@ let render buffer element =
 (* Pretty-printing *)
 let rec pp_element fmt = function
   | Text (s, _) -> Format.fprintf fmt "Text(%S)" s
+  | Rich_text segments -> 
+      Format.fprintf fmt "Rich_text[@[<hv>%a@]]"
+        (Format.pp_print_list
+           ~pp_sep:(fun fmt () -> Format.fprintf fmt ";@ ")
+           (fun fmt (s, _) -> Format.fprintf fmt "%S" s))
+        segments
   | Box { children; options; _ } ->
       let dir =
         match options.direction with `Horizontal -> "H" | `Vertical -> "V"
       in
       Format.fprintf fmt "%sBox[@[<hv>%a@]]" dir
+        (Format.pp_print_list
+           ~pp_sep:(fun fmt () -> Format.fprintf fmt ";@ ")
+           pp_element)
+        children
+  | Z_stack { children; align; _ } ->
+      Format.fprintf fmt "Z_stack(%s)[@[<hv>%a@]]"
+        (match align with
+         | Top_left -> "TL" | Top -> "T" | Top_right -> "TR"
+         | Left -> "L" | Center -> "C" | Right -> "R"
+         | Bottom_left -> "BL" | Bottom -> "B" | Bottom_right -> "BR")
+        (Format.pp_print_list
+           ~pp_sep:(fun fmt () -> Format.fprintf fmt ";@ ")
+           pp_element)
+        children
+  | Flow { children; h_gap; v_gap; _ } ->
+      Format.fprintf fmt "Flow(h:%d,v:%d)[@[<hv>%a@]]" h_gap v_gap
+        (Format.pp_print_list
+           ~pp_sep:(fun fmt () -> Format.fprintf fmt ";@ ")
+           pp_element)
+        children
+  | Grid { children; columns; rows; _ } ->
+      Format.fprintf fmt "Grid(%dx%d)[@[<hv>%a@]]"
+        (List.length columns) (List.length rows)
         (Format.pp_print_list
            ~pp_sep:(fun fmt () -> Format.fprintf fmt ";@ ")
            pp_element)

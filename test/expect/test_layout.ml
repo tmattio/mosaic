@@ -291,3 +291,173 @@ let%expect_test "Border too small to render" =
 |└───┘|
 +-----+
 |}]
+
+let%expect_test "Min/max width constraints" =
+  let ui =
+    Ui.vbox ~gap:1
+      [
+        Ui.hbox ~min_width:15 ~border:(Ui.border ()) [ Ui.text "Min" ];
+        Ui.hbox ~max_width:10 ~border:(Ui.border ()) [ Ui.text "Maximum width test" ];
+      ]
+  in
+  print_layout ~width:30 ~height:6 ui;
+  [%expect_exact
+    {|+------------------------------+
+|┌─────────────┐               |
+|│Min          │               |
+|└─────────────┘               |
+|┌────────┐                    |
+|│Maximum │                    |
+|└────────┘                    |
++------------------------------+
+|}]
+
+let%expect_test "Background padding" =
+  let ui =
+    Ui.hbox ~padding:(Ui.pad ~all:1 ())
+      [ Ui.text "Padded" ]
+  in
+  print_layout ~width:15 ~height:3 ui;
+  [%expect_exact
+    {|+---------------+
+|               |
+| Padded        |
+|               |
++---------------+
+|}]
+
+let%expect_test "Rich text" =
+  let ui =
+    Ui.rich_text
+      [
+        ("Normal ", Render.Style.empty);
+        ("Bold", Render.Style.empty);
+        (" and ", Render.Style.empty);
+        ("Red", Render.Style.empty);
+      ]
+  in
+  print_layout ~width:20 ~height:2 ui;
+  [%expect_exact
+    {|+--------------------+
+|Normal Bold and Red |
+|                    |
++--------------------+
+|}]
+
+let%expect_test "Z-stack alignment" =
+  let main = Ui.hbox ~width:20 ~height:5 ~border:(Ui.border ()) [ Ui.text "Main" ] in
+  let overlay = Ui.text "X" in
+  let ui = Ui.zstack ~align:Center [ main; overlay ] in
+  print_layout ~width:25 ~height:6 ui;
+  [%expect_exact
+    {|+-------------------------+
+|┌──────────────────┐     |
+|│Main              │     |
+|│         X        │     |
+|│                  │     |
+|└──────────────────┘     |
+|                         |
++-------------------------+
+|}]
+
+let%expect_test "Flow layout wrapping" =
+  let tag s = Ui.hbox ~border:(Ui.border ()) ~padding:(Ui.pad ~x:1 ()) [ Ui.text s ] in
+  let ui =
+    Ui.flow ~h_gap:1 ~v_gap:1
+      [ tag "one"; tag "two"; tag "three"; tag "four"; tag "five" ]
+  in
+  print_layout ~width:25 ~height:8 ui;
+  [%expect_exact
+    {|+-------------------------+
+|┌─────┐ ┌─────┐ ┌───────┐|
+|│ one │ │ two │ │ three │|
+|└─────┘ └─────┘ └───────┘|
+|┌──────┐ ┌──────┐        |
+|│ four │ │ five │        |
+|└──────┘ └──────┘        |
+|                         |
+|                         |
++-------------------------+
+|}]
+
+let%expect_test "Grid layout" =
+  let ui =
+    Ui.grid ~col_spacing:2 ~row_spacing:1 ~columns:[ Fixed 8; Flex 1 ]
+      ~rows:[ Fixed 1; Fixed 1 ]
+      [
+        Ui.text "Name:";
+        Ui.hbox ~border:(Ui.border ()) [ Ui.text "John" ];
+        Ui.text "Email:";
+        Ui.hbox ~border:(Ui.border ()) [ Ui.text "john@example.com" ];
+      ]
+  in
+  print_layout ~width:35 ~height:5 ui;
+  [%expect_exact
+    {|+-----------------------------------+
+|Name:     ┌───────────────────────┐|
+|          │John                   │|
+|Email:    └───────────────────────┐|
+|          │john@example.com       │|
+|          └───────────────────────┘|
++-----------------------------------+
+|}]
+
+let%expect_test "Flex spacer" =
+  let ui =
+    Ui.hbox ~border:(Ui.border ())
+      [ Ui.text "Left"; Ui.flex_spacer (); Ui.text "Right" ]
+  in
+  print_layout ~width:20 ~height:3 ui;
+  [%expect_exact
+    {|+--------------------+
+|┌──────────────────┐|
+|│Left         Right│|
+|└──────────────────┘|
++--------------------+
+|}]
+
+let%expect_test "Divider" =
+  let ui =
+    Ui.vbox ~gap:1
+      [ Ui.text "Section 1"; Ui.divider (); Ui.text "Section 2" ]
+  in
+  print_layout ~width:15 ~height:5 ui;
+  [%expect_exact
+    {|+---------------+
+|Section 1      |
+|───────────────|
+|Section 2      |
+|               |
+|               |
++---------------+
+|}]
+
+let%expect_test "Text alignment" =
+  let ui =
+    Ui.vbox ~gap:1 ~width:20
+      [
+        Ui.text ~align:Start "Left";
+        Ui.text ~align:Center "Center";
+        Ui.text ~align:End "Right";
+      ]
+  in
+  print_layout ~width:22 ~height:5 ui;
+  [%expect_exact
+    {|+----------------------+
+|Left                  |
+|       Center         |
+|               Right  |
+|                      |
+|                      |
++----------------------+
+|}]
+
+let%expect_test "Tab expansion" =
+  let ui = Ui.text ~tab_width:4 "A\tB\tC" in
+  print_layout ~width:15 ~height:2 ui;
+  [%expect_exact
+    {|+---------------+
+|A   B   C      |
+|               |
++---------------+
+|}]
