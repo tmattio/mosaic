@@ -121,12 +121,42 @@ module Style = struct
     let g = (hex lsr 8) land 0xFF in
     let b = hex land 0xFF in
     RGB (r, g, b)
+
+  (* Adaptive color support *)
+  type adaptive_color = { light : color; dark : color }
+
+  let adaptive ~light ~dark = { light; dark }
+
+  (* Global reference for terminal background state *)
+  let is_dark_background = ref true
+
+  (* Function to update background state - called by terminal detection *)
+  let set_dark_background dark = is_dark_background := dark
+
+  let adaptive_fg color =
+    let selected = if !is_dark_background then color.dark else color.light in
+    fg selected
+
+  let adaptive_bg color =
+    let selected = if !is_dark_background then color.dark else color.light in
+    bg selected
+
+  (* Common adaptive colors *)
+  let adaptive_primary = { light = Black; dark = White }
+  let adaptive_secondary = { light = gray 8; dark = gray 15 }
+  let adaptive_accent = { light = Blue; dark = Bright_blue }
+  let adaptive_error = { light = Red; dark = Bright_red }
+  let adaptive_warning = { light = Yellow; dark = Bright_yellow }
+  let adaptive_success = { light = Green; dark = Bright_green }
 end
 
 type cell = { chars : Uchar.t list; style : Style.t; width : int }
 
 let empty_cell =
   { chars = [ Uchar.of_int 0x20 ]; style = Style.default; width = 1 }
+
+(* Terminal background detection *)
+let set_terminal_background ~dark = Style.set_dark_background dark
 
 type buffer = { width : int; height : int; cells : cell array }
 

@@ -190,6 +190,59 @@ module Style : sig
       {[
         let magenta = Style.rgb_hex 0xFF00FF
       ]} *)
+
+  (** {2 Adaptive Colors} *)
+
+  type adaptive_color = { light : color; dark : color }
+  (** [adaptive_color] represents a color that adapts to terminal background.
+
+      Selects appropriate color based on whether terminal has light or dark
+      background. Provides automatic contrast adjustment. *)
+
+  val adaptive : light:color -> dark:color -> adaptive_color
+  (** [adaptive ~light ~dark] creates an adaptive color specification.
+
+      The [light] color is used on light backgrounds, [dark] on dark
+      backgrounds. Background detection happens at render time.
+
+      Example: Creates text that's readable on any background.
+      {[
+        let text_color = Style.adaptive ~light:Black ~dark:White
+      ]} *)
+
+  val adaptive_fg : adaptive_color -> t
+  (** [adaptive_fg color] creates a style with adaptive foreground color.
+
+      Color selection based on detected terminal background. Falls back to
+      [dark] variant if detection fails (most terminals have dark backgrounds).
+  *)
+
+  val adaptive_bg : adaptive_color -> t
+  (** [adaptive_bg color] creates a style with adaptive background color.
+
+      Color selection based on detected terminal background. Falls back to
+      [dark] variant if detection fails. *)
+
+  (** {2 Common Adaptive Colors} *)
+
+  val adaptive_primary : adaptive_color
+  (** Primary text color that adapts to background (Black on light, White on
+      dark) *)
+
+  val adaptive_secondary : adaptive_color
+  (** Secondary text color with reduced contrast *)
+
+  val adaptive_accent : adaptive_color
+  (** Accent color that remains visible on both backgrounds *)
+
+  val adaptive_error : adaptive_color
+  (** Error color that adapts while maintaining urgency *)
+
+  val adaptive_warning : adaptive_color
+  (** Warning color that adapts while maintaining visibility *)
+
+  val adaptive_success : adaptive_color
+  (** Success color that adapts while maintaining positive association *)
 end
 
 (** {1 Cells} *)
@@ -210,6 +263,18 @@ val empty_cell : cell
 
     Contains no characters, default style, width 1. Used for clearing and
     initialization. *)
+
+(** {1 Terminal Background Detection} *)
+
+val set_terminal_background : dark:bool -> unit
+(** [set_terminal_background ~dark] updates the global terminal background
+    state.
+
+    This affects how adaptive colors are rendered. Should be called once during
+    initialization after detecting the terminal's background color. The setting
+    persists for the lifetime of the process.
+
+    @param dark [true] for dark backgrounds, [false] for light backgrounds *)
 
 (** {1 Buffer} *)
 

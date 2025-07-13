@@ -359,6 +359,45 @@ let test_tab_expansion () =
   | ch :: _ when Uchar.to_char ch = 'B' -> ()
   | _ -> Alcotest.fail "tab not expanded correctly"
 
+let test_adaptive_colors () =
+  (* Test adaptive color functionality *)
+  let adaptive = Style.adaptive ~light:Style.Black ~dark:Style.White in
+  
+  (* Test with dark background (default) *)
+  Render.set_terminal_background ~dark:true;
+  let dark_style = Style.adaptive_fg adaptive in
+  let buffer = Render.create 10 1 in
+  let element = Ui.text ~style:dark_style "Test" in
+  Ui.render buffer element;
+  let cell = Render.get buffer 0 0 in
+  (match cell.Render.style.Render.Style.fg with
+  | Some Render.Style.White -> ()
+  | _ -> Alcotest.fail "adaptive color should be white on dark background");
+  
+  (* Test with light background *)
+  Render.set_terminal_background ~dark:false;
+  let light_style = Style.adaptive_fg adaptive in
+  let buffer = Render.create 10 1 in
+  let element = Ui.text ~style:light_style "Test" in
+  Ui.render buffer element;
+  let cell = Render.get buffer 0 0 in
+  (match cell.Render.style.Render.Style.fg with
+  | Some Render.Style.Black -> ()
+  | _ -> Alcotest.fail "adaptive color should be black on light background");
+  
+  (* Reset to dark for other tests *)
+  Render.set_terminal_background ~dark:true;
+  
+  (* Test predefined adaptive colors *)
+  let primary_style = Style.adaptive_fg Style.adaptive_primary in
+  let buffer = Render.create 10 1 in
+  let element = Ui.text ~style:primary_style "Primary" in
+  Ui.render buffer element;
+  let cell = Render.get buffer 0 0 in
+  (match cell.Render.style.Render.Style.fg with
+  | Some Render.Style.White -> () (* Should be white on dark background *)
+  | _ -> Alcotest.fail "adaptive_primary should be white on dark background")
+
 let test_margins () =
   (* Test margin offset *)
   let buffer = Render.create 10 5 in
@@ -405,6 +444,7 @@ let tests =
     ("color helpers", `Quick, test_color_helpers);
     ("text alignment", `Quick, test_text_alignment);
     ("tab expansion", `Quick, test_tab_expansion);
+    ("adaptive colors", `Quick, test_adaptive_colors);
   ]
 
 let () = Alcotest.run "UI" [ ("rendering", tests) ]

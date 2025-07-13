@@ -57,6 +57,9 @@ module Program = struct
       | Some t -> t
       | None -> Terminal.create ~tty:true Unix.stdin Unix.stdout
     in
+    (* Detect terminal background and configure adaptive colors *)
+    let is_dark = Terminal.has_dark_background term in
+    Render.set_terminal_background ~dark:is_dark;
     let event_source = Event_source.create term in
     let model, _init_cmd = app.init () in
     let msg_stream = Eio.Stream.create 100 in

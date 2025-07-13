@@ -178,6 +178,16 @@ val set_sigwinch_handler : sigwinch_handler option -> unit
         (Some (fun (w, h) -> Printf.eprintf "Resized to %dx%d\n" w h))
     ]} *)
 
+(** {2 Terminal Information} *)
+
+val has_dark_background : t -> bool
+(** [has_dark_background t] attempts to detect if terminal has dark background.
+
+    Uses various heuristics including environment variables and terminal
+    responses. Returns [true] if background is dark, [false] if light. Defaults
+    to [true] (dark) if detection fails, as most terminals use dark backgrounds.
+    Detection may take a few milliseconds on first call. *)
+
 (** {2 Testing Support} *)
 
 val create_from_strings : string -> t * (unit -> string)
