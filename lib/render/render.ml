@@ -413,6 +413,19 @@ let fill_rect_gradient buffer x y width height style =
     done
   done
 
+(* Fill a rectangular area with solid background - optimized version *)
+let fill_rect buffer x y width height style =
+  (* For solid colors, we can optimize by setting each cell directly *)
+  let space_char = Uchar.of_int 0x20 in
+  for dy = 0 to height - 1 do
+    for dx = 0 to width - 1 do
+      let px = x + dx in
+      let py = y + dy in
+      if px >= 0 && px < buffer.width && py >= 0 && py < buffer.height then
+        set_char buffer px py space_char style
+    done
+  done
+
 type patch = { row : int; col : int; old_cell : cell; new_cell : cell }
 type cursor_pos = [ `Hide | `Move of int * int ]
 

@@ -16,31 +16,22 @@ type 'msg exec_cmd = { run : unit -> unit; on_complete : 'msg }
     The [run] function executes with the terminal in normal mode. The
     [on_complete] message is produced after execution. *)
 
+(** [t] represents a command that may produce messages of type ['msg]. *)
 type 'msg t =
-  | None
-  | Msg of 'msg
-  | Batch of 'msg t list
-  | Perform of (unit -> 'msg option)
-  | Exec of 'msg exec_cmd
-  | Tick of float * (float -> 'msg)
-  | Sequence of 'msg t list
-  | Quit
-  | Log of string
-  | Print of string
-  | Set_window_title of string
-  | Enter_alt_screen
-  | Exit_alt_screen
-  | Repaint
-      (** [t] represents a command that may produce messages of type ['msg].
-
-          None performs no operation. Msg immediately produces a message. Batch
-          runs commands in parallel. Perform executes an async function. Exec
-          releases terminal for external programs. Tick creates a timer.
-          Sequence runs commands serially. Quit terminates the application. Log
-          writes debug output. Print writes to stdout for scrollback history.
-          Set_window_title updates the terminal title. Enter_alt_screen switches
-          to alternate screen buffer. Exit_alt_screen returns to normal screen.
-          Repaint forces a full screen redraw. *)
+  | None  (** Performs no operation. *)
+  | Msg of 'msg  (** Immediately produces a message. *)
+  | Batch of 'msg t list  (** Runs commands concurrently in parallel. *)
+  | Perform of (unit -> 'msg option)  (** Executes an async function. *)
+  | Exec of 'msg exec_cmd  (** Releases terminal for external programs. *)
+  | Tick of float * (float -> 'msg)  (** Creates a timer. *)
+  | Sequence of 'msg t list  (** Runs commands sequentially, one after another. *)
+  | Quit  (** Terminates the application. *)
+  | Log of string  (** Writes debug output. *)
+  | Print of string  (** Writes to stdout for scrollback history. *)
+  | Set_window_title of string  (** Updates the terminal title. *)
+  | Enter_alt_screen  (** Switches to alternate screen buffer. *)
+  | Exit_alt_screen  (** Returns to normal screen buffer. *)
+  | Repaint  (** Forces a full screen redraw. *)
 
 val none : 'msg t
 (** [none] represents the absence of any command.
@@ -66,6 +57,10 @@ val batch : 'msg t list -> 'msg t
     containing only [none] return [none]. Single-element lists return the
     command directly. Messages from batched commands arrive in non-deterministic
     order.
+
+    IMPORTANT: Commands run in parallel, which means operations like multiple
+    Exec commands may interfere with each other's terminal state. Use [sequence]
+    instead when commands need exclusive access to shared resources.
 
     Example: Loads multiple resources simultaneously.
     {[

@@ -302,23 +302,24 @@ let draw_border buffer x y width height (border_spec : border_spec) =
       bottom_right border_style;
 
   (* Top border *)
-  if border_spec.top then
+  if border_spec.top && width > 2 then
     for i = 1 to width - 2 do
       Render.set_string buffer (x + i) y t border_style
     done;
 
   (* Bottom border *)
-  if border_spec.bottom then
+  if border_spec.bottom && width > 2 then
     for i = 1 to width - 2 do
       Render.set_string buffer (x + i) (y + height - 1) b border_style
     done;
 
   (* Side borders *)
-  for i = 1 to height - 2 do
-    if border_spec.left then Render.set_string buffer x (y + i) l border_style;
-    if border_spec.right then
-      Render.set_string buffer (x + width - 1) (y + i) r border_style
-  done
+  if height > 2 then
+    for i = 1 to height - 2 do
+      if border_spec.left then Render.set_string buffer x (y + i) l border_style;
+      if border_spec.right then
+        Render.set_string buffer (x + width - 1) (y + i) r border_style
+    done
 
 (* Helper to expand tabs to spaces *)
 let expand_tabs s tab_width =
@@ -491,8 +492,8 @@ let rec clear_cache element =
 let align_offset available used align =
   match align with
   | Start -> 0
-  | Center -> (available - used) / 2
-  | End -> available - used
+  | Center -> max 0 ((available - used) / 2)
+  | End -> max 0 (available - used)
   | Stretch -> 0
 
 (* Calculate box layout without rendering - pure function *)
@@ -717,12 +718,9 @@ and redraw_from_cache ctx buffer opts cache =
         Render.fill_rect_gradient buffer draw_x draw_y cache.computed_width
           cache.computed_height bg_style
       else
-        (* Use regular background fill *)
-        for y = 0 to cache.computed_height - 1 do
-          for x = 0 to cache.computed_width - 1 do
-            Render.set_string buffer (draw_x + x) (draw_y + y) " " bg_style
-          done
-        done
+        (* Use optimized solid background fill *)
+        Render.fill_rect buffer draw_x draw_y cache.computed_width
+          cache.computed_height bg_style
   | None -> ());
 
   (* Draw the border for the parent box if needed *)
@@ -891,8 +889,15 @@ and calculate_grid_layout ctx children columns rows col_spacing row_spacing =
           calc_positions 0 (row + 1) ctx.x
             (y + List.nth row_heights row + row_spacing)
             col_widths row_heights acc children
-        else if row >= List.length rows then
+        else if row >= List.length rows then (
+          (* Warn about extra children being dropped *)
+          let extra_count = List.length children in
+          if extra_count > 0 then
+            Printf.eprintf
+              "Warning: Grid has %d extra children that don't fit in %dx%d grid\n%!"
+              extra_count (List.length columns) (List.length rows);
           List.rev acc (* Ignore extra children *)
+        )
         else
           let w = List.nth col_widths col in
           let h = List.nth row_heights row in
@@ -929,53 +934,81 @@ and render_at ctx buffer element =
         | _ -> false
       in
 
-      (* Render each line with alignment *)
+      (* Render each line with alignment and clipping *)
       List.iteri
         (fun i line ->
-          let line_width = Render.measure_string line in
-          let x_offset = align_offset ctx.width line_width align in
-          if has_gradient then
-            (* Use gradient-aware rendering *)
-            Render.set_string_gradient buffer (ctx.x + x_offset) (ctx.y + i)
-              line style ~width:line_width ~height:1
-          else
-            (* Use regular rendering *)
-            Render.set_string buffer (ctx.x + x_offset) (ctx.y + i) line style)
+          (* Skip lines that are outside the vertical bounds *)
+          if i < ctx.height then
+            let line_width = Render.measure_string line in
+            let x_offset = align_offset ctx.width line_width align in
+            (* Clip line to context width *)
+            let clipped_line = 
+              if line_width > ctx.width - x_offset then
+                let max_chars = ctx.width - x_offset in
+                if max_chars > 0 then
+                  (* Simple character-based clipping - may not handle Unicode perfectly *)
+                  String.sub line 0 (min (String.length line) max_chars)
+                else ""
+              else line
+            in
+            let clipped_width = Render.measure_string clipped_line in
+            if clipped_width > 0 then
+              if has_gradient then
+                (* Use gradient-aware rendering *)
+                Render.set_string_gradient buffer (ctx.x + x_offset) (ctx.y + i)
+                  clipped_line style ~width:clipped_width ~height:1
+              else
+                (* Use regular rendering *)
+                Render.set_string buffer (ctx.x + x_offset) (ctx.y + i) clipped_line style)
         lines;
 
-      (max_width, List.length lines)
+      (min max_width ctx.width, min (List.length lines) ctx.height)
   | Rich_text segments ->
       let rec render_segments x segments total_width =
         match segments with
         | [] -> total_width
         | (s, style) :: rest ->
-            let w = Render.measure_string s in
-            (* Check if this segment has gradients or adaptive colors *)
-            let has_gradient =
-              match (style.Render.Style.fg, style.Render.Style.bg) with
-              | Some (Render.Style.Gradient _), _ -> true
-              | _, Some (Render.Style.Gradient _) -> true
-              | Some (Render.Style.Adaptive _), _ -> true
-              | _, Some (Render.Style.Adaptive _) -> true
-              | _ -> false
-            in
-            if has_gradient then
-              Render.set_string_gradient buffer x ctx.y s style ~width:w
-                ~height:1
-            else Render.set_string buffer x ctx.y s style;
-            render_segments (x + w) rest (total_width + w)
+            (* Check if we've exceeded the horizontal bounds *)
+            if x - ctx.x >= ctx.width then
+              total_width
+            else
+              let w = Render.measure_string s in
+              (* Clip segment if it extends beyond context width *)
+              let available = ctx.x + ctx.width - x in
+              let (clipped_s, clipped_w) =
+                if w > available && available > 0 then
+                  (* Simple clipping - may need refinement for Unicode *)
+                  let max_chars = min (String.length s) available in
+                  let clipped = String.sub s 0 max_chars in
+                  (clipped, Render.measure_string clipped)
+                else if available <= 0 then
+                  ("", 0)
+                else
+                  (s, w)
+              in
+              if clipped_w > 0 then
+                (* Check if this segment has gradients or adaptive colors *)
+                let has_gradient =
+                  match (style.Render.Style.fg, style.Render.Style.bg) with
+                  | Some (Render.Style.Gradient _), _ -> true
+                  | _, Some (Render.Style.Gradient _) -> true
+                  | Some (Render.Style.Adaptive _), _ -> true
+                  | _, Some (Render.Style.Adaptive _) -> true
+                  | _ -> false
+                in
+                if has_gradient then
+                  Render.set_string_gradient buffer x ctx.y clipped_s style ~width:clipped_w
+                    ~height:1
+                else Render.set_string buffer x ctx.y clipped_s style;
+                render_segments (x + clipped_w) rest (total_width + clipped_w)
+              else
+                total_width
       in
       let width = render_segments ctx.x segments 0 in
-      (width, 1)
+      (min width ctx.width, 1)
   | Spacer _ ->
-      (* Spacers should fill their allocated space with empty space *)
-      (* When a spacer is given a context, it should use that width, not its natural width *)
-      for y = 0 to ctx.height - 1 do
-        for x = 0 to ctx.width - 1 do
-          Render.set_string buffer (ctx.x + x) (ctx.y + y) " "
-            Render.Style.empty
-        done
-      done;
+      (* Spacers should not render anything - they're just layout placeholders *)
+      (* The parent already filled the background, so we don't need to clear *)
       (ctx.width, ctx.height)
   | Expand e ->
       (* Expanded elements fill available space *)

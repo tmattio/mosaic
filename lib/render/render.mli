@@ -515,6 +515,12 @@ val set_string_gradient :
     @param width Total width of the text area for gradient calculation
     @param height Total height of the text area (usually 1 for single line) *)
 
+val fill_rect : buffer -> int -> int -> int -> int -> Style.t -> unit
+(** [fill_rect buffer x y width height style] fills rectangle with solid style.
+
+    Fills the specified rectangular area with space characters and the given
+    style. More efficient than fill_rect_gradient for solid colors. *)
+
 val fill_rect_gradient : buffer -> int -> int -> int -> int -> Style.t -> unit
 (** [fill_rect_gradient buffer x y width height style] fills rectangle with
     gradient.

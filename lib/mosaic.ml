@@ -41,6 +41,8 @@ module Program = struct
         (* Track lines rendered in non-alt-screen mode *)
     mutable print_queue : string list;
         (* Queue for print messages in non-alt-screen mode *)
+    terminal_mutex : Eio.Mutex.t;
+        (* Mutex to protect terminal state changes *)
   }
 
   let log_debug program s =
@@ -80,6 +82,7 @@ module Program = struct
       debug_log;
       lines_rendered = 0;
       print_queue = [];
+      terminal_mutex = Eio.Mutex.create ();
     }
 
   let send_msg program msg =
@@ -100,45 +103,46 @@ module Program = struct
             | None -> ())
     | Cmd.Exec exec_cmd ->
         Fiber.fork ~sw:program.sw (fun () ->
-            (* Define cleanup function *)
-            let cleanup () =
-              Terminal.restore_state program.term;
-              Terminal.hide_cursor program.term;
-              Terminal.set_mode program.term `Raw;
-              if program.mouse then Terminal.enable_mouse program.term;
-              if program.alt_screen then
-                Terminal.enable_alternate_screen program.term;
-              program.previous_buffer <- None
-            in
+            (* Protect all terminal state changes with mutex *)
+            Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
+                (* Define cleanup function *)
+                let cleanup () =
+                  Terminal.restore_state program.term;
+                  Terminal.hide_cursor program.term;
+                  Terminal.set_mode program.term `Raw;
+                  if program.mouse then Terminal.enable_mouse program.term;
+                  if program.alt_screen then
+                    Terminal.enable_alternate_screen program.term;
+                  program.previous_buffer <- None
+                in
 
-            (* Release terminal to normal state *)
-            Terminal.save_state program.term;
-            Terminal.show_cursor program.term;
-            Terminal.disable_mouse program.term;
-            Terminal.disable_alternate_screen program.term;
-            Terminal.set_mode program.term `Cooked;
-            Terminal.release program.term;
+                (* Release terminal to normal state *)
+                Terminal.save_state program.term;
+                Terminal.show_cursor program.term;
+                Terminal.disable_mouse program.term;
+                Terminal.disable_alternate_screen program.term;
+                Terminal.set_mode program.term `Cooked;
+                Terminal.release program.term;
 
-            (* Clear screen and move cursor to top *)
-            Terminal.write program.term (Bytes.of_string "\x1b[2J\x1b[H") 0 6;
-            Terminal.flush program.term;
+                (* Clear screen and move cursor to top *)
+                Terminal.write program.term (Bytes.of_string "\x1b[2J\x1b[H") 0 6;
+                Terminal.flush program.term;
 
-            (* Execute with protection *)
-            Fun.protect ~finally:cleanup (fun () ->
-                Eio_unix.run_in_systhread exec_cmd.run);
+                (* Execute with protection *)
+                Fun.protect ~finally:cleanup (fun () ->
+                    Eio_unix.run_in_systhread exec_cmd.run));
 
             (* Send completion message *)
             Eio.Stream.add program.msg_stream exec_cmd.on_complete)
     | Cmd.Tick (duration, f) ->
-        (* Use fork_daemon so the timer doesn't block program shutdown *)
-        Fiber.fork_daemon ~sw:program.sw (fun () ->
+        (* Use regular fork to ensure proper cleanup on shutdown *)
+        Fiber.fork ~sw:program.sw (fun () ->
             let start_time = Eio.Time.now program.clock in
             Eio.Time.sleep program.clock duration;
             let elapsed = Eio.Time.now program.clock -. start_time in
             (* Only send message if program is still running *)
             if program.running then
-              Eio.Stream.add program.msg_stream (f elapsed);
-            `Stop_daemon)
+              Eio.Stream.add program.msg_stream (f elapsed))
     | Cmd.Sequence cmds -> (
         (* Process commands sequentially - only the first command goes to the queue,
            the rest are wrapped in a new Sequence command that will be processed after *)
@@ -165,22 +169,25 @@ module Program = struct
           program.print_queue <- program.print_queue @ [ message ]
     | Cmd.Set_window_title title ->
         (* Write the escape sequence to set window title *)
-        Terminal.write program.term
-          (Bytes.of_string (Ansi.set_window_title title))
-          0
-          (String.length (Ansi.set_window_title title));
-        Terminal.flush program.term
+        Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
+            Terminal.write program.term
+              (Bytes.of_string (Ansi.set_window_title title))
+              0
+              (String.length (Ansi.set_window_title title));
+            Terminal.flush program.term)
     | Cmd.Enter_alt_screen ->
         if not program.alt_screen then (
           log_debug program "Entering alternate screen";
-          Terminal.enable_alternate_screen program.term;
+          Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
+              Terminal.enable_alternate_screen program.term);
           program.alt_screen <- true;
           (* Force a full repaint since the screen is now blank *)
           program.previous_buffer <- None)
     | Cmd.Exit_alt_screen ->
         if program.alt_screen then (
           log_debug program "Exiting alternate screen";
-          Terminal.disable_alternate_screen program.term;
+          Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
+              Terminal.disable_alternate_screen program.term);
           program.alt_screen <- false;
           (* Force a full repaint to redraw the inline UI *)
           program.previous_buffer <- None;
@@ -213,6 +220,10 @@ module Program = struct
              buffers of two different sizes, which would cause a crash.
              By setting it to None, we force a full redraw on the next frame. *)
           program.previous_buffer <- None;
+          
+          (* Clear UI element caches on resize since dimensions have changed *)
+          let element = program.app.view program.model in
+          Ui.clear_cache element;
 
           let window_handlers = Sub.collect_window [] subs in
           let size = { Sub.width = w; Sub.height = h } in
@@ -229,9 +240,10 @@ module Program = struct
     if program.print_queue <> [] && not program.alt_screen then (
       let output = String.concat "\r\n" program.print_queue ^ "\r\n" in
       (* Write directly, this will scroll the terminal *)
-      Terminal.write program.term (Bytes.of_string output) 0
-        (String.length output);
-      Terminal.flush program.term;
+      Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
+          Terminal.write program.term (Bytes.of_string output) 0
+            (String.length output);
+          Terminal.flush program.term);
       program.print_queue <- [];
       (* After printing, the old view is gone, so we must force a full repaint
          of the TUI below the new printed lines. *)
@@ -239,9 +251,8 @@ module Program = struct
 
     log_debug program "Render: Starting render pass";
     let element = program.app.view program.model in
-
-    (* Clear all caches before rendering *)
-    Ui.clear_cache element;
+    
+    (* Note: Caches are cleared only on model updates, not every frame *)
 
     (* Create a new buffer for this frame *)
     let width, height = Terminal.size program.term in
@@ -370,9 +381,10 @@ module Program = struct
 
     (* Only write to terminal if program is still running AND there's output *)
     if program.running && String.length output > 0 then (
-      Terminal.write program.term (Bytes.of_string output) 0
-        (String.length output);
-      Terminal.flush program.term);
+      Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
+          Terminal.write program.term (Bytes.of_string output) 0
+            (String.length output);
+          Terminal.flush program.term));
 
     program.previous_buffer <- Some buffer
 
@@ -424,12 +436,13 @@ module Program = struct
 
   let setup_terminal program =
     log_debug program "Setting up terminal";
-    Terminal.set_mode program.term `Raw;
-    Terminal.hide_cursor program.term;
-    if program.alt_screen then (
-      log_debug program "Enabling alternate screen";
-      Terminal.enable_alternate_screen program.term);
-    if program.mouse then Terminal.enable_mouse program.term;
+    Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
+        Terminal.set_mode program.term `Raw;
+        Terminal.hide_cursor program.term;
+        if program.alt_screen then (
+          log_debug program "Enabling alternate screen";
+          Terminal.enable_alternate_screen program.term);
+        if program.mouse then Terminal.enable_mouse program.term);
 
     (* Setup SIGWINCH handler *)
     let sigwinch_handler (w, h) =
@@ -442,11 +455,19 @@ module Program = struct
     let termination_handler _ =
       (* Ensure terminal is cleaned up before exit *)
       Terminal.set_sigwinch_handler None;
-      Terminal.show_cursor program.term;
-      Terminal.disable_mouse program.term;
-      Terminal.disable_alternate_screen program.term;
-      Terminal.set_mode program.term `Cooked;
-      Terminal.release program.term;
+      (* Try to acquire mutex with timeout to avoid deadlock during signal handling *)
+      try
+        Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
+            Terminal.show_cursor program.term;
+            Terminal.disable_mouse program.term;
+            Terminal.disable_alternate_screen program.term;
+            Terminal.set_mode program.term `Cooked;
+            Terminal.release program.term)
+      with _ ->
+        (* If we can't get the mutex, at least try to clean up *)
+        Terminal.show_cursor program.term;
+        Terminal.set_mode program.term `Cooked;
+        Terminal.release program.term;
       exit 0
     in
     (* Install handlers for common termination signals *)
@@ -459,12 +480,13 @@ module Program = struct
 
   let cleanup_terminal program =
     Terminal.set_sigwinch_handler None;
-    Terminal.flush program.term;
-    Terminal.show_cursor program.term;
-    Terminal.disable_mouse program.term;
-    Terminal.disable_alternate_screen program.term;
-    Terminal.set_mode program.term `Cooked;
-    Terminal.release program.term
+    Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
+        Terminal.flush program.term;
+        Terminal.show_cursor program.term;
+        Terminal.disable_mouse program.term;
+        Terminal.disable_alternate_screen program.term;
+        Terminal.set_mode program.term `Cooked;
+        Terminal.release program.term)
 
   let run ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
       ?debug_log app =
@@ -499,16 +521,6 @@ end
 let app ~init ~update ~view ?(subscriptions = fun _ -> Sub.none) () =
   { init; update; view; subscriptions }
 
-let run ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
-    ?(debug = false) app =
-  Eio_main.run @@ fun env ->
-  Eio.Switch.run @@ fun sw ->
-  let debug_log = if debug then Some (open_out "mosaic-debug.log") else None in
-  Fun.protect
-    ~finally:(fun () -> Option.iter close_out debug_log)
-    (fun () ->
-      Program.run ~sw ~env ?terminal ~alt_screen ~mouse ~fps ?debug_log app)
-
 let run_eio ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
     ?(debug = false) app =
   let debug_log = if debug then Some (open_out "mosaic-debug.log") else None in
@@ -516,3 +528,9 @@ let run_eio ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
     ~finally:(fun () -> Option.iter close_out debug_log)
     (fun () ->
       Program.run ~sw ~env ?terminal ~alt_screen ~mouse ~fps ?debug_log app)
+
+let run ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
+    ?(debug = false) app =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  run_eio ~sw ~env ?terminal ~alt_screen ~mouse ~fps ~debug app
