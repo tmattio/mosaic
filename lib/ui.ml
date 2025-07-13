@@ -218,11 +218,17 @@ let grid ?(col_spacing = 0) ?(row_spacing = 0) ~columns ~rows children =
   Grid { children; columns; rows; col_spacing; row_spacing; cache = None }
 
 (* Helper functions *)
-let flex_spacer () = expand (spacer 0)
+let flex_spacer () = Expand (Spacer 0)
 
 let divider ?(style = Render.Style.(fg (gray 8))) ?(char = "─") () =
   let content =
-    String.make 1000 (if String.length char > 0 then char.[0] else '-')
+    if String.length char = 0 then String.make 1000 '-'
+    else
+      (* Repeat the string (which may be multi-byte) instead of just the first byte *)
+      let rec repeat s n =
+        if n <= 0 then "" else if n = 1 then s else s ^ repeat s (n - 1)
+      in
+      repeat char 1000
   in
   expand (text ~style content)
 
@@ -506,21 +512,39 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
     measure_element (Box { children; options = opts; cache = None })
   in
 
-  let resolve_dimension value min_val max_val available natural =
-    let resolved = Option.value value ~default:(min available natural) in
+  (* Check if this box has expandable children *)
+  let has_expandable_children = List.exists is_expandable children in
+
+  let resolve_dimension value min_val max_val available natural use_available =
+    let resolved =
+      match value with
+      | Some v -> v
+      | None -> if use_available then available else min available natural
+    in
     let with_min =
       match min_val with Some m -> max m resolved | None -> resolved
     in
     match max_val with Some m -> min m with_min | None -> with_min
   in
 
+  (* For horizontal boxes with expandable children, use available width by default *)
+  (* For vertical boxes, also use available width if they have expandable children,
+     since expandable children likely want to expand horizontally *)
+  let use_available_width = has_expandable_children && opts.width = None in
+
   let box_width =
     resolve_dimension opts.width opts.min_width opts.max_width margin_ctx.width
-      natural_width
+      natural_width use_available_width
   in
+
+  (* For vertical boxes with expandable children, use available height by default *)
+  let use_available_height =
+    opts.direction = `Vertical && has_expandable_children && opts.height = None
+  in
+
   let box_height =
     resolve_dimension opts.height opts.min_height opts.max_height
-      margin_ctx.height natural_height
+      margin_ctx.height natural_height use_available_height
   in
 
   (* Calculate content area after border and padding *)
@@ -943,9 +967,19 @@ and render_at ctx buffer element =
       in
       let width = render_segments ctx.x segments 0 in
       (width, 1)
-  | Spacer n -> (n, 1)
+  | Spacer _ ->
+      (* Spacers should fill their allocated space with empty space *)
+      (* When a spacer is given a context, it should use that width, not its natural width *)
+      for y = 0 to ctx.height - 1 do
+        for x = 0 to ctx.width - 1 do
+          Render.set_string buffer (ctx.x + x) (ctx.y + y) " "
+            Render.Style.empty
+        done
+      done;
+      (ctx.width, ctx.height)
   | Expand e ->
       (* Expanded elements fill available space *)
+      (* The context width/height is the allocated space for this element *)
       let _w, _h = render_at ctx buffer e in
       (ctx.width, ctx.height)
   | Z_stack data -> (

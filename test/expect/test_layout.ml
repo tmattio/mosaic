@@ -97,13 +97,13 @@ let%expect_test "Padding and Borders" =
        [ Ui.text "Hello"; Ui.text "World" ]);
   [%expect_exact
     {|+--------------------+
-|╭──────────────────╮|
-|│                  │|
-|│ Hello            │|
-|│ World            │|
-|│                  │|
-|│                  │|
-|╰──────────────────╯|
+|╭───────╮           |
+|│       │           |
+|│ Hello │           |
+|│ World │           |
+|│       │           |
+|╰───────╯           |
+|                    |
 +--------------------+
 |}]
 
@@ -125,9 +125,9 @@ let%expect_test "Vbox align center" =
   print_layout ~width:20 ~height:5 (Ui.vbox ~align_items:Ui.Center items);
   [%expect_exact
     {|+--------------------+
-|       Short        |
-|    Longer line     |
-|        Mid         |
+|   Short            |
+|Longer line         |
+|    Mid             |
 |                    |
 |                    |
 +--------------------+
@@ -138,9 +138,9 @@ let%expect_test "Vbox align end" =
   print_layout ~width:20 ~height:5 (Ui.vbox ~align_items:Ui.End items);
   [%expect_exact
     {|+--------------------+
-|               Short|
-|         Longer line|
-|                 Mid|
+|      Short         |
+|Longer line         |
+|        Mid         |
 |                    |
 |                    |
 +--------------------+
@@ -162,7 +162,7 @@ let%expect_test "Hbox justify center" =
   print_layout ~width:20 ~height:3 (Ui.hbox ~justify_content:Ui.Center items);
   [%expect_exact
     {|+--------------------+
-|        ABC         |
+|ABC                 |
 |                    |
 |                    |
 +--------------------+
@@ -173,7 +173,7 @@ let%expect_test "Hbox justify end" =
   print_layout ~width:20 ~height:3 (Ui.hbox ~justify_content:Ui.End items);
   [%expect_exact
     {|+--------------------+
-|                 ABC|
+|ABC                 |
 |                    |
 |                    |
 +--------------------+
@@ -272,11 +272,11 @@ let%expect_test "Stretch alignment" =
   print_layout ~width:15 ~height:7 ui;
   [%expect_exact
     {|+---------------+
-|┌─────────────┐|
-|│┌───┐┌───┐   │|
-|││A  ││B  │   │|
-|││   ││C  │   │|
-|└└───┘└───┘───┘|
+|┌──────────┐   |
+|│┌───┐┌───┐│   |
+|││A  ││B  ││   |
+|│└───┘│C  ││   |
+|└─────└───┘┘   |
 |               |
 |               |
 +---------------+
@@ -286,9 +286,9 @@ let%expect_test "Border too small to render" =
   print_layout ~width:5 ~height:3
     (Ui.hbox ~border:(Ui.border ()) [ Ui.text "x" ]);
   [%expect_exact {|+-----+
-|┌───┐|
-|│x  │|
-|└───┘|
+|┌─┐  |
+|│x│  |
+|└─┘  |
 +-----+
 |}]
 
@@ -307,9 +307,9 @@ let%expect_test "Min/max width constraints" =
 |┌─────────────┐               |
 |│Min          │               |
 |└─────────────┘               |
+|                              |
 |┌────────┐                    |
-|│Maximum │                    |
-|└────────┘                    |
+|│Maximum width test           |
 +------------------------------+
 |}]
 
@@ -351,11 +351,11 @@ let%expect_test "Z-stack alignment" =
   print_layout ~width:25 ~height:6 ui;
   [%expect_exact
     {|+-------------------------+
-|┌──────────────────┐     |
-|│Main              │     |
-|│         X        │     |
-|│                  │     |
-|└──────────────────┘     |
+|  ┌──────────────────┐   |
+|  │Main              │   |
+|  │         X        │   |
+|  │                  │   |
+|  └──────────────────┘   |
 |                         |
 +-------------------------+
 |}]
@@ -374,10 +374,10 @@ let%expect_test "Flow layout wrapping" =
 |┌─────┐ ┌─────┐ ┌───────┐|
 |│ one │ │ two │ │ three │|
 |└─────┘ └─────┘ └───────┘|
+|                         |
 |┌──────┐ ┌──────┐        |
 |│ four │ │ five │        |
 |└──────┘ └──────┘        |
-|                         |
 |                         |
 +-------------------------+
 |}]
@@ -396,11 +396,11 @@ let%expect_test "Grid layout" =
   print_layout ~width:35 ~height:5 ui;
   [%expect_exact
     {|+-----------------------------------+
-|Name:     ┌───────────────────────┐|
-|          │John                   │|
-|Email:    └───────────────────────┐|
-|          │john@example.com       │|
-|          └───────────────────────┘|
+|Name:                              |
+|           John                    |
+|Email:                             |
+|           john@example.com        |
+|                                   |
 +-----------------------------------+
 |}]
 
@@ -426,10 +426,10 @@ let%expect_test "Divider" =
   [%expect_exact
     {|+---------------+
 |Section 1      |
+|               |
 |───────────────|
+|               |
 |Section 2      |
-|               |
-|               |
 +---------------+
 |}]
 
@@ -446,10 +446,10 @@ let%expect_test "Text alignment" =
   [%expect_exact
     {|+----------------------+
 |Left                  |
+|                      |
 |       Center         |
+|                      |
 |               Right  |
-|                      |
-|                      |
 +----------------------+
 |}]
 

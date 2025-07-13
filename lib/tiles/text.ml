@@ -506,8 +506,3 @@ let go_to_line line_num model =
 
 (* Theming *)
 let with_theme theme model = { model with theme }
-
-(* Re-export for component interface *)
-let update = update
-let view = view
-let subscriptions = subscriptions

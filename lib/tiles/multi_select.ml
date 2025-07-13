@@ -426,8 +426,3 @@ let update_filter text model = (model, Cmd.msg (Update_filter text))
 
 (* Theming *)
 let with_theme theme model = { model with theme }
-
-(* Re-export for component interface *)
-let update = update
-let view = view
-let subscriptions = subscriptions
