@@ -134,6 +134,53 @@ let test_borders () =
   | ch :: _ when Uchar.to_char ch = 'H' -> ()
   | _ -> Alcotest.fail "content not inside border"
 
+let test_per_side_borders () =
+  (* Test border with only top and bottom *)
+  let buffer = Render.create 10 5 in
+  let element =
+    Ui.hbox
+      ~border:(Ui.border_spec ~left:false ~right:false ())
+      ~width:10 ~height:5
+      [ Ui.text "Test" ]
+  in
+  Ui.render buffer element;
+
+  (* Top border should exist *)
+  let cell = Render.get buffer 5 0 in
+  (match cell.Render.chars with
+  | ch :: _ when Uchar.to_int ch = 0x2500 -> () (* ─ *)
+  | _ -> Alcotest.fail "top border missing");
+
+  (* Bottom border should exist *)
+  let cell = Render.get buffer 5 4 in
+  (match cell.Render.chars with
+  | ch :: _ when Uchar.to_int ch = 0x2500 -> () (* ─ *)
+  | _ -> Alcotest.fail "bottom border missing");
+
+  (* Left side should not have border *)
+  let cell = Render.get buffer 0 2 in
+  (match cell.Render.chars with
+  | [] -> ()
+  | ch :: _ when Uchar.to_char ch = ' ' -> ()
+  | ch :: _ when Uchar.to_char ch = 'T' -> () (* Content might be there *)
+  | _ -> Alcotest.fail "left border should not exist");
+
+  (* Test border with only left side *)
+  let buffer = Render.create 5 5 in
+  let element =
+    Ui.vbox
+      ~border:(Ui.border_spec ~top:false ~bottom:false ~right:false ())
+      ~width:5 ~height:5
+      []
+  in
+  Ui.render buffer element;
+
+  (* Left border should exist *)
+  let cell = Render.get buffer 0 2 in
+  match cell.Render.chars with
+  | ch :: _ when Uchar.to_int ch = 0x2502 -> () (* │ *)
+  | _ -> Alcotest.fail "left border missing"
+
 let test_alignment () =
   (* Test horizontal alignment in vbox *)
   let buffer = Render.create 10 3 in
@@ -261,6 +308,32 @@ let test_color_helpers () =
   | Style.RGB (255, 0, 255) -> ()
   | _ -> Alcotest.fail "rgb_hex helper failed"
 
+let test_margins () =
+  (* Test margin offset *)
+  let buffer = Render.create 10 5 in
+  let element = Ui.hbox ~margin:(Ui.pad ~all:1 ()) [ Ui.text "Test" ] in
+  Ui.render buffer element;
+
+  (* With margin of 1 on all sides, "Test" should be at position 1,1 *)
+  let cell = Render.get buffer 1 1 in
+  (match cell.Render.chars with
+  | ch :: _ when Uchar.to_char ch = 'T' -> ()
+  | _ -> Alcotest.fail "margin not applied correctly");
+
+  (* Test margin with border *)
+  let buffer = Render.create 10 5 in
+  let element = 
+    Ui.hbox ~margin:(Ui.pad ~left:2 ~top:1 ()) ~border:(Ui.border ()) 
+      [ Ui.text "X" ] 
+  in
+  Ui.render buffer element;
+
+  (* Border should start at position 2,1 due to margin *)
+  let cell = Render.get buffer 2 1 in
+  match cell.Render.chars with
+  | ch :: _ when Uchar.to_int ch = 0x250C -> () (* ┌ *)
+  | _ -> Alcotest.fail "margin with border not applied"
+
 let tests =
   [
     ("text rendering", `Quick, test_text_rendering);
@@ -268,7 +341,9 @@ let tests =
     ("hbox layout", `Quick, test_hbox_layout);
     ("vbox layout", `Quick, test_vbox_layout);
     ("padding", `Quick, test_padding);
+    ("margins", `Quick, test_margins);
     ("borders", `Quick, test_borders);
+    ("per-side borders", `Quick, test_per_side_borders);
     ("alignment", `Quick, test_alignment);
     ("justify", `Quick, test_justify);
     ("expand", `Quick, test_expand);

@@ -21,9 +21,28 @@ let padding_all n = { top = n; right = n; bottom = n; left = n }
 let padding_xy x y = { top = y; right = x; bottom = y; left = x }
 
 type border_style = Solid | Rounded | Double | Thick | ASCII
-type border = { style : border_style; color : Ansi.color option }
+type border_spec = {
+  top : bool;
+  bottom : bool;
+  left : bool;
+  right : bool;
+  style : border_style;
+  color : Ansi.color option;
+}
+type border = border_spec
 
-let border ?(style = Solid) ?color () = { style; color }
+let border ?(style = Solid) ?color () = 
+  { top = true; bottom = true; left = true; right = true; style; color }
+
+let border_spec ?(top = true) ?(bottom = true) ?(left = true) ?(right = true) 
+    ?(style = Solid) ?color () =
+  { top; bottom; left; right; style; color }
+
+let normal_border = border ~style:Solid ()
+let rounded_border = border ~style:Rounded ()
+let double_border = border ~style:Double ()
+let thick_border = border ~style:Thick ()
+let ascii_border = border ~style:ASCII ()
 
 type align = Start | Center | End | Stretch
 
@@ -65,6 +84,7 @@ and layout_options = {
   gap : int;
   width : int option;
   height : int option;
+  margin : padding;
   padding : padding;
   border : border option;
   align : align;
@@ -74,7 +94,7 @@ and layout_options = {
 let text ?(style = Render.Style.empty) s = Text (s, style)
 let no_padding = padding ()
 
-let hbox ?(gap = 0) ?width ?height ?(padding = no_padding) ?border
+let hbox ?(gap = 0) ?width ?height ?(margin = no_padding) ?(padding = no_padding) ?border
     ?(align_items = Stretch) ?(justify_content = Start) children =
   let options =
     {
@@ -82,6 +102,7 @@ let hbox ?(gap = 0) ?width ?height ?(padding = no_padding) ?border
       gap;
       width;
       height;
+      margin;
       padding;
       border;
       align = align_items;
@@ -90,7 +111,7 @@ let hbox ?(gap = 0) ?width ?height ?(padding = no_padding) ?border
   in
   Box { children; options; cache = None }
 
-let vbox ?(gap = 0) ?width ?height ?(padding = no_padding) ?border
+let vbox ?(gap = 0) ?width ?height ?(margin = no_padding) ?(padding = no_padding) ?border
     ?(align_items = Stretch) ?(justify_content = Start) children =
   let options =
     {
@@ -98,6 +119,7 @@ let vbox ?(gap = 0) ?width ?height ?(padding = no_padding) ?border
       gap;
       width;
       height;
+      margin;
       padding;
       border;
       align = align_items;
@@ -127,7 +149,7 @@ type layout_context = {
   height : int; (* Available height *)
 }
 
-(* Helper to draw a border *)
+(* Helper to draw a border with per-side control *)
 let draw_border buffer x y width height border_spec =
   let tl, t, tr, r, bl, b, br, l = border_chars border_spec.style in
   let style =
@@ -136,25 +158,76 @@ let draw_border buffer x y width height border_spec =
     | None -> Render.Style.empty
   in
 
+  (* Determine corner characters based on which sides are enabled *)
+  let top_left = 
+    match (border_spec.top, border_spec.left) with
+    | true, true -> tl
+    | true, false -> t
+    | false, true -> l
+    | false, false -> " "
+  in
+  let top_right =
+    match (border_spec.top, border_spec.right) with
+    | true, true -> tr
+    | true, false -> t
+    | false, true -> r
+    | false, false -> " "
+  in
+  let bottom_left =
+    match (border_spec.bottom, border_spec.left) with
+    | true, true -> bl
+    | true, false -> b
+    | false, true -> l
+    | false, false -> " "
+  in
+  let bottom_right =
+    match (border_spec.bottom, border_spec.right) with
+    | true, true -> br
+    | true, false -> b
+    | false, true -> r
+    | false, false -> " "
+  in
+
+  (* Draw corners *)
+  if border_spec.top || border_spec.left then
+    Render.set_string buffer x y top_left style;
+  if border_spec.top || border_spec.right then
+    Render.set_string buffer (x + width - 1) y top_right style;
+  if border_spec.bottom || border_spec.left then
+    Render.set_string buffer x (y + height - 1) bottom_left style;
+  if border_spec.bottom || border_spec.right then
+    Render.set_string buffer (x + width - 1) (y + height - 1) bottom_right style;
+
   (* Top border *)
-  Render.set_string buffer x y tl style;
-  for i = 1 to width - 2 do
-    Render.set_string buffer (x + i) y t style
-  done;
-  Render.set_string buffer (x + width - 1) y tr style;
+  if border_spec.top then
+    for i = 1 to width - 2 do
+      Render.set_string buffer (x + i) y t style
+    done;
+
+  (* Bottom border *)
+  if border_spec.bottom then
+    for i = 1 to width - 2 do
+      Render.set_string buffer (x + i) (y + height - 1) b style
+    done;
 
   (* Side borders *)
   for i = 1 to height - 2 do
-    Render.set_string buffer x (y + i) l style;
-    Render.set_string buffer (x + width - 1) (y + i) r style
-  done;
+    if border_spec.left then
+      Render.set_string buffer x (y + i) l style;
+    if border_spec.right then
+      Render.set_string buffer (x + width - 1) (y + i) r style
+  done
 
-  (* Bottom border *)
-  Render.set_string buffer x (y + height - 1) bl style;
-  for i = 1 to width - 2 do
-    Render.set_string buffer (x + i) (y + height - 1) b style
-  done;
-  Render.set_string buffer (x + width - 1) (y + height - 1) br style
+(* Calculate border space based on which sides are enabled *)
+let border_space_h border_opt =
+  match border_opt with
+  | None -> 0
+  | Some b -> (if b.left then 1 else 0) + (if b.right then 1 else 0)
+
+let border_space_v border_opt =
+  match border_opt with
+  | None -> 0
+  | Some b -> (if b.top then 1 else 0) + (if b.bottom then 1 else 0)
 
 (* Get natural size of element without rendering *)
 let rec measure_element element =
@@ -171,9 +244,12 @@ let rec measure_element element =
             | _ -> measure_element child)
           children
       in
-      let border_space = if opts.border = None then 0 else 2 in
+      let border_h = border_space_h opts.border in
+      let border_v = border_space_v opts.border in
       let padding_h = opts.padding.left + opts.padding.right in
       let padding_v = opts.padding.top + opts.padding.bottom in
+      let margin_h = opts.margin.left + opts.margin.right in
+      let margin_v = opts.margin.top + opts.margin.bottom in
 
       match opts.direction with
       | `Horizontal ->
@@ -186,11 +262,11 @@ let rec measure_element element =
           let gap_space = opts.gap * max 0 (List.length children - 1) in
           let width =
             Option.value opts.width
-              ~default:(total_width + gap_space + padding_h + border_space)
+              ~default:(total_width + gap_space + padding_h + border_h + margin_h)
           in
           let height =
             Option.value opts.height
-              ~default:(max_height + padding_v + border_space)
+              ~default:(max_height + padding_v + border_v + margin_v)
           in
           (width, height)
       | `Vertical ->
@@ -203,11 +279,11 @@ let rec measure_element element =
           let gap_space = opts.gap * max 0 (List.length children - 1) in
           let width =
             Option.value opts.width
-              ~default:(max_width + padding_h + border_space)
+              ~default:(max_width + padding_h + border_h + margin_h)
           in
           let height =
             Option.value opts.height
-              ~default:(total_height + gap_space + padding_v + border_space)
+              ~default:(total_height + gap_space + padding_v + border_v + margin_v)
           in
           (width, height))
 
@@ -237,18 +313,30 @@ let align_offset available used align =
 
 (* Calculate box layout without rendering - pure function *)
 let rec calculate_box_layout ctx children (opts : layout_options) =
-  let box_width = Option.value opts.width ~default:ctx.width in
-  let box_height = Option.value opts.height ~default:ctx.height in
+  (* First, account for margins by shrinking the available context *)
+  let margin_ctx = {
+    x = ctx.x + opts.margin.left;
+    y = ctx.y + opts.margin.top;
+    width = ctx.width - opts.margin.left - opts.margin.right;
+    height = ctx.height - opts.margin.top - opts.margin.bottom;
+  } in
+  
+  let box_width = Option.value opts.width ~default:margin_ctx.width in
+  let box_height = Option.value opts.height ~default:margin_ctx.height in
 
   (* Calculate content area after border and padding *)
-  let border_offset = if opts.border = None then 0 else 1 in
-  let content_x = ctx.x + border_offset + opts.padding.left in
-  let content_y = ctx.y + border_offset + opts.padding.top in
+  let border_left = match opts.border with None -> 0 | Some b -> if b.left then 1 else 0 in
+  let border_right = match opts.border with None -> 0 | Some b -> if b.right then 1 else 0 in
+  let border_top = match opts.border with None -> 0 | Some b -> if b.top then 1 else 0 in
+  let border_bottom = match opts.border with None -> 0 | Some b -> if b.bottom then 1 else 0 in
+  
+  let content_x = margin_ctx.x + border_left + opts.padding.left in
+  let content_y = margin_ctx.y + border_top + opts.padding.top in
   let content_width =
-    box_width - (2 * border_offset) - opts.padding.left - opts.padding.right
+    box_width - border_left - border_right - opts.padding.left - opts.padding.right
   in
   let content_height =
-    box_height - (2 * border_offset) - opts.padding.top - opts.padding.bottom
+    box_height - border_top - border_bottom - opts.padding.top - opts.padding.bottom
   in
 
   (* Count expandable children *)
@@ -377,11 +465,15 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
 
 (* Redraw from cached layout information *)
 and redraw_from_cache ctx buffer opts cache =
+  (* Apply margin offset for drawing *)
+  let draw_x = ctx.x + opts.margin.left in
+  let draw_y = ctx.y + opts.margin.top in
+  
   (* Draw the border for the parent box if needed *)
   (match opts.border with
   | Some border_spec when cache.computed_width > 2 && cache.computed_height > 2
     ->
-      draw_border buffer ctx.x ctx.y cache.computed_width cache.computed_height
+      draw_border buffer draw_x draw_y cache.computed_width cache.computed_height
         border_spec
   | _ -> ());
 

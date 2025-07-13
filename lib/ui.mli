@@ -78,15 +78,26 @@ type border_style =
           uses heavy lines (┏━┓┃┗┛). ASCII uses portable characters (+-+|) for
           environments without Unicode support. *)
 
-type border = { style : border_style; color : Ansi.color option }
-(** [border] specifies visual border properties for elements.
+type border_spec = {
+  top : bool;
+  bottom : bool;
+  left : bool;
+  right : bool;
+  style : border_style;
+  color : Ansi.color option;
+}
+(** [border_spec] specifies visual border properties for elements with per-side control.
 
-    The border occupies one character cell on each side within the element's
-    dimensions. Color applies to all border characters. Borders reduce available
-    content area by 2 cells in each dimension. *)
+    Each side can be individually enabled/disabled. The border occupies one 
+    character cell on each enabled side within the element's dimensions. 
+    Style and color apply to all border characters. Borders reduce available
+    content area by the number of enabled sides. *)
+
+type border = border_spec
+(** Alias for backward compatibility *)
 
 val border : ?style:border_style -> ?color:Ansi.color -> unit -> border
-(** [border ?style ?color ()] creates a border specification.
+(** [border ?style ?color ()] creates a border specification with all sides enabled.
 
     The [style] defaults to [Solid]. The [color] defaults to terminal's default
     foreground color.
@@ -95,6 +106,40 @@ val border : ?style:border_style -> ?color:Ansi.color -> unit -> border
     {[
       let b = Ui.border ~style:Rounded ~color:Ansi.Blue ()
     ]} *)
+
+val border_spec : 
+  ?top:bool -> 
+  ?bottom:bool -> 
+  ?left:bool -> 
+  ?right:bool -> 
+  ?style:border_style -> 
+  ?color:Ansi.color -> 
+  unit -> 
+  border_spec
+(** [border_spec ?top ?bottom ?left ?right ?style ?color ()] creates a border
+    specification with per-side control.
+
+    All sides default to [true]. The [style] defaults to [Solid].
+
+    Example: Creates a border with only top and bottom.
+    {[
+      let b = Ui.border_spec ~left:false ~right:false ()
+    ]} *)
+
+val normal_border : border_spec
+(** Pre-defined normal border with single lines (┌─┐│└┘) on all sides *)
+
+val rounded_border : border_spec  
+(** Pre-defined rounded border with curved corners (╭─╮│╰╯) on all sides *)
+
+val double_border : border_spec
+(** Pre-defined double border with double lines (╔═╗║╚╝) on all sides *)
+
+val thick_border : border_spec
+(** Pre-defined thick border with heavy lines (┏━┓┃┗┛) on all sides *)
+
+val ascii_border : border_spec
+(** Pre-defined ASCII border with portable characters (+-+|) on all sides *)
 
 type align =
   | Start
@@ -130,13 +175,14 @@ val hbox :
   ?gap:int ->
   ?width:int ->
   ?height:int ->
+  ?margin:padding ->
   ?padding:padding ->
   ?border:border ->
   ?align_items:align ->
   ?justify_content:align ->
   element list ->
   element
-(** [hbox ?gap ?width ?height ?padding ?border ?align_items ?justify_content
+(** [hbox ?gap ?width ?height ?margin ?padding ?border ?align_items ?justify_content
      children] creates a horizontal layout container.
 
     Children are arranged left-to-right with optional spacing. The box respects
@@ -147,6 +193,7 @@ val hbox :
     @param gap Space between children in character cells (default: 0)
     @param width Fixed width in cells (default: sum of children plus gaps)
     @param height Fixed height in cells (default: tallest child)
+    @param margin External spacing around the element
     @param padding Internal spacing reducing content area
     @param border Visual border drawn within bounds
     @param align_items
@@ -170,6 +217,7 @@ val vbox :
   ?gap:int ->
   ?width:int ->
   ?height:int ->
+  ?margin:padding ->
   ?padding:padding ->
   ?border:border ->
   ?align_items:align ->
