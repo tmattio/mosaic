@@ -86,18 +86,20 @@ type border_spec = {
   style : border_style;
   color : Ansi.color option;
 }
-(** [border_spec] specifies visual border properties for elements with per-side control.
+(** [border_spec] specifies visual border properties for elements with per-side
+    control.
 
-    Each side can be individually enabled/disabled. The border occupies one 
-    character cell on each enabled side within the element's dimensions. 
-    Style and color apply to all border characters. Borders reduce available
-    content area by the number of enabled sides. *)
+    Each side can be individually enabled/disabled. The border occupies one
+    character cell on each enabled side within the element's dimensions. Style
+    and color apply to all border characters. Borders reduce available content
+    area by the number of enabled sides. *)
 
 type border = border_spec
 (** Alias for backward compatibility *)
 
 val border : ?style:border_style -> ?color:Ansi.color -> unit -> border
-(** [border ?style ?color ()] creates a border specification with all sides enabled.
+(** [border ?style ?color ()] creates a border specification with all sides
+    enabled.
 
     The [style] defaults to [Solid]. The [color] defaults to terminal's default
     foreground color.
@@ -107,14 +109,14 @@ val border : ?style:border_style -> ?color:Ansi.color -> unit -> border
       let b = Ui.border ~style:Rounded ~color:Ansi.Blue ()
     ]} *)
 
-val border_spec : 
-  ?top:bool -> 
-  ?bottom:bool -> 
-  ?left:bool -> 
-  ?right:bool -> 
-  ?style:border_style -> 
-  ?color:Ansi.color -> 
-  unit -> 
+val border_spec :
+  ?top:bool ->
+  ?bottom:bool ->
+  ?left:bool ->
+  ?right:bool ->
+  ?style:border_style ->
+  ?color:Ansi.color ->
+  unit ->
   border_spec
 (** [border_spec ?top ?bottom ?left ?right ?style ?color ()] creates a border
     specification with per-side control.
@@ -129,7 +131,7 @@ val border_spec :
 val normal_border : border_spec
 (** Pre-defined normal border with single lines (┌─┐│└┘) on all sides *)
 
-val rounded_border : border_spec  
+val rounded_border : border_spec
 (** Pre-defined rounded border with curved corners (╭─╮│╰╯) on all sides *)
 
 val double_border : border_spec
@@ -159,7 +161,8 @@ type element
     layout calculation and efficient caching. The rendering engine converts
     elements to terminal output while preserving layout constraints. *)
 
-val text : ?style:Render.Style.t -> ?align:align -> ?tab_width:int -> string -> element
+val text :
+  ?style:Render.Style.t -> ?align:align -> ?tab_width:int -> string -> element
 (** [text ?style ?align ?tab_width s] creates a text element displaying [s].
 
     Text elements have natural dimensions based on string width and line count.
@@ -167,7 +170,8 @@ val text : ?style:Render.Style.t -> ?align:align -> ?tab_width:int -> string -> 
     attributes, and formatting. Multi-byte Unicode is handled correctly.
 
     @param style Style for text rendering
-    @param align Alignment for multi-line text within its bounds (default: Start)
+    @param align
+      Alignment for multi-line text within its bounds (default: Start)
     @param tab_width Number of spaces to expand tabs to (default: 4)
 
     Example: Creates bold red error text.
@@ -191,8 +195,8 @@ val hbox :
   ?justify_content:align ->
   element list ->
   element
-(** [hbox ?gap ?width ?height ?margin ?padding ?border ?align_items ?justify_content
-     children] creates a horizontal layout container.
+(** [hbox ?gap ?width ?height ?margin ?padding ?border ?align_items
+     ?justify_content children] creates a horizontal layout container.
 
     Children are arranged left-to-right with optional spacing. The box respects
     size constraints while calculating child positions. Expandable children
@@ -277,55 +281,63 @@ val expand : element -> element
 
 (** {2 Advanced Layout Elements} *)
 
-type z_align = 
-  | Top_left | Top | Top_right 
-  | Left | Center | Right 
-  | Bottom_left | Bottom | Bottom_right
-(** [z_align] controls alignment of children in a z-stack layout *)
+type z_align =
+  | Top_left
+  | Top
+  | Top_right
+  | Left
+  | Center
+  | Right
+  | Bottom_left
+  | Bottom
+  | Bottom_right
+      (** [z_align] controls alignment of children in a z-stack layout *)
 
 val zstack : ?align:z_align -> element list -> element
-(** [zstack ?align children] creates a z-stack layout where children are overlaid
-    at the same position.
-    
-    Children are rendered in order, with later children appearing on top.
-    The stack's size is determined by the largest child unless explicitly sized.
-    
-    @param align Controls alignment of children within the stack (default: Top_left)
-    
+(** [zstack ?align children] creates a z-stack layout where children are
+    overlaid at the same position.
+
+    Children are rendered in order, with later children appearing on top. The
+    stack's size is determined by the largest child unless explicitly sized.
+
+    @param align
+      Controls alignment of children within the stack (default: Top_left)
+
     Example: Overlay a notification on the main UI.
     {[
       let ui_with_notification =
-        Ui.zstack ~align:Center [
-          main_ui;
-          notification_box;
-        ]
+        Ui.zstack ~align:Center [ main_ui; notification_box ]
     ]} *)
 
-val flow : ?h_gap:int -> ?v_gap:int -> element list -> element  
-(** [flow ?h_gap ?v_gap children] creates a flow layout that wraps children
-    onto multiple lines when they exceed available width.
-    
+val flow : ?h_gap:int -> ?v_gap:int -> element list -> element
+(** [flow ?h_gap ?v_gap children] creates a flow layout that wraps children onto
+    multiple lines when they exceed available width.
+
     Children are arranged left-to-right and wrap to the next line when needed.
-    Each line is independently aligned according to the flow's alignment settings.
-    
+    Each line is independently aligned according to the flow's alignment
+    settings.
+
     @param h_gap Horizontal spacing between children (default: 0)
     @param v_gap Vertical spacing between lines (default: 0)
-    
+
     Example: Display tags that wrap to fit the container.
     {[
-      let tags = 
-        Ui.flow ~h_gap:1 ~v_gap:1 [
-          Ui.text "ocaml";
-          Ui.text "functional";
-          Ui.text "type-safe";
-          Ui.text "expressive";
-        ]
+      let tags =
+        Ui.flow ~h_gap:1 ~v_gap:1
+          [
+            Ui.text "ocaml";
+            Ui.text "functional";
+            Ui.text "type-safe";
+            Ui.text "expressive";
+          ]
     ]} *)
 
-type size_def = Fixed of int | Flex of int
-(** [size_def] specifies sizing for grid columns and rows.
-    Fixed size has a specific dimension in cells.
-    Flex size shares remaining space proportionally by weight. *)
+type size_def =
+  | Fixed of int
+  | Flex of int
+      (** [size_def] specifies sizing for grid columns and rows. Fixed size has
+          a specific dimension in cells. Flex size shares remaining space
+          proportionally by weight. *)
 
 type col_def = size_def
 (** [col_def] specifies column sizing in a grid layout. *)
@@ -340,23 +352,21 @@ val grid :
   rows:row_def list ->
   element list ->
   element
-(** [grid ?col_spacing ?row_spacing ~columns ~rows children] creates a grid layout
-    with specified column and row definitions.
-    
-    Children are placed in cells from left to right, top to bottom.
-    The number of columns and rows must accommodate all children.
-    
+(** [grid ?col_spacing ?row_spacing ~columns ~rows children] creates a grid
+    layout with specified column and row definitions.
+
+    Children are placed in cells from left to right, top to bottom. The number
+    of columns and rows must accommodate all children.
+
     @param col_spacing Horizontal spacing between columns (default: 0)
     @param row_spacing Vertical spacing between rows (default: 0)
     @param columns List of column definitions
     @param rows List of row definitions
-    
+
     Example: Create a 2x2 grid with flexible sizing.
     {[
       let grid =
-        Ui.grid
-          ~columns:[Flex 1; Flex 2]
-          ~rows:[Fixed 3; Flex 1]
+        Ui.grid ~columns:[ Flex 1; Flex 2 ] ~rows:[ Fixed 3; Flex 1 ]
           [
             Ui.text "Name:";
             Ui.text "John Doe";
@@ -369,56 +379,54 @@ val grid :
 
 val rich_text : (string * Render.Style.t) list -> element
 (** [rich_text segments] creates a text element with multiple styled segments.
-    
-    Each segment is a pair of text content and its style. Segments are 
+
+    Each segment is a pair of text content and its style. Segments are
     concatenated without spacing. Useful for syntax highlighting or inline
     emphasis.
-    
+
     Example: Create text with mixed styles.
     {[
-      let status = 
-        Ui.rich_text [
-          ("Status: ", Style.empty);
-          ("OK", Style.(fg green ++ bold));
-          (" (200)", Style.(fg (gray 12)));
-        ]
+      let status =
+        Ui.rich_text
+          [
+            ("Status: ", Style.empty);
+            ("OK", Style.(fg green ++ bold));
+            (" (200)", Style.(fg (gray 12)));
+          ]
     ]} *)
 
 (** {2 Helper Functions} *)
 
 val flex_spacer : unit -> element
 (** [flex_spacer ()] creates an expandable spacer that fills available space.
-    
-    Equivalent to [expand (spacer 0)]. Useful for pushing content apart
-    in boxes.
-    
+
+    Equivalent to [expand (spacer 0)]. Useful for pushing content apart in
+    boxes.
+
     Example: Right-align items in an hbox.
     {[
-      let header = 
-        Ui.hbox [
-          Ui.text "Title";
-          Ui.flex_spacer ();
-          Ui.text "Close";
-        ]
+      let header =
+        Ui.hbox [ Ui.text "Title"; Ui.flex_spacer (); Ui.text "Close" ]
     ]} *)
 
 val divider : ?style:Render.Style.t -> ?char:string -> unit -> element
 (** [divider ?style ?char ()] creates a horizontal divider line.
-    
+
     The divider expands to fill available width in a vbox.
-    
+
     @param style Style for the divider line (default: gray)
     @param char Character to use for the line (default: "─")
-    
+
     Example: Separate sections in a menu.
     {[
-      let menu = 
-        Ui.vbox [
-          Ui.text "File Operations";
-          Ui.divider ();
-          Ui.text "New";
-          Ui.text "Open";
-        ]
+      let menu =
+        Ui.vbox
+          [
+            Ui.text "File Operations";
+            Ui.divider ();
+            Ui.text "New";
+            Ui.text "Open";
+          ]
     ]} *)
 
 val render : Render.buffer -> element -> unit

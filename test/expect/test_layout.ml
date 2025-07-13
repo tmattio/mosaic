@@ -297,7 +297,8 @@ let%expect_test "Min/max width constraints" =
     Ui.vbox ~gap:1
       [
         Ui.hbox ~min_width:15 ~border:(Ui.border ()) [ Ui.text "Min" ];
-        Ui.hbox ~max_width:10 ~border:(Ui.border ()) [ Ui.text "Maximum width test" ];
+        Ui.hbox ~max_width:10 ~border:(Ui.border ())
+          [ Ui.text "Maximum width test" ];
       ]
   in
   print_layout ~width:30 ~height:6 ui;
@@ -313,10 +314,7 @@ let%expect_test "Min/max width constraints" =
 |}]
 
 let%expect_test "Background padding" =
-  let ui =
-    Ui.hbox ~padding:(Ui.pad ~all:1 ())
-      [ Ui.text "Padded" ]
-  in
+  let ui = Ui.hbox ~padding:(Ui.pad ~all:1 ()) [ Ui.text "Padded" ] in
   print_layout ~width:15 ~height:3 ui;
   [%expect_exact
     {|+---------------+
@@ -345,7 +343,9 @@ let%expect_test "Rich text" =
 |}]
 
 let%expect_test "Z-stack alignment" =
-  let main = Ui.hbox ~width:20 ~height:5 ~border:(Ui.border ()) [ Ui.text "Main" ] in
+  let main =
+    Ui.hbox ~width:20 ~height:5 ~border:(Ui.border ()) [ Ui.text "Main" ]
+  in
   let overlay = Ui.text "X" in
   let ui = Ui.zstack ~align:Center [ main; overlay ] in
   print_layout ~width:25 ~height:6 ui;
@@ -361,7 +361,9 @@ let%expect_test "Z-stack alignment" =
 |}]
 
 let%expect_test "Flow layout wrapping" =
-  let tag s = Ui.hbox ~border:(Ui.border ()) ~padding:(Ui.pad ~x:1 ()) [ Ui.text s ] in
+  let tag s =
+    Ui.hbox ~border:(Ui.border ()) ~padding:(Ui.pad ~x:1 ()) [ Ui.text s ]
+  in
   let ui =
     Ui.flow ~h_gap:1 ~v_gap:1
       [ tag "one"; tag "two"; tag "three"; tag "four"; tag "five" ]
@@ -418,8 +420,7 @@ let%expect_test "Flex spacer" =
 
 let%expect_test "Divider" =
   let ui =
-    Ui.vbox ~gap:1
-      [ Ui.text "Section 1"; Ui.divider (); Ui.text "Section 2" ]
+    Ui.vbox ~gap:1 [ Ui.text "Section 1"; Ui.divider (); Ui.text "Section 2" ]
   in
   print_layout ~width:15 ~height:5 ui;
   [%expect_exact

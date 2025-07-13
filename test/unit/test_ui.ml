@@ -170,8 +170,7 @@ let test_per_side_borders () =
   let element =
     Ui.vbox
       ~border:(Ui.border_spec ~top:false ~bottom:false ~right:false ())
-      ~width:5 ~height:5
-      []
+      ~width:5 ~height:5 []
   in
   Ui.render buffer element;
 
@@ -236,18 +235,17 @@ let test_expand () =
   in
   let b_pos = find_b 0 in
   match b_pos with
-  | Some 19 -> 
+  | Some 19 ->
       (* B is at the right position *)
       ()
   | Some pos ->
       (* For now, accept that expand might not be working perfectly *)
       (* TODO: Fix expand implementation to properly fill space *)
-      if pos = 1 then
-        () (* Current behavior: B immediately follows A *)
+      if pos = 1 then () (* Current behavior: B immediately follows A *)
       else
-        Alcotest.failf "B at unexpected position %d (expected 19 or 1):\n%s" pos output
-  | None ->
-      Alcotest.failf "B not found in output:\n%s" output
+        Alcotest.failf "B at unexpected position %d (expected 19 or 1):\n%s" pos
+          output
+  | None -> Alcotest.failf "B not found in output:\n%s" output
 
 let test_fixed_dimensions () =
   let buffer = Render.create 20 10 in
@@ -331,21 +329,24 @@ let test_text_alignment () =
   Ui.render buffer element;
 
   (* Each line should be centered *)
-  let cell_h = Render.get buffer 7 0 in (* "Hello" starts at 7 for center in 20 *)
-  let cell_w = Render.get buffer 7 1 in (* "World" starts at 7 for center in 20 *)
-  let cell_e = Render.get buffer 9 2 in (* "!" starts at 9 for center in 20 *)
-  
+  let cell_h = Render.get buffer 7 0 in
+  (* "Hello" starts at 7 for center in 20 *)
+  let cell_w = Render.get buffer 7 1 in
+  (* "World" starts at 7 for center in 20 *)
+  let cell_e = Render.get buffer 9 2 in
+  (* "!" starts at 9 for center in 20 *)
+
   (match cell_h.Render.chars with
   | ch :: _ when Uchar.to_char ch = 'H' -> ()
   | _ -> Alcotest.fail "first line not centered");
-  
+
   (match cell_w.Render.chars with
   | ch :: _ when Uchar.to_char ch = 'W' -> ()
   | _ -> Alcotest.fail "second line not centered");
-  
-  (match cell_e.Render.chars with
+
+  match cell_e.Render.chars with
   | ch :: _ when Uchar.to_char ch = '!' -> ()
-  | _ -> Alcotest.fail "third line not centered")
+  | _ -> Alcotest.fail "third line not centered"
 
 let test_tab_expansion () =
   (* Test tab to space conversion *)
@@ -362,7 +363,7 @@ let test_tab_expansion () =
 let test_adaptive_colors () =
   (* Test adaptive color functionality *)
   let adaptive = Style.adaptive ~light:Style.Black ~dark:Style.White in
-  
+
   (* Test with dark background (default) *)
   Render.set_terminal_background ~dark:true;
   let dark_style = Style.adaptive_fg adaptive in
@@ -373,7 +374,7 @@ let test_adaptive_colors () =
   (match cell.Render.style.Render.Style.fg with
   | Some Render.Style.White -> ()
   | _ -> Alcotest.fail "adaptive color should be white on dark background");
-  
+
   (* Test with light background *)
   Render.set_terminal_background ~dark:false;
   let light_style = Style.adaptive_fg adaptive in
@@ -384,19 +385,19 @@ let test_adaptive_colors () =
   (match cell.Render.style.Render.Style.fg with
   | Some Render.Style.Black -> ()
   | _ -> Alcotest.fail "adaptive color should be black on light background");
-  
+
   (* Reset to dark for other tests *)
   Render.set_terminal_background ~dark:true;
-  
+
   (* Test predefined adaptive colors *)
   let primary_style = Style.adaptive_fg Style.adaptive_primary in
   let buffer = Render.create 10 1 in
   let element = Ui.text ~style:primary_style "Primary" in
   Ui.render buffer element;
   let cell = Render.get buffer 0 0 in
-  (match cell.Render.style.Render.Style.fg with
+  match cell.Render.style.Render.Style.fg with
   | Some Render.Style.White -> () (* Should be white on dark background *)
-  | _ -> Alcotest.fail "adaptive_primary should be white on dark background")
+  | _ -> Alcotest.fail "adaptive_primary should be white on dark background"
 
 let test_margins () =
   (* Test margin offset *)
@@ -412,9 +413,9 @@ let test_margins () =
 
   (* Test margin with border *)
   let buffer = Render.create 10 5 in
-  let element = 
-    Ui.hbox ~margin:(Ui.pad ~left:2 ~top:1 ()) ~border:(Ui.border ()) 
-      [ Ui.text "X" ] 
+  let element =
+    Ui.hbox ~margin:(Ui.pad ~left:2 ~top:1 ()) ~border:(Ui.border ())
+      [ Ui.text "X" ]
   in
   Ui.render buffer element;
 
