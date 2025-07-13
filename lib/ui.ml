@@ -681,11 +681,23 @@ and redraw_from_cache ctx buffer opts cache =
   (* Draw background if specified *)
   (match opts.background with
   | Some bg_style ->
-      for y = 0 to cache.computed_height - 1 do
-        for x = 0 to cache.computed_width - 1 do
-          Render.set_string buffer (draw_x + x) (draw_y + y) " " bg_style
+      (* Check if background has gradient *)
+      let has_gradient =
+        match bg_style.Render.Style.bg with
+        | Some (Render.Style.Gradient _) -> true
+        | _ -> false
+      in
+      if has_gradient then
+        (* Use gradient-aware background fill *)
+        Render.fill_rect_gradient buffer draw_x draw_y cache.computed_width
+          cache.computed_height bg_style
+      else
+        (* Use regular background fill *)
+        for y = 0 to cache.computed_height - 1 do
+          for x = 0 to cache.computed_width - 1 do
+            Render.set_string buffer (draw_x + x) (draw_y + y) " " bg_style
+          done
         done
-      done
   | None -> ());
 
   (* Draw the border for the parent box if needed *)
@@ -882,12 +894,26 @@ and render_at ctx buffer element =
           0 lines
       in
 
+      (* Check if style has gradients *)
+      let has_gradient =
+        match (style.Render.Style.fg, style.Render.Style.bg) with
+        | Some (Render.Style.Gradient _), _ -> true
+        | _, Some (Render.Style.Gradient _) -> true
+        | _ -> false
+      in
+
       (* Render each line with alignment *)
       List.iteri
         (fun i line ->
           let line_width = Render.measure_string line in
           let x_offset = align_offset ctx.width line_width align in
-          Render.set_string buffer (ctx.x + x_offset) (ctx.y + i) line style)
+          if has_gradient then
+            (* Use gradient-aware rendering *)
+            Render.set_string_gradient buffer (ctx.x + x_offset) (ctx.y + i)
+              line style ~width:line_width ~height:1
+          else
+            (* Use regular rendering *)
+            Render.set_string buffer (ctx.x + x_offset) (ctx.y + i) line style)
         lines;
 
       (max_width, List.length lines)
@@ -896,8 +922,18 @@ and render_at ctx buffer element =
         match segments with
         | [] -> total_width
         | (s, style) :: rest ->
-            Render.set_string buffer x ctx.y s style;
             let w = Render.measure_string s in
+            (* Check if this segment has gradients *)
+            let has_gradient =
+              match (style.Render.Style.fg, style.Render.Style.bg) with
+              | Some (Render.Style.Gradient _), _ -> true
+              | _, Some (Render.Style.Gradient _) -> true
+              | _ -> false
+            in
+            if has_gradient then
+              Render.set_string_gradient buffer x ctx.y s style ~width:w
+                ~height:1
+            else Render.set_string buffer x ctx.y s style;
             render_segments (x + w) rest (total_width + w)
       in
       let width = render_segments ctx.x segments 0 in

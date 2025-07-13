@@ -1,7 +1,16 @@
 module Style = struct
+  (* Gradient type for linear color interpolation *)
+  type gradient = {
+    colors : Ansi.color list;
+    direction : [ `Horizontal | `Vertical ];
+  }
+
+  (* Color specification: solid or gradient *)
+  type color_spec = Solid of Ansi.color | Gradient of gradient
+
   type t = {
-    fg : Ansi.color option;
-    bg : Ansi.color option;
+    fg : color_spec option;
+    bg : color_spec option;
     bold : bool;
     dim : bool;
     italic : bool;
@@ -34,6 +43,8 @@ module Style = struct
   type attr =
     | Fg of Ansi.color
     | Bg of Ansi.color
+    | Fg_gradient of gradient
+    | Bg_gradient of gradient
     | Bold
     | Dim
     | Italic
@@ -44,8 +55,18 @@ module Style = struct
     | Link of string
 
   let empty = default
-  let fg color = { empty with fg = Some color }
-  let bg color = { empty with bg = Some color }
+  let fg color = { empty with fg = Some (Solid color) }
+  let bg color = { empty with bg = Some (Solid color) }
+
+  (* Gradient constructors *)
+  let gradient ~colors ~direction = { colors; direction }
+
+  let gradient_fg ~colors ~direction =
+    { empty with fg = Some (Gradient { colors; direction }) }
+
+  let gradient_bg ~colors ~direction =
+    { empty with bg = Some (Gradient { colors; direction }) }
+
   let bold = { empty with bold = true }
   let dim = { empty with dim = true }
   let italic = { empty with italic = true }
@@ -60,8 +81,10 @@ module Style = struct
     List.fold_left
       (fun style attr ->
         match attr with
-        | Fg color -> { style with fg = Some color }
-        | Bg color -> { style with bg = Some color }
+        | Fg color -> { style with fg = Some (Solid color) }
+        | Bg color -> { style with bg = Some (Solid color) }
+        | Fg_gradient g -> { style with fg = Some (Gradient g) }
+        | Bg_gradient g -> { style with bg = Some (Gradient g) }
         | Bold -> { style with bold = true }
         | Dim -> { style with dim = true }
         | Italic -> { style with italic = true }
@@ -148,6 +171,95 @@ module Style = struct
   let adaptive_error = { light = Red; dark = Bright_red }
   let adaptive_warning = { light = Yellow; dark = Bright_yellow }
   let adaptive_success = { light = Green; dark = Bright_green }
+
+  (* Color interpolation for gradients *)
+
+  (* Convert any color to RGB for interpolation *)
+  let to_rgb = function
+    | RGB (r, g, b) -> (r, g, b)
+    (* Basic colors to RGB - approximate values *)
+    | Black -> (0, 0, 0)
+    | Red -> (170, 0, 0)
+    | Green -> (0, 170, 0)
+    | Yellow -> (170, 170, 0)
+    | Blue -> (0, 0, 170)
+    | Magenta -> (170, 0, 170)
+    | Cyan -> (0, 170, 170)
+    | White -> (170, 170, 170)
+    | Default -> (170, 170, 170) (* Assume default is like white *)
+    | Bright_black -> (85, 85, 85)
+    | Bright_red -> (255, 85, 85)
+    | Bright_green -> (85, 255, 85)
+    | Bright_yellow -> (255, 255, 85)
+    | Bright_blue -> (85, 85, 255)
+    | Bright_magenta -> (255, 85, 255)
+    | Bright_cyan -> (85, 255, 255)
+    | Bright_white -> (255, 255, 255)
+    | Index i ->
+        (* Convert 256-color palette to RGB - simplified *)
+        if i < 16 then
+          (* Standard colors - use same as above *)
+          match i with
+          | 0 -> (0, 0, 0)
+          | 1 -> (170, 0, 0)
+          | 2 -> (0, 170, 0)
+          | 3 -> (170, 170, 0)
+          | 4 -> (0, 0, 170)
+          | 5 -> (170, 0, 170)
+          | 6 -> (0, 170, 170)
+          | 7 -> (170, 170, 170)
+          | 8 -> (85, 85, 85)
+          | 9 -> (255, 85, 85)
+          | 10 -> (85, 255, 85)
+          | 11 -> (255, 255, 85)
+          | 12 -> (85, 85, 255)
+          | 13 -> (255, 85, 255)
+          | 14 -> (85, 255, 255)
+          | 15 -> (255, 255, 255)
+          | _ -> (0, 0, 0)
+        else if i < 232 then
+          (* 6x6x6 RGB cube *)
+          let i = i - 16 in
+          let r = i / 36 * 51 in
+          let g = i / 6 mod 6 * 51 in
+          let b = i mod 6 * 51 in
+          (r, g, b)
+        else
+          (* Grayscale *)
+          let v = 8 + ((i - 232) * 10) in
+          (v, v, v)
+
+  (* Linear interpolation between two values *)
+  let lerp start_val end_val t =
+    int_of_float
+      (float_of_int start_val +. (t *. float_of_int (end_val - start_val)))
+
+  (* Interpolate between two RGB colors *)
+  let interpolate_rgb (r1, g1, b1) (r2, g2, b2) t =
+    let t = max 0.0 (min 1.0 t) in
+    (* Clamp t to [0, 1] *)
+    RGB (lerp r1 r2 t, lerp g1 g2 t, lerp b1 b2 t)
+
+  (* Calculate the color at position t (0.0 to 1.0) along a gradient *)
+  let calculate_gradient_color colors t =
+    match colors with
+    | [] -> Default (* No colors, use default *)
+    | [ c ] -> c (* Single color, solid fill *)
+    | _ ->
+        let num_segments = float_of_int (List.length colors - 1) in
+        let segment_index = int_of_float (t *. num_segments) in
+        let segment_index = min segment_index (List.length colors - 2) in
+        let segment_start_t = float_of_int segment_index /. num_segments in
+
+        let c1 = List.nth colors segment_index in
+        let c2 = List.nth colors (segment_index + 1) in
+
+        let segment_t =
+          if num_segments > 0. then (t -. segment_start_t) *. num_segments
+          else 0.0
+        in
+
+        interpolate_rgb (to_rgb c1) (to_rgb c2) segment_t
 end
 
 type cell = { chars : Uchar.t list; style : Style.t; width : int }
@@ -217,6 +329,88 @@ let set_string buffer x y str style =
   in
   loop x
 
+(* Gradient-aware rendering functions *)
+
+(* Resolve a color_spec to a concrete color based on position *)
+let resolve_color_spec spec ~x ~y ~width ~height =
+  match spec with
+  | None -> None
+  | Some (Style.Solid color) -> Some color
+  | Some (Style.Gradient gradient) ->
+      let t =
+        match gradient.direction with
+        | `Horizontal ->
+            if width <= 1 then 0.5
+            else float_of_int x /. float_of_int (width - 1)
+        | `Vertical ->
+            if height <= 1 then 0.5
+            else float_of_int y /. float_of_int (height - 1)
+      in
+      Some (Style.calculate_gradient_color gradient.colors t)
+
+(* Apply gradient-aware style to a position *)
+let apply_gradient_style base_style ~x ~y ~width ~height =
+  let fg =
+    match base_style.Style.fg with
+    | None -> None
+    | Some (Style.Solid _) -> base_style.Style.fg
+    | Some (Style.Gradient _ as g) ->
+        resolve_color_spec (Some g) ~x ~y ~width ~height
+        |> Option.map (fun c -> Style.Solid c)
+  in
+  let bg =
+    match base_style.Style.bg with
+    | None -> None
+    | Some (Style.Solid _) -> base_style.Style.bg
+    | Some (Style.Gradient _ as g) ->
+        resolve_color_spec (Some g) ~x ~y ~width ~height
+        |> Option.map (fun c -> Style.Solid c)
+  in
+  { base_style with Style.fg; Style.bg }
+
+(* Set a string with gradient support *)
+let set_string_gradient buffer x y str style ~width ~height:_ =
+  let decoder = Uutf.decoder ~encoding:`UTF_8 (`String str) in
+  let start_x = x in
+  let rec loop x =
+    if x >= buffer.width then ()
+    else
+      match Uutf.decode decoder with
+      | `Uchar u ->
+          let width_char = uchar_width u in
+          if x + width_char <= buffer.width then (
+            (* Calculate style for this specific position *)
+            let pos_style =
+              apply_gradient_style style ~x:(x - start_x) ~y:0 ~width ~height:1
+            in
+            set_char buffer x y u pos_style;
+            loop (x + width_char))
+      | `End -> ()
+      | `Malformed _ ->
+          let replacement = Uchar.of_int 0xFFFD in
+          if x < buffer.width then (
+            let pos_style =
+              apply_gradient_style style ~x:(x - start_x) ~y:0 ~width ~height:1
+            in
+            set_char buffer x y replacement pos_style;
+            loop (x + 1))
+      | `Await -> ()
+  in
+  loop x
+
+(* Fill a rectangular area with gradient background *)
+let fill_rect_gradient buffer x y width height style =
+  for dy = 0 to height - 1 do
+    for dx = 0 to width - 1 do
+      let px = x + dx in
+      let py = y + dy in
+      if px >= 0 && px < buffer.width && py >= 0 && py < buffer.height then
+        let pos_style = apply_gradient_style style ~x:dx ~y:dy ~width ~height in
+        (* Set a space character with the gradient background *)
+        set_char buffer px py (Uchar.of_int 0x20) pos_style
+    done
+  done
+
 type patch = { row : int; col : int; old_cell : cell; new_cell : cell }
 type cursor_pos = [ `Hide | `Move of int * int ]
 
@@ -253,8 +447,15 @@ let style_to_attrs style =
   if style.italic then attrs := `Italic :: !attrs;
   if style.dim then attrs := `Dim :: !attrs;
   if style.bold then attrs := `Bold :: !attrs;
-  (match style.bg with Some c -> attrs := `Bg c :: !attrs | None -> ());
-  (match style.fg with Some c -> attrs := `Fg c :: !attrs | None -> ());
+  (* Extract concrete colors from color_spec *)
+  (match style.bg with
+  | Some (Solid c) -> attrs := `Bg c :: !attrs
+  | Some (Gradient _) -> () (* Gradients should be resolved before this *)
+  | None -> ());
+  (match style.fg with
+  | Some (Solid c) -> attrs := `Fg c :: !attrs
+  | Some (Gradient _) -> () (* Gradients should be resolved before this *)
+  | None -> ());
   !attrs
 
 let render_cell cell =

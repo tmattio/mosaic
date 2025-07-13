@@ -14,9 +14,29 @@
 module Style : sig
   (** Text styling with colors, attributes, and hyperlinks. *)
 
+  (** {2 Color Specifications} *)
+
+  type gradient = {
+    colors : Ansi.color list;
+    direction : [ `Horizontal | `Vertical ];
+  }
+  (** [gradient] represents a linear gradient specification.
+
+      Colors are interpolated evenly across the gradient. Requires at least one
+      color. Single color acts as solid fill. Direction determines interpolation
+      axis. *)
+
+  type color_spec =
+    | Solid of Ansi.color
+    | Gradient of gradient
+        (** [color_spec] specifies how color is applied.
+
+            Solid applies uniform color. Gradient interpolates across element
+            bounds. *)
+
   type t = {
-    fg : Ansi.color option;
-    bg : Ansi.color option;
+    fg : color_spec option;
+    bg : color_spec option;
     bold : bool;
     dim : bool;
     italic : bool;
@@ -43,6 +63,8 @@ module Style : sig
   type attr =
     | Fg of Ansi.color
     | Bg of Ansi.color
+    | Fg_gradient of gradient
+    | Bg_gradient of gradient
     | Bold
     | Dim
     | Italic
@@ -73,6 +95,43 @@ module Style : sig
 
       All other attributes remain unset. Use [++] to combine with other styles.
   *)
+
+  (** {2 Gradient Constructors} *)
+
+  val gradient :
+    colors:Ansi.color list -> direction:[ `Horizontal | `Vertical ] -> gradient
+  (** [gradient ~colors ~direction] creates a gradient specification.
+
+      Colors are evenly distributed. Empty list defaults to transparent. Single
+      color acts as solid fill.
+
+      Example: Create a horizontal rainbow gradient.
+      {[
+        let rainbow =
+          Style.gradient
+            ~colors:[ Red; Yellow; Green; Cyan; Blue; Magenta ]
+            ~direction:`Horizontal
+      ]} *)
+
+  val gradient_fg :
+    colors:Ansi.color list -> direction:[ `Horizontal | `Vertical ] -> t
+  (** [gradient_fg ~colors ~direction] creates a style with gradient foreground.
+
+      The gradient is applied across the rendered element's bounds. Each
+      character gets an interpolated color based on position.
+
+      Example: Create text with horizontal gradient.
+      {[
+        let style =
+          Style.gradient_fg ~colors:[ Blue; Cyan ] ~direction:`Horizontal
+      ]} *)
+
+  val gradient_bg :
+    colors:Ansi.color list -> direction:[ `Horizontal | `Vertical ] -> t
+  (** [gradient_bg ~colors ~direction] creates a style with gradient background.
+
+      The gradient fills the element's background area. Works best with elements
+      that have explicit dimensions. *)
 
   val bold : t
   (** [bold] creates a style with only bold attribute.
@@ -440,3 +499,25 @@ val truncate_string_with_ellipsis : string -> int -> string -> string
           "..."
       (* Result: "/very/long/pa..." *)
     ]} *)
+
+(** {1 Gradient Rendering} *)
+
+val set_string_gradient :
+  buffer -> int -> int -> string -> Style.t -> width:int -> height:int -> unit
+(** [set_string_gradient buffer x y str style ~width ~height] writes string with
+    gradient.
+
+    Applies gradient colors character-by-character based on position within the
+    specified width and height bounds. Horizontal gradients interpolate along
+    the x-axis, vertical gradients along the y-axis.
+
+    @param width Total width of the text area for gradient calculation
+    @param height Total height of the text area (usually 1 for single line) *)
+
+val fill_rect_gradient : buffer -> int -> int -> int -> int -> Style.t -> unit
+(** [fill_rect_gradient buffer x y width height style] fills rectangle with
+    gradient.
+
+    Fills the specified rectangular area with space characters, applying
+    gradient background colors based on position. Each cell gets an interpolated
+    color based on its position in the rectangle. *)

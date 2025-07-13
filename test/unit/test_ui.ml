@@ -37,7 +37,7 @@ let test_style_application () =
       Alcotest.(check bool)
         "bold applied" true cell.Render.style.Render.Style.bold;
       match cell.Render.style.Render.Style.fg with
-      | Some (Ansi.Index 5) -> ()
+      | Some (Render.Style.Solid (Ansi.Index 5)) -> ()
       | _ -> Alcotest.fail "color not applied")
   | _ -> Alcotest.fail "text not rendered"
 
@@ -372,7 +372,7 @@ let test_adaptive_colors () =
   Ui.render buffer element;
   let cell = Render.get buffer 0 0 in
   (match cell.Render.style.Render.Style.fg with
-  | Some Render.Style.White -> ()
+  | Some (Render.Style.Solid Render.Style.White) -> ()
   | _ -> Alcotest.fail "adaptive color should be white on dark background");
 
   (* Test with light background *)
@@ -383,7 +383,7 @@ let test_adaptive_colors () =
   Ui.render buffer element;
   let cell = Render.get buffer 0 0 in
   (match cell.Render.style.Render.Style.fg with
-  | Some Render.Style.Black -> ()
+  | Some (Render.Style.Solid Render.Style.Black) -> ()
   | _ -> Alcotest.fail "adaptive color should be black on light background");
 
   (* Reset to dark for other tests *)
@@ -396,7 +396,8 @@ let test_adaptive_colors () =
   Ui.render buffer element;
   let cell = Render.get buffer 0 0 in
   match cell.Render.style.Render.Style.fg with
-  | Some Render.Style.White -> () (* Should be white on dark background *)
+  | Some (Render.Style.Solid Render.Style.White) ->
+      () (* Should be white on dark background *)
   | _ -> Alcotest.fail "adaptive_primary should be white on dark background"
 
 let test_margins () =

@@ -72,7 +72,7 @@ let test_get_set () =
 (** Test set_char with regular characters *)
 let test_set_char_regular () =
   let buf = create 10 5 in
-  let style = test_style ~fg:(Some Ansi.Red) () in
+  let style = test_style ~fg:(Some (Style.Solid Ansi.Red)) () in
 
   (* ASCII character *)
   set_char buf 0 0 (Uchar.of_char 'H') style;
@@ -275,7 +275,7 @@ let test_diff_mismatch () =
 
 (** Test render_patch *)
 let test_render_patch () =
-  let style = test_style ~fg:(Some Ansi.Green) () in
+  let style = test_style ~fg:(Some (Style.Solid Ansi.Green)) () in
   let patch =
     {
       row = 5;
@@ -291,7 +291,7 @@ let test_render_patch () =
 
 (** Test render_patches *)
 let test_render_patches () =
-  let style = test_style ~fg:(Some Ansi.Green) () in
+  let style = test_style ~fg:(Some (Style.Solid Ansi.Green)) () in
 
   (* Single patch *)
   let patch =
@@ -324,7 +324,7 @@ let test_render_patches () =
 (** Test render_full *)
 let test_render_full () =
   let buf = create 3 2 in
-  let style = test_style ~fg:(Some Ansi.Blue) () in
+  let style = test_style ~fg:(Some (Style.Solid Ansi.Blue)) () in
 
   (* Fill buffer *)
   set_string buf 0 0 "ABC" style;

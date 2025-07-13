@@ -7,5 +7,6 @@
   test_render
   test_sub
   test_ui
-  test_markdown)
+  test_markdown
+  test_gradient)
  (libraries mosaic mosaic.markdown ansi render eio_main alcotest test_utils))
