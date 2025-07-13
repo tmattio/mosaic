@@ -49,6 +49,43 @@ let test_gradient_rendering () =
   let cell = Render.get buffer 0 0 in
   Alcotest.(check bool) "cell has content" (List.length cell.chars > 0) true
 
+(** Test adaptive color in color_spec *)
+let test_adaptive_color_spec () =
+  let module S = Render.Style in
+  (* Create adaptive color *)
+  let adaptive = S.adaptive ~light:S.Black ~dark:S.White in
+
+  (* Test foreground adaptive *)
+  let style = S.adaptive_fg adaptive in
+  Alcotest.(check bool)
+    "has adaptive foreground"
+    (match style.S.fg with Some (S.Adaptive _) -> true | _ -> false)
+    true;
+  Alcotest.(check bool) "no background" (style.S.bg = None) true;
+
+  (* Test background adaptive *)
+  let style = S.adaptive_bg adaptive in
+  Alcotest.(check bool)
+    "has adaptive background"
+    (match style.S.bg with Some (S.Adaptive _) -> true | _ -> false)
+    true;
+  Alcotest.(check bool) "no foreground" (style.S.fg = None) true;
+
+  (* Test rendering with adaptive colors *)
+  let buffer = Render.create 20 3 in
+  let adaptive_style = S.adaptive_fg S.adaptive_primary in
+  let element = Ui.text ~style:adaptive_style "Adaptive" in
+  Ui.render buffer element;
+
+  (* Check that text was rendered *)
+  let cell = Render.get buffer 0 0 in
+  Alcotest.(check bool) "cell has content" (List.length cell.chars > 0) true;
+
+  (* Check that the color adapts based on background *)
+  match cell.Render.style.Render.Style.fg with
+  | Some (S.Solid S.White) -> () (* On dark background, should be white *)
+  | _ -> Alcotest.fail "Expected white color on dark background"
+
 let () =
   let open Alcotest in
   run "Gradient tests"
@@ -60,5 +97,7 @@ let () =
           test_case "gradient with RGB colors" `Quick test_gradient_with_rgb;
           test_case "gradient rendering integration" `Quick
             test_gradient_rendering;
+          test_case "adaptive color in color_spec" `Quick
+            test_adaptive_color_spec;
         ] );
     ]

@@ -16,6 +16,12 @@ module Style : sig
 
   (** {2 Color Specifications} *)
 
+  type adaptive_color = { light : Ansi.color; dark : Ansi.color }
+  (** [adaptive_color] represents a color that adapts to terminal background.
+
+      Selects appropriate color based on whether terminal has light or dark
+      background. Provides automatic contrast adjustment. *)
+
   type gradient = {
     colors : Ansi.color list;
     direction : [ `Horizontal | `Vertical ];
@@ -28,11 +34,12 @@ module Style : sig
 
   type color_spec =
     | Solid of Ansi.color
+    | Adaptive of adaptive_color
     | Gradient of gradient
         (** [color_spec] specifies how color is applied.
 
-            Solid applies uniform color. Gradient interpolates across element
-            bounds. *)
+            Solid applies uniform color. Adaptive selects color based on
+            terminal background. Gradient interpolates across element bounds. *)
 
   type t = {
     fg : color_spec option;
@@ -251,12 +258,6 @@ module Style : sig
       ]} *)
 
   (** {2 Adaptive Colors} *)
-
-  type adaptive_color = { light : color; dark : color }
-  (** [adaptive_color] represents a color that adapts to terminal background.
-
-      Selects appropriate color based on whether terminal has light or dark
-      background. Provides automatic contrast adjustment. *)
 
   val adaptive : light:color -> dark:color -> adaptive_color
   (** [adaptive ~light ~dark] creates an adaptive color specification.

@@ -681,10 +681,11 @@ and redraw_from_cache ctx buffer opts cache =
   (* Draw background if specified *)
   (match opts.background with
   | Some bg_style ->
-      (* Check if background has gradient *)
+      (* Check if background has gradient or adaptive color *)
       let has_gradient =
         match bg_style.Render.Style.bg with
         | Some (Render.Style.Gradient _) -> true
+        | Some (Render.Style.Adaptive _) -> true
         | _ -> false
       in
       if has_gradient then
@@ -894,11 +895,13 @@ and render_at ctx buffer element =
           0 lines
       in
 
-      (* Check if style has gradients *)
+      (* Check if style has gradients or adaptive colors *)
       let has_gradient =
         match (style.Render.Style.fg, style.Render.Style.bg) with
         | Some (Render.Style.Gradient _), _ -> true
         | _, Some (Render.Style.Gradient _) -> true
+        | Some (Render.Style.Adaptive _), _ -> true
+        | _, Some (Render.Style.Adaptive _) -> true
         | _ -> false
       in
 
@@ -923,11 +926,13 @@ and render_at ctx buffer element =
         | [] -> total_width
         | (s, style) :: rest ->
             let w = Render.measure_string s in
-            (* Check if this segment has gradients *)
+            (* Check if this segment has gradients or adaptive colors *)
             let has_gradient =
               match (style.Render.Style.fg, style.Render.Style.bg) with
               | Some (Render.Style.Gradient _), _ -> true
               | _, Some (Render.Style.Gradient _) -> true
+              | Some (Render.Style.Adaptive _), _ -> true
+              | _, Some (Render.Style.Adaptive _) -> true
               | _ -> false
             in
             if has_gradient then

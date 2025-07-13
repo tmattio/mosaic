@@ -1,12 +1,18 @@
 module Style = struct
+  (* Adaptive color support *)
+  type adaptive_color = { light : Ansi.color; dark : Ansi.color }
+
   (* Gradient type for linear color interpolation *)
   type gradient = {
     colors : Ansi.color list;
     direction : [ `Horizontal | `Vertical ];
   }
 
-  (* Color specification: solid or gradient *)
-  type color_spec = Solid of Ansi.color | Gradient of gradient
+  (* Color specification: solid, adaptive, or gradient *)
+  type color_spec =
+    | Solid of Ansi.color
+    | Adaptive of adaptive_color
+    | Gradient of gradient
 
   type t = {
     fg : color_spec option;
@@ -145,9 +151,6 @@ module Style = struct
     let b = hex land 0xFF in
     RGB (r, g, b)
 
-  (* Adaptive color support *)
-  type adaptive_color = { light : color; dark : color }
-
   let adaptive ~light ~dark = { light; dark }
 
   (* Global reference for terminal background state *)
@@ -155,14 +158,8 @@ module Style = struct
 
   (* Function to update background state - called by terminal detection *)
   let set_dark_background dark = is_dark_background := dark
-
-  let adaptive_fg color =
-    let selected = if !is_dark_background then color.dark else color.light in
-    fg selected
-
-  let adaptive_bg color =
-    let selected = if !is_dark_background then color.dark else color.light in
-    bg selected
+  let adaptive_fg color = { empty with fg = Some (Adaptive color) }
+  let adaptive_bg color = { empty with bg = Some (Adaptive color) }
 
   (* Common adaptive colors *)
   let adaptive_primary = { light = Black; dark = White }
@@ -336,6 +333,11 @@ let resolve_color_spec spec ~x ~y ~width ~height =
   match spec with
   | None -> None
   | Some (Style.Solid color) -> Some color
+  | Some (Style.Adaptive adaptive) ->
+      let selected =
+        if !Style.is_dark_background then adaptive.dark else adaptive.light
+      in
+      Some selected
   | Some (Style.Gradient gradient) ->
       let t =
         match gradient.direction with
@@ -354,16 +356,16 @@ let apply_gradient_style base_style ~x ~y ~width ~height =
     match base_style.Style.fg with
     | None -> None
     | Some (Style.Solid _) -> base_style.Style.fg
-    | Some (Style.Gradient _ as g) ->
-        resolve_color_spec (Some g) ~x ~y ~width ~height
+    | Some ((Style.Adaptive _ | Style.Gradient _) as spec) ->
+        resolve_color_spec (Some spec) ~x ~y ~width ~height
         |> Option.map (fun c -> Style.Solid c)
   in
   let bg =
     match base_style.Style.bg with
     | None -> None
     | Some (Style.Solid _) -> base_style.Style.bg
-    | Some (Style.Gradient _ as g) ->
-        resolve_color_spec (Some g) ~x ~y ~width ~height
+    | Some ((Style.Adaptive _ | Style.Gradient _) as spec) ->
+        resolve_color_spec (Some spec) ~x ~y ~width ~height
         |> Option.map (fun c -> Style.Solid c)
   in
   { base_style with Style.fg; Style.bg }
@@ -450,10 +452,16 @@ let style_to_attrs style =
   (* Extract concrete colors from color_spec *)
   (match style.bg with
   | Some (Solid c) -> attrs := `Bg c :: !attrs
+  | Some (Adaptive adaptive) ->
+      let c = if !is_dark_background then adaptive.dark else adaptive.light in
+      attrs := `Bg c :: !attrs
   | Some (Gradient _) -> () (* Gradients should be resolved before this *)
   | None -> ());
   (match style.fg with
   | Some (Solid c) -> attrs := `Fg c :: !attrs
+  | Some (Adaptive adaptive) ->
+      let c = if !is_dark_background then adaptive.dark else adaptive.light in
+      attrs := `Fg c :: !attrs
   | Some (Gradient _) -> () (* Gradients should be resolved before this *)
   | None -> ());
   !attrs
