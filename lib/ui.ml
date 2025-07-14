@@ -1208,3 +1208,6 @@ let rec pp_element fmt = function
         children
   | Spacer n -> Format.fprintf fmt "Spacer(%d)" n
   | Expand e -> Format.fprintf fmt "Expand(%a)" pp_element e
+
+(* Public API for measuring elements *)
+let measure element = measure_element element
