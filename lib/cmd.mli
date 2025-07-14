@@ -24,7 +24,8 @@ type 'msg t =
   | Perform of (unit -> 'msg option)  (** Executes an async function. *)
   | Exec of 'msg exec_cmd  (** Releases terminal for external programs. *)
   | Tick of float * (float -> 'msg)  (** Creates a timer. *)
-  | Sequence of 'msg t list  (** Runs commands sequentially, one after another. *)
+  | Sequence of 'msg t list
+      (** Runs commands sequentially, one after another. *)
   | Quit  (** Terminates the application. *)
   | Log of string  (** Writes debug output. *)
   | Print of string  (** Writes to stdout for scrollback history. *)

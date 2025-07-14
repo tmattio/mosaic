@@ -433,8 +433,8 @@ val render : Render.buffer -> element -> unit
 (** [render buf elem] renders elem to buf with layout support *)
 
 val measure : element -> int * int
-(** [measure element] returns the (width, height) that the element would 
-    require when rendered. Useful for dynamic layout calculations. *)
+(** [measure element] returns the (width, height) that the element would require
+    when rendered. Useful for dynamic layout calculations. *)
 
 val pp_element : Format.formatter -> element -> unit
 (** [pp_element fmt elem] pretty-prints element elem.

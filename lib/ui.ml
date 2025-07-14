@@ -667,18 +667,19 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
 
       let rec calc_v y children_with_sizes acc =
         (* Clip: stop laying out children that would overflow *)
-        if y >= content_y + content_height then
-          List.rev acc
+        if y >= content_y + content_height then List.rev acc
         else
           match children_with_sizes with
           | [] -> List.rev acc
           | (child, _, h) :: rest ->
               let child_width = content_width in
-              let child_height = if is_expandable child then expand_each else h in
-              
+              let child_height =
+                if is_expandable child then expand_each else h
+              in
+
               (* Check if this child would overflow vertically *)
               if y + child_height > content_y + content_height then
-                List.rev acc  (* Clip partial child *)
+                List.rev acc (* Clip partial child *)
               else
                 (* Apply horizontal alignment *)
                 let measured_w = fst (measure_element (unwrap_expand child)) in
@@ -696,7 +697,9 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
                   }
                 in
 
-                let next_y = y + child_height + if rest = [] then 0 else opts.gap in
+                let next_y =
+                  y + child_height + if rest = [] then 0 else opts.gap
+                in
                 calc_v next_y rest (computed :: acc)
       in
 
@@ -902,10 +905,10 @@ and calculate_grid_layout ctx children columns rows col_spacing row_spacing =
           let extra_count = List.length children in
           if extra_count > 0 then
             Printf.eprintf
-              "Warning: Grid has %d extra children that don't fit in %dx%d grid\n%!"
+              "Warning: Grid has %d extra children that don't fit in %dx%d grid\n\
+               %!"
               extra_count (List.length columns) (List.length rows);
-          List.rev acc (* Ignore extra children *)
-        )
+          List.rev acc (* Ignore extra children *))
         else
           let w = List.nth col_widths col in
           let h = List.nth row_heights row in
@@ -950,7 +953,7 @@ and render_at ctx buffer element =
             let line_width = Render.measure_string line in
             let x_offset = align_offset ctx.width line_width align in
             (* Clip line to context width *)
-            let clipped_line = 
+            let clipped_line =
               if line_width > ctx.width - x_offset then
                 let max_chars = ctx.width - x_offset in
                 if max_chars > 0 then
@@ -967,7 +970,8 @@ and render_at ctx buffer element =
                   clipped_line style ~width:clipped_width ~height:1
               else
                 (* Use regular rendering *)
-                Render.set_string buffer (ctx.x + x_offset) (ctx.y + i) clipped_line style)
+                Render.set_string buffer (ctx.x + x_offset) (ctx.y + i)
+                  clipped_line style)
         lines;
 
       (min max_width ctx.width, min (List.length lines) ctx.height)
@@ -977,24 +981,21 @@ and render_at ctx buffer element =
         | [] -> total_width
         | (s, style) :: rest ->
             (* Check if we've exceeded the horizontal bounds *)
-            if x - ctx.x >= ctx.width then
-              total_width
+            if x - ctx.x >= ctx.width then total_width
             else
               let w = Render.measure_string s in
               (* Clip segment if it extends beyond context width *)
               let available = ctx.x + ctx.width - x in
-              let (clipped_s, clipped_w) =
+              let clipped_s, clipped_w =
                 if w > available && available > 0 then
                   (* Simple clipping - may need refinement for Unicode *)
                   let max_chars = min (String.length s) available in
                   let clipped = String.sub s 0 max_chars in
                   (clipped, Render.measure_string clipped)
-                else if available <= 0 then
-                  ("", 0)
-                else
-                  (s, w)
+                else if available <= 0 then ("", 0)
+                else (s, w)
               in
-              if clipped_w > 0 then
+              if clipped_w > 0 then (
                 (* Check if this segment has gradients or adaptive colors *)
                 let has_gradient =
                   match (style.Render.Style.fg, style.Render.Style.bg) with
@@ -1005,12 +1006,11 @@ and render_at ctx buffer element =
                   | _ -> false
                 in
                 if has_gradient then
-                  Render.set_string_gradient buffer x ctx.y clipped_s style ~width:clipped_w
-                    ~height:1
+                  Render.set_string_gradient buffer x ctx.y clipped_s style
+                    ~width:clipped_w ~height:1
                 else Render.set_string buffer x ctx.y clipped_s style;
-                render_segments (x + clipped_w) rest (total_width + clipped_w)
-              else
-                total_width
+                render_segments (x + clipped_w) rest (total_width + clipped_w))
+              else total_width
       in
       let width = render_segments ctx.x segments 0 in
       (min width ctx.width, 1)

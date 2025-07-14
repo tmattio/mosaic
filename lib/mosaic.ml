@@ -41,8 +41,7 @@ module Program = struct
         (* Track lines rendered in non-alt-screen mode *)
     mutable print_queue : string list;
         (* Queue for print messages in non-alt-screen mode *)
-    terminal_mutex : Eio.Mutex.t;
-        (* Mutex to protect terminal state changes *)
+    terminal_mutex : Eio.Mutex.t; (* Mutex to protect terminal state changes *)
   }
 
   let log_debug program s =
@@ -125,7 +124,9 @@ module Program = struct
                 Terminal.release program.term;
 
                 (* Clear screen and move cursor to top *)
-                Terminal.write program.term (Bytes.of_string "\x1b[2J\x1b[H") 0 6;
+                Terminal.write program.term
+                  (Bytes.of_string "\x1b[2J\x1b[H")
+                  0 6;
                 Terminal.flush program.term;
 
                 (* Execute with protection *)
@@ -220,7 +221,7 @@ module Program = struct
              buffers of two different sizes, which would cause a crash.
              By setting it to None, we force a full redraw on the next frame. *)
           program.previous_buffer <- None;
-          
+
           (* Clear UI element caches on resize since dimensions have changed *)
           let element = program.app.view program.model in
           Ui.clear_cache element;
@@ -251,7 +252,7 @@ module Program = struct
 
     log_debug program "Render: Starting render pass";
     let element = program.app.view program.model in
-    
+
     (* Note: Caches are cleared only on model updates, not every frame *)
 
     (* Create a new buffer for this frame *)
@@ -380,11 +381,11 @@ module Program = struct
     else log_debug program "Writing 0 bytes (no output)";
 
     (* Only write to terminal if program is still running AND there's output *)
-    if program.running && String.length output > 0 then (
+    if program.running && String.length output > 0 then
       Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
           Terminal.write program.term (Bytes.of_string output) 0
             (String.length output);
-          Terminal.flush program.term));
+          Terminal.flush program.term);
 
     program.previous_buffer <- Some buffer
 
@@ -468,7 +469,7 @@ module Program = struct
         Terminal.show_cursor program.term;
         Terminal.set_mode program.term `Cooked;
         Terminal.release program.term;
-      exit 0
+        exit 0
     in
     (* Install handlers for common termination signals *)
     (try Sys.set_signal Sys.sigterm (Sys.Signal_handle termination_handler)
