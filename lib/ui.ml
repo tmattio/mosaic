@@ -666,30 +666,38 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
       in
 
       let rec calc_v y children_with_sizes acc =
-        match children_with_sizes with
-        | [] -> List.rev acc
-        | (child, _, h) :: rest ->
-            let child_width = content_width in
-            let child_height = if is_expandable child then expand_each else h in
+        (* Clip: stop laying out children that would overflow *)
+        if y >= content_y + content_height then
+          List.rev acc
+        else
+          match children_with_sizes with
+          | [] -> List.rev acc
+          | (child, _, h) :: rest ->
+              let child_width = content_width in
+              let child_height = if is_expandable child then expand_each else h in
+              
+              (* Check if this child would overflow vertically *)
+              if y + child_height > content_y + content_height then
+                List.rev acc  (* Clip partial child *)
+              else
+                (* Apply horizontal alignment *)
+                let measured_w = fst (measure_element (unwrap_expand child)) in
+                let x_offset = align_offset child_width measured_w opts.align in
 
-            (* Apply horizontal alignment *)
-            let measured_w = fst (measure_element (unwrap_expand child)) in
-            let x_offset = align_offset child_width measured_w opts.align in
+                let computed =
+                  {
+                    element = child;
+                    x = content_x + x_offset;
+                    y;
+                    width =
+                      (if opts.align = Stretch then child_width
+                       else min child_width measured_w);
+                    height = child_height;
+                  }
+                in
 
-            let computed =
-              {
-                element = child;
-                x = content_x + x_offset;
-                y;
-                width =
-                  (if opts.align = Stretch then child_width
-                   else min child_width measured_w);
-                height = child_height;
-              }
-            in
-
-            let next_y = y + child_height + if rest = [] then 0 else opts.gap in
-            calc_v next_y rest (computed :: acc)
+                let next_y = y + child_height + if rest = [] then 0 else opts.gap in
+                calc_v next_y rest (computed :: acc)
       in
 
       let children_layouts =
