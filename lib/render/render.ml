@@ -371,7 +371,7 @@ let apply_gradient_style base_style ~x ~y ~width ~height =
   { base_style with Style.fg; Style.bg }
 
 (* Set a string with gradient support *)
-let set_string_gradient buffer x y str style ~width ~height:_ =
+let set_string_gradient buffer x y str style ~width ~height ~line_offset =
   let decoder = Uutf.decoder ~encoding:`UTF_8 (`String str) in
   let start_x = x in
   let rec loop x =
@@ -383,7 +383,7 @@ let set_string_gradient buffer x y str style ~width ~height:_ =
           if x + width_char <= buffer.width then (
             (* Calculate style for this specific position *)
             let pos_style =
-              apply_gradient_style style ~x:(x - start_x) ~y:0 ~width ~height:1
+              apply_gradient_style style ~x:(x - start_x) ~y:line_offset ~width ~height
             in
             set_char buffer x y u pos_style;
             loop (x + width_char))
@@ -392,7 +392,7 @@ let set_string_gradient buffer x y str style ~width ~height:_ =
           let replacement = Uchar.of_int 0xFFFD in
           if x < buffer.width then (
             let pos_style =
-              apply_gradient_style style ~x:(x - start_x) ~y:0 ~width ~height:1
+              apply_gradient_style style ~x:(x - start_x) ~y:line_offset ~width ~height
             in
             set_char buffer x y replacement pos_style;
             loop (x + 1))

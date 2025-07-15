@@ -945,6 +945,9 @@ and render_at ctx buffer element =
         | _ -> false
       in
 
+      (* For vertical gradients, we need the total height of all lines *)
+      let total_lines = List.length lines in
+      
       (* Render each line with alignment and clipping *)
       List.iteri
         (fun i line ->
@@ -965,9 +968,9 @@ and render_at ctx buffer element =
             let clipped_width = Render.measure_string clipped_line in
             if clipped_width > 0 then
               if has_gradient then
-                (* Use gradient-aware rendering *)
+                (* Use gradient-aware rendering with proper line offset for vertical gradients *)
                 Render.set_string_gradient buffer (ctx.x + x_offset) (ctx.y + i)
-                  clipped_line style ~width:clipped_width ~height:1
+                  clipped_line style ~width:clipped_width ~height:total_lines ~line_offset:i
               else
                 (* Use regular rendering *)
                 Render.set_string buffer (ctx.x + x_offset) (ctx.y + i)
@@ -1007,7 +1010,7 @@ and render_at ctx buffer element =
                 in
                 if has_gradient then
                   Render.set_string_gradient buffer x ctx.y clipped_s style
-                    ~width:clipped_w ~height:1
+                    ~width:clipped_w ~height:1 ~line_offset:0
                 else Render.set_string buffer x ctx.y clipped_s style;
                 render_segments (x + clipped_w) rest (total_width + clipped_w))
               else total_width
