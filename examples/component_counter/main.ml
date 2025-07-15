@@ -5,14 +5,14 @@ type model = { top_counter : Counter.model; bottom_counter : Counter.model }
 type msg = Top of Counter.msg | Bottom of Counter.msg | Reset | Quit
 
 let top_counter_inst =
-  Component.make
+  Component.connect
     (module Counter)
     ~get:(fun m -> m.top_counter)
     ~set:(fun c m -> { m with top_counter = c })
     ~wrap:(fun child_msg -> Top child_msg)
 
 let bottom_counter_inst =
-  Component.make
+  Component.connect
     (module Counter)
     ~get:(fun m -> m.bottom_counter)
     ~set:(fun c m -> { m with bottom_counter = c })
@@ -25,8 +25,12 @@ let init () =
 
 let update msg model =
   match msg with
-  | Top child_msg -> top_counter_inst.update child_msg model
-  | Bottom child_msg -> bottom_counter_inst.update child_msg model
+  | Top child_msg ->
+      let model, cmd, _outgoing = top_counter_inst.update child_msg model in
+      (model, cmd)
+  | Bottom child_msg ->
+      let model, cmd, _outgoing = bottom_counter_inst.update child_msg model in
+      (model, cmd)
   | Reset ->
       let m, cmd = init () in
       (m, Cmd.batch [ cmd; Cmd.log "Counters were reset!" ])
