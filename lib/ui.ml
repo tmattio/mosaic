@@ -1079,6 +1079,25 @@ and render_at ctx buffer element =
       match data.cache with
       | Some cache
         when cache.ctx_width = ctx.width && cache.ctx_height = ctx.height ->
+          (* Fill lines first for cache hit *)
+          let line_map : (int, int) Hashtbl.t = Hashtbl.create 10 in
+          (* y -> max_h *)
+          List.iter
+            (fun (cl : computed_element) ->
+              let current_max =
+                try Hashtbl.find line_map cl.y with Not_found -> 0
+              in
+              Hashtbl.replace line_map cl.y (max current_max cl.height))
+            cache.children_layouts;
+          Hashtbl.iter
+            (fun y max_h ->
+              for dy = 0 to max_h - 1 do
+                Render.set_string buffer ctx.x (y + dy)
+                  (String.make ctx.width ' ')
+                  Render.Style.empty
+              done)
+            line_map;
+          (* Now render children over the filled background *)
           List.iter
             (fun (cl : computed_element) ->
               let child_ctx =
@@ -1100,6 +1119,24 @@ and render_at ctx buffer element =
                 computed_height;
                 children_layouts;
               };
+          (* Repeat filling for cache miss *)
+          let line_map : (int, int) Hashtbl.t = Hashtbl.create 10 in
+          List.iter
+            (fun (cl : computed_element) ->
+              let current_max =
+                try Hashtbl.find line_map cl.y with Not_found -> 0
+              in
+              Hashtbl.replace line_map cl.y (max current_max cl.height))
+            children_layouts;
+          Hashtbl.iter
+            (fun y max_h ->
+              for dy = 0 to max_h - 1 do
+                Render.set_string buffer ctx.x (y + dy)
+                  (String.make ctx.width ' ')
+                  Render.Style.empty
+              done)
+            line_map;
+          (* Render children *)
           List.iter
             (fun (cl : computed_element) ->
               let child_ctx =
