@@ -251,7 +251,6 @@ val clear_screen : 'msg t
       Cmd.batch [ Cmd.clear_screen; Cmd.msg `AppStarted ]
     ]} *)
 
-
 val map : ('a -> 'b) -> 'a t -> 'b t
 (** [map f cmd] transforms all messages produced by [cmd] using function [f].
 

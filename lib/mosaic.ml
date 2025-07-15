@@ -231,49 +231,50 @@ module Program = struct
 
   let handle_input_event program event =
     log_debug program (Format.asprintf "Input event: %a" Input.pp_event event);
-    let msgs = Eio.Mutex.use_ro program.state_mutex (fun () ->
-      let subs = program.app.subscriptions program.model in
-      match event with
-      | Input.Key key_event ->
-          let keyboard_handlers = Sub.collect_keyboard [] subs in
-          List.filter_map (fun f -> f key_event) keyboard_handlers
-      | Input.Focus ->
-          let focus_handlers = Sub.collect_focus [] subs in
-          List.filter_map (fun f -> f ()) focus_handlers
-      | Input.Blur ->
-          let blur_handlers = Sub.collect_blur [] subs in
-          List.filter_map (fun f -> f ()) blur_handlers
-      | Input.Mouse mouse_event ->
-          let mouse_handlers = Sub.collect_mouse [] subs in
-          List.filter_map (fun f -> f mouse_event) mouse_handlers
-      | Input.Resize (w, h) ->
-          (* Invalidate the previous buffer on resize.
+    let msgs =
+      Eio.Mutex.use_ro program.state_mutex (fun () ->
+          let subs = program.app.subscriptions program.model in
+          match event with
+          | Input.Key key_event ->
+              let keyboard_handlers = Sub.collect_keyboard [] subs in
+              List.filter_map (fun f -> f key_event) keyboard_handlers
+          | Input.Focus ->
+              let focus_handlers = Sub.collect_focus [] subs in
+              List.filter_map (fun f -> f ()) focus_handlers
+          | Input.Blur ->
+              let blur_handlers = Sub.collect_blur [] subs in
+              List.filter_map (fun f -> f ()) blur_handlers
+          | Input.Mouse mouse_event ->
+              let mouse_handlers = Sub.collect_mouse [] subs in
+              List.filter_map (fun f -> f mouse_event) mouse_handlers
+          | Input.Resize (w, h) ->
+              (* Invalidate the previous buffer on resize.
              This prevents the diffing logic in the render loop from comparing
              buffers of two different sizes, which would cause a crash.
              By setting it to None, we force a full redraw on the next frame. *)
-          program.previous_buffer <- None;
+              program.previous_buffer <- None;
 
-          (* Clear UI element caches on resize since dimensions have changed *)
-          let element = program.app.view program.model in
-          Ui.clear_cache element;
+              (* Clear UI element caches on resize since dimensions have changed *)
+              let element = program.app.view program.model in
+              Ui.clear_cache element;
 
-          (* For non-alt-screen, clear terminal and reset tracking *)
-          if not program.alt_screen then (
-            Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
-                let clear_seq = Ansi.clear_terminal in
-                Terminal.write program.term
-                  (Bytes.of_string clear_seq)
-                  0 (String.length clear_seq);
-                Terminal.flush program.term);
-            program.last_static_height <- 0;
-            program.last_printed_static <- 0;
-            program.previous_dynamic_buffer <- None);
+              (* For non-alt-screen, clear terminal and reset tracking *)
+              if not program.alt_screen then (
+                Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
+                    let clear_seq = Ansi.clear_terminal in
+                    Terminal.write program.term
+                      (Bytes.of_string clear_seq)
+                      0 (String.length clear_seq);
+                    Terminal.flush program.term);
+                program.last_static_height <- 0;
+                program.last_printed_static <- 0;
+                program.previous_dynamic_buffer <- None);
 
-          let window_handlers = Sub.collect_window [] subs in
-          let size = { Sub.width = w; Sub.height = h } in
-          List.filter_map (fun f -> f size) window_handlers
-      | _ -> []
-    ) in
+              let window_handlers = Sub.collect_window [] subs in
+              let size = { Sub.width = w; Sub.height = h } in
+              List.filter_map (fun f -> f size) window_handlers
+          | _ -> [])
+    in
     log_debug program
       (Format.asprintf "Generated %d messages from input event"
          (List.length msgs));
@@ -282,153 +283,161 @@ module Program = struct
   let render program =
     log_debug program "Render: Starting render pass";
     let width, height = Terminal.size program.term in
-    
+
     (* Protect reads of model and static elements *)
-    let buffer, non_alt_output = Eio.Mutex.use_ro program.state_mutex (fun () ->
-      let dynamic_element = program.app.view program.model in
-      let static_elements_snapshot = program.static_elements in
-      
-      let buffer = Render.create width height in
+    let buffer, non_alt_output =
+      Eio.Mutex.use_ro program.state_mutex (fun () ->
+          let dynamic_element = program.app.view program.model in
+          let static_elements_snapshot = program.static_elements in
 
-      if program.alt_screen then (
-        (* Alt-screen: Keep combined vbox for full buffer render *)
-        let combined_element =
-          if static_elements_snapshot = [] then dynamic_element
-          else Ui.vbox (static_elements_snapshot @ [ Ui.expand dynamic_element ])
-        in
-        Ui.render buffer combined_element;
-        (buffer, "")
-      ) else (
-       (* Non-alt-screen: Append new static relatively, clear/redraw dynamic *)
-       let output_buf = Buffer.create 1024 in
+          let buffer = Render.create width height in
 
-       (* Append only new static elements (delta since last render) *)
-       let new_static_start = program.last_printed_static in
-       let new_statics =
-         let rec drop n lst =
-           if n <= 0 then lst
-           else match lst with [] -> [] | _ :: t -> drop (n - 1) t
-         in
-         drop new_static_start static_elements_snapshot
-       in
+          if program.alt_screen then (
+            (* Alt-screen: Keep combined vbox for full buffer render *)
+            let combined_element =
+              if static_elements_snapshot = [] then dynamic_element
+              else
+                Ui.vbox
+                  (static_elements_snapshot @ [ Ui.expand dynamic_element ])
+            in
+            Ui.render buffer combined_element;
+            (buffer, ""))
+          else
+            (* Non-alt-screen: Append new static relatively, clear/redraw dynamic *)
+            let output_buf = Buffer.create 1024 in
 
-       (* Render dynamic to buffer *)
-       let _, dynamic_height = Ui.measure ~width dynamic_element in
-       let dyn_buffer = Render.create width dynamic_height in
-       Ui.render dyn_buffer dynamic_element;
+            (* Append only new static elements (delta since last render) *)
+            let new_static_start = program.last_printed_static in
+            let new_statics =
+              let rec drop n lst =
+                if n <= 0 then lst
+                else match lst with [] -> [] | _ :: t -> drop (n - 1) t
+              in
+              drop new_static_start static_elements_snapshot
+            in
 
-       (* Get previous height *)
-       let previous_height =
-         match program.previous_dynamic_buffer with
-         | None -> 0
-         | Some b -> snd (Render.dimensions b)
-       in
+            (* Render dynamic to buffer *)
+            let _, dynamic_height = Ui.measure ~width dynamic_element in
+            let dyn_buffer = Render.create width dynamic_height in
+            Ui.render dyn_buffer dynamic_element;
 
-       (* Detect if full redraw needed *)
-       let force_full =
-         new_statics <> []
-         || program.previous_dynamic_buffer = None
-         || previous_height <> dynamic_height
-         || width <> program.last_width
-       in
-       program.last_width <- width;
+            (* Get previous height *)
+            let previous_height =
+              match program.previous_dynamic_buffer with
+              | None -> 0
+              | Some b -> snd (Render.dimensions b)
+            in
 
-       (* Position to old dynamic start and clear if previous exists *)
-       if previous_height > 0 then (
-         Buffer.add_string output_buf (Ansi.cursor_up previous_height);
-         Buffer.add_string output_buf "\r";
-         if force_full then Buffer.add_string output_buf Ansi.clear_screen_below);
+            (* Detect if full redraw needed *)
+            let force_full =
+              new_statics <> []
+              || program.previous_dynamic_buffer = None
+              || previous_height <> dynamic_height
+              || width <> program.last_width
+            in
+            program.last_width <- width;
 
-       (* Append new static elements *)
-       let added_height = ref 0 in
-       List.iter
-         (fun el ->
-           let _, el_h = Ui.measure ~width el in
-           let el_buffer = Render.create width el_h in
-           Ui.render el_buffer el;
-           let rendered = Render.render_full ~mode:Render.Relative el_buffer in
-           Buffer.add_string output_buf rendered;
-           Buffer.add_string output_buf "\r\n";
-           added_height := !added_height + el_h)
-         new_statics;
-       program.last_printed_static <- List.length static_elements_snapshot;
-       program.last_static_height <- program.last_static_height + !added_height;
+            (* Position to old dynamic start and clear if previous exists *)
+            if previous_height > 0 then (
+              Buffer.add_string output_buf (Ansi.cursor_up previous_height);
+              Buffer.add_string output_buf "\r";
+              if force_full then
+                Buffer.add_string output_buf Ansi.clear_screen_below);
 
-       (* Prepare and output dynamic *)
-       let dynamic_height = snd (Render.dimensions dyn_buffer) in
-       let dyn_output =
-         if force_full then
-           Render.render_full ~mode:Render.Relative dyn_buffer ^ "\r\n"
-         else
-           (* previous_dynamic_buffer should always be set here,
+            (* Append new static elements *)
+            let added_height = ref 0 in
+            List.iter
+              (fun el ->
+                let _, el_h = Ui.measure ~width el in
+                let el_buffer = Render.create width el_h in
+                Ui.render el_buffer el;
+                let rendered =
+                  Render.render_full ~mode:Render.Relative el_buffer
+                in
+                Buffer.add_string output_buf rendered;
+                Buffer.add_string output_buf "\r\n";
+                added_height := !added_height + el_h)
+              new_statics;
+            program.last_printed_static <- List.length static_elements_snapshot;
+            program.last_static_height <-
+              program.last_static_height + !added_height;
+
+            (* Prepare and output dynamic *)
+            let dynamic_height = snd (Render.dimensions dyn_buffer) in
+            let dyn_output =
+              if force_full then
+                Render.render_full ~mode:Render.Relative dyn_buffer ^ "\r\n"
+              else
+                (* previous_dynamic_buffer should always be set here,
              so we can safely use it for diffing *)
-           let prev_buf = Option.get program.previous_dynamic_buffer in
-           let patches = Render.diff prev_buf dyn_buffer in
-           if patches = [] then Ansi.cursor_down dynamic_height ^ "\r"
-           else
-             let sorted_patches =
-               List.sort
-                 (fun (p1 : Render.patch) p2 ->
-                   if p1.row = p2.row then Int.compare p1.col p2.col
-                   else Int.compare p1.row p2.row)
-                 patches
-             in
-             let patch_buf = Buffer.create 1024 in
-             let current_row = ref 0 in
-             let current_col = ref 0 in
-             List.iter
-               (fun (p : Render.patch) ->
-                 (* Move down if needed *)
-                 let row_diff = p.row - !current_row in
-                 if row_diff > 0 then (
-                   Buffer.add_string patch_buf (Ansi.cursor_down row_diff);
-                   Buffer.add_string patch_buf "\r";
-                   current_col := 0);
-                 current_row := p.row;
+                let prev_buf = Option.get program.previous_dynamic_buffer in
+                let patches = Render.diff prev_buf dyn_buffer in
+                if patches = [] then Ansi.cursor_down dynamic_height ^ "\r"
+                else
+                  let sorted_patches =
+                    List.sort
+                      (fun (p1 : Render.patch) p2 ->
+                        if p1.row = p2.row then Int.compare p1.col p2.col
+                        else Int.compare p1.row p2.row)
+                      patches
+                  in
+                  let patch_buf = Buffer.create 1024 in
+                  let current_row = ref 0 in
+                  let current_col = ref 0 in
+                  List.iter
+                    (fun (p : Render.patch) ->
+                      (* Move down if needed *)
+                      let row_diff = p.row - !current_row in
+                      if row_diff > 0 then (
+                        Buffer.add_string patch_buf (Ansi.cursor_down row_diff);
+                        Buffer.add_string patch_buf "\r";
+                        current_col := 0);
+                      current_row := p.row;
 
-                 (* Move forward on line *)
-                 let col_diff = p.col - !current_col in
-                 if col_diff > 0 then
-                   Buffer.add_string patch_buf (Ansi.cursor_forward col_diff);
-                 current_col := p.col + p.new_cell.width;
+                      (* Move forward on line *)
+                      let col_diff = p.col - !current_col in
+                      if col_diff > 0 then
+                        Buffer.add_string patch_buf
+                          (Ansi.cursor_forward col_diff);
+                      current_col := p.col + p.new_cell.width;
 
-                 (* Apply style and content *)
-                 Buffer.add_string patch_buf (Style.to_sgr p.new_cell.style);
-                 let content =
-                   match p.new_cell.chars with
-                   | [] -> " "
-                   | chars ->
-                       let b = Buffer.create 8 in
-                       List.iter (Uutf.Buffer.add_utf_8 b) chars;
-                       Buffer.contents b
-                 in
-                 let styled_content =
-                   match p.new_cell.style.uri with
-                   | Some uri -> Ansi.hyperlink ~uri content
-                   | None -> content
-                 in
-                 Buffer.add_string patch_buf styled_content;
-                 Buffer.add_string patch_buf Ansi.reset)
-               sorted_patches;
-             Buffer.add_string patch_buf
-               (Ansi.cursor_down (dynamic_height - !current_row) ^ "\r");
-             Buffer.contents patch_buf
-       in
-       Buffer.add_string output_buf dyn_output;
+                      (* Apply style and content *)
+                      Buffer.add_string patch_buf
+                        (Style.to_sgr p.new_cell.style);
+                      let content =
+                        match p.new_cell.chars with
+                        | [] -> " "
+                        | chars ->
+                            let b = Buffer.create 8 in
+                            List.iter (Uutf.Buffer.add_utf_8 b) chars;
+                            Buffer.contents b
+                      in
+                      let styled_content =
+                        match p.new_cell.style.uri with
+                        | Some uri -> Ansi.hyperlink ~uri content
+                        | None -> content
+                      in
+                      Buffer.add_string patch_buf styled_content;
+                      Buffer.add_string patch_buf Ansi.reset)
+                    sorted_patches;
+                  Buffer.add_string patch_buf
+                    (Ansi.cursor_down (dynamic_height - !current_row) ^ "\r");
+                  Buffer.contents patch_buf
+            in
+            Buffer.add_string output_buf dyn_output;
 
-       (* Clear excess if height decreased *)
-       if dynamic_height < previous_height then (
-         Buffer.add_string output_buf (Ansi.cursor_down dynamic_height);
-         Buffer.add_string output_buf Ansi.clear_screen_below);
+            (* Clear excess if height decreased *)
+            if dynamic_height < previous_height then (
+              Buffer.add_string output_buf (Ansi.cursor_down dynamic_height);
+              Buffer.add_string output_buf Ansi.clear_screen_below);
 
-       (* Update state *)
-       program.previous_dynamic_buffer <- Some dyn_buffer;
-       program.previous_buffer <- None;
-       
-       (* Return buffer and output string *)
-       (buffer, Buffer.contents output_buf)
-      )
-    ) in
+            (* Update state *)
+            program.previous_dynamic_buffer <- Some dyn_buffer;
+            program.previous_buffer <- None;
+
+            (* Return buffer and output string *)
+            (buffer, Buffer.contents output_buf))
+    in
 
     (* Calculate a simple hash of buffer content for debugging *)
     let buffer_hash buffer =
@@ -522,7 +531,8 @@ module Program = struct
       (* Process queued commands first *)
       while not (Queue.is_empty program.cmd_queue) do
         let cmd = Queue.take program.cmd_queue in
-        Eio.Mutex.use_rw ~protect:false program.state_mutex (fun () -> process_cmd program cmd)
+        Eio.Mutex.use_rw ~protect:false program.state_mutex (fun () ->
+            process_cmd program cmd)
       done;
 
       (* Block until a new message arrives *)
@@ -532,15 +542,14 @@ module Program = struct
           (* Check again after waking up *)
           log_debug program "Processing message";
           Eio.Mutex.use_rw ~protect:false program.state_mutex (fun () ->
-            let cmd = send_msg program msg in
-            log_debug program
-              (Format.asprintf "Command generated: %a"
-                 (Cmd.pp (fun fmt _ -> Format.fprintf fmt "<msg>"))
-                 cmd);
-            (* If it's a sequence, it will be added to the queue.
+              let cmd = send_msg program msg in
+              log_debug program
+                (Format.asprintf "Command generated: %a"
+                   (Cmd.pp (fun fmt _ -> Format.fprintf fmt "<msg>"))
+                   cmd);
+              (* If it's a sequence, it will be added to the queue.
                Otherwise, process it immediately *)
-            process_cmd program cmd)
-        )
+              process_cmd program cmd))
     done
 
   let setup_terminal program =
