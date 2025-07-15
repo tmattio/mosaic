@@ -16,6 +16,7 @@ module Sub = Sub
 module Terminal = Terminal
 module Input = Input
 module Event_source = Event_source
+module Component = Component
 
 module Program = struct
   type ('model, 'msg) t = {

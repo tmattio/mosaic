@@ -44,6 +44,11 @@ module Input = Input
 module Sub = Sub
 (** @inline *)
 
+(** {1 Components} *)
+
+module Component = Component
+(** @inline *)
+
 (** {1 Building Applications} *)
 
 type ('model, 'msg) app = {
