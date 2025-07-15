@@ -44,6 +44,10 @@ module Program = struct
     mutable previous_dynamic_buffer : Render.buffer option;
         (* Previous dynamic buffer for non-alt-screen diffing *)
     mutable last_width : int; (* Last terminal width to detect resizes *)
+    resize_cond : Eio.Condition.t;
+        (* Condition for signal handler to wake resize fiber *)
+    last_resize_w : int ref; (* Last resize width from signal handler *)
+    last_resize_h : int ref; (* Last resize height from signal handler *)
   }
 
   let log_debug program s =
@@ -88,6 +92,9 @@ module Program = struct
       last_printed_static = 0;
       previous_dynamic_buffer = None;
       last_width = fst (Terminal.size term);
+      resize_cond = Eio.Condition.create ();
+      last_resize_w = ref 0;
+      last_resize_h = ref 0;
     }
 
   let send_msg program msg =
@@ -167,6 +174,8 @@ module Program = struct
             Queue.add (Cmd.Sequence t) program.cmd_queue)
     | Cmd.Quit ->
         program.running <- false;
+        (* Wake up the resize fiber so it can exit *)
+        Eio.Condition.broadcast program.resize_cond;
         (* Give other loops a chance to exit *)
         Eio.Fiber.yield ();
         ()
@@ -573,8 +582,9 @@ module Program = struct
 
     (* Setup SIGWINCH handler *)
     let sigwinch_handler (w, h) =
-      let resize_event = Input.Resize (w, h) in
-      handle_input_event program resize_event
+      program.last_resize_w := w;
+      program.last_resize_h := h;
+      Eio.Condition.broadcast program.resize_cond
     in
     Terminal.set_sigwinch_handler (Some sigwinch_handler);
 
@@ -582,29 +592,18 @@ module Program = struct
     let termination_handler _ =
       (* Ensure terminal is cleaned up before exit *)
       Terminal.set_sigwinch_handler None;
-      (* Try to acquire mutex with timeout to avoid deadlock during signal handling *)
-      try
-        Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
-            Terminal.show_cursor program.term;
-            Terminal.disable_mouse program.term;
-            Terminal.disable_kitty_keyboard program.term;
-            Terminal.disable_alternate_screen program.term;
-            Terminal.set_mode program.term `Cooked;
-            Terminal.release program.term)
-      with _ ->
-        (* If we can't get the mutex, at least try to clean up *)
-        Terminal.show_cursor program.term;
-        Terminal.set_mode program.term `Cooked;
-        Terminal.release program.term;
-        exit 0
+      Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
+          Terminal.show_cursor program.term;
+          Terminal.disable_mouse program.term;
+          Terminal.disable_kitty_keyboard program.term;
+          Terminal.disable_alternate_screen program.term;
+          Terminal.set_mode program.term `Cooked;
+          Terminal.release program.term)
     in
     (* Install handlers for common termination signals *)
-    (try Sys.set_signal Sys.sigterm (Sys.Signal_handle termination_handler)
-     with _ -> ());
-    (try Sys.set_signal Sys.sigint (Sys.Signal_handle termination_handler)
-     with _ -> ());
-    try Sys.set_signal Sys.sighup (Sys.Signal_handle termination_handler)
-    with _ -> ()
+    Sys.set_signal Sys.sigterm (Sys.Signal_handle termination_handler);
+    Sys.set_signal Sys.sigint (Sys.Signal_handle termination_handler);
+    Sys.set_signal Sys.sighup (Sys.Signal_handle termination_handler)
 
   let cleanup_terminal program =
     Terminal.set_sigwinch_handler None;
@@ -643,6 +642,15 @@ module Program = struct
         (fun () -> input_loop program);
         (fun () -> render_loop program);
         (fun () -> message_loop program);
+        (fun () ->
+          (* Resize handler fiber *)
+          while program.running do
+            Eio.Condition.await_no_mutex program.resize_cond;
+            if program.running then
+              let w = !(program.last_resize_w) in
+              let h = !(program.last_resize_h) in
+              handle_input_event program (Input.Resize (w, h))
+          done);
       ]
 end
 
