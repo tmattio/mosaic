@@ -289,6 +289,35 @@ let parse_csi s start end_ =
         | [ Some 200 ] -> Some Paste_start
         | [ Some 201 ] -> Some Paste_end
         | _ -> None)
+    (* CSI-u format (modern keyboard protocol) *)
+    | 'u' -> (
+        match params with
+        | [ Some 13 ] -> Some (Key { key = Enter; modifier = no_modifier })
+        | [ Some 13; Some _ ] ->
+            let mods = parse_modifiers params in
+            Some (Key { key = Enter; modifier = mods })
+        | [ Some 9 ] -> Some (Key { key = Tab; modifier = no_modifier })
+        | [ Some 9; Some _ ] ->
+            let mods = parse_modifiers params in
+            Some (Key { key = Tab; modifier = mods })
+        | [ Some 127 ] -> Some (Key { key = Backspace; modifier = no_modifier })
+        | [ Some 127; Some _ ] ->
+            let mods = parse_modifiers params in
+            Some (Key { key = Backspace; modifier = mods })
+        | [ Some 27 ] -> Some (Key { key = Escape; modifier = no_modifier })
+        | [ Some 27; Some _ ] ->
+            let mods = parse_modifiers params in
+            Some (Key { key = Escape; modifier = mods })
+        | [ Some 32 ] -> Some (Key { key = Char (Uchar.of_int 32); modifier = no_modifier })
+        | [ Some 32; Some _ ] ->
+            let mods = parse_modifiers params in
+            Some (Key { key = Char (Uchar.of_int 32); modifier = mods })
+        | [ Some c ] when c >= 33 && c <= 126 ->
+            Some (Key { key = Char (Uchar.of_int c); modifier = no_modifier })
+        | [ Some c; Some _ ] when c >= 33 && c <= 126 ->
+            let mods = parse_modifiers params in
+            Some (Key { key = Char (Uchar.of_int c); modifier = mods })
+        | _ -> None)
     (* Mouse events *)
     | '<' ->
         parse_sgr_mouse
