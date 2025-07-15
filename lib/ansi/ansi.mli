@@ -235,6 +235,19 @@ val bracketed_paste_off : string
     Pasted text appears as normal input. Cannot distinguish pastes from typing.
 *)
 
+val kitty_keyboard_on : string
+(** [kitty_keyboard_on] enables enhanced keyboard reporting (Kitty keyboard protocol).
+
+    Allows terminals to send distinct escape sequences for key combinations
+    like Shift+Enter that are normally indistinguishable. 
+*)
+
+val kitty_keyboard_off : string
+(** [kitty_keyboard_off] disables enhanced keyboard reporting.
+
+    Returns to standard keyboard input mode. 
+*)
+
 val set_window_title : string -> string
 (** [set_window_title title] creates escape sequence to set terminal window
     title.

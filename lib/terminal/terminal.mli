@@ -105,6 +105,18 @@ val disable_bracketed_paste : t -> unit
     Pasted text appears as normal typed input. Cannot distinguish from
     keystrokes. *)
 
+val enable_kitty_keyboard : t -> unit
+(** [enable_kitty_keyboard t] enables enhanced keyboard reporting.
+
+    Allows terminals to send distinct escape sequences for key combinations
+    like Shift+Enter. Required for detecting modified keys. No effect on non-TTY. *)
+
+val disable_kitty_keyboard : t -> unit
+(** [disable_kitty_keyboard t] disables enhanced keyboard reporting.
+
+    Returns to standard keyboard mode. Should be called before release if
+    enabled. *)
+
 val show_cursor : t -> unit
 (** [show_cursor t] makes cursor visible.
 

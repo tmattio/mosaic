@@ -97,6 +97,12 @@ let enable_bracketed_paste t =
 let disable_bracketed_paste t =
   if t.is_tty then write_escape t Ansi.bracketed_paste_off
 
+let enable_kitty_keyboard t =
+  if t.is_tty then write_escape t Ansi.kitty_keyboard_on
+
+let disable_kitty_keyboard t =
+  if t.is_tty then write_escape t Ansi.kitty_keyboard_off
+
 let show_cursor t = if t.is_tty then write_escape t Ansi.cursor_show
 let hide_cursor t = if t.is_tty then write_escape t Ansi.cursor_hide
 

@@ -112,6 +112,7 @@ module Program = struct
                   Terminal.hide_cursor program.term;
                   Terminal.set_mode program.term `Raw;
                   if program.mouse then Terminal.enable_mouse program.term;
+                  Terminal.enable_kitty_keyboard program.term;
                   if program.alt_screen then
                     Terminal.enable_alternate_screen program.term;
                   program.previous_buffer <- None
@@ -121,6 +122,7 @@ module Program = struct
                 Terminal.save_state program.term;
                 Terminal.show_cursor program.term;
                 Terminal.disable_mouse program.term;
+                Terminal.disable_kitty_keyboard program.term;
                 Terminal.disable_alternate_screen program.term;
                 Terminal.set_mode program.term `Cooked;
                 Terminal.release program.term;
@@ -455,7 +457,8 @@ module Program = struct
         if program.alt_screen then (
           log_debug program "Enabling alternate screen";
           Terminal.enable_alternate_screen program.term);
-        if program.mouse then Terminal.enable_mouse program.term);
+        if program.mouse then Terminal.enable_mouse program.term;
+        Terminal.enable_kitty_keyboard program.term);
 
     (* Setup SIGWINCH handler *)
     let sigwinch_handler (w, h) =
@@ -473,6 +476,7 @@ module Program = struct
         Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
             Terminal.show_cursor program.term;
             Terminal.disable_mouse program.term;
+            Terminal.disable_kitty_keyboard program.term;
             Terminal.disable_alternate_screen program.term;
             Terminal.set_mode program.term `Cooked;
             Terminal.release program.term)
@@ -497,6 +501,7 @@ module Program = struct
         Terminal.flush program.term;
         Terminal.show_cursor program.term;
         Terminal.disable_mouse program.term;
+        Terminal.disable_kitty_keyboard program.term;
         Terminal.disable_alternate_screen program.term;
         Terminal.set_mode program.term `Cooked;
         Terminal.release program.term)

@@ -64,6 +64,8 @@ let mouse_on = esc ^ "?1000;1002;1006h"
 let mouse_off = esc ^ "?1000;1002;1006l"
 let bracketed_paste_on = esc ^ "?2004h"
 let bracketed_paste_off = esc ^ "?2004l"
+let kitty_keyboard_on = esc ^ ">1u"
+let kitty_keyboard_off = esc ^ "<u"
 
 let set_window_title title =
   (* OSC 0 sets both icon and window title *)

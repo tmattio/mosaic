@@ -312,6 +312,13 @@ let parse_csi s start end_ =
         | [ Some 32; Some _ ] ->
             let mods = parse_modifiers params in
             Some (Key { key = Char (Uchar.of_int 32); modifier = mods })
+        (* Handle lowercase letters with ctrl modifier - Kitty sends these as letter code with modifier 5+ *)
+        | [ Some c; Some m ] when c >= 97 && c <= 122 && m >= 5 && m <= 8 ->
+            (* a-z with ctrl modifier: convert to uppercase for consistency *)
+            let ch = Char.chr (c - 32) in
+            let mods = parse_modifiers params in
+            Some (Key { key = Char (Uchar.of_char ch); 
+                       modifier = { ctrl = true; alt = mods.alt; shift = mods.shift } })
         | [ Some c ] when c >= 33 && c <= 126 ->
             Some (Key { key = Char (Uchar.of_int c); modifier = no_modifier })
         | [ Some c; Some _ ] when c >= 33 && c <= 126 ->
