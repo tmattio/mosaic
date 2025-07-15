@@ -10,7 +10,7 @@ type 'msg t =
   | Sequence of 'msg t list
   | Quit
   | Log of string
-  | Print of string
+  | Print of Ui.element
   | Set_window_title of string
   | Enter_alt_screen
   | Exit_alt_screen
@@ -32,7 +32,7 @@ let release_and_run = exec (* Alias for better discoverability *)
 let quit = Quit
 let tick duration f = Tick (duration, f)
 let log message = Log message
-let print message = Print message
+let print element = Print element
 let set_window_title title = Set_window_title title
 let enter_alt_screen = Enter_alt_screen
 let exit_alt_screen = Exit_alt_screen
@@ -68,7 +68,7 @@ let pp pp_msg fmt cmd =
           cmds
     | Quit -> fprintf fmt "Quit"
     | Log message -> fprintf fmt "Log(%S)" message
-    | Print message -> fprintf fmt "Print(%S)" message
+    | Print _ -> fprintf fmt "Print(<element>)"
     | Set_window_title title -> fprintf fmt "Set_window_title(%S)" title
     | Enter_alt_screen -> fprintf fmt "Enter_alt_screen"
     | Exit_alt_screen -> fprintf fmt "Exit_alt_screen"

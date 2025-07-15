@@ -170,6 +170,12 @@ val clear_screen_below : string
     Includes current line. Cursor position unchanged. Content above cursor
     preserved. *)
 
+val clear_terminal : string
+(** [clear_terminal] clears entire screen, scrollback buffer, and moves cursor to home.
+
+    Combines clear screen (2J), clear scrollback (3J), and cursor home (H).
+    Provides complete terminal reset. More thorough than [clear_screen]. *)
+
 val clear_line : string
 (** [clear_line] clears entire current line.
 

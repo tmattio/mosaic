@@ -86,6 +86,16 @@ module Style : sig
             Other variants enable specific formatting. Link creates hyperlinks.
         *)
 
+  val to_sgr : t -> string
+  (** [to_sgr style] generates the ANSI SGR escape sequence for the style.
+
+      Produces the escape string to apply the style's attributes and colors.
+      Handles resolved colors (Solid only, as gradients/adaptive are
+      pre-resolved in cell setting). Empty style returns empty string (no-op).
+  *)
+
+  (** {2 Style Constructors} *)
+
   val empty : t
   (** [empty] creates a style with no attributes set.
 

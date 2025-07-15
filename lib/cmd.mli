@@ -28,7 +28,7 @@ type 'msg t =
       (** Runs commands sequentially, one after another. *)
   | Quit  (** Terminates the application. *)
   | Log of string  (** Writes debug output. *)
-  | Print of string  (** Writes to stdout for scrollback history. *)
+  | Print of Ui.element  (** Renders to stdout for scrollback history. *)
   | Set_window_title of string  (** Updates the terminal title. *)
   | Enter_alt_screen  (** Switches to alternate screen buffer. *)
   | Exit_alt_screen  (** Returns to normal screen buffer. *)
@@ -176,17 +176,17 @@ val log : string -> 'msg t
       | Click (x, y) -> (model, Cmd.log (Printf.sprintf "Click at (%d, %d)" x y))
     ]} *)
 
-val print : string -> 'msg t
-(** [print s] writes message [s] to stdout in non-alt-screen mode.
+val print : Ui.element -> 'msg t
+(** [print element] renders [element] to stdout in non-alt-screen mode.
 
-    In non-alternate screen mode, the message is written above the TUI view and
-    becomes part of the terminal's scrollback history. In alternate screen mode,
-    this behaves like [log]. Use for persistent output that should remain
-    visible after the app exits.
+    In non-alternate screen mode, the element is rendered above the TUI view and
+    becomes part of the terminal's scrollback history. Elements are rendered
+    with full styling, layout, and formatting capabilities. In alternate screen
+    mode, the element is rendered as plain text to stderr.
 
     Example: Shows completion message in scrollback.
     {[
-      Cmd.print "Task completed successfully!"
+      Cmd.print (Ui.text "Task completed successfully!")
     ]} *)
 
 val set_window_title : string -> 'msg t
@@ -250,6 +250,7 @@ val clear_screen : 'msg t
     {[
       Cmd.batch [ Cmd.clear_screen; Cmd.msg `AppStarted ]
     ]} *)
+
 
 val map : ('a -> 'b) -> 'a t -> 'b t
 (** [map f cmd] transforms all messages produced by [cmd] using function [f].

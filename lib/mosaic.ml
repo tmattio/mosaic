@@ -1,9 +1,5 @@
 (* Mosaic - A delightful OCaml TUI framework inspired by The Elm Architecture *)
 
-(* Internal modules *)
-module Ansi = Ansi
-module Render = Render
-
 (* The Elm Architecture: Model-View-Update with effects and subscriptions *)
 type ('model, 'msg) app = {
   init : unit -> 'model * 'msg Cmd.t;
@@ -37,12 +33,16 @@ module Program = struct
     sw : Eio.Switch.t;
     cmd_queue : 'msg Cmd.t Queue.t; (* Command queue for sequential execution *)
     debug_log : out_channel option; (* Debug logging *)
-    mutable lines_rendered : int;
-        (* Track lines rendered in non-alt-screen mode *)
-    mutable print_queue : string list;
-        (* Queue for print messages in non-alt-screen mode *)
+    mutable static_elements : Ui.element list;
+        (* Accumulated static elements for both alt-screen and non-alt-screen modes *)
     terminal_mutex : Eio.Mutex.t; (* Mutex to protect terminal state changes *)
-    inline_buffer : int; (* Extra lines to allocate in non-alt-screen mode *)
+    state_mutex : Eio.Mutex.t; (* Mutex to protect model and static state *)
+    mutable last_static_height : int; (* Total height of all static elements *)
+    mutable last_printed_static : int;
+        (* Number of static elements already printed *)
+    mutable previous_dynamic_buffer : Render.buffer option;
+        (* Previous dynamic buffer for non-alt-screen diffing *)
+    mutable last_width : int; (* Last terminal width to detect resizes *)
   }
 
   let log_debug program s =
@@ -53,7 +53,7 @@ module Program = struct
     | None -> ()
 
   let create_program ~env ~sw ?terminal ?(alt_screen = true) ?(mouse = false)
-      ?(fps = 60) ?(inline_buffer = 0) ?debug_log app =
+      ?(fps = 60) ?debug_log app =
     let term =
       match terminal with
       | Some t -> t
@@ -80,10 +80,13 @@ module Program = struct
       sw;
       cmd_queue = Queue.create ();
       debug_log;
-      lines_rendered = 0;
-      print_queue = [];
+      static_elements = [];
       terminal_mutex = Eio.Mutex.create ();
-      inline_buffer;
+      state_mutex = Eio.Mutex.create ();
+      last_static_height = 0;
+      last_printed_static = 0;
+      previous_dynamic_buffer = None;
+      last_width = fst (Terminal.size term);
     }
 
   let send_msg program msg =
@@ -128,9 +131,13 @@ module Program = struct
                 Terminal.release program.term;
 
                 (* Clear screen and move cursor to top *)
+                let clear_and_home =
+                  Ansi.clear_screen ^ Ansi.cursor_position 1 1
+                in
                 Terminal.write program.term
-                  (Bytes.of_string "\x1b[2J\x1b[H")
-                  0 6;
+                  (Bytes.of_string clear_and_home)
+                  0
+                  (String.length clear_and_home);
                 Terminal.flush program.term;
 
                 (* Execute with protection *)
@@ -165,13 +172,14 @@ module Program = struct
     | Cmd.Log message ->
         (* Write to stderr to avoid corrupting the UI *)
         Printf.eprintf "%s\n%!" message
-    | Cmd.Print message ->
-        if program.alt_screen then
-          (* In alt-screen mode, print to stderr like Log *)
-          Printf.eprintf "%s\n%!" message
-        else
-          (* In non-alt-screen mode, queue for later printing *)
-          program.print_queue <- program.print_queue @ [ message ]
+    | Cmd.Print element ->
+        program.static_elements <- program.static_elements @ [ element ];
+        program.previous_buffer <- None;
+        (* Track element height for non-alt-screen positioning *)
+        if not program.alt_screen then
+          let width, _ = Terminal.size program.term in
+          let _, el_h = Ui.measure ~width element in
+          program.last_static_height <- program.last_static_height + el_h
     | Cmd.Set_window_title title ->
         (* Write the escape sequence to set window title *)
         Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
@@ -196,29 +204,34 @@ module Program = struct
           program.alt_screen <- false;
           (* Force a full repaint to redraw the inline UI *)
           program.previous_buffer <- None;
-          (* Reset the line count for the inline view *)
-          program.lines_rendered <- 0)
+          program.previous_dynamic_buffer <- None;
+          (* Reset tracking for the inline view *)
+          program.last_static_height <- 0;
+          program.last_printed_static <- 0)
     | Cmd.Repaint ->
         log_debug program "Forcing repaint";
         program.previous_buffer <- None
     | Cmd.Clear_screen ->
         log_debug program "Clearing screen";
         Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
-            (* Use the same sequence that works for window resize *)
-            let reset_seq = "\x1b[2J\x1b[3J\x1b[H" in
+            (* Clear screen, scrollback, and move cursor home *)
+            let reset_seq = Ansi.clear_terminal in
             Terminal.write program.term
               (Bytes.of_string reset_seq)
               0 (String.length reset_seq);
             Terminal.flush program.term);
-        (* Reset line tracking for non-alt-screen mode *)
-        program.lines_rendered <- 0;
+        (* Reset static elements *)
+        program.static_elements <- [];
+        program.last_static_height <- 0;
+        program.last_printed_static <- 0;
+        program.previous_dynamic_buffer <- None;
         (* Force a full repaint after clearing *)
         program.previous_buffer <- None
 
   let handle_input_event program event =
     log_debug program (Format.asprintf "Input event: %a" Input.pp_event event);
-    let subs = program.app.subscriptions program.model in
-    let msgs =
+    let msgs = Eio.Mutex.use_ro program.state_mutex (fun () ->
+      let subs = program.app.subscriptions program.model in
       match event with
       | Input.Key key_event ->
           let keyboard_handlers = Sub.collect_keyboard [] subs in
@@ -243,58 +256,178 @@ module Program = struct
           let element = program.app.view program.model in
           Ui.clear_cache element;
 
+          (* For non-alt-screen, clear terminal and reset tracking *)
+          if not program.alt_screen then (
+            Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
+                let clear_seq = Ansi.clear_terminal in
+                Terminal.write program.term
+                  (Bytes.of_string clear_seq)
+                  0 (String.length clear_seq);
+                Terminal.flush program.term);
+            program.last_static_height <- 0;
+            program.last_printed_static <- 0;
+            program.previous_dynamic_buffer <- None);
+
           let window_handlers = Sub.collect_window [] subs in
           let size = { Sub.width = w; Sub.height = h } in
           List.filter_map (fun f -> f size) window_handlers
       | _ -> []
-    in
+    ) in
     log_debug program
       (Format.asprintf "Generated %d messages from input event"
          (List.length msgs));
     List.iter (Eio.Stream.add program.msg_stream) msgs
 
   let render program =
-    (* Flush any queued print messages before rendering the main view *)
-    if program.print_queue <> [] && not program.alt_screen then (
-      let output = String.concat "\r\n" program.print_queue ^ "\r\n" in
-      (* Write directly, this will scroll the terminal *)
-      Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
-          Terminal.write program.term (Bytes.of_string output) 0
-            (String.length output);
-          Terminal.flush program.term);
-      program.print_queue <- [];
-      (* After printing, the old view is gone, so we must force a full repaint
-         of the TUI below the new printed lines. *)
-      program.previous_buffer <- None);
-
     log_debug program "Render: Starting render pass";
-    let element = program.app.view program.model in
-
-    (* Note: Caches are cleared only on model updates, not every frame *)
-
-    (* Create a new buffer for this frame *)
     let width, height = Terminal.size program.term in
+    
+    (* Protect reads of model and static elements *)
+    let buffer, non_alt_output = Eio.Mutex.use_ro program.state_mutex (fun () ->
+      let dynamic_element = program.app.view program.model in
+      let static_elements_snapshot = program.static_elements in
+      
+      let buffer = Render.create width height in
 
-    (* For non-alt-screen mode, dynamically allocate height based on content *)
-    let actual_height =
-      if not program.alt_screen then (
-        let _, natural_height = Ui.measure ~width element in
-        let desired_height = natural_height + program.inline_buffer in
-        (* Apply reasonable max cap (e.g., 100 lines) to prevent excessive allocation *)
-        let max_reasonable_height = 100 in
-        if desired_height > max_reasonable_height then
-          log_debug program
-            (Printf.sprintf "Warning: Desired height %d exceeds max cap %d"
-               desired_height max_reasonable_height);
-        max 1 (min height (min desired_height max_reasonable_height))
-        (* Ensure at least 1 line, capped at terminal height and max cap *))
-      else height
-    in
+      if program.alt_screen then (
+        (* Alt-screen: Keep combined vbox for full buffer render *)
+        let combined_element =
+          if static_elements_snapshot = [] then dynamic_element
+          else Ui.vbox (static_elements_snapshot @ [ Ui.expand dynamic_element ])
+        in
+        Ui.render buffer combined_element;
+        (buffer, "")
+      ) else (
+       (* Non-alt-screen: Append new static relatively, clear/redraw dynamic *)
+       let output_buf = Buffer.create 1024 in
 
-    let buffer = Render.create width actual_height in
+       (* Append only new static elements (delta since last render) *)
+       let new_static_start = program.last_printed_static in
+       let new_statics =
+         let rec drop n lst =
+           if n <= 0 then lst
+           else match lst with [] -> [] | _ :: t -> drop (n - 1) t
+         in
+         drop new_static_start static_elements_snapshot
+       in
 
-    (* Render the UI element tree into the buffer using the layout engine *)
-    Ui.render buffer element;
+       (* Render dynamic to buffer *)
+       let _, dynamic_height = Ui.measure ~width dynamic_element in
+       let dyn_buffer = Render.create width dynamic_height in
+       Ui.render dyn_buffer dynamic_element;
+
+       (* Get previous height *)
+       let previous_height =
+         match program.previous_dynamic_buffer with
+         | None -> 0
+         | Some b -> snd (Render.dimensions b)
+       in
+
+       (* Detect if full redraw needed *)
+       let force_full =
+         new_statics <> []
+         || program.previous_dynamic_buffer = None
+         || previous_height <> dynamic_height
+         || width <> program.last_width
+       in
+       program.last_width <- width;
+
+       (* Position to old dynamic start and clear if previous exists *)
+       if previous_height > 0 then (
+         Buffer.add_string output_buf (Ansi.cursor_up previous_height);
+         Buffer.add_string output_buf "\r";
+         if force_full then Buffer.add_string output_buf Ansi.clear_screen_below);
+
+       (* Append new static elements *)
+       let added_height = ref 0 in
+       List.iter
+         (fun el ->
+           let _, el_h = Ui.measure ~width el in
+           let el_buffer = Render.create width el_h in
+           Ui.render el_buffer el;
+           let rendered = Render.render_full ~mode:Render.Relative el_buffer in
+           Buffer.add_string output_buf rendered;
+           Buffer.add_string output_buf "\r\n";
+           added_height := !added_height + el_h)
+         new_statics;
+       program.last_printed_static <- List.length static_elements_snapshot;
+       program.last_static_height <- program.last_static_height + !added_height;
+
+       (* Prepare and output dynamic *)
+       let dynamic_height = snd (Render.dimensions dyn_buffer) in
+       let dyn_output =
+         if force_full then
+           Render.render_full ~mode:Render.Relative dyn_buffer ^ "\r\n"
+         else
+           (* previous_dynamic_buffer should always be set here,
+             so we can safely use it for diffing *)
+           let prev_buf = Option.get program.previous_dynamic_buffer in
+           let patches = Render.diff prev_buf dyn_buffer in
+           if patches = [] then Ansi.cursor_down dynamic_height ^ "\r"
+           else
+             let sorted_patches =
+               List.sort
+                 (fun (p1 : Render.patch) p2 ->
+                   if p1.row = p2.row then Int.compare p1.col p2.col
+                   else Int.compare p1.row p2.row)
+                 patches
+             in
+             let patch_buf = Buffer.create 1024 in
+             let current_row = ref 0 in
+             let current_col = ref 0 in
+             List.iter
+               (fun (p : Render.patch) ->
+                 (* Move down if needed *)
+                 let row_diff = p.row - !current_row in
+                 if row_diff > 0 then (
+                   Buffer.add_string patch_buf (Ansi.cursor_down row_diff);
+                   Buffer.add_string patch_buf "\r";
+                   current_col := 0);
+                 current_row := p.row;
+
+                 (* Move forward on line *)
+                 let col_diff = p.col - !current_col in
+                 if col_diff > 0 then
+                   Buffer.add_string patch_buf (Ansi.cursor_forward col_diff);
+                 current_col := p.col + p.new_cell.width;
+
+                 (* Apply style and content *)
+                 Buffer.add_string patch_buf (Style.to_sgr p.new_cell.style);
+                 let content =
+                   match p.new_cell.chars with
+                   | [] -> " "
+                   | chars ->
+                       let b = Buffer.create 8 in
+                       List.iter (Uutf.Buffer.add_utf_8 b) chars;
+                       Buffer.contents b
+                 in
+                 let styled_content =
+                   match p.new_cell.style.uri with
+                   | Some uri -> Ansi.hyperlink ~uri content
+                   | None -> content
+                 in
+                 Buffer.add_string patch_buf styled_content;
+                 Buffer.add_string patch_buf Ansi.reset)
+               sorted_patches;
+             Buffer.add_string patch_buf
+               (Ansi.cursor_down (dynamic_height - !current_row) ^ "\r");
+             Buffer.contents patch_buf
+       in
+       Buffer.add_string output_buf dyn_output;
+
+       (* Clear excess if height decreased *)
+       if dynamic_height < previous_height then (
+         Buffer.add_string output_buf (Ansi.cursor_down dynamic_height);
+         Buffer.add_string output_buf Ansi.clear_screen_below);
+
+       (* Update state *)
+       program.previous_dynamic_buffer <- Some dyn_buffer;
+       program.previous_buffer <- None;
+       
+       (* Return buffer and output string *)
+       (buffer, Buffer.contents output_buf)
+      )
+    ) in
 
     (* Calculate a simple hash of buffer content for debugging *)
     let buffer_hash buffer =
@@ -315,86 +448,29 @@ module Program = struct
 
     (* Prepare output based on mode *)
     let output =
-      match program.previous_buffer with
-      | None ->
-          (* First render *)
-          log_debug program "Render: Full redraw (no previous buffer)";
-          if not program.alt_screen then (
-            (* Non-alt-screen mode - first render *)
-            let buf = Buffer.create 1024 in
-            (* Clear from cursor down *)
-            Buffer.add_string buf Ansi.clear_screen_below;
-
-            (* Use render_full with Relative mode for non-alt-screen *)
-            let rendered = Render.render_full ~mode:Render.Relative buffer in
-            Buffer.add_string buf rendered;
-
-            (* After a full relative render, move to the next line and save position *)
-            let _, height = Render.dimensions buffer in
-            program.lines_rendered <- height;
-            Buffer.add_string buf "\r\n";
-
-            Buffer.contents buf)
-          else Render.render_full buffer
-      | Some prev_buf ->
-          (* Subsequent renders - use diff *)
-          log_debug program
-            (Printf.sprintf "Previous buffer hash: %d" (buffer_hash prev_buf));
-          let patches = Render.diff prev_buf buffer in
-          if patches = [] then (
-            log_debug program "Render: No changes detected (0 patches)";
-            "" (* Return empty string when no changes *))
-          else (
+      if not program.alt_screen then
+        (* Non-alt-screen output was already prepared *)
+        non_alt_output
+      else
+        (* Alt-screen mode uses buffer-based rendering *)
+        match program.previous_buffer with
+        | None ->
+            (* First render *)
+            log_debug program "Render: Full redraw (no previous buffer)";
+            Render.render_full buffer
+        | Some prev_buf ->
+            (* Subsequent renders - use diff *)
             log_debug program
-              (Printf.sprintf "Render: %d patches detected"
-                 (List.length patches));
-            if not program.alt_screen then (
-              (* START of REPLACEMENT LOGIC from the plan *)
-              let buf = Buffer.create 1024 in
-              let prev_height = program.lines_rendered in
-              let new_height = snd (Render.dimensions buffer) in
-
-              (* 1. Reposition cursor to the start of the old view area. *)
-              if prev_height > 0 then (
-                Buffer.add_string buf (Ansi.cursor_up prev_height);
-                Buffer.add_string buf "\r");
-
-              (* Save cursor position so we can return here later *)
-              Buffer.add_string buf Ansi.cursor_save;
-
-              (* 2. Render the patches, which will move the cursor around. *)
-              let patch_str =
-                Render.render_patches ~mode:Render.Relative patches
-              in
-              Buffer.add_string buf patch_str;
-
-              (* 3. If the new view is shorter, clear any leftover lines. *)
-              if new_height < prev_height then (
-                (* After patches, cursor position is uncertain. Restore to saved position first *)
-                Buffer.add_string buf Ansi.cursor_restore;
-                (* Now move to the end of the new content *)
-                if new_height > 0 then
-                  Buffer.add_string buf (Ansi.cursor_down new_height);
-                (* Clear everything below *)
-                Buffer.add_string buf Ansi.clear_screen_below);
-
-              (* 4. After all drawing and clearing, explicitly move the cursor
-                 to a known, consistent position for the *next* frame. This position
-                 should be the beginning of the line AFTER our rendered content. *)
-
-              (* Always restore to the saved position (start of our render area) first *)
-              Buffer.add_string buf Ansi.cursor_restore;
-
-              (* Now, move down to the line just after the new content. *)
-              if new_height > 0 then
-                Buffer.add_string buf (Ansi.cursor_down new_height);
-              Buffer.add_string buf "\r";
-
-              (* 5. Update state for the next frame. *)
-              program.lines_rendered <- new_height;
-
-              Buffer.contents buf)
-            else Render.render_patches patches)
+              (Printf.sprintf "Previous buffer hash: %d" (buffer_hash prev_buf));
+            let patches = Render.diff prev_buf buffer in
+            if patches = [] then (
+              log_debug program "Render: No changes detected (0 patches)";
+              "" (* Return empty string when no changes *))
+            else (
+              log_debug program
+                (Printf.sprintf "Render: %d patches detected"
+                   (List.length patches));
+              Render.render_patches patches)
     in
 
     (* Log output with preview for debugging *)
@@ -415,7 +491,8 @@ module Program = struct
             (String.length output);
           Terminal.flush program.term);
 
-    program.previous_buffer <- Some buffer
+    (* Only cache buffer for alt-screen mode *)
+    if program.alt_screen then program.previous_buffer <- Some buffer
 
   let input_loop program =
     while program.running do
@@ -444,7 +521,7 @@ module Program = struct
       (* Process queued commands first *)
       while not (Queue.is_empty program.cmd_queue) do
         let cmd = Queue.take program.cmd_queue in
-        process_cmd program cmd
+        Eio.Mutex.use_rw ~protect:false program.state_mutex (fun () -> process_cmd program cmd)
       done;
 
       (* Block until a new message arrives *)
@@ -453,14 +530,16 @@ module Program = struct
         if program.running then (
           (* Check again after waking up *)
           log_debug program "Processing message";
-          let cmd = send_msg program msg in
-          log_debug program
-            (Format.asprintf "Command generated: %a"
-               (Cmd.pp (fun fmt _ -> Format.fprintf fmt "<msg>"))
-               cmd);
-          (* If it's a sequence, it will be added to the queue.
-             Otherwise, process it immediately *)
-          process_cmd program cmd)
+          Eio.Mutex.use_rw ~protect:false program.state_mutex (fun () ->
+            let cmd = send_msg program msg in
+            log_debug program
+              (Format.asprintf "Command generated: %a"
+                 (Cmd.pp (fun fmt _ -> Format.fprintf fmt "<msg>"))
+                 cmd);
+            (* If it's a sequence, it will be added to the queue.
+               Otherwise, process it immediately *)
+            process_cmd program cmd)
+        )
     done
 
   let setup_terminal program =
@@ -521,11 +600,10 @@ module Program = struct
         Terminal.release program.term)
 
   let run ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
-      ?(inline_buffer = 0) ?debug_log app =
+      ?debug_log app =
     let open Eio.Std in
     let program =
-      create_program ~env ~sw ?terminal ~alt_screen ~mouse ~fps ~inline_buffer
-        ?debug_log app
+      create_program ~env ~sw ?terminal ~alt_screen ~mouse ~fps ?debug_log app
     in
 
     log_debug program "===== Program Start =====";
@@ -555,16 +633,15 @@ let app ~init ~update ~view ?(subscriptions = fun _ -> Sub.none) () =
   { init; update; view; subscriptions }
 
 let run_eio ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
-    ?(inline_buffer = 0) ?(debug = false) app =
+    ?(debug = false) app =
   let debug_log = if debug then Some (open_out "mosaic-debug.log") else None in
   Fun.protect
     ~finally:(fun () -> Option.iter close_out debug_log)
     (fun () ->
-      Program.run ~sw ~env ?terminal ~alt_screen ~mouse ~fps ~inline_buffer
-        ?debug_log app)
+      Program.run ~sw ~env ?terminal ~alt_screen ~mouse ~fps ?debug_log app)
 
 let run ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
-    ?(inline_buffer = 0) ?(debug = false) app =
+    ?(debug = false) app =
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
-  run_eio ~sw ~env ?terminal ~alt_screen ~mouse ~fps ~inline_buffer ~debug app
+  run_eio ~sw ~env ?terminal ~alt_screen ~mouse ~fps ~debug app

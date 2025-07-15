@@ -257,6 +257,36 @@ module Style = struct
         in
 
         interpolate_rgb (to_rgb c1) (to_rgb c2) segment_t
+
+  let to_attrs style =
+    let attrs = ref [] in
+    if style.overline then attrs := `Overline :: !attrs;
+    if style.strikethrough then attrs := `Strikethrough :: !attrs;
+    if style.reverse then attrs := `Reverse :: !attrs;
+    if style.blink then attrs := `Blink :: !attrs;
+    if style.double_underline then attrs := `Double_underline :: !attrs
+    else if style.underline then attrs := `Underline :: !attrs;
+    if style.italic then attrs := `Italic :: !attrs;
+    if style.dim then attrs := `Dim :: !attrs;
+    if style.bold then attrs := `Bold :: !attrs;
+    (* Extract concrete colors from color_spec *)
+    (match style.bg with
+    | Some (Solid c) -> attrs := `Bg c :: !attrs
+    | Some (Adaptive adaptive) ->
+        let c = if !is_dark_background then adaptive.dark else adaptive.light in
+        attrs := `Bg c :: !attrs
+    | Some (Gradient _) -> () (* Gradients should be resolved before this *)
+    | None -> ());
+    (match style.fg with
+    | Some (Solid c) -> attrs := `Fg c :: !attrs
+    | Some (Adaptive adaptive) ->
+        let c = if !is_dark_background then adaptive.dark else adaptive.light in
+        attrs := `Fg c :: !attrs
+    | Some (Gradient _) -> () (* Gradients should be resolved before this *)
+    | None -> ());
+    !attrs
+
+  let to_sgr style = Ansi.sgr (to_attrs style)
 end
 
 type cell = { chars : Uchar.t list; style : Style.t; width : int }
@@ -471,37 +501,8 @@ let diff old_buffer new_buffer =
 
   List.rev !patches
 
-let style_to_attrs style =
-  let open Style in
-  let attrs = ref [] in
-  if style.overline then attrs := `Overline :: !attrs;
-  if style.strikethrough then attrs := `Strikethrough :: !attrs;
-  if style.reverse then attrs := `Reverse :: !attrs;
-  if style.blink then attrs := `Blink :: !attrs;
-  if style.double_underline then attrs := `Double_underline :: !attrs
-  else if style.underline then attrs := `Underline :: !attrs;
-  if style.italic then attrs := `Italic :: !attrs;
-  if style.dim then attrs := `Dim :: !attrs;
-  if style.bold then attrs := `Bold :: !attrs;
-  (* Extract concrete colors from color_spec *)
-  (match style.bg with
-  | Some (Solid c) -> attrs := `Bg c :: !attrs
-  | Some (Adaptive adaptive) ->
-      let c = if !is_dark_background then adaptive.dark else adaptive.light in
-      attrs := `Bg c :: !attrs
-  | Some (Gradient _) -> () (* Gradients should be resolved before this *)
-  | None -> ());
-  (match style.fg with
-  | Some (Solid c) -> attrs := `Fg c :: !attrs
-  | Some (Adaptive adaptive) ->
-      let c = if !is_dark_background then adaptive.dark else adaptive.light in
-      attrs := `Fg c :: !attrs
-  | Some (Gradient _) -> () (* Gradients should be resolved before this *)
-  | None -> ());
-  !attrs
-
 let render_cell cell =
-  let attrs = style_to_attrs cell.style in
+  let attrs = Style.to_attrs cell.style in
   let sgr = Ansi.sgr attrs in
   let char_str =
     match cell.chars with
@@ -567,7 +568,7 @@ let render_patches ?cursor_pos ?(mode = Absolute) patches =
       (match mode with
       | Absolute ->
           if patch.new_cell.style <> !last_style then (
-            let attrs = style_to_attrs patch.new_cell.style in
+            let attrs = Style.to_attrs patch.new_cell.style in
             if attrs = [] then Buffer.add_string buf Ansi.reset
             else Buffer.add_string buf (Ansi.sgr attrs);
             last_style := patch.new_cell.style)
@@ -577,7 +578,7 @@ let render_patches ?cursor_pos ?(mode = Absolute) patches =
             (* Always reset before applying new style to prevent bleeding attributes *)
             if !last_style <> Style.default then
               Buffer.add_string buf Ansi.reset;
-            let attrs = style_to_attrs patch.new_cell.style in
+            let attrs = Style.to_attrs patch.new_cell.style in
             if attrs <> [] then Buffer.add_string buf (Ansi.sgr attrs);
             last_style := patch.new_cell.style));
 
@@ -655,7 +656,7 @@ let render_full ?cursor_pos ?(mode = Absolute) buffer =
         (match mode with
         | Absolute ->
             if cell.style <> !last_style then (
-              let attrs = style_to_attrs cell.style in
+              let attrs = Style.to_attrs cell.style in
               if attrs = [] then Buffer.add_string buf Ansi.reset
               else Buffer.add_string buf (Ansi.sgr attrs);
               last_style := cell.style)
@@ -663,7 +664,7 @@ let render_full ?cursor_pos ?(mode = Absolute) buffer =
             (* Always reset before styled cells to prevent bleeding *)
             if cell.style <> Style.default then (
               Buffer.add_string buf Ansi.reset;
-              let attrs = style_to_attrs cell.style in
+              let attrs = Style.to_attrs cell.style in
               Buffer.add_string buf (Ansi.sgr attrs);
               last_style := cell.style)
             else if !last_style <> Style.default then (
