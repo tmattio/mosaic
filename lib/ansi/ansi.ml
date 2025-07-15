@@ -229,6 +229,7 @@ let style attrs str =
       attrs
     |> List.sort_uniq compare (* Remove duplicates *)
   in
+  if attrs = [] then str else
   let reset_str =
     if List.mem 0 reset_codes then reset
       (* If full reset was requested, use it *)

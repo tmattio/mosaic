@@ -203,174 +203,30 @@ let parse_csi s start end_ =
 
     (* Parse modifiers from params for cursor keys *)
     let parse_modifiers = function
-      | [] | [ None ] -> no_modifier
-      | [ Some 1; Some m ] | [ _; Some m ] ->
+      | [ Some m ] -> (* For sequences like CSI 2 A, where param is modifier *)
           let m = m - 1 in
           { shift = m land 1 <> 0; alt = m land 2 <> 0; ctrl = m land 4 <> 0 }
-      | _ -> no_modifier
+      | [ Some _key_code; Some m ] -> (* For sequences like CSI 1;2 A or CSI 13;2~ *)
+          let m = m - 1 in
+          { shift = m land 1 <> 0; alt = m land 2 <> 0; ctrl = m land 4 <> 0 }
+      | _ -> no_modifier (* Includes [], [None], etc. *)
     in
 
     match final_char with
     (* Cursor movement *)
     | 'A' ->
-        let mods = parse_modifiers params in
-        if mods.ctrl && mods.shift then
-          Some
-            (Key
-               {
-                 key = Up;
-                 modifier = { ctrl = true; shift = true; alt = false };
-               })
-        else if mods.ctrl then
-          Some
-            (Key
-               {
-                 key = Up;
-                 modifier = { ctrl = true; shift = false; alt = false };
-               })
-        else if mods.shift then
-          Some
-            (Key
-               {
-                 key = Up;
-                 modifier = { shift = true; ctrl = false; alt = false };
-               })
-        else if mods.alt then
-          Some
-            (Key
-               {
-                 key = Up;
-                 modifier = { alt = true; ctrl = false; shift = false };
-               })
-        else Some (Key { key = Up; modifier = no_modifier })
+        Some (Key { key = Up; modifier = parse_modifiers params })
     | 'B' ->
-        let mods = parse_modifiers params in
-        if mods.ctrl && mods.shift then
-          Some
-            (Key
-               {
-                 key = Down;
-                 modifier = { ctrl = true; shift = true; alt = false };
-               })
-        else if mods.ctrl then
-          Some
-            (Key
-               {
-                 key = Down;
-                 modifier = { ctrl = true; shift = false; alt = false };
-               })
-        else if mods.shift then
-          Some
-            (Key
-               {
-                 key = Down;
-                 modifier = { shift = true; ctrl = false; alt = false };
-               })
-        else if mods.alt then
-          Some
-            (Key
-               {
-                 key = Down;
-                 modifier = { alt = true; ctrl = false; shift = false };
-               })
-        else Some (Key { key = Down; modifier = no_modifier })
+        Some (Key { key = Down; modifier = parse_modifiers params })
     | 'C' ->
-        let mods = parse_modifiers params in
-        if mods.ctrl && mods.shift then
-          Some
-            (Key
-               {
-                 key = Right;
-                 modifier = { ctrl = true; shift = true; alt = false };
-               })
-        else if mods.ctrl then
-          Some
-            (Key
-               {
-                 key = Right;
-                 modifier = { ctrl = true; shift = false; alt = false };
-               })
-        else if mods.shift then
-          Some
-            (Key
-               {
-                 key = Right;
-                 modifier = { shift = true; ctrl = false; alt = false };
-               })
-        else if mods.alt then
-          Some
-            (Key
-               {
-                 key = Right;
-                 modifier = { alt = true; ctrl = false; shift = false };
-               })
-        else Some (Key { key = Right; modifier = no_modifier })
+        Some (Key { key = Right; modifier = parse_modifiers params })
     | 'D' ->
-        let mods = parse_modifiers params in
-        if mods.ctrl && mods.shift then
-          Some
-            (Key
-               {
-                 key = Left;
-                 modifier = { ctrl = true; shift = true; alt = false };
-               })
-        else if mods.ctrl then
-          Some
-            (Key
-               {
-                 key = Left;
-                 modifier = { ctrl = true; shift = false; alt = false };
-               })
-        else if mods.shift then
-          Some
-            (Key
-               {
-                 key = Left;
-                 modifier = { shift = true; ctrl = false; alt = false };
-               })
-        else if mods.alt then
-          Some
-            (Key
-               {
-                 key = Left;
-                 modifier = { alt = true; ctrl = false; shift = false };
-               })
-        else Some (Key { key = Left; modifier = no_modifier })
+        Some (Key { key = Left; modifier = parse_modifiers params })
     (* Home/End *)
     | 'H' ->
-        let mods = parse_modifiers params in
-        if mods.ctrl then
-          Some
-            (Key
-               {
-                 key = Home;
-                 modifier = { ctrl = true; shift = false; alt = false };
-               })
-        else if mods.shift then
-          Some
-            (Key
-               {
-                 key = Home;
-                 modifier = { shift = true; ctrl = false; alt = false };
-               })
-        else Some (Key { key = Home; modifier = no_modifier })
+        Some (Key { key = Home; modifier = parse_modifiers params })
     | 'F' ->
-        let mods = parse_modifiers params in
-        if mods.ctrl then
-          Some
-            (Key
-               {
-                 key = End;
-                 modifier = { ctrl = true; shift = false; alt = false };
-               })
-        else if mods.shift then
-          Some
-            (Key
-               {
-                 key = End;
-                 modifier = { shift = true; ctrl = false; alt = false };
-               })
-        else Some (Key { key = End; modifier = no_modifier })
+        Some (Key { key = End; modifier = parse_modifiers params })
     (* Tab *)
     | 'Z' ->
         Some
@@ -387,109 +243,48 @@ let parse_csi s start end_ =
         match params with
         | [ Some 1 ] | [ Some 1; Some 1 ] ->
             Some (Key { key = Home; modifier = no_modifier })
-        | [ Some 1; Some m ] ->
-            let mods = parse_modifiers [ Some 1; Some m ] in
-            if mods.ctrl then
-              Some
-                (Key
-                   {
-                     key = Home;
-                     modifier = { ctrl = true; shift = false; alt = false };
-                   })
-            else if mods.shift then
-              Some
-                (Key
-                   {
-                     key = Home;
-                     modifier = { shift = true; ctrl = false; alt = false };
-                   })
-            else Some (Key { key = Home; modifier = no_modifier })
+        | [ Some 1; Some _ ] ->
+            let mods = parse_modifiers params in
+            Some (Key { key = Home; modifier = mods })
         | [ Some 2 ] -> Some (Key { key = Insert; modifier = no_modifier })
-        | [ Some 2; Some m ] ->
-            let mods = parse_modifiers [ Some 2; Some m ] in
-            Some (Key { key = Insert; modifier = mods })
+        | [ Some 2; Some _ ] ->
+            Some (Key { key = Insert; modifier = parse_modifiers params })
         | [ Some 3 ] -> Some (Key { key = Delete; modifier = no_modifier })
-        | [ Some 3; Some m ] ->
-            let mods = parse_modifiers [ Some 3; Some m ] in
+        | [ Some 3; Some _ ] ->
+            let mods = parse_modifiers params in
             Some (Key { key = Delete; modifier = mods })
         | [ Some 4 ] | [ Some 4; Some 1 ] ->
             Some (Key { key = End; modifier = no_modifier })
-        | [ Some 4; Some m ] ->
-            let mods = parse_modifiers [ Some 4; Some m ] in
-            if mods.ctrl then
-              Some
-                (Key
-                   {
-                     key = End;
-                     modifier = { ctrl = true; shift = false; alt = false };
-                   })
-            else if mods.shift then
-              Some
-                (Key
-                   {
-                     key = End;
-                     modifier = { shift = true; ctrl = false; alt = false };
-                   })
-            else Some (Key { key = End; modifier = no_modifier })
+        | [ Some 4; Some _ ] ->
+            let mods = parse_modifiers params in
+            Some (Key { key = End; modifier = mods })
+        | [ Some 13 ] -> Some (Key { key = Enter; modifier = no_modifier })
+        | [ Some 13; Some _ ] ->
+            let mods = parse_modifiers params in
+            Some (Key { key = Enter; modifier = mods })
+        | [ Some 27; Some 2; Some 13 ] ->
+            (* Alternative format for Shift+Enter used by some terminals *)
+            Some (Key { key = Enter; modifier = { shift = true; ctrl = false; alt = false } })
         | [ Some 5 ] -> Some (Key { key = Page_up; modifier = no_modifier })
-        | [ Some 5; Some m ] ->
-            let mods = parse_modifiers [ Some 5; Some m ] in
-            if mods.ctrl then
-              Some
-                (Key
-                   {
-                     key = Page_up;
-                     modifier = { ctrl = true; shift = false; alt = false };
-                   })
-            else Some (Key { key = Page_up; modifier = no_modifier })
+        | [ Some 5; Some _ ] ->
+            let mods = parse_modifiers params in
+            Some (Key { key = Page_up; modifier = mods })
         | [ Some 6 ] -> Some (Key { key = Page_down; modifier = no_modifier })
-        | [ Some 6; Some m ] ->
-            let mods = parse_modifiers [ Some 6; Some m ] in
-            if mods.ctrl then
-              Some
-                (Key
-                   {
-                     key = Page_down;
-                     modifier = { ctrl = true; shift = false; alt = false };
-                   })
-            else Some (Key { key = Page_down; modifier = no_modifier })
+        | [ Some 6; Some _ ] ->
+            let mods = parse_modifiers params in
+            Some (Key { key = Page_down; modifier = mods })
         (* Function keys *)
-        | [ Some n ] when n >= 11 && n <= 15 ->
-            Some (Key { key = F (n - 10); modifier = no_modifier })
-        | [ Some n ] when n >= 17 && n <= 21 ->
-            Some (Key { key = F (n - 11); modifier = no_modifier })
-        | [ Some n ] when n >= 23 && n <= 24 ->
-            Some (Key { key = F (n - 12); modifier = no_modifier })
-        | [ Some n; Some 2 ] when n >= 11 && n <= 24 ->
+        | [ Some n ] | [ Some n; Some 1 ] when n >= 11 && n <= 24 ->
             let f =
               if n <= 15 then n - 10 else if n <= 21 then n - 11 else n - 12
             in
-            Some
-              (Key
-                 {
-                   key = F f;
-                   modifier = { shift = true; ctrl = false; alt = false };
-                 })
-        | [ Some n; Some 5 ] when n >= 11 && n <= 24 ->
+            Some (Key { key = F f; modifier = no_modifier })
+        | [ Some n; Some _ ] when n >= 11 && n <= 24 ->
             let f =
               if n <= 15 then n - 10 else if n <= 21 then n - 11 else n - 12
             in
-            Some
-              (Key
-                 {
-                   key = F f;
-                   modifier = { ctrl = true; shift = false; alt = false };
-                 })
-        | [ Some n; Some 3 ] when n >= 11 && n <= 24 ->
-            let f =
-              if n <= 15 then n - 10 else if n <= 21 then n - 11 else n - 12
-            in
-            Some
-              (Key
-                 {
-                   key = F f;
-                   modifier = { alt = true; shift = false; ctrl = false };
-                 })
+            let mods = parse_modifiers params in
+            Some (Key { key = F f; modifier = mods })
         (* Paste mode *)
         | [ Some 200 ] -> Some Paste_start
         | [ Some 201 ] -> Some Paste_end
