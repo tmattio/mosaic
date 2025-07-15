@@ -95,10 +95,11 @@ val run :
   ?alt_screen:bool ->
   ?mouse:bool ->
   ?fps:int ->
+  ?inline_buffer:int ->
   ?debug:bool ->
   ('model, 'msg) app ->
   unit
-(** [run ?terminal ?alt_screen ?mouse ?fps ?debug app] executes the application
+(** [run ?terminal ?alt_screen ?mouse ?fps ?inline_buffer ?debug app] executes the application
     within an Eio runtime context.
 
     The runtime manages the event loop, renders frames at the target FPS, and
@@ -113,6 +114,9 @@ val run :
     @param fps
       Target frames per second for rendering, clamped to reasonable values
       (default: 60)
+    @param inline_buffer
+      Extra lines to allocate in non-alt-screen mode for content growth
+      (default: 0)
     @param debug
       Whether to write debug logs to mosaic-debug.log (default: false)
 
@@ -130,10 +134,11 @@ val run_eio :
   ?alt_screen:bool ->
   ?mouse:bool ->
   ?fps:int ->
+  ?inline_buffer:int ->
   ?debug:bool ->
   ('model, 'msg) app ->
   unit
-(** [run_eio ~sw ~env ?terminal ?alt_screen ?mouse ?fps ?debug app] executes the
+(** [run_eio ~sw ~env ?terminal ?alt_screen ?mouse ?fps ?inline_buffer ?debug app] executes the
     application with explicit Eio environment control.
 
     This lower-level function allows integration with existing Eio applications

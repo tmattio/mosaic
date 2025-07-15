@@ -348,7 +348,7 @@ let border_space_v border_opt =
   | Some b -> (if b.top then 1 else 0) + if b.bottom then 1 else 0
 
 (* Get natural size of element without rendering *)
-let rec measure_element element =
+let rec measure_element ?(width = max_int) element =
   match element with
   | Text { content; tab_width; _ } ->
       let expanded = expand_tabs content tab_width in
@@ -361,7 +361,7 @@ let rec measure_element element =
       let height = List.length lines in
       (max_width, max height 1)
   | Spacer n -> (n, 1)
-  | Expand e -> measure_element e
+  | Expand e -> measure_element ~width e
   | Rich_text segments ->
       let width =
         List.fold_left
@@ -373,27 +373,27 @@ let rec measure_element element =
       (* Z-stack size is the maximum of all children *)
       List.fold_left
         (fun (max_w, max_h) child ->
-          let w, h = measure_element child in
+          let w, h = measure_element ~width child in
           (max max_w w, max max_h h))
         (0, 0) children
-  | Flow { children; h_gap; v_gap = _; _ } ->
-      (* Flow layout needs context width to calculate wrapping, so return sum for now *)
-      let total_width =
-        List.fold_left
-          (fun acc child ->
-            let w, _ = measure_element child in
-            acc + w)
-          0 children
+  | Flow { children; h_gap; v_gap; _ } ->
+      (* Simulate wrapping given width constraint *)
+      let measured = List.map (fun c -> measure_element ~width:max_int c) children in
+      let rec simulate_wrap current_x current_h total_h rem =
+        match rem with
+        | [] -> total_h + current_h
+        | (cw, ch) :: rest ->
+            let gap = if current_x > 0 then h_gap else 0 in
+            if current_x + gap + cw > width then
+              (* Wrap to next line *)
+              simulate_wrap cw ch (total_h + current_h + if total_h > 0 then v_gap else 0) rest
+            else
+              (* Continue on same line *)
+              simulate_wrap (current_x + gap + cw) (max current_h ch) total_h rest
       in
-      let max_height =
-        List.fold_left
-          (fun acc child ->
-            let _, h = measure_element child in
-            max acc h)
-          0 children
-      in
-      let gap_space = h_gap * max 0 (List.length children - 1) in
-      (total_width + gap_space, max_height)
+      let sim_h = simulate_wrap 0 0 0 measured in
+      let sim_w = List.fold_left (fun acc (w, _) -> max acc w) 0 measured in
+      (min sim_w width, sim_h)
   | Grid { children = _; columns; rows; col_spacing; row_spacing; _ } ->
       (* Grid natural size based on column/row definitions *)
       let fixed_width =
@@ -410,20 +410,27 @@ let rec measure_element element =
       let row_gaps = row_spacing * max 0 (List.length rows - 1) in
       (fixed_width + col_gaps, fixed_height + row_gaps)
   | Box { children; options = opts; _ } -> (
-      let children_sizes =
-        List.map
-          (fun child ->
-            match child with
-            | Spacer n -> if opts.direction = `Horizontal then (n, 1) else (1, n)
-            | _ -> measure_element child)
-          children
-      in
       let border_h = border_space_h opts.border in
       let border_v = border_space_v opts.border in
       let padding_h = opts.padding.left + opts.padding.right in
       let padding_v = opts.padding.top + opts.padding.bottom in
       let margin_h = opts.margin.left + opts.margin.right in
       let margin_v = opts.margin.top + opts.margin.bottom in
+      
+      (* Calculate available width for children *)
+      let content_width = width - margin_h - border_h - padding_h in
+      
+      let children_sizes =
+        List.map
+          (fun child ->
+            match child with
+            | Spacer n -> if opts.direction = `Horizontal then (n, 1) else (1, n)
+            | _ -> 
+                (* For vertical boxes, children get full content width *)
+                let child_width = if opts.direction = `Vertical then content_width else max_int in
+                measure_element ~width:child_width child)
+          children
+      in
 
       match opts.direction with
       | `Horizontal ->
@@ -443,7 +450,7 @@ let rec measure_element element =
             Option.value opts.height
               ~default:(max_height + padding_v + border_v + margin_v)
           in
-          (width, height)
+          (min width width, height)
       | `Vertical ->
           let max_width =
             List.fold_left (fun acc (w, _) -> max acc w) 0 children_sizes
@@ -461,7 +468,7 @@ let rec measure_element element =
               ~default:
                 (total_height + gap_space + padding_v + border_v + margin_v)
           in
-          (width, height))
+          (min width width, height))
 
 (* Unwrap all layers of Expand *)
 let rec unwrap_expand element =
@@ -1213,4 +1220,4 @@ let rec pp_element fmt = function
   | Expand e -> Format.fprintf fmt "Expand(%a)" pp_element e
 
 (* Public API for measuring elements *)
-let measure element = measure_element element
+let measure ?width element = measure_element ?width element

@@ -430,24 +430,41 @@ type patch = { row : int; col : int; old_cell : cell; new_cell : cell }
 type cursor_pos = [ `Hide | `Move of int * int ]
 
 let diff old_buffer new_buffer =
-  if
-    old_buffer.width <> new_buffer.width
-    || old_buffer.height <> new_buffer.height
-  then
-    invalid_arg
-      (Printf.sprintf "Buffer dimensions must match: old=(%d,%d), new=(%d,%d)"
-         old_buffer.width old_buffer.height new_buffer.width new_buffer.height);
-
   let patches = ref [] in
-  for y = 0 to new_buffer.height - 1 do
-    for x = 0 to new_buffer.width - 1 do
-      let idx = index new_buffer x y in
-      let old_cell = old_buffer.cells.(idx) in
-      let new_cell = new_buffer.cells.(idx) in
+  
+  (* Compare cells that exist in both buffers *)
+  let min_height = min old_buffer.height new_buffer.height in
+  let min_width = min old_buffer.width new_buffer.width in
+  
+  for y = 0 to min_height - 1 do
+    for x = 0 to min_width - 1 do
+      let old_idx = index old_buffer x y in
+      let new_idx = index new_buffer x y in
+      let old_cell = old_buffer.cells.(old_idx) in
+      let new_cell = new_buffer.cells.(new_idx) in
       if old_cell <> new_cell then
         patches := { row = y; col = x; old_cell; new_cell } :: !patches
-    done
+    done;
+    
+    (* Handle cells in new buffer that are beyond old buffer width *)
+    if new_buffer.width > old_buffer.width then
+      for x = old_buffer.width to new_buffer.width - 1 do
+        let new_idx = index new_buffer x y in
+        let new_cell = new_buffer.cells.(new_idx) in
+        patches := { row = y; col = x; old_cell = empty_cell; new_cell } :: !patches
+      done
   done;
+  
+  (* Handle rows in new buffer that are beyond old buffer height *)
+  if new_buffer.height > old_buffer.height then
+    for y = old_buffer.height to new_buffer.height - 1 do
+      for x = 0 to new_buffer.width - 1 do
+        let new_idx = index new_buffer x y in
+        let new_cell = new_buffer.cells.(new_idx) in
+        patches := { row = y; col = x; old_cell = empty_cell; new_cell } :: !patches
+      done
+    done;
+    
   List.rev !patches
 
 let style_to_attrs style =

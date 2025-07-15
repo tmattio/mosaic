@@ -42,6 +42,7 @@ module Program = struct
     mutable print_queue : string list;
         (* Queue for print messages in non-alt-screen mode *)
     terminal_mutex : Eio.Mutex.t; (* Mutex to protect terminal state changes *)
+    inline_buffer : int; (* Extra lines to allocate in non-alt-screen mode *)
   }
 
   let log_debug program s =
@@ -52,7 +53,7 @@ module Program = struct
     | None -> ()
 
   let create_program ~env ~sw ?terminal ?(alt_screen = true) ?(mouse = false)
-      ?(fps = 60) ?debug_log app =
+      ?(fps = 60) ?(inline_buffer = 0) ?debug_log app =
     let term =
       match terminal with
       | Some t -> t
@@ -82,6 +83,7 @@ module Program = struct
       lines_rendered = 0;
       print_queue = [];
       terminal_mutex = Eio.Mutex.create ();
+      inline_buffer;
     }
 
   let send_msg program msg =
@@ -257,13 +259,22 @@ module Program = struct
 
     (* Create a new buffer for this frame *)
     let width, height = Terminal.size program.term in
-    (* For non-alt-screen mode, use a reasonable height *)
+    
+    (* For non-alt-screen mode, dynamically allocate height based on content *)
     let actual_height =
       if not program.alt_screen then
-        (* Use enough height for the UI but not too much *)
-        min height 20 (* Limit to 20 lines for inline mode *)
+        let _, natural_height = Ui.measure ~width element in
+        let desired_height = natural_height + program.inline_buffer in
+        (* Apply reasonable max cap (e.g., 100 lines) to prevent excessive allocation *)
+        let max_reasonable_height = 100 in
+        if desired_height > max_reasonable_height then
+          log_debug program 
+            (Printf.sprintf "Warning: Desired height %d exceeds max cap %d" 
+               desired_height max_reasonable_height);
+        max 1 (min height (min desired_height max_reasonable_height))  (* Ensure at least 1 line, capped at terminal height and max cap *)
       else height
     in
+    
     let buffer = Render.create width actual_height in
 
     (* Render the UI element tree into the buffer using the layout engine *)
@@ -343,18 +354,19 @@ module Program = struct
 
               (* 3. If the new view is shorter, clear any leftover lines. *)
               if new_height < prev_height then (
-                (* To clear correctly, we must reposition to the end of the new content *)
-                Buffer.add_string buf (Ansi.cursor_up prev_height);
-                Buffer.add_string buf "\r";
+                (* After patches, cursor position is uncertain. Restore to saved position first *)
+                Buffer.add_string buf Ansi.cursor_restore;
+                (* Now move to the end of the new content *)
                 if new_height > 0 then
                   Buffer.add_string buf (Ansi.cursor_down new_height);
+                (* Clear everything below *)
                 Buffer.add_string buf Ansi.clear_screen_below);
 
               (* 4. After all drawing and clearing, explicitly move the cursor
                  to a known, consistent position for the *next* frame. This position
                  should be the beginning of the line AFTER our rendered content. *)
 
-              (* Restore to the saved position (start of our render area) *)
+              (* Always restore to the saved position (start of our render area) first *)
               Buffer.add_string buf Ansi.cursor_restore;
 
               (* Now, move down to the line just after the new content. *)
@@ -490,10 +502,10 @@ module Program = struct
         Terminal.release program.term)
 
   let run ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
-      ?debug_log app =
+      ?(inline_buffer = 0) ?debug_log app =
     let open Eio.Std in
     let program =
-      create_program ~env ~sw ?terminal ~alt_screen ~mouse ~fps ?debug_log app
+      create_program ~env ~sw ?terminal ~alt_screen ~mouse ~fps ~inline_buffer ?debug_log app
     in
 
     log_debug program "===== Program Start =====";
@@ -523,15 +535,15 @@ let app ~init ~update ~view ?(subscriptions = fun _ -> Sub.none) () =
   { init; update; view; subscriptions }
 
 let run_eio ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
-    ?(debug = false) app =
+    ?(inline_buffer = 0) ?(debug = false) app =
   let debug_log = if debug then Some (open_out "mosaic-debug.log") else None in
   Fun.protect
     ~finally:(fun () -> Option.iter close_out debug_log)
     (fun () ->
-      Program.run ~sw ~env ?terminal ~alt_screen ~mouse ~fps ?debug_log app)
+      Program.run ~sw ~env ?terminal ~alt_screen ~mouse ~fps ~inline_buffer ?debug_log app)
 
 let run ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
-    ?(debug = false) app =
+    ?(inline_buffer = 0) ?(debug = false) app =
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
-  run_eio ~sw ~env ?terminal ~alt_screen ~mouse ~fps ~debug app
+  run_eio ~sw ~env ?terminal ~alt_screen ~mouse ~fps ~inline_buffer ~debug app
