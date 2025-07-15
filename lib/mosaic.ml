@@ -337,12 +337,21 @@ module Program = struct
             in
             program.last_width <- width;
 
-            (* Position to old dynamic start and clear if previous exists *)
+            (* Position to old dynamic start if previous exists *)
             if previous_height > 0 then (
               Buffer.add_string output_buf (Ansi.cursor_up previous_height);
-              Buffer.add_string output_buf "\r";
-              if force_full then
-                Buffer.add_string output_buf Ansi.clear_screen_below);
+              Buffer.add_string output_buf "\r");
+
+            if force_full && previous_height > 0 then (
+              (* Replace with explicit per-line erase to clear the old dynamic area *)
+              let erase_line = "\r" ^ Ansi.clear_line ^ "\n" in
+              (* \r \x1b[2K \n *)
+              for _ = 0 to previous_height - 1 do
+                Buffer.add_string output_buf erase_line
+              done;
+              (* Reposition cursor back to the start of the cleared area *)
+              Buffer.add_string output_buf (Ansi.cursor_up previous_height);
+              Buffer.add_string output_buf "\r");
 
             (* Append new static elements *)
             let added_height = ref 0 in
@@ -426,10 +435,9 @@ module Program = struct
             in
             Buffer.add_string output_buf dyn_output;
 
-            (* Clear excess if height decreased *)
-            if dynamic_height < previous_height then (
-              Buffer.add_string output_buf (Ansi.cursor_down dynamic_height);
-              Buffer.add_string output_buf Ansi.clear_screen_below);
+            (* Clear excess if height decreased - no extra cursor_down needed *)
+            if dynamic_height < previous_height then
+              Buffer.add_string output_buf Ansi.clear_screen_below;
 
             (* Update state *)
             program.previous_dynamic_buffer <- Some dyn_buffer;
