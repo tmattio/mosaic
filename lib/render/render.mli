@@ -504,9 +504,17 @@ val truncate_string_with_ellipsis : string -> int -> string -> string
 (** {1 Gradient Rendering} *)
 
 val set_string_gradient :
-  buffer -> int -> int -> string -> Style.t -> width:int -> height:int -> line_offset:int -> unit
-(** [set_string_gradient buffer x y str style ~width ~height ~line_offset] writes string with
-    gradient.
+  buffer ->
+  int ->
+  int ->
+  string ->
+  Style.t ->
+  width:int ->
+  height:int ->
+  line_offset:int ->
+  unit
+(** [set_string_gradient buffer x y str style ~width ~height ~line_offset]
+    writes string with gradient.
 
     Applies gradient colors character-by-character based on position within the
     specified width and height bounds. Horizontal gradients interpolate along

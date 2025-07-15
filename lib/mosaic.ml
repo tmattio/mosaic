@@ -201,6 +201,19 @@ module Program = struct
     | Cmd.Repaint ->
         log_debug program "Forcing repaint";
         program.previous_buffer <- None
+    | Cmd.Clear_screen ->
+        log_debug program "Clearing screen";
+        Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
+            (* Use the same sequence that works for window resize *)
+            let reset_seq = "\x1b[2J\x1b[3J\x1b[H" in
+            Terminal.write program.term
+              (Bytes.of_string reset_seq)
+              0 (String.length reset_seq);
+            Terminal.flush program.term);
+        (* Reset line tracking for non-alt-screen mode *)
+        program.lines_rendered <- 0;
+        (* Force a full repaint after clearing *)
+        program.previous_buffer <- None
 
   let handle_input_event program event =
     log_debug program (Format.asprintf "Input event: %a" Input.pp_event event);
@@ -261,22 +274,23 @@ module Program = struct
 
     (* Create a new buffer for this frame *)
     let width, height = Terminal.size program.term in
-    
+
     (* For non-alt-screen mode, dynamically allocate height based on content *)
     let actual_height =
-      if not program.alt_screen then
+      if not program.alt_screen then (
         let _, natural_height = Ui.measure ~width element in
         let desired_height = natural_height + program.inline_buffer in
         (* Apply reasonable max cap (e.g., 100 lines) to prevent excessive allocation *)
         let max_reasonable_height = 100 in
         if desired_height > max_reasonable_height then
-          log_debug program 
-            (Printf.sprintf "Warning: Desired height %d exceeds max cap %d" 
+          log_debug program
+            (Printf.sprintf "Warning: Desired height %d exceeds max cap %d"
                desired_height max_reasonable_height);
-        max 1 (min height (min desired_height max_reasonable_height))  (* Ensure at least 1 line, capped at terminal height and max cap *)
+        max 1 (min height (min desired_height max_reasonable_height))
+        (* Ensure at least 1 line, capped at terminal height and max cap *))
       else height
     in
-    
+
     let buffer = Render.create width actual_height in
 
     (* Render the UI element tree into the buffer using the layout engine *)
@@ -510,7 +524,8 @@ module Program = struct
       ?(inline_buffer = 0) ?debug_log app =
     let open Eio.Std in
     let program =
-      create_program ~env ~sw ?terminal ~alt_screen ~mouse ~fps ~inline_buffer ?debug_log app
+      create_program ~env ~sw ?terminal ~alt_screen ~mouse ~fps ~inline_buffer
+        ?debug_log app
     in
 
     log_debug program "===== Program Start =====";
@@ -545,7 +560,8 @@ let run_eio ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
   Fun.protect
     ~finally:(fun () -> Option.iter close_out debug_log)
     (fun () ->
-      Program.run ~sw ~env ?terminal ~alt_screen ~mouse ~fps ~inline_buffer ?debug_log app)
+      Program.run ~sw ~env ?terminal ~alt_screen ~mouse ~fps ~inline_buffer
+        ?debug_log app)
 
 let run ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
     ?(inline_buffer = 0) ?(debug = false) app =

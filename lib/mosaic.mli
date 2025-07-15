@@ -99,8 +99,8 @@ val run :
   ?debug:bool ->
   ('model, 'msg) app ->
   unit
-(** [run ?terminal ?alt_screen ?mouse ?fps ?inline_buffer ?debug app] executes the application
-    within an Eio runtime context.
+(** [run ?terminal ?alt_screen ?mouse ?fps ?inline_buffer ?debug app] executes
+    the application within an Eio runtime context.
 
     The runtime manages the event loop, renders frames at the target FPS, and
     processes commands and subscriptions. The alternate screen buffer preserves
@@ -138,8 +138,8 @@ val run_eio :
   ?debug:bool ->
   ('model, 'msg) app ->
   unit
-(** [run_eio ~sw ~env ?terminal ?alt_screen ?mouse ?fps ?inline_buffer ?debug app] executes the
-    application with explicit Eio environment control.
+(** [run_eio ~sw ~env ?terminal ?alt_screen ?mouse ?fps ?inline_buffer ?debug
+     app] executes the application with explicit Eio environment control.
 
     This lower-level function allows integration with existing Eio applications
     by accepting an explicit switch and environment. The switch manages resource

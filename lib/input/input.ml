@@ -203,10 +203,12 @@ let parse_csi s start end_ =
 
     (* Parse modifiers from params for cursor keys *)
     let parse_modifiers = function
-      | [ Some m ] -> (* For sequences like CSI 2 A, where param is modifier *)
+      | [ Some m ] ->
+          (* For sequences like CSI 2 A, where param is modifier *)
           let m = m - 1 in
           { shift = m land 1 <> 0; alt = m land 2 <> 0; ctrl = m land 4 <> 0 }
-      | [ Some _key_code; Some m ] -> (* For sequences like CSI 1;2 A or CSI 13;2~ *)
+      | [ Some _key_code; Some m ] ->
+          (* For sequences like CSI 1;2 A or CSI 13;2~ *)
           let m = m - 1 in
           { shift = m land 1 <> 0; alt = m land 2 <> 0; ctrl = m land 4 <> 0 }
       | _ -> no_modifier (* Includes [], [None], etc. *)
@@ -214,19 +216,13 @@ let parse_csi s start end_ =
 
     match final_char with
     (* Cursor movement *)
-    | 'A' ->
-        Some (Key { key = Up; modifier = parse_modifiers params })
-    | 'B' ->
-        Some (Key { key = Down; modifier = parse_modifiers params })
-    | 'C' ->
-        Some (Key { key = Right; modifier = parse_modifiers params })
-    | 'D' ->
-        Some (Key { key = Left; modifier = parse_modifiers params })
+    | 'A' -> Some (Key { key = Up; modifier = parse_modifiers params })
+    | 'B' -> Some (Key { key = Down; modifier = parse_modifiers params })
+    | 'C' -> Some (Key { key = Right; modifier = parse_modifiers params })
+    | 'D' -> Some (Key { key = Left; modifier = parse_modifiers params })
     (* Home/End *)
-    | 'H' ->
-        Some (Key { key = Home; modifier = parse_modifiers params })
-    | 'F' ->
-        Some (Key { key = End; modifier = parse_modifiers params })
+    | 'H' -> Some (Key { key = Home; modifier = parse_modifiers params })
+    | 'F' -> Some (Key { key = End; modifier = parse_modifiers params })
     (* Tab *)
     | 'Z' ->
         Some
@@ -264,7 +260,12 @@ let parse_csi s start end_ =
             Some (Key { key = Enter; modifier = mods })
         | [ Some 27; Some 2; Some 13 ] ->
             (* Alternative format for Shift+Enter used by some terminals *)
-            Some (Key { key = Enter; modifier = { shift = true; ctrl = false; alt = false } })
+            Some
+              (Key
+                 {
+                   key = Enter;
+                   modifier = { shift = true; ctrl = false; alt = false };
+                 })
         | [ Some 5 ] -> Some (Key { key = Page_up; modifier = no_modifier })
         | [ Some 5; Some _ ] ->
             let mods = parse_modifiers params in
@@ -274,7 +275,7 @@ let parse_csi s start end_ =
             let mods = parse_modifiers params in
             Some (Key { key = Page_down; modifier = mods })
         (* Function keys *)
-        | [ Some n ] | [ Some n; Some 1 ] when n >= 11 && n <= 24 ->
+        | ([ Some n ] | [ Some n; Some 1 ]) when n >= 11 && n <= 24 ->
             let f =
               if n <= 15 then n - 10 else if n <= 21 then n - 11 else n - 12
             in
@@ -308,7 +309,8 @@ let parse_csi s start end_ =
         | [ Some 27; Some _ ] ->
             let mods = parse_modifiers params in
             Some (Key { key = Escape; modifier = mods })
-        | [ Some 32 ] -> Some (Key { key = Char (Uchar.of_int 32); modifier = no_modifier })
+        | [ Some 32 ] ->
+            Some (Key { key = Char (Uchar.of_int 32); modifier = no_modifier })
         | [ Some 32; Some _ ] ->
             let mods = parse_modifiers params in
             Some (Key { key = Char (Uchar.of_int 32); modifier = mods })
@@ -317,8 +319,13 @@ let parse_csi s start end_ =
             (* a-z with ctrl modifier: convert to uppercase for consistency *)
             let ch = Char.chr (c - 32) in
             let mods = parse_modifiers params in
-            Some (Key { key = Char (Uchar.of_char ch); 
-                       modifier = { ctrl = true; alt = mods.alt; shift = mods.shift } })
+            Some
+              (Key
+                 {
+                   key = Char (Uchar.of_char ch);
+                   modifier =
+                     { ctrl = true; alt = mods.alt; shift = mods.shift };
+                 })
         | [ Some c ] when c >= 33 && c <= 126 ->
             Some (Key { key = Char (Uchar.of_int c); modifier = no_modifier })
         | [ Some c; Some _ ] when c >= 33 && c <= 126 ->

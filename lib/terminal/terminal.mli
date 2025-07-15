@@ -108,8 +108,8 @@ val disable_bracketed_paste : t -> unit
 val enable_kitty_keyboard : t -> unit
 (** [enable_kitty_keyboard t] enables enhanced keyboard reporting.
 
-    Allows terminals to send distinct escape sequences for key combinations
-    like Shift+Enter. Required for detecting modified keys. No effect on non-TTY. *)
+    Allows terminals to send distinct escape sequences for key combinations like
+    Shift+Enter. Required for detecting modified keys. No effect on non-TTY. *)
 
 val disable_kitty_keyboard : t -> unit
 (** [disable_kitty_keyboard t] disables enhanced keyboard reporting.

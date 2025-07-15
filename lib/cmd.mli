@@ -33,6 +33,7 @@ type 'msg t =
   | Enter_alt_screen  (** Switches to alternate screen buffer. *)
   | Exit_alt_screen  (** Returns to normal screen buffer. *)
   | Repaint  (** Forces a full screen redraw. *)
+  | Clear_screen  (** Clears the terminal screen. *)
 
 val none : 'msg t
 (** [none] represents the absence of any command.
@@ -235,6 +236,19 @@ val repaint : 'msg t
     Example: Refreshes display after returning from external program.
     {[
       Cmd.batch [ Cmd.repaint; Cmd.msg `EditorClosed ]
+    ]} *)
+
+val clear_screen : 'msg t
+(** [clear_screen] clears the terminal screen and scrollback buffer.
+
+    Clears both the visible screen and the terminal's scrollback history, then
+    positions the cursor at the top-left. Useful for starting with a clean
+    terminal state. In non-alternate screen mode, this provides a fresh canvas
+    for the application.
+
+    Example: Clears terminal before starting the app.
+    {[
+      Cmd.batch [ Cmd.clear_screen; Cmd.msg `AppStarted ]
     ]} *)
 
 val map : ('a -> 'b) -> 'a t -> 'b t

@@ -378,7 +378,9 @@ let rec measure_element ?(width = max_int) element =
         (0, 0) children
   | Flow { children; h_gap; v_gap; _ } ->
       (* Simulate wrapping given width constraint *)
-      let measured = List.map (fun c -> measure_element ~width:max_int c) children in
+      let measured =
+        List.map (fun c -> measure_element ~width:max_int c) children
+      in
       let rec simulate_wrap current_x current_h total_h rem =
         match rem with
         | [] -> total_h + current_h
@@ -386,10 +388,14 @@ let rec measure_element ?(width = max_int) element =
             let gap = if current_x > 0 then h_gap else 0 in
             if current_x + gap + cw > width then
               (* Wrap to next line *)
-              simulate_wrap cw ch (total_h + current_h + if total_h > 0 then v_gap else 0) rest
+              simulate_wrap cw ch
+                (total_h + current_h + if total_h > 0 then v_gap else 0)
+                rest
             else
               (* Continue on same line *)
-              simulate_wrap (current_x + gap + cw) (max current_h ch) total_h rest
+              simulate_wrap
+                (current_x + gap + cw)
+                (max current_h ch) total_h rest
       in
       let sim_h = simulate_wrap 0 0 0 measured in
       let sim_w = List.fold_left (fun acc (w, _) -> max acc w) 0 measured in
@@ -416,18 +422,20 @@ let rec measure_element ?(width = max_int) element =
       let padding_v = opts.padding.top + opts.padding.bottom in
       let margin_h = opts.margin.left + opts.margin.right in
       let margin_v = opts.margin.top + opts.margin.bottom in
-      
+
       (* Calculate available width for children *)
       let content_width = width - margin_h - border_h - padding_h in
-      
+
       let children_sizes =
         List.map
           (fun child ->
             match child with
             | Spacer n -> if opts.direction = `Horizontal then (n, 1) else (1, n)
-            | _ -> 
+            | _ ->
                 (* For vertical boxes, children get full content width *)
-                let child_width = if opts.direction = `Vertical then content_width else max_int in
+                let child_width =
+                  if opts.direction = `Vertical then content_width else max_int
+                in
                 measure_element ~width:child_width child)
           children
       in
@@ -954,7 +962,7 @@ and render_at ctx buffer element =
 
       (* For vertical gradients, we need the total height of all lines *)
       let total_lines = List.length lines in
-      
+
       (* Render each line with alignment and clipping *)
       List.iteri
         (fun i line ->
@@ -977,7 +985,8 @@ and render_at ctx buffer element =
               if has_gradient then
                 (* Use gradient-aware rendering with proper line offset for vertical gradients *)
                 Render.set_string_gradient buffer (ctx.x + x_offset) (ctx.y + i)
-                  clipped_line style ~width:clipped_width ~height:total_lines ~line_offset:i
+                  clipped_line style ~width:clipped_width ~height:total_lines
+                  ~line_offset:i
               else
                 (* Use regular rendering *)
                 Render.set_string buffer (ctx.x + x_offset) (ctx.y + i)

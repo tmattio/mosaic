@@ -383,7 +383,8 @@ let set_string_gradient buffer x y str style ~width ~height ~line_offset =
           if x + width_char <= buffer.width then (
             (* Calculate style for this specific position *)
             let pos_style =
-              apply_gradient_style style ~x:(x - start_x) ~y:line_offset ~width ~height
+              apply_gradient_style style ~x:(x - start_x) ~y:line_offset ~width
+                ~height
             in
             set_char buffer x y u pos_style;
             loop (x + width_char))
@@ -392,7 +393,8 @@ let set_string_gradient buffer x y str style ~width ~height ~line_offset =
           let replacement = Uchar.of_int 0xFFFD in
           if x < buffer.width then (
             let pos_style =
-              apply_gradient_style style ~x:(x - start_x) ~y:line_offset ~width ~height
+              apply_gradient_style style ~x:(x - start_x) ~y:line_offset ~width
+                ~height
             in
             set_char buffer x y replacement pos_style;
             loop (x + 1))
@@ -431,11 +433,11 @@ type cursor_pos = [ `Hide | `Move of int * int ]
 
 let diff old_buffer new_buffer =
   let patches = ref [] in
-  
+
   (* Compare cells that exist in both buffers *)
   let min_height = min old_buffer.height new_buffer.height in
   let min_width = min old_buffer.width new_buffer.width in
-  
+
   for y = 0 to min_height - 1 do
     for x = 0 to min_width - 1 do
       let old_idx = index old_buffer x y in
@@ -445,26 +447,28 @@ let diff old_buffer new_buffer =
       if old_cell <> new_cell then
         patches := { row = y; col = x; old_cell; new_cell } :: !patches
     done;
-    
+
     (* Handle cells in new buffer that are beyond old buffer width *)
     if new_buffer.width > old_buffer.width then
       for x = old_buffer.width to new_buffer.width - 1 do
         let new_idx = index new_buffer x y in
         let new_cell = new_buffer.cells.(new_idx) in
-        patches := { row = y; col = x; old_cell = empty_cell; new_cell } :: !patches
+        patches :=
+          { row = y; col = x; old_cell = empty_cell; new_cell } :: !patches
       done
   done;
-  
+
   (* Handle rows in new buffer that are beyond old buffer height *)
   if new_buffer.height > old_buffer.height then
     for y = old_buffer.height to new_buffer.height - 1 do
       for x = 0 to new_buffer.width - 1 do
         let new_idx = index new_buffer x y in
         let new_cell = new_buffer.cells.(new_idx) in
-        patches := { row = y; col = x; old_cell = empty_cell; new_cell } :: !patches
+        patches :=
+          { row = y; col = x; old_cell = empty_cell; new_cell } :: !patches
       done
     done;
-    
+
   List.rev !patches
 
 let style_to_attrs style =

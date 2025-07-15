@@ -231,13 +231,14 @@ let style attrs str =
       attrs
     |> List.sort_uniq compare (* Remove duplicates *)
   in
-  if attrs = [] then str else
-  let reset_str =
-    if List.mem 0 reset_codes then reset
-      (* If full reset was requested, use it *)
-    else if reset_codes = [] then "" (* No attributes to reset *)
-    else
-      let code_str = String.concat ";" (List.map string_of_int reset_codes) in
-      esc ^ code_str ^ "m"
-  in
-  sgr attrs ^ str ^ reset_str
+  if attrs = [] then str
+  else
+    let reset_str =
+      if List.mem 0 reset_codes then reset
+        (* If full reset was requested, use it *)
+      else if reset_codes = [] then "" (* No attributes to reset *)
+      else
+        let code_str = String.concat ";" (List.map string_of_int reset_codes) in
+        esc ^ code_str ^ "m"
+    in
+    sgr attrs ^ str ^ reset_str
