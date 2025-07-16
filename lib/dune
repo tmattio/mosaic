@@ -8,6 +8,7 @@
   render
   event_source
   unix
+  uutf
   eio
   eio.unix
   eio_main))

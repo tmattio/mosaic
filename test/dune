@@ -1,4 +1,13 @@
 (library
  (name test_utils)
  (modules test_utils)
- (libraries mosaic alcotest str eio_main))
+ (libraries
+  mosaic
+  mosaic.terminal
+  mosaic.render
+  uutf
+  fmt
+  eio
+  alcotest
+  str
+  eio_main))

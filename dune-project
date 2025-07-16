@@ -13,6 +13,8 @@
 
 (license ISC)
 
+(implicit_transitive_deps false)
+
 (package
  (name mosaic)
  (synopsis "A delightful TUI framework for OCaml inspired by Bubbletea")

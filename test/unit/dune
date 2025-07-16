@@ -9,4 +9,14 @@
   test_ui
   test_markdown
   test_gradient)
- (libraries mosaic mosaic.markdown ansi render eio_main alcotest test_utils))
+ (libraries
+  mosaic
+  mosaic.markdown
+  mosaic.render
+  mosaic.input
+  mosaic.ansi
+  mosaic.event
+  eio
+  eio_main
+  alcotest
+  test_utils))
