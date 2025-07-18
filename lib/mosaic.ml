@@ -22,6 +22,7 @@ module Program = struct
   type ('model, 'msg) t = {
     mutable model : 'model;
     mutable running : bool;
+    mutable quit_pending : bool; (* Flag to ensure final render before quit *)
     app : ('model, 'msg) app;
     term : Terminal.t;
     event_source : Event_source.t;
@@ -74,6 +75,7 @@ module Program = struct
     {
       model;
       running = true;
+      quit_pending = false;
       app;
       term;
       event_source;
@@ -181,11 +183,7 @@ module Program = struct
             Queue.add h program.cmd_queue;
             Queue.add (Cmd.Sequence t) program.cmd_queue)
     | Cmd.Quit ->
-        program.running <- false;
-        (* Wake up the resize fiber so it can exit *)
-        Eio.Condition.broadcast program.resize_cond;
-        (* Give other loops a chance to exit *)
-        Eio.Fiber.yield ();
+        program.quit_pending <- true;
         ()
     | Cmd.Log message ->
         (* Write to stderr to avoid corrupting the UI *)
@@ -565,21 +563,30 @@ module Program = struct
             process_cmd program cmd)
       done;
 
-      (* Block until a new message arrives *)
-      if program.running then (* Check again before blocking *)
-        let msg = Eio.Stream.take program.msg_stream in
-        if program.running then (
-          (* Check again after waking up *)
-          log_debug program "Processing message";
-          Eio.Mutex.use_rw ~protect:false program.state_mutex (fun () ->
-              let cmd = send_msg program msg in
-              log_debug program
-                (Format.asprintf "Command generated: %a"
-                   (Cmd.pp (fun fmt _ -> Format.fprintf fmt "<msg>"))
-                   cmd);
-              (* If it's a sequence, it will be added to the queue.
-               Otherwise, process it immediately *)
-              process_cmd program cmd))
+      if program.quit_pending then (
+        render program;
+        program.running <- false;
+        (* Wake up the resize fiber so it can exit *)
+        Eio.Condition.broadcast program.resize_cond;
+        (* Give other loops a chance to exit *)
+        Eio.Fiber.yield ()
+      ) else (
+        (* Block until a new message arrives *)
+        if program.running then (* Check again before blocking *)
+          let msg = Eio.Stream.take program.msg_stream in
+          if program.running then (
+            (* Check again after waking up *)
+            log_debug program "Processing message";
+            Eio.Mutex.use_rw ~protect:false program.state_mutex (fun () ->
+                let cmd = send_msg program msg in
+                log_debug program
+                  (Format.asprintf "Command generated: %a"
+                     (Cmd.pp (fun fmt _ -> Format.fprintf fmt "<msg>"))
+                     cmd);
+                (* If it's a sequence, it will be added to the queue.
+                 Otherwise, process it immediately *)
+                process_cmd program cmd))
+      )
     done
 
   let setup_terminal program =
