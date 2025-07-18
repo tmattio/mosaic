@@ -22,6 +22,8 @@ type 'msg t =
   | Msg of 'msg  (** Immediately produces a message. *)
   | Batch of 'msg t list  (** Runs commands concurrently in parallel. *)
   | Perform of (unit -> 'msg option)  (** Executes an async function. *)
+  | Perform_eio of (sw:Eio.Switch.t -> env:Eio_unix.Stdenv.base -> 'msg option)
+      (** Executes an async function with access to Eio environment. *)
   | Exec of 'msg exec_cmd  (** Releases terminal for external programs. *)
   | Tick of float * (float -> 'msg)  (** Creates a timer. *)
   | Sequence of 'msg t list
@@ -87,6 +89,23 @@ val perform : (unit -> 'msg option) -> 'msg t
           match fetch_data url with
           | Ok data -> Some (`DataFetched data)
           | Error _ -> Some `FetchFailed)
+    ]} *)
+
+val perform_eio :
+  (sw:Eio.Switch.t -> env:Eio_unix.Stdenv.base -> 'msg option) -> 'msg t
+(** [perform_eio f] creates a command that executes [f] with access to Eio
+    environment.
+
+    The function [f] receives the current switch and environment, allowing it to
+    perform Eio-based I/O operations. If it returns [Some msg], that message is
+    delivered to the update function. Returning [None] produces no message.
+
+    Example: Runs an HTTP server for OAuth callback.
+    {[
+      Cmd.perform_eio (fun ~sw ~env ->
+          match run_oauth_server ~sw ~env with
+          | Ok token -> Some (`OAuthComplete token)
+          | Error e -> Some (`OAuthFailed e))
     ]} *)
 
 val exec : (unit -> unit) -> 'msg -> 'msg t

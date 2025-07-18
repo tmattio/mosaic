@@ -5,6 +5,7 @@ type 'msg t =
   | Msg of 'msg
   | Batch of 'msg t list
   | Perform of (unit -> 'msg option)
+  | Perform_eio of (sw:Eio.Switch.t -> env:Eio_unix.Stdenv.base -> 'msg option)
   | Exec of 'msg exec_cmd
   | Tick of float * (float -> 'msg)
   | Sequence of 'msg t list
@@ -27,6 +28,7 @@ let batch cmds =
   | cmds -> Batch cmds
 
 let perform f = Perform f
+let perform_eio f = Perform_eio f
 let exec f msg = Exec { run = f; on_complete = msg }
 let release_and_run = exec (* Alias for better discoverability *)
 let quit = Quit
@@ -59,6 +61,7 @@ let pp pp_msg fmt cmd =
           (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ";@ ") pp_cmd)
           cmds
     | Perform _ -> fprintf fmt "Perform(<fun>)"
+    | Perform_eio _ -> fprintf fmt "Perform_eio(<fun>)"
     | Exec { on_complete; _ } ->
         fprintf fmt "Exec{on_complete=%a}" pp_msg on_complete
     | Tick (duration, _) -> fprintf fmt "Tick(%.3f, <fun>)" duration
@@ -82,6 +85,7 @@ let rec to_list = function
   | Msg m -> [ Msg m ]
   | Batch cmds -> List.concat_map to_list cmds
   | Perform _ as p -> [ p ]
+  | Perform_eio _ as p -> [ p ]
   | Exec _ as e -> [ e ]
   | Tick _ as t -> [ t ]
   | Sequence cmds ->
@@ -101,6 +105,7 @@ let map f cmd =
     | Msg m -> Msg (f m)
     | Batch cmds -> batch (List.map go cmds)
     | Perform fn -> Perform (fun () -> Option.map f (fn ()))
+    | Perform_eio fn -> Perform_eio (fun ~sw ~env -> Option.map f (fn ~sw ~env))
     | Exec exec_cmd ->
         Exec { exec_cmd with on_complete = f exec_cmd.on_complete }
     | Tick (duration, g) -> Tick (duration, fun t -> f (g t))

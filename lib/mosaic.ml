@@ -32,6 +32,7 @@ module Program = struct
     msg_stream : 'msg Eio.Stream.t;
     clock : float Eio.Time.clock_ty Eio.Std.r;
     sw : Eio.Switch.t;
+    env : Eio_unix.Stdenv.base; (* Eio environment for perform_eio *)
     cmd_queue : 'msg Cmd.t Queue.t; (* Command queue for sequential execution *)
     debug_log : out_channel option; (* Debug logging *)
     mutable static_elements : Ui.element list;
@@ -83,6 +84,7 @@ module Program = struct
       msg_stream;
       clock = Eio.Stdenv.clock env;
       sw;
+      env;
       cmd_queue = Queue.create ();
       debug_log;
       static_elements = [];
@@ -111,6 +113,11 @@ module Program = struct
     | Cmd.Perform f ->
         Fiber.fork ~sw:program.sw (fun () ->
             match f () with
+            | Some msg -> Eio.Stream.add program.msg_stream msg
+            | None -> ())
+    | Cmd.Perform_eio f ->
+        Fiber.fork ~sw:program.sw (fun () ->
+            match f ~sw:program.sw ~env:program.env with
             | Some msg -> Eio.Stream.add program.msg_stream msg
             | None -> ())
     | Cmd.Exec exec_cmd ->
@@ -258,14 +265,18 @@ module Program = struct
               List.filter_map (fun f -> f mouse_event) mouse_handlers
           | Input.Resize (w, h) ->
               (* Invalidate the previous buffer on resize.
-             This prevents the diffing logic in the render loop from comparing
-             buffers of two different sizes, which would cause a crash.
-             By setting it to None, we force a full redraw on the next frame. *)
+                 This prevents the diffing logic in the render loop from comparing
+                 buffers of two different sizes, which would cause a crash.
+                 By setting it to None, we force a full redraw on the next frame. *)
               program.previous_buffer <- None;
 
               (* Clear UI element caches on resize since dimensions have changed *)
               let element = program.app.view program.model in
               Ui.clear_cache element;
+
+              (* Also clear caches on all static elements to force reflow at new width *)
+              Eio.Mutex.use_rw ~protect:false program.state_mutex (fun () ->
+                  List.iter Ui.clear_cache program.static_elements);
 
               (* For non-alt-screen, clear terminal and reset tracking *)
               if not program.alt_screen then (
