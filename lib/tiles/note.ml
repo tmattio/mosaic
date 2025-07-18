@@ -100,7 +100,7 @@ let view model =
     (* Dismiss button *)
     let dismiss_elem =
       if model.dismissible then
-        [ expand (space 1); text ~style:model.theme.dismiss_style "[×]" ]
+        [ spacer ~flex:1 0; text ~style:model.theme.dismiss_style "[×]" ]
       else []
     in
 

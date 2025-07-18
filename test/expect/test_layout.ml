@@ -182,7 +182,7 @@ let%expect_test "Hbox justify end" =
 let%expect_test "Expand element" =
   let header = Ui.text "Header" in
   let footer = Ui.text "Footer" in
-  let body = Ui.expand (Ui.vbox []) in
+  let body = Ui.vbox ~flex_grow:1 [] in
   print_layout ~width:20 ~height:8 (Ui.vbox [ header; body; footer ]);
   [%expect_exact
     {|+--------------------+
@@ -198,7 +198,7 @@ let%expect_test "Expand element" =
 |}];
   let left = Ui.text "Left" in
   let right = Ui.text "Right" in
-  let center = Ui.expand (Ui.hbox []) in
+  let center = Ui.hbox ~flex_grow:1 [] in
   print_layout ~width:20 ~height:3 (Ui.hbox [ left; center; right ]);
   [%expect_exact
     {|+--------------------+
@@ -212,17 +212,17 @@ let%expect_test "Complex nested layout" =
   let sidebar =
     Ui.vbox ~width:12
       ~border:(Ui.border ~style:Ui.Double ())
-      [ Ui.text "Sidebar"; Ui.expand (Ui.space 0); Ui.text "Status" ]
+      [ Ui.text "Sidebar"; Ui.spacer ~flex:1 0; Ui.text "Status" ]
   in
   let main_content =
     Ui.vbox ~padding:(Ui.pad ~all:1 ()) ~border:(Ui.border ())
       [
         Ui.text "Main Content Header";
         Ui.text "-------------------";
-        Ui.expand (Ui.vbox [ Ui.text "Line 1"; Ui.text "Line 2" ]);
+        Ui.vbox [ Ui.text "Line 1"; Ui.text "Line 2" ];
       ]
   in
-  let layout = Ui.hbox [ sidebar; Ui.expand main_content ] in
+  let layout = Ui.hbox [ sidebar; main_content ] in
   print_layout ~width:40 ~height:8 layout;
   [%expect_exact
     {|+----------------------------------------+

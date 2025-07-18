@@ -162,8 +162,13 @@ type element
     elements to terminal output while preserving layout constraints. *)
 
 val text :
-  ?style:Render.Style.t -> ?align:align -> ?tab_width:int -> string -> element
-(** [text ?style ?align ?tab_width s] creates a text element displaying [s].
+  ?style:Render.Style.t ->
+  ?align:align ->
+  ?tab_width:int ->
+  ?wrap:bool ->
+  string ->
+  element
+(** [text ?style ?align ?tab_width ?wrap s] creates a text element displaying [s].
 
     Text elements have natural dimensions based on string width and line count.
     Newlines create multiple lines. The optional [style] applies color,
@@ -173,6 +178,8 @@ val text :
     @param align
       Alignment for multi-line text within its bounds (default: Start)
     @param tab_width Number of spaces to expand tabs to (default: 4)
+    @param wrap
+      When true, automatically wraps long lines to fit available width (default: false)
 
     Example: Creates bold red error text.
     {[
@@ -193,6 +200,9 @@ val hbox :
   ?background:Render.Style.t ->
   ?align_items:align ->
   ?justify_content:align ->
+  ?flex_grow:int ->
+  ?fill:bool ->
+  ?wrap:bool ->
   element list ->
   element
 (** [hbox ?gap ?width ?height ?margin ?padding ?border ?align_items
@@ -212,6 +222,12 @@ val hbox :
     @param align_items
       Controls vertical alignment of children (default: Stretch)
     @param justify_content Controls horizontal distribution (default: Start)
+    @param flex_grow
+      Flex grow factor when this box is a child in another box (default: 0)
+    @param fill
+      When true, automatically expands the last child if no children have
+      flex_grow (default: false)
+    @param wrap When true, wraps content that exceeds width (default: false)
 
     Example: Creates a horizontal menu bar with spacing.
     {[
@@ -240,6 +256,9 @@ val vbox :
   ?background:Render.Style.t ->
   ?align_items:align ->
   ?justify_content:align ->
+  ?flex_grow:int ->
+  ?fill:bool ->
+  ?wrap:bool ->
   element list ->
   element
 (** [vbox ?gap ?width ?height ?padding ?border ?align_items ?justify_content
@@ -257,6 +276,12 @@ val vbox :
     @param align_items
       Controls horizontal alignment of children (default: Stretch)
     @param justify_content Controls vertical distribution (default: Start)
+    @param flex_grow
+      Flex grow factor when this box is a child in another box (default: 0)
+    @param fill
+      When true, automatically expands the last child if no children have
+      flex_grow (default: true for vbox)
+    @param wrap When true, wraps content that exceeds height (default: true)
 
     Example: Creates a form with labeled fields.
     {[
@@ -270,14 +295,17 @@ val vbox :
           ]
     ]} *)
 
-val spacer : int -> element
-(** [spacer n] creates n units of empty space *)
+val spacer : ?flex:int -> int -> element
+(** [spacer ?flex n] creates n units of empty space.
 
-val space : int -> element
-(** [space n] creates n units of empty space. Alias for spacer. *)
+    @param flex When greater than 0, the spacer expands to fill available space
+              with the given flex weight (default: 0) *)
 
-val expand : element -> element
-(** [expand elem] makes elem fill available space *)
+val space : ?flex:int -> int -> element
+(** [space ?flex n] creates n units of empty space. Alias for spacer.
+    @param flex When greater than 0, the spacer expands to fill available space
+              with the given flex weight (default: 0) *)
+
 
 (** {2 Advanced Layout Elements} *)
 
@@ -427,6 +455,51 @@ val divider : ?style:Render.Style.t -> ?char:string -> unit -> element
             Ui.text "New";
             Ui.text "Open";
           ]
+    ]} *)
+
+val center : element -> element
+(** [center child] centers the child element within available space.
+
+    Creates a box with center alignment in both directions.
+
+    Example: Center a dialog box.
+    {[
+      let dialog = Ui.center (Ui.vbox ~border:(Ui.border ()) [ ... ])
+    ]} *)
+
+val styled : ?fg:Ansi.color -> ?bg:Ansi.color -> element -> element
+(** [styled ?fg ?bg child] applies foreground and background colors to child.
+
+    Wraps the child in a box with the specified background style.
+
+    @param fg Foreground color to apply
+    @param bg Background color to apply
+
+    Example: Create a warning message.
+    {[
+      let warning = Ui.styled ~fg:Black ~bg:Yellow (Ui.text "Warning!")
+    ]} *)
+
+val scroll :
+  ?width:int ->
+  ?height:int ->
+  ?h_offset:int ->
+  ?v_offset:int ->
+  element ->
+  element
+(** [scroll ?width ?height ?h_offset ?v_offset child] creates a scrollable viewport.
+
+    Content that exceeds the viewport dimensions can be scrolled. Use with
+    subscriptions to handle scroll events.
+
+    @param width Fixed viewport width (default: natural width)
+    @param height Fixed viewport height (default: natural height)
+    @param h_offset Horizontal scroll offset (default: 0)
+    @param v_offset Vertical scroll offset (default: 0)
+
+    Example: Create a scrollable log viewer.
+    {[
+      let log_viewer = Ui.scroll ~height:20 ~v_offset:!offset log_content
     ]} *)
 
 val render : Render.buffer -> element -> unit

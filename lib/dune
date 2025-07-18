@@ -9,6 +9,7 @@
   event_source
   unix
   uutf
+  uucp
   eio
   eio.unix
   eio_main))

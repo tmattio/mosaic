@@ -299,58 +299,98 @@ let set_terminal_background ~dark = Style.set_dark_background dark
 
 type buffer = { width : int; height : int; cells : cell array }
 
+module Clip = struct
+  type t = { x : int; y : int; width : int; height : int }
+
+  let make x y width height = { x; y; width; height }
+  let x { x; _ } = x
+  let y { y; _ } = y
+  let width { width; _ } = width
+  let height { height; _ } = height
+
+  let intersect c1 c2 =
+    let x1 = max c1.x c2.x in
+    let y1 = max c1.y c2.y in
+    let x2 = min (c1.x + c1.width) (c2.x + c2.width) in
+    let y2 = min (c1.y + c1.height) (c2.y + c2.height) in
+    if x2 > x1 && y2 > y1 then make x1 y1 (x2 - x1) (y2 - y1) else make 0 0 0 0
+
+  let intersect_opt c1_opt c2_opt =
+    match (c1_opt, c2_opt) with
+    | None, c | c, None -> c
+    | Some c1, Some c2 -> Some (intersect c1 c2)
+
+  let contains { x; y; width; height } x' y' =
+    x' >= x && x' < x + width && y' >= y && y' < y + height
+end
+
 let create width height =
   { width; height; cells = Array.make (width * height) empty_cell }
 
 let clear buffer =
   Array.fill buffer.cells 0 (Array.length buffer.cells) empty_cell
 
-let dimensions buffer = (buffer.width, buffer.height)
-let index buffer x y = (y * buffer.width) + x
+let dimensions (buffer : buffer) = (buffer.width, buffer.height)
 
-let get buffer x y =
+(* Clipping functions *)
+
+let full_clip (buffer : buffer) =
+  Clip.{ x = 0; y = 0; width = buffer.width; height = buffer.height }
+
+let index (buffer : buffer) x y = (y * buffer.width) + x
+
+let get (buffer : buffer) x y =
   if x >= 0 && x < buffer.width && y >= 0 && y < buffer.height then
     buffer.cells.(index buffer x y)
   else empty_cell
 
-let set buffer x y cell =
-  if x >= 0 && x < buffer.width && y >= 0 && y < buffer.height then
-    buffer.cells.(index buffer x y) <- cell
+let set ?(clip : Clip.t option) (buffer : buffer) x y cell =
+  let in_bounds = x >= 0 && x < buffer.width && y >= 0 && y < buffer.height in
+  let in_clip_bounds =
+    match clip with None -> true | Some c -> Clip.contains c x y
+  in
+  if in_bounds && in_clip_bounds then buffer.cells.(index buffer x y) <- cell
 
 let uchar_width u =
   match Uucp.Break.tty_width_hint u with
   | -1 -> 1 (* Uucp returns -1 for control characters, we treat as width 1 *)
   | n -> n
 
-let set_char buffer x y char style =
+let set_char ?(clip : Clip.t option) (buffer : buffer) x y char style =
   let width = uchar_width char in
   if width = 0 && x > 0 then
     (* Combining character - append to previous cell *)
     let prev_cell = get buffer (x - 1) y in
-    set buffer (x - 1) y { prev_cell with chars = prev_cell.chars @ [ char ] }
+    set ?clip buffer (x - 1) y
+      { prev_cell with chars = prev_cell.chars @ [ char ] }
   else (
     (* Regular character *)
-    set buffer x y { chars = [ char ]; style; width };
+    set ?clip buffer x y { chars = [ char ]; style; width };
     if width = 2 && x + 1 < buffer.width then
-      set buffer (x + 1) y { chars = []; style; width = 0 })
+      set ?clip buffer (x + 1) y { chars = []; style; width = 0 })
 
-let set_string buffer x y str style =
+let set_string ?(clip : Clip.t option) (buffer : buffer) x y str style =
   let decoder = Uutf.decoder ~encoding:`UTF_8 (`String str) in
   let rec loop x =
-    if x >= buffer.width then ()
+    let max_x =
+      match clip with
+      | None -> buffer.width
+      | Some c -> min buffer.width (c.x + c.width)
+    in
+    if x >= max_x then ()
     else
       match Uutf.decode decoder with
       | `Uchar u ->
           let width = uchar_width u in
-          if x + width <= buffer.width then (
-            set_char buffer x y u style;
+          if x + width <= max_x then (
+            set_char ?clip buffer x y u style;
             loop (x + width))
       | `End -> ()
       | `Malformed _ ->
           (* Replace malformed sequence with replacement character *)
           let replacement = Uchar.of_int 0xFFFD in
-          if x < buffer.width then (
-            set_char buffer x y replacement style;
+          if x < max_x then (
+            set_char ?clip buffer x y replacement style;
             loop (x + 1))
       | `Await -> () (* Should not happen with a string source *)
   in
@@ -401,27 +441,33 @@ let apply_gradient_style base_style ~x ~y ~width ~height =
   { base_style with Style.fg; Style.bg }
 
 (* Set a string with gradient support *)
-let set_string_gradient buffer x y str style ~width ~height ~line_offset =
+let set_string_gradient ?(clip : Clip.t option) (buffer : buffer) x y str style
+    ~width ~height ~line_offset =
   let decoder = Uutf.decoder ~encoding:`UTF_8 (`String str) in
   let start_x = x in
   let rec loop x =
-    if x >= buffer.width then ()
+    let max_x =
+      match clip with
+      | None -> buffer.width
+      | Some c -> min buffer.width (c.x + c.width)
+    in
+    if x >= max_x then ()
     else
       match Uutf.decode decoder with
       | `Uchar u ->
           let width_char = uchar_width u in
-          if x + width_char <= buffer.width then (
+          if x + width_char <= max_x then (
             (* Calculate style for this specific position *)
             let pos_style =
               apply_gradient_style style ~x:(x - start_x) ~y:line_offset ~width
                 ~height
             in
-            set_char buffer x y u pos_style;
+            set_char ?clip buffer x y u pos_style;
             loop (x + width_char))
       | `End -> ()
       | `Malformed _ ->
           let replacement = Uchar.of_int 0xFFFD in
-          if x < buffer.width then (
+          if x < max_x then (
             let pos_style =
               apply_gradient_style style ~x:(x - start_x) ~y:line_offset ~width
                 ~height
@@ -433,7 +479,8 @@ let set_string_gradient buffer x y str style ~width ~height ~line_offset =
   loop x
 
 (* Fill a rectangular area with gradient background *)
-let fill_rect_gradient buffer x y width height style =
+let fill_rect_gradient ?(clip : Clip.t option) (buffer : buffer) x y width
+    height style =
   for dy = 0 to height - 1 do
     for dx = 0 to width - 1 do
       let px = x + dx in
@@ -441,12 +488,12 @@ let fill_rect_gradient buffer x y width height style =
       if px >= 0 && px < buffer.width && py >= 0 && py < buffer.height then
         let pos_style = apply_gradient_style style ~x:dx ~y:dy ~width ~height in
         (* Set a space character with the gradient background *)
-        set_char buffer px py (Uchar.of_int 0x20) pos_style
+        set_char ?clip buffer px py (Uchar.of_int 0x20) pos_style
     done
   done
 
 (* Fill a rectangular area with solid background - optimized version *)
-let fill_rect buffer x y width height style =
+let fill_rect ?(clip : Clip.t option) (buffer : buffer) x y width height style =
   (* For solid colors, we can optimize by setting each cell directly *)
   let space_char = Uchar.of_int 0x20 in
   for dy = 0 to height - 1 do
@@ -454,14 +501,14 @@ let fill_rect buffer x y width height style =
       let px = x + dx in
       let py = y + dy in
       if px >= 0 && px < buffer.width && py >= 0 && py < buffer.height then
-        set_char buffer px py space_char style
+        set_char ?clip buffer px py space_char style
     done
   done
 
 type patch = { row : int; col : int; old_cell : cell; new_cell : cell }
 type cursor_pos = [ `Hide | `Move of int * int ]
 
-let diff old_buffer new_buffer =
+let diff (old_buffer : buffer) (new_buffer : buffer) =
   let patches = ref [] in
 
   (* Compare cells that exist in both buffers *)
@@ -631,7 +678,7 @@ let render_patches ?cursor_pos ?(mode = Absolute) patches =
 
   Buffer.contents buf
 
-let render_full ?cursor_pos ?(mode = Absolute) buffer =
+let render_full ?cursor_pos ?(mode = Absolute) (buffer : buffer) =
   let buf = Buffer.create (buffer.width * buffer.height * 10) in
 
   (* Initial setup based on mode *)

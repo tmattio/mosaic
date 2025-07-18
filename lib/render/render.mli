@@ -373,29 +373,73 @@ val dimensions : buffer -> int * int
 
     Dimensions are immutable after creation. Useful for boundary checking. *)
 
+(** {2 Clipping Support} *)
+
+module Clip : sig
+  type t
+  (** [t] represents a rectangular clipping region *)
+
+  val make : int -> int -> int -> int -> t
+  (** [make x y width height] creates a clipping rectangle.
+
+      Coordinates are in buffer space. The rectangle is immutable. *)
+
+  val x : t -> int
+  (** [x rect] returns the x-coordinate of the rectangle's top-left corner *)
+
+  val y : t -> int
+  (** [y rect] returns the y-coordinate of the rectangle's top-left corner *)
+
+  val width : t -> int
+  (** [width rect] returns the width of the rectangle *)
+
+  val height : t -> int
+  (** [height rect] returns the height of the rectangle *)
+
+  val intersect : t -> t -> t
+  (** [intersect c1 c2] returns the intersection of two clipping rectangles. *)
+
+  val intersect_opt : t option -> t option -> t option
+  (** [intersect_opt c1 c2] returns the intersection of two optional clipping
+      rectangles. Returns None if either is None. *)
+
+  val contains : t -> int -> int -> bool
+  (** [contains rect x y] checks if point [(x, y)] is inside the rectangle.
+      Returns [true] if the point is inside, [false] otherwise. *)
+end
+
+val full_clip : buffer -> Clip.t
+(** [full_clip buffer] returns a clip rect covering the entire buffer *)
+
 val get : buffer -> int -> int -> cell
 (** [get buffer x y] retrieves the cell at position [(x, y)].
 
     Returns [empty_cell] for out-of-bounds coordinates. Safe for any integer
     coordinates. O(1) access time. *)
 
-val set : buffer -> int -> int -> cell -> unit
-(** [set buffer x y cell] places [cell] at position [(x, y)].
+val set : ?clip:Clip.t -> buffer -> int -> int -> cell -> unit
+(** [set ?clip buffer x y cell] places [cell] at position [(x, y)].
 
-    Out-of-bounds writes are ignored. Handles wide characters by setting
+    Out-of-bounds writes are ignored. If [clip] is provided, writes outside the
+    clip rectangle are also ignored. Handles wide characters by setting
     continuation cells automatically. O(1) update time. *)
 
-val set_char : buffer -> int -> int -> Uchar.t -> Style.t -> unit
-(** [set_char buffer x y char style] places a styled character.
+val set_char :
+  ?clip:Clip.t -> buffer -> int -> int -> Uchar.t -> Style.t -> unit
+(** [set_char ?clip buffer x y char style] places a styled character.
 
     Convenience for single character updates. Handles wide characters correctly.
-    Sets continuation cells for 2-column characters. Out-of-bounds ignored. *)
+    Sets continuation cells for 2-column characters. Out-of-bounds and
+    out-of-clip writes are ignored. *)
 
-val set_string : buffer -> int -> int -> string -> Style.t -> unit
-(** [set_string buffer x y str style] writes styled UTF-8 string horizontally.
+val set_string :
+  ?clip:Clip.t -> buffer -> int -> int -> string -> Style.t -> unit
+(** [set_string ?clip buffer x y str style] writes styled UTF-8 string
+    horizontally.
 
-    Starts at [(x, y)] and continues rightward. Handles Unicode correctly. Wraps
-    at buffer edge. Wide characters use 2 columns. Newlines ignored.
+    Starts at [(x, y)] and continues rightward. Handles Unicode correctly.
+    Clipped at buffer edge and clip rectangle if provided. Wide characters use 2
+    columns. Newlines ignored.
 
     Example: Writes colored label.
     {[
@@ -514,6 +558,7 @@ val truncate_string_with_ellipsis : string -> int -> string -> string
 (** {1 Gradient Rendering} *)
 
 val set_string_gradient :
+  ?clip:Clip.t ->
   buffer ->
   int ->
   int ->
@@ -535,13 +580,15 @@ val set_string_gradient :
     @param width Total width of the text area for gradient calculation
     @param height Total height of the text area (usually 1 for single line) *)
 
-val fill_rect : buffer -> int -> int -> int -> int -> Style.t -> unit
+val fill_rect :
+  ?clip:Clip.t -> buffer -> int -> int -> int -> int -> Style.t -> unit
 (** [fill_rect buffer x y width height style] fills rectangle with solid style.
 
     Fills the specified rectangular area with space characters and the given
     style. More efficient than fill_rect_gradient for solid colors. *)
 
-val fill_rect_gradient : buffer -> int -> int -> int -> int -> Style.t -> unit
+val fill_rect_gradient :
+  ?clip:Clip.t -> buffer -> int -> int -> int -> int -> Style.t -> unit
 (** [fill_rect_gradient buffer x y width height style] fills rectangle with
     gradient.
 

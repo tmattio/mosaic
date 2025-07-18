@@ -273,7 +273,7 @@ let view model =
            ())
       ~justify_content:Start
       [
-        text ~style:selection_style selection_text; expand (space 1); text arrow;
+        text ~style:selection_style selection_text; spacer ~flex:1 0; text arrow;
       ]
   in
 

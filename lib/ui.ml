@@ -71,18 +71,19 @@ and computed_element = {
 and element =
   | Text of text_data
   | Box of box_data
-  | Spacer of int
-  | Expand of element (* Wrapper to mark expandable elements *)
+  | Spacer of spacer_data
   | Rich_text of (string * Render.Style.t) list
   | Z_stack of z_stack_data
   | Flow of flow_data
   | Grid of grid_data
+  | Scroll of scroll_data
 
 and text_data = {
   content : string;
   style : Render.Style.t;
   align : align;
   tab_width : int;
+  wrap : bool;
 }
 
 and box_data = {
@@ -107,6 +108,9 @@ and layout_options = {
   background : Render.Style.t option;
   align : align;
   justify : align;
+  flex_grow : int;
+  fill : bool;
+  wrap : bool;
 }
 
 and z_align =
@@ -146,15 +150,27 @@ and grid_data = {
   mutable cache : layout_cache option;
 }
 
-let text ?(style = Render.Style.empty) ?(align = Start) ?(tab_width = 4) content
-    =
-  Text { content; style; align; tab_width }
+and spacer_data = { size : int; flex : int }
+
+and scroll_data = {
+  child : element;
+  width : int option;
+  height : int option;
+  h_offset : int;
+  v_offset : int;
+  mutable cache : layout_cache option;
+}
+
+let text ?(style = Render.Style.empty) ?(align = Start) ?(tab_width = 4)
+    ?(wrap = false) content =
+  Text { content; style; align; tab_width; wrap }
 
 let no_padding = padding ()
 
 let hbox ?(gap = 0) ?width ?height ?min_width ?min_height ?max_width ?max_height
     ?(margin = no_padding) ?(padding = no_padding) ?border ?background
-    ?(align_items = Stretch) ?(justify_content = Start) children =
+    ?(align_items = Stretch) ?(justify_content = Start) ?(flex_grow = 0)
+    ?(fill = false) ?(wrap = false) children =
   let options =
     {
       direction = `Horizontal;
@@ -171,13 +187,17 @@ let hbox ?(gap = 0) ?width ?height ?min_width ?min_height ?max_width ?max_height
       background;
       align = align_items;
       justify = justify_content;
+      flex_grow;
+      fill;
+      wrap;
     }
   in
   Box { children; options; cache = None }
 
 let vbox ?(gap = 0) ?width ?height ?min_width ?min_height ?max_width ?max_height
     ?(margin = no_padding) ?(padding = no_padding) ?border ?background
-    ?(align_items = Stretch) ?(justify_content = Start) children =
+    ?(align_items = Stretch) ?(justify_content = Start) ?(flex_grow = 0)
+    ?(fill = true) ?(wrap = true) children =
   let options =
     {
       direction = `Vertical;
@@ -194,13 +214,15 @@ let vbox ?(gap = 0) ?width ?height ?min_width ?min_height ?max_width ?max_height
       background;
       align = align_items;
       justify = justify_content;
+      flex_grow;
+      fill;
+      wrap;
     }
   in
   Box { children; options; cache = None }
 
-let spacer n = Spacer n
+let spacer ?(flex = 0) size = Spacer { size; flex }
 let space = spacer (* Alias for API compatibility *)
-let expand element = Expand element
 
 (* Rich text element *)
 let rich_text segments = Rich_text segments
@@ -218,7 +240,7 @@ let grid ?(col_spacing = 0) ?(row_spacing = 0) ~columns ~rows children =
   Grid { children; columns; rows; col_spacing; row_spacing; cache = None }
 
 (* Helper functions *)
-let flex_spacer () = Expand (Spacer 0)
+let flex_spacer () = spacer ~flex:1 0
 
 let divider ?(style = Render.Style.(fg (gray 8))) ?(char = "─") () =
   let content =
@@ -230,7 +252,33 @@ let divider ?(style = Render.Style.(fg (gray 8))) ?(char = "─") () =
       in
       repeat char 1000
   in
-  expand (text ~style content)
+  hbox ~flex_grow:1 [ text ~style content ]
+
+(* New convenience functions *)
+let center child =
+  hbox ~align_items:Center ~justify_content:Center ~flex_grow:1
+    [ vbox ~align_items:Center ~justify_content:Center ~flex_grow:1 [ child ] ]
+
+let styled ?fg ?bg child =
+  let style =
+    match (fg, bg) with
+    | Some fg_color, Some bg_color -> Render.Style.(fg fg_color ++ bg bg_color)
+    | Some fg_color, None -> Render.Style.fg fg_color
+    | None, Some bg_color -> Render.Style.bg bg_color
+    | None, None -> Render.Style.empty
+  in
+  hbox ~background:style [ child ]
+
+let scroll ?width ?height ?(h_offset = 0) ?(v_offset = 0) child =
+  Scroll { child; width; height; h_offset; v_offset; cache = None }
+
+(* Create a clip for a child element *)
+let make_child_clip parent_clip child_bounds =
+  let child_rect =
+    Render.Clip.make child_bounds.x child_bounds.y child_bounds.width
+      child_bounds.height
+  in
+  Render.Clip.intersect_opt parent_clip (Some child_rect)
 
 (* Border drawing characters *)
 let border_chars style =
@@ -250,7 +298,7 @@ type layout_context = {
 }
 
 (* Helper to draw a border with per-side control *)
-let draw_border buffer x y width height (border_spec : border_spec) =
+let draw_border ?clip buffer x y width height (border_spec : border_spec) =
   let tl, t, tr, r, bl, b, br, l = border_chars border_spec.style in
   let border_style =
     match border_spec.color with
@@ -290,13 +338,13 @@ let draw_border buffer x y width height (border_spec : border_spec) =
 
   (* Draw corners *)
   if border_spec.top || border_spec.left then
-    Render.set_string buffer x y top_left border_style;
+    Render.set_string ?clip buffer x y top_left border_style;
   if border_spec.top || border_spec.right then
-    Render.set_string buffer (x + width - 1) y top_right border_style;
+    Render.set_string ?clip buffer (x + width - 1) y top_right border_style;
   if border_spec.bottom || border_spec.left then
-    Render.set_string buffer x (y + height - 1) bottom_left border_style;
+    Render.set_string ?clip buffer x (y + height - 1) bottom_left border_style;
   if border_spec.bottom || border_spec.right then
-    Render.set_string buffer
+    Render.set_string ?clip buffer
       (x + width - 1)
       (y + height - 1)
       bottom_right border_style;
@@ -304,21 +352,22 @@ let draw_border buffer x y width height (border_spec : border_spec) =
   (* Top border *)
   if border_spec.top && width > 2 then
     for i = 1 to width - 2 do
-      Render.set_string buffer (x + i) y t border_style
+      Render.set_string ?clip buffer (x + i) y t border_style
     done;
 
   (* Bottom border *)
   if border_spec.bottom && width > 2 then
     for i = 1 to width - 2 do
-      Render.set_string buffer (x + i) (y + height - 1) b border_style
+      Render.set_string ?clip buffer (x + i) (y + height - 1) b border_style
     done;
 
   (* Side borders *)
   if height > 2 then
     for i = 1 to height - 2 do
-      if border_spec.left then Render.set_string buffer x (y + i) l border_style;
+      if border_spec.left then
+        Render.set_string ?clip buffer x (y + i) l border_style;
       if border_spec.right then
-        Render.set_string buffer (x + width - 1) (y + i) r border_style
+        Render.set_string ?clip buffer (x + width - 1) (y + i) r border_style
     done
 
 (* Helper to expand tabs to spaces *)
@@ -336,6 +385,61 @@ let expand_tabs s tab_width =
   in
   String.split_on_char '\n' s |> List.map expand_line |> String.concat "\n"
 
+(* Unicode-aware substring that respects cell boundaries *)
+let unicode_substring str max_cells =
+  let decoder = Uutf.decoder ~encoding:`UTF_8 (`String str) in
+  let buffer = Buffer.create (String.length str) in
+  let rec loop cells =
+    if cells >= max_cells then Buffer.contents buffer
+    else
+      match Uutf.decode decoder with
+      | `Uchar u ->
+          let width = Uucp.Break.tty_width_hint u in
+          let width = if width < 0 then 1 else width in
+          if cells + width > max_cells then Buffer.contents buffer
+          else (
+            Buffer.add_utf_8_uchar buffer u;
+            loop (cells + width))
+      | `End -> Buffer.contents buffer
+      | `Malformed _ ->
+          (* Skip malformed sequences *)
+          loop cells
+      | `Await -> Buffer.contents buffer
+  in
+  loop 0
+
+(* Helper to wrap text to a given width *)
+let wrap_text text width =
+  if width <= 0 then [ text ]
+  else
+    let rec wrap_line line =
+      let len = Render.measure_string line in
+      if len <= width then [ line ]
+      else
+        (* Find a good break point *)
+        let rec find_break i last_space =
+          if i >= String.length line then
+            if last_space > 0 then last_space else width
+          else
+            let substr = String.sub line 0 (i + 1) in
+            let w = Render.measure_string substr in
+            if w > width then if last_space > 0 then last_space else max 1 i
+            else if line.[i] = ' ' then find_break (i + 1) i
+            else find_break (i + 1) last_space
+        in
+        let break_pos = find_break 0 0 in
+        let first = unicode_substring line break_pos in
+        let rest_start = String.length first in
+        let rest =
+          String.sub line rest_start (String.length line - rest_start)
+        in
+        let rest = String.trim rest in
+        (* Remove leading spaces from wrapped line *)
+        if rest = "" then [ first ] else first :: wrap_line rest
+    in
+    String.split_on_char '\n' text
+    |> List.concat_map (fun line -> wrap_line line)
+
 (* Calculate border space based on which sides are enabled *)
 let border_space_h border_opt =
   match border_opt with
@@ -350,9 +454,12 @@ let border_space_v border_opt =
 (* Get natural size of element without rendering *)
 let rec measure_element ?(width = max_int) element =
   match element with
-  | Text { content; tab_width; _ } ->
+  | Text { content; tab_width; wrap; _ } ->
       let expanded = expand_tabs content tab_width in
-      let lines = String.split_on_char '\n' expanded in
+      let lines =
+        if wrap && width < max_int then wrap_text expanded width
+        else String.split_on_char '\n' expanded
+      in
       let max_width =
         List.fold_left
           (fun acc line -> max acc (Render.measure_string line))
@@ -360,8 +467,7 @@ let rec measure_element ?(width = max_int) element =
       in
       let height = List.length lines in
       (max_width, max height 1)
-  | Spacer n -> (n, 1)
-  | Expand e -> measure_element ~width e
+  | Spacer { size; _ } -> (size, 1)
   | Rich_text segments ->
       let width =
         List.fold_left
@@ -415,6 +521,11 @@ let rec measure_element ?(width = max_int) element =
       let col_gaps = col_spacing * max 0 (List.length columns - 1) in
       let row_gaps = row_spacing * max 0 (List.length rows - 1) in
       (fixed_width + col_gaps, fixed_height + row_gaps)
+  | Scroll { child; width = scroll_width; height = scroll_height; _ } ->
+      let child_w, child_h = measure_element ~width child in
+      let w = Option.value scroll_width ~default:child_w in
+      let h = Option.value scroll_height ~default:child_h in
+      (w, h)
   | Box { children; options = opts; _ } -> (
       let border_h = border_space_h opts.border in
       let border_v = border_space_v opts.border in
@@ -430,7 +541,8 @@ let rec measure_element ?(width = max_int) element =
         List.map
           (fun child ->
             match child with
-            | Spacer n -> if opts.direction = `Horizontal then (n, 1) else (1, n)
+            | Spacer { size; _ } ->
+                if opts.direction = `Horizontal then (size, 1) else (1, size)
             | _ ->
                 (* For vertical boxes, children get full content width *)
                 let child_width =
@@ -478,18 +590,19 @@ let rec measure_element ?(width = max_int) element =
           in
           (min width width, height))
 
-(* Unwrap all layers of Expand *)
-let rec unwrap_expand element =
-  match element with Expand e -> unwrap_expand e | _ -> element
-
 (* Check if element is expandable *)
-let is_expandable = function Expand _ -> true | _ -> false
+let is_expandable = function
+  | Spacer { flex; _ } when flex > 0 -> true
+  | Box { options; _ } when options.flex_grow > 0 -> true
+  | _ -> false
 
 (* Clear layout caches from previous frame *)
 let rec clear_cache element =
   match element with
   | Text _ | Spacer _ | Rich_text _ -> ()
-  | Expand e -> clear_cache e
+  | Scroll data ->
+      data.cache <- None;
+      clear_cache data.child
   | Box data ->
       data.cache <- None;
       List.iter clear_cache data.children
@@ -526,6 +639,31 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
   (* Calculate box dimensions with min/max constraints *)
   let natural_width, natural_height =
     measure_element (Box { children; options = opts; cache = None })
+  in
+
+  (* Handle auto-fill behavior *)
+  let children =
+    if opts.fill && (not (List.exists is_expandable children)) && children <> []
+    then
+      (* Auto-expand the last child if no children are expandable *)
+      let rec apply_to_last f = function
+        | [] -> []
+        | [ x ] -> [ f x ]
+        | h :: t -> h :: apply_to_last f t
+      in
+      match List.rev children with
+      | [] -> []
+      | last :: rest ->
+          (* Wrap the last child in a box with flex_grow *)
+          let expandable_last =
+            match last with
+            | Box data ->
+                Box { data with options = { data.options with flex_grow = 1 } }
+            | Spacer data -> Spacer { data with flex = 1 }
+            | _ -> hbox ~flex_grow:1 [ last ]
+          in
+          List.rev (expandable_last :: rest)
+    else children
   in
 
   (* Check if this box has expandable children *)
@@ -598,9 +736,9 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
         if is_expandable child then (child, 0, 0)
         else
           match child with
-          | Spacer n ->
-              let w = if opts.direction = `Horizontal then n else 1 in
-              let h = if opts.direction = `Vertical then n else 1 in
+          | Spacer { size; flex = _ } ->
+              let w = if opts.direction = `Horizontal then size else 1 in
+              let h = if opts.direction = `Vertical then size else 1 in
               (child, w, h)
           | _ ->
               let w, h = measure_element child in
@@ -636,7 +774,7 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
             let child_height = content_height in
 
             (* Apply vertical alignment *)
-            let measured_h = snd (measure_element (unwrap_expand child)) in
+            let measured_h = snd (measure_element child) in
             let y_offset = align_offset child_height measured_h opts.align in
 
             let computed =
@@ -697,7 +835,7 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
                 List.rev acc (* Clip partial child *)
               else
                 (* Apply horizontal alignment *)
-                let measured_w = fst (measure_element (unwrap_expand child)) in
+                let measured_w = fst (measure_element child) in
                 let x_offset = align_offset child_width measured_w opts.align in
 
                 let computed =
@@ -724,7 +862,7 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
       (box_width, box_height, children_layouts)
 
 (* Redraw from cached layout information *)
-and redraw_from_cache ctx buffer opts cache =
+and redraw_from_cache ?clip ctx buffer opts cache =
   (* Apply margin offset for drawing *)
   let draw_x = ctx.x + opts.margin.left in
   let draw_y = ctx.y + opts.margin.top in
@@ -741,11 +879,11 @@ and redraw_from_cache ctx buffer opts cache =
       in
       if has_gradient then
         (* Use gradient-aware background fill *)
-        Render.fill_rect_gradient buffer draw_x draw_y cache.computed_width
-          cache.computed_height bg_style
+        Render.fill_rect_gradient ?clip buffer draw_x draw_y
+          cache.computed_width cache.computed_height bg_style
       else
         (* Use optimized solid background fill *)
-        Render.fill_rect buffer draw_x draw_y cache.computed_width
+        Render.fill_rect ?clip buffer draw_x draw_y cache.computed_width
           cache.computed_height bg_style
   | None -> ());
 
@@ -753,7 +891,7 @@ and redraw_from_cache ctx buffer opts cache =
   (match opts.border with
   | Some border_spec when cache.computed_width > 2 && cache.computed_height > 2
     ->
-      draw_border buffer draw_x draw_y cache.computed_width
+      draw_border ?clip buffer draw_x draw_y cache.computed_width
         cache.computed_height border_spec
   | _ -> ());
 
@@ -763,7 +901,8 @@ and redraw_from_cache ctx buffer opts cache =
       let child_ctx =
         { x = cl.x; y = cl.y; width = cl.width; height = cl.height }
       in
-      ignore (render_at child_ctx buffer cl.element))
+      let child_clip = make_child_clip clip cl in
+      ignore (render_at ~clip:child_clip child_ctx buffer cl.element))
     cache.children_layouts
 
 (* Layout calculation for z-stack *)
@@ -939,11 +1078,14 @@ and calculate_grid_layout ctx children columns rows col_spacing row_spacing =
   (width, height, children_layouts)
 
 (* Main render function with caching *)
-and render_at ctx buffer element =
+and render_at ?(clip = None) ctx buffer element =
   match element with
-  | Text { content; style; align; tab_width } ->
+  | Text { content; style; align; tab_width; wrap } ->
       let expanded = expand_tabs content tab_width in
-      let lines = String.split_on_char '\n' expanded in
+      let lines =
+        if wrap then wrap_text expanded ctx.width
+        else String.split_on_char '\n' expanded
+      in
       let max_width =
         List.fold_left
           (fun acc line -> max acc (Render.measure_string line))
@@ -973,23 +1115,19 @@ and render_at ctx buffer element =
             (* Clip line to context width *)
             let clipped_line =
               if line_width > ctx.width - x_offset then
-                let max_chars = ctx.width - x_offset in
-                if max_chars > 0 then
-                  (* Simple character-based clipping - may not handle Unicode perfectly *)
-                  String.sub line 0 (min (String.length line) max_chars)
-                else ""
+                unicode_substring line (ctx.width - x_offset)
               else line
             in
             let clipped_width = Render.measure_string clipped_line in
             if clipped_width > 0 then
               if has_gradient then
                 (* Use gradient-aware rendering with proper line offset for vertical gradients *)
-                Render.set_string_gradient buffer (ctx.x + x_offset) (ctx.y + i)
-                  clipped_line style ~width:clipped_width ~height:total_lines
-                  ~line_offset:i
+                Render.set_string_gradient ?clip buffer (ctx.x + x_offset)
+                  (ctx.y + i) clipped_line style ~width:clipped_width
+                  ~height:total_lines ~line_offset:i
               else
                 (* Use regular rendering *)
-                Render.set_string buffer (ctx.x + x_offset) (ctx.y + i)
+                Render.set_string ?clip buffer (ctx.x + x_offset) (ctx.y + i)
                   clipped_line style)
         lines;
 
@@ -1007,9 +1145,7 @@ and render_at ctx buffer element =
               let available = ctx.x + ctx.width - x in
               let clipped_s, clipped_w =
                 if w > available && available > 0 then
-                  (* Simple clipping - may need refinement for Unicode *)
-                  let max_chars = min (String.length s) available in
-                  let clipped = String.sub s 0 max_chars in
+                  let clipped = unicode_substring s available in
                   (clipped, Render.measure_string clipped)
                 else if available <= 0 then ("", 0)
                 else (s, w)
@@ -1025,9 +1161,9 @@ and render_at ctx buffer element =
                   | _ -> false
                 in
                 if has_gradient then
-                  Render.set_string_gradient buffer x ctx.y clipped_s style
-                    ~width:clipped_w ~height:1 ~line_offset:0
-                else Render.set_string buffer x ctx.y clipped_s style;
+                  Render.set_string_gradient ?clip buffer x ctx.y clipped_s
+                    style ~width:clipped_w ~height:1 ~line_offset:0
+                else Render.set_string ?clip buffer x ctx.y clipped_s style;
                 render_segments (x + clipped_w) rest (total_width + clipped_w))
               else total_width
       in
@@ -1036,11 +1172,6 @@ and render_at ctx buffer element =
   | Spacer _ ->
       (* Spacers should not render anything - they're just layout placeholders *)
       (* The parent already filled the background, so we don't need to clear *)
-      (ctx.width, ctx.height)
-  | Expand e ->
-      (* Expanded elements fill available space *)
-      (* The context width/height is the allocated space for this element *)
-      let _w, _h = render_at ctx buffer e in
       (ctx.width, ctx.height)
   | Z_stack data -> (
       match data.cache with
@@ -1051,7 +1182,8 @@ and render_at ctx buffer element =
               let child_ctx =
                 { x = cl.x; y = cl.y; width = cl.width; height = cl.height }
               in
-              ignore (render_at child_ctx buffer cl.element))
+              let child_clip = make_child_clip clip cl in
+              ignore (render_at ~clip:child_clip child_ctx buffer cl.element))
             cache.children_layouts;
           (cache.computed_width, cache.computed_height)
       | _ ->
@@ -1072,7 +1204,8 @@ and render_at ctx buffer element =
               let child_ctx =
                 { x = cl.x; y = cl.y; width = cl.width; height = cl.height }
               in
-              ignore (render_at child_ctx buffer cl.element))
+              let child_clip = make_child_clip clip cl in
+              ignore (render_at ~clip:child_clip child_ctx buffer cl.element))
             children_layouts;
           (computed_width, computed_height))
   | Flow data -> (
@@ -1092,7 +1225,7 @@ and render_at ctx buffer element =
           Hashtbl.iter
             (fun y max_h ->
               for dy = 0 to max_h - 1 do
-                Render.set_string buffer ctx.x (y + dy)
+                Render.set_string ?clip buffer ctx.x (y + dy)
                   (String.make ctx.width ' ')
                   Render.Style.empty
               done)
@@ -1103,7 +1236,8 @@ and render_at ctx buffer element =
               let child_ctx =
                 { x = cl.x; y = cl.y; width = cl.width; height = cl.height }
               in
-              ignore (render_at child_ctx buffer cl.element))
+              let child_clip = make_child_clip clip cl in
+              ignore (render_at ~clip:child_clip child_ctx buffer cl.element))
             cache.children_layouts;
           (cache.computed_width, cache.computed_height)
       | _ ->
@@ -1131,7 +1265,7 @@ and render_at ctx buffer element =
           Hashtbl.iter
             (fun y max_h ->
               for dy = 0 to max_h - 1 do
-                Render.set_string buffer ctx.x (y + dy)
+                Render.set_string ?clip buffer ctx.x (y + dy)
                   (String.make ctx.width ' ')
                   Render.Style.empty
               done)
@@ -1142,7 +1276,8 @@ and render_at ctx buffer element =
               let child_ctx =
                 { x = cl.x; y = cl.y; width = cl.width; height = cl.height }
               in
-              ignore (render_at child_ctx buffer cl.element))
+              let child_clip = make_child_clip clip cl in
+              ignore (render_at ~clip:child_clip child_ctx buffer cl.element))
             children_layouts;
           (computed_width, computed_height))
   | Grid data -> (
@@ -1154,7 +1289,8 @@ and render_at ctx buffer element =
               let child_ctx =
                 { x = cl.x; y = cl.y; width = cl.width; height = cl.height }
               in
-              ignore (render_at child_ctx buffer cl.element))
+              let child_clip = make_child_clip clip cl in
+              ignore (render_at ~clip:child_clip child_ctx buffer cl.element))
             cache.children_layouts;
           (cache.computed_width, cache.computed_height)
       | _ ->
@@ -1176,9 +1312,76 @@ and render_at ctx buffer element =
               let child_ctx =
                 { x = cl.x; y = cl.y; width = cl.width; height = cl.height }
               in
-              ignore (render_at child_ctx buffer cl.element))
+              let child_clip = make_child_clip clip cl in
+              ignore (render_at ~clip:child_clip child_ctx buffer cl.element))
             children_layouts;
           (computed_width, computed_height))
+  | Scroll data -> (
+      match data.cache with
+      | Some cache
+        when cache.ctx_width = ctx.width && cache.ctx_height = ctx.height ->
+          (* Render from cache *)
+          List.iter
+            (fun (cl : computed_element) ->
+              let child_ctx =
+                { x = cl.x; y = cl.y; width = cl.width; height = cl.height }
+              in
+              let child_clip = make_child_clip clip cl in
+              ignore (render_at ~clip:child_clip child_ctx buffer cl.element))
+            cache.children_layouts;
+          (cache.computed_width, cache.computed_height)
+      | _ ->
+          (* Calculate viewport dimensions *)
+          let child_w, child_h = measure_element data.child in
+          let viewport_w =
+            Option.value data.width ~default:(min ctx.width child_w)
+          in
+          let viewport_h =
+            Option.value data.height ~default:(min ctx.height child_h)
+          in
+
+          (* Calculate visible area with offsets *)
+          let visible_x = max 0 (min data.h_offset (child_w - viewport_w)) in
+          let visible_y = max 0 (min data.v_offset (child_h - viewport_h)) in
+
+          (* Create a clipped rendering context *)
+          let child_ctx =
+            {
+              x = ctx.x - visible_x;
+              y = ctx.y - visible_y;
+              width = child_w;
+              height = child_h;
+            }
+          in
+
+          (* Render the child with clipping *)
+          let scroll_clip =
+            Render.Clip.make ctx.x ctx.y viewport_w viewport_h
+          in
+          let new_clip = Render.Clip.intersect_opt clip (Some scroll_clip) in
+          ignore (render_at ~clip:new_clip child_ctx buffer data.child);
+
+          (* Cache the layout *)
+          data.cache <-
+            Some
+              {
+                ctx_width = ctx.width;
+                ctx_height = ctx.height;
+                computed_width = viewport_w;
+                computed_height = viewport_h;
+                children_layouts =
+                  [
+                    {
+                      element = data.child;
+                      x = child_ctx.x;
+                      y = child_ctx.y;
+                      width = child_w;
+                      height = child_h;
+                    };
+                  ];
+              };
+
+          (viewport_w, viewport_h))
   | Box data -> (
       (* 1. Check the cache *)
       match data.cache with
@@ -1186,7 +1389,7 @@ and render_at ctx buffer element =
         when cache.ctx_width = ctx.width && cache.ctx_height = ctx.height ->
           (* Cache hit! The box has been laid out in this context before.
              We can skip all calculations and just redraw. *)
-          redraw_from_cache ctx buffer data.options cache;
+          redraw_from_cache ?clip ctx buffer data.options cache;
           (cache.computed_width, cache.computed_height)
       | _ ->
           (* Cache miss. We must perform the full layout calculation. *)
@@ -1206,7 +1409,7 @@ and render_at ctx buffer element =
               };
 
           (* 3. Render the box and its children for the first time *)
-          redraw_from_cache ctx buffer data.options (Option.get data.cache);
+          redraw_from_cache ?clip ctx buffer data.options (Option.get data.cache);
 
           (computed_width, computed_height))
 
@@ -1262,8 +1465,10 @@ let rec pp_element fmt = function
            ~pp_sep:(fun fmt () -> Format.fprintf fmt ";@ ")
            pp_element)
         children
-  | Spacer n -> Format.fprintf fmt "Spacer(%d)" n
-  | Expand e -> Format.fprintf fmt "Expand(%a)" pp_element e
+  | Spacer { size; flex } ->
+      if flex > 0 then Format.fprintf fmt "Spacer(%d, flex=%d)" size flex
+      else Format.fprintf fmt "Spacer(%d)" size
+  | Scroll { child; _ } -> Format.fprintf fmt "Scroll(%a)" pp_element child
 
 (* Public API for measuring elements *)
 let measure ?width element = measure_element ?width element
