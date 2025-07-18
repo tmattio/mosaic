@@ -254,18 +254,6 @@ let parse_csi s start end_ =
         | [ Some 4; Some _ ] ->
             let mods = parse_modifiers params in
             Some (Key { key = End; modifier = mods })
-        | [ Some 13 ] -> Some (Key { key = Enter; modifier = no_modifier })
-        | [ Some 13; Some _ ] ->
-            let mods = parse_modifiers params in
-            Some (Key { key = Enter; modifier = mods })
-        | [ Some 27; Some 2; Some 13 ] ->
-            (* Alternative format for Shift+Enter used by some terminals *)
-            Some
-              (Key
-                 {
-                   key = Enter;
-                   modifier = { shift = true; ctrl = false; alt = false };
-                 })
         | [ Some 5 ] -> Some (Key { key = Page_up; modifier = no_modifier })
         | [ Some 5; Some _ ] ->
             let mods = parse_modifiers params in
@@ -316,13 +304,12 @@ let parse_csi s start end_ =
             Some (Key { key = Char (Uchar.of_int 32); modifier = mods })
         (* Handle lowercase letters with ctrl modifier - Kitty sends these as letter code with modifier 5+ *)
         | [ Some c; Some m ] when c >= 97 && c <= 122 && m >= 5 && m <= 8 ->
-            (* a-z with ctrl modifier: convert to uppercase for consistency *)
-            let ch = Char.chr (c - 32) in
+            (* a-z with ctrl modifier: preserve original case as per Kitty protocol *)
             let mods = parse_modifiers params in
             Some
               (Key
                  {
-                   key = Char (Uchar.of_char ch);
+                   key = Char (Uchar.of_int c);
                    modifier =
                      { ctrl = true; alt = mods.alt; shift = mods.shift };
                  })
@@ -331,6 +318,13 @@ let parse_csi s start end_ =
         | [ Some c; Some _ ] when c >= 33 && c <= 126 ->
             let mods = parse_modifiers params in
             Some (Key { key = Char (Uchar.of_int c); modifier = mods })
+        | _ -> None)
+    (* Window manipulation *)
+    | 't' -> (
+        match params with
+        | [ Some 8; Some h; Some w ] ->
+            (* CSI 8 ; height ; width t reports terminal size *)
+            Some (Resize (w, h))
         | _ -> None)
     (* Mouse events *)
     | '<' ->
@@ -409,12 +403,12 @@ let feed parser bytes offset length =
           && Bytes.sub_string parser.buffer pos 6 = "\x1b[201~"
         then (
           parser.in_paste <- false;
-          let paste_content = Buffer.contents parser.paste_buffer in
           Buffer.clear parser.paste_buffer;
-          process_buffer (Paste paste_content :: Paste_end :: acc) (pos + 6))
-        else (
-          Buffer.add_char parser.paste_buffer c;
-          process_buffer acc (pos + 1))
+          process_buffer (Paste_end :: acc) (pos + 6))
+        else
+          (* Emit individual Key events for each character in paste mode *)
+          let key_event = Key { key = key_of_char c; modifier = no_modifier } in
+          process_buffer (key_event :: acc) (pos + 1)
       else if c = '\x1b' then
         if
           (* Check for X10 mouse protocol first *)

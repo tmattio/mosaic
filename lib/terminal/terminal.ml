@@ -166,13 +166,22 @@ let create_from_strings input =
   (* Write input string to the input pipe *)
   let input_bytes = Bytes.of_string input in
   ignore (Unix.write in_write input_bytes 0 (Bytes.length input_bytes));
-  Unix.close in_write;
+  
+  (* Keep the write end open by storing it in a ref that can be closed later *)
+  let write_end_ref = ref (Some in_write) in
 
   (* Create terminal with TTY disabled *)
   let term = create ~tty:false in_read out_write in
 
   (* Function to read output *)
   let get_output () =
+    (* Close write end if still open *)
+    (match !write_end_ref with
+    | Some fd -> 
+        Unix.close fd;
+        write_end_ref := None
+    | None -> ());
+    
     let buffer = Buffer.create 1024 in
     let bytes = Bytes.create 1024 in
     let rec read_all () =
