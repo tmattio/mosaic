@@ -199,9 +199,24 @@ let test_color_types () =
   check string "rgb custom" "\x1b[38;2;128;64;192m"
     (sgr [ `Fg (RGB (128, 64, 192)) ])
 
+(** Convert style variant to string for test descriptions *)
+let string_of_style : attr -> string = function
+  | `Bold -> "Bold"
+  | `Dim -> "Dim"
+  | `Italic -> "Italic"
+  | `Underline -> "Underline"
+  | `Double_underline -> "Double_underline"
+  | `Blink -> "Blink"
+  | `Reverse -> "Reverse"
+  | `Strikethrough -> "Strikethrough"
+  | `Overline -> "Overline"
+  | `Reset -> "Reset"
+  | `Fg _ -> "Fg"
+  | `Bg _ -> "Bg"
+
 (** Test style attributes *)
 let test_style_attrs () =
-  let styles =
+  let styles : (attr * string) list =
     [
       (`Bold, "\x1b[1m");
       (`Dim, "\x1b[2m");
@@ -217,10 +232,208 @@ let test_style_attrs () =
 
   List.iter
     (fun (attr, expected) ->
-      check string
-        (Printf.sprintf "%s" (Obj.magic attr))
-        expected (sgr [ attr ]))
+      check string (string_of_style attr) expected (sgr [ attr ]))
     styles
+
+(** Test invalid inputs and edge cases *)
+let test_invalid_inputs () =
+  (* Test negative values in cursor movements - should be treated as 0 *)
+  check string "negative cursor up" "" (cursor_up (-5));
+  check string "negative cursor down" "" (cursor_down (-10));
+  check string "negative cursor forward" "" (cursor_forward (-1));
+  check string "negative cursor back" "" (cursor_back (-100));
+
+  (* Test negative scroll values *)
+  check string "negative scroll up" "" (scroll_up (-1));
+  check string "negative scroll down" "" (scroll_down (-5));
+
+  (* Test edge case cursor positions *)
+  check string "zero cursor position" "\x1b[0;0H" (cursor_position 0 0);
+  check string "negative cursor position" "\x1b[-5;-10H"
+    (cursor_position (-5) (-10));
+  check string "large cursor position" "\x1b[99999;99999H"
+    (cursor_position 99999 99999);
+
+  (* RGB colors with out-of-range values should raise exceptions *)
+  check bool "rgb negative values raise exception" true
+    (try
+       ignore (sgr [ `Fg (RGB (-10, -20, -30)) ]);
+       false
+     with Invalid_argument _ -> true);
+  check bool "rgb over 255 raises exception" true
+    (try
+       ignore (sgr [ `Fg (RGB (300, 400, 500)) ]);
+       false
+     with Invalid_argument _ -> true);
+
+  (* Test index colors at boundaries - also raise exceptions *)
+  check bool "index negative raises exception" true
+    (try
+       ignore (sgr [ `Fg (Index (-1)) ]);
+       false
+     with Invalid_argument _ -> true);
+  check bool "index over 255 raises exception" true
+    (try
+       ignore (sgr [ `Fg (Index 256) ]);
+       false
+     with Invalid_argument _ -> true);
+  check bool "index max int raises exception" true
+    (try
+       ignore (sgr [ `Fg (Index max_int) ]);
+       false
+     with Invalid_argument _ -> true)
+
+(** Test complex nested and malformed sequences in strip *)
+let test_strip_advanced () =
+  (* Nested OSC and CSI sequences *)
+  check string "osc inside csi" "" (strip "\x1b]0;\x1b[31mTitle\x07");
+  check string "csi inside osc" "Text"
+    (strip "\x1b[31m\x1b]0;Title\x07Text\x1b[0m");
+
+  (* Incomplete sequences *)
+  (* Note: 'T' is consumed as CSI terminator (scroll down command) *)
+  check string "incomplete sgr params" "est" (strip "\x1b[38;2;255Test");
+  check string "osc missing terminator at end" "" (strip "\x1b]0;Title");
+  (* Note: \x1b[B is CSI B (cursor down), \x1b]C starts unterminated OSC *)
+  check string "multiple incomplete" "A" (strip "A\x1b[B\x1b]C");
+
+  (* Very long sequences *)
+  let long_params = String.make 1000 '9' in
+  check string "long csi params" "Text"
+    (strip (Printf.sprintf "\x1b[%smText" long_params));
+
+  (* Mixed terminators *)
+  (* OSC without proper terminator consumes everything *)
+  check string "osc with wrong terminator" "" (strip "\x1b]0;Title\x1b[mEnd");
+
+  (* OSC should end with BEL or ST *)
+
+  (* Multiple escape characters *)
+  check string "double escape" "" (strip "\x1b\x1b");
+  (* Note: Each ESC is handled separately, third ESC-T might be consumed as a command *)
+  check string "triple escape with text" "ext" (strip "\x1b\x1b\x1bText");
+
+  (* Real-world malformed sequences *)
+  (* First CSI is incomplete, second ESC starts new CSI, 'm' terminates it *)
+  check string "broken prompt" "m$ " (strip "\x1b[1;32\x1b[m$ ");
+  check string "interleaved sequences" "HelloWorld"
+    (strip "\x1b[31mHe\x1b]0;Title\x07llo\x1b[0mWorld")
+
+(** Test hyperlink edge cases *)
+let test_hyperlink_edge () =
+  (* Empty URI *)
+  check string "empty uri" "\x1b]8;;\x1b\\text\x1b]8;;\x1b\\"
+    (hyperlink ~uri:"" "text");
+
+  (* Very long URI *)
+  let long_uri = String.make 2000 'a' in
+  let expected = Printf.sprintf "\x1b]8;;%s\x1b\\text\x1b]8;;\x1b\\" long_uri in
+  check string "long uri" expected (hyperlink ~uri:long_uri "text");
+
+  (* Special characters in URI *)
+  check string "uri with spaces"
+    "\x1b]8;;http://example.com/path with spaces\x1b\\click\x1b]8;;\x1b\\"
+    (hyperlink ~uri:"http://example.com/path with spaces" "click");
+  check string "uri with unicode"
+    "\x1b]8;;http://example.com/❤️\x1b\\heart\x1b]8;;\x1b\\"
+    (hyperlink ~uri:"http://example.com/❤️" "heart");
+
+  (* Text with ANSI codes *)
+  check string "text with ansi"
+    "\x1b]8;;http://example.com\x1b\\\x1b[31mRed Link\x1b[0m\x1b]8;;\x1b\\"
+    (hyperlink ~uri:"http://example.com" "\x1b[31mRed Link\x1b[0m")
+
+(** Test window title edge cases *)
+let test_window_title_edge () =
+  (* Special characters *)
+  check string "title with bell" "\x1b[]0;Title\x07Text\x07"
+    (set_window_title "Title\x07Text");
+  check string "title with escape" "\x1b[]0;Title\x1bText\x07"
+    (set_window_title "Title\x1bText");
+  check string "title with null" "\x1b[]0;Title\x00Text\x07"
+    (set_window_title "Title\x00Text");
+
+  (* Very long title *)
+  let long_title = String.make 1000 'X' in
+  let expected = Printf.sprintf "\x1b[]0;%s\x07" long_title in
+  check string "long title" expected (set_window_title long_title);
+
+  (* Unicode in title *)
+  check string "unicode title" "\x1b[]0;🌍 World\x07"
+    (set_window_title "🌍 World")
+
+(** Test style function with edge cases *)
+let test_style_edge () =
+  (* Empty text *)
+  check string "empty text with styles" "\x1b[31m\x1b[39m"
+    (style [ `Fg Red ] "");
+
+  (* Reset in attrs *)
+  check string "reset in attrs" "\x1b[0;31mText\x1b[0m"
+    (style [ `Reset; `Fg Red ] "Text");
+
+  (* Duplicate attributes *)
+  check string "duplicate colors" "\x1b[31;32mText\x1b[39m"
+    (style [ `Fg Red; `Fg Green ] "Text");
+
+  (* Many attributes *)
+  let many_attrs =
+    [
+      `Bold;
+      `Dim;
+      `Italic;
+      `Underline;
+      `Blink;
+      `Reverse;
+      `Strikethrough;
+      `Fg Red;
+      `Bg Blue;
+    ]
+  in
+  let result = style many_attrs "X" in
+  check bool "many attrs not empty" true (String.length result > 2)
+
+(** Property test helpers - simple property-based tests without external libs *)
+let test_properties () =
+  (* Property: strip should be idempotent *)
+  let test_idempotent s =
+    let stripped = strip s in
+    check string "idempotent strip" stripped (strip stripped)
+  in
+
+  List.iter test_idempotent
+    [
+      "plain text";
+      "\x1b[31mcolored\x1b[0m";
+      "\x1b]0;Title\x07text";
+      "\x1b[1;2;3mcomplex\x1b[0m";
+    ];
+
+  (* Property: strip removes all escape sequences *)
+  let has_escape s = String.contains s '\x1b' in
+
+  let test_no_escapes s =
+    let stripped = strip s in
+    check bool "no escapes after strip" false (has_escape stripped)
+  in
+
+  List.iter test_no_escapes
+    [
+      "\x1b[31mred\x1b[0m";
+      "\x1b]0;Title\x07\x1b[1mBold\x1b[0m";
+      "text\x1b[31m\x1b[32m\x1b[0m";
+    ];
+
+  (* Property: style with no attrs should return unchanged text *)
+  let test_no_style_change s =
+    check string "no attrs no change" s (style [] s)
+  in
+
+  List.iter test_no_style_change [ "plain"; "with spaces"; "unicode 🎉" ];
+
+  (* Property: cursor movements with 0 should produce empty string *)
+  let movements = [ cursor_up; cursor_down; cursor_forward; cursor_back ] in
+  List.iter (fun f -> check string "zero movement empty" "" (f 0)) movements
 
 let () =
   run "ANSI"
@@ -239,4 +452,14 @@ let () =
       ("Reset sequences", [ test_case "reset" `Quick test_reset_sequences ]);
       ("Color types", [ test_case "color types" `Quick test_color_types ]);
       ("Style attributes", [ test_case "style attrs" `Quick test_style_attrs ]);
+      ( "Invalid inputs",
+        [ test_case "invalid inputs" `Quick test_invalid_inputs ] );
+      ( "Strip advanced",
+        [ test_case "strip advanced" `Quick test_strip_advanced ] );
+      ( "Hyperlink edge cases",
+        [ test_case "hyperlink edge" `Quick test_hyperlink_edge ] );
+      ( "Window title edge cases",
+        [ test_case "window title edge" `Quick test_window_title_edge ] );
+      ("Style edge cases", [ test_case "style edge" `Quick test_style_edge ]);
+      ("Properties", [ test_case "properties" `Quick test_properties ]);
     ]

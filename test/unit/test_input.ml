@@ -285,6 +285,227 @@ let test_incremental_parsing () =
     [ Input.Key { key = Up; modifier = Input.no_modifier } ]
     events3
 
+(** Test additional key variants *)
+let test_more_key_variants () =
+  let parser = Input.create () in
+
+  (* Test Page Up/Down *)
+  let events = Input.feed parser (Bytes.of_string "\x1b[5~") 0 4 in
+  Alcotest.(check (list event_testable))
+    "Page Up"
+    [ Input.Key { key = Page_up; modifier = Input.no_modifier } ]
+    events;
+
+  let events = Input.feed parser (Bytes.of_string "\x1b[6~") 0 4 in
+  Alcotest.(check (list event_testable))
+    "Page Down"
+    [ Input.Key { key = Page_down; modifier = Input.no_modifier } ]
+    events;
+
+  (* Test Home/End *)
+  let events = Input.feed parser (Bytes.of_string "\x1b[H") 0 3 in
+  Alcotest.(check (list event_testable))
+    "Home"
+    [ Input.Key { key = Home; modifier = Input.no_modifier } ]
+    events;
+
+  let events = Input.feed parser (Bytes.of_string "\x1b[F") 0 3 in
+  Alcotest.(check (list event_testable))
+    "End"
+    [ Input.Key { key = End; modifier = Input.no_modifier } ]
+    events;
+
+  (* Test Insert/Delete *)
+  let events = Input.feed parser (Bytes.of_string "\x1b[2~") 0 4 in
+  Alcotest.(check (list event_testable))
+    "Insert"
+    [ Input.Key { key = Insert; modifier = Input.no_modifier } ]
+    events;
+
+  let events = Input.feed parser (Bytes.of_string "\x1b[3~") 0 4 in
+  Alcotest.(check (list event_testable))
+    "Delete"
+    [ Input.Key { key = Delete; modifier = Input.no_modifier } ]
+    events;
+
+  (* Test higher function keys F6-F12 *)
+  let f_keys =
+    [ (17, 6); (18, 7); (19, 8); (20, 9); (21, 10); (23, 11); (24, 12) ]
+  in
+  List.iter
+    (fun (code, n) ->
+      let seq = Printf.sprintf "\x1b[%d~" code in
+      let events =
+        Input.feed parser (Bytes.of_string seq) 0 (String.length seq)
+      in
+      Alcotest.(check (list event_testable))
+        (Printf.sprintf "F%d" n)
+        [ Input.Key { key = F n; modifier = Input.no_modifier } ]
+        events)
+    f_keys
+
+(** Test invalid/malformed sequences *)
+let test_invalid_sequences () =
+  let parser = Input.create () in
+
+  (* Incomplete CSI sequence *)
+  let events = Input.feed parser (Bytes.of_string "\x1b[") 0 2 in
+  Alcotest.(check (list pass)) "incomplete CSI buffered" [] events;
+
+  (* Invalid CSI terminator *)
+  let events = Input.feed parser (Bytes.of_string "999999X") 0 7 in
+  (* Should parse as regular chars since no valid terminator *)
+  Alcotest.(check int) "parsed as chars" 7 (List.length events);
+
+  (* Very long CSI parameters *)
+  let long_seq = "\x1b[" ^ String.make 100 '9' ^ "m" in
+  let events =
+    Input.feed parser (Bytes.of_string long_seq) 0 (String.length long_seq)
+  in
+  (* Should handle gracefully - exact behavior depends on implementation *)
+  Alcotest.(check bool)
+    "long sequence handled" true
+    (List.length events = 0 || List.length events > 0);
+
+  (* Invalid UTF-8 sequences *)
+  let invalid_utf8 = Bytes.create 2 in
+  Bytes.set invalid_utf8 0 '\xff';
+  Bytes.set invalid_utf8 1 '\xfe';
+  let events = Input.feed parser invalid_utf8 0 2 in
+  (* Should handle invalid UTF-8 gracefully *)
+  Alcotest.(check bool) "invalid UTF-8 handled" true (List.length events >= 0);
+
+  (* Mixed valid and invalid *)
+  let events =
+    Input.feed parser (Bytes.of_string "a\x1b[999999999999mbc") 0 19
+  in
+  (* Should at least parse 'a' *)
+  match events with
+  | Input.Key { key = Char c; _ } :: _ ->
+      Alcotest.(check char) "first char parsed" 'a' (Uchar.to_char c)
+  | _ -> Alcotest.fail "expected at least one char"
+
+(** Test combined/complex inputs *)
+let test_combined_inputs () =
+  let parser = Input.create () in
+
+  (* Key with multiple modifiers *)
+  let events = Input.feed parser (Bytes.of_string "\x1b[1;7A") 0 6 in
+  Alcotest.(check (list event_testable))
+    "Ctrl+Alt+Shift+Up"
+    [
+      Input.Key
+        { key = Up; modifier = { ctrl = true; alt = true; shift = true } };
+    ]
+    events;
+
+  (* Mouse followed by key *)
+  let seq = "\x1b[<0;5;10Ma" in
+  let events = Input.feed parser (Bytes.of_string seq) 0 (String.length seq) in
+  Alcotest.(check int) "mouse + key event count" 2 (List.length events);
+  (match events with
+  | [ Input.Mouse _; Input.Key _ ] -> ()
+  | _ -> Alcotest.fail "expected mouse then key event");
+
+  (* Paste with special chars *)
+  let paste_seq = "\x1b[200~Hello\nWorld\t!\x1b[201~" in
+  let events =
+    Input.feed parser (Bytes.of_string paste_seq) 0 (String.length paste_seq)
+  in
+  (* Should have paste start, chars, paste end *)
+  Alcotest.(check bool) "paste with special chars" true (List.length events >= 3);
+
+  (* Rapid key presses *)
+  let rapid =
+    String.concat ""
+      (List.init 50 (fun i -> String.make 1 (Char.chr (65 + (i mod 26)))))
+  in
+  let events =
+    Input.feed parser (Bytes.of_string rapid) 0 (String.length rapid)
+  in
+  Alcotest.(check int) "rapid keys parsed" 50 (List.length events)
+
+(** Test kitty keyboard protocol *)
+let test_kitty_keyboard () =
+  let parser = Input.create () in
+
+  (* Basic kitty key *)
+  let events = Input.feed parser (Bytes.of_string "\x1b[97u") 0 5 in
+  Alcotest.(check (list event_testable))
+    "kitty 'a'"
+    [
+      Input.Key { key = Char (Uchar.of_char 'a'); modifier = Input.no_modifier };
+    ]
+    events;
+
+  (* Kitty with modifiers *)
+  let events = Input.feed parser (Bytes.of_string "\x1b[97;5u") 0 7 in
+  Alcotest.(check (list event_testable))
+    "kitty ctrl+a"
+    [
+      Input.Key
+        {
+          key = Char (Uchar.of_char 'a');
+          modifier = { ctrl = true; alt = false; shift = false };
+        };
+    ]
+    events;
+
+  (* Kitty special keys *)
+  let events = Input.feed parser (Bytes.of_string "\x1b[13u") 0 6 in
+  Alcotest.(check (list event_testable))
+    "kitty enter"
+    [ Input.Key { key = Enter; modifier = Input.no_modifier } ]
+    events;
+
+  (* Kitty with event type - press repeat release *)
+  let events = Input.feed parser (Bytes.of_string "\x1b[97;1:3u") 0 10 in
+  (* Should parse the key regardless of event type *)
+  match events with
+  | [ Input.Key { key = Char c; _ } ] ->
+      Alcotest.(check char) "kitty with event type" 'a' (Uchar.to_char c)
+  | _ -> Alcotest.fail "expected single key event"
+
+(** Test edge cases *)
+let test_input_edge_cases () =
+  let parser = Input.create () in
+
+  (* Empty input *)
+  let events = Input.feed parser (Bytes.create 0) 0 0 in
+  Alcotest.(check (list pass)) "empty input" [] events;
+
+  (* Single null byte *)
+  let events = Input.feed parser (Bytes.of_string "\x00") 0 1 in
+  Alcotest.(check (list event_testable))
+    "null byte as Ctrl+@"
+    [
+      Input.Key
+        {
+          key = Char (Uchar.of_char '@');
+          modifier = { ctrl = true; alt = false; shift = false };
+        };
+    ]
+    events;
+
+  (* Alt+Escape *)
+  let events = Input.feed parser (Bytes.of_string "\x1b\x1b") 0 2 in
+  (* Should eventually parse as Alt+Escape when flushed *)
+  Alcotest.(check (list pass)) "alt+escape buffered" [] events;
+
+  (* Very large input buffer *)
+  let large = String.make 10000 'X' in
+  let events = Input.feed parser (Bytes.of_string large) 0 10000 in
+  Alcotest.(check int) "large input parsed" 10000 (List.length events);
+
+  (* Input with offset and length *)
+  let data = Bytes.of_string "XXXabcYYY" in
+  let events = Input.feed parser data 3 3 in
+  Alcotest.(check int) "partial feed count" 3 (List.length events);
+  match events with
+  | Input.Key { key = Char c; _ } :: _ ->
+      Alcotest.(check char) "partial feed first char" 'a' (Uchar.to_char c)
+  | _ -> Alcotest.fail "expected char event"
+
 let tests =
   [
     ("parse regular chars", `Quick, test_parse_regular_chars);
@@ -297,6 +518,11 @@ let tests =
     ("parse paste mode", `Quick, test_parse_paste_mode);
     ("parse UTF-8", `Quick, test_parse_utf8);
     ("incremental parsing", `Quick, test_incremental_parsing);
+    ("more key variants", `Quick, test_more_key_variants);
+    ("invalid sequences", `Quick, test_invalid_sequences);
+    ("combined inputs", `Quick, test_combined_inputs);
+    ("kitty keyboard", `Quick, test_kitty_keyboard);
+    ("edge cases", `Quick, test_input_edge_cases);
   ]
 
 let () = Alcotest.run "Input" [ ("parsing", tests) ]

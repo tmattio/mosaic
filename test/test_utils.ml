@@ -2,6 +2,36 @@
 
 open Mosaic
 
+(* Helper functions for tests *)
+let buffer_to_string buffer =
+  let width, height = Render.dimensions buffer in
+  let buf = Buffer.create ((width + 1) * height) in
+  for y = 0 to height - 1 do
+    for x = 0 to width - 1 do
+      let cell = Render.get buffer x y in
+      match cell.Render.chars with
+      | [] -> Buffer.add_char buf ' '
+      | ch :: _ -> Buffer.add_utf_8_uchar buf ch
+    done;
+    if y < height - 1 then Buffer.add_char buf '\n'
+  done;
+  Buffer.contents buf
+
+let buffer_to_lines buffer =
+  let width, height = Render.dimensions buffer in
+  let lines = ref [] in
+  for y = height - 1 downto 0 do
+    let line = Buffer.create width in
+    for x = 0 to width - 1 do
+      let cell = Render.get buffer x y in
+      match cell.Render.chars with
+      | [] -> Buffer.add_char line ' '
+      | ch :: _ -> Buffer.add_utf_8_uchar line ch
+    done;
+    lines := Buffer.contents line :: !lines
+  done;
+  !lines
+
 (** Create a test terminal with predefined input for unit testing low-level
     components like the event source or input parser. *)
 let make_test_terminal input =

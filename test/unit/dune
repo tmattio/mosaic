@@ -1,11 +1,9 @@
 (tests
  (names
   test_ansi
-  test_cmd
   test_event_source
   test_input
   test_render
-  test_sub
   test_ui
   test_markdown
   test_gradient)

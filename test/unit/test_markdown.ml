@@ -286,6 +286,225 @@ let test_line_breaks () =
   assert_output_contains output "Soft";
   assert_output_contains output "break"
 
+(** Test tables (if supported) *)
+let test_tables () =
+  let md =
+    {|
+| Header 1 | Header 2 | Header 3 |
+|----------|----------|----------|
+| Cell 1   | Cell 2   | Cell 3   |
+| Cell 4   | Cell 5   | Cell 6   |
+|}
+  in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  (* Tables might be rendered as code blocks if not supported *)
+  assert_output_contains output "Header 1";
+  assert_output_contains output "Cell 1"
+
+(** Test task lists *)
+let test_task_lists () =
+  let md =
+    {|- [ ] Unchecked item
+- [x] Checked item
+- [ ] Another unchecked|}
+  in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  assert_output_contains output "[ ]";
+  assert_output_contains output "[x]";
+  assert_output_contains output "Unchecked item";
+  assert_output_contains output "Checked item"
+
+(** Test deeply nested structures *)
+let test_deep_nesting () =
+  let md =
+    {|> Quote level 1
+> > Quote level 2
+> > > Quote level 3
+> > > > Quote level 4
+> > > > > Quote level 5|}
+  in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  assert_output_contains output "Quote level 1";
+  assert_output_contains output "Quote level 5";
+
+  (* Deep list nesting *)
+  let md =
+    {|1. Level 1
+   1. Level 2
+      1. Level 3
+         1. Level 4
+            1. Level 5|}
+  in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  assert_output_contains output "Level 1";
+  assert_output_contains output "Level 5"
+
+(** Test inline HTML (if supported) *)
+let test_inline_html () =
+  let md = "This has <em>HTML emphasis</em> and <strong>strong</strong>." in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  (* HTML might be escaped or rendered as-is *)
+  assert_output_contains output "HTML emphasis";
+  assert_output_contains output "strong"
+
+(** Test code spans with special content *)
+let test_code_spans_advanced () =
+  let md = "Code with `**bold**` and `_italic_` inside" in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  assert_output_contains output " **bold**";
+  assert_output_contains output " _italic_";
+
+  (* Code with backticks *)
+  let md = "Code: ``with ` backtick`` and ```triple ` backticks```" in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  assert_output_contains output "with ` backtick";
+
+  (* Code with entities *)
+  let md = "Code: `&lt; &gt; &amp;`" in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  assert_output_contains output " &lt; &gt; &amp;"
+
+(** Test strikethrough (if supported) *)
+let test_strikethrough () =
+  let md = "This has ~~strikethrough~~ text." in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  assert_output_contains output "strikethrough"
+
+(** Test footnotes (if supported) *)
+let test_footnotes () =
+  let md = {|This has a footnote[^1].
+
+[^1]: This is the footnote text.|} in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  assert_output_contains output "footnote";
+  assert_output_contains output "This is the footnote text"
+
+(** Test definition lists (if supported) *)
+let test_definition_lists () =
+  let md =
+    {|Term 1
+:   Definition 1
+
+Term 2
+:   Definition 2a
+:   Definition 2b|}
+  in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  assert_output_contains output "Term 1";
+  assert_output_contains output "Definition 1"
+
+(** Test smart punctuation *)
+let test_smart_punctuation () =
+  let md =
+    {|"Double quotes" and 'single quotes'.
+Em---dash and en--dash.
+Ellipsis...|}
+  in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  assert_output_contains output "Double quotes";
+  assert_output_contains output "single quotes"
+
+(** Test very long lines *)
+let test_long_lines () =
+  let long_word = String.make 100 'A' in
+  let md = Printf.sprintf "Word: %s end." long_word in
+  let ui = Mosaic_markdown.render ~width:50 md in
+  let output = render_to_string ui in
+  assert_output_contains output "AAAA"
+
+(** Test unicode and emoji *)
+let test_unicode_content () =
+  let md = "Unicode: αβγδε 中文字符 🎉🎈🎊" in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  assert_output_contains output "αβγδε";
+  assert_output_contains output "中文字符";
+  assert_output_contains output "🎉"
+
+(** Test malformed markdown *)
+let test_malformed_markdown () =
+  (* Unclosed emphasis *)
+  let md = "This has *unclosed emphasis" in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  assert_output_contains output "unclosed emphasis";
+
+  (* Mismatched delimiters *)
+  let md = "This has **mixed *delimiters**" in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  assert_output_contains output "mixed";
+
+  (* Invalid link *)
+  let md = "[link with no url]()" in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  assert_output_contains output "link with no url"
+
+(** Test edge cases in lists *)
+let test_list_edge_cases () =
+  (* Empty list items *)
+  let md = "- \n- Item 2\n- " in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  assert_output_contains output "• Item 2";
+
+  (* List with different markers *)
+  let md = "- Dash\n* Star\n+ Plus" in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  assert_output_contains output "• Dash";
+  assert_output_contains output "• Star";
+  assert_output_contains output "• Plus";
+
+  (* List with paragraphs *)
+  let md =
+    {|1. First item.
+
+   This is still part of the first item.
+
+2. Second item.|}
+  in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  assert_output_contains output "First item";
+  assert_output_contains output "still part of the first"
+
+(** Test setext headings *)
+let test_setext_headings () =
+  let md = {|Heading 1
+=========
+
+Heading 2
+---------|} in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  assert_output_contains output "Heading 1";
+  assert_output_contains output "Heading 2"
+
+(** Test raw HTML blocks *)
+let test_html_blocks () =
+  let md = {|<div>
+  <p>HTML content</p>
+</div>
+
+Regular markdown.|} in
+  let ui = Mosaic_markdown.render md in
+  let output = render_to_string ui in
+  assert_output_contains output "Regular markdown"
+
 let () =
   run "Markdown"
     [
@@ -294,6 +513,7 @@ let () =
           test_case "paragraphs" `Quick test_paragraphs;
           test_case "headings" `Quick test_headings;
           test_case "horizontal rules" `Quick test_horizontal_rules;
+          test_case "setext headings" `Quick test_setext_headings;
         ] );
       ( "Inline elements",
         [
@@ -303,6 +523,7 @@ let () =
           test_case "reference links" `Quick test_reference_links;
           test_case "autolinks" `Quick test_autolinks;
           test_case "line breaks" `Quick test_line_breaks;
+          test_case "code spans advanced" `Quick test_code_spans_advanced;
         ] );
       ( "Block elements",
         [
@@ -310,6 +531,21 @@ let () =
           test_case "ordered lists" `Quick test_ordered_lists;
           test_case "code blocks" `Quick test_code_blocks;
           test_case "blockquotes" `Quick test_blockquotes;
+          test_case "list edge cases" `Quick test_list_edge_cases;
+        ] );
+      ( "Extended features",
+        [
+          test_case "tables" `Quick test_tables;
+          test_case "task lists" `Quick test_task_lists;
+          test_case "strikethrough" `Quick test_strikethrough;
+          test_case "footnotes" `Quick test_footnotes;
+          test_case "definition lists" `Quick test_definition_lists;
+          test_case "smart punctuation" `Quick test_smart_punctuation;
+        ] );
+      ( "HTML",
+        [
+          test_case "inline HTML" `Quick test_inline_html;
+          test_case "HTML blocks" `Quick test_html_blocks;
         ] );
       ( "Advanced features",
         [
@@ -317,6 +553,7 @@ let () =
           test_case "custom style" `Quick test_custom_style;
           test_case "nested emphasis" `Quick test_nested_emphasis;
           test_case "complex lists" `Quick test_complex_lists;
+          test_case "deep nesting" `Quick test_deep_nesting;
         ] );
       ( "Edge cases",
         [
@@ -324,5 +561,8 @@ let () =
           test_case "width parameter" `Quick test_width_parameter;
           test_case "special characters" `Quick test_special_characters;
           test_case "string of inlines" `Quick test_string_of_inlines;
+          test_case "long lines" `Quick test_long_lines;
+          test_case "unicode content" `Quick test_unicode_content;
+          test_case "malformed markdown" `Quick test_malformed_markdown;
         ] );
     ]

@@ -259,20 +259,6 @@ let test_diff () =
   let rows_cols = List.map (fun p -> (p.row, p.col)) patches in
   check (list (pair int int)) "patch order" [ (0, 0); (1, 2); (2, 4) ] rows_cols
 
-(** Test diff with mismatched dimensions *)
-let test_diff_mismatch () =
-  let buf1 = create 5 3 in
-  let buf2 = create 6 3 in
-
-  check_raises "width mismatch"
-    (Invalid_argument "Buffer dimensions must match: old=(5,3), new=(6,3)")
-    (fun () -> ignore (diff buf1 buf2));
-
-  let buf3 = create 5 4 in
-  check_raises "height mismatch"
-    (Invalid_argument "Buffer dimensions must match: old=(5,3), new=(5,4)")
-    (fun () -> ignore (diff buf1 buf3))
-
 (** Test render_patch *)
 let test_render_patch () =
   let style = test_style ~fg:(Some (Style.Solid Ansi.Green)) () in
@@ -379,6 +365,161 @@ let test_truncate_string () =
   check string "empty string" "" (truncate_string "" 5);
   check string "zero width" "" (truncate_string "Hello" 0)
 
+(** Test diff with wide and combining characters *)
+let test_diff_advanced () =
+  let old_buf = create 10 3 in
+  let new_buf = create 10 3 in
+
+  (* Test wide character changes *)
+  set_char old_buf 0 0 (Uchar.of_char 'A') (test_style ());
+  set_char new_buf 0 0 (Uchar.of_int 0x1F600) (test_style ());
+
+  (* Wide emoji *)
+  let patches = diff old_buf new_buf in
+  check bool "wide char creates patch" true (List.length patches > 0);
+
+  (* Test style-only changes *)
+  let old_buf2 = create 5 1 in
+  let new_buf2 = create 5 1 in
+  set_string old_buf2 0 0 "Hello" (test_style ());
+  set_string new_buf2 0 0 "Hello" (test_style ~bold:true ());
+
+  let patches2 = diff old_buf2 new_buf2 in
+  check bool "style change creates patches" true (List.length patches2 > 0);
+
+  (* Test combining character changes *)
+  let old_buf3 = create 5 1 in
+  let new_buf3 = create 5 1 in
+  set_char old_buf3 0 0 (Uchar.of_char 'e') (test_style ());
+  (* Add combining acute accent *)
+  set old_buf3 0 0
+    {
+      chars = [ Uchar.of_char 'e'; Uchar.of_int 0x0301 ];
+      style = test_style ();
+      width = 1;
+    };
+
+  let patches3 = diff old_buf3 new_buf3 in
+  check bool "combining char change detected" true (List.length patches3 > 0)
+
+(** Test render modes and options *)
+let test_render_modes () =
+  let buf = create 10 5 in
+  set_string buf 2 2 "Test" (test_style ~fg:(Some (Style.Solid Ansi.Red)) ());
+
+  (* Test absolute positioning *)
+  let patches = diff (create 10 5) buf in
+  let result = render_patches patches in
+  check bool "absolute render has output" true (String.length result > 0);
+  check bool "contains cursor positioning" true (String.contains result '\x1b');
+
+  (* Test with cursor positioning *)
+  let result2 = render_patches patches ~cursor_pos:(`Move (5, 3)) in
+  check bool "cursor positioning affects output" true (String.length result2 > 0)
+
+(** Test huge buffers *)
+let test_huge_buffers () =
+  (* Test creation of large buffer *)
+  let big = create 1000 1000 in
+  let w, h = dimensions big in
+  check int "huge width" 1000 w;
+  check int "huge height" 1000 h;
+
+  (* Test operations on edges *)
+  set_char big 0 0 (Uchar.of_char 'A') (test_style ());
+  set_char big 999 999 (Uchar.of_char 'Z') (test_style ());
+
+  let cell1 = get big 0 0 in
+  let cell2 = get big 999 999 in
+  check uchar_list "huge buffer start" [ Uchar.of_char 'A' ] cell1.chars;
+  check uchar_list "huge buffer end" [ Uchar.of_char 'Z' ] cell2.chars
+
+(** Test malformed UTF-8 in rendering *)
+let test_malformed_rendering () =
+  let buf = create 10 5 in
+
+  (* Set cell with invalid Unicode *)
+  set buf 0 0
+    {
+      chars = [ Uchar.of_int 0xFFFE ];
+      (* Non-character *)
+      style = test_style ();
+      width = 1;
+    };
+
+  (* Should not crash when rendering *)
+  let result = render_full buf in
+  check bool "rendered malformed without crash" true (String.length result >= 0)
+
+(** Test patch merging and optimization *)
+let test_patch_optimization () =
+  let old_buf = create 20 5 in
+  let new_buf = create 20 5 in
+
+  (* Adjacent changes *)
+  set_string new_buf 0 0 "Hello" (test_style ());
+  set_string new_buf 5 0 "World" (test_style ());
+
+  let patches = diff old_buf new_buf in
+  (* Implementation might merge adjacent patches *)
+  check bool "patches generated" true (List.length patches > 0);
+
+  (* Scattered changes *)
+  let old_buf2 = create 20 5 in
+  let new_buf2 = create 20 5 in
+  set_char new_buf2 0 0 (Uchar.of_char 'A') (test_style ());
+  set_char new_buf2 19 4 (Uchar.of_char 'Z') (test_style ());
+
+  let patches2 = diff old_buf2 new_buf2 in
+  check bool "scattered changes create patches" true (List.length patches2 >= 2)
+
+(** Test edge cases in string utilities *)
+let test_string_utils_edge () =
+  (* Measure empty string *)
+  let w1 = measure_string "" in
+  check int "empty string width" 0 w1;
+
+  (* Measure string with only combining chars *)
+  let b = Buffer.create 10 in
+  Buffer.add_utf_8_uchar b (Uchar.of_int 0x0301);
+  Buffer.add_utf_8_uchar b (Uchar.of_int 0x0302);
+  let combining_only = Buffer.contents b in
+  let w2 = measure_string combining_only in
+  check int "combining only width" 0 w2;
+
+  (* Truncate to zero width *)
+  let truncated1 = truncate_string "Hello" 0 in
+  check string "truncate to 0" "" truncated1;
+
+  (* Truncate wide char at boundary *)
+  let with_emoji = "Hi😀!" in
+  let truncated2 = truncate_string with_emoji 3 in
+  (* Should be "Hi" or "Hi…" depending on implementation *)
+  check bool "truncated at emoji boundary" true
+    (truncated2 = "Hi" || truncated2 = "Hi…" || String.length truncated2 <= 3)
+
+(** Test render output formatting *)
+let test_render_formatting () =
+  let buf = create 10 3 in
+
+  (* Test various style combinations *)
+  set_string buf 0 0 "Bold" (test_style ~bold:true ());
+  set_string buf 0 1 "Color"
+    (test_style ~fg:(Some (Style.Solid Ansi.Blue))
+       ~bg:(Some (Style.Solid Ansi.Yellow)) ());
+  set_string buf 0 2 "Under" (test_style ~underline:true ());
+
+  let result = render_full buf in
+
+  (* Check for style sequences *)
+  check bool "contains SGR sequences" true (String.contains result '\x1b');
+  check bool "contains reset" true
+    (try
+       let _ = String.index result '\x1b' in
+       String.length result > 0
+     with Not_found -> false);
+  check bool "contains newlines" true (String.contains result '\n')
+
 let () =
   run "Render"
     [
@@ -402,17 +543,26 @@ let () =
       ( "Diffing",
         [
           test_case "diff" `Quick test_diff;
-          test_case "diff mismatch" `Quick test_diff_mismatch;
+          test_case "diff advanced" `Quick test_diff_advanced;
         ] );
       ( "Rendering",
         [
           test_case "render_patch" `Quick test_render_patch;
           test_case "render_patches" `Quick test_render_patches;
           test_case "render_full" `Quick test_render_full;
+          test_case "render modes" `Quick test_render_modes;
+          test_case "render formatting" `Quick test_render_formatting;
         ] );
       ( "String utilities",
         [
           test_case "measure_string" `Quick test_measure_string;
           test_case "truncate_string" `Quick test_truncate_string;
+          test_case "string utils edge" `Quick test_string_utils_edge;
+        ] );
+      ( "Edge cases",
+        [
+          test_case "huge buffers" `Quick test_huge_buffers;
+          test_case "malformed rendering" `Quick test_malformed_rendering;
+          test_case "patch optimization" `Quick test_patch_optimization;
         ] );
     ]

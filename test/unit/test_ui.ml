@@ -1,20 +1,7 @@
 (** Tests for the UI module *)
 
 open Mosaic
-
-let buffer_to_string buffer =
-  let width, height = Render.dimensions buffer in
-  let buf = Buffer.create ((width + 1) * height) in
-  for y = 0 to height - 1 do
-    for x = 0 to width - 1 do
-      let cell = Render.get buffer x y in
-      match cell.Render.chars with
-      | [] -> Buffer.add_char buf ' '
-      | ch :: _ -> Buffer.add_utf_8_uchar buf ch
-    done;
-    if y < height - 1 then Buffer.add_char buf '\n'
-  done;
-  Buffer.contents buf
+open Test_utils
 
 let test_text_rendering () =
   let buffer = Render.create 20 1 in
@@ -302,12 +289,27 @@ let test_space () =
   Alcotest.(check string) "space works" "A   B     " output
 
 let test_style_combination () =
-  let _style = Style.(fg (Index 1) ++ bg (Index 2) ++ bold ++ italic) in
+  (* Test that we can combine styles and apply them *)
+  let style = Style.(fg (Index 1) ++ bg (Index 2) ++ bold ++ italic) in
+  let buffer = Render.create 10 1 in
+  let element = Ui.text ~style "Test" in
+  Ui.render buffer element;
 
-  (* Just check that we can combine styles without error *)
-  (* We can't pattern match on Style.t as it's abstract *)
-  ()
-(* If it compiles, it works *)
+  (* Check that the style is applied to the rendered text *)
+  let cell = Render.get buffer 0 0 in
+  match cell.Render.chars with
+  | ch :: _ when Uchar.to_char ch = 'T' -> (
+      Alcotest.(check bool)
+        "bold applied" true cell.Render.style.Render.Style.bold;
+      Alcotest.(check bool)
+        "italic applied" true cell.Render.style.Render.Style.italic;
+      (match cell.Render.style.Render.Style.fg with
+      | Some (Render.Style.Solid (Ansi.Index 1)) -> ()
+      | _ -> Alcotest.fail "foreground color not applied");
+      match cell.Render.style.Render.Style.bg with
+      | Some (Render.Style.Solid (Ansi.Index 2)) -> ()
+      | _ -> Alcotest.fail "background color not applied")
+  | _ -> Alcotest.fail "text not rendered"
 
 let test_color_helpers () =
   (* Test gray *)
@@ -426,6 +428,499 @@ let test_margins () =
   | ch :: _ when Uchar.to_int ch = 0x250C -> () (* ┌ *)
   | _ -> Alcotest.fail "margin with border not applied"
 
+(** Test zstack layout *)
+let test_zstack () =
+  let buffer = Render.create 10 5 in
+
+  (* Basic z-stack - later elements should overlay earlier ones *)
+  let element = Ui.zstack [ Ui.text "AAAAA"; Ui.text "BB" ] in
+  Ui.render buffer element;
+
+  (* BB should overlay AA at start *)
+  let cell = Render.get buffer 0 0 in
+  (match cell.Render.chars with
+  | ch :: _ when Uchar.to_char ch = 'B' -> ()
+  | _ -> Alcotest.fail "zstack overlay not working");
+
+  (* A should still be visible after BB *)
+  let cell = Render.get buffer 2 0 in
+  (match cell.Render.chars with
+  | ch :: _ when Uchar.to_char ch = 'A' -> ()
+  | _ -> Alcotest.fail "zstack underlay not visible");
+
+  (* Test with alignment *)
+  let buffer = Render.create 10 5 in
+  let element =
+    Ui.zstack ~align:Center
+      [ Ui.hbox ~width:10 ~height:5 ~border:(Ui.border ()) []; Ui.text "X" ]
+  in
+  Ui.render buffer element;
+
+  (* X should be centered *)
+  let cell = Render.get buffer 5 2 in
+  match cell.Render.chars with
+  | ch :: _ when Uchar.to_char ch = 'X' -> ()
+  | _ -> Alcotest.fail "zstack center alignment failed"
+
+(** Test grid layout *)
+let test_grid () =
+  let buffer = Render.create 20 10 in
+
+  (* 2x2 grid with fixed columns *)
+  let element =
+    Ui.grid ~columns:[ Ui.Fixed 5; Ui.Fixed 5 ] ~rows:[ Ui.Fixed 1; Ui.Fixed 1 ]
+      [ Ui.text "A1"; Ui.text "B1"; Ui.text "A2"; Ui.text "B2" ]
+  in
+  Ui.render buffer element;
+
+  (* Check grid positions *)
+  let check_cell x y expected =
+    let cell = Render.get buffer x y in
+    match cell.Render.chars with
+    | ch :: _ when Uchar.to_char ch = expected -> ()
+    | _ -> Alcotest.failf "grid cell at (%d,%d) should be '%c'" x y expected
+  in
+
+  check_cell 0 0 'A';
+  (* A1 *)
+  check_cell 5 0 'B';
+  (* B1 *)
+  check_cell 0 1 'A';
+  (* A2 *)
+  check_cell 5 1 'B';
+
+  (* B2 *)
+
+  (* Test with spacing *)
+  let buffer = Render.create 20 10 in
+  let element =
+    Ui.grid ~col_spacing:2 ~row_spacing:1 ~columns:[ Ui.Fixed 3; Ui.Fixed 3 ]
+      ~rows:[ Ui.Fixed 1; Ui.Fixed 1 ]
+      [ Ui.text "X"; Ui.text "Y"; Ui.text "Z"; Ui.text "W" ]
+  in
+  Ui.render buffer element;
+
+  check_cell 0 0 'X';
+  check_cell 5 0 'Y';
+  (* 3 + 2 spacing *)
+  check_cell 0 2 'Z';
+  (* row 1 + 1 spacing *)
+  check_cell 5 2 'W'
+
+(** Test flow layout *)
+let test_flow () =
+  let buffer = Render.create 10 5 in
+
+  (* Flow should wrap when content exceeds width *)
+  let element =
+    Ui.flow [ Ui.text "AAA"; Ui.text "BBB"; Ui.text "CCC"; Ui.text "DDD" ]
+  in
+  Ui.render buffer element;
+
+  (* First line: AAA BBB *)
+  let check_at x y ch =
+    let cell = Render.get buffer x y in
+    match cell.Render.chars with
+    | c :: _ when Uchar.to_char c = ch -> ()
+    | _ -> Alcotest.failf "flow at (%d,%d) should be '%c'" x y ch
+  in
+
+  check_at 0 0 'A';
+  check_at 4 0 'B';
+  (* with default gap *)
+  check_at 0 1 'C';
+  (* wrapped to next line *)
+  check_at 4 1 'D';
+
+  (* Test with custom gaps *)
+  let buffer = Render.create 15 5 in
+  let element =
+    Ui.flow ~h_gap:2 ~v_gap:2 [ Ui.text "XX"; Ui.text "YY"; Ui.text "ZZ" ]
+  in
+  Ui.render buffer element;
+
+  check_at 0 0 'X';
+  check_at 4 0 'Y';
+  (* XX + 2 gap *)
+  check_at 0 2 'Z' (* wrapped with v_gap *)
+
+(** Test rich text *)
+let test_rich_text () =
+  let buffer = Render.create 20 1 in
+
+  let element =
+    Ui.rich_text
+      [
+        ("Red", Style.fg Style.Red);
+        (" ", Style.empty);
+        ("Bold", Style.bold);
+        (" ", Style.empty);
+        ("Blue", Style.fg Style.Blue);
+      ]
+  in
+  Ui.render buffer element;
+
+  (* Check text content *)
+  let output = buffer_to_string buffer in
+  Alcotest.(check string) "rich text content" "Red Bold Blue       " output;
+
+  (* Check styles *)
+  let cell = Render.get buffer 0 0 in
+  (* R *)
+  (match cell.Render.style.Render.Style.fg with
+  | Some (Render.Style.Solid Render.Style.Red) -> ()
+  | _ -> Alcotest.fail "rich text red style not applied");
+
+  let cell = Render.get buffer 4 0 in
+  (* B from Bold *)
+  Alcotest.(check bool) "bold style" true cell.Render.style.Render.Style.bold;
+
+  let cell = Render.get buffer 9 0 in
+  (* B from Blue *)
+  match cell.Render.style.Render.Style.fg with
+  | Some (Render.Style.Solid Render.Style.Blue) -> ()
+  | _ -> Alcotest.fail "rich text blue style not applied"
+
+(** Test scroll *)
+let test_scroll () =
+  let buffer = Render.create 5 3 in
+
+  (* Content larger than viewport *)
+  let content =
+    Ui.vbox
+      [
+        Ui.text "Line1";
+        Ui.text "Line2";
+        Ui.text "Line3";
+        Ui.text "Line4";
+        Ui.text "Line5";
+      ]
+  in
+
+  (* Scroll to show lines 2-4 *)
+  let element = Ui.scroll ~height:3 ~v_offset:1 content in
+  Ui.render buffer element;
+
+  let check_line y expected =
+    let cell = Render.get buffer 0 y in
+    match cell.Render.chars with
+    | ch :: _ when Uchar.to_char ch = 'L' -> (
+        let cell2 = Render.get buffer 4 y in
+        match cell2.Render.chars with
+        | ch :: _ when Uchar.to_char ch = expected -> ()
+        | _ -> Alcotest.failf "scroll line %d should show Line%c" y expected)
+    | _ -> Alcotest.fail "scroll content missing"
+  in
+
+  check_line 0 '2';
+  check_line 1 '3';
+  check_line 2 '4';
+
+  (* Test horizontal scroll *)
+  let buffer = Render.create 5 1 in
+  let content = Ui.text "ABCDEFGHIJ" in
+  let element = Ui.scroll ~width:5 ~h_offset:3 content in
+  Ui.render buffer element;
+
+  let output = buffer_to_string buffer in
+  Alcotest.(check string) "h-scroll" "DEFGH" output
+
+(** Test measure function *)
+let test_measure () =
+  (* Simple text *)
+  let w, h = Ui.measure (Ui.text "Hello") in
+  Alcotest.(check int) "text width" 5 w;
+  Alcotest.(check int) "text height" 1 h;
+
+  (* Multi-line text *)
+  let w, h = Ui.measure (Ui.text "Line1\nLine2\nLine3") in
+  Alcotest.(check int) "multiline width" 5 w;
+  Alcotest.(check int) "multiline height" 3 h;
+
+  (* Box with border *)
+  let w, h = Ui.measure (Ui.hbox ~border:(Ui.border ()) [ Ui.text "Hi" ]) in
+  Alcotest.(check int) "bordered width" 4 w;
+  (* Hi + 2 borders *)
+  Alcotest.(check int) "bordered height" 3 h;
+
+  (* 1 + 2 borders *)
+
+  (* Flow with width constraint *)
+  let element = Ui.flow [ Ui.text "AAA"; Ui.text "BBB"; Ui.text "CCC" ] in
+  let w, h = Ui.measure ~width:10 element in
+  Alcotest.(check bool) "flow measured width <= 10" true (w <= 10);
+  Alcotest.(check bool) "flow wraps to multiple lines" true (h > 1)
+
+(** Test caching *)
+let test_caching () =
+  let buffer1 = Render.create 10 5 in
+  let buffer2 = Render.create 10 5 in
+
+  let element = Ui.hbox ~border:(Ui.border ()) [ Ui.text "Cache" ] in
+
+  (* First render *)
+  Ui.render buffer1 element;
+
+  (* Second render should use cache *)
+  Ui.render buffer2 element;
+
+  (* Results should be identical *)
+  for y = 0 to 4 do
+    for x = 0 to 9 do
+      let cell1 = Render.get buffer1 x y in
+      let cell2 = Render.get buffer2 x y in
+      match (cell1.Render.chars, cell2.Render.chars) with
+      | [], [] -> ()
+      | ch1 :: _, ch2 :: _ when ch1 = ch2 -> ()
+      | _ -> Alcotest.fail "cached render differs"
+    done
+  done;
+
+  (* Clear cache and render again *)
+  Ui.clear_cache element;
+  let buffer3 = Render.create 10 5 in
+  Ui.render buffer3 element;
+
+  (* Should still produce same result *)
+  let cell1 = Render.get buffer1 1 1 in
+  let cell3 = Render.get buffer3 1 1 in
+  match (cell1.Render.chars, cell3.Render.chars) with
+  | ch1 :: _, ch3 :: _ when ch1 = ch3 -> ()
+  | _ -> Alcotest.fail "cache clear affected output"
+
+(** Test edge cases *)
+let test_ui_edge_cases () =
+  (* Empty layouts *)
+  let buffer = Render.create 10 5 in
+  Ui.render buffer (Ui.hbox []);
+  Ui.render buffer (Ui.vbox []);
+  Ui.render buffer (Ui.zstack []);
+  Ui.render buffer (Ui.flow []);
+  Ui.render buffer (Ui.grid ~columns:[] ~rows:[] []);
+
+  (* Zero dimensions *)
+  let buffer = Render.create 10 5 in
+  Ui.render buffer (Ui.hbox ~width:0 ~height:0 [ Ui.text "Hidden" ]);
+
+  (* Negative padding/margin (should be clamped to 0) *)
+  let element = Ui.hbox ~padding:(Ui.pad ~all:(-5) ()) [ Ui.text "X" ] in
+  Ui.render buffer element;
+  let cell = Render.get buffer 0 0 in
+  (match cell.Render.chars with
+  | ch :: _ when Uchar.to_char ch = 'X' -> ()
+  | _ -> Alcotest.fail "negative padding should be ignored");
+
+  (* Very large dimensions *)
+  let element = Ui.hbox ~width:99999 ~height:99999 [] in
+  let w, h = Ui.measure element in
+  Alcotest.(check bool) "huge dimensions clamped" true (w < 99999 && h < 99999)
+
+(** Tests from flexbox - flex grow functionality *)
+let test_flex_grow () =
+  let open Alcotest in
+  (* Test basic flex grow *)
+  let ui =
+    Ui.hbox ~width:30 [ Ui.text "A"; Ui.spacer ~flex:1 0; Ui.text "B" ]
+  in
+  let buffer = Render.create 30 1 in
+  Ui.render buffer ui;
+  let output = buffer_to_string buffer in
+  check string "flex spacer expands" "A                            B" output;
+
+  (* Test multiple flex grow *)
+  let ui2 =
+    Ui.hbox ~width:20
+      [
+        Ui.text "X";
+        Ui.hbox ~flex_grow:1 [ Ui.text "1" ];
+        Ui.hbox ~flex_grow:2 [ Ui.text "2" ];
+        Ui.text "Y";
+      ]
+  in
+  let buffer2 = Render.create 20 1 in
+  Ui.render buffer2 ui2;
+  let output2 = buffer_to_string buffer2 in
+  (* X takes 1, Y takes 1, leaving 18. flex_grow:1 gets 6, flex_grow:2 gets 12 *)
+  check string "weighted flex grow" "X1     2           Y"
+    (String.sub output2 0 20)
+
+(** Test flex shrink functionality *)
+let test_flex_shrink () =
+  let open Alcotest in
+  (* Test text wrapping with flex shrink *)
+  let ui =
+    Ui.hbox ~width:20
+      [
+        Ui.text "Start ";
+        Ui.text ~wrap:true "This text should wrap";
+        Ui.text " End";
+      ]
+  in
+  let buffer = Render.create 20 3 in
+  Ui.render buffer ui;
+  let lines = buffer_to_lines buffer in
+  check string "first line has start" "Start This text shou" (List.nth lines 0);
+
+  (* Test box with flex_shrink *)
+  let ui2 =
+    Ui.hbox ~width:15
+      [ Ui.hbox ~flex_shrink:1 [ Ui.text "Shrinkable" ]; Ui.text " Fixed" ]
+  in
+  let buffer2 = Render.create 15 1 in
+  Ui.render buffer2 ui2;
+  let output2 = buffer_to_string buffer2 in
+  check string "box shrinks to fit" "Shrinkab Fixed " output2
+
+(** Test text wrapping functionality *)
+let test_text_wrapping () =
+  let open Alcotest in
+  (* Test basic text wrapping *)
+  let ui =
+    Ui.text ~wrap:true "Hello world this is a long line that needs wrapping"
+  in
+  let buffer = Render.create 20 3 in
+  Ui.render buffer ui;
+  let lines = buffer_to_lines buffer in
+  check string "first line" "Hello world this is " (List.nth lines 0);
+  check string "second line" "a long line that    " (List.nth lines 1);
+  check string "third line" "needs wrapping      " (List.nth lines 2);
+
+  (* Test wrapping with Unicode *)
+  let ui2 = Ui.text ~wrap:true "你好世界 Hello 世界" in
+  let buffer2 = Render.create 10 2 in
+  Ui.render buffer2 ui2;
+  let lines2 = buffer_to_lines buffer2 in
+  check string "unicode wrap line 1" "你好世界  " (List.nth lines2 0);
+  check string "unicode wrap line 2" "Hello 世界" (List.nth lines2 1);
+
+  (* Test Unicode character wrapping respects cell boundaries *)
+  let ui3 = Ui.text ~wrap:true "你好世界Hello世界Test" in
+  let buffer3 = Render.create 10 3 in
+  Ui.render buffer3 ui3;
+  let lines3 = buffer_to_lines buffer3 in
+  (* Each Chinese character takes 2 cells *)
+  check string "unicode boundary line 1" "你好世界  " (List.nth lines3 0);
+  check string "unicode boundary line 2" "Hello世界 " (List.nth lines3 1);
+  check string "unicode boundary line 3" "Test      " (List.nth lines3 2)
+
+(** Test auto-fill behavior *)
+let test_auto_fill () =
+  let open Alcotest in
+  (* Test vbox auto-fill (default true) *)
+  let ui = Ui.vbox ~height:10 [ Ui.text "Top"; Ui.text "Bottom" ] in
+  let buffer = Render.create 10 10 in
+  Ui.render buffer ui;
+  let lines = buffer_to_lines buffer in
+  check string "top line" "Top       " (List.nth lines 0);
+  check string "bottom line at end" "Bottom    " (List.nth lines 9);
+
+  (* Test hbox no auto-fill (default false) *)
+  let ui2 = Ui.hbox ~width:20 [ Ui.text "Left"; Ui.text "Right" ] in
+  let buffer2 = Render.create 20 1 in
+  Ui.render buffer2 ui2;
+  let output2 = buffer_to_string buffer2 in
+  check string "no auto-fill in hbox" "LeftRight           " output2
+
+(** Test box wrap parameter *)
+let test_box_wrap_parameter () =
+  let open Alcotest in
+  (* Test hbox with wrap=true converts to flow layout *)
+  let ui =
+    Ui.hbox ~width:20 ~wrap:true ~gap:1
+      [
+        Ui.text "Item1";
+        Ui.text "Item2";
+        Ui.text "Item3";
+        Ui.text "Item4";
+        Ui.text "Item5";
+      ]
+  in
+  let buffer = Render.create 20 2 in
+  Ui.render buffer ui;
+  let lines = buffer_to_lines buffer in
+  check string "items wrap to next line" "Item1 Item2 Item3   "
+    (List.nth lines 0);
+  check string "remaining items on line 2" "Item4 Item5         "
+    (List.nth lines 1)
+
+(** Test margin exclusion from natural size *)
+let test_margin_exclusion () =
+  let open Alcotest in
+  (* Test that margins are excluded from natural size *)
+  let ui = Ui.hbox ~margin:(Ui.padding_all 2) [ Ui.text "Test" ] in
+  let w, h = Ui.measure ui in
+  check int "width excludes margin" 4 w;
+  (* Just "Test" *)
+  check int "height excludes margin" 1 h
+
+(** Test convenience functions *)
+let test_convenience_functions () =
+  let open Alcotest in
+  (* Test center function *)
+  let ui = Ui.center (Ui.text "X") in
+  let buffer = Render.create 5 3 in
+  Ui.render buffer ui;
+  let lines = buffer_to_lines buffer in
+  check string "centered vertically" "     " (List.nth lines 0);
+  check string "centered content" "  X  " (List.nth lines 1);
+  check string "centered bottom" "     " (List.nth lines 2);
+
+  (* Test styled function *)
+  let ui2 =
+    Ui.styled ~fg:Render.Style.Red ~bg:Render.Style.Blue (Ui.text "Hi")
+  in
+  let buffer2 = Render.create 5 1 in
+  Ui.render buffer2 ui2;
+  (* Just check it renders without error - style testing would need to check attributes *)
+  let output = buffer_to_string buffer2 in
+  check string "styled text renders" "Hi   " output
+
+(** Test complex flex layout *)
+let test_complex_flex_layout () =
+  let open Alcotest in
+  (* Test complex layout with mixed grow/shrink *)
+  let ui =
+    Ui.hbox ~width:30
+      [
+        Ui.text "[";
+        Ui.hbox ~flex_grow:1 ~flex_shrink:1 [ Ui.text "Flexible content here" ];
+        Ui.text "]";
+      ]
+  in
+  let buffer = Render.create 30 1 in
+  Ui.render buffer ui;
+  let output = buffer_to_string buffer in
+  check string "flex content expands" "[Flexible content here       ]" output;
+
+  (* Test with constrained space *)
+  let ui2 =
+    Ui.hbox ~width:15
+      [
+        Ui.text "[";
+        Ui.hbox ~flex_grow:1 ~flex_shrink:1 [ Ui.text "Flexible content here" ];
+        Ui.text "]";
+      ]
+  in
+  let buffer2 = Render.create 15 1 in
+  Ui.render buffer2 ui2;
+  let output2 = buffer_to_string buffer2 in
+  check string "flex content shrinks" "[Flexible co]  " output2
+
+(** Test border with clipping *)
+let test_border_with_clipping () =
+  let open Alcotest in
+  (* Test that borders respect clipping *)
+  let ui =
+    Ui.scroll ~width:10 ~height:3
+      (Ui.hbox ~border:(Ui.border ()) [ Ui.text "This is long content" ])
+  in
+  let buffer = Render.create 10 3 in
+  Ui.render buffer ui;
+  let lines = buffer_to_lines buffer in
+  check string "top border" "┌────────┐" (List.nth lines 0);
+  check string "content clipped" "│This is │" (List.nth lines 1);
+  check string "bottom border" "└────────┘" (List.nth lines 2)
+
 let tests =
   [
     ("text rendering", `Quick, test_text_rendering);
@@ -447,6 +942,24 @@ let tests =
     ("text alignment", `Quick, test_text_alignment);
     ("tab expansion", `Quick, test_tab_expansion);
     ("adaptive colors", `Quick, test_adaptive_colors);
+    ("zstack", `Quick, test_zstack);
+    ("grid", `Quick, test_grid);
+    ("flow", `Quick, test_flow);
+    ("rich_text", `Quick, test_rich_text);
+    ("scroll", `Quick, test_scroll);
+    ("measure", `Quick, test_measure);
+    ("caching", `Quick, test_caching);
+    ("edge cases", `Quick, test_ui_edge_cases);
+    (* Flexbox tests *)
+    ("flex grow", `Quick, test_flex_grow);
+    ("flex shrink", `Quick, test_flex_shrink);
+    ("text wrapping", `Quick, test_text_wrapping);
+    ("auto fill", `Quick, test_auto_fill);
+    ("box wrap parameter", `Quick, test_box_wrap_parameter);
+    ("margin exclusion", `Quick, test_margin_exclusion);
+    ("convenience functions", `Quick, test_convenience_functions);
+    ("complex flex layout", `Quick, test_complex_flex_layout);
+    ("border with clipping", `Quick, test_border_with_clipping);
   ]
 
 let () = Alcotest.run "UI" [ ("rendering", tests) ]
