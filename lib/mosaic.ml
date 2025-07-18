@@ -141,7 +141,8 @@ module Program = struct
                 Terminal.show_cursor program.term;
                 Terminal.disable_mouse program.term;
                 Terminal.disable_kitty_keyboard program.term;
-                Terminal.disable_alternate_screen program.term;
+                if program.alt_screen then
+                  Terminal.disable_alternate_screen program.term;
                 Terminal.set_mode program.term `Cooked;
                 Terminal.release program.term;
 
@@ -607,7 +608,8 @@ module Program = struct
           Terminal.show_cursor program.term;
           Terminal.disable_mouse program.term;
           Terminal.disable_kitty_keyboard program.term;
-          Terminal.disable_alternate_screen program.term;
+          if program.alt_screen then
+            Terminal.disable_alternate_screen program.term;
           Terminal.set_mode program.term `Cooked;
           Terminal.release program.term)
     in
@@ -623,9 +625,11 @@ module Program = struct
         Terminal.show_cursor program.term;
         Terminal.disable_mouse program.term;
         Terminal.disable_kitty_keyboard program.term;
-        Terminal.disable_alternate_screen program.term;
-        Terminal.set_mode program.term `Cooked;
-        Terminal.release program.term)
+        (* Only disable alt screen if it was enabled *)
+        if program.alt_screen then
+          Terminal.disable_alternate_screen program.term;
+        (* Always restore terminal mode *)
+        Terminal.set_mode program.term `Cooked)
 
   let run ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
       ?debug_log app =
