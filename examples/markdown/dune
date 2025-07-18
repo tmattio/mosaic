@@ -1,0 +1,4 @@
+(executable
+ (public_name markdown)
+ (name markdown)
+ (libraries mosaic mosaic.markdown))
