@@ -379,10 +379,8 @@ let feed parser bytes offset length =
         (* Move any unprocessed bytes to the beginning of the buffer *)
         if pos < parser.length then (
           Bytes.blit parser.buffer pos parser.buffer 0 (parser.length - pos);
-          parser.length <- parser.length - pos
-        ) else (
-          parser.length <- 0
-        );
+          parser.length <- parser.length - pos)
+        else parser.length <- 0;
         List.rev acc)
       else
         let c = Bytes.get parser.buffer pos in
@@ -520,7 +518,7 @@ let feed parser bytes offset length =
           (* UTF-8 multi-byte character *)
           (* Try to decode UTF-8 from current position *)
           (* First, check if this looks like the start of a UTF-8 sequence *)
-          let utf8_len = 
+          let utf8_len =
             if c < '\x80' then 1
             else if c < '\xc0' then 1 (* Invalid continuation byte *)
             else if c < '\xe0' then 2 (* 2-byte sequence *)
@@ -528,7 +526,7 @@ let feed parser bytes offset length =
             else if c < '\xf8' then 4 (* 4-byte sequence *)
             else 1 (* Invalid *)
           in
-          
+
           (* Check if we have enough bytes for the complete sequence *)
           if pos + utf8_len > parser.length then
             (* Incomplete UTF-8 sequence at end of buffer - stop processing here *)
@@ -659,4 +657,3 @@ let pp_event fmt = function
   | Paste_start -> Format.fprintf fmt "Paste_start"
   | Paste_end -> Format.fprintf fmt "Paste_end"
   | Paste s -> Format.fprintf fmt "Paste(%S)" s
-

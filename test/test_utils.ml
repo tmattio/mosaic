@@ -42,8 +42,6 @@ let make_test_terminal input =
     This is the foundation for visual snapshot and expect testing. *)
 let render_to_string ?(width = 80) ?(height = 24) element =
   let buffer = Render.create width height in
-  (* IMPORTANT: Clear cache before each render, just like the real runtime *)
-  Ui.clear_cache element;
   Ui.render buffer element;
   let buf = Buffer.create ((width + 1) * height) in
   for y = 0 to height - 1 do

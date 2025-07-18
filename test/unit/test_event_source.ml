@@ -224,15 +224,13 @@ let test_large_paste () =
   | `Event (Input.Paste content) ->
       Alcotest.(check string) "paste content" paste_content content;
       Alcotest.(check int) "paste content length" 1000 (String.length content)
-  | `Event e ->
-      Alcotest.failf "Expected paste content, got: %s" (show_event e)
+  | `Event e -> Alcotest.failf "Expected paste content, got: %s" (show_event e)
   | _ -> Alcotest.fail "Expected paste content");
 
   (* Should get paste end *)
   match Event_source.read source ~sw ~clock ~timeout:(Some 0.1) with
   | `Event Input.Paste_end -> ()
-  | `Event e ->
-      Alcotest.failf "Expected paste end, got: %s" (show_event e)
+  | `Event e -> Alcotest.failf "Expected paste end, got: %s" (show_event e)
   | _ -> Alcotest.fail "Expected paste end"
 
 (** Test mouse modes *)

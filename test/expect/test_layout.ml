@@ -109,7 +109,7 @@ let%expect_test "Padding and Borders" =
 
 let%expect_test "Alignment in Vbox" =
   let items = [ Ui.text "Short"; Ui.text "Longer line"; Ui.text "Mid" ] in
-  print_layout ~width:20 ~height:5 (Ui.vbox ~align_items:Ui.Start items);
+  print_layout ~width:20 ~height:5 (Ui.vbox ~align_items:`Start items);
   [%expect_exact
     {|+--------------------+
 |Short               |
@@ -122,7 +122,7 @@ let%expect_test "Alignment in Vbox" =
 
 let%expect_test "Vbox align center" =
   let items = [ Ui.text "Short"; Ui.text "Longer line"; Ui.text "Mid" ] in
-  print_layout ~width:20 ~height:5 (Ui.vbox ~align_items:Ui.Center items);
+  print_layout ~width:20 ~height:5 (Ui.vbox ~align_items:`Center items);
   [%expect_exact
     {|+--------------------+
 |   Short            |
@@ -135,7 +135,7 @@ let%expect_test "Vbox align center" =
 
 let%expect_test "Vbox align end" =
   let items = [ Ui.text "Short"; Ui.text "Longer line"; Ui.text "Mid" ] in
-  print_layout ~width:20 ~height:5 (Ui.vbox ~align_items:Ui.End items);
+  print_layout ~width:20 ~height:5 (Ui.vbox ~align_items:`End items);
   [%expect_exact
     {|+--------------------+
 |      Short         |
@@ -148,7 +148,7 @@ let%expect_test "Vbox align end" =
 
 let%expect_test "Justification in Hbox" =
   let items = [ Ui.text "A"; Ui.text "B"; Ui.text "C" ] in
-  print_layout ~width:20 ~height:3 (Ui.hbox ~justify_content:Ui.Start items);
+  print_layout ~width:20 ~height:3 (Ui.hbox ~justify_content:`Start items);
   [%expect_exact
     {|+--------------------+
 |ABC                 |
@@ -159,7 +159,7 @@ let%expect_test "Justification in Hbox" =
 
 let%expect_test "Hbox justify center" =
   let items = [ Ui.text "A"; Ui.text "B"; Ui.text "C" ] in
-  print_layout ~width:20 ~height:3 (Ui.hbox ~justify_content:Ui.Center items);
+  print_layout ~width:20 ~height:3 (Ui.hbox ~justify_content:`Center items);
   [%expect_exact
     {|+--------------------+
 |ABC                 |
@@ -170,7 +170,7 @@ let%expect_test "Hbox justify center" =
 
 let%expect_test "Hbox justify end" =
   let items = [ Ui.text "A"; Ui.text "B"; Ui.text "C" ] in
-  print_layout ~width:20 ~height:3 (Ui.hbox ~justify_content:Ui.End items);
+  print_layout ~width:20 ~height:3 (Ui.hbox ~justify_content:`End items);
   [%expect_exact
     {|+--------------------+
 |ABC                 |
@@ -262,7 +262,7 @@ let%expect_test "Stretch alignment" =
   let ui =
     Ui.vbox ~height:5 ~border:(Ui.border ())
       [
-        Ui.hbox ~align_items:Ui.Stretch
+        Ui.hbox ~align_items:`Stretch
           [
             Ui.vbox ~width:5 ~border:(Ui.border ()) [ Ui.text "A" ];
             Ui.vbox ~width:5 ~border:(Ui.border ()) [ Ui.text "B"; Ui.text "C" ];
@@ -384,8 +384,9 @@ let%expect_test "Flow layout wrapping" =
 
 let%expect_test "Grid layout" =
   let ui =
-    Ui.grid ~col_spacing:2 ~row_spacing:1 ~columns:[ Fixed 8; Flex 1 ]
-      ~rows:[ Fixed 1; Fixed 1 ]
+    Ui.grid ~col_spacing:2 ~row_spacing:1
+      ~columns:[ `Fixed 8; `Flex 1 ]
+      ~rows:[ `Fixed 1; `Fixed 1 ]
       [
         Ui.text "Name:";
         Ui.hbox ~border:(Ui.border ()) [ Ui.text "John" ];
@@ -437,9 +438,9 @@ let%expect_test "Text alignment" =
   let ui =
     Ui.vbox ~gap:1 ~width:20
       [
-        Ui.text ~align:Start "Left";
-        Ui.text ~align:Center "Center";
-        Ui.text ~align:End "Right";
+        Ui.text ~align:`Start "Left";
+        Ui.text ~align:`Center "Center";
+        Ui.text ~align:`End "Right";
       ]
   in
   print_layout ~width:22 ~height:5 ui;

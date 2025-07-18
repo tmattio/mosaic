@@ -271,7 +271,7 @@ let view model =
         (border ~style:Solid
            ~color:(if model.is_focused then Style.Index 6 else Style.Index 8)
            ())
-      ~justify_content:Start
+      ~justify_content:`Start
       [
         text ~style:selection_style selection_text; spacer ~flex:1 0; text arrow;
       ]

@@ -170,7 +170,7 @@ let test_per_side_borders () =
 let test_alignment () =
   (* Test horizontal alignment in vbox *)
   let buffer = Render.create 10 3 in
-  let element = Ui.vbox ~align_items:Center ~width:10 [ Ui.text "Hi" ] in
+  let element = Ui.vbox ~align_items:`Center ~width:10 [ Ui.text "Hi" ] in
   Ui.render buffer element;
 
   (* "Hi" should be centered (at position 4) *)
@@ -181,7 +181,7 @@ let test_alignment () =
 
   (* Test End alignment *)
   let buffer = Render.create 10 1 in
-  let element = Ui.vbox ~align_items:End ~width:10 [ Ui.text "End" ] in
+  let element = Ui.vbox ~align_items:`End ~width:10 [ Ui.text "End" ] in
   Ui.render buffer element;
 
   (* "End" should be at the right (position 7) *)
@@ -194,7 +194,7 @@ let test_justify () =
   (* Test vertical justification in vbox *)
   let buffer = Render.create 5 10 in
   let element =
-    Ui.vbox ~justify_content:Center ~height:10 [ Ui.text "A"; Ui.text "B" ]
+    Ui.vbox ~justify_content:`Center ~height:10 [ Ui.text "A"; Ui.text "B" ]
   in
   Ui.render buffer element;
 
@@ -327,7 +327,7 @@ let test_color_helpers () =
 let test_text_alignment () =
   (* Test centered text *)
   let buffer = Render.create 20 3 in
-  let element = Ui.text ~align:Center "Hello\nWorld\n!" in
+  let element = Ui.text ~align:`Center "Hello\nWorld\n!" in
   Ui.render buffer element;
 
   (* Each line should be centered *)
@@ -468,7 +468,9 @@ let test_grid () =
 
   (* 2x2 grid with fixed columns *)
   let element =
-    Ui.grid ~columns:[ Ui.Fixed 5; Ui.Fixed 5 ] ~rows:[ Ui.Fixed 1; Ui.Fixed 1 ]
+    Ui.grid
+      ~columns:[ `Fixed 5; `Fixed 5 ]
+      ~rows:[ `Fixed 1; `Fixed 1 ]
       [ Ui.text "A1"; Ui.text "B1"; Ui.text "A2"; Ui.text "B2" ]
   in
   Ui.render buffer element;
@@ -494,8 +496,9 @@ let test_grid () =
   (* Test with spacing *)
   let buffer = Render.create 20 10 in
   let element =
-    Ui.grid ~col_spacing:2 ~row_spacing:1 ~columns:[ Ui.Fixed 3; Ui.Fixed 3 ]
-      ~rows:[ Ui.Fixed 1; Ui.Fixed 1 ]
+    Ui.grid ~col_spacing:2 ~row_spacing:1
+      ~columns:[ `Fixed 3; `Fixed 3 ]
+      ~rows:[ `Fixed 1; `Fixed 1 ]
       [ Ui.text "X"; Ui.text "Y"; Ui.text "Z"; Ui.text "W" ]
   in
   Ui.render buffer element;
@@ -650,43 +653,6 @@ let test_measure () =
   let w, h = Ui.measure ~width:10 element in
   Alcotest.(check bool) "flow measured width <= 10" true (w <= 10);
   Alcotest.(check bool) "flow wraps to multiple lines" true (h > 1)
-
-(** Test caching *)
-let test_caching () =
-  let buffer1 = Render.create 10 5 in
-  let buffer2 = Render.create 10 5 in
-
-  let element = Ui.hbox ~border:(Ui.border ()) [ Ui.text "Cache" ] in
-
-  (* First render *)
-  Ui.render buffer1 element;
-
-  (* Second render should use cache *)
-  Ui.render buffer2 element;
-
-  (* Results should be identical *)
-  for y = 0 to 4 do
-    for x = 0 to 9 do
-      let cell1 = Render.get buffer1 x y in
-      let cell2 = Render.get buffer2 x y in
-      match (cell1.Render.chars, cell2.Render.chars) with
-      | [], [] -> ()
-      | ch1 :: _, ch2 :: _ when ch1 = ch2 -> ()
-      | _ -> Alcotest.fail "cached render differs"
-    done
-  done;
-
-  (* Clear cache and render again *)
-  Ui.clear_cache element;
-  let buffer3 = Render.create 10 5 in
-  Ui.render buffer3 element;
-
-  (* Should still produce same result *)
-  let cell1 = Render.get buffer1 1 1 in
-  let cell3 = Render.get buffer3 1 1 in
-  match (cell1.Render.chars, cell3.Render.chars) with
-  | ch1 :: _, ch3 :: _ when ch1 = ch3 -> ()
-  | _ -> Alcotest.fail "cache clear affected output"
 
 (** Test edge cases *)
 let test_ui_edge_cases () =
@@ -948,7 +914,6 @@ let tests =
     ("rich_text", `Quick, test_rich_text);
     ("scroll", `Quick, test_scroll);
     ("measure", `Quick, test_measure);
-    ("caching", `Quick, test_caching);
     ("edge cases", `Quick, test_ui_edge_cases);
     (* Flexbox tests *)
     ("flex grow", `Quick, test_flex_grow);

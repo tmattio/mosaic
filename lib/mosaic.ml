@@ -269,14 +269,6 @@ module Program = struct
                  By setting it to None, we force a full redraw on the next frame. *)
               program.previous_buffer <- None;
 
-              (* Clear UI element caches on resize since dimensions have changed *)
-              let element = program.app.view program.model in
-              Ui.clear_cache element;
-
-              (* Also clear caches on all static elements to force reflow at new width *)
-              Eio.Mutex.use_rw ~protect:false program.state_mutex (fun () ->
-                  List.iter Ui.clear_cache program.static_elements);
-
               (* For non-alt-screen, clear terminal and reset tracking *)
               if not program.alt_screen then (
                 Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
@@ -569,24 +561,25 @@ module Program = struct
         (* Wake up the resize fiber so it can exit *)
         Eio.Condition.broadcast program.resize_cond;
         (* Give other loops a chance to exit *)
-        Eio.Fiber.yield ()
-      ) else (
+        Eio.Fiber.yield ())
+      else if
         (* Block until a new message arrives *)
-        if program.running then (* Check again before blocking *)
-          let msg = Eio.Stream.take program.msg_stream in
-          if program.running then (
-            (* Check again after waking up *)
-            log_debug program "Processing message";
-            Eio.Mutex.use_rw ~protect:false program.state_mutex (fun () ->
-                let cmd = send_msg program msg in
-                log_debug program
-                  (Format.asprintf "Command generated: %a"
-                     (Cmd.pp (fun fmt _ -> Format.fprintf fmt "<msg>"))
-                     cmd);
-                (* If it's a sequence, it will be added to the queue.
+        program.running
+      then
+        (* Check again before blocking *)
+        let msg = Eio.Stream.take program.msg_stream in
+        if program.running then (
+          (* Check again after waking up *)
+          log_debug program "Processing message";
+          Eio.Mutex.use_rw ~protect:false program.state_mutex (fun () ->
+              let cmd = send_msg program msg in
+              log_debug program
+                (Format.asprintf "Command generated: %a"
+                   (Cmd.pp (fun fmt _ -> Format.fprintf fmt "<msg>"))
+                   cmd);
+              (* If it's a sequence, it will be added to the queue.
                  Otherwise, process it immediately *)
-                process_cmd program cmd))
-      )
+              process_cmd program cmd))
     done
 
   let setup_terminal program =
