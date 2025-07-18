@@ -150,10 +150,7 @@ end
 
 let init () =
   let element = Ui.flow [ Mosaic_markdown.render markdown_content ] in
-  ((), Cmd.seq [ 
-    Cmd.print element; 
-    Cmd.quit 
-  ])
+  ((), Cmd.seq [ Cmd.print element; Cmd.quit ])
 
 let update _msg model = (model, Cmd.none)
 let view _model = Ui.text ""

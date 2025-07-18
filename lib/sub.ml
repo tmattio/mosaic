@@ -24,15 +24,15 @@ let window_filter f = Window f
 let focus f = Focus (fun () -> Some (f ()))
 let blur f = Blur (fun () -> Some (f ()))
 
-let mouse_motion f =
+let on_mouse_motion f =
   mouse_filter (function
     | Input.Motion (x, y, _, _) -> Some (f x y)
     | _ -> None)
 
-let mouse_click f =
+let on_mouse_click f =
   mouse_filter (function Input.Press (x, y, _, _) -> Some (f x y) | _ -> None)
 
-let window_resize f = window (fun size -> f size.width size.height)
+let on_resize f = window (fun size -> f size.width size.height)
 
 (* Helper functions for specific events *)
 let on_key ?ctrl ?alt ?shift key msg =
@@ -85,7 +85,6 @@ let on_scroll_down f =
     | Input.Press (x, y, Input.Wheel_down, _) -> Some (f x y)
     | _ -> None)
 
-let on_resize f = window_resize f
 let on_focus msg = focus (fun () -> msg)
 let on_blur msg = blur (fun () -> msg)
 

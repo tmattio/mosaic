@@ -22,7 +22,7 @@ let padding_xy x y = { top = y; right = x; bottom = y; left = x }
 
 type border_style = Solid | Rounded | Double | Thick | ASCII
 
-type border_spec = {
+type border = {
   top : bool;
   bottom : bool;
   left : bool;
@@ -31,12 +31,7 @@ type border_spec = {
   color : Ansi.color option;
 }
 
-type border = border_spec
-
-let border ?(style = Solid) ?color () =
-  { top = true; bottom = true; left = true; right = true; style; color }
-
-let border_spec ?(top = true) ?(bottom = true) ?(left = true) ?(right = true)
+let border ?(top = true) ?(bottom = true) ?(left = true) ?(right = true)
     ?(style = Solid) ?color () =
   { top; bottom; left; right; style; color }
 
@@ -110,7 +105,6 @@ and layout_options = {
   justify : align;
   flex_grow : int;
   fill : bool;
-  wrap : bool;
 }
 
 and z_align =
@@ -167,6 +161,10 @@ let text ?(style = Render.Style.empty) ?(align = Start) ?(tab_width = 4)
 
 let no_padding = padding ()
 
+(* Flow layout *)
+let flow ?(h_gap = 0) ?(v_gap = 0) children =
+  Flow { children; h_gap; v_gap; cache = None }
+
 let hbox ?(gap = 0) ?width ?height ?min_width ?min_height ?max_width ?max_height
     ?(margin = no_padding) ?(padding = no_padding) ?border ?background
     ?(align_items = Stretch) ?(justify_content = Start) ?(flex_grow = 0)
@@ -189,15 +187,27 @@ let hbox ?(gap = 0) ?width ?height ?min_width ?min_height ?max_width ?max_height
       justify = justify_content;
       flex_grow;
       fill;
-      wrap;
     }
   in
-  Box { children; options; cache = None }
+  if wrap && options.direction = `Horizontal then
+    (* Create a flow layout wrapped in a box with all the styling *)
+    let flow_content = flow ~h_gap:gap ~v_gap:0 children in
+    let wrapper_options =
+      {
+        options with
+        direction = `Horizontal;
+        (* Keep it horizontal for the wrapper *)
+        gap = 0;
+        (* Gap is handled by flow *)
+      }
+    in
+    Box { children = [ flow_content ]; options = wrapper_options; cache = None }
+  else Box { children; options; cache = None }
 
 let vbox ?(gap = 0) ?width ?height ?min_width ?min_height ?max_width ?max_height
     ?(margin = no_padding) ?(padding = no_padding) ?border ?background
     ?(align_items = Stretch) ?(justify_content = Start) ?(flex_grow = 0)
-    ?(fill = true) ?(wrap = true) children =
+    ?(fill = true) children =
   let options =
     {
       direction = `Vertical;
@@ -216,13 +226,11 @@ let vbox ?(gap = 0) ?width ?height ?min_width ?min_height ?max_width ?max_height
       justify = justify_content;
       flex_grow;
       fill;
-      wrap;
     }
   in
   Box { children; options; cache = None }
 
 let spacer ?(flex = 0) size = Spacer { size; flex }
-let space = spacer (* Alias for API compatibility *)
 
 (* Rich text element *)
 let rich_text segments = Rich_text segments
@@ -230,10 +238,6 @@ let rich_text segments = Rich_text segments
 (* Z-stack layout *)
 let zstack ?(align = Top_left) children =
   Z_stack { children; align; cache = None }
-
-(* Flow layout *)
-let flow ?(h_gap = 0) ?(v_gap = 0) children =
-  Flow { children; h_gap; v_gap; cache = None }
 
 (* Grid layout *)
 let grid ?(col_spacing = 0) ?(row_spacing = 0) ~columns ~rows children =
@@ -298,38 +302,38 @@ type layout_context = {
 }
 
 (* Helper to draw a border with per-side control *)
-let draw_border ?clip buffer x y width height (border_spec : border_spec) =
-  let tl, t, tr, r, bl, b, br, l = border_chars border_spec.style in
+let draw_border ?clip buffer x y width height (border : border) =
+  let tl, t, tr, r, bl, b, br, l = border_chars border.style in
   let border_style =
-    match border_spec.color with
+    match border.color with
     | Some color -> Render.Style.fg color
     | None -> Render.Style.empty
   in
 
   (* Determine corner characters based on which sides are enabled *)
   let top_left =
-    match (border_spec.top, border_spec.left) with
+    match (border.top, border.left) with
     | true, true -> tl
     | true, false -> t
     | false, true -> l
     | false, false -> " "
   in
   let top_right =
-    match (border_spec.top, border_spec.right) with
+    match (border.top, border.right) with
     | true, true -> tr
     | true, false -> t
     | false, true -> r
     | false, false -> " "
   in
   let bottom_left =
-    match (border_spec.bottom, border_spec.left) with
+    match (border.bottom, border.left) with
     | true, true -> bl
     | true, false -> b
     | false, true -> l
     | false, false -> " "
   in
   let bottom_right =
-    match (border_spec.bottom, border_spec.right) with
+    match (border.bottom, border.right) with
     | true, true -> br
     | true, false -> b
     | false, true -> r
@@ -337,26 +341,26 @@ let draw_border ?clip buffer x y width height (border_spec : border_spec) =
   in
 
   (* Draw corners *)
-  if border_spec.top || border_spec.left then
+  if border.top || border.left then
     Render.set_string ?clip buffer x y top_left border_style;
-  if border_spec.top || border_spec.right then
+  if border.top || border.right then
     Render.set_string ?clip buffer (x + width - 1) y top_right border_style;
-  if border_spec.bottom || border_spec.left then
+  if border.bottom || border.left then
     Render.set_string ?clip buffer x (y + height - 1) bottom_left border_style;
-  if border_spec.bottom || border_spec.right then
+  if border.bottom || border.right then
     Render.set_string ?clip buffer
       (x + width - 1)
       (y + height - 1)
       bottom_right border_style;
 
   (* Top border *)
-  if border_spec.top && width > 2 then
+  if border.top && width > 2 then
     for i = 1 to width - 2 do
       Render.set_string ?clip buffer (x + i) y t border_style
     done;
 
   (* Bottom border *)
-  if border_spec.bottom && width > 2 then
+  if border.bottom && width > 2 then
     for i = 1 to width - 2 do
       Render.set_string ?clip buffer (x + i) (y + height - 1) b border_style
     done;
@@ -364,9 +368,9 @@ let draw_border ?clip buffer x y width height (border_spec : border_spec) =
   (* Side borders *)
   if height > 2 then
     for i = 1 to height - 2 do
-      if border_spec.left then
+      if border.left then
         Render.set_string ?clip buffer x (y + i) l border_style;
-      if border_spec.right then
+      if border.right then
         Render.set_string ?clip buffer (x + width - 1) (y + i) r border_style
     done
 
@@ -646,11 +650,6 @@ let rec calculate_box_layout ctx children (opts : layout_options) =
     if opts.fill && (not (List.exists is_expandable children)) && children <> []
     then
       (* Auto-expand the last child if no children are expandable *)
-      let rec apply_to_last f = function
-        | [] -> []
-        | [ x ] -> [ f x ]
-        | h :: t -> h :: apply_to_last f t
-      in
       match List.rev children with
       | [] -> []
       | last :: rest ->
@@ -889,10 +888,9 @@ and redraw_from_cache ?clip ctx buffer opts cache =
 
   (* Draw the border for the parent box if needed *)
   (match opts.border with
-  | Some border_spec when cache.computed_width > 2 && cache.computed_height > 2
-    ->
+  | Some border when cache.computed_width > 2 && cache.computed_height > 2 ->
       draw_border ?clip buffer draw_x draw_y cache.computed_width
-        cache.computed_height border_spec
+        cache.computed_height border
   | _ -> ());
 
   (* Recursively render children using computed geometry *)
@@ -1409,7 +1407,8 @@ and render_at ?(clip = None) ctx buffer element =
               };
 
           (* 3. Render the box and its children for the first time *)
-          redraw_from_cache ?clip ctx buffer data.options (Option.get data.cache);
+          redraw_from_cache ?clip ctx buffer data.options
+            (Option.get data.cache);
 
           (computed_width, computed_height))
 

@@ -134,7 +134,7 @@ let rec render_block (r : renderer) block : Ui.element list =
           ~padding:(Ui.padding_xy p_style.padding_left p_style.padding_right)
           [ text ]
       in
-      [ Ui.space p_style.margin_top; content; Ui.space p_style.margin_bottom ]
+      [ Ui.spacer p_style.margin_top; content; Ui.spacer p_style.margin_bottom ]
   | Block.Heading (h, _) ->
       let level = Block.Heading.level h in
       let h_style =
@@ -161,9 +161,9 @@ let rec render_block (r : renderer) block : Ui.element list =
           ]
       in
       [
-        Ui.space full_style.margin_top;
+        Ui.spacer full_style.margin_top;
         content;
-        Ui.space full_style.margin_bottom;
+        Ui.spacer full_style.margin_bottom;
       ]
   | Block.Block_quote (bq, _) ->
       let bq_style = r.style.block_quote in
@@ -181,7 +181,9 @@ let rec render_block (r : renderer) block : Ui.element list =
             let content = Ui.vbox children in
             Ui.hbox ~gap:1 [ Ui.text ~style:bq_style.style "│"; content ]
       in
-      [ Ui.space bq_style.margin_top; content; Ui.space bq_style.margin_bottom ]
+      [
+        Ui.spacer bq_style.margin_top; content; Ui.spacer bq_style.margin_bottom;
+      ]
   | Block.List (l, _) ->
       let list_ty = Block.List'.type' l in
       let start = match list_ty with `Ordered (n, _) -> n | _ -> 1 in
@@ -203,9 +205,9 @@ let rec render_block (r : renderer) block : Ui.element list =
         Ui.vbox ~padding:(Ui.padding_all l_style.block.padding_left) items
       in
       [
-        Ui.space l_style.block.margin_top;
+        Ui.spacer l_style.block.margin_top;
         content;
-        Ui.space l_style.block.margin_bottom;
+        Ui.spacer l_style.block.margin_bottom;
       ]
   | Block.Code_block (cb, _) ->
       let code_lines = Block.Code_block.code cb in
@@ -231,9 +233,9 @@ let rec render_block (r : renderer) block : Ui.element list =
           ([ Ui.hbox [ fence_elem; lang_elem ] ] @ code_lines @ [ fence_elem ])
       in
       [
-        Ui.space cb_style.block.margin_top;
+        Ui.spacer cb_style.block.margin_top;
         content;
-        Ui.space cb_style.block.margin_bottom;
+        Ui.spacer cb_style.block.margin_bottom;
       ]
   | Block.Thematic_break (_, _) ->
       let style, str = r.style.horizontal_rule in
@@ -258,7 +260,7 @@ and render_list_item (r : renderer) item =
     | [] -> ("", Mosaic.Style.empty)
   in
   let indent_size = (List.length r.list_stack - 1) * l_style.level_indent in
-  let indent = Ui.space indent_size in
+  let indent = Ui.spacer indent_size in
 
   (* Special handling for simple list items (single paragraph) *)
   let item_block = Cmarkit.Block.List_item.block item in
@@ -284,4 +286,4 @@ let render ?(style = Style.default) ?(width = 80) markdown_text =
   let s = r.style.document in
   Ui.vbox ~width
     ~padding:(Ui.padding_xy s.padding_left s.padding_right)
-    ([ Ui.space s.margin_top ] @ elements @ [ Ui.space s.margin_bottom ])
+    ([ Ui.spacer s.margin_top ] @ elements @ [ Ui.spacer s.margin_bottom ])

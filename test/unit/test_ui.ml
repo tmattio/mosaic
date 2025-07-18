@@ -139,7 +139,7 @@ let test_per_side_borders () =
   let buffer = Render.create 10 5 in
   let element =
     Ui.hbox
-      ~border:(Ui.border_spec ~left:false ~right:false ())
+      ~border:(Ui.border ~left:false ~right:false ())
       ~width:10 ~height:5
       [ Ui.text "Test" ]
   in
@@ -169,7 +169,7 @@ let test_per_side_borders () =
   let buffer = Render.create 5 5 in
   let element =
     Ui.vbox
-      ~border:(Ui.border_spec ~top:false ~bottom:false ~right:false ())
+      ~border:(Ui.border ~top:false ~bottom:false ~right:false ())
       ~width:5 ~height:5 []
   in
   Ui.render buffer element;
@@ -295,7 +295,7 @@ let test_nested_layout () =
 
 let test_space () =
   let buffer = Render.create 10 1 in
-  let element = Ui.hbox [ Ui.text "A"; Ui.space 3; Ui.text "B" ] in
+  let element = Ui.hbox [ Ui.text "A"; Ui.spacer 3; Ui.text "B" ] in
   Ui.render buffer element;
 
   let output = buffer_to_string buffer in

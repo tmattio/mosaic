@@ -319,7 +319,8 @@ module Program = struct
               if static_elements_snapshot = [] then dynamic_element
               else
                 Ui.vbox
-                  (static_elements_snapshot @ [ Ui.vbox ~flex_grow:1 [ dynamic_element ] ])
+                  (static_elements_snapshot
+                  @ [ Ui.vbox ~flex_grow:1 [ dynamic_element ] ])
             in
             Ui.render buffer combined_element;
             (buffer, ""))

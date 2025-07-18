@@ -127,37 +127,37 @@ val blur : (unit -> 'msg) -> 'msg t
 
 (** {2 Convenience Functions} *)
 
-val mouse_motion : (int -> int -> 'msg) -> 'msg t
-(** [mouse_motion f] subscribes to mouse movement events.
+val on_mouse_motion : (int -> int -> 'msg) -> 'msg t
+(** [on_mouse_motion f] subscribes to mouse movement events.
 
     The function [f] receives cursor coordinates on any motion. High-frequency
     events on fast mouse movement.
 
     Example: Implements hover effects.
     {[
-      Sub.mouse_motion (fun x y -> `MouseAt (x, y))
+      Sub.on_mouse_motion (fun x y -> `MouseAt (x, y))
     ]} *)
 
-val mouse_click : (int -> int -> 'msg) -> 'msg t
-(** [mouse_click f] subscribes to any mouse button press.
+val on_mouse_click : (int -> int -> 'msg) -> 'msg t
+(** [on_mouse_click f] subscribes to any mouse button press.
 
     The function [f] receives click coordinates regardless of button. Does not
     distinguish between buttons.
 
     Example: Handles click anywhere.
     {[
-      Sub.mouse_click (fun x y -> `ClickedAt (x, y))
+      Sub.on_mouse_click (fun x y -> `ClickedAt (x, y))
     ]} *)
 
-val window_resize : (int -> int -> 'msg) -> 'msg t
-(** [window_resize f] subscribes to terminal resize with direct dimensions.
+val on_resize : (int -> int -> 'msg) -> 'msg t
+(** [on_resize f] subscribes to terminal resize with direct dimensions.
 
     Convenience wrapper for [window]. The function [f] receives width and height
     directly.
 
     Example: Updates grid dimensions.
     {[
-      Sub.window_resize (fun w h -> `GridSize (w / 10, h / 5))
+      Sub.on_resize (fun w h -> `GridSize (w / 10, h / 5))
     ]} *)
 
 val on_key :
@@ -239,16 +239,6 @@ val on_scroll_down : (int -> int -> 'msg) -> 'msg t
     Example: Scrolls content down.
     {[
       Sub.on_scroll_down (fun _ _ -> `ScrollDown)
-    ]} *)
-
-val on_resize : (int -> int -> 'msg) -> 'msg t
-(** [on_resize f] subscribes to window resize events with dimensions.
-
-    Alias for [window_resize]. Provided for API consistency.
-
-    Example: Recalculates layout.
-    {[
-      Sub.on_resize (fun w h -> `RecalculateLayout (w, h))
     ]} *)
 
 val on_focus : 'msg -> 'msg t

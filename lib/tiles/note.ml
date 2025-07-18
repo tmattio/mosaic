@@ -80,7 +80,7 @@ let update msg model =
 (* View *)
 let view model =
   let open Ui in
-  if model.is_dismissed then space 0
+  if model.is_dismissed then spacer 0
   else
     let icon, icon_style, border_color = kind_info model.kind model.theme in
 
@@ -114,7 +114,7 @@ let view model =
         vbox
           [
             hbox ~gap:1 ([ icon_elem ] @ title_elem @ dismiss_elem);
-            hbox [ space 2; text_elem ];
+            hbox [ spacer 2; text_elem ];
           ]
     in
 

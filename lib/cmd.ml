@@ -30,7 +30,6 @@ let batch cmds =
 let perform f = Perform f
 let perform_eio f = Perform_eio f
 let exec f msg = Exec { run = f; on_complete = msg }
-let release_and_run = exec (* Alias for better discoverability *)
 let quit = Quit
 let tick duration f = Tick (duration, f)
 let log message = Log message
@@ -41,13 +40,12 @@ let exit_alt_screen = Exit_alt_screen
 let repaint = Repaint
 let clear_screen = Clear_screen
 
-let sequence cmds =
+let seq cmds =
   match List.filter (function None -> false | _ -> true) cmds with
   | [] -> None
   | [ cmd ] -> cmd
   | cmds -> Sequence cmds
 
-let seq = sequence (* Alias for API compatibility *)
 let after delay msg = tick delay (fun _ -> msg)
 
 (* Pretty-printing *)
@@ -109,7 +107,7 @@ let map f cmd =
     | Exec exec_cmd ->
         Exec { exec_cmd with on_complete = f exec_cmd.on_complete }
     | Tick (duration, g) -> Tick (duration, fun t -> f (g t))
-    | Sequence cmds -> sequence (List.map go cmds)
+    | Sequence cmds -> seq (List.map go cmds)
     | Quit -> Quit
     | Log _ as l -> l (* Log commands are not affected by map *)
     | Print _ as p -> p (* Print commands are not affected by map *)

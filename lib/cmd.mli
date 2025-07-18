@@ -122,19 +122,6 @@ val exec : (unit -> unit) -> 'msg -> 'msg t
         `EditorClosed
     ]} *)
 
-val release_and_run : (unit -> unit) -> 'msg -> 'msg t
-(** [release_and_run f msg] temporarily releases terminal for external commands.
-
-    Alias for [exec]. Provides a more descriptive name when launching
-    interactive programs.
-
-    Example: Opens pager to view logs.
-    {[
-      Cmd.release_and_run
-        (fun () -> Sys.command "less /var/log/app.log" |> ignore)
-        `PagerClosed
-    ]} *)
-
 val quit : 'msg t
 (** [quit] creates a command that terminates the application gracefully.
 
@@ -154,8 +141,8 @@ val tick : float -> (float -> 'msg) -> 'msg t
           `Timeout (Printf.sprintf "Timed out after %.2fs" elapsed))
     ]} *)
 
-val sequence : 'msg t list -> 'msg t
-(** [sequence cmds] creates a command that executes [cmds] in order.
+val seq : 'msg t list -> 'msg t
+(** [seq cmds] creates a command that executes [cmds] in order.
 
     Each command must complete before the next begins. Empty lists return
     [none]. Single-element lists return the command directly. Useful for
@@ -163,14 +150,8 @@ val sequence : 'msg t list -> 'msg t
 
     Example: Saves data then shows confirmation.
     {[
-      Cmd.sequence [ Cmd.perform save_to_disk; Cmd.msg `ShowSaveConfirmation ]
+      Cmd.seq [ Cmd.perform save_to_disk; Cmd.msg `ShowSaveConfirmation ]
     ]} *)
-
-val seq : 'msg t list -> 'msg t
-(** [seq cmds] runs commands in sequence.
-
-    Alias for [sequence]. Provides shorter name for common sequential
-    operations. *)
 
 val after : float -> 'msg -> 'msg t
 (** [after delay msg] produces [msg] after [delay] seconds.

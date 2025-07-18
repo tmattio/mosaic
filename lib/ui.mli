@@ -78,7 +78,7 @@ type border_style =
           uses heavy lines (┏━┓┃┗┛). ASCII uses portable characters (+-+|) for
           environments without Unicode support. *)
 
-type border_spec = {
+type border = {
   top : bool;
   bottom : bool;
   left : bool;
@@ -86,7 +86,7 @@ type border_spec = {
   style : border_style;
   color : Ansi.color option;
 }
-(** [border_spec] specifies visual border properties for elements with per-side
+(** [border] specifies visual border properties for elements with per-side
     control.
 
     Each side can be individually enabled/disabled. The border occupies one
@@ -94,22 +94,7 @@ type border_spec = {
     and color apply to all border characters. Borders reduce available content
     area by the number of enabled sides. *)
 
-type border = border_spec
-(** Alias for backward compatibility *)
-
-val border : ?style:border_style -> ?color:Ansi.color -> unit -> border
-(** [border ?style ?color ()] creates a border specification with all sides
-    enabled.
-
-    The [style] defaults to [Solid]. The [color] defaults to terminal's default
-    foreground color.
-
-    Example: Creates a blue rounded border.
-    {[
-      let b = Ui.border ~style:Rounded ~color:Ansi.Blue ()
-    ]} *)
-
-val border_spec :
+val border :
   ?top:bool ->
   ?bottom:bool ->
   ?left:bool ->
@@ -117,30 +102,30 @@ val border_spec :
   ?style:border_style ->
   ?color:Ansi.color ->
   unit ->
-  border_spec
-(** [border_spec ?top ?bottom ?left ?right ?style ?color ()] creates a border
+  border
+(** [border ?top ?bottom ?left ?right ?style ?color ()] creates a border
     specification with per-side control.
 
     All sides default to [true]. The [style] defaults to [Solid].
 
     Example: Creates a border with only top and bottom.
     {[
-      let b = Ui.border_spec ~left:false ~right:false ()
+      let b = Ui.border ~left:false ~right:false ()
     ]} *)
 
-val normal_border : border_spec
+val normal_border : border
 (** Pre-defined normal border with single lines (┌─┐│└┘) on all sides *)
 
-val rounded_border : border_spec
+val rounded_border : border
 (** Pre-defined rounded border with curved corners (╭─╮│╰╯) on all sides *)
 
-val double_border : border_spec
+val double_border : border
 (** Pre-defined double border with double lines (╔═╗║╚╝) on all sides *)
 
-val thick_border : border_spec
+val thick_border : border
 (** Pre-defined thick border with heavy lines (┏━┓┃┗┛) on all sides *)
 
-val ascii_border : border_spec
+val ascii_border : border
 (** Pre-defined ASCII border with portable characters (+-+|) on all sides *)
 
 type align =
@@ -168,7 +153,8 @@ val text :
   ?wrap:bool ->
   string ->
   element
-(** [text ?style ?align ?tab_width ?wrap s] creates a text element displaying [s].
+(** [text ?style ?align ?tab_width ?wrap s] creates a text element displaying
+    [s].
 
     Text elements have natural dimensions based on string width and line count.
     Newlines create multiple lines. The optional [style] applies color,
@@ -179,7 +165,8 @@ val text :
       Alignment for multi-line text within its bounds (default: Start)
     @param tab_width Number of spaces to expand tabs to (default: 4)
     @param wrap
-      When true, automatically wraps long lines to fit available width (default: false)
+      When true, automatically wraps long lines to fit available width (default:
+      false)
 
     Example: Creates bold red error text.
     {[
@@ -258,7 +245,6 @@ val vbox :
   ?justify_content:align ->
   ?flex_grow:int ->
   ?fill:bool ->
-  ?wrap:bool ->
   element list ->
   element
 (** [vbox ?gap ?width ?height ?padding ?border ?align_items ?justify_content
@@ -298,14 +284,9 @@ val vbox :
 val spacer : ?flex:int -> int -> element
 (** [spacer ?flex n] creates n units of empty space.
 
-    @param flex When greater than 0, the spacer expands to fill available space
-              with the given flex weight (default: 0) *)
-
-val space : ?flex:int -> int -> element
-(** [space ?flex n] creates n units of empty space. Alias for spacer.
-    @param flex When greater than 0, the spacer expands to fill available space
-              with the given flex weight (default: 0) *)
-
+    @param flex
+      When greater than 0, the spacer expands to fill available space with the
+      given flex weight (default: 0) *)
 
 (** {2 Advanced Layout Elements} *)
 
@@ -487,7 +468,8 @@ val scroll :
   ?v_offset:int ->
   element ->
   element
-(** [scroll ?width ?height ?h_offset ?v_offset child] creates a scrollable viewport.
+(** [scroll ?width ?height ?h_offset ?v_offset child] creates a scrollable
+    viewport.
 
     Content that exceeds the viewport dimensions can be scrolled. Use with
     subscriptions to handle scroll events.
