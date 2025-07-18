@@ -79,6 +79,7 @@ let parse_int s start end_ =
     else
       let c = s.[i] in
       if is_ascii_digit c then loop ((acc * 10) + (Char.code c - 48)) (i + 1)
+      else if c = ':' then Some acc  (* Stop at ':' for Kitty event types *)
       else None
   in
   loop 0 start
@@ -383,201 +384,184 @@ let decode_utf8 bytes offset length =
   loop []
 
 let feed parser bytes offset length =
-  if parser.length + length > Bytes.length parser.buffer then
-    failwith "Input buffer overflow";
-
-  Bytes.blit bytes offset parser.buffer parser.length length;
-  parser.length <- parser.length + length;
-
-  let rec process_buffer acc pos =
-    if pos >= parser.length then (
-      if pos > 0 then (
-        Bytes.blit parser.buffer pos parser.buffer 0 (parser.length - pos);
-        parser.length <- parser.length - pos);
-      List.rev acc)
-    else
-      let c = Bytes.get parser.buffer pos in
-      if parser.in_paste then
-        if
-          pos + 6 <= parser.length
-          && Bytes.sub_string parser.buffer pos 6 = "\x1b[201~"
-        then (
-          parser.in_paste <- false;
-          Buffer.clear parser.paste_buffer;
-          process_buffer (Paste_end :: acc) (pos + 6))
-        else
-          (* Emit individual Key events for each character in paste mode *)
+  (* Helper to process and clear buffer *)
+  let process_and_clear_buffer () =
+    let rec process_buffer acc pos =
+      if pos >= parser.length then (
+        if pos > 0 then (
+          Bytes.blit parser.buffer pos parser.buffer 0 (parser.length - pos);
+          parser.length <- parser.length - pos);
+        List.rev acc)
+      else
+        let c = Bytes.get parser.buffer pos in
+        if parser.in_paste then
+          if
+            pos + 6 <= parser.length
+            && Bytes.sub_string parser.buffer pos 6 = "\x1b[201~"
+          then (
+            parser.in_paste <- false;
+            let paste_content = Buffer.contents parser.paste_buffer in
+            Buffer.clear parser.paste_buffer;
+            let events = if paste_content = "" then acc else Paste paste_content :: acc in
+            process_buffer (Paste_end :: events) (pos + 6))
+          else (
+            (* Accumulate characters in paste buffer *)
+            Buffer.add_char parser.paste_buffer c;
+            process_buffer acc (pos + 1))
+        else if c = '\x1b' then
+          if
+            (* Check for X10 mouse protocol first *)
+            pos + 1 < parser.length
+            && Bytes.get parser.buffer (pos + 1) = '['
+            && pos + 2 < parser.length
+            && Bytes.get parser.buffer (pos + 2) = 'M'
+            && pos + 5 < parser.length
+          then
+            (* X10 mouse: ESC [ M btn x y *)
+            match parse_x10_mouse parser.buffer (pos + 3) with
+            | Some (event, consumed) ->
+                process_buffer (event :: acc) (pos + 3 + consumed)
+            | None ->
+                (* Fall back to normal escape sequence parsing *)
+                let rec find_end i =
+                  if i >= parser.length then i
+                  else
+                    let c = Bytes.get parser.buffer i in
+                    if i = pos + 1 && c <> '[' && c <> 'O' then i + 1
+                    else if
+                      i > pos + 1
+                      && (is_csi_final c || (i = pos + 2 && c >= 'A' && c <= 'Z'))
+                    then i + 1
+                    else find_end (i + 1)
+                in
+                let seq_end = find_end (pos + 1) in
+                if seq_end > pos + 1 then
+                  match
+                    parse_escape_sequence
+                      (Bytes.to_string parser.buffer)
+                      pos (seq_end - pos)
+                  with
+                  | Some Paste_start ->
+                      parser.in_paste <- true;
+                      process_buffer (Paste_start :: acc) seq_end
+                  | Some event -> process_buffer (event :: acc) seq_end
+                  | None ->
+                      if seq_end = pos + 2 && pos + 1 < parser.length then
+                        let next_char = Bytes.get parser.buffer (pos + 1) in
+                        if next_char = '[' || next_char = 'O' then
+                          (* Incomplete escape sequence, keep buffering *)
+                          List.rev acc
+                        else
+                          (* ESC followed by non-sequence character *)
+                          process_buffer
+                            (Key { key = Escape; modifier = no_modifier } :: acc)
+                            (pos + 1)
+                      else process_buffer acc (pos + 1)
+                else List.rev acc
+          else
+            let rec find_end i =
+              if i >= parser.length then i
+              else
+                let c = Bytes.get parser.buffer i in
+                if i = pos + 1 && c <> '[' && c <> 'O' then i + 1
+                else if
+                  i > pos + 1
+                  && (is_csi_final c || (i = pos + 2 && c >= 'A' && c <= 'Z'))
+                then i + 1
+                else find_end (i + 1)
+            in
+            let seq_end = find_end (pos + 1) in
+            if seq_end > pos + 1 then
+              match
+                parse_escape_sequence (Bytes.to_string parser.buffer)
+                  pos (seq_end - pos)
+              with
+              | Some Paste_start ->
+                  parser.in_paste <- true;
+                  process_buffer (Paste_start :: acc) seq_end
+              | Some event -> process_buffer (event :: acc) seq_end
+              | None ->
+                  if seq_end = pos + 2 && pos + 1 < parser.length then
+                    let next_char = Bytes.get parser.buffer (pos + 1) in
+                    if next_char = '[' || next_char = 'O' then List.rev acc
+                    else
+                      process_buffer
+                        (Key { key = Escape; modifier = no_modifier } :: acc)
+                        (pos + 1)
+                  else process_buffer acc (pos + 1)
+            else List.rev acc
+        else if c >= '\x00' && c <= '\x1f' then
+          (* Control character *)
+          let key_event =
+            match c with
+            | '\x00' -> Key { key = Char (Uchar.of_int 32); modifier = { ctrl = true; alt = false; shift = false } }
+            | '\x01' .. '\x08' | '\x0b' .. '\x0c' | '\x0e' .. '\x1a' as c ->
+                (* Skip tab (0x09), LF (0x0a), CR (0x0d) *)
+                Key
+                  {
+                    key = Char (Uchar.of_int (Char.code c + 64));
+                    modifier = { ctrl = true; alt = false; shift = false };
+                  }
+            | '\t' -> Key { key = Tab; modifier = no_modifier }
+            | '\n' | '\r' -> Key { key = Enter; modifier = no_modifier }
+            | _ -> Key { key = key_of_char c; modifier = no_modifier }
+          in
+          process_buffer (key_event :: acc) (pos + 1)
+        else if c = '\x7f' then
+          process_buffer
+            (Key { key = Backspace; modifier = no_modifier } :: acc)
+            (pos + 1)
+        else if c < '\x80' then
+          (* ASCII character *)
           let key_event = Key { key = key_of_char c; modifier = no_modifier } in
           process_buffer (key_event :: acc) (pos + 1)
-      else if c = '\x1b' then
-        if
-          (* Check for X10 mouse protocol first *)
-          pos + 1 < parser.length
-          && Bytes.get parser.buffer (pos + 1) = '['
-          && pos + 2 < parser.length
-          && Bytes.get parser.buffer (pos + 2) = 'M'
-          && pos + 5 < parser.length
-        then
-          (* X10 mouse: ESC [ M btn x y *)
-          match parse_x10_mouse parser.buffer (pos + 3) with
-          | Some (event, consumed) ->
-              process_buffer (event :: acc) (pos + 3 + consumed)
-          | None ->
-              (* Fall back to normal escape sequence parsing *)
-              let rec find_end i =
-                if i >= parser.length then i
-                else
-                  let c = Bytes.get parser.buffer i in
-                  if i = pos + 1 && c <> '[' && c <> 'O' then i + 1
-                  else if
-                    i > pos + 1
-                    && (is_csi_final c || (i = pos + 2 && c >= 'A' && c <= 'Z'))
-                  then i + 1
-                  else find_end (i + 1)
-              in
-              let seq_end = find_end (pos + 1) in
-              if seq_end > pos + 1 then
-                match
-                  parse_escape_sequence
-                    (Bytes.to_string parser.buffer)
-                    pos (seq_end - pos)
-                with
-                | Some Paste_start ->
-                    parser.in_paste <- true;
-                    process_buffer (Paste_start :: acc) seq_end
-                | Some event -> process_buffer (event :: acc) seq_end
-                | None ->
-                    if seq_end = pos + 2 && pos + 1 < parser.length then
-                      let next_char = Bytes.get parser.buffer (pos + 1) in
-                      if next_char = '[' || next_char = 'O' then
-                        (* Incomplete escape sequence, keep buffering *)
-                        List.rev acc
-                      else
-                        (* ESC followed by non-sequence character *)
-                        process_buffer
-                          (Key { key = Escape; modifier = no_modifier } :: acc)
-                          (pos + 1)
-                    else process_buffer acc (pos + 1)
-              else List.rev acc
         else
-          let rec find_end i =
+          (* UTF-8 multi-byte character *)
+          let rec find_utf8_end i =
             if i >= parser.length then i
             else
               let c = Bytes.get parser.buffer i in
-              if i = pos + 1 && c <> '[' && c <> 'O' then i + 1
-              else if
-                i > pos + 1
-                && (is_csi_final c || (i = pos + 2 && c >= 'A' && c <= 'Z'))
-              then i + 1
-              else find_end (i + 1)
+              if c < '\x80' || c >= '\xc0' then i else find_utf8_end (i + 1)
           in
-          let seq_end = find_end (pos + 1) in
-          if seq_end > pos + 1 then
-            match
-              parse_escape_sequence
-                (Bytes.to_string parser.buffer)
-                pos (seq_end - pos)
-            with
-            | Some Paste_start ->
-                parser.in_paste <- true;
-                process_buffer (Paste_start :: acc) seq_end
-            | Some event -> process_buffer (event :: acc) seq_end
-            | None ->
-                if seq_end = pos + 2 && pos + 1 < parser.length then
-                  let next_char = Bytes.get parser.buffer (pos + 1) in
-                  if next_char = '[' || next_char = 'O' then
-                    (* Incomplete escape sequence, keep buffering *)
-                    List.rev acc
-                  else
-                    (* ESC followed by non-sequence character *)
-                    process_buffer
-                      (Key { key = Escape; modifier = no_modifier } :: acc)
-                      (pos + 1)
-                else process_buffer acc (pos + 1)
-          else List.rev acc
-      else if c = '\x00' then
-        process_buffer
-          (Key
-             {
-               key = Char (Uchar.of_int 32);
-               modifier = { ctrl = true; alt = false; shift = false };
-             }
-          :: acc)
-          (pos + 1)
-      else if c = '\r' || c = '\n' || c = '\t' || c = '\x7f' then
-        (* Handle special keys before control character processing *)
-        process_buffer
-          (Key { key = key_of_char c; modifier = no_modifier } :: acc)
-          (pos + 1)
-      else if c >= '\x01' && c <= '\x1a' then
-        let ch = Char.chr (Char.code c + 64) in
-        process_buffer
-          (Key
-             {
-               key = Char (Uchar.of_char ch);
-               modifier = { ctrl = true; alt = false; shift = false };
-             }
-          :: acc)
-          (pos + 1)
-      else if c = '\x1c' then
-        process_buffer
-          (Key
-             {
-               key = Char (Uchar.of_char '\\');
-               modifier = { ctrl = true; alt = false; shift = false };
-             }
-          :: acc)
-          (pos + 1)
-      else if c = '\x1d' then
-        process_buffer
-          (Key
-             {
-               key = Char (Uchar.of_char ']');
-               modifier = { ctrl = true; alt = false; shift = false };
-             }
-          :: acc)
-          (pos + 1)
-      else if c = '\x1e' then
-        process_buffer
-          (Key
-             {
-               key = Char (Uchar.of_char '^');
-               modifier = { ctrl = true; alt = false; shift = false };
-             }
-          :: acc)
-          (pos + 1)
-      else if c = '\x1f' then
-        process_buffer
-          (Key
-             {
-               key = Char (Uchar.of_char '_');
-               modifier = { ctrl = true; alt = false; shift = false };
-             }
-          :: acc)
-          (pos + 1)
-      else if c < '\x80' then
-        process_buffer
-          (Key { key = key_of_char c; modifier = no_modifier } :: acc)
-          (pos + 1)
-      else
-        let rec find_utf8_end i =
-          if i >= parser.length then i
-          else
-            let c = Bytes.get parser.buffer i in
-            if c < '\x80' || c >= '\xc0' then i else find_utf8_end (i + 1)
-        in
-        let utf8_end = find_utf8_end (pos + 1) in
-        match decode_utf8 parser.buffer pos (utf8_end - pos) with
-        | [] -> process_buffer acc (pos + 1)
-        | chars ->
-            let events =
-              List.map
-                (fun u -> Key { key = Char u; modifier = no_modifier })
-                chars
-            in
-            process_buffer (List.rev_append events acc) utf8_end
+          let utf8_end = find_utf8_end (pos + 1) in
+          match decode_utf8 parser.buffer pos (utf8_end - pos) with
+          | [] -> process_buffer acc (pos + 1)
+          | chars ->
+              let events =
+                List.map
+                  (fun u -> Key { key = Char u; modifier = no_modifier })
+                  chars
+              in
+              process_buffer (List.rev_append events acc) utf8_end
+    in
+    process_buffer [] 0
   in
-  process_buffer [] 0
+
+  (* For large inputs, process in chunks *)
+  if parser.length + length > Bytes.length parser.buffer then
+    (* Process current buffer content first if any *)
+    let initial_events = 
+      if parser.length > 0 then process_and_clear_buffer () else []
+    in
+    
+    (* Process input in buffer-sized chunks *)
+    let rec process_chunks events offset remaining =
+      if remaining = 0 then events
+      else
+        let chunk_size = min remaining (Bytes.length parser.buffer) in
+        Bytes.blit bytes offset parser.buffer 0 chunk_size;
+        parser.length <- chunk_size;
+        let chunk_events = process_and_clear_buffer () in
+        process_chunks (events @ chunk_events) (offset + chunk_size) (remaining - chunk_size)
+    in
+    
+    initial_events @ process_chunks [] offset length
+  else (
+    (* Normal case: input fits in buffer *)
+    Bytes.blit bytes offset parser.buffer parser.length length;
+    parser.length <- parser.length + length;
+    process_and_clear_buffer ()
+  )
 
 let pending parser = Bytes.sub parser.buffer 0 parser.length
 
