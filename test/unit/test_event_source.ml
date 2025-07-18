@@ -116,17 +116,18 @@ let test_paste_events () =
   | `Event e -> Alcotest.failf "Expected paste start, got: %s" (show_event e)
   | _ -> Alcotest.fail "Expected paste start event");
 
-  (* Should get characters *)
-  let rec read_until_paste_end count =
-    if count > 10 then Alcotest.fail "Too many events"
-    else
-      match Event_source.read source ~sw ~clock ~timeout:(Some 0.1) with
-      | `Event Input.Paste_end -> ()
-      | `Event (Input.Key _) -> read_until_paste_end (count + 1)
-      | `Event e -> Alcotest.failf "Unexpected event: %s" (show_event e)
-      | _ -> Alcotest.fail "Unexpected non-event"
-  in
-  read_until_paste_end 0
+  (* Should get paste content *)
+  (match Event_source.read source ~sw ~clock ~timeout:(Some 0.1) with
+  | `Event (Input.Paste content) ->
+      Alcotest.(check string) "paste content" "test" content
+  | `Event e -> Alcotest.failf "Expected paste content, got: %s" (show_event e)
+  | _ -> Alcotest.fail "Expected paste content event");
+
+  (* Should get paste end *)
+  match Event_source.read source ~sw ~clock ~timeout:(Some 0.1) with
+  | `Event Input.Paste_end -> ()
+  | `Event e -> Alcotest.failf "Expected paste end, got: %s" (show_event e)
+  | _ -> Alcotest.fail "Expected paste end event"
 
 (** Test kitty keyboard mode events *)
 let test_kitty_keyboard_events () =
@@ -218,20 +219,21 @@ let test_large_paste () =
   | `Event Input.Paste_start -> ()
   | _ -> Alcotest.fail "Expected paste start");
 
-  (* Count pasted characters *)
-  let rec count_chars n =
-    if n > 1100 then Alcotest.fail "Too many chars in paste"
-    else
-      match Event_source.read source ~sw ~clock ~timeout:(Some 0.1) with
-      | `Event Input.Paste_end -> n
-      | `Event (Input.Key { key = Char c; _ }) when Uchar.to_char c = 'X' ->
-          count_chars (n + 1)
-      | `Event e ->
-          Alcotest.failf "Unexpected event in paste: %s" (show_event e)
-      | _ -> Alcotest.fail "Unexpected non-event in paste"
-  in
-  let char_count = count_chars 0 in
-  Alcotest.(check int) "pasted character count" 1000 char_count
+  (* Should get paste content *)
+  (match Event_source.read source ~sw ~clock ~timeout:(Some 0.1) with
+  | `Event (Input.Paste content) ->
+      Alcotest.(check string) "paste content" paste_content content;
+      Alcotest.(check int) "paste content length" 1000 (String.length content)
+  | `Event e ->
+      Alcotest.failf "Expected paste content, got: %s" (show_event e)
+  | _ -> Alcotest.fail "Expected paste content");
+
+  (* Should get paste end *)
+  match Event_source.read source ~sw ~clock ~timeout:(Some 0.1) with
+  | `Event Input.Paste_end -> ()
+  | `Event e ->
+      Alcotest.failf "Expected paste end, got: %s" (show_event e)
+  | _ -> Alcotest.fail "Expected paste end"
 
 (** Test mouse modes *)
 let test_mouse_modes () =

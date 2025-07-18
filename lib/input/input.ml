@@ -58,6 +58,7 @@ type parser = {
   mutable length : int;
   mutable in_paste : bool;
   paste_buffer : Buffer.t;
+  utf8_decoder : Uutf.decoder;
 }
 
 let create () =
@@ -66,6 +67,7 @@ let create () =
     length = 0;
     in_paste = false;
     paste_buffer = Buffer.create 256;
+    utf8_decoder = Uutf.decoder ~encoding:`UTF_8 `Manual;
   }
 
 let is_ascii_digit c = c >= '0' && c <= '9'
@@ -79,7 +81,7 @@ let parse_int s start end_ =
     else
       let c = s.[i] in
       if is_ascii_digit c then loop ((acc * 10) + (Char.code c - 48)) (i + 1)
-      else if c = ':' then Some acc  (* Stop at ':' for Kitty event types *)
+      else if c = ':' then Some acc (* Stop at ':' for Kitty event types *)
       else None
   in
   loop 0 start
@@ -369,28 +371,18 @@ let parse_escape_sequence s start length =
     else None
   else None
 
-let decode_utf8 bytes offset length =
-  let decoder =
-    Uutf.decoder ~encoding:`UTF_8
-      (`String (Bytes.sub_string bytes offset length))
-  in
-  let rec loop acc =
-    match Uutf.decode decoder with
-    | `Uchar u -> loop (u :: acc)
-    | `End -> List.rev acc
-    | `Malformed _ -> List.rev acc
-    | `Await -> List.rev acc
-  in
-  loop []
-
 let feed parser bytes offset length =
   (* Helper to process and clear buffer *)
   let process_and_clear_buffer () =
     let rec process_buffer acc pos =
       if pos >= parser.length then (
-        if pos > 0 then (
+        (* Move any unprocessed bytes to the beginning of the buffer *)
+        if pos < parser.length then (
           Bytes.blit parser.buffer pos parser.buffer 0 (parser.length - pos);
-          parser.length <- parser.length - pos);
+          parser.length <- parser.length - pos
+        ) else (
+          parser.length <- 0
+        );
         List.rev acc)
       else
         let c = Bytes.get parser.buffer pos in
@@ -402,7 +394,9 @@ let feed parser bytes offset length =
             parser.in_paste <- false;
             let paste_content = Buffer.contents parser.paste_buffer in
             Buffer.clear parser.paste_buffer;
-            let events = if paste_content = "" then acc else Paste paste_content :: acc in
+            let events =
+              if paste_content = "" then acc else Paste paste_content :: acc
+            in
             process_buffer (Paste_end :: events) (pos + 6))
           else (
             (* Accumulate characters in paste buffer *)
@@ -430,7 +424,8 @@ let feed parser bytes offset length =
                     if i = pos + 1 && c <> '[' && c <> 'O' then i + 1
                     else if
                       i > pos + 1
-                      && (is_csi_final c || (i = pos + 2 && c >= 'A' && c <= 'Z'))
+                      && (is_csi_final c
+                         || (i = pos + 2 && c >= 'A' && c <= 'Z'))
                     then i + 1
                     else find_end (i + 1)
                 in
@@ -473,7 +468,8 @@ let feed parser bytes offset length =
             let seq_end = find_end (pos + 1) in
             if seq_end > pos + 1 then
               match
-                parse_escape_sequence (Bytes.to_string parser.buffer)
+                parse_escape_sequence
+                  (Bytes.to_string parser.buffer)
                   pos (seq_end - pos)
               with
               | Some Paste_start ->
@@ -494,8 +490,13 @@ let feed parser bytes offset length =
           (* Control character *)
           let key_event =
             match c with
-            | '\x00' -> Key { key = Char (Uchar.of_int 32); modifier = { ctrl = true; alt = false; shift = false } }
-            | '\x01' .. '\x08' | '\x0b' .. '\x0c' | '\x0e' .. '\x1a' as c ->
+            | '\x00' ->
+                Key
+                  {
+                    key = Char (Uchar.of_int 32);
+                    modifier = { ctrl = true; alt = false; shift = false };
+                  }
+            | ('\x01' .. '\x08' | '\x0b' .. '\x0c' | '\x0e' .. '\x1a') as c ->
                 (* Skip tab (0x09), LF (0x0a), CR (0x0d) *)
                 Key
                   {
@@ -517,22 +518,39 @@ let feed parser bytes offset length =
           process_buffer (key_event :: acc) (pos + 1)
         else
           (* UTF-8 multi-byte character *)
-          let rec find_utf8_end i =
-            if i >= parser.length then i
-            else
-              let c = Bytes.get parser.buffer i in
-              if c < '\x80' || c >= '\xc0' then i else find_utf8_end (i + 1)
+          (* Try to decode UTF-8 from current position *)
+          (* First, check if this looks like the start of a UTF-8 sequence *)
+          let utf8_len = 
+            if c < '\x80' then 1
+            else if c < '\xc0' then 1 (* Invalid continuation byte *)
+            else if c < '\xe0' then 2 (* 2-byte sequence *)
+            else if c < '\xf0' then 3 (* 3-byte sequence *)
+            else if c < '\xf8' then 4 (* 4-byte sequence *)
+            else 1 (* Invalid *)
           in
-          let utf8_end = find_utf8_end (pos + 1) in
-          match decode_utf8 parser.buffer pos (utf8_end - pos) with
-          | [] -> process_buffer acc (pos + 1)
-          | chars ->
-              let events =
-                List.map
-                  (fun u -> Key { key = Char u; modifier = no_modifier })
-                  chars
-              in
-              process_buffer (List.rev_append events acc) utf8_end
+          
+          (* Check if we have enough bytes for the complete sequence *)
+          if pos + utf8_len > parser.length then
+            (* Incomplete UTF-8 sequence at end of buffer - stop processing here *)
+            (* The bytes will be preserved for the next feed *)
+            List.rev acc
+          else (
+            (* We have enough bytes, feed them to the decoder *)
+            Uutf.Manual.src parser.utf8_decoder parser.buffer pos utf8_len;
+            match Uutf.decode parser.utf8_decoder with
+            | `Uchar u ->
+                let event = Key { key = Char u; modifier = no_modifier } in
+                process_buffer (event :: acc) (pos + utf8_len)
+            | `Malformed _ ->
+                (* Skip this byte and continue *)
+                process_buffer acc (pos + 1)
+            | `Await ->
+                (* This shouldn't happen if we calculated utf8_len correctly *)
+                (* Skip one byte to avoid infinite loop *)
+                process_buffer acc (pos + 1)
+            | `End ->
+                (* Shouldn't happen in manual mode *)
+                process_buffer acc (pos + 1))
     in
     process_buffer [] 0
   in
@@ -540,10 +558,10 @@ let feed parser bytes offset length =
   (* For large inputs, process in chunks *)
   if parser.length + length > Bytes.length parser.buffer then
     (* Process current buffer content first if any *)
-    let initial_events = 
+    let initial_events =
       if parser.length > 0 then process_and_clear_buffer () else []
     in
-    
+
     (* Process input in buffer-sized chunks *)
     let rec process_chunks events offset remaining =
       if remaining = 0 then events
@@ -552,16 +570,16 @@ let feed parser bytes offset length =
         Bytes.blit bytes offset parser.buffer 0 chunk_size;
         parser.length <- chunk_size;
         let chunk_events = process_and_clear_buffer () in
-        process_chunks (events @ chunk_events) (offset + chunk_size) (remaining - chunk_size)
+        process_chunks (events @ chunk_events) (offset + chunk_size)
+          (remaining - chunk_size)
     in
-    
+
     initial_events @ process_chunks [] offset length
   else (
     (* Normal case: input fits in buffer *)
     Bytes.blit bytes offset parser.buffer parser.length length;
     parser.length <- parser.length + length;
-    process_and_clear_buffer ()
-  )
+    process_and_clear_buffer ())
 
 let pending parser = Bytes.sub parser.buffer 0 parser.length
 
@@ -641,3 +659,4 @@ let pp_event fmt = function
   | Paste_start -> Format.fprintf fmt "Paste_start"
   | Paste_end -> Format.fprintf fmt "Paste_end"
   | Paste s -> Format.fprintf fmt "Paste(%S)" s
+

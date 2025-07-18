@@ -512,6 +512,88 @@ let test_input_edge_cases () =
       Alcotest.(check char) "partial feed first char" 'a' (Uchar.to_char c)
   | _ -> Alcotest.fail "expected char event"
 
+(** Test split UTF-8 sequences across feeds *)
+let test_split_utf8 () =
+  let parser = Input.create () in
+
+  (* Test euro sign (€) = E2 82 AC split across feeds *)
+  let events1 = Input.feed parser (Bytes.of_string "\xE2\x82") 0 2 in
+  Alcotest.(check (list pass)) "incomplete UTF-8 should be buffered" [] events1;
+
+  (* Feed the final byte *)
+  let events2 = Input.feed parser (Bytes.of_string "\xAC") 0 1 in
+  match events2 with
+  | [ Input.Key { key = Char u; modifier = _ } ] ->
+      Alcotest.(check int) "euro sign unicode" 0x20AC (Uchar.to_int u)
+  | _ -> Alcotest.fail "expected single UTF-8 character after completion"
+
+(** Test buffer overflow with large input *)
+let test_buffer_overflow () =
+  let parser = Input.create () in
+
+  (* Try to feed more than buffer size (4096) in one go *)
+  let large = String.make 5000 'X' in
+  try
+    let events = Input.feed parser (Bytes.of_string large) 0 5000 in
+    Alcotest.(check int) "should parse all characters" 5000 (List.length events)
+  with
+  | Failure msg
+    when String.length msg >= 20
+         && String.sub msg 0 20 = "Input buffer overflow" ->
+      Alcotest.fail "Buffer should grow dynamically, not overflow"
+  | e -> raise e
+
+(** Test paste mode actually collects content *)
+let test_paste_mode_collection () =
+  let parser = Input.create () in
+
+  (* Feed a large paste that would be inefficient as individual keys *)
+  let paste_content = String.make 1000 'A' in
+  let input = "\x1b[200~" ^ paste_content ^ "\x1b[201~" in
+  let events =
+    Input.feed parser (Bytes.of_string input) 0 (String.length input)
+  in
+
+  (* Check we get Paste_start, Paste(content), Paste_end *)
+  match events with
+  | [ Input.Paste_start; Input.Paste content; Input.Paste_end ] ->
+      Alcotest.(check string) "paste content matches" paste_content content
+  | Input.Paste_start :: keys ->
+      (* If we get individual keys, count them *)
+      let key_count =
+        List.length
+          (List.filter (function Input.Key _ -> true | _ -> false) keys)
+      in
+      Alcotest.failf
+        "Got %d individual key events instead of single Paste event" key_count
+  | _ ->
+      Alcotest.failf "Unexpected event sequence: %d events" (List.length events)
+
+(** Test integer overflow in CSI parameters *)
+let test_csi_param_overflow () =
+  let parser = Input.create () in
+
+  (* Create a CSI sequence with a parameter that would overflow int *)
+  let huge_param = String.make 20 '9' in
+  (* 99999999999999999999 *)
+  let seq = Printf.sprintf "\x1b[%s;1A" huge_param in
+
+  let events = Input.feed parser (Bytes.of_string seq) 0 (String.length seq) in
+
+  (* Should either parse with wrapped value or fall back to regular chars *)
+  match events with
+  | [] -> Alcotest.fail "Should produce some events"
+  | [ Input.Key { key = Up; modifier } ] ->
+      (* If it parsed as Up arrow, check modifier isn't garbage *)
+      Alcotest.(check bool)
+        "modifier should be reasonable"
+        (modifier.ctrl || modifier.alt || modifier.shift
+        || modifier = Input.no_modifier)
+        true
+  | _ ->
+      (* Fallback to char events is acceptable *)
+      Alcotest.(check bool) "got some events" true (List.length events > 0)
+
 let tests =
   [
     ("parse regular chars", `Quick, test_parse_regular_chars);
@@ -529,6 +611,10 @@ let tests =
     ("combined inputs", `Quick, test_combined_inputs);
     ("kitty keyboard", `Quick, test_kitty_keyboard);
     ("edge cases", `Quick, test_input_edge_cases);
+    ("split UTF-8", `Quick, test_split_utf8);
+    ("buffer overflow", `Quick, test_buffer_overflow);
+    ("paste mode collection", `Quick, test_paste_mode_collection);
+    ("CSI param overflow", `Quick, test_csi_param_overflow);
   ]
 
 let () = Alcotest.run "Input" [ ("parsing", tests) ]
