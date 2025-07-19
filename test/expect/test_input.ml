@@ -268,7 +268,7 @@ let%expect_test "Fixed width input" =
   [%expect_exact
     {|+----------------------------------------+
 |┌──────────────────┐                    |
-|│ This is a very long text that exceeds |
+|│ This is a very lon                    |
 |└──────────────────┘                    |
 +----------------------------------------+
 |}]
