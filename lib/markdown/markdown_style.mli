@@ -27,12 +27,14 @@ type list_block = {
   item_prefix_style : Mosaic.Style.t;  (** Style for the item prefix. *)
   item_gap : int;  (** Space between the prefix and the item content. *)
   level_indent : int;  (** Indentation for nested lists. *)
+  task_style : Mosaic.Style.t;  (** Style for unchecked task items "[ ]". *)
+  checked_style : Mosaic.Style.t;  (** Style for checked task items "[x]". *)
 }
 (** [list_block] extends block styling for list elements.
 
     Item prefix appears before each list item (bullets for unordered, numbers
     for ordered). Gap separates prefix from content. Level indent multiplied by
-    nesting depth for sublists. *)
+    nesting depth for sublists. Task styles apply to GFM task lists. *)
 
 type code_block = {
   block : block;
@@ -45,10 +47,22 @@ type code_block = {
     delimiter lines. Block style used for code content. Typically uses
     monospace-like appearance. *)
 
+type table_block = {
+  block : block;
+  header_style : Mosaic.Style.t;  (** Style for table header cells. *)
+  separator_style : Mosaic.Style.t * string;
+      (* Style and character for table separators. *)
+}
+(** [table_block] extends block styling for tables.
+
+    Header style applies to first row. Separator used for horizontal lines and
+    column dividers. *)
+
 type t = {
   document : block;
   paragraph : block;
   heading : block;
+  heading_prefix : Mosaic.Style.t;
   h1 : block;
   h2 : block;
   h3 : block;
@@ -59,17 +73,21 @@ type t = {
   code_block : code_block;
   horizontal_rule : Mosaic.Style.t * string;
   list : list_block;
+  table : table_block;
   emph : Mosaic.Style.t;
   strong : Mosaic.Style.t;
   code : Mosaic.Style.t;
   link : Mosaic.Style.t;
   image : Mosaic.Style.t;
+  html : Mosaic.Style.t;
+  strike : Mosaic.Style.t;
 }
 (** [t] provides complete markdown styling configuration.
 
     Document style wraps entire content. Heading styles cascade from general to
     specific levels. Horizontal rule is (style, character) pair repeated across
-    width. Inline styles (emph, strong, code, link, image) apply within text. *)
+    width. Inline styles (emph, strong, code, link, image, html) apply within
+    text. *)
 
 val default : t
 (** [default] provides a dark theme optimized for terminal display.

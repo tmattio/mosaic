@@ -14,14 +14,23 @@ type list_block = {
   item_prefix_style : Style.t;
   item_gap : int;
   level_indent : int;
+  task_style : Style.t;
+  checked_style : Style.t;
 }
 
 type code_block = { block : block; lang_style : Style.t; fence_style : Style.t }
+
+type table_block = {
+  block : block;
+  header_style : Style.t;
+  separator_style : Style.t * string;
+}
 
 type t = {
   document : block;
   paragraph : block;
   heading : block;
+  heading_prefix : Style.t;
   h1 : block;
   h2 : block;
   h3 : block;
@@ -32,11 +41,14 @@ type t = {
   code_block : code_block;
   horizontal_rule : Style.t * string;
   list : list_block;
+  table : table_block;
   emph : Style.t;
   strong : Style.t;
   code : Style.t;
   link : Style.t;
   image : Style.t;
+  html : Style.t;
+  strike : Style.t;
 }
 
 let default_block =
@@ -53,6 +65,7 @@ let default =
     document = { default_block with margin_bottom = 0 };
     paragraph = default_block;
     heading = { default_block with style = Style.(bold ++ fg (Index 39)) };
+    heading_prefix = Style.(fg (Index 244));
     h1 = { default_block with style = Style.(bold ++ fg (Index 228)) };
     h2 = { default_block with style = Style.(bold ++ fg (Index 220)) };
     h3 = { default_block with style = Style.(bold ++ fg (Index 214)) };
@@ -67,7 +80,7 @@ let default =
         lang_style = Style.(fg (Index 244));
         fence_style = Style.(fg (Index 240));
       };
-    horizontal_rule = (Style.(fg (Index 240)), String.make 40 '-');
+    horizontal_rule = (Style.(fg (Index 240)), "-");
     list =
       {
         block = default_block;
@@ -75,10 +88,20 @@ let default =
         item_prefix_style = Style.(fg (Index 39));
         item_gap = 1;
         level_indent = 4;
+        task_style = Style.(fg (Index 244));
+        checked_style = Style.(fg (Index 39));
+      };
+    table =
+      {
+        block = default_block;
+        header_style = Style.bold;
+        separator_style = (Style.(fg (Index 240)), "-");
       };
     emph = Style.italic;
     strong = Style.bold;
     code = Style.(fg (Index 203) ++ bg (Index 236));
     link = Style.(underline ++ fg (Index 30));
     image = Style.(fg (Index 212));
+    html = Style.(fg (Index 244) ++ italic);
+    strike = Style.strikethrough;
   }
