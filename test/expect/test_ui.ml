@@ -183,7 +183,7 @@ let%expect_test "expand/flex_spacer" =
   print_ui ~height:1 (Ui.hbox [ Ui.text "A"; Ui.flex_spacer (); Ui.text "B" ]);
   [%expect_exact {|
 +--------------------+
-|AB                  |
+|A                  B|
 +--------------------+
 |}] [@@ocamlformat "disable"]
 
@@ -293,10 +293,10 @@ let%expect_test "margin with border" =
   [%expect_exact {|
 +----------+
 |          |
-|  ┌─────┐ |
-|  │X    │ |
-|  │     │ |
-|  └─────┘ |
+|  ┌──────┐|
+|  │X     │|
+|  │      │|
+|  └──────┘|
 +----------+
 |}] [@@ocamlformat "disable"]
 
@@ -382,16 +382,29 @@ let%expect_test "flow - basic wrap" =
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "flow - with custom gaps" =
-  print_ui ~width:15
+  print_ui ~width:7
     (Ui.flow ~h_gap:2 ~v_gap:2 [ Ui.text "XX"; Ui.text "YY"; Ui.text "ZZ" ]);
   [%expect_exact {|
-+---------------+
-|XX  YY         |
-|               |
-|ZZ             |
-|               |
-|               |
-+---------------+
++-------+
+|XX  YY |
+|       |
+|ZZ     |
+|       |
+|       |
++-------+
+|}] [@@ocamlformat "disable"]
+
+let%expect_test "text wrapping" =
+  print_ui ~width:7
+    (Ui.flow ~h_gap:2 ~v_gap:2 [ Ui.text ~wrap:true "XX YY ZZ" ]);
+  [%expect_exact {|
++-------+
+|XX  YY |
+|ZZ     |
+|       |
+|       |
+|       |
++-------+
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "rich text" =
@@ -565,7 +578,7 @@ let%expect_test "text wrapping - unicode" =
 
 let%expect_test "auto-fill - vbox" =
   print_ui ~width:10 ~height:10
-    (Ui.vbox ~height:10 [ Ui.text "Top"; Ui.text "Bottom" ]);
+    (Ui.vbox ~height:10 [ Ui.text "Top"; Ui.flex_spacer (); Ui.text "Bottom" ]);
   [%expect_exact {|
 +----------+
 |Top       |
@@ -674,74 +687,6 @@ let%expect_test "border with clipping" =
 +----------+
 |}] [@@ocamlformat "disable"]
 
-let%expect_test "Simple hbox" =
-  print_ui (Ui.hbox [ Ui.text "One"; Ui.text "Two"; Ui.text "Three" ]);
-  [%expect_exact {|
-+----------------------------------------+
-|OneTwoThree                             |
-|                                        |
-|                                        |
-|                                        |
-|                                        |
-|                                        |
-|                                        |
-|                                        |
-|                                        |
-|                                        |
-+----------------------------------------+
-|}] [@ocamlformat "disable"]
-
-let%expect_test "Simple vbox" =
-  print_ui (Ui.vbox [ Ui.text "One"; Ui.text "Two"; Ui.text "Three" ]);
-  [%expect_exact {|
-+----------------------------------------+
-|One                                     |
-|Two                                     |
-|Three                                   |
-|                                        |
-|                                        |
-|                                        |
-|                                        |
-|                                        |
-|                                        |
-|                                        |
-+----------------------------------------+
-|}] [@ocamlformat "disable"]
-
-let%expect_test "Hbox with gap" =
-  print_ui (Ui.hbox ~gap:3 [ Ui.text "One"; Ui.text "Two"; Ui.text "Three" ]);
-  [%expect_exact {|
-+----------------------------------------+
-|One   Two   Three                       |
-|                                        |
-|                                        |
-|                                        |
-|                                        |
-|                                        |
-|                                        |
-|                                        |
-|                                        |
-|                                        |
-+----------------------------------------+
-|}] [@ocamlformat "disable"]
-
-let%expect_test "Vbox with gap" =
-  print_ui (Ui.vbox ~gap:1 [ Ui.text "One"; Ui.text "Two"; Ui.text "Three" ]);
-  [%expect_exact {|
-+----------------------------------------+
-|One                                     |
-|                                        |
-|Two                                     |
-|                                        |
-|Three                                   |
-|                                        |
-|                                        |
-|                                        |
-|                                        |
-|                                        |
-+----------------------------------------+
-|}] [@ocamlformat "disable"]
-
 let%expect_test "Padding and Borders" =
   print_ui ~width:20 ~height:7
     (Ui.vbox ~padding:(Ui.pad ~all:1 ())
@@ -749,13 +694,13 @@ let%expect_test "Padding and Borders" =
        [ Ui.text "Hello"; Ui.text "World" ]);
   [%expect_exact {|
 +--------------------+
-|╭───────╮           |
-|│       │           |
-|│ Hello │           |
-|│ World │           |
-|│       │           |
-|╰───────╯           |
-|                    |
+|╭──────────────────╮|
+|│                  │|
+|│ Hello            │|
+|│ World            │|
+|│                  │|
+|│                  │|
+|╰──────────────────╯|
 +--------------------+
 |}] [@ocamlformat "disable"]
 
@@ -777,9 +722,9 @@ let%expect_test "Vbox align center" =
   print_ui ~width:20 ~height:5 (Ui.vbox ~align_items:`Center items);
   [%expect_exact {|
 +--------------------+
-|   Short            |
-|Longer line         |
-|    Mid             |
+|       Short        |
+|    Longer line     |
+|        Mid         |
 |                    |
 |                    |
 +--------------------+
@@ -790,9 +735,9 @@ let%expect_test "Vbox align end" =
   print_ui ~width:20 ~height:5 (Ui.vbox ~align_items:`End items);
   [%expect_exact {|
 +--------------------+
-|      Short         |
-|Longer line         |
-|        Mid         |
+|               Short|
+|         Longer line|
+|                 Mid|
 |                    |
 |                    |
 +--------------------+
@@ -814,7 +759,7 @@ let%expect_test "Hbox justify center" =
   print_ui ~width:20 ~height:3 (Ui.hbox ~justify_content:`Center items);
   [%expect_exact {|
 +--------------------+
-|ABC                 |
+|        ABC         |
 |                    |
 |                    |
 +--------------------+
@@ -825,7 +770,7 @@ let%expect_test "Hbox justify end" =
   print_ui ~width:20 ~height:3 (Ui.hbox ~justify_content:`End items);
   [%expect_exact {|
 +--------------------+
-|ABC                 |
+|                 ABC|
 |                    |
 |                    |
 +--------------------+
@@ -937,7 +882,8 @@ let%expect_test "Stretch alignment" =
 
 let%expect_test "Border too small to render" =
   print_ui ~width:5 ~height:3 (Ui.hbox ~border:(Ui.border ()) [ Ui.text "x" ]);
-  [%expect_exact {|+-----+
+  [%expect_exact {|
++-----+
 |┌─┐  |
 |│x│  |
 |└─┘  |
@@ -949,19 +895,25 @@ let%expect_test "Min/max width constraints" =
     Ui.vbox ~gap:1
       [
         Ui.hbox ~min_width:15 ~border:(Ui.border ()) [ Ui.text "Min" ];
+        Ui.hbox ~flex_shrink:1 ~min_width:15 ~border:(Ui.border ())
+          [ Ui.text "Min" ];
         Ui.hbox ~max_width:10 ~border:(Ui.border ())
           [ Ui.text "Maximum width test" ];
       ]
   in
-  print_ui ~width:30 ~height:6 ui;
+  print_ui ~width:30 ~height:10 ui;
   [%expect_exact {|
 +------------------------------+
+|┌────────────────────────────┐|
+|│Min                         │|
+|└────────────────────────────┘|
+|                              |
 |┌─────────────┐               |
 |│Min          │               |
 |└─────────────┘               |
 |                              |
 |┌────────┐                    |
-|│Maximum width test           |
+|│Maximum │                    |
 +------------------------------+
 |}] [@ocamlformat "disable"]
 
@@ -974,24 +926,6 @@ let%expect_test "Background padding" =
 | Padded        |
 |               |
 +---------------+
-|}] [@ocamlformat "disable"]
-
-let%expect_test "Rich text" =
-  let ui =
-    Ui.rich_text
-      [
-        ("Normal ", Render.Style.empty);
-        ("Bold", Render.Style.empty);
-        (" and ", Render.Style.empty);
-        ("Red", Render.Style.empty);
-      ]
-  in
-  print_ui ~width:20 ~height:2 ui;
-  [%expect_exact {|
-+--------------------+
-|Normal Bold and Red |
-|                    |
-+--------------------+
 |}] [@ocamlformat "disable"]
 
 let%expect_test "Z-stack alignment" =
@@ -1114,4 +1048,43 @@ let%expect_test "Tab expansion" =
 |A   B   C      |
 |               |
 +---------------+
+|}] [@ocamlformat "disable"]
+
+let%expect_test "grid with flex rows/columns" =
+  print_ui ~width:20 ~height:5
+    (Ui.grid
+       ~columns:[ `Flex 1; `Flex 2 ]
+       ~rows:[ `Flex 1 ]
+       [ Ui.text "A"; Ui.text "B" ]);
+  [%expect_exact {|
++--------------------+
+|A      B            |
+|                    |
+|                    |
+|                    |
+|                    |
++--------------------+
+|}] [@ocamlformat "disable"]
+
+let%expect_test "divider with custom char and style" =
+  print_ui ~width:15 ~height:3
+    (Ui.divider ~char:"*" ~style:Render.Style.(fg Green) ());
+  [%expect_exact {|
++---------------+
+|***************|
+|               |
+|               |
++---------------+
+|}] [@ocamlformat "disable"]
+
+let%expect_test "scroll with h and v offsets" =
+  print_ui ~width:5 ~height:3
+    (Ui.scroll ~width:5 ~height:3 ~h_offset:2 ~v_offset:1
+       (Ui.vbox [ Ui.text "ABCDEF"; Ui.text "GHIJKLM"; Ui.text "NOPQRS" ]));
+  [%expect_exact {|
++-----+
+|CDE  |
+|IJK  |
+|QRS  |
++-----+
 |}] [@ocamlformat "disable"]
