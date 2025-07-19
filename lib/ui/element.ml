@@ -2,7 +2,12 @@ module Padding = struct
   type t = { top : int; right : int; bottom : int; left : int }
 
   let make ?(top = 0) ?(right = 0) ?(bottom = 0) ?(left = 0) () =
-    { top; right; bottom; left }
+    {
+      top = max 0 top;
+      right = max 0 right;
+      bottom = max 0 bottom;
+      left = max 0 left;
+    }
 
   let no_padding = make ()
   let all n = { top = n; right = n; bottom = n; left = n }
@@ -18,10 +23,10 @@ module Padding = struct
     let v_val = Option.value y ~default:base_val in
 
     {
-      top = Option.value top ~default:v_val;
-      right = Option.value right ~default:h_val;
-      bottom = Option.value bottom ~default:v_val;
-      left = Option.value left ~default:h_val;
+      top = max 0 (Option.value top ~default:v_val);
+      right = max 0 (Option.value right ~default:h_val);
+      bottom = max 0 (Option.value bottom ~default:v_val);
+      left = max 0 (Option.value left ~default:h_val);
     }
 end
 
@@ -182,7 +187,7 @@ end
 module Flow = struct
   type nonrec t = flow_data
 
-  let make ?(h_gap = 0) ?(v_gap = 0) children = { children; h_gap; v_gap }
+  let make ?(h_gap = 1) ?(v_gap = 0) children = { children; h_gap; v_gap }
   let children (t : t) = t.children
   let h_gap t = t.h_gap
   let v_gap t = t.v_gap
@@ -233,126 +238,143 @@ let border_opt_v border =
   Option.map Border.space_v border |> Option.value ~default:0
 
 let rec measure ?(width = max_int) element =
-  match element with
-  | Text { content; tab_width; wrap; _ } ->
-      let expanded = Graphics.expand_tabs content tab_width in
-      let lines =
-        if wrap && width < max_int then Graphics.wrap_text expanded width
-        else String.split_on_char '\n' expanded
-      in
-      let max_width =
-        List.fold_left
-          (fun acc line -> max acc (Render.measure_string line))
-          0 lines
-      in
-      (max_width, max 1 (List.length lines))
-  | Rich_text { segments } ->
-      ( List.fold_left
-          (fun acc (s, _) -> acc + Render.measure_string s)
-          0 segments,
-        1 )
-  | Spacer { size; _ } -> (size, 1)
-  | Box { children; options } ->
-      let border_h = border_opt_h options.border in
-      let border_v = border_opt_v options.border in
-      let padding_h = options.padding.left + options.padding.right in
-      let padding_v = options.padding.top + options.padding.bottom in
-      let content_width = max 0 (width - border_h - padding_h) in
+  let max_reasonable = 10_000 in
+  let width = min width max_reasonable in
+  let clamp_result (w, h) = (min w max_reasonable, min h max_reasonable) in
+  let result =
+    match element with
+    | Text { content; tab_width; wrap; _ } ->
+        let expanded = Graphics.expand_tabs content tab_width in
+        let lines =
+          if wrap && width < max_int then Graphics.wrap_text expanded width
+          else String.split_on_char '\n' expanded
+        in
+        let max_width =
+          List.fold_left
+            (fun acc line -> max acc (Render.measure_string line))
+            0 lines
+        in
+        (max_width, max 1 (List.length lines))
+    | Rich_text { segments } ->
+        ( List.fold_left
+            (fun acc (s, _) -> acc + Render.measure_string s)
+            0 segments,
+          1 )
+    | Spacer { size; _ } -> (max 0 size, 0)
+    | Box { children; options } ->
+        let border_h = border_opt_h options.border in
+        let border_v = border_opt_v options.border in
+        let padding_h = options.padding.left + options.padding.right in
+        let padding_v = options.padding.top + options.padding.bottom in
+        let content_width = max 0 (width - border_h - padding_h) in
 
-      let children_sizes =
-        List.map
-          (fun child ->
-            let child_width =
-              if options.direction = `Vertical then content_width else max_int
-            in
-            measure ~width:child_width child)
-          children
-      in
+        let children_sizes =
+          List.map
+            (fun child ->
+              let child_width =
+                match options.direction with
+                | `Vertical -> content_width
+                | `Horizontal -> (
+                    (* For wrapped boxes containing flow, constrain width *)
+                    match (child, options.width) with
+                    | Flow _, Some _ -> content_width
+                    | _ -> max_int)
+              in
+              measure ~width:child_width child)
+            children
+        in
 
-      let natural_w, natural_h =
-        match options.direction with
-        | `Horizontal ->
-            let total_width =
-              List.fold_left (fun acc (w, _) -> acc + w) 0 children_sizes
-            in
-            let max_height =
-              List.fold_left (fun acc (_, h) -> max acc h) 0 children_sizes
-            in
-            let gap_space = options.gap * max 0 (List.length children - 1) in
-            ( total_width + gap_space + padding_h + border_h,
-              max_height + padding_v + border_v )
-        | `Vertical ->
-            let max_width =
-              List.fold_left (fun acc (w, _) -> max acc w) 0 children_sizes
-            in
-            let total_height =
-              List.fold_left (fun acc (_, h) -> acc + h) 0 children_sizes
-            in
-            let gap_space = options.gap * max 0 (List.length children - 1) in
-            ( max_width + padding_h + border_h,
-              total_height + gap_space + padding_v + border_v )
-      in
-      let resolve_dim value min_v max_v natural =
-        let resolved = Option.value value ~default:natural in
-        let with_min =
-          match min_v with Some m -> max m resolved | None -> resolved
+        let natural_w, natural_h =
+          match options.direction with
+          | `Horizontal ->
+              let total_width =
+                List.fold_left (fun acc (w, _) -> acc + w) 0 children_sizes
+              in
+              let max_height =
+                List.fold_left (fun acc (_, h) -> max acc h) 0 children_sizes
+              in
+              let gap_space = options.gap * max 0 (List.length children - 1) in
+              ( total_width + gap_space + padding_h + border_h,
+                max_height + padding_v + border_v )
+          | `Vertical ->
+              let max_width =
+                List.fold_left (fun acc (w, _) -> max acc w) 0 children_sizes
+              in
+              let total_height =
+                List.fold_left (fun acc (_, h) -> acc + h) 0 children_sizes
+              in
+              let gap_space = options.gap * max 0 (List.length children - 1) in
+              ( max_width + padding_h + border_h,
+                total_height + gap_space + padding_v + border_v )
         in
-        match max_v with Some m -> min m with_min | None -> with_min
-      in
-      ( resolve_dim options.width options.min_width options.max_width natural_w,
-        resolve_dim options.height options.min_height options.max_height
-          natural_h )
-  | Z_stack { children; _ } ->
-      List.fold_left
-        (fun (max_w, max_h) child ->
-          let w, h = measure ~width child in
-          (max max_w w, max max_h h))
-        (0, 0) children
-  | Flow { children; h_gap; v_gap; _ } ->
-      if width = max_int then (* Unconstrained width, just sum horizontally *)
-        let total_w =
-          List.fold_left (fun acc c -> acc + fst (measure c)) 0 children
+        let resolve_dim value min_v max_v natural =
+          let max_reasonable = 10_000 in
+          let resolved =
+            Option.value value ~default:natural |> min max_reasonable
+          in
+          let with_min =
+            match min_v with Some m -> max m resolved | None -> resolved
+          in
+          match max_v with Some m -> min m with_min | None -> with_min
         in
-        let max_h =
-          List.fold_left (fun acc c -> max acc (snd (measure c))) 0 children
-        in
-        (total_w + (h_gap * max 0 (List.length children - 1)), max_h)
-      else (* Constrained width, simulate wrapping *)
-        let measured = List.map (fun c -> measure ~width:max_int c) children in
-        let rec simulate_wrap current_x current_h total_h rem_measured =
-          match rem_measured with
-          | [] -> if current_x > 0 then total_h + current_h else total_h
-          | (cw, ch) :: rest ->
-              let gap = if current_x > 0 then h_gap else 0 in
-              if current_x + gap + cw > width && current_x > 0 then
-                let new_total_h =
-                  total_h + current_h + if total_h > 0 then v_gap else 0
-                in
-                simulate_wrap cw ch new_total_h rest
-              else
-                simulate_wrap
-                  (current_x + gap + cw)
-                  (max current_h ch) total_h rest
-        in
-        (width, simulate_wrap 0 0 0 measured)
-  | Grid { columns; rows; col_spacing; row_spacing; _ } ->
-      let fixed_width =
+        ( resolve_dim options.width options.min_width options.max_width natural_w,
+          resolve_dim options.height options.min_height options.max_height
+            natural_h )
+    | Z_stack { children; _ } ->
         List.fold_left
-          (fun acc col -> match col with `Fixed w -> acc + w | _ -> acc)
-          0 columns
-      in
-      let fixed_height =
-        List.fold_left
-          (fun acc row -> match row with `Fixed h -> acc + h | _ -> acc)
-          0 rows
-      in
-      let col_gaps = col_spacing * max 0 (List.length columns - 1) in
-      let row_gaps = row_spacing * max 0 (List.length rows - 1) in
-      (fixed_width + col_gaps, fixed_height + row_gaps)
-  | Scroll { child; width = scroll_w; height = scroll_h; _ } ->
-      let child_w, child_h = measure child in
-      ( Option.value scroll_w ~default:child_w,
-        Option.value scroll_h ~default:child_h )
+          (fun (max_w, max_h) child ->
+            let w, h = measure ~width child in
+            (max max_w w, max max_h h))
+          (0, 0) children
+    | Flow { children; h_gap; v_gap; _ } ->
+        if width = max_int then (* Unconstrained width, just sum horizontally *)
+          let total_w =
+            List.fold_left (fun acc c -> acc + fst (measure c)) 0 children
+          in
+          let max_h =
+            List.fold_left (fun acc c -> max acc (snd (measure c))) 0 children
+          in
+          (total_w + (h_gap * max 0 (List.length children - 1)), max_h)
+        else (* Constrained width, simulate wrapping *)
+          let measured =
+            List.map (fun c -> measure ~width:max_int c) children
+          in
+          let rec simulate_wrap current_x current_h total_h rem_measured =
+            match rem_measured with
+            | [] -> if current_x > 0 then total_h + current_h else total_h
+            | (cw, ch) :: rest ->
+                let gap = if current_x > 0 then h_gap else 0 in
+                if current_x + gap + cw > width && current_x > 0 then
+                  let new_total_h =
+                    total_h + current_h + if total_h > 0 then v_gap else 0
+                  in
+                  simulate_wrap cw ch new_total_h rest
+                else
+                  simulate_wrap
+                    (current_x + gap + cw)
+                    (max current_h ch) total_h rest
+          in
+          (width, simulate_wrap 0 0 0 measured)
+    | Grid { columns; rows; col_spacing; row_spacing; _ } ->
+        let fixed_width =
+          List.fold_left
+            (fun acc col -> match col with `Fixed w -> acc + w | _ -> acc)
+            0 columns
+        in
+        let fixed_height =
+          List.fold_left
+            (fun acc row -> match row with `Fixed h -> acc + h | _ -> acc)
+            0 rows
+        in
+        let col_gaps = col_spacing * max 0 (List.length columns - 1) in
+        let row_gaps = row_spacing * max 0 (List.length rows - 1) in
+        (fixed_width + col_gaps, fixed_height + row_gaps)
+    | Scroll { child; width = scroll_w; height = scroll_h; _ } ->
+        let child_w, child_h = measure child in
+        ( Option.value scroll_w ~default:child_w,
+          Option.value scroll_h ~default:child_h )
+  in
+  clamp_result result
 
 and min_width element =
   match element with
@@ -396,6 +418,7 @@ and min_height element =
   match element with
   | Text { content; _ } ->
       String.split_on_char '\n' content |> List.length |> max 1
+  | Spacer _ -> 0
   | Box { options; children; _ } ->
       let pad_v = options.padding.top + options.padding.bottom in
       let bor_v = border_opt_v options.border in
@@ -420,6 +443,7 @@ let grow_fact = function
 let shrink_fact = function
   | Box { options; _ } -> options.flex_shrink
   | Text { wrap = true; _ } -> 1
+  | Spacer { flex; _ } -> flex
   | _ -> 0
 
 let text ?(style = Render.Style.empty) ?(align = `Start) ?(tab_width = 4)
@@ -429,7 +453,7 @@ let text ?(style = Render.Style.empty) ?(align = `Start) ?(tab_width = 4)
 let rich_text segments = Rich_text (Rich_text.make segments)
 let spacer ?(flex = 0) size = Spacer (Spacer.make ~flex size)
 
-let flow ?(h_gap = 0) ?(v_gap = 0) children =
+let flow ?(h_gap = 1) ?(v_gap = 0) children =
   Flow (Flow.make ~h_gap ~v_gap children)
 
 let grid ?(col_spacing = 0) ?(row_spacing = 0) ~columns ~rows children =

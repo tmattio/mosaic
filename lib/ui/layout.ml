@@ -143,14 +143,17 @@ let rec calculate bounds element =
   | Grid g -> calculate_grid bounds g
   | Scroll s -> calculate_scroll bounds s
   | Text _ | Rich_text _ | Spacer _ ->
-      (* Leaf elements: their size is their measured size within the bounds *)
-      let w, h = Element.measure ~width:(Bounds.width bounds) element in
+      (* Leaf elements: expand width to full bounds to enable proper alignment *)
+      let _natural_w, natural_h =
+        Element.measure ~width:(Bounds.width bounds) element
+      in
       {
         element;
         x = Bounds.x bounds;
         y = Bounds.y bounds;
-        width = min w (Bounds.width bounds);
-        height = min h (Bounds.height bounds);
+        width = Bounds.width bounds;
+        (* Use full available width *)
+        height = min natural_h (Bounds.height bounds);
         children = [];
       }
 
@@ -166,9 +169,12 @@ and calculate_box bounds box_data =
       && (not (List.exists is_expandable children_elements))
       && children_elements <> []
     then
-      match List.rev children_elements with
-      | [] -> []
-      | last :: rest -> List.rev (last :: Element.spacer ~flex:1 0 :: rest)
+      let spacer = Element.spacer ~flex:1 0 in
+      match options.justify with
+      | `Start -> children_elements @ [ spacer ]
+      | `End -> spacer :: children_elements
+      | `Center -> (spacer :: children_elements) @ [ spacer ]
+      | `Stretch -> children_elements (* No spacers needed for stretch *)
     else children_elements
   in
 
@@ -191,8 +197,9 @@ and calculate_box bounds box_data =
   let natural_w, natural_h =
     Element.measure ~width:(Bounds.width margin_bounds) element
   in
-  let resolve_dim value min_v max_v natural available =
-    let r = Option.value value ~default:(min natural available) in
+  let resolve_dim value min_v max_v _natural available =
+    let max_reasonable = 10_000 in
+    let r = Option.value value ~default:available |> min max_reasonable in
     let r = match min_v with Some m -> max m r | _ -> r in
     match max_v with Some m -> min m r | _ -> r
   in
@@ -248,7 +255,7 @@ and calculate_box bounds box_data =
         (* Count only non-zero width elements for total width with gaps *)
         let non_zero_widths = List.filter (fun w -> w > 0) assigned_widths in
         let total_children_w =
-          List.fold_left ( + ) 0 assigned_widths
+          List.fold_left ( + ) 0 non_zero_widths
           + (options.gap * max 0 (List.length non_zero_widths - 1))
         in
         let justify_offset =
@@ -293,7 +300,7 @@ and calculate_box bounds box_data =
         (* Count only non-zero height elements for total height with gaps *)
         let non_zero_heights = List.filter (fun h -> h > 0) assigned_heights in
         let total_children_h =
-          List.fold_left ( + ) 0 assigned_heights
+          List.fold_left ( + ) 0 non_zero_heights
           + (options.gap * max 0 (List.length non_zero_heights - 1))
         in
         let justify_offset =
@@ -331,8 +338,8 @@ and calculate_box bounds box_data =
   in
   {
     element;
-    x = Bounds.x bounds;
-    y = Bounds.y bounds;
+    x = Bounds.x bounds + Element.Padding.left options.margin;
+    y = Bounds.y bounds + Element.Padding.top options.margin;
     width = box_w;
     height = box_h;
     children = children_layouts;
@@ -349,13 +356,13 @@ and calculate_z_stack bounds z_data =
         let x_offset =
           match align with
           | Top_left | Left | Bottom_left -> 0
-          | Top | Center | Bottom -> (Bounds.width bounds - child_w) / 2
+          | Top | Center | Bottom -> (Bounds.width bounds - child_w + 1) / 2
           | Top_right | Right | Bottom_right -> Bounds.width bounds - child_w
         in
         let y_offset =
           match align with
           | Top_left | Top | Top_right -> 0
-          | Left | Center | Right -> (Bounds.height bounds - child_h) / 2
+          | Left | Center | Right -> (Bounds.height bounds - child_h + 1) / 2
           | Bottom_left | Bottom | Bottom_right ->
               Bounds.height bounds - child_h
         in
@@ -386,28 +393,33 @@ and calculate_flow bounds flow_data =
     | [] -> acc
     | child :: rest ->
         let child_w, child_h = Element.measure child in
-        let next_x = x_cursor + child_w + h_gap in
+        let gap = if x_cursor > Bounds.x bounds then h_gap else 0 in
+        let next_x = x_cursor + gap + child_w in
         if
           x_cursor > Bounds.x bounds
           && next_x > Bounds.x bounds + Bounds.width bounds
         then
           (* New line *)
-          let new_y = y_cursor + current_line_h + v_gap in
+          let gap_v = if y_cursor > Bounds.y bounds then v_gap else 0 in
+          let new_y = y_cursor + current_line_h + gap_v in
           let child_bounds =
             Bounds.make ~x:(Bounds.x bounds) ~y:new_y ~width:child_w
               ~height:child_h
           in
           let computed = calculate child_bounds child in
           wrap_children
-            (Bounds.x bounds + child_w + h_gap)
+            (Bounds.x bounds + child_w)
             new_y child_h (computed :: acc) rest
         else
           (* Same line *)
           let child_bounds =
-            Bounds.make ~x:x_cursor ~y:y_cursor ~width:child_w ~height:child_h
+            Bounds.make ~x:(x_cursor + gap) ~y:y_cursor ~width:child_w
+              ~height:child_h
           in
           let computed = calculate child_bounds child in
-          wrap_children next_x y_cursor
+          wrap_children
+            (x_cursor + gap + child_w)
+            y_cursor
             (max current_line_h child_h)
             (computed :: acc) rest
   in
@@ -437,26 +449,43 @@ and calculate_grid bounds grid_data =
   let col_spacing = Element.Grid.col_spacing grid_data in
   let row_spacing = Element.Grid.row_spacing grid_data in
 
+  (* Calculate natural size *)
+  let natural_w =
+    List.fold_left
+      (fun acc col -> match col with `Fixed w -> acc + w | _ -> acc)
+      0 cols
+    + (col_spacing * max 0 (List.length cols - 1))
+  in
+  let natural_h =
+    List.fold_left
+      (fun acc row -> match row with `Fixed h -> acc + h | _ -> acc)
+      0 rows
+    + (row_spacing * max 0 (List.length rows - 1))
+  in
+
+  (* Resolve dimensions using resolve_dim like box does *)
+  let grid_w = min natural_w (Bounds.width bounds) in
+  let grid_h = min natural_h (Bounds.height bounds) in
+
   let calc_sizes defs available_space spacing =
     let total_fixed =
       List.fold_left
         (fun acc d -> match d with `Fixed s -> acc + s | _ -> acc)
         0 defs
     in
-    let total_flex =
-      List.fold_left
-        (fun acc d -> match d with `Flex f -> acc + f | _ -> acc)
-        0 defs
+    let flex_weights =
+      List.map (function `Flex f -> f | `Fixed _ -> 0) defs
     in
     let total_spacing = spacing * max 0 (List.length defs - 1) in
-    let flex_unit =
-      if total_flex = 0 then 0
-      else max 0 (available_space - total_fixed - total_spacing) / total_flex
-    in
-    List.map (function `Fixed s -> s | `Flex f -> f * flex_unit) defs
+    let flex_space = max 0 (available_space - total_fixed - total_spacing) in
+    let flex_amounts = distribute_fairly flex_space flex_weights in
+    List.map2
+      (fun def flex_amount ->
+        match def with `Fixed s -> s | `Flex _ -> flex_amount)
+      defs flex_amounts
   in
-  let col_widths = calc_sizes cols (Bounds.width bounds) col_spacing in
-  let row_heights = calc_sizes rows (Bounds.height bounds) row_spacing in
+  let col_widths = calc_sizes cols grid_w col_spacing in
+  let row_heights = calc_sizes rows grid_h row_spacing in
 
   let rec layout_cells ~x_cursor ~y_cursor ~col ~row acc = function
     | [] -> acc
@@ -487,8 +516,8 @@ and calculate_grid bounds grid_data =
     element;
     x = Bounds.x bounds;
     y = Bounds.y bounds;
-    width = Bounds.width bounds;
-    height = Bounds.height bounds;
+    width = grid_w;
+    height = grid_h;
     children = children_layouts;
   }
 

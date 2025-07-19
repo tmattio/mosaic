@@ -42,27 +42,31 @@ let wrap_text text width =
         if len <= width then [ line ]
         else
           let decoder = Uutf.decoder ~encoding:`UTF_8 (`String line) in
+          let last_space_byte = ref (-1) in
           let find_wrap () =
             let current_cell = ref 0 in
-            let last_space_byte = ref (-1) in
             let prev_byte = ref 0 in
             let rec loop () =
               match Uutf.decode decoder with
               | `Uchar u ->
-                  let w = max 0 (Uucp.Break.tty_width_hint u) in
+                  let w = max 1 (Uucp.Break.tty_width_hint u) in
                   let current_byte = Uutf.decoder_byte_count decoder in
                   let char_byte_size = current_byte - !prev_byte in
-                  if !current_cell + w > width then
+                  if !current_cell + w > width && !current_cell > 0 then
                     if !last_space_byte > 0 then !last_space_byte
-                    else max 1 (current_byte - char_byte_size)
+                    else current_byte - char_byte_size
                   else (
                     if Uchar.equal u (Uchar.of_char ' ') then
-                      last_space_byte := current_byte - char_byte_size;
+                      last_space_byte := current_byte;
                     current_cell := !current_cell + w;
                     prev_byte := current_byte;
                     loop ())
               | `End -> String.length line
-              | `Malformed _ -> loop ()
+              | `Malformed _ ->
+                  (* Skip malformed and continue *)
+                  let current_byte = Uutf.decoder_byte_count decoder in
+                  prev_byte := current_byte;
+                  loop ()
               | `Await -> assert false
             in
             loop ()
@@ -79,7 +83,15 @@ let wrap_text text width =
             let first = String.sub line 0 break_byte in
             let rest =
               String.sub line break_byte (String.length line - break_byte)
-              |> String.trim
+            in
+            (* Only trim leading space if we broke at a space *)
+            let rest =
+              if
+                break_byte = !last_space_byte
+                && String.length rest > 0
+                && rest.[0] = ' '
+              then String.sub rest 1 (String.length rest - 1)
+              else rest
             in
             if rest = "" then [ first ] else first :: wrap_line rest
     in
@@ -100,75 +112,142 @@ let draw_border ?(clip : Render.Clip.t option = None) ~buffer
     ~rect:(x, y, width, height) ~border () =
   if width <= 0 || height <= 0 then ()
   else
-    let border_chars style =
-      match style with
-      | Border.Solid -> ("┌", "─", "┐", "│", "└", "─", "┘", "│")
-      | Border.Rounded -> ("╭", "─", "╮", "│", "╰", "─", "╯", "│")
-      | Border.Double -> ("╔", "═", "╗", "║", "╚", "═", "╝", "║")
-      | Border.Thick -> ("┏", "━", "┓", "┃", "┗", "━", "┛", "┃")
-      | Border.ASCII -> ("+", "-", "+", "|", "+", "-", "+", "|")
+    (* Calculate effective rectangle after clipping *)
+    let effective_rect =
+      match clip with
+      | None -> (x, y, width, height)
+      | Some clip_rect ->
+          let clip_x = Render.Clip.x clip_rect in
+          let clip_y = Render.Clip.y clip_rect in
+          let clip_w = Render.Clip.width clip_rect in
+          let clip_h = Render.Clip.height clip_rect in
+          let eff_x = max x clip_x in
+          let eff_y = max y clip_y in
+          let eff_right = min (x + width) (clip_x + clip_w) in
+          let eff_bottom = min (y + height) (clip_y + clip_h) in
+          let eff_w = max 0 (eff_right - eff_x) in
+          let eff_h = max 0 (eff_bottom - eff_y) in
+          (eff_x, eff_y, eff_w, eff_h)
     in
-    let tl, t, tr, r, bl, b, br, l = border_chars (Border.style border) in
-    let border_style =
-      match Border.color border with
-      | Some color -> Render.Style.fg color
-      | None -> Render.Style.empty
-    in
-    let top_left =
-      if Border.top border && Border.left border then tl
-      else if Border.top border then t
-      else if Border.left border then l
-      else " "
-    in
-    let top_right =
-      if Border.top border && Border.right border then tr
-      else if Border.top border then t
-      else if Border.right border then r
-      else " "
-    in
-    let bottom_left =
-      if Border.bottom border && Border.left border then bl
-      else if Border.bottom border then b
-      else if Border.left border then l
-      else " "
-    in
-    let bottom_right =
-      if Border.bottom border && Border.right border then br
-      else if Border.bottom border then b
-      else if Border.right border then r
-      else " "
-    in
+    let eff_x, eff_y, eff_w, eff_h = effective_rect in
+    if eff_w <= 0 || eff_h <= 0 then ()
+    else
+      let border_chars style =
+        match style with
+        | Border.Solid -> ("┌", "─", "┐", "│", "└", "─", "┘", "│")
+        | Border.Rounded -> ("╭", "─", "╮", "│", "╰", "─", "╯", "│")
+        | Border.Double -> ("╔", "═", "╗", "║", "╚", "═", "╝", "║")
+        | Border.Thick -> ("┏", "━", "┓", "┃", "┗", "━", "┛", "┃")
+        | Border.ASCII -> ("+", "-", "+", "|", "+", "-", "+", "|")
+      in
+      let tl, t, tr, r, bl, b, br, l = border_chars (Border.style border) in
+      let border_style =
+        match Border.color border with
+        | Some color -> Render.Style.fg color
+        | None -> Render.Style.empty
+      in
+      (* Corners should only use corner characters when both sides are enabled *)
+      let top_left =
+        if Border.top border && Border.left border then tl else " "
+      in
+      let top_right =
+        if Border.top border && Border.right border then tr else " "
+      in
+      let bottom_left =
+        if Border.bottom border && Border.left border then bl else " "
+      in
+      let bottom_right =
+        if Border.bottom border && Border.right border then br else " "
+      in
 
-    (* Draw corners if possible *)
-    if Border.top border || Border.left border then
-      Render.set_string ?clip buffer x y top_left border_style;
-    if width > 1 && (Border.top border || Border.right border) then
-      Render.set_string ?clip buffer (x + width - 1) y top_right border_style;
-    if height > 1 && (Border.bottom border || Border.left border) then
-      Render.set_string ?clip buffer x (y + height - 1) bottom_left border_style;
-    if width > 1 && height > 1 && (Border.bottom border || Border.right border)
-    then
-      Render.set_string ?clip buffer
-        (x + width - 1)
-        (y + height - 1)
-        bottom_right border_style;
+      (* Check if corners are at original positions (not clipped) *)
+      let left_edge_visible = eff_x = x in
+      let right_edge_visible = eff_x + eff_w = x + width in
+      let top_edge_visible = eff_y = y in
+      let bottom_edge_visible = eff_y + eff_h = y + height in
 
-    (* Draw sides *)
-    if Border.top border && width > 2 then
-      for i = 1 to width - 2 do
-        Render.set_string ?clip buffer (x + i) y t border_style
-      done;
-    if Border.bottom border && width > 2 && height > 1 then
-      for i = 1 to width - 2 do
-        Render.set_string ?clip buffer (x + i) (y + height - 1) b border_style
-      done;
-    if height > 2 then
-      for i = 1 to height - 2 do
-        if Border.left border then
-          Render.set_string ?clip buffer x (y + i) l border_style;
-        if Border.right border && width > 1 then
-          Render.set_string ?clip buffer (x + width - 1) (y + i) r border_style
-      done
+      (* Draw corners only if both adjacent sides are enabled *)
+      if
+        top_edge_visible && left_edge_visible && Border.top border
+        && Border.left border
+      then Render.set_string ?clip buffer x y top_left border_style;
+      if
+        top_edge_visible && right_edge_visible && width > 1 && Border.top border
+        && Border.right border
+      then
+        Render.set_string ?clip buffer (x + width - 1) y top_right border_style;
+      if
+        bottom_edge_visible && left_edge_visible && height > 1
+        && Border.bottom border && Border.left border
+      then
+        Render.set_string ?clip buffer x
+          (y + height - 1)
+          bottom_left border_style;
+      if
+        bottom_edge_visible && right_edge_visible && width > 1 && height > 1
+        && Border.bottom border && Border.right border
+      then
+        Render.set_string ?clip buffer
+          (x + width - 1)
+          (y + height - 1)
+          bottom_right border_style;
+
+      (* Draw horizontal lines *)
+      if Border.top border && top_edge_visible && width > 0 then (
+        let start_x =
+          if left_edge_visible && Border.left border then x + 1
+          else if left_edge_visible then x
+          else eff_x
+        in
+        let end_x =
+          if right_edge_visible && Border.right border then x + width - 2
+          else if right_edge_visible then x + width - 1
+          else eff_x + eff_w - 1
+        in
+        if end_x >= start_x then
+          for i = start_x to end_x do
+            Render.set_string ?clip buffer i y t border_style
+          done;
+
+        if
+          Border.bottom border && bottom_edge_visible && width > 0 && height > 1
+        then (
+          let start_x =
+            if left_edge_visible && Border.left border then x + 1
+            else if left_edge_visible then x
+            else eff_x
+          in
+          let end_x =
+            if right_edge_visible && Border.right border then x + width - 2
+            else if right_edge_visible then x + width - 1
+            else eff_x + eff_w - 1
+          in
+          if end_x >= start_x then
+            for i = start_x to end_x do
+              Render.set_string ?clip buffer i (y + height - 1) b border_style
+            done;
+
+          (* Draw vertical lines *)
+          if height > 0 then
+            let start_y =
+              if top_edge_visible && Border.top border then y + 1
+              else if top_edge_visible then y
+              else eff_y
+            in
+            let end_y =
+              if bottom_edge_visible && Border.bottom border then y + height - 2
+              else if bottom_edge_visible then y + height - 1
+              else eff_y + eff_h - 1
+            in
+            if end_y >= start_y then
+              for i = start_y to end_y do
+                if Border.left border && left_edge_visible then
+                  Render.set_string ?clip buffer x i l border_style;
+                if Border.right border && right_edge_visible && width > 1 then
+                  Render.set_string ?clip buffer
+                    (x + width - 1)
+                    i r border_style
+              done))
 
 let draw_text ?(clip : Render.Clip.t option = None) ~buffer ~pos:(x, y)
     ~bounds:(w, h) ~text ~style ~align ~tab_width ~wrap () =
@@ -198,7 +277,7 @@ let draw_text ?(clip : Render.Clip.t option = None) ~buffer ~pos:(x, y)
 
   List.iteri
     (fun i line ->
-      if i < h then
+      if i < h then (
         let line_width = Render.measure_string line in
         let x_offset = align_offset w line_width in
         let available_width = w - x_offset in
@@ -215,7 +294,36 @@ let draw_text ?(clip : Render.Clip.t option = None) ~buffer ~pos:(x, y)
             ~height:total_lines ~line_offset:i
         else
           Render.set_string ?clip buffer (x + x_offset) (y + i) clipped_line
-            style)
+            style;
+
+        (* Pad remaining space on the line based on alignment *)
+        let clipped_width = Render.measure_string clipped_line in
+        let remaining = w - x_offset - clipped_width in
+        if remaining > 0 then
+          let pad_str = String.make remaining ' ' in
+          match align with
+          | `Start ->
+              (* Pad right *)
+              Render.set_string ?clip buffer
+                (x + x_offset + clipped_width)
+                (y + i) pad_str style
+          | `End ->
+              (* Already padded left by x_offset *)
+              ()
+          | `Center ->
+              (* Pad both sides - already padded left, pad right *)
+              let right_pad = remaining in
+              if right_pad > 0 then
+                Render.set_string ?clip buffer
+                  (x + x_offset + clipped_width)
+                  (y + i)
+                  (String.make right_pad ' ')
+                  style
+          | `Stretch ->
+              (* Pad right *)
+              Render.set_string ?clip buffer
+                (x + x_offset + clipped_width)
+                (y + i) pad_str style))
     lines
 
 let draw_rich_text ?(clip : Render.Clip.t option = None) ~buffer
