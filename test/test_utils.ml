@@ -60,6 +60,25 @@ let render_to_string ?(width = 80) ?(height = 24) element =
   done;
   Buffer.contents buf
 
+(** Helper to render a UI element to a string and print it for expect testing *)
+let print_ui ?(width = 20) ?(height = 5) element =
+  let output = render_to_string ~width ~height element in
+  (* Add a visual border to make the output clearer in the test file *)
+  let border_line = "+" ^ String.make width '-' ^ "+\n" in
+  let lines = String.split_on_char '\n' output in
+  let bordered_output =
+    List.map
+      (fun line ->
+        let len = String.length line in
+        let padded_line =
+          if len < width then line ^ String.make (width - len) ' ' else line
+        in
+        "|" ^ padded_line ^ "|")
+      lines
+    |> String.concat "\n"
+  in
+  print_string ("\n" ^ border_line ^ bordered_output ^ "\n" ^ border_line)
+
 (** A helper for writing concise Alcotest-based layout tests. *)
 let assert_renders_to ?width ?height element expected =
   let output = render_to_string ?width ?height element in
