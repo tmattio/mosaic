@@ -35,17 +35,12 @@ let distribute_fairly total_to_distribute weights =
     let with_fractions =
       List.mapi
         (fun i w ->
-          let ideal =
-            float_of_int total_to_distribute
-            *. float_of_int w /. float_of_int total_weight
-          in
-          (i, floor ideal, ideal -. floor ideal))
+          let base = (total_to_distribute * w) / total_weight in
+          let frac = (total_to_distribute * w) mod total_weight in
+          (i, base, frac))
         weights
     in
-    let base_amounts =
-      List.map (fun (_, base, _) -> int_of_float base) with_fractions
-    in
-    let distributed = List.fold_left ( + ) 0 base_amounts in
+    let distributed = List.fold_left (fun acc (_, base, _) -> acc + base) 0 with_fractions in
     let remainder = total_to_distribute - distributed in
     let sorted_by_fraction =
       List.sort (fun (_, _, f1) (_, _, f2) -> compare f2 f1) with_fractions
@@ -57,13 +52,12 @@ let distribute_fairly total_to_distribute weights =
             distribute_remainder (n - 1) ((idx, base + 1) :: acc) rest
           else distribute_remainder 0 ((idx, base) :: acc) rest
     in
-    let final_amounts_with_remainder =
-      distribute_remainder remainder []
-        (List.map (fun (i, b, f) -> (i, int_of_float b, f)) sorted_by_fraction)
+    let final_with_remainder =
+      distribute_remainder remainder [] sorted_by_fraction
     in
     List.sort
       (fun (i1, _) (i2, _) -> compare i1 i2)
-      final_amounts_with_remainder
+      final_with_remainder
     |> List.map snd
 
 (* Helper to assign sizes along the main axis using flexbox-like logic *)
@@ -142,8 +136,18 @@ let rec calculate bounds element =
   | Flow f -> calculate_flow bounds f
   | Grid g -> calculate_grid bounds g
   | Scroll s -> calculate_scroll bounds s
-  | Text _ | Rich_text _ | Spacer _ ->
-      (* Leaf elements: expand width to full bounds to enable proper alignment *)
+  | Spacer _ ->
+      (* Spacers should use full bounds dimensions *)
+      {
+        element;
+        x = Bounds.x bounds;
+        y = Bounds.y bounds;
+        width = Bounds.width bounds;
+        height = Bounds.height bounds;
+        children = [];
+      }
+  | Text _ | Rich_text _ ->
+      (* Text elements: expand width to full bounds to enable proper alignment *)
       let _natural_w, natural_h =
         Element.measure ~width:(Bounds.width bounds) element
       in
@@ -163,18 +167,26 @@ and calculate_box bounds box_data =
   let children_elements = Element.Box.children box_data in
   let is_expandable el = Element.grow_fact el > 0 in
 
+  (* Helper to insert spacers between children for fill mode *)
+  let insert_spacers children =
+    if List.length children <= 1 then children
+    else
+      let spacer = Element.spacer ~flex:1 0 in
+      let rec insert = function
+        | [] -> []
+        | [ x ] -> [ x ]
+        | x :: xs -> x :: spacer :: insert xs
+      in
+      insert children
+  in
+
   let children_elements =
     if
       options.fill
       && (not (List.exists is_expandable children_elements))
       && children_elements <> []
     then
-      let spacer = Element.spacer ~flex:1 0 in
-      match options.justify with
-      | `Start -> children_elements @ [ spacer ]
-      | `End -> spacer :: children_elements
-      | `Center -> (spacer :: children_elements) @ [ spacer ]
-      | `Stretch -> children_elements (* No spacers needed for stretch *)
+      insert_spacers children_elements
     else children_elements
   in
 
@@ -400,7 +412,7 @@ and calculate_flow bounds flow_data =
           && next_x > Bounds.x bounds + Bounds.width bounds
         then
           (* New line *)
-          let gap_v = if y_cursor > Bounds.y bounds then v_gap else 0 in
+          let gap_v = v_gap in
           let new_y = y_cursor + current_line_h + gap_v in
           let child_bounds =
             Bounds.make ~x:(Bounds.x bounds) ~y:new_y ~width:child_w
@@ -538,12 +550,12 @@ and calculate_scroll bounds scroll_data =
   let visible_x = max 0 (min h_offset (child_w - viewport_w)) in
   let visible_y = max 0 (min v_offset (child_h - viewport_h)) in
 
-  (* The child is laid out in its full size, but offset "behind" the viewport *)
+  (* The child is laid out constrained to viewport size, but offset "behind" the viewport *)
   let child_bounds =
     Bounds.make
       ~x:(Bounds.x bounds - visible_x)
       ~y:(Bounds.y bounds - visible_y)
-      ~width:child_w ~height:child_h
+      ~width:viewport_w ~height:viewport_h
   in
   let computed_child = calculate child_bounds child in
   {

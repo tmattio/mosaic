@@ -87,8 +87,8 @@ let render buffer top_level_element =
     | Rich_text rt ->
         let segments = Rich_text.segments rt in
         Graphics.draw_rich_text ~clip ~buffer ~pos ~width ~segments ()
-    | Flow _ | Z_stack _ ->
-        (* Flow and Z_stack need background fill for proper rendering *)
+    | Flow _ | Z_stack _ | Grid _ ->
+        (* Flow, Z_stack, and Grid need background fill for proper rendering *)
         (* Fill the entire element bounds with spaces to clear the area *)
         for y = 0 to height - 1 do
           for x = 0 to width - 1 do

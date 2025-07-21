@@ -52,12 +52,12 @@ let wrap_text text width =
                   let w = max 1 (Uucp.Break.tty_width_hint u) in
                   let current_byte = Uutf.decoder_byte_count decoder in
                   let char_byte_size = current_byte - !prev_byte in
+                  if Uchar.equal u (Uchar.of_char ' ') then
+                    last_space_byte := current_byte;
                   if !current_cell + w > width && !current_cell > 0 then
                     if !last_space_byte > 0 then !last_space_byte
                     else current_byte - char_byte_size
                   else (
-                    if Uchar.equal u (Uchar.of_char ' ') then
-                      last_space_byte := current_byte;
                     current_cell := !current_cell + w;
                     prev_byte := current_byte;
                     loop ())
@@ -72,7 +72,11 @@ let wrap_text text width =
             loop ()
           in
           let break_byte = find_wrap () in
-          if break_byte = 0 then
+          let adjusted_break_byte =
+            if break_byte = !last_space_byte && break_byte > 0 then break_byte - 1
+            else break_byte
+          in
+          if adjusted_break_byte = 0 then
             let split_at = unicode_substring line width |> String.length in
             let first = String.sub line 0 split_at in
             let rest =
@@ -80,7 +84,7 @@ let wrap_text text width =
             in
             first :: wrap_line rest
           else
-            let first = String.sub line 0 break_byte in
+            let first = String.sub line 0 adjusted_break_byte in
             let rest =
               String.sub line break_byte (String.length line - break_byte)
             in
@@ -225,29 +229,29 @@ let draw_border ?(clip : Render.Clip.t option = None) ~buffer
           if end_x >= start_x then
             for i = start_x to end_x do
               Render.set_string ?clip buffer i (y + height - 1) b border_style
-            done;
+            done));
 
-          (* Draw vertical lines *)
-          if height > 0 then
-            let start_y =
-              if top_edge_visible && Border.top border then y + 1
-              else if top_edge_visible then y
-              else eff_y
-            in
-            let end_y =
-              if bottom_edge_visible && Border.bottom border then y + height - 2
-              else if bottom_edge_visible then y + height - 1
-              else eff_y + eff_h - 1
-            in
-            if end_y >= start_y then
-              for i = start_y to end_y do
-                if Border.left border && left_edge_visible then
-                  Render.set_string ?clip buffer x i l border_style;
-                if Border.right border && right_edge_visible && width > 1 then
-                  Render.set_string ?clip buffer
-                    (x + width - 1)
-                    i r border_style
-              done))
+      (* Draw vertical lines *)
+      if height > 0 then
+        let start_y =
+          if top_edge_visible && Border.top border then y + 1
+          else if top_edge_visible then y
+          else eff_y
+        in
+        let end_y =
+          if bottom_edge_visible && Border.bottom border then y + height - 2
+          else if bottom_edge_visible then y + height - 1
+          else eff_y + eff_h - 1
+        in
+        if end_y >= start_y then
+          for i = start_y to end_y do
+            if Border.left border && left_edge_visible then
+              Render.set_string ?clip buffer x i l border_style;
+            if Border.right border && right_edge_visible && width > 1 then
+              Render.set_string ?clip buffer
+                (x + width - 1)
+                i r border_style
+          done
 
 let draw_text ?(clip : Render.Clip.t option = None) ~buffer ~pos:(x, y)
     ~bounds:(w, h) ~text ~style ~align ~tab_width ~wrap () =

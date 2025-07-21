@@ -345,9 +345,7 @@ let rec measure ?(width = max_int) element =
             | (cw, ch) :: rest ->
                 let gap = if current_x > 0 then h_gap else 0 in
                 if current_x + gap + cw > width && current_x > 0 then
-                  let new_total_h =
-                    total_h + current_h + if total_h > 0 then v_gap else 0
-                  in
+                  let new_total_h = total_h + current_h + v_gap in
                   simulate_wrap cw ch new_total_h rest
                 else
                   simulate_wrap
@@ -499,7 +497,7 @@ let hbox ?(gap = 0) ?width ?height ?min_width ?min_height ?max_width ?max_height
 let vbox ?(gap = 0) ?width ?height ?min_width ?min_height ?max_width ?max_height
     ?(margin = Padding.no_padding) ?(padding = Padding.no_padding) ?border
     ?background ?(align_items = `Stretch) ?(justify_content = `Start)
-    ?(flex_grow = 0) ?(flex_shrink = 0) ?(fill = true) children =
+    ?(flex_grow = 0) ?(flex_shrink = 0) ?(fill = false) children =
   let options =
     {
       Box.direction = `Vertical;
