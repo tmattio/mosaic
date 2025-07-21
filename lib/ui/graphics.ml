@@ -116,7 +116,6 @@ let draw_border ?(clip : Render.Clip.t option = None) ~buffer
     ~rect:(x, y, width, height) ~border () =
   if width <= 0 || height <= 0 then ()
   else
-    (* Calculate effective rectangle after clipping *)
     let effective_rect =
       match clip with
       | None -> (x, y, width, height)
@@ -150,108 +149,68 @@ let draw_border ?(clip : Render.Clip.t option = None) ~buffer
         | Some color -> Render.Style.fg color
         | None -> Render.Style.empty
       in
-      (* Corners should only use corner characters when both sides are enabled *)
-      let top_left =
-        if Border.top border && Border.left border then tl else " "
-      in
-      let top_right =
-        if Border.top border && Border.right border then tr else " "
-      in
-      let bottom_left =
-        if Border.bottom border && Border.left border then bl else " "
-      in
-      let bottom_right =
-        if Border.bottom border && Border.right border then br else " "
-      in
-
-      (* Check if corners are at original positions (not clipped) *)
       let left_edge_visible = eff_x = x in
       let right_edge_visible = eff_x + eff_w = x + width in
       let top_edge_visible = eff_y = y in
       let bottom_edge_visible = eff_y + eff_h = y + height in
+      let eff_right = eff_x + eff_w - 1 in
 
-      (* Draw corners only if both adjacent sides are enabled *)
-      if
-        top_edge_visible && left_edge_visible && Border.top border
-        && Border.left border
-      then Render.set_string ?clip buffer x y top_left border_style;
-      if
-        top_edge_visible && right_edge_visible && width > 1 && Border.top border
-        && Border.right border
-      then
-        Render.set_string ?clip buffer (x + width - 1) y top_right border_style;
-      if
-        bottom_edge_visible && left_edge_visible && height > 1
-        && Border.bottom border && Border.left border
-      then
-        Render.set_string ?clip buffer x
-          (y + height - 1)
-          bottom_left border_style;
-      if
-        bottom_edge_visible && right_edge_visible && width > 1 && height > 1
-        && Border.bottom border && Border.right border
-      then
-        Render.set_string ?clip buffer
-          (x + width - 1)
-          (y + height - 1)
-          bottom_right border_style;
+      (* Corners *)
+      let left_corner_x = if left_edge_visible then x else eff_x in
+      let right_corner_x = if right_edge_visible then x + width - 1 else eff_right in
+      let top_corner_y = y in
+      let bottom_corner_y = y + height - 1 in
 
-      (* Draw horizontal lines *)
-      if Border.top border && top_edge_visible && width > 0 then (
-        let start_x =
-          if left_edge_visible && Border.left border then x + 1
-          else if left_edge_visible then x
-          else eff_x
-        in
-        let end_x =
-          if right_edge_visible && Border.right border then x + width - 2
-          else if right_edge_visible then x + width - 1
-          else eff_x + eff_w - 1
-        in
-        if end_x >= start_x then
-          for i = start_x to end_x do
-            Render.set_string ?clip buffer i y t border_style
-          done;
+      if top_edge_visible && Border.top border && Border.left border then
+        Render.set_string ?clip buffer left_corner_x top_corner_y tl border_style;
+      if top_edge_visible && Border.top border && Border.right border then
+        Render.set_string ?clip buffer right_corner_x top_corner_y tr border_style;
+      if bottom_edge_visible && Border.bottom border && Border.left border then
+        Render.set_string ?clip buffer left_corner_x bottom_corner_y bl border_style;
+      if bottom_edge_visible && Border.bottom border && Border.right border then
+        Render.set_string ?clip buffer right_corner_x bottom_corner_y br border_style;
 
-        if
-          Border.bottom border && bottom_edge_visible && width > 0 && height > 1
-        then (
-          let start_x =
-            if left_edge_visible && Border.left border then x + 1
-            else if left_edge_visible then x
-            else eff_x
-          in
-          let end_x =
-            if right_edge_visible && Border.right border then x + width - 2
-            else if right_edge_visible then x + width - 1
-            else eff_x + eff_w - 1
-          in
-          if end_x >= start_x then
-            for i = start_x to end_x do
-              Render.set_string ?clip buffer i (y + height - 1) b border_style
-            done));
+      (* Horizontal lines *)
+      if Border.top border && top_edge_visible then (
+        let h_start_x =
+          if Border.left border then left_corner_x + 1 else left_corner_x
+        in
+        let h_end_x =
+          if Border.right border then right_corner_x - 1 else right_corner_x
+        in
+        if h_end_x >= h_start_x then
+          for i = h_start_x to h_end_x do
+            Render.set_string ?clip buffer i top_corner_y t border_style
+          done);
+      if Border.bottom border && bottom_edge_visible then (
+        let h_start_x =
+          if Border.left border then left_corner_x + 1 else left_corner_x
+        in
+        let h_end_x =
+          if Border.right border then right_corner_x - 1 else right_corner_x
+        in
+        if h_end_x >= h_start_x then
+          for i = h_start_x to h_end_x do
+            Render.set_string ?clip buffer i bottom_corner_y b border_style
+          done);
 
-      (* Draw vertical lines *)
-      if height > 0 then
-        let start_y =
-          if top_edge_visible && Border.top border then y + 1
-          else if top_edge_visible then y
-          else eff_y
+      (* Vertical lines *)
+      if eff_h > 0 then (
+        let v_start_y =
+          if Border.top border then y + 1 else y
         in
-        let end_y =
-          if bottom_edge_visible && Border.bottom border then y + height - 2
-          else if bottom_edge_visible then y + height - 1
-          else eff_y + eff_h - 1
+        let v_end_y =
+          if Border.bottom border then y + height - 2 else y + height - 1
         in
-        if end_y >= start_y then
-          for i = start_y to end_y do
-            if Border.left border && left_edge_visible then
-              Render.set_string ?clip buffer x i l border_style;
-            if Border.right border && right_edge_visible && width > 1 then
-              Render.set_string ?clip buffer
-                (x + width - 1)
-                i r border_style
-          done
+        if v_end_y >= v_start_y then
+          for i = v_start_y to v_end_y do
+            if Border.left border then
+              let left_v_x = if left_edge_visible then x else eff_x in
+              Render.set_string ?clip buffer left_v_x i l border_style;
+            if Border.right border then
+              let right_v_x = if right_edge_visible then x + width - 1 else eff_right in
+              Render.set_string ?clip buffer right_v_x i r border_style
+          done)
 
 let draw_text ?(clip : Render.Clip.t option = None) ~buffer ~pos:(x, y)
     ~bounds:(w, h) ~text ~style ~align ~tab_width ~wrap () =

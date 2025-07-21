@@ -104,7 +104,45 @@ let render buffer top_level_element =
 
     (* 2. Recursively render the layouts of all children. *)
     let children_layouts = Layout.children layout in
-    List.iter (render_layout ~clip:child_clip) children_layouts
+    (* For Box elements, compute content clip adjusting for faked borders *)
+    let final_child_clip = 
+      match element with
+      | Box b ->
+          let options = Box.options b in
+          let border_left_space = match options.border with | Some brd -> if Border.left brd then 1 else 0 | None -> 0 in
+          let border_right_space = match options.border with | Some brd -> if Border.right brd then 1 else 0 | None -> 0 in
+          let border_top_space = match options.border with | Some brd -> if Border.top brd then 1 else 0 | None -> 0 in
+          let border_bottom_space = match options.border with | Some brd -> if Border.bottom brd then 1 else 0 | None -> 0 in
+          let content_x = x + border_left_space + Padding.left options.padding in
+          let content_y = y + border_top_space + Padding.top options.padding in
+          let content_w = max 0 (width - border_left_space - border_right_space - Padding.left options.padding - Padding.right options.padding) in
+          let content_h = max 0 (height - border_top_space - border_bottom_space - Padding.top options.padding - Padding.bottom options.padding) in
+          
+          (* Compute faked flags based on current clip (or full rect if no clip) *)
+          let clip_x, clip_y, clip_w, clip_h =
+            match clip with
+            | Some c -> (Render.Clip.x c, Render.Clip.y c, Render.Clip.width c, Render.Clip.height c)
+            | None -> (x, y, width, height)
+          in
+          let clip_right = clip_x + clip_w - 1 in
+          let clip_bottom = clip_y + clip_h - 1 in
+          let fake_left = (content_x < clip_x) && (match options.border with | Some brd -> Border.left brd | _ -> false) in
+          let fake_right = (content_x + content_w - 1 > clip_right) && (match options.border with | Some brd -> Border.right brd | _ -> false) in
+          let fake_top = (content_y < clip_y) && (match options.border with | Some brd -> Border.top brd | _ -> false) in
+          let fake_bottom = (content_y + content_h - 1 > clip_bottom) && (match options.border with | Some brd -> Border.bottom brd | _ -> false) in
+          
+          (* Adjust effective content for faked borders *)
+          let eff_content_x = if fake_left then max content_x (clip_x + 1) else content_x in
+          let eff_content_y = if fake_top then max content_y (clip_y + 1) else content_y in
+          let eff_content_right = if fake_right then min (content_x + content_w - 1) (clip_right - 1) else content_x + content_w - 1 in
+          let eff_content_bottom = if fake_bottom then min (content_y + content_h - 1) (clip_bottom - 1) else content_y + content_h - 1 in
+          let eff_content_w = max 0 (eff_content_right - eff_content_x + 1) in
+          let eff_content_h = max 0 (eff_content_bottom - eff_content_y + 1) in
+          
+          Render.Clip.intersect_opt clip (Some (Render.Clip.make eff_content_x eff_content_y eff_content_w eff_content_h))
+      | _ -> child_clip
+    in
+    List.iter (render_layout ~clip:final_child_clip) children_layouts
   in
 
   (* This recursive function orchestrates layout and caching. *)
