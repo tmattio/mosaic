@@ -49,7 +49,7 @@ let wrap_text text width =
             let rec loop () =
               match Uutf.decode decoder with
               | `Uchar u ->
-                  let w = max 1 (Uucp.Break.tty_width_hint u) in
+                  let w = max 0 (Uucp.Break.tty_width_hint u) in
                   let current_byte = Uutf.decoder_byte_count decoder in
                   let char_byte_size = current_byte - !prev_byte in
                   if Uchar.equal u (Uchar.of_char ' ') then
@@ -249,18 +249,18 @@ let draw_text ?(clip : Render.Clip.t option = None) ~buffer ~pos:(x, y)
             unicode_substring line available_width
           else line
         in
+        let clipped_width = Render.measure_string clipped_line in
 
         if has_gradient then
           Render.set_string_gradient ?clip buffer (x + x_offset) (y + i)
             clipped_line style
-            ~width:(Render.measure_string clipped_line)
+            ~width:clipped_width
             ~height:total_lines ~line_offset:i
         else
           Render.set_string ?clip buffer (x + x_offset) (y + i) clipped_line
             style;
 
         (* Pad remaining space on the line based on alignment *)
-        let clipped_width = Render.measure_string clipped_line in
         let remaining = w - x_offset - clipped_width in
         if remaining > 0 then
           let pad_str = String.make remaining ' ' in

@@ -245,3 +245,8 @@ val measure : ?width:int -> element -> int * int
 val pp_element : Format.formatter -> element -> unit
 (** [pp_element fmt elem] pretty-prints the structure of an element tree, which
     is useful for debugging. *)
+
+(** {1 Low-level Graphics Module} *)
+
+module Graphics : module type of Graphics
+(** Direct access to the low-level graphics primitives module. *)

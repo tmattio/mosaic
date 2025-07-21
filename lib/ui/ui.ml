@@ -191,3 +191,4 @@ let render buffer top_level_element =
 
 let pp_element = Element.pp
 let measure = Element.measure
+module Graphics = Graphics
