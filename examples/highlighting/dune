@@ -1,0 +1,3 @@
+(executable
+ (name highlighting)
+ (libraries mosaic mosaic.syntax))

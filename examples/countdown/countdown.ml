@@ -12,7 +12,7 @@ let update (msg : msg) (model : model) : model * msg Cmd.t =
       if new_count <= 0 then (new_count, Cmd.quit)
       else (new_count, Cmd.after 1.0 `Tick)
   | `Quit -> (model, Cmd.quit)
-  | `Key_event { key; modifier } -> (
+  | `Key_event { key; modifier; _ } -> (
       match (key, modifier) with
       | Char c, { ctrl = true; _ } when Uchar.to_int c = Char.code 'C' ->
           (model, Cmd.quit)

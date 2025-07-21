@@ -1,0 +1,4 @@
+(executables
+ (public_names ui_primitives_demo progress_bar_example panel_demo table_demo)
+ (names ui_primitives_demo progress_bar_example panel_demo table_demo)
+ (libraries mosaic mosaic.ui))

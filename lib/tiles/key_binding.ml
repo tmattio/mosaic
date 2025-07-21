@@ -13,7 +13,11 @@ let pass_through_ctrl_keys config keys =
       (fun c ->
         ( {
             Mosaic.Input.key = Char (Uchar.of_char c);
-            modifier = { ctrl = true; alt = false; shift = false };
+            modifier = { Mosaic.Input.no_modifier with ctrl = true };
+            event_type = Press;
+            associated_text = "";
+            shifted_key = None;
+            base_key = None;
           },
           Pass_through ))
       keys

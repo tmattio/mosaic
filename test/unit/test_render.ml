@@ -1,21 +1,19 @@
 open Alcotest
 open Render
 
-(** Helper to create a test style *)
-let test_style ?(fg = None) ?(bg = None) ?(bold = false) ?(italic = false)
+(** Helper to create a test attr *)
+let test_attr ?(fg = None) ?(bg = None) ?(bold = false) ?(italic = false)
     ?(underline = false) ?(uri = None) () =
   {
-    Style.fg;
+    fg;
     bg;
     bold;
     dim = false;
     italic;
     underline;
-    double_underline = false;
     blink = false;
     reverse = false;
     strikethrough = false;
-    overline = false;
     uri;
   }
 
@@ -45,11 +43,7 @@ let test_buffer_create () =
 let test_get_set () =
   let buf = create 5 3 in
   let test_cell =
-    {
-      chars = [ Uchar.of_char 'A' ];
-      style = test_style ~bold:true ();
-      width = 1;
-    }
+    { chars = [ Uchar.of_char 'A' ]; attr = test_attr ~bold:true (); width = 1 }
   in
 
   (* Set a cell *)
@@ -58,7 +52,7 @@ let test_get_set () =
   (* Get the same cell *)
   let retrieved = get buf 2 1 in
   check uchar_list "chars match" [ Uchar.of_char 'A' ] retrieved.chars;
-  check bool "bold matches" true retrieved.style.bold;
+  check bool "bold matches" true retrieved.attr.bold;
   check int "width matches" 1 retrieved.width;
 
   (* Get out of bounds returns empty cell *)
@@ -72,16 +66,16 @@ let test_get_set () =
 (** Test set_char with regular characters *)
 let test_set_char_regular () =
   let buf = create 10 5 in
-  let style = test_style ~fg:(Some (Style.Solid Ansi.Red)) () in
+  let attr = test_attr ~fg:(Some Ansi.Red) () in
 
   (* ASCII character *)
-  set_char buf 0 0 (Uchar.of_char 'H') style;
+  set_char buf 0 0 (Uchar.of_char 'H') attr;
   let cell = get buf 0 0 in
   check uchar_list "ascii char" [ Uchar.of_char 'H' ] cell.chars;
   check int "ascii width" 1 cell.width;
 
   (* Unicode character *)
-  set_char buf 1 0 (Uchar.of_int 0x03B1) style;
+  set_char buf 1 0 (Uchar.of_int 0x03B1) attr;
   (* Greek alpha *)
   let cell = get buf 1 0 in
   check uchar_list "unicode char" [ Uchar.of_int 0x03B1 ] cell.chars;
@@ -90,12 +84,12 @@ let test_set_char_regular () =
 (** Test set_char with wide characters *)
 let test_set_char_wide () =
   let buf = create 10 5 in
-  let style = test_style () in
+  let attr = test_attr () in
 
   (* Wide character (emoji) *)
   let emoji = Uchar.of_int 0x1F600 in
   (* 😀 *)
-  set_char buf 2 1 emoji style;
+  set_char buf 2 1 emoji attr;
 
   let cell1 = get buf 2 1 in
   let cell2 = get buf 3 1 in
@@ -106,7 +100,7 @@ let test_set_char_wide () =
   check int "continuation width" 0 cell2.width;
 
   (* Wide character at edge of buffer *)
-  set_char buf 9 0 emoji style;
+  set_char buf 9 0 emoji attr;
   (* Should not write continuation cell *)
   let edge_cell = get buf 9 0 in
   check int "edge emoji width" 2 edge_cell.width
@@ -114,31 +108,31 @@ let test_set_char_wide () =
 (** Test set_char with combining characters *)
 let test_set_char_combining () =
   let buf = create 10 5 in
-  let style = test_style () in
+  let attr = test_attr () in
 
   (* Base character *)
-  set_char buf 2 2 (Uchar.of_char 'e') style;
+  set_char buf 2 2 (Uchar.of_char 'e') attr;
 
   (* Combining acute accent *)
   let acute = Uchar.of_int 0x0301 in
-  set_char buf 3 2 acute style;
+  set_char buf 3 2 acute attr;
 
   (* x=3 but should combine with x=2 *)
   let cell = get buf 2 2 in
   check uchar_list "combined chars" [ Uchar.of_char 'e'; acute ] cell.chars;
 
   (* Combining at start of line (no previous char) *)
-  set_char buf 0 3 acute style;
+  set_char buf 0 3 acute attr;
   let start_cell = get buf 0 3 in
   check uchar_list "combining at start" [ acute ] start_cell.chars
 
 (** Test set_string *)
 let test_set_string () =
   let buf = create 15 5 in
-  let style = test_style ~underline:true () in
+  let attr = test_attr ~underline:true () in
 
   (* Simple ASCII string *)
-  set_string buf 0 0 "Hello" style;
+  set_string buf 0 0 "Hello" attr;
   for i = 0 to 4 do
     let cell = get buf i 0 in
     check uchar_list
@@ -148,7 +142,7 @@ let test_set_string () =
   done;
 
   (* Unicode string *)
-  set_string buf 0 1 "αβγ" style;
+  set_string buf 0 1 "αβγ" attr;
   let cell0 = get buf 0 1 in
   let cell1 = get buf 1 1 in
   let cell2 = get buf 2 1 in
@@ -157,7 +151,7 @@ let test_set_string () =
   check uchar_list "greek gamma" [ Uchar.of_int 0x03B3 ] cell2.chars;
 
   (* String with emoji *)
-  set_string buf 0 2 "Hi😀!" style;
+  set_string buf 0 2 "Hi😀!" attr;
   let h = get buf 0 2 in
   let i = get buf 1 2 in
   let emoji = get buf 2 2 in
@@ -171,18 +165,18 @@ let test_set_string () =
   check uchar_list "!" [ Uchar.of_char '!' ] excl.chars;
 
   (* String that exceeds buffer width *)
-  set_string buf 10 3 "Too long string" style;
+  set_string buf 10 3 "Too long string" attr;
   let last = get buf 14 3 in
   check uchar_list "truncated" [ Uchar.of_char 'l' ] last.chars
 
 (** Test malformed UTF-8 handling *)
 let test_set_string_malformed () =
   let buf = create 10 5 in
-  let style = test_style () in
+  let attr = test_attr () in
 
   (* String with malformed UTF-8 *)
   let malformed = "Hello\xFF\xFEWorld" in
-  set_string buf 0 0 malformed style;
+  set_string buf 0 0 malformed attr;
 
   (* Should have "Hello" + 2 replacement chars + "World" *)
   let cells = List.init 12 (fun i -> get buf i 0) in
@@ -209,12 +203,12 @@ let test_set_string_malformed () =
 (** Test buffer clearing *)
 let test_clear () =
   let buf = create 5 3 in
-  let style = test_style () in
+  let attr = test_attr () in
 
   (* Fill buffer with 'X' *)
   for y = 0 to 2 do
     for x = 0 to 4 do
-      set_char buf x y (Uchar.of_char 'X') style
+      set_char buf x y (Uchar.of_char 'X') attr
     done
   done;
 
@@ -233,60 +227,69 @@ let test_clear () =
 let test_diff () =
   let buf1 = create 5 3 in
   let buf2 = create 5 3 in
-  let style = test_style () in
+  let attr = test_attr () in
 
   (* No changes *)
   let patches = diff buf1 buf2 in
   check int "no patches" 0 (List.length patches);
 
   (* Single change *)
-  set_char buf2 2 1 (Uchar.of_char 'A') style;
+  set_char buf2 2 1 (Uchar.of_char 'A') attr;
   let patches = diff buf1 buf2 in
   check int "one patch" 1 (List.length patches);
   let patch = List.hd patches in
-  check int "patch row" 1 patch.row;
-  check int "patch col" 2 patch.col;
-  check uchar_list "old cell" [ Uchar.of_int 0x20 ] patch.old_cell.chars;
-  check uchar_list "new cell" [ Uchar.of_char 'A' ] patch.new_cell.chars;
+  (match patch with
+  | Change { row; col; new_cell } ->
+      check int "patch row" 1 row;
+      check int "patch col" 2 col;
+      check uchar_list "new cell" [ Uchar.of_char 'A' ] new_cell.chars
+  | Clear _ -> Alcotest.fail "Expected Change patch");
 
   (* Multiple changes *)
-  set_char buf2 0 0 (Uchar.of_char 'B') style;
-  set_char buf2 4 2 (Uchar.of_char 'C') style;
+  set_char buf2 0 0 (Uchar.of_char 'B') attr;
+  set_char buf2 4 2 (Uchar.of_char 'C') attr;
   let patches = diff buf1 buf2 in
   check int "three patches" 3 (List.length patches);
 
   (* Check patches are in order *)
-  let rows_cols = List.map (fun p -> (p.row, p.col)) patches in
+  let rows_cols =
+    List.map
+      (fun p ->
+        match p with
+        | Change { row; col; _ } -> (row, col)
+        | Clear { row; col; _ } -> (row, col))
+      patches
+  in
   check (list (pair int int)) "patch order" [ (0, 0); (1, 2); (2, 4) ] rows_cols
 
 (** Test render_patch *)
 let test_render_patch () =
-  let style = test_style ~fg:(Some (Style.Solid Ansi.Green)) () in
+  let attr = test_attr ~fg:(Some Ansi.Green) () in
   let patch =
-    {
-      row = 5;
-      col = 10;
-      old_cell = empty_cell;
-      new_cell = { chars = [ Uchar.of_char 'X' ]; style; width = 1 };
-    }
+    Change
+      {
+        row = 5;
+        col = 10;
+        new_cell = { chars = [ Uchar.of_char 'X' ]; attr; width = 1 };
+      }
   in
-  let rendered = render_patch patch in
+  let rendered = render_patches [ patch ] in
   check bool "contains position" true (String.contains rendered '6');
   (* row+1 *)
   check bool "contains X" true (String.contains rendered 'X')
 
 (** Test render_patches *)
 let test_render_patches () =
-  let style = test_style ~fg:(Some (Style.Solid Ansi.Green)) () in
+  let attr = test_attr ~fg:(Some Ansi.Green) () in
 
   (* Single patch *)
   let patch =
-    {
-      row = 5;
-      col = 10;
-      old_cell = empty_cell;
-      new_cell = { chars = [ Uchar.of_char 'X' ]; style; width = 1 };
-    }
+    Change
+      {
+        row = 5;
+        col = 10;
+        new_cell = { chars = [ Uchar.of_char 'X' ]; attr; width = 1 };
+      }
   in
   let rendered = render_patches [ patch ] in
   check bool "contains X" true (String.contains rendered 'X');
@@ -296,8 +299,12 @@ let test_render_patches () =
        |> List.exists (String.starts_with ~prefix:"[0m"));
 
   (* Multiple patches on same row *)
-  let patch2 = { patch with col = 11 } in
-  let patch3 = { patch with col = 12 } in
+  let patch2 =
+    match patch with Change r -> Change { r with col = 11 } | _ -> patch
+  in
+  let patch3 =
+    match patch with Change r -> Change { r with col = 12 } | _ -> patch
+  in
   let rendered = render_patches [ patch; patch2; patch3 ] in
   check bool "contains XXX" true (String.contains rendered 'X');
 
@@ -310,18 +317,20 @@ let test_render_patches () =
 (** Test render_full *)
 let test_render_full () =
   let buf = create 3 2 in
-  let style = test_style ~fg:(Some (Style.Solid Ansi.Blue)) () in
+  let attr = test_attr ~fg:(Some Ansi.Blue) () in
 
   (* Fill buffer *)
-  set_string buf 0 0 "ABC" style;
-  set_string buf 0 1 "DEF" style;
+  set_string buf 0 0 "ABC" attr;
+  set_string buf 0 1 "DEF" attr;
 
   let rendered = render_full buf in
 
-  (* Should start with cursor home and clear *)
-  check bool "starts with home" true
-    (String.starts_with ~prefix:"\x1b[1;1H" rendered);
-  check bool "contains clear" true (String.contains rendered 'J');
+  (* Should start with clear screen then cursor home *)
+  check bool "starts with clear" true
+    (String.starts_with ~prefix:"\x1b[2J" rendered);
+  (* Check that it contains the expected sequences *)
+  check bool "has expected prefix" true
+    (String.starts_with ~prefix:"\x1b[2J\x1b[1;1H" rendered);
 
   (* Should contain our text *)
   check bool "contains ABC" true (String.contains rendered 'A');
@@ -347,8 +356,8 @@ let test_measure_string () =
 
   (* 5 + 4 + 3 *)
 
-  (* Malformed UTF-8 is handled *)
-  check int "malformed utf8" 5 (measure_string "Hi\xFFBye")
+  (* Malformed UTF-8 is handled - malformed byte counts as 1 *)
+  check int "malformed utf8" 6 (measure_string "Hi\xFFBye")
 
 (** Test truncate_string *)
 let test_truncate_string () =
@@ -371,8 +380,8 @@ let test_diff_advanced () =
   let new_buf = create 10 3 in
 
   (* Test wide character changes *)
-  set_char old_buf 0 0 (Uchar.of_char 'A') (test_style ());
-  set_char new_buf 0 0 (Uchar.of_int 0x1F600) (test_style ());
+  set_char old_buf 0 0 (Uchar.of_char 'A') (test_attr ());
+  set_char new_buf 0 0 (Uchar.of_int 0x1F600) (test_attr ());
 
   (* Wide emoji *)
   let patches = diff old_buf new_buf in
@@ -381,8 +390,8 @@ let test_diff_advanced () =
   (* Test style-only changes *)
   let old_buf2 = create 5 1 in
   let new_buf2 = create 5 1 in
-  set_string old_buf2 0 0 "Hello" (test_style ());
-  set_string new_buf2 0 0 "Hello" (test_style ~bold:true ());
+  set_string old_buf2 0 0 "Hello" (test_attr ());
+  set_string new_buf2 0 0 "Hello" (test_attr ~bold:true ());
 
   let patches2 = diff old_buf2 new_buf2 in
   check bool "style change creates patches" true (List.length patches2 > 0);
@@ -390,12 +399,12 @@ let test_diff_advanced () =
   (* Test combining character changes *)
   let old_buf3 = create 5 1 in
   let new_buf3 = create 5 1 in
-  set_char old_buf3 0 0 (Uchar.of_char 'e') (test_style ());
+  set_char old_buf3 0 0 (Uchar.of_char 'e') (test_attr ());
   (* Add combining acute accent *)
   set old_buf3 0 0
     {
       chars = [ Uchar.of_char 'e'; Uchar.of_int 0x0301 ];
-      style = test_style ();
+      attr = test_attr ();
       width = 1;
     };
 
@@ -405,7 +414,7 @@ let test_diff_advanced () =
 (** Test render modes and options *)
 let test_render_modes () =
   let buf = create 10 5 in
-  set_string buf 2 2 "Test" (test_style ~fg:(Some (Style.Solid Ansi.Red)) ());
+  set_string buf 2 2 "Test" (test_attr ~fg:(Some Ansi.Red) ());
 
   (* Test absolute positioning *)
   let patches = diff (create 10 5) buf in
@@ -426,8 +435,8 @@ let test_huge_buffers () =
   check int "huge height" 1000 h;
 
   (* Test operations on edges *)
-  set_char big 0 0 (Uchar.of_char 'A') (test_style ());
-  set_char big 999 999 (Uchar.of_char 'Z') (test_style ());
+  set_char big 0 0 (Uchar.of_char 'A') (test_attr ());
+  set_char big 999 999 (Uchar.of_char 'Z') (test_attr ());
 
   let cell1 = get big 0 0 in
   let cell2 = get big 999 999 in
@@ -443,7 +452,7 @@ let test_malformed_rendering () =
     {
       chars = [ Uchar.of_int 0xFFFE ];
       (* Non-character *)
-      style = test_style ();
+      attr = test_attr ();
       width = 1;
     };
 
@@ -457,8 +466,8 @@ let test_patch_optimization () =
   let new_buf = create 20 5 in
 
   (* Adjacent changes *)
-  set_string new_buf 0 0 "Hello" (test_style ());
-  set_string new_buf 5 0 "World" (test_style ());
+  set_string new_buf 0 0 "Hello" (test_attr ());
+  set_string new_buf 5 0 "World" (test_attr ());
 
   let patches = diff old_buf new_buf in
   (* Implementation might merge adjacent patches *)
@@ -467,8 +476,8 @@ let test_patch_optimization () =
   (* Scattered changes *)
   let old_buf2 = create 20 5 in
   let new_buf2 = create 20 5 in
-  set_char new_buf2 0 0 (Uchar.of_char 'A') (test_style ());
-  set_char new_buf2 19 4 (Uchar.of_char 'Z') (test_style ());
+  set_char new_buf2 0 0 (Uchar.of_char 'A') (test_attr ());
+  set_char new_buf2 19 4 (Uchar.of_char 'Z') (test_attr ());
 
   let patches2 = diff old_buf2 new_buf2 in
   check bool "scattered changes create patches" true (List.length patches2 >= 2)
@@ -503,11 +512,10 @@ let test_render_formatting () =
   let buf = create 10 3 in
 
   (* Test various style combinations *)
-  set_string buf 0 0 "Bold" (test_style ~bold:true ());
+  set_string buf 0 0 "Bold" (test_attr ~bold:true ());
   set_string buf 0 1 "Color"
-    (test_style ~fg:(Some (Style.Solid Ansi.Blue))
-       ~bg:(Some (Style.Solid Ansi.Yellow)) ());
-  set_string buf 0 2 "Under" (test_style ~underline:true ());
+    (test_attr ~fg:(Some Ansi.Blue) ~bg:(Some Ansi.Yellow) ());
+  set_string buf 0 2 "Under" (test_attr ~underline:true ());
 
   let result = render_full buf in
 

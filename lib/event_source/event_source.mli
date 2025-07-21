@@ -1,66 +1,55 @@
 (** Cross-platform event source for terminal input handling.
 
-    This module provides a platform-agnostic interface for reading terminal
-    events. Handles keyboard, mouse, and special events with automatic
-    platform-specific behavior adaptation.
-
-    Event sources are stateful and track terminal modes. Mouse support must be
-    explicitly enabled at creation. Platform implementations handle encoding
-    differences transparently. Events are delivered in order received. *)
+    Provides a platform-agnostic interface for reading terminal events,
+    including keyboard, mouse, paste, resize, and focus. Automatically manages
+    terminal modes with RAII via Eio.Switch. Handles platform differences
+    transparently. *)
 
 type t
-(** [t] represents an abstract event source for terminal input.
+(** Abstract event source. Manages internal stream and producer. *)
 
-    Encapsulates platform-specific input handling. Manages terminal mode changes
-    for mouse support. Thread-safe when used with proper Eio synchronization. *)
+val create :
+  sw:Eio.Switch.t ->
+  env:Eio_unix.Stdenv.base ->
+  ?mouse:bool ->
+  ?paste_threshold:float ->
+  ?paste_min_chars:int ->
+  Terminal.t ->
+  t
+(** [create ~sw ~env ?mouse ?paste_threshold ?paste_min_chars terminal] creates
+    an event source attached to the switch.
 
-val create : ?mouse:bool -> Terminal.t -> t
-(** [create ?mouse terminal] creates an event source for the given terminal.
+    Sets up raw mode, enables features (mouse, paste, focus), and spawns
+    producer fibers. Cleans up on switch release.
 
-    Selects appropriate implementation based on platform (Unix or Windows).
-    Configures terminal for raw input mode. Enables mouse event capture when
-    requested. Terminal must support the required input modes.
+    @param sw Eio switch for lifetime management and cleanup
+    @param env Eio environment for clock and unix utilities
+    @param mouse Enable mouse capture (default: false)
+    @param paste_threshold Seconds for Windows paste heuristic (default: 0.01)
+    @param paste_min_chars Minimum characters to detect as paste (default: 3)
 
-    @param mouse
-      Enable mouse event capture including clicks, motion, and scroll (default:
-      false)
+    Platform notes:
+    - Unix: Enables ANSI for mouse/paste/focus, handles SIGWINCH.
+    - Windows: Uses native console API, timing-based paste.
 
-    Example: Creates event source with mouse support.
+    Example:
     {[
-      let source = Event_source.create ~mouse:true terminal
+      Eio.Switch.run @@ fun sw ->
+      let source = Event_source.create ~sw ~env ~mouse:true terminal in
+      ...
     ]} *)
 
 val read :
   t ->
-  sw:Eio.Switch.t ->
   clock:float Eio.Time.clock_ty Eio.Std.r ->
   timeout:float option ->
-  [ `Event of Input.event | `Timeout | `Eof ]
-(** [read t ~sw ~clock ~timeout] reads the next input event with optional
-    timeout.
+  [ `Event of Input.event | `Timeout ]
+(** [read t ~clock ~timeout] reads next event from stream with timeout.
 
-    Blocks until an event arrives or timeout expires. Handles platform-specific
-    input parsing. Returns immediately if events are buffered. Timeout of [None]
-    blocks indefinitely.
+    Blocks until event or timeout. Returns `Timeout if no event within time.
 
-    Platform differences:
-    - [`Eof] typically only on Unix when input stream closes, not generated on
-      Windows
-    - [`Event (Input.Paste _)] from ANSI bracketed paste on Unix, heuristic
-      timing-based detection on Windows (10ms threshold)
-    - Mouse events only delivered if enabled in [create]
-    - Function keys and modifiers may vary by terminal and platform
+    Events include: Key, Mouse (Press/Release/Motion/Wheel), Paste, Resize,
+    Focus.
 
-    @param sw Eio switch for resource management
-    @param clock Eio clock for timeout handling
-    @param timeout Maximum seconds to wait, [None] for indefinite blocking
-
-    @raise End_of_file on unexpected termination (rare)
-
-    Example: Reads events with 1-second timeout.
-    {[
-      match Event_source.read source ~sw ~clock ~timeout:(Some 1.0) with
-      | `Event (Key key_event) -> handle_key key_event
-      | `Timeout -> handle_idle ()
-      | `Eof -> cleanup_and_exit ()
-    ]} *)
+    @param clock Eio clock
+    @param timeout Seconds to wait, None for indefinite *)

@@ -125,6 +125,32 @@ val blur : (unit -> 'msg) -> 'msg t
       Sub.blur (fun () -> `PauseGame)
     ]} *)
 
+val paste : (string -> 'msg) -> 'msg t
+(** [paste f] subscribes to paste events.
+
+    The function [f] receives the pasted text when the user pastes content.
+    Requires bracketed paste mode support in the terminal.
+
+    Example: Inserts pasted text.
+    {[
+      Sub.paste (fun text -> `InsertText text)
+    ]} *)
+
+val paste_filter : (string -> 'msg option) -> 'msg t
+(** [paste_filter f] subscribes to paste events with filtering.
+
+    The function [f] examines pasted text and returns [Some msg] to produce a
+    message or [None] to ignore. Useful for validating or transforming pasted
+    content.
+
+    Example: Only accepts numeric pastes.
+    {[
+      Sub.paste_filter (fun text ->
+          if String.for_all (fun c -> c >= '0' && c <= '9') text then
+            Some (`PasteNumber text)
+          else None)
+    ]} *)
+
 (** {2 Convenience Functions} *)
 
 val on_mouse_motion : (int -> int -> 'msg) -> 'msg t
@@ -259,6 +285,16 @@ val on_blur : 'msg -> 'msg t
     Example: Pauses on blur.
     {[
       Sub.on_blur `Pause
+    ]} *)
+
+val on_paste : (string -> 'msg) -> 'msg t
+(** [on_paste f] produces a message when text is pasted.
+
+    Convenience wrapper for [paste]. The function [f] receives the pasted text.
+
+    Example: Handles pasted input.
+    {[
+      Sub.on_paste (fun text -> `PastedText text)
     ]} *)
 
 (** {3 Common Key Shortcuts} *)
@@ -434,6 +470,13 @@ val collect_blur :
 (** [collect_blur acc sub] extracts blur event handlers from [sub].
 
     Internal function used by the runtime to gather active blur subscriptions.
+*)
+
+val collect_paste :
+  (string -> 'msg option) list -> 'msg t -> (string -> 'msg option) list
+(** [collect_paste acc sub] extracts paste event handlers from [sub].
+
+    Internal function used by the runtime to gather active paste subscriptions.
 *)
 
 val pp :

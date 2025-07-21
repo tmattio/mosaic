@@ -2,12 +2,12 @@
 
     This module provides low-level terminal manipulation including mode control,
     screen management, mouse support, and proper state restoration. Handles both
-    TTY and non-TTY file descriptors for testing flexibility.
+    TTY and non-TTY file descriptors for testing flexibility. Supports Windows
+    via VT enabling.
 
     Terminal state is saved on creation and restored on release. Mode changes
     are reversible. All features test TTY status before applying. Non-TTY
-    descriptors work for testing but ignore control sequences. Signal handlers
-    are process-global and must be managed carefully. *)
+    descriptors work for testing but ignore control sequences. *)
 
 type t
 (** [t] represents a terminal device handle.
@@ -24,6 +24,19 @@ type mode =
     (** Allows precise termios control. *) ]
 (** [mode] controls terminal input processing behavior. *)
 
+type mouse_mode =
+  [ `None  (** No mouse reporting. *)
+  | `Normal  (** Basic clicks and motion. *)
+  | `Button  (** Motion only on button press. *)
+  | `Any  (** All motion events. *)
+  | `SgrNormal
+    (** SGR mode for extended coordinates - basic clicks and motion. *)
+  | `SgrButton  (** SGR mode - motion only on button press. *)
+  | `SgrAny  (** SGR mode - all motion events. *) ]
+
+exception Terminal_error of string
+(** Raised on terminal operations failures. *)
+
 val create : ?tty:bool -> Unix.file_descr -> Unix.file_descr -> t
 (** [create ?tty input output] creates a terminal handle from file descriptors.
 
@@ -39,6 +52,10 @@ val create : ?tty:bool -> Unix.file_descr -> Unix.file_descr -> t
     {[
       let term = Terminal.create Unix.stdin Unix.stdout
     ]} *)
+
+val with_terminal :
+  ?tty:bool -> Unix.file_descr -> Unix.file_descr -> (t -> 'a) -> 'a
+(** Creates, runs function, and releases terminal automatically. *)
 
 val release : t -> unit
 (** [release t] restores original terminal settings and releases resources.
@@ -66,7 +83,24 @@ val set_mode : t -> mode -> unit
     TUI apps. No effect on non-TTY descriptors. Changes persist until explicitly
     changed or restored. *)
 
-(** {2 Terminal Features} *)
+val size : t -> int * int
+(** Gets current size (width, height). *)
+
+val is_tty : Unix.file_descr -> bool
+(** Checks if fd is TTY. *)
+
+val input_fd : t -> Unix.file_descr
+val output_fd : t -> Unix.file_descr
+val write : t -> bytes -> int -> int -> unit
+
+val write_string : t -> string -> unit
+(** Writes UTF-8 string. *)
+
+val read : t -> bytes -> int -> int -> int
+(** Reads from input. *)
+
+val wait_for_input : t -> float -> bool
+(** Waits for input with timeout. Returns true if ready. *)
 
 val enable_alternate_screen : t -> unit
 (** [enable_alternate_screen t] switches to alternate screen buffer.
@@ -81,17 +115,11 @@ val disable_alternate_screen : t -> unit
     Restores screen content saved by [enable_alternate_screen]. Alternate screen
     content is lost. No effect on non-TTY. *)
 
-val enable_mouse : t -> unit
-(** [enable_mouse t] enables mouse event reporting.
+val set_mouse_mode : t -> mouse_mode -> unit
+(** [set_mouse_mode t mode] configures mouse reporting mode. *)
 
-    Terminal sends escape sequences for mouse actions. Required for mouse
-    support. Use Event_source to parse mouse events. No effect on non-TTY. *)
-
-val disable_mouse : t -> unit
-(** [disable_mouse t] disables mouse event reporting.
-
-    Returns mouse to normal selection mode. Terminal stops sending mouse
-    escapes. Should be called before [release] if mouse was enabled. *)
+val enable_focus_reporting : t -> unit
+val disable_focus_reporting : t -> unit
 
 val enable_bracketed_paste : t -> unit
 (** [enable_bracketed_paste t] enables bracketed paste mode.
@@ -129,39 +157,13 @@ val hide_cursor : t -> unit
     Cursor position still tracked but not shown. Reduces flicker during
     rendering. Remember to show cursor before user input. *)
 
-val size : t -> int * int
-(** [size t] returns current terminal dimensions as [(width, height)].
+val clear_screen : t -> unit
 
-    Queries terminal for size in character cells. Returns (80, 24) for non-TTY.
-    May change during execution - see [set_sigwinch_handler] for resize events.
+val move_cursor : t -> int -> int -> unit
+(** Moves to row, col (1-based). *)
 
-    @raise Unix.Unix_error on query failure (rare) *)
-
-val is_tty : Unix.file_descr -> bool
-(** [is_tty fd] tests whether file descriptor is a terminal device.
-
-    True for interactive terminals, false for pipes, files, etc. Determines
-    whether control sequences will have effect. *)
-
-val input_fd : t -> Unix.file_descr
-(** [input_fd t] returns the input file descriptor.
-
-    Useful for select/poll operations. Do not close directly - use [release]. *)
-
-val output_fd : t -> Unix.file_descr
-(** [output_fd t] returns the output file descriptor.
-
-    Useful for select/poll operations. Do not close directly - use [release]. *)
-
-val write : t -> bytes -> int -> int -> unit
-(** [write t buf ofs len] writes bytes to terminal output.
-
-    Low-level write operation. Handles partial writes internally. Most users
-    should use higher-level rendering functions.
-
-    @param buf Byte buffer containing data
-    @param ofs Starting offset in buffer
-    @param len Number of bytes to write *)
+val set_title : t -> string -> unit
+val bell : t -> unit
 
 val flush : t -> unit
 (** [flush t] ensures all output reaches the terminal.
@@ -169,51 +171,79 @@ val flush : t -> unit
     Forces buffered output to terminal. Important after rendering to ensure
     display updates immediately. *)
 
-(** {2 Signal Handling} *)
+val set_resize_handler : t -> (int * int -> unit) -> unit
+(** Sets per-terminal resize handler. *)
 
-type sigwinch_handler = int * int -> unit
-(** [sigwinch_handler] receives new terminal dimensions on resize.
+val remove_resize_handlers : t -> unit
+(** Removes all handlers for this terminal. *)
 
-    Called with (width, height) when terminal window changes size. Runs in
-    signal handler context - keep operations minimal. *)
+val set_dark_background : t -> dark:bool -> unit
+(** [set_dark_background t ~dark] manually sets the terminal background state.
 
-val set_sigwinch_handler : sigwinch_handler option -> unit
-(** [set_sigwinch_handler handler] installs global terminal resize handler.
+    This overrides automatic detection. Use when you know the terminal's
+    background color and want to ensure correct adaptive color rendering.
 
-    Only one handler active at a time. Pass [None] to remove handler. Handler
-    called on SIGWINCH signal with new dimensions. Process-global effect - use
-    carefully in libraries.
-
-    Example: Updates layout on terminal resize.
-    {[
-      Terminal.set_sigwinch_handler
-        (Some (fun (w, h) -> Printf.eprintf "Resized to %dx%d\n" w h))
-    ]} *)
-
-(** {2 Terminal Information} *)
+    @param dark [true] for dark backgrounds, [false] for light backgrounds *)
 
 val has_dark_background : t -> bool
-(** [has_dark_background t] attempts to detect if terminal has dark background.
+(** [has_dark_background t] returns whether the terminal has a dark background.
 
-    Uses various heuristics including environment variables and terminal
-    responses. Returns [true] if background is dark, [false] if light. Defaults
-    to [true] (dark) if detection fails, as most terminals use dark backgrounds.
-    Detection may take a few milliseconds on first call. *)
+    Uses the following detection methods in order: 1. Previously set value via
+    [set_dark_background] 2. COLORFGBG environment variable 3. OSC 11 query to
+    terminal (if TTY) 4. TERM environment variable heuristics 5. Default to dark
+    (true) *)
+
+val has_truecolor_support : t -> bool
+(** Detects truecolor support. *)
+
+type feature =
+  [ `AlternateScreen  (** Alternate screen buffer support *)
+  | `Mouse  (** Basic mouse support *)
+  | `Truecolor  (** 24-bit color support *)
+  | `Kitty  (** Kitty keyboard protocol *)
+  | `BracketedPaste  (** Bracketed paste mode *)
+  | `FocusReporting  (** Focus in/out reporting *) ]
+
+val supports_feature : t -> feature -> bool
+(** [supports_feature t feature] checks if terminal supports a specific feature.
+
+    Uses environment variables, terminal queries, and heuristics to determine
+    feature support. Returns false for non-TTY descriptors.
+
+    @param t Terminal handle
+    @param feature Feature to check support for
+    @return true if feature is supported, false otherwise *)
+
+val enable_mouse_sgr : t -> unit
+(** [enable_mouse_sgr t] enables SGR mouse mode for extended coordinates.
+
+    SGR mode allows mouse coordinates beyond 223 columns/rows. Should be
+    combined with a regular mouse mode like `Normal or `Any. No effect on
+    non-TTY. *)
+
+val disable_mouse_sgr : t -> unit
+(** [disable_mouse_sgr t] disables SGR mouse mode.
+
+    Returns to standard mouse coordinate reporting. No effect on non-TTY. *)
+
+val set_non_blocking : t -> bool -> unit
+(** [set_non_blocking t enabled] controls non-blocking I/O mode.
+
+    When enabled, read/write operations won't block. Useful for event loops.
+    Automatically enabled in raw mode, disabled in cooked mode.
+
+    @param t Terminal handle
+    @param enabled true to enable non-blocking I/O, false to disable
+    @raise Terminal_error if system call fails *)
 
 (** {2 Testing Support} *)
 
-val create_from_strings : string -> t * (unit -> string)
-(** [create_from_strings input] creates a mock terminal for testing.
+val create_from_strings : string -> t * (unit -> string) * (unit -> unit)
+(** Creates mock terminal; returns term, get_output, close_mock. *)
 
-    Returns terminal handle and function to retrieve output. Input string
-    consumed as if typed. Output captured instead of displaying. No actual
-    terminal required. Control sequences processed but not executed.
+(** {2 Windows Support}
 
-    Example: Tests terminal interaction.
-    {[
-      let term, get_output = Terminal.create_from_strings "hello\n" in
-      Terminal.write term (Bytes.of_string "prompt> ") 0 8;
-      Terminal.flush term;
-      let output = get_output () in
-      assert (output = "prompt> ")
-    ]} *)
+    On Windows 10+, VT processing is automatically enabled. The
+    terminal_enable_vt function attempts to enable ANSI escape sequence
+    processing. Older Windows versions may have limited support for terminal
+    features. *)

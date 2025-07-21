@@ -1,34 +1,5 @@
-module Padding = struct
-  type t = { top : int; right : int; bottom : int; left : int }
-
-  let make ?(top = 0) ?(right = 0) ?(bottom = 0) ?(left = 0) () =
-    {
-      top = max 0 top;
-      right = max 0 right;
-      bottom = max 0 bottom;
-      left = max 0 left;
-    }
-
-  let no_padding = make ()
-  let all n = { top = n; right = n; bottom = n; left = n }
-  let xy x y = { top = y; right = x; bottom = y; left = x }
-  let top p = p.top
-  let right p = p.right
-  let bottom p = p.bottom
-  let left p = p.left
-
-  let pad ?all ?x ?y ?top ?right ?bottom ?left () =
-    let base_val = Option.value all ~default:0 in
-    let h_val = Option.value x ~default:base_val in
-    let v_val = Option.value y ~default:base_val in
-
-    {
-      top = max 0 (Option.value top ~default:v_val);
-      right = max 0 (Option.value right ~default:h_val);
-      bottom = max 0 (Option.value bottom ~default:v_val);
-      left = max 0 (Option.value left ~default:h_val);
-    }
-end
+module Padding = Padding
+module Border = Border
 
 type align = [ `Start | `Center | `End | `Stretch ]
 type size_def = [ `Fixed of int | `Flex of int ]
@@ -37,13 +8,13 @@ type size_def = [ `Fixed of int | `Flex of int ]
 
 type text_data = {
   content : string;
-  style : Render.Style.t;
+  style : Style.t;
   align : align;
   tab_width : int;
   wrap : bool;
 }
 
-type rich_text_data = { segments : (string * Render.Style.t) list }
+type rich_text_data = { segments : (string * Style.t) list }
 type spacer_data = { size : int; flex : int }
 
 type box_layout_options = {
@@ -58,7 +29,7 @@ type box_layout_options = {
   margin : Padding.t;
   padding : Padding.t;
   border : Border.t option;
-  background : Render.Style.t option;
+  background : Style.t option;
   align : align;
   justify : align;
   flex_grow : int;
@@ -110,7 +81,7 @@ and t =
 module Text = struct
   type nonrec t = text_data
 
-  let make ?(style = Render.Style.empty) ?(align = `Start) ?(tab_width = 4)
+  let make ?(style = Style.empty) ?(align = `Start) ?(tab_width = 4)
       ?(wrap = false) content =
     { content; style; align; tab_width; wrap }
 
@@ -152,7 +123,7 @@ module Box = struct
     margin : Padding.t;
     padding : Padding.t;
     border : Border.t option;
-    background : Render.Style.t option;
+    background : Style.t option;
     align : align;
     justify : align;
     flex_grow : int;
@@ -237,6 +208,86 @@ let border_opt_h border =
 let border_opt_v border =
   Option.map Border.space_v border |> Option.value ~default:0
 
+let split_into_tokens str =
+  let len = String.length str in
+  let rec loop pos acc =
+    if pos >= len then List.rev acc
+    else
+      let is_space c = c = ' ' in
+      (* Extend to other whitespace if needed, e.g., || c = '\t' *)
+      let start = pos in
+      let rec find_end p =
+        if p < len && is_space str.[p] = is_space str.[start] then
+          find_end (p + 1)
+        else p
+      in
+      let end_pos = find_end pos in
+      let token = String.sub str start (end_pos - start) in
+      loop end_pos (token :: acc)
+  in
+  loop 0 []
+
+type expanded_child = { elem : t; is_new_item : bool; is_hard_break : bool }
+
+let grow_fact = function
+  | Spacer { flex; _ } -> flex
+  | Box { options; _ } -> options.flex_grow
+  | Flow _ -> 0
+  | _ -> 0
+
+let shrink_fact = function
+  | Box { options; _ } -> options.flex_shrink
+  | Text { wrap = true; _ } -> 1
+  | Spacer { flex; _ } -> flex
+  | Flow _ -> 1
+  | _ -> 0
+
+let expand_children children =
+  List.concat_map
+    (fun child ->
+      match child with
+      | Text { wrap = true; content; tab_width; style; align; _ } ->
+          let expanded = Render.expand_tabs content tab_width in
+          let lines = String.split_on_char '\n' expanded in
+          List.mapi
+            (fun i line ->
+              let tokens = split_into_tokens line in
+              let is_hard = i > 0 in
+              let is_new = i = 0 in
+              match tokens with
+              | [] ->
+                  (* Preserve empty lines for height *)
+                  [
+                    {
+                      elem =
+                        Text (Text.make "" ~style ~align ~tab_width ~wrap:false);
+                      is_new_item = is_new;
+                      is_hard_break = is_hard;
+                    };
+                  ]
+              | first :: rest ->
+                  {
+                    elem =
+                      Text
+                        (Text.make first ~style ~align ~tab_width ~wrap:false);
+                    is_new_item = is_new;
+                    is_hard_break = is_hard;
+                  }
+                  :: List.map
+                       (fun t ->
+                         {
+                           elem =
+                             Text
+                               (Text.make t ~style ~align ~tab_width ~wrap:false);
+                           is_new_item = false;
+                           is_hard_break = false;
+                         })
+                       rest)
+            lines
+          |> List.concat
+      | _ -> [ { elem = child; is_new_item = true; is_hard_break = false } ])
+    children
+
 let rec measure ?(width = max_int) element =
   let max_reasonable = 10_000 in
   let width = min width max_reasonable in
@@ -244,9 +295,9 @@ let rec measure ?(width = max_int) element =
   let result =
     match element with
     | Text { content; tab_width; wrap; _ } ->
-        let expanded = Graphics.expand_tabs content tab_width in
+        let expanded = Render.expand_tabs content tab_width in
         let lines =
-          if wrap && width < max_int then Graphics.wrap_text expanded width
+          if wrap && width < max_int then Drawing.wrap_text expanded width
           else String.split_on_char '\n' expanded
         in
         let max_width =
@@ -328,24 +379,41 @@ let rec measure ?(width = max_int) element =
           (0, 0) children
     | Flow { children; h_gap; v_gap; _ } ->
         if width = max_int then (* Unconstrained width, just sum horizontally *)
+          let expanded = expand_children children in
           let total_w =
-            List.fold_left (fun acc c -> acc + fst (measure c)) 0 children
+            List.fold_left
+              (fun acc ec -> acc + fst (measure ~width:max_int ec.elem))
+              0 expanded
           in
           let max_h =
-            List.fold_left (fun acc c -> max acc (snd (measure c))) 0 children
+            List.fold_left
+              (fun acc ec -> max acc (snd (measure ~width:max_int ec.elem)))
+              0 expanded
           in
-          (total_w + (h_gap * max 0 (List.length children - 1)), max_h)
+          (total_w + (h_gap * max 0 (List.length expanded - 1)), max_h)
         else (* Constrained width, simulate wrapping *)
+          let expanded = expand_children children in
           let measured =
-            List.map (fun c -> measure ~width:max_int c) children
+            List.map
+              (fun ec ->
+                let w, h = measure ~width:max_int ec.elem in
+                (w, h, ec.is_new_item, ec.is_hard_break))
+              expanded
           in
           let rec simulate_wrap current_x current_h total_h rem_measured =
             match rem_measured with
             | [] -> if current_x > 0 then total_h + current_h else total_h
-            | (cw, ch) :: rest ->
+            | (cw, ch, is_new, is_hard) :: rest ->
                 let gap = if current_x > 0 then h_gap else 0 in
-                if current_x + gap + cw > width && current_x > 0 then
+                let would_exceed = current_x + gap + cw > width in
+                if is_hard && current_x > 0 then
+                  (* Force wrap for hard break *)
                   let new_total_h = total_h + current_h + v_gap in
+                  simulate_wrap cw ch new_total_h rest
+                else if would_exceed && current_x > 0 then
+                  (* Normal wrap *)
+                  let wrap_v = if is_new || is_hard then v_gap else 0 in
+                  let new_total_h = total_h + current_h + wrap_v in
                   simulate_wrap cw ch new_total_h rest
                 else
                   simulate_wrap
@@ -353,20 +421,76 @@ let rec measure ?(width = max_int) element =
                     (max current_h ch) total_h rest
           in
           (width, simulate_wrap 0 0 0 measured)
-    | Grid { columns; rows; col_spacing; row_spacing; _ } ->
-        let fixed_width =
-          List.fold_left
-            (fun acc col -> match col with `Fixed w -> acc + w | _ -> acc)
-            0 columns
-        in
-        let fixed_height =
-          List.fold_left
-            (fun acc row -> match row with `Fixed h -> acc + h | _ -> acc)
-            0 rows
-        in
-        let col_gaps = col_spacing * max 0 (List.length columns - 1) in
-        let row_gaps = row_spacing * max 0 (List.length rows - 1) in
-        (fixed_width + col_gaps, fixed_height + row_gaps)
+    | Grid { children; columns; rows; col_spacing; row_spacing; _ } ->
+        let num_cols = List.length columns in
+        let num_rows = List.length rows in
+        if num_cols = 0 || num_rows = 0 then (0, 0)
+        else
+          let num_cells = min (List.length children) (num_cols * num_rows) in
+          let col_mins = Array.make num_cols 0 in
+          let row_mins = Array.make num_rows 0 in
+          List.iteri
+            (fun i child ->
+              if i < num_cells then (
+                let r = i / num_cols in
+                let c = i mod num_cols in
+                col_mins.(c) <- max col_mins.(c) (min_width child);
+                row_mins.(r) <- max row_mins.(r) (min_height child)))
+            children;
+          let col_mins_list = Array.to_list col_mins in
+          let row_mins_list = Array.to_list row_mins in
+          if width = max_int then (
+            let fixed_w = ref 0 in
+            let min_flex_w = ref 0 in
+            List.iter2
+              (fun col m ->
+                match col with
+                | `Fixed w -> fixed_w := !fixed_w + w
+                | `Flex _ -> min_flex_w := !min_flex_w + m)
+              columns col_mins_list;
+            let fixed_h = ref 0 in
+            let min_flex_h = ref 0 in
+            List.iter2
+              (fun row m ->
+                match row with
+                | `Fixed h -> fixed_h := !fixed_h + h
+                | `Flex _ -> min_flex_h := !min_flex_h + m)
+              rows row_mins_list;
+            let col_gaps = col_spacing * max 0 (num_cols - 1) in
+            let row_gaps = row_spacing * max 0 (num_rows - 1) in
+            ( !fixed_w + !min_flex_w + col_gaps,
+              !fixed_h + !min_flex_h + row_gaps ))
+          else
+            let col_widths =
+              Drawing.compute_sizes ~defs:columns ~mins:col_mins_list
+                ~available:width ~spacing:col_spacing
+            in
+            let natural_w =
+              List.fold_left ( + ) 0 col_widths
+              + (col_spacing * max 0 (num_cols - 1))
+            in
+            let row_pref_h = Array.make num_rows 0 in
+            List.iteri
+              (fun i child ->
+                if i < num_cells then
+                  let r = i / num_cols in
+                  let c = i mod num_cols in
+                  let cell_w = List.nth col_widths c in
+                  let _, child_h = measure ~width:cell_w child in
+                  row_pref_h.(r) <- max row_pref_h.(r) child_h)
+              children;
+            let fixed_h = ref 0 in
+            let min_flex_h = ref 0 in
+            List.iteri
+              (fun i row ->
+                let m = row_pref_h.(i) in
+                match row with
+                | `Fixed h -> fixed_h := !fixed_h + h
+                | `Flex _ -> min_flex_h := !min_flex_h + m)
+              rows;
+            let row_gaps = row_spacing * max 0 (num_rows - 1) in
+            let natural_h = !fixed_h + !min_flex_h + row_gaps in
+            (natural_w, natural_h)
     | Scroll { child; width = scroll_w; height = scroll_h; _ } ->
         let child_w, child_h = measure child in
         ( Option.value scroll_w ~default:child_w,
@@ -377,7 +501,7 @@ let rec measure ?(width = max_int) element =
 and min_width element =
   match element with
   | Text { content; wrap; tab_width; _ } ->
-      let expanded = Graphics.expand_tabs content tab_width in
+      let expanded = Render.expand_tabs content tab_width in
       if not wrap then Render.measure_string expanded
       else
         let lines = String.split_on_char '\n' expanded in
@@ -410,6 +534,9 @@ and min_width element =
             List.fold_left (fun acc c -> max acc (min_width c)) 0 children
       in
       child_min_w + pad_h + bor_h
+  | Flow { children; _ } ->
+      if children = [] then 0
+      else List.fold_left (fun acc c -> max acc (min_width c)) 0 children
   | _ -> fst (measure element)
 
 and min_height element =
@@ -433,18 +560,7 @@ and min_height element =
       child_min_h + pad_v + bor_v
   | _ -> snd (measure element)
 
-let grow_fact = function
-  | Spacer { flex; _ } -> flex
-  | Box { options; _ } -> options.flex_grow
-  | _ -> 0
-
-let shrink_fact = function
-  | Box { options; _ } -> options.flex_shrink
-  | Text { wrap = true; _ } -> 1
-  | Spacer { flex; _ } -> flex
-  | _ -> 0
-
-let text ?(style = Render.Style.empty) ?(align = `Start) ?(tab_width = 4)
+let text ?(style = Style.empty) ?(align = `Start) ?(tab_width = 4)
     ?(wrap = false) content =
   Text (Text.make ~style ~align ~tab_width ~wrap content)
 
@@ -460,7 +576,8 @@ let grid ?(col_spacing = 0) ?(row_spacing = 0) ~columns ~rows children =
 let scroll ?width ?height ?(h_offset = 0) ?(v_offset = 0) child =
   Scroll (Scroll.make ?width ?height ~h_offset ~v_offset child)
 
-let zstack ?(align = Top_left) children = Z_stack (Z_stack.make ~align children)
+let z_stack ?(align = Top_left) children =
+  Z_stack (Z_stack.make ~align children)
 
 let hbox ?(gap = 0) ?width ?height ?min_width ?min_height ?max_width ?max_height
     ?(margin = Padding.no_padding) ?(padding = Padding.no_padding) ?border
@@ -489,7 +606,8 @@ let hbox ?(gap = 0) ?width ?height ?min_width ?min_height ?max_width ?max_height
     }
   in
   if wrap then
-    let flow_content = flow ~h_gap:gap ~v_gap:0 children in
+    let flow_content = flow ~h_gap:0 ~v_gap:0 children in
+    (* Force h_gap=0 for space preservation *)
     let wrapper_options = { options with gap = 0 } in
     Box (Box.make ~options:wrapper_options [ flow_content ])
   else Box (Box.make ~options children)
@@ -523,7 +641,7 @@ let vbox ?(gap = 0) ?width ?height ?min_width ?min_height ?max_width ?max_height
 
 let flex_spacer () = spacer ~flex:1 0
 
-let divider ?(style = Render.Style.(fg (gray 8))) ?(char = "─") () =
+let divider ?(style = Style.(fg (gray 8))) ?(char = "─") () =
   let content =
     if String.length char = 0 then String.make 1000 '-'
     else
@@ -540,15 +658,7 @@ let center child =
       hbox ~align_items:`Center ~justify_content:`Center ~flex_grow:1 [ child ];
     ]
 
-let styled ?fg ?bg child =
-  let style =
-    match (fg, bg) with
-    | Some fg_color, Some bg_color -> Render.Style.(fg fg_color ++ bg bg_color)
-    | Some fg_color, None -> Render.Style.fg fg_color
-    | None, Some bg_color -> Render.Style.bg bg_color
-    | None, None -> Render.Style.empty
-  in
-  hbox ~background:style [ child ]
+let styled style child = hbox ~background:style [ child ]
 
 let rec pp fmt = function
   | Text _ -> Format.fprintf fmt "Text"
@@ -580,3 +690,69 @@ let rec pp fmt = function
            pp)
         children
   | Scroll { child; _ } -> Format.fprintf fmt "Scroll(%a)" pp child
+
+(* Additional UI Primitives *)
+
+let checkbox ~checked ~label ?(style = Style.empty) () =
+  let check_char = Uchar.of_int (if checked then 0x2611 else 0x2610) in
+  (* ☑ or ☐ *)
+  let check_str =
+    let buf = Buffer.create 4 in
+    Uutf.Buffer.add_utf_8 buf check_char;
+    Buffer.contents buf
+  in
+  let checkbox_text = check_str ^ " " ^ label in
+  text ~style checkbox_text
+
+let radio ~checked ~label ?(style = Style.empty) () =
+  let radio_char = Uchar.of_int (if checked then 0x25C9 else 0x25CB) in
+  (* ◉ or ○ *)
+  let radio_str =
+    let buf = Buffer.create 4 in
+    Uutf.Buffer.add_utf_8 buf radio_char;
+    Buffer.contents buf
+  in
+  let radio_text = radio_str ^ " " ^ label in
+  text ~style radio_text
+
+let image ~lines ?(align = `Start) () =
+  let elements = List.map (fun line -> text ~align line) lines in
+  vbox elements
+
+let separator ?(orientation = `Horizontal) ?char ?(style = Style.(fg (gray 8)))
+    () =
+  match orientation with
+  | `Horizontal ->
+      let default_char = "─" in
+      let char = Option.value char ~default:default_char in
+      divider ~style ~char ()
+  | `Vertical ->
+      (* Use a box with just a left border to create a vertical line *)
+      (* The box will stretch vertically to fill available space *)
+      let _ = char in
+      (* char parameter ignored for vertical separators *)
+      let _ = style in
+      (* TODO: Apply style color to border when API allows *)
+      vbox ~width:1
+        ~border:
+          (Border.make ~top:false ~bottom:false ~right:false ~left:true ())
+        []
+
+let list ~items ?(bullet = "") ?(numbering = false) () =
+  let default_bullet =
+    let buf = Buffer.create 4 in
+    Uutf.Buffer.add_utf_8 buf (Uchar.of_int 0x2022);
+    (* • *)
+    Buffer.contents buf
+  in
+  let bullet = if bullet = "" then default_bullet else bullet in
+  let list_items =
+    List.mapi
+      (fun i item ->
+        let prefix =
+          if numbering then Printf.sprintf "%2d. " (i + 1) else bullet ^ "  "
+        in
+        hbox ~gap:0 [ text ~style:(Style.fg (Style.gray 12)) prefix; item ])
+      items
+  in
+  vbox ~gap:0 list_items

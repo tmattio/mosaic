@@ -21,7 +21,7 @@ let update (msg : msg) (model : model) : model * msg Cmd.t =
       let new_input, cmd = Mosaic_tiles.Input.update input_msg model.input in
       ({ input = new_input }, Cmd.map (fun m -> `Input_msg m) cmd)
   | `Submit | `Quit -> (model, Cmd.quit)
-  | `Key_event { key; modifier } -> (
+  | `Key_event { key; modifier; _ } -> (
       match (key, modifier) with
       | Char c, { ctrl = true; _ } when Uchar.to_int c = Char.code 'C' ->
           (model, Cmd.quit)

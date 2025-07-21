@@ -121,7 +121,7 @@ let init ?(options = []) ?(default = []) ?(limit = 0) ?(height = 5)
 (* Update *)
 let rec update msg model =
   match msg with
-  | Key { key; modifier } -> (
+  | Key { key; modifier; _ } -> (
       match key with
       | Up ->
           let model =

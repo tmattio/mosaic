@@ -26,9 +26,12 @@
   dune
   uutf
   uucp
-  cmarkit
   eio
   eio_main
+  ; for mosaic.markdown
+  cmarkit
+  ; for mosaic.syntax
+  textmate-language
   (alcotest :with-test)
   (ppx_expect :with-test))
  (tags

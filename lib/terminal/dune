@@ -4,4 +4,4 @@
  (libraries unix ansi)
  (foreign_stubs
   (language c)
-  (names winsize)))
+  (names terminal_stubs)))

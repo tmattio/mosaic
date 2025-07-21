@@ -9,7 +9,7 @@ type ('model, 'msg) app = {
 }
 
 (* Public modules *)
-module Style = Render.Style
+module Style = Ui.Style
 module Ui = Ui
 module Cmd = Cmd
 module Sub = Sub
@@ -66,10 +66,8 @@ module Program = struct
       | Some t -> t
       | None -> Terminal.create ~tty:true Unix.stdin Unix.stdout
     in
-    (* Detect terminal background and configure adaptive colors *)
-    let is_dark = Terminal.has_dark_background term in
-    Render.set_terminal_background ~dark:is_dark;
-    let event_source = Event_source.create term in
+    (* Terminal background is detected and stored in the terminal instance *)
+    let event_source = Event_source.create ~sw ~env ~mouse term in
     let model, _init_cmd = app.init () in
     let msg_stream = Eio.Stream.create 100 in
     {
@@ -131,7 +129,8 @@ module Program = struct
                   Terminal.restore_state program.term;
                   Terminal.hide_cursor program.term;
                   Terminal.set_mode program.term `Raw;
-                  if program.mouse then Terminal.enable_mouse program.term;
+                  if program.mouse then
+                    Terminal.set_mouse_mode program.term `Normal;
                   Terminal.enable_kitty_keyboard program.term;
                   if program.alt_screen then
                     Terminal.enable_alternate_screen program.term;
@@ -141,7 +140,7 @@ module Program = struct
                 (* Release terminal to normal state *)
                 Terminal.save_state program.term;
                 Terminal.show_cursor program.term;
-                Terminal.disable_mouse program.term;
+                Terminal.set_mouse_mode program.term `None;
                 Terminal.disable_kitty_keyboard program.term;
                 if program.alt_screen then
                   Terminal.disable_alternate_screen program.term;
@@ -230,6 +229,19 @@ module Program = struct
     | Cmd.Clear_screen ->
         log_debug program "Clearing screen";
         Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
+            (* Clear visible screen and move cursor home *)
+            let reset_seq = Ansi.clear_screen ^ Ansi.esc ^ "H" in
+            Terminal.write program.term
+              (Bytes.of_string reset_seq)
+              0 (String.length reset_seq);
+            Terminal.flush program.term);
+        (* Reset static elements *)
+        program.static_elements <- [];
+        program.last_static_height <- 0;
+        program.last_printed_static <- 0
+    | Cmd.Clear_terminal ->
+        log_debug program "Clearing terminal";
+        Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
             (* Clear screen, scrollback, and move cursor home *)
             let reset_seq = Ansi.clear_terminal in
             Terminal.write program.term
@@ -262,6 +274,9 @@ module Program = struct
           | Input.Mouse mouse_event ->
               let mouse_handlers = Sub.collect_mouse [] subs in
               List.filter_map (fun f -> f mouse_event) mouse_handlers
+          | Input.Paste s ->
+              let paste_handlers = Sub.collect_paste [] subs in
+              List.filter_map (fun f -> f s) paste_handlers
           | Input.Resize (w, h) ->
               (* Invalidate the previous buffer on resize.
                  This prevents the diffing logic in the render loop from comparing
@@ -397,9 +412,18 @@ module Program = struct
                 else
                   let sorted_patches =
                     List.sort
-                      (fun (p1 : Render.patch) p2 ->
-                        if p1.row = p2.row then Int.compare p1.col p2.col
-                        else Int.compare p1.row p2.row)
+                      (fun (p1 : Render.patch) (p2 : Render.patch) ->
+                        match (p1, p2) with
+                        | ( Change { row = r1; col = c1; _ },
+                            Change { row = r2; col = c2; _ } ) ->
+                            if r1 = r2 then Int.compare c1 c2
+                            else Int.compare r1 r2
+                        | Clear _, Change _ -> -1
+                        | Change _, Clear _ -> 1
+                        | ( Clear { row = r1; col = c1; _ },
+                            Clear { row = r2; col = c2; _ } ) ->
+                            if r1 = r2 then Int.compare c1 c2
+                            else Int.compare r1 r2)
                       patches
                   in
                   let patch_buf = Buffer.create 1024 in
@@ -407,39 +431,85 @@ module Program = struct
                   let current_col = ref 0 in
                   List.iter
                     (fun (p : Render.patch) ->
-                      (* Move down if needed *)
-                      let row_diff = p.row - !current_row in
-                      if row_diff > 0 then (
-                        Buffer.add_string patch_buf (Ansi.cursor_down row_diff);
-                        Buffer.add_string patch_buf "\r";
-                        current_col := 0);
-                      current_row := p.row;
+                      match p with
+                      | Change { row; col; new_cell } ->
+                          (* Move down if needed *)
+                          let row_diff = row - !current_row in
+                          if row_diff > 0 then (
+                            Buffer.add_string patch_buf
+                              (Ansi.cursor_down row_diff);
+                            Buffer.add_string patch_buf "\r";
+                            current_col := 0);
+                          current_row := row;
 
-                      (* Move forward on line *)
-                      let col_diff = p.col - !current_col in
-                      if col_diff > 0 then
-                        Buffer.add_string patch_buf
-                          (Ansi.cursor_forward col_diff);
-                      current_col := p.col + p.new_cell.width;
+                          (* Move forward on line *)
+                          let col_diff = col - !current_col in
+                          if col_diff > 0 then
+                            Buffer.add_string patch_buf
+                              (Ansi.cursor_forward col_diff);
+                          current_col := col + new_cell.width;
 
-                      (* Apply style and content *)
-                      Buffer.add_string patch_buf
-                        (Style.to_sgr p.new_cell.style);
-                      let content =
-                        match p.new_cell.chars with
-                        | [] -> " "
-                        | chars ->
-                            let b = Buffer.create 8 in
-                            List.iter (Uutf.Buffer.add_utf_8 b) chars;
-                            Buffer.contents b
-                      in
-                      let styled_content =
-                        match p.new_cell.style.uri with
-                        | Some uri -> Ansi.hyperlink ~uri content
-                        | None -> content
-                      in
-                      Buffer.add_string patch_buf styled_content;
-                      Buffer.add_string patch_buf Ansi.reset)
+                          (* Apply style and content *)
+                          let sgr_codes =
+                            let attrs = [] in
+                            let attrs =
+                              match new_cell.attr.fg with
+                              | Some c -> `Fg c :: attrs
+                              | None -> attrs
+                            in
+                            let attrs =
+                              match new_cell.attr.bg with
+                              | Some c -> `Bg c :: attrs
+                              | None -> attrs
+                            in
+                            let attrs =
+                              if new_cell.attr.bold then `Bold :: attrs
+                              else attrs
+                            in
+                            let attrs =
+                              if new_cell.attr.dim then `Dim :: attrs else attrs
+                            in
+                            let attrs =
+                              if new_cell.attr.italic then `Italic :: attrs
+                              else attrs
+                            in
+                            let attrs =
+                              if new_cell.attr.underline then
+                                `Underline :: attrs
+                              else attrs
+                            in
+                            let attrs =
+                              if new_cell.attr.blink then `Blink :: attrs
+                              else attrs
+                            in
+                            let attrs =
+                              if new_cell.attr.reverse then `Reverse :: attrs
+                              else attrs
+                            in
+                            let attrs =
+                              if new_cell.attr.strikethrough then
+                                `Strikethrough :: attrs
+                              else attrs
+                            in
+                            Ansi.sgr attrs
+                          in
+                          Buffer.add_string patch_buf sgr_codes;
+                          let content =
+                            match new_cell.chars with
+                            | [] -> " "
+                            | chars ->
+                                let b = Buffer.create 8 in
+                                List.iter (Uutf.Buffer.add_utf_8 b) chars;
+                                Buffer.contents b
+                          in
+                          let styled_content =
+                            match new_cell.attr.uri with
+                            | Some uri -> Ansi.hyperlink ~uri content
+                            | None -> content
+                          in
+                          Buffer.add_string patch_buf styled_content;
+                          Buffer.add_string patch_buf Ansi.reset
+                      | Clear _ -> () (* TODO: Handle clear patches *))
                     sorted_patches;
                   Buffer.add_string patch_buf
                     (Ansi.cursor_down (dynamic_height - !current_row) ^ "\r");
@@ -528,14 +598,10 @@ module Program = struct
     while program.running do
       let timeout = Some (1.0 /. float_of_int program.fps) in
       match
-        Event_source.read program.event_source ~sw:program.sw
-          ~clock:program.clock ~timeout
+        Event_source.read program.event_source ~clock:program.clock ~timeout
       with
       | `Event event -> handle_input_event program event
       | `Timeout -> ()
-      | `Eof ->
-          program.running <- false;
-          ()
     done
 
   let render_loop program =
@@ -582,55 +648,67 @@ module Program = struct
               process_cmd program cmd))
     done
 
+  let full_cleanup term alt_screen_was_on =
+    (* A comprehensive, single-string reset for the terminal state Mosaic modifies.
+       This can be used for both graceful shutdown and signal handling. *)
+    let common_seq =
+      Ansi.cursor_show ^ Ansi.mouse_off ^ Ansi.bracketed_paste_off
+    in
+    let cleanup_seq =
+      if alt_screen_was_on then
+        common_seq ^ Ansi.kitty_keyboard_off ^ Ansi.alternate_screen_off
+      else common_seq ^ Ansi.kitty_keyboard_off
+    in
+    Terminal.write term
+      (Bytes.of_string cleanup_seq)
+      0
+      (String.length cleanup_seq);
+    Terminal.set_mode term `Cooked;
+    Terminal.flush term
+
   let setup_terminal program =
     log_debug program "Setting up terminal";
     Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
+        (* Force-reset terminal features to a known-good state before enabling ours. *)
+        let reset_seq = Ansi.mouse_off ^ Ansi.bracketed_paste_off in
+        Terminal.write program.term
+          (Bytes.of_string reset_seq)
+          0 (String.length reset_seq);
+
         Terminal.set_mode program.term `Raw;
         Terminal.hide_cursor program.term;
         if program.alt_screen then (
           log_debug program "Enabling alternate screen";
           Terminal.enable_alternate_screen program.term);
-        if program.mouse then Terminal.enable_mouse program.term;
-        Terminal.enable_kitty_keyboard program.term);
+        if program.mouse then Terminal.set_mouse_mode program.term `Normal;
+        Terminal.enable_kitty_keyboard program.term;
+        Terminal.enable_bracketed_paste program.term)
 
-    (* Setup SIGWINCH handler *)
-    let sigwinch_handler (w, h) =
+  let setup_signal_handlers program =
+    (* The state of alt_screen can change, so we capture its initial value for the signal handler. *)
+    let initial_alt_screen = program.alt_screen in
+    let handler _signum =
+      (* THIS IS A SIGNAL HANDLER. DO NOT ALLOCATE, USE EIO, OR DO ANYTHING COMPLEX. *)
+      (* We perform a direct, low-level cleanup and then exit. *)
+      full_cleanup program.term initial_alt_screen;
+      exit 130 (* Standard exit code for termination by Ctrl+C *)
+    in
+    Sys.set_signal Sys.sigint (Sys.Signal_handle handler);
+    Sys.set_signal Sys.sigterm (Sys.Signal_handle handler);
+    Sys.set_signal Sys.sighup (Sys.Signal_handle handler);
+
+    (* SIGWINCH handler to notify the app of terminal resizes. *)
+    let winch_handler (w, h) =
       program.last_resize_w := w;
       program.last_resize_h := h;
       Eio.Condition.broadcast program.resize_cond
     in
-    Terminal.set_sigwinch_handler (Some sigwinch_handler);
-
-    (* Setup termination signal handlers to ensure terminal cleanup *)
-    let termination_handler _ =
-      (* Ensure terminal is cleaned up before exit *)
-      Terminal.set_sigwinch_handler None;
-      Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
-          Terminal.show_cursor program.term;
-          Terminal.disable_mouse program.term;
-          Terminal.disable_kitty_keyboard program.term;
-          if program.alt_screen then
-            Terminal.disable_alternate_screen program.term;
-          Terminal.set_mode program.term `Cooked;
-          Terminal.release program.term)
-    in
-    (* Install handlers for common termination signals *)
-    Sys.set_signal Sys.sigterm (Sys.Signal_handle termination_handler);
-    Sys.set_signal Sys.sigint (Sys.Signal_handle termination_handler);
-    Sys.set_signal Sys.sighup (Sys.Signal_handle termination_handler)
+    Terminal.set_resize_handler program.term winch_handler
 
   let cleanup_terminal program =
-    Terminal.set_sigwinch_handler None;
+    Terminal.remove_resize_handlers program.term;
     Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
-        Terminal.flush program.term;
-        Terminal.show_cursor program.term;
-        Terminal.disable_mouse program.term;
-        Terminal.disable_kitty_keyboard program.term;
-        (* Only disable alt screen if it was enabled *)
-        if program.alt_screen then
-          Terminal.disable_alternate_screen program.term;
-        (* Always restore terminal mode *)
-        Terminal.set_mode program.term `Cooked)
+        full_cleanup program.term program.alt_screen)
 
   let run ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
       ?debug_log app =
@@ -650,6 +728,7 @@ module Program = struct
     Queue.add init_cmd program.cmd_queue;
 
     setup_terminal program;
+    setup_signal_handlers program;
 
     Fun.protect ~finally:(fun () -> cleanup_terminal program) @@ fun () ->
     (* Run all loops concurrently *)

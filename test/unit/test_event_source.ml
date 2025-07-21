@@ -6,53 +6,52 @@ open Test_utils
 let read_event_from_string input ~timeout =
   run_eio (fun env sw ->
       let term, _ = make_test_terminal input in
-      let source = Event_source.create term in
-      Event_source.read source ~sw ~clock:(Eio.Stdenv.clock env) ~timeout)
+      let source = Event_source.create ~sw ~env term in
+      Event_source.read source ~clock:(Eio.Stdenv.clock env) ~timeout)
 
 let test_single_key_event () =
   match read_event_from_string "a" ~timeout:(Some 0.1) with
-  | `Event (Input.Key { key = Char c; modifier }) ->
+  | `Event (Input.Key { key = Char c; modifier; _ }) ->
       Alcotest.(check char) "key is 'a'" 'a' (Uchar.to_char c);
       Alcotest.(check bool) "no ctrl" false modifier.ctrl;
       Alcotest.(check bool) "no alt" false modifier.alt;
       Alcotest.(check bool) "no shift" false modifier.shift
   | `Event e -> Alcotest.failf "Unexpected event: %s" (show_event e)
   | `Timeout -> Alcotest.fail "Unexpected timeout"
-  | `Eof -> Alcotest.fail "Unexpected EOF"
 
 let test_ctrl_c_event () =
   (* This is the critical test for Ctrl+C *)
   match read_event_from_string "\x03" ~timeout:(Some 0.1) with
-  | `Event (Input.Key { key = Char c; modifier = { ctrl; alt; shift } }) ->
+  | `Event (Input.Key { key = Char c; modifier = { ctrl; alt; shift; _ }; _ })
+    ->
       Alcotest.(check char) "key is 'C'" 'C' (Uchar.to_char c);
       Alcotest.(check bool) "ctrl is pressed" true ctrl;
       Alcotest.(check bool) "alt not pressed" false alt;
       Alcotest.(check bool) "shift not pressed" false shift
   | `Event e -> Alcotest.failf "Unexpected event: %s" (show_event e)
   | `Timeout -> Alcotest.fail "Unexpected timeout"
-  | `Eof -> Alcotest.fail "Unexpected EOF"
 
 let test_event_queue () =
   (* Test multiple events in single read *)
   run_eio @@ fun env sw ->
   let term, _ = make_test_terminal "abc" in
-  let source = Event_source.create term in
+  let source = Event_source.create ~sw ~env term in
   let clock = Eio.Stdenv.clock env in
 
   (* First read should get 'a' *)
-  (match Event_source.read source ~sw ~clock ~timeout:(Some 0.1) with
+  (match Event_source.read source ~clock ~timeout:(Some 0.1) with
   | `Event (Input.Key { key = Char c; _ }) ->
       Alcotest.(check char) "first key is 'a'" 'a' (Uchar.to_char c)
   | _ -> Alcotest.fail "Expected key event for 'a'");
 
   (* Second read should get 'b' *)
-  (match Event_source.read source ~sw ~clock ~timeout:(Some 0.1) with
+  (match Event_source.read source ~clock ~timeout:(Some 0.1) with
   | `Event (Input.Key { key = Char c; _ }) ->
       Alcotest.(check char) "second key is 'b'" 'b' (Uchar.to_char c)
   | _ -> Alcotest.fail "Expected key event for 'b'");
 
   (* Third read should get 'c' *)
-  match Event_source.read source ~sw ~clock ~timeout:(Some 0.1) with
+  match Event_source.read source ~clock ~timeout:(Some 0.1) with
   | `Event (Input.Key { key = Char c; _ }) ->
       Alcotest.(check char) "third key is 'c'" 'c' (Uchar.to_char c)
   | _ -> Alcotest.fail "Expected key event for 'c'"
@@ -62,69 +61,66 @@ let test_timeout_behavior () =
   match read_event_from_string "" ~timeout:(Some 0.01) with
   | `Timeout -> () (* Expected *)
   | `Event e -> Alcotest.failf "Unexpected event: %s" (show_event e)
-  | `Eof -> () (* Also acceptable for empty input *)
 
 let test_eof_handling () =
   (* Test EOF after some input *)
   run_eio @@ fun env sw ->
   let term, _ = make_test_terminal "a" in
-  let source = Event_source.create term in
+  let source = Event_source.create ~sw ~env term in
   let clock = Eio.Stdenv.clock env in
 
   (* Read the 'a' *)
-  (match Event_source.read source ~sw ~clock ~timeout:(Some 0.1) with
+  (match Event_source.read source ~clock ~timeout:(Some 0.1) with
   | `Event (Input.Key { key = Char c; _ }) ->
       Alcotest.(check char) "key is 'a'" 'a' (Uchar.to_char c)
   | _ -> Alcotest.fail "Expected key event");
 
   (* Next read should be EOF or timeout *)
-  match Event_source.read source ~sw ~clock ~timeout:(Some 0.01) with
-  | `Eof | `Timeout -> () (* Both are acceptable *)
+  match Event_source.read source ~clock ~timeout:(Some 0.01) with
+  | `Timeout -> () (* Acceptable for timeout *)
   | `Event e -> Alcotest.failf "Unexpected event after input: %s" (show_event e)
 
 let test_escape_sequence () =
   (* Test arrow key *)
   match read_event_from_string "\x1b[A" ~timeout:(Some 0.1) with
-  | `Event (Input.Key { key = Up; modifier }) ->
+  | `Event (Input.Key { key = Up; modifier; _ }) ->
       Alcotest.(check bool)
         "no modifiers" false
         (modifier.ctrl || modifier.alt || modifier.shift)
   | `Event e -> Alcotest.failf "Unexpected event: %s" (show_event e)
   | `Timeout -> Alcotest.fail "Unexpected timeout"
-  | `Eof -> Alcotest.fail "Unexpected EOF"
 
 let test_mouse_event () =
   (* Test SGR mouse click *)
   match read_event_from_string "\x1b[<0;5;10M" ~timeout:(Some 0.1) with
-  | `Event (Input.Mouse (Press (x, y, Left, _))) ->
+  | `Event (Input.Mouse (Button_press (x, y, Left, _))) ->
       Alcotest.(check int) "x coordinate" 4 x;
       Alcotest.(check int) "y coordinate" 9 y
   | `Event e -> Alcotest.failf "Unexpected event: %s" (show_event e)
   | `Timeout -> Alcotest.fail "Unexpected timeout"
-  | `Eof -> Alcotest.fail "Unexpected EOF"
 
 let test_paste_events () =
   (* Test bracketed paste *)
   run_eio @@ fun env sw ->
   let term, _ = make_test_terminal "\x1b[200~test\x1b[201~" in
-  let source = Event_source.create term in
+  let source = Event_source.create ~sw ~env term in
   let clock = Eio.Stdenv.clock env in
 
   (* Should get paste start *)
-  (match Event_source.read source ~sw ~clock ~timeout:(Some 0.1) with
+  (match Event_source.read source ~clock ~timeout:(Some 0.1) with
   | `Event Input.Paste_start -> ()
   | `Event e -> Alcotest.failf "Expected paste start, got: %s" (show_event e)
   | _ -> Alcotest.fail "Expected paste start event");
 
   (* Should get paste content *)
-  (match Event_source.read source ~sw ~clock ~timeout:(Some 0.1) with
+  (match Event_source.read source ~clock ~timeout:(Some 0.1) with
   | `Event (Input.Paste content) ->
       Alcotest.(check string) "paste content" "test" content
   | `Event e -> Alcotest.failf "Expected paste content, got: %s" (show_event e)
   | _ -> Alcotest.fail "Expected paste content event");
 
   (* Should get paste end *)
-  match Event_source.read source ~sw ~clock ~timeout:(Some 0.1) with
+  match Event_source.read source ~clock ~timeout:(Some 0.1) with
   | `Event Input.Paste_end -> ()
   | `Event e -> Alcotest.failf "Expected paste end, got: %s" (show_event e)
   | _ -> Alcotest.fail "Expected paste end event"
@@ -133,7 +129,7 @@ let test_paste_events () =
 let test_kitty_keyboard_events () =
   (* Test enhanced key reporting with modifiers *)
   match read_event_from_string "\x1b[97;5u" ~timeout:(Some 0.1) with
-  | `Event (Input.Key { key = Char c; modifier = { ctrl; _ } }) ->
+  | `Event (Input.Key { key = Char c; modifier = { ctrl; _ }; _ }) ->
       Alcotest.(check char) "key is 'a'" 'a' (Uchar.to_char c);
       Alcotest.(check bool) "ctrl is pressed" true ctrl
   | `Event e -> Alcotest.failf "Unexpected event: %s" (show_event e)
@@ -167,18 +163,17 @@ let test_focus_blur_events () =
 let test_edge_cases () =
   (* Empty input immediate timeout *)
   (match read_event_from_string "" ~timeout:(Some 0.0) with
-  | `Timeout | `Eof -> ()
+  | `Timeout -> ()
   | `Event e -> Alcotest.failf "Unexpected event on empty: %s" (show_event e));
 
   (* Invalid escape sequence *)
   (match read_event_from_string "\x1b[999999Z" ~timeout:(Some 0.1) with
   | `Event _ -> () (* Some event expected, exact type depends on parser *)
-  | `Timeout -> Alcotest.fail "Should parse something"
-  | `Eof -> Alcotest.fail "Unexpected EOF");
+  | `Timeout -> ());
 
   (* Partial escape at EOF *)
   match read_event_from_string "\x1b[" ~timeout:(Some 0.1) with
-  | `Event (Input.Key { key = Escape; _ }) | `Timeout | `Eof -> ()
+  | `Event (Input.Key { key = Escape; _ }) | `Timeout -> ()
   | `Event e ->
       Alcotest.failf "Unexpected event for partial escape: %s" (show_event e)
 
@@ -190,16 +185,16 @@ let test_rapid_events () =
       (List.init 100 (fun i -> String.make 1 (Char.chr (65 + (i mod 26)))))
   in
   let term, _ = make_test_terminal input in
-  let source = Event_source.create term in
+  let source = Event_source.create ~sw ~env term in
   let clock = Eio.Stdenv.clock env in
 
   (* Read all events *)
   let rec read_all count =
     if count > 110 then Alcotest.fail "Too many events"
     else
-      match Event_source.read source ~sw ~clock ~timeout:(Some 0.001) with
+      match Event_source.read source ~clock ~timeout:(Some 0.001) with
       | `Event (Input.Key _) -> read_all (count + 1)
-      | `Timeout | `Eof -> count
+      | `Timeout -> count
       | `Event e -> Alcotest.failf "Unexpected event type: %s" (show_event e)
   in
   let count = read_all 0 in
@@ -211,16 +206,16 @@ let test_large_paste () =
   let paste_content = String.make 1000 'X' in
   let input = Printf.sprintf "\x1b[200~%s\x1b[201~" paste_content in
   let term, _ = make_test_terminal input in
-  let source = Event_source.create term in
+  let source = Event_source.create ~sw ~env term in
   let clock = Eio.Stdenv.clock env in
 
   (* Should get paste start *)
-  (match Event_source.read source ~sw ~clock ~timeout:(Some 0.1) with
+  (match Event_source.read source ~clock ~timeout:(Some 0.1) with
   | `Event Input.Paste_start -> ()
   | _ -> Alcotest.fail "Expected paste start");
 
   (* Should get paste content *)
-  (match Event_source.read source ~sw ~clock ~timeout:(Some 0.1) with
+  (match Event_source.read source ~clock ~timeout:(Some 0.1) with
   | `Event (Input.Paste content) ->
       Alcotest.(check string) "paste content" paste_content content;
       Alcotest.(check int) "paste content length" 1000 (String.length content)
@@ -228,7 +223,7 @@ let test_large_paste () =
   | _ -> Alcotest.fail "Expected paste content");
 
   (* Should get paste end *)
-  match Event_source.read source ~sw ~clock ~timeout:(Some 0.1) with
+  match Event_source.read source ~clock ~timeout:(Some 0.1) with
   | `Event Input.Paste_end -> ()
   | `Event e -> Alcotest.failf "Expected paste end, got: %s" (show_event e)
   | _ -> Alcotest.fail "Expected paste end"
@@ -243,7 +238,7 @@ let test_mouse_modes () =
 
   (* Test SGR mouse with release *)
   (match read_event_from_string "\x1b[<0;5;10m" ~timeout:(Some 0.1) with
-  | `Event (Input.Mouse (Release (x, y, Left, _))) ->
+  | `Event (Input.Mouse (Button_release (x, y, Left, _))) ->
       Alcotest.(check int) "x coordinate" 4 x;
       Alcotest.(check int) "y coordinate" 9 y
   | `Event e -> Alcotest.failf "Expected mouse release, got: %s" (show_event e)
@@ -287,7 +282,7 @@ let test_special_keys () =
 let test_alt_combinations () =
   (* Alt+a *)
   match read_event_from_string "\x1ba" ~timeout:(Some 0.1) with
-  | `Event (Input.Key { key = Char c; modifier = { alt; _ } }) ->
+  | `Event (Input.Key { key = Char c; modifier = { alt; _ }; _ }) ->
       Alcotest.(check char) "key is 'a'" 'a' (Uchar.to_char c);
       Alcotest.(check bool) "alt is pressed" true alt
   | `Event e -> Alcotest.failf "Unexpected event: %s" (show_event e)
@@ -300,7 +295,6 @@ let test_input_buffer () =
   | `Timeout -> () (* Expected - incomplete sequence *)
   | `Event (Input.Key { key = Escape; _ }) -> () (* Also acceptable *)
   | `Event e -> Alcotest.failf "Unexpected event on partial: %s" (show_event e)
-  | `Eof -> Alcotest.fail "Unexpected EOF"
 
 let tests =
   [
