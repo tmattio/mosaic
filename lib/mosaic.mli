@@ -21,7 +21,7 @@
 
 (** {1 Styling} *)
 
-module Style = Render.Style
+module Style = Ui.Style
 (** @inline *)
 
 (** {1 Building User Interfaces} *)

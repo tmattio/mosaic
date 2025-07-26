@@ -9,7 +9,7 @@ type ('model, 'msg) app = {
 }
 
 (* Public modules *)
-module Style = Render.Style
+module Style = Ui.Style
 module Ui = Ui
 module Cmd = Cmd
 module Sub = Sub
@@ -66,9 +66,6 @@ module Program = struct
       | Some t -> t
       | None -> Terminal.create ~tty:true Unix.stdin Unix.stdout
     in
-    (* Detect terminal background and configure adaptive colors *)
-    let is_dark = Terminal.has_dark_background term in
-    Render.set_terminal_background ~dark:is_dark;
     let event_source = Event_source.create ~sw ~env ~mouse term in
     let model, _init_cmd = app.init () in
     let msg_stream = Eio.Stream.create 100 in
@@ -398,9 +395,18 @@ module Program = struct
                 else
                   let sorted_patches =
                     List.sort
-                      (fun (p1 : Render.patch) p2 ->
-                        if p1.row = p2.row then Int.compare p1.col p2.col
-                        else Int.compare p1.row p2.row)
+                      (fun (p1 : Render.patch) (p2 : Render.patch) ->
+                        match (p1, p2) with
+                        | ( Change { row = r1; col = c1; _ },
+                            Change { row = r2; col = c2; _ } ) ->
+                            if r1 = r2 then Int.compare c1 c2
+                            else Int.compare r1 r2
+                        | Clear _, Change _ -> -1
+                        | Change _, Clear _ -> 1
+                        | ( Clear { row = r1; col = c1; _ },
+                            Clear { row = r2; col = c2; _ } ) ->
+                            if r1 = r2 then Int.compare c1 c2
+                            else Int.compare r1 r2)
                       patches
                   in
                   let patch_buf = Buffer.create 1024 in
@@ -408,39 +414,85 @@ module Program = struct
                   let current_col = ref 0 in
                   List.iter
                     (fun (p : Render.patch) ->
-                      (* Move down if needed *)
-                      let row_diff = p.row - !current_row in
-                      if row_diff > 0 then (
-                        Buffer.add_string patch_buf (Ansi.cursor_down row_diff);
-                        Buffer.add_string patch_buf "\r";
-                        current_col := 0);
-                      current_row := p.row;
+                      match p with
+                      | Change { row; col; new_cell } ->
+                          (* Move down if needed *)
+                          let row_diff = row - !current_row in
+                          if row_diff > 0 then (
+                            Buffer.add_string patch_buf
+                              (Ansi.cursor_down row_diff);
+                            Buffer.add_string patch_buf "\r";
+                            current_col := 0);
+                          current_row := row;
 
-                      (* Move forward on line *)
-                      let col_diff = p.col - !current_col in
-                      if col_diff > 0 then
-                        Buffer.add_string patch_buf
-                          (Ansi.cursor_forward col_diff);
-                      current_col := p.col + p.new_cell.width;
+                          (* Move forward on line *)
+                          let col_diff = col - !current_col in
+                          if col_diff > 0 then
+                            Buffer.add_string patch_buf
+                              (Ansi.cursor_forward col_diff);
+                          current_col := col + new_cell.width;
 
-                      (* Apply style and content *)
-                      Buffer.add_string patch_buf
-                        (Style.to_sgr p.new_cell.style);
-                      let content =
-                        match p.new_cell.chars with
-                        | [] -> " "
-                        | chars ->
-                            let b = Buffer.create 8 in
-                            List.iter (Uutf.Buffer.add_utf_8 b) chars;
-                            Buffer.contents b
-                      in
-                      let styled_content =
-                        match p.new_cell.style.uri with
-                        | Some uri -> Ansi.hyperlink ~uri content
-                        | None -> content
-                      in
-                      Buffer.add_string patch_buf styled_content;
-                      Buffer.add_string patch_buf Ansi.reset)
+                          (* Apply style and content *)
+                          let sgr_codes =
+                            let attrs = [] in
+                            let attrs =
+                              match new_cell.attr.fg with
+                              | Some c -> `Fg c :: attrs
+                              | None -> attrs
+                            in
+                            let attrs =
+                              match new_cell.attr.bg with
+                              | Some c -> `Bg c :: attrs
+                              | None -> attrs
+                            in
+                            let attrs =
+                              if new_cell.attr.bold then `Bold :: attrs
+                              else attrs
+                            in
+                            let attrs =
+                              if new_cell.attr.dim then `Dim :: attrs else attrs
+                            in
+                            let attrs =
+                              if new_cell.attr.italic then `Italic :: attrs
+                              else attrs
+                            in
+                            let attrs =
+                              if new_cell.attr.underline then
+                                `Underline :: attrs
+                              else attrs
+                            in
+                            let attrs =
+                              if new_cell.attr.blink then `Blink :: attrs
+                              else attrs
+                            in
+                            let attrs =
+                              if new_cell.attr.reverse then `Reverse :: attrs
+                              else attrs
+                            in
+                            let attrs =
+                              if new_cell.attr.strikethrough then
+                                `Strikethrough :: attrs
+                              else attrs
+                            in
+                            Ansi.sgr attrs
+                          in
+                          Buffer.add_string patch_buf sgr_codes;
+                          let content =
+                            match new_cell.chars with
+                            | [] -> " "
+                            | chars ->
+                                let b = Buffer.create 8 in
+                                List.iter (Uutf.Buffer.add_utf_8 b) chars;
+                                Buffer.contents b
+                          in
+                          let styled_content =
+                            match new_cell.attr.uri with
+                            | Some uri -> Ansi.hyperlink ~uri content
+                            | None -> content
+                          in
+                          Buffer.add_string patch_buf styled_content;
+                          Buffer.add_string patch_buf Ansi.reset
+                      | Clear _ -> () (* TODO: Handle clear patches *))
                     sorted_patches;
                   Buffer.add_string patch_buf
                     (Ansi.cursor_down (dynamic_height - !current_row) ^ "\r");

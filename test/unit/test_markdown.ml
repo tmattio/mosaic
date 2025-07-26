@@ -1,4 +1,3 @@
-open Mosaic
 open Test_utils
 open Alcotest
 
@@ -187,7 +186,7 @@ let test_custom_style () =
     {
       default with
       paragraph = { default.paragraph with margin_bottom = 3 };
-      h1 = { default.h1 with style = Mosaic.Style.(bold ++ fg Red) };
+      h1 = { default.h1 with style = Ui.Style.(bold ++ fg Red) };
       list = { default.list with item_prefix = "→" };
     }
   in

@@ -7,7 +7,7 @@
   test_markdown
   test_gradient)
  (libraries
-  mosaic
+  mosaic.ui
   mosaic.markdown
   mosaic.render
   mosaic.input

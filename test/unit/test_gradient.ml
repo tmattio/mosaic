@@ -1,8 +1,6 @@
-open Mosaic
-
 (** Test gradient style creation *)
 let test_gradient_style_creation () =
-  let module S = Render.Style in
+  let module S = Ui.Style in
   (* Test foreground gradient *)
   let style = S.gradient_fg ~colors:[ S.Red; S.Blue ] ~direction:`Horizontal in
   Alcotest.(check bool)
@@ -23,7 +21,7 @@ let test_gradient_style_creation () =
 
 (** Test gradient with RGB colors *)
 let test_gradient_with_rgb () =
-  let module S = Render.Style in
+  let module S = Ui.Style in
   let gradient =
     S.gradient
       ~colors:[ S.rgb 255 0 0; S.rgb 0 255 0; S.rgb 0 0 255 ]
@@ -36,7 +34,7 @@ let test_gradient_with_rgb () =
 
 (** Test gradient rendering integration *)
 let test_gradient_rendering () =
-  let module S = Render.Style in
+  let module S = Ui.Style in
   (* Create a buffer and render gradient text *)
   let buffer = Render.create 20 3 in
   let gradient_style =
@@ -51,7 +49,7 @@ let test_gradient_rendering () =
 
 (** Test adaptive color in color_spec *)
 let test_adaptive_color_spec () =
-  let module S = Render.Style in
+  let module S = Ui.Style in
   (* Create adaptive color *)
   let adaptive = S.adaptive ~light:S.Black ~dark:S.White in
 
@@ -82,16 +80,17 @@ let test_adaptive_color_spec () =
   Alcotest.(check bool) "cell has content" (List.length cell.chars > 0) true;
 
   (* Check that the color adapts based on background *)
-  match cell.Render.style.Render.Style.fg with
-  | Some (S.Solid S.White) -> () (* On dark background, should be white *)
+  match cell.Render.attr.Render.fg with
+  | Some Ansi.White -> () (* On dark background, should be white *)
   | _ -> Alcotest.fail "Expected white color on dark background"
 
 (** Test gradient edge cases *)
 let test_gradient_edge_cases () =
-  let module S = Render.Style in
-  (* Test empty color list *)
-  let gradient = S.gradient ~colors:[] ~direction:`Horizontal in
-  Alcotest.(check int) "empty colors list" (List.length gradient.S.colors) 0;
+  let module S = Ui.Style in
+  (* Test empty color list - should raise exception *)
+  Alcotest.check_raises "empty colors list raises exception"
+    (Invalid_argument "Gradient must have at least one color") (fun () ->
+      ignore (S.gradient ~colors:[] ~direction:`Horizontal));
 
   (* Test single color *)
   let gradient = S.gradient ~colors:[ S.Red ] ~direction:`Vertical in
@@ -104,7 +103,7 @@ let test_gradient_edge_cases () =
 
 (** Test gradient directions *)
 let test_gradient_directions () =
-  let module S = Render.Style in
+  let module S = Ui.Style in
   (* Test horizontal gradient on wide text *)
   let buffer = Render.create 30 5 in
   let h_gradient =
@@ -124,11 +123,11 @@ let test_gradient_directions () =
   Alcotest.(check bool)
     "horizontal variation" true
     (match
-       ( cell1.Render.style.Render.Style.fg,
-         cell2.Render.style.Render.Style.fg,
-         cell3.Render.style.Render.Style.fg )
+       ( cell1.Render.attr.Render.fg,
+         cell2.Render.attr.Render.fg,
+         cell3.Render.attr.Render.fg )
      with
-    | Some (S.Solid c1), Some (S.Solid c2), Some (S.Solid c3) ->
+    | Some c1, Some c2, Some c3 ->
         c1 <> c2 || c2 <> c3 (* At least some variation *)
     | _ -> true);
 
@@ -153,7 +152,7 @@ let test_gradient_directions () =
 
 (** Test gradient color interpolation *)
 let test_gradient_interpolation () =
-  let module S = Render.Style in
+  let module S = Ui.Style in
   (* Test RGB interpolation *)
   let gradient =
     S.gradient
@@ -183,7 +182,7 @@ let test_gradient_interpolation () =
 
 (** Test combined gradients *)
 let test_combined_gradients () =
-  let module S = Render.Style in
+  let module S = Ui.Style in
   (* Test foreground and background gradients together *)
   let fg_gradient =
     S.gradient_fg ~colors:[ S.White; S.Black ] ~direction:`Horizontal
@@ -213,7 +212,7 @@ let test_combined_gradients () =
 
 (** Test gradient with different color types *)
 let test_gradient_color_types () =
-  let module S = Render.Style in
+  let module S = Ui.Style in
   (* Mix of color types *)
   let mixed_gradient =
     S.gradient
@@ -258,7 +257,7 @@ let test_gradient_color_types () =
 
 (** Test gradient on empty and special cases *)
 let test_gradient_special_cases () =
-  let module S = Render.Style in
+  let module S = Ui.Style in
   (* Gradient on empty text *)
   let buffer = Render.create 10 1 in
   let gradient_style =

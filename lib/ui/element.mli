@@ -72,7 +72,7 @@ module rec Text : sig
   type t
 
   val make :
-    ?style:Render.Style.t ->
+    ?style:Style.t ->
     ?align:align ->
     ?tab_width:int ->
     ?wrap:bool ->
@@ -80,7 +80,7 @@ module rec Text : sig
     t
 
   val content : t -> string
-  val style : t -> Render.Style.t
+  val style : t -> Style.t
   val alignment : t -> align
   val tab_width : t -> int
   val is_wrapping : t -> bool
@@ -89,10 +89,10 @@ end
 and Rich_text : sig
   type t
 
-  val make : (string * Render.Style.t) list -> t
+  val make : (string * Style.t) list -> t
   (** Creates a single line of text with multiple styled segments. *)
 
-  val segments : t -> (string * Render.Style.t) list
+  val segments : t -> (string * Style.t) list
 end
 
 and Spacer : sig
@@ -126,7 +126,7 @@ and Box : sig
     margin : Padding.t;
     padding : Padding.t;
     border : Border.t option;
-    background : Render.Style.t option;
+    background : Style.t option;
     align : align;
     justify : align;
     flex_grow : int;
@@ -225,6 +225,25 @@ and Scroll : sig
   val v_offset : t -> int
 end
 
+and Canvas : sig
+  type t
+
+  val width : t -> int option
+  val height : t -> int option
+
+  val draw :
+    t ->
+    buffer:Render.buffer ->
+    x:int ->
+    y:int ->
+    w:int ->
+    h:int ->
+    dark:bool ->
+    unit
+  (** [draw canvas ~buffer ~x ~y ~h ~w ~dark] performs custom drawing on the
+      canvas using the provided buffer and dimensions. *)
+end
+
 and T : sig
   type t =
     | Text of Text.t
@@ -235,6 +254,7 @@ and T : sig
     | Flow of Flow.t
     | Grid of Grid.t
     | Scroll of Scroll.t
+    | Canvas of Canvas.t
 end
 
 type t = T.t =
@@ -246,16 +266,12 @@ type t = T.t =
   | Flow of Flow.t
   | Grid of Grid.t
   | Scroll of Scroll.t
+  | Canvas of Canvas.t
 
 (** {2 Element Constructors} *)
 
 val text :
-  ?style:Render.Style.t ->
-  ?align:align ->
-  ?tab_width:int ->
-  ?wrap:bool ->
-  string ->
-  t
+  ?style:Style.t -> ?align:align -> ?tab_width:int -> ?wrap:bool -> string -> t
 (** [text ?style ?align ?tab_width ?wrap s] creates a text
     @param wrap If true, text wraps to fit the container's width. *)
 
@@ -270,7 +286,7 @@ val hbox :
   ?margin:Padding.t ->
   ?padding:Padding.t ->
   ?border:Border.t ->
-  ?background:Render.Style.t ->
+  ?background:Style.t ->
   ?align_items:align ->
   ?justify_content:align ->
   ?flex_grow:int ->
@@ -295,7 +311,7 @@ val vbox :
   ?margin:Padding.t ->
   ?padding:Padding.t ->
   ?border:Border.t ->
-  ?background:Render.Style.t ->
+  ?background:Style.t ->
   ?align_items:align ->
   ?justify_content:align ->
   ?flex_grow:int ->
@@ -313,12 +329,12 @@ val vbox :
 val spacer : ?flex:int -> int -> t
 (** [spacer ?flex size] creates empty space. If [flex > 0], it expands. *)
 
-val rich_text : (string * Render.Style.t) list -> t
+val rich_text : (string * Style.t) list -> t
 (** [rich_text segments] creates a single line of text with multiple styles. *)
 
-val zstack : ?align:Z_stack.z_align -> t list -> t
-(** [zstack ?align children] overlays children, rendering later children on top.
-*)
+val z_stack : ?align:Z_stack.z_align -> t list -> t
+(** [z_stack ?align children] overlays children, rendering later children on
+    top. *)
 
 val flow : ?h_gap:int -> ?v_gap:int -> t list -> t
 (** [flow ?h_gap ?v_gap children] lays out children horizontally, wrapping to
@@ -339,22 +355,38 @@ val scroll :
 (** [scroll ?h_offset ?v_offset child] creates a scrollable viewport for child
     content. *)
 
+val canvas :
+  ?width:int ->
+  ?height:int ->
+  (buffer:Render.buffer ->
+  x:int ->
+  y:int ->
+  w:int ->
+  h:int ->
+  dark:bool ->
+  unit) ->
+  t
+(** [canvas ?width ?height draw] creates a canvas element that allows custom
+    drawing commands.
+    @param width Optional fixed width for the canvas.
+    @param height Optional fixed height for the canvas.
+    @param draw The function that performs the drawing on the canvas. *)
+
 (** {2 Helper Functions} *)
 
 val flex_spacer : unit -> t
 (** [flex_spacer ()] creates an expandable spacer to push content apart.
     Equivalent to [spacer ~flex:1 0]. *)
 
-val divider : ?style:Render.Style.t -> ?char:string -> unit -> t
+val divider : ?style:Style.t -> ?char:string -> unit -> t
 (** [divider ()] creates a horizontal line that expands to fill available width.
 *)
 
 val center : t -> t
 (** [center child] centers an element both horizontally and vertically. *)
 
-val styled : ?fg:Ansi.color -> ?bg:Ansi.color -> t -> t
-(** [styled ?fg ?bg child] wraps an element in a box to apply background color.
-*)
+val styled : Style.t -> t -> t
+(** [styled style child] wraps an element in a box to apply styling. *)
 
 (** {2 Measure Elements} *)
 
@@ -384,3 +416,45 @@ val shrink_fact : t -> int
 val pp : Format.formatter -> t -> unit
 (** [pp_element fmt elem] pretty-prints the structure of an element for
     debugging. *)
+
+type expanded_child = { elem : t; is_new_item : bool; is_hard_break : bool }
+
+val expand_children : t list -> expanded_child list
+(** [expand_children children] expands a list of elements into a list of
+    expanded_child records, which include information about whether each child
+    is a new item or a hard break. This is useful for layout calculations. *)
+
+(** {2 Additional UI Primitives} *)
+
+val checkbox : checked:bool -> label:string -> ?style:Style.t -> unit -> t
+(** [checkbox ~checked ~label ?style ()] creates a static checkbox visual.
+    Renders as "[x] label" when checked or "[ ] label" when unchecked. *)
+
+val radio : checked:bool -> label:string -> ?style:Style.t -> unit -> t
+(** [radio ~checked ~label ?style ()] creates a static radio button visual.
+    Renders as "(o) label" when checked or "( ) label" when unchecked. *)
+
+val image : lines:string list -> ?align:align -> unit -> t
+(** [image ~lines ?align ()] creates an element for rendering multi-line ASCII
+    art or logos. Each line is rendered as-is, with wrapping/clipping handled
+    like text. *)
+
+val separator :
+  ?orientation:[ `Horizontal | `Vertical ] ->
+  ?char:string ->
+  ?style:Style.t ->
+  unit ->
+  t
+(** [separator ?orientation ?char ?style ()] creates a separator line.
+    @param orientation Direction of separator (default: `Horizontal)
+    @param char
+      Character to use for the line (default: "─" for horizontal, "│" for
+      vertical)
+    @param style Style to apply to the separator *)
+
+val list : items:t list -> ?bullet:string -> ?numbering:bool -> unit -> t
+(** [list ~items ?bullet ?numbering ()] creates a vertical list with optional
+    bullets or numbers.
+    @param items List of elements to display
+    @param bullet Custom bullet character (default: "•")
+    @param numbering If true, use numbers instead of bullets *)

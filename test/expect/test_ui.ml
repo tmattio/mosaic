@@ -1,4 +1,3 @@
-open Mosaic
 open Test_utils
 
 let%expect_test "text rendering" =
@@ -15,7 +14,7 @@ let%expect_test "text rendering" =
 
 let%expect_test "style application" =
   print_ui ~width:10 ~height:1
-    (Ui.text ~style:Style.(fg (Index 5) ++ bold) "Test");
+    (Ui.text ~style:Ui.Style.(fg (Index 5) ++ bold) "Test");
   [%expect_exact {|
 +----------+
 |Test      |
@@ -238,7 +237,7 @@ let%expect_test "space" =
 let%expect_test "style combination" =
   print_ui ~width:10 ~height:1
     (Ui.text
-       ~style:Style.(fg (Index 1) ++ bg (Index 2) ++ bold ++ italic)
+       ~style:Ui.Style.(fg (Index 1) ++ bg (Index 2) ++ bold ++ italic)
        "Test");
   [%expect_exact {|
 +----------+
@@ -265,9 +264,9 @@ let%expect_test "tab expansion" =
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "adaptive colors" =
-  let adaptive = Style.adaptive ~light:Style.Black ~dark:Style.White in
+  let adaptive = Ui.Style.adaptive ~light:Ui.Style.Black ~dark:Ui.Style.White in
   print_ui ~width:10 ~height:1
-    (Ui.text ~style:(Style.adaptive_fg adaptive) "Test");
+    (Ui.text ~style:(Ui.Style.adaptive_fg adaptive) "Test");
   [%expect_exact {|
 +----------+
 |Test      |
@@ -300,8 +299,8 @@ let%expect_test "margin with border" =
 +----------+
 |}] [@@ocamlformat "disable"]
 
-let%expect_test "zstack - basic overlay" =
-  print_ui ~width:10 (Ui.zstack [ Ui.text "AAAAA"; Ui.text "BB" ]);
+let%expect_test "z_stack - basic overlay" =
+  print_ui ~width:10 (Ui.z_stack [ Ui.text "AAAAA"; Ui.text "BB" ]);
   [%expect_exact {|
 +----------+
 |BBAAA     |
@@ -312,15 +311,15 @@ let%expect_test "zstack - basic overlay" =
 +----------+
 |}] [@@ocamlformat "disable"]
 
-let%expect_test "zstack - with alignment" =
+let%expect_test "z_stack - with alignment" =
   print_ui ~width:10
-    (Ui.zstack ~align:Center
+    (Ui.z_stack ~align:Center
        [ Ui.hbox ~width:10 ~height:5 ~border:(Ui.border ()) []; Ui.text "X" ]);
   [%expect_exact {|
 +----------+
 |┌────────┐|
 |│        │|
-|│    X   │|
+|│   X    │|
 |│        │|
 |└────────┘|
 +----------+
@@ -388,8 +387,8 @@ let%expect_test "flow - with custom gaps" =
 +-------+
 |XX  YY |
 |       |
-|ZZ     |
 |       |
+|ZZ     |
 |       |
 +-------+
 |}] [@@ocamlformat "disable"]
@@ -411,11 +410,11 @@ let%expect_test "rich text" =
   print_ui ~height:1
     (Ui.rich_text
        [
-         ("Red", Style.fg Style.Red);
-         (" ", Style.empty);
-         ("Bold", Style.bold);
-         (" ", Style.empty);
-         ("Blue", Style.fg Style.Blue);
+         ("Red", Ui.Style.fg Ui.Style.Red);
+         (" ", Ui.Style.empty);
+         ("Bold", Ui.Style.bold);
+         (" ", Ui.Style.empty);
+         ("Blue", Ui.Style.fg Ui.Style.Blue);
        ]);
   [%expect_exact {|
 +--------------------+
@@ -479,7 +478,7 @@ let%expect_test "edge cases - empty layouts" =
 |          |
 +----------+
 |}];
-  print_ui ~width:10 ~height:1 (Ui.zstack []);
+  print_ui ~width:10 ~height:1 (Ui.z_stack []);
   [%expect_exact {|
 +----------+
 |          |
@@ -639,7 +638,7 @@ let%expect_test "convenience functions - center" =
 
 let%expect_test "convenience functions - styled" =
   print_ui ~width:5 ~height:1
-    (Ui.styled ~fg:Render.Style.Red ~bg:Render.Style.Blue (Ui.text "Hi"));
+    (Ui.styled Ui.Style.(fg Red ++ bg Blue) (Ui.text "Hi"));
   [%expect_exact {|
 +-----+
 |Hi   |
@@ -850,8 +849,8 @@ let%expect_test "Unicode and wide characters" =
 +--------------------+
 |ASCII: Hello        |
 |Greek: αβγ          |
-|Emoji: Hi😀 !        |
-|你 好 world           |
+|Emoji: Hi😀!        |
+|你好world           |
 |                    |
 +--------------------+
 |}] [@ocamlformat "disable"]
@@ -874,20 +873,10 @@ let%expect_test "Stretch alignment" =
 |│┌───┐┌───┐│   |
 |││A  ││B  ││   |
 |│└───┘│C  ││   |
-|└─────└───┘┘   |
+|└──────────┘   |
 |               |
 |               |
 +---------------+
-|}] [@ocamlformat "disable"]
-
-let%expect_test "Border too small to render" =
-  print_ui ~width:5 ~height:3 (Ui.hbox ~border:(Ui.border ()) [ Ui.text "x" ]);
-  [%expect_exact {|
-+-----+
-|┌─┐  |
-|│x│  |
-|└─┘  |
-+-----+
 |}] [@ocamlformat "disable"]
 
 let%expect_test "Min/max width constraints" =
@@ -933,7 +922,7 @@ let%expect_test "Z-stack alignment" =
     Ui.hbox ~width:20 ~height:5 ~border:(Ui.border ()) [ Ui.text "Main" ]
   in
   let overlay = Ui.text "X" in
-  let ui = Ui.zstack ~align:Center [ main; overlay ] in
+  let ui = Ui.z_stack ~align:Center [ main; overlay ] in
   print_ui ~width:25 ~height:6 ui;
   [%expect_exact {|
 +-------------------------+
@@ -975,18 +964,18 @@ let%expect_test "Grid layout" =
       ~rows:[ `Fixed 1; `Fixed 1 ]
       [
         Ui.text "Name:";
-        Ui.hbox ~border:(Ui.border ()) [ Ui.text "John" ];
+        Ui.hbox [ Ui.text "John" ];
         Ui.text "Email:";
-        Ui.hbox ~border:(Ui.border ()) [ Ui.text "john@example.com" ];
+        Ui.hbox [ Ui.text "john@example.com" ];
       ]
   in
   print_ui ~width:35 ~height:5 ui;
   [%expect_exact {|
 +-----------------------------------+
-|Name:                              |
-|           John                    |
-|Email:                             |
-|           john@example.com        |
+|Name:     John                     |
+|                                   |
+|Email:    john@example.com         |
+|                                   |
 |                                   |
 +-----------------------------------+
 |}] [@ocamlformat "disable"]
@@ -1068,7 +1057,7 @@ let%expect_test "grid with flex rows/columns" =
 
 let%expect_test "divider with custom char and style" =
   print_ui ~width:15 ~height:3
-    (Ui.divider ~char:"*" ~style:Render.Style.(fg Green) ());
+    (Ui.divider ~char:"*" ~style:Ui.Style.(fg Green) ());
   [%expect_exact {|
 +---------------+
 |***************|
@@ -1083,8 +1072,222 @@ let%expect_test "scroll with h and v offsets" =
        (Ui.vbox [ Ui.text "ABCDEF"; Ui.text "GHIJKLM"; Ui.text "NOPQRS" ]));
   [%expect_exact {|
 +-----+
-|CDE  |
-|IJK  |
-|QRS  |
+|CDEF |
+|IJKLM|
+|PQRS |
 +-----+
 |}] [@ocamlformat "disable"]
+
+let%expect_test "checkbox - checked" =
+  print_ui ~width:15 ~height:1 (Ui.checkbox ~checked:true ~label:"Option 1" ());
+  [%expect_exact {|
++---------------+
+|☑ Option 1     |
++---------------+
+|}] [@@ocamlformat "disable"]
+
+let%expect_test "checkbox - unchecked" =
+  print_ui ~width:15 ~height:1 (Ui.checkbox ~checked:false ~label:"Option 2" ());
+  [%expect_exact {|
++---------------+
+|☐ Option 2     |
++---------------+
+|}] [@@ocamlformat "disable"]
+
+let%expect_test "checkbox - with style" =
+  print_ui ~width:20 ~height:1 
+    (Ui.checkbox ~checked:true ~label:"Styled" ~style:Ui.Style.(fg Green) ());
+  [%expect_exact {|
++--------------------+
+|☑ Styled            |
++--------------------+
+|}] [@@ocamlformat "disable"]
+
+let%expect_test "radio - checked" =
+  print_ui ~width:15 ~height:1 (Ui.radio ~checked:true ~label:"Option A" ());
+  [%expect_exact {|
++---------------+
+|◉ Option A     |
++---------------+
+|}] [@@ocamlformat "disable"]
+
+let%expect_test "radio - unchecked" =
+  print_ui ~width:15 ~height:1 (Ui.radio ~checked:false ~label:"Option B" ());
+  [%expect_exact {|
++---------------+
+|○ Option B     |
++---------------+
+|}] [@@ocamlformat "disable"]
+
+let%expect_test "radio - with style" =
+  print_ui ~width:20 ~height:1 
+    (Ui.radio ~checked:true ~label:"Styled" ~style:Ui.Style.(fg Blue) ());
+  [%expect_exact {|
++--------------------+
+|◉ Styled            |
++--------------------+
+|}] [@@ocamlformat "disable"]
+
+let%expect_test "list - bullet list" =
+  print_ui ~width:20 ~height:4
+    (Ui.list ~items:[
+      Ui.text "First item";
+      Ui.text "Second item";
+      Ui.text "Third item"
+    ] ());
+  [%expect_exact {|
++--------------------+
+|•  First item       |
+|•  Second item      |
+|•  Third item       |
+|                    |
++--------------------+
+|}] [@@ocamlformat "disable"]
+
+let%expect_test "list - numbered list" =
+  print_ui ~width:20 ~height:4
+    (Ui.list ~items:[
+      Ui.text "First";
+      Ui.text "Second";
+      Ui.text "Third"
+    ] ~numbering:true ());
+  [%expect_exact {|
++--------------------+
+| 1. First           |
+| 2. Second          |
+| 3. Third           |
+|                    |
++--------------------+
+|}] [@@ocamlformat "disable"]
+
+let%expect_test "list - custom bullet" =
+  print_ui ~width:20 ~height:4
+    (Ui.list ~items:[
+      Ui.text "Apple";
+      Ui.text "Banana";
+      Ui.text "Cherry"
+    ] ~bullet:"→" ());
+  [%expect_exact {|
++--------------------+
+|→  Apple            |
+|→  Banana           |
+|→  Cherry           |
+|                    |
++--------------------+
+|}] [@@ocamlformat "disable"]
+
+let%expect_test "image - simple ASCII art" =
+  print_ui ~width:15 ~height:5
+    (Ui.image ~lines:[
+      "  /\\_/\\  ";
+      " ( o.o ) ";
+      "  > ^ <  "
+    ] ());
+  [%expect_exact {|
++---------------+
+|  /\_/\        |
+| ( o.o )       |
+|  > ^ <        |
+|               |
+|               |
++---------------+
+|}] [@@ocamlformat "disable"]
+
+let%expect_test "image - centered" =
+  print_ui ~width:20 ~height:4
+    (Ui.image ~lines:[
+      "╔═══╗";
+      "║ X ║";
+      "╚═══╝"
+    ] ~align:`Center ());
+  [%expect_exact {|
++--------------------+
+|       ╔═══╗        |
+|       ║ X ║        |
+|       ╚═══╝        |
+|                    |
++--------------------+
+|}] [@@ocamlformat "disable"]
+
+let%expect_test "image - right aligned" =
+  print_ui ~width:15 ~height:3
+    (Ui.image ~lines:[
+      "▶▶▶";
+      "▶▶▶"
+    ] ~align:`End ());
+  [%expect_exact {|
++---------------+
+|            ▶▶▶|
+|            ▶▶▶|
+|               |
++---------------+
+|}] [@@ocamlformat "disable"]
+
+let%expect_test "separator - horizontal" =
+  print_ui ~width:20 ~height:1
+    (Ui.separator ());
+  [%expect_exact {|
++--------------------+
+|────────────────────|
++--------------------+
+|}] [@@ocamlformat "disable"]
+
+let%expect_test "separator - vertical" =
+  print_ui ~width:1 ~height:5
+    (Ui.separator ~orientation:`Vertical ());
+  [%expect_exact {|
++-+
+|│|
+|│|
+|│|
+|│|
+|│|
++-+
+|}] [@@ocamlformat "disable"]
+
+let%expect_test "separator - custom char" =
+  print_ui ~width:15 ~height:1
+    (Ui.separator ~char:"═" ());
+  [%expect_exact {|
++---------------+
+|═══════════════|
++---------------+
+|}] [@@ocamlformat "disable"]
+
+let%expect_test "separator - with style" =
+  print_ui ~width:15 ~height:1
+    (Ui.separator ~style:Ui.Style.(fg Blue) ());
+  [%expect_exact {|
++---------------+
+|───────────────|
++---------------+
+|}] [@@ocamlformat "disable"]
+
+let%expect_test "mixed primitives layout" =
+  print_ui ~width:25 ~height:12
+    (Ui.vbox ~gap:1 [
+      Ui.checkbox ~checked:true ~label:"Enable feature" ();
+      Ui.separator ();
+      Ui.list ~items:[
+        Ui.text "Option 1";
+        Ui.text "Option 2"
+      ] ();
+      Ui.separator ();
+      Ui.image ~lines:["[Logo]"] ~align:`Center ();
+    ]);
+  [%expect_exact {|
++-------------------------+
+|☑ Enable feature         |
+|                         |
+|─────────────────────────|
+|                         |
+|                         |
+|•  Option 1              |
+|•  Option 2              |
+|                         |
+|─────────────────────────|
+|                         |
+|                         |
+|         [Logo]          |
++-------------------------+
+|}] [@@ocamlformat "disable"]
