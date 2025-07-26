@@ -35,7 +35,7 @@ let buffer_to_lines buffer =
 (** Create a test terminal with predefined input for unit testing low-level
     components like the event source or input parser. *)
 let make_test_terminal input =
-  let term, get_output = Terminal.create_from_strings input in
+  let term, get_output, _close = Terminal.create_from_strings input in
   (term, get_output)
 
 (** Renders a UI element to a raw string representation of the terminal grid.

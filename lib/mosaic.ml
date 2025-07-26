@@ -131,7 +131,8 @@ module Program = struct
                   Terminal.restore_state program.term;
                   Terminal.hide_cursor program.term;
                   Terminal.set_mode program.term `Raw;
-                  if program.mouse then Terminal.enable_mouse program.term;
+                  if program.mouse then
+                    Terminal.set_mouse_mode program.term `Normal;
                   Terminal.enable_kitty_keyboard program.term;
                   if program.alt_screen then
                     Terminal.enable_alternate_screen program.term;
@@ -141,7 +142,7 @@ module Program = struct
                 (* Release terminal to normal state *)
                 Terminal.save_state program.term;
                 Terminal.show_cursor program.term;
-                Terminal.disable_mouse program.term;
+                Terminal.set_mouse_mode program.term `None;
                 Terminal.disable_kitty_keyboard program.term;
                 if program.alt_screen then
                   Terminal.disable_alternate_screen program.term;
@@ -590,7 +591,7 @@ module Program = struct
         if program.alt_screen then (
           log_debug program "Enabling alternate screen";
           Terminal.enable_alternate_screen program.term);
-        if program.mouse then Terminal.enable_mouse program.term;
+        if program.mouse then Terminal.set_mouse_mode program.term `Normal;
         Terminal.enable_kitty_keyboard program.term);
 
     (* Setup SIGWINCH handler *)
@@ -599,15 +600,15 @@ module Program = struct
       program.last_resize_h := h;
       Eio.Condition.broadcast program.resize_cond
     in
-    Terminal.set_sigwinch_handler (Some sigwinch_handler);
+    Terminal.set_resize_handler program.term sigwinch_handler;
 
     (* Setup termination signal handlers to ensure terminal cleanup *)
     let termination_handler _ =
       (* Ensure terminal is cleaned up before exit *)
-      Terminal.set_sigwinch_handler None;
+      Terminal.remove_resize_handlers program.term;
       Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
           Terminal.show_cursor program.term;
-          Terminal.disable_mouse program.term;
+          Terminal.set_mouse_mode program.term `None;
           Terminal.disable_kitty_keyboard program.term;
           if program.alt_screen then
             Terminal.disable_alternate_screen program.term;
@@ -620,11 +621,12 @@ module Program = struct
     Sys.set_signal Sys.sighup (Sys.Signal_handle termination_handler)
 
   let cleanup_terminal program =
-    Terminal.set_sigwinch_handler None;
+    Terminal.remove_resize_handlers program.term;
     Eio.Mutex.use_rw ~protect:true program.terminal_mutex (fun () ->
         Terminal.flush program.term;
         Terminal.show_cursor program.term;
-        Terminal.disable_mouse program.term;
+        Terminal.set_mouse_mode program.term `None;
+        (* Restore terminal state if it was saved *)
         Terminal.disable_kitty_keyboard program.term;
         (* Only disable alt screen if it was enabled *)
         if program.alt_screen then
