@@ -112,7 +112,7 @@ let init ?(placeholder = "") ?(initial_value = "") ?(height = 5) ?(width = 60)
 (* Update *)
 let update msg model =
   match msg with
-  | Key { key; modifier } -> (
+  | Key { key; modifier; _ } -> (
       match key with
       | Char c
         when Uchar.to_int c >= 32

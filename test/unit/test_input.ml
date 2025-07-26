@@ -3,90 +3,65 @@
 open Test_utils
 
 let test_parse_regular_chars () =
-  let parser = Input.create () in
-
   (* Test single character *)
-  let events = Input.feed parser (Bytes.of_string "a") 0 1 in
+  let events = Input.parse_single "a" in
   Alcotest.(check (list event_testable))
     "single char 'a'"
-    [
-      Input.Key { key = Char (Uchar.of_char 'a'); modifier = Input.no_modifier };
-    ]
+    [ Input.char_event 'a' ]
     events;
 
   (* Test multiple characters *)
-  let events = Input.feed parser (Bytes.of_string "hello") 0 5 in
+  let events = Input.parse_single "hello" in
   Alcotest.(check (list event_testable))
     "multiple chars 'hello'"
     [
-      Input.Key { key = Char (Uchar.of_char 'h'); modifier = Input.no_modifier };
-      Input.Key { key = Char (Uchar.of_char 'e'); modifier = Input.no_modifier };
-      Input.Key { key = Char (Uchar.of_char 'l'); modifier = Input.no_modifier };
-      Input.Key { key = Char (Uchar.of_char 'l'); modifier = Input.no_modifier };
-      Input.Key { key = Char (Uchar.of_char 'o'); modifier = Input.no_modifier };
+      Input.char_event 'h';
+      Input.char_event 'e';
+      Input.char_event 'l';
+      Input.char_event 'l';
+      Input.char_event 'o';
     ]
     events
 
 let test_parse_control_chars () =
-  let parser = Input.create () in
-
   (* Test Ctrl+A *)
-  let events = Input.feed parser (Bytes.of_string "\x01") 0 1 in
+  let events = Input.parse_single "\x01" in
   Alcotest.(check (list event_testable))
     "Ctrl+A"
-    [
-      Input.Key
-        {
-          key = Char (Uchar.of_char 'A');
-          modifier = { ctrl = true; alt = false; shift = false };
-        };
-    ]
+    [ Input.char_event ~modifier:{ Input.no_modifier with ctrl = true } 'A' ]
     events;
 
   (* Test Ctrl+C - this is the critical test *)
-  let events = Input.feed parser (Bytes.of_string "\x03") 0 1 in
+  let events = Input.parse_single "\x03" in
   Alcotest.(check (list event_testable))
     "Ctrl+C"
-    [
-      Input.Key
-        {
-          key = Char (Uchar.of_char 'C');
-          modifier = { ctrl = true; alt = false; shift = false };
-        };
-    ]
+    [ Input.char_event ~modifier:{ Input.no_modifier with ctrl = true } 'C' ]
     events;
 
   (* Test Ctrl+Z *)
-  let events = Input.feed parser (Bytes.of_string "\x1a") 0 1 in
+  let events = Input.parse_single "\x1a" in
   Alcotest.(check (list event_testable))
     "Ctrl+Z"
-    [
-      Input.Key
-        {
-          key = Char (Uchar.of_char 'Z');
-          modifier = { ctrl = true; alt = false; shift = false };
-        };
-    ]
+    [ Input.char_event ~modifier:{ Input.no_modifier with ctrl = true } 'Z' ]
     events
 
 let test_parse_special_keys () =
-  let parser = Input.create () in
-
   (* Test Enter *)
-  let events = Input.feed parser (Bytes.of_string "\r") 0 1 in
+  let events = Input.parse_single "\r" in
   Alcotest.(check (list event_testable))
     "Enter"
-    [ Input.Key { key = Enter; modifier = Input.no_modifier } ]
+    [ Input.key_event Input.Enter ]
     events;
 
   (* Test Tab *)
-  let events = Input.feed parser (Bytes.of_string "\t") 0 1 in
+  let events = Input.parse_single "\t" in
   Alcotest.(check (list event_testable))
     "Tab"
-    [ Input.Key { key = Tab; modifier = Input.no_modifier } ]
+    [ Input.key_event Input.Tab ]
     events;
 
   (* Test Escape - in a streaming parser, a single escape is buffered *)
+  let parser = Input.create () in
   let events = Input.feed parser (Bytes.of_string "\x1b") 0 1 in
   Alcotest.(check (list event_testable)) "Escape buffered" [] events;
 
@@ -94,139 +69,107 @@ let test_parse_special_keys () =
   let events = Input.feed parser (Bytes.of_string "\x7f") 0 1 in
   Alcotest.(check (list event_testable))
     "Escape + Backspace"
-    [
-      Input.Key { key = Escape; modifier = Input.no_modifier };
-      Input.Key { key = Backspace; modifier = Input.no_modifier };
-    ]
+    [ Input.key_event Input.Escape; Input.key_event Input.Backspace ]
     events
 
 let test_parse_arrow_keys () =
-  let parser = Input.create () in
-
-  (* Test Up arrow *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[A") 0 3 in
-  Alcotest.(check (list event_testable))
-    "Up arrow"
-    [ Input.Key { key = Up; modifier = Input.no_modifier } ]
-    events;
-
-  (* Test Down arrow *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[B") 0 3 in
-  Alcotest.(check (list event_testable))
-    "Down arrow"
-    [ Input.Key { key = Down; modifier = Input.no_modifier } ]
-    events;
-
-  (* Test Right arrow *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[C") 0 3 in
-  Alcotest.(check (list event_testable))
-    "Right arrow"
-    [ Input.Key { key = Right; modifier = Input.no_modifier } ]
-    events;
-
-  (* Test Left arrow *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[D") 0 3 in
-  Alcotest.(check (list event_testable))
-    "Left arrow"
-    [ Input.Key { key = Left; modifier = Input.no_modifier } ]
-    events
+  (* Test arrow keys *)
+  let arrows =
+    [
+      ("\x1b[A", Input.Up, "Up arrow");
+      ("\x1b[B", Input.Down, "Down arrow");
+      ("\x1b[C", Input.Right, "Right arrow");
+      ("\x1b[D", Input.Left, "Left arrow");
+    ]
+  in
+  List.iter
+    (fun (seq, key, desc) ->
+      let events = Input.parse_single seq in
+      Alcotest.(check (list event_testable)) desc [ Input.key_event key ] events)
+    arrows
 
 let test_parse_function_keys () =
-  let parser = Input.create () in
-
-  (* Test F1 *)
-  let events = Input.feed parser (Bytes.of_string "\x1bOP") 0 3 in
-  Alcotest.(check (list event_testable))
-    "F1"
-    [ Input.Key { key = F 1; modifier = Input.no_modifier } ]
-    events;
-
-  (* Test F2 *)
-  let events = Input.feed parser (Bytes.of_string "\x1bOQ") 0 3 in
-  Alcotest.(check (list event_testable))
-    "F2"
-    [ Input.Key { key = F 2; modifier = Input.no_modifier } ]
-    events;
+  (* Test F1-F4 using SS3 sequences *)
+  let f_keys_ss3 =
+    [
+      ("\x1bOP", Input.F 1);
+      ("\x1bOQ", Input.F 2);
+      ("\x1bOR", Input.F 3);
+      ("\x1bOS", Input.F 4);
+    ]
+  in
+  List.iter
+    (fun (seq, key) ->
+      let events = Input.parse_single seq in
+      Alcotest.(check (list event_testable))
+        (Format.asprintf "%a" Input.pp_key key)
+        [ Input.key_event key ]
+        events)
+    f_keys_ss3;
 
   (* Test F5 *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[15~") 0 5 in
+  let events = Input.parse_single "\x1b[15~" in
   Alcotest.(check (list event_testable))
     "F5"
-    [ Input.Key { key = F 5; modifier = Input.no_modifier } ]
+    [ Input.key_event (Input.F 5) ]
     events
 
 let test_parse_modifiers () =
-  let parser = Input.create () in
-
   (* Test Shift+Tab *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[Z") 0 3 in
+  let events = Input.parse_single "\x1b[Z" in
   Alcotest.(check (list event_testable))
     "Shift+Tab"
     [
-      Input.Key
-        { key = Tab; modifier = { ctrl = false; alt = false; shift = true } };
+      Input.key_event
+        ~modifier:{ Input.no_modifier with shift = true }
+        Input.Tab;
     ]
     events;
 
   (* Test Ctrl+Up *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[1;5A") 0 6 in
+  let events = Input.parse_single "\x1b[1;5A" in
   Alcotest.(check (list event_testable))
     "Ctrl+Up"
     [
-      Input.Key
-        { key = Up; modifier = { ctrl = true; alt = false; shift = false } };
+      Input.key_event ~modifier:{ Input.no_modifier with ctrl = true } Input.Up;
     ]
     events;
 
   (* Test Alt+Left *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[1;3D") 0 6 in
+  let events = Input.parse_single "\x1b[1;3D" in
   Alcotest.(check (list event_testable))
     "Alt+Left"
     [
-      Input.Key
-        { key = Left; modifier = { ctrl = false; alt = true; shift = false } };
+      Input.key_event ~modifier:{ Input.no_modifier with alt = true } Input.Left;
     ]
     events
 
 let test_parse_mouse_sgr () =
-  let parser = Input.create () in
-
-  (* Test mouse click at (10, 20) *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[<0;10;20M") 0 11 in
+  (* Test mouse click at (10, 20) - 0-based in result *)
+  let events = Input.parse_single "\x1b[<0;10;20M" in
   Alcotest.(check (list event_testable))
     "Mouse click"
-    [ Input.Mouse (Press (9, 19, Left, Input.no_modifier)) ]
+    [ Input.mouse_press 9 19 Input.Left ]
     events;
 
   (* Test mouse release *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[<0;10;20m") 0 11 in
+  let events = Input.parse_single "\x1b[<0;10;20m" in
   Alcotest.(check (list event_testable))
     "Mouse release"
-    [ Input.Mouse (Release (9, 19, Left, Input.no_modifier)) ]
+    [ Input.mouse_release 9 19 Input.Left ]
     events;
 
   (* Test mouse motion *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[<32;15;25M") 0 12 in
+  let events = Input.parse_single "\x1b[<32;15;25M" in
   Alcotest.(check (list event_testable))
     "Mouse motion"
-    [
-      Input.Mouse
-        (Motion
-           ( 14,
-             24,
-             { left = true; middle = false; right = false },
-             Input.no_modifier ));
-    ]
+    [ Input.mouse_motion 14 24 { left = true; middle = false; right = false } ]
     events
 
 let test_parse_paste_mode () =
-  let parser = Input.create () in
-
   (* Test bracketed paste *)
   let input = "\x1b[200~Hello, World!\x1b[201~" in
-  let events =
-    Input.feed parser (Bytes.of_string input) 0 (String.length input)
-  in
+  let events = Input.parse_single input in
 
   (* Should get paste start, paste content, then paste end *)
   match events with
@@ -248,25 +191,18 @@ let test_parse_paste_mode () =
         "Expected [Paste_start; Paste(content); Paste_end], got [%s]" event_str
 
 let test_parse_utf8 () =
-  let parser = Input.create () in
-
   (* Test UTF-8 character (emoji 😀) *)
-  let events = Input.feed parser (Bytes.of_string "😀") 0 4 in
+  let events = Input.parse_single "😀" in
   Alcotest.(check (list event_testable))
     "UTF-8 emoji"
-    [
-      Input.Key
-        { key = Char (Uchar.of_int 0x1F600); modifier = Input.no_modifier };
-    ]
+    [ Input.key_event (Input.Char (Uchar.of_int 0x1F600)) ]
     events;
 
   (* Test accented character (é) *)
-  let events = Input.feed parser (Bytes.of_string "é") 0 2 in
+  let events = Input.parse_single "é" in
   Alcotest.(check (list event_testable))
     "UTF-8 accented char"
-    [
-      Input.Key { key = Char (Uchar.of_int 0xE9); modifier = Input.no_modifier };
-    ]
+    [ Input.key_event (Input.Char (Uchar.of_int 0xE9)) ]
     events
 
 let test_incremental_parsing () =
@@ -282,51 +218,30 @@ let test_incremental_parsing () =
   let events3 = Input.feed parser (Bytes.of_string "A") 0 1 in
   Alcotest.(check (list event_testable))
     "complete escape sequence"
-    [ Input.Key { key = Up; modifier = Input.no_modifier } ]
+    [ Input.key_event Input.Up ]
     events3
 
 (** Test additional key variants *)
 let test_more_key_variants () =
-  let parser = Input.create () in
-
-  (* Test Page Up/Down *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[5~") 0 4 in
-  Alcotest.(check (list event_testable))
-    "Page Up"
-    [ Input.Key { key = Page_up; modifier = Input.no_modifier } ]
-    events;
-
-  let events = Input.feed parser (Bytes.of_string "\x1b[6~") 0 4 in
-  Alcotest.(check (list event_testable))
-    "Page Down"
-    [ Input.Key { key = Page_down; modifier = Input.no_modifier } ]
-    events;
-
-  (* Test Home/End *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[H") 0 3 in
-  Alcotest.(check (list event_testable))
-    "Home"
-    [ Input.Key { key = Home; modifier = Input.no_modifier } ]
-    events;
-
-  let events = Input.feed parser (Bytes.of_string "\x1b[F") 0 3 in
-  Alcotest.(check (list event_testable))
-    "End"
-    [ Input.Key { key = End; modifier = Input.no_modifier } ]
-    events;
-
-  (* Test Insert/Delete *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[2~") 0 4 in
-  Alcotest.(check (list event_testable))
-    "Insert"
-    [ Input.Key { key = Insert; modifier = Input.no_modifier } ]
-    events;
-
-  let events = Input.feed parser (Bytes.of_string "\x1b[3~") 0 4 in
-  Alcotest.(check (list event_testable))
-    "Delete"
-    [ Input.Key { key = Delete; modifier = Input.no_modifier } ]
-    events;
+  (* Test Page Up/Down, Home/End, Insert/Delete *)
+  let keys =
+    [
+      ("\x1b[5~", Input.Page_up);
+      ("\x1b[6~", Input.Page_down);
+      ("\x1b[H", Input.Home);
+      ("\x1b[F", Input.End);
+      ("\x1b[2~", Input.Insert);
+      ("\x1b[3~", Input.Delete);
+    ]
+  in
+  List.iter
+    (fun (seq, key) ->
+      let events = Input.parse_single seq in
+      Alcotest.(check (list event_testable))
+        (Format.asprintf "%a" Input.pp_key key)
+        [ Input.key_event key ]
+        events)
+    keys;
 
   (* Test higher function keys F6-F12 *)
   let f_keys =
@@ -335,12 +250,10 @@ let test_more_key_variants () =
   List.iter
     (fun (code, n) ->
       let seq = Printf.sprintf "\x1b[%d~" code in
-      let events =
-        Input.feed parser (Bytes.of_string seq) 0 (String.length seq)
-      in
+      let events = Input.parse_single seq in
       Alcotest.(check (list event_testable))
         (Printf.sprintf "F%d" n)
-        [ Input.Key { key = F n; modifier = Input.no_modifier } ]
+        [ Input.key_event (Input.F n) ]
         events)
     f_keys
 
@@ -360,15 +273,14 @@ let test_invalid_sequences () =
 
   (* Very long CSI parameters *)
   let long_seq = "\x1b[" ^ String.make 100 '9' ^ "m" in
-  let events =
-    Input.feed parser (Bytes.of_string long_seq) 0 (String.length long_seq)
-  in
+  let events = Input.parse_single long_seq in
   (* Should handle gracefully - exact behavior depends on implementation *)
   Alcotest.(check bool)
     "long sequence handled" true
     (List.length events = 0 || List.length events > 0);
 
   (* Invalid UTF-8 sequences *)
+  let parser = Input.create () in
   let invalid_utf8 = Bytes.create 2 in
   Bytes.set invalid_utf8 0 '\xff';
   Bytes.set invalid_utf8 1 '\xfe';
@@ -377,9 +289,7 @@ let test_invalid_sequences () =
   Alcotest.(check bool) "invalid UTF-8 handled" true (List.length events >= 0);
 
   (* Mixed valid and invalid *)
-  let events =
-    Input.feed parser (Bytes.of_string "a\x1b[999999999999mbc") 0 18
-  in
+  let events = Input.parse_single "a\x1b[999999999999mbc" in
   (* Should at least parse 'a' *)
   match events with
   | Input.Key { key = Char c; _ } :: _ ->
@@ -388,22 +298,31 @@ let test_invalid_sequences () =
 
 (** Test combined/complex inputs *)
 let test_combined_inputs () =
-  let parser = Input.create () in
-
   (* Key with multiple modifiers *)
   (* Modifier encoding: 1 (base) + 1 (shift) + 2 (alt) + 4 (ctrl) = 8 *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[1;8A") 0 6 in
+  let events = Input.parse_single "\x1b[1;8A" in
   Alcotest.(check (list event_testable))
     "Ctrl+Alt+Shift+Up"
     [
-      Input.Key
-        { key = Up; modifier = { ctrl = true; alt = true; shift = true } };
+      Input.key_event
+        ~modifier:
+          {
+            ctrl = true;
+            alt = true;
+            shift = true;
+            super = false;
+            hyper = false;
+            meta = false;
+            caps_lock = false;
+            num_lock = false;
+          }
+        Input.Up;
     ]
     events;
 
   (* Mouse followed by key *)
   let seq = "\x1b[<0;5;10Ma" in
-  let events = Input.feed parser (Bytes.of_string seq) 0 (String.length seq) in
+  let events = Input.parse_single seq in
   Alcotest.(check int) "mouse + key event count" 2 (List.length events);
   (match events with
   | [ Input.Mouse _; Input.Key _ ] -> ()
@@ -411,9 +330,7 @@ let test_combined_inputs () =
 
   (* Paste with special chars *)
   let paste_seq = "\x1b[200~Hello\nWorld\t!\x1b[201~" in
-  let events =
-    Input.feed parser (Bytes.of_string paste_seq) 0 (String.length paste_seq)
-  in
+  let events = Input.parse_single paste_seq in
   (* Should have paste start, chars, paste end *)
   Alcotest.(check bool) "paste with special chars" true (List.length events >= 3);
 
@@ -422,46 +339,34 @@ let test_combined_inputs () =
     String.concat ""
       (List.init 50 (fun i -> String.make 1 (Char.chr (65 + (i mod 26)))))
   in
-  let events =
-    Input.feed parser (Bytes.of_string rapid) 0 (String.length rapid)
-  in
+  let events = Input.parse_single rapid in
   Alcotest.(check int) "rapid keys parsed" 50 (List.length events)
 
 (** Test kitty keyboard protocol *)
 let test_kitty_keyboard () =
-  let parser = Input.create () in
-
   (* Basic kitty key *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[97u") 0 5 in
+  let events = Input.parse_single "\x1b[97u" in
   Alcotest.(check (list event_testable))
     "kitty 'a'"
-    [
-      Input.Key { key = Char (Uchar.of_char 'a'); modifier = Input.no_modifier };
-    ]
+    [ Input.char_event 'a' ]
     events;
 
   (* Kitty with modifiers *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[97;5u") 0 7 in
+  let events = Input.parse_single "\x1b[97;5u" in
   Alcotest.(check (list event_testable))
     "kitty ctrl+a"
-    [
-      Input.Key
-        {
-          key = Char (Uchar.of_char 'a');
-          modifier = { ctrl = true; alt = false; shift = false };
-        };
-    ]
+    [ Input.char_event ~modifier:{ Input.no_modifier with ctrl = true } 'a' ]
     events;
 
   (* Kitty special keys *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[13u") 0 5 in
+  let events = Input.parse_single "\x1b[13u" in
   Alcotest.(check (list event_testable))
     "kitty enter"
-    [ Input.Key { key = Enter; modifier = Input.no_modifier } ]
+    [ Input.key_event Input.Enter ]
     events;
 
   (* Kitty with event type - press repeat release *)
-  let events = Input.feed parser (Bytes.of_string "\x1b[97;1:3u") 0 9 in
+  let events = Input.parse_single "\x1b[97;1:3u" in
   (* Should parse the key regardless of event type *)
   match events with
   | [ Input.Key { key = Char c; _ } ] ->
@@ -470,40 +375,35 @@ let test_kitty_keyboard () =
 
 (** Test edge cases *)
 let test_input_edge_cases () =
-  let parser = Input.create () in
-
   (* Empty input *)
-  let events = Input.feed parser (Bytes.create 0) 0 0 in
+  let events = Input.parse_single "" in
   Alcotest.(check (list pass)) "empty input" [] events;
 
   (* Single null byte *)
-  let events = Input.feed parser (Bytes.of_string "\x00") 0 1 in
+  let events = Input.parse_single "\x00" in
   Alcotest.(check (list event_testable))
     "null byte as Ctrl+Space"
-    [
-      Input.Key
-        {
-          key = Char (Uchar.of_char ' ');
-          modifier = { ctrl = true; alt = false; shift = false };
-        };
-    ]
+    [ Input.char_event ~modifier:{ Input.no_modifier with ctrl = true } ' ' ]
     events;
 
   (* Alt+Escape *)
+  let parser = Input.create () in
   let events = Input.feed parser (Bytes.of_string "\x1b\x1b") 0 2 in
   (* First ESC is parsed immediately, second is buffered *)
   Alcotest.(check (list event_testable))
     "first escape parsed"
-    [ Input.Key { key = Escape; modifier = Input.no_modifier } ]
+    [ Input.key_event Escape ]
     events;
 
   (* Very large input buffer *)
   let large = String.make 10000 'X' in
-  let events = Input.feed parser (Bytes.of_string large) 0 10000 in
+  let events = Input.parse_single large in
   (* Should get 10001 events: 1 buffered ESC from previous test + 10000 X's *)
-  Alcotest.(check int) "large input parsed" 10001 (List.length events);
+  (* Actually, parse_single uses a fresh parser, so just 10000 *)
+  Alcotest.(check int) "large input parsed" 10000 (List.length events);
 
   (* Input with offset and length *)
+  let parser = Input.create () in
   let data = Bytes.of_string "XXXabcYYY" in
   let events = Input.feed parser data 3 3 in
   Alcotest.(check int) "partial feed count" 3 (List.length events);
@@ -523,18 +423,16 @@ let test_split_utf8 () =
   (* Feed the final byte *)
   let events2 = Input.feed parser (Bytes.of_string "\xAC") 0 1 in
   match events2 with
-  | [ Input.Key { key = Char u; modifier = _ } ] ->
+  | [ Input.Key { key = Char u; modifier = _; _ } ] ->
       Alcotest.(check int) "euro sign unicode" 0x20AC (Uchar.to_int u)
   | _ -> Alcotest.fail "expected single UTF-8 character after completion"
 
 (** Test buffer overflow with large input *)
 let test_buffer_overflow () =
-  let parser = Input.create () in
-
   (* Try to feed more than buffer size (4096) in one go *)
   let large = String.make 5000 'X' in
   try
-    let events = Input.feed parser (Bytes.of_string large) 0 5000 in
+    let events = Input.parse_single large in
     Alcotest.(check int) "should parse all characters" 5000 (List.length events)
   with
   | Failure msg
@@ -545,14 +443,10 @@ let test_buffer_overflow () =
 
 (** Test paste mode actually collects content *)
 let test_paste_mode_collection () =
-  let parser = Input.create () in
-
   (* Feed a large paste that would be inefficient as individual keys *)
   let paste_content = String.make 1000 'A' in
   let input = "\x1b[200~" ^ paste_content ^ "\x1b[201~" in
-  let events =
-    Input.feed parser (Bytes.of_string input) 0 (String.length input)
-  in
+  let events = Input.parse_single input in
 
   (* Check we get Paste_start, Paste(content), Paste_end *)
   match events with
@@ -571,19 +465,17 @@ let test_paste_mode_collection () =
 
 (** Test integer overflow in CSI parameters *)
 let test_csi_param_overflow () =
-  let parser = Input.create () in
-
   (* Create a CSI sequence with a parameter that would overflow int *)
   let huge_param = String.make 20 '9' in
   (* 99999999999999999999 *)
   let seq = Printf.sprintf "\x1b[%s;1A" huge_param in
 
-  let events = Input.feed parser (Bytes.of_string seq) 0 (String.length seq) in
+  let events = Input.parse_single seq in
 
   (* Should either parse with wrapped value or fall back to regular chars *)
   match events with
   | [] -> Alcotest.fail "Should produce some events"
-  | [ Input.Key { key = Up; modifier } ] ->
+  | [ Input.Key { key = Input.Up; modifier; _ } ] ->
       (* If it parsed as Up arrow, check modifier isn't garbage *)
       Alcotest.(check bool)
         "modifier should be reasonable"
@@ -593,6 +485,23 @@ let test_csi_param_overflow () =
   | _ ->
       (* Fallback to char events is acceptable *)
       Alcotest.(check bool) "got some events" true (List.length events > 0)
+
+(** Test new event types *)
+let test_cursor_position_report () =
+  (* Test cursor position report - CSI row ; col R *)
+  let events = Input.parse_single "\x1b[10;25R" in
+  Alcotest.(check (list event_testable))
+    "cursor position report"
+    [ Input.Cursor_position (10, 25) ]
+    events
+
+let test_device_attributes () =
+  (* Test device attributes response - CSI ? attrs c *)
+  let events = Input.parse_single "\x1b[?1;2;6;9;15c" in
+  Alcotest.(check (list event_testable))
+    "device attributes"
+    [ Input.Device_attributes [ 1; 2; 6; 9; 15 ] ]
+    events
 
 let tests =
   [
@@ -615,6 +524,8 @@ let tests =
     ("buffer overflow", `Quick, test_buffer_overflow);
     ("paste mode collection", `Quick, test_paste_mode_collection);
     ("CSI param overflow", `Quick, test_csi_param_overflow);
+    ("cursor position report", `Quick, test_cursor_position_report);
+    ("device attributes", `Quick, test_device_attributes);
   ]
 
 let () = Alcotest.run "Input" [ ("parsing", tests) ]

@@ -127,7 +127,7 @@ let init ?(options = []) ?default ?(height = 5) ?(filterable = false)
 (* Update *)
 let update msg model =
   match msg with
-  | Key { key; modifier } -> (
+  | Key { key; modifier; _ } -> (
       if model.is_open then
         match key with
         | Up ->

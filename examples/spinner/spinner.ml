@@ -25,7 +25,7 @@ let update (msg : msg) (model : model) : model * msg Cmd.t =
       ( { model with spinner = new_spinner },
         Cmd.map (fun m -> `Spinner_msg m) cmd )
   | `Quit -> ({ model with quitting = true }, Cmd.quit)
-  | `Key_event { key; modifier } -> (
+  | `Key_event { key; modifier; _ } -> (
       match (key, modifier) with
       | Char c, { ctrl = true; _ } when Uchar.to_int c = Char.code 'C' ->
           ({ model with quitting = true }, Cmd.quit)

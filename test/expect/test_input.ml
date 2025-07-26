@@ -268,7 +268,7 @@ let%expect_test "Fixed width input" =
   [%expect_exact
     {|+----------------------------------------+
 |┌──────────────────┐                    |
-|│ This is a very lon                    |
+|│ This is a very l │                    |
 |└──────────────────┘                    |
 +----------------------------------------+
 |}]
@@ -279,7 +279,7 @@ let%expect_test "Clear input with Ctrl+U" =
 
   (* Clear with Ctrl+U *)
   Test_harness.push_key_event
-    (Input.key ~ctrl:true (Char (Uchar.of_char 'u')))
+    (Input.char ~modifier:{ Input.no_modifier with ctrl = true } 'u')
     harness;
 
   let output = Test_harness.view ~width:40 ~height:3 harness in

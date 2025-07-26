@@ -51,7 +51,7 @@ let update (msg : msg) (model : model) : model * msg Cmd.t =
       | Some value -> ({ model with choice = Some value }, Cmd.quit)
       | None -> (model, Cmd.none))
   | `Quit -> ({ model with quitting = true }, Cmd.quit)
-  | `Key_event { key; modifier } -> (
+  | `Key_event { key; modifier; _ } -> (
       match (key, modifier) with
       | Char c, { ctrl = true; _ } when Uchar.to_int c = Char.code 'C' ->
           ({ model with quitting = true }, Cmd.quit)

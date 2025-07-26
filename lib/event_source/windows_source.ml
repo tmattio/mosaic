@@ -58,7 +58,7 @@ let flush_paste_buffer detector =
   let text =
     events
     |> List.filter_map (function
-         | Input.Key { key = Input.Char c; modifier }
+         | Input.Key { key = Input.Char c; modifier; _ }
            when (not modifier.ctrl) && not modifier.alt ->
              (* Convert Uchar to string *)
              let buf = Buffer.create 4 in

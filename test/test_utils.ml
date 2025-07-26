@@ -111,11 +111,14 @@ let event_equal e1 e2 =
   | Input.Paste_start, Input.Paste_start -> true
   | Input.Paste_end, Input.Paste_end -> true
   | Input.Paste s1, Input.Paste s2 -> s1 = s2
+  | Input.Cursor_position (r1, c1), Input.Cursor_position (r2, c2) ->
+      r1 = r2 && c1 = c2
+  | Input.Device_attributes a1, Input.Device_attributes a2 -> a1 = a2
   | _ -> false
 
 (** Show an event as a string *)
 let rec show_event = function
-  | Input.Key { key; modifier } ->
+  | Input.Key { key; modifier; _ } ->
       Printf.sprintf "Key(%s, ctrl=%b, alt=%b, shift=%b)" (show_key key)
         modifier.ctrl modifier.alt modifier.shift
   | Input.Mouse m -> Printf.sprintf "Mouse(%s)" (show_mouse m)
@@ -125,6 +128,13 @@ let rec show_event = function
   | Input.Paste_start -> "Paste_start"
   | Input.Paste_end -> "Paste_end"
   | Input.Paste s -> Printf.sprintf "Paste(%S)" s
+  | Input.Osc (code, data) -> Printf.sprintf "Osc(%d, %S)" code data
+  | Input.Clipboard (text, mime) -> Printf.sprintf "Clipboard(%S, %S)" text mime
+  | Input.Cursor_position (row, col) ->
+      Printf.sprintf "Cursor_position(%d, %d)" row col
+  | Input.Device_attributes attrs ->
+      Printf.sprintf "Device_attributes([%s])"
+        (String.concat ";" (List.map string_of_int attrs))
 
 and show_key = function
   | Char c -> Printf.sprintf "Char(%C)" (Uchar.to_char c)
@@ -143,12 +153,75 @@ and show_key = function
   | Page_down -> "Page_down"
   | Insert -> "Insert"
   | F n -> Printf.sprintf "F%d" n
+  | Print_screen -> "Print_screen"
+  | Pause -> "Pause"
+  | Menu -> "Menu"
+  | Media_play -> "Media_play"
+  | Media_pause -> "Media_pause"
+  | Media_stop -> "Media_stop"
+  | Media_next -> "Media_next"
+  | Media_prev -> "Media_prev"
+  | Volume_up -> "Volume_up"
+  | Volume_down -> "Volume_down"
+  | Volume_mute -> "Volume_mute"
+  | Shift_left -> "Shift_left"
+  | Shift_right -> "Shift_right"
+  | Ctrl_left -> "Ctrl_left"
+  | Ctrl_right -> "Ctrl_right"
+  | Alt_left -> "Alt_left"
+  | Alt_right -> "Alt_right"
+  | Super_left -> "Super_left"
+  | Super_right -> "Super_right"
+  | Hyper_left -> "Hyper_left"
+  | Hyper_right -> "Hyper_right"
+  | Meta_left -> "Meta_left"
+  | Meta_right -> "Meta_right"
+  | Caps_lock -> "Caps_lock"
+  | Num_lock -> "Num_lock"
+  | KP_0 -> "KP_0"
+  | KP_1 -> "KP_1"
+  | KP_2 -> "KP_2"
+  | KP_3 -> "KP_3"
+  | KP_4 -> "KP_4"
+  | KP_5 -> "KP_5"
+  | KP_6 -> "KP_6"
+  | KP_7 -> "KP_7"
+  | KP_8 -> "KP_8"
+  | KP_9 -> "KP_9"
+  | KP_decimal -> "KP_decimal"
+  | KP_divide -> "KP_divide"
+  | KP_multiply -> "KP_multiply"
+  | KP_subtract -> "KP_subtract"
+  | KP_add -> "KP_add"
+  | KP_enter -> "KP_enter"
+  | KP_left -> "KP_left"
+  | KP_right -> "KP_right"
+  | KP_up -> "KP_up"
+  | KP_down -> "KP_down"
+  | KP_page_up -> "KP_page_up"
+  | KP_page_down -> "KP_page_down"
+  | KP_home -> "KP_home"
+  | KP_end -> "KP_end"
+  | KP_insert -> "KP_insert"
+  | KP_delete -> "KP_delete"
+  | Scroll_lock -> "Scroll_lock"
+  | Media_play_pause -> "Media_play_pause"
+  | Media_reverse -> "Media_reverse"
+  | Media_fast_forward -> "Media_fast_forward"
+  | Media_rewind -> "Media_rewind"
+  | Media_record -> "Media_record"
+  | Iso_level3_shift -> "Iso_level3_shift"
+  | Iso_level5_shift -> "Iso_level5_shift"
+  | KP_equal -> "KP_equal"
+  | KP_separator -> "KP_separator"
+  | KP_begin -> "KP_begin"
+  | Unknown n -> Printf.sprintf "Unknown(%d)" n
 
 and show_mouse = function
-  | Press (x, y, btn, _) ->
-      Printf.sprintf "Press(%d,%d,%s)" x y (show_button btn)
-  | Release (x, y, btn, _) ->
-      Printf.sprintf "Release(%d,%d,%s)" x y (show_button btn)
+  | Button_press (x, y, btn, _) ->
+      Printf.sprintf "Button_press(%d,%d,%s)" x y (show_button btn)
+  | Button_release (x, y, btn, _) ->
+      Printf.sprintf "Button_release(%d,%d,%s)" x y (show_button btn)
   | Motion (x, y, _, _) -> Printf.sprintf "Motion(%d,%d)" x y
 
 and show_button = function
@@ -157,6 +230,8 @@ and show_button = function
   | Right -> "Right"
   | Wheel_up -> "Wheel_up"
   | Wheel_down -> "Wheel_down"
+  | Wheel_left -> "Wheel_left"
+  | Wheel_right -> "Wheel_right"
   | Button n -> Printf.sprintf "Button%d" n
 
 (** Pretty printer for events for use with Alcotest *)

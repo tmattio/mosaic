@@ -112,7 +112,7 @@ let filter_suggestions model =
 (* Update *)
 let update msg model =
   match msg with
-  | Key { key; modifier } -> (
+  | Key { key; modifier; _ } -> (
       match key with
       | Char c when modifier.ctrl && Uchar.to_char c = 'u' ->
           (* Clear input on Ctrl+U *)

@@ -30,7 +30,9 @@ let on_mouse_motion f =
     | _ -> None)
 
 let on_mouse_click f =
-  mouse_filter (function Input.Press (x, y, _, _) -> Some (f x y) | _ -> None)
+  mouse_filter (function
+    | Input.Button_press (x, y, _, _) -> Some (f x y)
+    | _ -> None)
 
 let on_resize f = window (fun size -> f size.width size.height)
 
@@ -62,27 +64,27 @@ let on_char ?ctrl ?alt ?shift c msg =
 
 let on_click f =
   mouse_filter (function
-    | Input.Press (x, y, button, _) -> Some (f x y button)
+    | Input.Button_press (x, y, button, _) -> Some (f x y button)
     | _ -> None)
 
 let on_left_click f =
   mouse_filter (function
-    | Input.Press (x, y, Input.Left, _) -> Some (f x y)
+    | Input.Button_press (x, y, Input.Left, _) -> Some (f x y)
     | _ -> None)
 
 let on_right_click f =
   mouse_filter (function
-    | Input.Press (x, y, Input.Right, _) -> Some (f x y)
+    | Input.Button_press (x, y, Input.Right, _) -> Some (f x y)
     | _ -> None)
 
 let on_scroll_up f =
   mouse_filter (function
-    | Input.Press (x, y, Input.Wheel_up, _) -> Some (f x y)
+    | Input.Button_press (x, y, Input.Wheel_up, _) -> Some (f x y)
     | _ -> None)
 
 let on_scroll_down f =
   mouse_filter (function
-    | Input.Press (x, y, Input.Wheel_down, _) -> Some (f x y)
+    | Input.Button_press (x, y, Input.Wheel_down, _) -> Some (f x y)
     | _ -> None)
 
 let on_focus msg = focus (fun () -> msg)
