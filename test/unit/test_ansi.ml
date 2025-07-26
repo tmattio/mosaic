@@ -51,10 +51,10 @@ let test_cursor_style () =
 let test_clearing () =
   check string "clear screen" "\x1b[2J" clear_screen;
   check string "clear above" "\x1b[1J" clear_screen_above;
-  check string "clear below" "\x1b[0J" clear_screen_below;
+  check string "clear below" "\x1b[J" clear_screen_below;
   check string "clear line" "\x1b[2K" clear_line;
   check string "clear line left" "\x1b[1K" clear_line_left;
-  check string "clear line right" "\x1b[0K" clear_line_right
+  check string "clear line right" "\x1b[K" clear_line_right
 
 (** Test scrolling *)
 let test_scrolling () =
@@ -208,8 +208,11 @@ let string_of_style : attr -> string = function
   | `Double_underline -> "Double_underline"
   | `Blink -> "Blink"
   | `Reverse -> "Reverse"
+  | `Conceal -> "Conceal"
   | `Strikethrough -> "Strikethrough"
   | `Overline -> "Overline"
+  | `Framed -> "Framed"
+  | `Encircled -> "Encircled"
   | `Reset -> "Reset"
   | `Fg _ -> "Fg"
   | `Bg _ -> "Bg"
@@ -248,40 +251,25 @@ let test_invalid_inputs () =
   check string "negative scroll down" "" (scroll_down (-5));
 
   (* Test edge case cursor positions *)
-  check string "zero cursor position" "\x1b[0;0H" (cursor_position 0 0);
-  check string "negative cursor position" "\x1b[-5;-10H"
+  check string "zero cursor position" "\x1b[1;1H" (cursor_position 0 0);
+  check string "negative cursor position" "\x1b[1;1H"
     (cursor_position (-5) (-10));
   check string "large cursor position" "\x1b[99999;99999H"
     (cursor_position 99999 99999);
 
-  (* RGB colors with out-of-range values should raise exceptions *)
-  check bool "rgb negative values raise exception" true
-    (try
-       ignore (sgr [ `Fg (RGB (-10, -20, -30)) ]);
-       false
-     with Invalid_argument _ -> true);
-  check bool "rgb over 255 raises exception" true
-    (try
-       ignore (sgr [ `Fg (RGB (300, 400, 500)) ]);
-       false
-     with Invalid_argument _ -> true);
+  (* RGB colors with out-of-range values should be clamped *)
+  check string "rgb negative values clamped" "\x1b[38;2;0;0;0m"
+    (sgr [ `Fg (RGB (-10, -20, -30)) ]);
+  check string "rgb over 255 clamped" "\x1b[38;2;255;255;255m"
+    (sgr [ `Fg (RGB (300, 400, 500)) ]);
 
-  (* Test index colors at boundaries - also raise exceptions *)
-  check bool "index negative raises exception" true
-    (try
-       ignore (sgr [ `Fg (Index (-1)) ]);
-       false
-     with Invalid_argument _ -> true);
-  check bool "index over 255 raises exception" true
-    (try
-       ignore (sgr [ `Fg (Index 256) ]);
-       false
-     with Invalid_argument _ -> true);
-  check bool "index max int raises exception" true
-    (try
-       ignore (sgr [ `Fg (Index max_int) ]);
-       false
-     with Invalid_argument _ -> true)
+  (* Test index colors at boundaries - also clamped *)
+  check string "index negative clamped" "\x1b[38;5;0m"
+    (sgr [ `Fg (Index (-1)) ]);
+  check string "index over 255 clamped" "\x1b[38;5;255m"
+    (sgr [ `Fg (Index 256) ]);
+  check string "index max int clamped" "\x1b[38;5;255m"
+    (sgr [ `Fg (Index max_int) ])
 
 (** Test complex nested and malformed sequences in strip *)
 let test_strip_advanced () =
