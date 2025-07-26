@@ -69,7 +69,7 @@ module Program = struct
     (* Detect terminal background and configure adaptive colors *)
     let is_dark = Terminal.has_dark_background term in
     Render.set_terminal_background ~dark:is_dark;
-    let event_source = Event_source.create term in
+    let event_source = Event_source.create ~sw ~env ~mouse term in
     let model, _init_cmd = app.init () in
     let msg_stream = Eio.Stream.create 100 in
     {
@@ -529,14 +529,10 @@ module Program = struct
     while program.running do
       let timeout = Some (1.0 /. float_of_int program.fps) in
       match
-        Event_source.read program.event_source ~sw:program.sw
-          ~clock:program.clock ~timeout
+        Event_source.read program.event_source ~clock:program.clock ~timeout
       with
       | `Event event -> handle_input_event program event
       | `Timeout -> ()
-      | `Eof ->
-          program.running <- false;
-          ()
     done
 
   let render_loop program =
