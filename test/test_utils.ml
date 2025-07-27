@@ -49,7 +49,8 @@ let render_to_string ?(width = 80) ?(height = 24) element =
       List.init width (fun x ->
           let cell = Render.get buffer x y in
           match cell.Render.chars with
-          | [] -> " " (* For continuation of wide chars *)
+          | [] when cell.Render.width = 0 -> "" (* Continuation of wide char *)
+          | [] -> " " (* Empty cell *)
           | chs ->
               let b = Buffer.create 4 in
               List.iter (Uutf.Buffer.add_utf_8 b) chs;
