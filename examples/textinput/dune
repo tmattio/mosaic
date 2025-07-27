@@ -1,4 +1,3 @@
 (executable
- (public_name textinput)
  (name textinput)
  (libraries mosaic mosaic.tiles eio_main))

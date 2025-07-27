@@ -1,4 +1,3 @@
 (executable
- (public_name component_counter)
  (name main)
  (libraries mosaic))

@@ -1,4 +1,3 @@
 (executable
- (public_name charts)
  (name charts)
  (libraries mosaic.ui mosaic.charts unix))

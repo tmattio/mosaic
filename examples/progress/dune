@@ -1,4 +1,3 @@
 (executable
- (public_name progress)
  (name progress)
  (libraries mosaic mosaic.tiles eio_main))

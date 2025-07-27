@@ -1,4 +1,3 @@
 (executable
- (public_name countdown)
  (name countdown)
  (libraries mosaic eio_main))
