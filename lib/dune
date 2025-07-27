@@ -2,15 +2,14 @@
  (public_name mosaic)
  (name mosaic)
  (libraries
-  terminal
-  ansi
-  input
-  render
-  event_source
-  ui
+  mosaic.terminal
+  mosaic.ansi
+  mosaic.input
+  mosaic.render
+  mosaic.event
+  mosaic.engine
+  mosaic.ui
   unix
-  uutf
-  uucp
   eio
   eio.unix
   eio_main))

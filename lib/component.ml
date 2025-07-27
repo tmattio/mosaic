@@ -1,3 +1,5 @@
+open Engine
+
 module type S = sig
   type model
   type msg

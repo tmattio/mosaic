@@ -36,6 +36,7 @@ type 'msg t =
   | Exit_alt_screen  (** Returns to normal screen buffer. *)
   | Repaint  (** Forces a full screen redraw. *)
   | Clear_screen  (** Clears the terminal screen. *)
+  | Clear_terminal  (** Clears the terminal screen and scrollback buffer. *)
 
 val none : 'msg t
 (** [none] represents the absence of any command.
@@ -239,7 +240,19 @@ val repaint : 'msg t
     ]} *)
 
 val clear_screen : 'msg t
-(** [clear_screen] clears the terminal screen and scrollback buffer.
+(** [clear_screen] clears only the visible terminal screen.
+
+    Clears the visible screen and positions the cursor at the top-left, but
+    preserves the scrollback buffer. Useful for refreshing the display without
+    losing terminal history.
+
+    Example: Clears visible screen before redrawing.
+    {[
+      Cmd.batch [ Cmd.clear_screen; Cmd.msg `ScreenRefreshed ]
+    ]} *)
+
+val clear_terminal : 'msg t
+(** [clear_terminal] clears the terminal screen and scrollback buffer.
 
     Clears both the visible screen and the terminal's scrollback history, then
     positions the cursor at the top-left. Useful for starting with a clean
@@ -248,7 +261,7 @@ val clear_screen : 'msg t
 
     Example: Clears terminal before starting the app.
     {[
-      Cmd.batch [ Cmd.clear_screen; Cmd.msg `AppStarted ]
+      Cmd.batch [ Cmd.clear_terminal; Cmd.msg `AppStarted ]
     ]} *)
 
 val map : ('a -> 'b) -> 'a t -> 'b t

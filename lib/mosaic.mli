@@ -31,7 +31,7 @@ module Ui = Ui
 
 (** {1 Commands (Effects)} *)
 
-module Cmd = Cmd
+module Cmd = Engine.Cmd
 (** @inline *)
 
 (** {1 Input Events} *)
@@ -41,7 +41,7 @@ module Input = Input
 
 (** {1 Subscriptions (Event Listeners)} *)
 
-module Sub = Sub
+module Sub = Engine.Sub
 (** @inline *)
 
 (** {1 Components} *)

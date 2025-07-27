@@ -3,6 +3,8 @@
     This module provides tools for building reusable UI components that can be
     easily composed into larger applications following The Elm Architecture. *)
 
+open Engine
+
 (** The [S] module type defines the public interface for a composable component.
     Any module that implements this interface can be connected to a parent. *)
 module type S = sig

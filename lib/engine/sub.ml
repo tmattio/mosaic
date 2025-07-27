@@ -4,6 +4,7 @@ type window_size = { width : int; height : int }
 type 'msg window_sub = window_size -> 'msg option
 type 'msg focus_sub = unit -> 'msg option
 type 'msg blur_sub = unit -> 'msg option
+type 'msg paste_sub = string -> 'msg option
 
 type 'msg t =
   | None
@@ -12,6 +13,7 @@ type 'msg t =
   | Window of 'msg window_sub
   | Focus of 'msg focus_sub
   | Blur of 'msg blur_sub
+  | Paste of 'msg paste_sub
   | Batch of 'msg t list
 
 let none = None
@@ -23,6 +25,8 @@ let window f = Window (fun w -> Some (f w))
 let window_filter f = Window f
 let focus f = Focus (fun () -> Some (f ()))
 let blur f = Blur (fun () -> Some (f ()))
+let paste f = Paste (fun s -> Some (f s))
+let paste_filter f = Paste f
 
 let on_mouse_motion f =
   mouse_filter (function
@@ -89,6 +93,7 @@ let on_scroll_down f =
 
 let on_focus msg = focus (fun () -> msg)
 let on_blur msg = blur (fun () -> msg)
+let on_paste f = paste f
 
 (* Common key event shorthands *)
 let on_enter msg = on_key Input.Enter msg
@@ -128,37 +133,44 @@ let rec map f sub =
   | Window fn -> Window (fun w -> Option.map f (fn w))
   | Focus fn -> Focus (fun () -> Option.map f (fn ()))
   | Blur fn -> Blur (fun () -> Option.map f (fn ()))
+  | Paste fn -> Paste (fun s -> Option.map f (fn s))
   | Batch subs -> batch (List.map (map f) subs)
 
 let rec collect_keyboard acc = function
   | None -> acc
   | Keyboard fn -> fn :: acc
-  | Mouse _ | Window _ | Focus _ | Blur _ -> acc
+  | Mouse _ | Window _ | Focus _ | Blur _ | Paste _ -> acc
   | Batch subs -> List.fold_left collect_keyboard acc subs
 
 let rec collect_mouse acc = function
   | None -> acc
   | Mouse fn -> fn :: acc
-  | Keyboard _ | Window _ | Focus _ | Blur _ -> acc
+  | Keyboard _ | Window _ | Focus _ | Blur _ | Paste _ -> acc
   | Batch subs -> List.fold_left collect_mouse acc subs
 
 let rec collect_window acc = function
   | None -> acc
   | Window fn -> fn :: acc
-  | Keyboard _ | Mouse _ | Focus _ | Blur _ -> acc
+  | Keyboard _ | Mouse _ | Focus _ | Blur _ | Paste _ -> acc
   | Batch subs -> List.fold_left collect_window acc subs
 
 let rec collect_focus acc = function
   | None -> acc
   | Focus fn -> fn :: acc
-  | Keyboard _ | Mouse _ | Window _ | Blur _ -> acc
+  | Keyboard _ | Mouse _ | Window _ | Blur _ | Paste _ -> acc
   | Batch subs -> List.fold_left collect_focus acc subs
 
 let rec collect_blur acc = function
   | None -> acc
   | Blur fn -> fn :: acc
-  | Keyboard _ | Mouse _ | Window _ | Focus _ -> acc
+  | Keyboard _ | Mouse _ | Window _ | Focus _ | Paste _ -> acc
   | Batch subs -> List.fold_left collect_blur acc subs
+
+let rec collect_paste acc = function
+  | None -> acc
+  | Paste fn -> fn :: acc
+  | Keyboard _ | Mouse _ | Window _ | Focus _ | Blur _ -> acc
+  | Batch subs -> List.fold_left collect_paste acc subs
 
 (* Pretty-printing *)
 let pp _pp_msg fmt sub =
@@ -170,6 +182,7 @@ let pp _pp_msg fmt sub =
     | Window _ -> fprintf fmt "Window(<fun>)"
     | Focus _ -> fprintf fmt "Focus(<fun>)"
     | Blur _ -> fprintf fmt "Blur(<fun>)"
+    | Paste _ -> fprintf fmt "Paste(<fun>)"
     | Batch subs ->
         fprintf fmt "Batch[@[<hv>%a@]]"
           (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ";@ ") pp_sub)

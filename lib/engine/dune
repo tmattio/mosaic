@@ -1,0 +1,14 @@
+(library
+ (name engine)
+ (public_name mosaic.engine)
+ (libraries
+  eio
+  eio.unix
+  uutf
+  unix
+  mosaic.ui
+  mosaic.input
+  mosaic.terminal
+  mosaic.render
+  mosaic.event
+  mosaic.ansi))

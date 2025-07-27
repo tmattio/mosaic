@@ -17,6 +17,7 @@ type 'msg t =
   | Exit_alt_screen
   | Repaint
   | Clear_screen
+  | Clear_terminal
 
 let none = None
 let msg m = Msg m
@@ -39,6 +40,7 @@ let enter_alt_screen = Enter_alt_screen
 let exit_alt_screen = Exit_alt_screen
 let repaint = Repaint
 let clear_screen = Clear_screen
+let clear_terminal = Clear_terminal
 
 let seq cmds =
   match List.filter (function None -> false | _ -> true) cmds with
@@ -75,6 +77,7 @@ let pp pp_msg fmt cmd =
     | Exit_alt_screen -> fprintf fmt "Exit_alt_screen"
     | Repaint -> fprintf fmt "Repaint"
     | Clear_screen -> fprintf fmt "Clear_screen"
+    | Clear_terminal -> fprintf fmt "Clear_terminal"
   in
   pp_cmd fmt cmd
 
@@ -96,6 +99,7 @@ let rec to_list = function
   | Exit_alt_screen -> [ Exit_alt_screen ]
   | Repaint -> [ Repaint ]
   | Clear_screen -> [ Clear_screen ]
+  | Clear_terminal -> [ Clear_terminal ]
 
 let map f cmd =
   let rec go = function
@@ -117,5 +121,6 @@ let map f cmd =
     | Exit_alt_screen -> Exit_alt_screen
     | Repaint -> Repaint
     | Clear_screen -> Clear_screen
+    | Clear_terminal -> Clear_terminal
   in
   go cmd
