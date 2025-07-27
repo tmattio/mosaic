@@ -51,7 +51,7 @@ let view model =
       hbox ~gap:2
         [
           text ~style:Style.(fg (Index 8)) "[r] Reset";
-          text ~style:Style.(fg (Index 8)) "[q] Quit";
+          text ~style:Style.(fg (Index 8)) "[q/Ctrl+C] Quit";
         ];
     ]
 
@@ -62,6 +62,7 @@ let subscriptions model =
       bottom_counter_inst.subscriptions model;
       Sub.on_char 'r' Reset;
       Sub.on_char 'q' Quit;
+      Sub.on_key ~ctrl:true (Char (Uchar.of_char 'c')) Quit;
     ]
 
 let app = Mosaic.app ~init ~update ~view ~subscriptions ()
