@@ -148,11 +148,4 @@ end
 > state transitions.
 |}
 
-let init () =
-  let element = Ui.flow [ Mosaic_markdown.render markdown_content ] in
-  ((), Cmd.seq [ Cmd.print element; Cmd.quit ])
-
-let update _msg model = (model, Cmd.none)
-let view _model = Ui.text ""
-let app = Mosaic.app ~init ~update ~view ()
-let () = Mosaic.run ~alt_screen:false app
+let () = Ui.print (Ui.flow [ Mosaic_markdown.render markdown_content ])
