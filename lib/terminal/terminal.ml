@@ -43,7 +43,6 @@ let make_raw termios =
     c_vtime = 0;
     c_ixon = false;
     c_icrnl = false;
-    c_opost = false;
   }
 
 let create ?(tty = true) input output =
