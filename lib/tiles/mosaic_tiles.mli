@@ -84,7 +84,7 @@ module Input = Input
 (** Advanced single-line text input with validation and suggestions. See
     {!Input}. *)
 
-module Text = Text
+module Textarea = Textarea
 (** Multi-line text area with scrolling support. See {!Text}. *)
 
 module Confirm = Confirm
