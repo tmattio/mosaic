@@ -261,9 +261,7 @@ val release : t -> unit
     - Special modes (Kitty keyboard, bracketed paste, etc.)
 
     Safe to call multiple times - subsequent calls have no effect. Should be
-    called even on error paths to ensure proper cleanup.
-
- *)
+    called even on error paths to ensure proper cleanup. *)
 
 (** {1 State Management} *)
 
@@ -297,9 +295,7 @@ val restore_state : t -> unit
     {!save_state} is called again.
 
     Note: This restores to the last saved state, not the original state. Use
-    {!release} to restore to the original terminal state.
-
- *)
+    {!release} to restore to the original terminal state. *)
 
 (** {1 Terminal Configuration} *)
 
@@ -375,9 +371,7 @@ val input_fd : t -> Unix.file_descr
 (** [input_fd t] returns the input file descriptor.
 
     Useful for select/poll operations or when interfacing with other I/O
-    libraries.
-
- *)
+    libraries. *)
 
 val output_fd : t -> Unix.file_descr
 (** [output_fd t] returns the output file descriptor.
@@ -397,9 +391,7 @@ val write : t -> bytes -> int -> int -> unit
     @param len Number of bytes to write
 
     @raise Invalid_argument if [ofs] and [len] don't specify a valid substring
-    @raise Terminal_error on write failure
-
- *)
+    @raise Terminal_error on write failure *)
 
 val write_string : t -> string -> unit
 (** [write_string t s] writes a UTF-8 string to the terminal.
@@ -490,9 +482,7 @@ val disable_alternate_screen : t -> unit
     Restores the screen content that was saved when {!enable_alternate_screen}
     was called. The alternate screen content is discarded.
 
-    No effect if alternate screen is not active or on non-TTY descriptors.
-
- *)
+    No effect if alternate screen is not active or on non-TTY descriptors. *)
 
 (** {1 Mouse Support} *)
 
@@ -523,9 +513,7 @@ val enable_mouse_sgr : t -> unit
     of legacy mouse modes. Should be used with SGR mouse modes for extended
     coordinate support.
 
-    No effect on non-TTY descriptors.
-
- *)
+    No effect on non-TTY descriptors. *)
 
 val disable_mouse_sgr : t -> unit
 (** [disable_mouse_sgr t] disables SGR mouse protocol.
@@ -544,9 +532,7 @@ val enable_focus_reporting : t -> unit
     focus. Parse these with the Input module to receive {!Input.Focus_in} and
     {!Input.Focus_out} events.
 
-    No effect on non-TTY descriptors.
-
- *)
+    No effect on non-TTY descriptors. *)
 
 val disable_focus_reporting : t -> unit
 (** [disable_focus_reporting t] disables focus change notifications.
@@ -565,9 +551,7 @@ val enable_bracketed_paste : t -> unit
     The Input module parses these sequences and provides the pasted text in
     {!Input.Paste} events.
 
-    No effect on non-TTY descriptors.
-
- *)
+    No effect on non-TTY descriptors. *)
 
 val disable_bracketed_paste : t -> unit
 (** [disable_bracketed_paste t] disables bracketed paste mode.
@@ -575,9 +559,7 @@ val disable_bracketed_paste : t -> unit
     Returns to normal paste behavior where pasted text is indistinguishable from
     typed input. Pasted content may trigger keyboard shortcuts or commands.
 
-    No effect on non-TTY descriptors.
-
- *)
+    No effect on non-TTY descriptors. *)
 
 val enable_kitty_keyboard : t -> unit
 (** [enable_kitty_keyboard t] enables Kitty keyboard protocol.
@@ -591,9 +573,7 @@ val enable_kitty_keyboard : t -> unit
     Required for applications that need to detect modified keys or key release
     events. The Input module automatically parses Kitty protocol sequences.
 
-    No effect on non-TTY descriptors.
-
- *)
+    No effect on non-TTY descriptors. *)
 
 val disable_kitty_keyboard : t -> unit
 (** [disable_kitty_keyboard t] disables Kitty keyboard protocol.
@@ -614,9 +594,7 @@ val show_cursor : t -> unit
     Shows the cursor at its current position. The cursor typically blinks
     depending on terminal settings. Call this before accepting user input.
 
-    No effect on non-TTY descriptors.
-
- *)
+    No effect on non-TTY descriptors. *)
 
 val hide_cursor : t -> unit
 (** [hide_cursor t] makes the cursor invisible.
@@ -625,9 +603,7 @@ val hide_cursor : t -> unit
     to prevent cursor flicker. Remember to show the cursor before accepting user
     input.
 
-    No effect on non-TTY descriptors.
-
- *)
+    No effect on non-TTY descriptors. *)
 
 val move_cursor : t -> int -> int -> unit
 (** [move_cursor t row col] positions the cursor.
@@ -642,7 +618,7 @@ val move_cursor : t -> int -> int -> unit
     {4 Examples}
 
     {[
-      Terminal.move_cursor term 1 1  (* Top-left corner *)
+      Terminal.move_cursor term 1 1 (* Top-left corner *)
     ]} *)
 
 (** {1 Screen Operations} *)
@@ -652,9 +628,7 @@ val clear_screen : t -> unit
 
     Erases all content and moves the cursor to position (1, 1).
 
-    No effect on non-TTY descriptors.
-
- *)
+    No effect on non-TTY descriptors. *)
 
 val set_title : t -> string -> unit
 (** [set_title t title] sets the terminal window title.
@@ -679,17 +653,13 @@ val bell : t -> unit
     Triggers an audible or visual bell depending on terminal settings. Often
     used for alerts or errors.
 
-    No effect on non-TTY descriptors.
-
- *)
+    No effect on non-TTY descriptors. *)
 
 val flush : t -> unit
 (** [flush t] ensures all output reaches the terminal.
 
     Forces any buffered output to be written immediately. Call this after
-    rendering operations to ensure the display updates.
-
- *)
+    rendering operations to ensure the display updates. *)
 
 (** {1 Window Management} *)
 
@@ -718,9 +688,7 @@ val remove_resize_handlers : t -> unit
 (** [remove_resize_handlers t] unregisters resize callbacks.
 
     Removes any resize handler set for this terminal. The terminal will no
-    longer receive resize notifications.
-
- *)
+    longer receive resize notifications. *)
 
 (** {1 Color and Feature Detection} *)
 
@@ -756,8 +724,7 @@ val has_dark_background : t -> bool
 
     {[
       let fg_color =
-        if Terminal.has_dark_background term then "\027[97m"
-        else "\027[30m"
+        if Terminal.has_dark_background term then "\027[97m" else "\027[30m"
     ]} *)
 
 val has_truecolor_support : t -> bool
@@ -770,9 +737,7 @@ val has_truecolor_support : t -> bool
 
     The result is cached after first call.
 
-    @return [true] if terminal supports 24-bit color
-
- *)
+    @return [true] if terminal supports 24-bit color *)
 
 val supports_feature : t -> feature -> bool
 (** [supports_feature t feature] checks terminal capabilities.

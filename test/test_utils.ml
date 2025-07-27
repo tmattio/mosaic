@@ -61,7 +61,6 @@ let render_to_string ?(width = 80) ?(height = 24) element =
   done;
   Buffer.contents buf
 
-
 (** Helper to render a UI element to a string and print it for expect testing *)
 let print_ui ?(width = 20) ?(height = 5) element =
   let output = render_to_string ~width ~height element in
@@ -72,7 +71,9 @@ let print_ui ?(width = 20) ?(height = 5) element =
     List.map
       (fun line ->
         let len = Render.measure_string line in
-        let clipped = if len > width then Render.unicode_substring line width else line in
+        let clipped =
+          if len > width then Render.unicode_substring line width else line
+        in
         let clipped_len = Render.measure_string clipped in
         let padded_line = clipped ^ String.make (width - clipped_len) ' ' in
         "|" ^ padded_line ^ "|")

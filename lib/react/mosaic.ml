@@ -303,59 +303,60 @@ let run_eio ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
     ?(debug = false) (root : unit -> Ui.element) =
   let debug_log = if debug then Some (open_out "mosaic-debug.log") else None in
   let config = Program.{ terminal; alt_screen; mouse; fps; debug_log } in
-  
+
   (* Create the program handle *)
   let p = Program.create ~sw ~env config in
-  
+
   (* Create root fiber *)
   let root_fiber = create_fiber ?root_program:(Some p) None in
   Program.set_model p root_fiber;
-  
+
   (* Command stream for processing commands from hooks *)
   let cmd_stream = Eio.Stream.create 100 in
-  
+
   (* The dispatch function for our React app *)
   let dispatch (Msg (v, handler)) =
-    handler v; (* Imperatively update component state *)
+    handler v;
+    (* Imperatively update component state *)
     root_fiber.pending_updates <- true;
     Program.set_pending_updates p true
   in
-  
+
   (* Handle input events *)
   let handle_input_event event =
     let msgs =
       Program.with_state_mutex p ~protect:true (fun () ->
-        (* Collect subs from the fiber tree *)
-        let subs = collect_subs root_fiber in
-        match event with
-        | Input.Key key_event ->
-            let keyboard_handlers = Sub.collect_keyboard [] subs in
-            List.filter_map (fun f -> f key_event) keyboard_handlers
-        | Input.Focus ->
-            let focus_handlers = Sub.collect_focus [] subs in
-            List.filter_map (fun f -> f ()) focus_handlers
-        | Input.Blur ->
-            let blur_handlers = Sub.collect_blur [] subs in
-            List.filter_map (fun f -> f ()) blur_handlers
-        | Input.Mouse mouse_event ->
-            let mouse_handlers = Sub.collect_mouse [] subs in
-            List.filter_map (fun f -> f mouse_event) mouse_handlers
-        | Input.Paste s ->
-            let paste_handlers = Sub.collect_paste [] subs in
-            List.filter_map (fun f -> f s) paste_handlers
-        | Input.Resize (w, h) ->
-            Program.invalidate_buffer p;
-            let window_handlers = Sub.collect_window [] subs in
-            let size = { Sub.width = w; Sub.height = h } in
-            List.filter_map (fun f -> f size) window_handlers
-        | _ -> [])
+          (* Collect subs from the fiber tree *)
+          let subs = collect_subs root_fiber in
+          match event with
+          | Input.Key key_event ->
+              let keyboard_handlers = Sub.collect_keyboard [] subs in
+              List.filter_map (fun f -> f key_event) keyboard_handlers
+          | Input.Focus ->
+              let focus_handlers = Sub.collect_focus [] subs in
+              List.filter_map (fun f -> f ()) focus_handlers
+          | Input.Blur ->
+              let blur_handlers = Sub.collect_blur [] subs in
+              List.filter_map (fun f -> f ()) blur_handlers
+          | Input.Mouse mouse_event ->
+              let mouse_handlers = Sub.collect_mouse [] subs in
+              List.filter_map (fun f -> f mouse_event) mouse_handlers
+          | Input.Paste s ->
+              let paste_handlers = Sub.collect_paste [] subs in
+              List.filter_map (fun f -> f s) paste_handlers
+          | Input.Resize (w, h) ->
+              Program.invalidate_buffer p;
+              let window_handlers = Sub.collect_window [] subs in
+              let size = { Sub.width = w; Sub.height = h } in
+              List.filter_map (fun f -> f size) window_handlers
+          | _ -> [])
     in
     List.iter dispatch msgs
   in
-  
+
   (* Handle resize events *)
   let handle_resize (w, h) = handle_input_event (Input.Resize (w, h)) in
-  
+
   (* Process commands from the stream *)
   let message_loop () =
     while Program.is_running p do
@@ -364,26 +365,23 @@ let run_eio ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
       Program.process_cmd p dispatch cmd
     done
   in
-  
+
   (* Render loop with reconciliation *)
   let get_element () =
     (* The core reconciliation logic *)
-    if Program.get_pending_updates p then (
+    if Program.get_pending_updates p then
       Program.with_state_mutex p ~protect:false (fun () ->
-        reconcile root_fiber;
-        root_fiber.pending_updates <- false;
-        Program.set_pending_updates p false;
-        (* Collect new commands and add them to the stream *)
-        let new_cmds = collect_pending root_fiber in
-        if new_cmds <> Cmd.none then
-          Eio.Stream.add cmd_stream new_cmds
-      )
-    );
+          reconcile root_fiber;
+          root_fiber.pending_updates <- false;
+          Program.set_pending_updates p false;
+          (* Collect new commands and add them to the stream *)
+          let new_cmds = collect_pending root_fiber in
+          if new_cmds <> Cmd.none then Eio.Stream.add cmd_stream new_cmds);
     Option.get root_fiber.ui
   in
-  
+
   Fun.protect
-    ~finally:(fun () -> 
+    ~finally:(fun () ->
       Option.iter close_out debug_log;
       Program.cleanup p)
     (fun () ->
@@ -395,33 +393,34 @@ let run_eio ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
         let ui = root () in
         current_fiber := old_current;
         root_fiber.ui <- Some ui;
-        
+
         (* Collect initial commands *)
         let initial_cmds = collect_pending root_fiber in
-        if initial_cmds <> Cmd.none then
-          Eio.Stream.add cmd_stream initial_cmds;
-        
+        if initial_cmds <> Cmd.none then Eio.Stream.add cmd_stream initial_cmds;
+
         Program.setup_terminal p;
         Program.setup_signal_handlers p;
-        
-        Eio.Fiber.all [
-          (fun () -> Program.run_input_loop p handle_input_event);
-          (fun () -> Program.run_render_loop p get_element);
-          message_loop;
-          (fun () -> Program.run_resize_loop p handle_resize);
-        ]
+
+        Eio.Fiber.all
+          [
+            (fun () -> Program.run_input_loop p handle_input_event);
+            (fun () -> Program.run_render_loop p get_element);
+            message_loop;
+            (fun () -> Program.run_resize_loop p handle_resize);
+          ]
       in
-      
+
       Effect.Deep.try_with run_with_effects ()
         {
           Effect.Deep.effc =
             (fun (type b) (eff : b Effect.t) ->
               match eff with
-              | Use_state _ | Use_effect _ | Use_context _ | Dispatch_cmd _ | Use_subscription _ ->
+              | Use_state _ | Use_effect _ | Use_context _ | Dispatch_cmd _
+              | Use_subscription _ ->
                   (* Use the current fiber for handling *)
-                  Option.map (fun fiber ->
-                    fun k -> fiber_handler fiber eff k
-                  ) !current_fiber
+                  Option.map
+                    (fun fiber -> fun k -> fiber_handler fiber eff k)
+                    !current_fiber
               | _ -> None);
         })
 
