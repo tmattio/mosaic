@@ -1,5 +1,3 @@
-open Mosaic
-
 (** Markdown rendering for terminal user interfaces.
 
     This module converts markdown text to Mosaic UI elements with full styling
@@ -31,9 +29,14 @@ module Style : module type of Markdown_style
 (** {1 Rendering} *)
 
 val render :
-  ?style:Style.t -> ?width:int -> ?strict:bool -> string -> Ui.element
-(** [render ?style ?width ?strict markdown_text] converts markdown to a UI
-    element tree.
+  ?style:Style.t ->
+  ?width:int ->
+  ?strict:bool ->
+  ?syntax_theme:Mosaic_syntax.theme ->
+  string ->
+  Ui.element
+(** [render ?style ?width ?strict ?syntax_theme markdown_text] converts markdown
+    to a UI element tree.
 
     Parses CommonMark-compliant markdown and applies styling. Block elements
     become vertical boxes with appropriate spacing. Inline elements receive text
@@ -44,6 +47,9 @@ val render :
     @param strict
       Whether to parse strictly according to CommonMark (default: false; false
       enables extensions like task lists)
+    @param syntax_theme
+      Theme for syntax highlighting in code blocks (default:
+      Mosaic_syntax.default_dark_theme)
     @param markdown_text Input markdown string to render
 
     @return UI element tree ready for display

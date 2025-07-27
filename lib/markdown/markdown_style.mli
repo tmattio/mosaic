@@ -9,7 +9,7 @@
     specific (document -> block -> inline). *)
 
 type block = {
-  style : Mosaic.Style.t;  (** Base text style for the block. *)
+  style : Ui.Style.t;  (** Base text style for the block. *)
   margin_top : int;  (** Vertical space above the block. *)
   margin_bottom : int;  (** Vertical space below the block. *)
   padding_left : int;  (** Left padding for the block's content. *)
@@ -24,11 +24,11 @@ type block = {
 type list_block = {
   block : block;
   item_prefix : string;  (** Prefix for unordered list items (e.g., "•"). *)
-  item_prefix_style : Mosaic.Style.t;  (** Style for the item prefix. *)
+  item_prefix_style : Ui.Style.t;  (** Style for the item prefix. *)
   item_gap : int;  (** Space between the prefix and the item content. *)
   level_indent : int;  (** Indentation for nested lists. *)
-  task_style : Mosaic.Style.t;  (** Style for unchecked task items "[ ]". *)
-  checked_style : Mosaic.Style.t;  (** Style for checked task items "[x]". *)
+  task_style : Ui.Style.t;  (** Style for unchecked task items "[ ]". *)
+  checked_style : Ui.Style.t;  (** Style for checked task items "[x]". *)
 }
 (** [list_block] extends block styling for list elements.
 
@@ -38,8 +38,8 @@ type list_block = {
 
 type code_block = {
   block : block;
-  lang_style : Mosaic.Style.t;  (** Style for the language specifier. *)
-  fence_style : Mosaic.Style.t;  (** Style for the code fence ("```"). *)
+  lang_style : Ui.Style.t;  (** Style for the language specifier. *)
+  fence_style : Ui.Style.t;  (** Style for the code fence ("```"). *)
 }
 (** [code_block] extends block styling for fenced code blocks.
 
@@ -49,8 +49,8 @@ type code_block = {
 
 type table_block = {
   block : block;
-  header_style : Mosaic.Style.t;  (** Style for table header cells. *)
-  separator_style : Mosaic.Style.t * string;
+  header_style : Ui.Style.t;  (** Style for table header cells. *)
+  separator_style : Ui.Style.t * string;
       (* Style and character for table separators. *)
 }
 (** [table_block] extends block styling for tables.
@@ -62,7 +62,7 @@ type t = {
   document : block;
   paragraph : block;
   heading : block;
-  heading_prefix : Mosaic.Style.t;
+  heading_prefix : Ui.Style.t;
   h1 : block;
   h2 : block;
   h3 : block;
@@ -71,16 +71,16 @@ type t = {
   h6 : block;
   block_quote : block;
   code_block : code_block;
-  horizontal_rule : Mosaic.Style.t * string;
+  horizontal_rule : Ui.Style.t * string;
   list : list_block;
   table : table_block;
-  emph : Mosaic.Style.t;
-  strong : Mosaic.Style.t;
-  code : Mosaic.Style.t;
-  link : Mosaic.Style.t;
-  image : Mosaic.Style.t;
-  html : Mosaic.Style.t;
-  strike : Mosaic.Style.t;
+  emph : Ui.Style.t;
+  strong : Ui.Style.t;
+  code : Ui.Style.t;
+  link : Ui.Style.t;
+  image : Ui.Style.t;
+  html : Ui.Style.t;
+  strike : Ui.Style.t;
 }
 (** [t] provides complete markdown styling configuration.
 

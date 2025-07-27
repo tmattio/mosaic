@@ -1,11 +1,11 @@
-open Mosaic
 module Style = Markdown_style
 
 type list_state = { ordered : bool; mutable counter : int }
-type segment = S_text of string * Mosaic.Style.t | S_hard_break
+type segment = S_text of string * Ui.Style.t | S_hard_break
 
 type renderer = {
   style : Markdown_style.t;
+  syntax_theme : Mosaic_syntax.theme;
   mutable list_stack : list_state list;
   mutable quote_depth : int;
   link_defs : (string, string) Hashtbl.t;
@@ -118,7 +118,7 @@ let render_inlines r ~available_width ~initial_style inline =
             Cmarkit.Folder.ret current_style
         | Cmarkit.Inline.Emphasis (e, _) ->
             flush_buffer current_style;
-            let new_style = Mosaic.Style.(current_style ++ r.style.emph) in
+            let new_style = Ui.Style.(current_style ++ r.style.emph) in
             ignore
               (Cmarkit.Folder.fold_inline f new_style
                  (Cmarkit.Inline.Emphasis.inline e));
@@ -126,7 +126,7 @@ let render_inlines r ~available_width ~initial_style inline =
             Cmarkit.Folder.ret current_style
         | Cmarkit.Inline.Strong_emphasis (e, _) ->
             flush_buffer current_style;
-            let new_style = Mosaic.Style.(current_style ++ r.style.strong) in
+            let new_style = Ui.Style.(current_style ++ r.style.strong) in
             ignore
               (Cmarkit.Folder.fold_inline f new_style
                  (Cmarkit.Inline.Emphasis.inline e));
@@ -134,7 +134,7 @@ let render_inlines r ~available_width ~initial_style inline =
             Cmarkit.Folder.ret current_style
         | Cmarkit.Inline.Ext_strikethrough (s, _) ->
             flush_buffer current_style;
-            let new_style = Mosaic.Style.(current_style ++ r.style.strike) in
+            let new_style = Ui.Style.(current_style ++ r.style.strike) in
             ignore
               (Cmarkit.Folder.fold_inline f new_style
                  (Cmarkit.Inline.Strikethrough.inline s));
@@ -159,7 +159,7 @@ let render_inlines r ~available_width ~initial_style inline =
                   Hashtbl.find_opt r.link_defs key |> Option.value ~default:""
             in
             let new_style =
-              Mosaic.Style.(current_style ++ r.style.link ++ link uri)
+              Ui.Style.(current_style ++ r.style.link ++ link uri)
             in
             ignore
               (Cmarkit.Folder.fold_inline f new_style
@@ -187,8 +187,7 @@ let render_inlines r ~available_width ~initial_style inline =
             flush_buffer current_style;
             let uri, _ = Cmarkit.Inline.Autolink.link al in
             segments :=
-              S_text
-                (uri, Mosaic.Style.(current_style ++ r.style.link ++ link uri))
+              S_text (uri, Ui.Style.(current_style ++ r.style.link ++ link uri))
               :: !segments;
             Cmarkit.Folder.ret current_style
         | Cmarkit.Inline.Raw_html (h, _) ->
@@ -235,7 +234,7 @@ let rec render_block r ~available_width ~base_style block =
       in
       let content =
         render_inlines r ~available_width:avail
-          ~initial_style:Mosaic.Style.(base_style ++ p_style.style)
+          ~initial_style:Ui.Style.(base_style ++ p_style.style)
           (Paragraph.inline p)
       in
       let padded =
@@ -259,13 +258,13 @@ let rec render_block r ~available_width ~base_style block =
         {
           h_style with
           style =
-            Mosaic.Style.(base_style ++ r.style.heading.style ++ h_style.style);
+            Ui.Style.(base_style ++ r.style.heading.style ++ h_style.style);
         }
       in
       let prefix_str = String.make level '#' ^ " " in
       let prefix =
         Ui.text
-          ~style:Mosaic.Style.(r.style.heading_prefix ++ full_style.style)
+          ~style:Ui.Style.(r.style.heading_prefix ++ full_style.style)
           prefix_str
       in
       let text =
@@ -282,29 +281,47 @@ let rec render_block r ~available_width ~base_style block =
   | Block_quote (bq, _) ->
       let bq_style = r.style.block_quote in
       r.quote_depth <- r.quote_depth + 1;
-      let prefix_str =
-        String.concat "" (List.init r.quote_depth (fun _ -> "│ "))
+
+      (* Build prefix using vertical separators *)
+      let prefix_parts =
+        List.flatten
+          (List.init r.quote_depth (fun _ ->
+               [
+                 Ui.separator ~orientation:`Vertical ~char:"│"
+                   ~style:bq_style.style ();
+                 Ui.spacer 1;
+               ]))
       in
-      let prefix = Ui.text ~style:bq_style.style prefix_str in
+      let prefix_el = Ui.hbox prefix_parts in
+
+      (* Calculate available width *)
+      let prefix_width = r.quote_depth * 2 in
+      (* Each level is "│ " = 2 chars *)
       let avail =
-        available_width - u_length prefix_str - bq_style.padding_left
+        available_width - prefix_width - bq_style.padding_left
         - bq_style.padding_right
       in
+
       let bq_block = Block_quote.block bq in
       let children =
         render_block r ~available_width:avail
-          ~base_style:Mosaic.Style.(base_style ++ bq_style.style)
+          ~base_style:Ui.Style.(base_style ++ bq_style.style)
           bq_block
       in
-      let content = Ui.hbox [ prefix; Ui.vbox children ] in
-      r.quote_depth <- r.quote_depth - 1;
-      let padded =
-        Ui.vbox
-          ~padding:(Ui.padding_xy bq_style.padding_left bq_style.padding_right)
-          [ content ]
+
+      (* Create full prefix with padding *)
+      let full_prefix =
+        Ui.hbox [ prefix_el; Ui.spacer bq_style.padding_left ]
       in
+
+      let content =
+        Ui.hbox
+          [ full_prefix; Ui.vbox children; Ui.spacer bq_style.padding_right ]
+      in
+
+      r.quote_depth <- r.quote_depth - 1;
       [
-        Ui.spacer bq_style.margin_top; padded; Ui.spacer bq_style.margin_bottom;
+        Ui.spacer bq_style.margin_top; content; Ui.spacer bq_style.margin_bottom;
       ]
   | List (l, _) ->
       let l_style = r.style.list in
@@ -339,6 +356,7 @@ let rec render_block r ~available_width ~base_style block =
       let code_lines =
         Code_block.code cb |> List.map Cmarkit.Block_line.to_string
       in
+      let code = String.concat "\n" code_lines in
       let lang_opt =
         Option.bind (Code_block.info_string cb) (fun (s, _) ->
             Code_block.language_of_info_string s)
@@ -347,20 +365,46 @@ let rec render_block r ~available_width ~base_style block =
       let fence = "```" in
       let lang_el = Ui.text ~style:cb_style.lang_style lang in
       let fence_el = Ui.text ~style:cb_style.fence_style fence in
-      let code_els =
-        List.map
-          (fun line ->
-            Ui.text
-              ~style:Mosaic.Style.(base_style ++ cb_style.block.style)
-              ~wrap:false line)
-          code_lines
+
+      (* Create the highlighted code element *)
+      let highlighted =
+        let plain =
+          List.map
+            (fun line ->
+              Ui.text
+                ~style:Ui.Style.(base_style ++ cb_style.block.style)
+                ~wrap:false line)
+            code_lines
+          |> Ui.vbox
+        in
+        if lang = "" then plain
+        else
+          let lang_type_opt =
+            match String.lowercase_ascii lang with
+            | "ocaml" | "ml" -> Some `OCaml
+            | "mli" | "ocaml-interface" -> Some `OCaml_interface
+            | "dune" -> Some `Dune
+            | "sh" | "bash" | "shell" -> Some `Shell
+            | "diff" -> Some `Diff
+            | _ -> None
+          in
+          match lang_type_opt with
+          | None -> plain
+          | Some lang_type -> (
+              match
+                Mosaic_syntax.highlight ~theme:r.syntax_theme ~lang:lang_type
+                  code
+              with
+              | Ok el -> el
+              | Error _ -> plain)
       in
+
       let content =
         Ui.vbox
           ~padding:
             (Ui.padding_xy cb_style.block.padding_left
                cb_style.block.padding_right)
-          ([ Ui.hbox [ fence_el; lang_el ] ] @ code_els @ [ fence_el ])
+          ([ Ui.hbox [ fence_el; lang_el ] ] @ [ highlighted ] @ [ fence_el ])
       in
       [
         Ui.spacer cb_style.block.margin_top;
@@ -372,27 +416,26 @@ let rec render_block r ~available_width ~base_style block =
       let text =
         lines |> List.map Cmarkit.Block_line.to_string |> String.concat "\n"
       in
-      let content =
-        Ui.text ~style:Mosaic.Style.(base_style ++ r.style.html) text
-      in
+      let content = Ui.text ~style:Ui.Style.(base_style ++ r.style.html) text in
       [
         Ui.spacer hb_style.margin_top; content; Ui.spacer hb_style.margin_bottom;
       ]
   | Thematic_break (_, _) ->
       let hr_style, hr_char = r.style.horizontal_rule in
-      let line = String.make available_width hr_char.[0] in
       [
         Ui.spacer 1;
-        Ui.text ~style:Mosaic.Style.(base_style ++ hr_style) line;
+        Ui.separator ~orientation:`Horizontal ~char:hr_char
+          ~style:Ui.Style.(base_style ++ hr_style)
+          ();
         Ui.spacer 1;
       ]
   | Ext_table (tbl, _) ->
       let tb_style = r.style.table in
-      let base = Mosaic.Style.(base_style ++ tb_style.block.style) in
-      let sep_style, sep_char = tb_style.separator_style in
-      let col_count = Cmarkit.Block.Table.col_count tbl in
+      let base = Ui.Style.(base_style ++ tb_style.block.style) in
       let rows = Cmarkit.Block.Table.rows tbl in
       let get_row_type ((r, _), _) = r in
+
+      (* Extract headers and data *)
       let header_rows =
         List.filter
           (fun row ->
@@ -410,95 +453,68 @@ let rec render_block r ~available_width ~base_style block =
           (fun row -> match get_row_type row with `Sep _ -> true | _ -> false)
           rows
       in
+
+      (* Get alignments from separator row *)
       let alignments =
         match sep_row_opt with
         | Some ((`Sep seps, _), _) ->
-            Array.of_list
-              (List.map (fun ((a, _), _) -> Option.value ~default:`Left a) seps)
-        | _ -> Array.init col_count (fun _ -> `Left)
+            List.map
+              (fun ((a, _), _) ->
+                match Option.value ~default:`Left a with
+                | `Left -> `Left
+                | `Right -> `Right
+                | `Center -> `Center)
+              seps
+        | _ -> []
       in
+
+      (* Extract cell content *)
       let get_cells r =
         match r with
-        | `Header cs -> List.map (fun (i, _) -> i) cs
-        | `Data cs -> List.map (fun (i, _) -> i) cs
+        | `Header cs -> List.map (fun (i, _) -> string_of_inlines i) cs
+        | `Data cs -> List.map (fun (i, _) -> string_of_inlines i) cs
         | `Sep _ -> []
       in
-      let col_widths = Array.init col_count (fun _ -> 0) in
-      let update_widths rows_list =
-        List.iter
-          (fun row_node ->
-            let cells = get_cells (get_row_type row_node) in
-            List.iteri
-              (fun i inline ->
-                let len = u_length (string_of_inlines inline) in
-                if len > col_widths.(i) then col_widths.(i) <- len)
-              cells)
-          rows_list
+
+      (* Create headers and data as string lists *)
+      let headers =
+        match header_rows with
+        | [] -> []
+        | row :: _ -> get_cells (get_row_type row)
       in
-      update_widths header_rows;
-      update_widths data_rows;
-      let pad_text align text w =
-        let len = u_length text in
-        if len >= w then text
-        else
-          let pad = w - len in
-          match align with
-          | `Left -> text ^ String.make pad ' '
-          | `Right -> String.make pad ' ' ^ text
-          | `Center ->
-              let left = pad / 2 in
-              String.make left ' ' ^ text ^ String.make (pad - left) ' '
+      let table_rows =
+        List.map (fun row -> get_cells (get_row_type row)) data_rows
       in
-      let render_row cells row_style alignments =
-        let cell_texts =
-          List.mapi
-            (fun i inline ->
-              pad_text alignments.(i) (string_of_inlines inline) col_widths.(i))
-            cells
-        in
-        let cell_els =
-          List.map (fun text -> Ui.text ~style:row_style text) cell_texts
-        in
-        Ui.hbox
-          (Ui.text ~style:sep_style "|"
-          :: List.concat
-               (List.map
-                  (fun el -> [ el; Ui.text ~style:sep_style " |" ])
-                  cell_els))
+
+      (* Create columns with alignments *)
+      let columns =
+        List.mapi
+          (fun i header ->
+            let justify = try List.nth alignments i with _ -> `Left in
+            Ui.Table.
+              {
+                (default_column ~header) with
+                justify;
+                style = base;
+                header_style = tb_style.header_style;
+              })
+          headers
       in
-      let header_els =
-        List.map
-          (fun row ->
-            render_row
-              (get_cells (get_row_type row))
-              tb_style.header_style alignments)
-          header_rows
+
+      (* Create the table *)
+      let table_el =
+        Ui.Table.table ~columns ~rows:table_rows ~box_style:Ui.Table.Simple
+          ~style:base ~header_style:tb_style.header_style
+          ~border_style:(fst tb_style.separator_style)
+          ~show_header:true ~padding:(0, 1, 0, 1) ()
       in
-      let data_els =
-        List.map
-          (fun row -> render_row (get_cells (get_row_type row)) base alignments)
-          data_rows
-      in
-      let sep_el =
-        let dashes =
-          Array.to_list
-            (Array.map (fun w -> String.make w sep_char.[0]) col_widths)
-        in
-        Ui.hbox
-          (Ui.text ~style:sep_style "|"
-          :: List.concat
-               (List.map
-                  (fun d ->
-                    [ Ui.text ~style:sep_style d; Ui.text ~style:sep_style "|" ])
-                  dashes))
-      in
-      let content = Ui.vbox (header_els @ [ sep_el ] @ data_els) in
+
       let padded =
         Ui.vbox
           ~padding:
             (Ui.padding_xy tb_style.block.padding_left
                tb_style.block.padding_right)
-          [ content ]
+          [ table_el ]
       in
       [
         Ui.spacer tb_style.block.margin_top;
@@ -516,7 +532,7 @@ and render_list_item r ~available_width ~base_style
   let level = List.length r.list_stack in
   let indent_size = (level - 1) * l_style.level_indent in
   let task_marker = Cmarkit.Block.List_item.ext_task_marker item in
-  let prefix, prefix_style, state_change =
+  let prefix_element, state_change =
     match task_marker with
     | Some marker_node ->
         let marker, _ = marker_node in
@@ -524,37 +540,44 @@ and render_list_item r ~available_width ~base_style
           Cmarkit.Block.List_item.task_status_of_task_marker marker
         in
         let checked = match status with `Checked -> true | _ -> false in
-        let p = if checked then "[x]" else "[ ]" in
-        let ps =
+        let style =
           if checked then l_style.checked_style else l_style.task_style
         in
-        (p, ps, fun () -> ())
+        (Ui.checkbox ~checked ~label:"" ~style (), fun () -> ())
     | None -> (
         match List.hd r.list_stack with
         | { ordered = true; counter; _ } as state ->
             let p = string_of_int counter ^ "." in
-            ( p,
-              l_style.item_prefix_style,
+            ( Ui.text ~style:l_style.item_prefix_style p,
               fun () -> state.counter <- counter + 1 )
-        | _ -> (l_style.item_prefix, l_style.item_prefix_style, fun () -> ()))
+        | _ ->
+            ( Ui.text ~style:l_style.item_prefix_style l_style.item_prefix,
+              fun () -> () ))
   in
-  let avail =
-    available_width - indent_size - u_length prefix - l_style.item_gap
+  let prefix_width =
+    match task_marker with
+    | Some _ -> 3 (* checkbox is "[x]" or "[ ]" - 3 chars *)
+    | None -> (
+        match List.hd r.list_stack with
+        | { ordered = true; counter; _ } ->
+            u_length (string_of_int counter ^ ".")
+        | _ -> u_length l_style.item_prefix)
   in
+  let avail = available_width - indent_size - prefix_width - l_style.item_gap in
   let item_block = Cmarkit.Block.List_item.block item in
   let children = render_block r ~available_width:avail ~base_style item_block in
   let content =
-    Ui.hbox ~gap:l_style.item_gap
-      [ Ui.text ~style:prefix_style prefix; Ui.vbox children ]
+    Ui.hbox ~gap:l_style.item_gap [ prefix_element; Ui.vbox children ]
   in
   state_change ();
   [ Ui.hbox [ Ui.spacer indent_size; content ] ]
 
 let render ?(style = Markdown_style.default) ?(width = 80) ?(strict = false)
-    markdown_text =
+    ?(syntax_theme = Mosaic_syntax.default_dark_theme) markdown_text =
   let r =
     {
       style;
+      syntax_theme;
       list_stack = [];
       quote_depth = 0;
       link_defs = Hashtbl.create 16;
@@ -566,7 +589,7 @@ let render ?(style = Markdown_style.default) ?(width = 80) ?(strict = false)
   let s = r.style.document in
   let avail = width - s.padding_left - s.padding_right in
   let elements =
-    render_block r ~available_width:avail ~base_style:Mosaic.Style.empty
+    render_block r ~available_width:avail ~base_style:Ui.Style.empty
       (Cmarkit.Doc.block doc)
   in
   let footnote_elements =
@@ -580,8 +603,7 @@ let render ?(style = Markdown_style.default) ?(width = 80) ?(strict = false)
               Ui.text ~style:r.style.heading_prefix ("[" ^ key ^ "]: ")
             in
             let content =
-              render_block r ~available_width:avail
-                ~base_style:Mosaic.Style.empty b
+              render_block r ~available_width:avail ~base_style:Ui.Style.empty b
             in
             Ui.hbox [ prefix; Ui.vbox content ] :: acc)
           r.footnotes []

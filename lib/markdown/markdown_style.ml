@@ -1,4 +1,4 @@
-open Mosaic
+open Ui
 
 type block = {
   style : Style.t;
