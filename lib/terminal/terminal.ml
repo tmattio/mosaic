@@ -8,7 +8,8 @@ type t = {
   output : file_descr;
   original_termios : terminal_io option;
   mutable saved_termios : terminal_io option;
-  is_tty : bool;
+  input_is_tty : bool;
+  output_is_tty : bool;
   mutable dark_background : bool option;
   mutable truecolor : bool option;
 }
@@ -48,9 +49,10 @@ let make_raw termios =
   }
 
 let create ?(tty = true) input output =
-  let is_tty = tty && is_tty input && is_tty output in
+  let input_is_tty = tty && is_tty input in
+  let output_is_tty = tty && is_tty output in
   let original_termios =
-    if is_tty then try Some (tcgetattr input) with Unix_error _ -> None
+    if input_is_tty then try Some (tcgetattr input) with Unix_error _ -> None
     else None
   in
   let t =
@@ -59,14 +61,16 @@ let create ?(tty = true) input output =
       output;
       original_termios;
       saved_termios = None;
-      is_tty;
+      input_is_tty;
+      output_is_tty;
       dark_background = None;
       truecolor = None;
     }
   in
-  if is_tty then (
+  if output_is_tty then (
     (try enable_vt output with _ -> ());
-    (* Enable VT on Windows *)
+    (* Enable VT on Windows *));
+  if input_is_tty then (
     try
       let termios = tcgetattr t.input in
       tcsetattr t.input TCSANOW (make_raw termios)
@@ -82,7 +86,7 @@ let set_non_blocking t enabled =
   with Unix_error (e, _, _) -> raise (Terminal_error (error_message e))
 
 let set_mode t mode =
-  if not t.is_tty then ()
+  if not t.input_is_tty then ()
   else
     try
       match mode with
@@ -136,16 +140,16 @@ let wait_for_input t timeout =
   with Unix_error _ -> false
 
 let enable_alternate_screen t =
-  if t.is_tty then write_escape t Ansi.alternate_screen_on
+  if t.output_is_tty then write_escape t Ansi.alternate_screen_on
 
 let disable_alternate_screen t =
-  if t.is_tty then write_escape t Ansi.alternate_screen_off
+  if t.output_is_tty then write_escape t Ansi.alternate_screen_off
 
-let enable_mouse_sgr t = if t.is_tty then write_escape t "\x1b[?1006h"
-let disable_mouse_sgr t = if t.is_tty then write_escape t "\x1b[?1006l"
+let enable_mouse_sgr t = if t.output_is_tty then write_escape t "\x1b[?1006h"
+let disable_mouse_sgr t = if t.output_is_tty then write_escape t "\x1b[?1006l"
 
 let set_mouse_mode t mode =
-  if t.is_tty then
+  if t.output_is_tty then
     match mode with
     | `None ->
         write_escape t Ansi.mouse_off;
@@ -163,32 +167,32 @@ let set_mouse_mode t mode =
         enable_mouse_sgr t;
         write_escape t "\x1b[?1003h"
 
-let enable_focus_reporting t = if t.is_tty then write_escape t "\x1b[?1004h"
-let disable_focus_reporting t = if t.is_tty then write_escape t "\x1b[?1004l"
+let enable_focus_reporting t = if t.output_is_tty then write_escape t "\x1b[?1004h"
+let disable_focus_reporting t = if t.output_is_tty then write_escape t "\x1b[?1004l"
 
 let enable_bracketed_paste t =
-  if t.is_tty then write_escape t Ansi.bracketed_paste_on
+  if t.output_is_tty then write_escape t Ansi.bracketed_paste_on
 
 let disable_bracketed_paste t =
-  if t.is_tty then write_escape t Ansi.bracketed_paste_off
+  if t.output_is_tty then write_escape t Ansi.bracketed_paste_off
 
 let enable_kitty_keyboard t =
-  if t.is_tty then write_escape t Ansi.kitty_keyboard_on
+  if t.output_is_tty then write_escape t Ansi.kitty_keyboard_on
 
 let disable_kitty_keyboard t =
-  if t.is_tty then write_escape t Ansi.kitty_keyboard_off
+  if t.output_is_tty then write_escape t Ansi.kitty_keyboard_off
 
-let show_cursor t = if t.is_tty then write_escape t Ansi.cursor_show
-let hide_cursor t = if t.is_tty then write_escape t Ansi.cursor_hide
-let clear_screen t = if t.is_tty then write_escape t "\x1b[2J"
+let show_cursor t = if t.output_is_tty then write_escape t Ansi.cursor_show
+let hide_cursor t = if t.output_is_tty then write_escape t Ansi.cursor_hide
+let clear_screen t = if t.output_is_tty then write_escape t "\x1b[2J"
 
 let move_cursor t row col =
-  if t.is_tty then write_escape t (Printf.sprintf "\x1b[%d;%dH" row col)
+  if t.output_is_tty then write_escape t (Printf.sprintf "\x1b[%d;%dH" row col)
 
 let set_title t title =
-  if t.is_tty then write_escape t (Printf.sprintf "\x1b]0;%s\x07" title)
+  if t.output_is_tty then write_escape t (Printf.sprintf "\x1b]0;%s\x07" title)
 
-let bell t = if t.is_tty then write_escape t "\x07"
+let bell t = if t.output_is_tty then write_escape t "\x07"
 
 let flush t =
   try
@@ -230,7 +234,7 @@ let remove_resize_handlers t =
     List.filter (fun (term, _) -> term != t) !terminal_sigwinch_callbacks
 
 let release t =
-  if t.is_tty then (
+  if t.output_is_tty then (
     disable_alternate_screen t;
     show_cursor t;
     set_mouse_mode t `None;
@@ -239,8 +243,9 @@ let release t =
     disable_focus_reporting t;
     flush t;
     (* Flush after all writes *)
-    remove_resize_handlers t;
-    (* Clean up resize handlers *)
+    remove_resize_handlers t);
+  (* Clean up resize handlers *)
+  if t.input_is_tty then (
     match t.original_termios with
     | Some termios -> (
         try tcsetattr t.input TCSANOW termios with Unix_error _ -> ())
@@ -251,11 +256,11 @@ let with_terminal ?tty input output f =
   Fun.protect ~finally:(fun () -> release t) (fun () -> f t)
 
 let save_state t =
-  if t.is_tty then
+  if t.input_is_tty then
     t.saved_termios <- (try Some (tcgetattr t.input) with _ -> None)
 
 let restore_state t =
-  if t.is_tty then
+  if t.input_is_tty then
     match t.saved_termios with
     | Some termios -> (
         try tcsetattr t.input TCSANOW termios with Unix_error _ -> ())
@@ -293,7 +298,7 @@ let calculate_luminance r g b =
   (0.2126 *. r') +. (0.7152 *. g') +. (0.0722 *. b')
 
 let query_terminal_for_bg t =
-  if not t.is_tty then None
+  if not (t.input_is_tty && t.output_is_tty) then None
   else
     try
       let original_termios = tcgetattr t.input in
@@ -394,7 +399,7 @@ let has_truecolor_support t =
       sup
 
 let supports_feature t feature =
-  if not t.is_tty then false
+  if not t.output_is_tty then false
   else
     match feature with
     | `AlternateScreen -> true (* Most modern terminals support this *)
