@@ -27,7 +27,7 @@ let run_eio (type model msg) ~sw ~env ?terminal ?(alt_screen = true)
     ?(mouse = false) ?(fps = 60) ?(debug = false) (app : (model, msg) app) =
   (* Configuration *)
   let debug_log = if debug then Some (open_out "mosaic-debug.log") else None in
-  let config = Program.{ terminal; alt_screen; mouse; fps; debug_log } in
+  let config = { Program.terminal; alt_screen; mouse; fps; debug_log } in
 
   (* Create the program handle *)
   let p = Program.create ~sw ~env config in

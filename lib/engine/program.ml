@@ -22,8 +22,6 @@ type t = {
   mutable previous_dynamic_buffer : Render.buffer option;
   mutable last_width : int;
   resize_cond : Eio.Condition.t;
-  last_resize_w : int ref;
-  last_resize_h : int ref;
   mutable pending_updates : bool;
 }
 
@@ -72,27 +70,56 @@ let create ~sw ~env config =
     previous_dynamic_buffer = None;
     last_width = fst (Terminal.size term);
     resize_cond = Eio.Condition.create ();
-    last_resize_w = ref 0;
-    last_resize_h = ref 0;
     pending_updates = false;
   }
 
+(*
+  Command Processing Logic
+
+  The core of the command processing is the `go` function, which takes an
+  execution `mode` (`Parallel` or `Sequential`).
+
+  - `Parallel` mode is the default for top-level commands. It forks a new fiber
+    for each asynchronous command (`Perform`, `Exec`, `Tick`), allowing them to
+    run concurrently without blocking the message loop.
+
+  - `Sequential` mode is used for commands inside `Cmd.Sequence`. It executes
+    asynchronous commands in the *current* fiber, effectively blocking until
+    they complete before proceeding. This ensures that commands in a sequence
+    run one after another, as intended.
+
+  - `Cmd.Batch` always runs its children in parallel, but if it's inside a
+    `Cmd.Sequence`, the sequence will wait for the entire batch to complete
+    before moving to the next command.
+*)
+type exec_mode = Parallel | Sequential
+
 let process_cmd t dispatch cmd =
-  let rec go cmd =
+  let rec go mode cmd =
+    let run_in_mode work =
+      match mode with
+      | Parallel -> Eio.Fiber.fork ~sw:t.sw work
+      | Sequential -> work ()
+    in
     match cmd with
     | Cmd.None -> ()
     | Cmd.Msg m -> dispatch m
-    | Cmd.Batch cmds -> List.iter go cmds
+    | Cmd.Batch cmds ->
+        (* A batch runs all its commands in parallel, regardless of the current mode. *)
+        List.iter (go Parallel) cmds
+    | Cmd.Sequence cmds ->
+        (* A sequence runs all its commands sequentially. If it's part of a batch,
+           the parent fiber will wait for the whole sequence to finish. *)
+        List.iter (go Sequential) cmds
     | Cmd.Perform f ->
-        Eio.Fiber.fork ~sw:t.sw (fun () ->
-            match f () with Some msg -> dispatch msg | None -> ())
+        run_in_mode (fun () -> match f () with Some msg -> dispatch msg | None -> ())
     | Cmd.Perform_eio f ->
-        Eio.Fiber.fork ~sw:t.sw (fun () ->
+        run_in_mode (fun () ->
             match f ~sw:t.sw ~env:t.env with
             | Some msg -> dispatch msg
             | None -> ())
     | Cmd.Exec exec_cmd ->
-        Eio.Fiber.fork ~sw:t.sw (fun () ->
+        run_in_mode (fun () ->
             Eio.Mutex.use_rw ~protect:true t.terminal_mutex (fun () ->
                 let cleanup () =
                   Terminal.restore_state t.term;
@@ -113,27 +140,18 @@ let process_cmd t dispatch cmd =
                 let clear_and_home =
                   Ansi.clear_screen ^ Ansi.cursor_position 1 1
                 in
-                Terminal.write t.term
-                  (Bytes.of_string clear_and_home)
-                  0
+                Terminal.write t.term (Bytes.of_string clear_and_home) 0
                   (String.length clear_and_home);
                 Terminal.flush t.term;
                 Fun.protect ~finally:cleanup (fun () ->
                     Eio_unix.run_in_systhread exec_cmd.run));
             dispatch exec_cmd.on_complete)
     | Cmd.Tick (duration, f) ->
-        Eio.Fiber.fork ~sw:t.sw (fun () ->
+        run_in_mode (fun () ->
             let start_time = Eio.Time.now t.clock in
             Eio.Time.sleep t.clock duration;
             let elapsed = Eio.Time.now t.clock -. start_time in
             if t.running then dispatch (f elapsed))
-    | Cmd.Sequence cmds -> (
-        match cmds with
-        | [] -> ()
-        | [ cmd ] -> go cmd
-        | h :: tail ->
-            go h;
-            go (Cmd.Sequence tail))
     | Cmd.Quit -> t.quit_pending <- true
     | Cmd.Log message -> Printf.eprintf "%s\n%!" message
     | Cmd.Print element ->
@@ -174,9 +192,8 @@ let process_cmd t dispatch cmd =
         log_debug t "Clearing screen";
         Eio.Mutex.use_rw ~protect:true t.terminal_mutex (fun () ->
             let reset_seq = Ansi.clear_screen ^ Ansi.esc ^ "H" in
-            Terminal.write t.term
-              (Bytes.of_string reset_seq)
-              0 (String.length reset_seq);
+            Terminal.write t.term (Bytes.of_string reset_seq) 0
+              (String.length reset_seq);
             Terminal.flush t.term);
         t.static_elements <- [];
         t.last_static_height <- 0;
@@ -185,9 +202,8 @@ let process_cmd t dispatch cmd =
         log_debug t "Clearing terminal";
         Eio.Mutex.use_rw ~protect:true t.terminal_mutex (fun () ->
             let reset_seq = Ansi.clear_terminal in
-            Terminal.write t.term
-              (Bytes.of_string reset_seq)
-              0 (String.length reset_seq);
+            Terminal.write t.term (Bytes.of_string reset_seq) 0
+              (String.length reset_seq);
             Terminal.flush t.term);
         t.static_elements <- [];
         t.last_static_height <- 0;
@@ -195,7 +211,8 @@ let process_cmd t dispatch cmd =
         t.previous_dynamic_buffer <- None;
         t.previous_buffer <- None
   in
-  go cmd
+  (* All top-level commands are executed in parallel by default *)
+  go Parallel cmd
 
 let render_element t dynamic_element =
   log_debug t "Render: Starting render pass";
@@ -491,18 +508,14 @@ let run_render_loop t get_element =
   log_debug t "Starting render loop";
   let frame_duration = 1.0 /. float_of_int t.fps in
   while t.running do
-    render t (get_element ());
+    (* Protect the render call from cancellation. If a cancel happens during
+       render, it will be deferred until the render is complete, preventing
+       the terminal mutex from being poisoned. The cancellation will then be
+       processed during the subsequent sleep. *)
+    Eio.Cancel.protect (fun () -> render t (get_element ()));
     Eio.Time.sleep t.clock frame_duration
   done
 
-let run_resize_loop t handle_resize =
-  while t.running do
-    Eio.Condition.await_no_mutex t.resize_cond;
-    if t.running then
-      let w = !(t.last_resize_w) in
-      let h = !(t.last_resize_h) in
-      handle_resize (w, h)
-  done
 
 let full_cleanup term alt_screen_was_on =
   (* A comprehensive, single-string reset for the terminal state Mosaic modifies.
@@ -540,6 +553,12 @@ let setup_terminal t =
       Terminal.enable_kitty_keyboard t.term;
       Terminal.enable_bracketed_paste t.term)
 
+let run_resize_loop t handle_resize =
+  while t.running do
+    Eio.Condition.await_no_mutex t.resize_cond;
+    if t.running then handle_resize (Terminal.size t.term)
+  done
+
 let setup_signal_handlers (t : t) =
   (* The state of alt_screen can change, so we capture its initial value for the signal handler. *)
   let initial_alt_screen = t.alt_screen in
@@ -554,17 +573,20 @@ let setup_signal_handlers (t : t) =
   Sys.set_signal Sys.sighup (Sys.Signal_handle handler);
 
   (* SIGWINCH handler to notify the app of terminal resizes. *)
-  let winch_handler (w, h) =
-    t.last_resize_w := w;
-    t.last_resize_h := h;
-    Eio.Condition.broadcast t.resize_cond
-  in
-  Terminal.set_resize_handler t.term winch_handler
+  Terminal.set_resize_handler t.term (fun _ ->
+      Eio.Condition.broadcast t.resize_cond)
 
 let cleanup t =
   Terminal.remove_resize_handlers t.term;
-  Eio.Mutex.use_rw ~protect:true t.terminal_mutex (fun () ->
-      full_cleanup t.term t.alt_screen)
+  try
+    Eio.Mutex.use_rw ~protect:true t.terminal_mutex (fun () ->
+        full_cleanup t.term t.alt_screen)
+  with Eio.Mutex.Poisoned _ ->
+    (* The mutex was poisoned, likely by a fiber (e.g. from Cmd.Exec) that
+       was cancelled while holding the lock. The terminal state is unknown,
+       but we must try to restore it. We run the cleanup without the lock,
+       which is safe because all other fibers are terminated at this point. *)
+    full_cleanup t.term t.alt_screen
 
 (* Accessors and utility functions *)
 let is_running t = t.running
@@ -584,9 +606,10 @@ let add_static_element t element =
   t.static_elements <- t.static_elements @ [ element ]
 
 let clear_static_elements t = t.static_elements <- []
-let resize_condition t = t.resize_cond
 let clock t = t.clock
 let switch t = t.sw
 let env t = t.env
+let resize_condition t = t.resize_cond
 let get_pending_updates t = t.pending_updates
 let set_pending_updates t pending = t.pending_updates <- pending
+let terminal t = t.term

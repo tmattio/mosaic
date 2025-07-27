@@ -302,7 +302,7 @@ let rec collect_subs (f : fiber) : msg Sub.t =
 let run_eio ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
     ?(debug = false) (root : unit -> Ui.element) =
   let debug_log = if debug then Some (open_out "mosaic-debug.log") else None in
-  let config = Program.{ terminal; alt_screen; mouse; fps; debug_log } in
+  let config = { Program.terminal; alt_screen; mouse; fps; debug_log } in
 
   (* Create the program handle *)
   let p = Program.create ~sw ~env config in

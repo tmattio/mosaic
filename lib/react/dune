@@ -5,6 +5,7 @@
  (libraries
   eio
   eio_main
+  eio.unix
   mosaic.ui
   mosaic.engine
   mosaic.input

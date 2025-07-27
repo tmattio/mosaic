@@ -35,9 +35,6 @@ val run_render_loop : t -> (unit -> Ui.element) -> unit
 (** [run_render_loop t get_element] runs a loop that calls [get_element] and
     [render] at the configured FPS. Blocks until the program is stopped. *)
 
-val run_resize_loop : t -> (int * int -> unit) -> unit
-(** [run_resize_loop t handle_resize] runs a loop that handles terminal resize
-    events. *)
 
 val setup_terminal : t -> unit
 (** [setup_terminal t] sets up the terminal with the configured settings. *)
@@ -85,8 +82,6 @@ val clear_static_elements : t -> unit
 val log_debug : t -> string -> unit
 (** [log_debug t message] logs a debug message if debug logging is enabled. *)
 
-val resize_condition : t -> Eio.Condition.t
-(** [resize_condition t] returns the resize condition variable. *)
 
 val clock : t -> float Eio.Time.clock_ty Eio.Std.r
 (** [clock t] returns the program's clock. *)
@@ -101,6 +96,16 @@ val get_pending_updates : t -> bool
 (** [get_pending_updates t] returns whether there are pending updates to render.
 *)
 
+val run_resize_loop : t -> (int * int -> unit) -> unit
+(** [run_resize_loop t handle_resize] runs a loop that handles terminal resize
+    events. *)
+
+val resize_condition : t -> Eio.Condition.t
+(** [resize_condition t] returns the resize condition variable. *)
+
 val set_pending_updates : t -> bool -> unit
 (** [set_pending_updates t pending] sets whether there are pending updates to
     render. *)
+
+val terminal : t -> Terminal.t
+(** [terminal t] returns the terminal associated with the program. *)
