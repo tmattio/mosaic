@@ -7,7 +7,7 @@ type t = {
   input : file_descr;
   output : file_descr;
   original_termios : terminal_io option;
-  mutable saved_termios : terminal_io option;
+  mutable saved_termios : terminal_io list;
   input_is_tty : bool;
   output_is_tty : bool;
   mutable dark_background : bool option;
@@ -33,6 +33,7 @@ external get_size : Unix.file_descr -> int * int = "terminal_get_size"
 external enable_vt : Unix.file_descr -> unit = "terminal_enable_vt"
 
 let is_tty fd = try isatty fd with Unix_error _ -> false
+let tcgetattr_opt fd = try Some (tcgetattr fd) with Unix_error _ -> None
 
 let make_raw termios =
   {
@@ -57,7 +58,7 @@ let create ?(tty = true) input output =
       input;
       output;
       original_termios;
-      saved_termios = None;
+      saved_termios = [];
       input_is_tty;
       output_is_tty;
       dark_background = None;
@@ -256,14 +257,17 @@ let with_terminal ?tty input output f =
 
 let save_state t =
   if t.input_is_tty then
-    t.saved_termios <- (try Some (tcgetattr t.input) with _ -> None)
+    match tcgetattr_opt t.input with
+    | Some tio -> t.saved_termios <- tio :: t.saved_termios
+    | None -> ()
 
 let restore_state t =
   if t.input_is_tty then
     match t.saved_termios with
-    | Some termios -> (
+    | termios :: rest -> (
+        t.saved_termios <- rest;
         try tcsetattr t.input TCSANOW termios with Unix_error _ -> ())
-    | None -> ()
+    | [] -> ()
 
 (* Background detection *)
 
