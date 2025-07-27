@@ -118,7 +118,8 @@ let process_cmd t dispatch cmd =
            the parent fiber will wait for the whole sequence to finish. *)
         List.iter (go Sequential) cmds
     | Cmd.Perform f ->
-        run_in_mode (fun () -> match f () with Some msg -> dispatch msg | None -> ())
+        run_in_mode (fun () ->
+            match f () with Some msg -> dispatch msg | None -> ())
     | Cmd.Perform_eio f ->
         run_in_mode (fun () ->
             match f ~sw:t.sw ~env:t.env with
@@ -148,7 +149,9 @@ let process_cmd t dispatch cmd =
                 let clear_and_home =
                   Ansi.clear_screen ^ Ansi.cursor_position 1 1
                 in
-                Terminal.write t.term (Bytes.of_string clear_and_home) 0
+                Terminal.write t.term
+                  (Bytes.of_string clear_and_home)
+                  0
                   (String.length clear_and_home);
                 Terminal.flush t.term;
                 Fun.protect ~finally:cleanup (fun () ->
@@ -200,8 +203,9 @@ let process_cmd t dispatch cmd =
         log_debug t "Clearing screen";
         Eio.Mutex.use_rw ~protect:true t.terminal_mutex (fun () ->
             let reset_seq = Ansi.clear_screen ^ Ansi.esc ^ "H" in
-            Terminal.write t.term (Bytes.of_string reset_seq) 0
-              (String.length reset_seq);
+            Terminal.write t.term
+              (Bytes.of_string reset_seq)
+              0 (String.length reset_seq);
             Terminal.flush t.term);
         t.static_elements <- [];
         t.last_static_height <- 0;
@@ -210,8 +214,9 @@ let process_cmd t dispatch cmd =
         log_debug t "Clearing terminal";
         Eio.Mutex.use_rw ~protect:true t.terminal_mutex (fun () ->
             let reset_seq = Ansi.clear_terminal in
-            Terminal.write t.term (Bytes.of_string reset_seq) 0
-              (String.length reset_seq);
+            Terminal.write t.term
+              (Bytes.of_string reset_seq)
+              0 (String.length reset_seq);
             Terminal.flush t.term);
         t.static_elements <- [];
         t.last_static_height <- 0;
@@ -524,7 +529,6 @@ let run_render_loop t get_element =
     Eio.Time.sleep t.clock frame_duration
   done
 
-
 let full_cleanup term alt_screen_was_on =
   (* A comprehensive, single-string reset for the terminal state Mosaic modifies.
      This can be used for both graceful shutdown and signal handling. *)
@@ -595,14 +599,14 @@ let cleanup t =
        but we must try to restore it. We run the cleanup without the lock,
        which is safe because all other fibers are terminated at this point. *)
     full_cleanup t.term t.alt_screen;
-  
-  (* Restore signal handlers *)
-  let restore_signal sig_no saved =
-    Sys.set_signal sig_no (Option.value saved ~default:Sys.Signal_default)
-  in
-  restore_signal Sys.sigint t.sigint_prev;
-  restore_signal Sys.sigterm t.sigterm_prev;
-  restore_signal Sys.sighup t.sighup_prev
+
+    (* Restore signal handlers *)
+    let restore_signal sig_no saved =
+      Sys.set_signal sig_no (Option.value saved ~default:Sys.Signal_default)
+    in
+    restore_signal Sys.sigint t.sigint_prev;
+    restore_signal Sys.sigterm t.sigterm_prev;
+    restore_signal Sys.sighup t.sighup_prev
 
 (* Accessors and utility functions *)
 let is_running t = t.running

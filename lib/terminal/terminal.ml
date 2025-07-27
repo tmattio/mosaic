@@ -64,14 +64,13 @@ let create ?(tty = true) input output =
       truecolor = None;
     }
   in
-  if output_is_tty then (
-    (try enable_vt output with _ -> ());
-    (* Enable VT on Windows *));
-  if input_is_tty then (
-    try
-      let termios = tcgetattr t.input in
-      tcsetattr t.input TCSANOW (make_raw termios)
-    with Unix_error _ -> ());
+  (if output_is_tty then
+     try enable_vt output with _ -> () (* Enable VT on Windows *));
+  (if input_is_tty then
+     try
+       let termios = tcgetattr t.input in
+       tcsetattr t.input TCSANOW (make_raw termios)
+     with Unix_error _ -> ());
   t
 
 let set_non_blocking t enabled =
@@ -164,8 +163,11 @@ let set_mouse_mode t mode =
         enable_mouse_sgr t;
         write_escape t "\x1b[?1003h"
 
-let enable_focus_reporting t = if t.output_is_tty then write_escape t "\x1b[?1004h"
-let disable_focus_reporting t = if t.output_is_tty then write_escape t "\x1b[?1004l"
+let enable_focus_reporting t =
+  if t.output_is_tty then write_escape t "\x1b[?1004h"
+
+let disable_focus_reporting t =
+  if t.output_is_tty then write_escape t "\x1b[?1004l"
 
 let enable_bracketed_paste t =
   if t.output_is_tty then write_escape t Ansi.bracketed_paste_on
@@ -242,11 +244,11 @@ let release t =
     (* Flush after all writes *)
     remove_resize_handlers t);
   (* Clean up resize handlers *)
-  if t.input_is_tty then (
+  if t.input_is_tty then
     match t.original_termios with
     | Some termios -> (
         try tcsetattr t.input TCSANOW termios with Unix_error _ -> ())
-    | None -> ())
+    | None -> ()
 
 let with_terminal ?tty input output f =
   let t = create ?tty input output in

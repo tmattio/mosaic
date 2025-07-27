@@ -35,7 +35,6 @@ val run_render_loop : t -> (unit -> Ui.element) -> unit
 (** [run_render_loop t get_element] runs a loop that calls [get_element] and
     [render] at the configured FPS. Blocks until the program is stopped. *)
 
-
 val setup_terminal : t -> unit
 (** [setup_terminal t] sets up the terminal with the configured settings. *)
 
@@ -81,7 +80,6 @@ val clear_static_elements : t -> unit
 
 val log_debug : t -> string -> unit
 (** [log_debug t message] logs a debug message if debug logging is enabled. *)
-
 
 val clock : t -> float Eio.Time.clock_ty Eio.Std.r
 (** [clock t] returns the program's clock. *)
