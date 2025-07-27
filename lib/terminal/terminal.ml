@@ -75,12 +75,10 @@ let create ?(tty = true) input output =
 
 let set_non_blocking t enabled =
   try
-    if enabled then (
-      Unix.set_nonblock t.input;
-      Unix.set_nonblock t.output)
-    else (
-      Unix.clear_nonblock t.input;
-      Unix.clear_nonblock t.output)
+    if enabled then
+      Unix.set_nonblock
+        t.input (* keep output blocking to avoid EAGAIN on write *)
+    else Unix.clear_nonblock t.input (* leave output as-is *)
   with Unix_error (e, _, _) -> raise (Terminal_error (error_message e))
 
 let set_mode t mode =
@@ -109,13 +107,15 @@ let input_fd t = t.input
 let output_fd t = t.output
 
 let write t bytes offset length =
-  try
-    let rec write_all offset remaining =
-      if remaining > 0 then
-        let n = write t.output bytes offset remaining in
-        write_all (offset + n) (remaining - n)
-    in
-    write_all offset length
+  let rec write_all ofs rem =
+    if rem > 0 then
+      match Unix.write t.output bytes ofs rem with
+      | n -> write_all (ofs + n) (rem - n)
+      | exception Unix.Unix_error ((Unix.EAGAIN | Unix.EINTR), _, _) ->
+          ignore (Unix.select [] [ t.output ] [] (-1.0));
+          write_all ofs rem
+  in
+  try write_all offset length
   with Unix_error (e, _, _) -> raise (Terminal_error (error_message e))
 
 let write_string t str =
