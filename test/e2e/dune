@@ -1,5 +1,5 @@
 (library
- (name test_expect)
+ (name test_e2e)
  (inline_tests)
  (libraries test_utils mosaic mosaic.tiles mosaic.render unix)
  (preprocess
