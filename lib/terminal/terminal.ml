@@ -41,11 +41,9 @@ let make_raw termios =
     c_icanon = false;
     c_vmin = 1;
     c_vtime = 0;
-    c_isig = false;
     c_ixon = false;
     c_icrnl = false;
     c_opost = false;
-    (* Changed to false for true raw output *)
   }
 
 let create ?(tty = true) input output =
