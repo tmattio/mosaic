@@ -14,9 +14,11 @@ depends: [
   "dune" {>= "3.19"}
   "uutf"
   "uucp"
-  "cmarkit"
   "eio"
   "eio_main"
+  "cmarkit"
+  "textmate-language"
+  "yojson"
   "alcotest" {with-test}
   "ppx_expect" {with-test}
   "odoc" {with-doc}
