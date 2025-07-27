@@ -23,6 +23,9 @@ type t = {
   mutable last_width : int;
   resize_cond : Eio.Condition.t;
   mutable pending_updates : bool;
+  mutable sigint_prev : Sys.signal_behavior option;
+  mutable sigterm_prev : Sys.signal_behavior option;
+  mutable sighup_prev : Sys.signal_behavior option;
 }
 
 type config = {
@@ -71,6 +74,9 @@ let create ~sw ~env config =
     last_width = fst (Terminal.size term);
     resize_cond = Eio.Condition.create ();
     pending_updates = false;
+    sigint_prev = None;
+    sigterm_prev = None;
+    sighup_prev = None;
   }
 
 (*
@@ -122,13 +128,15 @@ let process_cmd t dispatch cmd =
         run_in_mode (fun () ->
             Eio.Mutex.use_rw ~protect:true t.terminal_mutex (fun () ->
                 let cleanup () =
-                  Terminal.restore_state t.term;
-                  Terminal.hide_cursor t.term;
-                  Terminal.set_mode t.term `Raw;
-                  if t.mouse then Terminal.set_mouse_mode t.term `Normal;
-                  Terminal.enable_kitty_keyboard t.term;
-                  if t.alt_screen then Terminal.enable_alternate_screen t.term;
-                  t.previous_buffer <- None
+                  (* Do nothing if the program is already quitting *)
+                  if t.running then (
+                    Terminal.restore_state t.term;
+                    Terminal.hide_cursor t.term;
+                    Terminal.set_mode t.term `Raw;
+                    if t.mouse then Terminal.set_mouse_mode t.term `Normal;
+                    Terminal.enable_kitty_keyboard t.term;
+                    if t.alt_screen then Terminal.enable_alternate_screen t.term;
+                    t.previous_buffer <- None)
                 in
                 Terminal.save_state t.term;
                 Terminal.show_cursor t.term;
@@ -568,9 +576,9 @@ let setup_signal_handlers (t : t) =
     full_cleanup t.term initial_alt_screen;
     exit 130 (* Standard exit code for termination by Ctrl+C *)
   in
-  Sys.set_signal Sys.sigint (Sys.Signal_handle handler);
-  Sys.set_signal Sys.sigterm (Sys.Signal_handle handler);
-  Sys.set_signal Sys.sighup (Sys.Signal_handle handler);
+  t.sigint_prev <- Some (Sys.signal Sys.sigint (Sys.Signal_handle handler));
+  t.sigterm_prev <- Some (Sys.signal Sys.sigterm (Sys.Signal_handle handler));
+  t.sighup_prev <- Some (Sys.signal Sys.sighup (Sys.Signal_handle handler));
 
   (* SIGWINCH handler to notify the app of terminal resizes. *)
   Terminal.set_resize_handler t.term (fun _ ->
@@ -586,7 +594,15 @@ let cleanup t =
        was cancelled while holding the lock. The terminal state is unknown,
        but we must try to restore it. We run the cleanup without the lock,
        which is safe because all other fibers are terminated at this point. *)
-    full_cleanup t.term t.alt_screen
+    full_cleanup t.term t.alt_screen;
+  
+  (* Restore signal handlers *)
+  let restore_signal sig_no saved =
+    Sys.set_signal sig_no (Option.value saved ~default:Sys.Signal_default)
+  in
+  restore_signal Sys.sigint t.sigint_prev;
+  restore_signal Sys.sigterm t.sigterm_prev;
+  restore_signal Sys.sighup t.sighup_prev
 
 (* Accessors and utility functions *)
 let is_running t = t.running
