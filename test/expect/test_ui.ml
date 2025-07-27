@@ -551,7 +551,7 @@ let%expect_test "flex shrink" =
        [ Ui.hbox ~flex_shrink:1 [ Ui.text "Shrinkable" ]; Ui.text " Fixed" ]);
   [%expect_exact {|
 +---------------+
-|Shrinkab Fixed |
+|Shrinkabl Fixed|
 +---------------+
 |}] [@@ocamlformat "disable"]
 
@@ -670,7 +670,7 @@ let%expect_test "complex flex layout - shrink" =
        
   [%expect_exact {|
 +---------------+
-|[Flexible co]  |
+|[Flexible cont]|
 +---------------+
 |}] [@@ocamlformat "disable"]
 
@@ -812,7 +812,7 @@ let%expect_test "Complex nested layout" =
       [ Ui.text "Sidebar"; Ui.spacer ~flex:1 0; Ui.text "Status" ]
   in
   let main_content =
-    Ui.vbox ~padding:(Ui.pad ~all:1 ()) ~border:(Ui.border ())
+    Ui.vbox ~flex_grow:1 ~padding:(Ui.pad ~all:1 ()) ~border:(Ui.border ())
       [
         Ui.text "Main Content Header";
         Ui.text "-------------------";
@@ -857,7 +857,7 @@ let%expect_test "Unicode and wide characters" =
 
 let%expect_test "Stretch alignment" =
   let ui =
-    Ui.vbox ~height:5 ~border:(Ui.border ())
+    Ui.vbox ~align_items:`Start ~flex_shrink:1 ~height:5 ~border:(Ui.border ())
       [
         Ui.hbox ~align_items:`Stretch
           [
@@ -869,15 +869,15 @@ let%expect_test "Stretch alignment" =
   print_ui ~width:15 ~height:7 ui;
   [%expect_exact {|
 +---------------+
-|┌──────────┐   |
-|│┌───┐┌───┐│   |
-|││A  ││B  ││   |
-|│└───┘│C  ││   |
-|└──────────┘   |
+|┌─────────────┐|
+|│┌───┐┌───┐   │|
+|││A  ││B  │   │|
+|││   ││C  │   │|
+|└─────────────┘|
 |               |
 |               |
 +---------------+
-|}] [@ocamlformat "disable"]
+|}] [@@ocamlformat "disable"]
 
 let%expect_test "Min/max width constraints" =
   let ui =

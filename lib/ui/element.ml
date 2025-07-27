@@ -247,7 +247,9 @@ let split_into_tokens str =
       in
       let end_pos = find_end pos in
       let token = String.sub str start (end_pos - start) in
-      loop end_pos (token :: acc)
+      (* drop pure‑whitespace tokens – spacing is already modelled by h_gap *)
+      let acc = if String.trim token = "" then acc else token :: acc in
+      loop end_pos acc
   in
   loop 0 []
 
@@ -532,7 +534,8 @@ and min_width element =
   match element with
   | Text { content; wrap; tab_width; _ } ->
       let expanded = Render.expand_tabs content tab_width in
-      if not wrap then Render.measure_string expanded
+      (* allow truncation down to one cell *)
+      if not wrap then if expanded = "" then 0 else 1
       else
         let lines = String.split_on_char '\n' expanded in
         List.fold_left
@@ -640,9 +643,9 @@ let hbox ?(gap = 0) ?width ?height ?min_width ?min_height ?max_width ?max_height
     }
   in
   if wrap then
-    let flow_content = flow ~h_gap:0 ~v_gap:0 children in
-    (* Force h_gap=0 for space preservation *)
-    let wrapper_options = { options with gap = 0 } in
+    let flow_content = flow ~h_gap:options.gap ~v_gap:0 children in
+    (* keep the original gap *)
+    let wrapper_options = options in
     Box (Box.make ~options:wrapper_options [ flow_content ])
   else Box (Box.make ~options children)
 

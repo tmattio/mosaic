@@ -398,21 +398,29 @@ and calculate_flow bounds flow_data =
           let new_y = y_cursor + current_line_h + wrap_v in
           wrap_children line_start new_y 0 acc (ec :: rest)
         else
+          (* first try to keep the preferred width, possibly shrinking *)
           let assigned_w =
             if child_w <= remaining then child_w
             else if can_shrink then max min_w remaining
             else child_w
           in
-          let _, assigned_h = Element.measure ~width:assigned_w child in
           let child_x = x_cursor + gap in
-          let child_bounds =
-            Bounds.make ~x:child_x ~y:y_cursor ~width:assigned_w
-              ~height:assigned_h
-          in
-          let computed = calculate_internal child_bounds child in
-          let new_current_h = max current_line_h assigned_h in
-          let new_x = child_x + assigned_w in
-          wrap_children new_x y_cursor new_current_h (computed :: acc) rest
+          if child_x + assigned_w > Bounds.x bounds + Bounds.width bounds then
+            let wrap_v = if is_new || is_hard then v_gap else 0 in
+            wrap_children line_start
+              (y_cursor + current_line_h + wrap_v)
+              0 acc (ec :: rest)
+          else
+            (* place the child normally *)
+            let _, assigned_h = Element.measure ~width:assigned_w child in
+            let child_bounds =
+              Bounds.make ~x:child_x ~y:y_cursor ~width:assigned_w
+                ~height:assigned_h
+            in
+            let computed = calculate_internal child_bounds child in
+            let new_current_h = max current_line_h assigned_h in
+            let new_x = child_x + assigned_w in
+            wrap_children new_x y_cursor new_current_h (computed :: acc) rest
   in
   let children_layouts =
     wrap_children line_start (Bounds.y bounds) 0 [] expanded
@@ -535,12 +543,12 @@ and calculate_scroll bounds scroll_data =
     else max 0 (min v_offset (child_h - viewport_h))
   in
 
-  (* The child is laid out constrained to viewport size, but offset "behind" the viewport *)
+  (* keep the child at its natural size – clipping is done while rendering *)
   let child_bounds =
     Bounds.make
       ~x:(Bounds.x bounds - visible_x)
       ~y:(Bounds.y bounds - visible_y)
-      ~width:viewport_w ~height:viewport_h
+      ~width:child_w ~height:child_h
   in
   let computed_child = calculate_internal child_bounds child in
   {
