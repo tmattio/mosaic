@@ -100,7 +100,7 @@ type t = {
       (** Previous frame for optimization *)
   mutable working_pixels : (int * int * int) array option;
       (** Working buffer to avoid repeated allocations *)
-  mutable previous_grid : Vte.Grid.t option;
+  mutable previous_grid : Grid.t option;
       (** Copy of previous grid state for diffing *)
   mutable full_width : int;
   mutable full_height : int;
@@ -382,7 +382,7 @@ let capture_frame t =
         (* First frame - render everything *)
         [
           {
-            Vte.Grid.min_row = 0;
+            Grid.min_row = 0;
             max_row = rows - 1;
             min_col = 0;
             max_col = cols - 1;
@@ -390,9 +390,7 @@ let capture_frame t =
         ]
     | Some prev_grid ->
         (* Compute differences *)
-        let _dirty_rows, region_changes =
-          Vte.Grid.diff prev_grid current_grid
-        in
+        let _dirty_rows, region_changes = Grid.diff prev_grid current_grid in
         let regions = List.map fst region_changes in
 
         (* Add cursor regions if cursor moved *)
@@ -403,13 +401,13 @@ let capture_frame t =
           then
             [
               {
-                Vte.Grid.min_row = pc_row;
+                Grid.min_row = pc_row;
                 max_row = pc_row;
                 min_col = pc_col;
                 max_col = pc_col;
               };
               {
-                Vte.Grid.min_row = cur_row;
+                Grid.min_row = cur_row;
                 max_row = cur_row;
                 min_col = cur_col;
                 max_col = cur_col;
@@ -424,7 +422,7 @@ let capture_frame t =
   (* Render only dirty regions *)
   List.iter
     (fun region ->
-      for row = region.Vte.Grid.min_row to region.max_row do
+      for row = region.Grid.min_row to region.max_row do
         for col = region.min_col to region.max_col do
           match Vte.get_cell t.vte ~row ~col with
           | None -> ()

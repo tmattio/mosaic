@@ -1,6 +1,4 @@
 open Ansi
-module Cell = Cell
-module Grid = Grid
 
 type cursor = { mutable row : int; mutable col : int; mutable visible : bool }
 
@@ -9,10 +7,10 @@ type cursor = { mutable row : int; mutable col : int; mutable visible : bool }
    re-assigned, which is what the original warning was about. *)
 type t = {
   grid : Grid.t;
-  scrollback : Cell.t option array Ring_buffer.t;
+  scrollback : Grid.Cell.t option array Ring_buffer.t;
   scrollback_size : int;
   cursor : cursor;
-  mutable gfx_state : Cell.style;
+  mutable gfx_state : Grid.Cell.style;
   parser : Parser.t;
   mutable title : string;
   mutable dirty : bool;  (** Set when terminal state changes *)
@@ -22,7 +20,7 @@ type t = {
   mutable scroll_top : int;  (** Top of scroll region (0-based) *)
   mutable scroll_bottom : int;  (** Bottom of scroll region (0-based) *)
   mutable cursor_saved : (int * int * bool) option;  (** Saved cursor state *)
-  mutable gfx_state_saved : Cell.style option;  (** Saved graphics state *)
+  mutable gfx_state_saved : Grid.Cell.style option;  (** Saved graphics state *)
   mutable origin_mode : bool;  (** DECOM - Origin mode *)
   mutable auto_wrap_mode : bool;  (** DECAWM - Auto wrap mode *)
   mutable cursor_key_mode : bool;  (** DECCKM - Cursor key application mode *)
@@ -42,7 +40,7 @@ let create ?(scrollback = 1000) ~rows ~cols () =
     scrollback = Ring_buffer.create scrollback empty_row;
     scrollback_size = scrollback;
     cursor = { row = 0; col = 0; visible = true };
-    gfx_state = Cell.default_style;
+    gfx_state = Grid.Cell.default_style;
     parser = Parser.create ();
     title = "";
     dirty = false;

@@ -1,3 +1,5 @@
+module Cell = Cell
+
 type rect = { row : int; col : int; width : int; height : int }
 type t = { cells : Cell.t option array array; dirty : rect list ref }
 

@@ -90,7 +90,7 @@ let select_font font_renderer style =
     | Freetype fonts -> fonts
   in
   (* Access style fields directly - Vte.style = Vte.Cell.style so fields should be accessible *)
-  match (style.Vte.Cell.bold, style.Vte.Cell.italic) with
+  match (style.Grid.Cell.bold, style.Grid.Cell.italic) with
   | true, true -> fonts.bold_italic
   | true, false -> fonts.bold
   | false, true -> fonts.italic

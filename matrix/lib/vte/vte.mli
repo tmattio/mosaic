@@ -9,12 +9,6 @@
     using functions like {!get_cell}, {!cursor_pos}, and {!title} to render the
     terminal display. *)
 
-module Cell = Cell
-(** Cell representation and styling *)
-
-module Grid = Grid
-(** Grid management and diffing *)
-
 (** {1 Core Types} *)
 
 type t
@@ -43,7 +37,7 @@ val reset : t -> unit
 
 (** {1 State Queries} *)
 
-val get_cell : t -> row:int -> col:int -> Cell.t option
+val get_cell : t -> row:int -> col:int -> Grid.Cell.t option
 (** [get_cell t ~row ~col] returns the cell at the specified 0-indexed
     coordinates. Returns [None] if the coordinates are out of bounds or if the
     cell is empty. This is the primary function for reading grid content for

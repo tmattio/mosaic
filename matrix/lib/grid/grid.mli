@@ -3,6 +3,9 @@
     This module provides operations for managing the character grid that
     represents the terminal display. *)
 
+module Cell = Cell
+(** @inline *)
+
 type rect = { row : int; col : int; width : int; height : int }
 (** A rectangular region in the grid *)
 

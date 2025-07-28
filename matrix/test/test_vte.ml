@@ -1,6 +1,7 @@
 (** Comprehensive tests for VTE terminal command parsing and interpretation *)
 
 open Alcotest
+module Cell = Grid.Cell
 
 let create_vte ?(rows = 24) ?(cols = 80) () = Vte.create ~rows ~cols ()
 
@@ -17,7 +18,7 @@ let get_line vte row =
     | Some cell ->
         (* Use the first character of the glyph *)
         let ch =
-          if String.length cell.Vte.Cell.glyph > 0 then cell.Vte.Cell.glyph.[0]
+          if String.length cell.Cell.glyph > 0 then cell.Cell.glyph.[0]
           else '?'
         in
         Buffer.add_char buf ch
@@ -40,7 +41,7 @@ let get_char_at vte ~row ~col =
   match Vte.get_cell vte ~row ~col with
   | None -> ' '
   | Some cell ->
-      if String.length cell.Vte.Cell.glyph > 0 then cell.Vte.Cell.glyph.[0]
+      if String.length cell.Cell.glyph > 0 then cell.Cell.glyph.[0]
       else '?'
 
 (** Basic text rendering tests *)
@@ -178,14 +179,14 @@ let test_bold_text () =
   let vte = create_vte () in
   feed_string vte "\x1b[1mBold\x1b[0m Normal";
   match Vte.get_cell vte ~row:0 ~col:0 with
-  | Some cell -> check bool "bold attribute" true cell.Vte.Cell.attrs.bold
+  | Some cell -> check bool "bold attribute" true cell.Cell.attrs.bold
   | None -> fail "Expected cell at 0,0"
 
 let test_italic_text () =
   let vte = create_vte () in
   feed_string vte "\x1b[3mItalic\x1b[0m";
   match Vte.get_cell vte ~row:0 ~col:0 with
-  | Some cell -> check bool "italic attribute" true cell.Vte.Cell.attrs.italic
+  | Some cell -> check bool "italic attribute" true cell.Cell.attrs.italic
   | None -> fail "Expected cell at 0,0"
 
 let test_underline_text () =
@@ -193,7 +194,7 @@ let test_underline_text () =
   feed_string vte "\x1b[4mUnderline\x1b[0m";
   match Vte.get_cell vte ~row:0 ~col:0 with
   | Some cell ->
-      check bool "underline attribute" true cell.Vte.Cell.attrs.underline
+      check bool "underline attribute" true cell.Cell.attrs.underline
   | None -> fail "Expected cell at 0,0"
 
 let test_foreground_color () =
@@ -201,7 +202,7 @@ let test_foreground_color () =
   feed_string vte "\x1b[31mRed\x1b[0m";
   match Vte.get_cell vte ~row:0 ~col:0 with
   | Some cell ->
-      check bool "red foreground" (cell.Vte.Cell.attrs.fg = Ansi.Red) true
+      check bool "red foreground" (cell.Cell.attrs.fg = Ansi.Red) true
   | None -> fail "Expected cell at 0,0"
 
 let test_background_color () =
@@ -209,7 +210,7 @@ let test_background_color () =
   feed_string vte "\x1b[42mGreen BG\x1b[0m";
   match Vte.get_cell vte ~row:0 ~col:0 with
   | Some cell ->
-      check bool "green background" (cell.Vte.Cell.attrs.bg = Ansi.Green) true
+      check bool "green background" (cell.Cell.attrs.bg = Ansi.Green) true
   | None -> fail "Expected cell at 0,0"
 
 let test_256_color () =
@@ -217,7 +218,7 @@ let test_256_color () =
   feed_string vte "\x1b[38;5;196mColor 196\x1b[0m";
   match Vte.get_cell vte ~row:0 ~col:0 with
   | Some cell -> (
-      match cell.Vte.Cell.attrs.fg with
+      match cell.Cell.attrs.fg with
       | Ansi.Index 196 -> ()
       | _ -> fail "Expected color index 196")
   | None -> fail "Expected cell at 0,0"
@@ -227,7 +228,7 @@ let test_rgb_color () =
   feed_string vte "\x1b[38;2;255;128;0mRGB\x1b[0m";
   match Vte.get_cell vte ~row:0 ~col:0 with
   | Some cell -> (
-      match cell.Vte.Cell.attrs.fg with
+      match cell.Cell.attrs.fg with
       | Ansi.RGB (255, 128, 0) -> ()
       | _ -> fail "Expected RGB color")
   | None -> fail "Expected cell at 0,0"
@@ -337,7 +338,7 @@ let test_incomplete_sequence () =
   match Vte.get_cell vte ~row:0 ~col:0 with
   | Some cell ->
       check bool "red foreground after incomplete"
-        (cell.Vte.Cell.attrs.fg = Ansi.Red)
+        (cell.Cell.attrs.fg = Ansi.Red)
         true
   | None -> fail "Expected cell at 0,0"
 
