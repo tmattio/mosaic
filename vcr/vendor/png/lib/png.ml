@@ -15,13 +15,16 @@
  * along with Imabelib.  If not, see <http://www.gnu.org/licenses/>.
  *
  * Copyright (C) 2014 Rodolphe Lepigre.
+ * Modified to be standalone.
  *)
-open ImageUtil
-open Image
 
 let debug = ref false
 let png_signature = "\137PNG\013\010\026\010"
 
+(** Exceptions *)
+exception Corrupted_image of string
+
+(** Basic types *)
 type chunk = { chunk_type : string; chunk_data : string }
 
 type ihdr_data = {
@@ -35,80 +38,204 @@ type ihdr_data = {
 
 type pixel = { r : int; g : int; b : int }
 
-(****************************************************************************
- * Zlib compression functions relying on decompress
+(** Image representation *)
+type pixel_data =
+  | Grey of int array array
+  | GreyA of (int * int) array array  
+  | RGB of (int * int * int) array array
+  | RGBA of (int * int * int * int) array array
 
+type image = {
+  width : int;
+  height : int;
+  max_val : int;
+  pixels : pixel_data;
+}
+
+(** Chunk reader/writer abstractions *)
+type chunk_reader = {
+  read_byte : unit -> char;
+  read_bytes : int -> string;
+  close : unit -> unit;
+}
+
+type chunk_writer = {
+  write_byte : char -> unit;
+  write_bytes : string -> unit;
+  close : unit -> unit;
+}
+
+(** Helper functions from ImageUtil *)
+let int_of_char c = Char.code c
+
+let pow_of_2 n = 1 lsl n
+
+let ones n = (1 lsl n) - 1
+
+let int32_of_str4 s =
+  let b0 = Int32.of_int (int_of_char s.[0]) in
+  let b1 = Int32.of_int (int_of_char s.[1]) in
+  let b2 = Int32.of_int (int_of_char s.[2]) in
+  let b3 = Int32.of_int (int_of_char s.[3]) in
+  Int32.logor (Int32.shift_left b0 24)
+    (Int32.logor (Int32.shift_left b1 16)
+       (Int32.logor (Int32.shift_left b2 8) b3))
+
+let int_of_str4 s =
+  let b0 = int_of_char s.[0] in
+  let b1 = int_of_char s.[1] in
+  let b2 = int_of_char s.[2] in
+  let b3 = int_of_char s.[3] in
+  (b0 lsl 24) lor (b1 lsl 16) lor (b2 lsl 8) lor b3
+
+let int_of_str2_le s =
+  let b0 = int_of_char s.[0] in
+  let b1 = int_of_char s.[1] in
+  (b0 lsl 8) lor b1
+
+let int_to_str4 i =
+  let b0 = (i lsr 24) land 0xff in
+  let b1 = (i lsr 16) land 0xff in
+  let b2 = (i lsr 8) land 0xff in
+  let b3 = i land 0xff in
+  Bytes.init 4 (function
+    | 0 -> Char.chr b0
+    | 1 -> Char.chr b1
+    | 2 -> Char.chr b2
+    | 3 -> Char.chr b3
+    | _ -> assert false)
+
+let get_bytes ich n = ich.read_bytes n
+let chunk_byte ich = ich.read_byte ()
+let chunk_write och s = och.write_bytes s
+let close_chunk_reader (ich : chunk_reader) = ich.close ()
+let close_chunk_writer (och : chunk_writer) = och.close ()
+
+(** Create chunk reader from input channel *)
+let chunk_reader_of_in_channel ic = {
+  read_byte = (fun () -> input_char ic);
+  read_bytes = (fun n ->
+    let buf = Bytes.create n in
+    really_input ic buf 0 n;
+    Bytes.to_string buf);
+  close = (fun () -> close_in ic);
+}
+
+(** Create chunk writer from output channel *)
+let chunk_writer_of_out_channel oc = {
+  write_byte = (fun c -> output_char oc c);
+  write_bytes = (fun s -> output_string oc s);
+  close = (fun () -> close_out oc);
+}
+
+(** Create chunk writer from buffer *)
+let chunk_writer_of_buffer buf = {
+  write_byte = (fun c -> Buffer.add_char buf c);
+  write_bytes = (fun s -> Buffer.add_string buf s);
+  close = (fun () -> ());
+}
+
+(** Image creation functions *)
+let create_grey ~alpha ~max_val width height =
+  let pixels = 
+    if alpha then
+      GreyA (Array.init height (fun _ -> Array.make width (0, max_val)))
+    else
+      Grey (Array.init height (fun _ -> Array.make width 0))
+  in
+  { width; height; max_val; pixels }
+
+let create_rgb ~alpha ~max_val width height =
+  let pixels = 
+    if alpha then
+      RGBA (Array.init height (fun _ -> Array.make width (0, 0, 0, max_val)))
+    else
+      RGB (Array.init height (fun _ -> Array.make width (0, 0, 0)))
+  in
+  { width; height; max_val; pixels }
+
+(** Image write functions *)
+let write_grey img x y g =
+  match img.pixels with
+  | Grey arr -> arr.(y).(x) <- g
+  | _ -> failwith "write_grey: not a grey image"
+
+let write_greya img x y g a =
+  match img.pixels with
+  | GreyA arr -> arr.(y).(x) <- (g, a)
+  | _ -> failwith "write_greya: not a grey+alpha image"
+
+let write_rgb img x y r g b =
+  match img.pixels with
+  | RGB arr -> arr.(y).(x) <- (r, g, b)
+  | _ -> failwith "write_rgb: not an RGB image"
+
+let write_rgba img x y r g b a =
+  match img.pixels with
+  | RGBA arr -> arr.(y).(x) <- (r, g, b, a)
+  | _ -> failwith "write_rgba: not an RGBA image"
+
+(** Image read functions *)
+let read_grey img x y f =
+  match img.pixels with
+  | Grey arr -> f arr.(y).(x)
+  | _ -> failwith "read_grey: not a grey image"
+
+let read_greya img x y f =
+  match img.pixels with
+  | GreyA arr -> let (g, a) = arr.(y).(x) in f g a
+  | _ -> failwith "read_greya: not a grey+alpha image"
+
+let read_rgb img x y f =
+  match img.pixels with
+  | RGB arr -> let (r, g, b) = arr.(y).(x) in f r g b
+  | _ -> failwith "read_rgb: not an RGB image"
+
+let read_rgba img x y f =
+  match img.pixels with
+  | RGBA arr -> let (r, g, b, a) = arr.(y).(x) in f r g b a
+  | _ -> failwith "read_rgba: not an RGBA image"
+
+(****************************************************************************
+ * Zlib compression functions using camlzip
  ****************************************************************************)
 module PNG_Zlib : sig
   val uncompress_string : string -> string
   val compress_string : string -> string
 end = struct
-  (* account for extremely meaningful name changes upstream *)
-  module Decompress = De
-  module Zlib = Zl
-  module Zlib_inflate = Zlib.Inf
-  module Zlib_deflate = Zlib.Def
-
-  let blit_from_string src src_off dst dst_off len =
-    let open Bigarray.Array1 in
-    for i = 0 to len - 1 do
-      set dst (dst_off + i) (String.get src (src_off + i))
-    done
-
-  let uncompress_string (input_ro : string) : string =
-    let open Bigarray.Array1 in
-    let i =
-      Bigarray.Array1.create Bigarray.char Bigarray.c_layout Zl.io_buffer_size
+  let uncompress_string input : string =
+    (* Use Zlib module from camlzip for decompression *)
+    let buffer = Buffer.create (String.length input * 2) in
+    let input_pos = ref 0 in
+    let refill buf =
+      let remaining = String.length input - !input_pos in
+      let n = min remaining (Bytes.length buf) in
+      Bytes.blit_string input !input_pos buf 0 n;
+      input_pos := !input_pos + n;
+      n
     in
-    let o =
-      Bigarray.Array1.create Bigarray.char Bigarray.c_layout Zl.io_buffer_size
+    let flush buf len =
+      Buffer.add_subbytes buffer buf 0 len
     in
-    let b = Buffer.create 0x1000 in
-    let p = ref 0 in
+    Zlib.uncompress refill flush;
+    Buffer.contents buffer
 
-    let refill dst =
-      let len = min (dim dst) (String.length input_ro - !p) in
-      blit_from_string input_ro !p dst 0 len;
-      p := !p + len;
-      len
+  let compress_string input : string =
+    (* Use Zlib module from camlzip for compression *)
+    let buffer = Buffer.create (String.length input) in
+    let input_pos = ref 0 in
+    let refill buf =
+      let remaining = String.length input - !input_pos in
+      let n = min remaining (Bytes.length buf) in
+      Bytes.blit_string input !input_pos buf 0 n;
+      input_pos := !input_pos + n;
+      n
     in
-    let flush src len =
-      for i = 0 to len - 1 do
-        Buffer.add_char b (unsafe_get src i)
-      done
+    let flush buf len =
+      Buffer.add_subbytes buffer buf 0 len
     in
-
-    match
-      Zl.Higher.uncompress
-        ~allocate:(fun bits -> De.make_window ~bits)
-        ~refill ~flush i o
-    with
-    | Ok _metadata -> Buffer.contents b
-    | Error (`Msg err) -> raise (Corrupted_image ("PNG.Zlib:" ^ err))
-
-  let compress_string (inputstr : string) : string =
-    let open Bigarray.Array1 in
-    let i = create Bigarray.char Bigarray.c_layout Zl.io_buffer_size in
-    let o = create Bigarray.char Bigarray.c_layout Zl.io_buffer_size in
-    let w = De.Lz77.make_window ~bits:15 in
-    let q = De.Queue.create 0x1000 in
-    let b = Buffer.create 0x1000 in
-    let p = ref 0 in
-
-    let refill dst =
-      let len = min (dim dst) (String.length inputstr - !p) in
-      blit_from_string inputstr !p dst 0 len;
-      p := !p + len;
-      len
-    in
-    let flush src len =
-      for i = 0 to len - 1 do
-        Buffer.add_char b (unsafe_get src i)
-      done
-    in
-
-    Zl.Higher.compress ~level:2 ~w ~q ~refill ~flush i o;
-    Buffer.contents b
+    Zlib.compress refill flush;
+    Buffer.contents buffer
 end
 
 open PNG_Zlib
@@ -147,14 +274,14 @@ open PNG_CRC
 (****************************************************************************
  * Core PNG function                                                        *
  ****************************************************************************)
-module ReadPNG : ReadImage = struct
+module ReadPNG = struct
   let extensions = [ "png" ]
 
   (* Checks for the PNG signature
    * Arguments:
    *   - ich : input channel.
    *)
-  let read_signature (ich : ImageUtil.chunk_reader) =
+  let read_signature (ich : chunk_reader) =
     let hdr = get_bytes ich 8 in
     if String.sub hdr 1 3 = "PNG" then (
       if hdr <> png_signature then raise (Corrupted_image "Corrupted header..."))
@@ -1298,3 +1425,45 @@ let bytes_of_png img =
 include ReadPNG
 
 let write = write_png
+
+(* Convenience functions for file I/O *)
+let read_png_file filename =
+  let ic = open_in_bin filename in
+  let ich = chunk_reader_of_in_channel ic in
+  try
+    let img = parsefile ich in
+    close_chunk_reader ich;
+    img
+  with e ->
+    close_chunk_reader ich;
+    raise e
+
+let write_png_file filename img =
+  let oc = open_out_bin filename in
+  let och = chunk_writer_of_out_channel oc in
+  try
+    write_png och img;
+    close_chunk_writer och
+  with e ->
+    close_chunk_writer och;
+    raise e
+
+(* Create RGB image from raw pixel data *)
+let rgb_of_pixels ~width ~height pixels =
+  let image = create_rgb ~alpha:false ~max_val:255 width height in
+  Array.iteri (fun y row ->
+    Array.iteri (fun x (r, g, b) ->
+      write_rgb image x y r g b
+    ) row
+  ) pixels;
+  image
+
+(* Create RGBA image from raw pixel data *)
+let rgba_of_pixels ~width ~height pixels =
+  let image = create_rgb ~alpha:true ~max_val:255 width height in
+  Array.iteri (fun y row ->
+    Array.iteri (fun x (r, g, b, a) ->
+      write_rgba image x y r g b a
+    ) row
+  ) pixels;
+  image

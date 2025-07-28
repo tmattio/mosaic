@@ -2,6 +2,7 @@ open Tape_lang.Ast
 module Svg_renderer = Renderer.Vg_renderer
 module Gif_renderer = Renderer.Gif_renderer
 module Ascii_renderer = Renderer.Ascii_renderer
+module Png_renderer = Renderer.Png_renderer
 
 let src = Logs.Src.create "vcr" ~doc:"VCR recording"
 
