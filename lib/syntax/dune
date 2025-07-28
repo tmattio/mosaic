@@ -6,7 +6,6 @@
  (libraries textmate-language mosaic.ui matrix.ansi yojson))
 
 (rule
- (mode promote)
  (target grammars.ml)
  (deps
   tm-syntaxes/ocaml.interface.json
@@ -35,7 +34,6 @@
     (echo "\n")))))
 
 (rule
- (mode promote)
  (target themes.ml)
  (deps
   tm-themes/dracula.json
