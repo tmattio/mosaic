@@ -1,0 +1,4 @@
+(library
+ (name vte)
+ (public_name vcr.vte)
+ (libraries uutf mosaic.ansi))

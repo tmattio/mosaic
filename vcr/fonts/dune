@@ -1,0 +1,44 @@
+(rule
+ (targets embedded_fonts.ml)
+ (deps
+  embed_font.ml
+  jetbrains-mono/JetBrainsMono-Regular.ttf
+  jetbrains-mono/JetBrainsMono-Bold.ttf
+  jetbrains-mono/JetBrainsMono-Italic.ttf
+  jetbrains-mono/JetBrainsMono-BoldItalic.ttf)
+ (action
+  (with-stdout-to
+   %{targets}
+   (progn
+    (echo "(* Auto-generated file containing embedded font data *)\n")
+    (echo "(* DO NOT EDIT MANUALLY *)\n\n")
+    (echo "module Fonts = struct\n")
+    (run
+     ocaml
+     embed_font.ml
+     jetbrains-mono/JetBrainsMono-Regular.ttf
+     jetbrains_mono_regular)
+    (echo "\n")
+    (run
+     ocaml
+     embed_font.ml
+     jetbrains-mono/JetBrainsMono-Bold.ttf
+     jetbrains_mono_bold)
+    (echo "\n")
+    (run
+     ocaml
+     embed_font.ml
+     jetbrains-mono/JetBrainsMono-Italic.ttf
+     jetbrains_mono_italic)
+    (echo "\n")
+    (run
+     ocaml
+     embed_font.ml
+     jetbrains-mono/JetBrainsMono-BoldItalic.ttf
+     jetbrains_mono_bold_italic)
+    (echo "end\n")))))
+
+(library
+ (name vcr_fonts)
+ (public_name vcr.fonts)
+ (modules embedded_fonts))

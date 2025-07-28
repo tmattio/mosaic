@@ -1,0 +1,4 @@
+(library
+ (name gif)
+ (public_name vcr.gif)
+ (libraries))

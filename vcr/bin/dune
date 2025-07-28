@@ -1,0 +1,5 @@
+(executable
+ (name main)
+ (public_name vcr)
+ (package vcr)
+ (libraries cmdliner vcr vcr.tape))

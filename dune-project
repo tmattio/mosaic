@@ -15,6 +15,8 @@
 
 (implicit_transitive_deps false)
 
+(using menhir 3.0)
+
 (package
  (name mosaic)
  (synopsis "A delightful TUI framework for OCaml inspired by Bubbletea")
@@ -37,3 +39,15 @@
   (ppx_expect :with-test))
  (tags
   (tui terminal "user interface" elm)))
+
+(package
+ (name vcr)
+ (synopsis "")
+ (description "")
+ (depends
+  ocaml
+  dune
+  menhir
+  vg
+  cmdliner
+  (alcotest :with-test)))

@@ -1,0 +1,5 @@
+(library
+ (name renderer)
+ (public_name vcr.renderer)
+ (modules_without_implementation renderer_intf)
+ (libraries vte gg vg mosaic.ansi gif freetype harfbuzz vcr_fonts))

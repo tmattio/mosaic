@@ -1,0 +1,8 @@
+(tests
+ (names test_gif_encoder test_gif_decoder)
+ (libraries alcotest gif))
+
+(test
+ (name test_integration)
+ (libraries gif unix)
+ (deps test_image.gif))

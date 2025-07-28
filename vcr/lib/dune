@@ -1,0 +1,4 @@
+(library
+ (name vcr)
+ (public_name vcr)
+ (libraries unix str vcr.pty vcr.renderer vcr.tape vcr.vte))

@@ -1,0 +1,7 @@
+(library
+ (name pty)
+ (public_name vcr.pty)
+ (foreign_stubs
+  (language c)
+  (names pty_stubs))
+ (libraries unix))

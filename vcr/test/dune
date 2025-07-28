@@ -1,0 +1,3 @@
+(tests
+ (names test_pty test_tape_lang test_vte_unicode test_gif_renderer)
+ (libraries alcotest unix str pty tape_lang vte renderer gif))

@@ -1,0 +1,4 @@
+(cram
+ (deps
+  %{bin:vcr}
+  (source_tree .)))
