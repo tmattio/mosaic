@@ -10,6 +10,9 @@ type style = {
   bg : Ansi.color;
   reversed : bool;
   link : string option;
+  strikethrough : bool;
+  overline : bool;
+  blink : bool;
 }
 
 type cell = { char : Uchar.t; style : style }
@@ -26,6 +29,9 @@ let default_style =
     bg = Default;
     reversed = false;
     link = None;
+    strikethrough = false;
+    overline = false;
+    blink = false;
   }
 
 let empty_cell = None
@@ -35,12 +41,21 @@ let empty_cell = None
    re-assigned, which is what the original warning was about. *)
 type t = {
   grid : cell option array array;
-  mutable scrollback : cell option list list;
+  scrollback : cell option array Ring_buffer.t;
   scrollback_size : int;
   cursor : cursor;
   mutable gfx_state : style;
   parser : Parser.t;
   mutable title : string;
+  mutable dirty : bool;  (** Set when terminal state changes *)
+  (* Alternate screen buffer support *)
+  alt_grid : cell option array array;
+  mutable in_alternate : bool;
+  mutable scroll_top : int;  (** Top of scroll region (0-based) *)
+  mutable scroll_bottom : int;  (** Bottom of scroll region (0-based) *)
+  mutable cursor_saved : (int * int * bool) option;  (** Saved cursor state *)
+  mutable gfx_state_saved : style option;  (** Saved graphics state *)
+  mutable origin_mode : bool;  (** DECOM - Origin mode *)
 }
 
 let rows (t : t) = Array.length t.grid
@@ -48,84 +63,176 @@ let cols (t : t) = if rows t = 0 then 0 else Array.length t.grid.(0)
 
 let create ?(scrollback = 1000) ~rows ~cols () =
   let grid = Array.make_matrix rows cols empty_cell in
+  let alt_grid = Array.make_matrix rows cols empty_cell in
+  let empty_row = Array.make cols empty_cell in
   {
     grid;
-    scrollback = [];
+    scrollback = Ring_buffer.create scrollback empty_row;
     scrollback_size = scrollback;
     cursor = { row = 0; col = 0; visible = true };
     gfx_state = default_style;
     parser = Parser.create ();
     title = "";
+    dirty = false;
+    alt_grid;
+    in_alternate = false;
+    scroll_top = 0;
+    scroll_bottom = rows - 1;
+    cursor_saved = None;
+    gfx_state_saved = None;
+    origin_mode = false;
   }
 
 let clamp ~min ~max v = if v < min then min else if v > max then max else v
 
+(* Dirty flag management *)
+let is_dirty t = t.dirty
+let clear_dirty t = t.dirty <- false
+let mark_dirty t = t.dirty <- true
+
 let set_cursor t ~row ~col =
   let row = clamp ~min:0 ~max:(rows t - 1) row in
   let col = clamp ~min:0 ~max:(cols t - 1) col in
-  t.cursor.row <- row;
-  t.cursor.col <- col
+  if t.cursor.row <> row || t.cursor.col <> col then (
+    t.cursor.row <- row;
+    t.cursor.col <- col;
+    mark_dirty t)
+
+let set_cursor_visible (t : t) visible =
+  if t.cursor.visible <> visible then (
+    t.cursor.visible <- visible;
+    mark_dirty t)
 
 let clear_line t row from_col =
   for i = from_col to cols t - 1 do
     t.grid.(row).(i) <- empty_cell
-  done
+  done;
+  if from_col < cols t then mark_dirty t
 
 let clear_screen t =
   for r = 0 to rows t - 1 do
     for c = 0 to cols t - 1 do
       t.grid.(r).(c) <- empty_cell
     done
-  done
+  done;
+  mark_dirty t
+
+(* Alternate screen buffer support *)
+let switch_to_alternate t save_cursor =
+  if not t.in_alternate then (
+    (* Save cursor and graphics state if requested *)
+    if save_cursor then (
+      t.cursor_saved <- Some (t.cursor.row, t.cursor.col, t.cursor.visible);
+      t.gfx_state_saved <- Some t.gfx_state);
+
+    (* Swap grids *)
+    for r = 0 to rows t - 1 do
+      for c = 0 to cols t - 1 do
+        let temp = t.grid.(r).(c) in
+        t.grid.(r).(c) <- t.alt_grid.(r).(c);
+        t.alt_grid.(r).(c) <- temp
+      done
+    done;
+
+    (* Clear the alternate screen *)
+    clear_screen t;
+
+    (* Reset scroll region to full screen *)
+    t.scroll_top <- 0;
+    t.scroll_bottom <- rows t - 1;
+
+    t.in_alternate <- true;
+    mark_dirty t)
+
+let switch_to_main t restore_cursor =
+  if t.in_alternate then (
+    (* Swap grids back *)
+    for r = 0 to rows t - 1 do
+      for c = 0 to cols t - 1 do
+        let temp = t.grid.(r).(c) in
+        t.grid.(r).(c) <- t.alt_grid.(r).(c);
+        t.alt_grid.(r).(c) <- temp
+      done
+    done;
+
+    (* Restore cursor and graphics state if saved *)
+    (if restore_cursor then
+       match t.cursor_saved with
+       | Some (row, col, visible) ->
+           t.cursor.row <- row;
+           t.cursor.col <- col;
+           t.cursor.visible <- visible;
+           t.cursor_saved <- None
+       | None -> (
+           ();
+
+           match t.gfx_state_saved with
+           | Some saved_state ->
+               t.gfx_state <- saved_state;
+               t.gfx_state_saved <- None
+           | None -> ()));
+
+    t.in_alternate <- false;
+    mark_dirty t)
 
 let scroll_up (vte : t) n =
-  if n > 0 && n < rows vte then (
-    (* Add lines to scrollback *)
-    if vte.scrollback_size > 0 then (
-      for i = 0 to n - 1 do
-        vte.scrollback <- Array.to_list vte.grid.(i) :: vte.scrollback
+  if n > 0 then (
+    let region_height = vte.scroll_bottom - vte.scroll_top + 1 in
+    let actual_n = min n region_height in
+
+    (* Add lines to scrollback only if scrolling from top of screen in main buffer *)
+    if (not vte.in_alternate) && vte.scroll_top = 0 && vte.scrollback_size > 0
+    then
+      for i = 0 to actual_n - 1 do
+        if vte.scroll_top + i < Array.length vte.grid then
+          Ring_buffer.push vte.scrollback
+            (Array.copy vte.grid.(vte.scroll_top + i))
       done;
-      let scrollback_len = List.length vte.scrollback in
-      if scrollback_len > vte.scrollback_size then
-        vte.scrollback <-
-          List.rev
-            (List.to_seq vte.scrollback
-            |> Seq.take vte.scrollback_size
-            |> List.of_seq)
-          |> List.rev);
-    (* Shift grid up *)
-    for r = 0 to rows vte - 1 - n do
-      vte.grid.(r) <- vte.grid.(r + n)
+
+    (* Shift lines up within scroll region *)
+    for r = vte.scroll_top to vte.scroll_bottom - actual_n do
+      vte.grid.(r) <- vte.grid.(r + actual_n)
     done;
-    (* Clear bottom lines *)
-    for r = rows vte - n to rows vte - 1 do
+
+    (* Clear bottom lines of scroll region *)
+    for r = vte.scroll_bottom - actual_n + 1 to vte.scroll_bottom do
       vte.grid.(r) <- Array.make (cols vte) empty_cell
-    done)
-  else if n > 0 then clear_screen vte
+    done;
+
+    mark_dirty vte)
 
 let scroll_down (t : t) n =
-  if n > 0 && n < rows t then (
-    for r = rows t - 1 downto n do
-      t.grid.(r) <- t.grid.(r - n)
+  if n > 0 then (
+    let region_height = t.scroll_bottom - t.scroll_top + 1 in
+    let actual_n = min n region_height in
+
+    (* Shift lines down within scroll region *)
+    for r = t.scroll_bottom downto t.scroll_top + actual_n do
+      t.grid.(r) <- t.grid.(r - actual_n)
     done;
-    for r = 0 to n - 1 do
+
+    (* Clear top lines of scroll region *)
+    for r = t.scroll_top to t.scroll_top + actual_n - 1 do
       t.grid.(r) <- Array.make (cols t) empty_cell
-    done)
-  else if n > 0 then clear_screen t
+    done;
+
+    mark_dirty t)
 
 let advance_cursor (t : t) =
   let { row; col; _ } = t.cursor in
   if col + 1 >= cols t then
-    if row + 1 >= rows t then (
+    (* Check if we're at the bottom of the scroll region *)
+    if row >= t.scroll_bottom then (
       scroll_up t 1;
-      set_cursor t ~row:(rows t - 1) ~col:0)
+      set_cursor t ~row:t.scroll_bottom ~col:0)
     else set_cursor t ~row:(row + 1) ~col:0
   else set_cursor t ~row ~col:(col + 1)
 
 let put_char (t : t) c =
   let { row; col; _ } = t.cursor in
-  if row < rows t && col < cols t then
+  if row < rows t && col < cols t then (
     t.grid.(row).(col) <- Some { char = c; style = t.gfx_state };
+    mark_dirty t);
   advance_cursor t
 
 let apply_sgr_attr state (attr : Ansi.attr) =
@@ -139,9 +246,10 @@ let apply_sgr_attr state (attr : Ansi.attr) =
   | `Reverse -> { state with reversed = true }
   | `Fg fg -> { state with fg }
   | `Bg bg -> { state with bg }
-  (* Other styles are not represented in our style type, so we ignore them. *)
-  | `Blink | `Conceal | `Strikethrough | `Overline | `Framed | `Encircled ->
-      state
+  | `Blink -> { state with blink = true }
+  | `Strikethrough -> { state with strikethrough = true }
+  | `Overline -> { state with overline = true }
+  | `Conceal | `Framed | `Encircled -> state (* Not visually implemented *)
 
 let handle_control t (ctrl : Parser.control) =
   match ctrl with
@@ -167,7 +275,8 @@ let handle_control t (ctrl : Parser.control) =
           done;
           for c = 0 to t.cursor.col do
             t.grid.(t.cursor.row).(c) <- empty_cell
-          done
+          done;
+          if t.cursor.col >= 0 then mark_dirty t
       | 2 | 3 ->
           clear_screen t;
           set_cursor t ~row:0 ~col:0
@@ -178,20 +287,94 @@ let handle_control t (ctrl : Parser.control) =
       | 1 ->
           for c = 0 to t.cursor.col do
             t.grid.(t.cursor.row).(c) <- empty_cell
-          done
+          done;
+          if t.cursor.col >= 0 then mark_dirty t
       | 2 -> clear_line t t.cursor.row 0
       | _ -> ())
-  | OSC (0, title) | OSC (2, title) -> t.title <- title
+  | OSC (0, title) | OSC (2, title) ->
+      t.title <- title;
+      mark_dirty t
   | Hyperlink (Some (_, uri)) ->
-      t.gfx_state <- { t.gfx_state with link = Some uri }
-  | Hyperlink None -> t.gfx_state <- { t.gfx_state with link = None }
+      t.gfx_state <- { t.gfx_state with link = Some uri };
+      mark_dirty t
+  | Hyperlink None ->
+      t.gfx_state <- { t.gfx_state with link = None };
+      mark_dirty t
   | Reset ->
       t.gfx_state <- default_style;
       clear_screen t;
-      set_cursor t ~row:0 ~col:0
-  (* Note: The provided Ansi.Parser does not seem to emit tokens for
-     Scroll Up/Down or Cursor Show/Hide. If it did, they would be handled here. *)
-  | OSC (_, _) | Unknown _ -> ()
+      set_cursor t ~row:0 ~col:0;
+      mark_dirty t
+  | Unknown csi -> (
+      (* Handle DECSET/DECRST and other unrecognized sequences *)
+      match csi with
+      | s when String.starts_with ~prefix:"CSI[?1049h" s ->
+          (* Enter alternate screen with cursor save *)
+          switch_to_alternate t true
+      | s when String.starts_with ~prefix:"CSI[?1049l" s ->
+          (* Exit alternate screen with cursor restore *)
+          switch_to_main t true
+      | s
+        when String.starts_with ~prefix:"CSI[?47h" s
+             || String.starts_with ~prefix:"CSI[?1047h" s ->
+          (* Enter alternate screen *)
+          switch_to_alternate t (String.starts_with ~prefix:"CSI[?1047h" s)
+      | s
+        when String.starts_with ~prefix:"CSI[?47l" s
+             || String.starts_with ~prefix:"CSI[?1047l" s ->
+          (* Exit alternate screen *)
+          switch_to_main t (String.starts_with ~prefix:"CSI[?1047l" s)
+      | s when String.starts_with ~prefix:"CSI[?25h" s ->
+          (* DECTCEM - Show cursor *)
+          set_cursor_visible t true
+      | s when String.starts_with ~prefix:"CSI[?25l" s ->
+          (* DECTCEM - Hide cursor *)
+          set_cursor_visible t false
+      | s when String.starts_with ~prefix:"CSI[?6h" s ->
+          (* DECOM - Set origin mode *)
+          t.origin_mode <- true;
+          set_cursor t ~row:t.scroll_top ~col:0
+      | s when String.starts_with ~prefix:"CSI[?6l" s ->
+          (* DECOM - Reset origin mode *)
+          t.origin_mode <- false;
+          set_cursor t ~row:0 ~col:0
+      | s when String.starts_with ~prefix:"CSI[s" s ->
+          (* DECSC - Save cursor *)
+          t.cursor_saved <- Some (t.cursor.row, t.cursor.col, t.cursor.visible);
+          t.gfx_state_saved <- Some t.gfx_state
+      | s when String.starts_with ~prefix:"CSI[u" s -> (
+          (* DECRC - Restore cursor *)
+          (match t.cursor_saved with
+          | Some (row, col, visible) ->
+              t.cursor.row <- row;
+              t.cursor.col <- col;
+              t.cursor.visible <- visible;
+              t.cursor_saved <- None
+          | None -> ());
+          match t.gfx_state_saved with
+          | Some saved_state ->
+              t.gfx_state <- saved_state;
+              t.gfx_state_saved <- None
+          | None -> ())
+      | s -> (
+          (* Try to parse DECSTBM (set scroll region) *)
+          let re = Str.regexp "CSI\\[\\([0-9]*\\);\\([0-9]*\\)r" in
+          try
+            if Str.string_match re s 0 then (
+              let top =
+                try int_of_string (Str.matched_group 1 s) with _ -> 1
+              in
+              let bottom =
+                try int_of_string (Str.matched_group 2 s) with _ -> rows t
+              in
+              t.scroll_top <- max 0 (top - 1);
+              t.scroll_bottom <- min (rows t - 1) (bottom - 1);
+              (* DECSTBM homes the cursor *)
+              set_cursor t
+                ~row:(if t.origin_mode then t.scroll_top else 0)
+                ~col:0)
+          with _ -> ()))
+  | OSC (_, _) -> ()
 
 let handle_text t text =
   let decoder = Uutf.decoder ~encoding:`UTF_8 (`String text) in
@@ -200,9 +383,12 @@ let handle_text t text =
     | `Uchar u ->
         (match Uchar.to_int u with
         | 0x0a ->
-            if t.cursor.row + 1 >= rows t then scroll_up t 1
-            else t.cursor.row <- t.cursor.row + 1;
-            t.cursor.col <- 0
+            if t.cursor.row >= t.scroll_bottom then scroll_up t 1
+            else (
+              t.cursor.row <- t.cursor.row + 1;
+              mark_dirty t);
+            t.cursor.col <- 0;
+            mark_dirty t
         | 0x0d -> set_cursor t ~row:t.cursor.row ~col:0
         | 0x08 -> set_cursor t ~row:t.cursor.row ~col:(t.cursor.col - 1)
         | 0x09 ->
@@ -221,7 +407,10 @@ let handle_text t text =
 let handle_token t = function
   | Parser.Text s -> handle_text t s
   | Parser.SGR attrs ->
-      t.gfx_state <- List.fold_left apply_sgr_attr t.gfx_state attrs
+      let new_state = List.fold_left apply_sgr_attr t.gfx_state attrs in
+      if new_state <> t.gfx_state then (
+        t.gfx_state <- new_state;
+        mark_dirty t)
   | Parser.Control ctrl -> handle_control t ctrl
 
 let feed t bytes ofs len =
@@ -251,16 +440,21 @@ let to_string_grid t =
 
 let cursor_pos (t : t) = (t.cursor.row, t.cursor.col)
 let is_cursor_visible (t : t) = t.cursor.visible
-let set_cursor_visible (t : t) visible = t.cursor.visible <- visible
 let title (t : t) = t.title
 
 let reset t =
+  (* Exit alternate screen if active *)
+  if t.in_alternate then switch_to_main t false;
   clear_screen t;
   set_cursor t ~row:0 ~col:0;
   t.gfx_state <- default_style;
   Parser.reset t.parser;
   t.title <- "";
-  t.scrollback <- []
+  Ring_buffer.clear t.scrollback;
+  t.scroll_top <- 0;
+  t.scroll_bottom <- rows t - 1;
+  t.origin_mode <- false;
+  mark_dirty t
 
 let get_cell t ~row ~col =
   if row >= 0 && row < rows t && col >= 0 && col < cols t then

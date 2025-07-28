@@ -204,6 +204,8 @@ let capture_frame t =
     let final_image = I.cut (P.rect view P.empty) final_image in
     t.frames <- final_image :: t.frames
 
+let add_pending_delay _ _ = () (* SVG doesn't use frame delays *)
+
 let render t =
   let frames = List.rev t.frames in
   if frames = [] then ""

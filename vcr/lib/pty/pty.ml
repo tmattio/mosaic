@@ -1,3 +1,7 @@
+let src = Logs.Src.create "vcr.pty" ~doc:"PTY management"
+
+module Log = (val Logs.src_log src : Logs.LOG)
+
 type t = Unix.file_descr
 type winsize = { rows : int; cols : int; x : int; y : int }
 
@@ -19,7 +23,7 @@ let open_pty ?winsize () =
   (match winsize with
   | None -> ()
   | Some ws -> (
-      try set_winsize master ws
+      try set_winsize slave ws (* Set winsize on slave, not master *)
       with e ->
         close master;
         close slave;
@@ -45,7 +49,10 @@ let spawn ~prog ~argv ?winsize ?env () =
 
       (* Create new session and set controlling TTY *)
       (try setsid_and_setctty pty_slave
-       with _ ->
+       with Unix.Unix_error (e, fn, _) ->
+         Log.err (fun m ->
+             m "Failed to set controlling terminal: %s in %s"
+               (Unix.error_message e) fn);
          Unix.close pty_slave;
          exit 127);
 
@@ -81,11 +88,15 @@ let with_pty ?winsize f =
   Fun.protect
     ~finally:(fun () ->
       (* Close both, ignoring errors since one might already be closed *)
-      (try close master with _ -> ());
-      try close slave with _ -> ())
+      (try close master with Unix.Unix_error _ -> ());
+      try close slave with Unix.Unix_error _ -> ())
     (fun () -> f master slave)
 
 (* I/O operations *)
 let read t buf ofs len = Unix.read t buf ofs len
 let write t buf ofs len = Unix.write t buf ofs len
 let write_string t str ofs len = Unix.write_substring t str ofs len
+
+(* Set non-blocking mode on a PTY file descriptor *)
+let set_nonblock t = Unix.set_nonblock t
+let clear_nonblock t = Unix.clear_nonblock t

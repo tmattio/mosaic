@@ -21,6 +21,9 @@ type style = {
   bg : Ansi.color;
   reversed : bool;
   link : string option;
+  strikethrough : bool;
+  overline : bool;
+  blink : bool;
 }
 (** Represents the graphical styling of a single terminal cell. A consumer of
     this library will read these fields from a {!cell} to determine how to
@@ -81,6 +84,15 @@ val set_cursor_visible : t -> bool -> unit
 val title : t -> string
 (** [title t] returns the current terminal window title as set by an OSC
     (Operating System Command) sequence. *)
+
+val is_dirty : t -> bool
+(** [is_dirty t] returns [true] if the terminal state has changed since the last
+    call to [clear_dirty]. This is useful for determining when to capture frames
+    or refresh the display. *)
+
+val clear_dirty : t -> unit
+(** [clear_dirty t] marks the terminal as clean, resetting the dirty flag. This
+    should be called after capturing or rendering the current state. *)
 
 (** {1 Grid Manipulation} *)
 

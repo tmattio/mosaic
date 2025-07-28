@@ -8,6 +8,11 @@
 #include <termios.h>
 #include <unistd.h>
 
+// Feature test for ptsname_r availability
+#ifdef __GLIBC__
+#include <limits.h>
+#endif
+
 // OCaml C FFI headers
 #include <caml/alloc.h>
 #include <caml/fail.h>
@@ -27,35 +32,59 @@ struct pty_fds {
 // This is the modern, portable way to open a PTY.
 struct pty_fds c_open_pty_posix() {
   struct pty_fds fds = {-1, -1};
+  
+  // Enter blocking section for potentially blocking syscalls
+  caml_enter_blocking_section();
+  
   // O_CLOEXEC prevents the file descriptor from being inherited by child
   // processes created by exec functions. This is a good security practice.
   int master_fd = posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC);
   if (master_fd == -1) {
+    caml_leave_blocking_section();
     return fds;
   }
 
   // Grant permissions to the slave device
   if (grantpt(master_fd) == -1) {
     close(master_fd);
+    caml_leave_blocking_section();
     return fds;
   }
 
   // Unlock the slave device
   if (unlockpt(master_fd) == -1) {
     close(master_fd);
+    caml_leave_blocking_section();
     return fds;
   }
+  
+  caml_leave_blocking_section();
 
-  char *slave_name = ptsname(master_fd);
+  // Get slave name - use thread-safe ptsname_r where available
+  char *slave_name = NULL;
+#ifdef __GLIBC__
+  char slave_name_buf[PATH_MAX];
+  if (ptsname_r(master_fd, slave_name_buf, sizeof(slave_name_buf)) != 0) {
+    close(master_fd);
+    return fds;
+  }
+  slave_name = slave_name_buf;
+#else
+  slave_name = ptsname(master_fd);
   if (slave_name == NULL) {
     close(master_fd);
     return fds;
   }
+#endif
 
+  caml_enter_blocking_section();
   fds.slave_fd = open(slave_name, O_RDWR | O_NOCTTY);
+  caml_leave_blocking_section();
+  
   if (fds.slave_fd == -1) {
     close(master_fd);
-    // Reset slave_fd to indicate failure
+    // CRITICAL FIX: Reset master_fd to indicate failure
+    fds.master_fd = -1;
     fds.slave_fd = -1;
     return fds;
   }
@@ -85,7 +114,11 @@ CAMLprim value ocaml_pty_get_winsize(value fd) {
   CAMLlocal1(res);
   struct winsize ws;
 
-  if (ioctl(Int_val(fd), TIOCGWINSZ, &ws) == -1) {
+  caml_enter_blocking_section();
+  int ret = ioctl(Int_val(fd), TIOCGWINSZ, &ws);
+  caml_leave_blocking_section();
+  
+  if (ret == -1) {
     uerror("ioctl(TIOCGWINSZ)", Nothing);
   }
 
@@ -106,7 +139,11 @@ CAMLprim value ocaml_pty_set_winsize_byte(value fd, value ws_val) {
   ws.ws_xpixel = Int_val(Field(ws_val, 2));
   ws.ws_ypixel = Int_val(Field(ws_val, 3));
 
-  if (ioctl(Int_val(fd), TIOCSWINSZ, &ws) == -1) {
+  caml_enter_blocking_section();
+  int ret = ioctl(Int_val(fd), TIOCSWINSZ, &ws);
+  caml_leave_blocking_section();
+  
+  if (ret == -1) {
     uerror("ioctl(TIOCSWINSZ)", Nothing);
   }
   CAMLreturn(Val_unit);

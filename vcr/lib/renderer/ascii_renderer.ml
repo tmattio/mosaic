@@ -15,26 +15,27 @@ let capture_frame t =
 
   (* Read each line from the terminal buffer *)
   for row = 0 to rows - 1 do
-    let line_chars = ref [] in
+    let cols_count = Vte.cols t.vte in
+    let line_bytes = Bytes.create cols_count in
     let last_non_space = ref (-1) in
 
     (* Get characters for this line *)
-    for col = 0 to Vte.cols t.vte - 1 do
+    for col = 0 to cols_count - 1 do
       match Vte.get_cell t.vte ~row ~col with
-      | None -> line_chars := ' ' :: !line_chars
+      | None -> Bytes.set line_bytes col ' '
       | Some cell ->
-          let ch = try Uchar.to_char cell.char with _ -> '?' in
-          line_chars := ch :: !line_chars;
+          let ch =
+            try Uchar.to_char cell.char with Invalid_argument _ -> '?'
+            (* Non-ASCII character *)
+          in
+          Bytes.set line_bytes col ch;
           if ch <> ' ' then last_non_space := col
     done;
 
     (* Convert to string and trim trailing spaces *)
-    let full_line =
-      String.init (List.length !line_chars) (fun i ->
-          List.nth (List.rev !line_chars) i)
-    in
     let trimmed_line =
-      if !last_non_space >= 0 then String.sub full_line 0 (!last_non_space + 1)
+      if !last_non_space >= 0 then
+        Bytes.sub_string line_bytes 0 (!last_non_space + 1)
       else ""
     in
     lines := trimmed_line :: !lines
@@ -42,6 +43,8 @@ let capture_frame t =
 
   (* Store frame (lines are in reverse order, so reverse them back) *)
   t.frames <- List.rev !lines :: t.frames
+
+let add_pending_delay _ _ = () (* ASCII doesn't use frame delays *)
 
 let render t =
   let buffer = Buffer.create 4096 in

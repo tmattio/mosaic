@@ -17,5 +17,9 @@ val create : Vte.t -> config -> t
 val capture_frame : t -> unit
 (** [capture_frame t] captures the current terminal state as a text frame *)
 
+val add_pending_delay : t -> float -> unit
+(** [add_pending_delay t delay] adds delay (in seconds) - ignored for ASCII
+    renderer *)
+
 val render : t -> string
 (** [render t] renders all captured frames as a text string *)

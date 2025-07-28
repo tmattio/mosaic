@@ -108,3 +108,17 @@ val write_string : t -> string -> int -> int -> int
 
     @return the number of bytes written
     @raise Unix.Unix_error on error *)
+
+(** {2 Non-blocking I/O} *)
+
+val set_nonblock : t -> unit
+(** [set_nonblock pty] sets the file descriptor to non-blocking mode.
+
+    This is equivalent to [Unix.set_nonblock (to_file_descr pty)] but provided
+    for convenience. *)
+
+val clear_nonblock : t -> unit
+(** [clear_nonblock pty] clears the non-blocking mode on the file descriptor.
+
+    This is equivalent to [Unix.clear_nonblock (to_file_descr pty)] but provided
+    for convenience. *)

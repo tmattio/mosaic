@@ -100,11 +100,11 @@ let load_flag_to_int = function
   | Load_force_autohint -> 0x20
   | Load_monochrome -> 0x1000
   | Load_linear_design -> 0x2000
-  | Load_target_normal -> 0x0000  (* FT_LOAD_TARGET_NORMAL *)
-  | Load_target_light -> 0x10000  (* FT_LOAD_TARGET_LIGHT *)
-  | Load_target_mono -> 0x20000   (* FT_LOAD_TARGET_MONO *)
-  | Load_target_lcd -> 0x30000    (* FT_LOAD_TARGET_LCD *)
-  | Load_target_lcd_v -> 0x40000  (* FT_LOAD_TARGET_LCD_V *)
+  | Load_target_normal -> 0x0000 (* FT_LOAD_TARGET_NORMAL *)
+  | Load_target_light -> 0x10000 (* FT_LOAD_TARGET_LIGHT *)
+  | Load_target_mono -> 0x20000 (* FT_LOAD_TARGET_MONO *)
+  | Load_target_lcd -> 0x30000 (* FT_LOAD_TARGET_LCD *)
+  | Load_target_lcd_v -> 0x40000 (* FT_LOAD_TARGET_LCD_V *)
 
 let render_mode_to_int = function
   | Render_normal -> 0

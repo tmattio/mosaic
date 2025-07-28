@@ -12,6 +12,10 @@ module type S = sig
   (** [capture_frame renderer] captures the current state of the VTE as a single
       frame. *)
 
+  val add_pending_delay : t -> float -> unit
+  (** [add_pending_delay renderer delay] adds delay (in seconds) to be included
+      in the next captured frame. *)
+
   val render : t -> string
   (** [render renderer] renders the captured frames and returns the output data
       as a string. *)

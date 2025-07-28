@@ -47,6 +47,26 @@ val create : Vte.t -> config -> t
 val capture_frame : t -> unit
 (** [capture_frame t] captures the current terminal state as a frame *)
 
+val add_pending_delay : t -> float -> unit
+(** [add_pending_delay t delay] adds delay (in seconds) to be included in the
+    next captured frame *)
+
 val render : t -> string
 (** [render t] renders all captured frames as an animated GIF and returns the
     binary data *)
+
+val frame_count : t -> int
+(** [frame_count t] returns the number of frames captured so far. For testing.
+*)
+
+type frame_info = { width : int; height : int; x_offset : int; y_offset : int }
+(** Information about a captured frame for testing *)
+
+val get_frame_info : t -> int -> frame_info option
+(** [get_frame_info t idx] returns information about frame at index [idx]
+    (0-based, most recent first) *)
+
+val render_streaming : t -> out_channel -> unit
+(** [render_streaming t out_channel] renders all captured frames as an animated
+    GIF and writes directly to the output channel. This is more memory-efficient
+    than [render] for large GIFs. *)

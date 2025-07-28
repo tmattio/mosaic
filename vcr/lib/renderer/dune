@@ -2,4 +2,11 @@
  (name renderer)
  (public_name vcr.renderer)
  (modules_without_implementation renderer_intf)
- (libraries vte gg vg mosaic.ansi gif freetype harfbuzz vcr_fonts))
+ (modules
+  renderer
+  renderer_intf
+  vg_renderer
+  gif_renderer
+  ascii_renderer
+  grid_diff)
+ (libraries str logs vte gg vg mosaic.ansi gif freetype harfbuzz vcr_fonts))

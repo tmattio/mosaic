@@ -1,0 +1,4 @@
+; (library
+;  (name png)
+;  (public_name vcr.png)
+;  (libraries))

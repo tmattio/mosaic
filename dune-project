@@ -50,4 +50,6 @@
   menhir
   vg
   cmdliner
+  logs
+  fmt
   (alcotest :with-test)))
