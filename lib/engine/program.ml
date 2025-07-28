@@ -4,7 +4,7 @@ type t = {
   mutable model : Obj.t; (* Generic model storage *)
   mutable running : bool;
   mutable quit_pending : bool;
-  term : Terminal.t;
+  term : Tty.t;
   event_source : Event_source.t;
   mutable alt_screen : bool;
   mouse : bool;
@@ -29,7 +29,7 @@ type t = {
 }
 
 type config = {
-  terminal : Terminal.t option;
+  terminal : Tty.t option;
   alt_screen : bool;
   mouse : bool;
   fps : int;
@@ -47,7 +47,7 @@ let create ~sw ~env config =
   let term =
     match config.terminal with
     | Some term -> term
-    | None -> Terminal.create ~tty:true Unix.stdin Unix.stdout
+    | None -> Tty.create ~tty:true Unix.stdin Unix.stdout
   in
   let event_source = Event_source.create ~sw ~env ~mouse:config.mouse term in
   {
@@ -71,7 +71,7 @@ let create ~sw ~env config =
     last_static_height = 0;
     last_printed_static = 0;
     previous_dynamic_buffer = None;
-    last_width = fst (Terminal.size term);
+    last_width = fst (Tty.size term);
     resize_cond = Eio.Condition.create ();
     pending_updates = false;
     sigint_prev = None;
@@ -131,29 +131,29 @@ let process_cmd t dispatch cmd =
                 let cleanup () =
                   (* Do nothing if the program is already quitting *)
                   if t.running then (
-                    Terminal.restore_state t.term;
-                    Terminal.hide_cursor t.term;
-                    Terminal.set_mode t.term `Raw;
-                    if t.mouse then Terminal.set_mouse_mode t.term `Normal;
-                    Terminal.enable_kitty_keyboard t.term;
-                    if t.alt_screen then Terminal.enable_alternate_screen t.term;
+                    Tty.restore_state t.term;
+                    Tty.hide_cursor t.term;
+                    Tty.set_mode t.term `Raw;
+                    if t.mouse then Tty.set_mouse_mode t.term `Normal;
+                    Tty.enable_kitty_keyboard t.term;
+                    if t.alt_screen then Tty.enable_alternate_screen t.term;
                     t.previous_buffer <- None)
                 in
-                Terminal.save_state t.term;
-                Terminal.show_cursor t.term;
-                Terminal.set_mouse_mode t.term `None;
-                Terminal.disable_kitty_keyboard t.term;
-                if t.alt_screen then Terminal.disable_alternate_screen t.term;
-                Terminal.set_mode t.term `Cooked;
-                Terminal.release t.term;
+                Tty.save_state t.term;
+                Tty.show_cursor t.term;
+                Tty.set_mouse_mode t.term `None;
+                Tty.disable_kitty_keyboard t.term;
+                if t.alt_screen then Tty.disable_alternate_screen t.term;
+                Tty.set_mode t.term `Cooked;
+                Tty.release t.term;
                 let clear_and_home =
                   Ansi.clear_screen ^ Ansi.cursor_position 1 1
                 in
-                Terminal.write t.term
+                Tty.write t.term
                   (Bytes.of_string clear_and_home)
                   0
                   (String.length clear_and_home);
-                Terminal.flush t.term;
+                Tty.flush t.term;
                 Fun.protect ~finally:cleanup (fun () ->
                     Eio_unix.run_in_systhread exec_cmd.run));
             dispatch exec_cmd.on_complete)
@@ -169,28 +169,28 @@ let process_cmd t dispatch cmd =
         t.static_elements <- t.static_elements @ [ element ];
         t.previous_buffer <- None;
         if not t.alt_screen then
-          let width, _ = Terminal.size t.term in
+          let width, _ = Tty.size t.term in
           let _, el_h = Ui.measure ~width element in
           t.last_static_height <- t.last_static_height + el_h
     | Cmd.Set_window_title title ->
         Eio.Mutex.use_rw ~protect:true t.terminal_mutex (fun () ->
-            Terminal.write t.term
+            Tty.write t.term
               (Bytes.of_string (Ansi.set_window_title title))
               0
               (String.length (Ansi.set_window_title title));
-            Terminal.flush t.term)
+            Tty.flush t.term)
     | Cmd.Enter_alt_screen ->
         if not t.alt_screen then (
           log_debug t "Entering alternate screen";
           Eio.Mutex.use_rw ~protect:true t.terminal_mutex (fun () ->
-              Terminal.enable_alternate_screen t.term);
+              Tty.enable_alternate_screen t.term);
           t.alt_screen <- true;
           t.previous_buffer <- None)
     | Cmd.Exit_alt_screen ->
         if t.alt_screen then (
           log_debug t "Exiting alternate screen";
           Eio.Mutex.use_rw ~protect:true t.terminal_mutex (fun () ->
-              Terminal.disable_alternate_screen t.term);
+              Tty.disable_alternate_screen t.term);
           t.alt_screen <- false;
           t.previous_buffer <- None;
           t.previous_dynamic_buffer <- None;
@@ -203,10 +203,10 @@ let process_cmd t dispatch cmd =
         log_debug t "Clearing screen";
         Eio.Mutex.use_rw ~protect:true t.terminal_mutex (fun () ->
             let reset_seq = Ansi.clear_screen ^ Ansi.esc ^ "H" in
-            Terminal.write t.term
+            Tty.write t.term
               (Bytes.of_string reset_seq)
               0 (String.length reset_seq);
-            Terminal.flush t.term);
+            Tty.flush t.term);
         t.static_elements <- [];
         t.last_static_height <- 0;
         t.last_printed_static <- 0
@@ -214,10 +214,10 @@ let process_cmd t dispatch cmd =
         log_debug t "Clearing terminal";
         Eio.Mutex.use_rw ~protect:true t.terminal_mutex (fun () ->
             let reset_seq = Ansi.clear_terminal in
-            Terminal.write t.term
+            Tty.write t.term
               (Bytes.of_string reset_seq)
               0 (String.length reset_seq);
-            Terminal.flush t.term);
+            Tty.flush t.term);
         t.static_elements <- [];
         t.last_static_height <- 0;
         t.last_printed_static <- 0;
@@ -229,7 +229,7 @@ let process_cmd t dispatch cmd =
 
 let render_element t dynamic_element =
   log_debug t "Render: Starting render pass";
-  let width, height = Terminal.size t.term in
+  let width, height = Tty.size t.term in
   let buffer, non_alt_output =
     Eio.Mutex.use_ro t.state_mutex (fun () ->
         let static_elements_snapshot = t.static_elements in
@@ -501,8 +501,8 @@ let render_element t dynamic_element =
   (* Only write to terminal if t is still running AND there's output *)
   if t.running && String.length output > 0 then
     Eio.Mutex.use_rw ~protect:true t.terminal_mutex (fun () ->
-        Terminal.write t.term (Bytes.of_string output) 0 (String.length output);
-        Terminal.flush t.term);
+        Tty.write t.term (Bytes.of_string output) 0 (String.length output);
+        Tty.flush t.term);
 
   (* Only cache buffer for alt-screen mode *)
   if t.alt_screen then t.previous_buffer <- Some buffer
@@ -540,35 +540,30 @@ let full_cleanup term alt_screen_was_on =
       common_seq ^ Ansi.kitty_keyboard_off ^ Ansi.alternate_screen_off
     else common_seq ^ Ansi.kitty_keyboard_off
   in
-  Terminal.write term
-    (Bytes.of_string cleanup_seq)
-    0
-    (String.length cleanup_seq);
-  Terminal.set_mode term `Cooked;
-  Terminal.flush term
+  Tty.write term (Bytes.of_string cleanup_seq) 0 (String.length cleanup_seq);
+  Tty.set_mode term `Cooked;
+  Tty.flush term
 
 let setup_terminal t =
   log_debug t "Setting up terminal";
   Eio.Mutex.use_rw ~protect:true t.terminal_mutex (fun () ->
       (* Force-reset terminal features to a known-good state before enabling ours. *)
       let reset_seq = Ansi.mouse_off ^ Ansi.bracketed_paste_off in
-      Terminal.write t.term
-        (Bytes.of_string reset_seq)
-        0 (String.length reset_seq);
+      Tty.write t.term (Bytes.of_string reset_seq) 0 (String.length reset_seq);
 
-      Terminal.set_mode t.term `Raw;
-      Terminal.hide_cursor t.term;
+      Tty.set_mode t.term `Raw;
+      Tty.hide_cursor t.term;
       if t.alt_screen then (
         log_debug t "Enabling alternate screen";
-        Terminal.enable_alternate_screen t.term);
-      if t.mouse then Terminal.set_mouse_mode t.term `Normal;
-      Terminal.enable_kitty_keyboard t.term;
-      Terminal.enable_bracketed_paste t.term)
+        Tty.enable_alternate_screen t.term);
+      if t.mouse then Tty.set_mouse_mode t.term `Normal;
+      Tty.enable_kitty_keyboard t.term;
+      Tty.enable_bracketed_paste t.term)
 
 let run_resize_loop t handle_resize =
   while t.running do
     Eio.Condition.await_no_mutex t.resize_cond;
-    if t.running then handle_resize (Terminal.size t.term)
+    if t.running then handle_resize (Tty.size t.term)
   done
 
 let setup_signal_handlers (t : t) =
@@ -585,11 +580,10 @@ let setup_signal_handlers (t : t) =
   t.sighup_prev <- Some (Sys.signal Sys.sighup (Sys.Signal_handle handler));
 
   (* SIGWINCH handler to notify the app of terminal resizes. *)
-  Terminal.set_resize_handler t.term (fun _ ->
-      Eio.Condition.broadcast t.resize_cond)
+  Tty.set_resize_handler t.term (fun _ -> Eio.Condition.broadcast t.resize_cond)
 
 let cleanup t =
-  Terminal.remove_resize_handlers t.term;
+  Tty.remove_resize_handlers t.term;
   try
     Eio.Mutex.use_rw ~protect:true t.terminal_mutex (fun () ->
         full_cleanup t.term t.alt_screen)

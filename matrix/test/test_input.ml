@@ -1,6 +1,6 @@
 (** Tests for the Input module *)
 
-open Test_utils
+let event_testable = Alcotest.testable Input.pp_event Input.event_equal
 
 let test_parse_regular_chars () =
   (* Test single character *)

@@ -17,8 +17,6 @@ let test_png_render () =
         target_width = None;
         target_height = None;
         padding = 10;
-        cursor_style = `Block;
-        cursor_color = None;
       }
   in
 

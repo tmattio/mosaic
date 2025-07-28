@@ -78,14 +78,8 @@ type config = {
   padding : int;  (** Padding around terminal content in pixels *)
 }
 
-type font_set = {
-  regular : Freetype.t;
-  bold : Freetype.t;
-  italic : Freetype.t;
-  bold_italic : Freetype.t;
-}
-
-type font_renderer = BuiltinFont | TrueTypeFont of font_set
+(* Use common font types from Font_renderer module *)
+open Font_renderer
 
 type frame_data = {
   x_offset : int;
@@ -106,7 +100,7 @@ type t = {
       (** Previous frame for optimization *)
   mutable working_pixels : (int * int * int) array option;
       (** Working buffer to avoid repeated allocations *)
-  mutable previous_grid : Vte.cell option array array option;
+  mutable previous_grid : Vte.Cell.t option array array option;
       (** Copy of previous grid state for diffing *)
   mutable full_width : int;
   mutable full_height : int;
@@ -257,18 +251,30 @@ let create vte config =
               ~pixel_size:config.font_size
           in
 
-          TrueTypeFont { regular; bold; italic; bold_italic }
+          Freetype { regular; bold; italic; bold_italic }
         with exn ->
           Log.warn (fun m ->
               m
                 "Failed to load embedded JetBrains Mono fonts: %s. Falling \
                  back to builtin font"
                 (Printexc.to_string exn));
-          BuiltinFont)
+          (* Create a simple bitmap font fallback *)
+          let dummy_font =
+            Freetype.create ~font_path:"/dev/null" ~pixel_size:config.font_size
+          in
+          let fonts =
+            {
+              regular = dummy_font;
+              bold = dummy_font;
+              italic = dummy_font;
+              bold_italic = dummy_font;
+            }
+          in
+          Bitmap { fonts; char_width = 10; char_height = 20 })
     | Some font_path ->
         (* Use the same font for all styles when custom font is provided *)
         let ft = Freetype.create ~font_path ~pixel_size:config.font_size in
-        TrueTypeFont { regular = ft; bold = ft; italic = ft; bold_italic = ft }
+        Freetype { regular = ft; bold = ft; italic = ft; bold_italic = ft }
   in
   {
     vte;
@@ -379,7 +385,7 @@ let capture_frame t =
         (* First frame - render everything *)
         [
           {
-            Grid_diff.min_row = 0;
+            Vte.Grid.min_row = 0;
             max_row = rows - 1;
             min_col = 0;
             max_col = cols - 1;
@@ -388,7 +394,7 @@ let capture_frame t =
     | Some prev_grid ->
         (* Compute differences *)
         let _dirty_rows, region_changes =
-          Grid_diff.diff prev_grid current_grid cols
+          Vte.Grid.diff prev_grid current_grid
         in
         let regions = List.map fst region_changes in
 
@@ -400,13 +406,13 @@ let capture_frame t =
           then
             [
               {
-                Grid_diff.min_row = pc_row;
+                Vte.Grid.min_row = pc_row;
                 max_row = pc_row;
                 min_col = pc_col;
                 max_col = pc_col;
               };
               {
-                Grid_diff.min_row = cur_row;
+                Vte.Grid.min_row = cur_row;
                 max_row = cur_row;
                 min_col = cur_col;
                 max_col = cur_col;
@@ -421,7 +427,7 @@ let capture_frame t =
   (* Render only dirty regions *)
   List.iter
     (fun region ->
-      for row = region.Grid_diff.min_row to region.max_row do
+      for row = region.Vte.Grid.min_row to region.max_row do
         for col = region.min_col to region.max_col do
           match Vte.get_cell t.vte ~row ~col with
           | None -> ()
@@ -452,7 +458,7 @@ let capture_frame t =
 
               (* Render character *)
               match t.font_renderer with
-              | BuiltinFont ->
+              | Bitmap _ ->
                   let ch =
                     try Uchar.to_char cell.char with Invalid_argument _ -> '?'
                     (* Non-ASCII character *)
@@ -460,7 +466,7 @@ let capture_frame t =
                   Font.render_char pixels total_width total_height x_start
                     y_start ch fg_color bg_color t.config.char_width
                     t.config.char_height
-              | TrueTypeFont fonts -> (
+              | Freetype fonts -> (
                   (* Select appropriate font based on style *)
                   let ft =
                     match (style.bold, style.italic) with
@@ -558,7 +564,7 @@ let capture_frame t =
      let cursor_row, cursor_col = Vte.cursor_pos t.vte in
      let x_start = x_offset + (cursor_col * t.config.char_width) in
      let y_start = y_offset + (cursor_row * t.config.char_height) in
-     (* Draw cursor as a solid block using foreground color *)
+     (* Simple block cursor using foreground color *)
      for
        y = y_start to min (y_start + t.config.char_height - 1) (total_height - 1)
      do

@@ -1,7 +1,3 @@
-let src = Logs.Src.create "vcr.pty" ~doc:"PTY management"
-
-module Log = (val Logs.src_log src : Logs.LOG)
-
 type t = Unix.file_descr
 type winsize = { rows : int; cols : int; x : int; y : int }
 
@@ -49,10 +45,7 @@ let spawn ~prog ~argv ?winsize ?env () =
 
       (* Create new session and set controlling TTY *)
       (try setsid_and_setctty pty_slave
-       with Unix.Unix_error (e, fn, _) ->
-         Log.err (fun m ->
-             m "Failed to set controlling terminal: %s in %s"
-               (Unix.error_message e) fn);
+       with Unix.Unix_error (_e, _fn, _) ->
          Unix.close pty_slave;
          exit 127);
 

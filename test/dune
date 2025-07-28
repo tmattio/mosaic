@@ -3,7 +3,7 @@
  (modules test_utils)
  (libraries
   mosaic
-  mosaic.terminal
+  matrix.tty
   mosaic.render
   uutf
   fmt

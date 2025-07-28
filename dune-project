@@ -26,6 +26,7 @@
   (ocaml
    (>= 5.0.0))
   dune
+  matrix
   uutf
   uucp
   eio
@@ -41,12 +42,28 @@
   (tui terminal "user interface" elm)))
 
 (package
+ (name matrix)
+ (synopsis "The infrastructure to build OCaml terminal applications")
+ (description
+  "Matrix is a foundational terminal programming toolkit that provides core terminal libraries. It includes input event parsing with support for modern keyboard protocols, complete ANSI escape sequence parser and generation, low-level terminal device control, pseudo-terminal (PTY) operations for terminal multiplexing, and a virtual terminal emulator (VTE) for terminal recording and testing.")
+ (depends
+  (ocaml
+   (>= 5.0.0))
+  dune
+  uutf
+  uucp
+  (alcotest :with-test))
+ (tags
+  (terminal input ansi pty vte)))
+
+(package
  (name vcr)
  (synopsis "")
  (description "")
  (depends
   ocaml
   dune
+  matrix
   menhir
   vg
   cmdliner

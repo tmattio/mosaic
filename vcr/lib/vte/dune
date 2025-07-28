@@ -1,5 +1,0 @@
-(library
- (name vte)
- (public_name vcr.vte)
- (modules vte ring_buffer)
- (libraries uutf mosaic.ansi str))

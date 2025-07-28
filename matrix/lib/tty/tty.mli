@@ -11,20 +11,20 @@
     terminal state. Create a terminal, configure its features, then release it:
 
     {[
-      let term = Terminal.create Unix.stdin Unix.stdout in
-      Terminal.set_mode term `Raw;
-      Terminal.hide_cursor term;
+      let term = Tty.create Unix.stdin Unix.stdout in
+      Tty.set_mode term `Raw;
+      Tty.hide_cursor term;
       (* Your application logic here *)
-      Terminal.show_cursor term;
-      Terminal.release term
+      Tty.show_cursor term;
+      Tty.release term
     ]}
 
     Or use {!with_terminal} for automatic cleanup:
 
     {[
-      Terminal.with_terminal Unix.stdin Unix.stdout (fun term ->
-          Terminal.set_mode term `Raw;
-          Terminal.enable_alternate_screen term
+      Tty.with_terminal Unix.stdin Unix.stdout (fun term ->
+          Tty.set_mode term `Raw;
+          Tty.enable_alternate_screen term
           (* Application runs here *)
           (* Terminal automatically restored on exit *))
     ]}
@@ -51,7 +51,7 @@
     capabilities before enabling advanced features:
 
     {[
-      if Terminal.supports_feature term `Truecolor then
+      if Tty.supports_feature term `Truecolor then
         (* Use 24-bit colors *)
       else
         (* Fall back to 256 colors *)
@@ -133,7 +133,7 @@ type mode =
               (* Keep signals enabled *)
             }
           in
-          Terminal.set_mode term (`Custom custom_mode)
+          Tty.set_mode term (`Custom custom_mode)
         ]} *) ]
 (** Terminal input processing mode.
 
@@ -220,7 +220,7 @@ val create : ?tty:bool -> Unix.file_descr -> Unix.file_descr -> t
     {4 Examples}
 
     {[
-      let term = Terminal.create Unix.stdin Unix.stdout
+      let term = Tty.create Unix.stdin Unix.stdout
     ]} *)
 
 val with_terminal :
@@ -243,9 +243,9 @@ val with_terminal :
     {4 Examples}
 
     {[
-      Terminal.with_terminal Unix.stdin Unix.stdout (fun term ->
-          Terminal.set_mode term `Raw;
-          Terminal.clear_screen term;
+      Tty.with_terminal Unix.stdin Unix.stdout (fun term ->
+          Tty.set_mode term `Raw;
+          Tty.clear_screen term;
           run_app term (* Terminal restored even if run_app raises *))
     ]} *)
 
@@ -277,11 +277,11 @@ val save_state : t -> unit
     {4 Examples}
 
     {[
-      Terminal.save_state term;
-      Terminal.set_mode term `Raw;
-      Terminal.write_string term "Password: ";
+      Tty.save_state term;
+      Tty.set_mode term `Raw;
+      Tty.write_string term "Password: ";
       let password = read_password term in
-      Terminal.restore_state term;
+      Tty.restore_state term;
       password
     ]} *)
 
@@ -317,12 +317,12 @@ val set_mode : t -> mode -> unit
     {4 Examples}
 
     {[
-      Terminal.set_mode term `Raw
+      Tty.set_mode term `Raw
       (* Input now available character by character *)
     ]}
 
     {[
-      Terminal.set_mode term
+      Tty.set_mode term
         (`Custom
            (fun termios ->
              {
@@ -343,7 +343,7 @@ val size : t -> int * int
     {4 Examples}
 
     {[
-      let width, height = Terminal.size term in
+      let width, height = Tty.size term in
       Printf.printf "Terminal: %d×%d\n" width height
     ]} *)
 
@@ -356,9 +356,9 @@ val is_tty : Unix.file_descr -> bool
 
     Check before creating terminal:
     {[
-      if Terminal.is_tty Unix.stdin && Terminal.is_tty Unix.stdout then
+      if Tty.is_tty Unix.stdin && Tty.is_tty Unix.stdout then
         (* Safe to use terminal features *)
-        let term = Terminal.create Unix.stdin Unix.stdout in
+        let term = Tty.create Unix.stdin Unix.stdout in
         ...
       else
         (* Fall back to simple I/O *)
@@ -407,7 +407,7 @@ val write_string : t -> string -> unit
     {4 Examples}
 
     {[
-      Terminal.write_string term "Hello, World!\n"
+      Tty.write_string term "Hello, World!\n"
     ]} *)
 
 val read : t -> bytes -> int -> int -> int
@@ -429,7 +429,7 @@ val read : t -> bytes -> int -> int -> int
 
     {[
       let buf = Bytes.create 1024 in
-      let n = Terminal.read term buf 0 1024 in
+      let n = Tty.read term buf 0 1024 in
       if n > 0 then process_input (Bytes.sub_string buf 0 n)
     ]} *)
 
@@ -446,9 +446,9 @@ val wait_for_input : t -> float -> bool
     {4 Examples}
 
     {[
-      if Terminal.wait_for_input term 0.1 then
+      if Tty.wait_for_input term 0.1 then
         (* Input available *)
-        let n = Terminal.read term buf 0 1024 in
+        let n = Tty.read term buf 0 1024 in
         ...
     ]} *)
 
@@ -469,10 +469,10 @@ val enable_alternate_screen : t -> unit
     {4 Examples}
 
     {[
-      Terminal.enable_alternate_screen term;
-      Terminal.clear_screen term;
+      Tty.enable_alternate_screen term;
+      Tty.clear_screen term;
       (* Application uses full screen *)
-      Terminal.disable_alternate_screen term
+      Tty.disable_alternate_screen term
       (* User's shell content restored *)
     ]} *)
 
@@ -501,8 +501,8 @@ val set_mouse_mode : t -> mouse_mode -> unit
     {4 Examples}
 
     {[
-      if Terminal.supports_feature term `Mouse then
-        Terminal.set_mouse_mode term `SgrNormal
+      if Tty.supports_feature term `Mouse then
+        Tty.set_mouse_mode term `SgrNormal
       (* Now receiving button press/release events *)
     ]} *)
 
@@ -618,7 +618,7 @@ val move_cursor : t -> int -> int -> unit
     {4 Examples}
 
     {[
-      Terminal.move_cursor term 1 1 (* Top-left corner *)
+      Tty.move_cursor term 1 1 (* Top-left corner *)
     ]} *)
 
 (** {1 Screen Operations} *)
@@ -644,7 +644,7 @@ val set_title : t -> string -> unit
     {4 Examples}
 
     {[
-      Terminal.set_title term (Printf.sprintf "Editor - %s" filename)
+      Tty.set_title term (Printf.sprintf "Editor - %s" filename)
     ]} *)
 
 val bell : t -> unit
@@ -678,10 +678,10 @@ val set_resize_handler : t -> (int * int -> unit) -> unit
     {4 Examples}
 
     {[
-      Terminal.set_resize_handler term (fun (w, h) ->
-          Terminal.clear_screen term;
+      Tty.set_resize_handler term (fun (w, h) ->
+          Tty.clear_screen term;
           draw_ui term w h;
-          Terminal.flush term)
+          Tty.flush term)
     ]} *)
 
 val remove_resize_handlers : t -> unit
@@ -705,7 +705,7 @@ val set_dark_background : t -> dark:bool -> unit
 
     {[
       let dark = Config.get_bool "dark_mode" in
-      Terminal.set_dark_background term ~dark
+      Tty.set_dark_background term ~dark
     ]} *)
 
 val has_dark_background : t -> bool
@@ -724,7 +724,7 @@ val has_dark_background : t -> bool
 
     {[
       let fg_color =
-        if Terminal.has_dark_background term then "\027[97m" else "\027[30m"
+        if Tty.has_dark_background term then "\027[97m" else "\027[30m"
     ]} *)
 
 val has_truecolor_support : t -> bool
@@ -754,11 +754,10 @@ val supports_feature : t -> feature -> bool
     {4 Examples}
 
     {[
-      if Terminal.supports_feature term `Mouse then
-        Terminal.set_mouse_mode term `SgrNormal;
+      if Tty.supports_feature term `Mouse then
+        Tty.set_mouse_mode term `SgrNormal;
 
-      if Terminal.supports_feature term `Kitty then
-        Terminal.enable_kitty_keyboard term
+      if Tty.supports_feature term `Kitty then Tty.enable_kitty_keyboard term
     ]} *)
 
 val set_non_blocking : t -> bool -> unit
@@ -775,9 +774,9 @@ val set_non_blocking : t -> bool -> unit
     {4 Examples}
 
     {[
-      Terminal.set_non_blocking term true;
+      Tty.set_non_blocking term true;
       let rec loop () =
-        match Terminal.read term buf 0 1024 with
+        match Tty.read term buf 0 1024 with
         | 0 -> Unix.sleep 0.01; loop ()
         | n -> process_input (Bytes.sub buf 0 n); loop ()
     ]} *)
@@ -801,12 +800,12 @@ val create_from_strings : string -> t * (unit -> string) * (unit -> unit)
 
     {[
       let input = "hello\nworld\n" in
-      let term, get_output, close = Terminal.create_from_strings input in
+      let term, get_output, close = Tty.create_from_strings input in
       let buf = Bytes.create 5 in
-      let n = Terminal.read term buf 0 5 in
+      let n = Tty.read term buf 0 5 in
       assert (n = 5);
       assert (Bytes.sub_string buf 0 5 = "hello");
-      Terminal.write_string term "processed";
+      Tty.write_string term "processed";
       assert (get_output () = "processed");
       close ()
     ]} *)

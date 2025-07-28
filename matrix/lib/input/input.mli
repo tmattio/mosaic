@@ -614,3 +614,6 @@ val mouse_motion :
       let drag =
         mouse_motion 15 8 { left = true; middle = false; right = false }
     ]} *)
+
+val event_equal : event -> event -> bool
+(** [event_equal e1 e2] checks if two events are equal. *)

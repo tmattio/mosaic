@@ -15,8 +15,8 @@ let disable_seqs output_fd mouse =
   ignore (Unix.write output_fd (Bytes.of_string seq) 0 (String.length seq))
 
 let create ~sw ~env:_ ~mouse terminal =
-  let input_fd = Terminal.input_fd terminal in
-  let output_fd = Terminal.output_fd terminal in
+  let input_fd = Tty.input_fd terminal in
+  let output_fd = Tty.output_fd terminal in
   let is_tty = Unix.isatty input_fd in
   let old_attr_opt =
     if is_tty then try Some (Unix.tcgetattr input_fd) with _ -> None else None
@@ -52,7 +52,7 @@ let create ~sw ~env:_ ~mouse terminal =
       (Sys.Signal_handle
          (fun _ -> ignore (Unix.write pipe_w (Bytes.of_string "\x00") 0 1)))
   in
-  let prev_size = ref (Terminal.size terminal) in
+  let prev_size = ref (Tty.size terminal) in
   (* Push initial resize event only for real TTYs *)
   (if is_tty then
      let w, h = !prev_size in
@@ -84,7 +84,7 @@ let create ~sw ~env:_ ~mouse terminal =
         while true do
           Eio_unix.await_readable pipe_r;
           ignore (Unix.read pipe_r dummy_buf 0 1);
-          let size = Terminal.size terminal in
+          let size = Tty.size terminal in
           if size <> !prev_size then (
             prev_size := size;
             let w, h = size in

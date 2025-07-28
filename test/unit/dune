@@ -1,17 +1,11 @@
 (tests
- (names
-  test_ansi
-  test_event_source
-  test_input
-  test_render
-  test_markdown
-  test_gradient)
+ (names test_event_source test_render test_markdown test_gradient)
  (libraries
+  matrix.ansi
   mosaic.ui
   mosaic.markdown
   mosaic.render
-  mosaic.input
-  mosaic.ansi
+  matrix.input
   mosaic.event
   eio
   eio_main

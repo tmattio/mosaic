@@ -227,7 +227,7 @@ let process_mouse state (x, y, new_buttons, ctrl_state, event_flags) =
 
 let create ~sw ~env ~mouse ~paste_threshold ~paste_min_chars terminal =
   let clock = Eio.Stdenv.clock env in
-  let handle = Obj.magic (Terminal.input_fd terminal) in
+  let handle = Obj.magic (Tty.input_fd terminal) in
   let original_mode = get_console_mode handle in
   enable_console_mode handle mouse;
   let events = Eio.Stream.create 1024 in

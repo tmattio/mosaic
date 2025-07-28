@@ -1809,6 +1809,20 @@ let pp_event fmt = function
       Format.fprintf fmt "Device_attributes([%s])"
         (String.concat ";" (List.map string_of_int attrs))
 
+let event_equal e1 e2 =
+  match (e1, e2) with
+  | Key k1, Key k2 -> k1.key = k2.key && k1.modifier = k2.modifier
+  | Mouse m1, Mouse m2 -> m1 = m2
+  | Resize (w1, h1), Resize (w2, h2) -> w1 = w2 && h1 = h2
+  | Focus, Focus -> true
+  | Blur, Blur -> true
+  | Paste_start, Paste_start -> true
+  | Paste_end, Paste_end -> true
+  | Paste s1, Paste s2 -> s1 = s2
+  | Cursor_position (r1, c1), Cursor_position (r2, c2) -> r1 = r2 && c1 = c2
+  | Device_attributes a1, Device_attributes a2 -> a1 = a2
+  | _ -> false
+
 (* Convenience functions *)
 
 let parse_single s =

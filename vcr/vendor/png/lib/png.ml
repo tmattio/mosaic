@@ -21,11 +21,11 @@
 let debug = ref false
 let png_signature = "\137PNG\013\010\026\010"
 
-(** Exceptions *)
 exception Corrupted_image of string
+(** Exceptions *)
 
-(** Basic types *)
 type chunk = { chunk_type : string; chunk_data : string }
+(** Basic types *)
 
 type ihdr_data = {
   image_size : int * int;
@@ -41,23 +41,18 @@ type pixel = { r : int; g : int; b : int }
 (** Image representation *)
 type pixel_data =
   | Grey of int array array
-  | GreyA of (int * int) array array  
+  | GreyA of (int * int) array array
   | RGB of (int * int * int) array array
   | RGBA of (int * int * int * int) array array
 
-type image = {
-  width : int;
-  height : int;
-  max_val : int;
-  pixels : pixel_data;
-}
+type image = { width : int; height : int; max_val : int; pixels : pixel_data }
 
-(** Chunk reader/writer abstractions *)
 type chunk_reader = {
   read_byte : unit -> char;
   read_bytes : int -> string;
   close : unit -> unit;
 }
+(** Chunk reader/writer abstractions *)
 
 type chunk_writer = {
   write_byte : char -> unit;
@@ -69,7 +64,6 @@ type chunk_writer = {
 let int_of_char c = Char.code c
 
 let pow_of_2 n = 1 lsl n
-
 let ones n = (1 lsl n) - 1
 
 let int32_of_str4 s =
@@ -112,45 +106,47 @@ let close_chunk_reader (ich : chunk_reader) = ich.close ()
 let close_chunk_writer (och : chunk_writer) = och.close ()
 
 (** Create chunk reader from input channel *)
-let chunk_reader_of_in_channel ic = {
-  read_byte = (fun () -> input_char ic);
-  read_bytes = (fun n ->
-    let buf = Bytes.create n in
-    really_input ic buf 0 n;
-    Bytes.to_string buf);
-  close = (fun () -> close_in ic);
-}
+let chunk_reader_of_in_channel ic =
+  {
+    read_byte = (fun () -> input_char ic);
+    read_bytes =
+      (fun n ->
+        let buf = Bytes.create n in
+        really_input ic buf 0 n;
+        Bytes.to_string buf);
+    close = (fun () -> close_in ic);
+  }
 
 (** Create chunk writer from output channel *)
-let chunk_writer_of_out_channel oc = {
-  write_byte = (fun c -> output_char oc c);
-  write_bytes = (fun s -> output_string oc s);
-  close = (fun () -> close_out oc);
-}
+let chunk_writer_of_out_channel oc =
+  {
+    write_byte = (fun c -> output_char oc c);
+    write_bytes = (fun s -> output_string oc s);
+    close = (fun () -> close_out oc);
+  }
 
 (** Create chunk writer from buffer *)
-let chunk_writer_of_buffer buf = {
-  write_byte = (fun c -> Buffer.add_char buf c);
-  write_bytes = (fun s -> Buffer.add_string buf s);
-  close = (fun () -> ());
-}
+let chunk_writer_of_buffer buf =
+  {
+    write_byte = (fun c -> Buffer.add_char buf c);
+    write_bytes = (fun s -> Buffer.add_string buf s);
+    close = (fun () -> ());
+  }
 
 (** Image creation functions *)
 let create_grey ~alpha ~max_val width height =
-  let pixels = 
+  let pixels =
     if alpha then
       GreyA (Array.init height (fun _ -> Array.make width (0, max_val)))
-    else
-      Grey (Array.init height (fun _ -> Array.make width 0))
+    else Grey (Array.init height (fun _ -> Array.make width 0))
   in
   { width; height; max_val; pixels }
 
 let create_rgb ~alpha ~max_val width height =
-  let pixels = 
+  let pixels =
     if alpha then
       RGBA (Array.init height (fun _ -> Array.make width (0, 0, 0, max_val)))
-    else
-      RGB (Array.init height (fun _ -> Array.make width (0, 0, 0)))
+    else RGB (Array.init height (fun _ -> Array.make width (0, 0, 0)))
   in
   { width; height; max_val; pixels }
 
@@ -183,17 +179,23 @@ let read_grey img x y f =
 
 let read_greya img x y f =
   match img.pixels with
-  | GreyA arr -> let (g, a) = arr.(y).(x) in f g a
+  | GreyA arr ->
+      let g, a = arr.(y).(x) in
+      f g a
   | _ -> failwith "read_greya: not a grey+alpha image"
 
 let read_rgb img x y f =
   match img.pixels with
-  | RGB arr -> let (r, g, b) = arr.(y).(x) in f r g b
+  | RGB arr ->
+      let r, g, b = arr.(y).(x) in
+      f r g b
   | _ -> failwith "read_rgb: not an RGB image"
 
 let read_rgba img x y f =
   match img.pixels with
-  | RGBA arr -> let (r, g, b, a) = arr.(y).(x) in f r g b a
+  | RGBA arr ->
+      let r, g, b, a = arr.(y).(x) in
+      f r g b a
   | _ -> failwith "read_rgba: not an RGBA image"
 
 (****************************************************************************
@@ -214,9 +216,7 @@ end = struct
       input_pos := !input_pos + n;
       n
     in
-    let flush buf len =
-      Buffer.add_subbytes buffer buf 0 len
-    in
+    let flush buf len = Buffer.add_subbytes buffer buf 0 len in
     Zlib.uncompress refill flush;
     Buffer.contents buffer
 
@@ -231,9 +231,7 @@ end = struct
       input_pos := !input_pos + n;
       n
     in
-    let flush buf len =
-      Buffer.add_subbytes buffer buf 0 len
-    in
+    let flush buf len = Buffer.add_subbytes buffer buf 0 len in
     Zlib.compress refill flush;
     Buffer.contents buffer
 end
@@ -1451,19 +1449,17 @@ let write_png_file filename img =
 (* Create RGB image from raw pixel data *)
 let rgb_of_pixels ~width ~height pixels =
   let image = create_rgb ~alpha:false ~max_val:255 width height in
-  Array.iteri (fun y row ->
-    Array.iteri (fun x (r, g, b) ->
-      write_rgb image x y r g b
-    ) row
-  ) pixels;
+  Array.iteri
+    (fun y row ->
+      Array.iteri (fun x (r, g, b) -> write_rgb image x y r g b) row)
+    pixels;
   image
 
 (* Create RGBA image from raw pixel data *)
 let rgba_of_pixels ~width ~height pixels =
   let image = create_rgb ~alpha:true ~max_val:255 width height in
-  Array.iteri (fun y row ->
-    Array.iteri (fun x (r, g, b, a) ->
-      write_rgba image x y r g b a
-    ) row
-  ) pixels;
+  Array.iteri
+    (fun y row ->
+      Array.iteri (fun x (r, g, b, a) -> write_rgba image x y r g b a) row)
+    pixels;
   image

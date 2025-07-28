@@ -1,32 +1,26 @@
-(** Cell-level diff for efficient terminal rendering *)
+(** Grid diffing functionality for optimized rendering *)
 
-type dirty_region = {
-  min_row : int;
-  max_row : int;
-  min_col : int;
-  max_col : int;
-}
-(** A rectangular region that has changed *)
+type region = { min_row : int; max_row : int; min_col : int; max_col : int }
+(** A rectangular region defined by its bounds *)
 
-val find_dirty_rows :
-  Vte.cell option array array -> Vte.cell option array array -> bool array
-(** [find_dirty_rows prev_grid curr_grid] returns an array indicating which rows
-    have changed between the previous and current grid states. *)
+val empty_region : region
+(** An empty region with no cells *)
 
-val compute_dirty_regions : bool array -> int -> dirty_region list
-(** [compute_dirty_regions dirty_rows cols] converts an array of dirty row flags
-    into a list of rectangular regions that need to be redrawn. *)
+val is_empty_region : region -> bool
+(** Check if a region is empty *)
 
-val diff :
-  Vte.cell option array array ->
-  Vte.cell option array array ->
-  int ->
-  bool array * (dirty_region * (int * int) list) list
-(** [diff prev_grid curr_grid cols] computes the differences between two grid
-    states. Returns:
-    - An array of dirty row flags
-    - A list of dirty regions with their changed cell coordinates *)
+val update_region : region -> int -> int -> region
+(** [update_region r row col] expands region [r] to include cell at [row, col]
+*)
 
-val compute_update_regions : (int * int) list -> dirty_region list
-(** [compute_update_regions changed_cells] computes minimal bounding regions
-    from a list of changed cell coordinates. *)
+val cell_equal : Vte.Cell.t option -> Vte.Cell.t option -> bool
+(** [cell_equal c1 c2] returns true if cells are visually equivalent *)
+
+val diff_grids :
+  prev:Vte.Cell.t option array array ->
+  curr:Vte.Cell.t option array array ->
+  rows:int ->
+  cols:int ->
+  region
+(** [diff_grids ~prev ~curr ~rows ~cols] returns the region containing all
+    changed cells *)

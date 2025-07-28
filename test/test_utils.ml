@@ -35,7 +35,7 @@ let buffer_to_lines buffer =
 (** Create a test terminal with predefined input for unit testing low-level
     components like the event source or input parser. *)
 let make_test_terminal input =
-  let term, get_output, _close = Terminal.create_from_strings input in
+  let term, get_output, _close = Tty.create_from_strings input in
   (term, get_output)
 
 (** Renders a UI element to a raw string representation of the terminal grid.
@@ -235,12 +235,6 @@ and show_button = function
   | Wheel_left -> "Wheel_left"
   | Wheel_right -> "Wheel_right"
   | Button n -> Printf.sprintf "Button%d" n
-
-(** Pretty printer for events for use with Alcotest *)
-let pp_event fmt event = Fmt.string fmt (show_event event)
-
-(** Alcotest testable for events *)
-let event_testable = Alcotest.testable pp_event event_equal
 
 (** Run a function within Eio context - helper to reduce boilerplate *)
 let run_eio f = Eio_main.run (fun env -> Eio.Switch.run (fun sw -> f env sw))

@@ -5,8 +5,22 @@
  (modules
   renderer
   renderer_intf
+  font_renderer
   vg_renderer
   gif_renderer
   ascii_renderer
+  png_renderer
   grid_diff)
- (libraries str logs vte gg vg mosaic.ansi gif freetype harfbuzz vcr_fonts))
+ (libraries
+  str
+  unix
+  matrix.vte
+  matrix.ansi
+  logs
+  gg
+  vg
+  gif
+  freetype
+  harfbuzz
+  vcr_fonts
+  vcr.png))

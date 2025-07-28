@@ -76,14 +76,12 @@ let run_eio (type model msg) ~sw ~env ?terminal ?(alt_screen = true)
               (* For non-alt-screen, clear terminal and reset tracking *)
               if not alt_screen then (
                 Program.with_terminal_mutex p ~protect:true (fun () ->
-                    let term =
-                      Terminal.create ~tty:true Unix.stdin Unix.stdout
-                    in
+                    let term = Tty.create ~tty:true Unix.stdin Unix.stdout in
                     let clear_seq = Ansi.clear_terminal in
-                    Terminal.write term
+                    Tty.write term
                       (Bytes.of_string clear_seq)
                       0 (String.length clear_seq);
-                    Terminal.flush term);
+                    Tty.flush term);
                 Program.clear_static_elements p);
 
               let window_handlers = Sub.collect_window [] subs in

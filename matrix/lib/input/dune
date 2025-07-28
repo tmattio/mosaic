@@ -1,4 +1,4 @@
 (library
  (name input)
- (public_name mosaic.input)
+ (public_name matrix.input)
  (libraries uutf))

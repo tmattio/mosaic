@@ -2,9 +2,9 @@
  (public_name mosaic)
  (name mosaic)
  (libraries
-  mosaic.terminal
-  mosaic.ansi
-  mosaic.input
+  matrix.tty
+  matrix.ansi
+  matrix.input
   mosaic.render
   mosaic.event
   mosaic.engine

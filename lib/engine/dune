@@ -7,8 +7,8 @@
   uutf
   unix
   mosaic.ui
-  mosaic.input
-  mosaic.terminal
+  matrix.input
+  matrix.tty
   mosaic.render
   mosaic.event
-  mosaic.ansi))
+  matrix.ansi))

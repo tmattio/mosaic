@@ -8,6 +8,6 @@
   eio.unix
   mosaic.ui
   mosaic.engine
-  mosaic.input
-  mosaic.terminal
+  matrix.input
+  matrix.tty
   mosaic.event))

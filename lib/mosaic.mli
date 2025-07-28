@@ -96,7 +96,7 @@ val app :
     ]} *)
 
 val run :
-  ?terminal:Terminal.t ->
+  ?terminal:Tty.t ->
   ?alt_screen:bool ->
   ?mouse:bool ->
   ?fps:int ->
@@ -131,7 +131,7 @@ val run :
 val run_eio :
   sw:Eio.Switch.t ->
   env:Eio_unix.Stdenv.base ->
-  ?terminal:Terminal.t ->
+  ?terminal:Tty.t ->
   ?alt_screen:bool ->
   ?mouse:bool ->
   ?fps:int ->

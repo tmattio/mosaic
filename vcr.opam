@@ -10,6 +10,7 @@ bug-reports: "https://github.com/tmattio/mosaic/issues"
 depends: [
   "ocaml"
   "dune" {>= "3.19"}
+  "matrix"
   "menhir"
   "vg"
   "cmdliner"

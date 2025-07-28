@@ -4,7 +4,7 @@ type t
 (** A handle to the core Mosaic runtime state. *)
 
 type config = {
-  terminal : Terminal.t option;
+  terminal : Tty.t option;
   alt_screen : bool;
   mouse : bool;
   fps : int;
@@ -105,5 +105,5 @@ val set_pending_updates : t -> bool -> unit
 (** [set_pending_updates t pending] sets whether there are pending updates to
     render. *)
 
-val terminal : t -> Terminal.t
+val terminal : t -> Tty.t
 (** [terminal t] returns the terminal associated with the program. *)

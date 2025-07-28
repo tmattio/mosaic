@@ -3,4 +3,4 @@
 (library
  (public_name mosaic.ui)
  (name ui)
- (libraries ansi render uutf uucp))
+ (libraries matrix.ansi render uutf uucp))

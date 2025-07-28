@@ -1,76 +1,44 @@
 open Ansi
+module Cell = Cell
+module Grid = Grid
 
-type style = {
-  bold : bool;
-  faint : bool; (* Corresponds to Ansi.style.`Dim` *)
-  italic : bool;
-  underline : bool;
-  double_underline : bool;
-  fg : Ansi.color;
-  bg : Ansi.color;
-  reversed : bool;
-  link : string option;
-  strikethrough : bool;
-  overline : bool;
-  blink : bool;
-}
-
-type cell = { char : Uchar.t; style : style }
 type cursor = { mutable row : int; mutable col : int; mutable visible : bool }
-
-let default_style =
-  {
-    bold = false;
-    faint = false;
-    italic = false;
-    underline = false;
-    double_underline = false;
-    fg = Default;
-    bg = Default;
-    reversed = false;
-    link = None;
-    strikethrough = false;
-    overline = false;
-    blink = false;
-  }
-
-let empty_cell = None
 
 (* The `grid` and `cursor` fields are changed to be non-mutable.
    Their *contents* are mutable, but the record fields themselves are never
    re-assigned, which is what the original warning was about. *)
 type t = {
-  grid : cell option array array;
-  scrollback : cell option array Ring_buffer.t;
+  grid : Grid.t;
+  scrollback : Cell.t option array Ring_buffer.t;
   scrollback_size : int;
   cursor : cursor;
-  mutable gfx_state : style;
+  mutable gfx_state : Cell.style;
   parser : Parser.t;
   mutable title : string;
   mutable dirty : bool;  (** Set when terminal state changes *)
   (* Alternate screen buffer support *)
-  alt_grid : cell option array array;
+  alt_grid : Grid.t;
   mutable in_alternate : bool;
   mutable scroll_top : int;  (** Top of scroll region (0-based) *)
   mutable scroll_bottom : int;  (** Bottom of scroll region (0-based) *)
   mutable cursor_saved : (int * int * bool) option;  (** Saved cursor state *)
-  mutable gfx_state_saved : style option;  (** Saved graphics state *)
+  mutable gfx_state_saved : Cell.style option;  (** Saved graphics state *)
   mutable origin_mode : bool;  (** DECOM - Origin mode *)
 }
 
-let rows (t : t) = Array.length t.grid
-let cols (t : t) = if rows t = 0 then 0 else Array.length t.grid.(0)
+let rows (t : t) = Grid.rows t.grid
+let cols (t : t) = Grid.cols t.grid
 
 let create ?(scrollback = 1000) ~rows ~cols () =
-  let grid = Array.make_matrix rows cols empty_cell in
-  let alt_grid = Array.make_matrix rows cols empty_cell in
-  let empty_row = Array.make cols empty_cell in
+  let grid = Grid.create ~rows ~cols in
+  let alt_grid = Grid.create ~rows ~cols in
+  let empty_row = Grid.make_empty_row ~cols in
   {
     grid;
     scrollback = Ring_buffer.create scrollback empty_row;
     scrollback_size = scrollback;
     cursor = { row = 0; col = 0; visible = true };
-    gfx_state = default_style;
+    gfx_state = Cell.default_style;
     parser = Parser.create ();
     title = "";
     dirty = false;
@@ -104,17 +72,11 @@ let set_cursor_visible (t : t) visible =
     mark_dirty t)
 
 let clear_line t row from_col =
-  for i = from_col to cols t - 1 do
-    t.grid.(row).(i) <- empty_cell
-  done;
+  Grid.clear_line t.grid row from_col;
   if from_col < cols t then mark_dirty t
 
 let clear_screen t =
-  for r = 0 to rows t - 1 do
-    for c = 0 to cols t - 1 do
-      t.grid.(r).(c) <- empty_cell
-    done
-  done;
+  Grid.clear t.grid;
   mark_dirty t
 
 (* Alternate screen buffer support *)
@@ -126,13 +88,7 @@ let switch_to_alternate t save_cursor =
       t.gfx_state_saved <- Some t.gfx_state);
 
     (* Swap grids *)
-    for r = 0 to rows t - 1 do
-      for c = 0 to cols t - 1 do
-        let temp = t.grid.(r).(c) in
-        t.grid.(r).(c) <- t.alt_grid.(r).(c);
-        t.alt_grid.(r).(c) <- temp
-      done
-    done;
+    Grid.swap (t.grid, t.alt_grid);
 
     (* Clear the alternate screen *)
     clear_screen t;
@@ -147,13 +103,7 @@ let switch_to_alternate t save_cursor =
 let switch_to_main t restore_cursor =
   if t.in_alternate then (
     (* Swap grids back *)
-    for r = 0 to rows t - 1 do
-      for c = 0 to cols t - 1 do
-        let temp = t.grid.(r).(c) in
-        t.grid.(r).(c) <- t.alt_grid.(r).(c);
-        t.alt_grid.(r).(c) <- temp
-      done
-    done;
+    Grid.swap (t.grid, t.alt_grid);
 
     (* Restore cursor and graphics state if saved *)
     (if restore_cursor then
@@ -184,19 +134,20 @@ let scroll_up (vte : t) n =
     if (not vte.in_alternate) && vte.scroll_top = 0 && vte.scrollback_size > 0
     then
       for i = 0 to actual_n - 1 do
-        if vte.scroll_top + i < Array.length vte.grid then
+        if vte.scroll_top + i < rows vte then
           Ring_buffer.push vte.scrollback
-            (Array.copy vte.grid.(vte.scroll_top + i))
+            (Grid.copy_row vte.grid (vte.scroll_top + i))
       done;
 
     (* Shift lines up within scroll region *)
     for r = vte.scroll_top to vte.scroll_bottom - actual_n do
-      vte.grid.(r) <- vte.grid.(r + actual_n)
+      let row_to_copy = Grid.copy_row vte.grid (r + actual_n) in
+      Grid.set_row vte.grid r row_to_copy
     done;
 
     (* Clear bottom lines of scroll region *)
     for r = vte.scroll_bottom - actual_n + 1 to vte.scroll_bottom do
-      vte.grid.(r) <- Array.make (cols vte) empty_cell
+      Grid.set_row vte.grid r (Grid.make_empty_row ~cols:(cols vte))
     done;
 
     mark_dirty vte)
@@ -208,12 +159,13 @@ let scroll_down (t : t) n =
 
     (* Shift lines down within scroll region *)
     for r = t.scroll_bottom downto t.scroll_top + actual_n do
-      t.grid.(r) <- t.grid.(r - actual_n)
+      let row_to_copy = Grid.copy_row t.grid (r - actual_n) in
+      Grid.set_row t.grid r row_to_copy
     done;
 
     (* Clear top lines of scroll region *)
     for r = t.scroll_top to t.scroll_top + actual_n - 1 do
-      t.grid.(r) <- Array.make (cols t) empty_cell
+      Grid.set_row t.grid r (Grid.make_empty_row ~cols:(cols t))
     done;
 
     mark_dirty t)
@@ -231,25 +183,9 @@ let advance_cursor (t : t) =
 let put_char (t : t) c =
   let { row; col; _ } = t.cursor in
   if row < rows t && col < cols t then (
-    t.grid.(row).(col) <- Some { char = c; style = t.gfx_state };
+    Grid.set t.grid ~row ~col (Some { Cell.char = c; style = t.gfx_state });
     mark_dirty t);
   advance_cursor t
-
-let apply_sgr_attr state (attr : Ansi.attr) =
-  match attr with
-  | `Reset -> default_style
-  | `Bold -> { state with bold = true }
-  | `Dim -> { state with faint = true }
-  | `Italic -> { state with italic = true }
-  | `Underline -> { state with underline = true }
-  | `Double_underline -> { state with double_underline = true }
-  | `Reverse -> { state with reversed = true }
-  | `Fg fg -> { state with fg }
-  | `Bg bg -> { state with bg }
-  | `Blink -> { state with blink = true }
-  | `Strikethrough -> { state with strikethrough = true }
-  | `Overline -> { state with overline = true }
-  | `Conceal | `Framed | `Encircled -> state (* Not visually implemented *)
 
 let handle_control t (ctrl : Parser.control) =
   match ctrl with
@@ -273,9 +209,8 @@ let handle_control t (ctrl : Parser.control) =
           for r = 0 to t.cursor.row - 1 do
             clear_line t r 0
           done;
-          for c = 0 to t.cursor.col do
-            t.grid.(t.cursor.row).(c) <- empty_cell
-          done;
+          Grid.clear_rect t.grid ~row_start:t.cursor.row ~row_end:t.cursor.row
+            ~col_start:0 ~col_end:t.cursor.col;
           if t.cursor.col >= 0 then mark_dirty t
       | 2 | 3 ->
           clear_screen t;
@@ -285,9 +220,8 @@ let handle_control t (ctrl : Parser.control) =
       match n with
       | 0 -> clear_line t t.cursor.row t.cursor.col
       | 1 ->
-          for c = 0 to t.cursor.col do
-            t.grid.(t.cursor.row).(c) <- empty_cell
-          done;
+          Grid.clear_rect t.grid ~row_start:t.cursor.row ~row_end:t.cursor.row
+            ~col_start:0 ~col_end:t.cursor.col;
           if t.cursor.col >= 0 then mark_dirty t
       | 2 -> clear_line t t.cursor.row 0
       | _ -> ())
@@ -301,7 +235,7 @@ let handle_control t (ctrl : Parser.control) =
       t.gfx_state <- { t.gfx_state with link = None };
       mark_dirty t
   | Reset ->
-      t.gfx_state <- default_style;
+      t.gfx_state <- Cell.default_style;
       clear_screen t;
       set_cursor t ~row:0 ~col:0;
       mark_dirty t
@@ -407,7 +341,7 @@ let handle_text t text =
 let handle_token t = function
   | Parser.Text s -> handle_text t s
   | Parser.SGR attrs ->
-      let new_state = List.fold_left apply_sgr_attr t.gfx_state attrs in
+      let new_state = List.fold_left Cell.apply_sgr_attr t.gfx_state attrs in
       if new_state <> t.gfx_state then (
         t.gfx_state <- new_state;
         mark_dirty t)
@@ -417,27 +351,7 @@ let feed t bytes ofs len =
   let tokens = Parser.feed t.parser bytes ofs len in
   List.iter (handle_token t) tokens
 
-let to_string_grid t =
-  let buffer = Buffer.create (rows t * (cols t + 1)) in
-  for r = 0 to rows t - 1 do
-    for c = 0 to cols t - 1 do
-      match t.grid.(r).(c) with
-      | None -> Buffer.add_char buffer ' '
-      | Some cell -> Buffer.add_utf_8_uchar buffer cell.char
-    done;
-    if r < rows t - 1 then Buffer.add_char buffer '\n'
-  done;
-  let lines = String.split_on_char '\n' (Buffer.contents buffer) in
-  let trim_right s =
-    let len = String.length s in
-    let rec find_end i =
-      if i < 0 || s.[i] <> ' ' then i + 1 else find_end (i - 1)
-    in
-    let end_pos = find_end (len - 1) in
-    if end_pos = len then s else String.sub s 0 end_pos
-  in
-  String.concat "\n" (List.map trim_right lines)
-
+let to_string_grid t = Grid.to_string t.grid
 let cursor_pos (t : t) = (t.cursor.row, t.cursor.col)
 let is_cursor_visible (t : t) = t.cursor.visible
 let title (t : t) = t.title
@@ -447,7 +361,7 @@ let reset t =
   if t.in_alternate then switch_to_main t false;
   clear_screen t;
   set_cursor t ~row:0 ~col:0;
-  t.gfx_state <- default_style;
+  t.gfx_state <- Cell.default_style;
   Parser.reset t.parser;
   t.title <- "";
   Ring_buffer.clear t.scrollback;
@@ -456,7 +370,4 @@ let reset t =
   t.origin_mode <- false;
   mark_dirty t
 
-let get_cell t ~row ~col =
-  if row >= 0 && row < rows t && col >= 0 && col < cols t then
-    t.grid.(row).(col)
-  else None
+let get_cell t ~row ~col = Grid.get t.grid ~row ~col

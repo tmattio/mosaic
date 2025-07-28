@@ -1,7 +1,0 @@
-(library
- (name terminal)
- (public_name mosaic.terminal)
- (libraries unix ansi)
- (foreign_stubs
-  (language c)
-  (names terminal_stubs)))

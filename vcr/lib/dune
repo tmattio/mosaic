@@ -9,7 +9,7 @@
   eio_main
   eio.unix
   logs
-  vcr.pty
+  matrix.pty
+  matrix.vte
   vcr.renderer
-  vcr.tape
-  vcr.vte))
+  vcr.tape))

@@ -1,6 +1,5 @@
 open Gg
 open Vg
-open Vte
 
 type theme = {
   fg : color;

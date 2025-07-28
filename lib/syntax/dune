@@ -3,7 +3,7 @@
 (library
  (name mosaic_syntax)
  (public_name mosaic.syntax)
- (libraries textmate-language mosaic.ui mosaic.ansi yojson))
+ (libraries textmate-language mosaic.ui matrix.ansi yojson))
 
 (rule
  (mode promote)

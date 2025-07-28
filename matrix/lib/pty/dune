@@ -1,7 +1,7 @@
 (library
  (name pty)
- (public_name vcr.pty)
+ (public_name matrix.pty)
  (foreign_stubs
   (language c)
   (names pty_stubs))
- (libraries logs unix))
+ (libraries unix))

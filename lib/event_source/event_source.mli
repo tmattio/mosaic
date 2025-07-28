@@ -14,7 +14,7 @@ val create :
   ?mouse:bool ->
   ?paste_threshold:float ->
   ?paste_min_chars:int ->
-  Terminal.t ->
+  Tty.t ->
   t
 (** [create ~sw ~env ?mouse ?paste_threshold ?paste_min_chars terminal] creates
     an event source attached to the switch.
