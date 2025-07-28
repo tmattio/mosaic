@@ -100,7 +100,7 @@ type t = {
       (** Previous frame for optimization *)
   mutable working_pixels : (int * int * int) array option;
       (** Working buffer to avoid repeated allocations *)
-  mutable previous_grid : Vte.Cell.t option array array option;
+  mutable previous_grid : Vte.Grid.t option;
       (** Copy of previous grid state for diffing *)
   mutable full_width : int;
   mutable full_height : int;
@@ -331,10 +331,7 @@ let capture_frame t =
   in
 
   (* Get current grid state *)
-  let current_grid =
-    Array.init rows (fun r ->
-        Array.init cols (fun c -> Vte.get_cell t.vte ~row:r ~col:c))
-  in
+  let current_grid = Vte.get_grid t.vte in
 
   (* Get or create working buffer - reuse to avoid allocations *)
   let pixels =
@@ -433,7 +430,7 @@ let capture_frame t =
           | None -> ()
           | Some cell -> (
               (* Render the cell *)
-              let style = cell.style in
+              let style = cell.attrs in
               let fg_ansi, bg_ansi =
                 if style.reversed then (style.bg, style.fg)
                 else (style.fg, style.bg)
@@ -460,8 +457,7 @@ let capture_frame t =
               match t.font_renderer with
               | Bitmap _ ->
                   let ch =
-                    try Uchar.to_char cell.char with Invalid_argument _ -> '?'
-                    (* Non-ASCII character *)
+                    if String.length cell.glyph > 0 then cell.glyph.[0] else ' '
                   in
                   Font.render_char pixels total_width total_height x_start
                     y_start ch fg_color bg_color t.config.char_width
@@ -476,7 +472,12 @@ let capture_frame t =
                     | false, false -> fonts.regular
                   in
                   (* Render using FreeType *)
-                  let unicode = Uchar.to_int cell.char in
+                  let ch =
+                    if String.length cell.glyph > 0 then
+                      Uchar.of_int (Char.code cell.glyph.[0])
+                    else Uchar.of_int 0x20 (* space *)
+                  in
+                  let unicode = Uchar.to_int ch in
                   try
                     let bitmap_str, metrics, pitch =
                       Freetype.load_and_render_char ft unicode
@@ -548,9 +549,8 @@ let capture_frame t =
                         m "Failed to render character U+%04X: %s" unicode
                           (Printexc.to_string exn));
                     let ch =
-                      try Uchar.to_char cell.char
-                      with Invalid_argument _ -> '?'
-                      (* Non-ASCII character *)
+                      if String.length cell.glyph > 0 then cell.glyph.[0]
+                      else ' '
                     in
                     Font.render_char pixels total_width total_height x_start
                       y_start ch fg_color bg_color t.config.char_width

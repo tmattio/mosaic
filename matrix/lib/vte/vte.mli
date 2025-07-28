@@ -65,6 +65,20 @@ val is_cursor_visible : t -> bool
 val set_cursor_visible : t -> bool -> unit
 (** [set_cursor_visible t visible] sets whether the cursor should be visible. *)
 
+val is_cursor_key_mode : t -> bool
+(** [is_cursor_key_mode t] returns [true] if cursor keys are in application
+    mode. *)
+
+val is_insert_mode : t -> bool
+(** [is_insert_mode t] returns [true] if insert mode is active. *)
+
+val is_auto_newline_mode : t -> bool
+(** [is_auto_newline_mode t] returns [true] if automatic newline mode is active.
+*)
+
+val is_auto_wrap_mode : t -> bool
+(** [is_auto_wrap_mode t] returns [true] if automatic wrap mode is active. *)
+
 val title : t -> string
 (** [title t] returns the current terminal window title as set by an OSC
     (Operating System Command) sequence. *)
@@ -79,6 +93,10 @@ val clear_dirty : t -> unit
     should be called after capturing or rendering the current state. *)
 
 (** {1 Grid Manipulation} *)
+
+val get_grid : t -> Grid.t
+(** [get_grid t] returns the current grid state. Useful for diffing and advanced
+    rendering operations. *)
 
 val scroll_up : t -> int -> unit
 (** [scroll_up t n] scrolls the grid content up by [n] lines. New blank lines

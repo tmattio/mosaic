@@ -172,7 +172,7 @@ CAMLprim value ocaml_raise_fork_error(value unit) {
   CAMLreturn(Val_unit);     // Unreachable
 }
 
-#else  // For Windows and other unsupported platforms
+#elif !defined(_WIN32)  // For other unsupported platforms (not Windows)
 
 CAMLprim value ocaml_pty_open(value unit) {
   uerror("open_pty", caml_copy_string("unsupported platform"));
@@ -193,5 +193,9 @@ CAMLprim value ocaml_pty_setsid_and_setctty(value slave_fd) {
   uerror("setsid_and_setctty", caml_copy_string("unsupported platform"));
   return Val_unit;
 }
+CAMLprim value ocaml_raise_fork_error(value unit) {
+  uerror("fork", caml_copy_string("unsupported platform"));
+  return Val_unit;
+}
 
-#endif
+#endif  // Windows implementations are in pty_win32.c

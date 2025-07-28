@@ -3,8 +3,11 @@
     This module provides operations for managing the character grid that
     represents the terminal display. *)
 
-type t = Cell.t option array array
-(** The type of a grid - a 2D array of optional cells *)
+type rect = { row : int; col : int; width : int; height : int }
+(** A rectangular region in the grid *)
+
+type t
+(** The type of a grid with damage tracking *)
 
 val create : rows:int -> cols:int -> t
 (** [create ~rows ~cols] creates a new empty grid with the specified dimensions
@@ -50,6 +53,12 @@ val make_empty_row : cols:int -> Cell.t option array
 val swap : t * t -> unit
 (** [swap (grid1, grid2)] swaps the contents of two grids. Both grids must have
     the same dimensions *)
+
+(** {2 Damage Tracking} *)
+
+val flush_damage : t -> rect list * unit
+(** [flush_damage grid] returns the list of dirty rectangles since the last
+    flush and clears the damage tracking. The second component is unit. *)
 
 val to_string : t -> string
 (** [to_string grid] returns a string representation of the grid content,

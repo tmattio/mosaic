@@ -24,6 +24,10 @@ type t = {
   mutable cursor_saved : (int * int * bool) option;  (** Saved cursor state *)
   mutable gfx_state_saved : Cell.style option;  (** Saved graphics state *)
   mutable origin_mode : bool;  (** DECOM - Origin mode *)
+  mutable auto_wrap_mode : bool;  (** DECAWM - Auto wrap mode *)
+  mutable cursor_key_mode : bool;  (** DECCKM - Cursor key application mode *)
+  mutable insert_mode : bool;  (** IRM - Insert/Replace mode *)
+  mutable auto_newline_mode : bool;  (** LNM - Automatic newline *)
 }
 
 let rows (t : t) = Grid.rows t.grid
@@ -49,6 +53,10 @@ let create ?(scrollback = 1000) ~rows ~cols () =
     cursor_saved = None;
     gfx_state_saved = None;
     origin_mode = false;
+    auto_wrap_mode = true;
+    cursor_key_mode = false;
+    insert_mode = false;
+    auto_newline_mode = false;
   }
 
 let clamp ~min ~max v = if v < min then min else if v > max then max else v
@@ -172,20 +180,77 @@ let scroll_down (t : t) n =
 
 let advance_cursor (t : t) =
   let { row; col; _ } = t.cursor in
-  if col + 1 >= cols t then
+  if col + 1 >= cols t then (
     (* Check if we're at the bottom of the scroll region *)
-    if row >= t.scroll_bottom then (
-      scroll_up t 1;
-      set_cursor t ~row:t.scroll_bottom ~col:0)
-    else set_cursor t ~row:(row + 1) ~col:0
-  else set_cursor t ~row ~col:(col + 1)
+    if t.auto_wrap_mode then (
+      if row >= t.scroll_bottom then (
+        scroll_up t 1;
+        set_cursor t ~row:t.scroll_bottom ~col:0)
+      else set_cursor t ~row:(row + 1) ~col:0)
+    (* else stay at the last column when auto_wrap is disabled *)
+  ) else 
+    set_cursor t ~row ~col:(col + 1)
 
 let put_char (t : t) c =
   let { row; col; _ } = t.cursor in
+
+  (* Calculate character width first *)
+  let code = Uchar.to_int c in
+  let width =
+    if
+      (code >= 0x1100 && code <= 0x115F)
+      (* Hangul Jamo *)
+      || (code >= 0x2E80 && code <= 0x9FFF)
+      (* CJK *)
+      || (code >= 0xAC00 && code <= 0xD7A3)
+      (* Hangul Syllables *)
+      || (code >= 0xF900 && code <= 0xFAFF)
+      (* CJK Compatibility *)
+      || (code >= 0xFE30 && code <= 0xFE6F)
+      (* CJK Compatibility Forms *)
+      || (code >= 0xFF00 && code <= 0xFF60)
+      ||
+      (* Fullwidth Forms *)
+      (code >= 0xFFE0 && code <= 0xFFE6 (* Fullwidth Forms *))
+    then 2
+    else if code = 0 || (code >= 0x0300 && code <= 0x036F (* Combining marks *))
+    then 0
+    else 1
+  in
+
+
+  (* Place character if within bounds *)
   if row < rows t && col < cols t then (
-    Grid.set t.grid ~row ~col (Some { Cell.char = c; style = t.gfx_state });
+    (* In insert mode, shift existing characters to the right *)
+    if t.insert_mode && col < cols t - 1 then (
+      (* Copy the line and shift it right *)
+      let line = Grid.copy_row t.grid row in
+      for i = cols t - 1 downto col + 1 do
+        if i > 0 then line.(i) <- line.(i - 1)
+      done;
+      Grid.set_row t.grid row line;
+      mark_dirty t);
+
+    let glyph = Buffer.create 4 in
+    Buffer.add_utf_8_uchar glyph c;
+    Grid.set t.grid ~row ~col
+      (Some { Cell.glyph = Buffer.contents glyph; width; attrs = t.gfx_state });
     mark_dirty t);
-  advance_cursor t
+
+  (* Handle cursor advancement based on character width *)
+  if width = 0 then
+    (* Combining character - don't advance cursor *)
+    ()
+  else if width = 2 then (
+    (* Wide character - advance cursor twice *)
+    advance_cursor t;
+    if t.cursor.col < cols t then (
+      Grid.set t.grid ~row:t.cursor.row ~col:t.cursor.col None;
+      mark_dirty t);
+    advance_cursor t)
+  else (
+    (* Normal character - advance cursor once *)
+    advance_cursor t)
 
 let handle_control t (ctrl : Parser.control) =
   match ctrl with
@@ -272,6 +337,30 @@ let handle_control t (ctrl : Parser.control) =
           (* DECOM - Reset origin mode *)
           t.origin_mode <- false;
           set_cursor t ~row:0 ~col:0
+      | s when String.starts_with ~prefix:"CSI[?7h" s ->
+          (* DECAWM - Set auto wrap mode *)
+          t.auto_wrap_mode <- true
+      | s when String.starts_with ~prefix:"CSI[?7l" s ->
+          (* DECAWM - Reset auto wrap mode *)
+          t.auto_wrap_mode <- false
+      | s when String.starts_with ~prefix:"CSI[?1h" s ->
+          (* DECCKM - Set cursor key to application mode *)
+          t.cursor_key_mode <- true
+      | s when String.starts_with ~prefix:"CSI[?1l" s ->
+          (* DECCKM - Set cursor key to cursor mode *)
+          t.cursor_key_mode <- false
+      | s when String.starts_with ~prefix:"CSI[4h" s ->
+          (* IRM - Set insert mode *)
+          t.insert_mode <- true
+      | s when String.starts_with ~prefix:"CSI[4l" s ->
+          (* IRM - Reset insert mode *)
+          t.insert_mode <- false
+      | s when String.starts_with ~prefix:"CSI[20h" s ->
+          (* LNM - Set automatic newline mode *)
+          t.auto_newline_mode <- true
+      | s when String.starts_with ~prefix:"CSI[20l" s ->
+          (* LNM - Reset automatic newline mode *)
+          t.auto_newline_mode <- false
       | s when String.starts_with ~prefix:"CSI[s" s ->
           (* DECSC - Save cursor *)
           t.cursor_saved <- Some (t.cursor.row, t.cursor.col, t.cursor.visible);
@@ -317,13 +406,17 @@ let handle_text t text =
     | `Uchar u ->
         (match Uchar.to_int u with
         | 0x0a ->
+            (* Line Feed *)
             if t.cursor.row >= t.scroll_bottom then scroll_up t 1
             else (
               t.cursor.row <- t.cursor.row + 1;
               mark_dirty t);
+            (* Most terminals treat LF as LF+CR by default *)
             t.cursor.col <- 0;
             mark_dirty t
-        | 0x0d -> set_cursor t ~row:t.cursor.row ~col:0
+        | 0x0d ->
+            (* Carriage Return *)
+            set_cursor t ~row:t.cursor.row ~col:0
         | 0x08 -> set_cursor t ~row:t.cursor.row ~col:(t.cursor.col - 1)
         | 0x09 ->
             let next_tab = ((t.cursor.col / 8) + 1) * 8 in
@@ -354,6 +447,10 @@ let feed t bytes ofs len =
 let to_string_grid t = Grid.to_string t.grid
 let cursor_pos (t : t) = (t.cursor.row, t.cursor.col)
 let is_cursor_visible (t : t) = t.cursor.visible
+let is_cursor_key_mode t = t.cursor_key_mode
+let is_insert_mode t = t.insert_mode
+let is_auto_newline_mode t = t.auto_newline_mode
+let is_auto_wrap_mode t = t.auto_wrap_mode
 let title (t : t) = t.title
 
 let reset t =
@@ -368,6 +465,11 @@ let reset t =
   t.scroll_top <- 0;
   t.scroll_bottom <- rows t - 1;
   t.origin_mode <- false;
+  t.auto_wrap_mode <- true;
+  t.cursor_key_mode <- false;
+  t.insert_mode <- false;
+  t.auto_newline_mode <- false;
   mark_dirty t
 
 let get_cell t ~row ~col = Grid.get t.grid ~row ~col
+let get_grid t = t.grid

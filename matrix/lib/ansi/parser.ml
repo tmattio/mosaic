@@ -117,12 +117,13 @@ let parse_sgr_params params =
 
 let parse_csi body final : token option =
   let ints =
-    if body = "" then [| 0 |]
+    if body = "" then [||]
     else
       Array.of_list
         (List.filter_map int_of_string_opt (String.split_on_char ';' body))
   in
   let get n = if n < Array.length ints then ints.(n) else 1 in
+  let get_default default n = if n < Array.length ints then ints.(n) else default in
   match final with
   | 'A' -> Some (Control (CUU (get 0)))
   | 'B' -> Some (Control (CUD (get 0)))
@@ -133,8 +134,8 @@ let parse_csi body final : token option =
   | 'G' -> Some (Control (CHA (get 0)))
   | 'd' -> Some (Control (VPA (get 0)))
   | 'H' | 'f' -> Some (Control (CUP (get 0, get 1)))
-  | 'J' -> Some (Control (ED (get 0)))
-  | 'K' -> Some (Control (EL (get 0)))
+  | 'J' -> Some (Control (ED (get_default 0 0)))
+  | 'K' -> Some (Control (EL (get_default 0 0)))
   | 'm' -> Some (SGR (parse_sgr_params ints))
   | _ -> Some (Control (Unknown (Printf.sprintf "CSI[%s%c" body final)))
 

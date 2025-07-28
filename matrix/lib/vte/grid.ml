@@ -1,30 +1,42 @@
-type t = Cell.t option array array
+type rect = { row : int; col : int; width : int; height : int }
+type t = { cells : Cell.t option array array; dirty : rect list ref }
 
-let create ~rows ~cols = Array.make_matrix rows cols Cell.empty
-let rows grid = Array.length grid
-let cols grid = if rows grid = 0 then 0 else Array.length grid.(0)
+let create ~rows ~cols =
+  { cells = Array.make_matrix rows cols Cell.empty; dirty = ref [] }
+
+let rows grid = Array.length grid.cells
+let cols grid = if rows grid = 0 then 0 else Array.length grid.cells.(0)
 
 let get grid ~row ~col =
   if row >= 0 && row < rows grid && col >= 0 && col < cols grid then
-    grid.(row).(col)
+    grid.cells.(row).(col)
   else None
 
 let set grid ~row ~col cell =
-  if row >= 0 && row < rows grid && col >= 0 && col < cols grid then
-    grid.(row).(col) <- cell
+  if row >= 0 && row < rows grid && col >= 0 && col < cols grid then (
+    grid.cells.(row).(col) <- cell;
+    grid.dirty := { row; col; width = 1; height = 1 } :: !(grid.dirty))
 
 let clear grid =
-  for r = 0 to rows grid - 1 do
-    for c = 0 to cols grid - 1 do
-      grid.(r).(c) <- Cell.empty
+  let nrows = rows grid in
+  let ncols = cols grid in
+  for r = 0 to nrows - 1 do
+    for c = 0 to ncols - 1 do
+      grid.cells.(r).(c) <- Cell.empty
     done
-  done
+  done;
+  grid.dirty := [ { row = 0; col = 0; width = ncols; height = nrows } ]
 
 let clear_line grid row from_col =
-  if row >= 0 && row < rows grid then
-    for i = from_col to cols grid - 1 do
-      grid.(row).(i) <- Cell.empty
-    done
+  if row >= 0 && row < rows grid then (
+    let ncols = cols grid in
+    for i = from_col to ncols - 1 do
+      grid.cells.(row).(i) <- Cell.empty
+    done;
+    if from_col < ncols then
+      grid.dirty :=
+        { row; col = from_col; width = ncols - from_col; height = 1 }
+        :: !(grid.dirty))
 
 let clear_rect grid ~row_start ~row_end ~col_start ~col_end =
   let row_start = max 0 row_start in
@@ -33,38 +45,64 @@ let clear_rect grid ~row_start ~row_end ~col_start ~col_end =
   let col_end = min (cols grid - 1) col_end in
   for r = row_start to row_end do
     for c = col_start to col_end do
-      grid.(r).(c) <- Cell.empty
+      grid.cells.(r).(c) <- Cell.empty
     done
-  done
+  done;
+  if row_start <= row_end && col_start <= col_end then
+    grid.dirty :=
+      {
+        row = row_start;
+        col = col_start;
+        width = col_end - col_start + 1;
+        height = row_end - row_start + 1;
+      }
+      :: !(grid.dirty)
 
 let copy_row grid row =
-  if row >= 0 && row < rows grid then Array.copy grid.(row) else [||]
+  if row >= 0 && row < rows grid then Array.copy grid.cells.(row) else [||]
 
 let set_row grid row new_row =
-  if row >= 0 && row < rows grid && Array.length new_row = cols grid then
-    grid.(row) <- new_row
+  if row >= 0 && row < rows grid && Array.length new_row = cols grid then (
+    grid.cells.(row) <- new_row;
+    grid.dirty :=
+      { row; col = 0; width = cols grid; height = 1 } :: !(grid.dirty))
 
 let make_empty_row ~cols = Array.make cols Cell.empty
 
+let flush_damage grid =
+  let damage = !(grid.dirty) in
+  grid.dirty := [];
+  (damage, ())
+
 let swap grids =
   let grid1, grid2 = grids in
-  for r = 0 to rows grid1 - 1 do
-    for c = 0 to cols grid1 - 1 do
-      let temp = grid1.(r).(c) in
-      grid1.(r).(c) <- grid2.(r).(c);
-      grid2.(r).(c) <- temp
+  let nrows = rows grid1 in
+  let ncols = cols grid1 in
+  for r = 0 to nrows - 1 do
+    for c = 0 to ncols - 1 do
+      let temp = grid1.cells.(r).(c) in
+      grid1.cells.(r).(c) <- grid2.cells.(r).(c);
+      grid2.cells.(r).(c) <- temp
     done
-  done
+  done;
+  grid1.dirty := [ { row = 0; col = 0; width = ncols; height = nrows } ];
+  grid2.dirty := [ { row = 0; col = 0; width = ncols; height = nrows } ]
 
 let to_string grid =
-  let buffer = Buffer.create (rows grid * (cols grid + 1)) in
-  for r = 0 to rows grid - 1 do
-    for c = 0 to cols grid - 1 do
-      match grid.(r).(c) with
-      | None -> Buffer.add_char buffer ' '
-      | Some cell -> Buffer.add_utf_8_uchar buffer cell.Cell.char
+  let nrows = rows grid in
+  let ncols = cols grid in
+  let buffer = Buffer.create (nrows * (ncols + 1)) in
+  for r = 0 to nrows - 1 do
+    let c = ref 0 in
+    while !c < ncols do
+      match grid.cells.(r).(!c) with
+      | None -> Buffer.add_char buffer ' '; incr c
+      | Some cell -> 
+          Buffer.add_string buffer cell.Cell.glyph;
+          (* Skip continuation cells for wide characters *)
+          c := !c + cell.Cell.width
     done;
-    if r < rows grid - 1 then Buffer.add_char buffer '\n'
+    if r < nrows - 1 then Buffer.add_char buffer '\n'
   done;
   let lines = String.split_on_char '\n' (Buffer.contents buffer) in
   let trim_right s =
@@ -91,16 +129,16 @@ let cell_hash = function
   | None -> 0
   | Some cell ->
       let open Cell in
-      let char_code = Uchar.to_int cell.char in
+      let glyph_hash = Hashtbl.hash cell.glyph in
       let style_hash =
-        ((if cell.style.bold then 1 else 0) lsl 0)
-        + ((if cell.style.italic then 1 else 0) lsl 1)
-        + ((if cell.style.underline then 1 else 0) lsl 2)
-        + ((if cell.style.strikethrough then 1 else 0) lsl 3)
-        + ((if cell.style.reversed then 1 else 0) lsl 4)
-        + ((if cell.style.blink then 1 else 0) lsl 5)
+        ((if cell.attrs.bold then 1 else 0) lsl 0)
+        + ((if cell.attrs.italic then 1 else 0) lsl 1)
+        + ((if cell.attrs.underline then 1 else 0) lsl 2)
+        + ((if cell.attrs.strikethrough then 1 else 0) lsl 3)
+        + ((if cell.attrs.reversed then 1 else 0) lsl 4)
+        + ((if cell.attrs.blink then 1 else 0) lsl 5)
       in
-      char_code lxor style_hash
+      glyph_hash lxor style_hash
 
 (* Compute hash of a row for quick comparison *)
 let row_hash row =
@@ -108,10 +146,10 @@ let row_hash row =
 
 (* Find dirty rows between two grids *)
 let find_dirty_rows prev_grid curr_grid =
-  let rows = Array.length curr_grid in
-  let dirty = Array.make rows false in
-  for r = 0 to rows - 1 do
-    dirty.(r) <- row_hash prev_grid.(r) <> row_hash curr_grid.(r)
+  let nrows = rows curr_grid in
+  let dirty = Array.make nrows false in
+  for r = 0 to nrows - 1 do
+    dirty.(r) <- row_hash prev_grid.cells.(r) <> row_hash curr_grid.cells.(r)
   done;
   dirty
 
@@ -149,15 +187,15 @@ let find_cell_changes prev_grid curr_grid region =
 
   for row = region.min_row to region.max_row do
     for col = region.min_col to region.max_col do
-      let prev_cell = prev_grid.(row).(col) in
-      let curr_cell = curr_grid.(row).(col) in
+      let prev_cell = prev_grid.cells.(row).(col) in
+      let curr_cell = curr_grid.cells.(row).(col) in
 
       let cells_differ =
         match (prev_cell, curr_cell) with
         | None, None -> false
         | None, Some _ | Some _, None -> true
         | Some c1, Some c2 ->
-            c1.Cell.char <> c2.Cell.char || c1.Cell.style <> c2.Cell.style
+            c1.Cell.glyph <> c2.Cell.glyph || c1.Cell.attrs <> c2.Cell.attrs
       in
 
       if cells_differ then changed_cells := (row, col) :: !changed_cells

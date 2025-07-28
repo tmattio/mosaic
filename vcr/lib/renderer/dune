@@ -2,15 +2,6 @@
  (name renderer)
  (public_name vcr.renderer)
  (modules_without_implementation renderer_intf)
- (modules
-  renderer
-  renderer_intf
-  font_renderer
-  vg_renderer
-  gif_renderer
-  ascii_renderer
-  png_renderer
-  grid_diff)
  (libraries
   str
   unix

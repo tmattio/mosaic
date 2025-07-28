@@ -15,7 +15,11 @@ let get_line vte row =
     match Vte.get_cell vte ~row ~col with
     | None -> Buffer.add_char buf ' '
     | Some cell ->
-        let ch = try Uchar.to_char cell.char with _ -> '?' in
+        (* Use the first character of the glyph *)
+        let ch =
+          if String.length cell.Vte.Cell.glyph > 0 then cell.Vte.Cell.glyph.[0]
+          else '?'
+        in
         Buffer.add_char buf ch
   done;
   (* Trim trailing spaces *)
@@ -35,7 +39,9 @@ let get_visible_content vte =
 let get_char_at vte ~row ~col =
   match Vte.get_cell vte ~row ~col with
   | None -> ' '
-  | Some cell -> ( try Uchar.to_char cell.char with _ -> '?')
+  | Some cell ->
+      if String.length cell.Vte.Cell.glyph > 0 then cell.Vte.Cell.glyph.[0]
+      else '?'
 
 (** Basic text rendering tests *)
 let test_basic_text () =
@@ -80,6 +86,8 @@ let test_cursor_down () =
   feed_string vte "Line1";
   feed_string vte "\x1b[B";
   (* Cursor down *)
+  feed_string vte "\r";
+  (* Carriage return to start of line *)
   feed_string vte "Line2";
   check string "first line" "Line1" (get_line vte 0);
   check string "second line" "Line2" (get_line vte 1)
@@ -126,7 +134,9 @@ let test_clear_to_end_of_line () =
   (* Move to position 5 *)
   feed_string vte "\x1b[K";
   (* Clear to end of line *)
-  check string "clear to end" "Hello" (get_line vte 0)
+  let line = get_line vte 0 in
+  Printf.printf "After clear to end: line = %S\n" line;
+  check string "clear to end" "Hello" line
 
 let test_clear_to_beginning_of_line () =
   let vte = create_vte () in
@@ -168,35 +178,38 @@ let test_bold_text () =
   let vte = create_vte () in
   feed_string vte "\x1b[1mBold\x1b[0m Normal";
   match Vte.get_cell vte ~row:0 ~col:0 with
-  | Some cell -> check bool "bold attribute" true cell.style.bold
+  | Some cell -> check bool "bold attribute" true cell.Vte.Cell.attrs.bold
   | None -> fail "Expected cell at 0,0"
 
 let test_italic_text () =
   let vte = create_vte () in
   feed_string vte "\x1b[3mItalic\x1b[0m";
   match Vte.get_cell vte ~row:0 ~col:0 with
-  | Some cell -> check bool "italic attribute" true cell.style.italic
+  | Some cell -> check bool "italic attribute" true cell.Vte.Cell.attrs.italic
   | None -> fail "Expected cell at 0,0"
 
 let test_underline_text () =
   let vte = create_vte () in
   feed_string vte "\x1b[4mUnderline\x1b[0m";
   match Vte.get_cell vte ~row:0 ~col:0 with
-  | Some cell -> check bool "underline attribute" true cell.style.underline
+  | Some cell ->
+      check bool "underline attribute" true cell.Vte.Cell.attrs.underline
   | None -> fail "Expected cell at 0,0"
 
 let test_foreground_color () =
   let vte = create_vte () in
   feed_string vte "\x1b[31mRed\x1b[0m";
   match Vte.get_cell vte ~row:0 ~col:0 with
-  | Some cell -> check bool "red foreground" (cell.style.fg = Ansi.Red) true
+  | Some cell ->
+      check bool "red foreground" (cell.Vte.Cell.attrs.fg = Ansi.Red) true
   | None -> fail "Expected cell at 0,0"
 
 let test_background_color () =
   let vte = create_vte () in
   feed_string vte "\x1b[42mGreen BG\x1b[0m";
   match Vte.get_cell vte ~row:0 ~col:0 with
-  | Some cell -> check bool "green background" (cell.style.bg = Ansi.Green) true
+  | Some cell ->
+      check bool "green background" (cell.Vte.Cell.attrs.bg = Ansi.Green) true
   | None -> fail "Expected cell at 0,0"
 
 let test_256_color () =
@@ -204,7 +217,7 @@ let test_256_color () =
   feed_string vte "\x1b[38;5;196mColor 196\x1b[0m";
   match Vte.get_cell vte ~row:0 ~col:0 with
   | Some cell -> (
-      match cell.style.fg with
+      match cell.Vte.Cell.attrs.fg with
       | Ansi.Index 196 -> ()
       | _ -> fail "Expected color index 196")
   | None -> fail "Expected cell at 0,0"
@@ -214,7 +227,7 @@ let test_rgb_color () =
   feed_string vte "\x1b[38;2;255;128;0mRGB\x1b[0m";
   match Vte.get_cell vte ~row:0 ~col:0 with
   | Some cell -> (
-      match cell.style.fg with
+      match cell.Vte.Cell.attrs.fg with
       | Ansi.RGB (255, 128, 0) -> ()
       | _ -> fail "Expected RGB color")
   | None -> fail "Expected cell at 0,0"
@@ -323,7 +336,8 @@ let test_incomplete_sequence () =
   feed_string vte "Red";
   match Vte.get_cell vte ~row:0 ~col:0 with
   | Some cell ->
-      check bool "red foreground after incomplete" (cell.style.fg = Ansi.Red)
+      check bool "red foreground after incomplete"
+        (cell.Vte.Cell.attrs.fg = Ansi.Red)
         true
   | None -> fail "Expected cell at 0,0"
 

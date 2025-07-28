@@ -1,5 +1,4 @@
 (library
  (name vte)
  (public_name matrix.vte)
- (modules vte ring_buffer cell grid)
  (libraries uutf ansi str))

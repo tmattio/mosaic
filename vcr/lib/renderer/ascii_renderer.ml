@@ -25,8 +25,10 @@ let capture_frame t =
       | None -> Bytes.set line_bytes col ' '
       | Some cell ->
           let ch =
-            try Uchar.to_char cell.char with Invalid_argument _ -> '?'
-            (* Non-ASCII character *)
+            if String.length cell.glyph > 0 then
+              try Uchar.to_char (Uchar.of_int (Char.code cell.glyph.[0]))
+              with Invalid_argument _ -> cell.glyph.[0]
+            else ' '
           in
           Bytes.set line_bytes col ch;
           if ch <> ' ' then last_non_space := col

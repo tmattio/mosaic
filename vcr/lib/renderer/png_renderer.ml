@@ -108,10 +108,10 @@ let capture_frame t =
 
           (* Get colors *)
           let fg_color =
-            get_color t.config.theme cell.style.fg cell.style.reversed true
+            get_color t.config.theme cell.attrs.fg cell.attrs.reversed true
           in
           let bg_color =
-            get_color t.config.theme cell.style.bg cell.style.reversed false
+            get_color t.config.theme cell.attrs.bg cell.attrs.reversed false
           in
 
           (* Draw background *)
@@ -126,8 +126,13 @@ let capture_frame t =
           done;
 
           (* Draw character *)
-          render_char pixels full_width full_height x y cell.char fg_color
-            bg_color char_width char_height
+          let ch =
+            if String.length cell.glyph > 0 then
+              Uchar.of_int (Char.code cell.glyph.[0])
+            else Uchar.of_int 0x20 (* space *)
+          in
+          render_char pixels full_width full_height x y ch fg_color bg_color
+            char_width char_height
     done
   done;
 

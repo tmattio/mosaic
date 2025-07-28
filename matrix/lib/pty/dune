@@ -3,5 +3,5 @@
  (public_name matrix.pty)
  (foreign_stubs
   (language c)
-  (names pty_stubs))
+  (names pty_stubs pty_win32))
  (libraries unix))

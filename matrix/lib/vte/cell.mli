@@ -17,9 +17,13 @@ type style = {
 (** Represents the graphical styling of a single terminal cell. A consumer of
     this library will read these fields to determine how to render it. *)
 
-type t = { char : Uchar.t; style : style }
-(** Represents a single cell on the terminal grid, containing a Unicode
-    character and its associated style. *)
+type attr = style
+
+type t = { glyph : string; width : int; attrs : attr }
+(** Represents a single cell on the terminal grid, containing a UTF-8 grapheme
+    and its associated attributes. The width field indicates the display width:
+    0 for combining characters, 1 for normal characters, 2 for wide characters.
+*)
 
 val default_style : style
 (** The default style attributes for a new terminal or after a reset. *)

@@ -1,7 +1,6 @@
 (library
  (name vcr)
  (public_name vcr)
- (modules vcr)
  (libraries
   unix
   str

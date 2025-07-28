@@ -44,7 +44,7 @@ let test_cursor_position () =
   let text = Bytes.of_string "Hello 世界" in
   Vte.feed vte text 0 (Bytes.length text);
   let row, col = Vte.cursor_pos vte in
-  check (pair int int) "Cursor after unicode" (0, 8) (row, col)
+  check (pair int int) "Cursor after unicode" (0, 10) (row, col)
 
 let test_malformed_utf8 () =
   let vte = Vte.create ~rows:5 ~cols:20 () in

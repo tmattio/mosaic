@@ -130,7 +130,7 @@ let capture_frame t =
           match Vte.get_cell t.vte ~row:r ~col:c with
           | None -> ()
           | Some cell ->
-              let style = cell.style in
+              let style = cell.attrs in
               let fg_ansi, bg_ansi =
                 if style.reversed then (style.bg, style.fg)
                 else (style.fg, style.bg)
@@ -163,7 +163,12 @@ let capture_frame t =
               (* NOTE: Vg expects glyph IDs. We simplify by using the Uchar.to_int.
                A real implementation would use a font layout library like otf-layout
                to get correct glyph IDs and advances. *)
-              let glyph = Uchar.to_int cell.char in
+              let ch =
+                if String.length cell.glyph > 0 then
+                  Uchar.of_int (Char.code cell.glyph.[0])
+                else Uchar.of_int 0x20 (* space *)
+              in
+              let glyph = Uchar.to_int ch in
               let char_pos =
                 V2.add pos
                   (V2.v 0.
@@ -172,9 +177,7 @@ let capture_frame t =
 
               let char_image =
                 I.const fg_color
-                |> I.cut_glyphs
-                     ~text:(String.make 1 (Uchar.to_char cell.char))
-                     font [ glyph ]
+                |> I.cut_glyphs ~text:cell.glyph font [ glyph ]
                 |> I.move char_pos
               in
               images := char_image :: !images

@@ -8,9 +8,11 @@ type t
 type winsize = { rows : int; cols : int; x : int; y : int }
 (** A record representing the terminal window size. *)
 
-val to_file_descr : t -> Unix.file_descr
-(** [to_file_descr pty] returns the underlying Unix file descriptor for the pty.
-*)
+val in_fd : t -> Unix.file_descr
+(** [in_fd pty] returns the input file descriptor for the pty. *)
+
+val out_fd : t -> Unix.file_descr
+(** [out_fd pty] returns the output file descriptor for the pty. *)
 
 val close : t -> unit
 (** [close pty] closes the pseudo-terminal. This is equivalent to
@@ -43,26 +45,34 @@ val inherit_size : src:t -> dst:t -> unit
     applies it to the terminal [dst]. This is useful for propagating window size
     changes (e.g., from a SIGWINCH signal). *)
 
+val resize : t -> cols:int -> rows:int -> unit
+(** [resize t ~cols ~rows] sets the window size of the terminal to the specified
+    number of columns and rows. This is useful as a SIGWINCH helper.
+
+    @raise Unix.Unix_error on failure. *)
+
 val spawn :
-  prog:string ->
-  argv:string array ->
-  ?winsize:winsize ->
   ?env:string array ->
+  ?cwd:string ->
+  ?winsize:winsize ->
+  prog:string ->
+  args:string list ->
   unit ->
-  t * int
-(** [spawn ~prog ~argv ?winsize ?env ()] starts a new command in a
+  t
+(** [spawn ?env ?cwd ?winsize ~prog ~args] starts a new command in a
     pseudo-terminal. This function: 1. Creates a new pty/tty pair. 2. Forks a
     new process. 3. In the child, makes the tty its controlling terminal and
     connects its stdin, stdout, and stderr to it. 4. In the child, executes the
-    command [prog] with arguments [argv]. 5. In the parent, closes the tty and
-    returns the pty and the child's PID.
+    command [prog] with arguments [args]. 5. In the parent, closes the tty and
+    returns the pty.
 
-    If [winsize] is provided, it sets the initial terminal size. If [env] is
-    provided, it sets the environment variables for the child process.
+    If [env] is provided, it sets the environment variables for the child
+    process. If [cwd] is provided, it changes to that directory before executing
+    the command. If [winsize] is provided, it sets the initial terminal size.
 
     @raise Unix.Unix_error on failure.
 
-    @return (pty, pid) *)
+    @return the pty handle *)
 
 val with_pty : ?winsize:winsize -> (t -> t -> 'a) -> 'a
 (** [with_pty ?winsize f] opens a new pseudo-terminal pair, applies function [f]

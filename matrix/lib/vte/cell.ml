@@ -15,7 +15,8 @@ type style = {
   blink : bool;
 }
 
-type t = { char : Uchar.t; style : style }
+type attr = style
+type t = { glyph : string; width : int; attrs : attr }
 
 let default_style =
   {

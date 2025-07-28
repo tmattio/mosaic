@@ -205,7 +205,7 @@ let sleep_with_output state duration =
 
 (* Async version using Eio *)
 let read_pty_output_async ~sw ~clock:_ state =
-  let pty_fd = Pty.to_file_descr state.pty_master in
+  let pty_fd = Pty.in_fd state.pty_master in
   let buf = Bytes.create 4096 in
 
   let rec drain () =
@@ -514,8 +514,7 @@ let rec handle_command_async state cmd =
             | None -> line_chars := ' ' :: !line_chars
             | Some cell ->
                 let ch =
-                  try Uchar.to_char cell.char with Invalid_argument _ -> '?'
-                  (* Non-ASCII character *)
+                  if String.length cell.glyph > 0 then cell.glyph.[0] else ' '
                 in
                 line_chars := ch :: !line_chars;
                 if ch <> ' ' then last_non_space := col
@@ -565,8 +564,7 @@ let rec handle_command_async state cmd =
             | None -> Buffer.add_char buffer ' '
             | Some cell ->
                 let ch =
-                  try Uchar.to_char cell.char with Invalid_argument _ -> '?'
-                  (* Non-ASCII character *)
+                  if String.length cell.glyph > 0 then cell.glyph.[0] else ' '
                 in
                 Buffer.add_char buffer ch
           done;
@@ -762,10 +760,12 @@ let run tape output_path =
       m "Spawning shell: %s with args: %s" prog
         (String.concat " " (Array.to_list argv)));
   let spawn_start = Unix.gettimeofday () in
-  let pty_master, pid = Pty.spawn ~prog ~argv ~winsize ~env:unix_env () in
+  let pty_master =
+    Pty.spawn ~prog ~args:(Array.to_list argv) ~winsize ~env:unix_env ()
+  in
   Printf.eprintf "[TIMING] Shell spawn: %.3fs\n"
     (Unix.gettimeofday () -. spawn_start);
-  Log.debug (fun m -> m "Shell spawned with PID: %d" pid);
+  Log.debug (fun m -> m "Shell spawned");
 
   (* Set PTY to non-blocking mode for better async I/O handling *)
   Pty.set_nonblock pty_master;
@@ -786,21 +786,9 @@ let run tape output_path =
 
   (* Cleanup on exit *)
   Eio.Switch.on_release sw (fun () ->
-      Pty.close pty_master;
-      try
-        (* Try SIGTERM first for graceful shutdown *)
-        Unix.kill pid Sys.sigterm;
-        (* Give process 0.1s to exit gracefully *)
-        Eio.Time.sleep (Eio.Stdenv.clock env) 0.1;
-        (* Check if process still exists and kill if needed *)
-        try
-          Unix.kill pid 0;
-          (* Process still alive, force kill *)
-          Unix.kill pid Sys.sigkill
-        with Unix.Unix_error (Unix.ESRCH, _, _) -> ()
-        (* Process already exited *)
-      with Unix.Unix_error (Unix.ESRCH, _, _) ->
-        () (* Process already exited *));
+      Pty.close pty_master
+      (* Note: Without the PID, we can't kill the process. The shell should
+         exit when the PTY is closed. *));
 
   (* Start async PTY reader and frame timer *)
   let clock = Eio.Stdenv.clock env in
