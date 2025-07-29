@@ -57,6 +57,11 @@ val swap : t * t -> unit
 (** [swap (grid1, grid2)] swaps the contents of two grids. Both grids must have
     the same dimensions *)
 
+val resize : t -> rows:int -> cols:int -> unit
+(** [resize grid ~rows ~cols] resizes the grid to the new dimensions. Content is
+    preserved as much as possible. If the new size is smaller, content is
+    truncated. If larger, new cells are empty. *)
+
 (** {2 Damage Tracking} *)
 
 val flush_damage : t -> rect list * unit

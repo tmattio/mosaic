@@ -35,6 +35,11 @@ val reset : t -> unit
     clears the screen and scrollback, moves the cursor to (0,0), and resets all
     graphical attributes to their defaults. *)
 
+val resize : t -> rows:int -> cols:int -> unit
+(** [resize t ~rows ~cols] resizes the terminal to the new dimensions. Content
+    is preserved as much as possible. The cursor position is adjusted if it
+    would be out of bounds. *)
+
 (** {1 State Queries} *)
 
 val get_cell : t -> row:int -> col:int -> Grid.Cell.t option

@@ -322,10 +322,9 @@ let handle_event state event =
           in
           let new_cols = (Int32.to_int w - 20) / state.char_width in
           let new_rows = (Int32.to_int h - 20) / state.char_height in
-          (* Inform the PTY and VTE about the resize. The shell inside will handle redrawing. *)
+          (* Resize both PTY and VTE *)
           Pty.resize state.pty ~cols:new_cols ~rows:new_rows;
-          Vte.reset state.vte;
-          (* Simple reset, a more complex impl would preserve content *)
+          Vte.resize state.vte ~rows:new_rows ~cols:new_cols;
           state.force_render <- true
       | _ -> ())
   | _ -> ()

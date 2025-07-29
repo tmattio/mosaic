@@ -522,5 +522,21 @@ let reset t =
   t.auto_newline_mode <- false;
   mark_dirty t
 
+let resize t ~rows:new_rows ~cols:new_cols =
+  (* Resize both grids *)
+  Grid.resize t.grid ~rows:new_rows ~cols:new_cols;
+  Grid.resize t.alt_grid ~rows:new_rows ~cols:new_cols;
+  
+  (* Adjust cursor position if needed *)
+  if t.cursor.row >= new_rows then t.cursor.row <- new_rows - 1;
+  if t.cursor.col >= new_cols then t.cursor.col <- new_cols - 1;
+  
+  (* Adjust scroll region *)
+  t.scroll_bottom <- new_rows - 1;
+  if t.scroll_top >= new_rows then t.scroll_top <- 0;
+  
+  (* Mark as dirty *)
+  mark_dirty t
+
 let get_cell t ~row ~col = Grid.get t.grid ~row ~col
 let get_grid t = t.grid

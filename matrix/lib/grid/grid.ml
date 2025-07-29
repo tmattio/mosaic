@@ -1,7 +1,7 @@
 module Cell = Cell
 
 type rect = { row : int; col : int; width : int; height : int }
-type t = { cells : Cell.t option array array; dirty : rect list ref }
+type t = { mutable cells : Cell.t option array array; dirty : rect list ref }
 
 let create ~rows ~cols =
   { cells = Array.make_matrix rows cols Cell.empty; dirty = ref [] }
@@ -78,17 +78,39 @@ let flush_damage grid =
 
 let swap grids =
   let grid1, grid2 = grids in
-  let nrows = rows grid1 in
-  let ncols = cols grid1 in
-  for r = 0 to nrows - 1 do
-    for c = 0 to ncols - 1 do
-      let temp = grid1.cells.(r).(c) in
-      grid1.cells.(r).(c) <- grid2.cells.(r).(c);
-      grid2.cells.(r).(c) <- temp
+  (* Just swap the cell arrays *)
+  let temp = grid1.cells in
+  grid1.cells <- grid2.cells;
+  grid2.cells <- temp;
+  (* Mark both grids as completely dirty *)
+  let nrows1 = rows grid1 in
+  let ncols1 = cols grid1 in
+  let nrows2 = rows grid2 in
+  let ncols2 = cols grid2 in
+  grid1.dirty := [ { row = 0; col = 0; width = ncols1; height = nrows1 } ];
+  grid2.dirty := [ { row = 0; col = 0; width = ncols2; height = nrows2 } ]
+
+let resize grid ~rows:new_rows ~cols:new_cols =
+  let old_rows = rows grid in
+  let old_cols = cols grid in
+  
+  (* Create new cell array *)
+  let new_cells = Array.make_matrix new_rows new_cols Cell.empty in
+  
+  (* Copy existing content *)
+  let copy_rows = min old_rows new_rows in
+  let copy_cols = min old_cols new_cols in
+  for r = 0 to copy_rows - 1 do
+    for c = 0 to copy_cols - 1 do
+      new_cells.(r).(c) <- grid.cells.(r).(c)
     done
   done;
-  grid1.dirty := [ { row = 0; col = 0; width = ncols; height = nrows } ];
-  grid2.dirty := [ { row = 0; col = 0; width = ncols; height = nrows } ]
+  
+  (* Replace the cells array *)
+  grid.cells <- new_cells;
+  
+  (* Mark entire grid as dirty *)
+  grid.dirty := [ { row = 0; col = 0; width = new_cols; height = new_rows } ]
 
 let to_string grid =
   let nrows = rows grid in
