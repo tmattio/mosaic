@@ -57,6 +57,18 @@
   (terminal input ansi pty vte)))
 
 (package
+ (name matrix-term)
+ (synopsis "A terminal emulator built with Matrix and tsdl")
+ (description "A terminal emulator application using the Matrix terminal toolkit and SDL2 for rendering")
+ (depends
+  ocaml
+  dune
+  matrix
+  tsdl
+  tsdl-ttf
+  (alcotest :with-test)))
+
+(package
  (name vcr)
  (synopsis "")
  (description "")
