@@ -1,0 +1,3 @@
+(executables
+ (names run_vttest_interactive vttest_debug)
+ (libraries matrix.vte matrix.pty unix))

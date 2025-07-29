@@ -67,7 +67,7 @@ let test_wide_characters () =
   (* Check that character was placed *)
   (match Vte.get_cell vte ~row:0 ~col:0 with
   | Some cell ->
-      Alcotest.(check string) "ASCII char placed" "A" cell.Vte.Cell.glyph
+      Alcotest.(check string) "ASCII char placed" "A" cell.Grid.Cell.glyph
   | None -> Alcotest.fail "No cell at 0,0");
   let _row, col = Vte.cursor_pos vte in
   Alcotest.(check int) "cursor after ASCII" 1 col;
@@ -88,8 +88,8 @@ let test_wide_characters () =
   (* Check that cell has width 2 *)
   match Vte.get_cell vte ~row:0 ~col:0 with
   | Some cell ->
-      Alcotest.(check int) "wide character width" 2 cell.Vte.Cell.width;
-      Alcotest.(check string) "wide character glyph" "你" cell.Vte.Cell.glyph
+      Alcotest.(check int) "wide character width" 2 cell.Grid.Cell.width;
+      Alcotest.(check string) "wide character glyph" "你" cell.Grid.Cell.glyph
   | None -> Alcotest.fail "Expected cell at 0,0"
 
 let test_combining_characters () =

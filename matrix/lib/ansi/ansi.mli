@@ -1303,6 +1303,8 @@ module Parser : sig
     | CUP of int * int
     | ED of int  (** Erase‑in‑Display *)
     | EL of int  (** Erase‑in‑Line *)
+    | IL of int  (** Insert Line *)
+    | DL of int  (** Delete Line *)
     | OSC of int * string  (** Generic OSC *)
     | Hyperlink of ((string * string) list * string) option
         (** OSC 8 open/close hyperlink.
@@ -1310,6 +1312,8 @@ module Parser : sig
           [Some (kvs,uri)] → open a hyperlink with optional parameters. *)
     | Reset  (** *RIS* – ESC c *)
     | Unknown of string  (** Fallback for anything else *)
+    | DECSC  (** ESC 7 - Save cursor *)
+    | DECRC  (** ESC 8 - Restore cursor *)
 
   type token =
     | Text of string  (** Plain UTF‑8 text *)

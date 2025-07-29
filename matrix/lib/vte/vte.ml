@@ -98,6 +98,9 @@ let switch_to_alternate t save_cursor =
 
     (* Clear the alternate screen *)
     clear_screen t;
+    
+    (* Reset cursor to top-left *)
+    set_cursor t ~row:0 ~col:0;
 
     (* Reset scroll region to full screen *)
     t.scroll_top <- 0;
@@ -232,7 +235,7 @@ let put_char (t : t) c =
     let glyph = Buffer.create 4 in
     Buffer.add_utf_8_uchar glyph c;
     Grid.set t.grid ~row ~col
-      (Some { Cell.glyph = Buffer.contents glyph; width; attrs = t.gfx_state });
+      (Some { Grid.Cell.glyph = Buffer.contents glyph; width; attrs = t.gfx_state });
     mark_dirty t);
 
   (* Handle cursor advancement based on character width *)
@@ -288,6 +291,38 @@ let handle_control t (ctrl : Parser.control) =
           if t.cursor.col >= 0 then mark_dirty t
       | 2 -> clear_line t t.cursor.row 0
       | _ -> ())
+  | IL n ->
+      (* Insert n blank lines at cursor position, shifting content down *)
+      let n = max 1 n in
+      let current_row = t.cursor.row in
+      if current_row >= t.scroll_top && current_row <= t.scroll_bottom then (
+        (* Shift lines down from current position *)
+        for r = t.scroll_bottom downto current_row + n do
+          if r - n >= current_row then
+            let row_to_copy = Grid.copy_row t.grid (r - n) in
+            Grid.set_row t.grid r row_to_copy
+        done;
+        (* Clear the inserted lines *)
+        for r = current_row to min (current_row + n - 1) t.scroll_bottom do
+          Grid.set_row t.grid r (Grid.make_empty_row ~cols:(cols t))
+        done;
+        mark_dirty t)
+  | DL n ->
+      (* Delete n lines at cursor position, shifting content up *)
+      let n = max 1 n in
+      let current_row = t.cursor.row in
+      if current_row >= t.scroll_top && current_row <= t.scroll_bottom then (
+        (* Shift lines up from below deletion point *)
+        for r = current_row to t.scroll_bottom - n do
+          if r + n <= t.scroll_bottom then
+            let row_to_copy = Grid.copy_row t.grid (r + n) in
+            Grid.set_row t.grid r row_to_copy
+        done;
+        (* Clear the bottom lines *)
+        for r = max current_row (t.scroll_bottom - n + 1) to t.scroll_bottom do
+          Grid.set_row t.grid r (Grid.make_empty_row ~cols:(cols t))
+        done;
+        mark_dirty t)
   | OSC (0, title) | OSC (2, title) ->
       t.title <- title;
       mark_dirty t
@@ -298,10 +333,28 @@ let handle_control t (ctrl : Parser.control) =
       t.gfx_state <- { t.gfx_state with link = None };
       mark_dirty t
   | Reset ->
-      t.gfx_state <- Cell.default_style;
+      t.gfx_state <- Grid.Cell.default_style;
       clear_screen t;
       set_cursor t ~row:0 ~col:0;
       mark_dirty t
+  | DECSC ->
+      (* ESC 7 - Save cursor *)
+      t.cursor_saved <- Some (t.cursor.row, t.cursor.col, t.cursor.visible);
+      t.gfx_state_saved <- Some t.gfx_state
+  | DECRC -> (
+      (* ESC 8 - Restore cursor *)
+      (match t.cursor_saved with
+      | Some (row, col, visible) ->
+          t.cursor.row <- row;
+          t.cursor.col <- col;
+          t.cursor.visible <- visible;
+          t.cursor_saved <- None
+      | None -> ());
+      match t.gfx_state_saved with
+      | Some saved_state ->
+          t.gfx_state <- saved_state;
+          t.gfx_state_saved <- None
+      | None -> ())
   | Unknown csi -> (
       (* Handle DECSET/DECRST and other unrecognized sequences *)
       match csi with
@@ -432,7 +485,7 @@ let handle_text t text =
 let handle_token t = function
   | Parser.Text s -> handle_text t s
   | Parser.SGR attrs ->
-      let new_state = List.fold_left Cell.apply_sgr_attr t.gfx_state attrs in
+      let new_state = List.fold_left Grid.Cell.apply_sgr_attr t.gfx_state attrs in
       if new_state <> t.gfx_state then (
         t.gfx_state <- new_state;
         mark_dirty t)
@@ -456,7 +509,7 @@ let reset t =
   if t.in_alternate then switch_to_main t false;
   clear_screen t;
   set_cursor t ~row:0 ~col:0;
-  t.gfx_state <- Cell.default_style;
+  t.gfx_state <- Grid.Cell.default_style;
   Parser.reset t.parser;
   t.title <- "";
   Ring_buffer.clear t.scrollback;

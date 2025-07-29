@@ -14,10 +14,14 @@ type control =
   | CUP of int * int
   | ED of int
   | EL of int
+  | IL of int  (** Insert Line *)
+  | DL of int  (** Delete Line *)
   | OSC of int * string
-  | Hyperlink of ((string * string) list * string) option  (** OSC 8 *)
-  | Reset  (** ESC c (RIS) *)
+  | Hyperlink of ((string * string) list * string) option  (** OSC 8 *)
+  | Reset  (** ESC c (RIS) *)
   | Unknown of string
+  | DECSC  (** ESC 7 - Save cursor *)
+  | DECRC  (** ESC 8 - Restore cursor *)
 
 type token = Text of string | SGR of attr list | Control of control
 
@@ -86,13 +90,31 @@ let parse_sgr_params params =
       | 22 | 23 | 24 | 25 | 27 | 28 | 29 | 55 | 54 ->
           push `Reset;
           loop (i + 1)
+      | 39 ->
+          push (`Fg Default);
+          loop (i + 1)
+      | 49 ->
+          push (`Bg Default);
+          loop (i + 1)
       | n when (30 <= n && n <= 37) || (90 <= n && n <= 97) ->
-          let idx = if n < 90 then n - 30 else n - 90 + 8 in
-          push (`Fg (Index idx));
+          let color = match n with
+            | 30 -> Black | 31 -> Red | 32 -> Green | 33 -> Yellow
+            | 34 -> Blue | 35 -> Magenta | 36 -> Cyan | 37 -> White
+            | 90 -> Bright_black | 91 -> Bright_red | 92 -> Bright_green | 93 -> Bright_yellow
+            | 94 -> Bright_blue | 95 -> Bright_magenta | 96 -> Bright_cyan | 97 -> Bright_white
+            | _ -> Default
+          in
+          push (`Fg color);
           loop (i + 1)
       | n when (40 <= n && n <= 47) || (100 <= n && n <= 107) ->
-          let idx = if n < 100 then n - 40 else n - 100 + 8 in
-          push (`Bg (Index idx));
+          let color = match n with
+            | 40 -> Black | 41 -> Red | 42 -> Green | 43 -> Yellow
+            | 44 -> Blue | 45 -> Magenta | 46 -> Cyan | 47 -> White
+            | 100 -> Bright_black | 101 -> Bright_red | 102 -> Bright_green | 103 -> Bright_yellow
+            | 104 -> Bright_blue | 105 -> Bright_magenta | 106 -> Bright_cyan | 107 -> Bright_white
+            | _ -> Default
+          in
+          push (`Bg color);
           loop (i + 1)
       | (38 | 48) as first -> (
           let bg = first = 48 in
@@ -136,7 +158,10 @@ let parse_csi body final : token option =
   | 'H' | 'f' -> Some (Control (CUP (get 0, get 1)))
   | 'J' -> Some (Control (ED (get_default 0 0)))
   | 'K' -> Some (Control (EL (get_default 0 0)))
+  | 'L' -> Some (Control (IL (get 0)))
+  | 'M' -> Some (Control (DL (get 0)))
   | 'm' -> Some (SGR (parse_sgr_params ints))
+  | 'c' -> Some (Control (Unknown (Printf.sprintf "CSI[%s%c" body final))) (* DA - Device Attributes *)
   | _ -> Some (Control (Unknown (Printf.sprintf "CSI[%s%c" body final)))
 
 let parse_hyperlink data : control option =
@@ -243,6 +268,25 @@ let feed p (src : bytes) off len : token list =
                 let tokens = Control Reset :: flush_text p tokens in
                 p.st <- Normal;
                 loop tokens (pos + 1)
+            | '7' ->
+                (* ESC 7 : DECSC - Save cursor *)
+                let tokens = Control DECSC :: flush_text p tokens in
+                p.st <- Normal;
+                loop tokens (pos + 1)
+            | '8' ->
+                (* ESC 8 : DECRC - Restore cursor *)
+                let tokens = Control DECRC :: flush_text p tokens in
+                p.st <- Normal;
+                loop tokens (pos + 1)
+            | '%' ->
+                (* ESC % - Character set selection, consume next char *)
+                if pos + 1 < p.len then (
+                  (* Skip the character set designator *)
+                  p.st <- Normal;
+                  loop tokens (pos + 2))
+                else (
+                  (* Need more data *)
+                  (tokens, pos - 1))
             | _ ->
                 Buffer.add_char p.text '\x1b';
                 p.st <- Normal;
