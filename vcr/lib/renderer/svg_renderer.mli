@@ -33,18 +33,4 @@ type config = {
 }
 (** Renderer configuration *)
 
-type t
-(** Renderer state *)
-
-val create : Vte.t -> config -> t
-(** [create vte config] creates a new SVG renderer for the given VTE *)
-
-val capture_frame : t -> unit
-(** [capture_frame t] captures the current terminal state as a frame *)
-
-val add_pending_delay : t -> float -> unit
-(** [add_pending_delay t delay] adds delay (in seconds) - ignored for SVG
-    renderer *)
-
-val render : t -> string
-(** [render t] renders all captured frames as an SVG image *)
+include Renderer_intf.S with type config := config

@@ -4,6 +4,10 @@ let src = Logs.Src.create "vcr.renderer.gif" ~doc:"GIF renderer"
 
 module Log = (val Logs.src_log src : Logs.LOG)
 
+(* Global timing reference for performance tracking *)
+let global_timing : Vcr_common.Timing.t option ref = ref None
+let set_timing t = global_timing := t
+
 type theme = {
   bg : int * int * int;
   fg : int * int * int;
@@ -69,7 +73,6 @@ let default_theme =
 type config = {
   char_width : int;  (** Width of a character in pixels *)
   char_height : int;  (** Height of a character in pixels *)
-  frame_delay : int;  (** Delay between frames in 1/100th of a second *)
   theme : theme;
   font_path : string option;  (** Path to font file, None for built-in font *)
   font_size : int;  (** Font size in pixels *)
@@ -87,31 +90,19 @@ type frame_data = {
   width : int;
   height : int;
   pixel_data : bytes;
-  transparent_color : (int * int * int) option;
   delay_cs : int; (* Delay in centiseconds (1/100th of a second) *)
 }
 
-type t = {
-  vte : Vte.t;
-  config : config;
-  font_renderer : font_renderer;
-  mutable frames : frame_data list;
-  mutable previous_pixels : (int * int * int) array option;
-      (** Previous frame for optimization *)
-  mutable working_pixels : (int * int * int) array option;
-      (** Working buffer to avoid repeated allocations *)
-  mutable previous_grid : Grid.t option;
-      (** Copy of previous grid state for diffing *)
-  mutable full_width : int;
-  mutable full_height : int;
-  mutable pending_delay_cs : int;
-      (** Accumulated delay for frames with no changes *)
-  mutable prev_cursor : int * int;
-      (** Previous cursor position for diff calculation *)
+type glyph_key = {
+  text : string;
+  fg : int * int * int;
+  bg : int * int * int;
+  style_hash : int;
 }
+[@@warning "-69"]
 
 (** Convert ANSI color to RGB *)
-let rec color_of_ansi theme (c : Ansi.color) =
+let rec color_of_ansi (theme : theme) (c : Ansi.color) =
   match c with
   | Default -> theme.fg
   | Black -> theme.black
@@ -165,6 +156,9 @@ let rec color_of_ansi theme (c : Ansi.color) =
         (* Grayscale *)
         let gray = 8 + ((i - 232) * 10) in
         (gray, gray, gray)
+  | RGBA (r, g, b, _a) ->
+      (* For GIF, we ignore alpha and just use RGB *)
+      (r, g, b)
 
 (** Simple bitmap font - 5x7 pixels per character *)
 module Font = struct
@@ -199,96 +193,23 @@ module Font = struct
     let scale_y = max 1 (char_height / 7) in
 
     for row = 0 to 6 do
+      let bits = bitmap.(row) in
       for col = 0 to 4 do
-        let bit = (bitmap.(row) lsr (4 - col)) land 1 in
-        if bit = 1 then
+        if bits land (1 lsl (4 - col)) <> 0 then
           (* Draw scaled pixel *)
-          for sy = 0 to scale_y - 1 do
-            for sx = 0 to scale_x - 1 do
-              let px = x + (col * scale_x) + sx in
-              let py = y + (row * scale_y) + sy in
+          for dy = 0 to scale_y - 1 do
+            for dx = 0 to scale_x - 1 do
+              let px = x + (col * scale_x) + dx in
+              let py = y + (row * scale_y) + dy in
               if px >= 0 && px < width && py >= 0 && py < height then
                 let idx = (py * width) + px in
-                pixels.(idx) <- fg_color
+                if idx >= 0 && idx < Array.length pixels then
+                  pixels.(idx) <- fg_color
             done
           done
       done
     done
 end
-
-let create vte config =
-  (* Initialize font renderer based on config *)
-  let font_renderer =
-    match config.font_path with
-    | None -> (
-        (* Use embedded JetBrains Mono fonts by default *)
-        try
-          let regular_data =
-            Vcr_fonts.Embedded_fonts.Fonts.jetbrains_mono_regular
-          in
-          let bold_data = Vcr_fonts.Embedded_fonts.Fonts.jetbrains_mono_bold in
-          let italic_data =
-            Vcr_fonts.Embedded_fonts.Fonts.jetbrains_mono_italic
-          in
-          let bold_italic_data =
-            Vcr_fonts.Embedded_fonts.Fonts.jetbrains_mono_bold_italic
-          in
-
-          let regular =
-            Freetype.create_from_memory ~font_data:regular_data
-              ~pixel_size:config.font_size
-          in
-          let bold =
-            Freetype.create_from_memory ~font_data:bold_data
-              ~pixel_size:config.font_size
-          in
-          let italic =
-            Freetype.create_from_memory ~font_data:italic_data
-              ~pixel_size:config.font_size
-          in
-          let bold_italic =
-            Freetype.create_from_memory ~font_data:bold_italic_data
-              ~pixel_size:config.font_size
-          in
-
-          Freetype { regular; bold; italic; bold_italic }
-        with exn ->
-          Log.warn (fun m ->
-              m
-                "Failed to load embedded JetBrains Mono fonts: %s. Falling \
-                 back to builtin font"
-                (Printexc.to_string exn));
-          (* Create a simple bitmap font fallback *)
-          let dummy_font =
-            Freetype.create ~font_path:"/dev/null" ~pixel_size:config.font_size
-          in
-          let fonts =
-            {
-              regular = dummy_font;
-              bold = dummy_font;
-              italic = dummy_font;
-              bold_italic = dummy_font;
-            }
-          in
-          Bitmap { fonts; char_width = 10; char_height = 20 })
-    | Some font_path ->
-        (* Use the same font for all styles when custom font is provided *)
-        let ft = Freetype.create ~font_path ~pixel_size:config.font_size in
-        Freetype { regular = ft; bold = ft; italic = ft; bold_italic = ft }
-  in
-  {
-    vte;
-    config;
-    font_renderer;
-    frames = [];
-    previous_pixels = None;
-    working_pixels = None;
-    previous_grid = None;
-    full_width = 0;
-    full_height = 0;
-    pending_delay_cs = 0;
-    prev_cursor = (-1, -1);
-  }
 
 (** Find bounding box of differences between two pixel arrays *)
 let find_diff_bounds prev_pixels curr_pixels width height =
@@ -296,6 +217,17 @@ let find_diff_bounds prev_pixels curr_pixels width height =
   let min_y = ref height in
   let max_x = ref (-1) in
   let max_y = ref (-1) in
+
+  let prev_len = Array.length prev_pixels in
+  let curr_len = Array.length curr_pixels in
+  let expected_len = width * height in
+
+  if prev_len <> expected_len || curr_len <> expected_len then
+    failwith
+      (Printf.sprintf
+         "find_diff_bounds: array size mismatch. Expected %d, got prev=%d, \
+          curr=%d (width=%d, height=%d)"
+         expected_len prev_len curr_len width height);
 
   for y = 0 to height - 1 do
     for x = 0 to width - 1 do
@@ -312,167 +244,147 @@ let find_diff_bounds prev_pixels curr_pixels width height =
     Some (!min_x, !min_y, !max_x - !min_x + 1, !max_y - !min_y + 1)
   else None
 
-let capture_frame t =
-  let rows = Vte.rows t.vte in
-  let cols = Vte.cols t.vte in
-  let terminal_width = cols * t.config.char_width in
-  let terminal_height = rows * t.config.char_height in
+(** ========== NEW PURE IMPLEMENTATION ========== *)
 
-  (* Use target dimensions if specified, with padding included *)
-  let total_width =
-    match t.config.target_width with
-    | Some w -> w
-    | None -> terminal_width + (2 * t.config.padding)
-  in
-  let total_height =
-    match t.config.target_height with
-    | Some h -> h
-    | None -> terminal_height + (2 * t.config.padding)
-  in
+(** Render a cell to pixels *)
+let render_cell ~config ~font_renderer ~glyph_cache ~pixels ~width ~height
+    ~x_offset ~y_offset ~row ~col ~cell =
+  let x_start = x_offset + (col * config.char_width) in
+  let y_start = y_offset + (row * config.char_height) in
 
-  (* Get current grid state *)
-  let current_grid = Vte.get_grid t.vte in
-
-  (* Get or create working buffer - reuse to avoid allocations *)
-  let pixels =
-    match t.working_pixels with
-    | Some work when Array.length work = total_width * total_height ->
-        (* Reuse existing buffer - copy previous frame data if available *)
-        (match t.previous_pixels with
-        | Some prev -> Array.blit prev 0 work 0 (Array.length prev)
-        | None -> Array.fill work 0 (Array.length work) t.config.theme.bg);
-        work
-    | _ ->
-        (* Need to allocate new buffer (size changed or first frame) *)
-        let new_buffer =
-          match t.previous_pixels with
-          | Some prev when Array.length prev = total_width * total_height ->
-              Array.copy prev (* Start with previous frame content *)
-          | _ -> Array.make (total_width * total_height) t.config.theme.bg
-        in
-        t.working_pixels <- Some new_buffer;
-        new_buffer
-  in
-
-  (* Calculate offsets - ensure at least the configured padding *)
-  let x_offset = max t.config.padding ((total_width - terminal_width) / 2) in
-  let y_offset = max t.config.padding ((total_height - terminal_height) / 2) in
-
-  (* erase old cursor before we start painting *)
-  (match t.prev_cursor with
-  | -1, -1 -> ()
-  | r, c ->
-      let x0 = x_offset + (c * t.config.char_width) in
-      let y0 = y_offset + (r * t.config.char_height) in
-      for y = y0 to y0 + t.config.char_height - 1 do
-        for x = x0 to x0 + t.config.char_width - 1 do
-          let idx = (y * total_width) + x in
-          pixels.(idx) <- t.config.theme.bg
+  match cell with
+  | None ->
+      (* Empty cell - fill with background *)
+      for y = 0 to config.char_height - 1 do
+        for x = 0 to config.char_width - 1 do
+          if x_start + x < width && y_start + y >= 0 then
+            let idx = ((y_start + y) * width) + (x_start + x) in
+            if idx >= 0 && idx < Array.length pixels then
+              pixels.(idx) <- config.theme.bg
         done
-      done);
+      done
+  | Some cell -> (
+      if Grid.Cell.is_empty cell then
+        (* Empty cell - fill with background *)
+        for y = 0 to config.char_height - 1 do
+          for x = 0 to config.char_width - 1 do
+            if x_start + x < width && y_start + y >= 0 then
+              let idx = ((y_start + y) * width) + (x_start + x) in
+              if idx >= 0 && idx < Array.length pixels then
+                pixels.(idx) <- config.theme.bg
+          done
+        done
+      else if Grid.Cell.is_continuation cell then
+        (* Continuation cell - just fill background *)
+        let style = Grid.Cell.get_style cell in
+        let bg = color_of_ansi config.theme (Ansi.Style.bg style) in
+        for y = 0 to config.char_height - 1 do
+          for x = 0 to config.char_width - 1 do
+            if x_start + x < width && y_start + y >= 0 then
+              let idx = ((y_start + y) * width) + (x_start + x) in
+              if idx >= 0 && idx < Array.length pixels then pixels.(idx) <- bg
+          done
+        done
+      else (* Glyph *)
+        let text = Grid.Cell.get_text cell in
+        let style = Grid.Cell.get_style cell in
+        let fg = color_of_ansi config.theme (Ansi.Style.fg style) in
+        let bg = color_of_ansi config.theme (Ansi.Style.bg style) in
 
-  (* Get current cursor position *)
-  let cur_row, cur_col = Vte.cursor_pos t.vte in
-  let pc_row, pc_col = t.prev_cursor in
+        (* Create cache key *)
+        let key = { text; fg; bg; style_hash = Hashtbl.hash style } in
 
-  (* Use Grid_diff for efficient cell-level diffing *)
-  let dirty_regions =
-    match t.previous_grid with
-    | None ->
-        (* First frame - render everything *)
-        [
-          {
-            Grid.min_row = 0;
-            max_row = rows - 1;
-            min_col = 0;
-            max_col = cols - 1;
-          };
-        ]
-    | Some prev_grid ->
-        (* Compute differences *)
-        let _dirty_rows, region_changes = Grid.diff prev_grid current_grid in
-        let regions = List.map fst region_changes in
-
-        (* Add cursor regions if cursor moved *)
-        let cursor_regions =
-          if
-            (cur_row, cur_col) <> (pc_row, pc_col)
-            && pc_row >= 0 && pc_row < rows && pc_col >= 0 && pc_col < cols
-          then
-            [
-              {
-                Grid.min_row = pc_row;
-                max_row = pc_row;
-                min_col = pc_col;
-                max_col = pc_col;
-              };
-              {
-                Grid.min_row = cur_row;
-                max_row = cur_row;
-                min_col = cur_col;
-                max_col = cur_col;
-              };
-            ]
-          else []
-        in
-
-        regions @ cursor_regions
-  in
-
-  (* Render only dirty regions *)
-  List.iter
-    (fun region ->
-      for row = region.Grid.min_row to region.max_row do
-        for col = region.min_col to region.max_col do
-          match Vte.get_cell t.vte ~row ~col with
-          | None -> ()
-          | Some cell -> (
-              (* Render the cell *)
-              let style = cell.attrs in
-              let fg_ansi, bg_ansi =
-                if style.reversed then (style.bg, style.fg)
-                else (style.fg, style.bg)
-              in
-              (* For background, Default should map to theme.bg, not theme.fg *)
-              let fg_color = color_of_ansi t.config.theme fg_ansi in
-              let bg_color =
-                match bg_ansi with
-                | Ansi.Default -> t.config.theme.bg
-                | _ -> color_of_ansi t.config.theme bg_ansi
+        (* Check cache first *)
+        match Hashtbl.find_opt glyph_cache key with
+        | Some cached ->
+            (* Found in cache - copy to output pixels *)
+            (* Log.debug (fun m -> m "Glyph cache hit for '%s'" cached_key.text); *)
+            for y = 0 to config.char_height - 1 do
+              for x = 0 to config.char_width - 1 do
+                let src_idx = ((y * config.char_width) + x) * 3 in
+                let dst_x = x_start + x in
+                let dst_y = y_start + y in
+                if dst_x >= 0 && dst_x < width && dst_y >= 0 && dst_y < height
+                then
+                  let dst_idx = (dst_y * width) + dst_x in
+                  let r = int_of_float cached.(src_idx) in
+                  let g = int_of_float cached.(src_idx + 1) in
+                  let b = int_of_float cached.(src_idx + 2) in
+                  pixels.(dst_idx) <- (r, g, b)
+              done
+            done
+        | None ->
+            (* Not in cache - render and cache it *)
+            (* Render glyph into temporary buffer *)
+            let render_glyph_to_buffer () =
+              let temp_pixels =
+                Array.make (config.char_width * config.char_height) bg
               in
 
-              (* Fill background *)
-              let x_start = x_offset + (col * t.config.char_width) in
-              let y_start = y_offset + (row * t.config.char_height) in
-              for y = y_start to y_start + t.config.char_height - 1 do
-                for x = x_start to x_start + t.config.char_width - 1 do
-                  if x >= 0 && x < total_width && y >= 0 && y < total_height
-                  then pixels.((y * total_width) + x) <- bg_color
-                done
+              (if String.length text = 0 then
+                (* Empty text - render space *)
+                Font.render_char temp_pixels config.char_width
+                  config.char_height 0 0 ' ' fg bg config.char_width
+                  config.char_height
+              else
+                (* Check if it's ASCII *)
+                let first_byte = String.get text 0 in
+                if Char.code first_byte < 128 && String.length text = 1 then
+                  (* ASCII character - render directly *)
+                  Font.render_char temp_pixels config.char_width
+                    config.char_height 0 0 first_byte fg bg config.char_width
+                    config.char_height
+                else
+                  (* Non-ASCII Unicode character - render placeholder *)
+                  (* TODO: Implement proper Unicode font rendering *)
+                  Font.render_char temp_pixels config.char_width
+                    config.char_height 0 0 '?' fg bg config.char_width
+                    config.char_height);
+
+              (* Convert to float array for caching *)
+              let result =
+                Array.create_float (config.char_width * config.char_height * 3)
+              in
+              for i = 0 to (config.char_width * config.char_height) - 1 do
+                let r, g, b = temp_pixels.(i) in
+                let base = i * 3 in
+                result.(base) <- float_of_int r;
+                result.(base + 1) <- float_of_int g;
+                result.(base + 2) <- float_of_int b
               done;
+              result
+            in
 
-              (* Render character *)
-              match t.font_renderer with
-              | Bitmap _ ->
-                  let ch =
-                    if String.length cell.glyph > 0 then cell.glyph.[0] else ' '
-                  in
-                  Font.render_char pixels total_width total_height x_start
-                    y_start ch fg_color bg_color t.config.char_width
-                    t.config.char_height
+            let glyph_pixels =
+              match font_renderer with
+              | Bitmap _ -> render_glyph_to_buffer ()
               | Freetype fonts -> (
                   (* Select appropriate font based on style *)
+                  let style = Grid.Cell.get_style cell in
                   let ft =
-                    match (style.bold, style.italic) with
+                    match (Ansi.Style.bold style, Ansi.Style.italic style) with
                     | true, true -> fonts.bold_italic
                     | true, false -> fonts.bold
                     | false, true -> fonts.italic
                     | false, false -> fonts.regular
                   in
+                  (* Initialize result with background color *)
+                  let result =
+                    Array.create_float
+                      (config.char_width * config.char_height * 3)
+                  in
+                  let bg_r, bg_g, bg_b = bg in
+                  for i = 0 to (config.char_width * config.char_height) - 1 do
+                    let base = i * 3 in
+                    result.(base) <- float_of_int bg_r;
+                    result.(base + 1) <- float_of_int bg_g;
+                    result.(base + 2) <- float_of_int bg_b
+                  done;
+
                   (* Render using FreeType *)
                   let ch =
-                    if String.length cell.glyph > 0 then
-                      Uchar.of_int (Char.code cell.glyph.[0])
+                    if String.length text > 0 then
+                      Uchar.of_int (Char.code text.[0])
                     else Uchar.of_int 0x20 (* space *)
                   in
                   let unicode = Uchar.to_int ch in
@@ -481,415 +393,712 @@ let capture_frame t =
                       Freetype.load_and_render_char ft unicode
                     in
 
-                    if metrics.width > 0 && metrics.height > 0 then
-                      (* Calculate baseline position *)
+                    Log.debug (fun m ->
+                        m
+                          "Rendering char U+%04X '%c': metrics width=%d \
+                           height=%d"
+                          unicode
+                          (Char.chr (min 127 unicode))
+                          metrics.width metrics.height);
+
+                    if metrics.width > 0 && metrics.height > 0 then (
+                      (* Calculate baseline position relative to cell origin *)
                       let baseline_y =
-                        y_start + t.config.char_height
-                        - (t.config.char_height / 4)
+                        config.char_height - (config.char_height / 4)
                       in
-                      let glyph_x = x_start + metrics.bitmap_left in
+                      let glyph_x = metrics.bitmap_left in
                       let glyph_y = baseline_y - metrics.bitmap_top in
 
-                      (* Render the glyph bitmap *)
+                      (* Render the glyph bitmap into result buffer *)
                       for row = 0 to metrics.height - 1 do
                         for col = 0 to metrics.width - 1 do
                           let px = glyph_x + col in
                           let py = glyph_y + row in
                           if
-                            px >= 0 && px < total_width && py >= 0
-                            && py < total_height
+                            px >= 0 && px < config.char_width && py >= 0
+                            && py < config.char_height
                           then
                             let idx = (row * pitch) + col in
                             let alpha = Char.code bitmap_str.[idx] in
-                            if alpha > 0 then
-                              (* Only draw within the cell bounds *)
-                              if
-                                px >= x_start
-                                && px < x_start + t.config.char_width
-                                && py >= y_start
-                                && py < y_start + t.config.char_height
-                              then
-                                let pixel_idx = (py * total_width) + px in
-                                (* Blend with existing pixel based on alpha *)
-                                if alpha = 255 then
-                                  (* Fully opaque - just set the color *)
-                                  pixels.(pixel_idx) <- fg_color
-                                else
-                                  (* Alpha blend *)
-                                  let bg = pixels.(pixel_idx) in
-                                  let a = float_of_int alpha /. 255.0 in
-                                  let inv_a = 1.0 -. a in
-                                  (* Extract RGB components *)
-                                  let fg_r, fg_g, fg_b = fg_color in
-                                  let bg_r, bg_g, bg_b = bg in
-                                  (* Blend each component *)
-                                  let r =
-                                    int_of_float
-                                      ((float_of_int fg_r *. a)
-                                      +. (float_of_int bg_r *. inv_a))
-                                  in
-                                  let g =
-                                    int_of_float
-                                      ((float_of_int fg_g *. a)
-                                      +. (float_of_int bg_g *. inv_a))
-                                  in
-                                  let b =
-                                    int_of_float
-                                      ((float_of_int fg_b *. a)
-                                      +. (float_of_int bg_b *. inv_a))
-                                  in
-                                  pixels.(pixel_idx) <- (r, g, b)
+                            if alpha > 0 then (
+                              let pixel_idx = (py * config.char_width) + px in
+                              let base_idx = pixel_idx * 3 in
+                              (* Blend with existing pixel based on alpha *)
+                              if alpha = 255 then (
+                                (* Fully opaque - just set the color *)
+                                let fg_r, fg_g, fg_b = fg in
+                                result.(base_idx) <- float_of_int fg_r;
+                                result.(base_idx + 1) <- float_of_int fg_g;
+                                result.(base_idx + 2) <- float_of_int fg_b)
+                              else
+                                (* Alpha blend *)
+                                let a = float_of_int alpha /. 255.0 in
+                                let inv_a = 1.0 -. a in
+                                (* Extract RGB components *)
+                                let fg_r, fg_g, fg_b = fg in
+                                (* Blend each component *)
+                                result.(base_idx) <-
+                                  (float_of_int fg_r *. a)
+                                  +. (result.(base_idx) *. inv_a);
+                                result.(base_idx + 1) <-
+                                  (float_of_int fg_g *. a)
+                                  +. (result.(base_idx + 1) *. inv_a);
+                                result.(base_idx + 2) <-
+                                  (float_of_int fg_b *. a)
+                                  +. (result.(base_idx + 2) *. inv_a))
                         done
-                      done
+                      done);
+                    result
                   with exn ->
                     (* Fallback to builtin font if character not found *)
                     Log.warn (fun m ->
                         m "Failed to render character U+%04X: %s" unicode
                           (Printexc.to_string exn));
-                    let ch =
-                      if String.length cell.glyph > 0 then cell.glyph.[0]
-                      else ' '
-                    in
-                    Font.render_char pixels total_width total_height x_start
-                      y_start ch fg_color bg_color t.config.char_width
-                      t.config.char_height))
-        done
-      done)
-    dirty_regions;
+                    render_glyph_to_buffer ())
+            in
+            (* Cache the rendered glyph *)
+            Hashtbl.add glyph_cache key glyph_pixels;
+
+            (* Copy cached glyph to output pixels *)
+            for y = 0 to config.char_height - 1 do
+              for x = 0 to config.char_width - 1 do
+                let src_idx = ((y * config.char_width) + x) * 3 in
+                let dst_x = x_start + x in
+                let dst_y = y_start + y in
+                if dst_x >= 0 && dst_x < width && dst_y >= 0 && dst_y < height
+                then
+                  let dst_idx = (dst_y * width) + dst_x in
+                  let r = int_of_float glyph_pixels.(src_idx) in
+                  let g = int_of_float glyph_pixels.(src_idx + 1) in
+                  let b = int_of_float glyph_pixels.(src_idx + 2) in
+                  pixels.(dst_idx) <- (r, g, b)
+              done
+            done)
+
+(** Render a single frame to pixel array *)
+let render_frame_to_pixels ~config ~font_renderer ~glyph_cache
+    ~(frame : Renderer_intf.frame) ~width ~height ~x_offset ~y_offset =
+  let pixels = Array.make (width * height) config.theme.bg in
+
+  (* Render all cells *)
+  let rows = Grid.rows frame.grid in
+  let cols = Grid.cols frame.grid in
+
+  (* Debug logging *)
+  if rows <= 0 || cols <= 0 then
+    failwith
+      (Printf.sprintf "render_frame_to_pixels: Invalid grid dimensions: %dx%d"
+         rows cols);
+
+  for row = 0 to rows - 1 do
+    for col = 0 to cols - 1 do
+      match Grid.get frame.grid ~row ~col with
+      | None -> ()
+      | Some cell ->
+          render_cell ~config ~font_renderer ~glyph_cache ~pixels ~width ~height
+            ~x_offset ~y_offset ~row ~col ~cell:(Some cell)
+    done
+  done;
 
   (* Draw cursor if visible *)
-  (if Vte.is_cursor_visible t.vte then
-     let cursor_row, cursor_col = Vte.cursor_pos t.vte in
-     let x_start = x_offset + (cursor_col * t.config.char_width) in
-     let y_start = y_offset + (cursor_row * t.config.char_height) in
-     (* Simple block cursor using foreground color *)
-     for
-       y = y_start to min (y_start + t.config.char_height - 1) (total_height - 1)
-     do
-       for
-         x = x_start to min (x_start + t.config.char_width - 1) (total_width - 1)
-       do
-         if x >= 0 && y >= 0 then
-           let idx = (y * total_width) + x in
-           pixels.(idx) <- t.config.theme.fg
+  (if
+     frame.cursor_visible && frame.cursor_row >= 0 && frame.cursor_row < rows
+     && frame.cursor_col >= 0 && frame.cursor_col < cols
+   then
+     let x_start = x_offset + (frame.cursor_col * config.char_width) in
+     let y_start = y_offset + (frame.cursor_row * config.char_height) in
+
+     (* Draw cursor as inverted colors or block *)
+     for y = 0 to config.char_height - 1 do
+       for x = 0 to config.char_width - 1 do
+         if x_start + x < width && y_start + y >= 0 then
+           let idx = ((y_start + y) * width) + (x_start + x) in
+           if idx >= 0 && idx < Array.length pixels then
+             let r, g, b = pixels.(idx) in
+             (* Invert colors for cursor *)
+             pixels.(idx) <- (255 - r, 255 - g, 255 - b)
        done
      done);
 
-  (* Update full dimensions if needed *)
-  if t.full_width = 0 then (
-    t.full_width <- total_width;
-    t.full_height <- total_height);
+  pixels
 
-  (* Check for differences with previous frame *)
-  match t.previous_pixels with
-  | None ->
-      (* First frame - store full frame *)
-      let pixel_bytes = Bytes.create (total_width * total_height * 3) in
-      Array.iteri
-        (fun i (r, g, b) ->
-          Bytes.set pixel_bytes (i * 3) (Char.chr r);
-          Bytes.set pixel_bytes ((i * 3) + 1) (Char.chr g);
-          Bytes.set pixel_bytes ((i * 3) + 2) (Char.chr b))
-        pixels;
+(** Convert frames to frame_data for GIF encoding *)
+let frames_to_frame_data ~config ~font_renderer ~glyph_cache ~frames =
+  (* Calculate dimensions *)
+  let rows, cols =
+    match frames with
+    | [] -> (24, 80) (* Default terminal size *)
+    | frame :: _ ->
+        (Grid.rows frame.Renderer_intf.grid, Grid.cols frame.Renderer_intf.grid)
+  in
 
-      let frame =
-        {
-          x_offset = 0;
-          y_offset = 0;
-          width = total_width;
-          height = total_height;
-          pixel_data = pixel_bytes;
-          transparent_color = None;
-          delay_cs = 0;
-          (* First frame has no delay *)
-        }
-      in
-      t.frames <- frame :: t.frames;
-      (* Copy working buffer to previous only when we have changes *)
-      t.previous_pixels <- Some (Array.copy pixels);
-      t.previous_grid <- Some current_grid;
-      t.prev_cursor <- (cur_row, cur_col);
-      (* Don't reset pending_delay_cs so second frame gets the accumulated time *)
-      ()
-  | Some prev_pixels -> (
-      (* Find bounding box of changes *)
-      match find_diff_bounds prev_pixels pixels total_width total_height with
-      | None ->
-          (* No visual changes, but we might have accumulated delay to preserve *)
-          if t.pending_delay_cs > 0 then (
-            (* Emit a 1x1 transparent frame to hold the delay *)
-            let pixel_bytes = Bytes.create 3 in
-            let r, g, b = t.config.theme.bg in
-            Bytes.set pixel_bytes 0 (Char.chr r);
-            Bytes.set pixel_bytes 1 (Char.chr g);
-            Bytes.set pixel_bytes 2 (Char.chr b);
+  let terminal_width = cols * config.char_width in
+  let terminal_height = rows * config.char_height in
 
-            let frame =
-              {
-                x_offset = 0;
-                y_offset = 0;
-                width = 1;
-                height = 1;
-                pixel_data = pixel_bytes;
-                transparent_color = Some t.config.theme.bg;
-                delay_cs = max 2 t.pending_delay_cs;
-              }
-            in
-            t.frames <- frame :: t.frames;
-            t.pending_delay_cs <- 0)
-      | Some (x, y, w, h) ->
-          (* Extract only the changed region *)
-          let pixel_bytes = Bytes.create (w * h * 3) in
+  let total_width =
+    match config.target_width with
+    | Some w -> w
+    | None -> terminal_width + (2 * config.padding)
+  in
+  let total_height =
+    match config.target_height with
+    | Some h -> h
+    | None -> terminal_height + (2 * config.padding)
+  in
 
-          for dy = 0 to h - 1 do
-            for dx = 0 to w - 1 do
-              let src_idx = ((y + dy) * total_width) + (x + dx) in
-              let dst_idx = (dy * w) + dx in
-              let r, g, b = pixels.(src_idx) in
-              Bytes.set pixel_bytes (dst_idx * 3) (Char.chr r);
-              Bytes.set pixel_bytes ((dst_idx * 3) + 1) (Char.chr g);
-              Bytes.set pixel_bytes ((dst_idx * 3) + 2) (Char.chr b)
-            done
-          done;
+  let x_offset = (total_width - terminal_width) / 2 in
+  let y_offset = (total_height - terminal_height) / 2 in
 
-          let frame =
-            {
-              x_offset = x;
-              y_offset = y;
-              width = w;
-              height = h;
-              pixel_data = pixel_bytes;
-              transparent_color = None;
-              delay_cs = max 2 t.pending_delay_cs;
-              (* Use accumulated delay *)
-            }
-          in
-          t.frames <- frame :: t.frames;
-          (* Copy working buffer to previous since we found changes *)
-          t.previous_pixels <- Some (Array.copy pixels);
-          t.previous_grid <- Some current_grid;
-          t.prev_cursor <- (cur_row, cur_col);
-          t.pending_delay_cs <- 0)
-
-let render t =
-  let start_time = Unix.gettimeofday () in
-  (* If we have accumulated delay but no final frame to hold it, capture one *)
-  if t.pending_delay_cs > 0 then capture_frame t;
-
-  match List.rev t.frames with
-  | [] -> ""
-  | frames ->
-      Printf.eprintf "[TIMING] GIF render: %d frames\n" (List.length frames);
-      (* Collect all unique colors from all frames, including transparent color *)
-      let all_colors = Hashtbl.create 256 in
-      let transparent_color = ref None in
-
-      List.iter
-        (fun frame ->
-          (* Add transparent color if present *)
-          (match frame.transparent_color with
-          | Some (r, g, b) ->
-              transparent_color := Some (Gif.rgb r g b);
-              Hashtbl.replace all_colors (r, g, b) ()
-          | None -> ());
-
-          (* Add all pixels from frame *)
-          for i = 0 to (Bytes.length frame.pixel_data / 3) - 1 do
-            let r = Char.code (Bytes.get frame.pixel_data (i * 3)) in
-            let g = Char.code (Bytes.get frame.pixel_data ((i * 3) + 1)) in
-            let b = Char.code (Bytes.get frame.pixel_data ((i * 3) + 2)) in
-            Hashtbl.replace all_colors (r, g, b) ()
-          done)
-        frames;
-
-      (* Create color palette *)
-      let palette_start = Unix.gettimeofday () in
-      let color_tuple_array =
-        Hashtbl.fold (fun color () acc -> color :: acc) all_colors []
-        |> Array.of_list
-      in
-
-      let palette_result = Gif.Quantize.create_palette color_tuple_array 256 in
-      let palette =
-        match palette_result with
-        | Ok p -> p
-        | Error _ -> failwith "Failed to create palette"
-      in
-      Printf.eprintf "[TIMING] GIF palette creation: %.3fs\n"
-        (Unix.gettimeofday () -. palette_start);
-
-      (* Find color index in palette *)
-      let find_color_index palette color =
-        let palette_array = Gif.palette_to_array palette in
-        let rec find idx =
-          if idx >= Array.length palette_array then None
-          else if palette_array.(idx) = color then Some idx
-          else find (idx + 1)
+  (* Render each frame *)
+  let rec process_frames frames prev_pixels prev_cursor acc =
+    match frames with
+    | [] -> List.rev acc
+    | frame :: rest -> (
+        (* For first frame or when we have dirty regions, render incrementally *)
+        let pixels =
+          match prev_pixels with
+          | None ->
+              (* First frame - render everything *)
+              render_frame_to_pixels ~config ~font_renderer ~glyph_cache ~frame
+                ~width:total_width ~height:total_height ~x_offset ~y_offset
+          | Some prev when frame.dirty_regions = [] && not frame.cursor_moved ->
+              (* No changes - reuse previous pixels *)
+              prev
+          | Some prev ->
+              (* Have previous frame - render only dirty regions *)
+              let pixels = Array.copy prev in
+              (* Add cursor regions if cursor moved *)
+              let regions =
+                if frame.cursor_moved then
+                  match prev_cursor with
+                  | Some (prev_row, prev_col) ->
+                      (* Add regions for old and new cursor positions *)
+                      let old_cursor_region =
+                        {
+                          Grid.min_row = prev_row;
+                          max_row = prev_row;
+                          min_col = prev_col;
+                          max_col = prev_col;
+                        }
+                      in
+                      let new_cursor_region =
+                        {
+                          Grid.min_row = frame.cursor_row;
+                          max_row = frame.cursor_row;
+                          min_col = frame.cursor_col;
+                          max_col = frame.cursor_col;
+                        }
+                      in
+                      old_cursor_region :: new_cursor_region
+                      :: frame.dirty_regions
+                  | None -> frame.dirty_regions
+                else frame.dirty_regions
+              in
+              (* Render the dirty regions *)
+              let rows = Grid.rows frame.grid in
+              let cols = Grid.cols frame.grid in
+              List.iter
+                (fun region ->
+                  for row = region.Grid.min_row to region.max_row do
+                    for col = region.min_col to region.max_col do
+                      if row >= 0 && row < rows && col >= 0 && col < cols then
+                        match Grid.get frame.grid ~row ~col with
+                        | None -> ()
+                        | Some cell ->
+                            render_cell ~config ~font_renderer ~glyph_cache ~pixels
+                              ~width:total_width ~height:total_height ~x_offset
+                              ~y_offset ~row ~col ~cell:(Some cell)
+                    done
+                  done)
+                regions;
+              (* Draw cursor if visible *)
+              (if
+                 frame.cursor_visible && frame.cursor_row >= 0
+                 && frame.cursor_row < rows && frame.cursor_col >= 0
+                 && frame.cursor_col < cols
+               then
+                 let x_start =
+                   x_offset + (frame.cursor_col * config.char_width)
+                 in
+                 let y_start =
+                   y_offset + (frame.cursor_row * config.char_height)
+                 in
+                 (* Draw cursor as inverted colors or block *)
+                 for y = 0 to config.char_height - 1 do
+                   for x = 0 to config.char_width - 1 do
+                     if x_start + x < total_width && y_start + y >= 0 then
+                       let idx =
+                         ((y_start + y) * total_width) + (x_start + x)
+                       in
+                       if idx >= 0 && idx < Array.length pixels then
+                         let r, g, b = pixels.(idx) in
+                         (* Invert colors for cursor *)
+                         pixels.(idx) <- (255 - r, 255 - g, 255 - b)
+                   done
+                 done);
+              pixels
         in
-        find 0
-      in
 
-      (* Get background color for disposal *)
-      let bg_r, bg_g, bg_b = t.config.theme.bg in
-      let bg_color = Gif.rgb bg_r bg_g bg_b in
+        (* Calculate diff region *)
+        let diff_region =
+          match prev_pixels with
+          | None -> Some (0, 0, total_width, total_height)
+          | Some prev -> find_diff_bounds prev pixels total_width total_height
+        in
 
-      (* Create color lookup cache for faster conversion *)
-      let color_cache = Hashtbl.create 4096 in
-
-      (* Helper to find color index with caching *)
-      let find_cached_color_index (r, g, b) =
-        let key = (r lsl 16) lor (g lsl 8) lor b in
-        match Hashtbl.find_opt color_cache key with
-        | Some idx -> idx
-        | None ->
-            let idx =
-              match Gif.Quantize.find_nearest_color (r, g, b) palette with
-              | idx -> idx
-            in
-            Hashtbl.add color_cache key idx;
-            idx
-      in
-
-      (* Convert all frames *)
-      let convert_start = Unix.gettimeofday () in
-      let gif_frames =
-        List.map
-          (fun frame ->
-            (* Convert RGB to indexed directly without intermediate array *)
-            let num_pixels = frame.width * frame.height in
-            let indexed_data = Bytes.create num_pixels in
-
-            (* Process pixels directly from source bytes *)
-            for i = 0 to num_pixels - 1 do
-              let r = Char.code (Bytes.get frame.pixel_data (i * 3)) in
-              let g = Char.code (Bytes.get frame.pixel_data ((i * 3) + 1)) in
-              let b = Char.code (Bytes.get frame.pixel_data ((i * 3) + 2)) in
-              let idx = find_cached_color_index (r, g, b) in
-              Bytes.set indexed_data i (Char.chr idx)
+        match diff_region with
+        | None -> (
+            (* No changes - accumulate delay to next frame if there is one *)
+            match acc with
+            | [] ->
+                process_frames rest (Some pixels)
+                  (Some (frame.cursor_row, frame.cursor_col))
+                  acc
+            | (hd : frame_data) :: tl ->
+                let updated =
+                  { hd with delay_cs = hd.delay_cs + frame.delay_cs }
+                in
+                process_frames rest (Some pixels)
+                  (Some (frame.cursor_row, frame.cursor_col))
+                  (updated :: tl))
+        | Some (x, y, w, h) ->
+            (* Extract pixel data for changed region *)
+            let pixel_bytes = Bytes.create (w * h * 3) in
+            for dy = 0 to h - 1 do
+              for dx = 0 to w - 1 do
+                let src_idx = ((y + dy) * total_width) + (x + dx) in
+                let dst_idx = (dy * w) + dx in
+                let r, g, b = pixels.(src_idx) in
+                Bytes.set pixel_bytes (dst_idx * 3) (Char.chr r);
+                Bytes.set pixel_bytes ((dst_idx * 3) + 1) (Char.chr g);
+                Bytes.set pixel_bytes ((dst_idx * 3) + 2) (Char.chr b)
+              done
             done;
 
-            (* Create GIF frame *)
-            {
-              Gif.width = frame.width;
-              height = frame.height;
-              x_offset = frame.x_offset;
-              y_offset = frame.y_offset;
-              delay_cs = frame.delay_cs;
-              disposal = Gif.Do_not_dispose;
-              transparent_index = None;
-              (* Disable transparency to avoid display issues *)
-              pixels = indexed_data;
-              local_palette = None;
-            })
-          frames
-      in
-      Printf.eprintf "[TIMING] GIF frame conversion: %.3fs\n"
-        (Unix.gettimeofday () -. convert_start);
+            let fd =
+              {
+                x_offset = x;
+                y_offset = y;
+                width = w;
+                height = h;
+                pixel_data = pixel_bytes;
+                delay_cs = frame.delay_cs;
+              }
+            in
+            process_frames rest (Some pixels)
+              (Some (frame.cursor_row, frame.cursor_col))
+              (fd :: acc))
+  in
 
-      (* Create GIF data structure with infinite loop *)
-      (* Find the background color index in palette *)
-      let bg_index = find_color_index palette bg_color in
-      let background_index = Option.value bg_index ~default:0 in
+  let frame_data_list = process_frames frames None None [] in
+  (frame_data_list, total_width, total_height)
 
-      let gif =
-        match
-          Gif.gif_create ~width:t.full_width ~height:t.full_height ~palette
-            ~background_index ~frames:gif_frames ~loop_count:0 ()
-        with
-        | Ok g -> g
-        | Error _ -> failwith "Failed to create GIF"
-      in
 
-      (* Encode to binary *)
-      let encode_start = Unix.gettimeofday () in
-      let result =
-        match Gif.encode gif with
-        | Ok data -> data
-        | Error _ -> failwith "Failed to encode GIF"
-      in
-      Printf.eprintf "[TIMING] GIF encoding: %.3fs\n"
-        (Unix.gettimeofday () -. encode_start);
-      Printf.eprintf "[TIMING] GIF render total: %.3fs\n"
-        (Unix.gettimeofday () -. start_time);
-      result
+type t = {
+  rows : int;
+  cols : int;
+  config : config;
+  total_width : int;
+  total_height : int;
+  font_renderer : font_renderer;
+  mutable encoder : Gif.streaming_encoder option;
+  mutable first_frame_buffer : Buffer.t option;
+  glyph_cache : (glyph_key, float array) Hashtbl.t;
+  mutable color_cache : (int, int) Hashtbl.t option;
+  mutable prev_pixels : (int * int * int) array option;
+  mutable prev_cursor : (int * int) option;
+  mutable frame_count : int;
+}
+[@@warning "-69"]
+(* Suppress unused field warnings *)
 
-let add_pending_delay t delay_seconds =
-  let added = int_of_float ((delay_seconds *. 100.) +. 0.5) in
-  (* Round to nearest *)
-  t.pending_delay_cs <- t.pending_delay_cs + added
+(** Create a comprehensive terminal color palette *)
+let create_terminal_palette (theme : theme) =
+  (* Build a comprehensive palette that includes:
+     - Theme colors (16 standard + bright colors)
+     - 216-color cube (6x6x6)
+     - 24 grayscale colors
+     Total: 256 colors *)
+  let colors = ref [] in
 
-let frame_count t = List.length t.frames
+  (* Add theme colors *)
+  colors := theme.bg :: !colors;
+  colors := theme.fg :: !colors;
+  colors := theme.black :: !colors;
+  colors := theme.red :: !colors;
+  colors := theme.green :: !colors;
+  colors := theme.yellow :: !colors;
+  colors := theme.blue :: !colors;
+  colors := theme.magenta :: !colors;
+  colors := theme.cyan :: !colors;
+  colors := theme.white :: !colors;
+  colors := theme.bright_black :: !colors;
+  colors := theme.bright_red :: !colors;
+  colors := theme.bright_green :: !colors;
+  colors := theme.bright_yellow :: !colors;
+  colors := theme.bright_blue :: !colors;
+  colors := theme.bright_magenta :: !colors;
+  colors := theme.bright_cyan :: !colors;
+  colors := theme.bright_white :: !colors;
 
-type frame_info = { width : int; height : int; x_offset : int; y_offset : int }
+  (* Add 216-color cube (6x6x6) *)
+  for r = 0 to 5 do
+    for g = 0 to 5 do
+      for b = 0 to 5 do
+        let r' = if r = 0 then 0 else 55 + (r * 40) in
+        let g' = if g = 0 then 0 else 55 + (g * 40) in
+        let b' = if b = 0 then 0 else 55 + (b * 40) in
+        colors := (r', g', b') :: !colors
+      done
+    done
+  done;
 
-let get_frame_info t idx =
-  match List.nth_opt t.frames idx with
-  | None -> None
-  | Some f ->
-      Some
-        {
-          width = f.width;
-          height = f.height;
-          x_offset = f.x_offset;
-          y_offset = f.y_offset;
-        }
+  (* Add 24 grayscale colors *)
+  for i = 0 to 23 do
+    let gray = 8 + (i * 10) in
+    colors := (gray, gray, gray) :: !colors
+  done;
 
-let render_streaming t out_channel =
-  let start_time = Unix.gettimeofday () in
-  (* If we have accumulated delay but no final frame to hold it, capture one *)
-  if t.pending_delay_cs > 0 then capture_frame t;
+  (* Convert to array and limit to 256 colors *)
+  let color_list = List.rev !colors in
+  let color_array_full = Array.of_list color_list in
+  let len = min (Array.length color_array_full) 256 in
+  let color_array =
+    Array.sub color_array_full 0 len
+    |> Array.map (fun (r, g, b) -> Gif.rgb r g b)
+  in
 
-  match List.rev t.frames with
-  | [] -> ()
-  | frames ->
-      Printf.eprintf "[TIMING] GIF render streaming: %d frames\n"
-        (List.length frames);
-      (* Collect all unique colors from all frames *)
-      let all_colors = Hashtbl.create 256 in
-      List.iter
-        (fun (fd : frame_data) ->
-          (* Add all pixels from frame *)
-          for i = 0 to (Bytes.length fd.pixel_data / 3) - 1 do
-            let r = Char.code (Bytes.get fd.pixel_data (i * 3)) in
-            let g = Char.code (Bytes.get fd.pixel_data ((i * 3) + 1)) in
-            let b = Char.code (Bytes.get fd.pixel_data ((i * 3) + 2)) in
-            Hashtbl.replace all_colors (r, g, b) ()
-          done)
-        frames;
+  match Gif.palette_of_array color_array with
+  | Ok p -> p
+  | Error _ -> failwith "Failed to create terminal palette"
 
-      (* Create color palette *)
-      let palette_start = Unix.gettimeofday () in
-      let color_tuple_array =
-        Hashtbl.fold (fun color () acc -> color :: acc) all_colors []
-        |> Array.of_list
-      in
-      let palette_result = Gif.Quantize.create_palette color_tuple_array 256 in
-      let palette =
-        match palette_result with
-        | Ok p -> p
-        | Error _ -> failwith "Failed to create palette"
-      in
-      Printf.eprintf "[TIMING] GIF palette creation: %.3fs\n"
-        (Unix.gettimeofday () -. palette_start);
+(** Pre-compute color lookup table for quantization *)
+let create_color_lookup_table palette =
+  let cache = Hashtbl.create 65536 in
+  (* Pre-populate with common terminal colors *)
+  let common_colors = [
+    (0, 0, 0); (255, 255, 255); (* Black and white *)
+    (23, 23, 23); (221, 221, 221); (* Default bg/fg *)
+    (128, 128, 128); (192, 192, 192); (* Grays *)
+  ] in
+  List.iter (fun (r, g, b) ->
+    let key = (r lsl 16) lor (g lsl 8) lor b in
+    let idx = Gif.Quantize.find_nearest_color (r, g, b) palette in
+    Hashtbl.add cache key idx
+  ) common_colors;
+  cache
+
+(** Find the index of a color in the palette *)
+let find_color_index palette (r, g, b) =
+  Gif.Quantize.find_nearest_color (r, g, b) palette
+
+let create ~rows ~cols config =
+  let font_renderer = create_font_renderer config.font_path config.font_size in
+
+  (* Calculate total dimensions based on rows/cols *)
+  let term_width, term_height =
+    match (config.target_width, config.target_height) with
+    | Some w, Some h ->
+        let available_width = w - (2 * config.padding) in
+        let available_height = h - (2 * config.padding) in
+        (available_width, available_height)
+    | _ -> (cols * config.char_width, rows * config.char_height)
+  in
+  let total_width = term_width + (2 * config.padding) in
+  let total_height = term_height + (2 * config.padding) in
+
+  {
+    rows;
+    cols;
+    config;
+    total_width;
+    total_height;
+    font_renderer;
+    encoder = None;
+    first_frame_buffer = None;
+    glyph_cache = Hashtbl.create 1024;
+    color_cache = None;
+    prev_pixels = None;
+    prev_cursor = None;
+    frame_count = 0;
+  }
+
+let rec write_frame t frame ~incremental ~writer =
+  (* Create encoder on first frame *)
+  match t.encoder with
+  | None -> (
+      (* Create a comprehensive palette for terminal colors *)
+      let palette = create_terminal_palette t.config.theme in
 
       (* Find background color index *)
       let bg_r, bg_g, bg_b = t.config.theme.bg in
-      let bg_color = Gif.rgb bg_r bg_g bg_b in
-      let find_color_index palette color =
-        let palette_array = Gif.palette_to_array palette in
-        let rec find idx =
-          if idx >= Array.length palette_array then None
-          else if palette_array.(idx) = color then Some idx
-          else find (idx + 1)
-        in
-        find 0
-      in
-      let bg_index = find_color_index palette bg_color in
-      let background_index = Option.value bg_index ~default:0 in
+      let bg_index = find_color_index palette (bg_r, bg_g, bg_b) in
+      
+      (* Create and store color cache *)
+      t.color_cache <- Some (create_color_lookup_table palette);
 
-      (* Create color lookup cache for faster conversion *)
-      let color_cache = Hashtbl.create 4096 in
-      let find_cached_color_index (r, g, b) =
+      (* For the first frame, we need to buffer the GIF header until it's written *)
+      let buffer = Buffer.create 1024 in
+      t.first_frame_buffer <- Some buffer;
+
+      match
+        Gif.create_streaming_encoder ~width:t.total_width ~height:t.total_height
+          ~palette ~background_index:bg_index ~loop_count:0 ()
+      with
+      | Error err ->
+          failwith
+            (Printf.sprintf "Failed to create encoder: %s"
+               (Gif.string_of_error err))
+      | Ok encoder ->
+          t.encoder <- Some encoder;
+          write_frame t frame ~incremental ~writer)
+  | Some encoder ->
+      (* For first frame, always render full frame *)
+      let is_first_frame = t.frame_count = 0 in
+      t.frame_count <- t.frame_count + 1;
+      
+      (* Compute terminal dimensions *)
+      let x_offset = (t.total_width - (t.cols * t.config.char_width)) / 2 in
+      let y_offset = (t.total_height - (t.rows * t.config.char_height)) / 2 in
+      
+      (* Render frame data *)
+      let frame_data_list =
+        match !global_timing with
+        | None ->
+            if is_first_frame then
+              (* First frame - must be full *)
+              let pixels = render_frame_to_pixels ~config:t.config 
+                ~font_renderer:t.font_renderer ~glyph_cache:t.glyph_cache 
+                ~frame ~width:t.total_width ~height:t.total_height 
+                ~x_offset ~y_offset in
+              t.prev_pixels <- Some pixels;
+              t.prev_cursor <- Some (frame.cursor_row, frame.cursor_col);
+              (* Convert entire frame to bytes *)
+              let pixel_bytes = Bytes.create (t.total_width * t.total_height * 3) in
+              for y = 0 to t.total_height - 1 do
+                for x = 0 to t.total_width - 1 do
+                  let idx = (y * t.total_width) + x in
+                  let r, g, b = pixels.(idx) in
+                  Bytes.set pixel_bytes (idx * 3) (Char.chr r);
+                  Bytes.set pixel_bytes ((idx * 3) + 1) (Char.chr g);
+                  Bytes.set pixel_bytes ((idx * 3) + 2) (Char.chr b)
+                done
+              done;
+              [{ x_offset = 0; y_offset = 0; width = t.total_width; 
+                 height = t.total_height; pixel_data = pixel_bytes; 
+                 delay_cs = frame.delay_cs }]
+            else
+              (* Subsequent frames - compute diff *)
+              frames_to_frame_data ~config:t.config
+                ~font_renderer:t.font_renderer ~glyph_cache:t.glyph_cache 
+                ~frames:[frame] |> (fun (fd_list, _, _) -> 
+                  (* Update state *)
+                  (match fd_list with
+                  | [] -> ()
+                  | _ ->
+                      (* Render this frame to update prev_pixels *)
+                      let pixels = render_frame_to_pixels ~config:t.config 
+                        ~font_renderer:t.font_renderer ~glyph_cache:t.glyph_cache 
+                        ~frame ~width:t.total_width ~height:t.total_height 
+                        ~x_offset ~y_offset in
+                      t.prev_pixels <- Some pixels;
+                      t.prev_cursor <- Some (frame.cursor_row, frame.cursor_col));
+                  fd_list)
+        | Some timing ->
+            Vcr_common.Timing.with_timing timing "  Render pixels" (fun () ->
+                if is_first_frame then
+                  (* First frame - must be full *)
+                  let pixels = render_frame_to_pixels ~config:t.config 
+                    ~font_renderer:t.font_renderer ~glyph_cache:t.glyph_cache 
+                    ~frame ~width:t.total_width ~height:t.total_height 
+                    ~x_offset ~y_offset in
+                  t.prev_pixels <- Some pixels;
+                  t.prev_cursor <- Some (frame.cursor_row, frame.cursor_col);
+                  (* Convert entire frame to bytes *)
+                  let pixel_bytes = Bytes.create (t.total_width * t.total_height * 3) in
+                  for y = 0 to t.total_height - 1 do
+                    for x = 0 to t.total_width - 1 do
+                      let idx = (y * t.total_width) + x in
+                      let r, g, b = pixels.(idx) in
+                      Bytes.set pixel_bytes (idx * 3) (Char.chr r);
+                      Bytes.set pixel_bytes ((idx * 3) + 1) (Char.chr g);
+                      Bytes.set pixel_bytes ((idx * 3) + 2) (Char.chr b)
+                    done
+                  done;
+                  [{ x_offset = 0; y_offset = 0; width = t.total_width; 
+                     height = t.total_height; pixel_data = pixel_bytes; 
+                     delay_cs = frame.delay_cs }]
+                else
+                  (* Subsequent frames - only render dirty regions *)
+                  match t.prev_pixels with
+                  | None -> failwith "No previous frame state"
+                  | Some prev_pixels ->
+                      (* Compute regions to update *)
+                      let regions =
+                        if frame.cursor_moved then
+                          match t.prev_cursor with
+                          | Some (prev_row, prev_col) ->
+                              (* Add regions for old and new cursor positions *)
+                              let old_cursor_region = {
+                                Grid.min_row = prev_row;
+                                max_row = prev_row;
+                                min_col = prev_col;
+                                max_col = prev_col;
+                              } in
+                              let new_cursor_region = {
+                                Grid.min_row = frame.cursor_row;
+                                max_row = frame.cursor_row;
+                                min_col = frame.cursor_col;
+                                max_col = frame.cursor_col;
+                              } in
+                              old_cursor_region :: new_cursor_region :: frame.dirty_regions
+                          | None -> frame.dirty_regions
+                        else frame.dirty_regions
+                      in
+                      
+                      (* Fast path: if no regions changed, return empty *)
+                      if regions = [] && not frame.cursor_visible then (
+                        t.prev_cursor <- Some (frame.cursor_row, frame.cursor_col);
+                        []
+                      ) else (
+                        (* Calculate bounding box of all dirty regions *)
+                        let min_x = ref t.total_width in
+                        let min_y = ref t.total_height in
+                        let max_x = ref (-1) in
+                        let max_y = ref (-1) in
+                        
+                        (* Update bounds for each dirty region *)
+                        List.iter (fun region ->
+                          let x1 = x_offset + (region.Grid.min_col * t.config.char_width) in
+                          let y1 = y_offset + (region.Grid.min_row * t.config.char_height) in
+                          let x2 = x_offset + ((region.Grid.max_col + 1) * t.config.char_width) - 1 in
+                          let y2 = y_offset + ((region.Grid.max_row + 1) * t.config.char_height) - 1 in
+                          min_x := min !min_x x1;
+                          min_y := min !min_y y1;
+                          max_x := max !max_x x2;
+                          max_y := max !max_y y2
+                        ) regions;
+                        
+                        (* Include cursor if visible *)
+                        if frame.cursor_visible && frame.cursor_row >= 0 && 
+                           frame.cursor_row < t.rows && frame.cursor_col >= 0 && 
+                           frame.cursor_col < t.cols then (
+                          let x1 = x_offset + (frame.cursor_col * t.config.char_width) in
+                          let y1 = y_offset + (frame.cursor_row * t.config.char_height) in
+                          let x2 = x1 + t.config.char_width - 1 in
+                          let y2 = y1 + t.config.char_height - 1 in
+                          min_x := min !min_x x1;
+                          min_y := min !min_y y1;
+                          max_x := max !max_x x2;
+                          max_y := max !max_y y2
+                        );
+                        
+                        (* Ensure bounds are within frame *)
+                        min_x := max 0 !min_x;
+                        min_y := max 0 !min_y;
+                        max_x := min (t.total_width - 1) !max_x;
+                        max_y := min (t.total_height - 1) !max_y;
+                        
+                        if !max_x < !min_x || !max_y < !min_y then (
+                          (* No actual changes *)
+                          t.prev_cursor <- Some (frame.cursor_row, frame.cursor_col);
+                          []
+                        ) else (
+                          (* Copy only the changed region from prev_pixels *)
+                          let w = !max_x - !min_x + 1 in
+                          let h = !max_y - !min_y + 1 in
+                          let pixels = Array.make (w * h) t.config.theme.bg in
+                          
+                          (* Copy previous pixels in the region *)
+                          for dy = 0 to h - 1 do
+                            for dx = 0 to w - 1 do
+                              let src_idx = ((!min_y + dy) * t.total_width) + (!min_x + dx) in
+                              let dst_idx = (dy * w) + dx in
+                              pixels.(dst_idx) <- prev_pixels.(src_idx)
+                            done
+                          done;
+                          
+                          (* Render only the dirty cells in this region *)
+                          List.iter (fun region ->
+                            for row = region.Grid.min_row to region.max_row do
+                              for col = region.min_col to region.max_col do
+                                if row >= 0 && row < t.rows && col >= 0 && col < t.cols then
+                                  match Grid.get frame.grid ~row ~col with
+                                  | None -> ()
+                                  | Some cell ->
+                                      let cell_x = x_offset + (col * t.config.char_width) in
+                                      let cell_y = y_offset + (row * t.config.char_height) in
+                                      (* Only render if cell overlaps our region *)
+                                      if cell_x < !min_x + w && cell_x + t.config.char_width > !min_x &&
+                                         cell_y < !min_y + h && cell_y + t.config.char_height > !min_y then
+                                        render_cell ~config:t.config ~font_renderer:t.font_renderer 
+                                          ~glyph_cache:t.glyph_cache ~pixels
+                                          ~width:w ~height:h 
+                                          ~x_offset:(- !min_x) ~y_offset:(- !min_y)
+                                          ~row ~col ~cell:(Some cell)
+                              done
+                            done
+                          ) regions;
+                          
+                          (* Draw cursor if visible and in region *)
+                          if frame.cursor_visible && frame.cursor_row >= 0 && 
+                             frame.cursor_row < t.rows && frame.cursor_col >= 0 && 
+                             frame.cursor_col < t.cols then (
+                            let cursor_x = x_offset + (frame.cursor_col * t.config.char_width) in
+                            let cursor_y = y_offset + (frame.cursor_row * t.config.char_height) in
+                            if cursor_x < !min_x + w && cursor_x + t.config.char_width > !min_x &&
+                               cursor_y < !min_y + h && cursor_y + t.config.char_height > !min_y then (
+                              for y = 0 to t.config.char_height - 1 do
+                                for x = 0 to t.config.char_width - 1 do
+                                  let px = cursor_x + x - !min_x in
+                                  let py = cursor_y + y - !min_y in
+                                  if px >= 0 && px < w && py >= 0 && py < h then
+                                    let idx = (py * w) + px in
+                                    let r, g, b = pixels.(idx) in
+                                    pixels.(idx) <- (255 - r, 255 - g, 255 - b)
+                                done
+                              done
+                            )
+                          );
+                          
+                          (* Convert to bytes *)
+                          let pixel_bytes = Bytes.create (w * h * 3) in
+                          for i = 0 to (w * h) - 1 do
+                            let r, g, b = pixels.(i) in
+                            Bytes.set pixel_bytes (i * 3) (Char.chr r);
+                            Bytes.set pixel_bytes ((i * 3) + 1) (Char.chr g);
+                            Bytes.set pixel_bytes ((i * 3) + 2) (Char.chr b)
+                          done;
+                          
+                          (* Update state - we need to apply changes back to prev_pixels *)
+                          for dy = 0 to h - 1 do
+                            for dx = 0 to w - 1 do
+                              let src_idx = (dy * w) + dx in
+                              let dst_idx = ((!min_y + dy) * t.total_width) + (!min_x + dx) in
+                              prev_pixels.(dst_idx) <- pixels.(src_idx)
+                            done
+                          done;
+                          t.prev_cursor <- Some (frame.cursor_row, frame.cursor_col);
+                          
+                          [{ x_offset = !min_x; y_offset = !min_y; width = w; height = h; 
+                             pixel_data = pixel_bytes; delay_cs = frame.delay_cs }]
+                        )
+                      ))
+      in
+
+      (* Get the palette we created for the encoder *)
+      let palette = create_terminal_palette t.config.theme in
+
+      (* Use persistent color cache *)
+      let color_cache = match t.color_cache with
+        | Some cache -> cache
+        | None -> 
+            (* Should not happen, but create one if needed *)
+            let cache = create_color_lookup_table palette in
+            t.color_cache <- Some cache;
+            cache
+      in
+      let find_cached_color r g b =
         let key = (r lsl 16) lor (g lsl 8) lor b in
         match Hashtbl.find_opt color_cache key with
         | Some idx -> idx
@@ -899,58 +1108,81 @@ let render_streaming t out_channel =
             idx
       in
 
-      (* Convert all frames *)
-      let convert_start = Unix.gettimeofday () in
-      let gif_frames =
-        List.map
-          (fun (fd : frame_data) ->
-            (* Convert RGB to indexed *)
-            let num_pixels = fd.width * fd.height in
-            let indexed_data = Bytes.create num_pixels in
+      (* Process each frame data *)
+      List.iter
+        (fun (fd : frame_data) ->
+          (* Convert RGB pixels to indexed color *)
+          let indexed_pixels =
+            match !global_timing with
+            | None ->
+                let indexed_pixels = Bytes.create (fd.width * fd.height) in
+                for i = 0 to (Bytes.length fd.pixel_data / 3) - 1 do
+                  let r = Char.code (Bytes.get fd.pixel_data (i * 3)) in
+                  let g = Char.code (Bytes.get fd.pixel_data ((i * 3) + 1)) in
+                  let b = Char.code (Bytes.get fd.pixel_data ((i * 3) + 2)) in
+                  let idx = find_cached_color r g b in
+                  Bytes.set indexed_pixels i (Char.chr idx)
+                done;
+                indexed_pixels
+            | Some timing ->
+                Vcr_common.Timing.with_timing timing "  Color quantization"
+                  (fun () ->
+                    let indexed_pixels = Bytes.create (fd.width * fd.height) in
+                    for i = 0 to (Bytes.length fd.pixel_data / 3) - 1 do
+                      let r = Char.code (Bytes.get fd.pixel_data (i * 3)) in
+                      let g =
+                        Char.code (Bytes.get fd.pixel_data ((i * 3) + 1))
+                      in
+                      let b =
+                        Char.code (Bytes.get fd.pixel_data ((i * 3) + 2))
+                      in
+                      let idx = find_cached_color r g b in
+                      Bytes.set indexed_pixels i (Char.chr idx)
+                    done;
+                    indexed_pixels)
+          in
 
-            for i = 0 to num_pixels - 1 do
-              let r = Char.code (Bytes.get fd.pixel_data (i * 3)) in
-              let g = Char.code (Bytes.get fd.pixel_data ((i * 3) + 1)) in
-              let b = Char.code (Bytes.get fd.pixel_data ((i * 3) + 2)) in
-              let idx = find_cached_color_index (r, g, b) in
-              Bytes.set indexed_data i (Char.chr idx)
-            done;
+          (* Create GIF frame *)
+          let gif_frame =
+            {
+              Gif.width = fd.width;
+              height = fd.height;
+              x_offset = fd.x_offset;
+              y_offset = fd.y_offset;
+              delay_cs = fd.delay_cs;
+              disposal = Gif.Do_not_dispose;
+              transparent_index = None;
+              pixels = indexed_pixels;
+              local_palette = None;
+            }
+          in
 
-            ({
-               width = fd.width;
-               height = fd.height;
-               x_offset = fd.x_offset;
-               y_offset = fd.y_offset;
-               delay_cs = fd.delay_cs;
-               disposal = Gif.Do_not_dispose;
-               transparent_index = None;
-               pixels = indexed_data;
-               local_palette = None;
-             }
-              : Gif.frame))
-          frames
-      in
-      Printf.eprintf "[TIMING] GIF frame conversion: %.3fs\n"
-        (Unix.gettimeofday () -. convert_start);
+          (* Write frame *)
+          let write_frame () =
+            match Gif.write_frame_streaming encoder gif_frame ~writer with
+            | Error err ->
+                failwith
+                  (Printf.sprintf "Failed to write frame: %s"
+                     (Gif.string_of_error err))
+            | Ok () -> ()
+          in
+          match !global_timing with
+          | None -> write_frame ()
+          | Some timing ->
+              Vcr_common.Timing.with_timing timing "  Write GIF frame"
+                write_frame)
+        frame_data_list
 
-      (* Create GIF data structure *)
-      let gif =
-        match
-          Gif.gif_create ~width:t.full_width ~height:t.full_height ~palette
-            ~background_index ~frames:gif_frames ~loop_count:0 ()
-        with
-        | Ok g -> g
-        | Error _ -> failwith "Failed to create GIF"
-      in
-
-      (* Encode to output channel using streaming *)
-      let encode_start = Unix.gettimeofday () in
-      let writer buf ofs len = output out_channel buf ofs len in
-      (match Gif.encode_streaming gif ~writer with
-      | Ok () -> ()
-      | Error _ -> failwith "Failed to encode GIF");
-
-      Printf.eprintf "[TIMING] GIF encoding: %.3fs\n"
-        (Unix.gettimeofday () -. encode_start);
-      Printf.eprintf "[TIMING] GIF render streaming total: %.3fs\n"
-        (Unix.gettimeofday () -. start_time)
+let finalize t ~writer =
+  match t.encoder with
+  | None ->
+      (* No frames were written *)
+      ()
+  | Some encoder -> (
+      (* Finalize the streaming encoder *)
+      match Gif.finalize_streaming_encoder encoder ~writer with
+      | Error err ->
+          failwith
+            (Printf.sprintf "Failed to finalize GIF: %s"
+               (Gif.string_of_error err))
+      | Ok () -> ())

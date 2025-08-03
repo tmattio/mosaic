@@ -11,15 +11,16 @@ type t
 val default_config : config
 (** Default configuration with 80-dash separator like VHS *)
 
-val create : Vte.t -> config -> t
-(** [create vte config] creates a new ASCII renderer for the given VTE *)
+val create : rows:int -> cols:int -> config -> t
+(** [create ~rows ~cols config] creates a new ASCII renderer *)
 
-val capture_frame : t -> unit
-(** [capture_frame t] captures the current terminal state as a text frame *)
+val write_frame :
+  t ->
+  Renderer_intf.frame ->
+  incremental:bool ->
+  writer:(bytes -> int -> int -> unit) ->
+  unit
+(** Write a frame *)
 
-val add_pending_delay : t -> float -> unit
-(** [add_pending_delay t delay] adds delay (in seconds) - ignored for ASCII
-    renderer *)
-
-val render : t -> string
-(** [render t] renders all captured frames as a text string *)
+val finalize : t -> writer:(bytes -> int -> int -> unit) -> unit
+(** Finalize the ASCII output *)

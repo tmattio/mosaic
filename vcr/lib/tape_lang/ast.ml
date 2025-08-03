@@ -146,3 +146,26 @@ let pp_command fmt = function
         pattern
 
 let pp_tape = Format.pp_print_list ~pp_sep:Format.pp_print_newline pp_command
+
+let setting_to_string = function
+  | Shell -> "Shell"
+  | FontFamily -> "FontFamily"
+  | FontSize -> "FontSize"
+  | Framerate -> "Framerate"
+  | Height -> "Height"
+  | LetterSpacing -> "LetterSpacing"
+  | LineHeight -> "LineHeight"
+  | LoopOffset -> "LoopOffset"
+  | Padding -> "Padding"
+  | PlaybackSpeed -> "PlaybackSpeed"
+  | Theme -> "Theme"
+  | TypingSpeed -> "TypingSpeed"
+  | Width -> "Width"
+  | WindowBar -> "WindowBar"
+  | WindowBarSize -> "WindowBarSize"
+  | BorderRadius -> "BorderRadius"
+  | Margin -> "Margin"
+  | MarginFill -> "MarginFill"
+  | WaitTimeout -> "WaitTimeout"
+  | WaitPattern -> "WaitPattern"
+  | CursorBlink -> "CursorBlink"

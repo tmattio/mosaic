@@ -1,5 +1,5 @@
 (tests
- (names test_tape_lang test_gif_renderer test_png_renderer)
+ (names test_tape_lang test_png_renderer test_executor test_sampler)
  (libraries
   alcotest
   unix
@@ -11,4 +11,7 @@
   gif
   ansi
   vcr
-  vcr_fonts))
+  vcr_fonts
+  eio
+  eio_main
+  matrix.grid))

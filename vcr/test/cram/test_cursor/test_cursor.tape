@@ -1,7 +1,7 @@
 # Test cursor visibility
 Set Shell "bash"
-Set Width 40
-Set Height 10
+Set Width 480
+Set Height 240
 Set TypingSpeed 0.1
 
 Type "echo 'Testing cursor visibility...'"

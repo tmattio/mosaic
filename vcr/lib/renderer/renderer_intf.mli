@@ -1,22 +1,38 @@
+type frame = {
+  grid : Grid.t;
+  cursor_row : int;
+  cursor_col : int;
+  cursor_visible : bool;
+  delay_cs : int;  (** Delay in centiseconds (1/100th of a second) *)
+  dirty_regions : Grid.dirty_region list;
+      (** Regions that changed since last frame *)
+  cursor_moved : bool;  (** Whether cursor position changed *)
+}
+(** A frame to render *)
+
 module type S = sig
-  type t
-  (** The abstract type for a renderer's state. *)
-
   type config
-  (** Renderer-specific configuration. *)
+  (** Renderer-specific configuration. Should include terminal dimensions
+      (rows/cols) to enable streaming encoding where applicable. *)
 
-  val create : Vte.t -> config -> t
-  (** [create vte config] creates a new renderer instance. *)
+  type t
 
-  val capture_frame : t -> unit
-  (** [capture_frame renderer] captures the current state of the VTE as a single
-      frame. *)
+  val create : rows:int -> cols:int -> config -> t
+  (** Create a new renderer *)
 
-  val add_pending_delay : t -> float -> unit
-  (** [add_pending_delay renderer delay] adds delay (in seconds) to be included
-      in the next captured frame. *)
+  val write_frame :
+    t ->
+    frame ->
+    incremental:bool ->
+    writer:(bytes -> int -> int -> unit) ->
+    unit
+  (** Write a frame.
+      @param frame The frame to render
+      @param incremental
+        If true, this is an incremental update (allows optimizations)
+      @param writer
+        Function to write bytes (e.g., to file, channel, buffer). Called as
+        [writer buf offset length]. *)
 
-  val render : t -> string
-  (** [render renderer] renders the captured frames and returns the output data
-      as a string. *)
+  val finalize : t -> writer:(bytes -> int -> int -> unit) -> unit
 end

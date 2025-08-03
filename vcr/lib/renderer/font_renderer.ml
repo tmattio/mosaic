@@ -44,8 +44,7 @@ let create_font_renderer font_path font_size =
               ~pixel_size:font_size;
         }
       in
-      (* Bitmap fonts use the config's char dimensions *)
-      Bitmap { fonts; char_width = 10; char_height = 20 }
+      Freetype fonts
   | Some path ->
       (* Load TrueType font *)
       let regular = Freetype.create ~font_path:path ~pixel_size:font_size in
@@ -90,7 +89,7 @@ let select_font font_renderer style =
     | Freetype fonts -> fonts
   in
   (* Access style fields directly - Vte.style = Vte.Cell.style so fields should be accessible *)
-  match (style.Grid.Cell.bold, style.Grid.Cell.italic) with
+  match (Ansi.Style.bold style, Ansi.Style.italic style) with
   | true, true -> fonts.bold_italic
   | true, false -> fonts.bold
   | false, true -> fonts.italic

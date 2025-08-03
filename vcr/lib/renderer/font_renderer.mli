@@ -18,7 +18,7 @@ val create_font_renderer : string option -> int -> font_renderer
 val get_char_dimensions : font_renderer -> int * int
 (** [get_char_dimensions renderer] returns (char_width, char_height) *)
 
-val select_font : font_renderer -> Grid.Cell.style -> Freetype.t
+val select_font : font_renderer -> Ansi.Style.t -> Freetype.t
 (** [select_font renderer style] selects the appropriate font variant based on
     style *)
 

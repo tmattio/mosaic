@@ -15,4 +15,5 @@
   freetype
   harfbuzz
   vcr_fonts
-  vcr.png))
+  vcr.png
+  vcr.common))

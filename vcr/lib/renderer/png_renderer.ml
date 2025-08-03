@@ -13,16 +13,15 @@ type config = {
   target_width : int option;  (** Desired output width in pixels *)
   target_height : int option;  (** Desired output height in pixels *)
   padding : int;  (** Padding around terminal content in pixels *)
+  output_dir : string;  (** Directory where PNG files will be written *)
 }
 
 type t = {
-  vte : Vte.t;
+  rows : int;
+  cols : int;
   config : config;
   font_renderer : Font_renderer.font_renderer;
-  mutable captured : bool;
-  mutable pixels : (int * int * int) array option;
-  mutable width : int;
-  mutable height : int;
+  mutable frame_number : int;
 }
 
 (* Reuse font rendering logic from common module *)
@@ -60,58 +59,60 @@ let get_color theme color reversed is_fg =
   | Ansi.Bright_white -> theme.Gif_renderer.bright_white
   | Ansi.Index _ -> theme.Gif_renderer.fg (* Default for indexed colors *)
   | Ansi.RGB (r, g, b) -> (r, g, b)
+  | Ansi.RGBA (r, g, b, _a) -> (r, g, b) (* Ignore alpha for PNG renderer *)
 
-let create vte config =
+let create ~rows ~cols config =
+  (* Ensure output directory exists *)
+  (try Unix.mkdir config.output_dir 0o755
+   with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
   (* Initialize font renderer based on config *)
   let font_renderer = create_font_renderer config.font_path config.font_size in
-  {
-    vte;
-    config;
-    font_renderer;
-    captured = false;
-    pixels = None;
-    width = 0;
-    height = 0;
-  }
+  { rows; cols; config; font_renderer; frame_number = 0 }
 
-let capture_frame t =
-  let rows = Vte.rows t.vte in
-  let cols = Vte.cols t.vte in
+let render_frame_to_png ~config ~frame ~font_renderer =
+  let grid = frame.Renderer_intf.grid in
+  let rows = Grid.rows grid in
+  let cols = Grid.cols grid in
 
   (* Use target dimensions if specified, otherwise calculate from terminal size *)
   let term_width, term_height =
-    match (t.config.target_width, t.config.target_height) with
+    match (config.target_width, config.target_height) with
     | Some w, Some h ->
-        let available_width = w - (2 * t.config.padding) in
-        let available_height = h - (2 * t.config.padding) in
+        let available_width = w - (2 * config.padding) in
+        let available_height = h - (2 * config.padding) in
         (available_width, available_height)
-    | _ -> (cols * t.config.char_width, rows * t.config.char_height)
+    | _ -> (cols * config.char_width, rows * config.char_height)
   in
 
-  let full_width = term_width + (2 * t.config.padding) in
-  let full_height = term_height + (2 * t.config.padding) in
+  let full_width = term_width + (2 * config.padding) in
+  let full_height = term_height + (2 * config.padding) in
 
   (* Create pixel buffer *)
-  let pixels = Array.make (full_width * full_height) t.config.theme.bg in
+  let pixels = Array.make (full_width * full_height) config.theme.bg in
 
   (* Get character dimensions *)
-  let char_width, char_height = get_char_dimensions t.font_renderer in
+  let char_width, char_height = get_char_dimensions font_renderer in
 
   (* Render each cell *)
   for row = 0 to rows - 1 do
     for col = 0 to cols - 1 do
-      match Vte.get_cell t.vte ~row ~col with
+      match Grid.get grid ~row ~col with
       | None -> ()
       | Some cell ->
-          let x = t.config.padding + (col * char_width) in
-          let y = t.config.padding + (row * char_height) in
+          let x = config.padding + (col * char_width) in
+          let y = config.padding + (row * char_height) in
 
           (* Get colors *)
+          let style = Grid.Cell.get_style cell in
           let fg_color =
-            get_color t.config.theme cell.attrs.fg cell.attrs.reversed true
+            get_color config.theme (Ansi.Style.fg style)
+              (Ansi.Style.reversed style)
+              true
           in
           let bg_color =
-            get_color t.config.theme cell.attrs.bg cell.attrs.reversed false
+            get_color config.theme (Ansi.Style.bg style)
+              (Ansi.Style.reversed style)
+              false
           in
 
           (* Draw background *)
@@ -126,9 +127,9 @@ let capture_frame t =
           done;
 
           (* Draw character *)
+          let text = Grid.Cell.get_text cell in
           let ch =
-            if String.length cell.glyph > 0 then
-              Uchar.of_int (Char.code cell.glyph.[0])
+            if String.length text > 0 then Uchar.of_int (Char.code text.[0])
             else Uchar.of_int 0x20 (* space *)
           in
           render_char pixels full_width full_height x y ch fg_color bg_color
@@ -137,13 +138,14 @@ let capture_frame t =
   done;
 
   (* Draw cursor if visible *)
-  let cur_row, cur_col = Vte.cursor_pos t.vte in
+  let cur_row = frame.cursor_row in
+  let cur_col = frame.cursor_col in
   (if
-     Vte.is_cursor_visible t.vte
-     && cur_row >= 0 && cur_row < rows && cur_col >= 0 && cur_col < cols
+     frame.cursor_visible && cur_row >= 0 && cur_row < rows && cur_col >= 0
+     && cur_col < cols
    then
-     let x = t.config.padding + (cur_col * char_width) in
-     let y = t.config.padding + (cur_row * char_height) in
+     let x = config.padding + (cur_col * char_width) in
+     let y = config.padding + (cur_row * char_height) in
 
      (* Simple block cursor using foreground color *)
      for dy = 0 to char_height - 1 do
@@ -152,33 +154,46 @@ let capture_frame t =
          let py = y + dy in
          if px >= 0 && px < full_width && py >= 0 && py < full_height then
            let idx = (py * full_width) + px in
-           pixels.(idx) <- t.config.theme.fg
+           pixels.(idx) <- config.theme.fg
        done
      done);
 
-  t.captured <- true;
-  t.pixels <- Some pixels;
-  t.width <- full_width;
-  t.height <- full_height
+  (* Convert pixel array to 2D array for PNG *)
+  let pixel_array =
+    Array.init full_height (fun y ->
+        Array.init full_width (fun x -> pixels.((y * full_width) + x)))
+  in
 
-let add_pending_delay _ _delay =
-  (* PNG doesn't need delays - it's a single frame *)
+  (* Create PNG image *)
+  let img =
+    Png.rgb_of_pixels ~width:full_width ~height:full_height pixel_array
+  in
+
+  (* Encode to PNG *)
+  Png.bytes_of_png img
+
+let write_frame t frame ~incremental ~writer =
+  let _ = incremental in
+  (* Unused for PNG - each frame is independent *)
+
+  (* Render the frame to PNG *)
+  let png_bytes =
+    render_frame_to_png ~config:t.config ~frame ~font_renderer:t.font_renderer
+  in
+
+  (* For multi-file mode, write to a separate file *)
+  if t.config.output_dir <> "" then (
+    let filename =
+      Printf.sprintf "%s/frame_%04d.png" t.config.output_dir t.frame_number
+    in
+    let oc = open_out_bin filename in
+    output_bytes oc png_bytes;
+    close_out oc;
+    t.frame_number <- t.frame_number + 1)
+  else
+    (* Single file mode - write using the writer function *)
+    writer png_bytes 0 (Bytes.length png_bytes)
+
+let finalize _t ~writer:_ =
+  (* Nothing to finalize for PNG renderer *)
   ()
-
-let render t =
-  if not t.captured then capture_frame t;
-
-  match t.pixels with
-  | None -> ""
-  | Some pixels ->
-      (* Convert pixel array to 2D array for PNG *)
-      let pixel_array =
-        Array.init t.height (fun y ->
-            Array.init t.width (fun x -> pixels.((y * t.width) + x)))
-      in
-
-      (* Create PNG image *)
-      let img = Png.rgb_of_pixels ~width:t.width ~height:t.height pixel_array in
-
-      (* Encode to PNG *)
-      Png.bytes_of_png img |> Bytes.to_string

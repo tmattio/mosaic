@@ -49,6 +49,9 @@ type gif_error =
   | Decode_error of string
   | Invalid_argument of string
 
+val string_of_error : gif_error -> string
+(** Convert a gif_error to a human-readable string *)
+
 type color = { r : int; g : int; b : int }
 (** RGB color.
 
@@ -139,6 +142,24 @@ type frame = {
     Represents a single frame in a GIF animation. Frames can be positioned
     anywhere within the canvas and may have their own color tables. *)
 
+val create_frame :
+  width:int ->
+  height:int ->
+  x_offset:int ->
+  y_offset:int ->
+  delay_cs:centiseconds ->
+  ?disposal:disposal_method ->
+  ?transparent_index:int ->
+  ?local_palette:palette ->
+  pixels:bytes ->
+  unit ->
+  frame
+(** [create_frame ~width ~height ~x_offset ~y_offset ~delay_cs ?disposal
+     ?transparent_index ?local_palette ~pixels ()] creates a new frame.
+
+    Validates all parameters and returns an error if any are invalid. The pixel
+    data must match the specified dimensions. *)
+
 (** {2 GIF data structure operations} *)
 
 val gif_width : t -> int
@@ -177,7 +198,8 @@ val gif_create :
 (** {2 Encoder API}
 
     The main encoding API is the [encode] function that works with the GIF data
-    structure. For memory-efficient streaming, use [encode_streaming]. *)
+    structure. For memory-efficient streaming, use [create_streaming_encoder]
+    and related functions. *)
 
 val encode : t -> (string, gif_error) result
 (** [encode gif] encodes a GIF data structure to binary format.
@@ -194,6 +216,64 @@ val encode_streaming :
     @param gif The GIF data structure to encode.
     @param writer Function to write bytes. Called as [writer buf offset length].
     @return [Ok ()] on success, or [Error _] if encoding fails. *)
+
+(** {2 Streaming Encoder API}
+
+    For true frame-by-frame streaming, use these functions. *)
+
+type streaming_encoder
+(** Opaque type representing a streaming GIF encoder state. *)
+
+val create_streaming_encoder :
+  width:int ->
+  height:int ->
+  palette:palette ->
+  ?background_index:int ->
+  ?loop_count:int ->
+  unit ->
+  (streaming_encoder, gif_error) result
+(** [create_streaming_encoder ~width ~height ~palette ?background_index
+     ?loop_count ()] creates a new streaming encoder.
+
+    The GIF header with the provided palette will be written when the first
+    frame is added.
+
+    @param width Canvas width in pixels
+    @param height Canvas height in pixels
+    @param palette The color palette to use for encoding
+    @param background_index
+      Index of the background color in the palette (default: 0)
+    @param loop_count
+      Number of loops (None = no loop extension, Some 0 = forever)
+    @return [Ok encoder] on success, or [Error _] if parameters are invalid. *)
+
+val write_frame_streaming :
+  streaming_encoder ->
+  frame ->
+  writer:(bytes -> int -> int -> unit) ->
+  (unit, gif_error) result
+(** [write_frame_streaming encoder frame writer] writes a single frame to the
+    GIF.
+
+    On the first frame, this will write the GIF header before writing the frame.
+
+    @param encoder The streaming encoder state
+    @param frame The frame to write
+    @param writer Function to write bytes. Called as [writer buf offset length].
+    @return [Ok ()] on success, or [Error _] if encoding fails. *)
+
+val finalize_streaming_encoder :
+  streaming_encoder ->
+  writer:(bytes -> int -> int -> unit) ->
+  (unit, gif_error) result
+(** [finalize_streaming_encoder encoder writer] finalizes the GIF by writing the
+    trailer.
+
+    This must be called to produce a valid GIF file.
+
+    @param encoder The streaming encoder state
+    @param writer Function to write bytes. Called as [writer buf offset length].
+    @return [Ok ()] on success, or [Error _] if finalization fails. *)
 
 (** Dithering algorithm for color quantization *)
 type dithering =

@@ -1,0 +1,4 @@
+(library
+ (name vcr_common)
+ (public_name vcr.common)
+ (libraries unix))

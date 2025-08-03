@@ -1,7 +1,7 @@
 # Test 256-color support
 Set Shell "bash"
-Set Width 80
-Set Height 20
+Set Width 800
+Set Height 400
 Set TypingSpeed 0.01
 
 Type "clear"

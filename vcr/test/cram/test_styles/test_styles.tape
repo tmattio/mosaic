@@ -1,7 +1,7 @@
 # Test text styles and attributes
 Set Shell "bash"
-Set Width 60
-Set Height 15
+Set Width 600
+Set Height 300
 Set TypingSpeed 0.05
 
 Type "clear"

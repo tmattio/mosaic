@@ -4,31 +4,38 @@ type config = { separator : string }
 
 let default_config = { separator = String.make 80 '-' (* 80 dashes like VHS *) }
 
-type frame = string list
-type t = { vte : Vte.t; config : config; mutable frames : frame list }
+type t = {
+  rows : int;
+  cols : int;
+  config : config;
+  mutable frames : string list list;
+      (* List of frames, each frame is a list of lines *)
+}
 
-let create vte config = { vte; config; frames = [] }
+let create ~rows ~cols config = { rows; cols; config; frames = [] }
 
-let capture_frame t =
-  let rows = Vte.rows t.vte in
+(** Render a frame to ASCII text *)
+let render_frame_to_ascii ~frame =
+  let grid = frame.Renderer_intf.grid in
+  let rows = Grid.rows grid in
+  let cols = Grid.cols grid in
   let lines = ref [] in
 
-  (* Read each line from the terminal buffer *)
+  (* Read each line from the grid *)
   for row = 0 to rows - 1 do
-    let cols_count = Vte.cols t.vte in
-    let line_bytes = Bytes.create cols_count in
+    let line_bytes = Bytes.create cols in
     let last_non_space = ref (-1) in
 
     (* Get characters for this line *)
-    for col = 0 to cols_count - 1 do
-      match Vte.get_cell t.vte ~row ~col with
+    for col = 0 to cols - 1 do
+      match Grid.get grid ~row ~col with
       | None -> Bytes.set line_bytes col ' '
       | Some cell ->
           let ch =
-            if String.length cell.glyph > 0 then
-              try Uchar.to_char (Uchar.of_int (Char.code cell.glyph.[0]))
-              with Invalid_argument _ -> cell.glyph.[0]
-            else ' '
+            if Grid.Cell.is_empty cell then ' '
+            else
+              let text = Grid.Cell.get_text cell in
+              if String.length text > 0 then text.[0] else ' '
           in
           Bytes.set line_bytes col ch;
           if ch <> ' ' then last_non_space := col
@@ -43,27 +50,39 @@ let capture_frame t =
     lines := trimmed_line :: !lines
   done;
 
-  (* Store frame (lines are in reverse order, so reverse them back) *)
-  t.frames <- List.rev !lines :: t.frames
+  List.rev !lines
 
-let add_pending_delay _ _ = () (* ASCII doesn't use frame delays *)
+let write_frame t frame ~incremental ~writer =
+  let _ = incremental in
+  (* Not used for ASCII renderer *)
+  let _ = writer in
+  (* Not used - we buffer frames for finalize *)
+  let _ = t.rows in
+  (* Mark as used *)
+  let _ = t.cols in
+  (* Mark as used *)
 
-let render t =
-  let buffer = Buffer.create 4096 in
+  (* Render frame to lines *)
+  let lines = render_frame_to_ascii ~frame in
+
+  (* Store frame for finalize *)
+  t.frames <- lines :: t.frames
+
+let finalize t ~writer =
   (* Write frames in order (they were added in reverse) *)
   let frames_in_order = List.rev t.frames in
+
   List.iteri
     (fun i frame ->
       (* Write each line of the frame *)
       List.iter
         (fun line ->
-          Buffer.add_string buffer line;
-          Buffer.add_char buffer '\n')
+          let line_bytes = Bytes.of_string (line ^ "\n") in
+          writer line_bytes 0 (Bytes.length line_bytes))
         frame;
 
       (* Add separator between frames (except after the last one) *)
-      if i < List.length frames_in_order - 1 then (
-        Buffer.add_string buffer t.config.separator;
-        Buffer.add_char buffer '\n'))
-    frames_in_order;
-  Buffer.contents buffer
+      if i < List.length frames_in_order - 1 then
+        let sep_bytes = Bytes.of_string (t.config.separator ^ "\n") in
+        writer sep_bytes 0 (Bytes.length sep_bytes))
+    frames_in_order

@@ -8,7 +8,10 @@
   eio_main
   eio.unix
   logs
+  fmt
+  vcr.common
+  vcr.renderer
+  vcr.tape
   matrix.pty
   matrix.vte
-  vcr.renderer
-  vcr.tape))
+  matrix.grid))
