@@ -158,6 +158,10 @@ type position = Relative | Absolute
 type box_sizing = Border_box | Content_box
 type overflow = Visible | Clip | Hidden | Scroll
 
+let is_scroll_container = function
+  | Visible | Clip -> false
+  | Hidden | Scroll -> true
+
 (* ─────────────────────────  Style record  ──────────────────────── *)
 
 type style = {

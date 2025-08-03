@@ -128,6 +128,8 @@ type position = Relative | Absolute
 type box_sizing = Border_box | Content_box
 type overflow = Visible | Clip | Hidden | Scroll
 
+val is_scroll_container : overflow -> bool
+
 type style = {
   (* — core — *)
   display : display;

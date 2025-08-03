@@ -1407,13 +1407,16 @@ let perform_final_layout_and_positioning (type tree)
     (module Tree : LAYOUT_FLEXBOX_CONTAINER with type t = tree) (tree : tree)
     (node : Node.Node_id.t) (container_size : float size)
     (constants : algo_constants) (flex_lines : Node.Node_id.t flex_line list) :
-    unit =
+    float size =
   Printf.printf "perform_final_layout_and_positioning called with %d lines\n"
     (List.length flex_lines);
   (* Set container layout *)
   let container_layout = Layout.Layout.empty in
 
   Tree.set_unrounded_layout tree node container_layout;
+
+  (* Track content size *)
+  let content_size = ref size_zero in
 
   (* Layout all flex items *)
   List.iter
@@ -1464,9 +1467,310 @@ let perform_final_layout_and_positioning (type tree)
             }
           in
 
-          Tree.set_unrounded_layout tree child.node child_layout)
+          Tree.set_unrounded_layout tree child.node child_layout;
+
+          (* Update content size *)
+          (* @feature content_size *)
+          let child_overflow = child.overflow in
+          content_size :=
+            size_zip_map !content_size
+              (Content_size.compute_content_size_contribution ~location
+                 ~size:child.target_size ~content_size:child.target_size
+                 ~overflow:child_overflow) (fun a b -> Float.max a b))
         line.items)
-    flex_lines
+    flex_lines;
+
+  !content_size
+
+(** Perform absolute layout on absolutely positioned children *)
+let perform_absolute_layout_on_absolute_children (type tree)
+    (module Tree : LAYOUT_FLEXBOX_CONTAINER with type t = tree) (tree : tree)
+    (node : Node.Node_id.t) (constants : algo_constants) : float size =
+  let module TExt = Tree_intf.LayoutPartialTreeExt (Tree) in
+  let content_size = ref size_zero in
+  let child_count = Tree.child_count tree node in
+
+  for order = 0 to child_count - 1 do
+    let child_id = Tree.get_child_id tree node order in
+    let child_style = Tree.get_flexbox_child_style tree child_id in
+
+    (* Skip items that are display:none or are not position:absolute *)
+    if
+      child_style.display <> Style.None && child_style.position = Style.Absolute
+    then (
+      let overflow = child_style.overflow in
+      let scrollbar_width = child_style.scrollbar_width in
+      let aspect_ratio = child_style.aspect_ratio in
+      let align_self =
+        Option.value ~default:constants.align_items child_style.align_self
+      in
+
+      (* Resolve margins *)
+      let margin =
+        rect_map child_style.margin (fun lpa ->
+            match lpa with
+            | Style.Length_percentage_auto.Auto -> None
+            | Style.Length_percentage_auto.Length v -> Some v
+            | Style.Length_percentage_auto.Percent p ->
+                Option.map (fun w -> w *. p) constants.node_inner_size.width)
+      in
+
+      (* Resolve padding and border *)
+      let padding =
+        rect_map child_style.padding (fun lp ->
+            match lp with
+            | Style.Length_percentage.Length v -> v
+            | Style.Length_percentage.Percent p ->
+                Option.value ~default:0.0
+                  (Option.map (fun w -> w *. p) constants.node_inner_size.width))
+      in
+      let border =
+        rect_map child_style.border (fun lp ->
+            match lp with
+            | Style.Length_percentage.Length v -> v
+            | Style.Length_percentage.Percent p ->
+                Option.value ~default:0.0
+                  (Option.map (fun w -> w *. p) constants.node_inner_size.width))
+      in
+      let padding_border_sum = rect_sum_axes (rect_add padding border) in
+      let box_sizing_adjustment =
+        if child_style.box_sizing = Style.Content_box then padding_border_sum
+        else size_zero
+      in
+
+      (* Resolve inset *)
+      let inset =
+        rect_map child_style.inset (fun lpa ->
+            match lpa with
+            | Style.Length_percentage_auto.Auto -> None
+            | Style.Length_percentage_auto.Length v -> Some v
+            | Style.Length_percentage_auto.Percent p ->
+                Option.map
+                  (fun s -> s *. p)
+                  (if constants.is_row then constants.node_inner_size.width
+                   else constants.node_inner_size.height))
+      in
+
+      (* Compute known dimensions *)
+      let resolve_dimension_with_aspect dim parent_size =
+        match dim with
+        | Style.Dimension.Auto -> None
+        | Style.Dimension.Length v -> Some v
+        | Style.Dimension.Percent p -> Option.map (fun s -> s *. p) parent_size
+      in
+
+      let apply_aspect_ratio_to_size size =
+        match aspect_ratio with
+        | None -> size
+        | Some ratio -> (
+            match (size.width, size.height) with
+            | Some w, None -> { size with height = Some (w /. ratio) }
+            | None, Some h -> { size with width = Some (h *. ratio) }
+            | _ -> size)
+      in
+
+      let parent_size = constants.node_inner_size in
+      let size =
+        {
+          width =
+            resolve_dimension_with_aspect child_style.size.width
+              parent_size.width;
+          height =
+            resolve_dimension_with_aspect child_style.size.height
+              parent_size.height;
+        }
+        |> apply_aspect_ratio_to_size
+        |> fun size ->
+        size_zip_map size box_sizing_adjustment (fun sz adj ->
+            Option.map (fun s -> s +. adj) sz)
+      in
+
+      let min_size =
+        {
+          width =
+            resolve_dimension_with_aspect child_style.min_size.width
+              parent_size.width;
+          height =
+            resolve_dimension_with_aspect child_style.min_size.height
+              parent_size.height;
+        }
+      in
+
+      let max_size =
+        {
+          width =
+            resolve_dimension_with_aspect child_style.max_size.width
+              parent_size.width;
+          height =
+            resolve_dimension_with_aspect child_style.max_size.height
+              parent_size.height;
+        }
+      in
+
+      (* Perform child layout *)
+      let layout_output =
+        TExt.perform_child_layout tree child_id ~known_dimensions:size
+          ~parent_size
+          ~available_space:
+            {
+              width =
+                Style.Available_space.Definite
+                  constants.inner_container_size.width;
+              height =
+                Style.Available_space.Definite
+                  constants.inner_container_size.height;
+            }
+          ~sizing_mode:Layout.Sizing_mode.Content_size
+          ~vertical_margins_are_collapsible:line_false
+      in
+
+      let measured_size = layout_output.size in
+      let unclamped =
+        {
+          width =
+            (match size.width with
+            | Some w -> Some w
+            | None -> Some measured_size.width);
+          height =
+            (match size.height with
+            | Some h -> Some h
+            | None -> Some measured_size.height);
+        }
+      in
+      let clamped = Size.maybe_clamp unclamped min_size max_size in
+      let final_size =
+        {
+          width = Option.value ~default:measured_size.width clamped.width;
+          height = Option.value ~default:measured_size.height clamped.height;
+        }
+      in
+
+      (* Resolve auto margins and compute position *)
+      let free_space =
+        {
+          width = constants.inner_container_size.width -. final_size.width;
+          height = constants.inner_container_size.height -. final_size.height;
+        }
+      in
+
+      let auto_margin_counts =
+        {
+          width =
+            ((if Option.is_none margin.left then 1 else 0)
+            + if Option.is_none margin.right then 1 else 0);
+          height =
+            ((if Option.is_none margin.top then 1 else 0)
+            + if Option.is_none margin.bottom then 1 else 0);
+        }
+      in
+
+      let auto_margin_size =
+        {
+          width =
+            (if auto_margin_counts.width > 0 then
+               free_space.width /. float_of_int auto_margin_counts.width
+             else 0.0);
+          height =
+            (if auto_margin_counts.height > 0 then
+               free_space.height /. float_of_int auto_margin_counts.height
+             else 0.0);
+        }
+      in
+
+      let resolved_margin =
+        {
+          left = Option.value ~default:auto_margin_size.width margin.left;
+          right = Option.value ~default:auto_margin_size.width margin.right;
+          top = Option.value ~default:auto_margin_size.height margin.top;
+          bottom = Option.value ~default:auto_margin_size.height margin.bottom;
+        }
+      in
+
+      (* Compute position based on inset *)
+      let location =
+        {
+          x =
+            (match (inset.left, inset.right) with
+            | Some left, _ ->
+                constants.content_box_inset.left +. left +. resolved_margin.left
+            | None, Some right ->
+                constants.inner_container_size.width -. final_size.width
+                -. right -. resolved_margin.right
+                -. constants.content_box_inset.right
+            | None, None ->
+                (* Apply alignment *)
+                let free_space_x =
+                  constants.inner_container_size.width -. final_size.width
+                  -. resolved_margin.left -. resolved_margin.right
+                in
+                let offset_x =
+                  match align_self with
+                  | Style.Alignment.Start | Style.Alignment.Flex_start -> 0.0
+                  | Style.Alignment.End | Style.Alignment.Flex_end ->
+                      free_space_x
+                  | Style.Alignment.Center -> free_space_x /. 2.0
+                  | _ -> 0.0
+                in
+                constants.content_box_inset.left +. resolved_margin.left
+                +. offset_x);
+          y =
+            (match (inset.top, inset.bottom) with
+            | Some top, _ ->
+                constants.content_box_inset.top +. top +. resolved_margin.top
+            | None, Some bottom ->
+                constants.inner_container_size.height -. final_size.height
+                -. bottom -. resolved_margin.bottom
+                -. constants.content_box_inset.bottom
+            | None, None ->
+                (* Apply alignment *)
+                let free_space_y =
+                  constants.inner_container_size.height -. final_size.height
+                  -. resolved_margin.top -. resolved_margin.bottom
+                in
+                let offset_y =
+                  match align_self with
+                  | Style.Alignment.Start | Style.Alignment.Flex_start -> 0.0
+                  | Style.Alignment.End | Style.Alignment.Flex_end ->
+                      free_space_y
+                  | Style.Alignment.Center -> free_space_y /. 2.0
+                  | _ -> 0.0
+                in
+                constants.content_box_inset.top +. resolved_margin.top
+                +. offset_y);
+        }
+      in
+
+      (* Set scrollbar size *)
+      let scrollbar_size =
+        {
+          width = (if overflow.y = Style.Scroll then scrollbar_width else 0.0);
+          height = (if overflow.x = Style.Scroll then scrollbar_width else 0.0);
+        }
+      in
+
+      (* Set child layout *)
+      Tree.set_unrounded_layout tree child_id
+        {
+          Layout.Layout.empty with
+          order;
+          location;
+          size = final_size;
+          padding;
+          border;
+          margin = resolved_margin;
+          scrollbar_size;
+        };
+
+      (* Update content size *)
+      (* @feature content_size *)
+      content_size :=
+        size_zip_map !content_size
+          (Content_size.compute_content_size_contribution ~location
+             ~size:final_size ~content_size:layout_output.size ~overflow)
+          (fun a b -> Float.max a b))
+  done;
+
+  !content_size
 
 (** Compute a preliminary size for an item *)
 let compute_preliminary (type tree)
@@ -1754,12 +2058,50 @@ let compute_preliminary (type tree)
     final_size.height;
 
   (* Perform final layout *)
-  perform_final_layout_and_positioning
-    (module Tree)
-    tree node final_size !constants !flex_lines;
+  let inflow_content_size =
+    perform_final_layout_and_positioning
+      (module Tree)
+      tree node final_size !constants !flex_lines
+  in
+
+  (* Perform absolute layout on absolutely positioned children *)
+  let absolute_content_size =
+    perform_absolute_layout_on_absolute_children
+      (module Tree)
+      tree node !constants
+  in
+
+  (* Perform hidden layout on hidden children *)
+  let module TExt = Tree_intf.LayoutPartialTreeExt (Tree) in
+  let child_count = Tree.child_count tree node in
+  for order = 0 to child_count - 1 do
+    let child_id = Tree.get_child_id tree node order in
+    let child_style = Tree.get_flexbox_child_style tree child_id in
+    if child_style.display = Style.None then (
+      Tree.set_unrounded_layout tree child_id (Layout.Layout.with_order order);
+      let _ =
+        TExt.perform_child_layout tree child_id ~known_dimensions:size_none
+          ~parent_size:size_none
+          ~available_space:
+            {
+              width = Style.Available_space.Max_content;
+              height = Style.Available_space.Max_content;
+            }
+          ~sizing_mode:Layout.Sizing_mode.Inherent_size
+          ~vertical_margins_are_collapsible:line_false
+      in
+      ())
+  done;
+
+  (* Compute final content size *)
+  (* @feature content_size *)
+  let content_size =
+    size_zip_map inflow_content_size absolute_content_size (fun a b ->
+        Float.max a b)
+  in
 
   (* Return the layout output *)
-  Layout.Layout_output.of_outer_size final_size
+  Layout.Layout_output.of_sizes ~size:final_size ~content_size
 
 (** Compute layout constants from the given style *)
 (* compute_constants function was inlined into compute_preliminary *)

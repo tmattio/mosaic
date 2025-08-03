@@ -406,10 +406,12 @@ let perform_final_layout_on_in_flow_children (type tree)
             margin = resolved_margin;
           };
         (* 11/ Update inflow content size. *)
-        (* (Feature‑gated; keep no‑op fallback) *)
-        inflow_content_size := size_zero;
-
-        (* TODO: compute when feature enabled *)
+        (* @feature content_size *)
+        inflow_content_size :=
+          size_zip_map !inflow_content_size
+            (Content_size.compute_content_size_contribution ~location
+               ~size:final_size ~content_size:child_layout.size
+               ~overflow:item.overflow) (fun a b -> Float.max a b);
 
         (* 12/ Margins update. *)
         if !collapsing_with_first then
@@ -784,8 +786,12 @@ let perform_absolute_layout_on_absolute_children (type tree)
             };
 
           (* Update absolute content size *)
-          (* TODO: compute_content_size_contribution when feature enabled *)
-          absolute_content_size := !absolute_content_size))
+          (* @feature content_size *)
+          absolute_content_size :=
+            size_zip_map !absolute_content_size
+              (Content_size.compute_content_size_contribution ~location
+                 ~size:final_size ~content_size:layout_output.size
+                 ~overflow:item.overflow) (fun a b -> Float.max a b)))
     items;
 
   !absolute_content_size
@@ -940,7 +946,32 @@ let compute_block_layout (type tree)
           Layout.Layout_output.of_outer_size
             { width = container_outer_width; height = h }
       | _ ->
-          (* 5. Final child layout. *)
+          (* 5. Determine margin collapsing behaviour *)
+          let own_margins_collapse_with_children =
+            {
+              start =
+                (vertical_margins_are_collapsible.start
+                && (not (Style.is_scroll_container style.overflow.x))
+                && (not (Style.is_scroll_container style.overflow.y))
+                && style.position = Style.Relative
+                && padding.top = 0.0 && border.top = 0.0
+                &&
+                match styled_based_known.height with
+                | None -> true
+                | Some _ -> false);
+              end_ =
+                (vertical_margins_are_collapsible.end_
+                && (not (Style.is_scroll_container style.overflow.x))
+                && (not (Style.is_scroll_container style.overflow.y))
+                && style.position = Style.Relative
+                && padding.bottom = 0.0 && border.bottom = 0.0
+                &&
+                match styled_based_known.height with
+                | None -> true
+                | Some _ -> false);
+            }
+          in
+          (* 6. Final child layout. *)
           let content_box_inset = Rect.(padding + border) in
           let resolved_content_box_inset = content_box_inset in
           let text_align = style.Style.text_align in
@@ -950,8 +981,7 @@ let compute_block_layout (type tree)
               (module T)
               ~tree ~items:items_arr ~container_outer_width ~content_box_inset
               ~resolved_content_box_inset ~text_align
-              ~own_margins_collapse_with_children:
-                vertical_margins_are_collapsible ~perform_child_layout
+              ~own_margins_collapse_with_children ~perform_child_layout
           in
           let container_outer_height =
             match styled_based_known.height with
@@ -966,7 +996,7 @@ let compute_block_layout (type tree)
           if run_mode = Compute_size then
             Layout.Layout_output.of_outer_size final_outer_size
           else
-            (* 6. Absolute children *)
+            (* 7. Absolute children *)
             let absolute_content_size =
               perform_absolute_layout_on_absolute_children
                 (module T)
@@ -982,19 +1012,84 @@ let compute_block_layout (type tree)
                     y = padding.top +. border.top;
                   }
             in
+            (* 8. Perform hidden layout on hidden children *)
+            let module TExt = Tree_intf.LayoutPartialTreeExt (T) in
+            let child_count = T.child_count tree node_id in
+            for order = 0 to child_count - 1 do
+              let child_id = T.get_child_id tree node_id order in
+              let child_style = T.get_block_child_style tree child_id in
+              if child_style.display = Style.None then (
+                T.set_unrounded_layout tree child_id
+                  (Layout.Layout.with_order order);
+                let _ =
+                  TExt.perform_child_layout tree child_id
+                    ~known_dimensions:size_none ~parent_size:size_none
+                    ~available_space:
+                      {
+                        width = Style.Available_space.Max_content;
+                        height = Style.Available_space.Max_content;
+                      }
+                    ~sizing_mode:Layout.Sizing_mode.Inherent_size
+                    ~vertical_margins_are_collapsible:line_false
+                in
+                ())
+            done;
             (* Compute content size as max of inflow and absolute content *)
             let content_size =
               size_zip_map inflow_content_size absolute_content_size (fun a b ->
                   Float.max a b)
             in
-            (* 7. Compose final output. *)
-            let _ = content_size in
-            (* TODO: Use when content_size feature is enabled *)
-            Layout.Layout_output.
-              {
-                size = final_outer_size;
-                first_baselines = point_none;
-                top_margin = first_top_set;
-                bottom_margin = last_bottom_set;
-                margins_can_collapse_through = false;
-              })
+            (* 9. Determine whether this node can be collapsed through *)
+            let has_styles_preventing_being_collapsed_through =
+              (not (Style.is_block style))
+              || Style.is_scroll_container style.overflow.x
+              || Style.is_scroll_container style.overflow.y
+              || style.position = Style.Absolute
+              || padding.top > 0.0 || padding.bottom > 0.0 || border.top > 0.0
+              || border.bottom > 0.0
+              ||
+              match styled_based_known.height with
+              | Some _ -> true
+              | None -> false
+            in
+            let all_in_flow_children_can_be_collapsed_through =
+              Array.for_all
+                (fun item ->
+                  item.position = Style.Absolute
+                  || item.can_be_collapsed_through)
+                items_arr
+            in
+            let can_be_collapsed_through =
+              (not has_styles_preventing_being_collapsed_through)
+              && all_in_flow_children_can_be_collapsed_through
+            in
+            (* 10. Compose final output. *)
+            (* Resolve margins *)
+            let raw_margin = Style.margin style in
+            let margin_top =
+              Resolve.resolve_or_zero_length_percentage_auto raw_margin.top
+                parent_size.width (fun _id basis -> basis)
+            in
+            let margin_bottom =
+              Resolve.resolve_or_zero_length_percentage_auto raw_margin.bottom
+                parent_size.width (fun _id basis -> basis)
+            in
+            let top_margin =
+              if own_margins_collapse_with_children.start then first_top_set
+              else Layout.Collapsible_margin_set.of_margin margin_top
+            in
+            let bottom_margin =
+              if own_margins_collapse_with_children.end_ then last_bottom_set
+              else Layout.Collapsible_margin_set.of_margin margin_bottom
+            in
+            (* @feature content_size *)
+            let output =
+              Layout.Layout_output.of_sizes ~size:final_outer_size ~content_size
+            in
+            {
+              output with
+              first_baselines = point_none;
+              top_margin;
+              bottom_margin;
+              margins_can_collapse_through = can_be_collapsed_through;
+            })

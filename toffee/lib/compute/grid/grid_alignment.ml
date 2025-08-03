@@ -513,20 +513,17 @@ let align_and_position_item ~node ~order ~grid_area ~container_alignment_styles
        order = Int32.to_int order;
        location = { x; y };
        size = final_size;
-       content_size = { width = 100.0; height = 100.0 };
-       (* FIXME: layout_output type issue *)
+       content_size = layout_output.size;
        scrollbar_size;
        padding;
        border;
        margin = resolved_margin;
      });
 
+  (* @feature content_size *)
   let contribution =
-    if
-      overflow.x = Visible || overflow.x = Clip || overflow.y = Visible
-      || overflow.y = Clip
-    then { width = x +. final_size.width; height = y +. final_size.height }
-    else Size.zero
+    Content_size.compute_content_size_contribution ~location:{ x; y }
+      ~size:final_size ~content_size:layout_output.size ~overflow
   in
 
   (contribution, y, final_size.height)

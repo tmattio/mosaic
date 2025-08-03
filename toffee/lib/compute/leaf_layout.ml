@@ -109,14 +109,8 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.style)
       match node_size with
       | { width = Some w; height = Some h } ->
           let size = { width = w; height = h } in
-          Layout_output.
-            {
-              size;
-              first_baselines = point_none;
-              top_margin = Collapsible_margin_set.zero;
-              bottom_margin = Collapsible_margin_set.zero;
-              margins_can_collapse_through = false;
-            }
+          (* @feature content_size *)
+          Layout_output.of_sizes ~size ~content_size:size_zero
       | _ ->
           (* Continue with normal computation flow *)
           let available_space =
@@ -195,16 +189,18 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.style)
             size_option_unwrap_or s size_zero
           in
           (* Final output. *)
-          Layout_output.
-            {
-              size;
-              first_baselines = point_none;
-              top_margin = Collapsible_margin_set.zero;
-              bottom_margin = Collapsible_margin_set.zero;
-              margins_can_collapse_through =
-                (not has_styles_preventing_being_collapsed_through)
-                && size.height = 0. && measured_size.height = 0.;
-            })
+          (* @feature content_size *)
+          let content_size = size_add measured_size (rect_sum_axes padding) in
+          let output = Layout_output.of_sizes ~size ~content_size in
+          {
+            output with
+            first_baselines = point_none;
+            top_margin = Collapsible_margin_set.zero;
+            bottom_margin = Collapsible_margin_set.zero;
+            margins_can_collapse_through =
+              (not has_styles_preventing_being_collapsed_through)
+              && size.height = 0. && measured_size.height = 0.;
+          })
   | _ ->
       (* Available space for the measure function (complex spec logic…) *)
       let available_space =
@@ -286,13 +282,15 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.style)
         size_option_unwrap_or s size_zero
       in
       (* Final output. *)
-      Layout_output.
-        {
-          size;
-          first_baselines = point_none;
-          top_margin = Collapsible_margin_set.zero;
-          bottom_margin = Collapsible_margin_set.zero;
-          margins_can_collapse_through =
-            (not has_styles_preventing_being_collapsed_through)
-            && size.height = 0. && measured_size.height = 0.;
-        }
+      (* @feature content_size *)
+      let content_size = size_add measured_size (rect_sum_axes padding) in
+      let output = Layout_output.of_sizes ~size ~content_size in
+      {
+        output with
+        first_baselines = point_none;
+        top_margin = Collapsible_margin_set.zero;
+        bottom_margin = Collapsible_margin_set.zero;
+        margins_can_collapse_through =
+          (not has_styles_preventing_being_collapsed_through)
+          && size.height = 0. && measured_size.height = 0.;
+      }
