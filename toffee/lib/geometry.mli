@@ -27,6 +27,17 @@ val line_false : bool line
 val point_zero : float point
 val point_none : float option point
 
+(** Line module *)
+module Line : sig
+  type 'a t = 'a line = { start : 'a; end_ : 'a }
+
+  val map : ('a -> 'b) -> 'a t -> 'b t
+  (** Map a function over both start and end values *)
+
+  val true_ : bool t
+  val false_ : bool t
+end
+
 (** {1 Axis-aware accessors} *)
 
 val size_get_abs : 'a size -> absolute_axis -> 'a

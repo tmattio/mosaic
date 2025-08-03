@@ -37,6 +37,8 @@ module Available_space : sig
   val maybe_set : t -> float option -> t
   val from : float -> t
   val into_option : t -> float option
+  val compute_free_space : t -> float -> float
+  val is_definite : t -> bool
 end
 
 module Alignment : sig

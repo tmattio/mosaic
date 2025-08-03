@@ -61,6 +61,14 @@ module Available_space = struct
   let into_option = function
     | Definite v -> Some v
     | Min_content | Max_content -> None
+
+  let compute_free_space available_space used_space =
+    match available_space with
+    | Max_content -> Float.infinity
+    | Min_content -> 0.0
+    | Definite available_space -> available_space -. used_space
+
+  let is_definite = function Definite _ -> true | _ -> false
 end
 
 (* ─────────────────────────  Alignment  ─────────────────────────── *)

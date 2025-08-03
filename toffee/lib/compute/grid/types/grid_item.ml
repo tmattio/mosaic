@@ -10,6 +10,17 @@ open Geometry
 open Grid_coordinates
 open Grid_grid_axis_helpers
 
+type 'tree intrinsic_size_measurer = {
+  tree : (module Tree_intf.LayoutPartialTreeExt with type t = 'tree);
+  tree_val : 'tree;
+  other_axis_tracks : Grid_track.t array;
+  get_track_size_estimate :
+    Grid_track.t -> float option -> 'tree -> float option;
+  axis : abstract_axis;
+  inner_node_size : float option size;
+}
+(** Type for intrinsic size measurer used in track sizing *)
+
 type t = {
   node : Node.Node_id.t;  (** The id of the node that this item represents *)
   source_order : int;
@@ -232,8 +243,14 @@ let spanned_fixed_track_limit t axis axis_tracks axis_parent_size calc =
 (** Compute the item's resolved margins for size contributions. Horizontal
     percentage margins always resolve to zero if the container size is
     indefinite as otherwise this would introduce a cyclic dependency. *)
-let margins_axis_sums_with_baseline_shims t inner_node_width tree =
-  let calc = tree#calc in
+let margins_axis_sums_with_baseline_shims (type tree) t inner_node_width
+    (measurer : tree intrinsic_size_measurer) =
+  let module Tree =
+    (val measurer.tree : Tree_intf.LayoutPartialTreeExt with type t = tree)
+  in
+  let calc ~ptr ~basis =
+    Tree.resolve_calc_value measurer.tree_val ~ptr ~basis
+  in
   let left =
     Resolve.resolve_or_zero_length_percentage_auto t.margin.left (Some 0.0) calc
   in
@@ -256,10 +273,16 @@ let margins_axis_sums_with_baseline_shims t inner_node_width tree =
     key thing that is being done here is applying stretch alignment, which is
     necessary to allow percentage sizes further down the tree to resolve
     properly in some cases *)
-let known_dimensions t tree inner_node_size grid_area_size =
-  let calc = tree#calc in
+let known_dimensions (type tree) t (measurer : tree intrinsic_size_measurer)
+    inner_node_size grid_area_size =
+  let module Tree =
+    (val measurer.tree : Tree_intf.LayoutPartialTreeExt with type t = tree)
+  in
+  let calc ~ptr ~basis =
+    Tree.resolve_calc_value measurer.tree_val ~ptr ~basis
+  in
   let margins =
-    margins_axis_sums_with_baseline_shims t inner_node_size.Size.width tree
+    margins_axis_sums_with_baseline_shims t inner_node_size.Size.width measurer
   in
 
   let padding =
@@ -406,58 +429,68 @@ let available_space_cached t axis other_axis_tracks other_axis_available_space
       available_spaces
 
 (** Compute the item's min content contribution from the provided parameters *)
-let min_content_contribution t axis tree available_space inner_node_size =
+let min_content_contribution (type tree) t axis
+    (measurer : tree intrinsic_size_measurer) available_space inner_node_size =
+  let module Tree =
+    (val measurer.tree : Tree_intf.LayoutPartialTreeExt with type t = tree)
+  in
   let known_dimensions =
-    known_dimensions t tree inner_node_size available_space
+    known_dimensions t measurer inner_node_size available_space
   in
   let available_space_map =
     Size.map available_space ~f:(function
       | Some size -> Style.Available_space.Definite size
       | None -> Style.Available_space.Min_content)
   in
-  tree#measure_child_size t.node known_dimensions inner_node_size
-    available_space_map Layout.Sizing_mode.Inherent_size
-    (Abstract_axis.as_abs_naive axis)
-    Line.false_
+  Tree.measure_child_size measurer.tree_val t.node ~known_dimensions
+    ~parent_size:inner_node_size ~available_space:available_space_map
+    ~sizing_mode:Layout.Sizing_mode.Inherent_size
+    ~axis:(Abstract_axis.as_abs_naive axis)
+    ~vertical_margins_are_collapsible:Line.false_
 
 (** Retrieve the item's min content contribution from the cache or compute it
     using the provided parameters *)
-let min_content_contribution_cached t axis tree available_space inner_node_size
-    =
+let min_content_contribution_cached t axis measurer available_space
+    inner_node_size =
   match Size.get t.min_content_contribution_cache axis with
   | Some cached -> cached
   | None ->
       let size =
-        min_content_contribution t axis tree available_space inner_node_size
+        min_content_contribution t axis measurer available_space inner_node_size
       in
       t.min_content_contribution_cache <-
         Size.set t.min_content_contribution_cache axis (Some size);
       size
 
 (** Compute the item's max content contribution from the provided parameters *)
-let max_content_contribution t axis tree available_space inner_node_size =
+let max_content_contribution (type tree) t axis
+    (measurer : tree intrinsic_size_measurer) available_space inner_node_size =
+  let module Tree =
+    (val measurer.tree : Tree_intf.LayoutPartialTreeExt with type t = tree)
+  in
   let known_dimensions =
-    known_dimensions t tree inner_node_size available_space
+    known_dimensions t measurer inner_node_size available_space
   in
   let available_space_map =
     Size.map available_space ~f:(function
       | Some size -> Style.Available_space.Definite size
       | None -> Style.Available_space.Max_content)
   in
-  tree#measure_child_size t.node known_dimensions inner_node_size
-    available_space_map Layout.Sizing_mode.Inherent_size
-    (Abstract_axis.as_abs_naive axis)
-    Line.false_
+  Tree.measure_child_size measurer.tree_val t.node ~known_dimensions
+    ~parent_size:inner_node_size ~available_space:available_space_map
+    ~sizing_mode:Layout.Sizing_mode.Inherent_size
+    ~axis:(Abstract_axis.as_abs_naive axis)
+    ~vertical_margins_are_collapsible:Line.false_
 
 (** Retrieve the item's max content contribution from the cache or compute it
     using the provided parameters *)
-let max_content_contribution_cached t axis tree available_space inner_node_size
-    =
+let max_content_contribution_cached t axis measurer available_space
+    inner_node_size =
   match Size.get t.max_content_contribution_cache axis with
   | Some cached -> cached
   | None ->
       let size =
-        max_content_contribution t axis tree available_space inner_node_size
+        max_content_contribution t axis measurer available_space inner_node_size
       in
       t.max_content_contribution_cache <-
         Size.set t.max_content_contribution_cache axis (Some size);
@@ -474,9 +507,14 @@ let max_content_contribution_cached t axis tree available_space inner_node_size
     Because the minimum contribution often depends on the size of the item's
     content, it is considered a type of intrinsic size contribution. See:
     https://www.w3.org/TR/css-grid-1/#min-size-auto *)
-let minimum_contribution t tree axis axis_tracks known_dimensions
-    inner_node_size =
-  let calc = tree#calc in
+let minimum_contribution (type tree) t (measurer : tree intrinsic_size_measurer)
+    axis axis_tracks known_dimensions inner_node_size =
+  let module Tree =
+    (val measurer.tree : Tree_intf.LayoutPartialTreeExt with type t = tree)
+  in
+  let calc ~ptr ~basis =
+    Tree.resolve_calc_value measurer.tree_val ~ptr ~basis
+  in
   let padding =
     Resolve.resolve_or_zero_rect_with_size
       Resolve.resolve_or_zero_length_percentage t.padding inner_node_size calc
@@ -562,8 +600,8 @@ let minimum_contribution t tree axis axis_tracks known_dimensions
                 (* Otherwise, the automatic minimum size is zero, as usual. *)
                 if use_content_based_minimum then
                   let minimum_contribution =
-                    min_content_contribution_cached t axis tree known_dimensions
-                      inner_node_size
+                    min_content_contribution_cached t axis measurer
+                      known_dimensions inner_node_size
                   in
 
                   (* If the item is a compressible replaced element, and has a definite preferred size or maximum size in the
@@ -599,7 +637,7 @@ let minimum_contribution t tree axis axis_tracks known_dimensions
   let limit =
     spanned_fixed_track_limit t axis axis_tracks
       (Size.get inner_node_size axis)
-      tree#calc
+      calc
   in
   match Option.maybe_min size_option limit with
   | Some v -> v
@@ -607,13 +645,13 @@ let minimum_contribution t tree axis axis_tracks known_dimensions
 
 (** Retrieve the item's minimum contribution from the cache or compute it using
     the provided parameters *)
-let minimum_contribution_cached t tree axis axis_tracks known_dimensions
+let minimum_contribution_cached t measurer axis axis_tracks known_dimensions
     inner_node_size =
   match Size.get t.minimum_contribution_cache axis with
   | Some cached -> cached
   | None ->
       let size =
-        minimum_contribution t tree axis axis_tracks known_dimensions
+        minimum_contribution t measurer axis axis_tracks known_dimensions
           inner_node_size
       in
       t.minimum_contribution_cache <-

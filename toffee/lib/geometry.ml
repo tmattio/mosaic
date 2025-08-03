@@ -20,6 +20,16 @@ let line_false : bool line = { start = false; end_ = false }
 let point_zero : float point = { x = 0.; y = 0. }
 let point_none : float option point = { x = None; y = None }
 
+(* ─────────────────  Line module  ───────────────── *)
+
+module Line = struct
+  type 'a t = 'a line = { start : 'a; end_ : 'a }
+
+  let map f line = { start = f line.start; end_ = f line.end_ }
+  let true_ = line_true
+  let false_ = line_false
+end
+
 (* ─────────────────  Axis helpers  ───────────────── *)
 
 let other_axis = function Horizontal -> Vertical | Vertical -> Horizontal

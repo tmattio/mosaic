@@ -192,13 +192,17 @@ let compute_grid_layout (type tree)
       width =
         (match constrained_available_space.width with
         | Definite space ->
-            Some (space -. content_box_inset.left -. content_box_inset.right)
-        | _ -> None);
+            Available_space.Definite
+              (space -. content_box_inset.left -. content_box_inset.right)
+        | Min_content -> Min_content
+        | Max_content -> Max_content);
       height =
         (match constrained_available_space.height with
         | Definite space ->
-            Some (space -. content_box_inset.top -. content_box_inset.bottom)
-        | _ -> None);
+            Available_space.Definite
+              (space -. content_box_inset.top -. content_box_inset.bottom)
+        | Min_content -> Min_content
+        | Max_content -> Max_content);
     }
   in
 
@@ -340,8 +344,7 @@ let compute_grid_layout (type tree)
       in
 
       (* 4. Track sizing *)
-      (* This is a simplified version - full implementation would be much more complex *)
-      let get_track_size_estimate track available_space =
+      let get_track_size_estimate track available_space _tree =
         let _ = available_space in
         (* Mark as intentionally unused *)
         if track.base_size > 0.0 then Some track.base_size
@@ -349,19 +352,57 @@ let compute_grid_layout (type tree)
         else None
       in
 
+      (* Check if we have baseline-aligned items *)
+      let has_baseline_aligned_item =
+        List.exists
+          (fun item -> item.Grid_item.align_self = Style.Alignment.Baseline)
+          !items
+      in
+
+      (* Create a module that implements LayoutPartialTreeExt for track sizing *)
+      let module TreeExt = Tree_intf.LayoutPartialTreeExt (Tree) in
+      let tree_module =
+        (module TreeExt : Tree_intf.LayoutPartialTreeExt with type t = tree)
+      in
+
+      (* Resolve item track indexes before sizing *)
+      Track_sizing.resolve_item_track_indexes (Array.of_list !items)
+        grid_col_counts grid_row_counts;
+
+      (* Determine if items cross flexible or intrinsic tracks *)
+      Track_sizing.determine_if_item_crosses_flexible_or_intrinsic_tracks
+        (Array.of_list !items) columns rows;
+
       (* Size columns *)
-      Track_sizing.track_sizing_algorithm ~axis:Inline
-        ~axis_min_size:min_size.width ~axis_max_size:max_size.width
-        ~axis_available_grid_space:available_grid_space.width
-        ~axis_tracks:columns ~axis_counts:grid_col_counts
-        ~items:(Array.of_list !items) ~get_track_size_estimate ~inner_node_size;
+      Track_sizing.track_sizing_algorithm ~tree:tree_module ~tree_val:tree
+        ~axis:Inline ~axis_min_size:min_size.width ~axis_max_size:max_size.width
+        ~axis_alignment:
+          (match container_style.justify_content with
+          | Some jc -> jc
+          | None -> Style.Alignment.Start)
+        ~other_axis_alignment:
+          (match container_style.align_content with
+          | Some ac -> ac
+          | None -> Style.Alignment.Start)
+        ~available_grid_space ~inner_node_size ~axis_tracks:columns
+        ~other_axis_tracks:rows ~items:(Array.of_list !items)
+        ~get_track_size_estimate ~has_baseline_aligned_item;
 
       (* Size rows *)
-      Track_sizing.track_sizing_algorithm ~axis:Block
-        ~axis_min_size:min_size.height ~axis_max_size:max_size.height
-        ~axis_available_grid_space:available_grid_space.height ~axis_tracks:rows
-        ~axis_counts:grid_row_counts ~items:(Array.of_list !items)
-        ~get_track_size_estimate ~inner_node_size;
+      Track_sizing.track_sizing_algorithm ~tree:tree_module ~tree_val:tree
+        ~axis:Block ~axis_min_size:min_size.height
+        ~axis_max_size:max_size.height
+        ~axis_alignment:
+          (match container_style.align_content with
+          | Some ac -> ac
+          | None -> Style.Alignment.Start)
+        ~other_axis_alignment:
+          (match container_style.justify_content with
+          | Some jc -> jc
+          | None -> Style.Alignment.Start)
+        ~available_grid_space ~inner_node_size ~axis_tracks:rows
+        ~other_axis_tracks:columns ~items:(Array.of_list !items)
+        ~get_track_size_estimate ~has_baseline_aligned_item;
 
       (* 5. Compute final container size *)
       let total_column_size =
