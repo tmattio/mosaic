@@ -200,7 +200,7 @@ let test_color_types () =
     (sgr [ `Fg (RGB (128, 64, 192)) ])
 
 (** Convert style variant to string for test descriptions *)
-let string_of_style : attr -> string = function
+let string_of_style : Ansi.Style.attr -> string = function
   | `Bold -> "Bold"
   | `Dim -> "Dim"
   | `Italic -> "Italic"
@@ -216,10 +216,21 @@ let string_of_style : attr -> string = function
   | `Reset -> "Reset"
   | `Fg _ -> "Fg"
   | `Bg _ -> "Bg"
+  | `No_bold -> "No_bold"
+  | `No_dim -> "No_dim"
+  | `No_italic -> "No_italic"
+  | `No_underline -> "No_underline"
+  | `No_blink -> "No_blink"
+  | `No_reverse -> "No_reverse"
+  | `No_conceal -> "No_conceal"
+  | `No_strikethrough -> "No_strikethrough"
+  | `No_overline -> "No_overline"
+  | `No_framed -> "No_framed"
+  | `No_encircled -> "No_encircled"
 
 (** Test style attributes *)
 let test_style_attrs () =
-  let styles : (attr * string) list =
+  let styles : (Ansi.Style.attr * string) list =
     [
       (`Bold, "\x1b[1m");
       (`Dim, "\x1b[2m");

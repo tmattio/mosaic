@@ -1,4 +1,4 @@
 (library
  (name grid)
  (public_name matrix.grid)
- (libraries ansi))
+ (libraries ansi uutf uucp uuseg fmt bigarray))
