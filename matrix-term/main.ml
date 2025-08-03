@@ -42,6 +42,7 @@ module Colors = struct
     | Ansi.Bright_white -> Sdl.Color.create ~r:255 ~g:255 ~b:255 ~a:255
     | Ansi.Index n -> palette_256.(n)
     | Ansi.RGB (r, g, b) -> Sdl.Color.create ~r ~g ~b ~a:255
+    | Ansi.RGBA (r, g, b, a) -> Sdl.Color.create ~r ~g ~b ~a
 end
 
 type state = {
@@ -275,7 +276,7 @@ let handle_event state event =
           in
           for col = col_start to col_end do
             match Vte.get_cell state.vte ~row ~col with
-            | Some cell -> Buffer.add_string buffer cell.Grid.Cell.glyph
+            | Some cell -> Buffer.add_string buffer (Grid.Cell.get_text cell)
             | None -> Buffer.add_char buffer ' '
           done;
           if row < end_row then Buffer.add_char buffer '\n'
@@ -339,33 +340,39 @@ let render state =
 
   (* Get texture for a cell with proper attribute handling *)
   let get_or_create_texture (cell : Grid.Cell.t) =
-    let { Grid.Cell.glyph; attrs; _ } = cell in
-    let { Grid.Cell.fg; bg; reversed; _ } = attrs in
+    let glyph = Grid.Cell.get_text cell in
+    (* Skip rendering empty glyphs *)
+    if String.length glyph = 0 then None
+    else
+      let style = Grid.Cell.get_style cell in
+      let fg = Ansi.Style.fg style in
+      let bg = Ansi.Style.bg style in
+      let reversed = Ansi.Style.reversed style in
 
-    (* Handle default colors - map to the terminal's actual colors *)
-    let fg = if fg = Ansi.Default then Ansi.White else fg in
-    let bg = if bg = Ansi.Default then Ansi.RGB (20, 20, 20) else bg in
+      (* Handle default colors - map to the terminal's actual colors *)
+      let fg = if fg = Ansi.Default then Ansi.White else fg in
+      let bg = if bg = Ansi.Default then Ansi.RGB (20, 20, 20) else bg in
 
-    (* Apply reversed attribute *)
-    let final_fg, final_bg = if reversed then (bg, fg) else (fg, bg) in
+      (* Apply reversed attribute *)
+      let final_fg, final_bg = if reversed then (bg, fg) else (fg, bg) in
 
-    let cache_key = (glyph, final_fg, final_bg, reversed) in
-    match Hashtbl.find_opt state.texture_cache cache_key with
-    | Some tex -> tex
-    | None ->
-        let fg_color = Colors.of_ansi final_fg in
-        let bg_color = Colors.of_ansi final_bg in
-        let surface =
-          Ttf.render_utf8_shaded state.font glyph fg_color bg_color
-          |> or_else "Failed to render char"
-        in
-        let texture =
-          Sdl.create_texture_from_surface renderer surface
-          |> or_else "Failed to create texture"
-        in
-        Sdl.free_surface surface;
-        Hashtbl.add state.texture_cache cache_key texture;
-        texture
+      let cache_key = (glyph, final_fg, final_bg, reversed) in
+      match Hashtbl.find_opt state.texture_cache cache_key with
+      | Some tex -> Some tex
+      | None ->
+          let fg_color = Colors.of_ansi final_fg in
+          let bg_color = Colors.of_ansi final_bg in
+          let surface =
+            Ttf.render_utf8_shaded state.font glyph fg_color bg_color
+            |> or_else "Failed to render char"
+          in
+          let texture =
+            Sdl.create_texture_from_surface renderer surface
+            |> or_else "Failed to create texture"
+          in
+          Sdl.free_surface surface;
+          Hashtbl.add state.texture_cache cache_key texture;
+          Some texture
   in
 
   (* Render grid cells *)
@@ -406,32 +413,52 @@ let render state =
             in
             Sdl.render_fill_rect renderer (Some rect)
             |> or_else "Fill selection")
-      | Some cell ->
+      | Some cell -> (
           (* Handle selection by temporarily modifying cell attributes *)
           let cell =
             if is_selected then
-              {
-                cell with
-                Grid.Cell.attrs =
-                  {
-                    cell.Grid.Cell.attrs with
-                    fg = cell.Grid.Cell.attrs.bg;
-                    bg = Ansi.Blue;
-                  };
-              }
+              let style = Grid.Cell.get_style cell in
+              let fg = Ansi.Style.bg style in
+              let new_style =
+                style |> Ansi.Style.with_fg fg |> Ansi.Style.with_bg Ansi.Blue
+              in
+              Grid.Cell.make_glyph (Grid.Cell.get_text cell) ~style:new_style
+                ~east_asian_context:false
             else cell
           in
 
-          let texture = get_or_create_texture cell in
-          let dst =
-            Sdl.Rect.create
-              ~x:(10 + (col * char_width))
-              ~y:(10 + (row * char_height))
-              ~w:(char_width * cell.Grid.Cell.width)
-              ~h:char_height
-          in
-          Sdl.render_copy renderer texture ~dst
-          |> or_else "Failed to copy texture"
+          match get_or_create_texture cell with
+          | Some texture ->
+              let dst =
+                Sdl.Rect.create
+                  ~x:(10 + (col * char_width))
+                  ~y:(10 + (row * char_height))
+                  ~w:(char_width * Grid.Cell.width cell)
+                  ~h:char_height
+              in
+              Sdl.render_copy renderer texture ~dst
+              |> or_else "Failed to copy texture"
+          | None ->
+              (* For empty glyphs, just render the background color *)
+              let style = Grid.Cell.get_style cell in
+              let bg = Ansi.Style.bg style in
+              (* Handle default background color - same as in texture rendering *)
+              let bg =
+                if bg = Ansi.Default then Ansi.RGB (20, 20, 20) else bg
+              in
+              let bg_color = Colors.of_ansi bg in
+              Sdl.set_render_draw_color renderer (Sdl.Color.r bg_color)
+                (Sdl.Color.g bg_color) (Sdl.Color.b bg_color)
+                (Sdl.Color.a bg_color)
+              |> or_else "Set bg color";
+              let rect =
+                Sdl.Rect.create
+                  ~x:(10 + (col * char_width))
+                  ~y:(10 + (row * char_height))
+                  ~w:char_width ~h:char_height
+              in
+              Sdl.render_fill_rect renderer (Some rect)
+              |> or_else "Fill background")
     done
   done;
 
