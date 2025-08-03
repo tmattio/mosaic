@@ -17,10 +17,8 @@ let get_line vte row =
     | None -> Buffer.add_char buf ' '
     | Some cell ->
         (* Use the first character of the glyph *)
-        let ch =
-          if String.length cell.Cell.glyph > 0 then cell.Cell.glyph.[0]
-          else '?'
-        in
+        let text = Grid.Cell.get_text cell in
+        let ch = if String.length text > 0 then text.[0] else ' ' in
         Buffer.add_char buf ch
   done;
   (* Trim trailing spaces *)
@@ -41,8 +39,8 @@ let get_char_at vte ~row ~col =
   match Vte.get_cell vte ~row ~col with
   | None -> ' '
   | Some cell ->
-      if String.length cell.Cell.glyph > 0 then cell.Cell.glyph.[0]
-      else '?'
+      let text = Grid.Cell.get_text cell in
+      if String.length text > 0 then text.[0] else ' '
 
 (** Basic text rendering tests *)
 let test_basic_text () =
@@ -179,14 +177,22 @@ let test_bold_text () =
   let vte = create_vte () in
   feed_string vte "\x1b[1mBold\x1b[0m Normal";
   match Vte.get_cell vte ~row:0 ~col:0 with
-  | Some cell -> check bool "bold attribute" true cell.Cell.attrs.bold
+  | Some cell ->
+      if Grid.Cell.is_glyph cell then
+        let style = Grid.Cell.get_style cell in
+        check bool "bold attribute" true (Ansi.Style.bold style)
+      else fail "Expected Glyph cell"
   | None -> fail "Expected cell at 0,0"
 
 let test_italic_text () =
   let vte = create_vte () in
   feed_string vte "\x1b[3mItalic\x1b[0m";
   match Vte.get_cell vte ~row:0 ~col:0 with
-  | Some cell -> check bool "italic attribute" true cell.Cell.attrs.italic
+  | Some cell ->
+      if Grid.Cell.is_glyph cell then
+        let style = Grid.Cell.get_style cell in
+        check bool "italic attribute" true (Ansi.Style.italic style)
+      else fail "Expected Glyph cell"
   | None -> fail "Expected cell at 0,0"
 
 let test_underline_text () =
@@ -194,7 +200,10 @@ let test_underline_text () =
   feed_string vte "\x1b[4mUnderline\x1b[0m";
   match Vte.get_cell vte ~row:0 ~col:0 with
   | Some cell ->
-      check bool "underline attribute" true cell.Cell.attrs.underline
+      if Grid.Cell.is_glyph cell then
+        let style = Grid.Cell.get_style cell in
+        check bool "underline attribute" true (Ansi.Style.underline style)
+      else fail "Expected Glyph cell"
   | None -> fail "Expected cell at 0,0"
 
 let test_foreground_color () =
@@ -202,7 +211,13 @@ let test_foreground_color () =
   feed_string vte "\x1b[31mRed\x1b[0m";
   match Vte.get_cell vte ~row:0 ~col:0 with
   | Some cell ->
-      check bool "red foreground" (cell.Cell.attrs.fg = Ansi.Red) true
+      if Grid.Cell.is_glyph cell then
+        let style = Grid.Cell.get_style cell in
+        (* Red should be preserved as Red, not converted to RGB *)
+        check bool "red foreground"
+          (match Ansi.Style.fg style with Ansi.Red -> true | _ -> false)
+          true
+      else fail "Expected Glyph cell"
   | None -> fail "Expected cell at 0,0"
 
 let test_background_color () =
@@ -210,27 +225,47 @@ let test_background_color () =
   feed_string vte "\x1b[42mGreen BG\x1b[0m";
   match Vte.get_cell vte ~row:0 ~col:0 with
   | Some cell ->
-      check bool "green background" (cell.Cell.attrs.bg = Ansi.Green) true
+      if Grid.Cell.is_glyph cell then
+        let style = Grid.Cell.get_style cell in
+        (* Green should be preserved as Green, not converted to RGB *)
+        check bool "green background"
+          (match Ansi.Style.bg style with Ansi.Green -> true | _ -> false)
+          true
+      else fail "Expected Glyph cell"
   | None -> fail "Expected cell at 0,0"
 
 let test_256_color () =
   let vte = create_vte () in
   feed_string vte "\x1b[38;5;196mColor 196\x1b[0m";
   match Vte.get_cell vte ~row:0 ~col:0 with
-  | Some cell -> (
-      match cell.Cell.attrs.fg with
-      | Ansi.Index 196 -> ()
-      | _ -> fail "Expected color index 196")
+  | Some cell ->
+      if Grid.Cell.is_glyph cell then
+        let style = Grid.Cell.get_style cell in
+        (* Index colors should be preserved as Index, not converted to RGB *)
+        match Ansi.Style.fg style with
+        | Ansi.Index 196 -> () (* Color 196 preserved *)
+        | _ -> fail "Expected Index 196 color"
+      else fail "Expected Glyph cell"
   | None -> fail "Expected cell at 0,0"
 
 let test_rgb_color () =
   let vte = create_vte () in
   feed_string vte "\x1b[38;2;255;128;0mRGB\x1b[0m";
   match Vte.get_cell vte ~row:0 ~col:0 with
-  | Some cell -> (
-      match cell.Cell.attrs.fg with
-      | Ansi.RGB (255, 128, 0) -> ()
-      | _ -> fail "Expected RGB color")
+  | Some cell ->
+      if Grid.Cell.is_glyph cell then
+        let style = Grid.Cell.get_style cell in
+        match Ansi.Style.fg style with
+        | Ansi.RGB (r, g, b)
+          when abs (r - 255) <= 1 && abs (g - 128) <= 1 && abs (b - 0) <= 1 ->
+            (* Allow ±1 difference due to 7-bit color channel encoding *)
+            ()
+        | Ansi.RGB (r, g, b) ->
+            fail
+              (Printf.sprintf
+                 "Expected RGB color (255, 128, 0) ±1, got (%d, %d, %d)" r g b)
+        | _ -> fail "Expected RGB color"
+      else fail "Expected Glyph cell"
   | None -> fail "Expected cell at 0,0"
 
 (** Scrolling and wrapping tests *)
@@ -337,9 +372,11 @@ let test_incomplete_sequence () =
   feed_string vte "Red";
   match Vte.get_cell vte ~row:0 ~col:0 with
   | Some cell ->
-      check bool "red foreground after incomplete"
-        (cell.Cell.attrs.fg = Ansi.Red)
-        true
+      if Grid.Cell.is_glyph cell then
+        let style = Grid.Cell.get_style cell in
+        check bool "red foreground after incomplete" true
+          (Ansi.Style.fg style = Ansi.Red)
+      else fail "Expected Glyph cell"
   | None -> fail "Expected cell at 0,0"
 
 let test_utf8_handling () =

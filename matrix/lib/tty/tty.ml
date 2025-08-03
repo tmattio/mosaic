@@ -67,11 +67,6 @@ let create ?(tty = true) input output =
   in
   (if output_is_tty then
      try enable_vt output with _ -> () (* Enable VT on Windows *));
-  (if input_is_tty then
-     try
-       let termios = tcgetattr t.input in
-       tcsetattr t.input TCSANOW (make_raw termios)
-     with Unix_error _ -> ());
   t
 
 let set_non_blocking t enabled =

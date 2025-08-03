@@ -61,8 +61,9 @@ let test_malformed_utf8 () =
 
   Vte.feed vte malformed 0 5;
   let output = Vte.to_string_grid vte in
-  (* Malformed sequences should be skipped *)
-  check string "Malformed UTF-8 handling" "ABC" (String.trim output)
+  (* Malformed sequences should be replaced with U+FFFD (replacement character) *)
+  check string "Malformed UTF-8 handling" "A\239\191\189\239\191\189BC"
+    (String.trim output)
 
 let () =
   run "VTE Unicode"

@@ -30,6 +30,10 @@ val feed : t -> bytes -> int -> int -> unit
     offset [ofs] of length [len]) and updates the internal state of [t]
     accordingly. *)
 
+val feed_string : t -> string -> unit
+(** [feed_string t str] is a convenience function that feeds a string to the
+    terminal emulator. It converts the string to bytes and calls [feed]. *)
+
 val reset : t -> unit
 (** [reset t] resets the terminal state to its initial configuration. This
     clears the screen and scrollback, moves the cursor to (0,0), and resets all
@@ -93,9 +97,9 @@ val clear_dirty : t -> unit
 
 (** {1 Grid Manipulation} *)
 
-val get_grid : t -> Grid.t
-(** [get_grid t] returns the current grid state. Useful for diffing and advanced
-    rendering operations. *)
+val grid : t -> Grid.t
+(** [grid t] returns the current grid state. This is useful for debugging and
+    testing. *)
 
 val scroll_up : t -> int -> unit
 (** [scroll_up t n] scrolls the grid content up by [n] lines. New blank lines

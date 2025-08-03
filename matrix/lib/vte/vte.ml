@@ -7,10 +7,10 @@ type cursor = { mutable row : int; mutable col : int; mutable visible : bool }
    re-assigned, which is what the original warning was about. *)
 type t = {
   grid : Grid.t;
-  scrollback : Grid.Cell.t option array Ring_buffer.t;
+  scrollback : Grid.Cell.t array Ring_buffer.t;
   scrollback_size : int;
   cursor : cursor;
-  mutable gfx_state : Grid.Cell.style;
+  mutable gfx_state : Ansi.Style.t;
   parser : Parser.t;
   mutable title : string;
   mutable dirty : bool;  (** Set when terminal state changes *)
@@ -20,7 +20,7 @@ type t = {
   mutable scroll_top : int;  (** Top of scroll region (0-based) *)
   mutable scroll_bottom : int;  (** Bottom of scroll region (0-based) *)
   mutable cursor_saved : (int * int * bool) option;  (** Saved cursor state *)
-  mutable gfx_state_saved : Grid.Cell.style option;  (** Saved graphics state *)
+  mutable gfx_state_saved : Ansi.Style.t option;  (** Saved graphics state *)
   mutable origin_mode : bool;  (** DECOM - Origin mode *)
   mutable auto_wrap_mode : bool;  (** DECAWM - Auto wrap mode *)
   mutable cursor_key_mode : bool;  (** DECCKM - Cursor key application mode *)
@@ -32,15 +32,15 @@ let rows (t : t) = Grid.rows t.grid
 let cols (t : t) = Grid.cols t.grid
 
 let create ?(scrollback = 1000) ~rows ~cols () =
-  let grid = Grid.create ~rows ~cols in
-  let alt_grid = Grid.create ~rows ~cols in
+  let grid = Grid.create ~rows ~cols () in
+  let alt_grid = Grid.create ~rows ~cols () in
   let empty_row = Grid.make_empty_row ~cols in
   {
     grid;
     scrollback = Ring_buffer.create scrollback empty_row;
     scrollback_size = scrollback;
     cursor = { row = 0; col = 0; visible = true };
-    gfx_state = Grid.Cell.default_style;
+    gfx_state = Ansi.Style.default;
     parser = Parser.create ();
     title = "";
     dirty = false;
@@ -66,7 +66,8 @@ let mark_dirty t = t.dirty <- true
 
 let set_cursor t ~row ~col =
   let row = clamp ~min:0 ~max:(rows t - 1) row in
-  let col = clamp ~min:0 ~max:(cols t - 1) col in
+  (* Allow column to be at cols for pending wrap state *)
+  let col = clamp ~min:0 ~max:(cols t) col in
   if t.cursor.row <> row || t.cursor.col <> col then (
     t.cursor.row <- row;
     t.cursor.col <- col;
@@ -98,7 +99,7 @@ let switch_to_alternate t save_cursor =
 
     (* Clear the alternate screen *)
     clear_screen t;
-    
+
     (* Reset cursor to top-left *)
     set_cursor t ~row:0 ~col:0;
 
@@ -179,79 +180,110 @@ let scroll_down (t : t) n =
 
     mark_dirty t)
 
-let advance_cursor (t : t) =
+let advance_cursor ?(by = 1) (t : t) =
   let { row; col; _ } = t.cursor in
-  if col + 1 >= cols t then (
-    (* Check if we're at the bottom of the scroll region *)
-    if t.auto_wrap_mode then (
+  let new_col = col + by in
+  if new_col >= cols t then
+    if t.auto_wrap_mode then
+      (* Wrap to next line *)
       if row >= t.scroll_bottom then (
         scroll_up t 1;
-        set_cursor t ~row:t.scroll_bottom ~col:0)
-      else set_cursor t ~row:(row + 1) ~col:0)
-    (* else stay at the last column when auto_wrap is disabled *)
-  ) else 
-    set_cursor t ~row ~col:(col + 1)
+        set_cursor t ~row:t.scroll_bottom ~col:(new_col - cols t))
+      else set_cursor t ~row:(row + 1) ~col:(new_col - cols t)
+    else
+      (* Stay at the last column when auto_wrap is disabled *)
+      set_cursor t ~row ~col:(cols t - 1)
+  else set_cursor t ~row ~col:new_col
 
-let put_char (t : t) c =
+let put_text (t : t) text =
   let { row; col; _ } = t.cursor in
 
-  (* Calculate character width first *)
-  let code = Uchar.to_int c in
-  let width =
-    if
-      (code >= 0x1100 && code <= 0x115F)
-      (* Hangul Jamo *)
-      || (code >= 0x2E80 && code <= 0x9FFF)
-      (* CJK *)
-      || (code >= 0xAC00 && code <= 0xD7A3)
-      (* Hangul Syllables *)
-      || (code >= 0xF900 && code <= 0xFAFF)
-      (* CJK Compatibility *)
-      || (code >= 0xFE30 && code <= 0xFE6F)
-      (* CJK Compatibility Forms *)
-      || (code >= 0xFF00 && code <= 0xFF60)
-      ||
-      (* Fullwidth Forms *)
-      (code >= 0xFFE0 && code <= 0xFFE6 (* Fullwidth Forms *))
-    then 2
-    else if code = 0 || (code >= 0x0300 && code <= 0x036F (* Combining marks *))
-    then 0
-    else 1
+  (* Handle pending wrap state *)
+  let row, col =
+    if col >= cols t && t.auto_wrap_mode then
+      if
+        (* We're in pending wrap state - wrap to next line *)
+        row >= t.scroll_bottom
+      then (
+        scroll_up t 1;
+        (t.scroll_bottom, 0))
+      else (row + 1, 0)
+    else (row, col)
   in
 
+  (* Update cursor position if we wrapped *)
+  if row <> t.cursor.row || col <> t.cursor.col then set_cursor t ~row ~col;
 
-  (* Place character if within bounds *)
+  (* Place text if within bounds *)
   if row < rows t && col < cols t then (
-    (* In insert mode, shift existing characters to the right *)
-    if t.insert_mode && col < cols t - 1 then (
-      (* Copy the line and shift it right *)
-      let line = Grid.copy_row t.grid row in
-      for i = cols t - 1 downto col + 1 do
-        if i > 0 then line.(i) <- line.(i - 1)
-      done;
-      Grid.set_row t.grid row line;
-      mark_dirty t);
+    (* Handle insert mode - shift existing characters to the right *)
+    (if t.insert_mode && String.length text > 0 then
+       (* We need to calculate the width of the text we're about to insert *)
+       (* For insert mode, we need to estimate the width of the text
+         This is approximate - we'd need full grapheme segmentation for accuracy *)
+       let text_width =
+         let rec count_width i acc =
+           if i >= String.length text then acc
+           else
+             let c = Char.code text.[i] in
+             if c < 0x80 then count_width (i + 1) (acc + 1) (* ASCII *)
+             else if c >= 0xC0 then count_width (i + 1) (acc + 1)
+               (* Start of UTF-8 sequence *)
+             else count_width (i + 1) acc (* Continuation byte *)
+         in
+         count_width 0 0
+       in
+       if text_width > 0 && col + text_width < cols t then (
+         (* Copy the line and shift it right by text_width *)
+         let line = Grid.copy_row t.grid row in
+         let grid_cols = cols t in
+         (* Shift characters to the right, starting from the end *)
+         for i = grid_cols - 1 downto col + text_width do
+           if i - text_width >= 0 && i - text_width < Array.length line then
+             line.(i) <- line.(i - text_width)
+         done;
+         (* Clear the space where we'll insert the new text *)
+         for i = col to min (col + text_width - 1) (grid_cols - 1) do
+           line.(i) <- Grid.Cell.empty
+         done;
+         Grid.set_row t.grid row line;
+         mark_dirty t));
 
-    let glyph = Buffer.create 4 in
-    Buffer.add_utf_8_uchar glyph c;
-    Grid.set t.grid ~row ~col
-      (Some { Grid.Cell.glyph = Buffer.contents glyph; width; attrs = t.gfx_state });
-    mark_dirty t);
+    (* Write text, handling wrapping at the VTE level *)
+    let text_len = String.length text in
+    if text_len > 0 then
+      (* Process text in chunks that fit on the current line *)
+      let rec write_text start_pos =
+        if start_pos < text_len then
+          let { row; col; _ } = t.cursor in
+          let remaining_cols = cols t - col in
 
-  (* Handle cursor advancement based on character width *)
-  if width = 0 then
-    (* Combining character - don't advance cursor *)
-    ()
-  else if width = 2 then (
-    (* Wide character - advance cursor twice *)
-    advance_cursor t;
-    if t.cursor.col < cols t then (
-      Grid.set t.grid ~row:t.cursor.row ~col:t.cursor.col None;
-      mark_dirty t);
-    advance_cursor t)
-  else (
-    (* Normal character - advance cursor once *)
-    advance_cursor t)
+          if remaining_cols > 0 then (
+            (* Write as much as fits on the current line *)
+            (* This is approximate - we'd need full grapheme segmentation for accuracy *)
+            let chunk_len = min remaining_cols (text_len - start_pos) in
+            let chunk = String.sub text start_pos chunk_len in
+            let width =
+              Grid.set_text t.grid ~row ~col ~text:chunk ~attrs:t.gfx_state
+                ~east_asian_context:false
+            in
+            mark_dirty t;
+
+            (* Advance cursor by the width written *)
+            if width > 0 then (
+              advance_cursor ~by:width t;
+              (* Continue with remaining text *)
+              write_text (start_pos + chunk_len)))
+          else if t.auto_wrap_mode then (
+            (* No room on current line - wrap to next *)
+            if row >= t.scroll_bottom then (
+              scroll_up t 1;
+              set_cursor t ~row:t.scroll_bottom ~col:0)
+            else set_cursor t ~row:(row + 1) ~col:0;
+            (* Continue writing on new line *)
+            write_text start_pos)
+      in
+      write_text 0)
 
 let handle_control t (ctrl : Parser.control) =
   match ctrl with
@@ -326,14 +358,14 @@ let handle_control t (ctrl : Parser.control) =
   | OSC (0, title) | OSC (2, title) ->
       t.title <- title;
       mark_dirty t
-  | Hyperlink (Some (_, uri)) ->
-      t.gfx_state <- { t.gfx_state with link = Some uri };
+  | Hyperlink (Some (_, _uri)) ->
+      (* TODO: Hyperlink support needs to be reimplemented at the Grid storage level *)
       mark_dirty t
   | Hyperlink None ->
-      t.gfx_state <- { t.gfx_state with link = None };
+      (* TODO: Hyperlink support needs to be reimplemented at the Grid storage level *)
       mark_dirty t
   | Reset ->
-      t.gfx_state <- Grid.Cell.default_style;
+      t.gfx_state <- Ansi.Style.default;
       clear_screen t;
       set_cursor t ~row:0 ~col:0;
       mark_dirty t
@@ -451,41 +483,60 @@ let handle_control t (ctrl : Parser.control) =
   | OSC (_, _) -> ()
 
 let handle_text t text =
-  let decoder = Uutf.decoder ~encoding:`UTF_8 (`String text) in
-  let rec decode_loop () =
-    match Uutf.decode decoder with
-    | `Uchar u ->
-        (match Uchar.to_int u with
-        | 0x0a ->
-            (* Line Feed *)
-            if t.cursor.row >= t.scroll_bottom then scroll_up t 1
-            else (
-              t.cursor.row <- t.cursor.row + 1;
-              mark_dirty t);
-            (* Most terminals treat LF as LF+CR by default *)
-            t.cursor.col <- 0;
-            mark_dirty t
-        | 0x0d ->
-            (* Carriage Return *)
-            set_cursor t ~row:t.cursor.row ~col:0
-        | 0x08 -> set_cursor t ~row:t.cursor.row ~col:(t.cursor.col - 1)
-        | 0x09 ->
-            let next_tab = ((t.cursor.col / 8) + 1) * 8 in
-            if next_tab < cols t then
-              set_cursor t ~row:t.cursor.row ~col:next_tab
-            else set_cursor t ~row:t.cursor.row ~col:(cols t - 1)
-        | _ -> put_char t u);
-        decode_loop ()
-    | `Malformed _ -> decode_loop ()
-    | `Await -> assert false
-    | `End -> ()
+  let handle_control_char code =
+    match code with
+    | 0x0a ->
+        (* Line Feed *)
+        if t.cursor.row >= t.scroll_bottom then scroll_up t 1
+        else (
+          t.cursor.row <- t.cursor.row + 1;
+          mark_dirty t);
+        (* Most terminals treat LF as LF+CR by default *)
+        t.cursor.col <- 0;
+        mark_dirty t
+    | 0x0d ->
+        (* Carriage Return *)
+        set_cursor t ~row:t.cursor.row ~col:0
+    | 0x08 -> set_cursor t ~row:t.cursor.row ~col:(t.cursor.col - 1)
+    | 0x09 ->
+        let next_tab = ((t.cursor.col / 8) + 1) * 8 in
+        if next_tab < cols t then set_cursor t ~row:t.cursor.row ~col:next_tab
+        else set_cursor t ~row:t.cursor.row ~col:(cols t - 1)
+    | 0x0e | 0x0f ->
+        (* SO (Shift Out) and SI (Shift In) - character set switching *)
+        (* For now, ignore these as we don't support alternate character sets *)
+        ()
+    | _ -> ()
   in
-  decode_loop ()
+
+  (* Process text, separating control characters from printable text *)
+  let len = String.length text in
+  let text_start = ref 0 in
+
+  let flush_text i =
+    (if i > !text_start then
+       let substring = String.sub text !text_start (i - !text_start) in
+       put_text t substring);
+    text_start := i + 1
+  in
+
+  for i = 0 to len - 1 do
+    let code = Char.code text.[i] in
+    if code < 0x20 || code = 0x7F then (
+      (* Control character - flush any pending text and handle it *)
+      flush_text i;
+      handle_control_char code)
+  done;
+
+  (* Flush any remaining text *)
+  flush_text len
 
 let handle_token t = function
   | Parser.Text s -> handle_text t s
   | Parser.SGR attrs ->
-      let new_state = List.fold_left Grid.Cell.apply_sgr_attr t.gfx_state attrs in
+      let new_state =
+        List.fold_left Ansi.Style.apply_sgr_attr t.gfx_state attrs
+      in
       if new_state <> t.gfx_state then (
         t.gfx_state <- new_state;
         mark_dirty t)
@@ -495,6 +546,11 @@ let feed t bytes ofs len =
   let tokens = Parser.feed t.parser bytes ofs len in
   List.iter (handle_token t) tokens
 
+let feed_string t str =
+  let bytes = Bytes.of_string str in
+  feed t bytes 0 (Bytes.length bytes)
+
+let grid t = t.grid
 let to_string_grid t = Grid.to_string t.grid
 let cursor_pos (t : t) = (t.cursor.row, t.cursor.col)
 let is_cursor_visible (t : t) = t.cursor.visible
@@ -509,7 +565,7 @@ let reset t =
   if t.in_alternate then switch_to_main t false;
   clear_screen t;
   set_cursor t ~row:0 ~col:0;
-  t.gfx_state <- Grid.Cell.default_style;
+  t.gfx_state <- Ansi.Style.default;
   Parser.reset t.parser;
   t.title <- "";
   Ring_buffer.clear t.scrollback;
@@ -526,17 +582,16 @@ let resize t ~rows:new_rows ~cols:new_cols =
   (* Resize both grids *)
   Grid.resize t.grid ~rows:new_rows ~cols:new_cols;
   Grid.resize t.alt_grid ~rows:new_rows ~cols:new_cols;
-  
+
   (* Adjust cursor position if needed *)
   if t.cursor.row >= new_rows then t.cursor.row <- new_rows - 1;
   if t.cursor.col >= new_cols then t.cursor.col <- new_cols - 1;
-  
+
   (* Adjust scroll region *)
   t.scroll_bottom <- new_rows - 1;
   if t.scroll_top >= new_rows then t.scroll_top <- 0;
-  
+
   (* Mark as dirty *)
   mark_dirty t
 
 let get_cell t ~row ~col = Grid.get t.grid ~row ~col
-let get_grid t = t.grid

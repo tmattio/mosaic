@@ -1,10 +1,21 @@
 (tests
  (names
   test_ansi
+  test_grid
   test_input
   test_vte
   test_pty
+  test_screen
   test_vte_unicode
   test_vte_damage
   test_vte_vttest)
- (libraries alcotest unix fmt matrix.ansi matrix.input matrix.pty matrix.vte matrix.grid))
+ (libraries
+  alcotest
+  unix
+  fmt
+  matrix.ansi
+  matrix.input
+  matrix.pty
+  matrix.screen
+  matrix.vte
+  matrix.grid))

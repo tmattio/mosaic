@@ -1,4 +1,4 @@
 (library
  (name vte)
  (public_name matrix.vte)
- (libraries uutf ansi str grid))
+ (libraries uutf uuseg ansi str grid))
