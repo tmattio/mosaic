@@ -1,0 +1,18 @@
+{
+  "name": "toffee-gentest",
+  "version": "1.0.0",
+  "description": "Test generation for Toffee layout engine",
+  "type": "module",
+  "scripts": {
+    "gentest": "node gentest.js",
+    "gentest:single": "node gentest.js",
+    "test": "node test_generation.js",
+    "test:single": "node test_single.js"
+  },
+  "dependencies": {
+    "playwright": "^1.40.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0"
+  }
+}

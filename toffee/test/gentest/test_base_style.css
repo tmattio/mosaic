@@ -1,0 +1,87 @@
+
+/* The Ahem font. See: https://github.com/Kozea/Ahem
+   The "X" glyph in this font happens to be exactly 10 pixels wide by 10 high
+
+   By combining X's with zero-width space characters (&#8203;) we can reliably set an elements
+   min-content and max-content sizes.
+*/
+@font-face {
+    font-family: 'ahem';
+    src: url(data:application/font-woff2;charset=utf-8;base64,d09GMgABAAAAAAXYAA0AAAAAKjgAAAWAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP0ZGVE0cGh4GYACEUhEQCrUAlzALg3AAATYCJAOHVgQgBYZQB4RFG5AYFeOYFbBxgM3u/5P9f53AyfVjdayDrHio6Mo1sl6KByXlCXnIVzSV5fT5TQ6ZXYT2USiITV79J77MWg5EBsol7qDhyo33x8P3c+Gf+142my1jCuTYlRUqFhJYETii8Z2qKkDFIPmzBIAMunuOxJGJPs+89lYS9Ec0RfnM0Mq1cEQnuxeTQGhm4JhuxBMZ4EBHEV1vjc4Fu7x5fMIF6JSO/8U5lc0B0A3VCXQhbYfk///VdNbjMwXYa1vASnF+7bd0/afj0z/RstqGAQUSRwFlCwcaZ1maalGAqYWaZhAIp0HbGFGhQp8R+fesEPDRAacNrm2GQQH4Yj1KJ9ANA5CE8LtQICHlL+OkliLdSodxIjppPDY1MknRAfZzqZd6AcCqaTlzdf8x5brZybVnteg9V2ZJ49QC2eMMgyGWIKTLKGIyFpirpdLdeHud1wBDLIvtcTo9TZ/me3U/MBAgQ0eIFMUoWdJlcnQ5uufoPjIjC7IjN6Mfo7/jfuP+/TE16K420VkXY0osJTGepPeBfUGBAxKT+N7qR/I7o/n99ma5sMfNpdn8778f/+vxxa27wV3/rnfXvivdpe6Ct5PbIVzANRzDEWzDBsxAAoyguwJ99HOvD8EOipKwViRk7A2KVtmuOl107da9R8/bQOaB8A+ceQBEmFDGhVTaWOdDnOZl3fbjvO7n/X4ty4uyqpu264dxmhfL1Xqz3e0Px9P5cr3dH09CoxWTnllYVtPY0NTS3Nre2dHV3dvT1z84PDQyNjo1OT1zxkBjCEe8OM274BCfdYFX5surkXt1+7j7ZhMBcoN4bXi/9v5gFx8jFerSxZW9/eOTg8Pxt/kyIJ/cIA5DO/tXSabE7IzcvPyc4hLEFaquXFjfdpW8vrEZ3tlaQ8gqSS/RyOAPiO/xC/kVxV1ADRIIhPayEkwZPFmF/VHetd2z3NS91a3du+zl1aO36LEDX4L21P96y+5f+qv+8ss34XX05bPtoNb3U1j23Ox8QHjXnz+Jjeh7z5m/VV3zl6+r2zXg/GWuUUk90q+Y/EuCia9U+V/Hi3vKH2k91NA5kbZXA39cAiZjp55uyKLoEGfIKFRxhpIecY6yOq5TYVC8ppYB8S2VqpTkXnoX6q1H6pPvU6bX9MyANJGem5xm0wtV2uR6qUxbj/iQDUm7DXkVyeQAoxApohs55BkYMxBARTYKQGkjUUiYlrTXGBSTjPdZNEwhsv5GiIu2WLutqCjOzBiNUCJVG2QEcri6wGFxMxBSkWAxQFvbyOdIvmgOfP2RUPAtqClwBVkbyNVkJIhXG06ZEQlFppEZcsCo8Jgh54qFAIdogE8JK7bbCCWduZxmZpdZQNvw9obxRlBsXOEYyGiQrvayDC6imNOoxRAvSK5Oi0j9dkxmgftX5lagZSZaGPpMFCeJmRL5zynRq5RLsUtvhRAgXnS+tgl8l86WDo2N/RgrP+RBKOZDEZsI70NJdph0Qz+iBDQi/djb/kBEiiz/cnqnqnR01U13PfTUS299vCeRyuQKpUqt0er0BiMAQjCCYjhBUjTDcrwgmswWq83ucLrcHq/PDw0DCwePgIiEjIKKho6BiYWNg4uHT0BIRExCSkZOQUlFrVuKmsaE1yMtK5OIgjTrjY4lcfn2w8JHbwX4F1X059e/pIota3ohaeVD26K3btOebTt2vTM4su9AH5w/DvuOnTD59C0DkZmVnY1DPRo3Fw8vP5+AoA8hEWFRYkQblyATK57Cqx+TDvRrGMk6dO/KtRt3Ltyq0tTS1bNqWMeaREtpStbNmhkzi/HLCwr40MIpLMfGzWOQwrZ5C2lFGe2oolOu9ndsWTO1zQnXTp7cFzWnznij+LuUYlVenjzayBbkk89aAgA=) format('woff2');
+    font-weight: normal;
+    font-style: normal;
+}
+
+body {
+  padding: 0;
+  margin: 0;
+}
+
+div, span, img {
+  box-sizing: border-box;
+  position: relative;
+  border: 0 solid red;
+  margin: 0;
+  padding: 0;
+}
+
+div {
+  display: flex;
+}
+
+body > * {
+  position: absolute;
+  border-color: red;
+}
+
+.viewport {
+  display: flex;
+  align-items: start;
+  justify-content: start;
+  /* Defaults: can be overridden in individual tests */
+  width: max-content;
+  height: max-content;
+}
+
+#test-root {
+  font-family: ahem;
+  line-height: 1;
+  font-size: 10px;
+  color: green;
+}
+
+.border-box, .border-box * {
+  box-sizing: border-box;
+}
+
+.content-box, .content-box * {
+  box-sizing: content-box;
+}
+
+div {
+  background-color: #222;
+}
+
+div > div {
+  background-color: #444;
+}
+
+div > div > div {
+  background-color: #666;
+}
+
+div > div > div > div {
+  background-color: #888;
+}
+
+div > div > div > div > div {
+  background-color: #aaa;
+}
+
+div > div > div > div > div > div {
+  background-color: #ccc;
+}
+
+div > div > div > div > div > div > div {
+  background-color: #eee;
+}

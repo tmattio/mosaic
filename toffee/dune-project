@@ -1,0 +1,29 @@
+(lang dune 3.20)
+
+(name toffee)
+
+(generate_opam_files true)
+
+(source
+ (github tmattio/mosaic))
+
+(authors "Thibaut Mattio <thibaut.mattio@gmail.com>")
+
+(maintainers "Thibaut Mattio <thibaut.mattio@gmail.com>")
+
+(license ISC)
+
+(implicit_transitive_deps false)
+
+(package
+ (name toffee)
+ (synopsis "A CSS layout engine written in OCaml")
+ (description
+  "Toffee is a flexible, high-performance CSS layout engine written in OCaml. It implements CSS Grid, Flexbox, and Block layout algorithms. Toffee is a port of Taffy (https://github.com/DioxusLabs/taffy) to OCaml.")
+ (depends
+  ocaml
+  dune
+  (alcotest :with-test)
+  (odoc :with-doc))
+ (tags
+  (css layout flexbox grid "css-grid" "layout-engine")))
