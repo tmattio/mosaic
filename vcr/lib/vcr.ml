@@ -111,14 +111,14 @@ let run ?(timing = Timing.create ()) tape output_path =
             Renderer.Gif_renderer.create ~rows ~cols renderer_config
           in
           (* Create buffered writer function for the output channel *)
-          let buffer = Buffer.create (64 * 1024) in (* 64KB buffer *)
+          let buffer = Buffer.create (64 * 1024) in
+          (* 64KB buffer *)
           let writer bytes offset length =
             Buffer.add_subbytes buffer bytes offset length;
             (* Flush if buffer gets too large *)
             if Buffer.length buffer > 256 * 1024 then (
               output_string out_channel (Buffer.contents buffer);
-              Buffer.clear buffer
-            )
+              Buffer.clear buffer)
           in
 
           (* Write each frame *)
@@ -134,11 +134,11 @@ let run ?(timing = Timing.create ()) tape output_path =
               (* Finalize the GIF *)
               Renderer.Gif_renderer.finalize renderer ~writer;
               Renderer.Gif_renderer.set_timing None;
-              
+
               (* Flush remaining buffer contents *)
               if Buffer.length buffer > 0 then
                 output_string out_channel (Buffer.contents buffer);
-              
+
               if output_path <> "-" then close_out out_channel)
       | ".txt" | ".ascii" ->
           (* For text output, just dump final terminal state *)

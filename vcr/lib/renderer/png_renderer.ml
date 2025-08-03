@@ -59,7 +59,8 @@ let get_color theme color reversed is_fg =
   | Ansi.Bright_white -> theme.Gif_renderer.bright_white
   | Ansi.Index _ -> theme.Gif_renderer.fg (* Default for indexed colors *)
   | Ansi.RGB (r, g, b) -> (r, g, b)
-  | Ansi.RGBA (r, g, b, _a) -> (r, g, b) (* Ignore alpha for PNG renderer *)
+  | Ansi.RGBA (r, g, b, _a) -> (r, g, b)
+(* Ignore alpha for PNG renderer *)
 
 let create ~rows ~cols config =
   (* Ensure output directory exists *)
