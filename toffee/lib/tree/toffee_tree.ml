@@ -494,10 +494,82 @@ module Tree = struct
                 node_data.final_layout <- node_data.unrounded_layout;
                 layout_output
             | Style.Block ->
-                (* For now, treat block layout as a simple container *)
-                node_data.unrounded_layout <- Layout.empty;
-                node_data.final_layout <- Layout.empty;
-                Layout_output.hidden
+                (* Create module adapter for block layout *)
+                let module TreeAdapter = struct
+                  type nonrec t = ctx t
+                  type child_iter = Node_id.t list
+                  type core_container_style = Style.style
+                  type block_container_style = Style.style
+                  type block_item_style = Style.style
+
+                  let child_ids _ node_id =
+                    match Hashtbl.find_opt t.children node_id with
+                    | Some children ->
+                        Array.to_list (Array.map Node_id.of_int64 children)
+                    | None -> []
+
+                  let child_count _ node_id =
+                    match Hashtbl.find_opt t.children node_id with
+                    | Some children -> Array.length children
+                    | None -> 0
+
+                  let get_child_id _ node_id index =
+                    match Hashtbl.find_opt t.children node_id with
+                    | Some children ->
+                        if index < Array.length children then
+                          Node_id.of_int64 children.(index)
+                        else failwith "Invalid child index"
+                    | None -> failwith "Invalid child index"
+
+                  let get_core_container_style _ node_id =
+                    match Hashtbl.find_opt t.nodes node_id with
+                    | Some node -> node.NodeData.style
+                    | None -> Style.default
+
+                  let get_block_container_style _ node_id =
+                    match Hashtbl.find_opt t.nodes node_id with
+                    | Some node -> node.NodeData.style
+                    | None -> Style.default
+
+                  let get_block_child_style _ node_id =
+                    match Hashtbl.find_opt t.nodes node_id with
+                    | Some node -> node.NodeData.style
+                    | None -> Style.default
+
+                  let resolve_calc_value _ ~ptr:_ ~basis = basis
+
+                  let set_unrounded_layout _ node_id layout =
+                    match Hashtbl.find_opt t.nodes node_id with
+                    | Some node_data ->
+                        node_data.NodeData.unrounded_layout <- layout;
+                        node_data.NodeData.final_layout <- layout
+                    | None -> ()
+
+                  let compute_child_layout _ child_id input =
+                    match Hashtbl.find_opt t.nodes child_id with
+                    | Some child_data ->
+                        compute_node_layout child_id child_data input
+                    | None -> Layout_output.hidden
+                end in
+                let layout_output =
+                  Block_layout.compute_block_layout
+                    (module TreeAdapter)
+                    t node_id input
+                in
+                (* Update layout *)
+                node_data.unrounded_layout <-
+                  {
+                    order = 0;
+                    location = Geometry.point_zero;
+                    size = layout_output.Layout_output.size;
+                    content_size = layout_output.size;
+                    scrollbar_size = Geometry.size_zero;
+                    border = Geometry.rect_zero;
+                    padding = Geometry.rect_zero;
+                    margin = Geometry.rect_zero;
+                  };
+                node_data.final_layout <- node_data.unrounded_layout;
+                layout_output
             | Style.Grid ->
                 (* For now, implement a basic grid layout that just returns the container size *)
                 (* TODO: Implement proper grid layout using module interface instead of objects *)

@@ -456,17 +456,338 @@ let perform_absolute_layout_on_absolute_children (type tree)
     (module T : Layout_block_container with type t = tree) ~(tree : tree)
     ~(items : _ block_item array) ~(area_size : float size)
     ~(area_offset : float point) : float size =
-  (* TODO: Implement absolute layout following the Rust implementation
-     This should iterate through items with position:absolute and lay them out
-     relative to the containing block defined by area_size and area_offset *)
-  let _ = (tree, area_size, area_offset) in
-  (* Mark as intentionally unused for now *)
+  (* Create extension module with helper functions *)
+  let module TExt = Tree_intf.LayoutPartialTreeExt (T) in
+  let area_width = area_size.width in
+  let area_height = area_size.height in
   let absolute_content_size = ref size_zero in
+
   Array.iter
-    (fun _item ->
-      (* TODO: Process each absolute positioned item *)
-      ())
+    (fun item ->
+      if item.position = Style.Absolute then
+        let child_style = T.get_block_child_style tree item.node_id in
+        (* Skip items that are display:none *)
+        if child_style.display <> Style.None then (
+          let aspect_ratio = Style.aspect_ratio child_style in
+
+          (* Resolve margin *)
+          let margin =
+            rect_map (Style.margin child_style) (fun m ->
+                Resolve.maybe_resolve_length_percentage_auto m (Some area_width)
+                  (fun _id basis -> basis))
+          in
+
+          (* Get already computed padding/border from item *)
+          let padding = item.padding in
+          let border = item.border in
+          let padding_border_sum = item.padding_border_sum in
+
+          let box_sizing_adjustment =
+            if Style.box_sizing child_style = Style.Content_box then
+              padding_border_sum
+            else size_zero
+          in
+
+          (* Resolve inset *)
+          let left =
+            Resolve.maybe_resolve_length_percentage_auto
+              (Style.inset child_style).left (Some area_width) (fun _id basis ->
+                basis)
+          in
+          let right =
+            Resolve.maybe_resolve_length_percentage_auto
+              (Style.inset child_style).right (Some area_width)
+              (fun _id basis -> basis)
+          in
+          let top =
+            Resolve.maybe_resolve_length_percentage_auto
+              (Style.inset child_style).top (Some area_height) (fun _id basis ->
+                basis)
+          in
+          let bottom =
+            Resolve.maybe_resolve_length_percentage_auto
+              (Style.inset child_style).bottom (Some area_height)
+              (fun _id basis -> basis)
+          in
+
+          (* Compute known dimensions from min/max/inherent size styles *)
+          let area_size_option = size_map area_size (fun x -> Some x) in
+          let style_size =
+            Resolve.maybe_resolve_size Resolve.maybe_resolve_dimension
+              (Style.size child_style) area_size_option (fun _ptr basis ->
+                basis)
+            |> Resolve.maybe_apply_aspect_ratio aspect_ratio
+            |> fun size ->
+            size_zip_map size box_sizing_adjustment (fun sz adj ->
+                Option.map (fun s -> s +. adj) sz)
+          in
+
+          let min_size =
+            ( ( Resolve.maybe_resolve_size Resolve.maybe_resolve_dimension
+                  (Style.min_size child_style) area_size_option
+                  (fun _ptr basis -> basis)
+              |> Resolve.maybe_apply_aspect_ratio aspect_ratio
+              |> fun size ->
+                size_zip_map size box_sizing_adjustment (fun sz adj ->
+                    Option.map (fun s -> s +. adj) sz) )
+            |> fun size ->
+              size_zip_map size
+                (size_map padding_border_sum (fun x -> Some x))
+                (fun a b -> match a with Some _ -> a | None -> b) )
+            |> fun size ->
+            size_zip_map size padding_border_sum (fun a b ->
+                match a with Some av -> Some (Float.max av b) | None -> Some b)
+          in
+
+          let max_size =
+            Resolve.maybe_resolve_size Resolve.maybe_resolve_dimension
+              (Style.max_size child_style) area_size_option (fun _ptr basis ->
+                basis)
+            |> Resolve.maybe_apply_aspect_ratio aspect_ratio
+            |> fun size ->
+            size_zip_map size box_sizing_adjustment (fun sz adj ->
+                Option.map (fun s -> s +. adj) sz)
+          in
+
+          let mut_known_dimensions =
+            ref (Size.maybe_clamp style_size min_size max_size)
+          in
+
+          (* Fill in width from left/right and reapply aspect ratio if:
+             - Width is not already known
+             - Item has both left and right inset properties set *)
+          (match (!mut_known_dimensions.width, left, right) with
+          | None, Some left_val, Some right_val ->
+              let new_width_raw =
+                ( ( area_width |> fun w ->
+                    match margin.left with Some m -> w -. m | None -> w )
+                |> fun w ->
+                  match margin.right with Some m -> w -. m | None -> w )
+                -. left_val -. right_val
+              in
+              let new_width = Float.max new_width_raw 0.0 in
+              let with_new_width =
+                { !mut_known_dimensions with width = Some new_width }
+              in
+              let with_aspect =
+                Resolve.maybe_apply_aspect_ratio aspect_ratio with_new_width
+              in
+              let clamped = Size.maybe_clamp with_aspect min_size max_size in
+              mut_known_dimensions := clamped
+          | _ -> ());
+
+          (* Fill in height from top/bottom and reapply aspect ratio if:
+             - Height is not already known
+             - Item has both top and bottom inset properties set *)
+          (match (!mut_known_dimensions.height, top, bottom) with
+          | None, Some top_val, Some bottom_val ->
+              let new_height_raw =
+                ( ( area_height |> fun h ->
+                    match margin.top with Some m -> h -. m | None -> h )
+                |> fun h ->
+                  match margin.bottom with Some m -> h -. m | None -> h )
+                -. top_val -. bottom_val
+              in
+              let new_height = Float.max new_height_raw 0.0 in
+              let with_new_height =
+                { !mut_known_dimensions with height = Some new_height }
+              in
+              let with_aspect =
+                Resolve.maybe_apply_aspect_ratio aspect_ratio with_new_height
+              in
+              let clamped = Size.maybe_clamp with_aspect min_size max_size in
+              mut_known_dimensions := clamped
+          | _ -> ());
+
+          let known_dimensions = !mut_known_dimensions in
+
+          (* Perform child layout *)
+          let layout_output =
+            TExt.perform_child_layout tree item.node_id ~known_dimensions
+              ~parent_size:(size_map area_size (fun x -> Some x))
+              ~available_space:
+                {
+                  width =
+                    Available_space.Definite
+                      (Geometry.Size.maybe_clamp_value area_width min_size.width
+                         max_size.width);
+                  height =
+                    Available_space.Definite
+                      (Geometry.Size.maybe_clamp_value area_height
+                         min_size.height max_size.height);
+                }
+              ~sizing_mode:Layout.Sizing_mode.Content_size
+              ~vertical_margins_are_collapsible:line_false
+          in
+
+          let measured_size = layout_output.size in
+          let final_size =
+            let unclamped =
+              {
+                width = known_dimensions.width;
+                height = known_dimensions.height;
+              }
+            in
+            let clamped = Size.maybe_clamp unclamped min_size max_size in
+            {
+              width = Option.value ~default:measured_size.width clamped.width;
+              height = Option.value ~default:measured_size.height clamped.height;
+            }
+          in
+
+          (* Compute non-auto margins *)
+          let non_auto_margin =
+            {
+              left =
+                (if Option.is_some left then
+                   Option.value ~default:0.0 margin.left
+                 else 0.0);
+              right =
+                (if Option.is_some right then
+                   Option.value ~default:0.0 margin.right
+                 else 0.0);
+              top =
+                (if Option.is_some top then Option.value ~default:0.0 margin.top
+                 else 0.0);
+              bottom =
+                (if Option.is_some bottom then
+                   Option.value ~default:0.0 margin.bottom
+                 else 0.0);
+            }
+          in
+
+          (* Expand auto margins to fill available space *)
+          let free_space =
+            {
+              width =
+                area_width -. final_size.width -. non_auto_margin.left
+                -. non_auto_margin.right;
+              height =
+                area_height -. final_size.height -. non_auto_margin.top
+                -. non_auto_margin.bottom;
+            }
+          in
+
+          let auto_margin =
+            let auto_margin_size =
+              {
+                width =
+                  (let auto_margin_count =
+                     (if Option.is_none margin.left then 1 else 0)
+                     + if Option.is_none margin.right then 1 else 0
+                   in
+                   if
+                     auto_margin_count = 2
+                     && (Option.is_none style_size.width
+                        || Option.value ~default:0.0 style_size.width
+                           >= free_space.width)
+                   then 0.0
+                   else if auto_margin_count > 0 then
+                     free_space.width /. float_of_int auto_margin_count
+                   else 0.0);
+                height =
+                  (let auto_margin_count =
+                     (if Option.is_none margin.top then 1 else 0)
+                     + if Option.is_none margin.bottom then 1 else 0
+                   in
+                   if
+                     auto_margin_count = 2
+                     && (Option.is_none style_size.height
+                        || Option.value ~default:0.0 style_size.height
+                           >= free_space.height)
+                   then 0.0
+                   else if auto_margin_count > 0 then
+                     free_space.height /. float_of_int auto_margin_count
+                   else 0.0);
+              }
+            in
+            {
+              left =
+                (if Option.is_some margin.left then 0.0
+                 else auto_margin_size.width);
+              right =
+                (if Option.is_some margin.right then 0.0
+                 else auto_margin_size.width);
+              top =
+                (if Option.is_some margin.top then 0.0
+                 else auto_margin_size.height);
+              bottom =
+                (if Option.is_some margin.bottom then 0.0
+                 else auto_margin_size.height);
+            }
+          in
+
+          let resolved_margin =
+            {
+              left = Option.value ~default:auto_margin.left margin.left;
+              right = Option.value ~default:auto_margin.right margin.right;
+              top = Option.value ~default:auto_margin.top margin.top;
+              bottom = Option.value ~default:auto_margin.bottom margin.bottom;
+            }
+          in
+
+          let location =
+            {
+              x =
+                (match left with
+                | Some left_val -> Some (left_val +. resolved_margin.left)
+                | None -> (
+                    match right with
+                    | Some right_val ->
+                        Some
+                          (area_size.width -. final_size.width -. right_val
+                         -. resolved_margin.right)
+                    | None -> None))
+                |> Option.map (fun x -> x +. area_offset.x)
+                |> Option.value
+                     ~default:(item.static_position.x +. resolved_margin.left);
+              y =
+                (match top with
+                | Some top_val -> Some (top_val +. resolved_margin.top)
+                | None -> (
+                    match bottom with
+                    | Some bottom_val ->
+                        Some
+                          (area_size.height -. final_size.height -. bottom_val
+                         -. resolved_margin.bottom)
+                    | None -> None))
+                |> Option.map (fun y -> y +. area_offset.y)
+                |> Option.value
+                     ~default:(item.static_position.y +. resolved_margin.top);
+            }
+          in
+
+          (* Note: axis intentionally switched here as scrollbars take up space in the opposite axis
+             to the axis in which scrolling is enabled. *)
+          let scrollbar_size =
+            {
+              width =
+                (if item.overflow.y = Style.Scroll then item.scrollbar_width
+                 else 0.0);
+              height =
+                (if item.overflow.x = Style.Scroll then item.scrollbar_width
+                 else 0.0);
+            }
+          in
+
+          (* Commit to tree *)
+          T.set_unrounded_layout tree item.node_id
+            {
+              order = item.order;
+              size = final_size;
+              content_size = layout_output.size;
+              scrollbar_size;
+              location;
+              padding;
+              border;
+              margin = resolved_margin;
+            };
+
+          (* Update absolute content size *)
+          (* TODO: compute_content_size_contribution when feature enabled *)
+          absolute_content_size := !absolute_content_size))
     items;
+
   !absolute_content_size
 
 (* --------------------------------------------------------------------------
