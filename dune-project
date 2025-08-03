@@ -27,6 +27,7 @@
    (>= 5.0.0))
   dune
   matrix
+  toffee
   uutf
   uucp
   eio
@@ -52,6 +53,8 @@
   dune
   uutf
   uucp
+  uuseg
+  fmt
   (alcotest :with-test))
  (tags
   (terminal input ansi pty vte)))

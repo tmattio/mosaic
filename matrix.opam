@@ -14,6 +14,8 @@ depends: [
   "dune" {>= "3.19"}
   "uutf"
   "uucp"
+  "uuseg"
+  "fmt"
   "alcotest" {with-test}
   "odoc" {with-doc}
 ]
