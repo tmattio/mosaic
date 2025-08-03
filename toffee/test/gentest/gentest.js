@@ -632,14 +632,65 @@ async function processFixture(fixturePath) {
   
   console.log(`Processing ${name}...`);
   
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({
+    args: [
+      '--force-device-scale-factor=1',
+      '--hide-scrollbars'
+    ]
+  });
   const page = await browser.newPage();
   
-  // Set consistent viewport
+  // Set consistent viewport and device scale
   await page.setViewportSize({ width: 1024, height: 768 });
+  
+  // Force device scale factor
+  await page.evaluate(() => {
+    window.devicePixelRatio = 1;
+  });
+  
+  // Add a route to intercept CSS requests and serve from correct location
+  await page.route('**/scripts/gentest/test_base_style.css', route => {
+    const cssPath = path.join(__dirname, 'test_base_style.css');
+    route.fulfill({ path: cssPath });
+  });
+  
+  // Add a route to intercept test_helper.js requests  
+  await page.route('**/scripts/gentest/test_helper.js', route => {
+    const jsPath = path.join(__dirname, 'test_helper.js');
+    route.fulfill({ path: jsPath });
+  });
   
   // Load the fixture
   await page.goto(`file://${fixturePath}`);
+  
+  // Reset any CSS zoom or transforms
+  await page.addStyleTag({
+    content: `
+      * {
+        zoom: 1 !important;
+        transform: none !important;
+      }
+      body {
+        zoom: 1 !important;
+        transform: none !important;
+      }
+    `
+  });
+  
+  // Verify scrollbar settings
+  const scrollbarWidth = await page.evaluate(() => {
+    const el = document.createElement("div");
+    el.style.cssText = "overflow:scroll; visibility:hidden; position:absolute;";
+    document.body.appendChild(el);
+    const width = el.offsetWidth - el.clientWidth;
+    el.remove();
+    return width;
+  });
+  
+  if (scrollbarWidth > 0) {
+    console.warn(`Warning: Scrollbars are taking up ${scrollbarWidth}px. Tests may be inaccurate.`);
+    console.warn('On macOS, set "Show scrollbars" to "When scrolling" in System Preferences > Appearance');
+  }
   
   // Inject test helper
   const testHelperPath = path.join(__dirname, 'test_helper.js');
@@ -649,6 +700,7 @@ async function processFixture(fixturePath) {
   // Extract test data for both box models
   const testData = await page.evaluate(() => getTestData());
   const data = JSON.parse(testData);
+  
   
   await browser.close();
   
