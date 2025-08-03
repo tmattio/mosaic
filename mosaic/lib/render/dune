@@ -1,4 +1,0 @@
-(library
- (name render)
- (public_name mosaic.render)
- (libraries matrix.ansi uutf uucp))

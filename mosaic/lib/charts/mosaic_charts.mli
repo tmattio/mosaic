@@ -58,8 +58,8 @@ type sparkline_render_kind = [ `Bars | `Line | `Braille ]
 (** The rendering style for sparkline charts. *)
 
 val line :
-  ?width:int ->
-  ?height:int ->
+  ?width:Ui.size ->
+  ?height:Ui.size ->
   ?x_range:float * float ->
   ?y_range:float * float ->
   ?show_axes:bool ->
@@ -85,8 +85,8 @@ val line :
       [(name, point list)]. *)
 
 val time_series :
-  ?width:int ->
-  ?height:int ->
+  ?width:Ui.size ->
+  ?height:Ui.size ->
   ?time_range:float * float ->
   ?y_range:float * float ->
   ?show_axes:bool ->
@@ -107,8 +107,8 @@ val time_series :
     @param data A list of named time series. *)
 
 val bar :
-  ?width:int ->
-  ?height:int ->
+  ?width:Ui.size ->
+  ?height:Ui.size ->
   ?orientation:[ `Vertical | `Horizontal ] ->
   ?max_value:float ->
   ?bar_width:int ->
@@ -145,8 +145,8 @@ val sparkline :
     @param render_kind The method used to draw the chart (default: [`Bars]). *)
 
 val heatmap :
-  ?width:int ->
-  ?height:int ->
+  ?width:Ui.size ->
+  ?height:Ui.size ->
   ?x_range:float * float ->
   ?y_range:float * float ->
   ?value_range:float * float ->
@@ -166,8 +166,8 @@ val heatmap :
       to a greyscale gradient. *)
 
 val candlestick :
-  ?width:int ->
-  ?height:int ->
+  ?width:Ui.size ->
+  ?height:Ui.size ->
   ?time_range:float * float ->
   ?y_range:float * float ->
   ?show_axes:bool ->

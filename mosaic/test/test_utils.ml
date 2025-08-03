@@ -3,30 +3,37 @@
 open Mosaic
 
 (* Helper functions for tests *)
-let buffer_to_string buffer =
-  let width, height = Render.dimensions buffer in
+let screen_to_string screen =
+  let width = Screen.cols screen in
+  let height = Screen.rows screen in
   let buf = Buffer.create ((width + 1) * height) in
   for y = 0 to height - 1 do
     for x = 0 to width - 1 do
-      let cell = Render.get buffer x y in
-      match cell.Render.chars with
-      | [] -> Buffer.add_char buf ' '
-      | ch :: _ -> Buffer.add_utf_8_uchar buf ch
+      (* After present(), the front buffer contains the rendered content *)
+      match Grid.get (Screen.front screen) ~row:y ~col:x with
+      | None -> Buffer.add_char buf ' '
+      | Some cell ->
+          let text = Grid.Cell.get_text cell in
+          if text = "" then Buffer.add_char buf ' '
+          else Buffer.add_string buf text
     done;
     if y < height - 1 then Buffer.add_char buf '\n'
   done;
   Buffer.contents buf
 
-let buffer_to_lines buffer =
-  let width, height = Render.dimensions buffer in
+let screen_to_lines screen =
+  let width = Screen.cols screen in
+  let height = Screen.rows screen in
   let lines = ref [] in
   for y = height - 1 downto 0 do
     let line = Buffer.create width in
     for x = 0 to width - 1 do
-      let cell = Render.get buffer x y in
-      match cell.Render.chars with
-      | [] -> Buffer.add_char line ' '
-      | ch :: _ -> Buffer.add_utf_8_uchar line ch
+      match Grid.get (Screen.front screen) ~row:y ~col:x with
+      | None -> Buffer.add_char line ' '
+      | Some cell ->
+          let text = Grid.Cell.get_text cell in
+          if text = "" then Buffer.add_char line ' '
+          else Buffer.add_string line text
     done;
     lines := Buffer.contents line :: !lines
   done;
@@ -41,46 +48,23 @@ let make_test_terminal input =
 (** Renders a UI element to a raw string representation of the terminal grid.
     This is the foundation for visual snapshot and expect testing. *)
 let render_to_string ?(width = 80) ?(height = 24) element =
-  let buffer = Render.create width height in
-  Ui.render buffer element;
-  let buf = Buffer.create ((width + 1) * height) in
-  for y = 0 to height - 1 do
-    let cell_line =
-      List.init width (fun x ->
-          let cell = Render.get buffer x y in
-          match cell.Render.chars with
-          | [] when cell.Render.width = 0 -> "" (* Continuation of wide char *)
-          | [] -> " " (* Empty cell *)
-          | chs ->
-              let b = Buffer.create 4 in
-              List.iter (Uutf.Buffer.add_utf_8 b) chs;
-              Buffer.contents b)
-    in
-    Buffer.add_string buf (String.concat "" cell_line);
-    if y < height - 1 then Buffer.add_char buf '\n'
-  done;
-  Buffer.contents buf
+  let screen = Screen.create ~rows:height ~cols:width () in
+  Screen.begin_frame screen;
+  Ui.render screen element;
+  let _ = Screen.present screen in
+  screen_to_string screen
 
 (** Helper to render a UI element to a string and print it for expect testing *)
 let print_ui ?(width = 20) ?(height = 5) element =
-  let output = render_to_string ~width ~height element in
-  (* Add a visual border to make the output clearer in the test file *)
-  let border_line = "+" ^ String.make width '-' ^ "+\n" in
-  let lines = String.split_on_char '\n' output in
-  let bordered_output =
-    List.map
-      (fun line ->
-        let len = Render.measure_string line in
-        let clipped =
-          if len > width then Render.unicode_substring line width else line
-        in
-        let clipped_len = Render.measure_string clipped in
-        let padded_line = clipped ^ String.make (width - clipped_len) ' ' in
-        "|" ^ padded_line ^ "|")
-      lines
-    |> String.concat "\n"
+  (* Wrap the element in a box with ASCII border for visual clarity *)
+  let bordered_element =
+    Ui.box
+      ~width:(Ui.Px (width + 2))
+      ~height:(Ui.Px (height + 2))
+      ~border:Ui.Border.normal ~border_style:Ui.Style.empty [ element ]
   in
-  print_string ("\n" ^ border_line ^ bordered_output ^ "\n" ^ border_line)
+  let output = Ui.render_string ~width ~height bordered_element in
+  print_string ("\n" ^ output)
 
 (** A helper for writing concise Alcotest-based layout tests. *)
 let assert_renders_to ?width ?height element expected =

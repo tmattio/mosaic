@@ -8,7 +8,7 @@ type theme = {
   header_style : Style.t;
   cell_style : Style.t;
   selected_style : Style.t;
-  border : Ui.border option;
+  border : Ui.Border.t option;
 }
 
 let default_theme =
@@ -144,9 +144,9 @@ let update msg model =
 (* View *)
 
 let truncate_string str max_width =
-  Render.truncate_string_with_ellipsis str max_width "..."
+  Ui.truncate_string_with_ellipsis str max_width "..."
 
-let pad_string = Render.pad_string
+let pad_string = Ui.pad_string
 
 let render_header model =
   if model.columns = [] then []

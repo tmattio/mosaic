@@ -1,6 +1,6 @@
 (library
  (name test_e2e)
  (inline_tests)
- (libraries test_utils mosaic mosaic.tiles mosaic.render unix)
+ (libraries test_utils mosaic mosaic.tiles unix)
  (preprocess
   (pps ppx_expect)))

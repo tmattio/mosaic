@@ -1,8 +1,14 @@
-(* mosaic.ml - React-based API for Mosaic TUI framework *)
-
 open Engine
+open Effect.Deep
+module Style = Ui.Style
+module Ui = Ui
+module Cmd = Cmd
+module Sub = Sub
+module Input = Input
+module Component = Component
 
-(* Type identity module for context identification *)
+(*  Type‑identity helper (for Contexts) *)
+
 module Type = struct
   module Id = struct
     type 'a t = int
@@ -13,21 +19,16 @@ module Type = struct
       incr counter;
       !counter
 
-    let equal : type a b. a t -> b t -> bool = fun a b -> a = b
+    let equal : type a b. a t -> b t -> bool = ( = )
   end
 end
 
-(* Public modules *)
-module Style = Ui.Style
-module Ui = Ui
-module Cmd = Cmd
-module Sub = Sub
-module Input = Input
-module Component = Component
+(*  Internal message wrapper – allows heterogenous payloads *)
 
 type msg = Msg : 'a * ('a -> unit) -> msg
 
-(* Effects for hooks *)
+(*  Effects for hooks *)
+
 type _ Effect.t +=
   | Use_state : 'a -> ('a * ('a -> unit)) Effect.t
   | Use_effect :
@@ -37,22 +38,23 @@ type _ Effect.t +=
   | Dispatch_cmd : msg Cmd.t -> unit Effect.t
   | Use_subscription : msg Sub.t -> unit Effect.t
 
-(* Helper types *)
+(* Helper alia *)
 type 'a deps = 'a array option
 
-(* Context abstraction *)
+(*  Context & Hook runtime data structures *)
+
 type context_value =
   | Context_value : { id : 'a Type.Id.t; value : 'a } -> context_value
 
-(* Hook abstraction - we need to keep the raw values *)
+(* Each hook instance lives in [hooks] list, order is significan *)
 type hook_state =
-  | State : { mutable value : 'a; setter : 'a -> unit } -> hook_state
-  | Effect :
-      (unit -> (unit -> unit) option) * 'b deps * (unit -> unit) option
-      -> hook_state
-  | Subscription : msg Sub.t -> hook_state
+  | State of { mutable value : Obj.t; setter : Obj.t -> unit }
+  | Effect of
+      (unit -> (unit -> unit) option) * Obj.t deps * (unit -> unit) option
+  | Subscription of msg Sub.t
 
-type fiber = {
+(* A React‑style fibre (component instance *)
+and fiber = {
   mutable id : int;
   mutable parent : fiber option;
   mutable child_slots : fiber list;
@@ -67,115 +69,104 @@ type fiber = {
   mutable pending_updates : bool;
 }
 
-type model = fiber
+type model = fiber (* exposed for debug / Program.set_mode *)
+
+(*  Global mutable references (per process) *)
 
 let next_id = ref 0
 let current_fiber : fiber option ref = ref None
 
+let deps_equal (type a b) (x : a deps) (y : b deps) : bool =
+  match (x, y) with
+  | None, None -> true
+  | Some xa, Some ya when Array.length xa = Array.length ya ->
+      let equal = ref true in
+      for i = 0 to Array.length xa - 1 do
+        if
+          Obj.magic (Array.unsafe_get xa i) != Obj.magic (Array.unsafe_get ya i)
+        then equal := false
+      done;
+      !equal
+  | _ -> false
+
+(*  Scheduler helpers *)
+
 let rec mark_dirty f =
-  f.dirty <- true;
-  Option.iter mark_dirty f.parent
+  if not f.dirty then (
+    f.dirty <- true;
+    Option.iter mark_dirty f.parent)
 
 let schedule_update f =
   mark_dirty f;
   f.pending_updates <- true;
-  match f.root_program with
-  | Some p -> Program.set_pending_updates p true
-  | None -> ()
+  Option.iter Program.request_render f.root_program
 
-let deps_equal (type a b) (a : a deps) (b : b deps) : bool =
-  match (a, b) with
-  | None, None -> true
-  | Some a_arr, Some b_arr when Array.length a_arr = Array.length b_arr -> (
-      (* We can only compare deps if they have the same length.
-         Since deps are used to determine if an effect should re-run,
-         we use physical equality (==) which works across types. *)
-      try
-        let equal = ref true in
-        for i = 0 to Array.length a_arr - 1 do
-          if
-            not
-              (Obj.magic (Array.unsafe_get a_arr i)
-              == Obj.magic (Array.unsafe_get b_arr i))
-          then equal := false
-        done;
-        !equal
-      with _ -> false)
-  | _ -> false
+(*  Hook interpreter *)
 
-let rec destroy_fiber f =
-  List.iter
-    (function Effect (_, _, Some cleanup) -> cleanup () | _ -> ())
-    f.hooks;
-  List.iter destroy_fiber f.child_slots
+let rec update_hook_list i new_val = function
+  | [] -> failwith "Hook not found"
+  | State s :: tl when i = 0 ->
+      State s :: tl (* unchanged here; updated elsewher *)
+  | h :: tl -> h :: update_hook_list (i - 1) new_val tl
 
 let fiber_handler (fiber : fiber) (type b) (eff : b Effect.t)
-    (k : (b, _) Effect.Deep.continuation) =
+    (k : (b, _) continuation) =
   match eff with
-  | Use_state initial -> (
+  | Use_state init -> (
       let idx = fiber.hook_index in
       fiber.hook_index <- idx + 1;
       match List.nth_opt fiber.hooks idx with
       | Some (State { value; setter }) ->
-          (* SAFETY: We rely on hooks being called in the same order with same types.
-             The effect system ensures type safety at the API boundary. *)
-          let v = Obj.magic value in
-          let s = Obj.magic setter in
-          Effect.Deep.continue k (v, s)
-      | None ->
-          let value = initial in
+          continue k (Obj.magic value, Obj.magic setter)
+      | _ ->
+          let cell = ref (Obj.repr init) in
           let setter v =
-            (* Find and update this specific hook *)
-            let rec update_hook i = function
-              | [] -> failwith "Hook not found"
-              | State h :: rest when i = idx ->
-                  h.value <- Obj.magic v;
-                  schedule_update fiber;
-                  State h :: rest
-              | h :: rest -> h :: update_hook (i + 1) rest
-            in
-            fiber.hooks <- update_hook 0 fiber.hooks
+            cell := Obj.repr v;
+            schedule_update fiber
           in
           fiber.hooks <-
             fiber.hooks
-            @ [ State { value = Obj.magic value; setter = Obj.magic setter } ];
-          Effect.Deep.continue k (value, setter)
-      | _ -> failwith "Hook mismatch: expected State")
-  | Use_effect (setup, deps) ->
+            @ [
+                State { value = !cell; setter = (fun v -> setter (Obj.obj v)) };
+              ];
+          continue k (init, setter))
+  | Use_effect (setup, deps) -> (
       let idx = fiber.hook_index in
       fiber.hook_index <- idx + 1;
-      (match List.nth_opt fiber.hooks idx with
-      | Some (Effect (_, old_deps, cleanup)) ->
-          if not (deps_equal old_deps deps) then (
-            Option.iter (fun c -> c ()) cleanup;
-            let new_cleanup = setup () in
-            fiber.hooks <-
-              List.mapi
-                (fun i h ->
-                  if i = idx then Effect (setup, deps, new_cleanup) else h)
-                fiber.hooks)
-      | None ->
+      match List.nth_opt fiber.hooks idx with
+      | Some (Effect (_, old_deps, _cleanup)) when deps_equal old_deps deps ->
+          continue k ()
+      | Some (Effect (_, _, cleanup)) ->
+          Option.iter (fun c -> c ()) cleanup;
           let new_cleanup = setup () in
-          fiber.hooks <- fiber.hooks @ [ Effect (setup, deps, new_cleanup) ]
-      | _ -> failwith "Hook mismatch: expected Effect");
-      Effect.Deep.continue k ()
+          fiber.hooks <-
+            List.mapi
+              (fun i h ->
+                if i = idx then Effect (setup, Obj.magic deps, new_cleanup)
+                else h)
+              fiber.hooks;
+          continue k ()
+      | _ ->
+          let c = setup () in
+          fiber.hooks <- fiber.hooks @ [ Effect (setup, Obj.magic deps, c) ];
+          continue k ())
   | Use_context id ->
       let rec find f =
-        match f.contexts with
-        | [] -> (
+        match
+          List.find_opt
+            (function Context_value { id = id'; _ } -> Type.Id.equal id id')
+            f.contexts
+        with
+        | Some (Context_value { value; _ }) -> continue k (Obj.magic value)
+        | None -> (
             match f.parent with
             | Some p -> find p
             | None -> failwith "Context not found")
-        | Context_value h :: rest ->
-            if Type.Id.equal h.id id then
-              (* We know the types match because of the id equality *)
-              Effect.Deep.continue k (Obj.magic h.value)
-            else find { f with contexts = rest }
       in
       find fiber
   | Dispatch_cmd cmd ->
       fiber.pending_cmds <- Cmd.batch [ fiber.pending_cmds; cmd ];
-      Effect.Deep.continue k ()
+      continue k ()
   | Use_subscription sub ->
       let idx = fiber.hook_index in
       fiber.hook_index <- idx + 1;
@@ -185,15 +176,17 @@ let fiber_handler (fiber : fiber) (type b) (eff : b Effect.t)
             List.mapi
               (fun i h -> if i = idx then Subscription sub else h)
               fiber.hooks
-      | None -> fiber.hooks <- fiber.hooks @ [ Subscription sub ]
-      | _ -> failwith "Hook mismatch: expected Subscription");
-      Effect.Deep.continue k ()
-  | _ ->
-      (* Re-perform the effect to let it be handled by an outer handler *)
-      let result = Effect.perform eff in
-      Effect.Deep.continue k result
+      | _ -> fiber.hooks <- fiber.hooks @ [ Subscription sub ]);
+      continue k ()
+  | _ -> continue k (Effect.perform eff)
 
-let create_fiber ?parent ?root_program component =
+(*  Fiber construction & reconciliation *)
+
+let rec destroy_fiber f =
+  List.iter (function Effect (_, _, Some c) -> c () | _ -> ()) f.hooks;
+  List.iter destroy_fiber f.child_slots
+
+let create_fiber ?parent ~root_program component =
   incr next_id;
   {
     id = !next_id;
@@ -210,36 +203,26 @@ let create_fiber ?parent ?root_program component =
     pending_updates = false;
   }
 
-let rec reconcile (fiber : fiber) : unit =
+let rec reconcile fiber =
   if not fiber.dirty then ()
   else (
     fiber.dirty <- false;
-    let old_child_slots = fiber.child_slots in
     fiber.child_slots <- [];
     fiber.hook_index <- 0;
     let new_ui =
       match fiber.component with
-      | None -> failwith "No component to reconcile"
+      | None -> Ui.spacer ()
       | Some (Component.Any ((module C), props)) ->
-          let old_current = !current_fiber in
+          let prev = !current_fiber in
           current_fiber := Some fiber;
-          let result = C.make props in
-          current_fiber := old_current;
-          result
+          let r = C.make props in
+          current_fiber := prev;
+          r
     in
     fiber.ui <- Some new_ui;
-    let new_len = List.length fiber.child_slots in
-    (if new_len < List.length old_child_slots then
-       let rec drop n lst =
-         match (n, lst) with
-         | 0, _ -> lst
-         | _, [] -> []
-         | n, _ :: t -> drop (n - 1) t
-       in
-       let excess = drop new_len old_child_slots in
-       List.iter destroy_fiber excess);
     List.iter reconcile fiber.child_slots)
 
+(* Helpers to render a child componen *)
 let render_subcomponent (type p) (c : p Component.t) (props : p) : Ui.element =
   match !current_fiber with
   | None -> failwith "render_subcomponent outside fiber"
@@ -252,46 +235,49 @@ let render_subcomponent (type p) (c : p Component.t) (props : p) : Ui.element =
             old.dirty <- true;
             old
         | None ->
-            create_fiber ~parent ?root_program:parent.root_program
+            create_fiber ~parent ~root_program:parent.root_program
               (Some (Component.Any (c, props)))
       in
       parent.child_slots <- parent.child_slots @ [ child ];
-      let old_current = !current_fiber in
+      let prev = !current_fiber in
       current_fiber := Some child;
       if child.dirty then reconcile child;
-      let ui = Option.get child.ui in
-      current_fiber := old_current;
-      ui
+      let out = Option.get child.ui in
+      current_fiber := prev;
+      out
 
-(* Context API *)
-type 'ctx t = { id : 'ctx Type.Id.t; default : 'ctx option }
+(*  Context API *)
 
-let create ?default () = { id = Type.Id.make (); default }
+type 'ctx context = { id : 'ctx Type.Id.t; default : 'ctx option }
 
-let provide { id; default = _ } value children =
+let create_context ?default () = { id = Type.Id.make (); default }
+
+let provide ctx value children =
   match !current_fiber with
   | None -> failwith "provide outside fiber"
   | Some f ->
-      let old_contexts = f.contexts in
-      f.contexts <- Context_value { id; value } :: f.contexts;
-      let ui = children () in
-      f.contexts <- old_contexts;
-      ui
+      let old = f.contexts in
+      f.contexts <- Context_value { id = ctx.id; value } :: old;
+      let out = children () in
+      f.contexts <- old;
+      out
 
-(* Hooks API *)
-let use_state initial = Effect.perform (Use_state initial)
+(*  Hook wrappers exposed to user code *)
+
+let use_state v = Effect.perform (Use_state v)
 let use_effect ?deps f = Effect.perform (Use_effect (f, deps))
 let use_context ctx = Effect.perform (Use_context ctx.id)
 let dispatch_cmd cmd = Effect.perform (Dispatch_cmd cmd)
 let use_subscription sub = Effect.perform (Use_subscription sub)
 
-(* Collect functions *)
-let rec collect_pending (f : fiber) : msg Cmd.t =
-  let c = f.pending_cmds in
-  f.pending_cmds <- Cmd.none;
-  Cmd.batch (c :: List.map collect_pending f.child_slots)
+(*  Collect helpers *)
 
-let rec collect_subs (f : fiber) : msg Sub.t =
+let rec collect_pending f =
+  let here = f.pending_cmds in
+  f.pending_cmds <- Cmd.none;
+  Cmd.batch (here :: List.map collect_pending f.child_slots)
+
+let rec collect_subs f =
   let local =
     List.fold_left
       (fun acc -> function Subscription s -> Sub.batch [ acc; s ] | _ -> acc)
@@ -299,135 +285,98 @@ let rec collect_subs (f : fiber) : msg Sub.t =
   in
   Sub.batch (local :: List.map collect_subs f.child_slots)
 
+(*  Runtime (Eio) *)
+
 let run_eio ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
     ?(debug = false) (root : unit -> Ui.element) =
   let debug_log = if debug then Some (open_out "mosaic-debug.log") else None in
-  let config = { Program.terminal; alt_screen; mouse; fps; debug_log } in
+  let cfg = Program.config ?terminal ~alt_screen ~mouse ~fps ?debug_log () in
 
-  (* Create the program handle *)
-  let p = Program.create ~sw ~env config in
+  (* Stub handles to be filled after star *)
+  let prog_ref : Program.t option ref = ref None in
+  let root_fiber_ref : fiber option ref = ref None in
 
-  (* Create root fiber *)
-  let root_fiber = create_fiber ?root_program:(Some p) None in
-  Program.set_model p root_fiber;
+  (* Message stream for hook‑generated command *)
+  let cmd_stream = Eio.Stream.create 128 in
 
-  (* Command stream for processing commands from hooks *)
-  let cmd_stream = Eio.Stream.create 100 in
+  (* Input / resize handlers *)
+  let dispatch_msg (Msg (v, handler)) = handler v in
 
-  (* The dispatch function for our React app *)
-  let dispatch (Msg (v, handler)) =
-    handler v;
-    (* Imperatively update component state *)
-    root_fiber.pending_updates <- true;
-    Program.set_pending_updates p true
-  in
-
-  (* Handle input events *)
-  let handle_input_event event =
+  let handle_input_event (event : Input.event) =
+    let root_fiber = Option.get !root_fiber_ref in
+    let subs = collect_subs root_fiber in
     let msgs =
-      Program.with_state_mutex p ~protect:true (fun () ->
-          (* Collect subs from the fiber tree *)
-          let subs = collect_subs root_fiber in
-          match event with
-          | Input.Key key_event ->
-              let keyboard_handlers = Sub.collect_keyboard [] subs in
-              List.filter_map (fun f -> f key_event) keyboard_handlers
-          | Input.Focus ->
-              let focus_handlers = Sub.collect_focus [] subs in
-              List.filter_map (fun f -> f ()) focus_handlers
-          | Input.Blur ->
-              let blur_handlers = Sub.collect_blur [] subs in
-              List.filter_map (fun f -> f ()) blur_handlers
-          | Input.Mouse mouse_event ->
-              let mouse_handlers = Sub.collect_mouse [] subs in
-              List.filter_map (fun f -> f mouse_event) mouse_handlers
-          | Input.Paste s ->
-              let paste_handlers = Sub.collect_paste [] subs in
-              List.filter_map (fun f -> f s) paste_handlers
-          | Input.Resize (w, h) ->
-              Program.invalidate_buffer p;
-              let window_handlers = Sub.collect_window [] subs in
-              let size = { Sub.width = w; Sub.height = h } in
-              List.filter_map (fun f -> f size) window_handlers
-          | _ -> [])
+      match event with
+      | Input.Key k ->
+          Sub.collect_keyboard [] subs |> List.filter_map (fun f -> f k)
+      | Input.Focus ->
+          Sub.collect_focus [] subs |> List.filter_map (fun f -> f ())
+      | Input.Blur ->
+          Sub.collect_blur [] subs |> List.filter_map (fun f -> f ())
+      | Input.Mouse m_ev ->
+          Sub.collect_mouse [] subs |> List.filter_map (fun f -> f m_ev)
+      | Input.Paste s ->
+          Sub.collect_paste [] subs |> List.filter_map (fun f -> f s)
+      | Input.Resize (w, h) ->
+          Program.request_render (Option.get !prog_ref);
+          let size = { Sub.width = w; height = h } in
+          Sub.collect_window [] subs |> List.filter_map (fun f -> f size)
+      | _ -> []
     in
-    List.iter dispatch msgs
+    List.iter dispatch_msg msgs
   in
 
-  (* Handle resize events *)
-  let handle_resize (w, h) = handle_input_event (Input.Resize (w, h)) in
+  let handle_resize ~w ~h = handle_input_event (Input.Resize (w, h)) in
 
-  (* Process commands from the stream *)
-  let message_loop () =
-    while Program.is_running p do
-      (* Process commands generated by hooks *)
-      let cmd = Eio.Stream.take cmd_stream in
-      Program.process_cmd p dispatch cmd
-    done
-  in
-
-  (* Render loop with reconciliation *)
-  let get_element () =
-    (* The core reconciliation logic *)
-    if Program.get_pending_updates p then
-      Program.with_state_mutex p ~protect:false (fun () ->
-          reconcile root_fiber;
-          root_fiber.pending_updates <- false;
-          Program.set_pending_updates p false;
-          (* Collect new commands and add them to the stream *)
-          let new_cmds = collect_pending root_fiber in
-          if new_cmds <> Cmd.none then Eio.Stream.add cmd_stream new_cmds);
+  (* render callback for Program *)
+  let render () =
+    let root_fiber = Option.get !root_fiber_ref in
+    if root_fiber.pending_updates then (
+      reconcile root_fiber;
+      root_fiber.pending_updates <- false;
+      (* push any freshly collected cmds to strea *)
+      let cmds = collect_pending root_fiber in
+      if cmds <> Cmd.none then Eio.Stream.add cmd_stream cmds);
     Option.get root_fiber.ui
   in
 
-  Fun.protect
-    ~finally:(fun () ->
-      Option.iter close_out debug_log;
-      Program.cleanup p)
-    (fun () ->
-      (* Set up the effect handler for the entire program *)
-      let run_with_effects () =
-        (* Initial render of the root component *)
-        let old_current = !current_fiber in
-        current_fiber := Some root_fiber;
-        let ui = root () in
-        current_fiber := old_current;
-        root_fiber.ui <- Some ui;
+  (* Start Program runtime *)
+  let prog, process_cmd =
+    Program.start ~sw ~env cfg ~render ~on_input:handle_input_event
+      ~on_resize:handle_resize ()
+  in
+  prog_ref := Some prog;
 
-        (* Collect initial commands *)
-        let initial_cmds = collect_pending root_fiber in
-        if initial_cmds <> Cmd.none then Eio.Stream.add cmd_stream initial_cmds;
+  (* create root fiber now that prog exist *)
+  let root_fiber = create_fiber ~root_program:(Some prog) None in
+  root_fiber_ref := Some root_fiber;
 
-        Program.setup_terminal p;
-        Program.setup_signal_handlers p;
+  (* initial moun *)
+  let prev = !current_fiber in
+  current_fiber := Some root_fiber;
+  let initial_ui = root () in
+  current_fiber := prev;
+  root_fiber.ui <- Some initial_ui;
+  let init_cmds = collect_pending root_fiber in
+  if init_cmds <> Cmd.none then Eio.Stream.add cmd_stream init_cmds;
 
-        Eio.Fiber.all
-          [
-            (fun () -> Program.run_input_loop p handle_input_event);
-            (fun () -> Program.run_render_loop p get_element);
-            message_loop;
-            (fun () -> Program.run_resize_loop p handle_resize);
-          ]
-      in
-
-      Effect.Deep.try_with run_with_effects ()
-        {
-          Effect.Deep.effc =
-            (fun (type b) (eff : b Effect.t) ->
-              match eff with
-              | Use_state _ | Use_effect _ | Use_context _ | Dispatch_cmd _
-              | Use_subscription _ ->
-                  (* Use the current fiber for handling *)
-                  Option.map
-                    (fun fiber -> fun k -> fiber_handler fiber eff k)
-                    !current_fiber
-              | _ -> None);
-        })
+  (* message loop (process_cmd) *)
+  let message_loop () =
+    try
+      while true do
+        let cmds = Eio.Stream.take cmd_stream in
+        process_cmd dispatch_msg cmds
+      done
+    with End_of_file -> ()
+  in
+  Eio.Fiber.fork ~sw message_loop
 
 let run ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
     ?(debug = false) root =
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   run_eio ~sw ~env ?terminal ~alt_screen ~mouse ~fps ~debug root
+
+(*  Component helper *)
 
 let component = Component.make

@@ -41,17 +41,17 @@ let view model =
   vbox ~gap:1
     [
       text ~style:Style.(fg (Index 14)) "Component Counter Demo";
-      spacer 1;
-      text "Top Counter:";
+      box ~margin:(Spacing.make ~top:1 ()) [ text "Top Counter:" ];
       top_counter_inst.view model;
-      spacer 1;
-      text "Bottom Counter:";
+      box ~margin:(Spacing.make ~top:1 ()) [ text "Bottom Counter:" ];
       bottom_counter_inst.view model;
-      spacer 2;
-      hbox ~gap:2
+      box ~margin:(Spacing.make ~top:2 ())
         [
-          text ~style:Style.(fg (Index 8)) "[r] Reset";
-          text ~style:Style.(fg (Index 8)) "[q/Ctrl+C] Quit";
+          hbox ~gap:2
+            [
+              text ~style:Style.(fg (Index 8)) "[r] Reset";
+              text ~style:Style.(fg (Index 8)) "[q/Ctrl+C] Quit";
+            ];
         ];
     ]
 

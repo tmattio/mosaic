@@ -1,735 +1,632 @@
-module Padding = Padding
-module Border = Border
+(* Type representing a UI element *)
+type t = Toffee.node_id * Renderable.t Toffee.t
+type spacing = Spacing.t
 
-type align = [ `Start | `Center | `End | `Stretch ]
-type size_def = [ `Fixed of int | `Flex of int ]
-
-(* These are the internal record types. They are not exposed in the mli. *)
-
-type text_data = {
-  content : string;
-  style : Style.t;
-  align : align;
-  tab_width : int;
-  wrap : bool;
-}
-
-type rich_text_data = { segments : (string * Style.t) list }
-type spacer_data = { size : int; flex : int }
-
-type box_layout_options = {
-  direction : [ `Horizontal | `Vertical ];
-  gap : int;
-  width : int option;
-  height : int option;
-  min_width : int option;
-  min_height : int option;
-  max_width : int option;
-  max_height : int option;
-  margin : Padding.t;
-  padding : Padding.t;
-  border : Border.t option;
-  background : Style.t option;
-  align : align;
-  justify : align;
-  flex_grow : int;
-  flex_shrink : int;
-  fill : bool;
-}
-
-type z_align =
-  | Top_left
-  | Top
-  | Top_right
-  | Left
+(* Direct type equalities to toffee types *)
+type align = Toffee.Style.Alignment.align_items =
+  | Start
+  | End
+  | Flex_start
+  | Flex_end
   | Center
-  | Right
-  | Bottom_left
-  | Bottom
-  | Bottom_right
+  | Baseline
+  | Stretch
 
-type box_data = { children : t list; options : box_layout_options }
-and z_stack_data = { children : t list; align : z_align }
-and flow_data = { children : t list; h_gap : int; v_gap : int }
+type justify = Toffee.Style.Alignment.align_content =
+  | Start
+  | End
+  | Flex_start
+  | Flex_end
+  | Center
+  | Stretch
+  | Space_between
+  | Space_evenly
+  | Space_around
 
-and grid_data = {
-  children : t list;
-  columns : size_def list;
-  rows : size_def list;
-  col_spacing : int;
-  row_spacing : int;
-}
+type wrap = Toffee.Style.Flex.flex_wrap = No_wrap | Wrap | Wrap_reverse
+type size = Px of int | Percent of float | Auto | Fit_content
+type position_type = Toffee.Style.position = Relative | Absolute
+type display = Toffee.Style.display = Block | Flex | Grid | None
+type direction = Inherit | Ltr | Rtl
 
-and scroll_data = {
-  child : t;
-  width : int option;
-  height : int option;
-  h_offset : int;
-  v_offset : int;
-}
+type flex_direction = Toffee.Style.Flex.flex_direction =
+  | Row
+  | Column
+  | Row_reverse
+  | Column_reverse
 
-and canvas_data = {
-  width : int option;
-  height : int option;
-  draw :
-    buffer:Render.buffer ->
-    x:int ->
-    y:int ->
-    w:int ->
-    h:int ->
-    dark:bool ->
-    unit;
-}
+type overflow = Toffee.Style.overflow = Visible | Clip | Hidden | Scroll
 
-and t =
-  | Text of text_data
-  | Rich_text of rich_text_data
-  | Spacer of spacer_data
-  | Box of box_data
-  | Z_stack of z_stack_data
-  | Flow of flow_data
-  | Grid of grid_data
-  | Scroll of scroll_data
-  | Canvas of canvas_data
+(* Convert our size type to toffee dimension *)
+let size_to_dimension = function
+  | Px n -> Toffee.Style.Dimension.length (float_of_int n)
+  | Percent p -> Toffee.Style.Dimension.percent (p /. 100.0)
+  | Auto -> Toffee.Style.Dimension.auto
+  | Fit_content ->
+      Toffee.Style.Dimension.auto (* toffee doesn't have fit_content *)
 
-module Text = struct
-  type nonrec t = text_data
-
-  let make ?(style = Style.empty) ?(align = `Start) ?(tab_width = 4)
-      ?(wrap = false) content =
-    { content; style; align; tab_width; wrap }
-
-  let content (t : t) = t.content
-  let style (t : t) = t.style
-  let alignment (t : t) = t.align
-  let tab_width (t : t) = t.tab_width
-  let is_wrapping (t : t) = t.wrap
-end
-
-module Rich_text = struct
-  type nonrec t = rich_text_data
-
-  let make segments = { segments }
-  let segments (t : t) = t.segments
-end
-
-module Spacer = struct
-  type nonrec t = spacer_data
-
-  let make ?(flex = 0) size = { size; flex }
-  let size (t : t) = t.size
-  let flex (t : t) = t.flex
-end
-
-module Box = struct
-  type nonrec t = box_data
-  type direction = [ `Horizontal | `Vertical ]
-
-  type layout_options = box_layout_options = {
-    direction : direction;
-    gap : int;
-    width : int option;
-    height : int option;
-    min_width : int option;
-    min_height : int option;
-    max_width : int option;
-    max_height : int option;
-    margin : Padding.t;
-    padding : Padding.t;
-    border : Border.t option;
-    background : Style.t option;
-    align : align;
-    justify : align;
-    flex_grow : int;
-    flex_shrink : int;
-    fill : bool;
+(* Convert spacing to toffee rect *)
+let spacing_to_rect (spacing : Spacing.t) =
+  {
+    Toffee.Geometry.top =
+      Toffee.Style.Length_percentage.Length (float_of_int (Spacing.top spacing));
+    right =
+      Toffee.Style.Length_percentage.Length
+        (float_of_int (Spacing.right spacing));
+    bottom =
+      Toffee.Style.Length_percentage.Length
+        (float_of_int (Spacing.bottom spacing));
+    left =
+      Toffee.Style.Length_percentage.Length
+        (float_of_int (Spacing.left spacing));
   }
 
-  let make ~options children = { options; children }
-  let children (t : t) = t.children
-  let options (t : t) = t.options
-end
+(* Convert spacing to auto rect for margins *)
+let spacing_to_auto_rect (spacing : Spacing.t) =
+  {
+    Toffee.Geometry.top =
+      Toffee.Style.Length_percentage_auto.Length
+        (float_of_int (Spacing.top spacing));
+    right =
+      Toffee.Style.Length_percentage_auto.Length
+        (float_of_int (Spacing.right spacing));
+    bottom =
+      Toffee.Style.Length_percentage_auto.Length
+        (float_of_int (Spacing.bottom spacing));
+    left =
+      Toffee.Style.Length_percentage_auto.Length
+        (float_of_int (Spacing.left spacing));
+  }
 
-module Z_stack = struct
-  type nonrec t = z_stack_data
+(* Convert border to toffee rect *)
+let border_to_rect (border : Border.t) =
+  {
+    Toffee.Geometry.top =
+      Toffee.Style.Length_percentage.Length
+        (if Border.top border then 1.0 else 0.0);
+    right =
+      Toffee.Style.Length_percentage.Length
+        (if Border.right border then 1.0 else 0.0);
+    bottom =
+      Toffee.Style.Length_percentage.Length
+        (if Border.bottom border then 1.0 else 0.0);
+    left =
+      Toffee.Style.Length_percentage.Length
+        (if Border.left border then 1.0 else 0.0);
+  }
 
-  type nonrec z_align = z_align =
-    | Top_left
-    | Top
-    | Top_right
-    | Left
-    | Center
-    | Right
-    | Bottom_left
-    | Bottom
-    | Bottom_right
+(* Global tree instance *)
+let tree = Toffee.create ()
 
-  let make ?(align = Top_left) children = { children; align }
-  let children (t : t) = t.children
-  let alignment (t : t) = t.align
-end
-
-module Flow = struct
-  type nonrec t = flow_data
-
-  let make ?(h_gap = 1) ?(v_gap = 0) children = { children; h_gap; v_gap }
-  let children (t : t) = t.children
-  let h_gap (t : t) = t.h_gap
-  let v_gap (t : t) = t.v_gap
-end
-
-module Grid = struct
-  type nonrec t = grid_data
-
-  let make ?(col_spacing = 0) ?(row_spacing = 0) ~columns ~rows children =
-    { children; columns; rows; col_spacing; row_spacing }
-
-  let children (t : t) = t.children
-  let columns (t : t) = t.columns
-  let rows (t : t) = t.rows
-  let col_spacing (t : t) = t.col_spacing
-  let row_spacing (t : t) = t.row_spacing
-end
-
-module Scroll = struct
-  type nonrec t = scroll_data
-
-  let make ?width ?height ?(h_offset = 0) ?(v_offset = 0) child =
-    { child; width; height; h_offset; v_offset }
-
-  let child (t : t) = t.child
-  let width (t : t) = t.width
-  let height (t : t) = t.height
-  let h_offset (t : t) = t.h_offset
-  let v_offset (t : t) = t.v_offset
-end
-
-module Canvas = struct
-  type nonrec t = canvas_data
-
-  let make ?width ?height draw = { width; height; draw }
-  let width (t : t) = t.width
-  let height (t : t) = t.height
-  let draw (t : t) ~buffer ~x ~y ~w ~h ~dark = t.draw ~buffer ~x ~y ~w ~h ~dark
-end
-
-module T = struct
-  type nonrec t = t =
-    | Text of Text.t
-    | Rich_text of Rich_text.t
-    | Spacer of Spacer.t
-    | Box of Box.t
-    | Z_stack of Z_stack.t
-    | Flow of Flow.t
-    | Grid of Grid.t
-    | Scroll of Scroll.t
-    | Canvas of Canvas.t
-end
-
-let border_opt_h border =
-  Option.map Border.space_h border |> Option.value ~default:0
-
-let border_opt_v border =
-  Option.map Border.space_v border |> Option.value ~default:0
-
-let split_into_tokens str =
-  let len = String.length str in
-  let rec loop pos acc =
-    if pos >= len then List.rev acc
-    else
-      let is_space c = c = ' ' in
-      (* Extend to other whitespace if needed, e.g., || c = '\t' *)
-      let start = pos in
-      let rec find_end p =
-        if p < len && is_space str.[p] = is_space str.[start] then
-          find_end (p + 1)
-        else p
-      in
-      let end_pos = find_end pos in
-      let token = String.sub str start (end_pos - start) in
-      (* drop pure‑whitespace tokens – spacing is already modelled by h_gap *)
-      let acc = if String.trim token = "" then acc else token :: acc in
-      loop end_pos acc
+let box ?position_type ?display ?direction:_ ?flex_grow ?flex_shrink ?align_self
+    ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
+    ?margin ?style ?border ?border_style ?flex_direction ?align_items
+    ?justify_content ?flex_wrap ?gap ?row_gap ?col_gap ?overflow children =
+  let box_renderable : Renderable.t option =
+    let final_border =
+      match (border, border_style) with
+      | Some b, Some s -> Some (Border.with_style b s)
+      | Some b, None -> Some b
+      | None, _ -> None
+    in
+    match (final_border, style) with
+    | None, None -> None
+    | _ -> Some (Renderable.box ?border:final_border ?background:style ())
   in
-  loop 0 []
 
-type expanded_child = { elem : t; is_new_item : bool; is_hard_break : bool }
+  (* Extract child node_ids *)
+  let child_ids = List.map fst children in
 
-let grow_fact = function
-  | Spacer { flex; _ } -> flex
-  | Box { options; _ } -> options.flex_grow
-  | Flow _ -> 0
-  | Canvas c -> if c.width = None || c.height = None then 1 else 0
-  | _ -> 0
-
-let shrink_fact = function
-  | Box { options; _ } -> options.flex_shrink
-  | Text { wrap = true; _ } -> 1
-  | Spacer { flex; _ } -> flex
-  | Flow _ -> 1
-  | Canvas c -> if c.width = None || c.height = None then 1 else 0
-  | _ -> 0
-
-let expand_children children =
-  List.concat_map
-    (fun child ->
-      match child with
-      | Text { wrap = true; content; tab_width; style; align; _ } ->
-          let expanded = Render.expand_tabs content tab_width in
-          let lines = String.split_on_char '\n' expanded in
-          List.mapi
-            (fun i line ->
-              let tokens = split_into_tokens line in
-              let is_hard = i > 0 in
-              let is_new = i = 0 in
-              match tokens with
-              | [] ->
-                  (* Preserve empty lines for height *)
-                  [
-                    {
-                      elem =
-                        Text (Text.make "" ~style ~align ~tab_width ~wrap:false);
-                      is_new_item = is_new;
-                      is_hard_break = is_hard;
-                    };
-                  ]
-              | first :: rest ->
-                  {
-                    elem =
-                      Text
-                        (Text.make first ~style ~align ~tab_width ~wrap:false);
-                    is_new_item = is_new;
-                    is_hard_break = is_hard;
-                  }
-                  :: List.map
-                       (fun t ->
-                         {
-                           elem =
-                             Text
-                               (Text.make t ~style ~align ~tab_width ~wrap:false);
-                           is_new_item = false;
-                           is_hard_break = false;
-                         })
-                       rest)
-            lines
-          |> List.concat
-      | _ -> [ { elem = child; is_new_item = true; is_hard_break = false } ])
-    children
-
-let rec measure ?(width = max_int) element =
-  let max_reasonable = 10_000 in
-  let width = min width max_reasonable in
-  let clamp_result (w, h) = (min w max_reasonable, min h max_reasonable) in
-  let result =
-    match element with
-    | Text { content; tab_width; wrap; _ } ->
-        let expanded = Render.expand_tabs content tab_width in
-        let lines =
-          if wrap && width < max_int then Drawing.wrap_text expanded width
-          else String.split_on_char '\n' expanded
-        in
-        let max_width =
-          List.fold_left
-            (fun acc line -> max acc (Render.measure_string line))
-            0 lines
-        in
-        (max_width, max 1 (List.length lines))
-    | Rich_text { segments } ->
-        ( List.fold_left
-            (fun acc (s, _) -> acc + Render.measure_string s)
-            0 segments,
-          1 )
-    | Spacer { size; _ } -> (max 0 size, 0)
-    | Box { children; options } ->
-        let border_h = border_opt_h options.border in
-        let border_v = border_opt_v options.border in
-        let padding_h = options.padding.left + options.padding.right in
-        let padding_v = options.padding.top + options.padding.bottom in
-        let content_width = max 0 (width - border_h - padding_h) in
-
-        let children_sizes =
-          List.map
-            (fun child ->
-              let child_width =
-                match options.direction with
-                | `Vertical -> content_width
-                | `Horizontal -> (
-                    (* For wrapped boxes containing flow, constrain width *)
-                    match (child, options.width) with
-                    | Flow _, Some _ -> content_width
-                    | _ -> max_int)
-              in
-              measure ~width:child_width child)
-            children
-        in
-
-        let natural_w, natural_h =
-          match options.direction with
-          | `Horizontal ->
-              let total_width =
-                List.fold_left (fun acc (w, _) -> acc + w) 0 children_sizes
-              in
-              let max_height =
-                List.fold_left (fun acc (_, h) -> max acc h) 0 children_sizes
-              in
-              let gap_space = options.gap * max 0 (List.length children - 1) in
-              ( total_width + gap_space + padding_h + border_h,
-                max_height + padding_v + border_v )
-          | `Vertical ->
-              let max_width =
-                List.fold_left (fun acc (w, _) -> max acc w) 0 children_sizes
-              in
-              let total_height =
-                List.fold_left (fun acc (_, h) -> acc + h) 0 children_sizes
-              in
-              let gap_space = options.gap * max 0 (List.length children - 1) in
-              ( max_width + padding_h + border_h,
-                total_height + gap_space + padding_v + border_v )
-        in
-        let resolve_dim value min_v max_v natural =
-          let max_reasonable = 10_000 in
-          let resolved =
-            Option.value value ~default:natural |> min max_reasonable
-          in
-          let with_min =
-            match min_v with Some m -> max m resolved | None -> resolved
-          in
-          match max_v with Some m -> min m with_min | None -> with_min
-        in
-        ( resolve_dim options.width options.min_width options.max_width natural_w,
-          resolve_dim options.height options.min_height options.max_height
-            natural_h )
-    | Z_stack { children; _ } ->
-        List.fold_left
-          (fun (max_w, max_h) child ->
-            let w, h = measure ~width child in
-            (max max_w w, max max_h h))
-          (0, 0) children
-    | Flow { children; h_gap; v_gap; _ } ->
-        if width = max_int then (* Unconstrained width, just sum horizontally *)
-          let expanded = expand_children children in
-          let total_w =
-            List.fold_left
-              (fun acc ec -> acc + fst (measure ~width:max_int ec.elem))
-              0 expanded
-          in
-          let max_h =
-            List.fold_left
-              (fun acc ec -> max acc (snd (measure ~width:max_int ec.elem)))
-              0 expanded
-          in
-          (total_w + (h_gap * max 0 (List.length expanded - 1)), max_h)
-        else (* Constrained width, simulate wrapping *)
-          let expanded = expand_children children in
-          let measured =
-            List.map
-              (fun ec ->
-                let w, h = measure ~width:max_int ec.elem in
-                (w, h, ec.is_new_item, ec.is_hard_break))
-              expanded
-          in
-          let rec simulate_wrap current_x current_h total_h rem_measured =
-            match rem_measured with
-            | [] -> if current_x > 0 then total_h + current_h else total_h
-            | (cw, ch, is_new, is_hard) :: rest ->
-                let gap = if current_x > 0 then h_gap else 0 in
-                let would_exceed = current_x + gap + cw > width in
-                if is_hard && current_x > 0 then
-                  (* Force wrap for hard break *)
-                  let new_total_h = total_h + current_h + v_gap in
-                  simulate_wrap cw ch new_total_h rest
-                else if would_exceed && current_x > 0 then
-                  (* Normal wrap *)
-                  let wrap_v = if is_new || is_hard then v_gap else 0 in
-                  let new_total_h = total_h + current_h + wrap_v in
-                  simulate_wrap cw ch new_total_h rest
-                else
-                  simulate_wrap
-                    (current_x + gap + cw)
-                    (max current_h ch) total_h rest
-          in
-          (width, simulate_wrap 0 0 0 measured)
-    | Grid { children; columns; rows; col_spacing; row_spacing; _ } ->
-        let num_cols = List.length columns in
-        let num_rows = List.length rows in
-        if num_cols = 0 || num_rows = 0 then (0, 0)
-        else
-          let num_cells = min (List.length children) (num_cols * num_rows) in
-          let col_mins = Array.make num_cols 0 in
-          let row_mins = Array.make num_rows 0 in
-          List.iteri
-            (fun i child ->
-              if i < num_cells then (
-                let r = i / num_cols in
-                let c = i mod num_cols in
-                col_mins.(c) <- max col_mins.(c) (min_width child);
-                row_mins.(r) <- max row_mins.(r) (min_height child)))
-            children;
-          let col_mins_list = Array.to_list col_mins in
-          let row_mins_list = Array.to_list row_mins in
-          if width = max_int then (
-            let fixed_w = ref 0 in
-            let min_flex_w = ref 0 in
-            List.iter2
-              (fun col m ->
-                match col with
-                | `Fixed w -> fixed_w := !fixed_w + w
-                | `Flex _ -> min_flex_w := !min_flex_w + m)
-              columns col_mins_list;
-            let fixed_h = ref 0 in
-            let min_flex_h = ref 0 in
-            List.iter2
-              (fun row m ->
-                match row with
-                | `Fixed h -> fixed_h := !fixed_h + h
-                | `Flex _ -> min_flex_h := !min_flex_h + m)
-              rows row_mins_list;
-            let col_gaps = col_spacing * max 0 (num_cols - 1) in
-            let row_gaps = row_spacing * max 0 (num_rows - 1) in
-            ( !fixed_w + !min_flex_w + col_gaps,
-              !fixed_h + !min_flex_h + row_gaps ))
-          else
-            let col_widths =
-              Drawing.compute_sizes ~defs:columns ~mins:col_mins_list
-                ~available:width ~spacing:col_spacing
-            in
-            let natural_w =
-              List.fold_left ( + ) 0 col_widths
-              + (col_spacing * max 0 (num_cols - 1))
-            in
-            let row_pref_h = Array.make num_rows 0 in
-            List.iteri
-              (fun i child ->
-                if i < num_cells then
-                  let r = i / num_cols in
-                  let c = i mod num_cols in
-                  let cell_w = List.nth col_widths c in
-                  let _, child_h = measure ~width:cell_w child in
-                  row_pref_h.(r) <- max row_pref_h.(r) child_h)
-              children;
-            let fixed_h = ref 0 in
-            let min_flex_h = ref 0 in
-            List.iteri
-              (fun i row ->
-                let m = row_pref_h.(i) in
-                match row with
-                | `Fixed h -> fixed_h := !fixed_h + h
-                | `Flex _ -> min_flex_h := !min_flex_h + m)
-              rows;
-            let row_gaps = row_spacing * max 0 (num_rows - 1) in
-            let natural_h = !fixed_h + !min_flex_h + row_gaps in
-            (natural_w, natural_h)
-    | Scroll { child; width = scroll_w; height = scroll_h; _ } ->
-        let child_w, child_h = measure child in
-        ( Option.value scroll_w ~default:child_w,
-          Option.value scroll_h ~default:child_h )
-    | Canvas c ->
-        let w = Option.value c.width ~default:0 in
-        let h = Option.value c.height ~default:1 in
-        (w, h)
+  (* Create gap size *)
+  let gap_size =
+    match (gap, row_gap, col_gap) with
+    | Some g, None, None ->
+        {
+          Toffee.Geometry.width =
+            Toffee.Style.Length_percentage.Length (float_of_int g);
+          height = Toffee.Style.Length_percentage.Length (float_of_int g);
+        }
+    | None, Some r, Some c ->
+        {
+          Toffee.Geometry.width =
+            Toffee.Style.Length_percentage.Length (float_of_int c);
+          height = Toffee.Style.Length_percentage.Length (float_of_int r);
+        }
+    | None, Some r, None ->
+        {
+          Toffee.Geometry.width = Toffee.Style.Length_percentage.Length 0.0;
+          height = Toffee.Style.Length_percentage.Length (float_of_int r);
+        }
+    | None, None, Some c ->
+        {
+          Toffee.Geometry.width =
+            Toffee.Style.Length_percentage.Length (float_of_int c);
+          height = Toffee.Style.Length_percentage.Length 0.0;
+        }
+    | Some g, Some r, _ ->
+        {
+          Toffee.Geometry.width =
+            Toffee.Style.Length_percentage.Length (float_of_int g);
+          height = Toffee.Style.Length_percentage.Length (float_of_int r);
+        }
+    | Some g, _, Some c ->
+        {
+          Toffee.Geometry.width =
+            Toffee.Style.Length_percentage.Length (float_of_int c);
+          height = Toffee.Style.Length_percentage.Length (float_of_int g);
+        }
+    | _ ->
+        {
+          Toffee.Geometry.width = Toffee.Style.Length_percentage.Length 0.0;
+          height = Toffee.Style.Length_percentage.Length 0.0;
+        }
   in
-  clamp_result result
 
-and min_width element =
-  match element with
-  | Text { content; wrap; tab_width; _ } ->
-      let expanded = Render.expand_tabs content tab_width in
-      (* allow truncation down to one cell *)
-      if not wrap then if expanded = "" then 0 else 1
-      else
-        let lines = String.split_on_char '\n' expanded in
-        List.fold_left
-          (fun acc line ->
-            let words =
-              String.split_on_char ' ' line
-              |> List.map String.trim
-              |> List.filter (( <> ) "")
-            in
-            let longest_word =
-              List.fold_left
-                (fun acc w -> max acc (Render.measure_string w))
-                0 words
-            in
-            max acc longest_word)
-          0 lines
-        |> max 1
-  | Box { options; children; _ } ->
-      let pad_h = options.padding.left + options.padding.right in
-      let bor_h = border_opt_h options.border in
-      let child_min_w =
-        match options.direction with
-        | `Horizontal ->
-            List.fold_left
-              (fun acc c -> acc + min_width c)
-              (options.gap * max 0 (List.length children - 1))
-              children
-        | `Vertical ->
-            List.fold_left (fun acc c -> max acc (min_width c)) 0 children
-      in
-      child_min_w + pad_h + bor_h
-  | Flow { children; _ } ->
-      if children = [] then 0
-      else List.fold_left (fun acc c -> max acc (min_width c)) 0 children
-  | Canvas c -> Option.value c.width ~default:0
-  | _ -> fst (measure element)
-
-and min_height element =
-  match element with
-  | Text { content; _ } ->
-      String.split_on_char '\n' content |> List.length |> max 1
-  | Spacer _ -> 0
-  | Box { options; children; _ } ->
-      let pad_v = options.padding.top + options.padding.bottom in
-      let bor_v = border_opt_v options.border in
-      let child_min_h =
-        match options.direction with
-        | `Vertical ->
-            List.fold_left
-              (fun acc c -> acc + min_height c)
-              (options.gap * max 0 (List.length children - 1))
-              children
-        | `Horizontal ->
-            List.fold_left (fun acc c -> max acc (min_height c)) 0 children
-      in
-      child_min_h + pad_v + bor_v
-  | Canvas c -> Option.value c.height ~default:0
-  | _ -> snd (measure element)
-
-let text ?(style = Style.empty) ?(align = `Start) ?(tab_width = 4)
-    ?(wrap = false) content =
-  Text (Text.make ~style ~align ~tab_width ~wrap content)
-
-let rich_text segments = Rich_text (Rich_text.make segments)
-let spacer ?(flex = 0) size = Spacer (Spacer.make ~flex size)
-
-let flow ?(h_gap = 1) ?(v_gap = 0) children =
-  Flow (Flow.make ~h_gap ~v_gap children)
-
-let grid ?(col_spacing = 0) ?(row_spacing = 0) ~columns ~rows children =
-  Grid (Grid.make ~col_spacing ~row_spacing ~columns ~rows children)
-
-let scroll ?width ?height ?(h_offset = 0) ?(v_offset = 0) child =
-  Scroll (Scroll.make ?width ?height ~h_offset ~v_offset child)
-
-let canvas ?width ?height draw = Canvas (Canvas.make ?width ?height draw)
-
-let z_stack ?(align = Top_left) children =
-  Z_stack (Z_stack.make ~align children)
-
-let hbox ?(gap = 0) ?width ?height ?min_width ?min_height ?max_width ?max_height
-    ?(margin = Padding.no_padding) ?(padding = Padding.no_padding) ?border
-    ?background ?(align_items = `Stretch) ?(justify_content = `Start)
-    ?(flex_grow = 0) ?(flex_shrink = 0) ?(fill = false) ?(wrap = false) children
-    =
-  let options =
+  (* Create style *)
+  let toffee_style : Toffee.Style.style =
     {
-      Box.direction = `Horizontal;
-      gap;
-      width;
-      height;
-      min_width;
-      min_height;
-      max_width;
-      max_height;
-      margin;
-      padding;
-      border;
-      background;
-      align = align_items;
-      justify = justify_content;
-      flex_grow;
-      flex_shrink;
-      fill;
+      Toffee.Style.default with
+      display = Option.value display ~default:Toffee.Style.Flex;
+      overflow =
+        (let o = Option.value overflow ~default:Toffee.Style.Visible in
+         { x = o; y = o });
+      position = Option.value position_type ~default:Toffee.Style.Relative;
+      align_items;
+      justify_content;
+      gap = gap_size;
+      flex_direction =
+        Option.value flex_direction ~default:Toffee.Style.Flex.Row;
+      flex_wrap = Option.value flex_wrap ~default:Toffee.Style.Flex.No_wrap;
+      flex_grow = Option.value flex_grow ~default:0.0;
+      flex_shrink = Option.value flex_shrink ~default:1.0;
+      flex_basis = Toffee.Style.Dimension.Auto;
+      align_self;
+      size =
+        {
+          width =
+            Option.value
+              (Option.map size_to_dimension width)
+              ~default:Toffee.Style.Dimension.Auto;
+          height =
+            Option.value
+              (Option.map size_to_dimension height)
+              ~default:Toffee.Style.Dimension.Auto;
+        };
+      min_size =
+        {
+          width =
+            Option.value
+              (Option.map size_to_dimension min_width)
+              ~default:Toffee.Style.Dimension.Auto;
+          height =
+            Option.value
+              (Option.map size_to_dimension min_height)
+              ~default:Toffee.Style.Dimension.Auto;
+        };
+      max_size =
+        {
+          width =
+            Option.value
+              (Option.map size_to_dimension max_width)
+              ~default:Toffee.Style.Dimension.Auto;
+          height =
+            Option.value
+              (Option.map size_to_dimension max_height)
+              ~default:Toffee.Style.Dimension.Auto;
+        };
+      margin =
+        Option.value
+          (Option.map spacing_to_auto_rect margin)
+          ~default:
+            {
+              top = Length 0.0;
+              right = Length 0.0;
+              bottom = Length 0.0;
+              left = Length 0.0;
+            };
+      padding =
+        Option.value
+          (Option.map spacing_to_rect padding)
+          ~default:
+            {
+              top = Length 0.0;
+              right = Length 0.0;
+              bottom = Length 0.0;
+              left = Length 0.0;
+            };
+      border =
+        Option.value
+          (Option.map border_to_rect border)
+          ~default:
+            {
+              top = Length 0.0;
+              right = Length 0.0;
+              bottom = Length 0.0;
+              left = Length 0.0;
+            };
     }
   in
-  if wrap then
-    let flow_content = flow ~h_gap:options.gap ~v_gap:0 children in
-    (* keep the original gap *)
-    let wrapper_options = options in
-    Box (Box.make ~options:wrapper_options [ flow_content ])
-  else Box (Box.make ~options children)
 
-let vbox ?(gap = 0) ?width ?height ?min_width ?min_height ?max_width ?max_height
-    ?(margin = Padding.no_padding) ?(padding = Padding.no_padding) ?border
-    ?background ?(align_items = `Stretch) ?(justify_content = `Start)
-    ?(flex_grow = 0) ?(flex_shrink = 0) ?(fill = false) children =
-  let options =
+  (* Create node *)
+  let id =
+    if List.length child_ids > 0 then
+      Toffee.new_with_children tree toffee_style child_ids
+    else Toffee.new_leaf tree toffee_style
+  in
+
+  (* Store renderable in context *)
+  (match box_renderable with
+  | Some r ->
+      let _ = Toffee.set_node_context tree id r in
+      ()
+  | None -> ());
+
+  (id, tree)
+
+let vbox ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
+    ?margin ?flex_grow ?flex_shrink ?align_self ?style ?border ?border_style
+    ?overflow ?align_items ?justify_content ?gap children =
+  box ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
+    ?margin ?flex_grow ?flex_shrink ?align_self ?style ?border ?border_style
+    ?overflow ~flex_direction:Column ?align_items ?justify_content ?gap children
+
+let hbox ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
+    ?margin ?flex_grow ?flex_shrink ?align_self ?style ?border ?border_style
+    ?overflow ?align_items ?justify_content ?gap children =
+  box ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
+    ?margin ?flex_grow ?flex_shrink ?align_self ?style ?border ?border_style
+    ?overflow ~flex_direction:Row ?align_items ?justify_content ?gap children
+
+let zbox ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
+    ?margin ?flex_grow ?flex_shrink ?align_self ?style ?border ?border_style
+    ?overflow children =
+  let box_renderable : Renderable.t option =
+    let final_border =
+      match (border, border_style) with
+      | Some b, Some s -> Some (Border.with_style b s)
+      | Some b, None -> Some b
+      | None, _ -> None
+    in
+    match (final_border, style) with
+    | None, None -> None
+    | _ -> Some (Renderable.box ?border:final_border ?background:style ())
+  in
+
+  let stacked_children =
+    List.map
+      (fun child ->
+        let wrapper_style : Toffee.Style.style =
+          {
+            Toffee.Style.default with
+            position = Toffee.Style.Absolute;
+            inset =
+              {
+                top = Toffee.Style.Length_percentage_auto.Length 0.0;
+                right = Toffee.Style.Length_percentage_auto.Length 0.0;
+                bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
+                left = Toffee.Style.Length_percentage_auto.Length 0.0;
+              };
+          }
+        in
+        let wrapper_id =
+          Toffee.new_with_children tree wrapper_style [ fst child ]
+        in
+        (wrapper_id, tree))
+      children
+  in
+
+  let toffee_style : Toffee.Style.style =
     {
-      Box.direction = `Vertical;
-      gap;
-      width;
-      height;
-      min_width;
-      min_height;
-      max_width;
-      max_height;
-      margin;
-      padding;
-      border;
-      background;
-      align = align_items;
-      justify = justify_content;
-      flex_grow;
-      flex_shrink;
-      fill;
+      Toffee.Style.default with
+      overflow =
+        (let o = Option.value overflow ~default:Toffee.Style.Visible in
+         { x = o; y = o });
+      flex_grow = Option.value flex_grow ~default:0.0;
+      flex_shrink = Option.value flex_shrink ~default:1.0;
+      align_self;
+      size =
+        {
+          width =
+            Option.value
+              (Option.map size_to_dimension width)
+              ~default:Toffee.Style.Dimension.Auto;
+          height =
+            Option.value
+              (Option.map size_to_dimension height)
+              ~default:Toffee.Style.Dimension.Auto;
+        };
+      min_size =
+        {
+          width =
+            Option.value
+              (Option.map size_to_dimension min_width)
+              ~default:Toffee.Style.Dimension.Auto;
+          height =
+            Option.value
+              (Option.map size_to_dimension min_height)
+              ~default:Toffee.Style.Dimension.Auto;
+        };
+      max_size =
+        {
+          width =
+            Option.value
+              (Option.map size_to_dimension max_width)
+              ~default:Toffee.Style.Dimension.Auto;
+          height =
+            Option.value
+              (Option.map size_to_dimension max_height)
+              ~default:Toffee.Style.Dimension.Auto;
+        };
+      margin =
+        Option.value
+          (Option.map spacing_to_auto_rect margin)
+          ~default:
+            {
+              top = Length 0.0;
+              right = Length 0.0;
+              bottom = Length 0.0;
+              left = Length 0.0;
+            };
+      padding =
+        Option.value
+          (Option.map spacing_to_rect padding)
+          ~default:
+            {
+              top = Length 0.0;
+              right = Length 0.0;
+              bottom = Length 0.0;
+              left = Length 0.0;
+            };
+      border =
+        Option.value
+          (Option.map border_to_rect border)
+          ~default:
+            {
+              top = Length 0.0;
+              right = Length 0.0;
+              bottom = Length 0.0;
+              left = Length 0.0;
+            };
     }
   in
-  Box (Box.make ~options children)
 
-let flex_spacer () = spacer ~flex:1 0
+  let child_ids = List.map fst stacked_children in
+  let id = Toffee.new_with_children tree toffee_style child_ids in
 
-let divider ?(style = Style.(merge (fg Ansi.Default) dim)) ?(char = "─") () =
-  let content =
-    if String.length char = 0 then String.make 1000 '-'
-    else
-      let rec repeat s n =
-        if n <= 0 then "" else if n = 1 then s else s ^ repeat s (n - 1)
-      in
-      repeat char 1000
+  (* Store renderable in context *)
+  (match box_renderable with
+  | Some r ->
+      let _ = Toffee.set_node_context tree id r in
+      ()
+  | None -> ());
+
+  (id, tree)
+
+let spacer ?(flex_grow = 1.0) ?min_width ?min_height () =
+  let toffee_style : Toffee.Style.style =
+    {
+      Toffee.Style.default with
+      flex_grow;
+      min_size =
+        {
+          width =
+            Option.value
+              (Option.map size_to_dimension min_width)
+              ~default:Toffee.Style.Dimension.Auto;
+          height =
+            Option.value
+              (Option.map size_to_dimension min_height)
+              ~default:Toffee.Style.Dimension.Auto;
+        };
+    }
   in
-  hbox ~flex_grow:1 [ text ~style content ]
+  let id = Toffee.new_leaf tree toffee_style in
+  (id, tree)
+
+let divider ?(orientation = `Horizontal) ?title:_ ?char ?style ?padding () =
+  let (width : size option), (height : size option) =
+    match orientation with
+    | `Horizontal -> (None, Some (Px 1))
+    | `Vertical -> (Some (Px 1), None)
+  in
+  let renderable =
+    match char with
+    | None -> Renderable.box ?border:None ?background:style ()
+    | Some c ->
+        Renderable.text ~style:(Option.value style ~default:Style.empty) c
+  in
+
+  let toffee_style : Toffee.Style.style =
+    {
+      Toffee.Style.default with
+      size =
+        {
+          width =
+            Option.value
+              (Option.map size_to_dimension width)
+              ~default:Toffee.Style.Dimension.Auto;
+          height =
+            Option.value
+              (Option.map size_to_dimension height)
+              ~default:Toffee.Style.Dimension.Auto;
+        };
+      padding =
+        Option.value
+          (Option.map spacing_to_rect padding)
+          ~default:
+            {
+              top = Length 0.0;
+              right = Length 0.0;
+              bottom = Length 0.0;
+              left = Length 0.0;
+            };
+    }
+  in
+
+  let id = Toffee.new_leaf tree toffee_style in
+  (* Store renderable in context *)
+  let _ = Toffee.set_node_context tree id renderable in
+  (id, tree)
+
+let text ?(style = Style.empty) ?(align = `Left) ?(wrap = `Wrap) content =
+  let align_renderable =
+    match align with `Left -> `Start | `Center -> `Center | `Right -> `End
+  in
+  let wrap_bool =
+    match wrap with `Wrap -> true | `Truncate | `Clip -> false
+  in
+  let renderable =
+    Renderable.text ~style ~align:align_renderable ~wrap:wrap_bool content
+  in
+
+  let _measure_fn : Renderable.t Toffee.measure_function =
+   fun ~known_dimensions ~available_space _node_id _context _style ->
+    (* Use the content from the renderable context *)
+    let lines = String.split_on_char '\n' content in
+    let max_width =
+      List.fold_left (fun acc line -> max acc (String.length line)) 0 lines
+    in
+    let num_lines = List.length lines in
+
+    let computed_width =
+      match known_dimensions.width with
+      | Some w -> w
+      | None -> (
+          match available_space.width with
+          | Toffee.Style.Available_space.Definite w ->
+              min w (float_of_int max_width)
+          | _ -> float_of_int max_width)
+    in
+
+    let computed_height =
+      match known_dimensions.height with
+      | Some h -> h
+      | None -> (
+          match available_space.height with
+          | Toffee.Style.Available_space.Definite h ->
+              min h (float_of_int num_lines)
+          | _ -> float_of_int num_lines)
+    in
+
+    { width = computed_width; height = computed_height }
+  in
+
+  let id = Toffee.new_leaf tree Toffee.Style.default in
+  (* Store renderable in context *)
+  let _ = Toffee.set_node_context tree id renderable in
+  (id, tree)
+
+let scroll_view ?width ?height ?min_width ?min_height ?max_width ?max_height
+    ?padding ?margin ?flex_grow ?flex_shrink ?align_self ?style ?border
+    ?border_style ?(show_scrollbars = true) ~h_offset ~v_offset child =
+  let _ = show_scrollbars in
+  (* Create the scroll container *)
+  let scroll_style : Toffee.Style.style =
+    {
+      Toffee.Style.default with
+      overflow = { x = Toffee.Style.Hidden; y = Toffee.Style.Hidden };
+    }
+  in
+  let scroll_id = Toffee.new_with_children tree scroll_style [ fst child ] in
+  let _ =
+    Toffee.set_node_context tree scroll_id
+      (Renderable.scroll ~h_offset ~v_offset ())
+  in
+
+  (* Always wrap in a box *)
+  box ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
+    ?margin ?flex_grow ?flex_shrink ?align_self ?style ?border ?border_style
+    ~overflow:Hidden
+    [ (scroll_id, tree) ]
+
+let canvas ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
+    ?margin ?flex_grow ?flex_shrink ?align_self ?style ?border ?border_style
+    draw =
+  (* Create the canvas node *)
+  let canvas_id = Toffee.new_leaf tree Toffee.Style.default in
+  let _ = Toffee.set_node_context tree canvas_id (Renderable.canvas draw) in
+
+  (* Always wrap in a box *)
+  box ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
+    ?margin ?flex_grow ?flex_shrink ?align_self ?style ?border ?border_style
+    [ (canvas_id, tree) ]
 
 let center child =
-  vbox ~align_items:`Center ~justify_content:`Center ~flex_grow:1
-    [
-      hbox ~align_items:`Center ~justify_content:`Center ~flex_grow:1 [ child ];
-    ]
+  box ~align_items:Center ~justify_content:Center ~width:(Percent 100.)
+    ~height:(Percent 100.) [ child ]
 
-let styled style child = hbox ~background:style [ child ]
+let styled style child =
+  (* Wrap the child in a box that applies the style *)
+  box ~style [ child ]
 
-let rec pp fmt = function
-  | Text _ -> Format.fprintf fmt "Text"
-  | Rich_text _ -> Format.fprintf fmt "Rich_text"
-  | Spacer { flex; _ } -> Format.fprintf fmt "Spacer(flex=%d)" flex
-  | Box { options; children; _ } ->
-      let dir = if options.direction = `Horizontal then "H" else "V" in
-      Format.fprintf fmt "%sBox[@[<hv>%a@]]" dir
-        (Format.pp_print_list
-           ~pp_sep:(fun fmt () -> Format.fprintf fmt ";@ ")
-           pp)
-        children
-  | Z_stack { children; _ } ->
-      Format.fprintf fmt "Z_stack[@[<hv>%a@]]"
-        (Format.pp_print_list
-           ~pp_sep:(fun fmt () -> Format.fprintf fmt ";@ ")
-           pp)
-        children
-  | Flow { children; _ } ->
-      Format.fprintf fmt "Flow[@[<hv>%a@]]"
-        (Format.pp_print_list
-           ~pp_sep:(fun fmt () -> Format.fprintf fmt ";@ ")
-           pp)
-        children
-  | Grid { children; _ } ->
-      Format.fprintf fmt "Grid[@[<hv>%a@]]"
-        (Format.pp_print_list
-           ~pp_sep:(fun fmt () -> Format.fprintf fmt ";@ ")
-           pp)
-        children
-  | Scroll { child; _ } -> Format.fprintf fmt "Scroll(%a)" pp child
-  | Canvas _ -> Format.fprintf fmt "Canvas"
+let flow ?(h_gap = 0) ?(v_gap = 0) children =
+  (* Flow layout using flexbox with wrap enabled *)
+  box ~display:Flex ~flex_direction:Row ~flex_wrap:Wrap ~gap:h_gap
+    ~row_gap:v_gap ~align_items:Start children
 
-(* Additional UI Primitives *)
+let block ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
+    ?margin ?style ?border ?border_style children =
+  (* Block layout - each child takes full width, stacked vertically *)
+  box ~display:Block ?width ?height ?min_width ?min_height ?max_width
+    ?max_height ?padding ?margin ?style ?border ?border_style children
+
+let grid ~columns ~rows ?(col_gap = 0) ?(row_gap = 0) children =
+  (* Convert our size type to toffee grid track sizing *)
+  let size_to_track_sizing = function
+    | Px n ->
+        Toffee.Style.Grid.Single
+          {
+            min = Toffee.Style.Grid.Length (float_of_int n);
+            max = Toffee.Style.Grid.Length (float_of_int n);
+          }
+    | Percent p ->
+        Toffee.Style.Grid.Single
+          {
+            min = Toffee.Style.Grid.Percent (p /. 100.0);
+            max = Toffee.Style.Grid.Percent (p /. 100.0);
+          }
+    | Auto ->
+        Toffee.Style.Grid.Single
+          { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto }
+    | Fit_content ->
+        Toffee.Style.Grid.Single
+          { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Max_content }
+  in
+
+  let grid_columns = List.map size_to_track_sizing columns in
+  let grid_rows = List.map size_to_track_sizing rows in
+
+  (* Extract child node_ids *)
+  let child_ids = List.map fst children in
+
+  (* Create grid gap *)
+  let gap_size =
+    {
+      Toffee.Geometry.width =
+        Toffee.Style.Length_percentage.Length (float_of_int col_gap);
+      height = Toffee.Style.Length_percentage.Length (float_of_int row_gap);
+    }
+  in
+
+  (* Create grid style *)
+  let grid_style : Toffee.Style.style =
+    {
+      Toffee.Style.default with
+      display = Toffee.Style.Grid;
+      grid_template_columns = grid_columns;
+      grid_template_rows = grid_rows;
+      gap = gap_size;
+    }
+  in
+
+  (* Create grid container *)
+  let id =
+    if List.length child_ids > 0 then
+      Toffee.new_with_children tree grid_style child_ids
+    else Toffee.new_leaf tree grid_style
+  in
+
+  (id, tree)
 
 let checkbox ~checked ~label ?(style = Style.empty) () =
   let check_char = Uchar.of_int (if checked then 0x2611 else 0x2610) in
@@ -753,30 +650,11 @@ let radio ~checked ~label ?(style = Style.empty) () =
   let radio_text = radio_str ^ " " ^ label in
   text ~style:(Style.merge style (Style.fg Ansi.Default)) radio_text
 
-let image ~lines ?(align = `Start) () =
+let image ~lines ?(align = `Left) () =
   let elements =
     List.map (fun line -> text ~style:(Style.fg Ansi.Default) ~align line) lines
   in
   vbox elements
-
-let separator ?(orientation = `Horizontal) ?char
-    ?(style = Style.(merge (fg Ansi.Default) dim)) () =
-  match orientation with
-  | `Horizontal ->
-      let default_char = "─" in
-      let char = Option.value char ~default:default_char in
-      divider ~style ~char ()
-  | `Vertical ->
-      (* Use a box with just a left border to create a vertical line *)
-      (* The box will stretch vertically to fill available space *)
-      let _ = char in
-      (* char parameter ignored for vertical separators *)
-      let _ = style in
-      (* TODO: Apply style color to border when API allows *)
-      vbox ~width:1
-        ~border:
-          (Border.make ~top:false ~bottom:false ~right:false ~left:true ())
-        []
 
 let list ~items ?(bullet = "") ?(numbering = false) () =
   let default_bullet =
@@ -797,3 +675,30 @@ let list ~items ?(bullet = "") ?(numbering = false) () =
       items
   in
   vbox ~gap:0 list_items
+
+let rich_text segments =
+  (* Create multiple text elements styled individually and combine them in an hbox *)
+  let text_elements =
+    List.map (fun (content, style) -> text ~style content) segments
+  in
+  hbox ~gap:0 text_elements
+
+let measure ?(width : int option) element =
+  (* Compute layout with given constraints and return the resulting size *)
+  let node_id, tree = element in
+  let available_space =
+    {
+      Toffee.Geometry.width =
+        (match width with
+        | Some w -> Toffee.Style.Available_space.Definite (float_of_int w)
+        | None -> Toffee.Style.Available_space.Max_content);
+      height = Toffee.Style.Available_space.Max_content;
+    }
+  in
+
+  let _ = Toffee.compute_layout tree node_id available_space in
+
+  match Toffee.layout tree node_id with
+  | Ok layout ->
+      (int_of_float layout.size.width, int_of_float layout.size.height)
+  | Error _ -> (0, 0)

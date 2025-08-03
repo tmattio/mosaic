@@ -1,6 +1,6 @@
 (library
  (name test_expect)
  (inline_tests)
- (libraries test_utils mosaic.ui mosaic.tiles mosaic.render unix)
+ (libraries test_utils mosaic.ui mosaic.tiles unix)
  (preprocess
   (pps ppx_expect)))

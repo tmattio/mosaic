@@ -4,7 +4,8 @@
  (libraries
   mosaic
   matrix.tty
-  mosaic.render
+  matrix.screen
+  matrix.grid
   uutf
   fmt
   eio

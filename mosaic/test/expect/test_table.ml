@@ -3,7 +3,11 @@ open Test_utils
 let%expect_test "simple table with headers" =
   print_ui ~width:30 ~height:8
     (Ui.table 
-      ~headers:["Name"; "Age"; "City"]
+      ~columns:[
+        Ui.Table.default_column ~header:"Name";
+        Ui.Table.default_column ~header:"Age";
+        Ui.Table.default_column ~header:"City";
+      ]
       ~rows:[
         ["Alice"; "30"; "NYC"];
         ["Bob"; "25"; "SF"];

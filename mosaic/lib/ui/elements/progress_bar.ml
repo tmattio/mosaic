@@ -100,7 +100,8 @@ let render_pulse ~time ~width ~pulse_style ~bar_style ~delimiters ~filled_char =
   let bar_width = max 0 (width - l_width - r_width) in
 
   if bar_width <= 0 then
-    Element.rich_text [ (l_delim, bar_style); (r_delim, bar_style) ]
+    (* TODO: rich_text not yet implemented in toffee migration *)
+    Element.text ~style:bar_style (l_delim ^ r_delim)
   else
     let pulse_size = 20 in
     let offset = int_of_float (time *. 15.0) mod (bar_width + pulse_size) in
@@ -122,12 +123,15 @@ let render_pulse ~time ~width ~pulse_style ~bar_style ~delimiters ~filled_char =
       segments := (filled_char, style) :: !segments
     done;
 
-    Element.rich_text
-      ([ (l_delim, bar_style) ] @ List.rev !segments @ [ (r_delim, bar_style) ])
+    (* TODO: rich_text not yet implemented in toffee migration *)
+    let full_text =
+      l_delim ^ String.concat "" (List.map fst (List.rev !segments)) ^ r_delim
+    in
+    Element.text ~style:bar_style full_text
 
 let progress_bar
     (* Core State *)
-    ?(total = Some 100.0) ?(completed = 0.0) ?(width = 20)
+    ?(total = 100.0) ?(completed = 0.0) ?(width = 20)
     (* Animation *)
     ?(pulse = false) ?(animation_time = 0.0)
     (* Styling *)
@@ -149,7 +153,9 @@ let progress_bar
     match preset with Some p -> presets p | None -> default_def
   in
 
-  let final_delimiters = Option.value delimiters ~default:base_def.delimiters in
+  let final_delimiters =
+    match delimiters with Some d -> Some d | None -> base_def.delimiters
+  in
   let final_filled_char =
     Option.value filled_char ~default:base_def.filled_char
   in
@@ -159,32 +165,21 @@ let progress_bar
   in
 
   (* 2. Decide whether to pulse *)
-  let should_pulse = pulse || total = None in
+  let should_pulse = pulse in
 
   if should_pulse then
     render_pulse ~time:animation_time ~width ~pulse_style ~bar_style
       ~delimiters:final_delimiters ~filled_char:final_filled_char
   else
     (* 3. Setup for determinate bar *)
-    let is_finished =
-      match total with None -> false | Some total -> completed >= total
-    in
+    let is_finished = completed >= total in
     let current_complete_style =
       if is_finished then finished_style else complete_style
     in
 
-    let completed =
-      match total with
-      | None -> 0.0
-      | Some total -> Float.min total (Float.max 0.0 completed)
-    in
+    let completed = Float.min total (Float.max 0.0 completed) in
 
-    let progress_ratio =
-      match total with
-      | None -> 0.0
-      | Some total when total > 0.0 -> completed /. total
-      | _ -> 0.0
-    in
+    let progress_ratio = completed /. total in
 
     (* 4. Calculate character counts with sub-character resolution *)
     let l_delim, r_delim = Option.value final_delimiters ~default:("", "") in
@@ -238,4 +233,6 @@ let progress_bar
     (* Right delimiter *)
     if r_delim <> "" then segments := (r_delim, bar_style) :: !segments;
 
-    Element.rich_text (List.rev !segments)
+    (* TODO: rich_text not yet implemented in toffee migration *)
+    Element.text ~style:bar_style
+      (String.concat "" (List.map fst (List.rev !segments)))

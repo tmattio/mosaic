@@ -32,7 +32,7 @@ type preset =
   | Custom of preset_def
 
 val progress_bar :
-  ?total:float option ->
+  ?total:float ->
   ?completed:float ->
   ?width:int ->
   ?pulse:bool ->
@@ -42,7 +42,7 @@ val progress_bar :
   ?finished_style:Style.t ->
   ?pulse_style:Style.t ->
   ?preset:preset ->
-  ?delimiters:(string * string) option ->
+  ?delimiters:string * string ->
   ?filled_char:string ->
   ?empty_char:string ->
   ?progress_stages:string list ->

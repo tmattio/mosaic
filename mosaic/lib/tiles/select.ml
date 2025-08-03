@@ -266,14 +266,16 @@ let view model =
   let arrow = if model.is_open then "▼" else "▶" in
 
   let selection_box =
-    hbox ~padding:(padding_xy 1 0)
+    hbox ~padding:(Spacing.xy 1 0)
       ~border:
-        (border ~style:Solid
+        (Border.make ~line_style:Solid
            ~color:(if model.is_focused then Style.Index 6 else Style.Index 8)
            ())
-      ~justify_content:`Start
+      ~justify_content:Start
       [
-        text ~style:selection_style selection_text; spacer ~flex:1 0; text arrow;
+        text ~style:selection_style selection_text;
+        spacer ~flex_grow:1. ();
+        text arrow;
       ]
   in
 
@@ -286,7 +288,7 @@ let view model =
       let filter_elem =
         if model.filterable then
           [
-            hbox ~padding:(padding_xy 1 0)
+            hbox ~padding:(Spacing.xy 1 0)
               [
                 text ~style:model.theme.filter_style "Filter: ";
                 text model.filter_text;
@@ -338,8 +340,8 @@ let view model =
       in
 
       [
-        vbox ~padding:(padding_all 1)
-          ~border:(border ~style:Solid ~color:(Style.Index 8) ())
+        vbox ~padding:(Spacing.all 1)
+          ~border:(Border.make ~line_style:Solid ~color:(Style.Index 8) ())
           (filter_elem @ option_items);
       ]
     else []

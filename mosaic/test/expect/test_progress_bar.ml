@@ -51,7 +51,7 @@ let%expect_test "progress bar with custom width" =
 
 let%expect_test "progress bar with custom total" =
   print_ui ~height:1 
-    (Ui.progress_bar ~total:(Some 200.0) ~completed:50.0 ());
+    (Ui.progress_bar ~total:200.0 ~completed:50.0 ());
   [%expect_exact {|
 +--------------------+
 |━━━━━───────────────|
@@ -60,7 +60,7 @@ let%expect_test "progress bar with custom total" =
 
 let%expect_test "progress bar with ASCII preset" =
   print_ui ~height:1 
-    (Ui.progress_bar ~completed:50.0 ~preset:Ui.ASCII ());
+    (Ui.progress_bar ~completed:50.0 ~preset:Ui.Progress_bar.ASCII ());
   [%expect_exact {|
 +--------------------+
 |[#########---------]|
@@ -69,7 +69,7 @@ let%expect_test "progress bar with ASCII preset" =
 
 let%expect_test "progress bar with UTF8 preset" =
   print_ui ~height:1 
-    (Ui.progress_bar ~completed:42.0 ~preset:Ui.UTF8 ());
+    (Ui.progress_bar ~completed:42.0 ~preset:Ui.Progress_bar.UTF8 ());
   [%expect_exact {|
 +--------------------+
 |│█████▉        │    |
@@ -78,7 +78,7 @@ let%expect_test "progress bar with UTF8 preset" =
 
 let%expect_test "progress bar with Line_double preset" =
   print_ui ~height:1 
-    (Ui.progress_bar ~completed:50.0 ~preset:Ui.Line_double ());
+    (Ui.progress_bar ~completed:50.0 ~preset:Ui.Progress_bar.Line_double ());
   [%expect_exact {|
 +--------------------+
 |╢═══════───────╟    |
@@ -87,7 +87,7 @@ let%expect_test "progress bar with Line_double preset" =
 
 let%expect_test "progress bar with Line_single preset" =
   print_ui ~height:1 
-    (Ui.progress_bar ~completed:50.0 ~preset:Ui.Line_single ());
+    (Ui.progress_bar ~completed:50.0 ~preset:Ui.Progress_bar.Line_single ());
   [%expect_exact {|
 +--------------------+
 |├━━━━━━━───────┤    |
@@ -96,7 +96,7 @@ let%expect_test "progress bar with Line_single preset" =
 
 let%expect_test "progress bar with Line_arrow preset" =
   print_ui ~height:1 
-    (Ui.progress_bar ~completed:50.0 ~preset:Ui.Line_arrow ());
+    (Ui.progress_bar ~completed:50.0 ~preset:Ui.Progress_bar.Line_arrow ());
   [%expect_exact {|
 +--------------------+
 |==========----------|
@@ -105,7 +105,7 @@ let%expect_test "progress bar with Line_arrow preset" =
 
 let%expect_test "progress bar with Block_shade_light preset" =
   print_ui ~height:1 
-    (Ui.progress_bar ~completed:50.0 ~preset:Ui.Block_shade_light ());
+    (Ui.progress_bar ~completed:50.0 ~preset:Ui.Progress_bar.Block_shade_light ());
   [%expect_exact {|
 +--------------------+
 |▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░|
@@ -114,7 +114,7 @@ let%expect_test "progress bar with Block_shade_light preset" =
 
 let%expect_test "progress bar with Block_shade_medium preset" =
   print_ui ~height:1 
-    (Ui.progress_bar ~completed:50.0 ~preset:Ui.Block_shade_medium ());
+    (Ui.progress_bar ~completed:50.0 ~preset:Ui.Progress_bar.Block_shade_medium ());
   [%expect_exact {|
 +--------------------+
 |██████████▒▒▒▒▒▒▒▒▒▒|
@@ -123,7 +123,7 @@ let%expect_test "progress bar with Block_shade_medium preset" =
 
 let%expect_test "progress bar with Block_shade_dark preset" =
   print_ui ~height:1 
-    (Ui.progress_bar ~completed:50.0 ~preset:Ui.Block_shade_dark ());
+    (Ui.progress_bar ~completed:50.0 ~preset:Ui.Progress_bar.Block_shade_dark ());
   [%expect_exact {|
 +--------------------+
 |██████████▓▓▓▓▓▓▓▓▓▓|
@@ -132,7 +132,7 @@ let%expect_test "progress bar with Block_shade_dark preset" =
 
 let%expect_test "progress bar with Block_dotted preset" =
   print_ui ~height:1 
-    (Ui.progress_bar ~completed:50.0 ~preset:Ui.Block_dotted ());
+    (Ui.progress_bar ~completed:50.0 ~preset:Ui.Progress_bar.Block_dotted ());
   [%expect_exact {|
 +--------------------+
 |┋⣿⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀┋    |
@@ -140,7 +140,7 @@ let%expect_test "progress bar with Block_dotted preset" =
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "progress bar with custom preset" =
-  let custom_preset = Ui.Custom {
+  let custom_preset = Ui.Progress_bar.Custom {
     delimiters = Some ("<", ">");
     filled_char = "*";
     empty_char = ".";
@@ -156,7 +156,7 @@ let%expect_test "progress bar with custom preset" =
 
 let%expect_test "progress bar with custom delimiters" =
   print_ui ~height:1 
-    (Ui.progress_bar ~completed:50.0 ~delimiters:(Some ("[", "]")) ());
+    (Ui.progress_bar ~completed:50.0 ~delimiters:(("[", "]")) ());
   [%expect_exact {|
 +--------------------+
 |[━━━━━━━━━─────────]|
@@ -199,7 +199,7 @@ let%expect_test "progress bar at finished state" =
 
 let%expect_test "pulse animation (indeterminate)" =
   print_ui ~height:1 
-    (Ui.progress_bar ~total:None ~pulse:true ~animation_time:0.0 ());
+    (Ui.progress_bar ~pulse:true ~animation_time:0.0 ());
   [%expect_exact {|
 +--------------------+
 |                    |

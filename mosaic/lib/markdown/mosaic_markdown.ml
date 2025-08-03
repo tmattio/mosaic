@@ -237,12 +237,14 @@ let rec render_block r ~available_width ~base_style block =
           ~initial_style:Ui.Style.(base_style ++ p_style.style)
           (Paragraph.inline p)
       in
-      let padded =
-        Ui.vbox
-          ~padding:(Ui.padding_xy p_style.padding_left p_style.padding_right)
-          [ content ]
-      in
-      [ Ui.spacer p_style.margin_top; padded; Ui.spacer p_style.margin_bottom ]
+      [
+        Ui.box
+          ~margin:
+            (Ui.Spacing.make ~top:p_style.margin_top
+               ~bottom:p_style.margin_bottom ())
+          ~padding:(Ui.Spacing.xy p_style.padding_left p_style.padding_right)
+          [ content ];
+      ]
   | Heading (h, _) ->
       let level = Heading.level h in
       let h_style =
@@ -272,11 +274,12 @@ let rec render_block r ~available_width ~base_style block =
           ~available_width:(available_width - u_length prefix_str)
           ~initial_style:full_style.style (Heading.inline h)
       in
-      let content = Ui.hbox [ prefix; text ] in
       [
-        Ui.spacer full_style.margin_top;
-        content;
-        Ui.spacer full_style.margin_bottom;
+        Ui.box
+          ~margin:
+            (Ui.Spacing.make ~top:full_style.margin_top
+               ~bottom:full_style.margin_bottom ())
+          [ Ui.hbox [ prefix; text ] ];
       ]
   | Block_quote (bq, _) ->
       let bq_style = r.style.block_quote in
@@ -286,11 +289,7 @@ let rec render_block r ~available_width ~base_style block =
       let prefix_parts =
         List.flatten
           (List.init r.quote_depth (fun _ ->
-               [
-                 Ui.separator ~orientation:`Vertical ~char:"│"
-                   ~style:bq_style.style ();
-                 Ui.spacer 1;
-               ]))
+               [ Ui.divider ~orientation:`Vertical ~style:bq_style.style () ]))
       in
       let prefix_el = Ui.hbox prefix_parts in
 
@@ -309,19 +308,24 @@ let rec render_block r ~available_width ~base_style block =
           bq_block
       in
 
-      (* Create full prefix with padding *)
-      let full_prefix =
-        Ui.hbox [ prefix_el; Ui.spacer bq_style.padding_left ]
-      in
-
+      (* Create the quote content with proper spacing *)
       let content =
-        Ui.hbox
-          [ full_prefix; Ui.vbox children; Ui.spacer bq_style.padding_right ]
+        Ui.hbox ~gap:bq_style.padding_left
+          [
+            prefix_el;
+            Ui.box
+              ~padding:(Ui.Spacing.make ~right:bq_style.padding_right ())
+              [ Ui.vbox children ];
+          ]
       in
 
       r.quote_depth <- r.quote_depth - 1;
       [
-        Ui.spacer bq_style.margin_top; content; Ui.spacer bq_style.margin_bottom;
+        Ui.box
+          ~margin:
+            (Ui.Spacing.make ~top:bq_style.margin_top
+               ~bottom:bq_style.margin_bottom ())
+          [ content ];
       ]
   | List (l, _) ->
       let l_style = r.style.list in
@@ -342,14 +346,16 @@ let rec render_block r ~available_width ~base_style block =
       let padded =
         Ui.vbox
           ~padding:
-            (Ui.padding_xy l_style.block.padding_left
+            (Ui.Spacing.xy l_style.block.padding_left
                l_style.block.padding_right)
           items
       in
       [
-        Ui.spacer l_style.block.margin_top;
-        padded;
-        Ui.spacer l_style.block.margin_bottom;
+        Ui.box
+          ~margin:
+            (Ui.Spacing.make ~top:l_style.block.margin_top
+               ~bottom:l_style.block.margin_bottom ())
+          [ padded ];
       ]
   | Code_block (cb, _) ->
       let cb_style = r.style.code_block in
@@ -373,7 +379,7 @@ let rec render_block r ~available_width ~base_style block =
             (fun line ->
               Ui.text
                 ~style:Ui.Style.(base_style ++ cb_style.block.style)
-                ~wrap:false line)
+                ~wrap:`Clip line)
             code_lines
           |> Ui.vbox
         in
@@ -402,32 +408,39 @@ let rec render_block r ~available_width ~base_style block =
       let content =
         Ui.vbox
           ~padding:
-            (Ui.padding_xy cb_style.block.padding_left
+            (Ui.Spacing.xy cb_style.block.padding_left
                cb_style.block.padding_right)
           ([ Ui.hbox [ fence_el; lang_el ] ] @ [ highlighted ] @ [ fence_el ])
       in
       [
-        Ui.spacer cb_style.block.margin_top;
-        content;
-        Ui.spacer cb_style.block.margin_bottom;
+        Ui.box
+          ~margin:
+            (Ui.Spacing.make ~top:cb_style.block.margin_top
+               ~bottom:cb_style.block.margin_bottom ())
+          [ content ];
       ]
   | Html_block (lines, _) ->
       let hb_style = r.style.paragraph in
       let text =
         lines |> List.map Cmarkit.Block_line.to_string |> String.concat "\n"
       in
-      let content = Ui.text ~style:Ui.Style.(base_style ++ r.style.html) text in
       [
-        Ui.spacer hb_style.margin_top; content; Ui.spacer hb_style.margin_bottom;
+        Ui.box
+          ~margin:
+            (Ui.Spacing.make ~top:hb_style.margin_top
+               ~bottom:hb_style.margin_bottom ())
+          [ Ui.text ~style:Ui.Style.(base_style ++ r.style.html) text ];
       ]
   | Thematic_break (_, _) ->
-      let hr_style, hr_char = r.style.horizontal_rule in
+      let hr_style, _hr_char = r.style.horizontal_rule in
       [
-        Ui.spacer 1;
-        Ui.separator ~orientation:`Horizontal ~char:hr_char
-          ~style:Ui.Style.(base_style ++ hr_style)
-          ();
-        Ui.spacer 1;
+        Ui.box
+          ~margin:(Ui.Spacing.make ~top:1 ~bottom:1 ())
+          [
+            Ui.divider ~orientation:`Horizontal
+              ~style:Ui.Style.(base_style ++ hr_style)
+              ();
+          ];
       ]
   | Ext_table (tbl, _) ->
       let tb_style = r.style.table in
@@ -503,7 +516,7 @@ let rec render_block r ~available_width ~base_style block =
 
       (* Create the table *)
       let table_el =
-        Ui.Table.table ~columns ~rows:table_rows ~box_style:Ui.Table.Simple
+        Ui.table ~columns ~rows:table_rows ~box_style:Ui.Table.Simple
           ~style:base ~header_style:tb_style.header_style
           ~border_style:(fst tb_style.separator_style)
           ~show_header:true ~padding:(0, 1, 0, 1) ()
@@ -512,14 +525,16 @@ let rec render_block r ~available_width ~base_style block =
       let padded =
         Ui.vbox
           ~padding:
-            (Ui.padding_xy tb_style.block.padding_left
+            (Ui.Spacing.xy tb_style.block.padding_left
                tb_style.block.padding_right)
           [ table_el ]
       in
       [
-        Ui.spacer tb_style.block.margin_top;
-        padded;
-        Ui.spacer tb_style.block.margin_bottom;
+        Ui.box
+          ~margin:
+            (Ui.Spacing.make ~top:tb_style.block.margin_top
+               ~bottom:tb_style.block.margin_bottom ())
+          [ padded ];
       ]
   | Blocks (blocks, _) ->
       List.concat_map (render_block r ~available_width ~base_style) blocks
@@ -570,7 +585,7 @@ and render_list_item r ~available_width ~base_style
     Ui.hbox ~gap:l_style.item_gap [ prefix_element; Ui.vbox children ]
   in
   state_change ();
-  [ Ui.hbox [ Ui.spacer indent_size; content ] ]
+  [ Ui.box ~padding:(Ui.Spacing.make ~left:indent_size ()) [ content ] ]
 
 let render ?(style = Markdown_style.default) ?(width = 80) ?(strict = false)
     ?(syntax_theme = Mosaic_syntax.default_dark_theme) markdown_text =
@@ -610,10 +625,9 @@ let render ?(style = Markdown_style.default) ?(width = 80) ?(strict = false)
         |> List.sort (fun _ _ -> 0)
         (* sort by key if needed *)
       in
-      Ui.spacer 1 :: fn_heading :: Ui.spacer 1 :: fns
+      Ui.box ~margin:(Ui.Spacing.make ~top:1 ~bottom:1 ()) [ fn_heading ] :: fns
   in
-  Ui.vbox ~width
-    ~padding:(Ui.padding_xy s.padding_left s.padding_right)
-    ([ Ui.spacer s.margin_top ]
-    @ elements @ footnote_elements
-    @ [ Ui.spacer s.margin_bottom ])
+  Ui.box ~width:(Ui.Px width)
+    ~margin:(Ui.Spacing.make ~top:s.margin_top ~bottom:s.margin_bottom ())
+    ~padding:(Ui.Spacing.xy s.padding_left s.padding_right)
+    [ Ui.vbox (elements @ footnote_elements) ]

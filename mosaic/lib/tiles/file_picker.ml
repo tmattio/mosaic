@@ -366,12 +366,13 @@ let view model =
   in
 
   let file_list =
-    vbox ~padding:(padding_all 1)
+    vbox ~padding:(Spacing.all 1)
       ~border:
-        (border ~style:Solid
+        (Border.make ~line_style:Solid
            ~color:(if model.is_focused then Style.Index 6 else Style.Index 8)
            ())
-      ~height:(model.height + 2) file_items
+      ~height:(Px (model.height + 2))
+      file_items
   in
 
   (* Selected file info *)

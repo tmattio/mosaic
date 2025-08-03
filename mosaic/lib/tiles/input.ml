@@ -292,9 +292,9 @@ let view model =
   in
 
   let input_field =
-    hbox ~padding:(padding_xy 1 0)
-      ~border:(border ~style:Solid ~color:border_color ())
-      ~width:model.width [ display_content ]
+    hbox ~padding:(Spacing.xy 1 0)
+      ~border:(Border.make ~line_style:Solid ~color:border_color ())
+      ~width:(Px model.width) [ display_content ]
   in
 
   (* Error message below input *)
@@ -322,9 +322,10 @@ let view model =
             filtered
         in
         [
-          vbox ~padding:(padding_all 1)
-            ~border:(border ~style:Solid ~color:(Style.Index 8) ())
-            ~width:(model.width - 2) suggestion_items;
+          vbox ~padding:(Spacing.all 1)
+            ~border:(Border.make ~line_style:Solid ~color:(Style.Index 8) ())
+            ~width:(Px (model.width - 2))
+            suggestion_items;
         ]
     else []
   in

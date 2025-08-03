@@ -420,9 +420,11 @@ let view model =
   in
 
   let text_area =
-    vbox ~padding:(padding_all 1)
-      ~border:(border ~style:Solid ~color:border_color ())
-      ~width:model.width ~height:(model.height + 2) content
+    vbox ~padding:(Spacing.all 1)
+      ~border:(Border.make ~line_style:Solid ~color:border_color ())
+      ~width:(Px model.width)
+      ~height:(Px (model.height + 2))
+      content
   in
 
   (* Error message below text area *)

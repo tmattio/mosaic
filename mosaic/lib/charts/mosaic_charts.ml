@@ -2,6 +2,11 @@ open Ui
 
 (** Common utilities *)
 
+let size_to_int_with_default size default =
+  match size with
+  | Some (Px n) -> n
+  | Some (Percent _) | Some Auto | Some Fit_content | None -> default
+
 type point = { x : float; y : float }
 type time_series_point = { time : float; value : float }
 
@@ -91,7 +96,7 @@ let braille_line x1 y1 x2 y2 canvas style =
             Uutf.Buffer.add_utf_8 buf char;
             Buffer.contents buf
           in
-          Canvas.plot canvas ~x ~y ~style char_str)
+          canvas ~x ~y ?style:(Some style) char_str)
         buffer.cells
   end in
   (* Create a buffer for the line *)
@@ -141,8 +146,8 @@ let line ?width ?height ?x_range ?y_range ?(show_axes = true)
     ?(axis_style = Style.dim) ?(label_style = Style.dim) ?series_styles
     ?(render_kind = Lines) (data : (string * point list) list) =
   Canvas.create ?width ?height (fun canvas ->
-      let w = Option.value width ~default:40 in
-      let h = Option.value height ~default:10 in
+      let w = size_to_int_with_default width 40 in
+      let h = size_to_int_with_default height 10 in
       let series_count = List.length data in
       let styles =
         match series_styles with
@@ -240,7 +245,7 @@ let line ?width ?height ?x_range ?y_range ?(show_axes = true)
                       int_of_float
                         (scale_value p.y y_max y_min 0. (float (plot_h - 1)))
                     in
-                    braille_line px py x y canvas style;
+                    braille_line px py x y (Canvas.plot canvas) style;
                     plot_braille p tl
               in
               match sorted_points with
@@ -291,8 +296,8 @@ let bar ?width ?height ?(orientation = `Vertical) ?max_value ?bar_width ?gap
   let _ = label_style in
   (* TODO: Use for bar labels *)
   Canvas.create ?width ?height (fun canvas ->
-      let w = Option.value width ~default:40 in
-      let h = Option.value height ~default:10 in
+      let w = size_to_int_with_default width 40 in
+      let h = size_to_int_with_default height 10 in
       let bar_count = List.length data in
       let bw =
         Option.value bar_width
@@ -363,7 +368,7 @@ let bar ?width ?height ?(orientation = `Vertical) ?max_value ?bar_width ?gap
 
 let sparkline ?width ?range ?style ?(render_kind = `Bars) (data : float list) =
   let w = Option.value width ~default:(List.length data) in
-  Canvas.create ~width:w ~height:1 (fun canvas ->
+  Canvas.create ~width:(Px w) ~height:(Px 1) (fun canvas ->
       let min_v, max_v = Option.value range ~default:(min_max data) in
       List.iteri
         (fun i v ->
@@ -400,8 +405,8 @@ let heatmap ?width ?height ?x_range ?y_range ?value_range ?color_scale
     match color_scale with None | Some [] -> default_scale | Some cs -> cs
   in
   Canvas.create ?width ?height (fun canvas ->
-      let w = Option.value width ~default:40 in
-      let h = Option.value height ~default:10 in
+      let w = size_to_int_with_default width 40 in
+      let h = size_to_int_with_default height 10 in
       let x_min, x_max =
         Option.value x_range ~default:(min_max (List.map (fun p -> p.x) data))
       in
@@ -420,7 +425,7 @@ let heatmap ?width ?height ?x_range ?y_range ?value_range ?color_scale
           ~style:(Option.value axis_style ~default:Style.dim)
           ~kind:`Line canvas);
       (* Create a grid for interpolation *)
-      let grid = Array.make_matrix h w None in
+      let grid = Array.make_matrix h w Option.None in
 
       (* Place data points in grid *)
       List.iter
@@ -434,7 +439,7 @@ let heatmap ?width ?height ?x_range ?y_range ?value_range ?color_scale
               (scale_value p.y y_max y_min 0. (float (max 0 (h - 1))))
           in
           if px >= 0 && px < w && py >= 0 && py < h then
-            grid.(py).(px) <- Some p.value)
+            grid.(py).(px) <- Option.Some p.value)
         data;
 
       (* Fill grid with interpolated values *)
@@ -442,8 +447,8 @@ let heatmap ?width ?height ?x_range ?y_range ?value_range ?color_scale
         for x = 0 to w - 1 do
           let value =
             match grid.(y).(x) with
-            | Some v -> v
-            | None ->
+            | Option.Some v -> v
+            | Option.None ->
                 (* Find nearest neighbors for interpolation *)
                 let rec find_nearest max_dist =
                   if max_dist > max w h then v_min
@@ -455,10 +460,10 @@ let heatmap ?width ?height ?x_range ?y_range ?value_range ?color_scale
                           let nx, ny = (x + dx, y + dy) in
                           if nx >= 0 && nx < w && ny >= 0 && ny < h then
                             match grid.(ny).(nx) with
-                            | Some v ->
+                            | Option.Some v ->
                                 let dist = float ((dx * dx) + (dy * dy)) in
                                 neighbors := (v, dist) :: !neighbors
-                            | None -> ()
+                            | Option.None -> ()
                       done
                     done;
                     if !neighbors = [] then find_nearest (max_dist + 1)
@@ -491,8 +496,8 @@ let candlestick ?width ?height ?time_range ?y_range ?(show_axes = true)
   let _ = label_style in
   (* TODO: Use for axis labels *)
   Canvas.create ?width ?height (fun canvas ->
-      let w = Option.value width ~default:40 in
-      let h = Option.value height ~default:10 in
+      let w = size_to_int_with_default width 40 in
+      let h = size_to_int_with_default height 10 in
       let sorted = List.sort (fun p1 p2 -> compare p1.time p2.time) data in
       let _t_min, _t_max =
         Option.value time_range
@@ -548,7 +553,9 @@ let candlestick ?width ?height ?time_range ?y_range ?(show_axes = true)
           let border_color =
             if p.close > p.open_ then Style.Green else Style.Red
           in
-          let candle_border = Ui.border ~style:Solid ~color:border_color () in
+          let candle_border =
+            Ui.Border.make ~line_style:Solid ~color:border_color ()
+          in
           Canvas.draw_box ~x:px ~y:body_y ~width:bar_w ~height:body_h ~style
             ~border:candle_border canvas)
         sorted)

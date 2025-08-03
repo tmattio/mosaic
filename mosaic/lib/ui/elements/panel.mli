@@ -1,12 +1,10 @@
 (** Panel element with Rich-like API for drawing borders around content *)
 
-open Element
-
 type align = [ `Left | `Center | `Right ]
 (** Alignment options for title and subtitle *)
 
 val panel :
-  ?box_style:Border.style ->
+  ?box_style:Border.line_style ->
   ?title:string ->
   ?title_align:align ->
   ?subtitle:string ->
@@ -16,10 +14,10 @@ val panel :
   ?border_style:Style.t ->
   ?width:int ->
   ?height:int ->
-  ?padding:Padding.t ->
+  ?padding:Spacing.t ->
   ?highlight:bool ->
-  t ->
-  t
+  Element.t ->
+  Element.t
 (** Create a panel with a border around its contents.
 
     @param child The content to display inside the panel

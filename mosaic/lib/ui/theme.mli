@@ -24,7 +24,7 @@ type t = {
   text_primary : Style.color;  (** Primary text color *)
   text_secondary : Style.color;  (** Secondary/muted text color *)
   border : Style.color;  (** Default border color *)
-  border_style : Border.style;  (** Default border style *)
+  border_style : Border.line_style;  (** Default border style *)
   spacing_unit : int;  (** Base spacing unit in characters (default: 1) *)
   font_styles : font_styles;
 }
@@ -80,7 +80,7 @@ val make :
   ?text_primary:Style.color ->
   ?text_secondary:Style.color ->
   ?border:Style.color ->
-  ?border_style:Border.style ->
+  ?border_style:Border.line_style ->
   ?spacing_unit:int ->
   ?heading_style:Style.t ->
   ?body_style:Style.t ->

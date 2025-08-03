@@ -171,6 +171,7 @@ type color = Ansi.color =
   | Bright_white
   | Index of int (* 256-color palette (0-255) *)
   | RGB of int * int * int (* 24-bit color (0-255 each) *)
+  | RGBA of int * int * int * int (* 24-bit color with alpha (0-255 each) *)
 
 (* Color helpers *)
 let gray n = Index (232 + min 23 (max 0 n))
@@ -250,6 +251,8 @@ let basic_rgb = function
         let v = 8 + ((i - 232) * 10) in
         (v, v, v)
   | RGB (r, g, b) -> (r, g, b)
+  | RGBA (r, g, b, _) -> (r, g, b)
+(* Ignore alpha for RGB conversion *)
 
 let to_rgb = basic_rgb
 
@@ -371,6 +374,7 @@ let pp_color fmt = function
   | Bright_white -> Format.fprintf fmt "Bright_white"
   | Index i -> Format.fprintf fmt "Index(%d)" i
   | RGB (r, g, b) -> Format.fprintf fmt "RGB(%d,%d,%d)" r g b
+  | RGBA (r, g, b, a) -> Format.fprintf fmt "RGBA(%d,%d,%d,%d)" r g b a
 
 let pp_color_spec fmt = function
   | None -> Format.fprintf fmt "None"
@@ -402,3 +406,43 @@ let pp fmt style =
   if style.encircled then Format.fprintf fmt "encircled@,";
   Option.iter (Format.fprintf fmt "uri=%S@,") style.uri;
   Format.fprintf fmt "@]@,}@]"
+
+let resolve (style : t) ~dark ~(pos : int * int) ~(bounds : int * int) :
+    Ansi.Style.t =
+  let x, y = pos in
+  let width, height = bounds in
+
+  (* Start with default style *)
+  let cell_style = ref Ansi.Style.default in
+
+  (* Resolve foreground color *)
+  (match resolve_color style.fg ~dark ~x ~y ~width ~height with
+  | Some color -> cell_style := Ansi.Style.with_fg color !cell_style
+  | None -> ());
+
+  (* Resolve background color *)
+  (match resolve_color style.bg ~dark ~x ~y ~width ~height with
+  | Some color -> cell_style := Ansi.Style.with_bg color !cell_style
+  | None -> ());
+
+  (* Apply text attributes *)
+  if style.bold then cell_style := Ansi.Style.with_bold true !cell_style;
+  if style.dim then cell_style := Ansi.Style.with_dim true !cell_style;
+  if style.italic then cell_style := Ansi.Style.with_italic true !cell_style;
+  if style.underline then
+    cell_style := Ansi.Style.with_underline true !cell_style;
+  if style.double_underline then
+    cell_style := Ansi.Style.with_double_underline true !cell_style;
+  if style.blink then cell_style := Ansi.Style.with_blink true !cell_style;
+  if style.reverse then cell_style := Ansi.Style.with_reversed true !cell_style;
+  if style.strikethrough then
+    cell_style := Ansi.Style.with_strikethrough true !cell_style;
+  if style.overline then cell_style := Ansi.Style.with_overline true !cell_style;
+
+  (* Apply hyperlink if present *)
+  (* TODO: hyperlink support not yet implemented in Ansi.Style
+  (match style.uri with
+  | Some uri -> cell_style := Ansi.Style.with_link (Some uri) !cell_style
+  | None -> ());
+  *)
+  !cell_style

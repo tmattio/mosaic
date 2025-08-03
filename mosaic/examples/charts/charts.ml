@@ -88,7 +88,7 @@ let line_chart_demo () =
       text ~style:Style.(fg Yellow ++ bold) "Line Chart Demo";
       divider ();
       text "Multiple series with different styles:";
-      line ~width:60 ~height:15
+      line ~width:(Px 60) ~height:(Px 15)
         ~series_styles:[ Style.(fg Red); Style.(fg Blue); Style.(fg Green) ]
         [
           ("Sine Wave", sine_data);
@@ -97,12 +97,12 @@ let line_chart_demo () =
         ];
       divider ();
       text "Same data with Braille rendering:";
-      line ~width:60 ~height:10 ~render_kind:Braille
+      line ~width:(Px 60) ~height:(Px 10) ~render_kind:Braille
         ~series_styles:[ Style.(fg Cyan) ]
         [ ("Braille Line", sine_data) ];
       divider ();
       text "Scatter plot with Points:";
-      line ~width:60 ~height:10 ~render_kind:(Points "")
+      line ~width:(Px 60) ~height:(Px 10) ~render_kind:(Points "")
         ~series_styles:[ Style.(fg Magenta) ]
         [ ("Scatter", List.filter (fun _ -> Random.bool ()) sine_data) ];
     ]
@@ -118,7 +118,7 @@ let time_series_demo () =
       text ~style:Style.(fg Yellow ++ bold) "Time Series Demo";
       divider ();
       text "24-hour data with multiple series:";
-      time_series ~width:60 ~height:15
+      time_series ~width:(Px 60) ~height:(Px 15)
         ~series_styles:[ Style.(fg Blue); Style.(fg Red) ]
         [
           ("Temperature", data1);
@@ -139,10 +139,10 @@ let bar_chart_demo () =
       text ~style:Style.(fg Yellow ++ bold) "Bar Chart Demo";
       divider ();
       text "Vertical stacked bars:";
-      bar ~width:60 ~height:12 ~orientation:`Vertical bar_data;
+      bar ~width:(Px 60) ~height:(Px 12) ~orientation:`Vertical bar_data;
       divider ();
       text "Horizontal bars:";
-      bar ~width:60 ~height:8 ~orientation:`Horizontal ~bar_width:2
+      bar ~width:(Px 60) ~height:(Px 8) ~orientation:`Horizontal ~bar_width:2
         (List.map
            (fun b -> { b with segments = [ List.hd b.segments ] })
            bar_data);
@@ -193,7 +193,7 @@ let heatmap_demo () =
       text ~style:Style.(fg Yellow ++ bold) "Heatmap Demo";
       divider ();
       text "2D function visualization (sin(x) * cos(y)):";
-      heatmap ~width:60 ~height:15
+      heatmap ~width:(Px 60) ~height:(Px 15)
         ~color_scale:
           [
             Style.Index 17;
@@ -222,7 +222,7 @@ let candlestick_demo () =
       text ~style:Style.(fg Yellow ++ bold) "Candlestick Chart Demo";
       divider ();
       text "20-day OHLC data:";
-      candlestick ~width:60 ~height:15
+      candlestick ~width:(Px 60) ~height:(Px 15)
         ~bullish_style:Style.(fg Green ++ bold)
         ~bearish_style:Style.(fg Red ++ bold)
         ohlc_data;
@@ -244,7 +244,7 @@ let combined_demo () =
           hbox ~gap:2
             [
               panel ~box_style:Rounded ~title:"Line Chart" ~expand:false
-                (line ~width:40 ~height:10
+                (line ~width:(Px 40) ~height:(Px 10)
                    ~series_styles:
                      [ Style.(fg (Index 39)); Style.(fg (Index 214)) ]
                    [
@@ -252,7 +252,7 @@ let combined_demo () =
                      ("Data 2", generate_sine_wave 30 0.7 2.0);
                    ]);
               panel ~box_style:Rounded ~title:"Time Series" ~expand:false
-                (time_series ~width:40 ~height:10
+                (time_series ~width:(Px 40) ~height:(Px 10)
                    (let now = Unix.time () in
                     [
                       ( "Series",
@@ -263,17 +263,17 @@ let combined_demo () =
           hbox ~gap:2
             [
               panel ~box_style:Rounded ~title:"Bar Chart" ~expand:false
-                (bar ~width:40 ~height:10
+                (bar ~width:(Px 40) ~height:(Px 10)
                    (generate_bar_data [ "A"; "B"; "C"; "D" ]));
               panel ~box_style:Rounded ~title:"Candlestick" ~expand:false
-                (candlestick ~width:40 ~height:10
+                (candlestick ~width:(Px 40) ~height:(Px 10)
                    (generate_ohlc_data 15 0.0 1.0 50.0));
             ];
           (* Row 3: Heatmap and Sparklines *)
           hbox ~gap:2
             [
               panel ~box_style:Rounded ~title:"Heatmap" ~expand:false
-                (heatmap ~width:40 ~height:10
+                (heatmap ~width:(Px 40) ~height:(Px 10)
                    ~color_scale:
                      [
                        Style.Index 232;
@@ -303,17 +303,18 @@ let combined_demo () =
                            ~render_kind:`Line
                            (List.init 30 (fun _ -> Random.float 100.0));
                        ];
-                     hbox ~gap:2
+                     box ~margin:(Spacing.make ~top:5 ())
                        [
-                         text "NET:";
-                         sparkline ~width:30
-                           ~style:Style.(fg Yellow)
-                           ~render_kind:`Braille
-                           (List.init 30 (fun i ->
-                                (float_of_int i *. 2.0) +. Random.float 10.0));
+                         hbox ~gap:2
+                           [
+                             text "NET:";
+                             sparkline ~width:30
+                               ~style:Style.(fg Yellow)
+                               ~render_kind:`Braille
+                               (List.init 30 (fun i ->
+                                    (float_of_int i *. 2.0) +. Random.float 10.0));
+                           ];
                        ];
-                     spacer 5;
-                     (* Add some vertical space *)
                    ]);
             ];
         ];

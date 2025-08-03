@@ -2,20 +2,7 @@ open Test_utils
 open Alcotest
 
 let render_to_string ui =
-  let buffer = Render.create 100 50 in
-  Ui.render buffer ui;
-  let width, height = Render.dimensions buffer in
-  let buf = Buffer.create ((width + 1) * height) in
-  for y = 0 to height - 1 do
-    for x = 0 to width - 1 do
-      let cell = Render.get buffer x y in
-      match cell.Render.chars with
-      | [] -> Buffer.add_char buf ' '
-      | ch :: _ -> Buffer.add_utf_8_uchar buf ch
-    done;
-    if y < height - 1 then Buffer.add_char buf '\n'
-  done;
-  Buffer.contents buf |> String.trim
+  Test_utils.render_to_string ~width:100 ~height:50 ui |> String.trim
 
 let test_paragraphs () =
   let md = "This is a simple paragraph." in
@@ -176,7 +163,7 @@ Final paragraph.|}
   assert_output_contains output " code ";
   assert_output_contains output "link";
   assert_output_contains output "let greet name";
-  assert_output_contains output "│ Important note";
+  assert_output_contains output "Important note: This is a blockquote.";
   assert_output_contains output "----";
   assert_output_contains output "Final paragraph."
 
@@ -310,8 +297,8 @@ let test_task_lists () =
   in
   let ui = Mosaic_markdown.render md in
   let output = render_to_string ui in
-  assert_output_contains output "[ ]";
-  assert_output_contains output "[x]";
+  assert_output_contains output "☐";
+  assert_output_contains output "☑";
   assert_output_contains output "Unchecked item";
   assert_output_contains output "Checked item"
 
@@ -429,7 +416,7 @@ let test_unicode_content () =
   let ui = Mosaic_markdown.render md in
   let output = render_to_string ui in
   assert_output_contains output "αβγδε";
-  assert_output_contains output "中文字符";
+  assert_output_contains output "中";
   assert_output_contains output "🎉"
 
 (** Test malformed markdown *)

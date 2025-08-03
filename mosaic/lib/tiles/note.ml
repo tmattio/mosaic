@@ -8,7 +8,7 @@ type kind =
 
 (* Theme configuration *)
 type theme = {
-  border_style : Ui.border_style;
+  border_style : Ui.Border.line_style;
   title_style : Style.t;
   info_style : Style.t;
   success_style : Style.t;
@@ -19,7 +19,7 @@ type theme = {
 
 let default_theme =
   {
-    border_style = Ui.Rounded;
+    border_style = Ui.Border.Rounded;
     title_style = Style.bold;
     info_style = Style.(fg (Index 6));
     success_style = Style.(fg Green);
@@ -80,7 +80,7 @@ let update msg model =
 (* View *)
 let view model =
   let open Ui in
-  if model.is_dismissed then spacer 0
+  if model.is_dismissed then spacer ()
   else
     let icon, icon_style, border_color = kind_info model.kind model.theme in
 
@@ -100,7 +100,7 @@ let view model =
     (* Dismiss button *)
     let dismiss_elem =
       if model.dismissible then
-        [ spacer ~flex:1 0; text ~style:model.theme.dismiss_style "[×]" ]
+        [ spacer ~flex_grow:1. (); text ~style:model.theme.dismiss_style "[×]" ]
       else []
     in
 
@@ -114,19 +114,21 @@ let view model =
         vbox
           [
             hbox ~gap:1 ([ icon_elem ] @ title_elem @ dismiss_elem);
-            hbox [ spacer 2; text_elem ];
+            box ~margin:(Spacing.make ~left:2 ()) [ text_elem ];
           ]
     in
 
     (* Main container *)
     let container =
-      vbox ~padding:(padding_all 1)
-        ~border:(border ~style:model.theme.border_style ~color:border_color ())
+      vbox ~padding:(Spacing.all 1)
+        ~border:
+          (Border.make ~line_style:model.theme.border_style ~color:border_color
+             ())
         [ content ]
     in
 
     match model.width with
-    | Some w -> hbox ~width:w [ container ]
+    | Some w -> hbox ~width:(Px w) [ container ]
     | None -> container
 
 (* Subscriptions *)

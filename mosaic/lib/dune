@@ -5,7 +5,6 @@
   matrix.tty
   matrix.ansi
   matrix.input
-  mosaic.render
   mosaic.event
   mosaic.engine
   mosaic.ui

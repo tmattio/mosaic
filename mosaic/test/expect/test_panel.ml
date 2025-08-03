@@ -93,7 +93,7 @@ let%expect_test "fitted panel" =
 
 let%expect_test "panel with padding" =
   print_ui ~height:8
-    (Ui.panel (Ui.text "Padded") ~padding:(Ui.padding_all 2));
+    (Ui.panel (Ui.text "Padded") ~padding:(Ui.Spacing.all 2));
   [%expect_exact {|
 +--------------------+
 |╭──────────╮        |

@@ -18,7 +18,7 @@ type t = {
   text_primary : Style.color;
   text_secondary : Style.color;
   border : Style.color;
-  border_style : Border.style;
+  border_style : Border.line_style;
   spacing_unit : int;
   font_styles : font_styles;
 }

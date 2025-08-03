@@ -241,7 +241,7 @@ let view model =
   let filter_elem =
     if model.filterable then
       [
-        hbox ~padding:(padding_xy 1 0)
+        hbox ~padding:(Spacing.xy 1 0)
           [
             text ~style:model.theme.filter_style "Filter: ";
             text model.filter_text;
@@ -304,9 +304,9 @@ let view model =
   in
 
   (* Layout *)
-  vbox ~padding:(padding_all 1)
+  vbox ~padding:(Spacing.all 1)
     ~border:
-      (border ~style:Solid
+      (Border.make ~line_style:Solid
          ~color:(if model.is_focused then Style.Index 6 else Style.Index 8)
          ())
     (filter_elem @ option_items @ limit_info)

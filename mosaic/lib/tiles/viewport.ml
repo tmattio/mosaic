@@ -282,7 +282,7 @@ let truncate_string str start_col width =
   if skip_cols start_col then take_width width;
   Buffer.contents buf
 
-let pad_string = Render.pad_string
+let pad_string = Ui.pad_string
 
 let view model =
   match model.content with

@@ -127,7 +127,7 @@ val set_kind : kind -> model -> model
 (** {2 Theming} *)
 
 type theme = {
-  border_style : Ui.border_style;
+  border_style : Ui.Border.line_style;
   title_style : Style.t;
   info_style : Style.t;
   success_style : Style.t;

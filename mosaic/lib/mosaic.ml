@@ -1,9 +1,4 @@
-(* mosaic_tea.ml *)
-(* Mosaic - A delightful OCaml TUI framework inspired by The Elm Architecture *)
-
 open Engine
-
-(* Public modules *)
 module Style = Ui.Style
 module Ui = Ui
 module Cmd = Cmd
@@ -11,7 +6,8 @@ module Sub = Sub
 module Input = Input
 module Component = Component
 
-(* The Elm Architecture: Model-View-Update with effects and subscriptions *)
+(*  The Elm Architecture types *)
+
 type ('model, 'msg) app = {
   init : unit -> 'model * 'msg Cmd.t;
   update : 'msg -> 'model -> 'model * 'msg Cmd.t;
@@ -19,130 +15,112 @@ type ('model, 'msg) app = {
   subscriptions : 'model -> 'msg Sub.t;
 }
 
-(* API functions *)
 let app ~init ~update ~view ?(subscriptions = fun _ -> Sub.none) () =
   { init; update; view; subscriptions }
 
-let run_eio (type model msg) ~sw ~env ?terminal ?(alt_screen = true)
-    ?(mouse = false) ?(fps = 60) ?(debug = false) (app : (model, msg) app) =
-  (* Configuration *)
+(*  Runtime *)
+
+let run_eio (type model msg) ~(sw : Eio.Switch.t) ~(env : Eio_unix.Stdenv.base)
+    ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60) ?(debug = false)
+    (app : (model, msg) app) =
+  (* 1) Build Program config and start the runtime *)
   let debug_log = if debug then Some (open_out "mosaic-debug.log") else None in
-  let config = { Program.terminal; alt_screen; mouse; fps; debug_log } in
+  let cfg = Program.config ?terminal ~alt_screen ~mouse ~fps ?debug_log () in
 
-  (* Create the program handle *)
-  let p = Program.create ~sw ~env config in
-
-  (* Initialize the model and get initial command *)
-  let model, initial_cmd = app.init () in
-  let model_ref = ref model in
-  Program.set_model p model;
-
-  (* Message stream for TEA *)
-  let msg_stream = Eio.Stream.create 100 in
-
-  (* Command queue for processing *)
-  let cmd_queue = Queue.create () in
-  Queue.add initial_cmd cmd_queue;
-
-  (* Dispatch function *)
-  let dispatch msg = Eio.Stream.add msg_stream msg in
-
-  (* Input event handler *)
-  let handle_input_event event =
-    Program.log_debug p (Format.asprintf "Input event: %a" Input.pp_event event);
-    let msgs =
-      Program.with_state_mutex p ~protect:true (fun () ->
-          let subs = app.subscriptions !model_ref in
-          match event with
-          | Input.Key key_event ->
-              let keyboard_handlers = Sub.collect_keyboard [] subs in
-              List.filter_map (fun f -> f key_event) keyboard_handlers
-          | Input.Focus ->
-              let focus_handlers = Sub.collect_focus [] subs in
-              List.filter_map (fun f -> f ()) focus_handlers
-          | Input.Blur ->
-              let blur_handlers = Sub.collect_blur [] subs in
-              List.filter_map (fun f -> f ()) blur_handlers
-          | Input.Mouse mouse_event ->
-              let mouse_handlers = Sub.collect_mouse [] subs in
-              List.filter_map (fun f -> f mouse_event) mouse_handlers
-          | Input.Paste s ->
-              let paste_handlers = Sub.collect_paste [] subs in
-              List.filter_map (fun f -> f s) paste_handlers
-          | Input.Resize (w, h) ->
-              (* Invalidate the previous buffer on resize *)
-              Program.invalidate_buffer p;
-
-              (* For non-alt-screen, clear terminal and reset tracking *)
-              if not alt_screen then (
-                Program.with_terminal_mutex p ~protect:true (fun () ->
-                    let term = Tty.create ~tty:true Unix.stdin Unix.stdout in
-                    let clear_seq = Ansi.clear_terminal in
-                    Tty.write term
-                      (Bytes.of_string clear_seq)
-                      0 (String.length clear_seq);
-                    Tty.flush term);
-                Program.clear_static_elements p);
-
-              let window_handlers = Sub.collect_window [] subs in
-              let size = { Sub.width = w; Sub.height = h } in
-              List.filter_map (fun f -> f size) window_handlers
-          | _ -> [])
-    in
-    Program.log_debug p
-      (Format.asprintf "Generated %d messages from input event"
-         (List.length msgs));
-    List.iter dispatch msgs
-  in
-
-  (* Handle resize events *)
-  let handle_resize (w, h) = handle_input_event (Input.Resize (w, h)) in
-
-  (* Message processing loop *)
-  let message_loop () =
-    while Program.is_running p do
-      (* Process queued commands first *)
-      while not (Queue.is_empty cmd_queue) do
-        let cmd = Queue.take cmd_queue in
-        Program.with_state_mutex p ~protect:false (fun () ->
-            Program.process_cmd p dispatch cmd)
-      done;
-
-      if Program.is_quit_pending p then (
-        Program.render p (app.view !model_ref);
-        Program.set_running p false;
-        (* Wake up the resize fiber so it can exit *)
-        Eio.Condition.broadcast (Program.resize_condition p);
-        (* Give other loops a chance to exit *)
-        Eio.Fiber.yield ())
-      else if Program.is_running p then
-        (* Block until a new message arrives *)
-        let msg = Eio.Stream.take msg_stream in
-        if Program.is_running p then
-          Program.with_state_mutex p ~protect:false (fun () ->
-              let new_model, cmd = app.update msg !model_ref in
-              model_ref := new_model;
-              Program.set_model p new_model;
-              Program.process_cmd p dispatch cmd)
-    done
-  in
+  (* We need to track if prog has been created for cleanup *)
+  let prog_ref = ref None in
 
   Fun.protect
     ~finally:(fun () ->
-      Option.iter close_out debug_log;
-      Program.cleanup p)
+      (* Always stop the program if it was created *)
+      Option.iter Program.stop !prog_ref;
+      Option.iter close_out debug_log)
     (fun () ->
-      Program.setup_terminal p;
-      Program.setup_signal_handlers p;
+      (* A mutable model lives only in this layer *)
+      let init_model, init_cmd = app.init () in
+      let model_ref : model ref = ref init_model in
+      let model_mutex = Eio.Mutex.create () in
 
-      Eio.Fiber.all
-        [
-          (fun () -> Program.run_input_loop p handle_input_event);
-          (fun () -> Program.run_render_loop p (fun () -> app.view !model_ref));
-          message_loop;
-          (fun () -> Program.run_resize_loop p handle_resize);
-        ])
+      (* Place to queue commands that still need to be executed *)
+      let cmd_queue : msg Cmd.t Queue.t = Queue.create () in
+      (* initial command from [init *)
+      Queue.add init_cmd cmd_queue;
 
+      (* Message stream (unbounded) for the TEA message pum *)
+      let msg_stream : msg Eio.Stream.t = Eio.Stream.create Int.max_int in
+      let dispatch (m : msg) = Eio.Stream.add msg_stream m in
+
+      (* Call‑backs expected by Program *)
+      let render () =
+        Eio.Mutex.use_ro model_mutex (fun () -> app.view !model_ref)
+      in
+
+      let handle_input_event (event : Input.event) =
+        let subs =
+          Eio.Mutex.use_ro model_mutex (fun () -> app.subscriptions !model_ref)
+        in
+        let generated : msg list =
+          match event with
+          | Input.Key k ->
+              Sub.collect_keyboard [] subs |> List.filter_map (fun f -> f k)
+          | Input.Focus ->
+              Sub.collect_focus [] subs |> List.filter_map (fun f -> f ())
+          | Input.Blur ->
+              Sub.collect_blur [] subs |> List.filter_map (fun f -> f ())
+          | Input.Mouse m_ev ->
+              Sub.collect_mouse [] subs |> List.filter_map (fun f -> f m_ev)
+          | Input.Paste s ->
+              Sub.collect_paste [] subs |> List.filter_map (fun f -> f s)
+          | Input.Resize (w, h) ->
+              Option.iter Program.request_render !prog_ref;
+              (* invalidate visual stat *)
+              let size = { Sub.width = w; height = h } in
+              Sub.collect_window [] subs |> List.filter_map (fun f -> f size)
+          | _ -> []
+        in
+        List.iter dispatch generated
+      in
+
+      let handle_resize ~w ~h = handle_input_event (Input.Resize (w, h)) in
+
+      (* Start the Program runtim *)
+      let prog, process_cmd =
+        Program.start ~sw ~env cfg ~render ~on_input:handle_input_event
+          ~on_resize:handle_resize ()
+      in
+      prog_ref := Some prog;
+
+      (* 2) TEA message / command pump *)
+      let rec message_loop () =
+        (* First, execute any queued commands *)
+        while not (Queue.is_empty cmd_queue) do
+          let cmd = Queue.take cmd_queue in
+          process_cmd dispatch cmd;
+          (* Detect [Cmd.Quit] by pattern‑matching – if found, also stop program *)
+          match cmd with
+          | Cmd.Quit -> raise Exit
+          | _ -> ()
+        done;
+
+        (* Then wait for the next messag *)
+        match Eio.Stream.take msg_stream with
+        | msg ->
+            let _new_model, cmd =
+              Eio.Mutex.use_rw model_mutex ~protect:true (fun () ->
+                  let current_model = !model_ref in
+                  let new_model, cmd = app.update msg current_model in
+                  model_ref := new_model;
+                  (new_model, cmd))
+            in
+            Queue.add cmd cmd_queue;
+            message_loop ()
+        | exception End_of_file -> ()
+      in
+
+      (* Run everything concurrentl *)
+      Eio.Fiber.fork ~sw (fun () -> try message_loop () with Exit -> ()))
+
+(* Convenience wrapper for the common case – sets up its own Eio event loo *)
 let run ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)
     ?(debug = false) app =
   Eio_main.run @@ fun env ->

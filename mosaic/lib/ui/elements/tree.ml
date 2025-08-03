@@ -36,7 +36,9 @@ let tree ?style ?(guide_style = Style.(fg Ansi.Default ++ dim))
 
     (* Apply style to label if provided *)
     let label =
-      match style with Some s -> styled s node.label | None -> node.label
+      match style with
+      | Some s -> Element.styled s node.label
+      | None -> node.label
     in
 
     (* Build the node line *)
@@ -82,7 +84,9 @@ let tree ?style ?(guide_style = Style.(fg Ansi.Default ++ dim))
     in
 
     let root_label =
-      match style with Some s -> styled s root.label | None -> root.label
+      match style with
+      | Some s -> Element.styled s root.label
+      | None -> root.label
     in
 
     if (not is_expanded) || root.children = [] then root_label

@@ -1,4 +1,5 @@
-open Element
+(* Use qualified names instead of open to avoid name conflicts *)
+module E = Element
 
 type justify = [ `Left | `Center | `Right | `Full ]
 type vertical_align = [ `Top | `Middle | `Bottom ]
@@ -933,11 +934,11 @@ let build_horizontal_line level widths box_chars show_edge border_style =
     ^ String.concat divider (List.map (fun w -> repeat horizontal w) widths)
     ^ if show_edge then right else ""
   in
-  text ~style:border_style line
+  E.text ~style:border_style line
 
 let build_vertical_sep height char style =
-  if height <= 0 || char = "" then text ""
-  else text ~style (String.concat "\n" (List.init height (fun _ -> char)))
+  if height <= 0 || char = "" then E.text ""
+  else E.text ~style (String.concat "\n" (List.init height (fun _ -> char)))
 
 let build_cell_element lines row_height vertical e_top e_bottom e_left e_right
     cell_style cell_width =
@@ -957,8 +958,8 @@ let build_cell_element lines row_height vertical e_top e_bottom e_left e_right
   let blank_line = String.make cell_width ' ' in
   let top_blanks = List.init top_spacer (fun _ -> blank_line) in
   let bottom_blanks = List.init bottom_spacer (fun _ -> blank_line) in
-  vbox ~background:cell_style
-    (List.map text (top_blanks @ padded_lines @ bottom_blanks))
+  E.vbox ~style:cell_style
+    (List.map E.text (top_blanks @ padded_lines @ bottom_blanks))
 
 let rec intersperse sep = function
   | [] -> []
@@ -967,7 +968,7 @@ let rec intersperse sep = function
 
 let build_blank_row widths box_chars border_style show_edge =
   let blanks =
-    List.map (fun w -> text ~style:Style.empty (String.make w ' ')) widths
+    List.map (fun w -> E.text ~style:Style.empty (String.make w ' ')) widths
   in
   let internal_sep = build_vertical_sep 1 box_chars.vertical border_style in
   let content = intersperse internal_sep blanks in
@@ -978,7 +979,7 @@ let build_blank_row widths box_chars border_style show_edge =
       (left_sep :: content) @ [ right_sep ]
     else content
   in
-  hbox content
+  E.hbox content
 
 let table ?(title = None) ?(caption = None) ?(columns = []) ?(rows = [])
     ?(box_style = HeavyHead) ?(safe_box = false) ?(padding = (0, 1, 0, 1))
@@ -992,7 +993,7 @@ let table ?(title = None) ?(caption = None) ?(columns = []) ?(rows = [])
     ?(title_justify = `Center) ?(caption_justify = `Center) ?(width = None)
     ?(min_width = None) () =
   let num_cols = List.length columns in
-  if num_cols = 0 then vbox []
+  if num_cols = 0 then E.vbox []
   else
     let default_max_width = 80 in
     let max_table_width = Option.value width ~default:default_max_width in
@@ -1010,36 +1011,36 @@ let table ?(title = None) ?(caption = None) ?(columns = []) ?(rows = [])
       else 0
     in
     let box_chars = get_box_chars box_style safe_box in
-    let map_justify j =
+    let map_justify_to_align j : E.align =
       match j with
-      | `Left -> `Start
-      | `Center -> `Center
-      | `Right -> `End
-      | `Full -> `Center
+      | `Left -> E.Start
+      | `Center -> E.Center
+      | `Right -> E.End
+      | `Full -> E.Center
     in
     let title_element =
       match title with
       | None -> None
       | Some t ->
           Some
-            (vbox ~width:table_total_width
-               ~align_items:(map_justify title_justify)
-               [ text ~style:title_style t ])
+            (E.vbox ~width:(E.Px table_total_width)
+               ~align_items:(map_justify_to_align title_justify)
+               [ E.text ~style:title_style t ])
     in
     let caption_element =
       match caption with
       | None -> None
       | Some c ->
           Some
-            (vbox ~width:table_total_width
-               ~align_items:(map_justify caption_justify)
-               [ text ~style:caption_style c ])
+            (E.vbox ~width:(E.Px table_total_width)
+               ~align_items:(map_justify_to_align caption_justify)
+               [ E.text ~style:caption_style c ])
     in
     let add_column_separators cells =
       if box_style = NoBox then cells
       else
         intersperse
-          (separator ~orientation:`Vertical ~style:border_style ())
+          (E.divider ~orientation:`Vertical ~style:border_style ())
           cells
     in
     (* Helper function to compute row height including padding *)
@@ -1153,8 +1154,9 @@ let table ?(title = None) ?(caption = None) ?(columns = []) ?(rows = [])
           let right_sep =
             build_vertical_sep header_height box_chars.vertical border_style
           in
-          hbox ((left_sep :: add_column_separators header_cells) @ [ right_sep ])
-        else hbox (add_column_separators header_cells)
+          E.hbox
+            ((left_sep :: add_column_separators header_cells) @ [ right_sep ])
+        else E.hbox (add_column_separators header_cells)
       in
       all_rows := !all_rows @ [ row_content ];
 
@@ -1208,8 +1210,8 @@ let table ?(title = None) ?(caption = None) ?(columns = []) ?(rows = [])
             let right_sep =
               build_vertical_sep row_height box_chars.vertical border_style
             in
-            hbox ((left_sep :: add_column_separators cells) @ [ right_sep ])
-          else hbox (add_column_separators cells)
+            E.hbox ((left_sep :: add_column_separators cells) @ [ right_sep ])
+          else E.hbox (add_column_separators cells)
         in
         all_rows := !all_rows @ [ row_content ];
 
@@ -1273,9 +1275,9 @@ let table ?(title = None) ?(caption = None) ?(columns = []) ?(rows = [])
            let right_sep =
              build_vertical_sep footer_height box_chars.vertical border_style
            in
-           hbox
+           E.hbox
              ((left_sep :: add_column_separators footer_cells) @ [ right_sep ])
-         else hbox (add_column_separators footer_cells)
+         else E.hbox (add_column_separators footer_cells)
        in
        all_rows := !all_rows @ [ row_content ]);
 
@@ -1294,10 +1296,10 @@ let table ?(title = None) ?(caption = None) ?(columns = []) ?(rows = [])
     | None -> ());
 
     (* Apply min_width constraint *)
-    let final_element = vbox ~gap:0 !all_rows in
+    let final_element = E.vbox ~gap:0 !all_rows in
     match min_width with
     | Some min_w when table_total_width < min_w ->
-        hbox ~width:min_w ~justify_content:`Center [ final_element ]
+        E.hbox ~width:(E.Px min_w) ~justify_content:E.Center [ final_element ]
     | _ -> final_element
 
 let simple_table ~headers ~rows =

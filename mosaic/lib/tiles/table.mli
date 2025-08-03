@@ -188,7 +188,7 @@ type theme = {
   header_style : Style.t;
   cell_style : Style.t;
   selected_style : Style.t;
-  border : Ui.border option;
+  border : Ui.Border.t option;
 }
 (** Theme configuration for customizing the table appearance.
 

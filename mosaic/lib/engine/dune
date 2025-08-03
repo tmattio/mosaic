@@ -9,6 +9,7 @@
   mosaic.ui
   matrix.input
   matrix.tty
-  mosaic.render
   mosaic.event
-  matrix.ansi))
+  matrix.ansi
+  matrix.screen
+  matrix.grid))

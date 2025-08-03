@@ -1,6 +1,6 @@
 (include_subdirs unqualified)
 
 (library
- (public_name mosaic.ui)
  (name ui)
- (libraries matrix.ansi render uutf uucp))
+ (public_name mosaic.ui)
+ (libraries matrix.ansi matrix.screen matrix.grid toffee uutf))

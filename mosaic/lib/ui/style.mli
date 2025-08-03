@@ -79,6 +79,17 @@ type attr =
           Used with [of_list] to build styles declaratively. Fg/Bg set colors.
           Other variants enable specific formatting. Link creates hyperlinks. *)
 
+val resolve :
+  t -> dark:bool -> pos:int * int -> bounds:int * int -> Ansi.Style.t
+(** [resolve style ~dark ~pos ~bounds] converts a high-level Style.t to a
+    low-level Ansi.Style.t.
+
+    @param style The high-level style to resolve
+    @param dark Whether to use dark mode for adaptive colors
+    @param pos The (x, y) coordinate of the cell being rendered
+    @param bounds The (width, height) of the element being rendered
+    @return The resolved Ansi.Style.t *)
+
 val to_sgr : dark:bool -> t -> string
 (** [to_sgr ~dark style] generates the ANSI SGR escape sequence for the style.
 
@@ -266,6 +277,7 @@ type color = Ansi.color =
   | Bright_white
   | Index of int  (** 256-color palette (0-255) *)
   | RGB of int * int * int  (** 24-bit color (0-255 each) *)
+  | RGBA of int * int * int * int  (** 24-bit color with alpha (0-255 each) *)
 
 val ansi256 : int -> color
 (** [ansi256 n] creates a 256-color palette color.
