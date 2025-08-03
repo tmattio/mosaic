@@ -1,40 +1,6 @@
-type color =
-  | Black
-  | Red
-  | Green
-  | Yellow
-  | Blue
-  | Magenta
-  | Cyan
-  | White
-  | Default
-  | Bright_black
-  | Bright_red
-  | Bright_green
-  | Bright_yellow
-  | Bright_blue
-  | Bright_magenta
-  | Bright_cyan
-  | Bright_white
-  | Index of int
-  | RGB of int * int * int
-
-type style =
-  [ `Bold
-  | `Dim
-  | `Italic
-  | `Underline
-  | `Double_underline
-    (** Note: Limited support; may conflict with bold reset in some terminals *)
-  | `Blink
-  | `Reverse
-  | `Conceal
-  | `Strikethrough
-  | `Overline  (** Note: Limited support *)
-  | `Framed  (** Note: Very limited support *)
-  | `Encircled  (** Note: Very limited support *) ]
-
-type attr = [ `Fg of color | `Bg of color | style | `Reset ]
+type color = Style.color
+type style = Style.style
+type attr = Style.attr
 
 let esc = "\x1b["
 
@@ -210,7 +176,7 @@ let request_terminal_size_pixels = esc ^ "14t"
    a widely supported variant compatible with konsole, instead of the colon
    specified in the standard. *)
 let color_to_codes ~bg = function
-  | Black -> [ (if bg then 40 else 30) ]
+  | Style.Black -> [ (if bg then 40 else 30) ]
   | Red -> [ (if bg then 41 else 31) ]
   | Green -> [ (if bg then 42 else 32) ]
   | Yellow -> [ (if bg then 43 else 33) ]
@@ -235,6 +201,12 @@ let color_to_codes ~bg = function
       let cg = max 0 (min 255 g) in
       let cb = max 0 (min 255 b) in
       [ (if bg then 48 else 38); 2; cr; cg; cb ]
+  | RGBA (r, g, b, _a) ->
+      (* ANSI escape sequences don't support alpha, so we render as RGB *)
+      let cr = max 0 (min 255 r) in
+      let cg = max 0 (min 255 g) in
+      let cb = max 0 (min 255 b) in
+      [ (if bg then 48 else 38); 2; cr; cg; cb ]
 
 let style_to_code = function
   | `Bold -> 1
@@ -254,6 +226,15 @@ let attr_to_codes = function
   | `Reset -> [ 0 ]
   | `Fg color -> color_to_codes ~bg:false color
   | `Bg color -> color_to_codes ~bg:true color
+  | `No_bold | `No_dim -> [ 22 ] (* Neither bold nor dim *)
+  | `No_italic -> [ 23 ]
+  | `No_underline -> [ 24 ]
+  | `No_blink -> [ 25 ]
+  | `No_reverse -> [ 27 ]
+  | `No_conceal -> [ 28 ]
+  | `No_strikethrough -> [ 29 ]
+  | `No_framed | `No_encircled -> [ 54 ]
+  | `No_overline -> [ 55 ]
   | #style as s -> [ style_to_code s ]
 
 let sgr attrs =
@@ -340,7 +321,16 @@ let style attrs str =
         | `Strikethrough -> [ 29 ]
         | `Overline -> [ 55 ]
         | `Framed | `Encircled -> [ 54 ]
-        | `Reset -> [ 0 ])
+        | `Reset -> [ 0 ]
+        | `No_bold | `No_dim -> [] (* Already handled by resetting bold/dim *)
+        | `No_italic -> []
+        | `No_underline -> []
+        | `No_blink -> []
+        | `No_reverse -> []
+        | `No_conceal -> []
+        | `No_strikethrough -> []
+        | `No_overline -> []
+        | `No_framed | `No_encircled -> [])
       attrs
     |> List.sort_uniq compare
   in
@@ -356,7 +346,7 @@ let style attrs str =
     sgr attrs ^ str ^ reset_str
 
 let rec rgb_of_color = function
-  | Index n ->
+  | Style.Index n ->
       (* same algorithm as xterm 256 palette *)
       if n < 8 then (* 0–7  : simple colors *)
         let basic = [| 0x00; 0x8b; 0x0a; 0x8b; 0x00; 0x8b; 0x0a; 0xbb |] in

@@ -78,28 +78,13 @@
         raise exn
     ]} *)
 
-(** {1 Colors} *)
+(** {1 Styles} *)
 
-(** [color] represents terminal color values.
+module Style = Style
+(** @inline *)
 
-    Basic colors map to standard 16-color palette (0-7). Bright variants use
-    high-intensity palette (8-15). Default resets to terminal's configured
-    color. Index accesses 256-color palette. RGB enables 24-bit true color.
-
-    Compatibility:
-    - Basic and bright colors: universal support
-    - Default: universal (SGR 39/49)
-    - Index: common in modern terminals (xterm-256color)
-    - RGB: varies; graceful fallback to nearest 256-color
-
-    Examples:
-    {[
-      let red_text = Ansi.sgr [ `Fg Red ]
-      let bright_bg = Ansi.sgr [ `Bg Bright_yellow ]
-      let orange = Ansi.sgr [ `Fg (Index 208) ]
-      let custom = Ansi.sgr [ `Fg (RGB (255, 128, 0)) ]
-    ]} *)
-type color =
+(** Re-export common types for convenience *)
+type color = Style.color =
   | Black
   | Red
   | Green
@@ -119,67 +104,8 @@ type color =
   | Bright_white
   | Index of int  (** 256-color palette index *)
   | RGB of int * int * int  (** 24-bit RGB color *)
-
-(** {1 Styles} *)
-
-type style =
-  [ `Bold  (** Increases font weight (SGR 1) *)
-  | `Dim  (** Reduces intensity (SGR 2) *)
-  | `Italic  (** Slants text (SGR 3; limited support) *)
-  | `Underline  (** Single underline (SGR 4) *)
-  | `Double_underline
-    (** Double underline (SGR 21; conflicts with bold reset on some terminals)
-    *)
-  | `Blink  (** Flashing text (SGR 5; often disabled by users) *)
-  | `Reverse  (** Swaps foreground/background (SGR 7) *)
-  | `Conceal  (** Hides text (SGR 8; limited support) *)
-  | `Strikethrough  (** Line through text (SGR 9) *)
-  | `Overline  (** Line above text (SGR 53; limited support) *)
-  | `Framed  (** Frame border (SGR 51; rare support) *)
-  | `Encircled  (** Circle border (SGR 52; rare support) *) ]
-(** [style] represents text formatting attributes.
-
-    Styles modify text appearance. Multiple styles can combine. Support varies
-    by terminal:
-    - Universal: Bold, Underline, Reverse
-    - Common: Dim, Strikethrough, Italic
-    - Limited: Double_underline, Blink, Conceal
-    - Rare: Overline, Framed, Encircled
-
-    Reset functions remove specific styles without affecting others. Use
-    {!reset} to clear all attributes.
-
-    Example:
-    {[
-      let title = Ansi.style [ `Bold; `Underline ] "Chapter 1"
-      let secret = Ansi.style [ `Conceal ] "password123"
-    ]} *)
-
-type attr =
-  [ `Fg of color  (** Sets foreground (text) color *)
-  | `Bg of color  (** Sets background color *)
-  | `Reset  (** Resets all attributes to defaults (SGR 0) *)
-  | style ]
-(** [attr] combines colors and styles into display attributes.
-
-    Attributes can be combined in {!sgr} or {!style}. Later attributes override
-    earlier ones for the same property. [`Reset] clears all attributes; prefer
-    targeted resets when preserving some attributes.
-
-    Precedence rules:
-    - Multiple [`Fg] values: last one wins
-    - Multiple [`Bg] values: last one wins
-    - [`Bold] and [`Dim]: both can be active unless [`Reset] intervenes
-    - [`Reset]: clears everything, position in list matters
-
-    Example:
-    {[
-      (* Bold red on blue background *)
-      let attrs = Ansi.sgr [ `Bold; `Fg Red; `Bg Blue ]
-
-      (* Override red with green *)
-      let changed = Ansi.sgr [ `Fg Red; `Fg Green ] (* Results in green *)
-    ]} *)
+  | RGBA of int * int * int * int
+      (** 32-bit RGBA color with alpha channel for blending *)
 
 (** {1 Cursor Control} *)
 
@@ -1063,7 +989,7 @@ val request_terminal_size_pixels : string
 
 (** {1 Styling and Colors} *)
 
-val sgr : attr list -> string
+val sgr : Style.attr list -> string
 (** [sgr attrs] creates SGR sequence for attributes.
 
     Combines multiple attributes efficiently. Empty list produces empty string.
@@ -1253,7 +1179,7 @@ val hyperlink : uri:string -> string -> string
       let styled = Ansi.style [ `Bold ] (Ansi.hyperlink ~uri:"#" "Click here")
     ]} *)
 
-val style : attr list -> string -> string
+val style : Style.attr list -> string -> string
 (** [style attrs s] applies attributes to string with smart reset.
 
     Wraps text with SGR sequences and targeted reset codes. Only resets
@@ -1282,64 +1208,23 @@ val rgb_of_color : color -> int * int * int
 (** Best‑effort conversion of an [Ansi.color] ( [`Index n] or [`RGB …] ) into an
     [r,g,b] triple in the 0‑255 range. Other variants return (0,0,0). *)
 
+(** {1 Pretty-printing} *)
+
+val pp_attr : Format.formatter -> Style.attr -> unit
+(** [pp_attr fmt attr] pretty-prints an attribute for debugging. *)
+
+val pp_attrs : Format.formatter -> Style.attr list -> unit
+(** [pp_attrs fmt attrs] pretty-prints a list of attributes for debugging. *)
+
+(** {1 Equality} *)
+
+val equal_color : color -> color -> bool
+(** [equal_color c1 c2] returns true if the two colors are equal. *)
+
+val equal_attr : Style.attr -> Style.attr -> bool
+(** [equal_attr a1 a2] returns true if the two attributes are equal. *)
+
 (** {1 Streaming Parser} *)
 
-(** Streaming ANSI / VT escape‑sequence tokenizer.
-
-    The module turns an arbitrary byte stream (which may arrive in chunks of any
-    size) into a sequence of high‑level [token] values, while preserving UTF‑8
-    integrity and handling common control‑ and OSC‑ sequences (notably OSC 8
-    hyperlinks). *)
-module Parser : sig
-  type control =
-    | CUU of int
-    | CUD of int
-    | CUF of int
-    | CUB of int
-    | CNL of int
-    | CPL of int
-    | CHA of int
-    | VPA of int
-    | CUP of int * int
-    | ED of int  (** Erase‑in‑Display *)
-    | EL of int  (** Erase‑in‑Line *)
-    | IL of int  (** Insert Line *)
-    | DL of int  (** Delete Line *)
-    | OSC of int * string  (** Generic OSC *)
-    | Hyperlink of ((string * string) list * string) option
-        (** OSC 8 open/close hyperlink.
-          [None]  → “close current link” ( ESC ] 8 ; ; ST )
-          [Some (kvs,uri)] → open a hyperlink with optional parameters. *)
-    | Reset  (** *RIS* – ESC c *)
-    | Unknown of string  (** Fallback for anything else *)
-    | DECSC  (** ESC 7 - Save cursor *)
-    | DECRC  (** ESC 8 - Restore cursor *)
-
-  type token =
-    | Text of string  (** Plain UTF‑8 text *)
-    | SGR of attr list  (** Complete Select‑Graphic‑Rendition command *)
-    | Control of control  (** Other recognised controls *)
-
-  type t
-  (** Mutable stream parser state. *)
-
-  val create : unit -> t
-  (** Fresh parser in the default state. *)
-
-  val reset : t -> unit
-  (** Clear internal buffers and return to the default state. *)
-
-  val pending : t -> bytes
-  (** Bytes currently buffered that have not yet formed a complete token (useful
-      for diagnostics or debugging). *)
-
-  val feed : t -> bytes -> int -> int -> token list
-  (** [feed p buf off len] consumes [len] bytes from [buf] starting at [off],
-      returning **any complete tokens** recognised so far. Partial
-      escape‑sequences or UTF‑8 characters are retained internally until more
-      data arrives. *)
-
-  val parse : string -> token list
-  (** Convenience wrapper that feeds the whole string at once and flushes the
-      parser afterwards. Not suitable for streaming use. *)
-end
+module Parser = Parser
+(** @inline *)

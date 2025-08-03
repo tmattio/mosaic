@@ -91,28 +91,54 @@ let parse_sgr_params params =
           push `Reset;
           loop (i + 1)
       | 39 ->
-          push (`Fg Default);
+          push (`Fg Style.Default);
           loop (i + 1)
       | 49 ->
-          push (`Bg Default);
+          push (`Bg Style.Default);
           loop (i + 1)
       | n when (30 <= n && n <= 37) || (90 <= n && n <= 97) ->
-          let color = match n with
-            | 30 -> Black | 31 -> Red | 32 -> Green | 33 -> Yellow
-            | 34 -> Blue | 35 -> Magenta | 36 -> Cyan | 37 -> White
-            | 90 -> Bright_black | 91 -> Bright_red | 92 -> Bright_green | 93 -> Bright_yellow
-            | 94 -> Bright_blue | 95 -> Bright_magenta | 96 -> Bright_cyan | 97 -> Bright_white
-            | _ -> Default
+          let color =
+            match n with
+            | 30 -> Style.Black
+            | 31 -> Style.Red
+            | 32 -> Style.Green
+            | 33 -> Style.Yellow
+            | 34 -> Style.Blue
+            | 35 -> Style.Magenta
+            | 36 -> Style.Cyan
+            | 37 -> Style.White
+            | 90 -> Style.Bright_black
+            | 91 -> Style.Bright_red
+            | 92 -> Style.Bright_green
+            | 93 -> Style.Bright_yellow
+            | 94 -> Style.Bright_blue
+            | 95 -> Style.Bright_magenta
+            | 96 -> Style.Bright_cyan
+            | 97 -> Style.Bright_white
+            | _ -> Style.Default
           in
           push (`Fg color);
           loop (i + 1)
       | n when (40 <= n && n <= 47) || (100 <= n && n <= 107) ->
-          let color = match n with
-            | 40 -> Black | 41 -> Red | 42 -> Green | 43 -> Yellow
-            | 44 -> Blue | 45 -> Magenta | 46 -> Cyan | 47 -> White
-            | 100 -> Bright_black | 101 -> Bright_red | 102 -> Bright_green | 103 -> Bright_yellow
-            | 104 -> Bright_blue | 105 -> Bright_magenta | 106 -> Bright_cyan | 107 -> Bright_white
-            | _ -> Default
+          let color =
+            match n with
+            | 40 -> Style.Black
+            | 41 -> Style.Red
+            | 42 -> Style.Green
+            | 43 -> Style.Yellow
+            | 44 -> Style.Blue
+            | 45 -> Style.Magenta
+            | 46 -> Style.Cyan
+            | 47 -> Style.White
+            | 100 -> Style.Bright_black
+            | 101 -> Style.Bright_red
+            | 102 -> Style.Bright_green
+            | 103 -> Style.Bright_yellow
+            | 104 -> Style.Bright_blue
+            | 105 -> Style.Bright_magenta
+            | 106 -> Style.Bright_cyan
+            | 107 -> Style.Bright_white
+            | _ -> Style.Default
           in
           push (`Bg color);
           loop (i + 1)
@@ -122,14 +148,16 @@ let parse_sgr_params params =
             match params.(i + 1) with
             | 5 when i + 2 < Array.length params ->
                 push
-                  (if bg then `Bg (Index params.(i + 2))
-                   else `Fg (Index params.(i + 2)));
+                  (if bg then `Bg (Style.Index params.(i + 2))
+                   else `Fg (Style.Index params.(i + 2)));
                 loop (i + 3)
             | 2 when i + 4 < Array.length params ->
                 let r, g, b =
                   (params.(i + 2), params.(i + 3), params.(i + 4))
                 in
-                push (if bg then `Bg (RGB (r, g, b)) else `Fg (RGB (r, g, b)));
+                push
+                  (if bg then `Bg (Style.RGB (r, g, b))
+                   else `Fg (Style.RGB (r, g, b)));
                 loop (i + 5)
             | _ -> loop (i + 1))
       | _ -> loop (i + 1)
@@ -141,11 +169,22 @@ let parse_csi body final : token option =
   let ints =
     if body = "" then [||]
     else
+      (* Parse parameters, treating empty strings as None *)
+      let params = String.split_on_char ';' body in
       Array.of_list
-        (List.filter_map int_of_string_opt (String.split_on_char ';' body))
+        (List.map
+           (fun s -> if s = "" then None else int_of_string_opt s)
+           params)
   in
-  let get n = if n < Array.length ints then ints.(n) else 1 in
-  let get_default default n = if n < Array.length ints then ints.(n) else default in
+  let get n =
+    if n < Array.length ints then match ints.(n) with Some v -> v | None -> 1
+    else 1
+  in
+  let get_default default n =
+    if n < Array.length ints then
+      match ints.(n) with Some v -> v | None -> default
+    else default
+  in
   match final with
   | 'A' -> Some (Control (CUU (get 0)))
   | 'B' -> Some (Control (CUD (get 0)))
@@ -160,8 +199,13 @@ let parse_csi body final : token option =
   | 'K' -> Some (Control (EL (get_default 0 0)))
   | 'L' -> Some (Control (IL (get 0)))
   | 'M' -> Some (Control (DL (get 0)))
-  | 'm' -> Some (SGR (parse_sgr_params ints))
-  | 'c' -> Some (Control (Unknown (Printf.sprintf "CSI[%s%c" body final))) (* DA - Device Attributes *)
+  | 'm' ->
+      (* Convert option array to int array for SGR parsing *)
+      let int_params = Array.map (function Some v -> v | None -> 0) ints in
+      Some (SGR (parse_sgr_params int_params))
+  | 'c' ->
+      Some (Control (Unknown (Printf.sprintf "CSI[%s%c" body final)))
+      (* DA - Device Attributes *)
   | _ -> Some (Control (Unknown (Printf.sprintf "CSI[%s%c" body final)))
 
 let parse_hyperlink data : control option =
@@ -284,9 +328,20 @@ let feed p (src : bytes) off len : token list =
                   (* Skip the character set designator *)
                   p.st <- Normal;
                   loop tokens (pos + 2))
-                else (
-                  (* Need more data *)
-                  (tokens, pos - 1))
+                else
+                  ( (* Need more data *)
+                    tokens,
+                    pos - 1 )
+            | '(' | ')' | '*' | '+' ->
+                (* ESC ( ) * + - Character set designation for G0-G3 *)
+                if pos + 1 < p.len then (
+                  (* Skip the character set designator *)
+                  p.st <- Normal;
+                  loop tokens (pos + 2))
+                else
+                  ( (* Need more data *)
+                    tokens,
+                    pos - 1 )
             | _ ->
                 Buffer.add_char p.text '\x1b';
                 p.st <- Normal;
