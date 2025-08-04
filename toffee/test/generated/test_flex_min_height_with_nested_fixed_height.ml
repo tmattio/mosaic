@@ -51,8 +51,8 @@ let test_flex_min_height_with_nested_fixed_height_border_box () =
           };
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Auto;
-            right = Toffee.Style.Length_percentage_auto.Auto;
+            left = Toffee.Style.Length_percentage_auto.Length 0.0;
+            right = Toffee.Style.Length_percentage_auto.Length 0.0;
             top = Toffee.Style.Length_percentage_auto.Length 8.0;
             bottom = Toffee.Style.Length_percentage_auto.Length 9.0;
           };
@@ -157,8 +157,8 @@ let test_flex_min_height_with_nested_fixed_height_content_box () =
           };
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Auto;
-            right = Toffee.Style.Length_percentage_auto.Auto;
+            left = Toffee.Style.Length_percentage_auto.Length 0.0;
+            right = Toffee.Style.Length_percentage_auto.Length 0.0;
             top = Toffee.Style.Length_percentage_auto.Length 8.0;
             bottom = Toffee.Style.Length_percentage_auto.Length 9.0;
           };

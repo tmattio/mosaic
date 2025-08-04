@@ -48,8 +48,8 @@ let test_flex_align_items_center_child_with_margin_bigger_than_parent_border_box
           {
             left = Toffee.Style.Length_percentage_auto.Length 10.0;
             right = Toffee.Style.Length_percentage_auto.Length 10.0;
-            top = Toffee.Style.Length_percentage_auto.Auto;
-            bottom = Toffee.Style.Length_percentage_auto.Auto;
+            top = Toffee.Style.Length_percentage_auto.Length 0.0;
+            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
           };
       }
   in
@@ -138,8 +138,8 @@ let test_flex_align_items_center_child_with_margin_bigger_than_parent_content_bo
           {
             left = Toffee.Style.Length_percentage_auto.Length 10.0;
             right = Toffee.Style.Length_percentage_auto.Length 10.0;
-            top = Toffee.Style.Length_percentage_auto.Auto;
-            bottom = Toffee.Style.Length_percentage_auto.Auto;
+            top = Toffee.Style.Length_percentage_auto.Length 0.0;
+            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
           };
         box_sizing = Toffee.Style.Content_box;
       }

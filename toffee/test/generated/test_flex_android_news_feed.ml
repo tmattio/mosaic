@@ -64,9 +64,9 @@ let test_flex_android_news_feed_border_box () =
         margin =
           {
             left = Toffee.Style.Length_percentage_auto.Length 36.0;
-            right = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Length 0.0;
             top = Toffee.Style.Length_percentage_auto.Length 24.0;
-            bottom = Toffee.Style.Length_percentage_auto.Auto;
+            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
           };
       }
   in
@@ -104,10 +104,10 @@ let test_flex_android_news_feed_border_box () =
         flex_shrink = 1.0;
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Auto;
+            left = Toffee.Style.Length_percentage_auto.Length 0.0;
             right = Toffee.Style.Length_percentage_auto.Length 36.0;
-            top = Toffee.Style.Length_percentage_auto.Auto;
-            bottom = Toffee.Style.Length_percentage_auto.Auto;
+            top = Toffee.Style.Length_percentage_auto.Length 0.0;
+            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
           };
         padding =
           {
@@ -157,9 +157,9 @@ let test_flex_android_news_feed_border_box () =
         margin =
           {
             left = Toffee.Style.Length_percentage_auto.Length 174.0;
-            right = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Length 0.0;
             top = Toffee.Style.Length_percentage_auto.Length 24.0;
-            bottom = Toffee.Style.Length_percentage_auto.Auto;
+            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
           };
       }
   in
@@ -197,10 +197,10 @@ let test_flex_android_news_feed_border_box () =
         flex_shrink = 1.0;
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Auto;
+            left = Toffee.Style.Length_percentage_auto.Length 0.0;
             right = Toffee.Style.Length_percentage_auto.Length 36.0;
-            top = Toffee.Style.Length_percentage_auto.Auto;
-            bottom = Toffee.Style.Length_percentage_auto.Auto;
+            top = Toffee.Style.Length_percentage_auto.Length 0.0;
+            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
           };
         padding =
           {
@@ -417,9 +417,9 @@ let test_flex_android_news_feed_content_box () =
         margin =
           {
             left = Toffee.Style.Length_percentage_auto.Length 36.0;
-            right = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Length 0.0;
             top = Toffee.Style.Length_percentage_auto.Length 24.0;
-            bottom = Toffee.Style.Length_percentage_auto.Auto;
+            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
           };
         box_sizing = Toffee.Style.Content_box;
       }
@@ -460,10 +460,10 @@ let test_flex_android_news_feed_content_box () =
         flex_shrink = 1.0;
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Auto;
+            left = Toffee.Style.Length_percentage_auto.Length 0.0;
             right = Toffee.Style.Length_percentage_auto.Length 36.0;
-            top = Toffee.Style.Length_percentage_auto.Auto;
-            bottom = Toffee.Style.Length_percentage_auto.Auto;
+            top = Toffee.Style.Length_percentage_auto.Length 0.0;
+            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
           };
         padding =
           {
@@ -517,9 +517,9 @@ let test_flex_android_news_feed_content_box () =
         margin =
           {
             left = Toffee.Style.Length_percentage_auto.Length 174.0;
-            right = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Length 0.0;
             top = Toffee.Style.Length_percentage_auto.Length 24.0;
-            bottom = Toffee.Style.Length_percentage_auto.Auto;
+            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
           };
         box_sizing = Toffee.Style.Content_box;
       }
@@ -560,10 +560,10 @@ let test_flex_android_news_feed_content_box () =
         flex_shrink = 1.0;
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Auto;
+            left = Toffee.Style.Length_percentage_auto.Length 0.0;
             right = Toffee.Style.Length_percentage_auto.Length 36.0;
-            top = Toffee.Style.Length_percentage_auto.Auto;
-            bottom = Toffee.Style.Length_percentage_auto.Auto;
+            top = Toffee.Style.Length_percentage_auto.Length 0.0;
+            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
           };
         padding =
           {

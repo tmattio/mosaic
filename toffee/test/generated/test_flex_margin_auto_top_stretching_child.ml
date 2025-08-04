@@ -34,10 +34,10 @@ let test_flex_margin_auto_top_stretching_child_border_box () =
         flex_basis = Toffee.Style.Dimension.percent 0.0;
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Auto;
-            right = Toffee.Style.Length_percentage_auto.Auto;
+            left = Toffee.Style.Length_percentage_auto.Length 0.0;
+            right = Toffee.Style.Length_percentage_auto.Length 0.0;
             top = Toffee.Style.Length_percentage_auto.Auto;
-            bottom = Toffee.Style.Length_percentage_auto.Auto;
+            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
           };
       }
   in
@@ -123,10 +123,10 @@ let test_flex_margin_auto_top_stretching_child_content_box () =
         flex_basis = Toffee.Style.Dimension.percent 0.0;
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Auto;
-            right = Toffee.Style.Length_percentage_auto.Auto;
+            left = Toffee.Style.Length_percentage_auto.Length 0.0;
+            right = Toffee.Style.Length_percentage_auto.Length 0.0;
             top = Toffee.Style.Length_percentage_auto.Auto;
-            bottom = Toffee.Style.Length_percentage_auto.Auto;
+            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
           };
         box_sizing = Toffee.Style.Content_box;
       }

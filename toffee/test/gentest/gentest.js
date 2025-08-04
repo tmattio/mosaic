@@ -257,23 +257,23 @@ function styleToOCaml(style) {
 
   // Margin/Padding/Border
   if (style.margin) {
-    const margin = rectToOCaml(style.margin, true);  // margin uses Length_percentage_auto
+    const margin = rectToOCaml(style.margin, 'margin');  // margin uses Length_percentage_auto
     if (margin) fields.push(`margin = ${margin}`);
   }
 
   if (style.padding) {
-    const padding = rectToOCaml(style.padding, false);  // padding uses Length_percentage
+    const padding = rectToOCaml(style.padding, 'padding');  // padding uses Length_percentage
     if (padding) fields.push(`padding = ${padding}`);
   }
 
   if (style.border) {
-    const border = rectToOCaml(style.border, false);  // border uses Length_percentage
+    const border = rectToOCaml(style.border, 'border');  // border uses Length_percentage
     if (border) fields.push(`border = ${border}`);
   }
 
   // Positioning (inset)
   if (style.inset) {
-    const inset = rectToOCaml(style.inset, true);  // inset uses Length_percentage_auto
+    const inset = rectToOCaml(style.inset, 'inset');  // inset uses Length_percentage_auto
     if (inset) fields.push(`inset = ${inset}`);
   }
 
@@ -527,19 +527,26 @@ function gapToOCaml(gap) {
   return `{ width = ${width}; height = ${height} }`;
 }
 
-function rectToOCaml(rect, isMarginOrInset = false) {
+function rectToOCaml(rect, fieldType = 'default') {
   if (!rect) return null;
 
   // Helper to convert a single edge value
   const convertEdge = (edge) => {
     if (!edge) {
-      // For margin/inset, missing values should be Auto, not 0
-      return isMarginOrInset
-        ? 'Toffee.Style.Length_percentage_auto.Auto'
-        : 'Toffee.Style.Length_percentage.Length (0.0)';
+      // Default behavior based on field type:
+      // - margin: missing values should be zero() = Length(0.0)
+      // - inset: missing values should be auto() = Auto
+      // - padding/border: missing values should be Length(0.0)
+      if (fieldType === 'margin') {
+        return 'Toffee.Style.Length_percentage_auto.Length (0.0)';
+      } else if (fieldType === 'inset') {
+        return 'Toffee.Style.Length_percentage_auto.Auto';
+      } else {
+        return 'Toffee.Style.Length_percentage.Length (0.0)';
+      }
     }
 
-    const prefix = isMarginOrInset
+    const prefix = (fieldType === 'margin' || fieldType === 'inset')
       ? 'Toffee.Style.Length_percentage_auto'
       : 'Toffee.Style.Length_percentage';
 
@@ -561,11 +568,9 @@ function rectToOCaml(rect, isMarginOrInset = false) {
         // Wrap in parentheses for OCaml syntax
         return `${prefix}.Percent (${percentVal})`;
       case 'auto':
-        return isMarginOrInset ? `${prefix}.Auto` : `${prefix}.Length (0.0)`;
+        return (fieldType === 'margin' || fieldType === 'inset') ? `${prefix}.Auto` : `${prefix}.Length (0.0)`;
       default:
-        return isMarginOrInset
-          ? `${prefix}.Length (0.0)`
-          : `${prefix}.Length (0.0)`;
+        return `${prefix}.Length (0.0)`;
     }
   };
 

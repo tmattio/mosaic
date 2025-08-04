@@ -125,8 +125,8 @@ let test_block_margin_auto_left_and_right_with_auto_width_border_box
           {
             left = Toffee.Style.Length_percentage_auto.Auto;
             right = Toffee.Style.Length_percentage_auto.Auto;
-            top = Toffee.Style.Length_percentage_auto.Auto;
-            bottom = Toffee.Style.Length_percentage_auto.Auto;
+            top = Toffee.Style.Length_percentage_auto.Length 0.0;
+            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
           };
       }
   in
@@ -209,8 +209,8 @@ let test_block_margin_auto_left_and_right_with_auto_width_content_box
           {
             left = Toffee.Style.Length_percentage_auto.Auto;
             right = Toffee.Style.Length_percentage_auto.Auto;
-            top = Toffee.Style.Length_percentage_auto.Auto;
-            bottom = Toffee.Style.Length_percentage_auto.Auto;
+            top = Toffee.Style.Length_percentage_auto.Length 0.0;
+            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
           };
         box_sizing = Toffee.Style.Content_box;
       }

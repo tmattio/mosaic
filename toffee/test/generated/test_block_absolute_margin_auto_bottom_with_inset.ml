@@ -38,9 +38,9 @@ let test_block_absolute_margin_auto_bottom_with_inset_border_box () =
           };
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Auto;
-            right = Toffee.Style.Length_percentage_auto.Auto;
-            top = Toffee.Style.Length_percentage_auto.Auto;
+            left = Toffee.Style.Length_percentage_auto.Length 0.0;
+            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            top = Toffee.Style.Length_percentage_auto.Length 0.0;
             bottom = Toffee.Style.Length_percentage_auto.Auto;
           };
         inset =
@@ -120,9 +120,9 @@ let test_block_absolute_margin_auto_bottom_with_inset_content_box () =
           };
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Auto;
-            right = Toffee.Style.Length_percentage_auto.Auto;
-            top = Toffee.Style.Length_percentage_auto.Auto;
+            left = Toffee.Style.Length_percentage_auto.Length 0.0;
+            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            top = Toffee.Style.Length_percentage_auto.Length 0.0;
             bottom = Toffee.Style.Length_percentage_auto.Auto;
           };
         inset =

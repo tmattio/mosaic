@@ -33,9 +33,9 @@ let test_block_margin_y_last_child_collapse_blocked_by_overflow_x_hidden_border_
         display = Toffee.Style.Block;
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Auto;
-            right = Toffee.Style.Length_percentage_auto.Auto;
-            top = Toffee.Style.Length_percentage_auto.Auto;
+            left = Toffee.Style.Length_percentage_auto.Length 0.0;
+            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            top = Toffee.Style.Length_percentage_auto.Length 0.0;
             bottom = Toffee.Style.Length_percentage_auto.Length 10.0;
           };
         overflow = { x = Toffee.Style.Hidden; y = Toffee.Style.Visible };
@@ -49,9 +49,9 @@ let test_block_margin_y_last_child_collapse_blocked_by_overflow_x_hidden_border_
         display = Toffee.Style.Block;
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Auto;
-            right = Toffee.Style.Length_percentage_auto.Auto;
-            top = Toffee.Style.Length_percentage_auto.Auto;
+            left = Toffee.Style.Length_percentage_auto.Length 0.0;
+            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            top = Toffee.Style.Length_percentage_auto.Length 0.0;
             bottom = Toffee.Style.Length_percentage_auto.Length 10.0;
           };
       }
@@ -149,9 +149,9 @@ let test_block_margin_y_last_child_collapse_blocked_by_overflow_x_hidden_content
         display = Toffee.Style.Block;
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Auto;
-            right = Toffee.Style.Length_percentage_auto.Auto;
-            top = Toffee.Style.Length_percentage_auto.Auto;
+            left = Toffee.Style.Length_percentage_auto.Length 0.0;
+            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            top = Toffee.Style.Length_percentage_auto.Length 0.0;
             bottom = Toffee.Style.Length_percentage_auto.Length 10.0;
           };
         overflow = { x = Toffee.Style.Hidden; y = Toffee.Style.Visible };
@@ -166,9 +166,9 @@ let test_block_margin_y_last_child_collapse_blocked_by_overflow_x_hidden_content
         display = Toffee.Style.Block;
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Auto;
-            right = Toffee.Style.Length_percentage_auto.Auto;
-            top = Toffee.Style.Length_percentage_auto.Auto;
+            left = Toffee.Style.Length_percentage_auto.Length 0.0;
+            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            top = Toffee.Style.Length_percentage_auto.Length 0.0;
             bottom = Toffee.Style.Length_percentage_auto.Length 10.0;
           };
         box_sizing = Toffee.Style.Content_box;
