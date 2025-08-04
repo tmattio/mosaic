@@ -18,7 +18,6 @@ let test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hid
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         size =
           {
@@ -31,7 +30,6 @@ let test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hid
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         flex_direction = Toffee.Style.Flex.Column;
         inset =
@@ -48,7 +46,6 @@ let test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hid
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -109,7 +106,6 @@ let test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hid
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         size =
           {
@@ -123,7 +119,6 @@ let test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hid
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         flex_direction = Toffee.Style.Flex.Column;
         inset =
@@ -141,7 +136,6 @@ let test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hid
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;

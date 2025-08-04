@@ -88,50 +88,23 @@ let test_grid_align_content_end_negative_space_gap_border_box () =
       }
   in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
-  let node1 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node1 = Toffee.new_leaf tree Toffee.Style.default in
   let _ = Toffee.add_child tree node0 node1 |> Result.get_ok in
-  let node2 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node2 = Toffee.new_leaf tree Toffee.Style.default in
   let _ = Toffee.add_child tree node0 node2 |> Result.get_ok in
-  let node3 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node3 = Toffee.new_leaf tree Toffee.Style.default in
   let _ = Toffee.add_child tree node0 node3 |> Result.get_ok in
-  let node4 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node4 = Toffee.new_leaf tree Toffee.Style.default in
   let _ = Toffee.add_child tree node0 node4 |> Result.get_ok in
-  let node5 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node5 = Toffee.new_leaf tree Toffee.Style.default in
   let _ = Toffee.add_child tree node0 node5 |> Result.get_ok in
-  let node6 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node6 = Toffee.new_leaf tree Toffee.Style.default in
   let _ = Toffee.add_child tree node0 node6 |> Result.get_ok in
-  let node7 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node7 = Toffee.new_leaf tree Toffee.Style.default in
   let _ = Toffee.add_child tree node0 node7 |> Result.get_ok in
-  let node8 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node8 = Toffee.new_leaf tree Toffee.Style.default in
   let _ = Toffee.add_child tree node0 node8 |> Result.get_ok in
-  let node9 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node9 = Toffee.new_leaf tree Toffee.Style.default in
   let _ = Toffee.add_child tree node0 node9 |> Result.get_ok in
 
   (* Compute layout *)
@@ -307,83 +280,47 @@ let test_grid_align_content_end_negative_space_gap_content_box () =
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
   let node1 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let _ = Toffee.add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let _ = Toffee.add_child tree node0 node2 |> Result.get_ok in
   let node3 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let _ = Toffee.add_child tree node0 node3 |> Result.get_ok in
   let node4 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let _ = Toffee.add_child tree node0 node4 |> Result.get_ok in
   let node5 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let _ = Toffee.add_child tree node0 node5 |> Result.get_ok in
   let node6 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let _ = Toffee.add_child tree node0 node6 |> Result.get_ok in
   let node7 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let _ = Toffee.add_child tree node0 node7 |> Result.get_ok in
   let node8 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let _ = Toffee.add_child tree node0 node8 |> Result.get_ok in
   let node9 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let _ = Toffee.add_child tree node0 node9 |> Result.get_ok in
 

@@ -29,7 +29,6 @@ let test_block_absolute_margin_auto_left_without_inset_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {
@@ -104,7 +103,6 @@ let test_block_absolute_margin_auto_left_without_inset_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {

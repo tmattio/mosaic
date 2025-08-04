@@ -43,7 +43,6 @@ let test_grid_absolute_layout_within_border_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {
@@ -64,7 +63,6 @@ let test_grid_absolute_layout_within_border_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {
@@ -85,7 +83,6 @@ let test_grid_absolute_layout_within_border_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {
@@ -113,7 +110,6 @@ let test_grid_absolute_layout_within_border_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {
@@ -227,7 +223,6 @@ let test_grid_absolute_layout_within_border_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {
@@ -249,7 +244,6 @@ let test_grid_absolute_layout_within_border_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {
@@ -271,7 +265,6 @@ let test_grid_absolute_layout_within_border_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {
@@ -300,7 +293,6 @@ let test_grid_absolute_layout_within_border_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {

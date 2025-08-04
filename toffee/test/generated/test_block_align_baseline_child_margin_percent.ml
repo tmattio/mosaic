@@ -17,7 +17,6 @@ let test_block_align_baseline_child_margin_percent_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_items = Some Toffee.Style.Alignment.Baseline;
         size =
@@ -137,7 +136,6 @@ let test_block_align_baseline_child_margin_percent_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_items = Some Toffee.Style.Alignment.Baseline;
         size =

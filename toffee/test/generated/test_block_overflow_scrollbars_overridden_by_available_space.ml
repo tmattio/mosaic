@@ -34,7 +34,6 @@ let test_block_overflow_scrollbars_overridden_by_available_space_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         inset =
           {
@@ -120,7 +119,6 @@ let test_block_overflow_scrollbars_overridden_by_available_space_content_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         inset =
           {

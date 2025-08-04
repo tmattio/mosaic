@@ -67,7 +67,6 @@ let test_grid_absolute_row_start_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         grid_row =
           { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
@@ -177,7 +176,6 @@ let test_grid_absolute_row_start_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         grid_row =
           { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };

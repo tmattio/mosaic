@@ -18,7 +18,6 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_b
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Center;
         align_content = Some Toffee.Style.Alignment.Flex_start;
         size =
@@ -37,7 +36,6 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_b
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -50,7 +48,6 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_b
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -111,7 +108,6 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_c
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Center;
         align_content = Some Toffee.Style.Alignment.Flex_start;
         size =
@@ -131,7 +127,6 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_c
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -145,7 +140,6 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_c
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;

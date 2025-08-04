@@ -13,15 +13,11 @@ let test_flex_absolute_padding_border_overrides_max_size_border_box () =
   let tree = Toffee.create () in
 
   (* Create nodes *)
-  let node =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node = Toffee.new_leaf tree Toffee.Style.default in
   let node0 =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         max_size =
           {
@@ -88,17 +84,12 @@ let test_flex_absolute_padding_border_overrides_max_size_content_box () =
   (* Create nodes *)
   let node =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let node0 =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         max_size =
           {

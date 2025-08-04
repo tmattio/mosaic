@@ -18,7 +18,6 @@ let test_flex_width_smaller_then_content_with_flex_grow_very_large_size_border_b
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         size =
           {
@@ -31,7 +30,6 @@ let test_flex_width_smaller_then_content_with_flex_grow_very_large_size_border_b
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         flex_grow = 1.0;
         size =
@@ -46,7 +44,6 @@ let test_flex_width_smaller_then_content_with_flex_grow_very_large_size_border_b
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 70.0;
@@ -59,7 +56,6 @@ let test_flex_width_smaller_then_content_with_flex_grow_very_large_size_border_b
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         flex_grow = 1.0;
         size =
@@ -74,7 +70,6 @@ let test_flex_width_smaller_then_content_with_flex_grow_very_large_size_border_b
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 20.0;
@@ -147,7 +142,6 @@ let test_flex_width_smaller_then_content_with_flex_grow_very_large_size_content_
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         size =
           {
@@ -161,7 +155,6 @@ let test_flex_width_smaller_then_content_with_flex_grow_very_large_size_content_
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         flex_grow = 1.0;
         size =
@@ -177,7 +170,6 @@ let test_flex_width_smaller_then_content_with_flex_grow_very_large_size_content_
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 70.0;
@@ -191,7 +183,6 @@ let test_flex_width_smaller_then_content_with_flex_grow_very_large_size_content_
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         flex_grow = 1.0;
         size =
@@ -207,7 +198,6 @@ let test_flex_width_smaller_then_content_with_flex_grow_very_large_size_content_
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 20.0;

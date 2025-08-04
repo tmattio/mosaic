@@ -74,10 +74,7 @@ let test_flex_intrinsic_sizing_main_size_row_border_box measure_function () =
   let tree = Toffee.create () in
 
   (* Create nodes *)
-  let node =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node = Toffee.new_leaf tree Toffee.Style.default in
   let _ =
     Toffee.set_node_context tree node (MeasureFunction.Text "HH​HH")
     |> Result.get_ok
@@ -120,11 +117,7 @@ let test_flex_intrinsic_sizing_main_size_row_content_box measure_function () =
   (* Create nodes *)
   let node =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let _ =
     Toffee.set_node_context tree node (MeasureFunction.Text "HH​HH")

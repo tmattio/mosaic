@@ -91,7 +91,6 @@ let test_flex_content_size_border_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -104,7 +103,6 @@ let test_flex_content_size_border_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         flex_shrink = 0.0;
         size =
@@ -192,7 +190,6 @@ let test_flex_content_size_content_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -206,7 +203,6 @@ let test_flex_content_size_content_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         flex_shrink = 0.0;
         size =

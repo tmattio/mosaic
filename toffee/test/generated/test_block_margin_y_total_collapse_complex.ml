@@ -29,7 +29,6 @@ let test_block_margin_y_total_collapse_complex_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -49,7 +48,6 @@ let test_block_margin_y_total_collapse_complex_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -69,7 +67,6 @@ let test_block_margin_y_total_collapse_complex_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -89,7 +86,6 @@ let test_block_margin_y_total_collapse_complex_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -109,7 +105,6 @@ let test_block_margin_y_total_collapse_complex_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -129,7 +124,6 @@ let test_block_margin_y_total_collapse_complex_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -149,7 +143,6 @@ let test_block_margin_y_total_collapse_complex_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -259,7 +252,6 @@ let test_block_margin_y_total_collapse_complex_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -280,7 +272,6 @@ let test_block_margin_y_total_collapse_complex_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -301,7 +292,6 @@ let test_block_margin_y_total_collapse_complex_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -322,7 +312,6 @@ let test_block_margin_y_total_collapse_complex_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -343,7 +332,6 @@ let test_block_margin_y_total_collapse_complex_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -364,7 +352,6 @@ let test_block_margin_y_total_collapse_complex_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -385,7 +372,6 @@ let test_block_margin_y_total_collapse_complex_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;

@@ -18,7 +18,6 @@ let test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild_border
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -31,7 +30,6 @@ let test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild_border
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         flex_direction = Toffee.Style.Flex.Column;
         max_size =
@@ -53,7 +51,6 @@ let test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild_border
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_shrink = 1.0;
         flex_basis = Toffee.Style.Dimension.length 150.0;
         size =
@@ -116,7 +113,6 @@ let test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild_conten
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -130,7 +126,6 @@ let test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild_conten
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         flex_direction = Toffee.Style.Flex.Column;
         max_size =
@@ -153,7 +148,6 @@ let test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild_conten
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_shrink = 1.0;
         flex_basis = Toffee.Style.Dimension.length 150.0;
         size =

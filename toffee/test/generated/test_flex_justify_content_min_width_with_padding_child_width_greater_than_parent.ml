@@ -18,7 +18,6 @@ let test_flex_justify_content_min_width_with_padding_child_width_greater_than_pa
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_content = Some Toffee.Style.Alignment.Stretch;
         size =
@@ -32,7 +31,6 @@ let test_flex_justify_content_min_width_with_padding_child_width_greater_than_pa
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_content = Some Toffee.Style.Alignment.Stretch;
       }
@@ -42,7 +40,6 @@ let test_flex_justify_content_min_width_with_padding_child_width_greater_than_pa
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         justify_content = Some Toffee.Style.Alignment.Center;
         align_content = Some Toffee.Style.Alignment.Stretch;
@@ -65,7 +62,6 @@ let test_flex_justify_content_min_width_with_padding_child_width_greater_than_pa
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_content = Some Toffee.Style.Alignment.Stretch;
         size =
@@ -134,7 +130,6 @@ let test_flex_justify_content_min_width_with_padding_child_width_greater_than_pa
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_content = Some Toffee.Style.Alignment.Stretch;
         size =
@@ -149,7 +144,6 @@ let test_flex_justify_content_min_width_with_padding_child_width_greater_than_pa
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_content = Some Toffee.Style.Alignment.Stretch;
         box_sizing = Toffee.Style.Content_box;
@@ -160,7 +154,6 @@ let test_flex_justify_content_min_width_with_padding_child_width_greater_than_pa
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         justify_content = Some Toffee.Style.Alignment.Center;
         align_content = Some Toffee.Style.Alignment.Stretch;
@@ -184,7 +177,6 @@ let test_flex_justify_content_min_width_with_padding_child_width_greater_than_pa
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_content = Some Toffee.Style.Alignment.Stretch;
         size =

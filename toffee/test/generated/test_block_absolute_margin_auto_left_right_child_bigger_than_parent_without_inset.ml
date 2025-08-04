@@ -30,7 +30,6 @@ let test_block_absolute_margin_auto_left_right_child_bigger_than_parent_without_
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {
@@ -106,7 +105,6 @@ let test_block_absolute_margin_auto_left_right_child_bigger_than_parent_without_
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {

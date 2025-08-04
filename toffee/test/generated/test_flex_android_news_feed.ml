@@ -17,7 +17,6 @@ let test_flex_android_news_feed_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 0.0;
@@ -32,7 +31,6 @@ let test_flex_android_news_feed_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         flex_shrink = 0.0;
       }
@@ -42,7 +40,6 @@ let test_flex_android_news_feed_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_content = Some Toffee.Style.Alignment.Stretch;
       }
@@ -52,7 +49,6 @@ let test_flex_android_news_feed_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_content = Some Toffee.Style.Alignment.Stretch;
       }
@@ -62,7 +58,6 @@ let test_flex_android_news_feed_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_items = Some Toffee.Style.Alignment.Flex_start;
         align_content = Some Toffee.Style.Alignment.Stretch;
@@ -80,7 +75,6 @@ let test_flex_android_news_feed_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 0.0;
@@ -91,7 +85,6 @@ let test_flex_android_news_feed_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 0.0;
         size =
@@ -106,7 +99,6 @@ let test_flex_android_news_feed_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 1.0;
@@ -131,7 +123,6 @@ let test_flex_android_news_feed_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 1.0;
@@ -142,7 +133,6 @@ let test_flex_android_news_feed_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 1.0;
       }
@@ -152,7 +142,6 @@ let test_flex_android_news_feed_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_content = Some Toffee.Style.Alignment.Stretch;
       }
@@ -162,7 +151,6 @@ let test_flex_android_news_feed_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_items = Some Toffee.Style.Alignment.Flex_start;
         align_content = Some Toffee.Style.Alignment.Stretch;
@@ -180,7 +168,6 @@ let test_flex_android_news_feed_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 0.0;
@@ -191,7 +178,6 @@ let test_flex_android_news_feed_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 0.0;
         size =
@@ -206,7 +192,6 @@ let test_flex_android_news_feed_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 1.0;
@@ -231,7 +216,6 @@ let test_flex_android_news_feed_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 1.0;
@@ -242,7 +226,6 @@ let test_flex_android_news_feed_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 1.0;
       }
@@ -383,7 +366,6 @@ let test_flex_android_news_feed_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 0.0;
@@ -399,7 +381,6 @@ let test_flex_android_news_feed_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         flex_shrink = 0.0;
         box_sizing = Toffee.Style.Content_box;
@@ -410,7 +391,6 @@ let test_flex_android_news_feed_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_content = Some Toffee.Style.Alignment.Stretch;
         box_sizing = Toffee.Style.Content_box;
@@ -421,7 +401,6 @@ let test_flex_android_news_feed_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_content = Some Toffee.Style.Alignment.Stretch;
         box_sizing = Toffee.Style.Content_box;
@@ -432,7 +411,6 @@ let test_flex_android_news_feed_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_items = Some Toffee.Style.Alignment.Flex_start;
         align_content = Some Toffee.Style.Alignment.Stretch;
@@ -451,7 +429,6 @@ let test_flex_android_news_feed_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 0.0;
@@ -463,7 +440,6 @@ let test_flex_android_news_feed_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 0.0;
         size =
@@ -479,7 +455,6 @@ let test_flex_android_news_feed_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 1.0;
@@ -505,7 +480,6 @@ let test_flex_android_news_feed_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 1.0;
@@ -517,7 +491,6 @@ let test_flex_android_news_feed_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 1.0;
         box_sizing = Toffee.Style.Content_box;
@@ -528,7 +501,6 @@ let test_flex_android_news_feed_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_content = Some Toffee.Style.Alignment.Stretch;
         box_sizing = Toffee.Style.Content_box;
@@ -539,7 +511,6 @@ let test_flex_android_news_feed_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_items = Some Toffee.Style.Alignment.Flex_start;
         align_content = Some Toffee.Style.Alignment.Stretch;
@@ -558,7 +529,6 @@ let test_flex_android_news_feed_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 0.0;
@@ -570,7 +540,6 @@ let test_flex_android_news_feed_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 0.0;
         size =
@@ -586,7 +555,6 @@ let test_flex_android_news_feed_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 1.0;
@@ -612,7 +580,6 @@ let test_flex_android_news_feed_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 1.0;
@@ -624,7 +591,6 @@ let test_flex_android_news_feed_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_content = Some Toffee.Style.Alignment.Stretch;
         flex_shrink = 1.0;
         box_sizing = Toffee.Style.Content_box;

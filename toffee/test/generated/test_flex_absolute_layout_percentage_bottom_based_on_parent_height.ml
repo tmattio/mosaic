@@ -18,7 +18,6 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_border_bo
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -30,7 +29,6 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_border_bo
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {
@@ -51,7 +49,6 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_border_bo
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {
@@ -72,7 +69,6 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_border_bo
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {
@@ -147,7 +143,6 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_content_b
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -160,7 +155,6 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_content_b
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {
@@ -182,7 +176,6 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_content_b
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {
@@ -204,7 +197,6 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_content_b
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {

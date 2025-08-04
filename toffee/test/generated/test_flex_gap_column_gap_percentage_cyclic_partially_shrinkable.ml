@@ -18,7 +18,6 @@ let test_flex_gap_column_gap_percentage_cyclic_partially_shrinkable_border_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         gap =
           {
@@ -31,7 +30,6 @@ let test_flex_gap_column_gap_percentage_cyclic_partially_shrinkable_border_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -45,7 +43,6 @@ let test_flex_gap_column_gap_percentage_cyclic_partially_shrinkable_border_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 20.0;
@@ -58,7 +55,6 @@ let test_flex_gap_column_gap_percentage_cyclic_partially_shrinkable_border_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -126,7 +122,6 @@ let test_flex_gap_column_gap_percentage_cyclic_partially_shrinkable_content_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         gap =
           {
@@ -140,7 +135,6 @@ let test_flex_gap_column_gap_percentage_cyclic_partially_shrinkable_content_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -155,7 +149,6 @@ let test_flex_gap_column_gap_percentage_cyclic_partially_shrinkable_content_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 20.0;
@@ -169,7 +162,6 @@ let test_flex_gap_column_gap_percentage_cyclic_partially_shrinkable_content_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {

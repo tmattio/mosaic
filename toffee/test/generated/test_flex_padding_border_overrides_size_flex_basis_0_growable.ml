@@ -14,15 +14,11 @@ let test_flex_padding_border_overrides_size_flex_basis_0_growable_border_box ()
   let tree = Toffee.create () in
 
   (* Create nodes *)
-  let node =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node = Toffee.new_leaf tree Toffee.Style.default in
   let node0 =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_basis = Toffee.Style.Dimension.length 0.0;
         size =
@@ -51,7 +47,6 @@ let test_flex_padding_border_overrides_size_flex_basis_0_growable_border_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_basis = Toffee.Style.Dimension.length 0.0;
         size =
@@ -112,17 +107,12 @@ let test_flex_padding_border_overrides_size_flex_basis_0_growable_content_box ()
   (* Create nodes *)
   let node =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let node0 =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_basis = Toffee.Style.Dimension.length 0.0;
         size =
@@ -152,7 +142,6 @@ let test_flex_padding_border_overrides_size_flex_basis_0_growable_content_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_basis = Toffee.Style.Dimension.length 0.0;
         size =

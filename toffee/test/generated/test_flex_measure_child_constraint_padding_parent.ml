@@ -79,7 +79,6 @@ let test_flex_measure_child_constraint_padding_parent_border_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -94,10 +93,7 @@ let test_flex_measure_child_constraint_padding_parent_border_box
           };
       }
   in
-  let node0 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node0 = Toffee.new_leaf tree Toffee.Style.default in
   let _ =
     Toffee.set_node_context tree node0
       (MeasureFunction.Text
@@ -152,7 +148,6 @@ let test_flex_measure_child_constraint_padding_parent_content_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -170,11 +165,7 @@ let test_flex_measure_child_constraint_padding_parent_content_box
   in
   let node0 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let _ =
     Toffee.set_node_context tree node0

@@ -17,7 +17,6 @@ let test_flex_basis_overrides_main_size_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -29,7 +28,6 @@ let test_flex_basis_overrides_main_size_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_basis = Toffee.Style.Dimension.length 50.0;
         size =
@@ -44,7 +42,6 @@ let test_flex_basis_overrides_main_size_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         size =
           {
@@ -58,7 +55,6 @@ let test_flex_basis_overrides_main_size_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         size =
           {
@@ -125,7 +121,6 @@ let test_flex_basis_overrides_main_size_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -138,7 +133,6 @@ let test_flex_basis_overrides_main_size_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_basis = Toffee.Style.Dimension.length 50.0;
         size =
@@ -154,7 +148,6 @@ let test_flex_basis_overrides_main_size_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         size =
           {
@@ -169,7 +162,6 @@ let test_flex_basis_overrides_main_size_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         size =
           {

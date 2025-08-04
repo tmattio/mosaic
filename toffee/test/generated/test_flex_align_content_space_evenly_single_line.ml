@@ -17,7 +17,6 @@ let test_flex_align_content_space_evenly_single_line_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_content = Some Toffee.Style.Alignment.Space_evenly;
         size =
@@ -31,7 +30,6 @@ let test_flex_align_content_space_evenly_single_line_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -44,7 +42,6 @@ let test_flex_align_content_space_evenly_single_line_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -57,7 +54,6 @@ let test_flex_align_content_space_evenly_single_line_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -70,7 +66,6 @@ let test_flex_align_content_space_evenly_single_line_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -83,7 +78,6 @@ let test_flex_align_content_space_evenly_single_line_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -96,7 +90,6 @@ let test_flex_align_content_space_evenly_single_line_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -180,7 +173,6 @@ let test_flex_align_content_space_evenly_single_line_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_content = Some Toffee.Style.Alignment.Space_evenly;
         size =
@@ -195,7 +187,6 @@ let test_flex_align_content_space_evenly_single_line_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -209,7 +200,6 @@ let test_flex_align_content_space_evenly_single_line_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -223,7 +213,6 @@ let test_flex_align_content_space_evenly_single_line_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -237,7 +226,6 @@ let test_flex_align_content_space_evenly_single_line_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -251,7 +239,6 @@ let test_flex_align_content_space_evenly_single_line_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -265,7 +252,6 @@ let test_flex_align_content_space_evenly_single_line_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;

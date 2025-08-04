@@ -43,7 +43,6 @@ let test_grid_absolute_layout_within_border_static_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         align_self = Some Toffee.Style.Alignment.Start;
         justify_self = Some Toffee.Style.Alignment.Start;
@@ -59,7 +58,6 @@ let test_grid_absolute_layout_within_border_static_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         align_self = Some Toffee.Style.Alignment.End;
         justify_self = Some Toffee.Style.Alignment.End;
@@ -75,7 +73,6 @@ let test_grid_absolute_layout_within_border_static_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         align_self = Some Toffee.Style.Alignment.Start;
         justify_self = Some Toffee.Style.Alignment.Start;
@@ -98,7 +95,6 @@ let test_grid_absolute_layout_within_border_static_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         align_self = Some Toffee.Style.Alignment.End;
         justify_self = Some Toffee.Style.Alignment.End;
@@ -207,7 +203,6 @@ let test_grid_absolute_layout_within_border_static_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         align_self = Some Toffee.Style.Alignment.Start;
         justify_self = Some Toffee.Style.Alignment.Start;
@@ -224,7 +219,6 @@ let test_grid_absolute_layout_within_border_static_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         align_self = Some Toffee.Style.Alignment.End;
         justify_self = Some Toffee.Style.Alignment.End;
@@ -241,7 +235,6 @@ let test_grid_absolute_layout_within_border_static_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         align_self = Some Toffee.Style.Alignment.Start;
         justify_self = Some Toffee.Style.Alignment.Start;
@@ -265,7 +258,6 @@ let test_grid_absolute_layout_within_border_static_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         align_self = Some Toffee.Style.Alignment.End;
         justify_self = Some Toffee.Style.Alignment.End;

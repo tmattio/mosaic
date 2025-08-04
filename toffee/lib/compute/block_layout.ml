@@ -1078,8 +1078,9 @@ let compute_block_layout (type tree)
             match styled_based_known.height with
             | Some h -> h
             | None ->
-                Geometry.Size.maybe_clamp_value intrinsic_h min_size.height
-                  max_size.height
+                let clamped = Geometry.Size.maybe_clamp_value intrinsic_h min_size.height
+                  max_size.height in
+                Float.max clamped pb_size.height
           in
           let final_outer_size =
             { width = container_outer_width; height = container_outer_height }

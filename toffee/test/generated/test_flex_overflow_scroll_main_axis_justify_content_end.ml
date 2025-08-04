@@ -17,7 +17,6 @@ let test_flex_overflow_scroll_main_axis_justify_content_end_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         justify_content = Some Toffee.Style.Alignment.End;
         size =
           {
@@ -30,7 +29,6 @@ let test_flex_overflow_scroll_main_axis_justify_content_end_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -85,7 +83,6 @@ let test_flex_overflow_scroll_main_axis_justify_content_end_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         justify_content = Some Toffee.Style.Alignment.End;
         size =
           {
@@ -99,7 +96,6 @@ let test_flex_overflow_scroll_main_axis_justify_content_end_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {

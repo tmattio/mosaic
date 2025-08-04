@@ -17,7 +17,6 @@ let test_flex_grow_less_than_factor_one_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 500.0;
@@ -29,7 +28,6 @@ let test_flex_grow_less_than_factor_one_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 0.2;
         flex_shrink = 0.0;
         flex_basis = Toffee.Style.Dimension.length 40.0;
@@ -38,22 +36,12 @@ let test_flex_grow_less_than_factor_one_border_box () =
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
   let node1 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        flex_grow = 0.2;
-        flex_shrink = 0.0;
-      }
+      { Toffee.Style.default with flex_grow = 0.2; flex_shrink = 0.0 }
   in
   let _ = Toffee.add_child tree node node1 |> Result.get_ok in
   let node2 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        flex_grow = 0.4;
-        flex_shrink = 0.0;
-      }
+      { Toffee.Style.default with flex_grow = 0.4; flex_shrink = 0.0 }
   in
   let _ = Toffee.add_child tree node node2 |> Result.get_ok in
 
@@ -113,7 +101,6 @@ let test_flex_grow_less_than_factor_one_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 500.0;
@@ -126,7 +113,6 @@ let test_flex_grow_less_than_factor_one_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 0.2;
         flex_shrink = 0.0;
         flex_basis = Toffee.Style.Dimension.length 40.0;
@@ -138,7 +124,6 @@ let test_flex_grow_less_than_factor_one_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 0.2;
         flex_shrink = 0.0;
         box_sizing = Toffee.Style.Content_box;
@@ -149,7 +134,6 @@ let test_flex_grow_less_than_factor_one_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 0.4;
         flex_shrink = 0.0;
         box_sizing = Toffee.Style.Content_box;

@@ -18,7 +18,6 @@ let test_flex_justify_content_column_min_height_and_margin_bottom_border_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         justify_content = Some Toffee.Style.Alignment.Center;
         min_size =
@@ -32,7 +31,6 @@ let test_flex_justify_content_column_min_height_and_margin_bottom_border_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 20.0;
@@ -94,7 +92,6 @@ let test_flex_justify_content_column_min_height_and_margin_bottom_content_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         justify_content = Some Toffee.Style.Alignment.Center;
         min_size =
@@ -109,7 +106,6 @@ let test_flex_justify_content_column_min_height_and_margin_bottom_content_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 20.0;

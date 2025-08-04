@@ -18,7 +18,6 @@ let test_flex_align_content_stretch_is_not_overriding_align_items_border_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_content = Some Toffee.Style.Alignment.Stretch;
       }
   in
@@ -26,7 +25,6 @@ let test_flex_align_content_stretch_is_not_overriding_align_items_border_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_items = Some Toffee.Style.Alignment.Center;
         align_content = Some Toffee.Style.Alignment.Stretch;
@@ -42,7 +40,6 @@ let test_flex_align_content_stretch_is_not_overriding_align_items_border_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_content = Some Toffee.Style.Alignment.Stretch;
         size =
           {
@@ -104,7 +101,6 @@ let test_flex_align_content_stretch_is_not_overriding_align_items_content_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_content = Some Toffee.Style.Alignment.Stretch;
         box_sizing = Toffee.Style.Content_box;
       }
@@ -113,7 +109,6 @@ let test_flex_align_content_stretch_is_not_overriding_align_items_content_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_items = Some Toffee.Style.Alignment.Center;
         align_content = Some Toffee.Style.Alignment.Stretch;
@@ -130,7 +125,6 @@ let test_flex_align_content_stretch_is_not_overriding_align_items_content_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_content = Some Toffee.Style.Alignment.Stretch;
         size =
           {

@@ -14,15 +14,16 @@ const testDir = path.resolve(__dirname, '..');
 function styleToOCaml(style, boxSizing = null) {
   const fields = [];
   
-  // Always set display - default to Block if not specified (HTML default)
-  const displayMap = {
-    'grid': 'Grid',
-    'flex': 'Flex', 
-    'block': 'Block',
-    'none': 'None'
-  };
-  const displayValue = style.display || 'block';  // Default to block if not set
-  fields.push(`display = Toffee.Style.${displayMap[displayValue] || 'Block'}`);
+  // Only set display if explicitly specified - Taffy defaults to Flex
+  if (style.display) {
+    const displayMap = {
+      'grid': 'Grid',
+      'flex': 'Flex', 
+      'block': 'Block',
+      'none': 'None'
+    };
+    fields.push(`display = Toffee.Style.${displayMap[style.display] || 'Flex'}`);
+  }
   
   if (style.position) {
     const positionMap = {
@@ -370,8 +371,8 @@ function gridLineToOCaml(line) {
   if (!line) return 'Toffee.Style.Grid.Auto';
   switch (line.tag || line.kind) {
     case 'auto': return 'Toffee.Style.Grid.Auto';
-    case 'line': return `Toffee.Style.Grid.Line ${line.value}`;
-    case 'span': return `Toffee.Style.Grid.Span ${line.value}`;
+    case 'line': return `Toffee.Style.Grid.Line (${line.value})`;
+    case 'span': return `Toffee.Style.Grid.Span (${line.value})`;
     default: return 'Toffee.Style.Grid.Auto';
   }
 }

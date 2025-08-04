@@ -17,7 +17,6 @@ let test_flex_align_content_space_between_wrapped_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         flex_wrap = Toffee.Style.Flex.Wrap;
         align_content = Some Toffee.Style.Alignment.Space_between;
@@ -32,7 +31,6 @@ let test_flex_align_content_space_between_wrapped_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -45,7 +43,6 @@ let test_flex_align_content_space_between_wrapped_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -58,7 +55,6 @@ let test_flex_align_content_space_between_wrapped_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -71,7 +67,6 @@ let test_flex_align_content_space_between_wrapped_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -84,7 +79,6 @@ let test_flex_align_content_space_between_wrapped_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -97,7 +91,6 @@ let test_flex_align_content_space_between_wrapped_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -181,7 +174,6 @@ let test_flex_align_content_space_between_wrapped_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         flex_wrap = Toffee.Style.Flex.Wrap;
         align_content = Some Toffee.Style.Alignment.Space_between;
@@ -197,7 +189,6 @@ let test_flex_align_content_space_between_wrapped_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -211,7 +202,6 @@ let test_flex_align_content_space_between_wrapped_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -225,7 +215,6 @@ let test_flex_align_content_space_between_wrapped_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -239,7 +228,6 @@ let test_flex_align_content_space_between_wrapped_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -253,7 +241,6 @@ let test_flex_align_content_space_between_wrapped_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -267,7 +254,6 @@ let test_flex_align_content_space_between_wrapped_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;

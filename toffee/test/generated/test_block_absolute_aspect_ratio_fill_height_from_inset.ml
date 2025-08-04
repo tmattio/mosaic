@@ -29,7 +29,6 @@ let test_block_absolute_aspect_ratio_fill_height_from_inset_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         aspect_ratio = Some 3.0;
         inset =
@@ -100,7 +99,6 @@ let test_block_absolute_aspect_ratio_fill_height_from_inset_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         aspect_ratio = Some 3.0;
         inset =

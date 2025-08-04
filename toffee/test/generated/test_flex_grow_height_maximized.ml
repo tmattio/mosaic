@@ -17,7 +17,6 @@ let test_flex_grow_height_maximized_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -30,7 +29,6 @@ let test_flex_grow_height_maximized_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         flex_grow = 1.0;
         min_size =
@@ -50,7 +48,6 @@ let test_flex_grow_height_maximized_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_basis = Toffee.Style.Dimension.length 200.0;
       }
@@ -60,7 +57,6 @@ let test_flex_grow_height_maximized_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -126,7 +122,6 @@ let test_flex_grow_height_maximized_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -140,7 +135,6 @@ let test_flex_grow_height_maximized_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         flex_grow = 1.0;
         min_size =
@@ -161,7 +155,6 @@ let test_flex_grow_height_maximized_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_basis = Toffee.Style.Dimension.length 200.0;
         box_sizing = Toffee.Style.Content_box;
@@ -172,7 +165,6 @@ let test_flex_grow_height_maximized_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;

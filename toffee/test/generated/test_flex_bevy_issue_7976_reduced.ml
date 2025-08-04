@@ -17,7 +17,6 @@ let test_flex_bevy_issue_7976_reduced_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_content = Some Toffee.Style.Alignment.Start;
         size =
           {
@@ -30,7 +29,6 @@ let test_flex_bevy_issue_7976_reduced_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 40.0;
@@ -84,7 +82,6 @@ let test_flex_bevy_issue_7976_reduced_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_content = Some Toffee.Style.Alignment.Start;
         size =
           {
@@ -98,7 +95,6 @@ let test_flex_bevy_issue_7976_reduced_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 40.0;

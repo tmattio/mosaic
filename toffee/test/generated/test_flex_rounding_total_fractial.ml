@@ -17,7 +17,6 @@ let test_flex_rounding_total_fractial_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -30,7 +29,6 @@ let test_flex_rounding_total_fractial_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 0.7;
         flex_basis = Toffee.Style.Dimension.length 50.3;
         size =
@@ -45,7 +43,6 @@ let test_flex_rounding_total_fractial_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.6;
         size =
           {
@@ -59,7 +56,6 @@ let test_flex_rounding_total_fractial_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.1;
         size =
           {
@@ -126,7 +122,6 @@ let test_flex_rounding_total_fractial_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -140,7 +135,6 @@ let test_flex_rounding_total_fractial_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 0.7;
         flex_basis = Toffee.Style.Dimension.length 50.3;
         size =
@@ -156,7 +150,6 @@ let test_flex_rounding_total_fractial_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.6;
         size =
           {
@@ -171,7 +164,6 @@ let test_flex_rounding_total_fractial_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.1;
         size =
           {

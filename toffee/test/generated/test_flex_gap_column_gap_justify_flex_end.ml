@@ -17,7 +17,6 @@ let test_flex_gap_column_gap_justify_flex_end_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         justify_content = Some Toffee.Style.Alignment.Flex_end;
         size =
@@ -36,7 +35,6 @@ let test_flex_gap_column_gap_justify_flex_end_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 20.0;
@@ -49,7 +47,6 @@ let test_flex_gap_column_gap_justify_flex_end_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 20.0;
@@ -62,7 +59,6 @@ let test_flex_gap_column_gap_justify_flex_end_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 20.0;
@@ -128,7 +124,6 @@ let test_flex_gap_column_gap_justify_flex_end_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         justify_content = Some Toffee.Style.Alignment.Flex_end;
         size =
@@ -148,7 +143,6 @@ let test_flex_gap_column_gap_justify_flex_end_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 20.0;
@@ -162,7 +156,6 @@ let test_flex_gap_column_gap_justify_flex_end_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 20.0;
@@ -176,7 +169,6 @@ let test_flex_gap_column_gap_justify_flex_end_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 20.0;

@@ -30,7 +30,6 @@ let test_flex_aspect_ratio_flex_column_fill_width_flex_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -99,7 +98,6 @@ let test_flex_aspect_ratio_flex_column_fill_width_flex_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;

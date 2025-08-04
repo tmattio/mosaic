@@ -17,7 +17,6 @@ let test_flex_align_items_center_min_max_with_padding_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_items = Some Toffee.Style.Alignment.Center;
         min_size =
@@ -43,7 +42,6 @@ let test_flex_align_items_center_min_max_with_padding_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 62.0;
@@ -97,7 +95,6 @@ let test_flex_align_items_center_min_max_with_padding_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_items = Some Toffee.Style.Alignment.Center;
         min_size =
@@ -124,7 +121,6 @@ let test_flex_align_items_center_min_max_with_padding_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 62.0;

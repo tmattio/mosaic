@@ -17,7 +17,6 @@ let test_flex_margin_auto_right_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Center;
         size =
           {
@@ -30,7 +29,6 @@ let test_flex_margin_auto_right_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -50,7 +48,6 @@ let test_flex_margin_auto_right_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -110,7 +107,6 @@ let test_flex_margin_auto_right_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Center;
         size =
           {
@@ -124,7 +120,6 @@ let test_flex_margin_auto_right_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -145,7 +140,6 @@ let test_flex_margin_auto_right_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;

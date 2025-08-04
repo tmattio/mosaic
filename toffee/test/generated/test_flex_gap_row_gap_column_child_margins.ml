@@ -17,7 +17,6 @@ let test_flex_gap_row_gap_column_child_margins_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -35,7 +34,6 @@ let test_flex_gap_row_gap_column_child_margins_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_shrink = 1.0;
         flex_basis = Toffee.Style.Dimension.percent 0.0;
@@ -53,7 +51,6 @@ let test_flex_gap_row_gap_column_child_margins_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_shrink = 1.0;
         flex_basis = Toffee.Style.Dimension.percent 0.0;
@@ -71,7 +68,6 @@ let test_flex_gap_row_gap_column_child_margins_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_shrink = 1.0;
         flex_basis = Toffee.Style.Dimension.percent 0.0;
@@ -142,7 +138,6 @@ let test_flex_gap_row_gap_column_child_margins_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -161,7 +156,6 @@ let test_flex_gap_row_gap_column_child_margins_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_shrink = 1.0;
         flex_basis = Toffee.Style.Dimension.percent 0.0;
@@ -180,7 +174,6 @@ let test_flex_gap_row_gap_column_child_margins_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_shrink = 1.0;
         flex_basis = Toffee.Style.Dimension.percent 0.0;
@@ -199,7 +192,6 @@ let test_flex_gap_row_gap_column_child_margins_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_shrink = 1.0;
         flex_basis = Toffee.Style.Dimension.percent 0.0;

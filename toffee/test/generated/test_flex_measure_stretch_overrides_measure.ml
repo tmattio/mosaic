@@ -78,7 +78,6 @@ let test_flex_measure_stretch_overrides_measure_border_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 20.0;
@@ -90,7 +89,6 @@ let test_flex_measure_stretch_overrides_measure_border_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_basis = Toffee.Style.Dimension.length 5.0;
       }
@@ -100,7 +98,6 @@ let test_flex_measure_stretch_overrides_measure_border_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_basis = Toffee.Style.Dimension.length 5.0;
       }
@@ -163,7 +160,6 @@ let test_flex_measure_stretch_overrides_measure_content_box measure_function ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 20.0;
@@ -176,7 +172,6 @@ let test_flex_measure_stretch_overrides_measure_content_box measure_function ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_basis = Toffee.Style.Dimension.length 5.0;
         box_sizing = Toffee.Style.Content_box;
@@ -187,7 +182,6 @@ let test_flex_measure_stretch_overrides_measure_content_box measure_function ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_basis = Toffee.Style.Dimension.length 5.0;
         box_sizing = Toffee.Style.Content_box;

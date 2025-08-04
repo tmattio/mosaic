@@ -17,7 +17,6 @@ let test_flex_bevy_issue_8082_percent_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_items = Some Toffee.Style.Alignment.Stretch;
         justify_content = Some Toffee.Style.Alignment.Flex_start;
@@ -33,7 +32,6 @@ let test_flex_bevy_issue_8082_percent_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_wrap = Toffee.Style.Flex.Wrap;
         align_items = Some Toffee.Style.Alignment.Flex_start;
         justify_content = Some Toffee.Style.Alignment.Center;
@@ -50,7 +48,6 @@ let test_flex_bevy_issue_8082_percent_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -63,7 +60,6 @@ let test_flex_bevy_issue_8082_percent_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -76,7 +72,6 @@ let test_flex_bevy_issue_8082_percent_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -89,7 +84,6 @@ let test_flex_bevy_issue_8082_percent_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -167,7 +161,6 @@ let test_flex_bevy_issue_8082_percent_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_items = Some Toffee.Style.Alignment.Stretch;
         justify_content = Some Toffee.Style.Alignment.Flex_start;
@@ -184,7 +177,6 @@ let test_flex_bevy_issue_8082_percent_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_wrap = Toffee.Style.Flex.Wrap;
         align_items = Some Toffee.Style.Alignment.Flex_start;
         justify_content = Some Toffee.Style.Alignment.Center;
@@ -202,7 +194,6 @@ let test_flex_bevy_issue_8082_percent_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -216,7 +207,6 @@ let test_flex_bevy_issue_8082_percent_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -230,7 +220,6 @@ let test_flex_bevy_issue_8082_percent_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -244,7 +233,6 @@ let test_flex_bevy_issue_8082_percent_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;

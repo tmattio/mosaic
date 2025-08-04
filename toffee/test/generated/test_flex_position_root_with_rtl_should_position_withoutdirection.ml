@@ -14,15 +14,11 @@ let test_flex_position_root_with_rtl_should_position_withoutdirection_border_box
   let tree = Toffee.create () in
 
   (* Create nodes *)
-  let node =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node = Toffee.new_leaf tree Toffee.Style.default in
   let node0 =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 52.0;
@@ -82,17 +78,12 @@ let test_flex_position_root_with_rtl_should_position_withoutdirection_content_bo
   (* Create nodes *)
   let node =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let node0 =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 52.0;

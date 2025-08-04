@@ -79,7 +79,6 @@ let test_flex_min_max_percent_different_width_height_border_box measure_function
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_items = Some Toffee.Style.Alignment.Flex_start;
         size =
@@ -93,7 +92,6 @@ let test_flex_min_max_percent_different_width_height_border_box measure_function
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         min_size =
           {
             width = Toffee.Style.Dimension.percent 0.1;
@@ -158,7 +156,6 @@ let test_flex_min_max_percent_different_width_height_content_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_items = Some Toffee.Style.Alignment.Flex_start;
         size =
@@ -173,7 +170,6 @@ let test_flex_min_max_percent_different_width_height_content_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         min_size =
           {
             width = Toffee.Style.Dimension.percent 0.1;

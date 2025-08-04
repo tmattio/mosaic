@@ -17,7 +17,6 @@ let test_flex_percentage_container_in_wrapping_container_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_items = Some Toffee.Style.Alignment.Center;
         justify_content = Some Toffee.Style.Alignment.Center;
@@ -30,18 +29,13 @@ let test_flex_percentage_container_in_wrapping_container_border_box () =
   in
   let node0 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        flex_direction = Toffee.Style.Flex.Column;
-      }
+      { Toffee.Style.default with flex_direction = Toffee.Style.Flex.Column }
   in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
   let node1 =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         justify_content = Some Toffee.Style.Alignment.Center;
         size =
@@ -56,7 +50,6 @@ let test_flex_percentage_container_in_wrapping_container_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -69,7 +62,6 @@ let test_flex_percentage_container_in_wrapping_container_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -141,7 +133,6 @@ let test_flex_percentage_container_in_wrapping_container_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_items = Some Toffee.Style.Alignment.Center;
         justify_content = Some Toffee.Style.Alignment.Center;
@@ -157,7 +148,6 @@ let test_flex_percentage_container_in_wrapping_container_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         box_sizing = Toffee.Style.Content_box;
       }
@@ -167,7 +157,6 @@ let test_flex_percentage_container_in_wrapping_container_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         justify_content = Some Toffee.Style.Alignment.Center;
         size =
@@ -183,7 +172,6 @@ let test_flex_percentage_container_in_wrapping_container_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -197,7 +185,6 @@ let test_flex_percentage_container_in_wrapping_container_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;

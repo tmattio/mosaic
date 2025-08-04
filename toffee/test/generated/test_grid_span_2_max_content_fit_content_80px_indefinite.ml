@@ -104,7 +104,6 @@ let test_grid_span_2_max_content_fit_content_80px_indefinite_border_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         grid_column =
           { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
         grid_row =
@@ -116,7 +115,6 @@ let test_grid_span_2_max_content_fit_content_80px_indefinite_border_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         grid_column =
           { start = Toffee.Style.Grid.Line 2; end_ = Toffee.Style.Grid.Auto };
         grid_row =
@@ -128,7 +126,6 @@ let test_grid_span_2_max_content_fit_content_80px_indefinite_border_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         grid_column =
           { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Span 2 };
         grid_row =
@@ -225,7 +222,6 @@ let test_grid_span_2_max_content_fit_content_80px_indefinite_content_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         grid_column =
           { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
         grid_row =
@@ -238,7 +234,6 @@ let test_grid_span_2_max_content_fit_content_80px_indefinite_content_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         grid_column =
           { start = Toffee.Style.Grid.Line 2; end_ = Toffee.Style.Grid.Auto };
         grid_row =
@@ -251,7 +246,6 @@ let test_grid_span_2_max_content_fit_content_80px_indefinite_content_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         grid_column =
           { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Span 2 };
         grid_row =

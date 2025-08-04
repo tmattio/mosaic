@@ -65,7 +65,6 @@ let test_grid_align_self_sized_all_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Start;
         size =
           {
@@ -79,7 +78,6 @@ let test_grid_align_self_sized_all_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Start;
         size =
           {
@@ -93,7 +91,6 @@ let test_grid_align_self_sized_all_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.End;
         size =
           {
@@ -107,7 +104,6 @@ let test_grid_align_self_sized_all_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.End;
         size =
           {
@@ -121,7 +117,6 @@ let test_grid_align_self_sized_all_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Center;
         size =
           {
@@ -135,7 +130,6 @@ let test_grid_align_self_sized_all_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Center;
         size =
           {
@@ -149,7 +143,6 @@ let test_grid_align_self_sized_all_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Stretch;
         size =
           {
@@ -163,7 +156,6 @@ let test_grid_align_self_sized_all_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Stretch;
         size =
           {
@@ -309,7 +301,6 @@ let test_grid_align_self_sized_all_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Start;
         size =
           {
@@ -324,7 +315,6 @@ let test_grid_align_self_sized_all_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Start;
         size =
           {
@@ -339,7 +329,6 @@ let test_grid_align_self_sized_all_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.End;
         size =
           {
@@ -354,7 +343,6 @@ let test_grid_align_self_sized_all_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.End;
         size =
           {
@@ -369,7 +357,6 @@ let test_grid_align_self_sized_all_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Center;
         size =
           {
@@ -384,7 +371,6 @@ let test_grid_align_self_sized_all_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Center;
         size =
           {
@@ -399,7 +385,6 @@ let test_grid_align_self_sized_all_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Stretch;
         size =
           {
@@ -414,7 +399,6 @@ let test_grid_align_self_sized_all_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Stretch;
         size =
           {

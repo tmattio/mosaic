@@ -18,7 +18,6 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -31,7 +30,6 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         flex_grow = 1.0;
         flex_basis = Toffee.Style.Dimension.percent 0.1;
@@ -61,7 +59,6 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -89,7 +86,6 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.percent 0.45;
@@ -116,7 +112,6 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 4.0;
         flex_basis = Toffee.Style.Dimension.percent 0.15;
         min_size =
@@ -191,7 +186,6 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -205,7 +199,6 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         flex_grow = 1.0;
         flex_basis = Toffee.Style.Dimension.percent 0.1;
@@ -236,7 +229,6 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -265,7 +257,6 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.percent 0.45;
@@ -293,7 +284,6 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 4.0;
         flex_basis = Toffee.Style.Dimension.percent 0.15;
         min_size =

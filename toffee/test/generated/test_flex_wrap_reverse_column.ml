@@ -17,7 +17,6 @@ let test_flex_wrap_reverse_column_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         flex_wrap = Toffee.Style.Flex.Wrap_reverse;
         size =
@@ -31,7 +30,6 @@ let test_flex_wrap_reverse_column_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 30.0;
@@ -44,7 +42,6 @@ let test_flex_wrap_reverse_column_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 30.0;
@@ -57,7 +54,6 @@ let test_flex_wrap_reverse_column_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 30.0;
@@ -70,7 +66,6 @@ let test_flex_wrap_reverse_column_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 30.0;
@@ -142,7 +137,6 @@ let test_flex_wrap_reverse_column_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         flex_wrap = Toffee.Style.Flex.Wrap_reverse;
         size =
@@ -157,7 +151,6 @@ let test_flex_wrap_reverse_column_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 30.0;
@@ -171,7 +164,6 @@ let test_flex_wrap_reverse_column_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 30.0;
@@ -185,7 +177,6 @@ let test_flex_wrap_reverse_column_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 30.0;
@@ -199,7 +190,6 @@ let test_flex_wrap_reverse_column_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 30.0;

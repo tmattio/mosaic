@@ -74,14 +74,8 @@ let test_flex_measure_child_border_box measure_function () =
   let tree = Toffee.create () in
 
   (* Create nodes *)
-  let node =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
-  let node0 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node = Toffee.new_leaf tree Toffee.Style.default in
+  let node0 = Toffee.new_leaf tree Toffee.Style.default in
   let _ =
     Toffee.set_node_context tree node0 (MeasureFunction.Text "HHHHHH")
     |> Result.get_ok
@@ -131,19 +125,11 @@ let test_flex_measure_child_content_box measure_function () =
   (* Create nodes *)
   let node =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let node0 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let _ =
     Toffee.set_node_context tree node0 (MeasureFunction.Text "HHHHHH")

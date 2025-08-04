@@ -91,7 +91,6 @@ let test_flex_absolute_aspect_ratio_fill_max_height_border_box measure_function
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         max_size =
           {
@@ -167,7 +166,6 @@ let test_flex_absolute_aspect_ratio_fill_max_height_content_box measure_function
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         max_size =
           {

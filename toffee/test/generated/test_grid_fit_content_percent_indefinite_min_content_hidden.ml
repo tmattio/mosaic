@@ -95,10 +95,7 @@ let test_grid_fit_content_percent_indefinite_min_content_hidden_border_box
           ];
       }
   in
-  let node0 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node0 = Toffee.new_leaf tree Toffee.Style.default in
   let _ =
     Toffee.set_node_context tree node0 (MeasureFunction.Text "HHHH​HH")
     |> Result.get_ok
@@ -170,11 +167,7 @@ let test_grid_fit_content_percent_indefinite_min_content_hidden_content_box
   in
   let node0 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let _ =
     Toffee.set_node_context tree node0 (MeasureFunction.Text "HHHH​HH")

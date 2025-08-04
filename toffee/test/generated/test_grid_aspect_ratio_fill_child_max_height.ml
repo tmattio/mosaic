@@ -91,7 +91,6 @@ let test_grid_aspect_ratio_fill_child_max_height_border_box measure_function ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         max_size =
           {
             width = Toffee.Style.Dimension.length 40.0;
@@ -166,7 +165,6 @@ let test_grid_aspect_ratio_fill_child_max_height_content_box measure_function ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         max_size =
           {
             width = Toffee.Style.Dimension.length 40.0;

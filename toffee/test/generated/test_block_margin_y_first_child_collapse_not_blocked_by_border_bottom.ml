@@ -60,7 +60,6 @@ let test_block_margin_y_first_child_collapse_not_blocked_by_border_bottom_border
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -172,7 +171,6 @@ let test_block_margin_y_first_child_collapse_not_blocked_by_border_bottom_conten
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;

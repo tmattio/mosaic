@@ -17,7 +17,6 @@ let test_flex_absolute_layout_no_size_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -27,11 +26,7 @@ let test_flex_absolute_layout_no_size_border_box () =
   in
   let node0 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        position = Toffee.Style.Absolute;
-      }
+      { Toffee.Style.default with position = Toffee.Style.Absolute }
   in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
 
@@ -79,7 +74,6 @@ let test_flex_absolute_layout_no_size_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -92,7 +86,6 @@ let test_flex_absolute_layout_no_size_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         box_sizing = Toffee.Style.Content_box;
       }

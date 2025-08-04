@@ -17,7 +17,6 @@ let test_flex_margin_and_stretch_column_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -30,7 +29,6 @@ let test_flex_margin_and_stretch_column_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         margin =
           {
@@ -87,7 +85,6 @@ let test_flex_margin_and_stretch_column_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -101,7 +98,6 @@ let test_flex_margin_and_stretch_column_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         margin =
           {

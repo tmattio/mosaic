@@ -78,7 +78,6 @@ let test_flex_absolute_child_with_cross_margin_border_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         justify_content = Some Toffee.Style.Alignment.Space_between;
         min_size =
@@ -97,7 +96,6 @@ let test_flex_absolute_child_with_cross_margin_border_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_content = Some Toffee.Style.Alignment.Stretch;
         size =
@@ -112,7 +110,6 @@ let test_flex_absolute_child_with_cross_margin_border_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         flex_direction = Toffee.Style.Flex.Row;
         align_content = Some Toffee.Style.Alignment.Stretch;
@@ -141,7 +138,6 @@ let test_flex_absolute_child_with_cross_margin_border_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_content = Some Toffee.Style.Alignment.Stretch;
         size =
@@ -210,7 +206,6 @@ let test_flex_absolute_child_with_cross_margin_content_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         justify_content = Some Toffee.Style.Alignment.Space_between;
         min_size =
@@ -230,7 +225,6 @@ let test_flex_absolute_child_with_cross_margin_content_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_content = Some Toffee.Style.Alignment.Stretch;
         size =
@@ -246,7 +240,6 @@ let test_flex_absolute_child_with_cross_margin_content_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         flex_direction = Toffee.Style.Flex.Row;
         align_content = Some Toffee.Style.Alignment.Stretch;
@@ -276,7 +269,6 @@ let test_flex_absolute_child_with_cross_margin_content_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_content = Some Toffee.Style.Alignment.Stretch;
         size =

@@ -17,7 +17,6 @@ let test_flex_justify_content_min_max_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         justify_content = Some Toffee.Style.Alignment.Center;
         size =
@@ -41,7 +40,6 @@ let test_flex_justify_content_min_max_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 60.0;
@@ -95,7 +93,6 @@ let test_flex_justify_content_min_max_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         justify_content = Some Toffee.Style.Alignment.Center;
         size =
@@ -120,7 +117,6 @@ let test_flex_justify_content_min_max_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 60.0;

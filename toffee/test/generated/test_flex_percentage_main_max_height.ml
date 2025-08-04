@@ -17,7 +17,6 @@ let test_flex_percentage_main_max_height_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -30,7 +29,6 @@ let test_flex_percentage_main_max_height_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_items = Some Toffee.Style.Alignment.Flex_start;
         size =
@@ -45,7 +43,6 @@ let test_flex_percentage_main_max_height_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_basis = Toffee.Style.Dimension.length 15.0;
       }
   in
@@ -54,7 +51,6 @@ let test_flex_percentage_main_max_height_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_basis = Toffee.Style.Dimension.length 48.0;
         max_size =
           {
@@ -121,7 +117,6 @@ let test_flex_percentage_main_max_height_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -135,7 +130,6 @@ let test_flex_percentage_main_max_height_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_items = Some Toffee.Style.Alignment.Flex_start;
         size =
@@ -151,7 +145,6 @@ let test_flex_percentage_main_max_height_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_basis = Toffee.Style.Dimension.length 15.0;
         box_sizing = Toffee.Style.Content_box;
       }
@@ -161,7 +154,6 @@ let test_flex_percentage_main_max_height_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_basis = Toffee.Style.Dimension.length 48.0;
         max_size =
           {

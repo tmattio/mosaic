@@ -78,7 +78,6 @@ let test_flex_measure_child_with_flex_shrink_border_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -90,7 +89,6 @@ let test_flex_measure_child_with_flex_shrink_border_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -99,10 +97,7 @@ let test_flex_measure_child_with_flex_shrink_border_box measure_function () =
       }
   in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
-  let node1 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node1 = Toffee.new_leaf tree Toffee.Style.default in
   let _ =
     Toffee.set_node_context tree node1
       (MeasureFunction.Text
@@ -162,7 +157,6 @@ let test_flex_measure_child_with_flex_shrink_content_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -175,7 +169,6 @@ let test_flex_measure_child_with_flex_shrink_content_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -187,11 +180,7 @@ let test_flex_measure_child_with_flex_shrink_content_box measure_function () =
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
   let node1 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let _ =
     Toffee.set_node_context tree node1

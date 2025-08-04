@@ -17,7 +17,6 @@ let test_flex_min_height_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -30,7 +29,6 @@ let test_flex_min_height_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         min_size =
           {
@@ -41,12 +39,7 @@ let test_flex_min_height_border_box () =
   in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
   let node1 =
-    Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        flex_grow = 1.0;
-      }
+    Toffee.new_leaf tree { Toffee.Style.default with flex_grow = 1.0 }
   in
   let _ = Toffee.add_child tree node node1 |> Result.get_ok in
 
@@ -100,7 +93,6 @@ let test_flex_min_height_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -114,7 +106,6 @@ let test_flex_min_height_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         min_size =
           {
@@ -129,7 +120,6 @@ let test_flex_min_height_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_grow = 1.0;
         box_sizing = Toffee.Style.Content_box;
       }

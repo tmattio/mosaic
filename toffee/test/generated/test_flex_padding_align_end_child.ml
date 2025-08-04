@@ -17,7 +17,6 @@ let test_flex_padding_align_end_child_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Flex_end;
         justify_content = Some Toffee.Style.Alignment.Flex_end;
         size =
@@ -31,7 +30,6 @@ let test_flex_padding_align_end_child_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -92,7 +90,6 @@ let test_flex_padding_align_end_child_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Flex_end;
         justify_content = Some Toffee.Style.Alignment.Flex_end;
         size =
@@ -107,7 +104,6 @@ let test_flex_padding_align_end_child_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;

@@ -17,7 +17,6 @@ let test_flex_gap_row_gap_row_wrap_child_margins_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         flex_wrap = Toffee.Style.Flex.Wrap;
         size =
@@ -36,7 +35,6 @@ let test_flex_gap_row_gap_row_wrap_child_margins_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 60.0;
@@ -56,7 +54,6 @@ let test_flex_gap_row_gap_row_wrap_child_margins_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 60.0;
@@ -76,7 +73,6 @@ let test_flex_gap_row_gap_row_wrap_child_margins_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 60.0;
@@ -149,7 +145,6 @@ let test_flex_gap_row_gap_row_wrap_child_margins_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         flex_wrap = Toffee.Style.Flex.Wrap;
         size =
@@ -169,7 +164,6 @@ let test_flex_gap_row_gap_row_wrap_child_margins_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 60.0;
@@ -190,7 +184,6 @@ let test_flex_gap_row_gap_row_wrap_child_margins_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 60.0;
@@ -211,7 +204,6 @@ let test_flex_gap_row_gap_row_wrap_child_margins_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 60.0;

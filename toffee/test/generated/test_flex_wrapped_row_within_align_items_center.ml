@@ -17,7 +17,6 @@ let test_flex_wrapped_row_within_align_items_center_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_items = Some Toffee.Style.Alignment.Center;
         size =
@@ -31,7 +30,6 @@ let test_flex_wrapped_row_within_align_items_center_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         flex_wrap = Toffee.Style.Flex.Wrap;
       }
@@ -41,7 +39,6 @@ let test_flex_wrapped_row_within_align_items_center_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 150.0;
@@ -54,7 +51,6 @@ let test_flex_wrapped_row_within_align_items_center_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 80.0;
@@ -120,7 +116,6 @@ let test_flex_wrapped_row_within_align_items_center_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_items = Some Toffee.Style.Alignment.Center;
         size =
@@ -135,7 +130,6 @@ let test_flex_wrapped_row_within_align_items_center_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         flex_wrap = Toffee.Style.Flex.Wrap;
         box_sizing = Toffee.Style.Content_box;
@@ -146,7 +140,6 @@ let test_flex_wrapped_row_within_align_items_center_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 150.0;
@@ -160,7 +153,6 @@ let test_flex_wrapped_row_within_align_items_center_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 80.0;

@@ -18,7 +18,6 @@ let test_flex_margin_auto_left_fix_right_child_bigger_than_parent_border_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         justify_content = Some Toffee.Style.Alignment.Center;
         size =
           {
@@ -31,7 +30,6 @@ let test_flex_margin_auto_left_fix_right_child_bigger_than_parent_border_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 72.0;
@@ -93,7 +91,6 @@ let test_flex_margin_auto_left_fix_right_child_bigger_than_parent_content_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         justify_content = Some Toffee.Style.Alignment.Center;
         size =
           {
@@ -107,7 +104,6 @@ let test_flex_margin_auto_left_fix_right_child_bigger_than_parent_content_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 72.0;

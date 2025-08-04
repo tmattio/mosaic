@@ -17,7 +17,6 @@ let test_flex_justify_content_column_space_evenly_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         justify_content = Some Toffee.Style.Alignment.Space_evenly;
         size =
@@ -31,7 +30,6 @@ let test_flex_justify_content_column_space_evenly_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -44,7 +42,6 @@ let test_flex_justify_content_column_space_evenly_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -57,7 +54,6 @@ let test_flex_justify_content_column_space_evenly_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -123,7 +119,6 @@ let test_flex_justify_content_column_space_evenly_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         justify_content = Some Toffee.Style.Alignment.Space_evenly;
         size =
@@ -138,7 +133,6 @@ let test_flex_justify_content_column_space_evenly_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -152,7 +146,6 @@ let test_flex_justify_content_column_space_evenly_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -166,7 +159,6 @@ let test_flex_justify_content_column_space_evenly_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;

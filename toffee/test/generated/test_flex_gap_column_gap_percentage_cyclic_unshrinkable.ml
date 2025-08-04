@@ -17,7 +17,6 @@ let test_flex_gap_column_gap_percentage_cyclic_unshrinkable_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         gap =
           {
@@ -30,7 +29,6 @@ let test_flex_gap_column_gap_percentage_cyclic_unshrinkable_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -44,7 +42,6 @@ let test_flex_gap_column_gap_percentage_cyclic_unshrinkable_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -58,7 +55,6 @@ let test_flex_gap_column_gap_percentage_cyclic_unshrinkable_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -125,7 +121,6 @@ let test_flex_gap_column_gap_percentage_cyclic_unshrinkable_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         gap =
           {
@@ -139,7 +134,6 @@ let test_flex_gap_column_gap_percentage_cyclic_unshrinkable_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -154,7 +148,6 @@ let test_flex_gap_column_gap_percentage_cyclic_unshrinkable_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -169,7 +162,6 @@ let test_flex_gap_column_gap_percentage_cyclic_unshrinkable_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {

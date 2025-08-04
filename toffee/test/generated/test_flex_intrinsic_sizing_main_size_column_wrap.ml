@@ -79,18 +79,13 @@ let test_flex_intrinsic_sizing_main_size_column_wrap_border_box measure_function
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         flex_wrap = Toffee.Style.Flex.Wrap;
       }
   in
   let node0 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        flex_direction = Toffee.Style.Flex.Column;
-      }
+      { Toffee.Style.default with flex_direction = Toffee.Style.Flex.Column }
   in
   let _ =
     Toffee.set_node_context tree node0 (MeasureFunction.Text "HH​HH")
@@ -99,11 +94,7 @@ let test_flex_intrinsic_sizing_main_size_column_wrap_border_box measure_function
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
   let node1 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        flex_direction = Toffee.Style.Flex.Column;
-      }
+      { Toffee.Style.default with flex_direction = Toffee.Style.Flex.Column }
   in
   let _ =
     Toffee.set_node_context tree node1 (MeasureFunction.Text "HH​HH")
@@ -163,7 +154,6 @@ let test_flex_intrinsic_sizing_main_size_column_wrap_content_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         flex_wrap = Toffee.Style.Flex.Wrap;
         box_sizing = Toffee.Style.Content_box;
@@ -173,7 +163,6 @@ let test_flex_intrinsic_sizing_main_size_column_wrap_content_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         box_sizing = Toffee.Style.Content_box;
       }
@@ -187,7 +176,6 @@ let test_flex_intrinsic_sizing_main_size_column_wrap_content_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         box_sizing = Toffee.Style.Content_box;
       }

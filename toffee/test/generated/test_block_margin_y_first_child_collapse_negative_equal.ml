@@ -59,7 +59,6 @@ let test_block_margin_y_first_child_collapse_negative_equal_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -170,7 +169,6 @@ let test_block_margin_y_first_child_collapse_negative_equal_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;

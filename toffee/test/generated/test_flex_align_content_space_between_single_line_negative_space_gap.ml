@@ -59,7 +59,6 @@ let test_flex_align_content_space_between_single_line_negative_space_gap_border_
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -164,7 +163,6 @@ let test_flex_align_content_space_between_single_line_negative_space_gap_content
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {

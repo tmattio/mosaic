@@ -126,7 +126,6 @@ let test_grid_size_child_fixed_tracks_border_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Start;
         justify_self = Some Toffee.Style.Alignment.Start;
       }
@@ -140,7 +139,6 @@ let test_grid_size_child_fixed_tracks_border_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Start;
         justify_self = Some Toffee.Style.Alignment.Start;
       }
@@ -154,7 +152,6 @@ let test_grid_size_child_fixed_tracks_border_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Start;
         justify_self = Some Toffee.Style.Alignment.Start;
       }
@@ -168,7 +165,6 @@ let test_grid_size_child_fixed_tracks_border_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Start;
         justify_self = Some Toffee.Style.Alignment.Start;
         size =
@@ -187,7 +183,6 @@ let test_grid_size_child_fixed_tracks_border_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Start;
         justify_self = Some Toffee.Style.Alignment.Start;
         max_size =
@@ -321,7 +316,6 @@ let test_grid_size_child_fixed_tracks_content_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Start;
         justify_self = Some Toffee.Style.Alignment.Start;
         box_sizing = Toffee.Style.Content_box;
@@ -336,7 +330,6 @@ let test_grid_size_child_fixed_tracks_content_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Start;
         justify_self = Some Toffee.Style.Alignment.Start;
         box_sizing = Toffee.Style.Content_box;
@@ -351,7 +344,6 @@ let test_grid_size_child_fixed_tracks_content_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Start;
         justify_self = Some Toffee.Style.Alignment.Start;
         box_sizing = Toffee.Style.Content_box;
@@ -366,7 +358,6 @@ let test_grid_size_child_fixed_tracks_content_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Start;
         justify_self = Some Toffee.Style.Alignment.Start;
         size =
@@ -386,7 +377,6 @@ let test_grid_size_child_fixed_tracks_content_box measure_function () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Start;
         justify_self = Some Toffee.Style.Alignment.Start;
         max_size =

@@ -17,7 +17,6 @@ let test_flex_rounding_flex_basis_flex_shrink_row_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         size =
           {
@@ -30,7 +29,6 @@ let test_flex_rounding_flex_basis_flex_shrink_row_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_shrink = 1.0;
         flex_basis = Toffee.Style.Dimension.length 100.0;
       }
@@ -40,7 +38,6 @@ let test_flex_rounding_flex_basis_flex_shrink_row_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_basis = Toffee.Style.Dimension.length 25.0;
       }
   in
@@ -49,7 +46,6 @@ let test_flex_rounding_flex_basis_flex_shrink_row_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_basis = Toffee.Style.Dimension.length 25.0;
       }
   in
@@ -111,7 +107,6 @@ let test_flex_rounding_flex_basis_flex_shrink_row_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         size =
           {
@@ -125,7 +120,6 @@ let test_flex_rounding_flex_basis_flex_shrink_row_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_shrink = 1.0;
         flex_basis = Toffee.Style.Dimension.length 100.0;
         box_sizing = Toffee.Style.Content_box;
@@ -136,7 +130,6 @@ let test_flex_rounding_flex_basis_flex_shrink_row_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_basis = Toffee.Style.Dimension.length 25.0;
         box_sizing = Toffee.Style.Content_box;
       }
@@ -146,7 +139,6 @@ let test_flex_rounding_flex_basis_flex_shrink_row_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_basis = Toffee.Style.Dimension.length 25.0;
         box_sizing = Toffee.Style.Content_box;
       }

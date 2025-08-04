@@ -90,7 +90,6 @@ let test_grid_percent_items_nested_with_padding_margin_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.percent 0.45;
@@ -113,10 +112,7 @@ let test_grid_percent_items_nested_with_padding_margin_border_box () =
       }
   in
   let _ = Toffee.add_child tree node1 node2 |> Result.get_ok in
-  let node3 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node3 = Toffee.new_leaf tree Toffee.Style.default in
   let _ = Toffee.add_child tree node node3 |> Result.get_ok in
 
   (* Compute layout *)
@@ -257,7 +253,6 @@ let test_grid_percent_items_nested_with_padding_margin_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.percent 0.45;
@@ -283,11 +278,7 @@ let test_grid_percent_items_nested_with_padding_margin_content_box () =
   let _ = Toffee.add_child tree node1 node2 |> Result.get_ok in
   let node3 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let _ = Toffee.add_child tree node node3 |> Result.get_ok in
 

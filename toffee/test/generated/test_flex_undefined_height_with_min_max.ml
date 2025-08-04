@@ -17,7 +17,6 @@ let test_flex_undefined_height_with_min_max_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -35,7 +34,6 @@ let test_flex_undefined_height_with_min_max_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         min_size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -94,7 +92,6 @@ let test_flex_undefined_height_with_min_max_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -113,7 +110,6 @@ let test_flex_undefined_height_with_min_max_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         min_size =
           {
             width = Toffee.Style.Dimension.auto;

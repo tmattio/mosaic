@@ -15,17 +15,12 @@ let test_flex_basis_zero_undefined_main_size_border_box () =
   (* Create nodes *)
   let node =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        flex_direction = Toffee.Style.Flex.Row;
-      }
+      { Toffee.Style.default with flex_direction = Toffee.Style.Flex.Row }
   in
   let node0 =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         flex_basis = Toffee.Style.Dimension.length 0.0;
       }
@@ -35,7 +30,6 @@ let test_flex_basis_zero_undefined_main_size_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -95,7 +89,6 @@ let test_flex_basis_zero_undefined_main_size_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         box_sizing = Toffee.Style.Content_box;
       }
@@ -104,7 +97,6 @@ let test_flex_basis_zero_undefined_main_size_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         flex_basis = Toffee.Style.Dimension.length 0.0;
         box_sizing = Toffee.Style.Content_box;
@@ -115,7 +107,6 @@ let test_flex_basis_zero_undefined_main_size_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;

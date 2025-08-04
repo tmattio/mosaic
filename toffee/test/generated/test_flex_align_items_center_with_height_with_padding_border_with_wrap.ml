@@ -14,10 +14,7 @@ let test_flex_align_items_center_with_height_with_padding_border_with_wrap_borde
   let tree = Toffee.create () in
 
   (* Create nodes *)
-  let node =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node = Toffee.new_leaf tree Toffee.Style.default in
   let node0 =
     Toffee.new_leaf tree
       {
@@ -38,7 +35,6 @@ let test_flex_align_items_center_with_height_with_padding_border_with_wrap_borde
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -51,7 +47,6 @@ let test_flex_align_items_center_with_height_with_padding_border_with_wrap_borde
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -79,7 +74,6 @@ let test_flex_align_items_center_with_height_with_padding_border_with_wrap_borde
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -92,7 +86,6 @@ let test_flex_align_items_center_with_height_with_padding_border_with_wrap_borde
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -175,11 +168,7 @@ let test_flex_align_items_center_with_height_with_padding_border_with_wrap_conte
   (* Create nodes *)
   let node =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let node0 =
     Toffee.new_leaf tree
@@ -202,7 +191,6 @@ let test_flex_align_items_center_with_height_with_padding_border_with_wrap_conte
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -216,7 +204,6 @@ let test_flex_align_items_center_with_height_with_padding_border_with_wrap_conte
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -246,7 +233,6 @@ let test_flex_align_items_center_with_height_with_padding_border_with_wrap_conte
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -260,7 +246,6 @@ let test_flex_align_items_center_with_height_with_padding_border_with_wrap_conte
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;

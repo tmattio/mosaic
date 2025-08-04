@@ -17,7 +17,6 @@ let test_flex_wrap_children_with_min_main_overriding_flex_basis_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         flex_wrap = Toffee.Style.Flex.Wrap;
         size =
@@ -31,7 +30,6 @@ let test_flex_wrap_children_with_min_main_overriding_flex_basis_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_basis = Toffee.Style.Dimension.length 50.0;
         size =
           {
@@ -50,7 +48,6 @@ let test_flex_wrap_children_with_min_main_overriding_flex_basis_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_basis = Toffee.Style.Dimension.length 50.0;
         size =
           {
@@ -116,7 +113,6 @@ let test_flex_wrap_children_with_min_main_overriding_flex_basis_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         flex_wrap = Toffee.Style.Flex.Wrap;
         size =
@@ -131,7 +127,6 @@ let test_flex_wrap_children_with_min_main_overriding_flex_basis_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_basis = Toffee.Style.Dimension.length 50.0;
         size =
           {
@@ -151,7 +146,6 @@ let test_flex_wrap_children_with_min_main_overriding_flex_basis_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_basis = Toffee.Style.Dimension.length 50.0;
         size =
           {

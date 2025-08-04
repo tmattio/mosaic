@@ -79,7 +79,6 @@ let test_flex_align_items_center_justify_content_center_border_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -92,7 +91,6 @@ let test_flex_align_items_center_justify_content_center_border_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_items = Some Toffee.Style.Alignment.Center;
         justify_content = Some Toffee.Style.Alignment.Center;
@@ -108,7 +106,6 @@ let test_flex_align_items_center_justify_content_center_border_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_items = Some Toffee.Style.Alignment.Center;
         justify_content = Some Toffee.Style.Alignment.Center;
@@ -131,7 +128,6 @@ let test_flex_align_items_center_justify_content_center_border_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -203,7 +199,6 @@ let test_flex_align_items_center_justify_content_center_content_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -217,7 +212,6 @@ let test_flex_align_items_center_justify_content_center_content_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_items = Some Toffee.Style.Alignment.Center;
         justify_content = Some Toffee.Style.Alignment.Center;
@@ -234,7 +228,6 @@ let test_flex_align_items_center_justify_content_center_content_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         align_items = Some Toffee.Style.Alignment.Center;
         justify_content = Some Toffee.Style.Alignment.Center;
@@ -258,7 +251,6 @@ let test_flex_align_items_center_justify_content_center_content_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;

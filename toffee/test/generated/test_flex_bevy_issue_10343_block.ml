@@ -56,10 +56,7 @@ let test_flex_bevy_issue_10343_block_border_box () =
       }
   in
   let _ = Toffee.add_child tree node0 node1 |> Result.get_ok in
-  let node2 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node2 = Toffee.new_leaf tree Toffee.Style.default in
   let _ = Toffee.add_child tree node1 node2 |> Result.get_ok in
 
   (* Compute layout *)
@@ -162,11 +159,7 @@ let test_flex_bevy_issue_10343_block_content_box () =
   let _ = Toffee.add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let _ = Toffee.add_child tree node1 node2 |> Result.get_ok in
 

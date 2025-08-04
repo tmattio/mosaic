@@ -79,7 +79,6 @@ let test_flex_measure_flex_basis_overrides_measure_border_box measure_function
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -87,10 +86,7 @@ let test_flex_measure_flex_basis_overrides_measure_border_box measure_function
           };
       }
   in
-  let node0 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
-  in
+  let node0 = Toffee.new_leaf tree Toffee.Style.default in
   let _ =
     Toffee.set_node_context tree node0 (MeasureFunction.Text "H")
     |> Result.get_ok
@@ -143,7 +139,6 @@ let test_flex_measure_flex_basis_overrides_measure_content_box measure_function
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
-        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -154,11 +149,7 @@ let test_flex_measure_flex_basis_overrides_measure_content_box measure_function
   in
   let node0 =
     Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Block;
-        box_sizing = Toffee.Style.Content_box;
-      }
+      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
   in
   let _ =
     Toffee.set_node_context tree node0 (MeasureFunction.Text "H")
