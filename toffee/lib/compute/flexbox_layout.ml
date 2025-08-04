@@ -1644,10 +1644,24 @@ let perform_absolute_layout_on_absolute_children (type tree)
         }
       in
       let clamped = Size.maybe_clamp unclamped min_size max_size in
+      (* After clamping, reapply aspect ratio if needed *)
+      let final_clamped =
+        match aspect_ratio with
+        | None -> clamped
+        | Some ratio -> (
+            match (clamped.width, clamped.height, unclamped.width, unclamped.height) with
+            (* If height was clamped by max/min, recalculate width *)
+            | (_, Some h, Some _, Some orig_h) when h <> orig_h ->
+                { clamped with width = Some (h *. ratio) }
+            (* If width was clamped by max/min, recalculate height *)
+            | (Some w, _, Some orig_w, Some _) when w <> orig_w ->
+                { clamped with height = Some (w /. ratio) }
+            | _ -> clamped)
+      in
       let final_size =
         {
-          width = Option.value ~default:measured_size.width clamped.width;
-          height = Option.value ~default:measured_size.height clamped.height;
+          width = Option.value ~default:measured_size.width final_clamped.width;
+          height = Option.value ~default:measured_size.height final_clamped.height;
         }
       in
 
