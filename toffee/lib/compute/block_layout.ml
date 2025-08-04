@@ -834,11 +834,10 @@ let perform_absolute_layout_on_absolute_children (type tree)
                         Some
                           (area_size.width -. final_size.width -. right_val
                          -. resolved_margin.right)
-                    | None -> 
-                        (* When both left and right are None (Auto), position at the left of the containing block *)
-                        Some resolved_margin.left))
+                    | None -> None))
                 |> Option.map (fun x -> x +. area_offset.x)
-                |> Option.get;
+                |> Option.value
+                     ~default:(item.static_position.x +. resolved_margin.left);
               y =
                 (match top with
                 | Some top_val -> Some (top_val +. resolved_margin.top)
@@ -848,11 +847,10 @@ let perform_absolute_layout_on_absolute_children (type tree)
                         Some
                           (area_size.height -. final_size.height -. bottom_val
                          -. resolved_margin.bottom)
-                    | None -> 
-                        (* When both top and bottom are None (Auto), position at the top of the containing block *)
-                        Some resolved_margin.top))
+                    | None -> None))
                 |> Option.map (fun y -> y +. area_offset.y)
-                |> Option.get;
+                |> Option.value
+                     ~default:(item.static_position.y +. resolved_margin.top);
             }
           in
 
