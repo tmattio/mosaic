@@ -220,6 +220,9 @@ let position style = style.position
 let inset style = style.inset
 let is_block style = style.display = Block
 
+let box_generation_mode style =
+  match style.display with None -> (None : box_generation_mode) | _ -> Normal
+
 (* ─────────────────────────  Helpers  ───────────────────────────── *)
 
 (* Plain helpers that mimic taffy's style_helpers.rs *)

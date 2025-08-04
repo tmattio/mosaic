@@ -192,6 +192,7 @@ val box_sizing : style -> box_sizing
 val position : style -> position
 val inset : style -> Length_percentage_auto.t rect
 val is_block : style -> bool
+val box_generation_mode : style -> box_generation_mode
 
 val default : style
 (** Spec-compliant default (matches `Style::DEFAULT` in Rust). Notably, **margin

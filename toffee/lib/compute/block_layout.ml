@@ -71,7 +71,7 @@ let generate_item_list (type tree)
     Node.Node_id.t block_item list =
   let map_child (order, child_id) : Node.Node_id.t block_item option =
     let style = T.get_block_child_style tree child_id in
-    if style.display = Style.None then None
+    if Style.box_generation_mode style = Style.None then None
     else
       let aspect_ratio = Style.aspect_ratio style in
       let padding =
@@ -280,14 +280,9 @@ let perform_final_layout_on_in_flow_children (type tree)
                 ~default:(container_inner_width -. margin_x_sum)
                 item.size.width
             in
-            {
-              width =
-                Some
-                  (*Rc.maybe_clamp*)
-                  width
-                (*item.min_size.width item.max_size.width*);
-              height = item.size.height;
-            }
+            Size.maybe_clamp
+              { width = Some width; height = item.size.height }
+              item.min_size item.max_size
         in
         (* 3/ Layout child. *)
         let child_layout =
@@ -563,116 +558,51 @@ let perform_absolute_layout_on_absolute_children (type tree)
             ref (Size.maybe_clamp style_size min_size max_size)
           in
 
-          (* When we have an aspect ratio and both horizontal and vertical insets 
-             constrain the size, we need to check which constraint is more restrictive *)
-          let check_both_insets =
-            !mut_known_dimensions.width = None
-            && !mut_known_dimensions.height = None
-            && aspect_ratio <> None
-            && (match (left, right) with Some _, Some _ -> true | _ -> false)
-            && match (top, bottom) with Some _, Some _ -> true | _ -> false
-          in
-
-          if check_both_insets then
-            (* Calculate width from horizontal insets *)
-            let width_from_insets =
-              let w =
-                area_width |> fun w ->
-                match margin.left with Some m -> w -. m | None -> w
+          (* Fill in width from left/right and reapply aspect ratio if:
+             - Width is not already known
+             - Item has both left and right inset properties set *)
+          (match (!mut_known_dimensions.width, left, right) with
+          | None, Some left_val, Some right_val ->
+              let new_width_raw =
+                ( ( area_width |> fun w ->
+                    match margin.left with Some m -> w -. m | None -> w )
+                |> fun w ->
+                  match margin.right with Some m -> w -. m | None -> w )
+                -. left_val -. right_val
               in
-              let w =
-                w |> fun w ->
-                match margin.right with Some m -> w -. m | None -> w
+              let new_width = Float.max new_width_raw 0.0 in
+              let with_new_width =
+                { !mut_known_dimensions with width = Some new_width }
               in
-              Float.max 0.0 (w -. Option.get left -. Option.get right)
-            in
-
-            (* Calculate height from vertical insets *)
-            let height_from_insets =
-              let h =
-                area_height |> fun h ->
-                match margin.top with Some m -> h -. m | None -> h
+              let with_aspect =
+                Resolve.maybe_apply_aspect_ratio aspect_ratio with_new_width
               in
-              let h =
-                h |> fun h ->
-                match margin.bottom with Some m -> h -. m | None -> h
+              let clamped = Size.maybe_clamp with_aspect min_size max_size in
+              mut_known_dimensions := clamped
+          | _ -> ());
+
+          (* Fill in height from top/bottom and reapply aspect ratio if:
+             - Height is not already known
+             - Item has both top and bottom inset properties set *)
+          (match (!mut_known_dimensions.height, top, bottom) with
+          | None, Some top_val, Some bottom_val ->
+              let new_height_raw =
+                ( ( area_height |> fun h ->
+                    match margin.top with Some m -> h -. m | None -> h )
+                |> fun h ->
+                  match margin.bottom with Some m -> h -. m | None -> h )
+                -. top_val -. bottom_val
               in
-              Float.max 0.0 (h -. Option.get top -. Option.get bottom)
-            in
-
-            (* With aspect ratio, determine which constraint is more restrictive *)
-            match aspect_ratio with
-            | Some ratio ->
-                let height_if_width = width_from_insets /. ratio in
-                let width_if_height = height_from_insets *. ratio in
-
-                (* Choose the more restrictive constraint *)
-                let final_size =
-                  if height_if_width <= height_from_insets then
-                    (* Width constraint is more restrictive *)
-                    {
-                      width = Some width_from_insets;
-                      height = Some height_if_width;
-                    }
-                  else
-                    (* Height constraint is more restrictive *)
-                    {
-                      width = Some width_if_height;
-                      height = Some height_from_insets;
-                    }
-                in
-                mut_known_dimensions :=
-                  Size.maybe_clamp final_size min_size max_size
-            | None ->
-                (* No aspect ratio, shouldn't happen in this branch *)
-                ()
-          else (
-            (* Original logic - handle constraints one at a time *)
-            (* Fill in width from left/right and reapply aspect ratio if:
-               - Width is not already known
-               - Item has both left and right inset properties set *)
-            (match (!mut_known_dimensions.width, left, right) with
-            | None, Some left_val, Some right_val ->
-                let new_width_raw =
-                  ( ( area_width |> fun w ->
-                      match margin.left with Some m -> w -. m | None -> w )
-                  |> fun w ->
-                    match margin.right with Some m -> w -. m | None -> w )
-                  -. left_val -. right_val
-                in
-                let new_width = Float.max new_width_raw 0.0 in
-                let with_new_width =
-                  { !mut_known_dimensions with width = Some new_width }
-                in
-                let with_aspect =
-                  Resolve.maybe_apply_aspect_ratio aspect_ratio with_new_width
-                in
-                let clamped = Size.maybe_clamp with_aspect min_size max_size in
-                mut_known_dimensions := clamped
-            | _ -> ());
-
-            (* Fill in height from top/bottom and reapply aspect ratio if:
-               - Height is not already known
-               - Item has both top and bottom inset properties set *)
-            match (!mut_known_dimensions.height, top, bottom) with
-            | None, Some top_val, Some bottom_val ->
-                let new_height_raw =
-                  ( ( area_height |> fun h ->
-                      match margin.top with Some m -> h -. m | None -> h )
-                  |> fun h ->
-                    match margin.bottom with Some m -> h -. m | None -> h )
-                  -. top_val -. bottom_val
-                in
-                let new_height = Float.max new_height_raw 0.0 in
-                let with_new_height =
-                  { !mut_known_dimensions with height = Some new_height }
-                in
-                let with_aspect =
-                  Resolve.maybe_apply_aspect_ratio aspect_ratio with_new_height
-                in
-                let clamped = Size.maybe_clamp with_aspect min_size max_size in
-                mut_known_dimensions := clamped
-            | _ -> ());
+              let new_height = Float.max new_height_raw 0.0 in
+              let with_new_height =
+                { !mut_known_dimensions with height = Some new_height }
+              in
+              let with_aspect =
+                Resolve.maybe_apply_aspect_ratio aspect_ratio with_new_height
+              in
+              let clamped = Size.maybe_clamp with_aspect min_size max_size in
+              mut_known_dimensions := clamped
+          | _ -> ());
 
           let known_dimensions = !mut_known_dimensions in
 
@@ -998,9 +928,11 @@ let compute_block_layout (type tree)
     let base_known =
       known_dimensions |> or_size min_max_definite |> or_size clamped_style_size
     in
-    (* Only apply padding_border minimum if the dimension is already known *)
+    (* Apply padding_border minimum - promote None to Some(padding) when padding is non-zero *)
     size_zip_map base_known pb_size (fun opt_val pb_val ->
-        match opt_val with Some v -> Some (Float.max v pb_val) | None -> None)
+        match opt_val with
+        | Some v -> Some (Float.max v pb_val)
+        | None -> if pb_val > 0.0 then Some pb_val else None)
   in
   (* 2. Short‑circuit when Compute_size and dimensions known. *)
   match (run_mode, styled_based_known) with
@@ -1144,7 +1076,12 @@ let compute_block_layout (type tree)
               ||
               match styled_based_known.height with
               | Some _ -> true
-              | None -> false
+              | None -> (
+                  false
+                  ||
+                  match min_size.height with
+                  | Some h when h > 0.0 -> true
+                  | _ -> false)
             in
             let all_in_flow_children_can_be_collapsed_through =
               Array.for_all
