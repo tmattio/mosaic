@@ -1540,15 +1540,28 @@ let perform_absolute_layout_on_absolute_children (type tree)
 
       (* Resolve inset *)
       let inset =
-        rect_map child_style.inset (fun lpa ->
-            match lpa with
+        {
+          left = (match child_style.inset.left with
             | Style.Length_percentage_auto.Auto -> None
             | Style.Length_percentage_auto.Length v -> Some v
             | Style.Length_percentage_auto.Percent p ->
-                Option.map
-                  (fun s -> s *. p)
-                  (if constants.is_row then constants.node_inner_size.width
-                   else constants.node_inner_size.height))
+                Option.map (fun s -> s *. p) constants.node_inner_size.width);
+          right = (match child_style.inset.right with
+            | Style.Length_percentage_auto.Auto -> None
+            | Style.Length_percentage_auto.Length v -> Some v
+            | Style.Length_percentage_auto.Percent p ->
+                Option.map (fun s -> s *. p) constants.node_inner_size.width);
+          top = (match child_style.inset.top with
+            | Style.Length_percentage_auto.Auto -> None
+            | Style.Length_percentage_auto.Length v -> Some v
+            | Style.Length_percentage_auto.Percent p ->
+                Option.map (fun s -> s *. p) constants.node_inner_size.height);
+          bottom = (match child_style.inset.bottom with
+            | Style.Length_percentage_auto.Auto -> None
+            | Style.Length_percentage_auto.Length v -> Some v
+            | Style.Length_percentage_auto.Percent p ->
+                Option.map (fun s -> s *. p) constants.node_inner_size.height);
+        }
       in
 
       (* Compute known dimensions *)
@@ -1570,20 +1583,22 @@ let perform_absolute_layout_on_absolute_children (type tree)
       in
 
       let parent_size = constants.node_inner_size in
-      let size =
-        {
-          width =
-            resolve_dimension_with_aspect child_style.size.width
-              parent_size.width;
-          height =
-            resolve_dimension_with_aspect child_style.size.height
-              parent_size.height;
-        }
-        |> apply_aspect_ratio_to_size
-        |> fun size ->
-        size_zip_map size box_sizing_adjustment (fun sz adj ->
-            Option.map (fun s -> s +. adj) sz)
+      let mut_known_dimensions =
+        ref
+          ({
+             width =
+               resolve_dimension_with_aspect child_style.size.width
+                 parent_size.width;
+             height =
+               resolve_dimension_with_aspect child_style.size.height
+                 parent_size.height;
+           }
+          |> apply_aspect_ratio_to_size
+          |> fun size ->
+          size_zip_map size box_sizing_adjustment (fun sz adj ->
+              Option.map (fun s -> s +. adj) sz))
       in
+
 
       let min_size =
         {
@@ -1593,6 +1608,19 @@ let perform_absolute_layout_on_absolute_children (type tree)
           height =
             resolve_dimension_with_aspect child_style.min_size.height
               parent_size.height;
+        }
+        |> apply_aspect_ratio_to_size
+        |> fun size ->
+        size_zip_map size box_sizing_adjustment (fun sz adj ->
+            Option.map (fun s -> s +. adj) sz)
+        |> fun size ->
+        {
+          width = (match size.width with
+            | None -> Some padding_border_sum.width
+            | Some w -> Some (Float.max w padding_border_sum.width));
+          height = (match size.height with
+            | None -> Some padding_border_sum.height
+            | Some h -> Some (Float.max h padding_border_sum.height));
         }
       in
 
@@ -1605,7 +1633,42 @@ let perform_absolute_layout_on_absolute_children (type tree)
             resolve_dimension_with_aspect child_style.max_size.height
               parent_size.height;
         }
+        |> apply_aspect_ratio_to_size
+        |> fun size ->
+        size_zip_map size box_sizing_adjustment (fun sz adj ->
+            Option.map (fun s -> s +. adj) sz)
       in
+
+      (* Apply clamping after width/height calculation from insets *)
+      (match (!mut_known_dimensions.width, inset.left, inset.right) with
+      | None, Some left, Some right ->
+          let new_width_raw =
+            Option.value ~default:0.0 parent_size.width
+            -. Option.value ~default:0.0 margin.left
+            -. Option.value ~default:0.0 margin.right
+            -. left -. right
+          in
+          mut_known_dimensions :=
+            { !mut_known_dimensions with width = Some (Float.max new_width_raw 0.0) }
+            |> apply_aspect_ratio_to_size
+            |> fun size -> Size.maybe_clamp size min_size max_size
+      | _ -> ());
+
+      (match (!mut_known_dimensions.height, inset.top, inset.bottom) with
+      | None, Some top, Some bottom ->
+          let new_height_raw =
+            Option.value ~default:0.0 parent_size.height
+            -. Option.value ~default:0.0 margin.top
+            -. Option.value ~default:0.0 margin.bottom
+            -. top -. bottom
+          in
+          mut_known_dimensions :=
+            { !mut_known_dimensions with height = Some (Float.max new_height_raw 0.0) }
+            |> apply_aspect_ratio_to_size
+            |> fun size -> Size.maybe_clamp size min_size max_size
+      | _ -> ());
+
+      let size = !mut_known_dimensions in
 
       (* Perform child layout *)
       let layout_output =
