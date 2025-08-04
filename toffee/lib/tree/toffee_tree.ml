@@ -711,36 +711,40 @@ module Tree = struct
 
         (* Apply rounding if enabled *)
         (if t.config.use_rounding then
-          let module RoundTreeImpl = struct
-            type nonrec t = ctx t
-            type child_iter = Node_id.t list
-            let child_ids t node_id =
-              match Hashtbl.find_opt t.children node_id with
-              | Some children ->
-                  Array.to_list (Array.map Node_id.of_int64 children)
-              | None -> []
-            let child_count t node_id =
-              match Hashtbl.find_opt t.children node_id with
-              | Some children -> Array.length children
-              | None -> 0
-            let get_child_id t node_id index =
-              match Hashtbl.find_opt t.children node_id with
-              | Some children ->
-                  if index < Array.length children then
-                    Node_id.of_int64 children.(index)
-                  else
-                    Node_id.of_int 0  (* This shouldn't happen *)
-              | None -> Node_id.of_int 0
-            let get_unrounded_layout t node_id =
-              match Hashtbl.find_opt t.nodes node_id with
-              | Some node_data -> node_data.NodeData.unrounded_layout
-              | None -> Layout.empty
-            let set_final_layout t node_id layout =
-              match Hashtbl.find_opt t.nodes node_id with
-              | Some node_data -> node_data.NodeData.final_layout <- layout
-              | None -> ()
-          end in
-          Compute.round_layout (module RoundTreeImpl) t root_id);
+           let module RoundTreeImpl = struct
+             type nonrec t = ctx t
+             type child_iter = Node_id.t list
+
+             let child_ids t node_id =
+               match Hashtbl.find_opt t.children node_id with
+               | Some children ->
+                   Array.to_list (Array.map Node_id.of_int64 children)
+               | None -> []
+
+             let child_count t node_id =
+               match Hashtbl.find_opt t.children node_id with
+               | Some children -> Array.length children
+               | None -> 0
+
+             let get_child_id t node_id index =
+               match Hashtbl.find_opt t.children node_id with
+               | Some children ->
+                   if index < Array.length children then
+                     Node_id.of_int64 children.(index)
+                   else Node_id.of_int 0 (* This shouldn't happen *)
+               | None -> Node_id.of_int 0
+
+             let get_unrounded_layout t node_id =
+               match Hashtbl.find_opt t.nodes node_id with
+               | Some node_data -> node_data.NodeData.unrounded_layout
+               | None -> Layout.empty
+
+             let set_final_layout t node_id layout =
+               match Hashtbl.find_opt t.nodes node_id with
+               | Some node_data -> node_data.NodeData.final_layout <- layout
+               | None -> ()
+           end in
+           Compute.round_layout (module RoundTreeImpl) t root_id);
 
         Ok ()
 
