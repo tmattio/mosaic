@@ -3,7 +3,8 @@
 
 open Toffee
 
-let test_align_flex_start_with_shrinking_children_with_stretch_border_box () =
+let test_flex_align_flex_start_with_shrinking_children_with_stretch_border_box
+    () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -98,7 +99,8 @@ let test_align_flex_start_with_shrinking_children_with_stretch_border_box () =
   assert_eq ~msg:"y of node2" 0.0 layout.location.y;
   ()
 
-let test_align_flex_start_with_shrinking_children_with_stretch_content_box () =
+let test_flex_align_flex_start_with_shrinking_children_with_stretch_content_box
+    () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -197,21 +199,16 @@ let test_align_flex_start_with_shrinking_children_with_stretch_content_box () =
   assert_eq ~msg:"y of node2" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee align_flex_start_with_shrinking_children_with_stretch Test"
-    [
-      ( "flex_align_flex_start_with_shrinking_children_with_stretch",
-        [
-          test_case
-            "align_flex_start_with_shrinking_children_with_stretch (border-box)"
-            `Quick
-            test_align_flex_start_with_shrinking_children_with_stretch_border_box;
-          test_case
-            "align_flex_start_with_shrinking_children_with_stretch \
-             (content-box)"
-            `Quick
-            test_align_flex_start_with_shrinking_children_with_stretch_content_box;
-        ] );
-    ]
+  [
+    test_case
+      "align_flex_start_with_shrinking_children_with_stretch (border-box)"
+      `Quick
+      test_flex_align_flex_start_with_shrinking_children_with_stretch_border_box;
+    test_case
+      "align_flex_start_with_shrinking_children_with_stretch (content-box)"
+      `Quick
+      test_flex_align_flex_start_with_shrinking_children_with_stretch_content_box;
+  ]

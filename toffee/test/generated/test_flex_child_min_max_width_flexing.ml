@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_child_min_max_width_flexing_border_box () =
+let test_flex_child_min_max_width_flexing_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -96,7 +96,7 @@ let test_child_min_max_width_flexing_border_box () =
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-let test_child_min_max_width_flexing_content_box () =
+let test_flex_child_min_max_width_flexing_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -192,16 +192,12 @@ let test_child_min_max_width_flexing_content_box () =
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee child_min_max_width_flexing Test"
-    [
-      ( "flex_child_min_max_width_flexing",
-        [
-          test_case "child_min_max_width_flexing (border-box)" `Quick
-            test_child_min_max_width_flexing_border_box;
-          test_case "child_min_max_width_flexing (content-box)" `Quick
-            test_child_min_max_width_flexing_content_box;
-        ] );
-    ]
+  [
+    test_case "child_min_max_width_flexing (border-box)" `Quick
+      test_flex_child_min_max_width_flexing_border_box;
+    test_case "child_min_max_width_flexing (content-box)" `Quick
+      test_flex_child_min_max_width_flexing_content_box;
+  ]

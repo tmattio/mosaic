@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_gap_column_gap_flexible_border_box () =
+let test_flex_gap_column_gap_flexible_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -107,7 +107,7 @@ let test_gap_column_gap_flexible_border_box () =
   assert_eq ~msg:"y of node2" 0.0 layout.location.y;
   ()
 
-let test_gap_column_gap_flexible_content_box () =
+let test_flex_gap_column_gap_flexible_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -215,16 +215,12 @@ let test_gap_column_gap_flexible_content_box () =
   assert_eq ~msg:"y of node2" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee gap_column_gap_flexible Test"
-    [
-      ( "flex_gap_column_gap_flexible",
-        [
-          test_case "gap_column_gap_flexible (border-box)" `Quick
-            test_gap_column_gap_flexible_border_box;
-          test_case "gap_column_gap_flexible (content-box)" `Quick
-            test_gap_column_gap_flexible_content_box;
-        ] );
-    ]
+  [
+    test_case "gap_column_gap_flexible (border-box)" `Quick
+      test_flex_gap_column_gap_flexible_border_box;
+    test_case "gap_column_gap_flexible (content-box)" `Quick
+      test_flex_gap_column_gap_flexible_content_box;
+  ]

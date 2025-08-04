@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_wrap_reverse_column_fixed_size_border_box () =
+let test_flex_wrap_reverse_column_fixed_size_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -148,7 +148,7 @@ let test_wrap_reverse_column_fixed_size_border_box () =
   assert_eq ~msg:"y of node4" 0.0 layout.location.y;
   ()
 
-let test_wrap_reverse_column_fixed_size_content_box () =
+let test_flex_wrap_reverse_column_fixed_size_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -299,16 +299,12 @@ let test_wrap_reverse_column_fixed_size_content_box () =
   assert_eq ~msg:"y of node4" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee wrap_reverse_column_fixed_size Test"
-    [
-      ( "flex_wrap_reverse_column_fixed_size",
-        [
-          test_case "wrap_reverse_column_fixed_size (border-box)" `Quick
-            test_wrap_reverse_column_fixed_size_border_box;
-          test_case "wrap_reverse_column_fixed_size (content-box)" `Quick
-            test_wrap_reverse_column_fixed_size_content_box;
-        ] );
-    ]
+  [
+    test_case "wrap_reverse_column_fixed_size (border-box)" `Quick
+      test_flex_wrap_reverse_column_fixed_size_border_box;
+    test_case "wrap_reverse_column_fixed_size (content-box)" `Quick
+      test_flex_wrap_reverse_column_fixed_size_content_box;
+  ]

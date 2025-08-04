@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_percentage_moderate_complexity_border_box () =
+let test_flex_percentage_moderate_complexity_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -126,7 +126,7 @@ let test_percentage_moderate_complexity_border_box () =
   assert_eq ~msg:"y of node1" 10.078125 layout.location.y;
   ()
 
-let test_percentage_moderate_complexity_content_box () =
+let test_flex_percentage_moderate_complexity_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -252,16 +252,12 @@ let test_percentage_moderate_complexity_content_box () =
   assert_eq ~msg:"y of node1" 11.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee percentage_moderate_complexity Test"
-    [
-      ( "flex_percentage_moderate_complexity",
-        [
-          test_case "percentage_moderate_complexity (border-box)" `Quick
-            test_percentage_moderate_complexity_border_box;
-          test_case "percentage_moderate_complexity (content-box)" `Quick
-            test_percentage_moderate_complexity_content_box;
-        ] );
-    ]
+  [
+    test_case "percentage_moderate_complexity (border-box)" `Quick
+      test_flex_percentage_moderate_complexity_border_box;
+    test_case "percentage_moderate_complexity (content-box)" `Quick
+      test_flex_percentage_moderate_complexity_content_box;
+  ]

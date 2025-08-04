@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_justify_content_min_width_with_padding_child_width_greater_than_parent_border_box
+let test_flex_justify_content_min_width_with_padding_child_width_greater_than_parent_border_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
@@ -119,7 +119,7 @@ let test_justify_content_min_width_with_padding_child_width_greater_than_parent_
   assert_eq ~msg:"y of node2" 0.0 layout.location.y;
   ()
 
-let test_justify_content_min_width_with_padding_child_width_greater_than_parent_content_box
+let test_flex_justify_content_min_width_with_padding_child_width_greater_than_parent_content_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
@@ -239,25 +239,18 @@ let test_justify_content_min_width_with_padding_child_width_greater_than_parent_
   assert_eq ~msg:"y of node2" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run
-    "Toffee \
-     justify_content_min_width_with_padding_child_width_greater_than_parent \
-     Test"
-    [
-      ( "flex_justify_content_min_width_with_padding_child_width_greater_than_parent",
-        [
-          test_case
-            "justify_content_min_width_with_padding_child_width_greater_than_parent \
-             (border-box)"
-            `Quick
-            test_justify_content_min_width_with_padding_child_width_greater_than_parent_border_box;
-          test_case
-            "justify_content_min_width_with_padding_child_width_greater_than_parent \
-             (content-box)"
-            `Quick
-            test_justify_content_min_width_with_padding_child_width_greater_than_parent_content_box;
-        ] );
-    ]
+  [
+    test_case
+      "justify_content_min_width_with_padding_child_width_greater_than_parent \
+       (border-box)"
+      `Quick
+      test_flex_justify_content_min_width_with_padding_child_width_greater_than_parent_border_box;
+    test_case
+      "justify_content_min_width_with_padding_child_width_greater_than_parent \
+       (content-box)"
+      `Quick
+      test_flex_justify_content_min_width_with_padding_child_width_greater_than_parent_content_box;
+  ]

@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_absolute_resolved_insets_border_box () =
+let test_flex_absolute_resolved_insets_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -384,7 +384,7 @@ let test_absolute_resolved_insets_border_box () =
   assert_eq ~msg:"y of node13" 20.0 layout.location.y;
   ()
 
-let test_absolute_resolved_insets_content_box () =
+let test_flex_absolute_resolved_insets_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -783,16 +783,12 @@ let test_absolute_resolved_insets_content_box () =
   assert_eq ~msg:"y of node13" 20.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee absolute_resolved_insets Test"
-    [
-      ( "flex_absolute_resolved_insets",
-        [
-          test_case "absolute_resolved_insets (border-box)" `Quick
-            test_absolute_resolved_insets_border_box;
-          test_case "absolute_resolved_insets (content-box)" `Quick
-            test_absolute_resolved_insets_content_box;
-        ] );
-    ]
+  [
+    test_case "absolute_resolved_insets (border-box)" `Quick
+      test_flex_absolute_resolved_insets_border_box;
+    test_case "absolute_resolved_insets (content-box)" `Quick
+      test_flex_absolute_resolved_insets_content_box;
+  ]

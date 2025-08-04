@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_android_news_feed_border_box () =
+let test_flex_android_news_feed_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -369,7 +369,7 @@ let test_android_news_feed_border_box () =
   assert_eq ~msg:"y of node15" 21.0 layout.location.y;
   ()
 
-let test_android_news_feed_content_box () =
+let test_flex_android_news_feed_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -752,16 +752,12 @@ let test_android_news_feed_content_box () =
   assert_eq ~msg:"y of node15" 21.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee android_news_feed Test"
-    [
-      ( "flex_android_news_feed",
-        [
-          test_case "android_news_feed (border-box)" `Quick
-            test_android_news_feed_border_box;
-          test_case "android_news_feed (content-box)" `Quick
-            test_android_news_feed_content_box;
-        ] );
-    ]
+  [
+    test_case "android_news_feed (border-box)" `Quick
+      test_flex_android_news_feed_border_box;
+    test_case "android_news_feed (content-box)" `Quick
+      test_flex_android_news_feed_content_box;
+  ]

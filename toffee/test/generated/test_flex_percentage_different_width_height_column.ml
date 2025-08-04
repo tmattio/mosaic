@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_percentage_different_width_height_column_border_box () =
+let test_flex_percentage_different_width_height_column_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -85,7 +85,7 @@ let test_percentage_different_width_height_column_border_box () =
   assert_eq ~msg:"y of node1" 210.0 layout.location.y;
   ()
 
-let test_percentage_different_width_height_column_content_box () =
+let test_flex_percentage_different_width_height_column_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -170,16 +170,12 @@ let test_percentage_different_width_height_column_content_box () =
   assert_eq ~msg:"y of node1" 210.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee percentage_different_width_height_column Test"
-    [
-      ( "flex_percentage_different_width_height_column",
-        [
-          test_case "percentage_different_width_height_column (border-box)"
-            `Quick test_percentage_different_width_height_column_border_box;
-          test_case "percentage_different_width_height_column (content-box)"
-            `Quick test_percentage_different_width_height_column_content_box;
-        ] );
-    ]
+  [
+    test_case "percentage_different_width_height_column (border-box)" `Quick
+      test_flex_percentage_different_width_height_column_border_box;
+    test_case "percentage_different_width_height_column (content-box)" `Quick
+      test_flex_percentage_different_width_height_column_content_box;
+  ]

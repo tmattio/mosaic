@@ -64,7 +64,8 @@ let measure_function ~known_dimensions ~available_space _node_id node_context
       { width = inline_size; height = block_size }
   | None -> { width = 0.0; height = 0.0 }
 
-let test_aspect_ratio_flex_column_fill_max_height_border_box () =
+let test_flex_aspect_ratio_flex_column_fill_max_height_border_box
+    measure_function () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -139,7 +140,8 @@ let test_aspect_ratio_flex_column_fill_max_height_border_box () =
   assert_eq ~msg:"y of node0" 0.0 layout.location.y;
   ()
 
-let test_aspect_ratio_flex_column_fill_max_height_content_box () =
+let test_flex_aspect_ratio_flex_column_fill_max_height_content_box
+    measure_function () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -216,16 +218,16 @@ let test_aspect_ratio_flex_column_fill_max_height_content_box () =
   assert_eq ~msg:"y of node0" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee aspect_ratio_flex_column_fill_max_height Test"
-    [
-      ( "flex_aspect_ratio_flex_column_fill_max_height",
-        [
-          test_case "aspect_ratio_flex_column_fill_max_height (border-box)"
-            `Quick test_aspect_ratio_flex_column_fill_max_height_border_box;
-          test_case "aspect_ratio_flex_column_fill_max_height (content-box)"
-            `Quick test_aspect_ratio_flex_column_fill_max_height_content_box;
-        ] );
-    ]
+  [
+    test_case "aspect_ratio_flex_column_fill_max_height (border-box)" `Quick
+      (fun () ->
+        test_flex_aspect_ratio_flex_column_fill_max_height_border_box
+          measure_function ());
+    test_case "aspect_ratio_flex_column_fill_max_height (content-box)" `Quick
+      (fun () ->
+        test_flex_aspect_ratio_flex_column_fill_max_height_content_box
+          measure_function ());
+  ]

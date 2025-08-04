@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_absolute_margin_bottom_left_border_box () =
+let test_flex_absolute_margin_bottom_left_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -79,7 +79,7 @@ let test_absolute_margin_bottom_left_border_box () =
   assert_eq ~msg:"y of node0" 80.0 layout.location.y;
   ()
 
-let test_absolute_margin_bottom_left_content_box () =
+let test_flex_absolute_margin_bottom_left_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -157,16 +157,12 @@ let test_absolute_margin_bottom_left_content_box () =
   assert_eq ~msg:"y of node0" 80.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee absolute_margin_bottom_left Test"
-    [
-      ( "flex_absolute_margin_bottom_left",
-        [
-          test_case "absolute_margin_bottom_left (border-box)" `Quick
-            test_absolute_margin_bottom_left_border_box;
-          test_case "absolute_margin_bottom_left (content-box)" `Quick
-            test_absolute_margin_bottom_left_content_box;
-        ] );
-    ]
+  [
+    test_case "absolute_margin_bottom_left (border-box)" `Quick
+      test_flex_absolute_margin_bottom_left_border_box;
+    test_case "absolute_margin_bottom_left (content-box)" `Quick
+      test_flex_absolute_margin_bottom_left_content_box;
+  ]

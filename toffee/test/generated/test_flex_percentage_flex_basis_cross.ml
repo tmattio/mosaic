@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_percentage_flex_basis_cross_border_box () =
+let test_flex_percentage_flex_basis_cross_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -83,7 +83,7 @@ let test_percentage_flex_basis_cross_border_box () =
   assert_eq ~msg:"y of node1" 250.0 layout.location.y;
   ()
 
-let test_percentage_flex_basis_cross_content_box () =
+let test_flex_percentage_flex_basis_cross_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -166,16 +166,12 @@ let test_percentage_flex_basis_cross_content_box () =
   assert_eq ~msg:"y of node1" 250.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee percentage_flex_basis_cross Test"
-    [
-      ( "flex_percentage_flex_basis_cross",
-        [
-          test_case "percentage_flex_basis_cross (border-box)" `Quick
-            test_percentage_flex_basis_cross_border_box;
-          test_case "percentage_flex_basis_cross (content-box)" `Quick
-            test_percentage_flex_basis_cross_content_box;
-        ] );
-    ]
+  [
+    test_case "percentage_flex_basis_cross (border-box)" `Quick
+      test_flex_percentage_flex_basis_cross_border_box;
+    test_case "percentage_flex_basis_cross (content-box)" `Quick
+      test_flex_percentage_flex_basis_cross_content_box;
+  ]

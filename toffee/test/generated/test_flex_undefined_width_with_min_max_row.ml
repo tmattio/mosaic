@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_undefined_width_with_min_max_row_border_box () =
+let test_flex_undefined_width_with_min_max_row_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -94,7 +94,7 @@ let test_undefined_width_with_min_max_row_border_box () =
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-let test_undefined_width_with_min_max_row_content_box () =
+let test_flex_undefined_width_with_min_max_row_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -188,16 +188,12 @@ let test_undefined_width_with_min_max_row_content_box () =
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee undefined_width_with_min_max_row Test"
-    [
-      ( "flex_undefined_width_with_min_max_row",
-        [
-          test_case "undefined_width_with_min_max_row (border-box)" `Quick
-            test_undefined_width_with_min_max_row_border_box;
-          test_case "undefined_width_with_min_max_row (content-box)" `Quick
-            test_undefined_width_with_min_max_row_content_box;
-        ] );
-    ]
+  [
+    test_case "undefined_width_with_min_max_row (border-box)" `Quick
+      test_flex_undefined_width_with_min_max_row_border_box;
+    test_case "undefined_width_with_min_max_row (content-box)" `Quick
+      test_flex_undefined_width_with_min_max_row_content_box;
+  ]

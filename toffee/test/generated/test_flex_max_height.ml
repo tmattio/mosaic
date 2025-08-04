@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_max_height_border_box () =
+let test_flex_max_height_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -75,7 +75,7 @@ let test_max_height_border_box () =
   assert_eq ~msg:"y of node0" 0.0 layout.location.y;
   ()
 
-let test_max_height_content_box () =
+let test_flex_max_height_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -149,15 +149,10 @@ let test_max_height_content_box () =
   assert_eq ~msg:"y of node0" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee max_height Test"
-    [
-      ( "flex_max_height",
-        [
-          test_case "max_height (border-box)" `Quick test_max_height_border_box;
-          test_case "max_height (content-box)" `Quick
-            test_max_height_content_box;
-        ] );
-    ]
+  [
+    test_case "max_height (border-box)" `Quick test_flex_max_height_border_box;
+    test_case "max_height (content-box)" `Quick test_flex_max_height_content_box;
+  ]

@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hidden_parent_border_box
+let test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hidden_parent_border_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
@@ -94,7 +94,7 @@ let test_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hidden_p
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-let test_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hidden_parent_content_box
+let test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hidden_parent_content_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
@@ -188,25 +188,18 @@ let test_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hidden_p
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run
-    "Toffee \
-     do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hidden_parent \
-     Test"
-    [
-      ( "flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hidden_parent",
-        [
-          test_case
-            "do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hidden_parent \
-             (border-box)"
-            `Quick
-            test_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hidden_parent_border_box;
-          test_case
-            "do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hidden_parent \
-             (content-box)"
-            `Quick
-            test_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hidden_parent_content_box;
-        ] );
-    ]
+  [
+    test_case
+      "do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hidden_parent \
+       (border-box)"
+      `Quick
+      test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hidden_parent_border_box;
+    test_case
+      "do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hidden_parent \
+       (content-box)"
+      `Quick
+      test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hidden_parent_content_box;
+  ]

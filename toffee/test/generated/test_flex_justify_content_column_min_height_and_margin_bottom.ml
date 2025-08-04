@@ -3,7 +3,8 @@
 
 open Toffee
 
-let test_justify_content_column_min_height_and_margin_bottom_border_box () =
+let test_flex_justify_content_column_min_height_and_margin_bottom_border_box ()
+    =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -78,7 +79,8 @@ let test_justify_content_column_min_height_and_margin_bottom_border_box () =
   assert_eq ~msg:"y of node0" 10.0 layout.location.y;
   ()
 
-let test_justify_content_column_min_height_and_margin_bottom_content_box () =
+let test_flex_justify_content_column_min_height_and_margin_bottom_content_box ()
+    =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -155,20 +157,14 @@ let test_justify_content_column_min_height_and_margin_bottom_content_box () =
   assert_eq ~msg:"y of node0" 10.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee justify_content_column_min_height_and_margin_bottom Test"
-    [
-      ( "flex_justify_content_column_min_height_and_margin_bottom",
-        [
-          test_case
-            "justify_content_column_min_height_and_margin_bottom (border-box)"
-            `Quick
-            test_justify_content_column_min_height_and_margin_bottom_border_box;
-          test_case
-            "justify_content_column_min_height_and_margin_bottom (content-box)"
-            `Quick
-            test_justify_content_column_min_height_and_margin_bottom_content_box;
-        ] );
-    ]
+  [
+    test_case "justify_content_column_min_height_and_margin_bottom (border-box)"
+      `Quick
+      test_flex_justify_content_column_min_height_and_margin_bottom_border_box;
+    test_case
+      "justify_content_column_min_height_and_margin_bottom (content-box)" `Quick
+      test_flex_justify_content_column_min_height_and_margin_bottom_content_box;
+  ]

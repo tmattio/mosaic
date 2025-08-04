@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_percent_absolute_position_border_box () =
+let test_flex_percent_absolute_position_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -117,7 +117,7 @@ let test_percent_absolute_position_border_box () =
   assert_eq ~msg:"y of node2" 0.0 layout.location.y;
   ()
 
-let test_percent_absolute_position_content_box () =
+let test_flex_percent_absolute_position_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -235,16 +235,12 @@ let test_percent_absolute_position_content_box () =
   assert_eq ~msg:"y of node2" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee percent_absolute_position Test"
-    [
-      ( "flex_percent_absolute_position",
-        [
-          test_case "percent_absolute_position (border-box)" `Quick
-            test_percent_absolute_position_border_box;
-          test_case "percent_absolute_position (content-box)" `Quick
-            test_percent_absolute_position_content_box;
-        ] );
-    ]
+  [
+    test_case "percent_absolute_position (border-box)" `Quick
+      test_flex_percent_absolute_position_border_box;
+    test_case "percent_absolute_position (content-box)" `Quick
+      test_flex_percent_absolute_position_content_box;
+  ]

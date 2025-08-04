@@ -538,7 +538,7 @@ function generateAssertions(nodeVar, node, useRounding) {
   return assertions;
 }
 
-function generateTest(name, testData, boxSizing) {
+function generateTest(name, testData, boxSizing, category = '') {
   const data = testData;
   const useRounding = data.useRounding !== false;
   
@@ -585,9 +585,12 @@ function generateTest(name, testData, boxSizing) {
     height = ${availableSpaceToOCaml(viewport.height)};
   }`;
   
-  // Generate test function
+  // Generate test function - note we need measure_function parameter if hasTextNodes
+  const measureParam = hasTextNodes ? ' measure_function' : '';
+  const functionPrefix = category ? `${category}_` : '';
+  
   return `
-let test_${name}_${boxSizing} () =
+let test_${functionPrefix}${name}_${boxSizing}${measureParam} () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -761,11 +764,21 @@ async function main() {
   if (args.length > 0) {
     // Process single fixture
     const fixturePath = path.resolve(args[0]);
-    const { name, borderBoxData, contentBoxData } = await processFixture(fixturePath);
-    
-    // Generate both border-box and content-box tests
-    const borderBoxTest = generateTest(name, borderBoxData, 'border_box');
-    const contentBoxTest = generateTest(name, contentBoxData, 'content_box');
+    try {
+      const { name, borderBoxData, contentBoxData } = await processFixture(fixturePath);
+      
+      // Validate the test data
+      if (!borderBoxData || !contentBoxData) {
+        throw new Error(`Invalid test data: missing borderBoxData or contentBoxData for ${fixturePath}`);
+      }
+      
+      // Generate both border-box and content-box tests
+      const borderBoxTest = generateTest(name, borderBoxData, 'border_box');
+      const contentBoxTest = generateTest(name, contentBoxData, 'content_box');
+      
+      if (!borderBoxTest || !contentBoxTest) {
+        throw new Error(`Failed to generate test functions for ${fixturePath}`);
+      }
     
     // Check if we have any text nodes
     let hasTextNodes = false;
@@ -797,13 +810,12 @@ ${borderBoxTest}
 
 ${contentBoxTest}
 
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee ${name} Test" [
-    "${name}", [
-      test_case "${name} (border-box)" \`Quick test_${name.replace(/-/g, '_')}_border_box;
-      test_case "${name} (content-box)" \`Quick test_${name.replace(/-/g, '_')}_content_box;
-    ];
+  [
+    test_case "${name} (border-box)" \`Quick ${hasTextNodes ? '(fun () -> test_' + name.replace(/-/g, '_') + '_border_box measure_function ())' : 'test_' + name.replace(/-/g, '_') + '_border_box'};
+    test_case "${name} (content-box)" \`Quick ${hasTextNodes ? '(fun () -> test_' + name.replace(/-/g, '_') + '_content_box measure_function ())' : 'test_' + name.replace(/-/g, '_') + '_content_box'};
   ]
 `;
     
@@ -812,7 +824,12 @@ let () =
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
     await fs.writeFile(outputPath, testModule);
     
-    console.log(`Generated ${outputPath}`);
+      console.log(`Generated ${outputPath}`);
+    } catch (err) {
+      console.error(`ERROR processing ${fixturePath}:`, err.message);
+      console.error(err.stack);
+      process.exit(1);
+    }
     return;
   }
   
@@ -846,9 +863,21 @@ let () =
         try {
           const { name, borderBoxData, contentBoxData } = await processFixture(fixturePath);
           
+          // Validate the test data
+          if (!borderBoxData || !contentBoxData) {
+            throw new Error(`Invalid test data: missing borderBoxData or contentBoxData for ${file}`);
+          }
+          
+          // Remove category prefix from name if it's already there
+          const cleanName = name.startsWith(`${category}_`) ? name.substring(category.length + 1) : name;
+          
           // Generate both border-box and content-box tests
-          const borderBoxTest = generateTest(name, borderBoxData, 'border_box');
-          const contentBoxTest = generateTest(name, contentBoxData, 'content_box');
+          const borderBoxTest = generateTest(cleanName, borderBoxData, 'border_box', category);
+          const contentBoxTest = generateTest(cleanName, contentBoxData, 'content_box', category);
+          
+          if (!borderBoxTest || !contentBoxTest) {
+            throw new Error(`Failed to generate test functions for ${file}`);
+          }
           
           // Check if we have any text nodes to determine if we need measure functions
           let hasTextNodes = false;
@@ -859,9 +888,9 @@ let () =
           checkForTextNodes(borderBoxData);
           checkForTextNodes(contentBoxData);
           
-          // Write individual test file with its own test runner
-          const testModuleName = `test_${category}_${name.replace(/-/g, '_')}`;
-          const testName = name.replace(/-/g, '_').replace(/\./g, '_');
+          // Write individual test file without test runner
+          const testModuleName = `test_${category}_${cleanName.replace(/-/g, '_')}`;
+          const testName = cleanName.replace(/-/g, '_').replace(/\./g, '_');
           const testModule = `
 (* Generated test for ${name} in ${category} layout *)
 (* Do not edit this file directly. It is generated by gentest.js *)
@@ -883,14 +912,12 @@ ${borderBoxTest}
 
 ${contentBoxTest}
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee ${name} Test" [
-    "${category}_${testName}", [
-      test_case "${testName} (border-box)" \`Quick test_${testName}_border_box;
-      test_case "${testName} (content-box)" \`Quick test_${testName}_content_box;
-    ];
+  [
+    test_case "${testName} (border-box)" \`Quick ${hasTextNodes ? '(fun () -> test_' + category + '_' + testName + '_border_box measure_function ())' : 'test_' + category + '_' + testName + '_border_box'};
+    test_case "${testName} (content-box)" \`Quick ${hasTextNodes ? '(fun () -> test_' + category + '_' + testName + '_content_box measure_function ())' : 'test_' + category + '_' + testName + '_content_box'};
   ]
 `;
           
@@ -905,7 +932,10 @@ let () =
           });
           
         } catch (err) {
-          console.error(`    Error processing ${file}:`, err.message);
+          console.error(`    ERROR processing ${file}:`, err.message);
+          console.error(err.stack);
+          // Exit with error code to fail the build
+          process.exit(1);
         }
       }
       
@@ -921,27 +951,55 @@ let () =
     }
   }
   
-  // Generate dune file for all tests
-  console.log('\nGenerating dune file...');
+  // Generate test runner and dune file
+  console.log('\nGenerating test runner and dune file...');
   
   try {
     const generatedFiles = await fs.readdir(generatedDir);
     const testFiles = generatedFiles
-      .filter(f => f.endsWith('.ml') && f.startsWith('test_'))
+      .filter(f => f.endsWith('.ml') && f.startsWith('test_') && f !== 'test_runner.ml')
       .map(f => f.replace('.ml', ''))
       .sort();
     
     if (testFiles.length > 0) {
-      const duneContent = `(tests
- (names ${testFiles.join(' ')})
- (libraries toffee alcotest))
+      // Generate test_runner.ml that aggregates all tests
+      const testRunnerContent = `(* Generated test runner that aggregates all tests *)
+(* Do not edit this file directly. It is generated by gentest.js *)
+
+open Alcotest
+
+(* Aggregate all tests from test modules *)
+let all_tests =
+  List.concat [
+${testFiles.map(f => {
+  // OCaml module names from files only capitalize the first letter
+  const moduleName = f.charAt(0).toUpperCase() + f.slice(1);
+  return `    ${moduleName}.tests;`;
+}).join('\n')}
+  ]
+
+(* Run all tests *)
+let () =
+  run "Toffee Layout Tests" [
+    "all_tests", all_tests;
+  ]
+`;
+      
+      await fs.writeFile(path.join(generatedDir, 'test_runner.ml'), testRunnerContent);
+      console.log('Generated test_runner.ml');
+      
+      // Generate dune file
+      const duneContent = `(test
+ (name test_runner)
+ (libraries toffee alcotest)
+ (modules ${testFiles.join(' ')} test_runner))
 `;
       
       await fs.writeFile(path.join(generatedDir, 'dune'), duneContent);
-      console.log(`Generated dune file with ${testFiles.length} tests`);
+      console.log(`Generated dune file with ${testFiles.length} test modules`);
     }
   } catch (err) {
-    console.error('Error generating dune file:', err);
+    console.error('Error generating test runner and dune file:', err);
   }
   
   console.log('\nTest generation complete!');

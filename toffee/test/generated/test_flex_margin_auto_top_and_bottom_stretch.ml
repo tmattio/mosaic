@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_margin_auto_top_and_bottom_stretch_border_box () =
+let test_flex_margin_auto_top_and_bottom_stretch_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -97,7 +97,7 @@ let test_margin_auto_top_and_bottom_stretch_border_box () =
   assert_eq ~msg:"y of node1" 150.0 layout.location.y;
   ()
 
-let test_margin_auto_top_and_bottom_stretch_content_box () =
+let test_flex_margin_auto_top_and_bottom_stretch_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -194,16 +194,12 @@ let test_margin_auto_top_and_bottom_stretch_content_box () =
   assert_eq ~msg:"y of node1" 150.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee margin_auto_top_and_bottom_stretch Test"
-    [
-      ( "flex_margin_auto_top_and_bottom_stretch",
-        [
-          test_case "margin_auto_top_and_bottom_stretch (border-box)" `Quick
-            test_margin_auto_top_and_bottom_stretch_border_box;
-          test_case "margin_auto_top_and_bottom_stretch (content-box)" `Quick
-            test_margin_auto_top_and_bottom_stretch_content_box;
-        ] );
-    ]
+  [
+    test_case "margin_auto_top_and_bottom_stretch (border-box)" `Quick
+      test_flex_margin_auto_top_and_bottom_stretch_border_box;
+    test_case "margin_auto_top_and_bottom_stretch (content-box)" `Quick
+      test_flex_margin_auto_top_and_bottom_stretch_content_box;
+  ]

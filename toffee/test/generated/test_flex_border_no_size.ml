@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_border_no_size_border_box () =
+let test_flex_border_no_size_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -53,7 +53,7 @@ let test_border_no_size_border_box () =
   assert_eq ~msg:"y of node" 0.0 layout.location.y;
   ()
 
-let test_border_no_size_content_box () =
+let test_flex_border_no_size_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -104,16 +104,12 @@ let test_border_no_size_content_box () =
   assert_eq ~msg:"y of node" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee border_no_size Test"
-    [
-      ( "flex_border_no_size",
-        [
-          test_case "border_no_size (border-box)" `Quick
-            test_border_no_size_border_box;
-          test_case "border_no_size (content-box)" `Quick
-            test_border_no_size_content_box;
-        ] );
-    ]
+  [
+    test_case "border_no_size (border-box)" `Quick
+      test_flex_border_no_size_border_box;
+    test_case "border_no_size (content-box)" `Quick
+      test_flex_border_no_size_content_box;
+  ]

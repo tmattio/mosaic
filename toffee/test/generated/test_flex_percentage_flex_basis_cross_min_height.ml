@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_percentage_flex_basis_cross_min_height_border_box () =
+let test_flex_percentage_flex_basis_cross_min_height_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -91,7 +91,7 @@ let test_percentage_flex_basis_cross_min_height_border_box () =
   assert_eq ~msg:"y of node1" 240.0 layout.location.y;
   ()
 
-let test_percentage_flex_basis_cross_min_height_content_box () =
+let test_flex_percentage_flex_basis_cross_min_height_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -182,16 +182,12 @@ let test_percentage_flex_basis_cross_min_height_content_box () =
   assert_eq ~msg:"y of node1" 240.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee percentage_flex_basis_cross_min_height Test"
-    [
-      ( "flex_percentage_flex_basis_cross_min_height",
-        [
-          test_case "percentage_flex_basis_cross_min_height (border-box)" `Quick
-            test_percentage_flex_basis_cross_min_height_border_box;
-          test_case "percentage_flex_basis_cross_min_height (content-box)"
-            `Quick test_percentage_flex_basis_cross_min_height_content_box;
-        ] );
-    ]
+  [
+    test_case "percentage_flex_basis_cross_min_height (border-box)" `Quick
+      test_flex_percentage_flex_basis_cross_min_height_border_box;
+    test_case "percentage_flex_basis_cross_min_height (content-box)" `Quick
+      test_flex_percentage_flex_basis_cross_min_height_content_box;
+  ]

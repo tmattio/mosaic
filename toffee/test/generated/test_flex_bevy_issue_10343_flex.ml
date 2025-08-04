@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_bevy_issue_10343_flex_border_box () =
+let test_flex_bevy_issue_10343_flex_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -104,7 +104,7 @@ let test_bevy_issue_10343_flex_border_box () =
   assert_eq ~msg:"y of node2" 0.0 layout.location.y;
   ()
 
-let test_bevy_issue_10343_flex_content_box () =
+let test_flex_bevy_issue_10343_flex_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -212,16 +212,12 @@ let test_bevy_issue_10343_flex_content_box () =
   assert_eq ~msg:"y of node2" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee bevy_issue_10343_flex Test"
-    [
-      ( "flex_bevy_issue_10343_flex",
-        [
-          test_case "bevy_issue_10343_flex (border-box)" `Quick
-            test_bevy_issue_10343_flex_border_box;
-          test_case "bevy_issue_10343_flex (content-box)" `Quick
-            test_bevy_issue_10343_flex_content_box;
-        ] );
-    ]
+  [
+    test_case "bevy_issue_10343_flex (border-box)" `Quick
+      test_flex_bevy_issue_10343_flex_border_box;
+    test_case "bevy_issue_10343_flex (content-box)" `Quick
+      test_flex_bevy_issue_10343_flex_content_box;
+  ]

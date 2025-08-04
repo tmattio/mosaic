@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_align_content_space_evenly_wrapped_single_border_box () =
+let test_flex_align_content_space_evenly_wrapped_single_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -72,7 +72,7 @@ let test_align_content_space_evenly_wrapped_single_border_box () =
   assert_eq ~msg:"y of node0" 0.0 layout.location.y;
   ()
 
-let test_align_content_space_evenly_wrapped_single_content_box () =
+let test_flex_align_content_space_evenly_wrapped_single_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -143,16 +143,12 @@ let test_align_content_space_evenly_wrapped_single_content_box () =
   assert_eq ~msg:"y of node0" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee align_content_space_evenly_wrapped_single Test"
-    [
-      ( "flex_align_content_space_evenly_wrapped_single",
-        [
-          test_case "align_content_space_evenly_wrapped_single (border-box)"
-            `Quick test_align_content_space_evenly_wrapped_single_border_box;
-          test_case "align_content_space_evenly_wrapped_single (content-box)"
-            `Quick test_align_content_space_evenly_wrapped_single_content_box;
-        ] );
-    ]
+  [
+    test_case "align_content_space_evenly_wrapped_single (border-box)" `Quick
+      test_flex_align_content_space_evenly_wrapped_single_border_box;
+    test_case "align_content_space_evenly_wrapped_single (content-box)" `Quick
+      test_flex_align_content_space_evenly_wrapped_single_content_box;
+  ]

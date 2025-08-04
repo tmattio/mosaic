@@ -64,7 +64,8 @@ let measure_function ~known_dimensions ~available_space _node_id node_context
       { width = inline_size; height = block_size }
   | None -> { width = 0.0; height = 0.0 }
 
-let test_intrinsic_sizing_main_size_row_wrap_border_box () =
+let test_flex_intrinsic_sizing_main_size_row_wrap_border_box measure_function ()
+    =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -138,7 +139,8 @@ let test_intrinsic_sizing_main_size_row_wrap_border_box () =
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-let test_intrinsic_sizing_main_size_row_wrap_content_box () =
+let test_flex_intrinsic_sizing_main_size_row_wrap_content_box measure_function
+    () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -221,16 +223,16 @@ let test_intrinsic_sizing_main_size_row_wrap_content_box () =
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee intrinsic_sizing_main_size_row_wrap Test"
-    [
-      ( "flex_intrinsic_sizing_main_size_row_wrap",
-        [
-          test_case "intrinsic_sizing_main_size_row_wrap (border-box)" `Quick
-            test_intrinsic_sizing_main_size_row_wrap_border_box;
-          test_case "intrinsic_sizing_main_size_row_wrap (content-box)" `Quick
-            test_intrinsic_sizing_main_size_row_wrap_content_box;
-        ] );
-    ]
+  [
+    test_case "intrinsic_sizing_main_size_row_wrap (border-box)" `Quick
+      (fun () ->
+        test_flex_intrinsic_sizing_main_size_row_wrap_border_box
+          measure_function ());
+    test_case "intrinsic_sizing_main_size_row_wrap (content-box)" `Quick
+      (fun () ->
+        test_flex_intrinsic_sizing_main_size_row_wrap_content_box
+          measure_function ());
+  ]

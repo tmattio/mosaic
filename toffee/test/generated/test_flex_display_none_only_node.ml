@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_display_none_only_node_border_box () =
+let test_flex_display_none_only_node_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -50,7 +50,7 @@ let test_display_none_only_node_border_box () =
   assert_eq ~msg:"y of node" 0.0 layout.location.y;
   ()
 
-let test_display_none_only_node_content_box () =
+let test_flex_display_none_only_node_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -98,16 +98,12 @@ let test_display_none_only_node_content_box () =
   assert_eq ~msg:"y of node" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee display_none_only_node Test"
-    [
-      ( "flex_display_none_only_node",
-        [
-          test_case "display_none_only_node (border-box)" `Quick
-            test_display_none_only_node_border_box;
-          test_case "display_none_only_node (content-box)" `Quick
-            test_display_none_only_node_content_box;
-        ] );
-    ]
+  [
+    test_case "display_none_only_node (border-box)" `Quick
+      test_flex_display_none_only_node_border_box;
+    test_case "display_none_only_node (content-box)" `Quick
+      test_flex_display_none_only_node_content_box;
+  ]

@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_justify_content_row_space_around_border_box () =
+let test_flex_justify_content_row_space_around_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -109,7 +109,7 @@ let test_justify_content_row_space_around_border_box () =
   assert_eq ~msg:"y of node2" 0.0 layout.location.y;
   ()
 
-let test_justify_content_row_space_around_content_box () =
+let test_flex_justify_content_row_space_around_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -219,16 +219,12 @@ let test_justify_content_row_space_around_content_box () =
   assert_eq ~msg:"y of node2" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee justify_content_row_space_around Test"
-    [
-      ( "flex_justify_content_row_space_around",
-        [
-          test_case "justify_content_row_space_around (border-box)" `Quick
-            test_justify_content_row_space_around_border_box;
-          test_case "justify_content_row_space_around (content-box)" `Quick
-            test_justify_content_row_space_around_content_box;
-        ] );
-    ]
+  [
+    test_case "justify_content_row_space_around (border-box)" `Quick
+      test_flex_justify_content_row_space_around_border_box;
+    test_case "justify_content_row_space_around (content-box)" `Quick
+      test_flex_justify_content_row_space_around_content_box;
+  ]

@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_absolute_child_with_max_height_larger_shrinkable_grandchild_border_box
+let test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild_border_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
@@ -101,7 +101,7 @@ let test_absolute_child_with_max_height_larger_shrinkable_grandchild_border_box
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-let test_absolute_child_with_max_height_larger_shrinkable_grandchild_content_box
+let test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild_content_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
@@ -202,22 +202,17 @@ let test_absolute_child_with_max_height_larger_shrinkable_grandchild_content_box
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee absolute_child_with_max_height_larger_shrinkable_grandchild Test"
-    [
-      ( "flex_absolute_child_with_max_height_larger_shrinkable_grandchild",
-        [
-          test_case
-            "absolute_child_with_max_height_larger_shrinkable_grandchild \
-             (border-box)"
-            `Quick
-            test_absolute_child_with_max_height_larger_shrinkable_grandchild_border_box;
-          test_case
-            "absolute_child_with_max_height_larger_shrinkable_grandchild \
-             (content-box)"
-            `Quick
-            test_absolute_child_with_max_height_larger_shrinkable_grandchild_content_box;
-        ] );
-    ]
+  [
+    test_case
+      "absolute_child_with_max_height_larger_shrinkable_grandchild (border-box)"
+      `Quick
+      test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild_border_box;
+    test_case
+      "absolute_child_with_max_height_larger_shrinkable_grandchild \
+       (content-box)"
+      `Quick
+      test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild_content_box;
+  ]

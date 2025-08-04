@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_align_baseline_nested_column_border_box () =
+let test_flex_align_baseline_nested_column_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -146,7 +146,7 @@ let test_align_baseline_nested_column_border_box () =
   assert_eq ~msg:"y of node4" 30.0 layout.location.y;
   ()
 
-let test_align_baseline_nested_column_content_box () =
+let test_flex_align_baseline_nested_column_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -295,16 +295,12 @@ let test_align_baseline_nested_column_content_box () =
   assert_eq ~msg:"y of node4" 30.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee align_baseline_nested_column Test"
-    [
-      ( "flex_align_baseline_nested_column",
-        [
-          test_case "align_baseline_nested_column (border-box)" `Quick
-            test_align_baseline_nested_column_border_box;
-          test_case "align_baseline_nested_column (content-box)" `Quick
-            test_align_baseline_nested_column_content_box;
-        ] );
-    ]
+  [
+    test_case "align_baseline_nested_column (border-box)" `Quick
+      test_flex_align_baseline_nested_column_border_box;
+    test_case "align_baseline_nested_column (content-box)" `Quick
+      test_flex_align_baseline_nested_column_content_box;
+  ]

@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_align_items_flex_end_child_without_margin_bigger_than_parent_border_box
+let test_flex_align_items_flex_end_child_without_margin_bigger_than_parent_border_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
@@ -87,7 +87,7 @@ let test_align_items_flex_end_child_without_margin_bigger_than_parent_border_box
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-let test_align_items_flex_end_child_without_margin_bigger_than_parent_content_box
+let test_flex_align_items_flex_end_child_without_margin_bigger_than_parent_content_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
@@ -174,22 +174,18 @@ let test_align_items_flex_end_child_without_margin_bigger_than_parent_content_bo
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee align_items_flex_end_child_without_margin_bigger_than_parent Test"
-    [
-      ( "flex_align_items_flex_end_child_without_margin_bigger_than_parent",
-        [
-          test_case
-            "align_items_flex_end_child_without_margin_bigger_than_parent \
-             (border-box)"
-            `Quick
-            test_align_items_flex_end_child_without_margin_bigger_than_parent_border_box;
-          test_case
-            "align_items_flex_end_child_without_margin_bigger_than_parent \
-             (content-box)"
-            `Quick
-            test_align_items_flex_end_child_without_margin_bigger_than_parent_content_box;
-        ] );
-    ]
+  [
+    test_case
+      "align_items_flex_end_child_without_margin_bigger_than_parent \
+       (border-box)"
+      `Quick
+      test_flex_align_items_flex_end_child_without_margin_bigger_than_parent_border_box;
+    test_case
+      "align_items_flex_end_child_without_margin_bigger_than_parent \
+       (content-box)"
+      `Quick
+      test_flex_align_items_flex_end_child_without_margin_bigger_than_parent_content_box;
+  ]

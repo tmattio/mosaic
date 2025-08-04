@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_margin_auto_left_and_right_border_box () =
+let test_flex_margin_auto_left_and_right_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -95,7 +95,7 @@ let test_margin_auto_left_and_right_border_box () =
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-let test_margin_auto_left_and_right_content_box () =
+let test_flex_margin_auto_left_and_right_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -190,16 +190,12 @@ let test_margin_auto_left_and_right_content_box () =
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee margin_auto_left_and_right Test"
-    [
-      ( "flex_margin_auto_left_and_right",
-        [
-          test_case "margin_auto_left_and_right (border-box)" `Quick
-            test_margin_auto_left_and_right_border_box;
-          test_case "margin_auto_left_and_right (content-box)" `Quick
-            test_margin_auto_left_and_right_content_box;
-        ] );
-    ]
+  [
+    test_case "margin_auto_left_and_right (border-box)" `Quick
+      test_flex_margin_auto_left_and_right_border_box;
+    test_case "margin_auto_left_and_right (content-box)" `Quick
+      test_flex_margin_auto_left_and_right_content_box;
+  ]

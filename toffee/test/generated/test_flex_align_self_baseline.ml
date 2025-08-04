@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_align_self_baseline_border_box () =
+let test_flex_align_self_baseline_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -109,7 +109,7 @@ let test_align_self_baseline_border_box () =
   assert_eq ~msg:"y of node2" 0.0 layout.location.y;
   ()
 
-let test_align_self_baseline_content_box () =
+let test_flex_align_self_baseline_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -219,16 +219,12 @@ let test_align_self_baseline_content_box () =
   assert_eq ~msg:"y of node2" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee align_self_baseline Test"
-    [
-      ( "flex_align_self_baseline",
-        [
-          test_case "align_self_baseline (border-box)" `Quick
-            test_align_self_baseline_border_box;
-          test_case "align_self_baseline (content-box)" `Quick
-            test_align_self_baseline_content_box;
-        ] );
-    ]
+  [
+    test_case "align_self_baseline (border-box)" `Quick
+      test_flex_align_self_baseline_border_box;
+    test_case "align_self_baseline (content-box)" `Quick
+      test_flex_align_self_baseline_content_box;
+  ]

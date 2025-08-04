@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_scroll_size_border_box () =
+let test_flex_scroll_size_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -72,7 +72,7 @@ let test_scroll_size_border_box () =
   assert_eq ~msg:"y of node0" 0.0 layout.location.y;
   ()
 
-let test_scroll_size_content_box () =
+let test_flex_scroll_size_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -143,16 +143,11 @@ let test_scroll_size_content_box () =
   assert_eq ~msg:"y of node0" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee scroll_size Test"
-    [
-      ( "flex_scroll_size",
-        [
-          test_case "scroll_size (border-box)" `Quick
-            test_scroll_size_border_box;
-          test_case "scroll_size (content-box)" `Quick
-            test_scroll_size_content_box;
-        ] );
-    ]
+  [
+    test_case "scroll_size (border-box)" `Quick test_flex_scroll_size_border_box;
+    test_case "scroll_size (content-box)" `Quick
+      test_flex_scroll_size_content_box;
+  ]

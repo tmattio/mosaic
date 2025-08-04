@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_overflow_cross_axis_border_box () =
+let test_flex_overflow_cross_axis_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -69,7 +69,7 @@ let test_overflow_cross_axis_border_box () =
   assert_eq ~msg:"y of node0" 0.0 layout.location.y;
   ()
 
-let test_overflow_cross_axis_content_box () =
+let test_flex_overflow_cross_axis_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -137,16 +137,12 @@ let test_overflow_cross_axis_content_box () =
   assert_eq ~msg:"y of node0" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee overflow_cross_axis Test"
-    [
-      ( "flex_overflow_cross_axis",
-        [
-          test_case "overflow_cross_axis (border-box)" `Quick
-            test_overflow_cross_axis_border_box;
-          test_case "overflow_cross_axis (content-box)" `Quick
-            test_overflow_cross_axis_content_box;
-        ] );
-    ]
+  [
+    test_case "overflow_cross_axis (border-box)" `Quick
+      test_flex_overflow_cross_axis_border_box;
+    test_case "overflow_cross_axis (content-box)" `Quick
+      test_flex_overflow_cross_axis_content_box;
+  ]

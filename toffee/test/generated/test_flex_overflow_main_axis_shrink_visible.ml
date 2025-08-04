@@ -64,7 +64,7 @@ let measure_function ~known_dimensions ~available_space _node_id node_context
       { width = inline_size; height = block_size }
   | None -> { width = 0.0; height = 0.0 }
 
-let test_overflow_main_axis_shrink_visible_border_box () =
+let test_flex_overflow_main_axis_shrink_visible_border_box measure_function () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -131,7 +131,8 @@ let test_overflow_main_axis_shrink_visible_border_box () =
   assert_eq ~msg:"y of node0" 0.0 layout.location.y;
   ()
 
-let test_overflow_main_axis_shrink_visible_content_box () =
+let test_flex_overflow_main_axis_shrink_visible_content_box measure_function ()
+    =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -200,16 +201,15 @@ let test_overflow_main_axis_shrink_visible_content_box () =
   assert_eq ~msg:"y of node0" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee overflow_main_axis_shrink_visible Test"
-    [
-      ( "flex_overflow_main_axis_shrink_visible",
-        [
-          test_case "overflow_main_axis_shrink_visible (border-box)" `Quick
-            test_overflow_main_axis_shrink_visible_border_box;
-          test_case "overflow_main_axis_shrink_visible (content-box)" `Quick
-            test_overflow_main_axis_shrink_visible_content_box;
-        ] );
-    ]
+  [
+    test_case "overflow_main_axis_shrink_visible (border-box)" `Quick (fun () ->
+        test_flex_overflow_main_axis_shrink_visible_border_box measure_function
+          ());
+    test_case "overflow_main_axis_shrink_visible (content-box)" `Quick
+      (fun () ->
+        test_flex_overflow_main_axis_shrink_visible_content_box measure_function
+          ());
+  ]

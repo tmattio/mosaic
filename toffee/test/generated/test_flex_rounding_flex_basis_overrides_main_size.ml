@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_rounding_flex_basis_overrides_main_size_border_box () =
+let test_flex_rounding_flex_basis_overrides_main_size_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -112,7 +112,7 @@ let test_rounding_flex_basis_overrides_main_size_border_box () =
   assert_eq ~msg:"y of node2" 89.0 layout.location.y;
   ()
 
-let test_rounding_flex_basis_overrides_main_size_content_box () =
+let test_flex_rounding_flex_basis_overrides_main_size_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -225,16 +225,12 @@ let test_rounding_flex_basis_overrides_main_size_content_box () =
   assert_eq ~msg:"y of node2" 89.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee rounding_flex_basis_overrides_main_size Test"
-    [
-      ( "flex_rounding_flex_basis_overrides_main_size",
-        [
-          test_case "rounding_flex_basis_overrides_main_size (border-box)"
-            `Quick test_rounding_flex_basis_overrides_main_size_border_box;
-          test_case "rounding_flex_basis_overrides_main_size (content-box)"
-            `Quick test_rounding_flex_basis_overrides_main_size_content_box;
-        ] );
-    ]
+  [
+    test_case "rounding_flex_basis_overrides_main_size (border-box)" `Quick
+      test_flex_rounding_flex_basis_overrides_main_size_border_box;
+    test_case "rounding_flex_basis_overrides_main_size (content-box)" `Quick
+      test_flex_rounding_flex_basis_overrides_main_size_content_box;
+  ]

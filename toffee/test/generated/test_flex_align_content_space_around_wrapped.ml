@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_align_content_space_around_wrapped_border_box () =
+let test_flex_align_content_space_around_wrapped_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -167,7 +167,7 @@ let test_align_content_space_around_wrapped_border_box () =
   assert_eq ~msg:"y of node5" 78.0 layout.location.y;
   ()
 
-let test_align_content_space_around_wrapped_content_box () =
+let test_flex_align_content_space_around_wrapped_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -338,16 +338,12 @@ let test_align_content_space_around_wrapped_content_box () =
   assert_eq ~msg:"y of node5" 78.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee align_content_space_around_wrapped Test"
-    [
-      ( "flex_align_content_space_around_wrapped",
-        [
-          test_case "align_content_space_around_wrapped (border-box)" `Quick
-            test_align_content_space_around_wrapped_border_box;
-          test_case "align_content_space_around_wrapped (content-box)" `Quick
-            test_align_content_space_around_wrapped_content_box;
-        ] );
-    ]
+  [
+    test_case "align_content_space_around_wrapped (border-box)" `Quick
+      test_flex_align_content_space_around_wrapped_border_box;
+    test_case "align_content_space_around_wrapped (content-box)" `Quick
+      test_flex_align_content_space_around_wrapped_content_box;
+  ]

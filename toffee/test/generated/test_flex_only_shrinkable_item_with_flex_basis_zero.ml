@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_only_shrinkable_item_with_flex_basis_zero_border_box () =
+let test_flex_only_shrinkable_item_with_flex_basis_zero_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -111,7 +111,7 @@ let test_only_shrinkable_item_with_flex_basis_zero_border_box () =
   assert_eq ~msg:"y of node2" 99.0 layout.location.y;
   ()
 
-let test_only_shrinkable_item_with_flex_basis_zero_content_box () =
+let test_flex_only_shrinkable_item_with_flex_basis_zero_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -223,16 +223,12 @@ let test_only_shrinkable_item_with_flex_basis_zero_content_box () =
   assert_eq ~msg:"y of node2" 99.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee only_shrinkable_item_with_flex_basis_zero Test"
-    [
-      ( "flex_only_shrinkable_item_with_flex_basis_zero",
-        [
-          test_case "only_shrinkable_item_with_flex_basis_zero (border-box)"
-            `Quick test_only_shrinkable_item_with_flex_basis_zero_border_box;
-          test_case "only_shrinkable_item_with_flex_basis_zero (content-box)"
-            `Quick test_only_shrinkable_item_with_flex_basis_zero_content_box;
-        ] );
-    ]
+  [
+    test_case "only_shrinkable_item_with_flex_basis_zero (border-box)" `Quick
+      test_flex_only_shrinkable_item_with_flex_basis_zero_border_box;
+    test_case "only_shrinkable_item_with_flex_basis_zero (content-box)" `Quick
+      test_flex_only_shrinkable_item_with_flex_basis_zero_content_box;
+  ]

@@ -3,7 +3,8 @@
 
 open Toffee
 
-let test_position_root_with_rtl_should_position_withoutdirection_border_box () =
+let test_flex_position_root_with_rtl_should_position_withoutdirection_border_box
+    () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -68,8 +69,8 @@ let test_position_root_with_rtl_should_position_withoutdirection_border_box () =
   assert_eq ~msg:"y of node0" 0.0 layout.location.y;
   ()
 
-let test_position_root_with_rtl_should_position_withoutdirection_content_box ()
-    =
+let test_flex_position_root_with_rtl_should_position_withoutdirection_content_box
+    () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -139,22 +140,16 @@ let test_position_root_with_rtl_should_position_withoutdirection_content_box ()
   assert_eq ~msg:"y of node0" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee position_root_with_rtl_should_position_withoutdirection Test"
-    [
-      ( "flex_position_root_with_rtl_should_position_withoutdirection",
-        [
-          test_case
-            "position_root_with_rtl_should_position_withoutdirection \
-             (border-box)"
-            `Quick
-            test_position_root_with_rtl_should_position_withoutdirection_border_box;
-          test_case
-            "position_root_with_rtl_should_position_withoutdirection \
-             (content-box)"
-            `Quick
-            test_position_root_with_rtl_should_position_withoutdirection_content_box;
-        ] );
-    ]
+  [
+    test_case
+      "position_root_with_rtl_should_position_withoutdirection (border-box)"
+      `Quick
+      test_flex_position_root_with_rtl_should_position_withoutdirection_border_box;
+    test_case
+      "position_root_with_rtl_should_position_withoutdirection (content-box)"
+      `Quick
+      test_flex_position_root_with_rtl_should_position_withoutdirection_content_box;
+  ]

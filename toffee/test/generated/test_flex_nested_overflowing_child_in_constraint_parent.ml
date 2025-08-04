@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_nested_overflowing_child_in_constraint_parent_border_box () =
+let test_flex_nested_overflowing_child_in_constraint_parent_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -88,7 +88,7 @@ let test_nested_overflowing_child_in_constraint_parent_border_box () =
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-let test_nested_overflowing_child_in_constraint_parent_content_box () =
+let test_flex_nested_overflowing_child_in_constraint_parent_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -176,17 +176,12 @@ let test_nested_overflowing_child_in_constraint_parent_content_box () =
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee nested_overflowing_child_in_constraint_parent Test"
-    [
-      ( "flex_nested_overflowing_child_in_constraint_parent",
-        [
-          test_case "nested_overflowing_child_in_constraint_parent (border-box)"
-            `Quick test_nested_overflowing_child_in_constraint_parent_border_box;
-          test_case
-            "nested_overflowing_child_in_constraint_parent (content-box)" `Quick
-            test_nested_overflowing_child_in_constraint_parent_content_box;
-        ] );
-    ]
+  [
+    test_case "nested_overflowing_child_in_constraint_parent (border-box)"
+      `Quick test_flex_nested_overflowing_child_in_constraint_parent_border_box;
+    test_case "nested_overflowing_child_in_constraint_parent (content-box)"
+      `Quick test_flex_nested_overflowing_child_in_constraint_parent_content_box;
+  ]

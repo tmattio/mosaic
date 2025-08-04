@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_wrap_grandchild_border_box () =
+let test_flex_wrap_grandchild_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -72,7 +72,7 @@ let test_wrap_grandchild_border_box () =
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-let test_wrap_grandchild_content_box () =
+let test_flex_wrap_grandchild_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -150,16 +150,12 @@ let test_wrap_grandchild_content_box () =
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee wrap_grandchild Test"
-    [
-      ( "flex_wrap_grandchild",
-        [
-          test_case "wrap_grandchild (border-box)" `Quick
-            test_wrap_grandchild_border_box;
-          test_case "wrap_grandchild (content-box)" `Quick
-            test_wrap_grandchild_content_box;
-        ] );
-    ]
+  [
+    test_case "wrap_grandchild (border-box)" `Quick
+      test_flex_wrap_grandchild_border_box;
+    test_case "wrap_grandchild (content-box)" `Quick
+      test_flex_wrap_grandchild_content_box;
+  ]

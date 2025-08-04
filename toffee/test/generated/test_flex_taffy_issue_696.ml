@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_taffy_issue_696_border_box () =
+let test_flex_taffy_issue_696_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -99,7 +99,7 @@ let test_taffy_issue_696_border_box () =
   assert_eq ~msg:"y of node1" 20.0 layout.location.y;
   ()
 
-let test_taffy_issue_696_content_box () =
+let test_flex_taffy_issue_696_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -198,16 +198,12 @@ let test_taffy_issue_696_content_box () =
   assert_eq ~msg:"y of node1" 20.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee taffy_issue_696 Test"
-    [
-      ( "flex_taffy_issue_696",
-        [
-          test_case "taffy_issue_696 (border-box)" `Quick
-            test_taffy_issue_696_border_box;
-          test_case "taffy_issue_696 (content-box)" `Quick
-            test_taffy_issue_696_content_box;
-        ] );
-    ]
+  [
+    test_case "taffy_issue_696 (border-box)" `Quick
+      test_flex_taffy_issue_696_border_box;
+    test_case "taffy_issue_696 (content-box)" `Quick
+      test_flex_taffy_issue_696_content_box;
+  ]

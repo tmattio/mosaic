@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_child_with_padding_align_end_border_box () =
+let test_flex_child_with_padding_align_end_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -79,7 +79,7 @@ let test_child_with_padding_align_end_border_box () =
   assert_eq ~msg:"y of node0" 100.0 layout.location.y;
   ()
 
-let test_child_with_padding_align_end_content_box () =
+let test_flex_child_with_padding_align_end_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -157,16 +157,12 @@ let test_child_with_padding_align_end_content_box () =
   assert_eq ~msg:"y of node0" 60.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee child_with_padding_align_end Test"
-    [
-      ( "flex_child_with_padding_align_end",
-        [
-          test_case "child_with_padding_align_end (border-box)" `Quick
-            test_child_with_padding_align_end_border_box;
-          test_case "child_with_padding_align_end (content-box)" `Quick
-            test_child_with_padding_align_end_content_box;
-        ] );
-    ]
+  [
+    test_case "child_with_padding_align_end (border-box)" `Quick
+      test_flex_child_with_padding_align_end_border_box;
+    test_case "child_with_padding_align_end (content-box)" `Quick
+      test_flex_child_with_padding_align_end_content_box;
+  ]

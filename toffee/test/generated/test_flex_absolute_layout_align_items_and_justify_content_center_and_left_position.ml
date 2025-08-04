@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_absolute_layout_align_items_and_justify_content_center_and_left_position_border_box
+let test_flex_absolute_layout_align_items_and_justify_content_center_and_left_position_border_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
@@ -80,7 +80,7 @@ let test_absolute_layout_align_items_and_justify_content_center_and_left_positio
   assert_eq ~msg:"y of node0" 30.0 layout.location.y;
   ()
 
-let test_absolute_layout_align_items_and_justify_content_center_and_left_position_content_box
+let test_flex_absolute_layout_align_items_and_justify_content_center_and_left_position_content_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
@@ -159,25 +159,18 @@ let test_absolute_layout_align_items_and_justify_content_center_and_left_positio
   assert_eq ~msg:"y of node0" 30.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run
-    "Toffee \
-     absolute_layout_align_items_and_justify_content_center_and_left_position \
-     Test"
-    [
-      ( "flex_absolute_layout_align_items_and_justify_content_center_and_left_position",
-        [
-          test_case
-            "absolute_layout_align_items_and_justify_content_center_and_left_position \
-             (border-box)"
-            `Quick
-            test_absolute_layout_align_items_and_justify_content_center_and_left_position_border_box;
-          test_case
-            "absolute_layout_align_items_and_justify_content_center_and_left_position \
-             (content-box)"
-            `Quick
-            test_absolute_layout_align_items_and_justify_content_center_and_left_position_content_box;
-        ] );
-    ]
+  [
+    test_case
+      "absolute_layout_align_items_and_justify_content_center_and_left_position \
+       (border-box)"
+      `Quick
+      test_flex_absolute_layout_align_items_and_justify_content_center_and_left_position_border_box;
+    test_case
+      "absolute_layout_align_items_and_justify_content_center_and_left_position \
+       (content-box)"
+      `Quick
+      test_flex_absolute_layout_align_items_and_justify_content_center_and_left_position_content_box;
+  ]

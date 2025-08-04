@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_intrinsic_sizing_main_size_min_size_border_box () =
+let test_flex_intrinsic_sizing_main_size_min_size_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -112,7 +112,7 @@ let test_intrinsic_sizing_main_size_min_size_border_box () =
   assert_eq ~msg:"y of node1" 10.0 layout.location.y;
   ()
 
-let test_intrinsic_sizing_main_size_min_size_content_box () =
+let test_flex_intrinsic_sizing_main_size_min_size_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -224,16 +224,12 @@ let test_intrinsic_sizing_main_size_min_size_content_box () =
   assert_eq ~msg:"y of node1" 10.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee intrinsic_sizing_main_size_min_size Test"
-    [
-      ( "flex_intrinsic_sizing_main_size_min_size",
-        [
-          test_case "intrinsic_sizing_main_size_min_size (border-box)" `Quick
-            test_intrinsic_sizing_main_size_min_size_border_box;
-          test_case "intrinsic_sizing_main_size_min_size (content-box)" `Quick
-            test_intrinsic_sizing_main_size_min_size_content_box;
-        ] );
-    ]
+  [
+    test_case "intrinsic_sizing_main_size_min_size (border-box)" `Quick
+      test_flex_intrinsic_sizing_main_size_min_size_border_box;
+    test_case "intrinsic_sizing_main_size_min_size (content-box)" `Quick
+      test_flex_intrinsic_sizing_main_size_min_size_content_box;
+  ]

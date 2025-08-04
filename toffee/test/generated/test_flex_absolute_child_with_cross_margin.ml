@@ -64,7 +64,7 @@ let measure_function ~known_dimensions ~available_space _node_id node_context
       { width = inline_size; height = block_size }
   | None -> { width = 0.0; height = 0.0 }
 
-let test_absolute_child_with_cross_margin_border_box () =
+let test_flex_absolute_child_with_cross_margin_border_box measure_function () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -196,7 +196,7 @@ let test_absolute_child_with_cross_margin_border_box () =
   assert_eq ~msg:"y of node2" 0.0 layout.location.y;
   ()
 
-let test_absolute_child_with_cross_margin_content_box () =
+let test_flex_absolute_child_with_cross_margin_content_box measure_function () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -332,16 +332,14 @@ let test_absolute_child_with_cross_margin_content_box () =
   assert_eq ~msg:"y of node2" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee absolute_child_with_cross_margin Test"
-    [
-      ( "flex_absolute_child_with_cross_margin",
-        [
-          test_case "absolute_child_with_cross_margin (border-box)" `Quick
-            test_absolute_child_with_cross_margin_border_box;
-          test_case "absolute_child_with_cross_margin (content-box)" `Quick
-            test_absolute_child_with_cross_margin_content_box;
-        ] );
-    ]
+  [
+    test_case "absolute_child_with_cross_margin (border-box)" `Quick (fun () ->
+        test_flex_absolute_child_with_cross_margin_border_box measure_function
+          ());
+    test_case "absolute_child_with_cross_margin (content-box)" `Quick (fun () ->
+        test_flex_absolute_child_with_cross_margin_content_box measure_function
+          ());
+  ]

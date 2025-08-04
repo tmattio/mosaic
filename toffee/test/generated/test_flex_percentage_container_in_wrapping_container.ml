@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_percentage_container_in_wrapping_container_border_box () =
+let test_flex_percentage_container_in_wrapping_container_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -127,7 +127,7 @@ let test_percentage_container_in_wrapping_container_border_box () =
   assert_eq ~msg:"y of node3" 0.0 layout.location.y;
   ()
 
-let test_percentage_container_in_wrapping_container_content_box () =
+let test_flex_percentage_container_in_wrapping_container_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -256,16 +256,12 @@ let test_percentage_container_in_wrapping_container_content_box () =
   assert_eq ~msg:"y of node3" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee percentage_container_in_wrapping_container Test"
-    [
-      ( "flex_percentage_container_in_wrapping_container",
-        [
-          test_case "percentage_container_in_wrapping_container (border-box)"
-            `Quick test_percentage_container_in_wrapping_container_border_box;
-          test_case "percentage_container_in_wrapping_container (content-box)"
-            `Quick test_percentage_container_in_wrapping_container_content_box;
-        ] );
-    ]
+  [
+    test_case "percentage_container_in_wrapping_container (border-box)" `Quick
+      test_flex_percentage_container_in_wrapping_container_border_box;
+    test_case "percentage_container_in_wrapping_container (content-box)" `Quick
+      test_flex_percentage_container_in_wrapping_container_content_box;
+  ]

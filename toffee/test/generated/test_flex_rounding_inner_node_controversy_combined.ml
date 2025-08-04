@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_rounding_inner_node_controversy_combined_border_box () =
+let test_flex_rounding_inner_node_controversy_combined_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -193,7 +193,7 @@ let test_rounding_inner_node_controversy_combined_border_box () =
   assert_eq ~msg:"y of node6" 0.0 layout.location.y;
   ()
 
-let test_rounding_inner_node_controversy_combined_content_box () =
+let test_flex_rounding_inner_node_controversy_combined_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -391,16 +391,12 @@ let test_rounding_inner_node_controversy_combined_content_box () =
   assert_eq ~msg:"y of node6" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee rounding_inner_node_controversy_combined Test"
-    [
-      ( "flex_rounding_inner_node_controversy_combined",
-        [
-          test_case "rounding_inner_node_controversy_combined (border-box)"
-            `Quick test_rounding_inner_node_controversy_combined_border_box;
-          test_case "rounding_inner_node_controversy_combined (content-box)"
-            `Quick test_rounding_inner_node_controversy_combined_content_box;
-        ] );
-    ]
+  [
+    test_case "rounding_inner_node_controversy_combined (border-box)" `Quick
+      test_flex_rounding_inner_node_controversy_combined_border_box;
+    test_case "rounding_inner_node_controversy_combined (content-box)" `Quick
+      test_flex_rounding_inner_node_controversy_combined_content_box;
+  ]

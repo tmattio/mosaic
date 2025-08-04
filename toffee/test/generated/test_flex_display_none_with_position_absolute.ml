@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_display_none_with_position_absolute_border_box () =
+let test_flex_display_none_with_position_absolute_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -70,7 +70,7 @@ let test_display_none_with_position_absolute_border_box () =
   assert_eq ~msg:"y of node0" 0.0 layout.location.y;
   ()
 
-let test_display_none_with_position_absolute_content_box () =
+let test_flex_display_none_with_position_absolute_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -139,16 +139,12 @@ let test_display_none_with_position_absolute_content_box () =
   assert_eq ~msg:"y of node0" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee display_none_with_position_absolute Test"
-    [
-      ( "flex_display_none_with_position_absolute",
-        [
-          test_case "display_none_with_position_absolute (border-box)" `Quick
-            test_display_none_with_position_absolute_border_box;
-          test_case "display_none_with_position_absolute (content-box)" `Quick
-            test_display_none_with_position_absolute_content_box;
-        ] );
-    ]
+  [
+    test_case "display_none_with_position_absolute (border-box)" `Quick
+      test_flex_display_none_with_position_absolute_border_box;
+    test_case "display_none_with_position_absolute (content-box)" `Quick
+      test_flex_display_none_with_position_absolute_content_box;
+  ]

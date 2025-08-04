@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_aspect_ratio_flex_column_fill_width_flex_border_box () =
+let test_flex_aspect_ratio_flex_column_fill_width_flex_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -71,7 +71,7 @@ let test_aspect_ratio_flex_column_fill_width_flex_border_box () =
   assert_eq ~msg:"y of node0" 0.0 layout.location.y;
   ()
 
-let test_aspect_ratio_flex_column_fill_width_flex_content_box () =
+let test_flex_aspect_ratio_flex_column_fill_width_flex_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -141,16 +141,12 @@ let test_aspect_ratio_flex_column_fill_width_flex_content_box () =
   assert_eq ~msg:"y of node0" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee aspect_ratio_flex_column_fill_width_flex Test"
-    [
-      ( "flex_aspect_ratio_flex_column_fill_width_flex",
-        [
-          test_case "aspect_ratio_flex_column_fill_width_flex (border-box)"
-            `Quick test_aspect_ratio_flex_column_fill_width_flex_border_box;
-          test_case "aspect_ratio_flex_column_fill_width_flex (content-box)"
-            `Quick test_aspect_ratio_flex_column_fill_width_flex_content_box;
-        ] );
-    ]
+  [
+    test_case "aspect_ratio_flex_column_fill_width_flex (border-box)" `Quick
+      test_flex_aspect_ratio_flex_column_fill_width_flex_border_box;
+    test_case "aspect_ratio_flex_column_fill_width_flex (content-box)" `Quick
+      test_flex_aspect_ratio_flex_column_fill_width_flex_content_box;
+  ]

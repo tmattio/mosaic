@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_wrap_nodes_with_content_sizing_margin_cross_border_box () =
+let test_flex_wrap_nodes_with_content_sizing_margin_cross_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -147,7 +147,7 @@ let test_wrap_nodes_with_content_sizing_margin_cross_border_box () =
   assert_eq ~msg:"y of node4" 0.0 layout.location.y;
   ()
 
-let test_wrap_nodes_with_content_sizing_margin_cross_content_box () =
+let test_flex_wrap_nodes_with_content_sizing_margin_cross_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -297,16 +297,12 @@ let test_wrap_nodes_with_content_sizing_margin_cross_content_box () =
   assert_eq ~msg:"y of node4" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee wrap_nodes_with_content_sizing_margin_cross Test"
-    [
-      ( "flex_wrap_nodes_with_content_sizing_margin_cross",
-        [
-          test_case "wrap_nodes_with_content_sizing_margin_cross (border-box)"
-            `Quick test_wrap_nodes_with_content_sizing_margin_cross_border_box;
-          test_case "wrap_nodes_with_content_sizing_margin_cross (content-box)"
-            `Quick test_wrap_nodes_with_content_sizing_margin_cross_content_box;
-        ] );
-    ]
+  [
+    test_case "wrap_nodes_with_content_sizing_margin_cross (border-box)" `Quick
+      test_flex_wrap_nodes_with_content_sizing_margin_cross_border_box;
+    test_case "wrap_nodes_with_content_sizing_margin_cross (content-box)" `Quick
+      test_flex_wrap_nodes_with_content_sizing_margin_cross_content_box;
+  ]

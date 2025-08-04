@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_absolute_minmax_bottom_right_min_max_preferred_border_box () =
+let test_flex_absolute_minmax_bottom_right_min_max_preferred_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -87,7 +87,7 @@ let test_absolute_minmax_bottom_right_min_max_preferred_border_box () =
   assert_eq ~msg:"y of node0" 30.0 layout.location.y;
   ()
 
-let test_absolute_minmax_bottom_right_min_max_preferred_content_box () =
+let test_flex_absolute_minmax_bottom_right_min_max_preferred_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -173,19 +173,13 @@ let test_absolute_minmax_bottom_right_min_max_preferred_content_box () =
   assert_eq ~msg:"y of node0" 30.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee absolute_minmax_bottom_right_min_max_preferred Test"
-    [
-      ( "flex_absolute_minmax_bottom_right_min_max_preferred",
-        [
-          test_case
-            "absolute_minmax_bottom_right_min_max_preferred (border-box)" `Quick
-            test_absolute_minmax_bottom_right_min_max_preferred_border_box;
-          test_case
-            "absolute_minmax_bottom_right_min_max_preferred (content-box)"
-            `Quick
-            test_absolute_minmax_bottom_right_min_max_preferred_content_box;
-        ] );
-    ]
+  [
+    test_case "absolute_minmax_bottom_right_min_max_preferred (border-box)"
+      `Quick test_flex_absolute_minmax_bottom_right_min_max_preferred_border_box;
+    test_case "absolute_minmax_bottom_right_min_max_preferred (content-box)"
+      `Quick
+      test_flex_absolute_minmax_bottom_right_min_max_preferred_content_box;
+  ]

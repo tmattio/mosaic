@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_width_smaller_then_content_with_flex_grow_unconstraint_size_border_box
+let test_flex_width_smaller_then_content_with_flex_grow_unconstraint_size_border_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
@@ -127,7 +127,7 @@ let test_width_smaller_then_content_with_flex_grow_unconstraint_size_border_box
   assert_eq ~msg:"y of node3" 0.0 layout.location.y;
   ()
 
-let test_width_smaller_then_content_with_flex_grow_unconstraint_size_content_box
+let test_flex_width_smaller_then_content_with_flex_grow_unconstraint_size_content_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
@@ -256,22 +256,17 @@ let test_width_smaller_then_content_with_flex_grow_unconstraint_size_content_box
   assert_eq ~msg:"y of node3" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee width_smaller_then_content_with_flex_grow_unconstraint_size Test"
-    [
-      ( "flex_width_smaller_then_content_with_flex_grow_unconstraint_size",
-        [
-          test_case
-            "width_smaller_then_content_with_flex_grow_unconstraint_size \
-             (border-box)"
-            `Quick
-            test_width_smaller_then_content_with_flex_grow_unconstraint_size_border_box;
-          test_case
-            "width_smaller_then_content_with_flex_grow_unconstraint_size \
-             (content-box)"
-            `Quick
-            test_width_smaller_then_content_with_flex_grow_unconstraint_size_content_box;
-        ] );
-    ]
+  [
+    test_case
+      "width_smaller_then_content_with_flex_grow_unconstraint_size (border-box)"
+      `Quick
+      test_flex_width_smaller_then_content_with_flex_grow_unconstraint_size_border_box;
+    test_case
+      "width_smaller_then_content_with_flex_grow_unconstraint_size \
+       (content-box)"
+      `Quick
+      test_flex_width_smaller_then_content_with_flex_grow_unconstraint_size_content_box;
+  ]

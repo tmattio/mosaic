@@ -64,7 +64,7 @@ let measure_function ~known_dimensions ~available_space _node_id node_context
       { width = inline_size; height = block_size }
   | None -> { width = 0.0; height = 0.0 }
 
-let test_bevy_issue_9530_reduced_border_box () =
+let test_flex_bevy_issue_9530_reduced_border_box measure_function () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -148,7 +148,7 @@ let test_bevy_issue_9530_reduced_border_box () =
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-let test_bevy_issue_9530_reduced_content_box () =
+let test_flex_bevy_issue_9530_reduced_content_box measure_function () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -235,16 +235,12 @@ let test_bevy_issue_9530_reduced_content_box () =
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee bevy_issue_9530_reduced Test"
-    [
-      ( "flex_bevy_issue_9530_reduced",
-        [
-          test_case "bevy_issue_9530_reduced (border-box)" `Quick
-            test_bevy_issue_9530_reduced_border_box;
-          test_case "bevy_issue_9530_reduced (content-box)" `Quick
-            test_bevy_issue_9530_reduced_content_box;
-        ] );
-    ]
+  [
+    test_case "bevy_issue_9530_reduced (border-box)" `Quick (fun () ->
+        test_flex_bevy_issue_9530_reduced_border_box measure_function ());
+    test_case "bevy_issue_9530_reduced (content-box)" `Quick (fun () ->
+        test_flex_bevy_issue_9530_reduced_content_box measure_function ());
+  ]

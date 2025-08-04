@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_overflow_scrollbars_overridden_by_available_space_border_box () =
+let test_flex_overflow_scrollbars_overridden_by_available_space_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -80,7 +80,7 @@ let test_overflow_scrollbars_overridden_by_available_space_border_box () =
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-let test_overflow_scrollbars_overridden_by_available_space_content_box () =
+let test_flex_overflow_scrollbars_overridden_by_available_space_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -160,20 +160,14 @@ let test_overflow_scrollbars_overridden_by_available_space_content_box () =
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee overflow_scrollbars_overridden_by_available_space Test"
-    [
-      ( "flex_overflow_scrollbars_overridden_by_available_space",
-        [
-          test_case
-            "overflow_scrollbars_overridden_by_available_space (border-box)"
-            `Quick
-            test_overflow_scrollbars_overridden_by_available_space_border_box;
-          test_case
-            "overflow_scrollbars_overridden_by_available_space (content-box)"
-            `Quick
-            test_overflow_scrollbars_overridden_by_available_space_content_box;
-        ] );
-    ]
+  [
+    test_case "overflow_scrollbars_overridden_by_available_space (border-box)"
+      `Quick
+      test_flex_overflow_scrollbars_overridden_by_available_space_border_box;
+    test_case "overflow_scrollbars_overridden_by_available_space (content-box)"
+      `Quick
+      test_flex_overflow_scrollbars_overridden_by_available_space_content_box;
+  ]

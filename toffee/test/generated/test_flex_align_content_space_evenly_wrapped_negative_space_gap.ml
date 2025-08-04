@@ -3,7 +3,8 @@
 
 open Toffee
 
-let test_align_content_space_evenly_wrapped_negative_space_gap_border_box () =
+let test_flex_align_content_space_evenly_wrapped_negative_space_gap_border_box
+    () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -146,7 +147,8 @@ let test_align_content_space_evenly_wrapped_negative_space_gap_border_box () =
   assert_eq ~msg:"y of node3" 60.0 layout.location.y;
   ()
 
-let test_align_content_space_evenly_wrapped_negative_space_gap_content_box () =
+let test_flex_align_content_space_evenly_wrapped_negative_space_gap_content_box
+    () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -294,21 +296,16 @@ let test_align_content_space_evenly_wrapped_negative_space_gap_content_box () =
   assert_eq ~msg:"y of node3" 60.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee align_content_space_evenly_wrapped_negative_space_gap Test"
-    [
-      ( "flex_align_content_space_evenly_wrapped_negative_space_gap",
-        [
-          test_case
-            "align_content_space_evenly_wrapped_negative_space_gap (border-box)"
-            `Quick
-            test_align_content_space_evenly_wrapped_negative_space_gap_border_box;
-          test_case
-            "align_content_space_evenly_wrapped_negative_space_gap \
-             (content-box)"
-            `Quick
-            test_align_content_space_evenly_wrapped_negative_space_gap_content_box;
-        ] );
-    ]
+  [
+    test_case
+      "align_content_space_evenly_wrapped_negative_space_gap (border-box)"
+      `Quick
+      test_flex_align_content_space_evenly_wrapped_negative_space_gap_border_box;
+    test_case
+      "align_content_space_evenly_wrapped_negative_space_gap (content-box)"
+      `Quick
+      test_flex_align_content_space_evenly_wrapped_negative_space_gap_content_box;
+  ]

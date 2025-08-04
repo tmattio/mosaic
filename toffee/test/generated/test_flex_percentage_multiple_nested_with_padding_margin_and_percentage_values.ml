@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_percentage_multiple_nested_with_padding_margin_and_percentage_values_border_box
+let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_values_border_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
@@ -176,7 +176,7 @@ let test_percentage_multiple_nested_with_padding_margin_and_percentage_values_bo
   assert_eq ~msg:"y of node3" 58.0 layout.location.y;
   ()
 
-let test_percentage_multiple_nested_with_padding_margin_and_percentage_values_content_box
+let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_values_content_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
@@ -354,24 +354,18 @@ let test_percentage_multiple_nested_with_padding_margin_and_percentage_values_co
   assert_eq ~msg:"y of node3" 63.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run
-    "Toffee \
-     percentage_multiple_nested_with_padding_margin_and_percentage_values Test"
-    [
-      ( "flex_percentage_multiple_nested_with_padding_margin_and_percentage_values",
-        [
-          test_case
-            "percentage_multiple_nested_with_padding_margin_and_percentage_values \
-             (border-box)"
-            `Quick
-            test_percentage_multiple_nested_with_padding_margin_and_percentage_values_border_box;
-          test_case
-            "percentage_multiple_nested_with_padding_margin_and_percentage_values \
-             (content-box)"
-            `Quick
-            test_percentage_multiple_nested_with_padding_margin_and_percentage_values_content_box;
-        ] );
-    ]
+  [
+    test_case
+      "percentage_multiple_nested_with_padding_margin_and_percentage_values \
+       (border-box)"
+      `Quick
+      test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_values_border_box;
+    test_case
+      "percentage_multiple_nested_with_padding_margin_and_percentage_values \
+       (content-box)"
+      `Quick
+      test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_values_content_box;
+  ]

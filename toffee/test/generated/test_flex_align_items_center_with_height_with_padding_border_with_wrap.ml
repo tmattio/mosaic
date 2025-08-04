@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_align_items_center_with_height_with_padding_border_with_wrap_border_box
+let test_flex_align_items_center_with_height_with_padding_border_with_wrap_border_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
@@ -162,7 +162,7 @@ let test_align_items_center_with_height_with_padding_border_with_wrap_border_box
   assert_eq ~msg:"y of node5" 40.0 layout.location.y;
   ()
 
-let test_align_items_center_with_height_with_padding_border_with_wrap_content_box
+let test_flex_align_items_center_with_height_with_padding_border_with_wrap_content_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
@@ -331,22 +331,18 @@ let test_align_items_center_with_height_with_padding_border_with_wrap_content_bo
   assert_eq ~msg:"y of node5" 40.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee align_items_center_with_height_with_padding_border_with_wrap Test"
-    [
-      ( "flex_align_items_center_with_height_with_padding_border_with_wrap",
-        [
-          test_case
-            "align_items_center_with_height_with_padding_border_with_wrap \
-             (border-box)"
-            `Quick
-            test_align_items_center_with_height_with_padding_border_with_wrap_border_box;
-          test_case
-            "align_items_center_with_height_with_padding_border_with_wrap \
-             (content-box)"
-            `Quick
-            test_align_items_center_with_height_with_padding_border_with_wrap_content_box;
-        ] );
-    ]
+  [
+    test_case
+      "align_items_center_with_height_with_padding_border_with_wrap \
+       (border-box)"
+      `Quick
+      test_flex_align_items_center_with_height_with_padding_border_with_wrap_border_box;
+    test_case
+      "align_items_center_with_height_with_padding_border_with_wrap \
+       (content-box)"
+      `Quick
+      test_flex_align_items_center_with_height_with_padding_border_with_wrap_content_box;
+  ]

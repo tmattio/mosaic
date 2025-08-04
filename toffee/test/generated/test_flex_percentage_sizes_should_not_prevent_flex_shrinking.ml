@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_percentage_sizes_should_not_prevent_flex_shrinking_border_box () =
+let test_flex_percentage_sizes_should_not_prevent_flex_shrinking_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -80,7 +80,8 @@ let test_percentage_sizes_should_not_prevent_flex_shrinking_border_box () =
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-let test_percentage_sizes_should_not_prevent_flex_shrinking_content_box () =
+let test_flex_percentage_sizes_should_not_prevent_flex_shrinking_content_box ()
+    =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -163,20 +164,14 @@ let test_percentage_sizes_should_not_prevent_flex_shrinking_content_box () =
   assert_eq ~msg:"y of node1" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee percentage_sizes_should_not_prevent_flex_shrinking Test"
-    [
-      ( "flex_percentage_sizes_should_not_prevent_flex_shrinking",
-        [
-          test_case
-            "percentage_sizes_should_not_prevent_flex_shrinking (border-box)"
-            `Quick
-            test_percentage_sizes_should_not_prevent_flex_shrinking_border_box;
-          test_case
-            "percentage_sizes_should_not_prevent_flex_shrinking (content-box)"
-            `Quick
-            test_percentage_sizes_should_not_prevent_flex_shrinking_content_box;
-        ] );
-    ]
+  [
+    test_case "percentage_sizes_should_not_prevent_flex_shrinking (border-box)"
+      `Quick
+      test_flex_percentage_sizes_should_not_prevent_flex_shrinking_border_box;
+    test_case "percentage_sizes_should_not_prevent_flex_shrinking (content-box)"
+      `Quick
+      test_flex_percentage_sizes_should_not_prevent_flex_shrinking_content_box;
+  ]

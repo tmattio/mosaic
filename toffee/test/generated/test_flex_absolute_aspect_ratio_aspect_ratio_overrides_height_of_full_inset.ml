@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset_border_box
+let test_flex_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset_border_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
@@ -74,7 +74,7 @@ let test_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset_borde
   assert_eq ~msg:"y of node0" 15.0 layout.location.y;
   ()
 
-let test_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset_content_box
+let test_flex_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset_content_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
@@ -147,24 +147,18 @@ let test_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset_conte
   assert_eq ~msg:"y of node0" 15.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run
-    "Toffee absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset \
-     Test"
-    [
-      ( "flex_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset",
-        [
-          test_case
-            "absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset \
-             (border-box)"
-            `Quick
-            test_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset_border_box;
-          test_case
-            "absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset \
-             (content-box)"
-            `Quick
-            test_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset_content_box;
-        ] );
-    ]
+  [
+    test_case
+      "absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset \
+       (border-box)"
+      `Quick
+      test_flex_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset_border_box;
+    test_case
+      "absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset \
+       (content-box)"
+      `Quick
+      test_flex_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset_content_box;
+  ]

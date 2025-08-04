@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_relative_position_should_not_nudge_siblings_border_box () =
+let test_flex_relative_position_should_not_nudge_siblings_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -103,7 +103,7 @@ let test_relative_position_should_not_nudge_siblings_border_box () =
   assert_eq ~msg:"y of node1" 25.0 layout.location.y;
   ()
 
-let test_relative_position_should_not_nudge_siblings_content_box () =
+let test_flex_relative_position_should_not_nudge_siblings_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -206,16 +206,12 @@ let test_relative_position_should_not_nudge_siblings_content_box () =
   assert_eq ~msg:"y of node1" 25.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee relative_position_should_not_nudge_siblings Test"
-    [
-      ( "flex_relative_position_should_not_nudge_siblings",
-        [
-          test_case "relative_position_should_not_nudge_siblings (border-box)"
-            `Quick test_relative_position_should_not_nudge_siblings_border_box;
-          test_case "relative_position_should_not_nudge_siblings (content-box)"
-            `Quick test_relative_position_should_not_nudge_siblings_content_box;
-        ] );
-    ]
+  [
+    test_case "relative_position_should_not_nudge_siblings (border-box)" `Quick
+      test_flex_relative_position_should_not_nudge_siblings_border_box;
+    test_case "relative_position_should_not_nudge_siblings (content-box)" `Quick
+      test_flex_relative_position_should_not_nudge_siblings_content_box;
+  ]

@@ -3,7 +3,7 @@
 
 open Toffee
 
-let test_absolute_child_with_main_margin_border_box () =
+let test_flex_absolute_child_with_main_margin_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -78,7 +78,7 @@ let test_absolute_child_with_main_margin_border_box () =
   assert_eq ~msg:"y of node0" 0.0 layout.location.y;
   ()
 
-let test_absolute_child_with_main_margin_content_box () =
+let test_flex_absolute_child_with_main_margin_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
@@ -155,16 +155,12 @@ let test_absolute_child_with_main_margin_content_box () =
   assert_eq ~msg:"y of node0" 0.0 layout.location.y;
   ()
 
-(* Test runner *)
-let () =
+(* Export tests for aggregation *)
+let tests =
   let open Alcotest in
-  run "Toffee absolute_child_with_main_margin Test"
-    [
-      ( "flex_absolute_child_with_main_margin",
-        [
-          test_case "absolute_child_with_main_margin (border-box)" `Quick
-            test_absolute_child_with_main_margin_border_box;
-          test_case "absolute_child_with_main_margin (content-box)" `Quick
-            test_absolute_child_with_main_margin_content_box;
-        ] );
-    ]
+  [
+    test_case "absolute_child_with_main_margin (border-box)" `Quick
+      test_flex_absolute_child_with_main_margin_border_box;
+    test_case "absolute_child_with_main_margin (content-box)" `Quick
+      test_flex_absolute_child_with_main_margin_content_box;
+  ]
