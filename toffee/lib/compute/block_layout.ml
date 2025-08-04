@@ -693,7 +693,7 @@ let perform_absolute_layout_on_absolute_children (type tree)
                   width = Available_space.Definite avail_width;
                   height = Available_space.Definite avail_height;
                 }
-              ~sizing_mode:Layout.Sizing_mode.Inherent_size
+              ~sizing_mode:Layout.Sizing_mode.Content_size
               ~vertical_margins_are_collapsible:line_false
           in
 
@@ -997,16 +997,12 @@ let compute_block_layout (type tree)
     let or_size s1 s2 =
       size_zip_map s1 s2 (fun a b -> match a with Some _ -> a | None -> b)
     in
-    let maybe_max_size s1 s2 =
-      size_zip_map s1 s2 (fun a b ->
-          match (a, b) with
-          | Some av, Some bv -> Some (Float.max av bv)
-          | Some av, None -> Some av
-          | None, Some bv -> Some bv
-          | None, None -> None)
-    in
-    known_dimensions |> or_size min_max_definite |> or_size clamped_style_size
-    |> maybe_max_size (size_map pb_size (fun x -> Some x))
+    let base_known = known_dimensions |> or_size min_max_definite |> or_size clamped_style_size in
+    (* Only apply padding_border minimum if the dimension is already known *)
+    size_zip_map base_known pb_size (fun opt_val pb_val ->
+      match opt_val with
+      | Some v -> Some (Float.max v pb_val)
+      | None -> None)
   in
   (* 2. Short‑circuit when Compute_size and dimensions known. *)
   match (run_mode, styled_based_known) with
