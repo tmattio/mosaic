@@ -895,10 +895,14 @@ let compute_block_layout (type tree)
      *horizontal* space to be reserved for a scrollbar *)
   let scrollbar_gutter =
     let overflow = Style.overflow style in
-    let offsets = 
+    let offsets =
       {
-        x = (if overflow.y = Style.Scroll then Style.scrollbar_width style else 0.0);
-        y = (if overflow.x = Style.Scroll then Style.scrollbar_width style else 0.0);
+        x =
+          (if overflow.y = Style.Scroll then Style.scrollbar_width style
+           else 0.0);
+        y =
+          (if overflow.x = Style.Scroll then Style.scrollbar_width style
+           else 0.0);
       }
     in
     (* TODO: make side configurable based on the `direction` property *)
@@ -1042,17 +1046,20 @@ let compute_block_layout (type tree)
           else
             (* 7. Absolute children *)
             let absolute_position_inset = Rect.(border + scrollbar_gutter) in
-            let absolute_position_area = 
+            let absolute_position_area =
               {
-                width = container_outer_width -. Rect.horizontal_axis_sum absolute_position_inset;
-                height = container_outer_height -. Rect.vertical_axis_sum absolute_position_inset;
+                width =
+                  container_outer_width
+                  -. Rect.horizontal_axis_sum absolute_position_inset;
+                height =
+                  container_outer_height
+                  -. Rect.vertical_axis_sum absolute_position_inset;
               }
             in
             let absolute_content_size =
               perform_absolute_layout_on_absolute_children
                 (module T)
-                ~tree ~items:items_arr
-                ~area_size:absolute_position_area
+                ~tree ~items:items_arr ~area_size:absolute_position_area
                 ~area_offset:
                   {
                     x = absolute_position_inset.left;
