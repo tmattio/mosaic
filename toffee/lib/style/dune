@@ -1,0 +1,4 @@
+(library
+ (name style)
+ (public_name toffee.style)
+ (libraries toffee.geometry))

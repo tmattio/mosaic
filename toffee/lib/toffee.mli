@@ -1,276 +1,310 @@
-(* toffee.mli *)
+(** Toffee - A high-performance flexbox/grid layout engine for OCaml
 
-(** Toffee: A flexible, high-performance library for UI layout.
+    Toffee is an OCaml port of the Taffy layout library, providing a flexible
+    and efficient implementation of CSS layout algorithms including flexbox, CSS
+    grid, and block layout.
 
-    This is the main, high-level API for Toffee. It provides a concrete,
-    easy-to-use, imperative-style tree implementation for managing your UI
-    nodes, styles, and layouts.
+    {1 Overview}
 
-    For advanced use cases where you need to integrate Toffee's layout
-    algorithms with your own existing tree data structure, see the
-    {!module-Toffee.Low_level}.
+    The main type is {!tree}, which represents a tree of UI nodes. Each node has
+    an associated style (from the {!Style} module) and can have children. The
+    library computes layouts based on these styles and the available space.
 
-    @see <https://github.com/DioxusLabs/taffy> for the original Rust library. *)
+    {1 Example}
 
-(** {1:main_types Main Types} *)
+    {[
+      open Toffee
 
-type 'a t
-(** An opaque handle to the toffee layout tree. The type parameter ['a]
-    represents the user-defined context data that can be associated with each
-    node. *)
+      (* Create a new tree *)
+      let tree = new_tree () in
 
-type node_id = Node.Node_id.t
-(** A unique identifier for a node within a toffee tree. *)
+      (* Create some nodes *)
+      let root = new_leaf tree Style.default |> Result.get_ok in
+      let child1 = new_leaf tree Style.(default |> with_size ~width:(px 100.) ~height:(px 50.)) |> Result.get_ok in
+      let child2 = new_leaf tree Style.(default |> with_flex_grow 1.0) |> Result.get_ok in
 
-type layout = Layout.Layout.t = {
-  order : int;
-  location : float Geometry.point;
-  size : float Geometry.size;
-  content_size : float Geometry.size;
-  scrollbar_size : float Geometry.size;
-  border : float Geometry.rect;
-  padding : float Geometry.rect;
-  margin : float Geometry.rect;
-}
-(** The computed layout of a single node after running a layout computation. *)
+      (* Build the tree structure *)
+      let _ = add_child tree root child1 in
+      let _ = add_child tree root child2 in
 
-(** Errors that can occur during tree manipulation or layout computation. *)
-type toffee_error =
-  | Child_index_out_of_bounds of {
-      parent : node_id;
-      child_index : int;
-      child_count : int;
-    }
-  | Invalid_parent_node of node_id
-  | Invalid_child_node of node_id
-  | Invalid_input_node of node_id
+      (* Compute layout *)
+      let available_space = Size.{ width = Available_space.from 500.; height = Available_space.from 300. } in
+      let _ = compute_layout tree root available_space in
 
-type 'a result = ('a, toffee_error) Result.t
-(** The result of an operation that may fail. *)
+      (* Get the computed layout *)
+      match layout tree root with
+      | Ok layout -> Printf.printf "Root size: %fx%f\n" layout.size.width layout.size.height
+      | Error _ -> ()
+    ]} *)
 
-type 'a measure_function =
-  known_dimensions:float option Geometry.size ->
-  available_space:Style.Available_space.t Geometry.size ->
-  node_id ->
-  'a option ->
-  Style.style ->
-  float Geometry.size
-(** A function provided by the user to measure the intrinsic size of a leaf
-    node. This is necessary for nodes whose size is determined by their content,
-    such as text or images. *)
+module Geometry = Geometry
+(** Geometry module - provides geometric types and utilities *)
 
-(** {1:lifecycle Tree Lifecycle} *)
+module Style = Style
+(** Style module - provides CSS style types and utilities *)
 
-val create : unit -> 'a t
-(** Creates a new, empty toffee tree. *)
+open Tree
+open Geometry
 
-val new_leaf : 'a t -> Style.style -> node_id
-(** Creates a new leaf node (with no children), applies the given style, and
-    adds it to the tree.
-    @return The [node_id] of the newly created node. *)
+(** {1 Tree Submodules}
 
-val new_with_children : 'a t -> Style.style -> node_id list -> node_id
-(** Creates a new node with the given children, applies the given style, and
-    adds it to the tree.
-    @return The [node_id] of the newly created node. *)
+    These submodules from Tree are exposed for use with the API. *)
 
-val remove : 'a t -> node_id -> unit result
-(** Removes a node and its entire subtree from the tree. This operation
-    invalidates the [node_id] of the removed node and all of its descendants. *)
+module Node_id = Node_id
+(** Node identifier module *)
 
-(** {1:layout Layout Computation} *)
+module Layout = Layout
+(** Layout module containing the layout type and operations *)
 
-val compute_layout :
-  'a t -> node_id -> Style.Available_space.t Geometry.size -> unit result
-(** Computes the layout of the tree starting from the given [node_id]. The
-    [available_space] parameter defines the containing block for the root of the
-    layout computation. *)
+module Available_space = Available_space
+(** Available space module *)
+
+module Layout_input = Layout_input
+(** Layout input type *)
+
+module Layout_output = Layout_output
+(** Layout output type *)
+
+module Run_mode = Run_mode
+(** Run mode type *)
+
+module Cache = Cache
+(** Cache module for layout caching *)
+
+(** {1 Error Handling} *)
+
+module Error : sig
+  (** The type of errors that can occur when manipulating the tree *)
+  type t =
+    | Child_index_out_of_bounds of {
+        parent : Node_id.t;
+        child_index : int;
+        child_count : int;
+      }  (** Raised when attempting to access a child at an invalid index *)
+    | Invalid_parent_node of Node_id.t
+        (** Raised when a parent node is not found in the tree *)
+    | Invalid_child_node of Node_id.t
+        (** Raised when a child node is not found in the tree *)
+    | Invalid_input_node of Node_id.t
+        (** Raised when an input node is not found in the tree *)
+
+  val to_string : t -> string
+  (** Convert an error to a human-readable string *)
+end
+
+type nonrec 'a result = ('a, Error.t) result
+(** The result type for operations that can fail *)
+
+(** {1 Tree Type and Creation} *)
+
+type 'context tree
+(** The main tree type, parameterized by the type of context data that can be
+    associated with nodes. Use [unit] if you don't need context data. *)
+
+val new_tree : unit -> 'context tree
+(** Create a new empty tree with default configuration *)
+
+val with_capacity : int -> 'context tree
+(** Create a new tree with the specified initial capacity. This can be more
+    efficient if you know approximately how many nodes you'll need. *)
+
+(** {1 Configuration} *)
+
+type config = { use_rounding : bool }
+(** Configuration options for layout computation *)
+
+val default_config : config
+(** Default configuration with rounding enabled *)
+
+val enable_rounding : 'context tree -> 'context tree
+(** Enable rounding of layout values (default) *)
+
+val disable_rounding : 'context tree -> 'context tree
+(** Disable rounding of layout values *)
+
+(** {1 Node Creation} *)
+
+val new_leaf : 'context tree -> Style.t -> Node_id.t result
+(** Create a new leaf node (no children) with the given style *)
+
+val new_leaf_with_context :
+  'context tree -> Style.t -> 'context -> Node_id.t result
+(** Create a new leaf node with associated context data *)
+
+val new_with_children :
+  'context tree -> Style.t -> Node_id.t array -> Node_id.t result
+(** Create a new node with the given style and children *)
+
+(** {1 Tree Operations} *)
+
+val clear : 'context tree -> unit
+(** Remove all nodes from the tree *)
+
+val remove : 'context tree -> Node_id.t -> Node_id.t result
+(** Remove a node and all its descendants from the tree *)
+
+val total_node_count : 'context tree -> int
+(** Get the total number of nodes in the tree *)
+
+(** {1 Node Context} *)
+
+val set_node_context :
+  'context tree -> Node_id.t -> 'context option -> unit result
+(** Set or update the context data associated with a node. Pass [None] to remove
+    the context. *)
+
+val get_node_context : 'context tree -> Node_id.t -> 'context option
+(** Get the context data associated with a node, if any *)
+
+val get_node_context_mut : 'context tree -> Node_id.t -> 'context option
+(** Get a mutable reference to the context data. Note: This returns the same
+    immutable option type in the functional interface. *)
+
+(** {1 Child Management} *)
+
+val add_child : 'context tree -> Node_id.t -> Node_id.t -> unit result
+(** Add a child to the end of a parent's child list *)
+
+val insert_child_at_index :
+  'context tree -> Node_id.t -> int -> Node_id.t -> unit result
+(** Insert a child at a specific index in the parent's child list *)
+
+val set_children : 'context tree -> Node_id.t -> Node_id.t array -> unit result
+(** Replace all children of a parent node *)
+
+val remove_child : 'context tree -> Node_id.t -> Node_id.t -> Node_id.t result
+(** Remove a specific child from a parent *)
+
+val remove_child_at_index :
+  'context tree -> Node_id.t -> int -> Node_id.t result
+(** Remove the child at a specific index *)
+
+val remove_children_range :
+  'context tree -> Node_id.t -> int * int -> unit result
+(** Remove children in the given range (inclusive) *)
+
+val replace_child_at_index :
+  'context tree -> Node_id.t -> int -> Node_id.t -> Node_id.t result
+(** Replace the child at a specific index with a new child *)
+
+(** {1 Tree Queries} *)
+
+val child_at_index : 'context tree -> Node_id.t -> int -> Node_id.t result
+(** Get the child at a specific index *)
+
+val parent : 'context tree -> Node_id.t -> Node_id.t option
+(** Get the parent of a node, if any *)
+
+val children : 'context tree -> Node_id.t -> Node_id.t list result
+(** Get all children of a node *)
+
+(** {1 Style Management} *)
+
+val set_style : 'context tree -> Node_id.t -> Style.t -> unit result
+(** Set the style of a node *)
+
+val style : 'context tree -> Node_id.t -> Style.t result
+(** Get the style of a node *)
+
+(** {1 Layout} *)
+
+val layout : 'context tree -> Node_id.t -> Layout.t result
+(** Get the computed layout of a node. Returns the rounded layout if rounding is
+    enabled, otherwise the unrounded layout. *)
+
+val unrounded_layout : 'context tree -> Node_id.t -> Layout.t
+(** Get the unrounded layout of a node *)
+
+val mark_dirty : 'context tree -> Node_id.t -> unit result
+(** Mark a node as needing layout recomputation. This will also mark all
+    ancestors as dirty. *)
+
+val dirty : 'context tree -> Node_id.t -> bool result
+(** Check if a node needs layout recomputation *)
+
+(** {1 Layout Computation} *)
+
+type 'context measure_function =
+  float option size ->
+  Available_space.t size ->
+  Node_id.t ->
+  'context option ->
+  Style.t ->
+  float size
+(** Type of measure functions for leaf nodes. The function receives:
+    - known_dimensions: Already computed dimensions (if any)
+    - available_space: Space constraints from the parent
+    - node_id: The node being measured
+    - context: The node's associated context data (if any)
+    - style: The node's style
+
+    It should return the measured size of the content. *)
 
 val compute_layout_with_measure :
-  'a t ->
-  node_id ->
-  Style.Available_space.t Geometry.size ->
-  'a measure_function ->
+  'context tree ->
+  Node_id.t ->
+  Available_space.t size ->
+  'context measure_function ->
   unit result
-(** Computes layout with a custom [measure_function] for leaf nodes. This is
-    useful for integrating with text-layout engines, image libraries, etc. The
-    measure function is called for each leaf node that needs to be measured. *)
+(** Compute the layout of a node and its descendants with a custom measure
+    function *)
 
-(** {1:node_inspection Node Inspection & Manipulation} *)
+val compute_layout :
+  'context tree -> Node_id.t -> Available_space.t size -> unit result
+(** Compute the layout of a node and its descendants. Uses a default measure
+    function that returns zero size. *)
 
-val style : 'a t -> node_id -> Style.style result
-(** Returns the [Style.style] of the given node. *)
+(** {1 Tree Traversal Modules}
 
-val layout : 'a t -> node_id -> layout result
-(** Returns the computed [layout] of the given node. You must call
-    [compute_layout] before this will return a meaningful value. *)
+    These modules provide implementations of tree traversal traits that can be
+    used with generic layout algorithms. *)
 
-val set_style : 'a t -> node_id -> Style.style -> unit result
-(** Sets the [Style.style] of the given node and marks it as "dirty". *)
+(** Partial tree traversal implementation *)
+module Traverse_partial_tree : sig
+  type 'context t = 'context tree
 
-val mark_dirty : 'a t -> node_id -> unit result
-(** Marks a node as "dirty", forcing its layout and the layout of its ancestors
-    to be recomputed on the next call to [compute_layout]. *)
-
-val dirty : 'a t -> node_id -> bool result
-(** Returns [true] if the node is considered "dirty" (its layout cache is
-    empty), [false] otherwise. *)
-
-val set_node_context : 'a t -> node_id -> 'a -> unit result
-(** Sets the user-defined context data for a given node. *)
-
-val get_node_context : 'a t -> node_id -> 'a option result
-(** Gets the user-defined context data for a given node. *)
-
-val children : 'a t -> node_id -> node_id list result
-(** Returns a list of the node's children. *)
-
-val child_count : 'a t -> node_id -> int result
-(** Returns the number of children of a node. *)
-
-val parent : 'a t -> node_id -> node_id option result
-(** Returns the parent of a node, if it has one. *)
-
-val child_at_index : 'a t -> node_id -> int -> node_id result
-(** Returns the child of a node at a specific index. *)
-
-val add_child : 'a t -> node_id -> node_id -> unit result
-(** Appends a child node to a parent node's list of children. *)
-
-val insert_child_at_index : 'a t -> node_id -> int -> node_id -> unit result
-(** Inserts a child node into a parent node's list of children at a specific
-    index. *)
-
-val set_children : 'a t -> node_id -> node_id list -> unit result
-(** Sets the children of a node, replacing any existing children. *)
-
-val remove_child : 'a t -> node_id -> node_id -> unit result
-(** Removes a specific child from a parent node's list of children. *)
-
-val remove_child_at_index : 'a t -> node_id -> int -> node_id result
-(** Removes a child at a specific index from a parent's list of children.
-    @return The [node_id] of the removed child. *)
-
-val replace_child_at_index : 'a t -> node_id -> int -> node_id -> node_id result
-(** Replaces a child at a specific index in a parent's list of children with a
-    new child.
-    @return The [node_id] of the replaced child. *)
-
-(** {1:configuration Configuration} *)
-
-val set_rounding_enabled : 'a t -> bool -> unit
-(** Enable or disable pixel-rounding of the final layout. Enabled by default.
-    Disabling rounding may be useful for tests or for environments where
-    sub-pixel layout is desired. *)
-
-(** {1:debugging Debugging} *)
-
-val print_tree : 'a t -> node_id -> unit
-(** Prints a debug representation of the layout tree starting from the given
-    node. *)
-
-(** {1:modules Sub-modules} *)
-
-module Geometry : module type of Geometry
-(** Core geometric primitives. *)
-
-module Style : module type of Style
-(** Data types for all CSS properties supported by Toffee. *)
-
-module Node : module type of Node
-(** Node identifier types. *)
-
-module Layout : module type of Layout
-(** Layout-related types, such as input and output structures. *)
-
-module Tree_intf : module type of Tree_intf
-(** Interfaces for integrating Toffee's algorithms with a custom tree structure.
-*)
-
-(** For advanced users who wish to use Toffee's layout algorithms with their own
-    tree data structure. *)
-module Low_level : sig
-  type layout_input = Layout.Layout_input.t
-  (** The input to a layout computation. *)
-
-  type layout_output = Layout.Layout_output.t
-  (** The output of a layout computation. *)
-
-  val compute_block_layout :
-    (module Tree_intf.LayoutBlockContainer
-       with type t = 'tree
-        and type block_container_style = Style.style
-        and type block_item_style = Style.style) ->
-    'tree ->
-    node_id ->
-    layout_input ->
-    layout_output
-  (** Computes the layout of a single node with `display: block`. *)
-
-  val compute_flexbox_layout :
-    (module Tree_intf.LayoutFlexboxContainer
-       with type t = 'tree
-        and type flexbox_container_style = Style.style
-        and type flexbox_item_style = Style.style) ->
-    'tree ->
-    node_id ->
-    layout_input ->
-    layout_output
-  (** Computes the layout of a single node with `display: flex`. *)
-
-  val compute_grid_layout :
-    (module Tree_intf.LayoutGridContainer
-       with type t = 'tree
-        and type grid_container_style = Style.style
-        and type grid_item_style = Style.style) ->
-    'tree ->
-    node_id ->
-    layout_input ->
-    layout_output
-  (** Computes the layout of a single node with `display: grid`. *)
-
-  val compute_leaf_layout :
-    inputs:layout_input ->
-    style:Style.style ->
-    resolve_calc_value:(unit -> float -> float) ->
-    measure_function:
-      (float option Geometry.size ->
-      Style.Available_space.t Geometry.size ->
-      float Geometry.size) ->
-    layout_output
-  (** Computes the layout for a leaf node (e.g., text, image). *)
-
-  val compute_root_layout :
-    (module Tree_intf.LayoutPartialTree
-       with type t = 'tree
-        and type core_container_style = Style.style) ->
-    'tree ->
-    node_id ->
-    Style.Available_space.t Geometry.size ->
-    unit
-  (** Computes the layout for the root of a tree. *)
-
-  val compute_cached_layout :
-    (module Tree_intf.CacheTree with type t = 'tree) ->
-    'tree ->
-    node_id ->
-    layout_input ->
-    ('tree -> node_id -> layout_input -> layout_output) ->
-    layout_output
-  (** Wraps a layout computation with caching. *)
-
-  val compute_hidden_layout :
-    (module Tree_intf.LayoutPartialTree
-       with type t = 'tree
-        and type core_container_style = Style.style) ->
-    (module Tree_intf.CacheTree with type t = 'tree) ->
-    'tree ->
-    node_id ->
-    layout_output
-  (** Computes a zero-sized layout for a node with `display: none`. *)
-
-  val round_layout :
-    (module Tree_intf.RoundTree with type t = 'tree) -> 'tree -> node_id -> unit
-  (** Recursively rounds the layout of a node and its descendants to align with
-      the pixel grid. *)
+  val child_ids : 'context t -> Node_id.t -> Node_id.t Seq.t
+  val child_count : 'context t -> Node_id.t -> int
+  val get_child_id : 'context t -> Node_id.t -> int -> Node_id.t
 end
+
+(** Cache tree implementation for layout caching *)
+module Cache_tree : sig
+  type 'context t = 'context tree
+
+  val cache_get :
+    'context t ->
+    Node_id.t ->
+    known_dimensions:float option size ->
+    available_space:Available_space.t size ->
+    run_mode:Run_mode.t ->
+    Layout_output.t option
+
+  val cache_store :
+    'context t ->
+    Node_id.t ->
+    known_dimensions:float option size ->
+    available_space:Available_space.t size ->
+    run_mode:Run_mode.t ->
+    Layout_output.t ->
+    unit
+
+  val cache_clear : 'context t -> Node_id.t -> unit
+end
+
+(** Debug printing support *)
+module Print_tree : sig
+  type 'context t = 'context tree
+
+  val child_ids : 'context t -> Node_id.t -> Node_id.t Seq.t
+  val child_count : 'context t -> Node_id.t -> int
+  val get_child_id : 'context t -> Node_id.t -> int -> Node_id.t
+  val get_debug_label : 'context t -> Node_id.t -> string
+  val get_final_layout : 'context t -> Node_id.t -> Layout.t
+end
+
+(** {1 Debugging} *)
+
+val print_tree : 'context tree -> Node_id.t -> unit
+(** Print a debug representation of the tree to stdout. This requires the
+    Print_tree module implementation. *)

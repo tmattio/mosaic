@@ -1,0 +1,4 @@
+(library
+ (name compute_grid)
+ (public_name toffee.compute.grid)
+ (libraries toffee.geometry toffee.style toffee.tree toffee.compute.helpers))

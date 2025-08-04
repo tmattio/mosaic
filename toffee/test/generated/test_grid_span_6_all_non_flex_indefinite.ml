@@ -6,14 +6,14 @@ open Toffee
 (* Test context for nodes *)
 module MeasureFunction = struct
   type t =
-    | Fixed of float Toffee.Geometry.size
+    | Fixed of float Geometry.size
     | Text of string
     | Text_vertical of string
   [@@warning "-37"]
 end
 
 (* Test measure function *)
-let measure_function ~known_dimensions ~available_space _node_id node_context
+let measure_function known_dimensions available_space _node_id node_context
     _style =
   match node_context with
   | Some (MeasureFunction.Fixed size) -> size
@@ -31,21 +31,21 @@ let measure_function ~known_dimensions ~available_space _node_id node_context
       in
 
       let inline_size =
-        match known_dimensions.Toffee.Geometry.width with
+        match known_dimensions.Geometry.Size.width with
         | Some w -> w
         | None ->
-            (match available_space.Toffee.Geometry.width with
-            | Toffee.Style.Available_space.Min_content ->
+            (match available_space.Geometry.Size.width with
+            | Available_space.Min_content ->
                 float_of_int min_line_length *. h_width
-            | Toffee.Style.Available_space.Max_content ->
+            | Available_space.Max_content ->
                 float_of_int max_line_length *. h_width
-            | Toffee.Style.Available_space.Definite inline_size ->
+            | Available_space.Definite inline_size ->
                 Float.min inline_size (float_of_int max_line_length *. h_width))
             |> Float.max (float_of_int min_line_length *. h_width)
       in
 
       let block_size =
-        match known_dimensions.Toffee.Geometry.height with
+        match known_dimensions.Geometry.Size.height with
         | Some h -> h
         | None ->
             let inline_line_length =
@@ -73,13 +73,13 @@ let measure_function ~known_dimensions ~available_space _node_id node_context
 
       let block_size = float_of_int text_length *. h_height in
       let inline_size =
-        match known_dimensions.Toffee.Geometry.width with
+        match known_dimensions.Geometry.Size.width with
         | Some w -> w
         | None -> (
-            match available_space.Toffee.Geometry.width with
-            | Toffee.Style.Available_space.Min_content -> h_width
-            | Toffee.Style.Available_space.Max_content -> h_width
-            | Toffee.Style.Available_space.Definite w -> w)
+            match available_space.Geometry.Size.width with
+            | Available_space.Min_content -> h_width
+            | Available_space.Max_content -> h_width
+            | Available_space.Definite w -> w)
       in
       { width = inline_size; height = block_size }
   | None -> { width = 0.0; height = 0.0 }
@@ -91,94 +91,74 @@ let test_grid_span_6_all_non_flex_indefinite_border_box measure_function () =
     check (float 0.001) msg expected actual
   in
 
-  let tree = Toffee.create () in
+  let tree = new_tree () in
 
   (* Create nodes *)
   let node =
-    Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Grid;
-        grid_template_columns =
-          [
-            Toffee.Style.Grid.Single
-              {
-                min = Toffee.Style.Grid.Min_content;
-                max = Toffee.Style.Grid.Min_content;
-              };
-            Toffee.Style.Grid.Single
-              {
-                min = Toffee.Style.Grid.Max_content;
-                max = Toffee.Style.Grid.Max_content;
-              };
-            Toffee.Style.Grid.Single
-              {
-                min = Toffee.Style.Grid.Auto;
-                max =
-                  Toffee.Style.Grid.Fit_content
-                    (Toffee.Style.Length_percentage.Length 20.0);
-              };
-            Toffee.Style.Grid.Single
-              { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto };
-            Toffee.Style.Grid.Single
-              {
-                min = Toffee.Style.Grid.Length 10.0;
-                max = Toffee.Style.Grid.Length 10.0;
-              };
-            Toffee.Style.Grid.Single
-              {
-                min = Toffee.Style.Grid.Percent 0.2;
-                max = Toffee.Style.Grid.Percent 0.2;
-              };
-          ];
-        grid_template_rows =
-          [
-            Toffee.Style.Grid.Single
-              {
-                min = Toffee.Style.Grid.Length 40.0;
-                max = Toffee.Style.Grid.Length 40.0;
-              };
-            Toffee.Style.Grid.Single
-              {
-                min = Toffee.Style.Grid.Length 40.0;
-                max = Toffee.Style.Grid.Length 40.0;
-              };
-          ];
-      }
-  in
-  let node0 =
-    Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        grid_column =
-          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Span 6 };
-      }
-  in
-  let _ =
-    Toffee.set_node_context tree node0
-      (MeasureFunction.Text "HHHHHHHH​HHHHHHHH")
+    new_leaf tree
+      (Style.make ~display:Style.Display.Grid
+         ~grid_template_columns:
+           [
+             Style.Grid.Template_component.single
+               Style.Grid.Track_sizing_function.min_content;
+             Style.Grid.Template_component.single
+               Style.Grid.Track_sizing_function.max_content;
+             Style.Grid.Template_component.single
+               (Style.Grid.Track_sizing_function.fit_content
+                  (Style.Length_percentage.length 20.0));
+             Style.Grid.Template_component.single
+               Style.Grid.Track_sizing_function.auto;
+             Style.Grid.Template_component.single
+               (Style.Grid.Track_sizing_function.length 10.0);
+             Style.Grid.Template_component.single
+               (Style.Grid.Track_sizing_function.percent 0.2);
+           ]
+         ~grid_template_rows:
+           [
+             Style.Grid.Template_component.single
+               (Style.Grid.Track_sizing_function.length 40.0);
+             Style.Grid.Template_component.single
+               (Style.Grid.Track_sizing_function.length 40.0);
+           ]
+         ())
     |> Result.get_ok
   in
-  let _ = Toffee.add_child tree node node0 |> Result.get_ok in
-  let node1 = Toffee.new_leaf tree Toffee.Style.default in
-  let _ = Toffee.add_child tree node node1 |> Result.get_ok in
-  let node2 = Toffee.new_leaf tree Toffee.Style.default in
-  let _ = Toffee.add_child tree node node2 |> Result.get_ok in
-  let node3 = Toffee.new_leaf tree Toffee.Style.default in
-  let _ = Toffee.add_child tree node node3 |> Result.get_ok in
-  let node4 = Toffee.new_leaf tree Toffee.Style.default in
-  let _ = Toffee.add_child tree node node4 |> Result.get_ok in
-  let node5 = Toffee.new_leaf tree Toffee.Style.default in
-  let _ = Toffee.add_child tree node node5 |> Result.get_ok in
-  let node6 = Toffee.new_leaf tree Toffee.Style.default in
-  let _ = Toffee.add_child tree node node6 |> Result.get_ok in
+  let node0 =
+    new_leaf tree
+      (Style.make
+         ~grid_column:
+           {
+             start = Style.Grid.Placement.line 1;
+             end_ = Style.Grid.Placement.span 6;
+           }
+         ())
+    |> Result.get_ok
+  in
+  let _ =
+    set_node_context tree node0
+      (Some (MeasureFunction.Text "HHHHHHHH​HHHHHHHH"))
+    |> Result.get_ok
+  in
+  let _ = add_child tree node node0 |> Result.get_ok in
+  let node1 = new_leaf tree Style.default |> Result.get_ok in
+  let _ = add_child tree node node1 |> Result.get_ok in
+  let node2 = new_leaf tree Style.default |> Result.get_ok in
+  let _ = add_child tree node node2 |> Result.get_ok in
+  let node3 = new_leaf tree Style.default |> Result.get_ok in
+  let _ = add_child tree node node3 |> Result.get_ok in
+  let node4 = new_leaf tree Style.default |> Result.get_ok in
+  let _ = add_child tree node node4 |> Result.get_ok in
+  let node5 = new_leaf tree Style.default |> Result.get_ok in
+  let _ = add_child tree node node5 |> Result.get_ok in
+  let node6 = new_leaf tree Style.default |> Result.get_ok in
+  let _ = add_child tree node node6 |> Result.get_ok in
 
   (* Compute layout *)
   let _ =
-    Toffee.compute_layout_with_measure tree node
+    compute_layout_with_measure tree node
       {
-        width = Toffee.Style.Available_space.Max_content;
-        height = Toffee.Style.Available_space.Max_content;
+        width = Available_space.Max_content;
+        height = Available_space.Max_content;
       }
       measure_function
     |> Result.get_ok
@@ -186,58 +166,50 @@ let test_grid_span_6_all_non_flex_indefinite_border_box measure_function () =
 
   (* Print tree for debugging *)
   Printf.printf "\nComputed tree:\n";
-  Toffee.print_tree tree node;
+  print_tree tree node;
   Printf.printf "\n";
 
   (* Verify layout *)
-  let layout = Toffee.layout tree node in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of node" 160.0 layout.size.width;
-  assert_eq ~msg:"height of node" 80.0 layout.size.height;
-  assert_eq ~msg:"x of node" 0.0 layout.location.x;
-  assert_eq ~msg:"y of node" 0.0 layout.location.y;
-  let layout = Toffee.layout tree node0 in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of node0" 160.0 layout.size.width;
-  assert_eq ~msg:"height of node0" 40.0 layout.size.height;
-  assert_eq ~msg:"x of node0" 0.0 layout.location.x;
-  assert_eq ~msg:"y of node0" 0.0 layout.location.y;
-  let layout = Toffee.layout tree node1 in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of node1" 10.0 layout.size.width;
-  assert_eq ~msg:"height of node1" 40.0 layout.size.height;
-  assert_eq ~msg:"x of node1" 0.0 layout.location.x;
-  assert_eq ~msg:"y of node1" 40.0 layout.location.y;
-  let layout = Toffee.layout tree node2 in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of node2" 89.0 layout.size.width;
-  assert_eq ~msg:"height of node2" 40.0 layout.size.height;
-  assert_eq ~msg:"x of node2" 10.0 layout.location.x;
-  assert_eq ~msg:"y of node2" 40.0 layout.location.y;
-  let layout = Toffee.layout tree node3 in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of node3" 10.0 layout.size.width;
-  assert_eq ~msg:"height of node3" 40.0 layout.size.height;
-  assert_eq ~msg:"x of node3" 99.0 layout.location.x;
-  assert_eq ~msg:"y of node3" 40.0 layout.location.y;
-  let layout = Toffee.layout tree node4 in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of node4" 9.0 layout.size.width;
-  assert_eq ~msg:"height of node4" 40.0 layout.size.height;
-  assert_eq ~msg:"x of node4" 109.0 layout.location.x;
-  assert_eq ~msg:"y of node4" 40.0 layout.location.y;
-  let layout = Toffee.layout tree node5 in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of node5" 10.0 layout.size.width;
-  assert_eq ~msg:"height of node5" 40.0 layout.size.height;
-  assert_eq ~msg:"x of node5" 118.0 layout.location.x;
-  assert_eq ~msg:"y of node5" 40.0 layout.location.y;
-  let layout = Toffee.layout tree node6 in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of node6" 32.0 layout.size.width;
-  assert_eq ~msg:"height of node6" 40.0 layout.size.height;
-  assert_eq ~msg:"x of node6" 128.0 layout.location.x;
-  assert_eq ~msg:"y of node6" 40.0 layout.location.y;
+  let layout_result = layout tree node |> Result.get_ok in
+  assert_eq ~msg:"width of node" 160.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node" 80.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node0 |> Result.get_ok in
+  assert_eq ~msg:"width of node0" 160.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node0" 40.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node0" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node0" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node1 |> Result.get_ok in
+  assert_eq ~msg:"width of node1" 10.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node1" 40.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node1" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node1" 40.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node2 |> Result.get_ok in
+  assert_eq ~msg:"width of node2" 89.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node2" 40.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node2" 10.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node2" 40.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node3 |> Result.get_ok in
+  assert_eq ~msg:"width of node3" 10.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node3" 40.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node3" 99.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node3" 40.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node4 |> Result.get_ok in
+  assert_eq ~msg:"width of node4" 9.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node4" 40.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node4" 109.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node4" 40.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node5 |> Result.get_ok in
+  assert_eq ~msg:"width of node5" 10.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node5" 40.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node5" 118.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node5" 40.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node6 |> Result.get_ok in
+  assert_eq ~msg:"width of node6" 32.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node6" 40.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node6" 128.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node6" 40.0 (Layout.location layout_result).y;
   ()
 
 let test_grid_span_6_all_non_flex_indefinite_content_box measure_function () =
@@ -247,114 +219,74 @@ let test_grid_span_6_all_non_flex_indefinite_content_box measure_function () =
     check (float 0.001) msg expected actual
   in
 
-  let tree = Toffee.create () in
+  let tree = new_tree () in
 
   (* Create nodes *)
   let node =
-    Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Grid;
-        grid_template_columns =
-          [
-            Toffee.Style.Grid.Single
-              {
-                min = Toffee.Style.Grid.Min_content;
-                max = Toffee.Style.Grid.Min_content;
-              };
-            Toffee.Style.Grid.Single
-              {
-                min = Toffee.Style.Grid.Max_content;
-                max = Toffee.Style.Grid.Max_content;
-              };
-            Toffee.Style.Grid.Single
-              {
-                min = Toffee.Style.Grid.Auto;
-                max =
-                  Toffee.Style.Grid.Fit_content
-                    (Toffee.Style.Length_percentage.Length 20.0);
-              };
-            Toffee.Style.Grid.Single
-              { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto };
-            Toffee.Style.Grid.Single
-              {
-                min = Toffee.Style.Grid.Length 10.0;
-                max = Toffee.Style.Grid.Length 10.0;
-              };
-            Toffee.Style.Grid.Single
-              {
-                min = Toffee.Style.Grid.Percent 0.2;
-                max = Toffee.Style.Grid.Percent 0.2;
-              };
-          ];
-        grid_template_rows =
-          [
-            Toffee.Style.Grid.Single
-              {
-                min = Toffee.Style.Grid.Length 40.0;
-                max = Toffee.Style.Grid.Length 40.0;
-              };
-            Toffee.Style.Grid.Single
-              {
-                min = Toffee.Style.Grid.Length 40.0;
-                max = Toffee.Style.Grid.Length 40.0;
-              };
-          ];
-        box_sizing = Toffee.Style.Content_box;
-      }
-  in
-  let node0 =
-    Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        grid_column =
-          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Span 6 };
-        box_sizing = Toffee.Style.Content_box;
-      }
-  in
-  let _ =
-    Toffee.set_node_context tree node0
-      (MeasureFunction.Text "HHHHHHHH​HHHHHHHH")
+    new_leaf tree
+      (Style.make ~display:Style.Display.Grid
+         ~grid_template_columns:
+           [
+             Style.Grid.Template_component.single
+               Style.Grid.Track_sizing_function.min_content;
+             Style.Grid.Template_component.single
+               Style.Grid.Track_sizing_function.max_content;
+             Style.Grid.Template_component.single
+               (Style.Grid.Track_sizing_function.fit_content
+                  (Style.Length_percentage.length 20.0));
+             Style.Grid.Template_component.single
+               Style.Grid.Track_sizing_function.auto;
+             Style.Grid.Template_component.single
+               (Style.Grid.Track_sizing_function.length 10.0);
+             Style.Grid.Template_component.single
+               (Style.Grid.Track_sizing_function.percent 0.2);
+           ]
+         ~grid_template_rows:
+           [
+             Style.Grid.Template_component.single
+               (Style.Grid.Track_sizing_function.length 40.0);
+             Style.Grid.Template_component.single
+               (Style.Grid.Track_sizing_function.length 40.0);
+           ]
+         ())
     |> Result.get_ok
   in
-  let _ = Toffee.add_child tree node node0 |> Result.get_ok in
-  let node1 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
+  let node0 =
+    new_leaf tree
+      (Style.make
+         ~grid_column:
+           {
+             start = Style.Grid.Placement.line 1;
+             end_ = Style.Grid.Placement.span 6;
+           }
+         ())
+    |> Result.get_ok
   in
-  let _ = Toffee.add_child tree node node1 |> Result.get_ok in
-  let node2 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
+  let _ =
+    set_node_context tree node0
+      (Some (MeasureFunction.Text "HHHHHHHH​HHHHHHHH"))
+    |> Result.get_ok
   in
-  let _ = Toffee.add_child tree node node2 |> Result.get_ok in
-  let node3 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
-  in
-  let _ = Toffee.add_child tree node node3 |> Result.get_ok in
-  let node4 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
-  in
-  let _ = Toffee.add_child tree node node4 |> Result.get_ok in
-  let node5 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
-  in
-  let _ = Toffee.add_child tree node node5 |> Result.get_ok in
-  let node6 =
-    Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
-  in
-  let _ = Toffee.add_child tree node node6 |> Result.get_ok in
+  let _ = add_child tree node node0 |> Result.get_ok in
+  let node1 = new_leaf tree Style.default |> Result.get_ok in
+  let _ = add_child tree node node1 |> Result.get_ok in
+  let node2 = new_leaf tree Style.default |> Result.get_ok in
+  let _ = add_child tree node node2 |> Result.get_ok in
+  let node3 = new_leaf tree Style.default |> Result.get_ok in
+  let _ = add_child tree node node3 |> Result.get_ok in
+  let node4 = new_leaf tree Style.default |> Result.get_ok in
+  let _ = add_child tree node node4 |> Result.get_ok in
+  let node5 = new_leaf tree Style.default |> Result.get_ok in
+  let _ = add_child tree node node5 |> Result.get_ok in
+  let node6 = new_leaf tree Style.default |> Result.get_ok in
+  let _ = add_child tree node node6 |> Result.get_ok in
 
   (* Compute layout *)
   let _ =
-    Toffee.compute_layout_with_measure tree node
+    compute_layout_with_measure tree node
       {
-        width = Toffee.Style.Available_space.Max_content;
-        height = Toffee.Style.Available_space.Max_content;
+        width = Available_space.Max_content;
+        height = Available_space.Max_content;
       }
       measure_function
     |> Result.get_ok
@@ -362,58 +294,50 @@ let test_grid_span_6_all_non_flex_indefinite_content_box measure_function () =
 
   (* Print tree for debugging *)
   Printf.printf "\nComputed tree:\n";
-  Toffee.print_tree tree node;
+  print_tree tree node;
   Printf.printf "\n";
 
   (* Verify layout *)
-  let layout = Toffee.layout tree node in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of node" 160.0 layout.size.width;
-  assert_eq ~msg:"height of node" 80.0 layout.size.height;
-  assert_eq ~msg:"x of node" 0.0 layout.location.x;
-  assert_eq ~msg:"y of node" 0.0 layout.location.y;
-  let layout = Toffee.layout tree node0 in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of node0" 160.0 layout.size.width;
-  assert_eq ~msg:"height of node0" 40.0 layout.size.height;
-  assert_eq ~msg:"x of node0" 0.0 layout.location.x;
-  assert_eq ~msg:"y of node0" 0.0 layout.location.y;
-  let layout = Toffee.layout tree node1 in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of node1" 10.0 layout.size.width;
-  assert_eq ~msg:"height of node1" 40.0 layout.size.height;
-  assert_eq ~msg:"x of node1" 0.0 layout.location.x;
-  assert_eq ~msg:"y of node1" 40.0 layout.location.y;
-  let layout = Toffee.layout tree node2 in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of node2" 89.0 layout.size.width;
-  assert_eq ~msg:"height of node2" 40.0 layout.size.height;
-  assert_eq ~msg:"x of node2" 10.0 layout.location.x;
-  assert_eq ~msg:"y of node2" 40.0 layout.location.y;
-  let layout = Toffee.layout tree node3 in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of node3" 10.0 layout.size.width;
-  assert_eq ~msg:"height of node3" 40.0 layout.size.height;
-  assert_eq ~msg:"x of node3" 99.0 layout.location.x;
-  assert_eq ~msg:"y of node3" 40.0 layout.location.y;
-  let layout = Toffee.layout tree node4 in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of node4" 9.0 layout.size.width;
-  assert_eq ~msg:"height of node4" 40.0 layout.size.height;
-  assert_eq ~msg:"x of node4" 109.0 layout.location.x;
-  assert_eq ~msg:"y of node4" 40.0 layout.location.y;
-  let layout = Toffee.layout tree node5 in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of node5" 10.0 layout.size.width;
-  assert_eq ~msg:"height of node5" 40.0 layout.size.height;
-  assert_eq ~msg:"x of node5" 118.0 layout.location.x;
-  assert_eq ~msg:"y of node5" 40.0 layout.location.y;
-  let layout = Toffee.layout tree node6 in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of node6" 32.0 layout.size.width;
-  assert_eq ~msg:"height of node6" 40.0 layout.size.height;
-  assert_eq ~msg:"x of node6" 128.0 layout.location.x;
-  assert_eq ~msg:"y of node6" 40.0 layout.location.y;
+  let layout_result = layout tree node |> Result.get_ok in
+  assert_eq ~msg:"width of node" 160.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node" 80.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node0 |> Result.get_ok in
+  assert_eq ~msg:"width of node0" 160.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node0" 40.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node0" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node0" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node1 |> Result.get_ok in
+  assert_eq ~msg:"width of node1" 10.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node1" 40.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node1" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node1" 40.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node2 |> Result.get_ok in
+  assert_eq ~msg:"width of node2" 89.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node2" 40.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node2" 10.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node2" 40.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node3 |> Result.get_ok in
+  assert_eq ~msg:"width of node3" 10.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node3" 40.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node3" 99.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node3" 40.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node4 |> Result.get_ok in
+  assert_eq ~msg:"width of node4" 9.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node4" 40.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node4" 109.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node4" 40.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node5 |> Result.get_ok in
+  assert_eq ~msg:"width of node5" 10.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node5" 40.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node5" 118.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node5" 40.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node6 |> Result.get_ok in
+  assert_eq ~msg:"width of node6" 32.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node6" 40.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node6" 128.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node6" 40.0 (Layout.location layout_result).y;
   ()
 
 (* Export tests for aggregation *)

@@ -1,0 +1,5 @@
+(library
+ (name compute)
+ (public_name toffee.compute)
+ (libraries toffee.geometry toffee.style toffee.tree toffee.compute.block
+  toffee.compute.flexbox toffee.compute.grid))

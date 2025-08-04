@@ -6,14 +6,14 @@ open Toffee
 (* Test context for nodes *)
 module MeasureFunction = struct
   type t =
-    | Fixed of float Toffee.Geometry.size
+    | Fixed of float Geometry.size
     | Text of string
     | Text_vertical of string
   [@@warning "-37"]
 end
 
 (* Test measure function *)
-let measure_function ~known_dimensions ~available_space _node_id node_context
+let measure_function known_dimensions available_space _node_id node_context
     _style =
   match node_context with
   | Some (MeasureFunction.Fixed size) -> size
@@ -31,21 +31,21 @@ let measure_function ~known_dimensions ~available_space _node_id node_context
       in
 
       let inline_size =
-        match known_dimensions.Toffee.Geometry.width with
+        match known_dimensions.Geometry.Size.width with
         | Some w -> w
         | None ->
-            (match available_space.Toffee.Geometry.width with
-            | Toffee.Style.Available_space.Min_content ->
+            (match available_space.Geometry.Size.width with
+            | Available_space.Min_content ->
                 float_of_int min_line_length *. h_width
-            | Toffee.Style.Available_space.Max_content ->
+            | Available_space.Max_content ->
                 float_of_int max_line_length *. h_width
-            | Toffee.Style.Available_space.Definite inline_size ->
+            | Available_space.Definite inline_size ->
                 Float.min inline_size (float_of_int max_line_length *. h_width))
             |> Float.max (float_of_int min_line_length *. h_width)
       in
 
       let block_size =
-        match known_dimensions.Toffee.Geometry.height with
+        match known_dimensions.Geometry.Size.height with
         | Some h -> h
         | None ->
             let inline_line_length =
@@ -73,13 +73,13 @@ let measure_function ~known_dimensions ~available_space _node_id node_context
 
       let block_size = float_of_int text_length *. h_height in
       let inline_size =
-        match known_dimensions.Toffee.Geometry.width with
+        match known_dimensions.Geometry.Size.width with
         | Some w -> w
         | None -> (
-            match available_space.Toffee.Geometry.width with
-            | Toffee.Style.Available_space.Min_content -> h_width
-            | Toffee.Style.Available_space.Max_content -> h_width
-            | Toffee.Style.Available_space.Definite w -> w)
+            match available_space.Geometry.Size.width with
+            | Available_space.Min_content -> h_width
+            | Available_space.Max_content -> h_width
+            | Available_space.Definite w -> w)
       in
       { width = inline_size; height = block_size }
   | None -> { width = 0.0; height = 0.0 }
@@ -92,47 +92,45 @@ let test_flex_absolute_aspect_ratio_fill_max_width_border_box measure_function
     check (float 0.001) msg expected actual
   in
 
-  let tree = Toffee.create () in
+  let tree = new_tree () in
 
   (* Create nodes *)
   let node =
-    Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Flex;
-        size =
-          {
-            width = Toffee.Style.Dimension.length 400.0;
-            height = Toffee.Style.Dimension.length 300.0;
-          };
-      }
-  in
-  let node0 =
-    Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        position = Toffee.Style.Absolute;
-        max_size =
-          {
-            width = Toffee.Style.Dimension.auto;
-            height = Toffee.Style.Dimension.length 50.0;
-          };
-        aspect_ratio = Some 0.5;
-      }
-  in
-  let _ =
-    Toffee.set_node_context tree node0
-      (MeasureFunction.Text "HHHH​HHHH​HHHH​HHHH​HHHH​HHHH​HHHH​HHHH​HHHH")
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~size:
+           {
+             width = Style.Dimension.length 400.0;
+             height = Style.Dimension.length 300.0;
+           }
+         ())
     |> Result.get_ok
   in
-  let _ = Toffee.add_child tree node node0 |> Result.get_ok in
+  let node0 =
+    new_leaf tree
+      (Style.make ~position:Style.Position.Absolute
+         ~max_size:
+           {
+             width = Style.Dimension.auto;
+             height = Style.Dimension.length 50.0;
+           }
+         ~aspect_ratio:0.5 ())
+    |> Result.get_ok
+  in
+  let _ =
+    set_node_context tree node0
+      (Some
+         (MeasureFunction.Text "HHHH​HHHH​HHHH​HHHH​HHHH​HHHH​HHHH​HHHH​HHHH"))
+    |> Result.get_ok
+  in
+  let _ = add_child tree node node0 |> Result.get_ok in
 
   (* Compute layout *)
   let _ =
-    Toffee.compute_layout_with_measure tree node
+    compute_layout_with_measure tree node
       {
-        width = Toffee.Style.Available_space.Max_content;
-        height = Toffee.Style.Available_space.Max_content;
+        width = Available_space.Max_content;
+        height = Available_space.Max_content;
       }
       measure_function
     |> Result.get_ok
@@ -140,22 +138,20 @@ let test_flex_absolute_aspect_ratio_fill_max_width_border_box measure_function
 
   (* Print tree for debugging *)
   Printf.printf "\nComputed tree:\n";
-  Toffee.print_tree tree node;
+  print_tree tree node;
   Printf.printf "\n";
 
   (* Verify layout *)
-  let layout = Toffee.layout tree node in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of node" 400.0 layout.size.width;
-  assert_eq ~msg:"height of node" 300.0 layout.size.height;
-  assert_eq ~msg:"x of node" 0.0 layout.location.x;
-  assert_eq ~msg:"y of node" 0.0 layout.location.y;
-  let layout = Toffee.layout tree node0 in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of node0" 25.0 layout.size.width;
-  assert_eq ~msg:"height of node0" 50.0 layout.size.height;
-  assert_eq ~msg:"x of node0" 0.0 layout.location.x;
-  assert_eq ~msg:"y of node0" 0.0 layout.location.y;
+  let layout_result = layout tree node |> Result.get_ok in
+  assert_eq ~msg:"width of node" 400.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node" 300.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node0 |> Result.get_ok in
+  assert_eq ~msg:"width of node0" 25.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node0" 50.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node0" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node0" 0.0 (Layout.location layout_result).y;
   ()
 
 let test_flex_absolute_aspect_ratio_fill_max_width_content_box measure_function
@@ -166,49 +162,45 @@ let test_flex_absolute_aspect_ratio_fill_max_width_content_box measure_function
     check (float 0.001) msg expected actual
   in
 
-  let tree = Toffee.create () in
+  let tree = new_tree () in
 
   (* Create nodes *)
   let node =
-    Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        display = Toffee.Style.Flex;
-        size =
-          {
-            width = Toffee.Style.Dimension.length 400.0;
-            height = Toffee.Style.Dimension.length 300.0;
-          };
-        box_sizing = Toffee.Style.Content_box;
-      }
-  in
-  let node0 =
-    Toffee.new_leaf tree
-      {
-        Toffee.Style.default with
-        position = Toffee.Style.Absolute;
-        max_size =
-          {
-            width = Toffee.Style.Dimension.auto;
-            height = Toffee.Style.Dimension.length 50.0;
-          };
-        aspect_ratio = Some 0.5;
-        box_sizing = Toffee.Style.Content_box;
-      }
-  in
-  let _ =
-    Toffee.set_node_context tree node0
-      (MeasureFunction.Text "HHHH​HHHH​HHHH​HHHH​HHHH​HHHH​HHHH​HHHH​HHHH")
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~size:
+           {
+             width = Style.Dimension.length 400.0;
+             height = Style.Dimension.length 300.0;
+           }
+         ())
     |> Result.get_ok
   in
-  let _ = Toffee.add_child tree node node0 |> Result.get_ok in
+  let node0 =
+    new_leaf tree
+      (Style.make ~position:Style.Position.Absolute
+         ~max_size:
+           {
+             width = Style.Dimension.auto;
+             height = Style.Dimension.length 50.0;
+           }
+         ~aspect_ratio:0.5 ())
+    |> Result.get_ok
+  in
+  let _ =
+    set_node_context tree node0
+      (Some
+         (MeasureFunction.Text "HHHH​HHHH​HHHH​HHHH​HHHH​HHHH​HHHH​HHHH​HHHH"))
+    |> Result.get_ok
+  in
+  let _ = add_child tree node node0 |> Result.get_ok in
 
   (* Compute layout *)
   let _ =
-    Toffee.compute_layout_with_measure tree node
+    compute_layout_with_measure tree node
       {
-        width = Toffee.Style.Available_space.Max_content;
-        height = Toffee.Style.Available_space.Max_content;
+        width = Available_space.Max_content;
+        height = Available_space.Max_content;
       }
       measure_function
     |> Result.get_ok
@@ -216,22 +208,20 @@ let test_flex_absolute_aspect_ratio_fill_max_width_content_box measure_function
 
   (* Print tree for debugging *)
   Printf.printf "\nComputed tree:\n";
-  Toffee.print_tree tree node;
+  print_tree tree node;
   Printf.printf "\n";
 
   (* Verify layout *)
-  let layout = Toffee.layout tree node in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of node" 400.0 layout.size.width;
-  assert_eq ~msg:"height of node" 300.0 layout.size.height;
-  assert_eq ~msg:"x of node" 0.0 layout.location.x;
-  assert_eq ~msg:"y of node" 0.0 layout.location.y;
-  let layout = Toffee.layout tree node0 in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of node0" 25.0 layout.size.width;
-  assert_eq ~msg:"height of node0" 50.0 layout.size.height;
-  assert_eq ~msg:"x of node0" 0.0 layout.location.x;
-  assert_eq ~msg:"y of node0" 0.0 layout.location.y;
+  let layout_result = layout tree node |> Result.get_ok in
+  assert_eq ~msg:"width of node" 400.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node" 300.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node0 |> Result.get_ok in
+  assert_eq ~msg:"width of node0" 25.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node0" 50.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node0" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node0" 0.0 (Layout.location layout_result).y;
   ()
 
 (* Export tests for aggregation *)

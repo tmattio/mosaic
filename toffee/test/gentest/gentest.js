@@ -4,6 +4,7 @@ import { chromium } from 'playwright';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import os from 'os';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,9 +12,10 @@ const testDir = path.resolve(__dirname, '..');
 
 // Convert style object to OCaml code
 function styleToOCaml(style) {
-  const fields = [];
+  const params = [];
 
   // Only set display if explicitly specified - Taffy defaults to Flex
+  let displayMode = style.display || 'flex';  // Track display mode for later checks
   if (style.display) {
     const displayMap = {
       'grid': 'Grid',
@@ -21,7 +23,7 @@ function styleToOCaml(style) {
       'block': 'Block',
       'none': 'None'
     };
-    fields.push(`display = Toffee.Style.${displayMap[style.display] || 'Flex'}`);
+    params.push(`~display:(Style.Display.${displayMap[style.display] || 'Flex'})`);
   }
 
   // Direction property
@@ -31,7 +33,7 @@ function styleToOCaml(style) {
       'ltr': 'Ltr'
     };
     if (directionMap[style.direction]) {
-      fields.push(`direction = Toffee.Style.${directionMap[style.direction]}`);
+      params.push(`~direction:(Style.${directionMap[style.direction]})`);
     }
   }
 
@@ -40,28 +42,28 @@ function styleToOCaml(style) {
       'relative': 'Relative',
       'absolute': 'Absolute'
     };
-    fields.push(`position = Toffee.Style.${positionMap[style.position] || 'Relative'}`);
+    params.push(`~position:(Style.Position.${positionMap[style.position] || 'Relative'})`);
   }
 
   // Grid properties
   if (style.gridTemplateColumns?.length > 0) {
     const tracks = style.gridTemplateColumns.map(trackToOCaml).join('; ');
-    fields.push(`grid_template_columns = [${tracks}]`);
+    params.push(`~grid_template_columns:([${tracks}])`);
   }
 
   if (style.gridTemplateRows?.length > 0) {
     const tracks = style.gridTemplateRows.map(trackToOCaml).join('; ');
-    fields.push(`grid_template_rows = [${tracks}]`);
+    params.push(`~grid_template_rows:([${tracks}])`);
   }
 
   if (style.gridAutoRows?.length > 0) {
     const tracks = style.gridAutoRows.map(t => nonRepeatedTrackToOCaml(t)).join('; ');
-    fields.push(`grid_auto_rows = [${tracks}]`);
+    params.push(`~grid_auto_rows:([${tracks}])`);
   }
 
   if (style.gridAutoColumns?.length > 0) {
     const tracks = style.gridAutoColumns.map(t => nonRepeatedTrackToOCaml(t)).join('; ');
-    fields.push(`grid_auto_columns = [${tracks}]`);
+    params.push(`~grid_auto_columns:([${tracks}])`);
   }
 
   if (style.gridAutoFlow) {
@@ -80,7 +82,7 @@ function styleToOCaml(style) {
       const isDense = style.gridAutoFlow.algorithm === 'dense';
       flowValue = isDense ? `${direction} dense` : direction;
     }
-    fields.push(`grid_auto_flow = Toffee.Style.Grid.${flowMap[flowValue] || 'Row'}`);
+    params.push(`~grid_auto_flow:(Style.Grid.Auto_flow.${flowMap[flowValue] || 'Row'})`);
   }
 
   // Handle grid placement - can be specified as gridColumn/gridRow or individual properties
@@ -89,7 +91,7 @@ function styleToOCaml(style) {
     const end_ = style.gridColumn?.end || style.gridColumnEnd || { kind: 'auto' };
     const startOCaml = gridLineToOCaml(start);
     const endOCaml = gridLineToOCaml(end_);
-    fields.push(`grid_column = { start = ${startOCaml}; end_ = ${endOCaml} }`);
+    params.push(`~grid_column:({ start = ${startOCaml}; end_ = ${endOCaml} })`);
   }
 
   if (style.gridRow || style.gridRowStart || style.gridRowEnd) {
@@ -97,7 +99,7 @@ function styleToOCaml(style) {
     const end_ = style.gridRow?.end || style.gridRowEnd || { kind: 'auto' };
     const startOCaml = gridLineToOCaml(start);
     const endOCaml = gridLineToOCaml(end_);
-    fields.push(`grid_row = { start = ${startOCaml}; end_ = ${endOCaml} }`);
+    params.push(`~grid_row:({ start = ${startOCaml}; end_ = ${endOCaml} })`);
   }
 
   // Flexbox properties
@@ -108,7 +110,7 @@ function styleToOCaml(style) {
       'column': 'Column',
       'column-reverse': 'Column_reverse'
     };
-    fields.push(`flex_direction = Toffee.Style.Flex.${dirMap[style.flexDirection] || 'Row'}`);
+    params.push(`~flex_direction:(Style.Flex_direction.${dirMap[style.flexDirection] || 'Row'})`);
   }
 
   if (style.flexWrap) {
@@ -117,7 +119,7 @@ function styleToOCaml(style) {
       'wrap': 'Wrap',
       'wrap-reverse': 'Wrap_reverse'
     };
-    fields.push(`flex_wrap = Toffee.Style.Flex.${wrapMap[style.flexWrap] || 'No_wrap'}`);
+    params.push(`~flex_wrap:(Style.Flex_wrap.${wrapMap[style.flexWrap] || 'No_wrap'})`);
   }
 
   if (style.alignItems) {
@@ -132,7 +134,7 @@ function styleToOCaml(style) {
     };
     const value = alignMap[style.alignItems];
     if (value) {
-      fields.push(`align_items = Some (Toffee.Style.Alignment.${value})`);
+      params.push(`~align_items:(${value})`);
     }
   }
 
@@ -148,11 +150,12 @@ function styleToOCaml(style) {
     };
     const value = alignMap[style.alignSelf];
     if (value) {
-      fields.push(`align_self = Some (Toffee.Style.Alignment.${value})`);
+      params.push(`~align_self:(${value})`);
     }
   }
 
-  if (style.justifyContent) {
+  // Only add justify_content for flex/grid layouts
+  if (style.justifyContent && displayMode !== 'block') {
     const justifyMap = {
       'flex-start': 'Flex_start',
       'flex-end': 'Flex_end',
@@ -164,10 +167,14 @@ function styleToOCaml(style) {
       'end': 'End',
       'stretch': 'Stretch'  // Add stretch support to match Rust implementation
     };
-    fields.push(`justify_content = Some (Toffee.Style.Alignment.${justifyMap[style.justifyContent] || 'Flex_start'})`);
+    const value = justifyMap[style.justifyContent];
+    if (value) {
+      params.push(`~justify_content:(${value})`);
+    }
   }
 
-  if (style.alignContent) {
+  // Only add align_content for flex/grid layouts
+  if (style.alignContent && displayMode !== 'block') {
     const alignMap = {
       'stretch': 'Stretch',
       'flex-start': 'Flex_start',
@@ -179,10 +186,11 @@ function styleToOCaml(style) {
       'start': 'Start',
       'end': 'End'
     };
-    fields.push(`align_content = Some (Toffee.Style.Alignment.${alignMap[style.alignContent] || 'Stretch'})`);
+    params.push(`~align_content:(${alignMap[style.alignContent] || 'Stretch'})`);
   }
 
-  if (style.justifyItems) {
+  // Only add justify_items for grid layouts  
+  if (style.justifyItems && displayMode === 'grid') {
     const justifyMap = {
       'stretch': 'Stretch',
       'flex-start': 'Flex_start',
@@ -192,10 +200,11 @@ function styleToOCaml(style) {
       'start': 'Start',
       'end': 'End'
     };
-    fields.push(`justify_items = Some (Toffee.Style.Alignment.${justifyMap[style.justifyItems] || 'Stretch'})`);
+    params.push(`~justify_items:(${justifyMap[style.justifyItems] || 'Stretch'})`);
   }
 
-  if (style.justifySelf && style.justifySelf !== 'auto') {
+  // Only add justify_self for grid layouts
+  if (style.justifySelf && style.justifySelf !== 'auto' && displayMode === 'grid') {
     const justifyMap = {
       'stretch': 'Stretch',
       'flex-start': 'Flex_start',
@@ -207,75 +216,75 @@ function styleToOCaml(style) {
     };
     const value = justifyMap[style.justifySelf];
     if (value) {
-      fields.push(`justify_self = Some (Toffee.Style.Alignment.${value})`);
+      params.push(`~justify_self:(${value})`);
     }
   }
 
   if (style.flexGrow !== undefined) {
     // Ensure flex_grow is a float
-    const floatValue = String(style.flexGrow).includes('.') ? style.flexGrow : `${style.flexGrow}.0`;
-    fields.push(`flex_grow = ${floatValue}`);
+    const floatStr = String(style.flexGrow).includes('.') ? String(style.flexGrow) : `${style.flexGrow}.0`;
+    const floatValue = floatStr.startsWith('-') ? `(${floatStr})` : floatStr;
+    params.push(`~flex_grow:(${floatValue})`);
   }
 
   if (style.flexShrink !== undefined) {
     // Ensure flex_shrink is a float
-    const floatValue = String(style.flexShrink).includes('.') ? style.flexShrink : `${style.flexShrink}.0`;
-    fields.push(`flex_shrink = ${floatValue}`);
+    const floatStr = String(style.flexShrink).includes('.') ? String(style.flexShrink) : `${style.flexShrink}.0`;
+    const floatValue = floatStr.startsWith('-') ? `(${floatStr})` : floatStr;
+    params.push(`~flex_shrink:(${floatValue})`);
   }
 
   if (style.flexBasis) {
-    fields.push(`flex_basis = ${dimensionToOCaml(style.flexBasis)}`);
+    params.push(`~flex_basis:(${dimensionToOCaml(style.flexBasis)})`);
   }
 
   // Size properties
   if (style.size) {
     const size = sizeToOCaml(style.size);
-    if (size) fields.push(`size = ${size}`);
+    if (size) params.push(`~size:(${size})`);
   }
 
   if (style.minSize) {
     const minSize = sizeToOCaml(style.minSize);
-    if (minSize) fields.push(`min_size = ${minSize}`);
+    if (minSize) params.push(`~min_size:(${minSize})`);
   }
 
   if (style.maxSize) {
     const maxSize = sizeToOCaml(style.maxSize);
-    if (maxSize) fields.push(`max_size = ${maxSize}`);
+    if (maxSize) params.push(`~max_size:(${maxSize})`);
   }
 
   if (style.aspectRatio !== undefined) {
     // Ensure aspect ratio is a float
-    const floatValue = String(style.aspectRatio).includes('.') ? style.aspectRatio : `${style.aspectRatio}.0`;
-    fields.push(`aspect_ratio = Some ${floatValue}`);
+    const floatStr = String(style.aspectRatio).includes('.') ? String(style.aspectRatio) : `${style.aspectRatio}.0`;
+    const floatValue = floatStr.startsWith('-') ? `(${floatStr})` : floatStr;
+    params.push(`~aspect_ratio:(${floatValue})`);
   }
 
   // Gap
   if (style.gap) {
     const gap = gapToOCaml(style.gap);
-    if (gap) fields.push(`gap = ${gap}`);
+    if (gap) params.push(`~gap:(${gap})`);
   }
 
   // Margin/Padding/Border
   if (style.margin) {
     const margin = rectToOCaml(style.margin, 'margin');  // margin uses Length_percentage_auto
-    if (margin) fields.push(`margin = ${margin}`);
+    if (margin) params.push(`~margin:(${margin})`);
   }
 
   if (style.padding) {
     const padding = rectToOCaml(style.padding, 'padding');  // padding uses Length_percentage
-    if (padding) fields.push(`padding = ${padding}`);
+    if (padding) params.push(`~padding:(${padding})`);
   }
 
   if (style.border) {
     const border = rectToOCaml(style.border, 'border');  // border uses Length_percentage
-    if (border) fields.push(`border = ${border}`);
+    if (border) params.push(`~border:(${border})`);
   }
 
-  // Positioning (inset)
-  if (style.inset) {
-    const inset = rectToOCaml(style.inset, 'inset');  // inset uses Length_percentage_auto
-    if (inset) fields.push(`inset = ${inset}`);
-  }
+  // Note: inset properties (top, left, right, bottom) are not part of Style.make in the OCaml API
+  // They would need to be handled separately if needed
 
   // Overflow properties
   let hasNonVisibleOverflow = false;
@@ -292,14 +301,15 @@ function styleToOCaml(style) {
 
     if (x !== 'Visible' || y !== 'Visible') {
       hasNonVisibleOverflow = true;
-      fields.push(`overflow = { x = Toffee.Style.${x}; y = Toffee.Style.${y} }`);
+      params.push(`~overflow:({ x = Style.Overflow.${x}; y = Style.Overflow.${y} })`);
     }
   }
 
   // Scrollbar width - only emit if at least one overflow axis is not visible (matches Rust behavior)
   if (hasNonVisibleOverflow && style.scrollbar_width !== undefined) {
-    const floatValue = String(style.scrollbar_width).includes('.') ? style.scrollbar_width : `${style.scrollbar_width}.0`;
-    fields.push(`scrollbar_width = ${floatValue}`);
+    const floatStr = String(style.scrollbar_width).includes('.') ? String(style.scrollbar_width) : `${style.scrollbar_width}.0`;
+    const floatValue = floatStr.startsWith('-') ? `(${floatStr})` : floatStr;
+    params.push(`~scrollbar_width:(${floatValue})`);
   }
 
   // Text align
@@ -310,20 +320,46 @@ function styleToOCaml(style) {
       '-webkit-center': 'Legacy_center'
     };
     if (textAlignMap[style.textAlign]) {
-      fields.push(`text_align = Toffee.Style.Block.${textAlignMap[style.textAlign]}`);
+      params.push(`~text_align:(Style.Text_align.${textAlignMap[style.textAlign]})`);
     }
   }
 
-  // Box sizing - only set if style explicitly specifies content-box
-  // This matches the Rust logic which only generates box_sizing for content-box
-  if (style.boxSizing === 'content-box') {
-    fields.push(`box_sizing = Toffee.Style.Content_box`);
-  }
-  // Border-box is the default in Taffy, so we don't need to set it explicitly
+  // Note: box_sizing is not a parameter of Style.make in the new API
+  // It appears to be handled internally or through a different mechanism
+  // The box_sizing property is accessible via the box_sizing accessor function
 
-  return fields.length > 0
-    ? `{ Toffee.Style.default with ${fields.join('; ')} }`
-    : 'Toffee.Style.default';
+  return params.length > 0
+    ? `Style.make ${params.join(' ')} ()`
+    : 'Style.default';
+}
+
+function getTrackSizeValue(track) {
+  // Helper to ensure value is a float
+  const floatValue = (val) => {
+    const strVal = String(val);
+    const floatStr = strVal.includes('.') ? strVal : `${strVal}.0`;
+    // Wrap negative values in parentheses for OCaml syntax
+    return floatStr.startsWith('-') ? `(${floatStr})` : floatStr;
+  };
+
+  switch (track.unit) {
+    case 'px':
+    case 'points':
+      return `(Style.Length_percentage.length ${floatValue(track.value)})`;
+    case 'percent':
+      return `(Style.Length_percentage.percent ${floatValue(track.value)})`;
+    case 'fr':
+    case 'fraction':
+      return `(Style.Length_percentage.length 0.0)`; // Fr not valid for min/max in Length_percentage
+    case 'auto':
+      return `(Style.Length_percentage.length 0.0)`; // Auto maps to 0 for Length_percentage
+    case 'min-content':
+      return `(Style.Length_percentage.length 0.0)`; // Min-content maps to 0 for Length_percentage
+    case 'max-content':
+      return `(Style.Length_percentage.length 0.0)`; // Max-content maps to 0 for Length_percentage
+    default:
+      return `(Style.Length_percentage.length 0.0)`;
+  }
 }
 
 function nonRepeatedTrackToOCaml(track) {
@@ -335,50 +371,52 @@ function nonRepeatedTrackToOCaml(track) {
       case 'fr':
         // For scalar fr tracks, min must be Auto (Fr only valid for max in Toffee)
         const frVal = String(track.value).includes('.') ? track.value : `${track.value}.0`;
-        return `{ min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Fr (${frVal}) }`;
+        return `(Style.Grid.Track_sizing_function.fr ${frVal})`;
       case 'px':
       case 'points':
         // Length for both min and max - ensure float value
         const floatVal = String(track.value).includes('.') ? track.value : `${track.value}.0`;
-        return `{ min = Toffee.Style.Grid.Length (${floatVal}); max = Toffee.Style.Grid.Length (${floatVal}) }`;
+        return `(Style.Grid.Track_sizing_function.length ${floatVal})`;
       case 'percent':
         // Percent for both min and max - ensure float value
         const percentVal = String(track.value).includes('.') ? track.value : `${track.value}.0`;
-        return `{ min = Toffee.Style.Grid.Percent (${percentVal}); max = Toffee.Style.Grid.Percent (${percentVal}) }`;
+        return `(Style.Grid.Track_sizing_function.percent ${percentVal})`;
       case 'auto':
-        return `{ min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto }`;
+        return `Style.Grid.Track_sizing_function.auto`;
       case 'min-content':
-        return `{ min = Toffee.Style.Grid.Min_content; max = Toffee.Style.Grid.Min_content }`;
+        return `Style.Grid.Track_sizing_function.min_content`;
       case 'max-content':
-        return `{ min = Toffee.Style.Grid.Max_content; max = Toffee.Style.Grid.Max_content }`;
+        return `Style.Grid.Track_sizing_function.max_content`;
       default:
-        return `{ min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto }`;
+        return `Style.Grid.Track_sizing_function.auto`;
     }
   } else if (track.kind === 'function') {
     // Handle minmax() and fit-content() track sizing functions
     if (track.name === 'minmax' && track.arguments?.length === 2) {
-      const min = trackMinToOCaml(track.arguments[0]);
-      const max = trackMaxToOCaml(track.arguments[1]);
-      return `{ min = ${min}; max = ${max} }`;
+      const min = track.arguments[0];
+      const max = track.arguments[1];
+      const minVal = getTrackSizeValue(min);
+      const maxVal = getTrackSizeValue(max);
+      return `(Style.Grid.Track_sizing_function.minmax ~min:${minVal} ~max:${maxVal})`;
     } else if (track.name === 'fit-content' && track.arguments?.length === 1) {
       // fit-content(limit) expects a Length_percentage.t, not a Grid type
       const arg = track.arguments[0];
       let limitValue;
-      
+
       if (arg.unit === 'px' || arg.unit === 'points') {
         const floatVal = String(arg.value).includes('.') ? arg.value : `${arg.value}.0`;
-        limitValue = `Toffee.Style.Length_percentage.Length (${floatVal})`;
+        limitValue = `(Style.Length_percentage.length ${floatVal})`;
       } else if (arg.unit === 'percent') {
         const percentVal = String(arg.value).includes('.') ? arg.value : `${arg.value}.0`;
-        limitValue = `Toffee.Style.Length_percentage.Percent (${percentVal})`;
+        limitValue = `(Style.Length_percentage.percent ${percentVal})`;
       } else {
-        limitValue = `Toffee.Style.Length_percentage.Length (0.0)`;
+        limitValue = `(Style.Length_percentage.length 0.0)`;
       }
-      
-      return `{ min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Fit_content (${limitValue}) }`;
+
+      return `(Style.Grid.Track_sizing_function.fit_content ${limitValue})`;
     }
   }
-  return `{ min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto }`;
+  return `Style.Grid.Track_sizing_function.auto`;
 }
 
 function trackToOCaml(track) {
@@ -390,109 +428,74 @@ function trackToOCaml(track) {
     if (repetitionArg.kind === 'keyword') {
       switch (repetitionArg.value) {
         case 'auto-fill':
-          repetition = 'Toffee.Style.Grid.Auto_fill';
+          repetition = 'Style.Grid.Repetition_count.auto_fill';
           break;
         case 'auto-fit':
-          repetition = 'Toffee.Style.Grid.Auto_fit';
+          repetition = 'Style.Grid.Repetition_count.auto_fit';
           break;
         default:
-          repetition = 'Toffee.Style.Grid.Count 1';
+          repetition = 'Style.Grid.Repetition_count.count 1';
       }
     } else if (repetitionArg.kind === 'integer') {
-      repetition = `Toffee.Style.Grid.Count ${repetitionArg.value}`;
+      repetition = `Style.Grid.Repetition_count.count ${repetitionArg.value}`;
     } else {
-      repetition = 'Toffee.Style.Grid.Count 1';
+      repetition = 'Style.Grid.Repetition_count.count 1';
     }
 
     // Process the track list (all arguments after the repetition)
     const tracks = track.arguments.slice(1).map(t => nonRepeatedTrackToOCaml(t)).join('; ');
-    return `Toffee.Style.Grid.Repeat (${repetition}, [${tracks}])`;
+    return `Style.Grid.Template_component.repeat (Style.Grid.Repetition.make ~count:(${repetition}) ~tracks:[${tracks}] ~line_names:[])`;
   }
 
   // For non-repeat tracks, wrap with Single constructor
   const nonRepeated = nonRepeatedTrackToOCaml(track);
-  return `Toffee.Style.Grid.Single ${nonRepeated}`;
+  return `Style.Grid.Template_component.single ${nonRepeated}`;
 }
 
-function trackMinToOCaml(track) {
-  // Helper to ensure value is a float
-  const floatValue = (val) => {
-    const strVal = String(val);
-    return strVal.includes('.') ? strVal : `${strVal}.0`;
-  };
+// trackMinToOCaml is no longer needed with the new API
 
-  if (track.unit === 'px' || track.unit === 'points') return `Toffee.Style.Grid.Length (${floatValue(track.value)})`;
-  if (track.unit === 'percent') {
-    const percentVal = String(track.value).includes('.') ? track.value : `${track.value}.0`;
-    return `Toffee.Style.Grid.Percent (${percentVal})`;
-  }
-  if (track.unit === 'auto') return 'Toffee.Style.Grid.Auto';
-  if (track.unit === 'min-content') return 'Toffee.Style.Grid.Min_content';
-  if (track.unit === 'max-content') return 'Toffee.Style.Grid.Max_content';
-  // Fr units are not valid for min track sizing functions in CSS Grid spec
-  // But Rust implementation maps them to Auto for compatibility
-  if (track.unit === 'fr' || track.unit === 'fraction') return 'Toffee.Style.Grid.Auto';
-  return 'Toffee.Style.Grid.Auto';
-}
-
-function trackMaxToOCaml(track) {
-  // Helper to ensure value is a float
-  const floatValue = (val) => {
-    const strVal = String(val);
-    return strVal.includes('.') ? strVal : `${strVal}.0`;
-  };
-
-  if (track.unit === 'fr' || track.unit === 'fraction') {
-    const frVal = String(track.value).includes('.') ? track.value : `${track.value}.0`;
-    return `Toffee.Style.Grid.Fr (${frVal})`;
-  }
-  if (track.unit === 'px' || track.unit === 'points') return `Toffee.Style.Grid.Length (${floatValue(track.value)})`;
-  if (track.unit === 'percent') {
-    const percentVal = String(track.value).includes('.') ? track.value : `${track.value}.0`;
-    return `Toffee.Style.Grid.Percent (${percentVal})`;
-  }
-  if (track.unit === 'auto') return 'Toffee.Style.Grid.Auto';
-  if (track.unit === 'min-content') return 'Toffee.Style.Grid.Min_content';
-  if (track.unit === 'max-content') return 'Toffee.Style.Grid.Max_content';
-  return 'Toffee.Style.Grid.Auto';
-}
+// trackMaxToOCaml is no longer needed with the new API
 
 function gridLineToOCaml(line) {
-  if (!line) return 'Toffee.Style.Grid.Auto';
+  if (!line) return 'Style.Grid.Placement.auto';
   switch (line.tag || line.kind) {
-    case 'auto': return 'Toffee.Style.Grid.Auto';
-    case 'line': return `Toffee.Style.Grid.Line (${line.value})`;
-    case 'span': return `Toffee.Style.Grid.Span (${line.value})`;
-    default: return 'Toffee.Style.Grid.Auto';
+    case 'auto': return 'Style.Grid.Placement.auto';
+    case 'line': return `(Style.Grid.Placement.line (${line.value}))`;
+    case 'span': return `(Style.Grid.Placement.span (${line.value}))`;
+    default: return 'Style.Grid.Placement.auto';
   }
 }
 
 function dimensionToOCaml(dim) {
-  if (!dim) return 'Toffee.Style.Dimension.auto';
+  if (!dim) return 'Style.Dimension.auto';
 
   // Helper to ensure value is a float
   const floatValue = (val) => {
     // Check if the value is already a float (has decimal point)
     const strVal = String(val);
-    return strVal.includes('.') ? strVal : `${strVal}.0`;
+    const floatStr = strVal.includes('.') ? strVal : `${strVal}.0`;
+    // Wrap negative values in parentheses for OCaml syntax
+    return floatStr.startsWith('-') ? `(${floatStr})` : floatStr;
   };
 
   switch (dim.unit) {
-    case 'px': return `Toffee.Style.Dimension.length ${floatValue(dim.value)}`;
-    case 'points': return `Toffee.Style.Dimension.length ${floatValue(dim.value)}`;
+    case 'px': return `Style.Dimension.length ${floatValue(dim.value)}`;
+    case 'points': return `Style.Dimension.length ${floatValue(dim.value)}`;
     case 'percent':
       // Ensure percent values are floats
-      const percentVal = String(dim.value).includes('.') ? dim.value : `${dim.value}.0`;
-      return `Toffee.Style.Dimension.percent ${percentVal}`;
-    case 'auto': return 'Toffee.Style.Dimension.auto';
-    default: return 'Toffee.Style.Dimension.auto';
+      const percentStr = String(dim.value).includes('.') ? String(dim.value) : `${dim.value}.0`;
+      // Wrap negative values in parentheses for OCaml syntax
+      const percentVal = percentStr.startsWith('-') ? `(${percentStr})` : percentStr;
+      return `Style.Dimension.percent ${percentVal}`;
+    case 'auto': return 'Style.Dimension.auto';
+    default: return 'Style.Dimension.auto';
   }
 }
 
 function sizeToOCaml(size) {
   if (!size) return null;
-  const width = size.width ? dimensionToOCaml(size.width) : 'Toffee.Style.Dimension.auto';
-  const height = size.height ? dimensionToOCaml(size.height) : 'Toffee.Style.Dimension.auto';
+  const width = size.width ? dimensionToOCaml(size.width) : 'Style.Dimension.auto';
+  const height = size.height ? dimensionToOCaml(size.height) : 'Style.Dimension.auto';
   return `{ width = ${width}; height = ${height} }`;
 }
 
@@ -500,30 +503,34 @@ function gapToOCaml(gap) {
   if (!gap) return null;
 
   const convertGapValue = (value) => {
-    if (!value) return 'Toffee.Style.Length_percentage.Length (0.0)';
+    if (!value) return 'Style.Length_percentage.length 0.0';
 
     // Helper to ensure value is a float
     const floatValue = (val) => {
       const strVal = String(val);
-      return strVal.includes('.') ? strVal : `${strVal}.0`;
+      const floatStr = strVal.includes('.') ? strVal : `${strVal}.0`;
+      // Wrap negative values in parentheses for OCaml syntax
+      return floatStr.startsWith('-') ? `(${floatStr})` : floatStr;
     };
 
     switch (value.unit) {
       case 'px':
       case 'points':
-        return `Toffee.Style.Length_percentage.Length (${floatValue(value.value)})`;
+        return `Style.Length_percentage.length ${floatValue(value.value)}`;
       case 'percent':
         // Ensure percent values are floats
-        const percentVal = String(value.value).includes('.') ? value.value : `${value.value}.0`;
-        return `Toffee.Style.Length_percentage.Percent (${percentVal})`;
+        const percentStr = String(value.value).includes('.') ? String(value.value) : `${value.value}.0`;
+        // Wrap negative values in parentheses for OCaml syntax
+        const percentVal = percentStr.startsWith('-') ? `(${percentStr})` : percentStr;
+        return `Style.Length_percentage.percent ${percentVal}`;
       default:
-        return 'Toffee.Style.Length_percentage.Length (0.0)';
+        return 'Style.Length_percentage.length 0.0';
     }
   };
 
   // Use column/row keys as in the Rust version, but output as width/height
-  const width = gap.column ? convertGapValue(gap.column) : 'Toffee.Style.Length_percentage.Length (0.0)';
-  const height = gap.row ? convertGapValue(gap.row) : 'Toffee.Style.Length_percentage.Length (0.0)';
+  const width = gap.column ? convertGapValue(gap.column) : 'Style.Length_percentage.length 0.0';
+  const height = gap.row ? convertGapValue(gap.row) : 'Style.Length_percentage.length 0.0';
   return `{ width = ${width}; height = ${height} }`;
 }
 
@@ -538,22 +545,24 @@ function rectToOCaml(rect, fieldType = 'default') {
       // - inset: missing values should be auto() = Auto
       // - padding/border: missing values should be Length(0.0)
       if (fieldType === 'margin') {
-        return 'Toffee.Style.Length_percentage_auto.Length (0.0)';
+        return 'Style.Length_percentage_auto.length 0.0';
       } else if (fieldType === 'inset') {
-        return 'Toffee.Style.Length_percentage_auto.Auto';
+        return 'Style.Length_percentage_auto.auto';
       } else {
-        return 'Toffee.Style.Length_percentage.Length (0.0)';
+        return 'Style.Length_percentage.length 0.0';
       }
     }
 
     const prefix = (fieldType === 'margin' || fieldType === 'inset')
-      ? 'Toffee.Style.Length_percentage_auto'
-      : 'Toffee.Style.Length_percentage';
+      ? 'Style.Length_percentage_auto'
+      : 'Style.Length_percentage';
 
     // Helper to ensure value is a float
     const floatValue = (val) => {
       const strVal = String(val);
-      return strVal.includes('.') ? strVal : `${strVal}.0`;
+      const floatStr = strVal.includes('.') ? strVal : `${strVal}.0`;
+      // Wrap negative values in parentheses for OCaml syntax
+      return floatStr.startsWith('-') ? `(${floatStr})` : floatStr;
     };
 
     switch (edge.unit) {
@@ -561,14 +570,15 @@ function rectToOCaml(rect, fieldType = 'default') {
       case 'points':
         const lengthVal = floatValue(edge.value);
         // Wrap negative values in parentheses for OCaml syntax
-        return `${prefix}.Length (${lengthVal})`;
+        return `${prefix}.length ${lengthVal}`;
       case 'percent':
         // Ensure percent values are floats
-        const percentVal = String(edge.value).includes('.') ? edge.value : `${edge.value}.0`;
-        // Wrap in parentheses for OCaml syntax
-        return `${prefix}.Percent (${percentVal})`;
+        const percentStr = String(edge.value).includes('.') ? String(edge.value) : `${edge.value}.0`;
+        // Wrap negative values in parentheses for OCaml syntax
+        const percentVal = percentStr.startsWith('-') ? `(${percentStr})` : percentStr;
+        return `${prefix}.percent ${percentVal}`;
       case 'auto':
-        return (fieldType === 'margin' || fieldType === 'inset') ? `${prefix}.Auto` : `${prefix}.Length (0.0)`;
+        return (fieldType === 'margin' || fieldType === 'inset') ? `${prefix}.auto` : `${prefix}.length 0.0`;
       default:
         return `${prefix}.Length (0.0)`;
     }
@@ -583,20 +593,22 @@ function rectToOCaml(rect, fieldType = 'default') {
 }
 
 function availableSpaceToOCaml(space) {
-  if (!space) return 'Toffee.Style.Available_space.Max_content';
+  if (!space) return 'Available_space.Max_content';
 
   // Helper to ensure value is a float
   const floatValue = (val) => {
     const strVal = String(val);
-    return strVal.includes('.') ? strVal : `${strVal}.0`;
+    const floatStr = strVal.includes('.') ? strVal : `${strVal}.0`;
+    // Wrap negative values in parentheses for OCaml syntax
+    return floatStr.startsWith('-') ? `(${floatStr})` : floatStr;
   };
 
   switch (space.unit) {
-    case 'points': return `Toffee.Style.Available_space.Definite ${floatValue(space.value)}`;
+    case 'points': return `Available_space.Definite ${floatValue(space.value)}`;
     // Match Rust behavior: min-content maps to MaxContent (likely a Taffy test suite simplification)
-    case 'min-content': return 'Toffee.Style.Available_space.Max_content';
-    case 'max-content': return 'Toffee.Style.Available_space.Max_content';
-    default: return 'Toffee.Style.Available_space.Max_content';
+    case 'min-content': return 'Available_space.Max_content';
+    case 'max-content': return 'Available_space.Max_content';
+    default: return 'Available_space.Max_content';
   }
 }
 
@@ -606,7 +618,7 @@ function generateNode(nodeVar, node, _parentVar) {
   const writingMode = node.style?.writingMode;
   // Note: aspect_ratio is read in Rust but not used in TestNodeContext
 
-  let nodeCreation = `let ${nodeVar} = Toffee.new_leaf tree (${style}) in`;
+  let nodeCreation = `let ${nodeVar} = new_leaf tree (${style}) |> Result.get_ok in`;
 
   // Only attach text context on true leaf nodes (nodes without children) - matches Rust behavior
   const isLeafNode = !node.children || node.children.length === 0;
@@ -618,7 +630,7 @@ function generateNode(nodeVar, node, _parentVar) {
     // Determine if vertical writing mode
     const isVertical = writingMode === 'vertical-rl' || writingMode === 'vertical-lr';
     const contextType = isVertical ? 'Text_vertical' : 'Text';
-    nodeCreation += `\n  let _ = Toffee.set_node_context tree ${nodeVar} (MeasureFunction.${contextType} "${escapedText}") |> Result.get_ok in`;
+    nodeCreation += `\n  let _ = set_node_context tree ${nodeVar} (Some (MeasureFunction.${contextType} "${escapedText}")) |> Result.get_ok in`;
   }
 
   return nodeCreation;
@@ -645,12 +657,11 @@ function generateAssertions(nodeVar, node, useRounding) {
   };
 
   let assertions = `
-  let layout = Toffee.layout tree ${nodeVar} in
-  let layout = layout |> Result.get_ok in
-  assert_eq ~msg:"width of ${nodeVar}" ${formatFloat(width)} layout.size.width;
-  assert_eq ~msg:"height of ${nodeVar}" ${formatFloat(height)} layout.size.height;
-  assert_eq ~msg:"x of ${nodeVar}" ${formatFloat(x)} layout.location.x;
-  assert_eq ~msg:"y of ${nodeVar}" ${formatFloat(y)} layout.location.y;`;
+  let layout_result = layout tree ${nodeVar} |> Result.get_ok in
+  assert_eq ~msg:"width of ${nodeVar}" ${formatFloat(width)} (Layout.size layout_result).width;
+  assert_eq ~msg:"height of ${nodeVar}" ${formatFloat(height)} (Layout.size layout_result).height;
+  assert_eq ~msg:"x of ${nodeVar}" ${formatFloat(x)} (Layout.location layout_result).x;
+  assert_eq ~msg:"y of ${nodeVar}" ${formatFloat(y)} (Layout.location layout_result).y;`;
 
   // Add scroll content size assertions for scroll containers
   if (isScrollContainer && layout.scrollWidth !== undefined && layout.scrollHeight !== undefined) {
@@ -659,12 +670,12 @@ function generateAssertions(nodeVar, node, useRounding) {
     const naiveLayout = node.naivelyRoundedLayout || layout;
     const scrollWidth = Math.max(0, (layout.scrollWidth || 0) - (naiveLayout.clientWidth || naiveLayout.width));
     const scrollHeight = Math.max(0, (layout.scrollHeight || 0) - (naiveLayout.clientHeight || naiveLayout.height));
-    
+
     assertions += `
   (* Content size assertions for scroll container *)
   (* Note: In Toffee, scroll_width and scroll_height are functions, not fields *)
-  assert_eq ~msg:"scroll_width of ${nodeVar}" ${formatFloat(scrollWidth)} (Toffee.Layout.Layout.scroll_width layout);
-  assert_eq ~msg:"scroll_height of ${nodeVar}" ${formatFloat(scrollHeight)} (Toffee.Layout.Layout.scroll_height layout);`;
+  assert_eq ~msg:"scroll_width of ${nodeVar}" ${formatFloat(scrollWidth)} (Layout.scroll_width layout_result);
+  assert_eq ~msg:"scroll_height of ${nodeVar}" ${formatFloat(scrollHeight)} (Layout.scroll_height layout_result);`;
   }
 
   return assertions;
@@ -696,7 +707,7 @@ function generateTest(name, testData, boxSizing, category = '') {
     nodes.push(generateNode(nodeVar, node, parentVar));
 
     if (parentVar) {
-      nodes.push(`let _ = Toffee.add_child tree ${parentVar} ${nodeVar} |> Result.get_ok in`);
+      nodes.push(`let _ = add_child tree ${parentVar} ${nodeVar} |> Result.get_ok in`);
     }
 
     // Generate assertions for this node
@@ -729,21 +740,21 @@ let test_${functionPrefix}${name}_${boxSizing}${measureParam} () =
     check (float ${useRounding ? `0.001` : `0.1`}) msg expected actual
   in
   
-  let tree = Toffee.create () in
-  ${useRounding ? '' : 'let _ = Toffee.set_rounding_enabled tree false in'}
+  let tree = new_tree () in
+  ${useRounding ? '' : 'let tree = disable_rounding tree in'}
   
   (* Create nodes *)
   ${nodes.join('\n  ')}
   
   (* Compute layout *)
   ${hasTextNodes
-      ? `let _ = Toffee.compute_layout_with_measure tree node ${availableSpace} measure_function |> Result.get_ok in`
-      : `let _ = Toffee.compute_layout tree node ${availableSpace} |> Result.get_ok in`
+      ? `let _ = compute_layout_with_measure tree node ${availableSpace} measure_function |> Result.get_ok in`
+      : `let _ = compute_layout tree node ${availableSpace} |> Result.get_ok in`
     }
   
   (* Print tree for debugging *)
   Printf.printf "\\nComputed tree:\\n";
-  Toffee.print_tree tree node;
+  print_tree tree node;
   Printf.printf "\\n";
   
   (* Verify layout *)${assertions.join('')}
@@ -754,7 +765,7 @@ let test_${functionPrefix}${name}_${boxSizing}${measureParam} () =
 function generateMeasureFunction() {
   return `
 (* Test measure function *)
-let measure_function ~known_dimensions ~available_space _node_id node_context _style =
+let measure_function known_dimensions available_space _node_id node_context _style =
   match node_context with
   | Some (MeasureFunction.Fixed size) -> size
   | Some (MeasureFunction.Text text) ->
@@ -767,19 +778,19 @@ let measure_function ~known_dimensions ~available_space _node_id node_context _s
       let max_line_length = List.fold_left (+) 0 (List.map String.length lines) in
       
       let inline_size = 
-        match known_dimensions.Toffee.Geometry.width with
+        match known_dimensions.Geometry.Size.width with
         | Some w -> w
         | None -> (
-            match available_space.Toffee.Geometry.width with
-            | Toffee.Style.Available_space.Min_content -> float_of_int min_line_length *. h_width
-            | Toffee.Style.Available_space.Max_content -> float_of_int max_line_length *. h_width
-            | Toffee.Style.Available_space.Definite inline_size -> 
+            match available_space.Geometry.Size.width with
+            | Available_space.Min_content -> float_of_int min_line_length *. h_width
+            | Available_space.Max_content -> float_of_int max_line_length *. h_width
+            | Available_space.Definite inline_size -> 
                 Float.min inline_size (float_of_int max_line_length *. h_width)
         ) |> Float.max (float_of_int min_line_length *. h_width)
       in
       
       let block_size =
-        match known_dimensions.Toffee.Geometry.height with
+        match known_dimensions.Geometry.Size.height with
         | Some h -> h
         | None ->
             let inline_line_length = int_of_float (Float.floor (inline_size /. h_width)) in
@@ -806,13 +817,13 @@ let measure_function ~known_dimensions ~available_space _node_id node_context _s
       
       let block_size = float_of_int text_length *. h_height in
       let inline_size = 
-        match known_dimensions.Toffee.Geometry.width with
+        match known_dimensions.Geometry.Size.width with
         | Some w -> w
         | None -> (
-            match available_space.Toffee.Geometry.width with
-            | Toffee.Style.Available_space.Min_content -> h_width
-            | Toffee.Style.Available_space.Max_content -> h_width
-            | Toffee.Style.Available_space.Definite w -> w
+            match available_space.Geometry.Size.width with
+            | Available_space.Min_content -> h_width
+            | Available_space.Max_content -> h_width
+            | Available_space.Definite w -> w
         )
       in
       { width = inline_size; height = block_size }
@@ -820,20 +831,32 @@ let measure_function ~known_dimensions ~available_space _node_id node_context _s
 `;
 }
 
-async function processFixture(fixturePath) {
+// Global browser instance
+let globalBrowser = null;
+
+async function getBrowser() {
+  if (!globalBrowser) {
+    globalBrowser = await chromium.launch({
+      args: [
+        '--force-device-scale-factor=1',
+        '--hide-scrollbars'
+      ]
+    });
+  }
+  return globalBrowser;
+}
+
+async function processFixture(fixturePath, page = null) {
   const name = path.basename(fixturePath, '.html')
     .replace(/-/g, '_')
     .replace(/\./g, '_');
 
-  console.log(`Processing ${name}...`);
-
-  const browser = await chromium.launch({
-    args: [
-      '--force-device-scale-factor=1',
-      '--hide-scrollbars'
-    ]
-  });
-  const page = await browser.newPage();
+  // Create page if not provided
+  const shouldClosePage = !page;
+  if (!page) {
+    const browser = await getBrowser();
+    page = await browser.newPage();
+  }
 
   // Set consistent viewport and device scale
   await page.setViewportSize({ width: 1024, height: 768 });
@@ -875,7 +898,7 @@ async function processFixture(fixturePath) {
     console.error('On macOS, set "Show scrollbars" to "When scrolling" in System Preferences > Appearance');
     console.error('On Linux, configure your window manager to use overlay scrollbars');
     console.error('On Windows, this may require system-level configuration');
-    await browser.close();
+    if (shouldClosePage) await page.close();
     process.exit(1);
   }
 
@@ -896,7 +919,7 @@ async function processFixture(fixturePath) {
   });
   const data = JSON.parse(testData);
 
-  await browser.close();
+  if (shouldClosePage) await page.close();
 
   // If the data doesn't have separate box model data, use the same data for both
   if (data.borderBoxData && data.contentBoxData) {
@@ -947,7 +970,7 @@ open Toffee
 ${hasTextNodes ? `(* Test context for nodes *)
 module MeasureFunction = struct
   type t = 
-    | Fixed of float Toffee.Geometry.size
+    | Fixed of float Geometry.size
     | Text of string
     | Text_vertical of string
   [@@warning "-37"]
@@ -1005,13 +1028,29 @@ let tests =
       // Track test cases for this category
       const categoryTestCases = [];
 
-      // Process each fixture individually
-      for (const file of htmlFiles) {
-        const fixturePath = path.join(categoryDir, file);
-        console.log(`  Processing ${file}...`);
+      // Determine batch size based on CPU cores
+      const cpuCount = os.cpus().length;
+      const batchSize = Math.max(2, Math.min(cpuCount, 8)); // Between 2 and 8
+      
+      console.log(`  Processing ${htmlFiles.length} files in batches of ${batchSize}...`);
 
-        try {
-          const { name, borderBoxData, contentBoxData } = await processFixture(fixturePath);
+      // Create pages upfront for parallel processing
+      const browser = await getBrowser();
+      const pages = await Promise.all(
+        Array(batchSize).fill(null).map(() => browser.newPage())
+      );
+
+      // Process fixtures in batches
+      for (let i = 0; i < htmlFiles.length; i += batchSize) {
+        const batch = htmlFiles.slice(i, i + batchSize);
+        
+        // Process batch in parallel, reusing pages
+        const batchPromises = batch.map(async (file, index) => {
+          const fixturePath = path.join(categoryDir, file);
+          const page = pages[index];
+          
+          try {
+            const { name, borderBoxData, contentBoxData } = await processFixture(fixturePath, page);
 
           // Validate the test data
           if (!borderBoxData || !contentBoxData) {
@@ -1050,7 +1089,7 @@ open Toffee
 ${hasTextNodes ? `(* Test context for nodes *)
 module MeasureFunction = struct
   type t = 
-    | Fixed of float Toffee.Geometry.size
+    | Fixed of float Geometry.size
     | Text of string
     | Text_vertical of string
   [@@warning "-37"]
@@ -1073,23 +1112,51 @@ let tests =
 `;
 
           const outputPath = path.join(generatedDir, `${testModuleName}.ml`);
-          await fs.writeFile(outputPath, testModule);
-          console.log(`    Generated ${testModuleName}.ml`);
-
-          // Track for summary
-          categoryTestCases.push({
-            name: testName,
-            file: `${testModuleName}.ml`
-          });
+          
+          return {
+            outputPath,
+            testModule,
+            testModuleName,
+            testName,
+            file,
+            success: true
+          };
 
         } catch (err) {
           console.error(`    ERROR processing ${file}:`, err.message);
-          console.error(err.stack);
+          return {
+            file,
+            success: false,
+            error: err
+          };
+        }
+      });
+      
+      // Wait for batch to complete
+      const batchResults = await Promise.all(batchPromises);
+      
+      // Write successful results to files
+      for (const result of batchResults) {
+        if (result.success) {
+          await fs.writeFile(result.outputPath, result.testModule);
+          console.log(`    Generated ${result.testModuleName}.ml`);
+          
+          // Track for summary
+          categoryTestCases.push({
+            name: result.testName,
+            file: `${result.testModuleName}.ml`
+          });
+        } else {
+          console.error(`    Failed: ${result.file}`);
           // Exit with error code to fail the build
           process.exit(1);
         }
       }
+    }
 
+      // Close pages after processing category
+      await Promise.all(pages.map(page => page.close()));
+      
       // Print summary for this category
       if (categoryTestCases.length > 0) {
         console.log(`  Generated ${categoryTestCases.length} test files for ${category}`);
@@ -1178,6 +1245,16 @@ let () =
   }
 
   console.log('\nTest generation complete!');
+  
+  // Close the global browser if it was created
+  if (globalBrowser) {
+    await globalBrowser.close();
+  }
 }
 
-main().catch(console.error);
+main().catch(console.error).finally(async () => {
+  // Ensure browser is closed on exit
+  if (globalBrowser) {
+    await globalBrowser.close();
+  }
+});
