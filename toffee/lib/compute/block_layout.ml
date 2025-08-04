@@ -693,7 +693,7 @@ let perform_absolute_layout_on_absolute_children (type tree)
                   width = Available_space.Definite avail_width;
                   height = Available_space.Definite avail_height;
                 }
-              ~sizing_mode:Layout.Sizing_mode.Content_size
+              ~sizing_mode:Layout.Sizing_mode.Inherent_size
               ~vertical_margins_are_collapsible:line_false
           in
 
@@ -715,8 +715,8 @@ let perform_absolute_layout_on_absolute_children (type tree)
                 min_size max_size
             in
             {
-              width = Option.value ~default:0.0 clamped.width;
-              height = Option.value ~default:0.0 clamped.height;
+              width = Option.value ~default:measured_size.width clamped.width;
+              height = Option.value ~default:measured_size.height clamped.height;
             }
           in
 
