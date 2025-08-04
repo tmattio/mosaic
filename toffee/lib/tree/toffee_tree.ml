@@ -355,14 +355,62 @@ module Tree = struct
         in
         let style = root_data.NodeData.style in
 
+        (* Compute known dimensions - only for block layouts should we pre-compute sizes *)
         let known_dimensions =
-          (* For now, we'll compute the styled size for the root.
-             The full implementation would handle block layout special cases *)
-          let size =
-            Resolve.maybe_resolve_size Resolve.maybe_resolve_dimension
-              (Style.size style) parent_size (fun () basis -> basis)
-          in
-          size
+          match style.Style.display with
+          | Style.Block ->
+              (* For block layout, handle box-sizing adjustments *)
+              let aspect_ratio = Style.aspect_ratio style in
+              let padding =
+                Resolve.resolve_or_zero_rect_with_size
+                  Resolve.resolve_or_zero_length_percentage
+                  (Style.padding style) parent_size (fun () basis -> basis)
+              in
+              let border =
+                Resolve.resolve_or_zero_rect_with_size
+                  Resolve.resolve_or_zero_length_percentage (Style.border style)
+                  parent_size (fun () basis -> basis)
+              in
+              let padding_border_size =
+                Geometry.Rect.(sum_axes (add padding border))
+              in
+              let box_sizing_adjustment =
+                if Style.box_sizing style = Style.Content_box then
+                  padding_border_size
+                else Geometry.Size.zero
+              in
+
+              let min_size =
+                Style.min_size style
+                |> (fun s ->
+                Resolve.maybe_resolve_size Resolve.maybe_resolve_dimension s
+                  parent_size (fun () basis -> basis))
+                |> Resolve.maybe_apply_aspect_ratio aspect_ratio
+                |> fun s -> Geometry.Size.maybe_add s box_sizing_adjustment
+              in
+              let max_size =
+                Style.max_size style
+                |> (fun s ->
+                Resolve.maybe_resolve_size Resolve.maybe_resolve_dimension s
+                  parent_size (fun () basis -> basis))
+                |> Resolve.maybe_apply_aspect_ratio aspect_ratio
+                |> fun s -> Geometry.Size.maybe_add s box_sizing_adjustment
+              in
+              let clamped_style_size =
+                Style.size style
+                |> (fun s ->
+                Resolve.maybe_resolve_size Resolve.maybe_resolve_dimension s
+                  parent_size (fun () basis -> basis))
+                |> Resolve.maybe_apply_aspect_ratio aspect_ratio
+                |> fun s ->
+                Geometry.Size.maybe_add s box_sizing_adjustment |> fun s ->
+                Geometry.Size.maybe_clamp s min_size max_size
+              in
+
+              clamped_style_size
+          | _ ->
+              (* For non-block layouts (Flex, Grid), start with no known dimensions *)
+              Geometry.Size.none
         in
 
         (* Create the layout input *)

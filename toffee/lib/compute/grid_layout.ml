@@ -93,20 +93,20 @@ let compute_grid_layout (type tree)
   in
   let preferred_size =
     if inputs.sizing_mode = Layout.Sizing_mode.Inherent_size then
-      Size.maybe_apply_aspect_ratio
-        (Size.maybe_add
-           {
-             width =
-               Style.Dimension.maybe_resolve container_style.size.width
-                 parent_size.width (fun _ptr basis ->
-                   Tree.resolve_calc_value tree ~ptr:() ~basis);
-             height =
-               Style.Dimension.maybe_resolve container_style.size.height
-                 parent_size.height (fun _ptr basis ->
-                   Tree.resolve_calc_value tree ~ptr:() ~basis);
-           }
-           box_sizing_adjustment)
-        aspect_ratio
+      let base_size =
+        {
+          width =
+            Style.Dimension.maybe_resolve container_style.size.width
+              parent_size.width (fun _ptr basis ->
+                Tree.resolve_calc_value tree ~ptr:() ~basis);
+          height =
+            Style.Dimension.maybe_resolve container_style.size.height
+              parent_size.height (fun _ptr basis ->
+                Tree.resolve_calc_value tree ~ptr:() ~basis);
+        }
+      in
+      let adjusted_size = Size.maybe_add base_size box_sizing_adjustment in
+      Size.maybe_apply_aspect_ratio adjusted_size aspect_ratio
     else Size.none
   in
 
