@@ -1433,9 +1433,6 @@ let perform_absolute_layout_on_absolute_children (type tree)
       let overflow = child_style.overflow in
       let scrollbar_width = child_style.scrollbar_width in
       let aspect_ratio = child_style.aspect_ratio in
-      let align_self =
-        Option.value ~default:constants.align_items child_style.align_self
-      in
 
       (* Resolve margins *)
       let margin =
@@ -1666,11 +1663,22 @@ let perform_absolute_layout_on_absolute_children (type tree)
       in
 
       (* Resolve auto margins and compute position *)
+      let non_auto_margin =
+        {
+          left = Option.value ~default:0.0 margin.left;
+          right = Option.value ~default:0.0 margin.right;
+          top = Option.value ~default:0.0 margin.top;
+          bottom = Option.value ~default:0.0 margin.bottom;
+        }
+      in
       let free_space =
         {
-          width = constants.inner_container_size.width -. final_size.width;
-          height = constants.inner_container_size.height -. final_size.height;
+          width = constants.container_size.width -. final_size.width 
+                  -. non_auto_margin.left -. non_auto_margin.right;
+          height = constants.container_size.height -. final_size.height
+                   -. non_auto_margin.top -. non_auto_margin.bottom;
         }
+        |> fun s -> { width = Float.max 0.0 s.width; height = Float.max 0.0 s.height }
       in
 
       let auto_margin_counts =
@@ -1712,51 +1720,29 @@ let perform_absolute_layout_on_absolute_children (type tree)
           x =
             (match (inset.left, inset.right) with
             | Some left, _ ->
-                constants.content_box_inset.left +. left +. resolved_margin.left
+                constants.border.left +. left +. resolved_margin.left
             | None, Some right ->
-                constants.inner_container_size.width -. final_size.width
+                constants.container_size.width
+                -. constants.border.right
+                -. constants.scrollbar_gutter.x
+                -. final_size.width
                 -. right -. resolved_margin.right
-                -. constants.content_box_inset.right
             | None, None ->
-                (* Apply alignment *)
-                let free_space_x =
-                  constants.inner_container_size.width -. final_size.width
-                  -. resolved_margin.left -. resolved_margin.right
-                in
-                let offset_x =
-                  match align_self with
-                  | Style.Alignment.Start | Style.Alignment.Flex_start -> 0.0
-                  | Style.Alignment.End | Style.Alignment.Flex_end ->
-                      free_space_x
-                  | Style.Alignment.Center -> free_space_x /. 2.0
-                  | _ -> 0.0
-                in
-                constants.content_box_inset.left +. resolved_margin.left
-                +. offset_x);
+                (* Apply alignment when no inset - matches Rust flexbox.rs line 2210+ *)
+                constants.content_box_inset.left +. resolved_margin.left);
           y =
             (match (inset.top, inset.bottom) with
             | Some top, _ ->
-                constants.content_box_inset.top +. top +. resolved_margin.top
+                constants.border.top +. top +. resolved_margin.top
             | None, Some bottom ->
-                constants.inner_container_size.height -. final_size.height
+                constants.container_size.height
+                -. constants.border.bottom
+                -. constants.scrollbar_gutter.y
+                -. final_size.height
                 -. bottom -. resolved_margin.bottom
-                -. constants.content_box_inset.bottom
             | None, None ->
-                (* Apply alignment *)
-                let free_space_y =
-                  constants.inner_container_size.height -. final_size.height
-                  -. resolved_margin.top -. resolved_margin.bottom
-                in
-                let offset_y =
-                  match align_self with
-                  | Style.Alignment.Start | Style.Alignment.Flex_start -> 0.0
-                  | Style.Alignment.End | Style.Alignment.Flex_end ->
-                      free_space_y
-                  | Style.Alignment.Center -> free_space_y /. 2.0
-                  | _ -> 0.0
-                in
-                constants.content_box_inset.top +. resolved_margin.top
-                +. offset_y);
+                (* Apply alignment when no inset - matches Rust flexbox.rs line 2254+ *)
+                constants.content_box_inset.top +. resolved_margin.top);
         }
       in
 
