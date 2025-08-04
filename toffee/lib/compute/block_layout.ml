@@ -563,24 +563,25 @@ let perform_absolute_layout_on_absolute_children (type tree)
             ref (Size.maybe_clamp style_size min_size max_size)
           in
 
-
           (* When we have an aspect ratio and both horizontal and vertical insets 
              constrain the size, we need to check which constraint is more restrictive *)
-          let check_both_insets = 
-            !mut_known_dimensions.width = None && 
-            !mut_known_dimensions.height = None &&
-            aspect_ratio <> None &&
-            (match (left, right) with Some _, Some _ -> true | _ -> false) &&
-            (match (top, bottom) with Some _, Some _ -> true | _ -> false)
+          let check_both_insets =
+            !mut_known_dimensions.width = None
+            && !mut_known_dimensions.height = None
+            && aspect_ratio <> None
+            && (match (left, right) with Some _, Some _ -> true | _ -> false)
+            && match (top, bottom) with Some _, Some _ -> true | _ -> false
           in
 
-          if check_both_insets then (
+          if check_both_insets then
             (* Calculate width from horizontal insets *)
             let width_from_insets =
-              let w = area_width |> fun w ->
+              let w =
+                area_width |> fun w ->
                 match margin.left with Some m -> w -. m | None -> w
               in
-              let w = w |> fun w ->
+              let w =
+                w |> fun w ->
                 match margin.right with Some m -> w -. m | None -> w
               in
               Float.max 0.0 (w -. Option.get left -. Option.get right)
@@ -588,10 +589,12 @@ let perform_absolute_layout_on_absolute_children (type tree)
 
             (* Calculate height from vertical insets *)
             let height_from_insets =
-              let h = area_height |> fun h ->
+              let h =
+                area_height |> fun h ->
                 match margin.top with Some m -> h -. m | None -> h
               in
-              let h = h |> fun h ->
+              let h =
+                h |> fun h ->
                 match margin.bottom with Some m -> h -. m | None -> h
               in
               Float.max 0.0 (h -. Option.get top -. Option.get bottom)
@@ -602,21 +605,28 @@ let perform_absolute_layout_on_absolute_children (type tree)
             | Some ratio ->
                 let height_if_width = width_from_insets /. ratio in
                 let width_if_height = height_from_insets *. ratio in
-                
+
                 (* Choose the more restrictive constraint *)
                 let final_size =
                   if height_if_width <= height_from_insets then
                     (* Width constraint is more restrictive *)
-                    { width = Some width_from_insets; height = Some height_if_width }
+                    {
+                      width = Some width_from_insets;
+                      height = Some height_if_width;
+                    }
                   else
                     (* Height constraint is more restrictive *)
-                    { width = Some width_if_height; height = Some height_from_insets }
+                    {
+                      width = Some width_if_height;
+                      height = Some height_from_insets;
+                    }
                 in
-                mut_known_dimensions := Size.maybe_clamp final_size min_size max_size
+                mut_known_dimensions :=
+                  Size.maybe_clamp final_size min_size max_size
             | None ->
                 (* No aspect ratio, shouldn't happen in this branch *)
                 ()
-          ) else (
+          else (
             (* Original logic - handle constraints one at a time *)
             (* Fill in width from left/right and reapply aspect ratio if:
                - Width is not already known
@@ -644,7 +654,7 @@ let perform_absolute_layout_on_absolute_children (type tree)
             (* Fill in height from top/bottom and reapply aspect ratio if:
                - Height is not already known
                - Item has both top and bottom inset properties set *)
-            (match (!mut_known_dimensions.height, top, bottom) with
+            match (!mut_known_dimensions.height, top, bottom) with
             | None, Some top_val, Some bottom_val ->
                 let new_height_raw =
                   ( ( area_height |> fun h ->
@@ -662,8 +672,7 @@ let perform_absolute_layout_on_absolute_children (type tree)
                 in
                 let clamped = Size.maybe_clamp with_aspect min_size max_size in
                 mut_known_dimensions := clamped
-            | _ -> ())
-          );
+            | _ -> ());
 
           let known_dimensions = !mut_known_dimensions in
 
