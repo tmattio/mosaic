@@ -17,6 +17,7 @@ let test_padding_no_size_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         padding =
           {
             left = Toffee.Style.Length_percentage.Length 10.0;
@@ -65,6 +66,7 @@ let test_padding_no_size_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         padding =
           {
             left = Toffee.Style.Length_percentage.Length 10.0;

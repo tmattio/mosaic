@@ -79,7 +79,12 @@ let test_grid_aspect_ratio_child_fill_content_width_border_box () =
       { Toffee.Style.default with display = Toffee.Style.Grid }
   in
   let node0 =
-    Toffee.new_leaf tree { Toffee.Style.default with aspect_ratio = Some 2.0 }
+    Toffee.new_leaf tree
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        aspect_ratio = Some 2.0;
+      }
   in
   let _ =
     Toffee.set_node_context tree node0 (MeasureFunction.Text "HHHH")
@@ -90,6 +95,7 @@ let test_grid_aspect_ratio_child_fill_content_width_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -158,6 +164,7 @@ let test_grid_aspect_ratio_child_fill_content_width_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         aspect_ratio = Some 2.0;
         box_sizing = Toffee.Style.Content_box;
       }
@@ -171,6 +178,7 @@ let test_grid_aspect_ratio_child_fill_content_width_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;

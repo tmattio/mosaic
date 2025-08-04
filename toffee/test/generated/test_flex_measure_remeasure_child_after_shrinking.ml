@@ -78,6 +78,7 @@ let test_measure_remeasure_child_after_shrinking_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Start;
         size =
           {
@@ -90,6 +91,7 @@ let test_measure_remeasure_child_after_shrinking_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -99,7 +101,10 @@ let test_measure_remeasure_child_after_shrinking_border_box () =
       }
   in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
-  let node1 = Toffee.new_leaf tree Toffee.Style.default in
+  let node1 =
+    Toffee.new_leaf tree
+      { Toffee.Style.default with display = Toffee.Style.Block }
+  in
   let _ =
     Toffee.set_node_context tree node1 (MeasureFunction.Text "HH")
     |> Result.get_ok
@@ -157,6 +162,7 @@ let test_measure_remeasure_child_after_shrinking_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Start;
         size =
           {
@@ -170,6 +176,7 @@ let test_measure_remeasure_child_after_shrinking_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -182,7 +189,11 @@ let test_measure_remeasure_child_after_shrinking_content_box () =
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
   let node1 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        box_sizing = Toffee.Style.Content_box;
+      }
   in
   let _ =
     Toffee.set_node_context tree node1 (MeasureFunction.Text "HH")

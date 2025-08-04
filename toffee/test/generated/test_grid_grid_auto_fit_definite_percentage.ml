@@ -17,6 +17,7 @@ let test_grid_auto_fit_definite_percentage_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 730.0;
@@ -187,6 +188,7 @@ let test_grid_auto_fit_definite_percentage_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 730.0;

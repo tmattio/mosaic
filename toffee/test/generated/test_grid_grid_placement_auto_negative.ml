@@ -51,11 +51,20 @@ let test_grid_placement_auto_negative_border_box () =
           };
       }
   in
-  let node0 = Toffee.new_leaf tree Toffee.Style.default in
+  let node0 =
+    Toffee.new_leaf tree
+      { Toffee.Style.default with display = Toffee.Style.Block }
+  in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
-  let node1 = Toffee.new_leaf tree Toffee.Style.default in
+  let node1 =
+    Toffee.new_leaf tree
+      { Toffee.Style.default with display = Toffee.Style.Block }
+  in
   let _ = Toffee.add_child tree node node1 |> Result.get_ok in
-  let node2 = Toffee.new_leaf tree Toffee.Style.default in
+  let node2 =
+    Toffee.new_leaf tree
+      { Toffee.Style.default with display = Toffee.Style.Block }
+  in
   let _ = Toffee.add_child tree node node2 |> Result.get_ok in
 
   (* Compute layout *)
@@ -151,17 +160,29 @@ let test_grid_placement_auto_negative_content_box () =
   in
   let node0 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        box_sizing = Toffee.Style.Content_box;
+      }
   in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
   let node1 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        box_sizing = Toffee.Style.Content_box;
+      }
   in
   let _ = Toffee.add_child tree node node1 |> Result.get_ok in
   let node2 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        box_sizing = Toffee.Style.Content_box;
+      }
   in
   let _ = Toffee.add_child tree node node2 |> Result.get_ok in
 

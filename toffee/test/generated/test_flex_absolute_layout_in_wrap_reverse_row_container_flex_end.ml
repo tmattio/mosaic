@@ -17,6 +17,7 @@ let test_absolute_layout_in_wrap_reverse_row_container_flex_end_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         flex_wrap = Toffee.Style.Flex.Wrap_reverse;
         size =
@@ -30,6 +31,7 @@ let test_absolute_layout_in_wrap_reverse_row_container_flex_end_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         align_self = Some Toffee.Style.Alignment.Flex_end;
         size =
@@ -85,6 +87,7 @@ let test_absolute_layout_in_wrap_reverse_row_container_flex_end_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         flex_wrap = Toffee.Style.Flex.Wrap_reverse;
         size =
@@ -99,6 +102,7 @@ let test_absolute_layout_in_wrap_reverse_row_container_flex_end_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         align_self = Some Toffee.Style.Alignment.Flex_end;
         size =

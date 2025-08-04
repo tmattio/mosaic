@@ -17,6 +17,7 @@ let test_align_baseline_child_top_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_items = Some Toffee.Style.Alignment.Baseline;
         size =
@@ -30,6 +31,7 @@ let test_align_baseline_child_top_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -37,10 +39,10 @@ let test_align_baseline_child_top_border_box () =
           };
         inset =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
             top = Toffee.Style.Length_percentage_auto.Length 10.0;
-            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
+            bottom = Toffee.Style.Length_percentage_auto.Auto;
           };
       }
   in
@@ -49,6 +51,7 @@ let test_align_baseline_child_top_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -62,6 +65,7 @@ let test_align_baseline_child_top_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -127,6 +131,7 @@ let test_align_baseline_child_top_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         align_items = Some Toffee.Style.Alignment.Baseline;
         size =
@@ -141,6 +146,7 @@ let test_align_baseline_child_top_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -148,10 +154,10 @@ let test_align_baseline_child_top_content_box () =
           };
         inset =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
             top = Toffee.Style.Length_percentage_auto.Length 10.0;
-            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
+            bottom = Toffee.Style.Length_percentage_auto.Auto;
           };
         box_sizing = Toffee.Style.Content_box;
       }
@@ -161,6 +167,7 @@ let test_align_baseline_child_top_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -175,6 +182,7 @@ let test_align_baseline_child_top_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;

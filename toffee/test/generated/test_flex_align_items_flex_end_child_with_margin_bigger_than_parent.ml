@@ -18,6 +18,7 @@ let test_align_items_flex_end_child_with_margin_bigger_than_parent_border_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Center;
         justify_content = Some Toffee.Style.Alignment.Center;
         size =
@@ -31,6 +32,7 @@ let test_align_items_flex_end_child_with_margin_bigger_than_parent_border_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Flex_end;
       }
   in
@@ -39,6 +41,7 @@ let test_align_items_flex_end_child_with_margin_bigger_than_parent_border_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -48,8 +51,8 @@ let test_align_items_flex_end_child_with_margin_bigger_than_parent_border_box ()
           {
             left = Toffee.Style.Length_percentage_auto.Length 10.0;
             right = Toffee.Style.Length_percentage_auto.Length 10.0;
-            top = Toffee.Style.Length_percentage_auto.Length 0.0;
-            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
+            top = Toffee.Style.Length_percentage_auto.Auto;
+            bottom = Toffee.Style.Length_percentage_auto.Auto;
           };
       }
   in
@@ -106,6 +109,7 @@ let test_align_items_flex_end_child_with_margin_bigger_than_parent_content_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Center;
         justify_content = Some Toffee.Style.Alignment.Center;
         size =
@@ -120,6 +124,7 @@ let test_align_items_flex_end_child_with_margin_bigger_than_parent_content_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Flex_end;
         box_sizing = Toffee.Style.Content_box;
       }
@@ -129,6 +134,7 @@ let test_align_items_flex_end_child_with_margin_bigger_than_parent_content_box
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -138,8 +144,8 @@ let test_align_items_flex_end_child_with_margin_bigger_than_parent_content_box
           {
             left = Toffee.Style.Length_percentage_auto.Length 10.0;
             right = Toffee.Style.Length_percentage_auto.Length 10.0;
-            top = Toffee.Style.Length_percentage_auto.Length 0.0;
-            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
+            top = Toffee.Style.Length_percentage_auto.Auto;
+            bottom = Toffee.Style.Length_percentage_auto.Auto;
           };
         box_sizing = Toffee.Style.Content_box;
       }

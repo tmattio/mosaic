@@ -17,6 +17,7 @@ let test_container_with_unsized_child_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -24,7 +25,10 @@ let test_container_with_unsized_child_border_box () =
           };
       }
   in
-  let node0 = Toffee.new_leaf tree Toffee.Style.default in
+  let node0 =
+    Toffee.new_leaf tree
+      { Toffee.Style.default with display = Toffee.Style.Block }
+  in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
 
   (* Compute layout *)
@@ -71,6 +75,7 @@ let test_container_with_unsized_child_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -81,7 +86,11 @@ let test_container_with_unsized_child_content_box () =
   in
   let node0 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        box_sizing = Toffee.Style.Content_box;
+      }
   in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
 

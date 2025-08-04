@@ -30,6 +30,7 @@ let test_grid_aspect_ratio_absolute_aspect_ratio_overrides_height_of_full_inset_
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         aspect_ratio = Some 3.0;
         inset =
@@ -101,6 +102,7 @@ let test_grid_aspect_ratio_absolute_aspect_ratio_overrides_height_of_full_inset_
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         aspect_ratio = Some 3.0;
         inset =

@@ -78,6 +78,7 @@ let test_measure_child_absolute_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -87,7 +88,11 @@ let test_measure_child_absolute_border_box () =
   in
   let node0 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with position = Toffee.Style.Absolute }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        position = Toffee.Style.Absolute;
+      }
   in
   let _ =
     Toffee.set_node_context tree node0 (MeasureFunction.Text "HHHHHH")
@@ -140,6 +145,7 @@ let test_measure_child_absolute_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -152,6 +158,7 @@ let test_measure_child_absolute_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         box_sizing = Toffee.Style.Content_box;
       }

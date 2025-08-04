@@ -17,6 +17,7 @@ let test_rounding_fractial_input_5_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         justify_content = Some Toffee.Style.Alignment.Center;
         size =
           {
@@ -29,6 +30,7 @@ let test_rounding_fractial_input_5_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.3;
@@ -41,6 +43,7 @@ let test_rounding_fractial_input_5_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.3;
@@ -100,6 +103,7 @@ let test_rounding_fractial_input_5_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         justify_content = Some Toffee.Style.Alignment.Center;
         size =
           {
@@ -113,6 +117,7 @@ let test_rounding_fractial_input_5_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.3;
@@ -126,6 +131,7 @@ let test_rounding_fractial_input_5_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.3;

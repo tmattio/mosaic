@@ -17,6 +17,7 @@ let test_align_baseline_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Baseline;
         size =
           {
@@ -29,6 +30,7 @@ let test_align_baseline_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -41,6 +43,7 @@ let test_align_baseline_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -100,6 +103,7 @@ let test_align_baseline_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Baseline;
         size =
           {
@@ -113,6 +117,7 @@ let test_align_baseline_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -126,6 +131,7 @@ let test_align_baseline_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;

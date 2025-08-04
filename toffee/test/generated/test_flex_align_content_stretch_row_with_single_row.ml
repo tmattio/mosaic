@@ -17,6 +17,7 @@ let test_align_content_stretch_row_with_single_row_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         flex_wrap = Toffee.Style.Flex.Wrap;
         align_content = Some Toffee.Style.Alignment.Stretch;
@@ -31,6 +32,7 @@ let test_align_content_stretch_row_with_single_row_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -43,6 +45,7 @@ let test_align_content_stretch_row_with_single_row_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -102,6 +105,7 @@ let test_align_content_stretch_row_with_single_row_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         flex_wrap = Toffee.Style.Flex.Wrap;
         align_content = Some Toffee.Style.Alignment.Stretch;
@@ -117,6 +121,7 @@ let test_align_content_stretch_row_with_single_row_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -130,6 +135,7 @@ let test_align_content_stretch_row_with_single_row_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;

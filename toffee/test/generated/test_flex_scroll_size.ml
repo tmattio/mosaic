@@ -17,6 +17,7 @@ let test_scroll_size_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Start;
         justify_content = Some Toffee.Style.Alignment.Start;
         size =
@@ -30,6 +31,7 @@ let test_scroll_size_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -84,6 +86,7 @@ let test_scroll_size_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Start;
         justify_content = Some Toffee.Style.Alignment.Start;
         size =
@@ -98,6 +101,7 @@ let test_scroll_size_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {

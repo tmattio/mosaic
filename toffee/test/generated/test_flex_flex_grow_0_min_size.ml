@@ -98,6 +98,7 @@ let test_flex_grow_0_min_size_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 0.0;
         flex_shrink = 0.0;
         flex_basis = Toffee.Style.Dimension.percent 0.0;
@@ -112,6 +113,7 @@ let test_flex_grow_0_min_size_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 0.0;
         flex_shrink = 0.0;
         flex_basis = Toffee.Style.Dimension.percent 0.0;
@@ -126,6 +128,7 @@ let test_flex_grow_0_min_size_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 0.0;
         flex_shrink = 0.0;
         flex_basis = Toffee.Style.Dimension.percent 0.0;
@@ -140,6 +143,7 @@ let test_flex_grow_0_min_size_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 0.0;
         flex_shrink = 0.0;
         flex_basis = Toffee.Style.Dimension.percent 0.0;
@@ -235,6 +239,7 @@ let test_flex_grow_0_min_size_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 0.0;
         flex_shrink = 0.0;
         flex_basis = Toffee.Style.Dimension.percent 0.0;
@@ -250,6 +255,7 @@ let test_flex_grow_0_min_size_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 0.0;
         flex_shrink = 0.0;
         flex_basis = Toffee.Style.Dimension.percent 0.0;
@@ -265,6 +271,7 @@ let test_flex_grow_0_min_size_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 0.0;
         flex_shrink = 0.0;
         flex_basis = Toffee.Style.Dimension.percent 0.0;
@@ -280,6 +287,7 @@ let test_flex_grow_0_min_size_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 0.0;
         flex_shrink = 0.0;
         flex_basis = Toffee.Style.Dimension.percent 0.0;

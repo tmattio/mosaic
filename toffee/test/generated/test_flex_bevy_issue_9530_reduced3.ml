@@ -78,6 +78,7 @@ let test_bevy_issue_9530_reduced3_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -90,6 +91,7 @@ let test_bevy_issue_9530_reduced3_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 1.0;
         margin =
           {
@@ -152,6 +154,7 @@ let test_bevy_issue_9530_reduced3_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -165,6 +168,7 @@ let test_bevy_issue_9530_reduced3_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 1.0;
         margin =
           {

@@ -78,6 +78,7 @@ let test_overflow_main_axis_shrink_hidden_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -86,7 +87,12 @@ let test_overflow_main_axis_shrink_hidden_border_box () =
       }
   in
   let node0 =
-    Toffee.new_leaf tree { Toffee.Style.default with flex_shrink = 1.0 }
+    Toffee.new_leaf tree
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        flex_shrink = 1.0;
+      }
   in
   let _ =
     Toffee.set_node_context tree node0 (MeasureFunction.Text "HHHHHHHHHH")
@@ -139,6 +145,7 @@ let test_overflow_main_axis_shrink_hidden_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -151,6 +158,7 @@ let test_overflow_main_axis_shrink_hidden_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_shrink = 1.0;
         box_sizing = Toffee.Style.Content_box;
       }

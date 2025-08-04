@@ -17,6 +17,7 @@ let test_percentage_flex_basis_cross_max_width_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -29,6 +30,7 @@ let test_percentage_flex_basis_cross_max_width_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_basis = Toffee.Style.Dimension.percent 0.1;
         max_size =
@@ -43,6 +45,7 @@ let test_percentage_flex_basis_cross_max_width_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 4.0;
         flex_basis = Toffee.Style.Dimension.percent 0.15;
         max_size =
@@ -104,6 +107,7 @@ let test_percentage_flex_basis_cross_max_width_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -117,6 +121,7 @@ let test_percentage_flex_basis_cross_max_width_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_basis = Toffee.Style.Dimension.percent 0.1;
         max_size =
@@ -132,6 +137,7 @@ let test_percentage_flex_basis_cross_max_width_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 4.0;
         flex_basis = Toffee.Style.Dimension.percent 0.15;
         max_size =

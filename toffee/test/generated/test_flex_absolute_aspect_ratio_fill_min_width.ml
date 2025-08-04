@@ -29,6 +29,7 @@ let test_absolute_aspect_ratio_fill_min_width_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         min_size =
           {
@@ -97,6 +98,7 @@ let test_absolute_aspect_ratio_fill_min_width_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         min_size =
           {

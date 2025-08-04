@@ -76,7 +76,11 @@ let test_intrinsic_sizing_cross_size_column_border_box () =
   (* Create nodes *)
   let node =
     Toffee.new_leaf tree
-      { Toffee.Style.default with flex_direction = Toffee.Style.Flex.Column }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        flex_direction = Toffee.Style.Flex.Column;
+      }
   in
   let _ =
     Toffee.set_node_context tree node (MeasureFunction.Text "HH​HH")
@@ -122,6 +126,7 @@ let test_intrinsic_sizing_cross_size_column_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         box_sizing = Toffee.Style.Content_box;
       }

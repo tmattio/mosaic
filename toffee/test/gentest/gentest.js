@@ -14,15 +14,15 @@ const testDir = path.resolve(__dirname, '..');
 function styleToOCaml(style, boxSizing = null) {
   const fields = [];
   
-  if (style.display) {
-    const displayMap = {
-      'grid': 'Grid',
-      'flex': 'Flex', 
-      'block': 'Block',
-      'none': 'None'
-    };
-    fields.push(`display = Toffee.Style.${displayMap[style.display] || 'Block'}`);
-  }
+  // Always set display - default to Block if not specified (HTML default)
+  const displayMap = {
+    'grid': 'Grid',
+    'flex': 'Flex', 
+    'block': 'Block',
+    'none': 'None'
+  };
+  const displayValue = style.display || 'block';  // Default to block if not set
+  fields.push(`display = Toffee.Style.${displayMap[displayValue] || 'Block'}`);
   
   if (style.position) {
     const positionMap = {
@@ -436,8 +436,9 @@ function rectToOCaml(rect, isMarginOrInset = false) {
   // Helper to convert a single edge value
   const convertEdge = (edge) => {
     if (!edge) {
+      // For margin/inset, missing values should be Auto, not 0
       return isMarginOrInset 
-        ? 'Toffee.Style.Length_percentage_auto.Length (0.0)'
+        ? 'Toffee.Style.Length_percentage_auto.Auto'
         : 'Toffee.Style.Length_percentage.Length (0.0)';
     }
     

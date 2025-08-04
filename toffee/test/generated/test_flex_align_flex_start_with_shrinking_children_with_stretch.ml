@@ -17,6 +17,7 @@ let test_align_flex_start_with_shrinking_children_with_stretch_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 500.0;
@@ -28,6 +29,7 @@ let test_align_flex_start_with_shrinking_children_with_stretch_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Flex_start;
       }
   in
@@ -36,6 +38,7 @@ let test_align_flex_start_with_shrinking_children_with_stretch_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Stretch;
         flex_grow = 1.0;
         flex_shrink = 1.0;
@@ -44,7 +47,12 @@ let test_align_flex_start_with_shrinking_children_with_stretch_border_box () =
   let _ = Toffee.add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with flex_grow = 1.0; flex_shrink = 1.0 }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        flex_grow = 1.0;
+        flex_shrink = 1.0;
+      }
   in
   let _ = Toffee.add_child tree node1 node2 |> Result.get_ok in
 
@@ -104,6 +112,7 @@ let test_align_flex_start_with_shrinking_children_with_stretch_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 500.0;
@@ -116,6 +125,7 @@ let test_align_flex_start_with_shrinking_children_with_stretch_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Flex_start;
         box_sizing = Toffee.Style.Content_box;
       }
@@ -125,6 +135,7 @@ let test_align_flex_start_with_shrinking_children_with_stretch_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Stretch;
         flex_grow = 1.0;
         flex_shrink = 1.0;
@@ -136,6 +147,7 @@ let test_align_flex_start_with_shrinking_children_with_stretch_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_shrink = 1.0;
         box_sizing = Toffee.Style.Content_box;

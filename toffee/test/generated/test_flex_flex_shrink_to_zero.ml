@@ -17,6 +17,7 @@ let test_flex_shrink_to_zero_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 75.0;
@@ -28,6 +29,7 @@ let test_flex_shrink_to_zero_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -41,6 +43,7 @@ let test_flex_shrink_to_zero_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_shrink = 1.0;
         size =
           {
@@ -54,6 +57,7 @@ let test_flex_shrink_to_zero_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -120,6 +124,7 @@ let test_flex_shrink_to_zero_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 75.0;
@@ -132,6 +137,7 @@ let test_flex_shrink_to_zero_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -146,6 +152,7 @@ let test_flex_shrink_to_zero_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_shrink = 1.0;
         size =
           {
@@ -160,6 +167,7 @@ let test_flex_shrink_to_zero_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {

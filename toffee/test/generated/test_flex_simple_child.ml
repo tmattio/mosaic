@@ -17,6 +17,7 @@ let test_simple_child_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -28,6 +29,7 @@ let test_simple_child_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.percent 1.0;
@@ -40,6 +42,7 @@ let test_simple_child_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -52,6 +55,7 @@ let test_simple_child_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -60,12 +64,16 @@ let test_simple_child_border_box () =
       }
   in
   let _ = Toffee.add_child tree node1 node2 |> Result.get_ok in
-  let node3 = Toffee.new_leaf tree Toffee.Style.default in
+  let node3 =
+    Toffee.new_leaf tree
+      { Toffee.Style.default with display = Toffee.Style.Block }
+  in
   let _ = Toffee.add_child tree node0 node3 |> Result.get_ok in
   let node4 =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Center;
         size =
           {
@@ -79,6 +87,7 @@ let test_simple_child_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Center;
         size =
           {
@@ -163,6 +172,7 @@ let test_simple_child_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -175,6 +185,7 @@ let test_simple_child_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.percent 1.0;
@@ -188,6 +199,7 @@ let test_simple_child_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -201,6 +213,7 @@ let test_simple_child_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -212,13 +225,18 @@ let test_simple_child_content_box () =
   let _ = Toffee.add_child tree node1 node2 |> Result.get_ok in
   let node3 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        box_sizing = Toffee.Style.Content_box;
+      }
   in
   let _ = Toffee.add_child tree node0 node3 |> Result.get_ok in
   let node4 =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Center;
         size =
           {
@@ -233,6 +251,7 @@ let test_simple_child_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Center;
         size =
           {

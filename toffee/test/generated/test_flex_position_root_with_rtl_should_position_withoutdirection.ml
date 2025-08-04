@@ -13,11 +13,15 @@ let test_position_root_with_rtl_should_position_withoutdirection_border_box () =
   let tree = Toffee.create () in
 
   (* Create nodes *)
-  let node = Toffee.new_leaf tree Toffee.Style.default in
+  let node =
+    Toffee.new_leaf tree
+      { Toffee.Style.default with display = Toffee.Style.Block }
+  in
   let node0 =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 52.0;
@@ -26,9 +30,9 @@ let test_position_root_with_rtl_should_position_withoutdirection_border_box () =
         inset =
           {
             left = Toffee.Style.Length_percentage_auto.Length 72.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
-            top = Toffee.Style.Length_percentage_auto.Length 0.0;
-            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
+            right = Toffee.Style.Length_percentage_auto.Auto;
+            top = Toffee.Style.Length_percentage_auto.Auto;
+            bottom = Toffee.Style.Length_percentage_auto.Auto;
           };
       }
   in
@@ -77,12 +81,17 @@ let test_position_root_with_rtl_should_position_withoutdirection_content_box ()
   (* Create nodes *)
   let node =
     Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        box_sizing = Toffee.Style.Content_box;
+      }
   in
   let node0 =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 52.0;
@@ -91,9 +100,9 @@ let test_position_root_with_rtl_should_position_withoutdirection_content_box ()
         inset =
           {
             left = Toffee.Style.Length_percentage_auto.Length 72.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
-            top = Toffee.Style.Length_percentage_auto.Length 0.0;
-            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
+            right = Toffee.Style.Length_percentage_auto.Auto;
+            top = Toffee.Style.Length_percentage_auto.Auto;
+            bottom = Toffee.Style.Length_percentage_auto.Auto;
           };
         box_sizing = Toffee.Style.Content_box;
       }

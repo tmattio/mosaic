@@ -17,6 +17,7 @@ let test_align_self_flex_start_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -28,6 +29,7 @@ let test_align_self_flex_start_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Flex_start;
         size =
           {
@@ -82,6 +84,7 @@ let test_align_self_flex_start_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -94,6 +97,7 @@ let test_align_self_flex_start_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_self = Some Toffee.Style.Alignment.Flex_start;
         size =
           {

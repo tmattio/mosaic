@@ -78,6 +78,7 @@ let test_measure_child_with_flex_grow_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -89,6 +90,7 @@ let test_measure_child_with_flex_grow_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -97,7 +99,10 @@ let test_measure_child_with_flex_grow_border_box () =
       }
   in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
-  let node1 = Toffee.new_leaf tree Toffee.Style.default in
+  let node1 =
+    Toffee.new_leaf tree
+      { Toffee.Style.default with display = Toffee.Style.Block }
+  in
   let _ =
     Toffee.set_node_context tree node1 (MeasureFunction.Text "H​H​H​H​H")
     |> Result.get_ok
@@ -155,6 +160,7 @@ let test_measure_child_with_flex_grow_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -167,6 +173,7 @@ let test_measure_child_with_flex_grow_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -178,7 +185,11 @@ let test_measure_child_with_flex_grow_content_box () =
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
   let node1 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        box_sizing = Toffee.Style.Content_box;
+      }
   in
   let _ =
     Toffee.set_node_context tree node1 (MeasureFunction.Text "H​H​H​H​H")

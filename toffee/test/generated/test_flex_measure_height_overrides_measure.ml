@@ -74,11 +74,15 @@ let test_measure_height_overrides_measure_border_box () =
   let tree = Toffee.create () in
 
   (* Create nodes *)
-  let node = Toffee.new_leaf tree Toffee.Style.default in
+  let node =
+    Toffee.new_leaf tree
+      { Toffee.Style.default with display = Toffee.Style.Block }
+  in
   let node0 =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -135,12 +139,17 @@ let test_measure_height_overrides_measure_content_box () =
   (* Create nodes *)
   let node =
     Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        box_sizing = Toffee.Style.Content_box;
+      }
   in
   let node0 =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;

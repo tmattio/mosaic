@@ -99,11 +99,20 @@ let test_grid_span_2_min_content_fit_content_30px_indefinite_border_box () =
           ];
       }
   in
-  let node0 = Toffee.new_leaf tree Toffee.Style.default in
+  let node0 =
+    Toffee.new_leaf tree
+      { Toffee.Style.default with display = Toffee.Style.Block }
+  in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
-  let node1 = Toffee.new_leaf tree Toffee.Style.default in
+  let node1 =
+    Toffee.new_leaf tree
+      { Toffee.Style.default with display = Toffee.Style.Block }
+  in
   let _ = Toffee.add_child tree node node1 |> Result.get_ok in
-  let node2 = Toffee.new_leaf tree Toffee.Style.default in
+  let node2 =
+    Toffee.new_leaf tree
+      { Toffee.Style.default with display = Toffee.Style.Block }
+  in
   let _ =
     Toffee.set_node_context tree node2 (MeasureFunction.Text "HHHH​HHHH")
     |> Result.get_ok
@@ -191,17 +200,29 @@ let test_grid_span_2_min_content_fit_content_30px_indefinite_content_box () =
   in
   let node0 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        box_sizing = Toffee.Style.Content_box;
+      }
   in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
   let node1 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        box_sizing = Toffee.Style.Content_box;
+      }
   in
   let _ = Toffee.add_child tree node node1 |> Result.get_ok in
   let node2 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        box_sizing = Toffee.Style.Content_box;
+      }
   in
   let _ =
     Toffee.set_node_context tree node2 (MeasureFunction.Text "HHHH​HHHH")

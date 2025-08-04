@@ -17,6 +17,7 @@ let test_rounding_total_fractial_nested_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -29,6 +30,7 @@ let test_rounding_total_fractial_nested_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         flex_grow = 0.7;
         flex_basis = Toffee.Style.Dimension.length 50.3;
@@ -44,6 +46,7 @@ let test_rounding_total_fractial_nested_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_basis = Toffee.Style.Dimension.length 0.3;
         size =
@@ -53,9 +56,9 @@ let test_rounding_total_fractial_nested_border_box () =
           };
         inset =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
-            top = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
+            top = Toffee.Style.Length_percentage_auto.Auto;
             bottom = Toffee.Style.Length_percentage_auto.Length 13.3;
           };
       }
@@ -65,6 +68,7 @@ let test_rounding_total_fractial_nested_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 4.0;
         flex_basis = Toffee.Style.Dimension.length 0.3;
         size =
@@ -74,10 +78,10 @@ let test_rounding_total_fractial_nested_border_box () =
           };
         inset =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
             top = Toffee.Style.Length_percentage_auto.Length 13.3;
-            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
+            bottom = Toffee.Style.Length_percentage_auto.Auto;
           };
       }
   in
@@ -86,6 +90,7 @@ let test_rounding_total_fractial_nested_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 1.6;
         size =
           {
@@ -99,6 +104,7 @@ let test_rounding_total_fractial_nested_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 1.1;
         size =
           {
@@ -177,6 +183,7 @@ let test_rounding_total_fractial_nested_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -190,6 +197,7 @@ let test_rounding_total_fractial_nested_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         flex_grow = 0.7;
         flex_basis = Toffee.Style.Dimension.length 50.3;
@@ -206,6 +214,7 @@ let test_rounding_total_fractial_nested_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_basis = Toffee.Style.Dimension.length 0.3;
         size =
@@ -215,9 +224,9 @@ let test_rounding_total_fractial_nested_content_box () =
           };
         inset =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
-            top = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
+            top = Toffee.Style.Length_percentage_auto.Auto;
             bottom = Toffee.Style.Length_percentage_auto.Length 13.3;
           };
         box_sizing = Toffee.Style.Content_box;
@@ -228,6 +237,7 @@ let test_rounding_total_fractial_nested_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 4.0;
         flex_basis = Toffee.Style.Dimension.length 0.3;
         size =
@@ -237,10 +247,10 @@ let test_rounding_total_fractial_nested_content_box () =
           };
         inset =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
             top = Toffee.Style.Length_percentage_auto.Length 13.3;
-            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
+            bottom = Toffee.Style.Length_percentage_auto.Auto;
           };
         box_sizing = Toffee.Style.Content_box;
       }
@@ -250,6 +260,7 @@ let test_rounding_total_fractial_nested_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 1.6;
         size =
           {
@@ -264,6 +275,7 @@ let test_rounding_total_fractial_nested_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 1.1;
         size =
           {

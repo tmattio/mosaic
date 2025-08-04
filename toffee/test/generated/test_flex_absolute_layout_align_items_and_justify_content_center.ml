@@ -17,6 +17,7 @@ let test_absolute_layout_align_items_and_justify_content_center_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Center;
         justify_content = Some Toffee.Style.Alignment.Center;
         size =
@@ -30,6 +31,7 @@ let test_absolute_layout_align_items_and_justify_content_center_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {
@@ -84,6 +86,7 @@ let test_absolute_layout_align_items_and_justify_content_center_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         align_items = Some Toffee.Style.Alignment.Center;
         justify_content = Some Toffee.Style.Alignment.Center;
         size =
@@ -98,6 +101,7 @@ let test_absolute_layout_align_items_and_justify_content_center_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {

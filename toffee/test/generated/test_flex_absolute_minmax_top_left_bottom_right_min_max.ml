@@ -17,6 +17,7 @@ let test_absolute_minmax_top_left_bottom_right_min_max_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -28,6 +29,7 @@ let test_absolute_minmax_top_left_bottom_right_min_max_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         min_size =
           {
@@ -94,6 +96,7 @@ let test_absolute_minmax_top_left_bottom_right_min_max_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 100.0;
@@ -106,6 +109,7 @@ let test_absolute_minmax_top_left_bottom_right_min_max_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         min_size =
           {

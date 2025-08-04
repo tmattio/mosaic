@@ -42,6 +42,7 @@ let test_grid_percent_items_nested_with_margin_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.percent 0.45;
@@ -135,6 +136,7 @@ let test_grid_percent_items_nested_with_margin_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.percent 0.45;

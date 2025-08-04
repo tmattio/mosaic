@@ -17,6 +17,7 @@ let test_overflow_scrollbars_overridden_by_available_space_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 2.0;
@@ -25,11 +26,21 @@ let test_overflow_scrollbars_overridden_by_available_space_border_box () =
       }
   in
   let node0 =
-    Toffee.new_leaf tree { Toffee.Style.default with flex_grow = 1.0 }
+    Toffee.new_leaf tree
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        flex_grow = 1.0;
+      }
   in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
   let node1 =
-    Toffee.new_leaf tree { Toffee.Style.default with flex_grow = 1.0 }
+    Toffee.new_leaf tree
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        flex_grow = 1.0;
+      }
   in
   let _ = Toffee.add_child tree node0 node1 |> Result.get_ok in
 
@@ -83,6 +94,7 @@ let test_overflow_scrollbars_overridden_by_available_space_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 2.0;
@@ -95,6 +107,7 @@ let test_overflow_scrollbars_overridden_by_available_space_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 1.0;
         box_sizing = Toffee.Style.Content_box;
       }
@@ -104,6 +117,7 @@ let test_overflow_scrollbars_overridden_by_available_space_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 1.0;
         box_sizing = Toffee.Style.Content_box;
       }

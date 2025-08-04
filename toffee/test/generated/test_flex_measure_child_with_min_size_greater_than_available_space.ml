@@ -92,6 +92,7 @@ let test_measure_child_with_min_size_greater_than_available_space_border_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         min_size =
           {
             width = Toffee.Style.Dimension.length 200.0;
@@ -166,6 +167,7 @@ let test_measure_child_with_min_size_greater_than_available_space_content_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         min_size =
           {
             width = Toffee.Style.Dimension.length 200.0;

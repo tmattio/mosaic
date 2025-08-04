@@ -94,7 +94,10 @@ let test_grid_fit_content_points_argument_border_box () =
           ];
       }
   in
-  let node0 = Toffee.new_leaf tree Toffee.Style.default in
+  let node0 =
+    Toffee.new_leaf tree
+      { Toffee.Style.default with display = Toffee.Style.Block }
+  in
   let _ =
     Toffee.set_node_context tree node0 (MeasureFunction.Text "HH​HH")
     |> Result.get_ok
@@ -165,7 +168,11 @@ let test_grid_fit_content_points_argument_content_box () =
   in
   let node0 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        box_sizing = Toffee.Style.Content_box;
+      }
   in
   let _ =
     Toffee.set_node_context tree node0 (MeasureFunction.Text "HH​HH")

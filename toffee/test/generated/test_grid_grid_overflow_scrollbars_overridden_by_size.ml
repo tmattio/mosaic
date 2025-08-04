@@ -25,7 +25,10 @@ let test_grid_overflow_scrollbars_overridden_by_size_border_box () =
           };
       }
   in
-  let node0 = Toffee.new_leaf tree Toffee.Style.default in
+  let node0 =
+    Toffee.new_leaf tree
+      { Toffee.Style.default with display = Toffee.Style.Block }
+  in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
 
   (* Compute layout *)
@@ -83,7 +86,11 @@ let test_grid_overflow_scrollbars_overridden_by_size_content_box () =
   in
   let node0 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        box_sizing = Toffee.Style.Content_box;
+      }
   in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
 

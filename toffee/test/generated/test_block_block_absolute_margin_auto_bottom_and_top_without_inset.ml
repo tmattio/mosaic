@@ -29,6 +29,7 @@ let test_block_absolute_margin_auto_bottom_and_top_without_inset_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {
@@ -37,8 +38,8 @@ let test_block_absolute_margin_auto_bottom_and_top_without_inset_border_box () =
           };
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
             top = Toffee.Style.Length_percentage_auto.Auto;
             bottom = Toffee.Style.Length_percentage_auto.Auto;
           };
@@ -104,6 +105,7 @@ let test_block_absolute_margin_auto_bottom_and_top_without_inset_content_box ()
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
         size =
           {
@@ -112,8 +114,8 @@ let test_block_absolute_margin_auto_bottom_and_top_without_inset_content_box ()
           };
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
             top = Toffee.Style.Length_percentage_auto.Auto;
             bottom = Toffee.Style.Length_percentage_auto.Auto;
           };

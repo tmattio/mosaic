@@ -29,6 +29,7 @@ let test_aspect_ratio_flex_row_stretch_fill_height_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 40.0;
@@ -96,6 +97,7 @@ let test_aspect_ratio_flex_row_stretch_fill_height_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 40.0;

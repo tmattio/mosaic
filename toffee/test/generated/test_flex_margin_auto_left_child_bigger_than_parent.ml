@@ -17,6 +17,7 @@ let test_margin_auto_left_child_bigger_than_parent_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         justify_content = Some Toffee.Style.Alignment.Center;
         size =
           {
@@ -29,6 +30,7 @@ let test_margin_auto_left_child_bigger_than_parent_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 72.0;
@@ -37,9 +39,9 @@ let test_margin_auto_left_child_bigger_than_parent_border_box () =
         margin =
           {
             left = Toffee.Style.Length_percentage_auto.Auto;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
-            top = Toffee.Style.Length_percentage_auto.Length 0.0;
-            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
+            right = Toffee.Style.Length_percentage_auto.Auto;
+            top = Toffee.Style.Length_percentage_auto.Auto;
+            bottom = Toffee.Style.Length_percentage_auto.Auto;
           };
       }
   in
@@ -89,6 +91,7 @@ let test_margin_auto_left_child_bigger_than_parent_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         justify_content = Some Toffee.Style.Alignment.Center;
         size =
           {
@@ -102,6 +105,7 @@ let test_margin_auto_left_child_bigger_than_parent_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 72.0;
@@ -110,9 +114,9 @@ let test_margin_auto_left_child_bigger_than_parent_content_box () =
         margin =
           {
             left = Toffee.Style.Length_percentage_auto.Auto;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
-            top = Toffee.Style.Length_percentage_auto.Length 0.0;
-            bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
+            right = Toffee.Style.Length_percentage_auto.Auto;
+            top = Toffee.Style.Length_percentage_auto.Auto;
+            bottom = Toffee.Style.Length_percentage_auto.Auto;
           };
         box_sizing = Toffee.Style.Content_box;
       }

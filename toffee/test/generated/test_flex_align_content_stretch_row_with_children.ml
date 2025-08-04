@@ -17,6 +17,7 @@ let test_align_content_stretch_row_with_children_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         flex_wrap = Toffee.Style.Flex.Wrap;
         align_content = Some Toffee.Style.Alignment.Stretch;
@@ -31,6 +32,7 @@ let test_align_content_stretch_row_with_children_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -44,6 +46,7 @@ let test_align_content_stretch_row_with_children_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_shrink = 1.0;
         flex_basis = Toffee.Style.Dimension.percent 0.0;
@@ -54,6 +57,7 @@ let test_align_content_stretch_row_with_children_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -66,6 +70,7 @@ let test_align_content_stretch_row_with_children_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -78,6 +83,7 @@ let test_align_content_stretch_row_with_children_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -90,6 +96,7 @@ let test_align_content_stretch_row_with_children_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -173,6 +180,7 @@ let test_align_content_stretch_row_with_children_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         flex_wrap = Toffee.Style.Flex.Wrap;
         align_content = Some Toffee.Style.Alignment.Stretch;
@@ -188,6 +196,7 @@ let test_align_content_stretch_row_with_children_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         size =
           {
@@ -202,6 +211,7 @@ let test_align_content_stretch_row_with_children_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 1.0;
         flex_shrink = 1.0;
         flex_basis = Toffee.Style.Dimension.percent 0.0;
@@ -213,6 +223,7 @@ let test_align_content_stretch_row_with_children_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -226,6 +237,7 @@ let test_align_content_stretch_row_with_children_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -239,6 +251,7 @@ let test_align_content_stretch_row_with_children_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -252,6 +265,7 @@ let test_align_content_stretch_row_with_children_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;

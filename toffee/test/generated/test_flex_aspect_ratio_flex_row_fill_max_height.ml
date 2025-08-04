@@ -91,6 +91,7 @@ let test_aspect_ratio_flex_row_fill_max_height_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         max_size =
           {
             width = Toffee.Style.Dimension.length 40.0;
@@ -165,6 +166,7 @@ let test_aspect_ratio_flex_row_fill_max_height_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         max_size =
           {
             width = Toffee.Style.Dimension.length 40.0;

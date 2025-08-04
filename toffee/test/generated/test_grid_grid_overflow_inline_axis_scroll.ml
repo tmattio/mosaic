@@ -86,7 +86,10 @@ let test_grid_overflow_inline_axis_scroll_border_box () =
           };
       }
   in
-  let node0 = Toffee.new_leaf tree Toffee.Style.default in
+  let node0 =
+    Toffee.new_leaf tree
+      { Toffee.Style.default with display = Toffee.Style.Block }
+  in
   let _ =
     Toffee.set_node_context tree node0 (MeasureFunction.Text "HHHHHHHHHH")
     |> Result.get_ok
@@ -149,7 +152,11 @@ let test_grid_overflow_inline_axis_scroll_content_box () =
   in
   let node0 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        box_sizing = Toffee.Style.Content_box;
+      }
   in
   let _ =
     Toffee.set_node_context tree node0 (MeasureFunction.Text "HHHHHHHHHH")

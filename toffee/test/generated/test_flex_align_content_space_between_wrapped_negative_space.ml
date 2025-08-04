@@ -54,6 +54,7 @@ let test_align_content_space_between_wrapped_negative_space_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -67,6 +68,7 @@ let test_align_content_space_between_wrapped_negative_space_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -80,6 +82,7 @@ let test_align_content_space_between_wrapped_negative_space_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -191,6 +194,7 @@ let test_align_content_space_between_wrapped_negative_space_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -205,6 +209,7 @@ let test_align_content_space_between_wrapped_negative_space_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -219,6 +224,7 @@ let test_align_content_space_between_wrapped_negative_space_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {

@@ -17,6 +17,7 @@ let test_align_items_stretch_min_cross_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         min_size =
           {
@@ -29,6 +30,7 @@ let test_align_items_stretch_min_cross_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {
@@ -83,6 +85,7 @@ let test_align_items_stretch_min_cross_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         min_size =
           {
@@ -96,6 +99,7 @@ let test_align_items_stretch_min_cross_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_shrink = 0.0;
         size =
           {

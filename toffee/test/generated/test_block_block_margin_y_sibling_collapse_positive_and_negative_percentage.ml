@@ -30,6 +30,7 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_border
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -37,8 +38,8 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_border
           };
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
             top = Toffee.Style.Length_percentage_auto.Percent 0.1;
             bottom = Toffee.Style.Length_percentage_auto.Percent 0.1;
           };
@@ -49,6 +50,7 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_border
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -56,8 +58,8 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_border
           };
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
             top = Toffee.Style.Length_percentage_auto.Percent (-0.1);
             bottom = Toffee.Style.Length_percentage_auto.Percent 0.1;
           };
@@ -68,6 +70,7 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_border
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -75,8 +78,8 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_border
           };
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
             top = Toffee.Style.Length_percentage_auto.Percent (-0.05);
             bottom = Toffee.Style.Length_percentage_auto.Percent 0.05;
           };
@@ -87,6 +90,7 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_border
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -94,8 +98,8 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_border
           };
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
             top = Toffee.Style.Length_percentage_auto.Percent (-0.1);
             bottom = Toffee.Style.Length_percentage_auto.Percent (-0.1);
           };
@@ -106,6 +110,7 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_border
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -113,8 +118,8 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_border
           };
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
             top = Toffee.Style.Length_percentage_auto.Percent 0.1;
             bottom = Toffee.Style.Length_percentage_auto.Percent (-0.1);
           };
@@ -125,6 +130,7 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_border
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -132,8 +138,8 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_border
           };
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
             top = Toffee.Style.Length_percentage_auto.Percent 0.05;
             bottom = Toffee.Style.Length_percentage_auto.Percent (-0.05);
           };
@@ -144,6 +150,7 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_border
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -151,8 +158,8 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_border
           };
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
             top = Toffee.Style.Length_percentage_auto.Percent 0.1;
             bottom = Toffee.Style.Length_percentage_auto.Percent 0.1;
           };
@@ -254,6 +261,7 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_conten
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -261,8 +269,8 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_conten
           };
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
             top = Toffee.Style.Length_percentage_auto.Percent 0.1;
             bottom = Toffee.Style.Length_percentage_auto.Percent 0.1;
           };
@@ -274,6 +282,7 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_conten
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -281,8 +290,8 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_conten
           };
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
             top = Toffee.Style.Length_percentage_auto.Percent (-0.1);
             bottom = Toffee.Style.Length_percentage_auto.Percent 0.1;
           };
@@ -294,6 +303,7 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_conten
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -301,8 +311,8 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_conten
           };
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
             top = Toffee.Style.Length_percentage_auto.Percent (-0.05);
             bottom = Toffee.Style.Length_percentage_auto.Percent 0.05;
           };
@@ -314,6 +324,7 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_conten
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -321,8 +332,8 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_conten
           };
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
             top = Toffee.Style.Length_percentage_auto.Percent (-0.1);
             bottom = Toffee.Style.Length_percentage_auto.Percent (-0.1);
           };
@@ -334,6 +345,7 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_conten
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -341,8 +353,8 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_conten
           };
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
             top = Toffee.Style.Length_percentage_auto.Percent 0.1;
             bottom = Toffee.Style.Length_percentage_auto.Percent (-0.1);
           };
@@ -354,6 +366,7 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_conten
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -361,8 +374,8 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_conten
           };
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
             top = Toffee.Style.Length_percentage_auto.Percent 0.05;
             bottom = Toffee.Style.Length_percentage_auto.Percent (-0.05);
           };
@@ -374,6 +387,7 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_conten
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.auto;
@@ -381,8 +395,8 @@ let test_block_margin_y_sibling_collapse_positive_and_negative_percentage_conten
           };
         margin =
           {
-            left = Toffee.Style.Length_percentage_auto.Length 0.0;
-            right = Toffee.Style.Length_percentage_auto.Length 0.0;
+            left = Toffee.Style.Length_percentage_auto.Auto;
+            right = Toffee.Style.Length_percentage_auto.Auto;
             top = Toffee.Style.Length_percentage_auto.Percent 0.1;
             bottom = Toffee.Style.Length_percentage_auto.Percent 0.1;
           };

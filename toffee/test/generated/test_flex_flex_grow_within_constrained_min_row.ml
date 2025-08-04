@@ -17,6 +17,7 @@ let test_flex_grow_within_constrained_min_row_border_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         size =
           {
@@ -31,13 +32,19 @@ let test_flex_grow_within_constrained_min_row_border_box () =
       }
   in
   let node0 =
-    Toffee.new_leaf tree { Toffee.Style.default with flex_grow = 1.0 }
+    Toffee.new_leaf tree
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        flex_grow = 1.0;
+      }
   in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
   let node1 =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;
@@ -97,6 +104,7 @@ let test_flex_grow_within_constrained_min_row_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Row;
         size =
           {
@@ -115,6 +123,7 @@ let test_flex_grow_within_constrained_min_row_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 1.0;
         box_sizing = Toffee.Style.Content_box;
       }
@@ -124,6 +133,7 @@ let test_flex_grow_within_constrained_min_row_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 50.0;

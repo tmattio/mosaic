@@ -14,7 +14,10 @@ let test_align_items_center_with_min_height_with_align_content_flex_start_with_w
   let tree = Toffee.create () in
 
   (* Create nodes *)
-  let node = Toffee.new_leaf tree Toffee.Style.default in
+  let node =
+    Toffee.new_leaf tree
+      { Toffee.Style.default with display = Toffee.Style.Block }
+  in
   let node0 =
     Toffee.new_leaf tree
       {
@@ -40,6 +43,7 @@ let test_align_items_center_with_min_height_with_align_content_flex_start_with_w
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -52,6 +56,7 @@ let test_align_items_center_with_min_height_with_align_content_flex_start_with_w
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -84,6 +89,7 @@ let test_align_items_center_with_min_height_with_align_content_flex_start_with_w
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -96,6 +102,7 @@ let test_align_items_center_with_min_height_with_align_content_flex_start_with_w
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -127,6 +134,7 @@ let test_align_items_center_with_min_height_with_align_content_flex_start_with_w
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -139,6 +147,7 @@ let test_align_items_center_with_min_height_with_align_content_flex_start_with_w
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -171,6 +180,7 @@ let test_align_items_center_with_min_height_with_align_content_flex_start_with_w
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -183,6 +193,7 @@ let test_align_items_center_with_min_height_with_align_content_flex_start_with_w
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -301,7 +312,11 @@ let test_align_items_center_with_min_height_with_align_content_flex_start_with_w
   (* Create nodes *)
   let node =
     Toffee.new_leaf tree
-      { Toffee.Style.default with box_sizing = Toffee.Style.Content_box }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        box_sizing = Toffee.Style.Content_box;
+      }
   in
   let node0 =
     Toffee.new_leaf tree
@@ -329,6 +344,7 @@ let test_align_items_center_with_min_height_with_align_content_flex_start_with_w
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -342,6 +358,7 @@ let test_align_items_center_with_min_height_with_align_content_flex_start_with_w
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -376,6 +393,7 @@ let test_align_items_center_with_min_height_with_align_content_flex_start_with_w
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -389,6 +407,7 @@ let test_align_items_center_with_min_height_with_align_content_flex_start_with_w
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -422,6 +441,7 @@ let test_align_items_center_with_min_height_with_align_content_flex_start_with_w
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -435,6 +455,7 @@ let test_align_items_center_with_min_height_with_align_content_flex_start_with_w
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -469,6 +490,7 @@ let test_align_items_center_with_min_height_with_align_content_flex_start_with_w
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -482,6 +504,7 @@ let test_align_items_center_with_min_height_with_align_content_flex_start_with_w
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;

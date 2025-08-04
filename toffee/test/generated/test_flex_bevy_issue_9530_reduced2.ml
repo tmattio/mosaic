@@ -76,12 +76,17 @@ let test_bevy_issue_9530_reduced2_border_box () =
   (* Create nodes *)
   let node =
     Toffee.new_leaf tree
-      { Toffee.Style.default with flex_direction = Toffee.Style.Flex.Column }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        flex_direction = Toffee.Style.Flex.Column;
+      }
   in
   let node0 =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         flex_grow = 1.0;
         size =
@@ -100,7 +105,12 @@ let test_bevy_issue_9530_reduced2_border_box () =
   in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
   let node1 =
-    Toffee.new_leaf tree { Toffee.Style.default with flex_grow = 1.0 }
+    Toffee.new_leaf tree
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        flex_grow = 1.0;
+      }
   in
   let _ =
     Toffee.set_node_context tree node1
@@ -160,6 +170,7 @@ let test_bevy_issue_9530_reduced2_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         box_sizing = Toffee.Style.Content_box;
       }
@@ -168,6 +179,7 @@ let test_bevy_issue_9530_reduced2_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_direction = Toffee.Style.Flex.Column;
         flex_grow = 1.0;
         size =
@@ -190,6 +202,7 @@ let test_bevy_issue_9530_reduced2_content_box () =
     Toffee.new_leaf tree
       {
         Toffee.Style.default with
+        display = Toffee.Style.Block;
         flex_grow = 1.0;
         box_sizing = Toffee.Style.Content_box;
       }
