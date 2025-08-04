@@ -298,10 +298,18 @@ let compute_grid_layout (type tree)
       in
 
       (* 3. Perform grid item placement (resolves the implicit grid) *)
+      (* Filter out absolutely positioned and hidden items for grid placement *)
+      let in_flow_child_styles =
+        child_styles
+        |> List.filter (fun (_, _, style) ->
+               style.display <> None && style.position <> Absolute)
+      in
+
       let grid_col_counts, grid_row_counts =
         Implicit_grid.compute_grid_size_estimate ~explicit_col_count
           ~explicit_row_count
-          ~child_styles:(List.map (fun (_, _, style) -> style) child_styles)
+          ~child_styles:
+            (List.map (fun (_, _, style) -> style) in_flow_child_styles)
       in
 
       let items = ref [] in
@@ -311,7 +319,7 @@ let compute_grid_layout (type tree)
 
       let _ =
         Placement.place_grid_items ~cell_occupancy_matrix ~items
-          ~children_styles:child_styles
+          ~children_styles:in_flow_child_styles
           ~grid_auto_flow:container_style.grid_auto_flow
           ~align_items:
             (Option.value align_items
@@ -412,27 +420,58 @@ let compute_grid_layout (type tree)
         Array.fold_left (fun acc track -> acc +. track.base_size) 0.0 rows
       in
 
+      (* Compute container size following taffy's approach *)
+      let resolved_style_size = Size.or_ known_dimensions preferred_size in
+      let container_border_box =
+        {
+          width =
+            ( ( (match resolved_style_size.width with
+                | Some w -> w
+                | None ->
+                    total_column_size +. content_box_inset.left
+                    +. content_box_inset.right)
+              |> fun w ->
+                Math.FloatOption.maybe_clamp w min_size.width max_size.width )
+            |> fun w -> max w padding_border_size.width );
+          height =
+            ( ( (match resolved_style_size.height with
+                | Some h -> h
+                | None ->
+                    total_row_size +. content_box_inset.top
+                    +. content_box_inset.bottom)
+              |> fun h ->
+                Math.FloatOption.maybe_clamp h min_size.height max_size.height
+              )
+            |> fun h -> max h padding_border_size.height );
+        }
+      in
+
       let resolved_inner_node_size =
         {
-          width = Option.value inner_node_size.width ~default:total_column_size;
-          height = Option.value inner_node_size.height ~default:total_row_size;
+          width =
+            max 0.0
+              (container_border_box.width -. content_box_inset.left
+             -. content_box_inset.right);
+          height =
+            max 0.0
+              (container_border_box.height -. content_box_inset.top
+             -. content_box_inset.bottom);
         }
       in
 
       (* 6. Align tracks *)
-      if resolved_inner_node_size.width > total_column_size then
-        Grid_alignment.align_tracks
-          ~grid_container_content_box_size:resolved_inner_node_size.width
-          ~padding:{ start = padding_border.left; end_ = padding_border.right }
-          ~border:{ start = 0.0; end_ = 0.0 }
-          ~tracks:columns ~track_alignment_style:justify_content;
+      (* Always align tracks, not just when there's extra space *)
+      Grid_alignment.align_tracks
+        ~grid_container_content_box_size:resolved_inner_node_size.width
+        ~padding:{ start = padding_border.left; end_ = padding_border.right }
+        ~border:{ start = 0.0; end_ = 0.0 }
+        ~tracks:columns ~track_alignment_style:justify_content;
 
-      if resolved_inner_node_size.height > total_row_size then
-        Grid_alignment.align_tracks
-          ~grid_container_content_box_size:resolved_inner_node_size.height
-          ~padding:{ start = padding_border.top; end_ = padding_border.bottom }
-          ~border:{ start = 0.0; end_ = 0.0 }
-          ~tracks:rows ~track_alignment_style:align_content;
+      Grid_alignment.align_tracks
+        ~grid_container_content_box_size:resolved_inner_node_size.height
+        ~padding:{ start = padding_border.top; end_ = padding_border.bottom }
+        ~border:{ start = 0.0; end_ = 0.0 }
+        ~tracks:rows ~track_alignment_style:align_content;
 
       (* 7. Size and position items *)
       let container_alignment_styles =
@@ -444,24 +483,29 @@ let compute_grid_layout (type tree)
       List.iter
         (fun item ->
           (* Compute grid area *)
+          let col_start_idx =
+            Grid_track_counts.oz_line_to_next_track grid_col_counts
+              item.column.start
+          in
+          let col_end_idx =
+            Grid_track_counts.oz_line_to_next_track grid_col_counts
+              item.column.end_
+          in
+          let row_start_idx =
+            Grid_track_counts.oz_line_to_next_track grid_row_counts
+              item.row.start
+          in
+          let row_end_idx =
+            Grid_track_counts.oz_line_to_next_track grid_row_counts
+              item.row.end_
+          in
+
           let grid_area =
             {
-              left =
-                columns.(Grid_track_counts.oz_line_to_next_track grid_col_counts
-                           item.column.start)
-                  .offset;
-              right =
-                columns.(Grid_track_counts.oz_line_to_next_track grid_col_counts
-                           item.column.end_)
-                  .offset;
-              top =
-                rows.(Grid_track_counts.oz_line_to_next_track grid_row_counts
-                        item.row.start)
-                  .offset;
-              bottom =
-                rows.(Grid_track_counts.oz_line_to_next_track grid_row_counts
-                        item.row.end_)
-                  .offset;
+              left = columns.((col_start_idx * 2) + 1).offset;
+              right = columns.(col_end_idx * 2).offset;
+              top = rows.((row_start_idx * 2) + 1).offset;
+              bottom = rows.(row_end_idx * 2).offset;
             }
           in
 
@@ -498,17 +542,79 @@ let compute_grid_layout (type tree)
             })
         !items;
 
-      (* Return final layout *)
-      let container_size =
-        {
-          width =
-            resolved_inner_node_size.width +. content_box_inset.left
-            +. content_box_inset.right;
-          height =
-            resolved_inner_node_size.height +. content_box_inset.top
-            +. content_box_inset.bottom;
-        }
-      in
+      (* 8. Position hidden and absolutely positioned children *)
+      List.iter
+        (fun (index, child_node, child_style) ->
+          (* Position hidden child *)
+          if child_style.display = None then (
+            Tree.set_unrounded_layout tree child_node
+              (Layout.Layout.with_order (List.length !items + index));
+            let _ =
+              Tree.compute_child_layout tree child_node
+                {
+                  run_mode = Layout.Run_mode.Perform_hidden_layout;
+                  sizing_mode = Layout.Sizing_mode.Inherent_size;
+                  axis = Layout.Requested_axis.Both;
+                  known_dimensions = Size.none;
+                  parent_size = Size.none;
+                  available_space =
+                    {
+                      width = Style.Available_space.Max_content;
+                      height = Style.Available_space.Max_content;
+                    };
+                  vertical_margins_are_collapsible = line_false;
+                }
+            in
+            ())
+          else if
+            (* Position absolutely positioned child *)
+            child_style.position = Style.Absolute
+          then
+            let grid_area =
+              {
+                top = border.top;
+                bottom =
+                  container_border_box.height -. border.bottom
+                  -. scrollbar_gutter.y;
+                left = border.left;
+                right =
+                  container_border_box.width -. border.right
+                  -. scrollbar_gutter.x;
+              }
+            in
 
-      Layout.Layout_output.of_sizes_and_baselines ~size:container_size
+            let order = Int32.of_int (List.length !items + index) in
+            let calc_fn = Tree.resolve_calc_value tree in
+            let perform_layout_fn node size parent_size available_space
+                sizing_mode margins_collapsible =
+              Tree.compute_child_layout tree node
+                {
+                  run_mode = Layout.Run_mode.Perform_layout;
+                  sizing_mode;
+                  axis = Layout.Requested_axis.Both;
+                  known_dimensions = size;
+                  parent_size;
+                  available_space;
+                  vertical_margins_are_collapsible = margins_collapsible;
+                }
+            in
+            let set_layout_fn = Tree.set_unrounded_layout tree in
+
+            let contribution, _, _ =
+              Grid_alignment.align_and_position_item ~node:child_node ~order
+                ~grid_area ~container_alignment_styles ~baseline_shim:0.0
+                ~style:child_style ~calc:calc_fn
+                ~perform_child_layout:perform_layout_fn
+                ~set_unrounded_layout:set_layout_fn
+            in
+
+            content_size :=
+              {
+                width = max !content_size.width contribution.width;
+                height = max !content_size.height contribution.height;
+              })
+        child_styles;
+
+      (* Return final layout *)
+      Layout.Layout_output.of_sizes_and_baselines ~size:container_border_box
         ~content_size:!content_size ~first_baselines:{ x = None; y = None }

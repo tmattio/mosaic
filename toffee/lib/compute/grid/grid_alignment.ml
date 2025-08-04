@@ -319,7 +319,9 @@ let align_and_position_item ~node ~order ~grid_area ~container_alignment_styles
         | Some js, _ -> js
         | None, Some js -> js
         | None, None ->
-            if match inherent_size.width with Some _ -> true | None -> false
+            if
+              (match inherent_size.width with Some _ -> true | None -> false)
+              || position = Absolute
             then Style.Alignment.Start
             else Alignment.Stretch);
       vertical =
@@ -329,7 +331,8 @@ let align_and_position_item ~node ~order ~grid_area ~container_alignment_styles
         | None, None ->
             if
               (match inherent_size.height with Some _ -> true | None -> false)
-              || match aspect_ratio with Some _ -> true | None -> false
+              || (match aspect_ratio with Some _ -> true | None -> false)
+              || position = Absolute
             then Style.Alignment.Start
             else Alignment.Stretch);
     }

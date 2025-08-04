@@ -572,76 +572,90 @@ module Tree = struct
                 node_data.final_layout <- node_data.unrounded_layout;
                 layout_output
             | Style.Grid ->
-                (* For now, implement a basic grid layout that just returns the container size *)
-                (* TODO: Implement proper grid layout using module interface instead of objects *)
-                let style = node_data.NodeData.style in
-                let size =
-                  match (style.size.width, style.size.height) with
-                  | Style.Dimension.Length w, Style.Dimension.Length h ->
-                      { Geometry.width = w; height = h }
-                  | _ ->
-                      (* Fallback size *)
-                      { Geometry.width = 0.0; height = 0.0 }
-                in
+                (* Create module adapter for grid layout *)
+                let module TreeAdapter = struct
+                  type nonrec t = ctx t
+                  type child_iter = Node_id.t list
+                  type core_container_style = Style.style
+                  type grid_container_style = Style.style
+                  type grid_item_style = Style.style
 
-                (* Layout children with absolute positioning for now *)
-                let children =
-                  match Hashtbl.find_opt t.children node_id with
-                  | Some child_array -> Array.to_list child_array
-                  | None -> []
-                in
+                  let child_ids _ node_id =
+                    match Hashtbl.find_opt t.children node_id with
+                    | Some child_array -> Array.to_list child_array
+                    | None -> []
 
-                List.iter
-                  (fun child_id ->
+                  let get_child_id _ node_id index =
+                    match Hashtbl.find_opt t.children node_id with
+                    | Some child_array ->
+                        if index < Array.length child_array then
+                          child_array.(index)
+                        else Node_id.of_int 0
+                    | None -> Node_id.of_int 0
+
+                  let child_count _ node_id =
+                    match Hashtbl.find_opt t.children node_id with
+                    | Some child_array -> Array.length child_array
+                    | None -> 0
+
+                  let resolve_calc_value _ ~ptr:_ ~basis:_ = 0.0
+
+                  let get_grid_container_style _ node_id =
+                    match Hashtbl.find_opt t.nodes node_id with
+                    | Some node_data -> node_data.NodeData.style
+                    | None -> Style.default
+
+                  let get_grid_child_style _ node_id =
+                    match Hashtbl.find_opt t.nodes node_id with
+                    | Some node_data -> node_data.NodeData.style
+                    | None -> Style.default
+
+                  let get_core_container_style _ node_id =
+                    match Hashtbl.find_opt t.nodes node_id with
+                    | Some node_data -> node_data.NodeData.style
+                    | None -> Style.default
+
+                  let set_unrounded_layout _ node_id layout =
+                    match Hashtbl.find_opt t.nodes node_id with
+                    | Some node_data -> node_data.unrounded_layout <- layout
+                    | None -> ()
+
+                  let _get_cache _ _ = None
+                  let _set_cached_measurement _ _ _ _ = ()
+
+                  let compute_child_layout _ child_id input =
                     match Hashtbl.find_opt t.nodes child_id with
                     | Some child_data ->
-                        let child_style = child_data.NodeData.style in
-                        (* Get child size *)
-                        let child_size =
-                          match
-                            (child_style.size.width, child_style.size.height)
-                          with
-                          | Style.Dimension.Length w, Style.Dimension.Length h
-                            ->
-                              { Geometry.width = w; height = h }
-                          | _ -> { Geometry.width = 20.0; height = 20.0 }
-                        in
+                        compute_node_layout child_id child_data input
+                    | None -> Layout_output.hidden
 
-                        (* Calculate position based on align_self *)
-                        let location =
-                          if child_style.position = Style.Absolute then
-                            match child_style.align_self with
-                            | Some Style.Alignment.Start ->
-                                { Geometry.x = 0.0; y = 0.0 }
-                            | Some Style.Alignment.End ->
-                                {
-                                  Geometry.x = 0.0;
-                                  y = size.height -. child_size.height;
-                                }
-                            | Some Style.Alignment.Center ->
-                                {
-                                  Geometry.x = 0.0;
-                                  y = (size.height -. child_size.height) /. 2.0;
-                                }
-                            | _ -> { Geometry.x = 0.0; y = 0.0 }
-                          else { Geometry.x = 0.0; y = 0.0 }
-                        in
+                  let _perform_child_layout _ child_id ~known_dimensions
+                      ~parent_size ~available_space ~sizing_mode
+                      ~vertical_margins_are_collapsible =
+                    let layout_input =
+                      {
+                        Layout_input.known_dimensions;
+                        parent_size;
+                        available_space;
+                        axis = Requested_axis.Both;
+                        run_mode = Run_mode.Perform_layout;
+                        sizing_mode;
+                        vertical_margins_are_collapsible;
+                      }
+                    in
+                    compute_child_layout () child_id layout_input
 
-                        let child_layout =
-                          {
-                            Layout.empty with
-                            order = 0;
-                            location;
-                            size = child_size;
-                          }
-                        in
+                  module DetailedGridInfo = struct
+                    type t = unit
+                  end
 
-                        child_data.NodeData.unrounded_layout <- child_layout;
-                        child_data.NodeData.final_layout <- child_layout
-                    | None -> ())
-                  children;
-
-                let layout_output = Layout_output.of_outer_size size in
+                  let set_detailed_grid_info _ _ _ = ()
+                end in
+                let layout_output =
+                  Grid_layout.compute_grid_layout
+                    (module TreeAdapter)
+                    t node_id input
+                in
 
                 node_data.unrounded_layout <-
                   {
