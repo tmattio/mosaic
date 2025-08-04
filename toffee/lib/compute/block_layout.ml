@@ -757,33 +757,45 @@ let perform_absolute_layout_on_absolute_children (type tree)
             let auto_margin_size =
               {
                 width =
-                  (let auto_margin_count =
-                     (if Option.is_none margin.left then 1 else 0)
-                     + if Option.is_none margin.right then 1 else 0
+                  (* Auto margins only apply when we have horizontal constraints *)
+                  (let has_horizontal_constraints = 
+                     Option.is_some left || Option.is_some right
                    in
-                   if
-                     auto_margin_count = 2
-                     && (Option.is_none style_size.width
-                        || Option.value ~default:0.0 style_size.width
-                           >= free_space.width)
-                   then 0.0
-                   else if auto_margin_count > 0 then
-                     free_space.width /. float_of_int auto_margin_count
-                   else 0.0);
+                   if not has_horizontal_constraints then 0.0
+                   else
+                     let auto_margin_count =
+                       (if Option.is_none margin.left then 1 else 0)
+                       + if Option.is_none margin.right then 1 else 0
+                     in
+                     if
+                       auto_margin_count = 2
+                       && (Option.is_none style_size.width
+                          || Option.value ~default:0.0 style_size.width
+                             >= free_space.width)
+                     then 0.0
+                     else if auto_margin_count > 0 then
+                       free_space.width /. float_of_int auto_margin_count
+                     else 0.0);
                 height =
-                  (let auto_margin_count =
-                     (if Option.is_none margin.top then 1 else 0)
-                     + if Option.is_none margin.bottom then 1 else 0
+                  (* Auto margins only apply when we have vertical constraints *)
+                  (let has_vertical_constraints = 
+                     Option.is_some top || Option.is_some bottom
                    in
-                   if
-                     auto_margin_count = 2
-                     && (Option.is_none style_size.height
-                        || Option.value ~default:0.0 style_size.height
-                           >= free_space.height)
-                   then 0.0
-                   else if auto_margin_count > 0 then
-                     free_space.height /. float_of_int auto_margin_count
-                   else 0.0);
+                   if not has_vertical_constraints then 0.0
+                   else
+                     let auto_margin_count =
+                       (if Option.is_none margin.top then 1 else 0)
+                       + if Option.is_none margin.bottom then 1 else 0
+                     in
+                     if
+                       auto_margin_count = 2
+                       && (Option.is_none style_size.height
+                          || Option.value ~default:0.0 style_size.height
+                             >= free_space.height)
+                     then 0.0
+                     else if auto_margin_count > 0 then
+                       free_space.height /. float_of_int auto_margin_count
+                     else 0.0);
               }
             in
             {
@@ -822,10 +834,11 @@ let perform_absolute_layout_on_absolute_children (type tree)
                         Some
                           (area_size.width -. final_size.width -. right_val
                          -. resolved_margin.right)
-                    | None -> None))
+                    | None -> 
+                        (* When both left and right are None (Auto), position at the left of the containing block *)
+                        Some resolved_margin.left))
                 |> Option.map (fun x -> x +. area_offset.x)
-                |> Option.value
-                     ~default:(item.static_position.x +. resolved_margin.left);
+                |> Option.get;
               y =
                 (match top with
                 | Some top_val -> Some (top_val +. resolved_margin.top)
@@ -835,10 +848,11 @@ let perform_absolute_layout_on_absolute_children (type tree)
                         Some
                           (area_size.height -. final_size.height -. bottom_val
                          -. resolved_margin.bottom)
-                    | None -> None))
+                    | None -> 
+                        (* When both top and bottom are None (Auto), position at the top of the containing block *)
+                        Some resolved_margin.top))
                 |> Option.map (fun y -> y +. area_offset.y)
-                |> Option.value
-                     ~default:(item.static_position.y +. resolved_margin.top);
+                |> Option.get;
             }
           in
 
