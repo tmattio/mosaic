@@ -2190,11 +2190,15 @@ let compute_flexbox_layout (type tree)
 
   (* The size of the container should be floored by the padding and border *)
   let styled_based_known_dimensions =
-    let base =
-      Math.size_maybe_max_option_option known_dimensions
-        (Math.size_maybe_max_option_option min_max_definite_size
-           clamped_style_size)
+    (* Implement the Rust logic: known_dimensions.or(min_max_definite_size.or(clamped_style_size).maybe_max(padding_border_sum)) *)
+    let or_size (a : float option size) (b : float option size) : float option size =
+      {
+        width = (match a.width with Some _ -> a.width | None -> b.width);
+        height = (match a.height with Some _ -> a.height | None -> b.height);
+      }
     in
+    let min_max_or_clamped = or_size min_max_definite_size clamped_style_size in
+    let base = or_size known_dimensions min_max_or_clamped in
     let result = Math.size_maybe_max_option_float base padding_border_sum in
     result
   in
