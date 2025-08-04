@@ -672,14 +672,30 @@ let perform_absolute_layout_on_absolute_children (type tree)
           in
 
           (* Expand auto margins to fill available space *)
+          (* Auto margins for absolutely positioned elements in block containers only resolve
+             if inset is set. Otherwise they resolve to 0. *)
+          let absolute_auto_margin_space =
+            {
+              x =
+                (match right with
+                | Some right_val ->
+                    area_width -. right_val -. Option.value ~default:0.0 left
+                | None -> final_size.width);
+              y =
+                (match bottom with
+                | Some bottom_val ->
+                    area_height -. bottom_val -. Option.value ~default:0.0 top
+                | None -> final_size.height);
+            }
+          in
           let free_space =
             {
               width =
-                area_width -. final_size.width -. non_auto_margin.left
-                -. non_auto_margin.right;
+                absolute_auto_margin_space.x -. final_size.width
+                -. non_auto_margin.left -. non_auto_margin.right;
               height =
-                area_height -. final_size.height -. non_auto_margin.top
-                -. non_auto_margin.bottom;
+                absolute_auto_margin_space.y -. final_size.height
+                -. non_auto_margin.top -. non_auto_margin.bottom;
             }
           in
 
@@ -687,45 +703,33 @@ let perform_absolute_layout_on_absolute_children (type tree)
             let auto_margin_size =
               {
                 width =
-                  (* Auto margins only apply when we have horizontal constraints *)
-                  (let has_horizontal_constraints =
-                     Option.is_some left || Option.is_some right
+                  (let auto_margin_count =
+                     (if Option.is_none margin.left then 1 else 0)
+                     + if Option.is_none margin.right then 1 else 0
                    in
-                   if not has_horizontal_constraints then 0.0
-                   else
-                     let auto_margin_count =
-                       (if Option.is_none margin.left then 1 else 0)
-                       + if Option.is_none margin.right then 1 else 0
-                     in
-                     if
-                       auto_margin_count = 2
-                       && (Option.is_none style_size.width
-                          || Option.value ~default:0.0 style_size.width
-                             >= free_space.width)
-                     then 0.0
-                     else if auto_margin_count > 0 then
-                       free_space.width /. float_of_int auto_margin_count
-                     else 0.0);
+                   if
+                     auto_margin_count = 2
+                     && (Option.is_none style_size.width
+                        || Option.value ~default:0.0 style_size.width
+                           >= free_space.width)
+                   then 0.0
+                   else if auto_margin_count > 0 then
+                     free_space.width /. float_of_int auto_margin_count
+                   else 0.0);
                 height =
-                  (* Auto margins only apply when we have vertical constraints *)
-                  (let has_vertical_constraints =
-                     Option.is_some top || Option.is_some bottom
+                  (let auto_margin_count =
+                     (if Option.is_none margin.top then 1 else 0)
+                     + if Option.is_none margin.bottom then 1 else 0
                    in
-                   if not has_vertical_constraints then 0.0
-                   else
-                     let auto_margin_count =
-                       (if Option.is_none margin.top then 1 else 0)
-                       + if Option.is_none margin.bottom then 1 else 0
-                     in
-                     if
-                       auto_margin_count = 2
-                       && (Option.is_none style_size.height
-                          || Option.value ~default:0.0 style_size.height
-                             >= free_space.height)
-                     then 0.0
-                     else if auto_margin_count > 0 then
-                       free_space.height /. float_of_int auto_margin_count
-                     else 0.0);
+                   if
+                     auto_margin_count = 2
+                     && (Option.is_none style_size.height
+                        || Option.value ~default:0.0 style_size.height
+                           >= free_space.height)
+                   then 0.0
+                   else if auto_margin_count > 0 then
+                     free_space.height /. float_of_int auto_margin_count
+                   else 0.0);
               }
             in
             {
@@ -886,6 +890,20 @@ let compute_block_layout (type tree)
       Resolve.resolve_or_zero_length_percentage (Style.border style)
       parent_size.width (fun _ptr basis -> basis)
   in
+  (* Scrollbar gutters are reserved when the `overflow` property is set to `Overflow::Scroll`.
+     However, the axis are switched (transposed) because a node that scrolls vertically needs
+     *horizontal* space to be reserved for a scrollbar *)
+  let scrollbar_gutter =
+    let overflow = Style.overflow style in
+    let offsets = 
+      {
+        x = (if overflow.y = Style.Scroll then Style.scrollbar_width style else 0.0);
+        y = (if overflow.x = Style.Scroll then Style.scrollbar_width style else 0.0);
+      }
+    in
+    (* TODO: make side configurable based on the `direction` property *)
+    { top = 0.0; left = 0.0; right = offsets.x; bottom = offsets.y }
+  in
   let pb_size = Rect.(padding + border) |> Rect.sum_axes in
   let box_sizing_adj =
     if Style.box_sizing style = Style.Content_box then pb_size else size_zero
@@ -1023,19 +1041,22 @@ let compute_block_layout (type tree)
             Layout.Layout_output.of_outer_size final_outer_size
           else
             (* 7. Absolute children *)
+            let absolute_position_inset = Rect.(border + scrollbar_gutter) in
+            let absolute_position_area = 
+              {
+                width = container_outer_width -. Rect.horizontal_axis_sum absolute_position_inset;
+                height = container_outer_height -. Rect.vertical_axis_sum absolute_position_inset;
+              }
+            in
             let absolute_content_size =
               perform_absolute_layout_on_absolute_children
                 (module T)
                 ~tree ~items:items_arr
-                ~area_size:
-                  {
-                    width = container_outer_width;
-                    height = container_outer_height;
-                  }
+                ~area_size:absolute_position_area
                 ~area_offset:
                   {
-                    x = padding.left +. border.left;
-                    y = padding.top +. border.top;
+                    x = absolute_position_inset.left;
+                    y = absolute_position_inset.top;
                   }
             in
             (* 8. Perform hidden layout on hidden children *)
