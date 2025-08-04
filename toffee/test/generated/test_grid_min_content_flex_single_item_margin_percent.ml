@@ -155,6 +155,8 @@ let test_grid_min_content_flex_single_item_margin_percent_border_box
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Span 2; end_ = Toffee.Style.Grid.Auto };
         margin =
           {
             left = Toffee.Style.Length_percentage_auto.Percent 0.2;
@@ -363,6 +365,8 @@ let test_grid_min_content_flex_single_item_margin_percent_content_box
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Span 2; end_ = Toffee.Style.Grid.Auto };
         margin =
           {
             left = Toffee.Style.Length_percentage_auto.Percent 0.2;

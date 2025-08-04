@@ -570,16 +570,101 @@ let compute_grid_layout (type tree)
             (* Position absolutely positioned child *)
             child_style.position = Style.Absolute
           then
+            (* Convert grid placement to origin zero coordinates *)
+            let col_placement_oz =
+              {
+                start =
+                  Placement.to_origin_zero_placement
+                    child_style.grid_column.start grid_col_counts.explicit;
+                end_ =
+                  Placement.to_origin_zero_placement
+                    child_style.grid_column.end_ grid_col_counts.explicit;
+              }
+            in
+            let row_placement_oz =
+              {
+                start =
+                  Placement.to_origin_zero_placement child_style.grid_row.start
+                    grid_row_counts.explicit;
+                end_ =
+                  Placement.to_origin_zero_placement child_style.grid_row.end_
+                    grid_row_counts.explicit;
+              }
+            in
+
+            (* Resolve absolutely positioned grid tracks *)
+            let maybe_col_indexes =
+              Placement.resolve_absolutely_positioned_grid_tracks
+                col_placement_oz
+            in
+            let maybe_row_indexes =
+              Placement.resolve_absolutely_positioned_grid_tracks
+                row_placement_oz
+            in
+
+            (* Convert to track vector indexes *)
+            let maybe_col_start_index =
+              match maybe_col_indexes.start with
+              | Some line ->
+                  let idx =
+                    Grid_track_counts.oz_line_to_next_track grid_col_counts line
+                  in
+                  if idx >= 0 && idx < Array.length columns then Some idx
+                  else None
+              | None -> None
+            in
+            let maybe_col_end_index =
+              match maybe_col_indexes.end_ with
+              | Some line ->
+                  let idx =
+                    Grid_track_counts.oz_line_to_next_track grid_col_counts line
+                  in
+                  if idx >= 0 && idx < Array.length columns then Some idx
+                  else None
+              | None -> None
+            in
+            let maybe_row_start_index =
+              match maybe_row_indexes.start with
+              | Some line ->
+                  let idx =
+                    Grid_track_counts.oz_line_to_next_track grid_row_counts line
+                  in
+                  if idx >= 0 && idx < Array.length rows then Some idx else None
+              | None -> None
+            in
+            let maybe_row_end_index =
+              match maybe_row_indexes.end_ with
+              | Some line ->
+                  let idx =
+                    Grid_track_counts.oz_line_to_next_track grid_row_counts line
+                  in
+                  if idx >= 0 && idx < Array.length rows then Some idx else None
+              | None -> None
+            in
+
+            (* Calculate grid area based on resolved positions *)
             let grid_area =
               {
-                top = border.top;
+                top =
+                  (match maybe_row_start_index with
+                  | Some idx -> rows.(idx).offset
+                  | None -> border.top);
                 bottom =
-                  container_border_box.height -. border.bottom
-                  -. scrollbar_gutter.y;
-                left = border.left;
+                  (match maybe_row_end_index with
+                  | Some idx -> rows.(idx).offset
+                  | None ->
+                      container_border_box.height -. border.bottom
+                      -. scrollbar_gutter.y);
+                left =
+                  (match maybe_col_start_index with
+                  | Some idx -> columns.(idx).offset
+                  | None -> border.left);
                 right =
-                  container_border_box.width -. border.right
-                  -. scrollbar_gutter.x;
+                  (match maybe_col_end_index with
+                  | Some idx -> columns.(idx).offset
+                  | None ->
+                      container_border_box.width -. border.right
+                      -. scrollbar_gutter.x);
               }
             in
 

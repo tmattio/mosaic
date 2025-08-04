@@ -40,12 +40,26 @@ let test_grid_span_2_max_content_auto_indefinite_hidden_border_box () =
   in
   let node0 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
+        grid_row =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
+      }
   in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
   let node1 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Line 2; end_ = Toffee.Style.Grid.Auto };
+        grid_row =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
+      }
   in
   let _ = Toffee.add_child tree node node1 |> Result.get_ok in
 
@@ -126,6 +140,10 @@ let test_grid_span_2_max_content_auto_indefinite_hidden_content_box () =
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
+        grid_row =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
         box_sizing = Toffee.Style.Content_box;
       }
   in
@@ -135,6 +153,10 @@ let test_grid_span_2_max_content_auto_indefinite_hidden_content_box () =
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Line 2; end_ = Toffee.Style.Grid.Auto };
+        grid_row =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
         box_sizing = Toffee.Style.Content_box;
       }
   in

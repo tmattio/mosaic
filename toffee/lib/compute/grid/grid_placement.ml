@@ -81,6 +81,33 @@ let is_definite line =
   | Line _, _ | _, Line _ -> true
   | _ -> false
 
+(** Resolve absolutely positioned grid tracks For absolutely positioned items:
+    - Tracks resolve to definite tracks
+    - For Spans:
+    - If the other position is a Track, they resolve to a definite track
+      relative to the other track
+    - Else resolve to None
+    - Auto resolves to None
+
+    When finally positioning the item, a value of None means that the item's
+    grid area is bounded by the grid container's border box on that side. *)
+let resolve_absolutely_positioned_grid_tracks line =
+  match (line.start, line.end_) with
+  | Line track1, Line track2 ->
+      if track1 = track2 then
+        { start = Some track1; end_ = Some (OriginZeroLine.add_int track1 1) }
+      else
+        let start_track = min track1 track2 in
+        let end_track = max track1 track2 in
+        { start = Some start_track; end_ = Some end_track }
+  | Line track, Span span ->
+      { start = Some track; end_ = Some (OriginZeroLine.add_int track span) }
+  | Line track, Auto -> { start = Some track; end_ = None }
+  | Span span, Line track ->
+      { start = Some (OriginZeroLine.sub_int track span); end_ = Some track }
+  | Auto, Line track -> { start = None; end_ = Some track }
+  | _ -> { start = None; end_ = None }
+
 (** Get axis from in_both_abs_axis *)
 let get_axis placement axis =
   match axis with

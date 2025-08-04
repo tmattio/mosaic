@@ -48,6 +48,8 @@ let test_grid_fr_span_2_proportion_zero_sum_with_non_spanned_track_border_box ()
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Span 2; end_ = Toffee.Style.Grid.Auto };
         size =
           {
             width = Toffee.Style.Dimension.length 60.0;
@@ -177,6 +179,8 @@ let test_grid_fr_span_2_proportion_zero_sum_with_non_spanned_track_content_box
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Span 2; end_ = Toffee.Style.Grid.Auto };
         size =
           {
             width = Toffee.Style.Dimension.length 60.0;

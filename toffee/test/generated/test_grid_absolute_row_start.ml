@@ -69,6 +69,8 @@ let test_grid_absolute_row_start_border_box () =
         Toffee.Style.default with
         display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
+        grid_row =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
         inset =
           {
             left = Toffee.Style.Length_percentage_auto.Length 4.0;
@@ -177,6 +179,8 @@ let test_grid_absolute_row_start_content_box () =
         Toffee.Style.default with
         display = Toffee.Style.Block;
         position = Toffee.Style.Absolute;
+        grid_row =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
         inset =
           {
             left = Toffee.Style.Length_percentage_auto.Length 4.0;

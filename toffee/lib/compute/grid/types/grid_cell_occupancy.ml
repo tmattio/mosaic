@@ -240,4 +240,3 @@ let last_of_type t track_type start_at kind =
   in
 
   Option.map (fun idx -> track_to_prev_oz_line track_counts idx) maybe_index
-

@@ -54,17 +54,34 @@ let test_grid_placement_definite_in_secondary_axis_with_fully_definite_negative_
   in
   let node0 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        grid_row =
+          { start = Toffee.Style.Grid.Line 2; end_ = Toffee.Style.Grid.Auto };
+      }
   in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
   let node1 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Line - 4; end_ = Toffee.Style.Grid.Auto };
+        grid_row =
+          { start = Toffee.Style.Grid.Line 2; end_ = Toffee.Style.Grid.Auto };
+      }
   in
   let _ = Toffee.add_child tree node node1 |> Result.get_ok in
   let node2 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        grid_row =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
+      }
   in
   let _ = Toffee.add_child tree node node2 |> Result.get_ok in
 
@@ -165,6 +182,8 @@ let test_grid_placement_definite_in_secondary_axis_with_fully_definite_negative_
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_row =
+          { start = Toffee.Style.Grid.Line 2; end_ = Toffee.Style.Grid.Auto };
         box_sizing = Toffee.Style.Content_box;
       }
   in
@@ -174,6 +193,10 @@ let test_grid_placement_definite_in_secondary_axis_with_fully_definite_negative_
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Line - 4; end_ = Toffee.Style.Grid.Auto };
+        grid_row =
+          { start = Toffee.Style.Grid.Line 2; end_ = Toffee.Style.Grid.Auto };
         box_sizing = Toffee.Style.Content_box;
       }
   in
@@ -183,6 +206,8 @@ let test_grid_placement_definite_in_secondary_axis_with_fully_definite_negative_
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_row =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
         box_sizing = Toffee.Style.Content_box;
       }
   in

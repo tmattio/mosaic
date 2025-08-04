@@ -72,16 +72,21 @@ function styleToOCaml(style, boxSizing = null) {
     fields.push(`grid_auto_flow = Toffee.Style.Grid.${flowMap[flowValue] || 'Row'}`);
   }
   
-  if (style.gridColumn) {
-    const start = gridLineToOCaml(style.gridColumn.start);
-    const end_ = gridLineToOCaml(style.gridColumn.end);
-    fields.push(`grid_column = { start = ${start}; end_ = ${end_} }`);
+  // Handle grid placement - can be specified as gridColumn/gridRow or individual properties
+  if (style.gridColumn || style.gridColumnStart || style.gridColumnEnd) {
+    const start = style.gridColumn?.start || style.gridColumnStart || { kind: 'auto' };
+    const end_ = style.gridColumn?.end || style.gridColumnEnd || { kind: 'auto' };
+    const startOCaml = gridLineToOCaml(start);
+    const endOCaml = gridLineToOCaml(end_);
+    fields.push(`grid_column = { start = ${startOCaml}; end_ = ${endOCaml} }`);
   }
   
-  if (style.gridRow) {
-    const start = gridLineToOCaml(style.gridRow.start);
-    const end_ = gridLineToOCaml(style.gridRow.end);
-    fields.push(`grid_row = { start = ${start}; end_ = ${end_} }`);
+  if (style.gridRow || style.gridRowStart || style.gridRowEnd) {
+    const start = style.gridRow?.start || style.gridRowStart || { kind: 'auto' };
+    const end_ = style.gridRow?.end || style.gridRowEnd || { kind: 'auto' };
+    const startOCaml = gridLineToOCaml(start);
+    const endOCaml = gridLineToOCaml(end_);
+    fields.push(`grid_row = { start = ${startOCaml}; end_ = ${endOCaml} }`);
   }
   
   // Flexbox properties
@@ -745,7 +750,6 @@ async function processFixture(fixturePath) {
   // Extract test data for both box models
   const testData = await page.evaluate(() => getTestData());
   const data = JSON.parse(testData);
-  
   
   await browser.close();
   

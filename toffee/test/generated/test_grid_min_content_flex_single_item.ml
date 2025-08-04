@@ -144,7 +144,12 @@ let test_grid_min_content_flex_single_item_border_box measure_function () =
   let _ = Toffee.add_child tree node node3 |> Result.get_ok in
   let node4 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Span 2; end_ = Toffee.Style.Grid.Auto };
+      }
   in
   let _ =
     Toffee.set_node_context tree node4 (MeasureFunction.Text "HH​HH")
@@ -337,6 +342,8 @@ let test_grid_min_content_flex_single_item_content_box measure_function () =
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Span 2; end_ = Toffee.Style.Grid.Auto };
         box_sizing = Toffee.Style.Content_box;
       }
   in

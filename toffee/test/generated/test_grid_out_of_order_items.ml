@@ -77,6 +77,8 @@ let test_grid_out_of_order_items_border_box () =
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
         size =
           {
             width = Toffee.Style.Dimension.length 35.0;
@@ -100,6 +102,10 @@ let test_grid_out_of_order_items_border_box () =
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
+        grid_row =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
         size =
           {
             width = Toffee.Style.Dimension.length 20.0;
@@ -118,6 +124,8 @@ let test_grid_out_of_order_items_border_box () =
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_row =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;
@@ -293,6 +301,8 @@ let test_grid_out_of_order_items_content_box () =
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
         size =
           {
             width = Toffee.Style.Dimension.length 35.0;
@@ -325,6 +335,10 @@ let test_grid_out_of_order_items_content_box () =
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
+        grid_row =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
         size =
           {
             width = Toffee.Style.Dimension.length 20.0;
@@ -348,6 +362,8 @@ let test_grid_out_of_order_items_content_box () =
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_row =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
         size =
           {
             width = Toffee.Style.Dimension.length 10.0;

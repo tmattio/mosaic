@@ -124,7 +124,12 @@ let test_grid_span_6_all_non_flex_indefinite_hidden_border_box measure_function
   in
   let node0 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Span 6 };
+      }
   in
   let _ =
     Toffee.set_node_context tree node0
@@ -294,6 +299,8 @@ let test_grid_span_6_all_non_flex_indefinite_hidden_content_box measure_function
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Span 6 };
         box_sizing = Toffee.Style.Content_box;
       }
   in

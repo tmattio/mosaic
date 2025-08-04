@@ -127,7 +127,12 @@ let test_grid_span_8_all_track_types_indefinite_border_box measure_function () =
   in
   let node0 =
     Toffee.new_leaf tree
-      { Toffee.Style.default with display = Toffee.Style.Block }
+      {
+        Toffee.Style.default with
+        display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Span 8 };
+      }
   in
   let _ =
     Toffee.set_node_context tree node0
@@ -323,6 +328,8 @@ let test_grid_span_8_all_track_types_indefinite_content_box measure_function ()
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Span 8 };
         box_sizing = Toffee.Style.Content_box;
       }
   in

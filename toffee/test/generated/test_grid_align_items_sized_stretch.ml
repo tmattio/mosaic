@@ -67,6 +67,10 @@ let test_grid_align_items_sized_stretch_border_box () =
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
+        grid_row =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
         size =
           {
             width = Toffee.Style.Dimension.length 20.0;
@@ -80,6 +84,10 @@ let test_grid_align_items_sized_stretch_border_box () =
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Line 3; end_ = Toffee.Style.Grid.Auto };
+        grid_row =
+          { start = Toffee.Style.Grid.Line 3; end_ = Toffee.Style.Grid.Auto };
         size =
           {
             width = Toffee.Style.Dimension.length 60.0;
@@ -190,6 +198,10 @@ let test_grid_align_items_sized_stretch_content_box () =
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
+        grid_row =
+          { start = Toffee.Style.Grid.Line 1; end_ = Toffee.Style.Grid.Auto };
         size =
           {
             width = Toffee.Style.Dimension.length 20.0;
@@ -204,6 +216,10 @@ let test_grid_align_items_sized_stretch_content_box () =
       {
         Toffee.Style.default with
         display = Toffee.Style.Block;
+        grid_column =
+          { start = Toffee.Style.Grid.Line 3; end_ = Toffee.Style.Grid.Auto };
+        grid_row =
+          { start = Toffee.Style.Grid.Line 3; end_ = Toffee.Style.Grid.Auto };
         size =
           {
             width = Toffee.Style.Dimension.length 60.0;
