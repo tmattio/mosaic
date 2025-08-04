@@ -31,8 +31,14 @@ let test_grid_auto_fit_definite_percentage_border_box () =
         display = Toffee.Style.Grid;
         grid_template_columns =
           [
-            Toffee.Style.Grid.Single
-              { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto };
+            Toffee.Style.Grid.Repeat
+              ( Toffee.Style.Grid.Count 1,
+                [
+                  {
+                    min = Toffee.Style.Grid.Length 150.0;
+                    max = Toffee.Style.Grid.Fr 1.0;
+                  };
+                ] );
           ];
         size =
           {
@@ -41,8 +47,8 @@ let test_grid_auto_fit_definite_percentage_border_box () =
           };
         gap =
           {
-            width = Toffee.Style.Length_percentage.Length 0.0;
-            height = Toffee.Style.Length_percentage.Length 0.0;
+            width = Toffee.Style.Length_percentage.Length 10.0;
+            height = Toffee.Style.Length_percentage.Length 10.0;
           };
         padding =
           {
@@ -202,8 +208,14 @@ let test_grid_auto_fit_definite_percentage_content_box () =
         display = Toffee.Style.Grid;
         grid_template_columns =
           [
-            Toffee.Style.Grid.Single
-              { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto };
+            Toffee.Style.Grid.Repeat
+              ( Toffee.Style.Grid.Count 1,
+                [
+                  {
+                    min = Toffee.Style.Grid.Length 150.0;
+                    max = Toffee.Style.Grid.Fr 1.0;
+                  };
+                ] );
           ];
         size =
           {
@@ -212,8 +224,8 @@ let test_grid_auto_fit_definite_percentage_content_box () =
           };
         gap =
           {
-            width = Toffee.Style.Length_percentage.Length 0.0;
-            height = Toffee.Style.Length_percentage.Length 0.0;
+            width = Toffee.Style.Length_percentage.Length 10.0;
+            height = Toffee.Style.Length_percentage.Length 10.0;
           };
         padding =
           {

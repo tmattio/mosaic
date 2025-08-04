@@ -758,7 +758,7 @@ let perform_absolute_layout_on_absolute_children (type tree)
               {
                 width =
                   (* Auto margins only apply when we have horizontal constraints *)
-                  (let has_horizontal_constraints = 
+                  (let has_horizontal_constraints =
                      Option.is_some left || Option.is_some right
                    in
                    if not has_horizontal_constraints then 0.0
@@ -778,7 +778,7 @@ let perform_absolute_layout_on_absolute_children (type tree)
                      else 0.0);
                 height =
                   (* Auto margins only apply when we have vertical constraints *)
-                  (let has_vertical_constraints = 
+                  (let has_vertical_constraints =
                      Option.is_some top || Option.is_some bottom
                    in
                    if not has_vertical_constraints then 0.0
@@ -995,12 +995,12 @@ let compute_block_layout (type tree)
     let or_size s1 s2 =
       size_zip_map s1 s2 (fun a b -> match a with Some _ -> a | None -> b)
     in
-    let base_known = known_dimensions |> or_size min_max_definite |> or_size clamped_style_size in
+    let base_known =
+      known_dimensions |> or_size min_max_definite |> or_size clamped_style_size
+    in
     (* Only apply padding_border minimum if the dimension is already known *)
     size_zip_map base_known pb_size (fun opt_val pb_val ->
-      match opt_val with
-      | Some v -> Some (Float.max v pb_val)
-      | None -> None)
+        match opt_val with Some v -> Some (Float.max v pb_val) | None -> None)
   in
   (* 2. Short‑circuit when Compute_size and dimensions known. *)
   match (run_mode, styled_based_known) with
@@ -1078,8 +1078,10 @@ let compute_block_layout (type tree)
             match styled_based_known.height with
             | Some h -> h
             | None ->
-                let clamped = Geometry.Size.maybe_clamp_value intrinsic_h min_size.height
-                  max_size.height in
+                let clamped =
+                  Geometry.Size.maybe_clamp_value intrinsic_h min_size.height
+                    max_size.height
+                in
                 Float.max clamped pb_size.height
           in
           let final_outer_size =

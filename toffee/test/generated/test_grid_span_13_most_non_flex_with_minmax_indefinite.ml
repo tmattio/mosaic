@@ -5,7 +5,10 @@ open Toffee
 
 (* Test context for nodes *)
 module MeasureFunction = struct
-  type t = Fixed of float Toffee.Geometry.size | Text of string
+  type t =
+    | Fixed of float Toffee.Geometry.size
+    | Text of string
+    | Text_vertical of string
   [@@warning "-37"]
 end
 
@@ -62,6 +65,23 @@ let measure_function ~known_dimensions ~available_space _node_id node_context
             float_of_int (count_lines 0 1 lines) *. h_height
       in
       { width = inline_size; height = block_size }
+  | Some (MeasureFunction.Text_vertical text) ->
+      (* Vertical text: height is based on text length, width is based on available space *)
+      let h_width = 10.0 in
+      let h_height = 10.0 in
+      let text_length = String.length text in
+
+      let block_size = float_of_int text_length *. h_height in
+      let inline_size =
+        match known_dimensions.Toffee.Geometry.width with
+        | Some w -> w
+        | None -> (
+            match available_space.Toffee.Geometry.width with
+            | Toffee.Style.Available_space.Min_content -> h_width
+            | Toffee.Style.Available_space.Max_content -> h_width
+            | Toffee.Style.Available_space.Definite w -> w)
+      in
+      { width = inline_size; height = block_size }
   | None -> { width = 0.0; height = 0.0 }
 
 let test_grid_span_13_most_non_flex_with_minmax_indefinite_border_box
@@ -93,7 +113,12 @@ let test_grid_span_13_most_non_flex_with_minmax_indefinite_border_box
                 max = Toffee.Style.Grid.Max_content;
               };
             Toffee.Style.Grid.Single
-              { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto };
+              {
+                min = Toffee.Style.Grid.Auto;
+                max =
+                  Toffee.Style.Grid.Fit_content
+                    (Toffee.Style.Length_percentage.Length 20.0);
+              };
             Toffee.Style.Grid.Single
               { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto };
             Toffee.Style.Grid.Single
@@ -336,7 +361,12 @@ let test_grid_span_13_most_non_flex_with_minmax_indefinite_content_box
                 max = Toffee.Style.Grid.Max_content;
               };
             Toffee.Style.Grid.Single
-              { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto };
+              {
+                min = Toffee.Style.Grid.Auto;
+                max =
+                  Toffee.Style.Grid.Fit_content
+                    (Toffee.Style.Length_percentage.Length 20.0);
+              };
             Toffee.Style.Grid.Single
               { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto };
             Toffee.Style.Grid.Single

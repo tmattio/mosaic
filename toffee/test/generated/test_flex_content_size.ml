@@ -5,7 +5,10 @@ open Toffee
 
 (* Test context for nodes *)
 module MeasureFunction = struct
-  type t = Fixed of float Toffee.Geometry.size | Text of string
+  type t =
+    | Fixed of float Toffee.Geometry.size
+    | Text of string
+    | Text_vertical of string
   [@@warning "-37"]
 end
 
@@ -62,6 +65,23 @@ let measure_function ~known_dimensions ~available_space _node_id node_context
             float_of_int (count_lines 0 1 lines) *. h_height
       in
       { width = inline_size; height = block_size }
+  | Some (MeasureFunction.Text_vertical text) ->
+      (* Vertical text: height is based on text length, width is based on available space *)
+      let h_width = 10.0 in
+      let h_height = 10.0 in
+      let text_length = String.length text in
+
+      let block_size = float_of_int text_length *. h_height in
+      let inline_size =
+        match known_dimensions.Toffee.Geometry.width with
+        | Some w -> w
+        | None -> (
+            match available_space.Toffee.Geometry.width with
+            | Toffee.Style.Available_space.Min_content -> h_width
+            | Toffee.Style.Available_space.Max_content -> h_width
+            | Toffee.Style.Available_space.Definite w -> w)
+      in
+      { width = inline_size; height = block_size }
   | None -> { width = 0.0; height = 0.0 }
 
 let test_flex_content_size_border_box measure_function () =
@@ -85,6 +105,7 @@ let test_flex_content_size_border_box measure_function () =
             width = Toffee.Style.Dimension.length 100.0;
             height = Toffee.Style.Dimension.length 100.0;
           };
+        overflow = { x = Toffee.Style.Visible; y = Toffee.Style.Scroll };
       }
   in
   let node0 =
@@ -148,6 +169,12 @@ let test_flex_content_size_border_box measure_function () =
   assert_eq ~msg:"height of node" 100.0 layout.size.height;
   assert_eq ~msg:"x of node" 0.0 layout.location.x;
   assert_eq ~msg:"y of node" 0.0 layout.location.y;
+  (* Content size assertions for scroll container *)
+  (* Note: In Toffee, scroll_width and scroll_height are functions, not fields *)
+  assert_eq ~msg:"scroll_width of node" 0.0
+    (Toffee.Layout.Layout.scroll_width layout);
+  assert_eq ~msg:"scroll_height of node" 0.0
+    (Toffee.Layout.Layout.scroll_height layout);
   let layout = Toffee.layout tree node0 in
   let layout = layout |> Result.get_ok in
   assert_eq ~msg:"width of node0" 100.0 layout.size.width;
@@ -183,6 +210,7 @@ let test_flex_content_size_content_box measure_function () =
             width = Toffee.Style.Dimension.length 100.0;
             height = Toffee.Style.Dimension.length 100.0;
           };
+        overflow = { x = Toffee.Style.Visible; y = Toffee.Style.Scroll };
         box_sizing = Toffee.Style.Content_box;
       }
   in
@@ -249,6 +277,12 @@ let test_flex_content_size_content_box measure_function () =
   assert_eq ~msg:"height of node" 100.0 layout.size.height;
   assert_eq ~msg:"x of node" 0.0 layout.location.x;
   assert_eq ~msg:"y of node" 0.0 layout.location.y;
+  (* Content size assertions for scroll container *)
+  (* Note: In Toffee, scroll_width and scroll_height are functions, not fields *)
+  assert_eq ~msg:"scroll_width of node" 0.0
+    (Toffee.Layout.Layout.scroll_width layout);
+  assert_eq ~msg:"scroll_height of node" 0.0
+    (Toffee.Layout.Layout.scroll_height layout);
   let layout = Toffee.layout tree node0 in
   let layout = layout |> Result.get_ok in
   assert_eq ~msg:"width of node0" 100.0 layout.size.width;

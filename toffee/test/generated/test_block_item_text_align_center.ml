@@ -23,6 +23,7 @@ let test_block_item_text_align_center_border_box () =
             width = Toffee.Style.Dimension.length 200.0;
             height = Toffee.Style.Dimension.length 200.0;
           };
+        text_align = Toffee.Style.Block.Legacy_center;
       }
   in
   let node0 =
@@ -116,6 +117,7 @@ let test_block_item_text_align_center_content_box () =
             width = Toffee.Style.Dimension.length 200.0;
             height = Toffee.Style.Dimension.length 200.0;
           };
+        text_align = Toffee.Style.Block.Legacy_center;
         box_sizing = Toffee.Style.Content_box;
       }
   in

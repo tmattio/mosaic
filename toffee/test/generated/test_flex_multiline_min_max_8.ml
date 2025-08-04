@@ -32,6 +32,7 @@ let test_flex_multiline_min_max_8_border_box () =
             top = Toffee.Style.Length_percentage.Length 5.0;
             bottom = Toffee.Style.Length_percentage.Length 5.0;
           };
+        box_sizing = Toffee.Style.Content_box;
       }
   in
   let node0 =

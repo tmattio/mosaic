@@ -32,6 +32,7 @@ let test_flex_multiline_min_max_14_border_box () =
             top = Toffee.Style.Length_percentage.Length 5.0;
             bottom = Toffee.Style.Length_percentage.Length 5.0;
           };
+        box_sizing = Toffee.Style.Content_box;
       }
   in
   let node0 =
@@ -211,7 +212,6 @@ let test_flex_multiline_min_max_14_content_box () =
             top = Toffee.Style.Length_percentage_auto.Auto;
             bottom = Toffee.Style.Length_percentage_auto.Auto;
           };
-        box_sizing = Toffee.Style.Content_box;
       }
   in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
@@ -227,7 +227,6 @@ let test_flex_multiline_min_max_14_content_box () =
             width = Toffee.Style.Dimension.length 100.0;
             height = Toffee.Style.Dimension.length 10.0;
           };
-        box_sizing = Toffee.Style.Content_box;
       }
   in
   let _ = Toffee.add_child tree node node1 |> Result.get_ok in
@@ -243,7 +242,6 @@ let test_flex_multiline_min_max_14_content_box () =
             width = Toffee.Style.Dimension.length 100.0;
             height = Toffee.Style.Dimension.length 10.0;
           };
-        box_sizing = Toffee.Style.Content_box;
       }
   in
   let _ = Toffee.add_child tree node node2 |> Result.get_ok in
@@ -259,7 +257,6 @@ let test_flex_multiline_min_max_14_content_box () =
             width = Toffee.Style.Dimension.length 100.0;
             height = Toffee.Style.Dimension.length 10.0;
           };
-        box_sizing = Toffee.Style.Content_box;
       }
   in
   let _ = Toffee.add_child tree node node3 |> Result.get_ok in

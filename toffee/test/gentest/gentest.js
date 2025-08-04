@@ -7,24 +7,34 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const rootDir = path.resolve(__dirname, '../..');
 const testDir = path.resolve(__dirname, '..');
 
 // Convert style object to OCaml code
-function styleToOCaml(style, boxSizing = null) {
+function styleToOCaml(style) {
   const fields = [];
-  
+
   // Only set display if explicitly specified - Taffy defaults to Flex
   if (style.display) {
     const displayMap = {
       'grid': 'Grid',
-      'flex': 'Flex', 
+      'flex': 'Flex',
       'block': 'Block',
       'none': 'None'
     };
     fields.push(`display = Toffee.Style.${displayMap[style.display] || 'Flex'}`);
   }
-  
+
+  // Direction property
+  if (style.direction) {
+    const directionMap = {
+      'rtl': 'Rtl',
+      'ltr': 'Ltr'
+    };
+    if (directionMap[style.direction]) {
+      fields.push(`direction = Toffee.Style.${directionMap[style.direction]}`);
+    }
+  }
+
   if (style.position) {
     const positionMap = {
       'relative': 'Relative',
@@ -32,28 +42,28 @@ function styleToOCaml(style, boxSizing = null) {
     };
     fields.push(`position = Toffee.Style.${positionMap[style.position] || 'Relative'}`);
   }
-  
+
   // Grid properties
   if (style.gridTemplateColumns?.length > 0) {
     const tracks = style.gridTemplateColumns.map(trackToOCaml).join('; ');
     fields.push(`grid_template_columns = [${tracks}]`);
   }
-  
+
   if (style.gridTemplateRows?.length > 0) {
     const tracks = style.gridTemplateRows.map(trackToOCaml).join('; ');
     fields.push(`grid_template_rows = [${tracks}]`);
   }
-  
+
   if (style.gridAutoRows?.length > 0) {
     const tracks = style.gridAutoRows.map(t => nonRepeatedTrackToOCaml(t)).join('; ');
     fields.push(`grid_auto_rows = [${tracks}]`);
   }
-  
+
   if (style.gridAutoColumns?.length > 0) {
     const tracks = style.gridAutoColumns.map(t => nonRepeatedTrackToOCaml(t)).join('; ');
     fields.push(`grid_auto_columns = [${tracks}]`);
   }
-  
+
   if (style.gridAutoFlow) {
     const flowMap = {
       'row': 'Row',
@@ -72,7 +82,7 @@ function styleToOCaml(style, boxSizing = null) {
     }
     fields.push(`grid_auto_flow = Toffee.Style.Grid.${flowMap[flowValue] || 'Row'}`);
   }
-  
+
   // Handle grid placement - can be specified as gridColumn/gridRow or individual properties
   if (style.gridColumn || style.gridColumnStart || style.gridColumnEnd) {
     const start = style.gridColumn?.start || style.gridColumnStart || { kind: 'auto' };
@@ -81,7 +91,7 @@ function styleToOCaml(style, boxSizing = null) {
     const endOCaml = gridLineToOCaml(end_);
     fields.push(`grid_column = { start = ${startOCaml}; end_ = ${endOCaml} }`);
   }
-  
+
   if (style.gridRow || style.gridRowStart || style.gridRowEnd) {
     const start = style.gridRow?.start || style.gridRowStart || { kind: 'auto' };
     const end_ = style.gridRow?.end || style.gridRowEnd || { kind: 'auto' };
@@ -89,7 +99,7 @@ function styleToOCaml(style, boxSizing = null) {
     const endOCaml = gridLineToOCaml(end_);
     fields.push(`grid_row = { start = ${startOCaml}; end_ = ${endOCaml} }`);
   }
-  
+
   // Flexbox properties
   if (style.flexDirection) {
     const dirMap = {
@@ -100,7 +110,7 @@ function styleToOCaml(style, boxSizing = null) {
     };
     fields.push(`flex_direction = Toffee.Style.Flex.${dirMap[style.flexDirection] || 'Row'}`);
   }
-  
+
   if (style.flexWrap) {
     const wrapMap = {
       'nowrap': 'No_wrap',
@@ -109,7 +119,7 @@ function styleToOCaml(style, boxSizing = null) {
     };
     fields.push(`flex_wrap = Toffee.Style.Flex.${wrapMap[style.flexWrap] || 'No_wrap'}`);
   }
-  
+
   if (style.alignItems) {
     const alignMap = {
       'stretch': 'Stretch',
@@ -125,7 +135,7 @@ function styleToOCaml(style, boxSizing = null) {
       fields.push(`align_items = Some (Toffee.Style.Alignment.${value})`);
     }
   }
-  
+
   if (style.alignSelf && style.alignSelf !== 'auto') {
     const alignMap = {
       'stretch': 'Stretch',
@@ -141,7 +151,7 @@ function styleToOCaml(style, boxSizing = null) {
       fields.push(`align_self = Some (Toffee.Style.Alignment.${value})`);
     }
   }
-  
+
   if (style.justifyContent) {
     const justifyMap = {
       'flex-start': 'Flex_start',
@@ -151,11 +161,12 @@ function styleToOCaml(style, boxSizing = null) {
       'space-around': 'Space_around',
       'space-evenly': 'Space_evenly',
       'start': 'Start',
-      'end': 'End'
+      'end': 'End',
+      'stretch': 'Stretch'  // Add stretch support to match Rust implementation
     };
     fields.push(`justify_content = Some (Toffee.Style.Alignment.${justifyMap[style.justifyContent] || 'Flex_start'})`);
   }
-  
+
   if (style.alignContent) {
     const alignMap = {
       'stretch': 'Stretch',
@@ -170,7 +181,7 @@ function styleToOCaml(style, boxSizing = null) {
     };
     fields.push(`align_content = Some (Toffee.Style.Alignment.${alignMap[style.alignContent] || 'Stretch'})`);
   }
-  
+
   if (style.justifyItems) {
     const justifyMap = {
       'stretch': 'Stretch',
@@ -183,7 +194,7 @@ function styleToOCaml(style, boxSizing = null) {
     };
     fields.push(`justify_items = Some (Toffee.Style.Alignment.${justifyMap[style.justifyItems] || 'Stretch'})`);
   }
-  
+
   if (style.justifySelf && style.justifySelf !== 'auto') {
     const justifyMap = {
       'stretch': 'Stretch',
@@ -199,85 +210,118 @@ function styleToOCaml(style, boxSizing = null) {
       fields.push(`justify_self = Some (Toffee.Style.Alignment.${value})`);
     }
   }
-  
+
   if (style.flexGrow !== undefined) {
     // Ensure flex_grow is a float
     const floatValue = String(style.flexGrow).includes('.') ? style.flexGrow : `${style.flexGrow}.0`;
     fields.push(`flex_grow = ${floatValue}`);
   }
-  
+
   if (style.flexShrink !== undefined) {
     // Ensure flex_shrink is a float
     const floatValue = String(style.flexShrink).includes('.') ? style.flexShrink : `${style.flexShrink}.0`;
     fields.push(`flex_shrink = ${floatValue}`);
   }
-  
+
   if (style.flexBasis) {
     fields.push(`flex_basis = ${dimensionToOCaml(style.flexBasis)}`);
   }
-  
+
   // Size properties
   if (style.size) {
     const size = sizeToOCaml(style.size);
     if (size) fields.push(`size = ${size}`);
   }
-  
+
   if (style.minSize) {
     const minSize = sizeToOCaml(style.minSize);
     if (minSize) fields.push(`min_size = ${minSize}`);
   }
-  
+
   if (style.maxSize) {
     const maxSize = sizeToOCaml(style.maxSize);
     if (maxSize) fields.push(`max_size = ${maxSize}`);
   }
-  
+
   if (style.aspectRatio !== undefined) {
     // Ensure aspect ratio is a float
     const floatValue = String(style.aspectRatio).includes('.') ? style.aspectRatio : `${style.aspectRatio}.0`;
     fields.push(`aspect_ratio = Some ${floatValue}`);
   }
-  
+
   // Gap
   if (style.gap) {
     const gap = gapToOCaml(style.gap);
     if (gap) fields.push(`gap = ${gap}`);
   }
-  
+
   // Margin/Padding/Border
   if (style.margin) {
     const margin = rectToOCaml(style.margin, true);  // margin uses Length_percentage_auto
     if (margin) fields.push(`margin = ${margin}`);
   }
-  
+
   if (style.padding) {
     const padding = rectToOCaml(style.padding, false);  // padding uses Length_percentage
     if (padding) fields.push(`padding = ${padding}`);
   }
-  
+
   if (style.border) {
     const border = rectToOCaml(style.border, false);  // border uses Length_percentage
     if (border) fields.push(`border = ${border}`);
   }
-  
+
   // Positioning (inset)
   if (style.inset) {
     const inset = rectToOCaml(style.inset, true);  // inset uses Length_percentage_auto
     if (inset) fields.push(`inset = ${inset}`);
   }
-  
-  // Box sizing - only set if explicitly requested and different from default
-  if (boxSizing === 'border_box') {
-    // For border-box test, only set if style is explicitly content-box (not default)
-    if (style.boxSizing === 'content-box') {
-      // Don't set box_sizing for border-box test - it defaults to BorderBox
+
+  // Overflow properties
+  let hasNonVisibleOverflow = false;
+  if (style.overflowX || style.overflowY) {
+    const overflowMap = {
+      'visible': 'Visible',
+      'hidden': 'Hidden',
+      'scroll': 'Scroll',
+      'auto': 'Auto'  // 'auto' should map to Auto, not Scroll
+    };
+
+    const x = style.overflowX ? (overflowMap[style.overflowX] || 'Visible') : 'Visible';
+    const y = style.overflowY ? (overflowMap[style.overflowY] || 'Visible') : 'Visible';
+
+    if (x !== 'Visible' || y !== 'Visible') {
+      hasNonVisibleOverflow = true;
+      fields.push(`overflow = { x = Toffee.Style.${x}; y = Toffee.Style.${y} }`);
     }
-  } else if (boxSizing === 'content_box') {
-    // For content-box test, always set to ContentBox
+  }
+
+  // Scrollbar width - only emit if at least one overflow axis is not visible (matches Rust behavior)
+  if (hasNonVisibleOverflow && style.scrollbar_width !== undefined) {
+    const floatValue = String(style.scrollbar_width).includes('.') ? style.scrollbar_width : `${style.scrollbar_width}.0`;
+    fields.push(`scrollbar_width = ${floatValue}`);
+  }
+
+  // Text align
+  if (style.textAlign) {
+    const textAlignMap = {
+      '-webkit-left': 'Legacy_left',
+      '-webkit-right': 'Legacy_right',
+      '-webkit-center': 'Legacy_center'
+    };
+    if (textAlignMap[style.textAlign]) {
+      fields.push(`text_align = Toffee.Style.Block.${textAlignMap[style.textAlign]}`);
+    }
+  }
+
+  // Box sizing - only set if style explicitly specifies content-box
+  // This matches the Rust logic which only generates box_sizing for content-box
+  if (style.boxSizing === 'content-box') {
     fields.push(`box_sizing = Toffee.Style.Content_box`);
   }
-  
-  return fields.length > 0 
+  // Border-box is the default in Taffy, so we don't need to set it explicitly
+
+  return fields.length > 0
     ? `{ Toffee.Style.default with ${fields.join('; ')} }`
     : 'Toffee.Style.default';
 }
@@ -288,41 +332,84 @@ function nonRepeatedTrackToOCaml(track) {
   if (track.kind === 'scalar') {
     switch (track.unit) {
       case 'fraction':
-      case 'fr': 
-        // Fr can only be max, min is auto
+      case 'fr':
+        // For scalar fr tracks, min must be Auto (Fr only valid for max in Toffee)
         const frVal = String(track.value).includes('.') ? track.value : `${track.value}.0`;
         return `{ min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Fr (${frVal}) }`;
-      case 'px': 
-      case 'points': 
+      case 'px':
+      case 'points':
         // Length for both min and max - ensure float value
         const floatVal = String(track.value).includes('.') ? track.value : `${track.value}.0`;
         return `{ min = Toffee.Style.Grid.Length (${floatVal}); max = Toffee.Style.Grid.Length (${floatVal}) }`;
-      case 'percent': 
+      case 'percent':
         // Percent for both min and max - ensure float value
         const percentVal = String(track.value).includes('.') ? track.value : `${track.value}.0`;
         return `{ min = Toffee.Style.Grid.Percent (${percentVal}); max = Toffee.Style.Grid.Percent (${percentVal}) }`;
-      case 'auto': 
+      case 'auto':
         return `{ min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto }`;
-      case 'min-content': 
+      case 'min-content':
         return `{ min = Toffee.Style.Grid.Min_content; max = Toffee.Style.Grid.Min_content }`;
-      case 'max-content': 
+      case 'max-content':
         return `{ min = Toffee.Style.Grid.Max_content; max = Toffee.Style.Grid.Max_content }`;
-      default: 
+      default:
         return `{ min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto }`;
     }
   } else if (track.kind === 'function') {
-    // Handle minmax() and other track sizing functions
+    // Handle minmax() and fit-content() track sizing functions
     if (track.name === 'minmax' && track.arguments?.length === 2) {
       const min = trackMinToOCaml(track.arguments[0]);
       const max = trackMaxToOCaml(track.arguments[1]);
       return `{ min = ${min}; max = ${max} }`;
+    } else if (track.name === 'fit-content' && track.arguments?.length === 1) {
+      // fit-content(limit) expects a Length_percentage.t, not a Grid type
+      const arg = track.arguments[0];
+      let limitValue;
+      
+      if (arg.unit === 'px' || arg.unit === 'points') {
+        const floatVal = String(arg.value).includes('.') ? arg.value : `${arg.value}.0`;
+        limitValue = `Toffee.Style.Length_percentage.Length (${floatVal})`;
+      } else if (arg.unit === 'percent') {
+        const percentVal = String(arg.value).includes('.') ? arg.value : `${arg.value}.0`;
+        limitValue = `Toffee.Style.Length_percentage.Percent (${percentVal})`;
+      } else {
+        limitValue = `Toffee.Style.Length_percentage.Length (0.0)`;
+      }
+      
+      return `{ min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Fit_content (${limitValue}) }`;
     }
   }
   return `{ min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto }`;
 }
 
 function trackToOCaml(track) {
-  // For grid_template_*, we need to wrap with Single constructor
+  // Handle repeat() function for grid templates
+  if (track.kind === 'function' && track.name === 'repeat' && track.arguments?.length >= 2) {
+    const repetitionArg = track.arguments[0];
+    let repetition;
+
+    if (repetitionArg.kind === 'keyword') {
+      switch (repetitionArg.value) {
+        case 'auto-fill':
+          repetition = 'Toffee.Style.Grid.Auto_fill';
+          break;
+        case 'auto-fit':
+          repetition = 'Toffee.Style.Grid.Auto_fit';
+          break;
+        default:
+          repetition = 'Toffee.Style.Grid.Count 1';
+      }
+    } else if (repetitionArg.kind === 'integer') {
+      repetition = `Toffee.Style.Grid.Count ${repetitionArg.value}`;
+    } else {
+      repetition = 'Toffee.Style.Grid.Count 1';
+    }
+
+    // Process the track list (all arguments after the repetition)
+    const tracks = track.arguments.slice(1).map(t => nonRepeatedTrackToOCaml(t)).join('; ');
+    return `Toffee.Style.Grid.Repeat (${repetition}, [${tracks}])`;
+  }
+
+  // For non-repeat tracks, wrap with Single constructor
   const nonRepeated = nonRepeatedTrackToOCaml(track);
   return `Toffee.Style.Grid.Single ${nonRepeated}`;
 }
@@ -333,7 +420,7 @@ function trackMinToOCaml(track) {
     const strVal = String(val);
     return strVal.includes('.') ? strVal : `${strVal}.0`;
   };
-  
+
   if (track.unit === 'px' || track.unit === 'points') return `Toffee.Style.Grid.Length (${floatValue(track.value)})`;
   if (track.unit === 'percent') {
     const percentVal = String(track.value).includes('.') ? track.value : `${track.value}.0`;
@@ -342,6 +429,9 @@ function trackMinToOCaml(track) {
   if (track.unit === 'auto') return 'Toffee.Style.Grid.Auto';
   if (track.unit === 'min-content') return 'Toffee.Style.Grid.Min_content';
   if (track.unit === 'max-content') return 'Toffee.Style.Grid.Max_content';
+  // Fr units are not valid for min track sizing functions in CSS Grid spec
+  // But Rust implementation maps them to Auto for compatibility
+  if (track.unit === 'fr' || track.unit === 'fraction') return 'Toffee.Style.Grid.Auto';
   return 'Toffee.Style.Grid.Auto';
 }
 
@@ -351,7 +441,7 @@ function trackMaxToOCaml(track) {
     const strVal = String(val);
     return strVal.includes('.') ? strVal : `${strVal}.0`;
   };
-  
+
   if (track.unit === 'fr' || track.unit === 'fraction') {
     const frVal = String(track.value).includes('.') ? track.value : `${track.value}.0`;
     return `Toffee.Style.Grid.Fr (${frVal})`;
@@ -379,18 +469,18 @@ function gridLineToOCaml(line) {
 
 function dimensionToOCaml(dim) {
   if (!dim) return 'Toffee.Style.Dimension.auto';
-  
+
   // Helper to ensure value is a float
   const floatValue = (val) => {
     // Check if the value is already a float (has decimal point)
     const strVal = String(val);
     return strVal.includes('.') ? strVal : `${strVal}.0`;
   };
-  
+
   switch (dim.unit) {
     case 'px': return `Toffee.Style.Dimension.length ${floatValue(dim.value)}`;
     case 'points': return `Toffee.Style.Dimension.length ${floatValue(dim.value)}`;
-    case 'percent': 
+    case 'percent':
       // Ensure percent values are floats
       const percentVal = String(dim.value).includes('.') ? dim.value : `${dim.value}.0`;
       return `Toffee.Style.Dimension.percent ${percentVal}`;
@@ -408,16 +498,16 @@ function sizeToOCaml(size) {
 
 function gapToOCaml(gap) {
   if (!gap) return null;
-  
+
   const convertGapValue = (value) => {
     if (!value) return 'Toffee.Style.Length_percentage.Length (0.0)';
-    
+
     // Helper to ensure value is a float
     const floatValue = (val) => {
       const strVal = String(val);
       return strVal.includes('.') ? strVal : `${strVal}.0`;
     };
-    
+
     switch (value.unit) {
       case 'px':
       case 'points':
@@ -430,34 +520,35 @@ function gapToOCaml(gap) {
         return 'Toffee.Style.Length_percentage.Length (0.0)';
     }
   };
-  
-  const width = gap.width ? convertGapValue(gap.width) : 'Toffee.Style.Length_percentage.Length (0.0)';
-  const height = gap.height ? convertGapValue(gap.height) : 'Toffee.Style.Length_percentage.Length (0.0)';
+
+  // Use column/row keys as in the Rust version, but output as width/height
+  const width = gap.column ? convertGapValue(gap.column) : 'Toffee.Style.Length_percentage.Length (0.0)';
+  const height = gap.row ? convertGapValue(gap.row) : 'Toffee.Style.Length_percentage.Length (0.0)';
   return `{ width = ${width}; height = ${height} }`;
 }
 
 function rectToOCaml(rect, isMarginOrInset = false) {
   if (!rect) return null;
-  
+
   // Helper to convert a single edge value
   const convertEdge = (edge) => {
     if (!edge) {
       // For margin/inset, missing values should be Auto, not 0
-      return isMarginOrInset 
+      return isMarginOrInset
         ? 'Toffee.Style.Length_percentage_auto.Auto'
         : 'Toffee.Style.Length_percentage.Length (0.0)';
     }
-    
-    const prefix = isMarginOrInset 
-      ? 'Toffee.Style.Length_percentage_auto' 
+
+    const prefix = isMarginOrInset
+      ? 'Toffee.Style.Length_percentage_auto'
       : 'Toffee.Style.Length_percentage';
-    
+
     // Helper to ensure value is a float
     const floatValue = (val) => {
       const strVal = String(val);
       return strVal.includes('.') ? strVal : `${strVal}.0`;
     };
-    
+
     switch (edge.unit) {
       case 'px':
       case 'points':
@@ -472,49 +563,59 @@ function rectToOCaml(rect, isMarginOrInset = false) {
       case 'auto':
         return isMarginOrInset ? `${prefix}.Auto` : `${prefix}.Length (0.0)`;
       default:
-        return isMarginOrInset 
+        return isMarginOrInset
           ? `${prefix}.Length (0.0)`
           : `${prefix}.Length (0.0)`;
     }
   };
-  
+
   const left = convertEdge(rect.left);
   const right = convertEdge(rect.right);
   const top = convertEdge(rect.top);
   const bottom = convertEdge(rect.bottom);
-  
+
   return `{ left = ${left}; right = ${right}; top = ${top}; bottom = ${bottom} }`;
 }
 
 function availableSpaceToOCaml(space) {
   if (!space) return 'Toffee.Style.Available_space.Max_content';
-  
+
   // Helper to ensure value is a float
   const floatValue = (val) => {
     const strVal = String(val);
     return strVal.includes('.') ? strVal : `${strVal}.0`;
   };
-  
+
   switch (space.unit) {
     case 'points': return `Toffee.Style.Available_space.Definite ${floatValue(space.value)}`;
-    case 'min-content': return 'Toffee.Style.Available_space.Min_content';
+    // Match Rust behavior: min-content maps to MaxContent (likely a Taffy test suite simplification)
+    case 'min-content': return 'Toffee.Style.Available_space.Max_content';
     case 'max-content': return 'Toffee.Style.Available_space.Max_content';
     default: return 'Toffee.Style.Available_space.Max_content';
   }
 }
 
-function generateNode(nodeVar, node, parentVar, boxSizing) {
-  const style = styleToOCaml(node.style, boxSizing);
+function generateNode(nodeVar, node, _parentVar) {
+  const style = styleToOCaml(node.style);
   const textContent = node.textContent;
-  
+  const writingMode = node.style?.writingMode;
+  // Note: aspect_ratio is read in Rust but not used in TestNodeContext
+
   let nodeCreation = `let ${nodeVar} = Toffee.new_leaf tree (${style}) in`;
-  
-  if (textContent) {
-    // Set context for text nodes - pass the actual text content
+
+  // Only attach text context on true leaf nodes (nodes without children) - matches Rust behavior
+  const isLeafNode = !node.children || node.children.length === 0;
+  if (textContent && isLeafNode) {
+    // Set context for text nodes - pass the actual text content and writing mode
+    // Note: The Rust version reads aspect_ratio but doesn't use it in the context
+    // We match this behavior for test parity
     const escapedText = textContent.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    nodeCreation += `\n  let _ = Toffee.set_node_context tree ${nodeVar} (MeasureFunction.Text "${escapedText}") |> Result.get_ok in`;
+    // Determine if vertical writing mode
+    const isVertical = writingMode === 'vertical-rl' || writingMode === 'vertical-lr';
+    const contextType = isVertical ? 'Text_vertical' : 'Text';
+    nodeCreation += `\n  let _ = Toffee.set_node_context tree ${nodeVar} (MeasureFunction.${contextType} "${escapedText}") |> Result.get_ok in`;
   }
-  
+
   return nodeCreation;
 }
 
@@ -524,7 +625,12 @@ function generateAssertions(nodeVar, node, useRounding) {
   const height = layout.height;
   const x = layout.x;
   const y = layout.y;
-  
+
+  // Check if this is a scroll container
+  const isScrollContainer =
+    (node.style?.overflowX && node.style.overflowX !== 'visible') ||
+    (node.style?.overflowY && node.style.overflowY !== 'visible');
+
   // Handle negative values by wrapping in parentheses
   const formatFloat = (val) => {
     const strVal = String(val);
@@ -532,7 +638,7 @@ function generateAssertions(nodeVar, node, useRounding) {
     // If it's negative and doesn't have parentheses, add them
     return floatVal.startsWith('-') ? `(${floatVal})` : floatVal;
   };
-  
+
   let assertions = `
   let layout = Toffee.layout tree ${nodeVar} in
   let layout = layout |> Result.get_ok in
@@ -540,14 +646,29 @@ function generateAssertions(nodeVar, node, useRounding) {
   assert_eq ~msg:"height of ${nodeVar}" ${formatFloat(height)} layout.size.height;
   assert_eq ~msg:"x of ${nodeVar}" ${formatFloat(x)} layout.location.x;
   assert_eq ~msg:"y of ${nodeVar}" ${formatFloat(y)} layout.location.y;`;
-  
+
+  // Add scroll content size assertions for scroll containers
+  if (isScrollContainer && layout.scrollWidth !== undefined && layout.scrollHeight !== undefined) {
+    // Calculate scroll dimensions like the Rust version does
+    // Use naivelyRoundedLayout for client dimensions to match Rust implementation
+    const naiveLayout = node.naivelyRoundedLayout || layout;
+    const scrollWidth = Math.max(0, (layout.scrollWidth || 0) - (naiveLayout.clientWidth || naiveLayout.width));
+    const scrollHeight = Math.max(0, (layout.scrollHeight || 0) - (naiveLayout.clientHeight || naiveLayout.height));
+    
+    assertions += `
+  (* Content size assertions for scroll container *)
+  (* Note: In Toffee, scroll_width and scroll_height are functions, not fields *)
+  assert_eq ~msg:"scroll_width of ${nodeVar}" ${formatFloat(scrollWidth)} (Toffee.Layout.Layout.scroll_width layout);
+  assert_eq ~msg:"scroll_height of ${nodeVar}" ${formatFloat(scrollHeight)} (Toffee.Layout.Layout.scroll_height layout);`;
+  }
+
   return assertions;
 }
 
 function generateTest(name, testData, boxSizing, category = '') {
   const data = testData;
   const useRounding = data.useRounding !== false;
-  
+
   // Check if we have any text nodes
   let hasTextNodes = false;
   function checkForTextNodes(node) {
@@ -559,48 +680,48 @@ function generateTest(name, testData, boxSizing, category = '') {
     }
   }
   checkForTextNodes(data);
-  
+
   // Generate node creation and tree building
   const nodes = [];
   const assertions = [];
   let nodeCounter = 0;
-  
+
   function processNode(node, parentVar) {
     const nodeVar = parentVar ? `node${nodeCounter++}` : 'node';
-    nodes.push(generateNode(nodeVar, node, parentVar, boxSizing));
-    
+    nodes.push(generateNode(nodeVar, node, parentVar));
+
     if (parentVar) {
       nodes.push(`let _ = Toffee.add_child tree ${parentVar} ${nodeVar} |> Result.get_ok in`);
     }
-    
+
     // Generate assertions for this node
     assertions.push(generateAssertions(nodeVar, node, useRounding));
-    
+
     // Process children
     if (node.children) {
       node.children.forEach(child => processNode(child, nodeVar));
     }
   }
-  
+
   processNode(data, null);
-  
+
   // Get available space from viewport
   const viewport = data.viewport || { width: { unit: 'max-content' }, height: { unit: 'max-content' } };
   const availableSpace = `{
     width = ${availableSpaceToOCaml(viewport.width)};
     height = ${availableSpaceToOCaml(viewport.height)};
   }`;
-  
+
   // Generate test function - note we need measure_function parameter if hasTextNodes
   const measureParam = hasTextNodes ? ' measure_function' : '';
   const functionPrefix = category ? `${category}_` : '';
-  
+
   return `
 let test_${functionPrefix}${name}_${boxSizing}${measureParam} () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
-    check (float 0.001) msg expected actual
+    check (float ${useRounding ? `0.001` : `0.1`}) msg expected actual
   in
   
   let tree = Toffee.create () in
@@ -610,10 +731,10 @@ let test_${functionPrefix}${name}_${boxSizing}${measureParam} () =
   ${nodes.join('\n  ')}
   
   (* Compute layout *)
-  ${hasTextNodes 
-    ? `let _ = Toffee.compute_layout_with_measure tree node ${availableSpace} measure_function |> Result.get_ok in`
-    : `let _ = Toffee.compute_layout tree node ${availableSpace} |> Result.get_ok in`
-  }
+  ${hasTextNodes
+      ? `let _ = Toffee.compute_layout_with_measure tree node ${availableSpace} measure_function |> Result.get_ok in`
+      : `let _ = Toffee.compute_layout tree node ${availableSpace} |> Result.get_ok in`
+    }
   
   (* Print tree for debugging *)
   Printf.printf "\\nComputed tree:\\n";
@@ -672,6 +793,24 @@ let measure_function ~known_dimensions ~available_space _node_id node_context _s
             float_of_int (count_lines 0 1 lines) *. h_height
       in
       { width = inline_size; height = block_size }
+  | Some (MeasureFunction.Text_vertical text) ->
+      (* Vertical text: height is based on text length, width is based on available space *)
+      let h_width = 10.0 in
+      let h_height = 10.0 in
+      let text_length = String.length text in
+      
+      let block_size = float_of_int text_length *. h_height in
+      let inline_size = 
+        match known_dimensions.Toffee.Geometry.width with
+        | Some w -> w
+        | None -> (
+            match available_space.Toffee.Geometry.width with
+            | Toffee.Style.Available_space.Min_content -> h_width
+            | Toffee.Style.Available_space.Max_content -> h_width
+            | Toffee.Style.Available_space.Definite w -> w
+        )
+      in
+      { width = inline_size; height = block_size }
   | None -> { width = 0.0; height = 0.0 }
 `;
 }
@@ -680,9 +819,9 @@ async function processFixture(fixturePath) {
   const name = path.basename(fixturePath, '.html')
     .replace(/-/g, '_')
     .replace(/\./g, '_');
-  
+
   console.log(`Processing ${name}...`);
-  
+
   const browser = await chromium.launch({
     args: [
       '--force-device-scale-factor=1',
@@ -690,44 +829,32 @@ async function processFixture(fixturePath) {
     ]
   });
   const page = await browser.newPage();
-  
+
   // Set consistent viewport and device scale
   await page.setViewportSize({ width: 1024, height: 768 });
-  
+
   // Force device scale factor
   await page.evaluate(() => {
     window.devicePixelRatio = 1;
   });
-  
+
   // Add a route to intercept CSS requests and serve from correct location
   await page.route('**/scripts/gentest/test_base_style.css', route => {
     const cssPath = path.join(__dirname, 'test_base_style.css');
     route.fulfill({ path: cssPath });
   });
-  
+
   // Add a route to intercept test_helper.js requests  
   await page.route('**/scripts/gentest/test_helper.js', route => {
     const jsPath = path.join(__dirname, 'test_helper.js');
     route.fulfill({ path: jsPath });
   });
-  
+
   // Load the fixture
   await page.goto(`file://${fixturePath}`);
-  
-  // Reset any CSS zoom or transforms
-  await page.addStyleTag({
-    content: `
-      * {
-        zoom: 1 !important;
-        transform: none !important;
-      }
-      body {
-        zoom: 1 !important;
-        transform: none !important;
-      }
-    `
-  });
-  
+
+  // Don't reset CSS zoom or transforms - match Rust version behavior
+
   // Verify scrollbar settings
   const scrollbarWidth = await page.evaluate(() => {
     const el = document.createElement("div");
@@ -737,23 +864,35 @@ async function processFixture(fixturePath) {
     el.remove();
     return width;
   });
-  
+
   if (scrollbarWidth > 0) {
-    console.warn(`Warning: Scrollbars are taking up ${scrollbarWidth}px. Tests may be inaccurate.`);
-    console.warn('On macOS, set "Show scrollbars" to "When scrolling" in System Preferences > Appearance');
+    console.error(`ERROR: Scrollbars are taking up ${scrollbarWidth}px. Tests will be inaccurate.`);
+    console.error('On macOS, set "Show scrollbars" to "When scrolling" in System Preferences > Appearance');
+    console.error('On Linux, configure your window manager to use overlay scrollbars');
+    console.error('On Windows, this may require system-level configuration');
+    await browser.close();
+    process.exit(1);
   }
-  
+
   // Inject test helper
   const testHelperPath = path.join(__dirname, 'test_helper.js');
   const testHelper = await fs.readFile(testHelperPath, 'utf-8');
   await page.addScriptTag({ content: testHelper });
-  
+
   // Extract test data for both box models
-  const testData = await page.evaluate(() => getTestData());
+  const testData = await page.evaluate(() => {
+    // getTestData is defined in the injected test_helper.js
+    // @ts-ignore - getTestData is injected from test_helper.js
+    if (typeof window.getTestData === 'function') {
+      // @ts-ignore
+      return window.getTestData();
+    }
+    throw new Error('getTestData function not found. Make sure test_helper.js is loaded correctly.');
+  });
   const data = JSON.parse(testData);
-  
+
   await browser.close();
-  
+
   // If the data doesn't have separate box model data, use the same data for both
   if (data.borderBoxData && data.contentBoxData) {
     return { name, borderBoxData: data.borderBoxData, contentBoxData: data.contentBoxData };
@@ -771,30 +910,30 @@ async function main() {
     const fixturePath = path.resolve(args[0]);
     try {
       const { name, borderBoxData, contentBoxData } = await processFixture(fixturePath);
-      
+
       // Validate the test data
       if (!borderBoxData || !contentBoxData) {
         throw new Error(`Invalid test data: missing borderBoxData or contentBoxData for ${fixturePath}`);
       }
-      
+
       // Generate both border-box and content-box tests
       const borderBoxTest = generateTest(name, borderBoxData, 'border_box');
       const contentBoxTest = generateTest(name, contentBoxData, 'content_box');
-      
+
       if (!borderBoxTest || !contentBoxTest) {
         throw new Error(`Failed to generate test functions for ${fixturePath}`);
       }
-    
-    // Check if we have any text nodes
-    let hasTextNodes = false;
-    function checkForTextNodes(node) {
-      if (node.textContent) hasTextNodes = true;
-      if (node.children) node.children.forEach(checkForTextNodes);
-    }
-    checkForTextNodes(borderBoxData);
-    checkForTextNodes(contentBoxData);
-    
-    const testModule = `
+
+      // Check if we have any text nodes
+      let hasTextNodes = false;
+      function checkForTextNodes(node) {
+        if (node.textContent) hasTextNodes = true;
+        if (node.children) node.children.forEach(checkForTextNodes);
+      }
+      checkForTextNodes(borderBoxData);
+      checkForTextNodes(contentBoxData);
+
+      const testModule = `
 (* Generated test for ${name} *)
 (* Do not edit this file directly. It is generated by gentest.js *)
 
@@ -805,6 +944,7 @@ module MeasureFunction = struct
   type t = 
     | Fixed of float Toffee.Geometry.size
     | Text of string
+    | Text_vertical of string
   [@@warning "-37"]
 end
 
@@ -823,12 +963,12 @@ let tests =
     test_case "${name} (content-box)" \`Quick ${hasTextNodes ? '(fun () -> test_' + name.replace(/-/g, '_') + '_content_box measure_function ())' : 'test_' + name.replace(/-/g, '_') + '_content_box'};
   ]
 `;
-    
-    const outputName = `test_${name.replace(/-/g, '_')}.ml`;
-    const outputPath = path.join(testDir, 'generated', outputName);
-    await fs.mkdir(path.dirname(outputPath), { recursive: true });
-    await fs.writeFile(outputPath, testModule);
-    
+
+      const outputName = `test_${name.replace(/-/g, '_')}.ml`;
+      const outputPath = path.join(testDir, 'generated', outputName);
+      await fs.mkdir(path.dirname(outputPath), { recursive: true });
+      await fs.writeFile(outputPath, testModule);
+
       console.log(`Generated ${outputPath}`);
     } catch (err) {
       console.error(`ERROR processing ${fixturePath}:`, err.message);
@@ -837,53 +977,53 @@ let tests =
     }
     return;
   }
-  
+
   // Original behavior: process all fixtures
   const fixturesDir = path.join(testDir, 'fixtures');
   const categories = ['grid', 'flex', 'block'];
-  
+
   // Create generated directory
   const generatedDir = path.join(testDir, 'generated');
   await fs.mkdir(generatedDir, { recursive: true });
-  
+
   for (const category of categories) {
     const categoryDir = path.join(fixturesDir, category);
-    
+
     try {
       const files = await fs.readdir(categoryDir);
       const htmlFiles = files.filter(f => f.endsWith('.html') && !f.startsWith('x'));
-      
+
       if (htmlFiles.length === 0) continue;
-      
+
       console.log(`\nProcessing ${category} category with ${htmlFiles.length} fixtures...`);
-      
+
       // Track test cases for this category
       const categoryTestCases = [];
-      
+
       // Process each fixture individually
       for (const file of htmlFiles) {
         const fixturePath = path.join(categoryDir, file);
         console.log(`  Processing ${file}...`);
-        
+
         try {
           const { name, borderBoxData, contentBoxData } = await processFixture(fixturePath);
-          
+
           // Validate the test data
           if (!borderBoxData || !contentBoxData) {
             throw new Error(`Invalid test data: missing borderBoxData or contentBoxData for ${file}`);
           }
-          
+
           // Remove category prefix from name if it's already there
           const cleanName = name.startsWith(`${category}_`) ? name.substring(category.length + 1) : name;
-          
+
           // Generate both border-box and content-box tests
           const borderBoxTest = generateTest(cleanName, borderBoxData, 'border_box', category);
           const contentBoxTest = generateTest(cleanName, contentBoxData, 'content_box', category);
-          
+
           if (!borderBoxTest || !contentBoxTest) {
             throw new Error(`Failed to generate test functions for ${file}`);
           }
-          
+
           // Check if we have any text nodes to determine if we need measure functions
           let hasTextNodes = false;
           function checkForTextNodes(node) {
@@ -892,7 +1032,7 @@ let tests =
           }
           checkForTextNodes(borderBoxData);
           checkForTextNodes(contentBoxData);
-          
+
           // Write individual test file without test runner
           const testModuleName = `test_${category}_${cleanName.replace(/-/g, '_')}`;
           const testName = cleanName.replace(/-/g, '_').replace(/\./g, '_');
@@ -907,6 +1047,7 @@ module MeasureFunction = struct
   type t = 
     | Fixed of float Toffee.Geometry.size
     | Text of string
+    | Text_vertical of string
   [@@warning "-37"]
 end
 
@@ -925,17 +1066,17 @@ let tests =
     test_case "${testName} (content-box)" \`Quick ${hasTextNodes ? '(fun () -> test_' + category + '_' + testName + '_content_box measure_function ())' : 'test_' + category + '_' + testName + '_content_box'};
   ]
 `;
-          
+
           const outputPath = path.join(generatedDir, `${testModuleName}.ml`);
           await fs.writeFile(outputPath, testModule);
           console.log(`    Generated ${testModuleName}.ml`);
-          
+
           // Track for summary
           categoryTestCases.push({
             name: testName,
             file: `${testModuleName}.ml`
           });
-          
+
         } catch (err) {
           console.error(`    ERROR processing ${file}:`, err.message);
           console.error(err.stack);
@@ -943,35 +1084,35 @@ let tests =
           process.exit(1);
         }
       }
-      
+
       // Print summary for this category
       if (categoryTestCases.length > 0) {
         console.log(`  Generated ${categoryTestCases.length} test files for ${category}`);
       }
-      
+
     } catch (err) {
       if (err.code !== 'ENOENT') {
         console.error(`Error processing ${category}:`, err);
       }
     }
   }
-  
+
   // Generate test runner and dune file
   console.log('\nGenerating test runner and dune file...');
-  
+
   try {
     const generatedFiles = await fs.readdir(generatedDir);
     const testFiles = generatedFiles
       .filter(f => f.endsWith('.ml') && f.startsWith('test_') && f !== 'test_runner.ml')
       .map(f => f.replace('.ml', ''))
       .sort();
-    
+
     if (testFiles.length > 0) {
       // Group test files by category
       const gridTests = testFiles.filter(f => f.startsWith('test_grid_'));
       const flexTests = testFiles.filter(f => f.startsWith('test_flex_'));
       const blockTests = testFiles.filter(f => f.startsWith('test_block_'));
-      
+
       // Generate test_runner.ml that aggregates all tests grouped by category
       const testRunnerContent = `(* Generated test runner that aggregates all tests *)
 (* Do not edit this file directly. It is generated by gentest.js *)
@@ -982,27 +1123,27 @@ open Alcotest
 let grid_tests =
   List.concat [
 ${gridTests.map(f => {
-  const moduleName = f.charAt(0).toUpperCase() + f.slice(1);
-  return `    ${moduleName}.tests;`;
-}).join('\n')}
+        const moduleName = f.charAt(0).toUpperCase() + f.slice(1);
+        return `    ${moduleName}.tests;`;
+      }).join('\n')}
   ]
 
 (* Flex tests *)
 let flex_tests =
   List.concat [
 ${flexTests.map(f => {
-  const moduleName = f.charAt(0).toUpperCase() + f.slice(1);
-  return `    ${moduleName}.tests;`;
-}).join('\n')}
+        const moduleName = f.charAt(0).toUpperCase() + f.slice(1);
+        return `    ${moduleName}.tests;`;
+      }).join('\n')}
   ]
 
 (* Block tests *)
 let block_tests =
   List.concat [
 ${blockTests.map(f => {
-  const moduleName = f.charAt(0).toUpperCase() + f.slice(1);
-  return `    ${moduleName}.tests;`;
-}).join('\n')}
+        const moduleName = f.charAt(0).toUpperCase() + f.slice(1);
+        return `    ${moduleName}.tests;`;
+      }).join('\n')}
   ]
 
 (* Run all tests grouped by category *)
@@ -1013,24 +1154,24 @@ let () =
     "block", block_tests;
   ]
 `;
-      
+
       await fs.writeFile(path.join(generatedDir, 'test_runner.ml'), testRunnerContent);
       console.log('Generated test_runner.ml');
-      
+
       // Generate dune file
       const duneContent = `(test
  (name test_runner)
  (libraries toffee alcotest)
  (modules ${testFiles.join(' ')} test_runner))
 `;
-      
+
       await fs.writeFile(path.join(generatedDir, 'dune'), duneContent);
       console.log(`Generated dune file with ${testFiles.length} test modules`);
     }
   } catch (err) {
     console.error('Error generating test runner and dune file:', err);
   }
-  
+
   console.log('\nTest generation complete!');
 }
 

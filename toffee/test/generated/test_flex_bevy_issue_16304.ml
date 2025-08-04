@@ -44,8 +44,8 @@ let test_flex_bevy_issue_16304_border_box () =
           };
         gap =
           {
-            width = Toffee.Style.Length_percentage.Length 0.0;
-            height = Toffee.Style.Length_percentage.Length 0.0;
+            width = Toffee.Style.Length_percentage.Length 10.0;
+            height = Toffee.Style.Length_percentage.Length 10.0;
           };
       }
   in
@@ -169,8 +169,8 @@ let test_flex_bevy_issue_16304_content_box () =
           };
         gap =
           {
-            width = Toffee.Style.Length_percentage.Length 0.0;
-            height = Toffee.Style.Length_percentage.Length 0.0;
+            width = Toffee.Style.Length_percentage.Length 10.0;
+            height = Toffee.Style.Length_percentage.Length 10.0;
           };
         box_sizing = Toffee.Style.Content_box;
       }

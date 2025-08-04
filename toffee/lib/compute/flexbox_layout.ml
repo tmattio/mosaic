@@ -486,7 +486,6 @@ let determine_flex_base_size (type tree)
               (main_size dir child.size)
       in
 
-
       child.flex_basis <-
         (match flex_basis with
         | Some basis -> basis
@@ -600,7 +599,6 @@ let determine_flex_base_size (type tree)
       let sized = set_main_size dir child.size main_val in
       child.hypothetical_inner_size <-
         size_map sized (Option.value ~default:0.0);
-
 
       child.hypothetical_outer_size <-
         size_add child.hypothetical_inner_size
@@ -881,7 +879,7 @@ let resolve_flexible_lengths (line : 'a flex_line) (constants : algo_constants)
                     violation_occurred := true;
                     child.frozen <- true)))
               line.items
-          else (
+          else
             (* No flex factors - just check min/max violations *)
             List.iter
               (fun child ->
@@ -912,7 +910,7 @@ let resolve_flexible_lengths (line : 'a flex_line) (constants : algo_constants)
                         +. main_axis_sum constants.dir child.margin);
                   (* Always freeze when no flex factors *)
                   child.frozen <- true))
-              line.items);
+              line.items;
 
           (* If violations occurred, loop again; otherwise freeze remaining *)
           if !violation_occurred then flex_loop ()
@@ -1646,19 +1644,22 @@ let perform_absolute_layout_on_absolute_children (type tree)
         match aspect_ratio with
         | None -> clamped
         | Some ratio -> (
-            match (clamped.width, clamped.height, unclamped.width, unclamped.height) with
+            match
+              (clamped.width, clamped.height, unclamped.width, unclamped.height)
+            with
             (* If height was clamped by max/min, recalculate width *)
-            | (_, Some h, Some _, Some orig_h) when h <> orig_h ->
+            | _, Some h, Some _, Some orig_h when h <> orig_h ->
                 { clamped with width = Some (h *. ratio) }
             (* If width was clamped by max/min, recalculate height *)
-            | (Some w, _, Some orig_w, Some _) when w <> orig_w ->
+            | Some w, _, Some orig_w, Some _ when w <> orig_w ->
                 { clamped with height = Some (w /. ratio) }
             | _ -> clamped)
       in
       let final_size =
         {
           width = Option.value ~default:measured_size.width final_clamped.width;
-          height = Option.value ~default:measured_size.height final_clamped.height;
+          height =
+            Option.value ~default:measured_size.height final_clamped.height;
         }
       in
 
@@ -1673,12 +1674,15 @@ let perform_absolute_layout_on_absolute_children (type tree)
       in
       let free_space =
         {
-          width = constants.container_size.width -. final_size.width 
-                  -. non_auto_margin.left -. non_auto_margin.right;
-          height = constants.container_size.height -. final_size.height
-                   -. non_auto_margin.top -. non_auto_margin.bottom;
+          width =
+            constants.container_size.width -. final_size.width
+            -. non_auto_margin.left -. non_auto_margin.right;
+          height =
+            constants.container_size.height -. final_size.height
+            -. non_auto_margin.top -. non_auto_margin.bottom;
         }
-        |> fun s -> { width = Float.max 0.0 s.width; height = Float.max 0.0 s.height }
+        |> fun s ->
+        { width = Float.max 0.0 s.width; height = Float.max 0.0 s.height }
       in
 
       let auto_margin_counts =
@@ -1722,24 +1726,19 @@ let perform_absolute_layout_on_absolute_children (type tree)
             | Some left, _ ->
                 constants.border.left +. left +. resolved_margin.left
             | None, Some right ->
-                constants.container_size.width
-                -. constants.border.right
-                -. constants.scrollbar_gutter.x
-                -. final_size.width
-                -. right -. resolved_margin.right
+                constants.container_size.width -. constants.border.right
+                -. constants.scrollbar_gutter.x -. final_size.width -. right
+                -. resolved_margin.right
             | None, None ->
                 (* Apply alignment when no inset - matches Rust flexbox.rs line 2210+ *)
                 constants.content_box_inset.left +. resolved_margin.left);
           y =
             (match (inset.top, inset.bottom) with
-            | Some top, _ ->
-                constants.border.top +. top +. resolved_margin.top
+            | Some top, _ -> constants.border.top +. top +. resolved_margin.top
             | None, Some bottom ->
-                constants.container_size.height
-                -. constants.border.bottom
-                -. constants.scrollbar_gutter.y
-                -. final_size.height
-                -. bottom -. resolved_margin.bottom
+                constants.container_size.height -. constants.border.bottom
+                -. constants.scrollbar_gutter.y -. final_size.height -. bottom
+                -. resolved_margin.bottom
             | None, None ->
                 (* Apply alignment when no inset - matches Rust flexbox.rs line 2254+ *)
                 constants.content_box_inset.top +. resolved_margin.top);
@@ -2177,7 +2176,8 @@ let compute_flexbox_layout (type tree)
   (* The size of the container should be floored by the padding and border *)
   let styled_based_known_dimensions =
     (* Implement the Rust logic: known_dimensions.or(min_max_definite_size.or(clamped_style_size).maybe_max(padding_border_sum)) *)
-    let or_size (a : float option size) (b : float option size) : float option size =
+    let or_size (a : float option size) (b : float option size) :
+        float option size =
       {
         width = (match a.width with Some _ -> a.width | None -> b.width);
         height = (match a.height with Some _ -> a.height | None -> b.height);
@@ -2201,9 +2201,9 @@ let compute_flexbox_layout (type tree)
           (module Tree)
           tree node
           { inputs with known_dimensions = styled_based_known_dimensions }
-  else (
+  else
     (* Delegate to compute_preliminary for full layout *)
     compute_preliminary
       (module Tree)
       tree node
-      { inputs with known_dimensions = styled_based_known_dimensions })
+      { inputs with known_dimensions = styled_based_known_dimensions }

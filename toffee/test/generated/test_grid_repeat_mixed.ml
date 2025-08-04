@@ -25,10 +25,22 @@ let test_grid_repeat_mixed_border_box () =
                 min = Toffee.Style.Grid.Length 40.0;
                 max = Toffee.Style.Grid.Length 40.0;
               };
-            Toffee.Style.Grid.Single
-              { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto };
-            Toffee.Style.Grid.Single
-              { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto };
+            Toffee.Style.Grid.Repeat
+              ( Toffee.Style.Grid.Count 1,
+                [
+                  {
+                    min = Toffee.Style.Grid.Length 40.0;
+                    max = Toffee.Style.Grid.Length 40.0;
+                  };
+                ] );
+            Toffee.Style.Grid.Repeat
+              ( Toffee.Style.Grid.Count 1,
+                [
+                  {
+                    min = Toffee.Style.Grid.Length 40.0;
+                    max = Toffee.Style.Grid.Length 40.0;
+                  };
+                ] );
           ];
         grid_template_rows =
           [
@@ -37,10 +49,22 @@ let test_grid_repeat_mixed_border_box () =
                 min = Toffee.Style.Grid.Length 40.0;
                 max = Toffee.Style.Grid.Length 40.0;
               };
-            Toffee.Style.Grid.Single
-              { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto };
-            Toffee.Style.Grid.Single
-              { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto };
+            Toffee.Style.Grid.Repeat
+              ( Toffee.Style.Grid.Count 1,
+                [
+                  {
+                    min = Toffee.Style.Grid.Length 40.0;
+                    max = Toffee.Style.Grid.Length 40.0;
+                  };
+                ] );
+            Toffee.Style.Grid.Repeat
+              ( Toffee.Style.Grid.Count 1,
+                [
+                  {
+                    min = Toffee.Style.Grid.Length 40.0;
+                    max = Toffee.Style.Grid.Length 40.0;
+                  };
+                ] );
           ];
         size =
           {
@@ -168,10 +192,22 @@ let test_grid_repeat_mixed_content_box () =
                 min = Toffee.Style.Grid.Length 40.0;
                 max = Toffee.Style.Grid.Length 40.0;
               };
-            Toffee.Style.Grid.Single
-              { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto };
-            Toffee.Style.Grid.Single
-              { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto };
+            Toffee.Style.Grid.Repeat
+              ( Toffee.Style.Grid.Count 1,
+                [
+                  {
+                    min = Toffee.Style.Grid.Length 40.0;
+                    max = Toffee.Style.Grid.Length 40.0;
+                  };
+                ] );
+            Toffee.Style.Grid.Repeat
+              ( Toffee.Style.Grid.Count 1,
+                [
+                  {
+                    min = Toffee.Style.Grid.Length 40.0;
+                    max = Toffee.Style.Grid.Length 40.0;
+                  };
+                ] );
           ];
         grid_template_rows =
           [
@@ -180,10 +216,22 @@ let test_grid_repeat_mixed_content_box () =
                 min = Toffee.Style.Grid.Length 40.0;
                 max = Toffee.Style.Grid.Length 40.0;
               };
-            Toffee.Style.Grid.Single
-              { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto };
-            Toffee.Style.Grid.Single
-              { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto };
+            Toffee.Style.Grid.Repeat
+              ( Toffee.Style.Grid.Count 1,
+                [
+                  {
+                    min = Toffee.Style.Grid.Length 40.0;
+                    max = Toffee.Style.Grid.Length 40.0;
+                  };
+                ] );
+            Toffee.Style.Grid.Repeat
+              ( Toffee.Style.Grid.Count 1,
+                [
+                  {
+                    min = Toffee.Style.Grid.Length 40.0;
+                    max = Toffee.Style.Grid.Length 40.0;
+                  };
+                ] );
           ];
         size =
           {

@@ -26,7 +26,7 @@ let test_flex_gap_row_gap_column_child_margins_border_box () =
         gap =
           {
             width = Toffee.Style.Length_percentage.Length 0.0;
-            height = Toffee.Style.Length_percentage.Length 0.0;
+            height = Toffee.Style.Length_percentage.Length 10.0;
           };
       }
   in
@@ -147,7 +147,7 @@ let test_flex_gap_row_gap_column_child_margins_content_box () =
         gap =
           {
             width = Toffee.Style.Length_percentage.Length 0.0;
-            height = Toffee.Style.Length_percentage.Length 0.0;
+            height = Toffee.Style.Length_percentage.Length 10.0;
           };
         box_sizing = Toffee.Style.Content_box;
       }

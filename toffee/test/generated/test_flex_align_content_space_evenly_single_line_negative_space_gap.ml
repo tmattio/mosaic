@@ -49,8 +49,8 @@ let test_flex_align_content_space_evenly_single_line_negative_space_gap_border_b
           };
         gap =
           {
-            width = Toffee.Style.Length_percentage.Length 0.0;
-            height = Toffee.Style.Length_percentage.Length 0.0;
+            width = Toffee.Style.Length_percentage.Length 10.0;
+            height = Toffee.Style.Length_percentage.Length 10.0;
           };
       }
   in
@@ -152,8 +152,8 @@ let test_flex_align_content_space_evenly_single_line_negative_space_gap_content_
           };
         gap =
           {
-            width = Toffee.Style.Length_percentage.Length 0.0;
-            height = Toffee.Style.Length_percentage.Length 0.0;
+            width = Toffee.Style.Length_percentage.Length 10.0;
+            height = Toffee.Style.Length_percentage.Length 10.0;
           };
         box_sizing = Toffee.Style.Content_box;
       }

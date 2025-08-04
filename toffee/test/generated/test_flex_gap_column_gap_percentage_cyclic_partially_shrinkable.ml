@@ -21,7 +21,7 @@ let test_flex_gap_column_gap_percentage_cyclic_partially_shrinkable_border_box
         flex_direction = Toffee.Style.Flex.Row;
         gap =
           {
-            width = Toffee.Style.Length_percentage.Length 0.0;
+            width = Toffee.Style.Length_percentage.Percent 0.5;
             height = Toffee.Style.Length_percentage.Length 0.0;
           };
       }
@@ -125,7 +125,7 @@ let test_flex_gap_column_gap_percentage_cyclic_partially_shrinkable_content_box
         flex_direction = Toffee.Style.Flex.Row;
         gap =
           {
-            width = Toffee.Style.Length_percentage.Length 0.0;
+            width = Toffee.Style.Length_percentage.Percent 0.5;
             height = Toffee.Style.Length_percentage.Length 0.0;
           };
         box_sizing = Toffee.Style.Content_box;

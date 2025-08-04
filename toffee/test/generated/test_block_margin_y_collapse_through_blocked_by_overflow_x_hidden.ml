@@ -58,6 +58,7 @@ let test_block_margin_y_collapse_through_blocked_by_overflow_x_hidden_border_box
             top = Toffee.Style.Length_percentage_auto.Length 10.0;
             bottom = Toffee.Style.Length_percentage_auto.Length 10.0;
           };
+        overflow = { x = Toffee.Style.Hidden; y = Toffee.Style.Visible };
       }
   in
   let _ = Toffee.add_child tree node node1 |> Result.get_ok in
@@ -116,6 +117,12 @@ let test_block_margin_y_collapse_through_blocked_by_overflow_x_hidden_border_box
   assert_eq ~msg:"height of node1" 0.0 layout.size.height;
   assert_eq ~msg:"x of node1" 0.0 layout.location.x;
   assert_eq ~msg:"y of node1" 20.0 layout.location.y;
+  (* Content size assertions for scroll container *)
+  (* Note: In Toffee, scroll_width and scroll_height are functions, not fields *)
+  assert_eq ~msg:"scroll_width of node1" 0.0
+    (Toffee.Layout.Layout.scroll_width layout);
+  assert_eq ~msg:"scroll_height of node1" 0.0
+    (Toffee.Layout.Layout.scroll_height layout);
   let layout = Toffee.layout tree node2 in
   let layout = layout |> Result.get_ok in
   assert_eq ~msg:"width of node2" 50.0 layout.size.width;
@@ -181,6 +188,7 @@ let test_block_margin_y_collapse_through_blocked_by_overflow_x_hidden_content_bo
             top = Toffee.Style.Length_percentage_auto.Length 10.0;
             bottom = Toffee.Style.Length_percentage_auto.Length 10.0;
           };
+        overflow = { x = Toffee.Style.Hidden; y = Toffee.Style.Visible };
         box_sizing = Toffee.Style.Content_box;
       }
   in
@@ -241,6 +249,12 @@ let test_block_margin_y_collapse_through_blocked_by_overflow_x_hidden_content_bo
   assert_eq ~msg:"height of node1" 0.0 layout.size.height;
   assert_eq ~msg:"x of node1" 0.0 layout.location.x;
   assert_eq ~msg:"y of node1" 20.0 layout.location.y;
+  (* Content size assertions for scroll container *)
+  (* Note: In Toffee, scroll_width and scroll_height are functions, not fields *)
+  assert_eq ~msg:"scroll_width of node1" 0.0
+    (Toffee.Layout.Layout.scroll_width layout);
+  assert_eq ~msg:"scroll_height of node1" 0.0
+    (Toffee.Layout.Layout.scroll_height layout);
   let layout = Toffee.layout tree node2 in
   let layout = layout |> Result.get_ok in
   assert_eq ~msg:"width of node2" 50.0 layout.size.width;

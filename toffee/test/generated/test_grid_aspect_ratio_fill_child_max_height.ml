@@ -5,7 +5,10 @@ open Toffee
 
 (* Test context for nodes *)
 module MeasureFunction = struct
-  type t = Fixed of float Toffee.Geometry.size | Text of string
+  type t =
+    | Fixed of float Toffee.Geometry.size
+    | Text of string
+    | Text_vertical of string
   [@@warning "-37"]
 end
 
@@ -62,6 +65,23 @@ let measure_function ~known_dimensions ~available_space _node_id node_context
             float_of_int (count_lines 0 1 lines) *. h_height
       in
       { width = inline_size; height = block_size }
+  | Some (MeasureFunction.Text_vertical text) ->
+      (* Vertical text: height is based on text length, width is based on available space *)
+      let h_width = 10.0 in
+      let h_height = 10.0 in
+      let text_length = String.length text in
+
+      let block_size = float_of_int text_length *. h_height in
+      let inline_size =
+        match known_dimensions.Toffee.Geometry.width with
+        | Some w -> w
+        | None -> (
+            match available_space.Toffee.Geometry.width with
+            | Toffee.Style.Available_space.Min_content -> h_width
+            | Toffee.Style.Available_space.Max_content -> h_width
+            | Toffee.Style.Available_space.Definite w -> w)
+      in
+      { width = inline_size; height = block_size }
   | None -> { width = 0.0; height = 0.0 }
 
 let test_grid_aspect_ratio_fill_child_max_height_border_box measure_function ()
@@ -101,7 +121,7 @@ let test_grid_aspect_ratio_fill_child_max_height_border_box measure_function ()
   in
   let _ =
     Toffee.set_node_context tree node0
-      (MeasureFunction.Text "HH​HH​HH​HH​HH​HH")
+      (MeasureFunction.Text_vertical "HH​HH​HH​HH​HH​HH")
     |> Result.get_ok
   in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in
@@ -176,7 +196,7 @@ let test_grid_aspect_ratio_fill_child_max_height_content_box measure_function ()
   in
   let _ =
     Toffee.set_node_context tree node0
-      (MeasureFunction.Text "HH​HH​HH​HH​HH​HH")
+      (MeasureFunction.Text_vertical "HH​HH​HH​HH​HH​HH")
     |> Result.get_ok
   in
   let _ = Toffee.add_child tree node node0 |> Result.get_ok in

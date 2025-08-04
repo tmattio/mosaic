@@ -7,7 +7,7 @@ let test_flex_percentage_moderate_complexity_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
-    check (float 0.001) msg expected actual
+    check (float 0.1) msg expected actual
   in
 
   let tree = Toffee.create () in
@@ -129,7 +129,7 @@ let test_flex_percentage_moderate_complexity_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
-    check (float 0.001) msg expected actual
+    check (float 0.1) msg expected actual
   in
 
   let tree = Toffee.create () in

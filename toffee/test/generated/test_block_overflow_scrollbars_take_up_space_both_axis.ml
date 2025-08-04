@@ -23,6 +23,7 @@ let test_block_overflow_scrollbars_take_up_space_both_axis_border_box () =
             width = Toffee.Style.Dimension.length 50.0;
             height = Toffee.Style.Dimension.length 50.0;
           };
+        overflow = { x = Toffee.Style.Scroll; y = Toffee.Style.Scroll };
       }
   in
   let node0 =
@@ -63,6 +64,12 @@ let test_block_overflow_scrollbars_take_up_space_both_axis_border_box () =
   assert_eq ~msg:"height of node" 50.0 layout.size.height;
   assert_eq ~msg:"x of node" 0.0 layout.location.x;
   assert_eq ~msg:"y of node" 0.0 layout.location.y;
+  (* Content size assertions for scroll container *)
+  (* Note: In Toffee, scroll_width and scroll_height are functions, not fields *)
+  assert_eq ~msg:"scroll_width of node" 0.0
+    (Toffee.Layout.Layout.scroll_width layout);
+  assert_eq ~msg:"scroll_height of node" 0.0
+    (Toffee.Layout.Layout.scroll_height layout);
   let layout = Toffee.layout tree node0 in
   let layout = layout |> Result.get_ok in
   assert_eq ~msg:"width of node0" 50.0 layout.size.width;
@@ -91,6 +98,7 @@ let test_block_overflow_scrollbars_take_up_space_both_axis_content_box () =
             width = Toffee.Style.Dimension.length 50.0;
             height = Toffee.Style.Dimension.length 50.0;
           };
+        overflow = { x = Toffee.Style.Scroll; y = Toffee.Style.Scroll };
         box_sizing = Toffee.Style.Content_box;
       }
   in
@@ -133,6 +141,12 @@ let test_block_overflow_scrollbars_take_up_space_both_axis_content_box () =
   assert_eq ~msg:"height of node" 50.0 layout.size.height;
   assert_eq ~msg:"x of node" 0.0 layout.location.x;
   assert_eq ~msg:"y of node" 0.0 layout.location.y;
+  (* Content size assertions for scroll container *)
+  (* Note: In Toffee, scroll_width and scroll_height are functions, not fields *)
+  assert_eq ~msg:"scroll_width of node" 0.0
+    (Toffee.Layout.Layout.scroll_width layout);
+  assert_eq ~msg:"scroll_height of node" 0.0
+    (Toffee.Layout.Layout.scroll_height layout);
   let layout = Toffee.layout tree node0 in
   let layout = layout |> Result.get_ok in
   assert_eq ~msg:"width of node0" 50.0 layout.size.width;

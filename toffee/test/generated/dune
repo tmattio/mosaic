@@ -1,7 +1,7 @@
 (test
  (name test_runner)
  (libraries toffee alcotest)
- (modules
+ (modules test_absolute_layout_no_size
   test_block_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset
   test_block_absolute_aspect_ratio_fill_height
   test_block_absolute_aspect_ratio_fill_height_from_inset
@@ -178,6 +178,7 @@
   test_block_padding_fixed_size test_block_padding_intrinsic_size
   test_block_padding_percentage_fixed_size
   test_block_padding_percentage_intrinsic_size
+  test_blockgrid_block_in_grid_fr
   test_flex_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset
   test_flex_absolute_aspect_ratio_fill_height
   test_flex_absolute_aspect_ratio_fill_height_from_inset
@@ -842,4 +843,5 @@
   test_grid_span_6_all_non_flex_indefinite
   test_grid_span_6_all_non_flex_indefinite_hidden
   test_grid_span_8_all_track_types_indefinite test_grid_taffy_issue_624
-  test_runner))
+  test_justify_content_min_width_with_padding_child_width_lower_than_parent
+  test_leaf_overflow_scrollbars_take_up_space_y_axis test_runner))

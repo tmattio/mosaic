@@ -20,8 +20,14 @@ let test_grid_auto_fill_with_empty_auto_track_border_box () =
         display = Toffee.Style.Grid;
         grid_template_columns =
           [
-            Toffee.Style.Grid.Single
-              { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto };
+            Toffee.Style.Grid.Repeat
+              ( Toffee.Style.Grid.Count 1,
+                [
+                  {
+                    min = Toffee.Style.Grid.Length 40.0;
+                    max = Toffee.Style.Grid.Length 40.0;
+                  };
+                ] );
           ];
         grid_template_rows =
           [
@@ -107,8 +113,14 @@ let test_grid_auto_fill_with_empty_auto_track_content_box () =
         display = Toffee.Style.Grid;
         grid_template_columns =
           [
-            Toffee.Style.Grid.Single
-              { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto };
+            Toffee.Style.Grid.Repeat
+              ( Toffee.Style.Grid.Count 1,
+                [
+                  {
+                    min = Toffee.Style.Grid.Length 40.0;
+                    max = Toffee.Style.Grid.Length 40.0;
+                  };
+                ] );
           ];
         grid_template_rows =
           [
