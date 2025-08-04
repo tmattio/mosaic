@@ -241,26 +241,3 @@ let last_of_type t track_type start_at kind =
 
   Option.map (fun idx -> track_to_prev_oz_line track_counts idx) maybe_index
 
-(** Debug representation that shows the matrix in a compact 2d text format *)
-let to_string t =
-  let buffer = Buffer.create 256 in
-  Printf.bprintf buffer "Rows: neg_implicit=%d explicit=%d pos_implicit=%d\n"
-    t.rows.negative_implicit t.rows.explicit t.rows.positive_implicit;
-  Printf.bprintf buffer "Cols: neg_implicit=%d explicit=%d pos_implicit=%d\n"
-    t.columns.negative_implicit t.columns.explicit t.columns.positive_implicit;
-  Buffer.add_string buffer "State:\n";
-
-  for row_idx = 0 to rows t - 1 do
-    for col_idx = 0 to cols t - 1 do
-      let letter =
-        match t.inner.(row_idx).(col_idx) with
-        | Unoccupied -> '_'
-        | DefinitelyPlaced -> 'D'
-        | AutoPlaced -> 'A'
-      in
-      Buffer.add_char buffer letter
-    done;
-    Buffer.add_char buffer '\n'
-  done;
-
-  Buffer.contents buffer

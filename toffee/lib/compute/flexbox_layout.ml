@@ -486,21 +486,6 @@ let determine_flex_base_size (type tree)
               (main_size dir child.size)
       in
 
-      (* Debug output *)
-      Printf.printf
-        "determine_flex_base_size: dir=%s, child.size=(w=%s, h=%s), \
-         main_size=%s, flex_basis=%s\n"
-        (match dir with
-        | Row -> "Row"
-        | Row_reverse -> "Row_reverse"
-        | Column -> "Column"
-        | Column_reverse -> "Column_reverse")
-        (Option.fold ~none:"None" ~some:(Printf.sprintf "%.1f") child.size.width)
-        (Option.fold ~none:"None" ~some:(Printf.sprintf "%.1f")
-           child.size.height)
-        (Option.fold ~none:"None" ~some:(Printf.sprintf "%.1f")
-           (main_size dir child.size))
-        (Option.fold ~none:"None" ~some:(Printf.sprintf "%.1f") flex_basis);
 
       child.flex_basis <-
         (match flex_basis with
@@ -616,14 +601,6 @@ let determine_flex_base_size (type tree)
       child.hypothetical_inner_size <-
         size_map sized (Option.value ~default:0.0);
 
-      (* Debug output *)
-      Printf.printf
-        "hypothetical_inner_size: inner_flex_basis=%.1f, sized=(w=%s, h=%s), \
-         hypothetical=(w=%.1f, h=%.1f)\n"
-        child.inner_flex_basis
-        (Option.fold ~none:"None" ~some:(Printf.sprintf "%.1f") sized.width)
-        (Option.fold ~none:"None" ~some:(Printf.sprintf "%.1f") sized.height)
-        child.hypothetical_inner_size.width child.hypothetical_inner_size.height;
 
       child.hypothetical_outer_size <-
         size_add child.hypothetical_inner_size
@@ -740,9 +717,6 @@ let determine_container_main_size
           (main_size !constants.dir !constants.max_size)
   in
 
-  Printf.printf
-    "determine_container_main_size: setting container main size to %.1f\n"
-    outer_main_size;
   constants :=
     {
       !constants with
@@ -756,8 +730,6 @@ let determine_container_main_size
 (** Resolve flexible lengths *)
 let resolve_flexible_lengths (line : 'a flex_line) (constants : algo_constants)
     : unit =
-  Printf.printf "resolve_flexible_lengths: %d items in line\n"
-    (List.length line.items);
   let total_main_axis_gap =
     sum_axis_gaps
       (main_size constants.dir constants.gap)
@@ -781,16 +753,10 @@ let resolve_flexible_lengths (line : 'a flex_line) (constants : algo_constants)
   let growing = used_flex_factor < container_main_size in
   let shrinking = used_flex_factor > container_main_size in
   let exactly_sized = (not growing) && not shrinking in
-  Printf.printf
-    "Flex resolution: used_flex_factor=%.1f, container_main_size=%.1f, \
-     growing=%b\n"
-    used_flex_factor container_main_size growing;
 
   (* 2. Size inflexible items *)
   List.iter
     (fun child ->
-      Printf.printf "Child: flex_grow=%.1f, flex_shrink=%.1f\n" child.flex_grow
-        child.flex_shrink;
       let inner_target_size =
         main_size constants.dir child.hypothetical_inner_size
       in
@@ -810,9 +776,6 @@ let resolve_flexible_lengths (line : 'a flex_line) (constants : algo_constants)
            && child.flex_basis
               < main_size constants.dir child.hypothetical_inner_size
       then (
-        Printf.printf
-          "Freezing child: exactly_sized=%b, grow=%.1f, shrink=%.1f, growing=%b\n"
-          exactly_sized child.flex_grow child.flex_shrink growing;
         child.frozen <- true;
         let outer_target_size =
           inner_target_size +. main_axis_sum constants.dir child.margin
@@ -877,9 +840,6 @@ let resolve_flexible_lengths (line : 'a flex_line) (constants : algo_constants)
           let violation_occurred = ref false in
 
           (* Only distribute space if there are flex factors to work with *)
-          Printf.printf
-            "Flex distribution: growing=%b, shrinking=%b, flex_factor_sum=%.1f\n"
-            growing shrinking flex_factor_sum;
           if
             (growing && flex_factor_sum > 0.0)
             || (shrinking && flex_factor_sum > 0.0)
@@ -923,13 +883,9 @@ let resolve_flexible_lengths (line : 'a flex_line) (constants : algo_constants)
               line.items
           else (
             (* No flex factors - just check min/max violations *)
-            Printf.printf "No flex factors case - freezing all unfrozen items\n";
             List.iter
               (fun child ->
                 if not child.frozen then (
-                  Printf.printf
-                    "Processing unfrozen child: target_size main=%.1f\n"
-                    (main_size constants.dir child.target_size);
                   (* Clamp by min/max *)
                   let current_main =
                     main_size constants.dir child.target_size
@@ -1060,14 +1016,8 @@ let determine_hypothetical_cross_size (type tree)
         let cross_val =
           match child_cross_size with Some s -> s | None -> 0.0
         in
-        Printf.printf
-          "determine_hypothetical_cross_size: cross_val=%.1f, current \
-           target_size=(%.1f x %.1f)\n"
-          cross_val child.target_size.width child.target_size.height;
         child.target_size <-
           set_cross_size constants.dir child.target_size cross_val;
-        Printf.printf "After setting cross: target_size=(%.1f x %.1f)\n"
-          child.target_size.width child.target_size.height;
         child.outer_target_size <-
           set_cross_size constants.dir child.outer_target_size
             (cross_val +. cross_axis_sum constants.dir child.margin))
@@ -1172,8 +1122,6 @@ let determine_used_cross_size (flex_lines : 'a flex_line list)
 (** Perform main axis alignment *)
 let perform_main_alignment (flex_lines : 'a flex_line list)
     (constants : algo_constants) : unit =
-  Printf.printf "perform_main_alignment called with %d lines\n"
-    (List.length flex_lines);
   List.iter
     (fun line ->
       let total_main_axis_gap =
@@ -1221,15 +1169,6 @@ let perform_main_alignment (flex_lines : 'a flex_line list)
         | (child : 'a flex_item) :: rest ->
             child.offset_main <-
               offset +. (main_axis_sum constants.dir child.margin /. 2.0);
-            Printf.printf
-              "Positioning child: offset=%.1f, outer_size=%.1f, next_offset \
-               will be %.1f\n"
-              offset
-              (main_size constants.dir child.outer_target_size)
-              (offset
-              +. main_size constants.dir child.outer_target_size
-              +. main_size constants.dir constants.gap
-              +. gap_addition);
             let next_offset =
               offset
               +. main_size constants.dir child.outer_target_size
@@ -1347,9 +1286,6 @@ let determine_container_size (known_dimensions : float option size)
     (constants : algo_constants) (flex_lines : 'a flex_line list) : float size =
   (* Main size already determined *)
   let main_size = main_size constants.dir constants.container_size in
-  Printf.printf
-    "determine_container_size: container_size=(%.1f, %.1f), main_size=%.1f\n"
-    constants.container_size.width constants.container_size.height main_size;
 
   (* Determine cross size if not known *)
   let cross_size_val =
@@ -1408,8 +1344,6 @@ let perform_final_layout_and_positioning (type tree)
     (node : Node.Node_id.t) (container_size : float size)
     (constants : algo_constants) (flex_lines : Node.Node_id.t flex_line list) :
     float size =
-  Printf.printf "perform_final_layout_and_positioning called with %d lines\n"
-    (List.length flex_lines);
   (* Set container layout *)
   let container_layout = Layout.Layout.empty in
 
@@ -1456,8 +1390,6 @@ let perform_final_layout_and_positioning (type tree)
 
           (* Apply inset/position adjustments if needed *)
           (* TODO: Handle absolute positioning *)
-          Printf.printf "Setting child layout: target_size=(%.1f x %.1f)\n"
-            child.target_size.width child.target_size.height;
           let child_layout =
             {
               Layout.Layout.empty with
@@ -1914,21 +1846,6 @@ let compute_preliminary (type tree)
         Option.map (fun h -> h -. inset_sum.height) node_outer_size.height;
     }
   in
-  Printf.printf
-    "compute_preliminary: known_dimensions=(width=%s, height=%s), \
-     node_inner_size=(width=%s, height=%s)\n"
-    (match known_dimensions.width with
-    | Some v -> Printf.sprintf "Some(%.1f)" v
-    | None -> "None")
-    (match known_dimensions.height with
-    | Some v -> Printf.sprintf "Some(%.1f)" v
-    | None -> "None")
-    (match node_inner_size.width with
-    | Some v -> Printf.sprintf "Some(%.1f)" v
-    | None -> "None")
-    (match node_inner_size.height with
-    | Some v -> Printf.sprintf "Some(%.1f)" v
-    | None -> "None");
 
   let constants =
     ref
@@ -2023,13 +1940,6 @@ let compute_preliminary (type tree)
   in
 
   (* If container size is undefined, determine the container's main size *)
-  Printf.printf "node_inner_size: width=%s, height=%s\n"
-    (match !constants.node_inner_size.width with
-    | Some v -> Printf.sprintf "Some(%.1f)" v
-    | None -> "None")
-    (match !constants.node_inner_size.height with
-    | Some v -> Printf.sprintf "Some(%.1f)" v
-    | None -> "None");
   (* Set container sizes based on known dimensions *)
   (match !constants.node_inner_size |> main_size !constants.dir with
   | Some inner_main_size ->
@@ -2128,8 +2038,6 @@ let compute_preliminary (type tree)
   let final_size =
     determine_container_size known_dimensions !constants !flex_lines
   in
-  Printf.printf "Flexbox final_size: width=%.1f, height=%.1f\n" final_size.width
-    final_size.height;
 
   (* Perform final layout *)
   let inflow_content_size =
@@ -2274,13 +2182,6 @@ let compute_flexbox_layout (type tree)
            clamped_style_size)
     in
     let result = Math.size_maybe_max_option_float base padding_border_sum in
-    Printf.printf "Flexbox styled_based_known_dimensions: width=%s, height=%s\n"
-      (match result.width with
-      | Some v -> Printf.sprintf "Some(%.1f)" v
-      | None -> "None")
-      (match result.height with
-      | Some v -> Printf.sprintf "Some(%.1f)" v
-      | None -> "None");
     result
   in
 
@@ -2298,14 +2199,6 @@ let compute_flexbox_layout (type tree)
           { inputs with known_dimensions = styled_based_known_dimensions }
   else (
     (* Delegate to compute_preliminary for full layout *)
-    Printf.printf
-      "Passing known_dimensions to compute_preliminary: width=%s, height=%s\n"
-      (match styled_based_known_dimensions.width with
-      | Some v -> Printf.sprintf "Some(%.1f)" v
-      | None -> "None")
-      (match styled_based_known_dimensions.height with
-      | Some v -> Printf.sprintf "Some(%.1f)" v
-      | None -> "None");
     compute_preliminary
       (module Tree)
       tree node
