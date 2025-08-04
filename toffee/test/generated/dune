@@ -1,6 +1,7 @@
 (tests
  (names
   test_block_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset
+  test_block_absolute_aspect_ratio_fill_max_height
   test_block_block_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset
   test_block_block_absolute_aspect_ratio_fill_height
   test_block_block_absolute_aspect_ratio_fill_height_from_inset

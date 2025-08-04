@@ -503,8 +503,9 @@ function generateNode(nodeVar, node, parentVar, boxSizing) {
   let nodeCreation = `let ${nodeVar} = Toffee.new_leaf tree (${style}) in`;
   
   if (textContent) {
-    // Set context for text nodes
-    nodeCreation += `\n  let _ = Toffee.set_node_context tree ${nodeVar} (MeasureFunction.Fixed {width = ${textContent.length * 10}.0; height = 10.0}) |> Result.get_ok in`;
+    // Set context for text nodes - pass the actual text content
+    const escapedText = textContent.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    nodeCreation += `\n  let _ = Toffee.set_node_context tree ${nodeVar} (MeasureFunction.Text "${escapedText}") |> Result.get_ok in`;
   }
   
   return nodeCreation;
@@ -617,10 +618,50 @@ let test_${name}_${boxSizing} () =
 function generateMeasureFunction() {
   return `
 (* Test measure function *)
-let measure_function ~known_dimensions:_ ~available_space:_ _node_id node_context _style =
+let measure_function ~known_dimensions ~available_space _node_id node_context _style =
   match node_context with
   | Some (MeasureFunction.Fixed size) -> size
-  | Some (MeasureFunction.Text _) -> { width = 100.0; height = 20.0 }  (* Placeholder *)
+  | Some (MeasureFunction.Text text) ->
+      (* Ahem font simulation: each character is 10x10 *)
+      let h_width = 10.0 in
+      let h_height = 10.0 in
+      let zws = "\\u{200b}" in
+      let lines = String.split_on_char (String.get zws 0) text in
+      let min_line_length = List.fold_left max 0 (List.map String.length lines) in
+      let max_line_length = List.fold_left (+) 0 (List.map String.length lines) in
+      
+      let inline_size = 
+        match known_dimensions.Toffee.Geometry.width with
+        | Some w -> w
+        | None -> (
+            match available_space.Toffee.Geometry.width with
+            | Toffee.Style.Available_space.Min_content -> float_of_int min_line_length *. h_width
+            | Toffee.Style.Available_space.Max_content -> float_of_int max_line_length *. h_width
+            | Toffee.Style.Available_space.Definite inline_size -> 
+                Float.min inline_size (float_of_int max_line_length *. h_width)
+        ) |> Float.max (float_of_int min_line_length *. h_width)
+      in
+      
+      let block_size =
+        match known_dimensions.Toffee.Geometry.height with
+        | Some h -> h
+        | None ->
+            let inline_line_length = int_of_float (Float.floor (inline_size /. h_width)) in
+            let rec count_lines current_line_length line_count = function
+              | [] -> line_count
+              | line :: rest ->
+                  let line_len = String.length line in
+                  if current_line_length + line_len > inline_line_length then
+                    if current_line_length > 0 then
+                      count_lines line_len (line_count + 1) rest
+                    else
+                      count_lines line_len line_count rest
+                  else
+                    count_lines (current_line_length + line_len) line_count rest
+            in
+            float_of_int (count_lines 0 1 lines) *. h_height
+      in
+      { width = inline_size; height = block_size }
   | None -> { width = 0.0; height = 0.0 }
 `;
 }

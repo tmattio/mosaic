@@ -96,14 +96,27 @@ let generate_item_list (type tree)
       let min_size = resolve_size (Style.min_size style) in
       let max_size = resolve_size (Style.max_size style) in
 
-      (* Apply aspect ratio and box sizing adjustment to the style size *)
+      (* Apply aspect ratio and box sizing adjustment to size, min_size, and max_size *)
       let size =
         style_size
         |> Resolve.maybe_apply_aspect_ratio aspect_ratio
         |> (fun size ->
         size_zip_map size box_sizing_adj (fun sz adj ->
             Option.map (fun s -> s +. adj) sz))
-        |> Size.maybe_clamp min_size max_size
+      in
+      let min_size =
+        min_size
+        |> Resolve.maybe_apply_aspect_ratio aspect_ratio
+        |> (fun size ->
+        size_zip_map size box_sizing_adj (fun sz adj ->
+            Option.map (fun s -> s +. adj) sz))
+      in
+      let max_size =
+        max_size
+        |> Resolve.maybe_apply_aspect_ratio aspect_ratio
+        |> (fun size ->
+        size_zip_map size box_sizing_adj (fun sz adj ->
+            Option.map (fun s -> s +. adj) sz))
       in
       let overflow = Style.overflow style in
       let item =
@@ -111,7 +124,7 @@ let generate_item_list (type tree)
           node_id = child_id;
           order;
           is_table = style.Style.item_is_table;
-          size;
+          size = Size.maybe_clamp size min_size max_size;
           min_size;
           max_size;
           overflow;
@@ -604,19 +617,15 @@ let perform_absolute_layout_on_absolute_children (type tree)
           let known_dimensions = !mut_known_dimensions in
 
           (* Perform child layout *)
+          let avail_width = Geometry.Size.maybe_clamp_value area_width min_size.width max_size.width in
+          let avail_height = Geometry.Size.maybe_clamp_value area_height min_size.height max_size.height in
           let layout_output =
             TExt.perform_child_layout tree item.node_id ~known_dimensions
               ~parent_size:(size_map area_size (fun x -> Some x))
               ~available_space:
                 {
-                  width =
-                    Available_space.Definite
-                      (Geometry.Size.maybe_clamp_value area_width min_size.width
-                         max_size.width);
-                  height =
-                    Available_space.Definite
-                      (Geometry.Size.maybe_clamp_value area_height
-                         min_size.height max_size.height);
+                  width = Available_space.Definite avail_width;
+                  height = Available_space.Definite avail_height;
                 }
               ~sizing_mode:Layout.Sizing_mode.Content_size
               ~vertical_margins_are_collapsible:line_false
@@ -624,16 +633,14 @@ let perform_absolute_layout_on_absolute_children (type tree)
 
           let measured_size = layout_output.size in
           let final_size =
-            let unclamped =
-              {
-                width = known_dimensions.width;
-                height = known_dimensions.height;
-              }
-            in
-            let clamped = Size.maybe_clamp unclamped min_size max_size in
+            let unwrapped_size = {
+              width = Option.value ~default:measured_size.width known_dimensions.width;
+              height = Option.value ~default:measured_size.height known_dimensions.height;
+            } in
+            let clamped = Size.maybe_clamp (size_map unwrapped_size (fun x -> Some x)) min_size max_size in
             {
-              width = Option.value ~default:measured_size.width clamped.width;
-              height = Option.value ~default:measured_size.height clamped.height;
+              width = Option.value ~default:0.0 clamped.width;
+              height = Option.value ~default:0.0 clamped.height;
             }
           in
 
