@@ -112,6 +112,10 @@ end
 module Flex = struct
   type flex_direction = Row | Column | Row_reverse | Column_reverse
   type flex_wrap = No_wrap | Wrap | Wrap_reverse
+
+  let is_reverse = function
+    | Row_reverse | Column_reverse -> true
+    | Row | Column -> false
 end
 
 (* ─────────────────────────  Grid  ──────────────────────────────── *)

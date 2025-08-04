@@ -154,6 +154,9 @@ module AvailableSpaceOption = struct
     | Available_space.Definite value, None -> Available_space.Definite value
     | Available_space.Min_content, _ -> Available_space.Min_content
     | Available_space.Max_content, _ -> Available_space.Max_content
+
+  let maybe_set self rhs =
+    match rhs with Some value -> Available_space.Definite value | None -> self
 end
 
 (* Size operations for different math modules *)

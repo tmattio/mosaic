@@ -79,6 +79,8 @@ end
 module Flex : sig
   type flex_direction = Row | Column | Row_reverse | Column_reverse
   type flex_wrap = No_wrap | Wrap | Wrap_reverse
+
+  val is_reverse : flex_direction -> bool
 end
 
 module Grid : sig
