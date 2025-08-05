@@ -43,6 +43,13 @@ let test_flex_rounding_total_fractial_nested_border_box () =
          ~flex_basis:(Style.Dimension.length 0.3)
          ~size:
            { width = Style.Dimension.auto; height = Style.Dimension.length 9.9 }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.length 13.3;
+           }
          ())
     |> Result.get_ok
   in
@@ -53,6 +60,13 @@ let test_flex_rounding_total_fractial_nested_border_box () =
          ~flex_basis:(Style.Dimension.length 0.3)
          ~size:
            { width = Style.Dimension.auto; height = Style.Dimension.length 1.1 }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.length 13.3;
+             bottom = Style.Length_percentage_auto.auto;
+           }
          ())
     |> Result.get_ok
   in
@@ -170,6 +184,13 @@ let test_flex_rounding_total_fractial_nested_content_box () =
          ~flex_basis:(Style.Dimension.length 0.3)
          ~size:
            { width = Style.Dimension.auto; height = Style.Dimension.length 9.9 }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.length 13.3;
+           }
          ())
     |> Result.get_ok
   in
@@ -180,6 +201,13 @@ let test_flex_rounding_total_fractial_nested_content_box () =
          ~flex_basis:(Style.Dimension.length 0.3)
          ~size:
            { width = Style.Dimension.auto; height = Style.Dimension.length 1.1 }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.length 13.3;
+             bottom = Style.Length_percentage_auto.auto;
+           }
          ())
     |> Result.get_ok
   in

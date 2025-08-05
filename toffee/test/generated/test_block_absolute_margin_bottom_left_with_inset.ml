@@ -39,6 +39,13 @@ let test_block_absolute_margin_bottom_left_with_inset_border_box () =
              top = Style.Length_percentage_auto.length 0.0;
              bottom = Style.Length_percentage_auto.length 10.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 20.0;
+             right = Style.Length_percentage_auto.length 10.0;
+             top = Style.Length_percentage_auto.length 10.0;
+             bottom = Style.Length_percentage_auto.length 20.0;
+           }
          ())
     |> Result.get_ok
   in
@@ -107,6 +114,13 @@ let test_block_absolute_margin_bottom_left_with_inset_content_box () =
              right = Style.Length_percentage_auto.length 0.0;
              top = Style.Length_percentage_auto.length 0.0;
              bottom = Style.Length_percentage_auto.length 10.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 20.0;
+             right = Style.Length_percentage_auto.length 10.0;
+             top = Style.Length_percentage_auto.length 10.0;
+             bottom = Style.Length_percentage_auto.length 20.0;
            }
          ())
     |> Result.get_ok

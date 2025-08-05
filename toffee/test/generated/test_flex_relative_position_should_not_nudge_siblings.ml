@@ -32,6 +32,13 @@ let test_flex_relative_position_should_not_nudge_siblings_border_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.length 15.0;
+             bottom = Style.Length_percentage_auto.auto;
+           }
          ())
     |> Result.get_ok
   in
@@ -43,6 +50,13 @@ let test_flex_relative_position_should_not_nudge_siblings_border_box () =
            {
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.length 15.0;
+             bottom = Style.Length_percentage_auto.auto;
            }
          ())
     |> Result.get_ok
@@ -111,6 +125,13 @@ let test_flex_relative_position_should_not_nudge_siblings_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.length 15.0;
+             bottom = Style.Length_percentage_auto.auto;
+           }
          ())
     |> Result.get_ok
   in
@@ -122,6 +143,13 @@ let test_flex_relative_position_should_not_nudge_siblings_content_box () =
            {
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.length 15.0;
+             bottom = Style.Length_percentage_auto.auto;
            }
          ())
     |> Result.get_ok

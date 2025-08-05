@@ -32,6 +32,13 @@ let test_flex_percentage_absolute_position_border_box () =
              width = Style.Dimension.length 10.0;
              height = Style.Dimension.length 10.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.percent 0.3;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.percent 0.1;
+             bottom = Style.Length_percentage_auto.auto;
+           }
          ())
     |> Result.get_ok
   in
@@ -93,6 +100,13 @@ let test_flex_percentage_absolute_position_content_box () =
            {
              width = Style.Dimension.length 10.0;
              height = Style.Dimension.length 10.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.percent 0.3;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.percent 0.1;
+             bottom = Style.Length_percentage_auto.auto;
            }
          ())
     |> Result.get_ok

@@ -52,6 +52,13 @@ let test_grid_absolute_row_start_border_box () =
              start = Style.Grid.Placement.line 1;
              end_ = Style.Grid.Placement.auto;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 4.0;
+             right = Style.Length_percentage_auto.length 3.0;
+             top = Style.Length_percentage_auto.length 1.0;
+             bottom = Style.Length_percentage_auto.length 2.0;
+           }
          ())
     |> Result.get_ok
   in
@@ -133,6 +140,13 @@ let test_grid_absolute_row_start_content_box () =
            {
              start = Style.Grid.Placement.line 1;
              end_ = Style.Grid.Placement.auto;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 4.0;
+             right = Style.Length_percentage_auto.length 3.0;
+             top = Style.Length_percentage_auto.length 1.0;
+             bottom = Style.Length_percentage_auto.length 2.0;
            }
          ())
     |> Result.get_ok

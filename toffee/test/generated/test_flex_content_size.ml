@@ -127,6 +127,13 @@ let test_flex_content_size_border_box measure_function () =
              width = Style.Dimension.percent 1.0;
              height = Style.Dimension.length 20.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.length (-10.0);
+             bottom = Style.Length_percentage_auto.auto;
+           }
          ())
     |> Result.get_ok
   in
@@ -217,6 +224,13 @@ let test_flex_content_size_content_box measure_function () =
            {
              width = Style.Dimension.percent 1.0;
              height = Style.Dimension.length 20.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.length (-10.0);
+             bottom = Style.Length_percentage_auto.auto;
            }
          ())
     |> Result.get_ok

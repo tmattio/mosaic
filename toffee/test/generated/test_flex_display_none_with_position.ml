@@ -27,7 +27,16 @@ let test_flex_display_none_with_position_border_box () =
   let node0 = new_leaf tree (Style.make ~flex_grow:1.0 ()) |> Result.get_ok in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
-    new_leaf tree (Style.make ~display:Style.Display.None ~flex_grow:1.0 ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.None ~flex_grow:1.0
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.length 10.0;
+             bottom = Style.Length_percentage_auto.auto;
+           }
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
@@ -89,7 +98,16 @@ let test_flex_display_none_with_position_content_box () =
   let node0 = new_leaf tree (Style.make ~flex_grow:1.0 ()) |> Result.get_ok in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
-    new_leaf tree (Style.make ~display:Style.Display.None ~flex_grow:1.0 ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.None ~flex_grow:1.0
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.length 10.0;
+             bottom = Style.Length_percentage_auto.auto;
+           }
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in

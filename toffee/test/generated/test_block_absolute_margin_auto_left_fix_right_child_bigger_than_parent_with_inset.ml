@@ -40,6 +40,13 @@ let test_block_absolute_margin_auto_left_fix_right_child_bigger_than_parent_with
              top = Style.Length_percentage_auto.length 0.0;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 10.0;
+             right = Style.Length_percentage_auto.length 20.0;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.auto;
+           }
          ())
     |> Result.get_ok
   in
@@ -109,6 +116,13 @@ let test_block_absolute_margin_auto_left_fix_right_child_bigger_than_parent_with
              right = Style.Length_percentage_auto.length 10.0;
              top = Style.Length_percentage_auto.length 0.0;
              bottom = Style.Length_percentage_auto.length 0.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 10.0;
+             right = Style.Length_percentage_auto.length 20.0;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.auto;
            }
          ())
     |> Result.get_ok

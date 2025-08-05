@@ -40,6 +40,13 @@ let test_block_absolute_margin_auto_multiple_children_with_inset_border_box () =
              top = Style.Length_percentage_auto.length 0.0;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 10.0;
+             right = Style.Length_percentage_auto.length 20.0;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.auto;
+           }
          ())
     |> Result.get_ok
   in
@@ -58,6 +65,13 @@ let test_block_absolute_margin_auto_multiple_children_with_inset_border_box () =
              right = Style.Length_percentage_auto.auto;
              top = Style.Length_percentage_auto.length 0.0;
              bottom = Style.Length_percentage_auto.length 0.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 20.0;
+             right = Style.Length_percentage_auto.length 10.0;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.auto;
            }
          ())
     |> Result.get_ok
@@ -135,6 +149,13 @@ let test_block_absolute_margin_auto_multiple_children_with_inset_content_box ()
              top = Style.Length_percentage_auto.length 0.0;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 10.0;
+             right = Style.Length_percentage_auto.length 20.0;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.auto;
+           }
          ())
     |> Result.get_ok
   in
@@ -153,6 +174,13 @@ let test_block_absolute_margin_auto_multiple_children_with_inset_content_box ()
              right = Style.Length_percentage_auto.auto;
              top = Style.Length_percentage_auto.length 0.0;
              bottom = Style.Length_percentage_auto.length 0.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 20.0;
+             right = Style.Length_percentage_auto.length 10.0;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.auto;
            }
          ())
     |> Result.get_ok

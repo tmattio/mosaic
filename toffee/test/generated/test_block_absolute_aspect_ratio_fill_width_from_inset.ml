@@ -26,7 +26,15 @@ let test_block_absolute_aspect_ratio_fill_width_from_inset_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~aspect_ratio:3.0 ())
+      (Style.make ~position:Style.Position.Absolute ~aspect_ratio:3.0
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.percent 0.3;
+             bottom = Style.Length_percentage_auto.percent 0.5;
+           }
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -82,7 +90,15 @@ let test_block_absolute_aspect_ratio_fill_width_from_inset_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~aspect_ratio:3.0 ())
+      (Style.make ~position:Style.Position.Absolute ~aspect_ratio:3.0
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.percent 0.3;
+             bottom = Style.Length_percentage_auto.percent 0.5;
+           }
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in

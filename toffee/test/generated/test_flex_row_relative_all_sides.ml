@@ -32,6 +32,13 @@ let test_flex_row_relative_all_sides_border_box () =
              width = Style.Dimension.length 40.0;
              height = Style.Dimension.auto;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 10.0;
+             right = Style.Length_percentage_auto.length 10.0;
+             top = Style.Length_percentage_auto.length 10.0;
+             bottom = Style.Length_percentage_auto.length 10.0;
+           }
          ())
     |> Result.get_ok
   in
@@ -93,6 +100,13 @@ let test_flex_row_relative_all_sides_content_box () =
            {
              width = Style.Dimension.length 40.0;
              height = Style.Dimension.auto;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 10.0;
+             right = Style.Length_percentage_auto.length 10.0;
+             top = Style.Length_percentage_auto.length 10.0;
+             bottom = Style.Length_percentage_auto.length 10.0;
            }
          ())
     |> Result.get_ok

@@ -27,6 +27,13 @@ let test_block_absolute_layout_start_top_end_bottom_border_box () =
   let node0 =
     new_leaf tree
       (Style.make ~display:Style.Display.Block ~position:Style.Position.Absolute
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 10.0;
+             right = Style.Length_percentage_auto.length 10.0;
+             top = Style.Length_percentage_auto.length 10.0;
+             bottom = Style.Length_percentage_auto.length 10.0;
+           }
          ())
     |> Result.get_ok
   in
@@ -84,6 +91,13 @@ let test_block_absolute_layout_start_top_end_bottom_content_box () =
   let node0 =
     new_leaf tree
       (Style.make ~display:Style.Display.Block ~position:Style.Position.Absolute
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 10.0;
+             right = Style.Length_percentage_auto.length 10.0;
+             top = Style.Length_percentage_auto.length 10.0;
+             bottom = Style.Length_percentage_auto.length 10.0;
+           }
          ())
     |> Result.get_ok
   in

@@ -26,7 +26,16 @@ let test_block_overflow_scrollbars_take_up_space_cross_axis_border_box () =
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree (Style.make ~position:Style.Position.Absolute ())
+    new_leaf tree
+      (Style.make ~position:Style.Position.Absolute
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 0.0;
+             right = Style.Length_percentage_auto.length 0.0;
+             top = Style.Length_percentage_auto.length 0.0;
+             bottom = Style.Length_percentage_auto.length 0.0;
+           }
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -87,7 +96,16 @@ let test_block_overflow_scrollbars_take_up_space_cross_axis_content_box () =
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree (Style.make ~position:Style.Position.Absolute ())
+    new_leaf tree
+      (Style.make ~position:Style.Position.Absolute
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 0.0;
+             right = Style.Length_percentage_auto.length 0.0;
+             top = Style.Length_percentage_auto.length 0.0;
+             bottom = Style.Length_percentage_auto.length 0.0;
+           }
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in

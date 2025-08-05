@@ -33,6 +33,13 @@ let test_flex_absolute_layout_align_items_and_justify_content_center_and_right_p
              width = Style.Dimension.length 60.0;
              height = Style.Dimension.length 40.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.length 5.0;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.auto;
+           }
          ())
     |> Result.get_ok
   in
@@ -95,6 +102,13 @@ let test_flex_absolute_layout_align_items_and_justify_content_center_and_right_p
            {
              width = Style.Dimension.length 60.0;
              height = Style.Dimension.length 40.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.length 5.0;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.auto;
            }
          ())
     |> Result.get_ok

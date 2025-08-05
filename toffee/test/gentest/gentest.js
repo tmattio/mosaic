@@ -283,8 +283,18 @@ function styleToOCaml(style) {
     if (border) params.push(`~border:(${border})`);
   }
 
-  // Note: inset properties (top, left, right, bottom) are not part of Style.make in the OCaml API
-  // They would need to be handled separately if needed
+  // Inset properties (top, left, right, bottom)
+  if (style.inset || style.top !== undefined || style.left !== undefined || 
+      style.right !== undefined || style.bottom !== undefined) {
+    const inset = {
+      top: style.inset?.top ?? style.top,
+      left: style.inset?.left ?? style.left,
+      right: style.inset?.right ?? style.right,
+      bottom: style.inset?.bottom ?? style.bottom
+    };
+    const insetOCaml = rectToOCaml(inset, 'inset');  // inset uses Length_percentage_auto
+    if (insetOCaml) params.push(`~inset:(${insetOCaml})`);
+  }
 
   // Overflow properties
   let hasNonVisibleOverflow = false;

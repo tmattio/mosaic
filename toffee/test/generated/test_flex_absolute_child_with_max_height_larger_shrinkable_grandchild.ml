@@ -34,6 +34,13 @@ let test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild_border
              width = Style.Dimension.auto;
              height = Style.Dimension.length 100.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.length 20.0;
+           }
          ())
     |> Result.get_ok
   in
@@ -115,6 +122,13 @@ let test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild_conten
            {
              width = Style.Dimension.auto;
              height = Style.Dimension.length 100.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.length 20.0;
            }
          ())
     |> Result.get_ok

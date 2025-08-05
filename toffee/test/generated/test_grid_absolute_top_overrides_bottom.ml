@@ -52,6 +52,13 @@ let test_grid_absolute_top_overrides_bottom_border_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.length 2.0;
+             bottom = Style.Length_percentage_auto.length 5.0;
+           }
          ())
     |> Result.get_ok
   in
@@ -189,6 +196,13 @@ let test_grid_absolute_top_overrides_bottom_content_box () =
            {
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.length 2.0;
+             bottom = Style.Length_percentage_auto.length 5.0;
            }
          ())
     |> Result.get_ok

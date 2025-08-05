@@ -33,6 +33,13 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_border_bo
              width = Style.Dimension.length 10.0;
              height = Style.Dimension.length 10.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.percent 0.5;
+             bottom = Style.Length_percentage_auto.auto;
+           }
          ())
     |> Result.get_ok
   in
@@ -45,6 +52,13 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_border_bo
              width = Style.Dimension.length 10.0;
              height = Style.Dimension.length 10.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.percent 0.5;
+           }
          ())
     |> Result.get_ok
   in
@@ -56,6 +70,13 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_border_bo
            {
              width = Style.Dimension.length 10.0;
              height = Style.Dimension.auto;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.percent 0.1;
+             bottom = Style.Length_percentage_auto.percent 0.1;
            }
          ())
     |> Result.get_ok
@@ -130,6 +151,13 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_content_b
              width = Style.Dimension.length 10.0;
              height = Style.Dimension.length 10.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.percent 0.5;
+             bottom = Style.Length_percentage_auto.auto;
+           }
          ())
     |> Result.get_ok
   in
@@ -142,6 +170,13 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_content_b
              width = Style.Dimension.length 10.0;
              height = Style.Dimension.length 10.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.percent 0.5;
+           }
          ())
     |> Result.get_ok
   in
@@ -153,6 +188,13 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_content_b
            {
              width = Style.Dimension.length 10.0;
              height = Style.Dimension.auto;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.percent 0.1;
+             bottom = Style.Length_percentage_auto.percent 0.1;
            }
          ())
     |> Result.get_ok

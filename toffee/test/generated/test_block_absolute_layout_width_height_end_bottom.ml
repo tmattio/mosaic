@@ -32,6 +32,13 @@ let test_block_absolute_layout_width_height_end_bottom_border_box () =
              width = Style.Dimension.length 10.0;
              height = Style.Dimension.length 10.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.length 10.0;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.length 10.0;
+           }
          ())
     |> Result.get_ok
   in
@@ -93,6 +100,13 @@ let test_block_absolute_layout_width_height_end_bottom_content_box () =
            {
              width = Style.Dimension.length 10.0;
              height = Style.Dimension.length 10.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.length 10.0;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.length 10.0;
            }
          ())
     |> Result.get_ok

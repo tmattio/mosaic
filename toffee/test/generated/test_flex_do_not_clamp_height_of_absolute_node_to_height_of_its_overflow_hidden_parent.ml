@@ -29,7 +29,15 @@ let test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hid
   let node0 =
     new_leaf tree
       (Style.make ~position:Style.Position.Absolute
-         ~flex_direction:Style.Flex_direction.Column ())
+         ~flex_direction:Style.Flex_direction.Column
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 0.0;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.length 0.0;
+             bottom = Style.Length_percentage_auto.auto;
+           }
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -110,7 +118,15 @@ let test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hid
   let node0 =
     new_leaf tree
       (Style.make ~position:Style.Position.Absolute
-         ~flex_direction:Style.Flex_direction.Column ())
+         ~flex_direction:Style.Flex_direction.Column
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 0.0;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.length 0.0;
+             bottom = Style.Length_percentage_auto.auto;
+           }
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in

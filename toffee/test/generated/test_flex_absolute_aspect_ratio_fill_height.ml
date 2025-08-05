@@ -32,7 +32,15 @@ let test_flex_absolute_aspect_ratio_fill_height_border_box () =
              width = Style.Dimension.percent 0.5;
              height = Style.Dimension.auto;
            }
-         ~aspect_ratio:3.0 ())
+         ~aspect_ratio:3.0
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.percent 0.05;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.percent 0.05;
+             bottom = Style.Length_percentage_auto.auto;
+           }
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -94,7 +102,15 @@ let test_flex_absolute_aspect_ratio_fill_height_content_box () =
              width = Style.Dimension.percent 0.5;
              height = Style.Dimension.auto;
            }
-         ~aspect_ratio:3.0 ())
+         ~aspect_ratio:3.0
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.percent 0.05;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.percent 0.05;
+             bottom = Style.Length_percentage_auto.auto;
+           }
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in

@@ -45,12 +45,30 @@ let test_grid_absolute_container_negative_position_border_box () =
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree (Style.make ~position:Style.Position.Absolute ())
+    new_leaf tree
+      (Style.make ~position:Style.Position.Absolute
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.length (-15.0);
+             top = Style.Length_percentage_auto.length (-5.0);
+             bottom = Style.Length_percentage_auto.auto;
+           }
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
-    new_leaf tree (Style.make ~position:Style.Position.Absolute ())
+    new_leaf tree
+      (Style.make ~position:Style.Position.Absolute
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length (-35.0);
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.length (-25.0);
+           }
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
@@ -179,12 +197,30 @@ let test_grid_absolute_container_negative_position_content_box () =
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree (Style.make ~position:Style.Position.Absolute ())
+    new_leaf tree
+      (Style.make ~position:Style.Position.Absolute
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.length (-15.0);
+             top = Style.Length_percentage_auto.length (-5.0);
+             bottom = Style.Length_percentage_auto.auto;
+           }
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
-    new_leaf tree (Style.make ~position:Style.Position.Absolute ())
+    new_leaf tree
+      (Style.make ~position:Style.Position.Absolute
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length (-35.0);
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.length (-25.0);
+           }
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in

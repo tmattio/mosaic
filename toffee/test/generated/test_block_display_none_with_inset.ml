@@ -44,6 +44,13 @@ let test_block_display_none_with_inset_border_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.length 10.0;
+             bottom = Style.Length_percentage_auto.auto;
+           }
          ())
     |> Result.get_ok
   in
@@ -122,6 +129,13 @@ let test_block_display_none_with_inset_content_box () =
            {
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.length 10.0;
+             bottom = Style.Length_percentage_auto.auto;
            }
          ())
     |> Result.get_ok

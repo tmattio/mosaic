@@ -32,6 +32,13 @@ let test_block_inset_fixed_border_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 2.0;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.length 4.0;
+             bottom = Style.Length_percentage_auto.auto;
+           }
          ())
     |> Result.get_ok
   in
@@ -44,6 +51,13 @@ let test_block_inset_fixed_border_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.length 6.0;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.length 8.0;
+           }
          ())
     |> Result.get_ok
   in
@@ -55,6 +69,13 @@ let test_block_inset_fixed_border_box () =
            {
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 2.0;
+             right = Style.Length_percentage_auto.length 6.0;
+             top = Style.Length_percentage_auto.length 4.0;
+             bottom = Style.Length_percentage_auto.length 8.0;
            }
          ())
     |> Result.get_ok
@@ -128,6 +149,13 @@ let test_block_inset_fixed_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 2.0;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.length 4.0;
+             bottom = Style.Length_percentage_auto.auto;
+           }
          ())
     |> Result.get_ok
   in
@@ -140,6 +168,13 @@ let test_block_inset_fixed_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.length 6.0;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.length 8.0;
+           }
          ())
     |> Result.get_ok
   in
@@ -151,6 +186,13 @@ let test_block_inset_fixed_content_box () =
            {
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 2.0;
+             right = Style.Length_percentage_auto.length 6.0;
+             top = Style.Length_percentage_auto.length 4.0;
+             bottom = Style.Length_percentage_auto.length 8.0;
            }
          ())
     |> Result.get_ok

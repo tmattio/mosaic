@@ -23,6 +23,13 @@ let test_flex_position_root_with_rtl_should_position_withoutdirection_border_box
              width = Style.Dimension.length 52.0;
              height = Style.Dimension.length 52.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 72.0;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.auto;
+           }
          ())
     |> Result.get_ok
   in
@@ -75,6 +82,13 @@ let test_flex_position_root_with_rtl_should_position_withoutdirection_content_bo
            {
              width = Style.Dimension.length 52.0;
              height = Style.Dimension.length 52.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 72.0;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.auto;
            }
          ())
     |> Result.get_ok

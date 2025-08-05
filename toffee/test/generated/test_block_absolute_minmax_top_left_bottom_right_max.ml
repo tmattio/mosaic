@@ -32,6 +32,13 @@ let test_block_absolute_minmax_top_left_bottom_right_max_border_box () =
              width = Style.Dimension.length 40.0;
              height = Style.Dimension.length 30.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 10.0;
+             right = Style.Length_percentage_auto.length 10.0;
+             top = Style.Length_percentage_auto.length 10.0;
+             bottom = Style.Length_percentage_auto.length 10.0;
+           }
          ())
     |> Result.get_ok
   in
@@ -93,6 +100,13 @@ let test_block_absolute_minmax_top_left_bottom_right_max_content_box () =
            {
              width = Style.Dimension.length 40.0;
              height = Style.Dimension.length 30.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 10.0;
+             right = Style.Length_percentage_auto.length 10.0;
+             top = Style.Length_percentage_auto.length 10.0;
+             bottom = Style.Length_percentage_auto.length 10.0;
            }
          ())
     |> Result.get_ok

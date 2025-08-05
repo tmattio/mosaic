@@ -32,6 +32,13 @@ let test_grid_align_items_baseline_child_top_border_box () =
              width = Style.Dimension.length 50.0;
              height = Style.Dimension.length 50.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.length 10.0;
+             bottom = Style.Length_percentage_auto.auto;
+           }
          ())
     |> Result.get_ok
   in
@@ -127,6 +134,13 @@ let test_grid_align_items_baseline_child_top_content_box () =
            {
              width = Style.Dimension.length 50.0;
              height = Style.Dimension.length 50.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.length 10.0;
+             bottom = Style.Length_percentage_auto.auto;
            }
          ())
     |> Result.get_ok

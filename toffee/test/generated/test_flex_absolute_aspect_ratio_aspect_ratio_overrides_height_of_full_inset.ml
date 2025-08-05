@@ -27,7 +27,15 @@ let test_flex_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset_
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~aspect_ratio:3.0 ())
+      (Style.make ~position:Style.Position.Absolute ~aspect_ratio:3.0
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.percent 0.05;
+             right = Style.Length_percentage_auto.percent 0.05;
+             top = Style.Length_percentage_auto.percent 0.05;
+             bottom = Style.Length_percentage_auto.percent 0.05;
+           }
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -84,7 +92,15 @@ let test_flex_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset_
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~aspect_ratio:3.0 ())
+      (Style.make ~position:Style.Position.Absolute ~aspect_ratio:3.0
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.percent 0.05;
+             right = Style.Length_percentage_auto.percent 0.05;
+             top = Style.Length_percentage_auto.percent 0.05;
+             bottom = Style.Length_percentage_auto.percent 0.05;
+           }
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in

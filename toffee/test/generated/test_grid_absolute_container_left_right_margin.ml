@@ -54,6 +54,13 @@ let test_grid_absolute_container_left_right_margin_border_box () =
              top = Style.Length_percentage_auto.length 1.0;
              bottom = Style.Length_percentage_auto.length 3.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 5.0;
+             right = Style.Length_percentage_auto.length 2.0;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.auto;
+           }
          ())
     |> Result.get_ok
   in
@@ -193,6 +200,13 @@ let test_grid_absolute_container_left_right_margin_content_box () =
              right = Style.Length_percentage_auto.length 2.0;
              top = Style.Length_percentage_auto.length 1.0;
              bottom = Style.Length_percentage_auto.length 3.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 5.0;
+             right = Style.Length_percentage_auto.length 2.0;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.auto;
            }
          ())
     |> Result.get_ok

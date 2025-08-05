@@ -32,7 +32,15 @@ let test_grid_aspect_ratio_absolute_height_overrides_inset_border_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.percent 0.1;
            }
-         ~aspect_ratio:3.0 ())
+         ~aspect_ratio:3.0
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.percent 0.3;
+             bottom = Style.Length_percentage_auto.percent 0.5;
+           }
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -94,7 +102,15 @@ let test_grid_aspect_ratio_absolute_height_overrides_inset_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.percent 0.1;
            }
-         ~aspect_ratio:3.0 ())
+         ~aspect_ratio:3.0
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.percent 0.3;
+             bottom = Style.Length_percentage_auto.percent 0.5;
+           }
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in

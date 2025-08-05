@@ -54,6 +54,13 @@ let test_grid_absolute_with_padding_and_margin_border_box () =
              top = Style.Length_percentage_auto.length 1.0;
              bottom = Style.Length_percentage_auto.length 3.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.length 0.0;
+             top = Style.Length_percentage_auto.length 0.0;
+             bottom = Style.Length_percentage_auto.auto;
+           }
          ())
     |> Result.get_ok
   in
@@ -67,6 +74,13 @@ let test_grid_absolute_with_padding_and_margin_border_box () =
              right = Style.Length_percentage_auto.length 2.0;
              top = Style.Length_percentage_auto.length 1.0;
              bottom = Style.Length_percentage_auto.length 3.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 10.0;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.length 10.0;
            }
          ())
     |> Result.get_ok
@@ -206,6 +220,13 @@ let test_grid_absolute_with_padding_and_margin_content_box () =
              top = Style.Length_percentage_auto.length 1.0;
              bottom = Style.Length_percentage_auto.length 3.0;
            }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.auto;
+             right = Style.Length_percentage_auto.length 0.0;
+             top = Style.Length_percentage_auto.length 0.0;
+             bottom = Style.Length_percentage_auto.auto;
+           }
          ())
     |> Result.get_ok
   in
@@ -219,6 +240,13 @@ let test_grid_absolute_with_padding_and_margin_content_box () =
              right = Style.Length_percentage_auto.length 2.0;
              top = Style.Length_percentage_auto.length 1.0;
              bottom = Style.Length_percentage_auto.length 3.0;
+           }
+         ~inset:
+           {
+             left = Style.Length_percentage_auto.length 10.0;
+             right = Style.Length_percentage_auto.auto;
+             top = Style.Length_percentage_auto.auto;
+             bottom = Style.Length_percentage_auto.length 10.0;
            }
          ())
     |> Result.get_ok
