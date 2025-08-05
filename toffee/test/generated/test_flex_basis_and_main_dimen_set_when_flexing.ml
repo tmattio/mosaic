@@ -15,7 +15,8 @@ let test_flex_basis_and_main_dimen_set_when_flexing_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Row
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -26,7 +27,7 @@ let test_flex_basis_and_main_dimen_set_when_flexing_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
          ~flex_basis:(Style.Dimension.length 10.0)
          ~size:
            {
@@ -39,7 +40,7 @@ let test_flex_basis_and_main_dimen_set_when_flexing_border_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
          ~flex_basis:(Style.Dimension.length 10.0)
          ~size:
            {
@@ -96,7 +97,8 @@ let test_flex_basis_and_main_dimen_set_when_flexing_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Row
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -107,7 +109,7 @@ let test_flex_basis_and_main_dimen_set_when_flexing_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
          ~flex_basis:(Style.Dimension.length 10.0)
          ~size:
            {
@@ -120,7 +122,7 @@ let test_flex_basis_and_main_dimen_set_when_flexing_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
          ~flex_basis:(Style.Dimension.length 10.0)
          ~size:
            {

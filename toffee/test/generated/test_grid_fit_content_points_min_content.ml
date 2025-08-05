@@ -111,7 +111,9 @@ let test_grid_fit_content_points_min_content_border_box measure_function () =
          ())
     |> Result.get_ok
   in
-  let node0 = new_leaf tree Style.default |> Result.get_ok in
+  let node0 =
+    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
+  in
   let _ =
     set_node_context tree node0 (Some (MeasureFunction.Text "HHHH​HH"))
     |> Result.get_ok
@@ -175,7 +177,9 @@ let test_grid_fit_content_points_min_content_content_box measure_function () =
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

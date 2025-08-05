@@ -15,7 +15,7 @@ let test_flex_border_no_child_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~border:
            {
              left = Style.Length_percentage.length 10.0;
@@ -62,7 +62,7 @@ let test_flex_border_no_child_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~border:
            {
              left = Style.Length_percentage.length 10.0;

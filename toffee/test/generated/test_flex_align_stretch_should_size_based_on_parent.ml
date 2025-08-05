@@ -15,7 +15,7 @@ let test_flex_align_stretch_should_size_based_on_parent_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -26,18 +26,20 @@ let test_flex_align_stretch_should_size_based_on_parent_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~justify_content:Center ~flex_grow:0.0 ~flex_shrink:1.0 ())
+      (Style.make ~display:Style.Display.Flex ~justify_content:Center
+         ~flex_grow:0.0 ~flex_shrink:1.0 ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
-    new_leaf tree (Style.make ~flex_grow:1.0 ~flex_shrink:1.0 ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:1.0 ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -98,7 +100,7 @@ let test_flex_align_stretch_should_size_based_on_parent_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -109,21 +111,22 @@ let test_flex_align_stretch_should_size_based_on_parent_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~justify_content:Center ~flex_grow:0.0 ~flex_shrink:1.0
+      (Style.make ~display:Style.Display.Flex ~justify_content:Center
+         ~flex_grow:0.0 ~flex_shrink:1.0
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0 ~flex_shrink:1.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:1.0
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 20.0;

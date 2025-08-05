@@ -126,21 +126,33 @@ let test_grid_margins_auto_margins_override_stretch_border_box measure_function
          ())
     |> Result.get_ok
   in
-  let node0 = new_leaf tree Style.default |> Result.get_ok in
+  let node0 =
+    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
+  in
   let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 = new_leaf tree Style.default |> Result.get_ok in
+  let node1 =
+    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
+  in
   let _ = add_child tree node node1 |> Result.get_ok in
-  let node2 = new_leaf tree Style.default |> Result.get_ok in
+  let node2 =
+    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
+  in
   let _ = add_child tree node node2 |> Result.get_ok in
-  let node3 = new_leaf tree Style.default |> Result.get_ok in
+  let node3 =
+    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
+  in
   let _ = add_child tree node node3 |> Result.get_ok in
-  let node4 = new_leaf tree Style.default |> Result.get_ok in
+  let node4 =
+    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
+  in
   let _ = add_child tree node node4 |> Result.get_ok in
-  let node5 = new_leaf tree Style.default |> Result.get_ok in
+  let node5 =
+    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
+  in
   let _ = add_child tree node node5 |> Result.get_ok in
   let node6 =
     new_leaf tree
-      (Style.make ~align_self:Stretch
+      (Style.make ~display:Style.Display.Flex ~align_self:Stretch
          ~margin:
            {
              left = Style.Length_percentage_auto.auto;
@@ -156,9 +168,13 @@ let test_grid_margins_auto_margins_override_stretch_border_box measure_function
     |> Result.get_ok
   in
   let _ = add_child tree node node6 |> Result.get_ok in
-  let node7 = new_leaf tree Style.default |> Result.get_ok in
+  let node7 =
+    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
+  in
   let _ = add_child tree node node7 |> Result.get_ok in
-  let node8 = new_leaf tree Style.default |> Result.get_ok in
+  let node8 =
+    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
+  in
   let _ = add_child tree node node8 |> Result.get_ok in
 
   (* Compute layout *)
@@ -273,38 +289,50 @@ let test_grid_margins_auto_margins_override_stretch_content_box measure_function
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
-    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
-    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node2 |> Result.get_ok in
   let node3 =
-    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node3 |> Result.get_ok in
   let node4 =
-    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node4 |> Result.get_ok in
   let node5 =
-    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node5 |> Result.get_ok in
   let node6 =
     new_leaf tree
-      (Style.make ~align_self:Stretch
+      (Style.make ~display:Style.Display.Flex ~align_self:Stretch
          ~margin:
            {
              left = Style.Length_percentage_auto.auto;
@@ -321,12 +349,16 @@ let test_grid_margins_auto_margins_override_stretch_content_box measure_function
   in
   let _ = add_child tree node node6 |> Result.get_ok in
   let node7 =
-    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node7 |> Result.get_ok in
   let node8 =
-    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node8 |> Result.get_ok in

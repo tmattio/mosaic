@@ -18,7 +18,7 @@ let test_block_margin_y_simple_positive_percentage_other_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.auto;
@@ -37,7 +37,7 @@ let test_block_margin_y_simple_positive_percentage_other_border_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -99,7 +99,7 @@ let test_block_margin_y_simple_positive_percentage_other_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.auto;
@@ -118,7 +118,7 @@ let test_block_margin_y_simple_positive_percentage_other_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;

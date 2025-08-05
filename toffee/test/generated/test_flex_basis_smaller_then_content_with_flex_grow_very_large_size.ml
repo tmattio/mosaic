@@ -16,7 +16,8 @@ let test_flex_basis_smaller_then_content_with_flex_grow_very_large_size_border_b
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Row
          ~size:
            {
              width = Style.Dimension.length 200.0;
@@ -27,7 +28,8 @@ let test_flex_basis_smaller_then_content_with_flex_grow_very_large_size_border_b
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
          ~flex_basis:(Style.Dimension.length 0.0)
          ())
     |> Result.get_ok
@@ -35,7 +37,7 @@ let test_flex_basis_smaller_then_content_with_flex_grow_very_large_size_border_b
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 70.0;
@@ -47,7 +49,8 @@ let test_flex_basis_smaller_then_content_with_flex_grow_very_large_size_border_b
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
          ~flex_basis:(Style.Dimension.length 0.0)
          ())
     |> Result.get_ok
@@ -55,7 +58,7 @@ let test_flex_basis_smaller_then_content_with_flex_grow_very_large_size_border_b
   let _ = add_child tree node node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -122,7 +125,8 @@ let test_flex_basis_smaller_then_content_with_flex_grow_very_large_size_content_
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Row
          ~size:
            {
              width = Style.Dimension.length 200.0;
@@ -133,7 +137,8 @@ let test_flex_basis_smaller_then_content_with_flex_grow_very_large_size_content_
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
          ~flex_basis:(Style.Dimension.length 0.0)
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
@@ -141,7 +146,7 @@ let test_flex_basis_smaller_then_content_with_flex_grow_very_large_size_content_
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 70.0;
@@ -153,7 +158,8 @@ let test_flex_basis_smaller_then_content_with_flex_grow_very_large_size_content_
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
          ~flex_basis:(Style.Dimension.length 0.0)
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
@@ -161,7 +167,7 @@ let test_flex_basis_smaller_then_content_with_flex_grow_very_large_size_content_
   let _ = add_child tree node node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 20.0;

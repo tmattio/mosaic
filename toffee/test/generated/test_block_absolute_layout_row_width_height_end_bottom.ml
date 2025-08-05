@@ -26,7 +26,7 @@ let test_block_absolute_layout_row_width_height_end_bottom_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -95,7 +95,7 @@ let test_block_absolute_layout_row_width_height_end_bottom_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 10.0;

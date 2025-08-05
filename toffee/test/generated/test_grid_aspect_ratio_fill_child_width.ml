@@ -26,7 +26,7 @@ let test_grid_aspect_ratio_fill_child_width_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.auto;
@@ -88,7 +88,7 @@ let test_grid_aspect_ratio_fill_child_width_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.auto;

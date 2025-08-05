@@ -16,7 +16,8 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.length 200.0;
@@ -27,7 +28,8 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
          ~flex_basis:(Style.Dimension.percent 0.1)
          ~min_size:
            {
@@ -54,7 +56,8 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.percent 0.5;
@@ -80,7 +83,7 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.percent 0.45;
@@ -106,7 +109,7 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
   let _ = add_child tree node1 node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~flex_grow:4.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:4.0
          ~flex_basis:(Style.Dimension.percent 0.15)
          ~min_size:
            {
@@ -174,7 +177,8 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.length 200.0;
@@ -185,7 +189,8 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
          ~flex_basis:(Style.Dimension.percent 0.1)
          ~min_size:
            {
@@ -212,7 +217,8 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.percent 0.5;
@@ -238,7 +244,7 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.percent 0.45;
@@ -264,7 +270,7 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
   let _ = add_child tree node1 node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~flex_grow:4.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:4.0
          ~flex_basis:(Style.Dimension.percent 0.15)
          ~min_size:
            {

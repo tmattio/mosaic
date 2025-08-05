@@ -16,7 +16,8 @@ let test_flex_align_content_flex_start_without_height_on_children_border_box ()
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column
          ~flex_wrap:Style.Flex_wrap.Wrap ~align_content:Flex_start
          ~size:
            {
@@ -28,7 +29,7 @@ let test_flex_align_content_flex_start_without_height_on_children_border_box ()
   in
   let node0 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -40,7 +41,7 @@ let test_flex_align_content_flex_start_without_height_on_children_border_box ()
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -52,7 +53,7 @@ let test_flex_align_content_flex_start_without_height_on_children_border_box ()
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -64,7 +65,7 @@ let test_flex_align_content_flex_start_without_height_on_children_border_box ()
   let _ = add_child tree node node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -76,7 +77,7 @@ let test_flex_align_content_flex_start_without_height_on_children_border_box ()
   let _ = add_child tree node node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -148,7 +149,8 @@ let test_flex_align_content_flex_start_without_height_on_children_content_box ()
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column
          ~flex_wrap:Style.Flex_wrap.Wrap ~align_content:Flex_start
          ~size:
            {
@@ -160,7 +162,7 @@ let test_flex_align_content_flex_start_without_height_on_children_content_box ()
   in
   let node0 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -172,7 +174,7 @@ let test_flex_align_content_flex_start_without_height_on_children_content_box ()
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -184,7 +186,7 @@ let test_flex_align_content_flex_start_without_height_on_children_content_box ()
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -196,7 +198,7 @@ let test_flex_align_content_flex_start_without_height_on_children_content_box ()
   let _ = add_child tree node node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -208,7 +210,7 @@ let test_flex_align_content_flex_start_without_height_on_children_content_box ()
   let _ = add_child tree node node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;

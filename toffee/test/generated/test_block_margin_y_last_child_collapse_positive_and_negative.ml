@@ -55,7 +55,7 @@ let test_block_margin_y_last_child_collapse_positive_and_negative_border_box ()
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.auto;
@@ -95,7 +95,7 @@ let test_block_margin_y_last_child_collapse_positive_and_negative_border_box ()
   let _ = add_child tree node3 node4 |> Result.get_ok in
   let node5 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.auto;
@@ -135,7 +135,7 @@ let test_block_margin_y_last_child_collapse_positive_and_negative_border_box ()
   let _ = add_child tree node6 node7 |> Result.get_ok in
   let node8 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.auto;
@@ -266,7 +266,7 @@ let test_block_margin_y_last_child_collapse_positive_and_negative_content_box ()
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.auto;
@@ -306,7 +306,7 @@ let test_block_margin_y_last_child_collapse_positive_and_negative_content_box ()
   let _ = add_child tree node3 node4 |> Result.get_ok in
   let node5 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.auto;
@@ -346,7 +346,7 @@ let test_block_margin_y_last_child_collapse_positive_and_negative_content_box ()
   let _ = add_child tree node6 node7 |> Result.get_ok in
   let node8 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.auto;

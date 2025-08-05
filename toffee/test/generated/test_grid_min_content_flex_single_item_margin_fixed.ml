@@ -119,11 +119,13 @@ let test_grid_min_content_flex_single_item_margin_fixed_border_box
          ())
     |> Result.get_ok
   in
-  let node0 = new_leaf tree Style.default |> Result.get_ok in
+  let node0 =
+    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
+  in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~min_size:
            {
              width = Style.Dimension.length 10.0;
@@ -140,13 +142,17 @@ let test_grid_min_content_flex_single_item_margin_fixed_border_box
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
-  let node2 = new_leaf tree Style.default |> Result.get_ok in
+  let node2 =
+    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
+  in
   let _ = add_child tree node node2 |> Result.get_ok in
-  let node3 = new_leaf tree Style.default |> Result.get_ok in
+  let node3 =
+    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
+  in
   let _ = add_child tree node node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~grid_column:
            {
              start = Style.Grid.Placement.span 2;
@@ -167,11 +173,17 @@ let test_grid_min_content_flex_single_item_margin_fixed_border_box
     |> Result.get_ok
   in
   let _ = add_child tree node node4 |> Result.get_ok in
-  let node5 = new_leaf tree Style.default |> Result.get_ok in
+  let node5 =
+    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
+  in
   let _ = add_child tree node node5 |> Result.get_ok in
-  let node6 = new_leaf tree Style.default |> Result.get_ok in
+  let node6 =
+    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
+  in
   let _ = add_child tree node node6 |> Result.get_ok in
-  let node7 = new_leaf tree Style.default |> Result.get_ok in
+  let node7 =
+    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
+  in
   let _ = add_child tree node node7 |> Result.get_ok in
 
   (* Compute layout *)
@@ -274,13 +286,15 @@ let test_grid_min_content_flex_single_item_margin_fixed_content_box
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~min_size:
            {
              width = Style.Dimension.length 10.0;
@@ -298,18 +312,22 @@ let test_grid_min_content_flex_single_item_margin_fixed_content_box
   in
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
-    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node2 |> Result.get_ok in
   let node3 =
-    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~grid_column:
            {
              start = Style.Grid.Placement.span 2;
@@ -331,17 +349,23 @@ let test_grid_min_content_flex_single_item_margin_fixed_content_box
   in
   let _ = add_child tree node node4 |> Result.get_ok in
   let node5 =
-    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node5 |> Result.get_ok in
   let node6 =
-    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node6 |> Result.get_ok in
   let node7 =
-    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node7 |> Result.get_ok in

@@ -113,13 +113,17 @@ let test_grid_span_2_min_content_auto_indefinite_border_box measure_function ()
          ())
     |> Result.get_ok
   in
-  let node0 = new_leaf tree Style.default |> Result.get_ok in
+  let node0 =
+    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
+  in
   let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 = new_leaf tree Style.default |> Result.get_ok in
+  let node1 =
+    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
+  in
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~grid_column:
            {
              start = Style.Grid.Placement.line 1;
@@ -203,18 +207,22 @@ let test_grid_span_2_min_content_auto_indefinite_content_box measure_function ()
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
-    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~grid_column:
            {
              start = Style.Grid.Placement.line 1;

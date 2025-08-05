@@ -15,7 +15,8 @@ let test_flex_rounding_total_fractial_nested_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.length 87.4;
@@ -26,7 +27,8 @@ let test_flex_rounding_total_fractial_nested_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_grow:0.7
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column ~flex_grow:0.7
          ~flex_basis:(Style.Dimension.length 50.3)
          ~size:
            {
@@ -39,7 +41,7 @@ let test_flex_rounding_total_fractial_nested_border_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
          ~flex_basis:(Style.Dimension.length 0.3)
          ~size:
            { width = Style.Dimension.auto; height = Style.Dimension.length 9.9 }
@@ -56,7 +58,7 @@ let test_flex_rounding_total_fractial_nested_border_box () =
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~flex_grow:4.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:4.0
          ~flex_basis:(Style.Dimension.length 0.3)
          ~size:
            { width = Style.Dimension.auto; height = Style.Dimension.length 1.1 }
@@ -73,7 +75,7 @@ let test_flex_rounding_total_fractial_nested_border_box () =
   let _ = add_child tree node0 node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~flex_grow:1.6
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.6
          ~size:
            {
              width = Style.Dimension.auto;
@@ -85,7 +87,7 @@ let test_flex_rounding_total_fractial_nested_border_box () =
   let _ = add_child tree node node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
-      (Style.make ~flex_grow:1.1
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.1
          ~size:
            {
              width = Style.Dimension.auto;
@@ -156,7 +158,8 @@ let test_flex_rounding_total_fractial_nested_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.length 87.4;
@@ -167,7 +170,8 @@ let test_flex_rounding_total_fractial_nested_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_grow:0.7
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column ~flex_grow:0.7
          ~flex_basis:(Style.Dimension.length 50.3)
          ~size:
            {
@@ -180,7 +184,7 @@ let test_flex_rounding_total_fractial_nested_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
          ~flex_basis:(Style.Dimension.length 0.3)
          ~size:
            { width = Style.Dimension.auto; height = Style.Dimension.length 9.9 }
@@ -197,7 +201,7 @@ let test_flex_rounding_total_fractial_nested_content_box () =
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~flex_grow:4.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:4.0
          ~flex_basis:(Style.Dimension.length 0.3)
          ~size:
            { width = Style.Dimension.auto; height = Style.Dimension.length 1.1 }
@@ -214,7 +218,7 @@ let test_flex_rounding_total_fractial_nested_content_box () =
   let _ = add_child tree node0 node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~flex_grow:1.6
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.6
          ~size:
            {
              width = Style.Dimension.auto;
@@ -226,7 +230,7 @@ let test_flex_rounding_total_fractial_nested_content_box () =
   let _ = add_child tree node node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
-      (Style.make ~flex_grow:1.1
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.1
          ~size:
            {
              width = Style.Dimension.auto;

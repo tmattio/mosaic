@@ -34,7 +34,7 @@ let test_flex_multiline_min_max_5_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0 ~flex_shrink:1.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:1.0
          ~flex_basis:(Style.Dimension.length 600.0)
          ~size:
            {
@@ -52,7 +52,7 @@ let test_flex_multiline_min_max_5_border_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0 ~flex_shrink:1.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:1.0
          ~flex_basis:Style.Dimension.auto
          ~size:
            {
@@ -65,7 +65,7 @@ let test_flex_multiline_min_max_5_border_box () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0 ~flex_shrink:1.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:1.0
          ~flex_basis:Style.Dimension.auto
          ~size:
            {
@@ -78,7 +78,7 @@ let test_flex_multiline_min_max_5_border_box () =
   let _ = add_child tree node node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0 ~flex_shrink:1.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:1.0
          ~flex_basis:Style.Dimension.auto
          ~size:
            {
@@ -164,7 +164,7 @@ let test_flex_multiline_min_max_5_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0 ~flex_shrink:1.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:1.0
          ~flex_basis:(Style.Dimension.length 600.0)
          ~size:
            {
@@ -182,7 +182,7 @@ let test_flex_multiline_min_max_5_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0 ~flex_shrink:1.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:1.0
          ~flex_basis:Style.Dimension.auto
          ~size:
            {
@@ -195,7 +195,7 @@ let test_flex_multiline_min_max_5_content_box () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0 ~flex_shrink:1.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:1.0
          ~flex_basis:Style.Dimension.auto
          ~size:
            {
@@ -208,7 +208,7 @@ let test_flex_multiline_min_max_5_content_box () =
   let _ = add_child tree node node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0 ~flex_shrink:1.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:1.0
          ~flex_basis:Style.Dimension.auto
          ~size:
            {

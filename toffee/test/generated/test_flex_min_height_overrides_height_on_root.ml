@@ -15,7 +15,7 @@ let test_flex_min_height_overrides_height_on_root_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.auto;
@@ -65,7 +65,7 @@ let test_flex_min_height_overrides_height_on_root_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.auto;

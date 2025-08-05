@@ -15,8 +15,9 @@ let test_flex_bevy_issue_8082_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~align_items:Stretch ~justify_content:Flex_start ~align_content:Center
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column ~align_items:Stretch
+         ~justify_content:Flex_start ~align_content:Center
          ~size:
            {
              width = Style.Dimension.length 200.0;
@@ -27,14 +28,15 @@ let test_flex_bevy_issue_8082_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_wrap:Style.Flex_wrap.Wrap ~align_items:Flex_start
-         ~justify_content:Center ~align_content:Center ())
+      (Style.make ~display:Style.Display.Flex ~flex_wrap:Style.Flex_wrap.Wrap
+         ~align_items:Flex_start ~justify_content:Center ~align_content:Center
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -53,7 +55,7 @@ let test_flex_bevy_issue_8082_border_box () =
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -72,7 +74,7 @@ let test_flex_bevy_issue_8082_border_box () =
   let _ = add_child tree node0 node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -91,7 +93,7 @@ let test_flex_bevy_issue_8082_border_box () =
   let _ = add_child tree node0 node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -169,8 +171,9 @@ let test_flex_bevy_issue_8082_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~align_items:Stretch ~justify_content:Flex_start ~align_content:Center
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column ~align_items:Stretch
+         ~justify_content:Flex_start ~align_content:Center
          ~size:
            {
              width = Style.Dimension.length 200.0;
@@ -181,15 +184,15 @@ let test_flex_bevy_issue_8082_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_wrap:Style.Flex_wrap.Wrap ~align_items:Flex_start
-         ~justify_content:Center ~align_content:Center
+      (Style.make ~display:Style.Display.Flex ~flex_wrap:Style.Flex_wrap.Wrap
+         ~align_items:Flex_start ~justify_content:Center ~align_content:Center
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -208,7 +211,7 @@ let test_flex_bevy_issue_8082_content_box () =
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -227,7 +230,7 @@ let test_flex_bevy_issue_8082_content_box () =
   let _ = add_child tree node0 node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -246,7 +249,7 @@ let test_flex_bevy_issue_8082_content_box () =
   let _ = add_child tree node0 node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;

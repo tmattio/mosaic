@@ -15,7 +15,7 @@ let test_flex_absolute_layout_start_top_end_bottom_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -26,7 +26,7 @@ let test_flex_absolute_layout_start_top_end_bottom_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~inset:
            {
              left = Style.Length_percentage_auto.length 10.0;
@@ -79,7 +79,7 @@ let test_flex_absolute_layout_start_top_end_bottom_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -90,7 +90,7 @@ let test_flex_absolute_layout_start_top_end_bottom_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~inset:
            {
              left = Style.Length_percentage_auto.length 10.0;

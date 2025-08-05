@@ -15,7 +15,7 @@ let test_flex_absolute_minmax_top_left_bottom_right_max_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -26,7 +26,7 @@ let test_flex_absolute_minmax_top_left_bottom_right_max_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~max_size:
            {
              width = Style.Dimension.length 40.0;
@@ -84,7 +84,7 @@ let test_flex_absolute_minmax_top_left_bottom_right_max_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -95,7 +95,7 @@ let test_flex_absolute_minmax_top_left_bottom_right_max_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~max_size:
            {
              width = Style.Dimension.length 40.0;

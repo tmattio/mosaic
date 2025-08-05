@@ -40,7 +40,8 @@ let test_grid_absolute_layout_within_border_static_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~align_self:Start
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+         ~align_self:Start
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -52,7 +53,8 @@ let test_grid_absolute_layout_within_border_static_border_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~align_self:End
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+         ~align_self:End
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -64,7 +66,8 @@ let test_grid_absolute_layout_within_border_static_border_box () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~align_self:Start
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+         ~align_self:Start
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -83,7 +86,8 @@ let test_grid_absolute_layout_within_border_static_border_box () =
   let _ = add_child tree node node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~align_self:End
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+         ~align_self:End
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -181,7 +185,8 @@ let test_grid_absolute_layout_within_border_static_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~align_self:Start
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+         ~align_self:Start
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -193,7 +198,8 @@ let test_grid_absolute_layout_within_border_static_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~align_self:End
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+         ~align_self:End
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -205,7 +211,8 @@ let test_grid_absolute_layout_within_border_static_content_box () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~align_self:Start
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+         ~align_self:Start
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -224,7 +231,8 @@ let test_grid_absolute_layout_within_border_static_content_box () =
   let _ = add_child tree node node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~align_self:End
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+         ~align_self:End
          ~size:
            {
              width = Style.Dimension.length 50.0;

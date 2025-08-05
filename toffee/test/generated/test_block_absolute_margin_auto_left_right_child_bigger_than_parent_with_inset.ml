@@ -27,7 +27,7 @@ let test_block_absolute_margin_auto_left_right_child_bigger_than_parent_with_ins
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 72.0;
@@ -104,7 +104,7 @@ let test_block_absolute_margin_auto_left_right_child_bigger_than_parent_with_ins
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 72.0;

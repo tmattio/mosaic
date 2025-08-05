@@ -15,11 +15,14 @@ let test_flex_align_content_stretch_is_not_overriding_align_items_border_box ()
 
   (* Create nodes *)
   let node =
-    new_leaf tree (Style.make ~align_content:Stretch ()) |> Result.get_ok
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex ~align_content:Stretch ())
+    |> Result.get_ok
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row ~align_items:Center
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Row ~align_items:Center
          ~align_content:Stretch
          ~size:
            {
@@ -32,7 +35,7 @@ let test_flex_align_content_stretch_is_not_overriding_align_items_border_box ()
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~align_content:Stretch
+      (Style.make ~display:Style.Display.Flex ~align_content:Stretch
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -89,13 +92,14 @@ let test_flex_align_content_stretch_is_not_overriding_align_items_content_box ()
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~align_content:Stretch
+      (Style.make ~display:Style.Display.Flex ~align_content:Stretch
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row ~align_items:Center
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Row ~align_items:Center
          ~align_content:Stretch
          ~size:
            {
@@ -108,7 +112,7 @@ let test_flex_align_content_stretch_is_not_overriding_align_items_content_box ()
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~align_content:Stretch
+      (Style.make ~display:Style.Display.Flex ~align_content:Stretch
          ~size:
            {
              width = Style.Dimension.length 10.0;

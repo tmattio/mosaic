@@ -26,7 +26,7 @@ let test_grid_aspect_ratio_overridden_by_explicit_sizes_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -88,7 +88,7 @@ let test_grid_aspect_ratio_overridden_by_explicit_sizes_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;

@@ -15,7 +15,8 @@ let test_flex_percentage_flex_basis_cross_min_height_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.length 200.0;
@@ -26,7 +27,7 @@ let test_flex_percentage_flex_basis_cross_min_height_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
          ~min_size:
            {
              width = Style.Dimension.auto;
@@ -38,7 +39,7 @@ let test_flex_percentage_flex_basis_cross_min_height_border_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~flex_grow:2.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:2.0
          ~min_size:
            {
              width = Style.Dimension.auto;
@@ -94,7 +95,8 @@ let test_flex_percentage_flex_basis_cross_min_height_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.length 200.0;
@@ -105,7 +107,7 @@ let test_flex_percentage_flex_basis_cross_min_height_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
          ~min_size:
            {
              width = Style.Dimension.auto;
@@ -117,7 +119,7 @@ let test_flex_percentage_flex_basis_cross_min_height_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~flex_grow:2.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:2.0
          ~min_size:
            {
              width = Style.Dimension.auto;

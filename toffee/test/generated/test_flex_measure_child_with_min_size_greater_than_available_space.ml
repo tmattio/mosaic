@@ -109,7 +109,7 @@ let test_flex_measure_child_with_min_size_greater_than_available_space_border_bo
   in
   let node0 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~min_size:
            {
              width = Style.Dimension.length 200.0;
@@ -179,7 +179,7 @@ let test_flex_measure_child_with_min_size_greater_than_available_space_content_b
   in
   let node0 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~min_size:
            {
              width = Style.Dimension.length 200.0;

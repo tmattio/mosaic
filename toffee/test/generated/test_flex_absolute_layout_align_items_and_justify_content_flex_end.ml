@@ -16,7 +16,8 @@ let test_flex_absolute_layout_align_items_and_justify_content_flex_end_border_bo
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~align_items:Flex_end ~justify_content:Flex_end
+      (Style.make ~display:Style.Display.Flex ~align_items:Flex_end
+         ~justify_content:Flex_end
          ~size:
            {
              width = Style.Dimension.length 110.0;
@@ -27,7 +28,7 @@ let test_flex_absolute_layout_align_items_and_justify_content_flex_end_border_bo
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 60.0;
@@ -79,7 +80,8 @@ let test_flex_absolute_layout_align_items_and_justify_content_flex_end_content_b
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~align_items:Flex_end ~justify_content:Flex_end
+      (Style.make ~display:Style.Display.Flex ~align_items:Flex_end
+         ~justify_content:Flex_end
          ~size:
            {
              width = Style.Dimension.length 110.0;
@@ -90,7 +92,7 @@ let test_flex_absolute_layout_align_items_and_justify_content_flex_end_content_b
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 60.0;

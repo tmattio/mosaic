@@ -14,12 +14,14 @@ let test_flex_basis_unconstraint_row_border_box () =
 
   (* Create nodes *)
   let node =
-    new_leaf tree (Style.make ~flex_direction:Style.Flex_direction.Row ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Row ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~flex_basis:(Style.Dimension.length 50.0)
          ~size:
            {
@@ -71,13 +73,14 @@ let test_flex_basis_unconstraint_row_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Row
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~flex_basis:(Style.Dimension.length 50.0)
          ~size:
            {

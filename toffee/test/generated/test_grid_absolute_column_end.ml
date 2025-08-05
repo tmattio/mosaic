@@ -46,7 +46,7 @@ let test_grid_absolute_column_end_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~grid_column:
            {
              start = Style.Grid.Placement.auto;
@@ -135,7 +135,7 @@ let test_grid_absolute_column_end_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~grid_column:
            {
              start = Style.Grid.Placement.auto;

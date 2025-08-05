@@ -28,7 +28,7 @@ let test_flex_multiline_column_max_height_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -40,7 +40,7 @@ let test_flex_multiline_column_max_height_border_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -52,7 +52,7 @@ let test_flex_multiline_column_max_height_border_box () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -64,7 +64,7 @@ let test_flex_multiline_column_max_height_border_box () =
   let _ = add_child tree node node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -76,7 +76,7 @@ let test_flex_multiline_column_max_height_border_box () =
   let _ = add_child tree node node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -88,7 +88,7 @@ let test_flex_multiline_column_max_height_border_box () =
   let _ = add_child tree node node4 |> Result.get_ok in
   let node5 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -100,7 +100,7 @@ let test_flex_multiline_column_max_height_border_box () =
   let _ = add_child tree node node5 |> Result.get_ok in
   let node6 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -112,7 +112,7 @@ let test_flex_multiline_column_max_height_border_box () =
   let _ = add_child tree node node6 |> Result.get_ok in
   let node7 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -124,7 +124,7 @@ let test_flex_multiline_column_max_height_border_box () =
   let _ = add_child tree node node7 |> Result.get_ok in
   let node8 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -136,7 +136,7 @@ let test_flex_multiline_column_max_height_border_box () =
   let _ = add_child tree node node8 |> Result.get_ok in
   let node9 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -148,7 +148,7 @@ let test_flex_multiline_column_max_height_border_box () =
   let _ = add_child tree node node9 |> Result.get_ok in
   let node10 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -160,7 +160,7 @@ let test_flex_multiline_column_max_height_border_box () =
   let _ = add_child tree node node10 |> Result.get_ok in
   let node11 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -172,7 +172,7 @@ let test_flex_multiline_column_max_height_border_box () =
   let _ = add_child tree node node11 |> Result.get_ok in
   let node12 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -184,7 +184,7 @@ let test_flex_multiline_column_max_height_border_box () =
   let _ = add_child tree node node12 |> Result.get_ok in
   let node13 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -196,7 +196,7 @@ let test_flex_multiline_column_max_height_border_box () =
   let _ = add_child tree node node13 |> Result.get_ok in
   let node14 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -208,7 +208,7 @@ let test_flex_multiline_column_max_height_border_box () =
   let _ = add_child tree node node14 |> Result.get_ok in
   let node15 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -220,7 +220,7 @@ let test_flex_multiline_column_max_height_border_box () =
   let _ = add_child tree node node15 |> Result.get_ok in
   let node16 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -232,7 +232,7 @@ let test_flex_multiline_column_max_height_border_box () =
   let _ = add_child tree node node16 |> Result.get_ok in
   let node17 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -244,7 +244,7 @@ let test_flex_multiline_column_max_height_border_box () =
   let _ = add_child tree node node17 |> Result.get_ok in
   let node18 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -256,7 +256,7 @@ let test_flex_multiline_column_max_height_border_box () =
   let _ = add_child tree node node18 |> Result.get_ok in
   let node19 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -415,7 +415,7 @@ let test_flex_multiline_column_max_height_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -427,7 +427,7 @@ let test_flex_multiline_column_max_height_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -439,7 +439,7 @@ let test_flex_multiline_column_max_height_content_box () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -451,7 +451,7 @@ let test_flex_multiline_column_max_height_content_box () =
   let _ = add_child tree node node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -463,7 +463,7 @@ let test_flex_multiline_column_max_height_content_box () =
   let _ = add_child tree node node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -475,7 +475,7 @@ let test_flex_multiline_column_max_height_content_box () =
   let _ = add_child tree node node4 |> Result.get_ok in
   let node5 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -487,7 +487,7 @@ let test_flex_multiline_column_max_height_content_box () =
   let _ = add_child tree node node5 |> Result.get_ok in
   let node6 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -499,7 +499,7 @@ let test_flex_multiline_column_max_height_content_box () =
   let _ = add_child tree node node6 |> Result.get_ok in
   let node7 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -511,7 +511,7 @@ let test_flex_multiline_column_max_height_content_box () =
   let _ = add_child tree node node7 |> Result.get_ok in
   let node8 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -523,7 +523,7 @@ let test_flex_multiline_column_max_height_content_box () =
   let _ = add_child tree node node8 |> Result.get_ok in
   let node9 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -535,7 +535,7 @@ let test_flex_multiline_column_max_height_content_box () =
   let _ = add_child tree node node9 |> Result.get_ok in
   let node10 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -547,7 +547,7 @@ let test_flex_multiline_column_max_height_content_box () =
   let _ = add_child tree node node10 |> Result.get_ok in
   let node11 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -559,7 +559,7 @@ let test_flex_multiline_column_max_height_content_box () =
   let _ = add_child tree node node11 |> Result.get_ok in
   let node12 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -571,7 +571,7 @@ let test_flex_multiline_column_max_height_content_box () =
   let _ = add_child tree node node12 |> Result.get_ok in
   let node13 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -583,7 +583,7 @@ let test_flex_multiline_column_max_height_content_box () =
   let _ = add_child tree node node13 |> Result.get_ok in
   let node14 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -595,7 +595,7 @@ let test_flex_multiline_column_max_height_content_box () =
   let _ = add_child tree node node14 |> Result.get_ok in
   let node15 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -607,7 +607,7 @@ let test_flex_multiline_column_max_height_content_box () =
   let _ = add_child tree node node15 |> Result.get_ok in
   let node16 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -619,7 +619,7 @@ let test_flex_multiline_column_max_height_content_box () =
   let _ = add_child tree node node16 |> Result.get_ok in
   let node17 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -631,7 +631,7 @@ let test_flex_multiline_column_max_height_content_box () =
   let _ = add_child tree node node17 |> Result.get_ok in
   let node18 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -643,7 +643,7 @@ let test_flex_multiline_column_max_height_content_box () =
   let _ = add_child tree node node18 |> Result.get_ok in
   let node19 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 40.0;

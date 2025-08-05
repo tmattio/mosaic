@@ -27,7 +27,7 @@ let test_block_overflow_scrollbars_take_up_space_both_axis_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~inset:
            {
              left = Style.Length_percentage_auto.length 0.0;
@@ -97,7 +97,7 @@ let test_block_overflow_scrollbars_take_up_space_both_axis_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~inset:
            {
              left = Style.Length_percentage_auto.length 0.0;

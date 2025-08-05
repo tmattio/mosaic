@@ -25,7 +25,9 @@ let test_block_absolute_layout_no_size_border_box () =
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree (Style.make ~position:Style.Position.Absolute ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -81,7 +83,7 @@ let test_block_absolute_layout_no_size_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in

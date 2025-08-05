@@ -15,7 +15,8 @@ let test_flex_single_flex_child_after_absolute_child_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.length 428.0;
@@ -26,7 +27,7 @@ let test_flex_single_flex_child_after_absolute_child_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.percent 1.0;
@@ -37,13 +38,14 @@ let test_flex_single_flex_child_after_absolute_child_border_box () =
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
-    new_leaf tree (Style.make ~flex_grow:1.0 ~flex_shrink:1.0 ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:1.0 ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~flex_basis:(Style.Dimension.length 174.0)
          ())
     |> Result.get_ok
@@ -100,7 +102,8 @@ let test_flex_single_flex_child_after_absolute_child_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.length 428.0;
@@ -111,7 +114,7 @@ let test_flex_single_flex_child_after_absolute_child_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.percent 1.0;
@@ -123,14 +126,14 @@ let test_flex_single_flex_child_after_absolute_child_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0 ~flex_shrink:1.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:1.0
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~flex_basis:(Style.Dimension.length 174.0)
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok

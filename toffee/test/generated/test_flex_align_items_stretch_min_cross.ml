@@ -15,7 +15,8 @@ let test_flex_align_items_stretch_min_cross_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column
          ~min_size:
            {
              width = Style.Dimension.length 400.0;
@@ -26,7 +27,7 @@ let test_flex_align_items_stretch_min_cross_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.auto;
@@ -77,7 +78,8 @@ let test_flex_align_items_stretch_min_cross_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column
          ~min_size:
            {
              width = Style.Dimension.length 400.0;
@@ -88,7 +90,7 @@ let test_flex_align_items_stretch_min_cross_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.auto;

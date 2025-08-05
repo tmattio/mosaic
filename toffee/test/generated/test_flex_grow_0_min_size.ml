@@ -115,7 +115,7 @@ let test_flex_grow_0_min_size_border_box measure_function () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:0.0 ~flex_shrink:0.0
          ~flex_basis:(Style.Dimension.percent 0.0)
          ())
     |> Result.get_ok
@@ -127,7 +127,7 @@ let test_flex_grow_0_min_size_border_box measure_function () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:0.0 ~flex_shrink:0.0
          ~flex_basis:(Style.Dimension.percent 0.0)
          ())
     |> Result.get_ok
@@ -139,7 +139,7 @@ let test_flex_grow_0_min_size_border_box measure_function () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:0.0 ~flex_shrink:0.0
          ~flex_basis:(Style.Dimension.percent 0.0)
          ())
     |> Result.get_ok
@@ -151,7 +151,7 @@ let test_flex_grow_0_min_size_border_box measure_function () =
   let _ = add_child tree node node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:0.0 ~flex_shrink:0.0
          ~flex_basis:(Style.Dimension.percent 0.0)
          ())
     |> Result.get_ok
@@ -237,7 +237,7 @@ let test_flex_grow_0_min_size_content_box measure_function () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:0.0 ~flex_shrink:0.0
          ~flex_basis:(Style.Dimension.percent 0.0)
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
@@ -249,7 +249,7 @@ let test_flex_grow_0_min_size_content_box measure_function () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:0.0 ~flex_shrink:0.0
          ~flex_basis:(Style.Dimension.percent 0.0)
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
@@ -261,7 +261,7 @@ let test_flex_grow_0_min_size_content_box measure_function () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:0.0 ~flex_shrink:0.0
          ~flex_basis:(Style.Dimension.percent 0.0)
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
@@ -273,7 +273,7 @@ let test_flex_grow_0_min_size_content_box measure_function () =
   let _ = add_child tree node node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:0.0 ~flex_shrink:0.0
          ~flex_basis:(Style.Dimension.percent 0.0)
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok

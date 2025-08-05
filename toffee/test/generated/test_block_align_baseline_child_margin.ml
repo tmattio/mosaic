@@ -15,7 +15,8 @@ let test_block_align_baseline_child_margin_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row ~align_items:Baseline
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Row ~align_items:Baseline
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -57,7 +58,7 @@ let test_block_align_baseline_child_margin_border_box () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -125,7 +126,8 @@ let test_block_align_baseline_child_margin_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row ~align_items:Baseline
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Row ~align_items:Baseline
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -167,7 +169,7 @@ let test_block_align_baseline_child_margin_content_box () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;

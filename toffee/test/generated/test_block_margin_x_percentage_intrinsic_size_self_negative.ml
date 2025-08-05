@@ -18,7 +18,7 @@ let test_block_margin_x_percentage_intrinsic_size_self_negative_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -82,7 +82,7 @@ let test_block_margin_x_percentage_intrinsic_size_self_negative_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 100.0;

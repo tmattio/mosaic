@@ -48,7 +48,7 @@ let test_flex_bevy_issue_16304_border_box () =
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -60,7 +60,7 @@ let test_flex_bevy_issue_16304_border_box () =
   let _ = add_child tree node1 node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -162,7 +162,7 @@ let test_flex_bevy_issue_16304_content_box () =
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -174,7 +174,7 @@ let test_flex_bevy_issue_16304_content_box () =
   let _ = add_child tree node1 node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 20.0;

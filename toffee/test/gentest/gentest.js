@@ -14,17 +14,16 @@ const testDir = path.resolve(__dirname, '..');
 function styleToOCaml(style, boxSizing) {
   const params = [];
 
-  // Only set display if explicitly specified - Taffy defaults to Flex
-  let displayMode = style.display || 'flex';  // Track display mode for later checks
-  if (style.display) {
-    const displayMap = {
-      'grid': 'Grid',
-      'flex': 'Flex',
-      'block': 'Block',
-      'none': 'None'
-    };
-    params.push(`~display:(Style.Display.${displayMap[style.display] || 'Flex'})`);
-  }
+  // Display property - Taffy's test CSS sets div { display: flex; } by default
+  // So we should always set display, using flex as the default if not specified
+  const displayMap = {
+    'grid': 'Grid',
+    'flex': 'Flex',
+    'block': 'Block',
+    'none': 'None'
+  };
+  const displayMode = style.display || 'flex';
+  params.push(`~display:(Style.Display.${displayMap[displayMode] || 'Flex'})`);
 
   // Direction property
   if (style.direction) {
@@ -340,9 +339,11 @@ function styleToOCaml(style, boxSizing) {
     params.push('~box_sizing:Style.Box_sizing.Content_box');
   }
 
+  // Note: We always have at least display set, so params.length > 0 should always be true
+  // This matches Taffy which always has at least display: flex from the CSS
   return params.length > 0
     ? `Style.make ${params.join(' ')} ()`
-    : 'Style.default';
+    : `Style.make ~display:(Style.Display.Flex) ()`;
 }
 
 function getTrackSizeValue(track) {

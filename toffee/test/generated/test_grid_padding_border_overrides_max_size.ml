@@ -18,7 +18,7 @@ let test_grid_padding_border_overrides_max_size_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~max_size:
            {
              width = Style.Dimension.length 12.0;
@@ -89,7 +89,7 @@ let test_grid_padding_border_overrides_max_size_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~max_size:
            {
              width = Style.Dimension.length 12.0;

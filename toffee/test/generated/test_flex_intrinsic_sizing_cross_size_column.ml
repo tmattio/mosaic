@@ -96,7 +96,9 @@ let test_flex_intrinsic_sizing_cross_size_column_border_box measure_function ()
 
   (* Create nodes *)
   let node =
-    new_leaf tree (Style.make ~flex_direction:Style.Flex_direction.Column ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column ())
     |> Result.get_ok
   in
   let _ =
@@ -141,7 +143,8 @@ let test_flex_intrinsic_sizing_cross_size_column_content_box measure_function ()
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in

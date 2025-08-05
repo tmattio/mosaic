@@ -15,7 +15,7 @@ let test_flex_rounding_fractial_input_5_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~justify_content:Center
+      (Style.make ~display:Style.Display.Flex ~justify_content:Center
          ~size:
            {
              width = Style.Dimension.length 963.333;
@@ -26,7 +26,7 @@ let test_flex_rounding_fractial_input_5_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 100.3;
@@ -38,7 +38,7 @@ let test_flex_rounding_fractial_input_5_border_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 100.3;
@@ -94,7 +94,7 @@ let test_flex_rounding_fractial_input_5_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~justify_content:Center
+      (Style.make ~display:Style.Display.Flex ~justify_content:Center
          ~size:
            {
              width = Style.Dimension.length 963.333;
@@ -105,7 +105,7 @@ let test_flex_rounding_fractial_input_5_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 100.3;
@@ -117,7 +117,7 @@ let test_flex_rounding_fractial_input_5_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 100.3;

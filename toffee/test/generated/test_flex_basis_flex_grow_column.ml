@@ -15,7 +15,8 @@ let test_flex_basis_flex_grow_column_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -26,11 +27,16 @@ let test_flex_basis_flex_grow_column_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0 ~flex_basis:(Style.Dimension.length 50.0) ())
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
+         ~flex_basis:(Style.Dimension.length 50.0)
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 = new_leaf tree (Style.make ~flex_grow:1.0 ()) |> Result.get_ok in
+  let node1 =
+    new_leaf tree (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node node1 |> Result.get_ok in
 
   (* Compute layout *)
@@ -78,7 +84,8 @@ let test_flex_basis_flex_grow_column_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -89,7 +96,7 @@ let test_flex_basis_flex_grow_column_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
          ~flex_basis:(Style.Dimension.length 50.0)
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
@@ -97,7 +104,8 @@ let test_flex_basis_flex_grow_column_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0 ~box_sizing:Style.Box_sizing.Content_box ())
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in

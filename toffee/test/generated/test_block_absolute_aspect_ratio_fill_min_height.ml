@@ -26,7 +26,7 @@ let test_block_absolute_aspect_ratio_fill_min_height_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~min_size:
            {
              width = Style.Dimension.length 50.0;
@@ -88,7 +88,7 @@ let test_block_absolute_aspect_ratio_fill_min_height_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~min_size:
            {
              width = Style.Dimension.length 50.0;

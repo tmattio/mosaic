@@ -15,7 +15,7 @@ let test_flex_absolute_layout_percentage_height_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 200.0;
@@ -26,7 +26,7 @@ let test_flex_absolute_layout_percentage_height_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -84,7 +84,7 @@ let test_flex_absolute_layout_percentage_height_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 200.0;
@@ -95,7 +95,7 @@ let test_flex_absolute_layout_percentage_height_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 10.0;

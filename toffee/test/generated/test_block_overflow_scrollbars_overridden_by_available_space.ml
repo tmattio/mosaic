@@ -34,7 +34,7 @@ let test_block_overflow_scrollbars_overridden_by_available_space_border_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~inset:
            {
              left = Style.Length_percentage_auto.length 0.0;
@@ -117,7 +117,7 @@ let test_block_overflow_scrollbars_overridden_by_available_space_content_box ()
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~inset:
            {
              left = Style.Length_percentage_auto.length 0.0;

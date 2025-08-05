@@ -96,7 +96,7 @@ let test_flex_measure_child_with_flex_grow_border_box measure_function () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -107,7 +107,7 @@ let test_flex_measure_child_with_flex_grow_border_box measure_function () =
   in
   let node0 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -117,7 +117,9 @@ let test_flex_measure_child_with_flex_grow_border_box measure_function () =
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 = new_leaf tree Style.default |> Result.get_ok in
+  let node1 =
+    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
+  in
   let _ =
     set_node_context tree node1 (Some (MeasureFunction.Text "H​H​H​H​H"))
     |> Result.get_ok
@@ -170,7 +172,7 @@ let test_flex_measure_child_with_flex_grow_content_box measure_function () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -181,7 +183,7 @@ let test_flex_measure_child_with_flex_grow_content_box measure_function () =
   in
   let node0 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -192,7 +194,9 @@ let test_flex_measure_child_with_flex_grow_content_box measure_function () =
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
-    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

@@ -16,7 +16,8 @@ let test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hid
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Row
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -28,7 +29,7 @@ let test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hid
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~flex_direction:Style.Flex_direction.Column
          ~inset:
            {
@@ -43,7 +44,7 @@ let test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hid
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -105,7 +106,8 @@ let test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hid
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Row
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -117,7 +119,7 @@ let test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hid
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~flex_direction:Style.Flex_direction.Column
          ~inset:
            {
@@ -132,7 +134,7 @@ let test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hid
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 100.0;

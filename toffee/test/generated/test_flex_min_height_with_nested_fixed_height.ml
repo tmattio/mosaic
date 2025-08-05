@@ -15,7 +15,8 @@ let test_flex_min_height_with_nested_fixed_height_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Row
          ~size:
            {
              width = Style.Dimension.length 320.0;
@@ -38,8 +39,9 @@ let test_flex_min_height_with_nested_fixed_height_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~align_self:Flex_start ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column ~align_self:Flex_start
+         ~flex_shrink:0.0
          ~min_size:
            {
              width = Style.Dimension.auto;
@@ -58,7 +60,7 @@ let test_flex_min_height_with_nested_fixed_height_border_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -114,7 +116,8 @@ let test_flex_min_height_with_nested_fixed_height_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Row
          ~size:
            {
              width = Style.Dimension.length 320.0;
@@ -137,8 +140,9 @@ let test_flex_min_height_with_nested_fixed_height_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~align_self:Flex_start ~flex_shrink:0.0
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Column ~align_self:Flex_start
+         ~flex_shrink:0.0
          ~min_size:
            {
              width = Style.Dimension.auto;
@@ -157,7 +161,7 @@ let test_flex_min_height_with_nested_fixed_height_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make
+      (Style.make ~display:Style.Display.Flex
          ~size:
            {
              width = Style.Dimension.length 40.0;

@@ -96,8 +96,8 @@ let test_flex_absolute_child_with_cross_margin_border_box measure_function () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~justify_content:Space_between
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Row ~justify_content:Space_between
          ~min_size:
            {
              width = Style.Dimension.length 311.0;
@@ -113,8 +113,8 @@ let test_flex_absolute_child_with_cross_margin_border_box measure_function () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_content:Stretch
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Row ~align_content:Stretch
          ~size:
            {
              width = Style.Dimension.length 28.0;
@@ -126,7 +126,7 @@ let test_flex_absolute_child_with_cross_margin_border_box measure_function () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~flex_direction:Style.Flex_direction.Row ~align_content:Stretch
          ~flex_grow:0.0 ~flex_shrink:1.0
          ~size:
@@ -151,8 +151,8 @@ let test_flex_absolute_child_with_cross_margin_border_box measure_function () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_content:Stretch
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Row ~align_content:Stretch
          ~size:
            {
              width = Style.Dimension.length 25.0;
@@ -214,8 +214,8 @@ let test_flex_absolute_child_with_cross_margin_content_box measure_function () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~justify_content:Space_between
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Row ~justify_content:Space_between
          ~min_size:
            {
              width = Style.Dimension.length 311.0;
@@ -231,8 +231,8 @@ let test_flex_absolute_child_with_cross_margin_content_box measure_function () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_content:Stretch
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Row ~align_content:Stretch
          ~size:
            {
              width = Style.Dimension.length 28.0;
@@ -244,7 +244,7 @@ let test_flex_absolute_child_with_cross_margin_content_box measure_function () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
          ~flex_direction:Style.Flex_direction.Row ~align_content:Stretch
          ~flex_grow:0.0 ~flex_shrink:1.0
          ~size:
@@ -269,8 +269,8 @@ let test_flex_absolute_child_with_cross_margin_content_box measure_function () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_content:Stretch
+      (Style.make ~display:Style.Display.Flex
+         ~flex_direction:Style.Flex_direction.Row ~align_content:Stretch
          ~size:
            {
              width = Style.Dimension.length 25.0;

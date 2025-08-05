@@ -26,7 +26,8 @@ let test_grid_aspect_ratio_absolute_fill_height_from_inset_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~aspect_ratio:3.0
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+         ~aspect_ratio:3.0
          ~inset:
            {
              left = Style.Length_percentage_auto.percent 0.1;
@@ -90,7 +91,8 @@ let test_grid_aspect_ratio_absolute_fill_height_from_inset_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~aspect_ratio:3.0
+      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+         ~aspect_ratio:3.0
          ~inset:
            {
              left = Style.Length_percentage_auto.percent 0.1;
