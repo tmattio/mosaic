@@ -68,7 +68,7 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)
             }
           |> fun size ->
           Size.apply_aspect_ratio size aspect_ratio |> fun size ->
-          Size.add_option size (Size.map Option.some box_sizing_adjustment)
+          Size.maybe_add size box_sizing_adjustment
         in
 
         let style_min_size =
@@ -84,7 +84,7 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)
             }
           |> fun size ->
           Size.apply_aspect_ratio size aspect_ratio |> fun size ->
-          Size.add_option size (Size.map Option.some box_sizing_adjustment)
+          Size.maybe_add size box_sizing_adjustment
         in
 
         let style_max_size =
@@ -99,7 +99,7 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)
                   resolve_calc_value;
             }
           |> fun size ->
-          Size.add_option size (Size.map Option.some box_sizing_adjustment)
+          Size.maybe_add size box_sizing_adjustment
         in
 
         let node_size = Size.choose_first known_dimensions style_size in

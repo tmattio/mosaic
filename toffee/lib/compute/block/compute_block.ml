@@ -99,7 +99,7 @@ let generate_item_list (type t)
               in
               resolved_size |> fun size ->
               Size.apply_aspect_ratio size aspect_ratio |> fun size ->
-              Size.add_option size (Size.map Option.some box_sizing_adjustment));
+              Size.maybe_add size box_sizing_adjustment);
            min_size =
              (let min_size_dimensions = Style.min_size child_style in
               let resolved_min_size : float option size =
@@ -116,7 +116,7 @@ let generate_item_list (type t)
               in
               resolved_min_size |> fun size ->
               Size.apply_aspect_ratio size aspect_ratio |> fun size ->
-              Size.add_option size (Size.map Option.some box_sizing_adjustment));
+              Size.maybe_add size box_sizing_adjustment);
            max_size =
              (let max_size_dimensions = Style.max_size child_style in
               let resolved_max_size : float option size =
@@ -133,7 +133,7 @@ let generate_item_list (type t)
               in
               resolved_max_size |> fun size ->
               Size.apply_aspect_ratio size aspect_ratio |> fun size ->
-              Size.add_option size (Size.map Option.some box_sizing_adjustment));
+              Size.maybe_add size box_sizing_adjustment);
            overflow = Style.overflow child_style;
            scrollbar_width = Style.scrollbar_width child_style;
            position = Style.position child_style;
@@ -579,7 +579,7 @@ let perform_absolute_layout_on_absolute_children (type t)
               }
             |> fun s ->
             Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-            Size.add_option s (Size.map Option.some box_sizing_adjustment)
+            Size.maybe_add s box_sizing_adjustment
           in
           let min_size =
             Style.min_size child_style |> fun dims ->
@@ -594,11 +594,11 @@ let perform_absolute_layout_on_absolute_children (type t)
               }
             |> fun s ->
             Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-            Size.add_option s (Size.map Option.some box_sizing_adjustment)
+            Size.maybe_add s box_sizing_adjustment
             |> fun s ->
             Size.choose_first s (Size.map Option.some padding_border_sum)
             |> fun s ->
-            Size.max_option s (Size.map Option.some padding_border_sum)
+            Size.maybe_max s padding_border_sum
           in
           let max_size =
             Style.max_size child_style |> fun dims ->
@@ -613,7 +613,7 @@ let perform_absolute_layout_on_absolute_children (type t)
               }
             |> fun s ->
             Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-            Size.add_option s (Size.map Option.some box_sizing_adjustment)
+            Size.maybe_add s box_sizing_adjustment
           in
           (* If both min and max in a given axis are set and max <= min then this determines the size in that axis *)
           let min_max_definite_size =
@@ -943,7 +943,7 @@ let compute_inner (type t)
       }
     |> fun s ->
     Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-    Size.add_option s (Size.map Option.some box_sizing_adjustment)
+    Size.maybe_add s box_sizing_adjustment
   in
   let min_size =
     Style.min_size style |> fun dims ->
@@ -955,7 +955,7 @@ let compute_inner (type t)
       }
     |> fun s ->
     Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-    Size.add_option s (Size.map Option.some box_sizing_adjustment)
+    Size.maybe_add s box_sizing_adjustment
   in
   let max_size =
     Style.max_size style |> fun dims ->
@@ -967,7 +967,7 @@ let compute_inner (type t)
       }
     |> fun s ->
     Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-    Size.add_option s (Size.map Option.some box_sizing_adjustment)
+    Size.maybe_add s box_sizing_adjustment
   in
 
   (* Determine margin collapsing behaviour *)
@@ -1206,7 +1206,7 @@ let compute_block_layout (type t)
       }
     |> fun s ->
     Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-    Size.add_option s (Size.map Option.some box_sizing_adjustment)
+    Size.maybe_add s box_sizing_adjustment
   in
   let max_size =
     Style.max_size style |> fun dims ->
@@ -1219,7 +1219,7 @@ let compute_block_layout (type t)
       }
     |> fun s ->
     Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-    Size.add_option s (Size.map Option.some box_sizing_adjustment)
+    Size.maybe_add s box_sizing_adjustment
   in
   let clamped_style_size =
     if sizing_mode = Sizing_mode.Inherent_size then
@@ -1235,7 +1235,7 @@ let compute_block_layout (type t)
         }
       |> fun s ->
       Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-      Size.add_option s (Size.map Option.some box_sizing_adjustment) |> fun s ->
+      Size.maybe_add s box_sizing_adjustment |> fun s ->
       Size.clamp_option s min_size max_size
     else Size.none
   in
@@ -1254,7 +1254,7 @@ let compute_block_layout (type t)
     known_dimensions |> fun dims ->
     Size.choose_first dims min_max_definite_size |> fun dims ->
     Size.choose_first dims clamped_style_size |> fun dims ->
-    Size.max_option dims (Size.map Option.some padding_border_size)
+    Size.maybe_max dims padding_border_size
   in
 
   (* Short-circuit layout if the container's size is fully determined by the container's size and the run mode

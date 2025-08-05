@@ -52,7 +52,7 @@ let compute_root_layout (type t)
          }
        |> fun s ->
        Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-       Size.add_option s (Size.map Option.some box_sizing_adjustment)
+       Size.maybe_add s box_sizing_adjustment
      in
      let max_size =
        Style.max_size style |> fun dims ->
@@ -63,7 +63,7 @@ let compute_root_layout (type t)
          }
        |> fun s ->
        Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-       Size.add_option s (Size.map Option.some box_sizing_adjustment)
+       Size.maybe_add s box_sizing_adjustment
      in
      let clamped_style_size =
        Style.size style |> fun dims ->
@@ -74,7 +74,7 @@ let compute_root_layout (type t)
          }
        |> fun s ->
        Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-       Size.add_option s (Size.map Option.some box_sizing_adjustment)
+       Size.maybe_add s box_sizing_adjustment
        |> fun s -> Size.clamp_option s min_size max_size
      in
 
@@ -106,7 +106,7 @@ let compute_root_layout (type t)
        Size.choose_first dims min_max_definite_size |> fun dims ->
        Size.choose_first dims clamped_style_size |> fun dims ->
        Size.choose_first dims available_space_based_size |> fun dims ->
-       Size.max_option dims (Size.map Option.some padding_border_size)
+       Size.maybe_max dims padding_border_size
      in
 
      mut_known_dimensions := styled_based_known_dimensions);

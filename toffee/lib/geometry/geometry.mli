@@ -188,6 +188,21 @@ module Size : sig
 
   val apply_aspect_ratio : float option t -> float option -> float option t
   (** Apply aspect ratio to compute missing dimension *)
+
+  (** {3 Option + Concrete → Option operations}
+      Implements Rust's MaybeMath for Option<f32> + f32 -> Option<f32> *)
+
+  val maybe_add : float option t -> float t -> float option t
+  (** Add concrete size to optional size. None stays None. *)
+
+  val maybe_sub : float option t -> float t -> float option t
+  (** Subtract concrete size from optional size. None stays None. *)
+
+  val maybe_min : float option t -> float t -> float option t
+  (** Component-wise minimum with concrete size. None stays None. *)
+
+  val maybe_max : float option t -> float t -> float option t
+  (** Component-wise maximum with concrete size. None stays None. *)
 end
 
 (** A 2-dimensional coordinate *)

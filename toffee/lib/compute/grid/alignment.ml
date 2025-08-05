@@ -213,7 +213,7 @@ let align_and_position_item (type t)
         }
     in
     let with_aspect = Size.apply_aspect_ratio resolved_size aspect_ratio in
-    Size.add_option with_aspect (Size.map Option.some box_sizing_adjustment)
+    Size.maybe_add with_aspect box_sizing_adjustment
   in
   let min_size =
     let style_min_size = Style.min_size style in
@@ -231,8 +231,7 @@ let align_and_position_item (type t)
         }
     in
     let with_box_sizing =
-      Size.add_option resolved_min_size
-        (Size.map Option.some box_sizing_adjustment)
+      Size.maybe_add resolved_min_size box_sizing_adjustment
     in
     let with_padding_border =
       Size.choose_first with_box_sizing
@@ -260,7 +259,7 @@ let align_and_position_item (type t)
         }
     in
     let with_aspect = Size.apply_aspect_ratio resolved_max_size aspect_ratio in
-    Size.add_option with_aspect (Size.map Option.some box_sizing_adjustment)
+    Size.maybe_add with_aspect box_sizing_adjustment
   in
 
   (* Resolve default alignment styles if they are set on neither the parent or the node itself
@@ -300,18 +299,18 @@ let align_and_position_item (type t)
              (Tree.resolve_calc_value tree))
   in
 
-  let maybe_sub base opt_val =
+  let subtract_option base opt_val =
     match opt_val with Some v -> base -. v | None -> base
   in
   let grid_area_minus_item_margins_size =
     Size.
       {
         width =
-          ( (grid_area_size.width |> fun w -> maybe_sub w margin.left)
-          |> fun w -> maybe_sub w margin.right );
+          ( (grid_area_size.width |> fun w -> subtract_option w margin.left)
+          |> fun w -> subtract_option w margin.right );
         height =
-          ( ( (grid_area_size.height |> fun h -> maybe_sub h margin.top)
-            |> fun h -> maybe_sub h margin.bottom )
+          ( ( (grid_area_size.height |> fun h -> subtract_option h margin.top)
+            |> fun h -> subtract_option h margin.bottom )
           |> fun h -> h -. baseline_shim );
       }
   in

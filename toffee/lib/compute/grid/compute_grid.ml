@@ -51,7 +51,7 @@ let compute_grid_layout (type t)
         height = Dimension.maybe_resolve dims.height parent_size.height calc;
       })
     |> (fun s -> Size.apply_aspect_ratio s aspect_ratio)
-    |> Size.add_option (Size.map Option.some box_sizing_adjustment)
+    |> (fun s -> Size.maybe_add s box_sizing_adjustment)
   in
   let max_size =
     Style.max_size style
@@ -62,19 +62,22 @@ let compute_grid_layout (type t)
         height = Dimension.maybe_resolve dims.height parent_size.height calc;
       })
     |> (fun s -> Size.apply_aspect_ratio s aspect_ratio)
-    |> Size.add_option (Size.map Option.some box_sizing_adjustment)
+    |> (fun s -> Size.maybe_add s box_sizing_adjustment)
+  in
+  let style_size =
+    Style.size style
+    |> (fun dims ->
+    Size.
+      {
+        width = Dimension.maybe_resolve dims.width parent_size.width calc;
+        height = Dimension.maybe_resolve dims.height parent_size.height calc;
+      })
+    |> (fun s -> Size.apply_aspect_ratio s aspect_ratio)
+    |> (fun s -> Size.maybe_add s box_sizing_adjustment)
   in
   let preferred_size =
     if Layout_input.sizing_mode inputs = Sizing_mode.Inherent_size then
-      Style.size style
-      |> (fun dims ->
-      Size.
-        {
-          width = Dimension.maybe_resolve dims.width parent_size.width calc;
-          height = Dimension.maybe_resolve dims.height parent_size.height calc;
-        })
-      |> (fun s -> Size.apply_aspect_ratio s aspect_ratio)
-      |> Size.add_option (Size.map Option.some box_sizing_adjustment)
+      style_size
     else Size.none
   in
 
@@ -157,7 +160,7 @@ let compute_grid_layout (type t)
     known_dimensions
     |> Size.choose_first preferred_size
     |> Size.clamp_option min_size max_size
-    |> Size.max_option (Size.map Option.some padding_border_size)
+    |> (fun s -> Size.maybe_max s padding_border_size)
   in
   let inner_node_size =
     Size.
@@ -186,7 +189,7 @@ let compute_grid_layout (type t)
         outer_node_size |> Size.choose_first max_size
         |> Size.choose_first min_size
         |> Size.clamp_option min_size max_size
-        |> Size.max_option (Size.map Option.some padding_border_size)
+        |> (fun s -> Size.maybe_max s padding_border_size)
         |> Size.sub_option
              (Size.map Option.some (Rect.sum_axes content_box_inset))
       in

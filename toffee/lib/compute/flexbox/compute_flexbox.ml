@@ -249,7 +249,7 @@ let compute_constants (type t)
       }
     |> fun s ->
     Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-    Size.add_option s (Size.map Option.some box_sizing_adjustment)
+    Size.maybe_add s box_sizing_adjustment
   in
 
   let max_size =
@@ -263,7 +263,7 @@ let compute_constants (type t)
       }
     |> fun s ->
     Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-    Size.add_option s (Size.map Option.some box_sizing_adjustment)
+    Size.maybe_add s box_sizing_adjustment
   in
 
   {
@@ -334,7 +334,7 @@ let generate_anonymous_flex_items (type t)
              }
            |> fun s ->
            Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-           Size.add_option s (Size.map Option.some box_sizing_adjustment)
+           Size.maybe_add s box_sizing_adjustment
          in
 
          let min_size =
@@ -350,7 +350,7 @@ let generate_anonymous_flex_items (type t)
              }
            |> fun s ->
            Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-           Size.add_option s (Size.map Option.some box_sizing_adjustment)
+           Size.maybe_add s box_sizing_adjustment
          in
 
          let max_size =
@@ -366,7 +366,7 @@ let generate_anonymous_flex_items (type t)
              }
            |> fun s ->
            Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-           Size.add_option s (Size.map Option.some box_sizing_adjustment)
+           Size.maybe_add s box_sizing_adjustment
          in
 
          (* Resolve inset *)
@@ -2095,7 +2095,7 @@ let determine_used_cross_size (type t)
                         constants.node_inner_size.height calc;
                   }
                 |> fun s ->
-                Size.add_option s (Size.map Option.some box_sizing_adjustment)
+                Size.maybe_add s box_sizing_adjustment
               in
 
               let cross_margin_sum =
@@ -3584,7 +3584,7 @@ let compute_flexbox_layout (type t)
       }
     |> fun s ->
     Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-    Size.add_option s (Size.map Option.some box_sizing_adjustment)
+    Size.maybe_add s box_sizing_adjustment
   in
 
   let max_size =
@@ -3598,7 +3598,7 @@ let compute_flexbox_layout (type t)
       }
     |> fun s ->
     Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-    Size.add_option s (Size.map Option.some box_sizing_adjustment)
+    Size.maybe_add s box_sizing_adjustment
   in
 
   let clamped_style_size =
@@ -3615,7 +3615,7 @@ let compute_flexbox_layout (type t)
         }
       |> fun s ->
       Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-      Size.add_option s (Size.map Option.some box_sizing_adjustment) |> fun s ->
+      Size.maybe_add s box_sizing_adjustment |> fun s ->
       Size.clamp_option s min_size max_size
     else Size.none
   in
@@ -3635,7 +3635,7 @@ let compute_flexbox_layout (type t)
     known_dimensions |> fun dims ->
     Size.choose_first dims min_max_definite_size |> fun dims ->
     Size.choose_first dims clamped_style_size |> fun dims ->
-    Size.max_option dims (Size.map Option.some padding_border_sum)
+    Size.maybe_max dims padding_border_sum
   in
 
   (* Short-circuit layout if the container's size is fully determined and we're in ComputeSize mode *)

@@ -316,3 +316,30 @@ let sub_or_zero concrete optional =
 
 let max_concrete a b =
   { width = Float.max a.width b.width; height = Float.max a.height b.height }
+
+(* Option + Concrete -> Option operations *)
+(* These implement Rust's MaybeMath for Option<f32> + f32 -> Option<f32> *)
+
+let maybe_add opt_size concrete_size =
+  {
+    width = Option.map (fun v -> v +. concrete_size.width) opt_size.width;
+    height = Option.map (fun v -> v +. concrete_size.height) opt_size.height;
+  }
+
+let maybe_sub opt_size concrete_size =
+  {
+    width = Option.map (fun v -> v -. concrete_size.width) opt_size.width;
+    height = Option.map (fun v -> v -. concrete_size.height) opt_size.height;
+  }
+
+let maybe_min opt_size concrete_size =
+  {
+    width = Option.map (fun v -> Float.min v concrete_size.width) opt_size.width;
+    height = Option.map (fun v -> Float.min v concrete_size.height) opt_size.height;
+  }
+
+let maybe_max opt_size concrete_size =
+  {
+    width = Option.map (fun v -> Float.max v concrete_size.width) opt_size.width;
+    height = Option.map (fun v -> Float.max v concrete_size.height) opt_size.height;
+  }
