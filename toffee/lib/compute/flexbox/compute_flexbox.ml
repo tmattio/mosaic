@@ -2760,8 +2760,16 @@ let perform_absolute_layout_on_absolute_children (type t)
       (* Compute known dimensions from min/max/inherent size styles *)
       let style_size =
         Style.size child_style
-        |> Size.map (fun d ->
-               Dimension.maybe_resolve d (Some inset_relative_size.width) calc)
+        |> fun size ->
+        Size.
+          {
+            width =
+              Dimension.maybe_resolve size.width
+                (Some inset_relative_size.width) calc;
+            height =
+              Dimension.maybe_resolve size.height
+                (Some inset_relative_size.height) calc;
+          }
       in
       (* Apply aspect ratio if needed *)
       let style_size =
@@ -2786,8 +2794,16 @@ let perform_absolute_layout_on_absolute_children (type t)
 
       let min_size =
         Style.min_size child_style
-        |> Size.map (fun d ->
-               Dimension.maybe_resolve d (Some inset_relative_size.width) calc)
+        |> fun size ->
+        Size.
+          {
+            width =
+              Dimension.maybe_resolve size.width
+                (Some inset_relative_size.width) calc;
+            height =
+              Dimension.maybe_resolve size.height
+                (Some inset_relative_size.height) calc;
+          }
       in
       (* Apply aspect ratio if needed *)
       let min_size =
@@ -2825,8 +2841,16 @@ let perform_absolute_layout_on_absolute_children (type t)
 
       let max_size =
         Style.max_size child_style
-        |> Size.map (fun d ->
-               Dimension.maybe_resolve d (Some inset_relative_size.width) calc)
+        |> fun size ->
+        Size.
+          {
+            width =
+              Dimension.maybe_resolve size.width
+                (Some inset_relative_size.width) calc;
+            height =
+              Dimension.maybe_resolve size.height
+                (Some inset_relative_size.height) calc;
+          }
       in
       (* Apply aspect ratio if needed *)
       let max_size =

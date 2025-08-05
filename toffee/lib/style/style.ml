@@ -286,7 +286,7 @@ let set_grid_row t grid_row = { t with grid_row }
 let set_grid_column t grid_column = { t with grid_column }
 
 (* Smart constructor *)
-let make ?(display = default.display) ?(box_sizing = default.box_sizing)
+let make ?display ?(box_sizing = default.box_sizing)
     ?(position = default.position) ?(overflow = default.overflow)
     ?(scrollbar_width = default.scrollbar_width)
     ?(text_align = default.text_align) ?(inset = default.inset)
@@ -306,6 +306,14 @@ let make ?(display = default.display) ?(box_sizing = default.box_sizing)
     ?(grid_template_column_names = default.grid_template_column_names)
     ?(grid_template_row_names = default.grid_template_row_names)
     ?(grid_row = default.grid_row) ?(grid_column = default.grid_column) () =
+  (* Infer display mode from properties if not explicitly set *)
+  let display =
+    match display with
+    | Some d -> d
+    | None ->
+        (* Default to Flex to match Taffy's behavior when flexbox feature is enabled *)
+        Display.Flex
+  in
   {
     display;
     item_is_table = false;
