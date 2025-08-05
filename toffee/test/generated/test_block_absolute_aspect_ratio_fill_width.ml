@@ -26,7 +26,7 @@ let test_block_absolute_aspect_ratio_fill_width_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.auto;
@@ -96,7 +96,7 @@ let test_block_absolute_aspect_ratio_fill_width_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.auto;

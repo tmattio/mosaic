@@ -15,7 +15,7 @@ let test_flex_basis_overrides_main_size_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -26,7 +26,7 @@ let test_flex_basis_overrides_main_size_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
+      (Style.make ~flex_grow:1.0
          ~flex_basis:(Style.Dimension.length 50.0)
          ~size:
            {
@@ -39,7 +39,7 @@ let test_flex_basis_overrides_main_size_border_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
+      (Style.make ~flex_grow:1.0
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -51,7 +51,7 @@ let test_flex_basis_overrides_main_size_border_box () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
+      (Style.make ~flex_grow:1.0
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -112,7 +112,7 @@ let test_flex_basis_overrides_main_size_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -123,7 +123,7 @@ let test_flex_basis_overrides_main_size_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
+      (Style.make ~flex_grow:1.0
          ~flex_basis:(Style.Dimension.length 50.0)
          ~size:
            {
@@ -136,7 +136,7 @@ let test_flex_basis_overrides_main_size_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
+      (Style.make ~flex_grow:1.0
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -148,7 +148,7 @@ let test_flex_basis_overrides_main_size_content_box () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
+      (Style.make ~flex_grow:1.0
          ~size:
            {
              width = Style.Dimension.length 10.0;

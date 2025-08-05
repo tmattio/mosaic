@@ -96,8 +96,7 @@ let test_flex_bevy_issue_9530_reduced_border_box measure_function () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -108,15 +107,11 @@ let test_flex_bevy_issue_9530_reduced_border_box measure_function () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0 ())
+      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0 ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 =
-    new_leaf tree (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ())
-    |> Result.get_ok
-  in
+  let node1 = new_leaf tree (Style.make ~flex_grow:1.0 ()) |> Result.get_ok in
   let _ =
     set_node_context tree node1 (Some (MeasureFunction.Text "HH​HH​HH​HH"))
     |> Result.get_ok
@@ -169,8 +164,7 @@ let test_flex_bevy_issue_9530_reduced_content_box measure_function () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -181,16 +175,14 @@ let test_flex_bevy_issue_9530_reduced_content_box measure_function () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
+      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
-         ~box_sizing:Style.Box_sizing.Content_box ())
+      (Style.make ~flex_grow:1.0 ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

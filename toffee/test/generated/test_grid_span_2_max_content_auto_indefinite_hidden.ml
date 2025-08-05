@@ -33,7 +33,7 @@ let test_grid_span_2_max_content_auto_indefinite_hidden_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~grid_column:
            {
              start = Style.Grid.Placement.line 1;
@@ -50,7 +50,7 @@ let test_grid_span_2_max_content_auto_indefinite_hidden_border_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~grid_column:
            {
              start = Style.Grid.Placement.line 2;
@@ -129,7 +129,7 @@ let test_grid_span_2_max_content_auto_indefinite_hidden_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~grid_column:
            {
              start = Style.Grid.Placement.line 1;
@@ -146,7 +146,7 @@ let test_grid_span_2_max_content_auto_indefinite_hidden_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~grid_column:
            {
              start = Style.Grid.Placement.line 2;

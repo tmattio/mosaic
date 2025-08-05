@@ -15,8 +15,7 @@ let test_flex_absolute_child_with_main_margin_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~flex_direction:Style.Flex_direction.Row
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -27,7 +26,7 @@ let test_flex_absolute_child_with_main_margin_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 9.0;
@@ -85,8 +84,7 @@ let test_flex_absolute_child_with_main_margin_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~flex_direction:Style.Flex_direction.Row
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -97,7 +95,7 @@ let test_flex_absolute_child_with_main_margin_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 9.0;

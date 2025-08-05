@@ -15,8 +15,7 @@ let test_flex_scroll_size_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_items:Start
-         ~justify_content:Start
+      (Style.make ~align_items:Start ~justify_content:Start
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -28,7 +27,7 @@ let test_flex_scroll_size_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
+      (Style.make ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -84,8 +83,7 @@ let test_flex_scroll_size_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_items:Start
-         ~justify_content:Start
+      (Style.make ~align_items:Start ~justify_content:Start
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -97,7 +95,7 @@ let test_flex_scroll_size_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
+      (Style.make ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 100.0;

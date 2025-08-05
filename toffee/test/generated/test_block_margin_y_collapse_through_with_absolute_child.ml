@@ -140,9 +140,7 @@ let test_block_margin_y_collapse_through_with_absolute_child_border_box
   in
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
-         ())
+    new_leaf tree (Style.make ~position:Style.Position.Absolute ())
     |> Result.get_ok
   in
   let _ =
@@ -271,7 +269,7 @@ let test_block_margin_y_collapse_through_with_absolute_child_content_box
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in

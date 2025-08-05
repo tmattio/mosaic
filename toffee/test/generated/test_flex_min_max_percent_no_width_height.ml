@@ -15,8 +15,8 @@ let test_flex_min_max_percent_no_width_height_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~align_items:Flex_start
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_items:Flex_start
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -27,7 +27,7 @@ let test_flex_min_max_percent_no_width_height_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~min_size:
            {
              width = Style.Dimension.percent 0.1;
@@ -83,8 +83,8 @@ let test_flex_min_max_percent_no_width_height_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~align_items:Flex_start
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_items:Flex_start
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -95,7 +95,7 @@ let test_flex_min_max_percent_no_width_height_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~min_size:
            {
              width = Style.Dimension.percent 0.1;

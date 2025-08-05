@@ -26,7 +26,7 @@ let test_block_display_none_with_inset_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.auto;
@@ -112,7 +112,7 @@ let test_block_display_none_with_inset_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.auto;

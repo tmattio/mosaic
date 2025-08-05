@@ -26,7 +26,7 @@ let test_block_item_max_width_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.auto;
@@ -43,7 +43,7 @@ let test_block_item_max_width_border_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.auto;
@@ -115,7 +115,7 @@ let test_block_item_max_width_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.auto;
@@ -132,7 +132,7 @@ let test_block_item_max_width_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.auto;

@@ -26,7 +26,7 @@ let test_grid_percent_items_width_and_padding_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.percent 0.5;
@@ -95,7 +95,7 @@ let test_grid_percent_items_width_and_padding_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.percent 0.5;

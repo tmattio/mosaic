@@ -26,7 +26,7 @@ let test_block_margin_auto_left_child_bigger_than_parent_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 72.0;
@@ -95,7 +95,7 @@ let test_block_margin_auto_left_child_bigger_than_parent_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 72.0;

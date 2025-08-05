@@ -35,7 +35,7 @@ let test_grid_fr_span_2_proportion_zero_sum_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~grid_column:
            {
              start = Style.Grid.Placement.span 2;
@@ -50,13 +50,9 @@ let test_grid_fr_span_2_proportion_zero_sum_border_box () =
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 =
-    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
-  in
+  let node1 = new_leaf tree Style.default |> Result.get_ok in
   let _ = add_child tree node node1 |> Result.get_ok in
-  let node2 =
-    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
-  in
+  let node2 = new_leaf tree Style.default |> Result.get_ok in
   let _ = add_child tree node node2 |> Result.get_ok in
 
   (* Compute layout *)
@@ -129,7 +125,7 @@ let test_grid_fr_span_2_proportion_zero_sum_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~grid_column:
            {
              start = Style.Grid.Placement.span 2;
@@ -145,16 +141,12 @@ let test_grid_fr_span_2_proportion_zero_sum_content_box () =
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node2 |> Result.get_ok in

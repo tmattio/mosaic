@@ -15,7 +15,7 @@ let test_flex_overflow_scrollbars_overridden_by_size_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 2.0;
@@ -25,10 +25,7 @@ let test_flex_overflow_scrollbars_overridden_by_size_border_box () =
          ())
     |> Result.get_ok
   in
-  let node0 =
-    new_leaf tree (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ())
-    |> Result.get_ok
-  in
+  let node0 = new_leaf tree (Style.make ~flex_grow:1.0 ()) |> Result.get_ok in
   let _ = add_child tree node node0 |> Result.get_ok in
 
   (* Compute layout *)
@@ -76,7 +73,7 @@ let test_flex_overflow_scrollbars_overridden_by_size_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 2.0;
@@ -88,8 +85,7 @@ let test_flex_overflow_scrollbars_overridden_by_size_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
-         ~box_sizing:Style.Box_sizing.Content_box ())
+      (Style.make ~flex_grow:1.0 ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in

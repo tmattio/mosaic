@@ -109,7 +109,7 @@ let test_flex_aspect_ratio_flex_column_fill_max_width_border_box
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~max_size:
            {
              width = Style.Dimension.auto;
@@ -178,7 +178,7 @@ let test_flex_aspect_ratio_flex_column_fill_max_width_content_box
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~max_size:
            {
              width = Style.Dimension.auto;

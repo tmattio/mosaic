@@ -16,7 +16,7 @@ let test_flex_margin_fix_left_auto_right_child_bigger_than_parent_border_box ()
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~justify_content:Center
+      (Style.make ~justify_content:Center
          ~size:
            {
              width = Style.Dimension.length 52.0;
@@ -27,7 +27,7 @@ let test_flex_margin_fix_left_auto_right_child_bigger_than_parent_border_box ()
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 72.0;
@@ -86,7 +86,7 @@ let test_flex_margin_fix_left_auto_right_child_bigger_than_parent_content_box ()
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~justify_content:Center
+      (Style.make ~justify_content:Center
          ~size:
            {
              width = Style.Dimension.length 52.0;
@@ -97,7 +97,7 @@ let test_flex_margin_fix_left_auto_right_child_bigger_than_parent_content_box ()
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 72.0;

@@ -15,8 +15,8 @@ let test_flex_margin_right_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~justify_content:Flex_end
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~justify_content:Flex_end
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -27,7 +27,7 @@ let test_flex_margin_right_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -85,8 +85,8 @@ let test_flex_margin_right_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~justify_content:Flex_end
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~justify_content:Flex_end
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -97,7 +97,7 @@ let test_flex_margin_right_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;

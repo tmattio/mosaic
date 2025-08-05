@@ -96,7 +96,7 @@ let test_flex_measure_child_absolute_border_box measure_function () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -106,9 +106,7 @@ let test_flex_measure_child_absolute_border_box measure_function () =
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
-         ())
+    new_leaf tree (Style.make ~position:Style.Position.Absolute ())
     |> Result.get_ok
   in
   let _ =
@@ -158,7 +156,7 @@ let test_flex_measure_child_absolute_content_box measure_function () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -169,7 +167,7 @@ let test_flex_measure_child_absolute_content_box measure_function () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in

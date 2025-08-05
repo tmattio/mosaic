@@ -110,18 +110,14 @@ let test_grid_relayout_vertical_text_border_box measure_function () =
          ())
     |> Result.get_ok
   in
-  let node0 =
-    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
-  in
+  let node0 = new_leaf tree Style.default |> Result.get_ok in
   let _ =
     set_node_context tree node0
       (Some (MeasureFunction.Text_vertical "HH​HH​HH​HH​HH​HH​HH"))
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 =
-    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
-  in
+  let node1 = new_leaf tree Style.default |> Result.get_ok in
   let _ =
     set_node_context tree node1 (Some (MeasureFunction.Text "HH​HH​HH"))
     |> Result.get_ok
@@ -189,9 +185,7 @@ let test_grid_relayout_vertical_text_content_box measure_function () =
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =
@@ -201,9 +195,7 @@ let test_grid_relayout_vertical_text_content_box measure_function () =
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

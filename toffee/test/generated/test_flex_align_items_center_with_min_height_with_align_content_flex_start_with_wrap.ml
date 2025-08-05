@@ -14,9 +14,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_w
   let tree = new_tree () in
 
   (* Create nodes *)
-  let node =
-    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
-  in
+  let node = new_leaf tree Style.default |> Result.get_ok in
   let node0 =
     new_leaf tree
       (Style.make ~display:Style.Display.Flex ~flex_wrap:Style.Flex_wrap.Wrap
@@ -37,7 +35,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_w
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -49,7 +47,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_w
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -79,7 +77,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_w
   let _ = add_child tree node node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -91,7 +89,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_w
   let _ = add_child tree node3 node4 |> Result.get_ok in
   let node5 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -120,7 +118,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_w
   let _ = add_child tree node node6 |> Result.get_ok in
   let node7 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -132,7 +130,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_w
   let _ = add_child tree node6 node7 |> Result.get_ok in
   let node8 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -162,7 +160,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_w
   let _ = add_child tree node node9 |> Result.get_ok in
   let node10 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -174,7 +172,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_w
   let _ = add_child tree node9 node10 |> Result.get_ok in
   let node11 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -280,9 +278,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_w
 
   (* Create nodes *)
   let node =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -305,7 +301,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_w
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -317,7 +313,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_w
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -347,7 +343,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_w
   let _ = add_child tree node node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -359,7 +355,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_w
   let _ = add_child tree node3 node4 |> Result.get_ok in
   let node5 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -388,7 +384,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_w
   let _ = add_child tree node node6 |> Result.get_ok in
   let node7 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -400,7 +396,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_w
   let _ = add_child tree node6 node7 |> Result.get_ok in
   let node8 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -430,7 +426,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_w
   let _ = add_child tree node node9 |> Result.get_ok in
   let node10 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -442,7 +438,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_w
   let _ = add_child tree node9 node10 |> Result.get_ok in
   let node11 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;

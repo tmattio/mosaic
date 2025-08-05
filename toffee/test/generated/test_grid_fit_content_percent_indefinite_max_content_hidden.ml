@@ -114,7 +114,7 @@ let test_grid_fit_content_percent_indefinite_max_content_hidden_border_box
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~overflow:{ x = Style.Overflow.Hidden; y = Style.Overflow.Hidden }
          ())
     |> Result.get_ok
@@ -190,7 +190,7 @@ let test_grid_fit_content_percent_indefinite_max_content_hidden_content_box
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~overflow:{ x = Style.Overflow.Hidden; y = Style.Overflow.Hidden }
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok

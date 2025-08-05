@@ -68,7 +68,7 @@ let test_block_margin_y_first_granchild_collapse_positive_equal_border_box () =
   let _ = add_child tree node1 node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.auto;
@@ -187,7 +187,7 @@ let test_block_margin_y_first_granchild_collapse_positive_equal_content_box () =
   let _ = add_child tree node1 node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.auto;

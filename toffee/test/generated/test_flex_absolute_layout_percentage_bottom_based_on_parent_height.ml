@@ -16,7 +16,7 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_border_bo
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -27,7 +27,7 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_border_bo
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -46,7 +46,7 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_border_bo
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -65,7 +65,7 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_border_bo
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -134,7 +134,7 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_content_b
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -145,7 +145,7 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_content_b
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -164,7 +164,7 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_content_b
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -183,7 +183,7 @@ let test_flex_absolute_layout_percentage_bottom_based_on_parent_height_content_b
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 10.0;

@@ -13,12 +13,10 @@ let test_flex_padding_border_overrides_size_flex_basis_0_border_box () =
   let tree = new_tree () in
 
   (* Create nodes *)
-  let node =
-    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
-  in
+  let node = new_leaf tree Style.default |> Result.get_ok in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~flex_basis:(Style.Dimension.length 0.0)
          ~size:
            {
@@ -45,7 +43,7 @@ let test_flex_padding_border_overrides_size_flex_basis_0_border_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~flex_basis:(Style.Dimension.length 0.0)
          ~size:
            {
@@ -101,14 +99,12 @@ let test_flex_padding_border_overrides_size_flex_basis_0_content_box () =
 
   (* Create nodes *)
   let node =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~flex_basis:(Style.Dimension.length 0.0)
          ~size:
            {
@@ -135,7 +131,7 @@ let test_flex_padding_border_overrides_size_flex_basis_0_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~flex_basis:(Style.Dimension.length 0.0)
          ~size:
            {

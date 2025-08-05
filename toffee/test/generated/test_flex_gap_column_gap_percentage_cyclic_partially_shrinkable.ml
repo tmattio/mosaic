@@ -16,8 +16,7 @@ let test_flex_gap_column_gap_percentage_cyclic_partially_shrinkable_border_box
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~flex_direction:Style.Flex_direction.Row
          ~gap:
            {
              width = Style.Length_percentage.percent 0.5;
@@ -28,7 +27,7 @@ let test_flex_gap_column_gap_percentage_cyclic_partially_shrinkable_border_box
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
+      (Style.make ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -40,7 +39,7 @@ let test_flex_gap_column_gap_percentage_cyclic_partially_shrinkable_border_box
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -52,7 +51,7 @@ let test_flex_gap_column_gap_percentage_cyclic_partially_shrinkable_border_box
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
+      (Style.make ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -114,8 +113,7 @@ let test_flex_gap_column_gap_percentage_cyclic_partially_shrinkable_content_box
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~flex_direction:Style.Flex_direction.Row
          ~gap:
            {
              width = Style.Length_percentage.percent 0.5;
@@ -126,7 +124,7 @@ let test_flex_gap_column_gap_percentage_cyclic_partially_shrinkable_content_box
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
+      (Style.make ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -138,7 +136,7 @@ let test_flex_gap_column_gap_percentage_cyclic_partially_shrinkable_content_box
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -150,7 +148,7 @@ let test_flex_gap_column_gap_percentage_cyclic_partially_shrinkable_content_box
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
+      (Style.make ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 20.0;

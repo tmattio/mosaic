@@ -15,8 +15,7 @@ let test_block_align_baseline_child_margin_percent_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_items:Baseline
+      (Style.make ~flex_direction:Style.Flex_direction.Row ~align_items:Baseline
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -126,8 +125,7 @@ let test_block_align_baseline_child_margin_percent_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_items:Baseline
+      (Style.make ~flex_direction:Style.Flex_direction.Row ~align_items:Baseline
          ~size:
            {
              width = Style.Dimension.length 100.0;

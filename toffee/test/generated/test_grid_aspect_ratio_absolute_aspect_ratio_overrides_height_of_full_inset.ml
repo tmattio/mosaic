@@ -27,8 +27,7 @@ let test_grid_aspect_ratio_absolute_aspect_ratio_overrides_height_of_full_inset_
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
-         ~aspect_ratio:3.0
+      (Style.make ~position:Style.Position.Absolute ~aspect_ratio:3.0
          ~inset:
            {
              left = Style.Length_percentage_auto.percent 0.05;
@@ -93,8 +92,7 @@ let test_grid_aspect_ratio_absolute_aspect_ratio_overrides_height_of_full_inset_
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
-         ~aspect_ratio:3.0
+      (Style.make ~position:Style.Position.Absolute ~aspect_ratio:3.0
          ~inset:
            {
              left = Style.Length_percentage_auto.percent 0.05;

@@ -27,7 +27,7 @@ let test_block_absolute_margin_auto_multiple_children_with_inset_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -53,7 +53,7 @@ let test_block_absolute_margin_auto_multiple_children_with_inset_border_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -136,7 +136,7 @@ let test_block_absolute_margin_auto_multiple_children_with_inset_content_box ()
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -162,7 +162,7 @@ let test_block_absolute_margin_auto_multiple_children_with_inset_content_box ()
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 50.0;

@@ -55,7 +55,7 @@ let test_block_margin_y_last_child_collapse_not_blocked_by_border_top_border_box
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.auto;
@@ -156,7 +156,7 @@ let test_block_margin_y_last_child_collapse_not_blocked_by_border_top_content_bo
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.auto;

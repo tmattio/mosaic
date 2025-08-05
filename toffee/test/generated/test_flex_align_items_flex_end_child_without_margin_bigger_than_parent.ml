@@ -16,8 +16,7 @@ let test_flex_align_items_flex_end_child_without_margin_bigger_than_parent_borde
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_items:Center
-         ~justify_content:Center
+      (Style.make ~align_items:Center ~justify_content:Center
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -27,14 +26,12 @@ let test_flex_align_items_flex_end_child_without_margin_bigger_than_parent_borde
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_items:Flex_end ())
-    |> Result.get_ok
+    new_leaf tree (Style.make ~align_items:Flex_end ()) |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 70.0;
@@ -91,8 +88,7 @@ let test_flex_align_items_flex_end_child_without_margin_bigger_than_parent_conte
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_items:Center
-         ~justify_content:Center
+      (Style.make ~align_items:Center ~justify_content:Center
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -103,14 +99,14 @@ let test_flex_align_items_flex_end_child_without_margin_bigger_than_parent_conte
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_items:Flex_end
-         ~box_sizing:Style.Box_sizing.Content_box ())
+      (Style.make ~align_items:Flex_end ~box_sizing:Style.Box_sizing.Content_box
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 70.0;

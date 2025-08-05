@@ -26,7 +26,7 @@ let test_flex_aspect_ratio_flex_row_fill_width_flex_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.auto;
@@ -88,7 +88,7 @@ let test_flex_aspect_ratio_flex_row_fill_width_flex_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.auto;

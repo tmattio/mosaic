@@ -26,7 +26,7 @@ let test_grid_relative_all_sides_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -95,7 +95,7 @@ let test_grid_relative_all_sides_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 40.0;

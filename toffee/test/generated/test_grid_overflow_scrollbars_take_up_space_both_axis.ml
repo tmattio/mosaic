@@ -25,9 +25,7 @@ let test_grid_overflow_scrollbars_take_up_space_both_axis_border_box () =
          ())
     |> Result.get_ok
   in
-  let node0 =
-    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
-  in
+  let node0 = new_leaf tree Style.default |> Result.get_ok in
   let _ = add_child tree node node0 |> Result.get_ok in
 
   (* Compute layout *)
@@ -86,9 +84,7 @@ let test_grid_overflow_scrollbars_take_up_space_both_axis_content_box () =
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in

@@ -15,8 +15,7 @@ let test_flex_column_relative_all_sides_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -27,7 +26,7 @@ let test_flex_column_relative_all_sides_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -85,8 +84,7 @@ let test_flex_column_relative_all_sides_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -97,7 +95,7 @@ let test_flex_column_relative_all_sides_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 40.0;

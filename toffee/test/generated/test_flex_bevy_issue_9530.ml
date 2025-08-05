@@ -96,9 +96,8 @@ let test_flex_bevy_issue_9530_border_box measure_function () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~align_items:Center
-         ~align_content:Center
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_items:Center ~align_content:Center
          ~size:
            {
              width = Style.Dimension.length 300.0;
@@ -116,8 +115,7 @@ let test_flex_bevy_issue_9530_border_box measure_function () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.percent 1.0;
@@ -129,8 +127,7 @@ let test_flex_bevy_issue_9530_border_box measure_function () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
+      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
          ~size:
            {
              width = Style.Dimension.percent 1.0;
@@ -156,7 +153,7 @@ let test_flex_bevy_issue_9530_border_box measure_function () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.percent 1.0;
@@ -168,8 +165,8 @@ let test_flex_bevy_issue_9530_border_box measure_function () =
   let _ = add_child tree node1 node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_items:Center
-         ~justify_content:Center ~align_content:Center ~flex_grow:1.0
+      (Style.make ~align_items:Center ~justify_content:Center
+         ~align_content:Center ~flex_grow:1.0
          ~margin:
            {
              left = Style.Length_percentage_auto.length 20.0;
@@ -190,7 +187,7 @@ let test_flex_bevy_issue_9530_border_box measure_function () =
   let _ = add_child tree node1 node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.percent 1.0;
@@ -262,9 +259,8 @@ let test_flex_bevy_issue_9530_content_box measure_function () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~align_items:Center
-         ~align_content:Center
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_items:Center ~align_content:Center
          ~size:
            {
              width = Style.Dimension.length 300.0;
@@ -282,8 +278,7 @@ let test_flex_bevy_issue_9530_content_box measure_function () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.percent 1.0;
@@ -295,8 +290,7 @@ let test_flex_bevy_issue_9530_content_box measure_function () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
+      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
          ~size:
            {
              width = Style.Dimension.percent 1.0;
@@ -322,7 +316,7 @@ let test_flex_bevy_issue_9530_content_box measure_function () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.percent 1.0;
@@ -334,8 +328,8 @@ let test_flex_bevy_issue_9530_content_box measure_function () =
   let _ = add_child tree node1 node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_items:Center
-         ~justify_content:Center ~align_content:Center ~flex_grow:1.0
+      (Style.make ~align_items:Center ~justify_content:Center
+         ~align_content:Center ~flex_grow:1.0
          ~margin:
            {
              left = Style.Length_percentage_auto.length 20.0;
@@ -356,7 +350,7 @@ let test_flex_bevy_issue_9530_content_box measure_function () =
   let _ = add_child tree node1 node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.percent 1.0;

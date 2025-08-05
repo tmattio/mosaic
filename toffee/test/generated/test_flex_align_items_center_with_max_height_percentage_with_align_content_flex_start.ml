@@ -16,7 +16,7 @@ let test_flex_align_items_center_with_max_height_percentage_with_align_content_f
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -45,7 +45,7 @@ let test_flex_align_items_center_with_max_height_percentage_with_align_content_f
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -57,7 +57,7 @@ let test_flex_align_items_center_with_max_height_percentage_with_align_content_f
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -119,7 +119,7 @@ let test_flex_align_items_center_with_max_height_percentage_with_align_content_f
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -148,7 +148,7 @@ let test_flex_align_items_center_with_max_height_percentage_with_align_content_f
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -160,7 +160,7 @@ let test_flex_align_items_center_with_max_height_percentage_with_align_content_f
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;

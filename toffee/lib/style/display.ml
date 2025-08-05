@@ -6,7 +6,7 @@ type t =
   | Grid  (** The children will follow the CSS grid layout algorithm *)
   | None  (** The node is hidden and does not generate any boxes *)
 
-let default = Block
+let default = Flex
 
 let to_string = function
   | Block -> "block"

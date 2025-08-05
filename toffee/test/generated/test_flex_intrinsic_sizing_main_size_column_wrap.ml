@@ -97,15 +97,12 @@ let test_flex_intrinsic_sizing_main_size_column_wrap_border_box measure_function
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~flex_direction:Style.Flex_direction.Column
          ~flex_wrap:Style.Flex_wrap.Wrap ())
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ())
+    new_leaf tree (Style.make ~flex_direction:Style.Flex_direction.Column ())
     |> Result.get_ok
   in
   let _ =
@@ -114,9 +111,7 @@ let test_flex_intrinsic_sizing_main_size_column_wrap_border_box measure_function
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ())
+    new_leaf tree (Style.make ~flex_direction:Style.Flex_direction.Column ())
     |> Result.get_ok
   in
   let _ =
@@ -172,16 +167,14 @@ let test_flex_intrinsic_sizing_main_size_column_wrap_content_box
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~flex_direction:Style.Flex_direction.Column
          ~flex_wrap:Style.Flex_wrap.Wrap
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~flex_direction:Style.Flex_direction.Column
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
@@ -192,8 +185,7 @@ let test_flex_intrinsic_sizing_main_size_column_wrap_content_box
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~flex_direction:Style.Flex_direction.Column
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in

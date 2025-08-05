@@ -108,7 +108,7 @@ let test_block_absolute_aspect_ratio_fill_max_width_border_box measure_function
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~max_size:
            {
              width = Style.Dimension.auto;
@@ -178,7 +178,7 @@ let test_block_absolute_aspect_ratio_fill_max_width_content_box measure_function
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~max_size:
            {
              width = Style.Dimension.auto;

@@ -108,7 +108,7 @@ let test_block_margin_auto_left_and_right_with_auto_width_border_box
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.auto;
@@ -188,7 +188,7 @@ let test_block_margin_auto_left_and_right_with_auto_width_content_box
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.auto;

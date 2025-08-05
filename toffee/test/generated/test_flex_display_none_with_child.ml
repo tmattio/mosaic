@@ -15,8 +15,7 @@ let test_flex_display_none_with_child_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~flex_direction:Style.Flex_direction.Row
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -27,7 +26,7 @@ let test_flex_display_none_with_child_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:1.0
+      (Style.make ~flex_grow:1.0 ~flex_shrink:1.0
          ~flex_basis:(Style.Dimension.percent 0.0)
          ())
     |> Result.get_ok
@@ -45,7 +44,7 @@ let test_flex_display_none_with_child_border_box () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:1.0
+      (Style.make ~flex_grow:1.0 ~flex_shrink:1.0
          ~flex_basis:(Style.Dimension.percent 0.0)
          ~size:
            {
@@ -58,7 +57,7 @@ let test_flex_display_none_with_child_border_box () =
   let _ = add_child tree node1 node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:1.0
+      (Style.make ~flex_grow:1.0 ~flex_shrink:1.0
          ~flex_basis:(Style.Dimension.percent 0.0)
          ())
     |> Result.get_ok
@@ -120,8 +119,7 @@ let test_flex_display_none_with_child_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~flex_direction:Style.Flex_direction.Row
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -132,7 +130,7 @@ let test_flex_display_none_with_child_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:1.0
+      (Style.make ~flex_grow:1.0 ~flex_shrink:1.0
          ~flex_basis:(Style.Dimension.percent 0.0)
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
@@ -150,7 +148,7 @@ let test_flex_display_none_with_child_content_box () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:1.0
+      (Style.make ~flex_grow:1.0 ~flex_shrink:1.0
          ~flex_basis:(Style.Dimension.percent 0.0)
          ~size:
            {
@@ -163,7 +161,7 @@ let test_flex_display_none_with_child_content_box () =
   let _ = add_child tree node1 node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:1.0
+      (Style.make ~flex_grow:1.0 ~flex_shrink:1.0
          ~flex_basis:(Style.Dimension.percent 0.0)
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok

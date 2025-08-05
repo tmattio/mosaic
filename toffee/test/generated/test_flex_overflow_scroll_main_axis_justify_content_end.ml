@@ -15,7 +15,7 @@ let test_flex_overflow_scroll_main_axis_justify_content_end_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~justify_content:End
+      (Style.make ~justify_content:End
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -26,7 +26,7 @@ let test_flex_overflow_scroll_main_axis_justify_content_end_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
+      (Style.make ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 200.0;
@@ -77,7 +77,7 @@ let test_flex_overflow_scroll_main_axis_justify_content_end_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~justify_content:End
+      (Style.make ~justify_content:End
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -88,7 +88,7 @@ let test_flex_overflow_scroll_main_axis_justify_content_end_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
+      (Style.make ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 200.0;

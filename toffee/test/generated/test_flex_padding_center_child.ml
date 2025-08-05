@@ -15,8 +15,7 @@ let test_flex_padding_center_child_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_items:Center
-         ~justify_content:Center
+      (Style.make ~align_items:Center ~justify_content:Center
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -34,7 +33,7 @@ let test_flex_padding_center_child_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -85,8 +84,7 @@ let test_flex_padding_center_child_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_items:Center
-         ~justify_content:Center
+      (Style.make ~align_items:Center ~justify_content:Center
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -104,7 +102,7 @@ let test_flex_padding_center_child_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;

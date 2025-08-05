@@ -15,8 +15,7 @@ let test_flex_child_min_max_width_flexing_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_items:Stretch
+      (Style.make ~flex_direction:Style.Flex_direction.Row ~align_items:Stretch
          ~size:
            {
              width = Style.Dimension.length 120.0;
@@ -27,7 +26,7 @@ let test_flex_child_min_max_width_flexing_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:0.0
+      (Style.make ~flex_grow:1.0 ~flex_shrink:0.0
          ~flex_basis:(Style.Dimension.length 0.0)
          ~min_size:
            {
@@ -40,7 +39,7 @@ let test_flex_child_min_max_width_flexing_border_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:0.0
+      (Style.make ~flex_grow:1.0 ~flex_shrink:0.0
          ~flex_basis:(Style.Dimension.percent 0.5)
          ~max_size:
            {
@@ -97,8 +96,7 @@ let test_flex_child_min_max_width_flexing_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_items:Stretch
+      (Style.make ~flex_direction:Style.Flex_direction.Row ~align_items:Stretch
          ~size:
            {
              width = Style.Dimension.length 120.0;
@@ -109,7 +107,7 @@ let test_flex_child_min_max_width_flexing_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:0.0
+      (Style.make ~flex_grow:1.0 ~flex_shrink:0.0
          ~flex_basis:(Style.Dimension.length 0.0)
          ~min_size:
            {
@@ -122,7 +120,7 @@ let test_flex_child_min_max_width_flexing_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ~flex_shrink:0.0
+      (Style.make ~flex_grow:1.0 ~flex_shrink:0.0
          ~flex_basis:(Style.Dimension.percent 0.5)
          ~max_size:
            {

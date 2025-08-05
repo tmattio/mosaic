@@ -15,8 +15,7 @@ let test_flex_undefined_width_with_min_max_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.auto;
@@ -27,7 +26,7 @@ let test_flex_undefined_width_with_min_max_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~min_size:
            { width = Style.Dimension.length 0.0; height = Style.Dimension.auto }
          ~max_size:
@@ -80,8 +79,7 @@ let test_flex_undefined_width_with_min_max_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.auto;
@@ -92,7 +90,7 @@ let test_flex_undefined_width_with_min_max_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~min_size:
            { width = Style.Dimension.length 0.0; height = Style.Dimension.auto }
          ~max_size:

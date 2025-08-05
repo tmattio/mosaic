@@ -16,8 +16,8 @@ let test_flex_justify_content_min_width_with_padding_child_width_lower_than_pare
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~align_content:Stretch
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch
          ~size:
            {
              width = Style.Dimension.length 1080.0;
@@ -28,16 +28,15 @@ let test_flex_justify_content_min_width_with_padding_child_width_lower_than_pare
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_content:Stretch ())
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_content:Stretch ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~justify_content:Center
-         ~align_content:Stretch
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~justify_content:Center ~align_content:Stretch
          ~min_size:
            {
              width = Style.Dimension.length 400.0;
@@ -56,8 +55,8 @@ let test_flex_justify_content_min_width_with_padding_child_width_lower_than_pare
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_content:Stretch
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_content:Stretch
          ~size:
            {
              width = Style.Dimension.length 199.0;
@@ -119,8 +118,8 @@ let test_flex_justify_content_min_width_with_padding_child_width_lower_than_pare
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~align_content:Stretch
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch
          ~size:
            {
              width = Style.Dimension.length 1080.0;
@@ -131,17 +130,15 @@ let test_flex_justify_content_min_width_with_padding_child_width_lower_than_pare
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_content:Stretch
-         ~box_sizing:Style.Box_sizing.Content_box ())
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_content:Stretch ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~justify_content:Center
-         ~align_content:Stretch
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~justify_content:Center ~align_content:Stretch
          ~min_size:
            {
              width = Style.Dimension.length 400.0;
@@ -160,8 +157,8 @@ let test_flex_justify_content_min_width_with_padding_child_width_lower_than_pare
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_content:Stretch
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_content:Stretch
          ~size:
            {
              width = Style.Dimension.length 199.0;

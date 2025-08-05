@@ -54,7 +54,7 @@ let test_flex_align_content_space_around_single_line_negative_space_gap_border_b
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
+      (Style.make ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.percent 0.8;
@@ -149,7 +149,7 @@ let test_flex_align_content_space_around_single_line_negative_space_gap_content_
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_shrink:0.0
+      (Style.make ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.percent 0.8;

@@ -109,7 +109,7 @@ let test_flex_content_size_border_box measure_function () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.auto;
@@ -121,8 +121,7 @@ let test_flex_content_size_border_box measure_function () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
-         ~flex_shrink:0.0
+      (Style.make ~position:Style.Position.Absolute ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.percent 1.0;
@@ -208,7 +207,7 @@ let test_flex_content_size_content_box measure_function () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.auto;
@@ -220,8 +219,7 @@ let test_flex_content_size_content_box measure_function () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
-         ~flex_shrink:0.0
+      (Style.make ~position:Style.Position.Absolute ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.percent 1.0;

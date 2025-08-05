@@ -15,8 +15,7 @@ let test_flex_margin_and_stretch_row_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~flex_direction:Style.Flex_direction.Row
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -27,7 +26,7 @@ let test_flex_margin_and_stretch_row_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
+      (Style.make ~flex_grow:1.0
          ~margin:
            {
              left = Style.Length_percentage_auto.length 0.0;
@@ -80,8 +79,7 @@ let test_flex_margin_and_stretch_row_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~flex_direction:Style.Flex_direction.Row
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -92,7 +90,7 @@ let test_flex_margin_and_stretch_row_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
+      (Style.make ~flex_grow:1.0
          ~margin:
            {
              left = Style.Length_percentage_auto.length 0.0;

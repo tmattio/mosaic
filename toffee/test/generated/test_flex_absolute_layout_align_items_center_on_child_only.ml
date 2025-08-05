@@ -15,7 +15,7 @@ let test_flex_absolute_layout_align_items_center_on_child_only_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 110.0;
@@ -26,8 +26,7 @@ let test_flex_absolute_layout_align_items_center_on_child_only_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
-         ~align_self:Center
+      (Style.make ~position:Style.Position.Absolute ~align_self:Center
          ~size:
            {
              width = Style.Dimension.length 60.0;
@@ -78,7 +77,7 @@ let test_flex_absolute_layout_align_items_center_on_child_only_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 110.0;
@@ -89,8 +88,7 @@ let test_flex_absolute_layout_align_items_center_on_child_only_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
-         ~align_self:Center
+      (Style.make ~position:Style.Position.Absolute ~align_self:Center
          ~size:
            {
              width = Style.Dimension.length 60.0;

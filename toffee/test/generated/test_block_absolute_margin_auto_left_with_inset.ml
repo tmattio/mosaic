@@ -26,7 +26,7 @@ let test_block_absolute_margin_auto_left_with_inset_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -102,7 +102,7 @@ let test_block_absolute_margin_auto_left_with_inset_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 50.0;

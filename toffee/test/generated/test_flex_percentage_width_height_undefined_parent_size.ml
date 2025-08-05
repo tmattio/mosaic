@@ -14,14 +14,12 @@ let test_flex_percentage_width_height_undefined_parent_size_border_box () =
 
   (* Create nodes *)
   let node =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ())
+    new_leaf tree (Style.make ~flex_direction:Style.Flex_direction.Column ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.percent 0.5;
@@ -72,14 +70,13 @@ let test_flex_percentage_width_height_undefined_parent_size_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~flex_direction:Style.Flex_direction.Column
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.percent 0.5;

@@ -16,8 +16,7 @@ let test_flex_percentage_margin_should_calculate_based_only_on_width_border_box
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.length 200.0;
@@ -28,8 +27,7 @@ let test_flex_percentage_margin_should_calculate_based_only_on_width_border_box
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
+      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
          ~margin:
            {
              left = Style.Length_percentage_auto.percent 0.1;
@@ -43,7 +41,7 @@ let test_flex_percentage_margin_should_calculate_based_only_on_width_border_box
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -100,8 +98,7 @@ let test_flex_percentage_margin_should_calculate_based_only_on_width_content_box
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.length 200.0;
@@ -112,8 +109,7 @@ let test_flex_percentage_margin_should_calculate_based_only_on_width_content_box
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
+      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
          ~margin:
            {
              left = Style.Length_percentage_auto.percent 0.1;
@@ -127,7 +123,7 @@ let test_flex_percentage_margin_should_calculate_based_only_on_width_content_box
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;

@@ -41,7 +41,7 @@ let test_grid_placement_definite_in_secondary_axis_with_fully_definite_negative_
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~grid_row:
            {
              start = Style.Grid.Placement.line 2;
@@ -53,7 +53,7 @@ let test_grid_placement_definite_in_secondary_axis_with_fully_definite_negative_
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~grid_column:
            {
              start = Style.Grid.Placement.line (-4);
@@ -70,7 +70,7 @@ let test_grid_placement_definite_in_secondary_axis_with_fully_definite_negative_
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~grid_row:
            {
              start = Style.Grid.Placement.line 1;
@@ -157,7 +157,7 @@ let test_grid_placement_definite_in_secondary_axis_with_fully_definite_negative_
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~grid_row:
            {
              start = Style.Grid.Placement.line 2;
@@ -169,7 +169,7 @@ let test_grid_placement_definite_in_secondary_axis_with_fully_definite_negative_
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~grid_column:
            {
              start = Style.Grid.Placement.line (-4);
@@ -186,7 +186,7 @@ let test_grid_placement_definite_in_secondary_axis_with_fully_definite_negative_
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~grid_row:
            {
              start = Style.Grid.Placement.line 1;

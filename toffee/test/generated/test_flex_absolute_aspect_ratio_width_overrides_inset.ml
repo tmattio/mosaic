@@ -26,7 +26,7 @@ let test_flex_absolute_aspect_ratio_width_overrides_inset_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.percent 0.4;
@@ -96,7 +96,7 @@ let test_flex_absolute_aspect_ratio_width_overrides_inset_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~position:Style.Position.Absolute
+      (Style.make ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.percent 0.4;

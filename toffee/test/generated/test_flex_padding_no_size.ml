@@ -15,7 +15,7 @@ let test_flex_padding_no_size_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~padding:
            {
              left = Style.Length_percentage.length 10.0;
@@ -62,7 +62,7 @@ let test_flex_padding_no_size_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~padding:
            {
              left = Style.Length_percentage.length 10.0;

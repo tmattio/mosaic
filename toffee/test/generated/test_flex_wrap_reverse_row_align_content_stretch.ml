@@ -15,8 +15,7 @@ let test_flex_wrap_reverse_row_align_content_stretch_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~flex_direction:Style.Flex_direction.Row
          ~flex_wrap:Style.Flex_wrap.Wrap_reverse ~align_content:Stretch
          ~size:
            {
@@ -28,7 +27,7 @@ let test_flex_wrap_reverse_row_align_content_stretch_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 30.0;
@@ -40,7 +39,7 @@ let test_flex_wrap_reverse_row_align_content_stretch_border_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 30.0;
@@ -52,7 +51,7 @@ let test_flex_wrap_reverse_row_align_content_stretch_border_box () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 30.0;
@@ -64,7 +63,7 @@ let test_flex_wrap_reverse_row_align_content_stretch_border_box () =
   let _ = add_child tree node node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 30.0;
@@ -76,7 +75,7 @@ let test_flex_wrap_reverse_row_align_content_stretch_border_box () =
   let _ = add_child tree node node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 30.0;
@@ -147,8 +146,7 @@ let test_flex_wrap_reverse_row_align_content_stretch_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~flex_direction:Style.Flex_direction.Row
          ~flex_wrap:Style.Flex_wrap.Wrap_reverse ~align_content:Stretch
          ~size:
            {
@@ -160,7 +158,7 @@ let test_flex_wrap_reverse_row_align_content_stretch_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 30.0;
@@ -172,7 +170,7 @@ let test_flex_wrap_reverse_row_align_content_stretch_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 30.0;
@@ -184,7 +182,7 @@ let test_flex_wrap_reverse_row_align_content_stretch_content_box () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 30.0;
@@ -196,7 +194,7 @@ let test_flex_wrap_reverse_row_align_content_stretch_content_box () =
   let _ = add_child tree node node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 30.0;
@@ -208,7 +206,7 @@ let test_flex_wrap_reverse_row_align_content_stretch_content_box () =
   let _ = add_child tree node node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 30.0;

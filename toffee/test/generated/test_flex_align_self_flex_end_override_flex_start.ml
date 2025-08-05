@@ -15,7 +15,7 @@ let test_flex_align_self_flex_end_override_flex_start_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_items:Flex_start
+      (Style.make ~align_items:Flex_start
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -26,7 +26,7 @@ let test_flex_align_self_flex_end_override_flex_start_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_self:Flex_end
+      (Style.make ~align_self:Flex_end
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -77,7 +77,7 @@ let test_flex_align_self_flex_end_override_flex_start_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_items:Flex_start
+      (Style.make ~align_items:Flex_start
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -88,7 +88,7 @@ let test_flex_align_self_flex_end_override_flex_start_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_self:Flex_end
+      (Style.make ~align_self:Flex_end
          ~size:
            {
              width = Style.Dimension.length 10.0;

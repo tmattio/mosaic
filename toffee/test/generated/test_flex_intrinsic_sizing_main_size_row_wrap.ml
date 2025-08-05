@@ -96,21 +96,16 @@ let test_flex_intrinsic_sizing_main_size_row_wrap_border_box measure_function ()
 
   (* Create nodes *)
   let node =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_wrap:Style.Flex_wrap.Wrap ())
+    new_leaf tree (Style.make ~flex_wrap:Style.Flex_wrap.Wrap ())
     |> Result.get_ok
   in
-  let node0 =
-    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
-  in
+  let node0 = new_leaf tree Style.default |> Result.get_ok in
   let _ =
     set_node_context tree node0 (Some (MeasureFunction.Text "HH​HH"))
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 =
-    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
-  in
+  let node1 = new_leaf tree Style.default |> Result.get_ok in
   let _ =
     set_node_context tree node1 (Some (MeasureFunction.Text "HH​HH"))
     |> Result.get_ok
@@ -164,14 +159,12 @@ let test_flex_intrinsic_sizing_main_size_row_wrap_content_box measure_function
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_wrap:Style.Flex_wrap.Wrap
+      (Style.make ~flex_wrap:Style.Flex_wrap.Wrap
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =
@@ -180,9 +173,7 @@ let test_flex_intrinsic_sizing_main_size_row_wrap_content_box measure_function
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

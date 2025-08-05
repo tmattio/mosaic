@@ -15,8 +15,7 @@ let test_flex_align_items_center_min_max_with_padding_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_items:Center
+      (Style.make ~flex_direction:Style.Flex_direction.Row ~align_items:Center
          ~min_size:
            {
              width = Style.Dimension.length 320.0;
@@ -39,7 +38,7 @@ let test_flex_align_items_center_min_max_with_padding_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 62.0;
@@ -90,8 +89,7 @@ let test_flex_align_items_center_min_max_with_padding_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_items:Center
+      (Style.make ~flex_direction:Style.Flex_direction.Row ~align_items:Center
          ~min_size:
            {
              width = Style.Dimension.length 320.0;
@@ -114,7 +112,7 @@ let test_flex_align_items_center_min_max_with_padding_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 62.0;

@@ -15,8 +15,7 @@ let test_flex_align_self_center_undefined_max_height_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~flex_direction:Style.Flex_direction.Row
          ~size:
            {
              width = Style.Dimension.length 280.0;
@@ -32,7 +31,7 @@ let test_flex_align_self_center_undefined_max_height_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 240.0;
@@ -44,7 +43,7 @@ let test_flex_align_self_center_undefined_max_height_border_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_self:Center
+      (Style.make ~align_self:Center
          ~size:
            {
              width = Style.Dimension.length 40.0;
@@ -100,8 +99,7 @@ let test_flex_align_self_center_undefined_max_height_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~flex_direction:Style.Flex_direction.Row
          ~size:
            {
              width = Style.Dimension.length 280.0;
@@ -117,7 +115,7 @@ let test_flex_align_self_center_undefined_max_height_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 240.0;
@@ -129,7 +127,7 @@ let test_flex_align_self_center_undefined_max_height_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_self:Center
+      (Style.make ~align_self:Center
          ~size:
            {
              width = Style.Dimension.length 40.0;

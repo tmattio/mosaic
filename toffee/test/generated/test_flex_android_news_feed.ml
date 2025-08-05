@@ -15,9 +15,8 @@ let test_flex_android_news_feed_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~align_content:Stretch
-         ~flex_shrink:0.0
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 1080.0;
@@ -28,30 +27,29 @@ let test_flex_android_news_feed_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~flex_shrink:0.0 ())
+      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_shrink:0.0
+         ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~align_content:Stretch ())
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~align_content:Stretch ())
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch ())
     |> Result.get_ok
   in
   let _ = add_child tree node1 node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_items:Flex_start
-         ~align_content:Stretch
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_items:Flex_start ~align_content:Stretch
          ~margin:
            {
              left = Style.Length_percentage_auto.length 36.0;
@@ -65,16 +63,14 @@ let test_flex_android_news_feed_border_box () =
   let _ = add_child tree node2 node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_content:Stretch
-         ~flex_shrink:0.0 ())
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_content:Stretch ~flex_shrink:0.0 ())
     |> Result.get_ok
   in
   let _ = add_child tree node3 node4 |> Result.get_ok in
   let node5 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_content:Stretch
-         ~flex_shrink:0.0
+      (Style.make ~align_content:Stretch ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 120.0;
@@ -86,9 +82,8 @@ let test_flex_android_news_feed_border_box () =
   let _ = add_child tree node4 node5 |> Result.get_ok in
   let node6 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~align_content:Stretch
-         ~flex_shrink:1.0
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch ~flex_shrink:1.0
          ~margin:
            {
              left = Style.Length_percentage_auto.length 0.0;
@@ -109,31 +104,27 @@ let test_flex_android_news_feed_border_box () =
   let _ = add_child tree node3 node6 |> Result.get_ok in
   let node7 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_content:Stretch
-         ~flex_shrink:1.0 ())
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_content:Stretch ~flex_shrink:1.0 ())
     |> Result.get_ok
   in
   let _ = add_child tree node6 node7 |> Result.get_ok in
   let node8 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_content:Stretch
-         ~flex_shrink:1.0 ())
+    new_leaf tree (Style.make ~align_content:Stretch ~flex_shrink:1.0 ())
     |> Result.get_ok
   in
   let _ = add_child tree node6 node8 |> Result.get_ok in
   let node9 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~align_content:Stretch ())
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch ())
     |> Result.get_ok
   in
   let _ = add_child tree node1 node9 |> Result.get_ok in
   let node10 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_items:Flex_start
-         ~align_content:Stretch
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_items:Flex_start ~align_content:Stretch
          ~margin:
            {
              left = Style.Length_percentage_auto.length 174.0;
@@ -147,16 +138,14 @@ let test_flex_android_news_feed_border_box () =
   let _ = add_child tree node9 node10 |> Result.get_ok in
   let node11 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_content:Stretch
-         ~flex_shrink:0.0 ())
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_content:Stretch ~flex_shrink:0.0 ())
     |> Result.get_ok
   in
   let _ = add_child tree node10 node11 |> Result.get_ok in
   let node12 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_content:Stretch
-         ~flex_shrink:0.0
+      (Style.make ~align_content:Stretch ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 72.0;
@@ -168,9 +157,8 @@ let test_flex_android_news_feed_border_box () =
   let _ = add_child tree node11 node12 |> Result.get_ok in
   let node13 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~align_content:Stretch
-         ~flex_shrink:1.0
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch ~flex_shrink:1.0
          ~margin:
            {
              left = Style.Length_percentage_auto.length 0.0;
@@ -191,16 +179,13 @@ let test_flex_android_news_feed_border_box () =
   let _ = add_child tree node10 node13 |> Result.get_ok in
   let node14 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_content:Stretch
-         ~flex_shrink:1.0 ())
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_content:Stretch ~flex_shrink:1.0 ())
     |> Result.get_ok
   in
   let _ = add_child tree node13 node14 |> Result.get_ok in
   let node15 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_content:Stretch
-         ~flex_shrink:1.0 ())
+    new_leaf tree (Style.make ~align_content:Stretch ~flex_shrink:1.0 ())
     |> Result.get_ok
   in
   let _ = add_child tree node13 node15 |> Result.get_ok in
@@ -320,9 +305,8 @@ let test_flex_android_news_feed_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~align_content:Stretch
-         ~flex_shrink:0.0
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 1080.0;
@@ -333,33 +317,29 @@ let test_flex_android_news_feed_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~flex_shrink:0.0
+      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_shrink:0.0
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~align_content:Stretch
-         ~box_sizing:Style.Box_sizing.Content_box ())
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~align_content:Stretch
-         ~box_sizing:Style.Box_sizing.Content_box ())
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node1 node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_items:Flex_start
-         ~align_content:Stretch
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_items:Flex_start ~align_content:Stretch
          ~margin:
            {
              left = Style.Length_percentage_auto.length 36.0;
@@ -373,16 +353,15 @@ let test_flex_android_news_feed_content_box () =
   let _ = add_child tree node2 node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_content:Stretch
-         ~flex_shrink:0.0 ~box_sizing:Style.Box_sizing.Content_box ())
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_content:Stretch ~flex_shrink:0.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node3 node4 |> Result.get_ok in
   let node5 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_content:Stretch
-         ~flex_shrink:0.0
+      (Style.make ~align_content:Stretch ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 120.0;
@@ -394,9 +373,8 @@ let test_flex_android_news_feed_content_box () =
   let _ = add_child tree node4 node5 |> Result.get_ok in
   let node6 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~align_content:Stretch
-         ~flex_shrink:1.0
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch ~flex_shrink:1.0
          ~margin:
            {
              left = Style.Length_percentage_auto.length 0.0;
@@ -417,32 +395,30 @@ let test_flex_android_news_feed_content_box () =
   let _ = add_child tree node3 node6 |> Result.get_ok in
   let node7 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_content:Stretch
-         ~flex_shrink:1.0 ~box_sizing:Style.Box_sizing.Content_box ())
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_content:Stretch ~flex_shrink:1.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node6 node7 |> Result.get_ok in
   let node8 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_content:Stretch
-         ~flex_shrink:1.0 ~box_sizing:Style.Box_sizing.Content_box ())
+      (Style.make ~align_content:Stretch ~flex_shrink:1.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node6 node8 |> Result.get_ok in
   let node9 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~align_content:Stretch
-         ~box_sizing:Style.Box_sizing.Content_box ())
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node1 node9 |> Result.get_ok in
   let node10 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_items:Flex_start
-         ~align_content:Stretch
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_items:Flex_start ~align_content:Stretch
          ~margin:
            {
              left = Style.Length_percentage_auto.length 174.0;
@@ -456,16 +432,15 @@ let test_flex_android_news_feed_content_box () =
   let _ = add_child tree node9 node10 |> Result.get_ok in
   let node11 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_content:Stretch
-         ~flex_shrink:0.0 ~box_sizing:Style.Box_sizing.Content_box ())
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_content:Stretch ~flex_shrink:0.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node10 node11 |> Result.get_ok in
   let node12 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_content:Stretch
-         ~flex_shrink:0.0
+      (Style.make ~align_content:Stretch ~flex_shrink:0.0
          ~size:
            {
              width = Style.Dimension.length 72.0;
@@ -477,9 +452,8 @@ let test_flex_android_news_feed_content_box () =
   let _ = add_child tree node11 node12 |> Result.get_ok in
   let node13 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~align_content:Stretch
-         ~flex_shrink:1.0
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch ~flex_shrink:1.0
          ~margin:
            {
              left = Style.Length_percentage_auto.length 0.0;
@@ -500,16 +474,16 @@ let test_flex_android_news_feed_content_box () =
   let _ = add_child tree node10 node13 |> Result.get_ok in
   let node14 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ~align_content:Stretch
-         ~flex_shrink:1.0 ~box_sizing:Style.Box_sizing.Content_box ())
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_content:Stretch ~flex_shrink:1.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node13 node14 |> Result.get_ok in
   let node15 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_content:Stretch
-         ~flex_shrink:1.0 ~box_sizing:Style.Box_sizing.Content_box ())
+      (Style.make ~align_content:Stretch ~flex_shrink:1.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node13 node15 |> Result.get_ok in

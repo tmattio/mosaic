@@ -16,8 +16,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_b
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_items:Center
-         ~align_content:Flex_start
+      (Style.make ~align_items:Center ~align_content:Flex_start
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -33,7 +32,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_b
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -45,7 +44,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_b
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -102,8 +101,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_c
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_items:Center
-         ~align_content:Flex_start
+      (Style.make ~align_items:Center ~align_content:Flex_start
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -119,7 +117,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_c
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -131,7 +129,7 @@ let test_flex_align_items_center_with_min_height_with_align_content_flex_start_c
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;

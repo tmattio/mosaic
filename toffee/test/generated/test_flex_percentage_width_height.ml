@@ -15,8 +15,7 @@ let test_flex_percentage_width_height_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~flex_direction:Style.Flex_direction.Row
          ~size:
            {
              width = Style.Dimension.length 200.0;
@@ -27,7 +26,7 @@ let test_flex_percentage_width_height_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.percent 0.3;
@@ -78,8 +77,7 @@ let test_flex_percentage_width_height_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row
+      (Style.make ~flex_direction:Style.Flex_direction.Row
          ~size:
            {
              width = Style.Dimension.length 200.0;
@@ -90,7 +88,7 @@ let test_flex_percentage_width_height_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.percent 0.3;

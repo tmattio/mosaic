@@ -125,7 +125,7 @@ let test_grid_span_6_all_non_flex_indefinite_border_box measure_function () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~grid_column:
            {
              start = Style.Grid.Placement.line 1;
@@ -140,29 +140,17 @@ let test_grid_span_6_all_non_flex_indefinite_border_box measure_function () =
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 =
-    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
-  in
+  let node1 = new_leaf tree Style.default |> Result.get_ok in
   let _ = add_child tree node node1 |> Result.get_ok in
-  let node2 =
-    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
-  in
+  let node2 = new_leaf tree Style.default |> Result.get_ok in
   let _ = add_child tree node node2 |> Result.get_ok in
-  let node3 =
-    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
-  in
+  let node3 = new_leaf tree Style.default |> Result.get_ok in
   let _ = add_child tree node node3 |> Result.get_ok in
-  let node4 =
-    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
-  in
+  let node4 = new_leaf tree Style.default |> Result.get_ok in
   let _ = add_child tree node node4 |> Result.get_ok in
-  let node5 =
-    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
-  in
+  let node5 = new_leaf tree Style.default |> Result.get_ok in
   let _ = add_child tree node node5 |> Result.get_ok in
-  let node6 =
-    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
-  in
+  let node6 = new_leaf tree Style.default |> Result.get_ok in
   let _ = add_child tree node node6 |> Result.get_ok in
 
   (* Compute layout *)
@@ -265,7 +253,7 @@ let test_grid_span_6_all_non_flex_indefinite_content_box measure_function () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~grid_column:
            {
              start = Style.Grid.Placement.line 1;
@@ -281,44 +269,32 @@ let test_grid_span_6_all_non_flex_indefinite_content_box measure_function () =
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node2 |> Result.get_ok in
   let node3 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node3 |> Result.get_ok in
   let node4 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node4 |> Result.get_ok in
   let node5 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node5 |> Result.get_ok in
   let node6 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node6 |> Result.get_ok in

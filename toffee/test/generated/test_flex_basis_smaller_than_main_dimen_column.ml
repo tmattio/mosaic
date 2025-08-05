@@ -15,8 +15,7 @@ let test_flex_basis_smaller_than_main_dimen_column_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.auto;
@@ -27,7 +26,7 @@ let test_flex_basis_smaller_than_main_dimen_column_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~flex_basis:(Style.Dimension.length 10.0)
          ~size:
            {
@@ -79,8 +78,7 @@ let test_flex_basis_smaller_than_main_dimen_column_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~flex_direction:Style.Flex_direction.Column
          ~size:
            {
              width = Style.Dimension.auto;
@@ -91,7 +89,7 @@ let test_flex_basis_smaller_than_main_dimen_column_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~flex_basis:(Style.Dimension.length 10.0)
          ~size:
            {

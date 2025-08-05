@@ -15,8 +15,7 @@ let test_flex_wrapped_column_max_height_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~flex_direction:Style.Flex_direction.Column
          ~flex_wrap:Style.Flex_wrap.Wrap ~align_items:Center
          ~justify_content:Center ~align_content:Center
          ~size:
@@ -29,7 +28,7 @@ let test_flex_wrapped_column_max_height_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -46,7 +45,7 @@ let test_flex_wrapped_column_max_height_border_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 200.0;
@@ -65,7 +64,7 @@ let test_flex_wrapped_column_max_height_border_box () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -126,8 +125,7 @@ let test_flex_wrapped_column_max_height_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column
+      (Style.make ~flex_direction:Style.Flex_direction.Column
          ~flex_wrap:Style.Flex_wrap.Wrap ~align_items:Center
          ~justify_content:Center ~align_content:Center
          ~size:
@@ -140,7 +138,7 @@ let test_flex_wrapped_column_max_height_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -157,7 +155,7 @@ let test_flex_wrapped_column_max_height_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 200.0;
@@ -176,7 +174,7 @@ let test_flex_wrapped_column_max_height_content_box () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 100.0;

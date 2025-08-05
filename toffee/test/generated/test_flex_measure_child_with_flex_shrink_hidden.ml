@@ -97,7 +97,7 @@ let test_flex_measure_child_with_flex_shrink_hidden_border_box measure_function
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -108,7 +108,7 @@ let test_flex_measure_child_with_flex_shrink_hidden_border_box measure_function
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -120,7 +120,7 @@ let test_flex_measure_child_with_flex_shrink_hidden_border_box measure_function
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~overflow:{ x = Style.Overflow.Hidden; y = Style.Overflow.Hidden }
          ())
     |> Result.get_ok
@@ -186,7 +186,7 @@ let test_flex_measure_child_with_flex_shrink_hidden_content_box measure_function
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -197,7 +197,7 @@ let test_flex_measure_child_with_flex_shrink_hidden_content_box measure_function
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -209,7 +209,7 @@ let test_flex_measure_child_with_flex_shrink_hidden_content_box measure_function
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~overflow:{ x = Style.Overflow.Hidden; y = Style.Overflow.Hidden }
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok

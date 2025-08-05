@@ -15,7 +15,7 @@ let test_flex_simple_child_border_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -26,7 +26,7 @@ let test_flex_simple_child_border_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.percent 1.0;
@@ -38,7 +38,7 @@ let test_flex_simple_child_border_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -50,7 +50,7 @@ let test_flex_simple_child_border_box () =
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -60,13 +60,11 @@ let test_flex_simple_child_border_box () =
     |> Result.get_ok
   in
   let _ = add_child tree node1 node2 |> Result.get_ok in
-  let node3 =
-    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
-  in
+  let node3 = new_leaf tree Style.default |> Result.get_ok in
   let _ = add_child tree node0 node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_self:Center
+      (Style.make ~align_self:Center
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -78,7 +76,7 @@ let test_flex_simple_child_border_box () =
   let _ = add_child tree node3 node4 |> Result.get_ok in
   let node5 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_self:Center
+      (Style.make ~align_self:Center
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -154,7 +152,7 @@ let test_flex_simple_child_content_box () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -165,7 +163,7 @@ let test_flex_simple_child_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.percent 1.0;
@@ -177,7 +175,7 @@ let test_flex_simple_child_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -189,7 +187,7 @@ let test_flex_simple_child_content_box () =
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -200,15 +198,13 @@ let test_flex_simple_child_content_box () =
   in
   let _ = add_child tree node1 node2 |> Result.get_ok in
   let node3 =
-    new_leaf tree
-      (Style.make ~display:Style.Display.Flex
-         ~box_sizing:Style.Box_sizing.Content_box ())
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_self:Center
+      (Style.make ~align_self:Center
          ~size:
            {
              width = Style.Dimension.length 10.0;
@@ -220,7 +216,7 @@ let test_flex_simple_child_content_box () =
   let _ = add_child tree node3 node4 |> Result.get_ok in
   let node5 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~align_self:Center
+      (Style.make ~align_self:Center
          ~size:
            {
              width = Style.Dimension.length 10.0;

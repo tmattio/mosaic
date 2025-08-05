@@ -56,7 +56,7 @@ let test_block_margin_y_last_child_collapse_blocked_by_overflow_x_scroll_border_
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.auto;
@@ -163,7 +163,7 @@ let test_block_margin_y_last_child_collapse_blocked_by_overflow_x_scroll_content
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.auto;

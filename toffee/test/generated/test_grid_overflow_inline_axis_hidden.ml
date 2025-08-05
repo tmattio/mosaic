@@ -107,7 +107,7 @@ let test_grid_overflow_inline_axis_hidden_border_box measure_function () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~overflow:{ x = Style.Overflow.Hidden; y = Style.Overflow.Hidden }
          ())
     |> Result.get_ok
@@ -176,7 +176,7 @@ let test_grid_overflow_inline_axis_hidden_content_box measure_function () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~overflow:{ x = Style.Overflow.Hidden; y = Style.Overflow.Hidden }
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok

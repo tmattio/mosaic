@@ -96,7 +96,7 @@ let test_flex_overflow_main_axis_shrink_hidden_border_box measure_function () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -107,7 +107,7 @@ let test_flex_overflow_main_axis_shrink_hidden_border_box measure_function () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_shrink:1.0
+      (Style.make ~flex_shrink:1.0
          ~overflow:{ x = Style.Overflow.Hidden; y = Style.Overflow.Hidden }
          ())
     |> Result.get_ok
@@ -165,7 +165,7 @@ let test_flex_overflow_main_axis_shrink_hidden_content_box measure_function () =
   (* Create nodes *)
   let node =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex
+      (Style.make
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -176,7 +176,7 @@ let test_flex_overflow_main_axis_shrink_hidden_content_box measure_function () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Flex ~flex_shrink:1.0
+      (Style.make ~flex_shrink:1.0
          ~overflow:{ x = Style.Overflow.Hidden; y = Style.Overflow.Hidden }
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
