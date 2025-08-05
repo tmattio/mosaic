@@ -74,17 +74,19 @@ let create style column_auto_repetitions row_auto_repetitions =
   let current_line = ref 0 in
   let column_tracks = grid_template_columns style in
   let column_line_names = grid_template_column_names style in
+  let column_tracks_ref = ref column_tracks in
 
-  List.iter2
-    (fun line_names track ->
+  List.iter
+    (fun line_names ->
       incr current_line;
       List.iter
         (fun line_name ->
           upsert_line_name_map column_lines line_name !current_line)
         line_names;
 
-      match track with
-      | Grid.Template_component.Repeat rep ->
+      match !column_tracks_ref with
+      | Grid.Template_component.Repeat rep :: rest ->
+          column_tracks_ref := rest;
           let repeat_count =
             match Grid.Repetition.count rep with
             | Grid.Repetition_count.Count count -> count
@@ -107,8 +109,10 @@ let create style column_auto_repetitions row_auto_repetitions =
           done;
           (* Last line name set collapses with following line name set *)
           decr current_line
-      | _ -> ())
-    column_line_names column_tracks;
+      | _ :: rest ->
+          column_tracks_ref := rest
+      | [] -> ())
+    column_line_names;
 
   (* Sort and dedup lines for each column name *)
   Hashtbl.iter
@@ -121,17 +125,19 @@ let create style column_auto_repetitions row_auto_repetitions =
   let current_line = ref 0 in
   let row_tracks = grid_template_rows style in
   let row_line_names = grid_template_row_names style in
+  let row_tracks_ref = ref row_tracks in
 
-  List.iter2
-    (fun line_names track ->
+  List.iter
+    (fun line_names ->
       incr current_line;
       List.iter
         (fun line_name ->
           upsert_line_name_map row_lines line_name !current_line)
         line_names;
 
-      match track with
-      | Grid.Template_component.Repeat rep ->
+      match !row_tracks_ref with
+      | Grid.Template_component.Repeat rep :: rest ->
+          row_tracks_ref := rest;
           let repeat_count =
             match Grid.Repetition.count rep with
             | Grid.Repetition_count.Count count -> count
@@ -154,8 +160,10 @@ let create style column_auto_repetitions row_auto_repetitions =
           done;
           (* Last line name set collapses with following line name set *)
           decr current_line
-      | _ -> ())
-    row_line_names row_tracks;
+      | _ :: rest ->
+          row_tracks_ref := rest
+      | [] -> ())
+    row_line_names;
 
   (* Sort and dedup lines for each row name *)
   Hashtbl.iter

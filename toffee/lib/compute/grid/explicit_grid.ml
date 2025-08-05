@@ -308,20 +308,20 @@ let initialize_grid_tracks ~tracks ~counts ~style ~axis ~track_has_items =
       create_implicit_tracks tracks
         (Grid_track_counts.negative_implicit counts)
         (fun () -> iter ())
-        gap;
+        gap);
 
-      let current_track_index =
-        ref (Grid_track_counts.negative_implicit counts)
-      in
+  let current_track_index =
+    ref (Grid_track_counts.negative_implicit counts)
+  in
 
-      (* Create explicit tracks *)
-      (* An explicit check against the count (rather than just relying on track_template being empty) is required here
+  (* Create explicit tracks *)
+  (* An explicit check against the count (rather than just relying on track_template being empty) is required here
      because a count of zero can result from the track_template being invalid, in which case it should be ignored. *)
-      if Grid_track_counts.explicit counts > 0 then
-        if track_template <> [] then
-          List.iter
-            (function
-              | Template_component.Single sizing_function ->
+  if Grid_track_counts.explicit counts > 0 then
+    if track_template <> [] then
+      List.iter
+        (function
+          | Template_component.Single sizing_function ->
                   let track =
                     Track_sizing_function.make
                       ~min:
@@ -429,12 +429,12 @@ let initialize_grid_tracks ~tracks ~counts ~style ~axis ~track_has_items =
           (fun () -> iter ())
           gap;
 
-        (* Mark first and last grid lines as collapsed *)
-        match !tracks with
-        | [] -> ()
-        | first :: rest -> (
-            tracks := Grid_track.collapse first :: rest;
-            match List.rev !tracks with
-            | [] -> ()
-            | last :: rest_rev ->
-                tracks := List.rev (Grid_track.collapse last :: rest_rev)))
+  (* Mark first and last grid lines as collapsed *)
+  match !tracks with
+  | [] -> ()
+  | first :: rest -> (
+      tracks := Grid_track.collapse first :: rest;
+      match List.rev !tracks with
+      | [] -> ()
+      | last :: rest_rev ->
+          tracks := List.rev (Grid_track.collapse last :: rest_rev))
