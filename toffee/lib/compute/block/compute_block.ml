@@ -615,8 +615,17 @@ let perform_absolute_layout_on_absolute_children (type t)
             Size.apply_aspect_ratio s aspect_ratio |> fun s ->
             Size.add_option s (Size.map Option.some box_sizing_adjustment)
           in
+          (* If both min and max in a given axis are set and max <= min then this determines the size in that axis *)
+          let min_max_definite_size =
+            Size.map2
+              (fun min max ->
+                match (min, max) with
+                | Some min_v, Some max_v when max_v <= min_v -> Some min_v
+                | _ -> None)
+              min_size max_size
+          in
           let known_dimensions =
-            ref (Size.clamp_option style_size min_size max_size)
+            ref (Size.choose_first min_max_definite_size (Size.clamp_option style_size min_size max_size))
           in
 
           (* Fill in width from left/right and reapply aspect ratio if:
@@ -638,7 +647,7 @@ let perform_absolute_layout_on_absolute_children (type t)
               known_dimensions :=
                 !known_dimensions |> fun s ->
                 Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-                Size.clamp_option s min_size max_size
+                Size.choose_first min_max_definite_size (Size.clamp_option s min_size max_size)
           | _ -> ());
 
           (* Fill in height from top/bottom and reapply aspect ratio if:
@@ -660,7 +669,7 @@ let perform_absolute_layout_on_absolute_children (type t)
               known_dimensions :=
                 !known_dimensions |> fun s ->
                 Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-                Size.clamp_option s min_size max_size
+                Size.choose_first min_max_definite_size (Size.clamp_option s min_size max_size)
           | _ -> ());
 
           let layout_output =
@@ -686,7 +695,9 @@ let perform_absolute_layout_on_absolute_children (type t)
           let measured_size = Layout_output.size layout_output in
           let final_size =
             Size.unwrap_or !known_dimensions measured_size |> fun s ->
-            Size.clamp s min_size max_size
+            let s_opt = Size.map Option.some s in
+            Size.choose_first min_max_definite_size (Size.clamp_option s_opt min_size max_size) |> fun s_opt ->
+            Size.unwrap_or s_opt s
           in
 
           let non_auto_margin =
