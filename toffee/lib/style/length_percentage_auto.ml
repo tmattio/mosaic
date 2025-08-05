@@ -63,15 +63,15 @@ let resolved_percentage_size_with_calc t parent_size calc_resolver =
 (* Resolve functions from Taffy's resolve.rs *)
 
 let maybe_resolve t context calc_resolver =
-  match context with
-  | None -> None
-  | Some dim ->
-      if is_auto t then None
-      else if is_length t then Some (value t)
-      else if is_percent t then Some (dim *. value t)
-      else if is_calc t then
-        Some (calc_resolver (Compact_length.get_calc_index t) dim)
-      else failwith "Invalid length_percentage_auto value"
+  if is_auto t then None
+  else if is_length t then Some (value t)
+  else if is_percent t then
+    match context with None -> None | Some dim -> Some (dim *. value t)
+  else if is_calc t then
+    match context with
+    | None -> None
+    | Some dim -> Some (calc_resolver (Compact_length.get_calc_index t) dim)
+  else failwith "Invalid length_percentage_auto value"
 
 let resolve_or_zero t context calc_resolver =
   match maybe_resolve t context calc_resolver with Some v -> v | None -> 0.0
