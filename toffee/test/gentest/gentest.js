@@ -11,7 +11,7 @@ const __dirname = path.dirname(__filename);
 const testDir = path.resolve(__dirname, '..');
 
 // Convert style object to OCaml code
-function styleToOCaml(style) {
+function styleToOCaml(style, boxSizing) {
   const params = [];
 
   // Only set display if explicitly specified - Taffy defaults to Flex
@@ -334,9 +334,11 @@ function styleToOCaml(style) {
     }
   }
 
-  // Note: box_sizing is not a parameter of Style.make in the new API
-  // It appears to be handled internally or through a different mechanism
-  // The box_sizing property is accessible via the box_sizing accessor function
+  // Box sizing - add for all nodes when test is content-box mode
+  // In the Rust tests, when a test is run with content-box, ALL nodes get ContentBox
+  if (boxSizing === 'content_box') {
+    params.push('~box_sizing:Style.Box_sizing.Content_box');
+  }
 
   return params.length > 0
     ? `Style.make ${params.join(' ')} ()`
@@ -622,8 +624,8 @@ function availableSpaceToOCaml(space) {
   }
 }
 
-function generateNode(nodeVar, node, _parentVar) {
-  const style = styleToOCaml(node.style);
+function generateNode(nodeVar, node, _parentVar, boxSizing) {
+  const style = styleToOCaml(node.style, boxSizing);
   const textContent = node.textContent;
   const writingMode = node.style?.writingMode;
   // Note: aspect_ratio is read in Rust but not used in TestNodeContext
@@ -714,7 +716,7 @@ function generateTest(name, testData, boxSizing, category = '') {
 
   function processNode(node, parentVar) {
     const nodeVar = parentVar ? `node${nodeCounter++}` : 'node';
-    nodes.push(generateNode(nodeVar, node, parentVar));
+    nodes.push(generateNode(nodeVar, node, parentVar, boxSizing));
 
     if (parentVar) {
       nodes.push(`let _ = add_child tree ${parentVar} ${nodeVar} |> Result.get_ok in`);

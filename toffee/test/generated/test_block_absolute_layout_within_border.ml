@@ -185,6 +185,7 @@ let test_block_absolute_layout_within_border_content_box () =
   let node =
     new_leaf tree
       (Style.make ~display:Style.Display.Block
+         ~box_sizing:Style.Box_sizing.Content_box
          ~size:
            {
              width = Style.Dimension.length 100.0;
@@ -209,7 +210,9 @@ let test_block_absolute_layout_within_border_content_box () =
   in
   let node0 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Block ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Block
+         ~box_sizing:Style.Box_sizing.Content_box
+         ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -228,7 +231,9 @@ let test_block_absolute_layout_within_border_content_box () =
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Block ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Block
+         ~box_sizing:Style.Box_sizing.Content_box
+         ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -247,7 +252,9 @@ let test_block_absolute_layout_within_border_content_box () =
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Block ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Block
+         ~box_sizing:Style.Box_sizing.Content_box
+         ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -273,7 +280,9 @@ let test_block_absolute_layout_within_border_content_box () =
   let _ = add_child tree node node2 |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make ~display:Style.Display.Block ~position:Style.Position.Absolute
+      (Style.make ~display:Style.Display.Block
+         ~box_sizing:Style.Box_sizing.Content_box
+         ~position:Style.Position.Absolute
          ~size:
            {
              width = Style.Dimension.length 50.0;
