@@ -503,9 +503,9 @@ let determine_flex_base_size (type t)
             let clamped =
               Option.value cross_axis_parent_size ~default:val_ |> fun v ->
               match (child_min_cross, child_max_cross) with
-              | Some min, Some max -> Float.min max (Float.max min v)
+              | Some min, Some max -> Float.max min (Float.min v max)
               | Some min, None -> Float.max min v
-              | None, Some max -> Float.min max v
+              | None, Some max -> Float.min v max
               | None, None -> v
             in
             Available_space.of_float clamped
@@ -1127,9 +1127,9 @@ let determine_container_main_size (type t)
                                       (child_min_cross, child_max_cross)
                                     with
                                     | Some min, Some max ->
-                                        Float.min max (Float.max min v)
+                                        Float.max min (Float.min v max)
                                     | Some min, None -> Float.max min v
-                                    | None, Some max -> Float.min max v
+                                    | None, Some max -> Float.min v max
                                     | None, None -> v
                                   in
                                   Available_space.of_float clamped
@@ -1226,12 +1226,12 @@ let determine_container_main_size (type t)
                               let clamped =
                                 match (style_min, style_max) with
                                 | Some min, Some max ->
-                                    Float.min max
-                                      (Float.max min content_main_size)
+                                    Float.max min
+                                      (Float.min content_main_size max)
                                 | Some min, None ->
                                     Float.max min content_main_size
                                 | None, Some max ->
-                                    Float.min max content_main_size
+                                    Float.min content_main_size max
                                 | None, None -> content_main_size
                               in
                               Float.max clamped main_content_box_inset
@@ -1242,12 +1242,12 @@ let determine_container_main_size (type t)
                               let clamped =
                                 match (style_min, style_max) with
                                 | Some min, Some max ->
-                                    Float.min max
-                                      (Float.max min with_flex_basis)
+                                    Float.max min
+                                      (Float.min with_flex_basis max)
                                 | Some min, None ->
                                     Float.max min with_flex_basis
                                 | None, Some max ->
-                                    Float.min max with_flex_basis
+                                    Float.min with_flex_basis max
                                 | None, None -> with_flex_basis
                               in
                               Float.max clamped main_content_box_inset
@@ -1328,9 +1328,9 @@ let determine_container_main_size (type t)
   let outer_main_size =
     let clamped =
       match (min_main, max_main) with
-      | Some min, Some max -> Float.min max (Float.max min outer_main_size)
+      | Some min, Some max -> Float.max min (Float.min outer_main_size max)
       | Some min, None -> Float.max min outer_main_size
-      | None, Some max -> Float.min max outer_main_size
+      | None, Some max -> Float.min outer_main_size max
       | None, None -> outer_main_size
     in
     Float.max clamped (main_content_box_inset -. scrollbar_main)
@@ -1527,9 +1527,9 @@ let resolve_flexible_lengths (line : flex_line) (constants : algo_constants) :
                 let v =
                   match (resolved_min, max_main) with
                   | Some min, Some max ->
-                      Float.min max (Float.max min current_size)
+                      Float.max min (Float.min current_size max)
                   | Some min, None -> Float.max min current_size
-                  | None, Some max -> Float.min max current_size
+                  | None, Some max -> Float.min current_size max
                   | None, None -> current_size
                 in
                 Float.max 0.0 v
@@ -1611,11 +1611,11 @@ let determine_hypothetical_cross_size (type t)
         | Some size, Some min, Some max ->
             Some
               (Float.max padding_border_sum
-                 (Float.min max (Float.max min size)))
+                 (Float.max min (Float.min size max)))
         | Some size, Some min, None ->
             Some (Float.max padding_border_sum (Float.max min size))
         | Some size, None, Some max ->
-            Some (Float.max padding_border_sum (Float.min max size))
+            Some (Float.max padding_border_sum (Float.min size max))
         | Some size, None, None -> Some (Float.max padding_border_sum size)
         | None, _, _ -> None
       in
@@ -1637,9 +1637,9 @@ let determine_hypothetical_cross_size (type t)
         | Available_space.Definite value ->
             let clamped =
               match (min_cross, max_cross) with
-              | Some min, Some max -> Float.min max (Float.max min value)
+              | Some min, Some max -> Float.max min (Float.min value max)
               | Some min, None -> Float.max min value
-              | None, Some max -> Float.min max value
+              | None, Some max -> Float.min value max
               | None, None -> value
             in
             Available_space.of_float (Float.max padding_border_sum clamped)
@@ -1703,9 +1703,9 @@ let determine_hypothetical_cross_size (type t)
             let clamped =
               match (min_cross, max_cross) with
               | Some min, Some max ->
-                  Float.min max (Float.max min measured_size)
+                  Float.max min (Float.min measured_size max)
               | Some min, None -> Float.max min measured_size
-              | None, Some max -> Float.min max measured_size
+              | None, Some max -> Float.min measured_size max
               | None, None -> measured_size
             in
             Float.max padding_border_sum clamped
@@ -1877,9 +1877,9 @@ let calculate_cross_size (flex_lines : flex_line list)
       | Some size ->
           let clamped =
             match (cross_min_size, cross_max_size) with
-            | Some min, Some max -> Float.min max (Float.max min size)
+            | Some min, Some max -> Float.max min (Float.min size max)
             | Some min, None -> Float.max min size
-            | None, Some max -> Float.min max size
+            | None, Some max -> Float.min size max
             | None, None -> size
           in
           Float.max 0.0 (clamped -. cross_axis_padding_border)
@@ -1960,9 +1960,9 @@ let calculate_cross_size (flex_lines : flex_line list)
 
         line.cross_size <-
           (match (min_constraint, max_constraint) with
-          | Some min, Some max -> Float.min max (Float.max min line.cross_size)
+          | Some min, Some max -> Float.max min (Float.min line.cross_size max)
           | Some min, None -> Float.max min line.cross_size
-          | None, Some max -> Float.min max line.cross_size
+          | None, Some max -> Float.min line.cross_size max
           | None, None -> line.cross_size)
     | [] -> ()
 
@@ -2001,9 +2001,9 @@ let handle_align_content_stretch (flex_lines : flex_line list)
         let clamped =
           match (size_or_min, cross_min_size, cross_max_size) with
           | Some size, Some min, Some max ->
-              Some (Float.min max (Float.max min size))
+              Some (Float.max min (Float.min size max))
           | Some size, Some min, None -> Some (Float.max min size)
-          | Some size, None, Some max -> Some (Float.min max size)
+          | Some size, None, Some max -> Some (Float.min size max)
           | Some size, None, None -> Some size
           | None, _, _ -> None
         in
@@ -2115,9 +2115,9 @@ let determine_used_cross_size (type t)
 
               match (min_size, max_size) with
               | Some min, Some max ->
-                  Float.min max (Float.max min stretched_size)
+                  Float.max min (Float.min stretched_size max)
               | Some min, None -> Float.max min stretched_size
-              | None, Some max -> Float.min max stretched_size
+              | None, Some max -> Float.min stretched_size max
               | None, None -> stretched_size
             else if
               (* Use hypothetical size *)
@@ -2420,9 +2420,9 @@ let determine_container_cross_size (flex_lines : flex_line list)
     in
     let clamped_size =
       match (min_cross_size, max_cross_size) with
-      | Some min, Some max -> Float.min max (Float.max min base_size)
+      | Some min, Some max -> Float.max min (Float.min base_size max)
       | Some min, None -> Float.max min base_size
-      | None, Some max -> Float.min max base_size
+      | None, Some max -> Float.min base_size max
       | None, None -> base_size
     in
     Float.max clamped_size (padding_border_sum -. cross_scrollbar_gutter)
@@ -2878,18 +2878,18 @@ let perform_absolute_layout_on_absolute_children (type t)
               width =
                 (match (style_size.width, min_size.width, max_size.width) with
                 | Some w, Some min_w, Some max_w ->
-                    Some (Float.min max_w (Float.max min_w w))
+                    Some (Float.max min_w (Float.min w max_w))
                 | Some w, Some min_w, None -> Some (Float.max min_w w)
-                | Some w, None, Some max_w -> Some (Float.min max_w w)
+                | Some w, None, Some max_w -> Some (Float.min w max_w)
                 | w, _, _ -> w);
               height =
                 (match
                    (style_size.height, min_size.height, max_size.height)
                  with
                 | Some h, Some min_h, Some max_h ->
-                    Some (Float.min max_h (Float.max min_h h))
+                    Some (Float.max min_h (Float.min h max_h))
                 | Some h, Some min_h, None -> Some (Float.max min_h h)
-                | Some h, None, Some max_h -> Some (Float.min max_h h)
+                | Some h, None, Some max_h -> Some (Float.min h max_h)
                 | h, _, _ -> h);
             }
       in
@@ -2929,18 +2929,18 @@ let perform_absolute_layout_on_absolute_children (type t)
                      (!known_dimensions.width, min_size.width, max_size.width)
                    with
                   | Some w, Some min_w, Some max_w ->
-                      Some (Float.min max_w (Float.max min_w w))
+                      Some (Float.max min_w (Float.min w max_w))
                   | Some w, Some min_w, None -> Some (Float.max min_w w)
-                  | Some w, None, Some max_w -> Some (Float.min max_w w)
+                  | Some w, None, Some max_w -> Some (Float.min w max_w)
                   | w, _, _ -> w);
                 height =
                   (match
                      (!known_dimensions.height, min_size.height, max_size.height)
                    with
                   | Some h, Some min_h, Some max_h ->
-                      Some (Float.min max_h (Float.max min_h h))
+                      Some (Float.max min_h (Float.min h max_h))
                   | Some h, Some min_h, None -> Some (Float.max min_h h)
-                  | Some h, None, Some max_h -> Some (Float.min max_h h)
+                  | Some h, None, Some max_h -> Some (Float.min h max_h)
                   | h, _, _ -> h);
               }
       | _ -> ());
@@ -2980,18 +2980,18 @@ let perform_absolute_layout_on_absolute_children (type t)
                      (!known_dimensions.width, min_size.width, max_size.width)
                    with
                   | Some w, Some min_w, Some max_w ->
-                      Some (Float.min max_w (Float.max min_w w))
+                      Some (Float.max min_w (Float.min w max_w))
                   | Some w, Some min_w, None -> Some (Float.max min_w w)
-                  | Some w, None, Some max_w -> Some (Float.min max_w w)
+                  | Some w, None, Some max_w -> Some (Float.min w max_w)
                   | w, _, _ -> w);
                 height =
                   (match
                      (!known_dimensions.height, min_size.height, max_size.height)
                    with
                   | Some h, Some min_h, Some max_h ->
-                      Some (Float.min max_h (Float.max min_h h))
+                      Some (Float.max min_h (Float.min h max_h))
                   | Some h, Some min_h, None -> Some (Float.max min_h h)
-                  | Some h, None, Some max_h -> Some (Float.min max_h h)
+                  | Some h, None, Some max_h -> Some (Float.min h max_h)
                   | h, _, _ -> h);
               }
       | _ -> ());
@@ -3038,21 +3038,21 @@ let perform_absolute_layout_on_absolute_children (type t)
 
       let measured_size = Layout_output.size layout_output in
       let final_size = Size.unwrap_or !known_dimensions measured_size in
-      (* Clamp final size between min and max *)
+      (* Clamp final size between min and max - min wins over max when they conflict *)
       let final_size =
         Size.
           {
             width =
               (match (final_size.width, min_size.width, max_size.width) with
-              | w, Some min_w, Some max_w -> Float.min max_w (Float.max min_w w)
+              | w, Some min_w, Some max_w -> Float.max min_w (Float.min w max_w)
               | w, Some min_w, None -> Float.max min_w w
-              | w, None, Some max_w -> Float.min max_w w
+              | w, None, Some max_w -> Float.min w max_w
               | w, _, _ -> w);
             height =
               (match (final_size.height, min_size.height, max_size.height) with
-              | h, Some min_h, Some max_h -> Float.min max_h (Float.max min_h h)
+              | h, Some min_h, Some max_h -> Float.max min_h (Float.min h max_h)
               | h, Some min_h, None -> Float.max min_h h
-              | h, None, Some max_h -> Float.min max_h h
+              | h, None, Some max_h -> Float.min h max_h
               | h, _, _ -> h);
           }
       in
