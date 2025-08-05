@@ -821,24 +821,22 @@ let perform_absolute_layout_on_absolute_children (type t)
               {
                 x =
                   (match left with
-                  | Some l -> l +. resolved_margin.left
+                  | Some l -> l +. resolved_margin.left +. area_offset.x
                   | None -> (
                       match right with
                       | Some r ->
                           area_size.width -. final_size.width -. r
-                          -. resolved_margin.right
-                      | None -> item.static_position.x +. resolved_margin.left))
-                  +. area_offset.x;
+                          -. resolved_margin.right +. area_offset.x
+                      | None -> item.static_position.x +. resolved_margin.left));
                 y =
                   (match top with
-                  | Some t -> t +. resolved_margin.top
+                  | Some t -> t +. resolved_margin.top +. area_offset.y
                   | None -> (
                       match bottom with
                       | Some b ->
                           area_size.height -. final_size.height -. b
-                          -. resolved_margin.bottom
-                      | None -> item.static_position.y +. resolved_margin.top))
-                  +. area_offset.y;
+                          -. resolved_margin.bottom +. area_offset.y
+                      | None -> item.static_position.y +. resolved_margin.top));
               }
           in
 
