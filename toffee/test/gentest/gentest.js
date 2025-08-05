@@ -807,8 +807,25 @@ let measure_function known_dimensions available_space _node_id node_context _sty
       (* Ahem font simulation: each character is 10x10 *)
       let h_width = 10.0 in
       let h_height = 10.0 in
-      let zws = "\\u{200b}" in
-      let lines = String.split_on_char (String.get zws 0) text in
+      let lines = 
+        (* Split on zero-width space - OCaml's split_on_char works on bytes, 
+           so we need to split on the UTF-8 sequence *)
+        let split_on_string sep str =
+          let sep_len = String.length sep in
+          let rec aux acc start =
+            try
+              let pos = String.index_from str start (String.get sep 0) in
+              if pos + sep_len <= String.length str && 
+                 String.sub str pos sep_len = sep then
+                aux (String.sub str start (pos - start) :: acc) (pos + sep_len)
+              else
+                aux acc (pos + 1)
+            with Not_found ->
+              List.rev (String.sub str start (String.length str - start) :: acc)
+          in
+          aux [] 0
+        in
+        split_on_string "\\u{200b}" text in
       let min_line_length = List.fold_left max 0 (List.map String.length lines) in
       let max_line_length = List.fold_left (+) 0 (List.map String.length lines) in
       
@@ -829,19 +846,20 @@ let measure_function known_dimensions available_space _node_id node_context _sty
         | Some h -> h
         | None ->
             let inline_line_length = int_of_float (Float.floor (inline_size /. h_width)) in
-            let rec count_lines current_line_length line_count = function
-              | [] -> line_count
-              | line :: rest ->
-                  let line_len = String.length line in
-                  if current_line_length + line_len > inline_line_length then
-                    if current_line_length > 0 then
-                      count_lines line_len (line_count + 1) rest
-                    else
-                      count_lines line_len line_count rest
-                  else
-                    count_lines (current_line_length + line_len) line_count rest
-            in
-            float_of_int (count_lines 0 1 lines) *. h_height
+            (* Match Taffy's exact line counting logic *)
+            let line_count = ref 1 in
+            let current_line_length = ref 0 in
+            List.iter (fun line ->
+              let line_len = String.length line in
+              if !current_line_length + line_len > inline_line_length then begin
+                if !current_line_length > 0 then
+                  incr line_count;
+                current_line_length := line_len
+              end else begin
+                current_line_length := !current_line_length + line_len
+              end
+            ) lines;
+            float_of_int !line_count *. h_height
       in
       { width = inline_size; height = block_size }
   | Some (MeasureFunction.Text_vertical text) ->

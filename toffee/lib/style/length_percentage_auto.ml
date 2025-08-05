@@ -29,13 +29,21 @@ let value t = Compact_length.value t
 let resolve_to_option t context =
   if is_auto t then None
   else if is_length t then Some (value t)
-  else if is_percent t then Some (context *. value t)
+  else if is_percent t then
+    (* Emulate f32 arithmetic to match Taffy's behavior *)
+    let result = context *. value t in
+    (* Round to f32 precision *)
+    Some (Int32.float_of_bits (Int32.bits_of_float result))
   else failwith "Invalid length_percentage_auto value (possibly calc)"
 
 let resolve_to_option_with_calc t context calc_resolver =
   if is_auto t then None
   else if is_length t then Some (value t)
-  else if is_percent t then Some (context *. value t)
+  else if is_percent t then
+    (* Emulate f32 arithmetic to match Taffy's behavior *)
+    let result = context *. value t in
+    (* Round to f32 precision *)
+    Some (Int32.float_of_bits (Int32.bits_of_float result))
   else if is_calc t then
     Some (calc_resolver (Compact_length.get_calc_index t) context)
   else failwith "Invalid length_percentage_auto value"

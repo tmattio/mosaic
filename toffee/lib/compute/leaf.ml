@@ -169,6 +169,9 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)
           (* Override with node size if present *)
           |> fun space ->
           set_or_self space node_size_axis
+          (* Apply max constraint even for Max_content *)
+          |> fun space ->
+          min_or_self space node_max_size_axis
           (* Apply constraints and subtract inset *)
           |> fun space ->
           map_definite_value space (fun size ->
@@ -211,25 +214,43 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)
         measure_function known_for_measure available_space_computed
       in
 
+      (* Match Taffy's leaf computation logic exactly *)
       let clamped_size =
         let chosen = Size.choose_first known_dimensions node_size in
-        let unwrapped =
+        let measured_with_inset =
+          Size.add measured_size (Rect.sum_axes content_box_inset)
+        in
+
+        (* Taffy's logic: known_dimensions.or(node_size).unwrap_or(measured_size + content_box_inset.sum_axes()) *)
+        let base_size =
           match (chosen.width, chosen.height) with
           | Some w, Some h -> Size.{ width = w; height = h }
-          | _ -> Size.add measured_size (Rect.sum_axes content_box_inset)
+          | Some w, None ->
+              Size.{ width = w; height = measured_with_inset.height }
+          | None, Some h ->
+              Size.{ width = measured_with_inset.width; height = h }
+          | None, None -> measured_with_inset
         in
-        Size.clamp unwrapped node_min_size node_max_size
+
+        (* Clamp to min/max constraints *)
+        Size.clamp base_size node_min_size node_max_size
       in
 
+      (* Apply aspect ratio AFTER clamping, matching Taffy's logic exactly *)
       let size =
-        let width = clamped_size.width in
-        let height =
-          match aspect_ratio with
-          | Some ratio -> Float.max clamped_size.height (width /. ratio)
-          | None -> clamped_size.height
-        in
-        Size.{ width; height } |> fun s -> Size.max s pb_sum
+        match aspect_ratio with
+        | Some ratio ->
+            (* Taffy: height: f32_max(clamped_size.height, aspect_ratio.map(|ratio| clamped_size.width / ratio).unwrap_or(0.0)) *)
+            let aspect_height = clamped_size.width /. ratio in
+            Size.
+              {
+                width = clamped_size.width;
+                height = Float.max clamped_size.height aspect_height;
+              }
+        | None -> clamped_size
       in
+
+      let size = Size.max size pb_sum in
 
       Layout_output.make ~size
         ~content_size:(Size.add measured_size (Rect.sum_axes padding))

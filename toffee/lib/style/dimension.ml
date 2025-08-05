@@ -56,7 +56,13 @@ let maybe_resolve t context calc_resolver =
   if is_auto t then None
   else if is_length t then Some (value t)
   else if is_percent t then
-    match context with None -> None | Some dim -> Some (dim *. value t)
+    match context with
+    | None -> None
+    | Some dim ->
+        (* Emulate f32 arithmetic to match Taffy's behavior *)
+        let result = dim *. value t in
+        (* Round to f32 precision *)
+        Some (Int32.float_of_bits (Int32.bits_of_float result))
   else if is_calc t then
     match context with
     | None -> None

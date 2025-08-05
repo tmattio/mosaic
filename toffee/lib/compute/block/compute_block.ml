@@ -295,7 +295,13 @@ let perform_final_layout_on_in_flow_children (type t)
           Tree.compute_child_layout tree item.node_id
             (Layout_input.make ~run_mode:Run_mode.Perform_layout
                ~sizing_mode:Sizing_mode.Inherent_size ~axis:Requested_axis.Both
-               ~known_dimensions ~parent_size
+               ~known_dimensions
+               ~parent_size:
+                 Size.
+                   {
+                     width = Some container_outer_width;
+                     height = parent_size.height;
+                   }
                ~available_space:
                  Size.
                    {

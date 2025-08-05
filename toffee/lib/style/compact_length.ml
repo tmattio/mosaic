@@ -28,31 +28,57 @@ let value_mask = lnot tag_mask
 (* Helper functions for bit manipulation *)
 
 let create_tagged_value value tag =
-  let bits = Int64.bits_of_float value in
-  let tagged_bits =
-    Int64.logor (Int64.logand bits (Int64.of_int value_mask)) (Int64.of_int tag)
-  in
-  Int64.float_of_bits tagged_bits
+  if Sys.word_size = 64 then
+    (* On 64-bit platforms, store f32 value in upper 32 bits, tag in lower 8 bits
+       This preserves full f32 precision, matching Taffy's approach *)
+    let value_bits = Int32.bits_of_float value in
+    let shifted_value = Int64.shift_left (Int64.of_int32 value_bits) 32 in
+    let tagged_bits = Int64.logor shifted_value (Int64.of_int tag) in
+    Int64.float_of_bits tagged_bits
+  else
+    (* On 32-bit platforms, use the old approach
+       TODO: implement a better solution for 32-bit platforms *)
+    let bits = Int64.bits_of_float value in
+    let tagged_bits =
+      Int64.logor
+        (Int64.logand bits (Int64.of_int value_mask))
+        (Int64.of_int tag)
+    in
+    Int64.float_of_bits tagged_bits
 
 let get_tag t =
   let bits = Int64.bits_of_float t in
   Int64.to_int (Int64.logand bits (Int64.of_int tag_mask))
 
 let get_value t =
-  let bits = Int64.bits_of_float t in
-  let cleared_bits = Int64.logand bits (Int64.of_int value_mask) in
-  Int64.float_of_bits cleared_bits
+  if Sys.word_size = 64 then
+    let bits = Int64.bits_of_float t in
+    (* Extract upper 32 bits and convert back to float *)
+    let value_bits = Int64.shift_right_logical bits 32 in
+    Int32.float_of_bits (Int64.to_int32 value_bits)
+  else
+    (* On 32-bit platforms, use the old approach *)
+    let bits = Int64.bits_of_float t in
+    let cleared_bits = Int64.logand bits (Int64.of_int value_mask) in
+    Int64.float_of_bits cleared_bits
 
 (* Special handling for calc - stores an integer index instead of a float value *)
 let create_calc_value index =
-  (* Store the index in the upper bits, with calc_tag in lower 3 bits *)
-  let shifted_index = Int64.shift_left (Int64.of_int index) 3 in
-  let tagged_bits = Int64.logor shifted_index (Int64.of_int calc_tag) in
-  Int64.float_of_bits tagged_bits
+  if Sys.word_size = 64 then
+    (* Store the index in the upper 32 bits, with calc_tag in lower 3 bits *)
+    let shifted_index = Int64.shift_left (Int64.of_int index) 32 in
+    let tagged_bits = Int64.logor shifted_index (Int64.of_int calc_tag) in
+    Int64.float_of_bits tagged_bits
+  else
+    (* Store the index in the upper bits, with calc_tag in lower 3 bits *)
+    let shifted_index = Int64.shift_left (Int64.of_int index) 3 in
+    let tagged_bits = Int64.logor shifted_index (Int64.of_int calc_tag) in
+    Int64.float_of_bits tagged_bits
 
 let get_calc_index t =
   let bits = Int64.bits_of_float t in
-  Int64.to_int (Int64.shift_right_logical bits 3)
+  if Sys.word_size = 64 then Int64.to_int (Int64.shift_right_logical bits 32)
+  else Int64.to_int (Int64.shift_right_logical bits 3)
 
 let is_calc t =
   let bits = Int64.bits_of_float t in
@@ -130,12 +156,20 @@ type calc_resolver = int -> float -> float
 
 let resolved_percentage_size t parent_size =
   match get_tag t with
-  | tag when tag = percent_tag -> Some (get_value t *. parent_size)
+  | tag when tag = percent_tag ->
+      (* Emulate f32 arithmetic to match Taffy's behavior *)
+      let result = get_value t *. parent_size in
+      (* Round to f32 precision *)
+      Some (Int32.float_of_bits (Int32.bits_of_float result))
   | _ -> None
 
 let resolved_percentage_size_with_calc t parent_size calc_resolver =
   match get_tag t with
-  | tag when tag = percent_tag -> Some (get_value t *. parent_size)
+  | tag when tag = percent_tag ->
+      (* Emulate f32 arithmetic to match Taffy's behavior *)
+      let result = get_value t *. parent_size in
+      (* Round to f32 precision *)
+      Some (Int32.float_of_bits (Int32.bits_of_float result))
   | _ when is_calc t -> Some (calc_resolver (get_calc_index t) parent_size)
   | _ -> None
 
