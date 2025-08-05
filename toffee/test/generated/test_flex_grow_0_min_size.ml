@@ -232,14 +232,14 @@ let test_flex_grow_0_min_size_content_box measure_function () =
              top = Style.Length_percentage.length 1.0;
              bottom = Style.Length_percentage.length 1.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
       (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
          ~flex_basis:(Style.Dimension.percent 0.0)
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =
@@ -251,7 +251,7 @@ let test_flex_grow_0_min_size_content_box measure_function () =
     new_leaf tree
       (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
          ~flex_basis:(Style.Dimension.percent 0.0)
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =
@@ -263,7 +263,7 @@ let test_flex_grow_0_min_size_content_box measure_function () =
     new_leaf tree
       (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
          ~flex_basis:(Style.Dimension.percent 0.0)
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =
@@ -275,7 +275,7 @@ let test_flex_grow_0_min_size_content_box measure_function () =
     new_leaf tree
       (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
          ~flex_basis:(Style.Dimension.percent 0.0)
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

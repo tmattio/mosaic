@@ -111,7 +111,7 @@ let test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild_conten
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.length 200.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -130,7 +130,7 @@ let test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild_conten
              top = Style.Length_percentage_auto.auto;
              bottom = Style.Length_percentage_auto.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -143,7 +143,7 @@ let test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild_conten
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in

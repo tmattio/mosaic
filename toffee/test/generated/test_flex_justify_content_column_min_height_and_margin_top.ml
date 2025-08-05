@@ -92,7 +92,7 @@ let test_flex_justify_content_column_min_height_and_margin_top_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 50.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -110,7 +110,7 @@ let test_flex_justify_content_column_min_height_and_margin_top_content_box () =
              top = Style.Length_percentage_auto.length 10.0;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in

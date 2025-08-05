@@ -136,7 +136,7 @@ let test_flex_grow_root_minimized_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 500.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -152,13 +152,15 @@ let test_flex_grow_root_minimized_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 500.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~flex_grow:1.0 ~flex_basis:(Style.Dimension.length 200.0) ())
+      (Style.make ~flex_grow:1.0
+         ~flex_basis:(Style.Dimension.length 200.0)
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
@@ -170,7 +172,7 @@ let test_flex_grow_root_minimized_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node2 |> Result.get_ok in

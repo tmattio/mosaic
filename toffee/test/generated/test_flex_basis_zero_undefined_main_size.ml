@@ -82,14 +82,16 @@ let test_flex_basis_zero_undefined_main_size_content_box () =
 
   (* Create nodes *)
   let node =
-    new_leaf tree (Style.make ~flex_direction:Style.Flex_direction.Row ())
+    new_leaf tree
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
       (Style.make ~flex_direction:Style.Flex_direction.Column
          ~flex_basis:(Style.Dimension.length 0.0)
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -101,7 +103,7 @@ let test_flex_basis_zero_undefined_main_size_content_box () =
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.length 50.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in

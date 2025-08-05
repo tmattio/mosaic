@@ -97,10 +97,14 @@ let test_flex_display_none_absolute_child_content_box () =
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
-  let node0 = new_leaf tree (Style.make ~flex_grow:1.0 ()) |> Result.get_ok in
+  let node0 =
+    new_leaf tree
+      (Style.make ~flex_grow:1.0 ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
@@ -117,7 +121,7 @@ let test_flex_display_none_absolute_child_content_box () =
              top = Style.Length_percentage_auto.length 10.0;
              bottom = Style.Length_percentage_auto.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in

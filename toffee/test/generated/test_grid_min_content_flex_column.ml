@@ -203,29 +203,39 @@ let test_grid_min_content_flex_column_content_box measure_function () =
              Style.Grid.Template_component.single
                (Style.Grid.Track_sizing_function.length 40.0);
            ]
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
       (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ())
+         ~flex_direction:Style.Flex_direction.Column
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 = new_leaf tree Style.default |> Result.get_ok in
+  let node1 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ =
     set_node_context tree node1 (Some (MeasureFunction.Text "HH​HH"))
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
-  let node2 = new_leaf tree Style.default |> Result.get_ok in
+  let node2 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ =
     set_node_context tree node2 (Some (MeasureFunction.Text "HH​HH"))
     |> Result.get_ok
   in
   let _ = add_child tree node0 node2 |> Result.get_ok in
-  let node3 = new_leaf tree Style.default |> Result.get_ok in
+  let node3 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ =
     set_node_context tree node3 (Some (MeasureFunction.Text "HH​HH"))
     |> Result.get_ok

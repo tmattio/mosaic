@@ -70,7 +70,10 @@ let test_flex_min_width_overrides_width_content_box () =
   let tree = new_tree () in
 
   (* Create nodes *)
-  let node = new_leaf tree Style.default |> Result.get_ok in
+  let node =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let node0 =
     new_leaf tree
       (Style.make
@@ -84,7 +87,7 @@ let test_flex_min_width_overrides_width_content_box () =
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in

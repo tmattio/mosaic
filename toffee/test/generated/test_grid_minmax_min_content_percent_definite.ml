@@ -185,10 +185,13 @@ let test_grid_minmax_min_content_percent_definite_content_box measure_function
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
-  let node0 = new_leaf tree Style.default |> Result.get_ok in
+  let node0 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ =
     set_node_context tree node0 (Some (MeasureFunction.Text "HH​HH"))
     |> Result.get_ok

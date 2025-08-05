@@ -120,12 +120,14 @@ let test_flex_only_shrinkable_item_with_flex_basis_zero_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 764.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
-      (Style.make ~flex_shrink:1.0 ~flex_basis:(Style.Dimension.length 0.0) ())
+      (Style.make ~flex_shrink:1.0
+         ~flex_basis:(Style.Dimension.length 0.0)
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -140,7 +142,7 @@ let test_flex_only_shrinkable_item_with_flex_basis_zero_content_box () =
              top = Style.Length_percentage_auto.length 0.0;
              bottom = Style.Length_percentage_auto.length 6.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
@@ -148,7 +150,7 @@ let test_flex_only_shrinkable_item_with_flex_basis_zero_content_box () =
     new_leaf tree
       (Style.make ~flex_shrink:0.0
          ~flex_basis:(Style.Dimension.length 764.0)
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node2 |> Result.get_ok in

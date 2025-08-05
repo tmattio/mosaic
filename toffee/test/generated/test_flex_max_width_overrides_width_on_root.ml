@@ -76,7 +76,7 @@ let test_flex_max_width_overrides_width_on_root_content_box () =
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
 

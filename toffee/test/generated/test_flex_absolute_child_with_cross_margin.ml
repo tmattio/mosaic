@@ -226,7 +226,7 @@ let test_flex_absolute_child_with_cross_margin_content_box measure_function () =
              width = Style.Dimension.length 311.0;
              height = Style.Dimension.length 36893500000000000000.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -238,7 +238,7 @@ let test_flex_absolute_child_with_cross_margin_content_box measure_function () =
              width = Style.Dimension.length 28.0;
              height = Style.Dimension.length 27.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -259,7 +259,7 @@ let test_flex_absolute_child_with_cross_margin_content_box measure_function () =
              top = Style.Length_percentage_auto.length 4.0;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =
@@ -276,7 +276,7 @@ let test_flex_absolute_child_with_cross_margin_content_box measure_function () =
              width = Style.Dimension.length 25.0;
              height = Style.Dimension.length 27.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node2 |> Result.get_ok in

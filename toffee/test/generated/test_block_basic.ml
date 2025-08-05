@@ -100,7 +100,7 @@ let test_block_basic_content_box () =
              width = Style.Dimension.length 50.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -111,7 +111,7 @@ let test_block_basic_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -123,7 +123,7 @@ let test_block_basic_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in

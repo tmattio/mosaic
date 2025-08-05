@@ -76,7 +76,7 @@ let test_flex_min_height_overrides_height_on_root_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
 

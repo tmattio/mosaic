@@ -196,7 +196,7 @@ let test_grid_max_width_less_than_max_content_with_min_content_content_box
              Style.Grid.Template_component.single
                Style.Grid.Track_sizing_function.min_content;
            ]
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -214,17 +214,23 @@ let test_grid_max_width_less_than_max_content_with_min_content_content_box
              width = Style.Dimension.length 80.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 = new_leaf tree Style.default |> Result.get_ok in
+  let node1 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ =
     set_node_context tree node1 (Some (MeasureFunction.Text "HH​HH​HH​HH"))
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
-  let node2 = new_leaf tree Style.default |> Result.get_ok in
+  let node2 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ =
     set_node_context tree node2 (Some (MeasureFunction.Text "HH​HH​HH​HH"))
     |> Result.get_ok

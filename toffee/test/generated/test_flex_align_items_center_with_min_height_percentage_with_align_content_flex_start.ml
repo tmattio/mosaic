@@ -125,7 +125,7 @@ let test_flex_align_items_center_with_min_height_percentage_with_align_content_f
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -142,7 +142,7 @@ let test_flex_align_items_center_with_min_height_percentage_with_align_content_f
              width = Style.Dimension.auto;
              height = Style.Dimension.percent 1.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -154,7 +154,7 @@ let test_flex_align_items_center_with_min_height_percentage_with_align_content_f
              width = Style.Dimension.length 10.0;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
@@ -166,7 +166,7 @@ let test_flex_align_items_center_with_min_height_percentage_with_align_content_f
              width = Style.Dimension.length 10.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node2 |> Result.get_ok in

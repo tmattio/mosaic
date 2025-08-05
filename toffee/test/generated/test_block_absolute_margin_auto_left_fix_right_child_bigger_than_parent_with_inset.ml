@@ -99,7 +99,7 @@ let test_block_absolute_margin_auto_left_fix_right_child_bigger_than_parent_with
              width = Style.Dimension.length 52.0;
              height = Style.Dimension.length 52.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -124,7 +124,7 @@ let test_block_absolute_margin_auto_left_fix_right_child_bigger_than_parent_with
              top = Style.Length_percentage_auto.auto;
              bottom = Style.Length_percentage_auto.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in

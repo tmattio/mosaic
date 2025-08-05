@@ -199,12 +199,18 @@ let test_grid_span_2_min_content_auto_indefinite_content_box measure_function ()
              Style.Grid.Template_component.single
                (Style.Grid.Track_sizing_function.length 40.0);
            ]
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
-  let node0 = new_leaf tree Style.default |> Result.get_ok in
+  let node0 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 = new_leaf tree Style.default |> Result.get_ok in
+  let node1 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
@@ -214,7 +220,7 @@ let test_grid_span_2_min_content_auto_indefinite_content_box measure_function ()
              start = Style.Grid.Placement.line 1;
              end_ = Style.Grid.Placement.span 2;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

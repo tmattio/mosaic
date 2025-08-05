@@ -204,7 +204,7 @@ let test_flex_absolute_layout_within_border_content_box () =
              top = Style.Length_percentage.length 10.0;
              bottom = Style.Length_percentage.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -222,7 +222,7 @@ let test_flex_absolute_layout_within_border_content_box () =
              top = Style.Length_percentage_auto.length 0.0;
              bottom = Style.Length_percentage_auto.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -241,7 +241,7 @@ let test_flex_absolute_layout_within_border_content_box () =
              top = Style.Length_percentage_auto.auto;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
@@ -267,7 +267,7 @@ let test_flex_absolute_layout_within_border_content_box () =
              top = Style.Length_percentage_auto.length 0.0;
              bottom = Style.Length_percentage_auto.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node2 |> Result.get_ok in
@@ -293,7 +293,7 @@ let test_flex_absolute_layout_within_border_content_box () =
              top = Style.Length_percentage_auto.auto;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node3 |> Result.get_ok in

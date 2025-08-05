@@ -92,7 +92,7 @@ let test_block_overflow_scrollbars_take_up_space_main_axis_content_box () =
              height = Style.Dimension.length 50.0;
            }
          ~overflow:{ x = Style.Overflow.Scroll; y = Style.Overflow.Visible }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -105,7 +105,7 @@ let test_block_overflow_scrollbars_take_up_space_main_axis_content_box () =
              top = Style.Length_percentage_auto.length 0.0;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in

@@ -322,7 +322,7 @@ let test_grid_align_items_baseline_complex_content_box () =
              width = Style.Dimension.length 120.0;
              height = Style.Dimension.length 120.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -333,7 +333,7 @@ let test_grid_align_items_baseline_complex_content_box () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -345,7 +345,7 @@ let test_grid_align_items_baseline_complex_content_box () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
@@ -357,7 +357,7 @@ let test_grid_align_items_baseline_complex_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node1 node2 |> Result.get_ok in
@@ -369,7 +369,7 @@ let test_grid_align_items_baseline_complex_content_box () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node3 |> Result.get_ok in
@@ -381,7 +381,7 @@ let test_grid_align_items_baseline_complex_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node3 node4 |> Result.get_ok in
@@ -393,7 +393,7 @@ let test_grid_align_items_baseline_complex_content_box () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node5 |> Result.get_ok in
@@ -405,7 +405,7 @@ let test_grid_align_items_baseline_complex_content_box () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node6 |> Result.get_ok in
@@ -417,7 +417,7 @@ let test_grid_align_items_baseline_complex_content_box () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node7 |> Result.get_ok in
@@ -429,7 +429,7 @@ let test_grid_align_items_baseline_complex_content_box () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node8 |> Result.get_ok in
@@ -441,7 +441,7 @@ let test_grid_align_items_baseline_complex_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node8 node9 |> Result.get_ok in
@@ -453,7 +453,7 @@ let test_grid_align_items_baseline_complex_content_box () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node10 |> Result.get_ok in
@@ -462,7 +462,7 @@ let test_grid_align_items_baseline_complex_content_box () =
       (Style.make
          ~size:
            { width = Style.Dimension.auto; height = Style.Dimension.length 5.0 }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node10 node11 |> Result.get_ok in
@@ -474,7 +474,7 @@ let test_grid_align_items_baseline_complex_content_box () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node12 |> Result.get_ok in

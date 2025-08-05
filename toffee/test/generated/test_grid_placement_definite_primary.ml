@@ -165,7 +165,7 @@ let test_grid_placement_definite_primary_content_box () =
              width = Style.Dimension.length 200.0;
              height = Style.Dimension.length 200.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -176,7 +176,7 @@ let test_grid_placement_definite_primary_content_box () =
              start = Style.Grid.Placement.line 1;
              end_ = Style.Grid.Placement.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -188,7 +188,7 @@ let test_grid_placement_definite_primary_content_box () =
              start = Style.Grid.Placement.line 2;
              end_ = Style.Grid.Placement.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
@@ -200,7 +200,7 @@ let test_grid_placement_definite_primary_content_box () =
              start = Style.Grid.Placement.line 1;
              end_ = Style.Grid.Placement.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node2 |> Result.get_ok in
@@ -212,7 +212,7 @@ let test_grid_placement_definite_primary_content_box () =
              start = Style.Grid.Placement.line 2;
              end_ = Style.Grid.Placement.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node3 |> Result.get_ok in
@@ -224,7 +224,7 @@ let test_grid_placement_definite_primary_content_box () =
              start = Style.Grid.Placement.line 1;
              end_ = Style.Grid.Placement.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node4 |> Result.get_ok in

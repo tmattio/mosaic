@@ -144,7 +144,7 @@ let test_flex_align_baseline_nested_column_content_box () =
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -155,12 +155,14 @@ let test_flex_align_baseline_nested_column_content_box () =
              width = Style.Dimension.length 50.0;
              height = Style.Dimension.length 60.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
-    new_leaf tree (Style.make ~flex_direction:Style.Flex_direction.Column ())
+    new_leaf tree
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
@@ -172,7 +174,7 @@ let test_flex_align_baseline_nested_column_content_box () =
              width = Style.Dimension.length 50.0;
              height = Style.Dimension.length 80.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node1 node2 |> Result.get_ok in
@@ -184,7 +186,7 @@ let test_flex_align_baseline_nested_column_content_box () =
              width = Style.Dimension.length 50.0;
              height = Style.Dimension.length 30.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node2 node3 |> Result.get_ok in
@@ -196,7 +198,7 @@ let test_flex_align_baseline_nested_column_content_box () =
              width = Style.Dimension.length 50.0;
              height = Style.Dimension.length 40.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node2 node4 |> Result.get_ok in

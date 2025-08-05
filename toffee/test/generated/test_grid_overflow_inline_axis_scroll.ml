@@ -171,14 +171,14 @@ let test_grid_overflow_inline_axis_scroll_content_box measure_function () =
              width = Style.Dimension.length 50.0;
              height = Style.Dimension.length 50.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
       (Style.make
          ~overflow:{ x = Style.Overflow.Scroll; y = Style.Overflow.Scroll }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

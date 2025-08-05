@@ -154,7 +154,10 @@ let test_flex_align_items_center_with_height_with_padding_border_with_wrap_conte
   let tree = new_tree () in
 
   (* Create nodes *)
-  let node = new_leaf tree Style.default |> Result.get_ok in
+  let node =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let node0 =
     new_leaf tree
       (Style.make ~display:Style.Display.Flex ~flex_wrap:Style.Flex_wrap.Wrap
@@ -164,7 +167,7 @@ let test_flex_align_items_center_with_height_with_padding_border_with_wrap_conte
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -176,7 +179,7 @@ let test_flex_align_items_center_with_height_with_padding_border_with_wrap_conte
              width = Style.Dimension.length 10.0;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
@@ -188,7 +191,7 @@ let test_flex_align_items_center_with_height_with_padding_border_with_wrap_conte
              width = Style.Dimension.length 10.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node2 |> Result.get_ok in
@@ -201,7 +204,7 @@ let test_flex_align_items_center_with_height_with_padding_border_with_wrap_conte
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node3 |> Result.get_ok in
@@ -213,7 +216,7 @@ let test_flex_align_items_center_with_height_with_padding_border_with_wrap_conte
              width = Style.Dimension.length 10.0;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node3 node4 |> Result.get_ok in
@@ -225,7 +228,7 @@ let test_flex_align_items_center_with_height_with_padding_border_with_wrap_conte
              width = Style.Dimension.length 10.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node3 node5 |> Result.get_ok in

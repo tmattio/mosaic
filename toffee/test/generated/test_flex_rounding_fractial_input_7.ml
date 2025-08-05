@@ -264,7 +264,7 @@ let test_flex_rounding_fractial_input_7_content_box () =
       (Style.make
          ~size:
            { width = Style.Dimension.length 7.0; height = Style.Dimension.auto }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -275,7 +275,7 @@ let test_flex_rounding_fractial_input_7_content_box () =
              width = Style.Dimension.percent 0.25;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -287,7 +287,7 @@ let test_flex_rounding_fractial_input_7_content_box () =
              width = Style.Dimension.length 1.0;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
@@ -299,7 +299,7 @@ let test_flex_rounding_fractial_input_7_content_box () =
              width = Style.Dimension.length 1.0;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node2 |> Result.get_ok in
@@ -311,7 +311,7 @@ let test_flex_rounding_fractial_input_7_content_box () =
              width = Style.Dimension.percent 0.25;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node3 |> Result.get_ok in
@@ -323,7 +323,7 @@ let test_flex_rounding_fractial_input_7_content_box () =
              width = Style.Dimension.length 1.0;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node3 node4 |> Result.get_ok in
@@ -335,7 +335,7 @@ let test_flex_rounding_fractial_input_7_content_box () =
              width = Style.Dimension.length 1.0;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node3 node5 |> Result.get_ok in
@@ -347,7 +347,7 @@ let test_flex_rounding_fractial_input_7_content_box () =
              width = Style.Dimension.percent 0.25;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node6 |> Result.get_ok in
@@ -359,7 +359,7 @@ let test_flex_rounding_fractial_input_7_content_box () =
              width = Style.Dimension.length 1.0;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node6 node7 |> Result.get_ok in
@@ -371,7 +371,7 @@ let test_flex_rounding_fractial_input_7_content_box () =
              width = Style.Dimension.length 1.0;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node6 node8 |> Result.get_ok in
@@ -383,7 +383,7 @@ let test_flex_rounding_fractial_input_7_content_box () =
              width = Style.Dimension.percent 0.25;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node9 |> Result.get_ok in
@@ -395,7 +395,7 @@ let test_flex_rounding_fractial_input_7_content_box () =
              width = Style.Dimension.length 1.0;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node9 node10 |> Result.get_ok in
@@ -407,7 +407,7 @@ let test_flex_rounding_fractial_input_7_content_box () =
              width = Style.Dimension.length 1.0;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node9 node11 |> Result.get_ok in

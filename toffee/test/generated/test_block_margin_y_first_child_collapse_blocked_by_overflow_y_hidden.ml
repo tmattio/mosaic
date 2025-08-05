@@ -129,7 +129,7 @@ let test_block_margin_y_first_child_collapse_blocked_by_overflow_y_hidden_conten
              width = Style.Dimension.length 50.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -143,7 +143,7 @@ let test_block_margin_y_first_child_collapse_blocked_by_overflow_y_hidden_conten
              bottom = Style.Length_percentage_auto.length 0.0;
            }
          ~overflow:{ x = Style.Overflow.Visible; y = Style.Overflow.Hidden }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -157,7 +157,7 @@ let test_block_margin_y_first_child_collapse_blocked_by_overflow_y_hidden_conten
              top = Style.Length_percentage_auto.length 10.0;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
@@ -169,7 +169,7 @@ let test_block_margin_y_first_child_collapse_blocked_by_overflow_y_hidden_conten
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node1 node2 |> Result.get_ok in

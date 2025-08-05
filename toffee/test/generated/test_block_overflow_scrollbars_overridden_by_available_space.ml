@@ -104,14 +104,14 @@ let test_block_overflow_scrollbars_overridden_by_available_space_content_box ()
              width = Style.Dimension.length 2.0;
              height = Style.Dimension.length 4.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
       (Style.make ~display:Style.Display.Block
          ~overflow:{ x = Style.Overflow.Scroll; y = Style.Overflow.Scroll }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -125,7 +125,7 @@ let test_block_overflow_scrollbars_overridden_by_available_space_content_box ()
              top = Style.Length_percentage_auto.length 0.0;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in

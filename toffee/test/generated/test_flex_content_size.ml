@@ -202,7 +202,7 @@ let test_flex_content_size_content_box measure_function () =
              height = Style.Dimension.length 100.0;
            }
          ~overflow:{ x = Style.Overflow.Visible; y = Style.Overflow.Scroll }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -213,7 +213,7 @@ let test_flex_content_size_content_box measure_function () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 30.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -232,7 +232,7 @@ let test_flex_content_size_content_box measure_function () =
              top = Style.Length_percentage_auto.length (-10.0);
              bottom = Style.Length_percentage_auto.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

@@ -183,7 +183,7 @@ let test_block_margin_auto_left_and_right_with_auto_width_content_box
              width = Style.Dimension.length 200.0;
              height = Style.Dimension.length 200.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -206,7 +206,7 @@ let test_block_margin_auto_left_and_right_with_auto_width_content_box
              top = Style.Length_percentage_auto.length 0.0;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

@@ -171,14 +171,14 @@ let test_flex_overflow_main_axis_shrink_scroll_content_box measure_function () =
              width = Style.Dimension.length 50.0;
              height = Style.Dimension.length 50.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
       (Style.make ~flex_shrink:1.0
          ~overflow:{ x = Style.Overflow.Scroll; y = Style.Overflow.Scroll }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

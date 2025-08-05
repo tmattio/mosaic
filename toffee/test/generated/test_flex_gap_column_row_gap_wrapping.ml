@@ -231,7 +231,7 @@ let test_flex_gap_column_row_gap_wrapping_content_box () =
              width = Style.Length_percentage.length 10.0;
              height = Style.Length_percentage.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -242,7 +242,7 @@ let test_flex_gap_column_row_gap_wrapping_content_box () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -254,7 +254,7 @@ let test_flex_gap_column_row_gap_wrapping_content_box () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
@@ -266,7 +266,7 @@ let test_flex_gap_column_row_gap_wrapping_content_box () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node2 |> Result.get_ok in
@@ -278,7 +278,7 @@ let test_flex_gap_column_row_gap_wrapping_content_box () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node3 |> Result.get_ok in
@@ -290,7 +290,7 @@ let test_flex_gap_column_row_gap_wrapping_content_box () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node4 |> Result.get_ok in
@@ -302,7 +302,7 @@ let test_flex_gap_column_row_gap_wrapping_content_box () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node5 |> Result.get_ok in
@@ -314,7 +314,7 @@ let test_flex_gap_column_row_gap_wrapping_content_box () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node6 |> Result.get_ok in
@@ -326,7 +326,7 @@ let test_flex_gap_column_row_gap_wrapping_content_box () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node7 |> Result.get_ok in
@@ -338,7 +338,7 @@ let test_flex_gap_column_row_gap_wrapping_content_box () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node8 |> Result.get_ok in

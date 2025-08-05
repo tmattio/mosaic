@@ -118,7 +118,7 @@ let test_block_absolute_margin_auto_multiple_children_without_inset_content_box
              width = Style.Dimension.length 200.0;
              height = Style.Dimension.length 200.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -136,7 +136,7 @@ let test_block_absolute_margin_auto_multiple_children_without_inset_content_box
              top = Style.Length_percentage_auto.length 0.0;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -155,7 +155,7 @@ let test_block_absolute_margin_auto_multiple_children_without_inset_content_box
              top = Style.Length_percentage_auto.length 0.0;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in

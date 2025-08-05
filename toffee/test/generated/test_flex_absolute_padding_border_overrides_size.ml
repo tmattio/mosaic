@@ -79,7 +79,10 @@ let test_flex_absolute_padding_border_overrides_size_content_box () =
   let tree = new_tree () in
 
   (* Create nodes *)
-  let node = new_leaf tree Style.default |> Result.get_ok in
+  let node =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let node0 =
     new_leaf tree
       (Style.make ~position:Style.Position.Absolute
@@ -102,7 +105,7 @@ let test_flex_absolute_padding_border_overrides_size_content_box () =
              top = Style.Length_percentage.length 1.0;
              bottom = Style.Length_percentage.length 5.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in

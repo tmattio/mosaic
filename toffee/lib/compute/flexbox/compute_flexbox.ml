@@ -2759,8 +2759,7 @@ let perform_absolute_layout_on_absolute_children (type t)
 
       (* Compute known dimensions from min/max/inherent size styles *)
       let style_size =
-        Style.size child_style
-        |> fun size ->
+        Style.size child_style |> fun size ->
         Size.
           {
             width =
@@ -2793,8 +2792,7 @@ let perform_absolute_layout_on_absolute_children (type t)
       in
 
       let min_size =
-        Style.min_size child_style
-        |> fun size ->
+        Style.min_size child_style |> fun size ->
         Size.
           {
             width =
@@ -2840,8 +2838,7 @@ let perform_absolute_layout_on_absolute_children (type t)
       in
 
       let max_size =
-        Style.max_size child_style
-        |> fun size ->
+        Style.max_size child_style |> fun size ->
         Size.
           {
             width =

@@ -150,11 +150,15 @@ let test_flex_intrinsic_sizing_main_size_column_nested_content_box
 
   (* Create nodes *)
   let node =
-    new_leaf tree (Style.make ~flex_direction:Style.Flex_direction.Column ())
+    new_leaf tree
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree (Style.make ~flex_direction:Style.Flex_direction.Column ())
+    new_leaf tree
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

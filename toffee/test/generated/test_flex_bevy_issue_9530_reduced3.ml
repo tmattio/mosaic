@@ -172,7 +172,7 @@ let test_flex_bevy_issue_9530_reduced3_content_box measure_function () =
              width = Style.Dimension.length 80.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -185,7 +185,7 @@ let test_flex_bevy_issue_9530_reduced3_content_box measure_function () =
              top = Style.Length_percentage_auto.length 0.0;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

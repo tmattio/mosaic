@@ -118,7 +118,7 @@ let test_flex_rounding_total_fractial_content_box () =
              width = Style.Dimension.length 87.4;
              height = Style.Dimension.length 113.4;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -130,7 +130,7 @@ let test_flex_rounding_total_fractial_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 20.3;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -142,7 +142,7 @@ let test_flex_rounding_total_fractial_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
@@ -154,7 +154,7 @@ let test_flex_rounding_total_fractial_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.7;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node2 |> Result.get_ok in

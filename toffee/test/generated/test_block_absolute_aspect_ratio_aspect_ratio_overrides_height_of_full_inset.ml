@@ -87,7 +87,7 @@ let test_block_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset
              width = Style.Dimension.length 400.0;
              height = Style.Dimension.length 300.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -100,7 +100,7 @@ let test_block_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset
              top = Style.Length_percentage_auto.percent 0.05;
              bottom = Style.Length_percentage_auto.percent 0.05;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in

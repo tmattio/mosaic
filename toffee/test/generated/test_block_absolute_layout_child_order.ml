@@ -117,7 +117,7 @@ let test_block_absolute_layout_child_order_content_box () =
              width = Style.Dimension.length 110.0;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -128,7 +128,7 @@ let test_block_absolute_layout_child_order_content_box () =
              width = Style.Dimension.length 60.0;
              height = Style.Dimension.length 40.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -140,7 +140,7 @@ let test_block_absolute_layout_child_order_content_box () =
              width = Style.Dimension.length 60.0;
              height = Style.Dimension.length 40.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
@@ -152,7 +152,7 @@ let test_block_absolute_layout_child_order_content_box () =
              width = Style.Dimension.length 60.0;
              height = Style.Dimension.length 40.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node2 |> Result.get_ok in

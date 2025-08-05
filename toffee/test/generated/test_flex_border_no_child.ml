@@ -70,7 +70,7 @@ let test_flex_border_no_child_content_box () =
              top = Style.Length_percentage.length 10.0;
              bottom = Style.Length_percentage.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
 

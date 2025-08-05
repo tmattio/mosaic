@@ -178,7 +178,7 @@ let test_flex_measure_remeasure_child_after_shrinking_content_box
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -189,11 +189,14 @@ let test_flex_measure_remeasure_child_after_shrinking_content_box
              width = Style.Dimension.length 50.0;
              height = Style.Dimension.length 50.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 = new_leaf tree Style.default |> Result.get_ok in
+  let node1 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ =
     set_node_context tree node1 (Some (MeasureFunction.Text "HH"))
     |> Result.get_ok

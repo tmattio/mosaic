@@ -125,7 +125,7 @@ let test_flex_percent_absolute_position_content_box () =
              width = Style.Dimension.length 60.0;
              height = Style.Dimension.length 50.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -144,7 +144,7 @@ let test_flex_percent_absolute_position_content_box () =
              top = Style.Length_percentage_auto.auto;
              bottom = Style.Length_percentage_auto.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -156,7 +156,7 @@ let test_flex_percent_absolute_position_content_box () =
              width = Style.Dimension.percent 1.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
@@ -168,7 +168,7 @@ let test_flex_percent_absolute_position_content_box () =
              width = Style.Dimension.percent 1.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node2 |> Result.get_ok in

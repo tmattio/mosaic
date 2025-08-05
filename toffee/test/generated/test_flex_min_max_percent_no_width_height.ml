@@ -90,7 +90,7 @@ let test_flex_min_max_percent_no_width_height_content_box () =
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -106,7 +106,7 @@ let test_flex_min_max_percent_no_width_height_content_box () =
              width = Style.Dimension.percent 0.1;
              height = Style.Dimension.percent 0.1;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in

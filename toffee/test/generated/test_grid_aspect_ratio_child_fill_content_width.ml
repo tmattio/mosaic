@@ -165,10 +165,15 @@ let test_grid_aspect_ratio_child_fill_content_width_content_box measure_function
 
   (* Create nodes *)
   let node =
-    new_leaf tree (Style.make ~display:Style.Display.Grid ()) |> Result.get_ok
+    new_leaf tree
+      (Style.make ~display:Style.Display.Grid
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
   in
   let node0 =
-    new_leaf tree (Style.make ~aspect_ratio:2.0 ()) |> Result.get_ok
+    new_leaf tree
+      (Style.make ~aspect_ratio:2.0 ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
   in
   let _ =
     set_node_context tree node0 (Some (MeasureFunction.Text "HHHH"))
@@ -183,7 +188,7 @@ let test_grid_aspect_ratio_child_fill_content_width_content_box measure_function
              width = Style.Dimension.auto;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in

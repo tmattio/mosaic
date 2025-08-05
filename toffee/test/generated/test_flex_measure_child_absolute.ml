@@ -162,11 +162,13 @@ let test_flex_measure_child_absolute_content_box measure_function () =
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree (Style.make ~position:Style.Position.Absolute ())
+    new_leaf tree
+      (Style.make ~position:Style.Position.Absolute
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

@@ -104,7 +104,7 @@ let test_flex_percentage_padding_should_calculate_based_only_on_width_content_bo
              width = Style.Dimension.length 200.0;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -117,7 +117,7 @@ let test_flex_percentage_padding_should_calculate_based_only_on_width_content_bo
              top = Style.Length_percentage.percent 0.1;
              bottom = Style.Length_percentage.percent 0.1;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -129,7 +129,7 @@ let test_flex_percentage_padding_should_calculate_based_only_on_width_content_bo
              width = Style.Dimension.length 10.0;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in

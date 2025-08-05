@@ -125,7 +125,10 @@ let test_flex_bevy_issue_16304_content_box () =
 
   (* Create nodes *)
   let node =
-    new_leaf tree (Style.make ~display:Style.Display.Flex ()) |> Result.get_ok
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
   in
   let node0 =
     new_leaf tree
@@ -136,7 +139,7 @@ let test_flex_bevy_issue_16304_content_box () =
              width = Style.Dimension.length 50.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -153,7 +156,7 @@ let test_flex_bevy_issue_16304_content_box () =
              width = Style.Length_percentage.length 10.0;
              height = Style.Length_percentage.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
@@ -165,7 +168,7 @@ let test_flex_bevy_issue_16304_content_box () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.length 40.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node1 node2 |> Result.get_ok in
@@ -177,7 +180,7 @@ let test_flex_bevy_issue_16304_content_box () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.length 40.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node1 node3 |> Result.get_ok in

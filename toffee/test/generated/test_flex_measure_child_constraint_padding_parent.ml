@@ -178,10 +178,13 @@ let test_flex_measure_child_constraint_padding_parent_content_box
              top = Style.Length_percentage.length 10.0;
              bottom = Style.Length_percentage.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
-  let node0 = new_leaf tree Style.default |> Result.get_ok in
+  let node0 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ =
     set_node_context tree node0
       (Some

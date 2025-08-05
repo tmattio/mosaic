@@ -170,7 +170,9 @@ let test_flex_bevy_issue_9530_reduced2_content_box measure_function () =
 
   (* Create nodes *)
   let node =
-    new_leaf tree (Style.make ~flex_direction:Style.Flex_direction.Column ())
+    new_leaf tree
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -188,11 +190,15 @@ let test_flex_bevy_issue_9530_reduced2_content_box measure_function () =
              top = Style.Length_percentage_auto.length 0.0;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 = new_leaf tree (Style.make ~flex_grow:1.0 ()) |> Result.get_ok in
+  let node1 =
+    new_leaf tree
+      (Style.make ~flex_grow:1.0 ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ =
     set_node_context tree node1
       (Some (MeasureFunction.Text "HH​HH​HH​HH​HH​HH​HH​HH"))

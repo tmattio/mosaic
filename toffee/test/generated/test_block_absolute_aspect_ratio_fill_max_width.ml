@@ -173,7 +173,7 @@ let test_block_absolute_aspect_ratio_fill_max_width_content_box measure_function
              width = Style.Dimension.length 400.0;
              height = Style.Dimension.length 300.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -184,7 +184,7 @@ let test_block_absolute_aspect_ratio_fill_max_width_content_box measure_function
              width = Style.Dimension.auto;
              height = Style.Dimension.length 50.0;
            }
-         ~aspect_ratio:0.5 ())
+         ~aspect_ratio:0.5 ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

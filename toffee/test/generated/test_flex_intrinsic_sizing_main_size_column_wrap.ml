@@ -168,11 +168,14 @@ let test_flex_intrinsic_sizing_main_size_column_wrap_content_box
   let node =
     new_leaf tree
       (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~flex_wrap:Style.Flex_wrap.Wrap ())
+         ~flex_wrap:Style.Flex_wrap.Wrap
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree (Style.make ~flex_direction:Style.Flex_direction.Column ())
+    new_leaf tree
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =
@@ -181,7 +184,9 @@ let test_flex_intrinsic_sizing_main_size_column_wrap_content_box
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
-    new_leaf tree (Style.make ~flex_direction:Style.Flex_direction.Column ())
+    new_leaf tree
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

@@ -99,24 +99,30 @@ let test_flex_rounding_flex_basis_flex_shrink_row_content_box () =
              width = Style.Dimension.length 101.0;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
       (Style.make ~flex_shrink:1.0
          ~flex_basis:(Style.Dimension.length 100.0)
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
-    new_leaf tree (Style.make ~flex_basis:(Style.Dimension.length 25.0) ())
+    new_leaf tree
+      (Style.make
+         ~flex_basis:(Style.Dimension.length 25.0)
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
-    new_leaf tree (Style.make ~flex_basis:(Style.Dimension.length 25.0) ())
+    new_leaf tree
+      (Style.make
+         ~flex_basis:(Style.Dimension.length 25.0)
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node2 |> Result.get_ok in

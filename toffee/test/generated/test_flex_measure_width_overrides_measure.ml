@@ -151,7 +151,10 @@ let test_flex_measure_width_overrides_measure_content_box measure_function () =
   let tree = new_tree () in
 
   (* Create nodes *)
-  let node = new_leaf tree Style.default |> Result.get_ok in
+  let node =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let node0 =
     new_leaf tree
       (Style.make
@@ -160,7 +163,7 @@ let test_flex_measure_width_overrides_measure_content_box measure_function () =
              width = Style.Dimension.length 50.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

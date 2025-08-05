@@ -154,7 +154,7 @@ let test_flex_justify_content_column_space_between_negative_space_content_box ()
              top = Style.Length_percentage.length 60.0;
              bottom = Style.Length_percentage.length 60.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -167,7 +167,7 @@ let test_flex_justify_content_column_space_between_negative_space_content_box ()
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -179,7 +179,7 @@ let test_flex_justify_content_column_space_between_negative_space_content_box ()
              width = Style.Dimension.percent 0.8;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
@@ -191,7 +191,7 @@ let test_flex_justify_content_column_space_between_negative_space_content_box ()
              width = Style.Dimension.percent 0.8;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node2 |> Result.get_ok in
@@ -203,7 +203,7 @@ let test_flex_justify_content_column_space_between_negative_space_content_box ()
              width = Style.Dimension.percent 0.8;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node3 |> Result.get_ok in

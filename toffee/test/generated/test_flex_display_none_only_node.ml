@@ -66,7 +66,7 @@ let test_flex_display_none_only_node_content_box () =
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
 

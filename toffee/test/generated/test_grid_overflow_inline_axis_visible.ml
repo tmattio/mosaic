@@ -159,10 +159,13 @@ let test_grid_overflow_inline_axis_visible_content_box measure_function () =
              width = Style.Dimension.length 50.0;
              height = Style.Dimension.length 50.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
-  let node0 = new_leaf tree Style.default |> Result.get_ok in
+  let node0 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ =
     set_node_context tree node0 (Some (MeasureFunction.Text "HHHHHHHHHH"))
     |> Result.get_ok

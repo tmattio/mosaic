@@ -172,28 +172,58 @@ let test_grid_basic_with_overflow_content_box () =
              width = Style.Dimension.length 120.0;
              height = Style.Dimension.length 120.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
-  let node0 = new_leaf tree Style.default |> Result.get_ok in
+  let node0 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 = new_leaf tree Style.default |> Result.get_ok in
+  let node1 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node node1 |> Result.get_ok in
-  let node2 = new_leaf tree Style.default |> Result.get_ok in
+  let node2 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node node2 |> Result.get_ok in
-  let node3 = new_leaf tree Style.default |> Result.get_ok in
+  let node3 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node node3 |> Result.get_ok in
-  let node4 = new_leaf tree Style.default |> Result.get_ok in
+  let node4 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node node4 |> Result.get_ok in
-  let node5 = new_leaf tree Style.default |> Result.get_ok in
+  let node5 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node node5 |> Result.get_ok in
-  let node6 = new_leaf tree Style.default |> Result.get_ok in
+  let node6 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node node6 |> Result.get_ok in
-  let node7 = new_leaf tree Style.default |> Result.get_ok in
+  let node7 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node node7 |> Result.get_ok in
-  let node8 = new_leaf tree Style.default |> Result.get_ok in
+  let node8 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node node8 |> Result.get_ok in
-  let node9 = new_leaf tree Style.default |> Result.get_ok in
+  let node9 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node node9 |> Result.get_ok in
 
   (* Compute layout *)

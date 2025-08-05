@@ -92,11 +92,14 @@ let test_grid_percent_item_inside_stretch_item_content_box () =
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree (Style.make ~display:Style.Display.Grid ()) |> Result.get_ok
+    new_leaf tree
+      (Style.make ~display:Style.Display.Grid
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
@@ -107,7 +110,7 @@ let test_grid_percent_item_inside_stretch_item_content_box () =
              width = Style.Dimension.percent 0.5;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in

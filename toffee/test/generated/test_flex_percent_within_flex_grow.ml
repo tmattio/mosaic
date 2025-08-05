@@ -128,7 +128,7 @@ let test_flex_percent_within_flex_grow_content_box () =
              width = Style.Dimension.length 350.0;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -139,13 +139,14 @@ let test_flex_percent_within_flex_grow_content_box () =
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0 ())
+      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_grow:1.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
@@ -157,7 +158,7 @@ let test_flex_percent_within_flex_grow_content_box () =
              width = Style.Dimension.percent 1.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node1 node2 |> Result.get_ok in
@@ -169,7 +170,7 @@ let test_flex_percent_within_flex_grow_content_box () =
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node3 |> Result.get_ok in

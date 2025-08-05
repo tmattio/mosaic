@@ -236,7 +236,7 @@ let test_grid_span_2_min_content_fit_content_80px_indefinite_content_box
              Style.Grid.Template_component.single
                (Style.Grid.Track_sizing_function.length 40.0);
            ]
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -252,7 +252,7 @@ let test_grid_span_2_min_content_fit_content_80px_indefinite_content_box
              start = Style.Grid.Placement.line 1;
              end_ = Style.Grid.Placement.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -269,7 +269,7 @@ let test_grid_span_2_min_content_fit_content_80px_indefinite_content_box
              start = Style.Grid.Placement.line 1;
              end_ = Style.Grid.Placement.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
@@ -286,7 +286,7 @@ let test_grid_span_2_min_content_fit_content_80px_indefinite_content_box
              start = Style.Grid.Placement.line 1;
              end_ = Style.Grid.Placement.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

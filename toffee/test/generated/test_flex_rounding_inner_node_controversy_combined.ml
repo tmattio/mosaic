@@ -185,7 +185,7 @@ let test_flex_rounding_inner_node_controversy_combined_content_box () =
              width = Style.Dimension.length 640.0;
              height = Style.Dimension.length 320.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -196,7 +196,7 @@ let test_flex_rounding_inner_node_controversy_combined_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.percent 1.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -208,7 +208,7 @@ let test_flex_rounding_inner_node_controversy_combined_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.percent 1.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
@@ -220,7 +220,7 @@ let test_flex_rounding_inner_node_controversy_combined_content_box () =
              width = Style.Dimension.percent 1.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node1 node2 |> Result.get_ok in
@@ -232,7 +232,7 @@ let test_flex_rounding_inner_node_controversy_combined_content_box () =
              width = Style.Dimension.percent 1.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node1 node3 |> Result.get_ok in
@@ -244,7 +244,7 @@ let test_flex_rounding_inner_node_controversy_combined_content_box () =
              width = Style.Dimension.percent 1.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node3 node4 |> Result.get_ok in
@@ -256,7 +256,7 @@ let test_flex_rounding_inner_node_controversy_combined_content_box () =
              width = Style.Dimension.percent 1.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node1 node5 |> Result.get_ok in
@@ -268,7 +268,7 @@ let test_flex_rounding_inner_node_controversy_combined_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.percent 1.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node6 |> Result.get_ok in

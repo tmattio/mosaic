@@ -174,7 +174,7 @@ let test_flex_measure_child_with_min_size_greater_than_available_space_content_b
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -185,7 +185,7 @@ let test_flex_measure_child_with_min_size_greater_than_available_space_content_b
              width = Style.Dimension.length 200.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

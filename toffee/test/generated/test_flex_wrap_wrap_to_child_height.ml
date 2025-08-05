@@ -115,13 +115,16 @@ let test_flex_wrap_wrap_to_child_height_content_box () =
 
   (* Create nodes *)
   let node =
-    new_leaf tree (Style.make ~flex_direction:Style.Flex_direction.Column ())
+    new_leaf tree
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
       (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~flex_wrap:Style.Flex_wrap.Wrap ~align_items:Flex_start ())
+         ~flex_wrap:Style.Flex_wrap.Wrap ~align_items:Flex_start
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -133,7 +136,7 @@ let test_flex_wrap_wrap_to_child_height_content_box () =
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
@@ -145,7 +148,7 @@ let test_flex_wrap_wrap_to_child_height_content_box () =
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node1 node2 |> Result.get_ok in
@@ -157,7 +160,7 @@ let test_flex_wrap_wrap_to_child_height_content_box () =
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node3 |> Result.get_ok in

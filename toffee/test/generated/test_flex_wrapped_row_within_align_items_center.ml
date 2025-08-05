@@ -114,13 +114,14 @@ let test_flex_wrapped_row_within_align_items_center_content_box () =
              width = Style.Dimension.length 200.0;
              height = Style.Dimension.length 200.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
       (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~flex_wrap:Style.Flex_wrap.Wrap ())
+         ~flex_wrap:Style.Flex_wrap.Wrap
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -132,7 +133,7 @@ let test_flex_wrapped_row_within_align_items_center_content_box () =
              width = Style.Dimension.length 150.0;
              height = Style.Dimension.length 80.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
@@ -144,7 +145,7 @@ let test_flex_wrapped_row_within_align_items_center_content_box () =
              width = Style.Dimension.length 80.0;
              height = Style.Dimension.length 80.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node2 |> Result.get_ok in

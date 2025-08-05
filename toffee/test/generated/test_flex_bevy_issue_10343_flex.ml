@@ -113,13 +113,14 @@ let test_flex_bevy_issue_10343_flex_content_box () =
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
       (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Row ())
+         ~flex_direction:Style.Flex_direction.Row
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -138,11 +139,14 @@ let test_flex_bevy_issue_10343_flex_content_box () =
              top = Style.Length_percentage_auto.length 5.0;
              bottom = Style.Length_percentage_auto.length 5.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
-  let node2 = new_leaf tree Style.default |> Result.get_ok in
+  let node2 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node1 node2 |> Result.get_ok in
 
   (* Compute layout *)

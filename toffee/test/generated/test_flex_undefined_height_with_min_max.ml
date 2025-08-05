@@ -89,7 +89,7 @@ let test_flex_undefined_height_with_min_max_content_box () =
            }
          ~min_size:
            { width = Style.Dimension.auto; height = Style.Dimension.length 0.0 }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -102,7 +102,7 @@ let test_flex_undefined_height_with_min_max_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in

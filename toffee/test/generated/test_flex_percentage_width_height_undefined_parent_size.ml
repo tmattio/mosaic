@@ -69,7 +69,9 @@ let test_flex_percentage_width_height_undefined_parent_size_content_box () =
 
   (* Create nodes *)
   let node =
-    new_leaf tree (Style.make ~flex_direction:Style.Flex_direction.Column ())
+    new_leaf tree
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -80,7 +82,7 @@ let test_flex_percentage_width_height_undefined_parent_size_content_box () =
              width = Style.Dimension.percent 0.5;
              height = Style.Dimension.percent 0.5;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in

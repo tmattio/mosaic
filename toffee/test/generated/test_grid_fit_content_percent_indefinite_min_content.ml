@@ -173,10 +173,13 @@ let test_grid_fit_content_percent_indefinite_min_content_content_box
              Style.Grid.Template_component.single
                (Style.Grid.Track_sizing_function.length 40.0);
            ]
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
-  let node0 = new_leaf tree Style.default |> Result.get_ok in
+  let node0 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ =
     set_node_context tree node0 (Some (MeasureFunction.Text "HHHH​HH"))
     |> Result.get_ok

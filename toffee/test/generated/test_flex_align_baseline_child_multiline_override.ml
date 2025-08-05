@@ -169,7 +169,7 @@ let test_flex_align_baseline_child_multiline_override_content_box () =
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -180,7 +180,7 @@ let test_flex_align_baseline_child_multiline_override_content_box () =
              width = Style.Dimension.length 50.0;
              height = Style.Dimension.length 60.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -193,7 +193,7 @@ let test_flex_align_baseline_child_multiline_override_content_box () =
              width = Style.Dimension.length 50.0;
              height = Style.Dimension.length 25.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
@@ -205,7 +205,7 @@ let test_flex_align_baseline_child_multiline_override_content_box () =
              width = Style.Dimension.length 25.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node1 node2 |> Result.get_ok in
@@ -217,7 +217,7 @@ let test_flex_align_baseline_child_multiline_override_content_box () =
              width = Style.Dimension.length 25.0;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node1 node3 |> Result.get_ok in
@@ -229,7 +229,7 @@ let test_flex_align_baseline_child_multiline_override_content_box () =
              width = Style.Dimension.length 25.0;
              height = Style.Dimension.length 20.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node1 node4 |> Result.get_ok in
@@ -241,7 +241,7 @@ let test_flex_align_baseline_child_multiline_override_content_box () =
              width = Style.Dimension.length 25.0;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node1 node5 |> Result.get_ok in

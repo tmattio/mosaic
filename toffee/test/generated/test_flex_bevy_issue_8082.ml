@@ -176,13 +176,14 @@ let test_flex_bevy_issue_8082_content_box () =
              width = Style.Dimension.length 200.0;
              height = Style.Dimension.length 400.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
       (Style.make ~flex_wrap:Style.Flex_wrap.Wrap ~align_items:Flex_start
-         ~justify_content:Center ~align_content:Center ())
+         ~justify_content:Center ~align_content:Center
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -201,7 +202,7 @@ let test_flex_bevy_issue_8082_content_box () =
              top = Style.Length_percentage_auto.length 10.0;
              bottom = Style.Length_percentage_auto.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
@@ -220,7 +221,7 @@ let test_flex_bevy_issue_8082_content_box () =
              top = Style.Length_percentage_auto.length 10.0;
              bottom = Style.Length_percentage_auto.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node2 |> Result.get_ok in
@@ -239,7 +240,7 @@ let test_flex_bevy_issue_8082_content_box () =
              top = Style.Length_percentage_auto.length 10.0;
              bottom = Style.Length_percentage_auto.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node3 |> Result.get_ok in
@@ -258,7 +259,7 @@ let test_flex_bevy_issue_8082_content_box () =
              top = Style.Length_percentage_auto.length 10.0;
              bottom = Style.Length_percentage_auto.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node4 |> Result.get_ok in

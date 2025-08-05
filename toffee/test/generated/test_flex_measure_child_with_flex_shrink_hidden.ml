@@ -192,7 +192,7 @@ let test_flex_measure_child_with_flex_shrink_hidden_content_box measure_function
              width = Style.Dimension.length 100.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -203,7 +203,7 @@ let test_flex_measure_child_with_flex_shrink_hidden_content_box measure_function
              width = Style.Dimension.length 50.0;
              height = Style.Dimension.length 50.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -211,7 +211,7 @@ let test_flex_measure_child_with_flex_shrink_hidden_content_box measure_function
     new_leaf tree
       (Style.make
          ~overflow:{ x = Style.Overflow.Hidden; y = Style.Overflow.Hidden }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

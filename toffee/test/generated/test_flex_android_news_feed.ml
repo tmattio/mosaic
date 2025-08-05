@@ -312,27 +312,27 @@ let test_flex_android_news_feed_content_box () =
              width = Style.Dimension.length 1080.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
       (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_shrink:0.0
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
     new_leaf tree
       (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~align_content:Stretch ())
+         ~align_content:Stretch ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
     new_leaf tree
       (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~align_content:Stretch ())
+         ~align_content:Stretch ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node1 node2 |> Result.get_ok in
@@ -347,14 +347,15 @@ let test_flex_android_news_feed_content_box () =
              top = Style.Length_percentage_auto.length 24.0;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node2 node3 |> Result.get_ok in
   let node4 =
     new_leaf tree
       (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_content:Stretch ~flex_shrink:0.0 ())
+         ~align_content:Stretch ~flex_shrink:0.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node3 node4 |> Result.get_ok in
@@ -366,7 +367,7 @@ let test_flex_android_news_feed_content_box () =
              width = Style.Dimension.length 120.0;
              height = Style.Dimension.length 120.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node4 node5 |> Result.get_ok in
@@ -388,26 +389,29 @@ let test_flex_android_news_feed_content_box () =
              top = Style.Length_percentage.length 21.0;
              bottom = Style.Length_percentage.length 18.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node3 node6 |> Result.get_ok in
   let node7 =
     new_leaf tree
       (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_content:Stretch ~flex_shrink:1.0 ())
+         ~align_content:Stretch ~flex_shrink:1.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node6 node7 |> Result.get_ok in
   let node8 =
-    new_leaf tree (Style.make ~align_content:Stretch ~flex_shrink:1.0 ())
+    new_leaf tree
+      (Style.make ~align_content:Stretch ~flex_shrink:1.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node6 node8 |> Result.get_ok in
   let node9 =
     new_leaf tree
       (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~align_content:Stretch ())
+         ~align_content:Stretch ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node1 node9 |> Result.get_ok in
@@ -422,14 +426,15 @@ let test_flex_android_news_feed_content_box () =
              top = Style.Length_percentage_auto.length 24.0;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node9 node10 |> Result.get_ok in
   let node11 =
     new_leaf tree
       (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_content:Stretch ~flex_shrink:0.0 ())
+         ~align_content:Stretch ~flex_shrink:0.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node10 node11 |> Result.get_ok in
@@ -441,7 +446,7 @@ let test_flex_android_news_feed_content_box () =
              width = Style.Dimension.length 72.0;
              height = Style.Dimension.length 72.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node11 node12 |> Result.get_ok in
@@ -463,19 +468,22 @@ let test_flex_android_news_feed_content_box () =
              top = Style.Length_percentage.length 21.0;
              bottom = Style.Length_percentage.length 18.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node10 node13 |> Result.get_ok in
   let node14 =
     new_leaf tree
       (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_content:Stretch ~flex_shrink:1.0 ())
+         ~align_content:Stretch ~flex_shrink:1.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node13 node14 |> Result.get_ok in
   let node15 =
-    new_leaf tree (Style.make ~align_content:Stretch ~flex_shrink:1.0 ())
+    new_leaf tree
+      (Style.make ~align_content:Stretch ~flex_shrink:1.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node13 node15 |> Result.get_ok in

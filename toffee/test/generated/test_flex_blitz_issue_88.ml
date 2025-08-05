@@ -188,18 +188,21 @@ let test_flex_blitz_issue_88_content_box measure_function () =
              width = Style.Dimension.length 600.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
     new_leaf tree
       (Style.make ~display:Style.Display.Flex
-         ~flex_direction:Style.Flex_direction.Column ~justify_content:Start ())
+         ~flex_direction:Style.Flex_direction.Column ~justify_content:Start
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
-    new_leaf tree (Style.make ~display:Style.Display.Flex ~flex_grow:1.0 ())
+    new_leaf tree
+      (Style.make ~display:Style.Display.Flex ~flex_grow:1.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
@@ -207,7 +210,7 @@ let test_flex_blitz_issue_88_content_box measure_function () =
     new_leaf tree
       (Style.make ~display:Style.Display.Block ~flex_grow:1.0
          ~flex_basis:(Style.Dimension.length 0.0)
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =

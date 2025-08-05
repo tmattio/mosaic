@@ -90,7 +90,7 @@ let test_grid_percent_items_width_and_padding_content_box () =
              width = Style.Dimension.length 200.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -108,7 +108,7 @@ let test_grid_percent_items_width_and_padding_content_box () =
              top = Style.Length_percentage.percent 0.03;
              bottom = Style.Length_percentage.percent 0.03;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in

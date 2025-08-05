@@ -103,18 +103,38 @@ let test_flex_rounding_flex_basis_flex_grow_row_prime_number_width_content_box
              width = Style.Dimension.length 113.0;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
-  let node0 = new_leaf tree (Style.make ~flex_grow:1.0 ()) |> Result.get_ok in
+  let node0 =
+    new_leaf tree
+      (Style.make ~flex_grow:1.0 ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 = new_leaf tree (Style.make ~flex_grow:1.0 ()) |> Result.get_ok in
+  let node1 =
+    new_leaf tree
+      (Style.make ~flex_grow:1.0 ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node node1 |> Result.get_ok in
-  let node2 = new_leaf tree (Style.make ~flex_grow:1.0 ()) |> Result.get_ok in
+  let node2 =
+    new_leaf tree
+      (Style.make ~flex_grow:1.0 ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node node2 |> Result.get_ok in
-  let node3 = new_leaf tree (Style.make ~flex_grow:1.0 ()) |> Result.get_ok in
+  let node3 =
+    new_leaf tree
+      (Style.make ~flex_grow:1.0 ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node node3 |> Result.get_ok in
-  let node4 = new_leaf tree (Style.make ~flex_grow:1.0 ()) |> Result.get_ok in
+  let node4 =
+    new_leaf tree
+      (Style.make ~flex_grow:1.0 ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node node4 |> Result.get_ok in
 
   (* Compute layout *)

@@ -94,11 +94,14 @@ let test_flex_align_items_center_child_without_margin_bigger_than_parent_content
              width = Style.Dimension.length 50.0;
              height = Style.Dimension.length 50.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree (Style.make ~align_items:Center ()) |> Result.get_ok
+    new_leaf tree
+      (Style.make ~align_items:Center ~box_sizing:Style.Box_sizing.Content_box
+         ())
+    |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
@@ -109,7 +112,7 @@ let test_flex_align_items_center_child_without_margin_bigger_than_parent_content
              width = Style.Dimension.length 70.0;
              height = Style.Dimension.length 70.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in

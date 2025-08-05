@@ -85,7 +85,7 @@ let test_flex_absolute_layout_align_items_and_justify_content_flex_end_content_b
              width = Style.Dimension.length 110.0;
              height = Style.Dimension.length 100.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -96,7 +96,7 @@ let test_flex_absolute_layout_align_items_and_justify_content_flex_end_content_b
              width = Style.Dimension.length 60.0;
              height = Style.Dimension.length 40.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in

@@ -80,10 +80,14 @@ let test_flex_overflow_scrollbars_take_up_space_cross_axis_content_box () =
              height = Style.Dimension.length 50.0;
            }
          ~overflow:{ x = Style.Overflow.Visible; y = Style.Overflow.Scroll }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
-  let node0 = new_leaf tree (Style.make ~flex_grow:1.0 ()) |> Result.get_ok in
+  let node0 =
+    new_leaf tree
+      (Style.make ~flex_grow:1.0 ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
   let _ = add_child tree node node0 |> Result.get_ok in
 
   (* Compute layout *)

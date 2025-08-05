@@ -114,7 +114,7 @@ let test_block_border_fixed_size_content_box () =
              top = Style.Length_percentage.length 2.0;
              bottom = Style.Length_percentage.length 6.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -125,7 +125,7 @@ let test_block_border_fixed_size_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -137,7 +137,7 @@ let test_block_border_fixed_size_content_box () =
              width = Style.Dimension.auto;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in

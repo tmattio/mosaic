@@ -136,7 +136,7 @@ let test_flex_gap_row_gap_column_child_margins_content_box () =
              width = Style.Length_percentage.length 0.0;
              height = Style.Length_percentage.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -150,7 +150,7 @@ let test_flex_gap_row_gap_column_child_margins_content_box () =
              top = Style.Length_percentage_auto.length 2.0;
              bottom = Style.Length_percentage_auto.length 2.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
@@ -165,7 +165,7 @@ let test_flex_gap_row_gap_column_child_margins_content_box () =
              top = Style.Length_percentage_auto.length 10.0;
              bottom = Style.Length_percentage_auto.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node1 |> Result.get_ok in
@@ -180,7 +180,7 @@ let test_flex_gap_row_gap_column_child_margins_content_box () =
              top = Style.Length_percentage_auto.length 15.0;
              bottom = Style.Length_percentage_auto.length 15.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node2 |> Result.get_ok in

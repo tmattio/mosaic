@@ -180,7 +180,7 @@ let test_grid_auto_fit_definite_percentage_content_box () =
              width = Style.Dimension.length 730.0;
              height = Style.Dimension.length 300.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
@@ -216,40 +216,64 @@ let test_grid_auto_fit_definite_percentage_content_box () =
              top = Style.Length_percentage.length 10.0;
              bottom = Style.Length_percentage.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
-    new_leaf tree (Style.make ~display:Style.Display.Block ()) |> Result.get_ok
+    new_leaf tree
+      (Style.make ~display:Style.Display.Block
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
   in
   let _ = add_child tree node0 node1 |> Result.get_ok in
   let node2 =
-    new_leaf tree (Style.make ~display:Style.Display.Block ()) |> Result.get_ok
+    new_leaf tree
+      (Style.make ~display:Style.Display.Block
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
   in
   let _ = add_child tree node0 node2 |> Result.get_ok in
   let node3 =
-    new_leaf tree (Style.make ~display:Style.Display.Block ()) |> Result.get_ok
+    new_leaf tree
+      (Style.make ~display:Style.Display.Block
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
   in
   let _ = add_child tree node0 node3 |> Result.get_ok in
   let node4 =
-    new_leaf tree (Style.make ~display:Style.Display.Block ()) |> Result.get_ok
+    new_leaf tree
+      (Style.make ~display:Style.Display.Block
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
   in
   let _ = add_child tree node0 node4 |> Result.get_ok in
   let node5 =
-    new_leaf tree (Style.make ~display:Style.Display.Block ()) |> Result.get_ok
+    new_leaf tree
+      (Style.make ~display:Style.Display.Block
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
   in
   let _ = add_child tree node0 node5 |> Result.get_ok in
   let node6 =
-    new_leaf tree (Style.make ~display:Style.Display.Block ()) |> Result.get_ok
+    new_leaf tree
+      (Style.make ~display:Style.Display.Block
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
   in
   let _ = add_child tree node0 node6 |> Result.get_ok in
   let node7 =
-    new_leaf tree (Style.make ~display:Style.Display.Block ()) |> Result.get_ok
+    new_leaf tree
+      (Style.make ~display:Style.Display.Block
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
   in
   let _ = add_child tree node0 node7 |> Result.get_ok in
   let node8 =
-    new_leaf tree (Style.make ~display:Style.Display.Block ()) |> Result.get_ok
+    new_leaf tree
+      (Style.make ~display:Style.Display.Block
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
   in
   let _ = add_child tree node0 node8 |> Result.get_ok in
 

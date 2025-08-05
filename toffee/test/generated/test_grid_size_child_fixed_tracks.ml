@@ -265,11 +265,13 @@ let test_grid_size_child_fixed_tracks_content_box measure_function () =
              width = Style.Dimension.length 120.0;
              height = Style.Dimension.length 120.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let node0 =
-    new_leaf tree (Style.make ~align_self:Start ()) |> Result.get_ok
+    new_leaf tree
+      (Style.make ~align_self:Start ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
   in
   let _ =
     set_node_context tree node0 (Some (MeasureFunction.Text "HH​HH​HH​HH"))
@@ -277,7 +279,9 @@ let test_grid_size_child_fixed_tracks_content_box measure_function () =
   in
   let _ = add_child tree node node0 |> Result.get_ok in
   let node1 =
-    new_leaf tree (Style.make ~align_self:Start ()) |> Result.get_ok
+    new_leaf tree
+      (Style.make ~align_self:Start ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
   in
   let _ =
     set_node_context tree node1 (Some (MeasureFunction.Text "HHH​HHH"))
@@ -285,7 +289,9 @@ let test_grid_size_child_fixed_tracks_content_box measure_function () =
   in
   let _ = add_child tree node node1 |> Result.get_ok in
   let node2 =
-    new_leaf tree (Style.make ~align_self:Start ()) |> Result.get_ok
+    new_leaf tree
+      (Style.make ~align_self:Start ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
   in
   let _ =
     set_node_context tree node2 (Some (MeasureFunction.Text "HH​HHHH"))
@@ -300,7 +306,7 @@ let test_grid_size_child_fixed_tracks_content_box measure_function () =
              width = Style.Dimension.length 20.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =
@@ -316,7 +322,7 @@ let test_grid_size_child_fixed_tracks_content_box measure_function () =
              width = Style.Dimension.length 30.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =
