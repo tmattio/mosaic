@@ -109,8 +109,7 @@ let create style column_auto_repetitions row_auto_repetitions =
           done;
           (* Last line name set collapses with following line name set *)
           decr current_line
-      | _ :: rest ->
-          column_tracks_ref := rest
+      | _ :: rest -> column_tracks_ref := rest
       | [] -> ())
     column_line_names;
 
@@ -160,8 +159,7 @@ let create style column_auto_repetitions row_auto_repetitions =
           done;
           (* Last line name set collapses with following line name set *)
           decr current_line
-      | _ :: rest ->
-          row_tracks_ref := rest
+      | _ :: rest -> row_tracks_ref := rest
       | [] -> ())
     row_line_names;
 

@@ -625,7 +625,9 @@ let perform_absolute_layout_on_absolute_children (type t)
               min_size max_size
           in
           let known_dimensions =
-            ref (Size.choose_first min_max_definite_size (Size.clamp_option style_size min_size max_size))
+            ref
+              (Size.choose_first min_max_definite_size
+                 (Size.clamp_option style_size min_size max_size))
           in
 
           (* Fill in width from left/right and reapply aspect ratio if:
@@ -647,7 +649,8 @@ let perform_absolute_layout_on_absolute_children (type t)
               known_dimensions :=
                 !known_dimensions |> fun s ->
                 Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-                Size.choose_first min_max_definite_size (Size.clamp_option s min_size max_size)
+                Size.choose_first min_max_definite_size
+                  (Size.clamp_option s min_size max_size)
           | _ -> ());
 
           (* Fill in height from top/bottom and reapply aspect ratio if:
@@ -669,7 +672,8 @@ let perform_absolute_layout_on_absolute_children (type t)
               known_dimensions :=
                 !known_dimensions |> fun s ->
                 Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-                Size.choose_first min_max_definite_size (Size.clamp_option s min_size max_size)
+                Size.choose_first min_max_definite_size
+                  (Size.clamp_option s min_size max_size)
           | _ -> ());
 
           let layout_output =
@@ -696,8 +700,9 @@ let perform_absolute_layout_on_absolute_children (type t)
           let final_size =
             Size.unwrap_or !known_dimensions measured_size |> fun s ->
             let s_opt = Size.map Option.some s in
-            Size.choose_first min_max_definite_size (Size.clamp_option s_opt min_size max_size) |> fun s_opt ->
-            Size.unwrap_or s_opt s
+            Size.choose_first min_max_definite_size
+              (Size.clamp_option s_opt min_size max_size)
+            |> fun s_opt -> Size.unwrap_or s_opt s
           in
 
           let non_auto_margin =
