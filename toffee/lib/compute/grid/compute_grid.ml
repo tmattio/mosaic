@@ -190,8 +190,7 @@ let compute_grid_layout (type t)
         |> Size.choose_first min_size
         |> Size.clamp_option min_size max_size
         |> (fun s -> Size.maybe_max s padding_border_size)
-        |> Size.sub_option
-             (Size.map Option.some (Rect.sum_axes content_box_inset))
+        |> (fun s -> Size.maybe_sub s (Rect.sum_axes content_box_inset))
       in
 
       (* Determine auto-repeat strategy based on container size constraints *)

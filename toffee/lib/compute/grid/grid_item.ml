@@ -260,7 +260,7 @@ let known_dimensions (type tree)
   in
 
   let grid_area_minus_item_margins_size =
-    Size.sub_option grid_area_size (Size.map (fun v -> Some v) margins)
+    Size.maybe_sub grid_area_size margins
   in
 
   (* Apply stretch alignment for width *)

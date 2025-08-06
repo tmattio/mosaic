@@ -925,8 +925,7 @@ let compute_inner (type t)
   let padding_border_size = Rect.sum_axes padding_border in
   let content_box_inset = Rect.add padding_border scrollbar_gutter in
   let container_content_box_size =
-    Size.sub_option known_dimensions
-      (Size.map Option.some (Rect.sum_axes content_box_inset))
+    Size.maybe_sub known_dimensions (Rect.sum_axes content_box_inset)
   in
 
   let box_sizing_adjustment =
