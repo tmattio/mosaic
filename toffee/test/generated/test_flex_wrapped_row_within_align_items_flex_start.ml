@@ -13,26 +13,7 @@ let test_flex_wrapped_row_within_align_items_flex_start_border_box () =
   let tree = new_tree () in
 
   (* Create nodes *)
-  let node =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~align_items:Flex_start
-         ~size:
-           {
-             width = Style.Dimension.length 200.0;
-             height = Style.Dimension.length 200.0;
-           }
-         ())
-    |> Result.get_ok
-  in
-  let node0 =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~flex_wrap:Style.Flex_wrap.Wrap ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 =
+  let node2 =
     new_leaf tree
       (Style.make
          ~size:
@@ -43,8 +24,7 @@ let test_flex_wrapped_row_within_align_items_flex_start_border_box () =
          ())
     |> Result.get_ok
   in
-  let _ = add_child tree node0 node1 |> Result.get_ok in
-  let node2 =
+  let node3 =
     new_leaf tree
       (Style.make
          ~size:
@@ -55,11 +35,30 @@ let test_flex_wrapped_row_within_align_items_flex_start_border_box () =
          ())
     |> Result.get_ok
   in
-  let _ = add_child tree node0 node2 |> Result.get_ok in
+  let node1 =
+    new_with_children tree
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~flex_wrap:Style.Flex_wrap.Wrap ())
+      [| node2; node3 |]
+    |> Result.get_ok
+  in
+  let node0 =
+    new_with_children tree
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_items:Flex_start
+         ~size:
+           {
+             width = Style.Dimension.length 200.0;
+             height = Style.Dimension.length 200.0;
+           }
+         ())
+      [| node1 |]
+    |> Result.get_ok
+  in
 
   (* Compute layout *)
   let _ =
-    compute_layout tree node
+    compute_layout tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
@@ -69,30 +68,30 @@ let test_flex_wrapped_row_within_align_items_flex_start_border_box () =
 
   (* Print tree for debugging *)
   Printf.printf "\nComputed tree:\n";
-  print_tree tree node;
+  print_tree tree node0;
   Printf.printf "\n";
 
   (* Verify layout *)
-  let layout_result = layout tree node |> Result.get_ok in
-  assert_eq ~msg:"width of node" 200.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node" 200.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node0 |> Result.get_ok in
-  assert_eq ~msg:"width of node0" 200.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node0" 160.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node0" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node0" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node1 |> Result.get_ok in
-  assert_eq ~msg:"width of node1" 150.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node1" 80.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node1" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node1" 0.0 (Layout.location layout_result).y;
   let layout_result = layout tree node2 |> Result.get_ok in
-  assert_eq ~msg:"width of node2" 80.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"width of node2" 150.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node2" 80.0 (Layout.size layout_result).height;
   assert_eq ~msg:"x of node2" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node2" 80.0 (Layout.location layout_result).y;
+  assert_eq ~msg:"y of node2" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node3 |> Result.get_ok in
+  assert_eq ~msg:"width of node3" 80.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node3" 80.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node3" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node3" 80.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node1 |> Result.get_ok in
+  assert_eq ~msg:"width of node1" 200.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node1" 160.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node1" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node1" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node0 |> Result.get_ok in
+  assert_eq ~msg:"width of node0" 200.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node0" 200.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node0" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node0" 0.0 (Layout.location layout_result).y;
   ()
 
 let test_flex_wrapped_row_within_align_items_flex_start_content_box () =
@@ -105,27 +104,7 @@ let test_flex_wrapped_row_within_align_items_flex_start_content_box () =
   let tree = new_tree () in
 
   (* Create nodes *)
-  let node =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~align_items:Flex_start
-         ~size:
-           {
-             width = Style.Dimension.length 200.0;
-             height = Style.Dimension.length 200.0;
-           }
-         ~box_sizing:Style.Box_sizing.Content_box ())
-    |> Result.get_ok
-  in
-  let node0 =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~flex_wrap:Style.Flex_wrap.Wrap
-         ~box_sizing:Style.Box_sizing.Content_box ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 =
+  let node2 =
     new_leaf tree
       (Style.make
          ~size:
@@ -136,8 +115,7 @@ let test_flex_wrapped_row_within_align_items_flex_start_content_box () =
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
-  let _ = add_child tree node0 node1 |> Result.get_ok in
-  let node2 =
+  let node3 =
     new_leaf tree
       (Style.make
          ~size:
@@ -148,11 +126,31 @@ let test_flex_wrapped_row_within_align_items_flex_start_content_box () =
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
-  let _ = add_child tree node0 node2 |> Result.get_ok in
+  let node1 =
+    new_with_children tree
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~flex_wrap:Style.Flex_wrap.Wrap
+         ~box_sizing:Style.Box_sizing.Content_box ())
+      [| node2; node3 |]
+    |> Result.get_ok
+  in
+  let node0 =
+    new_with_children tree
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_items:Flex_start
+         ~size:
+           {
+             width = Style.Dimension.length 200.0;
+             height = Style.Dimension.length 200.0;
+           }
+         ~box_sizing:Style.Box_sizing.Content_box ())
+      [| node1 |]
+    |> Result.get_ok
+  in
 
   (* Compute layout *)
   let _ =
-    compute_layout tree node
+    compute_layout tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
@@ -162,30 +160,30 @@ let test_flex_wrapped_row_within_align_items_flex_start_content_box () =
 
   (* Print tree for debugging *)
   Printf.printf "\nComputed tree:\n";
-  print_tree tree node;
+  print_tree tree node0;
   Printf.printf "\n";
 
   (* Verify layout *)
-  let layout_result = layout tree node |> Result.get_ok in
-  assert_eq ~msg:"width of node" 200.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node" 200.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node0 |> Result.get_ok in
-  assert_eq ~msg:"width of node0" 200.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node0" 160.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node0" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node0" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node1 |> Result.get_ok in
-  assert_eq ~msg:"width of node1" 150.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node1" 80.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node1" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node1" 0.0 (Layout.location layout_result).y;
   let layout_result = layout tree node2 |> Result.get_ok in
-  assert_eq ~msg:"width of node2" 80.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"width of node2" 150.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node2" 80.0 (Layout.size layout_result).height;
   assert_eq ~msg:"x of node2" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node2" 80.0 (Layout.location layout_result).y;
+  assert_eq ~msg:"y of node2" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node3 |> Result.get_ok in
+  assert_eq ~msg:"width of node3" 80.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node3" 80.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node3" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node3" 80.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node1 |> Result.get_ok in
+  assert_eq ~msg:"width of node1" 200.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node1" 160.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node1" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node1" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node0 |> Result.get_ok in
+  assert_eq ~msg:"width of node0" 200.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node0" 200.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node0" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node0" 0.0 (Layout.location layout_result).y;
   ()
 
 (* Export tests for aggregation *)

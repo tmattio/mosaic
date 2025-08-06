@@ -13,62 +13,7 @@ let test_flex_android_news_feed_border_box () =
   let tree = new_tree () in
 
   (* Create nodes *)
-  let node =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~align_content:Stretch ~flex_shrink:0.0
-         ~size:
-           {
-             width = Style.Dimension.length 1080.0;
-             height = Style.Dimension.auto;
-           }
-         ())
-    |> Result.get_ok
-  in
-  let node0 =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_shrink:0.0
-         ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~align_content:Stretch ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node0 node1 |> Result.get_ok in
-  let node2 =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~align_content:Stretch ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node1 node2 |> Result.get_ok in
-  let node3 =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_items:Flex_start ~align_content:Stretch
-         ~margin:
-           {
-             left = Style.Length_percentage_auto.length 36.0;
-             right = Style.Length_percentage_auto.length 0.0;
-             top = Style.Length_percentage_auto.length 24.0;
-             bottom = Style.Length_percentage_auto.length 0.0;
-           }
-         ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node2 node3 |> Result.get_ok in
-  let node4 =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_content:Stretch ~flex_shrink:0.0 ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node3 node4 |> Result.get_ok in
-  let node5 =
+  let node6 =
     new_leaf tree
       (Style.make ~align_content:Stretch ~flex_shrink:0.0
          ~size:
@@ -79,9 +24,25 @@ let test_flex_android_news_feed_border_box () =
          ())
     |> Result.get_ok
   in
-  let _ = add_child tree node4 node5 |> Result.get_ok in
-  let node6 =
+  let node5 =
+    new_with_children tree
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_content:Stretch ~flex_shrink:0.0 ())
+      [| node6 |]
+    |> Result.get_ok
+  in
+  let node8 =
     new_leaf tree
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_content:Stretch ~flex_shrink:1.0 ())
+    |> Result.get_ok
+  in
+  let node9 =
+    new_leaf tree (Style.make ~align_content:Stretch ~flex_shrink:1.0 ())
+    |> Result.get_ok
+  in
+  let node7 =
+    new_with_children tree
       (Style.make ~flex_direction:Style.Flex_direction.Column
          ~align_content:Stretch ~flex_shrink:1.0
          ~margin:
@@ -99,51 +60,32 @@ let test_flex_android_news_feed_border_box () =
              bottom = Style.Length_percentage.length 18.0;
            }
          ())
+      [| node8; node9 |]
     |> Result.get_ok
   in
-  let _ = add_child tree node3 node6 |> Result.get_ok in
-  let node7 =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_content:Stretch ~flex_shrink:1.0 ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node6 node7 |> Result.get_ok in
-  let node8 =
-    new_leaf tree (Style.make ~align_content:Stretch ~flex_shrink:1.0 ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node6 node8 |> Result.get_ok in
-  let node9 =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~align_content:Stretch ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node1 node9 |> Result.get_ok in
-  let node10 =
-    new_leaf tree
+  let node4 =
+    new_with_children tree
       (Style.make ~flex_direction:Style.Flex_direction.Row
          ~align_items:Flex_start ~align_content:Stretch
          ~margin:
            {
-             left = Style.Length_percentage_auto.length 174.0;
+             left = Style.Length_percentage_auto.length 36.0;
              right = Style.Length_percentage_auto.length 0.0;
              top = Style.Length_percentage_auto.length 24.0;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
          ())
+      [| node5; node7 |]
     |> Result.get_ok
   in
-  let _ = add_child tree node9 node10 |> Result.get_ok in
-  let node11 =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_content:Stretch ~flex_shrink:0.0 ())
+  let node3 =
+    new_with_children tree
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch ())
+      [| node4 |]
     |> Result.get_ok
   in
-  let _ = add_child tree node10 node11 |> Result.get_ok in
-  let node12 =
+  let node13 =
     new_leaf tree
       (Style.make ~align_content:Stretch ~flex_shrink:0.0
          ~size:
@@ -154,9 +96,25 @@ let test_flex_android_news_feed_border_box () =
          ())
     |> Result.get_ok
   in
-  let _ = add_child tree node11 node12 |> Result.get_ok in
-  let node13 =
+  let node12 =
+    new_with_children tree
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_content:Stretch ~flex_shrink:0.0 ())
+      [| node13 |]
+    |> Result.get_ok
+  in
+  let node15 =
     new_leaf tree
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_content:Stretch ~flex_shrink:1.0 ())
+    |> Result.get_ok
+  in
+  let node16 =
+    new_leaf tree (Style.make ~align_content:Stretch ~flex_shrink:1.0 ())
+    |> Result.get_ok
+  in
+  let node14 =
+    new_with_children tree
       (Style.make ~flex_direction:Style.Flex_direction.Column
          ~align_content:Stretch ~flex_shrink:1.0
          ~margin:
@@ -174,25 +132,62 @@ let test_flex_android_news_feed_border_box () =
              bottom = Style.Length_percentage.length 18.0;
            }
          ())
+      [| node15; node16 |]
     |> Result.get_ok
   in
-  let _ = add_child tree node10 node13 |> Result.get_ok in
-  let node14 =
-    new_leaf tree
+  let node11 =
+    new_with_children tree
       (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_content:Stretch ~flex_shrink:1.0 ())
+         ~align_items:Flex_start ~align_content:Stretch
+         ~margin:
+           {
+             left = Style.Length_percentage_auto.length 174.0;
+             right = Style.Length_percentage_auto.length 0.0;
+             top = Style.Length_percentage_auto.length 24.0;
+             bottom = Style.Length_percentage_auto.length 0.0;
+           }
+         ())
+      [| node12; node14 |]
     |> Result.get_ok
   in
-  let _ = add_child tree node13 node14 |> Result.get_ok in
-  let node15 =
-    new_leaf tree (Style.make ~align_content:Stretch ~flex_shrink:1.0 ())
+  let node10 =
+    new_with_children tree
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch ())
+      [| node11 |]
     |> Result.get_ok
   in
-  let _ = add_child tree node13 node15 |> Result.get_ok in
+  let node2 =
+    new_with_children tree
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch ())
+      [| node3; node10 |]
+    |> Result.get_ok
+  in
+  let node1 =
+    new_with_children tree
+      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_shrink:0.0
+         ())
+      [| node2 |]
+    |> Result.get_ok
+  in
+  let node0 =
+    new_with_children tree
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch ~flex_shrink:0.0
+         ~size:
+           {
+             width = Style.Dimension.length 1080.0;
+             height = Style.Dimension.auto;
+           }
+         ())
+      [| node1 |]
+    |> Result.get_ok
+  in
 
   (* Compute layout *)
   let _ =
-    compute_layout tree node
+    compute_layout tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
@@ -202,95 +197,95 @@ let test_flex_android_news_feed_border_box () =
 
   (* Print tree for debugging *)
   Printf.printf "\nComputed tree:\n";
-  print_tree tree node;
+  print_tree tree node0;
   Printf.printf "\n";
 
   (* Verify layout *)
-  let layout_result = layout tree node |> Result.get_ok in
-  assert_eq ~msg:"width of node" 1080.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node" 240.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node0 |> Result.get_ok in
-  assert_eq ~msg:"width of node0" 1080.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node0" 240.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node0" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node0" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node1 |> Result.get_ok in
-  assert_eq ~msg:"width of node1" 1080.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node1" 240.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node1" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node1" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node2 |> Result.get_ok in
-  assert_eq ~msg:"width of node2" 1080.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node2" 144.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node2" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node2" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node3 |> Result.get_ok in
-  assert_eq ~msg:"width of node3" 1044.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node3" 120.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node3" 36.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node3" 24.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node4 |> Result.get_ok in
-  assert_eq ~msg:"width of node4" 120.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node4" 120.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node4" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node4" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node6 |> Result.get_ok in
+  assert_eq ~msg:"width of node6" 120.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node6" 120.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node6" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node6" 0.0 (Layout.location layout_result).y;
   let layout_result = layout tree node5 |> Result.get_ok in
   assert_eq ~msg:"width of node5" 120.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node5" 120.0 (Layout.size layout_result).height;
   assert_eq ~msg:"x of node5" 0.0 (Layout.location layout_result).x;
   assert_eq ~msg:"y of node5" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node6 |> Result.get_ok in
-  assert_eq ~msg:"width of node6" 72.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node6" 39.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node6" 120.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node6" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node7 |> Result.get_ok in
-  assert_eq ~msg:"width of node7" 0.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node7" 0.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node7" 36.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node7" 21.0 (Layout.location layout_result).y;
   let layout_result = layout tree node8 |> Result.get_ok in
   assert_eq ~msg:"width of node8" 0.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node8" 0.0 (Layout.size layout_result).height;
   assert_eq ~msg:"x of node8" 36.0 (Layout.location layout_result).x;
   assert_eq ~msg:"y of node8" 21.0 (Layout.location layout_result).y;
   let layout_result = layout tree node9 |> Result.get_ok in
-  assert_eq ~msg:"width of node9" 1080.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node9" 96.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node9" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node9" 144.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node10 |> Result.get_ok in
-  assert_eq ~msg:"width of node10" 906.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node10" 72.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node10" 174.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node10" 24.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node11 |> Result.get_ok in
-  assert_eq ~msg:"width of node11" 72.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node11" 72.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node11" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node11" 0.0 (Layout.location layout_result).y;
+  assert_eq ~msg:"width of node9" 0.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node9" 0.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node9" 36.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node9" 21.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node7 |> Result.get_ok in
+  assert_eq ~msg:"width of node7" 72.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node7" 39.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node7" 120.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node7" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node4 |> Result.get_ok in
+  assert_eq ~msg:"width of node4" 1044.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node4" 120.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node4" 36.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node4" 24.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node3 |> Result.get_ok in
+  assert_eq ~msg:"width of node3" 1080.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node3" 144.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node3" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node3" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node13 |> Result.get_ok in
+  assert_eq ~msg:"width of node13" 72.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node13" 72.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node13" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node13" 0.0 (Layout.location layout_result).y;
   let layout_result = layout tree node12 |> Result.get_ok in
   assert_eq ~msg:"width of node12" 72.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node12" 72.0 (Layout.size layout_result).height;
   assert_eq ~msg:"x of node12" 0.0 (Layout.location layout_result).x;
   assert_eq ~msg:"y of node12" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node13 |> Result.get_ok in
-  assert_eq ~msg:"width of node13" 72.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node13" 39.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node13" 72.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node13" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node14 |> Result.get_ok in
-  assert_eq ~msg:"width of node14" 0.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node14" 0.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node14" 36.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node14" 21.0 (Layout.location layout_result).y;
   let layout_result = layout tree node15 |> Result.get_ok in
   assert_eq ~msg:"width of node15" 0.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node15" 0.0 (Layout.size layout_result).height;
   assert_eq ~msg:"x of node15" 36.0 (Layout.location layout_result).x;
   assert_eq ~msg:"y of node15" 21.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node16 |> Result.get_ok in
+  assert_eq ~msg:"width of node16" 0.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node16" 0.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node16" 36.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node16" 21.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node14 |> Result.get_ok in
+  assert_eq ~msg:"width of node14" 72.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node14" 39.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node14" 72.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node14" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node11 |> Result.get_ok in
+  assert_eq ~msg:"width of node11" 906.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node11" 72.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node11" 174.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node11" 24.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node10 |> Result.get_ok in
+  assert_eq ~msg:"width of node10" 1080.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node10" 96.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node10" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node10" 144.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node2 |> Result.get_ok in
+  assert_eq ~msg:"width of node2" 1080.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node2" 240.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node2" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node2" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node1 |> Result.get_ok in
+  assert_eq ~msg:"width of node1" 1080.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node1" 240.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node1" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node1" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node0 |> Result.get_ok in
+  assert_eq ~msg:"width of node0" 1080.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node0" 240.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node0" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node0" 0.0 (Layout.location layout_result).y;
   ()
 
 let test_flex_android_news_feed_content_box () =
@@ -303,63 +298,7 @@ let test_flex_android_news_feed_content_box () =
   let tree = new_tree () in
 
   (* Create nodes *)
-  let node =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~align_content:Stretch ~flex_shrink:0.0
-         ~size:
-           {
-             width = Style.Dimension.length 1080.0;
-             height = Style.Dimension.auto;
-           }
-         ~box_sizing:Style.Box_sizing.Content_box ())
-    |> Result.get_ok
-  in
-  let node0 =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_shrink:0.0
-         ~box_sizing:Style.Box_sizing.Content_box ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~align_content:Stretch ~box_sizing:Style.Box_sizing.Content_box ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node0 node1 |> Result.get_ok in
-  let node2 =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~align_content:Stretch ~box_sizing:Style.Box_sizing.Content_box ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node1 node2 |> Result.get_ok in
-  let node3 =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_items:Flex_start ~align_content:Stretch
-         ~margin:
-           {
-             left = Style.Length_percentage_auto.length 36.0;
-             right = Style.Length_percentage_auto.length 0.0;
-             top = Style.Length_percentage_auto.length 24.0;
-             bottom = Style.Length_percentage_auto.length 0.0;
-           }
-         ~box_sizing:Style.Box_sizing.Content_box ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node2 node3 |> Result.get_ok in
-  let node4 =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_content:Stretch ~flex_shrink:0.0
-         ~box_sizing:Style.Box_sizing.Content_box ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node3 node4 |> Result.get_ok in
-  let node5 =
+  let node6 =
     new_leaf tree
       (Style.make ~align_content:Stretch ~flex_shrink:0.0
          ~size:
@@ -370,9 +309,29 @@ let test_flex_android_news_feed_content_box () =
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
-  let _ = add_child tree node4 node5 |> Result.get_ok in
-  let node6 =
+  let node5 =
+    new_with_children tree
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_content:Stretch ~flex_shrink:0.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
+      [| node6 |]
+    |> Result.get_ok
+  in
+  let node8 =
     new_leaf tree
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_content:Stretch ~flex_shrink:1.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
+  let node9 =
+    new_leaf tree
+      (Style.make ~align_content:Stretch ~flex_shrink:1.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
+  let node7 =
+    new_with_children tree
       (Style.make ~flex_direction:Style.Flex_direction.Column
          ~align_content:Stretch ~flex_shrink:1.0
          ~margin:
@@ -390,55 +349,32 @@ let test_flex_android_news_feed_content_box () =
              bottom = Style.Length_percentage.length 18.0;
            }
          ~box_sizing:Style.Box_sizing.Content_box ())
+      [| node8; node9 |]
     |> Result.get_ok
   in
-  let _ = add_child tree node3 node6 |> Result.get_ok in
-  let node7 =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_content:Stretch ~flex_shrink:1.0
-         ~box_sizing:Style.Box_sizing.Content_box ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node6 node7 |> Result.get_ok in
-  let node8 =
-    new_leaf tree
-      (Style.make ~align_content:Stretch ~flex_shrink:1.0
-         ~box_sizing:Style.Box_sizing.Content_box ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node6 node8 |> Result.get_ok in
-  let node9 =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~align_content:Stretch ~box_sizing:Style.Box_sizing.Content_box ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node1 node9 |> Result.get_ok in
-  let node10 =
-    new_leaf tree
+  let node4 =
+    new_with_children tree
       (Style.make ~flex_direction:Style.Flex_direction.Row
          ~align_items:Flex_start ~align_content:Stretch
          ~margin:
            {
-             left = Style.Length_percentage_auto.length 174.0;
+             left = Style.Length_percentage_auto.length 36.0;
              right = Style.Length_percentage_auto.length 0.0;
              top = Style.Length_percentage_auto.length 24.0;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
          ~box_sizing:Style.Box_sizing.Content_box ())
+      [| node5; node7 |]
     |> Result.get_ok
   in
-  let _ = add_child tree node9 node10 |> Result.get_ok in
-  let node11 =
-    new_leaf tree
-      (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_content:Stretch ~flex_shrink:0.0
-         ~box_sizing:Style.Box_sizing.Content_box ())
+  let node3 =
+    new_with_children tree
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch ~box_sizing:Style.Box_sizing.Content_box ())
+      [| node4 |]
     |> Result.get_ok
   in
-  let _ = add_child tree node10 node11 |> Result.get_ok in
-  let node12 =
+  let node13 =
     new_leaf tree
       (Style.make ~align_content:Stretch ~flex_shrink:0.0
          ~size:
@@ -449,9 +385,29 @@ let test_flex_android_news_feed_content_box () =
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
-  let _ = add_child tree node11 node12 |> Result.get_ok in
-  let node13 =
+  let node12 =
+    new_with_children tree
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_content:Stretch ~flex_shrink:0.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
+      [| node13 |]
+    |> Result.get_ok
+  in
+  let node15 =
     new_leaf tree
+      (Style.make ~flex_direction:Style.Flex_direction.Row
+         ~align_content:Stretch ~flex_shrink:1.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
+  let node16 =
+    new_leaf tree
+      (Style.make ~align_content:Stretch ~flex_shrink:1.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
+  let node14 =
+    new_with_children tree
       (Style.make ~flex_direction:Style.Flex_direction.Column
          ~align_content:Stretch ~flex_shrink:1.0
          ~margin:
@@ -469,28 +425,62 @@ let test_flex_android_news_feed_content_box () =
              bottom = Style.Length_percentage.length 18.0;
            }
          ~box_sizing:Style.Box_sizing.Content_box ())
+      [| node15; node16 |]
     |> Result.get_ok
   in
-  let _ = add_child tree node10 node13 |> Result.get_ok in
-  let node14 =
-    new_leaf tree
+  let node11 =
+    new_with_children tree
       (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_content:Stretch ~flex_shrink:1.0
+         ~align_items:Flex_start ~align_content:Stretch
+         ~margin:
+           {
+             left = Style.Length_percentage_auto.length 174.0;
+             right = Style.Length_percentage_auto.length 0.0;
+             top = Style.Length_percentage_auto.length 24.0;
+             bottom = Style.Length_percentage_auto.length 0.0;
+           }
          ~box_sizing:Style.Box_sizing.Content_box ())
+      [| node12; node14 |]
     |> Result.get_ok
   in
-  let _ = add_child tree node13 node14 |> Result.get_ok in
-  let node15 =
-    new_leaf tree
-      (Style.make ~align_content:Stretch ~flex_shrink:1.0
-         ~box_sizing:Style.Box_sizing.Content_box ())
+  let node10 =
+    new_with_children tree
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch ~box_sizing:Style.Box_sizing.Content_box ())
+      [| node11 |]
     |> Result.get_ok
   in
-  let _ = add_child tree node13 node15 |> Result.get_ok in
+  let node2 =
+    new_with_children tree
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch ~box_sizing:Style.Box_sizing.Content_box ())
+      [| node3; node10 |]
+    |> Result.get_ok
+  in
+  let node1 =
+    new_with_children tree
+      (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_shrink:0.0
+         ~box_sizing:Style.Box_sizing.Content_box ())
+      [| node2 |]
+    |> Result.get_ok
+  in
+  let node0 =
+    new_with_children tree
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~align_content:Stretch ~flex_shrink:0.0
+         ~size:
+           {
+             width = Style.Dimension.length 1080.0;
+             height = Style.Dimension.auto;
+           }
+         ~box_sizing:Style.Box_sizing.Content_box ())
+      [| node1 |]
+    |> Result.get_ok
+  in
 
   (* Compute layout *)
   let _ =
-    compute_layout tree node
+    compute_layout tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
@@ -500,95 +490,95 @@ let test_flex_android_news_feed_content_box () =
 
   (* Print tree for debugging *)
   Printf.printf "\nComputed tree:\n";
-  print_tree tree node;
+  print_tree tree node0;
   Printf.printf "\n";
 
   (* Verify layout *)
-  let layout_result = layout tree node |> Result.get_ok in
-  assert_eq ~msg:"width of node" 1080.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node" 240.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node0 |> Result.get_ok in
-  assert_eq ~msg:"width of node0" 1080.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node0" 240.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node0" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node0" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node1 |> Result.get_ok in
-  assert_eq ~msg:"width of node1" 1080.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node1" 240.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node1" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node1" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node2 |> Result.get_ok in
-  assert_eq ~msg:"width of node2" 1080.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node2" 144.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node2" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node2" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node3 |> Result.get_ok in
-  assert_eq ~msg:"width of node3" 1044.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node3" 120.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node3" 36.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node3" 24.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node4 |> Result.get_ok in
-  assert_eq ~msg:"width of node4" 120.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node4" 120.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node4" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node4" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node6 |> Result.get_ok in
+  assert_eq ~msg:"width of node6" 120.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node6" 120.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node6" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node6" 0.0 (Layout.location layout_result).y;
   let layout_result = layout tree node5 |> Result.get_ok in
   assert_eq ~msg:"width of node5" 120.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node5" 120.0 (Layout.size layout_result).height;
   assert_eq ~msg:"x of node5" 0.0 (Layout.location layout_result).x;
   assert_eq ~msg:"y of node5" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node6 |> Result.get_ok in
-  assert_eq ~msg:"width of node6" 72.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node6" 39.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node6" 120.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node6" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node7 |> Result.get_ok in
-  assert_eq ~msg:"width of node7" 0.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node7" 0.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node7" 36.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node7" 21.0 (Layout.location layout_result).y;
   let layout_result = layout tree node8 |> Result.get_ok in
   assert_eq ~msg:"width of node8" 0.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node8" 0.0 (Layout.size layout_result).height;
   assert_eq ~msg:"x of node8" 36.0 (Layout.location layout_result).x;
   assert_eq ~msg:"y of node8" 21.0 (Layout.location layout_result).y;
   let layout_result = layout tree node9 |> Result.get_ok in
-  assert_eq ~msg:"width of node9" 1080.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node9" 96.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node9" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node9" 144.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node10 |> Result.get_ok in
-  assert_eq ~msg:"width of node10" 906.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node10" 72.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node10" 174.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node10" 24.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node11 |> Result.get_ok in
-  assert_eq ~msg:"width of node11" 72.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node11" 72.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node11" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node11" 0.0 (Layout.location layout_result).y;
+  assert_eq ~msg:"width of node9" 0.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node9" 0.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node9" 36.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node9" 21.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node7 |> Result.get_ok in
+  assert_eq ~msg:"width of node7" 72.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node7" 39.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node7" 120.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node7" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node4 |> Result.get_ok in
+  assert_eq ~msg:"width of node4" 1044.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node4" 120.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node4" 36.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node4" 24.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node3 |> Result.get_ok in
+  assert_eq ~msg:"width of node3" 1080.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node3" 144.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node3" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node3" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node13 |> Result.get_ok in
+  assert_eq ~msg:"width of node13" 72.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node13" 72.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node13" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node13" 0.0 (Layout.location layout_result).y;
   let layout_result = layout tree node12 |> Result.get_ok in
   assert_eq ~msg:"width of node12" 72.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node12" 72.0 (Layout.size layout_result).height;
   assert_eq ~msg:"x of node12" 0.0 (Layout.location layout_result).x;
   assert_eq ~msg:"y of node12" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node13 |> Result.get_ok in
-  assert_eq ~msg:"width of node13" 72.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node13" 39.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node13" 72.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node13" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node14 |> Result.get_ok in
-  assert_eq ~msg:"width of node14" 0.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node14" 0.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node14" 36.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node14" 21.0 (Layout.location layout_result).y;
   let layout_result = layout tree node15 |> Result.get_ok in
   assert_eq ~msg:"width of node15" 0.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node15" 0.0 (Layout.size layout_result).height;
   assert_eq ~msg:"x of node15" 36.0 (Layout.location layout_result).x;
   assert_eq ~msg:"y of node15" 21.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node16 |> Result.get_ok in
+  assert_eq ~msg:"width of node16" 0.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node16" 0.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node16" 36.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node16" 21.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node14 |> Result.get_ok in
+  assert_eq ~msg:"width of node14" 72.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node14" 39.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node14" 72.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node14" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node11 |> Result.get_ok in
+  assert_eq ~msg:"width of node11" 906.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node11" 72.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node11" 174.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node11" 24.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node10 |> Result.get_ok in
+  assert_eq ~msg:"width of node10" 1080.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node10" 96.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node10" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node10" 144.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node2 |> Result.get_ok in
+  assert_eq ~msg:"width of node2" 1080.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node2" 240.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node2" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node2" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node1 |> Result.get_ok in
+  assert_eq ~msg:"width of node1" 1080.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node1" 240.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node1" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node1" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node0 |> Result.get_ok in
+  assert_eq ~msg:"width of node0" 1080.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node0" 240.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node0" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node0" 0.0 (Layout.location layout_result).y;
   ()
 
 (* Export tests for aggregation *)

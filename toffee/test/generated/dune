@@ -1,7 +1,7 @@
 (test
  (name test_runner)
  (libraries toffee alcotest)
- (modules test_absolute_resolved_insets
+ (modules
   test_block_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset
   test_block_absolute_aspect_ratio_fill_height
   test_block_absolute_aspect_ratio_fill_height_from_inset

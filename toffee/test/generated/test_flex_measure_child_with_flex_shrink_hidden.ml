@@ -95,18 +95,7 @@ let test_flex_measure_child_with_flex_shrink_hidden_border_box measure_function
   let tree = new_tree () in
 
   (* Create nodes *)
-  let node =
-    new_leaf tree
-      (Style.make
-         ~size:
-           {
-             width = Style.Dimension.length 100.0;
-             height = Style.Dimension.auto;
-           }
-         ())
-    |> Result.get_ok
-  in
-  let node0 =
+  let node1 =
     new_leaf tree
       (Style.make
          ~size:
@@ -117,8 +106,7 @@ let test_flex_measure_child_with_flex_shrink_hidden_border_box measure_function
          ())
     |> Result.get_ok
   in
-  let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 =
+  let node2 =
     new_leaf tree
       (Style.make
          ~overflow:{ x = Style.Overflow.Hidden; y = Style.Overflow.Hidden }
@@ -126,17 +114,28 @@ let test_flex_measure_child_with_flex_shrink_hidden_border_box measure_function
     |> Result.get_ok
   in
   let _ =
-    set_node_context tree node1
+    set_node_context tree node2
       (Some
          (MeasureFunction.Text
             "HHHHHHHHHH​HHHHHHHHHH​HHHHHHHHHH​HHHHHHHHHH​HHHHHHHHHH"))
     |> Result.get_ok
   in
-  let _ = add_child tree node node1 |> Result.get_ok in
+  let node0 =
+    new_with_children tree
+      (Style.make
+         ~size:
+           {
+             width = Style.Dimension.length 100.0;
+             height = Style.Dimension.auto;
+           }
+         ())
+      [| node1; node2 |]
+    |> Result.get_ok
+  in
 
   (* Compute layout *)
   let _ =
-    compute_layout_with_measure tree node
+    compute_layout_with_measure tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
@@ -147,30 +146,30 @@ let test_flex_measure_child_with_flex_shrink_hidden_border_box measure_function
 
   (* Print tree for debugging *)
   Printf.printf "\nComputed tree:\n";
-  print_tree tree node;
+  print_tree tree node0;
   Printf.printf "\n";
 
   (* Verify layout *)
-  let layout_result = layout tree node |> Result.get_ok in
-  assert_eq ~msg:"width of node" 100.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node" 50.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node1 |> Result.get_ok in
+  assert_eq ~msg:"width of node1" 9.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node1" 50.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node1" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node1" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node2 |> Result.get_ok in
+  assert_eq ~msg:"width of node2" 91.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node2" 50.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node2" 9.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node2" 0.0 (Layout.location layout_result).y;
+  (* Content size assertions for scroll container *)
+  (* Note: In Toffee, scroll_width and scroll_height are functions, not fields *)
+  assert_eq ~msg:"scroll_width of node2" 9.0 (Layout.scroll_width layout_result);
+  assert_eq ~msg:"scroll_height of node2" 0.0
+    (Layout.scroll_height layout_result);
   let layout_result = layout tree node0 |> Result.get_ok in
-  assert_eq ~msg:"width of node0" 9.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"width of node0" 100.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node0" 50.0 (Layout.size layout_result).height;
   assert_eq ~msg:"x of node0" 0.0 (Layout.location layout_result).x;
   assert_eq ~msg:"y of node0" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node1 |> Result.get_ok in
-  assert_eq ~msg:"width of node1" 91.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node1" 50.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node1" 9.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node1" 0.0 (Layout.location layout_result).y;
-  (* Content size assertions for scroll container *)
-  (* Note: In Toffee, scroll_width and scroll_height are functions, not fields *)
-  assert_eq ~msg:"scroll_width of node1" 9.0 (Layout.scroll_width layout_result);
-  assert_eq ~msg:"scroll_height of node1" 0.0
-    (Layout.scroll_height layout_result);
   ()
 
 let test_flex_measure_child_with_flex_shrink_hidden_content_box measure_function
@@ -184,18 +183,7 @@ let test_flex_measure_child_with_flex_shrink_hidden_content_box measure_function
   let tree = new_tree () in
 
   (* Create nodes *)
-  let node =
-    new_leaf tree
-      (Style.make
-         ~size:
-           {
-             width = Style.Dimension.length 100.0;
-             height = Style.Dimension.auto;
-           }
-         ~box_sizing:Style.Box_sizing.Content_box ())
-    |> Result.get_ok
-  in
-  let node0 =
+  let node1 =
     new_leaf tree
       (Style.make
          ~size:
@@ -206,8 +194,7 @@ let test_flex_measure_child_with_flex_shrink_hidden_content_box measure_function
          ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
-  let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 =
+  let node2 =
     new_leaf tree
       (Style.make
          ~overflow:{ x = Style.Overflow.Hidden; y = Style.Overflow.Hidden }
@@ -215,17 +202,28 @@ let test_flex_measure_child_with_flex_shrink_hidden_content_box measure_function
     |> Result.get_ok
   in
   let _ =
-    set_node_context tree node1
+    set_node_context tree node2
       (Some
          (MeasureFunction.Text
             "HHHHHHHHHH​HHHHHHHHHH​HHHHHHHHHH​HHHHHHHHHH​HHHHHHHHHH"))
     |> Result.get_ok
   in
-  let _ = add_child tree node node1 |> Result.get_ok in
+  let node0 =
+    new_with_children tree
+      (Style.make
+         ~size:
+           {
+             width = Style.Dimension.length 100.0;
+             height = Style.Dimension.auto;
+           }
+         ~box_sizing:Style.Box_sizing.Content_box ())
+      [| node1; node2 |]
+    |> Result.get_ok
+  in
 
   (* Compute layout *)
   let _ =
-    compute_layout_with_measure tree node
+    compute_layout_with_measure tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
@@ -236,30 +234,30 @@ let test_flex_measure_child_with_flex_shrink_hidden_content_box measure_function
 
   (* Print tree for debugging *)
   Printf.printf "\nComputed tree:\n";
-  print_tree tree node;
+  print_tree tree node0;
   Printf.printf "\n";
 
   (* Verify layout *)
-  let layout_result = layout tree node |> Result.get_ok in
-  assert_eq ~msg:"width of node" 100.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node" 50.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node1 |> Result.get_ok in
+  assert_eq ~msg:"width of node1" 9.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node1" 50.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node1" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node1" 0.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node2 |> Result.get_ok in
+  assert_eq ~msg:"width of node2" 91.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node2" 50.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node2" 9.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node2" 0.0 (Layout.location layout_result).y;
+  (* Content size assertions for scroll container *)
+  (* Note: In Toffee, scroll_width and scroll_height are functions, not fields *)
+  assert_eq ~msg:"scroll_width of node2" 9.0 (Layout.scroll_width layout_result);
+  assert_eq ~msg:"scroll_height of node2" 0.0
+    (Layout.scroll_height layout_result);
   let layout_result = layout tree node0 |> Result.get_ok in
-  assert_eq ~msg:"width of node0" 9.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"width of node0" 100.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node0" 50.0 (Layout.size layout_result).height;
   assert_eq ~msg:"x of node0" 0.0 (Layout.location layout_result).x;
   assert_eq ~msg:"y of node0" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node1 |> Result.get_ok in
-  assert_eq ~msg:"width of node1" 91.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node1" 50.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node1" 9.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node1" 0.0 (Layout.location layout_result).y;
-  (* Content size assertions for scroll container *)
-  (* Note: In Toffee, scroll_width and scroll_height are functions, not fields *)
-  assert_eq ~msg:"scroll_width of node1" 9.0 (Layout.scroll_width layout_result);
-  assert_eq ~msg:"scroll_height of node1" 0.0
-    (Layout.scroll_height layout_result);
   ()
 
 (* Export tests for aggregation *)

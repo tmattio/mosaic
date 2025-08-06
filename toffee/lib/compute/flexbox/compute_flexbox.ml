@@ -826,17 +826,17 @@ let collect_flex_lines (constants : algo_constants)
           if constants.is_row then constants.gap.width else constants.gap.height
         in
 
-        let rec collect_lines items_remaining lines_acc =
-          match items_remaining with
-          | [] -> List.rev lines_acc
+        (* Process flex items into lines *)
+        let rec collect_lines items lines =
+          match items with
+          | [] -> List.rev lines
           | _ ->
+              (* Find where to split the items for this line *)
               let line_length = ref 0.0 in
-              let line_items = ref [] in
-              let remaining_items = ref items_remaining in
 
-              (* Collect items for this line *)
-              let rec collect_line_items idx = function
-                | [] -> ()
+              (* Find the index where items stop fitting *)
+              let rec find_split idx = function
+                | [] -> idx
                 | item :: rest ->
                     let gap_contribution =
                       if idx = 0 then 0.0 else main_axis_gap
@@ -850,26 +850,34 @@ let collect_flex_lines (constants : algo_constants)
                       !line_length +. item_size +. gap_contribution
                     in
 
-                    if new_length > main_axis_available_space && idx > 0 then
-                      (* This item doesn't fit, stop here *)
-                      remaining_items := item :: rest
+                    if new_length > main_axis_available_space && idx <> 0 then
+                      idx (* Stop here, this item doesn't fit *)
                     else (
-                      (* Add item to current line *)
                       line_length := new_length;
-                      line_items := item :: !line_items;
-                      collect_line_items (idx + 1) rest)
+                      find_split (idx + 1) rest)
               in
 
-              collect_line_items 0 items_remaining;
+              let index = find_split 0 items in
+              (* Ensure we take at least one item per line *)
+              let index = if index = 0 then 1 else index in
+
+              (* Split the items at the index *)
+              let rec split_at n acc = function
+                | [] -> (List.rev acc, [])
+                | lst when n = 0 -> (List.rev acc, lst)
+                | h :: t -> split_at (n - 1) (h :: acc) t
+              in
+              let line_items, rest = split_at index [] items in
 
               let line =
                 {
-                  items = Array.of_list (List.rev !line_items);
+                  items = Array.of_list line_items;
                   cross_size = 0.0;
                   offset_cross = 0.0;
                 }
               in
-              collect_lines !remaining_items (line :: lines_acc)
+
+              collect_lines rest (line :: lines)
         in
 
         collect_lines flex_items []
@@ -1758,87 +1766,60 @@ let calculate_children_base_lines (type t)
             (fun child ->
               (* Only calculate baselines for children participating in baseline alignment *)
               if child.align_self = Baseline then
-                let child_known_dimensions =
-                  if constants.is_row then
-                    Size.
-                      {
-                        width = Some child.target_size.width;
-                        height = Some child.hypothetical_inner_size.height;
-                      }
-                  else
-                    Size.
-                      {
-                        width = Some child.hypothetical_inner_size.width;
-                        height = Some child.target_size.height;
-                      }
-                in
-
-                let child_available_space =
-                  if constants.is_row then
-                    Size.
-                      {
-                        width =
-                          Available_space.of_float
-                            constants.container_size.width;
-                        height =
-                          (match available_space.height with
-                          | Available_space.Definite _ ->
-                              let height =
-                                Option.value known_dimensions.height
-                                  ~default:Float.infinity
-                              in
-                              Available_space.of_float height
-                          | Available_space.Min_content
-                          | Available_space.Max_content ->
-                              let height =
-                                Option.value known_dimensions.height
-                                  ~default:Float.infinity
-                              in
-                              Available_space.of_float height);
-                      }
-                  else
-                    Size.
-                      {
-                        width =
-                          (match available_space.width with
-                          | Available_space.Definite _ ->
-                              let width =
-                                Option.value known_dimensions.width
-                                  ~default:Float.infinity
-                              in
-                              Available_space.of_float width
-                          | Available_space.Min_content
-                          | Available_space.Max_content ->
-                              let width =
-                                Option.value known_dimensions.width
-                                  ~default:Float.infinity
-                              in
-                              Available_space.of_float width);
-                        height =
-                          Available_space.of_float
-                            constants.container_size.height;
-                      }
-                in
-
-                let layout_output =
+                let measured_size_and_baselines =
                   Tree.compute_child_layout tree child.node
                     (Layout_input.make ~run_mode:Run_mode.Perform_layout
                        ~sizing_mode:Sizing_mode.Content_size
                        ~axis:Requested_axis.Both
-                       ~known_dimensions:child_known_dimensions
+                       ~known_dimensions:
+                         (if constants.is_row then
+                            Size.
+                              {
+                                width = Some child.target_size.width;
+                                height =
+                                  Some child.hypothetical_inner_size.height;
+                              }
+                          else
+                            Size.
+                              {
+                                width = Some child.hypothetical_inner_size.width;
+                                height = Some child.target_size.height;
+                              })
                        ~parent_size:constants.node_inner_size
-                       ~available_space:child_available_space
+                       ~available_space:
+                         (if constants.is_row then
+                            Size.
+                              {
+                                width =
+                                  Available_space.of_float
+                                    constants.container_size.width;
+                                height =
+                                  Available_space.set_or_self
+                                    available_space.height
+                                    known_dimensions.height;
+                              }
+                          else
+                            Size.
+                              {
+                                width =
+                                  Available_space.set_or_self
+                                    available_space.width known_dimensions.width;
+                                height =
+                                  Available_space.of_float
+                                    constants.container_size.height;
+                              })
                        ~vertical_margins_are_collapsible:Line.both_false)
                 in
 
-                let first_baselines =
-                  Layout_output.first_baselines layout_output
+                let baseline =
+                  (Layout_output.first_baselines measured_size_and_baselines).y
                 in
-                let height = (Layout_output.size layout_output).height in
+                let height =
+                  (Layout_output.size measured_size_and_baselines).height
+                in
 
-                (* baseline is the y component of first_baselines, or height if None *)
-                let baseline = Option.value first_baselines.y ~default:height in
-                child.baseline <- baseline +. child.margin.top)
+                child.baseline <-
+                  Option.value baseline ~default:height +. child.margin.top)
             line.items)
       flex_lines
 
@@ -2094,8 +2075,7 @@ let determine_used_cross_size (type t)
                       Dimension.maybe_resolve (Size.get dims Block)
                         constants.node_inner_size.height calc;
                   }
-                |> fun s ->
-                Size.maybe_add s box_sizing_adjustment
+                |> fun s -> Size.maybe_add s box_sizing_adjustment
               in
 
               let cross_margin_sum =
@@ -3335,6 +3315,7 @@ let compute_preliminary (type t)
   let parent_size = Layout_input.parent_size inputs in
   let available_space = Layout_input.available_space inputs in
   let run_mode = Layout_input.run_mode inputs in
+  let _sizing_mode = Layout_input.sizing_mode inputs in
 
   (* Define some general constants we will need for the remainder of the algorithm *)
   let constants =
@@ -3521,18 +3502,33 @@ let compute_preliminary (type t)
     let first_vertical_baseline =
       match flex_lines with
       | [] -> None
-      | first_line :: _ ->
-          first_line.items |> Array.to_list
-          |> List.find_map (fun item ->
-                 if
-                   Flex_direction_ext.is_row constants.dir
-                   && item.align_self = Baseline
-                 then
-                   Some
-                     (item.baseline
-                     +. Flex_direction_ext.cross_start
-                          constants.content_box_inset constants.dir)
-                 else None)
+      | first_line :: _ -> (
+          (* For row containers: find item with baseline alignment or fallback to first item
+             For column containers: always use first item *)
+          let items_list = first_line.items |> Array.to_list in
+          let baseline_item =
+            if Flex_direction_ext.is_row constants.dir then
+              List.find_opt (fun item -> item.align_self = Baseline) items_list
+            else None
+          in
+          let item_to_use =
+            match baseline_item with
+            | Some item -> Some item
+            | None ->
+                (* Fallback to first item if no baseline item found *)
+                if Array.length first_line.items > 0 then
+                  Some first_line.items.(0)
+                else None
+          in
+          match item_to_use with
+          | Some item ->
+              let offset_cross =
+                if Flex_direction_ext.is_row constants.dir then
+                  item.offset_cross
+                else item.offset_main
+              in
+              Some (offset_cross +. item.baseline)
+          | None -> None)
     in
 
     (* Return final layout output *)

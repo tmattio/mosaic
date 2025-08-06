@@ -94,8 +94,52 @@ let test_flex_grow_0_min_size_border_box measure_function () =
   let tree = new_tree () in
 
   (* Create nodes *)
-  let node =
+  let node1 =
     new_leaf tree
+      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
+         ~flex_basis:(Style.Dimension.percent 0.0)
+         ())
+    |> Result.get_ok
+  in
+  let _ =
+    set_node_context tree node1 (Some (MeasureFunction.Text "one"))
+    |> Result.get_ok
+  in
+  let node2 =
+    new_leaf tree
+      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
+         ~flex_basis:(Style.Dimension.percent 0.0)
+         ())
+    |> Result.get_ok
+  in
+  let _ =
+    set_node_context tree node2 (Some (MeasureFunction.Text "two"))
+    |> Result.get_ok
+  in
+  let node3 =
+    new_leaf tree
+      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
+         ~flex_basis:(Style.Dimension.percent 0.0)
+         ())
+    |> Result.get_ok
+  in
+  let _ =
+    set_node_context tree node3 (Some (MeasureFunction.Text "three"))
+    |> Result.get_ok
+  in
+  let node4 =
+    new_leaf tree
+      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
+         ~flex_basis:(Style.Dimension.percent 0.0)
+         ())
+    |> Result.get_ok
+  in
+  let _ =
+    set_node_context tree node4 (Some (MeasureFunction.Text "four"))
+    |> Result.get_ok
+  in
+  let node0 =
+    new_with_children tree
       (Style.make ~display:Style.Display.Flex
          ~flex_direction:Style.Flex_direction.Row
          ~size:
@@ -111,60 +155,13 @@ let test_flex_grow_0_min_size_border_box measure_function () =
              bottom = Style.Length_percentage.length 1.0;
            }
          ())
+      [| node1; node2; node3; node4 |]
     |> Result.get_ok
   in
-  let node0 =
-    new_leaf tree
-      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
-         ~flex_basis:(Style.Dimension.percent 0.0)
-         ())
-    |> Result.get_ok
-  in
-  let _ =
-    set_node_context tree node0 (Some (MeasureFunction.Text "one"))
-    |> Result.get_ok
-  in
-  let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 =
-    new_leaf tree
-      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
-         ~flex_basis:(Style.Dimension.percent 0.0)
-         ())
-    |> Result.get_ok
-  in
-  let _ =
-    set_node_context tree node1 (Some (MeasureFunction.Text "two"))
-    |> Result.get_ok
-  in
-  let _ = add_child tree node node1 |> Result.get_ok in
-  let node2 =
-    new_leaf tree
-      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
-         ~flex_basis:(Style.Dimension.percent 0.0)
-         ())
-    |> Result.get_ok
-  in
-  let _ =
-    set_node_context tree node2 (Some (MeasureFunction.Text "three"))
-    |> Result.get_ok
-  in
-  let _ = add_child tree node node2 |> Result.get_ok in
-  let node3 =
-    new_leaf tree
-      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
-         ~flex_basis:(Style.Dimension.percent 0.0)
-         ())
-    |> Result.get_ok
-  in
-  let _ =
-    set_node_context tree node3 (Some (MeasureFunction.Text "four"))
-    |> Result.get_ok
-  in
-  let _ = add_child tree node node3 |> Result.get_ok in
 
   (* Compute layout *)
   let _ =
-    compute_layout_with_measure tree node
+    compute_layout_with_measure tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
@@ -175,35 +172,35 @@ let test_flex_grow_0_min_size_border_box measure_function () =
 
   (* Print tree for debugging *)
   Printf.printf "\nComputed tree:\n";
-  print_tree tree node;
+  print_tree tree node0;
   Printf.printf "\n";
 
   (* Verify layout *)
-  let layout_result = layout tree node |> Result.get_ok in
-  assert_eq ~msg:"width of node" 400.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node" 100.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node0 |> Result.get_ok in
-  assert_eq ~msg:"width of node0" 30.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node0" 98.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node0" 1.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node0" 1.0 (Layout.location layout_result).y;
   let layout_result = layout tree node1 |> Result.get_ok in
   assert_eq ~msg:"width of node1" 30.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node1" 98.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node1" 31.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"x of node1" 1.0 (Layout.location layout_result).x;
   assert_eq ~msg:"y of node1" 1.0 (Layout.location layout_result).y;
   let layout_result = layout tree node2 |> Result.get_ok in
-  assert_eq ~msg:"width of node2" 50.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"width of node2" 30.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node2" 98.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node2" 61.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"x of node2" 31.0 (Layout.location layout_result).x;
   assert_eq ~msg:"y of node2" 1.0 (Layout.location layout_result).y;
   let layout_result = layout tree node3 |> Result.get_ok in
-  assert_eq ~msg:"width of node3" 40.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"width of node3" 50.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node3" 98.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node3" 111.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"x of node3" 61.0 (Layout.location layout_result).x;
   assert_eq ~msg:"y of node3" 1.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node4 |> Result.get_ok in
+  assert_eq ~msg:"width of node4" 40.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node4" 98.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node4" 111.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node4" 1.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node0 |> Result.get_ok in
+  assert_eq ~msg:"width of node0" 400.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node0" 100.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node0" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node0" 0.0 (Layout.location layout_result).y;
   ()
 
 let test_flex_grow_0_min_size_content_box measure_function () =
@@ -216,8 +213,52 @@ let test_flex_grow_0_min_size_content_box measure_function () =
   let tree = new_tree () in
 
   (* Create nodes *)
-  let node =
+  let node1 =
     new_leaf tree
+      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
+         ~flex_basis:(Style.Dimension.percent 0.0)
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
+  let _ =
+    set_node_context tree node1 (Some (MeasureFunction.Text "one"))
+    |> Result.get_ok
+  in
+  let node2 =
+    new_leaf tree
+      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
+         ~flex_basis:(Style.Dimension.percent 0.0)
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
+  let _ =
+    set_node_context tree node2 (Some (MeasureFunction.Text "two"))
+    |> Result.get_ok
+  in
+  let node3 =
+    new_leaf tree
+      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
+         ~flex_basis:(Style.Dimension.percent 0.0)
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
+  let _ =
+    set_node_context tree node3 (Some (MeasureFunction.Text "three"))
+    |> Result.get_ok
+  in
+  let node4 =
+    new_leaf tree
+      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
+         ~flex_basis:(Style.Dimension.percent 0.0)
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
+  let _ =
+    set_node_context tree node4 (Some (MeasureFunction.Text "four"))
+    |> Result.get_ok
+  in
+  let node0 =
+    new_with_children tree
       (Style.make ~display:Style.Display.Flex
          ~flex_direction:Style.Flex_direction.Row
          ~size:
@@ -233,60 +274,13 @@ let test_flex_grow_0_min_size_content_box measure_function () =
              bottom = Style.Length_percentage.length 1.0;
            }
          ~box_sizing:Style.Box_sizing.Content_box ())
+      [| node1; node2; node3; node4 |]
     |> Result.get_ok
   in
-  let node0 =
-    new_leaf tree
-      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
-         ~flex_basis:(Style.Dimension.percent 0.0)
-         ~box_sizing:Style.Box_sizing.Content_box ())
-    |> Result.get_ok
-  in
-  let _ =
-    set_node_context tree node0 (Some (MeasureFunction.Text "one"))
-    |> Result.get_ok
-  in
-  let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 =
-    new_leaf tree
-      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
-         ~flex_basis:(Style.Dimension.percent 0.0)
-         ~box_sizing:Style.Box_sizing.Content_box ())
-    |> Result.get_ok
-  in
-  let _ =
-    set_node_context tree node1 (Some (MeasureFunction.Text "two"))
-    |> Result.get_ok
-  in
-  let _ = add_child tree node node1 |> Result.get_ok in
-  let node2 =
-    new_leaf tree
-      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
-         ~flex_basis:(Style.Dimension.percent 0.0)
-         ~box_sizing:Style.Box_sizing.Content_box ())
-    |> Result.get_ok
-  in
-  let _ =
-    set_node_context tree node2 (Some (MeasureFunction.Text "three"))
-    |> Result.get_ok
-  in
-  let _ = add_child tree node node2 |> Result.get_ok in
-  let node3 =
-    new_leaf tree
-      (Style.make ~flex_grow:0.0 ~flex_shrink:0.0
-         ~flex_basis:(Style.Dimension.percent 0.0)
-         ~box_sizing:Style.Box_sizing.Content_box ())
-    |> Result.get_ok
-  in
-  let _ =
-    set_node_context tree node3 (Some (MeasureFunction.Text "four"))
-    |> Result.get_ok
-  in
-  let _ = add_child tree node node3 |> Result.get_ok in
 
   (* Compute layout *)
   let _ =
-    compute_layout_with_measure tree node
+    compute_layout_with_measure tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
@@ -297,35 +291,35 @@ let test_flex_grow_0_min_size_content_box measure_function () =
 
   (* Print tree for debugging *)
   Printf.printf "\nComputed tree:\n";
-  print_tree tree node;
+  print_tree tree node0;
   Printf.printf "\n";
 
   (* Verify layout *)
-  let layout_result = layout tree node |> Result.get_ok in
-  assert_eq ~msg:"width of node" 402.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node" 102.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node0 |> Result.get_ok in
-  assert_eq ~msg:"width of node0" 30.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node0" 100.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node0" 1.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node0" 1.0 (Layout.location layout_result).y;
   let layout_result = layout tree node1 |> Result.get_ok in
   assert_eq ~msg:"width of node1" 30.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node1" 100.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node1" 31.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"x of node1" 1.0 (Layout.location layout_result).x;
   assert_eq ~msg:"y of node1" 1.0 (Layout.location layout_result).y;
   let layout_result = layout tree node2 |> Result.get_ok in
-  assert_eq ~msg:"width of node2" 50.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"width of node2" 30.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node2" 100.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node2" 61.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"x of node2" 31.0 (Layout.location layout_result).x;
   assert_eq ~msg:"y of node2" 1.0 (Layout.location layout_result).y;
   let layout_result = layout tree node3 |> Result.get_ok in
-  assert_eq ~msg:"width of node3" 40.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"width of node3" 50.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node3" 100.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node3" 111.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"x of node3" 61.0 (Layout.location layout_result).x;
   assert_eq ~msg:"y of node3" 1.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node4 |> Result.get_ok in
+  assert_eq ~msg:"width of node4" 40.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node4" 100.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node4" 111.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node4" 1.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node0 |> Result.get_ok in
+  assert_eq ~msg:"width of node0" 402.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node0" 102.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node0" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node0" 0.0 (Layout.location layout_result).y;
   ()
 
 (* Export tests for aggregation *)

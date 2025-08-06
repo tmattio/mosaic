@@ -74,8 +74,8 @@ let compute_root_layout (type t)
          }
        |> fun s ->
        Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-       Size.maybe_add s box_sizing_adjustment
-       |> fun s -> Size.clamp_option s min_size max_size
+       Size.maybe_add s box_sizing_adjustment |> fun s ->
+       Size.clamp_option s min_size max_size
      in
 
      (* If both min and max in a given axis are set and max <= min then this determines the size in that axis *)

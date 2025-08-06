@@ -13,8 +13,66 @@ let test_grid_absolute_layout_within_border_static_border_box () =
   let tree = new_tree () in
 
   (* Create nodes *)
-  let node =
+  let node1 =
     new_leaf tree
+      (Style.make ~position:Style.Position.Absolute ~align_self:Start
+         ~size:
+           {
+             width = Style.Dimension.length 50.0;
+             height = Style.Dimension.length 50.0;
+           }
+         ())
+    |> Result.get_ok
+  in
+  let node2 =
+    new_leaf tree
+      (Style.make ~position:Style.Position.Absolute ~align_self:End
+         ~size:
+           {
+             width = Style.Dimension.length 50.0;
+             height = Style.Dimension.length 50.0;
+           }
+         ())
+    |> Result.get_ok
+  in
+  let node3 =
+    new_leaf tree
+      (Style.make ~position:Style.Position.Absolute ~align_self:Start
+         ~size:
+           {
+             width = Style.Dimension.length 50.0;
+             height = Style.Dimension.length 50.0;
+           }
+         ~margin:
+           {
+             left = Style.Length_percentage_auto.length 10.0;
+             right = Style.Length_percentage_auto.length 10.0;
+             top = Style.Length_percentage_auto.length 10.0;
+             bottom = Style.Length_percentage_auto.length 10.0;
+           }
+         ())
+    |> Result.get_ok
+  in
+  let node4 =
+    new_leaf tree
+      (Style.make ~position:Style.Position.Absolute ~align_self:End
+         ~size:
+           {
+             width = Style.Dimension.length 50.0;
+             height = Style.Dimension.length 50.0;
+           }
+         ~margin:
+           {
+             left = Style.Length_percentage_auto.length 10.0;
+             right = Style.Length_percentage_auto.length 10.0;
+             top = Style.Length_percentage_auto.length 10.0;
+             bottom = Style.Length_percentage_auto.length 10.0;
+           }
+         ())
+    |> Result.get_ok
+  in
+  let node0 =
+    new_with_children tree
       (Style.make ~display:Style.Display.Grid
          ~size:
            {
@@ -36,74 +94,13 @@ let test_grid_absolute_layout_within_border_static_border_box () =
              bottom = Style.Length_percentage.length 10.0;
            }
          ())
+      [| node1; node2; node3; node4 |]
     |> Result.get_ok
   in
-  let node0 =
-    new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~align_self:Start
-         ~size:
-           {
-             width = Style.Dimension.length 50.0;
-             height = Style.Dimension.length 50.0;
-           }
-         ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 =
-    new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~align_self:End
-         ~size:
-           {
-             width = Style.Dimension.length 50.0;
-             height = Style.Dimension.length 50.0;
-           }
-         ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node node1 |> Result.get_ok in
-  let node2 =
-    new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~align_self:Start
-         ~size:
-           {
-             width = Style.Dimension.length 50.0;
-             height = Style.Dimension.length 50.0;
-           }
-         ~margin:
-           {
-             left = Style.Length_percentage_auto.length 10.0;
-             right = Style.Length_percentage_auto.length 10.0;
-             top = Style.Length_percentage_auto.length 10.0;
-             bottom = Style.Length_percentage_auto.length 10.0;
-           }
-         ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node node2 |> Result.get_ok in
-  let node3 =
-    new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~align_self:End
-         ~size:
-           {
-             width = Style.Dimension.length 50.0;
-             height = Style.Dimension.length 50.0;
-           }
-         ~margin:
-           {
-             left = Style.Length_percentage_auto.length 10.0;
-             right = Style.Length_percentage_auto.length 10.0;
-             top = Style.Length_percentage_auto.length 10.0;
-             bottom = Style.Length_percentage_auto.length 10.0;
-           }
-         ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node node3 |> Result.get_ok in
 
   (* Compute layout *)
   let _ =
-    compute_layout tree node
+    compute_layout tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
@@ -113,35 +110,35 @@ let test_grid_absolute_layout_within_border_static_border_box () =
 
   (* Print tree for debugging *)
   Printf.printf "\nComputed tree:\n";
-  print_tree tree node;
+  print_tree tree node0;
   Printf.printf "\n";
 
   (* Verify layout *)
-  let layout_result = layout tree node |> Result.get_ok in
-  assert_eq ~msg:"width of node" 100.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node" 100.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node0 |> Result.get_ok in
-  assert_eq ~msg:"width of node0" 50.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node0" 50.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node0" 10.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node0" 10.0 (Layout.location layout_result).y;
   let layout_result = layout tree node1 |> Result.get_ok in
   assert_eq ~msg:"width of node1" 50.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node1" 50.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node1" 40.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node1" 40.0 (Layout.location layout_result).y;
+  assert_eq ~msg:"x of node1" 10.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node1" 10.0 (Layout.location layout_result).y;
   let layout_result = layout tree node2 |> Result.get_ok in
   assert_eq ~msg:"width of node2" 50.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node2" 50.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node2" 20.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node2" 20.0 (Layout.location layout_result).y;
+  assert_eq ~msg:"x of node2" 40.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node2" 40.0 (Layout.location layout_result).y;
   let layout_result = layout tree node3 |> Result.get_ok in
   assert_eq ~msg:"width of node3" 50.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node3" 50.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node3" 30.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node3" 30.0 (Layout.location layout_result).y;
+  assert_eq ~msg:"x of node3" 20.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node3" 20.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node4 |> Result.get_ok in
+  assert_eq ~msg:"width of node4" 50.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node4" 50.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node4" 30.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node4" 30.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node0 |> Result.get_ok in
+  assert_eq ~msg:"width of node0" 100.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node0" 100.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node0" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node0" 0.0 (Layout.location layout_result).y;
   ()
 
 let test_grid_absolute_layout_within_border_static_content_box () =
@@ -154,8 +151,66 @@ let test_grid_absolute_layout_within_border_static_content_box () =
   let tree = new_tree () in
 
   (* Create nodes *)
-  let node =
+  let node1 =
     new_leaf tree
+      (Style.make ~position:Style.Position.Absolute ~align_self:Start
+         ~size:
+           {
+             width = Style.Dimension.length 50.0;
+             height = Style.Dimension.length 50.0;
+           }
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
+  let node2 =
+    new_leaf tree
+      (Style.make ~position:Style.Position.Absolute ~align_self:End
+         ~size:
+           {
+             width = Style.Dimension.length 50.0;
+             height = Style.Dimension.length 50.0;
+           }
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
+  let node3 =
+    new_leaf tree
+      (Style.make ~position:Style.Position.Absolute ~align_self:Start
+         ~size:
+           {
+             width = Style.Dimension.length 50.0;
+             height = Style.Dimension.length 50.0;
+           }
+         ~margin:
+           {
+             left = Style.Length_percentage_auto.length 10.0;
+             right = Style.Length_percentage_auto.length 10.0;
+             top = Style.Length_percentage_auto.length 10.0;
+             bottom = Style.Length_percentage_auto.length 10.0;
+           }
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
+  let node4 =
+    new_leaf tree
+      (Style.make ~position:Style.Position.Absolute ~align_self:End
+         ~size:
+           {
+             width = Style.Dimension.length 50.0;
+             height = Style.Dimension.length 50.0;
+           }
+         ~margin:
+           {
+             left = Style.Length_percentage_auto.length 10.0;
+             right = Style.Length_percentage_auto.length 10.0;
+             top = Style.Length_percentage_auto.length 10.0;
+             bottom = Style.Length_percentage_auto.length 10.0;
+           }
+         ~box_sizing:Style.Box_sizing.Content_box ())
+    |> Result.get_ok
+  in
+  let node0 =
+    new_with_children tree
       (Style.make ~display:Style.Display.Grid
          ~size:
            {
@@ -177,74 +232,13 @@ let test_grid_absolute_layout_within_border_static_content_box () =
              bottom = Style.Length_percentage.length 10.0;
            }
          ~box_sizing:Style.Box_sizing.Content_box ())
+      [| node1; node2; node3; node4 |]
     |> Result.get_ok
   in
-  let node0 =
-    new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~align_self:Start
-         ~size:
-           {
-             width = Style.Dimension.length 50.0;
-             height = Style.Dimension.length 50.0;
-           }
-         ~box_sizing:Style.Box_sizing.Content_box ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node node0 |> Result.get_ok in
-  let node1 =
-    new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~align_self:End
-         ~size:
-           {
-             width = Style.Dimension.length 50.0;
-             height = Style.Dimension.length 50.0;
-           }
-         ~box_sizing:Style.Box_sizing.Content_box ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node node1 |> Result.get_ok in
-  let node2 =
-    new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~align_self:Start
-         ~size:
-           {
-             width = Style.Dimension.length 50.0;
-             height = Style.Dimension.length 50.0;
-           }
-         ~margin:
-           {
-             left = Style.Length_percentage_auto.length 10.0;
-             right = Style.Length_percentage_auto.length 10.0;
-             top = Style.Length_percentage_auto.length 10.0;
-             bottom = Style.Length_percentage_auto.length 10.0;
-           }
-         ~box_sizing:Style.Box_sizing.Content_box ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node node2 |> Result.get_ok in
-  let node3 =
-    new_leaf tree
-      (Style.make ~position:Style.Position.Absolute ~align_self:End
-         ~size:
-           {
-             width = Style.Dimension.length 50.0;
-             height = Style.Dimension.length 50.0;
-           }
-         ~margin:
-           {
-             left = Style.Length_percentage_auto.length 10.0;
-             right = Style.Length_percentage_auto.length 10.0;
-             top = Style.Length_percentage_auto.length 10.0;
-             bottom = Style.Length_percentage_auto.length 10.0;
-           }
-         ~box_sizing:Style.Box_sizing.Content_box ())
-    |> Result.get_ok
-  in
-  let _ = add_child tree node node3 |> Result.get_ok in
 
   (* Compute layout *)
   let _ =
-    compute_layout tree node
+    compute_layout tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
@@ -254,35 +248,35 @@ let test_grid_absolute_layout_within_border_static_content_box () =
 
   (* Print tree for debugging *)
   Printf.printf "\nComputed tree:\n";
-  print_tree tree node;
+  print_tree tree node0;
   Printf.printf "\n";
 
   (* Verify layout *)
-  let layout_result = layout tree node |> Result.get_ok in
-  assert_eq ~msg:"width of node" 140.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node" 140.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node" 0.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node" 0.0 (Layout.location layout_result).y;
-  let layout_result = layout tree node0 |> Result.get_ok in
-  assert_eq ~msg:"width of node0" 50.0 (Layout.size layout_result).width;
-  assert_eq ~msg:"height of node0" 50.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node0" 10.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node0" 10.0 (Layout.location layout_result).y;
   let layout_result = layout tree node1 |> Result.get_ok in
   assert_eq ~msg:"width of node1" 50.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node1" 50.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node1" 80.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node1" 80.0 (Layout.location layout_result).y;
+  assert_eq ~msg:"x of node1" 10.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node1" 10.0 (Layout.location layout_result).y;
   let layout_result = layout tree node2 |> Result.get_ok in
   assert_eq ~msg:"width of node2" 50.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node2" 50.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node2" 20.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node2" 20.0 (Layout.location layout_result).y;
+  assert_eq ~msg:"x of node2" 80.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node2" 80.0 (Layout.location layout_result).y;
   let layout_result = layout tree node3 |> Result.get_ok in
   assert_eq ~msg:"width of node3" 50.0 (Layout.size layout_result).width;
   assert_eq ~msg:"height of node3" 50.0 (Layout.size layout_result).height;
-  assert_eq ~msg:"x of node3" 70.0 (Layout.location layout_result).x;
-  assert_eq ~msg:"y of node3" 70.0 (Layout.location layout_result).y;
+  assert_eq ~msg:"x of node3" 20.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node3" 20.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node4 |> Result.get_ok in
+  assert_eq ~msg:"width of node4" 50.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node4" 50.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node4" 70.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node4" 70.0 (Layout.location layout_result).y;
+  let layout_result = layout tree node0 |> Result.get_ok in
+  assert_eq ~msg:"width of node0" 140.0 (Layout.size layout_result).width;
+  assert_eq ~msg:"height of node0" 140.0 (Layout.size layout_result).height;
+  assert_eq ~msg:"x of node0" 0.0 (Layout.location layout_result).x;
+  assert_eq ~msg:"y of node0" 0.0 (Layout.location layout_result).y;
   ()
 
 (* Export tests for aggregation *)

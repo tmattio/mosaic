@@ -335,11 +335,13 @@ let maybe_sub opt_size concrete_size =
 let maybe_min opt_size concrete_size =
   {
     width = Option.map (fun v -> Float.min v concrete_size.width) opt_size.width;
-    height = Option.map (fun v -> Float.min v concrete_size.height) opt_size.height;
+    height =
+      Option.map (fun v -> Float.min v concrete_size.height) opt_size.height;
   }
 
 let maybe_max opt_size concrete_size =
   {
     width = Option.map (fun v -> Float.max v concrete_size.width) opt_size.width;
-    height = Option.map (fun v -> Float.max v concrete_size.height) opt_size.height;
+    height =
+      Option.map (fun v -> Float.max v concrete_size.height) opt_size.height;
   }

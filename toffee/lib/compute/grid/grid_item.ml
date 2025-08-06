@@ -235,28 +235,28 @@ let known_dimensions (type tree)
 
   (* Resolve inherent size *)
   let inherent_size =
-    Size.map2
-      (fun dim grid_size -> Dimension.maybe_resolve dim grid_size calc)
-      t.size grid_area_size
-    |> (fun s -> Size.apply_aspect_ratio s t.aspect_ratio)
-    |> (fun s -> Size.maybe_add s box_sizing_adjustment)
+    ( Size.map2
+        (fun dim grid_size -> Dimension.maybe_resolve dim grid_size calc)
+        t.size grid_area_size
+    |> fun s -> Size.apply_aspect_ratio s t.aspect_ratio )
+    |> fun s -> Size.maybe_add s box_sizing_adjustment
   in
 
   (* Resolve min/max sizes *)
   let min_size =
-    Size.map2
-      (fun dim grid_size -> Dimension.maybe_resolve dim grid_size calc)
-      t.min_size grid_area_size
-    |> (fun s -> Size.apply_aspect_ratio s t.aspect_ratio)
-    |> (fun s -> Size.maybe_add s box_sizing_adjustment)
+    ( Size.map2
+        (fun dim grid_size -> Dimension.maybe_resolve dim grid_size calc)
+        t.min_size grid_area_size
+    |> fun s -> Size.apply_aspect_ratio s t.aspect_ratio )
+    |> fun s -> Size.maybe_add s box_sizing_adjustment
   in
 
   let max_size =
-    Size.map2
-      (fun dim grid_size -> Dimension.maybe_resolve dim grid_size calc)
-      t.max_size grid_area_size
-    |> (fun s -> Size.apply_aspect_ratio s t.aspect_ratio)
-    |> (fun s -> Size.maybe_add s box_sizing_adjustment)
+    ( Size.map2
+        (fun dim grid_size -> Dimension.maybe_resolve dim grid_size calc)
+        t.max_size grid_area_size
+    |> fun s -> Size.apply_aspect_ratio s t.aspect_ratio )
+    |> fun s -> Size.maybe_add s box_sizing_adjustment
   in
 
   let grid_area_minus_item_margins_size =

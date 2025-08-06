@@ -713,25 +713,48 @@ function generateTest(name, testData, boxSizing, category = '') {
   const nodes = [];
   const assertions = [];
   let nodeCounter = 0;
+  const nodeMap = new Map(); // Map to store node variable names
 
-  function processNode(node, parentVar) {
-    const nodeVar = parentVar ? `node${nodeCounter++}` : 'node';
-    nodes.push(generateNode(nodeVar, node, parentVar, boxSizing));
+  // First pass: assign variable names to all nodes
+  function assignNodeVars(node) {
+    const nodeVar = `node${nodeCounter++}`;
+    nodeMap.set(node, nodeVar);
+    
+    if (node.children) {
+      node.children.forEach(child => assignNodeVars(child));
+    }
+  }
 
-    if (parentVar) {
-      nodes.push(`let _ = add_child tree ${parentVar} ${nodeVar} |> Result.get_ok in`);
+  // Second pass: generate code
+  function generateNodeCode(node, parentVar) {
+    const nodeVar = nodeMap.get(node);
+    const hasChildren = node.children && node.children.length > 0;
+    
+    if (hasChildren) {
+      // Generate children first
+      node.children.forEach(child => {
+        generateNodeCode(child, nodeVar);
+      });
+      
+      // Now create the parent node with children
+      const style = styleToOCaml(node.style, boxSizing);
+      const childVars = node.children.map(child => nodeMap.get(child));
+      const childrenArray = `[|${childVars.join('; ')}|]`;
+      nodes.push(`let ${nodeVar} = new_with_children tree (${style}) ${childrenArray} |> Result.get_ok in`);
+    } else {
+      // Leaf node - use new_leaf
+      nodes.push(generateNode(nodeVar, node, parentVar, boxSizing));
     }
 
     // Generate assertions for this node
     assertions.push(generateAssertions(nodeVar, node, useRounding));
-
-    // Process children
-    if (node.children) {
-      node.children.forEach(child => processNode(child, nodeVar));
-    }
   }
 
-  processNode(data, null);
+  assignNodeVars(data);
+  generateNodeCode(data, null);
+  
+  // Get the root node variable
+  const rootNodeVar = nodeMap.get(data);
 
   // Get available space from viewport
   const viewport = data.viewport || { width: { unit: 'max-content' }, height: { unit: 'max-content' } };
@@ -760,13 +783,13 @@ let test_${functionPrefix}${name}_${boxSizing}${measureParam} () =
   
   (* Compute layout *)
   ${hasTextNodes
-      ? `let _ = compute_layout_with_measure tree node ${availableSpace} measure_function |> Result.get_ok in`
-      : `let _ = compute_layout tree node ${availableSpace} |> Result.get_ok in`
+      ? `let _ = compute_layout_with_measure tree ${rootNodeVar} ${availableSpace} measure_function |> Result.get_ok in`
+      : `let _ = compute_layout tree ${rootNodeVar} ${availableSpace} |> Result.get_ok in`
     }
   
   (* Print tree for debugging *)
   Printf.printf "\\nComputed tree:\\n";
-  print_tree tree node;
+  print_tree tree ${rootNodeVar};
   Printf.printf "\\n";
   
   (* Verify layout *)${assertions.join('')}

@@ -98,8 +98,7 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)
                 Style.Dimension.maybe_resolve dims.height parent_size.height
                   resolve_calc_value;
             }
-          |> fun size ->
-          Size.maybe_add size box_sizing_adjustment
+          |> fun size -> Size.maybe_add size box_sizing_adjustment
         in
 
         let node_size = Size.choose_first known_dimensions style_size in

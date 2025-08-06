@@ -594,11 +594,9 @@ let perform_absolute_layout_on_absolute_children (type t)
               }
             |> fun s ->
             Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-            Size.maybe_add s box_sizing_adjustment
-            |> fun s ->
+            Size.maybe_add s box_sizing_adjustment |> fun s ->
             Size.choose_first s (Size.map Option.some padding_border_sum)
-            |> fun s ->
-            Size.maybe_max s padding_border_sum
+            |> fun s -> Size.maybe_max s padding_border_sum
           in
           let max_size =
             Style.max_size child_style |> fun dims ->

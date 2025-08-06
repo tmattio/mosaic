@@ -43,37 +43,34 @@ let compute_grid_layout (type t)
   in
 
   let min_size =
-    Style.min_size style
-    |> (fun dims ->
-    Size.
-      {
-        width = Dimension.maybe_resolve dims.width parent_size.width calc;
-        height = Dimension.maybe_resolve dims.height parent_size.height calc;
-      })
-    |> (fun s -> Size.apply_aspect_ratio s aspect_ratio)
-    |> (fun s -> Size.maybe_add s box_sizing_adjustment)
+    ( ( Style.min_size style |> fun dims ->
+        Size.
+          {
+            width = Dimension.maybe_resolve dims.width parent_size.width calc;
+            height = Dimension.maybe_resolve dims.height parent_size.height calc;
+          } )
+    |> fun s -> Size.apply_aspect_ratio s aspect_ratio )
+    |> fun s -> Size.maybe_add s box_sizing_adjustment
   in
   let max_size =
-    Style.max_size style
-    |> (fun dims ->
-    Size.
-      {
-        width = Dimension.maybe_resolve dims.width parent_size.width calc;
-        height = Dimension.maybe_resolve dims.height parent_size.height calc;
-      })
-    |> (fun s -> Size.apply_aspect_ratio s aspect_ratio)
-    |> (fun s -> Size.maybe_add s box_sizing_adjustment)
+    ( ( Style.max_size style |> fun dims ->
+        Size.
+          {
+            width = Dimension.maybe_resolve dims.width parent_size.width calc;
+            height = Dimension.maybe_resolve dims.height parent_size.height calc;
+          } )
+    |> fun s -> Size.apply_aspect_ratio s aspect_ratio )
+    |> fun s -> Size.maybe_add s box_sizing_adjustment
   in
   let style_size =
-    Style.size style
-    |> (fun dims ->
-    Size.
-      {
-        width = Dimension.maybe_resolve dims.width parent_size.width calc;
-        height = Dimension.maybe_resolve dims.height parent_size.height calc;
-      })
-    |> (fun s -> Size.apply_aspect_ratio s aspect_ratio)
-    |> (fun s -> Size.maybe_add s box_sizing_adjustment)
+    ( ( Style.size style |> fun dims ->
+        Size.
+          {
+            width = Dimension.maybe_resolve dims.width parent_size.width calc;
+            height = Dimension.maybe_resolve dims.height parent_size.height calc;
+          } )
+    |> fun s -> Size.apply_aspect_ratio s aspect_ratio )
+    |> fun s -> Size.maybe_add s box_sizing_adjustment
   in
   let preferred_size =
     if Layout_input.sizing_mode inputs = Sizing_mode.Inherent_size then
@@ -160,7 +157,7 @@ let compute_grid_layout (type t)
     known_dimensions
     |> Size.choose_first preferred_size
     |> Size.clamp_option min_size max_size
-    |> (fun s -> Size.maybe_max s padding_border_size)
+    |> fun s -> Size.maybe_max s padding_border_size
   in
   let inner_node_size =
     Size.
