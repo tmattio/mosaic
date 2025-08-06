@@ -1,9 +1,9 @@
 (* Type representing a UI element *)
-type t = Toffee.node_id * Renderable.t Toffee.t
+type t = Toffee.Node_id.t * Renderable.t Toffee.tree
 type spacing = Spacing.t
 
 (* Direct type equalities to toffee types *)
-type align = Toffee.Style.Alignment.align_items =
+type align = Toffee.Style.Align_items.t =
   | Start
   | End
   | Flex_start
@@ -12,7 +12,7 @@ type align = Toffee.Style.Alignment.align_items =
   | Baseline
   | Stretch
 
-type justify = Toffee.Style.Alignment.align_content =
+type justify = Toffee.Style.Align_content.t =
   | Start
   | End
   | Flex_start
@@ -23,19 +23,19 @@ type justify = Toffee.Style.Alignment.align_content =
   | Space_evenly
   | Space_around
 
-type wrap = Toffee.Style.Flex.flex_wrap = No_wrap | Wrap | Wrap_reverse
+type wrap = Toffee.Style.Flex_wrap.t = No_wrap | Wrap | Wrap_reverse
 type size = Px of int | Percent of float | Auto | Fit_content
-type position_type = Toffee.Style.position = Relative | Absolute
-type display = Toffee.Style.display = Block | Flex | Grid | None
+type position_type = Toffee.Style.Position.t = Relative | Absolute
+type display = Toffee.Style.Display.t = Block | Flex | Grid | None
 type direction = Inherit | Ltr | Rtl
 
-type flex_direction = Toffee.Style.Flex.flex_direction =
+type flex_direction = Toffee.Style.Flex_direction.t =
   | Row
   | Column
   | Row_reverse
   | Column_reverse
 
-type overflow = Toffee.Style.overflow = Visible | Clip | Hidden | Scroll
+type overflow = Toffee.Style.Overflow.t = Visible | Clip | Hidden | Scroll
 
 (* Convert our size type to toffee dimension *)
 let size_to_dimension = function
@@ -46,57 +46,57 @@ let size_to_dimension = function
       Toffee.Style.Dimension.auto (* toffee doesn't have fit_content *)
 
 (* Convert spacing to toffee rect *)
-let spacing_to_rect (spacing : Spacing.t) =
+let spacing_to_rect (spacing : Spacing.t) : Toffee.Style.Length_percentage.t Toffee.Geometry.rect =
   {
-    Toffee.Geometry.top =
-      Toffee.Style.Length_percentage.Length (float_of_int (Spacing.top spacing));
+    top =
+      Toffee.Style.Length_percentage.length (float_of_int (Spacing.top spacing));
     right =
-      Toffee.Style.Length_percentage.Length
+      Toffee.Style.Length_percentage.length
         (float_of_int (Spacing.right spacing));
     bottom =
-      Toffee.Style.Length_percentage.Length
+      Toffee.Style.Length_percentage.length
         (float_of_int (Spacing.bottom spacing));
     left =
-      Toffee.Style.Length_percentage.Length
+      Toffee.Style.Length_percentage.length
         (float_of_int (Spacing.left spacing));
   }
 
 (* Convert spacing to auto rect for margins *)
-let spacing_to_auto_rect (spacing : Spacing.t) =
+let spacing_to_auto_rect (spacing : Spacing.t) : Toffee.Style.Length_percentage_auto.t Toffee.Geometry.rect =
   {
-    Toffee.Geometry.top =
-      Toffee.Style.Length_percentage_auto.Length
+    top =
+      Toffee.Style.Length_percentage_auto.length
         (float_of_int (Spacing.top spacing));
     right =
-      Toffee.Style.Length_percentage_auto.Length
+      Toffee.Style.Length_percentage_auto.length
         (float_of_int (Spacing.right spacing));
     bottom =
-      Toffee.Style.Length_percentage_auto.Length
+      Toffee.Style.Length_percentage_auto.length
         (float_of_int (Spacing.bottom spacing));
     left =
-      Toffee.Style.Length_percentage_auto.Length
+      Toffee.Style.Length_percentage_auto.length
         (float_of_int (Spacing.left spacing));
   }
 
 (* Convert border to toffee rect *)
-let border_to_rect (border : Border.t) =
+let border_to_rect (border : Border.t) : Toffee.Style.Length_percentage.t Toffee.Geometry.rect =
   {
-    Toffee.Geometry.top =
-      Toffee.Style.Length_percentage.Length
+    top =
+      Toffee.Style.Length_percentage.length
         (if Border.top border then 1.0 else 0.0);
     right =
-      Toffee.Style.Length_percentage.Length
+      Toffee.Style.Length_percentage.length
         (if Border.right border then 1.0 else 0.0);
     bottom =
-      Toffee.Style.Length_percentage.Length
+      Toffee.Style.Length_percentage.length
         (if Border.bottom border then 1.0 else 0.0);
     left =
-      Toffee.Style.Length_percentage.Length
+      Toffee.Style.Length_percentage.length
         (if Border.left border then 1.0 else 0.0);
   }
 
 (* Global tree instance *)
-let tree = Toffee.create ()
+let tree = Toffee.new_tree ()
 
 let box ?position_type ?display ?direction:_ ?flex_grow ?flex_shrink ?align_self
     ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
@@ -118,146 +118,102 @@ let box ?position_type ?display ?direction:_ ?flex_grow ?flex_shrink ?align_self
   let child_ids = List.map fst children in
 
   (* Create gap size *)
-  let gap_size =
+  let gap_size : Toffee.Style.Length_percentage.t Toffee.Geometry.size =
     match (gap, row_gap, col_gap) with
     | Some g, None, None ->
         {
-          Toffee.Geometry.width =
-            Toffee.Style.Length_percentage.Length (float_of_int g);
-          height = Toffee.Style.Length_percentage.Length (float_of_int g);
+          width =
+            Toffee.Style.Length_percentage.length (float_of_int g);
+          height = Toffee.Style.Length_percentage.length (float_of_int g);
         }
     | None, Some r, Some c ->
         {
-          Toffee.Geometry.width =
-            Toffee.Style.Length_percentage.Length (float_of_int c);
-          height = Toffee.Style.Length_percentage.Length (float_of_int r);
+          width =
+            Toffee.Style.Length_percentage.length (float_of_int c);
+          height = Toffee.Style.Length_percentage.length (float_of_int r);
         }
     | None, Some r, None ->
         {
-          Toffee.Geometry.width = Toffee.Style.Length_percentage.Length 0.0;
-          height = Toffee.Style.Length_percentage.Length (float_of_int r);
+          width = Toffee.Style.Length_percentage.length 0.0;
+          height = Toffee.Style.Length_percentage.length (float_of_int r);
         }
     | None, None, Some c ->
         {
-          Toffee.Geometry.width =
-            Toffee.Style.Length_percentage.Length (float_of_int c);
-          height = Toffee.Style.Length_percentage.Length 0.0;
+          width =
+            Toffee.Style.Length_percentage.length (float_of_int c);
+          height = Toffee.Style.Length_percentage.length 0.0;
         }
     | Some g, Some r, _ ->
         {
-          Toffee.Geometry.width =
-            Toffee.Style.Length_percentage.Length (float_of_int g);
-          height = Toffee.Style.Length_percentage.Length (float_of_int r);
+          width =
+            Toffee.Style.Length_percentage.length (float_of_int g);
+          height = Toffee.Style.Length_percentage.length (float_of_int r);
         }
     | Some g, _, Some c ->
         {
-          Toffee.Geometry.width =
-            Toffee.Style.Length_percentage.Length (float_of_int c);
-          height = Toffee.Style.Length_percentage.Length (float_of_int g);
+          width =
+            Toffee.Style.Length_percentage.length (float_of_int c);
+          height = Toffee.Style.Length_percentage.length (float_of_int g);
         }
     | _ ->
         {
-          Toffee.Geometry.width = Toffee.Style.Length_percentage.Length 0.0;
-          height = Toffee.Style.Length_percentage.Length 0.0;
+          width = Toffee.Style.Length_percentage.length 0.0;
+          height = Toffee.Style.Length_percentage.length 0.0;
         }
   in
 
   (* Create style *)
-  let toffee_style : Toffee.Style.style =
-    {
-      Toffee.Style.default with
-      display = Option.value display ~default:Toffee.Style.Flex;
-      overflow =
-        (let o = Option.value overflow ~default:Toffee.Style.Visible in
-         { x = o; y = o });
-      position = Option.value position_type ~default:Toffee.Style.Relative;
-      align_items;
-      justify_content;
-      gap = gap_size;
-      flex_direction =
-        Option.value flex_direction ~default:Toffee.Style.Flex.Row;
-      flex_wrap = Option.value flex_wrap ~default:Toffee.Style.Flex.No_wrap;
-      flex_grow = Option.value flex_grow ~default:0.0;
-      flex_shrink = Option.value flex_shrink ~default:1.0;
-      flex_basis = Toffee.Style.Dimension.Auto;
-      align_self;
-      size =
-        {
-          width =
-            Option.value
-              (Option.map size_to_dimension width)
-              ~default:Toffee.Style.Dimension.Auto;
-          height =
-            Option.value
-              (Option.map size_to_dimension height)
-              ~default:Toffee.Style.Dimension.Auto;
-        };
-      min_size =
-        {
-          width =
-            Option.value
-              (Option.map size_to_dimension min_width)
-              ~default:Toffee.Style.Dimension.Auto;
-          height =
-            Option.value
-              (Option.map size_to_dimension min_height)
-              ~default:Toffee.Style.Dimension.Auto;
-        };
-      max_size =
-        {
-          width =
-            Option.value
-              (Option.map size_to_dimension max_width)
-              ~default:Toffee.Style.Dimension.Auto;
-          height =
-            Option.value
-              (Option.map size_to_dimension max_height)
-              ~default:Toffee.Style.Dimension.Auto;
-        };
-      margin =
-        Option.value
-          (Option.map spacing_to_auto_rect margin)
-          ~default:
-            {
-              top = Length 0.0;
-              right = Length 0.0;
-              bottom = Length 0.0;
-              left = Length 0.0;
-            };
-      padding =
-        Option.value
-          (Option.map spacing_to_rect padding)
-          ~default:
-            {
-              top = Length 0.0;
-              right = Length 0.0;
-              bottom = Length 0.0;
-              left = Length 0.0;
-            };
-      border =
-        Option.value
-          (Option.map border_to_rect border)
-          ~default:
-            {
-              top = Length 0.0;
-              right = Length 0.0;
-              bottom = Length 0.0;
-              left = Length 0.0;
-            };
-    }
+  let toffee_style : Toffee.Style.t =
+    let overflow_point = 
+      match overflow with
+      | Some o -> { Toffee.Geometry.Point.x = o; y = o }
+      | None -> { Toffee.Geometry.Point.x = Toffee.Style.Overflow.Visible; y = Toffee.Style.Overflow.Visible }
+    in
+    let size_dim = {
+      Toffee.Geometry.Size.width = Option.value (Option.map size_to_dimension width) ~default:Toffee.Style.Dimension.auto;
+      height = Option.value (Option.map size_to_dimension height) ~default:Toffee.Style.Dimension.auto;
+    } in
+    let min_size_dim = {
+      Toffee.Geometry.Size.width = Option.value (Option.map size_to_dimension min_width) ~default:Toffee.Style.Dimension.auto;
+      height = Option.value (Option.map size_to_dimension min_height) ~default:Toffee.Style.Dimension.auto;
+    } in
+    let max_size_dim = {
+      Toffee.Geometry.Size.width = Option.value (Option.map size_to_dimension max_width) ~default:Toffee.Style.Dimension.auto;
+      height = Option.value (Option.map size_to_dimension max_height) ~default:Toffee.Style.Dimension.auto;
+    } in
+    Toffee.Style.make
+      ?display
+      ?position:position_type
+      ~overflow:overflow_point
+      ?align_items
+      ?justify_content
+      ~gap:gap_size
+      ?flex_direction
+      ?flex_wrap
+      ~flex_grow:(Option.value flex_grow ~default:0.0)
+      ~flex_shrink:(Option.value flex_shrink ~default:1.0)
+      ~flex_basis:Toffee.Style.Dimension.auto
+      ?align_self
+      ~size:size_dim
+      ~min_size:min_size_dim
+      ~max_size:max_size_dim
+      ?margin:(Option.map spacing_to_auto_rect margin)
+      ?padding:(Option.map spacing_to_rect padding)
+      ?border:(Option.map border_to_rect border)
+      ()
   in
 
   (* Create node *)
   let id =
     if List.length child_ids > 0 then
-      Toffee.new_with_children tree toffee_style child_ids
-    else Toffee.new_leaf tree toffee_style
+      Toffee.new_with_children tree toffee_style (Array.of_list child_ids) |> Result.get_ok
+    else Toffee.new_leaf tree toffee_style |> Result.get_ok
   in
 
   (* Store renderable in context *)
   (match box_renderable with
   | Some r ->
-      let _ = Toffee.set_node_context tree id r in
+      let _ = Toffee.set_node_context tree id (Some r) |> Result.get_ok in
       ()
   | None -> ());
 
@@ -295,132 +251,133 @@ let zbox ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
   let stacked_children =
     List.map
       (fun child ->
-        let wrapper_style : Toffee.Style.style =
-          {
-            Toffee.Style.default with
-            position = Toffee.Style.Absolute;
-            inset =
-              {
-                top = Toffee.Style.Length_percentage_auto.Length 0.0;
-                right = Toffee.Style.Length_percentage_auto.Length 0.0;
-                bottom = Toffee.Style.Length_percentage_auto.Length 0.0;
-                left = Toffee.Style.Length_percentage_auto.Length 0.0;
-              };
-          }
+        let wrapper_style : Toffee.Style.t =
+          Toffee.Style.make
+            ~position:Toffee.Style.Position.Absolute
+            ~inset:{
+                top = Toffee.Style.Length_percentage_auto.length 0.0;
+                right = Toffee.Style.Length_percentage_auto.length 0.0;
+                bottom = Toffee.Style.Length_percentage_auto.length 0.0;
+                left = Toffee.Style.Length_percentage_auto.length 0.0;
+              }
+            ()
         in
         let wrapper_id =
-          Toffee.new_with_children tree wrapper_style [ fst child ]
+          Toffee.new_with_children tree wrapper_style [| fst child |] |> Result.get_ok
         in
         (wrapper_id, tree))
       children
   in
 
-  let toffee_style : Toffee.Style.style =
-    {
-      Toffee.Style.default with
-      overflow =
-        (let o = Option.value overflow ~default:Toffee.Style.Visible in
-         { x = o; y = o });
-      flex_grow = Option.value flex_grow ~default:0.0;
-      flex_shrink = Option.value flex_shrink ~default:1.0;
-      align_self;
-      size =
-        {
-          width =
-            Option.value
-              (Option.map size_to_dimension width)
-              ~default:Toffee.Style.Dimension.Auto;
-          height =
-            Option.value
-              (Option.map size_to_dimension height)
-              ~default:Toffee.Style.Dimension.Auto;
-        };
-      min_size =
-        {
-          width =
-            Option.value
-              (Option.map size_to_dimension min_width)
-              ~default:Toffee.Style.Dimension.Auto;
-          height =
-            Option.value
-              (Option.map size_to_dimension min_height)
-              ~default:Toffee.Style.Dimension.Auto;
-        };
-      max_size =
-        {
-          width =
-            Option.value
-              (Option.map size_to_dimension max_width)
-              ~default:Toffee.Style.Dimension.Auto;
-          height =
-            Option.value
-              (Option.map size_to_dimension max_height)
-              ~default:Toffee.Style.Dimension.Auto;
-        };
-      margin =
+  let toffee_style : Toffee.Style.t =
+    let overflow_point =
+      let o = Option.value overflow ~default:Toffee.Style.Overflow.Visible in
+      { Toffee.Geometry.Point.x = o; y = o }
+    in
+    let size_dim = {
+      Toffee.Geometry.Size.width =
         Option.value
-          (Option.map spacing_to_auto_rect margin)
-          ~default:
-            {
-              top = Length 0.0;
-              right = Length 0.0;
-              bottom = Length 0.0;
-              left = Length 0.0;
-            };
-      padding =
+          (Option.map size_to_dimension width)
+          ~default:Toffee.Style.Dimension.auto;
+      height =
         Option.value
-          (Option.map spacing_to_rect padding)
-          ~default:
-            {
-              top = Length 0.0;
-              right = Length 0.0;
-              bottom = Length 0.0;
-              left = Length 0.0;
-            };
-      border =
+          (Option.map size_to_dimension height)
+          ~default:Toffee.Style.Dimension.auto;
+    } in
+    let min_size_dim = {
+      Toffee.Geometry.Size.width =
         Option.value
-          (Option.map border_to_rect border)
-          ~default:
-            {
-              top = Length 0.0;
-              right = Length 0.0;
-              bottom = Length 0.0;
-              left = Length 0.0;
-            };
-    }
+          (Option.map size_to_dimension min_width)
+          ~default:Toffee.Style.Dimension.auto;
+      height =
+        Option.value
+          (Option.map size_to_dimension min_height)
+          ~default:Toffee.Style.Dimension.auto;
+    } in
+    let max_size_dim = {
+      Toffee.Geometry.Size.width =
+        Option.value
+          (Option.map size_to_dimension max_width)
+          ~default:Toffee.Style.Dimension.auto;
+      height =
+        Option.value
+          (Option.map size_to_dimension max_height)
+          ~default:Toffee.Style.Dimension.auto;
+    } in
+    let margin_rect =
+      Option.value
+        (Option.map spacing_to_auto_rect margin)
+        ~default:{
+          top = Toffee.Style.Length_percentage_auto.length 0.0;
+          right = Toffee.Style.Length_percentage_auto.length 0.0;
+          bottom = Toffee.Style.Length_percentage_auto.length 0.0;
+          left = Toffee.Style.Length_percentage_auto.length 0.0;
+        }
+    in
+    let padding_rect =
+      Option.value
+        (Option.map spacing_to_rect padding)
+        ~default:{
+          top = Toffee.Style.Length_percentage.length 0.0;
+          right = Toffee.Style.Length_percentage.length 0.0;
+          bottom = Toffee.Style.Length_percentage.length 0.0;
+          left = Toffee.Style.Length_percentage.length 0.0;
+        }
+    in
+    let border_rect =
+      Option.value
+        (Option.map border_to_rect border)
+        ~default:{
+          top = Toffee.Style.Length_percentage.length 0.0;
+          right = Toffee.Style.Length_percentage.length 0.0;
+          bottom = Toffee.Style.Length_percentage.length 0.0;
+          left = Toffee.Style.Length_percentage.length 0.0;
+        }
+    in
+    Toffee.Style.make
+      ~overflow:overflow_point
+      ~flex_grow:(Option.value flex_grow ~default:0.0)
+      ~flex_shrink:(Option.value flex_shrink ~default:1.0)
+      ?align_self
+      ~size:size_dim
+      ~min_size:min_size_dim
+      ~max_size:max_size_dim
+      ~margin:margin_rect
+      ~padding:padding_rect
+      ~border:border_rect
+      ()
   in
 
   let child_ids = List.map fst stacked_children in
-  let id = Toffee.new_with_children tree toffee_style child_ids in
+  let id = Toffee.new_with_children tree toffee_style (Array.of_list child_ids) |> Result.get_ok in
 
   (* Store renderable in context *)
   (match box_renderable with
   | Some r ->
-      let _ = Toffee.set_node_context tree id r in
+      let _ = Toffee.set_node_context tree id (Some r) |> Result.get_ok in
       ()
   | None -> ());
 
   (id, tree)
 
 let spacer ?(flex_grow = 1.0) ?min_width ?min_height () =
-  let toffee_style : Toffee.Style.style =
-    {
-      Toffee.Style.default with
-      flex_grow;
-      min_size =
-        {
-          width =
-            Option.value
-              (Option.map size_to_dimension min_width)
-              ~default:Toffee.Style.Dimension.Auto;
-          height =
-            Option.value
-              (Option.map size_to_dimension min_height)
-              ~default:Toffee.Style.Dimension.Auto;
-        };
-    }
+  let toffee_style : Toffee.Style.t =
+    let min_size_dim = {
+      Toffee.Geometry.Size.width =
+        Option.value
+          (Option.map size_to_dimension min_width)
+          ~default:Toffee.Style.Dimension.auto;
+      height =
+        Option.value
+          (Option.map size_to_dimension min_height)
+          ~default:Toffee.Style.Dimension.auto;
+    } in
+    Toffee.Style.make
+      ~flex_grow
+      ~min_size:min_size_dim
+      ()
   in
-  let id = Toffee.new_leaf tree toffee_style in
+  let id = Toffee.new_leaf tree toffee_style |> Result.get_ok in
   (id, tree)
 
 let divider ?(orientation = `Horizontal) ?title:_ ?char ?style ?padding () =
@@ -436,36 +393,36 @@ let divider ?(orientation = `Horizontal) ?title:_ ?char ?style ?padding () =
         Renderable.text ~style:(Option.value style ~default:Style.empty) c
   in
 
-  let toffee_style : Toffee.Style.style =
-    {
-      Toffee.Style.default with
-      size =
-        {
-          width =
-            Option.value
-              (Option.map size_to_dimension width)
-              ~default:Toffee.Style.Dimension.Auto;
-          height =
-            Option.value
-              (Option.map size_to_dimension height)
-              ~default:Toffee.Style.Dimension.Auto;
-        };
-      padding =
+  let toffee_style : Toffee.Style.t =
+    let size_dim = {
+      Toffee.Geometry.Size.width =
         Option.value
-          (Option.map spacing_to_rect padding)
-          ~default:
-            {
-              top = Length 0.0;
-              right = Length 0.0;
-              bottom = Length 0.0;
-              left = Length 0.0;
-            };
-    }
+          (Option.map size_to_dimension width)
+          ~default:Toffee.Style.Dimension.auto;
+      height =
+        Option.value
+          (Option.map size_to_dimension height)
+          ~default:Toffee.Style.Dimension.auto;
+    } in
+    let padding_rect =
+      Option.value
+        (Option.map spacing_to_rect padding)
+        ~default:{
+          top = Toffee.Style.Length_percentage.length 0.0;
+          right = Toffee.Style.Length_percentage.length 0.0;
+          bottom = Toffee.Style.Length_percentage.length 0.0;
+          left = Toffee.Style.Length_percentage.length 0.0;
+        }
+    in
+    Toffee.Style.make
+      ~size:size_dim
+      ~padding:padding_rect
+      ()
   in
 
-  let id = Toffee.new_leaf tree toffee_style in
+  let id = Toffee.new_leaf tree toffee_style |> Result.get_ok in
   (* Store renderable in context *)
-  let _ = Toffee.set_node_context tree id renderable in
+  let _ = Toffee.set_node_context tree id (Some renderable) |> Result.get_ok in
   (id, tree)
 
 let text ?(style = Style.empty) ?(align = `Left) ?(wrap = `Wrap) content =
@@ -480,7 +437,7 @@ let text ?(style = Style.empty) ?(align = `Left) ?(wrap = `Wrap) content =
   in
 
   let _measure_fn : Renderable.t Toffee.measure_function =
-   fun ~known_dimensions ~available_space _node_id _context _style ->
+   fun known_dimensions available_space _node_id _context _style ->
     (* Use the content from the renderable context *)
     let lines = String.split_on_char '\n' content in
     let max_width =
@@ -493,7 +450,7 @@ let text ?(style = Style.empty) ?(align = `Left) ?(wrap = `Wrap) content =
       | Some w -> w
       | None -> (
           match available_space.width with
-          | Toffee.Style.Available_space.Definite w ->
+          | Toffee.Available_space.Definite w ->
               min w (float_of_int max_width)
           | _ -> float_of_int max_width)
     in
@@ -503,7 +460,7 @@ let text ?(style = Style.empty) ?(align = `Left) ?(wrap = `Wrap) content =
       | Some h -> h
       | None -> (
           match available_space.height with
-          | Toffee.Style.Available_space.Definite h ->
+          | Toffee.Available_space.Definite h ->
               min h (float_of_int num_lines)
           | _ -> float_of_int num_lines)
     in
@@ -511,9 +468,9 @@ let text ?(style = Style.empty) ?(align = `Left) ?(wrap = `Wrap) content =
     { width = computed_width; height = computed_height }
   in
 
-  let id = Toffee.new_leaf tree Toffee.Style.default in
+  let id = Toffee.new_leaf tree Toffee.Style.default |> Result.get_ok in
   (* Store renderable in context *)
-  let _ = Toffee.set_node_context tree id renderable in
+  let _ = Toffee.set_node_context tree id (Some renderable) |> Result.get_ok in
   (id, tree)
 
 let scroll_view ?width ?height ?min_width ?min_height ?max_width ?max_height
@@ -521,16 +478,15 @@ let scroll_view ?width ?height ?min_width ?min_height ?max_width ?max_height
     ?border_style ?(show_scrollbars = true) ~h_offset ~v_offset child =
   let _ = show_scrollbars in
   (* Create the scroll container *)
-  let scroll_style : Toffee.Style.style =
-    {
-      Toffee.Style.default with
-      overflow = { x = Toffee.Style.Hidden; y = Toffee.Style.Hidden };
-    }
+  let scroll_style : Toffee.Style.t =
+    Toffee.Style.make
+      ~overflow:{ x = Toffee.Style.Overflow.Hidden; y = Toffee.Style.Overflow.Hidden }
+      ()
   in
-  let scroll_id = Toffee.new_with_children tree scroll_style [ fst child ] in
+  let scroll_id = Toffee.new_with_children tree scroll_style [| fst child |] |> Result.get_ok in
   let _ =
     Toffee.set_node_context tree scroll_id
-      (Renderable.scroll ~h_offset ~v_offset ())
+      (Some (Renderable.scroll ~h_offset ~v_offset ()))
   in
 
   (* Always wrap in a box *)
@@ -543,8 +499,8 @@ let canvas ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
     ?margin ?flex_grow ?flex_shrink ?align_self ?style ?border ?border_style
     draw =
   (* Create the canvas node *)
-  let canvas_id = Toffee.new_leaf tree Toffee.Style.default in
-  let _ = Toffee.set_node_context tree canvas_id (Renderable.canvas draw) in
+  let canvas_id = Toffee.new_leaf tree Toffee.Style.default |> Result.get_ok in
+  let _ = Toffee.set_node_context tree canvas_id (Some (Renderable.canvas draw)) |> Result.get_ok in
 
   (* Always wrap in a box *)
   box ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
@@ -574,23 +530,13 @@ let grid ~columns ~rows ?(col_gap = 0) ?(row_gap = 0) children =
   (* Convert our size type to toffee grid track sizing *)
   let size_to_track_sizing = function
     | Px n ->
-        Toffee.Style.Grid.Single
-          {
-            min = Toffee.Style.Grid.Length (float_of_int n);
-            max = Toffee.Style.Grid.Length (float_of_int n);
-          }
+        Toffee.Style.Grid.Template_component.length (float_of_int n)
     | Percent p ->
-        Toffee.Style.Grid.Single
-          {
-            min = Toffee.Style.Grid.Percent (p /. 100.0);
-            max = Toffee.Style.Grid.Percent (p /. 100.0);
-          }
+        Toffee.Style.Grid.Template_component.percent (p /. 100.0)
     | Auto ->
-        Toffee.Style.Grid.Single
-          { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Auto }
+        Toffee.Style.Grid.Template_component.auto
     | Fit_content ->
-        Toffee.Style.Grid.Single
-          { min = Toffee.Style.Grid.Auto; max = Toffee.Style.Grid.Max_content }
+        Toffee.Style.Grid.Template_component.max_content
   in
 
   let grid_columns = List.map size_to_track_sizing columns in
@@ -602,28 +548,27 @@ let grid ~columns ~rows ?(col_gap = 0) ?(row_gap = 0) children =
   (* Create grid gap *)
   let gap_size =
     {
-      Toffee.Geometry.width =
-        Toffee.Style.Length_percentage.Length (float_of_int col_gap);
-      height = Toffee.Style.Length_percentage.Length (float_of_int row_gap);
+      Toffee.Geometry.Size.width =
+        Toffee.Style.Length_percentage.length (float_of_int col_gap);
+      height = Toffee.Style.Length_percentage.length (float_of_int row_gap);
     }
   in
 
   (* Create grid style *)
-  let grid_style : Toffee.Style.style =
-    {
-      Toffee.Style.default with
-      display = Toffee.Style.Grid;
-      grid_template_columns = grid_columns;
-      grid_template_rows = grid_rows;
-      gap = gap_size;
-    }
+  let grid_style : Toffee.Style.t =
+    Toffee.Style.make
+      ~display:Toffee.Style.Display.Grid
+      ~grid_template_columns:grid_columns
+      ~grid_template_rows:grid_rows
+      ~gap:gap_size
+      ()
   in
 
   (* Create grid container *)
   let id =
     if List.length child_ids > 0 then
-      Toffee.new_with_children tree grid_style child_ids
-    else Toffee.new_leaf tree grid_style
+      Toffee.new_with_children tree grid_style (Array.of_list child_ids) |> Result.get_ok
+    else Toffee.new_leaf tree grid_style |> Result.get_ok
   in
 
   (id, tree)
@@ -688,17 +633,18 @@ let measure ?(width : int option) element =
   let node_id, tree = element in
   let available_space =
     {
-      Toffee.Geometry.width =
+      Toffee.Geometry.Size.width =
         (match width with
-        | Some w -> Toffee.Style.Available_space.Definite (float_of_int w)
-        | None -> Toffee.Style.Available_space.Max_content);
-      height = Toffee.Style.Available_space.Max_content;
+        | Some w -> Toffee.Available_space.Definite (float_of_int w)
+        | None -> Toffee.Available_space.Max_content);
+      height = Toffee.Available_space.Max_content;
     }
   in
 
-  let _ = Toffee.compute_layout tree node_id available_space in
+  let _ = Toffee.compute_layout tree node_id available_space |> Result.get_ok in
 
   match Toffee.layout tree node_id with
   | Ok layout ->
-      (int_of_float layout.size.width, int_of_float layout.size.height)
+      let size = Toffee.Layout.size layout in
+      (int_of_float size.width, int_of_float size.height)
   | Error _ -> (0, 0)

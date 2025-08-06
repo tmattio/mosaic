@@ -106,18 +106,20 @@ let rec render_node ctx (node_id, tree) =
     | Error _ -> failwith "Failed to get layout"
   in
 
+  let location = Toffee.Layout.location layout in
+  let size = Toffee.Layout.size layout in
   let bounds =
     {
-      x = layout.location.x;
-      y = layout.location.y;
-      width = layout.size.width;
-      height = layout.size.height;
+      x = location.x;
+      y = location.y;
+      width = size.width;
+      height = size.height;
     }
   in
 
   (* Render this node's renderable *)
   (match Toffee.get_node_context tree node_id with
-  | Ok (Some renderable) -> (
+  | Some renderable -> (
       match renderable with
       | Renderable.Empty -> ()
       | Renderable.Box { border; background } ->

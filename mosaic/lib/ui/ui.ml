@@ -148,17 +148,17 @@ let render ?(dark = false) ?(theme = Theme.default_dark) screen ui =
   let ui_id, ui_tree = ui in
   let available_space =
     {
-      Toffee.Geometry.width =
-        Toffee.Style.Available_space.Definite
+      Toffee.Geometry.Size.width =
+        Toffee.Available_space.Definite
           (float_of_int (Screen.cols screen));
       height =
-        Toffee.Style.Available_space.Definite
+        Toffee.Available_space.Definite
           (float_of_int (Screen.rows screen));
     }
   in
 
   (* Compute layout *)
-  let _ = Toffee.compute_layout ui_tree ui_id available_space in
+  let _ = Toffee.compute_layout ui_tree ui_id available_space |> Result.get_ok in
 
   Renderer.render_node ctx (ui_id, ui_tree)
 
@@ -171,14 +171,16 @@ let render_string ?(width = 80) ?height ?(dark = false)
         let ui_id, ui_tree = ui in
         let available_space =
           {
-            Toffee.Geometry.width =
-              Toffee.Style.Available_space.Definite (float_of_int width);
-            height = Toffee.Style.Available_space.Definite 1000.0;
+            Toffee.Geometry.Size.width =
+              Toffee.Available_space.Definite (float_of_int width);
+            height = Toffee.Available_space.Definite 1000.0;
           }
         in
-        let _ = Toffee.compute_layout ui_tree ui_id available_space in
+        let _ = Toffee.compute_layout ui_tree ui_id available_space |> Result.get_ok in
         match Toffee.layout ui_tree ui_id with
-        | Ok layout -> int_of_float layout.size.height + 1
+        | Ok layout -> 
+            let size = Toffee.Layout.size layout in
+            int_of_float size.height + 1
         | Error _ -> 50 (* fallback height *))
   in
 
