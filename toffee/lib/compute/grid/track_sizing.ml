@@ -572,8 +572,12 @@ let resolve_item_track_indexes (items : Grid_item.t array)
             failwith
               "OriginZero grid line cannot be more than the number of positive \
                grid lines"
-          else negative_implicit + line
-        else negative_implicit + line
+          else
+            (* Multiply by 2 to account for gutters - each line maps to an even index *)
+            2 * (negative_implicit + line)
+        else
+          (* Multiply by 2 to account for gutters - each line maps to an even index *)
+          2 * (negative_implicit + line)
       in
       item.Grid_item.column_indexes <-
         Line.map
