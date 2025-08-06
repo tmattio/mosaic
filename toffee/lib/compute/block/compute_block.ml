@@ -288,7 +288,7 @@ let perform_final_layout_on_in_flow_children (type t)
                        Some
                          (Helpers.maybe_clamp stretched_width
                             item.min_size.width item.max_size.width))
-            |> Size.clamp_option item.min_size item.max_size
+            |> fun size -> Size.clamp_option size item.min_size item.max_size
         in
 
         let item_layout =

@@ -154,9 +154,8 @@ let compute_grid_layout (type t)
   in
 
   let outer_node_size =
-    known_dimensions
-    |> Size.choose_first preferred_size
-    |> Size.clamp_option min_size max_size
+    Size.choose_first known_dimensions preferred_size
+    |> fun s -> Size.clamp_option s min_size max_size
     |> fun s -> Size.maybe_max s padding_border_size
   in
   let inner_node_size =
@@ -183,16 +182,16 @@ let compute_grid_layout (type t)
       (* This is very similar to the inner_node_size except if the inner_node_size is not definite but the node
          has a min- or max- size style then that will be used in its place. *)
       let auto_fit_container_size =
-        outer_node_size |> Size.choose_first max_size
-        |> Size.choose_first min_size
-        |> Size.clamp_option min_size max_size
+        Size.choose_first outer_node_size max_size
+        |> fun s -> Size.choose_first s min_size
+        |> fun s -> Size.clamp_option s min_size max_size
         |> (fun s -> Size.maybe_max s padding_border_size)
         |> (fun s -> Size.maybe_sub s (Rect.sum_axes content_box_inset))
       in
 
       (* Determine auto-repeat strategy based on container size constraints *)
       let auto_repeat_fit_strategy =
-        outer_node_size |> Size.choose_first max_size
+        Size.choose_first outer_node_size max_size
         |> Size.map (function
              | Some _ -> Explicit_grid.Max_repetitions_that_do_not_overflow
              | None -> Explicit_grid.Min_repetitions_that_do_overflow)
