@@ -15,7 +15,7 @@ let test_grid_justify_self_sized_all_border_box () =
   (* Create nodes *)
   let node1 =
     new_leaf tree
-      (Style.make
+      (Style.make ~justify_self:Style.Align_items.Start
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -26,7 +26,7 @@ let test_grid_justify_self_sized_all_border_box () =
   in
   let node2 =
     new_leaf tree
-      (Style.make
+      (Style.make ~justify_self:Style.Align_items.Start
          ~size:
            {
              width = Style.Dimension.length 60.0;
@@ -37,7 +37,7 @@ let test_grid_justify_self_sized_all_border_box () =
   in
   let node3 =
     new_leaf tree
-      (Style.make
+      (Style.make ~justify_self:Style.Align_items.End
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -48,7 +48,7 @@ let test_grid_justify_self_sized_all_border_box () =
   in
   let node4 =
     new_leaf tree
-      (Style.make
+      (Style.make ~justify_self:Style.Align_items.End
          ~size:
            {
              width = Style.Dimension.length 60.0;
@@ -59,7 +59,7 @@ let test_grid_justify_self_sized_all_border_box () =
   in
   let node5 =
     new_leaf tree
-      (Style.make
+      (Style.make ~justify_self:Style.Align_items.Center
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -70,7 +70,7 @@ let test_grid_justify_self_sized_all_border_box () =
   in
   let node6 =
     new_leaf tree
-      (Style.make
+      (Style.make ~justify_self:Style.Align_items.Center
          ~size:
            {
              width = Style.Dimension.length 60.0;
@@ -81,7 +81,7 @@ let test_grid_justify_self_sized_all_border_box () =
   in
   let node7 =
     new_leaf tree
-      (Style.make
+      (Style.make ~justify_self:Style.Align_items.Stretch
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -92,7 +92,7 @@ let test_grid_justify_self_sized_all_border_box () =
   in
   let node8 =
     new_leaf tree
-      (Style.make
+      (Style.make ~justify_self:Style.Align_items.Stretch
          ~size:
            {
              width = Style.Dimension.length 60.0;
@@ -207,7 +207,7 @@ let test_grid_justify_self_sized_all_content_box () =
   (* Create nodes *)
   let node1 =
     new_leaf tree
-      (Style.make
+      (Style.make ~justify_self:Style.Align_items.Start
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -218,7 +218,7 @@ let test_grid_justify_self_sized_all_content_box () =
   in
   let node2 =
     new_leaf tree
-      (Style.make
+      (Style.make ~justify_self:Style.Align_items.Start
          ~size:
            {
              width = Style.Dimension.length 60.0;
@@ -229,7 +229,7 @@ let test_grid_justify_self_sized_all_content_box () =
   in
   let node3 =
     new_leaf tree
-      (Style.make
+      (Style.make ~justify_self:Style.Align_items.End
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -240,7 +240,7 @@ let test_grid_justify_self_sized_all_content_box () =
   in
   let node4 =
     new_leaf tree
-      (Style.make
+      (Style.make ~justify_self:Style.Align_items.End
          ~size:
            {
              width = Style.Dimension.length 60.0;
@@ -251,7 +251,7 @@ let test_grid_justify_self_sized_all_content_box () =
   in
   let node5 =
     new_leaf tree
-      (Style.make
+      (Style.make ~justify_self:Style.Align_items.Center
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -262,7 +262,7 @@ let test_grid_justify_self_sized_all_content_box () =
   in
   let node6 =
     new_leaf tree
-      (Style.make
+      (Style.make ~justify_self:Style.Align_items.Center
          ~size:
            {
              width = Style.Dimension.length 60.0;
@@ -273,7 +273,7 @@ let test_grid_justify_self_sized_all_content_box () =
   in
   let node7 =
     new_leaf tree
-      (Style.make
+      (Style.make ~justify_self:Style.Align_items.Stretch
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -284,7 +284,7 @@ let test_grid_justify_self_sized_all_content_box () =
   in
   let node8 =
     new_leaf tree
-      (Style.make
+      (Style.make ~justify_self:Style.Align_items.Stretch
          ~size:
            {
              width = Style.Dimension.length 60.0;

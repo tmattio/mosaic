@@ -15,7 +15,7 @@ let test_grid_margins_fixed_start_border_box () =
   (* Create nodes *)
   let node1 =
     new_leaf tree
-      (Style.make ~align_self:Start
+      (Style.make ~align_self:Start ~justify_self:Style.Align_items.Start
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -134,7 +134,7 @@ let test_grid_margins_fixed_start_content_box () =
   (* Create nodes *)
   let node1 =
     new_leaf tree
-      (Style.make ~align_self:Start
+      (Style.make ~align_self:Start ~justify_self:Style.Align_items.Start
          ~size:
            {
              width = Style.Dimension.length 20.0;

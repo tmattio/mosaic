@@ -16,6 +16,7 @@ let test_grid_absolute_layout_within_border_static_border_box () =
   let node1 =
     new_leaf tree
       (Style.make ~position:Style.Position.Absolute ~align_self:Start
+         ~justify_self:Style.Align_items.Start
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -27,6 +28,7 @@ let test_grid_absolute_layout_within_border_static_border_box () =
   let node2 =
     new_leaf tree
       (Style.make ~position:Style.Position.Absolute ~align_self:End
+         ~justify_self:Style.Align_items.End
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -38,6 +40,7 @@ let test_grid_absolute_layout_within_border_static_border_box () =
   let node3 =
     new_leaf tree
       (Style.make ~position:Style.Position.Absolute ~align_self:Start
+         ~justify_self:Style.Align_items.Start
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -56,6 +59,7 @@ let test_grid_absolute_layout_within_border_static_border_box () =
   let node4 =
     new_leaf tree
       (Style.make ~position:Style.Position.Absolute ~align_self:End
+         ~justify_self:Style.Align_items.End
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -154,6 +158,7 @@ let test_grid_absolute_layout_within_border_static_content_box () =
   let node1 =
     new_leaf tree
       (Style.make ~position:Style.Position.Absolute ~align_self:Start
+         ~justify_self:Style.Align_items.Start
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -165,6 +170,7 @@ let test_grid_absolute_layout_within_border_static_content_box () =
   let node2 =
     new_leaf tree
       (Style.make ~position:Style.Position.Absolute ~align_self:End
+         ~justify_self:Style.Align_items.End
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -176,6 +182,7 @@ let test_grid_absolute_layout_within_border_static_content_box () =
   let node3 =
     new_leaf tree
       (Style.make ~position:Style.Position.Absolute ~align_self:Start
+         ~justify_self:Style.Align_items.Start
          ~size:
            {
              width = Style.Dimension.length 50.0;
@@ -194,6 +201,7 @@ let test_grid_absolute_layout_within_border_static_content_box () =
   let node4 =
     new_leaf tree
       (Style.make ~position:Style.Position.Absolute ~align_self:End
+         ~justify_self:Style.Align_items.End
          ~size:
            {
              width = Style.Dimension.length 50.0;

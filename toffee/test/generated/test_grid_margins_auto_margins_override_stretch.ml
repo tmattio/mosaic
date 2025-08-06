@@ -122,7 +122,7 @@ let test_grid_margins_auto_margins_override_stretch_border_box measure_function
   let node6 = new_leaf tree Style.default |> Result.get_ok in
   let node7 =
     new_leaf tree
-      (Style.make ~align_self:Stretch
+      (Style.make ~align_self:Stretch ~justify_self:Style.Align_items.Stretch
          ~margin:
            {
              left = Style.Length_percentage_auto.auto;
@@ -278,7 +278,7 @@ let test_grid_margins_auto_margins_override_stretch_content_box measure_function
   in
   let node7 =
     new_leaf tree
-      (Style.make ~align_self:Stretch
+      (Style.make ~align_self:Stretch ~justify_self:Style.Align_items.Stretch
          ~margin:
            {
              left = Style.Length_percentage_auto.auto;

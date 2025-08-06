@@ -15,7 +15,7 @@ let test_grid_margins_fixed_stretch_border_box () =
   (* Create nodes *)
   let node1 =
     new_leaf tree
-      (Style.make ~align_self:Stretch
+      (Style.make ~align_self:Stretch ~justify_self:Style.Align_items.Stretch
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -134,7 +134,7 @@ let test_grid_margins_fixed_stretch_content_box () =
   (* Create nodes *)
   let node1 =
     new_leaf tree
-      (Style.make ~align_self:Stretch
+      (Style.make ~align_self:Stretch ~justify_self:Style.Align_items.Stretch
          ~size:
            {
              width = Style.Dimension.length 20.0;

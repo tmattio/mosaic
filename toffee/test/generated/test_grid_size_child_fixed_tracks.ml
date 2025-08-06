@@ -114,21 +114,27 @@ let test_grid_size_child_fixed_tracks_border_box measure_function () =
 
   (* Create nodes *)
   let node1 =
-    new_leaf tree (Style.make ~align_self:Start ()) |> Result.get_ok
+    new_leaf tree
+      (Style.make ~align_self:Start ~justify_self:Style.Align_items.Start ())
+    |> Result.get_ok
   in
   let _ =
     set_node_context tree node1 (Some (MeasureFunction.Text "HH​HH​HH​HH"))
     |> Result.get_ok
   in
   let node2 =
-    new_leaf tree (Style.make ~align_self:Start ()) |> Result.get_ok
+    new_leaf tree
+      (Style.make ~align_self:Start ~justify_self:Style.Align_items.Start ())
+    |> Result.get_ok
   in
   let _ =
     set_node_context tree node2 (Some (MeasureFunction.Text "HHH​HHH"))
     |> Result.get_ok
   in
   let node3 =
-    new_leaf tree (Style.make ~align_self:Start ()) |> Result.get_ok
+    new_leaf tree
+      (Style.make ~align_self:Start ~justify_self:Style.Align_items.Start ())
+    |> Result.get_ok
   in
   let _ =
     set_node_context tree node3 (Some (MeasureFunction.Text "HH​HHHH"))
@@ -136,7 +142,7 @@ let test_grid_size_child_fixed_tracks_border_box measure_function () =
   in
   let node4 =
     new_leaf tree
-      (Style.make ~align_self:Start
+      (Style.make ~align_self:Start ~justify_self:Style.Align_items.Start
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -151,7 +157,7 @@ let test_grid_size_child_fixed_tracks_border_box measure_function () =
   in
   let node5 =
     new_leaf tree
-      (Style.make ~align_self:Start
+      (Style.make ~align_self:Start ~justify_self:Style.Align_items.Start
          ~max_size:
            {
              width = Style.Dimension.length 30.0;
@@ -256,7 +262,8 @@ let test_grid_size_child_fixed_tracks_content_box measure_function () =
   (* Create nodes *)
   let node1 =
     new_leaf tree
-      (Style.make ~align_self:Start ~box_sizing:Style.Box_sizing.Content_box ())
+      (Style.make ~align_self:Start ~justify_self:Style.Align_items.Start
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =
@@ -265,7 +272,8 @@ let test_grid_size_child_fixed_tracks_content_box measure_function () =
   in
   let node2 =
     new_leaf tree
-      (Style.make ~align_self:Start ~box_sizing:Style.Box_sizing.Content_box ())
+      (Style.make ~align_self:Start ~justify_self:Style.Align_items.Start
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =
@@ -274,7 +282,8 @@ let test_grid_size_child_fixed_tracks_content_box measure_function () =
   in
   let node3 =
     new_leaf tree
-      (Style.make ~align_self:Start ~box_sizing:Style.Box_sizing.Content_box ())
+      (Style.make ~align_self:Start ~justify_self:Style.Align_items.Start
+         ~box_sizing:Style.Box_sizing.Content_box ())
     |> Result.get_ok
   in
   let _ =
@@ -283,7 +292,7 @@ let test_grid_size_child_fixed_tracks_content_box measure_function () =
   in
   let node4 =
     new_leaf tree
-      (Style.make ~align_self:Start
+      (Style.make ~align_self:Start ~justify_self:Style.Align_items.Start
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -298,7 +307,7 @@ let test_grid_size_child_fixed_tracks_content_box measure_function () =
   in
   let node5 =
     new_leaf tree
-      (Style.make ~align_self:Start
+      (Style.make ~align_self:Start ~justify_self:Style.Align_items.Start
          ~max_size:
            {
              width = Style.Dimension.length 30.0;

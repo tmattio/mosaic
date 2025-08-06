@@ -17,7 +17,7 @@ let test_grid_margins_auto_margins_border_box () =
   let node2 = new_leaf tree Style.default |> Result.get_ok in
   let node3 =
     new_leaf tree
-      (Style.make
+      (Style.make ~justify_self:Style.Align_items.Start
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -55,7 +55,7 @@ let test_grid_margins_auto_margins_border_box () =
   let node6 = new_leaf tree Style.default |> Result.get_ok in
   let node7 =
     new_leaf tree
-      (Style.make ~align_self:Start
+      (Style.make ~align_self:Start ~justify_self:Style.Align_items.Start
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -194,7 +194,7 @@ let test_grid_margins_auto_margins_content_box () =
   in
   let node3 =
     new_leaf tree
-      (Style.make
+      (Style.make ~justify_self:Style.Align_items.Start
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -238,7 +238,7 @@ let test_grid_margins_auto_margins_content_box () =
   in
   let node7 =
     new_leaf tree
-      (Style.make ~align_self:Start
+      (Style.make ~align_self:Start ~justify_self:Style.Align_items.Start
          ~size:
            {
              width = Style.Dimension.length 20.0;

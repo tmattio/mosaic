@@ -15,7 +15,7 @@ let test_grid_margins_percent_end_border_box () =
   (* Create nodes *)
   let node1 =
     new_leaf tree
-      (Style.make ~align_self:End
+      (Style.make ~align_self:End ~justify_self:Style.Align_items.End
          ~size:
            {
              width = Style.Dimension.length 20.0;
@@ -127,7 +127,7 @@ let test_grid_margins_percent_end_content_box () =
   (* Create nodes *)
   let node1 =
     new_leaf tree
-      (Style.make ~align_self:End
+      (Style.make ~align_self:End ~justify_self:Style.Align_items.End
          ~size:
            {
              width = Style.Dimension.length 20.0;

@@ -203,8 +203,8 @@ function styleToOCaml(style, boxSizing) {
     params.push(`~justify_items:(${justifyMap[style.justifyItems] || 'Stretch'})`);
   }
 
-  // Only add justify_self for grid layouts
-  if (style.justifySelf && style.justifySelf !== 'auto' && displayMode === 'grid') {
+  // Add justify_self (relevant for grid items, not just grid containers)
+  if (style.justifySelf && style.justifySelf !== 'auto') {
     const justifyMap = {
       'stretch': 'Stretch',
       'flex-start': 'Flex_start',
@@ -216,7 +216,7 @@ function styleToOCaml(style, boxSizing) {
     };
     const value = justifyMap[style.justifySelf];
     if (value) {
-      params.push(`~justify_self:(${value})`);
+      params.push(`~justify_self:(Style.Align_items.${value})`);
     }
   }
 
