@@ -75,7 +75,7 @@ let track_range_to_oz_line_range t (start, end_) =
     or None if the line is outside the grid *)
 let oz_line_to_track t (line : int) : int option =
   let track_index = line + t.Grid.negative_implicit in
-  if track_index < 0 || track_index >= len t then None 
-  else 
+  if track_index < 0 || track_index >= len t then None
+  else
     (* Multiply by 2 to account for gutters - each line maps to an even index *)
     Some (2 * track_index)

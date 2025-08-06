@@ -237,9 +237,7 @@ let align_and_position_item (type t)
       Size.choose_first with_box_sizing
         (Size.map Option.some padding_border_size)
     in
-    let max_with_pb =
-      Size.maybe_max with_padding_border padding_border_size
-    in
+    let max_with_pb = Size.maybe_max with_padding_border padding_border_size in
     Size.apply_aspect_ratio max_with_pb aspect_ratio
   in
   let max_size =
