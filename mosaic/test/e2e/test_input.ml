@@ -66,11 +66,11 @@ let%expect_test "Basic input with placeholder" =
   let output = Test_harness.view ~width:40 ~height:3 harness in
   print_test_output ~height:3 output;
   [%expect_exact
-    {|+----------------------------------------+
+    {|┌----------------------------------------┐
 |┌──────────────────────────────────────┐|
 |│                                      │|
 |└──────────────────────────────────────┘|
-+----------------------------------------+
+└----------------------------------------┘
 |}]
 
 let%expect_test "Input with initial value" =
@@ -79,11 +79,11 @@ let%expect_test "Input with initial value" =
   let output = Test_harness.view ~width:40 ~height:3 harness in
   print_test_output ~height:3 output;
   [%expect_exact
-    {|+----------------------------------------+
+    {|┌----------------------------------------┐
 |┌──────────────────────────────────────┐|
 |│ Hello, World!                        │|
 |└──────────────────────────────────────┘|
-+----------------------------------------+
+└----------------------------------------┘
 |}]
 
 let%expect_test "Typing in input" =
@@ -96,11 +96,11 @@ let%expect_test "Typing in input" =
   let output = Test_harness.view ~width:40 ~height:3 harness in
   print_test_output ~height:3 output;
   [%expect_exact
-    {|+----------------------------------------+
+    {|┌----------------------------------------┐
 |┌──────────────────────────────────────┐|
 |│ OCaml                                │|
 |└──────────────────────────────────────┘|
-+----------------------------------------+
+└----------------------------------------┘
 |}]
 
 let%expect_test "Password input" =
@@ -113,11 +113,11 @@ let%expect_test "Password input" =
   let output = Test_harness.view ~width:40 ~height:3 harness in
   print_test_output ~height:3 output;
   [%expect_exact
-    {|+----------------------------------------+
+    {|┌----------------------------------------┐
 |┌──────────────────────────────────────┐|
 |│ *********                            │|
 |└──────────────────────────────────────┘|
-+----------------------------------------+
+└----------------------------------------┘
 |}]
 
 let%expect_test "Input with validation error" =
@@ -134,11 +134,11 @@ let%expect_test "Input with validation error" =
   let output = Test_harness.view ~width:40 ~height:3 harness in
   print_test_output ~height:3 output;
   [%expect_exact
-    {|+----------------------------------------+
+    {|┌----------------------------------------┐
 |┌──────────────────────────────────────┐|
 |│ Hi                                   │|
 |└──────────────────────────────────────┘|
-+----------------------------------------+
+└----------------------------------------┘
 |}]
 
 let%expect_test "Input with suggestions" =
@@ -152,7 +152,7 @@ let%expect_test "Input with suggestions" =
   let output = Test_harness.view ~width:40 ~height:8 harness in
   print_test_output ~height:8 output;
   [%expect_exact
-    {|+----------------------------------------+
+    {|┌----------------------------------------┐
 |┌──────────────────────────────────────┐|
 |│ o                                    │|
 |└──────────────────────────────────────┘|
@@ -161,7 +161,7 @@ let%expect_test "Input with suggestions" =
 |│ OCaml                              │  |
 |│                                    │  |
 |└────────────────────────────────────┘  |
-+----------------------------------------+
+└----------------------------------------┘
 |}]
 
 let%expect_test "Navigate and select suggestion" =
@@ -181,11 +181,11 @@ let%expect_test "Navigate and select suggestion" =
   let output = Test_harness.view ~width:40 ~height:3 harness in
   print_test_output ~height:3 output;
   [%expect_exact
-    {|+----------------------------------------+
+    {|┌----------------------------------------┐
 |┌──────────────────────────────────────┐|
 |│ OCaml                                │|
 |└──────────────────────────────────────┘|
-+----------------------------------------+
+└----------------------------------------┘
 |}]
 
 let%expect_test "Backspace and cursor movement" =
@@ -208,11 +208,11 @@ let%expect_test "Backspace and cursor movement" =
   let output = Test_harness.view ~width:40 ~height:3 harness in
   print_test_output ~height:3 output;
   [%expect_exact
-    {|+----------------------------------------+
+    {|┌----------------------------------------┐
 |┌──────────────────────────────────────┐|
 |│ HelloWorld                           │|
 |└──────────────────────────────────────┘|
-+----------------------------------------+
+└----------------------------------------┘
 |}]
 
 let%expect_test "Home and End keys" =
@@ -241,18 +241,18 @@ let%expect_test "Home and End keys" =
 
   [%expect_exact
     {|After Home and typing:
-+----------------------------------------+
++----------------------------------------┐
 |┌──────────────────────────────────────┐|
 |│ >Start Middle End                    │|
 |└──────────────────────────────────────┘|
-+----------------------------------------+
+└----------------------------------------┐
 
 After End and typing:
-+----------------------------------------+
++----------------------------------------┐
 |┌──────────────────────────────────────┐|
 |│ >Start Middle End<                   │|
 |└──────────────────────────────────────┘|
-+----------------------------------------+
+└----------------------------------------┘
 |}]
 
 let%expect_test "Fixed width input" =
@@ -266,11 +266,11 @@ let%expect_test "Fixed width input" =
   let output = Test_harness.view ~width:40 ~height:3 harness in
   print_test_output ~height:3 output;
   [%expect_exact
-    {|+----------------------------------------+
+    {|┌----------------------------------------┐
 |┌──────────────────┐                    |
 |│ This is a very l │                    |
 |└──────────────────┘                    |
-+----------------------------------------+
+└----------------------------------------┘
 |}]
 
 let%expect_test "Clear input with Ctrl+U" =
@@ -285,9 +285,9 @@ let%expect_test "Clear input with Ctrl+U" =
   let output = Test_harness.view ~width:40 ~height:3 harness in
   print_test_output ~height:3 output;
   [%expect_exact
-    {|+----------------------------------------+
+    {|┌----------------------------------------┐
 |┌──────────────────────────────────────┐|
 |│                                      │|
 |└──────────────────────────────────────┘|
-+----------------------------------------+
+└----------------------------------------┘
 |}]

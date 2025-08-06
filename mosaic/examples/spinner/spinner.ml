@@ -41,7 +41,7 @@ let view model =
     [
       text "";
       text "";
-      hbox ~gap:1
+      hbox ~gap:(`Cells 1)
         [
           text "   ";
           Mosaic_tiles.Spinner.view model.spinner;

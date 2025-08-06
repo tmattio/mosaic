@@ -406,7 +406,7 @@ let view model =
             else text line
           in
 
-          hbox ~gap:2
+          hbox ~gap:(`Cells 2)
             [
               text ~style:model.theme.line_numbers_style
                 (Printf.sprintf "%3d" (actual_line_num + 1));
@@ -420,10 +420,10 @@ let view model =
   in
 
   let text_area =
-    vbox ~padding:(Spacing.all 1)
+    vbox ~padding:(all 1)
       ~border:(Border.make ~line_style:Solid ~color:border_color ())
-      ~width:(Px model.width)
-      ~height:(Px (model.height + 2))
+      ~width:(`Cells model.width)
+      ~height:(`Cells (model.height + 2))
       content
   in
 

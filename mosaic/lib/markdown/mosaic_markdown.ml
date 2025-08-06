@@ -240,9 +240,8 @@ let rec render_block r ~available_width ~base_style block =
       [
         Ui.box
           ~margin:
-            (Ui.Spacing.make ~top:p_style.margin_top
-               ~bottom:p_style.margin_bottom ())
-          ~padding:(Ui.Spacing.xy p_style.padding_left p_style.padding_right)
+            (Ui.sides ~top:p_style.margin_top ~bottom:p_style.margin_bottom ())
+          ~padding:(Ui.xy p_style.padding_left p_style.padding_right)
           [ content ];
       ]
   | Heading (h, _) ->
@@ -277,7 +276,7 @@ let rec render_block r ~available_width ~base_style block =
       [
         Ui.box
           ~margin:
-            (Ui.Spacing.make ~top:full_style.margin_top
+            (Ui.sides ~top:full_style.margin_top
                ~bottom:full_style.margin_bottom ())
           [ Ui.hbox [ prefix; text ] ];
       ]
@@ -310,11 +309,11 @@ let rec render_block r ~available_width ~base_style block =
 
       (* Create the quote content with proper spacing *)
       let content =
-        Ui.hbox ~gap:bq_style.padding_left
+        Ui.hbox ~gap:(`Cells bq_style.padding_left)
           [
             prefix_el;
             Ui.box
-              ~padding:(Ui.Spacing.make ~right:bq_style.padding_right ())
+              ~padding:(Ui.xy 0 bq_style.padding_right)
               [ Ui.vbox children ];
           ]
       in
@@ -323,8 +322,7 @@ let rec render_block r ~available_width ~base_style block =
       [
         Ui.box
           ~margin:
-            (Ui.Spacing.make ~top:bq_style.margin_top
-               ~bottom:bq_style.margin_bottom ())
+            (Ui.sides ~top:bq_style.margin_top ~bottom:bq_style.margin_bottom ())
           [ content ];
       ]
   | List (l, _) ->
@@ -346,14 +344,13 @@ let rec render_block r ~available_width ~base_style block =
       let padded =
         Ui.vbox
           ~padding:
-            (Ui.Spacing.xy l_style.block.padding_left
-               l_style.block.padding_right)
+            (Ui.xy l_style.block.padding_left l_style.block.padding_right)
           items
       in
       [
         Ui.box
           ~margin:
-            (Ui.Spacing.make ~top:l_style.block.margin_top
+            (Ui.sides ~top:l_style.block.margin_top
                ~bottom:l_style.block.margin_bottom ())
           [ padded ];
       ]
@@ -408,14 +405,13 @@ let rec render_block r ~available_width ~base_style block =
       let content =
         Ui.vbox
           ~padding:
-            (Ui.Spacing.xy cb_style.block.padding_left
-               cb_style.block.padding_right)
+            (Ui.xy cb_style.block.padding_left cb_style.block.padding_right)
           ([ Ui.hbox [ fence_el; lang_el ] ] @ [ highlighted ] @ [ fence_el ])
       in
       [
         Ui.box
           ~margin:
-            (Ui.Spacing.make ~top:cb_style.block.margin_top
+            (Ui.sides ~top:cb_style.block.margin_top
                ~bottom:cb_style.block.margin_bottom ())
           [ content ];
       ]
@@ -427,15 +423,14 @@ let rec render_block r ~available_width ~base_style block =
       [
         Ui.box
           ~margin:
-            (Ui.Spacing.make ~top:hb_style.margin_top
-               ~bottom:hb_style.margin_bottom ())
+            (Ui.sides ~top:hb_style.margin_top ~bottom:hb_style.margin_bottom ())
           [ Ui.text ~style:Ui.Style.(base_style ++ r.style.html) text ];
       ]
   | Thematic_break (_, _) ->
       let hr_style, _hr_char = r.style.horizontal_rule in
       [
         Ui.box
-          ~margin:(Ui.Spacing.make ~top:1 ~bottom:1 ())
+          ~margin:(Ui.sides ~top:1 ~bottom:1 ())
           [
             Ui.divider ~orientation:`Horizontal
               ~style:Ui.Style.(base_style ++ hr_style)
@@ -525,14 +520,13 @@ let rec render_block r ~available_width ~base_style block =
       let padded =
         Ui.vbox
           ~padding:
-            (Ui.Spacing.xy tb_style.block.padding_left
-               tb_style.block.padding_right)
+            (Ui.xy tb_style.block.padding_left tb_style.block.padding_right)
           [ table_el ]
       in
       [
         Ui.box
           ~margin:
-            (Ui.Spacing.make ~top:tb_style.block.margin_top
+            (Ui.sides ~top:tb_style.block.margin_top
                ~bottom:tb_style.block.margin_bottom ())
           [ padded ];
       ]
@@ -582,10 +576,10 @@ and render_list_item r ~available_width ~base_style
   let item_block = Cmarkit.Block.List_item.block item in
   let children = render_block r ~available_width:avail ~base_style item_block in
   let content =
-    Ui.hbox ~gap:l_style.item_gap [ prefix_element; Ui.vbox children ]
+    Ui.hbox ~gap:(`Cells l_style.item_gap) [ prefix_element; Ui.vbox children ]
   in
   state_change ();
-  [ Ui.box ~padding:(Ui.Spacing.make ~left:indent_size ()) [ content ] ]
+  [ Ui.box ~padding:(Ui.sides ~left:indent_size ()) [ content ] ]
 
 let render ?(style = Markdown_style.default) ?(width = 80) ?(strict = false)
     ?(syntax_theme = Mosaic_syntax.default_dark_theme) markdown_text =
@@ -625,9 +619,9 @@ let render ?(style = Markdown_style.default) ?(width = 80) ?(strict = false)
         |> List.sort (fun _ _ -> 0)
         (* sort by key if needed *)
       in
-      Ui.box ~margin:(Ui.Spacing.make ~top:1 ~bottom:1 ()) [ fn_heading ] :: fns
+      Ui.box ~margin:(Ui.sides ~top:1 ~bottom:1 ()) [ fn_heading ] :: fns
   in
-  Ui.box ~width:(Ui.Px width)
-    ~margin:(Ui.Spacing.make ~top:s.margin_top ~bottom:s.margin_bottom ())
-    ~padding:(Ui.Spacing.xy s.padding_left s.padding_right)
+  Ui.box ~width:(`Cells width)
+    ~margin:(Ui.sides ~top:s.margin_top ~bottom:s.margin_bottom ())
+    ~padding:(Ui.xy s.padding_left s.padding_right)
     [ Ui.vbox (elements @ footnote_elements) ]

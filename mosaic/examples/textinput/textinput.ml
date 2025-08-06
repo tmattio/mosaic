@@ -31,7 +31,7 @@ let update (msg : msg) (model : model) : model * msg Cmd.t =
 
 let view model =
   let open Ui in
-  vbox ~gap:1
+  vbox ~gap:(`Cells 1)
     [
       text ~style:Style.(fg (Index 5)) "What's your favorite Pokémon?";
       text "";

@@ -46,7 +46,7 @@
 
       (* Compose in your view *)
       let open Ui in
-      vbox ~gap:2 [
+      vbox ~gap:(`Cells 2) [
         text "User Profile";
         Input.view name_input;
         Select.view language_select;

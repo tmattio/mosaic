@@ -1,6 +1,9 @@
 (* Use qualified names instead of open to avoid name conflicts *)
 module E = Element
 
+(* Import the cells constructor from Element *)
+let cells = E.cells
+
 type align = [ `Left | `Center | `Right ]
 
 let get_border_chars = function
@@ -60,7 +63,7 @@ let vertical_border char_str style h =
   if h <= 0 then E.spacer ~flex_grow:0.0 ()
   else
     let line = E.text ~style ~wrap:`Clip char_str in
-    E.vbox ~gap:0 (List.init h (fun _ -> line))
+    E.vbox ~gap:(cells 0) (List.init h (fun _ -> line))
 
 let panel ?(box_style = Border.Rounded) ?title ?(title_align = `Center)
     ?subtitle ?(subtitle_align = `Center) ?(expand = true)
@@ -78,7 +81,7 @@ let panel ?(box_style = Border.Rounded) ?title ?(title_align = `Center)
   let styled_child =
     if Style.equal style Style.empty then child else E.styled style child
   in
-  let actual_padding = Option.value padding ~default:(Spacing.xy 1 0) in
+  let actual_padding = Option.value padding ~default:(E.xy 1 0) in
   let title_opt = match title with Some "" -> None | _ -> title in
   let subtitle_opt = match subtitle with Some "" -> None | _ -> subtitle in
   let title_style =
@@ -96,17 +99,27 @@ let panel ?(box_style = Border.Rounded) ?title ?(title_align = `Center)
   in
   let header_min_w = max title_min_w subtitle_min_w in
   let natural_inner_w, natural_inner_h = E.measure styled_child in
-  let padded_inner_w =
-    natural_inner_w + Spacing.left actual_padding + Spacing.right actual_padding
+  let padding_left =
+    match actual_padding.left with
+    | `Cells n -> n
+    | `Pct _ -> 0 (* For percentages, default to 0 for width calculation *)
   in
-  let _padded_inner_h =
-    natural_inner_h + Spacing.top actual_padding + Spacing.bottom actual_padding
+  let padding_right =
+    match actual_padding.right with `Cells n -> n | `Pct _ -> 0
   in
+  let padding_top =
+    match actual_padding.top with `Cells n -> n | `Pct _ -> 0
+  in
+  let padding_bottom =
+    match actual_padding.bottom with `Cells n -> n | `Pct _ -> 0
+  in
+  let padded_inner_w = natural_inner_w + padding_left + padding_right in
+  let _padded_inner_h = natural_inner_h + padding_top + padding_bottom in
   let required_inner_w = max padded_inner_w header_min_w in
   let panel_width = Option.value width ~default:(required_inner_w + 2) in
   let inner_width = panel_width - 2 in
   let base_content =
-    E.vbox ~padding:actual_padding ~width:(E.Px inner_width) [ styled_child ]
+    E.vbox ~padding:actual_padding ~width:(`Cells inner_width) [ styled_child ]
   in
   let _, content_height = E.measure ~width:inner_width base_content in
   let inner_height =
@@ -116,10 +129,10 @@ let panel ?(box_style = Border.Rounded) ?title ?(title_align = `Center)
   let content_column =
     let core = base_content in
     if inner_height < content_height then
-      E.scroll_view ~width:(E.Px inner_width) ~height:(E.Px inner_height)
+      E.scroll_view ~width:(`Cells inner_width) ~height:(`Cells inner_height)
         ~h_offset:0 ~v_offset:0 core
     else if extra > 0 then
-      E.vbox ~gap:0 ~width:(E.Px inner_width)
+      E.vbox ~gap:(cells 0) ~width:(`Cells inner_width)
         [
           core; E.text (if extra = 1 then "" else String.make (extra - 1) '\n');
         ]
@@ -127,7 +140,9 @@ let panel ?(box_style = Border.Rounded) ?title ?(title_align = `Center)
   in
   let left_border = vertical_border left border_style inner_height in
   let right_border = vertical_border right border_style inner_height in
-  let middle = E.hbox ~gap:0 [ left_border; content_column; right_border ] in
+  let middle =
+    E.hbox ~gap:(cells 0) [ left_border; content_column; right_border ]
+  in
   let top_border =
     make_border_line ~width:panel_width ~text_opt:title_opt ~align:title_align
       ~left_char:top_left ~line_char:top ~right_char:top_right ~border_style
@@ -139,5 +154,5 @@ let panel ?(box_style = Border.Rounded) ?title ?(title_align = `Center)
       ~right_char:bottom_right ~border_style ~text_style:title_style
   in
   let panel_elements = [ top_border; middle; bottom_border ] in
-  let panel_box = E.vbox ~gap:0 panel_elements in
+  let panel_box = E.vbox ~gap:(cells 0) panel_elements in
   if expand then E.hbox ~flex_grow:1.0 [ panel_box ] else panel_box

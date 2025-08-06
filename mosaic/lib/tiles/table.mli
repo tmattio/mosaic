@@ -52,7 +52,7 @@
 
       (* In your view *)
       let open Ui in
-      vbox ~gap:1 [
+      vbox ~gap:(`Cells 1) [
         text "User Directory:";
         Table.view model.table;
         (match Table.selected_row model.table with

@@ -45,7 +45,7 @@ let tree ?style ?(guide_style = Style.(fg Ansi.Default ++ dim))
     let connector =
       text ~style:node_guide_style (if is_last then last_branch else branch)
     in
-    let node_line = hbox ~gap:0 [ text prefix; connector; label ] in
+    let node_line = hbox ~gap:(cells 0) [ text prefix; connector; label ] in
 
     (* If collapsed or no children, just return the node line *)
     if (not is_expanded) || node.children = [] then node_line
@@ -60,7 +60,7 @@ let tree ?style ?(guide_style = Style.(fg Ansi.Default ++ dim))
               ~current_guide_style:node_guide_style child)
           node.children
       in
-      vbox ~gap:0 (node_line :: children_elements)
+      vbox ~gap:(cells 0) (node_line :: children_elements)
   in
 
   (* Handle root node *)
@@ -76,7 +76,7 @@ let tree ?style ?(guide_style = Style.(fg Ansi.Default ++ dim))
               ~current_guide_style:guide_style child)
           root.children
       in
-      vbox ~gap:0 children_elements
+      vbox ~gap:(cells 0) children_elements
   else
     (* Show root *)
     let is_expanded =
@@ -99,4 +99,4 @@ let tree ?style ?(guide_style = Style.(fg Ansi.Default ++ dim))
               ~current_guide_style:guide_style child)
           root.children
       in
-      vbox ~gap:0 (root_label :: children_elements)
+      vbox ~gap:(cells 0) (root_label :: children_elements)

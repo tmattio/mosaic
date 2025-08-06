@@ -8,7 +8,7 @@ type t =
       style : Style.t;
       align : align;
       tab_width : int;
-      wrap : bool;
+      wrap : [ `Wrap | `Truncate | `Clip ];
     }
   | Canvas of {
       draw : (x:int -> y:int -> ?style:Style.t -> string -> unit) -> unit;
@@ -18,7 +18,7 @@ type t =
 let box ?border ?background () = Box { border; background }
 
 let text ?(style = Style.empty) ?(align = `Start) ?(tab_width = 4)
-    ?(wrap = false) content =
+    ?(wrap = `Clip) content =
   Text { content; style; align; tab_width; wrap }
 
 let canvas draw = Canvas { draw }

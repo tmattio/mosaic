@@ -14,7 +14,7 @@ val panel :
   ?border_style:Style.t ->
   ?width:int ->
   ?height:int ->
-  ?padding:Spacing.t ->
+  ?padding:Element.length_percentage Element.sides ->
   ?highlight:bool ->
   Element.t ->
   Element.t

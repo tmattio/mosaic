@@ -1011,19 +1011,19 @@ let table ?(title = None) ?(caption = None) ?(columns = []) ?(rows = [])
       else 0
     in
     let box_chars = get_box_chars box_style safe_box in
-    let map_justify_to_align j : E.align =
+    let map_justify_to_align j : E.align_items =
       match j with
-      | `Left -> E.Start
-      | `Center -> E.Center
-      | `Right -> E.End
-      | `Full -> E.Center
+      | `Left -> `Start
+      | `Center -> `Center
+      | `Right -> `End
+      | `Full -> `Center
     in
     let title_element =
       match title with
       | None -> None
       | Some t ->
           Some
-            (E.vbox ~width:(E.Px table_total_width)
+            (E.vbox ~width:(`Cells table_total_width)
                ~align_items:(map_justify_to_align title_justify)
                [ E.text ~style:title_style t ])
     in
@@ -1032,7 +1032,7 @@ let table ?(title = None) ?(caption = None) ?(columns = []) ?(rows = [])
       | None -> None
       | Some c ->
           Some
-            (E.vbox ~width:(E.Px table_total_width)
+            (E.vbox ~width:(`Cells table_total_width)
                ~align_items:(map_justify_to_align caption_justify)
                [ E.text ~style:caption_style c ])
     in
@@ -1296,10 +1296,10 @@ let table ?(title = None) ?(caption = None) ?(columns = []) ?(rows = [])
     | None -> ());
 
     (* Apply min_width constraint *)
-    let final_element = E.vbox ~gap:0 !all_rows in
+    let final_element = E.vbox ~gap:(E.cells 0) !all_rows in
     match min_width with
     | Some min_w when table_total_width < min_w ->
-        E.hbox ~width:(E.Px min_w) ~justify_content:E.Center [ final_element ]
+        E.hbox ~width:(`Cells min_w) ~justify_content:`Center [ final_element ]
     | _ -> final_element
 
 let simple_table ~headers ~rows =

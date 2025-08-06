@@ -1,10 +1,114 @@
 module Style = Style
 module Border = Border
 module Theme = Theme
-module Spacing = Spacing
 include Element
 
 type element = Element.t
+
+(* String utilities - defined early as needed by measure function *)
+let measure_string str = Renderer.measure_string str
+
+let truncate_string_with_ellipsis str max_width suffix =
+  Renderer.truncate_string_with_ellipsis str max_width suffix
+
+let pad_string str width = Renderer.pad_string str width
+
+(* Default measure function for text nodes *)
+let default_measure_fn known_dimensions available_space _node_id context _style
+    =
+  match context with
+  | Some (Renderable.Text { content; tab_width; wrap; _ }) ->
+      (* Measure text content *)
+      let lines = String.split_on_char '\n' content in
+      (* Expand tabs before measuring *)
+      let expanded_lines =
+        List.map
+          (fun line -> Renderer.expand_tabs ~tab_width ~start_col:0 line)
+          lines
+      in
+
+      (* Calculate width and height based on wrap mode *)
+      let computed_width, computed_height =
+        match wrap with
+        | `Wrap -> (
+            (* When wrapping, pre-wrap to available width if definite *)
+            match available_space.Toffee.Geometry.Size.width with
+            | Toffee.Available_space.Definite available_w ->
+                let available_width = int_of_float available_w in
+                (* Count wrapped lines for height calculation *)
+                let wrapped_line_count =
+                  List.fold_left
+                    (fun acc line ->
+                      let line_width = measure_string line in
+                      if line_width <= available_width then acc + 1
+                      else
+                        (* Calculate number of wrapped lines *)
+                        let lines_needed =
+                          (line_width + available_width - 1) / available_width
+                        in
+                        acc + lines_needed)
+                    0 expanded_lines
+                in
+                (* For wrapped text, width is constrained to available width *)
+                let max_line_width =
+                  List.fold_left
+                    (fun acc line ->
+                      max acc (min (measure_string line) available_width))
+                    0 expanded_lines
+                in
+                let width =
+                  match known_dimensions.Toffee.Geometry.Size.width with
+                  | Some w -> w
+                  | None -> min available_w (float_of_int max_line_width)
+                in
+                let height =
+                  match known_dimensions.Toffee.Geometry.Size.height with
+                  | Some h -> h
+                  | None -> float_of_int wrapped_line_count
+                in
+                (width, height)
+            | _ ->
+                (* No definite width to wrap to, use natural size *)
+                let max_width =
+                  List.fold_left
+                    (fun acc line -> max acc (measure_string line))
+                    0 expanded_lines
+                in
+                let width =
+                  match known_dimensions.Toffee.Geometry.Size.width with
+                  | Some w -> w
+                  | None -> float_of_int max_width
+                in
+                let height =
+                  match known_dimensions.Toffee.Geometry.Size.height with
+                  | Some h -> h
+                  | None -> float_of_int (List.length lines)
+                in
+                (width, height))
+        | `Truncate | `Clip ->
+            (* Don't clamp to available size - use natural content size *)
+            let max_width =
+              List.fold_left
+                (fun acc line -> max acc (measure_string line))
+                0 expanded_lines
+            in
+            let width =
+              match known_dimensions.Toffee.Geometry.Size.width with
+              | Some w -> w
+              | None -> float_of_int max_width
+            in
+            let height =
+              match known_dimensions.Toffee.Geometry.Size.height with
+              | Some h -> h
+              | None -> float_of_int (List.length lines)
+            in
+            (width, height)
+      in
+
+      { Toffee.Geometry.Size.width = computed_width; height = computed_height }
+  | _ ->
+      (* Non-text nodes don't need measuring *)
+      { width = 0.0; height = 0.0 }
 
 module Progress_bar = Progress_bar
 module Panel = Panel
@@ -136,7 +240,7 @@ let canvas ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
     ?padding ?margin ?flex_grow ?flex_shrink ?align_self ?style ?border
     ?border_style draw_fn
 
-let render ?(dark = false) ?(theme = Theme.default_dark) screen ui =
+let render ?(dark = false) ?(theme = Theme.default_dark) ?calc screen ui =
   Screen.begin_frame screen;
 
   let viewport =
@@ -149,21 +253,27 @@ let render ?(dark = false) ?(theme = Theme.default_dark) screen ui =
   let available_space =
     {
       Toffee.Geometry.Size.width =
-        Toffee.Available_space.Definite
-          (float_of_int (Screen.cols screen));
+        Toffee.Available_space.Definite (float_of_int (Screen.cols screen));
       height =
-        Toffee.Available_space.Definite
-          (float_of_int (Screen.rows screen));
+        Toffee.Available_space.Definite (float_of_int (Screen.rows screen));
     }
   in
 
-  (* Compute layout *)
-  let _ = Toffee.compute_layout ui_tree ui_id available_space |> Result.get_ok in
+  (* Compute layout with measure function for text nodes *)
+  (* Note: calc support is defined in the API but not yet fully implemented in Toffee.
+     The calc_resolver parameter is accepted but currently ignored. *)
+  let _ = calc in
+  (* Suppress unused warning until Toffee implements calc support *)
+  let _ =
+    Toffee.compute_layout_with_measure ui_tree ui_id available_space
+      default_measure_fn
+    |> Result.get_ok
+  in
 
   Renderer.render_node ctx (ui_id, ui_tree)
 
 let render_string ?(width = 80) ?height ?(dark = false)
-    ?(theme = Theme.default_dark) ui =
+    ?(theme = Theme.default_dark) ?calc ui =
   let measured_height =
     match height with
     | Some h -> h
@@ -176,65 +286,26 @@ let render_string ?(width = 80) ?height ?(dark = false)
             height = Toffee.Available_space.Definite 1000.0;
           }
         in
-        let _ = Toffee.compute_layout ui_tree ui_id available_space |> Result.get_ok in
+        let _ = calc in
+        (* Suppress unused warning until Toffee implements calc support *)
+        let _ =
+          Toffee.compute_layout_with_measure ui_tree ui_id available_space
+            default_measure_fn
+          |> Result.get_ok
+        in
         match Toffee.layout ui_tree ui_id with
-        | Ok layout -> 
+        | Ok layout ->
             let size = Toffee.Layout.size layout in
             int_of_float size.height + 1
         | Error _ -> 50 (* fallback height *))
   in
 
   let screen = Screen.create ~rows:measured_height ~cols:width () in
-  render ~dark ~theme screen ui;
+  render ~dark ~theme ?calc screen ui;
   Screen.render_to_string screen
 
-let print ?(width = 80) ?height ?(dark = false) ?(theme = Theme.default_dark) ui
-    =
-  let output = render_string ~width ?height ~dark ~theme ui in
+let print ?(width = 80) ?height ?(dark = false) ?(theme = Theme.default_dark)
+    ?calc ui =
+  let output = render_string ~width ?height ~dark ~theme ?calc ui in
   print_string output;
   flush stdout
-
-(* String utilities *)
-
-let measure_string str =
-  (* UTF-8 aware string width calculation *)
-  let decoder = Uutf.decoder ~encoding:`UTF_8 (`String str) in
-  let rec count_width acc =
-    match Uutf.decode decoder with
-    | `Uchar _ -> count_width (acc + 1)
-    | `End -> acc
-    | `Malformed _ -> count_width (acc + 1)
-    | `Await -> acc
-  in
-  count_width 0
-
-let truncate_string_with_ellipsis str max_width suffix =
-  let suffix_len = String.length suffix in
-  if measure_string str <= max_width then str
-  else if max_width <= suffix_len then String.sub str 0 max_width
-  else
-    (* UTF-8 safe truncation *)
-    let decoder = Uutf.decoder ~encoding:`UTF_8 (`String str) in
-    let buf = Buffer.create (String.length str) in
-    let rec take_chars width =
-      if width <= suffix_len then ()
-      else
-        match Uutf.decode decoder with
-        | `Uchar u ->
-            let char_str =
-              String.init (Uchar.utf_8_byte_length u) (fun i ->
-                  String.get str
-                    (Uutf.decoder_byte_count decoder
-                    - Uchar.utf_8_byte_length u + i))
-            in
-            if width - 1 >= suffix_len then (
-              Buffer.add_string buf char_str;
-              take_chars (width - 1))
-        | `End | `Malformed _ | `Await -> ()
-    in
-    take_chars (max_width - suffix_len);
-    Buffer.contents buf ^ suffix
-
-let pad_string str width =
-  let str_width = measure_string str in
-  if str_width >= width then str else str ^ String.make (width - str_width) ' '

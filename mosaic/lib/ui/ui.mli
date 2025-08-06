@@ -15,120 +15,239 @@ module Border : module type of Border
 module Theme : module type of Theme
 (** The type for theming and constants. See the [Theme] module. *)
 
-module Spacing : module type of Spacing
-(** Spacing utilities for padding and margin. *)
+(** {2 Geometric Types} *)
 
-type spacing = Spacing.t
-(** The type for defining spacing on the four sides of an element. *)
+type 'a sides = { top : 'a; right : 'a; bottom : 'a; left : 'a }
+(** Four-sided values for padding, margin, border, inset *)
 
-(** Defines how the element is positioned. *)
-type position_type =
-  | Relative  (** Positioned relative to its normal position. *)
-  | Absolute  (** Positioned absolutely within its parent. *)
+type 'a span = { start : 'a; end_ : 'a }
+(** Start/end span for grid placement *)
 
-(** Defines how the element is displayed. *)
-type display =
-  | Block  (** Element is displayed as a block. *)
-  | Flex  (** Element is displayed as a flex container. *)
-  | Grid  (** Element is displayed as a grid container. *)
-  | None  (** Element is not displayed (hidden). *)
+(** {2 Dimension Types} *)
 
-(** Defines the layout direction for text and children. *)
-type direction =
-  | Inherit  (** Inherit direction from parent *)
-  | Ltr  (** Left-to-right *)
-  | Rtl  (** Right-to-left *)
+type length_percentage = [ `Cells of int | `Pct of float ]
+(** Length in terminal cells or percentage (for padding, borders, gaps).
+    Percentage is 0.0-1.0, not 0-100. *)
 
-(** Defines the main axis direction for flex containers. *)
-type flex_direction =
-  | Row  (** Horizontal from left to right *)
-  | Column  (** Vertical from top to bottom *)
-  | Row_reverse  (** Horizontal from right to left *)
-  | Column_reverse  (** Vertical from bottom to top *)
+type length_percentage_auto = [ length_percentage | `Auto ]
+(** Length, percentage, or auto (for margins, insets). Percentage is 0.0-1.0,
+    not 0-100. *)
 
-(** Defines how content that exceeds bounds is handled. *)
-type overflow =
-  | Visible  (** Content is not clipped (Default) *)
-  | Clip  (** Content is clipped at element bounds *)
-  | Hidden  (** Content is clipped at element bounds *)
-  | Scroll  (** Content is clipped but scrollable *)
+type calc_resolver = int -> float -> float
+(** Calc resolver function: index -> context_size -> resolved_value *)
 
-(** Defines how to align items along the cross-axis of a container. *)
-type align =
-  | Start  (** Align items to the start of the container. *)
-  | End  (** Align items to the end of the container. *)
-  | Flex_start  (** Align items to the start of the container's cross axis. *)
-  | Flex_end  (** Align items to the end of the container's cross axis. *)
-  | Center  (** Align items to the center of the container's cross axis. *)
-  | Baseline  (** Align items along their baseline *)
-  | Stretch  (** Stretch items to fill the container's cross axis. *)
+type dimension = [ length_percentage_auto | `Calc of int ]
+(** Dimension type for width, height, flex-basis, etc. Calc takes an integer
+    index that gets resolved via calc_resolver. *)
 
-(** Defines how to distribute items along the main-axis of a container. *)
-type justify =
-  | Start  (** Pack items toward the start of the main axis. *)
-  | End  (** Pack items toward the end of the main axis. *)
-  | Flex_start  (** Pack items toward the start of the main axis. *)
-  | Flex_end  (** Pack items toward the end of the main axis. *)
-  | Center  (** Pack items toward the center of the main axis. *)
-  | Stretch  (** Stretch items to fill the main axis. *)
-  | Space_between  (** Distribute items evenly; first at start, last at end. *)
-  | Space_evenly  (** Distribute items evenly with equal space around them. *)
-  | Space_around
-      (** Distribute items evenly with half-size spaces on either end. *)
+(** {2 Layout Control Types} *)
 
-(** Defines whether a container should wrap its children to new lines. *)
-type wrap =
-  | No_wrap  (** Items are laid out in a single line. (Default) *)
-  | Wrap  (** Items wrap onto multiple lines if they overflow. *)
-  | Wrap_reverse  (** Items wrap onto multiple lines in reverse order. *)
+type display = [ `Block | `Flex | `Grid | `Hidden ]
+(** Display mode: Block, Flex, Grid, or Hidden (generates no boxes) *)
 
-(** Defines the size of an element's dimension (width, height, etc.). * Sizes
-    can be fixed, relative, or content-based. *)
-type size =
-  | Px of int  (** An exact size in terminal cells (pixels). *)
-  | Percent of float
-      (** A percentage of the parent's available size (0.0 to 100.0). *)
-  | Auto  (** The size is determined by the layout engine. (Default) *)
-  | Fit_content  (** The element's size is determined by its content. *)
+type position = [ `Relative | `Absolute ]
+(** Positioning: Relative to normal flow or Absolute within parent *)
+
+type overflow = [ `Visible | `Clip | `Hidden | `Scroll ]
+(** Overflow handling: Visible, Clip at bounds, Hidden, or Scrollable *)
+
+type box_sizing = [ `Border_box | `Content_box ]
+(** Box sizing: Border_box includes padding/border, Content_box excludes them *)
+
+type text_align = [ `Auto | `Legacy_left | `Legacy_right | `Legacy_center ]
+(** Text alignment for block layout *)
+
+(** {2 Flexbox Types} *)
+
+type flex_direction = [ `Row | `Column | `Row_reverse | `Column_reverse ]
+(** Flex direction: Row, Column, or their reverse variants *)
+
+type flex_wrap = [ `No_wrap | `Wrap | `Wrap_reverse ]
+(** Flex wrapping: No_wrap (single line), Wrap, or Wrap_reverse *)
+
+(** {2 Alignment Types} *)
+
+type align_items =
+  [ `Start | `End | `Flex_start | `Flex_end | `Center | `Baseline | `Stretch ]
+(** Alignment on cross axis (Flexbox) or block axis (Grid) *)
+
+type align_content =
+  [ `Start
+  | `End
+  | `Flex_start
+  | `Flex_end
+  | `Center
+  | `Stretch
+  | `Space_between
+  | `Space_evenly
+  | `Space_around ]
+(** Content alignment for wrapped lines (Flexbox) or tracks (Grid) *)
+
+type align_self = align_items
+(** Self alignment, overrides parent's align_items *)
+
+type justify_items = align_items
+(** Item justification on inline axis (Grid only, ignored in Flexbox) *)
+
+type justify_self = align_items
+(** Self justification, overrides parent's justify_items (Grid only, ignored in
+    Flexbox) *)
+
+type justify_content = align_content
+(** Content distribution on main axis (Flexbox) or inline axis (Grid) *)
+
+(** {2 Grid Types} *)
+
+type grid_auto_flow = [ `Row | `Column | `Row_dense | `Column_dense ]
+(** Grid auto-placement flow: Row, Column, or dense packing variants *)
+
+type grid_placement =
+  [ `Auto
+  | `Line of int  (** CSS line number (can be negative) *)
+  | `Span of int
+  | `Named_line of string * int
+  | `Named_span of string * int ]
+(** Grid placement specification for a single axis *)
+
+type track_sizing_function
+(** Grid track sizing function - use constructor functions below *)
+
+type grid_repetition
+(** Grid repetition pattern - use constructor functions below *)
+
+type repetition_count = [ `Count of int | `Auto_fill | `Auto_fit ]
+
+type grid_template_component =
+  | Single of track_sizing_function
+  | Repeat of grid_repetition
+
+type grid_template_area
+(** Named grid area - use constructor functions below *)
+
+(** {2 Dimension Constructors} *)
+
+val cells : int -> [ `Cells of int ]
+(** Create a length in terminal cells (e.g., cells 10) *)
+
+val pct : float -> [ `Pct of float ]
+(** Create a percentage (0.0 to 1.0, not 0-100) *)
+
+val auto : [ `Auto ]
+(** Auto value for dimensions *)
+
+val calc : int -> [ `Calc of int ]
+(** Create a calc dimension with given index *)
+
+(** {2 Sides Constructors} *)
+
+val all : int -> [> `Cells of int ] sides
+(** Create sides with all edges set to the same value in cells *)
+
+val xy : int -> int -> [> `Cells of int ] sides
+(** Create sides with horizontal (left/right) and vertical (top/bottom) values
+    in cells *)
+
+val sides :
+  ?top:int ->
+  ?bottom:int ->
+  ?left:int ->
+  ?right:int ->
+  unit ->
+  [> `Cells of int ] sides
+(** Create sides with optional overrides, all in cells *)
+
+(** {2 Grid Track Constructors} *)
+
+val fr : float -> track_sizing_function
+(** Create a fractional unit track (e.g., 1fr, 2.5fr) *)
+
+val minmax : length_percentage -> length_percentage -> track_sizing_function
+(** Create a minmax track sizing function *)
+
+val fit_content_track : length_percentage -> track_sizing_function
+(** Create a fit-content track sizing function *)
+
+val min_content : track_sizing_function
+(** Min-content track sizing *)
+
+val max_content : track_sizing_function
+(** Max-content track sizing *)
+
+val track_cells : int -> track_sizing_function
+(** Fixed cell size track *)
+
+val track_pct : float -> track_sizing_function
+(** Percentage size track *)
+
+val track_auto : track_sizing_function
+(** Auto-sized track *)
+
+val repeat :
+  ?line_names:string list list ->
+  repetition_count ->
+  track_sizing_function list ->
+  grid_repetition
+(** Create a repeat pattern for grid tracks with optional line names *)
+
+val grid_area :
+  name:string ->
+  row_start:int ->
+  row_end:int ->
+  column_start:int ->
+  column_end:int ->
+  grid_template_area
+(** Create a named grid area *)
 
 (** {1 Layout Primitives} *)
 
 val box :
-  ?position_type:position_type ->
   ?display:display ->
-  ?direction:direction ->
+  ?position:position ->
+  ?box_sizing:box_sizing ->
+  ?text_align:text_align ->
+  ?flex_direction:flex_direction ->
+  ?flex_wrap:flex_wrap ->
   ?flex_grow:float ->
   ?flex_shrink:float ->
-  ?align_self:align ->
-  ?width:size ->
-  ?height:size ->
-  ?min_width:size ->
-  ?min_height:size ->
-  ?max_width:size ->
-  ?max_height:size ->
-  ?padding:spacing ->
-  ?margin:spacing ->
+  ?flex_basis:[< dimension ] ->
+  ?align_items:align_items ->
+  ?align_self:align_self ->
+  ?align_content:align_content ->
+  ?justify_content:justify_content ->
+  ?justify_items:justify_items ->
+  ?justify_self:justify_self ->
+  ?overflow_x:overflow ->
+  ?overflow_y:overflow ->
+  ?aspect_ratio:float ->
+  ?scrollbar_width:float ->
+  ?inset:length_percentage_auto sides ->
+  ?width:[< dimension ] ->
+  ?height:[< dimension ] ->
+  ?min_width:[< dimension ] ->
+  ?min_height:[< dimension ] ->
+  ?max_width:[< dimension ] ->
+  ?max_height:[< dimension ] ->
+  ?padding:length_percentage sides ->
+  ?margin:length_percentage_auto sides ->
+  ?border_width:length_percentage sides ->
+  ?gap:[< length_percentage ] ->
+  ?row_gap:[< length_percentage ] ->
+  ?col_gap:[< length_percentage ] ->
   ?style:Style.t ->
   ?border:Border.t ->
   ?border_style:Style.t ->
-  ?flex_direction:flex_direction ->
-  ?align_items:align ->
-  ?justify_content:justify ->
-  ?flex_wrap:wrap ->
-  ?gap:int ->
-  ?row_gap:int ->
-  ?col_gap:int ->
-  ?overflow:overflow ->
   element list ->
   element
-(** A foundational container element with extensive layout customization. It
-    arranges a list of children according to the provided flexbox properties.
+(** A foundational container element with comprehensive layout control.
 
     @param children The list of elements to be placed inside this box.
-    @param direction
-      Sets the layout direction (Ltr or Rtl) for this container and its
-      children.
-    @param display Hides or shows the element and its children.
+
+    --- Layout Mode ---
+    @param display The layout mode: Block, Flex, Grid, or None.
+    @param box_generation_mode Whether to generate boxes (Normal) or not (None).
+    @param box_sizing
+      Border_box includes padding/border in size, Content_box doesn't.
+    @param text_align Text alignment for block layout.
 
     --- Sizing ---
     @param width The width of the box.
@@ -137,120 +256,180 @@ val box :
     @param min_height The minimum height.
     @param max_width The maximum width.
     @param max_height The maximum height.
+    @param aspect_ratio Aspect ratio constraint (width/height).
 
     --- Flex Container Properties (affect children) ---
     @param flex_direction
-      The main axis for arranging children ([Row] or [Column]). Defaults to
-      [Column].
-    @param justify_content How to distribute children along the main axis.
-    @param align_items How to align children along the cross axis.
-    @param flex_wrap
-      Whether children should wrap to the next line if they overflow.
-    @param gap The space between each child, both horizontally and vertically.
-    @param row_gap The vertical space between children in a wrapping layout.
-    @param col_gap The horizontal space between children.
+      The main axis: Row, Column, Row_reverse, Column_reverse.
+    @param flex_wrap Whether items wrap: No_wrap, Wrap, Wrap_reverse.
+    @param align_items How to align children on cross axis.
+    @param align_content How wrapped lines are aligned.
+    @param justify_content How to distribute children along main axis.
+    @param justify_items Default justify-self for children (Grid).
+    @param gap Space between children (both axes).
+    @param row_gap Vertical space between children.
+    @param col_gap Horizontal space between children.
 
     --- Flex Item Properties (affect this box within its parent) ---
-    @param flex_grow The factor by which this box should grow to fill space.
-    @param flex_shrink
-      The factor by which this box should shrink if there isn't enough space.
-    @param align_self
-      Overrides the parent's [align_items] for this specific box.
+    @param flex_grow Growth factor to fill available space.
+    @param flex_shrink Shrink factor when space is insufficient.
+    @param flex_basis Initial main size before grow/shrink.
+    @param align_self Override parent's align_items.
+    @param justify_self Override parent's justify_items (Grid).
 
     --- Spacing ---
-    @param padding
-      The space between the box's border and its content (all sides).
-    @param padding_x Horizontal padding (left and right).
-    @param padding_y Vertical padding (top and bottom).
-    @param margin The space outside the box's border (all sides).
+    @param padding Space between border and content.
+    @param margin Space outside the border.
+    @param border_width Width of the border for layout calculation.
 
     --- Positioning ---
-    @param position_type
-      Whether the element is positioned statically, relative to its normal flow,
-      or absolutely.
-    @param overflow What to do when content exceeds the box's bounds. *)
+    @param position Relative or Absolute positioning.
+    @param inset Offsets for positioned elements (top/right/bottom/left).
+
+    --- Overflow ---
+    @param overflow_x Horizontal overflow behavior.
+    @param overflow_y Vertical overflow behavior.
+    @param scrollbar_width Width reserved for scrollbars.
+
+    --- Visual ---
+    @param style Text/color styling.
+    @param border Visual border decoration.
+    @param border_style Style for the visual border. *)
 
 val vbox :
-  ?width:size ->
-  ?height:size ->
-  ?min_width:size ->
-  ?min_height:size ->
-  ?max_width:size ->
-  ?max_height:size ->
-  ?padding:spacing ->
-  ?margin:spacing ->
+  ?width:[< dimension ] ->
+  ?height:[< dimension ] ->
+  ?min_width:[< dimension ] ->
+  ?min_height:[< dimension ] ->
+  ?max_width:[< dimension ] ->
+  ?max_height:[< dimension ] ->
+  ?padding:length_percentage sides ->
+  ?margin:length_percentage_auto sides ->
+  ?border_width:length_percentage sides ->
   ?flex_grow:float ->
   ?flex_shrink:float ->
-  ?align_self:align ->
+  ?flex_basis:[< dimension ] ->
+  ?align_self:align_self ->
+  ?align_items:align_items ->
+  ?justify_content:justify_content ->
+  ?gap:[< length_percentage ] ->
+  ?overflow_x:overflow ->
+  ?overflow_y:overflow ->
   ?style:Style.t ->
   ?border:Border.t ->
   ?border_style:Style.t ->
-  ?overflow:overflow ->
-  ?align_items:align ->
-  ?justify_content:justify ->
-  ?gap:int ->
   element list ->
   element
-(** Arranges elements vertically. Inherits all standard box-model parameters.
+(** Arranges elements vertically in a flex column.
 
-    @param align_items How to align children horizontally (on the cross-axis).
-    @param justify_content
-      How to distribute children vertically (on the main-axis).
-    @param gap The vertical space in cells between each child element. *)
+    This is a convenience function that creates a flex container with
+    flex_direction set to Column.
+
+    @param width The width of the container.
+    @param height The height of the container.
+    @param min_width The minimum width.
+    @param min_height The minimum height.
+    @param max_width The maximum width.
+    @param max_height The maximum height.
+    @param padding Space between border and content.
+    @param margin Space outside the border.
+    @param border_width Width of the border for layout.
+    @param flex_grow Growth factor for this container.
+    @param flex_shrink Shrink factor for this container.
+    @param flex_basis Initial size before grow/shrink.
+    @param align_self Override parent's align_items.
+    @param align_items How to align children horizontally (cross-axis).
+    @param justify_content How to distribute children vertically (main-axis).
+    @param gap The space between each child element.
+    @param overflow_x Horizontal overflow behavior.
+    @param overflow_y Vertical overflow behavior.
+    @param style Text/color styling.
+    @param border Visual border decoration.
+    @param border_style Style for the visual border. *)
 
 val hbox :
-  ?width:size ->
-  ?height:size ->
-  ?min_width:size ->
-  ?min_height:size ->
-  ?max_width:size ->
-  ?max_height:size ->
-  ?padding:spacing ->
-  ?margin:spacing ->
+  ?width:[< dimension ] ->
+  ?height:[< dimension ] ->
+  ?min_width:[< dimension ] ->
+  ?min_height:[< dimension ] ->
+  ?max_width:[< dimension ] ->
+  ?max_height:[< dimension ] ->
+  ?padding:length_percentage sides ->
+  ?margin:length_percentage_auto sides ->
+  ?border_width:length_percentage sides ->
   ?flex_grow:float ->
   ?flex_shrink:float ->
-  ?align_self:align ->
+  ?flex_basis:[< dimension ] ->
+  ?align_self:align_self ->
+  ?align_items:align_items ->
+  ?justify_content:justify_content ->
+  ?gap:[< length_percentage ] ->
+  ?overflow_x:overflow ->
+  ?overflow_y:overflow ->
   ?style:Style.t ->
   ?border:Border.t ->
   ?border_style:Style.t ->
-  ?overflow:overflow ->
-  ?align_items:align ->
-  ?justify_content:justify ->
-  ?gap:int ->
   element list ->
   element
-(** Arranges elements horizontally. Inherits all standard box-model parameters.
+(** Arranges elements horizontally in a flex row.
 
-    @param align_items How to align children vertically (on the cross-axis).
-    @param justify_content
-      How to distribute children horizontally (on the main-axis).
-    @param gap The horizontal space in cells between each child element. *)
+    This is a convenience function that creates a flex container with
+    flex_direction set to Row.
+
+    @param width The width of the container.
+    @param height The height of the container.
+    @param min_width The minimum width.
+    @param min_height The minimum height.
+    @param max_width The maximum width.
+    @param max_height The maximum height.
+    @param padding Space between border and content.
+    @param margin Space outside the border.
+    @param border_width Width of the border for layout.
+    @param flex_grow Growth factor for this container.
+    @param flex_shrink Shrink factor for this container.
+    @param flex_basis Initial size before grow/shrink.
+    @param align_self Override parent's align_items.
+    @param align_items How to align children vertically (cross-axis).
+    @param justify_content How to distribute children horizontally (main-axis).
+    @param gap The space between each child element.
+    @param overflow_x Horizontal overflow behavior.
+    @param overflow_y Vertical overflow behavior.
+    @param style Text/color styling.
+    @param border Visual border decoration.
+    @param border_style Style for the visual border. *)
 
 val zbox :
-  ?width:size ->
-  ?height:size ->
-  ?min_width:size ->
-  ?min_height:size ->
-  ?max_width:size ->
-  ?max_height:size ->
-  ?padding:spacing ->
-  ?margin:spacing ->
+  ?width:[< dimension ] ->
+  ?height:[< dimension ] ->
+  ?min_width:[< dimension ] ->
+  ?min_height:[< dimension ] ->
+  ?max_width:[< dimension ] ->
+  ?max_height:[< dimension ] ->
+  ?padding:length_percentage sides ->
+  ?margin:length_percentage_auto sides ->
+  ?border_width:length_percentage sides ->
   ?flex_grow:float ->
   ?flex_shrink:float ->
-  ?align_self:align ->
+  ?align_self:align_self ->
+  ?overflow_x:overflow ->
+  ?overflow_y:overflow ->
   ?style:Style.t ->
   ?border:Border.t ->
   ?border_style:Style.t ->
-  ?overflow:overflow ->
   element list ->
   element
-(** Lays out elements on top of each other, from back to front. * Each child is
-    stretched to fill the container by default. This function * inherits all
-    standard box-model parameters but does not have child layout * parameters
-    like [gap] or [align_items]. *)
+(** Lays out elements on top of each other, from back to front.
+
+    Each child is stretched to fill the container by default. This function
+    inherits all standard box-model parameters but does not have child layout
+    parameters like [gap] or [align_items] as children overlap. *)
 
 val spacer :
-  ?flex_grow:float -> ?min_width:size -> ?min_height:size -> unit -> element
+  ?flex_grow:float ->
+  ?min_width:[< dimension ] ->
+  ?min_height:[< dimension ] ->
+  unit ->
+  element
 (** Creates an invisible, flexible element that expands to fill available space.
     * Its primary customization is [flex_grow], but a minimum size can also be
     set. * It does not accept general styling, as it is intended to be
@@ -261,7 +440,7 @@ val divider :
   ?title:string ->
   ?char:string ->
   ?style:Style.t ->
-  ?padding:spacing ->
+  ?padding:length_percentage sides ->
   unit ->
   element
 (** Renders a horizontal or vertical line to visually separate content.
@@ -289,17 +468,17 @@ val text :
     @param content The string to display. *)
 
 val scroll_view :
-  ?width:size ->
-  ?height:size ->
-  ?min_width:size ->
-  ?min_height:size ->
-  ?max_width:size ->
-  ?max_height:size ->
-  ?padding:spacing ->
-  ?margin:spacing ->
+  ?width:[< dimension ] ->
+  ?height:[< dimension ] ->
+  ?min_width:[< dimension ] ->
+  ?min_height:[< dimension ] ->
+  ?max_width:[< dimension ] ->
+  ?max_height:[< dimension ] ->
+  ?padding:length_percentage sides ->
+  ?margin:length_percentage_auto sides ->
   ?flex_grow:float ->
   ?flex_shrink:float ->
-  ?align_self:align ->
+  ?align_self:align_self ->
   ?style:Style.t ->
   ?border:Border.t ->
   ?border_style:Style.t ->
@@ -311,18 +490,14 @@ val scroll_view :
 (** A container that provides a scrollable viewport for a single, larger child
     element.
 
-    The application is responsible for storing the scroll offsets in its model
-    and updating them via the [on_scroll] message. This keeps the UI fully
-    state-driven.
+    The application is responsible for storing the scroll offsets in its model.
+    This keeps the UI fully state-driven.
 
     @param show_scrollbars
       If true (the default), visual scrollbars will be drawn inside the
       container's border/padding area.
     @param h_offset The current horizontal scroll position (column offset).
     @param v_offset The current vertical scroll position (row offset).
-    @param on_scroll
-      A function to create a message when the user scrolls (e.g., with arrow
-      keys or a mouse wheel). The runtime provides the new offsets.
     @param child The single element to be displayed within the scroll view. *)
 
 val center : element -> element
@@ -332,7 +507,11 @@ val styled : Style.t -> element -> element
 (** Apply a style to an existing UI element. The style will be applied to a
     wrapper box around the element. *)
 
-val flow : ?h_gap:int -> ?v_gap:int -> element list -> element
+val flow :
+  ?h_gap:[< length_percentage ] ->
+  ?v_gap:[< length_percentage ] ->
+  element list ->
+  element
 (** [flow ?h_gap ?v_gap children] creates a flow layout that wraps children
     horizontally to new lines when they don't fit in the available width.
     Similar to how inline elements work in HTML.
@@ -340,14 +519,14 @@ val flow : ?h_gap:int -> ?v_gap:int -> element list -> element
     @param v_gap Vertical spacing between lines (default: 0) *)
 
 val block :
-  ?width:size ->
-  ?height:size ->
-  ?min_width:size ->
-  ?min_height:size ->
-  ?max_width:size ->
-  ?max_height:size ->
-  ?padding:spacing ->
-  ?margin:spacing ->
+  ?width:[< dimension ] ->
+  ?height:[< dimension ] ->
+  ?min_width:[< dimension ] ->
+  ?min_height:[< dimension ] ->
+  ?max_width:[< dimension ] ->
+  ?max_height:[< dimension ] ->
+  ?padding:length_percentage sides ->
+  ?margin:length_percentage_auto sides ->
   ?style:Style.t ->
   ?border:Border.t ->
   ?border_style:Style.t ->
@@ -358,21 +537,40 @@ val block :
     traditional block-level element behavior. *)
 
 val grid :
-  columns:size list ->
-  rows:size list ->
-  ?col_gap:int ->
-  ?row_gap:int ->
+  ?template_columns:grid_template_component list ->
+  ?template_rows:grid_template_component list ->
+  ?auto_columns:track_sizing_function list ->
+  ?auto_rows:track_sizing_function list ->
+  ?auto_flow:grid_auto_flow ->
+  ?template_areas:grid_template_area list ->
+  ?column_names:string list list ->
+  ?row_names:string list list ->
+  ?col_gap:[< length_percentage ] ->
+  ?row_gap:[< length_percentage ] ->
   element list ->
   element
-(** [grid ~columns ~rows children] creates a CSS Grid layout with specified
-    column and row track sizes. Children are placed automatically in grid cells
-    from left-to-right, top-to-bottom.
+(** Creates a CSS Grid layout with full control over track sizing and placement.
 
-    @param columns
-      List of column track sizes (e.g., [Px 100; Percent 50.; Auto])
-    @param rows List of row track sizes
-    @param col_gap Spacing between columns (default: 0)
-    @param row_gap Spacing between rows (default: 0) *)
+    @param template_columns Column track definitions (use Single or Repeat).
+    @param template_rows Row track definitions.
+    @param auto_columns Sizing for implicit columns.
+    @param auto_rows Sizing for implicit rows.
+    @param auto_flow
+      How auto-placed items flow (Row, Column, with Dense option).
+    @param template_areas Named grid areas for semantic placement.
+    @param column_names Names for column lines.
+    @param row_names Names for row lines.
+    @param col_gap Spacing between columns.
+    @param row_gap Spacing between rows.
+    @param children Elements to place in the grid. *)
+
+val grid_item :
+  ?row:grid_placement span -> ?column:grid_placement span -> element -> element
+(** Wraps an element with grid placement information.
+
+    @param row Row placement (start and end lines).
+    @param column Column placement (start and end lines).
+    @param child The element to place in the grid. *)
 
 val checkbox : checked:bool -> label:string -> ?style:Style.t -> unit -> element
 (** [checkbox ~checked ~label ?style ()] creates a checkbox UI element.
@@ -389,10 +587,7 @@ val radio : checked:bool -> label:string -> ?style:Style.t -> unit -> element
     @param style Optional style to apply to the radio button *)
 
 val image :
-  lines:string list ->
-  ?align:[< `Left | `Center | `Right > `Left ] ->
-  unit ->
-  element
+  lines:string list -> ?align:[ `Left | `Center | `Right ] -> unit -> element
 (** [image ~lines ?align ()] creates an image element from ASCII art lines.
 
     @param lines List of strings representing each line of the ASCII art
@@ -426,9 +621,9 @@ val pad_string : string -> int -> string
 *)
 
 val measure : ?width:int -> element -> int * int
-(** [measure ?width element] computes the natural dimensions of an element.
+(** [measure ?width element] computes the natural [< dimension]s of an element.
     @param width Optional width constraint for the layout calculation
-    @return A pair (width, height) representing the element's dimensions *)
+    @return A pair (width, height) representing the element's [< dimension]s *)
 
 (** {1 Extended UI Components} *)
 
@@ -461,17 +656,17 @@ module Canvas : sig
     unit
 
   val create :
-    ?width:size ->
-    ?height:size ->
-    ?min_width:size ->
-    ?min_height:size ->
-    ?max_width:size ->
-    ?max_height:size ->
-    ?padding:spacing ->
-    ?margin:spacing ->
+    ?width:[< dimension ] ->
+    ?height:[< dimension ] ->
+    ?min_width:[< dimension ] ->
+    ?min_height:[< dimension ] ->
+    ?max_width:[< dimension ] ->
+    ?max_height:[< dimension ] ->
+    ?padding:length_percentage sides ->
+    ?margin:length_percentage_auto sides ->
     ?flex_grow:float ->
     ?flex_shrink:float ->
-    ?align_self:align ->
+    ?align_self:align_self ->
     ?style:Style.t ->
     ?border:Border.t ->
     ?border_style:Style.t ->
@@ -480,17 +675,17 @@ module Canvas : sig
 end
 
 val canvas :
-  ?width:size ->
-  ?height:size ->
-  ?min_width:size ->
-  ?min_height:size ->
-  ?max_width:size ->
-  ?max_height:size ->
-  ?padding:spacing ->
-  ?margin:spacing ->
+  ?width:[< dimension ] ->
+  ?height:[< dimension ] ->
+  ?min_width:[< dimension ] ->
+  ?min_height:[< dimension ] ->
+  ?max_width:[< dimension ] ->
+  ?max_height:[< dimension ] ->
+  ?padding:length_percentage sides ->
+  ?margin:length_percentage_auto sides ->
   ?flex_grow:float ->
   ?flex_shrink:float ->
-  ?align_self:align ->
+  ?align_self:align_self ->
   ?style:Style.t ->
   ?border:Border.t ->
   ?border_style:Style.t ->
@@ -503,8 +698,8 @@ val canvas :
     charts, sparklines, or game boards.
 
     While its size can be determined by flexbox (e.g., using [flex_grow]), it's
-    often best to provide an explicit size like [width:(Px 40)] for predictable
-    results.
+    often best to provide an explicit size like [width:(`Cells 40)] for
+    predictable results.
 
     @param draw
       A function that receives the final, calculated [width] and [height] of the
@@ -613,7 +808,7 @@ module Panel : sig
     ?border_style:Style.t ->
     ?width:int ->
     ?height:int ->
-    ?padding:Spacing.t ->
+    ?padding:length_percentage sides ->
     ?highlight:bool ->
     element ->
     element
@@ -924,7 +1119,7 @@ val panel :
   ?border_style:Style.t ->
   ?width:int ->
   ?height:int ->
-  ?padding:spacing ->
+  ?padding:length_percentage sides ->
   ?highlight:bool ->
   element ->
   element
@@ -995,16 +1190,29 @@ val tree :
 
 (** {1 Rendering} *)
 
-val render : ?dark:bool -> ?theme:Theme.t -> Screen.t -> element -> unit
+val render :
+  ?dark:bool ->
+  ?theme:Theme.t ->
+  ?calc:calc_resolver ->
+  Screen.t ->
+  element ->
+  unit
 (** Renders a UI tree to an in-memory [Screen.t] buffer.
 
     @param dark Toggles between light and dark mode for adaptive styles.
     @param theme An optional theme to apply to the UI.
+    @param calc Optional calc resolver for calc() expressions.
     @param screen The target screen buffer to render to.
     @param ui The root UI element to render. *)
 
 val render_string :
-  ?width:int -> ?height:int -> ?dark:bool -> ?theme:Theme.t -> element -> string
+  ?width:int ->
+  ?height:int ->
+  ?dark:bool ->
+  ?theme:Theme.t ->
+  ?calc:calc_resolver ->
+  element ->
+  string
 (** Renders a UI element to a string, suitable for terminal output.
 
     @param width The width of the virtual screen to create.
@@ -1013,14 +1221,24 @@ val render_string :
       based on the content's measured height.
     @param dark Toggles between light and dark mode for adaptive styles.
     @param theme An optional theme to apply to the UI.
+    @param calc Optional calc resolver for calc() expressions.
     @param element The UI element to render. *)
 
 val print :
-  ?width:int -> ?height:int -> ?dark:bool -> ?theme:Theme.t -> element -> unit
+  ?width:int ->
+  ?height:int ->
+  ?dark:bool ->
+  ?theme:Theme.t ->
+  ?calc:calc_resolver ->
+  element ->
+  unit
 (** A convenience function that creates a screen, renders the UI, and prints the
     result to standard output.
 
     @param width The width of the virtual screen to create.
     @param height
       The height of the virtual screen. If not provided, it will be auto-sized
-      based on the content's measured height. *)
+      based on the content's measured height.
+    @param dark Toggles between light and dark mode for adaptive styles.
+    @param theme An optional theme to apply to the UI.
+    @param calc Optional calc resolver for calc() expressions. *)

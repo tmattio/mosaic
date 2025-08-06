@@ -29,7 +29,7 @@ let view model =
       Printf.sprintf "Hi. This program will exit in %d seconds." model
     else "Bye!"
   in
-  vbox ~gap:1
+  vbox ~gap:(`Cells 1)
     [
       text ~style:Style.(fg (Index 5)) message;
       text "";

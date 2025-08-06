@@ -81,11 +81,11 @@ let%expect_test "Default dots spinner" =
   let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
-    {|+--------------------+
+    {|┌--------------------┐
 |⠋                   |
 | Frame: 0           |
 |                    |
-+--------------------+
+└--------------------┘
 |}]
 
 let%expect_test "Line spinner style" =
@@ -94,11 +94,11 @@ let%expect_test "Line spinner style" =
   let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
-    {|+--------------------+
+    {|┌--------------------┐
 |-                   |
 | Frame: 0           |
 |                    |
-+--------------------+
+└--------------------┘
 |}]
 
 let%expect_test "Arrow spinner with color" =
@@ -110,11 +110,11 @@ let%expect_test "Arrow spinner with color" =
   let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
-    {|+--------------------+
+    {|┌--------------------┐
 |←                   |
 | Frame: 0           |
 |                    |
-+--------------------+
+└--------------------┘
 |}]
 
 let%expect_test "Box bounce spinner" =
@@ -123,11 +123,11 @@ let%expect_test "Box bounce spinner" =
   let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
-    {|+--------------------+
+    {|┌--------------------┐
 |▖                   |
 | Frame: 0           |
 |                    |
-+--------------------+
+└--------------------┘
 |}]
 
 let%expect_test "Circle spinner" =
@@ -136,11 +136,11 @@ let%expect_test "Circle spinner" =
   let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
-    {|+--------------------+
+    {|┌--------------------┐
 |◐                   |
 | Frame: 0           |
 |                    |
-+--------------------+
+└--------------------┘
 |}]
 
 let%expect_test "Bar spinner" =
@@ -149,11 +149,11 @@ let%expect_test "Bar spinner" =
   let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
-    {|+--------------------+
+    {|┌--------------------┐
 |▏                   |
 | Frame: 0           |
 |                    |
-+--------------------+
+└--------------------┘
 |}]
 
 let%expect_test "Pulse spinner" =
@@ -162,11 +162,11 @@ let%expect_test "Pulse spinner" =
   let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
-    {|+--------------------+
+    {|┌--------------------┐
 |▁                   |
 | Frame: 0           |
 |                    |
-+--------------------+
+└--------------------┘
 |}]
 
 let%expect_test "Bounce spinner" =
@@ -175,11 +175,11 @@ let%expect_test "Bounce spinner" =
   let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
-    {|+--------------------+
+    {|┌--------------------┐
 |⠁                   |
 | Frame: 0           |
 |                    |
-+--------------------+
+└--------------------┘
 |}]
 
 let%expect_test "Custom spinner from string" =
@@ -189,11 +189,11 @@ let%expect_test "Custom spinner from string" =
   let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
-    {|+--------------------+
+    {|┌--------------------┐
 ||                   |
 | Frame: 0           |
 |                    |
-+--------------------+
+└--------------------┘
 |}]
 
 let%expect_test "Custom spinner with frames" =
@@ -203,11 +203,11 @@ let%expect_test "Custom spinner with frames" =
   let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
-    {|+--------------------+
+    {|┌--------------------┐
 |◐                   |
 | Frame: 0           |
 |                    |
-+--------------------+
+└--------------------┘
 |}]
 
 let%expect_test "Stopped spinner" =
@@ -257,9 +257,9 @@ let%expect_test "Stopped spinner" =
   let output = Test_harness.view ~width:20 ~height:3 harness in
   print_test_output output;
   [%expect_exact
-    {|+--------------------+
+    {|┌--------------------┐
 |Stopped             |
 |⠋                   |
 |                    |
-+--------------------+
+└--------------------┘
 |}]

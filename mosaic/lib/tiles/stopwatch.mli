@@ -37,10 +37,10 @@
 
       (* In your view *)
       let open Ui in
-      vbox ~gap:1 [
+      vbox ~gap:(`Cells 1) [
         text "Elapsed time:";
         Stopwatch.view model.stopwatch;
-        hbox ~gap:2 [
+        hbox ~gap:(`Cells 2) [
           text "Controls: ";
           text "[Space] Start/Stop";
           text "[S] Split";

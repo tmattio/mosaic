@@ -14,7 +14,7 @@ let%expect_test "simple table with headers" =
       ]
       ());
   [%expect_exact {|
-+------------------------------+
+┌------------------------------┐
 | Name   Age  City             |
 | Alice  30   NYC              |
 | Bob    25   SF               |
@@ -23,7 +23,7 @@ let%expect_test "simple table with headers" =
 |                              |
 |                              |
 |                              |
-+------------------------------+
+└------------------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with ascii box style" =
@@ -37,13 +37,13 @@ let%expect_test "table with ascii box style" =
       ~box_style:Ui.Table.Ascii
       ());
   [%expect_exact {|
-+--------------------+
-|+---+---+           |
+┌--------------------┐
+|+---┐---┐           |
 || A │ B |           |
-|+---+---+           |
+|+---┐---┐           |
 || 1 │ 2 |           |
-|+---+---+           |
-+--------------------+
+|+---┐---┐           |
+└--------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with double box style" =
@@ -57,13 +57,13 @@ let%expect_test "table with double box style" =
       ~box_style:Ui.Table.Double
       ());
   [%expect_exact {|
-+--------------------+
+┌--------------------┐
 |╔═══╦═══╗           |
 |║ A │ B ║           |
 |╠═══╬═══╣           |
 |║ 1 │ 2 ║           |
 |╚═══╩═══╝           |
-+--------------------+
+└--------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with minimal box style" =
@@ -77,13 +77,13 @@ let%expect_test "table with minimal box style" =
       ~box_style:Ui.Table.Minimal
       ());
   [%expect_exact {|
-+--------------------+
+┌--------------------┐
 |                    |
 |  A │ B             |
 |                    |
 |  1 │ 2             |
 |                    |
-+--------------------+
+└--------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with custom column alignment" =
@@ -103,7 +103,7 @@ let%expect_test "table with custom column alignment" =
       ]
       ());
   [%expect_exact {|
-+----------------------------------------+
+┌----------------------------------------┐
 |┏━━━━━━┳━━━━━━━━┳━━━━━━━┓               |
 |│ Left │ Center │ Right │               |
 |├──────┼────────┼───────┤               |
@@ -112,7 +112,7 @@ let%expect_test "table with custom column alignment" =
 |└──────┴────────┴───────┘               |
 |                                        |
 |                                        |
-+----------------------------------------+
+└----------------------------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with title and caption" =
@@ -132,7 +132,7 @@ let%expect_test "table with title and caption" =
       ~caption_style:Ui.Style.(fg (Index 8))
       ());
   [%expect_exact {|
-+------------------------------+
+┌------------------------------┐
 |  Sales Report                |
 |┏━━━━━━━┳━━━━━━━┓             |
 |│ Month │ Total │             |
@@ -143,7 +143,7 @@ let%expect_test "table with title and caption" =
 |     Q4 2023                  |
 |                              |
 |                              |
-+------------------------------+
+└------------------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with padding" =
@@ -157,7 +157,7 @@ let%expect_test "table with padding" =
       ~padding:(2, 3, 2, 3)
       ());
   [%expect_exact {|
-+------------------------------+
+┌------------------------------┐
 |┏━━━━━━━┳━━━━━━━┓             |
 |│       │       │             |
 |│       │       │             |
@@ -166,7 +166,7 @@ let%expect_test "table with padding" =
 |│       │       │             |
 |├───────┼───────┤             |
 |│       │       │             |
-+------------------------------+
+└------------------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with footer" =
@@ -186,7 +186,7 @@ let%expect_test "table with footer" =
       ~footer_style:Ui.Style.(bold)
       ());
   [%expect_exact {|
-+-----------------------------------+
+┌-----------------------------------┐
 |┏━━━━━━━━━┳━━━━━━━┓                |
 |│ Item    │ Count │                |
 |├─────────┼───────┤                |
@@ -197,7 +197,7 @@ let%expect_test "table with footer" =
 |└─────────┴───────┘                |
 |                                   |
 |                                   |
-+-----------------------------------+
+└-----------------------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with lines between rows" =
@@ -215,7 +215,7 @@ let%expect_test "table with lines between rows" =
       ~show_lines:true
       ());
   [%expect_exact {|
-+-------------------------+
+┌-------------------------┐
 |┏━━━┳━━━┓                |
 |│ A │ B │                |
 |├───┼───┤                |
@@ -226,7 +226,7 @@ let%expect_test "table with lines between rows" =
 |│ 5 │ 6 │                |
 |└───┴───┘                |
 |                         |
-+-------------------------+
+└-------------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with alternating row styles" =
@@ -247,7 +247,7 @@ let%expect_test "table with alternating row styles" =
       ]
       ());
   [%expect_exact {|
-+-------------------------+
+┌-------------------------┐
 |┏━━━━━━━┳━━━━━┓          |
 |│ Name  │ ID  │          |
 |├───────┼─────┤          |
@@ -256,7 +256,7 @@ let%expect_test "table with alternating row styles" =
 |│ Carol │ 003 │          |
 |└───────┴─────┘          |
 |                         |
-+-------------------------+
+└-------------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with text overflow" =
@@ -276,7 +276,7 @@ let%expect_test "table with text overflow" =
       ]
       ());
   [%expect_exact {|
-+------------------------------+
+┌------------------------------┐
 |┏━━━━━━━━┳━━━━━━┳━━━━━━┓      |
 |│ Ell... │ Crop │ Fold │      |
 |├────────┼──────┼──────┤      |
@@ -287,7 +287,7 @@ let%expect_test "table with text overflow" =
 |                              |
 |                              |
 |                              |
-+------------------------------+
+└------------------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with leading (row spacing)" =
@@ -304,7 +304,7 @@ let%expect_test "table with leading (row spacing)" =
       ~leading:1
       ());
   [%expect_exact {|
-+--------------------+
+┌--------------------┐
 |┏━━━┳━━━┓           |
 |│ A │ B │           |
 |├───┼───┤           |
@@ -317,7 +317,7 @@ let%expect_test "table with leading (row spacing)" =
 |                    |
 |                    |
 |                    |
-+--------------------+
+└--------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with min_width constraint" =
@@ -331,14 +331,14 @@ let%expect_test "table with min_width constraint" =
       ~min_width:(Some 30)
       ());
   [%expect_exact {|
-+--------------------------------------------------+
+┌--------------------------------------------------┐
 |          ┏━━━┳━━━┓                               |
 |          │ A │ B │                               |
 |          ├───┼───┤                               |
 |          │ 1 │ 2 │                               |
 |          └───┴───┘                               |
 |                                                  |
-+--------------------------------------------------+
+└--------------------------------------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with vertical alignment" =
@@ -357,7 +357,7 @@ let%expect_test "table with vertical alignment" =
       ]
       ());
   [%expect_exact {|
-+-------------------------+
+┌-------------------------┐
 |┏━━━━━┳━━━━━━━━┳━━━━━━━━┓|
 |│ Top │ Middle │ Bottom │|
 |├─────┼────────┼────────┤|
@@ -366,7 +366,7 @@ let%expect_test "table with vertical alignment" =
 |                         |
 |                         |
 |                         |
-+-------------------------+
+└-------------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "grid table (no borders)" =
@@ -381,14 +381,14 @@ let%expect_test "grid table (no borders)" =
         ["Email:"; "john@example.com"];
       ]);
   [%expect_exact {|
-+------------------------------+
+┌------------------------------┐
 |Name:  John Doe               |
 |Email: john@example.com       |
 |                              |
 |                              |
 |                              |
 |                              |
-+------------------------------+
+└------------------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with custom column widths" =
@@ -406,7 +406,7 @@ let%expect_test "table with custom column widths" =
       ]
       ());
   [%expect_exact {|
-+-----------------------------------+
+┌-----------------------------------┐
 |┏━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━|
 |│ Fixed │ Flexible                 |
 |├───────┼──────────────────────────|
@@ -415,7 +415,7 @@ let%expect_test "table with custom column widths" =
 |└───────┴──────────────────────────|
 |                                   |
 |                                   |
-+-----------------------------------+
+└-----------------------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with border style" =
@@ -429,14 +429,14 @@ let%expect_test "table with border style" =
       ~border_style:Ui.Style.(fg Blue)
       ());
   [%expect_exact {|
-+-------------------------+
+┌-------------------------┐
 |┏━━━┳━━━┓                |
 |│ A │ B │                |
 |├───┼───┤                |
 |│ 1 │ 2 │                |
 |└───┴───┘                |
 |                         |
-+-------------------------+
+└-------------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with header style" =
@@ -451,14 +451,14 @@ let%expect_test "table with header style" =
       ~rows:[["Item1"; "100"]]
       ());
   [%expect_exact {|
-+-------------------------+
+┌-------------------------┐
 |┏━━━━━━━┳━━━━━━━┓        |
 |│ Name  │ Value │        |
 |├───────┼───────┤        |
 |│ Item1 │ 100   │        |
 |└───────┴───────┘        |
 |                         |
-+-------------------------+
+└-------------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with expand" =
@@ -472,14 +472,14 @@ let%expect_test "table with expand" =
       ~expand:true
       ());
   [%expect_exact {|
-+----------------------------------------+
+┌----------------------------------------┐
 |┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━|
 |│ A                                     |
 |├───────────────────────────────────────|
 |│ 1                                     |
 |└───────────────────────────────────────|
 |                                        |
-+----------------------------------------+
+└----------------------------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with collapse_padding" =
@@ -495,14 +495,14 @@ let%expect_test "table with collapse_padding" =
       ~collapse_padding:true
       ());
   [%expect_exact {|
-+-------------------------+
+┌-------------------------┐
 |┏━━━━━┳━━━┳━━━┓          |
 |│     │   │   │          |
 |│  A  │B  │C  │          |
 |│     │   │   │          |
 |├─────┼───┼───┤          |
 |│  1  │2  │3  │          |
-+-------------------------+
+└-------------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table edge case - empty table" =
@@ -512,13 +512,13 @@ let%expect_test "table edge case - empty table" =
       ~rows:[]
       ());
   [%expect_exact {|
-+--------------------+
+┌--------------------┐
 |                    |
 |                    |
 |                    |
 |                    |
 |                    |
-+--------------------+
+└--------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table edge case - headers only" =
@@ -531,13 +531,13 @@ let%expect_test "table edge case - headers only" =
       ~rows:[]
       ());
   [%expect_exact {|
-+--------------------+
+┌--------------------┐
 |┏━━━┳━━━┓           |
 |│ A │ B │           |
 |├───┼───┤           |
 |└───┴───┘           |
 |                    |
-+--------------------+
+└--------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with heavy box style" =
@@ -551,14 +551,14 @@ let%expect_test "table with heavy box style" =
       ~box_style:Ui.Table.Heavy
       ());
   [%expect_exact {|
-+--------------------+
+┌--------------------┐
 |┏━━━┳━━━┓           |
 |┃ A │ B ┃           |
 |┣━━━╋━━━┫           |
 |┃ 1 │ 2 ┃           |
 |┗━━━┻━━━┛           |
 |                    |
-+--------------------+
+└--------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with double edge box style" =
@@ -572,14 +572,14 @@ let%expect_test "table with double edge box style" =
       ~box_style:Ui.Table.DoubleEdge
       ());
   [%expect_exact {|
-+--------------------+
+┌--------------------┐
 |╔═══╤═══╗           |
 |║ A │ B ║           |
 |│───┼───│           |
 |║ 1 │ 2 ║           |
 |╚═══╧═══╝           |
 |                    |
-+--------------------+
+└--------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with rounded box style" =
@@ -593,14 +593,14 @@ let%expect_test "table with rounded box style" =
       ~box_style:Ui.Table.Rounded
       ());
   [%expect_exact {|
-+--------------------+
+┌--------------------┐
 |╭───┬───╮           |
 |│ A │ B │           |
 |│───┼───│           |
 |│ 1 │ 2 │           |
 |╰───┴───╯           |
 |                    |
-+--------------------+
+└--------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with width constraint" =
@@ -614,14 +614,14 @@ let%expect_test "table with width constraint" =
       ~width:(Some 25)
       ());
   [%expect_exact {|
-+--------------------------------------------------+
+┌--------------------------------------------------┐
 |┏━━━━━━┳━━━━━━━┓                                  |
 |│ Name │ Value │                                  |
 |├──────┼───────┤                                  |
 |│ Item │ 100   │                                  |
 |└──────┴───────┘                                  |
 |                                                  |
-+--------------------------------------------------+
+└--------------------------------------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with column styles" =
@@ -639,14 +639,14 @@ let%expect_test "table with column styles" =
       ]
       ());
   [%expect_exact {|
-+------------------------------+
+┌------------------------------┐
 |┏━━━━━━━━━┳━━━━━━━━┓          |
 |│ Product │ Price  │          |
 |├─────────┼────────┤          |
 |│ Widget  │ $19.99 │          |
 |│ Gadget  │ $49.99 │          |
 |└─────────┴────────┘          |
-+------------------------------+
+└------------------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with complex column configuration" =
@@ -672,7 +672,7 @@ let%expect_test "table with complex column configuration" =
       ]
       ());
   [%expect_exact {|
-+----------------------------------------+
+┌----------------------------------------┐
 |┏━━━━━━━━━━┳━━━━━━━━┓                   |
 |│ Product  │ Price  │                   |
 |├──────────┼────────┤                   |
@@ -681,7 +681,7 @@ let%expect_test "table with complex column configuration" =
 |└──────────┴────────┘                   |
 |                                        |
 |                                        |
-+----------------------------------------+
+└----------------------------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with row styles wraparound" =
@@ -704,7 +704,7 @@ let%expect_test "table with row styles wraparound" =
       ]
       ());
   [%expect_exact {|
-+-------------------------+
+┌-------------------------┐
 |┏━━━━┳━━━━━━━┓           |
 |│ ID │ Name  │           |
 |├────┼───────┤           |
@@ -715,7 +715,7 @@ let%expect_test "table with row styles wraparound" =
 |│ 5  │ Eve   │           |
 |└────┴───────┘           |
 |                         |
-+-------------------------+
+└-------------------------┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "table with complex features combined" =
@@ -749,7 +749,7 @@ let%expect_test "table with complex features combined" =
       ~footer_style:Ui.Style.(fg Yellow ++ bold)
       ());
   [%expect_exact {|
-+--------------------------------------------------+
+┌--------------------------------------------------┐
 |    Complex Table                                 |
 |╔══════════╤═════════╗                            |
 |║          │         ║                            |
@@ -762,5 +762,5 @@ let%expect_test "table with complex features combined" =
 |│──────────┼─────────│                            |
 |║          │         ║                            |
 |║  Item B  │   $100  ║                            |
-+--------------------------------------------------+
+└--------------------------------------------------┘
 |}] [@@ocamlformat "disable"]

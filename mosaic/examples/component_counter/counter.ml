@@ -13,7 +13,7 @@ let update msg model =
 
 let view model =
   let open Ui in
-  hbox ~gap:2
+  hbox ~gap:(`Cells 2)
     [ text (Printf.sprintf "Count: %d" model); text "[Press +/- keys]" ]
 
 let subscriptions _model =

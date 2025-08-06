@@ -38,7 +38,7 @@
 
       (* In your view *)
       let open Ui in
-      vbox ~gap:1 [
+      vbox ~gap:(`Cells 1) [
         text "Download progress:";
         Progress.view model.progress;
         if Progress.is_complete model.progress then

@@ -1067,3 +1067,9 @@ let equal_rect r1 r2 =
 let equal_dirty_region r1 r2 =
   r1.min_row = r2.min_row && r1.max_row = r2.max_row && r1.min_col = r2.min_col
   && r1.max_col = r2.max_col
+
+let char_width ?(east_asian = false) uchar =
+  Ucwidth.char_width ~east_asian uchar
+
+let string_width ?(east_asian = false) str =
+  Ucwidth.string_width ~east_asian str

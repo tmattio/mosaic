@@ -61,7 +61,7 @@ let string_width s = Ui.measure_string s
 let render_binding theme binding =
   let key_elem = Ui.text ~style:theme.key_style binding.key in
   let desc_elem = Ui.text ~style:theme.desc_style binding.description in
-  Ui.hbox ~gap:1 [ key_elem; desc_elem ]
+  Ui.hbox ~gap:(`Cells 1) [ key_elem; desc_elem ]
 
 let should_render_binding binding = binding.enabled
 let should_render_group group = List.exists should_render_binding group.bindings
@@ -138,7 +138,7 @@ let render_group theme group =
           in
           let key_elem = Ui.text ~style:theme.key_style key_padded in
           let desc_elem = Ui.text ~style:theme.desc_style binding.description in
-          Ui.hbox ~gap:1 [ key_elem; desc_elem ])
+          Ui.hbox ~gap:(`Cells 1) [ key_elem; desc_elem ])
         enabled_bindings
     in
 

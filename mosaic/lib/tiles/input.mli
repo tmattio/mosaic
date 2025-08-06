@@ -43,7 +43,7 @@
 
       (* In your view with error display *)
       let open Ui in
-      vbox ~gap:1 [
+      vbox ~gap:(`Cells 1) [
         text "Email Address:";
         Input.view model.input;
         (match Input.error model.input with

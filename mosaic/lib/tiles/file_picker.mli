@@ -39,7 +39,7 @@
 
       (* In your view with navigation hints *)
       let open Ui in
-      vbox ~gap:1 [
+      vbox ~gap:(`Cells 1) [
         text ~style:Style.bold "Select an OCaml file:";
         text ~style:Style.(fg (Index 8))
           (File_picker.current_directory model.picker);

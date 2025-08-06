@@ -38,16 +38,16 @@ let update msg model =
 
 let view model =
   let open Ui in
-  vbox ~gap:1
+  vbox ~gap:(`Cells 1)
     [
       text ~style:Style.(fg (Index 14)) "Component Counter Demo";
-      box ~margin:(Spacing.make ~top:1 ()) [ text "Top Counter:" ];
+      box ~margin:(sides ~top:1 ()) [ text "Top Counter:" ];
       top_counter_inst.view model;
-      box ~margin:(Spacing.make ~top:1 ()) [ text "Bottom Counter:" ];
+      box ~margin:(sides ~top:1 ()) [ text "Bottom Counter:" ];
       bottom_counter_inst.view model;
-      box ~margin:(Spacing.make ~top:2 ())
+      box ~margin:(sides ~top:2 ())
         [
-          hbox ~gap:2
+          hbox ~gap:(`Cells 2)
             [
               text ~style:Style.(fg (Index 8)) "[r] Reset";
               text ~style:Style.(fg (Index 8)) "[q/Ctrl+C] Quit";

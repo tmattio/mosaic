@@ -127,7 +127,8 @@ let view model =
   in
 
   (* Layout *)
-  if model.inline then hbox ~gap:4 [ affirmative_option; negative_option ]
+  if model.inline then
+    hbox ~gap:(`Cells 4) [ affirmative_option; negative_option ]
   else vbox [ affirmative_option; negative_option ]
 
 (* Subscriptions *)

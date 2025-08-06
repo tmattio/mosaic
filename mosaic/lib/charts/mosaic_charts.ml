@@ -4,8 +4,8 @@ open Ui
 
 let size_to_int_with_default size default =
   match size with
-  | Some (Px n) -> n
-  | Some (Percent _) | Some Auto | Some Fit_content | None -> default
+  | Some (`Cells n) -> n
+  | Some (`Pct _) | Some `Auto | Some (`Calc _) | None -> default
 
 type point = { x : float; y : float }
 type time_series_point = { time : float; value : float }
@@ -368,7 +368,7 @@ let bar ?width ?height ?(orientation = `Vertical) ?max_value ?bar_width ?gap
 
 let sparkline ?width ?range ?style ?(render_kind = `Bars) (data : float list) =
   let w = Option.value width ~default:(List.length data) in
-  Canvas.create ~width:(Px w) ~height:(Px 1) (fun canvas ->
+  Canvas.create ~width:(`Cells w) ~height:(`Cells 1) (fun canvas ->
       let min_v, max_v = Option.value range ~default:(min_max data) in
       List.iteri
         (fun i v ->

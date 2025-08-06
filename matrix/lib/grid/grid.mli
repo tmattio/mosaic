@@ -185,6 +185,28 @@ val copy : t -> t
 (** [copy grid] creates a deep copy of the grid with all cells duplicated. The
     returned grid is independent from the original. *)
 
+val char_width : ?east_asian:bool -> Uchar.t -> int
+(** Calculate the display width of a single Unicode character.
+
+    @param east_asian
+      If true, ambiguous width characters are treated as width 2. Defaults to
+      false.
+    @param uchar The Unicode character to measure
+    @return
+      The display width in terminal columns (-1 for control, 0-2 for others) *)
+
+val string_width : ?east_asian:bool -> string -> int
+(** Calculate the display width of a string using proper grapheme segmentation.
+
+    This handles complex emoji sequences, ZWJ sequences, variation selectors,
+    and multi-codepoint grapheme clusters according to Unicode standards.
+
+    @param east_asian
+      If true, ambiguous width characters are treated as width 2. Defaults to
+      false.
+    @param s The UTF-8 encoded string
+    @return The total display width in terminal columns *)
+
 (** {2 Pretty-printing} *)
 
 val pp : Format.formatter -> t -> unit

@@ -37,7 +37,7 @@
 
       (* In your view *)
       let open Ui in
-      hbox ~gap:1 [
+      hbox ~gap:(`Cells 1) [
         Spinner.view model.spinner;
         text " Loading data...";
       ]

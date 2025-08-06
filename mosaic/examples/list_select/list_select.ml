@@ -75,7 +75,7 @@ let view model =
           |> Option.value ~default:"Unknown"
       | None -> ""
     in
-    vbox ~gap:1
+    vbox ~gap:(`Cells 1)
       [
         text "";
         text
@@ -84,7 +84,7 @@ let view model =
         text "";
       ]
   else if model.quitting then
-    vbox ~gap:1
+    vbox ~gap:(`Cells 1)
       [
         text "";
         text ~style:Style.(fg (Index 5)) "    Not hungry? That's cool.";

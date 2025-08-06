@@ -56,15 +56,15 @@ let render_to_string ?(width = 80) ?(height = 24) element =
 
 (** Helper to render a UI element to a string and print it for expect testing *)
 let print_ui ?(width = 20) ?(height = 5) element =
-  (* Wrap the element in a box with ASCII border for visual clarity *)
+  (* Wrap the element in a box with border for visual clarity *)
+  let width = width + 2 in
+  let height = height + 2 in
   let bordered_element =
-    Ui.box
-      ~width:(Ui.Px (width + 2))
-      ~height:(Ui.Px (height + 2))
+    Ui.box ~width:(`Cells width) ~height:(`Cells height)
       ~border:Ui.Border.normal ~border_style:Ui.Style.empty [ element ]
   in
-  let output = Ui.render_string ~width ~height bordered_element in
-  print_string ("\n" ^ output)
+  let output = render_to_string ~width ~height bordered_element in
+  print_string ("\n" ^ output ^ "\n")
 
 (** A helper for writing concise Alcotest-based layout tests. *)
 let assert_renders_to ?width ?height element expected =

@@ -108,19 +108,19 @@ let view model =
     let content =
       if title_elem = [] then
         (* No title: icon and text on same line *)
-        hbox ~gap:1 ([ icon_elem; text_elem ] @ dismiss_elem)
+        hbox ~gap:(`Cells 1) ([ icon_elem; text_elem ] @ dismiss_elem)
       else
         (* With title: icon next to title, text below *)
         vbox
           [
-            hbox ~gap:1 ([ icon_elem ] @ title_elem @ dismiss_elem);
-            box ~margin:(Spacing.make ~left:2 ()) [ text_elem ];
+            hbox ~gap:(`Cells 1) ([ icon_elem ] @ title_elem @ dismiss_elem);
+            box ~margin:(sides ~left:2 ()) [ text_elem ];
           ]
     in
 
     (* Main container *)
     let container =
-      vbox ~padding:(Spacing.all 1)
+      vbox ~padding:(all 1)
         ~border:
           (Border.make ~line_style:model.theme.border_style ~color:border_color
              ())
@@ -128,7 +128,7 @@ let view model =
     in
 
     match model.width with
-    | Some w -> hbox ~width:(Px w) [ container ]
+    | Some w -> hbox ~width:(`Cells w) [ container ]
     | None -> container
 
 (* Subscriptions *)

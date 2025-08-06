@@ -117,7 +117,7 @@ let test_gradient_directions () =
     S.gradient_bg ~colors:[ S.Black; S.gray 12; S.White ] ~direction:`Vertical
   in
   let element =
-    Ui.vbox ~style:v_gradient ~height:(Ui.Px 10)
+    Ui.vbox ~style:v_gradient ~height:(`Cells 10)
       [
         Ui.text "Line 1";
         Ui.text "Line 2";
@@ -189,7 +189,7 @@ let test_gradient_with_containers () =
     S.gradient_bg ~colors:[ S.Red; S.Yellow ] ~direction:`Vertical
   in
   let element =
-    Ui.vbox ~style:gradient ~gap:1
+    Ui.vbox ~style:gradient ~gap:(`Cells 1)
       [ Ui.text "Top"; Ui.text "Middle"; Ui.text "Bottom" ]
   in
   let output = Test_utils.render_to_string ~width:10 ~height:5 element in
@@ -203,7 +203,7 @@ let test_gradient_with_containers () =
     S.gradient_bg ~colors:[ S.Blue; S.Green ] ~direction:`Horizontal
   in
   let element =
-    Ui.hbox ~style:h_gradient ~gap:2
+    Ui.hbox ~style:h_gradient ~gap:(`Cells 2)
       [ Ui.text "Left"; Ui.text "Center"; Ui.text "Right" ]
   in
   let output = Test_utils.render_to_string ~width:30 ~height:1 element in
@@ -267,7 +267,7 @@ let test_gradient_with_padding () =
     S.gradient_bg ~colors:[ S.Red; S.Blue ] ~direction:`Horizontal
   in
   let element =
-    Ui.vbox ~style:gradient ~padding:(Ui.Spacing.all 2) [ Ui.text "Padded" ]
+    Ui.vbox ~style:gradient ~padding:(Ui.all 2) [ Ui.text "Padded" ]
   in
   let output = Test_utils.render_to_string ~width:20 ~height:5 element in
   Alcotest.(check bool)

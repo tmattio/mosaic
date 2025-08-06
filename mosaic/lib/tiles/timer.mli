@@ -45,7 +45,7 @@
 
       (* In your view *)
       let open Ui in
-      vbox ~gap:1 [
+      vbox ~gap:(`Cells 1) [
         text "Time remaining:";
         Timer.view model.timer;
         if Timer.is_expired model.timer then

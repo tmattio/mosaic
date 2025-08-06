@@ -83,12 +83,12 @@ let line_chart_demo () =
   let cosine_data = generate_sine_wave 50 0.8 1.5 in
   let random_data = generate_random_walk 50 0.0 0.3 in
 
-  vbox ~gap:1
+  vbox ~gap:(`Cells 1)
     [
       text ~style:Style.(fg Yellow ++ bold) "Line Chart Demo";
       divider ();
       text "Multiple series with different styles:";
-      line ~width:(Px 60) ~height:(Px 15)
+      line ~width:(`Cells 60) ~height:(`Cells 15)
         ~series_styles:[ Style.(fg Red); Style.(fg Blue); Style.(fg Green) ]
         [
           ("Sine Wave", sine_data);
@@ -97,12 +97,12 @@ let line_chart_demo () =
         ];
       divider ();
       text "Same data with Braille rendering:";
-      line ~width:(Px 60) ~height:(Px 10) ~render_kind:Braille
+      line ~width:(`Cells 60) ~height:(`Cells 10) ~render_kind:Braille
         ~series_styles:[ Style.(fg Cyan) ]
         [ ("Braille Line", sine_data) ];
       divider ();
       text "Scatter plot with Points:";
-      line ~width:(Px 60) ~height:(Px 10) ~render_kind:(Points "")
+      line ~width:(`Cells 60) ~height:(`Cells 10) ~render_kind:(Points "")
         ~series_styles:[ Style.(fg Magenta) ]
         [ ("Scatter", List.filter (fun _ -> Random.bool ()) sine_data) ];
     ]
@@ -113,12 +113,12 @@ let time_series_demo () =
   let data1 = generate_time_series_data 24 (now -. (24.0 *. hour)) hour in
   let data2 = generate_time_series_data 24 (now -. (24.0 *. hour)) hour in
 
-  vbox ~gap:1
+  vbox ~gap:(`Cells 1)
     [
       text ~style:Style.(fg Yellow ++ bold) "Time Series Demo";
       divider ();
       text "24-hour data with multiple series:";
-      time_series ~width:(Px 60) ~height:(Px 15)
+      time_series ~width:(`Cells 60) ~height:(`Cells 15)
         ~series_styles:[ Style.(fg Blue); Style.(fg Red) ]
         [
           ("Temperature", data1);
@@ -134,15 +134,16 @@ let bar_chart_demo () =
   let categories = [ "Q1"; "Q2"; "Q3"; "Q4" ] in
   let bar_data = generate_bar_data categories in
 
-  vbox ~gap:1
+  vbox ~gap:(`Cells 1)
     [
       text ~style:Style.(fg Yellow ++ bold) "Bar Chart Demo";
       divider ();
       text "Vertical stacked bars:";
-      bar ~width:(Px 60) ~height:(Px 12) ~orientation:`Vertical bar_data;
+      bar ~width:(`Cells 60) ~height:(`Cells 12) ~orientation:`Vertical bar_data;
       divider ();
       text "Horizontal bars:";
-      bar ~width:(Px 60) ~height:(Px 8) ~orientation:`Horizontal ~bar_width:2
+      bar ~width:(`Cells 60) ~height:(`Cells 8) ~orientation:`Horizontal
+        ~bar_width:2
         (List.map
            (fun b -> { b with segments = [ List.hd b.segments ] })
            bar_data);
@@ -157,11 +158,11 @@ let sparkline_demo () =
     List.init 30 (fun i -> (float_of_int i *. 3.0) +. Random.float 20.0)
   in
 
-  vbox ~gap:1
+  vbox ~gap:(`Cells 1)
     [
       text ~style:Style.(fg Yellow ++ bold) "Sparkline Demo";
       divider ();
-      hbox ~gap:2
+      hbox ~gap:(`Cells 2)
         [
           vbox [ text "CPU Usage:"; sparkline ~style:Style.(fg Green) data1 ];
           vbox
@@ -177,7 +178,7 @@ let sparkline_demo () =
         ];
       divider ();
       text "Inline sparklines in text:";
-      hbox ~gap:1
+      hbox ~gap:(`Cells 1)
         [
           text "Sales trend:";
           sparkline ~width:15 ~style:Style.(fg Green) data3;
@@ -188,12 +189,12 @@ let sparkline_demo () =
 let heatmap_demo () =
   let heatmap_data = generate_heatmap_data 20 in
 
-  vbox ~gap:1
+  vbox ~gap:(`Cells 1)
     [
       text ~style:Style.(fg Yellow ++ bold) "Heatmap Demo";
       divider ();
       text "2D function visualization (sin(x) * cos(y)):";
-      heatmap ~width:(Px 60) ~height:(Px 15)
+      heatmap ~width:(`Cells 60) ~height:(`Cells 15)
         ~color_scale:
           [
             Style.Index 17;
@@ -217,12 +218,12 @@ let candlestick_demo () =
   let day = 86400.0 in
   let ohlc_data = generate_ohlc_data 20 (now -. (20.0 *. day)) day 100.0 in
 
-  vbox ~gap:1
+  vbox ~gap:(`Cells 1)
     [
       text ~style:Style.(fg Yellow ++ bold) "Candlestick Chart Demo";
       divider ();
       text "20-day OHLC data:";
-      candlestick ~width:(Px 60) ~height:(Px 15)
+      candlestick ~width:(`Cells 60) ~height:(`Cells 15)
         ~bullish_style:Style.(fg Green ++ bold)
         ~bearish_style:Style.(fg Red ++ bold)
         ohlc_data;
@@ -232,19 +233,19 @@ let candlestick_demo () =
     ]
 
 let combined_demo () =
-  vbox ~gap:2
+  vbox ~gap:(`Cells 2)
     [
       text ~style:Style.(fg Cyan ++ bold ++ underline) "=� Mosaic Charts Demo";
       text "A showcase of all available chart types";
       divider ~style:Style.(fg (Index 240)) ();
       (* Create a grid layout for charts *)
-      vbox ~gap:2
+      vbox ~gap:(`Cells 2)
         [
           (* Row 1: Line and Time Series *)
-          hbox ~gap:2
+          hbox ~gap:(`Cells 2)
             [
               panel ~box_style:Rounded ~title:"Line Chart" ~expand:false
-                (line ~width:(Px 40) ~height:(Px 10)
+                (line ~width:(`Cells 40) ~height:(`Cells 10)
                    ~series_styles:
                      [ Style.(fg (Index 39)); Style.(fg (Index 214)) ]
                    [
@@ -252,7 +253,7 @@ let combined_demo () =
                      ("Data 2", generate_sine_wave 30 0.7 2.0);
                    ]);
               panel ~box_style:Rounded ~title:"Time Series" ~expand:false
-                (time_series ~width:(Px 40) ~height:(Px 10)
+                (time_series ~width:(`Cells 40) ~height:(`Cells 10)
                    (let now = Unix.time () in
                     [
                       ( "Series",
@@ -260,20 +261,20 @@ let combined_demo () =
                     ]));
             ];
           (* Row 2: Bar and Candlestick *)
-          hbox ~gap:2
+          hbox ~gap:(`Cells 2)
             [
               panel ~box_style:Rounded ~title:"Bar Chart" ~expand:false
-                (bar ~width:(Px 40) ~height:(Px 10)
+                (bar ~width:(`Cells 40) ~height:(`Cells 10)
                    (generate_bar_data [ "A"; "B"; "C"; "D" ]));
               panel ~box_style:Rounded ~title:"Candlestick" ~expand:false
-                (candlestick ~width:(Px 40) ~height:(Px 10)
+                (candlestick ~width:(`Cells 40) ~height:(`Cells 10)
                    (generate_ohlc_data 15 0.0 1.0 50.0));
             ];
           (* Row 3: Heatmap and Sparklines *)
-          hbox ~gap:2
+          hbox ~gap:(`Cells 2)
             [
               panel ~box_style:Rounded ~title:"Heatmap" ~expand:false
-                (heatmap ~width:(Px 40) ~height:(Px 10)
+                (heatmap ~width:(`Cells 40) ~height:(`Cells 10)
                    ~color_scale:
                      [
                        Style.Index 232;
@@ -285,9 +286,9 @@ let combined_demo () =
                      ]
                    (generate_heatmap_data 15));
               panel ~box_style:Rounded ~title:"Sparklines" ~expand:false
-                (vbox ~gap:1
+                (vbox ~gap:(`Cells 1)
                    [
-                     hbox ~gap:2
+                     hbox ~gap:(`Cells 2)
                        [
                          text "CPU:";
                          sparkline ~width:30
@@ -295,7 +296,7 @@ let combined_demo () =
                            (List.init 30 (fun i ->
                                 50.0 +. (30.0 *. sin (float_of_int i /. 5.0))));
                        ];
-                     hbox ~gap:2
+                     hbox ~gap:(`Cells 2)
                        [
                          text "MEM:";
                          sparkline ~width:30
@@ -303,9 +304,9 @@ let combined_demo () =
                            ~render_kind:`Line
                            (List.init 30 (fun _ -> Random.float 100.0));
                        ];
-                     box ~margin:(Spacing.make ~top:5 ())
+                     box ~margin:(sides ~top:5 ())
                        [
-                         hbox ~gap:2
+                         hbox ~gap:(`Cells 2)
                            [
                              text "NET:";
                              sparkline ~width:30
@@ -327,7 +328,7 @@ let () =
 
   (* Create a comprehensive demo showing all chart types *)
   let ui =
-    vbox ~gap:2
+    vbox ~gap:(`Cells 2)
       [
         text
           ~style:Style.(fg Cyan ++ bold ++ underline)
