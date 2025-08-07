@@ -459,7 +459,13 @@ let render_to_string t =
           Buffer.add_string buf (Ansi.Style.to_sgr ~prev_style:!prev_style style);
           Buffer.add_string buf text;
           prev_style := Some style
-      | _ -> Buffer.add_char buf ' '
+      | _ -> 
+          (* For empty cells, reset to default style if needed *)
+          if !prev_style <> None && !prev_style <> Some Ansi.Style.default then (
+            Buffer.add_string buf (Ansi.Style.to_sgr ~prev_style:!prev_style Ansi.Style.default);
+            prev_style := Some Ansi.Style.default
+          );
+          Buffer.add_char buf ' '
     done;
     if row < rows t - 1 then Buffer.add_char buf '\n'
   done;
