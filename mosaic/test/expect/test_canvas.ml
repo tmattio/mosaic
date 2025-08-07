@@ -384,7 +384,7 @@ let%expect_test "canvas - flexible sizing" =
 let%expect_test "canvas - grid pattern" =
   print_ui ~width:15 ~height:8
     (Ui.Canvas.create ~width:(`Cells 15) ~height:(`Cells 8)
-       (fun ~width ~height:_ canvas ->
+       (fun ~width ~height canvas ->
          (* Draw a grid *)
          for x = 0 to width - 1 do
            if x mod 3 = 0 then
@@ -415,7 +415,7 @@ let%expect_test "canvas - grid pattern" =
 let%expect_test "canvas - animation frame" =
   print_ui ~width:15 ~height:5
     (Ui.Canvas.create ~width:(`Cells 15) ~height:(`Cells 5)
-       (fun ~width ~height canvas ->
+       (fun ~width ~height:_ canvas ->
          (* Simulate an animation frame with a moving object *)
          let frame = 3 in (* Fixed frame for testing *)
          let x = frame mod width in

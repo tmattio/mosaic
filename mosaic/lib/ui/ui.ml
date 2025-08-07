@@ -95,9 +95,9 @@ module Canvas = struct
                 let glyph =
                   if dx = 0 then "│" (* Vertical line *)
                   else if dy = 0 then "─" (* Horizontal line *)
-                  else if (x2 - x1) * (y2 - y1) > 0 then "\\"
-                    (* Diagonal down-right or up-left *)
-                  else "/" (* Diagonal down-left or up-right *)
+                  else if (x2 - x1) * (y2 - y1) > 0 then "╲"
+                    (* Diagonal down-right or up-left - U+2572 *)
+                  else "╱" (* Diagonal down-left or up-right - U+2571 *)
                 in
                 plot_fn ~x ~y ~style glyph;
                 if x = x2 && y = y2 then ()
@@ -113,10 +113,44 @@ module Canvas = struct
               in
               draw x1 y1 (dx - dy)
           | `Braille ->
-              (* For Braille, would need a proper braille buffer implementation *)
-              (* For now, fall back to line drawing *)
+              (* Braille pattern drawing *)
+              (* Braille characters use a 2x4 grid of dots *)
+              (* Each cell can represent 8 possible dot positions *)
+              let braille_buffer = Hashtbl.create 100 in
+              
+              (* Draw line using Bresenham algorithm and store in buffer *)
               let rec draw x y err =
-                plot_fn ~x ~y ~style "⠄";
+                (* Calculate braille cell position and bit position *)
+                let cell_x = x / 2 in
+                let cell_y = y / 4 in
+                let bit_x = x mod 2 in
+                let bit_y = y mod 4 in
+                
+                (* Braille dot mapping: *)
+                (* 0 3 *)
+                (* 1 4 *)
+                (* 2 5 *)
+                (* 6 7 *)
+                let bit_pos =
+                  match (bit_x, bit_y) with
+                  | 0, 0 -> 0
+                  | 0, 1 -> 1
+                  | 0, 2 -> 2
+                  | 0, 3 -> 6
+                  | 1, 0 -> 3
+                  | 1, 1 -> 4
+                  | 1, 2 -> 5
+                  | 1, 3 -> 7
+                  | _ -> 0
+                in
+                
+                let key = (cell_x, cell_y) in
+                let current = 
+                  try Hashtbl.find braille_buffer key 
+                  with Not_found -> 0 
+                in
+                Hashtbl.replace braille_buffer key (current lor (1 lsl bit_pos));
+                
                 if x = x2 && y = y2 then ()
                 else
                   let e2 = 2 * err in
@@ -128,7 +162,20 @@ module Canvas = struct
                   in
                   draw x' y' err''
               in
-              draw x1 y1 (dx - dy)
+              draw x1 y1 (dx - dy);
+              
+              (* Render the braille buffer *)
+              Hashtbl.iter
+                (fun (x, y) bits ->
+                  let braille_code = 0x2800 + bits in
+                  let char = Uchar.of_int braille_code in
+                  let char_str =
+                    let buf = Buffer.create 4 in
+                    Uutf.Buffer.add_utf_8 buf char;
+                    Buffer.contents buf
+                  in
+                  plot_fn ~x ~y ~style char_str)
+                braille_buffer
         in
 
         let draw_box ~x ~y ~width ~height ?(style = Style.empty) ?border () =
@@ -148,10 +195,10 @@ module Canvas = struct
               plot_fn ~x ~y:(y + height - 1) ~style "└";
               plot_fn ~x:(x + width - 1) ~y:(y + height - 1) ~style "┘"
           | None ->
-              (* Fill box *)
+              (* Fill box - use full block character for filled effect *)
               for j = y to y + height - 1 do
                 for i = x to x + width - 1 do
-                  plot_fn ~x:i ~y:j ~style " "
+                  plot_fn ~x:i ~y:j ~style "█"
                 done
               done
         in

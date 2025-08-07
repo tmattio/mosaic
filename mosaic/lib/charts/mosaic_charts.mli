@@ -66,6 +66,8 @@ val line :
   ?axis_style:Ui.Style.t ->
   ?label_style:Ui.Style.t ->
   ?series_styles:Ui.Style.t list ->
+  ?show_grid:bool ->
+  ?grid_style:Ui.Style.t ->
   ?render_kind:line_render_kind ->
   (string * point list) list ->
   Ui.element
@@ -111,6 +113,7 @@ val bar :
   ?height:Ui.dimension ->
   ?orientation:[ `Vertical | `Horizontal ] ->
   ?max_value:float ->
+  ?min_value:float ->
   ?bar_width:int ->
   ?gap:int ->
   ?show_axes:bool ->
@@ -183,3 +186,26 @@ val candlestick :
       Style for candles where [close > open] (default: green).
     @param bearish_style Style for candles where [close < open] (default: red).
 *)
+
+(** {2 Helper Functions} *)
+
+val legend : (string * Ui.Style.t) list -> Ui.element
+(** [legend items] creates a horizontal legend from a list of (label, style) pairs.
+    The style is used to color a marker (line or box) before each label. *)
+
+val line_with_gaps :
+  ?width:Ui.dimension ->
+  ?height:Ui.dimension ->
+  ?x_range:float * float ->
+  ?y_range:float * float ->
+  ?show_axes:bool ->
+  ?axis_style:Ui.Style.t ->
+  ?label_style:Ui.Style.t ->
+  ?series_styles:Ui.Style.t list ->
+  ?show_grid:bool ->
+  ?grid_style:Ui.Style.t ->
+  ?render_kind:line_render_kind ->
+  (string * (float * float option) list) list ->
+  Ui.element
+(** [line_with_gaps data] creates a line chart that supports data gaps.
+    Each point is a pair of (x, y option) where None represents a missing value. *)
