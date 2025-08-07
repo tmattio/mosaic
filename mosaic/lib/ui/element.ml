@@ -649,7 +649,7 @@ let divider ?(orientation = `Horizontal) ?title:_ ?char ?style ?padding () =
   let _ = Toffee.set_node_context tree id (Some renderable) |> Result.get_ok in
   (id, tree)
 
-let text ?(style = Style.empty) ?(align = `Left) ?(wrap = `Wrap) content =
+let text ?(style = Style.empty) ?(align = `Left) ?(wrap = `Wrap) ?overflow_x ?overflow_y content =
   let align_renderable =
     match align with `Left -> `Start | `Center -> `Center | `Right -> `End
   in
@@ -659,16 +659,53 @@ let text ?(style = Style.empty) ?(align = `Left) ?(wrap = `Wrap) content =
 
   (* For center and right alignment, text needs to fill available width *)
   let toffee_style =
-    if align = `Center || align = `Right then
-      (* Use 100% width so text can align within its container *)
-      let size =
-        {
+    (* Build style with all parameters at once *)
+    let size_opt = 
+      if align = `Center || align = `Right then
+        (* Use 100% width so text can align within its container *)
+        Some {
           Toffee.Geometry.Size.width = Toffee.Style.Dimension.percent 1.0;
           height = Toffee.Style.Dimension.auto;
         }
-      in
-      Toffee.Style.make ~size ()
-    else Toffee.Style.default
+      else None
+    in
+    
+    (* Smart defaults for overflow based on wrap behavior *)
+    (* When text should wrap, we want it to be able to shrink (overflow: hidden) *)
+    (* When text is clipped/truncated, preserve minimum size (overflow: visible) *)
+    let default_overflow_x = 
+      match wrap with
+      | `Wrap -> Toffee.Style.Overflow.Hidden  (* Allow shrinking for proper wrapping *)
+      | `Truncate | `Clip -> Toffee.Style.Overflow.Visible  (* Preserve min-content size *)
+    in
+    
+    let overflow_opt =
+      match (overflow_x, overflow_y) with
+      | None, None when wrap = `Wrap ->
+          (* Smart default: Allow text to shrink when wrapping is enabled *)
+          Some {
+            Toffee.Geometry.Point.x = default_overflow_x;
+            y = Toffee.Style.Overflow.Visible;  (* Usually don't need vertical shrinking *)
+          }
+      | None, None -> None  (* Use CSS defaults for non-wrapping text *)
+      | _ ->
+          (* User specified overflow - respect their choices *)
+          Some {
+            Toffee.Geometry.Point.x = 
+              (match overflow_x with 
+               | Some ox -> overflow_to_toffee ox
+               | None -> default_overflow_x);
+            y = 
+              (match overflow_y with
+               | Some oy -> overflow_to_toffee oy  
+               | None -> Toffee.Style.Overflow.Visible);
+          }
+    in
+    match (size_opt, overflow_opt) with
+    | None, None -> Toffee.Style.default
+    | Some size, None -> Toffee.Style.make ~size ()
+    | None, Some overflow -> Toffee.Style.make ~overflow ()
+    | Some size, Some overflow -> Toffee.Style.make ~size ~overflow ()
   in
   let id = Toffee.new_leaf tree toffee_style |> Result.get_ok in
   (* Store renderable in context *)

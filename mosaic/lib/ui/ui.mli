@@ -457,14 +457,26 @@ val text :
   ?style:Style.t ->
   ?align:[ `Left | `Center | `Right ] ->
   ?wrap:[ `Wrap | `Truncate | `Clip ] ->
+  ?overflow_x:overflow ->
+  ?overflow_y:overflow ->
   string ->
   element
 (** Renders a block of text.
+
+    When [wrap] is [`Wrap] (the default), the text automatically uses [overflow_x:`Hidden]
+    to ensure it can shrink and wrap properly within its container. This prevents the 
+    CSS flexbox automatic minimum size from blocking text wrapping.
 
     @param style The color and text attributes (bold, italic, etc.).
     @param align The horizontal alignment of the text within its bounding box.
     @param wrap
       How to handle text that exceeds the element's width. Defaults to [`Wrap`].
+      When [`Wrap`], automatically sets overflow_x to [`Hidden`] for proper wrapping.
+    @param overflow_x 
+      Controls horizontal overflow behavior. Defaults to [`Hidden`] when wrap is [`Wrap`],
+      [`Visible`] otherwise. Set explicitly to override smart defaults.
+    @param overflow_y 
+      Controls vertical overflow behavior. Defaults to [`Visible`].
     @param content The string to display. *)
 
 val scroll_view :
