@@ -177,8 +177,6 @@ let canvas ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
     ?border_style draw_fn
 
 let render ?(dark = false) ?(theme = Theme.default_dark) ?calc screen ui =
-  Screen.begin_frame screen;
-
   let viewport =
     Screen.Viewport.full ~rows:(Screen.rows screen) ~cols:(Screen.cols screen)
   in

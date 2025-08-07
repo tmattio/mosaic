@@ -195,6 +195,7 @@ let render_static t ~width =
             0 t.static_elements
         in
         let scr = Screen.create ~rows:total_rows ~cols:width () in
+        Screen.begin_frame scr;
         Ui.render scr (Ui.vbox t.static_elements);
         let rendered = screen_to_string scr ^ "\n" in
         t.static_cache <- Some (width, rendered);
@@ -256,6 +257,7 @@ let do_render t dyn_el =
       if needs_full_redraw then (
         (* Full redraw on size change or first render *)
         let dyn_scr = Screen.create ~rows:height ~cols:width () in
+        Screen.begin_frame dyn_scr;
         Ui.render dyn_scr dyn_el;
         let dyn_out = Screen.render_to_string dyn_scr in
         let output =
