@@ -28,6 +28,15 @@ let right t = t.right
 let color t = t.color
 let style t = t.style
 let with_style t style = { t with style = Some style }
+
+let width_of_presence b : [ `Cells of int ] Element.sides =
+  {
+    top = `Cells (if top b then 1 else 0);
+    right = `Cells (if right b then 1 else 0);
+    bottom = `Cells (if bottom b then 1 else 0);
+    left = `Cells (if left b then 1 else 0);
+  }
+
 let space_h b = (if left b then 1 else 0) + if right b then 1 else 0
 let space_v b = (if top b then 1 else 0) + if bottom b then 1 else 0
 

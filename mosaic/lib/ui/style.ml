@@ -266,6 +266,41 @@ let interpolate_rgb (r1, g1, b1) (r2, g2, b2) t =
   let t = max 0.0 (min 1.0 t) in
   RGB (lerp r1 r2 t, lerp g1 g2 t, lerp b1 b2 t)
 
+(* Gradient cache for performance - cache key is (colors_hash, t_rounded) *)
+module GradientCache = struct
+  type key = int * int  (* colors hash * t rounded to 0.001 precision *)
+  let cache : (key, Ansi.color) Hashtbl.t = Hashtbl.create 256
+  
+  let hash_colors colors =
+    (* Simple hash of color list for cache key *)
+    List.fold_left (fun acc c ->
+      let c_hash = match c with
+        | Default -> 0
+        | Black -> 1 | Red -> 2 | Green -> 3 | Yellow -> 4
+        | Blue -> 5 | Magenta -> 6 | Cyan -> 7 | White -> 8
+        | BrightBlack -> 9 | BrightRed -> 10 | BrightGreen -> 11
+        | BrightYellow -> 12 | BrightBlue -> 13 | BrightMagenta -> 14
+        | BrightCyan -> 15 | BrightWhite -> 16
+        | RGB (r, g, b) -> 17 + r * 1000000 + g * 1000 + b
+        | Gray i -> 1000 + i
+      in
+      (acc * 31 + c_hash) land max_int
+    ) 0 colors
+    
+  let round_t t = int_of_float (t *. 1000.0)  (* Round to 0.001 precision *)
+  
+  let get colors t compute =
+    let key = (hash_colors colors, round_t t) in
+    match Hashtbl.find_opt cache key with
+    | Some color -> color
+    | None ->
+        let color = compute () in
+        (* Limit cache size to prevent unbounded growth *)
+        if Hashtbl.length cache < 1024 then
+          Hashtbl.add cache key color;
+        color
+end
+
 (* Calculate the color at position t (0.0 to 1.0) along a gradient *)
 let calculate_gradient_color colors t =
   let t = max 0.0 (min 1.0 t) in
@@ -274,15 +309,16 @@ let calculate_gradient_color colors t =
       Default (* Return Default color for empty gradient instead of raising *)
   | [ c ] -> c
   | _ ->
-      let num_segments = float_of_int (List.length colors - 1) in
-      let segment_index =
-        min (int_of_float (t *. num_segments)) (List.length colors - 2)
-      in
-      let segment_start_t = float_of_int segment_index /. num_segments in
-      let c1 = List.nth colors segment_index in
-      let c2 = List.nth colors (segment_index + 1) in
-      let segment_t = (t -. segment_start_t) /. (1. /. num_segments) in
-      interpolate_rgb (to_rgb c1) (to_rgb c2) segment_t
+      GradientCache.get colors t (fun () ->
+        let num_segments = float_of_int (List.length colors - 1) in
+        let segment_index =
+          min (int_of_float (t *. num_segments)) (List.length colors - 2)
+        in
+        let segment_start_t = float_of_int segment_index /. num_segments in
+        let c1 = List.nth colors segment_index in
+        let c2 = List.nth colors (segment_index + 1) in
+        let segment_t = (t -. segment_start_t) /. (1. /. num_segments) in
+        interpolate_rgb (to_rgb c1) (to_rgb c2) segment_t)
 
 let to_attrs ~dark style =
   let attrs = ref [] in

@@ -67,6 +67,188 @@ let pad_string str width =
   let str_width = measure_string str in
   if str_width >= width then str else str ^ String.make (width - str_width) ' '
 
+(* Extract wrapping logic for reuse in measurement *)
+let rec wrap_line_impl acc current_line width measure_fn =
+  if String.length current_line = 0 then List.rev acc
+  else if measure_fn current_line <= width then
+    List.rev (current_line :: acc)
+  else
+    (* Try to find a word boundary to break at *)
+    let find_word_break str max_width =
+      let last_space = ref (-1) in
+      let rec check_width idx =
+        if idx >= String.length str then
+          if !last_space > 0 then !last_space
+          else String.length str
+        else
+          (* Measure the string up to this point *)
+          let substr = String.sub str 0 (idx + 1) in
+          let new_width = measure_fn substr in
+          if new_width > max_width then
+            if !last_space > 0 then !last_space else idx
+          else
+            let ch = String.get str idx in
+            if ch = ' ' then last_space := idx + 1;
+            check_width (idx + 1)
+      in
+      check_width 0
+    in
+    let break_pos = find_word_break current_line width in
+    if break_pos = 0 then
+      (* Can't fit even one word, fall back to character wrap *)
+      let find_char_break str max_width =
+        let rec check_width idx current_width =
+          if idx >= String.length str then
+            String.length str
+          else
+            let decoder =
+              Uutf.decoder ~encoding:`UTF_8
+                (`String (String.sub str idx (String.length str - idx)))
+            in
+            match Uutf.decode decoder with
+            | `Uchar u ->
+                let char_width = Grid.char_width u in
+                let new_width = current_width + char_width in
+                if new_width > max_width then idx
+                else
+                  check_width (idx + Uchar.utf_8_byte_length u) new_width
+            | _ -> idx
+        in
+        check_width 0 0
+      in
+      let char_break = find_char_break current_line width in
+      if char_break = 0 then
+        (* Force at least one character *)
+        let decoder =
+          Uutf.decoder ~encoding:`UTF_8 (`String current_line)
+        in
+        match Uutf.decode decoder with
+        | `Uchar u ->
+            let char_len = Uchar.utf_8_byte_length u in
+            let this_line = String.sub current_line 0 char_len in
+            let rest = String.sub current_line char_len
+              (String.length current_line - char_len) in
+            wrap_line_impl (this_line :: acc) rest width measure_fn
+        | _ -> List.rev acc
+      else
+        let this_line = String.sub current_line 0 char_break in
+        let rest = String.sub current_line char_break
+          (String.length current_line - char_break) in
+        wrap_line_impl (this_line :: acc) rest width measure_fn
+    else
+      let this_line = String.sub current_line 0 break_pos in
+      let rest = String.sub current_line break_pos
+        (String.length current_line - break_pos) in
+      (* Skip leading spaces on continuation lines *)
+      let rest =
+        let rec skip_spaces s i =
+          if i < String.length s && String.get s i = ' '
+          then skip_spaces s (i + 1)
+          else String.sub s i (String.length s - i)
+        in
+        skip_spaces rest 0
+      in
+      wrap_line_impl (this_line :: acc) rest width measure_fn
+
+let wrap_line_to_width line width measure_fn =
+  wrap_line_impl [] line width measure_fn
+
+let measure_text_content ~known_dimensions ~available_space ~tab_width ~wrap content =
+  (* Unified text measurement logic using actual wrapping algorithm *)
+  let lines = String.split_on_char '\n' content in
+  (* Expand tabs before measuring *)
+  let expanded_lines =
+    List.map
+      (fun line -> expand_tabs ~tab_width ~start_col:0 line)
+      lines
+  in
+
+  (* Calculate width and height based on wrap mode *)
+  let computed_width, computed_height =
+    match wrap with
+    | `Wrap -> (
+        (* When wrapping, use actual wrap algorithm to count lines *)
+        match available_space.Toffee.Geometry.Size.width with
+        | Toffee.Available_space.Definite available_w ->
+            let available_width = max 1 (int_of_float available_w) in  (* Ensure at least 1 to avoid issues *)
+            (* Count wrapped lines using actual wrapping logic *)
+            let wrapped_line_count =
+              List.fold_left
+                (fun acc line ->
+                  if measure_string line <= available_width then acc + 1
+                  else
+                    (* Use actual wrapping to count lines *)
+                    let wrapped = wrap_line_to_width line available_width measure_string in
+                    acc + List.length wrapped)
+                0 expanded_lines
+            in
+            (* For wrapped text, width is constrained to available width *)
+            let max_line_width =
+              List.fold_left
+                (fun acc line ->
+                  if measure_string line <= available_width then
+                    max acc (measure_string line)
+                  else
+                    (* Check width of wrapped lines *)
+                    let wrapped = wrap_line_to_width line available_width measure_string in
+                    List.fold_left
+                      (fun m l -> max m (measure_string l))
+                      acc wrapped)
+                0 expanded_lines
+            in
+            let width =
+              match known_dimensions.Toffee.Geometry.Size.width with
+              | Some w -> w
+              | None -> min available_w (float_of_int max_line_width)
+            in
+            let height =
+              match known_dimensions.Toffee.Geometry.Size.height with
+              | Some h -> h
+              | None -> float_of_int wrapped_line_count
+            in
+            (width, height)
+        | _ ->
+            (* No definite width to wrap to, use natural size *)
+            let max_width =
+              List.fold_left
+                (fun acc line -> max acc (measure_string line))
+                0 expanded_lines
+            in
+            let width =
+              match known_dimensions.Toffee.Geometry.Size.width with
+              | Some w -> w
+              | None -> float_of_int max_width
+            in
+            let height =
+              match known_dimensions.Toffee.Geometry.Size.height with
+              | Some h -> h
+              | None -> float_of_int (List.length lines)
+            in
+            (width, height))
+    | `Truncate | `Clip ->
+        (* Don't clamp to available size - use natural content size *)
+        let max_width =
+          List.fold_left
+            (fun acc line -> max acc (measure_string line))
+            0 expanded_lines
+        in
+        let width =
+          match known_dimensions.Toffee.Geometry.Size.width with
+          | Some w -> w
+          | None -> float_of_int max_width
+        in
+        let height =
+          match known_dimensions.Toffee.Geometry.Size.height with
+          | Some h -> h
+          | None -> float_of_int (List.length lines)
+        in
+        (width, height)
+  in
+  {
+    Toffee.Geometry.Size.width = computed_width;
+    height = computed_height;
+  }
+
 let expand_tabs ~tab_width ~start_col str =
   (* Expand tabs based on current column position to align to tab stops *)
   let buf = Buffer.create (String.length str * 2) in
@@ -121,6 +303,51 @@ let draw_border ctx border bounds =
     in
     Style.resolve final_style ~dark:ctx.dark ~pos:(0, 0) ~bounds:(1, 1)
   in
+  
+  (* Handle edge cases for small sizes *)
+  if width <= 0 || height <= 0 then ()
+  else if width = 1 && height = 1 then (
+    (* Single cell - pick appropriate character based on which borders are enabled *)
+    let glyph =
+      match (Border.top border, Border.bottom border, Border.left border, Border.right border) with
+      | true, true, true, true -> mc  (* All sides - use cross *)
+      | true, true, true, false -> mr (* Top, bottom, left *)
+      | true, true, false, true -> ml (* Top, bottom, right *)
+      | true, false, true, true -> mb (* Top, left, right *)
+      | false, true, true, true -> mt (* Bottom, left, right *)
+      | true, true, false, false -> vl (* Top and bottom - vertical *)
+      | false, false, true, true -> th (* Left and right - horizontal *)
+      | true, false, true, false -> br (* Top and left - bottom-right corner *)
+      | true, false, false, true -> bl (* Top and right - bottom-left corner *)
+      | false, true, true, false -> tr (* Bottom and left - top-right corner *)
+      | false, true, false, true -> tl (* Bottom and right - top-left corner *)
+      | true, false, false, false | false, true, false, false -> vl (* Single vertical *)
+      | false, false, true, false | false, false, false, true -> th (* Single horizontal *)
+      | false, false, false, false -> " " (* No borders *)
+    in
+    Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row ~col ~glyph ~attrs
+  )
+  else if height = 1 then (
+    (* Single row - only draw horizontal borders *)
+    if Border.top border || Border.bottom border then (
+      let left_glyph = if Border.left border then th else th in
+      Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row ~col ~glyph:left_glyph ~attrs;
+      for i = 1 to width - 2 do
+        Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row ~col:(col + i) ~glyph:th ~attrs
+      done;
+      if width > 1 then
+        let right_glyph = if Border.right border then th else th in
+        Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row ~col:(col + width - 1) ~glyph:right_glyph ~attrs
+    )
+  )
+  else if width = 1 then (
+    (* Single column - only draw vertical borders *)
+    if Border.left border || Border.right border then
+      for i = 0 to height - 1 do
+        Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:(row + i) ~col ~glyph:vl ~attrs
+      done
+  )
+  else
 
   (* Draw top border *)
   if Border.top border && height > 0 then (
@@ -140,11 +367,11 @@ let draw_border ctx border bounds =
         ~col:(col + width - 1)
         ~glyph:right_glyph ~attrs)
   else (
-    (* No top border, but draw vertical lines at corners if left/right borders exist *)
-    if Border.left border && height > 0 then
+    (* No top border, only draw vertical lines if no corner will be drawn later *)
+    if Border.left border && height > 0 && not (Border.bottom border && height = 1) then
       Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row ~col ~glyph:vl
         ~attrs;
-    if Border.right border && width > 0 && height > 0 then
+    if Border.right border && width > 0 && height > 0 && not (Border.bottom border && height = 1) then
       Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row
         ~col:(col + width - 1)
         ~glyph:vr ~attrs);
@@ -167,18 +394,17 @@ let draw_border ctx border bounds =
       Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row
         ~col:(col + width - 1)
         ~glyph:right_glyph ~attrs)
-  else if
-    (* No bottom border, but draw vertical lines at corners if left/right borders exist *)
-    Border.left border && height > 1
-  then (
-    let bottom_row = row + height - 1 in
-    Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row ~col
-      ~glyph:vl ~attrs;
-    if Border.right border && width > 0 && height > 1 then
+  else (
+    (* No bottom border, only draw vertical lines if not already drawn by top logic *)
+    if Border.left border && height > 1 && not (Border.top border) then (
+      let bottom_row = row + height - 1 in
+      Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row ~col
+        ~glyph:vl ~attrs);
+    if Border.right border && width > 0 && height > 1 && not (Border.top border) then (
       let bottom_row = row + height - 1 in
       Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row
         ~col:(col + width - 1)
-        ~glyph:vr ~attrs);
+        ~glyph:vr ~attrs));
 
   (* Draw left border *)
   (if Border.left border then
@@ -216,6 +442,17 @@ let fill_background ctx style bounds =
         ~col:(col + x) ~glyph:" " ~attrs
     done
   done
+
+let with_clip ctx bounds f =
+  (* Encapsulated clipping logic that can be reused *)
+  let clip_viewport =
+    Screen.Viewport.make ~row:(int_of_float bounds.y)
+      ~col:(int_of_float bounds.x)
+      ~width:(int_of_float bounds.width)
+      ~height:(int_of_float bounds.height)
+  in
+  let ctx' = { ctx with viewport = clip_viewport } in
+  f ctx'
 
 let rec render_node_with_offset ctx (node_id, tree) (parent_x, parent_y) =
   (* Get layout for this node *)
@@ -268,111 +505,8 @@ let rec render_node_with_offset ctx (node_id, tree) (parent_x, parent_y) =
                     let expanded = expand_tabs ~tab_width ~start_col:0 line in
                     if measure_string expanded <= width then [ expanded ]
                     else
-                      (* Word-based wrapping with fallback to character wrap *)
-                      let rec wrap_line acc current_line =
-                        if String.length current_line = 0 then List.rev acc
-                        else if measure_string current_line <= width then
-                          List.rev (current_line :: acc)
-                        else
-                          (* Try to find a word boundary to break at *)
-                          let find_word_break str max_width =
-                            let last_space = ref (-1) in
-                            let rec check_width idx =
-                              if idx >= String.length str then
-                                if !last_space > 0 then !last_space
-                                else String.length str
-                              else
-                                (* Measure the string up to this point *)
-                                let substr = String.sub str 0 (idx + 1) in
-                                let new_width = measure_string substr in
-                                if new_width > max_width then
-                                  if !last_space > 0 then !last_space else idx
-                                else
-                                  let ch = String.get str idx in
-                                  if ch = ' ' then last_space := idx + 1;
-                                  check_width (idx + 1)
-                            in
-                            check_width 0
-                          in
-                          let break_pos = find_word_break current_line width in
-                          if break_pos = 0 then
-                            (* Can't fit even one word, fall back to character wrap *)
-                            let find_char_break str max_width =
-                              let rec check_width idx current_width =
-                                if idx >= String.length str then
-                                  String.length str
-                                else
-                                  let decoder =
-                                    Uutf.decoder ~encoding:`UTF_8
-                                      (`String
-                                         (String.sub str idx
-                                            (String.length str - idx)))
-                                  in
-                                  match Uutf.decode decoder with
-                                  | `Uchar u ->
-                                      let char_width = Grid.char_width u in
-                                      let new_width =
-                                        current_width + char_width
-                                      in
-                                      if new_width > max_width then idx
-                                      else
-                                        check_width
-                                          (idx + Uchar.utf_8_byte_length u)
-                                          new_width
-                                  | _ -> idx
-                              in
-                              check_width 0 0
-                            in
-                            let char_break =
-                              find_char_break current_line width
-                            in
-                            if char_break = 0 then
-                              (* Force at least one character *)
-                              let decoder =
-                                Uutf.decoder ~encoding:`UTF_8
-                                  (`String current_line)
-                              in
-                              match Uutf.decode decoder with
-                              | `Uchar u ->
-                                  let char_len = Uchar.utf_8_byte_length u in
-                                  let this_line =
-                                    String.sub current_line 0 char_len
-                                  in
-                                  let rest =
-                                    String.sub current_line char_len
-                                      (String.length current_line - char_len)
-                                  in
-                                  wrap_line (this_line :: acc) rest
-                              | _ -> List.rev acc
-                            else
-                              let this_line =
-                                String.sub current_line 0 char_break
-                              in
-                              let rest =
-                                String.sub current_line char_break
-                                  (String.length current_line - char_break)
-                              in
-                              wrap_line (this_line :: acc) rest
-                          else
-                            let this_line =
-                              String.sub current_line 0 break_pos
-                            in
-                            let rest =
-                              String.sub current_line break_pos
-                                (String.length current_line - break_pos)
-                            in
-                            (* Skip leading spaces on continuation lines *)
-                            let rest =
-                              let rec skip_spaces s i =
-                                if i < String.length s && String.get s i = ' '
-                                then skip_spaces s (i + 1)
-                                else String.sub s i (String.length s - i)
-                              in
-                              skip_spaces rest 0
-                            in
-                            wrap_line (this_line :: acc) rest
-                      in
-                      wrap_line [] expanded)
+                      (* Use extracted wrapping logic *)
+                      wrap_line_to_width expanded width measure_string)
                   lines
             | `Truncate ->
                 (* Truncate lines that are too wide with ellipsis *)
@@ -406,22 +540,20 @@ let rec render_node_with_offset ctx (node_id, tree) (parent_x, parent_y) =
                 in
                 let final_line =
                   match align with
-                  | `Stretch when line <> "" ->
+                  | `Stretch when line <> "" && measure_string line > 0 ->
                       (* Repeat the pattern to fill the width *)
                       let pattern = line in
                       let pattern_width = measure_string pattern in
-                      if pattern_width > 0 then
-                        let times = width / pattern_width in
-                        let remainder = width mod pattern_width in
-                        let repeated =
-                          String.concat "" (List.init times (fun _ -> pattern))
-                        in
-                        if remainder > 0 then
-                          (* Add partial pattern to fill exact width *)
-                          repeated
-                          ^ truncate_string_with_ellipsis pattern remainder ""
-                        else repeated
-                      else line
+                      let times = width / pattern_width in
+                      let remainder = width mod pattern_width in
+                      let repeated =
+                        String.concat "" (List.init times (fun _ -> pattern))
+                      in
+                      if remainder > 0 then
+                        (* Add partial pattern to fill exact width *)
+                        repeated
+                        ^ truncate_string_with_ellipsis pattern remainder ""
+                      else repeated
                   | _ -> line
                 in
                 let _ =
@@ -451,24 +583,17 @@ let rec render_node_with_offset ctx (node_id, tree) (parent_x, parent_y) =
           draw plot
       | Renderable.Scroll { h_offset; v_offset } -> (
           (* Clip children to this node's bounds and apply scroll offset *)
-          let clip_viewport =
-            Screen.Viewport.make ~row:(int_of_float bounds.y)
-              ~col:(int_of_float bounds.x)
-              ~width:(int_of_float bounds.width)
-              ~height:(int_of_float bounds.height)
-          in
-          (* Use the clip viewport directly for scroll content *)
-          let ctx' = { ctx with viewport = clip_viewport } in
-          (* Render children with adjusted offset *)
-          match Toffee.children tree node_id with
-          | Ok children ->
-              List.iter
-                (fun child_id ->
-                  render_node_with_offset ctx' (child_id, tree)
-                    ( absolute_x -. float_of_int h_offset,
-                      absolute_y -. float_of_int v_offset ))
-                children
-          | Error _ -> ()
+          with_clip ctx bounds (fun ctx' ->
+              (* Render children with adjusted offset *)
+              match Toffee.children tree node_id with
+              | Ok children ->
+                  List.iter
+                    (fun child_id ->
+                      render_node_with_offset ctx' (child_id, tree)
+                        ( absolute_x -. float_of_int h_offset,
+                          absolute_y -. float_of_int v_offset ))
+                    children
+              | Error _ -> ())
           (* Return early since we've handled children *)))
   | _ -> ());
 

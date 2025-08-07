@@ -18,96 +18,9 @@ let default_measure_fn known_dimensions available_space _node_id context _style
     =
   match context with
   | Some (Renderable.Text { content; tab_width; wrap; _ }) ->
-      (* Measure text content *)
-      let lines = String.split_on_char '\n' content in
-      (* Expand tabs before measuring *)
-      let expanded_lines =
-        List.map
-          (fun line -> Renderer.expand_tabs ~tab_width ~start_col:0 line)
-          lines
-      in
-
-      (* Calculate width and height based on wrap mode *)
-      let computed_width, computed_height =
-        match wrap with
-        | `Wrap -> (
-            (* When wrapping, pre-wrap to available width if definite *)
-            match available_space.Toffee.Geometry.Size.width with
-            | Toffee.Available_space.Definite available_w ->
-                let available_width = int_of_float available_w in
-                (* Count wrapped lines for height calculation *)
-                let wrapped_line_count =
-                  List.fold_left
-                    (fun acc line ->
-                      let line_width = measure_string line in
-                      if line_width <= available_width then acc + 1
-                      else
-                        (* Calculate number of wrapped lines *)
-                        let lines_needed =
-                          if available_width > 0 then
-                            (line_width + available_width - 1) / available_width
-                          else 1
-                        in
-                        acc + lines_needed)
-                    0 expanded_lines
-                in
-                (* For wrapped text, width is constrained to available width *)
-                let max_line_width =
-                  List.fold_left
-                    (fun acc line ->
-                      max acc (min (measure_string line) available_width))
-                    0 expanded_lines
-                in
-                let width =
-                  match known_dimensions.Toffee.Geometry.Size.width with
-                  | Some w -> w
-                  | None -> min available_w (float_of_int max_line_width)
-                in
-                let height =
-                  match known_dimensions.Toffee.Geometry.Size.height with
-                  | Some h -> h
-                  | None -> float_of_int wrapped_line_count
-                in
-                (width, height)
-            | _ ->
-                (* No definite width to wrap to, use natural size *)
-                let max_width =
-                  List.fold_left
-                    (fun acc line -> max acc (measure_string line))
-                    0 expanded_lines
-                in
-                let width =
-                  match known_dimensions.Toffee.Geometry.Size.width with
-                  | Some w -> w
-                  | None -> float_of_int max_width
-                in
-                let height =
-                  match known_dimensions.Toffee.Geometry.Size.height with
-                  | Some h -> h
-                  | None -> float_of_int (List.length lines)
-                in
-                (width, height))
-        | `Truncate | `Clip ->
-            (* Don't clamp to available size - use natural content size *)
-            let max_width =
-              List.fold_left
-                (fun acc line -> max acc (measure_string line))
-                0 expanded_lines
-            in
-            let width =
-              match known_dimensions.Toffee.Geometry.Size.width with
-              | Some w -> w
-              | None -> float_of_int max_width
-            in
-            let height =
-              match known_dimensions.Toffee.Geometry.Size.height with
-              | Some h -> h
-              | None -> float_of_int (List.length lines)
-            in
-            (width, height)
-      in
-
-      { Toffee.Geometry.Size.width = computed_width; height = computed_height }
+      (* Use unified text measurement function *)
+      Renderer.measure_text_content ~known_dimensions ~available_space
+        ~tab_width ~wrap content
   | _ ->
       (* Non-text nodes don't need measuring *)
       { width = 0.0; height = 0.0 }
@@ -178,23 +91,43 @@ module Canvas = struct
           match kind with
           | `Line ->
               let rec draw x y err =
-                plot_fn ~x ~y ~style (if dx > dy then "─" else "│");
+                (* Choose appropriate character based on direction *)
+                let glyph =
+                  if dx = 0 then "│"  (* Vertical line *)
+                  else if dy = 0 then "─"  (* Horizontal line *)
+                  else if (x2 - x1) * (y2 - y1) > 0 then "\\"  (* Diagonal down-right or up-left *)
+                  else "/"  (* Diagonal down-left or up-right *)
+                in
+                plot_fn ~x ~y ~style glyph;
                 if x = x2 && y = y2 then ()
                 else
-                  let e2 = err * 2 in
-                  let err', x', y' =
-                    let err1 =
-                      if e2 > -dy then (err - dy, x + sx, y) else (err, x, y)
-                    in
-                    let err2, x2, y2 = err1 in
-                    if e2 < dx then (err2 + dx, x2, y2 + sy) else (err2, x2, y2)
+                  let e2 = 2 * err in
+                  let x', err' =
+                    if e2 > -dy then (x + sx, err - dy) else (x, err)
                   in
-                  draw x' y' err'
+                  let y', err'' =
+                    if e2 < dx then (y + sy, err' + dx) else (y, err')
+                  in
+                  draw x' y' err''
               in
               draw x1 y1 (dx - dy)
           | `Braille ->
-              (* For Braille, delegate to the braille buffer logic in charts *)
-              ()
+              (* For Braille, would need a proper braille buffer implementation *)
+              (* For now, fall back to line drawing *)
+              let rec draw x y err =
+                plot_fn ~x ~y ~style "⠄";
+                if x = x2 && y = y2 then ()
+                else
+                  let e2 = 2 * err in
+                  let x', err' =
+                    if e2 > -dy then (x + sx, err - dy) else (x, err)
+                  in
+                  let y', err'' =
+                    if e2 < dx then (y + sy, err' + dx) else (y, err')
+                  in
+                  draw x' y' err''
+              in
+              draw x1 y1 (dx - dy)
         in
 
         let draw_box ~x ~y ~width ~height ?(style = Style.empty) ?border () =
