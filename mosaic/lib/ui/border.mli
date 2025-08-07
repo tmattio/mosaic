@@ -64,11 +64,6 @@ val double : t
 val thick : t
 (** Pre-defined thick-line border on all sides. *)
 
-val width_of_presence : t -> [ `Cells of int ] Element.sides
-(** [width_of_presence border] returns the space occupied by each border side.
-    Returns {top=Cells n; right=Cells n; bottom=Cells n; left=Cells n} where
-    n is 1 if the side is enabled, 0 otherwise. *)
-
 val space_h : t -> int
 (** [space_h border] returns the horizontal space required by the border. If no
     border is specified, returns 0. *)

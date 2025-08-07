@@ -120,6 +120,15 @@ let border_to_rect (border : Border.t) :
         (if Border.left border then 1.0 else 0.0);
   }
 
+(* Helper function to get border width based on presence *)
+let border_width_of_presence (b : Border.t) : length_percentage sides =
+  {
+    top = `Cells (if Border.top b then 1 else 0);
+    right = `Cells (if Border.right b then 1 else 0);
+    bottom = `Cells (if Border.bottom b then 1 else 0);
+    left = `Cells (if Border.left b then 1 else 0);
+  }
+
 (* Type conversions to Toffee types *)
 let display_to_toffee = function
   | `Block -> Toffee.Style.Display.Block
@@ -178,17 +187,6 @@ let align_content_to_toffee = function
   | `Space_evenly -> Toffee.Style.Align_content.Space_evenly
   | `Space_around -> Toffee.Style.Align_content.Space_around
 
-let justify_content_to_toffee = function
-  | `Start -> Toffee.Style.Justify_content.Start
-  | `End -> Toffee.Style.Justify_content.End
-  | `Flex_start -> Toffee.Style.Justify_content.Flex_start
-  | `Flex_end -> Toffee.Style.Justify_content.Flex_end
-  | `Center -> Toffee.Style.Justify_content.Center
-  | `Stretch -> Toffee.Style.Justify_content.Stretch
-  | `Space_between -> Toffee.Style.Justify_content.Space_between
-  | `Space_evenly -> Toffee.Style.Justify_content.Space_evenly
-  | `Space_around -> Toffee.Style.Justify_content.Space_around
-
 let grid_auto_flow_to_toffee = function
   | `Row -> Toffee.Style.Grid.Auto_flow.Row
   | `Column -> Toffee.Style.Grid.Auto_flow.Column
@@ -219,7 +217,7 @@ let box ?display ?position ?box_sizing ?text_align ?flex_direction ?flex_wrap
     | None, _ -> None
   in
 
-  let box_renderable : Renderable.t option =
+  let box_renderable =
     match (final_border, style) with
     | None, None -> None
     | _ -> Some (Renderable.box ?border:final_border ?background:style ())
@@ -231,7 +229,7 @@ let box ?display ?position ?box_sizing ?text_align ?flex_direction ?flex_wrap
     | Some bw, _ -> Some bw (* Explicit border_width takes precedence *)
     | None, Some b ->
         (* Only auto-set if no border_width is provided at all *)
-        let border_presence = Border.width_of_presence b in
+        let border_presence = border_width_of_presence b in
         Some border_presence
     | None, None -> None
   in
@@ -240,20 +238,18 @@ let box ?display ?position ?box_sizing ?text_align ?flex_direction ?flex_wrap
   let child_ids = List.map fst children in
 
   (* Create gap size - row_gap and col_gap override gap *)
-  let gap_size : Toffee.Style.Length_percentage.t Toffee.Geometry.size option =
-    let effective_row_gap = match row_gap with
-      | Some r -> Some r
-      | None -> gap
+  let gap_size =
+    let effective_row_gap =
+      match row_gap with Some r -> Some r | None -> gap
     in
-    let effective_col_gap = match col_gap with
-      | Some c -> Some c
-      | None -> gap
+    let effective_col_gap =
+      match col_gap with Some c -> Some c | None -> gap
     in
     match (effective_row_gap, effective_col_gap) with
     | Some r, Some c ->
         Some
           {
-            width = length_percentage_to_toffee c;
+            Toffee.Geometry.Size.width = length_percentage_to_toffee c;
             height = length_percentage_to_toffee r;
           }
     | Some r, None ->
@@ -270,16 +266,17 @@ let box ?display ?position ?box_sizing ?text_align ?flex_direction ?flex_wrap
           }
     | None, None -> None
   in
-  
+
   (* Ensure box_sizing is set for consistency *)
-  let box_sizing_opt = 
+  let box_sizing_opt =
     match box_sizing with
     | Some bs -> Some bs
-    | None -> Some `Border_box  (* Default to border-box for principled behavior *)
+    | None ->
+        Some `Border_box (* Default to border-box for principled behavior *)
   in
 
   (* Create style *)
-  let toffee_style : Toffee.Style.t =
+  let toffee_style =
     let overflow_point =
       match (overflow_x, overflow_y) with
       | Some x, Some y ->
@@ -354,7 +351,7 @@ let box ?display ?position ?box_sizing ?text_align ?flex_direction ?flex_wrap
       ?align_content:(Option.map align_content_to_toffee align_content)
       ?justify_items:(Option.map align_items_to_toffee justify_items)
       ?justify_self:(Option.map align_items_to_toffee justify_self)
-      ?justify_content:(Option.map justify_content_to_toffee justify_content)
+      ?justify_content:(Option.map align_content_to_toffee justify_content)
       ?gap:gap_size
       ?flex_direction:(Option.map flex_direction_to_toffee flex_direction)
       ?flex_wrap:(Option.map flex_wrap_to_toffee flex_wrap)
@@ -426,7 +423,7 @@ let zbox ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
     | Some bw, _ -> Some bw (* Explicit border_width takes precedence *)
     | None, Some b ->
         (* Only auto-set if no border_width is provided at all *)
-        let border_presence = Border.width_of_presence b in
+        let border_presence = border_width_of_presence b in
         Some border_presence
     | None, None -> None
   in
@@ -654,7 +651,8 @@ let divider ?(orientation = `Horizontal) ?title:_ ?char ?style ?padding () =
   let _ = Toffee.set_node_context tree id (Some renderable) |> Result.get_ok in
   (id, tree)
 
-let text ?(style = Style.empty) ?(align = `Left) ?(wrap = `Wrap) ?overflow_x ?overflow_y content =
+let text ?(style = Style.empty) ?(align = `Left) ?(wrap = `Wrap) ?overflow_x
+    ?overflow_y content =
   let align_renderable =
     match align with `Left -> `Start | `Center -> `Center | `Right -> `End
   in
@@ -667,45 +665,52 @@ let text ?(style = Style.empty) ?(align = `Left) ?(wrap = `Wrap) ?overflow_x ?ov
     (* Build style with all parameters at once *)
     (* No size forcing - let parent container control width if needed *)
     let size_opt = None in
-    
+
     (* Smart defaults for overflow based on wrap behavior *)
     (* When text should wrap, we want it to be able to shrink (overflow: hidden) *)
     (* When text is clipped/truncated, preserve minimum size (overflow: visible) *)
-    let default_overflow_x = 
+    let default_overflow_x =
       match wrap with
-      | `Wrap -> Toffee.Style.Overflow.Hidden  (* Allow shrinking for proper wrapping *)
-      | `Truncate | `Clip -> Toffee.Style.Overflow.Visible  (* Preserve min-content size *)
+      | `Wrap ->
+          Toffee.Style.Overflow.Hidden (* Allow shrinking for proper wrapping *)
+      | `Truncate | `Clip ->
+          Toffee.Style.Overflow.Visible (* Preserve min-content size *)
     in
-    
-    let default_overflow_y = Toffee.Style.Overflow.Visible in  (* Usually don't need vertical shrinking *)
-    
+
+    let default_overflow_y = Toffee.Style.Overflow.Visible in
+    (* Usually don't need vertical shrinking *)
+
     let overflow_opt =
       match (overflow_x, overflow_y) with
       | None, None when wrap = `Wrap ->
           (* Smart default: Allow text to shrink when wrapping is enabled *)
-          Some {
-            Toffee.Geometry.Point.x = default_overflow_x;
-            y = default_overflow_y;
-          }
-      | None, None -> None  (* Use CSS defaults for non-wrapping text *)
+          Some
+            {
+              Toffee.Geometry.Point.x = default_overflow_x;
+              y = default_overflow_y;
+            }
+      | None, None -> None (* Use CSS defaults for non-wrapping text *)
       | Some ox, Some oy ->
           (* Both specified - use them *)
-          Some {
-            Toffee.Geometry.Point.x = overflow_to_toffee ox;
-            y = overflow_to_toffee oy;
-          }
+          Some
+            {
+              Toffee.Geometry.Point.x = overflow_to_toffee ox;
+              y = overflow_to_toffee oy;
+            }
       | Some ox, None ->
           (* Only X specified - use it and keep Y default *)
-          Some {
-            Toffee.Geometry.Point.x = overflow_to_toffee ox;
-            y = default_overflow_y;
-          }
+          Some
+            {
+              Toffee.Geometry.Point.x = overflow_to_toffee ox;
+              y = default_overflow_y;
+            }
       | None, Some oy ->
           (* Only Y specified - use it and keep X default based on wrap *)
-          Some {
-            Toffee.Geometry.Point.x = default_overflow_x;
-            y = overflow_to_toffee oy;
-          }
+          Some
+            {
+              Toffee.Geometry.Point.x = default_overflow_x;
+              y = overflow_to_toffee oy;
+            }
     in
     match (size_opt, overflow_opt) with
     | None, None -> Toffee.Style.default
@@ -734,18 +739,15 @@ let scroll_view ?width ?height ?min_width ?min_height ?max_width ?max_height
   let scroll_id =
     Toffee.new_with_children tree scroll_style [| fst child |] |> Result.get_ok
   in
-  
+
   (* Store scroll renderable with scrollbar visibility flag *)
   let renderable =
     if show_scrollbars then
       (* TODO: Extend Renderable.Scroll to include scrollbar rendering *)
       Renderable.scroll ~h_offset ~v_offset ()
-    else
-      Renderable.scroll ~h_offset ~v_offset ()
+    else Renderable.scroll ~h_offset ~v_offset ()
   in
-  let _ =
-    Toffee.set_node_context tree scroll_id (Some renderable)
-  in
+  let _ = Toffee.set_node_context tree scroll_id (Some renderable) in
 
   (* Always wrap in a box with Hidden overflow for visual clipping *)
   box ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
@@ -782,9 +784,9 @@ let flow ?h_gap ?v_gap ?overflow_x ?overflow_y children =
   let overflow_y = Option.value overflow_y ~default:`Hidden in
   (* Set align_content to Start to prevent wrapped lines from stretching *)
   (* Use col_gap for horizontal spacing and row_gap for vertical spacing *)
-  box ~display:`Flex ~flex_direction:`Row ~flex_wrap:`Wrap 
-    ?col_gap:h_gap ?row_gap:v_gap ~align_items:`Start ~align_content:`Start 
-    ?overflow_x ~overflow_y children
+  box ~display:`Flex ~flex_direction:`Row ~flex_wrap:`Wrap ?col_gap:h_gap
+    ?row_gap:v_gap ~align_items:`Start ~align_content:`Start ?overflow_x
+    ~overflow_y children
 
 let block ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
     ?margin ?style ?border ?border_style children =
@@ -1045,9 +1047,11 @@ let measure ?(width : int option) element =
         (* Non-text nodes: use known dimensions or default to 0 *)
         {
           width =
-            Option.value ~default:0.0 known_dimensions.Toffee.Geometry.Size.width;
+            Option.value ~default:0.0
+              known_dimensions.Toffee.Geometry.Size.width;
           height =
-            Option.value ~default:0.0 known_dimensions.Toffee.Geometry.Size.height;
+            Option.value ~default:0.0
+              known_dimensions.Toffee.Geometry.Size.height;
         }
   in
 

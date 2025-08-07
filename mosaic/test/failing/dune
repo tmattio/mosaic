@@ -1,7 +1,5 @@
 (executables
- (names
-  basic_ui
-  test_border_fixed)
+ (names basic_ui)
  (libraries
   test_utils
   mosaic.ui

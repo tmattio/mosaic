@@ -209,7 +209,7 @@ val box :
   ?flex_wrap:flex_wrap ->
   ?flex_grow:float ->
   ?flex_shrink:float ->
-  ?flex_basis:[< dimension ] ->
+  ?flex_basis:dimension ->
   ?align_items:align_items ->
   ?align_self:align_self ->
   ?align_content:align_content ->
@@ -221,18 +221,18 @@ val box :
   ?aspect_ratio:float ->
   ?scrollbar_width:float ->
   ?inset:length_percentage_auto sides ->
-  ?width:[< dimension ] ->
-  ?height:[< dimension ] ->
-  ?min_width:[< dimension ] ->
-  ?min_height:[< dimension ] ->
-  ?max_width:[< dimension ] ->
-  ?max_height:[< dimension ] ->
+  ?width:dimension ->
+  ?height:dimension ->
+  ?min_width:dimension ->
+  ?min_height:dimension ->
+  ?max_width:dimension ->
+  ?max_height:dimension ->
   ?padding:length_percentage sides ->
   ?margin:length_percentage_auto sides ->
   ?border_width:length_percentage sides ->
-  ?gap:[< length_percentage ] ->
-  ?row_gap:[< length_percentage ] ->
-  ?col_gap:[< length_percentage ] ->
+  ?gap:length_percentage ->
+  ?row_gap:length_percentage ->
+  ?col_gap:length_percentage ->
   ?style:Style.t ->
   ?border:Border.t ->
   ?border_style:Style.t ->
@@ -297,22 +297,22 @@ val box :
     @param border_style Style for the visual border. *)
 
 val vbox :
-  ?width:[< dimension ] ->
-  ?height:[< dimension ] ->
-  ?min_width:[< dimension ] ->
-  ?min_height:[< dimension ] ->
-  ?max_width:[< dimension ] ->
-  ?max_height:[< dimension ] ->
+  ?width:dimension ->
+  ?height:dimension ->
+  ?min_width:dimension ->
+  ?min_height:dimension ->
+  ?max_width:dimension ->
+  ?max_height:dimension ->
   ?padding:length_percentage sides ->
   ?margin:length_percentage_auto sides ->
   ?border_width:length_percentage sides ->
   ?flex_grow:float ->
   ?flex_shrink:float ->
-  ?flex_basis:[< dimension ] ->
+  ?flex_basis:dimension ->
   ?align_self:align_self ->
   ?align_items:align_items ->
   ?justify_content:justify_content ->
-  ?gap:[< length_percentage ] ->
+  ?gap:length_percentage ->
   ?overflow_x:overflow ->
   ?overflow_y:overflow ->
   ?style:Style.t ->
@@ -348,22 +348,22 @@ val vbox :
     @param border_style Style for the visual border. *)
 
 val hbox :
-  ?width:[< dimension ] ->
-  ?height:[< dimension ] ->
-  ?min_width:[< dimension ] ->
-  ?min_height:[< dimension ] ->
-  ?max_width:[< dimension ] ->
-  ?max_height:[< dimension ] ->
+  ?width:dimension ->
+  ?height:dimension ->
+  ?min_width:dimension ->
+  ?min_height:dimension ->
+  ?max_width:dimension ->
+  ?max_height:dimension ->
   ?padding:length_percentage sides ->
   ?margin:length_percentage_auto sides ->
   ?border_width:length_percentage sides ->
   ?flex_grow:float ->
   ?flex_shrink:float ->
-  ?flex_basis:[< dimension ] ->
+  ?flex_basis:dimension ->
   ?align_self:align_self ->
   ?align_items:align_items ->
   ?justify_content:justify_content ->
-  ?gap:[< length_percentage ] ->
+  ?gap:length_percentage ->
   ?overflow_x:overflow ->
   ?overflow_y:overflow ->
   ?style:Style.t ->
@@ -399,12 +399,12 @@ val hbox :
     @param border_style Style for the visual border. *)
 
 val zbox :
-  ?width:[< dimension ] ->
-  ?height:[< dimension ] ->
-  ?min_width:[< dimension ] ->
-  ?min_height:[< dimension ] ->
-  ?max_width:[< dimension ] ->
-  ?max_height:[< dimension ] ->
+  ?width:dimension ->
+  ?height:dimension ->
+  ?min_width:dimension ->
+  ?min_height:dimension ->
+  ?max_width:dimension ->
+  ?max_height:dimension ->
   ?padding:length_percentage sides ->
   ?margin:length_percentage_auto sides ->
   ?border_width:length_percentage sides ->
@@ -426,8 +426,8 @@ val zbox :
 
 val spacer :
   ?flex_grow:float ->
-  ?min_width:[< dimension ] ->
-  ?min_height:[< dimension ] ->
+  ?min_width:dimension ->
+  ?min_height:dimension ->
   unit ->
   element
 (** Creates an invisible, flexible element that expands to fill available space.
@@ -463,29 +463,32 @@ val text :
   element
 (** Renders a block of text.
 
-    When [wrap] is [`Wrap] (the default), the text automatically uses [overflow_x:`Hidden]
-    to ensure it can shrink and wrap properly within its container. This prevents the 
-    CSS flexbox automatic minimum size from blocking text wrapping.
+    When [wrap] is [`Wrap] (the default), the text automatically uses
+    [overflow_x:`Hidden] to ensure it can shrink and wrap properly within its
+    container. This prevents the CSS flexbox automatic minimum size from
+    blocking text wrapping.
 
     @param style The color and text attributes (bold, italic, etc.).
     @param align The horizontal alignment of the text within its bounding box.
     @param wrap
       How to handle text that exceeds the element's width. Defaults to [`Wrap`].
-      When [`Wrap`], automatically sets overflow_x to [`Hidden`] for proper wrapping.
-    @param overflow_x 
-      Controls horizontal overflow behavior. Defaults to [`Hidden`] when wrap is [`Wrap`],
-      [`Visible`] otherwise. Set explicitly to override smart defaults.
-    @param overflow_y 
+      When [`Wrap`], automatically sets overflow_x to [`Hidden`] for proper
+      wrapping.
+    @param overflow_x
+      Controls horizontal overflow behavior. Defaults to [`Hidden`] when wrap is
+      [`Wrap`], [`Visible`] otherwise. Set explicitly to override smart
+      defaults.
+    @param overflow_y
       Controls vertical overflow behavior. Defaults to [`Visible`].
     @param content The string to display. *)
 
 val scroll_view :
-  ?width:[< dimension ] ->
-  ?height:[< dimension ] ->
-  ?min_width:[< dimension ] ->
-  ?min_height:[< dimension ] ->
-  ?max_width:[< dimension ] ->
-  ?max_height:[< dimension ] ->
+  ?width:dimension ->
+  ?height:dimension ->
+  ?min_width:dimension ->
+  ?min_height:dimension ->
+  ?max_width:dimension ->
+  ?max_height:dimension ->
   ?padding:length_percentage sides ->
   ?margin:length_percentage_auto sides ->
   ?flex_grow:float ->
@@ -520,31 +523,34 @@ val styled : Style.t -> element -> element
     wrapper box around the element. *)
 
 val flow :
-  ?h_gap:[< length_percentage ] ->
-  ?v_gap:[< length_percentage ] ->
+  ?h_gap:length_percentage ->
+  ?v_gap:length_percentage ->
   ?overflow_x:overflow ->
   ?overflow_y:overflow ->
   element list ->
   element
-(** [flow ?h_gap ?v_gap ?overflow_x ?overflow_y children] creates a flow layout that wraps children
-    horizontally to new lines when they don't fit in the available width.
-    Similar to how inline elements work in HTML.
-    
+(** [flow ?h_gap ?v_gap ?overflow_x ?overflow_y children] creates a flow layout
+    that wraps children horizontally to new lines when they don't fit in the
+    available width. Similar to how inline elements work in HTML.
+
     Defaults to [overflow_x:`Hidden] and [overflow_y:`Hidden] to ensure the flow
-    container can shrink to fit within its parent, allowing proper wrapping behavior.
-    
+    container can shrink to fit within its parent, allowing proper wrapping
+    behavior.
+
     @param h_gap Horizontal spacing between items (default: 0)
     @param v_gap Vertical spacing between lines (default: 0)
-    @param overflow_x Horizontal overflow (default: [`Hidden] for proper shrinking)
-    @param overflow_y Vertical overflow (default: [`Hidden] for proper shrinking) *)
+    @param overflow_x
+      Horizontal overflow (default: [`Hidden] for proper shrinking)
+    @param overflow_y
+      Vertical overflow (default: [`Hidden] for proper shrinking) *)
 
 val block :
-  ?width:[< dimension ] ->
-  ?height:[< dimension ] ->
-  ?min_width:[< dimension ] ->
-  ?min_height:[< dimension ] ->
-  ?max_width:[< dimension ] ->
-  ?max_height:[< dimension ] ->
+  ?width:dimension ->
+  ?height:dimension ->
+  ?min_width:dimension ->
+  ?min_height:dimension ->
+  ?max_width:dimension ->
+  ?max_height:dimension ->
   ?padding:length_percentage sides ->
   ?margin:length_percentage_auto sides ->
   ?style:Style.t ->
@@ -565,8 +571,8 @@ val grid :
   ?template_areas:grid_template_area list ->
   ?column_names:string list list ->
   ?row_names:string list list ->
-  ?col_gap:[< length_percentage ] ->
-  ?row_gap:[< length_percentage ] ->
+  ?col_gap:length_percentage ->
+  ?row_gap:length_percentage ->
   element list ->
   element
 (** Creates a CSS Grid layout with full control over track sizing and placement.
@@ -641,9 +647,9 @@ val pad_string : string -> int -> string
 *)
 
 val measure : ?width:int -> element -> int * int
-(** [measure ?width element] computes the natural [< dimension]s of an element.
+(** [measure ?width element] computes the natural dimension of an element.
     @param width Optional width constraint for the layout calculation
-    @return A pair (width, height) representing the element's [< dimension]s *)
+    @return A pair (width, height) representing the element's dimension *)
 
 (** {1 Extended UI Components} *)
 
@@ -676,12 +682,12 @@ module Canvas : sig
     unit
 
   val create :
-    ?width:[< dimension ] ->
-    ?height:[< dimension ] ->
-    ?min_width:[< dimension ] ->
-    ?min_height:[< dimension ] ->
-    ?max_width:[< dimension ] ->
-    ?max_height:[< dimension ] ->
+    ?width:dimension ->
+    ?height:dimension ->
+    ?min_width:dimension ->
+    ?min_height:dimension ->
+    ?max_width:dimension ->
+    ?max_height:dimension ->
     ?padding:length_percentage sides ->
     ?margin:length_percentage_auto sides ->
     ?flex_grow:float ->
@@ -695,12 +701,12 @@ module Canvas : sig
 end
 
 val canvas :
-  ?width:[< dimension ] ->
-  ?height:[< dimension ] ->
-  ?min_width:[< dimension ] ->
-  ?min_height:[< dimension ] ->
-  ?max_width:[< dimension ] ->
-  ?max_height:[< dimension ] ->
+  ?width:dimension ->
+  ?height:dimension ->
+  ?min_width:dimension ->
+  ?min_height:dimension ->
+  ?max_width:dimension ->
+  ?max_height:dimension ->
   ?padding:length_percentage sides ->
   ?margin:length_percentage_auto sides ->
   ?flex_grow:float ->

@@ -267,28 +267,44 @@ let interpolate_rgb (r1, g1, b1) (r2, g2, b2) t =
   RGB (lerp r1 r2 t, lerp g1 g2 t, lerp b1 b2 t)
 
 (* Gradient cache for performance - cache key is (colors_hash, t_rounded) *)
-module GradientCache = struct
-  type key = int * int  (* colors hash * t rounded to 0.001 precision *)
+module Gradient_cache = struct
+  type key = int * int (* colors hash * t rounded to 0.001 precision *)
+
   let cache : (key, Ansi.color) Hashtbl.t = Hashtbl.create 256
-  
+
   let hash_colors colors =
     (* Simple hash of color list for cache key *)
-    List.fold_left (fun acc c ->
-      let c_hash = match c with
-        | Default -> 0
-        | Black -> 1 | Red -> 2 | Green -> 3 | Yellow -> 4
-        | Blue -> 5 | Magenta -> 6 | Cyan -> 7 | White -> 8
-        | BrightBlack -> 9 | BrightRed -> 10 | BrightGreen -> 11
-        | BrightYellow -> 12 | BrightBlue -> 13 | BrightMagenta -> 14
-        | BrightCyan -> 15 | BrightWhite -> 16
-        | RGB (r, g, b) -> 17 + r * 1000000 + g * 1000 + b
-        | Gray i -> 1000 + i
-      in
-      (acc * 31 + c_hash) land max_int
-    ) 0 colors
-    
-  let round_t t = int_of_float (t *. 1000.0)  (* Round to 0.001 precision *)
-  
+    List.fold_left
+      (fun acc c ->
+        let c_hash =
+          match c with
+          | Default -> 0
+          | Black -> 1
+          | Red -> 2
+          | Green -> 3
+          | Yellow -> 4
+          | Blue -> 5
+          | Magenta -> 6
+          | Cyan -> 7
+          | White -> 8
+          | Bright_black -> 9
+          | Bright_red -> 10
+          | Bright_green -> 11
+          | Bright_yellow -> 12
+          | Bright_blue -> 13
+          | Bright_magenta -> 14
+          | Bright_cyan -> 15
+          | Bright_white -> 16
+          | RGB (r, g, b) -> 17 + (r * 1000000) + (g * 1000) + b
+          | RGBA (r, g, b, a) ->
+              18 + (r * 1000000000) + (g * 1000000) + (b * 1000) + a
+          | Index i -> 19 + i
+        in
+        ((acc * 31) + c_hash) land max_int)
+      0 colors
+
+  let round_t t = int_of_float (t *. 1000.0) (* Round to 0.001 precision *)
+
   let get colors t compute =
     let key = (hash_colors colors, round_t t) in
     match Hashtbl.find_opt cache key with
@@ -296,8 +312,7 @@ module GradientCache = struct
     | None ->
         let color = compute () in
         (* Limit cache size to prevent unbounded growth *)
-        if Hashtbl.length cache < 1024 then
-          Hashtbl.add cache key color;
+        if Hashtbl.length cache < 1024 then Hashtbl.add cache key color;
         color
 end
 
@@ -309,16 +324,16 @@ let calculate_gradient_color colors t =
       Default (* Return Default color for empty gradient instead of raising *)
   | [ c ] -> c
   | _ ->
-      GradientCache.get colors t (fun () ->
-        let num_segments = float_of_int (List.length colors - 1) in
-        let segment_index =
-          min (int_of_float (t *. num_segments)) (List.length colors - 2)
-        in
-        let segment_start_t = float_of_int segment_index /. num_segments in
-        let c1 = List.nth colors segment_index in
-        let c2 = List.nth colors (segment_index + 1) in
-        let segment_t = (t -. segment_start_t) /. (1. /. num_segments) in
-        interpolate_rgb (to_rgb c1) (to_rgb c2) segment_t)
+      Gradient_cache.get colors t (fun () ->
+          let num_segments = float_of_int (List.length colors - 1) in
+          let segment_index =
+            min (int_of_float (t *. num_segments)) (List.length colors - 2)
+          in
+          let segment_start_t = float_of_int segment_index /. num_segments in
+          let c1 = List.nth colors segment_index in
+          let c2 = List.nth colors (segment_index + 1) in
+          let segment_t = (t -. segment_start_t) /. (1. /. num_segments) in
+          interpolate_rgb (to_rgb c1) (to_rgb c2) segment_t)
 
 let to_attrs ~dark style =
   let attrs = ref [] in

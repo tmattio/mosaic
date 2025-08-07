@@ -93,10 +93,11 @@ module Canvas = struct
               let rec draw x y err =
                 (* Choose appropriate character based on direction *)
                 let glyph =
-                  if dx = 0 then "│"  (* Vertical line *)
-                  else if dy = 0 then "─"  (* Horizontal line *)
-                  else if (x2 - x1) * (y2 - y1) > 0 then "\\"  (* Diagonal down-right or up-left *)
-                  else "/"  (* Diagonal down-left or up-right *)
+                  if dx = 0 then "│" (* Vertical line *)
+                  else if dy = 0 then "─" (* Horizontal line *)
+                  else if (x2 - x1) * (y2 - y1) > 0 then "\\"
+                    (* Diagonal down-right or up-left *)
+                  else "/" (* Diagonal down-left or up-right *)
                 in
                 plot_fn ~x ~y ~style glyph;
                 if x = x2 && y = y2 then ()
