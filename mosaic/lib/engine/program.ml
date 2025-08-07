@@ -33,7 +33,7 @@ type t = {
   mutable running : bool;
   (* terminal & I *)
   term : Tty.t;
-  event_source : Event_source.t;
+  mutable event_source : Event_source.t option;
   (* user confi *)
   mouse : bool;
   fps : int;
@@ -73,7 +73,6 @@ let make_terminal ?terminal () =
 
 let create (cfg : config) ~(sw : Switch.t) ~(env : Eio_unix.Stdenv.base) : t =
   let term = make_terminal ?terminal:cfg.terminal () in
-  let event_source = Event_source.create ~sw ~env ~mouse:cfg.mouse term in
   let render_mode =
     if cfg.alt_screen then Alt_screen { previous = None }
     else
@@ -87,7 +86,7 @@ let create (cfg : config) ~(sw : Switch.t) ~(env : Eio_unix.Stdenv.base) : t =
   {
     running = true;
     term;
-    event_source;
+    event_source = None;
     mouse = cfg.mouse;
     fps = cfg.fps;
     render_mode;
@@ -116,6 +115,7 @@ let build_cleanup_sequence had_alt_screen =
   Buffer.add_string esc Ansi.mouse_off;
   Buffer.add_string esc Ansi.bracketed_paste_off;
   Buffer.add_string esc Ansi.kitty_keyboard_off;
+  Buffer.add_string esc Ansi.focus_event_off;
   if had_alt_screen then Buffer.add_string esc Ansi.alternate_screen_off;
   Buffer.contents esc
 
@@ -132,20 +132,40 @@ let setup_terminal t =
         (* First ensure the terminal is in a clean state *)
         let reset_seq =
           Ansi.mouse_off ^ Ansi.bracketed_paste_off ^ Ansi.kitty_keyboard_off
+          ^ Ansi.focus_event_off (* Disable focus events first *)
         in
         Tty.write t.term (Bytes.of_string reset_seq) 0 (String.length reset_seq);
         Tty.flush t.term;
 
         (* Now set up the terminal for our use *)
+        log_debug t "Setting terminal to raw mode";
         Tty.set_mode t.term `Raw;
+        log_debug t "Raw mode set";
         Tty.hide_cursor t.term;
         (match t.render_mode with
         | Alt_screen _ -> Tty.enable_alternate_screen t.term
         | _ -> ());
         if t.mouse then Tty.set_mouse_mode t.term `Normal;
+        Tty.enable_focus_reporting t.term;
         Tty.enable_kitty_keyboard t.term;
         Tty.enable_bracketed_paste t.term;
-        Tty.flush t.term
+        Tty.flush t.term;
+
+        (* Clear any pending input that might have been buffered before raw mode *)
+        let input_fd = Tty.input_fd t.term in
+        let buf = Bytes.create 256 in
+        (try
+           Unix.set_nonblock input_fd;
+           while Unix.read input_fd buf 0 256 > 0 do
+             ()
+           done
+         with
+         | Unix.Unix_error (Unix.EAGAIN, _, _)
+         | Unix.Unix_error (Unix.EWOULDBLOCK, _, _)
+         ->
+           ());
+
+        log_debug t "Terminal setup complete"
       with exn ->
         log_debug t
           (Printf.sprintf "Setup terminal failed: %s" (Printexc.to_string exn));
@@ -288,73 +308,90 @@ let do_render t dyn_el =
 
 (*  Command execution *)
 
-type exec_mode = Spawn | Inline
+let process_meta_command t meta =
+  match meta with
+  | Cmd.Quit -> t.running <- false
+  | Cmd.Print el ->
+      with_state_mutex t ~f:(fun () ->
+          t.static_elements <- t.static_elements @ [ el ];
+          t.static_cache <- None)
+  | Cmd.Clear_screen ->
+      with_term_mutex t ~f:(fun () ->
+          let seq = Ansi.clear_screen ^ Ansi.esc ^ "H" in
+          Tty.write t.term (Bytes.of_string seq) 0 (String.length seq);
+          Tty.flush t.term);
+      with_state_mutex t ~f:(fun () ->
+          t.static_elements <- [];
+          t.static_cache <- None;
+          match t.render_mode with
+          | Standard rm -> rm.last_static_height <- 0
+          | Alt_screen _ -> ())
+  | Cmd.Clear_terminal ->
+      with_term_mutex t ~f:(fun () ->
+          let seq = Ansi.clear_screen ^ "\027[3J" ^ Ansi.esc ^ "H" in
+          Tty.write t.term (Bytes.of_string seq) 0 (String.length seq);
+          Tty.flush t.term);
+      with_state_mutex t ~f:(fun () ->
+          t.static_elements <- [];
+          t.static_cache <- None)
+  | Cmd.Set_window_title title ->
+      with_term_mutex t ~f:(fun () ->
+          let seq = Printf.sprintf "\027]0;%s\007" title in
+          Tty.write t.term (Bytes.of_string seq) 0 (String.length seq);
+          Tty.flush t.term)
+  | Cmd.Enter_alt_screen ->
+      if not (is_alt t.render_mode) then
+        with_term_mutex t ~f:(fun () ->
+            let seq = "\0277" ^ "\027[?1049h" in
+            Tty.write t.term (Bytes.of_string seq) 0 (String.length seq);
+            Tty.flush t.term)
+  | Cmd.Exit_alt_screen ->
+      if is_alt t.render_mode then
+        with_term_mutex t ~f:(fun () ->
+            let seq = "\027[?1049l" ^ "\0278" in
+            Tty.write t.term (Bytes.of_string seq) 0 (String.length seq);
+            Tty.flush t.term)
+  | Cmd.Repaint -> (
+      (* Force re-render by invalidating previous buffers *)
+      match t.render_mode with
+      | Alt_screen st -> st.previous <- None
+      | Standard st -> st.previous_dynamic <- None)
+  | Cmd.Log s -> log_debug t s
+  | Cmd.Tick (duration, f) ->
+      Fiber.fork ~sw:t.sw (fun () ->
+          let start = Eio.Time.now t.clock in
+          Eio.Time.sleep t.clock duration;
+          let elapsed = Eio.Time.now t.clock -. start in
+          if t.running then f elapsed)
+  | Cmd.Perform_eio f -> Fiber.fork ~sw:t.sw (fun () -> f ~sw:t.sw ~env:t.env)
 
 let process_cmd_internal t dispatch cmd =
-  let run mode f =
-    match mode with Spawn -> Fiber.fork ~sw:t.sw f | Inline -> f ()
-  in
-
-  (* Use a queue for tail-recursive processing *)
-  let cmd_queue = Queue.create () in
-  Queue.add (Spawn, cmd) cmd_queue;
-
-  while not (Queue.is_empty cmd_queue) do
-    let mode, cmd = Queue.take cmd_queue in
-    match cmd with
-    | Cmd.None -> ()
-    | Cmd.Msg m -> dispatch m
-    | Cmd.Batch l -> List.iter (fun c -> Queue.add (Spawn, c) cmd_queue) l
-    | Cmd.Sequence l -> List.iter (fun c -> Queue.add (Inline, c) cmd_queue) l
-    | Cmd.Perform f -> run mode (fun () -> Option.iter dispatch (f ()))
-    | Cmd.Perform_eio f ->
-        run mode (fun () -> Option.iter dispatch (f ~sw:t.sw ~env:t.env))
-    | Cmd.Tick (d, f) ->
-        run mode (fun () ->
-            let start = Eio.Time.now t.clock in
-            Eio.Time.sleep t.clock d;
-            let elapsed = Eio.Time.now t.clock -. start in
-            if t.running then dispatch (f elapsed))
-    | Cmd.Quit -> () (* Handled by the caller in mosaic.ml *)
-    | Cmd.Log s -> log_debug t s
-    | Cmd.Print el ->
-        with_state_mutex t ~f:(fun () ->
-            t.static_elements <- t.static_elements @ [ el ];
-            t.static_cache <- None)
-    | Cmd.Clear_screen ->
-        with_term_mutex t ~f:(fun () ->
-            let seq = Ansi.clear_screen ^ Ansi.esc ^ "H" in
-            Tty.write t.term (Bytes.of_string seq) 0 (String.length seq);
-            Tty.flush t.term);
-        with_state_mutex t ~f:(fun () ->
-            t.static_elements <- [];
-            t.static_cache <- None;
-            match t.render_mode with
-            | Standard rm -> rm.last_static_height <- 0
-            | Alt_screen _ -> ())
-    | Cmd.Repaint -> (
-        (* Force re-render by invalidating previous buffers *)
-        match t.render_mode with
-        | Alt_screen st -> st.previous <- None
-        | Standard st -> st.previous_dynamic <- None)
-    | _ -> ()
-  done
+  (* Run the command and get meta commands *)
+  let metas = Cmd.run ~dispatch cmd in
+  (* Process the meta commands *)
+  List.iter (process_meta_command t) metas
 
 (*  Runtime loops *)
 
 let run_input_loop t on_input =
-  while t.running do
-    let timeout = Some (1.0 /. float_of_int t.fps) in
-    match Event_source.read t.event_source ~clock:t.clock ~timeout with
-    | `Event ev -> on_input ev
-    | `Timeout -> ()
-  done
+  match t.event_source with
+  | None -> log_debug t "No event source, input loop not running"
+  | Some event_source ->
+      while t.running do
+        let timeout = Some (1.0 /. float_of_int t.fps) in
+        match Event_source.read event_source ~clock:t.clock ~timeout with
+        | `Event ev -> on_input ev
+        | `Timeout -> ()
+      done
 
 let run_render_loop t get_view =
+  log_debug t "Starting render loop";
   while t.running do
+    log_debug t "Rendering frame";
     do_render t (get_view ());
     Eio.Time.sleep t.clock (1.0 /. float_of_int t.fps)
-  done
+  done;
+  log_debug t "Render loop ended"
 
 let run_resize_loop t on_resize =
   while t.running do
@@ -380,20 +417,36 @@ let start ~(sw : Switch.t) ~(env : Eio_unix.Stdenv.base) cfg ~render ~on_input
 
   (* Ensure cleanup happens if setup fails *)
   try
+    log_debug prog "Starting program";
     setup_terminal prog;
     setup_signal_handlers prog;
 
-    Fiber.fork ~sw (fun () -> run_input_loop prog on_input);
-    Fiber.fork ~sw (fun () -> run_render_loop prog (fun () -> render ()));
-    Fiber.fork ~sw (fun () -> run_resize_loop prog on_resize);
+    (* Create event source AFTER terminal is set up *)
+    log_debug prog "Creating event source";
+    prog.event_source <-
+      Some (Event_source.create ~sw ~env ~mouse:prog.mouse prog.term);
+
+    log_debug prog "Forking fibers";
+    Fiber.fork ~sw (fun () ->
+        log_debug prog "Input loop fiber started";
+        run_input_loop prog on_input);
+    Fiber.fork ~sw (fun () ->
+        log_debug prog "Render loop fiber started";
+        run_render_loop prog (fun () -> render ()));
+    Fiber.fork ~sw (fun () ->
+        log_debug prog "Resize loop fiber started";
+        run_resize_loop prog on_resize);
     (match tick with
     | None -> ()
     | Some cb -> Fiber.fork ~sw (fun () -> run_tick_loop prog cb));
 
     let process_cmd disp cmd = process_cmd_internal prog disp cmd in
+    log_debug prog "Program started successfully";
     (prog, process_cmd)
   with exn ->
     (* Emergency cleanup if setup fails *)
+    log_debug prog
+      (Printf.sprintf "Program start failed: %s" (Printexc.to_string exn));
     (try cleanup prog with _ -> ());
     raise exn
 
@@ -402,6 +455,8 @@ let stop t =
     t.running <- false;
     Eio.Condition.broadcast t.resize_cond;
     cleanup t)
+
+let is_running t = t.running
 
 let request_render t =
   match t.render_mode with

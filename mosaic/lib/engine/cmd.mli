@@ -9,34 +9,23 @@
     in parallel while sequence commands execute serially. Commands can be
     composed and transformed with [map]. *)
 
-type 'msg exec_cmd = { run : unit -> unit; on_complete : 'msg }
-(** [exec_cmd] describes an operation that temporarily releases terminal
-    control.
+(** Meta commands for runtime operations *)
+type meta =
+  | Quit
+  | Print of Ui.element
+  | Set_window_title of string
+  | Repaint
+  | Clear_screen
+  | Clear_terminal
+  | Enter_alt_screen
+  | Exit_alt_screen
+  | Log of string
+  | Tick of float * (float -> unit)
+  | Perform_eio of (sw:Eio.Switch.t -> env:Eio_unix.Stdenv.base -> unit)
 
-    The [run] function executes with the terminal in normal mode. The
-    [on_complete] message is produced after execution. *)
-
-(** [t] represents a command that may produce messages of type ['msg]. *)
-type 'msg t =
-  | None  (** Performs no operation. *)
-  | Msg of 'msg  (** Immediately produces a message. *)
-  | Batch of 'msg t list  (** Runs commands concurrently in parallel. *)
-  | Perform of (unit -> 'msg option)  (** Executes an async function. *)
-  | Perform_eio of (sw:Eio.Switch.t -> env:Eio_unix.Stdenv.base -> 'msg option)
-      (** Executes an async function with access to Eio environment. *)
-  | Exec of 'msg exec_cmd  (** Releases terminal for external programs. *)
-  | Tick of float * (float -> 'msg)  (** Creates a timer. *)
-  | Sequence of 'msg t list
-      (** Runs commands sequentially, one after another. *)
-  | Quit  (** Terminates the application. *)
-  | Log of string  (** Writes debug output. *)
-  | Print of Ui.element  (** Renders to stdout for scrollback history. *)
-  | Set_window_title of string  (** Updates the terminal title. *)
-  | Enter_alt_screen  (** Switches to alternate screen buffer. *)
-  | Exit_alt_screen  (** Returns to normal screen buffer. *)
-  | Repaint  (** Forces a full screen redraw. *)
-  | Clear_screen  (** Clears the terminal screen. *)
-  | Clear_terminal  (** Clears the terminal screen and scrollback buffer. *)
+type 'msg t
+(** [t] represents a command that may produce messages of type ['msg]. Commands
+    are closures that take a dispatch function and execute side effects. *)
 
 val none : 'msg t
 (** [none] represents the absence of any command.
@@ -277,16 +266,9 @@ val map : ('a -> 'b) -> 'a t -> 'b t
       Cmd.map (fun msg -> `Select_msg msg) cmd
     ]} *)
 
-val to_list : 'msg t -> 'msg t list
-(** [to_list cmd] flattens [cmd] into a list of atomic commands.
+val run : dispatch:('msg -> unit) -> 'msg t -> meta list
+(** [run ~dispatch cmd] executes the command with the given dispatch function.
 
-    Expands [Batch] commands while preserving [Sequence] as atomic units. Used
-    internally by the runtime for command execution. *)
-
-val pp :
-  (Format.formatter -> 'msg -> unit) -> Format.formatter -> 'msg t -> unit
-(** [pp pp_msg fmt cmd] pretty-prints command structure for debugging.
-
-    The [pp_msg] function formats message values. Shows command constructors and
-    parameters. Functions are displayed as "<fun>". Useful for logging command
-    flow during development. *)
+    This is the main runtime interface that executes the command's closure,
+    allowing it to perform side effects and dispatch messages. Returns a list of
+    meta commands that need to be processed by the runtime. *)

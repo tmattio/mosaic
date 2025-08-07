@@ -50,6 +50,9 @@ val start :
 val stop : t -> unit
 (** Gracefully shut the program down (restores terminal state, joins fibres). *)
 
+val is_running : t -> bool
+(** Check if the program is still running. *)
+
 (** {1 Utility} *)
 
 val request_render : t -> unit

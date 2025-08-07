@@ -59,24 +59,18 @@ let run_eio (type model msg) ~(sw : Eio.Switch.t) ~(env : Eio_unix.Stdenv.base)
         let subs =
           Eio.Mutex.use_ro model_mutex (fun () -> app.subscriptions !model_ref)
         in
-        let generated : msg list =
-          match event with
-          | Input.Key k ->
-              Sub.collect_keyboard [] subs |> List.filter_map (fun f -> f k)
-          | Input.Focus ->
-              Sub.collect_focus [] subs |> List.filter_map (fun f -> f ())
-          | Input.Blur ->
-              Sub.collect_blur [] subs |> List.filter_map (fun f -> f ())
-          | Input.Mouse m_ev ->
-              Sub.collect_mouse [] subs |> List.filter_map (fun f -> f m_ev)
-          | Input.Paste s ->
-              Sub.collect_paste [] subs |> List.filter_map (fun f -> f s)
-          | Input.Resize (w, h) ->
-              Option.iter Program.request_render !prog_ref;
-              (* invalidate visual stat *)
-              let size = { Sub.width = w; height = h } in
-              Sub.collect_window [] subs |> List.filter_map (fun f -> f size)
-          | _ -> []
+        (* Collect messages from subscriptions *)
+        let messages = ref [] in
+        let collect_msg msg = messages := msg :: !messages in
+        Sub.run ~dispatch:collect_msg event subs;
+        
+        (* Handle resize event to trigger render *)
+        (match event with
+        | Input.Resize _ ->
+            Option.iter Program.request_render !prog_ref
+        | _ -> ());
+        
+        let generated = List.rev !messages
         in
         List.iter dispatch generated
       in
@@ -96,10 +90,8 @@ let run_eio (type model msg) ~(sw : Eio.Switch.t) ~(env : Eio_unix.Stdenv.base)
         while not (Queue.is_empty cmd_queue) do
           let cmd = Queue.take cmd_queue in
           process_cmd dispatch cmd;
-          (* Detect [Cmd.Quit] by pattern‑matching – if found, also stop program *)
-          match cmd with
-          | Cmd.Quit -> raise Exit
-          | _ -> ()
+          (* Check if quit was requested *)
+          if not (Program.is_running prog) then raise Exit
         done;
 
         (* Then wait for the next messag *)
@@ -117,8 +109,8 @@ let run_eio (type model msg) ~(sw : Eio.Switch.t) ~(env : Eio_unix.Stdenv.base)
         | exception End_of_file -> ()
       in
 
-      (* Run everything concurrentl *)
-      Eio.Fiber.fork ~sw (fun () -> try message_loop () with Exit -> ()))
+      (* Run everything concurrently - wait for message loop to complete *)
+      try message_loop () with Exit -> ())
 
 (* Convenience wrapper for the common case – sets up its own Eio event loo *)
 let run ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 60)

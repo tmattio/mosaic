@@ -431,53 +431,12 @@ val map : ('a -> 'b) -> 'a t -> 'b t
       Sub.map (fun msg -> `Select_msg msg) subs
     ]} *)
 
-val collect_keyboard :
-  (Input.key_event -> 'msg option) list ->
-  'msg t ->
-  (Input.key_event -> 'msg option) list
-(** [collect_keyboard acc sub] extracts keyboard handlers from [sub].
-
-    Internal function used by the runtime to gather active keyboard
-    subscriptions. Accumulates handlers in [acc]. *)
-
-val collect_mouse :
-  (Input.mouse_event -> 'msg option) list ->
-  'msg t ->
-  (Input.mouse_event -> 'msg option) list
-(** [collect_mouse acc sub] extracts mouse handlers from [sub].
-
-    Internal function used by the runtime to gather active mouse subscriptions.
-*)
-
-val collect_window :
-  (window_size -> 'msg option) list ->
-  'msg t ->
-  (window_size -> 'msg option) list
-(** [collect_window acc sub] extracts window resize handlers from [sub].
-
-    Internal function used by the runtime to gather active window subscriptions.
-*)
-
-val collect_focus :
-  (unit -> 'msg option) list -> 'msg t -> (unit -> 'msg option) list
-(** [collect_focus acc sub] extracts focus event handlers from [sub].
-
-    Internal function used by the runtime to gather active focus subscriptions.
-*)
-
-val collect_blur :
-  (unit -> 'msg option) list -> 'msg t -> (unit -> 'msg option) list
-(** [collect_blur acc sub] extracts blur event handlers from [sub].
-
-    Internal function used by the runtime to gather active blur subscriptions.
-*)
-
-val collect_paste :
-  (string -> 'msg option) list -> 'msg t -> (string -> 'msg option) list
-(** [collect_paste acc sub] extracts paste event handlers from [sub].
-
-    Internal function used by the runtime to gather active paste subscriptions.
-*)
+val run : dispatch:('msg -> unit) -> Input.event -> 'msg t -> unit
+(** [run ~dispatch event sub] executes the subscription with the given dispatch 
+    function and input event.
+    
+    This is the main runtime interface that executes the subscription's closure,
+    allowing it to process events and dispatch messages. *)
 
 val pp :
   (Format.formatter -> 'msg -> unit) -> Format.formatter -> 'msg t -> unit

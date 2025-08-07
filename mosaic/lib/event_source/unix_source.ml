@@ -1,48 +1,8 @@
 let sigwinch = 28
 
-let enable_seqs output_fd mouse =
-  let seq =
-    "\x1b[?2004h\x1b[?1004h"
-    ^ if mouse then "\x1b[?1000h\x1b[?1002h\x1b[?1006h" else ""
-  in
-  ignore (Unix.write output_fd (Bytes.of_string seq) 0 (String.length seq))
-
-let disable_seqs output_fd mouse =
-  let seq =
-    "\x1b[?2004l\x1b[?1004l"
-    ^ if mouse then "\x1b[?1000l\x1b[?1002l\x1b[?1006l" else ""
-  in
-  ignore (Unix.write output_fd (Bytes.of_string seq) 0 (String.length seq))
-
-let create ~sw ~env:_ ~mouse terminal =
+let create ~sw ~env:_ ~mouse:_ terminal =
   let input_fd = Tty.input_fd terminal in
-  let output_fd = Tty.output_fd terminal in
   let is_tty = Unix.isatty input_fd in
-  let old_attr_opt =
-    if is_tty then try Some (Unix.tcgetattr input_fd) with _ -> None else None
-  in
-  (match old_attr_opt with
-  | Some old_attr ->
-      let raw_attr =
-        {
-          old_attr with
-          c_icanon = false;
-          c_echo = false;
-          c_isig = false;
-          c_vmin = 1;
-          c_vtime = 0;
-          c_ignbrk = true;
-          c_inpck = false;
-          c_istrip = false;
-          c_icrnl = false;
-          c_ixoff = false;
-          c_opost = false;
-          c_csize = 8;
-        }
-      in
-      Unix.tcsetattr input_fd Unix.TCSANOW raw_attr;
-      enable_seqs output_fd mouse
-  | None -> ());
 
   let events = Eio.Stream.create 1024 in
   let pipe_r, pipe_w = Unix.pipe () in
@@ -93,11 +53,7 @@ let create ~sw ~env:_ ~mouse terminal =
       with Eio.Cancel.Cancelled _ -> `Stop_daemon (* Switch release *));
 
   Eio.Switch.on_release sw (fun () ->
-      (match old_attr_opt with
-      | Some old_attr ->
-          disable_seqs output_fd mouse;
-          Unix.tcsetattr input_fd Unix.TCSANOW old_attr
-      | None -> ());
+      (* Terminal cleanup is handled by Program.cleanup *)
       Sys.set_signal sigwinch old_sigwinch;
       Unix.close pipe_r;
       Unix.close pipe_w);

@@ -1,33 +1,91 @@
-type 'msg keyboard_sub = Input.key_event -> 'msg option
-type 'msg mouse_sub = Input.mouse_event -> 'msg option
+(** Subscriptions with single closure-based implementation *)
+
+(* The only representation: a closure that takes dispatch and event *)
+type 'msg t = { 
+  run : dispatch:('msg -> unit) -> Input.event -> unit 
+}
+
+(* Window size type *)
 type window_size = { width : int; height : int }
-type 'msg window_sub = window_size -> 'msg option
-type 'msg focus_sub = unit -> 'msg option
-type 'msg blur_sub = unit -> 'msg option
-type 'msg paste_sub = string -> 'msg option
 
-type 'msg t =
-  | None
-  | Keyboard of 'msg keyboard_sub
-  | Mouse of 'msg mouse_sub
-  | Window of 'msg window_sub
-  | Focus of 'msg focus_sub
-  | Blur of 'msg blur_sub
-  | Paste of 'msg paste_sub
-  | Batch of 'msg t list
+(* Constructors *)
+let none = { run = (fun ~dispatch:_ _event -> ()) }
 
-let none = None
-let keyboard f = Keyboard (fun k -> Some (f k))
-let keyboard_filter f = Keyboard f
-let mouse f = Mouse (fun m -> Some (f m))
-let mouse_filter f = Mouse f
-let window f = Window (fun w -> Some (f w))
-let window_filter f = Window f
-let focus f = Focus (fun () -> Some (f ()))
-let blur f = Blur (fun () -> Some (f ()))
-let paste f = Paste (fun s -> Some (f s))
-let paste_filter f = Paste f
+let keyboard f = 
+  { run = (fun ~dispatch event ->
+      match event with
+      | Input.Key key_event ->
+          dispatch (f key_event)
+      | _ -> ()) }
 
+let keyboard_filter f = 
+  { run = (fun ~dispatch event ->
+      match event with
+      | Input.Key key_event ->
+          Option.iter dispatch (f key_event)
+      | _ -> ()) }
+
+let mouse f = 
+  { run = (fun ~dispatch event ->
+      match event with
+      | Input.Mouse mouse_event ->
+          dispatch (f mouse_event)
+      | _ -> ()) }
+
+let mouse_filter f = 
+  { run = (fun ~dispatch event ->
+      match event with
+      | Input.Mouse mouse_event ->
+          Option.iter dispatch (f mouse_event)
+      | _ -> ()) }
+
+let window f = 
+  { run = (fun ~dispatch event ->
+      match event with
+      | Input.Resize (width, height) ->
+          dispatch (f { width; height })
+      | _ -> ()) }
+
+let window_filter f = 
+  { run = (fun ~dispatch event ->
+      match event with
+      | Input.Resize (width, height) ->
+          Option.iter dispatch (f { width; height })
+      | _ -> ()) }
+
+let focus f = 
+  { run = (fun ~dispatch event ->
+      match event with
+      | Input.Focus ->
+          dispatch (f ())
+      | _ -> ()) }
+
+let blur f = 
+  { run = (fun ~dispatch event ->
+      match event with
+      | Input.Blur ->
+          dispatch (f ())
+      | _ -> ()) }
+
+let paste f = 
+  { run = (fun ~dispatch event ->
+      match event with
+      | Input.Paste text ->
+          dispatch (f text)
+      | _ -> ()) }
+
+let paste_filter f = 
+  { run = (fun ~dispatch event ->
+      match event with
+      | Input.Paste text ->
+          Option.iter dispatch (f text)
+      | _ -> ()) }
+
+let batch subs =
+  { run = (fun ~dispatch event ->
+      List.iter (fun (sub : _ t) -> sub.run ~dispatch event) subs) }
+
+(* Helper functions for specific events *)
 let on_mouse_motion f =
   mouse_filter (function
     | Input.Motion (x, y, _, _) -> Some (f x y)
@@ -40,7 +98,6 @@ let on_mouse_click f =
 
 let on_resize f = window (fun size -> f size.width size.height)
 
-(* Helper functions for specific events *)
 let on_key ?ctrl ?alt ?shift key msg =
   let ctrl = Option.value ctrl ~default:false in
   let alt = Option.value alt ~default:false in
@@ -119,73 +176,14 @@ let on_ctrl_a msg = on_char ~ctrl:true 'a' msg
 let on_ctrl_s msg = on_char ~ctrl:true 's' msg
 let on_ctrl_d msg = on_char ~ctrl:true 'd' msg
 
-let batch subs =
-  match List.filter (function None -> false | _ -> true) subs with
-  | [] -> None
-  | [ sub ] -> sub
-  | subs -> Batch subs
+(* Map function for transforming messages *)
+let map f (sub : _ t) =
+  { run = (fun ~dispatch event ->
+      sub.run ~dispatch:(fun msg -> dispatch (f msg)) event) }
 
-let rec map f sub =
-  match sub with
-  | None -> None
-  | Keyboard fn -> Keyboard (fun k -> Option.map f (fn k))
-  | Mouse fn -> Mouse (fun m -> Option.map f (fn m))
-  | Window fn -> Window (fun w -> Option.map f (fn w))
-  | Focus fn -> Focus (fun () -> Option.map f (fn ()))
-  | Blur fn -> Blur (fun () -> Option.map f (fn ()))
-  | Paste fn -> Paste (fun s -> Option.map f (fn s))
-  | Batch subs -> batch (List.map (map f) subs)
-
-let rec collect_keyboard acc = function
-  | None -> acc
-  | Keyboard fn -> fn :: acc
-  | Mouse _ | Window _ | Focus _ | Blur _ | Paste _ -> acc
-  | Batch subs -> List.fold_left collect_keyboard acc subs
-
-let rec collect_mouse acc = function
-  | None -> acc
-  | Mouse fn -> fn :: acc
-  | Keyboard _ | Window _ | Focus _ | Blur _ | Paste _ -> acc
-  | Batch subs -> List.fold_left collect_mouse acc subs
-
-let rec collect_window acc = function
-  | None -> acc
-  | Window fn -> fn :: acc
-  | Keyboard _ | Mouse _ | Focus _ | Blur _ | Paste _ -> acc
-  | Batch subs -> List.fold_left collect_window acc subs
-
-let rec collect_focus acc = function
-  | None -> acc
-  | Focus fn -> fn :: acc
-  | Keyboard _ | Mouse _ | Window _ | Blur _ | Paste _ -> acc
-  | Batch subs -> List.fold_left collect_focus acc subs
-
-let rec collect_blur acc = function
-  | None -> acc
-  | Blur fn -> fn :: acc
-  | Keyboard _ | Mouse _ | Window _ | Focus _ | Paste _ -> acc
-  | Batch subs -> List.fold_left collect_blur acc subs
-
-let rec collect_paste acc = function
-  | None -> acc
-  | Paste fn -> fn :: acc
-  | Keyboard _ | Mouse _ | Window _ | Focus _ | Blur _ -> acc
-  | Batch subs -> List.fold_left collect_paste acc subs
+(* Runtime interface *)
+let run ~dispatch event (sub : _ t) = sub.run ~dispatch event
 
 (* Pretty-printing *)
-let pp _pp_msg fmt sub =
-  let open Format in
-  let rec pp_sub fmt = function
-    | None -> fprintf fmt "None"
-    | Keyboard _ -> fprintf fmt "Keyboard(<fun>)"
-    | Mouse _ -> fprintf fmt "Mouse(<fun>)"
-    | Window _ -> fprintf fmt "Window(<fun>)"
-    | Focus _ -> fprintf fmt "Focus(<fun>)"
-    | Blur _ -> fprintf fmt "Blur(<fun>)"
-    | Paste _ -> fprintf fmt "Paste(<fun>)"
-    | Batch subs ->
-        fprintf fmt "Batch[@[<hv>%a@]]"
-          (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ";@ ") pp_sub)
-          subs
-  in
-  pp_sub fmt sub
+let pp _pp_msg fmt _sub =
+  Format.fprintf fmt "<subscription>"

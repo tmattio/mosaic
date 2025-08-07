@@ -1,13 +1,11 @@
 module type S = sig
   type props
 
-  val make : props -> Ui.element
+  val key : props -> string option
+  val equal : props -> props -> bool option
+  val render : props -> Ui.element
 end
 
-type 'props t = (module S with type props = 'props)
+type 'p t = Pack : (module S with type props = 'p) * 'p -> 'p t
 
-let make (type props) (module C : S with type props = props) : props t =
-  (module C)
-
-(* For existential wrapping *)
-type any_component = Any : 'props t * 'props -> any_component
+let make m p = Pack (m, p)
