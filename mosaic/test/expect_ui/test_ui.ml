@@ -688,7 +688,7 @@ let%expect_test "border with clipping" =
 
 let%expect_test "Padding and Borders" =
   print_ui ~width:20 ~height:7
-    (Ui.vbox ~padding:(Ui.all 1)
+    (Ui.vbox ~padding:(Ui.all 1) ~width:(`Pct 1.0)
        ~border:(Ui.Border.make ~line_style:Ui.Border.Rounded ())
        [ Ui.text "Hello"; Ui.text "World" ]);
   [%expect_exact {|
@@ -814,19 +814,20 @@ let%expect_test "Expand element" =
 
 let%expect_test "Complex nested layout" =
   let sidebar =
-    Ui.vbox ~width:(`Cells 12)
+    Ui.vbox ~width:(`Cells 12) ~flex_shrink:0.
       ~border:(Ui.Border.make ~line_style:Ui.Border.Double ())
       [ Ui.text "Sidebar"; Ui.spacer ~flex_grow:1. (); Ui.text "Status" ]
   in
   let main_content =
-    Ui.vbox ~flex_grow:1. ~padding:(Ui.all 1) ~border:Ui.Border.normal
+    Ui.vbox ~flex_grow:1. ~width:(`Pct 1.0) ~padding:(Ui.all 1)
+      ~border:Ui.Border.normal
       [
         Ui.text "Main Content Header";
         Ui.text "──────────────────-";
         Ui.vbox [ Ui.text "Line 1"; Ui.text "Line 2" ];
       ]
   in
-  let layout = Ui.hbox [ sidebar; main_content ] in
+  let layout = Ui.hbox ~width:(`Pct 1.0) [ sidebar; main_content ] in
   print_ui ~width:40 ~height:8 layout;
   [%expect_exact {|
 ┌────────────────────────────────────────┐
@@ -864,7 +865,7 @@ let%expect_test "Unicode and wide characters" =
 
 let%expect_test "Stretch alignment" =
   let ui =
-    Ui.vbox ~align_items:`Start ~flex_shrink:1. ~height:(`Cells 5) ~border:(Ui.Border.normal)
+    Ui.vbox ~width:(`Pct 1.0) ~align_items:`Start ~flex_shrink:1. ~height:(`Cells 5) ~border:(Ui.Border.normal)
       [
         Ui.hbox ~align_items:`Stretch
           [
@@ -880,7 +881,7 @@ let%expect_test "Stretch alignment" =
 ││┌───┐┌───┐   ││
 │││A  ││B  │   ││
 │││   ││C  │   ││
-│└─────────────┘│
+│└└───┘└───┘───┘│
 │               │
 │               │
 └───────────────┘
@@ -928,20 +929,21 @@ let%expect_test "Background padding" =
 
 let%expect_test "Z-stack alignment" =
   let main =
-    Ui.hbox ~width:(`Cells 20) ~height:(`Cells 5) ~border:Ui.Border.normal
-      [ Ui.text "Main" ]
+    Ui.center
+      (Ui.hbox ~width:(`Cells 20) ~height:(`Cells 5) ~border:Ui.Border.normal
+         [ Ui.text "Main" ])
   in
-  let overlay = Ui.text "X" in
-  let ui = Ui.zbox [ main; overlay ] in
+  let overlay = Ui.center (Ui.text "X") in
+  let ui = Ui.zbox ~width:(`Pct 1.) [ main; overlay ] in
   print_ui ~width:25 ~height:6 ui;
   [%expect_exact {|
 ┌─────────────────────────┐
-│  ┌──────────────────┐   │
-│  │Main              │   │
-│  │         X        │   │
-│  │                  │   │
-│  └──────────────────┘   │
 │                         │
+│   ┌──────────────────┐  │
+│   │Main              │  │
+│   │        X         │  │
+│   │                  │  │
+│   └──────────────────┘  │
 └─────────────────────────┘
 |}] [@ocamlformat "disable"]
 
@@ -1008,7 +1010,7 @@ let%expect_test "Flex spacer" =
 
 let%expect_test "Divider" =
   let ui =
-    Ui.vbox ~gap:(`Cells 1)
+    Ui.vbox ~gap:(`Cells 1) ~width:(`Pct 1.0)
       [ Ui.text "Section 1"; Ui.divider (); Ui.text "Section 2" ]
   in
   print_ui ~width:15 ~height:5 ui;
@@ -1054,11 +1056,14 @@ let%expect_test "Tab expansion" =
 
 let%expect_test "grid with flex rows/columns" =
   print_ui ~width:20 ~height:5
-    (Ui.grid
-       ~template_columns:
-         [ Ui.Single (Ui.track_pct 1.0); Ui.Single (Ui.track_pct 2.0) ]
-       ~template_rows:[ Ui.Single (Ui.track_pct 1.0) ]
-       [ Ui.text "A"; Ui.text "B" ]);
+    (Ui.box ~width:(`Pct 1.0)
+       [
+         Ui.grid
+           ~template_columns:
+             [ Ui.Single (Ui.track_pct 1.0); Ui.Single (Ui.track_pct 2.0) ]
+           ~template_rows:[ Ui.Single (Ui.track_pct 1.0) ]
+           [ Ui.text "A"; Ui.text "B" ];
+       ]);
   [%expect_exact {|
 ┌────────────────────┐
 │A      B            │
@@ -1259,7 +1264,7 @@ let%expect_test "divider - vertical" =
 │││
 │││
 │││
-+─┘
+└─┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "divider - custom char" =
@@ -1282,7 +1287,7 @@ let%expect_test "divider - with style" =
 
 let%expect_test "mixed primitives layout" =
   print_ui ~width:25 ~height:12
-    (Ui.vbox ~gap:(`Cells 1) [
+    (Ui.vbox ~width:(`Pct 1.0) ~gap:(`Cells 1) [
       Ui.checkbox ~checked:true ~label:"Enable feature" ();
       Ui.divider ();
       Ui.list ~items:[
@@ -1298,13 +1303,13 @@ let%expect_test "mixed primitives layout" =
 │                         │
 │─────────────────────────│
 │                         │
-│                         │
 │•  Option 1              │
 │•  Option 2              │
 │                         │
 │─────────────────────────│
 │                         │
-│                         │
 │         [Logo]          │
+│                         │
+│                         │
 └─────────────────────────┘
 |}] [@@ocamlformat "disable"]
