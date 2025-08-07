@@ -522,13 +522,21 @@ val styled : Style.t -> element -> element
 val flow :
   ?h_gap:[< length_percentage ] ->
   ?v_gap:[< length_percentage ] ->
+  ?overflow_x:overflow ->
+  ?overflow_y:overflow ->
   element list ->
   element
-(** [flow ?h_gap ?v_gap children] creates a flow layout that wraps children
+(** [flow ?h_gap ?v_gap ?overflow_x ?overflow_y children] creates a flow layout that wraps children
     horizontally to new lines when they don't fit in the available width.
     Similar to how inline elements work in HTML.
+    
+    Defaults to [overflow_x:`Hidden] and [overflow_y:`Hidden] to ensure the flow
+    container can shrink to fit within its parent, allowing proper wrapping behavior.
+    
     @param h_gap Horizontal spacing between items (default: 0)
-    @param v_gap Vertical spacing between lines (default: 0) *)
+    @param v_gap Vertical spacing between lines (default: 0)
+    @param overflow_x Horizontal overflow (default: [`Hidden] for proper shrinking)
+    @param overflow_y Vertical overflow (default: [`Hidden] for proper shrinking) *)
 
 val block :
   ?width:[< dimension ] ->

@@ -761,10 +761,13 @@ let styled style child =
   (* Wrap the child in a box that applies the style *)
   box ~style [ child ]
 
-let flow ?h_gap ?v_gap children =
+let flow ?h_gap ?v_gap ?overflow_x ?overflow_y children =
   (* Flow layout using flexbox with wrap enabled *)
+  (* Default to overflow:hidden so flow can shrink to fit its container *)
+  let overflow_x = Option.value overflow_x ~default:`Hidden in
+  let overflow_y = Option.value overflow_y ~default:`Hidden in
   box ~display:`Flex ~flex_direction:`Row ~flex_wrap:`Wrap ?gap:h_gap
-    ?row_gap:v_gap ~align_items:`Start children
+    ?row_gap:v_gap ~align_items:`Start ~overflow_x ~overflow_y children
 
 let block ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
     ?margin ?style ?border ?border_style children =
