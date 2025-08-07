@@ -11,7 +11,7 @@ type t =
       wrap : [ `Wrap | `Truncate | `Clip ];
     }
   | Canvas of {
-      draw : (x:int -> y:int -> ?style:Style.t -> string -> unit) -> unit;
+      draw : width:int -> height:int -> (x:int -> y:int -> ?style:Style.t -> string -> unit) -> unit;
     }
   | Scroll of { h_offset : int; v_offset : int }
 

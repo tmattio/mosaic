@@ -77,7 +77,7 @@ module Canvas = struct
       ?border_style draw_fn =
     Element.canvas ?width ?height ?min_width ?min_height ?max_width ?max_height
       ?padding ?margin ?flex_grow ?flex_shrink ?align_self ?style ?border
-      ?border_style (fun plot_fn ->
+      ?border_style (fun ~width ~height plot_fn ->
         let plot ~x ~y ?style str = plot_fn ~x ~y ?style str in
 
         let draw_line ~x1 ~y1 ~x2 ~y2 ?(style = Style.empty) ?(kind = `Line) ()
@@ -157,7 +157,7 @@ module Canvas = struct
         in
 
         let canvas = { plot; draw_line; draw_box } in
-        draw_fn canvas)
+        draw_fn ~width ~height canvas)
 
   let plot canvas ~x ~y ?(style = Style.empty) str =
     canvas.plot ~x ~y ~style str

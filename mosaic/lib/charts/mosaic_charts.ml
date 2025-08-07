@@ -2,10 +2,6 @@ open Ui
 
 (** Common utilities *)
 
-let size_to_int_with_default size default =
-  match size with
-  | Some (`Cells n) -> n
-  | Some (`Pct _) | Some `Auto | Some (`Calc _) | None -> default
 
 type point = { x : float; y : float }
 type time_series_point = { time : float; value : float }
@@ -145,9 +141,7 @@ let calculate_gradient_color colors t =
 let line ?width ?height ?x_range ?y_range ?(show_axes = true)
     ?(axis_style = Style.dim) ?(label_style = Style.dim) ?series_styles
     ?(render_kind = Lines) (data : (string * point list) list) =
-  Canvas.create ?width ?height (fun canvas ->
-      let w = size_to_int_with_default width 40 in
-      let h = size_to_int_with_default height 10 in
+  Canvas.create ?width ?height (fun ~width:w ~height:h canvas ->
       let series_count = List.length data in
       let styles =
         match series_styles with
@@ -295,9 +289,7 @@ let bar ?width ?height ?(orientation = `Vertical) ?max_value ?bar_width ?gap
     ?(show_axes = true) ?axis_style ?label_style (data : bar list) =
   let _ = label_style in
   (* TODO: Use for bar labels *)
-  Canvas.create ?width ?height (fun canvas ->
-      let w = size_to_int_with_default width 40 in
-      let h = size_to_int_with_default height 10 in
+  Canvas.create ?width ?height (fun ~width:w ~height:h canvas ->
       let bar_count = List.length data in
       let bw =
         Option.value bar_width
@@ -368,12 +360,12 @@ let bar ?width ?height ?(orientation = `Vertical) ?max_value ?bar_width ?gap
 
 let sparkline ?width ?range ?style ?(render_kind = `Bars) (data : float list) =
   let w = Option.value width ~default:(List.length data) in
-  Canvas.create ~width:(`Cells w) ~height:(`Cells 1) (fun canvas ->
+  Canvas.create ~width:(`Cells w) ~height:(`Cells 1) (fun ~width:actual_w ~height:_ canvas ->
       let min_v, max_v = Option.value range ~default:(min_max data) in
       List.iteri
         (fun i v ->
           (* Ensure i is within bounds *)
-          if i < w then
+          if i < actual_w then
             let scaled = scale_value v min_v max_v 0. 8. |> int_of_float in
             let char =
               match render_kind with
@@ -404,9 +396,7 @@ let heatmap ?width ?height ?x_range ?y_range ?value_range ?color_scale
   let color_scale =
     match color_scale with None | Some [] -> default_scale | Some cs -> cs
   in
-  Canvas.create ?width ?height (fun canvas ->
-      let w = size_to_int_with_default width 40 in
-      let h = size_to_int_with_default height 10 in
+  Canvas.create ?width ?height (fun ~width:w ~height:h canvas ->
       let x_min, x_max =
         Option.value x_range ~default:(min_max (List.map (fun p -> p.x) data))
       in
@@ -495,9 +485,7 @@ let candlestick ?width ?height ?time_range ?y_range ?(show_axes = true)
     ?(bearish_style = Style.bg Red) (data : ohlc_point list) =
   let _ = label_style in
   (* TODO: Use for axis labels *)
-  Canvas.create ?width ?height (fun canvas ->
-      let w = size_to_int_with_default width 40 in
-      let h = size_to_int_with_default height 10 in
+  Canvas.create ?width ?height (fun ~width:w ~height:h canvas ->
       let sorted = List.sort (fun p1 p2 -> compare p1.time p2.time) data in
       let _t_min, _t_max =
         Option.value time_range

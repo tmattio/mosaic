@@ -1,0 +1,6 @@
+(library
+ (name test_expect_charts)
+ (inline_tests)
+ (libraries test_utils mosaic.ui mosaic.tiles mosaic.charts unix)
+ (preprocess
+  (pps ppx_expect)))

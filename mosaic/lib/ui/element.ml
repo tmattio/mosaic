@@ -773,8 +773,13 @@ let scroll_view ?width ?height ?min_width ?min_height ?max_width ?max_height
 let canvas ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
     ?margin ?flex_grow ?flex_shrink ?align_self ?style ?border ?border_style
     draw =
-  (* Create the canvas node *)
-  let canvas_id = Toffee.new_leaf tree Toffee.Style.default |> Result.get_ok in
+  (* Create the canvas node with full size to fill its container *)
+  let canvas_style = 
+    Toffee.Style.make 
+      ~size:{width = Toffee.Style.Dimension.percent 1.0; 
+             height = Toffee.Style.Dimension.percent 1.0} ()
+  in
+  let canvas_id = Toffee.new_leaf tree canvas_style |> Result.get_ok in
   let _ =
     Toffee.set_node_context tree canvas_id (Some (Renderable.canvas draw))
     |> Result.get_ok

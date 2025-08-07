@@ -729,7 +729,7 @@ module Canvas : sig
     ?style:Style.t ->
     ?border:Border.t ->
     ?border_style:Style.t ->
-    (t -> unit) ->
+    (width:int -> height:int -> t -> unit) ->
     element
 end
 
@@ -748,7 +748,7 @@ val canvas :
   ?style:Style.t ->
   ?border:Border.t ->
   ?border_style:Style.t ->
-  ((x:int -> y:int -> ?style:Style.t -> string -> unit) -> unit) ->
+  (width:int -> height:int -> (x:int -> y:int -> ?style:Style.t -> string -> unit) -> unit) ->
   element
 (** A self-contained element for custom, imperative drawing.
 

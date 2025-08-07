@@ -702,7 +702,7 @@ let rec render_node_with_offset ctx (node_id, tree) (parent_x, parent_y) =
               Screen.set_grapheme ctx.screen ~viewport:ctx.viewport
                 ~row:(row + y) ~col:(col + x) ~glyph ~attrs
           in
-          draw plot
+          draw ~width ~height plot
       | Renderable.Scroll { h_offset; v_offset } ->
           (* Clip children to this node's bounds and apply scroll offset *)
           with_clip ctx bounds (fun ctx' ->
