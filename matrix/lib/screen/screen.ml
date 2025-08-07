@@ -215,8 +215,26 @@ let set_text ?viewport t ~row ~col ~text ~attrs =
       (lines_written, cols_advanced)
   | Some vp ->
       with_viewport t vp @@ fun t' ->
-      if Viewport.contains vp ~row ~col then
-        let max_width = vp.col + vp.width - col in
+      (* Handle scrolling case where row might be negative *)
+      if row < vp.Viewport.row then
+        (* Text row is before viewport - skip it entirely *)
+        (0, 0)
+      (* Handle scrolling case where col might be negative *)
+      else if col < vp.Viewport.col then
+        (* Text starts before viewport - skip the beginning *)
+        let skip_chars = vp.Viewport.col - col in
+        if skip_chars >= String.length text then
+          (0, 0) (* Entire text is before viewport *)
+        else
+          let visible_text = 
+            String.sub text skip_chars (String.length text - skip_chars) in
+          let max_width = vp.Viewport.width in
+          let cols_advanced =
+            G.set_text t'.back ~row ~col:vp.Viewport.col ~text:visible_text ~attrs ~max_width
+          in
+          (1, cols_advanced)
+      else if Viewport.contains vp ~row ~col then
+        let max_width = vp.Viewport.col + vp.Viewport.width - col in
         let cols_advanced =
           G.set_text t'.back ~row ~col ~text ~attrs ~max_width
         in
