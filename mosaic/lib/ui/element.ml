@@ -763,11 +763,13 @@ let styled style child =
 
 let flow ?h_gap ?v_gap ?overflow_x ?overflow_y children =
   (* Flow layout using flexbox with wrap enabled *)
-  (* Default to overflow:hidden so flow can shrink to fit its container *)
-  let overflow_x = Option.value overflow_x ~default:`Hidden in
+  (* Default to overflow:hidden to prevent wrapped content from overflowing container *)
   let overflow_y = Option.value overflow_y ~default:`Hidden in
-  box ~display:`Flex ~flex_direction:`Row ~flex_wrap:`Wrap ?gap:h_gap
-    ?row_gap:v_gap ~align_items:`Start ~overflow_x ~overflow_y children
+  (* Set align_content to Start to prevent wrapped lines from stretching *)
+  (* Use col_gap for horizontal spacing and row_gap for vertical spacing *)
+  box ~display:`Flex ~flex_direction:`Row ~flex_wrap:`Wrap 
+    ?col_gap:h_gap ?row_gap:v_gap ~align_items:`Start ~align_content:`Start 
+    ?overflow_x ~overflow_y children
 
 let block ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
     ?margin ?style ?border ?border_style children =

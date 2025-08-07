@@ -44,7 +44,9 @@ let default_measure_fn known_dimensions available_space _node_id context _style
                       else
                         (* Calculate number of wrapped lines *)
                         let lines_needed =
-                          (line_width + available_width - 1) / available_width
+                          if available_width > 0 then
+                            (line_width + available_width - 1) / available_width
+                          else 1
                         in
                         acc + lines_needed)
                     0 expanded_lines

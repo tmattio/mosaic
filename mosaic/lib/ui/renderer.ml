@@ -477,13 +477,65 @@ let rec render_node_with_offset ctx (node_id, tree) (parent_x, parent_y) =
   match Toffee.get_node_context tree node_id with
   | Some (Renderable.Scroll _) -> () (* Already handled above *)
   | _ -> (
+      (* Check if this node has a border - boxes with borders always clip *)
+      let has_border = 
+        match Toffee.get_node_context tree node_id with
+        | Some (Renderable.Box { border = Some _; _ }) -> true
+        | _ -> false
+      in
+      
+      (* Check if this node has overflow:hidden or clip *)
+      let has_overflow_hidden = 
+        match Toffee.style tree node_id with
+        | Ok style ->
+            let overflow_point = Toffee.Style.overflow style in
+            let open Toffee.Style.Overflow in
+            overflow_point.Toffee.Geometry.Point.x = Hidden || 
+            overflow_point.Toffee.Geometry.Point.y = Hidden ||
+            overflow_point.Toffee.Geometry.Point.x = Clip || 
+            overflow_point.Toffee.Geometry.Point.y = Clip
+        | Error _ -> false
+      in
+      
+      (* Only clip if overflow is explicitly hidden, not just because there's a border *)
+      (* Borders should contain content but not force clipping if overflow is visible *)
+      let should_clip = has_overflow_hidden in
+      
       match Toffee.children tree node_id with
       | Ok children ->
-          List.iter
-            (fun child_id ->
-              render_node_with_offset ctx (child_id, tree)
-                (absolute_x, absolute_y))
-            children
+          if should_clip then (
+            (* Apply clipping by setting viewport bounds *)
+            
+            (* If there's a border, clip to the content area (inside the border) *)
+            let (clip_row, clip_col, clip_width, clip_height) =
+              if has_border then
+                (int_of_float bounds.y + 1,
+                 int_of_float bounds.x + 1,
+                 int_of_float bounds.width - 2,
+                 int_of_float bounds.height - 2)
+              else
+                (int_of_float bounds.y,
+                 int_of_float bounds.x,
+                 int_of_float bounds.width,
+                 int_of_float bounds.height)
+            in
+            
+            let clip_viewport =
+              Screen.Viewport.make ~row:clip_row ~col:clip_col
+                ~width:clip_width ~height:clip_height
+            in
+            let ctx' = { ctx with viewport = clip_viewport } in
+            List.iter
+              (fun child_id ->
+                render_node_with_offset ctx' (child_id, tree)
+                  (absolute_x, absolute_y))
+              children)
+          else
+            List.iter
+              (fun child_id ->
+                render_node_with_offset ctx (child_id, tree)
+                  (absolute_x, absolute_y))
+              children
       | Error _ -> ())
 
 (* Entry point for rendering - root node has no parent offset *)
