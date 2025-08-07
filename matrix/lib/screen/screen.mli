@@ -196,7 +196,7 @@ val render : t -> patch list
 val render_to_string : t -> string
 (** Simple full render of back buffer to ANSI string *)
 
-val patch_to_sgr : patch -> string
+val patch_to_sgr : ?prev_style:Ansi.Style.t option -> patch -> string
 (** Convert a single patch to ANSI escape sequences *)
 
 val patches_to_sgr : patch list -> string

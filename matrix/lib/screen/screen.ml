@@ -449,24 +449,26 @@ let render t =
 
 let render_to_string t =
   let buf = Buffer.create 1024 in
+  let prev_style = ref None in
   for row = 0 to rows t - 1 do
     for col = 0 to cols t - 1 do
       match G.get t.back ~row ~col with
       | Some cell when not (C.is_empty cell) ->
           let style = C.get_style cell in
           let text = C.get_text cell in
-          Buffer.add_string buf (Ansi.Style.to_sgr style);
-          Buffer.add_string buf text
+          Buffer.add_string buf (Ansi.Style.to_sgr ~prev_style:!prev_style style);
+          Buffer.add_string buf text;
+          prev_style := Some style
       | _ -> Buffer.add_char buf ' '
     done;
     if row < rows t - 1 then Buffer.add_char buf '\n'
   done;
   Buffer.contents buf
 
-let patch_to_sgr = function
+let patch_to_sgr ?(prev_style = None) = function
   | Run { row; col; text; style; width = _ } ->
       Printf.sprintf "\027[%d;%dH%s%s" (row + 1) (col + 1)
-        (Ansi.Style.to_sgr style) text
+        (Ansi.Style.to_sgr ~prev_style style) text
   | Clear_region { row; col; width; height } ->
       let buf = Buffer.create 256 in
       for r = row to row + height - 1 do
@@ -482,7 +484,14 @@ let patch_to_sgr = function
 
 let patches_to_sgr patches =
   let buf = Buffer.create 1024 in
-  List.iter (fun patch -> Buffer.add_string buf (patch_to_sgr patch)) patches;
+  let prev_style = ref None in
+  List.iter (fun patch -> 
+    Buffer.add_string buf (patch_to_sgr ~prev_style:!prev_style patch);
+    (* Track the previous style for Run patches *)
+    match patch with
+    | Run { style; _ } -> prev_style := Some style
+    | _ -> ()  (* Keep prev_style for continuity *)
+  ) patches;
   Buffer.contents buf
 
 let get_cursor t = t.cursor

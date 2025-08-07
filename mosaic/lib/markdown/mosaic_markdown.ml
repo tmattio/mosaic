@@ -143,7 +143,7 @@ let render_inlines r ~available_width ~initial_style inline =
         | Cmarkit.Inline.Code_span (cs, _) ->
             flush_buffer current_style;
             let code = Cmarkit.Inline.Code_span.code cs in
-            segments := S_text (code, r.style.code) :: !segments;
+            segments := S_text (code, Ui.Style.(current_style ++ r.style.code)) :: !segments;
             Cmarkit.Folder.ret current_style
         | Cmarkit.Inline.Link (l, _) ->
             flush_buffer current_style;
@@ -181,7 +181,7 @@ let render_inlines r ~available_width ~initial_style inline =
             in
             let alt = string_of_inlines (Cmarkit.Inline.Link.text l) in
             let text = Printf.sprintf "[Image: %s <%s>]" alt uri in
-            segments := S_text (text, r.style.image) :: !segments;
+            segments := S_text (text, Ui.Style.(current_style ++ r.style.image)) :: !segments;
             Cmarkit.Folder.ret current_style
         | Cmarkit.Inline.Autolink (al, _) ->
             flush_buffer current_style;
@@ -195,7 +195,7 @@ let render_inlines r ~available_width ~initial_style inline =
             let html =
               String.concat "" (List.map Cmarkit.Block_line.tight_to_string h)
             in
-            segments := S_text (html, r.style.html) :: !segments;
+            segments := S_text (html, Ui.Style.(current_style ++ r.style.html)) :: !segments;
             Cmarkit.Folder.ret current_style
         | Cmarkit.Inline.Break (b, _) ->
             flush_buffer current_style;

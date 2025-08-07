@@ -683,15 +683,37 @@ let attr_to_codes = function
   | #style as s -> [ style_to_code s ]
 
 let to_sgr ?(prev_style = None) style =
-  let _ = prev_style in
   let codes = ref [] in
   let add_code c = codes := c :: !codes in
   let add_codes cs = codes := List.rev_append cs !codes in
 
   let fg, bg, _, flags = decode style in
 
-  (* Reset if needed *)
-  if style = default then add_code 0
+  (* Handle resets based on previous style *)
+  (match prev_style with
+  | Some prev ->
+      let prev_fg, prev_bg, _, prev_flags = decode prev in
+      
+      (* Reset background if it changed or was removed *)
+      if prev_bg <> Default && bg = Default then add_code 49;
+      
+      (* Reset foreground if it was removed *)
+      if prev_fg <> Default && fg = Default then add_code 39;
+      
+      (* Reset individual style flags that were on but are now off *)
+      if prev_flags land (1 lsl bold_bit) <> 0 && flags land (1 lsl bold_bit) = 0 then add_code 22;
+      if prev_flags land (1 lsl dim_bit) <> 0 && flags land (1 lsl dim_bit) = 0 then add_code 22;
+      if prev_flags land (1 lsl italic_bit) <> 0 && flags land (1 lsl italic_bit) = 0 then add_code 23;
+      if prev_flags land (1 lsl underline_bit) <> 0 && flags land (1 lsl underline_bit) = 0 then add_code 24;
+      if prev_flags land (1 lsl blink_bit) <> 0 && flags land (1 lsl blink_bit) = 0 then add_code 25;
+      if prev_flags land (1 lsl reversed_bit) <> 0 && flags land (1 lsl reversed_bit) = 0 then add_code 27;
+      if prev_flags land (1 lsl strikethrough_bit) <> 0 && flags land (1 lsl strikethrough_bit) = 0 then add_code 29;
+      if prev_flags land (1 lsl overline_bit) <> 0 && flags land (1 lsl overline_bit) = 0 then add_code 55;
+      if prev_flags land 0x100 <> 0 && flags land 0x100 = 0 then add_code 24; (* double underline off *)
+  | None -> ());
+  
+  (* Now add the new style codes - do this regardless of prev_style *)
+  if style = default && prev_style = None then add_code 0
   else (
     (* Colors *)
     if fg <> Default then add_codes (color_to_codes ~bg:false fg);
