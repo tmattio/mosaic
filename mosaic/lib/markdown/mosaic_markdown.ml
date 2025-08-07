@@ -284,28 +284,43 @@ let rec render_block r ~available_width ~base_style block =
       let bq_style = r.style.block_quote in
       r.quote_depth <- r.quote_depth + 1;
 
-      (* Build prefix using vertical separators *)
-      let prefix_parts =
-        List.flatten
-          (List.init r.quote_depth (fun _ ->
-               [ Ui.divider ~orientation:`Vertical ~style:bq_style.style () ]))
-      in
-      let prefix_el = Ui.hbox prefix_parts in
+      (* Build prefix - just one bar for the current level *)
+      let prefix_el = Ui.divider ~orientation:`Vertical ~style:bq_style.style () in
 
       (* Calculate available width *)
-      let prefix_width = r.quote_depth * 2 in
-      (* Each level is "│ " = 2 chars *)
+      let prefix_width = 2 in (* "│ " = 2 chars *)
       let avail =
         available_width - prefix_width - bq_style.padding_left
         - bq_style.padding_right
       in
 
       let bq_block = Block_quote.block bq in
-      let children =
-        render_block r ~available_width:avail
-          ~base_style:Ui.Style.(base_style ++ bq_style.style)
-          bq_block
+      
+      (* Special handling for blockquote content to avoid extra margins *)
+      let rec render_blockquote_content blk =
+        match blk with
+        | Cmarkit.Block.Paragraph (p, _) ->
+            (* Render paragraph without margins *)
+            let content = render_inlines r ~available_width:avail
+              ~initial_style:Ui.Style.(base_style ++ bq_style.style)
+              (Cmarkit.Block.Paragraph.inline p) in
+            [ content ]
+        | Cmarkit.Block.Blank_line (_, _) ->
+            (* Render a blank line as empty text to preserve spacing *)
+            [ Ui.text "" ]
+        | Cmarkit.Block.Blocks (blocks, _) ->
+            (* Render multiple blocks without margins between them *)
+            List.concat_map render_blockquote_content blocks
+        | Cmarkit.Block.Block_quote _ ->
+            (* Nested blockquote - render without outer margins *)
+            render_block r ~available_width:avail
+              ~base_style:Ui.Style.(base_style ++ bq_style.style) blk
+        | _ ->
+            render_block r ~available_width:avail
+              ~base_style:Ui.Style.(base_style ++ bq_style.style) blk
       in
+      
+      let children = render_blockquote_content bq_block in
 
       (* Create the quote content with proper spacing *)
       let content =
@@ -314,17 +329,22 @@ let rec render_block r ~available_width ~base_style block =
             prefix_el;
             Ui.box
               ~padding:(Ui.xy 0 bq_style.padding_right)
-              [ Ui.vbox children ];
+              [ Ui.vbox ~gap:(`Cells 0) children ];
           ]
       in
 
       r.quote_depth <- r.quote_depth - 1;
-      [
-        Ui.box
-          ~margin:
-            (Ui.sides ~top:bq_style.margin_top ~bottom:bq_style.margin_bottom ())
-          [ content ];
-      ]
+      
+      (* Only add margins if we're not inside another blockquote *)
+      if r.quote_depth = 0 then
+        [
+          Ui.box
+            ~margin:
+              (Ui.sides ~top:bq_style.margin_top ~bottom:bq_style.margin_bottom ())
+            [ content ];
+        ]
+      else
+        [ content ]
   | List (l, _) ->
       let l_style = r.style.list in
       let list_ty = List'.type' l in
@@ -335,29 +355,51 @@ let rec render_block r ~available_width ~base_style block =
           counter = start;
         }
       in
+      let is_nested = List.length r.list_stack > 0 in
       r.list_stack <- state :: r.list_stack;
       let items =
         List'.items l
         |> List.concat_map (render_list_item r ~available_width ~base_style)
       in
       r.list_stack <- List.tl r.list_stack;
-      let padded =
-        Ui.vbox
-          ~padding:
-            (Ui.xy l_style.block.padding_left l_style.block.padding_right)
-          items
+      (* Only add padding for top-level lists *)
+      let list_content =
+        if is_nested then
+          Ui.vbox items
+        else
+          Ui.vbox
+            ~padding:
+              (Ui.xy l_style.block.padding_left l_style.block.padding_right)
+            items
       in
-      [
-        Ui.box
-          ~margin:
-            (Ui.sides ~top:l_style.block.margin_top
-               ~bottom:l_style.block.margin_bottom ())
-          [ padded ];
-      ]
+      (* Only add margins for top-level lists *)
+      if is_nested then
+        [ list_content ]
+      else
+        [
+          Ui.box
+            ~margin:
+              (Ui.sides ~top:l_style.block.margin_top
+                 ~bottom:l_style.block.margin_bottom ())
+            [ list_content ];
+        ]
   | Code_block (cb, _) ->
       let cb_style = r.style.code_block in
       let code_lines =
-        Code_block.code cb |> List.map Cmarkit.Block_line.to_string
+        Code_block.code cb 
+        |> List.map Cmarkit.Block_line.to_string
+        |> (fun lines ->
+            (* Trim empty lines from beginning and end *)
+            let rec trim_start = function
+              | "" :: rest -> trim_start rest
+              | lines -> lines
+            in
+            let rec trim_end lines =
+              match List.rev lines with
+              | "" :: rest -> trim_end (List.rev rest)  
+              | _ -> lines
+            in
+            lines |> trim_start |> trim_end)
       in
       let code = String.concat "\n" code_lines in
       let lang_opt =
@@ -366,8 +408,6 @@ let rec render_block r ~available_width ~base_style block =
       in
       let lang = match lang_opt with Some (l, _) -> l | None -> "" in
       let fence = "```" in
-      let lang_el = Ui.text ~style:cb_style.lang_style lang in
-      let fence_el = Ui.text ~style:cb_style.fence_style fence in
 
       (* Create the highlighted code element *)
       let highlighted =
@@ -378,7 +418,7 @@ let rec render_block r ~available_width ~base_style block =
                 ~style:Ui.Style.(base_style ++ cb_style.block.style)
                 ~wrap:`Clip line)
             code_lines
-          |> Ui.vbox
+          |> Ui.vbox ~gap:(`Cells 0)
         in
         if lang = "" then plain
         else
@@ -402,19 +442,37 @@ let rec render_block r ~available_width ~base_style block =
               | Error _ -> plain)
       in
 
-      let content =
-        Ui.vbox
-          ~padding:
-            (Ui.xy cb_style.block.padding_left cb_style.block.padding_right)
-          ([ Ui.hbox [ fence_el; lang_el ] ] @ [ highlighted ] @ [ fence_el ])
+      (* Apply consistent padding to all lines *)
+      let padding_str = String.make cb_style.block.padding_left ' ' in
+      
+      (* Add padding to each code line *)
+      let highlighted_with_padding =
+        if lang = "" then
+          (* For plain code, add padding manually *)
+          List.map
+            (fun line ->
+              Ui.text ~style:Ui.Style.(base_style ++ cb_style.block.style)
+                (padding_str ^ line))
+            code_lines
+          |> Ui.vbox ~gap:(`Cells 0)
+        else
+          (* For syntax highlighted code, we need to handle it differently *)
+          (* The syntax highlighter returns a UI element, so we wrap it *)
+          Ui.box ~padding:(Ui.xy cb_style.block.padding_left 0) [ highlighted ]
       in
-      [
-        Ui.box
-          ~margin:
-            (Ui.sides ~top:cb_style.block.margin_top
-               ~bottom:cb_style.block.margin_bottom ())
-          [ content ];
-      ]
+      
+      let fence_line_start = 
+        Ui.hbox [
+          Ui.text ~style:cb_style.fence_style (padding_str ^ fence);
+          Ui.text ~style:cb_style.lang_style lang
+        ] in
+      let fence_line_end = 
+        Ui.text ~style:cb_style.fence_style (padding_str ^ fence) in
+      
+      let content =
+        Ui.vbox ~gap:(`Cells 0) [ fence_line_start; highlighted_with_padding; fence_line_end ]
+      in
+      [ content ]
   | Html_block (lines, _) ->
       let hb_style = r.style.paragraph in
       let text =
@@ -427,14 +485,14 @@ let rec render_block r ~available_width ~base_style block =
           [ Ui.text ~style:Ui.Style.(base_style ++ r.style.html) text ];
       ]
   | Thematic_break (_, _) ->
-      let hr_style, _hr_char = r.style.horizontal_rule in
+      let hr_style, hr_char = r.style.horizontal_rule in
+      let hr_width = min available_width 80 in
+      let hr_text = String.make hr_width hr_char.[0] in
       [
         Ui.box
-          ~margin:(Ui.sides ~top:1 ~bottom:1 ())
+          ~margin:(Ui.sides ~top:0 ~bottom:0 ())
           [
-            Ui.divider ~orientation:`Horizontal
-              ~style:Ui.Style.(base_style ++ hr_style)
-              ();
+            Ui.text ~style:Ui.Style.(base_style ++ hr_style) hr_text;
           ];
       ]
   | Ext_table (tbl, _) ->
@@ -532,14 +590,17 @@ let rec render_block r ~available_width ~base_style block =
       ]
   | Blocks (blocks, _) ->
       List.concat_map (render_block r ~available_width ~base_style) blocks
+  | Blank_line (_, _) ->
+      (* Render blank lines as empty text to preserve markdown spacing *)
+      [ Ui.text "" ]
   | _ -> []
 
 and render_list_item r ~available_width ~base_style
     (item_node : Cmarkit.Block.List_item.t Cmarkit.node) =
   let item, _ = item_node in
   let l_style = r.style.list in
-  let level = List.length r.list_stack in
-  let indent_size = (level - 1) * l_style.level_indent in
+  (* No additional indentation - parent list items handle positioning *)
+  let indent_size = 0 in
   let task_marker = Cmarkit.Block.List_item.ext_task_marker item in
   let prefix_element, state_change =
     match task_marker with
@@ -574,7 +635,32 @@ and render_list_item r ~available_width ~base_style
   in
   let avail = available_width - indent_size - prefix_width - l_style.item_gap in
   let item_block = Cmarkit.Block.List_item.block item in
-  let children = render_block r ~available_width:avail ~base_style item_block in
+  let children = 
+    match item_block with
+    | Cmarkit.Block.Paragraph (p, _) ->
+        (* For paragraph items, render inline content directly without margins *)
+        let content = render_inlines r ~available_width:avail ~initial_style:base_style
+          (Cmarkit.Block.Paragraph.inline p) in
+        [ content ]
+    | Cmarkit.Block.Blocks (blocks, _) ->
+        (* For blocks (e.g., paragraph + nested list), handle specially *)
+        List.concat_map (fun blk ->
+          match blk with
+          | Cmarkit.Block.Paragraph (p, _) ->
+              (* Render paragraph without margins *)
+              let content = render_inlines r ~available_width:avail ~initial_style:base_style
+                (Cmarkit.Block.Paragraph.inline p) in
+              [ content ]
+          | Cmarkit.Block.List _ ->
+              (* Render nested list with no top margin *)
+              render_block r ~available_width:avail ~base_style blk
+          | _ ->
+              render_block r ~available_width:avail ~base_style blk
+        ) blocks
+    | _ ->
+        (* For other blocks, render normally *)
+        render_block r ~available_width:avail ~base_style item_block
+  in
   let content =
     Ui.hbox ~gap:(`Cells l_style.item_gap) [ prefix_element; Ui.vbox children ]
   in

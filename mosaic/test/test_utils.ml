@@ -13,9 +13,12 @@ let screen_to_string screen =
       match Grid.get (Screen.front screen) ~row:y ~col:x with
       | None -> Buffer.add_char buf ' '
       | Some cell ->
-          let text = Grid.Cell.get_text cell in
-          if text = "" then Buffer.add_char buf ' '
-          else Buffer.add_string buf text
+          (* Skip continuation cells for wide characters *)
+          if Grid.Cell.is_continuation cell then ()
+          else
+            let text = Grid.Cell.get_text cell in
+            if text = "" then Buffer.add_char buf ' '
+            else Buffer.add_string buf text
     done;
     if y < height - 1 then Buffer.add_char buf '\n'
   done;
@@ -31,9 +34,12 @@ let screen_to_lines screen =
       match Grid.get (Screen.front screen) ~row:y ~col:x with
       | None -> Buffer.add_char line ' '
       | Some cell ->
-          let text = Grid.Cell.get_text cell in
-          if text = "" then Buffer.add_char line ' '
-          else Buffer.add_string line text
+          (* Skip continuation cells for wide characters *)
+          if Grid.Cell.is_continuation cell then ()
+          else
+            let text = Grid.Cell.get_text cell in
+            if text = "" then Buffer.add_char line ' '
+            else Buffer.add_string line text
     done;
     lines := Buffer.contents line :: !lines
   done;
@@ -60,7 +66,7 @@ let print_ui ?(width = 20) ?(height = 5) element =
   let width = width + 2 in
   let height = height + 2 in
   let bordered_element =
-    Ui.box ~width:(`Cells width) ~height:(`Cells height)
+    Ui.box ~width:(`Cells width) ~height:(`Cells height) ~overflow_x:`Hidden ~overflow_y:`Hidden
       ~border:Ui.Border.normal ~border_style:Ui.Style.empty [ element ]
   in
   let output = render_to_string ~width ~height bordered_element in

@@ -1036,11 +1036,11 @@ let table ?(title = None) ?(caption = None) ?(columns = []) ?(rows = [])
                ~align_items:(map_justify_to_align caption_justify)
                [ E.text ~style:caption_style c ])
     in
-    let add_column_separators cells =
+    let add_column_separators cells height =
       if box_style = NoBox then cells
       else
         intersperse
-          (E.divider ~orientation:`Vertical ~style:border_style ())
+          (build_vertical_sep height box_chars.vertical border_style)
           cells
     in
     (* Helper function to compute row height including padding *)
@@ -1155,8 +1155,8 @@ let table ?(title = None) ?(caption = None) ?(columns = []) ?(rows = [])
             build_vertical_sep header_height box_chars.vertical border_style
           in
           E.hbox
-            ((left_sep :: add_column_separators header_cells) @ [ right_sep ])
-        else E.hbox (add_column_separators header_cells)
+            ((left_sep :: add_column_separators header_cells header_height) @ [ right_sep ])
+        else E.hbox (add_column_separators header_cells header_height)
       in
       all_rows := !all_rows @ [ row_content ];
 
@@ -1210,8 +1210,8 @@ let table ?(title = None) ?(caption = None) ?(columns = []) ?(rows = [])
             let right_sep =
               build_vertical_sep row_height box_chars.vertical border_style
             in
-            E.hbox ((left_sep :: add_column_separators cells) @ [ right_sep ])
-          else E.hbox (add_column_separators cells)
+            E.hbox ((left_sep :: add_column_separators cells row_height) @ [ right_sep ])
+          else E.hbox (add_column_separators cells row_height)
         in
         all_rows := !all_rows @ [ row_content ];
 
@@ -1276,8 +1276,8 @@ let table ?(title = None) ?(caption = None) ?(columns = []) ?(rows = [])
              build_vertical_sep footer_height box_chars.vertical border_style
            in
            E.hbox
-             ((left_sep :: add_column_separators footer_cells) @ [ right_sep ])
-         else E.hbox (add_column_separators footer_cells)
+             ((left_sep :: add_column_separators footer_cells footer_height) @ [ right_sep ])
+         else E.hbox (add_column_separators footer_cells footer_height)
        in
        all_rows := !all_rows @ [ row_content ]);
 

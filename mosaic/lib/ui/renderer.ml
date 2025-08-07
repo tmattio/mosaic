@@ -67,109 +67,120 @@ let pad_string str width =
   let str_width = measure_string str in
   if str_width >= width then str else str ^ String.make (width - str_width) ' '
 
-(* Extract wrapping logic for reuse in measurement *)
+let expand_tabs ~tab_width ~start_col str =
+  let buf = Buffer.create (String.length str * 2) in
+  let col = ref start_col in
+  let decoder = Uutf.decoder ~encoding:`UTF_8 (`String str) in
+  let rec loop () =
+    match Uutf.decode decoder with
+    | `Uchar u ->
+        if Uchar.equal u (Uchar.of_char '\t') then (
+          let spaces = tab_width - (!col mod tab_width) in
+          Buffer.add_string buf (String.make spaces ' ');
+          col := !col + spaces)
+        else (
+          Uutf.Buffer.add_utf_8 buf u;
+          col := !col + Grid.char_width u);
+        loop ()
+    | `End -> ()
+    | `Malformed s ->
+        Buffer.add_string buf s;
+        loop ()
+    | `Await -> assert false
+  in
+  loop ();
+  Buffer.contents buf
+
 let rec wrap_line_impl acc current_line width measure_fn =
   if String.length current_line = 0 then List.rev acc
   else if measure_fn current_line <= width then List.rev (current_line :: acc)
   else
-    (* Try to find a word boundary to break at *)
     let find_word_break str max_width =
-      let last_space = ref (-1) in
-      let rec check_width idx =
-        if idx >= String.length str then
-          if !last_space > 0 then !last_space else String.length str
-        else
-          (* Measure the string up to this point *)
-          let substr = String.sub str 0 (idx + 1) in
-          let new_width = measure_fn substr in
-          if new_width > max_width then
-            if !last_space > 0 then !last_space else idx
-          else
-            let ch = String.get str idx in
-            if ch = ' ' then last_space := idx + 1;
-            check_width (idx + 1)
+      let decoder = Uutf.decoder ~encoding:`UTF_8 (`String str) in
+      let last_space_byte = ref (-1) in
+      let current_width = ref 0 in
+      let current_byte = ref 0 in
+      let rec check () =
+        match Uutf.decode decoder with
+        | `Uchar u ->
+            let char_width = Grid.char_width u in
+            let new_width = !current_width + char_width in
+            let byte_after = Uutf.decoder_byte_count decoder in
+            if new_width > max_width then
+              if !last_space_byte > 0 then !last_space_byte
+              else !current_byte
+            else (
+              current_width := new_width;
+              current_byte := byte_after;
+              if Uchar.equal u (Uchar.of_char ' ') then
+                last_space_byte := byte_after;
+              check ())
+        | `End -> String.length str
+        | `Malformed _ -> check ()
+        | `Await -> assert false
       in
-      check_width 0
+      check ()
     in
     let break_pos = find_word_break current_line width in
     if break_pos = 0 then
-      (* Can't fit even one word, fall back to character wrap *)
       let find_char_break str max_width =
-        let rec check_width idx current_width =
-          if idx >= String.length str then String.length str
-          else
-            let decoder =
-              Uutf.decoder ~encoding:`UTF_8
-                (`String (String.sub str idx (String.length str - idx)))
-            in
-            match Uutf.decode decoder with
-            | `Uchar u ->
-                let char_width = Grid.char_width u in
-                let new_width = current_width + char_width in
-                if new_width > max_width then idx
-                else check_width (idx + Uchar.utf_8_byte_length u) new_width
-            | _ -> idx
+        let decoder = Uutf.decoder ~encoding:`UTF_8 (`String str) in
+        let current_width = ref 0 in
+        let current_byte = ref 0 in
+        let rec check () =
+          match Uutf.decode decoder with
+          | `Uchar u ->
+              let char_width = Grid.char_width u in
+              let new_width = !current_width + char_width in
+              let byte_after = Uutf.decoder_byte_count decoder in
+              if new_width > max_width then !current_byte
+              else (
+                current_width := new_width;
+                current_byte := byte_after;
+                check ())
+          | `End -> String.length str
+          | _ -> !current_byte
         in
-        check_width 0 0
+        check ()
       in
       let char_break = find_char_break current_line width in
       if char_break = 0 then
-        (* Force at least one character *)
         let decoder = Uutf.decoder ~encoding:`UTF_8 (`String current_line) in
         match Uutf.decode decoder with
-        | `Uchar u ->
-            let char_len = Uchar.utf_8_byte_length u in
+        | `Uchar _u ->
+            let char_len = Uutf.decoder_byte_count decoder in
             let this_line = String.sub current_line 0 char_len in
-            let rest =
-              String.sub current_line char_len
-                (String.length current_line - char_len)
-            in
+            let rest = String.sub current_line char_len (String.length current_line - char_len) in
             wrap_line_impl (this_line :: acc) rest width measure_fn
         | _ -> List.rev acc
       else
         let this_line = String.sub current_line 0 char_break in
-        let rest =
-          String.sub current_line char_break
-            (String.length current_line - char_break)
-        in
+        let rest = String.sub current_line char_break (String.length current_line - char_break) in
         wrap_line_impl (this_line :: acc) rest width measure_fn
     else
       let this_line = String.sub current_line 0 break_pos in
-      let rest =
-        String.sub current_line break_pos
-          (String.length current_line - break_pos)
-      in
-      (* Skip leading spaces on continuation lines *)
-      let rest =
-        let rec skip_spaces s i =
-          if i < String.length s && String.get s i = ' ' then
-            skip_spaces s (i + 1)
-          else String.sub s i (String.length s - i)
+      let rest = String.sub current_line break_pos (String.length current_line - break_pos) in
+      let skip_spaces s =
+        let decoder = Uutf.decoder ~encoding:`UTF_8 (`String s) in
+        let byte_pos = ref 0 in
+        let rec loop () =
+          match Uutf.decode decoder with
+          | `Uchar u ->
+              if Uchar.equal u (Uchar.of_char ' ') then (
+                byte_pos := Uutf.decoder_byte_count decoder;
+                loop ())
+              else !byte_pos
+          | `End -> String.length s
+          | _ -> !byte_pos
         in
-        skip_spaces rest 0
+        let pos = loop () in
+        String.sub s pos (String.length s - pos)
       in
+      let rest = skip_spaces rest in
       wrap_line_impl (this_line :: acc) rest width measure_fn
 
 let wrap_line_to_width line width measure_fn =
   wrap_line_impl [] line width measure_fn
-
-let expand_tabs ~tab_width ~start_col str =
-  (* Expand tabs based on current column position to align to tab stops *)
-  let buf = Buffer.create (String.length str * 2) in
-  let col = ref start_col in
-  String.iter
-    (fun ch ->
-      if ch = '\t' then (
-        (* Calculate spaces to next tab stop *)
-        let spaces_to_tab_stop = tab_width - (!col mod tab_width) in
-        Buffer.add_string buf (String.make spaces_to_tab_stop ' ');
-        col := !col + spaces_to_tab_stop)
-      else (
-        Buffer.add_char buf ch;
-        (* For simplicity, assume single-width chars here - the real width is computed after *)
-        incr col))
-    str;
-  Buffer.contents buf
 
 let measure_text_content ~known_dimensions ~available_space ~tab_width ~wrap
     content =
@@ -355,17 +366,69 @@ let draw_border ctx border bounds =
     let left_glyph = if Border.left border then tl else th in
     Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row ~col
       ~glyph:left_glyph ~attrs;
-    (* Horizontal line *)
-    for i = 1 to width - 2 do
-      Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row ~col:(col + i)
-        ~glyph:th ~attrs
-    done;
+    
+    (* Draw horizontal line and text in top border if present *)
+    let draw_end = width - 2 in (* Stop before right corner *)
+    (match border.top_text with
+    | Some { text; align; style = text_style } ->
+        let padded_text = " " ^ text ^ " " in
+        let text_len = Grid.string_width padded_text in
+        let available = draw_end in (* Space available for text and lines *)
+        if text_len <= available then (
+          (* Calculate position based on alignment *)
+          let text_start = 
+            match align with
+            | `Left -> 1
+            | `Center -> 1 + (available - text_len) / 2
+            | `Right -> draw_end - text_len
+          in
+          (* Ensure text doesn't overrun into corner *)
+          let text_start = min text_start (draw_end - text_len) in
+          let text_start = max 1 text_start in
+          
+          (* Draw horizontal line before text *)
+          for i = 1 to text_start - 1 do
+            Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row ~col:(col + i)
+              ~glyph:th ~attrs
+          done;
+          (* Draw the text *)
+          let text_attrs = 
+            match text_style with
+            | Some s -> Style.resolve s ~dark:ctx.dark ~pos:(0, 0) ~bounds:(1, 1)
+            | None -> attrs
+          in
+          String.iteri (fun idx c ->
+            Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row 
+              ~col:(col + text_start + idx) 
+              ~glyph:(String.make 1 c) ~attrs:text_attrs
+          ) padded_text;
+          (* Draw horizontal line after text *)
+          let line_start = text_start + text_len in
+          if line_start <= draw_end then
+            for i = line_start to draw_end do
+              Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row ~col:(col + i)
+                ~glyph:th ~attrs
+            done
+        ) else (
+          (* Text too long, just draw the border *)
+          for i = 1 to width - 2 do
+            Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row ~col:(col + i)
+              ~glyph:th ~attrs
+          done
+        )
+    | None ->
+        (* No text, draw horizontal line normally *)
+        for i = 1 to width - 2 do
+          Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row ~col:(col + i)
+            ~glyph:th ~attrs
+        done);
+    
     (* Right corner: use corner if right border enabled, otherwise horizontal *)
-    if width > 1 then
+    (if width > 1 then
       let right_glyph = if Border.right border then tr else th in
       Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row
         ~col:(col + width - 1)
-        ~glyph:right_glyph ~attrs)
+        ~glyph:right_glyph ~attrs))
   else (
     (* No top border, only draw vertical lines if no corner will be drawn later *)
     if
@@ -389,11 +452,63 @@ let draw_border ctx border bounds =
     let left_glyph = if Border.left border then bl else bh in
     Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row ~col
       ~glyph:left_glyph ~attrs;
-    (* Horizontal line *)
-    for i = 1 to width - 2 do
-      Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row
-        ~col:(col + i) ~glyph:bh ~attrs
-    done;
+    
+    (* Draw horizontal line and text in bottom border if present *)
+    let draw_end = width - 2 in (* Stop before right corner *)
+    (match border.bottom_text with
+    | Some { text; align; style = text_style } ->
+        let padded_text = " " ^ text ^ " " in
+        let text_len = Grid.string_width padded_text in
+        let available = draw_end in (* Space available for text and lines *)
+        if text_len <= available then (
+          (* Calculate position based on alignment *)
+          let text_start = 
+            match align with
+            | `Left -> 1
+            | `Center -> 1 + (available - text_len) / 2
+            | `Right -> draw_end - text_len
+          in
+          (* Ensure text doesn't overrun into corner *)
+          let text_start = min text_start (draw_end - text_len) in
+          let text_start = max 1 text_start in
+          
+          (* Draw horizontal line before text *)
+          for i = 1 to text_start - 1 do
+            Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row
+              ~col:(col + i) ~glyph:bh ~attrs
+          done;
+          (* Draw the text *)
+          let text_attrs = 
+            match text_style with
+            | Some s -> Style.resolve s ~dark:ctx.dark ~pos:(0, 0) ~bounds:(1, 1)
+            | None -> attrs
+          in
+          String.iteri (fun idx c ->
+            Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row
+              ~col:(col + text_start + idx) 
+              ~glyph:(String.make 1 c) ~attrs:text_attrs
+          ) padded_text;
+          (* Draw horizontal line after text *)
+          let line_start = text_start + text_len in
+          if line_start <= draw_end then
+            for i = line_start to draw_end do
+              Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row
+                ~col:(col + i) ~glyph:bh ~attrs
+            done
+        ) else (
+          (* Text too long, just draw the border *)
+          for i = 1 to width - 2 do
+            Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row
+              ~col:(col + i) ~glyph:bh ~attrs
+          done
+        )
+    | None ->
+        (* No text, draw horizontal line normally *)
+        for i = 1 to width - 2 do
+          Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row
+            ~col:(col + i) ~glyph:bh ~attrs
+        done);
+    
     (* Right corner: use corner if right border enabled, otherwise horizontal *)
     if width > 1 then
       let right_glyph = if Border.right border then br else bh in

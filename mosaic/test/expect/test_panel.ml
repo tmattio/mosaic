@@ -16,9 +16,9 @@ let%expect_test "panel with title" =
   print_ui (Ui.panel (Ui.text "Content") ~title:"Panel Title");
   [%expect_exact {|
 ┌────────────────────┐
-│╭── Panel Title ──╮ │
-││ Content         │ │
-│╰─────────────────╯ │
+│╭ Panel Title ╮     │
+││ Content     │     │
+│╰─────────────╯     │
 │                    │
 │                    │
 └────────────────────┘
@@ -35,11 +35,11 @@ let%expect_test "panel with title and subtitle" =
        ~title:"Header" ~subtitle:"Footer");
   [%expect_exact {|
 ┌────────────────────┐
-│╭── Header ──╮      │
-││ Line 1     │      │
-││            │      │
-││ Line 2     │      │
-│╰── Footer ──╯      │
+│╭ Header ╮          │
+││ Line 1 │          │
+││        │          │
+││ Line 2 │          │
+│╰ Footer ╯          │
 │                    │
 │                    │
 └────────────────────┘
@@ -49,9 +49,9 @@ let%expect_test "panel with ascii border style" =
   print_ui ~height:4 (Ui.panel (Ui.text "ASCII") ~box_style:ASCII);
   [%expect_exact {|
 ┌────────────────────┐
-│+──────-┐           │
-│| ASCII │           │
-│+──────-┐           │
+│+-------+           │
+│| ASCII |           │
+│+-------+           │
 │                    │
 └────────────────────┘
 |}] [@@ocamlformat "disable"]
@@ -83,9 +83,9 @@ let%expect_test "fitted panel" =
     (Ui.panel (Ui.text "Compact") ~title:"Fitted" ~expand:false);
   [%expect_exact {|
 ┌──────────────────────────────┐
-│╭── Fitted ──╮                │
-││ Compact    │                │
-│╰────────────╯                │
+│╭ Fitted ─╮                   │
+││ Compact │                   │
+│╰─────────╯                   │
 │                              │
 │                              │
 └──────────────────────────────┘
@@ -138,9 +138,9 @@ let%expect_test "panel with aligned titles" =
        ~subtitle:"Right" ~subtitle_align:`Right);
   [%expect_exact {|
 ┌────────────────────┐
-│╭─ Left ────╮       │
-││ Content   │       │
-│╰─── Right ─╯       │
+│╭ Left ───╮         │
+││ Content │         │
+│╰─ Right ─╯         │
 │                    │
 │                    │
 └────────────────────┘
@@ -153,9 +153,9 @@ let%expect_test "panel with center aligned title" =
        ~subtitle:"Also Center" ~subtitle_align:`Center);
   [%expect_exact {|
 ┌────────────────────┐
-│╭─── Centered ────╮ │
-││ Content         │ │
-│╰── Also Center ──╯ │
+│╭─ Centered ──╮     │
+││ Content     │     │
+│╰ Also Center ╯     │
 │                    │
 │                    │
 └────────────────────┘
@@ -172,15 +172,15 @@ let%expect_test "nested panels" =
        ~title:"Outer Panel" ~box_style:Thick);
   [%expect_exact {|
 ┌──────────────────────────────┐
-│┏━━ Outer Panel ━━┓           │
-│┃ ╭── First ──╮   ┃           │
-│┃ │ Inner 1   │   ┃           │
-│┃ ╰───────────╯   ┃           │
-│┃                 ┃           │
-│┃ +── Second ──┐  ┃           │
-│┃ │ Inner 2    │  ┃           │
-│┃ +────────────┐  ┃           │
-│┗━━━━━━━━━━━━━━━━━┛           │
+│┏ Outer Panel ┓               │
+│┃ ╭─ First ─╮ ┃               │
+│┃ │ Inner 1 │ ┃               │
+│┃ ╰─────────╯ ┃               │
+│┃             ┃               │
+│┃ + Second -+ ┃               │
+│┃ | Inner 2 | ┃               │
+│┃ +---------+ ┃               │
+│┗━━━━━━━━━━━━━┛               │
 │                              │
 │                              │
 │                              │
@@ -196,9 +196,9 @@ let%expect_test "panel with fixed dimensions" =
        ~height:5);
   [%expect_exact {|
 ┌──────────────────────────────┐
-│╭─ 15x5 Panel─╮               │
+│╭ 15x5 Panel ─╮               │
 ││ Fixed size  │               │
-││             │               │
+││ content     │               │
 ││             │               │
 │╰─────────────╯               │
 │                              │

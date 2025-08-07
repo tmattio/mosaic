@@ -6,9 +6,9 @@ let%expect_test "tree - simple tree" =
   in
   print_ui ~width:20 ~height:1 (Ui.tree tree_node);
   [%expect_exact {|
-┌--------------------┐
-|Root                |
-└--------------------┘
+┌────────────────────┐
+│Root                │
+└────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "tree - tree with children" =
@@ -25,11 +25,11 @@ let%expect_test "tree - tree with children" =
   in
   print_ui ~width:20 ~height:3 (Ui.tree tree_node);
   [%expect_exact {|
-┌--------------------┐
-|Parent              |
-|├── Child 1         |
-|└── Child 2         |
-└--------------------┘
+┌────────────────────┐
+│Parent              │
+│├── Child 1         │
+│└── Child 2         │
+└────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "tree - nested tree" =
@@ -54,14 +54,14 @@ let%expect_test "tree - nested tree" =
   in
   print_ui ~width:20 ~height:6 (Ui.tree tree_node);
   [%expect_exact {|
-┌--------------------┐
-|Root                |
-|├── Branch 1        |
-|│   ├── Leaf 1.1    |
-|│   └── Leaf 1.2    |
-|└── Branch 2        |
-|                    |
-└--------------------┘
+┌────────────────────┐
+│Root                │
+│├── Branch 1        │
+││   ├── Leaf 1.1    │
+││   └── Leaf 1.2    │
+│└── Branch 2        │
+│                    │
+└────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "tree - collapsed branch" =
@@ -86,11 +86,11 @@ let%expect_test "tree - collapsed branch" =
   in
   print_ui ~width:20 ~height:3 (Ui.tree tree_node);
   [%expect_exact {|
-┌--------------------┐
-|Root                |
-|├── Collapsed       |
-|└── Visible         |
-└--------------------┘
+┌────────────────────┐
+│Root                │
+│├── Collapsed       │
+│└── Visible         │
+└────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "tree - hide root" =
@@ -107,10 +107,10 @@ let%expect_test "tree - hide root" =
   in
   print_ui ~width:20 ~height:2 (Ui.tree ~hide_root:true tree_node);
   [%expect_exact {|
-┌--------------------┐
-|├── Item 1          |
-|└── Item 2          |
-└--------------------┘
+┌────────────────────┐
+│├── Item 1          │
+│└── Item 2          │
+└────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "tree - ASCII guides" =
@@ -127,11 +127,11 @@ let%expect_test "tree - ASCII guides" =
   in
   print_ui ~width:20 ~height:3 (Ui.tree ~guides:Ui.Tree.ASCII tree_node);
   [%expect_exact {|
-┌--------------------┐
-|Root                |
-|+-- Child 1         |
-|`-- Child 2         |
-└--------------------┘
+┌────────────────────┐
+│Root                │
+│+-- Child 1         │
+│`-- Child 2         │
+└────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "tree - Bold guides" =
@@ -148,11 +148,11 @@ let%expect_test "tree - Bold guides" =
   in
   print_ui ~width:20 ~height:3 (Ui.tree ~guides:Ui.Tree.Bold tree_node);
   [%expect_exact {|
-┌--------------------┐
-|Root                |
-|┣━━ Child 1         |
-|┗━━ Child 2         |
-└--------------------┘
+┌────────────────────┐
+│Root                │
+│┣━━ Child 1         │
+│┗━━ Child 2         │
+└────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "tree - Double guides" =
@@ -169,11 +169,11 @@ let%expect_test "tree - Double guides" =
   in
   print_ui ~width:20 ~height:3 (Ui.tree ~guides:Ui.Tree.Double tree_node);
   [%expect_exact {|
-┌--------------------┐
-|Root                |
-|╠══ Child 1         |
-|╚══ Child 2         |
-└--------------------┘
+┌────────────────────┐
+│Root                │
+│╠══ Child 1         │
+│╚══ Child 2         │
+└────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "tree - styled Tree.labels" =
@@ -200,11 +200,11 @@ let%expect_test "tree - styled Tree.labels" =
   in
   print_ui ~width:20 ~height:3 (Ui.tree tree_node);
   [%expect_exact {|
-┌--------------------┐
-|Styled Root         |
-|├── Green Child     |
-|└── Blue Child      |
-└--------------------┘
+┌────────────────────┐
+│Styled Root         │
+│├── Green Child     │
+│└── Blue Child      │
+└────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "tree - guide style" =
@@ -221,11 +221,11 @@ let%expect_test "tree - guide style" =
   in
   print_ui ~width:20 ~height:3 (Ui.tree ~guide_style:Ui.Style.(fg Blue) tree_node);
   [%expect_exact {|
-┌--------------------┐
-|Root                |
-|├── Child 1         |
-|└── Child 2         |
-└--------------------┘
+┌────────────────────┐
+│Root                │
+│├── Child 1         │
+│└── Child 2         │
+└────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "tree - per-node guide style" =
@@ -252,11 +252,11 @@ let%expect_test "tree - per-node guide style" =
   in
   print_ui ~width:20 ~height:3 (Ui.tree tree_node);
   [%expect_exact {|
-┌--------------------┐
-|Root                |
-|├── Special         |
-|└── Normal          |
-└--------------------┘
+┌────────────────────┐
+│Root                │
+│├── Special         │
+│└── Normal          │
+└────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "tree - deep nesting" =
@@ -286,12 +286,12 @@ let%expect_test "tree - deep nesting" =
   in
   print_ui ~width:20 ~height:4 (Ui.tree tree_node);
   [%expect_exact {|
-┌--------------------┐
-|Level 1             |
-|└── Level 2         |
-|    └── Level 3     |
-|        └── Level 4 |
-└--------------------┘
+┌────────────────────┐
+│Level 1             │
+│└── Level 2         │
+│    └── Level 3     │
+│        └── Level 4 │
+└────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "tree - multiple branches" =
@@ -324,16 +324,16 @@ let%expect_test "tree - multiple branches" =
   in
   print_ui ~width:25 ~height:8 (Ui.tree tree_node);
   [%expect_exact {|
-┌-------------------------┐
-|Project                  |
-|├── src/                 |
-|│   ├── main.ml          |
-|│   └── utils.ml         |
-|├── test/                |
-|│   └── test_main.ml     |
-|└── README.md            |
-|                         |
-└-------------------------┘
+┌─────────────────────────┐
+│Project                  │
+│├── src/                 │
+││   ├── main.ml          │
+││   └── utils.ml         │
+│├── test/                │
+││   └── test_main.ml     │
+│└── README.md            │
+│                         │
+└─────────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "tree - empty tree" =
@@ -342,9 +342,9 @@ let%expect_test "tree - empty tree" =
   in
   print_ui ~width:20 ~height:1 (Ui.tree tree_node);
   [%expect_exact {|
-┌--------------------┐
-|Empty               |
-└--------------------┘
+┌────────────────────┐
+│Empty               │
+└────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "tree - override expanded state" =
@@ -367,12 +367,12 @@ let%expect_test "tree - override expanded state" =
   in
   print_ui ~width:20 ~height:4 (Ui.tree ~expanded:true tree_node);
   [%expect_exact {|
-┌--------------------┐
-|Root                |
-|└── Branch          |
-|    └── Leaf        |
-|                    |
-└--------------------┘
+┌────────────────────┐
+│Root                │
+│└── Branch          │
+│    └── Leaf        │
+│                    │
+└────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "tree - non-text elements" =
@@ -393,8 +393,8 @@ let%expect_test "tree - non-text elements" =
   in
   print_ui ~width:20 ~height:2 (Ui.tree tree_node);
   [%expect_exact {|
-┌--------------------┐
-|[ ✓ ] Done          |
-|└── [   ] Todo      |
-└--------------------┘
+┌────────────────────┐
+│[ ✓ ] Done          │
+│└── [   ] Todo      │
+└────────────────────┘
 |}] [@@ocamlformat "disable"]
