@@ -1,4 +1,0 @@
-(library
- (name mosaic_tiles)
- (public_name mosaic.tiles)
- (libraries mosaic unix uutf uucp))
