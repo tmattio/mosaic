@@ -1,0 +1,3 @@
+(executables
+ (names bench_ui bench_engine)
+ (libraries ubench mosaic.ui mosaic.engine matrix.screen matrix.input))
