@@ -32,6 +32,8 @@
   uucp
   eio
   eio_main
+  logs
+  fmt
   ; for mosaic.markdown
   cmarkit
   ; for mosaic.syntax
@@ -85,3 +87,4 @@
   logs
   fmt
   (alcotest :with-test)))
+

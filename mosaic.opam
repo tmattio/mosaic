@@ -18,6 +18,8 @@ depends: [
   "uucp"
   "eio"
   "eio_main"
+  "logs"
+  "fmt"
   "cmarkit"
   "textmate-language"
   "yojson"
