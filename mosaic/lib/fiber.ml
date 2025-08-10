@@ -268,7 +268,10 @@ let rec reconcile f : Ui.element =
     f.hook_idx <- 0;
     let ui = with_current f (fun () -> with_handler f f.render_fn) in
     f.ui <- Some ui;
-    f.children <- Array.map (fun child -> reconcile_child child) f.children;
+    f.children <- Array.mapi (fun i child ->
+      (* Yield per child to prevent blocking during large tree reconciliations *)
+      if i > 0 && i mod 10 = 0 then Eio.Fiber.yield ();
+      reconcile_child child) f.children;
     let elapsed_ms = (Unix.gettimeofday () -. start_time) *. 1000. in
     Log.debug (fun m -> m "Reconciliation completed in %.2fms" elapsed_ms);
     ui
@@ -308,9 +311,14 @@ let rec collect_subscriptions_internal f acc =
         local_subs := Erased_sub sub :: !local_subs
     | _ -> ()
   done;
+  (* Yield after processing hooks to allow other fibers to run *)
+  if Hook_array.length f.hooks > 0 then Eio.Fiber.yield ();
   (* Collect from children *)
   Array.fold_left
-    (fun acc child -> collect_subscriptions_internal child acc)
+    (fun acc child ->
+      (* Yield per child for large trees *)
+      if Array.length f.children > 1 then Eio.Fiber.yield ();
+      collect_subscriptions_internal child acc)
     !local_subs f.children
 
 let collect_subscriptions f = collect_subscriptions_internal f []

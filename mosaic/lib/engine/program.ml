@@ -561,15 +561,19 @@ let run_resize_loop t on_resize =
 
 let run_tick_loop t tick_cb =
   let frame_duration = 1.0 /. float_of_int t.fps in
+  let prev_time = ref (Eio.Time.now t.clock) in
   while t.running do
-    let start = Eio.Time.now t.clock in
+    let current_time = Eio.Time.now t.clock in
+    let elapsed = current_time -. !prev_time in
+    prev_time := current_time;
 
-    (* Execute tick callback - subscriptions may mark dirty and request render internally *)
-    if t.running then tick_cb ~elapsed:frame_duration;
+    (* Execute tick callback with actual elapsed time *)
+    if t.running then tick_cb ~elapsed;
 
-    (* Calculate time taken and sleep for the remainder *)
-    let elapsed = Eio.Time.now t.clock -. start in
-    let sleep_time = frame_duration -. elapsed in
+    (* Calculate time taken for tick_cb and sleep for the remainder *)
+    let tick_end = Eio.Time.now t.clock in
+    let tick_duration = tick_end -. current_time in
+    let sleep_time = frame_duration -. tick_duration in
     if sleep_time > 0.0 then Eio.Time.sleep t.clock sleep_time
   done
 
