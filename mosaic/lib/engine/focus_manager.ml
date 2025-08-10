@@ -1,4 +1,4 @@
-(** Focus manager implementation *)
+(** Optimized focus manager implementation with O(1) lookups **)
 
 type focusable = {
   key : Ui.Attr.key;
@@ -7,21 +7,66 @@ type focusable = {
   order : int; (* insertion order *)
 }
 
+(* Use priority queue for maintaining sorted tab order *)
+module Tab_order = struct
+  type t = focusable array ref * int ref (* array and size *)
+
+  let create () = (ref [||], ref 0)
+
+  let compare_focusable a b =
+    (* Sort by (has_index, tab_index, insertion_order) for stable ordering *)
+    let rank = function Some i -> (0, i) | None -> (1, max_int) in
+    match compare (rank a.tab_index) (rank b.tab_index) with
+    | 0 -> compare a.order b.order
+    | c -> c
+
+  let rebuild (arr_ref, size_ref) focusables =
+    let sorted = List.sort compare_focusable focusables in
+    arr_ref := Array.of_list sorted;
+    size_ref := Array.length !arr_ref
+
+  let find_index (arr_ref, size_ref) key =
+    (* Linear search since we need to find by key, not by sort order *)
+    let rec linear_search i =
+      if i >= !size_ref then None
+      else if !arr_ref.(i).key = key then Some i
+      else linear_search (i + 1)
+    in
+    linear_search 0
+end
+
 type t = {
-  mutable focusables : focusable list;
+  focusables_map : (Ui.Attr.key, focusable) Hashtbl.t; (* O(1) lookups *)
+  mutable tab_order : Tab_order.t; (* Pre-sorted array for fast navigation *)
   mutable focused : Ui.Attr.key option;
   mutable router : Input_router.t option;
   mutable next_order : int; (* counter for insertion order *)
+  mutable dirty : bool; (* Flag to rebuild tab_order when needed *)
 }
 
 let create () =
-  { focusables = []; focused = None; router = None; next_order = 0 }
+  {
+    focusables_map = Hashtbl.create 64;
+    tab_order = Tab_order.create ();
+    focused = None;
+    router = None;
+    next_order = 0;
+    dirty = false;
+  }
 
 let set_router t router = t.router <- Some router
 
+let rebuild_tab_order t =
+  if t.dirty then (
+    let focusables =
+      Hashtbl.fold (fun _ f acc -> f :: acc) t.focusables_map []
+    in
+    Tab_order.rebuild t.tab_order focusables;
+    t.dirty <- false)
+
 let register t focusable =
   (* Preserve previous order if re-registering; else assign new order *)
-  let prev = List.find_opt (fun f -> f.key = focusable.key) t.focusables in
+  let prev = Hashtbl.find_opt t.focusables_map focusable.key in
   let order =
     match prev with
     | Some f -> f.order
@@ -31,31 +76,25 @@ let register t focusable =
         o
   in
   let focusable = { focusable with order } in
-  (* Remove if already registered to avoid duplicates *)
-  t.focusables <- List.filter (fun f -> f.key <> focusable.key) t.focusables;
-  t.focusables <- focusable :: t.focusables;
+  (* Add/replace in hashtable - O(1) *)
+  Hashtbl.replace t.focusables_map focusable.key focusable;
+  t.dirty <- true;
+
+  (* Mark for rebuild *)
 
   (* Auto-focus if requested and nothing focused yet *)
   if focusable.auto_focus && t.focused = None then
     t.focused <- Some focusable.key
 
 let unregister t key =
-  t.focusables <- List.filter (fun f -> f.key <> key) t.focusables;
-  if t.focused = Some key then t.focused <- None
-
-let get_tab_order t =
-  (* Sort by (has_index, tab_index, insertion_order) for stable ordering *)
-  let rank = function Some i -> (0, i) | None -> (1, max_int) in
-  let cmp a b =
-    match compare (rank a.tab_index) (rank b.tab_index) with
-    | 0 -> compare a.order b.order
-    | c -> c
-  in
-  t.focusables |> List.sort cmp |> List.map (fun f -> f.key)
+  if Hashtbl.mem t.focusables_map key then (
+    Hashtbl.remove t.focusables_map key;
+    t.dirty <- true;
+    if t.focused = Some key then t.focused <- None)
 
 let focus t key =
-  (* Check if the key is registered as focusable *)
-  if List.exists (fun f -> f.key = key) t.focusables then (
+  (* Check if the key is registered as focusable - O(1) *)
+  if Hashtbl.mem t.focusables_map key then (
     t.focused <- Some key;
     (* Notify router if connected *)
     Option.iter (fun r -> Input_router.set_focused r (Some key)) t.router)
@@ -68,43 +107,48 @@ let blur t =
 let get_focused t = t.focused
 
 let focus_first t =
-  match get_tab_order t with [] -> () | key :: _ -> focus t key
+  rebuild_tab_order t;
+  let arr_ref, size_ref = t.tab_order in
+  if !size_ref > 0 then focus t !arr_ref.(0).key
 
 let focus_last t =
-  match List.rev (get_tab_order t) with [] -> () | key :: _ -> focus t key
+  rebuild_tab_order t;
+  let arr_ref, size_ref = t.tab_order in
+  if !size_ref > 0 then focus t !arr_ref.(!size_ref - 1).key
 
 let focus_next t =
-  let order = get_tab_order t in
-  match (t.focused, order) with
-  | None, [] -> ()
-  | None, key :: _ -> focus t key
-  | Some current, _ ->
-      let rec find_next = function
-        | [] -> focus_first t (* Wrap around *)
-        | [ x ] when x = current -> focus_first t (* Last element, wrap *)
-        | x :: y :: _ when x = current -> focus t y
-        | _ :: rest -> find_next rest
-      in
-      find_next order
+  rebuild_tab_order t;
+  let arr_ref, size_ref = t.tab_order in
+  if !size_ref = 0 then ()
+  else
+    match t.focused with
+    | None -> focus t !arr_ref.(0).key
+    | Some current -> (
+        match Tab_order.find_index t.tab_order current with
+        | None -> focus t !arr_ref.(0).key (* Not found, focus first *)
+        | Some idx ->
+            let next_idx = (idx + 1) mod !size_ref in
+            focus t !arr_ref.(next_idx).key)
 
 let focus_prev t =
-  let order = get_tab_order t in
-  match (t.focused, order) with
-  | None, [] -> ()
-  | None, _ -> focus_last t
-  | Some current, _ ->
-      let rec find_prev prev = function
-        | [] -> focus_last t (* Wrap around *)
-        | x :: _ when x = current -> (
-            match prev with
-            | Some p -> focus t p
-            | None -> focus_last t (* First element, wrap to last *))
-        | x :: rest -> find_prev (Some x) rest
-      in
-      find_prev None order
+  rebuild_tab_order t;
+  let arr_ref, size_ref = t.tab_order in
+  if !size_ref = 0 then ()
+  else
+    match t.focused with
+    | None -> focus t !arr_ref.(!size_ref - 1).key
+    | Some current -> (
+        match Tab_order.find_index t.tab_order current with
+        | None ->
+            focus t !arr_ref.(!size_ref - 1).key (* Not found, focus last *)
+        | Some idx ->
+            let prev_idx = if idx = 0 then !size_ref - 1 else idx - 1 in
+            focus t !arr_ref.(prev_idx).key)
 
 let handle_tab t ~forward = if forward then focus_next t else focus_prev t
 
 let clear t =
-  t.focusables <- [];
-  t.focused <- None
+  Hashtbl.clear t.focusables_map;
+  t.tab_order <- Tab_order.create ();
+  t.focused <- None;
+  t.dirty <- false

@@ -335,9 +335,12 @@ let row_hash storage row cols =
     let cell_hash = Storage.fast_hash storage row col in
     (* Mix position with cell hash using multiplication and rotation *)
     (* This ensures 'a' at position 0 differs from 'b' at position 0 *)
-    let position_factor = 0x45d9f3b in (* Large prime for mixing *)
-    let mixed = cell_hash lxor (cell_hash lsl 13) in (* Self-mix the cell hash *)
-    let position_mixed = mixed lxor ((col + 1) * position_factor) in (* +1 to avoid col=0 issues *)
+    let position_factor = 0x45d9f3b in
+    (* Large prime for mixing *)
+    let mixed = cell_hash lxor (cell_hash lsl 13) in
+    (* Self-mix the cell hash *)
+    let position_mixed = mixed lxor ((col + 1) * position_factor) in
+    (* +1 to avoid col=0 issues *)
     (* Rotate to spread bits *)
     let rotated = (position_mixed lsl 7) lor (position_mixed lsr 25) in
     hash := !hash lxor rotated
@@ -465,19 +468,24 @@ let update_row_hash_incremental grid row col =
     (* XOR-based incremental update: remove old contribution, add new *)
     (* Use the same mixing as in row_hash for consistency *)
     let position_factor = 0x45d9f3b in
-    
+
     (* Remove old contribution *)
     let old_mixed = old_cell_hash lxor (old_cell_hash lsl 13) in
     let old_position_mixed = old_mixed lxor ((col + 1) * position_factor) in
-    let old_rotated = (old_position_mixed lsl 7) lor (old_position_mixed lsr 25) in
-    
+    let old_rotated =
+      (old_position_mixed lsl 7) lor (old_position_mixed lsr 25)
+    in
+
     (* Add new contribution *)
     let new_mixed = new_cell_hash lxor (new_cell_hash lsl 13) in
     let new_position_mixed = new_mixed lxor ((col + 1) * position_factor) in
-    let new_rotated = (new_position_mixed lsl 7) lor (new_position_mixed lsr 25) in
-    
+    let new_rotated =
+      (new_position_mixed lsl 7) lor (new_position_mixed lsr 25)
+    in
+
     (* XOR is self-inverse: A xor B xor B = A *)
-    grid.row_hashes.(row) <- grid.row_hashes.(row) lxor old_rotated lxor new_rotated;
+    grid.row_hashes.(row) <-
+      grid.row_hashes.(row) lxor old_rotated lxor new_rotated;
 
     grid.dirty_rows.(row) <- true;
     mark_col_dirty grid row col)

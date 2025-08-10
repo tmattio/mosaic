@@ -52,21 +52,21 @@ dune exec mosaic/bench/bench_engine.exe
 ┌──────────────────────────────────────────┬──────────┬──────────┬─────────┬────────────┐
 │ Name                                     │ Time/Run │  mWd/Run │ Speedup │ vs Fastest │
 ├──────────────────────────────────────────┼──────────┼──────────┼─────────┼────────────┤
-│ Subscriptions/keyboard_simple            │  13.32ns │    7.00w │   1.00x │       100% │
-│ Commands/simple_msg                      │  43.19ns │   28.00w │   0.31x │       324% │
-│ Commands/tick                            │  59.61ns │   52.00w │   0.22x │       447% │
-│ Commands/perform_simple                  │  60.14ns │   50.00w │   0.22x │       451% │
-│ Commands/map_chain_10                    │ 114.09ns │  148.00w │   0.12x │       856% │
-│ Subscriptions/timer_accumulate_100_ticks │ 399.60ns │   11.00w │   0.03x │      2999% │
-│ Commands/batch_100_msgs                  │ 689.33ns │  932.00w │   0.02x │      5173% │
-│ Subscriptions/batch_100_keyboard         │ 735.86ns │   1.01kw │   0.02x │      5523% │
-│ Commands/seq_100_msgs                    │ 769.42ns │  932.00w │   0.02x │      5775% │
-│ Focus Manager/register_1000              │ 159.44μs │  64.31kw │   0.00x │   1196598% │
-│ Input Router/on_keyboard_1000_focused    │ 234.17μs │  28.19kw │   0.00x │   1757425% │
-│ Focus Manager/unregister_1000            │ 258.78μs │ 125.61kw │   0.00x │   1942161% │
-│ Input Router/subscribe_1000_mixed        │ 531.05μs │  60.88kw │   0.00x │   3985539% │
-│ Focus Manager/focus_next_loop_1000       │ 606.93μs │ 449.05kw │   0.00x │   4555062% │
-│ Input Router/on_mouse_drag_1000          │ 633.19μs │  77.17kw │   0.00x │   4752095% │
-│ Input Router/on_mouse_motion_1000_hits   │   7.35ms │   3.91Mw │   0.00x │  55177587% │
+│ Subscriptions/keyboard_simple            │  19.81ns │    7.00w │   1.00x │       100% │
+│ Commands/perform_simple                  │  43.44ns │   50.00w │   0.46x │       219% │
+│ Commands/tick                            │  72.32ns │   52.00w │   0.27x │       365% │
+│ Commands/map_chain_10                    │  79.21ns │  148.00w │   0.25x │       400% │
+│ Commands/simple_msg                      │  83.97ns │   28.00w │   0.24x │       424% │
+│ Subscriptions/timer_accumulate_100_ticks │ 402.78ns │   11.00w │   0.05x │      2033% │
+│ Commands/seq_100_msgs                    │ 648.12ns │  932.00w │   0.03x │      3271% │
+│ Commands/batch_100_msgs                  │ 659.55ns │  932.00w │   0.03x │      3329% │
+│ Subscriptions/batch_100_keyboard         │ 897.92ns │   1.01kw │   0.02x │      4532% │
+│ Focus Manager/register_1000              │  26.10μs │   3.55kw │   0.00x │    131724% │
+│ Focus Manager/focus_next_loop_1000       │  37.64μs │   8.90kw │   0.00x │    189975% │
+│ Focus Manager/unregister_1000            │  53.27μs │   4.35kw │   0.00x │    268902% │
+│ Input Router/on_keyboard_1000_focused    │ 271.28μs │  28.19kw │   0.00x │   1369300% │
+│ Input Router/subscribe_1000_mixed        │ 497.15μs │  60.88kw │   0.00x │   2509391% │
+│ Input Router/on_mouse_motion_1000_hits   │ 545.57μs │ 103.80kw │   0.00x │   2753776% │
+│ Input Router/on_mouse_drag_1000          │ 577.04μs │ 102.98kw │   0.00x │   2912637% │
 └──────────────────────────────────────────┴──────────┴──────────┴─────────┴────────────┘
 ```

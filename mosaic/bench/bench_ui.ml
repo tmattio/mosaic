@@ -8,7 +8,8 @@ let benchmarks =
         create "long_clip" (fun () ->
             render_string ~width:80 (text ~wrap:`Clip (String.make 5000 'a')));
         create "long_truncate" (fun () ->
-            render_string ~width:80 (text ~wrap:`Truncate (String.make 5000 'a')));
+            render_string ~width:80
+              (text ~wrap:`Truncate (String.make 5000 'a')));
         create "long_wrap" (fun () ->
             render_string ~width:80 (text ~wrap:`Wrap (String.make 5000 'a')));
         create "multi_line" (fun () ->

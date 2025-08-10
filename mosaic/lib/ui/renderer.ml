@@ -20,57 +20,37 @@ let measure_string str =
   (* Use Grid's display width calculation which handles wide chars, emoji, etc. *)
   Grid.string_width str
 
+(* Optimized single-pass truncation with minimal allocations *)
 let truncate_string_with_ellipsis str max_width suffix =
   let suffix_width = Grid.string_width suffix in
   let str_width = Grid.string_width str in
   if str_width <= max_width then str
-  else if max_width <= suffix_width then (
-    (* Not enough space for suffix, just truncate *)
-    let buf = Buffer.create max_width in
-    let decoder = Uutf.decoder ~encoding:`UTF_8 (`String str) in
-    let rec take_chars current_width =
-      if current_width >= max_width then ()
-      else
-        match Uutf.decode decoder with
-        | `Uchar u ->
-            let char_width = Grid.char_width u in
-            if current_width + char_width <= max_width then (
-              let char_str =
-                String.init (Uchar.utf_8_byte_length u) (fun i ->
-                    String.get str
-                      (Uutf.decoder_byte_count decoder
-                      - Uchar.utf_8_byte_length u + i))
-              in
-              Buffer.add_string buf char_str;
-              take_chars (current_width + char_width))
-        | `End | `Malformed _ | `Await -> ()
-    in
-    take_chars 0;
-    Buffer.contents buf)
   else
-    (* Truncate with ellipsis *)
-    let target_width = max_width - suffix_width in
-    let buf = Buffer.create (String.length str) in
-    let decoder = Uutf.decoder ~encoding:`UTF_8 (`String str) in
-    let rec take_chars current_width =
-      if current_width >= target_width then ()
-      else
-        match Uutf.decode decoder with
-        | `Uchar u ->
-            let char_width = Grid.char_width u in
-            if current_width + char_width <= target_width then (
-              let char_str =
-                String.init (Uchar.utf_8_byte_length u) (fun i ->
-                    String.get str
-                      (Uutf.decoder_byte_count decoder
-                      - Uchar.utf_8_byte_length u + i))
-              in
-              Buffer.add_string buf char_str;
-              take_chars (current_width + char_width))
-        | `End | `Malformed _ | `Await -> ()
+    (* Single-pass truncation using byte positions *)
+    let target_width =
+      if max_width <= suffix_width then max_width else max_width - suffix_width
     in
-    take_chars 0;
-    Buffer.contents buf ^ suffix
+
+    let decoder = Uutf.decoder ~encoding:`UTF_8 (`String str) in
+    let current_width = ref 0 in
+    let last_byte = ref 0 in
+    let continue = ref true in
+
+    while !continue do
+      match Uutf.decode decoder with
+      | `Uchar u ->
+          let char_width = Grid.char_width u in
+          let new_width = !current_width + char_width in
+          if new_width <= target_width then (
+            current_width := new_width;
+            last_byte := Uutf.decoder_byte_count decoder)
+          else continue := false
+      | _ -> continue := false
+    done;
+
+    if !last_byte = 0 then ""
+    else if max_width <= suffix_width then String.sub str 0 !last_byte
+    else String.sub str 0 !last_byte ^ suffix
 
 let pad_string str width =
   let str_width = measure_string str in
@@ -100,104 +80,112 @@ let expand_tabs ~tab_width ~start_col str =
   loop ();
   Buffer.contents buf
 
-let rec wrap_line_impl acc current_line width measure_fn =
-  if String.length current_line = 0 then List.rev acc
-  else if measure_fn current_line <= width then List.rev (current_line :: acc)
-  else
-    let find_word_break str max_width =
-      let decoder = Uutf.decoder ~encoding:`UTF_8 (`String str) in
-      let last_space_byte = ref (-1) in
-      let current_width = ref 0 in
-      let current_byte = ref 0 in
-      let rec check () =
-        match Uutf.decode decoder with
-        | `Uchar u ->
-            let char_width = Grid.char_width u in
-            let new_width = !current_width + char_width in
-            let byte_after = Uutf.decoder_byte_count decoder in
-            if new_width > max_width then
-              if !last_space_byte > 0 then !last_space_byte else !current_byte
-            else (
-              current_width := new_width;
-              current_byte := byte_after;
-              if Uchar.equal u (Uchar.of_char ' ') then
-                last_space_byte := byte_after;
-              check ())
-        | `End -> String.length str
-        | `Malformed _ -> check ()
-        | `Await -> assert false
-      in
-      check ()
-    in
-    let break_pos = find_word_break current_line width in
-    if break_pos = 0 then
-      let find_char_break str max_width =
-        let decoder = Uutf.decoder ~encoding:`UTF_8 (`String str) in
-        let current_width = ref 0 in
-        let current_byte = ref 0 in
-        let rec check () =
-          match Uutf.decode decoder with
-          | `Uchar u ->
-              let char_width = Grid.char_width u in
-              let new_width = !current_width + char_width in
-              let byte_after = Uutf.decoder_byte_count decoder in
-              if new_width > max_width then !current_byte
-              else (
-                current_width := new_width;
-                current_byte := byte_after;
-                check ())
-          | `End -> String.length str
-          | _ -> !current_byte
-        in
-        check ()
-      in
-      let char_break = find_char_break current_line width in
-      if char_break = 0 then
-        let decoder = Uutf.decoder ~encoding:`UTF_8 (`String current_line) in
-        match Uutf.decode decoder with
-        | `Uchar _u ->
-            let char_len = Uutf.decoder_byte_count decoder in
-            let this_line = String.sub current_line 0 char_len in
-            let rest =
-              String.sub current_line char_len
-                (String.length current_line - char_len)
-            in
-            wrap_line_impl (this_line :: acc) rest width measure_fn
-        | _ -> List.rev acc
-      else
-        let this_line = String.sub current_line 0 char_break in
-        let rest =
-          String.sub current_line char_break
-            (String.length current_line - char_break)
-        in
-        wrap_line_impl (this_line :: acc) rest width measure_fn
-    else
-      let this_line = String.sub current_line 0 break_pos in
-      let rest =
-        String.sub current_line break_pos
-          (String.length current_line - break_pos)
-      in
-      let skip_spaces s =
-        let decoder = Uutf.decoder ~encoding:`UTF_8 (`String s) in
-        let byte_pos = ref 0 in
-        let rec loop () =
-          match Uutf.decode decoder with
-          | `Uchar u ->
-              if Uchar.equal u (Uchar.of_char ' ') then (
-                byte_pos := Uutf.decoder_byte_count decoder;
-                loop ())
-              else !byte_pos
-          | `End -> String.length s
-          | _ -> !byte_pos
-        in
-        let pos = loop () in
-        String.sub s pos (String.length s - pos)
-      in
-      let rest = skip_spaces rest in
-      wrap_line_impl (this_line :: acc) rest width measure_fn
+(* Text wrapping cache for performance optimization *)
+module WrapCache = struct
+  type key = string * int
+  type t = (key, string list) Hashtbl.t
 
+  let create () = Hashtbl.create 128
+  let find_opt = Hashtbl.find_opt
+  let add = Hashtbl.add
+end
+
+let wrap_cache = WrapCache.create ()
+
+(* Optimized iterative text wrapping with caching *)
 let wrap_line_to_width line width measure_fn =
-  wrap_line_impl [] line width measure_fn
+  (* Check cache first *)
+  let cache_key = (line, width) in
+  match WrapCache.find_opt wrap_cache cache_key with
+  | Some result -> result
+  | None ->
+      (* Iterative implementation to avoid stack overflow and reduce allocations *)
+      let result = ref [] in
+      let current_pos = ref 0 in
+      let line_len = String.length line in
+
+      while !current_pos < line_len do
+        let remaining =
+          String.sub line !current_pos (line_len - !current_pos)
+        in
+
+        if measure_fn remaining <= width then (
+          (* Rest of line fits, we're done *)
+          result := remaining :: !result;
+          current_pos := line_len)
+        else
+          (* Find break point using single pass *)
+          let decoder = Uutf.decoder ~encoding:`UTF_8 (`String remaining) in
+          let last_space_byte = ref (-1) in
+          let current_width = ref 0 in
+          let current_byte = ref 0 in
+          let break_byte = ref 0 in
+          let found_break = ref false in
+
+          while not !found_break do
+            match Uutf.decode decoder with
+            | `Uchar u ->
+                let char_width = Grid.char_width u in
+                let new_width = !current_width + char_width in
+                let byte_after = Uutf.decoder_byte_count decoder in
+
+                if new_width > width then (
+                  (* Found our break point *)
+                  break_byte :=
+                    if !last_space_byte > 0 then !last_space_byte
+                    else if !current_byte > 0 then !current_byte
+                    else byte_after;
+                  (* At least take one char *)
+                  found_break := true)
+                else (
+                  current_width := new_width;
+                  current_byte := byte_after;
+                  if Uchar.equal u (Uchar.of_char ' ') then
+                    last_space_byte := byte_after)
+            | `End ->
+                break_byte := String.length remaining;
+                found_break := true
+            | _ -> found_break := true
+          done;
+
+          if !break_byte = 0 then
+            (* Can't break, force at least one character *)
+            let decoder = Uutf.decoder ~encoding:`UTF_8 (`String remaining) in
+            match Uutf.decode decoder with
+            | `Uchar _ ->
+                let char_len = Uutf.decoder_byte_count decoder in
+                result := String.sub remaining 0 char_len :: !result;
+                current_pos := !current_pos + char_len
+            | _ -> current_pos := line_len (* Give up *)
+          else
+            let this_line = String.sub remaining 0 !break_byte in
+            result := this_line :: !result;
+            current_pos := !current_pos + !break_byte;
+
+            (* Skip leading spaces on next line *)
+            let remaining_after =
+              String.sub line !current_pos (line_len - !current_pos)
+            in
+            let decoder =
+              Uutf.decoder ~encoding:`UTF_8 (`String remaining_after)
+            in
+            let space_bytes = ref 0 in
+            let continue = ref true in
+            while !continue do
+              match Uutf.decode decoder with
+              | `Uchar u ->
+                  if Uchar.equal u (Uchar.of_char ' ') then
+                    space_bytes := Uutf.decoder_byte_count decoder
+                  else continue := false
+              | _ -> continue := false
+            done;
+            current_pos := !current_pos + !space_bytes
+      done;
+
+      let final_result = List.rev !result in
+      (* Cache the result *)
+      WrapCache.add wrap_cache cache_key final_result;
+      final_result
 
 let measure_text_content ~known_dimensions ~available_space ~tab_width ~wrap
     content =
