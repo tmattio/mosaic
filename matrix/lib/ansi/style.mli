@@ -185,6 +185,15 @@ val blink : t -> bool
 
 val with_fg : color -> t -> t
 val with_bg : color -> t -> t
+
+val with_no_fg : t -> t
+(** [with_no_fg t] removes the foreground color, causing it to inherit from
+    parent/existing content *)
+
+val with_no_bg : t -> t
+(** [with_no_bg t] removes the background color, causing it to inherit from
+    parent/existing content *)
+
 val with_bold : bool -> t -> t
 val with_italic : bool -> t -> t
 val with_underline : bool -> t -> t

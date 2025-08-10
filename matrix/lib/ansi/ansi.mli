@@ -1119,7 +1119,7 @@ val esc : string
 val csi_params : int list -> string -> string
 (** [csi_params params cmd] builds CSI sequence with parameters.
     
-    Creates "ESC[{params};{cmd}". Empty params produces "ESC[{cmd}". Useful for custom sequences.
+    Creates "ESC[{params}{cmd}" where params are semicolon-separated. Empty params produces "ESC[{cmd}". Useful for custom sequences.
     
     Example:
     {[

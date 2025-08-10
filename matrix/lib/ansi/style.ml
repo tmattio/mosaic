@@ -74,36 +74,55 @@ module Arena = struct
 
   let initial_capacity = 1024
   let entry_size = 16 (* Size of unpacked struct in bytes *)
+  let max_safe_capacity = max_int / (2 * entry_size)
+
+  (* Prevent overflow in dim calculation *)
   let arena = ref None
+  let arena_mutex = Mutex.create ()
 
   let get_or_create () =
-    match !arena with
-    | Some a -> a
-    | None ->
-        let a =
-          {
-            data =
-              Bigarray.Array1.create Bigarray.int8_unsigned Bigarray.c_layout
-                (initial_capacity * entry_size);
-            size = 0;
-            capacity = initial_capacity;
-          }
-        in
-        arena := Some a;
-        a
+    Mutex.lock arena_mutex;
+    let result =
+      match !arena with
+      | Some a -> a
+      | None ->
+          let a =
+            {
+              data =
+                Bigarray.Array1.create Bigarray.int8_unsigned Bigarray.c_layout
+                  (initial_capacity * entry_size);
+              size = 0;
+              capacity = initial_capacity;
+            }
+          in
+          arena := Some a;
+          a
+    in
+    Mutex.unlock arena_mutex;
+    result
 
   let grow arena =
-    let new_capacity = arena.capacity * 2 in
+    (* Note: Must be called with mutex held *)
+    let old_capacity = arena.capacity in
+    let candidate = old_capacity lsl 1 in
+    (* *2 *)
+    if candidate <= 0 || candidate > max_safe_capacity then
+      raise (Failure "Arena capacity overflow");
+    let new_capacity = candidate in
+    let new_dim = new_capacity * entry_size in
+    if new_dim <= 0 || new_dim / entry_size <> new_capacity then
+      (* Overflow check *)
+      raise (Failure "Arena dimension overflow");
     let new_data =
-      Bigarray.Array1.create Bigarray.int8_unsigned Bigarray.c_layout
-        (new_capacity * entry_size)
+      Bigarray.Array1.create Bigarray.int8_unsigned Bigarray.c_layout new_dim
     in
-    Bigarray.Array1.blit arena.data
-      (Bigarray.Array1.sub new_data 0 (arena.capacity * entry_size));
+    let old_dim = old_capacity * entry_size in
+    Bigarray.Array1.blit arena.data (Bigarray.Array1.sub new_data 0 old_dim);
     arena.data <- new_data;
     arena.capacity <- new_capacity
 
   let alloc_unpacked arena unpacked =
+    Mutex.lock arena_mutex;
     if arena.size >= arena.capacity then grow arena;
     let offset = arena.size in
     (* Write unpacked data to arena *)
@@ -139,68 +158,98 @@ module Arena = struct
     write_int8 11 unpacked.fg_kind;
     write_int8 12 unpacked.bg_kind;
     arena.size <- arena.size + 1;
+    Mutex.unlock arena_mutex;
     offset
 
   let read_unpacked arena offset =
-    let read_int32 off =
-      let open Bigarray.Array1 in
-      let b0 =
-        Int32.of_int (unsafe_get arena.data ((offset * entry_size) + off))
-      in
-      let b1 =
-        Int32.of_int (unsafe_get arena.data ((offset * entry_size) + off + 1))
-      in
-      let b2 =
-        Int32.of_int (unsafe_get arena.data ((offset * entry_size) + off + 2))
-      in
-      let b3 =
-        Int32.of_int (unsafe_get arena.data ((offset * entry_size) + off + 3))
-      in
-      Int32.logor
-        (Int32.logor b0 (Int32.shift_left b1 8))
-        (Int32.logor (Int32.shift_left b2 16) (Int32.shift_left b3 24))
-    in
-    let read_int16 off =
-      let open Bigarray.Array1 in
-      let b0 = unsafe_get arena.data ((offset * entry_size) + off) in
-      let b1 = unsafe_get arena.data ((offset * entry_size) + off + 1) in
-      b0 lor (b1 lsl 8)
-    in
-    let read_int8 off =
-      Bigarray.Array1.unsafe_get arena.data ((offset * entry_size) + off)
-    in
-    {
-      fg_rgba = read_int32 0;
-      bg_rgba = read_int32 4;
-      flags = read_int16 8;
-      link = read_int8 10;
-      fg_kind = read_int8 11;
-      bg_kind = read_int8 12;
-    }
+    Mutex.lock arena_mutex;
+    (* Bounds check *)
+    if offset < 0 || offset >= arena.size then (
+      Mutex.unlock arena_mutex;
+      (* Return a default unpacked value *)
+      {
+        fg_rgba = Int32.zero;
+        bg_rgba = Int32.zero;
+        flags = 0;
+        link = 0;
+        fg_kind = 0;
+        bg_kind = 0;
+      })
+    else
+      let dim64 = Int64.of_int (Bigarray.Array1.dim arena.data) in
+      let base64 = Int64.mul (Int64.of_int offset) (Int64.of_int entry_size) in
+      if base64 < 0L || base64 >= dim64 then (
+        Mutex.unlock arena_mutex;
+        {
+          fg_rgba = Int32.zero;
+          bg_rgba = Int32.zero;
+          flags = 0;
+          link = 0;
+          fg_kind = 0;
+          bg_kind = 0;
+        })
+      else
+        let safe_get off =
+          let i64 = Int64.add base64 (Int64.of_int off) in
+          if i64 < 0L || i64 >= dim64 then 0
+          else Bigarray.Array1.unsafe_get arena.data (Int64.to_int i64)
+        in
+        let read_int32 off =
+          let b0 = Int32.of_int (safe_get off) in
+          let b1 = Int32.of_int (safe_get (off + 1)) in
+          let b2 = Int32.of_int (safe_get (off + 2)) in
+          let b3 = Int32.of_int (safe_get (off + 3)) in
+          Int32.logor
+            (Int32.logor b0 (Int32.shift_left b1 8))
+            (Int32.logor (Int32.shift_left b2 16) (Int32.shift_left b3 24))
+        in
+        let read_int16 off =
+          let b0 = safe_get off in
+          let b1 = safe_get (off + 1) in
+          b0 lor (b1 lsl 8)
+        in
+        let read_int8 = safe_get in
+        let result =
+          {
+            fg_rgba = read_int32 0;
+            bg_rgba = read_int32 4;
+            flags = read_int16 8;
+            link = read_int8 10;
+            fg_kind = read_int8 11;
+            bg_kind = read_int8 12;
+          }
+        in
+        Mutex.unlock arena_mutex;
+        result
 end
 
-(* New bit layout for fast path:
+(* New bit layout for fast path (no overlaps):
    Bit 63: Extended flag (0 = fast path, 1 = extended)
-   Bits 40-62: Meta info (23 bits total)
-     - Bits 60-61: FG color type (2 bits)
-     - Bits 58-59: BG color type (2 bits)
-     - Bits 53-57: Link ID (5 bits)
-     - Bits 45-52: Style flags (8 bits)
-   Bits 24-39: BG color data (16 bits) - extended to 24 for RGB
-   Bits 0-23: FG color data (24 bits) 
+   Bit 62: Unused (reserved for future)
+   Bit 61: fg_none (1 bit) - indicates fg should inherit
+   Bit 60: bg_none (1 bit) - indicates bg should inherit
+   Bits 58-59: FG color type (2 bits)
+   Bits 56-57: BG color type (2 bits)
+   Bits 51-55: Link ID (5 bits, 0-31; >31 needs extended)
+   Bits 43-50: Style flags (8 bits)
+   Bits 35-42: BG color data (8 bits for index/basic only)
+   Bits 27-34: FG color data (8 bits for index/basic only)
+   Bits 0-26: Reserved for future use
 *)
 
 let extended_bit = 63
-let fg_type_shift = 60
-let bg_type_shift = 58
-let link_shift = 53
-let flags_shift = 45
-let bg_data_shift = 24
-let _fg_data_shift = 0
-let type_mask = 0x3L
+let fg_none_bit = 61
+let bg_none_bit = 60
+let fg_type_shift = 58
+let bg_type_shift = 56
+let link_shift = 51
+let flags_shift = 43
+let bg_data_shift = 35
+let fg_data_shift = 27
+let type_mask = 0x3L (* 2 bits *)
 let link_mask = 0x1FL (* 5 bits *)
 let flags_mask = 0xFFL (* 8 bits *)
-let color_data_mask = 0xFFFFFFL (* 24 bits *)
+let color_data_mask = 0xFFL (* 8 bits for fast path *)
 
 (* Color type encoding *)
 let color_type_default = 0L
@@ -222,28 +271,39 @@ let overline_bit = 7
 
 (* Helper to check if we need extended encoding *)
 let needs_extended ~fg ~bg ~fg_type ~fg_data ~bg_type ~bg_data ~link ~flags =
-  (* RGBA always needs extended path *)
-  let fg_needs_extended = match fg with RGBA _ -> true | _ -> false in
-  let bg_needs_extended = match bg with RGBA _ -> true | _ -> false in
-  (* Check if colors fit in fast path *)
+  (* RGB/RGBA always need extended path *)
+  let fg_needs_extended =
+    match fg with
+    | RGB _ | RGBA _ -> true
+    | Index i when i > 255 -> true (* Index >255 needs extended *)
+    | _ -> false
+  in
+  let bg_needs_extended =
+    match bg with
+    | RGB _ | RGBA _ -> true
+    | Index i when i > 255 -> true (* Index >255 needs extended *)
+    | _ -> false
+  in
+  (* Check if data fits in 8 bits for fast path *)
+  let data_fits d = d <= 0xFFL in
   let fg_fits =
     match fg_type with
     | 0L | 1L -> true (* Default and basic always fit *)
-    | 2L -> fg_data <= 0xFFFFFFL (* Index fits in 24 bits *)
-    | 3L -> not fg_needs_extended (* RGB fits unless it's RGBA *)
-    | _ -> false
+    | 2L -> data_fits fg_data (* Index must fit in 8 bits *)
+    | _ -> false (* RGB (type 3) goes to extended *)
   in
   let bg_fits =
     match bg_type with
     | 0L | 1L -> true
-    | 2L -> bg_data <= 0xFFFFFFL
-    | 3L -> not bg_needs_extended (* RGB fits unless it's RGBA *)
-    | _ -> false
+    | 2L -> data_fits bg_data (* Index must fit in 8 bits *)
+    | _ -> false (* RGB (type 3) goes to extended *)
   in
   (* Check if we have extended flags *)
   let has_extended_flags = flags > 0xFF in
   (* Need extended if anything doesn't fit *)
-  not (fg_fits && bg_fits && link <= 31 && not has_extended_flags)
+  fg_needs_extended || bg_needs_extended
+  || (not (fg_fits && bg_fits))
+  || link > 31 || has_extended_flags
 
 (* Encode a color value *)
 let encode_color_data = function
@@ -325,7 +385,7 @@ let encode_fast ~fg ~bg ~link ~flags =
   if needs_extended ~fg ~bg ~fg_type ~fg_data ~bg_type ~bg_data ~link ~flags
   then None (* Fall back to extended *)
   else
-    (* Pack everything into 64 bits *)
+    (* Pack everything into 64 bits with new layout *)
     let result =
       Int64.logor
         (Int64.shift_left fg_type fg_type_shift)
@@ -335,7 +395,9 @@ let encode_fast ~fg ~bg ~link ~flags =
               (Int64.shift_left (Int64.of_int link) link_shift)
               (Int64.logor
                  (Int64.shift_left (Int64.of_int flags) flags_shift)
-                 (Int64.logor (Int64.shift_left bg_data bg_data_shift) fg_data))))
+                 (Int64.logor
+                    (Int64.shift_left bg_data bg_data_shift)
+                    (Int64.shift_left fg_data fg_data_shift)))))
     in
     Some result
 
@@ -386,33 +448,66 @@ let decode_fast style =
   let bg_data =
     Int64.logand (Int64.shift_right_logical style bg_data_shift) color_data_mask
   in
-  let fg_data = Int64.logand style color_data_mask in
+  let fg_data =
+    Int64.logand (Int64.shift_right_logical style fg_data_shift) color_data_mask
+  in
 
   let fg = decode_color_data fg_type fg_data in
   let bg = decode_color_data bg_type bg_data in
-  (fg, bg, link, flags)
+
+  (* Check for None bits *)
+  let fg_is_none = Int64.logand style (Int64.shift_left 1L fg_none_bit) <> 0L in
+  let bg_is_none = Int64.logand style (Int64.shift_left 1L bg_none_bit) <> 0L in
+
+  let fg_opt = if fg_is_none then None else Some fg in
+  let bg_opt = if bg_is_none then None else Some bg in
+
+  (fg_opt, bg_opt, link, flags)
 
 let decode_extended style =
   let offset = Int64.to_int (Int64.logand style 0x7FFFFFFFFFFFFFFFL) in
   let arena = Arena.get_or_create () in
-  let unpacked = Arena.read_unpacked arena offset in
-  let fg =
-    decode_color_data
-      (Int64.of_int unpacked.fg_kind)
-      (Int64.of_int32 unpacked.fg_rgba)
-  in
-  let bg =
-    decode_color_data
-      (Int64.of_int unpacked.bg_kind)
-      (Int64.of_int32 unpacked.bg_rgba)
-  in
-  (fg, bg, unpacked.link, unpacked.flags)
+  (* Bounds check to prevent invalid memory access *)
+  if offset < 0 || offset >= arena.size then
+    (* Return default style if offset is invalid *)
+    (None, None, 0, 0)
+  else
+    let unpacked = Arena.read_unpacked arena offset in
+    let fg =
+      decode_color_data
+        (Int64.of_int unpacked.fg_kind)
+        (Int64.of_int32 unpacked.fg_rgba)
+    in
+    let bg =
+      decode_color_data
+        (Int64.of_int unpacked.bg_kind)
+        (Int64.of_int32 unpacked.bg_rgba)
+    in
+
+    (* Check for None bits *)
+    let fg_is_none =
+      Int64.logand style (Int64.shift_left 1L fg_none_bit) <> 0L
+    in
+    let bg_is_none =
+      Int64.logand style (Int64.shift_left 1L bg_none_bit) <> 0L
+    in
+
+    let fg_opt = if fg_is_none then None else Some fg in
+    let bg_opt = if bg_is_none then None else Some bg in
+
+    (fg_opt, bg_opt, unpacked.link, unpacked.flags)
 
 let decode style =
   if is_extended style then decode_extended style else decode_fast style
 
-(* Default style *)
-let default = encode ~fg:Default ~bg:Default ~link:0 ~flags:0
+(* Default style - now with no colors set (None) for inheritance *)
+let default =
+  (* Set both fg_none and bg_none bits to indicate no colors *)
+  let base = encode ~fg:Default ~bg:Default ~link:0 ~flags:0 in
+  Int64.logor base
+    (Int64.logor
+       (Int64.shift_left 1L fg_none_bit)
+       (Int64.shift_left 1L bg_none_bit))
 
 (* Flag helpers *)
 let flag_of_style = function
@@ -473,12 +568,16 @@ let double_underline t =
   flags land 0x100 <> 0 (* Extended flag *)
 
 let fg t =
-  let fg, _, _, _ = decode t in
-  fg
+  let fg_opt, _, _, _ = decode t in
+  match fg_opt with
+  | None -> Default (* When no color is set, return Default for compatibility *)
+  | Some c -> c
 
 let bg t =
-  let _, bg, _, _ = decode t in
-  bg
+  let _, bg_opt, _, _ = decode t in
+  match bg_opt with
+  | None -> Default (* When no color is set, return Default for compatibility *)
+  | Some c -> c
 
 let reversed t =
   let _, _, _, flags = decode t in
@@ -498,78 +597,209 @@ let blink t =
 
 (* Builders *)
 let with_fg color t =
-  let _, bg, link, flags = decode t in
-  encode ~fg:color ~bg ~link ~flags
+  let _, bg_opt, link, flags = decode t in
+  (* For encoding, use Default as placeholder when None *)
+  let bg_for_encode = match bg_opt with None -> Default | Some c -> c in
+  let result = encode ~fg:color ~bg:bg_for_encode ~link ~flags in
+  (* Only manipulate none bits for non-extended styles *)
+  if is_extended result then
+    result  (* Extended styles handle None differently *)
+  else (
+    (* Clear the fg_none bit since we're setting an actual color *)
+    let result =
+      Int64.logand result (Int64.lognot (Int64.shift_left 1L fg_none_bit))
+    in
+    (* Preserve bg_none bit if bg was None *)
+    if bg_opt = None then Int64.logor result (Int64.shift_left 1L bg_none_bit)
+    else result
+  )
+
+(* Set fg to None (inherit) *)
+let with_no_fg t =
+  let _, bg_opt, link, flags = decode t in
+  let bg = match bg_opt with None -> Default | Some c -> c in
+  let result = encode ~fg:Default ~bg ~link ~flags in
+  (* Set the fg_none bit to indicate no fg color *)
+  let result = Int64.logor result (Int64.shift_left 1L fg_none_bit) in
+  (* Preserve bg_none bit if bg was None *)
+  if bg_opt = None then Int64.logor result (Int64.shift_left 1L bg_none_bit)
+  else result
 
 let with_bg color t =
-  let fg, _, link, flags = decode t in
-  encode ~fg ~bg:color ~link ~flags
+  let fg_opt, _, link, flags = decode t in
+  (* For encoding, use Default as placeholder when None *)
+  let fg_for_encode = match fg_opt with None -> Default | Some c -> c in
+  let result = encode ~fg:fg_for_encode ~bg:color ~link ~flags in
+  (* Only manipulate none bits for non-extended styles *)
+  if is_extended result then
+    result  (* Extended styles handle None differently *)
+  else (
+    (* Clear the bg_none bit since we're setting an actual color *)
+    let result =
+      Int64.logand result (Int64.lognot (Int64.shift_left 1L bg_none_bit))
+    in
+    (* Preserve fg_none bit if fg was None *)
+    if fg_opt = None then Int64.logor result (Int64.shift_left 1L fg_none_bit)
+    else result
+  )
+
+(* Set bg to None (inherit) *)
+let with_no_bg t =
+  let fg_opt, _, link, flags = decode t in
+  let fg = match fg_opt with None -> Default | Some c -> c in
+  let result = encode ~fg ~bg:Default ~link ~flags in
+  (* Set the bg_none bit to indicate no bg color *)
+  let result = Int64.logor result (Int64.shift_left 1L bg_none_bit) in
+  (* Preserve fg_none bit if fg was None *)
+  if fg_opt = None then Int64.logor result (Int64.shift_left 1L fg_none_bit)
+  else result
 
 let with_bold b t =
-  let fg, bg, link, flags = decode t in
+  let fg_opt, bg_opt, link, flags = decode t in
+  let fg = match fg_opt with None -> Default | Some c -> c in
+  let bg = match bg_opt with None -> Default | Some c -> c in
   let flags =
     if b then flags lor (1 lsl bold_bit) else flags land lnot (1 lsl bold_bit)
   in
-  encode ~fg ~bg ~link ~flags
+  let result = encode ~fg ~bg ~link ~flags in
+  (* Preserve None bits *)
+  let result =
+    if fg_opt = None then Int64.logor result (Int64.shift_left 1L fg_none_bit)
+    else result
+  in
+  if bg_opt = None then Int64.logor result (Int64.shift_left 1L bg_none_bit)
+  else result
 
 let with_italic b t =
-  let fg, bg, link, flags = decode t in
+  let fg_opt, bg_opt, link, flags = decode t in
+  let fg = match fg_opt with None -> Default | Some c -> c in
+  let bg = match bg_opt with None -> Default | Some c -> c in
   let flags =
     if b then flags lor (1 lsl italic_bit)
     else flags land lnot (1 lsl italic_bit)
   in
-  encode ~fg ~bg ~link ~flags
+  let result = encode ~fg ~bg ~link ~flags in
+  (* Preserve None bits *)
+  let result =
+    if fg_opt = None then Int64.logor result (Int64.shift_left 1L fg_none_bit)
+    else result
+  in
+  if bg_opt = None then Int64.logor result (Int64.shift_left 1L bg_none_bit)
+  else result
 
 let with_underline b t =
-  let fg, bg, link, flags = decode t in
+  let fg_opt, bg_opt, link, flags = decode t in
+  let fg = match fg_opt with None -> Default | Some c -> c in
+  let bg = match bg_opt with None -> Default | Some c -> c in
   let flags =
     if b then flags lor (1 lsl underline_bit)
     else flags land lnot (1 lsl underline_bit)
   in
-  encode ~fg ~bg ~link ~flags
+  let result = encode ~fg ~bg ~link ~flags in
+  (* Preserve None bits *)
+  let result =
+    if fg_opt = None then Int64.logor result (Int64.shift_left 1L fg_none_bit)
+    else result
+  in
+  if bg_opt = None then Int64.logor result (Int64.shift_left 1L bg_none_bit)
+  else result
 
 let with_double_underline b t =
-  let fg, bg, link, flags = decode t in
+  let fg_opt, bg_opt, link, flags = decode t in
+  let fg = match fg_opt with None -> Default | Some c -> c in
+  let bg = match bg_opt with None -> Default | Some c -> c in
   let flags = if b then flags lor 0x100 else flags land lnot 0x100 in
-  encode ~fg ~bg ~link ~flags
+  let result = encode ~fg ~bg ~link ~flags in
+  (* Preserve None bits *)
+  let result =
+    if fg_opt = None then Int64.logor result (Int64.shift_left 1L fg_none_bit)
+    else result
+  in
+  if bg_opt = None then Int64.logor result (Int64.shift_left 1L bg_none_bit)
+  else result
 
 let with_strikethrough b t =
-  let fg, bg, link, flags = decode t in
+  let fg_opt, bg_opt, link, flags = decode t in
+  let fg = match fg_opt with None -> Default | Some c -> c in
+  let bg = match bg_opt with None -> Default | Some c -> c in
   let flags =
     if b then flags lor (1 lsl strikethrough_bit)
     else flags land lnot (1 lsl strikethrough_bit)
   in
-  encode ~fg ~bg ~link ~flags
+  let result = encode ~fg ~bg ~link ~flags in
+  (* Preserve None bits *)
+  let result =
+    if fg_opt = None then Int64.logor result (Int64.shift_left 1L fg_none_bit)
+    else result
+  in
+  if bg_opt = None then Int64.logor result (Int64.shift_left 1L bg_none_bit)
+  else result
 
 let with_reversed b t =
-  let fg, bg, link, flags = decode t in
+  let fg_opt, bg_opt, link, flags = decode t in
+  let fg = match fg_opt with None -> Default | Some c -> c in
+  let bg = match bg_opt with None -> Default | Some c -> c in
   let flags =
     if b then flags lor (1 lsl reversed_bit)
     else flags land lnot (1 lsl reversed_bit)
   in
-  encode ~fg ~bg ~link ~flags
+  let result = encode ~fg ~bg ~link ~flags in
+  (* Preserve None bits *)
+  let result =
+    if fg_opt = None then Int64.logor result (Int64.shift_left 1L fg_none_bit)
+    else result
+  in
+  if bg_opt = None then Int64.logor result (Int64.shift_left 1L bg_none_bit)
+  else result
 
 let with_blink b t =
-  let fg, bg, link, flags = decode t in
+  let fg_opt, bg_opt, link, flags = decode t in
+  let fg = match fg_opt with None -> Default | Some c -> c in
+  let bg = match bg_opt with None -> Default | Some c -> c in
   let flags =
     if b then flags lor (1 lsl blink_bit) else flags land lnot (1 lsl blink_bit)
   in
-  encode ~fg ~bg ~link ~flags
+  let result = encode ~fg ~bg ~link ~flags in
+  (* Preserve None bits *)
+  let result =
+    if fg_opt = None then Int64.logor result (Int64.shift_left 1L fg_none_bit)
+    else result
+  in
+  if bg_opt = None then Int64.logor result (Int64.shift_left 1L bg_none_bit)
+  else result
 
 let with_dim b t =
-  let fg, bg, link, flags = decode t in
+  let fg_opt, bg_opt, link, flags = decode t in
+  let fg = match fg_opt with None -> Default | Some c -> c in
+  let bg = match bg_opt with None -> Default | Some c -> c in
   let flags =
     if b then flags lor (1 lsl dim_bit) else flags land lnot (1 lsl dim_bit)
   in
-  encode ~fg ~bg ~link ~flags
+  let result = encode ~fg ~bg ~link ~flags in
+  (* Preserve None bits *)
+  let result =
+    if fg_opt = None then Int64.logor result (Int64.shift_left 1L fg_none_bit)
+    else result
+  in
+  if bg_opt = None then Int64.logor result (Int64.shift_left 1L bg_none_bit)
+  else result
 
 let with_overline b t =
-  let fg, bg, link, flags = decode t in
+  let fg_opt, bg_opt, link, flags = decode t in
+  let fg = match fg_opt with None -> Default | Some c -> c in
+  let bg = match bg_opt with None -> Default | Some c -> c in
   let flags =
     if b then flags lor (1 lsl overline_bit)
     else flags land lnot (1 lsl overline_bit)
   in
-  encode ~fg ~bg ~link ~flags
+  let result = encode ~fg ~bg ~link ~flags in
+  (* Preserve None bits *)
+  let result =
+    if fg_opt = None then Int64.logor result (Int64.shift_left 1L fg_none_bit)
+    else result
+  in
+  if bg_opt = None then Int64.logor result (Int64.shift_left 1L bg_none_bit)
+  else result
 
 (* Link ID support *)
 let get_link_id t =
@@ -577,8 +807,17 @@ let get_link_id t =
   link
 
 let set_link_id t id =
-  let fg, bg, _, flags = decode t in
-  encode ~fg ~bg ~link:id ~flags
+  let fg_opt, bg_opt, _, flags = decode t in
+  let fg = match fg_opt with None -> Default | Some c -> c in
+  let bg = match bg_opt with None -> Default | Some c -> c in
+  let result = encode ~fg ~bg ~link:id ~flags in
+  (* Preserve None bits *)
+  let result =
+    if fg_opt = None then Int64.logor result (Int64.shift_left 1L fg_none_bit)
+    else result
+  in
+  if bg_opt = None then Int64.logor result (Int64.shift_left 1L bg_none_bit)
+  else result
 
 (* Apply SGR attribute *)
 let apply_sgr_attr t attr =
@@ -608,204 +847,6 @@ let apply_sgr_attr t attr =
 (* Equality and hashing *)
 let equal = Int64.equal
 let hash = Hashtbl.hash
-
-(* Merge styles *)
-let merge _parent child =
-  (* For now, child completely overrides parent *)
-  (* TODO: Implement proper merging logic *)
-  child
-
-let ( ++ ) = merge
-
-(* SGR generation *)
-let color_to_codes ~bg = function
-  | Black -> [ (if bg then 40 else 30) ]
-  | Red -> [ (if bg then 41 else 31) ]
-  | Green -> [ (if bg then 42 else 32) ]
-  | Yellow -> [ (if bg then 43 else 33) ]
-  | Blue -> [ (if bg then 44 else 34) ]
-  | Magenta -> [ (if bg then 45 else 35) ]
-  | Cyan -> [ (if bg then 46 else 36) ]
-  | White -> [ (if bg then 47 else 37) ]
-  | Default -> [ (if bg then 49 else 39) ]
-  | Bright_black -> [ (if bg then 100 else 90) ]
-  | Bright_red -> [ (if bg then 101 else 91) ]
-  | Bright_green -> [ (if bg then 102 else 92) ]
-  | Bright_yellow -> [ (if bg then 103 else 93) ]
-  | Bright_blue -> [ (if bg then 104 else 94) ]
-  | Bright_magenta -> [ (if bg then 105 else 95) ]
-  | Bright_cyan -> [ (if bg then 106 else 96) ]
-  | Bright_white -> [ (if bg then 107 else 97) ]
-  | Index n ->
-      let clamped = max 0 (min 255 n) in
-      [ (if bg then 48 else 38); 5; clamped ]
-  | RGB (r, g, b) ->
-      let cr = max 0 (min 255 r) in
-      let cg = max 0 (min 255 g) in
-      let cb = max 0 (min 255 b) in
-      [ (if bg then 48 else 38); 2; cr; cg; cb ]
-  | RGBA (r, g, b, _a) ->
-      (* ANSI escape sequences don't support alpha, so we render as RGB *)
-      let cr = max 0 (min 255 r) in
-      let cg = max 0 (min 255 g) in
-      let cb = max 0 (min 255 b) in
-      [ (if bg then 48 else 38); 2; cr; cg; cb ]
-
-let style_to_code = function
-  | `Bold -> 1
-  | `Dim -> 2
-  | `Italic -> 3
-  | `Underline -> 4
-  | `Double_underline -> 21
-  | `Blink -> 5
-  | `Reverse -> 7
-  | `Conceal -> 8
-  | `Strikethrough -> 9
-  | `Overline -> 53
-  | `Framed -> 51
-  | `Encircled -> 52
-
-let attr_to_codes = function
-  | `Fg color -> color_to_codes ~bg:false color
-  | `Bg color -> color_to_codes ~bg:true color
-  | `Reset -> [ 0 ]
-  | `No_bold -> [ 22 ]
-  | `No_dim -> [ 22 ]
-  | `No_italic -> [ 23 ]
-  | `No_underline -> [ 24 ]
-  | `No_blink -> [ 25 ]
-  | `No_reverse -> [ 27 ]
-  | `No_conceal -> [ 28 ]
-  | `No_strikethrough -> [ 29 ]
-  | `No_overline -> [ 55 ]
-  | `No_framed -> [ 54 ]
-  | `No_encircled -> [ 54 ]
-  | #style as s -> [ style_to_code s ]
-
-let to_sgr ?(prev_style = None) style =
-  let codes = ref [] in
-  let add_code c = codes := c :: !codes in
-  let add_codes cs = codes := List.rev_append cs !codes in
-
-  let fg, bg, _, flags = decode style in
-
-  (* Handle resets based on previous style *)
-  (match prev_style with
-  | Some prev ->
-      let prev_fg, prev_bg, _, prev_flags = decode prev in
-      
-      (* Reset background if it changed or was removed *)
-      if prev_bg <> Default && bg = Default then add_code 49;
-      
-      (* Reset foreground if it was removed *)
-      if prev_fg <> Default && fg = Default then add_code 39;
-      
-      (* Reset individual style flags that were on but are now off *)
-      if prev_flags land (1 lsl bold_bit) <> 0 && flags land (1 lsl bold_bit) = 0 then add_code 22;
-      if prev_flags land (1 lsl dim_bit) <> 0 && flags land (1 lsl dim_bit) = 0 then add_code 22;
-      if prev_flags land (1 lsl italic_bit) <> 0 && flags land (1 lsl italic_bit) = 0 then add_code 23;
-      if prev_flags land (1 lsl underline_bit) <> 0 && flags land (1 lsl underline_bit) = 0 then add_code 24;
-      if prev_flags land (1 lsl blink_bit) <> 0 && flags land (1 lsl blink_bit) = 0 then add_code 25;
-      if prev_flags land (1 lsl reversed_bit) <> 0 && flags land (1 lsl reversed_bit) = 0 then add_code 27;
-      if prev_flags land (1 lsl strikethrough_bit) <> 0 && flags land (1 lsl strikethrough_bit) = 0 then add_code 29;
-      if prev_flags land (1 lsl overline_bit) <> 0 && flags land (1 lsl overline_bit) = 0 then add_code 55;
-      if prev_flags land 0x100 <> 0 && flags land 0x100 = 0 then add_code 24; (* double underline off *)
-  | None -> ());
-  
-  (* Now add the new style codes - do this regardless of prev_style *)
-  if style = default && prev_style = None then add_code 0
-  else (
-    (* Colors *)
-    if fg <> Default then add_codes (color_to_codes ~bg:false fg);
-    if bg <> Default then add_codes (color_to_codes ~bg:true bg);
-
-    (* Style flags *)
-    if flags land (1 lsl bold_bit) <> 0 then add_code 1;
-    if flags land (1 lsl dim_bit) <> 0 then add_code 2;
-    if flags land (1 lsl italic_bit) <> 0 then add_code 3;
-    if flags land (1 lsl underline_bit) <> 0 then add_code 4;
-    if flags land (1 lsl blink_bit) <> 0 then add_code 5;
-    if flags land (1 lsl reversed_bit) <> 0 then add_code 7;
-    if flags land (1 lsl strikethrough_bit) <> 0 then add_code 9;
-    if flags land (1 lsl overline_bit) <> 0 then add_code 53;
-    if flags land 0x100 <> 0 then add_code 21 (* double underline *));
-
-  if !codes = [] then ""
-  else
-    let codes_str = String.concat ";" (List.rev_map string_of_int !codes) in
-    Printf.sprintf "\027[%sm" codes_str
-
-(* Conversion for storage *)
-let of_int64 i = i
-
-let encode_color color =
-  let color_type, color_data = encode_color_data color in
-  Int64.logor color_type (Int64.shift_left color_data 2)
-
-let decode_color v =
-  let color_type = Int64.logand v 3L in
-  let color_data = Int64.shift_right_logical v 2 in
-  decode_color_data color_type color_data
-
-(* Pretty printing *)
-let pp_color ppf = function
-  | Black -> Fmt.string ppf "Black"
-  | Red -> Fmt.string ppf "Red"
-  | Green -> Fmt.string ppf "Green"
-  | Yellow -> Fmt.string ppf "Yellow"
-  | Blue -> Fmt.string ppf "Blue"
-  | Magenta -> Fmt.string ppf "Magenta"
-  | Cyan -> Fmt.string ppf "Cyan"
-  | White -> Fmt.string ppf "White"
-  | Default -> Fmt.string ppf "Default"
-  | Bright_black -> Fmt.string ppf "Bright_black"
-  | Bright_red -> Fmt.string ppf "Bright_red"
-  | Bright_green -> Fmt.string ppf "Bright_green"
-  | Bright_yellow -> Fmt.string ppf "Bright_yellow"
-  | Bright_blue -> Fmt.string ppf "Bright_blue"
-  | Bright_magenta -> Fmt.string ppf "Bright_magenta"
-  | Bright_cyan -> Fmt.string ppf "Bright_cyan"
-  | Bright_white -> Fmt.string ppf "Bright_white"
-  | Index i -> Fmt.pf ppf "Index(%d)" i
-  | RGB (r, g, b) -> Fmt.pf ppf "RGB(%d,%d,%d)" r g b
-  | RGBA (r, g, b, a) -> Fmt.pf ppf "RGBA(%d,%d,%d,%d)" r g b a
-
-let pp ppf style =
-  let fg, bg, link, flags = decode style in
-  let attrs = [] in
-  let attrs =
-    if flags land (1 lsl bold_bit) <> 0 then "bold" :: attrs else attrs
-  in
-  let attrs =
-    if flags land (1 lsl dim_bit) <> 0 then "dim" :: attrs else attrs
-  in
-  let attrs =
-    if flags land (1 lsl italic_bit) <> 0 then "italic" :: attrs else attrs
-  in
-  let attrs =
-    if flags land (1 lsl underline_bit) <> 0 then "underline" :: attrs
-    else attrs
-  in
-  let attrs =
-    if flags land (1 lsl blink_bit) <> 0 then "blink" :: attrs else attrs
-  in
-  let attrs =
-    if flags land (1 lsl reversed_bit) <> 0 then "reversed" :: attrs else attrs
-  in
-  let attrs =
-    if flags land (1 lsl strikethrough_bit) <> 0 then "strikethrough" :: attrs
-    else attrs
-  in
-  let attrs =
-    if flags land (1 lsl overline_bit) <> 0 then "overline" :: attrs else attrs
-  in
-  let attrs =
-    if flags land 0x100 <> 0 then "double_underline" :: attrs else attrs
-  in
-
-  Fmt.pf ppf "@[<h>Style {fg=%a; bg=%a; link=%d; attrs=[%s]%s}@]" pp_color fg
-    pp_color bg link (String.concat "; " attrs)
-    (if is_extended style then " [extended]" else "")
 
 (* Convert color to RGBA for blending *)
 let color_to_rgba = function
@@ -878,3 +919,326 @@ let equal_color c1 c2 =
   | RGBA (r1, g1, b1, a1), RGBA (r2, g2, b2, a2) ->
       r1 = r2 && g1 = g2 && b1 = b2 && a1 = a2
   | _ -> false
+
+(* Merge styles *)
+let merge parent child =
+  (* Child overrides colors if set; flags are union *)
+  let fgp_opt, bgp_opt, lp, fp = decode parent in
+  let fgc_opt, bgc_opt, lc, fc = decode child in
+
+  (* Handle foreground with alpha blending for RGBA *)
+  let fg_opt' =
+    match fgc_opt with
+    | None -> fgp_opt (* Inherit from parent *)
+    | Some (RGBA (_, _, _, a) as child_fg) when a < 255 -> (
+        (* Child has semi-transparent RGBA foreground *)
+        match bgp_opt with
+        | Some parent_bg ->
+            (* Blend child RGBA foreground over parent background *)
+            Some (blend_colors ~src:child_fg ~dst:parent_bg)
+        | None ->
+            (* No parent background to blend with, keep RGBA as-is *)
+            fgc_opt)
+    | Some _ -> fgc_opt (* Use child's color as-is *)
+  in
+
+  (* Handle background with alpha blending for RGBA *)
+  let bg_opt' =
+    match bgc_opt with
+    | None -> bgp_opt (* Inherit from parent *)
+    | Some (RGBA (_, _, _, a) as child_bg) when a < 255 -> (
+        (* Child has semi-transparent RGBA background *)
+        match bgp_opt with
+        | Some parent_bg ->
+            (* Blend child RGBA over parent background *)
+            Some (blend_colors ~src:child_bg ~dst:parent_bg)
+        | None ->
+            (* No parent background to blend with, keep RGBA as-is *)
+            bgc_opt)
+    | Some _ -> bgc_opt (* Use child's color as-is *)
+  in
+
+  let link' = if lc <> 0 then lc else lp in
+  let flags' = fp lor fc in
+
+  (* Create result preserving None states *)
+  let fg = match fg_opt' with None -> Default | Some c -> c in
+  let bg = match bg_opt' with None -> Default | Some c -> c in
+  let result = encode ~fg ~bg ~link:link' ~flags:flags' in
+
+  (* Set None bits as needed *)
+  let result =
+    if fg_opt' = None then Int64.logor result (Int64.shift_left 1L fg_none_bit)
+    else result
+  in
+  if bg_opt' = None then Int64.logor result (Int64.shift_left 1L bg_none_bit)
+  else result
+
+let ( ++ ) = merge
+
+(* SGR Cache for performance *)
+module SGR_cache = struct
+  (* Use weak table to allow GC of unused styles *)
+  let cache : (t * t option, string) Hashtbl.t = Hashtbl.create 1024
+  let max_size = 4096
+
+  let get style prev_style =
+    try Some (Hashtbl.find cache (style, prev_style)) with Not_found -> None
+
+  let put style prev_style sgr =
+    if Hashtbl.length cache < max_size then
+      Hashtbl.add cache (style, prev_style) sgr
+    else (
+      (* Clear cache when it gets too large *)
+      Hashtbl.clear cache;
+      Hashtbl.add cache (style, prev_style) sgr)
+end
+
+(* SGR generation *)
+let color_to_codes ~bg = function
+  | Black -> [ (if bg then 40 else 30) ]
+  | Red -> [ (if bg then 41 else 31) ]
+  | Green -> [ (if bg then 42 else 32) ]
+  | Yellow -> [ (if bg then 43 else 33) ]
+  | Blue -> [ (if bg then 44 else 34) ]
+  | Magenta -> [ (if bg then 45 else 35) ]
+  | Cyan -> [ (if bg then 46 else 36) ]
+  | White -> [ (if bg then 47 else 37) ]
+  | Default -> [ (if bg then 49 else 39) ]
+  | Bright_black -> [ (if bg then 100 else 90) ]
+  | Bright_red -> [ (if bg then 101 else 91) ]
+  | Bright_green -> [ (if bg then 102 else 92) ]
+  | Bright_yellow -> [ (if bg then 103 else 93) ]
+  | Bright_blue -> [ (if bg then 104 else 94) ]
+  | Bright_magenta -> [ (if bg then 105 else 95) ]
+  | Bright_cyan -> [ (if bg then 106 else 96) ]
+  | Bright_white -> [ (if bg then 107 else 97) ]
+  | Index n ->
+      let clamped = max 0 (min 255 n) in
+      [ (if bg then 48 else 38); 5; clamped ]
+  | RGB (r, g, b) ->
+      let cr = max 0 (min 255 r) in
+      let cg = max 0 (min 255 g) in
+      let cb = max 0 (min 255 b) in
+      [ (if bg then 48 else 38); 2; cr; cg; cb ]
+  | RGBA (r, g, b, _a) ->
+      (* ANSI escape sequences don't support alpha, so we render as RGB *)
+      let cr = max 0 (min 255 r) in
+      let cg = max 0 (min 255 g) in
+      let cb = max 0 (min 255 b) in
+      [ (if bg then 48 else 38); 2; cr; cg; cb ]
+
+let style_to_code = function
+  | `Bold -> 1
+  | `Dim -> 2
+  | `Italic -> 3
+  | `Underline -> 4
+  | `Double_underline -> 21
+  | `Blink -> 5
+  | `Reverse -> 7
+  | `Conceal -> 8
+  | `Strikethrough -> 9
+  | `Overline -> 53
+  | `Framed -> 51
+  | `Encircled -> 52
+
+let attr_to_codes = function
+  | `Fg color -> color_to_codes ~bg:false color
+  | `Bg color -> color_to_codes ~bg:true color
+  | `Reset -> [ 0 ]
+  | `No_bold -> [ 22 ]
+  | `No_dim -> [ 22 ]
+  | `No_italic -> [ 23 ]
+  | `No_underline -> [ 24 ]
+  | `No_blink -> [ 25 ]
+  | `No_reverse -> [ 27 ]
+  | `No_conceal -> [ 28 ]
+  | `No_strikethrough -> [ 29 ]
+  | `No_overline -> [ 55 ]
+  | `No_framed -> [ 54 ]
+  | `No_encircled -> [ 54 ]
+  | #style as s -> [ style_to_code s ]
+
+let to_sgr ?(prev_style = None) style =
+  (* Check cache first *)
+  match SGR_cache.get style prev_style with
+  | Some sgr -> sgr
+  | None ->
+      let codes = ref [] in
+      let add_code c = codes := c :: !codes in
+      let add_codes cs = codes := List.rev_append cs !codes in
+
+      let fg_opt, bg_opt, _, flags = decode style in
+
+      (* Handle resets based on previous style *)
+      (match prev_style with
+      | Some prev ->
+          let prev_fg_opt, prev_bg_opt, _, prev_flags = decode prev in
+
+          (* Reset background if it changed from Some color to None or Some Default *)
+          (match (prev_bg_opt, bg_opt) with
+          | Some prev_bg, Some Default when prev_bg <> Default -> add_code 49
+          | Some prev_bg, None when prev_bg <> Default ->
+              (* When transitioning from a set background to None, reset to default *)
+              add_code 49
+          | _ -> ());
+
+          (* Reset foreground if it changed from Some color to None or Some Default *)
+          (match (prev_fg_opt, fg_opt) with
+          | Some prev_fg, Some Default when prev_fg <> Default -> add_code 39
+          | Some prev_fg, None when prev_fg <> Default ->
+              (* When transitioning from a set foreground to None, reset to default *)
+              add_code 39
+          | _ -> ());
+
+          (* Reset individual style flags that were on but are now off *)
+          if
+            prev_flags land (1 lsl bold_bit) <> 0
+            && flags land (1 lsl bold_bit) = 0
+          then add_code 22;
+          if
+            prev_flags land (1 lsl dim_bit) <> 0
+            && flags land (1 lsl dim_bit) = 0
+          then add_code 22;
+          if
+            prev_flags land (1 lsl italic_bit) <> 0
+            && flags land (1 lsl italic_bit) = 0
+          then add_code 23;
+          if
+            prev_flags land (1 lsl underline_bit) <> 0
+            && flags land (1 lsl underline_bit) = 0
+          then add_code 24;
+          if
+            prev_flags land (1 lsl blink_bit) <> 0
+            && flags land (1 lsl blink_bit) = 0
+          then add_code 25;
+          if
+            prev_flags land (1 lsl reversed_bit) <> 0
+            && flags land (1 lsl reversed_bit) = 0
+          then add_code 27;
+          if
+            prev_flags land (1 lsl strikethrough_bit) <> 0
+            && flags land (1 lsl strikethrough_bit) = 0
+          then add_code 29;
+          if
+            prev_flags land (1 lsl overline_bit) <> 0
+            && flags land (1 lsl overline_bit) = 0
+          then add_code 55;
+          if prev_flags land 0x100 <> 0 && flags land 0x100 = 0 then add_code 24
+          (* double underline off *)
+      | None -> ());
+
+      (* Now add the new style codes - do this regardless of prev_style *)
+      (* Special case: completely default style (both fg and bg are None) with no prev_style should emit nothing *)
+      if fg_opt = None && bg_opt = None && flags = 0 && prev_style = None then
+        ()
+      else (
+        (* Colors - only emit codes when color is Some (not None) *)
+        (match fg_opt with
+        | None -> () (* No color set - inherit from existing *)
+        | Some fg -> add_codes (color_to_codes ~bg:false fg));
+
+        (* Emit codes for any set color including Default *)
+        (match bg_opt with
+        | None -> () (* No color set - inherit from existing *)
+        | Some bg -> add_codes (color_to_codes ~bg:true bg));
+
+        (* Emit codes for any set color including Default *)
+
+        (* Style flags *)
+        if flags land (1 lsl bold_bit) <> 0 then add_code 1;
+        if flags land (1 lsl dim_bit) <> 0 then add_code 2;
+        if flags land (1 lsl italic_bit) <> 0 then add_code 3;
+        if flags land (1 lsl underline_bit) <> 0 then add_code 4;
+        if flags land (1 lsl blink_bit) <> 0 then add_code 5;
+        if flags land (1 lsl reversed_bit) <> 0 then add_code 7;
+        if flags land (1 lsl strikethrough_bit) <> 0 then add_code 9;
+        if flags land (1 lsl overline_bit) <> 0 then add_code 53;
+        if flags land 0x100 <> 0 then add_code 21 (* double underline *));
+
+      let result =
+        if !codes = [] then ""
+        else
+          let codes_str =
+            String.concat ";" (List.rev_map string_of_int !codes)
+          in
+          Printf.sprintf "\027[%sm" codes_str
+      in
+      SGR_cache.put style prev_style result;
+      result
+
+(* Conversion for storage *)
+let of_int64 i = i
+
+let encode_color color =
+  let color_type, color_data = encode_color_data color in
+  Int64.logor color_type (Int64.shift_left color_data 2)
+
+let decode_color v =
+  let color_type = Int64.logand v 3L in
+  let color_data = Int64.shift_right_logical v 2 in
+  decode_color_data color_type color_data
+
+(* Pretty printing *)
+let pp_color ppf = function
+  | Black -> Fmt.string ppf "Black"
+  | Red -> Fmt.string ppf "Red"
+  | Green -> Fmt.string ppf "Green"
+  | Yellow -> Fmt.string ppf "Yellow"
+  | Blue -> Fmt.string ppf "Blue"
+  | Magenta -> Fmt.string ppf "Magenta"
+  | Cyan -> Fmt.string ppf "Cyan"
+  | White -> Fmt.string ppf "White"
+  | Default -> Fmt.string ppf "Default"
+  | Bright_black -> Fmt.string ppf "Bright_black"
+  | Bright_red -> Fmt.string ppf "Bright_red"
+  | Bright_green -> Fmt.string ppf "Bright_green"
+  | Bright_yellow -> Fmt.string ppf "Bright_yellow"
+  | Bright_blue -> Fmt.string ppf "Bright_blue"
+  | Bright_magenta -> Fmt.string ppf "Bright_magenta"
+  | Bright_cyan -> Fmt.string ppf "Bright_cyan"
+  | Bright_white -> Fmt.string ppf "Bright_white"
+  | Index i -> Fmt.pf ppf "Index(%d)" i
+  | RGB (r, g, b) -> Fmt.pf ppf "RGB(%d,%d,%d)" r g b
+  | RGBA (r, g, b, a) -> Fmt.pf ppf "RGBA(%d,%d,%d,%d)" r g b a
+
+let pp_color_opt ppf = function
+  | None -> Fmt.string ppf "None"
+  | Some c -> pp_color ppf c
+
+let pp ppf style =
+  let fg, bg, link, flags = decode style in
+  let attrs = [] in
+  let attrs =
+    if flags land (1 lsl bold_bit) <> 0 then "bold" :: attrs else attrs
+  in
+  let attrs =
+    if flags land (1 lsl dim_bit) <> 0 then "dim" :: attrs else attrs
+  in
+  let attrs =
+    if flags land (1 lsl italic_bit) <> 0 then "italic" :: attrs else attrs
+  in
+  let attrs =
+    if flags land (1 lsl underline_bit) <> 0 then "underline" :: attrs
+    else attrs
+  in
+  let attrs =
+    if flags land (1 lsl blink_bit) <> 0 then "blink" :: attrs else attrs
+  in
+  let attrs =
+    if flags land (1 lsl reversed_bit) <> 0 then "reversed" :: attrs else attrs
+  in
+  let attrs =
+    if flags land (1 lsl strikethrough_bit) <> 0 then "strikethrough" :: attrs
+    else attrs
+  in
+  let attrs =
+    if flags land (1 lsl overline_bit) <> 0 then "overline" :: attrs else attrs
+  in
+  let attrs =
+    if flags land 0x100 <> 0 then "double_underline" :: attrs else attrs
+  in
+
+  Fmt.pf ppf "@[<h>Style {fg=%a; bg=%a; link=%d; attrs=[%s]%s}@]" pp_color_opt
+    fg pp_color_opt bg link (String.concat "; " attrs)
+    (if is_extended style then " [extended]" else "")

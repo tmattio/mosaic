@@ -1,6 +1,9 @@
 open Internal
 
-let max_escape_length = 20 (* matches historical mobi‑CI code *)
+let max_escape_length = 256 (* increased for complex SGR sequences *)
+
+let max_osc_length =
+  8192 (* OSC can be much longer, especially for hyperlinks and titles *)
 
 type control =
   | CUU of int
@@ -87,8 +90,34 @@ let parse_sgr_params params =
       | 52 ->
           push `Encircled;
           loop (i + 1)
-      | 22 | 23 | 24 | 25 | 27 | 28 | 29 | 55 | 54 ->
-          push `Reset;
+      | 22 ->
+          push `No_bold;
+          push `No_dim;
+          loop (i + 1)
+      | 23 ->
+          push `No_italic;
+          loop (i + 1)
+      | 24 ->
+          push `No_underline;
+          loop (i + 1)
+      | 25 ->
+          push `No_blink;
+          loop (i + 1)
+      | 27 ->
+          push `No_reverse;
+          loop (i + 1)
+      | 28 ->
+          push `No_conceal;
+          loop (i + 1)
+      | 29 ->
+          push `No_strikethrough;
+          loop (i + 1)
+      | 54 ->
+          push `No_framed;
+          push `No_encircled;
+          loop (i + 1)
+      | 55 ->
+          push `No_overline;
           loop (i + 1)
       | 39 ->
           push (`Fg Style.Default);
@@ -215,7 +244,7 @@ let parse_hyperlink data : control option =
   | [ ""; link ] -> Some (Hyperlink (Some ([], link)))
   | [ params; link ] ->
       let kv_pairs =
-        params |> String.split_on_char ':'
+        params |> String.split_on_char ';'
         |> List.filter_map (fun s ->
                match String.split_on_char '=' s with
                | [ k; v ] -> Some (k, v)
@@ -269,7 +298,8 @@ let flush_text p acc =
     Buffer.clear p.text;
     t :: acc
 
-let overshoot buf = Buffer.length buf > max_escape_length
+let overshoot_csi buf = Buffer.length buf > max_escape_length
+let overshoot_osc buf = Buffer.length buf > max_osc_length
 
 let feed p (src : bytes) off len : token list =
   (* grow buffer if necessary *)
@@ -351,7 +381,7 @@ let feed p (src : bytes) off len : token list =
           else
             let c = Bytes.get p.buf pos in
             Buffer.add_char buf c;
-            if overshoot buf then (
+            if overshoot_csi buf then (
               let tokens = Control (Unknown "ESCAPE_TOO_LONG") :: tokens in
               Buffer.clear buf;
               p.st <- Normal;
@@ -380,7 +410,7 @@ let feed p (src : bytes) off len : token list =
               loop tokens (pos + 1))
             else (
               Buffer.add_char buf c;
-              if overshoot buf then (
+              if overshoot_osc buf then (
                 let tok = Control (Unknown "ESCAPE_TOO_LONG") in
                 Buffer.clear buf;
                 p.st <- Normal;
