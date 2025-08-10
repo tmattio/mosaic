@@ -324,7 +324,9 @@ let test_set_text_max_width () =
 
 let test_set_text_zero_width () =
   let g = G.create ~rows:1 ~cols:5 () in
-  let width = G.set_text g ~row:0 ~col:0 ~text:"a\u{200D}b" ~attrs:default_style in
+  let width =
+    G.set_text g ~row:0 ~col:0 ~text:"a\u{200D}b" ~attrs:default_style
+  in
   (* a + ZWJ + b - ZWJ sticks to 'a' but doesn't join with 'b' *)
   (* First grapheme cluster "a\u{200D}" goes to cell 0 *)
   check string "first cluster contains a+ZWJ" "a\u{200D}"
@@ -536,33 +538,41 @@ let test_batch_many_changes () =
 
 let test_set_text_regional_indicators () =
   let g = G.create ~rows:1 ~cols:4 () in
-  let flag = "🇺🇸" in  (* US flag: two regional indicators *)
+  let flag = "🇺🇸" in
+  (* US flag: two regional indicators *)
   let width = G.set_text g ~row:0 ~col:0 ~text:flag ~attrs:default_style in
   check int "flag width 2" 2 width;
   check string "flag cluster" flag (C.get_text (get_cell g ~row:0 ~col:0));
-  check bool "flag continuation" true (C.is_continuation (get_cell g ~row:0 ~col:1))
+  check bool "flag continuation" true
+    (C.is_continuation (get_cell g ~row:0 ~col:1))
 (* Covers regional indicator pairs as single wide cluster. *)
 
 let test_set_grapheme_skin_tone () =
   let g = G.create ~rows:1 ~cols:2 () in
-  let emoji = "👍🏽" in  (* Thumbs up with medium skin tone *)
+  let emoji = "👍🏽" in
+  (* Thumbs up with medium skin tone *)
   G.set_grapheme g ~row:0 ~col:0 ~glyph:emoji ~attrs:default_style;
   check int "skin tone emoji width 2" 2 (C.width (get_cell g ~row:0 ~col:0));
-  check string "skin tone preserved" emoji (C.get_text (get_cell g ~row:0 ~col:0))
+  check string "skin tone preserved" emoji
+    (C.get_text (get_cell g ~row:0 ~col:0))
 (* Covers emoji with skin tone modifiers in clusters. *)
 
 let test_set_text_malformed_utf8 () =
   let g = G.create ~rows:1 ~cols:1 () in
-  let malformed = "\x80" in  (* Invalid UTF-8 byte *)
+  let malformed = "\x80" in
+  (* Invalid UTF-8 byte *)
   let width = G.set_text g ~row:0 ~col:0 ~text:malformed ~attrs:default_style in
   check int "malformed treated as width 1" 1 width;
-  check string "malformed as replacement" "�" (C.get_text (get_cell g ~row:0 ~col:0))
+  check string "malformed as replacement" "�"
+    (C.get_text (get_cell g ~row:0 ~col:0))
 (* Covers robustness to malformed UTF-8, using replacement char. *)
 
 let test_set_grapheme_variation_selector () =
   let g = G.create ~rows:1 ~cols:2 () in
-  let text_vs = "⭐\u{FE0E}" in  (* Star with VS-15: text presentation, width 1 *)
-  let emoji_vs = "⭐\u{FE0F}" in (* Star with VS-16: emoji, width 2 *)
+  let text_vs = "⭐\u{FE0E}" in
+  (* Star with VS-15: text presentation, width 1 *)
+  let emoji_vs = "⭐\u{FE0F}" in
+  (* Star with VS-16: emoji, width 2 *)
   G.set_grapheme g ~row:0 ~col:0 ~glyph:text_vs ~attrs:default_style;
   check int "VS15 forces width 1" 1 (C.width (get_cell g ~row:0 ~col:0));
   G.set_grapheme g ~row:0 ~col:0 ~glyph:emoji_vs ~attrs:default_style;
@@ -571,44 +581,62 @@ let test_set_grapheme_variation_selector () =
 
 let test_set_grapheme_alpha_blend_transparent () =
   let g = G.create ~rows:1 ~cols:1 () in
-  let existing_bg = Ansi.Style.with_bg (Ansi.Style.RGB (255, 0, 0)) default_style in
+  let existing_bg =
+    Ansi.Style.with_bg (Ansi.Style.RGB (255, 0, 0)) default_style
+  in
   G.set_grapheme g ~row:0 ~col:0 ~glyph:" " ~attrs:existing_bg;
-  let transparent = Ansi.Style.RGBA (0, 255, 0, 0) in  (* Fully transparent green *)
+  let transparent = Ansi.Style.RGBA (0, 255, 0, 0) in
+  (* Fully transparent green *)
   let attrs = Ansi.Style.with_bg transparent default_style in
   G.set_grapheme g ~row:0 ~col:0 ~glyph:"a" ~attrs;
   let final_bg = Ansi.Style.bg (C.get_style (get_cell g ~row:0 ~col:0)) in
-  check bool "transparent blends to existing" (final_bg = Ansi.Style.RGB (255, 0, 0)) true
+  check bool "transparent blends to existing"
+    (final_bg = Ansi.Style.RGB (255, 0, 0))
+    true
 (* Covers fully transparent blending preserving underlying color. *)
 
 (* Add to "Bulk Operations" suite *)
 
 let test_resize_cut_wide_char () =
   let g = G.create ~rows:1 ~cols:3 () in
-  G.set_grapheme g ~row:0 ~col:1 ~glyph:"宽" ~attrs:default_style;  (* Wide at col 1-2 *)
-  G.resize g ~rows:1 ~cols:2;  (* Cut to cols=2 *)
-  check bool "wide char cleared when cut" true (C.is_empty (get_cell g ~row:0 ~col:1));
-  G.resize g ~rows:1 ~cols:3;  (* Expand back *)
+  G.set_grapheme g ~row:0 ~col:1 ~glyph:"宽" ~attrs:default_style;
+  (* Wide at col 1-2 *)
+  G.resize g ~rows:1 ~cols:2;
+  (* Cut to cols=2 *)
+  check bool "wide char cleared when cut" true
+    (C.is_empty (get_cell g ~row:0 ~col:1));
+  G.resize g ~rows:1 ~cols:3;
+  (* Expand back *)
   check cell "no orphan on expand" C.empty (get_cell g ~row:0 ~col:2)
 (* Covers resize truncating wide chars, preventing orphans on re-expand. *)
 
 let test_blit_wide_cross_boundary () =
   let src = G.create ~rows:1 ~cols:3 () in
-  G.set_grapheme src ~row:0 ~col:1 ~glyph:"宽" ~attrs:default_style;  (* Wide at 1-2 *)
+  G.set_grapheme src ~row:0 ~col:1 ~glyph:"宽" ~attrs:default_style;
+  (* Wide at 1-2 *)
   let dst = G.create ~rows:1 ~cols:3 () in
-  let src_rect = { G.row=0; col=1; width=2; height=1 } in
-  G.blit ~src ~src_rect ~dst ~dst_pos:(0,0);
-  check string "blit wide preserved" "宽" (C.get_text (get_cell dst ~row:0 ~col:0));
-  check bool "blit continuation" true (C.is_continuation (get_cell dst ~row:0 ~col:1))
+  let src_rect = { G.row = 0; col = 1; width = 2; height = 1 } in
+  G.blit ~src ~src_rect ~dst ~dst_pos:(0, 0);
+  check string "blit wide preserved" "宽"
+    (C.get_text (get_cell dst ~row:0 ~col:0));
+  check bool "blit continuation" true
+    (C.is_continuation (get_cell dst ~row:0 ~col:1))
 (* Covers blitting regions with wide chars, preserving continuations. *)
 
 let test_clear_styled_with_links () =
   let g = G.create ~rows:1 ~cols:1 () in
   G.set_grapheme ~link:"url" g ~row:0 ~col:0 ~glyph:"a" ~attrs:default_style;
-  let bg_style = Ansi.Style.with_bg (Ansi.Style.RGB (0,255,0)) default_style in
+  let bg_style =
+    Ansi.Style.with_bg (Ansi.Style.RGB (0, 255, 0)) default_style
+  in
   G.clear ~style:bg_style g;
   let cell = get_cell g ~row:0 ~col:0 in
-  check bool "clear removes link" (Ansi.Style.get_link_id (C.get_style cell) = 0) true;
-  check bool "clear sets bg" (Ansi.Style.bg (C.get_style cell) = Ansi.Style.RGB (0,255,0)) true
+  check bool "clear removes link"
+    (Ansi.Style.get_link_id (C.get_style cell) = 0)
+    true;
+  check bool "clear sets bg"
+    (Ansi.Style.bg (C.get_style cell) = Ansi.Style.RGB (0, 255, 0))
+    true
 (* Covers clear removing links while applying styles. *)
 
 (* Add to "Damage Tracking and Diffing" suite *)
@@ -623,7 +651,7 @@ let test_diff_mismatched_sizes () =
 (* Covers diff on size mismatch, treating new areas as dirty. *)
 
 let test_cell_hash_equal_direct () =
-  let s1 = Ansi.Style.with_fg (Ansi.Style.RGB (255,0,0)) default_style in
+  let s1 = Ansi.Style.with_fg (Ansi.Style.RGB (255, 0, 0)) default_style in
   let c1 = C.make_continuation ~style:s1 in
   let c2 = C.make_continuation ~style:s1 in
   check bool "equal continuations" true (C.equal c1 c2);
@@ -637,10 +665,11 @@ let test_cell_hash_equal_direct () =
 let test_batch_with_exception () =
   let g = G.create ~rows:1 ~cols:1 () in
   let prev = G.copy g in
-  (try G.with_updates g (fun g' -> 
-    G.set_grapheme g' ~row:0 ~col:0 ~glyph:"x" ~attrs:default_style;
-    raise Not_found) 
-  with Not_found -> ());
+  (try
+     G.with_updates g (fun g' ->
+         G.set_grapheme g' ~row:0 ~col:0 ~glyph:"x" ~attrs:default_style;
+         raise Not_found)
+   with Not_found -> ());
   (* Changes should be rolled back on exception *)
   let diffs = G.diff_cells prev g in
   check int "no changes after exception rollback" 0 (List.length diffs)
@@ -648,8 +677,10 @@ let test_batch_with_exception () =
 
 let test_storage_inline_vs_pooled () =
   let g = G.create ~rows:1 ~cols:20 () in
-  let short = "abc" in  (* <8 bytes - will be stored inline *)
-  let long = String.make 10 'x' in  (* >7 bytes - will be pooled *)
+  let short = "abc" in
+  (* <8 bytes - will be stored inline *)
+  let long = String.make 10 'x' in
+  (* >7 bytes - will be pooled *)
   (* Set text at different positions with enough space *)
   let _ = G.set_text g ~row:0 ~col:0 ~text:short ~attrs:default_style in
   let _ = G.set_text g ~row:0 ~col:5 ~text:long ~attrs:default_style in
@@ -657,25 +688,32 @@ let test_storage_inline_vs_pooled () =
   check bool "inline/pool preserved in copy" true (G.diff_cells g copy = []);
   (* Verify text is preserved correctly across inline/pooled boundary *)
   (* For set_text, each character goes to a separate cell *)
-  check string "first char of short" "a" (C.get_text (get_cell copy ~row:0 ~col:0));
-  check string "second char of short" "b" (C.get_text (get_cell copy ~row:0 ~col:1));
-  check string "third char of short" "c" (C.get_text (get_cell copy ~row:0 ~col:2));
-  check string "first char of long" "x" (C.get_text (get_cell copy ~row:0 ~col:5))
+  check string "first char of short" "a"
+    (C.get_text (get_cell copy ~row:0 ~col:0));
+  check string "second char of short" "b"
+    (C.get_text (get_cell copy ~row:0 ~col:1));
+  check string "third char of short" "c"
+    (C.get_text (get_cell copy ~row:0 ~col:2));
+  check string "first char of long" "x"
+    (C.get_text (get_cell copy ~row:0 ~col:5))
 (* Covers inline (<8) vs pooled storage correctness. *)
 
 let test_string_width_cache () =
   let east_asian = false in
-  for i = 1 to 3000 do  (* Many unique strings *)
+  for i = 1 to 3000 do
+    (* Many unique strings *)
     ignore (G.string_width ~east_asian (string_of_int i))
   done;
-  let hit1 = G.string_width ~east_asian "1" in  (* Should still work correctly *)
+  let hit1 = G.string_width ~east_asian "1" in
+  (* Should still work correctly *)
   check int "cache handles many strings" 1 hit1
 (* Covers string width cache under load. *)
 
 (* Add to "Utilities and Equality" suite *)
 
 let test_string_width_control_in_cluster () =
-  let s = "a\x0A b" in  (* a + LF (control) + space + b *)
+  let s = "a\x0A b" in
+  (* a + LF (control) + space + b *)
   check int "control skips width" 3 (G.string_width s)
 (* Covers control chars in clusters not adding width. *)
 
@@ -715,11 +753,15 @@ let () =
           test_case "Set Text zero-width joiner" `Quick test_set_text_zero_width;
           test_case "Set Text combining marks" `Quick
             test_set_text_combining_marks;
-          test_case "Set Text regional indicators" `Quick test_set_text_regional_indicators;
+          test_case "Set Text regional indicators" `Quick
+            test_set_text_regional_indicators;
           test_case "Set Grapheme skin tone" `Quick test_set_grapheme_skin_tone;
-          test_case "Set Text malformed UTF-8" `Quick test_set_text_malformed_utf8;
-          test_case "Set Grapheme variation selector" `Quick test_set_grapheme_variation_selector;
-          test_case "Set Grapheme alpha blend transparent" `Quick test_set_grapheme_alpha_blend_transparent;
+          test_case "Set Text malformed UTF-8" `Quick
+            test_set_text_malformed_utf8;
+          test_case "Set Grapheme variation selector" `Quick
+            test_set_grapheme_variation_selector;
+          test_case "Set Grapheme alpha blend transparent" `Quick
+            test_set_grapheme_alpha_blend_transparent;
         ] );
       ( "Bulk Operations",
         [
@@ -734,8 +776,10 @@ let () =
           test_case "Resize with preservation/truncation" `Quick
             test_resize_preservation;
           test_case "Resize cut wide char" `Quick test_resize_cut_wide_char;
-          test_case "Blit wide cross boundary" `Quick test_blit_wide_cross_boundary;
-          test_case "Clear styled with links" `Quick test_clear_styled_with_links;
+          test_case "Blit wide cross boundary" `Quick
+            test_blit_wide_cross_boundary;
+          test_case "Clear styled with links" `Quick
+            test_clear_styled_with_links;
         ] );
       ( "Damage Tracking and Diffing",
         [
@@ -756,7 +800,8 @@ let () =
             test_with_updates;
           test_case "Batch with many changes" `Quick test_batch_many_changes;
           test_case "Batch with exception" `Quick test_batch_with_exception;
-          test_case "Storage inline vs pooled" `Quick test_storage_inline_vs_pooled;
+          test_case "Storage inline vs pooled" `Quick
+            test_storage_inline_vs_pooled;
         ] );
       ( "Utilities and Equality",
         [
@@ -768,7 +813,8 @@ let () =
           test_case "Rect equality" `Quick test_rect_equality;
           test_case "Dirty region equality" `Quick test_dirty_region_equality;
           test_case "String width cache" `Quick test_string_width_cache;
-          test_case "String width control in cluster" `Quick test_string_width_control_in_cluster;
+          test_case "String width control in cluster" `Quick
+            test_string_width_control_in_cluster;
           test_case "Diff no changes" `Quick test_diff_no_changes;
         ] );
       ( "Edge Cases",

@@ -602,9 +602,9 @@ let with_fg color t =
   let bg_for_encode = match bg_opt with None -> Default | Some c -> c in
   let result = encode ~fg:color ~bg:bg_for_encode ~link ~flags in
   (* Only manipulate none bits for non-extended styles *)
-  if is_extended result then
-    result  (* Extended styles handle None differently *)
-  else (
+  if is_extended result then result
+    (* Extended styles handle None differently *)
+  else
     (* Clear the fg_none bit since we're setting an actual color *)
     let result =
       Int64.logand result (Int64.lognot (Int64.shift_left 1L fg_none_bit))
@@ -612,7 +612,6 @@ let with_fg color t =
     (* Preserve bg_none bit if bg was None *)
     if bg_opt = None then Int64.logor result (Int64.shift_left 1L bg_none_bit)
     else result
-  )
 
 (* Set fg to None (inherit) *)
 let with_no_fg t =
@@ -631,9 +630,9 @@ let with_bg color t =
   let fg_for_encode = match fg_opt with None -> Default | Some c -> c in
   let result = encode ~fg:fg_for_encode ~bg:color ~link ~flags in
   (* Only manipulate none bits for non-extended styles *)
-  if is_extended result then
-    result  (* Extended styles handle None differently *)
-  else (
+  if is_extended result then result
+    (* Extended styles handle None differently *)
+  else
     (* Clear the bg_none bit since we're setting an actual color *)
     let result =
       Int64.logand result (Int64.lognot (Int64.shift_left 1L bg_none_bit))
@@ -641,7 +640,6 @@ let with_bg color t =
     (* Preserve fg_none bit if fg was None *)
     if fg_opt = None then Int64.logor result (Int64.shift_left 1L fg_none_bit)
     else result
-  )
 
 (* Set bg to None (inherit) *)
 let with_no_bg t =

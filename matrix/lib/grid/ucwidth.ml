@@ -182,8 +182,7 @@ let is_emoji_presentation uchar =
   with _ -> false (* Fallback if function doesn't exist *)
 
 (** Check if a code point is a skin tone modifier (U+1F3FB..U+1F3FF) *)
-let is_skin_tone_modifier cp =
-  cp >= 0x1F3FB && cp <= 0x1F3FF
+let is_skin_tone_modifier cp = cp >= 0x1F3FB && cp <= 0x1F3FF
 
 (** Calculate width of a grapheme cluster from a substring
 
@@ -231,13 +230,15 @@ let cluster_width_sub ?(east_asian = false) s start len =
           let w = char_width ~east_asian u in
           let new_has_control = has_control || w = -1 in
           let new_acc =
-            if is_vs || is_zwj || is_ri || is_skin_tone then acc (* Don't add width for these *)
+            if is_vs || is_zwj || is_ri || is_skin_tone then acc
+              (* Don't add width for these *)
             else if w = -1 then acc (* Don't add control character width *)
             else acc + w
           in
 
           loop dec new_acc new_has_vs15 new_has_vs16 new_has_zwj new_ri_count
-            new_last_non_vs_was_keycap is_emoji new_has_control new_has_skin_tone
+            new_last_non_vs_was_keycap is_emoji new_has_control
+            new_has_skin_tone
     | `End ->
         (* Final width calculation *)
         if has_control then -1 (* Control character cluster *)
@@ -246,7 +247,8 @@ let cluster_width_sub ?(east_asian = false) s start len =
           (* Single RI should be width 1 unless followed by VS-16 *)
           if has_vs16 then 2 else 1
         else if has_zwj && has_emoji then 2 (* Emoji ZWJ sequence *)
-        else if has_skin_tone && has_emoji then 2 (* Emoji with skin tone modifier *)
+        else if has_skin_tone && has_emoji then 2
+          (* Emoji with skin tone modifier *)
         else if has_vs16 then
           if acc > 0 then 2 (* VS-16 forces emoji presentation *)
           else 1 (* Isolated VS-16 has width 1 *)
@@ -347,7 +349,6 @@ let string_width ?(east_asian = false) s =
   let len = String.length s in
   if len = 0 then 0
   else
-    
     (* Fast path for pure ASCII strings *)
     let rec check_ascii i acc =
       if i >= len then Some acc
@@ -368,11 +369,11 @@ let string_width ?(east_asian = false) s =
         | Some width -> width
         | None ->
             (* Slow path: full grapheme segmentation *)
-              let folder acc g =
-                let w = cluster_width ~east_asian g in
-                (* Control characters (-1) don't contribute to display width *)
-                if w = -1 then acc else acc + w
-              in
-              let width = Uuseg_string.fold_utf_8 `Grapheme_cluster folder 0 s in
-              Width_cache.put cache_key width;
-              width)
+            let folder acc g =
+              let w = cluster_width ~east_asian g in
+              (* Control characters (-1) don't contribute to display width *)
+              if w = -1 then acc else acc + w
+            in
+            let width = Uuseg_string.fold_utf_8 `Grapheme_cluster folder 0 s in
+            Width_cache.put cache_key width;
+            width)

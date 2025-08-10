@@ -541,7 +541,8 @@ let test_osc_sequences () =
       Alcotest.(check int) "osc code" 10 code;
       Alcotest.(check string) "osc data" "#FFFFFF" osc_data
   | _ ->
-      Alcotest.failf "Expected [Clipboard; Osc], got %d events" (List.length events)
+      Alcotest.failf "Expected [Clipboard; Osc], got %d events"
+        (List.length events)
 (* Covers: OSC parsing (clipboard via 52, general via code;data), terminated by BEL (\x07). Untested but essential for features like remote clipboard. Ensures terminator handling and param splitting. *)
 
 (** Test focus, blur, and resize events *)
@@ -578,7 +579,9 @@ let test_kitty_advanced () =
       Alcotest.(check char) "shifted" 'A' (Uchar.to_char su);
       Alcotest.(check char) "base" 'a' (Uchar.to_char bu);
       Alcotest.(check bool) "ctrl modifier" true m.ctrl;
-      Alcotest.(check bool) "event type is Release" true (event_type = Input.Release);
+      Alcotest.(check bool)
+        "event type is Release" true
+        (event_type = Input.Release);
       Alcotest.(check string) "associated text" "bc" associated_text
   | _ -> Alcotest.fail "expected advanced Kitty key event"
 (* Covers: Kitty-specific fields (associated_text from code points, shifted/base), repeat/release event_type, untested modifiers like super/hyper (here ctrl). Ensures colon/semi parsing without duplication of basic Kitty tests. *)
@@ -620,10 +623,7 @@ let test_parsing_efficiency () =
   let dt = Unix.gettimeofday () -. t0 in
   Alcotest.(check bool) "fast on long invalid (<0.1s)" true (dt < 0.1);
   (* The sequence is parsed as chars. ESC [ is consumed but 10000 '9's + 'X' are returned *)
-  Alcotest.(check bool)
-    "parses many chars"
-    true
-    (List.length events >= 10000);
+  Alcotest.(check bool) "parses many chars" true (List.length events >= 10000);
   (* Assuming fallback to chars *)
   (* Large paste (50k chars) as single event *)
   let large_paste = String.make 50000 'A' in

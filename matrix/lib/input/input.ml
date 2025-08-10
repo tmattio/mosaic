@@ -1306,12 +1306,12 @@ let parse_escape_sequence s start length =
               (* Decode base64 *)
               let decode_base64 s =
                 let decode_char = function
-                  | 'A'..'Z' as c -> Char.code c - Char.code 'A'
-                  | 'a'..'z' as c -> Char.code c - Char.code 'a' + 26
-                  | '0'..'9' as c -> Char.code c - Char.code '0' + 52
+                  | 'A' .. 'Z' as c -> Char.code c - Char.code 'A'
+                  | 'a' .. 'z' as c -> Char.code c - Char.code 'a' + 26
+                  | '0' .. '9' as c -> Char.code c - Char.code '0' + 52
                   | '+' -> 62
                   | '/' -> 63
-                  | '=' -> 0  (* Padding *)
+                  | '=' -> 0 (* Padding *)
                   | _ -> 0
                 in
                 let len = String.length s in
@@ -1324,19 +1324,20 @@ let parse_escape_sequence s start length =
                     let d = decode_char s.[i + 3] in
                     Buffer.add_char out (Char.chr ((a lsl 2) lor (b lsr 4)));
                     if s.[i + 2] <> '=' then (
-                      Buffer.add_char out (Char.chr (((b land 15) lsl 4) lor (c lsr 2)));
+                      Buffer.add_char out
+                        (Char.chr (((b land 15) lsl 4) lor (c lsr 2)));
                       if s.[i + 3] <> '=' then
-                        Buffer.add_char out (Char.chr (((c land 3) lsl 6) lor d))
-                    );
-                    decode (i + 4)
-                  )
+                        Buffer.add_char out
+                          (Char.chr (((c land 3) lsl 6) lor d)));
+                    decode (i + 4))
                 in
                 decode 0;
                 Buffer.contents out
               in
-              let clipboard_data = 
-                try decode_base64 base64_data 
-                with _ -> base64_data  (* Fallback to raw data if decode fails *)
+              let clipboard_data =
+                try decode_base64 base64_data
+                with _ ->
+                  base64_data (* Fallback to raw data if decode fails *)
               in
               Clipboard (selection, clipboard_data)
             else Osc (code, data)
@@ -1473,9 +1474,11 @@ let feed parser bytes offset length =
                   let rec find_osc_end j =
                     if j >= parser.length then j
                     else if Bytes.get parser.buffer j = '\x07' then j + 1
-                    else if j + 1 < parser.length 
-                            && Bytes.get parser.buffer j = '\x1b' 
-                            && Bytes.get parser.buffer (j + 1) = '\\' then j + 2
+                    else if
+                      j + 1 < parser.length
+                      && Bytes.get parser.buffer j = '\x1b'
+                      && Bytes.get parser.buffer (j + 1) = '\\'
+                    then j + 2
                     else find_osc_end (j + 1)
                   in
                   find_osc_end (i + 1)
@@ -1514,26 +1517,28 @@ let feed parser bytes offset length =
                            }
                         :: acc)
                         (pos + 1)
-                  else 
+                  else
                     (* Invalid CSI sequence - emit as individual characters *)
                     (* Skip the ESC character but emit everything else *)
                     let rec emit_chars acc i =
                       if i >= seq_end then acc
                       else
                         let c = Bytes.get parser.buffer i in
-                        let key_event = 
-                          Key {
-                            key = Char (Uchar.of_int (Char.code c));
-                            modifier = no_modifier;
-                            event_type = Press;
-                            associated_text = "";
-                            shifted_key = None;
-                            base_key = None;
-                          }
+                        let key_event =
+                          Key
+                            {
+                              key = Char (Uchar.of_int (Char.code c));
+                              modifier = no_modifier;
+                              event_type = Press;
+                              associated_text = "";
+                              shifted_key = None;
+                              base_key = None;
+                            }
                         in
                         emit_chars (key_event :: acc) (i + 1)
                     in
-                    let events = emit_chars acc (pos + 1) in  (* Start from pos+1 to skip ESC *)
+                    let events = emit_chars acc (pos + 1) in
+                    (* Start from pos+1 to skip ESC *)
                     process_buffer events seq_end
             else List.rev acc
         else if c >= '\x00' && c <= '\x1f' then

@@ -86,42 +86,44 @@ let use_scroll ?(initial = 0) ?(min_offset = 0) ?(max_offset = max_int)
     ?(momentum = false) ?(friction = 2.0) ?(impulse_scale = 3.0)
     ?(inertia_threshold = 0.05) ?(alpha = 0.8) ?(max_dt = 0.1) () =
   let offset, set_offset, update_offset = use_state initial in
-  let velocity, set_velocity, update_velocity = use_state 0.0 in  (* Always call *)
-  let _accumulated, _, update_accumulated = use_state 0.0 in  (* Always call *)
-  let last_input_time = use_ref (Unix.gettimeofday ()) in  (* Always call *)
-  let last_scroll_time = use_ref (Unix.gettimeofday ()) in  (* New: for dt calc *)
+  let velocity, set_velocity, update_velocity = use_state 0.0 in
+  (* Always call *)
+  let _accumulated, _, update_accumulated = use_state 0.0 in
+  (* Always call *)
+  let last_input_time = use_ref (Unix.gettimeofday ()) in
+  (* Always call *)
+  let last_scroll_time = use_ref (Unix.gettimeofday ()) in
+  (* New: for dt calc *)
 
   (* Helper to clamp offset *)
   let clamp v = max min_offset (min max_offset v) in
 
   (* Reset velocity when momentum toggles off *)
-  use_effect ~deps:(Deps.keys [ Deps.bool momentum ]) (fun () ->
-    if not momentum then set_velocity 0.0;
-    None
-  );
+  use_effect
+    ~deps:(Deps.keys [ Deps.bool momentum ])
+    (fun () ->
+      if not momentum then set_velocity 0.0;
+      None);
 
   (* Always subscribe, but use Sub.none when !momentum *)
   use_subscription
     (if momentum then
        Engine.Sub.on_tick (fun dt ->
-         let now = Unix.gettimeofday () in
-         if now -. !last_input_time > inertia_threshold && abs_float velocity > 0.01 then (
-           let delta = velocity *. dt in
-           update_accumulated (fun acc ->
-             let new_acc = acc +. delta in
-             let int_delta = int_of_float (Float.floor new_acc) in
-             if int_delta <> 0 then (
-               update_offset (fun o -> clamp (o + int_delta));
-               new_acc -. Float.floor new_acc
-             ) else
-               new_acc
-           );
-           update_velocity (fun v -> v *. exp (-. friction *. dt))
-         )
-       )
-     else
-       Engine.Sub.none
-    );
+           let now = Unix.gettimeofday () in
+           if
+             now -. !last_input_time > inertia_threshold
+             && abs_float velocity > 0.01
+           then (
+             let delta = velocity *. dt in
+             update_accumulated (fun acc ->
+                 let new_acc = acc +. delta in
+                 let int_delta = int_of_float (Float.floor new_acc) in
+                 if int_delta <> 0 then (
+                   update_offset (fun o -> clamp (o + int_delta));
+                   new_acc -. Float.floor new_acc)
+                 else new_acc);
+             update_velocity (fun v -> v *. exp (-.friction *. dt))))
+     else Engine.Sub.none);
 
   let scroll_by delta =
     let now = Unix.gettimeofday () in
@@ -131,13 +133,11 @@ let use_scroll ?(initial = 0) ?(min_offset = 0) ?(max_offset = max_int)
     if momentum then (
       last_input_time := now;
       let instant_vel =
-        if dt > 0. && dt <= max_dt then
-          float_of_int delta /. dt
+        if dt > 0. && dt <= max_dt then float_of_int delta /. dt
         else
-          float_of_int delta *. impulse_scale  (* Fallback for large/stale dt *)
+          float_of_int delta *. impulse_scale (* Fallback for large/stale dt *)
       in
-      update_velocity (fun v -> alpha *. instant_vel +. (1. -. alpha) *. v)
-    )
+      update_velocity (fun v -> (alpha *. instant_vel) +. ((1. -. alpha) *. v)))
   in
 
   let set_offset_clamped v = set_offset (clamp v) in

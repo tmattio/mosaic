@@ -217,26 +217,30 @@ let set_text ?viewport t ~row ~col ~text ~attrs =
         (lines_written, cols_advanced)
   | Some vp ->
       (* Check if row is out of viewport *)
-      if row < 0 || row >= vp.Viewport.height then
-        (0, 0)
+      if row < 0 || row >= vp.Viewport.height then (0, 0)
       else if col < 0 then
         (* Negative col - skip beginning of text *)
         let skip_chars = -col in
-        if skip_chars >= String.length text then
-          (0, 0)  (* All text is before viewport *)
+        if skip_chars >= String.length text then (0, 0)
+          (* All text is before viewport *)
         else
-          let visible_text = String.sub text skip_chars (String.length text - skip_chars) in
+          let visible_text =
+            String.sub text skip_chars (String.length text - skip_chars)
+          in
           let abs_row = vp.Viewport.row + row in
-          let abs_col = vp.Viewport.col  (* Start at viewport's column 0 *)
+          let abs_col =
+            vp.Viewport.col
+            (* Start at viewport's column 0 *)
           in
           let max_width = vp.Viewport.width in
-          let cols_advanced = 
-            G.set_text t.back ~row:abs_row ~col:abs_col ~text:visible_text ~attrs ~max_width
+          let cols_advanced =
+            G.set_text t.back ~row:abs_row ~col:abs_col ~text:visible_text
+              ~attrs ~max_width
           in
           let lines_written = if cols_advanced > 0 then 1 else 0 in
           (lines_written, cols_advanced)
-      else if col >= vp.Viewport.width then
-        (0, 0)  (* Starting position is beyond viewport *)
+      else if col >= vp.Viewport.width then (0, 0)
+        (* Starting position is beyond viewport *)
       else
         (* Normal case - position is within viewport *)
         let abs_row = vp.Viewport.row + row in
@@ -252,14 +256,13 @@ let set_text ?viewport t ~row ~col ~text ~attrs =
 let set_multiline_text ?viewport t ~row ~col ~text ~attrs =
   let lines = String.split_on_char '\n' text in
   let max_cols = ref 0 in
-  let max_row = match viewport with
-    | None -> max_int
-    | Some vp -> vp.Viewport.height
+  let max_row =
+    match viewport with None -> max_int | Some vp -> vp.Viewport.height
   in
   let rec loop idx = function
     | [] -> idx
     | hd :: tl ->
-        if idx >= max_row then idx  (* Stop if we've reached viewport height *)
+        if idx >= max_row then idx (* Stop if we've reached viewport height *)
         else
           let _lines, cols =
             set_text ?viewport t ~row:(row + idx) ~col ~text:hd ~attrs
@@ -489,20 +492,22 @@ let render_to_string t =
     let line_buf = Buffer.create 80 in
     let line_prev_style = ref !prev_style in
     let last_non_empty_col = ref (-1) in
-    
+
     (* First pass: find the last non-empty column *)
     for col = 0 to cols t - 1 do
       match G.get t.back ~row ~col with
-      | Some cell when not (C.is_empty cell) && not (C.is_continuation cell) ->
+      | Some cell when (not (C.is_empty cell)) && not (C.is_continuation cell)
+        ->
           last_non_empty_col := col
       | _ -> ()
     done;
-    
+
     (* Second pass: render the line *)
     let col = ref 0 in
     while !col < cols t do
       match G.get t.back ~row ~col:!col with
-      | Some cell when not (C.is_empty cell) && not (C.is_continuation cell) ->
+      | Some cell when (not (C.is_empty cell)) && not (C.is_continuation cell)
+        ->
           let style = C.get_style cell in
           (* Collect consecutive cells with the same style *)
           let text_buf = Buffer.create 16 in
@@ -510,8 +515,10 @@ let render_to_string t =
           let scan_col = ref !col in
           while !scan_col < cols t do
             match G.get t.back ~row ~col:!scan_col with
-            | Some c when not (C.is_empty c) && not (C.is_continuation c) && 
-                         Ansi.Style.equal (C.get_style c) style ->
+            | Some c
+              when (not (C.is_empty c))
+                   && (not (C.is_continuation c))
+                   && Ansi.Style.equal (C.get_style c) style ->
                 Buffer.add_string text_buf (C.get_text c);
                 let width = C.width c in
                 cells_consumed := !cells_consumed + width;
@@ -519,11 +526,11 @@ let render_to_string t =
             | Some c when C.is_continuation c ->
                 (* Should not happen if we're tracking width properly *)
                 incr scan_col
-            | _ -> 
+            | _ ->
                 (* Different style or empty - stop grouping *)
-                scan_col := cols t + 1  (* Break inner loop *)
+                scan_col := cols t + 1 (* Break inner loop *)
           done;
-          
+
           (* Output the grouped text with style *)
           if !line_prev_style <> Some style then (
             let sgr = Ansi.Style.to_sgr ~prev_style:!line_prev_style style in
@@ -537,21 +544,28 @@ let render_to_string t =
       | _ ->
           (* Empty cell - only add space if we haven't reached the last non-empty column *)
           if !col <= !last_non_empty_col then (
-            if !line_prev_style <> None && !line_prev_style <> Some Ansi.Style.default then (
+            if
+              !line_prev_style <> None
+              && !line_prev_style <> Some Ansi.Style.default
+            then (
               Buffer.add_string line_buf "\027[0m";
               line_prev_style := Some Ansi.Style.default);
             Buffer.add_char line_buf ' ');
           incr col
     done;
-    
+
     (* If line ends with non-default style and there are only empty cells after last content, add reset *)
-    if !line_prev_style <> None && !line_prev_style <> Some Ansi.Style.default && !last_non_empty_col >= 0 then (
-      (* Check if there are empty cells after the last non-empty cell *)
-      let has_trailing_empty = !last_non_empty_col < cols t - 1 in
-      if has_trailing_empty then (
-        Buffer.add_string line_buf "\027[0m";
-        line_prev_style := Some Ansi.Style.default));
-    
+    (if
+       !line_prev_style <> None
+       && !line_prev_style <> Some Ansi.Style.default
+       && !last_non_empty_col >= 0
+     then
+       (* Check if there are empty cells after the last non-empty cell *)
+       let has_trailing_empty = !last_non_empty_col < cols t - 1 in
+       if has_trailing_empty then (
+         Buffer.add_string line_buf "\027[0m";
+         line_prev_style := Some Ansi.Style.default));
+
     (* Add the line to the main buffer *)
     Buffer.add_buffer buf line_buf;
     prev_style := !line_prev_style;
@@ -582,13 +596,14 @@ let patches_to_sgr patches =
   List.iter
     (fun patch ->
       (* Special handling for transitions to default style *)
-      let patch_str = match patch with
-        | Run { row; col; text; style; _ } when style = Ansi.Style.default 
-            && !prev_style <> None && !prev_style <> Some Ansi.Style.default ->
+      let patch_str =
+        match patch with
+        | Run { row; col; text; style; _ }
+          when style = Ansi.Style.default && !prev_style <> None
+               && !prev_style <> Some Ansi.Style.default ->
             (* Use full reset when transitioning to default style *)
             Printf.sprintf "\027[%d;%dH\027[0m%s" (row + 1) (col + 1) text
-        | _ ->
-            patch_to_sgr ~prev_style:!prev_style patch
+        | _ -> patch_to_sgr ~prev_style:!prev_style patch
       in
       Buffer.add_string buf patch_str;
       (* Track the previous style for Run patches *)

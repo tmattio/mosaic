@@ -190,8 +190,9 @@ val candlestick :
 (** {2 Helper Functions} *)
 
 val legend : (string * Ui.Style.t) list -> Ui.element
-(** [legend items] creates a horizontal legend from a list of (label, style) pairs.
-    The style is used to color a marker (line or box) before each label. *)
+(** [legend items] creates a horizontal legend from a list of (label, style)
+    pairs. The style is used to color a marker (line or box) before each label.
+*)
 
 val line_with_gaps :
   ?width:Ui.dimension ->
@@ -207,5 +208,5 @@ val line_with_gaps :
   ?render_kind:line_render_kind ->
   (string * (float * float option) list) list ->
   Ui.element
-(** [line_with_gaps data] creates a line chart that supports data gaps.
-    Each point is a pair of (x, y option) where None represents a missing value. *)
+(** [line_with_gaps data] creates a line chart that supports data gaps. Each
+    point is a pair of (x, y option) where None represents a missing value. *)

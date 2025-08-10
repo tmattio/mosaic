@@ -64,19 +64,65 @@ let default =
   {
     document = { default_block with margin_bottom = 0 };
     paragraph = { default_block with margin_bottom = 0 };
-    heading = { default_block with margin_bottom = 0; style = Style.(bold ++ fg (Index 39)) };
+    heading =
+      {
+        default_block with
+        margin_bottom = 0;
+        style = Style.(bold ++ fg (Index 39));
+      };
     heading_prefix = Style.(fg (Index 244));
-    h1 = { default_block with margin_bottom = 0; style = Style.(bold ++ fg (Index 228)) };
-    h2 = { default_block with margin_bottom = 0; style = Style.(bold ++ fg (Index 220)) };
-    h3 = { default_block with margin_bottom = 0; style = Style.(bold ++ fg (Index 214)) };
-    h4 = { default_block with margin_bottom = 0; style = Style.(bold ++ fg (Index 208)) };
-    h5 = { default_block with margin_bottom = 0; style = Style.(bold ++ fg (Index 202)) };
-    h6 = { default_block with margin_bottom = 0; style = Style.(bold ++ fg (Index 196)) };
+    h1 =
+      {
+        default_block with
+        margin_bottom = 0;
+        style = Style.(bold ++ fg (Index 228));
+      };
+    h2 =
+      {
+        default_block with
+        margin_bottom = 0;
+        style = Style.(bold ++ fg (Index 220));
+      };
+    h3 =
+      {
+        default_block with
+        margin_bottom = 0;
+        style = Style.(bold ++ fg (Index 214));
+      };
+    h4 =
+      {
+        default_block with
+        margin_bottom = 0;
+        style = Style.(bold ++ fg (Index 208));
+      };
+    h5 =
+      {
+        default_block with
+        margin_bottom = 0;
+        style = Style.(bold ++ fg (Index 202));
+      };
+    h6 =
+      {
+        default_block with
+        margin_bottom = 0;
+        style = Style.(bold ++ fg (Index 196));
+      };
     block_quote =
-      { default_block with margin_bottom = 0; padding_left = 2; style = Style.(fg (Index 244)) };
+      {
+        default_block with
+        margin_bottom = 0;
+        padding_left = 2;
+        style = Style.(fg (Index 244));
+      };
     code_block =
       {
-        block = { default_block with margin_bottom = 0; padding_left = 2; padding_right = 2 };
+        block =
+          {
+            default_block with
+            margin_bottom = 0;
+            padding_left = 2;
+            padding_right = 2;
+          };
         lang_style = Style.(fg (Index 244));
         fence_style = Style.(fg (Index 240));
       };

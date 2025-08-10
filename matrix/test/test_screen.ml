@@ -610,7 +610,8 @@ let () =
           test_case "Viewport module functions" `Quick test_viewport_module;
           test_case "Copy viewport" `Quick test_copy_viewport;
           test_case "Negative viewport dimensions" `Quick test_negative_viewport;
-          test_case "Non-overlapping viewports" `Quick test_viewport_non_overlapping;
+          test_case "Non-overlapping viewports" `Quick
+            test_viewport_non_overlapping;
         ] );
       ( "Drawing Operations",
         [
@@ -622,7 +623,8 @@ let () =
           test_case "Set text negative positions" `Quick
             test_set_text_negative_pos;
           test_case "Set text wide char clipping" `Quick test_set_text_wide_clip;
-          test_case "Clear with negative positions" `Quick test_clear_negative_pos;
+          test_case "Clear with negative positions" `Quick
+            test_clear_negative_pos;
         ] );
       ( "Rendering",
         [
@@ -636,8 +638,10 @@ let () =
           test_case "Patches to sgr synchronized" `Quick
             test_patches_to_sgr_sync;
           test_case "Render run grouping" `Quick test_render_run_grouping;
-          test_case "Clear heuristic threshold" `Quick test_clear_heuristic_threshold;
-          test_case "Diff cells filters continuations" `Quick test_diff_cells_continuations;
+          test_case "Clear heuristic threshold" `Quick
+            test_clear_heuristic_threshold;
+          test_case "Diff cells filters continuations" `Quick
+            test_diff_cells_continuations;
         ] );
       ( "State Management",
         [

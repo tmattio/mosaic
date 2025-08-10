@@ -209,8 +209,7 @@ module Storage = struct
           (* Empty cell - check if it has a style *)
           let style_int64 = Bigarray.Array2.get storage.styles row col in
           let style = Ansi.Style.of_int64 style_int64 in
-          if Ansi.Style.equal style Ansi.Style.default then
-            Cell.empty
+          if Ansi.Style.equal style Ansi.Style.default then Cell.empty
           else
             (* Empty cell with style - create a glyph with space to preserve style *)
             Cell.make_glyph " " ~style ~east_asian_context:false
@@ -308,14 +307,19 @@ module Storage = struct
       (* Glyph cells - compare text bytes directly to avoid string allocation *)
       let base1 = col1 * 8 in
       let base2 = col2 * 8 in
-      if row1 >= 0 && row1 < Array.length storage1.texts 
-         && row2 >= 0 && row2 < Array.length storage2.texts then
+      if
+        row1 >= 0
+        && row1 < Array.length storage1.texts
+        && row2 >= 0
+        && row2 < Array.length storage2.texts
+      then
         let texts1 = storage1.texts.(row1) in
         let texts2 = storage2.texts.(row2) in
         (* Compare the 8 bytes directly *)
         let rec compare_bytes i =
           if i >= 8 then true
-          else if Bytes.get texts1 (base1 + i) <> Bytes.get texts2 (base2 + i) then false
+          else if Bytes.get texts1 (base1 + i) <> Bytes.get texts2 (base2 + i)
+          then false
           else compare_bytes (i + 1)
         in
         compare_bytes 0
@@ -563,7 +567,7 @@ let set_text ?link ?east_asian_context ?max_width grid ~row ~col ~text ~attrs =
           let actual_width = min width (max_col - !current_col) in
           current_col := !current_col + actual_width;
           total_width := !total_width + actual_width)
-        else if width = 0 then (
+        else if width = 0 then
           (* Zero-width grapheme (combining characters, ZWJ, VS15/16, etc) *)
           (* Check if this is a combining mark character *)
           let is_combining_mark =
@@ -601,7 +605,7 @@ let set_text ?link ?east_asian_context ?max_width grid ~row ~col ~text ~attrs =
                This matches terminal behavior when combining marks are sent as separate characters *)
             current_col := !current_col + 1;
             total_width := !total_width + 1)
-          else if !current_col > col then (
+          else if !current_col > col then
             (* Other zero-width characters (ZWJ, VS, etc) - don't advance cursor *)
             let prev_col = !current_col - 1 in
             match Storage.get_cell grid.storage row prev_col with
@@ -621,9 +625,7 @@ let set_text ?link ?east_asian_context ?max_width grid ~row ~col ~text ~attrs =
             | _ ->
                 (* No previous cell or it's empty/continuation - skip this grapheme *)
                 ()
-          )
-        (* else: zero-width at start of line - skip it *)
-        )
+      (* else: zero-width at start of line - skip it *)
     in
 
     Uuseg_string.fold_utf_8 `Grapheme_cluster folder () text;
@@ -780,18 +782,20 @@ let resize grid ~rows:new_rows ~cols:new_cols =
   grid.cols <- new_cols;
 
   (* Check for cut wide characters at the new column boundary *)
-  if new_cols < old_cols then (
-    (* When shrinking columns, check if any wide characters are cut *)
-    for r = 0 to min new_rows old_rows - 1 do
-      if new_cols > 0 then (
+  if new_cols < old_cols then
+    for
+      (* When shrinking columns, check if any wide characters are cut *)
+      r = 0 to min new_rows old_rows - 1
+    do
+      if new_cols > 0 then
         (* Check the last column - if it's a wide character that would extend beyond boundary *)
         let last_col = new_cols - 1 in
         let cell = Storage.get_cell grid.storage r last_col in
-        if Cell.is_glyph cell && Cell.width cell > 1 then (
+        if Cell.is_glyph cell && Cell.width cell > 1 then
           (* This wide character would extend beyond the new boundary *)
           (* Clear the cell - don't leave half a double-width glyph *)
           Storage.set_cell grid.storage r last_col Cell.empty
-        ) else if Cell.is_continuation cell then (
+        else if Cell.is_continuation cell then
           (* This is an orphaned continuation - clear both the lead and trail *)
           (* Find the start of the wide character by going backwards *)
           let rec find_start col =
@@ -806,18 +810,14 @@ let resize grid ~rows:new_rows ~cols:new_cols =
           for c = start_col to last_col do
             Storage.set_cell grid.storage r c Cell.empty
           done
-        )
-      )
-    done
-  );
+    done;
 
   (* Resize cell hashes array *)
-  let new_cell_hashes = Array.init new_rows (fun r ->
-    Array.init new_cols (fun c ->
-      if r < old_rows && c < old_cols then
-        grid.cell_hashes.(r).(c)
-      else
-        Storage.fast_hash grid.storage r c))
+  let new_cell_hashes =
+    Array.init new_rows (fun r ->
+        Array.init new_cols (fun c ->
+            if r < old_rows && c < old_cols then grid.cell_hashes.(r).(c)
+            else Storage.fast_hash grid.storage r c))
   in
   grid.cell_hashes <- new_cell_hashes;
 
@@ -866,26 +866,49 @@ let blit ~src ~src_rect ~dst ~dst_pos =
     (* Use Bigarray slices for more efficient bulk copy *)
     if copy_width > 0 then (
       (* Get row slices *)
-      let src_types_slice = Bigarray.Array2.slice_left src.storage.types src_r in
-      let dst_types_slice = Bigarray.Array2.slice_left dst.storage.types dst_r in
-      let src_widths_slice = Bigarray.Array2.slice_left src.storage.widths src_r in
-      let dst_widths_slice = Bigarray.Array2.slice_left dst.storage.widths dst_r in
-      let src_styles_slice = Bigarray.Array2.slice_left src.storage.styles src_r in
-      let dst_styles_slice = Bigarray.Array2.slice_left dst.storage.styles dst_r in
-      
+      let src_types_slice =
+        Bigarray.Array2.slice_left src.storage.types src_r
+      in
+      let dst_types_slice =
+        Bigarray.Array2.slice_left dst.storage.types dst_r
+      in
+      let src_widths_slice =
+        Bigarray.Array2.slice_left src.storage.widths src_r
+      in
+      let dst_widths_slice =
+        Bigarray.Array2.slice_left dst.storage.widths dst_r
+      in
+      let src_styles_slice =
+        Bigarray.Array2.slice_left src.storage.styles src_r
+      in
+      let dst_styles_slice =
+        Bigarray.Array2.slice_left dst.storage.styles dst_r
+      in
+
       (* Create sub-arrays for the exact range we want to copy *)
-      let src_sub_types = Bigarray.Array1.sub src_types_slice src_col_start copy_width in
-      let dst_sub_types = Bigarray.Array1.sub dst_types_slice dst_col_start copy_width in
-      let src_sub_widths = Bigarray.Array1.sub src_widths_slice src_col_start copy_width in
-      let dst_sub_widths = Bigarray.Array1.sub dst_widths_slice dst_col_start copy_width in
-      let src_sub_styles = Bigarray.Array1.sub src_styles_slice src_col_start copy_width in
-      let dst_sub_styles = Bigarray.Array1.sub dst_styles_slice dst_col_start copy_width in
-      
+      let src_sub_types =
+        Bigarray.Array1.sub src_types_slice src_col_start copy_width
+      in
+      let dst_sub_types =
+        Bigarray.Array1.sub dst_types_slice dst_col_start copy_width
+      in
+      let src_sub_widths =
+        Bigarray.Array1.sub src_widths_slice src_col_start copy_width
+      in
+      let dst_sub_widths =
+        Bigarray.Array1.sub dst_widths_slice dst_col_start copy_width
+      in
+      let src_sub_styles =
+        Bigarray.Array1.sub src_styles_slice src_col_start copy_width
+      in
+      let dst_sub_styles =
+        Bigarray.Array1.sub dst_styles_slice dst_col_start copy_width
+      in
+
       (* Use Bigarray blit for efficient memory copy *)
       Bigarray.Array1.blit src_sub_types dst_sub_types;
       Bigarray.Array1.blit src_sub_widths dst_sub_widths;
-      Bigarray.Array1.blit src_sub_styles dst_sub_styles
-    );
+      Bigarray.Array1.blit src_sub_styles dst_sub_styles);
 
     (* Copy text bytes for this row segment *)
     (if copy_width > 0 then
@@ -1139,8 +1162,8 @@ let diff_rows prev_grid curr_grid =
   let prev_rows = prev_grid.rows in
   let dirty_rows = ref [] in
   for r = 0 to nrows - 1 do
-    if r < prev_rows then
-      (if prev_grid.row_hashes.(r) <> curr_grid.row_hashes.(r) then
+    if r < prev_rows then (
+      if prev_grid.row_hashes.(r) <> curr_grid.row_hashes.(r) then
         dirty_rows := r :: !dirty_rows)
     else
       (* New rows that didn't exist in prev_grid are dirty *)
@@ -1178,8 +1201,8 @@ let diff_regions_detailed prev_grid curr_grid =
             let cells_in_region =
               List.filter
                 (fun (r, c) ->
-                  r >= cell_region.min_row && r <= cell_region.max_row &&
-                  c >= cell_region.min_col && c <= cell_region.max_col)
+                  r >= cell_region.min_row && r <= cell_region.max_row
+                  && c >= cell_region.min_col && c <= cell_region.max_col)
                 changed_cells
             in
             (cell_region, cells_in_region) :: acc2)
@@ -1228,18 +1251,19 @@ let copy grid =
 let with_updates grid f =
   (* Save current state for potential rollback *)
   let backup = copy grid in
-  
+
   (* Set batch mode *)
   grid.batch_updates <- true;
   grid.batch_dirty_rows <- [];
 
   (* Execute the function *)
-  let result = 
-    try 
+  let result =
+    try
       let res = f grid in
       (* Success - update all dirty row hashes at once *)
       List.iter
-        (fun row -> grid.row_hashes.(row) <- row_hash grid.storage row grid.cols)
+        (fun row ->
+          grid.row_hashes.(row) <- row_hash grid.storage row grid.cols)
         grid.batch_dirty_rows;
       res
     with e ->
