@@ -202,6 +202,11 @@ val patch_to_sgr : ?prev_style:Ansi.Style.t option -> patch -> string
 val patches_to_sgr : patch list -> string
 (** Convert patches to ANSI escape sequences *)
 
+val patches_to_sgr_synchronized : patch list -> string
+(** Convert patches to ANSI escape sequences wrapped with synchronized update
+    mode. This reduces flicker by telling the terminal to buffer all updates and
+    apply them atomically. *)
+
 (** {1 Cursor management} *)
 
 val get_cursor : t -> (int * int) option
