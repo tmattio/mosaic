@@ -66,8 +66,8 @@ let print_ui ?(width = 20) ?(height = 5) element =
   let width = width + 2 in
   let height = height + 2 in
   let bordered_element =
-    Ui.box ~width:(`Cells width) ~height:(`Cells height) ~overflow_x:`Hidden
-      ~overflow_y:`Hidden ~border:Ui.Border.normal ~border_style:Ui.Style.empty
+    Ui.box ~width:(`Cells width) ~height:(`Cells height)
+      ~border:Ui.Border.normal ~border_style:Ui.Style.empty
       [ element ]
   in
   let output = render_to_string ~width ~height bordered_element in
