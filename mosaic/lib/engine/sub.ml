@@ -1,9 +1,7 @@
 (** Subscriptions with single closure-based implementation *)
 
 (* The only representation: a closure that takes dispatch and event *)
-type 'msg t = { 
-  run : dispatch:('msg -> unit) -> Input.event -> unit 
-}
+type 'msg t = { run : dispatch:('msg -> unit) -> Event.t -> unit }
 
 (* Window size type *)
 type window_size = { width : int; height : int }
@@ -11,79 +9,126 @@ type window_size = { width : int; height : int }
 (* Constructors *)
 let none = { run = (fun ~dispatch:_ _event -> ()) }
 
-let keyboard f = 
-  { run = (fun ~dispatch event ->
-      match event with
-      | Input.Key key_event ->
-          dispatch (f key_event)
-      | _ -> ()) }
+let keyboard f =
+  {
+    run =
+      (fun ~dispatch event ->
+        match event with
+        | Event.Input (Input.Key key_event) -> dispatch (f key_event)
+        | _ -> ());
+  }
 
-let keyboard_filter f = 
-  { run = (fun ~dispatch event ->
-      match event with
-      | Input.Key key_event ->
-          Option.iter dispatch (f key_event)
-      | _ -> ()) }
+let keyboard_filter f =
+  {
+    run =
+      (fun ~dispatch event ->
+        match event with
+        | Event.Input (Input.Key key_event) ->
+            Option.iter dispatch (f key_event)
+        | _ -> ());
+  }
 
-let mouse f = 
-  { run = (fun ~dispatch event ->
-      match event with
-      | Input.Mouse mouse_event ->
-          dispatch (f mouse_event)
-      | _ -> ()) }
+let mouse f =
+  {
+    run =
+      (fun ~dispatch event ->
+        match event with
+        | Event.Input (Input.Mouse mouse_event) -> dispatch (f mouse_event)
+        | _ -> ());
+  }
 
-let mouse_filter f = 
-  { run = (fun ~dispatch event ->
-      match event with
-      | Input.Mouse mouse_event ->
-          Option.iter dispatch (f mouse_event)
-      | _ -> ()) }
+let mouse_filter f =
+  {
+    run =
+      (fun ~dispatch event ->
+        match event with
+        | Event.Input (Input.Mouse mouse_event) ->
+            Option.iter dispatch (f mouse_event)
+        | _ -> ());
+  }
 
-let window f = 
-  { run = (fun ~dispatch event ->
-      match event with
-      | Input.Resize (width, height) ->
-          dispatch (f { width; height })
-      | _ -> ()) }
+let window f =
+  {
+    run =
+      (fun ~dispatch event ->
+        match event with
+        | Event.Input (Input.Resize (width, height)) ->
+            dispatch (f { width; height })
+        | _ -> ());
+  }
 
-let window_filter f = 
-  { run = (fun ~dispatch event ->
-      match event with
-      | Input.Resize (width, height) ->
-          Option.iter dispatch (f { width; height })
-      | _ -> ()) }
+let window_filter f =
+  {
+    run =
+      (fun ~dispatch event ->
+        match event with
+        | Event.Input (Input.Resize (width, height)) ->
+            Option.iter dispatch (f { width; height })
+        | _ -> ());
+  }
 
-let focus f = 
-  { run = (fun ~dispatch event ->
-      match event with
-      | Input.Focus ->
-          dispatch (f ())
-      | _ -> ()) }
+let focus f =
+  {
+    run =
+      (fun ~dispatch event ->
+        match event with Event.Input Input.Focus -> dispatch (f ()) | _ -> ());
+  }
 
-let blur f = 
-  { run = (fun ~dispatch event ->
-      match event with
-      | Input.Blur ->
-          dispatch (f ())
-      | _ -> ()) }
+let blur f =
+  {
+    run =
+      (fun ~dispatch event ->
+        match event with Event.Input Input.Blur -> dispatch (f ()) | _ -> ());
+  }
 
-let paste f = 
-  { run = (fun ~dispatch event ->
-      match event with
-      | Input.Paste text ->
-          dispatch (f text)
-      | _ -> ()) }
+let paste f =
+  {
+    run =
+      (fun ~dispatch event ->
+        match event with
+        | Event.Input (Input.Paste text) -> dispatch (f text)
+        | _ -> ());
+  }
 
-let paste_filter f = 
-  { run = (fun ~dispatch event ->
-      match event with
-      | Input.Paste text ->
-          Option.iter dispatch (f text)
-      | _ -> ()) }
+let paste_filter f =
+  {
+    run =
+      (fun ~dispatch event ->
+        match event with
+        | Event.Input (Input.Paste text) -> Option.iter dispatch (f text)
+        | _ -> ());
+  }
+
+let on_tick f =
+  {
+    run =
+      (fun ~dispatch event ->
+        match event with Event.Tick elapsed -> dispatch (f elapsed) | _ -> ());
+  }
+
+(* Timer implementation using tick events *)
+type timer_state = { mutable accumulated : float }
+
+let timer ~every f =
+  let state = { accumulated = 0.0 } in
+  {
+    run =
+      (fun ~dispatch event ->
+        match event with
+        | Event.Tick elapsed ->
+            state.accumulated <- state.accumulated +. elapsed;
+            if state.accumulated >= every then (
+              state.accumulated <- state.accumulated -. every;
+              dispatch (f ()))
+        | _ -> ());
+  }
 
 let batch subs =
-  { run = (fun ~dispatch event ->
-      List.iter (fun (sub : _ t) -> sub.run ~dispatch event) subs) }
+  {
+    run =
+      (fun ~dispatch event ->
+        List.iter (fun (sub : _ t) -> sub.run ~dispatch event) subs);
+  }
 
 (* Helper functions for specific events *)
 let on_mouse_motion f =
@@ -178,12 +223,14 @@ let on_ctrl_d msg = on_char ~ctrl:true 'd' msg
 
 (* Map function for transforming messages *)
 let map f (sub : _ t) =
-  { run = (fun ~dispatch event ->
-      sub.run ~dispatch:(fun msg -> dispatch (f msg)) event) }
+  {
+    run =
+      (fun ~dispatch event ->
+        sub.run ~dispatch:(fun msg -> dispatch (f msg)) event);
+  }
 
 (* Runtime interface *)
 let run ~dispatch event (sub : _ t) = sub.run ~dispatch event
 
 (* Pretty-printing *)
-let pp _pp_msg fmt _sub =
-  Format.fprintf fmt "<subscription>"
+let pp _pp_msg fmt _sub = Format.fprintf fmt "<subscription>"

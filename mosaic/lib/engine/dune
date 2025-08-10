@@ -6,6 +6,7 @@
   eio.unix
   uutf
   unix
+  logs
   mosaic.ui
   matrix.input
   matrix.tty

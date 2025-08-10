@@ -21,6 +21,7 @@ type meta =
   | Exit_alt_screen
   | Log of string
   | Tick of float * (float -> unit)
+  | Perform of (unit -> unit)
   | Perform_eio of (sw:Eio.Switch.t -> env:Eio_unix.Stdenv.base -> unit)
 
 type 'msg t

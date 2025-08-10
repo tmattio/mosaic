@@ -297,6 +297,33 @@ val on_paste : (string -> 'msg) -> 'msg t
       Sub.on_paste (fun text -> `PastedText text)
     ]} *)
 
+val on_tick : (float -> 'msg) -> 'msg t
+(** [on_tick f] subscribes to animation tick events.
+
+    The function [f] receives the elapsed time in seconds since the last tick.
+    Tick events are generated at the configured FPS rate when any tick
+    subscriptions are active. Useful for animations and time-based updates.
+
+    Example: Updates animation progress.
+    {[
+      Sub.on_tick (fun elapsed -> `UpdateAnimation elapsed)
+    ]} *)
+
+val timer : every:float -> (unit -> 'msg) -> 'msg t
+(** [timer ~every f] creates a repeating timer that calls [f] every [every]
+    seconds.
+
+    The timer accumulates elapsed time from tick events and fires when the
+    accumulated time exceeds the interval. The timer automatically resets after
+    firing and continues repeating.
+
+    Example: Update every 1.5 seconds.
+    {[
+      Sub.timer ~every:1.5 (fun () -> `TimerFired)
+    ]}
+
+    Note: For one-shot delayed actions, use [Cmd.after] instead. *)
+
 (** {3 Common Key Shortcuts} *)
 
 val on_enter : 'msg -> 'msg t
@@ -431,10 +458,10 @@ val map : ('a -> 'b) -> 'a t -> 'b t
       Sub.map (fun msg -> `Select_msg msg) subs
     ]} *)
 
-val run : dispatch:('msg -> unit) -> Input.event -> 'msg t -> unit
-(** [run ~dispatch event sub] executes the subscription with the given dispatch 
-    function and input event.
-    
+val run : dispatch:('msg -> unit) -> Event.t -> 'msg t -> unit
+(** [run ~dispatch event sub] executes the subscription with the given dispatch
+    function and event.
+
     This is the main runtime interface that executes the subscription's closure,
     allowing it to process events and dispatch messages. *)
 

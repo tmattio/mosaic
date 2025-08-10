@@ -1,5 +1,9 @@
 (** Commands with single closure-based implementation *)
 
+let src = Logs.Src.create "cmd" ~doc:"Command execution"
+
+module Log = (val Logs.src_log src : Logs.LOG)
+
 (* The only representation: a closure that takes a dispatch function *)
 type 'msg t = { run : dispatch:('msg -> unit) -> unit }
 
@@ -15,14 +19,33 @@ type meta =
   | Exit_alt_screen
   | Log of string
   | Tick of float * (float -> unit)
+  | Perform of (unit -> unit)
   | Perform_eio of (sw:Eio.Switch.t -> env:Eio_unix.Stdenv.base -> unit)
 
-(* Local queue for collecting meta commands during execution *)
-let local_meta_queue : meta Queue.t option ref = ref None
+let pp_meta ppf = function
+  | Quit -> Format.fprintf ppf "Quit"
+  | Print _ -> Format.fprintf ppf "Print(<element>)"
+  | Set_window_title title -> Format.fprintf ppf "Set_window_title(%S)" title
+  | Repaint -> Format.fprintf ppf "Repaint"
+  | Clear_screen -> Format.fprintf ppf "Clear_screen"
+  | Clear_terminal -> Format.fprintf ppf "Clear_terminal"
+  | Enter_alt_screen -> Format.fprintf ppf "Enter_alt_screen"
+  | Exit_alt_screen -> Format.fprintf ppf "Exit_alt_screen"
+  | Log msg -> Format.fprintf ppf "Log(%S)" msg
+  | Tick (interval, _) -> Format.fprintf ppf "Tick(%.3f)" interval
+  | Perform _ -> Format.fprintf ppf "Perform(<fn>)"
+  | Perform_eio _ -> Format.fprintf ppf "Perform_eio(<fn>)"
+
+(* Domain-local queue for collecting meta commands during execution *)
+let local_meta_queue_key : meta Queue.t option Domain.DLS.key =
+  Domain.DLS.new_key (fun () -> None)
 
 (* Enqueue a meta command *)
 let enqueue_meta meta =
-  match !local_meta_queue with Some q -> Queue.add meta q | None -> ()
+  Log.debug (fun m -> m "Enqueuing meta command: %a" pp_meta meta);
+  match Domain.DLS.get local_meta_queue_key with
+  | Some q -> Queue.add meta q
+  | None -> ()
 
 (* User command constructors *)
 let none = { run = (fun ~dispatch:_ -> ()) }
@@ -34,7 +57,13 @@ let batch cmds =
       (fun ~dispatch -> List.iter (fun (cmd : _ t) -> cmd.run ~dispatch) cmds);
   }
 
-let perform f = { run = (fun ~dispatch -> Option.iter dispatch (f ())) }
+let perform f =
+  {
+    run =
+      (fun ~dispatch ->
+        enqueue_meta
+          (Perform (fun () -> try Option.iter dispatch (f ()) with _ -> ())));
+  }
 
 let perform_eio f =
   {
@@ -48,8 +77,13 @@ let exec f msg =
   {
     run =
       (fun ~dispatch ->
-        f ();
-        dispatch msg);
+        (* enqueue in the order they must happen *)
+        enqueue_meta Exit_alt_screen;
+        enqueue_meta (Perform (fun () -> f ()));
+        enqueue_meta Enter_alt_screen;
+        enqueue_meta Repaint;
+        (* dispatch *after* we're back in our UI mode *)
+        enqueue_meta (Perform (fun () -> dispatch msg)));
   }
 
 (* Meta command constructors *)
@@ -94,13 +128,14 @@ let map f (cmd : _ t) =
 
 (* Runtime interface - returns list of meta commands *)
 let run ~dispatch (cmd : _ t) =
+  Log.debug (fun m -> m "Running command");
   let queue = Queue.create () in
-  let old = !local_meta_queue in
-  local_meta_queue := Some queue;
+  let old = Domain.DLS.get local_meta_queue_key in
+  Domain.DLS.set local_meta_queue_key (Some queue);
   Fun.protect
     (fun () ->
       cmd.run ~dispatch;
       (* Return the collected meta commands *)
       let metas = Queue.fold (fun acc m -> m :: acc) [] queue in
       List.rev metas)
-    ~finally:(fun () -> local_meta_queue := old)
+    ~finally:(fun () -> Domain.DLS.set local_meta_queue_key old)

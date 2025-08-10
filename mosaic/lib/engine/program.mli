@@ -35,6 +35,7 @@ val start :
   render:(unit -> Ui.element) ->
   on_input:(Input.event -> unit) ->
   on_resize:(w:int -> h:int -> unit) ->
+  ?on_snapshot:(Ui.Layout_snapshot.t -> unit) ->
   ?tick:(elapsed:float -> unit) ->
   unit ->
   t * (('msg -> unit) -> 'msg Cmd.t -> unit)
@@ -53,8 +54,15 @@ val stop : t -> unit
 val is_running : t -> bool
 (** Check if the program is still running. *)
 
+val get_snapshot : t -> Ui.Layout_snapshot.t option
+(** Get the layout snapshot if mouse mode is enabled. *)
+
 (** {1 Utility} *)
 
 val request_render : t -> unit
 (** Ask the render loop to redraw as soon as possible (useful after an
     asynchronous change). No‑op if the program is already scheduled to paint. *)
+
+val force_full_redraw : t -> unit
+(** Force a full screen redraw, clearing the previous frame buffer. Use this
+    when the terminal state may be inconsistent (e.g., after resize). *)
