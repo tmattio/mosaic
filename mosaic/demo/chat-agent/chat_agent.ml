@@ -229,69 +229,8 @@ let input_area ~current_input ~agent_state max_width =
               text ~style:Style.(fg (Index 252)) current_input;
               spacer ~flex_grow:1. ();
             ];
-          hbox
-            [
-              text ~style:Style.(fg (Index 244)) prompt_text;
-              spacer ~flex_grow:1. ();
-              text ~style:Style.(fg (Index 45)) "Claude Sonnet";
-            ];
+          hbox [ text ~style:Style.(fg (Index 244)) prompt_text ];
         ];
-    ]
-
-let status_bar width =
-  let open Ui in
-  hbox ~min_width:(`Cells width)
-    ~style:Style.(bg (Index 234) ++ fg (Index 252))
-    [
-      text " opencode v0.3.132";
-      spacer ~flex_grow:1. ();
-      text "~/Workspace/mosaic:main";
-      spacer ~flex_grow:1. ();
-      text ~style:Style.(fg (Index 45)) "tab ┃ BUILD MODE ";
-    ]
-
-let logo_header () =
-  let open Ui in
-  vbox ~gap:(`Cells 0)
-    [
-      hbox
-        [
-          text ~style:Style.(fg (Index 244)) "█▀▀█ █▀▀█ █▀▀ █▀▀▄ ";
-          text ~style:Style.(fg (Index 252)) "█▀▀ █▀▀█ █▀▀▄ █▀▀";
-        ];
-      hbox
-        [
-          text ~style:Style.(fg (Index 244)) "█░░█ █░░█ █▀▀ █░░█ ";
-          text ~style:Style.(fg (Index 252)) "█░░ █░░█ █░░█ █▀▀";
-        ];
-      hbox
-        [
-          text ~style:Style.(fg (Index 244)) "▀▀▀▀ █▀▀▀ ▀▀▀ ▀  ▀ ";
-          text ~style:Style.(fg (Index 252)) "▀▀▀ ▀▀▀▀ ▀▀▀  ▀▀▀";
-        ];
-      text ~style:Style.(fg (Index 244)) "         v0.3.132";
-    ]
-
-let commands_menu () =
-  let open Ui in
-  let command_row cmd desc shortcut =
-    hbox
-      [
-        text ~style:Style.(fg (Index 45)) cmd;
-        spacer ~min_width:(`Cells 4) ();
-        text ~style:Style.(fg (Index 252)) desc;
-        spacer ~min_width:(`Cells 4) ();
-        text ~style:Style.(fg (Index 244)) shortcut;
-      ]
-  in
-  vbox ~gap:(`Cells 1)
-    [
-      command_row "/new" "new session" "ctrl+x n";
-      command_row "/help" "show help" "ctrl+x h";
-      command_row "/share" "share session" "ctrl+x s";
-      command_row "/models" "list models" "ctrl+x m";
-      command_row "/editor" "open editor" "ctrl+x e";
-      command_row "/redo" "redo message" "ctrl+x r";
     ]
 
 let chat_agent_app () =
@@ -479,33 +418,28 @@ let chat_agent_app () =
   (* Main content *)
   let main_content =
     if show_welcome then
-      box ~max_width:(`Cells content_width) ~max_height:(`Cells content_height)
-        ~style:Style.(bg (Index 235))
-        ~border:Border.rounded
-        ~padding:(sides ~left:4 ~right:4 ~top:2 ~bottom:2 ())
-        [
-          vbox ~gap:(`Cells 2)
-            [
-              logo_header ();
-              commands_menu ();
-              spacer ~flex_grow:1. ();
-              input_area ~current_input ~agent_state (content_width - 8);
-            ];
-        ]
+      (* Just the input prompt, centered with fixed width *)
+      box ~min_width:(`Cells window_width) ~min_height:(`Cells window_height)
+        [ center (input_area ~current_input ~agent_state 60) ]
     else
-      box ~max_width:(`Cells content_width) ~max_height:(`Cells content_height)
-        ~style:Style.(bg (Index 235))
-        ~border:Border.rounded
-        ~padding:(sides ~left:2 ~right:2 ~top:1 ~bottom:1 ())
+      box ~min_width:(`Cells window_width) ~min_height:(`Cells window_height)
         [
-          vbox ~gap:(`Cells 1)
-            [
-              scroll_view
-                ~min_height:(`Cells (max 10 (content_height - 8)))
-                ~h_offset:0 ~v_offset:scroll_offset messages_view;
-              spacer ~flex_grow:1. ();
-              input_area ~current_input ~agent_state (content_width - 4);
-            ];
+          center
+            (box ~max_width:(`Cells content_width)
+               ~max_height:(`Cells content_height)
+               ~style:Style.(bg (Index 235))
+               ~border:Border.rounded
+               ~padding:(sides ~left:2 ~right:2 ~top:1 ~bottom:1 ())
+               [
+                 vbox ~gap:(`Cells 1)
+                   [
+                     scroll_view
+                       ~min_height:(`Cells (max 10 (content_height - 8)))
+                       ~h_offset:0 ~v_offset:scroll_offset messages_view;
+                     spacer ~flex_grow:1. ();
+                     input_area ~current_input ~agent_state (content_width - 4);
+                   ];
+               ]);
         ]
   in
 
@@ -514,14 +448,8 @@ let chat_agent_app () =
     [
       (* Background starfield *)
       starfield_background;
-      (* Centered content with status bar *)
-      vbox
-        [
-          spacer ~flex_grow:1. ();
-          center main_content;
-          spacer ~flex_grow:1. ();
-          status_bar window_width;
-        ];
+      (* Main content *)
+      main_content;
     ]
 
 (* Main entry point *)
