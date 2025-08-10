@@ -1,0 +1,3 @@
+(executables
+ (names bench_grid bench_screen)
+ (libraries ubench matrix.ansi matrix.grid matrix.screen))
