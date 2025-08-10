@@ -84,6 +84,13 @@ val clear : ?style:Ansi.Style.t -> t -> unit
     useful for initializing a grid with a specific background color for proper
     alpha blending. *)
 
+val fill_space : ?style:Ansi.Style.t -> t -> unit
+(** [fill_space ?style grid] fills all cells in the grid with space characters.
+    If [style] is provided, spaces are set with the given style. Otherwise,
+    spaces are set with default style. This is useful for initializing a buffer
+    where unwritten areas should be spaces rather than empty cells, ensuring
+    proper diff behavior for UI transitions. *)
+
 val clear_line : t -> int -> int -> unit
 (** [clear_line grid row from_col] clears all cells in the specified row
     starting from [from_col] to the end of the line *)

@@ -181,10 +181,24 @@ let is_emoji_presentation uchar =
   try Uucp.Emoji.is_emoji_presentation uchar
   with _ -> false (* Fallback if function doesn't exist *)
 
-(** Calculate width of a grapheme cluster from a substring *)
+(** Check if a code point is a skin tone modifier (U+1F3FB..U+1F3FF) *)
+let is_skin_tone_modifier cp =
+  cp >= 0x1F3FB && cp <= 0x1F3FF
+
+(** Calculate width of a grapheme cluster from a substring
+
+    This implementation handles most common emoji sequences including:
+    - ZWJ (zero-width joiner) sequences
+    - Variation selectors (VS-15 for text, VS-16 for emoji)
+    - Keycap sequences (#️⃣)
+    - Regional indicator pairs (flags)
+
+    For more complex grapheme clusters (e.g., complex scripts with combining
+    marks), consider using a dedicated library like uuseg for proper grapheme
+    segmentation. *)
 let cluster_width_sub ?(east_asian = false) s start len =
   let rec loop dec acc has_vs15 has_vs16 has_zwj ri_count last_non_vs_was_keycap
-      has_emoji has_control =
+      has_emoji has_control has_skin_tone =
     match Uutf.decode dec with
     | `Uchar u ->
         let cp = Uchar.to_int u in
@@ -195,6 +209,7 @@ let cluster_width_sub ?(east_asian = false) s start len =
         let is_vs16 = cp = 0xFE0F in
         let is_zwj = cp = 0x200D in
         let is_keycap_mark = cp = 0x20E3 in
+        let is_skin_tone = is_skin_tone_modifier cp in
         let is_emoji = has_emoji || is_emoji_presentation u in
 
         (* Update tracking for keycap - VS doesn't reset it *)
@@ -205,23 +220,24 @@ let cluster_width_sub ?(east_asian = false) s start len =
         (* Handle keycap sequences *)
         if is_keycap_mark && last_non_vs_was_keycap then
           loop dec 2 has_vs15 has_vs16 has_zwj ri_count
-            new_last_non_vs_was_keycap is_emoji has_control
+            new_last_non_vs_was_keycap is_emoji has_control has_skin_tone
         else
           let new_has_vs15 = has_vs15 || is_vs15 in
           let new_has_vs16 = has_vs16 || is_vs16 in
           let new_has_zwj = has_zwj || is_zwj in
+          let new_has_skin_tone = has_skin_tone || is_skin_tone in
           let new_ri_count = if is_ri then ri_count + 1 else ri_count in
 
           let w = char_width ~east_asian u in
           let new_has_control = has_control || w = -1 in
           let new_acc =
-            if is_vs || is_zwj || is_ri then acc (* Don't add width for these *)
+            if is_vs || is_zwj || is_ri || is_skin_tone then acc (* Don't add width for these *)
             else if w = -1 then acc (* Don't add control character width *)
             else acc + w
           in
 
           loop dec new_acc new_has_vs15 new_has_vs16 new_has_zwj new_ri_count
-            new_last_non_vs_was_keycap is_emoji new_has_control
+            new_last_non_vs_was_keycap is_emoji new_has_control new_has_skin_tone
     | `End ->
         (* Final width calculation *)
         if has_control then -1 (* Control character cluster *)
@@ -230,57 +246,100 @@ let cluster_width_sub ?(east_asian = false) s start len =
           (* Single RI should be width 1 unless followed by VS-16 *)
           if has_vs16 then 2 else 1
         else if has_zwj && has_emoji then 2 (* Emoji ZWJ sequence *)
+        else if has_skin_tone && has_emoji then 2 (* Emoji with skin tone modifier *)
         else if has_vs16 then
           if acc > 0 then 2 (* VS-16 forces emoji presentation *)
           else 1 (* Isolated VS-16 has width 1 *)
         else if has_vs15 then 1 (* VS-15 forces text presentation *)
         else acc
     | `Malformed _ ->
-        (* Skip malformed sequence *)
-        loop dec acc has_vs15 has_vs16 has_zwj ri_count last_non_vs_was_keycap
-          has_emoji has_control
+        (* Treat malformed sequences as width 1 (replacement character) *)
+        loop dec (acc + 1) has_vs15 has_vs16 has_zwj ri_count
+          last_non_vs_was_keycap has_emoji has_control has_skin_tone
     | `Await -> assert false
   in
 
   let substring = String.sub s start len in
   let decoder = Uutf.decoder ~encoding:`UTF_8 (`String substring) in
-  loop decoder 0 false false false 0 false false false
+  loop decoder 0 false false false 0 false false false false
 
 (** Calculate width of a grapheme cluster *)
 let cluster_width ?(east_asian = false) cluster =
   cluster_width_sub ~east_asian cluster 0 (String.length cluster)
 
-(** Simple LRU cache for string width calculations *)
-module WidthCache = struct
-  type entry = { width : int; mutable last_access : int }
+(** Efficient LRU cache for string width calculations *)
+module Width_cache = struct
+  type entry = {
+    width : int;
+    mutable prev : (string * bool) option;
+    mutable next : (string * bool) option;
+  }
 
   let cache = Hashtbl.create 1024
-  let access_counter = ref 0
+  let head = ref None
+  let tail = ref None
   let max_size = 2048
 
+  (* Move entry to head (most recently used) *)
+  let move_to_head key entry =
+    (* Remove from current position *)
+    (match entry.prev with
+    | None -> head := entry.next (* Was head *)
+    | Some p -> (
+        match Hashtbl.find_opt cache p with
+        | Some prev_entry -> prev_entry.next <- entry.next
+        | None -> ()));
+    (match entry.next with
+    | None -> tail := entry.prev (* Was tail *)
+    | Some n -> (
+        match Hashtbl.find_opt cache n with
+        | Some next_entry -> next_entry.prev <- entry.prev
+        | None -> ()));
+    (* Add to head *)
+    entry.prev <- None;
+    entry.next <- !head;
+    (match !head with
+    | Some h -> (
+        match Hashtbl.find_opt cache h with
+        | Some head_entry -> head_entry.prev <- Some key
+        | None -> ())
+    | None -> tail := Some key);
+    head := Some key
+
   let evict_oldest () =
-    let oldest_key = ref None in
-    let oldest_time = ref max_int in
-    Hashtbl.iter
-      (fun k v ->
-        if v.last_access < !oldest_time then (
-          oldest_time := v.last_access;
-          oldest_key := Some k))
-      cache;
-    match !oldest_key with Some k -> Hashtbl.remove cache k | None -> ()
+    match !tail with
+    | Some t -> (
+        match Hashtbl.find_opt cache t with
+        | Some entry ->
+            tail := entry.prev;
+            (match entry.prev with
+            | Some p -> (
+                match Hashtbl.find_opt cache p with
+                | Some prev_entry -> prev_entry.next <- None
+                | None -> ())
+            | None -> head := None);
+            Hashtbl.remove cache t
+        | None -> ())
+    | None -> ()
 
   let get key =
     match Hashtbl.find_opt cache key with
     | Some entry ->
-        incr access_counter;
-        entry.last_access <- !access_counter;
+        move_to_head key entry;
         Some entry.width
     | None -> None
 
   let put key width =
     if Hashtbl.length cache >= max_size then evict_oldest ();
-    incr access_counter;
-    Hashtbl.replace cache key { width; last_access = !access_counter }
+    let entry = { width; prev = None; next = !head } in
+    (match !head with
+    | Some h -> (
+        match Hashtbl.find_opt cache h with
+        | Some head_entry -> head_entry.prev <- Some key
+        | None -> ())
+    | None -> tail := Some key);
+    head := Some key;
+    Hashtbl.replace cache key entry
 end
 
 (** Calculate display width of a string using proper grapheme segmentation *)
@@ -288,6 +347,7 @@ let string_width ?(east_asian = false) s =
   let len = String.length s in
   if len = 0 then 0
   else
+    
     (* Fast path for pure ASCII strings *)
     let rec check_ascii i acc =
       if i >= len then Some acc
@@ -304,15 +364,15 @@ let string_width ?(east_asian = false) s =
     | None -> (
         (* Check cache for non-ASCII strings *)
         let cache_key = (s, east_asian) in
-        match WidthCache.get cache_key with
+        match Width_cache.get cache_key with
         | Some width -> width
         | None ->
             (* Slow path: full grapheme segmentation *)
-            let folder acc g =
-              let w = cluster_width ~east_asian g in
-              (* Control characters (-1) don't contribute to display width *)
-              if w = -1 then acc else acc + w
-            in
-            let width = Uuseg_string.fold_utf_8 `Grapheme_cluster folder 0 s in
-            WidthCache.put cache_key width;
-            width)
+              let folder acc g =
+                let w = cluster_width ~east_asian g in
+                (* Control characters (-1) don't contribute to display width *)
+                if w = -1 then acc else acc + w
+              in
+              let width = Uuseg_string.fold_utf_8 `Grapheme_cluster folder 0 s in
+              Width_cache.put cache_key width;
+              width)
