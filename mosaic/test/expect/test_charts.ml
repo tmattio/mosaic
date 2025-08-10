@@ -2,45 +2,71 @@ open Test_utils
 open Mosaic_charts
 
 (* Helper function to generate test data *)
-let simple_line_data = 
-  [ {x=0.0; y=0.0}; {x=1.0; y=2.0}; {x=2.0; y=1.0}; {x=3.0; y=3.0} ]
+let simple_line_data =
+  [
+    { x = 0.0; y = 0.0 };
+    { x = 1.0; y = 2.0 };
+    { x = 2.0; y = 1.0 };
+    { x = 3.0; y = 3.0 };
+  ]
 
 let sine_wave_data points =
   List.init points (fun i ->
-    let x = float_of_int i /. float_of_int (points - 1) *. 2.0 *. Float.pi in
-    { x; y = sin x })
+      let x = float_of_int i /. float_of_int (points - 1) *. 2.0 *. Float.pi in
+      { x; y = sin x })
 
 let random_data points seed =
   Random.init seed;
-  List.init points (fun i ->
-    { x = float_of_int i; y = Random.float 10.0 })
+  List.init points (fun i -> { x = float_of_int i; y = Random.float 10.0 })
 
 let time_series_data points =
-  let base_time = 1700000000.0 in (* Fixed timestamp for reproducible tests *)
+  let base_time = 1700000000.0 in
+  (* Fixed timestamp for reproducible tests *)
   List.init points (fun i ->
-    { time = base_time +. (float_of_int i *. 3600.0);
-      value = 50.0 +. (20.0 *. sin (float_of_int i /. 4.0)) })
+      {
+        time = base_time +. (float_of_int i *. 3600.0);
+        value = 50.0 +. (20.0 *. sin (float_of_int i /. 4.0));
+      })
 
 let bar_data_simple =
   [
-    { label = "Q1"; segments = [{value=30.0; style=Ui.Style.(bg Red); label=None}] };
-    { label = "Q2"; segments = [{value=45.0; style=Ui.Style.(bg Blue); label=None}] };
-    { label = "Q3"; segments = [{value=25.0; style=Ui.Style.(bg Green); label=None}] };
-    { label = "Q4"; segments = [{value=50.0; style=Ui.Style.(bg Yellow); label=None}] };
+    {
+      label = "Q1";
+      segments = [ { value = 30.0; style = Ui.Style.(bg Red); label = None } ];
+    };
+    {
+      label = "Q2";
+      segments = [ { value = 45.0; style = Ui.Style.(bg Blue); label = None } ];
+    };
+    {
+      label = "Q3";
+      segments = [ { value = 25.0; style = Ui.Style.(bg Green); label = None } ];
+    };
+    {
+      label = "Q4";
+      segments =
+        [ { value = 50.0; style = Ui.Style.(bg Yellow); label = None } ];
+    };
   ]
 
 let bar_data_stacked =
   [
-    { label = "Jan"; 
-      segments = [
-        {value=20.0; style=Ui.Style.(bg Red); label=Some "A"};
-        {value=30.0; style=Ui.Style.(bg Blue); label=Some "B"}
-      ] };
-    { label = "Feb"; 
-      segments = [
-        {value=25.0; style=Ui.Style.(bg Red); label=Some "A"};
-        {value=35.0; style=Ui.Style.(bg Blue); label=Some "B"}
-      ] };
+    {
+      label = "Jan";
+      segments =
+        [
+          { value = 20.0; style = Ui.Style.(bg Red); label = Some "A" };
+          { value = 30.0; style = Ui.Style.(bg Blue); label = Some "B" };
+        ];
+    };
+    {
+      label = "Feb";
+      segments =
+        [
+          { value = 25.0; style = Ui.Style.(bg Red); label = Some "A" };
+          { value = 35.0; style = Ui.Style.(bg Blue); label = Some "B" };
+        ];
+    };
   ]
 
 let ohlc_data =
@@ -53,10 +79,12 @@ let ohlc_data =
 let heat_data =
   List.flatten
     (List.init 5 (fun x ->
-      List.init 5 (fun y ->
-        { x = float_of_int x; 
-          y = float_of_int y; 
-          value = sin (float_of_int x /. 2.0) *. cos (float_of_int y /. 2.0) })))
+         List.init 5 (fun y ->
+             {
+               x = float_of_int x;
+               y = float_of_int y;
+               value = sin (float_of_int x /. 2.0) *. cos (float_of_int y /. 2.0);
+             })))
 
 let%expect_test "line chart - simple" =
   print_ui ~width:30 ~height:10
@@ -625,12 +653,29 @@ let%expect_test "bar chart - negative values with zero baseline" =
   print_ui ~width:40 ~height:12
     (bar ~width:(`Cells 40) ~height:(`Cells 12) ~orientation:`Vertical
        [
-         { label = "Loss"; segments = [{value=(-20.0); style=Ui.Style.(bg Red); label=None}] };
-         { label = "Profit"; segments = [{value=30.0; style=Ui.Style.(bg Green); label=None}] };
-         { label = "Small Loss"; segments = [{value=(-5.0); style=Ui.Style.(bg Red); label=None}] };
-         { label = "Big Profit"; segments = [{value=45.0; style=Ui.Style.(bg Green); label=None}] };
+         {
+           label = "Loss";
+           segments =
+             [ { value = -20.0; style = Ui.Style.(bg Red); label = None } ];
+         };
+         {
+           label = "Profit";
+           segments =
+             [ { value = 30.0; style = Ui.Style.(bg Green); label = None } ];
+         };
+         {
+           label = "Small Loss";
+           segments =
+             [ { value = -5.0; style = Ui.Style.(bg Red); label = None } ];
+         };
+         {
+           label = "Big Profit";
+           segments =
+             [ { value = 45.0; style = Ui.Style.(bg Green); label = None } ];
+         };
        ]);
-  [%expect {|
+  [%expect
+    {|
     ┌────────────────────────────────────────┐
     │                              ▄▄▄▄▄▄▄▄▄ │
     │                              █████████ │
@@ -651,8 +696,16 @@ let%expect_test "line chart - with axis labels" =
   print_ui ~width:30 ~height:10
     (line ~width:(`Cells 30) ~height:(`Cells 10) ~show_axes:true
        ~label_style:Ui.Style.dim
-       [ ("Data", [{x=0.0; y=100.0}; {x=1000.0; y=2000.0}; {x=2000.0; y=1500.0}]) ]);
-  [%expect {|
+       [
+         ( "Data",
+           [
+             { x = 0.0; y = 100.0 };
+             { x = 1000.0; y = 2000.0 };
+             { x = 2000.0; y = 1500.0 };
+           ] );
+       ]);
+  [%expect
+    {|
     ┌──────────────────────────────┐
     │  2k│            ╲╲╲╲╲╲╲      │
     │    │          ╱╱       ╲╲╲╲╲╲│
@@ -669,10 +722,15 @@ let%expect_test "line chart - with axis labels" =
 
 let%expect_test "line chart - with grid lines" =
   print_ui ~width:25 ~height:10
-    (line ~width:(`Cells 25) ~height:(`Cells 10) ~show_axes:true
-       ~show_grid:true ~grid_style:Ui.Style.dim
-       [ ("Data", [{x=0.0; y=0.0}; {x=1.0; y=1.0}; {x=2.0; y=0.5}]) ]);
-  [%expect {|
+    (line ~width:(`Cells 25) ~height:(`Cells 10) ~show_axes:true ~show_grid:true
+       ~grid_style:Ui.Style.dim
+       [
+         ( "Data",
+           [ { x = 0.0; y = 0.0 }; { x = 1.0; y = 1.0 }; { x = 2.0; y = 0.5 } ]
+         );
+       ]);
+  [%expect
+    {|
     ┌─────────────────────────┐
     ││· · · · · ·╲╲ · · · · · │
     ││· · · · ·╱╱ ·╲╲╲· · · · │
@@ -689,12 +747,14 @@ let%expect_test "line chart - with grid lines" =
 
 let%expect_test "legend - multiple series" =
   print_ui ~width:40 ~height:3
-    (legend [
-      ("Revenue", Ui.Style.(fg Green));
-      ("Costs", Ui.Style.(fg Red));
-      ("Profit", Ui.Style.(fg Blue))
-    ]);
-  [%expect {|
+    (legend
+       [
+         ("Revenue", Ui.Style.(fg Green));
+         ("Costs", Ui.Style.(fg Red));
+         ("Profit", Ui.Style.(fg Blue));
+       ]);
+  [%expect
+    {|
     ┌────────────────────────────────────────┐
     │●●  Revenue  ●●  Costs  ●●  Profit      │
     │                                        │
@@ -705,15 +765,21 @@ let%expect_test "legend - multiple series" =
 let%expect_test "line_with_gaps - missing data points" =
   print_ui ~width:30 ~height:8
     (line_with_gaps ~width:(`Cells 30) ~height:(`Cells 8) ~show_axes:true
-       [ ("Incomplete", [
-           (0.0, Some 1.0);
-           (1.0, Some 2.0);
-           (2.0, None);  (* Gap *)
-           (3.0, None);  (* Gap *)
-           (4.0, Some 1.5);
-           (5.0, Some 2.5)
-         ]) ]);
-  [%expect {|
+       [
+         ( "Incomplete",
+           [
+             (0.0, Some 1.0);
+             (1.0, Some 2.0);
+             (2.0, None);
+             (* Gap *)
+             (3.0, None);
+             (* Gap *)
+             (4.0, Some 1.5);
+             (5.0, Some 2.5);
+           ] );
+       ]);
+  [%expect
+    {|
     ┌──────────────────────────────┐
     ││                            ╱│
     ││                          ╱╱ │
@@ -728,17 +794,30 @@ let%expect_test "line_with_gaps - missing data points" =
 
 let%expect_test "chart with legend composition" =
   print_ui ~width:35 ~height:12
-    (Ui.vbox [
-      line ~width:(`Cells 35) ~height:(`Cells 8) ~show_axes:true
-        ~series_styles:[Ui.Style.(fg Green); Ui.Style.(fg Red)]
-        [
-          ("Revenue", [{x=0.0; y=100.0}; {x=1.0; y=120.0}; {x=2.0; y=140.0}]);
-          ("Costs", [{x=0.0; y=80.0}; {x=1.0; y=85.0}; {x=2.0; y=90.0}])
-        ];
-      Ui.divider ~char:"-" ();
-      legend [("Revenue", Ui.Style.(fg Green)); ("Costs", Ui.Style.(fg Red))]
-    ]);
-  [%expect {|
+    (Ui.vbox
+       [
+         line ~width:(`Cells 35) ~height:(`Cells 8) ~show_axes:true
+           ~series_styles:[ Ui.Style.(fg Green); Ui.Style.(fg Red) ]
+           [
+             ( "Revenue",
+               [
+                 { x = 0.0; y = 100.0 };
+                 { x = 1.0; y = 120.0 };
+                 { x = 2.0; y = 140.0 };
+               ] );
+             ( "Costs",
+               [
+                 { x = 0.0; y = 80.0 };
+                 { x = 1.0; y = 85.0 };
+                 { x = 2.0; y = 90.0 };
+               ] );
+           ];
+         Ui.divider ~char:"-" ();
+         legend
+           [ ("Revenue", Ui.Style.(fg Green)); ("Costs", Ui.Style.(fg Red)) ];
+       ]);
+  [%expect
+    {|
     ┌───────────────────────────────────┐
     ││                             ╱╱╱╱╱│
     ││                     ╱╱╱╱╱╱╱╱     │
@@ -759,12 +838,29 @@ let%expect_test "bar chart - mixed positive and negative" =
   print_ui ~width:35 ~height:10
     (bar ~width:(`Cells 35) ~height:(`Cells 10) ~orientation:`Vertical
        [
-         { label = "Q1"; segments = [{value=20.0; style=Ui.Style.(bg Blue); label=None}] };
-         { label = "Q2"; segments = [{value=(-15.0); style=Ui.Style.(bg Red); label=None}] };
-         { label = "Q3"; segments = [{value=25.0; style=Ui.Style.(bg Green); label=None}] };
-         { label = "Q4"; segments = [{value=(-10.0); style=Ui.Style.(bg Red); label=None}] };
+         {
+           label = "Q1";
+           segments =
+             [ { value = 20.0; style = Ui.Style.(bg Blue); label = None } ];
+         };
+         {
+           label = "Q2";
+           segments =
+             [ { value = -15.0; style = Ui.Style.(bg Red); label = None } ];
+         };
+         {
+           label = "Q3";
+           segments =
+             [ { value = 25.0; style = Ui.Style.(bg Green); label = None } ];
+         };
+         {
+           label = "Q4";
+           segments =
+             [ { value = -10.0; style = Ui.Style.(bg Red); label = None } ];
+         };
        ]);
-  [%expect {|
+  [%expect
+    {|
     ┌───────────────────────────────────┐
     │                ▄▄▄▄▄▄▄            │
     │▃▃▃▃▃▃▃         ███████            │
@@ -781,21 +877,30 @@ let%expect_test "bar chart - mixed positive and negative" =
 
 let%expect_test "line chart - with all features" =
   print_ui ~width:40 ~height:12
-    (Ui.vbox [
-      Ui.text ~style:Ui.Style.(fg Cyan ++ bold) "Sales Dashboard";
-      line ~width:(`Cells 40) ~height:(`Cells 8) 
-        ~show_axes:true
-        ~show_grid:true
-        ~grid_style:Ui.Style.dim
-        ~label_style:Ui.Style.dim
-        ~series_styles:[Ui.Style.(fg Green); Ui.Style.(fg Red)]
-        [
-          ("2024", [{x=1.0; y=100.0}; {x=2.0; y=150.0}; {x=3.0; y=120.0}]);
-          ("2023", [{x=1.0; y=80.0}; {x=2.0; y=90.0}; {x=3.0; y=85.0}])
-        ];
-      legend [("2024", Ui.Style.(fg Green)); ("2023", Ui.Style.(fg Red))]
-    ]);
-  [%expect {|
+    (Ui.vbox
+       [
+         Ui.text ~style:Ui.Style.(fg Cyan ++ bold) "Sales Dashboard";
+         line ~width:(`Cells 40) ~height:(`Cells 8) ~show_axes:true
+           ~show_grid:true ~grid_style:Ui.Style.dim ~label_style:Ui.Style.dim
+           ~series_styles:[ Ui.Style.(fg Green); Ui.Style.(fg Red) ]
+           [
+             ( "2024",
+               [
+                 { x = 1.0; y = 100.0 };
+                 { x = 2.0; y = 150.0 };
+                 { x = 3.0; y = 120.0 };
+               ] );
+             ( "2023",
+               [
+                 { x = 1.0; y = 80.0 };
+                 { x = 2.0; y = 90.0 };
+                 { x = 3.0; y = 85.0 };
+               ] );
+           ];
+         legend [ ("2024", Ui.Style.(fg Green)); ("2023", Ui.Style.(fg Red)) ];
+       ]);
+  [%expect
+    {|
     ┌────────────────────────────────────────┐
     │Sales Dashboard                         │
     │ 150│· · · · · · · ·╱╱╲╲╲╲╲· · · · · · ·│
@@ -817,11 +922,24 @@ let%expect_test "horizontal bar with negative values" =
     (bar ~width:(`Cells 30) ~height:(`Cells 8) ~orientation:`Horizontal
        ~bar_width:1
        [
-         { label = "A"; segments = [{value=20.0; style=Ui.Style.(bg Blue); label=None}] };
-         { label = "B"; segments = [{value=(-15.0); style=Ui.Style.(bg Red); label=None}] };
-         { label = "C"; segments = [{value=10.0; style=Ui.Style.(bg Green); label=None}] };
+         {
+           label = "A";
+           segments =
+             [ { value = 20.0; style = Ui.Style.(bg Blue); label = None } ];
+         };
+         {
+           label = "B";
+           segments =
+             [ { value = -15.0; style = Ui.Style.(bg Red); label = None } ];
+         };
+         {
+           label = "C";
+           segments =
+             [ { value = 10.0; style = Ui.Style.(bg Green); label = None } ];
+         };
        ]);
-  [%expect {|
+  [%expect
+    {|
     ┌──────────────────────────────┐
     ││           ████████████████▌ │
     ││           │                 │
@@ -836,12 +954,15 @@ let%expect_test "horizontal bar with negative values" =
 
 let%expect_test "sparkline with negative values" =
   print_ui ~width:25 ~height:3
-    (Ui.vbox [
-      Ui.text "Market trends:";
-      sparkline ~width:20 ~style:Ui.Style.(fg Blue)
-        [-2.0; -1.0; 0.0; 1.0; 2.0; 1.0; 0.0; -1.0; -2.0; -1.0]
-    ]);
-  [%expect {|
+    (Ui.vbox
+       [
+         Ui.text "Market trends:";
+         sparkline ~width:20
+           ~style:Ui.Style.(fg Blue)
+           [ -2.0; -1.0; 0.0; 1.0; 2.0; 1.0; 0.0; -1.0; -2.0; -1.0 ];
+       ]);
+  [%expect
+    {|
     ┌─────────────────────────┐
     │Market trends:           │
     │ ▎▌▊█▊▌▎ ▎               │
@@ -851,44 +972,68 @@ let%expect_test "sparkline with negative values" =
 
 let%expect_test "complex dashboard with all new features" =
   print_ui ~width:50 ~height:20
-    (Ui.vbox ~gap:(`Cells 1) [
-      Ui.text ~style:Ui.Style.(fg Cyan ++ bold) "Q4 2024 Financial Report";
-      Ui.divider ();
-      
-      (* Line chart with grid and labels *)
-      Ui.hbox ~gap:(`Cells 2) [
-        Ui.vbox [
-          Ui.text "Revenue Trend:";
-          line ~width:(`Cells 23) ~height:(`Cells 6)
-            ~show_axes:true
-            ~show_grid:true
-            ~label_style:Ui.Style.dim
-            [("Rev", [{x=0.0; y=100.0}; {x=1.0; y=120.0}; {x=2.0; y=90.0}])]
-        ];
-        Ui.vbox [
-          Ui.text "Quick Stats:";
-          sparkline ~width:15 ~style:Ui.Style.(fg Green)
-            [5.0; 7.0; 6.0; 8.0; 7.5; 9.0; 8.5]
-        ]
-      ];
-      
-      (* Bar chart with negatives *)
-      Ui.text "Profit/Loss by Region:";
-      bar ~width:(`Cells 45) ~height:(`Cells 5) ~orientation:`Vertical
-        [
-          { label = "North"; segments = [{value=15.0; style=Ui.Style.(bg Green); label=None}] };
-          { label = "South"; segments = [{value=(-8.0); style=Ui.Style.(bg Red); label=None}] };
-          { label = "East"; segments = [{value=12.0; style=Ui.Style.(bg Green); label=None}] };
-          { label = "West"; segments = [{value=(-3.0); style=Ui.Style.(bg Red); label=None}] };
-        ];
-      
-      (* Legend *)
-      legend [
-        ("Positive", Ui.Style.(fg Green));
-        ("Negative", Ui.Style.(fg Red))
-      ]
-    ]);
-  [%expect {|
+    (Ui.vbox ~gap:(`Cells 1)
+       [
+         Ui.text ~style:Ui.Style.(fg Cyan ++ bold) "Q4 2024 Financial Report";
+         Ui.divider ();
+         (* Line chart with grid and labels *)
+         Ui.hbox ~gap:(`Cells 2)
+           [
+             Ui.vbox
+               [
+                 Ui.text "Revenue Trend:";
+                 line ~width:(`Cells 23) ~height:(`Cells 6) ~show_axes:true
+                   ~show_grid:true ~label_style:Ui.Style.dim
+                   [
+                     ( "Rev",
+                       [
+                         { x = 0.0; y = 100.0 };
+                         { x = 1.0; y = 120.0 };
+                         { x = 2.0; y = 90.0 };
+                       ] );
+                   ];
+               ];
+             Ui.vbox
+               [
+                 Ui.text "Quick Stats:";
+                 sparkline ~width:15
+                   ~style:Ui.Style.(fg Green)
+                   [ 5.0; 7.0; 6.0; 8.0; 7.5; 9.0; 8.5 ];
+               ];
+           ];
+         (* Bar chart with negatives *)
+         Ui.text "Profit/Loss by Region:";
+         bar ~width:(`Cells 45) ~height:(`Cells 5) ~orientation:`Vertical
+           [
+             {
+               label = "North";
+               segments =
+                 [ { value = 15.0; style = Ui.Style.(bg Green); label = None } ];
+             };
+             {
+               label = "South";
+               segments =
+                 [ { value = -8.0; style = Ui.Style.(bg Red); label = None } ];
+             };
+             {
+               label = "East";
+               segments =
+                 [ { value = 12.0; style = Ui.Style.(bg Green); label = None } ];
+             };
+             {
+               label = "West";
+               segments =
+                 [ { value = -3.0; style = Ui.Style.(bg Red); label = None } ];
+             };
+           ];
+         (* Legend *)
+         legend
+           [
+             ("Positive", Ui.Style.(fg Green)); ("Negative", Ui.Style.(fg Red));
+           ];
+       ]);
+  [%expect
+    {|
     ┌──────────────────────────────────────────────────┐
     │Q4 2024 Financial Report                          │
     │                                                  │

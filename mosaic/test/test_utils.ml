@@ -1,6 +1,6 @@
 (** Test utilities for Mosaic tests *)
 
-open Mosaic
+open Mosaic_tea
 
 (* Helper functions for tests *)
 let screen_to_string screen =
@@ -66,8 +66,9 @@ let print_ui ?(width = 20) ?(height = 5) element =
   let width = width + 2 in
   let height = height + 2 in
   let bordered_element =
-    Ui.box ~width:(`Cells width) ~height:(`Cells height) ~overflow_x:`Hidden ~overflow_y:`Hidden
-      ~border:Ui.Border.normal ~border_style:Ui.Style.empty [ element ]
+    Ui.box ~width:(`Cells width) ~height:(`Cells height) ~overflow_x:`Hidden
+      ~overflow_y:`Hidden ~border:Ui.Border.normal ~border_style:Ui.Style.empty
+      [ element ]
   in
   let output = render_to_string ~width ~height bordered_element in
   print_string ("\n" ^ output ^ "\n")
@@ -235,7 +236,7 @@ let run_eio f = Eio_main.run (fun env -> Eio.Switch.run (fun sw -> f env sw))
     way to write integration tests for applications. *)
 module Test_harness = struct
   type ('model, 'msg) t = {
-    app : ('model, 'msg) Mosaic.app;
+    app : ('model, 'msg) Mosaic_tea.app;
     mutable model : 'model;
     mutable last_cmd : 'msg Cmd.t;
   }
@@ -274,7 +275,7 @@ module Test_harness = struct
     let subs = h.app.subscriptions h.model in
     let messages = ref [] in
     let dispatch msg = messages := msg :: !messages in
-    Sub.run ~dispatch (Input.Key event) subs;
+    Sub.run ~dispatch (Event.Input (Input.Key event)) subs;
     List.iter (fun msg -> push_msg msg h) (List.rev !messages)
 
   (** Simulate a key press from a raw string (e.g., "q", "\x1b[A").
