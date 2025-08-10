@@ -1,14 +1,14 @@
 (library
- (public_name mosaic)
  (name mosaic)
+ (public_name mosaic)
  (libraries
-  matrix.tty
-  matrix.ansi
-  matrix.input
-  mosaic.event
-  mosaic.engine
-  mosaic.ui
-  unix
   eio
+  eio_main
   eio.unix
-  eio_main))
+  unix
+  logs
+  mosaic.ui
+  mosaic.engine
+  matrix.input
+  matrix.tty
+  mosaic.event))

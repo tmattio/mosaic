@@ -1,14 +1,15 @@
 type 'a t = {
   id : 'a Type.Id.t (* unique witness for the type *);
   default : 'a option (* fallback when no provider  *);
+  name : string option (* optional name for debugging *);
 }
 
-let create ?default () = { id = Type.Id.make (); default }
+let create ?default ?name () = { id = Type.Id.make (); default; name }
 
-(* A single frame in the stack  ------------------------------------*)
+(* A single frame in the stack *)
 type frame = Frame : 'a t * 'a -> frame
 
-(* One stack per domain --------------------------------------------*)
+(* One stack per domain *)
 let dls : frame list Domain.DLS.key = Domain.DLS.new_key (fun () -> [])
 let get_stack () = Domain.DLS.get dls
 let set_stack nest = Domain.DLS.set dls nest
@@ -33,6 +34,12 @@ let use (type a) (ctx : a t) : a =
   | None -> (
       match ctx.default with
       | Some v -> v
-      | None -> failwith "Context.use: no provider and no default")
-
-let unsafe_use = use
+      | None ->
+          let msg =
+            match ctx.name with
+            | Some n ->
+                Printf.sprintf
+                  "Context.use: no provider for context '%s' and no default" n
+            | None -> "Context.use: no provider and no default"
+          in
+          failwith msg)

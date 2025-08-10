@@ -6,17 +6,29 @@ type _ kind =
   | State : 'a ref -> 'a kind
   | Effect : {
       cleanup : (unit -> unit) option;
-      deps : Obj.t array option;
+      deps : Deps.t option;
     }
       -> unit kind
   | Sub : 'msg Sub.t -> unit kind
+  | Reducer : {
+      sid : 's id;
+      aid : 'a id;
+      state : 's ref;
+      reducer : ('s -> 'a -> 's) ref;
+      dynamic : bool; (* whether to update reducer each render *)
+    }
+      -> 's kind
+  | Memo : 'a * Deps.t option -> 'a kind
+  | Ref : 'a ref -> 'a kind
   | Hole : unit kind
 
-type slot = { mutable cell : unit kind }
+(* NEW: existential wrapper *)
+type packed = P : 'a kind -> packed
+type slot = { mutable cell : packed }
 
-let make_slot k = { cell = (k :> unit kind) }
+let make_slot k = { cell = P k }
 let get s = s.cell
-let set s k = s.cell <- (k :> unit kind)
+let set s k = s.cell <- P k
 
 type t = { mutable arr : slot array; mutable len : int }
 
