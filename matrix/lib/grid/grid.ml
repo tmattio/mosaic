@@ -326,18 +326,25 @@ module Storage = struct
       else false
 end
 
-(* Compute hash of a row for quick comparison - using FNV-1a for better collision resistance *)
+(* Compute hash of a row for quick comparison - using XOR for incremental updates *)
 let row_hash storage row cols =
-  (* FNV-1a constants for 32-bit *)
-  let fnv_prime = 0x01000193 in
-  let fnv_offset_basis = 0x811c9dc5 in
-
-  let hash = ref fnv_offset_basis in
+  (* Use simple XOR-based hash for O(1) incremental updates *)
+  let hash = ref 0 in
   for col = 0 to cols - 1 do
     let cell_hash = Storage.fast_hash storage row col in
-    (* FNV-1a: XOR then multiply *)
-    hash := !hash lxor cell_hash;
-    hash := !hash * fnv_prime
+    (* Mix the column position into the hash to avoid position-independent collisions *)
+    let position_mixed = cell_hash lxor (col * 0x9e3779b9) in
+    hash := !hash lxor position_mixed
+  done;
+  !hash
+
+(* Compute row hash from cached cell hashes - for incremental updates *)
+let row_hash_from_cache cell_hashes cols =
+  let hash = ref 0 in
+  for col = 0 to cols - 1 do
+    (* Mix the column position into the hash *)
+    let position_mixed = cell_hashes.(col) lxor (col * 0x9e3779b9) in
+    hash := !hash lxor position_mixed
   done;
   !hash
 
@@ -349,6 +356,7 @@ type t = {
   mutable cell_hashes : int array array;
       (* Cache individual cell hashes for incremental updates *)
   mutable dirty_rows : bool array; (* Track which rows are dirty *)
+  mutable col_dirty : int64 array array; (* Per-row dirty column bitsets *)
   east_asian_context : bool;
   mutable batch_updates : bool; (* Whether we're in a batch update *)
   mutable batch_dirty_rows : int list; (* Rows modified during batch *)
@@ -366,6 +374,7 @@ let create ~rows ~cols ?(east_asian_context = false) () =
     row_hashes.(r) <- row_hash storage r cols
   done;
   let dirty_rows = Array.make rows false in
+  let col_dirty = Array.init rows (fun _ -> Array.make ((cols + 63) / 64) 0L) in
   {
     storage;
     rows;
@@ -373,21 +382,70 @@ let create ~rows ~cols ?(east_asian_context = false) () =
     row_hashes;
     cell_hashes;
     dirty_rows;
+    col_dirty;
     east_asian_context;
     batch_updates = false;
     batch_dirty_rows = [];
   }
 
+(* Helper functions for column dirty tracking *)
+let mark_col_dirty grid row col =
+  if row >= 0 && row < grid.rows && col >= 0 && col < grid.cols then
+    let word = col / 64 in
+    let bit = Int64.shift_left 1L (col mod 64) in
+    if word < Array.length grid.col_dirty.(row) then
+      grid.col_dirty.(row).(word) <- Int64.logor grid.col_dirty.(row).(word) bit
+
+let clear_col_dirty grid row =
+  if row >= 0 && row < grid.rows then
+    Array.fill grid.col_dirty.(row) 0 (Array.length grid.col_dirty.(row)) 0L
+
+(* Get dirty column ranges for a row - useful for incremental updates within a grid
+   Currently unused but kept for potential future optimizations *)
+let _get_dirty_col_ranges grid row =
+  if row < 0 || row >= grid.rows then []
+  else
+    let ranges = ref [] in
+    let row_dirty = grid.col_dirty.(row) in
+    for w = 0 to Array.length row_dirty - 1 do
+      let bits = row_dirty.(w) in
+      if bits <> 0L then
+        let base_col = w * 64 in
+        (* Use bit manipulation to find contiguous ranges *)
+        let rec scan_bits pos =
+          if pos >= 64 then ()
+          else if Int64.logand bits (Int64.shift_left 1L pos) <> 0L then
+            let start = base_col + pos in
+            let rec find_end e =
+              if e >= 64 || Int64.logand bits (Int64.shift_left 1L e) = 0L then e - 1
+              else find_end (e + 1)
+            in
+            let end_pos = find_end (pos + 1) in
+            ranges := (start, base_col + end_pos) :: !ranges;
+            scan_bits (end_pos + 1)
+          else scan_bits (pos + 1)
+        in
+        scan_bits 0
+    done;
+    List.rev !ranges
+
 (* Update row hash incrementally for a single cell change *)
 let update_row_hash_incremental grid row col =
   if row >= 0 && row < grid.rows && col >= 0 && col < grid.cols then (
+    (* Get the old cell hash *)
+    let old_cell_hash = grid.cell_hashes.(row).(col) in
     (* Update the cell hash cache *)
     let new_cell_hash = Storage.fast_hash grid.storage row col in
     grid.cell_hashes.(row).(col) <- new_cell_hash;
-    (* With XXHash, we need to recompute the entire row hash *)
-    (* This is still faster than the old FNV-1a approach *)
-    grid.row_hashes.(row) <- row_hash grid.storage row grid.cols;
-    grid.dirty_rows.(row) <- true)
+    
+    (* XOR-based incremental update: remove old, add new *)
+    let old_mixed = old_cell_hash lxor (col * 0x9e3779b9) in
+    let new_mixed = new_cell_hash lxor (col * 0x9e3779b9) in
+    (* XOR out the old hash, XOR in the new hash *)
+    grid.row_hashes.(row) <- grid.row_hashes.(row) lxor old_mixed lxor new_mixed;
+    
+    grid.dirty_rows.(row) <- true;
+    mark_col_dirty grid row col)
 
 (* Full row hash recomputation - used when incremental isn't possible *)
 let update_row_hash grid row =
@@ -401,7 +459,7 @@ let update_row_hash grid row =
     for c = 0 to grid.cols - 1 do
       grid.cell_hashes.(row).(c) <- Storage.fast_hash grid.storage row c
     done;
-    grid.row_hashes.(row) <- row_hash grid.storage row grid.cols)
+    grid.row_hashes.(row) <- row_hash_from_cache grid.cell_hashes.(row) grid.cols)
 
 let rows grid = grid.rows
 let cols grid = grid.cols
@@ -420,8 +478,9 @@ let set grid ~row ~col cell =
     if grid.batch_updates then
       update_row_hash grid row (* Defer in batch mode *)
     else update_row_hash_incremental grid row col;
-    (* Mark row as dirty *)
-    grid.dirty_rows.(row) <- true)
+    (* Mark row and column as dirty *)
+    grid.dirty_rows.(row) <- true;
+    mark_col_dirty grid row col)
 
 let set_grapheme ?link ?east_asian_context grid ~row ~col ~glyph ~attrs =
   if row >= 0 && row < grid.rows && col >= 0 && col < grid.cols then (
@@ -459,35 +518,47 @@ let set_grapheme ?link ?east_asian_context grid ~row ~col ~glyph ~attrs =
     let existing_cell = Storage.get_cell grid.storage row col in
     let old_width = Cell.width existing_cell in
 
-    (* Handle alpha blending for RGBA colors *)
+    (* Handle alpha blending for RGBA colors - optimized to avoid unnecessary work *)
     let attrs, preserve_existing_glyph =
       let fg = Ansi.Style.fg attrs in
       let bg = Ansi.Style.bg attrs in
-      let existing_style = Cell.get_style existing_cell in
-      let existing_fg = Ansi.Style.fg existing_style in
-      let existing_bg = Ansi.Style.bg existing_style in
-
-      (* Check if we're only updating background (glyph is space) *)
-      let is_background_only = glyph = " " in
-
-      (* Blend foreground if it's RGBA *)
-      let attrs =
-        match fg with
-        | Ansi.Style.RGBA _ ->
-            let blended_fg = Ansi.Style.blend_colors ~src:fg ~dst:existing_fg in
-            Ansi.Style.with_fg blended_fg attrs
-        | _ -> attrs
+      
+      (* Quick check: skip blending if no RGBA colors *)
+      let has_rgba = 
+        match fg, bg with
+        | Ansi.Style.RGBA (_, _, _, a), _ when a < 255 -> true
+        | _, Ansi.Style.RGBA (_, _, _, a) when a < 255 -> true
+        | _ -> false
       in
+      
+      if not has_rgba then
+        (attrs, false)
+      else
+        let existing_style = Cell.get_style existing_cell in
+        let existing_fg = Ansi.Style.fg existing_style in
+        let existing_bg = Ansi.Style.bg existing_style in
 
-      (* Blend background if it's RGBA *)
-      let attrs, should_preserve =
-        match bg with
-        | Ansi.Style.RGBA _ ->
-            let blended_bg = Ansi.Style.blend_colors ~src:bg ~dst:existing_bg in
-            (Ansi.Style.with_bg blended_bg attrs, is_background_only)
-        | _ -> (attrs, false)
-      in
-      (attrs, should_preserve)
+        (* Check if we're only updating background (glyph is space) *)
+        let is_background_only = glyph = " " in
+
+        (* Blend foreground if it's RGBA with alpha < 255 *)
+        let attrs =
+          match fg with
+          | Ansi.Style.RGBA (_, _, _, a) when a < 255 ->
+              let blended_fg = Ansi.Style.blend_colors ~src:fg ~dst:existing_fg in
+              Ansi.Style.with_fg blended_fg attrs
+          | _ -> attrs
+        in
+
+        (* Blend background if it's RGBA with alpha < 255 *)
+        let attrs, should_preserve =
+          match bg with
+          | Ansi.Style.RGBA (_, _, _, a) when a < 255 ->
+              let blended_bg = Ansi.Style.blend_colors ~src:bg ~dst:existing_bg in
+              (Ansi.Style.with_bg blended_bg attrs, is_background_only)
+          | _ -> (attrs, false)
+        in
+        (attrs, should_preserve)
     in
 
     (* If we're only updating background with alpha, preserve existing glyph *)
@@ -536,8 +607,13 @@ let set_grapheme ?link ?east_asian_context grid ~row ~col ~glyph ~attrs =
     (* Update row hash - must recompute full row with FNV-1a *)
     update_row_hash grid row;
 
-    (* Mark row as dirty *)
-    grid.dirty_rows.(row) <- true)
+    (* Mark row and affected columns as dirty *)
+    grid.dirty_rows.(row) <- true;
+    (* Mark all columns affected (including continuation cells and cleared cells) *)
+    let max_width = max width old_width in
+    for i = 0 to max_width - 1 do
+      if col + i < grid.cols then mark_col_dirty grid row (col + i)
+    done)
 
 let set_text ?link ?east_asian_context ?max_width grid ~row ~col ~text ~attrs =
   if String.length text = 0 then 0
@@ -553,8 +629,39 @@ let set_text ?link ?east_asian_context ?max_width grid ~row ~col ~text ~attrs =
       | Some w -> min grid.cols (col + w)
     in
 
-    (* Fold over grapheme clusters in the text *)
-    let folder () grapheme =
+    (* Fast path for pure ASCII text - avoid Uuseg overhead *)
+    let is_pure_ascii = 
+      let rec check i =
+        if i >= String.length text then true
+        else
+          let c = Char.code text.[i] in
+          if c >= 128 then false
+          else check (i + 1)
+      in
+      check 0
+    in
+    
+    if is_pure_ascii then (
+      (* ASCII fast path - direct character processing *)
+      for i = 0 to String.length text - 1 do
+        if !current_col < max_col then (
+          let c = text.[i] in
+          let c_code = Char.code c in
+          if c_code >= 32 && c_code < 127 then (
+            (* Printable ASCII character *)
+            set_grapheme ?link grid ~row ~col:!current_col 
+              ~glyph:(String.make 1 c) ~attrs ~east_asian_context;
+            incr current_col;
+            incr total_width
+          )
+          (* Skip control characters *)
+        )
+      done;
+      !total_width
+    ) else (
+      (* Full Unicode path - use Uuseg for grapheme cluster segmentation *)
+      (* Fold over grapheme clusters in the text *)
+      let folder () grapheme =
       if !current_col < max_col then
         let width =
           Ucwidth.string_width ~east_asian:east_asian_context grapheme
@@ -628,8 +735,9 @@ let set_text ?link ?east_asian_context ?max_width grid ~row ~col ~text ~attrs =
       (* else: zero-width at start of line - skip it *)
     in
 
-    Uuseg_string.fold_utf_8 `Grapheme_cluster folder () text;
-    !total_width
+      Uuseg_string.fold_utf_8 `Grapheme_cluster folder () text;
+      !total_width
+    )
 
 let clear ?style grid =
   let nrows = grid.rows in
@@ -649,14 +757,19 @@ let clear ?style grid =
     (* Clear text storage for this row *)
     Bytes.fill grid.storage.texts.(r) 0 (ncols * 8) '\000';
     update_row_hash grid r;
-    grid.dirty_rows.(r) <- true
+    grid.dirty_rows.(r) <- true;
+    (* Mark all columns as dirty for this row *)
+    for c = 0 to ncols - 1 do
+      mark_col_dirty grid r c
+    done
   done
 
 let clear_line grid row from_col =
   if row >= 0 && row < grid.rows then (
     let ncols = grid.cols in
     for i = from_col to ncols - 1 do
-      Storage.set_cell grid.storage row i Cell.empty
+      Storage.set_cell grid.storage row i Cell.empty;
+      mark_col_dirty grid row i
     done;
     (* Update row hash *)
     update_row_hash grid row;
@@ -680,6 +793,10 @@ let clear_rect grid ~row_start ~row_end ~col_start ~col_end =
       let start_byte = col_start * 8 in
       let num_bytes = (col_end - col_start + 1) * 8 in
       Bytes.fill grid.storage.texts.(r) start_byte num_bytes '\000';
+      (* Mark dirty columns *)
+      for c = col_start to col_end do
+        mark_col_dirty grid r c
+      done;
       (* Update row hash for this row *)
       update_row_hash grid r;
       grid.dirty_rows.(r) <- true)
@@ -712,7 +829,8 @@ let fill_space ?(style = Ansi.Style.default) grid =
     Bigarray.Array1.fill row_widths 1;
     Bigarray.Array1.fill row_styles style64;
     for c = 0 to ncols - 1 do
-      Storage.set_string grid.storage r c " "
+      Storage.set_string grid.storage r c " ";
+      mark_col_dirty grid r c
     done;
     update_row_hash grid r;
     grid.dirty_rows.(r) <- true
@@ -730,6 +848,8 @@ let flush_damage grid =
       while !i < rows && grid.dirty_rows.(!i) do
         grid.dirty_rows.(!i) <- false;
         (* Clear dirty flag *)
+        clear_col_dirty grid !i;
+        (* Clear column dirty bits *)
         incr i
       done;
       let end_row = !i - 1 in
@@ -766,7 +886,11 @@ let swap grids =
   (* Swap dirty rows *)
   let temp_dirty = grid1.dirty_rows in
   grid1.dirty_rows <- grid2.dirty_rows;
-  grid2.dirty_rows <- temp_dirty
+  grid2.dirty_rows <- temp_dirty;
+  (* Swap column dirty bits *)
+  let temp_col_dirty = grid1.col_dirty in
+  grid1.col_dirty <- grid2.col_dirty;
+  grid2.col_dirty <- temp_col_dirty
 (* Don't automatically mark all rows as dirty - let the client decide 
      what's dirty via diffing. This enables true minimal-update render loops. *)
 
@@ -830,7 +954,11 @@ let resize grid ~rows:new_rows ~cols:new_cols =
 
   (* Resize dirty rows array and mark all as dirty *)
   let new_dirty_rows = Array.make new_rows true in
-  grid.dirty_rows <- new_dirty_rows
+  grid.dirty_rows <- new_dirty_rows;
+  
+  (* Resize column dirty bits *)
+  let new_col_dirty = Array.init new_rows (fun _ -> Array.make ((new_cols + 63) / 64) 0L) in
+  grid.col_dirty <- new_col_dirty
 
 let blit ~src ~src_rect ~dst ~dst_pos =
   let src_row = src_rect.row in
@@ -920,7 +1048,11 @@ let blit ~src ~src_rect ~dst ~dst_pos =
 
     (* Update row hash and mark as dirty for destination row *)
     update_row_hash dst dst_r;
-    dst.dirty_rows.(dst_r) <- true
+    dst.dirty_rows.(dst_r) <- true;
+    (* Mark affected columns as dirty *)
+    for c = dst_col_start to dst_col_start + copy_width - 1 do
+      mark_col_dirty dst dst_r c
+    done
   done
 
 let to_string grid =
@@ -1053,6 +1185,8 @@ let find_cell_changes prev_grid curr_grid region =
   let changed_cells = ref [] in
 
   for row = region.min_row to region.max_row do
+    (* When comparing two different grids, don't use column dirty bits
+       as they track changes within a single grid, not between grids *)
     for col = region.min_col to region.max_col do
       (* Use fast cell comparison without allocation *)
       let cells_differ =
@@ -1060,7 +1194,6 @@ let find_cell_changes prev_grid curr_grid region =
           (Storage.cells_equal prev_grid.storage row col curr_grid.storage row
              col)
       in
-
       if cells_differ then changed_cells := (row, col) :: !changed_cells
     done
   done;
@@ -1246,6 +1379,7 @@ let copy grid =
     storage = new_storage;
     row_hashes = Array.copy grid.row_hashes;
     dirty_rows = Array.make grid.rows false;
+    col_dirty = Array.map Array.copy grid.col_dirty;
   }
 
 let with_updates grid f =

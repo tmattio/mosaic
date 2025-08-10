@@ -163,12 +163,7 @@ let clear ?viewport t =
   match viewport with
   | None ->
       (* Clear entire screen if no viewport specified *)
-      G.with_updates t.back (fun grid ->
-          for r = 0 to rows t - 1 do
-            for c = 0 to cols t - 1 do
-              G.set grid ~row:r ~col:c None
-            done
-          done)
+      G.clear t.back
   | Some vp ->
       with_viewport t vp @@ fun t' ->
       G.with_updates t'.back (fun grid ->
@@ -286,6 +281,8 @@ let begin_frame t =
   let cols = G.cols t.front in
   let src_rect = { G.row = 0; col = 0; width = cols; height = rows } in
   G.blit ~src:t.front ~src_rect ~dst:t.back ~dst_pos:(0, 0);
+  (* Clear dirty bits after copying - this is our new baseline *)
+  ignore (G.flush_damage t.back);
   t.frame_started <- true
 
 let present t =
@@ -308,6 +305,7 @@ let present t =
   let cols = G.cols t.front in
   let src_rect = { G.row = 0; col = 0; width = cols; height = rows } in
   G.blit ~src:t.front ~src_rect ~dst:t.back ~dst_pos:(0, 0);
+  (* Flush damage to clear dirty bits after the copy *)
   ignore (G.flush_damage t.back);
   t.frame_started <- false;
   dirty_regions
@@ -353,8 +351,8 @@ let copy_to ~src ~dst =
     ~src_rect:{ row = 0; col = 0; width = cols; height = rows }
     ~dst:dst.back ~dst_pos:(0, 0)
 
-(* Convert cells to run-length encoded patches *)
-let cells_to_patches cells =
+(* Convert cells to run-length encoded patches - optimized with callback *)
+let cells_to_patches_iter cells callback =
   (* Sort cells by row and column for proper run-length encoding *)
   let cells =
     List.sort
@@ -362,12 +360,10 @@ let cells_to_patches cells =
         if r1 = r2 then compare c1 c2 else compare r1 r2)
       cells
   in
-  (* Use a queue to avoid list reversals *)
-  let patches = Queue.create () in
 
   let rec build_runs current_run = function
     | [] -> (
-        match current_run with None -> () | Some run -> Queue.push run patches)
+        match current_run with None -> () | Some run -> callback run)
     | (row, col, cell) :: rest -> (
         let text = C.get_text cell in
         let style = C.get_style cell in
@@ -410,7 +406,7 @@ let cells_to_patches cells =
               build_runs (Some extended_run) rest
             else (
               (* Finish current run and maybe start a new one *)
-              Queue.push
+              callback
                 (Run
                    {
                      row = run_row;
@@ -418,8 +414,7 @@ let cells_to_patches cells =
                      text = run_text;
                      style = run_style;
                      width = run_width;
-                   })
-                patches;
+                   });
               if C.is_empty cell then build_runs None rest
               else
                 let new_run = Run { row; col; text; style; width } in
@@ -427,11 +422,13 @@ let cells_to_patches cells =
         | _ -> build_runs current_run rest)
   in
 
-  build_runs None cells;
-  Queue.fold (fun acc x -> x :: acc) [] patches |> List.rev
+  build_runs None cells
+
 
 let render t =
   Perf.global_counter.frames_rendered <- Perf.global_counter.frames_rendered + 1;
+  if false then
+    Printf.eprintf "render: front has content, back has content\n";
   let changes = diff_cells t in
   let total_cells = rows t * cols t in
   let changed_cells = List.length changes in
@@ -455,35 +452,43 @@ let render t =
   in
 
   (* Heuristic: clear screen if either:
-     - More than 30% of cells changed (lowered from 50% to reduce flicker), OR
+     - More than 30% of cells changed, OR
      - The largest continuous rectangle is more than 25% of the screen *)
-  let patches =
-    if
-      float_of_int changed_cells /. float_of_int total_cells > 0.3
-      || largest_rect_size > total_cells / 4
-    then (
-      let patches = ref [ Clear_screen ] in
-      (* Build runs for the entire back buffer *)
-      for row = 0 to rows t - 1 do
-        let row_cells = ref [] in
-        for col = 0 to cols t - 1 do
-          match G.get t.back ~row ~col with
-          | Some cell
-            when (not (C.is_empty cell)) && not (C.is_continuation cell) ->
-              row_cells := (row, col, cell) :: !row_cells
-          | _ -> ()
-        done;
-        let row_patches = cells_to_patches (List.rev !row_cells) in
-        patches := !patches @ row_patches
-      done;
-      !patches)
-    else
-      (* Build patches from changed cells only *)
-      cells_to_patches changes
+  let patches = Queue.create () in
+  let add_patch p = 
+    Queue.push p patches;
+    Perf.global_counter.patches_generated <- Perf.global_counter.patches_generated + 1
   in
-  Perf.global_counter.patches_generated <-
-    Perf.global_counter.patches_generated + List.length patches;
-  patches
+  
+  (* Debug: print change ratio *)
+  if false then
+    Printf.eprintf "Changed cells: %d/%d = %.2f%%, largest_rect: %d\n" 
+      changed_cells total_cells 
+      (float_of_int changed_cells /. float_of_int total_cells *. 100.0)
+      largest_rect_size;
+  
+  if
+    float_of_int changed_cells /. float_of_int total_cells > 0.3
+    || largest_rect_size > total_cells / 4
+  then (
+    add_patch Clear_screen;
+    (* Build runs for the entire back buffer - streaming without intermediate lists *)
+    for row = 0 to rows t - 1 do
+      let row_cells = ref [] in
+      for col = 0 to cols t - 1 do
+        match G.get t.back ~row ~col with
+        | Some cell
+          when (not (C.is_empty cell)) && not (C.is_continuation cell) ->
+            row_cells := (row, col, cell) :: !row_cells
+        | _ -> ()
+      done;
+      cells_to_patches_iter (List.rev !row_cells) add_patch
+    done)
+  else
+    (* Build patches from changed cells only *)
+    cells_to_patches_iter changes add_patch;
+  
+  Queue.fold (fun acc x -> x :: acc) [] patches |> List.rev
 
 let render_to_string t =
   let buf = Buffer.create 1024 in
