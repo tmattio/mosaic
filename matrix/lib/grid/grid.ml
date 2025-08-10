@@ -326,31 +326,35 @@ module Storage = struct
       else false
 end
 
-(* Compute hash of a row for quick comparison - using FNV-1a for better distribution *)
+(* Compute hash of a row for quick comparison - using XOR with better mixing *)
 let row_hash storage row cols =
-  (* Use FNV-1a hash which has better distribution than XOR *)
-  let fnv_prime = 0x01000193 in
-  let fnv_offset = 0x811c9dc5 in
-  let hash = ref fnv_offset in
+  (* Use XOR-based hash for O(1) incremental updates, with better mixing to avoid collisions *)
+  (* Mix position more strongly: use a larger prime and rotate bits *)
+  let hash = ref 0 in
   for col = 0 to cols - 1 do
     let cell_hash = Storage.fast_hash storage row col in
-    (* FNV-1a: hash = (hash XOR byte) * prime *)
-    hash := !hash lxor cell_hash * fnv_prime;
-    (* Also mix in the column position *)
-    hash := !hash lxor col * fnv_prime
+    (* Mix position with cell hash using multiplication and rotation *)
+    (* This ensures 'a' at position 0 differs from 'b' at position 0 *)
+    let position_factor = 0x45d9f3b in (* Large prime for mixing *)
+    let mixed = cell_hash lxor (cell_hash lsl 13) in (* Self-mix the cell hash *)
+    let position_mixed = mixed lxor ((col + 1) * position_factor) in (* +1 to avoid col=0 issues *)
+    (* Rotate to spread bits *)
+    let rotated = (position_mixed lsl 7) lor (position_mixed lsr 25) in
+    hash := !hash lxor rotated
   done;
   !hash
 
 (* Compute row hash from cached cell hashes - for incremental updates *)
 let row_hash_from_cache cell_hashes cols =
-  let fnv_prime = 0x01000193 in
-  let fnv_offset = 0x811c9dc5 in
-  let hash = ref fnv_offset in
+  let hash = ref 0 in
   for col = 0 to cols - 1 do
-    (* FNV-1a: hash = (hash XOR byte) * prime *)
-    hash := !hash lxor cell_hashes.(col) * fnv_prime;
-    (* Also mix in the column position *)
-    hash := !hash lxor col * fnv_prime
+    let cell_hash = cell_hashes.(col) in
+    (* Same mixing as above for consistency *)
+    let position_factor = 0x45d9f3b in
+    let mixed = cell_hash lxor (cell_hash lsl 13) in
+    let position_mixed = mixed lxor ((col + 1) * position_factor) in
+    let rotated = (position_mixed lsl 7) lor (position_mixed lsr 25) in
+    hash := !hash lxor rotated
   done;
   !hash
 
@@ -381,13 +385,14 @@ let create ~rows ~cols ?(east_asian_context = false) () =
   (* For empty grid, all rows have the same hash pattern *)
   let row_hashes = Array.make rows 0 in
   if cols > 0 then (
-    (* Compute row hash once for empty row using FNV-1a *)
-    let fnv_prime = 0x01000193 in
-    let fnv_offset = 0x811c9dc5 in
-    let empty_row_hash = ref fnv_offset in
+    (* Compute row hash once for empty row using XOR with mixing *)
+    let empty_row_hash = ref 0 in
+    let position_factor = 0x45d9f3b in
     for col = 0 to cols - 1 do
-      empty_row_hash := !empty_row_hash lxor empty_cell_hash * fnv_prime;
-      empty_row_hash := !empty_row_hash lxor col * fnv_prime
+      let mixed = empty_cell_hash lxor (empty_cell_hash lsl 13) in
+      let position_mixed = mixed lxor ((col + 1) * position_factor) in
+      let rotated = (position_mixed lsl 7) lor (position_mixed lsr 25) in
+      empty_row_hash := !empty_row_hash lxor rotated
     done;
     (* All rows have the same hash initially *)
     Array.fill row_hashes 0 rows !empty_row_hash);
@@ -451,14 +456,28 @@ let _get_dirty_col_ranges grid row =
 (* Update row hash incrementally for a single cell change *)
 let update_row_hash_incremental grid row col =
   if row >= 0 && row < grid.rows && col >= 0 && col < grid.cols then (
+    (* Get the old cell hash before updating *)
+    let old_cell_hash = grid.cell_hashes.(row).(col) in
     (* Update the cell hash cache *)
     let new_cell_hash = Storage.fast_hash grid.storage row col in
     grid.cell_hashes.(row).(col) <- new_cell_hash;
 
-    (* FNV-1a can't be incrementally updated easily, so recompute the full row hash *)
-    (* This is still faster than before since we use cached cell hashes *)
-    grid.row_hashes.(row) <-
-      row_hash_from_cache grid.cell_hashes.(row) grid.cols;
+    (* XOR-based incremental update: remove old contribution, add new *)
+    (* Use the same mixing as in row_hash for consistency *)
+    let position_factor = 0x45d9f3b in
+    
+    (* Remove old contribution *)
+    let old_mixed = old_cell_hash lxor (old_cell_hash lsl 13) in
+    let old_position_mixed = old_mixed lxor ((col + 1) * position_factor) in
+    let old_rotated = (old_position_mixed lsl 7) lor (old_position_mixed lsr 25) in
+    
+    (* Add new contribution *)
+    let new_mixed = new_cell_hash lxor (new_cell_hash lsl 13) in
+    let new_position_mixed = new_mixed lxor ((col + 1) * position_factor) in
+    let new_rotated = (new_position_mixed lsl 7) lor (new_position_mixed lsr 25) in
+    
+    (* XOR is self-inverse: A xor B xor B = A *)
+    grid.row_hashes.(row) <- grid.row_hashes.(row) lxor old_rotated lxor new_rotated;
 
     grid.dirty_rows.(row) <- true;
     mark_col_dirty grid row col)
@@ -847,13 +866,14 @@ let clear ?style grid =
     Bytes.fill grid.storage.texts.(r) 0 (ncols * 8) '\000';
     (* Update cell hashes to match the cleared state *)
     Array.fill grid.cell_hashes.(r) 0 ncols empty_hash;
-    (* Recompute row hash for empty row using FNV-1a *)
-    let fnv_prime = 0x01000193 in
-    let fnv_offset = 0x811c9dc5 in
-    let row_hash_val = ref fnv_offset in
+    (* Recompute row hash for empty row using XOR with mixing *)
+    let row_hash_val = ref 0 in
+    let position_factor = 0x45d9f3b in
     for col = 0 to ncols - 1 do
-      row_hash_val := !row_hash_val lxor empty_hash * fnv_prime;
-      row_hash_val := !row_hash_val lxor col * fnv_prime
+      let mixed = empty_hash lxor (empty_hash lsl 13) in
+      let position_mixed = mixed lxor ((col + 1) * position_factor) in
+      let rotated = (position_mixed lsl 7) lor (position_mixed lsr 25) in
+      row_hash_val := !row_hash_val lxor rotated
     done;
     grid.row_hashes.(r) <- !row_hash_val;
     grid.dirty_rows.(r) <- true;
