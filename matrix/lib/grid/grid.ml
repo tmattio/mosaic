@@ -326,25 +326,31 @@ module Storage = struct
       else false
 end
 
-(* Compute hash of a row for quick comparison - using XOR for incremental updates *)
+(* Compute hash of a row for quick comparison - using FNV-1a for better distribution *)
 let row_hash storage row cols =
-  (* Use simple XOR-based hash for O(1) incremental updates *)
-  let hash = ref 0 in
+  (* Use FNV-1a hash which has better distribution than XOR *)
+  let fnv_prime = 0x01000193 in
+  let fnv_offset = 0x811c9dc5 in
+  let hash = ref fnv_offset in
   for col = 0 to cols - 1 do
     let cell_hash = Storage.fast_hash storage row col in
-    (* Mix the column position into the hash to avoid position-independent collisions *)
-    let position_mixed = cell_hash lxor (col * 0x9e3779b9) in
-    hash := !hash lxor position_mixed
+    (* FNV-1a: hash = (hash XOR byte) * prime *)
+    hash := !hash lxor cell_hash * fnv_prime;
+    (* Also mix in the column position *)
+    hash := !hash lxor col * fnv_prime
   done;
   !hash
 
 (* Compute row hash from cached cell hashes - for incremental updates *)
 let row_hash_from_cache cell_hashes cols =
-  let hash = ref 0 in
+  let fnv_prime = 0x01000193 in
+  let fnv_offset = 0x811c9dc5 in
+  let hash = ref fnv_offset in
   for col = 0 to cols - 1 do
-    (* Mix the column position into the hash *)
-    let position_mixed = cell_hashes.(col) lxor (col * 0x9e3779b9) in
-    hash := !hash lxor position_mixed
+    (* FNV-1a: hash = (hash XOR byte) * prime *)
+    hash := !hash lxor cell_hashes.(col) * fnv_prime;
+    (* Also mix in the column position *)
+    hash := !hash lxor col * fnv_prime
   done;
   !hash
 
@@ -364,15 +370,27 @@ type t = {
 
 let create ~rows ~cols ?(east_asian_context = false) () =
   let storage = Storage.create rows cols in
-  (* Initialize with empty cells by default (types array is already 0) *)
+  (* Optimization: All empty cells have the same hash, compute once *)
+  let empty_cell_hash =
+    if rows > 0 && cols > 0 then Storage.fast_hash storage 0 0 else 0
+  in
+  (* Initialize cell hashes with the empty hash value *)
+  let cell_hashes =
+    Array.init rows (fun _ -> Array.make cols empty_cell_hash)
+  in
+  (* For empty grid, all rows have the same hash pattern *)
   let row_hashes = Array.make rows 0 in
-  let cell_hashes = Array.init rows (fun _ -> Array.make cols 0) in
-  for r = 0 to rows - 1 do
-    for c = 0 to cols - 1 do
-      cell_hashes.(r).(c) <- Storage.fast_hash storage r c
+  if cols > 0 then (
+    (* Compute row hash once for empty row using FNV-1a *)
+    let fnv_prime = 0x01000193 in
+    let fnv_offset = 0x811c9dc5 in
+    let empty_row_hash = ref fnv_offset in
+    for col = 0 to cols - 1 do
+      empty_row_hash := !empty_row_hash lxor empty_cell_hash * fnv_prime;
+      empty_row_hash := !empty_row_hash lxor col * fnv_prime
     done;
-    row_hashes.(r) <- row_hash storage r cols
-  done;
+    (* All rows have the same hash initially *)
+    Array.fill row_hashes 0 rows !empty_row_hash);
   let dirty_rows = Array.make rows false in
   let col_dirty = Array.init rows (fun _ -> Array.make ((cols + 63) / 64) 0L) in
   {
@@ -414,15 +432,16 @@ let _get_dirty_col_ranges grid row =
         (* Use bit manipulation to find contiguous ranges *)
         let rec scan_bits pos =
           if pos >= 64 then ()
-          else if Int64.logand bits (Int64.shift_left 1L pos) <> 0L then
+          else if Int64.logand bits (Int64.shift_left 1L pos) <> 0L then (
             let start = base_col + pos in
             let rec find_end e =
-              if e >= 64 || Int64.logand bits (Int64.shift_left 1L e) = 0L then e - 1
+              if e >= 64 || Int64.logand bits (Int64.shift_left 1L e) = 0L then
+                e - 1
               else find_end (e + 1)
             in
             let end_pos = find_end (pos + 1) in
             ranges := (start, base_col + end_pos) :: !ranges;
-            scan_bits (end_pos + 1)
+            scan_bits (end_pos + 1))
           else scan_bits (pos + 1)
         in
         scan_bits 0
@@ -432,18 +451,15 @@ let _get_dirty_col_ranges grid row =
 (* Update row hash incrementally for a single cell change *)
 let update_row_hash_incremental grid row col =
   if row >= 0 && row < grid.rows && col >= 0 && col < grid.cols then (
-    (* Get the old cell hash *)
-    let old_cell_hash = grid.cell_hashes.(row).(col) in
     (* Update the cell hash cache *)
     let new_cell_hash = Storage.fast_hash grid.storage row col in
     grid.cell_hashes.(row).(col) <- new_cell_hash;
-    
-    (* XOR-based incremental update: remove old, add new *)
-    let old_mixed = old_cell_hash lxor (col * 0x9e3779b9) in
-    let new_mixed = new_cell_hash lxor (col * 0x9e3779b9) in
-    (* XOR out the old hash, XOR in the new hash *)
-    grid.row_hashes.(row) <- grid.row_hashes.(row) lxor old_mixed lxor new_mixed;
-    
+
+    (* FNV-1a can't be incrementally updated easily, so recompute the full row hash *)
+    (* This is still faster than before since we use cached cell hashes *)
+    grid.row_hashes.(row) <-
+      row_hash_from_cache grid.cell_hashes.(row) grid.cols;
+
     grid.dirty_rows.(row) <- true;
     mark_col_dirty grid row col)
 
@@ -459,7 +475,8 @@ let update_row_hash grid row =
     for c = 0 to grid.cols - 1 do
       grid.cell_hashes.(row).(c) <- Storage.fast_hash grid.storage row c
     done;
-    grid.row_hashes.(row) <- row_hash_from_cache grid.cell_hashes.(row) grid.cols)
+    grid.row_hashes.(row) <-
+      row_hash_from_cache grid.cell_hashes.(row) grid.cols)
 
 let rows grid = grid.rows
 let cols grid = grid.cols
@@ -522,17 +539,16 @@ let set_grapheme ?link ?east_asian_context grid ~row ~col ~glyph ~attrs =
     let attrs, preserve_existing_glyph =
       let fg = Ansi.Style.fg attrs in
       let bg = Ansi.Style.bg attrs in
-      
+
       (* Quick check: skip blending if no RGBA colors *)
-      let has_rgba = 
-        match fg, bg with
+      let has_rgba =
+        match (fg, bg) with
         | Ansi.Style.RGBA (_, _, _, a), _ when a < 255 -> true
         | _, Ansi.Style.RGBA (_, _, _, a) when a < 255 -> true
         | _ -> false
       in
-      
-      if not has_rgba then
-        (attrs, false)
+
+      if not has_rgba then (attrs, false)
       else
         let existing_style = Cell.get_style existing_cell in
         let existing_fg = Ansi.Style.fg existing_style in
@@ -545,7 +561,9 @@ let set_grapheme ?link ?east_asian_context grid ~row ~col ~glyph ~attrs =
         let attrs =
           match fg with
           | Ansi.Style.RGBA (_, _, _, a) when a < 255 ->
-              let blended_fg = Ansi.Style.blend_colors ~src:fg ~dst:existing_fg in
+              let blended_fg =
+                Ansi.Style.blend_colors ~src:fg ~dst:existing_fg
+              in
               Ansi.Style.with_fg blended_fg attrs
           | _ -> attrs
         in
@@ -554,7 +572,9 @@ let set_grapheme ?link ?east_asian_context grid ~row ~col ~glyph ~attrs =
         let attrs, should_preserve =
           match bg with
           | Ansi.Style.RGBA (_, _, _, a) when a < 255 ->
-              let blended_bg = Ansi.Style.blend_colors ~src:bg ~dst:existing_bg in
+              let blended_bg =
+                Ansi.Style.blend_colors ~src:bg ~dst:existing_bg
+              in
               (Ansi.Style.with_bg blended_bg attrs, is_background_only)
           | _ -> (attrs, false)
         in
@@ -630,119 +650,188 @@ let set_text ?link ?east_asian_context ?max_width grid ~row ~col ~text ~attrs =
     in
 
     (* Fast path for pure ASCII text - avoid Uuseg overhead *)
-    let is_pure_ascii = 
+    let is_pure_ascii =
       let rec check i =
         if i >= String.length text then true
         else
           let c = Char.code text.[i] in
-          if c >= 128 then false
-          else check (i + 1)
+          if c >= 128 then false else check (i + 1)
       in
       check 0
     in
-    
+
     if is_pure_ascii then (
-      (* ASCII fast path - direct character processing *)
+      (* ASCII fast path - batch all changes, update hash once *)
+      (* Handle link if provided *)
+      let attrs =
+        match link with
+        | None -> attrs
+        | Some url ->
+            let link_id =
+              let existing_id = ref None in
+              Hashtbl.iter
+                (fun id stored_url ->
+                  if stored_url = url then existing_id := Some id)
+                grid.storage.link_table;
+              match !existing_id with
+              | Some id -> id
+              | None ->
+                  let id = grid.storage.next_link_id in
+                  Hashtbl.add grid.storage.link_table id url;
+                  grid.storage.next_link_id <- grid.storage.next_link_id + 1;
+                  id
+            in
+            Ansi.Style.set_link_id attrs link_id
+      in
+
+      (* Clear any existing wide characters in the range first *)
       for i = 0 to String.length text - 1 do
-        if !current_col < max_col then (
+        if col + i < grid.cols then
+          let existing_cell = Storage.get_cell grid.storage row (col + i) in
+          let old_width = Cell.width existing_cell in
+          if old_width > 1 then
+            (* Clear continuation cells from wide chars *)
+            for j = 1 to min (old_width - 1) (grid.cols - col - i - 1) do
+              Storage.set_cell grid.storage row (col + i + j) Cell.empty
+            done
+      done;
+
+      (* Now set all ASCII characters directly *)
+      for i = 0 to String.length text - 1 do
+        if !current_col < max_col then
           let c = text.[i] in
           let c_code = Char.code c in
           if c_code >= 32 && c_code < 127 then (
-            (* Printable ASCII character *)
-            set_grapheme ?link grid ~row ~col:!current_col 
-              ~glyph:(String.make 1 c) ~attrs ~east_asian_context;
+            (* Printable ASCII character - set directly without using set_grapheme *)
+            let cell =
+              Cell.make_glyph (String.make 1 c) ~style:attrs ~east_asian_context
+            in
+            Storage.set_cell grid.storage row !current_col cell;
+            (* Update cell hash cache *)
+            grid.cell_hashes.(row).(!current_col) <-
+              Storage.fast_hash grid.storage row !current_col;
+            mark_col_dirty grid row !current_col;
             incr current_col;
-            incr total_width
-          )
-          (* Skip control characters *)
-        )
+            incr total_width) (* Skip control characters *)
       done;
-      !total_width
-    ) else (
+
+      (* Update row hash once for all changes *)
+      if !total_width > 0 then (
+        (* Recompute row hash from cell hashes *)
+        grid.row_hashes.(row) <-
+          row_hash_from_cache grid.cell_hashes.(row) grid.cols;
+        grid.dirty_rows.(row) <- true);
+
+      !total_width)
+    else
       (* Full Unicode path - use Uuseg for grapheme cluster segmentation *)
       (* Fold over grapheme clusters in the text *)
       let folder () grapheme =
-      if !current_col < max_col then
-        let width =
-          Ucwidth.string_width ~east_asian:east_asian_context grapheme
-        in
-        if width > 0 then (
-          (* Normal width grapheme *)
-          set_grapheme ?link grid ~row ~col:!current_col ~glyph:grapheme ~attrs
-            ~east_asian_context;
-          (* Only count the width that was actually written *)
-          let actual_width = min width (max_col - !current_col) in
-          current_col := !current_col + actual_width;
-          total_width := !total_width + actual_width)
-        else if width = 0 then
-          (* Zero-width grapheme (combining characters, ZWJ, VS15/16, etc) *)
-          (* Check if this is a combining mark character *)
-          let is_combining_mark =
-            match
-              Uutf.decode (Uutf.decoder ~encoding:`UTF_8 (`String grapheme))
-            with
-            | `Uchar u ->
-                let gc = Uucp.Gc.general_category u in
-                gc = `Mn || gc = `Mc || gc = `Me
-            | _ -> false
+        if !current_col < max_col then
+          let width =
+            Ucwidth.string_width ~east_asian:east_asian_context grapheme
           in
+          if width > 0 then (
+            (* Normal width grapheme *)
+            set_grapheme ?link grid ~row ~col:!current_col ~glyph:grapheme
+              ~attrs ~east_asian_context;
+            (* Only count the width that was actually written *)
+            let actual_width = min width (max_col - !current_col) in
+            current_col := !current_col + actual_width;
+            total_width := !total_width + actual_width)
+          else if width = 0 then
+            (* Zero-width grapheme (combining characters, ZWJ, VS15/16, etc) *)
+            (* Check if this is a combining mark character *)
+            let is_combining_mark =
+              match
+                Uutf.decode (Uutf.decoder ~encoding:`UTF_8 (`String grapheme))
+              with
+              | `Uchar u ->
+                  let gc = Uucp.Gc.general_category u in
+                  gc = `Mn || gc = `Mc || gc = `Me
+              | _ -> false
+            in
 
-          if is_combining_mark then (
-            (* Combining mark fed as separate grapheme - advance cursor *)
-            (if !current_col > col then
-               (* Try to append to previous cell first *)
-               let prev_col = !current_col - 1 in
-               match Storage.get_cell grid.storage row prev_col with
-               | cell
-                 when (not (Cell.is_empty cell))
-                      && not (Cell.is_continuation cell) ->
-                   (* Append to previous cell's text *)
-                   let prev_text = Cell.get_text cell in
-                   let combined_text = prev_text ^ grapheme in
-                   let combined_cell =
-                     Cell.make_glyph combined_text ~style:(Cell.get_style cell)
-                       ~east_asian_context
-                   in
-                   Storage.set_cell grid.storage row prev_col combined_cell
-               | _ ->
-                   (* No valid previous cell - place as standalone *)
-                   set_grapheme ?link grid ~row ~col:!current_col
-                     ~glyph:grapheme ~attrs ~east_asian_context);
-            (* Advance cursor for separately-fed combining marks 
+            if is_combining_mark then (
+              (* Combining mark fed as separate grapheme - advance cursor *)
+              (if !current_col > col then
+                 (* Try to append to previous cell first *)
+                 let prev_col = !current_col - 1 in
+                 match Storage.get_cell grid.storage row prev_col with
+                 | cell
+                   when (not (Cell.is_empty cell))
+                        && not (Cell.is_continuation cell) ->
+                     (* Append to previous cell's text *)
+                     let prev_text = Cell.get_text cell in
+                     let combined_text = prev_text ^ grapheme in
+                     let combined_cell =
+                       Cell.make_glyph combined_text
+                         ~style:(Cell.get_style cell) ~east_asian_context
+                     in
+                     Storage.set_cell grid.storage row prev_col combined_cell
+                 | _ ->
+                     (* No valid previous cell - place as standalone *)
+                     set_grapheme ?link grid ~row ~col:!current_col
+                       ~glyph:grapheme ~attrs ~east_asian_context);
+              (* Advance cursor for separately-fed combining marks 
                This matches terminal behavior when combining marks are sent as separate characters *)
-            current_col := !current_col + 1;
-            total_width := !total_width + 1)
-          else if !current_col > col then
-            (* Other zero-width characters (ZWJ, VS, etc) - don't advance cursor *)
-            let prev_col = !current_col - 1 in
-            match Storage.get_cell grid.storage row prev_col with
-            | cell
-              when (not (Cell.is_empty cell)) && not (Cell.is_continuation cell)
-              ->
-                (* Append to previous cell's text *)
-                let prev_text = Cell.get_text cell in
-                let combined_text = prev_text ^ grapheme in
-                let combined_cell =
-                  Cell.make_glyph combined_text ~style:(Cell.get_style cell)
-                    ~east_asian_context
-                in
-                Storage.set_cell grid.storage row prev_col combined_cell;
-                (* Don't advance cursor for other zero-width chars *)
-                ()
-            | _ ->
-                (* No previous cell or it's empty/continuation - skip this grapheme *)
-                ()
-      (* else: zero-width at start of line - skip it *)
-    in
+              current_col := !current_col + 1;
+              total_width := !total_width + 1)
+            else if !current_col > col then
+              (* Other zero-width characters (ZWJ, VS, etc) - don't advance cursor *)
+              let prev_col = !current_col - 1 in
+              match Storage.get_cell grid.storage row prev_col with
+              | cell
+                when (not (Cell.is_empty cell))
+                     && not (Cell.is_continuation cell) ->
+                  (* Append to previous cell's text *)
+                  let prev_text = Cell.get_text cell in
+                  let combined_text = prev_text ^ grapheme in
+                  let combined_cell =
+                    Cell.make_glyph combined_text ~style:(Cell.get_style cell)
+                      ~east_asian_context
+                  in
+                  Storage.set_cell grid.storage row prev_col combined_cell;
+                  (* Don't advance cursor for other zero-width chars *)
+                  ()
+              | _ ->
+                  (* No previous cell or it's empty/continuation - skip this grapheme *)
+                  ()
+        (* else: zero-width at start of line - skip it *)
+      in
 
       Uuseg_string.fold_utf_8 `Grapheme_cluster folder () text;
       !total_width
-    )
 
 let clear ?style grid =
   let nrows = grid.rows in
   let ncols = grid.cols in
   let style = Option.value style ~default:Ansi.Style.default in
+  (* Compute the empty cell hash for the given style *)
+  let empty_hash =
+    if style = Ansi.Style.default then
+      (* Type 0, default style, width 0 *)
+      let h1 = 0 in
+      let h2 =
+        Int64.(
+          to_int
+            (logxor
+               (Ansi.Style.default :> int64)
+               (shift_right_logical (Ansi.Style.default :> int64) 32)))
+      in
+      let h3 = 0 in
+      h1 lxor h2 lxor h3
+    else
+      (* Need to compute hash for styled empty cell *)
+      let h1 = 0 in
+      let h2 =
+        Int64.(
+          to_int
+            (logxor (style :> int64) (shift_right_logical (style :> int64) 32)))
+      in
+      let h3 = 0 in
+      h1 lxor h2 lxor h3
+  in
   (* Clear all bigarrays in bulk - much faster than cell-by-cell *)
   for r = 0 to nrows - 1 do
     (* Use Bigarray.Array1 slice for efficient row clearing *)
@@ -756,7 +845,17 @@ let clear ?style grid =
     (* But with the given style *)
     (* Clear text storage for this row *)
     Bytes.fill grid.storage.texts.(r) 0 (ncols * 8) '\000';
-    update_row_hash grid r;
+    (* Update cell hashes to match the cleared state *)
+    Array.fill grid.cell_hashes.(r) 0 ncols empty_hash;
+    (* Recompute row hash for empty row using FNV-1a *)
+    let fnv_prime = 0x01000193 in
+    let fnv_offset = 0x811c9dc5 in
+    let row_hash_val = ref fnv_offset in
+    for col = 0 to ncols - 1 do
+      row_hash_val := !row_hash_val lxor empty_hash * fnv_prime;
+      row_hash_val := !row_hash_val lxor col * fnv_prime
+    done;
+    grid.row_hashes.(r) <- !row_hash_val;
     grid.dirty_rows.(r) <- true;
     (* Mark all columns as dirty for this row *)
     for c = 0 to ncols - 1 do
@@ -955,9 +1054,11 @@ let resize grid ~rows:new_rows ~cols:new_cols =
   (* Resize dirty rows array and mark all as dirty *)
   let new_dirty_rows = Array.make new_rows true in
   grid.dirty_rows <- new_dirty_rows;
-  
+
   (* Resize column dirty bits *)
-  let new_col_dirty = Array.init new_rows (fun _ -> Array.make ((new_cols + 63) / 64) 0L) in
+  let new_col_dirty =
+    Array.init new_rows (fun _ -> Array.make ((new_cols + 63) / 64) 0L)
+  in
   grid.col_dirty <- new_col_dirty
 
 let blit ~src ~src_rect ~dst ~dst_pos =

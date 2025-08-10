@@ -170,17 +170,19 @@ let clear ?viewport t =
           iter_rect vp (fun r c -> G.set grid ~row:r ~col:c None))
 
 let clear_rect ?viewport t ~row_start ~row_end ~col_start ~col_end =
-  let extra =
-    Viewport.make ~row:row_start ~col:col_start
-      ~width:(col_end - col_start + 1)
-      ~height:(row_end - row_start + 1)
-  in
-  let viewport =
-    match viewport with
-    | Some c -> Viewport.intersect c extra
-    | None -> Some extra
-  in
-  clear ?viewport t
+  (* Use batch mode for clearing rectangles *)
+  G.with_updates t.back (fun _ ->
+      let extra =
+        Viewport.make ~row:row_start ~col:col_start
+          ~width:(col_end - col_start + 1)
+          ~height:(row_end - row_start + 1)
+      in
+      let viewport =
+        match viewport with
+        | Some c -> Viewport.intersect c extra
+        | None -> Some extra
+      in
+      clear ?viewport t)
 
 let clear_line ?viewport t ~row ~col =
   let extra = Viewport.make ~row ~col ~width:(cols t - col) ~height:1 in
@@ -254,19 +256,23 @@ let set_multiline_text ?viewport t ~row ~col ~text ~attrs =
   let max_row =
     match viewport with None -> max_int | Some vp -> vp.Viewport.height
   in
-  let rec loop idx = function
-    | [] -> idx
-    | hd :: tl ->
-        if idx >= max_row then idx (* Stop if we've reached viewport height *)
-        else
-          let _lines, cols =
-            set_text ?viewport t ~row:(row + idx) ~col ~text:hd ~attrs
-          in
-          if cols > 0 then max_cols := max !max_cols cols;
-          loop (idx + 1) tl
-  in
-  let lines_written = loop 0 lines in
-  (lines_written, !max_cols)
+  let lines_written = ref 0 in
+  (* Use batch mode for multi-line text *)
+  G.with_updates t.back (fun _ ->
+      let rec loop idx = function
+        | [] -> idx
+        | hd :: tl ->
+            if idx >= max_row then idx
+              (* Stop if we've reached viewport height *)
+            else
+              let _lines, cols =
+                set_text ?viewport t ~row:(row + idx) ~col ~text:hd ~attrs
+              in
+              if cols > 0 then max_cols := max !max_cols cols;
+              loop (idx + 1) tl
+      in
+      lines_written := loop 0 lines);
+  (!lines_written, !max_cols)
 
 let back t =
   if not t.frame_started then
@@ -362,8 +368,7 @@ let cells_to_patches_iter cells callback =
   in
 
   let rec build_runs current_run = function
-    | [] -> (
-        match current_run with None -> () | Some run -> callback run)
+    | [] -> ( match current_run with None -> () | Some run -> callback run)
     | (row, col, cell) :: rest -> (
         let text = C.get_text cell in
         let style = C.get_style cell in
@@ -424,11 +429,18 @@ let cells_to_patches_iter cells callback =
 
   build_runs None cells
 
-
 let render t =
   Perf.global_counter.frames_rendered <- Perf.global_counter.frames_rendered + 1;
-  if false then
-    Printf.eprintf "render: front has content, back has content\n";
+  if false then (
+    Printf.eprintf "render: front rows=%d cols=%d, back rows=%d cols=%d\n"
+      (G.rows t.front) (G.cols t.front) (G.rows t.back) (G.cols t.back);
+    Printf.eprintf "  front[0,0] empty=%b, back[0,0] empty=%b\n"
+      (match G.get t.front ~row:0 ~col:0 with
+      | Some c -> C.is_empty c
+      | None -> true)
+      (match G.get t.back ~row:0 ~col:0 with
+      | Some c -> C.is_empty c
+      | None -> true));
   let changes = diff_cells t in
   let total_cells = rows t * cols t in
   let changed_cells = List.length changes in
@@ -455,18 +467,19 @@ let render t =
      - More than 30% of cells changed, OR
      - The largest continuous rectangle is more than 25% of the screen *)
   let patches = Queue.create () in
-  let add_patch p = 
+  let add_patch p =
     Queue.push p patches;
-    Perf.global_counter.patches_generated <- Perf.global_counter.patches_generated + 1
+    Perf.global_counter.patches_generated <-
+      Perf.global_counter.patches_generated + 1
   in
-  
+
   (* Debug: print change ratio *)
   if false then
-    Printf.eprintf "Changed cells: %d/%d = %.2f%%, largest_rect: %d\n" 
-      changed_cells total_cells 
+    Printf.eprintf "Changed cells: %d/%d = %.2f%%, largest_rect: %d\n"
+      changed_cells total_cells
       (float_of_int changed_cells /. float_of_int total_cells *. 100.0)
       largest_rect_size;
-  
+
   if
     float_of_int changed_cells /. float_of_int total_cells > 0.3
     || largest_rect_size > total_cells / 4
@@ -477,8 +490,8 @@ let render t =
       let row_cells = ref [] in
       for col = 0 to cols t - 1 do
         match G.get t.back ~row ~col with
-        | Some cell
-          when (not (C.is_empty cell)) && not (C.is_continuation cell) ->
+        | Some cell when (not (C.is_empty cell)) && not (C.is_continuation cell)
+          ->
             row_cells := (row, col, cell) :: !row_cells
         | _ -> ()
       done;
@@ -487,7 +500,7 @@ let render t =
   else
     (* Build patches from changed cells only *)
     cells_to_patches_iter changes add_patch;
-  
+
   Queue.fold (fun acc x -> x :: acc) [] patches |> List.rev
 
 let render_to_string t =
