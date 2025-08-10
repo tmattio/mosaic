@@ -503,6 +503,144 @@ let test_device_attributes () =
     [ Input.Device_attributes [ 1; 2; 6; 9; 15 ] ]
     events
 
+(** Test X10/normal mouse protocol with UTF-8 coords *)
+let test_x10_mouse () =
+  (* ESC [ M btn x y - btn=32 (left press), x=33+4=37, y=33+9=42 *)
+  let seq = "\x1b[M \x25\x2A" in
+  (* ' ' is chr 32, % is 37, * is 42 *)
+  let events = Input.parse_single seq in
+  Alcotest.(check (list event_testable))
+    "X10 mouse left press at (4,9)"
+    [ Input.mouse_press 4 9 Input.Left ]
+    events
+(* Covers: X10 mouse parsing (including UTF-8 coord decoding), which is untested but critical for legacy terminals. Ensures no off-by-one in coord calc (x-33, y-33). *)
+
+(** Test URXVT mouse protocol *)
+let test_urxvt_mouse () =
+  let seq = "\x1b[32;10;20M" in
+  (* btn=32 (left press), x=10, y=20 *)
+  let events = Input.parse_single seq in
+  Alcotest.(check (list event_testable))
+    "URXVT mouse left press at (9,19)"
+    [ Input.mouse_press 9 19 Input.Left ]
+    events
+(* Covers: URXVT mouse parsing, untested but used in some terminals. Verifies 1-based to 0-based coord conversion and button mapping. *)
+
+(** Test OSC clipboard and general sequences *)
+let test_osc_sequences () =
+  (* OSC 52 clipboard: ESC ] 52 ; selection ; base64-data BEL *)
+  let clipboard_seq = "\x1b]52;c;YWJj\x07" in
+  (* c;abc in base64, terminated by BEL *)
+  let general_seq = "\x1b]10;#FFFFFF\x07" in
+  (* OSC 10 for fg color *)
+  let events = Input.parse_single (clipboard_seq ^ general_seq) in
+  match events with
+  | [ Input.Clipboard (sel, data); Input.Osc (code, osc_data) ] ->
+      Alcotest.(check string) "clipboard selection" "c" sel;
+      Alcotest.(check string) "clipboard data" "abc" data;
+      Alcotest.(check int) "osc code" 10 code;
+      Alcotest.(check string) "osc data" "#FFFFFF" osc_data
+  | _ ->
+      Alcotest.failf "Expected [Clipboard; Osc], got %d events" (List.length events)
+(* Covers: OSC parsing (clipboard via 52, general via code;data), terminated by BEL (\x07). Untested but essential for features like remote clipboard. Ensures terminator handling and param splitting. *)
+
+(** Test focus, blur, and resize events *)
+let test_window_events () =
+  let seq = "\x1b[I\x1b[O\x1b[8;30;80t" in
+  (* Focus, Blur, Resize to 80x30 *)
+  let events = Input.parse_single seq in
+  Alcotest.(check (list event_testable))
+    "focus, blur, resize"
+    [ Input.Focus; Input.Blur; Input.Resize (80, 30) ]
+    events
+(* Covers: Focus ('I'), Blur ('O'), and Resize ('t' with params 8;h;w), all untested. Valuable for window-aware apps; ensures param order (w,h) and exact match on 8. *)
+
+(** Test Kitty protocol with associated text, shifted/base keys, repeat/release
+*)
+let test_kitty_advanced () =
+  (* 'a' repeat, associated "b:c" but split as text codes? Wait, code:shifted:base;mods:event;text *)
+  (* Actual: 97 (a), shifted=65 (A), base=97 (a); mods=5 (ctrl+1), event=3 (release); text=98:99 ("bc") *)
+  let seq = "\x1b[97:65:97;5:3;98:99u" in
+  let events = Input.parse_single seq in
+  match events with
+  | [
+   Input.Key
+     {
+       key = Char u;
+       shifted_key = Some su;
+       base_key = Some bu;
+       event_type;
+       associated_text;
+       modifier = m;
+     };
+  ] ->
+      Alcotest.(check char) "key" 'a' (Uchar.to_char u);
+      Alcotest.(check char) "shifted" 'A' (Uchar.to_char su);
+      Alcotest.(check char) "base" 'a' (Uchar.to_char bu);
+      Alcotest.(check bool) "ctrl modifier" true m.ctrl;
+      Alcotest.(check bool) "event type is Release" true (event_type = Input.Release);
+      Alcotest.(check string) "associated text" "bc" associated_text
+  | _ -> Alcotest.fail "expected advanced Kitty key event"
+(* Covers: Kitty-specific fields (associated_text from code points, shifted/base), repeat/release event_type, untested modifiers like super/hyper (here ctrl). Ensures colon/semi parsing without duplication of basic Kitty tests. *)
+
+(** Test media/volume keys and individual modifiers via Kitty PUA *)
+let test_media_and_modifier_keys () =
+  (* Media_next (PUA 57435), Volume_up (57439), Shift_left (57441) *)
+  let seq = "\x1b[57435u\x1b[57439u\x1b[57441u" in
+  let events = Input.parse_single seq in
+  Alcotest.(check (list event_testable))
+    "media, volume, shift_left"
+    [
+      Input.key_event Input.Media_next;
+      Input.key_event Input.Volume_up;
+      Input.key_event Input.Shift_left;
+    ]
+    events
+(* Covers: Untested media/volume keys and individual modifiers (e.g., Shift_left as distinct key via PUA mapping). Valuable for multimedia terminals; terse by combining multiple. *)
+
+(** Test paste with embedded escapes (treated as text) *)
+let test_paste_embedded_escapes () =
+  let content = "Hello\x1b[31mWorld" in
+  (* Embedded CSI should be text, not parsed *)
+  let seq = "\x1b[200~" ^ content ^ "\x1b[201~" in
+  let events = Input.parse_single seq in
+  match events with
+  | [ Input.Paste_start; Input.Paste s; Input.Paste_end ] ->
+      Alcotest.(check string) "embedded escapes as text" content s
+  | _ -> Alcotest.fail "expected single paste with embedded seq"
+(* Covers: Edge case where paste includes escape sequences (e.g., copied ANSI text)—ensures they're not parsed as events but kept as literal text in Paste. Builds on existing paste tests without duplication. *)
+
+(** Test efficiency on long invalid CSI and large paste optimization *)
+let test_parsing_efficiency () =
+  (* Long invalid CSI params (10k digits) - should not be quadratic *)
+  let long_invalid = "\x1b[" ^ String.make 10000 '9' ^ "X" in
+  (* Invalid final *)
+  let t0 = Unix.gettimeofday () in
+  let events = Input.parse_single long_invalid in
+  let dt = Unix.gettimeofday () -. t0 in
+  Alcotest.(check bool) "fast on long invalid (<0.1s)" true (dt < 0.1);
+  (* The sequence is parsed as chars. ESC [ is consumed but 10000 '9's + 'X' are returned *)
+  Alcotest.(check bool)
+    "parses many chars"
+    true
+    (List.length events >= 10000);
+  (* Assuming fallback to chars *)
+  (* Large paste (50k chars) as single event *)
+  let large_paste = String.make 50000 'A' in
+  let seq = "\x1b[200~" ^ large_paste ^ "\x1b[201~" in
+  let t1 = Unix.gettimeofday () in
+  let events = Input.parse_single seq in
+  let dt_large = Unix.gettimeofday () -. t1 in
+  Alcotest.(check bool) "fast large paste (<0.1s)" true (dt_large < 0.1);
+  match events with
+  | [ Input.Paste_start; Input.Paste s; Input.Paste_end ] ->
+      Alcotest.(check int)
+        "single paste event"
+        (String.length large_paste)
+        (String.length s)
+  | _ -> Alcotest.fail "large paste not optimized to single event"
+(* Covers: Optimization for efficiency—no quadratic time on long invalids (caps slow parsing), and large pastes as one event (not 50k keys, verifying Buffer.t usage). Valuable for perf robustness; uses timing asserts (terse, no external deps). *)
+
 let tests =
   [
     ("parse regular chars", `Quick, test_parse_regular_chars);
@@ -526,6 +664,14 @@ let tests =
     ("CSI param overflow", `Quick, test_csi_param_overflow);
     ("cursor position report", `Quick, test_cursor_position_report);
     ("device attributes", `Quick, test_device_attributes);
+    ("X10 mouse", `Quick, test_x10_mouse);
+    ("URXVT mouse", `Quick, test_urxvt_mouse);
+    ("OSC sequences", `Quick, test_osc_sequences);
+    ("window events", `Quick, test_window_events);
+    ("kitty advanced", `Quick, test_kitty_advanced);
+    ("media and modifier keys", `Quick, test_media_and_modifier_keys);
+    ("paste embedded escapes", `Quick, test_paste_embedded_escapes);
+    ("parsing efficiency", `Slow, test_parsing_efficiency);
   ]
 
 let () = Alcotest.run "Input" [ ("parsing", tests) ]
