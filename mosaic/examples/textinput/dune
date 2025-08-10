@@ -1,3 +1,0 @@
-(executable
- (name textinput)
- (libraries mosaic mosaic.tiles eio_main))

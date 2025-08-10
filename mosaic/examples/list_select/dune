@@ -1,3 +1,0 @@
-(executable
- (name list_select)
- (libraries mosaic mosaic.tiles eio_main))

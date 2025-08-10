@@ -1,0 +1,3 @@
+(executable
+ (name chat_agent)
+ (libraries mosaic uutf matrix.ansi))

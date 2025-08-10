@@ -1,4 +1,4 @@
-open Mosaic
+open Mosaic_tea
 
 type model = int
 type msg = [ `Key_event of Input.key_event | `Tick | `Quit ]
@@ -41,5 +41,5 @@ let view model =
 let subscriptions _model = Sub.keyboard (fun key_event -> `Key_event key_event)
 
 let () =
-  let app = Mosaic.app ~init ~update ~view ~subscriptions () in
-  Mosaic.run app
+  let app = Mosaic_tea.app ~init ~update ~view ~subscriptions () in
+  Mosaic_tea.run app

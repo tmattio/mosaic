@@ -1,5 +1,3 @@
-open Mosaic
-
 let ocaml_code =
   {|
 (* OCaml syntax highlighting demo *)

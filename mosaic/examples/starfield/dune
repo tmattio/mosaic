@@ -1,3 +1,3 @@
 (executable
- (name main)
+ (name starfield)
  (libraries mosaic))

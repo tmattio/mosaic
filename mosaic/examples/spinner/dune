@@ -1,3 +1,0 @@
-(executable
- (name spinner)
- (libraries mosaic mosaic.tiles eio_main))

@@ -1,0 +1,3 @@
+(executables
+ (names button)
+ (libraries mosaic))

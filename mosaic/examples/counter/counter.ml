@@ -1,33 +1,33 @@
-open Mosaic_react
+open Mosaic
 
 (* Simple Counter Component using React-style hooks *)
 let counter label =
   let open Ui in
   (* useState hook for counter value *)
-  let count, set_count = use_state 0 in
+  let count, _, update_count = use_state 0 in
 
   (* useEffect hook - runs on mount and when count changes *)
   use_effect
-    ~deps:Obj.[| repr count |]
+    ~deps:Deps.(keys [ int count ])
     (fun () ->
       if count > 0 then Printf.printf "%s: Count is now %d\n%!" label count;
       None (* No cleanup needed *));
 
-  (* Subscribe to keyboard events *)
+  (* Subscribe to keyboard events using functional updates to avoid stale closures *)
   use_subscription
     (Sub.keyboard_filter (fun event ->
          match event.Input.key with
          | Input.Char c when Uchar.to_int c = 0x2B ->
              (* '+' *)
-             set_count (count + 1);
+             update_count (( + ) 1);
              Some ()
          | Input.Char c when Uchar.to_int c = 0x2D ->
              (* '-' *)
-             set_count (count - 1);
+             update_count (fun x -> x - 1);
              Some ()
          | Input.Char c when Uchar.to_int c = 0x30 ->
              (* '0' *)
-             set_count 0;
+             update_count (Fun.const 0);
              Some ()
          | _ -> None));
 
@@ -63,7 +63,7 @@ let themed_box children =
 let app () =
   let open Ui in
   (* Theme state *)
-  let theme, set_theme = use_state Dark in
+  let theme, _, update_theme = use_state Dark in
 
   (* Subscribe to theme toggle *)
   use_subscription
@@ -71,12 +71,7 @@ let app () =
          match event.Input.key with
          | Input.Char c when Uchar.to_int c = 0x74 ->
              (* 't' *)
-             let new_theme =
-               match theme with Light -> Dark | Dark -> Light
-             in
-             set_theme new_theme;
-             Printf.printf "Theme changed to %s\n%!"
-               (match new_theme with Light -> "Light" | Dark -> "Dark");
+             update_theme (function Light -> Dark | Dark -> Light);
              Some ()
          | _ -> None));
 

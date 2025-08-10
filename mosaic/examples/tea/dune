@@ -1,0 +1,3 @@
+(executable
+ (name tea_countdown)
+ (libraries mosaic_tea eio_main))

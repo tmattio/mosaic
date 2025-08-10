@@ -1,5 +1,0 @@
-(executable
- (public_name react_counter)
- (package mosaic)
- (name counter)
- (libraries mosaic_react))

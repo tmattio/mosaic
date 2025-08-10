@@ -1,0 +1,3 @@
+(executable
+ (name animated_sine)
+ (libraries mosaic mosaic_charts))
