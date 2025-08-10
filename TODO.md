@@ -1,12 +1,14 @@
 # to do
 
-bugs:
-
-- markdown: extra line after footnote
-- ui: bug with reset style, markdown example shows style is applied after its scope
-- ui: scroll view test failures
-- program: not rendering, showing ^[[I 
-- charts: not rendering
+- bug: fix background issue in markdown viewer
+- bug: scrolling in markdown viewer is not smooth, too fast.
+- bug: responsiveness of events
+- bug: fix style leaking to button border
+- bug: non alt screen is broken (try button)
+- make sure we don't clear screen on non-alt: the diff should never return clear screen
+- bug: markdown viewer has padding?
+- bug: markdown sidebar element stay bold after we move to next one
+- bug: re-rendering a line shorter doesn't erase the rest of the line
 
 ---
 
