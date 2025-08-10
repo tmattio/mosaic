@@ -440,10 +440,14 @@ let zbox ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
             ~justify_content:Toffee.Style.Align_content.Start
             ~inset:
               {
-                top = zero;   (* pin y = 0 *)
-                left = zero;   (* pin x = 0 *)
-                right = auto;   (* let width be content-sized *)
-                bottom = auto;   (* let height be content-sized *)
+                top = zero;
+                (* pin y = 0 *)
+                left = zero;
+                (* pin x = 0 *)
+                right = auto;
+                (* let width be content-sized *)
+                bottom = auto;
+                (* let height be content-sized *)
               }
             ()
         in
@@ -721,7 +725,7 @@ let text ?(style = Style.empty) ?(align = `Left) ?(wrap = `Wrap) ?overflow_x
           }
     | `Left -> None
   in
-  
+
   (* Build final style *)
   let toffee_style =
     match (size_opt, overflow_opt) with
@@ -730,10 +734,10 @@ let text ?(style = Style.empty) ?(align = `Left) ?(wrap = `Wrap) ?overflow_x
     | None, Some overflow -> Toffee.Style.make ~overflow ()
     | Some size, Some overflow -> Toffee.Style.make ~size ~overflow ()
   in
-  
+
   (* Create the final node *)
   let id = Toffee.new_leaf tree toffee_style |> Result.get_ok in
-  
+
   (* Store renderable in context *)
   let _ = Toffee.set_node_context tree id (Some renderable) |> Result.get_ok in
   (* Note: The measure function is used at layout time via compute_layout_with_measure *)
@@ -774,10 +778,14 @@ let canvas ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
     ?margin ?flex_grow ?flex_shrink ?align_self ?style ?border ?border_style
     draw =
   (* Create the canvas node with full size to fill its container *)
-  let canvas_style = 
-    Toffee.Style.make 
-      ~size:{width = Toffee.Style.Dimension.percent 1.0; 
-             height = Toffee.Style.Dimension.percent 1.0} ()
+  let canvas_style =
+    Toffee.Style.make
+      ~size:
+        {
+          width = Toffee.Style.Dimension.percent 1.0;
+          height = Toffee.Style.Dimension.percent 1.0;
+        }
+      ()
   in
   let canvas_id = Toffee.new_leaf tree canvas_style |> Result.get_ok in
   let _ =
@@ -797,6 +805,22 @@ let center child =
 let styled style child =
   (* Wrap the child in a box that applies the style *)
   box ~style [ child ]
+
+let with_key key ((node_id, tree) as element) =
+  (* Annotate the existing element with a key, don't create a wrapper *)
+  let original =
+    match Toffee.get_node_context tree node_id with
+    | Some r -> r
+    | None -> Renderable.Empty
+  in
+  let key_str = Attr.key_to_string key in
+  let keyed =
+    match original with
+    | Renderable.Keyed _ -> original (* Already keyed, keep as is *)
+    | _ -> Renderable.Keyed { key = key_str; child = original }
+  in
+  ignore (Toffee.set_node_context tree node_id (Some keyed));
+  element
 
 let flow ?h_gap ?v_gap ?overflow_x ?overflow_y children =
   (* Flow layout using flexbox with wrap enabled *)

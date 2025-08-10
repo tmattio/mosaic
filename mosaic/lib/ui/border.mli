@@ -6,15 +6,11 @@ type line_style =
   | Thick  (** Heavy-line box drawing characters (┏━┓). *)
   | ASCII  (** Portable characters for maximum compatibility (+-+|). *)
 
-(** Alignment for text within borders *)
 type text_align = [ `Left | `Center | `Right ]
+(** Alignment for text within borders *)
 
+type border_text = { text : string; align : text_align; style : Style.t option }
 (** Text to be embedded in a border line *)
-type border_text = {
-  text : string;
-  align : text_align;
-  style : Style.t option;
-}
 
 type t = {
   top : bool;
@@ -27,8 +23,8 @@ type t = {
   top_text : border_text option;
   bottom_text : border_text option;
 }
-(** Type representing the visual border properties of an element. It
-    includes per-side control, style, and optional text overlays. *)
+(** Type representing the visual border properties of an element. It includes
+    per-side control, style, and optional text overlays. *)
 
 val make :
   ?top:bool ->
@@ -42,10 +38,11 @@ val make :
   ?bottom_text:border_text ->
   unit ->
   t
-(** [make ?top ?bottom ?left ?right ?line_style ?color ?style ?top_text ?bottom_text ()] creates a
-    border specification. All sides default to [true] and line_style to [Solid].
-    The optional style parameter allows applying additional text attributes to
-    the border. The optional top_text and bottom_text allow embedding text in the border lines. *)
+(** [make ?top ?bottom ?left ?right ?line_style ?color ?style ?top_text
+     ?bottom_text ()] creates a border specification. All sides default to
+    [true] and line_style to [Solid]. The optional style parameter allows
+    applying additional text attributes to the border. The optional top_text and
+    bottom_text allow embedding text in the border lines. *)
 
 val top : t -> bool
 (** [top p] returns whether the top border is enabled. *)
@@ -71,11 +68,15 @@ val style : t -> Style.t option
 val with_style : t -> Style.t -> t
 (** [with_style border style] returns a new border with the given style. *)
 
-val with_top_text : t -> string -> ?align:text_align -> ?style:Style.t -> unit -> t
-(** [with_top_text border text ?align ?style ()] returns a new border with text embedded in the top border. *)
+val with_top_text :
+  t -> string -> ?align:text_align -> ?style:Style.t -> unit -> t
+(** [with_top_text border text ?align ?style ()] returns a new border with text
+    embedded in the top border. *)
 
-val with_bottom_text : t -> string -> ?align:text_align -> ?style:Style.t -> unit -> t
-(** [with_bottom_text border text ?align ?style ()] returns a new border with text embedded in the bottom border. *)
+val with_bottom_text :
+  t -> string -> ?align:text_align -> ?style:Style.t -> unit -> t
+(** [with_bottom_text border text ?align ?style ()] returns a new border with
+    text embedded in the bottom border. *)
 
 val normal : t
 (** Pre-defined solid border on all sides. *)

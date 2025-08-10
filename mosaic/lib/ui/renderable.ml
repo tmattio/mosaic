@@ -11,9 +11,15 @@ type t =
       wrap : [ `Wrap | `Truncate | `Clip ];
     }
   | Canvas of {
-      draw : width:int -> height:int -> (x:int -> y:int -> ?style:Style.t -> string -> unit) -> unit;
+      draw :
+        width:int ->
+        height:int ->
+        (x:int -> y:int -> ?style:Style.t -> string -> unit) ->
+        unit;
     }
   | Scroll of { h_offset : int; v_offset : int }
+  | Keyed of { key : string; child : t }
+(* New: wrapper for keyed elements *)
 
 let box ?border ?background () = Box { border; background }
 

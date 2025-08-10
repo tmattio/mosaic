@@ -1,5 +1,4 @@
 type line_style = Solid | Rounded | Double | Thick | ASCII
-
 type text_align = [ `Left | `Center | `Right ]
 
 type border_text = {
@@ -17,7 +16,7 @@ type t = {
   color : Ansi.color option;
   style : Style.t option;
       (* Style attributes (bold, italic, etc.) for the border *)
-  top_text : border_text option;  (* Text to embed in top border *)
+  top_text : border_text option; (* Text to embed in top border *)
   bottom_text : border_text option; (* Text to embed in bottom border *)
 }
 
@@ -38,10 +37,13 @@ let right t = t.right
 let color t = t.color
 let style t = t.style
 let with_style t style = { t with style = Some style }
-let with_top_text t text ?(align = `Center) ?style () = 
+
+let with_top_text t text ?(align = `Center) ?style () =
   { t with top_text = Some { text; align; style } }
-let with_bottom_text t text ?(align = `Center) ?style () = 
+
+let with_bottom_text t text ?(align = `Center) ?style () =
   { t with bottom_text = Some { text; align; style } }
+
 let space_h b = (if left b then 1 else 0) + if right b then 1 else 0
 let space_v b = (if top b then 1 else 0) + if bottom b then 1 else 0
 

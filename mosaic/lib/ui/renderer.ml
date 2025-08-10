@@ -1,8 +1,17 @@
+let src = Logs.Src.create "renderer" ~doc:"UI rendering events"
+
+module Log = (val Logs.src_log src : Logs.LOG)
+
 type render_context = {
   screen : Screen.t;
   dark : bool;
   theme : Theme.t;
   viewport : Screen.Viewport.t;
+  snapshot : Layout_snapshot.t option;
+      (* Optional snapshot to populate during render *)
+  mutable z_counter : int; (* Track z-order during rendering *)
+  inherited_style : Ansi.Style.t option;
+      (* Inherited style from parent for explicit inheritance *)
 }
 
 type bounds = { x : float; y : float; width : float; height : float }
@@ -107,8 +116,7 @@ let rec wrap_line_impl acc current_line width measure_fn =
             let new_width = !current_width + char_width in
             let byte_after = Uutf.decoder_byte_count decoder in
             if new_width > max_width then
-              if !last_space_byte > 0 then !last_space_byte
-              else !current_byte
+              if !last_space_byte > 0 then !last_space_byte else !current_byte
             else (
               current_width := new_width;
               current_byte := byte_after;
@@ -150,16 +158,25 @@ let rec wrap_line_impl acc current_line width measure_fn =
         | `Uchar _u ->
             let char_len = Uutf.decoder_byte_count decoder in
             let this_line = String.sub current_line 0 char_len in
-            let rest = String.sub current_line char_len (String.length current_line - char_len) in
+            let rest =
+              String.sub current_line char_len
+                (String.length current_line - char_len)
+            in
             wrap_line_impl (this_line :: acc) rest width measure_fn
         | _ -> List.rev acc
       else
         let this_line = String.sub current_line 0 char_break in
-        let rest = String.sub current_line char_break (String.length current_line - char_break) in
+        let rest =
+          String.sub current_line char_break
+            (String.length current_line - char_break)
+        in
         wrap_line_impl (this_line :: acc) rest width measure_fn
     else
       let this_line = String.sub current_line 0 break_pos in
-      let rest = String.sub current_line break_pos (String.length current_line - break_pos) in
+      let rest =
+        String.sub current_line break_pos
+          (String.length current_line - break_pos)
+      in
       let skip_spaces s =
         let decoder = Uutf.decoder ~encoding:`UTF_8 (`String s) in
         let byte_pos = ref 0 in
@@ -366,69 +383,73 @@ let draw_border ctx border bounds =
     let left_glyph = if Border.left border then tl else th in
     Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row ~col
       ~glyph:left_glyph ~attrs;
-    
+
     (* Draw horizontal line and text in top border if present *)
-    let draw_end = width - 2 in (* Stop before right corner *)
+    let draw_end = width - 2 in
+    (* Stop before right corner *)
     (match border.top_text with
     | Some { text; align; style = text_style } ->
         let padded_text = " " ^ text ^ " " in
         let text_len = Grid.string_width padded_text in
-        let available = draw_end in (* Space available for text and lines *)
+        let available = draw_end in
+        (* Space available for text and lines *)
         if text_len <= available then (
           (* Calculate position based on alignment *)
-          let text_start = 
+          let text_start =
             match align with
             | `Left -> 1
-            | `Center -> 1 + (available - text_len) / 2
+            | `Center -> 1 + ((available - text_len) / 2)
             | `Right -> draw_end - text_len
           in
           (* Ensure text doesn't overrun into corner *)
           let text_start = min text_start (draw_end - text_len) in
           let text_start = max 1 text_start in
-          
+
           (* Draw horizontal line before text *)
           for i = 1 to text_start - 1 do
-            Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row ~col:(col + i)
-              ~glyph:th ~attrs
+            Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row
+              ~col:(col + i) ~glyph:th ~attrs
           done;
           (* Draw the text *)
-          let text_attrs = 
+          let text_attrs =
             match text_style with
             | Some s -> Style.resolve s ~dark:ctx.dark ~pos:(0, 0) ~bounds:(1, 1)
             | None -> attrs
           in
-          String.iteri (fun idx c ->
-            Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row 
-              ~col:(col + text_start + idx) 
-              ~glyph:(String.make 1 c) ~attrs:text_attrs
-          ) padded_text;
+          String.iteri
+            (fun idx c ->
+              Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row
+                ~col:(col + text_start + idx)
+                ~glyph:(String.make 1 c) ~attrs:text_attrs)
+            padded_text;
           (* Draw horizontal line after text *)
           let line_start = text_start + text_len in
           if line_start <= draw_end then
             for i = line_start to draw_end do
-              Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row ~col:(col + i)
-                ~glyph:th ~attrs
-            done
-        ) else (
-          (* Text too long, just draw the border *)
-          for i = 1 to width - 2 do
-            Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row ~col:(col + i)
-              ~glyph:th ~attrs
+              Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row
+                ~col:(col + i) ~glyph:th ~attrs
+            done)
+        else
+          for
+            (* Text too long, just draw the border *)
+            i = 1 to width - 2
+          do
+            Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row
+              ~col:(col + i) ~glyph:th ~attrs
           done
-        )
     | None ->
         (* No text, draw horizontal line normally *)
         for i = 1 to width - 2 do
-          Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row ~col:(col + i)
-            ~glyph:th ~attrs
+          Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row
+            ~col:(col + i) ~glyph:th ~attrs
         done);
-    
+
     (* Right corner: use corner if right border enabled, otherwise horizontal *)
-    (if width > 1 then
+    if width > 1 then
       let right_glyph = if Border.right border then tr else th in
       Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row
         ~col:(col + width - 1)
-        ~glyph:right_glyph ~attrs))
+        ~glyph:right_glyph ~attrs)
   else (
     (* No top border, only draw vertical lines if no corner will be drawn later *)
     if
@@ -452,63 +473,68 @@ let draw_border ctx border bounds =
     let left_glyph = if Border.left border then bl else bh in
     Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row ~col
       ~glyph:left_glyph ~attrs;
-    
+
     (* Draw horizontal line and text in bottom border if present *)
-    let draw_end = width - 2 in (* Stop before right corner *)
+    let draw_end = width - 2 in
+    (* Stop before right corner *)
     (match border.bottom_text with
     | Some { text; align; style = text_style } ->
         let padded_text = " " ^ text ^ " " in
         let text_len = Grid.string_width padded_text in
-        let available = draw_end in (* Space available for text and lines *)
+        let available = draw_end in
+        (* Space available for text and lines *)
         if text_len <= available then (
           (* Calculate position based on alignment *)
-          let text_start = 
+          let text_start =
             match align with
             | `Left -> 1
-            | `Center -> 1 + (available - text_len) / 2
+            | `Center -> 1 + ((available - text_len) / 2)
             | `Right -> draw_end - text_len
           in
           (* Ensure text doesn't overrun into corner *)
           let text_start = min text_start (draw_end - text_len) in
           let text_start = max 1 text_start in
-          
+
           (* Draw horizontal line before text *)
           for i = 1 to text_start - 1 do
-            Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row
-              ~col:(col + i) ~glyph:bh ~attrs
+            Screen.set_grapheme ctx.screen ~viewport:ctx.viewport
+              ~row:bottom_row ~col:(col + i) ~glyph:bh ~attrs
           done;
           (* Draw the text *)
-          let text_attrs = 
+          let text_attrs =
             match text_style with
             | Some s -> Style.resolve s ~dark:ctx.dark ~pos:(0, 0) ~bounds:(1, 1)
             | None -> attrs
           in
-          String.iteri (fun idx c ->
-            Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row
-              ~col:(col + text_start + idx) 
-              ~glyph:(String.make 1 c) ~attrs:text_attrs
-          ) padded_text;
+          String.iteri
+            (fun idx c ->
+              Screen.set_grapheme ctx.screen ~viewport:ctx.viewport
+                ~row:bottom_row
+                ~col:(col + text_start + idx)
+                ~glyph:(String.make 1 c) ~attrs:text_attrs)
+            padded_text;
           (* Draw horizontal line after text *)
           let line_start = text_start + text_len in
           if line_start <= draw_end then
             for i = line_start to draw_end do
-              Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row
-                ~col:(col + i) ~glyph:bh ~attrs
-            done
-        ) else (
-          (* Text too long, just draw the border *)
-          for i = 1 to width - 2 do
-            Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row
-              ~col:(col + i) ~glyph:bh ~attrs
+              Screen.set_grapheme ctx.screen ~viewport:ctx.viewport
+                ~row:bottom_row ~col:(col + i) ~glyph:bh ~attrs
+            done)
+        else
+          for
+            (* Text too long, just draw the border *)
+            i = 1 to width - 2
+          do
+            Screen.set_grapheme ctx.screen ~viewport:ctx.viewport
+              ~row:bottom_row ~col:(col + i) ~glyph:bh ~attrs
           done
-        )
     | None ->
         (* No text, draw horizontal line normally *)
         for i = 1 to width - 2 do
           Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row
             ~col:(col + i) ~glyph:bh ~attrs
         done);
-    
+
     (* Right corner: use corner if right border enabled, otherwise horizontal *)
     if width > 1 then
       let right_glyph = if Border.right border then br else bh in
@@ -583,9 +609,11 @@ let rec render_node_with_offset ctx (node_id, tree) (parent_x, parent_y) =
     | Ok l -> l
     | Error _ -> failwith "Failed to get layout"
   in
-
   let location = Toffee.Layout.location layout in
   let size = Toffee.Layout.size layout in
+  Log.debug (fun m ->
+      m "Rendering node at (%.1f, %.1f) size (%.1f, %.1f)"
+        (parent_x +. location.x) (parent_y +. location.y) size.width size.height);
 
   (* Calculate absolute position by adding parent offset *)
   let absolute_x = location.x +. parent_x in
@@ -598,6 +626,41 @@ let rec render_node_with_offset ctx (node_id, tree) (parent_x, parent_y) =
   (* Render this node's renderable *)
   (match Toffee.get_node_context tree node_id with
   | Some renderable -> (
+      (* Recursively collect all keys from nested Keyed elements *)
+      let rec collect_keys_and_unwrap rend keys =
+        match rend with
+        | Renderable.Keyed { key; child } ->
+            collect_keys_and_unwrap child ((key, bounds) :: keys)
+        | r -> (r, keys)
+      in
+      let renderable, keys = collect_keys_and_unwrap renderable [] in
+
+      (* Record all keyed elements in snapshot *)
+      (match ctx.snapshot with
+      | Some snapshot ->
+          List.iter
+            (fun (key, key_bounds) ->
+              let rect : Layout_snapshot.rect =
+                {
+                  Layout_snapshot.x = int_of_float key_bounds.x;
+                  Layout_snapshot.y = int_of_float key_bounds.y;
+                  Layout_snapshot.w = int_of_float key_bounds.width;
+                  Layout_snapshot.h = int_of_float key_bounds.height;
+                }
+              in
+              let entry : Layout_snapshot.entry =
+                {
+                  Layout_snapshot.rect;
+                  Layout_snapshot.z_index = ctx.z_counter;
+                  Layout_snapshot.clipping = None;
+                  (* TODO: track clipping context *)
+                }
+              in
+              ctx.z_counter <- ctx.z_counter + 1;
+              Layout_snapshot.record snapshot (Attr.key key) entry)
+            keys
+      | None -> ());
+
       match renderable with
       | Renderable.Empty -> ()
       | Renderable.Box { border; background } ->
@@ -612,9 +675,20 @@ let rec render_node_with_offset ctx (node_id, tree) (parent_x, parent_y) =
           (* Split content into lines *)
           let lines = String.split_on_char '\n' content in
 
+          (* Resolve style with inheritance *)
           let attrs =
-            Style.resolve style ~dark:ctx.dark ~pos:(0, 0)
-              ~bounds:(width, height)
+            match ctx.inherited_style with
+            | Some inherited ->
+                (* Start with inherited style, then apply local style *)
+                let base = inherited in
+                let local_attrs =
+                  Style.resolve style ~dark:ctx.dark ~pos:(0, 0)
+                    ~bounds:(width, height)
+                in
+                Ansi.Style.merge base local_attrs
+            | None ->
+                Style.resolve style ~dark:ctx.dark ~pos:(0, 0)
+                  ~bounds:(width, height)
           in
 
           (* Process lines based on wrap mode *)
@@ -684,6 +758,9 @@ let rec render_node_with_offset ctx (node_id, tree) (parent_x, parent_y) =
                 in
                 ())
             processed_lines
+      | Renderable.Keyed _ ->
+          (* Should never reach here - handled above *)
+          failwith "Unexpected Keyed renderable in render switch"
       | Renderable.Canvas { draw } ->
           let row = int_of_float bounds.y in
           let col = int_of_float bounds.x in
@@ -704,31 +781,103 @@ let rec render_node_with_offset ctx (node_id, tree) (parent_x, parent_y) =
           in
           draw ~width ~height plot
       | Renderable.Scroll { h_offset; v_offset } ->
+          (* Ensure scroll offsets are non-negative to prevent out-of-bounds access *)
+          let safe_h_offset = max 0 h_offset in
+          let safe_v_offset = max 0 v_offset in
+
           (* Clip children to this node's bounds and apply scroll offset *)
           with_clip ctx bounds (fun ctx' ->
-              (* Render children with adjusted offset *)
+              (* Render children with adjusted offset, passing inherited style *)
+              let ctx_with_inherited =
+                { ctx' with inherited_style = ctx.inherited_style }
+              in
               match Toffee.children tree node_id with
               | Ok children ->
                   List.iter
                     (fun child_id ->
-                      render_node_with_offset ctx' (child_id, tree)
-                        ( absolute_x -. float_of_int h_offset,
-                          absolute_y -. float_of_int v_offset ))
+                      render_node_with_offset ctx_with_inherited (child_id, tree)
+                        ( absolute_x -. float_of_int safe_h_offset,
+                          absolute_y -. float_of_int safe_v_offset ))
                     children
               | Error _ -> ())
-          (* Return early since we've handled children *))
+      (* Return early since we've handled children *))
   | _ -> ());
 
   (* Render children with this node's absolute position as their parent offset *)
   (* Skip if we already handled children (e.g., for Scroll nodes) *)
+  (* Recursively unwrap keyed elements to check for Scroll *)
+  let rec unwrap_to_check_scroll rend =
+    match rend with
+    | Renderable.Keyed { child; _ } -> unwrap_to_check_scroll child
+    | Renderable.Scroll _ -> true
+    | _ -> false
+  in
   match Toffee.get_node_context tree node_id with
-  | Some (Renderable.Scroll _) -> () (* Already handled above *)
+  | Some rend when unwrap_to_check_scroll rend -> () (* Already handled above *)
   | _ -> (
+      (* OVERFLOW AND CLIPPING BEHAVIOR:
+         
+         Clipping is applied to children in the following cases:
+         1. When a box has a border (border = Some _) - borders always clip content
+         2. When overflow is set to Hidden or Scroll (but not Visible)
+         
+         Important notes:
+         - Content CAN overflow visually when overflow=Visible and no border is present
+         - This matches CSS behavior where borders create a clipping context
+         - Scroll views handle their own clipping through viewport adjustments
+         - Nested clipping contexts are properly composed
+      *)
+
       (* Check if this node has a border - boxes with borders always clip *)
       let has_border =
         match Toffee.get_node_context tree node_id with
         | Some (Renderable.Box { border = Some _; _ }) -> true
         | _ -> false
+      in
+
+      (* Determine the complete resolved style for this node to pass to children *)
+      let inherited_style_for_children =
+        (* Helper to unwrap Keyed wrappers to get to the actual renderable *)
+        let rec unwrap_renderable = function
+          | Renderable.Keyed { child; _ } -> unwrap_renderable child
+          | other -> other
+        in
+        match Toffee.get_node_context tree node_id with
+        | Some rend -> (
+            (* Unwrap any Keyed wrappers to get to the actual renderable *)
+            let unwrapped = unwrap_renderable rend in
+            match unwrapped with
+            | Renderable.Box { background; _ } -> (
+                match background with
+                | Some bg_style -> (
+                    (* Resolve this node's style *)
+                    let width = int_of_float bounds.width in
+                    let height = int_of_float bounds.height in
+                    let node_style =
+                      Style.resolve bg_style ~dark:ctx.dark ~pos:(0, 0)
+                        ~bounds:(width, height)
+                    in
+                    (* Merge with parent's inherited style if any *)
+                    match ctx.inherited_style with
+                    | Some parent_style ->
+                        Some (Ansi.Style.merge parent_style node_style)
+                    | None -> Some node_style)
+                | None -> ctx.inherited_style)
+            | Renderable.Text { style; _ } -> (
+                (* Text nodes also have styles that should be inherited by children if any *)
+                let width = int_of_float bounds.width in
+                let height = int_of_float bounds.height in
+                let node_style =
+                  Style.resolve style ~dark:ctx.dark ~pos:(0, 0)
+                    ~bounds:(width, height)
+                in
+                (* Merge with parent's inherited style if any *)
+                match ctx.inherited_style with
+                | Some parent_style ->
+                    Some (Ansi.Style.merge parent_style node_style)
+                | None -> Some node_style)
+            | _ -> ctx.inherited_style)
+        | None -> ctx.inherited_style
       in
 
       (* Check if this node has overflow:hidden or clip *)
@@ -769,16 +918,25 @@ let rec render_node_with_offset ctx (node_id, tree) (parent_x, parent_y) =
               Screen.Viewport.make ~row:clip_row ~col:clip_col ~width:clip_width
                 ~height:clip_height
             in
-            let ctx' = { ctx with viewport = clip_viewport } in
+            let ctx' =
+              {
+                ctx with
+                viewport = clip_viewport;
+                inherited_style = inherited_style_for_children;
+              }
+            in
             List.iter
               (fun child_id ->
                 render_node_with_offset ctx' (child_id, tree)
                   (absolute_x, absolute_y))
               children
           else
+            let ctx' =
+              { ctx with inherited_style = inherited_style_for_children }
+            in
             List.iter
               (fun child_id ->
-                render_node_with_offset ctx (child_id, tree)
+                render_node_with_offset ctx' (child_id, tree)
                   (absolute_x, absolute_y))
               children
       | Error _ -> ())

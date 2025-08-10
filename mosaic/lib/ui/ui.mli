@@ -6,6 +6,87 @@
 type element
 (** The abstract type for a UI element. *)
 
+(** Attributes for UI elements *)
+module Attr : sig
+  type key = private string
+  (** Stable identity key for elements *)
+
+  val key : string -> key
+  (** Create a key from a string. Keys should be unique within their parent
+      context. *)
+
+  val key_to_string : key -> string
+  (** Convert a key back to its string representation *)
+end
+
+module Key : sig
+  val create : prefix:string -> Attr.key
+  val of_string : string -> Attr.key
+  val of_int : int -> Attr.key
+end
+
+module Layout_snapshot : sig
+  (** Layout snapshot for element geometry observation
+
+      This module provides a way to record and query the final rendered
+      positions and dimensions of UI elements that have been tagged with keys.
+      The snapshot is populated during rendering and can be queried by the
+      runtime for hit-testing, focus management, and other position-aware
+      operations. *)
+
+  type rect = {
+    x : int;  (** Absolute column position *)
+    y : int;  (** Absolute row position *)
+    w : int;  (** Width in columns *)
+    h : int;  (** Height in rows *)
+  }
+  (** Rectangle representing absolute screen coordinates *)
+
+  type entry = {
+    rect : rect;  (** Absolute bounding box *)
+    z_index : int;  (** Stacking order (higher = on top) *)
+    clipping : rect option;  (** Clipping rectangle if element is clipped *)
+  }
+  (** Entry for a keyed element *)
+
+  type t
+  (** The snapshot type *)
+
+  val create : unit -> t
+  (** Create a new empty snapshot *)
+
+  val record : t -> Attr.key -> entry -> unit
+  (** Record an element's layout information *)
+
+  val get : t -> Attr.key -> entry option
+  (** Get the layout information for a keyed element *)
+
+  val clear : t -> unit
+  (** Clear all recorded entries *)
+
+  val iter : t -> (Attr.key -> entry -> unit) -> unit
+  (** Iterate over all recorded entries *)
+
+  val fold : t -> init:'a -> f:('a -> Attr.key -> entry -> 'a) -> 'a
+  (** Fold over all recorded entries *)
+
+  val keys : t -> Attr.key list
+  (** Get all keys in the snapshot *)
+
+  val hit_test : t -> x:int -> y:int -> Attr.key option
+  (** Find the topmost element at the given position *)
+
+  val hit_test_all : t -> x:int -> y:int -> (Attr.key * entry) list
+  (** Find all elements at the given position, sorted by z-index (topmost first)
+  *)
+
+  val point_in_rect : x:int -> y:int -> rect -> bool
+  (** Check if a point is within a rectangle *)
+
+  val size : t -> int
+  (** Get the number of entries in the snapshot *)
+end
+
 module Style : module type of Style
 (** The type for defining a color style. See the [Style] module. *)
 
@@ -522,6 +603,11 @@ val styled : Style.t -> element -> element
 (** Apply a style to an existing UI element. The style will be applied to a
     wrapper box around the element. *)
 
+val with_key : Attr.key -> element -> element
+(** Attach a stable identity key to an element. This key is used by the runtime
+    for event routing, focus management, and other identity-based operations.
+    Keys should be unique within their parent context. *)
+
 val flow :
   ?h_gap:length_percentage ->
   ?v_gap:length_percentage ->
@@ -748,7 +834,10 @@ val canvas :
   ?style:Style.t ->
   ?border:Border.t ->
   ?border_style:Style.t ->
-  (width:int -> height:int -> (x:int -> y:int -> ?style:Style.t -> string -> unit) -> unit) ->
+  (width:int ->
+  height:int ->
+  (x:int -> y:int -> ?style:Style.t -> string -> unit) ->
+  unit) ->
   element
 (** A self-contained element for custom, imperative drawing.
 
@@ -1196,6 +1285,7 @@ val render :
   ?dark:bool ->
   ?theme:Theme.t ->
   ?calc:calc_resolver ->
+  ?snapshot:Layout_snapshot.t ->
   Screen.t ->
   element ->
   unit
@@ -1204,6 +1294,7 @@ val render :
     @param dark Toggles between light and dark mode for adaptive styles.
     @param theme An optional theme to apply to the UI.
     @param calc Optional calc resolver for calc() expressions.
+    @param snapshot Optional layout snapshot to populate with element positions.
     @param screen The target screen buffer to render to.
     @param ui The root UI element to render. *)
 

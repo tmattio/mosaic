@@ -471,10 +471,14 @@ let resolve (style : t) ~dark ~(pos : int * int) ~(bounds : int * int) :
   | Some color -> cell_style := Ansi.Style.with_fg color !cell_style
   | None -> ());
 
-  (* Resolve background color *)
+  (* Leave fg as None (no change) when no color specified *)
+
+  (* Resolve background color - leave as None for inheritance when not set *)
   (match resolve_color style.bg ~dark ~x ~y ~width ~height with
   | Some color -> cell_style := Ansi.Style.with_bg color !cell_style
   | None -> ());
+
+  (* Leave bg as None (inherit from parent) *)
 
   (* Apply text attributes *)
   if style.bold then cell_style := Ansi.Style.with_bold true !cell_style;

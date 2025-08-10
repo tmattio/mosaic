@@ -1155,7 +1155,8 @@ let table ?(title = None) ?(caption = None) ?(columns = []) ?(rows = [])
             build_vertical_sep header_height box_chars.vertical border_style
           in
           E.hbox
-            ((left_sep :: add_column_separators header_cells header_height) @ [ right_sep ])
+            ((left_sep :: add_column_separators header_cells header_height)
+            @ [ right_sep ])
         else E.hbox (add_column_separators header_cells header_height)
       in
       all_rows := !all_rows @ [ row_content ];
@@ -1210,7 +1211,9 @@ let table ?(title = None) ?(caption = None) ?(columns = []) ?(rows = [])
             let right_sep =
               build_vertical_sep row_height box_chars.vertical border_style
             in
-            E.hbox ((left_sep :: add_column_separators cells row_height) @ [ right_sep ])
+            E.hbox
+              ((left_sep :: add_column_separators cells row_height)
+              @ [ right_sep ])
           else E.hbox (add_column_separators cells row_height)
         in
         all_rows := !all_rows @ [ row_content ];
@@ -1276,7 +1279,8 @@ let table ?(title = None) ?(caption = None) ?(columns = []) ?(rows = [])
              build_vertical_sep footer_height box_chars.vertical border_style
            in
            E.hbox
-             ((left_sep :: add_column_separators footer_cells footer_height) @ [ right_sep ])
+             ((left_sep :: add_column_separators footer_cells footer_height)
+             @ [ right_sep ])
          else E.hbox (add_column_separators footer_cells footer_height)
        in
        all_rows := !all_rows @ [ row_content ]);

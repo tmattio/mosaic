@@ -1,6 +1,9 @@
 module Style = Style
 module Border = Border
 module Theme = Theme
+module Attr = Attr
+module Layout_snapshot = Layout_snapshot
+module Key = Key
 include Element
 
 type element = Element.t
@@ -117,7 +120,7 @@ module Canvas = struct
               (* Braille characters use a 2x4 grid of dots *)
               (* Each cell can represent 8 possible dot positions *)
               let braille_buffer = Hashtbl.create 100 in
-              
+
               (* Draw line using Bresenham algorithm and store in buffer *)
               let rec draw x y err =
                 (* Calculate braille cell position and bit position *)
@@ -125,7 +128,7 @@ module Canvas = struct
                 let cell_y = y / 4 in
                 let bit_x = x mod 2 in
                 let bit_y = y mod 4 in
-                
+
                 (* Braille dot mapping: *)
                 (* 0 3 *)
                 (* 1 4 *)
@@ -143,14 +146,13 @@ module Canvas = struct
                   | 1, 3 -> 7
                   | _ -> 0
                 in
-                
+
                 let key = (cell_x, cell_y) in
-                let current = 
-                  try Hashtbl.find braille_buffer key 
-                  with Not_found -> 0 
+                let current =
+                  try Hashtbl.find braille_buffer key with Not_found -> 0
                 in
                 Hashtbl.replace braille_buffer key (current lor (1 lsl bit_pos));
-                
+
                 if x = x2 && y = y2 then ()
                 else
                   let e2 = 2 * err in
@@ -163,7 +165,7 @@ module Canvas = struct
                   draw x' y' err''
               in
               draw x1 y1 (dx - dy);
-              
+
               (* Render the braille buffer *)
               Hashtbl.iter
                 (fun (x, y) bits ->
@@ -223,35 +225,56 @@ let canvas ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
     ?padding ?margin ?flex_grow ?flex_shrink ?align_self ?style ?border
     ?border_style draw_fn
 
-let render ?(dark = false) ?(theme = Theme.default_dark) ?calc screen ui =
+let render ?(dark = false) ?(theme = Theme.default_dark) ?calc ?snapshot screen
+    ui =
   let viewport =
     Screen.Viewport.full ~rows:(Screen.rows screen) ~cols:(Screen.cols screen)
   in
 
-  let ctx = { Renderer.screen; dark; theme; viewport } in
+  (* If a snapshot is provided, use it for recording during rendering *)
+  let render_with_ctx snapshot_opt =
+    let ctx =
+      {
+        Renderer.screen;
+        dark;
+        theme;
+        viewport;
+        snapshot = snapshot_opt;
+        z_counter = 0;
+        inherited_style = None;
+      }
+    in
 
-  let ui_id, ui_tree = ui in
-  let available_space =
-    {
-      Toffee.Geometry.Size.width =
-        Toffee.Available_space.Definite (float_of_int (Screen.cols screen));
-      height =
-        Toffee.Available_space.Definite (float_of_int (Screen.rows screen));
-    }
+    let ui_id, ui_tree = ui in
+    let available_space =
+      {
+        Toffee.Geometry.Size.width =
+          Toffee.Available_space.Definite (float_of_int (Screen.cols screen));
+        height =
+          Toffee.Available_space.Definite (float_of_int (Screen.rows screen));
+      }
+    in
+
+    (* Compute layout with measure function for text nodes *)
+    (* Note: calc support is defined in the API but not yet fully implemented in Toffee.
+       The calc_resolver parameter is accepted but currently ignored. *)
+    let _ = calc in
+    (* Suppress unused warning until Toffee implements calc support *)
+    let _ =
+      Toffee.compute_layout_with_measure ui_tree ui_id available_space
+        default_measure_fn
+      |> Result.get_ok
+    in
+
+    Renderer.render_node ctx (ui_id, ui_tree)
   in
 
-  (* Compute layout with measure function for text nodes *)
-  (* Note: calc support is defined in the API but not yet fully implemented in Toffee.
-     The calc_resolver parameter is accepted but currently ignored. *)
-  let _ = calc in
-  (* Suppress unused warning until Toffee implements calc support *)
-  let _ =
-    Toffee.compute_layout_with_measure ui_tree ui_id available_space
-      default_measure_fn
-    |> Result.get_ok
-  in
-
-  Renderer.render_node ctx (ui_id, ui_tree)
+  (* Use with_recording if snapshot provided, otherwise render without *)
+  match snapshot with
+  | Some snap ->
+      Layout_snapshot.with_recording snap (fun () ->
+          render_with_ctx (Some snap))
+  | None -> render_with_ctx None
 
 let render_string ?(width = 80) ?height ?(dark = false)
     ?(theme = Theme.default_dark) ?calc ui =
@@ -288,5 +311,7 @@ let render_string ?(width = 80) ?height ?(dark = false)
 let print ?(width = 80) ?height ?(dark = false) ?(theme = Theme.default_dark)
     ?calc ui =
   let output = render_string ~width ?height ~dark ~theme ?calc ui in
-  print_string output;
-  flush stdout
+  (* Use buffered output for better performance *)
+  let out_channel = stdout in
+  output_string out_channel output;
+  flush out_channel

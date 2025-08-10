@@ -3,4 +3,4 @@
 (library
  (name ui)
  (public_name mosaic.ui)
- (libraries matrix.ansi matrix.screen matrix.grid toffee uutf))
+ (libraries matrix.ansi matrix.screen matrix.grid toffee uutf logs))
