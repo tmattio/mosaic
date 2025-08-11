@@ -201,23 +201,6 @@ let setup_terminal t =
         Tty_eio.enable_bracketed_paste t.term;
         Tty_eio.flush t.term;
 
-        (* Clear any pending input that might have been buffered before raw mode *)
-        (* Use non-blocking read to avoid blocking the domain *)
-        let input_fd = Tty_eio.input_fd t.term in
-        if Unix.isatty input_fd then (
-          Unix.set_nonblock input_fd; (* Ensure non-blocking mode *)
-          let buf = Bytes.create 4096 in
-          let rec clear_input ~max_iters =
-            if max_iters <= 0 then ()
-            else
-              try
-                Eio_unix.await_readable input_fd; (* Non-blocking wait for readability *)
-                let n = Tty_eio.read t.term buf 0 4096 in
-                if n > 0 then clear_input ~max_iters:(max_iters - 1)
-              with _ -> () (* Ignore errors, e.g., no data or EAGAIN *)
-          in
-          try clear_input ~max_iters:10 with _ -> ());
-
         Log.debug (fun m -> m "Terminal setup complete")
       with exn ->
         Log.err (fun m ->

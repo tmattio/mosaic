@@ -17,13 +17,8 @@ let create ~sw ~env ?tty () =
   (* Create the underlying Matrix TTY *)
   let matrix_tty = Tty.create ?tty input_fd output_fd in
 
-  (* Set input to non-blocking mode for Eio compatibility *)
-  Unix.set_nonblock input_fd;
-
   (* Register cleanup with switch *)
-  Switch.on_release sw (fun () ->
-      Unix.clear_nonblock input_fd;
-      Tty.release matrix_tty);
+  Switch.on_release sw (fun () -> Tty.release matrix_tty);
 
   { matrix_tty; input = Source env#stdin; output = Sink env#stdout }
 
@@ -58,22 +53,12 @@ let flush _t =
   ()
 
 let read t buf ofs len =
-  (* Use Eio flow for non-blocking read with proper retry on EAGAIN *)
+  (* Use Eio flow for reading *)
   let (Source input) = t.input in
   let cs = Cstruct.create len in
-  let rec safe_read () =
-    try
-      let n = Flow.single_read input cs in
-      Cstruct.blit_to_bytes cs 0 buf ofs n;
-      n
-    with
-    | Unix.Unix_error ((Unix.EAGAIN | Unix.EWOULDBLOCK | Unix.EINTR), _, _) ->
-        (* Await readiness and retry *)
-        Eio_unix.await_readable (Tty.input_fd t.matrix_tty);
-        safe_read ()
-    | End_of_file -> 0
-  in
-  safe_read ()
+  let n = Flow.single_read input cs in
+  Cstruct.blit_to_bytes cs 0 buf ofs n;
+  n
 
 (** {1 Screen Management} *)
 

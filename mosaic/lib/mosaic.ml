@@ -138,7 +138,7 @@ let run_eio ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 30)
   let root_fiber = Fiber.create_root root_fn in
   let debug_log =
     match debug with
-    | Some path -> Some (open_out_gen [ Open_append; Open_creat ] 0o666 path)
+    | Some path -> Some (open_out_gen [ Open_wronly; Open_creat ] 0o666 path)
     | None -> None
   in
   let cfg =
