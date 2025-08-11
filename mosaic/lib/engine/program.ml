@@ -300,9 +300,6 @@ let do_render t dyn_el =
     | _ -> ()
   in
 
-  (* NEW: Use a Buffer.t to collect all output strings before writing *)
-  let output_buf = Buffer.create 4096 in  (* Initial size; will grow as needed *)
-
   match t.render_mode with
   | Alt_screen rm ->
       (* Ensure we reuse a persistent [Screen.t] so that [present] can diff
@@ -321,29 +318,24 @@ let do_render t dyn_el =
 
       (if is_first_frame then (
          (* First frame: must do a full render since front buffer is empty *)
-         Buffer.add_string output_buf (Ansi.cursor_position 1 1);
-         Buffer.add_string output_buf (Screen.render_to_string scr);
-         (* NEW: Single write for the entire output *)
-         let output = Buffer.contents output_buf in
-         log_terminal_output output "alt-screen first frame (full render, buffered)";
+         let output = Ansi.cursor_position 1 1 ^ Screen.render_to_string scr in
+         log_terminal_output output "alt-screen first frame (full render)";
          with_term_mutex t ~f:(fun () ->
-             Tty_eio.write t.term (Bytes.of_string output) 0 (String.length output);
+             Tty_eio.write_string t.term output;
              Tty_eio.flush t.term))
        else
          (* Subsequent frames: use patches with synchronized updates *)
          let patches = Screen.render scr in
          if patches <> [] then (
-           Buffer.add_string output_buf (Screen.patches_to_sgr_synchronized patches);
-           let output = Buffer.contents output_buf in
+           let output = Screen.patches_to_sgr_synchronized patches in
            Log.info (fun m ->
-               m "Alt-screen incremental update: %d patches (buffered)"
+               m "Alt-screen incremental update: %d patches"
                  (List.length patches));
            log_terminal_output output
-             (Printf.sprintf "alt-screen patches (%d patches, buffered)"
+             (Printf.sprintf "alt-screen patches (%d patches)"
                 (List.length patches));
            with_term_mutex t ~f:(fun () ->
-               Tty_eio.write t.term (Bytes.of_string output) 0
-                 (String.length output);
+               Tty_eio.write_string t.term output;
                Tty_eio.flush t.term))
          else Log.info (fun m -> m "Alt-screen frame skipped: no patches"));
 
@@ -364,23 +356,21 @@ let do_render t dyn_el =
       if needs_full then (
         let scr = Screen.create ~rows:height ~cols:width () in
         render_to scr;
-        (* NEW: Buffer the output *)
-        Buffer.add_string output_buf (Ansi.cursor_position 1 1);
-        Buffer.add_string output_buf Ansi.clear_screen;
-        Buffer.add_string output_buf (Screen.render_to_string scr);
-        Buffer.add_string output_buf "\n";
-        (* Single write *)
-        let output = Buffer.contents output_buf in
-        log_terminal_output output "standard mode full render (buffered)";
+        let output = 
+          Ansi.cursor_position 1 1 ^ 
+          Ansi.clear_screen ^ 
+          Screen.render_to_string scr ^ 
+          "\n" in
+        log_terminal_output output "standard mode full render";
         with_term_mutex t ~f:(fun () ->
-            Tty_eio.write t.term (Bytes.of_string output) 0 (String.length output);
+            Tty_eio.write_string t.term output;
             Tty_eio.flush t.term);
         let dirty_regions = Screen.present scr in
         let render_elapsed_ms =
           (Unix.gettimeofday () -. render_start) *. 1000.
         in
         Log.debug (fun m ->
-            m "Rendered standard frame (full) with %d dirty regions in %.2fms (buffered)"
+            m "Rendered standard frame (full) with %d dirty regions in %.2fms"
               (List.length dirty_regions)
               render_elapsed_ms);
         rm.previous_dynamic <- Some scr)
@@ -389,16 +379,15 @@ let do_render t dyn_el =
         render_to scr;
         let patches = Screen.render scr in
         if patches <> [] then (
-          Buffer.add_string output_buf (Screen.patches_to_sgr_synchronized patches);
-          let output = Buffer.contents output_buf in
+          let output = Screen.patches_to_sgr_synchronized patches in
           Log.info (fun m ->
-              m "Standard mode incremental update: %d patches (buffered)"
+              m "Standard mode incremental update: %d patches"
                 (List.length patches));
           log_terminal_output output
-            (Printf.sprintf "standard mode patches (%d patches, buffered)"
+            (Printf.sprintf "standard mode patches (%d patches)"
                (List.length patches));
           with_term_mutex t ~f:(fun () ->
-              Tty_eio.write t.term (Bytes.of_string output) 0 (String.length output);
+              Tty_eio.write_string t.term output;
               Tty_eio.flush t.term))
         else Log.info (fun m -> m "Standard mode frame skipped: no patches");
         let dirty_regions = Screen.present scr in
@@ -408,7 +397,7 @@ let do_render t dyn_el =
         Log.debug (fun m ->
             m
               "Rendered standard frame (partial) with %d dirty regions in \
-               %.2fms (buffered)"
+               %.2fms"
               (List.length dirty_regions)
               render_elapsed_ms);
         ()

@@ -9,18 +9,18 @@ let create ?default ?name () = { id = Type.Id.make (); default; name }
 (* A single frame in the stack *)
 type frame = Frame : 'a t * 'a -> frame
 
-(* One stack per domain *)
-let dls : frame list Domain.DLS.key = Domain.DLS.new_key (fun () -> [])
-let get_stack () = Domain.DLS.get dls
-let set_stack nest = Domain.DLS.set dls nest
+(* Global stack *)
+let stack : frame list ref = ref []
+let get_stack () = !stack
+let set_stack nest = stack := nest
 
-(*  provide : push value, run thunk, pop                             *)
+(*  provide : push value, run thunk, pop *)
 let provide (type a) (ctx : a t) (value : a) (thunk : unit -> 'b) : 'b =
   let prev = get_stack () in
   set_stack (Frame (ctx, value) :: prev);
   Fun.protect thunk ~finally:(fun () -> set_stack prev)
 
-(*  use : lookup nearest value                                       *)
+(*  use : lookup nearest value *)
 let use (type a) (ctx : a t) : a =
   let rec find : frame list -> a option = function
     | [] -> None

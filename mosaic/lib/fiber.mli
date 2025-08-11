@@ -6,7 +6,6 @@ module Cmd = Engine.Cmd
 type t
 (** Module type for polymorphic command runner *)
 
-val current_key : t option Domain.DLS.key
 val create_root : (unit -> Ui.element) -> t
 val mark_dirty : ?reason:string -> t -> unit
 val is_dirty : t -> bool

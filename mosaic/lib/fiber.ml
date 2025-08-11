@@ -14,16 +14,13 @@ type t = {
   mutable ui : Ui.element option;
   mutable dirty : bool;
   mutable alive : bool;
-  (* NEW: For subscription caching *)
-  mutable subs_cache : erased_sub list option;
-  mutable subs_dirty : bool;
 }
 and erased_sub = Erased_sub : 'msg Sub.t -> erased_sub
 
-(* Domain-local pointer to the fiber that is *currently rendering*. *)
-let current_key : t option Domain.DLS.key = Domain.DLS.new_key (fun () -> None)
-let get_current () = Domain.DLS.get current_key
-let set_current f = Domain.DLS.set current_key (Some f)
+(* Global pointer to the fiber that is *currently rendering*. *)
+let current_fiber : t option ref = ref None
+let get_current () = !current_fiber
+let set_current f = current_fiber := Some f
 
 let make ?parent render_fn =
   {
@@ -35,8 +32,6 @@ let make ?parent render_fn =
     ui = None;
     dirty = true;
     alive = true;
-    subs_cache = None;  (* NEW *)
-    subs_dirty = true;   (* NEW: Start dirty to force initial collection *)
   }
 
 let create_root render = make render
@@ -44,7 +39,7 @@ let create_root render = make render
 let with_current f k =
   let old = get_current () in
   set_current f;
-  Fun.protect k ~finally:(fun () -> Domain.DLS.set current_key old)
+  Fun.protect k ~finally:(fun () -> current_fiber := old)
 
 (* Global ref for requesting renders when bubbling to root *)
 let request_render_ref : (unit -> unit) ref = ref (fun () -> ())
@@ -64,44 +59,26 @@ let mark_dirty ?(reason = "unknown") f =
     in
     bubble f)
 
-(* NEW: Similar to mark_dirty, but for subscription changes *)
-let mark_subs_dirty ?(reason = "subs_change") f =
-  if not f.alive then ()
-  else (
-    Log.debug (fun m -> m "Marking fiber subs dirty (reason: %s)" reason);
-    let rec bubble n =
-      if not n.subs_dirty then (
-        n.subs_dirty <- true;
-        n.subs_cache <- None;  (* Invalidate cache *)
-        match n.parent with
-        | Some p -> bubble p
-        | None -> ()
-      )
-    in
-    bubble f
-  )
 
 let is_dirty f = f.dirty
 
 (* Type-erased command for React *)
 type erased_cmd = Erased_cmd : unit Cmd.t -> erased_cmd
 
-(* Domain-local storage for pending commands *)
-let pending_cmds_key : erased_cmd list Domain.DLS.key =
-  Domain.DLS.new_key (fun () -> [])
+(* Global storage for pending commands *)
+let pending_cmds : erased_cmd list ref = ref []
 
 (* Add a command to the pending queue – map its message type to unit *)
 let add_pending_cmd (type msg) (cmd : msg Cmd.t) =
   let cmd' : unit Cmd.t = Cmd.map (fun _ -> ()) cmd in
-  let cmds = Domain.DLS.get pending_cmds_key in
-  Domain.DLS.set pending_cmds_key (Erased_cmd cmd' :: cmds)
+  pending_cmds := Erased_cmd cmd' :: !pending_cmds
 
-let has_pending_commands _f = Domain.DLS.get pending_cmds_key <> []
+let has_pending_commands _f = !pending_cmds <> []
 
 (* Collect and clear pending commands (FIFO) *)
 let collect_pending_commands _f : erased_cmd list =
-  let cmds = List.rev (Domain.DLS.get pending_cmds_key) in
-  Domain.DLS.set pending_cmds_key [];
+  let cmds = List.rev !pending_cmds in
+  pending_cmds := [];
   cmds
 
 (* Hook effect handler *)
@@ -171,11 +148,6 @@ let with_handler f k =
                   let idx = f.hook_idx in
                   f.hook_idx <- idx + 1;
                   let slot = Hook_array.get_slot f.hooks idx in
-                  (* NEW: Mark subs dirty when adding/changing a subscription *)
-                  (* We always mark dirty since we can't compare existentially typed subs *)
-                  (match Hook_array.get slot with
-                   | Hook_array.P (Hook_array.Sub _) -> () (* Already had a sub, assume unchanged *)
-                   | _ -> mark_subs_dirty f);  (* New or changed type *)
                   Hook_array.set slot (Hook_array.Sub sub);
                   continue cont ())
           | Hook.Dispatch_cmd cmd ->
@@ -296,23 +268,11 @@ let rec reconcile f : Ui.element =
     f.hook_idx <- 0;
     let ui = with_current f (fun () -> with_handler f f.render_fn) in
     f.ui <- Some ui;
-    let old_children = f.children in  (* NEW: Save old for comparison *)
     let new_children = Array.mapi (fun i child ->
       (* Yield per child to prevent blocking during large tree reconciliations *)
       if i > 0 && i mod 10 = 0 then Eio.Fiber.yield ();
-      reconcile_child child) old_children in
+      reconcile_child child) f.children in
     f.children <- new_children;
-    (* NEW: Check if children changed; if so, mark subs dirty *)
-    let children_changed =
-      Array.length old_children <> Array.length new_children ||
-      (let changed = ref false in
-       for i = 0 to Array.length new_children - 1 do
-         if i < Array.length old_children && old_children.(i) != new_children.(i) then 
-           changed := true
-       done;
-       !changed)
-    in
-    if children_changed then mark_subs_dirty ~reason:"children_changed" f;
     let elapsed_ms = (Unix.gettimeofday () -. start_time) *. 1000. in
     Log.debug (fun m -> m "Reconciliation completed in %.2fms" elapsed_ms);
     ui
@@ -336,43 +296,25 @@ let rec destroy f =
     Array.iter destroy f.children;
     (* Clear UI reference *)
     f.ui <- None;
-    f.dirty <- false;
-    (* NEW: Clear sub cache *)
-    f.subs_cache <- None;
-    f.subs_dirty <- true)
+    f.dirty <- false)
 
 
 (* Collect all subscriptions from this fiber and its children *)
-let rec collect_subscriptions_internal f acc =
-  (* NEW: Use cache if not dirty *)
-  if not f.subs_dirty then
-    match f.subs_cache with
-    | Some cached -> cached @ acc  (* Append to acc for consistency *)
-    | None -> failwith "Invariant violation: clean but no cache"
-  else (
-    (* Collect subscriptions from this fiber's hooks *)
-    let local_subs = ref [] in
-    for i = 0 to Hook_array.length f.hooks - 1 do
-      match Hook_array.get (Hook_array.get_slot f.hooks i) with
-      | Hook_array.P (Hook_array.Sub sub) ->
-          local_subs := Erased_sub sub :: !local_subs
-      | _ -> ()
-    done;
-    (* Yield after processing hooks to allow other fibers to run *)
-    if Hook_array.length f.hooks > 0 then Eio.Fiber.yield ();
-    (* Collect from children *)
-    let all_subs =
-      Array.fold_left
-        (fun acc child ->
-          (* Yield per child for large trees *)
-          if Array.length f.children > 1 then Eio.Fiber.yield ();
-          collect_subscriptions_internal child acc)
-        !local_subs f.children
-    in
-    (* NEW: Cache the result and clear dirty flag *)
-    f.subs_cache <- Some all_subs;
-    f.subs_dirty <- false;
-    all_subs @ acc
-  )
-
-let collect_subscriptions f = collect_subscriptions_internal f []
+let rec collect_subscriptions f =
+  (* Collect subscriptions from this fiber's hooks *)
+  let local_subs = ref [] in
+  for i = 0 to Hook_array.length f.hooks - 1 do
+    match Hook_array.get (Hook_array.get_slot f.hooks i) with
+    | Hook_array.P (Hook_array.Sub sub) ->
+        local_subs := Erased_sub sub :: !local_subs
+    | _ -> ()
+  done;
+  (* Yield after processing hooks to allow other fibers to run *)
+  if Hook_array.length f.hooks > 0 then Eio.Fiber.yield ();
+  (* Collect from children and combine *)
+  Array.fold_left
+    (fun acc child ->
+      (* Yield per child for large trees *)
+      if Array.length f.children > 1 then Eio.Fiber.yield ();
+      collect_subscriptions child @ acc)
+    !local_subs f.children

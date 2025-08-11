@@ -6,8 +6,8 @@ type t = {
   mutable snapshot : Ui.Layout_snapshot.t option;
 }
 
-(* Domain-local reference for the current context *)
-let current_key : t option Domain.DLS.key = Domain.DLS.new_key (fun () -> None)
+(* Global reference for the current context *)
+let current_context : t option ref = ref None
 
 let create () =
   let router = Engine.Input_router.create () in
@@ -15,8 +15,8 @@ let create () =
   Engine.Focus_manager.set_router focus_mgr router;
   { input_router = router; focus_manager = focus_mgr; snapshot = None }
 
-let current () = Domain.DLS.get current_key
-let set_current ctx = Domain.DLS.set current_key ctx
+let current () = !current_context
+let set_current ctx = current_context := ctx
 
 let update_snapshot t snapshot =
   t.snapshot <- Some snapshot;

@@ -36,14 +36,13 @@ let pp_meta ppf = function
   | Perform _ -> Format.fprintf ppf "Perform(<fn>)"
   | Perform_eio _ -> Format.fprintf ppf "Perform_eio(<fn>)"
 
-(* Domain-local queue for collecting meta commands during execution *)
-let local_meta_queue_key : meta Queue.t option Domain.DLS.key =
-  Domain.DLS.new_key (fun () -> None)
+(* Global queue for collecting meta commands during execution *)
+let meta_queue : meta Queue.t option ref = ref None
 
 (* Enqueue a meta command *)
 let enqueue_meta meta =
   Log.debug (fun m -> m "Enqueuing meta command: %a" pp_meta meta);
-  match Domain.DLS.get local_meta_queue_key with
+  match !meta_queue with
   | Some q -> Queue.add meta q
   | None -> ()
 
@@ -139,12 +138,12 @@ let map f (cmd : _ t) =
 let run ~dispatch (cmd : _ t) =
   Log.debug (fun m -> m "Running command");
   let queue = Queue.create () in
-  let old = Domain.DLS.get local_meta_queue_key in
-  Domain.DLS.set local_meta_queue_key (Some queue);
+  let old = !meta_queue in
+  meta_queue := Some queue;
   Fun.protect
     (fun () ->
       cmd.run ~dispatch;
       (* Return the collected meta commands *)
       let metas = Queue.fold (fun acc m -> m :: acc) [] queue in
       List.rev metas)
-    ~finally:(fun () -> Domain.DLS.set local_meta_queue_key old)
+    ~finally:(fun () -> meta_queue := old)
