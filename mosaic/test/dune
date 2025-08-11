@@ -1,10 +1,10 @@
 (library
  (name test_utils)
- (modules test_utils)
  (libraries
   mosaic
-  mosaic.tea
+  mosaic.engine
   matrix.tty
+  matrix.vte
   matrix.screen
   matrix.grid
   uutf
