@@ -1,8 +1,15 @@
-open Test_utils
 open Alcotest
 
 let render_to_string ui =
   Test_utils.render_to_string ~width:100 ~height:50 ui |> String.trim
+
+(** Assert that output contains a substring *)
+let assert_output_contains output expected =
+  try
+    let _ = Str.search_forward (Str.regexp_string expected) output 0 in
+    ()
+  with Not_found ->
+    Alcotest.failf "Output does not contain '%s':\n%s" expected output
 
 let test_paragraphs () =
   let md = "This is a simple paragraph." in

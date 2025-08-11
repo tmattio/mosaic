@@ -1,11 +1,13 @@
 (** Tests for the Event_source module *)
 
-open Test_utils
 open Engine
 
 let make_test_terminal ~sw input =
   let term, get_output, _close = Tty_eio.create_from_strings ~sw input in
   (term, get_output)
+
+(** Run a function within Eio context - helper to reduce boilerplate *)
+let run_eio f = Eio_main.run (fun env -> Eio.Switch.run (fun sw -> f env sw))
 
 (** Helper to create source and read event *)
 let read_event_from_string input ~timeout =
@@ -21,7 +23,7 @@ let test_single_key_event () =
       Alcotest.(check bool) "no ctrl" false modifier.ctrl;
       Alcotest.(check bool) "no alt" false modifier.alt;
       Alcotest.(check bool) "no shift" false modifier.shift
-  | `Event e -> Alcotest.failf "Unexpected event: %s" (show_event e)
+  | `Event e -> Alcotest.failf "Unexpected event: %a" Input.pp_event e
   | `Timeout -> Alcotest.fail "Unexpected timeout"
 
 let test_ctrl_c_event () =
@@ -33,7 +35,7 @@ let test_ctrl_c_event () =
       Alcotest.(check bool) "ctrl is pressed" true ctrl;
       Alcotest.(check bool) "alt not pressed" false alt;
       Alcotest.(check bool) "shift not pressed" false shift
-  | `Event e -> Alcotest.failf "Unexpected event: %s" (show_event e)
+  | `Event e -> Alcotest.failf "Unexpected event: %a" Input.pp_event e
   | `Timeout -> Alcotest.fail "Unexpected timeout"
 
 let test_event_queue () =
@@ -65,7 +67,7 @@ let test_timeout_behavior () =
   (* Test with empty input *)
   match read_event_from_string "" ~timeout:(Some 0.01) with
   | `Timeout -> () (* Expected *)
-  | `Event e -> Alcotest.failf "Unexpected event: %s" (show_event e)
+  | `Event e -> Alcotest.failf "Unexpected event: %a" Input.pp_event e
 
 let test_eof_handling () =
   (* Test EOF after some input *)
@@ -83,7 +85,8 @@ let test_eof_handling () =
   (* Next read should be EOF or timeout *)
   match Event_source.read source ~clock ~timeout:(Some 0.01) with
   | `Timeout -> () (* Acceptable for timeout *)
-  | `Event e -> Alcotest.failf "Unexpected event after input: %s" (show_event e)
+  | `Event e ->
+      Alcotest.failf "Unexpected event after input: %a" Input.pp_event e
 
 let test_escape_sequence () =
   (* Test arrow key *)
@@ -92,7 +95,7 @@ let test_escape_sequence () =
       Alcotest.(check bool)
         "no modifiers" false
         (modifier.ctrl || modifier.alt || modifier.shift)
-  | `Event e -> Alcotest.failf "Unexpected event: %s" (show_event e)
+  | `Event e -> Alcotest.failf "Unexpected event: %a" Input.pp_event e
   | `Timeout -> Alcotest.fail "Unexpected timeout"
 
 let test_mouse_event () =
@@ -101,7 +104,7 @@ let test_mouse_event () =
   | `Event (Input.Mouse (Button_press (x, y, Left, _))) ->
       Alcotest.(check int) "x coordinate" 4 x;
       Alcotest.(check int) "y coordinate" 9 y
-  | `Event e -> Alcotest.failf "Unexpected event: %s" (show_event e)
+  | `Event e -> Alcotest.failf "Unexpected event: %a" Input.pp_event e
   | `Timeout -> Alcotest.fail "Unexpected timeout"
 
 let test_paste_events () =
@@ -114,20 +117,21 @@ let test_paste_events () =
   (* Should get paste start *)
   (match Event_source.read source ~clock ~timeout:(Some 0.1) with
   | `Event Input.Paste_start -> ()
-  | `Event e -> Alcotest.failf "Expected paste start, got: %s" (show_event e)
+  | `Event e -> Alcotest.failf "Expected paste start, got: %a" Input.pp_event e
   | _ -> Alcotest.fail "Expected paste start event");
 
   (* Should get paste content *)
   (match Event_source.read source ~clock ~timeout:(Some 0.1) with
   | `Event (Input.Paste content) ->
       Alcotest.(check string) "paste content" "test" content
-  | `Event e -> Alcotest.failf "Expected paste content, got: %s" (show_event e)
+  | `Event e ->
+      Alcotest.failf "Expected paste content, got: %a" Input.pp_event e
   | _ -> Alcotest.fail "Expected paste content event");
 
   (* Should get paste end *)
   match Event_source.read source ~clock ~timeout:(Some 0.1) with
   | `Event Input.Paste_end -> ()
-  | `Event e -> Alcotest.failf "Expected paste end, got: %s" (show_event e)
+  | `Event e -> Alcotest.failf "Expected paste end, got: %a" Input.pp_event e
   | _ -> Alcotest.fail "Expected paste end event"
 
 (** Test kitty keyboard mode events *)
@@ -137,7 +141,7 @@ let test_kitty_keyboard_events () =
   | `Event (Input.Key { key = Char c; modifier = { ctrl; _ }; _ }) ->
       Alcotest.(check char) "key is 'a'" 'a' (Uchar.to_char c);
       Alcotest.(check bool) "ctrl is pressed" true ctrl
-  | `Event e -> Alcotest.failf "Unexpected event: %s" (show_event e)
+  | `Event e -> Alcotest.failf "Unexpected event: %a" Input.pp_event e
   | _ -> Alcotest.fail "Expected key event"
 
 (** Test resize events *)
@@ -147,7 +151,7 @@ let test_resize_event () =
   | `Event (Input.Resize (width, height)) ->
       Alcotest.(check int) "width" 80 width;
       Alcotest.(check int) "height" 24 height
-  | `Event e -> Alcotest.failf "Expected resize, got: %s" (show_event e)
+  | `Event e -> Alcotest.failf "Expected resize, got: %a" Input.pp_event e
   | _ -> Alcotest.fail "Expected resize event"
 
 (** Test focus/blur events *)
@@ -155,13 +159,13 @@ let test_focus_blur_events () =
   (* Test focus in *)
   (match read_event_from_string "\x1b[I" ~timeout:(Some 0.1) with
   | `Event Input.Focus -> ()
-  | `Event e -> Alcotest.failf "Expected focus, got: %s" (show_event e)
+  | `Event e -> Alcotest.failf "Expected focus, got: %a" Input.pp_event e
   | _ -> Alcotest.fail "Expected focus event");
 
   (* Test focus out *)
   match read_event_from_string "\x1b[O" ~timeout:(Some 0.1) with
   | `Event Input.Blur -> ()
-  | `Event e -> Alcotest.failf "Expected blur, got: %s" (show_event e)
+  | `Event e -> Alcotest.failf "Expected blur, got: %a" Input.pp_event e
   | _ -> Alcotest.fail "Expected blur event"
 
 (** Test edge cases *)
@@ -169,7 +173,7 @@ let test_edge_cases () =
   (* Empty input immediate timeout *)
   (match read_event_from_string "" ~timeout:(Some 0.0) with
   | `Timeout -> ()
-  | `Event e -> Alcotest.failf "Unexpected event on empty: %s" (show_event e));
+  | `Event e -> Alcotest.failf "Unexpected event on empty: %a" Input.pp_event e);
 
   (* Invalid escape sequence *)
   (match read_event_from_string "\x1b[999999Z" ~timeout:(Some 0.1) with
@@ -180,7 +184,7 @@ let test_edge_cases () =
   match read_event_from_string "\x1b[" ~timeout:(Some 0.1) with
   | `Event (Input.Key { key = Escape; _ }) | `Timeout -> ()
   | `Event e ->
-      Alcotest.failf "Unexpected event for partial escape: %s" (show_event e)
+      Alcotest.failf "Unexpected event for partial escape: %a" Input.pp_event e
 
 (** Test rapid event processing *)
 let test_rapid_events () =
@@ -200,7 +204,7 @@ let test_rapid_events () =
       match Event_source.read source ~clock ~timeout:(Some 0.001) with
       | `Event (Input.Key _) -> read_all (count + 1)
       | `Timeout -> count
-      | `Event e -> Alcotest.failf "Unexpected event type: %s" (show_event e)
+      | `Event e -> Alcotest.failf "Unexpected event type: %a" Input.pp_event e
   in
   let count = read_all 0 in
   Alcotest.(check int) "read all rapid events" 100 count
@@ -224,13 +228,14 @@ let test_large_paste () =
   | `Event (Input.Paste content) ->
       Alcotest.(check string) "paste content" paste_content content;
       Alcotest.(check int) "paste content length" 1000 (String.length content)
-  | `Event e -> Alcotest.failf "Expected paste content, got: %s" (show_event e)
+  | `Event e ->
+      Alcotest.failf "Expected paste content, got: %a" Input.pp_event e
   | _ -> Alcotest.fail "Expected paste content");
 
   (* Should get paste end *)
   match Event_source.read source ~clock ~timeout:(Some 0.1) with
   | `Event Input.Paste_end -> ()
-  | `Event e -> Alcotest.failf "Expected paste end, got: %s" (show_event e)
+  | `Event e -> Alcotest.failf "Expected paste end, got: %a" Input.pp_event e
   | _ -> Alcotest.fail "Expected paste end"
 
 (** Test mouse modes *)
@@ -238,7 +243,7 @@ let test_mouse_modes () =
   (* Test X10 mouse mode - only button press *)
   (match read_event_from_string "\x1b[M !!" ~timeout:(Some 0.1) with
   | `Event (Input.Mouse _) -> ()
-  | `Event e -> Alcotest.failf "Expected mouse event, got: %s" (show_event e)
+  | `Event e -> Alcotest.failf "Expected mouse event, got: %a" Input.pp_event e
   | _ -> Alcotest.fail "Expected mouse event");
 
   (* Test SGR mouse with release *)
@@ -246,13 +251,14 @@ let test_mouse_modes () =
   | `Event (Input.Mouse (Button_release (x, y, Left, _))) ->
       Alcotest.(check int) "x coordinate" 4 x;
       Alcotest.(check int) "y coordinate" 9 y
-  | `Event e -> Alcotest.failf "Expected mouse release, got: %s" (show_event e)
+  | `Event e ->
+      Alcotest.failf "Expected mouse release, got: %a" Input.pp_event e
   | _ -> Alcotest.fail "Expected mouse release");
 
   (* Test mouse motion *)
   match read_event_from_string "\x1b[<32;5;10M" ~timeout:(Some 0.1) with
   | `Event (Input.Mouse (Motion _)) -> ()
-  | `Event e -> Alcotest.failf "Expected mouse motion, got: %s" (show_event e)
+  | `Event e -> Alcotest.failf "Expected mouse motion, got: %a" Input.pp_event e
   | _ -> Alcotest.fail "Expected mouse motion"
 
 (** Test special key combinations *)
@@ -279,7 +285,7 @@ let test_special_keys () =
     (fun (input, expected_key) ->
       match read_event_from_string input ~timeout:(Some 0.1) with
       | `Event (Input.Key { key; _ }) when key = expected_key -> ()
-      | `Event e -> Alcotest.failf "Expected F key, got: %s" (show_event e)
+      | `Event e -> Alcotest.failf "Expected F key, got: %a" Input.pp_event e
       | _ -> Alcotest.fail "Expected function key event")
     test_cases
 
@@ -290,7 +296,7 @@ let test_alt_combinations () =
   | `Event (Input.Key { key = Char c; modifier = { alt; _ }; _ }) ->
       Alcotest.(check char) "key is 'a'" 'a' (Uchar.to_char c);
       Alcotest.(check bool) "alt is pressed" true alt
-  | `Event e -> Alcotest.failf "Unexpected event: %s" (show_event e)
+  | `Event e -> Alcotest.failf "Unexpected event: %a" Input.pp_event e
   | _ -> Alcotest.fail "Expected alt+a event"
 
 (** Test input buffer handling *)
@@ -299,7 +305,8 @@ let test_input_buffer () =
   match read_event_from_string "\x1b[" ~timeout:(Some 0.01) with
   | `Timeout -> () (* Expected - incomplete sequence *)
   | `Event (Input.Key { key = Escape; _ }) -> () (* Also acceptable *)
-  | `Event e -> Alcotest.failf "Unexpected event on partial: %s" (show_event e)
+  | `Event e ->
+      Alcotest.failf "Unexpected event on partial: %a" Input.pp_event e
 
 let tests =
   [

@@ -10,4 +10,5 @@
   eio
   eio_main
   alcotest
-  test_utils))
+  test_utils
+  str))
