@@ -1,85 +1,73 @@
 (** Mosaic.Tile — interactive wrappers and widgets atop Mosaic.Ui *)
 
+open Ui
+
+type t = Ui.element
+
 (** {1 Re-exports from Ui} *)
 
-type element = Ui.element
+include module type of struct
+  module Border = Ui.Border
 
-module Style = Ui.Style
-module Border = Ui.Border
-module Theme = Ui.Theme
-module Attr = Ui.Attr
-module Key = Ui.Key
-module Table = Ui.Table
-module Spinner = Ui.Spinner
-module Progress_bar = Ui.Progress_bar
+  (* Core UI functions *)
 
-(** {2 Core UI functions} *)
+  let text = Ui.text
 
-val text :
-  ?style:Style.t ->
-  ?align:[ `Left | `Center | `Right ] ->
-  ?wrap:[ `Wrap | `Truncate | `Clip ] ->
-  ?overflow_x:Ui.overflow ->
-  ?overflow_y:Ui.overflow ->
-  string ->
-  element
+  (* Core Layout Components *)
+  let zbox = Ui.zbox
+  let spacer = Ui.spacer
+  let divider = Ui.divider
+  let scroll_view = Ui.scroll_view
+  let center = Ui.center
+  let flow = Ui.flow
+  let block = Ui.block
+  let grid = Ui.grid
+  let grid_item = Ui.grid_item
 
-val with_key : Attr.key -> element -> element
+  (* Utility Functions *)
+  let styled = Ui.styled
+  let empty = Ui.empty
+  let cells = Ui.cells
+  let pct = Ui.pct
+  let auto = Ui.auto
+  let calc = Ui.calc
+  let all = Ui.all
+  let xy = Ui.xy
+  let sides = Ui.sides
 
-(** {2 Layout helpers} *)
+  (* Grid track sizing functions *)
+  let fr = Ui.fr
+  let minmax = Ui.minmax
+  let fit_content_track = Ui.fit_content_track
+  let min_content = Ui.min_content
+  let max_content = Ui.max_content
+  let track_cells = Ui.track_cells
+  let track_pct = Ui.track_pct
+  let track_auto = Ui.track_auto
+  let repeat = Ui.repeat
+  let grid_area = Ui.grid_area
 
-val cells : int -> [ `Cells of int ]
-val pct : float -> [ `Pct of float ]
-val xy : int -> int -> [> `Cells of int ] Ui.sides
-
-val sides :
-  ?top:int ->
-  ?bottom:int ->
-  ?left:int ->
-  ?right:int ->
-  unit ->
-  [> `Cells of int ] Ui.sides
+  (* Visual Components *)
+  let image = Ui.image
+  let list = Ui.list
+  let rich_text = Ui.rich_text
+  let panel = Ui.panel
+  let progress_bar = Ui.progress_bar
+  let spinner = Ui.spinner
+  let table = Ui.table
+  let tree = Ui.tree
+  let canvas = Ui.canvas
+end
 
 (** {1 Keys and identity} *)
 
-type key = Attr.key
-
-val use_key : prefix:string -> key
-(** Allocate a stable key once per callsite; survives re-renders. *)
+include module type of Tile_key
 
 (** {1 Low-level events (composable)} *)
 
-module Events : sig
-  type key_event = Input.key_event
-  (** Concrete event payloads usable in callbacks *)
-
-  type drag_phase = [ `Start | `Move | `End ]
-
-  type drag = {
-    phase : drag_phase;
-    x : int;
-    y : int;  (** current cursor (0-based) *)
-    dx : int;
-    dy : int;  (** delta since last event *)
-    start_x : int;
-    start_y : int;
-  }
-
-  val on_click : key -> (unit -> unit) -> unit
-  (** Subscribe this keyed element to events. Lifetime is tied to the calling
-      component. *)
-
-  val on_hover : key -> (bool -> unit) -> unit
-  val on_focus : key -> (bool -> unit) -> unit
-  val on_drag : key -> (drag -> unit) -> unit
-  val on_key : key -> (key_event -> unit) -> unit
-
-  val focusable : key -> ?tab_index:int -> ?auto_focus:bool -> unit -> unit
-  (** Mark element focusable and place it in the tab order. *)
-
-  val use_bounds : key -> Ui.Layout_snapshot.rect option
-  (** Geometry observation (reads from runtime snapshot if available). *)
-end
+module Events = Tile_events
+(** Event subscriptions module - alias to Tile_events for all event handling
+    functionality *)
 
 (** {1 Convenience: make any element interactive} *)
 
@@ -230,12 +218,15 @@ val hbox :
   element list ->
   element
 
+(** {1 Form Components} *)
+
+(* Include form components early so we get the size type *)
+include module type of Tile_forms
+
 (** {1 Opinionated controls} *)
 
 type variant =
   [ `Primary | `Secondary | `Success | `Danger | `Warning | `Info | `Ghost ]
-
-type size = [ `Small | `Medium | `Large ]
 
 val button :
   ?style:Style.t ->
@@ -282,15 +273,3 @@ val radio :
   on_change:(bool -> unit) ->
   unit ->
   element
-
-(** {1 Utilities} *)
-
-val use_keyboard :
-  ?ctrl:bool ->
-  ?alt:bool ->
-  ?shift:bool ->
-  Input.key ->
-  unit Engine.Cmd.t ->
-  unit
-(** Global-ish shortcut helper that dispatches a command when a chord is hit.
-    Intended for app-level bindings; for element-local keys use [on_key]. *)

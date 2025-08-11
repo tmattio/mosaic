@@ -1,5 +1,31 @@
 (** Event subscription implementation *)
 
+(* Event types *)
+type key_event = Input.key_event
+type drag_phase = [ `Start | `Move | `End ]
+
+type drag = {
+  phase : drag_phase;
+  x : int;
+  y : int;
+  dx : int;
+  dy : int;
+  start_x : int;
+  start_y : int;
+}
+
+(* Convert internal drag event to our public drag type *)
+let convert_drag_event (evt : Engine.Input_router.drag_event) : drag =
+  {
+    phase = evt.phase;
+    x = evt.x;
+    y = evt.y;
+    dx = evt.dx;
+    dy = evt.dy;
+    start_x = evt.start_x;
+    start_y = evt.start_y;
+  }
+
 (* Get the runtime context from the global context or React context *)
 let get_runtime_context () =
   match Runtime_context.current () with
@@ -45,7 +71,7 @@ let use_drag key on_drag =
         Engine.Input_router.Drag
           ( key,
             fun evt ->
-              on_drag evt;
+              on_drag (convert_drag_event evt);
               ()
             (* Return Some msg - will be fixed *) )
       in
@@ -109,3 +135,57 @@ let use_focusable key ?tab_index ?(auto_focus = false) () =
       in
       Engine.Focus_manager.register ctx.focus_manager focusable;
       Some (fun () -> Engine.Focus_manager.unregister ctx.focus_manager key))
+
+let use_keyboard ?ctrl ?alt ?shift key cmd =
+  Hook.use_keyboard ?ctrl ?alt ?shift key cmd
+
+(* Direct event subscription functions that return unit (for composability) *)
+let on_click = use_click
+
+let on_hover key callback =
+  Hook.use_effect
+    ~deps:(Deps.keys [ Deps.ui_key key ])
+    (fun () ->
+      match Runtime_context.current () with
+      | None -> None
+      | Some ctx ->
+          let handler = Engine.Input_router.Hover (key, callback) in
+          let id = Engine.Input_router.subscribe ctx.input_router handler in
+          Some (fun () -> Engine.Input_router.unsubscribe ctx.input_router id))
+
+let on_focus key callback =
+  Hook.use_effect
+    ~deps:(Deps.keys [ Deps.ui_key key ])
+    (fun () ->
+      match Runtime_context.current () with
+      | None -> None
+      | Some ctx ->
+          let handler =
+            Engine.Input_router.Focus
+              ( key,
+                fun has_focus ->
+                  callback has_focus;
+                  () )
+          in
+          let id = Engine.Input_router.subscribe ctx.input_router handler in
+          Some (fun () -> Engine.Input_router.unsubscribe ctx.input_router id))
+
+let on_drag key callback =
+  Hook.use_effect
+    ~deps:(Deps.keys [ Deps.ui_key key ])
+    (fun () ->
+      match Runtime_context.current () with
+      | None -> None
+      | Some ctx ->
+          let handler =
+            Engine.Input_router.Drag
+              ( key,
+                fun evt ->
+                  callback (convert_drag_event evt);
+                  () )
+          in
+          let id = Engine.Input_router.subscribe ctx.input_router handler in
+          Some (fun () -> Engine.Input_router.unsubscribe ctx.input_router id))
+
+let on_key = use_key_press
+let focusable = use_focusable

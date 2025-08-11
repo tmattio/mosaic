@@ -563,6 +563,9 @@ val text :
       Controls vertical overflow behavior. Defaults to [`Visible`].
     @param content The string to display. *)
 
+val empty : element
+(** An empty element that renders nothing and takes no space. *)
+
 val scroll_view :
   ?width:dimension ->
   ?height:dimension ->

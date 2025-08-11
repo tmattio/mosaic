@@ -1,5 +1,4 @@
 open Mosaic
-open Mosaic.Tile
 
 (* ===== Starfield Module ===== *)
 module Starfield = struct

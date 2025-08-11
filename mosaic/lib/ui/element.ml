@@ -743,6 +743,9 @@ let text ?(style = Style.empty) ?(align = `Left) ?(wrap = `Wrap) ?overflow_x
   (* Note: The measure function is used at layout time via compute_layout_with_measure *)
   (id, tree)
 
+(* Empty element - renders nothing and takes no space *)
+let empty = text ""
+
 let scroll_view ?width ?height ?min_width ?min_height ?max_width ?max_height
     ?padding ?margin ?flex_grow ?flex_shrink ?align_self ?style ?border
     ?border_style ?(show_scrollbars = true) ~h_offset ~v_offset child =

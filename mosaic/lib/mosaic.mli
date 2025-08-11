@@ -13,10 +13,10 @@
       let counter () =
         let count, set_count, _ = use_state 0 in
 
-        Ui.vbox ~gap:(`Cells 1)
+        Tile.vbox ~gap:(`Cells 1)
           [
-            Ui.text (Printf.sprintf "Count: %d" count);
-            Ui.hbox ~gap:(`Cells 1)
+            Tile.text (Printf.sprintf "Count: %d" count);
+            Tile.hbox ~gap:(`Cells 1)
               [
                 Tile.button ~label:"+"
                   ~on_click:(fun () -> set_count (count + 1))
@@ -185,7 +185,7 @@ val use_key : prefix:string -> Ui.Attr.key
 
     {[
       let button_key = use_key ~prefix:"btn" in
-      Ui.with_key button_key (Ui.text "Button")
+      Tile.with_key button_key (Tile.text "Button")
     ]} *)
 
 (** {2 Input Handling} *)
@@ -309,9 +309,9 @@ val run :
 
     {[
       let app () =
-        Ui.vbox
+        Tile.vbox
           [
-            Ui.text "Hello, Mosaic!";
+            Tile.text "Hello, Mosaic!";
             Tile.button ~label:"Click me"
               ~on_click:(fun () -> print_endline "Clicked!")
               ();

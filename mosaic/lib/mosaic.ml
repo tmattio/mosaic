@@ -37,7 +37,7 @@ let use_key ~prefix =
       key
 
 (* Subscribe to keyboard shortcuts *)
-let use_keyboard = Hook.use_key
+let use_keyboard = Hook.use_keyboard
 
 (* Subscribe to animation ticks *)
 let use_tick = Hook.use_tick

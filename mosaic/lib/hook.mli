@@ -52,7 +52,7 @@ val use_ref : 'a -> 'a ref
 val use_callback : 'a -> deps:Deps.t -> 'a
 (** Memoize a callback function *)
 
-val use_key :
+val use_keyboard :
   ?ctrl:bool ->
   ?alt:bool ->
   ?shift:bool ->

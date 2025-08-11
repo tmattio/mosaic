@@ -66,7 +66,7 @@ let use_reducer_latest ?id reducer initial =
   in
   Effect.perform (Use_reducer (id, reducer, initial, true))
 
-let use_key ?(ctrl = false) ?(alt = false) ?(shift = false) key cmd =
+let use_keyboard ?(ctrl = false) ?(alt = false) ?(shift = false) key cmd =
   use_subscription
     (Engine.Sub.keyboard_filter (fun event ->
          if

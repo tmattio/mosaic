@@ -1,138 +1,80 @@
 open Input
+open Ui
 
-(** {1 Re-exports from Ui} *)
+type t = Ui.element
 
-type element = Ui.element
+(* Re-exports from Ui *)
 
-module Style = Ui.Style
-module Border = Ui.Border
-module Theme = Ui.Theme
-module Attr = Ui.Attr
-module Key = Ui.Key
-module Table = Ui.Table
-module Spinner = Ui.Spinner
-module Progress_bar = Ui.Progress_bar
+include struct
+  module Border = Ui.Border
 
-(** Core UI functions *)
-let text = Ui.text
+  (* Core UI functions *)
 
-let with_key = Ui.with_key
+  let text = Ui.text
 
-(** Layout helpers *)
-let cells = Ui.cells
+  (* Core Layout Components *)
+  let zbox = Ui.zbox
+  let spacer = Ui.spacer
+  let divider = Ui.divider
+  let scroll_view = Ui.scroll_view
+  let center = Ui.center
+  let flow = Ui.flow
+  let block = Ui.block
+  let grid = Ui.grid
+  let grid_item = Ui.grid_item
 
-let pct = Ui.pct
-let xy = Ui.xy
-let sides = Ui.sides
+  (* Utility Functions *)
+  let styled = Ui.styled
+  let empty = Ui.empty
+  let cells = Ui.cells
+  let pct = Ui.pct
+  let auto = Ui.auto
+  let calc = Ui.calc
+  let all = Ui.all
+  let xy = Ui.xy
+  let sides = Ui.sides
 
-(** {1 Keys and identity} *)
+  (* Grid track sizing functions *)
+  let fr = Ui.fr
+  let minmax = Ui.minmax
+  let fit_content_track = Ui.fit_content_track
+  let min_content = Ui.min_content
+  let max_content = Ui.max_content
+  let track_cells = Ui.track_cells
+  let track_pct = Ui.track_pct
+  let track_auto = Ui.track_auto
+  let repeat = Ui.repeat
+  let grid_area = Ui.grid_area
 
-type key = Attr.key
-
-(** Key generation implementation *)
-
-(* Global counter for generating unique IDs *)
-let next_key_id : int ref = ref 0
-
-(* Generate a unique key with stable identity per hook call site *)
-let use_key ~prefix =
-  (* Use a ref to store the key, making it stable across re-renders *)
-  let key_ref = Hook.use_ref None in
-  match !key_ref with
-  | Some key -> key
-  | None ->
-      let id = !next_key_id in
-      next_key_id := id + 1;
-      let key = Ui.Attr.key (Printf.sprintf "%s_%d" prefix id) in
-      key_ref := Some key;
-      key
-
-(** {1 Low-level events (composable)} *)
-
-module Events = struct
-  type key_event = Input.key_event
-  type drag_phase = [ `Start | `Move | `End ]
-
-  type drag = {
-    phase : drag_phase;
-    x : int;
-    y : int;
-    dx : int;
-    dy : int;
-    start_x : int;
-    start_y : int;
-  }
-
-  (* Convert internal drag event to our public drag type *)
-  let convert_drag_event (evt : Engine.Input_router.drag_event) : drag =
-    {
-      phase = evt.phase;
-      x = evt.x;
-      y = evt.y;
-      dx = evt.dx;
-      dy = evt.dy;
-      start_x = evt.start_x;
-      start_y = evt.start_y;
-    }
-
-  let on_click = Tile_events.use_click
-
-  let on_hover key callback =
-    Hook.use_effect
-      ~deps:(Deps.keys [ Deps.ui_key key ])
-      (fun () ->
-        match Runtime_context.current () with
-        | None -> None
-        | Some ctx ->
-            let handler = Engine.Input_router.Hover (key, callback) in
-            let id = Engine.Input_router.subscribe ctx.input_router handler in
-            Some (fun () -> Engine.Input_router.unsubscribe ctx.input_router id))
-
-  let on_focus key callback =
-    Hook.use_effect
-      ~deps:(Deps.keys [ Deps.ui_key key ])
-      (fun () ->
-        match Runtime_context.current () with
-        | None -> None
-        | Some ctx ->
-            let handler =
-              Engine.Input_router.Focus
-                ( key,
-                  fun has_focus ->
-                    callback has_focus;
-                    () )
-            in
-            let id = Engine.Input_router.subscribe ctx.input_router handler in
-            Some (fun () -> Engine.Input_router.unsubscribe ctx.input_router id))
-
-  let on_drag key callback =
-    Hook.use_effect
-      ~deps:(Deps.keys [ Deps.ui_key key ])
-      (fun () ->
-        match Runtime_context.current () with
-        | None -> None
-        | Some ctx ->
-            let handler =
-              Engine.Input_router.Drag
-                ( key,
-                  fun evt ->
-                    callback (convert_drag_event evt);
-                    () )
-            in
-            let id = Engine.Input_router.subscribe ctx.input_router handler in
-            Some (fun () -> Engine.Input_router.unsubscribe ctx.input_router id))
-
-  let on_key = Tile_events.use_key_press
-  let focusable = Tile_events.use_focusable
-  let use_bounds = Tile_events.use_bounds
+  (* Visual Components *)
+  let image = Ui.image
+  let list = Ui.list
+  let rich_text = Ui.rich_text
+  let panel = Ui.panel
+  let progress_bar = Ui.progress_bar
+  let spinner = Ui.spinner
+  let table = Ui.table
+  let tree = Ui.tree
+  let canvas = Ui.canvas
 end
 
-(** {1 Common widget styles} *)
+(* Key and identity *)
+
+include Tile_key
+
+(* Low-level events (composable) *)
+
+module Events = Tile_events
+
+(* Form Components *)
+
+include Tile_forms
+
+(* Common widget styles *)
 
 type variant =
   [ `Primary | `Secondary | `Success | `Danger | `Warning | `Info | `Ghost ]
 
-type size = [ `Small | `Medium | `Large ]
 type hotkey = string
 
 let variant_style = function
@@ -167,7 +109,7 @@ let parse_key_chord chord =
   | "escape" | "esc" -> Some (fun k -> k.key = Escape)
   | _ -> None
 
-(** {1 Convenience: make any element interactive} *)
+(* Convenience: make any element interactive *)
 
 let interact ?key ?tab_index ?auto_focus ?(disabled = false) ?(hotkeys = [])
     ?tooltip ?on_click ?on_hover ?on_focus ?on_drag ?on_key element =
@@ -237,7 +179,7 @@ let interact ?key ?tab_index ?auto_focus ?(disabled = false) ?(hotkeys = [])
 
   with_key key element_with_tooltip
 
-(** {1 Interactive wrappers for common Ui containers} *)
+(* Interactive wrappers for common Ui containers *)
 
 let box ?display ?position ?box_sizing ?text_align ?flex_direction ?flex_wrap
     ?flex_grow ?flex_shrink ?flex_basis ?align_items ?align_self ?align_content
@@ -330,7 +272,7 @@ let hbox ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
       interact ?key ?tab_index ?auto_focus ?disabled ?hotkeys ?tooltip ?on_click
         ?on_hover ?on_focus ?on_drag ?on_key base_element
 
-(** {1 Opinionated controls} *)
+(* Opinionated controls *)
 
 let button ?(style = Style.empty) ?(border = Border.rounded)
     ?(border_style = Style.empty) ?(variant = `Secondary) ?(size = `Medium)
@@ -431,8 +373,3 @@ let radio ?(style = Style.empty) ?tab_index ~checked ~label ~on_change () =
   in
 
   interact ~key ?tab_index ~on_click:(fun () -> on_change true) element
-
-(** {1 Utilities} *)
-
-let use_keyboard ?ctrl ?alt ?shift key cmd =
-  Hook.use_key ?ctrl ?alt ?shift key cmd
