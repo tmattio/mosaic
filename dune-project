@@ -64,7 +64,8 @@
 (package
  (name matrix-term)
  (synopsis "A terminal emulator built with Matrix and tsdl")
- (description "A terminal emulator application using the Matrix terminal toolkit and SDL2 for rendering")
+ (description
+  "A terminal emulator application using the Matrix terminal toolkit and SDL2 for rendering")
  (depends
   ocaml
   dune
@@ -75,8 +76,9 @@
 
 (package
  (name vcr)
- (synopsis "")
- (description "")
+ (synopsis "Terminal recording and playback tool")
+ (description
+  "VCR is a tool for recording, replaying, and converting terminal sessions. It captures terminal output and input events to create reproducible terminal animations and demos.")
  (depends
   ocaml
   dune
@@ -86,5 +88,18 @@
   cmdliner
   logs
   fmt
-  (alcotest :with-test)))
+  (alcotest :with-test))
+ (tags
+  (terminal recording playback demo)))
 
+(package
+ (name toffee)
+ (synopsis "A CSS layout engine written in OCaml")
+ (description
+  "Toffee is a flexible, high-performance CSS layout engine written in OCaml. It implements CSS Grid, Flexbox, and Block layout algorithms. Toffee is a port of Taffy (https://github.com/DioxusLabs/taffy) to OCaml.")
+ (depends
+  ocaml
+  dune
+  (alcotest :with-test))
+ (tags
+  (css layout flexbox grid "css-grid" "layout-engine")))

@@ -1,58 +1,91 @@
 # Mosaic
 
-A delightful OCaml framework for building modern terminal user interfaces. Inspired by The Elm Architecture and Bubble Tea.
+A modern, declarative terminal UI framework for OCaml with a React-inspired API powered by algebraic effects.
 
-> **Status: Prototype** - This is an early prototype exploring ideas for a modern OCaml TUI framework. It is not yet functional. APIs will change significantly.
+## Overview
 
-## Features
+Mosaic is a high-performance terminal UI framework that brings React's component model and hooks to the terminal applications. It combines three powerful foundations:
 
-- **Elm Architecture** - Simple, scalable app structure with model-view-update
-- **Declarative UI** - Build layouts with flexbox-style primitives
-- **Cross-platform** - Works on Unix/Linux, macOS, and Windows
-- **Mouse & Keyboard** - Full input handling with modifiers
-- **Unicode Support** - First-class support for Unicode throughout
-- **Testable** - Pure functions and effects make testing straightforward
+1. **[Matrix](./matrix)** - A highly optimized terminal toolkit with efficient grid representation, damage tracking, and double-buffered rendering
+2. **[Toffee](./toffee)** - A pure OCaml port of the Taffy layout engine, providing CSS Grid, Flexbox, and Block layouts
+3. **Algebraic Effects** - OCaml 5's effect system enables a direct-style React-like API with hooks
 
 ## Quick Start
+
+### React-Style with Hooks (Algebraic Effects)
 
 ```ocaml
 open Mosaic
 
-type model = int
-type msg = Increment | Decrement | Quit
+let counter () =
+  (* Direct-style state management via algebraic effects *)
+  let count, set_count = use_state 0 in
+  
+  (* Direct-style effect with cleanup *)
+  use_effect (fun () ->
+    Printf.printf "Count changed to %d\n" count;
+    Some (fun () -> Printf.printf "Cleanup for %d\n" count)
+  ) [Dep.pack count];
+  
+  (* Direct-style keyboard handler *)
+  use_keyboard ~key:(Char '+') (fun () -> 
+    set_count (count + 1)
+  );
+  
+  (* Toffee-powered flexbox layout *)
+  vbox ~gap:(`Cells 1) [
+    text ~style:Style.(fg (rgb 100 200 255) ++ bold) 
+      (Printf.sprintf "Count: %d" count);
+    hbox ~gap:(`Cells 2) [
+      button ~label:"Increment" ~on_click:(fun () -> 
+        set_count (count + 1)
+      ) ();
+      button ~label:"Decrement" ~on_click:(fun () -> 
+        set_count (count - 1)
+      ) ();
+    ];
+  ]
 
-let init () = (0, Cmd.none)
+let () = run counter
+```
+
+### The Elm Architecture
+
+```ocaml
+open Mosaic_tea
+
+type model = { count: int }
+type msg = Increment | Decrement | Reset
+
+let init () = { count = 0 }, Cmd.none
 
 let update msg model =
   match msg with
-  | Increment -> (model + 1, Cmd.none)
-  | Decrement -> (model - 1, Cmd.none)
-  | Quit -> (model, Cmd.quit)
+  | Increment -> { count = model.count + 1 }, Cmd.none
+  | Decrement -> { count = model.count - 1 }, Cmd.none
+  | Reset -> { count = 0 }, Cmd.none
 
 let view model =
   Ui.vbox [
-    Ui.text "Counter Example";
-    Ui.text (Printf.sprintf "Count: %d" model);
-    Ui.text "";
-    Ui.text "Press +/- to change, Ctrl+C to quit";
+    Ui.text (Printf.sprintf "Count: %d" model.count);
+    Ui.hbox [
+      Ui.text "[+] Increment";
+      Ui.text "[-] Decrement";
+      Ui.text "[r] Reset";
+    ];
   ]
 
 let subscriptions _ =
   Sub.batch [
-    Sub.on_key ~ctrl:true (Char (Uchar.of_char 'C')) Quit;
-    Sub.on_char '+' Increment;
-    Sub.on_char '-' Decrement;
+    Sub.on_key (Char '+') Increment;
+    Sub.on_key (Char '-') Decrement;
+    Sub.on_key (Char 'r') Reset;
   ]
 
-let () = Mosaic.run (Mosaic.app ~init ~update ~view ~subscriptions ())
-```
-
-## Installation
-
-```bash
-opam install mosaic
+let () = 
+  run (app ~init ~update ~view ~subscriptions ())
 ```
 
 ## License
 
-ISC
+Mosaic is licensed under the ISC license. See [LICENSE](LICENSE) for details.

@@ -11,7 +11,7 @@ homepage: "https://github.com/tmattio/mosaic"
 bug-reports: "https://github.com/tmattio/mosaic/issues"
 depends: [
   "ocaml"
-  "dune" {>= "3.20"}
+  "dune" {>= "3.19"}
   "alcotest" {with-test}
   "odoc" {with-doc}
 ]
