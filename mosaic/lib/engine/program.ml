@@ -195,7 +195,9 @@ let setup_terminal t =
         Tty_eio.set_mode t.term `Raw;
         Tty_eio.hide_cursor t.term;
         (match t.render_mode with
-        | Alt_screen _ -> Tty_eio.enable_alternate_screen t.term
+        | Alt_screen _ ->
+            Tty_eio.enable_alternate_screen t.term;
+            Tty_eio.clear_screen t.term
         | _ -> ());
         if t.mouse then Tty_eio.set_mouse_mode t.term `Any;
         Tty_eio.enable_focus_reporting t.term;
