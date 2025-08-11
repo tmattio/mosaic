@@ -180,9 +180,16 @@ let markdown_viewer_app () =
              Some ()
          | Input.Char c when Uchar.to_int c = 0x71 ->
              (* 'q' *)
-             exit 0
-         (* dispatch_cmd doesn't work in subscriptions outside render context *)
-         (* Some () *)
+             dispatch_cmd Cmd.quit;
+             Some ()
+         | Input.Char c when Uchar.to_int c = 0x03 && event.Input.modifier.ctrl ->
+             (* Ctrl+C *)
+             dispatch_cmd Cmd.quit;
+             Some ()
+         | Input.Escape ->
+             (* Escape *)
+             dispatch_cmd Cmd.quit;
+             Some ()
          | _ -> None));
 
   (* Subscribe to mouse scroll events *)
@@ -205,10 +212,10 @@ let markdown_viewer_app () =
          ()));
 
   (* Render markdown content *)
-  let content_width = window_width - 28 in
-  (* Leave space for TOC and separator *)
+  (* The actual available width for content after TOC (25) and separator (1) and padding (1) *)
+  let available_width = max 40 (window_width - 27) in
   let rendered_content =
-    Mosaic_markdown.render ~width:content_width
+    Mosaic_markdown.render ~width:available_width
       ~style:Mosaic_markdown.Style.default sample_markdown
   in
 
@@ -242,11 +249,19 @@ let markdown_viewer_app () =
             ~style:Style.(bg (Index 233) ++ fg (Index 238))
             [ text "|"; spacer ~flex_grow:1. () ];
           (* Content area with scrolling using scroll_view *)
-          scroll_view ~min_width:(`Cells content_width)
-            ~min_height:(`Cells (window_height - 3))
-            ~h_offset:0 ~v_offset:scroll_offset
+          (* Wrap in a box to ensure proper positioning *)
+          box
+            ~width:(`Cells available_width)
+            ~height:(`Cells (window_height - 3))
+            ~padding:(sides ~left:1 ())
             ~style:Style.(bg (Index 234))
-            rendered_content;
+            [
+              scroll_view
+                ~width:(`Cells (available_width - 1))
+                ~height:(`Cells (window_height - 3))
+                ~h_offset:0 ~v_offset:scroll_offset
+                rendered_content;
+            ];
         ];
       (* Status bar *)
       hbox

@@ -783,9 +783,12 @@ let rec render_node_with_offset ctx (node_id, tree) (parent_x, parent_y) =
               | Ok children ->
                   List.iter
                     (fun child_id ->
+                      (* When rendering inside a clipped viewport, children should be positioned
+                         relative to the viewport origin (0,0), not the absolute position.
+                         We subtract the scroll offsets to implement scrolling. *)
                       render_node_with_offset ctx_with_inherited (child_id, tree)
-                        ( absolute_x -. float_of_int safe_h_offset,
-                          absolute_y -. float_of_int safe_v_offset ))
+                        ( -. float_of_int safe_h_offset,
+                          -. float_of_int safe_v_offset ))
                     children
               | Error _ -> ())
       (* Return early since we've handled children *))
