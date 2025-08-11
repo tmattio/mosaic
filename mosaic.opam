@@ -11,12 +11,13 @@ tags: ["tui" "terminal" "react" "hooks" "algebraic-effects" "user-interface"]
 homepage: "https://github.com/tmattio/mosaic"
 bug-reports: "https://github.com/tmattio/mosaic/issues"
 depends: [
-  "ocaml" {>= "5.0.0"}
+  "ocaml" {>= "5.1"}
   "dune" {>= "3.19"}
   "matrix"
   "toffee"
   "uutf"
   "uucp"
+  "uuseg" {>= "16.0.0"}
   "eio"
   "eio_main"
   "logs"

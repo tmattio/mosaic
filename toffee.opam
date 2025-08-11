@@ -10,7 +10,7 @@ tags: ["css" "layout" "flexbox" "grid" "css-grid" "taffy" "layout-engine"]
 homepage: "https://github.com/tmattio/mosaic"
 bug-reports: "https://github.com/tmattio/mosaic/issues"
 depends: [
-  "ocaml"
+  "ocaml" {>= "5.1"}
   "dune" {>= "3.19"}
   "alcotest" {with-test}
   "odoc" {with-doc}
