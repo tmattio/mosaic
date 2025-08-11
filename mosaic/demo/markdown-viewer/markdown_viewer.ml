@@ -182,7 +182,8 @@ let markdown_viewer_app () =
              (* 'q' *)
              dispatch_cmd Cmd.quit;
              Some ()
-         | Input.Char c when Uchar.to_int c = 0x03 && event.Input.modifier.ctrl ->
+         | Input.Char c when Uchar.to_int c = 0x03 && event.Input.modifier.ctrl
+           ->
              (* Ctrl+C *)
              dispatch_cmd Cmd.quit;
              Some ()
@@ -250,8 +251,7 @@ let markdown_viewer_app () =
             [ text "|"; spacer ~flex_grow:1. () ];
           (* Content area with scrolling using scroll_view *)
           (* Wrap in a box to ensure proper positioning *)
-          box
-            ~width:(`Cells available_width)
+          box ~width:(`Cells available_width)
             ~height:(`Cells (window_height - 3))
             ~padding:(sides ~left:1 ())
             ~style:Style.(bg (Index 234))
@@ -259,8 +259,7 @@ let markdown_viewer_app () =
               scroll_view
                 ~width:(`Cells (available_width - 1))
                 ~height:(`Cells (window_height - 3))
-                ~h_offset:0 ~v_offset:scroll_offset
-                rendered_content;
+                ~h_offset:0 ~v_offset:scroll_offset rendered_content;
             ];
         ];
       (* Status bar *)
@@ -278,5 +277,4 @@ let markdown_viewer_app () =
 (* Main entry point *)
 let () =
   Eio_main.run @@ fun _env ->
-  Mosaic.run ~alt_screen:true ~mouse:true ~debug:"mosaic-markdown-viewer.log"
-    markdown_viewer_app
+  Mosaic.run ~alt_screen:true ~mouse:true markdown_viewer_app

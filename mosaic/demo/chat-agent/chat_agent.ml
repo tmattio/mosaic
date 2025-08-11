@@ -454,5 +454,4 @@ let chat_agent_app () =
 (* Main entry point *)
 let () =
   Random.self_init ();
-  run ~alt_screen:true ~mouse:true ~fps:30 chat_agent_app
-    ~debug:"mosaic-chat.log"
+  run ~alt_screen:true ~mouse:true ~fps:60 chat_agent_app

@@ -16,4 +16,4 @@ let app () =
       text "Or click with mouse!";
     ]
 
-let () = Mosaic.run ~mouse:true ~debug:"mosaic-button.log" app
+let () = Mosaic.run ~mouse:true app
