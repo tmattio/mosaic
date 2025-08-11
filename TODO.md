@@ -7,7 +7,6 @@ for release
 - bug: non alt screen is broken (try button)
 - make sure we don't clear screen on non-alt: the diff should never return clear screen
 - bug: fix style leaking to button border
-- bug: not clearing terminal properly on exit (mouse event get logged in)
 
 ---
 
