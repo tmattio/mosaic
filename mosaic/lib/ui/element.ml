@@ -219,9 +219,7 @@ let box ?display ?position ?box_sizing ?text_align ?flex_direction ?flex_wrap
 
   let box_renderable =
     match (final_border, style) with
-    | None, None -> 
-        (* Default to empty style background to ensure area is filled *)
-        Some (Renderable.box ?border:final_border ~background:Style.empty ())
+    | None, None -> None
     | _ -> Some (Renderable.box ?border:final_border ?background:style ())
   in
 
@@ -415,9 +413,7 @@ let zbox ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
 
   let box_renderable : Renderable.t option =
     match (final_border, style) with
-    | None, None -> 
-        (* Default to empty style background to ensure area is filled *)
-        Some (Renderable.box ?border:final_border ~background:Style.empty ())
+    | None, None -> None
     | _ -> Some (Renderable.box ?border:final_border ?background:style ())
   in
 

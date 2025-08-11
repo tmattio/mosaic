@@ -650,8 +650,7 @@ let set_grapheme ?link ?east_asian_context grid ~row ~col ~glyph ~attrs =
       (* Clear any orphan continuation cells from the previous wider character *)
       if old_width > width then
         for i = width to min (old_width - 1) (grid.cols - col - 1) do
-          Storage.set_cell grid.storage row (col + i) Cell.empty;
-          mark_col_dirty grid row (col + i)
+          Storage.set_cell grid.storage row (col + i) Cell.empty
         done);
 
     (* Update row hash - must recompute full row with FNV-1a *)
@@ -725,8 +724,7 @@ let set_text ?link ?east_asian_context ?max_width grid ~row ~col ~text ~attrs =
             if old_width > 1 then
               (* Clear continuation cells from wide chars *)
               for j = 1 to min (old_width - 1) (grid.cols - col - i - 1) do
-                Storage.set_cell grid.storage row (col + i + j) Cell.empty;
-                mark_col_dirty grid row (col + i + j)
+                Storage.set_cell grid.storage row (col + i + j) Cell.empty
               done
         done;
         (* Now set all ASCII characters directly *)
