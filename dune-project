@@ -19,9 +19,9 @@
 
 (package
  (name mosaic)
- (synopsis "A delightful TUI framework for OCaml inspired by Bubbletea")
+ (synopsis "A modern terminal UI framework for OCaml with React-inspired hooks")
  (description
-  "Mosaic is a functional and composable framework for building terminal user interfaces in OCaml, inspired by Go's Bubbletea and The Elm Architecture")
+  "Mosaic is a high-performance terminal UI framework that brings React's component model and hooks to terminal applications through OCaml 5's algebraic effects. It provides a direct-style API with hooks like use_state and use_effect, a rich component library, and supports both React-style and Elm Architecture patterns. Built on Matrix for terminal I/O and Toffee for CSS layouts.")
  (depends
   (ocaml
    (>= 5.0.0))
@@ -42,13 +42,13 @@
   (alcotest :with-test)
   (ppx_expect :with-test))
  (tags
-  (tui terminal "user interface" elm)))
+  (tui terminal react hooks "algebraic-effects" "user-interface")))
 
 (package
  (name matrix)
- (synopsis "The infrastructure to build OCaml terminal applications")
+ (synopsis "High-performance terminal infrastructure for OCaml")
  (description
-  "Matrix is a foundational terminal programming toolkit that provides core terminal libraries. It includes input event parsing with support for modern keyboard protocols, complete ANSI escape sequence parser and generation, low-level terminal device control, pseudo-terminal (PTY) operations for terminal multiplexing, and a virtual terminal emulator (VTE) for terminal recording and testing.")
+  "Matrix is a highly optimized terminal programming toolkit providing efficient grid representation with damage tracking, double-buffered rendering, and comprehensive Unicode support. It includes an incremental input parser supporting Kitty keyboard protocol, complete ANSI escape sequence generation, terminal control (TTY), pseudo-terminal operations (PTY), and a virtual terminal emulator (VTE). Features mouse support with X10/SGR/URXVT protocols.")
  (depends
   (ocaml
    (>= 5.0.0))
@@ -59,13 +59,13 @@
   fmt
   (alcotest :with-test))
  (tags
-  (terminal input ansi pty vte)))
+  (terminal ansi input grid rendering unicode pty vte)))
 
 (package
  (name matrix-term)
- (synopsis "A terminal emulator built with Matrix and tsdl")
+ (synopsis "Terminal emulator example using Matrix and SDL2")
  (description
-  "A terminal emulator application using the Matrix terminal toolkit and SDL2 for rendering")
+  "Matrix-term is an example terminal emulator application demonstrating Matrix's virtual terminal emulator (VTE) capabilities. It uses SDL2 for rendering and showcases how to build a fully functional terminal emulator with Matrix's infrastructure.")
  (depends
   ocaml
   dune
@@ -76,9 +76,9 @@
 
 (package
  (name vcr)
- (synopsis "Terminal recording and playback tool")
+ (synopsis "Terminal session recording and playback tool")
  (description
-  "VCR is a tool for recording, replaying, and converting terminal sessions. It captures terminal output and input events to create reproducible terminal animations and demos.")
+  "VCR is a comprehensive tool for recording, replaying, and converting terminal sessions. It captures terminal output and input events with accurate timing to create reproducible terminal animations, demos, and documentation. Supports various export formats for sharing terminal sessions.")
  (depends
   ocaml
   dune
@@ -94,12 +94,12 @@
 
 (package
  (name toffee)
- (synopsis "A CSS layout engine written in OCaml")
+ (synopsis "Pure OCaml port of the Taffy CSS layout engine")
  (description
-  "Toffee is a flexible, high-performance CSS layout engine written in OCaml. It implements CSS Grid, Flexbox, and Block layout algorithms. Toffee is a port of Taffy (https://github.com/DioxusLabs/taffy) to OCaml.")
+  "Toffee is a high-performance CSS layout engine providing full CSS Grid Level 1, complete Flexbox algorithm, and traditional block layout with margin collapsing. It's a pure OCaml port of Taffy, enabling responsive terminal layouts with percentage-based sizing, calc() expressions, and the full CSS box model including padding, margin, and borders.")
  (depends
   ocaml
   dune
   (alcotest :with-test))
  (tags
-  (css layout flexbox grid "css-grid" "layout-engine")))
+  (css layout flexbox grid "css-grid" taffy "layout-engine")))
