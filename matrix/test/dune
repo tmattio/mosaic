@@ -1,4 +1,5 @@
 (tests
+ (package matrix)
  (names
   test_ansi
   test_grid

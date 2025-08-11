@@ -1,4 +1,5 @@
 (tests
+ (package vcr)
  (names test_tape_lang test_png_renderer test_executor test_sampler)
  (libraries
   alcotest

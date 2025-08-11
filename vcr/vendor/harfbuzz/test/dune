@@ -1,3 +1,4 @@
 (tests
+ (package vcr)
  (names test_harfbuzz test_integration)
  (libraries harfbuzz freetype))

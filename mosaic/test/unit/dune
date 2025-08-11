@@ -1,4 +1,5 @@
 (tests
+ (package mosaic)
  (names test_event_source test_markdown test_gradient)
  (libraries
   matrix.ansi

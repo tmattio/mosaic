@@ -1,3 +1,4 @@
 (tests
+ (package toffee)
  (names test_toffee)
  (libraries toffee alcotest))

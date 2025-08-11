@@ -1285,6 +1285,7 @@ let () =
 
       // Generate dune file
       const duneContent = `(test
+ (package toffee)
  (name test_runner)
  (libraries toffee alcotest)
  (modules ${testFiles.join(' ')} test_runner))

@@ -1,4 +1,5 @@
 (test
+ (package toffee)
  (name test_runner)
  (libraries toffee alcotest)
  (modules
