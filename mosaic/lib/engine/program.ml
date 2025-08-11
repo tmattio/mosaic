@@ -295,6 +295,7 @@ let render t dyn_el =
 
   let render_to scr =
     Screen.begin_frame scr;
+    (* TODO: for now, we clear the front buffer. Ideally, we'd be able to keep the previous back buffer and do incremental rendering. *)
     Screen.clear scr;
     Ui.render ?snapshot:t.snapshot scr final_el;
     (* Call the on_snapshot callback if we have a snapshot *)

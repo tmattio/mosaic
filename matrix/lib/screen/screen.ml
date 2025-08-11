@@ -480,26 +480,75 @@ let render t =
       (float_of_int changed_cells /. float_of_int total_cells *. 100.0)
       largest_rect_size;
 
-  if
-    float_of_int changed_cells /. float_of_int total_cells > 0.3
-    || largest_rect_size > total_cells / 4
-  then (
-    add_patch Clear_screen;
-    (* Build runs for the entire back buffer - streaming without intermediate lists *)
+  (* Helper to check if a cell needs to be rendered (not empty or has style) *)
+  let needs_rendering cell =
+    not (C.is_empty cell) || C.get_style cell <> Ansi.Style.default
+  in
+  
+  (* Helper to check if we should use Clear_screen optimization *)
+  let should_clear_screen () =
+    (* Count how many cells in the back buffer have non-default styles *)
+    let styled_cell_count = ref 0 in
     for row = 0 to rows t - 1 do
-      let row_cells = ref [] in
       for col = 0 to cols t - 1 do
         match G.get t.back ~row ~col with
-        | Some cell when (not (C.is_empty cell)) && not (C.is_continuation cell)
-          ->
-            row_cells := (row, col, cell) :: !row_cells
+        | Some cell when C.get_style cell <> Ansi.Style.default ->
+            incr styled_cell_count
         | _ -> ()
-      done;
-      cells_to_patches_iter (List.rev !row_cells) add_patch
-    done)
-  else
-    (* Build patches from changed cells only *)
-    cells_to_patches_iter changes add_patch;
+      done
+    done;
+    (* Don't use Clear_screen if we have any styled cells, as it would
+       erase the styling and require redrawing everything *)
+    !styled_cell_count = 0 &&
+    (float_of_int changed_cells /. float_of_int total_cells > 0.3
+     || largest_rect_size > total_cells / 4)
+  in
+
+  (if should_clear_screen () then (
+     add_patch Clear_screen;
+     (* Build runs for the entire back buffer - including styled empty cells *)
+     for row = 0 to rows t - 1 do
+       let row_cells = ref [] in
+       for col = 0 to cols t - 1 do
+         match G.get t.back ~row ~col with
+         | Some cell when needs_rendering cell && not (C.is_continuation cell) ->
+             row_cells := (row, col, cell) :: !row_cells
+         | _ -> ()
+       done;
+       cells_to_patches_iter (List.rev !row_cells) add_patch
+     done)
+   else
+     (* Separate changed cells into three categories:
+        1. Non-empty cells or empty cells with style -> render as runs
+        2. Empty cells with default style -> can be cleared *)
+     let cells_to_render, cells_to_clear =
+       List.partition 
+         (fun (_, _, cell) -> needs_rendering cell)
+         changes
+     in
+
+     (* Build patches for cells that need rendering *)
+     cells_to_patches_iter cells_to_render add_patch;
+
+     (* Generate clear regions only for truly empty cells (no content, default style) *)
+     if cells_to_clear <> [] then
+       let clear_positions =
+         List.map (fun (r, c, _) -> (r, c)) cells_to_clear
+       in
+       let clear_regions = G.compute_update_regions clear_positions in
+       List.iter
+         (fun region ->
+           let patch =
+             Clear_region
+               {
+                 row = region.G.min_row;
+                 col = region.G.min_col;
+                 width = region.G.max_col - region.G.min_col + 1;
+                 height = region.G.max_row - region.G.min_row + 1;
+               }
+           in
+           add_patch patch)
+         clear_regions);
 
   Queue.fold (fun acc x -> x :: acc) [] patches |> List.rev
 

@@ -326,6 +326,130 @@ let test_render_large_change () =
     (List.length
        (List.filter (function Screen.Run _ -> true | _ -> false) patches))
 
+let test_render_mosaic_pattern () =
+  (* Test the exact pattern used by mosaic: begin_frame + clear + partial content *)
+  let s = Screen.create ~rows:5 ~cols:10 () in
+  
+  (* Frame 1: Add content to multiple rows *)
+  Screen.begin_frame s;
+  Screen.clear s;
+  Screen.set_text s ~row:1 ~col:2 ~text:"Hello" ~attrs:default_style |> ignore;
+  Screen.set_text s ~row:2 ~col:2 ~text:"World" ~attrs:default_style |> ignore;
+  Screen.set_text s ~row:3 ~col:2 ~text:"Test" ~attrs:default_style |> ignore;
+  Screen.present s |> ignore;
+  
+  (* Frame 2: Clear and only redraw some content (mosaic pattern) *)
+  Screen.begin_frame s;
+  Screen.clear s;
+  Screen.set_text s ~row:1 ~col:2 ~text:"Hello" ~attrs:default_style |> ignore;
+  (* Row 2 is NOT redrawn - should be cleared *)
+  Screen.set_text s ~row:3 ~col:2 ~text:"Test" ~attrs:default_style |> ignore;
+  
+  let patches = Screen.render s in
+  
+  (* Check that we get patches for the cleared row *)
+  let has_clear_for_row2 = List.exists (function
+    | Screen.Clear_line { row; _ } when row = 2 -> true
+    | Screen.Clear_region { row; height; _ } when row <= 2 && row + height > 2 -> true
+    | Screen.Clear_screen -> true
+    | _ -> false
+  ) patches in
+  
+  check bool "should have clear patch for row 2" true has_clear_for_row2;
+  
+  (* Verify the content is actually cleared after present *)
+  Screen.present s |> ignore;
+  let front = Screen.front s in
+  let row2_empty = ref true in
+  for col = 0 to 9 do
+    match G.get front ~row:2 ~col with
+    | Some cell when C.is_glyph cell && C.get_text cell <> "" ->
+        row2_empty := false
+    | _ -> ()
+  done;
+  check bool "row 2 should be empty in front buffer" true !row2_empty;
+  
+  (* Additional test: styled empty cells should not produce Clear_screen *)
+  let s2 = Screen.create ~rows:3 ~cols:5 () in
+  let bg_style = Ansi.Style.(default |> with_bg (Index 4)) in
+  
+  (* Frame 1: Content with background *)
+  Screen.begin_frame s2;
+  Screen.set_text s2 ~row:1 ~col:1 ~text:"ABC" ~attrs:bg_style |> ignore;
+  Screen.present s2 |> ignore;
+  
+  (* Frame 2: Clear with styled background *)
+  Screen.begin_frame s2;
+  let back = Screen.back s2 in
+  G.clear ~style:bg_style back;
+  
+  let patches2 = Screen.render s2 in
+  
+  (* Check for the bug: Clear_screen followed by styled runs *)
+  let has_clear_screen = List.exists (function Screen.Clear_screen -> true | _ -> false) patches2 in
+  let has_styled_runs = List.exists (function
+    | Screen.Run { style; _ } -> 
+        (match Ansi.Style.bg style with Ansi.Style.Default -> false | _ -> true)
+    | _ -> false
+  ) patches2 in
+  
+  check bool "styled empty cells should not trigger Clear_screen" false has_clear_screen;
+  check bool "styled empty cells should produce Run patches" true has_styled_runs
+
+let test_render_clear_removed_content () =
+  (* Test that removing content generates appropriate clear patches *)
+  let s = Screen.create ~rows:3 ~cols:5 () in
+  
+  (* Frame 1: Add a single character *)
+  Screen.begin_frame s;
+  Screen.set_text s ~row:1 ~col:2 ~text:"X" ~attrs:default_style |> ignore;
+  Screen.present s |> ignore;
+  
+  (* Frame 2: Clear everything *)
+  Screen.begin_frame s;
+  Screen.clear s;
+  
+  let patches = Screen.render s in
+  check bool "clearing content should generate patches" true (patches <> []);
+  
+  let has_clear = List.exists (function
+    | Screen.Clear_screen -> true
+    | Screen.Clear_line _ -> true
+    | Screen.Clear_region _ -> true
+    | _ -> false
+  ) patches in
+  check bool "should have at least one clear patch" true has_clear;
+  
+  (* Test styled empty cells vs truly empty cells *)
+  let s2 = Screen.create ~rows:2 ~cols:4 () in
+  let bg_style = Ansi.Style.(default |> with_bg (Index 2)) in
+  
+  (* Frame 1: Mix of styled and unstyled content *)
+  Screen.begin_frame s2;
+  Screen.set_text s2 ~row:0 ~col:0 ~text:"AB" ~attrs:default_style |> ignore;
+  Screen.set_text s2 ~row:0 ~col:2 ~text:"CD" ~attrs:bg_style |> ignore;
+  Screen.present s2 |> ignore;
+  
+  (* Frame 2: Clear unstyled content, replace styled content with styled spaces *)
+  Screen.begin_frame s2;
+  (* Explicitly clear the unstyled area - this should generate Clear_region *)
+  Screen.clear_rect s2 ~row_start:0 ~row_end:0 ~col_start:0 ~col_end:1;
+  (* Replace styled area with styled spaces - should generate Run with spaces *)
+  Screen.set_grapheme s2 ~row:0 ~col:2 ~glyph:" " ~attrs:bg_style;
+  Screen.set_grapheme s2 ~row:0 ~col:3 ~glyph:" " ~attrs:bg_style;
+  
+  let patches2 = Screen.render s2 in
+  
+  let has_clear_region = List.exists (function Screen.Clear_region _ -> true | _ -> false) patches2 in
+  let has_styled_space_run = List.exists (function
+    | Screen.Run { text; style; _ } when String.trim text = "" ->
+        (match Ansi.Style.bg style with Ansi.Style.Default -> false | _ -> true)
+    | _ -> false
+  ) patches2 in
+  
+  check bool "unstyled empty cells should generate Clear_region" true has_clear_region;
+  check bool "styled empty cells should generate Run with spaces" true has_styled_space_run
+
 let test_render_to_string () =
   let s = Screen.create ~rows:2 ~cols:3 () in
   Screen.begin_frame s;
@@ -631,6 +755,8 @@ let () =
           test_case "Render to patches (inc, clear, full)" `Quick
             test_render_to_patches;
           test_case "Render clear bug check" `Quick test_render_clear_bug;
+          test_case "Render mosaic pattern" `Quick test_render_mosaic_pattern;
+          test_case "Render clear removed content" `Quick test_render_clear_removed_content;
           test_case "Render large change" `Quick test_render_large_change;
           test_case "Render to string" `Quick test_render_to_string;
           test_case "Patch to sgr" `Quick test_patch_to_sgr;
