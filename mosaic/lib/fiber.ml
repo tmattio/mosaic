@@ -81,6 +81,28 @@ let collect_pending_commands _f : erased_cmd list =
   pending_cmds := [];
   cmds
 
+(* Helper to check if deps changed for effects and memos *)
+let check_effect_deps_changed slot deps =
+  match Hook_array.get slot with
+  | Hook_array.P (Hook_array.Effect { deps = Some old_deps; _ }) ->
+      Deps.changed old_deps deps
+  | Hook_array.P (Hook_array.Effect _) -> true
+  | _ -> true
+
+let check_memo_deps_changed slot deps =
+  match Hook_array.get slot with
+  | Hook_array.P (Hook_array.Memo (_, Some old_deps)) ->
+      Deps.changed old_deps deps  
+  | Hook_array.P (Hook_array.Memo _) -> true
+  | _ -> true
+
+(* Helper to run cleanup for effects *)
+let run_effect_cleanup slot =
+  match Hook_array.get slot with
+  | Hook_array.P (Hook_array.Effect { cleanup = Some c; _ }) ->
+      (try c () with _ -> ())
+  | _ -> ()
+
 (* Hook effect handler *)
 let with_handler f k =
   let open Effect.Deep in
@@ -95,45 +117,30 @@ let with_handler f k =
                   let idx = f.hook_idx in
                   f.hook_idx <- idx + 1;
                   let slot = Hook_array.get_slot f.hooks idx in
-                  match Hook_array.get slot with
-                  | Hook_array.P (Hook_array.State r) ->
-                      let r = Obj.obj (Obj.repr r) in
-                      continue cont
-                        ( !r,
-                          fun upd ->
-                            r := upd !r;
-                            mark_dirty ~reason:"state_update" f )
-                  | _ ->
-                      let r = ref init in
-                      Hook_array.set slot
-                        (Hook_array.State (Obj.obj (Obj.repr r)));
-                      continue cont
-                        ( init,
-                          fun upd ->
-                            r := upd !r;
-                            mark_dirty ~reason:"state_update" f ))
+                  let state_ref = 
+                    match Hook_array.get slot with
+                    | Hook_array.P (Hook_array.State r) -> 
+                        Obj.obj (Obj.repr r)
+                    | _ ->
+                        let r = ref init in
+                        Hook_array.set slot
+                          (Hook_array.State (Obj.obj (Obj.repr r)));
+                        r
+                  in
+                  continue cont
+                    ( !state_ref,
+                      fun upd ->
+                        state_ref := upd !state_ref;
+                        mark_dirty ~reason:"state_update" f ))
           | Hook.Use_effect (setup, deps) ->
               Some
                 (fun (cont : (a, _) continuation) ->
                   let idx = f.hook_idx in
                   f.hook_idx <- idx + 1;
                   let slot = Hook_array.get_slot f.hooks idx in
-                  let rerun =
-                    match Hook_array.get slot with
-                    | Hook_array.P
-                        (Hook_array.Effect { deps = Some old_deps; _ }) ->
-                        Deps.changed old_deps deps
-                    | Hook_array.P (Hook_array.Effect _) -> true
-                    | _ -> true
-                  in
+                  let rerun = check_effect_deps_changed slot deps in
                   if rerun then (
-                    (* Run cleanup from previous effect if any *)
-                    (match Hook_array.get slot with
-                    | Hook_array.P (Hook_array.Effect { cleanup = Some c; _ })
-                      -> (
-                        try c () with _ -> ())
-                    | _ -> ());
-                    (* Run the new effect *)
+                    run_effect_cleanup slot;
                     let cleanup = setup () in
                     Hook_array.set slot
                       (Hook_array.Effect { cleanup; deps = Some deps }));
@@ -223,13 +230,7 @@ let with_handler f k =
                   let idx = f.hook_idx in
                   f.hook_idx <- idx + 1;
                   let slot = Hook_array.get_slot f.hooks idx in
-                  let recompute =
-                    match Hook_array.get slot with
-                    | Hook_array.P (Hook_array.Memo (_, Some old_deps)) ->
-                        Deps.changed old_deps deps
-                    | Hook_array.P (Hook_array.Memo _) -> true
-                    | _ -> true
-                  in
+                  let recompute = check_memo_deps_changed slot deps in
                   if recompute then (
                     let value = compute () in
                     Hook_array.set slot
@@ -287,10 +288,7 @@ let rec destroy f =
     f.alive <- false;
     (* Run cleanup for all effects *)
     for i = 0 to Hook_array.length f.hooks - 1 do
-      match Hook_array.get (Hook_array.get_slot f.hooks i) with
-      | Hook_array.P (Hook_array.Effect { cleanup = Some c; _ }) -> (
-          try c () with _ -> ())
-      | _ -> ()
+      run_effect_cleanup (Hook_array.get_slot f.hooks i)
     done;
     (* Destroy all children *)
     Array.iter destroy f.children;
