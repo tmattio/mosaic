@@ -93,6 +93,10 @@ type t = {
   snapshot : Ui.Layout_snapshot.t option;
   (* callback for snapshot updates *)
   mutable on_snapshot : (Ui.Layout_snapshot.t -> unit) option;
+  (* event handlers *)
+  mutable on_input : (Input.event -> unit) option;
+  mutable on_resize : (w:int -> h:int -> unit) option;
+  mutable on_tick : (elapsed:float -> unit) option;
 }
 
 (*  Constructors / helpers *)
@@ -133,7 +137,9 @@ let create (cfg : config) ~(sw : Switch.t) ~(env : Eio_unix.Stdenv.base) : t =
     sighup_prev = None;
     snapshot = (if cfg.mouse then Some (Ui.Layout_snapshot.create ()) else None);
     on_snapshot = None;
-    (* Will be set in start function *)
+    on_input = None;
+    on_resize = None;
+    on_tick = None;
   }
 
 let with_term_mutex t ~f = Eio.Mutex.use_rw ~protect:true t.terminal_mutex f
@@ -242,7 +248,7 @@ let setup_signal_handlers t =
 let restore sig_no v =
   Sys.set_signal sig_no (Option.value v ~default:Sys.Signal_default)
 
-let cleanup t =
+let cleanup_terminal t =
   Tty_eio.remove_resize_handlers t.term;
   (try
      with_term_mutex t ~f:(fun () ->
@@ -266,11 +272,11 @@ let stop t =
     t.running <- false;
     Eio.Condition.broadcast t.resize_cond;
     Eio.Condition.broadcast t.render_cond;
-    cleanup t)
+    cleanup_terminal t)
 
 (*  Rendering *)
 
-let do_render t dyn_el =
+let render t dyn_el =
   let render_start = Unix.gettimeofday () in
   let width, height = with_term_mutex t ~f:(fun () -> Tty_eio.size t.term) in
   Log.debug (fun m -> m "Starting render: width=%d height=%d" width height);
@@ -468,7 +474,7 @@ let process_meta_command t meta =
   | Cmd.Perform f -> Fiber.fork ~sw:t.sw (fun () -> f ())
   | Cmd.Perform_eio f -> Fiber.fork ~sw:t.sw (fun () -> f ~sw:t.sw ~env:t.env)
 
-let process_cmd_internal t dispatch cmd =
+let process_cmd t dispatch cmd =
   (* Run the command and get meta commands *)
   let metas = Cmd.run ~dispatch cmd in
   (* Process the meta commands *)
@@ -487,7 +493,7 @@ let run_input_loop t on_input =
         | `Timeout -> ()
       done
 
-let request_render t =
+let schedule_render t =
   with_state_mutex t ~f:(fun () ->
       if not t.render_pending then (
         t.render_pending <- true;
@@ -523,12 +529,12 @@ let force_full_redraw t =
       match t.render_mode with
       | Alt_screen st -> st.previous <- None
       | Standard st -> st.previous_dynamic <- None);
-  request_render t
+  schedule_render t
 
 let run_render_loop t get_view =
   Log.debug (fun m -> m "Starting render loop");
   (* initial render *)
-  request_render t;
+  schedule_render t;
   while t.running do
     (* wait until we're asked to render *)
     with_state_mutex t ~f:(fun () ->
@@ -538,11 +544,11 @@ let run_render_loop t get_view =
         t.needs_render <- false);
     if t.running then (
       Log.debug (fun m -> m "Rendering frame");
-      do_render t (get_view ()))
+      render t (get_view ()))
   done;
   Log.debug (fun m -> m "Render loop ended")
 
-let run_resize_loop t on_resize =
+let run_resize_loop_internal t on_resize =
   while t.running do
     Eio.Condition.await_no_mutex t.resize_cond;
     if t.running then
@@ -550,7 +556,7 @@ let run_resize_loop t on_resize =
       on_resize ~w ~h
   done
 
-let run_tick_loop t tick_cb =
+let run_tick_loop_internal t tick_cb =
   let frame_duration = 1.0 /. float_of_int t.fps in
   let prev_time = ref (Eio.Time.now t.clock) in
   while t.running do
@@ -568,12 +574,43 @@ let run_tick_loop t tick_cb =
     if sleep_time > 0.0 then Eio.Time.sleep t.clock sleep_time
   done
 
+(** Lifecycle Management *)
+
+(* Event handlers *)
+let set_input_handler t handler = t.on_input <- Some handler
+let set_resize_handler t handler = t.on_resize <- Some handler
+let set_tick_handler t handler = t.on_tick <- handler
+let set_snapshot_handler t handler = t.on_snapshot <- handler
+
+(* State access *)
+let is_running t = t.running
+let get_snapshot t = t.snapshot
+
+(* Event loops - wrapper functions that use internal handlers *)
+let run_event_loop t =
+  run_input_loop t (fun ev ->
+      match t.on_input with Some handler -> handler ev | None -> ())
+
+let run_resize_loop t =
+  run_resize_loop_internal t (fun ~w ~h ->
+      match t.on_resize with Some handler -> handler ~w ~h | None -> ())
+
+let run_tick_loop t =
+  match t.on_tick with
+  | Some handler -> run_tick_loop_internal t handler
+  | None -> ()
+
 (*  Public entry points *)
 
 let start ~(sw : Switch.t) ~(env : Eio_unix.Stdenv.base) cfg ~render ~on_input
     ~(on_resize : w:int -> h:int -> unit) ?on_snapshot ?tick () =
   let prog = create cfg ~sw ~env in
-  prog.on_snapshot <- on_snapshot;
+
+  (* Set all handlers *)
+  set_input_handler prog on_input;
+  set_resize_handler prog on_resize;
+  set_tick_handler prog tick;
+  set_snapshot_handler prog on_snapshot;
 
   (* Ensure cleanup happens if setup fails *)
   try
@@ -589,25 +626,22 @@ let start ~(sw : Switch.t) ~(env : Eio_unix.Stdenv.base) cfg ~render ~on_input
     Log.debug (fun m -> m "Forking fibers");
     Fiber.fork ~sw (fun () ->
         Log.debug (fun m -> m "Input loop fiber started");
-        run_input_loop prog on_input);
+        run_event_loop prog);
     Fiber.fork ~sw (fun () ->
         Log.debug (fun m -> m "Render loop fiber started");
-        run_render_loop prog (fun () -> render ()));
+        run_render_loop prog render);
     Fiber.fork ~sw (fun () ->
         Log.debug (fun m -> m "Resize loop fiber started");
-        run_resize_loop prog on_resize);
+        run_resize_loop prog);
     (match tick with
     | None -> ()
-    | Some cb -> Fiber.fork ~sw (fun () -> run_tick_loop prog cb));
+    | Some _ -> Fiber.fork ~sw (fun () -> run_tick_loop prog));
 
-    let process_cmd disp cmd = process_cmd_internal prog disp cmd in
+    let process_cmd disp cmd = process_cmd prog disp cmd in
     Log.info (fun m -> m "Program started successfully");
     (prog, process_cmd)
   with exn ->
     (* Emergency cleanup if setup fails *)
     Log.err (fun m -> m "Program start failed: %s" (Printexc.to_string exn));
-    (try cleanup prog with _ -> ());
+    (try cleanup_terminal prog with _ -> ());
     raise exn
-
-let is_running t = t.running
-let get_snapshot t = t.snapshot

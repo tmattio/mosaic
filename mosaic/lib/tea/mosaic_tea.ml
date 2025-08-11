@@ -67,7 +67,7 @@ let run_eio (type model msg) ~(sw : Eio.Switch.t) ~(env : Eio_unix.Stdenv.base)
 
         (* Handle resize event to trigger render *)
         (match event with
-        | Input.Resize _ -> Option.iter Program.request_render !prog_ref
+        | Input.Resize _ -> Option.iter Program.schedule_render !prog_ref
         | _ -> ());
 
         let generated = List.rev !messages in

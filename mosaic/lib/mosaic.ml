@@ -219,7 +219,7 @@ let run_eio ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 30)
           m "Requesting render after input event (dirty: %b, pending_cmds: %b)"
             (Fiber.is_dirty root_fiber)
             (Fiber.has_pending_commands root_fiber));
-      Option.iter Engine.Program.request_render !prog_ref)
+      Option.iter Engine.Program.schedule_render !prog_ref)
   in
 
   let on_resize ~w ~h =
@@ -260,7 +260,7 @@ let run_eio ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 30)
 
   (* Set up the render request callback for Fiber.mark_dirty *)
   (Fiber.request_render_ref :=
-     fun () -> Option.iter Engine.Program.request_render !prog_ref);
+     fun () -> Option.iter Engine.Program.schedule_render !prog_ref);
   ()
 
 (** Run the application - main entry point *)
