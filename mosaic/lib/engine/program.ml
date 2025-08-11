@@ -287,6 +287,7 @@ let render t dyn_el =
     if t.static_elements = [] then dyn_el
     else Ui.vbox (t.static_elements @ [ Ui.vbox ~flex_grow:1.0 [ dyn_el ] ])
   in
+  let final_el = Ui.box ~height:(`Pct 1.0) ~overflow_y:`Hidden [final_el] in
 
   (* Clear and prepare snapshot if mouse is enabled *)
   let () =
