@@ -1,9 +1,11 @@
 #ifdef _WIN32
 
+// Include winsock2.h before windows.h to avoid warning
+#include <winsock2.h>
+#include <windows.h>
 #include <process.h>
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
 
 // OCaml C FFI headers
 #include <caml/alloc.h>
