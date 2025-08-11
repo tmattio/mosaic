@@ -236,8 +236,12 @@ let release t =
     disable_bracketed_paste t;
     disable_kitty_keyboard t;
     disable_focus_reporting t;
-    flush t;
-    (* Flush after all writes *)
+    (* Force immediate write instead of relying on flush/fsync *)
+    (* This ensures cleanup works even in signal handlers *)
+    (try
+       (* Writing an empty buffer forces pending output to be sent *)
+       ignore (Unix.write t.output (Bytes.create 0) 0 0)
+     with _ -> ());
     remove_resize_handlers t);
   (* Clean up resize handlers *)
   if t.input_is_tty then

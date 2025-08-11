@@ -172,14 +172,24 @@ let build_cleanup_sequence had_alt_screen =
   Buffer.contents esc
 
 let full_cleanup term had_alt_screen =
+  (* Build comprehensive cleanup sequence *)
   let seq = build_cleanup_sequence had_alt_screen in
+  (* Write cleanup sequence *)
   Tty_eio.write term (Bytes.of_string seq) 0 (String.length seq);
+  (* Ensure it's flushed immediately *)
+  Tty_eio.flush term;
+  (* Reset terminal to cooked mode *)
   Tty_eio.set_mode term `Cooked;
+  (* Final flush to ensure all changes are applied *)
   Tty_eio.flush term
 
 let setup_terminal t =
   with_term_mutex t ~f:(fun () ->
       try
+        (* Save the current terminal state *)
+        Tty_eio.save_state t.term;
+        Log.debug (fun m -> m "Saved terminal state");
+
         (* First ensure the terminal is in a clean state *)
         let reset_seq =
           Ansi.mouse_off ^ Ansi.bracketed_paste_off ^ Ansi.kitty_keyboard_off
@@ -214,23 +224,10 @@ let setup_terminal t =
 let resize_handler t _ = Eio.Condition.broadcast t.resize_cond
 
 let setup_signal_handlers t =
-  let had_alt = is_alt t.render_mode in
   let emergency _ =
-    (* Check if we're in a TTY environment before cleanup *)
-    (try
-       if
-         Unix.isatty (Tty_eio.input_fd t.term)
-         && Unix.isatty (Tty_eio.output_fd t.term)
-       then full_cleanup t.term had_alt
-       else
-         (* Non-TTY fallback: just log if debug is enabled *)
-         Log.debug (fun m ->
-             m
-               "Signal received in non-TTY environment, skipping terminal \
-                cleanup")
-     with _ -> (
-       (* If checking TTY status fails, attempt cleanup anyway *)
-       try full_cleanup t.term had_alt with _ -> ()));
+    (* In signal handler context, just release the terminal *)
+    (* The Tty module's release function now handles signal contexts properly *)
+    (try Tty_eio.release t.term with _ -> ());
     exit 130
   in
   t.sigint_prev <- Some (Sys.signal Sys.sigint (Sys.Signal_handle emergency));
@@ -248,8 +245,18 @@ let restore sig_no v =
 let cleanup t =
   Tty_eio.remove_resize_handlers t.term;
   (try
-     with_term_mutex t ~f:(fun () -> full_cleanup t.term (is_alt t.render_mode))
-   with Eio.Mutex.Poisoned _ -> full_cleanup t.term (is_alt t.render_mode));
+     with_term_mutex t ~f:(fun () ->
+         (* Send cleanup escape sequences *)
+         full_cleanup t.term (is_alt t.render_mode);
+         (* Restore the saved terminal state *)
+         Tty_eio.restore_state t.term;
+         Log.debug (fun m -> m "Restored terminal state during cleanup"))
+   with Eio.Mutex.Poisoned _ -> (
+     (* If mutex is poisoned, still try to restore *)
+     try
+       Tty_eio.restore_state t.term;
+       Tty_eio.flush t.term
+     with _ -> ( try Tty_eio.release t.term with _ -> ())));
   restore Sys.sigint t.sigint_prev;
   restore Sys.sigterm t.sigterm_prev;
   restore Sys.sighup t.sighup_prev

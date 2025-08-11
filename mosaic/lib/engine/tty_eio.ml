@@ -17,10 +17,15 @@ let create ~sw ~env ?tty () =
   (* Create the underlying Matrix TTY *)
   let matrix_tty = Tty.create ?tty input_fd output_fd in
 
-  (* Register cleanup with switch *)
+  (* Save the initial terminal state *)
+  Tty.save_state matrix_tty;
+
+  let t = { matrix_tty; input = Source env#stdin; output = Sink env#stdout } in
+
+  (* Register cleanup with switch - this will restore to the original state *)
   Switch.on_release sw (fun () -> Tty.release matrix_tty);
 
-  { matrix_tty; input = Source env#stdin; output = Sink env#stdout }
+  t
 
 let with_terminal ~sw ~env ?tty f =
   let t = create ~sw ~env ?tty () in
