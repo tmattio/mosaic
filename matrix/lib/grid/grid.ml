@@ -146,15 +146,15 @@ module Storage = struct
       if base >= Bytes.length texts then ""
       else
         (* Check first byte to see if it's inline or pooled *)
-        let b0 = Char.code (Bytes.get texts base) in
+        let b0 = Char.code (Bytes.unsafe_get texts base) in
         if b0 = 0 then ""
         else if b0 = 255 then
           (* Pooled string - next 4 bytes are index *)
           let idx =
-            Char.code (Bytes.get texts (base + 1))
-            lor (Char.code (Bytes.get texts (base + 2)) lsl 8)
-            lor (Char.code (Bytes.get texts (base + 3)) lsl 16)
-            lor (Char.code (Bytes.get texts (base + 4)) lsl 24)
+            Char.code (Bytes.unsafe_get texts (base + 1))
+            lor (Char.code (Bytes.unsafe_get texts (base + 2)) lsl 8)
+            lor (Char.code (Bytes.unsafe_get texts (base + 3)) lsl 16)
+            lor (Char.code (Bytes.unsafe_get texts (base + 4)) lsl 24)
           in
           if idx >= 0 && idx < storage.pool_size then storage.pool_strings.(idx)
           else "" (* Invalid index, return empty string *)
@@ -165,7 +165,7 @@ module Storage = struct
           else
             let buf = Bytes.create len in
             for i = 0 to len - 1 do
-              Bytes.set buf i (Bytes.get texts (base + 1 + i))
+              Bytes.unsafe_set buf i (Bytes.unsafe_get texts (base + 1 + i))
             done;
             Bytes.to_string buf
 
@@ -182,7 +182,7 @@ module Storage = struct
           Bytes.fill texts base 8 '\000'
         else if len <= 7 then (
           (* Inline storage - first byte is length *)
-          Bytes.set texts base (Char.chr len);
+          Bytes.unsafe_set texts base (Char.chr len);
           (* Use blit for faster copy *)
           Bytes.blit_string s 0 texts (base + 1) len;
           (* Clear remaining bytes *)
@@ -190,12 +190,12 @@ module Storage = struct
         else
           (* Pool storage *)
           let idx = intern_string storage s in
-          Bytes.set texts base '\255';
+          Bytes.unsafe_set texts base '\255';
           (* Marker for pooled *)
-          Bytes.set texts (base + 1) (Char.chr (idx land 0xFF));
-          Bytes.set texts (base + 2) (Char.chr ((idx lsr 8) land 0xFF));
-          Bytes.set texts (base + 3) (Char.chr ((idx lsr 16) land 0xFF));
-          Bytes.set texts (base + 4) (Char.chr ((idx lsr 24) land 0xFF));
+          Bytes.unsafe_set texts (base + 1) (Char.chr (idx land 0xFF));
+          Bytes.unsafe_set texts (base + 2) (Char.chr ((idx lsr 8) land 0xFF));
+          Bytes.unsafe_set texts (base + 3) (Char.chr ((idx lsr 16) land 0xFF));
+          Bytes.unsafe_set texts (base + 4) (Char.chr ((idx lsr 24) land 0xFF));
           Bytes.fill texts (base + 5) 3 '\000'
 
   let get_cell storage row col =
@@ -203,11 +203,11 @@ module Storage = struct
     let cols = Bigarray.Array2.dim2 storage.types in
     if row < 0 || row >= rows || col < 0 || col >= cols then Cell.empty
     else
-      let cell_type = Bigarray.Array2.get storage.types row col in
+      let cell_type = Bigarray.Array2.unsafe_get storage.types row col in
       match cell_type with
       | 0 ->
           (* Empty cell - check if it has a style *)
-          let style_int64 = Bigarray.Array2.get storage.styles row col in
+          let style_int64 = Bigarray.Array2.unsafe_get storage.styles row col in
           let style = Ansi.Style.of_int64 style_int64 in
           if Ansi.Style.equal style Ansi.Style.default then Cell.empty
           else
@@ -216,13 +216,15 @@ module Storage = struct
       | 1 ->
           let text = get_string storage row col in
           let style =
-            Ansi.Style.of_int64 (Bigarray.Array2.get storage.styles row col)
+            Ansi.Style.of_int64
+              (Bigarray.Array2.unsafe_get storage.styles row col)
           in
           (* Note: links are handled at storage level, not cell level *)
           Cell.make_glyph text ~style ~east_asian_context:false
       | 2 ->
           let style =
-            Ansi.Style.of_int64 (Bigarray.Array2.get storage.styles row col)
+            Ansi.Style.of_int64
+              (Bigarray.Array2.unsafe_get storage.styles row col)
           in
           Cell.make_continuation ~style
       | _ -> Cell.empty
@@ -250,30 +252,28 @@ module Storage = struct
   let cell_hash storage row col = fast_hash storage row col
 
   let set_cell_with_old_hash storage row col cell =
-    (* Get old cell hash before modifying *)
     let old_hash = cell_hash storage row col in
-
     (if Cell.is_empty cell then (
-       Bigarray.Array2.set storage.types row col 0;
-       Bigarray.Array2.set storage.widths row col 0;
-       Bigarray.Array2.set storage.styles row col (Ansi.Style.default :> int64);
+       Bigarray.Array2.unsafe_set storage.types row col 0;
+       Bigarray.Array2.unsafe_set storage.widths row col 0;
+       Bigarray.Array2.unsafe_set storage.styles row col
+         (Ansi.Style.default :> int64);
        set_string storage row col "")
      else if Cell.is_continuation cell then (
        let style = Cell.get_style cell in
-       Bigarray.Array2.set storage.types row col 2;
-       Bigarray.Array2.set storage.widths row col 0;
-       Bigarray.Array2.set storage.styles row col (style :> int64);
+       Bigarray.Array2.unsafe_set storage.types row col 2;
+       Bigarray.Array2.unsafe_set storage.widths row col 0;
+       Bigarray.Array2.unsafe_set storage.styles row col (style :> int64);
        set_string storage row col "")
      else
        (* Glyph *)
        let text = Cell.get_text cell in
        let width = Cell.width cell in
        let style = Cell.get_style cell in
-       Bigarray.Array2.set storage.types row col 1;
-       Bigarray.Array2.set storage.widths row col width;
-       Bigarray.Array2.set storage.styles row col (style :> int64);
+       Bigarray.Array2.unsafe_set storage.types row col 1;
+       Bigarray.Array2.unsafe_set storage.widths row col width;
+       Bigarray.Array2.unsafe_set storage.styles row col (style :> int64);
        set_string storage row col text);
-
     (* Return old hash for incremental updates *)
     old_hash
 
@@ -289,8 +289,8 @@ module Storage = struct
       { cell_type = 0; style = (Ansi.Style.default :> int64) }
     else
       {
-        cell_type = Bigarray.Array2.get storage.types row col;
-        style = Bigarray.Array2.get storage.styles row col;
+        cell_type = Bigarray.Array2.unsafe_get storage.types row col;
+        style = Bigarray.Array2.unsafe_get storage.styles row col;
       }
 
   (* Fast cell comparison without full Cell construction *)
@@ -318,7 +318,9 @@ module Storage = struct
         (* Compare the 8 bytes directly *)
         let rec compare_bytes i =
           if i >= 8 then true
-          else if Bytes.get texts1 (base1 + i) <> Bytes.get texts2 (base2 + i)
+          else if
+            Bytes.unsafe_get texts1 (base1 + i)
+            <> Bytes.unsafe_get texts2 (base2 + i)
           then false
           else compare_bytes (i + 1)
         in
@@ -664,6 +666,7 @@ let set_grapheme ?link ?east_asian_context grid ~row ~col ~glyph ~attrs =
 
 let set_text ?link ?east_asian_context ?max_width grid ~row ~col ~text ~attrs =
   if String.length text = 0 then 0
+  else if row < 0 || row >= grid.rows then 0
   else
     let east_asian_context =
       Option.value east_asian_context ~default:grid.east_asian_context
@@ -675,160 +678,161 @@ let set_text ?link ?east_asian_context ?max_width grid ~row ~col ~text ~attrs =
       | None -> grid.cols
       | Some w -> min grid.cols (col + w)
     in
-
-    (* Fast path for pure ASCII text - avoid Uuseg overhead *)
-    let is_pure_ascii =
-      let rec check i =
-        if i >= String.length text then true
-        else
-          let c = Char.code text.[i] in
-          if c >= 128 then false else check (i + 1)
-      in
-      check 0
-    in
-
-    if is_pure_ascii then (
-      (* ASCII fast path - batch all changes, update hash once *)
-      (* Handle link if provided *)
-      let attrs =
-        match link with
-        | None -> attrs
-        | Some url ->
-            let link_id =
-              let existing_id = ref None in
-              Hashtbl.iter
-                (fun id stored_url ->
-                  if stored_url = url then existing_id := Some id)
-                grid.storage.link_table;
-              match !existing_id with
-              | Some id -> id
-              | None ->
-                  let id = grid.storage.next_link_id in
-                  Hashtbl.add grid.storage.link_table id url;
-                  grid.storage.next_link_id <- grid.storage.next_link_id + 1;
-                  id
-            in
-            Ansi.Style.set_link_id attrs link_id
-      in
-
-      (* Clear any existing wide characters in the range first *)
-      for i = 0 to String.length text - 1 do
-        if col + i < grid.cols then
-          let existing_cell = Storage.get_cell grid.storage row (col + i) in
-          let old_width = Cell.width existing_cell in
-          if old_width > 1 then
-            (* Clear continuation cells from wide chars *)
-            for j = 1 to min (old_width - 1) (grid.cols - col - i - 1) do
-              Storage.set_cell grid.storage row (col + i + j) Cell.empty
-            done
-      done;
-
-      (* Now set all ASCII characters directly *)
-      for i = 0 to String.length text - 1 do
-        if !current_col < max_col then
-          let c = text.[i] in
-          let c_code = Char.code c in
-          if c_code >= 32 && c_code < 127 then (
-            (* Printable ASCII character - set directly without using set_grapheme *)
-            let cell =
-              Cell.make_glyph (String.make 1 c) ~style:attrs ~east_asian_context
-            in
-            Storage.set_cell grid.storage row !current_col cell;
-            (* Update cell hash cache *)
-            grid.cell_hashes.(row).(!current_col) <-
-              Storage.fast_hash grid.storage row !current_col;
-            mark_col_dirty grid row !current_col;
-            incr current_col;
-            incr total_width) (* Skip control characters *)
-      done;
-
-      (* Update row hash once for all changes *)
-      if !total_width > 0 then (
-        (* Recompute row hash from cell hashes *)
-        grid.row_hashes.(row) <-
-          row_hash_from_cache grid.cell_hashes.(row) grid.cols;
-        grid.dirty_rows.(row) <- true);
-
-      !total_width)
+    if col >= grid.cols then 0
     else
-      (* Full Unicode path - use Uuseg for grapheme cluster segmentation *)
-      (* Fold over grapheme clusters in the text *)
-      let folder () grapheme =
-        if !current_col < max_col then
-          let width =
-            Ucwidth.string_width ~east_asian:east_asian_context grapheme
-          in
-          if width > 0 then (
-            (* Normal width grapheme *)
-            set_grapheme ?link grid ~row ~col:!current_col ~glyph:grapheme
-              ~attrs ~east_asian_context;
-            (* Only count the width that was actually written *)
-            let actual_width = min width (max_col - !current_col) in
-            current_col := !current_col + actual_width;
-            total_width := !total_width + actual_width)
-          else if width = 0 then
-            (* Zero-width grapheme (combining characters, ZWJ, VS15/16, etc) *)
-            (* Check if this is a combining mark character *)
-            let is_combining_mark =
-              match
-                Uutf.decode (Uutf.decoder ~encoding:`UTF_8 (`String grapheme))
-              with
-              | `Uchar u ->
-                  let gc = Uucp.Gc.general_category u in
-                  gc = `Mn || gc = `Mc || gc = `Me
-              | _ -> false
-            in
-
-            if is_combining_mark then (
-              (* Combining mark fed as separate grapheme - advance cursor *)
-              (if !current_col > col then
-                 (* Try to append to previous cell first *)
-                 let prev_col = !current_col - 1 in
-                 match Storage.get_cell grid.storage row prev_col with
-                 | cell
-                   when (not (Cell.is_empty cell))
-                        && not (Cell.is_continuation cell) ->
-                     (* Append to previous cell's text *)
-                     let prev_text = Cell.get_text cell in
-                     let combined_text = prev_text ^ grapheme in
-                     let combined_cell =
-                       Cell.make_glyph combined_text
-                         ~style:(Cell.get_style cell) ~east_asian_context
-                     in
-                     Storage.set_cell grid.storage row prev_col combined_cell
-                 | _ ->
-                     (* No valid previous cell - place as standalone *)
-                     set_grapheme ?link grid ~row ~col:!current_col
-                       ~glyph:grapheme ~attrs ~east_asian_context);
-              (* Advance cursor for separately-fed combining marks 
-               This matches terminal behavior when combining marks are sent as separate characters *)
-              current_col := !current_col + 1;
-              total_width := !total_width + 1)
-            else if !current_col > col then
-              (* Other zero-width characters (ZWJ, VS, etc) - don't advance cursor *)
-              let prev_col = !current_col - 1 in
-              match Storage.get_cell grid.storage row prev_col with
-              | cell
-                when (not (Cell.is_empty cell))
-                     && not (Cell.is_continuation cell) ->
-                  (* Append to previous cell's text *)
-                  let prev_text = Cell.get_text cell in
-                  let combined_text = prev_text ^ grapheme in
-                  let combined_cell =
-                    Cell.make_glyph combined_text ~style:(Cell.get_style cell)
-                      ~east_asian_context
-                  in
-                  Storage.set_cell grid.storage row prev_col combined_cell;
-                  (* Don't advance cursor for other zero-width chars *)
-                  ()
-              | _ ->
-                  (* No previous cell or it's empty/continuation - skip this grapheme *)
-                  ()
-        (* else: zero-width at start of line - skip it *)
+      let is_pure_ascii =
+        let rec check i =
+          if i >= String.length text then true
+          else
+            let c = Char.code text.[i] in
+            if c >= 128 then false else check (i + 1)
+        in
+        check 0
       in
+      if is_pure_ascii then (
+        (* ASCII fast path - batch all changes, update hash once *)
+        (* Handle link if provided *)
+        let attrs =
+          match link with
+          | None -> attrs
+          | Some url ->
+              (* Add link to storage and get ID *)
+              let link_id =
+                (* Check if URL already exists *)
+                let existing_id = ref None in
+                Hashtbl.iter
+                  (fun id stored_url ->
+                    if stored_url = url then existing_id := Some id)
+                  grid.storage.link_table;
+                match !existing_id with
+                | Some id -> id
+                | None ->
+                    (* Add new link *)
+                    let id = grid.storage.next_link_id in
+                    Hashtbl.add grid.storage.link_table id url;
+                    grid.storage.next_link_id <- grid.storage.next_link_id + 1;
+                    id
+              in
+              (* Encode link ID in style *)
+              Ansi.Style.set_link_id attrs link_id
+        in
+        (* Clear any existing wide characters in the range first *)
+        for i = 0 to String.length text - 1 do
+          if col + i < grid.cols then
+            let existing_cell = Storage.get_cell grid.storage row (col + i) in
+            let old_width = Cell.width existing_cell in
+            if old_width > 1 then
+              (* Clear continuation cells from wide chars *)
+              for j = 1 to min (old_width - 1) (grid.cols - col - i - 1) do
+                Storage.set_cell grid.storage row (col + i + j) Cell.empty
+              done
+        done;
+        (* Now set all ASCII characters directly *)
+        for i = 0 to String.length text - 1 do
+          if !current_col < max_col then
+            let c = text.[i] in
+            let c_code = Char.code c in
+            if c_code >= 32 && c_code < 127 then (
+              (* Printable ASCII character - set directly without using set_grapheme *)
+              let cell =
+                Cell.make_glyph (String.make 1 c) ~style:attrs
+                  ~east_asian_context
+              in
+              if !current_col >= 0 then (
+                Storage.set_cell grid.storage row !current_col cell;
+                (* Update cell hash cache *)
+                grid.cell_hashes.(row).(!current_col) <-
+                  Storage.fast_hash grid.storage row !current_col;
+                mark_col_dirty grid row !current_col);
+              incr current_col;
+              incr total_width) (* Skip control characters *)
+        done;
+        (* Update row hash once for all changes *)
+        if !total_width > 0 then (
+          (* Recompute row hash from cell hashes *)
+          grid.row_hashes.(row) <-
+            row_hash_from_cache grid.cell_hashes.(row) grid.cols;
+          grid.dirty_rows.(row) <- true);
+        !total_width)
+      else
+        (* Full Unicode path - use Uuseg for grapheme cluster segmentation *)
+        (* Fold over grapheme clusters in the text *)
+        let folder () grapheme =
+          if !current_col < max_col then
+            let width =
+              Ucwidth.string_width ~east_asian:east_asian_context grapheme
+            in
+            if width > 0 then (
+              (* Normal width grapheme *)
+              set_grapheme ?link grid ~row ~col:!current_col ~glyph:grapheme
+                ~attrs ~east_asian_context;
+              (* Only count the width that was actually written *)
+              let actual_width = min width (max_col - !current_col) in
+              current_col := !current_col + actual_width;
+              total_width := !total_width + actual_width)
+            else if width = 0 then
+              (* Zero-width grapheme (combining characters, ZWJ, VS15/16, etc) *)
+              (* Check if this is a combining mark character *)
+              let is_combining_mark =
+                match
+                  Uutf.decode (Uutf.decoder ~encoding:`UTF_8 (`String grapheme))
+                with
+                | `Uchar u ->
+                    let gc = Uucp.Gc.general_category u in
+                    gc = `Mn || gc = `Mc || gc = `Me
+                | _ -> false
+              in
 
-      Uuseg_string.fold_utf_8 `Grapheme_cluster folder () text;
-      !total_width
+              if is_combining_mark then (
+                (* Combining mark fed as separate grapheme - advance cursor *)
+                (if !current_col > col then
+                   (* Try to append to previous cell first *)
+                   let prev_col = !current_col - 1 in
+                   match Storage.get_cell grid.storage row prev_col with
+                   | cell
+                     when (not (Cell.is_empty cell))
+                          && not (Cell.is_continuation cell) ->
+                       (* Append to previous cell's text *)
+                       let prev_text = Cell.get_text cell in
+                       let combined_text = prev_text ^ grapheme in
+                       let combined_cell =
+                         Cell.make_glyph combined_text
+                           ~style:(Cell.get_style cell) ~east_asian_context
+                       in
+                       Storage.set_cell grid.storage row prev_col combined_cell
+                   | _ ->
+                       (* No valid previous cell - place as standalone *)
+                       set_grapheme ?link grid ~row ~col:!current_col
+                         ~glyph:grapheme ~attrs ~east_asian_context);
+                (* Advance cursor for separately-fed combining marks 
+               This matches terminal behavior when combining marks are sent as separate characters *)
+                current_col := !current_col + 1;
+                total_width := !total_width + 1)
+              else if !current_col > col then
+                (* Other zero-width characters (ZWJ, VS, etc) - don't advance cursor *)
+                let prev_col = !current_col - 1 in
+                match Storage.get_cell grid.storage row prev_col with
+                | cell
+                  when (not (Cell.is_empty cell))
+                       && not (Cell.is_continuation cell) ->
+                    (* Append to previous cell's text *)
+                    let prev_text = Cell.get_text cell in
+                    let combined_text = prev_text ^ grapheme in
+                    let combined_cell =
+                      Cell.make_glyph combined_text ~style:(Cell.get_style cell)
+                        ~east_asian_context
+                    in
+                    Storage.set_cell grid.storage row prev_col combined_cell;
+                    (* Don't advance cursor for other zero-width chars *)
+                    ()
+                | _ ->
+                    (* No previous cell or it's empty/continuation - skip this grapheme *)
+                    ()
+          (* else: zero-width at start of line - skip it *)
+        in
+
+        Uuseg_string.fold_utf_8 `Grapheme_cluster folder () text;
+        !total_width
 
 let clear ?style grid =
   let nrows = grid.rows in
