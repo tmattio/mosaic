@@ -10,7 +10,7 @@ val use_click : Ui.Attr.key -> (unit -> unit) -> unit
     Example:
     {[
       let button ~on_click () =
-        let key = Tile_key.use_key ~prefix:"btn" in
+        let key = Tile.use_key ~prefix:"btn" in
         Tile_events.use_click key on_click;
         Ui.with_key key (...)
     ]} *)
