@@ -109,4 +109,4 @@ let animated_sine () =
 
 let () =
   Printexc.record_backtrace true;
-  run ~alt_screen:true animated_sine
+  run ~alt_screen:true ~fps:30 animated_sine

@@ -1,11 +1,16 @@
 (** Tests for the Event_source module *)
 
 open Test_utils
+open Engine
+
+let make_test_terminal ~sw input =
+  let term, get_output, _close = Tty_eio.create_from_strings ~sw input in
+  (term, get_output)
 
 (** Helper to create source and read event *)
 let read_event_from_string input ~timeout =
   run_eio (fun env sw ->
-      let term, _ = make_test_terminal input in
+      let term, _ = make_test_terminal ~sw input in
       let source = Event_source.create ~sw ~env term in
       Event_source.read source ~clock:(Eio.Stdenv.clock env) ~timeout)
 
@@ -34,7 +39,7 @@ let test_ctrl_c_event () =
 let test_event_queue () =
   (* Test multiple events in single read *)
   run_eio @@ fun env sw ->
-  let term, _ = make_test_terminal "abc" in
+  let term, _ = make_test_terminal ~sw "abc" in
   let source = Event_source.create ~sw ~env term in
   let clock = Eio.Stdenv.clock env in
 
@@ -65,7 +70,7 @@ let test_timeout_behavior () =
 let test_eof_handling () =
   (* Test EOF after some input *)
   run_eio @@ fun env sw ->
-  let term, _ = make_test_terminal "a" in
+  let term, _ = make_test_terminal ~sw "a" in
   let source = Event_source.create ~sw ~env term in
   let clock = Eio.Stdenv.clock env in
 
@@ -102,7 +107,7 @@ let test_mouse_event () =
 let test_paste_events () =
   (* Test bracketed paste *)
   run_eio @@ fun env sw ->
-  let term, _ = make_test_terminal "\x1b[200~test\x1b[201~" in
+  let term, _ = make_test_terminal ~sw "\x1b[200~test\x1b[201~" in
   let source = Event_source.create ~sw ~env term in
   let clock = Eio.Stdenv.clock env in
 
@@ -184,7 +189,7 @@ let test_rapid_events () =
     String.concat ""
       (List.init 100 (fun i -> String.make 1 (Char.chr (65 + (i mod 26)))))
   in
-  let term, _ = make_test_terminal input in
+  let term, _ = make_test_terminal ~sw input in
   let source = Event_source.create ~sw ~env term in
   let clock = Eio.Stdenv.clock env in
 
@@ -205,7 +210,7 @@ let test_large_paste () =
   run_eio @@ fun env sw ->
   let paste_content = String.make 1000 'X' in
   let input = Printf.sprintf "\x1b[200~%s\x1b[201~" paste_content in
-  let term, _ = make_test_terminal input in
+  let term, _ = make_test_terminal ~sw input in
   let source = Event_source.create ~sw ~env term in
   let clock = Eio.Stdenv.clock env in
 

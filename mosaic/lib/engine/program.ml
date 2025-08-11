@@ -39,7 +39,7 @@ let setup_logging oc enabled =
 (*  Public configuration type *)
 
 type config = {
-  terminal : Tty.t option;
+  terminal : Tty_eio.t option;
   alt_screen : bool;
   mouse : bool;
   fps : int;
@@ -64,7 +64,7 @@ type t = {
   (* mutable flag *)
   mutable running : bool;
   (* terminal & I *)
-  term : Tty.t;
+  term : Tty_eio.t;
   mutable event_source : Event_source.t option;
   (* user confi *)
   mouse : bool;
@@ -97,15 +97,15 @@ type t = {
 
 (*  Constructors / helpers *)
 
-let make_terminal ?terminal () =
+let make_terminal ?terminal ~sw ~env () =
   match terminal with
   | Some tty -> tty
-  | None -> Tty.create ~tty:true Unix.stdin Unix.stdout
+  | None -> Tty_eio.create ~sw ~env ~tty:true ()
 
 let create (cfg : config) ~(sw : Switch.t) ~(env : Eio_unix.Stdenv.base) : t =
   (* Setup logging if debug_log is provided *)
   (match cfg.debug_log with Some oc -> setup_logging oc true | None -> ());
-  let term = make_terminal ?terminal:cfg.terminal () in
+  let term = make_terminal ?terminal:cfg.terminal ~sw ~env () in
   let render_mode =
     if cfg.alt_screen then Alt_screen { previous = None }
     else Standard { previous_dynamic = None }
@@ -173,9 +173,9 @@ let build_cleanup_sequence had_alt_screen =
 
 let full_cleanup term had_alt_screen =
   let seq = build_cleanup_sequence had_alt_screen in
-  Tty.write term (Bytes.of_string seq) 0 (String.length seq);
-  Tty.set_mode term `Cooked;
-  Tty.flush term
+  Tty_eio.write term (Bytes.of_string seq) 0 (String.length seq);
+  Tty_eio.set_mode term `Cooked;
+  Tty_eio.flush term
 
 let setup_terminal t =
   with_term_mutex t ~f:(fun () ->
@@ -186,42 +186,37 @@ let setup_terminal t =
           ^ Ansi.focus_event_off (* Disable focus events first *)
         in
         log_terminal_output reset_seq "terminal reset sequence";
-        Tty.write t.term (Bytes.of_string reset_seq) 0 (String.length reset_seq);
-        Tty.flush t.term;
+        Tty_eio.write t.term (Bytes.of_string reset_seq) 0 (String.length reset_seq);
+        Tty_eio.flush t.term;
 
         (* Now set up the terminal for our use *)
-        Tty.set_mode t.term `Raw;
-        Tty.hide_cursor t.term;
+        Tty_eio.set_mode t.term `Raw;
+        Tty_eio.hide_cursor t.term;
         (match t.render_mode with
-        | Alt_screen _ -> Tty.enable_alternate_screen t.term
+        | Alt_screen _ -> Tty_eio.enable_alternate_screen t.term
         | _ -> ());
-        if t.mouse then Tty.set_mouse_mode t.term `Any;
-        Tty.enable_focus_reporting t.term;
-        Tty.enable_kitty_keyboard t.term;
-        Tty.enable_bracketed_paste t.term;
-        Tty.flush t.term;
+        if t.mouse then Tty_eio.set_mouse_mode t.term `Any;
+        Tty_eio.enable_focus_reporting t.term;
+        Tty_eio.enable_kitty_keyboard t.term;
+        Tty_eio.enable_bracketed_paste t.term;
+        Tty_eio.flush t.term;
 
         (* Clear any pending input that might have been buffered before raw mode *)
-        (* Only do this for actual TTYs, not pipes or regular files *)
-        let input_fd = Tty.input_fd t.term in
+        (* Use non-blocking read to avoid blocking the domain *)
+        let input_fd = Tty_eio.input_fd t.term in
         if Unix.isatty input_fd then (
-          let buf = Bytes.create 256 in
-          try
-            Unix.set_nonblock input_fd;
-            while Unix.read input_fd buf 0 256 > 0 do
-              ()
-            done;
-            (* Always restore blocking mode after clearing *)
-            Unix.clear_nonblock input_fd
-          with
-          | Unix.Unix_error (Unix.EAGAIN, _, _)
-          | Unix.Unix_error (Unix.EWOULDBLOCK, _, _) ->
-              (* Restore blocking mode even on EAGAIN/EWOULDBLOCK *)
-              Unix.clear_nonblock input_fd
-          | exn ->
-              (* Ensure we restore blocking mode even on unexpected errors *)
-              Unix.clear_nonblock input_fd;
-              raise exn);
+          Unix.set_nonblock input_fd; (* Ensure non-blocking mode *)
+          let buf = Bytes.create 4096 in
+          let rec clear_input ~max_iters =
+            if max_iters <= 0 then ()
+            else
+              try
+                Eio_unix.await_readable input_fd; (* Non-blocking wait for readability *)
+                let n = Tty_eio.read t.term buf 0 4096 in
+                if n > 0 then clear_input ~max_iters:(max_iters - 1)
+              with _ -> () (* Ignore errors, e.g., no data or EAGAIN *)
+          in
+          try clear_input ~max_iters:10 with _ -> ());
 
         Log.debug (fun m -> m "Terminal setup complete")
       with exn ->
@@ -237,7 +232,7 @@ let setup_signal_handlers t =
     (* Check if we're in a TTY environment before cleanup *)
     (try
        if
-         Unix.isatty (Tty.input_fd t.term) && Unix.isatty (Tty.output_fd t.term)
+         Unix.isatty (Tty_eio.input_fd t.term) && Unix.isatty (Tty_eio.output_fd t.term)
        then full_cleanup t.term had_alt
        else
          (* Non-TTY fallback: just log if debug is enabled *)
@@ -255,15 +250,15 @@ let setup_signal_handlers t =
   t.sighup_prev <- Some (Sys.signal Sys.sighup (Sys.Signal_handle emergency));
   (* Only set resize handler if we're in a TTY *)
   try
-    if Unix.isatty (Tty.input_fd t.term) then
-      Tty.set_resize_handler t.term (resize_handler t)
+    if Unix.isatty (Tty_eio.input_fd t.term) then
+      Tty_eio.set_resize_handler t.term (resize_handler t)
   with _ -> ()
 
 let restore sig_no v =
   Sys.set_signal sig_no (Option.value v ~default:Sys.Signal_default)
 
 let cleanup t =
-  Tty.remove_resize_handlers t.term;
+  Tty_eio.remove_resize_handlers t.term;
   (try
      with_term_mutex t ~f:(fun () -> full_cleanup t.term (is_alt t.render_mode))
    with Eio.Mutex.Poisoned _ -> full_cleanup t.term (is_alt t.render_mode));
@@ -282,7 +277,7 @@ let stop t =
 
 let do_render t dyn_el =
   let render_start = Unix.gettimeofday () in
-  let width, height = with_term_mutex t ~f:(fun () -> Tty.size t.term) in
+  let width, height = with_term_mutex t ~f:(fun () -> Tty_eio.size t.term) in
   Log.debug (fun m -> m "Starting render: width=%d height=%d" width height);
 
   (* Prepare final element for both modes *)
@@ -305,6 +300,9 @@ let do_render t dyn_el =
     | _ -> ()
   in
 
+  (* NEW: Use a Buffer.t to collect all output strings before writing *)
+  let output_buf = Buffer.create 4096 in  (* Initial size; will grow as needed *)
+
   match t.render_mode with
   | Alt_screen rm ->
       (* Ensure we reuse a persistent [Screen.t] so that [present] can diff
@@ -323,33 +321,37 @@ let do_render t dyn_el =
 
       (if is_first_frame then (
          (* First frame: must do a full render since front buffer is empty *)
-         let output = Ansi.cursor_position 1 1 ^ Screen.render_to_string scr in
-         log_terminal_output output "alt-screen first frame (full render)";
+         Buffer.add_string output_buf (Ansi.cursor_position 1 1);
+         Buffer.add_string output_buf (Screen.render_to_string scr);
+         (* NEW: Single write for the entire output *)
+         let output = Buffer.contents output_buf in
+         log_terminal_output output "alt-screen first frame (full render, buffered)";
          with_term_mutex t ~f:(fun () ->
-             Tty.write t.term (Bytes.of_string output) 0 (String.length output);
-             Tty.flush t.term))
+             Tty_eio.write t.term (Bytes.of_string output) 0 (String.length output);
+             Tty_eio.flush t.term))
        else
          (* Subsequent frames: use patches with synchronized updates *)
          let patches = Screen.render scr in
          if patches <> [] then (
-           let output = Screen.patches_to_sgr_synchronized patches in
+           Buffer.add_string output_buf (Screen.patches_to_sgr_synchronized patches);
+           let output = Buffer.contents output_buf in
            Log.info (fun m ->
-               m "Alt-screen incremental update: %d patches"
+               m "Alt-screen incremental update: %d patches (buffered)"
                  (List.length patches));
            log_terminal_output output
-             (Printf.sprintf "alt-screen patches (%d patches)"
+             (Printf.sprintf "alt-screen patches (%d patches, buffered)"
                 (List.length patches));
            with_term_mutex t ~f:(fun () ->
-               Tty.write t.term (Bytes.of_string output) 0
+               Tty_eio.write t.term (Bytes.of_string output) 0
                  (String.length output);
-               Tty.flush t.term))
+               Tty_eio.flush t.term))
          else Log.info (fun m -> m "Alt-screen frame skipped: no patches"));
 
       (* Swap buffers for next frame *)
       let dirty_regions = Screen.present scr in
       let render_elapsed_ms = (Unix.gettimeofday () -. render_start) *. 1000. in
       Log.debug (fun m ->
-          m "Rendered alt-screen frame with %d dirty regions in %.2fms"
+          m "Rendered alt-screen frame with %d dirty regions in %.2fms (buffered)"
             (List.length dirty_regions)
             render_elapsed_ms);
       rm.previous <- Some scr
@@ -362,21 +364,23 @@ let do_render t dyn_el =
       if needs_full then (
         let scr = Screen.create ~rows:height ~cols:width () in
         render_to scr;
-        let output =
-          Ansi.cursor_position 1 1 ^ Ansi.clear_screen
-          ^ Screen.render_to_string scr
-          ^ "\n"
-        in
-        log_terminal_output output "standard mode full render";
+        (* NEW: Buffer the output *)
+        Buffer.add_string output_buf (Ansi.cursor_position 1 1);
+        Buffer.add_string output_buf Ansi.clear_screen;
+        Buffer.add_string output_buf (Screen.render_to_string scr);
+        Buffer.add_string output_buf "\n";
+        (* Single write *)
+        let output = Buffer.contents output_buf in
+        log_terminal_output output "standard mode full render (buffered)";
         with_term_mutex t ~f:(fun () ->
-            Tty.write t.term (Bytes.of_string output) 0 (String.length output);
-            Tty.flush t.term);
+            Tty_eio.write t.term (Bytes.of_string output) 0 (String.length output);
+            Tty_eio.flush t.term);
         let dirty_regions = Screen.present scr in
         let render_elapsed_ms =
           (Unix.gettimeofday () -. render_start) *. 1000.
         in
         Log.debug (fun m ->
-            m "Rendered standard frame (full) with %d dirty regions in %.2fms"
+            m "Rendered standard frame (full) with %d dirty regions in %.2fms (buffered)"
               (List.length dirty_regions)
               render_elapsed_ms);
         rm.previous_dynamic <- Some scr)
@@ -385,16 +389,17 @@ let do_render t dyn_el =
         render_to scr;
         let patches = Screen.render scr in
         if patches <> [] then (
-          let output = Screen.patches_to_sgr_synchronized patches in
+          Buffer.add_string output_buf (Screen.patches_to_sgr_synchronized patches);
+          let output = Buffer.contents output_buf in
           Log.info (fun m ->
-              m "Standard mode incremental update: %d patches"
+              m "Standard mode incremental update: %d patches (buffered)"
                 (List.length patches));
           log_terminal_output output
-            (Printf.sprintf "standard mode patches (%d patches)"
+            (Printf.sprintf "standard mode patches (%d patches, buffered)"
                (List.length patches));
           with_term_mutex t ~f:(fun () ->
-              Tty.write t.term (Bytes.of_string output) 0 (String.length output);
-              Tty.flush t.term))
+              Tty_eio.write t.term (Bytes.of_string output) 0 (String.length output);
+              Tty_eio.flush t.term))
         else Log.info (fun m -> m "Standard mode frame skipped: no patches");
         let dirty_regions = Screen.present scr in
         let render_elapsed_ms =
@@ -403,7 +408,7 @@ let do_render t dyn_el =
         Log.debug (fun m ->
             m
               "Rendered standard frame (partial) with %d dirty regions in \
-               %.2fms"
+               %.2fms (buffered)"
               (List.length dirty_regions)
               render_elapsed_ms);
         ()
@@ -422,16 +427,16 @@ let process_meta_command t meta =
   | Cmd.Clear_screen ->
       with_term_mutex t ~f:(fun () ->
           let seq = Ansi.clear_screen ^ Ansi.esc ^ "H" in
-          Tty.write t.term (Bytes.of_string seq) 0 (String.length seq);
-          Tty.flush t.term);
+          Tty_eio.write t.term (Bytes.of_string seq) 0 (String.length seq);
+          Tty_eio.flush t.term);
       with_state_mutex t ~f:(fun () ->
           t.static_elements <- [];
           match t.render_mode with Standard _ -> () | Alt_screen _ -> ())
   | Cmd.Clear_terminal ->
       with_term_mutex t ~f:(fun () ->
           let seq = Ansi.clear_screen ^ "\027[3J" ^ Ansi.esc ^ "H" in
-          Tty.write t.term (Bytes.of_string seq) 0 (String.length seq);
-          Tty.flush t.term);
+          Tty_eio.write t.term (Bytes.of_string seq) 0 (String.length seq);
+          Tty_eio.flush t.term);
       with_state_mutex t ~f:(fun () ->
           t.static_elements <- [];
           match t.render_mode with
@@ -440,15 +445,15 @@ let process_meta_command t meta =
   | Cmd.Set_window_title title ->
       with_term_mutex t ~f:(fun () ->
           let seq = Printf.sprintf "\027]0;%s\007" title in
-          Tty.write t.term (Bytes.of_string seq) 0 (String.length seq);
-          Tty.flush t.term)
+          Tty_eio.write t.term (Bytes.of_string seq) 0 (String.length seq);
+          Tty_eio.flush t.term)
   | Cmd.Enter_alt_screen -> (
       match t.render_mode with
       | Standard _ ->
           with_term_mutex t ~f:(fun () ->
               let seq = "\0277" ^ "\027[?1049h" in
-              Tty.write t.term (Bytes.of_string seq) 0 (String.length seq);
-              Tty.flush t.term);
+              Tty_eio.write t.term (Bytes.of_string seq) 0 (String.length seq);
+              Tty_eio.flush t.term);
           with_state_mutex t ~f:(fun () ->
               t.render_mode <- Alt_screen { previous = None })
       | Alt_screen _ -> ())
@@ -457,8 +462,8 @@ let process_meta_command t meta =
       | Alt_screen _ ->
           with_term_mutex t ~f:(fun () ->
               let seq = "\027[?1049l" ^ "\0278" in
-              Tty.write t.term (Bytes.of_string seq) 0 (String.length seq);
-              Tty.flush t.term);
+              Tty_eio.write t.term (Bytes.of_string seq) 0 (String.length seq);
+              Tty_eio.flush t.term);
           with_state_mutex t ~f:(fun () ->
               t.render_mode <- Standard { previous_dynamic = None })
       | Standard _ -> ())
@@ -555,7 +560,7 @@ let run_resize_loop t on_resize =
   while t.running do
     Eio.Condition.await_no_mutex t.resize_cond;
     if t.running then
-      let w, h = Tty.size t.term in
+      let w, h = Tty_eio.size t.term in
       on_resize ~w ~h
   done
 

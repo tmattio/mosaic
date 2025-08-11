@@ -1,7 +1,0 @@
-(library
- (name event_source)
- (public_name mosaic.event)
- (libraries matrix.tty matrix.input unix eio eio.unix)
- (foreign_stubs
-  (language c)
-  (names event_win)))

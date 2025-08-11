@@ -227,7 +227,8 @@ let process_mouse state (x, y, new_buttons, ctrl_state, event_flags) =
 
 let create ~sw ~env ~mouse ~paste_threshold ~paste_min_chars terminal =
   let clock = Eio.Stdenv.clock env in
-  let handle = Obj.magic (Tty.input_fd terminal) in
+  let matrix_tty = Tty_eio.get_matrix_tty terminal in
+  let handle = Obj.magic (Tty.input_fd matrix_tty) in
   let original_mode = get_console_mode handle in
   enable_console_mode handle mouse;
   let events = Eio.Stream.create 1024 in
@@ -296,7 +297,7 @@ let create ~sw ~env ~mouse ~paste_threshold ~paste_min_chars terminal =
              then
                let flushed = flush_paste detector in
                List.iter (Eio.Stream.add events) flushed);
-            Eio.Time.sleep clock 0.001 (* Short cooperative sleep *)
+            Eio.Time.sleep clock 0.01 (* 100Hz polling *)
         done
       with Eio.Cancel.Cancelled _ -> `Stop_daemon (* Exit on cancel *));
 

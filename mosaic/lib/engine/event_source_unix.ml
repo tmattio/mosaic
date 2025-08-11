@@ -1,7 +1,9 @@
 let sigwinch = 28
 
 let create ~sw ~env:_ ~mouse:_ terminal =
-  let input_fd = Tty.input_fd terminal in
+  (* Get the underlying Matrix TTY for compatibility *)
+  let matrix_tty = Tty_eio.get_matrix_tty terminal in
+  let input_fd = Tty.input_fd matrix_tty in
   let is_tty = Unix.isatty input_fd in
 
   let events = Eio.Stream.create 1024 in
@@ -12,7 +14,7 @@ let create ~sw ~env:_ ~mouse:_ terminal =
       (Sys.Signal_handle
          (fun _ -> ignore (Unix.write pipe_w (Bytes.of_string "\x00") 0 1)))
   in
-  let prev_size = ref (Tty.size terminal) in
+  let prev_size = ref (Tty.size matrix_tty) in
   (* Push initial resize event only for real TTYs *)
   (if is_tty then
      let w, h = !prev_size in
@@ -20,13 +22,13 @@ let create ~sw ~env:_ ~mouse:_ terminal =
 
   let parser = Input.create () in
 
-  (* Input fiber: cooperative await for input *)
+  (* Input fiber: use Eio flow for non-blocking reads *)
   Eio.Fiber.fork_daemon ~sw (fun () ->
       let buf = Bytes.create 4096 in
       try
         while true do
-          Eio_unix.await_readable input_fd;
-          let n = Unix.read input_fd buf 0 4096 in
+          (* Non-blocking read through Tty_eio *)
+          let n = Tty_eio.read terminal buf 0 4096 in
           if n = 0 then raise Exit;
           (* EOF, exit fiber *)
           let parsed = Input.feed parser buf 0 n in
@@ -44,7 +46,7 @@ let create ~sw ~env:_ ~mouse:_ terminal =
         while true do
           Eio_unix.await_readable pipe_r;
           ignore (Unix.read pipe_r dummy_buf 0 1);
-          let size = Tty.size terminal in
+          let size = Tty.size matrix_tty in
           if size <> !prev_size then (
             prev_size := size;
             let w, h = size in

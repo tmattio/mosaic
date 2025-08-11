@@ -10,5 +10,4 @@
   mosaic.ui
   mosaic.engine
   matrix.input
-  matrix.tty
-  mosaic.event))
+  matrix.tty))

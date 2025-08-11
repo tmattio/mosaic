@@ -62,7 +62,10 @@ let perform f =
     run =
       (fun ~dispatch ->
         enqueue_meta
-          (Perform (fun () -> try Option.iter dispatch (f ()) with _ -> ())));
+          (Perform (fun () -> 
+            try Option.iter dispatch (f ()) 
+            with exn -> 
+              Log.err (fun m -> m "Exception in perform: %s" (Printexc.to_string exn)))));
   }
 
 let perform_eio f =
@@ -70,7 +73,10 @@ let perform_eio f =
     run =
       (fun ~dispatch ->
         enqueue_meta
-          (Perform_eio (fun ~sw ~env -> Option.iter dispatch (f ~sw ~env))));
+          (Perform_eio (fun ~sw ~env -> 
+            try Option.iter dispatch (f ~sw ~env) 
+            with exn -> 
+              Log.err (fun m -> m "Exception in perform_eio: %s" (Printexc.to_string exn)))));
   }
 
 let exec f msg =
@@ -79,7 +85,10 @@ let exec f msg =
       (fun ~dispatch ->
         (* enqueue in the order they must happen *)
         enqueue_meta Exit_alt_screen;
-        enqueue_meta (Perform (fun () -> f ()));
+        enqueue_meta (Perform (fun () -> 
+          try f () 
+          with exn -> 
+            Log.err (fun m -> m "Exception in exec: %s" (Printexc.to_string exn))));
         enqueue_meta Enter_alt_screen;
         enqueue_meta Repaint;
         (* dispatch *after* we're back in our UI mode *)

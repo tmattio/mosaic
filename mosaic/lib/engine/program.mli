@@ -8,7 +8,7 @@ open Eio
 type config
 
 val config :
-  ?terminal:Tty.t ->
+  ?terminal:Tty_eio.t ->
   ?alt_screen:bool ->
   (* default = true  *)
   ?mouse:bool ->

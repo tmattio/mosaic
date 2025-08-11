@@ -9,7 +9,7 @@ val create :
   mouse:bool ->
   paste_threshold:float ->
   paste_min_chars:int ->
-  Tty.t ->
+  Tty_eio.t ->
   Input.event Eio.Stream.t
 (** Creates source, sets console mode, spawns producer. Cleanup on switch
     release. *)

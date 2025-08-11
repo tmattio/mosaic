@@ -5,7 +5,7 @@
   mosaic.ui
   mosaic.markdown
   matrix.input
-  mosaic.event
+  mosaic.engine
   eio
   eio_main
   alcotest
