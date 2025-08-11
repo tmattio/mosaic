@@ -115,44 +115,50 @@ let interact ?key ?tab_index ?auto_focus ?(disabled = false) ?(hotkeys = [])
     ?tooltip ?on_click ?on_hover ?on_focus ?on_drag ?on_key element =
   let key = match key with Some k -> k | None -> use_key ~prefix:"interact" in
 
-  (* Wire up event handlers *)
-  Option.iter (fun f -> Events.on_click key f) on_click;
-  Option.iter (fun f -> Events.on_hover key f) on_hover;
-  Option.iter (fun f -> Events.on_focus key f) on_focus;
-  Option.iter (fun f -> Events.on_drag key f) on_drag;
+  (* Define noop handlers for unconditional hook calls *)
+  let noop_click () = () in
+  let noop_hover _entering = () in
+  let noop_focus _has_focus = () in
+  let noop_drag _evt = () in
+  let noop_key _evt = () in
+
+  (* Wire up event handlers unconditionally *)
+  Events.on_click key (Option.value ~default:noop_click on_click);
+  Events.on_hover key (Option.value ~default:noop_hover on_hover);
+  Events.on_focus key (Option.value ~default:noop_focus on_focus);
+  Events.on_drag key (Option.value ~default:noop_drag on_drag);
 
   (* Handle keyboard events including hotkeys *)
   let handle_key =
     match (on_key, hotkeys, on_click) with
-    | Some f, [], _ -> Some f
-    | None, [], None -> None
+    | Some f, [], _ -> f
+    | None, [], None -> noop_key
     | _ ->
-        Some
-          (fun event ->
-            (* Call custom key handler if provided *)
-            Option.iter (fun f -> f event) on_key;
+        (fun event ->
+          (* Call custom key handler if provided *)
+          Option.iter (fun f -> f event) on_key;
 
-            (* Check hotkeys if we have a click handler *)
-            match on_click with
-            | Some click_fn when not disabled -> (
-                (* Check for Enter/Space defaults *)
-                match event.key with
-                | Enter -> click_fn ()
-                | Char c when Uchar.to_int c = 0x20 -> click_fn ()
-                | _ ->
-                    (* Check custom hotkeys *)
-                    let matches_hotkey =
-                      List.exists
-                        (fun chord ->
-                          match parse_key_chord chord with
-                          | Some checker -> checker event
-                          | None -> false)
-                        hotkeys
-                    in
-                    if matches_hotkey then click_fn ())
-            | _ -> ())
+          (* Check hotkeys if we have a click handler *)
+          match on_click with
+          | Some click_fn when not disabled -> (
+              (* Check for Enter/Space defaults *)
+              match event.key with
+              | Enter -> click_fn ()
+              | Char c when Uchar.to_int c = 0x20 -> click_fn ()
+              | _ ->
+                  (* Check custom hotkeys *)
+                  let matches_hotkey =
+                    List.exists
+                      (fun chord ->
+                        match parse_key_chord chord with
+                        | Some checker -> checker event
+                        | None -> false)
+                      hotkeys
+                  in
+                  if matches_hotkey then click_fn ())
+          | _ -> ())
   in
-  Option.iter (fun f -> Events.on_key key f) handle_key;
+  Events.on_key key handle_key;
 
   (* Mark as focusable if needed *)
   (if tab_index <> None || auto_focus <> None || on_click <> None then

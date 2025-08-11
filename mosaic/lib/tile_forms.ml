@@ -66,36 +66,40 @@ let input ?(label_position = `Left) ?(label_width = None) ?(required = false)
     Hook.use_state (Option.value ~default:"" value)
   in
   let current_value = Option.value ~default:internal_value value in
-  let is_editing, set_editing, _ = Hook.use_state false in
   let is_focused = Tile_events.use_focus key in
+  
+  (* Handle blur for submit *)
+  Hook.use_effect ~deps:(Deps.keys [ Deps.bool is_focused ]) (fun () ->
+      if not is_focused && Option.is_some on_submit then 
+        Option.iter (fun f -> f current_value) on_submit;
+      None);
+
+  (* Helper to check if a character is printable *)
+  let is_printable c =
+    let ch = Uchar.to_char c in
+    ch >= ' ' && ch <= '~'
+  in
 
   (* Handle keyboard events *)
   Tile_events.use_key_press key (fun event ->
-      if disabled then ()
-      else if is_editing then
+      if not is_focused || disabled then ()
+      else
         match event.key with
-        | Enter ->
-            set_editing false;
-            Option.iter (fun f -> f current_value) on_submit
-        | Escape -> set_editing false
-        | Char c ->
-            let ch = Uchar.to_char c in
-            if ch >= ' ' && ch <= '~' then (
-              let new_value = current_value ^ String.make 1 ch in
-              (match value with
-              | None -> set_internal_value new_value
-              | Some _ -> ());
-              Option.iter (fun f -> f new_value) on_change)
-        | Backspace when String.length current_value > 0 ->
-            let new_value =
-              String.sub current_value 0 (String.length current_value - 1)
-            in
+        | Enter -> Option.iter (fun f -> f current_value) on_submit
+        | Char c when is_printable c ->
+            let ch = String.make 1 (Uchar.to_char c) in
+            let new_value = current_value ^ ch in
             (match value with
             | None -> set_internal_value new_value
             | Some _ -> ());
             Option.iter (fun f -> f new_value) on_change
-        | _ -> ()
-      else match event.key with Enter -> set_editing true | _ -> ());
+        | Backspace when String.length current_value > 0 ->
+            let new_value = String.sub current_value 0 (pred (String.length current_value)) in
+            (match value with
+            | None -> set_internal_value new_value
+            | Some _ -> ());
+            Option.iter (fun f -> f new_value) on_change
+        | _ -> ());
 
   (* Mark as focusable *)
   Tile_events.use_focusable key ?tab_index ();
@@ -112,7 +116,7 @@ let input ?(label_position = `Left) ?(label_width = None) ?(required = false)
     if error <> None then Style.(fg (RGB (239, 68, 68))) (* Red for error *)
     else if current_value = "" && placeholder <> None then
       Style.(fg (Index 240))
-    else if is_editing then Style.(fg White ++ bold)
+    else if is_focused then Style.(fg White ++ bold)
     else Style.(fg (Index 250))
   in
 
@@ -135,7 +139,7 @@ let input ?(label_position = `Left) ?(label_width = None) ?(required = false)
             Ui.hbox
               [
                 text ~style:combined_style display_value;
-                (if is_editing then
+                (if is_focused then
                    text ~style:Style.(fg (RGB (59, 130, 246))) " ▌"
                  else Ui.empty);
               ];
@@ -146,7 +150,7 @@ let input ?(label_position = `Left) ?(label_width = None) ?(required = false)
             text "[";
             text ~style:combined_style display_value;
             text "]";
-            (if is_editing then text ~style:Style.(fg (RGB (59, 130, 246))) " ◀"
+            (if is_focused then text ~style:Style.(fg (RGB (59, 130, 246))) " ◀"
              else text "");
           ]
   in
@@ -207,15 +211,27 @@ let select ?(label_position = `Left) ?(label_width = None) ?(required = false)
             Option.iter
               (fun f -> f new_selected (List.nth options new_selected))
               on_change
-        | Enter | Escape -> set_expanded false
+        | Enter ->
+            (* Select current item and close *)
+            Option.iter
+              (fun f -> f current_selected (List.nth options current_selected))
+              on_change;
+            set_expanded false
+        | Escape -> set_expanded false
+        | Char c when Uchar.to_int c = 0x20 ->
+            (* space - select current and close dropdown *)
+            Option.iter
+              (fun f -> f current_selected (List.nth options current_selected))
+              on_change;
+            set_expanded false
         | _ -> ()
-      else
+      else if is_focused then
         match event.key with
         | Enter -> set_expanded true
         | Char c when Uchar.to_int c = 0x20 ->
             (* space *)
             set_expanded true
-        | Left when current_selected > 0 ->
+        | Up when current_selected > 0 ->
             let new_selected = current_selected - 1 in
             (match selected with
             | None -> set_internal_selected new_selected
@@ -223,7 +239,7 @@ let select ?(label_position = `Left) ?(label_width = None) ?(required = false)
             Option.iter
               (fun f -> f new_selected (List.nth options new_selected))
               on_change
-        | Right when current_selected < List.length options - 1 ->
+        | Down when current_selected < List.length options - 1 ->
             let new_selected = current_selected + 1 in
             (match selected with
             | None -> set_internal_selected new_selected
@@ -231,7 +247,8 @@ let select ?(label_position = `Left) ?(label_width = None) ?(required = false)
             Option.iter
               (fun f -> f new_selected (List.nth options new_selected))
               on_change
-        | _ -> ());
+        | _ -> ()
+      else ());
 
   (* Mark as focusable *)
   Tile_events.use_focusable key ?tab_index ();
@@ -402,18 +419,27 @@ let textarea ?(style = Style.empty) ?border ?(border_style = Style.empty)
     Hook.use_state (Option.value ~default:"" value)
   in
   let current_value = Option.value ~default:internal_value value in
-  let is_editing, set_editing, _ = Hook.use_state false in
   let is_focused = Tile_events.use_focus key in
+  
+  (* Handle blur for submit *)
+  Hook.use_effect ~deps:(Deps.keys [ Deps.bool is_focused ]) (fun () ->
+      if not is_focused && Option.is_some on_submit then 
+        Option.iter (fun f -> f current_value) on_submit;
+      None);
+
+  (* Helper to check if a character is printable *)
+  let is_printable c =
+    let ch = Uchar.to_char c in
+    ch >= ' ' && ch <= '~'
+  in
 
   (* Handle keyboard events *)
   Tile_events.use_key_press key (fun event ->
-      if disabled then ()
-      else if is_editing then
+      if not is_focused || disabled then ()
+      else
         match event.key with
-        | Escape -> set_editing false
         | Enter when event.modifier.shift ->
             (* Shift+Enter submits *)
-            set_editing false;
             Option.iter (fun f -> f current_value) on_submit
         | Enter ->
             (* Regular Enter adds newline *)
@@ -422,30 +448,28 @@ let textarea ?(style = Style.empty) ?border ?(border_style = Style.empty)
             | None -> set_internal_value new_value
             | Some _ -> ());
             Option.iter (fun f -> f new_value) on_change
-        | Char c ->
-            let ch = Uchar.to_char c in
-            if ch >= ' ' && ch <= '~' then (
-              let new_value = current_value ^ String.make 1 ch in
-              (match value with
-              | None -> set_internal_value new_value
-              | Some _ -> ());
-              Option.iter (fun f -> f new_value) on_change)
+        | Char c when is_printable c ->
+            let ch = String.make 1 (Uchar.to_char c) in
+            let new_value = current_value ^ ch in
+            (match value with
+            | None -> set_internal_value new_value
+            | Some _ -> ());
+            Option.iter (fun f -> f new_value) on_change
         | Backspace when String.length current_value > 0 ->
             let new_value =
-              String.sub current_value 0 (String.length current_value - 1)
+              String.sub current_value 0 (pred (String.length current_value))
             in
             (match value with
             | None -> set_internal_value new_value
             | Some _ -> ());
             Option.iter (fun f -> f new_value) on_change
-        | _ -> ()
-      else match event.key with Enter -> set_editing true | _ -> ());
+        | _ -> ());
 
   (* Mark as focusable *)
   Tile_events.use_focusable key ?tab_index ();
 
   let label_style =
-    if is_focused || is_editing then Style.(fg (RGB (59, 130, 246)) ++ bold)
+    if is_focused then Style.(fg (RGB (59, 130, 246)) ++ bold)
     else Style.(fg (Index 250))
   in
 
@@ -457,7 +481,7 @@ let textarea ?(style = Style.empty) ?border ?(border_style = Style.empty)
 
   let value_style =
     if current_value = "" && placeholder <> None then Style.(fg (Index 240))
-    else if is_editing then Style.(fg White)
+    else if is_focused then Style.(fg White)
     else Style.(fg (Index 250))
   in
 
@@ -465,7 +489,7 @@ let textarea ?(style = Style.empty) ?border ?(border_style = Style.empty)
     Ui.vbox
       (List.map (fun line -> text ~style:value_style line) display_lines
       @
-      if is_editing then [ text ~style:Style.(fg (RGB (59, 130, 246))) "▌" ]
+      if is_focused then [ text ~style:Style.(fg (RGB (59, 130, 246))) "▌" ]
       else [])
   in
 

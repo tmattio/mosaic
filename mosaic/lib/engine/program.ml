@@ -169,6 +169,7 @@ let log_terminal_output output description =
 
 let build_cleanup_sequence had_alt_screen =
   let esc = Buffer.create 32 in
+  if not had_alt_screen then Buffer.add_string esc "\r\n";
   Buffer.add_string esc Ansi.cursor_show;
   Buffer.add_string esc Ansi.mouse_off;
   Buffer.add_string esc Ansi.bracketed_paste_off;
@@ -294,6 +295,7 @@ let render t dyn_el =
 
   let render_to scr =
     Screen.begin_frame scr;
+    Screen.clear scr;
     Ui.render ?snapshot:t.snapshot scr final_el;
     (* Call the on_snapshot callback if we have a snapshot *)
     match (t.snapshot, t.on_snapshot) with
@@ -360,9 +362,12 @@ let render t dyn_el =
         let scr = Screen.create ~rows:height ~cols:width () in
         render_to scr;
         let output =
-          Ansi.cursor_position 1 1 ^ Ansi.clear_screen
-          ^ Screen.render_to_string scr
-          ^ "\n"
+          if rm.previous_dynamic = None then
+            (* First render: just output from current position *)
+            Screen.render_to_string scr
+          else
+            Ansi.cursor_position 1 1 ^ Ansi.clear_screen
+            ^ Screen.render_to_string scr
         in
         log_terminal_output output "standard mode full render";
         with_term_mutex t ~f:(fun () ->

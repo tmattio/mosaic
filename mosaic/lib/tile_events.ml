@@ -63,6 +63,10 @@ let use_hover key =
   hovered
 
 let use_drag key on_drag =
+  let callback_ref = Hook.use_ref on_drag in
+  Hook.use_effect ~deps:Deps.always (fun () ->
+      callback_ref := on_drag;
+      None);
   Hook.use_effect
     ~deps:(Deps.keys [ Deps.ui_key key ])
     (fun () ->
@@ -71,7 +75,7 @@ let use_drag key on_drag =
         Engine.Input_router.Drag
           ( key,
             fun evt ->
-              on_drag (convert_drag_event evt);
+              !callback_ref (convert_drag_event evt);
               ()
             (* Return Some msg - will be fixed *) )
       in
@@ -99,6 +103,10 @@ let use_focus key =
   focused
 
 let use_key_press key on_key =
+  let callback_ref = Hook.use_ref on_key in
+  Hook.use_effect ~deps:Deps.always (fun () ->
+      callback_ref := on_key;
+      None);
   Hook.use_effect
     ~deps:(Deps.keys [ Deps.ui_key key ])
     (fun () ->
@@ -107,7 +115,7 @@ let use_key_press key on_key =
         Engine.Input_router.KeyPress
           ( key,
             fun evt ->
-              on_key evt;
+              !callback_ref evt;
               ()
             (* Return Some msg - will be fixed *) )
       in
@@ -143,17 +151,25 @@ let use_keyboard ?ctrl ?alt ?shift key cmd =
 let on_click = use_click
 
 let on_hover key callback =
+  let callback_ref = Hook.use_ref callback in
+  Hook.use_effect ~deps:Deps.always (fun () ->
+      callback_ref := callback;
+      None);
   Hook.use_effect
     ~deps:(Deps.keys [ Deps.ui_key key ])
     (fun () ->
       match Runtime_context.current () with
       | None -> None
       | Some ctx ->
-          let handler = Engine.Input_router.Hover (key, callback) in
+          let handler = Engine.Input_router.Hover (key, fun entering -> !callback_ref entering) in
           let id = Engine.Input_router.subscribe ctx.input_router handler in
           Some (fun () -> Engine.Input_router.unsubscribe ctx.input_router id))
 
 let on_focus key callback =
+  let callback_ref = Hook.use_ref callback in
+  Hook.use_effect ~deps:Deps.always (fun () ->
+      callback_ref := callback;
+      None);
   Hook.use_effect
     ~deps:(Deps.keys [ Deps.ui_key key ])
     (fun () ->
@@ -164,13 +180,17 @@ let on_focus key callback =
             Engine.Input_router.Focus
               ( key,
                 fun has_focus ->
-                  callback has_focus;
+                  !callback_ref has_focus;
                   () )
           in
           let id = Engine.Input_router.subscribe ctx.input_router handler in
           Some (fun () -> Engine.Input_router.unsubscribe ctx.input_router id))
 
 let on_drag key callback =
+  let callback_ref = Hook.use_ref callback in
+  Hook.use_effect ~deps:Deps.always (fun () ->
+      callback_ref := callback;
+      None);
   Hook.use_effect
     ~deps:(Deps.keys [ Deps.ui_key key ])
     (fun () ->
@@ -181,7 +201,7 @@ let on_drag key callback =
             Engine.Input_router.Drag
               ( key,
                 fun evt ->
-                  callback (convert_drag_event evt);
+                  !callback_ref (convert_drag_event evt);
                   () )
           in
           let id = Engine.Input_router.subscribe ctx.input_router handler in
