@@ -105,7 +105,7 @@ val exec : (unit -> unit) -> 'msg -> 'msg t
     The terminal is restored to normal mode before calling [f], allowing
     external programs to run with full terminal access. After [f] completes, the
     terminal returns to alternate screen mode and [msg] is produced.
-    
+
     Note: This always restores to alternate screen mode after execution, even if
     the program was started in standard mode.
 

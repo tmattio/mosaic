@@ -186,7 +186,9 @@ let setup_terminal t =
           ^ Ansi.focus_event_off (* Disable focus events first *)
         in
         log_terminal_output reset_seq "terminal reset sequence";
-        Tty_eio.write t.term (Bytes.of_string reset_seq) 0 (String.length reset_seq);
+        Tty_eio.write t.term
+          (Bytes.of_string reset_seq)
+          0 (String.length reset_seq);
         Tty_eio.flush t.term;
 
         (* Now set up the terminal for our use *)
@@ -215,7 +217,8 @@ let setup_signal_handlers t =
     (* Check if we're in a TTY environment before cleanup *)
     (try
        if
-         Unix.isatty (Tty_eio.input_fd t.term) && Unix.isatty (Tty_eio.output_fd t.term)
+         Unix.isatty (Tty_eio.input_fd t.term)
+         && Unix.isatty (Tty_eio.output_fd t.term)
        then full_cleanup t.term had_alt
        else
          (* Non-TTY fallback: just log if debug is enabled *)
@@ -326,7 +329,9 @@ let do_render t dyn_el =
       let dirty_regions = Screen.present scr in
       let render_elapsed_ms = (Unix.gettimeofday () -. render_start) *. 1000. in
       Log.debug (fun m ->
-          m "Rendered alt-screen frame with %d dirty regions in %.2fms (buffered)"
+          m
+            "Rendered alt-screen frame with %d dirty regions in %.2fms \
+             (buffered)"
             (List.length dirty_regions)
             render_elapsed_ms);
       rm.previous <- Some scr
@@ -339,11 +344,11 @@ let do_render t dyn_el =
       if needs_full then (
         let scr = Screen.create ~rows:height ~cols:width () in
         render_to scr;
-        let output = 
-          Ansi.cursor_position 1 1 ^ 
-          Ansi.clear_screen ^ 
-          Screen.render_to_string scr ^ 
-          "\n" in
+        let output =
+          Ansi.cursor_position 1 1 ^ Ansi.clear_screen
+          ^ Screen.render_to_string scr
+          ^ "\n"
+        in
         log_terminal_output output "standard mode full render";
         with_term_mutex t ~f:(fun () ->
             Tty_eio.write_string t.term output;

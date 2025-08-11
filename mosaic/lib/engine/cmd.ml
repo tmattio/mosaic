@@ -42,9 +42,7 @@ let meta_queue : meta Queue.t option ref = ref None
 (* Enqueue a meta command *)
 let enqueue_meta meta =
   Log.debug (fun m -> m "Enqueuing meta command: %a" pp_meta meta);
-  match !meta_queue with
-  | Some q -> Queue.add meta q
-  | None -> ()
+  match !meta_queue with Some q -> Queue.add meta q | None -> ()
 
 (* User command constructors *)
 let none = { run = (fun ~dispatch:_ -> ()) }
@@ -61,10 +59,12 @@ let perform f =
     run =
       (fun ~dispatch ->
         enqueue_meta
-          (Perform (fun () -> 
-            try Option.iter dispatch (f ()) 
-            with exn -> 
-              Log.err (fun m -> m "Exception in perform: %s" (Printexc.to_string exn)))));
+          (Perform
+             (fun () ->
+               try Option.iter dispatch (f ())
+               with exn ->
+                 Log.err (fun m ->
+                     m "Exception in perform: %s" (Printexc.to_string exn)))));
   }
 
 let perform_eio f =
@@ -72,10 +72,12 @@ let perform_eio f =
     run =
       (fun ~dispatch ->
         enqueue_meta
-          (Perform_eio (fun ~sw ~env -> 
-            try Option.iter dispatch (f ~sw ~env) 
-            with exn -> 
-              Log.err (fun m -> m "Exception in perform_eio: %s" (Printexc.to_string exn)))));
+          (Perform_eio
+             (fun ~sw ~env ->
+               try Option.iter dispatch (f ~sw ~env)
+               with exn ->
+                 Log.err (fun m ->
+                     m "Exception in perform_eio: %s" (Printexc.to_string exn)))));
   }
 
 let exec f msg =
@@ -84,10 +86,13 @@ let exec f msg =
       (fun ~dispatch ->
         (* enqueue in the order they must happen *)
         enqueue_meta Exit_alt_screen;
-        enqueue_meta (Perform (fun () -> 
-          try f () 
-          with exn -> 
-            Log.err (fun m -> m "Exception in exec: %s" (Printexc.to_string exn))));
+        enqueue_meta
+          (Perform
+             (fun () ->
+               try f ()
+               with exn ->
+                 Log.err (fun m ->
+                     m "Exception in exec: %s" (Printexc.to_string exn))));
         enqueue_meta Enter_alt_screen;
         enqueue_meta Repaint;
         (* dispatch *after* we're back in our UI mode *)

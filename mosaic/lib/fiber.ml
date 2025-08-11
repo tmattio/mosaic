@@ -15,6 +15,7 @@ type t = {
   mutable dirty : bool;
   mutable alive : bool;
 }
+
 and erased_sub = Erased_sub : 'msg Sub.t -> erased_sub
 
 (* Global pointer to the fiber that is *currently rendering*. *)
@@ -59,7 +60,6 @@ let mark_dirty ?(reason = "unknown") f =
     in
     bubble f)
 
-
 let is_dirty f = f.dirty
 
 (* Type-erased command for React *)
@@ -92,15 +92,15 @@ let check_effect_deps_changed slot deps =
 let check_memo_deps_changed slot deps =
   match Hook_array.get slot with
   | Hook_array.P (Hook_array.Memo (_, Some old_deps)) ->
-      Deps.changed old_deps deps  
+      Deps.changed old_deps deps
   | Hook_array.P (Hook_array.Memo _) -> true
   | _ -> true
 
 (* Helper to run cleanup for effects *)
 let run_effect_cleanup slot =
   match Hook_array.get slot with
-  | Hook_array.P (Hook_array.Effect { cleanup = Some c; _ }) ->
-      (try c () with _ -> ())
+  | Hook_array.P (Hook_array.Effect { cleanup = Some c; _ }) -> (
+      try c () with _ -> ())
   | _ -> ()
 
 (* Hook effect handler *)
@@ -117,10 +117,9 @@ let with_handler f k =
                   let idx = f.hook_idx in
                   f.hook_idx <- idx + 1;
                   let slot = Hook_array.get_slot f.hooks idx in
-                  let state_ref = 
+                  let state_ref =
                     match Hook_array.get slot with
-                    | Hook_array.P (Hook_array.State r) -> 
-                        Obj.obj (Obj.repr r)
+                    | Hook_array.P (Hook_array.State r) -> Obj.obj (Obj.repr r)
                     | _ ->
                         let r = ref init in
                         Hook_array.set slot
@@ -269,10 +268,14 @@ let rec reconcile f : Ui.element =
     f.hook_idx <- 0;
     let ui = with_current f (fun () -> with_handler f f.render_fn) in
     f.ui <- Some ui;
-    let new_children = Array.mapi (fun i child ->
-      (* Yield per child to prevent blocking during large tree reconciliations *)
-      if i > 0 && i mod 10 = 0 then Eio.Fiber.yield ();
-      reconcile_child child) f.children in
+    let new_children =
+      Array.mapi
+        (fun i child ->
+          (* Yield per child to prevent blocking during large tree reconciliations *)
+          if i > 0 && i mod 10 = 0 then Eio.Fiber.yield ();
+          reconcile_child child)
+        f.children
+    in
     f.children <- new_children;
     let elapsed_ms = (Unix.gettimeofday () -. start_time) *. 1000. in
     Log.debug (fun m -> m "Reconciliation completed in %.2fms" elapsed_ms);
@@ -295,7 +298,6 @@ let rec destroy f =
     (* Clear UI reference *)
     f.ui <- None;
     f.dirty <- false)
-
 
 (* Collect all subscriptions from this fiber and its children *)
 let rec collect_subscriptions f =

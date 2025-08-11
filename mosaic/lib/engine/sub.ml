@@ -1,6 +1,7 @@
 (** Subscriptions with single closure-based implementation *)
 
 let src = Logs.Src.create "sub" ~doc:"Subscription execution"
+
 module Log = (val Logs.src_log src : Logs.LOG)
 
 (* The only representation: a closure that takes dispatch and event *)
@@ -17,9 +18,11 @@ let keyboard f =
     run =
       (fun ~dispatch event ->
         match event with
-        | Event.Input (Input.Key key_event) -> 
-            (try dispatch (f key_event)
-             with exn -> Log.err (fun m -> m "Exception in keyboard sub: %s" (Printexc.to_string exn)))
+        | Event.Input (Input.Key key_event) -> (
+            try dispatch (f key_event)
+            with exn ->
+              Log.err (fun m ->
+                  m "Exception in keyboard sub: %s" (Printexc.to_string exn)))
         | _ -> ());
   }
 
@@ -28,9 +31,12 @@ let keyboard_filter f =
     run =
       (fun ~dispatch event ->
         match event with
-        | Event.Input (Input.Key key_event) ->
-            (try Option.iter dispatch (f key_event)
-             with exn -> Log.err (fun m -> m "Exception in keyboard_filter sub: %s" (Printexc.to_string exn)))
+        | Event.Input (Input.Key key_event) -> (
+            try Option.iter dispatch (f key_event)
+            with exn ->
+              Log.err (fun m ->
+                  m "Exception in keyboard_filter sub: %s"
+                    (Printexc.to_string exn)))
         | _ -> ());
   }
 
@@ -39,9 +45,11 @@ let mouse f =
     run =
       (fun ~dispatch event ->
         match event with
-        | Event.Input (Input.Mouse mouse_event) -> 
-            (try dispatch (f mouse_event)
-             with exn -> Log.err (fun m -> m "Exception in mouse sub: %s" (Printexc.to_string exn)))
+        | Event.Input (Input.Mouse mouse_event) -> (
+            try dispatch (f mouse_event)
+            with exn ->
+              Log.err (fun m ->
+                  m "Exception in mouse sub: %s" (Printexc.to_string exn)))
         | _ -> ());
   }
 
@@ -50,9 +58,12 @@ let mouse_filter f =
     run =
       (fun ~dispatch event ->
         match event with
-        | Event.Input (Input.Mouse mouse_event) ->
-            (try Option.iter dispatch (f mouse_event)
-             with exn -> Log.err (fun m -> m "Exception in mouse_filter sub: %s" (Printexc.to_string exn)))
+        | Event.Input (Input.Mouse mouse_event) -> (
+            try Option.iter dispatch (f mouse_event)
+            with exn ->
+              Log.err (fun m ->
+                  m "Exception in mouse_filter sub: %s" (Printexc.to_string exn))
+            )
         | _ -> ());
   }
 
@@ -61,9 +72,11 @@ let window f =
     run =
       (fun ~dispatch event ->
         match event with
-        | Event.Input (Input.Resize (width, height)) ->
-            (try dispatch (f { width; height })
-             with exn -> Log.err (fun m -> m "Exception in window sub: %s" (Printexc.to_string exn)))
+        | Event.Input (Input.Resize (width, height)) -> (
+            try dispatch (f { width; height })
+            with exn ->
+              Log.err (fun m ->
+                  m "Exception in window sub: %s" (Printexc.to_string exn)))
         | _ -> ());
   }
 
@@ -72,9 +85,12 @@ let window_filter f =
     run =
       (fun ~dispatch event ->
         match event with
-        | Event.Input (Input.Resize (width, height)) ->
-            (try Option.iter dispatch (f { width; height })
-             with exn -> Log.err (fun m -> m "Exception in window_filter sub: %s" (Printexc.to_string exn)))
+        | Event.Input (Input.Resize (width, height)) -> (
+            try Option.iter dispatch (f { width; height })
+            with exn ->
+              Log.err (fun m ->
+                  m "Exception in window_filter sub: %s"
+                    (Printexc.to_string exn)))
         | _ -> ());
   }
 
@@ -82,10 +98,12 @@ let focus f =
   {
     run =
       (fun ~dispatch event ->
-        match event with 
-        | Event.Input Input.Focus -> 
-            (try dispatch (f ())
-             with exn -> Log.err (fun m -> m "Exception in focus sub: %s" (Printexc.to_string exn)))
+        match event with
+        | Event.Input Input.Focus -> (
+            try dispatch (f ())
+            with exn ->
+              Log.err (fun m ->
+                  m "Exception in focus sub: %s" (Printexc.to_string exn)))
         | _ -> ());
   }
 
@@ -93,10 +111,12 @@ let blur f =
   {
     run =
       (fun ~dispatch event ->
-        match event with 
-        | Event.Input Input.Blur -> 
-            (try dispatch (f ())
-             with exn -> Log.err (fun m -> m "Exception in blur sub: %s" (Printexc.to_string exn)))
+        match event with
+        | Event.Input Input.Blur -> (
+            try dispatch (f ())
+            with exn ->
+              Log.err (fun m ->
+                  m "Exception in blur sub: %s" (Printexc.to_string exn)))
         | _ -> ());
   }
 
@@ -105,9 +125,11 @@ let paste f =
     run =
       (fun ~dispatch event ->
         match event with
-        | Event.Input (Input.Paste text) -> 
-            (try dispatch (f text)
-             with exn -> Log.err (fun m -> m "Exception in paste sub: %s" (Printexc.to_string exn)))
+        | Event.Input (Input.Paste text) -> (
+            try dispatch (f text)
+            with exn ->
+              Log.err (fun m ->
+                  m "Exception in paste sub: %s" (Printexc.to_string exn)))
         | _ -> ());
   }
 
@@ -116,9 +138,12 @@ let paste_filter f =
     run =
       (fun ~dispatch event ->
         match event with
-        | Event.Input (Input.Paste text) -> 
-            (try Option.iter dispatch (f text)
-             with exn -> Log.err (fun m -> m "Exception in paste_filter sub: %s" (Printexc.to_string exn)))
+        | Event.Input (Input.Paste text) -> (
+            try Option.iter dispatch (f text)
+            with exn ->
+              Log.err (fun m ->
+                  m "Exception in paste_filter sub: %s" (Printexc.to_string exn))
+            )
         | _ -> ());
   }
 
@@ -126,10 +151,12 @@ let on_tick f =
   {
     run =
       (fun ~dispatch event ->
-        match event with 
-        | Event.Tick elapsed -> 
-            (try dispatch (f elapsed)
-             with exn -> Log.err (fun m -> m "Exception in on_tick sub: %s" (Printexc.to_string exn)))
+        match event with
+        | Event.Tick elapsed -> (
+            try dispatch (f elapsed)
+            with exn ->
+              Log.err (fun m ->
+                  m "Exception in on_tick sub: %s" (Printexc.to_string exn)))
         | _ -> ());
   }
 
@@ -147,7 +174,9 @@ let timer ~every f =
             if state.accumulated >= every then (
               state.accumulated <- state.accumulated -. every;
               try dispatch (f ())
-              with exn -> Log.err (fun m -> m "Exception in timer sub: %s" (Printexc.to_string exn)))
+              with exn ->
+                Log.err (fun m ->
+                    m "Exception in timer sub: %s" (Printexc.to_string exn)))
         | _ -> ());
   }
 

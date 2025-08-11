@@ -1,34 +1,34 @@
 (** Eio-based wrapper for Matrix TTY module.
-    
-    This module wraps the Matrix TTY functionality with Eio's non-blocking
-    IO primitives to prevent domain suspension during terminal operations. *)
+
+    This module wraps the Matrix TTY functionality with Eio's non-blocking IO
+    primitives to prevent domain suspension during terminal operations. *)
 
 open Eio
 
 type t
 (** Terminal handle with Eio flow-based IO *)
 
-val create : 
-  sw:Switch.t -> 
-  env:< stdin : _ Flow.source; stdout : _ Flow.sink; .. > ->
-  ?tty:bool -> 
+val create :
+  sw:Switch.t ->
+  env:< stdin : _ Flow.source ; stdout : _ Flow.sink ; .. > ->
+  ?tty:bool ->
   unit ->
   t
-(** [create ~sw ~env ?tty] creates an Eio-based terminal handle.
-    Uses env's stdin/stdout as Eio flows for non-blocking IO.
+(** [create ~sw ~env ?tty] creates an Eio-based terminal handle. Uses env's
+    stdin/stdout as Eio flows for non-blocking IO.
     @param sw Switch for resource management
     @param env Eio environment with stdin/stdout
     @param tty Force TTY status (default: autodetect) *)
 
 val with_terminal :
   sw:Switch.t ->
-  env:< stdin : _ Flow.source; stdout : _ Flow.sink; .. > ->
+  env:< stdin : _ Flow.source ; stdout : _ Flow.sink ; .. > ->
   ?tty:bool ->
   (t -> 'a) ->
   'a
 (** [with_terminal ~sw ~env ?tty f] creates a terminal and ensures cleanup. *)
 
-(** {1 Delegated Functions} 
+(** {1 Delegated Functions}
     These functions delegate to the underlying Matrix TTY implementation *)
 
 val release : t -> unit
@@ -96,25 +96,23 @@ val supports_feature : t -> Tty.feature -> bool
 
 (** {1 Testing Support} *)
 
-val create_from_strings : 
-  sw:Switch.t -> 
-  string -> 
-  t * (unit -> string) * (unit -> unit)
+val create_from_strings :
+  sw:Switch.t -> string -> t * (unit -> string) * (unit -> unit)
 (** [create_from_strings ~sw input] creates a mock terminal for testing.
-    
+
     Creates a terminal that reads from the provided string and writes to an
     internal buffer. Control sequences have no effect.
-    
+
     @param sw Switch for resource management
     @param input String to use as input data
     @return
       [(term, get_output, close)] where:
-      - [term] is the mock terminal handle  
+      - [term] is the mock terminal handle
       - [get_output ()] returns all output written so far
       - [close ()] closes the mock file descriptors *)
 
 (** {1 Internal Access} *)
 
 val get_matrix_tty : t -> Tty.t
-(** [get_matrix_tty t] returns the underlying Matrix TTY handle.
-    Use with caution - direct writes may block. *)
+(** [get_matrix_tty t] returns the underlying Matrix TTY handle. Use with
+    caution - direct writes may block. *)
