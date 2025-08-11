@@ -14,7 +14,7 @@ let animated_sine () =
   let paused, _, update_paused = use_state false in
 
   use_tick (fun delta ->
-      if not paused then update_time (fun t -> t +. (delta *. 0.002)));
+      if not paused then update_time (fun t -> t +. (delta *. 2.0)));
 
   use_subscription
     (Sub.keyboard_filter (fun event ->
