@@ -114,8 +114,8 @@ let patch_equal p1 p2 =
   | _ -> false
 
 type t = {
-  front : G.t;
-  back : G.t;
+  mutable front : G.t;
+  mutable back : G.t;
   (* lazily initialised on first frame if caller forgets begin_frame *)
   mutable frame_started : bool;
   mutable cursor : (int * int) option;
@@ -282,39 +282,36 @@ let back t =
 let front t = t.front
 
 let begin_frame t =
-  (* Copy front buffer to back buffer for incremental updates *)
-  let rows = G.rows t.front in
-  let cols = G.cols t.front in
-  let src_rect = { G.row = 0; col = 0; width = cols; height = rows } in
-  G.blit ~src:t.front ~src_rect ~dst:t.back ~dst_pos:(0, 0);
-  (* Clear dirty bits after copying - this is our new baseline *)
-  ignore (G.flush_damage t.back);
+  (* Mark that we've started a new frame. The back buffer already contains
+     the previous frame's content from the last present() call. *)
   t.frame_started <- true
 
 let present t =
-  let dirty_regions =
-    if t.needs_full_redraw then
-      [
-        {
-          G.min_row = 0;
-          max_row = G.rows t.back - 1;
-          min_col = 0;
-          max_col = G.cols t.back - 1;
-        };
-      ]
-    else G.diff_regions t.front t.back
-  in
-  t.needs_full_redraw <- false;
-  G.swap (t.front, t.back);
-  (* After swap, copy front to back to maintain consistency for next frame *)
-  let rows = G.rows t.front in
-  let cols = G.cols t.front in
-  let src_rect = { G.row = 0; col = 0; width = cols; height = rows } in
-  G.blit ~src:t.front ~src_rect ~dst:t.back ~dst_pos:(0, 0);
-  (* Flush damage to clear dirty bits after the copy *)
-  ignore (G.flush_damage t.back);
-  t.frame_started <- false;
-  dirty_regions
+  (* If begin_frame wasn't called and we don't need a full redraw,
+     there were no changes to the back buffer *)
+  if not t.frame_started && not t.needs_full_redraw then
+    []
+  else begin
+    let dirty_regions =
+      if t.needs_full_redraw then
+        [
+          {
+            G.min_row = 0;
+            max_row = G.rows t.back - 1;
+            min_col = 0;
+            max_col = G.cols t.back - 1;
+          };
+        ]
+      else G.diff_regions t.front t.back
+    in
+    t.needs_full_redraw <- false;
+    (* Simply swap the buffer references - no copying needed *)
+    let temp = t.front in
+    t.front <- t.back;
+    t.back <- temp;
+    t.frame_started <- false;
+    dirty_regions
+  end
 
 let batch t f =
   begin_frame t;
