@@ -136,7 +136,7 @@ let benchmarks =
                    (Hover (Ui.Key.of_int i, fun _ -> ())));
               ignore
                 (Input_router.subscribe r
-                   (KeyPress (Ui.Key.of_int i, fun _ -> ())))
+                   (Key_press (Ui.Key.of_int i, fun _ -> ())))
             done);
         create "on_mouse_motion_1000_hits" (fun () ->
             let r = Input_router.create () in
@@ -180,7 +180,7 @@ let benchmarks =
             for i = 1 to 1000 do
               ignore
                 (Input_router.subscribe r
-                   (KeyPress (Ui.Key.of_int i, fun _ -> ())))
+                   (Key_press (Ui.Key.of_int i, fun _ -> ())))
             done;
             Input_router.set_focused r (Some (Ui.Key.of_int 500));
             let evt =

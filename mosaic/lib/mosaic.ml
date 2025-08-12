@@ -111,7 +111,7 @@ let on_key key callback =
       | None -> None
       | Some ctx ->
           let handler =
-            Engine.Input_router.KeyPress
+            Engine.Input_router.Key_press
               ( key,
                 fun evt ->
                   callback evt;

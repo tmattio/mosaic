@@ -112,7 +112,7 @@ let use_key_press key on_key =
     (fun () ->
       let ctx = get_runtime_context () in
       let handler =
-        Engine.Input_router.KeyPress
+        Engine.Input_router.Key_press
           ( key,
             fun evt ->
               !callback_ref evt;

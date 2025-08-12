@@ -43,7 +43,7 @@ type handler =
   | Hover of Attr.key * (bool -> unit)
   | Drag of Attr.key * (drag_event -> unit)
   | Focus of Attr.key * (bool -> unit)
-  | KeyPress of Attr.key * (Input.key_event -> unit)
+  | Key_press of Attr.key * (Input.key_event -> unit)
   | Scroll of Attr.key * (int -> unit)
 (* delta: positive for down, negative for up *)
 
@@ -122,7 +122,7 @@ let subscribe t handler =
   | Focus (key, f) ->
       let handlers = get_or_create_handlers key in
       handlers.focuses <- (id, f) :: handlers.focuses
-  | KeyPress (key, f) ->
+  | Key_press (key, f) ->
       let handlers = get_or_create_handlers key in
       handlers.keypresses <- (id, f) :: handlers.keypresses
   | Scroll (key, f) ->

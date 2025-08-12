@@ -35,7 +35,7 @@ val keyboard : (Input.key_event -> 'msg) -> 'msg t
 
     Example: Logs all keyboard input.
     {[
-      Sub.keyboard (fun event -> `KeyPressed (Input.show_key_event event))
+      Sub.keyboard (fun event -> `Key_pressed (Input.show_key_event event))
     ]} *)
 
 val keyboard_filter : (Input.key_event -> 'msg option) -> 'msg t

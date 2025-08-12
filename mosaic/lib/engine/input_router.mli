@@ -22,7 +22,7 @@ type handler =
   | Hover of Ui.Attr.key * (bool -> unit)
   | Drag of Ui.Attr.key * (drag_event -> unit)
   | Focus of Ui.Attr.key * (bool -> unit)
-  | KeyPress of Ui.Attr.key * (Input.key_event -> unit)
+  | Key_press of Ui.Attr.key * (Input.key_event -> unit)
   | Scroll of Ui.Attr.key * (int -> unit)
 (* delta: positive for down, negative for up *)
 
