@@ -283,9 +283,20 @@ let render t dyn_el =
   Log.debug (fun m -> m "Starting render: width=%d height=%d" width height);
 
   (* Prepare final element for both modes *)
-  let final_el =
+  let base_el =
     if t.static_elements = [] then dyn_el
     else Ui.vbox (t.static_elements @ [ Ui.vbox ~flex_grow:1.0 [ dyn_el ] ])
+  in
+  (* Mode-aware root wrapping *)
+  let final_el =
+    if is_alt t.render_mode then
+      (* Alt-screen: constrain to terminal height with hidden overflow *)
+      Ui.box ~height:(`Pct 1.0) ~overflow_y:`Hidden [ base_el ]
+    else
+      (* Non-alt: allow auto height with visible overflow for history preservation *)
+      Ui.box ~height:`Auto ~overflow_y:`Visible
+        ~style:Ui.Style.empty (* Ensure clearing with spaces *)
+        [ base_el ]
   in
 
   (* Clear and prepare snapshot if mouse is enabled *)
