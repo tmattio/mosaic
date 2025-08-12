@@ -130,16 +130,27 @@ let sample ~fps:_ ~strategy:_ ~initial_cols ~initial_rows events =
                 let new_regions =
                   match event with
                   | Event.Screen_change { changed_rows; _ } ->
-                      List.map
-                        (fun (row, _) ->
-                          let ncols = Grid.cols new_state.grid in
-                          Grid.
-                            {
-                              min_row = row;
-                              max_row = row;
-                              min_col = 0;
-                              max_col = ncols - 1;
-                            })
+                      List.filter_map
+                        (fun (row, row_data) ->
+                          (* Find the actual range of changed cells *)
+                          let min_col = ref max_int in
+                          let max_col = ref (-1) in
+                          Array.iteri
+                            (fun col cell_opt ->
+                              if cell_opt <> None then (
+                                min_col := min !min_col col;
+                                max_col := max !max_col col))
+                            row_data;
+                          if !max_col >= 0 then
+                            Some
+                              Grid.
+                                {
+                                  min_row = row;
+                                  max_row = row;
+                                  min_col = !min_col;
+                                  max_col = !max_col;
+                                }
+                          else None)
                         changed_rows
                   | _ -> []
                 in
