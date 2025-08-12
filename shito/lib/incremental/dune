@@ -1,0 +1,4 @@
+(library
+ (name shito_incremental)
+ (public_name shito.incremental)
+ (libraries))

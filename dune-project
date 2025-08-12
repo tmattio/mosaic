@@ -48,6 +48,18 @@
   (tui terminal react hooks "algebraic-effects" "user-interface")))
 
 (package
+ (name shito)
+ (synopsis "")
+ (description "")
+ (depends
+  (ocaml
+   (>= 5.1))
+  dune
+  (alcotest :with-test))
+ (tags
+  (incremental reactive computation "dependency-tracking")))
+
+(package
  (name matrix)
  (synopsis "High-performance terminal infrastructure for OCaml")
  (description
