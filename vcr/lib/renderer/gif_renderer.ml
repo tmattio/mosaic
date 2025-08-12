@@ -665,8 +665,9 @@ let frames_to_frame_data ~config ~font_renderer ~glyph_cache ~frames =
     | None -> terminal_height + (2 * config.padding)
   in
 
-  let x_offset = (total_width - terminal_width) / 2 in
-  let y_offset = (total_height - terminal_height) / 2 in
+  (* Padding should be applied equally on all sides *)
+  let x_offset = config.padding in
+  let y_offset = config.padding in
 
   (* Render each frame *)
   let rec process_frames frames prev_pixels prev_cursor acc =
@@ -984,9 +985,9 @@ let rec write_frame t frame ~incremental ~writer =
       let is_first_frame = t.frame_count = 0 in
       t.frame_count <- t.frame_count + 1;
 
-      (* Compute terminal dimensions *)
-      let x_offset = (t.total_width - (t.cols * t.config.char_width)) / 2 in
-      let y_offset = (t.total_height - (t.rows * t.config.char_height)) / 2 in
+      (* Use consistent padding *)
+      let x_offset = t.config.padding in
+      let y_offset = t.config.padding in
 
       (* Render frame data *)
       let frame_data_list =
