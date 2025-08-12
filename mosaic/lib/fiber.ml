@@ -117,6 +117,29 @@ let run_effect_cleanup slot =
       try c () with _ -> ())
   | _ -> ()
 
+(* Common error message for hook violations *)
+let print_hook_violation_error ~reason =
+  let error_msg = Printf.sprintf
+    "\n\
+     FATAL: Hook Violation Detected\n\
+     ===============================\n\
+     \n\
+     %s\n\
+     \n\
+     This will cause memory corruption and crashes.\n\
+     \n\
+     Common causes:\n\
+     - Hooks inside if/match statements\n\
+     - Hooks in loops with varying iterations  \n\
+     - Early returns before all hooks\n\
+     \n\
+     Fix: ALL hooks must be called unconditionally\n\
+     in the same order every render.\n"
+    reason
+  in
+  prerr_endline error_msg;
+  exit 1
+
 (* Helper to validate hook signature *)
 let validate_hook_signature f hook_type =
   f.current_signature <- f.current_signature @ [hook_type];
@@ -131,32 +154,24 @@ let validate_hook_signature f hook_type =
       let expected = List.nth f.hook_signature (current_len - 1) in
       let actual = hook_type in
       if expected <> actual then
-        Log.err (fun m -> 
-          m "HOOK VIOLATION DETECTED! Hook type mismatch at position %d.\n\
-             Expected: %s, Got: %s\n\
-             This is a serious bug that can cause crashes!\n\
-             Common causes:\n\
-             - Conditional hook calls (hooks inside if/match statements)\n\
-             - Hooks in loops with varying iterations\n\
-             - Early returns before all hooks are called\n\
-             Fix: Ensure all hooks are called in the same order every render."
-            (current_len - 1)
-            (match expected with
-             | State_hook -> "use_state"
-             | Effect_hook -> "use_effect"
-             | Context_hook -> "use_context"
-             | Subscription_hook -> "use_subscription"
-             | Reducer_hook -> "use_reducer"
-             | Memo_hook -> "use_memo"
-             | Ref_hook -> "use_ref")
-            (match actual with
-             | State_hook -> "use_state"
-             | Effect_hook -> "use_effect"
-             | Context_hook -> "use_context"
-             | Subscription_hook -> "use_subscription"
-             | Reducer_hook -> "use_reducer"
-             | Memo_hook -> "use_memo"
-             | Ref_hook -> "use_ref"))
+        let hook_name_of = function
+          | State_hook -> "use_state"
+          | Effect_hook -> "use_effect"
+          | Context_hook -> "use_context"
+          | Subscription_hook -> "use_subscription"
+          | Reducer_hook -> "use_reducer"
+          | Memo_hook -> "use_memo"
+          | Ref_hook -> "use_ref"
+        in
+        let reason = Printf.sprintf
+          "Hook type mismatch at position %d:\n\
+           Expected: %s\n\
+           Got:      %s"
+          current_len
+          (hook_name_of expected)
+          (hook_name_of actual)
+        in
+        print_hook_violation_error ~reason
     )
   )
 
@@ -355,16 +370,13 @@ let rec reconcile f : Ui.element =
       let current_len = List.length f.current_signature in
       let prev_len = List.length f.hook_signature in
       if current_len <> prev_len then
-        Log.err (fun m -> 
-          m "HOOK VIOLATION DETECTED! Hook count mismatch.\n\
-             Previous render: %d hooks, Current render: %d hooks\n\
-             This is a serious bug that WILL cause crashes!\n\
-             Common causes:\n\
-             - Conditional hook calls (hooks inside if/match statements)\n\
-             - Hooks in loops with varying iterations\n\
-             - Early returns before all hooks are called\n\
-             Fix: Ensure all hooks are called unconditionally in the same order."
-            prev_len current_len)
+        let reason = Printf.sprintf
+          "Hook count mismatch:\n\
+           Previous render: %d hooks\n\
+           Current render:  %d hooks"
+          prev_len current_len
+        in
+        print_hook_violation_error ~reason
     );
     
     (* Save the signature for next render *)

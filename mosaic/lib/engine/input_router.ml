@@ -71,62 +71,8 @@ let create_handlers () =
 module Key_tbl = Hashtbl.Make (struct
   type t = Attr.key
 
-  let equal a b = 
-    try 
-      (* First check if objects are physically equal (same pointer) *)
-      if a == b then true
-      else a = b
-    with e ->
-      Log.err (fun m -> 
-        m "Failed to compare keys: %s\n\
-           This suggests memory corruption or invalid key data.\n\
-           Treating keys as different to avoid further issues."
-          (Printexc.to_string e));
-      false
-  
-  (* Safe, optimized hash function that cannot crash *)
-  let hash (key : t) =
-    (* We implement a fast FNV-1a hash that operates directly on the string
-       bytes without going through OCaml's generic hash function which can crash
-       on corrupted memory *)
-    let fnv_prime = 0x01000193 in
-    let fnv_offset = 0x811c9dc5 in
-    
-    try
-      let s = (key :> string) in
-      (* Force a memory barrier to ensure we're not reading stale data *)
-      Sys.opaque_identity s |> ignore;
-      let len = String.length s in
-      
-      (* Validate the string is reasonable *)
-      if len < 0 || len > 10000 then begin
-        Log.err (fun m -> m "Invalid key length %d in hash, using fallback" len);
-        fnv_offset  (* Return a constant hash *)
-      end else if len = 0 then
-        fnv_offset  (* Empty string gets base hash *)
-      else
-        (* FNV-1a hash - fast and good distribution 
-           We process the string in chunks for better performance *)
-        let rec hash_loop i acc =
-          if i >= len then acc
-          else
-            (* Safe bounds checking *)
-            let byte = 
-              try Char.code (String.unsafe_get s i)
-              with _ -> 0  (* Fallback if corrupted *)
-            in
-            let acc = acc lxor byte in
-            let acc = (acc * fnv_prime) land 0x7FFFFFFF in (* Keep positive *)
-            hash_loop (i + 1) acc
-        in
-        hash_loop 0 fnv_offset
-    with e ->
-      (* If we can't even access the string safely, return a constant *)
-      Log.err (fun m -> 
-        m "Failed to hash key safely: %s\n\
-           Using fallback hash. This indicates memory corruption."
-          (Printexc.to_string e));
-      fnv_offset
+  let equal = ( = )
+  let hash = Hashtbl.hash
 end)
 
 type t = {
@@ -154,54 +100,13 @@ let subscribe t handler =
   let id = t.next_id in
   t.next_id <- t.next_id + 1;
 
-  (* Validate the key before using it *)
-  let validate_key (k : Attr.key) =
-    try
-      let s = (k :> string) in
-      let len = String.length s in
-      if len = 0 then
-        Log.err (fun m -> m "Warning: Empty key detected in subscribe");
-      if len > 1000 then
-        Log.err (fun m -> m "Warning: Suspiciously long key (%d chars) in subscribe" len);
-      (* Try to access the string to ensure it's valid, but only if not empty *)
-      if len > 0 then ignore (s.[0]);
-      true
-    with e ->
-      Log.err (fun m -> 
-        m "Invalid key detected in subscribe: %s\n\
-           This indicates a serious bug - the key is corrupted or invalid.\n\
-           Stack trace: %s"
-          (Printexc.to_string e)
-          (Printexc.get_backtrace ()));
-      false
-  in
-
   let get_or_create_handlers key =
-    if not (validate_key key) then
-      create_handlers ()
-    else
-      try
-        match Key_tbl.find_opt t.by_key key with
-        | Some h -> h
-        | None ->
-            let h = create_handlers () in
-            Key_tbl.add t.by_key key h;
-            h
-      with e ->
-        let key_str = try (key :> string) with _ -> "<unprintable>" in
-        Log.err (fun m -> 
-          m "Failed to get or create handlers for key '%s': %s\n\
-             This is likely a bug in your component code:\n\
-             1. Check that all use_key calls are at the component's top level\n\
-             2. Ensure keys are not generated inside conditionals or loops\n\
-             3. Verify that key prefixes don't contain invalid characters\n\
-             4. Consider using static string literals for key prefixes\n\
-             Stack trace: %s"
-            key_str
-            (Printexc.to_string e)
-            (Printexc.get_backtrace ()));
-        (* Return empty handlers as fallback to prevent crash *)
-        create_handlers ()
+    match Key_tbl.find_opt t.by_key key with
+    | Some h -> h
+    | None ->
+        let h = create_handlers () in
+        Key_tbl.add t.by_key key h;
+        h
   in
 
   (match handler with
