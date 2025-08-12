@@ -111,9 +111,9 @@ let parse_key_chord chord =
 
 (* Convenience: make any element interactive *)
 
-let interact ?key ?tab_index ?auto_focus ?(disabled = false) ?(hotkeys = [])
+let interact ~key ?tab_index ?auto_focus ?(disabled = false) ?(hotkeys = [])
     ?tooltip ?on_click ?on_hover ?on_focus ?on_drag ?on_key element =
-  let key = match key with Some k -> k | None -> use_key ~prefix:"interact" in
+  (* Key is now required - must be provided by caller *)
 
   (* Define noop handlers for unconditional hook calls *)
   let noop_click () = () in
@@ -124,7 +124,6 @@ let interact ?key ?tab_index ?auto_focus ?(disabled = false) ?(hotkeys = [])
 
   (* Wire up event handlers unconditionally *)
   Events.on_click key (Option.value ~default:noop_click on_click);
-  Events.on_hover key (Option.value ~default:noop_hover on_hover);
   Events.on_focus key (Option.value ~default:noop_focus on_focus);
   Events.on_drag key (Option.value ~default:noop_drag on_drag);
 
@@ -160,27 +159,35 @@ let interact ?key ?tab_index ?auto_focus ?(disabled = false) ?(hotkeys = [])
   in
   Events.on_key key handle_key;
 
-  (* Mark as focusable if needed *)
-  (if tab_index <> None || auto_focus <> None || on_click <> None then
-     let auto_focus = Option.value ~default:false auto_focus in
-     Events.focusable key ?tab_index ~auto_focus ());
+  (* Always mark as focusable, but with appropriate defaults *)
+  let should_be_focusable = tab_index <> None || auto_focus <> None || on_click <> None in
+  let effective_tab_index = if should_be_focusable then tab_index else Some (-1) in
+  let effective_auto_focus = Option.value ~default:false auto_focus in
+  Events.focusable key ?tab_index:effective_tab_index ~auto_focus:effective_auto_focus ();
 
+  (* Always call use_hover unconditionally *)
+  let is_hovered = Tile_events.use_hover key in
+  
+  (* Call hover callback if provided *)
+  let hover_handler = Option.value ~default:noop_hover on_hover in
+  Hook.use_effect ~deps:(Deps.keys [Deps.bool is_hovered]) (fun () ->
+    hover_handler is_hovered;
+    None
+  );
+  
   (* Add tooltip if hovering *)
   let element_with_tooltip =
     match tooltip with
-    | Some tip ->
-        let is_hovered = Tile_events.use_hover key in
-        if is_hovered then
-          Ui.vbox ~gap:(`Cells 0)
-            [
-              element;
-              Ui.box
-                ~style:Style.(bg (Index 238) ++ fg (Index 250))
-                ~padding:(xy 2 0)
-                [ text tip ];
-            ]
-        else element
-    | None -> element
+    | Some tip when is_hovered ->
+        Ui.vbox ~gap:(`Cells 0)
+          [
+            element;
+            Ui.box
+              ~style:Style.(bg (Index 238) ++ fg (Index 250))
+              ~padding:(xy 2 0)
+              [ text tip ];
+          ]
+    | _ -> element
   in
 
   with_key key element_with_tooltip
@@ -194,6 +201,10 @@ let box ?display ?position ?box_sizing ?text_align ?flex_direction ?flex_wrap
     ?max_width ?max_height ?padding ?margin ?border_width ?gap ?row_gap ?col_gap
     ?style ?border ?border_style ?key ?tab_index ?auto_focus ?disabled ?hotkeys
     ?tooltip ?on_click ?on_hover ?on_focus ?on_drag ?on_key children =
+  (* Always generate a key unconditionally *)
+  let generated_key = use_key ~prefix:"box" in
+  let key = match key with Some k -> k | None -> generated_key in
+  
   let base_element =
     Ui.box ?display ?position ?box_sizing ?text_align ?flex_direction ?flex_wrap
       ?flex_grow ?flex_shrink ?flex_basis ?align_items ?align_self
@@ -202,81 +213,47 @@ let box ?display ?position ?box_sizing ?text_align ?flex_direction ?flex_wrap
       ?min_width ?min_height ?max_width ?max_height ?padding ?margin
       ?border_width ?gap ?row_gap ?col_gap ?style ?border ?border_style children
   in
-  (* Only wrap with interact if we have interactive properties *)
-  match
-    ( key,
-      tab_index,
-      auto_focus,
-      hotkeys,
-      tooltip,
-      on_click,
-      on_hover,
-      on_focus,
-      on_drag,
-      on_key )
-  with
-  | None, None, None, None, None, None, None, None, None, None -> base_element
-  | _ ->
-      interact ?key ?tab_index ?auto_focus ?disabled ?hotkeys ?tooltip ?on_click
-        ?on_hover ?on_focus ?on_drag ?on_key base_element
+  (* Always wrap with interact - hooks must be called unconditionally *)
+  interact ~key ?tab_index ?auto_focus ?disabled ?hotkeys ?tooltip ?on_click
+    ?on_hover ?on_focus ?on_drag ?on_key base_element
 
 let vbox ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
     ?margin ?border_width ?flex_grow ?flex_shrink ?flex_basis ?align_self
     ?align_items ?justify_content ?gap ?overflow_x ?overflow_y ?style ?border
     ?border_style ?key ?tab_index ?auto_focus ?disabled ?hotkeys ?tooltip
     ?on_click ?on_hover ?on_focus ?on_drag ?on_key children =
+  (* Always generate a key unconditionally *)
+  let generated_key = use_key ~prefix:"vbox" in
+  let key = match key with Some k -> k | None -> generated_key in
+  
   let base_element =
     Ui.vbox ?width ?height ?min_width ?min_height ?max_width ?max_height
       ?padding ?margin ?border_width ?flex_grow ?flex_shrink ?flex_basis
       ?align_self ?align_items ?justify_content ?gap ?overflow_x ?overflow_y
       ?style ?border ?border_style children
   in
-  (* Only wrap with interact if we have interactive properties *)
-  match
-    ( key,
-      tab_index,
-      auto_focus,
-      hotkeys,
-      tooltip,
-      on_click,
-      on_hover,
-      on_focus,
-      on_drag,
-      on_key )
-  with
-  | None, None, None, None, None, None, None, None, None, None -> base_element
-  | _ ->
-      interact ?key ?tab_index ?auto_focus ?disabled ?hotkeys ?tooltip ?on_click
-        ?on_hover ?on_focus ?on_drag ?on_key base_element
+  (* Always wrap with interact - hooks must be called unconditionally *)
+  interact ~key ?tab_index ?auto_focus ?disabled ?hotkeys ?tooltip ?on_click
+    ?on_hover ?on_focus ?on_drag ?on_key base_element
 
 let hbox ?width ?height ?min_width ?min_height ?max_width ?max_height ?padding
     ?margin ?border_width ?flex_grow ?flex_shrink ?flex_basis ?align_self
     ?align_items ?justify_content ?gap ?overflow_x ?overflow_y ?style ?border
     ?border_style ?key ?tab_index ?auto_focus ?disabled ?hotkeys ?tooltip
     ?on_click ?on_hover ?on_focus ?on_drag ?on_key children =
+  (* Always generate a key unconditionally *)
+  let generated_key = use_key ~prefix:"hbox" in
+  let key = match key with Some k -> k | None -> generated_key in
+  
   let base_element =
     Ui.hbox ?width ?height ?min_width ?min_height ?max_width ?max_height
       ?padding ?margin ?border_width ?flex_grow ?flex_shrink ?flex_basis
       ?align_self ?align_items ?justify_content ?gap ?overflow_x ?overflow_y
       ?style ?border ?border_style children
   in
-  (* Only wrap with interact if we have interactive properties *)
-  match
-    ( key,
-      tab_index,
-      auto_focus,
-      hotkeys,
-      tooltip,
-      on_click,
-      on_hover,
-      on_focus,
-      on_drag,
-      on_key )
-  with
-  | None, None, None, None, None, None, None, None, None, None -> base_element
-  | _ ->
-      interact ?key ?tab_index ?auto_focus ?disabled ?hotkeys ?tooltip ?on_click
-        ?on_hover ?on_focus ?on_drag ?on_key base_element
+  (* Always wrap with interact - hooks must be called unconditionally *)
+  interact ~key ?tab_index ?auto_focus ?disabled ?hotkeys ?tooltip ?on_click
+    ?on_hover ?on_focus ?on_drag ?on_key base_element
 
 (* Opinionated controls *)
 

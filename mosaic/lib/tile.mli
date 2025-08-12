@@ -69,27 +69,10 @@ module Events = Tile_events
 (** Event subscriptions module - alias to Tile_events for all event handling
     functionality *)
 
-(** {1 Convenience: make any element interactive} *)
+(** {1 Types} *)
 
 type hotkey = string
 (** Simple chords: "enter", "space", "esc". Extend later if needed. *)
-
-val interact :
-  ?key:key ->
-  ?tab_index:int ->
-  ?auto_focus:bool ->
-  ?disabled:bool ->
-  ?hotkeys:hotkey list ->
-  ?tooltip:string ->
-  ?on_click:(unit -> unit) ->
-  ?on_hover:(bool -> unit) ->
-  ?on_focus:(bool -> unit) ->
-  ?on_drag:(Events.drag -> unit) ->
-  ?on_key:(Events.key_event -> unit) ->
-  element ->
-  element
-(** Wrap any element to give it identity, focus behavior, hotkeys and handlers.
-    Rendering is unchanged; this only wires events and optional tooltip. *)
 
 (** {1 Interactive wrappers for common Ui containers} *)
 

@@ -2,7 +2,7 @@ open Mosaic
 
 (* Simple Counter Component using React-style hooks *)
 let counter label =
-  let open Ui in
+  let open Tile in
   (* useState hook for counter value *)
   let count, _, update_count = use_state 0 in
 
@@ -49,7 +49,7 @@ let theme_context = create_context ~default:Dark ()
 
 (* Themed Box Component *)
 let themed_box children =
-  let open Ui in
+  let open Tile in
   let theme = use_context theme_context in
   let style =
     match theme with
@@ -61,7 +61,7 @@ let themed_box children =
 
 (* Main App Component *)
 let app () =
-  let open Ui in
+  let open Tile in
   (* Theme state *)
   let theme, _, update_theme = use_state Dark in
 

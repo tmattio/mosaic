@@ -188,7 +188,7 @@ let parse_command input =
   | _ -> None
 
 let message_component msg =
-  let open Ui in
+  let open Tile in
   if msg.is_user then
     vbox ~gap:(`Cells 0)
       [
@@ -207,7 +207,7 @@ let message_component msg =
       ]
 
 let input_area ~current_input ~agent_state max_width =
-  let open Ui in
+  let open Tile in
   let prompt_text =
     match agent_state with
     | Idle -> "enter send"
@@ -233,7 +233,7 @@ let input_area ~current_input ~agent_state max_width =
     ]
 
 let chat_agent_app () =
-  let open Ui in
+  let open Tile in
   (* State *)
   let messages, set_messages, update_messages = use_state [] in
   let current_input, set_current_input, update_current_input = use_state "" in

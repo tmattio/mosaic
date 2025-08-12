@@ -107,7 +107,7 @@ let extract_headings markdown_text =
 
 (* Table of Contents component *)
 let toc_component ~headings ~selected =
-  let open Ui in
+  let open Tile in
   vbox ~gap:(`Cells 1)
     [
       text ~style:Style.(fg (Index 39) ++ bold) "TABLE OF CONTENTS";
@@ -131,7 +131,7 @@ let toc_component ~headings ~selected =
 
 (* Main markdown viewer app *)
 let markdown_viewer_app () =
-  let open Ui in
+  let open Tile in
   (* Use the new scroll hook with momentum enabled *)
   let scroll_offset, scroll_by, set_scroll_offset =
     use_scroll ~initial:0 ~min_offset:0 ()

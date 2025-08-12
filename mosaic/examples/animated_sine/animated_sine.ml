@@ -7,7 +7,7 @@ let generate_sine_wave time amplitude frequency phase num_points =
       { x; y = amplitude *. sin ((frequency *. x) +. phase +. time) })
 
 let animated_sine () =
-  let open Ui in
+  let open Tile in
   let time, _, update_time = use_state 0.0 in
   let amplitude, _, update_amplitude = use_state 1.0 in
   let frequency, _, update_frequency = use_state 1.0 in
