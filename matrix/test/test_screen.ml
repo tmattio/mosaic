@@ -535,8 +535,6 @@ let test_perf_counters () =
   Screen.begin_frame s;
   Screen.set_grapheme s ~row:0 ~col:0 ~glyph:"x" ~attrs:default_style;
   let patches = Screen.render s in
-  (* Debug: print patches to understand what's generated *)
-  (* Printf.eprintf "Patches generated: %d\n" (List.length patches); *)
   let c2 = Screen.Perf.get () in
   check int "frames incremented" 1 c2.frames_rendered;
   check int "patches incremented" (List.length patches) c2.patches_generated;

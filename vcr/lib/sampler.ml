@@ -31,80 +31,8 @@ type event_cursor = {
 let create_cursor events initial_state =
   { events; position = 0; current_state = initial_state }
 
-(** Advance cursor to time t, updating state along the way *)
-let advance_cursor_to cursor target_time =
-  let rec advance cursor =
-    match List.nth_opt cursor.events cursor.position with
-    | None -> cursor
-    | Some event ->
-        let event_time = Event.timestamp event in
-        if event_time > target_time then cursor
-        else
-          let new_state =
-            match event with
-            | Event.Screen_change { changed_rows; _ } ->
-                (* Apply row changes to current grid *)
-                let grid = Grid.copy cursor.current_state.grid in
-                List.iter
-                  (fun (row, row_data) ->
-                    let cells =
-                      Array.map
-                        (fun opt -> Option.value opt ~default:Grid.Cell.empty)
-                        row_data
-                    in
-                    Grid.set_row grid row cells)
-                  changed_rows;
-                { cursor.current_state with grid }
-            | Event.Cursor_move { row; col; _ } ->
-                { cursor.current_state with cursor_row = row; cursor_col = col }
-            | Event.Sleep _ -> cursor.current_state
-          in
-          advance
-            {
-              cursor with
-              position = cursor.position + 1;
-              current_state = new_state;
-            }
-  in
-  advance cursor
-
-(** Collect changes between two times using cursor *)
-let collect_changes_between cursor start_time end_time =
-  let rec collect pos dirty_regions cursor_moved =
-    match List.nth_opt cursor.events pos with
-    | None -> (dirty_regions, cursor_moved)
-    | Some event ->
-        let t = Event.timestamp event in
-        if t > end_time then (dirty_regions, cursor_moved)
-        else if t > start_time then
-          match event with
-          | Event.Screen_change { changed_rows; _ } ->
-              (* Convert changed rows to dirty regions *)
-              let new_regions =
-                List.map
-                  (fun (row, _) ->
-                    let ncols = Grid.cols cursor.current_state.grid in
-                    Grid.
-                      {
-                        min_row = row;
-                        max_row = row;
-                        min_col = 0;
-                        max_col = ncols - 1;
-                      })
-                  changed_rows
-              in
-              collect (pos + 1) (new_regions @ dirty_regions) cursor_moved
-          | Event.Cursor_move _ -> collect (pos + 1) dirty_regions true
-          | _ -> collect (pos + 1) dirty_regions cursor_moved
-        else collect (pos + 1) dirty_regions cursor_moved
-  in
-  collect cursor.position [] false
-
-(** Sample frames from event log at given FPS *)
-let sample ~fps ~strategy ~initial_cols ~initial_rows events =
-  let frame_interval = 1.0 /. fps in
-  let end_time = Event.end_time events in
-
+(** Sample frames from event log - create frames only when there are changes *)
+let sample ~fps:_ ~strategy:_ ~initial_cols ~initial_rows events =
   (* Initial state *)
   let initial_state =
     {
@@ -115,45 +43,156 @@ let sample ~fps ~strategy ~initial_cols ~initial_rows events =
     }
   in
 
-  (* Create cursor *)
-  let initial_cursor = create_cursor events initial_state in
+  (* Process events and create frames only when there are visual changes *)
+  (* Group events at the same timestamp into a single frame *)
+  let rec process_events cursor frames last_frame_time = function
+    | [] ->
+        (* Add final frame if needed *)
+        if last_frame_time < Event.end_time events then
+          let final_frame =
+            {
+              timestamp = Event.end_time events;
+              grid = cursor.current_state.grid;
+              cursor_row = cursor.current_state.cursor_row;
+              cursor_col = cursor.current_state.cursor_col;
+              cursor_visible = cursor.current_state.cursor_visible;
+              dirty_regions = [];
+              cursor_moved = false;
+            }
+          in
+          List.rev (final_frame :: frames)
+        else List.rev frames
+    | events_list ->
+        (* Group events by timestamp *)
+        let rec collect_same_time acc time = function
+          | [] -> (List.rev acc, [])
+          | (Event.Sleep _ as evt) :: rest when Event.timestamp evt = time ->
+              (* Include Sleep events in the group *)
+              collect_same_time (evt :: acc) time rest
+          | evt :: rest when Event.timestamp evt = time ->
+              collect_same_time (evt :: acc) time rest
+          | rest -> (List.rev acc, rest)
+        in
 
-  (* Sample at regular intervals *)
-  let rec sample_at_times time frames cursor last_time =
-    if time > end_time then List.rev frames
-    else
-      (* Advance cursor to current time *)
-      let cursor = advance_cursor_to cursor time in
+        let first_event = List.hd events_list in
+        let event_time = Event.timestamp first_event in
+        let same_time_events, remaining =
+          collect_same_time [] event_time events_list
+        in
 
-      (* Collect changes since last frame *)
-      let dirty_regions, cursor_moved =
-        collect_changes_between cursor last_time time
-      in
+        (* Check if any events have visual changes *)
+        let has_visual_change =
+          List.exists
+            (function
+              | Event.Screen_change _ | Event.Cursor_move _ -> true
+              | Event.Sleep _ -> false)
+            same_time_events
+        in
 
-      let frame =
-        {
-          timestamp = time;
-          grid = cursor.current_state.grid;
-          cursor_row = cursor.current_state.cursor_row;
-          cursor_col = cursor.current_state.cursor_col;
-          cursor_visible = cursor.current_state.cursor_visible;
-          dirty_regions;
-          cursor_moved;
-        }
-      in
+        if has_visual_change then
+          (* Apply all events at this timestamp *)
+          let rec apply_events state dirty_regions cursor_moved = function
+            | [] -> (state, dirty_regions, cursor_moved)
+            | event :: rest ->
+                let new_state =
+                  match event with
+                  | Event.Screen_change { changed_rows; _ } ->
+                      let grid =
+                        if state.grid == cursor.current_state.grid then
+                          Grid.copy cursor.current_state.grid
+                        else state.grid
+                      in
+                      List.iter
+                        (fun (row, row_data) ->
+                          if Array.length row_data = Grid.cols grid then
+                            let cells =
+                              Array.map
+                                (fun opt ->
+                                  Option.value opt ~default:Grid.Cell.empty)
+                                row_data
+                            in
+                            Grid.set_row grid row cells
+                          else
+                            Array.iteri
+                              (fun col cell_opt ->
+                                match cell_opt with
+                                | Some cell ->
+                                    Grid.set grid ~row ~col (Some cell)
+                                | None -> ())
+                              row_data)
+                        changed_rows;
+                      { state with grid }
+                  | Event.Cursor_move { row; col; _ } ->
+                      { state with cursor_row = row; cursor_col = col }
+                  | Event.Sleep _ -> state
+                in
 
-      (* Determine next sample time based on strategy *)
-      let next_time =
-        match strategy with
-        | Drop ->
-            (* Always advance by frame interval during active periods *)
-            time +. frame_interval
-      in
+                let new_regions =
+                  match event with
+                  | Event.Screen_change { changed_rows; _ } ->
+                      List.map
+                        (fun (row, _) ->
+                          let ncols = Grid.cols new_state.grid in
+                          Grid.
+                            {
+                              min_row = row;
+                              max_row = row;
+                              min_col = 0;
+                              max_col = ncols - 1;
+                            })
+                        changed_rows
+                  | _ -> []
+                in
 
-      sample_at_times next_time (frame :: frames) cursor time
+                let moved =
+                  match event with
+                  | Event.Cursor_move _ -> true
+                  | _ -> cursor_moved
+                in
+
+                apply_events new_state (new_regions @ dirty_regions) moved rest
+          in
+
+          let final_state, all_regions, cursor_moved =
+            apply_events cursor.current_state [] false same_time_events
+          in
+
+          (* Create frame with all changes at this timestamp *)
+          let frame =
+            {
+              timestamp = event_time;
+              grid = final_state.grid;
+              cursor_row = final_state.cursor_row;
+              cursor_col = final_state.cursor_col;
+              cursor_visible = final_state.cursor_visible;
+              dirty_regions = all_regions;
+              cursor_moved;
+            }
+          in
+
+          (* Update cursor *)
+          let new_cursor =
+            {
+              events = cursor.events;
+              position = cursor.position + List.length same_time_events;
+              current_state = final_state;
+            }
+          in
+
+          process_events new_cursor (frame :: frames) event_time remaining
+        else
+          (* No visual changes in this group - just advance *)
+          let new_cursor =
+            {
+              cursor with
+              position = cursor.position + List.length same_time_events;
+            }
+          in
+          process_events new_cursor frames last_frame_time remaining
   in
 
-  sample_at_times 0.0 [] initial_cursor (-1.0)
+  let initial_cursor = create_cursor events initial_state in
+  process_events initial_cursor [] 0.0 events
 
 (** Check if two frames are visually identical *)
 let frames_equal f1 f2 =
@@ -165,41 +204,31 @@ let frames_equal f1 f2 =
 
 (** Deduplicate consecutive identical frames *)
 let deduplicate_frames frames =
-  let rec dedup acc last_frame accumulated_time = function
+  let rec dedup acc last_frame = function
     | [] -> (
-        (* Add the last frame with accumulated time *)
+        (* Add the last frame *)
         match last_frame with
-        | Some f ->
-            List.rev
-              ({ f with timestamp = f.timestamp +. accumulated_time } :: acc)
+        | Some f -> List.rev (f :: acc)
         | None -> List.rev acc)
     | frame :: rest -> (
         match last_frame with
         | None ->
             (* First frame *)
-            dedup acc (Some frame) 0.0 rest
+            dedup acc (Some frame) rest
         | Some prev ->
             if frames_equal prev frame then
-              (* Identical frame - accumulate time *)
-              let time_diff = frame.timestamp -. prev.timestamp in
-              dedup acc last_frame (accumulated_time +. time_diff) rest
+              (* Identical frame - skip it *)
+              dedup acc last_frame rest
             else
-              (* Different frame - emit previous with accumulated time *)
-              let prev_with_time =
-                { prev with timestamp = prev.timestamp +. accumulated_time }
-              in
-              dedup (prev_with_time :: acc) (Some frame) 0.0 rest)
+              (* Different frame - emit previous *)
+              dedup (prev :: acc) (Some frame) rest)
   in
-  dedup [] None 0.0 frames
+  dedup [] None frames
 
 (** Calculate frame delays in centiseconds *)
 let calculate_delays frames =
   (* First deduplicate frames *)
   let unique_frames = deduplicate_frames frames in
-  let () =
-    Printf.eprintf "[DEBUG] Frames after deduplication: %d\n"
-      (List.length unique_frames)
-  in
 
   match unique_frames with
   | [] -> []

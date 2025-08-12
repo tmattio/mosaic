@@ -24,8 +24,9 @@ let compare e1 e2 =
   in
   Float.compare (get_time e1) (get_time e2)
 
-(** Sort events chronologically *)
-let sort_log log = List.sort compare log
+(** Sort events chronologically, preserving order for events at same timestamp
+*)
+let sort_log log = List.stable_sort compare log
 
 (** Get timestamp of an event *)
 let timestamp = function

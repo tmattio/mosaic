@@ -102,9 +102,10 @@ type glyph_key = {
 [@@warning "-69"]
 
 (** Convert ANSI color to RGB *)
-let rec color_of_ansi (theme : theme) (c : Ansi.color) =
+let rec color_of_ansi ?(is_background = false) (theme : theme) (c : Ansi.color)
+    =
   match c with
-  | Default -> theme.fg
+  | Default -> if is_background then theme.bg else theme.fg
   | Black -> theme.black
   | Red -> theme.red
   | Green -> theme.green
@@ -126,7 +127,7 @@ let rec color_of_ansi (theme : theme) (c : Ansi.color) =
       (* Basic 256-color palette support *)
       if i < 16 then
         (* Standard and bright colors *)
-        color_of_ansi theme
+        color_of_ansi ~is_background theme
           (match i with
           | 0 -> Black
           | 1 -> Red
@@ -160,6 +161,42 @@ let rec color_of_ansi (theme : theme) (c : Ansi.color) =
       (* For GIF, we ignore alpha and just use RGB *)
       (r, g, b)
 
+(** Decode first UTF-8 codepoint from string, returning replacement char on
+    error *)
+let utf8_to_codepoint s =
+  let len = String.length s in
+  if len = 0 then 0x0020 (* space *)
+  else
+    let c0 = Char.code s.[0] in
+    if c0 < 0x80 then c0
+    else if c0 < 0xC2 || c0 > 0xF4 then 0xFFFD (* invalid start byte *)
+    else if c0 < 0xE0 then
+      if len < 2 then 0xFFFD
+      else
+        let c1 = Char.code s.[1] in
+        if c1 land 0xC0 <> 0x80 then 0xFFFD
+        else ((c0 land 0x1F) lsl 6) lor (c1 land 0x3F)
+    else if c0 < 0xF0 then
+      if len < 3 then 0xFFFD
+      else
+        let c1 = Char.code s.[1] in
+        let c2 = Char.code s.[2] in
+        if c1 land 0xC0 <> 0x80 || c2 land 0xC0 <> 0x80 then 0xFFFD
+        else
+          ((c0 land 0x0F) lsl 12) lor ((c1 land 0x3F) lsl 6) lor (c2 land 0x3F)
+    else if len < 4 then 0xFFFD
+    else
+      let c1 = Char.code s.[1] in
+      let c2 = Char.code s.[2] in
+      let c3 = Char.code s.[3] in
+      if c1 land 0xC0 <> 0x80 || c2 land 0xC0 <> 0x80 || c3 land 0xC0 <> 0x80
+      then 0xFFFD
+      else
+        ((c0 land 0x07) lsl 18)
+        lor ((c1 land 0x3F) lsl 12)
+        lor ((c2 land 0x3F) lsl 6)
+        lor (c3 land 0x3F)
+
 (** Simple bitmap font - 5x7 pixels per character *)
 module Font = struct
   (* Minimal ASCII font data - just basic letters and symbols *)
@@ -167,21 +204,102 @@ module Font = struct
   (** Get bitmap for a character (returns array of 7 rows, 5 bits each) *)
   let get_char_bitmap ch =
     match ch with
-    | ' ' -> [| 0; 0; 0; 0; 0; 0; 0 |]
+    | ' ' -> [| 0x00; 0x00; 0x00; 0x00; 0x00; 0x00; 0x00 |]
     | '!' -> [| 0x04; 0x04; 0x04; 0x04; 0x00; 0x04; 0x00 |]
-    | 'A' | 'a' -> [| 0x0E; 0x11; 0x11; 0x1F; 0x11; 0x11; 0x00 |]
-    | 'B' | 'b' -> [| 0x1E; 0x11; 0x1E; 0x11; 0x11; 0x1E; 0x00 |]
-    | 'C' | 'c' -> [| 0x0E; 0x11; 0x10; 0x10; 0x11; 0x0E; 0x00 |]
-    | 'E' | 'e' -> [| 0x1F; 0x10; 0x1E; 0x10; 0x10; 0x1F; 0x00 |]
-    | 'H' | 'h' -> [| 0x11; 0x11; 0x1F; 0x11; 0x11; 0x11; 0x00 |]
-    | 'L' | 'l' -> [| 0x10; 0x10; 0x10; 0x10; 0x10; 0x1F; 0x00 |]
-    | 'O' | 'o' -> [| 0x0E; 0x11; 0x11; 0x11; 0x11; 0x0E; 0x00 |]
-    | 'W' | 'w' -> [| 0x11; 0x11; 0x11; 0x15; 0x15; 0x0A; 0x00 |]
-    | 'R' | 'r' -> [| 0x1E; 0x11; 0x11; 0x1E; 0x14; 0x12; 0x00 |]
-    | 'D' | 'd' -> [| 0x1E; 0x11; 0x11; 0x11; 0x11; 0x1E; 0x00 |]
-    | '0' -> [| 0x0E; 0x11; 0x13; 0x15; 0x19; 0x0E; 0x00 |]
-    | '1' -> [| 0x04; 0x0C; 0x04; 0x04; 0x04; 0x0E; 0x00 |]
-    | _ -> [| 0x1F; 0x11; 0x11; 0x11; 0x11; 0x1F; 0x00 |]
+    | '"' -> [| 0x0A; 0x0A; 0x0A; 0x00; 0x00; 0x00; 0x00 |]
+    | '#' -> [| 0x0A; 0x0A; 0x1F; 0x0A; 0x1F; 0x0A; 0x0A |]
+    | '$' -> [| 0x04; 0x0F; 0x14; 0x0E; 0x05; 0x1E; 0x04 |]
+    | '%' -> [| 0x18; 0x19; 0x02; 0x04; 0x08; 0x13; 0x03 |]
+    | '&' -> [| 0x0C; 0x12; 0x14; 0x08; 0x15; 0x12; 0x0D |]
+    | '\'' -> [| 0x0C; 0x04; 0x08; 0x00; 0x00; 0x00; 0x00 |]
+    | '(' -> [| 0x02; 0x04; 0x08; 0x08; 0x08; 0x04; 0x02 |]
+    | ')' -> [| 0x08; 0x04; 0x02; 0x02; 0x02; 0x04; 0x08 |]
+    | '*' -> [| 0x00; 0x04; 0x15; 0x0E; 0x15; 0x04; 0x00 |]
+    | '+' -> [| 0x00; 0x04; 0x04; 0x1F; 0x04; 0x04; 0x00 |]
+    | ',' -> [| 0x00; 0x00; 0x00; 0x00; 0x0C; 0x04; 0x08 |]
+    | '-' -> [| 0x00; 0x00; 0x00; 0x1F; 0x00; 0x00; 0x00 |]
+    | '.' -> [| 0x00; 0x00; 0x00; 0x00; 0x00; 0x0C; 0x0C |]
+    | '/' -> [| 0x00; 0x01; 0x02; 0x04; 0x08; 0x10; 0x00 |]
+    | '0' -> [| 0x0E; 0x11; 0x13; 0x15; 0x19; 0x11; 0x0E |]
+    | '1' -> [| 0x04; 0x0C; 0x04; 0x04; 0x04; 0x04; 0x0E |]
+    | '2' -> [| 0x0E; 0x11; 0x01; 0x02; 0x04; 0x08; 0x1F |]
+    | '3' -> [| 0x1F; 0x02; 0x04; 0x02; 0x01; 0x11; 0x0E |]
+    | '4' -> [| 0x02; 0x06; 0x0A; 0x12; 0x1F; 0x02; 0x02 |]
+    | '5' -> [| 0x1F; 0x10; 0x1E; 0x01; 0x01; 0x11; 0x0E |]
+    | '6' -> [| 0x06; 0x08; 0x10; 0x1E; 0x11; 0x11; 0x0E |]
+    | '7' -> [| 0x1F; 0x01; 0x02; 0x04; 0x08; 0x08; 0x08 |]
+    | '8' -> [| 0x0E; 0x11; 0x11; 0x0E; 0x11; 0x11; 0x0E |]
+    | '9' -> [| 0x0E; 0x11; 0x11; 0x0F; 0x01; 0x02; 0x0C |]
+    | ':' -> [| 0x00; 0x0C; 0x0C; 0x00; 0x0C; 0x0C; 0x00 |]
+    | ';' -> [| 0x00; 0x0C; 0x0C; 0x00; 0x0C; 0x04; 0x08 |]
+    | '<' -> [| 0x02; 0x04; 0x08; 0x10; 0x08; 0x04; 0x02 |]
+    | '=' -> [| 0x00; 0x00; 0x1F; 0x00; 0x1F; 0x00; 0x00 |]
+    | '>' -> [| 0x08; 0x04; 0x02; 0x01; 0x02; 0x04; 0x08 |]
+    | '?' -> [| 0x0E; 0x11; 0x01; 0x02; 0x04; 0x00; 0x04 |]
+    | '@' -> [| 0x0E; 0x11; 0x01; 0x0D; 0x15; 0x15; 0x0E |]
+    | 'A' -> [| 0x0E; 0x11; 0x11; 0x11; 0x1F; 0x11; 0x11 |]
+    | 'B' -> [| 0x1E; 0x11; 0x11; 0x1E; 0x11; 0x11; 0x1E |]
+    | 'C' -> [| 0x0E; 0x11; 0x10; 0x10; 0x10; 0x11; 0x0E |]
+    | 'D' -> [| 0x1C; 0x12; 0x11; 0x11; 0x11; 0x12; 0x1C |]
+    | 'E' -> [| 0x1F; 0x10; 0x10; 0x1E; 0x10; 0x10; 0x1F |]
+    | 'F' -> [| 0x1F; 0x10; 0x10; 0x1E; 0x10; 0x10; 0x10 |]
+    | 'G' -> [| 0x0E; 0x11; 0x10; 0x17; 0x11; 0x11; 0x0F |]
+    | 'H' -> [| 0x11; 0x11; 0x11; 0x1F; 0x11; 0x11; 0x11 |]
+    | 'I' -> [| 0x0E; 0x04; 0x04; 0x04; 0x04; 0x04; 0x0E |]
+    | 'J' -> [| 0x07; 0x02; 0x02; 0x02; 0x02; 0x12; 0x0C |]
+    | 'K' -> [| 0x11; 0x12; 0x14; 0x18; 0x14; 0x12; 0x11 |]
+    | 'L' -> [| 0x10; 0x10; 0x10; 0x10; 0x10; 0x10; 0x1F |]
+    | 'M' -> [| 0x11; 0x1B; 0x15; 0x15; 0x11; 0x11; 0x11 |]
+    | 'N' -> [| 0x11; 0x11; 0x19; 0x15; 0x13; 0x11; 0x11 |]
+    | 'O' -> [| 0x0E; 0x11; 0x11; 0x11; 0x11; 0x11; 0x0E |]
+    | 'P' -> [| 0x1E; 0x11; 0x11; 0x1E; 0x10; 0x10; 0x10 |]
+    | 'Q' -> [| 0x0E; 0x11; 0x11; 0x11; 0x15; 0x12; 0x0D |]
+    | 'R' -> [| 0x1E; 0x11; 0x11; 0x1E; 0x14; 0x12; 0x11 |]
+    | 'S' -> [| 0x0F; 0x10; 0x10; 0x0E; 0x01; 0x01; 0x1E |]
+    | 'T' -> [| 0x1F; 0x04; 0x04; 0x04; 0x04; 0x04; 0x04 |]
+    | 'U' -> [| 0x11; 0x11; 0x11; 0x11; 0x11; 0x11; 0x0E |]
+    | 'V' -> [| 0x11; 0x11; 0x11; 0x11; 0x11; 0x0A; 0x04 |]
+    | 'W' -> [| 0x11; 0x11; 0x11; 0x15; 0x15; 0x15; 0x0A |]
+    | 'X' -> [| 0x11; 0x11; 0x0A; 0x04; 0x0A; 0x11; 0x11 |]
+    | 'Y' -> [| 0x11; 0x11; 0x11; 0x0A; 0x04; 0x04; 0x04 |]
+    | 'Z' -> [| 0x1F; 0x01; 0x02; 0x04; 0x08; 0x10; 0x1F |]
+    | '[' -> [| 0x0E; 0x08; 0x08; 0x08; 0x08; 0x08; 0x0E |]
+    | '\\' -> [| 0x00; 0x10; 0x08; 0x04; 0x02; 0x01; 0x00 |]
+    | ']' -> [| 0x0E; 0x02; 0x02; 0x02; 0x02; 0x02; 0x0E |]
+    | '^' -> [| 0x04; 0x0A; 0x11; 0x00; 0x00; 0x00; 0x00 |]
+    | '_' -> [| 0x00; 0x00; 0x00; 0x00; 0x00; 0x00; 0x1F |]
+    | '`' -> [| 0x08; 0x04; 0x02; 0x00; 0x00; 0x00; 0x00 |]
+    | 'a' -> [| 0x00; 0x00; 0x0E; 0x01; 0x0F; 0x11; 0x0F |]
+    | 'b' -> [| 0x10; 0x10; 0x16; 0x19; 0x11; 0x11; 0x1E |]
+    | 'c' -> [| 0x00; 0x00; 0x0E; 0x10; 0x10; 0x11; 0x0E |]
+    | 'd' -> [| 0x01; 0x01; 0x0D; 0x13; 0x11; 0x11; 0x0F |]
+    | 'e' -> [| 0x00; 0x00; 0x0E; 0x11; 0x1F; 0x10; 0x0E |]
+    | 'f' -> [| 0x06; 0x09; 0x08; 0x1C; 0x08; 0x08; 0x08 |]
+    | 'g' -> [| 0x00; 0x0F; 0x11; 0x11; 0x0F; 0x01; 0x0E |]
+    | 'h' -> [| 0x10; 0x10; 0x16; 0x19; 0x11; 0x11; 0x11 |]
+    | 'i' -> [| 0x04; 0x00; 0x0C; 0x04; 0x04; 0x04; 0x0E |]
+    | 'j' -> [| 0x02; 0x00; 0x06; 0x02; 0x02; 0x12; 0x0C |]
+    | 'k' -> [| 0x10; 0x10; 0x12; 0x14; 0x18; 0x14; 0x12 |]
+    | 'l' -> [| 0x0C; 0x04; 0x04; 0x04; 0x04; 0x04; 0x0E |]
+    | 'm' -> [| 0x00; 0x00; 0x1A; 0x15; 0x15; 0x11; 0x11 |]
+    | 'n' -> [| 0x00; 0x00; 0x16; 0x19; 0x11; 0x11; 0x11 |]
+    | 'o' -> [| 0x00; 0x00; 0x0E; 0x11; 0x11; 0x11; 0x0E |]
+    | 'p' -> [| 0x00; 0x00; 0x1E; 0x11; 0x1E; 0x10; 0x10 |]
+    | 'q' -> [| 0x00; 0x00; 0x0D; 0x13; 0x0F; 0x01; 0x01 |]
+    | 'r' -> [| 0x00; 0x00; 0x16; 0x19; 0x10; 0x10; 0x10 |]
+    | 's' -> [| 0x00; 0x00; 0x0E; 0x10; 0x0E; 0x01; 0x1E |]
+    | 't' -> [| 0x08; 0x08; 0x1C; 0x08; 0x08; 0x09; 0x06 |]
+    | 'u' -> [| 0x00; 0x00; 0x11; 0x11; 0x11; 0x13; 0x0D |]
+    | 'v' -> [| 0x00; 0x00; 0x11; 0x11; 0x11; 0x0A; 0x04 |]
+    | 'w' -> [| 0x00; 0x00; 0x11; 0x11; 0x15; 0x15; 0x0A |]
+    | 'x' -> [| 0x00; 0x00; 0x11; 0x0A; 0x04; 0x0A; 0x11 |]
+    | 'y' -> [| 0x00; 0x00; 0x11; 0x11; 0x0F; 0x01; 0x0E |]
+    | 'z' -> [| 0x00; 0x00; 0x1F; 0x02; 0x04; 0x08; 0x1F |]
+    | '{' -> [| 0x02; 0x04; 0x04; 0x08; 0x04; 0x04; 0x02 |]
+    | '|' -> [| 0x04; 0x04; 0x04; 0x00; 0x04; 0x04; 0x04 |]
+    | '}' -> [| 0x08; 0x04; 0x04; 0x02; 0x04; 0x04; 0x08 |]
+    | '~' -> [| 0x00; 0x00; 0x08; 0x15; 0x02; 0x00; 0x00 |]
+    | _ -> [| 0x1F; 0x15; 0x15; 0x15; 0x15; 0x15; 0x1F |]
   (* Default box *)
 
   (** Render a character at position (x, y) in the pixel buffer *)
@@ -277,7 +395,9 @@ let render_cell ~config ~font_renderer ~glyph_cache ~pixels ~width ~height
       else if Grid.Cell.is_continuation cell then
         (* Continuation cell - just fill background *)
         let style = Grid.Cell.get_style cell in
-        let bg = color_of_ansi config.theme (Ansi.Style.bg style) in
+        let bg =
+          color_of_ansi ~is_background:true config.theme (Ansi.Style.bg style)
+        in
         for y = 0 to config.char_height - 1 do
           for x = 0 to config.char_width - 1 do
             if x_start + x < width && y_start + y >= 0 then
@@ -289,7 +409,9 @@ let render_cell ~config ~font_renderer ~glyph_cache ~pixels ~width ~height
         let text = Grid.Cell.get_text cell in
         let style = Grid.Cell.get_style cell in
         let fg = color_of_ansi config.theme (Ansi.Style.fg style) in
-        let bg = color_of_ansi config.theme (Ansi.Style.bg style) in
+        let bg =
+          color_of_ansi ~is_background:true config.theme (Ansi.Style.bg style)
+        in
 
         (* Create cache key *)
         let key = { text; fg; bg; style_hash = Hashtbl.hash style } in
@@ -298,7 +420,6 @@ let render_cell ~config ~font_renderer ~glyph_cache ~pixels ~width ~height
         match Hashtbl.find_opt glyph_cache key with
         | Some cached ->
             (* Found in cache - copy to output pixels *)
-            (* Log.debug (fun m -> m "Glyph cache hit for '%s'" cached_key.text); *)
             for y = 0 to config.char_height - 1 do
               for x = 0 to config.char_width - 1 do
                 let src_idx = ((y * config.char_width) + x) * 3 in
@@ -321,25 +442,10 @@ let render_cell ~config ~font_renderer ~glyph_cache ~pixels ~width ~height
                 Array.make (config.char_width * config.char_height) bg
               in
 
-              (if String.length text = 0 then
-                 (* Empty text - render space *)
-                 Font.render_char temp_pixels config.char_width
-                   config.char_height 0 0 ' ' fg bg config.char_width
-                   config.char_height
-               else
-                 (* Check if it's ASCII *)
-                 let first_byte = String.get text 0 in
-                 if Char.code first_byte < 128 && String.length text = 1 then
-                   (* ASCII character - render directly *)
-                   Font.render_char temp_pixels config.char_width
-                     config.char_height 0 0 first_byte fg bg config.char_width
-                     config.char_height
-                 else
-                   (* Non-ASCII Unicode character - render placeholder *)
-                   (* TODO: Implement proper Unicode font rendering *)
-                   Font.render_char temp_pixels config.char_width
-                     config.char_height 0 0 '?' fg bg config.char_width
-                     config.char_height);
+              let unicode = utf8_to_codepoint text in
+              let ch = if unicode <= 0x7F then Char.chr unicode else '?' in
+              Font.render_char temp_pixels config.char_width config.char_height
+                0 0 ch fg bg config.char_width config.char_height;
 
               (* Convert to float array for caching *)
               let result =
@@ -382,72 +488,73 @@ let render_cell ~config ~font_renderer ~glyph_cache ~pixels ~width ~height
                   done;
 
                   (* Render using FreeType *)
-                  let ch =
-                    if String.length text > 0 then
-                      Uchar.of_int (Char.code text.[0])
-                    else Uchar.of_int 0x20 (* space *)
-                  in
-                  let unicode = Uchar.to_int ch in
+                  let unicode = utf8_to_codepoint text in
                   try
                     let bitmap_str, metrics, pitch =
                       Freetype.load_and_render_char ft unicode
                     in
 
-                    Log.debug (fun m ->
-                        m
-                          "Rendering char U+%04X '%c': metrics width=%d \
-                           height=%d"
-                          unicode
-                          (Char.chr (min 127 unicode))
-                          metrics.width metrics.height);
+                    if metrics.width > 0 && metrics.height > 0 then
+                      (* Calculate baseline position relative to cell origin *)
+                      let baseline_y =
+                        config.char_height - (config.char_height / 4)
+                      in
+                      let glyph_x = metrics.bitmap_left in
+                      let glyph_y = baseline_y - metrics.bitmap_top in
 
-                    (if metrics.width > 0 && metrics.height > 0 then
-                       (* Calculate baseline position relative to cell origin *)
-                       let baseline_y =
-                         config.char_height - (config.char_height / 4)
-                       in
-                       let glyph_x = metrics.bitmap_left in
-                       let glyph_y = baseline_y - metrics.bitmap_top in
-
-                       (* Render the glyph bitmap into result buffer *)
-                       for row = 0 to metrics.height - 1 do
-                         for col = 0 to metrics.width - 1 do
-                           let px = glyph_x + col in
-                           let py = glyph_y + row in
-                           if
-                             px >= 0 && px < config.char_width && py >= 0
-                             && py < config.char_height
-                           then
-                             let idx = (row * pitch) + col in
-                             let alpha = Char.code bitmap_str.[idx] in
-                             if alpha > 0 then (
-                               let pixel_idx = (py * config.char_width) + px in
-                               let base_idx = pixel_idx * 3 in
-                               (* Blend with existing pixel based on alpha *)
-                               if alpha = 255 then (
-                                 (* Fully opaque - just set the color *)
-                                 let fg_r, fg_g, fg_b = fg in
-                                 result.(base_idx) <- float_of_int fg_r;
-                                 result.(base_idx + 1) <- float_of_int fg_g;
-                                 result.(base_idx + 2) <- float_of_int fg_b)
-                               else
-                                 (* Alpha blend *)
-                                 let a = float_of_int alpha /. 255.0 in
-                                 let inv_a = 1.0 -. a in
-                                 (* Extract RGB components *)
-                                 let fg_r, fg_g, fg_b = fg in
-                                 (* Blend each component *)
-                                 result.(base_idx) <-
-                                   (float_of_int fg_r *. a)
-                                   +. (result.(base_idx) *. inv_a);
-                                 result.(base_idx + 1) <-
-                                   (float_of_int fg_g *. a)
-                                   +. (result.(base_idx + 1) *. inv_a);
-                                 result.(base_idx + 2) <-
-                                   (float_of_int fg_b *. a)
-                                   +. (result.(base_idx + 2) *. inv_a))
-                         done
-                       done);
+                      (* Render the glyph bitmap into result buffer *)
+                      for row = 0 to metrics.height - 1 do
+                        for col = 0 to metrics.width - 1 do
+                          let px = glyph_x + col in
+                          let py = glyph_y + row in
+                          if
+                            px >= 0 && px < config.char_width && py >= 0
+                            && py < config.char_height
+                          then
+                            let idx = (row * pitch) + col in
+                            let alpha = Char.code bitmap_str.[idx] in
+                            if alpha > 0 then (
+                              let pixel_idx = (py * config.char_width) + px in
+                              let base_idx = pixel_idx * 3 in
+                              (* Blend with existing pixel based on alpha *)
+                              if alpha = 255 then (
+                                (* Fully opaque - just set the color *)
+                                let fg_r, fg_g, fg_b = fg in
+                                result.(base_idx) <- float_of_int fg_r;
+                                result.(base_idx + 1) <- float_of_int fg_g;
+                                result.(base_idx + 2) <- float_of_int fg_b)
+                              else
+                                (* Alpha blend *)
+                                let a = float_of_int alpha /. 255.0 in
+                                let inv_a = 1.0 -. a in
+                                (* Extract RGB components *)
+                                let fg_r, fg_g, fg_b = fg in
+                                (* Blend each component *)
+                                result.(base_idx) <-
+                                  (float_of_int fg_r *. a)
+                                  +. (result.(base_idx) *. inv_a);
+                                result.(base_idx + 1) <-
+                                  (float_of_int fg_g *. a)
+                                  +. (result.(base_idx + 1) *. inv_a);
+                                result.(base_idx + 2) <-
+                                  (float_of_int fg_b *. a)
+                                  +. (result.(base_idx + 2) *. inv_a))
+                        done
+                      done
+                    else
+                      Log.warn (fun m ->
+                          m "Empty metrics for char U+%04X" unicode);
+                    (* Check what's in result *)
+                    let non_bg_count = ref 0 in
+                    for i = 0 to (config.char_width * config.char_height) - 1 do
+                      let base = i * 3 in
+                      let r = int_of_float result.(base) in
+                      let g = int_of_float result.(base + 1) in
+                      let b = int_of_float result.(base + 2) in
+                      let bg_r, bg_g, bg_b = bg in
+                      if r <> bg_r || g <> bg_g || b <> bg_b then
+                        incr non_bg_count
+                    done;
                     result
                   with exn ->
                     (* Fallback to builtin font if character not found *)
@@ -457,9 +564,19 @@ let render_cell ~config ~font_renderer ~glyph_cache ~pixels ~width ~height
                     render_glyph_to_buffer ())
             in
             (* Cache the rendered glyph *)
+            (* Debug: Check glyph_pixels before caching *)
+            (if col < 2 then
+               let non_bg = ref 0 in
+               for i = 0 to (config.char_width * config.char_height) - 1 do
+                 let base = i * 3 in
+                 let r = int_of_float glyph_pixels.(base) in
+                 let g = int_of_float glyph_pixels.(base + 1) in
+                 let b = int_of_float glyph_pixels.(base + 2) in
+                 let bg_r, bg_g, bg_b = bg in
+                 if r <> bg_r || g <> bg_g || b <> bg_b then incr non_bg
+               done);
             Hashtbl.add glyph_cache key glyph_pixels;
 
-            (* Copy cached glyph to output pixels *)
             for y = 0 to config.char_height - 1 do
               for x = 0 to config.char_width - 1 do
                 let src_idx = ((y * config.char_width) + x) * 3 in
@@ -490,11 +607,13 @@ let render_frame_to_pixels ~config ~font_renderer ~glyph_cache
       (Printf.sprintf "render_frame_to_pixels: Invalid grid dimensions: %dx%d"
          rows cols);
 
+  let non_empty_count = ref 0 in
   for row = 0 to rows - 1 do
     for col = 0 to cols - 1 do
       match Grid.get frame.grid ~row ~col with
       | None -> ()
       | Some cell ->
+          if not (Grid.Cell.is_empty cell) then incr non_empty_count;
           render_cell ~config ~font_renderer ~glyph_cache ~pixels ~width ~height
             ~x_offset ~y_offset ~row ~col ~cell:(Some cell)
     done
@@ -995,7 +1114,8 @@ let rec write_frame t frame ~incremental ~writer =
                       in
 
                       (* Fast path: if no regions changed, return empty *)
-                      if regions = [] && not frame.cursor_visible then (
+                      if regions = [] then (
+                        (* No changes - don't render anything, even cursor *)
                         t.prev_cursor <-
                           Some (frame.cursor_row, frame.cursor_col);
                         [])
@@ -1081,8 +1201,8 @@ let rec write_frame t frame ~incremental ~writer =
                           done;
 
                           (* Render only the dirty cells in this region *)
-                          List.iter
-                            (fun region ->
+                          List.iteri
+                            (fun _i region ->
                               for row = region.Grid.min_row to region.max_row do
                                 for col = region.min_col to region.max_col do
                                   if
@@ -1111,9 +1231,9 @@ let rec write_frame t frame ~incremental ~writer =
                                             ~font_renderer:t.font_renderer
                                             ~glyph_cache:t.glyph_cache ~pixels
                                             ~width:w ~height:h
-                                            ~x_offset:(- !min_x)
-                                            ~y_offset:(- !min_y) ~row ~col
-                                            ~cell:(Some cell)
+                                            ~x_offset:(x_offset - !min_x)
+                                            ~y_offset:(y_offset - !min_y) ~row
+                                            ~col ~cell:(Some cell)
                                 done
                               done)
                             regions;
@@ -1158,6 +1278,14 @@ let rec write_frame t frame ~incremental ~writer =
                             Bytes.set pixel_bytes (i * 3) (Char.chr r);
                             Bytes.set pixel_bytes ((i * 3) + 1) (Char.chr g);
                             Bytes.set pixel_bytes ((i * 3) + 2) (Char.chr b)
+                          done;
+
+                          (* Debug: Check some pixels in the output *)
+                          let non_bg_count = ref 0 in
+                          for i = 0 to min 100 ((w * h) - 1) do
+                            let r, g, b = pixels.(i) in
+                            if r <> 23 || g <> 23 || b <> 23 then
+                              incr non_bg_count
                           done;
 
                           (* Update state - we need to apply changes back to prev_pixels *)

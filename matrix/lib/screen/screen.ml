@@ -289,9 +289,8 @@ let begin_frame t =
 let present t =
   (* If begin_frame wasn't called and we don't need a full redraw,
      there were no changes to the back buffer *)
-  if not t.frame_started && not t.needs_full_redraw then
-    []
-  else begin
+  if (not t.frame_started) && not t.needs_full_redraw then []
+  else
     let dirty_regions =
       if t.needs_full_redraw then
         [
@@ -311,7 +310,6 @@ let present t =
     t.back <- temp;
     t.frame_started <- false;
     dirty_regions
-  end
 
 let batch t f =
   begin_frame t;
@@ -428,16 +426,7 @@ let cells_to_patches_iter cells callback =
 
 let render t =
   Perf.global_counter.frames_rendered <- Perf.global_counter.frames_rendered + 1;
-  if false then (
-    Printf.eprintf "render: front rows=%d cols=%d, back rows=%d cols=%d\n"
-      (G.rows t.front) (G.cols t.front) (G.rows t.back) (G.cols t.back);
-    Printf.eprintf "  front[0,0] empty=%b, back[0,0] empty=%b\n"
-      (match G.get t.front ~row:0 ~col:0 with
-      | Some c -> C.is_empty c
-      | None -> true)
-      (match G.get t.back ~row:0 ~col:0 with
-      | Some c -> C.is_empty c
-      | None -> true));
+
   let changes = diff_cells t in
   let total_cells = rows t * cols t in
   let changed_cells = List.length changes in
@@ -470,18 +459,11 @@ let render t =
       Perf.global_counter.patches_generated + 1
   in
 
-  (* Debug: print change ratio *)
-  if false then
-    Printf.eprintf "Changed cells: %d/%d = %.2f%%, largest_rect: %d\n"
-      changed_cells total_cells
-      (float_of_int changed_cells /. float_of_int total_cells *. 100.0)
-      largest_rect_size;
-
   (* Helper to check if a cell needs to be rendered (not empty or has style) *)
   let needs_rendering cell =
-    not (C.is_empty cell) || C.get_style cell <> Ansi.Style.default
+    (not (C.is_empty cell)) || C.get_style cell <> Ansi.Style.default
   in
-  
+
   (* Helper to check if we should use Clear_screen optimization *)
   let should_clear_screen () =
     (* Count how many cells in the back buffer have non-default styles *)
@@ -496,9 +478,9 @@ let render t =
     done;
     (* Don't use Clear_screen if we have any styled cells, as it would
        erase the styling and require redrawing everything *)
-    !styled_cell_count = 0 &&
-    (float_of_int changed_cells /. float_of_int total_cells > 0.3
-     || largest_rect_size > total_cells / 4)
+    !styled_cell_count = 0
+    && (float_of_int changed_cells /. float_of_int total_cells > 0.3
+       || largest_rect_size > total_cells / 4)
   in
 
   (if should_clear_screen () then (
@@ -508,7 +490,8 @@ let render t =
        let row_cells = ref [] in
        for col = 0 to cols t - 1 do
          match G.get t.back ~row ~col with
-         | Some cell when needs_rendering cell && not (C.is_continuation cell) ->
+         | Some cell when needs_rendering cell && not (C.is_continuation cell)
+           ->
              row_cells := (row, col, cell) :: !row_cells
          | _ -> ()
        done;
@@ -519,9 +502,7 @@ let render t =
         1. Non-empty cells or empty cells with style -> render as runs
         2. Empty cells with default style -> can be cleared *)
      let cells_to_render, cells_to_clear =
-       List.partition 
-         (fun (_, _, cell) -> needs_rendering cell)
-         changes
+       List.partition (fun (_, _, cell) -> needs_rendering cell) changes
      in
 
      (* Build patches for cells that need rendering *)

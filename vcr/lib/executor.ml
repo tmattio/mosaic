@@ -118,6 +118,7 @@ let drain_pty_output state =
       in
       if n > 0 then (
         Log.debug (fun m -> m "Read %d bytes from PTY" n);
+        let _data = Bytes.sub_string buf 0 n in
         Vte.feed state.vte buf 0 n;
 
         (* Check for changes *)
@@ -164,7 +165,8 @@ let drain_pty_output state =
                         (* Fill in only the changed cells *)
                         List.iter
                           (fun col ->
-                            row_changes.(col) <- Grid.get grid ~row ~col)
+                            let cell = Grid.get grid ~row ~col in
+                            row_changes.(col) <- cell)
                           cols;
                         (row, row_changes) :: acc)
                       rows_map []
@@ -231,29 +233,36 @@ let sleep_with_output state duration =
   (* Advance virtual time *)
   { state'' with virtual_time = state''.virtual_time +. duration }
 
-(** Async PTY reader *)
-let read_pty_async ~sw state_ref =
+(** Async PTY reader - currently disabled *)
+let _read_pty_async ~sw state_ref =
   let pty_fd = Pty.in_fd !state_ref.pty_master in
 
   let rec pump () =
     (* Drain all available data *)
-    let new_state, _ = drain_pty_output !state_ref in
+    Printf.eprintf "[ASYNC] PTY reader pumping...\n%!";
+    let new_state, had_changes = drain_pty_output !state_ref in
+    if had_changes then Printf.eprintf "[ASYNC] Got data from PTY\n%!";
     state_ref := new_state;
     (* Wait for more data *)
+    Printf.eprintf "[ASYNC] Waiting for PTY to be readable...\n%!";
     Eio_unix.await_readable pty_fd;
+    Printf.eprintf "[ASYNC] PTY is readable\n%!";
     pump ()
   in
 
   Eio.Fiber.fork_daemon ~sw (fun () ->
+      Printf.eprintf "[ASYNC] PTY reader daemon started\n%!";
       Log.debug (fun m -> m "PTY reader started");
       try pump ()
-      with _ ->
+      with exn ->
+        Printf.eprintf "[ASYNC] PTY reader exiting with: %s\n%!"
+          (Printexc.to_string exn);
         Log.debug (fun m -> m "PTY reader exiting");
         `Stop_daemon)
 
 (** Convert key to escape sequence *)
 let key_to_sequence = function
-  | Enter -> "\r"
+  | Enter -> "\n"
   | Tab -> "\t"
   | Space -> " "
   | Backspace -> "\x7f"
@@ -338,7 +347,7 @@ let format_command = function
   | _ -> ""
 
 (** Handle a single command *)
-let handle_command state = function
+let handle_command state _state_ref = function
   | Set (setting, value) -> (
       match Config.apply_setting state.config setting value with
       | Ok config -> Ok { state with config }
@@ -346,39 +355,40 @@ let handle_command state = function
   | Type { text; speed } ->
       let delay = Option.value speed ~default:state.config.typing_speed in
       let open Error.Syntax in
-      let rec type_chars state = function
+      let rec type_chars state first = function
         | [] -> Ok state
         | char :: rest ->
-            (* Get current cursor position *)
-            let start_row, start_col = Vte.cursor_pos state.vte in
-            let expected_col = start_col + 1 in
-
-            (* Advance virtual time BEFORE writing *)
+            (* For first character, add initial delay to separate from prompt *)
             let state =
-              { state with virtual_time = state.virtual_time +. delay }
+              if first then
+                { state with virtual_time = state.virtual_time +. delay }
+              else state
             in
+
+            (* Write character to PTY *)
             let* () = write_to_pty state (String.make 1 char) in
 
-            (* Wait for cursor to advance or screen to update *)
-            let rec wait_for_echo state attempts =
-              if attempts > 100 then
-                (* Timeout after ~100ms *)
-                Ok state
+            (* Wait for echo and drain it - this adds events at current virtual time *)
+            let rec wait_for_echo attempts =
+              if attempts > 50 then state
               else
-                let state', _ = drain_pty_output state in
-                let new_row, new_col = Vte.cursor_pos state'.vte in
-                if new_col = expected_col || new_row > start_row then
-                  (* Character was processed *)
-                  Ok state'
+                let new_state, had_changes = drain_pty_output state in
+                if had_changes then new_state
                 else (
-                  (* Wait a bit more *)
                   Eio.Fiber.yield ();
-                  wait_for_echo state' (attempts + 1))
+                  wait_for_echo (attempts + 1))
             in
-            let* state' = wait_for_echo state 0 in
-            type_chars state' rest
+            let state' = wait_for_echo 0 in
+
+            (* Now advance virtual time for the next character *)
+            let state'' =
+              { state' with virtual_time = state'.virtual_time +. delay }
+            in
+
+            (* Continue with next character *)
+            type_chars state'' false rest
       in
-      type_chars state (String.to_seq text |> List.of_seq)
+      type_chars state true (String.to_seq text |> List.of_seq)
   | KeyPress { key; count; speed } ->
       let delay = Option.value speed ~default:0.1 in
       let key_sequence = key_to_sequence key in
@@ -410,11 +420,37 @@ let handle_command state = function
       Ok state
 
 (** Wait for shell prompt *)
-let wait_for_prompt state =
-  (* Just drain any immediate output *)
-  let state', _ = drain_pty_output state in
-  (* The prompt should appear quickly, no need for complex waiting *)
-  state'
+let wait_for_prompt state_ref =
+  (* Wait for shell to send initial prompt using select *)
+  let rec wait_for_prompt_output total_time =
+    if total_time > 2.0 then (
+      Log.warn (fun m -> m "Timeout waiting for initial prompt");
+      !state_ref)
+    else
+      let state, had_changes = drain_pty_output !state_ref in
+      state_ref := state;
+      if had_changes then (
+        (* Check if we have a prompt (look for '>') *)
+        let grid = Vte.grid state.vte in
+        let has_prompt = ref false in
+        for row = 0 to min 2 (Grid.rows grid - 1) do
+          for col = 0 to min 5 (Grid.cols grid - 1) do
+            match Grid.get grid ~row ~col with
+            | Some cell when Grid.Cell.get_text cell = ">" -> has_prompt := true
+            | _ -> ()
+          done
+        done;
+        if !has_prompt then state else wait_for_prompt_output total_time)
+      else
+        (* No data yet, use select to wait *)
+        let pty_fd = Pty.in_fd state.pty_master in
+        let timeout = 0.01 in
+        (* 10ms timeout *)
+        let readable, _, _ = Unix.select [ pty_fd ] [] [] timeout in
+        if readable <> [] then wait_for_prompt_output total_time
+        else wait_for_prompt_output (total_time +. timeout)
+  in
+  wait_for_prompt_output 0.0
 
 (** Run tape and produce event log *)
 let run ~sw ~env:_ tape =
@@ -450,16 +486,12 @@ let run ~sw ~env:_ tape =
 
   (* Spawn shell *)
   Log.debug (fun m -> m "Spawning shell: %s" prog);
-  Printf.eprintf "[DEBUG] About to spawn shell %s\n" prog;
-  flush stderr;
   let* pty_master =
     try
       let args_without_prog = Array.to_list argv |> List.tl in
       let pty =
         Pty.spawn ~prog ~args:args_without_prog ~winsize ~env:unix_env ()
       in
-      Printf.eprintf "[DEBUG] Shell spawned successfully\n";
-      flush stderr;
       Ok pty
     with
     | Unix.Unix_error (err, fn, arg) ->
@@ -496,11 +528,11 @@ let run ~sw ~env:_ tape =
   (* Use a mutable reference for async PTY reader *)
   let state_ref = ref initial_state in
 
-  (* Start async PTY reader *)
-  read_pty_async ~sw state_ref;
+  (* Disable async PTY reader for now - we'll handle PTY reads synchronously *)
+  (* read_pty_async ~sw state_ref; *)
 
   (* Wait for prompt *)
-  let state = wait_for_prompt !state_ref in
+  let state = wait_for_prompt state_ref in
   state_ref := state;
 
   (* Record initial screen state *)
@@ -530,18 +562,41 @@ let run ~sw ~env:_ tape =
               Printf.printf "%s\n" cmd_str;
               flush stdout));
 
-        let* new_state = handle_command state cmd in
+        let* new_state = handle_command state state_ref cmd in
 
-        (* Update the reference for async reader *)
-        state_ref := new_state;
+        (* For commands that might have shell output, drain it *)
+        let final_state =
+          match cmd with
+          | KeyPress { key = Enter; _ } ->
+              (* After Enter, wait for command output using select to detect when done *)
+              let rec wait_for_output state =
+                (* First, drain any immediate output *)
+                let state', had_changes = drain_pty_output state in
 
-        (* After each command, yield to let PTY reader process any output *)
-        Eio.Fiber.yield ();
+                if had_changes then
+                  (* Got data, might be more coming *)
+                  wait_for_output state'
+                else
+                  (* No immediate data, use select to wait with timeout *)
+                  let pty_fd = Pty.in_fd state'.pty_master in
+                  let timeout = 0.05 in
+                  (* 50ms timeout *)
 
-        (* Drain any output that arrived *)
-        let drained_state, _ = drain_pty_output !state_ref in
-        state_ref := drained_state;
-        Ok drained_state)
+                  let readable, _, _ = Unix.select [ pty_fd ] [] [] timeout in
+
+                  if readable <> [] then
+                    (* Data became available *)
+                    wait_for_output state'
+                  else
+                    (* Timeout with no data - command is likely done *)
+                    (* Do one final drain in case anything arrived *)
+                    let final_state, _ = drain_pty_output state' in
+                    final_state
+              in
+              wait_for_output new_state
+          | _ -> new_state
+        in
+        Ok final_state)
       (Ok state) tape
   in
 
@@ -549,4 +604,5 @@ let run ~sw ~env:_ tape =
   let final_state, _ = drain_pty_output final_state in
 
   (* Return sorted event log and final VTE state *)
-  Ok (Event.sort_log final_state.events, vte, initial_config)
+  (* Events were prepended, so reverse before sorting to maintain order *)
+  Ok (Event.sort_log (List.rev final_state.events), vte, initial_config)

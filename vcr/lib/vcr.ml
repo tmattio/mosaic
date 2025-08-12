@@ -69,12 +69,15 @@ let run ?(timing = Timing.create ()) tape output_path =
             Timing.with_timing timing "Convert frames" (fun () ->
                 List.map
                   (fun (frame, delay_cs) ->
-                    Renderer.Frame.create ~grid:frame.Sampler.grid
-                      ~cursor_row:frame.Sampler.cursor_row
-                      ~cursor_col:frame.Sampler.cursor_col
-                      ~cursor_visible:frame.Sampler.cursor_visible ~delay_cs
-                      ~dirty_regions:frame.Sampler.dirty_regions
-                      ~cursor_moved:frame.Sampler.cursor_moved)
+                    let renderer_frame =
+                      Renderer.Frame.create ~grid:frame.Sampler.grid
+                        ~cursor_row:frame.Sampler.cursor_row
+                        ~cursor_col:frame.Sampler.cursor_col
+                        ~cursor_visible:frame.Sampler.cursor_visible ~delay_cs
+                        ~dirty_regions:frame.Sampler.dirty_regions
+                        ~cursor_moved:frame.Sampler.cursor_moved
+                    in
+                    renderer_frame)
                   frames_with_delays)
           in
 
