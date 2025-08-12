@@ -78,10 +78,15 @@ type state = {
   prev_grid : Grid.t option;
   prev_cursor : (int * int) option;
   pty_mutex : Eio.Mutex.t; (* Mutex for thread-safe PTY access *)
+  is_recording : bool; (* Whether to capture events (controlled by Hide/Show) *)
 }
 
 (** Add an event to the log - returns new state *)
-let add_event state event = { state with events = event :: state.events }
+let add_event state event = 
+  if state.is_recording then
+    { state with events = event :: state.events }
+  else
+    state
 
 (** Write to PTY with proper error handling *)
 let write_to_pty state data =
@@ -314,7 +319,10 @@ let format_command = function
         | Json s -> s
       in
       Printf.sprintf "Set %s %s" setting_str value_str
-  | Type { text; speed = _ } -> Printf.sprintf "Type %s" text
+  | Type { text; speed } -> (
+      match speed with
+      | None -> Printf.sprintf "Type %s" text
+      | Some s -> Printf.sprintf "Type@%g %s" s text)
   | KeyPress { key; count; speed = _ } ->
       let key_str =
         match key with
@@ -353,63 +361,94 @@ let handle_command state _state_ref = function
       | Ok config -> Ok { state with config }
       | Error msg -> Error (Error.Invalid_config msg))
   | Type { text; speed } ->
-      let delay = Option.value speed ~default:state.config.typing_speed in
       let open Error.Syntax in
-      let rec type_chars state first = function
-        | [] -> Ok state
-        | char :: rest ->
-            (* For first character, add initial delay to separate from prompt *)
-            let state =
-              if first then
-                { state with virtual_time = state.virtual_time +. delay }
-              else state
-            in
+      if not state.is_recording then
+        (* When not recording, type all at once without delays *)
+        let* () = write_to_pty state text in
+        (* Wait for echo *)
+        let rec wait_for_echo attempts =
+          if attempts > 50 then state
+          else
+            let new_state, had_changes = drain_pty_output state in
+            if had_changes then new_state
+            else (
+              Eio.Fiber.yield ();
+              wait_for_echo (attempts + 1))
+        in
+        Ok (wait_for_echo 0)
+      else
+        (* When recording, type with delays *)
+        let delay = Option.value speed ~default:state.config.typing_speed in
+        let rec type_chars state first = function
+          | [] -> Ok state
+          | char :: rest ->
+              (* For first character, add initial delay to separate from prompt *)
+              let state =
+                if first then
+                  { state with virtual_time = state.virtual_time +. delay }
+                else state
+              in
 
-            (* Write character to PTY *)
-            let* () = write_to_pty state (String.make 1 char) in
+              (* Write character to PTY *)
+              let* () = write_to_pty state (String.make 1 char) in
 
-            (* Wait for echo and drain it - this adds events at current virtual time *)
-            let rec wait_for_echo attempts =
-              if attempts > 50 then state
-              else
-                let new_state, had_changes = drain_pty_output state in
-                if had_changes then new_state
-                else (
-                  Eio.Fiber.yield ();
-                  wait_for_echo (attempts + 1))
-            in
-            let state' = wait_for_echo 0 in
+              (* Wait for echo and drain it - this adds events at current virtual time *)
+              let rec wait_for_echo attempts =
+                if attempts > 50 then state
+                else
+                  let new_state, had_changes = drain_pty_output state in
+                  if had_changes then new_state
+                  else (
+                    Eio.Fiber.yield ();
+                    wait_for_echo (attempts + 1))
+              in
+              let state' = wait_for_echo 0 in
 
-            (* Now advance virtual time for the next character *)
-            let state'' =
-              { state' with virtual_time = state'.virtual_time +. delay }
-            in
+              (* Now advance virtual time for the next character *)
+              let state'' =
+                { state' with virtual_time = state'.virtual_time +. delay }
+              in
 
-            (* Continue with next character *)
-            type_chars state'' false rest
-      in
-      type_chars state true (String.to_seq text |> List.of_seq)
+              (* Continue with next character *)
+              type_chars state'' false rest
+        in
+        type_chars state true (String.to_seq text |> List.of_seq)
   | KeyPress { key; count; speed } ->
-      let delay = Option.value speed ~default:0.1 in
       let key_sequence = key_to_sequence key in
       let open Error.Syntax in
-      let rec press_key state n =
-        if n = 0 then Ok state
-        else
-          (* Advance virtual time BEFORE writing *)
-          let state =
-            { state with virtual_time = state.virtual_time +. delay }
-          in
-          let* () = write_to_pty state key_sequence in
-          (* Drain output after key press *)
-          let state', _ = drain_pty_output state in
-          press_key state' (n - 1)
-      in
-      press_key state count
+      if not state.is_recording then
+        (* When not recording, press all keys at once without delays *)
+        let rec press_all state n =
+          if n = 0 then Ok state
+          else
+            let* () = write_to_pty state key_sequence in
+            let state', _ = drain_pty_output state in
+            press_all state' (n - 1)
+        in
+        press_all state count
+      else
+        (* When recording, press with delays *)
+        let delay = Option.value speed ~default:0.1 in
+        let rec press_key state n =
+          if n = 0 then Ok state
+          else
+            (* Advance virtual time BEFORE writing *)
+            let state =
+              { state with virtual_time = state.virtual_time +. delay }
+            in
+            let* () = write_to_pty state key_sequence in
+            (* Drain output after key press *)
+            let state', _ = drain_pty_output state in
+            press_key state' (n - 1)
+        in
+        press_key state count
   | Sleep duration -> Ok (sleep_with_output state duration)
-  | Hide | Show ->
-      (* Recording state doesn't affect event log *)
-      Ok state
+  | Hide ->
+      (* Stop recording events *)
+      Ok { state with is_recording = false }
+  | Show ->
+      (* Resume recording events *)
+      Ok { state with is_recording = true }
   | Copy s -> Ok { state with clipboard = s }
   | Paste ->
       let open Error.Syntax in
@@ -519,6 +558,7 @@ let run ~sw ~env:_ tape =
       prev_grid = None;
       prev_cursor = None;
       pty_mutex = Eio.Mutex.create ();
+      is_recording = true; (* Start recording by default *)
     }
   in
 
