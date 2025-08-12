@@ -201,8 +201,8 @@ let test_empty_markdown () =
 
 let test_width_parameter () =
   let md = "This is a test" in
-  let ui1 = Mosaic_markdown.render ~width:40 md in
-  let ui2 = Mosaic_markdown.render ~width:80 md in
+  let ui1 = Mosaic_markdown.render ~width:(`Cells 40) md in
+  let ui2 = Mosaic_markdown.render ~width:(`Cells 80) md in
   (* Both should work without errors *)
   let _ = render_to_string ui1 in
   let _ = render_to_string ui2 in
@@ -413,7 +413,7 @@ Ellipsis...|}
 let test_long_lines () =
   let long_word = String.make 100 'A' in
   let md = Printf.sprintf "Word: %s end." long_word in
-  let ui = Mosaic_markdown.render ~width:50 md in
+  let ui = Mosaic_markdown.render ~width:(`Cells 50) md in
   let output = render_to_string ui in
   assert_output_contains output "AAAA"
 

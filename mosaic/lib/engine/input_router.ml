@@ -150,11 +150,14 @@ let get_dragging t =
   match t.dragging with Some (key, _, _) -> Some key | None -> None
 
 let set_focused t key =
+  Log.debug (fun m -> m "INPUT_ROUTER: set_focused called with %s"
+    (match key with Some k -> Ui.Attr.key_to_string k | None -> "None"));
   let old_focused = t.focused in
   t.focused <- key;
 
   (match old_focused with
   | Some old_key when Some old_key <> key -> (
+      Log.debug (fun m -> m "INPUT_ROUTER: Blurring old key %s" (Ui.Attr.key_to_string old_key));
       match Key_tbl.find_opt t.by_key old_key with
       | Some handlers -> List.iter (fun (_, f) -> f false) handlers.focuses
       | None -> ())
@@ -162,9 +165,12 @@ let set_focused t key =
 
   match key with
   | Some new_key -> (
+      Log.debug (fun m -> m "INPUT_ROUTER: Focusing new key %s" (Ui.Attr.key_to_string new_key));
       match Key_tbl.find_opt t.by_key new_key with
-      | Some handlers -> List.iter (fun (_, f) -> f true) handlers.focuses
-      | None -> ())
+      | Some handlers -> 
+          Log.debug (fun m -> m "INPUT_ROUTER: Found %d focus handlers" (List.length handlers.focuses));
+          List.iter (fun (_, f) -> f true) handlers.focuses
+      | None -> Log.debug (fun m -> m "INPUT_ROUTER: No handlers found for key"))
   | None -> ()
 
 let get_focused t = t.focused
@@ -310,7 +316,10 @@ let on_keyboard t event =
   Log.debug (fun m -> m "Keyboard event: %a" Input.pp_key_event event);
   match t.focused with
   | Some key -> (
+      Log.debug (fun m -> m "Routing keyboard to focused element: %s" (Ui.Attr.key_to_string key));
       match Key_tbl.find_opt t.by_key key with
-      | Some handlers -> List.iter (fun (_, f) -> f event) handlers.keypresses
-      | None -> ())
-  | None -> ()
+      | Some handlers -> 
+          Log.debug (fun m -> m "Found %d keypress handlers for focused element" (List.length handlers.keypresses));
+          List.iter (fun (_, f) -> f event) handlers.keypresses
+      | None -> Log.debug (fun m -> m "No keypress handlers found for focused element"))
+  | None -> Log.debug (fun m -> m "No element focused, keyboard event not routed")

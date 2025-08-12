@@ -218,26 +218,10 @@ let measure_text_content ~known_dimensions ~available_space ~tab_width ~wrap
                     acc + List.length wrapped)
                 0 expanded_lines
             in
-            (* For wrapped text, width is constrained to available width *)
-            let max_line_width =
-              List.fold_left
-                (fun acc line ->
-                  if measure_string line <= available_width then
-                    max acc (measure_string line)
-                  else
-                    (* Check width of wrapped lines *)
-                    let wrapped =
-                      wrap_line_to_width line available_width measure_string
-                    in
-                    List.fold_left
-                      (fun m l -> max m (measure_string l))
-                      acc wrapped)
-                0 expanded_lines
-            in
             let width =
               match known_dimensions.Toffee.Geometry.Size.width with
-              | Some w -> w
-              | None -> min available_w (float_of_int max_line_width)
+              | Some w -> w  (* Explicit width takes precedence *)
+              | None -> available_w  (* Fill available width for wrapping *)
             in
             let height =
               match known_dimensions.Toffee.Geometry.Size.height with

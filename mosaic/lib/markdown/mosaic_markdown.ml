@@ -12,8 +12,6 @@ type renderer = {
   footnotes : (string, Cmarkit.Block.t) Hashtbl.t;
 }
 
-let u_length s = Uutf.String.fold_utf_8 (fun acc _ _ -> acc + 1) 0 s
-
 let string_of_inlines i =
   let plain = Cmarkit.Inline.to_plain_text ~break_on_soft:false i in
   String.concat "" (List.map (String.concat "") plain)
@@ -48,59 +46,8 @@ let collect_link_defs block link_defs footnotes =
   in
   ignore (Cmarkit.Folder.fold_block folder () block)
 
-let wrap_segments available_width segments =
-  let lines = ref [] in
-  let current = ref [] in
-  let current_len = ref 0 in
-  let add_to_current text st =
-    current := (text, st) :: !current;
-    current_len := !current_len + u_length text
-  in
-  let flush () =
-    if !current <> [] then (
-      lines := List.rev !current :: !lines;
-      current := [];
-      current_len := 0)
-  in
-  List.iter
-    (fun seg ->
-      match seg with
-      | S_hard_break -> flush ()
-      | S_text (text, st) ->
-          if text = "" then ()
-          else
-            let words = String.split_on_char ' ' text in
-            let has_leading = match words with "" :: _ -> true | _ -> false in
-            let has_trailing =
-              match List.rev words with "" :: _ -> true | _ -> false
-            in
-            let filtered = List.filter (( <> ) "") words in
-            if filtered = [] then ()
-            else (
-              if has_leading then (
-                let sp = " " in
-                let splen = u_length sp in
-                if !current_len > 0 && !current_len + splen > available_width
-                then flush ();
-                add_to_current sp st);
-              List.iteri
-                (fun i word ->
-                  let word_with_space = if i > 0 then " " ^ word else word in
-                  let wlen = u_length word_with_space in
-                  if !current_len > 0 && !current_len + wlen > available_width
-                  then flush ();
-                  add_to_current word_with_space st)
-                filtered;
-              if has_trailing then (
-                let sp = " " in
-                let splen = u_length sp in
-                if !current_len + splen > available_width then flush ();
-                add_to_current sp st)))
-    segments;
-  flush ();
-  List.rev !lines
 
-let render_inlines r ~available_width ~initial_style inline =
+let render_inlines r ~initial_style inline =
   let segments = ref [] in
   let buffer = ref [] in
   let flush_buffer current_style =
@@ -221,30 +168,31 @@ let render_inlines r ~available_width ~initial_style inline =
   ignore (Cmarkit.Folder.fold_inline folder initial_style inline);
   flush_buffer initial_style;
   let segments = List.rev !segments in
-  let wrapped_lines = wrap_segments available_width segments in
-  let line_els =
-    List.map
-      (fun line_segments ->
-        Ui.hbox (List.map (fun (s, st) -> Ui.text ~style:st s) line_segments))
-      wrapped_lines
+  (* For now, we'll simplify by merging all text into a single element
+     This loses inline styling but preserves wrapping and line breaks *)
+  let full_text = 
+    List.fold_left (fun acc seg ->
+      match seg with
+      | S_text (text, _style) -> acc ^ text
+      | S_hard_break -> acc ^ "\n"
+    ) "" segments
   in
-  Ui.vbox line_els
+  (* Use the initial style for the entire text *)
+  Ui.text ~style:initial_style ~wrap:`Wrap full_text
 
-let rec render_block r ~available_width ~base_style block =
+let rec render_block r ~base_style block =
   let open Cmarkit.Block in
   match block with
   | Paragraph (p, _) ->
       let p_style = r.style.paragraph in
-      let avail =
-        available_width - p_style.padding_left - p_style.padding_right
-      in
       let content =
-        render_inlines r ~available_width:avail
+        render_inlines r
           ~initial_style:Ui.Style.(base_style ++ p_style.style)
           (Paragraph.inline p)
       in
       [
         Ui.box
+          ~width:(`Pct 1.0)  (* Ensure paragraph takes full width *)
           ~margin:
             (Ui.sides ~top:p_style.margin_top ~bottom:p_style.margin_bottom ())
           ~padding:(Ui.xy p_style.padding_left p_style.padding_right)
@@ -276,15 +224,15 @@ let rec render_block r ~available_width ~base_style block =
       in
       let text =
         render_inlines r
-          ~available_width:(available_width - u_length prefix_str)
           ~initial_style:full_style.style (Heading.inline h)
       in
       [
         Ui.box
+          ~width:(`Pct 1.0)  (* Ensure heading takes full width *)
           ~margin:
             (Ui.sides ~top:full_style.margin_top
                ~bottom:full_style.margin_bottom ())
-          [ Ui.hbox [ prefix; text ] ];
+          [ Ui.hbox ~width:(`Pct 1.0) [ prefix; text ] ];
       ]
   | Block_quote (bq, _) ->
       let bq_style = r.style.block_quote in
@@ -295,13 +243,6 @@ let rec render_block r ~available_width ~base_style block =
         Ui.divider ~orientation:`Vertical ~style:bq_style.style ()
       in
 
-      (* Calculate available width *)
-      let prefix_width = 2 in
-      (* "│ " = 2 chars *)
-      let avail =
-        available_width - prefix_width - bq_style.padding_left
-        - bq_style.padding_right
-      in
 
       let bq_block = Block_quote.block bq in
 
@@ -311,7 +252,7 @@ let rec render_block r ~available_width ~base_style block =
         | Cmarkit.Block.Paragraph (p, _) ->
             (* Render paragraph without margins *)
             let content =
-              render_inlines r ~available_width:avail
+              render_inlines r
                 ~initial_style:Ui.Style.(base_style ++ bq_style.style)
                 (Cmarkit.Block.Paragraph.inline p)
             in
@@ -324,11 +265,11 @@ let rec render_block r ~available_width ~base_style block =
             List.concat_map render_blockquote_content blocks
         | Cmarkit.Block.Block_quote _ ->
             (* Nested blockquote - render without outer margins *)
-            render_block r ~available_width:avail
+            render_block r
               ~base_style:Ui.Style.(base_style ++ bq_style.style)
               blk
         | _ ->
-            render_block r ~available_width:avail
+            render_block r
               ~base_style:Ui.Style.(base_style ++ bq_style.style)
               blk
       in
@@ -372,7 +313,7 @@ let rec render_block r ~available_width ~base_style block =
       r.list_stack <- state :: r.list_stack;
       let items =
         List'.items l
-        |> List.concat_map (render_list_item r ~available_width ~base_style)
+        |> List.concat_map (render_list_item r ~base_style)
       in
       r.list_stack <- List.tl r.list_stack;
       (* Only add padding for top-level lists *)
@@ -501,7 +442,7 @@ let rec render_block r ~available_width ~base_style block =
       ]
   | Thematic_break (_, _) ->
       let hr_style, hr_char = r.style.horizontal_rule in
-      let hr_width = min available_width 80 in
+      let hr_width = 80 in
       let hr_text = String.make hr_width hr_char.[0] in
       [
         Ui.box
@@ -602,13 +543,13 @@ let rec render_block r ~available_width ~base_style block =
           [ padded ];
       ]
   | Blocks (blocks, _) ->
-      List.concat_map (render_block r ~available_width ~base_style) blocks
+      List.concat_map (render_block r ~base_style) blocks
   | Blank_line (_, _) ->
       (* Render blank lines as empty text to preserve markdown spacing *)
       [ Ui.text "" ]
   | _ -> []
 
-and render_list_item r ~available_width ~base_style
+and render_list_item r ~base_style
     (item_node : Cmarkit.Block.List_item.t Cmarkit.node) =
   let item, _ = item_node in
   let l_style = r.style.list in
@@ -637,23 +578,14 @@ and render_list_item r ~available_width ~base_style
             ( Ui.text ~style:l_style.item_prefix_style l_style.item_prefix,
               fun () -> () ))
   in
-  let prefix_width =
-    match task_marker with
-    | Some _ -> 3 (* checkbox is "[x]" or "[ ]" - 3 chars *)
-    | None -> (
-        match List.hd r.list_stack with
-        | { ordered = true; counter; _ } ->
-            u_length (string_of_int counter ^ ".")
-        | _ -> u_length l_style.item_prefix)
-  in
-  let avail = available_width - indent_size - prefix_width - l_style.item_gap in
+  (* List item content *)
   let item_block = Cmarkit.Block.List_item.block item in
   let children =
     match item_block with
     | Cmarkit.Block.Paragraph (p, _) ->
         (* For paragraph items, render inline content directly without margins *)
         let content =
-          render_inlines r ~available_width:avail ~initial_style:base_style
+          render_inlines r ~initial_style:base_style
             (Cmarkit.Block.Paragraph.inline p)
         in
         [ content ]
@@ -665,19 +597,19 @@ and render_list_item r ~available_width ~base_style
             | Cmarkit.Block.Paragraph (p, _) ->
                 (* Render paragraph without margins *)
                 let content =
-                  render_inlines r ~available_width:avail
+                  render_inlines r
                     ~initial_style:base_style
                     (Cmarkit.Block.Paragraph.inline p)
                 in
                 [ content ]
             | Cmarkit.Block.List _ ->
                 (* Render nested list with no top margin *)
-                render_block r ~available_width:avail ~base_style blk
-            | _ -> render_block r ~available_width:avail ~base_style blk)
+                render_block r ~base_style blk
+            | _ -> render_block r ~base_style blk)
           blocks
     | _ ->
         (* For other blocks, render normally *)
-        render_block r ~available_width:avail ~base_style item_block
+        render_block r ~base_style item_block
   in
   let content =
     Ui.hbox ~gap:(`Cells l_style.item_gap) [ prefix_element; Ui.vbox children ]
@@ -685,7 +617,7 @@ and render_list_item r ~available_width ~base_style
   state_change ();
   [ Ui.box ~padding:(Ui.sides ~left:indent_size ()) [ content ] ]
 
-let render ?(style = Markdown_style.default) ?(width = 80) ?(strict = false)
+let render ?(style = Markdown_style.default) ?(width : Ui.dimension = `Cells 80 ) ?(strict = false)
     ?(syntax_theme = Mosaic_syntax.default_dark_theme) markdown_text =
   let r =
     {
@@ -700,9 +632,8 @@ let render ?(style = Markdown_style.default) ?(width = 80) ?(strict = false)
   let doc = Cmarkit.Doc.of_string ~strict ~layout:true markdown_text in
   collect_link_defs (Cmarkit.Doc.block doc) r.link_defs r.footnotes;
   let s = r.style.document in
-  let avail = width - s.padding_left - s.padding_right in
   let elements =
-    render_block r ~available_width:avail ~base_style:Ui.Style.empty
+    render_block r ~base_style:Ui.Style.empty
       (Cmarkit.Doc.block doc)
   in
   let footnote_elements =
@@ -716,7 +647,7 @@ let render ?(style = Markdown_style.default) ?(width = 80) ?(strict = false)
               Ui.text ~style:r.style.heading_prefix ("[" ^ key ^ "]: ")
             in
             let content =
-              render_block r ~available_width:avail ~base_style:Ui.Style.empty b
+              render_block r ~base_style:Ui.Style.empty b
             in
             Ui.hbox [ prefix; Ui.vbox content ] :: acc)
           r.footnotes []
@@ -725,7 +656,7 @@ let render ?(style = Markdown_style.default) ?(width = 80) ?(strict = false)
       in
       Ui.box ~margin:(Ui.sides ~top:1 ~bottom:1 ()) [ fn_heading ] :: fns
   in
-  Ui.box ~width:(`Cells width)
+  Ui.box ~width
     ~margin:(Ui.sides ~top:s.margin_top ~bottom:s.margin_bottom ())
     ~padding:(Ui.xy s.padding_left s.padding_right)
-    [ Ui.vbox (elements @ footnote_elements) ]
+    [ Ui.vbox ~width:(`Pct 1.0) (elements @ footnote_elements) ]

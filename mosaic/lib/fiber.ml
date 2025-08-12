@@ -126,11 +126,14 @@ let with_handler f k =
                           (Hook_array.State (Obj.obj (Obj.repr r)));
                         r
                   in
+                  (* Capture the fiber reference so setState can be called from async contexts *)
+                  let fiber_ref = f in
                   continue cont
                     ( !state_ref,
                       fun upd ->
                         state_ref := upd !state_ref;
-                        mark_dirty ~reason:"state_update" f ))
+                        (* Mark the captured fiber dirty, not the current one *)
+                        mark_dirty ~reason:"state_update" fiber_ref ))
           | Hook.Use_effect (setup, deps) ->
               Some
                 (fun (cont : (a, _) continuation) ->
@@ -140,7 +143,21 @@ let with_handler f k =
                   let rerun = check_effect_deps_changed slot deps in
                   if rerun then (
                     run_effect_cleanup slot;
-                    let cleanup = setup () in
+                    (* Run the setup function with its own handler to allow dispatch_cmd *)
+                    (* We need to handle effects within the setup function *)
+                    let cleanup = 
+                      let open Effect.Deep in
+                      try_with setup ()
+                        {
+                          effc = (fun (type a) (eff : a Effect.t) ->
+                            match eff with
+                            | Hook.Dispatch_cmd cmd ->
+                                Some (fun (cont : (a, _) continuation) ->
+                                  add_pending_cmd cmd;
+                                  continue cont ())
+                            | _ -> None)
+                        }
+                    in
                     Hook_array.set slot
                       (Hook_array.Effect { cleanup; deps = Some deps }));
                   continue cont ())

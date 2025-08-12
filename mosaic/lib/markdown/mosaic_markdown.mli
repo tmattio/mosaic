@@ -30,7 +30,7 @@ module Style : module type of Markdown_style
 
 val render :
   ?style:Style.t ->
-  ?width:int ->
+  ?width:Ui.dimension ->
   ?strict:bool ->
   ?syntax_theme:Mosaic_syntax.theme ->
   string ->
@@ -43,7 +43,7 @@ val render :
     styling. Word wrapping applied based on width constraint.
 
     @param style Theme configuration for all elements (default: Style.default)
-    @param width Maximum line width in character cells (default: 80)
+    @param width Maximum line width as Ui.dimension (default: `Cells 80)
     @param strict
       Whether to parse strictly according to CommonMark (default: false; false
       enables extensions like task lists)

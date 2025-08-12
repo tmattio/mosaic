@@ -290,11 +290,11 @@ let render t dyn_el =
   (* Mode-aware root wrapping *)
   let final_el =
     if is_alt t.render_mode then
-      (* Alt-screen: constrain to terminal height with hidden overflow *)
-      Ui.box ~height:(`Pct 1.0) ~overflow_y:`Hidden [ base_el ]
+      (* Alt-screen: constrain to terminal width and height with hidden overflow *)
+      Ui.box ~width:(`Pct 1.0) ~height:(`Pct 1.0) ~overflow_y:`Hidden [ base_el ]
     else
       (* Non-alt: allow auto height with visible overflow for history preservation *)
-      Ui.box ~height:`Auto ~overflow_y:`Visible
+      Ui.box ~width:(`Pct 1.0) ~height:`Auto ~overflow_y:`Visible
         ~style:Ui.Style.empty (* Ensure clearing with spaces *)
         [ base_el ]
   in

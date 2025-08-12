@@ -1,5 +1,8 @@
 (** Optimized focus manager implementation with O(1) lookups **)
 
+let src = Logs.Src.create "focus" ~doc:"Focus management events"
+module Log = (val Logs.src_log src : Logs.LOG)
+
 type focusable = {
   key : Ui.Attr.key;
   tab_index : int option;
@@ -83,8 +86,14 @@ let register t focusable =
   (* Mark for rebuild *)
 
   (* Auto-focus if requested and nothing focused yet *)
-  if focusable.auto_focus && t.focused = None then
-    t.focused <- Some focusable.key
+  if focusable.auto_focus && t.focused = None then (
+    Log.debug (fun m -> m "AUTO_FOCUS: Setting focus to key %s" (Ui.Attr.key_to_string focusable.key));
+    t.focused <- Some focusable.key;
+    (* Notify router if connected *)
+    Option.iter (fun r -> Input_router.set_focused r (Some focusable.key)) t.router
+  ) else if focusable.auto_focus then
+    Log.debug (fun m -> m "AUTO_FOCUS: Skipped (already focused on %s)"
+      (match t.focused with Some k -> Ui.Attr.key_to_string k | None -> "none"))
 
 let unregister t key =
   if Hashtbl.mem t.focusables_map key then (

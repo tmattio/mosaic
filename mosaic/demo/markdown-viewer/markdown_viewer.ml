@@ -216,7 +216,7 @@ let markdown_viewer_app () =
   (* The actual available width for content after TOC (25) and separator (1) and padding (1) *)
   let available_width = max 40 (window_width - 27) in
   let rendered_content =
-    Mosaic_markdown.render ~width:available_width
+    Mosaic_markdown.render ~width:(`Cells available_width)
       ~style:Mosaic_markdown.Style.default sample_markdown
   in
 
