@@ -5,11 +5,23 @@ let src = Logs.Src.create "fiber" ~doc:"Fiber lifecycle events"
 
 module Log = (val Logs.src_log src : Logs.LOG)
 
+(* Hook signature to detect violations *)
+type hook_signature = 
+  | State_hook
+  | Effect_hook  
+  | Context_hook
+  | Subscription_hook
+  | Reducer_hook
+  | Memo_hook
+  | Ref_hook
+
 type t = {
   parent : t option;
   mutable children : t array;
   hooks : Hook_array.t;
   mutable hook_idx : int;
+  mutable hook_signature : hook_signature list;  (* Track the signature of hooks from previous render *)
+  mutable current_signature : hook_signature list;  (* Build up signature during current render *)
   render_fn : unit -> Ui.element;
   mutable ui : Ui.element option;
   mutable dirty : bool;
@@ -29,6 +41,8 @@ let make ?parent render_fn =
     children = [||];
     hooks = Hook_array.create ();
     hook_idx = 0;
+    hook_signature = [];
+    current_signature = [];
     render_fn;
     ui = None;
     dirty = true;
@@ -103,6 +117,49 @@ let run_effect_cleanup slot =
       try c () with _ -> ())
   | _ -> ()
 
+(* Helper to validate hook signature *)
+let validate_hook_signature f hook_type =
+  f.current_signature <- f.current_signature @ [hook_type];
+  
+  (* Check if we have a previous signature to compare against *)
+  if f.hook_signature <> [] then (
+    let current_len = List.length f.current_signature in
+    let prev_len = List.length f.hook_signature in
+    
+    (* Check if we're within bounds of previous signature *)
+    if current_len <= prev_len then (
+      let expected = List.nth f.hook_signature (current_len - 1) in
+      let actual = hook_type in
+      if expected <> actual then
+        Log.err (fun m -> 
+          m "HOOK VIOLATION DETECTED! Hook type mismatch at position %d.\n\
+             Expected: %s, Got: %s\n\
+             This is a serious bug that can cause crashes!\n\
+             Common causes:\n\
+             - Conditional hook calls (hooks inside if/match statements)\n\
+             - Hooks in loops with varying iterations\n\
+             - Early returns before all hooks are called\n\
+             Fix: Ensure all hooks are called in the same order every render."
+            (current_len - 1)
+            (match expected with
+             | State_hook -> "use_state"
+             | Effect_hook -> "use_effect"
+             | Context_hook -> "use_context"
+             | Subscription_hook -> "use_subscription"
+             | Reducer_hook -> "use_reducer"
+             | Memo_hook -> "use_memo"
+             | Ref_hook -> "use_ref")
+            (match actual with
+             | State_hook -> "use_state"
+             | Effect_hook -> "use_effect"
+             | Context_hook -> "use_context"
+             | Subscription_hook -> "use_subscription"
+             | Reducer_hook -> "use_reducer"
+             | Memo_hook -> "use_memo"
+             | Ref_hook -> "use_ref"))
+    )
+  )
+
 (* Hook effect handler *)
 let with_handler f k =
   let open Effect.Deep in
@@ -114,6 +171,7 @@ let with_handler f k =
           | Hook.Use_state init ->
               Some
                 (fun (cont : (a, _) continuation) ->
+                  validate_hook_signature f State_hook;
                   let idx = f.hook_idx in
                   f.hook_idx <- idx + 1;
                   let slot = Hook_array.get_slot f.hooks idx in
@@ -137,6 +195,7 @@ let with_handler f k =
           | Hook.Use_effect (setup, deps) ->
               Some
                 (fun (cont : (a, _) continuation) ->
+                  validate_hook_signature f Effect_hook;
                   let idx = f.hook_idx in
                   f.hook_idx <- idx + 1;
                   let slot = Hook_array.get_slot f.hooks idx in
@@ -164,10 +223,12 @@ let with_handler f k =
           | Hook.Use_context ctx ->
               Some
                 (fun (cont : (a, _) continuation) ->
+                  validate_hook_signature f Context_hook;
                   continue cont (Context.use ctx))
           | Hook.Use_subscription sub ->
               Some
                 (fun (cont : (a, _) continuation) ->
+                  validate_hook_signature f Subscription_hook;
                   let idx = f.hook_idx in
                   f.hook_idx <- idx + 1;
                   let slot = Hook_array.get_slot f.hooks idx in
@@ -181,6 +242,7 @@ let with_handler f k =
           | Hook.Use_reducer (rid, reducer, initial, dynamic) ->
               Some
                 (fun (cont : (a, _) continuation) ->
+                  validate_hook_signature f Reducer_hook;
                   let idx = f.hook_idx in
                   f.hook_idx <- idx + 1;
                   let slot = Hook_array.get_slot f.hooks idx in
@@ -243,6 +305,7 @@ let with_handler f k =
           | Hook.Use_memo (compute, deps) ->
               Some
                 (fun (cont : (a, _) continuation) ->
+                  validate_hook_signature f Memo_hook;
                   let idx = f.hook_idx in
                   f.hook_idx <- idx + 1;
                   let slot = Hook_array.get_slot f.hooks idx in
@@ -260,6 +323,7 @@ let with_handler f k =
           | Hook.Use_ref initial ->
               Some
                 (fun (cont : (a, _) continuation) ->
+                  validate_hook_signature f Ref_hook;
                   let idx = f.hook_idx in
                   f.hook_idx <- idx + 1;
                   let slot = Hook_array.get_slot f.hooks idx in
@@ -283,7 +347,28 @@ let rec reconcile f : Ui.element =
     Log.debug (fun m -> m "Reconciling fiber (was dirty)");
     f.dirty <- false;
     f.hook_idx <- 0;
+    f.current_signature <- [];  (* Reset current signature for new render *)
     let ui = with_current f (fun () -> with_handler f f.render_fn) in
+    
+    (* Validate the complete signature after render *)
+    if f.hook_signature <> [] then (
+      let current_len = List.length f.current_signature in
+      let prev_len = List.length f.hook_signature in
+      if current_len <> prev_len then
+        Log.err (fun m -> 
+          m "HOOK VIOLATION DETECTED! Hook count mismatch.\n\
+             Previous render: %d hooks, Current render: %d hooks\n\
+             This is a serious bug that WILL cause crashes!\n\
+             Common causes:\n\
+             - Conditional hook calls (hooks inside if/match statements)\n\
+             - Hooks in loops with varying iterations\n\
+             - Early returns before all hooks are called\n\
+             Fix: Ensure all hooks are called unconditionally in the same order."
+            prev_len current_len)
+    );
+    
+    (* Save the signature for next render *)
+    f.hook_signature <- f.current_signature;
     f.ui <- Some ui;
     let new_children =
       Array.mapi
