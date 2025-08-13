@@ -193,6 +193,14 @@ module Make () : S = struct
     max_height_allowed : int;
   }
 
+  type 'a var = { 
+    mutable value : 'a;
+    mutable value_set_during_stabilization : 'a option;
+    watch : 'a node;
+  }
+
+  type packed_var = Var_packed : _ var -> packed_var
+
   type state = {
     mutable stabilization_num : stabilization_num;
     mutable is_stabilizing : bool;
@@ -200,6 +208,7 @@ module Make () : S = struct
     adjust_heights_heap : adjust_heights_heap;
     mutable current_scope : scope;
     mutable propagate_invalidity : packed_node list;
+    mutable vars_set_during_stabilization : packed_var list;
   }
 
   let global_state = ref None
@@ -229,6 +238,7 @@ module Make () : S = struct
               };
             current_scope = Top;
             propagate_invalidity = [];
+            vars_set_during_stabilization = [];
           }
         in
         global_state := Some s;
@@ -405,6 +415,7 @@ module Make () : S = struct
       | Some (Node n) ->
           let next = n.next_in_same_scope in
           n.next_in_same_scope <- None;
+          (* Printf.eprintf "Invalidating node created on RHS\n"; *)
           invalidate_node (Node n);
           loop next
     in
@@ -413,16 +424,17 @@ module Make () : S = struct
   let add_parent child parent =
     let child_packed = Node child in
     let parent_packed = Node parent in
-    if not (List.exists (fun p -> p == parent_packed) child.parents) then
+    if not (List.exists (fun (Node p) -> node_same p parent) child.parents) then
       child.parents <- parent_packed :: child.parents;
-    if not (List.exists (fun c -> c == child_packed) parent.children) then
+    if not (List.exists (fun (Node c) -> node_same c child) parent.children) then
       parent.children <- child_packed :: parent.children
 
   let remove_parent child parent =
-    let child_packed = Node child in
-    let parent_packed = Node parent in
-    child.parents <- List.filter (fun p -> p != parent_packed) child.parents;
-    parent.children <- List.filter (fun c -> c != child_packed) parent.children
+    child.parents <- List.filter (fun (Node p) -> not (node_same p parent)) child.parents;
+    parent.children <- List.filter (fun (Node c) -> not (node_same c child)) parent.children;
+    (* If removing an invalid child, decrement the parent's invalid child count *)
+    if not (is_valid child) then
+      parent.num_invalid_children <- max 0 (parent.num_invalid_children - 1)
 
   let ensure_height_requirement s ~original_child ~original_parent:_ ~child
       ~parent =
@@ -499,21 +511,28 @@ module Make () : S = struct
       | Bind_main bind -> (
           match bind.rhs with
           | None -> raise Not_stabilized
-          | Some rhs -> recompute_val s rhs)
+          | Some rhs -> 
+              (* Like incremental's copy_child: if the child is valid, use its value *)
+              if is_valid rhs then (
+                (* Printf.eprintf "Bind_main: RHS is valid, getting value\n"; *)
+                recompute_val s rhs
+              ) else (
+                (* Printf.eprintf "Bind_main: RHS is invalid!\n"; *)
+                (* In incremental, copy_child invalidates the parent if child is invalid *)
+                invalidate_node (Node n);
+                raise Not_stabilized
+              ))
       | Bind_lhs_change bind ->
           let old_rhs = bind.rhs in
+          let old_all_nodes_created_on_rhs = bind.all_nodes_created_on_rhs in
           let lhs_val = recompute_val s bind.lhs in
+
+          (* Clear all_nodes_created_on_rhs like incremental *)
+          bind.all_nodes_created_on_rhs <- None;
 
           (* Save old scope and switch to bind's scope *)
           let old_scope = s.current_scope in
           s.current_scope <- bind.rhs_scope;
-
-          (* Invalidate old RHS nodes if needed *)
-          (match old_rhs with
-          | Some _ ->
-              invalidate_nodes_created_on_rhs bind.all_nodes_created_on_rhs
-          | None -> ());
-          bind.all_nodes_created_on_rhs <- None;
 
           (* Create new RHS *)
           let new_rhs = bind.f lhs_val in
@@ -522,12 +541,19 @@ module Make () : S = struct
           (* Restore scope *)
           s.current_scope <- old_scope;
 
-          (* Update main node dependencies *)
+          (* Update dependencies - remove old, add new *)
           (match old_rhs with
           | Some old -> remove_dependency old bind.main
           | None -> ());
           add_dependency s new_rhs bind.main;
           make_necessary s (Node new_rhs);
+
+          (* NOW invalidate old RHS nodes after setting up new ones, like incremental *)
+          (match old_rhs with
+          | Some _ ->
+              invalidate_nodes_created_on_rhs old_all_nodes_created_on_rhs
+          | None -> ());
+          (* Return () like incremental does *)
           ()
       | If_then_else if_data -> (
           match if_data.current_branch with
@@ -578,7 +604,8 @@ module Make () : S = struct
     let should_propagate =
       match n.value with
       | None -> true
-      | Some old_val -> not (n.cutoff ~old:old_val ~new_:new_val)
+      | Some old_val -> 
+          not (n.cutoff ~old:old_val ~new_:new_val)
     in
 
     n.value <- Some new_val;
@@ -610,7 +637,7 @@ module Make () : S = struct
     if is_stale s n then recompute s n
     else match n.value with Some v -> v | None -> raise Not_stabilized
 
-  let propagate_invalidity s =
+  and propagate_invalidity s =
     let rec process_nodes nodes =
       match nodes with
       | [] -> ()
@@ -626,23 +653,31 @@ module Make () : S = struct
     process_nodes nodes
 
   module Var = struct
-    type 'a t = { value : 'a ref; node : 'a node }
+    type 'a t = 'a var
 
     let create v =
-      let node = create_node (Var (ref v)) in
-      node.value <- Some v;
-      { value = ref v; node }
+      let watch = create_node (Var (ref v)) in
+      watch.value <- Some v;
+      { value = v; value_set_during_stabilization = None; watch }
 
     let set t v =
       let s = ensure_state () in
-      t.value := v;
-      (match t.node.kind with Var r -> r := v | _ -> assert false);
-      t.node.changed_at <- s.stabilization_num;
-      if is_necessary t.node && not t.node.in_recompute_heap then
-        add_to_recompute_heap s.recompute_heap (Node t.node)
+      if s.is_stabilizing then (
+        (* During stabilization, defer the update *)
+        if t.value_set_during_stabilization = None then
+          s.vars_set_during_stabilization <- Var_packed t :: s.vars_set_during_stabilization;
+        t.value_set_during_stabilization <- Some v
+      ) else (
+        t.value <- v;
+        (match t.watch.kind with Var r -> r := v | _ -> assert false);
+        (* Mark as changed and add to recompute heap *)
+        t.watch.changed_at <- s.stabilization_num;
+        if is_necessary t.watch && not t.watch.in_recompute_heap then
+          add_to_recompute_heap s.recompute_heap (Node t.watch)
+      )
 
-    let value t = !(t.value)
-    let watch t = t.node
+    let value t = t.value
+    let watch t = t.watch
   end
 
   module Observer = struct
@@ -725,8 +760,8 @@ module Make () : S = struct
     (* Set after creation *)
     main.kind <- Bind_main bind_data;
     lhs_change.kind <- Bind_lhs_change bind_data;
+    (* Never cutoff - always propagate when LHS changes *)
     lhs_change.cutoff <- (fun ~old:_ ~new_:_ -> false);
-    (* Never cutoff *)
     add_dependency s lhs lhs_change;
     add_dependency s lhs_change main;
     main
@@ -790,6 +825,17 @@ module Make () : S = struct
   let set_cutoff incr cutoff = incr.cutoff <- cutoff
   let get_cutoff incr = incr.cutoff
 
+  let process_vars_set_during_stabilization s =
+    let vars = s.vars_set_during_stabilization in
+    s.vars_set_during_stabilization <- [];
+    List.iter (fun (Var_packed var) ->
+      match var.value_set_during_stabilization with
+      | None -> ()
+      | Some v ->
+          var.value_set_during_stabilization <- None;
+          Var.set var v
+    ) vars
+
   let stabilize () =
     let s = ensure_state () in
     if s.is_stabilizing then failwith "Already stabilizing";
@@ -802,11 +848,14 @@ module Make () : S = struct
     (* Then recompute stale nodes *)
     while s.recompute_heap.size > 0 do
       let (Node n) = remove_min_recompute_heap s.recompute_heap in
-      if is_stale s n then ignore (recompute s n : _);
+      if is_valid n then ignore (recompute s n : _);
       propagate_invalidity s
     done;
 
-    s.is_stabilizing <- false
+    s.is_stabilizing <- false;
+    
+    (* Process any vars that were set during stabilization *)
+    process_vars_set_during_stabilization s
 
   let is_stabilizing () =
     let s = ensure_state () in
