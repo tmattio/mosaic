@@ -118,7 +118,11 @@ module Make () : S = struct
     mutable observers : 'a observer list;
     mutable in_recompute_heap : bool;
     mutable height_in_recompute_heap : int;
+    mutable prev_in_recompute_heap : packed_node option;
+    mutable next_in_recompute_heap : packed_node option;
     mutable height_in_adjust_heights_heap : int;
+    mutable prev_in_adjust_heights_heap : packed_node option;
+    mutable next_in_adjust_heights_heap : packed_node option;
     mutable recomputed_at : stabilization_num;
     mutable changed_at : stabilization_num;
     mutable created_in : scope;
@@ -166,7 +170,7 @@ module Make () : S = struct
     node : 'a node;
     mutable on_update : ('a update -> unit) list;
     mutable active : bool;
-    mutable old_value : 'a option;
+    mutable old_value : 'a option; [@warning "-69"]
   }
 
   and 'a update = Initialized of 'a | Changed of 'a * 'a | Invalidated
@@ -179,21 +183,23 @@ module Make () : S = struct
 
   (* Heaps for stabilization *)
   type recompute_heap = {
-    data : packed_node list array;
+    data : packed_node option array;
+        (* Head of doubly-linked list at each height *)
     mutable min_height : int;
     mutable size : int;
     max_height : int;
   }
 
   type adjust_heights_heap = {
-    data : packed_node list array;
+    data : packed_node option array;
+        (* Head of doubly-linked list at each height *)
     mutable min_height : int;
     mutable size : int;
     mutable max_height_seen : int;
     max_height_allowed : int;
   }
 
-  type 'a var = { 
+  type 'a var = {
     mutable value : 'a;
     mutable value_set_during_stabilization : 'a option;
     watch : 'a node;
@@ -201,14 +207,29 @@ module Make () : S = struct
 
   type packed_var = Var_packed : _ var -> packed_var
 
+  type 'a pending_update = {
+    update_node : 'a node;
+    update_old_value : 'a option;
+    update_new_value : 'a;
+  }
+
+  type packed_pending_update =
+    | Pending_update : _ pending_update -> packed_pending_update
+
+  type status =
+    | Not_stabilizing
+    | Stabilizing
+    | Stabilize_previously_raised of exn
+
   type state = {
     mutable stabilization_num : stabilization_num;
-    mutable is_stabilizing : bool;
+    mutable status : status;
     recompute_heap : recompute_heap;
     adjust_heights_heap : adjust_heights_heap;
     mutable current_scope : scope;
     mutable propagate_invalidity : packed_node list;
     mutable vars_set_during_stabilization : packed_var list;
+    mutable updates_to_handle : packed_pending_update list;
   }
 
   let global_state = ref None
@@ -220,17 +241,17 @@ module Make () : S = struct
         let s =
           {
             stabilization_num = 0;
-            is_stabilizing = false;
+            status = Not_stabilizing;
             recompute_heap =
               {
-                data = Array.make 129 [];
+                data = Array.make 129 None;
                 min_height = 129;
                 size = 0;
                 max_height = 128;
               };
             adjust_heights_heap =
               {
-                data = Array.make 129 [];
+                data = Array.make 129 None;
                 min_height = 129;
                 size = 0;
                 max_height_seen = 0;
@@ -239,6 +260,7 @@ module Make () : S = struct
             current_scope = Top;
             propagate_invalidity = [];
             vars_set_during_stabilization = [];
+            updates_to_handle = [];
           }
         in
         global_state := Some s;
@@ -250,68 +272,104 @@ module Make () : S = struct
       if height < 0 || height > heap.max_height then raise Cycle_detected;
       n.in_recompute_heap <- true;
       n.height_in_recompute_heap <- height;
-      heap.data.(height) <- packed :: heap.data.(height);
+      (* Add to head of doubly-linked list *)
+      n.prev_in_recompute_heap <- None;
+      n.next_in_recompute_heap <- heap.data.(height);
+      (match heap.data.(height) with
+      | Some (Node next) -> next.prev_in_recompute_heap <- Some packed
+      | None -> ());
+      heap.data.(height) <- Some packed;
       heap.size <- heap.size + 1;
       if height < heap.min_height then heap.min_height <- height)
+
+  let unlink_from_recompute_heap (heap : recompute_heap) (Node n) =
+    let prev = n.prev_in_recompute_heap in
+    let next = n.next_in_recompute_heap in
+    (match prev with
+    | Some (Node p) -> p.next_in_recompute_heap <- next
+    | None -> heap.data.(n.height_in_recompute_heap) <- next);
+    (match next with
+    | Some (Node next_n) -> next_n.prev_in_recompute_heap <- prev
+    | None -> ());
+    n.prev_in_recompute_heap <- None;
+    n.next_in_recompute_heap <- None
 
   let remove_min_recompute_heap (heap : recompute_heap) =
     if heap.size = 0 then failwith "Empty recompute heap";
     while
-      heap.min_height <= heap.max_height && heap.data.(heap.min_height) = []
+      heap.min_height <= heap.max_height && heap.data.(heap.min_height) = None
     do
       heap.min_height <- heap.min_height + 1
     done;
     if heap.min_height > heap.max_height then failwith "Empty recompute heap";
     match heap.data.(heap.min_height) with
-    | Node n :: tl ->
-        heap.data.(heap.min_height) <- tl;
+    | Some (Node n as packed) ->
+        unlink_from_recompute_heap heap (Node n);
         heap.size <- heap.size - 1;
         n.in_recompute_heap <- false;
         n.height_in_recompute_heap <- -1;
-        Node n
-    | [] -> assert false
+        packed
+    | None -> assert false
 
   let add_to_adjust_heights_heap heap (Node n as packed) =
     if n.height_in_adjust_heights_heap = -1 then (
       let height = n.height in
       n.height_in_adjust_heights_heap <- height;
-      heap.data.(height) <- packed :: heap.data.(height);
+      (* Add to head of doubly-linked list *)
+      n.prev_in_adjust_heights_heap <- None;
+      n.next_in_adjust_heights_heap <- heap.data.(height);
+      (match heap.data.(height) with
+      | Some (Node next) -> next.prev_in_adjust_heights_heap <- Some packed
+      | None -> ());
+      heap.data.(height) <- Some packed;
       heap.size <- heap.size + 1;
       if height < heap.min_height then heap.min_height <- height)
+
+  let unlink_from_adjust_heights_heap (heap : adjust_heights_heap) (Node n) =
+    let prev = n.prev_in_adjust_heights_heap in
+    let next = n.next_in_adjust_heights_heap in
+    (match prev with
+    | Some (Node p) -> p.next_in_adjust_heights_heap <- next
+    | None -> heap.data.(n.height_in_adjust_heights_heap) <- next);
+    (match next with
+    | Some (Node next_n) -> next_n.prev_in_adjust_heights_heap <- prev
+    | None -> ());
+    n.prev_in_adjust_heights_heap <- None;
+    n.next_in_adjust_heights_heap <- None
 
   let remove_min_adjust_heights_heap (heap : adjust_heights_heap) =
     if heap.size = 0 then failwith "Empty adjust heights heap";
     while
       heap.min_height <= heap.max_height_allowed
-      && heap.data.(heap.min_height) = []
+      && heap.data.(heap.min_height) = None
     do
       heap.min_height <- heap.min_height + 1
     done;
     if heap.min_height > heap.max_height_allowed then
       failwith "Empty adjust heights heap";
     match heap.data.(heap.min_height) with
-    | Node n :: tl ->
-        heap.data.(heap.min_height) <- tl;
+    | Some (Node n as packed) ->
+        unlink_from_adjust_heights_heap heap (Node n);
         heap.size <- heap.size - 1;
         n.height_in_adjust_heights_heap <- -1;
-        Node n
-    | [] -> assert false
+        packed
+    | None -> assert false
 
   let increase_height_in_recompute_heap (recompute_heap : recompute_heap)
-      (Node n) =
+      (Node n as packed) =
     if n.in_recompute_heap && n.height > n.height_in_recompute_heap then (
-      (* Remove from old position *)
-      let old_height = n.height_in_recompute_heap in
-      let node_packed = Node n in
-      recompute_heap.data.(old_height) <-
-        List.filter
-          (fun packed -> packed != node_packed)
-          recompute_heap.data.(old_height);
-      (* Add to new position *)
+      (* Remove from old position using O(1) unlink *)
+      unlink_from_recompute_heap recompute_heap (Node n);
+      (* Update height *)
       let new_height = n.height in
       n.height_in_recompute_heap <- new_height;
-      recompute_heap.data.(new_height) <-
-        node_packed :: recompute_heap.data.(new_height))
+      (* Add to new position *)
+      n.prev_in_recompute_heap <- None;
+      n.next_in_recompute_heap <- recompute_heap.data.(new_height);
+      (match recompute_heap.data.(new_height) with
+      | Some (Node next) -> next.prev_in_recompute_heap <- Some packed
+      | None -> ());
+      recompute_heap.data.(new_height) <- Some packed)
 
   let scope_add_node scope (node : _ node) =
     node.created_in <- scope;
@@ -334,7 +392,11 @@ module Make () : S = struct
         observers = [];
         in_recompute_heap = false;
         height_in_recompute_heap = -1;
+        prev_in_recompute_heap = None;
+        next_in_recompute_heap = None;
         height_in_adjust_heights_heap = -1;
+        prev_in_adjust_heights_heap = None;
+        next_in_adjust_heights_heap = None;
         recomputed_at = Stabilization_num.none;
         changed_at = Stabilization_num.none;
         created_in = s.current_scope;
@@ -415,7 +477,6 @@ module Make () : S = struct
       | Some (Node n) ->
           let next = n.next_in_same_scope in
           n.next_in_same_scope <- None;
-          (* Printf.eprintf "Invalidating node created on RHS\n"; *)
           invalidate_node (Node n);
           loop next
     in
@@ -426,12 +487,14 @@ module Make () : S = struct
     let parent_packed = Node parent in
     if not (List.exists (fun (Node p) -> node_same p parent) child.parents) then
       child.parents <- parent_packed :: child.parents;
-    if not (List.exists (fun (Node c) -> node_same c child) parent.children) then
-      parent.children <- child_packed :: parent.children
+    if not (List.exists (fun (Node c) -> node_same c child) parent.children)
+    then parent.children <- child_packed :: parent.children
 
   let remove_parent child parent =
-    child.parents <- List.filter (fun (Node p) -> not (node_same p parent)) child.parents;
-    parent.children <- List.filter (fun (Node c) -> not (node_same c child)) parent.children;
+    child.parents <-
+      List.filter (fun (Node p) -> not (node_same p parent)) child.parents;
+    parent.children <-
+      List.filter (fun (Node c) -> not (node_same c child)) parent.children;
     (* If removing an invalid child, decrement the parent's invalid child count *)
     if not (is_valid child) then
       parent.num_invalid_children <- max 0 (parent.num_invalid_children - 1)
@@ -511,17 +574,13 @@ module Make () : S = struct
       | Bind_main bind -> (
           match bind.rhs with
           | None -> raise Not_stabilized
-          | Some rhs -> 
+          | Some rhs ->
               (* Like incremental's copy_child: if the child is valid, use its value *)
-              if is_valid rhs then (
-                (* Printf.eprintf "Bind_main: RHS is valid, getting value\n"; *)
-                recompute_val s rhs
-              ) else (
-                (* Printf.eprintf "Bind_main: RHS is invalid!\n"; *)
+              if is_valid rhs then recompute_val s rhs
+              else (
                 (* In incremental, copy_child invalidates the parent if child is invalid *)
                 invalidate_node (Node n);
-                raise Not_stabilized
-              ))
+                raise Not_stabilized))
       | Bind_lhs_change bind ->
           let old_rhs = bind.rhs in
           let old_all_nodes_created_on_rhs = bind.all_nodes_created_on_rhs in
@@ -601,11 +660,13 @@ module Make () : S = struct
 
     n.recomputed_at <- s.stabilization_num;
 
+    let old_value = n.value in
+    (* Capture old value before updating *)
+
     let should_propagate =
-      match n.value with
+      match old_value with
       | None -> true
-      | Some old_val -> 
-          not (n.cutoff ~old:old_val ~new_:new_val)
+      | Some old_val -> not (n.cutoff ~old:old_val ~new_:new_val)
     in
 
     n.value <- Some new_val;
@@ -617,18 +678,17 @@ module Make () : S = struct
           if (not p.in_recompute_heap) && is_necessary p then
             add_to_recompute_heap s.recompute_heap (Node p))
         n.parents;
-      List.iter
-        (fun obs ->
-          if obs.active then
-            let update =
-              match obs.old_value with
-              | None -> Initialized new_val
-              | Some old ->
-                  obs.old_value <- Some new_val;
-                  Changed (old, new_val)
-            in
-            List.iter (fun f -> f update) obs.on_update)
-        n.observers);
+      (* Collect updates to handle after stabilization *)
+      if n.observers <> [] then
+        let update =
+          Pending_update
+            {
+              update_node = n;
+              update_old_value = old_value;
+              update_new_value = new_val;
+            }
+        in
+        s.updates_to_handle <- update :: s.updates_to_handle);
 
     new_val
 
@@ -662,19 +722,19 @@ module Make () : S = struct
 
     let set t v =
       let s = ensure_state () in
-      if s.is_stabilizing then (
+      if s.status = Stabilizing then (
         (* During stabilization, defer the update *)
         if t.value_set_during_stabilization = None then
-          s.vars_set_during_stabilization <- Var_packed t :: s.vars_set_during_stabilization;
-        t.value_set_during_stabilization <- Some v
-      ) else (
+          s.vars_set_during_stabilization <-
+            Var_packed t :: s.vars_set_during_stabilization;
+        t.value_set_during_stabilization <- Some v)
+      else (
         t.value <- v;
         (match t.watch.kind with Var r -> r := v | _ -> assert false);
         (* Mark as changed and add to recompute heap *)
         t.watch.changed_at <- s.stabilization_num;
         if is_necessary t.watch && not t.watch.in_recompute_heap then
-          add_to_recompute_heap s.recompute_heap (Node t.watch)
-      )
+          add_to_recompute_heap s.recompute_heap (Node t.watch))
 
     let value t = t.value
     let watch t = t.watch
@@ -828,36 +888,66 @@ module Make () : S = struct
   let process_vars_set_during_stabilization s =
     let vars = s.vars_set_during_stabilization in
     s.vars_set_during_stabilization <- [];
-    List.iter (fun (Var_packed var) ->
-      match var.value_set_during_stabilization with
-      | None -> ()
-      | Some v ->
-          var.value_set_during_stabilization <- None;
-          Var.set var v
-    ) vars
+    List.iter
+      (fun (Var_packed var) ->
+        match var.value_set_during_stabilization with
+        | None -> ()
+        | Some v ->
+            var.value_set_during_stabilization <- None;
+            Var.set var v)
+      vars
 
   let stabilize () =
     let s = ensure_state () in
-    if s.is_stabilizing then failwith "Already stabilizing";
-    s.is_stabilizing <- true;
-    s.stabilization_num <- Stabilization_num.add1 s.stabilization_num;
+    match s.status with
+    | Stabilize_previously_raised e -> raise e
+    | Stabilizing -> failwith "Already stabilizing"
+    | Not_stabilizing -> (
+        try
+          s.status <- Stabilizing;
+          s.stabilization_num <- Stabilization_num.add1 s.stabilization_num;
+          s.updates_to_handle <- [];
 
-    (* First propagate any invalidations *)
-    propagate_invalidity s;
+          (* Clear before starting *)
 
-    (* Then recompute stale nodes *)
-    while s.recompute_heap.size > 0 do
-      let (Node n) = remove_min_recompute_heap s.recompute_heap in
-      if is_valid n then ignore (recompute s n : _);
-      propagate_invalidity s
-    done;
+          (* First propagate any invalidations *)
+          propagate_invalidity s;
 
-    s.is_stabilizing <- false;
-    
-    (* Process any vars that were set during stabilization *)
-    process_vars_set_during_stabilization s
+          (* Then recompute stale nodes *)
+          while s.recompute_heap.size > 0 do
+            let (Node n) = remove_min_recompute_heap s.recompute_heap in
+            if is_valid n then ignore (recompute s n : _);
+            propagate_invalidity s
+          done;
+
+          (* New Phase: Run on-update handlers *)
+          let updates = List.rev s.updates_to_handle in
+          s.updates_to_handle <- [];
+          List.iter
+            (fun (Pending_update u) ->
+              List.iter
+                (fun obs ->
+                  if obs.active then
+                    let update =
+                      match u.update_old_value with
+                      | None -> Initialized u.update_new_value
+                      | Some old ->
+                          obs.old_value <- Some u.update_new_value;
+                          Changed (old, u.update_new_value)
+                    in
+                    List.iter (fun f -> f update) obs.on_update)
+                u.update_node.observers)
+            updates;
+
+          s.status <- Not_stabilizing;
+
+          (* Process any vars that were set during stabilization *)
+          process_vars_set_during_stabilization s
+        with e ->
+          s.status <- Stabilize_previously_raised e;
+          raise e)
 
   let is_stabilizing () =
     let s = ensure_state () in
-    s.is_stabilizing
+    match s.status with Stabilizing -> true | _ -> false
 end
