@@ -24,6 +24,11 @@ module type S = sig
 
   type 'a t = 'a Incr.t
 
+  (** For time-based incremental nodes *)
+  type 'a before_or_after =
+    | Before of 'a
+    | After of 'a
+
   module Var : sig
     type 'a t
     (** Mutable variables (leaves in the DAG). *)
@@ -138,6 +143,25 @@ module type S = sig
 
   val is_stabilizing : unit -> bool
   (** True if currently stabilizing. *)
+
+  (** Clock API for time-based incremental nodes *)
+  val at : Time.t -> Time.t before_or_after t
+  (** [at time] creates an incremental that transitions from [Before time] to [After time] when the clock reaches the specified time. *)
+
+  val after : Time.Span.t -> Time.t before_or_after t
+  (** [after span] creates an incremental that transitions after the given time span from now. *)
+
+  val at_intervals : base:Time.t -> interval:Time.Span.t -> unit t
+  (** [at_intervals ~base ~interval] creates an incremental that fires at regular intervals. *)
+
+  val snapshot : 'a t -> at:Time.t t -> f:(Time.t -> 'a -> 'b) -> 'b t
+  (** [snapshot value_at ~at ~f] creates a snapshot of a value at specific times. *)
+
+  val step_function : init:'a -> (Time.t * 'a) list -> 'a t
+  (** [step_function ~init steps] creates an incremental that changes value at specific times. *)
+
+  val advance_clock : to_:Time.t -> unit
+  (** [advance_clock ~to_] advances the clock to the specified time, triggering time-based incrementals. *)
 end
 
 module Make () : S

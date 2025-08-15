@@ -5,6 +5,11 @@ module type S = sig
 
   type 'a t = 'a Incr.t
 
+  (* For time-based incremental nodes *)
+  type 'a before_or_after =
+    | Before of 'a
+    | After of 'a
+
   module Var : sig
     type 'a t
 
@@ -64,6 +69,14 @@ module type S = sig
   val get_cutoff : 'a t -> 'a Cutoff.t
   val stabilize : unit -> unit
   val is_stabilizing : unit -> bool
+
+  (* Clock API for time-based incremental nodes *)
+  val at : Time.t -> Time.t before_or_after t
+  val after : Time.Span.t -> Time.t before_or_after t
+  val at_intervals : base:Time.t -> interval:Time.Span.t -> unit t
+  val snapshot : 'a t -> at:Time.t t -> f:(Time.t -> 'a -> 'b) -> 'b t
+  val step_function : init:'a -> (Time.t * 'a) list -> 'a t
+  val advance_clock : to_:Time.t -> unit
 end
 
 module Make () : S = struct
@@ -81,6 +94,12 @@ module Make () : S = struct
   end
 
   type stabilization_num = Stabilization_num.t
+
+  (* For time-based incremental nodes *)
+  type 'a before_or_after =
+    | Before of 'a
+    | After of 'a
+
 
   type _ kind =
     | Invalid
@@ -107,6 +126,10 @@ module Make () : S = struct
     | Join_main : 'a join_data -> 'a kind
     | Join_lhs_change : _ join_data -> unit kind
     | Freeze : 'a freeze_data -> 'a kind
+    | At : at_data -> Time.t before_or_after kind
+    | At_intervals : at_intervals_data -> unit kind
+    | Snapshot : ('a, 'b) snapshot_data -> 'b kind
+    | Step_function : 'a step_function_data -> 'a kind
 
   and 'a node = {
     mutable kind : 'a kind;
@@ -166,6 +189,64 @@ module Make () : S = struct
     only_freeze_when : 'a -> bool;
   }
 
+  and at_data = {
+    main : Time.t before_or_after node;
+    at : Time.t;
+    mutable alarm : alarm;
+    clock : clock;
+  }
+
+  and at_intervals_data = {
+    main : unit node;
+    base : Time.t;
+    interval : Time.Span.t;
+    mutable alarm : alarm;
+    clock : clock;
+  }
+
+  and ('a, 'b) snapshot_data = {
+    main : 'b node;
+    at : Time.t;
+    before : 'b;
+    value_at : 'a node;
+    clock : clock;
+  }
+
+  and 'a step_function_data = {
+    main : 'a node;
+    init : 'a;
+    steps : (Time.t * 'a) array;
+    mutable current_index : int;
+    mutable alarm : alarm;
+    clock : clock;
+  }
+  
+  and 'a var = {
+    mutable value : 'a;
+    mutable value_set_during_stabilization : 'a option;
+    watch : 'a node;
+  }
+  
+  and alarm = alarm_value Timing_wheel.alarm
+  
+  and alarm_value = {
+    action : alarm_action;
+    mutable next_fired : alarm_value option;
+  }
+  
+  and alarm_action =
+    | At of at_data
+    | At_intervals of at_intervals_data
+    | Snapshot : ('a, 'b) snapshot_data -> alarm_action
+    | Step_function : 'a step_function_data -> alarm_action
+    
+  and clock = {
+    timing_wheel : alarm_value Timing_wheel.t;
+    now : Time.t var;
+    handle_fired : alarm_value -> unit;
+    mutable fired_alarm_values : alarm_value option;
+  }
+
   and 'a observer = {
     node : 'a node;
     mutable on_update : ('a update -> unit) list;
@@ -199,12 +280,6 @@ module Make () : S = struct
     max_height_allowed : int;
   }
 
-  type 'a var = {
-    mutable value : 'a;
-    mutable value_set_during_stabilization : 'a option;
-    watch : 'a node;
-  }
-
   type packed_var = Var_packed : _ var -> packed_var
 
   type 'a pending_update = {
@@ -230,7 +305,11 @@ module Make () : S = struct
     mutable propagate_invalidity : packed_node list;
     mutable vars_set_during_stabilization : packed_var list;
     mutable updates_to_handle : packed_pending_update list;
+    mutable clock : clock option;
   }
+
+  (* Helper to get null alarm *)
+  let get_null_alarm () = Timing_wheel.Alarm.null ()
 
   let global_state = ref None
 
@@ -261,6 +340,7 @@ module Make () : S = struct
             propagate_invalidity = [];
             vars_set_during_stabilization = [];
             updates_to_handle = [];
+            clock = None;
           }
         in
         global_state := Some s;
@@ -656,6 +736,26 @@ module Make () : S = struct
             make_unnecessary (Node n);
             child_val)
           else child_val
+      | At at_data ->
+          (* At nodes return Before or After based on current time vs target time *)
+          (* The actual time check happens during advance_clock when alarms fire *)
+          (match n.value with
+          | Some v -> v
+          | None -> Before at_data.at)
+      | At_intervals _at_intervals_data ->
+          (* At_intervals fires at regular intervals, returns unit *)
+          ()
+      | Snapshot snapshot_data ->
+          (* Snapshot nodes return the stored 'before' value until frozen *)
+          snapshot_data.before
+      | Step_function step_data ->
+          (* Step function returns init value or value from last step *)
+          if step_data.current_index = 0 then step_data.init
+          else if step_data.current_index > 0 && step_data.current_index <= Array.length step_data.steps then
+            snd step_data.steps.(step_data.current_index - 1)
+          else if Array.length step_data.steps > 0 then
+            snd step_data.steps.(Array.length step_data.steps - 1)
+          else step_data.init
     in
 
     n.recomputed_at <- s.stabilization_num;
@@ -738,6 +838,117 @@ module Make () : S = struct
 
     let value t = t.value
     let watch t = t.watch
+  end
+
+  (* Clock module - needs to come after Var *)
+  module Clock = struct
+    type t = clock
+
+    let global_clock = ref None
+    
+    let get_clock () =
+      match !global_clock with
+      | Some clock -> clock
+      | None ->
+          let s = ensure_state () in
+          (match s.clock with
+          | Some clock -> 
+              global_clock := Some clock;
+              clock
+          | None ->
+              let timing_wheel = Timing_wheel.create ~alarm_precision:(Time.Span.of_sec 0.001) ~start:(Time.now ()) in
+              let now_var = Var.create (Time.now ()) in
+              let rec clock = {
+                timing_wheel;
+                now = now_var;
+                handle_fired;
+                fired_alarm_values = None;
+              }
+              and handle_fired (alarm_value : alarm_value) =
+                alarm_value.next_fired <- clock.fired_alarm_values;
+                clock.fired_alarm_values <- Some alarm_value
+              in
+              s.clock <- Some clock;
+              global_clock := Some clock;
+              clock)
+    
+    let now () = 
+      let clock = get_clock () in
+      clock.now.value
+    
+    let advance_clock ~to_ =
+      let clock = get_clock () in
+      let s = ensure_state () in
+      
+      (* First pass: collect fired alarms *)
+      Timing_wheel.advance_clock clock.timing_wheel ~to_ ~handle_fired:clock.handle_fired;
+      
+      (* Update the now var *)
+      Var.set clock.now to_;
+      
+      (* Second pass: handle fired alarms *)
+      let rec handle_fired_alarms () =
+        match clock.fired_alarm_values with
+        | None -> ()
+        | Some alarm_value ->
+            clock.fired_alarm_values <- alarm_value.next_fired;
+            alarm_value.next_fired <- None;
+            (match alarm_value.action with
+            | At at_data ->
+                at_data.main.value <- Some (After at_data.at);
+                at_data.main.changed_at <- s.stabilization_num;
+                invalidate_node (Node at_data.main);
+                if is_necessary at_data.main && not at_data.main.in_recompute_heap then
+                  add_to_recompute_heap s.recompute_heap (Node at_data.main)
+            | At_intervals at_intervals_data ->
+                at_intervals_data.main.value <- Some ();
+                at_intervals_data.main.changed_at <- s.stabilization_num;
+                invalidate_node (Node at_intervals_data.main);
+                if is_necessary at_intervals_data.main && not at_intervals_data.main.in_recompute_heap then
+                  add_to_recompute_heap s.recompute_heap (Node at_intervals_data.main);
+                (* Schedule next alarm *)
+                let next_time = Time.next_multiple ~base:at_intervals_data.base ~after:to_ ~interval:at_intervals_data.interval in
+                let next_alarm_value = { action = At_intervals at_intervals_data; next_fired = None } in
+                at_intervals_data.alarm <- Timing_wheel.add clock.timing_wheel ~at:next_time next_alarm_value
+            | Snapshot snapshot_data ->
+                (* Update snapshot value *)
+                (match snapshot_data.value_at.value with
+                | Some v -> 
+                    snapshot_data.main.value <- Some snapshot_data.before;
+                    snapshot_data.main.changed_at <- s.stabilization_num;
+                    invalidate_node (Node snapshot_data.main);
+                    if is_necessary snapshot_data.main && not snapshot_data.main.in_recompute_heap then
+                      add_to_recompute_heap s.recompute_heap (Node snapshot_data.main)
+                | None -> ())
+            | Step_function step_function_data ->
+                (* Advance to next step *)
+                let rec find_next_step idx =
+                  if idx >= Array.length step_function_data.steps then
+                    (* No more steps *)
+                    ()
+                  else
+                    let (step_time, step_value) = step_function_data.steps.(idx) in
+                    if Time.(step_time <= to_) then (
+                      step_function_data.main.value <- Some step_value;
+                      step_function_data.current_index <- idx + 1;
+                      find_next_step (idx + 1)
+                    ) else (
+                      (* Schedule alarm for next step *)
+                      let next_alarm_value = { action = Step_function step_function_data; next_fired = None } in
+                      step_function_data.alarm <- Timing_wheel.add clock.timing_wheel ~at:step_time next_alarm_value
+                    )
+                in
+                find_next_step step_function_data.current_index;
+                if step_function_data.main.value <> None then (
+                  step_function_data.main.changed_at <- s.stabilization_num;
+                  invalidate_node (Node step_function_data.main);
+                  if is_necessary step_function_data.main && not step_function_data.main.in_recompute_heap then
+                    add_to_recompute_heap s.recompute_heap (Node step_function_data.main)
+                )
+            );
+            handle_fired_alarms ()
+      in
+      handle_fired_alarms ()
   end
 
   module Observer = struct
@@ -950,4 +1161,132 @@ module Make () : S = struct
   let is_stabilizing () =
     let s = ensure_state () in
     match s.status with Stabilizing -> true | _ -> false
+
+  (* Clock API for time-based incremental nodes *)
+  module Clock_api = struct
+    let at time =
+      let _s = ensure_state () in
+      (* Create a dummy node first *)
+      let dummy_node = create_node Invalid in
+      let at_data = { at = time; alarm = None } in
+      dummy_node.kind <- At at_data;
+      
+      (* Schedule alarm if timing wheel is initialized *)
+      (match (!global_state) with
+      | Some s ->
+          (match s.timing_wheel with
+          | Some wheel ->
+              let alarm = Timing_wheel.add wheel ~at:time (Node dummy_node) in
+              at_data.alarm <- Some alarm
+          | None -> ())
+      | None -> ());
+      
+      dummy_node
+
+    let after span =
+      let time = Time.(Clock.now () + span) in
+      at time
+
+    let at_intervals ~base ~interval =
+      let _s = ensure_state () in
+      (* Create a dummy node first *)
+      let dummy_node = create_node Invalid in
+      let at_intervals_data = { base; interval; alarm = None } in
+      dummy_node.kind <- At_intervals at_intervals_data;
+      
+      (* Schedule initial alarm *)
+      let first_fire = Time.next_multiple ~base ~after:(Clock.now ()) ~interval in
+      (match (!global_state) with
+      | Some s ->
+          (match s.timing_wheel with
+          | Some wheel ->
+              let alarm = Timing_wheel.add wheel ~at:first_fire (Node dummy_node) in
+              at_intervals_data.alarm <- Some alarm
+          | None -> ())
+      | None -> ());
+      
+      dummy_node
+
+    let snapshot at_incr ~at ~f =
+      let s = ensure_state () in
+      (* Create a dummy node first *)
+      let dummy_node = create_node Invalid in
+      let snapshot_data = { at; value_at = at_incr; f } in
+      dummy_node.kind <- Snapshot snapshot_data;
+      add_dependency s at dummy_node;
+      add_dependency s at_incr dummy_node;
+      dummy_node
+
+    let step_function ~init steps =
+      let _s = ensure_state () in
+      let steps_array = Array.of_list steps in
+      (* Create a dummy node first *)  
+      let dummy_node = create_node Invalid in
+      let step_data = { init; steps = steps_array; current_index = 0 } in
+      dummy_node.kind <- Step_function step_data;
+      
+      (* Schedule alarm for first step if timing wheel exists *)
+      if Array.length steps_array > 0 then (
+        let (first_time, _) = steps_array.(0) in
+        match (!global_state) with
+        | Some s ->
+            (match s.timing_wheel with
+            | Some wheel ->
+                ignore (Timing_wheel.add wheel ~at:first_time (Node dummy_node))
+            | None -> ())
+        | None -> ()
+      );
+      
+      dummy_node
+
+    let advance_clock ~to_ =
+      Clock.advance_clock ~to_;
+      let s = ensure_state () in
+      
+      (* Initialize timing wheel if needed *)
+      let wheel =
+        match s.timing_wheel with
+        | Some w -> w
+        | None ->
+            let w = Timing_wheel.create ~alarm_precision:(Time.Span.of_sec 0.001) ~start:(Clock.now ()) in
+            s.timing_wheel <- Some w;
+            w
+      in
+      
+      (* Advance timing wheel and fire alarms *)
+      Timing_wheel.advance_clock wheel ~to_ ~handle_fired:(fun alarm_value ->
+        let (Node n) = alarm_value.Timing_wheel.value in
+        invalidate_node (Node n);
+        s.propagate_invalidity <- (Node n) :: s.propagate_invalidity;
+        
+        (* Re-schedule for periodic alarms *)
+        match n.kind with
+        | At_intervals at_intervals_data ->
+            let next_fire = Time.next_multiple ~base:at_intervals_data.base ~after:to_ ~interval:at_intervals_data.interval in
+            let alarm = Timing_wheel.add wheel ~at:next_fire (Node n) in
+            at_intervals_data.alarm <- Some alarm
+        | Step_function step_data ->
+            (* Find next step to schedule *)
+            let rec find_next idx =
+              if idx < Array.length step_data.steps then
+                let (step_time, _) = step_data.steps.(idx) in
+                if Time.(step_time > to_) then (
+                  step_data.current_index <- idx;
+                  ignore (Timing_wheel.add wheel ~at:step_time (Node n))
+                ) else find_next (idx + 1)
+            in
+            find_next step_data.current_index
+        | _ -> ()
+      );
+      
+      (* Trigger stabilization to propagate changes *)
+      stabilize ()
+  end
+
+  let at = Clock_api.at
+  let after = Clock_api.after
+  let at_intervals = Clock_api.at_intervals
+  let snapshot = Clock_api.snapshot
+  let step_function = Clock_api.step_function
+  let advance_clock = Clock_api.advance_clock
 end
