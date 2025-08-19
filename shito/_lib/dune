@@ -1,4 +1,0 @@
-(library
- (name shito)
- (public_name shito)
- (libraries))
