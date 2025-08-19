@@ -1,4 +1,4 @@
-module S = Shito.Make ()
+module S = Incremental.Make ()
 
 let () =
   Printf.printf "\n=== Minimal bind test ===\n";

@@ -102,7 +102,8 @@ let rec fire_alarms_in_list alarms ~now:now_time ~handle_fired acc =
 let fire_bucket t bucket_idx ~handle_fired =
   let rec process_list alarm_opt =
     match alarm_opt with
-    | None -> None
+    | None -> 
+        None
     | Some alarm ->
         if Time.(alarm.at <= t.now) then (
           handle_fired alarm.value;
@@ -148,18 +149,23 @@ let advance_clock t ~to_ ~handle_fired =
     done
   );
   
-  (* Move alarms from far future to wheel if they're now in range *)
-  let rec move_far_future acc = function
+  (* Process far future alarms *)
+  let rec process_far_future acc = function
     | [] -> acc
     | alarm :: rest ->
-        if time_to_bucket t alarm.at <> None then (
-          (* Move to wheel *)
+        if Time.(alarm.at <= t.now) then (
+          (* Fire immediately - it's in the past *)
+          handle_fired alarm.value;
+          process_far_future acc rest
+        ) else if time_to_bucket t alarm.at <> None then (
+          (* Move to wheel - it's now in range *)
           ignore (add t ~at:alarm.at alarm.value);
-          move_far_future acc rest
+          process_far_future acc rest
         ) else
-          move_far_future (alarm :: acc) rest
+          (* Keep in far future *)
+          process_far_future (alarm :: acc) rest
   in
-  t.far_future <- move_far_future [] t.far_future;
+  t.far_future <- process_far_future [] t.far_future;
   
   (* Update min alarm time *)
   t.min_alarm_time <- None;

@@ -25,9 +25,9 @@ module type S = sig
   type 'a t = 'a Incr.t
 
   (** For time-based incremental nodes *)
-  type 'a before_or_after =
-    | Before of 'a
-    | After of 'a
+  type before_or_after =
+    | Before
+    | After
 
   module Var : sig
     type 'a t
@@ -87,11 +87,16 @@ module type S = sig
 
   val map2 : 'a t -> 'b t -> f:('a -> 'b -> 'c) -> 'c t
   val map3 : 'a t -> 'b t -> 'c t -> f:('a -> 'b -> 'c -> 'd) -> 'd t
+  val map4 : 'a t -> 'b t -> 'c t -> 'd t -> f:('a -> 'b -> 'c -> 'd -> 'e) -> 'e t
   (* ... up to map15 for practicality; can extend if needed *)
 
   val bind : 'a t -> f:('a -> 'b t) -> 'b t
   (** Bind: Dynamic graphs. Less efficient than map (modifies DAG on LHS
       change). *)
+
+  val bind2 : 'a t -> 'b t -> f:('a -> 'b -> 'c t) -> 'c t
+  val bind3 : 'a t -> 'b t -> 'c t -> f:('a -> 'b -> 'c -> 'd t) -> 'd t
+  val bind4 : 'a t -> 'b t -> 'c t -> 'd t -> f:('a -> 'b -> 'c -> 'd -> 'e t) -> 'e t
 
   val if_ : bool t -> then_:'a t -> else_:'a t -> 'a t
   (** [if_ test ~then_ ~else_] dynamically switches between branches based on test value. *)
@@ -144,24 +149,36 @@ module type S = sig
   val is_stabilizing : unit -> bool
   (** True if currently stabilizing. *)
 
-  (** Clock API for time-based incremental nodes *)
-  val at : Time.t -> Time.t before_or_after t
-  (** [at time] creates an incremental that transitions from [Before time] to [After time] when the clock reaches the specified time. *)
+  (** Clock module for managing time-based computations *)
+  module Clock : sig
+    val create : start:Time.t -> unit -> unit
+    (** Create a clock with the specified start time. *)
+    
+    val now : unit -> Time.t
+    (** Get the current time of the clock. *)
+    
+    val advance_clock : to_:Time.t -> unit -> unit
+    (** Advance the clock to the specified time. *)
+  end
 
-  val after : Time.Span.t -> Time.t before_or_after t
+  (** Clock API for time-based incremental nodes *)
+  val at : Time.t -> before_or_after t
+  (** [at time] creates an incremental that transitions from [Before] to [After] when the clock reaches the specified time. *)
+
+  val after : Time.Span.t -> before_or_after t
   (** [after span] creates an incremental that transitions after the given time span from now. *)
 
   val at_intervals : base:Time.t -> interval:Time.Span.t -> unit t
   (** [at_intervals ~base ~interval] creates an incremental that fires at regular intervals. *)
 
-  val snapshot : 'a t -> at:Time.t t -> f:(Time.t -> 'a -> 'b) -> 'b t
-  (** [snapshot value_at ~at ~f] creates a snapshot of a value at specific times. *)
+  val snapshot : 'a t -> at:Time.t -> before:'a -> 'a t
+  (** [snapshot value_at ~at ~before] creates a snapshot of a value at a specific time, with an initial value [before]. *)
 
   val step_function : init:'a -> (Time.t * 'a) list -> 'a t
   (** [step_function ~init steps] creates an incremental that changes value at specific times. *)
 
   val advance_clock : to_:Time.t -> unit
-  (** [advance_clock ~to_] advances the clock to the specified time, triggering time-based incrementals. *)
+  (** [advance_clock ~to_] advances the clock to the specified time. (Also available in Clock module) *)
 end
 
 module Make () : S

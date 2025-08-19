@@ -1,6 +1,6 @@
 (** Comprehensive test suite for Shito incremental computation library *)
 
-module S = Shito.Make ()
+module S = Incremental.Make ()
 
 (** Test utilities *)
 let assert_raises f =

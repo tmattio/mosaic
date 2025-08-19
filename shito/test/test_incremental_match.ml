@@ -1,6 +1,6 @@
 (** Test that our implementation matches incremental's semantics exactly *)
 
-module S = Shito.Make ()
+module S = Incremental.Make ()
 
 let assert_equal msg expected actual =
   if expected <> actual then
