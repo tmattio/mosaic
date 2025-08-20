@@ -1,4 +1,5 @@
 (library
  (name reconciler)
  (public_name shito.reconciler)
- (libraries unix incremental))
+ (libraries)
+ (modules_without_implementation host_config))

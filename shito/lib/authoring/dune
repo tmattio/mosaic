@@ -1,0 +1,4 @@
+(library
+ (name authoring)
+ (public_name shito.authoring)
+ (libraries shito.incremental shito.reconciler))

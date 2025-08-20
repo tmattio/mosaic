@@ -1,0 +1,4 @@
+(library
+ (name reconciler_incr)
+ (public_name shito.reconciler_incr)
+ (libraries shito.incremental shito.reconciler))

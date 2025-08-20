@@ -1,134 +1,101 @@
-open Types
+module Make (Host : Host_config.S) : sig
+  (** Node kind *)
+  type tag =
+    | HostNode of Host.primitive
+    | TextNode
+    | FragmentNode
+    | SuspenseNode
 
-type ('props, 'state, 'host_element, 'host_text, 'host_container) t = {
-  (* Instance fields *)
-  mutable tag : Work_tags.t;
-  mutable key : key;
-  mutable element_type :
-    ('props, 'host_element, 'host_text, 'host_container) element_type option;
-  mutable typ : ('props, 'host_element, 'host_text, 'host_container) type_;
-  mutable state_node :
-    ('host_element, 'host_text, 'host_container, 'props) state_node;
-  (* Fiber fields *)
-  mutable return :
-    ('props, 'state, 'host_element, 'host_text, 'host_container) t option;
-  mutable child :
-    ('props, 'state, 'host_element, 'host_text, 'host_container) t option;
-  mutable sibling :
-    ('props, 'state, 'host_element, 'host_text, 'host_container) t option;
-  mutable index : int;
-  mutable ref_ : 'host_element ref_;
-  mutable ref_cleanup : (unit -> unit) option;
-  mutable pending_props : 'props;
-  mutable memoized_props : 'props option;
-  mutable update_queue : ('state, 'props) update_queue option;
-  mutable memoized_state : ('state, 'props) memoized_state;
-  mutable dependencies : dependencies option;
-  mutable mode : Type_of_mode.t;
-  (* Effects *)
-  mutable flags : Fiber_flags.t;
-  mutable subtree_flags : Fiber_flags.t;
-  mutable deletions :
-    ('props, 'state, 'host_element, 'host_text, 'host_container) t list;
-  mutable lanes : lanes;
-  mutable child_lanes : lanes;
-  mutable alternate :
-    ('props, 'state, 'host_element, 'host_text, 'host_container) t option;
-  (* Profiler timer fields *)
-  mutable actual_duration : float;
-  mutable actual_start_time : float;
-  mutable self_base_duration : float;
-  mutable tree_base_duration : float;
-  (* Dev mode fields *)
-  mutable debug_info : debug_info option;
-  mutable debug_owner :
-    ('props, 'state, 'host_element, 'host_text, 'host_container) t option;
-  mutable debug_stack : exn option;
-  mutable debug_task : string option;
-  mutable debug_needs_remount : bool;
-  mutable debug_hook_types : hook_type list;
-}
+  (** Bitset flags for commit-time behavior *)
+  module Flag : sig
+    type t
 
-and ('props, 'host_element, 'host_text, 'host_container) type_ =
-  | String_type of string
-  | Function_type of
-      ('props -> ('props, 'host_element, 'host_text, 'host_container) element)
-  | Class_type of
-      ('props, 'host_element, 'host_text, 'host_container) class_component_type
-  | Forward_ref_type of
-      ('props ->
-      'host_element ref_ ->
-      ('props, 'host_element, 'host_text, 'host_container) element)
-  | Memo_type of
-      ('props, 'host_element, 'host_text, 'host_container) element_type
-  | Lazy_type of
-      (unit -> ('props, 'host_element, 'host_text, 'host_container) element)
-  | Context_type :
-      'a context
-      -> ('props, 'host_element, 'host_text, 'host_container) type_
-  | Portal_type of 'host_container
-  | Fragment_type
-  | Suspense_type
-  | Profiler_type
-  | Other_type
+    val none : t
 
-val create_fiber :
-  Work_tags.t ->
-  'props ->
-  key ->
-  Type_of_mode.t ->
-  ('props, 'state, 'host_element, 'host_text, 'host_container) t
+    val placement : t
+    (** needs insert/move *)
 
-(* Create work in progress fiber from current fiber *)
-val create_work_in_progress :
-  (('props, 'host_element, 'host_text, 'host_container) fiber_props, 'state, 'host_element, 'host_text, 'host_container) t ->
-  ('props, 'host_element, 'host_text, 'host_container) fiber_props ->
-  (('props, 'host_element, 'host_text, 'host_container) fiber_props, 'state, 'host_element, 'host_text, 'host_container) t
+    val update : t
+    (** props/text changed *)
 
-(* Create fiber from element *)
-val create_fiber_from_element :
-  ('props, 'host_element, 'host_text, 'host_container) child ->
-  Type_of_mode.t ->
-  lanes ->
-  (('props, 'host_element, 'host_text, 'host_container) fiber_props, 'state, 'host_element, 'host_text, 'host_container) t
+    val child_deletion : t
+    (** has children to delete *)
 
-(* Create fiber from text *)
-val create_fiber_from_text :
-  string ->
-  Type_of_mode.t ->
-  lanes ->
-  (('props, 'host_element, 'host_text, 'host_container) fiber_props, 'state, 'host_element, 'host_text, 'host_container) t
+    val layout : t
+    (** has layout effects *)
 
-(* Create fiber from fragment *)
-val create_fiber_from_fragment :
-  ('props, 'host_element, 'host_text, 'host_container) child list ->
-  Type_of_mode.t ->
-  lanes ->
-  key ->
-  (('props, 'host_element, 'host_text, 'host_container) fiber_props, 'state, 'host_element, 'host_text, 'host_container) t
+    val passive : t
+    (** has passive effects *)
 
-(* Create fiber from portal *)
-val create_fiber_from_portal :
-  children:('props, 'host_element, 'host_text, 'host_container) child list ->
-  container_info:'host_container ->
-  implementation:unit ->
-  key:key ->
-  Type_of_mode.t ->
-  lanes ->
-  (('props, 'host_element, 'host_text, 'host_container) fiber_props, 'state, 'host_element, 'host_text, 'host_container) t
+    val ref_ : t
+    (** ref changed *)
 
-(* Check if fiber can be reused *)
-val can_reuse_fiber :
-  (('props, 'host_element, 'host_text, 'host_container) fiber_props, 'state, 'host_element, 'host_text, 'host_container) t ->
-  ('props, 'host_element, 'host_text, 'host_container) child ->
-  bool
+    val ( + ) : t -> t -> t
+    (** union *)
 
-(* Get element props *)
-val get_element_props :
-  ('props, 'host_element, 'host_text, 'host_container) child ->
-  'props
+    val mem : t -> t -> bool
+    (** [mem flag set] *)
 
-(* Get element key *)
-val get_element_key :
-  ('props, 'host_element, 'host_text, 'host_container) element ->
-  key
+    val pp : Format.formatter -> t -> unit
+  end
+
+  type effect_ = {
+    mutable create : unit -> (unit -> unit) option;
+    mutable destroy : (unit -> unit) option;
+  }
+  (** Effect payload is intentionally generic: [create] returns an optional
+      cleanup to run on unmount/dep change. *)
+
+  type t = {
+    mutable tag : tag;
+    mutable key : Key.t;
+    mutable element_type : Host.primitive option;  (** HostNode only *)
+    mutable pending_props : Host.props option;  (** next props *)
+    mutable memo_props : Host.props option;  (** last committed *)
+    mutable state_node : (Host.instance, Host.text_instance) Either.t option;
+    mutable parent : t option;
+    mutable child : t option;
+    mutable sibling : t option;
+    mutable alternate : t option;  (** current/WIP pair *)
+    mutable flags : Flag.t;
+    mutable subtree_flags : Flag.t;
+    mutable layout_effects : effect_ list;
+    mutable passive_effects : effect_ list;
+  }
+  (** The fiber record *)
+
+  (** Constructors *)
+
+  val make_host :
+    key:Key.t -> element_type:Host.primitive -> props:Host.props -> t
+
+  val make_text : key:Key.t -> t
+  val make_fragment : key:Key.t -> t
+  val make_suspense : key:Key.t -> t
+
+  (** Linking helpers *)
+
+  val set_child : t -> t option -> unit
+  val set_sibling : t -> t option -> unit
+  val set_parent : t -> t option -> unit
+  val set_alternate_pair : current:t -> wip:t -> unit
+
+  (** Flags *)
+
+  val reset_flags : t -> unit
+  val add_flag : t -> Flag.t -> unit
+  val bubble_subtree_flags : t -> unit
+
+  (** Host instance helpers *)
+
+  val set_state_instance :
+    t -> (Host.instance, Host.text_instance) Either.t -> unit
+
+  val get_state_instance :
+    t -> (Host.instance, Host.text_instance) Either.t option
+
+  (** Effect helpers *)
+
+  val push_layout_effect : t -> effect_ -> unit
+  val push_passive_effect : t -> effect_ -> unit
+end

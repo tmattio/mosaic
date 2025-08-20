@@ -1,214 +1,129 @@
-open Types
+module Make (Host : Host_config.S) = struct
+  type tag =
+    | HostNode of Host.primitive
+    | TextNode
+    | FragmentNode
+    | SuspenseNode
 
-(* The fiber type is parameterized by:
-   - 'props: the type of props
-   - 'state: the type of component state
-   - 'host_element: the type of host elements (e.g., DOM elements)
-   - 'host_text: the type of host text nodes
-   - 'host_container: the type of host containers
-*)
-type ('props, 'state, 'host_element, 'host_text, 'host_container) t = {
-  (* Instance fields *)
-  mutable tag: Work_tags.t;
-  mutable key: key;
-  mutable element_type: ('props, 'host_element, 'host_text, 'host_container) element_type option;
-  mutable typ: ('props, 'host_element, 'host_text, 'host_container) type_;
-  mutable state_node: ('host_element, 'host_text, 'host_container, 'props) state_node;
+  module Flag = struct
+    type t = int
 
-  (* Fiber fields *)
-  mutable return: ('props, 'state, 'host_element, 'host_text, 'host_container) t option;
-  mutable child: ('props, 'state, 'host_element, 'host_text, 'host_container) t option;
-  mutable sibling: ('props, 'state, 'host_element, 'host_text, 'host_container) t option;
-  mutable index: int;
+    let none = 0
+    let placement = 1 lsl 0
+    let update = 1 lsl 1
+    let child_deletion = 1 lsl 2
+    let layout = 1 lsl 3
+    let passive = 1 lsl 4
+    let ref_ = 1 lsl 5
+    let ( + ) a b = a lor b
+    let mem set flag = set land flag <> 0
 
-  mutable ref_: 'host_element ref_;
-  mutable ref_cleanup: (unit -> unit) option;
+    let pp fmt v =
+      let xs = ref [] in
+      let add name flag = if mem v flag then xs := name :: !xs in
+      add "Placement" placement;
+      add "Update" update;
+      add "ChildDeletion" child_deletion;
+      add "Layout" layout;
+      add "Passive" passive;
+      add "Ref" ref_;
+      Format.fprintf fmt "{%s}" (String.concat "," (List.rev !xs))
+  end
 
-  mutable pending_props: 'props;
-  mutable memoized_props: 'props option;
-  mutable update_queue: ('state, 'props) update_queue option;
-  mutable memoized_state: ('state, 'props) memoized_state;
-  mutable dependencies: dependencies option;
+  type effect_ = {
+    mutable create : unit -> (unit -> unit) option;
+    mutable destroy : (unit -> unit) option;
+  }
 
-  mutable mode: Type_of_mode.t;
+  type t = {
+    mutable tag : tag;
+    mutable key : Key.t;
+    mutable element_type : Host.primitive option;
+    mutable pending_props : Host.props option;
+    mutable memo_props : Host.props option;
+    mutable state_node : (Host.instance, Host.text_instance) Either.t option;
+    mutable parent : t option;
+    mutable child : t option;
+    mutable sibling : t option;
+    mutable alternate : t option;
+    mutable flags : Flag.t;
+    mutable subtree_flags : Flag.t;
+    mutable layout_effects : effect_ list;
+    mutable passive_effects : effect_ list;
+  }
 
-  (* Effects *)
-  mutable flags: Fiber_flags.t;
-  mutable subtree_flags: Fiber_flags.t;
-  mutable deletions: ('props, 'state, 'host_element, 'host_text, 'host_container) t list;
+  let empty_effects = []
 
-  mutable lanes: lanes;
-  mutable child_lanes: lanes;
+  let base ~tag ~key =
+    {
+      tag;
+      key;
+      element_type = None;
+      pending_props = None;
+      memo_props = None;
+      state_node = None;
+      parent = None;
+      child = None;
+      sibling = None;
+      alternate = None;
+      flags = Flag.none;
+      subtree_flags = Flag.none;
+      layout_effects = empty_effects;
+      passive_effects = empty_effects;
+    }
 
-  mutable alternate: ('props, 'state, 'host_element, 'host_text, 'host_container) t option;
+  let make_host ~key ~element_type ~props =
+    let f = base ~tag:(HostNode element_type) ~key in
+    f.element_type <- Some element_type;
+    f.pending_props <- Some props;
+    f.memo_props <- None;
+    f
 
-  (* Profiler timer fields *)
-  mutable actual_duration: float;
-  mutable actual_start_time: float;
-  mutable self_base_duration: float;
-  mutable tree_base_duration: float;
+  let make_text ~key = base ~tag:TextNode ~key
+  let make_fragment ~key = base ~tag:FragmentNode ~key
+  let make_suspense ~key = base ~tag:SuspenseNode ~key
+  let set_child f c = f.child <- c
+  let set_sibling f s = f.sibling <- s
+  let set_parent f p = f.parent <- p
 
-  (* Dev mode fields *)
-  mutable debug_info: debug_info option;
-  mutable debug_owner: ('props, 'state, 'host_element, 'host_text, 'host_container) t option;
-  mutable debug_stack: exn option;
-  mutable debug_task: string option;
-  mutable debug_needs_remount: bool;
-  mutable debug_hook_types: hook_type list;
-}
+  let set_alternate_pair ~current ~wip =
+    current.alternate <- Some wip;
+    wip.alternate <- Some current
 
-(* Type for what a fiber represents *)
-and ('props, 'host_element, 'host_text, 'host_container) type_ =
-  | String_type of string (* for host components *)
-  | Function_type of ('props -> ('props, 'host_element, 'host_text, 'host_container) element)
-  | Class_type of ('props, 'host_element, 'host_text, 'host_container) class_component_type
-  | Forward_ref_type of ('props -> 'host_element ref_ -> ('props, 'host_element, 'host_text, 'host_container) element)
-  | Memo_type of ('props, 'host_element, 'host_text, 'host_container) element_type
-  | Lazy_type of (unit -> ('props, 'host_element, 'host_text, 'host_container) element)
-  | Context_type : 'a context -> ('props, 'host_element, 'host_text, 'host_container) type_
-  | Portal_type of 'host_container
-  | Fragment_type
-  | Suspense_type
-  | Profiler_type
-  | Other_type
+  let reset_flags f =
+    f.flags <- Flag.none;
+    f.subtree_flags <- Flag.none
 
-let create_fiber tag pending_props key mode = {
-  tag;
-  key;
-  element_type = None;
-  typ = Other_type;
-  state_node = Null_state;
+  let add_flag f fl = f.flags <- Flag.(f.flags + fl)
 
-  return = None;
-  child = None;
-  sibling = None;
-  index = 0;
-
-  ref_ = Null;
-  ref_cleanup = None;
-
-  pending_props;
-  memoized_props = None;
-  update_queue = None;
-  memoized_state = No_state;
-  dependencies = None;
-
-  mode;
-
-  flags = Fiber_flags.no_flags;
-  subtree_flags = Fiber_flags.no_flags;
-  deletions = [];
-
-  lanes = 0; (* NoLanes *)
-  child_lanes = 0; (* NoLanes *)
-
-  alternate = None;
-
-  actual_duration = 0.0;
-  actual_start_time = -1.1;
-  self_base_duration = 0.0;
-  tree_base_duration = 0.0;
-
-  debug_info = None;
-  debug_owner = None;
-  debug_stack = None;
-  debug_task = None;
-  debug_needs_remount = false;
-  debug_hook_types = [];
-}
-
-(* Create work in progress from current fiber *)
-let create_work_in_progress current pending_props =
-  (* For now, create a new fiber with the same configuration *)
-  let work_in_progress = create_fiber current.tag pending_props current.key current.mode in
-  work_in_progress.element_type <- current.element_type;
-  work_in_progress.typ <- current.typ;
-  work_in_progress.state_node <- current.state_node;
-  work_in_progress.memoized_props <- current.memoized_props;
-  work_in_progress.memoized_state <- current.memoized_state;
-  work_in_progress.update_queue <- current.update_queue;
-  work_in_progress.dependencies <- current.dependencies;
-  work_in_progress.alternate <- Some current;
-  work_in_progress
-
-(* Create fiber from element *)
-let create_fiber_from_element child mode lanes =
-  match child with
-  | Child_element element ->
-    let tag = match element.type_ with
-      | Host_component _ -> Work_tags.Host_component
-      | Host_text -> Work_tags.Host_text
-      | Function_component _ -> Work_tags.Function_component
-      | Class_component _ -> Work_tags.Class_component
-      | Fragment -> Work_tags.Fragment
-      | Suspense -> Work_tags.Suspense_component
-      | Portal _ -> Work_tags.Host_portal
-      | _ -> Work_tags.Function_component  (* Default for unknown types *)
+  let bubble_subtree_flags f =
+    (* Combine children's flags into subtree_flags; keep f.flags intact. *)
+    let rec _collect acc = function
+      | None -> acc
+      | Some c ->
+          let acc = acc lor c.flags lor c.subtree_flags in
+          _collect (match c.sibling with None -> acc | Some _ -> acc) c.sibling
     in
-    (* Wrap element props in Element_props *)
-    let props = Element_props element.props in
-    let fiber = create_fiber tag props element.key mode in
-    (* Store element type and typ - these will have mismatched types but that's OK
-       as we control how they're used and this matches React's design *)
-    (* fiber.element_type <- Some element.type_; -- skip for now due to type issues *)
-    fiber.typ <- (match element.type_ with
-      | Host_component name -> String_type name
-      | Fragment -> Fragment_type
-      | Suspense -> Suspense_type
-      | Portal container -> Portal_type container
-      | _ -> Other_type);
-    fiber.lanes <- lanes;
-    fiber
-  | _ -> failwith "Expected Child_element"
-
-(* Create fiber from text *)
-let create_fiber_from_text content mode lanes =
-  (* Text fibers wrap the content in Text_props *)
-  let props = Text_props content in
-  let fiber = create_fiber Work_tags.Host_text props None mode in
-  fiber.lanes <- lanes;
-  fiber
-
-(* Create fiber from fragment *)
-let create_fiber_from_fragment children mode lanes key =
-  (* Fragment fibers wrap children in Fragment_props *)
-  let props = Fragment_props children in
-  let fiber = create_fiber Work_tags.Fragment props key mode in
-  fiber.lanes <- lanes;
-  fiber
-
-(* Create fiber from portal *)
-let create_fiber_from_portal ~children ~container_info ~implementation:_ ~key mode lanes =
-  (* Portal fibers wrap children in Portal_props *)
-  let props = Portal_props children in
-  let fiber = create_fiber Work_tags.Host_portal props key mode in
-  (* Store the portal state information *)
-  fiber.state_node <- Portal_state container_info;
-  fiber.lanes <- lanes;
-  fiber
-
-(* Check if fiber can be reused *)
-let can_reuse_fiber existing child =
-  match child with
-  | Child_element element ->
-    (* For now, just check tag and key match since element_type has type issues *)
-    let tag_matches = match element.type_ with
-      | Host_component _ -> existing.tag = Work_tags.Host_component
-      | Function_component _ -> existing.tag = Work_tags.Function_component  
-      | Class_component _ -> existing.tag = Work_tags.Class_component
-      | Fragment -> existing.tag = Work_tags.Fragment
-      | Suspense -> existing.tag = Work_tags.Suspense_component
-      | Portal _ -> existing.tag = Work_tags.Host_portal
-      | _ -> false
+    let child_flags =
+      match f.child with
+      | None -> Flag.none
+      | Some c ->
+          let rec loop acc n =
+            let acc = acc lor n.flags lor n.subtree_flags in
+            match n.sibling with None -> acc | Some s -> loop acc s
+          in
+          loop Flag.none c
     in
-    tag_matches && existing.key = element.key
-  | _ -> false
+    f.subtree_flags <- child_flags
 
-(* Get element props *)
-let get_element_props child =
-  match child with
-  | Child_element element -> element.props
-  | _ -> failwith "Expected Child_element"
+  let set_state_instance f inst = f.state_node <- Some inst
+  let get_state_instance f = f.state_node
 
-(* Get element key *)
-let get_element_key (element : ('props, 'host_element, 'host_text, 'host_container) element) = element.key
+  let push_layout_effect f eff =
+    f.layout_effects <- eff :: f.layout_effects;
+    add_flag f Flag.layout
+
+  let push_passive_effect f eff =
+    f.passive_effects <- eff :: f.passive_effects;
+    add_flag f Flag.passive
+end

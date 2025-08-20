@@ -800,15 +800,26 @@ module Make () : S = struct
           let _at = snapshot_data.at in
           snapshot_data.before
       | Step_function step_data ->
-          (* Step function returns init value or value from last step *)
+          (* Following reference: advance step function to current time and schedule next alarm *)
+          let clock = step_data.clock in
+          let current_time = clock.now.value in
+          
+          (* Advance through all steps that should have fired by now *)
+          while step_data.current_index < Array.length step_data.steps 
+                && fst step_data.steps.(step_data.current_index) <= current_time do
+            step_data.current_index <- step_data.current_index + 1
+          done;
+          
+          (* Schedule next alarm if there are more steps *)
+          if step_data.current_index < Array.length step_data.steps then (
+            let next_time = fst step_data.steps.(step_data.current_index) in
+            step_data.alarm <- Timing_wheel.add clock.timing_wheel ~at:next_time 
+              { action = Step_function step_data; next_fired = None }
+          );
+          
+          (* Return the current value based on current_index *)
           if step_data.current_index = 0 then step_data.init
-          else if
-            step_data.current_index > 0
-            && step_data.current_index <= Array.length step_data.steps
-          then snd step_data.steps.(step_data.current_index - 1)
-          else if Array.length step_data.steps > 0 then
-            snd step_data.steps.(Array.length step_data.steps - 1)
-          else step_data.init
+          else snd step_data.steps.(step_data.current_index - 1)
     in
 
     n.recomputed_at <- s.stabilization_num;
@@ -946,18 +957,20 @@ module Make () : S = struct
       let clock = get_clock () in
       let s = ensure_state () in
 
-      (* First pass: collect fired alarms *)
-      Timing_wheel.advance_clock clock.timing_wheel ~to_
-        ~handle_fired:clock.handle_fired;
-      
-      (* Fire any past alarms (following reference implementation) *)
-      Timing_wheel.fire_past_alarms clock.timing_wheel ~handle_fired:clock.handle_fired;
+      (* Following reference: only advance if to_ > current time *)
+      if to_ > clock.now.value then (
+        (* First pass: collect fired alarms *)
+        Timing_wheel.advance_clock clock.timing_wheel ~to_
+          ~handle_fired:clock.handle_fired;
+        
+        (* Fire any past alarms (following reference implementation) *)
+        Timing_wheel.fire_past_alarms clock.timing_wheel ~handle_fired:clock.handle_fired;
 
-      (* Update the now var *)
-      Var.set clock.now to_;
+        (* Update the now var *)
+        Var.set clock.now to_;
 
-      (* Second pass: handle fired alarms *)
-      let rec handle_fired_alarms () =
+        (* Second pass: handle fired alarms *)
+        let rec handle_fired_alarms () =
         match clock.fired_alarm_values with
         | None -> ()
         | Some alarm_value ->
@@ -976,8 +989,10 @@ module Make () : S = struct
             | At_intervals at_intervals_data ->
                 if is_valid at_intervals_data.main then (
                   (* Schedule next alarm first *)
+                  (* Use a small epsilon to ensure we get the next interval, not current *)
                   let next_time =
-                    Time.next_multiple ~base:at_intervals_data.base ~after:to_
+                    Time.next_multiple ~base:at_intervals_data.base 
+                      ~after:(to_ +. 0.0001)
                       ~interval:at_intervals_data.interval
                   in
                   at_intervals_data.alarm <-
@@ -1021,10 +1036,8 @@ module Make () : S = struct
                     add_to_recompute_heap s.recompute_heap (Node snapshot_data.main)
                 )
             | Step_function step_function_data ->
-                (* Following reference: increment index and make stale *)
+                (* Following reference: just make stale - advance happens during recomputation *)
                 if is_valid step_function_data.main then (
-                  (* Increment current_index to move to next step *)
-                  step_function_data.current_index <- step_function_data.current_index + 1;
                   step_function_data.main.changed_at <- Stabilization_num.none;
                   if is_necessary step_function_data.main && not step_function_data.main.in_recompute_heap then
                     add_to_recompute_heap s.recompute_heap (Node step_function_data.main)
@@ -1032,6 +1045,7 @@ module Make () : S = struct
             handle_fired_alarms ()
       in
       handle_fired_alarms ()
+      )  (* Close the if statement *)
   end
 
   module Observer = struct
