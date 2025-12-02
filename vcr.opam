@@ -18,6 +18,7 @@ depends: [
   "cmdliner"
   "logs"
   "fmt"
+  "eio_main"
   "alcotest" {with-test}
   "odoc" {with-doc}
 ]

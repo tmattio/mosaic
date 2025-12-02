@@ -92,6 +92,7 @@
   cmdliner
   logs
   fmt
+  eio_main
   (alcotest :with-test))
  (tags
   (terminal recording playback demo)))
