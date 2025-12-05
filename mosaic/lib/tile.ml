@@ -120,7 +120,6 @@ let interact ?key ?tab_index ?auto_focus ?(disabled = false) ?(hotkeys = [])
   let noop_hover _entering = () in
   let noop_focus _has_focus = () in
   let noop_drag _evt = () in
-  let noop_key _evt = () in
 
   (* Wire up event handlers unconditionally *)
   Events.on_click key (Option.value ~default:noop_click on_click);
@@ -128,13 +127,19 @@ let interact ?key ?tab_index ?auto_focus ?(disabled = false) ?(hotkeys = [])
   Events.on_focus key (Option.value ~default:noop_focus on_focus);
   Events.on_drag key (Option.value ~default:noop_drag on_drag);
 
-  (* Handle keyboard events including hotkeys *)
-  let handle_key =
+  (* Handle keyboard events including hotkeys - return true if handled *)
+  let handle_key_filter =
     match (on_key, hotkeys, on_click) with
-    | Some f, [], _ -> f
-    | None, [], None -> noop_key
-    | _ ->
-        (fun event ->
+    | None, [], None ->
+        (* No key handling needed, don't consume any keys *)
+        fun _event -> false
+    | Some f, [], _ ->
+        (* User provided a key handler, always consume *)
+        fun event ->
+          f event;
+          true
+    | _ -> (
+        fun event ->
           (* Call custom key handler if provided *)
           Option.iter (fun f -> f event) on_key;
 
@@ -143,8 +148,12 @@ let interact ?key ?tab_index ?auto_focus ?(disabled = false) ?(hotkeys = [])
           | Some click_fn when not disabled -> (
               (* Check for Enter/Space defaults *)
               match event.key with
-              | Enter -> click_fn ()
-              | Char c when Uchar.to_int c = 0x20 -> click_fn ()
+              | Enter ->
+                  click_fn ();
+                  true
+              | Char c when Uchar.to_int c = 0x20 ->
+                  click_fn ();
+                  true
               | _ ->
                   (* Check custom hotkeys *)
                   let matches_hotkey =
@@ -155,10 +164,17 @@ let interact ?key ?tab_index ?auto_focus ?(disabled = false) ?(hotkeys = [])
                         | None -> false)
                       hotkeys
                   in
-                  if matches_hotkey then click_fn ())
-          | _ -> ())
+                  if matches_hotkey then (
+                    click_fn ();
+                    true)
+                  else
+                    (* Key not handled by this component *)
+                    Option.is_some on_key)
+          | _ ->
+              (* No click handler or disabled - only consume if we have on_key *)
+              Option.is_some on_key)
   in
-  Events.on_key key handle_key;
+  Events.use_key_press_filter key handle_key_filter;
 
   (* Mark as focusable if needed *)
   (if tab_index <> None || auto_focus <> None || on_click <> None then

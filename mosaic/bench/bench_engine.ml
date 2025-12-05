@@ -130,13 +130,13 @@ let benchmarks =
             for i = 1 to 1000 do
               ignore
                 (Input_router.subscribe r
-                   (Click (Ui.Key.of_int i, fun () -> ())));
+                   (Click (Ui.Key.of_int i, fun () -> true)));
               ignore
                 (Input_router.subscribe r
                    (Hover (Ui.Key.of_int i, fun _ -> ())));
               ignore
                 (Input_router.subscribe r
-                   (Key_press (Ui.Key.of_int i, fun _ -> ())))
+                   (Key_press (Ui.Key.of_int i, fun _ -> true)))
             done);
         create "on_mouse_motion_1000_hits" (fun () ->
             let r = Input_router.create () in
@@ -154,7 +154,7 @@ let benchmarks =
             done;
             Input_router.set_snapshot r s;
             for _ = 1 to 100 do
-              Input_router.on_mouse r ~x:0 ~y:0 Motion
+              ignore (Input_router.on_mouse r ~x:0 ~y:0 Motion)
             done);
         create "on_mouse_drag_1000" (fun () ->
             let r = Input_router.create () in
@@ -170,9 +170,9 @@ let benchmarks =
                 (Input_router.subscribe r (Drag (Ui.Key.of_int i, fun _ -> ())))
             done;
             Input_router.set_snapshot r s;
-            Input_router.on_mouse r ~x:0 ~y:0 (Button_down Input.Left);
+            ignore (Input_router.on_mouse r ~x:0 ~y:0 (Button_down Input.Left));
             for _ = 1 to 10 do
-              Input_router.on_mouse r ~x:1 ~y:1 Motion
+              ignore (Input_router.on_mouse r ~x:1 ~y:1 Motion)
             done;
             Input_router.on_mouse r ~x:2 ~y:2 (Button_up Input.Left));
         create "on_keyboard_1000_focused" (fun () ->
@@ -180,7 +180,7 @@ let benchmarks =
             for i = 1 to 1000 do
               ignore
                 (Input_router.subscribe r
-                   (Key_press (Ui.Key.of_int i, fun _ -> ())))
+                   (Key_press (Ui.Key.of_int i, fun _ -> true)))
             done;
             Input_router.set_focused r (Some (Ui.Key.of_int 500));
             let evt =
@@ -204,7 +204,7 @@ let benchmarks =
               }
             in
             for _ = 1 to 100 do
-              Input_router.on_keyboard r evt
+              ignore (Input_router.on_keyboard r evt)
             done);
       ];
   ]

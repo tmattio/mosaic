@@ -32,7 +32,7 @@ let get_runtime_context () =
   | Some ctx -> ctx
   | None -> Hook.use_context Runtime_context.context
 
-let use_click key on_click =
+let use_click_filter key on_click =
   let callback_ref = Hook.use_ref on_click in
   Hook.use_effect ~deps:Deps.always (fun () ->
       callback_ref := on_click;
@@ -46,6 +46,12 @@ let use_click key on_click =
       in
       let id = Engine.Input_router.subscribe ctx.input_router handler in
       Some (fun () -> Engine.Input_router.unsubscribe ctx.input_router id))
+
+let use_click key on_click =
+  use_click_filter key (fun () ->
+      on_click ();
+      (* always consume events *)
+      true)
 
 let use_hover key =
   let hovered, set_hovered, _ = Hook.use_state false in
@@ -102,7 +108,7 @@ let use_focus key =
 
   focused
 
-let use_key_press key on_key =
+let use_key_press_filter key on_key =
   let callback_ref = Hook.use_ref on_key in
   Hook.use_effect ~deps:Deps.always (fun () ->
       callback_ref := on_key;
@@ -112,15 +118,16 @@ let use_key_press key on_key =
     (fun () ->
       let ctx = get_runtime_context () in
       let handler =
-        Engine.Input_router.Key_press
-          ( key,
-            fun evt ->
-              !callback_ref evt;
-              ()
-            (* Return Some msg - will be fixed *) )
+        Engine.Input_router.Key_press (key, fun evt -> !callback_ref evt)
       in
       let id = Engine.Input_router.subscribe ctx.input_router handler in
       Some (fun () -> Engine.Input_router.unsubscribe ctx.input_router id))
+
+let use_key_press key on_key =
+  use_key_press_filter key (fun evt ->
+      on_key evt;
+      (* always consume events *)
+      true)
 
 let use_bounds key =
   let ctx = get_runtime_context () in
@@ -161,7 +168,10 @@ let on_hover key callback =
       match Runtime_context.current () with
       | None -> None
       | Some ctx ->
-          let handler = Engine.Input_router.Hover (key, fun entering -> !callback_ref entering) in
+          let handler =
+            Engine.Input_router.Hover
+              (key, fun entering -> !callback_ref entering)
+          in
           let id = Engine.Input_router.subscribe ctx.input_router handler in
           Some (fun () -> Engine.Input_router.unsubscribe ctx.input_router id))
 

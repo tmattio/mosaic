@@ -56,7 +56,13 @@ let on_click key callback =
       match Runtime_context.current () with
       | None -> None
       | Some ctx ->
-          let handler = Engine.Input_router.Click (key, callback) in
+          let handler =
+            Engine.Input_router.Click
+              ( key,
+                fun _ ->
+                  callback ();
+                  true )
+          in
           let id = Engine.Input_router.subscribe ctx.input_router handler in
           Some (fun () -> Engine.Input_router.unsubscribe ctx.input_router id));
   Engine.Sub.none
@@ -115,7 +121,8 @@ let on_key key callback =
               ( key,
                 fun evt ->
                   callback evt;
-                  () )
+                  (* Default behavior: consume all events sent to the handler *)
+                  true )
           in
           let id = Engine.Input_router.subscribe ctx.input_router handler in
           Some (fun () -> Engine.Input_router.unsubscribe ctx.input_router id));
@@ -161,7 +168,7 @@ let run_eio ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 30)
     | Some process_cmd ->
         Fiber.collect_pending_commands root_fiber
         |> List.iter (fun (Fiber.Erased_cmd cmd) ->
-               process_cmd (fun () -> ()) cmd)
+            process_cmd (fun () -> ()) cmd)
   in
 
   let render () =
@@ -177,38 +184,42 @@ let run_eio ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 30)
 
   let on_input event =
     (* First, route the event through our input router *)
-    (match event with
-    | Input.Mouse mouse_evt ->
-        (* Extract position and convert to our mouse event type *)
-        (* Convert from 1-based terminal coordinates to 0-based *)
-        let dec n = if n > 0 then n - 1 else 0 in
-        let x, y, evt =
-          match mouse_evt with
-          | Input.Button_press (x, y, button, _) ->
-              (dec x, dec y, Engine.Input_router.(Button_down button))
-          | Input.Button_release (x, y, button, _) ->
-              (dec x, dec y, Engine.Input_router.(Button_up button))
-          | Input.Motion (x, y, _, _) ->
-              (dec x, dec y, Engine.Input_router.Motion)
-        in
-        Engine.Input_router.on_mouse runtime_ctx.input_router ~x ~y evt
-    | Input.Key evt -> (
-        (* Handle tab navigation specially *)
-        match evt.key with
-        | Input.Tab ->
-            Engine.Focus_manager.handle_tab runtime_ctx.focus_manager
-              ~forward:(not evt.modifier.shift)
-        | _ -> Engine.Input_router.on_keyboard runtime_ctx.input_router evt)
-    | _ -> ());
+    let consumed =
+      match event with
+      | Input.Mouse mouse_evt ->
+          (* Extract position and convert to our mouse event type *)
+          (* Convert from 1-based terminal coordinates to 0-based *)
+          let dec n = if n > 0 then n - 1 else 0 in
+          let x, y, evt =
+            match mouse_evt with
+            | Input.Button_press (x, y, button, _) ->
+                (dec x, dec y, Engine.Input_router.(Button_down button))
+            | Input.Button_release (x, y, button, _) ->
+                (dec x, dec y, Engine.Input_router.(Button_up button))
+            | Input.Motion (x, y, _, _) ->
+                (dec x, dec y, Engine.Input_router.Motion)
+          in
+          Engine.Input_router.on_mouse runtime_ctx.input_router ~x ~y evt
+      | Input.Key evt -> (
+          (* Handle tab navigation specially *)
+          match evt.key with
+          | Input.Tab ->
+              Engine.Focus_manager.handle_tab runtime_ctx.focus_manager
+                ~forward:(not evt.modifier.shift)
+          | _ -> Engine.Input_router.on_keyboard runtime_ctx.input_router evt)
+      | _ -> false
+    in
 
     (* ------------- always run after any event ------------- *)
 
-    (* Run original subscriptions *)
-    let event' = Engine.Event.Input event in
-    Fiber.collect_subscriptions root_fiber
-    |> List.iter (fun (Fiber.Erased_sub sub) ->
+    (* Run original subscriptions, but exclude events that were consumed
+       by focused element handlers to prevent double-processing *)
+    (if not consumed then
+       let event' = Engine.Event.Input event in
+       Fiber.collect_subscriptions root_fiber
+       |> List.iter (fun (Fiber.Erased_sub sub) ->
            Fiber.with_handler root_fiber (fun () ->
-               Sub.run ~dispatch:(fun _ -> ()) event' sub));
+               Sub.run ~dispatch:(fun _ -> ()) event' sub)));
 
     (* Execute any commands enqueued by subs immediately (e.g., Cmd.quit) *)
     flush_pending ();
@@ -226,8 +237,8 @@ let run_eio ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 30)
     let ev = Engine.Event.Input (Input.Resize (w, h)) in
     Fiber.collect_subscriptions root_fiber
     |> List.iter (fun (Fiber.Erased_sub sub) ->
-           Fiber.with_handler root_fiber (fun () ->
-               Sub.run ~dispatch:(fun _ -> ()) ev sub));
+        Fiber.with_handler root_fiber (fun () ->
+            Sub.run ~dispatch:(fun _ -> ()) ev sub));
     flush_pending ();
     if Fiber.is_dirty root_fiber then
       Option.iter Engine.Program.force_full_redraw !prog_ref
@@ -237,8 +248,8 @@ let run_eio ~sw ~env ?terminal ?(alt_screen = true) ?(mouse = false) ?(fps = 30)
     let event = Engine.Event.Tick elapsed in
     Fiber.collect_subscriptions root_fiber
     |> List.iter (fun (Fiber.Erased_sub sub) ->
-           Fiber.with_handler root_fiber (fun () ->
-               Sub.run ~dispatch:(fun _ -> ()) event sub));
+        Fiber.with_handler root_fiber (fun () ->
+            Sub.run ~dispatch:(fun _ -> ()) event sub));
     flush_pending ()
     (* Note: No need to explicitly request render here as mark_dirty 
        will call request_render_ref when reaching root *)

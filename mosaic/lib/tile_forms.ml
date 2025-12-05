@@ -67,10 +67,12 @@ let input ?(label_position = `Left) ?(label_width = None) ?(required = false)
   in
   let current_value = Option.value ~default:internal_value value in
   let is_focused = Tile_events.use_focus key in
-  
+
   (* Handle blur for submit *)
-  Hook.use_effect ~deps:(Deps.keys [ Deps.bool is_focused ]) (fun () ->
-      if not is_focused && Option.is_some on_submit then 
+  Hook.use_effect
+    ~deps:(Deps.keys [ Deps.bool is_focused ])
+    (fun () ->
+      if (not is_focused) && Option.is_some on_submit then
         Option.iter (fun f -> f current_value) on_submit;
       None);
 
@@ -81,25 +83,31 @@ let input ?(label_position = `Left) ?(label_width = None) ?(required = false)
   in
 
   (* Handle keyboard events *)
-  Tile_events.use_key_press key (fun event ->
-      if not is_focused || disabled then ()
+  Tile_events.use_key_press_filter key (fun event ->
+      if (not is_focused) || disabled then false
       else
         match event.key with
-        | Enter -> Option.iter (fun f -> f current_value) on_submit
+        | Enter ->
+            Option.iter (fun f -> f current_value) on_submit;
+            true
         | Char c when is_printable c ->
             let ch = String.make 1 (Uchar.to_char c) in
             let new_value = current_value ^ ch in
             (match value with
             | None -> set_internal_value new_value
             | Some _ -> ());
-            Option.iter (fun f -> f new_value) on_change
+            Option.iter (fun f -> f new_value) on_change;
+            true
         | Backspace when String.length current_value > 0 ->
-            let new_value = String.sub current_value 0 (pred (String.length current_value)) in
+            let new_value =
+              String.sub current_value 0 (pred (String.length current_value))
+            in
             (match value with
             | None -> set_internal_value new_value
             | Some _ -> ());
-            Option.iter (fun f -> f new_value) on_change
-        | _ -> ());
+            Option.iter (fun f -> f new_value) on_change;
+            true
+        | _ -> false);
 
   (* Mark as focusable *)
   Tile_events.use_focusable key ?tab_index ();
@@ -191,8 +199,8 @@ let select ?(label_position = `Left) ?(label_width = None) ?(required = false)
   let is_focused = Tile_events.use_focus key in
 
   (* Handle keyboard events *)
-  Tile_events.use_key_press key (fun event ->
-      if disabled then ()
+  Tile_events.use_key_press_filter key (fun event ->
+      if disabled then false
       else if is_expanded then
         match event.key with
         | Up when current_selected > 0 ->
@@ -202,7 +210,8 @@ let select ?(label_position = `Left) ?(label_width = None) ?(required = false)
             | Some _ -> ());
             Option.iter
               (fun f -> f new_selected (List.nth options new_selected))
-              on_change
+              on_change;
+            true
         | Down when current_selected < List.length options - 1 ->
             let new_selected = current_selected + 1 in
             (match selected with
@@ -210,27 +219,35 @@ let select ?(label_position = `Left) ?(label_width = None) ?(required = false)
             | Some _ -> ());
             Option.iter
               (fun f -> f new_selected (List.nth options new_selected))
-              on_change
+              on_change;
+            true
         | Enter ->
             (* Select current item and close *)
             Option.iter
               (fun f -> f current_selected (List.nth options current_selected))
               on_change;
-            set_expanded false
-        | Escape -> set_expanded false
+            set_expanded false;
+            true
+        | Escape ->
+            set_expanded false;
+            true
         | Char c when Uchar.to_int c = 0x20 ->
             (* space - select current and close dropdown *)
             Option.iter
               (fun f -> f current_selected (List.nth options current_selected))
               on_change;
-            set_expanded false
-        | _ -> ()
+            set_expanded false;
+            true
+        | _ -> false
       else if is_focused then
         match event.key with
-        | Enter -> set_expanded true
+        | Enter ->
+            set_expanded true;
+            true
         | Char c when Uchar.to_int c = 0x20 ->
             (* space *)
-            set_expanded true
+            set_expanded true;
+            true
         | Up when current_selected > 0 ->
             let new_selected = current_selected - 1 in
             (match selected with
@@ -238,7 +255,8 @@ let select ?(label_position = `Left) ?(label_width = None) ?(required = false)
             | Some _ -> ());
             Option.iter
               (fun f -> f new_selected (List.nth options new_selected))
-              on_change
+              on_change;
+            true
         | Down when current_selected < List.length options - 1 ->
             let new_selected = current_selected + 1 in
             (match selected with
@@ -246,9 +264,10 @@ let select ?(label_position = `Left) ?(label_width = None) ?(required = false)
             | Some _ -> ());
             Option.iter
               (fun f -> f new_selected (List.nth options new_selected))
-              on_change
-        | _ -> ()
-      else ());
+              on_change;
+            true
+        | _ -> false
+      else false);
 
   (* Mark as focusable *)
   Tile_events.use_focusable key ?tab_index ();
@@ -347,8 +366,8 @@ let radio_group ?(style = Style.empty) ?(disabled = false) ?tab_index ?selected
   let is_focused = Tile_events.use_focus key in
 
   (* Handle keyboard events *)
-  Tile_events.use_key_press key (fun event ->
-      if disabled then ()
+  Tile_events.use_key_press_filter key (fun event ->
+      if disabled then false
       else
         match event.key with
         | (Up | Left) when current_selected > 0 ->
@@ -358,7 +377,8 @@ let radio_group ?(style = Style.empty) ?(disabled = false) ?tab_index ?selected
             | Some _ -> ());
             Option.iter
               (fun f -> f new_selected (List.nth options new_selected))
-              on_change
+              on_change;
+            true
         | (Down | Right) when current_selected < List.length options - 1 ->
             let new_selected = current_selected + 1 in
             (match selected with
@@ -366,13 +386,15 @@ let radio_group ?(style = Style.empty) ?(disabled = false) ?tab_index ?selected
             | Some _ -> ());
             Option.iter
               (fun f -> f new_selected (List.nth options new_selected))
-              on_change
+              on_change;
+            true
         | Char c when Uchar.to_int c = 0x20 ->
             (* space - confirm selection *)
             Option.iter
               (fun f -> f current_selected (List.nth options current_selected))
-              on_change
-        | _ -> ());
+              on_change;
+            true
+        | _ -> false);
 
   (* Mark as focusable *)
   Tile_events.use_focusable key ?tab_index ();
@@ -420,10 +442,12 @@ let textarea ?(style = Style.empty) ?border ?(border_style = Style.empty)
   in
   let current_value = Option.value ~default:internal_value value in
   let is_focused = Tile_events.use_focus key in
-  
+
   (* Handle blur for submit *)
-  Hook.use_effect ~deps:(Deps.keys [ Deps.bool is_focused ]) (fun () ->
-      if not is_focused && Option.is_some on_submit then 
+  Hook.use_effect
+    ~deps:(Deps.keys [ Deps.bool is_focused ])
+    (fun () ->
+      if (not is_focused) && Option.is_some on_submit then
         Option.iter (fun f -> f current_value) on_submit;
       None);
 
@@ -434,27 +458,30 @@ let textarea ?(style = Style.empty) ?border ?(border_style = Style.empty)
   in
 
   (* Handle keyboard events *)
-  Tile_events.use_key_press key (fun event ->
-      if not is_focused || disabled then ()
+  Tile_events.use_key_press_filter key (fun event ->
+      if (not is_focused) || disabled then false
       else
         match event.key with
         | Enter when event.modifier.shift ->
             (* Shift+Enter submits *)
-            Option.iter (fun f -> f current_value) on_submit
+            Option.iter (fun f -> f current_value) on_submit;
+            true
         | Enter ->
             (* Regular Enter adds newline *)
             let new_value = current_value ^ "\n" in
             (match value with
             | None -> set_internal_value new_value
             | Some _ -> ());
-            Option.iter (fun f -> f new_value) on_change
+            Option.iter (fun f -> f new_value) on_change;
+            true
         | Char c when is_printable c ->
             let ch = String.make 1 (Uchar.to_char c) in
             let new_value = current_value ^ ch in
             (match value with
             | None -> set_internal_value new_value
             | Some _ -> ());
-            Option.iter (fun f -> f new_value) on_change
+            Option.iter (fun f -> f new_value) on_change;
+            true
         | Backspace when String.length current_value > 0 ->
             let new_value =
               String.sub current_value 0 (pred (String.length current_value))
@@ -462,8 +489,9 @@ let textarea ?(style = Style.empty) ?border ?(border_style = Style.empty)
             (match value with
             | None -> set_internal_value new_value
             | Some _ -> ());
-            Option.iter (fun f -> f new_value) on_change
-        | _ -> ());
+            Option.iter (fun f -> f new_value) on_change;
+            true
+        | _ -> false);
 
   (* Mark as focusable *)
   Tile_events.use_focusable key ?tab_index ();

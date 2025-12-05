@@ -48,8 +48,10 @@ val focus_next : t -> unit
 val focus_prev : t -> unit
 (** Move focus to the previous element (wraps around) *)
 
-val handle_tab : t -> forward:bool -> unit
-(** Handle Tab key press. [forward] = true for Tab, false for Shift+Tab *)
+val handle_tab : t -> forward:bool -> bool
+(** Handle Tab key press. [forward] = true for Tab, false for Shift+Tab
+    [handle_tab t ~forward] moves focus accordingly and returns [true] if the
+    tab event was handled (i.e. focus changed) and [false] otherwise. *)
 
 val clear : t -> unit
 (** Clear all focusable elements and remove focus *)

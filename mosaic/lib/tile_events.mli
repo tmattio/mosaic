@@ -36,6 +36,21 @@ val use_click : Ui.Attr.key -> (unit -> unit) -> unit
         Ui.with_key key (...)
     ]} *)
 
+val use_click_filter : Ui.Attr.key -> (unit -> bool) -> unit
+(** Subscribe to click events on an element. The callback is invoked when the
+    element is clicked and should return [true] if the event was handled
+    (consumed) or [false] to let it propagate.
+
+    Example:
+    {[
+      let button ~on_click () =
+        let key = Tile.use_key ~prefix:"btn" in
+        Tile_events.use_click_filter key (fun () ->
+          on_click ();
+          true);
+        Ui.with_key key (...)
+    ]} *)
+
 val use_hover : Ui.Attr.key -> bool
 (** Subscribe to hover events on an element. The callback is invoked with [true]
     when the mouse enters and [false] when it leaves.
@@ -54,7 +69,15 @@ val use_focus : Ui.Attr.key -> bool
 
 val use_key_press : Ui.Attr.key -> (key_event -> unit) -> unit
 (** Subscribe to keyboard events when the element has focus. The callback
-    receives keyboard events when the element is focused. *)
+    receives keyboard events when the element is focused. All events are
+    consumed (prevent propagation to global subscriptions). For selective
+    consumption, use [use_key_press_filter]. *)
+
+val use_key_press_filter : Ui.Attr.key -> (key_event -> bool) -> unit
+(** Subscribe to keyboard events when the element has focus. The callback
+    receives keyboard events and returns [true] if the event was handled and
+    should be consumed (not propagate to global subscriptions), or [false] to
+    let the event propagate. *)
 
 val use_bounds : Ui.Attr.key -> Ui.Layout_snapshot.rect option
 (** Get the current bounds of an element from the layout snapshot. Returns

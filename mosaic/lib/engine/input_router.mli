@@ -18,11 +18,13 @@ type drag_event = {
 }
 
 type handler =
-  | Click of Ui.Attr.key * (unit -> unit)
+  | Click of Ui.Attr.key * (unit -> bool)
   | Hover of Ui.Attr.key * (bool -> unit)
   | Drag of Ui.Attr.key * (drag_event -> unit)
   | Focus of Ui.Attr.key * (bool -> unit)
-  | Key_press of Ui.Attr.key * (Input.key_event -> unit)
+  | Key_press of Ui.Attr.key * (Input.key_event -> bool)
+      (** Key press handler that returns [true] if the event was consumed and
+          should not propagate further *)
   | Scroll of Ui.Attr.key * (int -> unit)
 (* delta: positive for down, negative for up *)
 
@@ -33,8 +35,13 @@ val subscribe : t -> handler -> subscription_id
 val unsubscribe : t -> subscription_id -> unit
 val set_snapshot : t -> Ui.Layout_snapshot.t -> unit
 val set_focused : t -> Ui.Attr.key option -> unit
-val on_mouse : t -> x:int -> y:int -> mouse_event -> unit
-val on_keyboard : t -> Input.key_event -> unit
+val on_mouse : t -> x:int -> y:int -> mouse_event -> bool
+
+val on_keyboard : t -> Input.key_event -> bool
+(** [on_keyboard t event] dispatches a keyboard event to the focused element's
+    handlers. Returns [true] if any handler consumed the event (indicated the
+    event should not propagate further). *)
+
 val get_hovered : t -> Ui.Attr.key option
 val get_dragging : t -> Ui.Attr.key option
 val get_focused : t -> Ui.Attr.key option

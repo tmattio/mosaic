@@ -39,22 +39,23 @@ let pp_drag_event ppf evt =
     evt.y pp_phase evt.phase evt.start_x evt.start_y evt.dx evt.dy
 
 type handler =
-  | Click of Attr.key * (unit -> unit)
+  | Click of Attr.key * (unit -> bool)
   | Hover of Attr.key * (bool -> unit)
   | Drag of Attr.key * (drag_event -> unit)
   | Focus of Attr.key * (bool -> unit)
-  | Key_press of Attr.key * (Input.key_event -> unit)
+  | Key_press of Attr.key * (Input.key_event -> bool)
   | Scroll of Attr.key * (int -> unit)
 (* delta: positive for down, negative for up *)
+(* handlers return a bool for whether the event was consumed *)
 
 type subscription_id = int
 
 type handlers = {
-  mutable clicks : (subscription_id * (unit -> unit)) list;
+  mutable clicks : (subscription_id * (unit -> bool)) list;
   mutable hovers : (subscription_id * (bool -> unit)) list;
   mutable drags : (subscription_id * (drag_event -> unit)) list;
   mutable focuses : (subscription_id * (bool -> unit)) list;
-  mutable keypresses : (subscription_id * (Input.key_event -> unit)) list;
+  mutable keypresses : (subscription_id * (Input.key_event -> bool)) list;
   mutable scrolls : (subscription_id * (int -> unit)) list;
 }
 
@@ -149,6 +150,16 @@ let get_hovered t = t.hovered
 let get_dragging t =
   match t.dragging with Some (key, _, _) -> Some key | None -> None
 
+let consume_first_handler handlers arg =
+  let exception Done in
+  try
+    (* Supposedly faster? *)
+    List.fold_left
+      (fun consumed (_, handler) ->
+        if consumed then raise Done else handler arg)
+      false handlers
+  with Done -> true
+
 let set_focused t key =
   let old_focused = t.focused in
   t.focused <- key;
@@ -179,7 +190,7 @@ let on_mouse t ~x ~y event =
   match t.snapshot with
   | None ->
       Log.debug (fun m -> m "No snapshot available for mouse event routing");
-      ()
+      false
   | Some snapshot -> (
       Log.debug (fun m -> m "Routing mouse event through snapshot");
       match event with
@@ -206,57 +217,67 @@ let on_mouse t ~x ~y event =
                 }
               in
               match Key_tbl.find_opt t.by_key key with
-              | Some handlers -> List.iter (fun (_, f) -> f evt) handlers.drags
-              | None -> ())
-          | None -> ())
+              | Some handlers ->
+                  List.iter (fun (_, f) -> f evt) handlers.drags;
+                  true
+              | None -> false)
+          | None -> false)
       | Button_down Input.Wheel_up -> (
           match Layout_snapshot.hit_test snapshot ~x ~y with
           | Some key -> (
               match Key_tbl.find_opt t.by_key key with
               | Some handlers ->
-                  List.iter (fun (_, f) -> f (-3)) handlers.scrolls
-              | None -> ())
-          | None -> ())
+                  List.iter (fun (_, f) -> f (-3)) handlers.scrolls;
+                  true
+              | None -> false)
+          | None -> false)
       | Button_down Input.Wheel_down -> (
           match Layout_snapshot.hit_test snapshot ~x ~y with
           | Some key -> (
               match Key_tbl.find_opt t.by_key key with
-              | Some handlers -> List.iter (fun (_, f) -> f 3) handlers.scrolls
-              | None -> ())
-          | None -> ())
+              | Some handlers ->
+                  List.iter (fun (_, f) -> f 3) handlers.scrolls;
+                  true
+              | None -> false)
+          | None -> false)
       | Button_up b when List.mem b [ Input.Left; Input.Right; Input.Middle ] ->
-          (match t.dragging with
-          | Some (drag_key, start_x, start_y) -> (
-              let evt =
-                {
-                  x;
-                  y;
-                  phase = `End;
-                  start_x;
-                  start_y;
-                  dx = x - start_x;
-                  dy = y - start_y;
-                }
-              in
-              (match Key_tbl.find_opt t.by_key drag_key with
-              | Some handlers -> List.iter (fun (_, f) -> f evt) handlers.drags
-              | None -> ());
+          let consumed =
+            match t.dragging with
+            | Some (drag_key, start_x, start_y) -> (
+                let evt =
+                  {
+                    x;
+                    y;
+                    phase = `End;
+                    start_x;
+                    start_y;
+                    dx = x - start_x;
+                    dy = y - start_y;
+                  }
+                in
+                (match Key_tbl.find_opt t.by_key drag_key with
+                | Some handlers ->
+                    List.iter (fun (_, f) -> f evt) handlers.drags
+                | None -> ());
 
-              match Layout_snapshot.hit_test snapshot ~x ~y with
-              | Some key when key = drag_key -> (
-                  match Key_tbl.find_opt t.by_key key with
-                  | Some handlers ->
-                      Log.info (fun m ->
-                          m "Click event delivered to component with key");
-                      List.iter (fun (_, f) -> f ()) handlers.clicks
-                  | None ->
-                      Log.debug (fun m ->
-                          m "Click event on component with no click handler"))
-              | _ -> ())
-          | None -> ());
-          t.dragging <- None
-      | Button_down _ -> () (* Other button types not handled *)
-      | Button_up _ -> () (* Button up without dragging - ignore *)
+                match Layout_snapshot.hit_test snapshot ~x ~y with
+                | Some key when key = drag_key -> (
+                    match Key_tbl.find_opt t.by_key key with
+                    | Some handlers ->
+                        Log.info (fun m ->
+                            m "Click event delivered to component with key");
+                        consume_first_handler handlers.clicks ()
+                    | None ->
+                        Log.debug (fun m ->
+                            m "Click event on component with no click handler");
+                        false)
+                | _ -> false)
+            | None -> false
+          in
+          t.dragging <- None;
+          consumed
+      | Button_down _ -> false (* Other button types not handled *)
+      | Button_up _ -> false (* Button up without dragging - ignore *)
       | Motion -> (
           (* Handle dragging immediately - drag events need real-time feedback *)
           (match t.dragging with
@@ -294,23 +315,28 @@ let on_mouse t ~x ~y event =
 
                 match Key_tbl.find_opt t.by_key key with
                 | Some handlers ->
-                    List.iter (fun (_, f) -> f true) handlers.hovers
-                | None -> ())
+                    List.iter (fun (_, f) -> f true) handlers.hovers;
+                    true
+                | None -> false)
+              else false
           | None -> (
               match t.hovered with
               | Some prev_key -> (
                   t.hovered <- None;
                   match Key_tbl.find_opt t.by_key prev_key with
                   | Some handlers ->
-                      List.iter (fun (_, f) -> f false) handlers.hovers
-                  | None -> ())
-              | None -> ())))
+                      List.iter (fun (_, f) -> f false) handlers.hovers;
+                      true
+                  | None -> false)
+              | None -> false)))
 
 let on_keyboard t event =
   Log.debug (fun m -> m "Keyboard event: %a" Input.pp_key_event event);
   match t.focused with
   | Some key -> (
       match Key_tbl.find_opt t.by_key key with
-      | Some handlers -> List.iter (fun (_, f) -> f event) handlers.keypresses
-      | None -> ())
-  | None -> ()
+      | Some handlers ->
+          (* Run handlers and return true at the first event that consumes *)
+          consume_first_handler handlers.keypresses event
+      | None -> false)
+  | None -> false

@@ -145,7 +145,9 @@ let focus_prev t =
             let prev_idx = if idx = 0 then !size_ref - 1 else idx - 1 in
             focus t !arr_ref.(prev_idx).key)
 
-let handle_tab t ~forward = if forward then focus_next t else focus_prev t
+let handle_tab t ~forward =
+  if forward then focus_next t else focus_prev t;
+  true
 
 let clear t =
   Hashtbl.clear t.focusables_map;
