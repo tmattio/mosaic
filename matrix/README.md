@@ -1,214 +1,106 @@
 # Matrix
 
-Matrix is a terminal programming toolkit for OCaml that provides low-level terminal control, input parsing, and terminal emulation capabilities.
+A fast, full-featured, modern terminal UI library for OCaml.
 
-## Overview
+## Why Matrix?
 
-Matrix consists of five modules:
+- **Minimal dependencies** – Only depends on `uutf` for UTF-8 decoding. No transitive dependency bloat.
+- **High performance** – Designed for 60+ FPS rendering. Zero-allocation frame diffing, efficient glyph pooling, and double-buffered rendering minimize GC pressure.
+- **Modular architecture** – Small, focused libraries (`matrix.ansi`, `matrix.grid`, `matrix.pty`, `matrix.vte`, etc.) that you can use independently or combine as needed.
+- **Immediate-mode API** – A simple render loop with `on_render`, `on_input`, and `on_resize` callbacks. No framework overhead—just draw your UI each frame.
+- **Native alpha blending** – RGBA colors with proper alpha compositing for translucent overlays and smooth visual effects.
+- **Full Unicode support** – Grapheme clusters, emoji, wide characters, and 24-bit color with correct alignment across terminal width calculation methods.
+- **Modern terminal protocols** – Kitty keyboard (with auto-detection), SGR/X10/URXVT mouse tracking, bracketed paste, and focus reporting—all negotiated automatically.
+- **Safe terminal handling** – Raw mode, alternate screen, and input protocols are restored on exit, even if your code raises an exception.
+- **Declarative and imperative APIs** – Use the mutable `Grid` for performance-critical paths, or the Notty-inspired `Image` DSL for compositional layouts.
+- **Built-in devtools** – Debug overlay for frame timing and FPS, and frame dumps to disk for diagnostics.
 
-- **ANSI**: Generates ANSI escape sequences following ECMA-48/ANSI X3.64 standards
-- **Input**: Parses terminal byte sequences into structured events (keyboard, mouse, paste)
-- **TTY**: Raw terminal mode control and terminal attribute management
-- **PTY**: Pseudo-terminal creation and process spawning
-- **VTE**: Virtual terminal emulator with ANSI escape sequence processing
+## Getting Started
 
-## Installation
+Install via opam:
 
 ```bash
 opam install matrix
 ```
 
-## Module Reference
+Or build the library locally:
 
-### ANSI
-
-Generates ANSI escape sequences for terminal control:
-
-```ocaml
-(* Generate styled text *)
-let red_bold = Ansi.style [`Fg `Red; `Bold] "Error"
-(* Output: "\027[31;1mError\027[0m" *)
-
-(* Cursor control *)
-let move_cursor = Ansi.cursor_position 10 20  (* Move to row 10, column 20 *)
-(* Output: "\027[10;20H" *)
-
-(* 256-color and RGB support *)
-let orange = Ansi.sgr [`Fg (`Index 208)]       (* 256-color palette *)
-let custom = Ansi.sgr [`Fg (`RGB (255, 128, 0))] (* 24-bit true color *)
+```bash
+dune build @install
 ```
 
-Supported features:
-- 16 basic colors + bright variants
-- 256-color palette (0-255)
-- 24-bit RGB colors
-- Text attributes: bold, italic, underline, strikethrough, etc.
-- Cursor movement and visibility
-- Screen clearing and scrolling
-- Hyperlinks (OSC 8)
+Run a demo to confirm everything works:
 
-### Input Module
-
-Parses terminal input sequences with support for:
-
-- **Keyboard protocols**: Legacy ANSI, Kitty keyboard protocol
-- **Mouse protocols**: X10, SGR, URXVT with motion tracking
-- **Bracketed paste mode**: Distinguishes typed input from pasted text
-- **Key modifiers**: Ctrl, Alt, Shift, Super (Cmd/Win)
-- **Special keys**: F1-F20, media keys, navigation keys
-
-```ocaml
-let parser = Input.create () in
-let events = Input.feed parser bytes 0 len in
-List.iter (function
-  | Input.Key { key = Char c; modifier; _ } when modifier.ctrl ->
-      Printf.printf "Ctrl+%s pressed\n" (Uchar.to_string c)
-  | Input.Mouse (Button_press (x, y, Left, _)) ->
-      Printf.printf "Left click at (%d, %d)\n" x y  (* 0-based coordinates *)
-  | Input.Paste_start -> print_endline "Paste started"
-  | _ -> ()
-) events
+```bash
+dune exec ./examples/01-rain/main.exe
 ```
 
-The parser handles partial escape sequences split across reads:
-```ocaml
-(* First read gets partial sequence *)
-let events1 = Input.feed parser "\027[" 0 2 in    (* [] - no complete event *)
-(* Second read completes it *)
-let events2 = Input.feed parser "A" 0 1 in        (* [Key Up] *)
-```
-
-### TTY Module
-
-Low-level terminal control:
+### Hello Terminal
 
 ```ocaml
-(* Open terminal and enable raw mode *)
-let tty = Tty.of_fd Unix.stdin in
-let original_attrs = Tty.get_attrs tty in
-Tty.set_raw_mode tty;
+open Matrix
 
-(* Terminal operations *)
-let (width, height) = Tty.get_size tty in  (* Get terminal dimensions *)
-
-(* Restore original mode on exit *)
-Tty.set_attrs tty original_attrs
+let () =
+  let app = Matrix.create () in
+  let frames = ref 0 in
+  Matrix.run app
+    ~on_frame:(fun _ ~dt:_ -> incr frames)
+    ~on_input:(fun app event ->
+      match event with
+      | Input.Key { key = Input.Key.Escape; _ } -> Matrix.stop app
+      | _ -> ())
+    ~on_render:(fun app ->
+      let grid = Matrix.grid app in
+      Grid.clear grid;
+      Grid.draw_text grid ~x:2 ~y:2
+        ~text:(Printf.sprintf "Frames: %d" !frames))
 ```
 
-### PTY Module
+Matrix switches the TTY to raw mode, negotiates terminal features, and restores everything on exit—even if a callback raises.
 
-Pseudo-terminal operations:
+### Display Modes
+
+Matrix supports three rendering modes:
+
+- **`Alt`** (default) – Full-screen alternate buffer, content restored on exit
+- **`Primary_inline`** – Renders below the shell prompt, grows dynamically
+- **`Primary_split`** – Fixed region at bottom of primary screen
+
+Use `Primary_inline` for CLI tools that should leave output in terminal history:
 
 ```ocaml
-(* Create PTY and spawn process *)
-let pty = Pty.create () in
-let pid = Pty.spawn pty ~argv:[|"/bin/bash"; "-l"|] in
-
-(* Get file descriptors *)
-let master_fd = Pty.master_fd pty in  (* Read/write to subprocess *)
-let slave_fd = Pty.slave_fd pty in    (* Subprocess's terminal *)
-
-(* Set PTY size *)
-Pty.set_size pty ~rows:24 ~cols:80;
-
-(* Cleanup *)
-Unix.waitpid [] pid;
-Pty.close pty
+let app = Matrix.create ~mode:`Primary_inline () in
+(* Use Matrix.static_print to write persistent output above the UI *)
 ```
 
-### VTE Module
+## API Overview
 
-Virtual terminal emulator that maintains a grid of cells with styling:
+Matrix is organized into focused libraries that can be used together or independently:
 
-```ocaml
-(* Create 80x24 terminal with 1000 lines of scrollback *)
-let vte = Vte.create ~rows:24 ~cols:80 ~scrollback:1000 () in
+| Library           | Module     | Purpose                                               |
+| ----------------- | ---------- | ----------------------------------------------------- |
+| `matrix`          | `Matrix`   | Immediate-mode runtime with render loop and callbacks |
+| `matrix`          | `Image`    | Declarative Notty-inspired composition DSL            |
+| `matrix.grid`     | `Grid`     | Mutable framebuffer with colors and styles            |
+| `matrix.screen`   | `Screen`   | Double-buffered rendering with ANSI diffing           |
+| `matrix.input`    | `Input`    | Keyboard, mouse, paste, focus event parsing           |
+| `matrix.terminal` | `Terminal` | TTY control and capability detection                  |
+| `matrix.ansi`     | `Ansi`     | Low-level ANSI escape sequence generation             |
+| `matrix.glyph`    | `Glyph`    | Unicode grapheme cluster management                   |
+| `matrix.terminfo` | `Terminfo` | Terminal capability database                          |
+| `matrix.pty`      | `Pty`      | Pseudo-terminal spawning (POSIX + Windows ConPTY)     |
+| `matrix.vte`      | `Vte`      | Virtual terminal emulator for embedding output        |
 
-(* Feed terminal data *)
-Vte.feed vte bytes offset length;
+API documentation is available in the corresponding `.mli` files under `lib/`.
 
-(* Query cell content *)
-let cell = Vte.get_cell vte ~row:0 ~col:0 in
-match cell with
-| Some { Vte.Cell.char; style } ->
-    Printf.printf "Character: U+%04X\n" (Uchar.to_int char);
-    if style.bold then print_endline "Bold";
-    if style.fg <> `Default then print_endline "Colored"
-| None -> print_endline "Empty cell"
+## Acknowledgements
 
-(* Check if screen needs redrawing *)
-if Vte.is_dirty vte then (
-  render_screen vte;
-  Vte.clear_dirty vte
-)
-```
+Matrix draws inspiration from several excellent projects:
 
-VTE supports:
-- Full ANSI escape sequence processing (CSI, OSC, etc.)
-- Unicode text with combining characters
-- 256-color and RGB color support
-- Text attributes (bold, italic, underline, etc.)
-- Alternate screen buffer
-- Scrollback buffer
-- Cursor tracking and visibility
-- Grid diffing for efficient rendering
-
-## Practical Examples
-
-### Simple Terminal UI
-
-```ocaml
-(* Clear screen and draw border *)
-print_string Ansi.clear_screen;
-print_string (Ansi.cursor_position 1 1);
-print_string (Ansi.style [`Fg `Blue] "┌──────────────┐");
-
-(* Enable mouse tracking *)
-print_string Ansi.mouse_on;
-
-(* Process input *)
-let parser = Input.create () in
-let rec loop () =
-  let buffer = Bytes.create 1024 in
-  let n = Unix.read Unix.stdin buffer 0 1024 in
-  let events = Input.feed parser buffer 0 n in
-  List.iter (function
-    | Input.Key { key = Escape; _ } -> raise Exit
-    | Input.Mouse (Button_press (x, y, _, _)) ->
-        print_string (Ansi.cursor_position (y + 1) (x + 1));
-        print_char 'X'
-    | _ -> ()
-  ) events;
-  if n > 0 then loop ()
-in
-try loop () with Exit ->
-  print_string Ansi.mouse_off;
-  print_string Ansi.clear_screen
-```
-
-### Terminal Recorder
-
-```ocaml
-(* Record terminal session to VTE *)
-let record_session () =
-  let pty = Pty.create () in
-  let vte = Vte.create ~rows:24 ~cols:80 () in
-  let pid = Pty.spawn pty ~argv:[|"/bin/bash"|] in
-  
-  let rec copy_loop () =
-    let buffer = Bytes.create 4096 in
-    match Unix.select [Pty.master_fd pty] [] [] 0.1 with
-    | [fd], _, _ ->
-        let n = Unix.read fd buffer 0 4096 in
-        Unix.write Unix.stdout buffer 0 n |> ignore;
-        Vte.feed vte buffer 0 n;
-        copy_loop ()
-    | _ -> copy_loop ()
-  in
-  
-  copy_loop ()
-```
+- [Notty](https://github.com/pqwy/notty) – Declarative terminal graphics for OCaml - our `Image` API is directly inspired by Notty's.
+- [OpenTUI](https://github.com/sst/opentui/) – TypeScript library for building terminal user interfaces (TUIs).
+- [Rich](https://github.com/Textualize/rich) – Python library for rich text and beautiful formatting in the terminal.
 
 ## License
 
-ISC License. See [LICENSE](../LICENSE) for details.
+Matrix is licensed under the ISC license. See [LICENSE](../LICENSE) for details.

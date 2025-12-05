@@ -1,726 +1,530 @@
-(* Performance counters *)
-module Perf = struct
-  type counter = {
-    mutable bytes_allocated : int;
-    mutable cells_diffed : int;
-    mutable frames_rendered : int;
-    mutable patches_generated : int;
-    mutable cache_hits : int;
-    mutable cache_misses : int;
-  }
+(* matrix/lib/screen.ml *)
 
-  let global_counter =
-    {
-      bytes_allocated = 0;
-      cells_diffed = 0;
-      frames_rendered = 0;
-      patches_generated = 0;
-      cache_hits = 0;
-      cache_misses = 0;
-    }
+(* High-performance terminal screen with functional API.
+   Zero-allocation frame building through direct buffer mutation. *)
 
-  let reset () =
-    global_counter.bytes_allocated <- 0;
-    global_counter.cells_diffed <- 0;
-    global_counter.frames_rendered <- 0;
-    global_counter.patches_generated <- 0;
-    global_counter.cache_hits <- 0;
-    global_counter.cache_misses <- 0
+open StdLabels
+module Hit_grid = Hit_grid
+module Pool = Glyph
+module Esc = Ansi.Escape
 
-  let get () =
-    {
-      bytes_allocated = global_counter.bytes_allocated;
-      cells_diffed = global_counter.cells_diffed;
-      frames_rendered = global_counter.frames_rendered;
-      patches_generated = global_counter.patches_generated;
-      cache_hits = global_counter.cache_hits;
-      cache_misses = global_counter.cache_misses;
-    }
-end
+(* --- Types & Metrics --- *)
 
-module Viewport = struct
-  type t = { row : int; col : int; width : int; height : int }
-
-  let make ~row ~col ~width ~height =
-    if width < 0 || height < 0 then
-      invalid_arg "Viewport.make: negative width/height";
-    { row; col; width; height }
-
-  let full ~rows ~cols = { row = 0; col = 0; width = cols; height = rows }
-
-  let contains { row; col; width; height } ~row:r ~col:c =
-    r >= row && r < row + height && c >= col && c < col + width
-
-  let intersect a b =
-    let row' = max a.row b.row in
-    let col' = max a.col b.col in
-    let row_end = min (a.row + a.height) (b.row + b.height) in
-    let col_end = min (a.col + a.width) (b.col + b.width) in
-    let height' = row_end - row' in
-    let width' = col_end - col' in
-    if width' <= 0 || height' <= 0 then None
-    else Some { row = row'; col = col'; width = width'; height = height' }
-
-  (* Pretty-printing and equality *)
-
-  let pp ppf v =
-    Fmt.pf ppf "@[<h>Viewport {row=%d; col=%d; width=%d; height=%d}@]" v.row
-      v.col v.width v.height
-
-  let equal v1 v2 =
-    v1.row = v2.row && v1.col = v2.col && v1.width = v2.width
-    && v1.height = v2.height
-end
-
-module G = Grid
-module C = G.Cell
-
-type patch =
-  | Run of {
-      row : int;
-      col : int;
-      text : string;
-      style : Ansi.Style.t;
-      width : int;
-    }
-  | Clear_region of { row : int; col : int; width : int; height : int }
-  | Clear_line of { row : int; from_col : int }
-  | Clear_screen
-
-(* Pretty-printing and equality for patches *)
-
-let pp_patch ppf = function
-  | Run { row; col; text; style; width } ->
-      Fmt.pf ppf "@[<h>Run {row=%d; col=%d; text=%S; style=%a; width=%d}@]" row
-        col text Ansi.Style.pp style width
-  | Clear_region { row; col; width; height } ->
-      Fmt.pf ppf "@[<h>Clear_region {row=%d; col=%d; width=%d; height=%d}@]" row
-        col width height
-  | Clear_line { row; from_col } ->
-      Fmt.pf ppf "@[<h>Clear_line {row=%d; from_col=%d}@]" row from_col
-  | Clear_screen -> Fmt.string ppf "Clear_screen"
-
-let patch_equal p1 p2 =
-  match (p1, p2) with
-  | Run r1, Run r2 ->
-      r1.row = r2.row && r1.col = r2.col && r1.text = r2.text
-      && Ansi.Style.equal r1.style r2.style
-      && r1.width = r2.width
-  | Clear_region r1, Clear_region r2 ->
-      r1.row = r2.row && r1.col = r2.col && r1.width = r2.width
-      && r1.height = r2.height
-  | Clear_line l1, Clear_line l2 -> l1.row = l2.row && l1.from_col = l2.from_col
-  | Clear_screen, Clear_screen -> true
-  | _ -> false
-
-type t = {
-  mutable front : G.t;
-  mutable back : G.t;
-  (* lazily initialised on first frame if caller forgets begin_frame *)
-  mutable frame_started : bool;
-  mutable cursor : (int * int) option;
-  mutable needs_full_redraw : bool;
+type stats_state = {
+  mutable frame_count : int;
+  mutable total_cells : int;
+  mutable total_bytes : int;
 }
-(** Screen type – two grids of identical size. *)
 
-let create ~rows ~cols ?(east_asian_context = false) ?style () =
-  let g1 = G.create ~rows ~cols ~east_asian_context () in
-  let g2 = G.create ~rows ~cols ~east_asian_context () in
-  (* Initialize with the given style if provided *)
-  Option.iter
-    (fun s ->
-      G.clear ~style:s g1;
-      G.clear ~style:s g2)
-    style;
-  {
-    front = g1;
-    back = g2;
-    frame_started = false;
-    cursor = None;
-    needs_full_redraw = false;
-  }
+type stats = { frame_count : int; total_cells : int; total_bytes : int }
 
-let rows t = G.rows t.front
-let cols t = G.cols t.front
+type frame_metrics = {
+  frame_count : int;
+  cells : int;
+  bytes : int;
+  frame_time_ms : float;
+  interval_ms : float;
+  reset_ms : float;
+  overall_frame_ms : float;
+  frame_callback_ms : float;
+  stdout_ms : float;
+  mouse_enabled : bool;
+  cursor_visible : bool;
+  timestamp_s : float;
+}
 
-let resize t ~rows ~cols =
-  G.resize t.front ~rows ~cols;
-  G.resize t.back ~rows ~cols;
-  t.needs_full_redraw <- true
+type input_state = {
+  mutable mouse_enabled : bool;
+  mutable applied_mouse_enabled : bool;
+}
 
-let with_viewport t _viewport f =
-  (* The viewport is handled by the drawing functions themselves *)
-  f t
+(* screen state - mutable internal state for maximum performance *)
+type t = {
+  (* Configuration *)
+  glyph_pool : Pool.pool;
+  stats : stats_state;
+  mutable last_metrics : frame_metrics;
+  (* Buffers (Double Buffering) *)
+  mutable current : Grid.t;
+  mutable next : Grid.t;
+  mutable hit_current : Hit_grid.t;
+  mutable hit_next : Hit_grid.t;
+  (* State *)
+  input : input_state;
+  cursor : Cursor_state.t;
+  mutable row_offset : int;
+  mutable scratch_bytes : bytes;
+  mutable last_render_time : float option;
+  (* Capabilities *)
+  mutable prefer_explicit_width : bool;
+  mutable explicit_width_capable : bool;
+  mutable use_explicit_width : bool;
+  mutable hyperlinks_capable : bool;
+  (* Post-processing *)
+  mutable post_process_fns : (Grid.t -> delta:float -> unit) list;
+  mutable post_process_cache : (Grid.t -> delta:float -> unit) list;
+  mutable post_process_dirty : bool;
+}
 
-let iter_rect { Viewport.row; col; width; height } f =
-  for r = row to row + height - 1 do
-    for c = col to col + width - 1 do
-      f r c
-    done
-  done
+(* --- Constants & Inline Helpers --- *)
 
-let clear ?viewport t =
-  match viewport with
-  | None ->
-      (* Clear entire screen if no viewport specified *)
-      G.clear t.back
-  | Some vp ->
-      with_viewport t vp @@ fun t' ->
-      G.with_updates t'.back (fun grid ->
-          iter_rect vp (fun r c -> G.set grid ~row:r ~col:c None))
+let[@inline] width_step w = if w <= 0 then 1 else w
 
-let clear_rect ?viewport t ~row_start ~row_end ~col_start ~col_end =
-  (* Use batch mode for clearing rectangles *)
-  G.with_updates t.back (fun _ ->
-      let extra =
-        Viewport.make ~row:row_start ~col:col_start
-          ~width:(col_end - col_start + 1)
-          ~height:(row_end - row_start + 1)
-      in
-      let viewport =
-        match viewport with
-        | Some c -> Viewport.intersect c extra
-        | None -> Some extra
-      in
-      clear ?viewport t)
+(* --- Writer Logic --- *)
 
-let clear_line ?viewport t ~row ~col =
-  let extra = Viewport.make ~row ~col ~width:(cols t - col) ~height:1 in
-  let viewport =
-    match viewport with
-    | Some c -> Viewport.intersect c extra
-    | None -> Some extra
-  in
-  clear ?viewport t
+(* Writes a grid cell's content to the output buffer. *)
+let[@inline] add_code_to_writer ~explicit_width ~cell_width pool
+    (scratch : bytes ref) (w : Esc.writer) grid idx =
+  let code = Grid.get_code grid idx in
 
-let set_grapheme ?viewport t ~row ~col ~glyph ~attrs =
-  match viewport with
-  | None -> G.set_grapheme t.back ~row ~col ~glyph ~attrs
-  | Some vp ->
-      with_viewport t vp @@ fun t' ->
-      if Viewport.contains vp ~row ~col then
-        G.set_grapheme t'.back ~row ~col ~glyph ~attrs
-
-let set_text ?viewport t ~row ~col ~text ~attrs =
-  (* When viewport is provided, row/col are relative to the viewport *)
-  match viewport with
-  | None ->
-      (* Check for negative positions or out of bounds *)
-      if row < 0 || col < 0 || row >= G.rows t.back || col >= G.cols t.back then
-        (0, 0)
-      else
-        let cols_advanced = G.set_text t.back ~row ~col ~text ~attrs in
-        let lines_written = if cols_advanced > 0 then 1 else 0 in
-        (lines_written, cols_advanced)
-  | Some vp ->
-      (* Check if row is out of viewport *)
-      if row < 0 || row >= vp.Viewport.height then (0, 0)
-      else if col < 0 then
-        (* Negative col - skip beginning of text *)
-        let skip_chars = -col in
-        if skip_chars >= String.length text then (0, 0)
-          (* All text is before viewport *)
-        else
-          let visible_text =
-            String.sub text skip_chars (String.length text - skip_chars)
-          in
-          let abs_row = vp.Viewport.row + row in
-          let abs_col =
-            vp.Viewport.col
-            (* Start at viewport's column 0 *)
-          in
-          let max_width = vp.Viewport.width in
-          let cols_advanced =
-            G.set_text t.back ~row:abs_row ~col:abs_col ~text:visible_text
-              ~attrs ~max_width
-          in
-          let lines_written = if cols_advanced > 0 then 1 else 0 in
-          (lines_written, cols_advanced)
-      else if col >= vp.Viewport.width then (0, 0)
-        (* Starting position is beyond viewport *)
-      else
-        (* Normal case - position is within viewport *)
-        let abs_row = vp.Viewport.row + row in
-        let abs_col = vp.Viewport.col + col in
-        let max_width = vp.Viewport.width - col in
-        let max_width = max 0 max_width in
-        let cols_advanced =
-          G.set_text t.back ~row:abs_row ~col:abs_col ~text ~attrs ~max_width
-        in
-        let lines_written = if cols_advanced > 0 then 1 else 0 in
-        (lines_written, min cols_advanced max_width)
-
-let set_multiline_text ?viewport t ~row ~col ~text ~attrs =
-  let lines = String.split_on_char '\n' text in
-  let max_cols = ref 0 in
-  let max_row =
-    match viewport with None -> max_int | Some vp -> vp.Viewport.height
-  in
-  let lines_written = ref 0 in
-  (* Use batch mode for multi-line text *)
-  G.with_updates t.back (fun _ ->
-      let rec loop idx = function
-        | [] -> idx
-        | hd :: tl ->
-            if idx >= max_row then idx
-              (* Stop if we've reached viewport height *)
-            else
-              let _lines, cols =
-                set_text ?viewport t ~row:(row + idx) ~col ~text:hd ~attrs
-              in
-              if cols > 0 then max_cols := max !max_cols cols;
-              loop (idx + 1) tl
-      in
-      lines_written := loop 0 lines);
-  (!lines_written, !max_cols)
-
-let back t =
-  if not t.frame_started then
-    failwith "Screen.back: Must call begin_frame before accessing back buffer";
-  t.back
-
-let front t = t.front
-
-let begin_frame t =
-  (* Mark that we've started a new frame. The back buffer already contains
-     the previous frame's content from the last present() call. *)
-  t.frame_started <- true
-
-let present t =
-  (* If begin_frame wasn't called and we don't need a full redraw,
-     there were no changes to the back buffer *)
-  if (not t.frame_started) && not t.needs_full_redraw then []
+  if Int32.equal code 0l || Grid.is_continuation grid idx then
+    Esc.emit (Esc.char ' ') w
+  else if Pool.is_simple code then
+    (* Fast Path: ASCII *)
+    let u = Int32.to_int code in
+    if u < 128 then Esc.emit (Esc.char (Char.chr u)) w
+    else Esc.emit (Esc.utf8 u) w
   else
-    let dirty_regions =
-      if t.needs_full_redraw then
-        [
-          {
-            G.min_row = 0;
-            max_row = G.rows t.back - 1;
-            min_col = 0;
-            max_col = G.cols t.back - 1;
-          };
-        ]
-      else G.diff_regions t.front t.back
+    (* Complex Grapheme *)
+    let len = Pool.length pool code in
+    if len <= 0 then Esc.emit (Esc.char ' ') w
+    else (
+      (* Resize scratch buffer if needed *)
+      if len > Bytes.length !scratch then
+        scratch := Bytes.create (max (Bytes.length !scratch * 2) len);
+
+      (* Zero-alloc copy from Pool -> Scratch *)
+      let written = Pool.blit pool code !scratch 0 in
+
+      if written <= 0 then Esc.emit (Esc.char ' ') w
+      else if explicit_width && cell_width >= 2 then
+        Esc.emit
+          (Esc.explicit_width_bytes ~width:cell_width ~bytes:!scratch ~off:0
+             ~len:written)
+          w
+      else Esc.emit (Esc.bytes !scratch ~off:0 ~len:written) w)
+
+(* --- Core Rendering Logic --- *)
+
+type render_mode = [ `Diff | `Full ]
+
+(* The hot loop. Scans grid, checks dirty flags, diffs against previous frame, emits sequences. *)
+let render_generic ~pool ~row_offset ~use_explicit_width ~use_hyperlinks ~mode
+    ~writer ~scratch ~prev ~curr =
+  let width = Grid.width curr in
+  let height = Grid.height curr in
+  let row_offset = max 0 row_offset in
+
+  (* Diff predicate using the specialized zero-alloc comparator *)
+  let cell_changed =
+    match prev with
+    | None -> fun _ _ -> true
+    | Some p ->
+        fun prev_idx curr_idx -> not (Grid.cells_equal p prev_idx curr curr_idx)
+  in
+
+  let prev_width = match prev with None -> 0 | Some p -> Grid.width p in
+  let prev_height = match prev with None -> 0 | Some p -> Grid.height p in
+
+  let is_cell_changed y x idx curr_width =
+    if curr_width <= 0 then false
+    else
+      match mode with
+      | `Full -> true
+      | `Diff ->
+          if y >= prev_height || x >= prev_width then true
+          else
+            let prev_idx = (y * prev_width) + x in
+            cell_changed prev_idx idx
+  in
+
+  (* SGR State Tracking *)
+  let style = Ansi.Sgr_state.create () in
+  let active_link = ref None in
+  let cells_updated = ref 0 in
+
+  let close_active_link () =
+    match !active_link with
+    | None -> ()
+    | Some _ ->
+        Esc.emit Esc.hyperlink_end writer;
+        active_link := None
+  in
+
+  let set_active_link link =
+    match (!active_link, link) with
+    | Some a, Some b when String.equal a b -> ()
+    | _ -> (
+        close_active_link ();
+        match link with
+        | None -> ()
+        | Some url when use_hyperlinks ->
+            Esc.emit (Esc.hyperlink_start ~url) writer;
+            active_link := Some url
+        | Some _ -> ())
+  in
+
+  (* --- Main Render Loop --- *)
+  for y = 0 to height - 1 do
+    let x = ref 0 in
+    while !x < width do
+      let idx = (y * width) + !x in
+      let curr_width = Grid.cell_width curr idx in
+
+      if curr_width <= 0 then incr x
+      else if is_cell_changed y !x idx curr_width then (
+        (* Move cursor to start of changed run *)
+        let target_row = row_offset + y + 1 in
+        Esc.emit (Esc.cursor_position ~row:target_row ~col:(!x + 1)) writer;
+
+        (* Inner loop: Write consecutive changed cells *)
+        let rec write_run x_acc =
+          if x_acc >= width then x_acc
+          else
+            let idx = (y * width) + x_acc in
+            let curr_width = Grid.cell_width curr idx in
+            let step = width_step curr_width in
+
+            if curr_width <= 0 then x_acc
+            else if not (is_cell_changed y x_acc idx curr_width) then x_acc
+            else
+              (* Emit Style/Color using zero-alloc accessors *)
+              let attrs = Grid.get_attrs curr idx in
+              let link = Grid.hyperlink_url curr (Grid.get_link curr idx) in
+              set_active_link link;
+
+              (* Individual component access to avoid tuple allocation *)
+              let fg_r = Grid.get_fg_r curr idx in
+              let fg_g = Grid.get_fg_g curr idx in
+              let fg_b = Grid.get_fg_b curr idx in
+              let fg_a = Grid.get_fg_a curr idx in
+
+              let bg_r = Grid.get_bg_r curr idx in
+              let bg_g = Grid.get_bg_g curr idx in
+              let bg_b = Grid.get_bg_b curr idx in
+              let bg_a = Grid.get_bg_a curr idx in
+
+              Ansi.Sgr_state.update style writer ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r
+                ~bg_g ~bg_b ~bg_a ~attrs;
+
+              (* Emit Content *)
+              add_code_to_writer ~explicit_width:use_explicit_width
+                ~cell_width:curr_width pool scratch writer curr idx;
+
+              cells_updated := !cells_updated + step;
+              write_run (x_acc + step)
+        in
+        let new_x = write_run !x in
+        (* Reset style at end of run to prevent bleed to skipped cells *)
+        Ansi.Sgr_state.reset style;
+        x := new_x)
+      else x := !x + width_step curr_width
+    done
+  done;
+
+  close_active_link ();
+  Ansi.Sgr_state.reset style;
+  !cells_updated
+
+(* --- Frame Lifecycle --- *)
+
+let[@inline] swap_buffers r =
+  let old_current = r.current in
+  r.current <- r.next;
+  r.next <- old_current;
+  let old_hit_current = r.hit_current in
+  r.hit_current <- r.hit_next;
+  r.hit_next <- old_hit_current;
+  Hit_grid.clear r.hit_next;
+  Grid.clear r.next
+
+let post_processes r =
+  if r.post_process_dirty then (
+    r.post_process_cache <- List.rev r.post_process_fns;
+    r.post_process_dirty <- false);
+  r.post_process_cache
+
+let prepare_frame r =
+  let now = Unix.gettimeofday () in
+  let delta_seconds =
+    match r.last_render_time with
+    | None ->
+        r.last_render_time <- Some now;
+        0.
+    | Some prev ->
+        let delta = now -. prev in
+        r.last_render_time <- Some now;
+        if delta <= 0. then 0. else delta
+  in
+  let delta_ms = delta_seconds *. 1000. in
+  List.iter ~f:(fun fn -> fn r.next ~delta:delta_ms) (post_processes r);
+  (now, delta_seconds)
+
+let finalize_frame r ~now ~delta_seconds ~elapsed_ms ~cells ~output_len =
+  let t_reset_start = Unix.gettimeofday () in
+
+  (* Swap buffers; [next] is cleared to provide a fresh canvas for the builder. *)
+  swap_buffers r;
+
+  let t_reset_end = Unix.gettimeofday () in
+  let reset_ms = (t_reset_end -. t_reset_start) *. 1000. in
+
+  (* Update Stats *)
+  r.stats.frame_count <- r.stats.frame_count + 1;
+  r.stats.total_cells <- r.stats.total_cells + cells;
+  r.stats.total_bytes <- r.stats.total_bytes + output_len;
+
+  (* Snapshot Metrics *)
+  let next_m =
+    {
+      frame_count = r.stats.frame_count;
+      cells;
+      bytes = output_len;
+      frame_time_ms = elapsed_ms;
+      interval_ms = delta_seconds *. 1000.;
+      reset_ms;
+      overall_frame_ms = 0.;
+      frame_callback_ms = 0.;
+      stdout_ms = 0.;
+      mouse_enabled = r.input.mouse_enabled;
+      cursor_visible = Cursor_state.is_visible r.cursor;
+      timestamp_s = now;
+    }
+  in
+  r.last_metrics <- next_m
+
+(* --- Input / Cursor Handling --- *)
+
+let mouse_enable_sequences =
+  [
+    Esc.mouse_tracking_on;
+    Esc.mouse_button_tracking_on;
+    Esc.mouse_motion_on;
+    Esc.mouse_sgr_mode_on;
+  ]
+
+let mouse_disable_sequences =
+  [
+    Esc.mouse_motion_off;
+    Esc.mouse_button_tracking_off;
+    Esc.mouse_tracking_off;
+    Esc.mouse_sgr_mode_off;
+  ]
+
+let emit_input_side_effects r (w : Esc.writer) =
+  if r.input.mouse_enabled <> r.input.applied_mouse_enabled then (
+    let sequences =
+      if r.input.mouse_enabled then mouse_enable_sequences
+      else mouse_disable_sequences
     in
-    t.needs_full_redraw <- false;
-    (* Simply swap the buffer references - no copying needed *)
-    let temp = t.front in
-    t.front <- t.back;
-    t.back <- temp;
-    t.frame_started <- false;
-    dirty_regions
+    List.iter ~f:(fun seq -> Esc.emit seq w) sequences;
+    r.input.applied_mouse_enabled <- r.input.mouse_enabled)
 
-let batch t f =
-  begin_frame t;
-  let result = f t in
-  let _ = present t in
-  result
+let emit_prefix r (w : Esc.writer) =
+  emit_input_side_effects r w;
+  Esc.emit Esc.sync_output_on w;
+  Cursor_state.hide_temporarily r.cursor w
 
-let diff_cells t =
-  let cells = G.diff_cells t.front t.back in
-  Perf.global_counter.cells_diffed <-
-    Perf.global_counter.cells_diffed + List.length cells;
-  cells
-  |> List.filter_map (fun (row, col) ->
-         match G.get t.back ~row ~col with
-         | Some cell when not (C.is_continuation cell) -> Some (row, col, cell)
-         | _ -> None)
+let emit_suffix r (w : Esc.writer) =
+  Cursor_state.emit r.cursor ~row_offset:r.row_offset w;
+  Esc.emit Esc.sync_output_off w
 
-let flush_damage t = G.flush_damage t.back
-let hash_front t = Hashtbl.hash (G.to_string t.front)
-let hash_back t = Hashtbl.hash (G.to_string t.back)
+(* --- Public API --- *)
 
-let clone t =
+let submit r ~(mode : render_mode) ~(writer : Esc.writer) =
+  let now, delta_seconds = prepare_frame r in
+  emit_prefix r writer;
+
+  let scratch = ref r.scratch_bytes in
+  let render_start = Unix.gettimeofday () in
+  let prev = match mode with `Diff -> Some r.current | `Full -> None in
+
+  let cells =
+    render_generic ~pool:r.glyph_pool ~row_offset:r.row_offset
+      ~use_explicit_width:r.use_explicit_width
+      ~use_hyperlinks:r.hyperlinks_capable ~mode ~writer ~scratch ~prev
+      ~curr:r.next
+  in
+
+  let elapsed_ms = (Unix.gettimeofday () -. render_start) *. 1000. in
+  r.scratch_bytes <- !scratch;
+
+  emit_suffix r writer;
+  let output_len = Esc.len writer in
+
+  finalize_frame r ~now ~delta_seconds ~elapsed_ms ~cells ~output_len
+
+let render_to_bytes ?(full = false) frame bytes =
+  let writer = Esc.make bytes in
+  let mode = if full then `Full else `Diff in
+  submit frame ~mode ~writer;
+  Esc.len writer
+
+let render ?(full = false) frame =
+  let bytes = Bytes.create 65536 in
+  let len = render_to_bytes ~full frame bytes in
+  Bytes.sub_string bytes ~pos:0 ~len
+
+let glyph_pool t = t.glyph_pool
+
+(* Creation & Management *)
+
+let create ?glyph_pool ?width_method ?respect_alpha ?(mouse_enabled = true)
+    ?(cursor_visible = true) ?(explicit_width = false) () =
+  let glyph_pool =
+    match glyph_pool with Some p -> p | None -> Pool.create_pool ()
+  in
+  let w_method = match width_method with Some m -> m | None -> `Unicode in
+  let r_alpha = match respect_alpha with Some r -> r | None -> false in
+
+  let t =
+    {
+      glyph_pool;
+      stats = { frame_count = 0; total_cells = 0; total_bytes = 0 };
+      last_metrics =
+        {
+          frame_count = 0;
+          cells = 0;
+          bytes = 0;
+          frame_time_ms = 0.;
+          interval_ms = 0.;
+          reset_ms = 0.;
+          overall_frame_ms = 0.;
+          frame_callback_ms = 0.;
+          stdout_ms = 0.;
+          mouse_enabled;
+          cursor_visible;
+          timestamp_s = 0.;
+        };
+      current =
+        Grid.create ~width:1 ~height:1 ~glyph_pool ~width_method:w_method
+          ~respect_alpha:r_alpha ();
+      next =
+        Grid.create ~width:1 ~height:1 ~glyph_pool ~width_method:w_method
+          ~respect_alpha:r_alpha ();
+      hit_current = Hit_grid.create ~width:0 ~height:0;
+      hit_next = Hit_grid.create ~width:0 ~height:0;
+      input = { mouse_enabled; applied_mouse_enabled = false };
+      cursor = Cursor_state.create ();
+      row_offset = 0;
+      post_process_fns = [];
+      post_process_cache = [];
+      post_process_dirty = false;
+      prefer_explicit_width = explicit_width;
+      explicit_width_capable = true;
+      use_explicit_width = explicit_width;
+      hyperlinks_capable = true;
+      scratch_bytes = Bytes.create 256;
+      last_render_time = None;
+    }
+  in
+  Cursor_state.set_visible t.cursor cursor_visible;
+  t
+
+let reset t =
+  Grid.clear t.next;
+  Hit_grid.clear t.hit_current;
+  Hit_grid.clear t.hit_next;
+  t.last_render_time <- None;
+  t.stats.frame_count <- 0;
+  t.stats.total_cells <- 0;
+  t.stats.total_bytes <- 0;
+  Cursor_state.reset t.cursor
+
+let resize t ~width ~height =
+  Grid.resize t.current ~width ~height;
+  Grid.resize t.next ~width ~height;
+  Hit_grid.resize t.hit_current ~width ~height;
+  Hit_grid.resize t.hit_next ~width ~height;
+  Hit_grid.clear t.hit_current;
+  Hit_grid.clear t.hit_next;
+  if width > 0 && height > 0 then
+    Cursor_state.clamp_to_bounds t.cursor ~max_row:height ~max_col:width
+
+let internal_build t ~width ~height f =
+  if width <= 0 || height <= 0 then (
+    Hit_grid.clear t.hit_next;
+    t)
+  else (
+    if width <> Grid.width t.next || height <> Grid.height t.next then
+      resize t ~width ~height;
+    Hit_grid.clear t.hit_next;
+    f t.next t.hit_next;
+    t)
+
+let build t ~width ~height f =
+  internal_build t ~width ~height (fun grid hits -> f grid hits)
+
+let grid frame = frame.next
+let hit_grid frame = frame.hit_next
+let query_hit frame ~x ~y = Hit_grid.get frame.hit_current ~x ~y
+let row_offset t = t.row_offset
+let set_row_offset t offset = t.row_offset <- max 0 offset
+let active_height (t : t) = Grid.active_height t.next
+
+let stats t =
   {
-    front = G.copy t.front;
-    back = G.copy t.back;
-    frame_started = t.frame_started;
-    cursor = t.cursor;
-    needs_full_redraw = t.needs_full_redraw;
+    frame_count = t.stats.frame_count;
+    total_cells = t.stats.total_cells;
+    total_bytes = t.stats.total_bytes;
   }
 
-let snapshot t =
-  (* Return an immutable copy of the back buffer for background processing *)
-  G.copy t.back
+let last_metrics t = t.last_metrics
 
-let copy_to ~src ~dst =
-  (* Use the efficient blit operation to copy the entire grid *)
-  let rows = min (G.rows src.back) (G.rows dst.back) in
-  let cols = min (G.cols src.back) (G.cols dst.back) in
-  G.blit ~src:src.back
-    ~src_rect:{ row = 0; col = 0; width = cols; height = rows }
-    ~dst:dst.back ~dst_pos:(0, 0)
+let record_runtime_metrics t ~frame_callback_ms ~overall_frame_ms ~stdout_ms =
+  let m = t.last_metrics in
+  let new_m = { m with frame_callback_ms; overall_frame_ms; stdout_ms } in
+  t.last_metrics <- new_m
 
-(* Convert cells to run-length encoded patches - optimized with callback *)
-let cells_to_patches_iter cells callback =
-  (* Sort cells by row and column for proper run-length encoding *)
-  let cells =
-    List.sort
-      (fun (r1, c1, _) (r2, c2, _) ->
-        if r1 = r2 then compare c1 c2 else compare r1 r2)
-      cells
-  in
+let set_mouse_enabled t enabled = t.input.mouse_enabled <- enabled
+let set_cursor_visible t visible = Cursor_state.set_visible t.cursor visible
 
-  let rec build_runs current_run = function
-    | [] -> ( match current_run with None -> () | Some run -> callback run)
-    | (row, col, cell) :: rest -> (
-        let text = C.get_text cell in
-        let style = C.get_style cell in
-        let width = C.width cell in
+let set_cursor_position t ~row ~col =
+  Cursor_state.set_position t.cursor ~row ~col
 
-        match current_run with
-        | None ->
-            (* Start a new run if cell is not empty *)
-            if C.is_empty cell then build_runs None rest
-            else
-              let run = Run { row; col; text; style; width } in
-              build_runs (Some run) rest
-        | Some
-            (Run
-               {
-                 row = run_row;
-                 col = run_col;
-                 text = run_text;
-                 style = run_style;
-                 width = run_width;
-               }) ->
-            (* Check if we can extend the current run *)
-            if
-              row = run_row
-              && col = run_col + run_width
-              && Ansi.Style.equal style run_style
-              && not (C.is_empty cell)
-            then
-              (* Extend the run *)
-              let extended_run =
-                Run
-                  {
-                    row = run_row;
-                    col = run_col;
-                    text = run_text ^ text;
-                    style = run_style;
-                    width = run_width + width;
-                  }
-              in
-              build_runs (Some extended_run) rest
-            else (
-              (* Finish current run and maybe start a new one *)
-              callback
-                (Run
-                   {
-                     row = run_row;
-                     col = run_col;
-                     text = run_text;
-                     style = run_style;
-                     width = run_width;
-                   });
-              if C.is_empty cell then build_runs None rest
-              else
-                let new_run = Run { row; col; text; style; width } in
-                build_runs (Some new_run) rest)
-        | _ -> build_runs current_run rest)
-  in
+let clear_cursor_position t = Cursor_state.clear_position t.cursor
 
-  build_runs None cells
+let set_cursor_style t ~style ~blinking =
+  Cursor_state.set_style t.cursor ~style ~blinking
 
-let render t =
-  Perf.global_counter.frames_rendered <- Perf.global_counter.frames_rendered + 1;
+let clamp_byte v = max 0 (min 255 v)
 
-  let changes = diff_cells t in
-  let total_cells = rows t * cols t in
-  let changed_cells = List.length changes in
+let set_cursor_color t ~r ~g ~b =
+  Cursor_state.set_color t.cursor
+    (Some (clamp_byte r, clamp_byte g, clamp_byte b))
 
-  (* Compute the largest continuous rectangle of changes *)
-  let largest_rect_size =
-    let changed_positions =
-      List.map (fun (row, col, _) -> (row, col)) changes
-    in
-    match G.compute_update_regions changed_positions with
-    | [] -> 0
-    | regions ->
-        List.fold_left
-          (fun acc region ->
-            let size =
-              (region.G.max_row - region.G.min_row + 1)
-              * (region.G.max_col - region.G.min_col + 1)
-            in
-            max acc size)
-          0 regions
-  in
+let reset_cursor_color t = Cursor_state.set_color t.cursor None
 
-  (* Heuristic: clear screen if either:
-     - More than 30% of cells changed, OR
-     - The largest continuous rectangle is more than 25% of the screen *)
-  let patches = Queue.create () in
-  let add_patch p =
-    Queue.push p patches;
-    Perf.global_counter.patches_generated <-
-      Perf.global_counter.patches_generated + 1
-  in
+let apply_capabilities r ~explicit_width ~hyperlinks =
+  r.explicit_width_capable <- explicit_width;
+  r.use_explicit_width <- r.prefer_explicit_width && explicit_width;
+  r.hyperlinks_capable <- hyperlinks
 
-  (* Helper to check if a cell needs to be rendered (not empty or has style) *)
-  let needs_rendering cell =
-    (not (C.is_empty cell)) || C.get_style cell <> Ansi.Style.default
-  in
+let set_explicit_width t flag =
+  t.prefer_explicit_width <- flag;
+  t.use_explicit_width <- flag && t.explicit_width_capable
 
-  (* Helper to check if we should use Clear_screen optimization *)
-  let should_clear_screen () =
-    (* Count how many cells in the back buffer have non-default styles *)
-    let styled_cell_count = ref 0 in
-    for row = 0 to rows t - 1 do
-      for col = 0 to cols t - 1 do
-        match G.get t.back ~row ~col with
-        | Some cell when C.get_style cell <> Ansi.Style.default ->
-            incr styled_cell_count
-        | _ -> ()
-      done
-    done;
-    (* Don't use Clear_screen if we have any styled cells, as it would
-       erase the styling and require redrawing everything *)
-    !styled_cell_count = 0
-    && (float_of_int changed_cells /. float_of_int total_cells > 0.3
-       || largest_rect_size > total_cells / 4)
-  in
+let set_width_method (t : t) (method_ : Glyph.width_method) =
+  Grid.set_width_method t.current method_;
+  Grid.set_width_method t.next method_
 
-  (if should_clear_screen () then (
-     add_patch Clear_screen;
-     (* Build runs for the entire back buffer - including styled empty cells *)
-     for row = 0 to rows t - 1 do
-       let row_cells = ref [] in
-       for col = 0 to cols t - 1 do
-         match G.get t.back ~row ~col with
-         | Some cell when needs_rendering cell && not (C.is_continuation cell)
-           ->
-             row_cells := (row, col, cell) :: !row_cells
-         | _ -> ()
-       done;
-       cells_to_patches_iter (List.rev !row_cells) add_patch
-     done)
-   else
-     (* Separate changed cells into three categories:
-        1. Non-empty cells or empty cells with style -> render as runs
-        2. Empty cells with default style -> can be cleared *)
-     let cells_to_render, cells_to_clear =
-       List.partition (fun (_, _, cell) -> needs_rendering cell) changes
-     in
+let post_process f frame =
+  frame.post_process_fns <- f :: frame.post_process_fns;
+  frame.post_process_dirty <- true;
+  frame
 
-     (* Build patches for cells that need rendering *)
-     cells_to_patches_iter cells_to_render add_patch;
+let remove_post_process f frame =
+  frame.post_process_fns <-
+    List.filter ~f:(fun e -> not (e == f)) frame.post_process_fns;
+  frame.post_process_dirty <- true;
+  frame
 
-     (* Generate clear regions only for truly empty cells (no content, default style) *)
-     if cells_to_clear <> [] then
-       let clear_positions =
-         List.map (fun (r, c, _) -> (r, c)) cells_to_clear
-       in
-       let clear_regions = G.compute_update_regions clear_positions in
-       List.iter
-         (fun region ->
-           let patch =
-             Clear_region
-               {
-                 row = region.G.min_row;
-                 col = region.G.min_col;
-                 width = region.G.max_col - region.G.min_col + 1;
-                 height = region.G.max_row - region.G.min_row + 1;
-               }
-           in
-           add_patch patch)
-         clear_regions);
+let clear_post_processes frame =
+  frame.post_process_fns <- [];
+  frame.post_process_cache <- [];
+  frame.post_process_dirty <- false;
+  frame
 
-  Queue.fold (fun acc x -> x :: acc) [] patches |> List.rev
-
-let render_to_string t =
-  let buf = Buffer.create 1024 in
-  let prev_style = ref None in
-  for row = 0 to rows t - 1 do
-    let line_buf = Buffer.create 80 in
-    let line_prev_style = ref !prev_style in
-    let last_non_empty_col = ref (-1) in
-
-    (* First pass: find the last non-empty column *)
-    for col = 0 to cols t - 1 do
-      match G.get t.back ~row ~col with
-      | Some cell when (not (C.is_empty cell)) && not (C.is_continuation cell)
-        ->
-          last_non_empty_col := col
-      | _ -> ()
-    done;
-
-    (* Second pass: render the line *)
-    let col = ref 0 in
-    while !col < cols t do
-      match G.get t.back ~row ~col:!col with
-      | Some cell when (not (C.is_empty cell)) && not (C.is_continuation cell)
-        ->
-          let style = C.get_style cell in
-          (* Collect consecutive cells with the same style *)
-          let text_buf = Buffer.create 16 in
-          let cells_consumed = ref 0 in
-          let scan_col = ref !col in
-          while !scan_col < cols t do
-            match G.get t.back ~row ~col:!scan_col with
-            | Some c
-              when (not (C.is_empty c))
-                   && (not (C.is_continuation c))
-                   && Ansi.Style.equal (C.get_style c) style ->
-                Buffer.add_string text_buf (C.get_text c);
-                let width = C.width c in
-                cells_consumed := !cells_consumed + width;
-                scan_col := !scan_col + width
-            | Some c when C.is_continuation c ->
-                (* Should not happen if we're tracking width properly *)
-                incr scan_col
-            | _ ->
-                (* Different style or empty - stop grouping *)
-                scan_col := cols t + 1 (* Break inner loop *)
-          done;
-
-          (* Output the grouped text with style *)
-          if !line_prev_style <> Some style then (
-            let sgr = Ansi.Style.to_sgr ~prev_style:!line_prev_style style in
-            Buffer.add_string line_buf sgr;
-            line_prev_style := Some style);
-          Buffer.add_string line_buf (Buffer.contents text_buf);
-          col := !col + !cells_consumed
-      | Some cell when C.is_continuation cell ->
-          (* Skip continuation cells - should not normally happen if tracking properly *)
-          incr col
-      | _ ->
-          (* Empty cell - only add space if we haven't reached the last non-empty column *)
-          if !col <= !last_non_empty_col then (
-            if
-              !line_prev_style <> None
-              && !line_prev_style <> Some Ansi.Style.default
-            then (
-              Buffer.add_string line_buf "\027[0m";
-              line_prev_style := Some Ansi.Style.default);
-            Buffer.add_char line_buf ' ');
-          incr col
-    done;
-
-    (* If line ends with non-default style and there are only empty cells after last content, add reset *)
-    (if
-       !line_prev_style <> None
-       && !line_prev_style <> Some Ansi.Style.default
-       && !last_non_empty_col >= 0
-     then
-       (* Check if there are empty cells after the last non-empty cell *)
-       let has_trailing_empty = !last_non_empty_col < cols t - 1 in
-       if has_trailing_empty then (
-         Buffer.add_string line_buf "\027[0m";
-         line_prev_style := Some Ansi.Style.default));
-
-    (* Add the line to the main buffer *)
-    Buffer.add_buffer buf line_buf;
-    prev_style := !line_prev_style;
-    if row < rows t - 1 then Buffer.add_char buf '\n'
-  done;
-  Buffer.contents buf
-
-let patch_to_sgr ?(prev_style = None) = function
-  | Run { row; col; text; style; width = _ } ->
-      let sgr = Ansi.Style.to_sgr ~prev_style style in
-      Printf.sprintf "\027[%d;%dH%s%s" (row + 1) (col + 1) sgr text
-  | Clear_region { row; col; width; height } ->
-      let buf = Buffer.create 256 in
-      for r = row to row + height - 1 do
-        Buffer.add_string buf (Printf.sprintf "\027[%d;%dH" (r + 1) (col + 1));
-        for _ = 0 to width - 1 do
-          Buffer.add_char buf ' '
-        done
-      done;
-      Buffer.contents buf
-  | Clear_line { row; from_col } ->
-      Printf.sprintf "\027[%d;%dH\027[K" (row + 1) (from_col + 1)
-  | Clear_screen -> "\027[2J\027[H"
-
-let patches_to_sgr patches =
-  let buf = Buffer.create 1024 in
-  let prev_style = ref None in
-  List.iter
-    (fun patch ->
-      (* Special handling for transitions to default style *)
-      let patch_str =
-        match patch with
-        | Run { row; col; text; style; _ }
-          when style = Ansi.Style.default && !prev_style <> None
-               && !prev_style <> Some Ansi.Style.default ->
-            (* Use full reset when transitioning to default style *)
-            Printf.sprintf "\027[%d;%dH\027[0m%s" (row + 1) (col + 1) text
-        | _ -> patch_to_sgr ~prev_style:!prev_style patch
-      in
-      Buffer.add_string buf patch_str;
-      (* Track the previous style for Run patches *)
-      match patch with
-      | Run { style; _ } -> prev_style := Some style
-      | _ -> () (* Keep prev_style for continuity *))
-    patches;
-  Buffer.contents buf
-
-let patches_to_sgr_synchronized patches =
-  let buf = Buffer.create 1024 in
-  (* Start synchronized update mode *)
-  Buffer.add_string buf Ansi.synchronized_update_on;
-  (* Add all patches *)
-  Buffer.add_string buf (patches_to_sgr patches);
-  (* End synchronized update mode *)
-  Buffer.add_string buf Ansi.synchronized_update_off;
-  Buffer.contents buf
-
-let get_cursor t = t.cursor
-
-let set_cursor t ~row ~col =
-  if row >= 0 && row < rows t && col >= 0 && col < cols t then
-    t.cursor <- Some (row, col)
-  else t.cursor <- None
-
-let render_viewport t viewport =
-  let buffer = Buffer.create 256 in
-  let vp = viewport in
-  for
-    r = vp.Viewport.row
-    to min (vp.Viewport.row + vp.Viewport.height - 1) (rows t - 1)
-  do
-    let line_buf = Buffer.create vp.Viewport.width in
-    let c = ref vp.Viewport.col in
-    let max_c = min (vp.Viewport.col + vp.Viewport.width) (cols t) in
-    while !c < max_c do
-      match G.get t.back ~row:r ~col:!c with
-      | Some cell when (not (C.is_empty cell)) && not (C.is_continuation cell)
-        ->
-          Buffer.add_string line_buf (C.get_text cell);
-          (* skip continuation columns *)
-          c := !c + C.width cell
-      | Some cell when C.is_continuation cell ->
-          (* Skip continuation cells *)
-          incr c
-      | _ ->
-          Buffer.add_char line_buf ' ';
-          incr c
-    done;
-    (* trim trailing spaces exactly like Grid.to_string *)
-    let line = Buffer.contents line_buf in
-    let len = String.length line in
-    let rec find_end i =
-      if i < 0 || line.[i] <> ' ' then i + 1 else find_end (i - 1)
-    in
-    let trimmed_len = find_end (len - 1) in
-    Buffer.add_substring buffer line 0 trimmed_len;
-    if r < min (vp.Viewport.row + vp.Viewport.height - 1) (rows t - 1) then
-      Buffer.add_char buffer '\n'
-  done;
-  Buffer.contents buffer
-
-let copy_viewport ~src ~dst ~src_viewport ~dst_row ~dst_col =
-  let vp = src_viewport in
-  (* Use blit for efficient rectangular copy *)
-  G.blit ~src:src.back
-    ~src_rect:
-      {
-        row = vp.Viewport.row;
-        col = vp.Viewport.col;
-        width = vp.Viewport.width;
-        height = vp.Viewport.height;
-      }
-    ~dst:dst.back ~dst_pos:(dst_row, dst_col)
+let add_hit_region frame ~x ~y ~width ~height ~id =
+  Hit_grid.add frame.hit_next ~x ~y ~width ~height ~id;
+  frame

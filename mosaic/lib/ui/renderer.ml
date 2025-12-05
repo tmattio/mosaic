@@ -1,937 +1,976 @@
-let src = Logs.Src.create "renderer" ~doc:"UI rendering events"
-
-module Log = (val Logs.src_log src : Logs.LOG)
-
-type render_context = {
-  screen : Screen.t;
-  dark : bool;
-  theme : Theme.t;
-  viewport : Screen.Viewport.t;
-  snapshot : Layout_snapshot.t option;
-      (* Optional snapshot to populate during render *)
-  mutable z_counter : int; (* Track z-order during rendering *)
-  inherited_style : Ansi.Style.t option;
-      (* Inherited style from parent for explicit inheritance *)
+type selection_state = {
+  selection : Selection.t;
+  mutable touched_nodes : Renderable.t list;
+  selected_nodes_ref : Renderable.t list ref;
 }
 
-type bounds = { x : float; y : float; width : float; height : float }
+type handler_id = Event_dispatcher.handler_id
 
-let measure_string str =
-  (* Use Grid's display width calculation which handles wide chars, emoji, etc. *)
-  Grid.string_width str
+type t = {
+  layout : unit Toffee.tree;
+  mutable root : Renderable.t option;
+  mutable focused_node : Renderable.t option;
+  nodes : (Toffee.Node_id.t, Renderable.t) Hashtbl.t;
+  renderables : (int, Renderable.t) Hashtbl.t;
+  mutable next_renderable_num : int;
+  lifecycle_nodes : (int, Renderable.t) Hashtbl.t;
+  event_dispatcher : Event_dispatcher.t;
+  screen : Screen.t;
+  mutable last_frame : Screen.t option;
+  mutable last_hits : Screen.Hit_grid.t option;
+  mutable width : int;
+  mutable height : int;
+  mutable last_layout_width : int;
+  mutable last_layout_height : int;
+  mutable dirty : bool;
+  mutable rendering : bool;
+  auto_focus_on_mouse_down : bool;
+  mutable current_selection : selection_state option;
+  mutable selection_containers : Renderable.t list;
+  mutable selection_listeners :
+    (anchor_x:int -> anchor_y:int -> focus_x:int -> focus_y:int -> unit) list;
+  mutable last_over : Renderable.t option;
+  mutable captured : Renderable.t option;
+  mutable last_pointer_x : int;
+  mutable last_pointer_y : int;
+  mutable live_active : bool;
+  mutable on_live_change : (bool -> unit) option;
+}
 
-(* Optimized single-pass truncation with minimal allocations *)
-let truncate_string_with_ellipsis str max_width suffix =
-  let suffix_width = Grid.string_width suffix in
-  let str_width = Grid.string_width str in
-  if str_width <= max_width then str
-  else
-    (* Single-pass truncation using byte positions *)
-    let target_width =
-      if max_width <= suffix_width then max_width else max_width - suffix_width
-    in
+type error =
+  | Layout_error of Toffee.Error.t
+  | Tree_mismatch
+  | Root_already_assigned
 
-    let decoder = Uutf.decoder ~encoding:`UTF_8 (`String str) in
-    let current_width = ref 0 in
-    let last_byte = ref 0 in
-    let continue = ref true in
+let set_live_active t now_live =
+  if now_live <> t.live_active then (
+    t.live_active <- now_live;
+    match t.on_live_change with Some cb -> cb now_live | None -> ())
 
-    while !continue do
-      match Uutf.decode decoder with
-      | `Uchar u ->
-          let char_width = Grid.char_width u in
-          let new_width = !current_width + char_width in
-          if new_width <= target_width then (
-            current_width := new_width;
-            last_byte := Uutf.decoder_byte_count decoder)
-          else continue := false
-      | _ -> continue := false
-    done;
+let create ?glyph_pool ?width_method ?respect_alpha ?mouse_enabled
+    ?cursor_visible ?auto_focus_on_mouse_down ?explicit_width () =
+  let resolved_mouse_enabled = Option.value ~default:true mouse_enabled in
+  let resolved_cursor_visible = Option.value ~default:true cursor_visible in
+  let resolved_explicit_width = Option.value ~default:false explicit_width in
 
-    if !last_byte = 0 then ""
-    else if max_width <= suffix_width then String.sub str 0 !last_byte
-    else String.sub str 0 !last_byte ^ suffix
-
-let pad_string str width =
-  let str_width = measure_string str in
-  if str_width >= width then str else str ^ String.make (width - str_width) ' '
-
-let expand_tabs ~tab_width ~start_col str =
-  let buf = Buffer.create (String.length str * 2) in
-  let col = ref start_col in
-  let decoder = Uutf.decoder ~encoding:`UTF_8 (`String str) in
-  let rec loop () =
-    match Uutf.decode decoder with
-    | `Uchar u ->
-        if Uchar.equal u (Uchar.of_char '\t') then (
-          let spaces = tab_width - (!col mod tab_width) in
-          Buffer.add_string buf (String.make spaces ' ');
-          col := !col + spaces)
-        else (
-          Uutf.Buffer.add_utf_8 buf u;
-          col := !col + Grid.char_width u);
-        loop ()
-    | `End -> ()
-    | `Malformed s ->
-        Buffer.add_string buf s;
-        loop ()
-    | `Await -> assert false
+  let screen =
+    Screen.create ?glyph_pool ?width_method ?respect_alpha
+      ~mouse_enabled:resolved_mouse_enabled
+      ~cursor_visible:resolved_cursor_visible
+      ~explicit_width:resolved_explicit_width ()
   in
-  loop ();
-  Buffer.contents buf
+  {
+    layout = Toffee.new_tree ();
+    root = None;
+    focused_node = None;
+    nodes = Hashtbl.create 128;
+    renderables = Hashtbl.create 128;
+    next_renderable_num = 1;
+    lifecycle_nodes = Hashtbl.create 32;
+    event_dispatcher = Event_dispatcher.create ();
+    screen;
+    last_frame = None;
+    last_hits = None;
+    width = 0;
+    height = 0;
+    last_layout_width = -1;
+    last_layout_height = -1;
+    dirty = false;
+    rendering = false;
+    auto_focus_on_mouse_down =
+      Option.value ~default:true auto_focus_on_mouse_down;
+    current_selection = None;
+    selection_containers = [];
+    selection_listeners = [];
+    last_over = None;
+    captured = None;
+    last_pointer_x = 0;
+    last_pointer_y = 0;
+    live_active = false;
+    on_live_change = None;
+  }
 
-(* Text wrapping cache for performance optimization *)
-module WrapCache = struct
-  type key = string * int
-  type t = (key, string list) Hashtbl.t
+let alloc_num t =
+  let n = t.next_renderable_num in
+  t.next_renderable_num <- n + 1;
+  n
 
-  let create () = Hashtbl.create 128
-  let find_opt = Hashtbl.find_opt
-  let add = Hashtbl.add
-end
+let gen_id t = Printf.sprintf "_fiber_%d" (alloc_num t)
 
-let wrap_cache = WrapCache.create ()
+let register_node t (node : Renderable.t) =
+  Hashtbl.replace t.nodes (Renderable.Internal.node_id node) node;
+  Hashtbl.replace t.renderables (Renderable.Internal.number node) node
 
-(* Optimized iterative text wrapping with caching *)
-let wrap_line_to_width line width measure_fn =
-  (* Check cache first *)
-  let cache_key = (line, width) in
-  match WrapCache.find_opt wrap_cache cache_key with
-  | Some result -> result
-  | None ->
-      (* Iterative implementation to avoid stack overflow and reduce allocations *)
-      let result = ref [] in
-      let current_pos = ref 0 in
-      let line_len = String.length line in
+let register_lifecycle_node t (node : Renderable.t) =
+  Hashtbl.replace t.lifecycle_nodes (Renderable.Internal.number node) node
 
-      while !current_pos < line_len do
-        let remaining =
-          String.sub line !current_pos (line_len - !current_pos)
-        in
+let unregister_lifecycle_node t (node : Renderable.t) =
+  Hashtbl.remove t.lifecycle_nodes (Renderable.Internal.number node)
 
-        if measure_fn remaining <= width then (
-          (* Rest of line fits, we're done *)
-          result := remaining :: !result;
-          current_pos := line_len)
-        else
-          (* Find break point using single pass *)
-          let decoder = Uutf.decoder ~encoding:`UTF_8 (`String remaining) in
-          let last_space_byte = ref (-1) in
-          let current_width = ref 0 in
-          let current_byte = ref 0 in
-          let break_byte = ref 0 in
-          let found_break = ref false in
+let root t = t.root
 
-          while not !found_break do
-            match Uutf.decode decoder with
-            | `Uchar u ->
-                let char_width = Grid.char_width u in
-                let new_width = !current_width + char_width in
-                let byte_after = Uutf.decoder_byte_count decoder in
+let clear_root t =
+  (match t.root with
+  | Some node ->
+      Renderable.Internal.set_is_root node false;
+      Renderable.Internal.set_on_live_count_change node None
+  | None -> ());
+  t.root <- None;
+  set_live_active t false;
+  t.dirty <- true
 
-                if new_width > width then (
-                  (* Found our break point *)
-                  break_byte :=
-                    if !last_space_byte > 0 then !last_space_byte
-                    else if !current_byte > 0 then !current_byte
-                    else byte_after;
-                  (* At least take one char *)
-                  found_break := true)
-                else (
-                  current_width := new_width;
-                  current_byte := byte_after;
-                  if Uchar.equal u (Uchar.of_char ' ') then
-                    last_space_byte := byte_after)
-            | `End ->
-                break_byte := String.length remaining;
-                found_break := true
-            | _ -> found_break := true
-          done;
+let request_render t = if not t.rendering then t.dirty <- true
 
-          if !break_byte = 0 then
-            (* Can't break, force at least one character *)
-            let decoder = Uutf.decoder ~encoding:`UTF_8 (`String remaining) in
-            match Uutf.decode decoder with
-            | `Uchar _ ->
-                let char_len = Uutf.decoder_byte_count decoder in
-                result := String.sub remaining 0 char_len :: !result;
-                current_pos := !current_pos + char_len
-            | _ -> current_pos := line_len (* Give up *)
-          else
-            let this_line = String.sub remaining 0 !break_byte in
-            result := this_line :: !result;
-            current_pos := !current_pos + !break_byte;
+let with_rendering t f =
+  let prev = t.rendering in
+  t.rendering <- true;
+  Fun.protect ~finally:(fun () -> t.rendering <- prev) f
 
-            (* Skip leading spaces on next line *)
-            let remaining_after =
-              String.sub line !current_pos (line_len - !current_pos)
-            in
-            let decoder =
-              Uutf.decoder ~encoding:`UTF_8 (`String remaining_after)
-            in
-            let space_bytes = ref 0 in
-            let continue = ref true in
-            while !continue do
-              match Uutf.decode decoder with
-              | `Uchar u ->
-                  if Uchar.equal u (Uchar.of_char ' ') then
-                    space_bytes := Uutf.decoder_byte_count decoder
-                  else continue := false
-              | _ -> continue := false
-            done;
-            current_pos := !current_pos + !space_bytes
-      done;
+let run_lifecycle_passes t =
+  Hashtbl.iter
+    (fun _ node -> Renderable.Internal.run_lifecycle_pass node)
+    t.lifecycle_nodes
 
-      let final_result = List.rev !result in
-      (* Cache the result *)
-      WrapCache.add wrap_cache cache_key final_result;
-      final_result
-
-let measure_text_content ~known_dimensions ~available_space ~tab_width ~wrap
-    content =
-  (* Unified text measurement logic using actual wrapping algorithm *)
-  let lines = String.split_on_char '\n' content in
-  (* Expand tabs before measuring *)
-  let expanded_lines =
-    List.map (fun line -> expand_tabs ~tab_width ~start_col:0 line) lines
+let blur_node t node =
+  let was_focused =
+    match t.focused_node with Some prev when prev == node -> true | _ -> false
   in
+  Renderable.Internal.blur_direct node;
+  if was_focused then (
+    t.focused_node <- None;
+    Event_dispatcher.set_focused_renderable t.event_dispatcher None;
+    t.dirty <- true)
 
-  (* Calculate width and height based on wrap mode *)
-  let computed_width, computed_height =
-    match wrap with
-    | `Wrap -> (
-        (* When wrapping, use actual wrap algorithm to count lines *)
-        match available_space.Toffee.Geometry.Size.width with
-        | Toffee.Available_space.Definite available_w ->
-            let available_width = max 1 (int_of_float available_w) in
-            (* Ensure at least 1 to avoid issues *)
-            (* Count wrapped lines using actual wrapping logic *)
-            let wrapped_line_count =
-              List.fold_left
-                (fun acc line ->
-                  if measure_string line <= available_width then acc + 1
-                  else
-                    (* Use actual wrapping to count lines *)
-                    let wrapped =
-                      wrap_line_to_width line available_width measure_string
-                    in
-                    acc + List.length wrapped)
-                0 expanded_lines
-            in
-            (* For wrapped text, width is constrained to available width *)
-            let max_line_width =
-              List.fold_left
-                (fun acc line ->
-                  if measure_string line <= available_width then
-                    max acc (measure_string line)
-                  else
-                    (* Check width of wrapped lines *)
-                    let wrapped =
-                      wrap_line_to_width line available_width measure_string
-                    in
-                    List.fold_left
-                      (fun m l -> max m (measure_string l))
-                      acc wrapped)
-                0 expanded_lines
-            in
-            let width =
-              match known_dimensions.Toffee.Geometry.Size.width with
-              | Some w -> w
-              | None -> min available_w (float_of_int max_line_width)
-            in
-            let height =
-              match known_dimensions.Toffee.Geometry.Size.height with
-              | Some h -> h
-              | None -> float_of_int wrapped_line_count
-            in
-            (width, height)
-        | _ ->
-            (* No definite width to wrap to, use natural size *)
-            let max_width =
-              List.fold_left
-                (fun acc line -> max acc (measure_string line))
-                0 expanded_lines
-            in
-            let width =
-              match known_dimensions.Toffee.Geometry.Size.width with
-              | Some w -> w
-              | None -> float_of_int max_width
-            in
-            let height =
-              match known_dimensions.Toffee.Geometry.Size.height with
-              | Some h -> h
-              | None -> float_of_int (List.length lines)
-            in
-            (width, height))
-    | `Truncate | `Clip ->
-        (* Don't clamp to available size - use natural content size *)
-        let max_width =
-          List.fold_left
-            (fun acc line -> max acc (measure_string line))
-            0 expanded_lines
-        in
-        let width =
-          match known_dimensions.Toffee.Geometry.Size.width with
-          | Some w -> w
-          | None -> float_of_int max_width
-        in
-        let height =
-          match known_dimensions.Toffee.Geometry.Size.height with
-          | Some h -> h
-          | None -> float_of_int (List.length lines)
-        in
-        (width, height)
-  in
-  { Toffee.Geometry.Size.width = computed_width; height = computed_height }
-
-let draw_border ctx border bounds =
-  let { Border.tl; th; tr; vl; bl; bh; br; vr; ml; mr; mt; mb; mc } =
-    Border.get_chars (Border.line_style border)
-  in
-  let row = int_of_float bounds.y in
-  let col = int_of_float bounds.x in
-  let width = int_of_float bounds.width in
-  let height = int_of_float bounds.height in
-
-  let attrs =
-    let base_style =
-      match Border.color border with
-      | Some color -> Style.(fg color)
-      | None -> Style.empty
-    in
-    let final_style =
-      match Border.style border with
-      | Some s -> Style.merge base_style s
-      | None -> base_style
-    in
-    Style.resolve final_style ~dark:ctx.dark ~pos:(0, 0) ~bounds:(1, 1)
-  in
-
-  (* Handle edge cases for small sizes *)
-  if width <= 0 || height <= 0 then ()
-  else if width = 1 && height = 1 then
-    (* Single cell - pick appropriate character based on which borders are enabled *)
-    let glyph =
-      match
-        ( Border.top border,
-          Border.bottom border,
-          Border.left border,
-          Border.right border )
-      with
-      | true, true, true, true -> mc (* All sides - use cross *)
-      | true, true, true, false -> mr (* Top, bottom, left *)
-      | true, true, false, true -> ml (* Top, bottom, right *)
-      | true, false, true, true -> mb (* Top, left, right *)
-      | false, true, true, true -> mt (* Bottom, left, right *)
-      | true, true, false, false -> vl (* Top and bottom - vertical *)
-      | false, false, true, true -> th (* Left and right - horizontal *)
-      | true, false, true, false -> br (* Top and left - bottom-right corner *)
-      | true, false, false, true -> bl (* Top and right - bottom-left corner *)
-      | false, true, true, false -> tr (* Bottom and left - top-right corner *)
-      | false, true, false, true -> tl (* Bottom and right - top-left corner *)
-      | true, false, false, false | false, true, false, false ->
-          vl (* Single vertical *)
-      | false, false, true, false | false, false, false, true ->
-          th (* Single horizontal *)
-      | false, false, false, false -> " " (* No borders *)
-    in
-    Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row ~col ~glyph
-      ~attrs
-  else if height = 1 then (
-    if
-      (* Single row - only draw horizontal borders *)
-      Border.top border || Border.bottom border
-    then (
-      let left_glyph = if Border.left border then th else th in
-      Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row ~col
-        ~glyph:left_glyph ~attrs;
-      for i = 1 to width - 2 do
-        Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row
-          ~col:(col + i) ~glyph:th ~attrs
-      done;
-      if width > 1 then
-        let right_glyph = if Border.right border then th else th in
-        Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row
-          ~col:(col + width - 1)
-          ~glyph:right_glyph ~attrs))
-  else if width = 1 then (
-    if
-      (* Single column - only draw vertical borders *)
-      Border.left border || Border.right border
-    then
-      for i = 0 to height - 1 do
-        Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:(row + i)
-          ~col ~glyph:vl ~attrs
-      done)
-  else if
-    (* Draw top border *)
-    Border.top border && height > 0
-  then (
-    (* Left corner: use corner if left border enabled, otherwise horizontal *)
-    let left_glyph = if Border.left border then tl else th in
-    Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row ~col
-      ~glyph:left_glyph ~attrs;
-
-    (* Draw horizontal line and text in top border if present *)
-    let draw_end = width - 2 in
-    (* Stop before right corner *)
-    (match border.top_text with
-    | Some { text; align; style = text_style } ->
-        let padded_text = " " ^ text ^ " " in
-        let text_len = Grid.string_width padded_text in
-        let available = draw_end in
-        (* Space available for text and lines *)
-        if text_len <= available then (
-          (* Calculate position based on alignment *)
-          let text_start =
-            match align with
-            | `Left -> 1
-            | `Center -> 1 + ((available - text_len) / 2)
-            | `Right -> draw_end - text_len
-          in
-          (* Ensure text doesn't overrun into corner *)
-          let text_start = min text_start (draw_end - text_len) in
-          let text_start = max 1 text_start in
-
-          (* Draw horizontal line before text *)
-          for i = 1 to text_start - 1 do
-            Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row
-              ~col:(col + i) ~glyph:th ~attrs
-          done;
-          (* Draw the text *)
-          let text_attrs =
-            match text_style with
-            | Some s -> Style.resolve s ~dark:ctx.dark ~pos:(0, 0) ~bounds:(1, 1)
-            | None -> attrs
-          in
-          String.iteri
-            (fun idx c ->
-              Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row
-                ~col:(col + text_start + idx)
-                ~glyph:(String.make 1 c) ~attrs:text_attrs)
-            padded_text;
-          (* Draw horizontal line after text *)
-          let line_start = text_start + text_len in
-          if line_start <= draw_end then
-            for i = line_start to draw_end do
-              Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row
-                ~col:(col + i) ~glyph:th ~attrs
-            done)
-        else
-          for
-            (* Text too long, just draw the border *)
-            i = 1 to width - 2
-          do
-            Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row
-              ~col:(col + i) ~glyph:th ~attrs
-          done
-    | None ->
-        (* No text, draw horizontal line normally *)
-        for i = 1 to width - 2 do
-          Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row
-            ~col:(col + i) ~glyph:th ~attrs
-        done);
-
-    (* Right corner: use corner if right border enabled, otherwise horizontal *)
-    if width > 1 then
-      let right_glyph = if Border.right border then tr else th in
-      Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row
-        ~col:(col + width - 1)
-        ~glyph:right_glyph ~attrs)
+let focus_node t node =
+  if not (Renderable.focusable node) then false
   else (
-    (* No top border, only draw vertical lines if no corner will be drawn later *)
-    if
-      Border.left border && height > 0
-      && not (Border.bottom border && height = 1)
-    then
-      Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row ~col ~glyph:vl
-        ~attrs;
-    if
-      Border.right border && width > 0 && height > 0
-      && not (Border.bottom border && height = 1)
-    then
-      Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row
-        ~col:(col + width - 1)
-        ~glyph:vr ~attrs);
+    (match t.focused_node with
+    | Some prev when prev == node -> ()
+    | Some prev -> blur_node t prev
+    | None -> ());
+    if Renderable.Internal.focus_direct node then (
+      t.focused_node <- Some node;
+      Event_dispatcher.set_focused_renderable t.event_dispatcher (Some node);
+      t.dirty <- true;
+      true)
+    else false)
 
-  (* Draw bottom border *)
-  if Border.bottom border && height > 1 then (
-    let bottom_row = row + height - 1 in
-    (* Left corner: use corner if left border enabled, otherwise horizontal *)
-    let left_glyph = if Border.left border then bl else bh in
-    Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row ~col
-      ~glyph:left_glyph ~attrs;
+let create_node t ?id ?props ?on_frame ?on_size_change ?render () =
+  let num = alloc_num t in
+  match
+    Renderable.Internal.create ~layout:t.layout ?id ?props ?on_frame
+      ?on_size_change ?render
+      ~glyph_pool:(Screen.glyph_pool t.screen)
+      ~num ()
+  with
+  | Error _ as e -> e
+  | Ok node ->
+      Renderable.Internal.set_schedule node (fun () -> request_render t);
+      Renderable.Internal.set_focus_controller node
+        ~focus:(fun n -> focus_node t n)
+        ~blur:(fun n -> blur_node t n);
+      Renderable.Internal.set_lifecycle_controllers node
+        ~register:(fun n -> register_lifecycle_node t n)
+        ~unregister:(fun n -> unregister_lifecycle_node t n);
+      Renderable.Internal.set_registration_hooks node
+        ~register:(fun n -> register_node t n)
+        ~alloc_num:(fun () -> alloc_num t);
+      Renderable.Internal.register_with_renderer node;
+      Ok node
 
-    (* Draw horizontal line and text in bottom border if present *)
-    let draw_end = width - 2 in
-    (* Stop before right corner *)
-    (match border.bottom_text with
-    | Some { text; align; style = text_style } ->
-        let padded_text = " " ^ text ^ " " in
-        let text_len = Grid.string_width padded_text in
-        let available = draw_end in
-        (* Space available for text and lines *)
-        if text_len <= available then (
-          (* Calculate position based on alignment *)
-          let text_start =
-            match align with
-            | `Left -> 1
-            | `Center -> 1 + ((available - text_len) / 2)
-            | `Right -> draw_end - text_len
-          in
-          (* Ensure text doesn't overrun into corner *)
-          let text_start = min text_start (draw_end - text_len) in
-          let text_start = max 1 text_start in
+let set_root t node =
+  match t.root with
+  | Some _ -> Error Root_already_assigned
+  | None -> (
+      match Toffee.style t.layout (Renderable.Internal.node_id node) with
+      | Ok _ ->
+          t.root <- Some node;
+          Renderable.Internal.set_is_root node true;
+          Renderable.Internal.set_on_live_count_change node
+            (Some
+               (fun n ->
+                 let live = Renderable.Internal.live_count n > 0 in
+                 set_live_active t live));
+          set_live_active t (Renderable.Internal.live_count node > 0);
+          (if t.width > 0 && t.height > 0 then
+             let open Toffee.Style in
+             let size =
+               Toffee.Geometry.Size.make
+                 (Dimension.length (float t.width))
+                 (Dimension.length (float t.height))
+             in
+             let (_ : (unit, Renderable.error) Stdlib.result) =
+               Renderable.set_style node (set_size size (Renderable.style node))
+             in
+             ());
+          t.dirty <- true;
+          Ok ()
+      | Error _ -> Error Tree_mismatch)
 
-          (* Draw horizontal line before text *)
-          for i = 1 to text_start - 1 do
-            Screen.set_grapheme ctx.screen ~viewport:ctx.viewport
-              ~row:bottom_row ~col:(col + i) ~glyph:bh ~attrs
-          done;
-          (* Draw the text *)
-          let text_attrs =
-            match text_style with
-            | Some s -> Style.resolve s ~dark:ctx.dark ~pos:(0, 0) ~bounds:(1, 1)
-            | None -> attrs
-          in
-          String.iteri
-            (fun idx c ->
-              Screen.set_grapheme ctx.screen ~viewport:ctx.viewport
-                ~row:bottom_row
-                ~col:(col + text_start + idx)
-                ~glyph:(String.make 1 c) ~attrs:text_attrs)
-            padded_text;
-          (* Draw horizontal line after text *)
-          let line_start = text_start + text_len in
-          if line_start <= draw_end then
-            for i = line_start to draw_end do
-              Screen.set_grapheme ctx.screen ~viewport:ctx.viewport
-                ~row:bottom_row ~col:(col + i) ~glyph:bh ~attrs
-            done)
-        else
-          for
-            (* Text too long, just draw the border *)
-            i = 1 to width - 2
-          do
-            Screen.set_grapheme ctx.screen ~viewport:ctx.viewport
-              ~row:bottom_row ~col:(col + i) ~glyph:bh ~attrs
-          done
-    | None ->
-        (* No text, draw horizontal line normally *)
-        for i = 1 to width - 2 do
-          Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row
-            ~col:(col + i) ~glyph:bh ~attrs
-        done);
+let rec update_layout_cache t parent_abs (node : Renderable.t) =
+  match Toffee.layout t.layout (Renderable.Internal.node_id node) with
+  | Error _ -> ()
+  | Ok layout ->
+      let loc = Toffee.Layout.location layout in
+      let size = Toffee.Layout.size layout in
+      let abs_x = parent_abs.Toffee.Geometry.Point.x +. loc.x in
+      let abs_y = parent_abs.y +. loc.y in
+      Renderable.Internal.update_cached_layout node ~x:abs_x ~y:abs_y
+        ~width:size.width ~height:size.height;
+      List.iter
+        (update_layout_cache t Toffee.Geometry.Point.{ x = abs_x; y = abs_y })
+        (Renderable.children node)
 
-    (* Right corner: use corner if right border enabled, otherwise horizontal *)
-    if width > 1 then
-      let right_glyph = if Border.right border then br else bh in
-      Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row
-        ~col:(col + width - 1)
-        ~glyph:right_glyph ~attrs)
-  else (
-    (* No bottom border, only draw vertical lines if not already drawn by top logic *)
-    (if Border.left border && height > 1 && not (Border.top border) then
-       let bottom_row = row + height - 1 in
-       Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row
-         ~col ~glyph:vl ~attrs);
-    if Border.right border && width > 0 && height > 1 && not (Border.top border)
-    then
-      let bottom_row = row + height - 1 in
-      Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:bottom_row
-        ~col:(col + width - 1)
-        ~glyph:vr ~attrs);
+let rec clear_layout_flags (node : Renderable.t) =
+  Renderable.Internal.clear_layout_dirty node;
+  List.iter clear_layout_flags (Renderable.children node)
 
-  (* Draw left border *)
-  (if Border.left border then
-     (* Determine vertical range based on top/bottom borders *)
-     let start_row = if Border.top border then 1 else 0 in
-     let end_row = if Border.bottom border then height - 2 else height - 1 in
-     for i = start_row to end_row do
-       Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:(row + i) ~col
-         ~glyph:vl ~attrs
-     done);
+let rec any_layout_dirty (node : Renderable.t) : bool =
+  if Renderable.Internal.layout_dirty node then true
+  else List.exists any_layout_dirty (Renderable.children node)
 
-  (* Draw right border *)
-  if Border.right border && width > 0 then
-    let right_col = col + width - 1 in
-    (* Determine vertical range based on top/bottom borders *)
-    let start_row = if Border.top border then 1 else 0 in
-    let end_row = if Border.bottom border then height - 2 else height - 1 in
-    for i = start_row to end_row do
-      Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:(row + i)
-        ~col:right_col ~glyph:vr ~attrs
-    done
-
-let fill_background ctx style bounds =
-  let row = int_of_float bounds.y in
-  let col = int_of_float bounds.x in
-  let width = int_of_float bounds.width in
-  let height = int_of_float bounds.height in
-
-  for y = 0 to height - 1 do
-    for x = 0 to width - 1 do
-      let attrs =
-        Style.resolve style ~dark:ctx.dark ~pos:(x, y) ~bounds:(width, height)
+let compute_and_update_layout t : (unit, error) result =
+  match t.root with
+  | None -> Ok ()
+  | Some root -> (
+      let width_changed = t.width <> t.last_layout_width in
+      let height_changed = t.height <> t.last_layout_height in
+      let needs_layout =
+        width_changed || height_changed || any_layout_dirty root
       in
-      Screen.set_grapheme ctx.screen ~viewport:ctx.viewport ~row:(row + y)
-        ~col:(col + x) ~glyph:" " ~attrs
-    done
-  done
+      if not needs_layout then Ok ()
+      else
+        let w = if t.width > 0 then t.width else 80 in
+        let h = if t.height > 0 then t.height else 24 in
+        let available_space =
+          Toffee.Geometry.Size.
+            {
+              width = Toffee.Available_space.of_float (float w);
+              height = Toffee.Available_space.of_float (float h);
+            }
+        in
+        let measure_fn known_dimensions available_space node_id _ctx style =
+          match Hashtbl.find_opt t.nodes node_id with
+          | Some n -> (
+              match Renderable.Internal.measure_of n with
+              | None -> Toffee.Geometry.Size.{ width = 0.; height = 0. }
+              | Some m -> m ~known_dimensions ~available_space ~style)
+          | None -> Toffee.Geometry.Size.{ width = 0.; height = 0. }
+        in
+        match
+          Toffee.compute_layout_with_measure t.layout
+            (Renderable.Internal.node_id root)
+            available_space measure_fn
+        with
+        | Ok () ->
+            update_layout_cache t Toffee.Geometry.Point.{ x = 0.; y = 0. } root;
+            clear_layout_flags root;
+            t.last_layout_width <- t.width;
+            t.last_layout_height <- t.height;
+            Ok ()
+        | Error e -> Error (Layout_error e))
 
-let with_clip ctx bounds f =
-  (* Encapsulated clipping logic that can be reused *)
-  let clip_viewport =
-    Screen.Viewport.make ~row:(int_of_float bounds.y)
-      ~col:(int_of_float bounds.x)
-      ~width:(int_of_float bounds.width)
-      ~height:(int_of_float bounds.height)
-  in
-  let ctx' = { ctx with viewport = clip_viewport } in
-  f ctx'
-
-let rec render_node_with_offset ctx (node_id, tree) (parent_x, parent_y) =
-  (* Get layout for this node *)
-  let layout =
-    match Toffee.layout tree node_id with
-    | Ok l -> l
-    | Error _ -> failwith "Failed to get layout"
-  in
-  let location = Toffee.Layout.location layout in
-  let size = Toffee.Layout.size layout in
-  Log.debug (fun m ->
-      m "Rendering node at (%.1f, %.1f) size (%.1f, %.1f)"
-        (parent_x +. location.x) (parent_y +. location.y) size.width size.height);
-
-  (* Calculate absolute position by adding parent offset *)
-  let absolute_x = location.x +. parent_x in
-  let absolute_y = location.y +. parent_y in
-
-  let bounds =
-    { x = absolute_x; y = absolute_y; width = size.width; height = size.height }
-  in
-
-  (* Render this node's renderable *)
-  (match Toffee.get_node_context tree node_id with
-  | Some renderable -> (
-      (* Recursively collect all keys from nested Keyed elements *)
-      let rec collect_keys_and_unwrap rend keys =
-        match rend with
-        | Renderable.Keyed { key; child } ->
-            collect_keys_and_unwrap child ((key, bounds) :: keys)
-        | r -> (r, keys)
+let resize t ~width ~height =
+  let width = max 0 width and height = max 0 height in
+  let size_changed = width <> t.width || height <> t.height in
+  t.width <- width;
+  t.height <- height;
+  Screen.resize t.screen ~width ~height;
+  (match t.root with
+  | Some root ->
+      let open Toffee.Style in
+      let size =
+        Toffee.Geometry.Size.make
+          (Dimension.length (float width))
+          (Dimension.length (float height))
       in
-      let renderable, keys = collect_keys_and_unwrap renderable [] in
+      let new_style = set_size size (Renderable.style root) in
+      let (_ : (unit, Renderable.error) Stdlib.result) =
+        Renderable.set_style root new_style
+      in
+      ()
+  | None -> ());
+  t.captured <- None;
+  t.last_over <- None;
+  t.last_frame <- None;
+  t.last_hits <- None;
+  if size_changed then (
+    t.last_pointer_x <- 0;
+    t.last_pointer_y <- 0);
+  t.dirty <- true;
+  Ok ()
 
-      (* Record all keyed elements in snapshot *)
-      (match ctx.snapshot with
-      | Some snapshot ->
+let notify_selection_change t =
+  match t.current_selection with
+  | None -> ()
+  | Some sel_state -> (
+      let container_opt =
+        match List.rev t.selection_containers with
+        | hd :: _ -> Some hd
+        | [] -> t.root
+      in
+      match container_opt with
+      | None -> ()
+      | Some container ->
+          let bounds = Selection.bounds sel_state.selection in
+          let new_touched = ref [] in
+          let new_selected = ref [] in
+          let grid_viewport =
+            Grid.
+              {
+                x = bounds.x;
+                y = bounds.y;
+                width = bounds.width;
+                height = bounds.height;
+              }
+          in
+
+          let rec walk (n : Renderable.t) =
+            let children =
+              Renderable.Internal.children_in_viewport ~parent:n
+                ~viewport:grid_viewport ~padding:0
+            in
+            List.iter
+              (fun child ->
+                walk child;
+                if Renderable.selectable child then (
+                  new_touched := child :: !new_touched;
+                  let has_sel =
+                    Renderable.Internal.emit_selection_changed child
+                      (Some sel_state.selection)
+                  in
+                  if has_sel then new_selected := child :: !new_selected))
+              children
+          in
+          walk container;
+
+          let was_touched = sel_state.touched_nodes in
+          let is_touched_set = Hashtbl.create 32 in
           List.iter
-            (fun (key, key_bounds) ->
-              let rect : Layout_snapshot.rect =
-                {
-                  Layout_snapshot.x = int_of_float key_bounds.x;
-                  Layout_snapshot.y = int_of_float key_bounds.y;
-                  Layout_snapshot.w = int_of_float key_bounds.width;
-                  Layout_snapshot.h = int_of_float key_bounds.height;
-                }
+            (fun n ->
+              Hashtbl.replace is_touched_set (Renderable.Internal.number n) ())
+            !new_touched;
+          List.iter
+            (fun n ->
+              if not (Hashtbl.mem is_touched_set (Renderable.Internal.number n))
+              then
+                let _ = Renderable.Internal.emit_selection_changed n None in
+                Renderable.Internal.clear_selection_by_node n)
+            was_touched;
+
+          sel_state.touched_nodes <- !new_touched;
+          sel_state.selected_nodes_ref := !new_selected;
+          t.dirty <- true)
+
+let clear_selection t =
+  (match t.current_selection with
+  | Some sel_state ->
+      Selection.set_is_active sel_state.selection false;
+      List.iter
+        (fun node ->
+          ignore (Renderable.Internal.emit_selection_changed node None);
+          Renderable.Internal.clear_selection_by_node node)
+        sel_state.touched_nodes;
+      sel_state.touched_nodes <- [];
+      sel_state.selected_nodes_ref := []
+  | None -> ());
+  t.current_selection <- None;
+  t.selection_containers <- [];
+  t.dirty <- true
+
+let start_selection t (node : Renderable.t) ~(x : int) ~(y : int) =
+  clear_selection t;
+  let container =
+    match Renderable.parent node with
+    | Some p -> p
+    | None -> ( match t.root with Some r -> r | None -> node)
+  in
+  let point = Selection.{ x; y } in
+  let anchor_provider =
+    let rel_x = x - Renderable.x node in
+    let rel_y = y - Renderable.y node in
+    fun () ->
+      let base_x = Renderable.x node in
+      let base_y = Renderable.y node in
+      Selection.{ x = base_x + rel_x; y = base_y + rel_y }
+  in
+  let selected_nodes_ref : Renderable.t list ref = ref [] in
+  t.selection_containers <- [ container ];
+
+  let selected_text_fn () =
+    let nodes = !selected_nodes_ref in
+    let sorted =
+      List.sort
+        (fun a b ->
+          let ay = Renderable.y a and by = Renderable.y b in
+          if ay <> by then compare ay by
+          else compare (Renderable.x a) (Renderable.x b))
+        nodes
+    in
+    let pieces =
+      List.filter_map
+        (fun n ->
+          let txt = Renderable.Internal.get_selected_text n in
+          if txt = "" then None else Some txt)
+        sorted
+    in
+    String.concat "\n" pieces
+  in
+
+  let selection =
+    Selection.create ~anchor:point ~focus:point ~anchor_provider
+      ~get_selected_text:selected_text_fn ()
+  in
+  t.current_selection <-
+    Some { selection; touched_nodes = []; selected_nodes_ref };
+  notify_selection_change t
+
+let list_take lst n =
+  let rec aux i acc = function
+    | _ when i = 0 -> List.rev acc
+    | [] -> List.rev acc
+    | h :: tl -> aux (i - 1) (h :: acc) tl
+  in
+  if n <= 0 then [] else aux n [] lst
+
+let rec is_within_container (node : Renderable.t) (container : Renderable.t) :
+    bool =
+  if node == container then true
+  else
+    match Renderable.parent node with
+    | None -> false
+    | Some p -> is_within_container p container
+
+let update_selection t ~(current_node : Renderable.t option) ~(x : int)
+    ~(y : int) =
+  match t.current_selection with
+  | None -> ()
+  | Some sel_state ->
+      Selection.set_focus sel_state.selection Selection.{ x; y };
+
+      (match t.selection_containers with
+      | [] -> ()
+      | containers -> (
+          let current_container = List.hd (List.rev containers) in
+          match current_node with
+          | None ->
+              let parent =
+                match Renderable.parent current_container with
+                | Some p -> p
+                | None -> (
+                    match t.root with Some r -> r | None -> current_container)
               in
-              let entry : Layout_snapshot.entry =
-                {
-                  Layout_snapshot.rect;
-                  Layout_snapshot.z_index = ctx.z_counter;
-                  Layout_snapshot.clipping = None;
-                  (* TODO: track clipping context *)
-                }
-              in
-              ctx.z_counter <- ctx.z_counter + 1;
-              Layout_snapshot.record snapshot (Attr.key key) entry)
-            keys
+              t.selection_containers <- containers @ [ parent ]
+          | Some n -> (
+              if not (is_within_container n current_container) then
+                let parent =
+                  match Renderable.parent current_container with
+                  | Some p -> p
+                  | None -> (
+                      match t.root with
+                      | Some r -> r
+                      | None -> current_container)
+                in
+                t.selection_containers <- containers @ [ parent ]
+              else if List.length containers > 1 then
+                let rec index_of needle i = function
+                  | [] -> None
+                  | h :: tl ->
+                      if h == needle then Some i else index_of needle (i + 1) tl
+                in
+                let idx_opt =
+                  match index_of n 0 containers with
+                  | Some i -> Some i
+                  | None -> (
+                      match Renderable.parent n with
+                      | None -> None
+                      | Some p -> index_of p 0 containers)
+                in
+                match idx_opt with
+                | Some i when i < List.length containers - 1 ->
+                    t.selection_containers <- list_take containers (i + 1)
+                | _ -> ())));
+      notify_selection_change t
+
+let finish_selection t =
+  match t.current_selection with
+  | None -> ()
+  | Some sel_state ->
+      Selection.set_is_selecting sel_state.selection false;
+      let anchor = Selection.anchor sel_state.selection in
+      let focus = Selection.focus sel_state.selection in
+      let ax, ay, fx, fy = (anchor.x, anchor.y, focus.x, focus.y) in
+      List.iter
+        (fun cb -> cb ~anchor_x:ax ~anchor_y:ay ~focus_x:fx ~focus_y:fy)
+        t.selection_listeners
+
+let intersect_rect (a : Grid.clip_rect) (b : Grid.clip_rect) :
+    Grid.clip_rect option =
+  let x0 = max a.x b.x in
+  let y0 = max a.y b.y in
+  let x1 = min (a.x + a.width) (b.x + b.width) in
+  let y1 = min (a.y + a.height) (b.y + b.height) in
+  let w = x1 - x0 and h = y1 - y0 in
+  if w <= 0 || h <= 0 then None
+  else Some Grid.{ x = x0; y = y0; width = w; height = h }
+
+let overflow_scissor (node : Renderable.t) ~(target_is_buffered : bool) :
+    Grid.clip_rect option =
+  let open Toffee in
+  let st = Renderable.style node in
+  let ov = Style.overflow st in
+  match ov with
+  | { Geometry.Point.x = Style.Overflow.Visible; y = Style.Overflow.Visible } ->
+      None
+  | _ ->
+      let w = Renderable.width node and h = Renderable.height node in
+      if w <= 0 || h <= 0 then None
+      else if target_is_buffered then
+        Some Grid.{ x = 0; y = 0; width = w; height = h }
+      else
+        let x = Renderable.x node and y = Renderable.y node in
+        Some Grid.{ x; y; width = w; height = h }
+
+let rec render_node_shared (captured_num : int option) (node : Renderable.t)
+    (grid : Grid.t) (hits : Screen.Hit_grid.t) ~delta : unit =
+  if Renderable.visible node then (
+    Renderable.Internal.pre_render_update node ~delta;
+    let w = Renderable.width node and h = Renderable.height node in
+    if w > 0 && h > 0 then (
+      let hx = Renderable.x node and hy = Renderable.y node in
+      let nid = Renderable.Internal.number node in
+
+      let self_target, using_buffer =
+        match Renderable.buffer node with
+        | `Self ->
+            ( Option.value
+                (Renderable.Internal.ensure_frame_buffer node ~parent:grid)
+                ~default:grid,
+              true )
+        | `None -> (grid, false)
+      in
+
+      let overflow =
+        overflow_scissor node
+          ~target_is_buffered:(Renderable.buffer node = `Self)
+      in
+      let child_clip = Renderable.Internal.child_clip_rect node in
+      let clip =
+        match (overflow, child_clip) with
+        | None, None -> None
+        | Some r, None -> Some r
+        | None, Some r -> Some r
+        | Some a, Some b -> intersect_rect a b
+      in
+
+      (match Renderable.Internal.render_before_hook node with
+      | Some hook -> hook node self_target ~delta
+      | None -> ());
+      Renderable.Internal.render node self_target ~delta;
+      (match Renderable.Internal.render_after_hook node with
+      | Some hook -> hook node self_target ~delta
       | None -> ());
 
-      match renderable with
-      | Renderable.Empty -> ()
-      | Renderable.Box { border; background } ->
-          Option.iter (fun bg -> fill_background ctx bg bounds) background;
-          Option.iter (fun b -> draw_border ctx b bounds) border
-      | Renderable.Text { content; style; align; tab_width; wrap; _ } ->
-          let row = int_of_float bounds.y in
-          let col = int_of_float bounds.x in
-          let width = int_of_float bounds.width in
-          let height = int_of_float bounds.height in
+      (match captured_num with
+      | Some cn when cn = nid -> ()
+      | _ -> Screen.Hit_grid.add hits ~x:hx ~y:hy ~width:w ~height:h ~id:nid);
 
-          (* Split content into lines *)
-          let lines = String.split_on_char '\n' content in
+      if using_buffer then Renderable.Internal.blit_frame_buffer node ~dst:grid;
 
-          (* Resolve style with inheritance *)
-          let attrs =
-            match ctx.inherited_style with
-            | Some inherited ->
-                (* Start with inherited style, then apply local style *)
-                let base = inherited in
-                let local_attrs =
-                  Style.resolve style ~dark:ctx.dark ~pos:(0, 0)
-                    ~bounds:(width, height)
-                in
-                Ansi.Style.merge base local_attrs
-            | None ->
-                Style.resolve style ~dark:ctx.dark ~pos:(0, 0)
-                  ~bounds:(width, height)
-          in
+      let child_visibility =
+        match Renderable.Internal.visible_children node with
+        | `All -> `All
+        | `Subset ids ->
+            let tbl = Hashtbl.create (List.length ids + 1) in
+            List.iter (fun id -> Hashtbl.replace tbl id ()) ids;
+            `Subset tbl
+      in
+      let render_children () =
+        Renderable.Internal.iter_sorted_children node (fun child ->
+            let should_render =
+              match child_visibility with
+              | `All -> true
+              | `Subset tbl ->
+                  Hashtbl.mem tbl (Renderable.Internal.number child)
+            in
+            if should_render then
+              render_node_shared captured_num child grid hits ~delta)
+      in
+      match clip with
+      | None -> render_children ()
+      | Some rect -> Grid.with_scissor grid rect render_children))
 
-          (* Process lines based on wrap mode *)
-          let processed_lines =
-            match wrap with
-            | `Wrap ->
-                (* Implement word wrapping *)
-                List.concat_map
-                  (fun line ->
-                    let expanded = expand_tabs ~tab_width ~start_col:0 line in
-                    if measure_string expanded <= width then [ expanded ]
-                    else
-                      (* Use extracted wrapping logic *)
-                      wrap_line_to_width expanded width measure_string)
-                  lines
-            | `Truncate ->
-                (* Truncate lines that are too wide with ellipsis *)
-                List.map
-                  (fun line ->
-                    let expanded = expand_tabs ~tab_width ~start_col:0 line in
-                    if measure_string expanded <= width then expanded
-                    else truncate_string_with_ellipsis expanded width "...")
-                  lines
-            | `Clip ->
-                (* Clip lines that are too wide without ellipsis *)
-                List.map
-                  (fun line ->
-                    let expanded = expand_tabs ~tab_width ~start_col:0 line in
-                    if measure_string expanded <= width then expanded
-                    else truncate_string_with_ellipsis expanded width "")
-                  lines
-          in
+let clamp v ~min ~max = if v < min then min else if v > max then max else v
 
-          (* Render processed lines *)
-          List.iteri
-            (fun line_idx line ->
-              if line_idx < height then
-                let line_width = measure_string line in
-                let start_col =
-                  match align with
-                  | `Start -> col
-                  | `Center -> col + ((width - line_width) / 2)
-                  | `End -> col + width - line_width
-                  | `Stretch -> col
-                in
-                let final_line =
-                  match align with
-                  | `Stretch when line <> "" && measure_string line > 0 ->
-                      (* Repeat the pattern to fill the width *)
-                      let pattern = line in
-                      let pattern_width = measure_string pattern in
-                      let times = width / pattern_width in
-                      let remainder = width mod pattern_width in
-                      let repeated =
-                        String.concat "" (List.init times (fun _ -> pattern))
-                      in
-                      if remainder > 0 then
-                        (* Add partial pattern to fill exact width *)
-                        repeated
-                        ^ truncate_string_with_ellipsis pattern remainder ""
-                      else repeated
-                  | _ -> line
-                in
-                let _ =
-                  Screen.set_text ctx.screen ~viewport:ctx.viewport
-                    ~row:(row + line_idx) ~col:start_col ~text:final_line ~attrs
-                in
-                ())
-            processed_lines
-      | Renderable.Keyed _ ->
-          (* Should never reach here - handled above *)
-          failwith "Unexpected Keyed renderable in render switch"
-      | Renderable.Canvas { draw } ->
-          let row = int_of_float bounds.y in
-          let col = int_of_float bounds.x in
-          let width = int_of_float bounds.width in
-          let height = int_of_float bounds.height in
+let resolve_hardware_cursor t =
+  match t.focused_node with
+  | None -> None
+  | Some node when not (Renderable.visible node) -> None
+  | Some node -> Renderable.Internal.hardware_cursor node
 
-          let plot ~x ~y ?style glyph =
-            if x >= 0 && x < width && y >= 0 && y < height then
-              let attrs =
-                match style with
-                | Some s ->
-                    Style.resolve s ~dark:ctx.dark ~pos:(x, y)
-                      ~bounds:(width, height)
-                | None -> Ansi.Style.default
-              in
-              Screen.set_grapheme ctx.screen ~viewport:ctx.viewport
-                ~row:(row + y) ~col:(col + x) ~glyph ~attrs
-          in
-          draw ~width ~height plot
-      | Renderable.Scroll { h_offset; v_offset } ->
-          (* Ensure scroll offsets are non-negative to prevent out-of-bounds access *)
-          let safe_h_offset = max 0 h_offset in
-          let safe_v_offset = max 0 v_offset in
+let apply_cursor_to_screen t ~width ~height cursor =
+  match cursor with
+  | None -> Screen.set_cursor_visible t.screen false
+  | Some Renderable.{ x; y; color; style; blinking } ->
+      let col = clamp x ~min:1 ~max:(max 1 width) in
+      let row = clamp y ~min:1 ~max:(max 1 height) in
+      let r, g, b, _ = Ansi.Color.to_rgba color in
+      Screen.set_cursor_style t.screen ~style ~blinking;
+      Screen.set_cursor_color t.screen ~r ~g ~b;
+      Screen.set_cursor_position t.screen ~row ~col;
+      Screen.set_cursor_visible t.screen true
 
-          (* Clip children to this node's bounds and apply scroll offset *)
-          with_clip ctx bounds (fun ctx' ->
-              (* Render children with adjusted offset, passing inherited style *)
-              let ctx_with_inherited =
-                { ctx' with inherited_style = ctx.inherited_style }
-              in
-              match Toffee.children tree node_id with
-              | Ok children ->
-                  List.iter
-                    (fun child_id ->
-                      (* When rendering inside a clipped viewport, children should be positioned
-                         relative to the viewport origin (0,0), not the absolute position.
-                         We subtract the scroll offsets to implement scrolling. *)
-                      render_node_with_offset ctx_with_inherited (child_id, tree)
-                        ( -. float_of_int safe_h_offset,
-                          -. float_of_int safe_v_offset ))
-                    children
-              | Error _ -> ())
-      (* Return early since we've handled children *))
-  | _ -> ());
+let render_frame t ~delta =
+  with_rendering t (fun () ->
+      run_lifecycle_passes t;
+      (match t.root with
+      | None -> ()
+      | Some _ -> ignore (compute_and_update_layout t));
+      (match t.focused_node with
+      | Some n when not (Renderable.visible n) -> blur_node t n
+      | _ -> ());
 
-  (* Render children with this node's absolute position as their parent offset *)
-  (* Skip if we already handled children (e.g., for Scroll nodes) *)
-  (* Recursively unwrap keyed elements to check for Scroll *)
-  let rec unwrap_to_check_scroll rend =
-    match rend with
-    | Renderable.Keyed { child; _ } -> unwrap_to_check_scroll child
-    | Renderable.Scroll _ -> true
+      let bw = if t.width > 0 then t.width else 80 in
+      let bh = if t.height > 0 then t.height else 24 in
+      let captured_num = Option.map Renderable.Internal.number t.captured in
+      let cursor = resolve_hardware_cursor t in
+      apply_cursor_to_screen t ~width:bw ~height:bh cursor;
+
+      let render_once () =
+        Screen.build t.screen ~width:bw ~height:bh (fun grid hits ->
+            match t.root with
+            | None -> ()
+            | Some root -> render_node_shared captured_num root grid hits ~delta)
+      in
+
+      t.dirty <- false;
+      let frame = render_once () in
+
+      t.last_hits <- Some (Screen.hit_grid frame);
+      t.last_frame <- Some frame;
+
+      (match t.current_selection with
+      | Some sel_state when Selection.is_active sel_state.selection ->
+          notify_selection_change t
+      | _ -> ());
+
+      Screen.render frame)
+
+let snapshot_frame t ~delta =
+  with_rendering t (fun () ->
+      run_lifecycle_passes t;
+      (match t.root with
+      | None -> ()
+      | Some _ -> ignore (compute_and_update_layout t));
+      (match t.focused_node with
+      | Some n when not (Renderable.visible n) -> blur_node t n
+      | _ -> ());
+
+      let bw = if t.width > 0 then t.width else 80 in
+      let bh = if t.height > 0 then t.height else 24 in
+      let captured_num = Option.map Renderable.Internal.number t.captured in
+      let cursor = resolve_hardware_cursor t in
+      apply_cursor_to_screen t ~width:bw ~height:bh cursor;
+
+      let build () =
+        Screen.build t.screen ~width:bw ~height:bh (fun grid hits ->
+            match t.root with
+            | None -> ()
+            | Some root -> render_node_shared captured_num root grid hits ~delta)
+      in
+
+      t.dirty <- false;
+      let frame = build () in
+      t.last_hits <- Some (Screen.hit_grid frame);
+      t.last_frame <- Some frame;
+      Grid.snapshot (Screen.grid frame))
+
+let render_into t grid hits ~delta =
+  with_rendering t (fun () ->
+      run_lifecycle_passes t;
+      (match t.root with
+      | None -> ()
+      | Some _ -> ignore (compute_and_update_layout t));
+      (match t.focused_node with
+      | Some n when not (Renderable.visible n) -> blur_node t n
+      | _ -> ());
+      let captured_num = Option.map Renderable.Internal.number t.captured in
+      (match t.root with
+      | None -> ()
+      | Some root -> render_node_shared captured_num root grid hits ~delta);
+      t.last_hits <- Some hits;
+      let cursor =
+        match resolve_hardware_cursor t with
+        | None -> None
+        | Some Renderable.{ x; y; color; style; blinking } ->
+            let gw = Grid.width grid in
+            let gh = Grid.height grid in
+            if gw <= 0 || gh <= 0 then None
+            else
+              Some
+                {
+                  Renderable.x = clamp x ~min:1 ~max:(max 1 gw);
+                  y = clamp y ~min:1 ~max:(max 1 gh);
+                  color;
+                  style;
+                  blinking;
+                }
+      in
+      (match t.current_selection with
+      | Some sel_state when Selection.is_active sel_state.selection ->
+          notify_selection_change t
+      | _ -> ());
+      cursor)
+
+let query_hit t ~x ~y =
+  match t.last_frame with
+  | Some frame -> Screen.query_hit frame ~x ~y
+  | None -> (
+      match t.last_hits with
+      | Some hits -> Screen.Hit_grid.get hits ~x ~y
+      | None -> 0)
+
+let set_target_metadata event node_opt =
+  match node_opt with
+  | None -> Event.Mouse.Internal.set_target event ~id:None ~number:None
+  | Some node ->
+      Event.Mouse.Internal.set_target event
+        ~id:(Some (Renderable.id node))
+        ~number:(Some (Renderable.Internal.number node))
+
+let set_source_metadata event node_opt =
+  match node_opt with
+  | None -> Event.Mouse.Internal.set_source event ~id:None ~number:None
+  | Some node ->
+      Event.Mouse.Internal.set_source event
+        ~id:(Some (Renderable.id node))
+        ~number:(Some (Renderable.Internal.number node))
+
+let dispatch_event node evt =
+  set_target_metadata evt (Some node);
+  Renderable.Internal.emit_mouse_event node evt
+
+let handle_mouse_focus t target is_left =
+  if t.auto_focus_on_mouse_down && is_left then
+    match target with
+    | Some node when Renderable.focusable node -> ignore (focus_node t node)
+    | _ -> ()
+
+let handle_hover_state t target x y modifiers =
+  let same_target =
+    match (t.last_over, target) with
+    | Some a, Some b -> a == b
+    | None, None -> true
     | _ -> false
   in
-  match Toffee.get_node_context tree node_id with
-  | Some rend when unwrap_to_check_scroll rend -> () (* Already handled above *)
+  if not same_target then (
+    (match t.last_over with
+    | Some prev when match t.captured with Some c -> c != prev | None -> true ->
+        let ev = Event.Mouse.out ~x ~y ~modifiers in
+        set_target_metadata ev (Some prev);
+        Renderable.Internal.emit_mouse_event prev ev
+    | _ -> ());
+    t.last_over <- target;
+    match target with
+    | Some node ->
+        let over_event = Event.Mouse.over ~x ~y ~modifiers in
+        set_target_metadata over_event (Some node);
+        set_source_metadata over_event t.captured;
+        Renderable.Internal.emit_mouse_event node over_event
+    | None -> ())
+
+let handle_mouse t (event : Event.mouse) =
+  let x = Event.Mouse.x event and y = Event.Mouse.y event in
+  t.last_pointer_x <- x;
+  t.last_pointer_y <- y;
+
+  let id = query_hit t ~x ~y in
+  let target = Hashtbl.find_opt t.renderables id in
+  let is_left =
+    match Event.Mouse.button event with
+    | Some Input.Mouse.Left -> true
+    | _ -> false
+  in
+  let modifiers = Event.Mouse.modifiers event in
+
+  let selection_is_selecting () =
+    match t.current_selection with
+    | Some sel -> Selection.is_selecting sel.selection
+    | None -> false
+  in
+
+  let is_up =
+    match Event.Mouse.kind event with Up | Drag_end -> true | _ -> false
+  in
+
+  match Event.Mouse.kind event with
+  | Scroll -> (
+      match target with
+      | Some n -> dispatch_event n event
+      | None -> set_target_metadata event None)
   | _ -> (
-      (* OVERFLOW AND CLIPPING BEHAVIOR:
-         
-         Clipping is applied to children in the following cases:
-         1. When a box has a border (border = Some _) - borders always clip content
-         2. When overflow is set to Hidden or Scroll (but not Visible)
-         
-         Important notes:
-         - Content CAN overflow visually when overflow=Visible and no border is present
-         - This matches CSS behavior where borders create a clipping context
-         - Scroll views handle their own clipping through viewport adjustments
-         - Nested clipping contexts are properly composed
-      *)
+      try
+        (match Event.Mouse.kind event with
+        | Down -> handle_mouse_focus t target is_left
+        | _ -> ());
 
-      (* Check if this node has a border - boxes with borders always clip *)
-      let has_border =
-        match Toffee.get_node_context tree node_id with
-        | Some (Renderable.Box { border = Some _; _ }) -> true
-        | _ -> false
-      in
+        (match Event.Mouse.kind event with
+        | Down
+          when is_left
+               && (not (selection_is_selecting ()))
+               && not modifiers.ctrl -> (
+            match target with
+            | Some node
+              when Renderable.selectable node
+                   && Renderable.Internal.should_start_selection node ~x ~y ->
+                start_selection t node ~x ~y;
+                dispatch_event node event;
+                raise Exit
+            | _ -> ())
+        | _ -> ());
 
-      (* Determine the complete resolved style for this node to pass to children *)
-      let inherited_style_for_children =
-        (* Helper to unwrap Keyed wrappers to get to the actual renderable *)
-        let rec unwrap_renderable = function
-          | Renderable.Keyed { child; _ } -> unwrap_renderable child
-          | other -> other
-        in
-        match Toffee.get_node_context tree node_id with
-        | Some rend -> (
-            (* Unwrap any Keyed wrappers to get to the actual renderable *)
-            let unwrapped = unwrap_renderable rend in
-            match unwrapped with
-            | Renderable.Box { background; _ } -> (
-                match background with
-                | Some bg_style -> (
-                    (* Resolve this node's style *)
-                    let width = int_of_float bounds.width in
-                    let height = int_of_float bounds.height in
-                    let node_style =
-                      Style.resolve bg_style ~dark:ctx.dark ~pos:(0, 0)
-                        ~bounds:(width, height)
-                    in
-                    (* Merge with parent's inherited style if any *)
-                    match ctx.inherited_style with
-                    | Some parent_style ->
-                        Some (Ansi.Style.merge parent_style node_style)
-                    | None -> Some node_style)
-                | None -> ctx.inherited_style)
-            | Renderable.Text { style; _ } -> (
-                (* Text nodes also have styles that should be inherited by children if any *)
-                let width = int_of_float bounds.width in
-                let height = int_of_float bounds.height in
-                let node_style =
-                  Style.resolve style ~dark:ctx.dark ~pos:(0, 0)
-                    ~bounds:(width, height)
-                in
-                (* Merge with parent's inherited style if any *)
-                match ctx.inherited_style with
-                | Some parent_style ->
-                    Some (Ansi.Style.merge parent_style node_style)
-                | None -> Some node_style)
-            | _ -> ctx.inherited_style)
-        | None -> ctx.inherited_style
-      in
+        (match Event.Mouse.kind event with
+        | Drag when selection_is_selecting () ->
+            update_selection t ~current_node:target ~x ~y;
+            (match target with
+            | Some node ->
+                Event.Mouse.Internal.set_is_selecting event true;
+                dispatch_event node event
+            | None -> ());
+            raise Exit
+        | _ -> ());
 
-      (* Check if this node has overflow:hidden or clip *)
-      let has_overflow_hidden =
-        match Toffee.style tree node_id with
-        | Ok style ->
-            let overflow_point = Toffee.Style.overflow style in
-            let open Toffee.Style.Overflow in
-            overflow_point.Toffee.Geometry.Point.x = Hidden
-            || overflow_point.Toffee.Geometry.Point.y = Hidden
-            || overflow_point.Toffee.Geometry.Point.x = Clip
-            || overflow_point.Toffee.Geometry.Point.y = Clip
-        | Error _ -> false
-      in
+        (match Event.Mouse.kind event with
+        | Up when selection_is_selecting () ->
+            (match target with
+            | Some node ->
+                Event.Mouse.Internal.set_is_selecting event true;
+                dispatch_event node event
+            | None -> ());
+            finish_selection t;
+            raise Exit
+        | _ -> ());
 
-      (* Only clip if overflow is explicitly hidden, not just because there's a border *)
-      (* Borders should contain content but not force clipping if overflow is visible *)
-      let should_clip = has_overflow_hidden in
+        (match Event.Mouse.kind event with
+        | Down when is_left && modifiers.ctrl -> (
+            match t.current_selection with
+            | Some sel ->
+                Selection.set_is_selecting sel.selection true;
+                update_selection t ~current_node:target ~x ~y;
+                raise Exit
+            | None -> ())
+        | _ -> ());
 
-      match Toffee.children tree node_id with
-      | Ok children ->
-          if should_clip then (* Apply clipping by setting viewport bounds *)
-            (* If there's a border, clip to the content area (inside the border) *)
-            let clip_row, clip_col, clip_width, clip_height =
-              if has_border then
-                ( int_of_float bounds.y + 1,
-                  int_of_float bounds.x + 1,
-                  int_of_float bounds.width - 2,
-                  int_of_float bounds.height - 2 )
-              else
-                ( int_of_float bounds.y,
-                  int_of_float bounds.x,
-                  int_of_float bounds.width,
-                  int_of_float bounds.height )
+        (match Event.Mouse.kind event with
+        | Move | Drag -> handle_hover_state t target x y modifiers
+        | _ -> ());
+
+        (match t.captured with
+        | Some c when not is_up ->
+            dispatch_event c event;
+            raise Exit
+        | Some c ->
+            let button =
+              match Event.Mouse.button event with
+              | Some b -> b
+              | None -> Input.Mouse.Left
             in
+            let drag_end = Event.Mouse.drag_end ~x ~y ~button ~modifiers in
+            set_target_metadata drag_end (Some c);
+            Renderable.Internal.emit_mouse_event c drag_end;
+            dispatch_event c event;
+            (match target with
+            | Some n ->
+                let drop = Event.Mouse.drop ~x ~y ~button ~modifiers in
+                set_target_metadata drop (Some n);
+                set_source_metadata drop (Some c);
+                Renderable.Internal.emit_mouse_event n drop
+            | None -> ());
+            t.last_over <- Some c;
+            t.captured <- None;
+            request_render t;
+            raise Exit
+        | None -> ());
 
-            let clip_viewport =
-              Screen.Viewport.make ~row:clip_row ~col:clip_col ~width:clip_width
-                ~height:clip_height
-            in
-            let ctx' =
-              {
-                ctx with
-                viewport = clip_viewport;
-                inherited_style = inherited_style_for_children;
-              }
-            in
-            List.iter
-              (fun child_id ->
-                render_node_with_offset ctx' (child_id, tree)
-                  (absolute_x, absolute_y))
-              children
-          else
-            let ctx' =
-              { ctx with inherited_style = inherited_style_for_children }
-            in
-            List.iter
-              (fun child_id ->
-                render_node_with_offset ctx' (child_id, tree)
-                  (absolute_x, absolute_y))
-              children
-      | Error _ -> ())
+        (match Event.Mouse.kind event with
+        | Drag -> (
+            match Event.Mouse.button event with
+            | Some Input.Mouse.Left -> t.captured <- target
+            | _ -> t.captured <- None)
+        | _ -> ());
 
-(* Entry point for rendering - root node has no parent offset *)
-let render_node ctx (node_id, tree) =
-  render_node_with_offset ctx (node_id, tree) (0.0, 0.0)
+        (match target with
+        | Some n -> dispatch_event n event
+        | None ->
+            t.captured <- None;
+            t.last_over <- None;
+            set_target_metadata event None);
+
+        match Event.Mouse.kind event with
+        | Down when Option.is_some t.current_selection ->
+            if not (Event.Mouse.default_prevented event) then clear_selection t
+        | _ -> ()
+      with Exit -> ())
+
+let add_global_key_handler t handler =
+  Event_dispatcher.add_global_key_handler t.event_dispatcher handler
+
+let remove_global_key_handler t handler_id =
+  Event_dispatcher.remove_global_key_handler t.event_dispatcher handler_id
+
+let add_global_paste_handler t handler =
+  Event_dispatcher.add_global_paste_handler t.event_dispatcher handler
+
+let remove_global_paste_handler t handler_id =
+  Event_dispatcher.remove_global_paste_handler t.event_dispatcher handler_id
+
+let handle_key t (key : Event.key) =
+  Event_dispatcher.dispatch_key t.event_dispatcher key
+
+let handle_paste t (event : Event.paste) =
+  Event_dispatcher.dispatch_paste t.event_dispatcher event
+
+let focused_node t = t.focused_node
+
+let blur_focused t =
+  match t.focused_node with None -> () | Some n -> blur_node t n
+
+let focus t (node : Renderable.t) = ignore (focus_node t node)
+let find_by_number t n = Hashtbl.find_opt t.renderables n
+
+let find_by_id t id =
+  Hashtbl.to_seq_values t.renderables
+  |> Seq.find (fun node -> String.equal (Renderable.id node) id)
+
+let on_selection t cb = t.selection_listeners <- cb :: t.selection_listeners
+let has_selection t = Option.is_some t.current_selection
+
+let get_selection t : (int * int * int * int) option =
+  match t.current_selection with
+  | None -> None
+  | Some sel_state ->
+      let anchor = Selection.anchor sel_state.selection in
+      let focus = Selection.focus sel_state.selection in
+      Some (anchor.x, anchor.y, focus.x, focus.y)
+
+let get_selected_text t : string =
+  match t.current_selection with
+  | None -> ""
+  | Some sel_state -> Selection.get_selected_text sel_state.selection
+
+let has_live_requests t =
+  match t.root with
+  | None -> false
+  | Some r -> Renderable.Internal.live_count r > 0
+
+let request_selection_update t =
+  match t.current_selection with
+  | Some sel_state when Selection.is_selecting sel_state.selection ->
+      let x = t.last_pointer_x and y = t.last_pointer_y in
+      let id = query_hit t ~x ~y in
+      let current = Hashtbl.find_opt t.renderables id in
+      update_selection t ~current_node:current ~x ~y
+  | _ -> ()
+
+let on_live_change t f = t.on_live_change <- Some f
+let needs_render t = t.dirty

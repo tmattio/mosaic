@@ -1,4 +1,11 @@
 (tests
  (package toffee)
- (names test_toffee)
- (libraries toffee alcotest))
+ (names test_toffee test_grid)
+ (libraries
+  toffee
+  compute_grid
+  compute_helpers
+  toffee.style
+  toffee.tree
+  toffee.geometry
+  alcotest))

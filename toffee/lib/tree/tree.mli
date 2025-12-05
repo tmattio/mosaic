@@ -1,351 +1,142 @@
-(** An OCaml port of Taffy's tree module. This library provides the core data
-    structures and interfaces for layout computation. It defines the inputs and
-    outputs for layout algorithms and the module types for creating custom
-    layout trees. *)
+(** Tree abstractions for CSS layout computation.
+
+    This module defines signatures and types for layout trees in toffee. Layout
+    algorithms operate on trees by calling trait methods to access children,
+    styles, and storage.
+
+    {1 Trait Hierarchy}
+
+    Traits form a dependency hierarchy enabling different operations:
+
+    - {!TRAVERSE_PARTIAL_TREE}: Access immediate children of a node
+    - {!LAYOUT_PARTIAL_TREE}: Run layout algorithms (Flexbox, Grid, Block)
+    - {!TRAVERSE_TREE}: Guarantee full recursive tree access
+    - {!CACHE_TREE}: Enable layout result caching
+    - {!ROUND_TREE}: Round float layouts to integer pixels
+    - {!PRINT_TREE}: Debug-print layout trees
+
+    Layout algorithms require {!LAYOUT_PARTIAL_TREE}. Pixel rounding and debug
+    printing require {!TRAVERSE_TREE}, which extends {!TRAVERSE_PARTIAL_TREE}
+    with a guarantee that child access methods can recurse infinitely.
+
+    {1 Layout Flow}
+
+    Layout proceeds top-down: parents pass {!Layout_input} constraints to
+    children via [compute_child_layout], and children return {!Layout_output}
+    with computed sizes and margins. Algorithms read styles via
+    [get_core_container_style] and store results via [set_unrounded_layout]. *)
 
 (** {1 Core Types} *)
 
-(** A type representing the id of a single node in a tree of nodes. It is
-    abstract to ensure type safety. *)
-module Node_id : sig
-  type t
-  (** The abstract type for a node ID. *)
+module Node_id = Node_id
+(** @inline *)
 
-  val make : int -> t
-  (** Create a new NodeId from an integer value. *)
+module Run_mode = Run_mode
+(** @inline *)
 
-  val to_int : t -> int
-  (** Convert a NodeId to its underlying integer representation. *)
+module Sizing_mode = Sizing_mode
+(** @inline *)
 
-  val equal : t -> t -> bool
-  (** Equality test for node IDs. *)
+module Collapsible_margin_set = Collapsible_margin_set
+(** @inline *)
 
-  val compare : t -> t -> int
-  (** Comparison function for node IDs, suitable for use in maps and sets. *)
+module Requested_axis = Requested_axis
+(** @inline *)
 
-  val pp : Format.formatter -> t -> unit
-  (** Pretty printer for node IDs. *)
+module Available_space = Available_space
+(** @inline *)
 
-  module Map : Map.S with type key = t
-  (** A map with node IDs as keys. *)
+module Layout_input = Layout_input
+(** @inline *)
 
-  module Set : Set.S with type elt = t
-  (** A set of node IDs. *)
-end
+module Layout_output = Layout_output
+(** @inline *)
 
-(** Whether we are performing a full layout, or we merely need to size the node.
-*)
-module Run_mode : sig
-  type t =
-    | Perform_layout
-        (** A full layout for this node and all children should be computed. *)
-    | Compute_size
-        (** The layout algorithm should be run only to determine the node's
-            container size. Steps not necessary for this can be skipped. *)
-    | Perform_hidden_layout
-        (** The node should have a null layout as it is hidden (e.g., `display:
-            none`). *)
-end
+module Layout = Layout
+(** @inline *)
 
-(** Whether styles should be taken into account when computing size. *)
-module Sizing_mode : sig
-  type t =
-    | Content_size  (** Only content contributions should be considered. *)
-    | Inherent_size
-        (** Inherent size styles (like `width`, `height`) should be considered
-            in addition to content. *)
-end
+module Cache = Cache
+(** @inline *)
 
-(** A set of margins for margin collapsing in block layout. *)
-module Collapsible_margin_set : sig
-  type t
+(** {1 Tree Signatures} *)
 
-  val zero : t
-  (** A default margin set with no collapsible margins. *)
+(** Tree traversal for immediate children.
 
-  val from_margin : float -> t
-  (** Create a set from a single margin value. *)
-
-  val collapse_with_margin : t -> float -> t
-  (** Collapse a single margin with this set. *)
-
-  val collapse_with_set : t -> t -> t
-  (** Collapse another margin set with this set. *)
-
-  val resolve : t -> float
-  (** Resolve the resultant margin from this set. *)
-end
-
-(** An axis that layout algorithms can be requested to compute a size for. *)
-module Requested_axis : sig
-  type t = Horizontal | Vertical | Both
-
-  val of_absolute_axis : Geometry.absolute_axis -> t
-  val to_absolute_axis : t -> Geometry.absolute_axis option
-end
-
-(** The amount of space available to a node in a given axis *)
-module Available_space : sig
-  type t =
-    | Definite of float  (** A specific number of pixels available *)
-    | Min_content  (** Use minimum content size *)
-    | Max_content  (** Use maximum content size *)
-
-  val zero : t
-  val min_content : t
-  val max_content : t
-  val of_float : float -> t
-  val of_option : float option -> t
-  val is_definite : t -> bool
-  val to_option : t -> float option
-  val unwrap_or : t -> float -> float
-  val unwrap : t -> float
-  val map_definite_value : t -> (float -> float) -> t
-  val compute_free_space : t -> float -> float
-  val is_roughly_equal : t -> t -> bool
-  val to_string : t -> string
-
-  val equal : t -> t -> bool
-  (** Equality function *)
-
-  val compare : t -> t -> int
-  (** Comparison function for use in sets/maps *)
-
-  val pp : Format.formatter -> t -> unit
-  (** Pretty printer *)
-
-  (** {2 Operations with concrete values} *)
-
-  val min : t -> float -> t
-  (** Returns the minimum. MinContent/MaxContent become Definite(rhs). *)
-
-  val max : t -> float -> t
-  (** Returns the maximum. MinContent/MaxContent are preserved. *)
-
-  val clamp : t -> float -> float -> t
-  (** Clamps between min and max. MinContent/MaxContent are preserved. *)
-
-  val add : t -> float -> t
-  (** Adds rhs. MinContent/MaxContent are preserved. *)
-
-  val sub : t -> float -> t
-  (** Subtracts rhs. MinContent/MaxContent are preserved. *)
-
-  (** {2 Operations with optional values} *)
-
-  val min_or_self : t -> float option -> t
-  (** Returns minimum if Some, otherwise self. *)
-
-  val max_or_self : t -> float option -> t
-  (** Returns maximum if Some, otherwise self. *)
-
-  val clamp_or_self : t -> float option -> float option -> t
-  (** Clamps between optional bounds. None means no constraint. *)
-
-  val add_or_zero : t -> float option -> t
-  (** Adds if Some, otherwise treats as zero. *)
-
-  val sub_or_zero : t -> float option -> t
-  (** Subtracts if Some, otherwise treats as zero. *)
-
-  val set_or_self : t -> float option -> t
-  (** Sets to Definite(value) if Some, otherwise preserves self. *)
-end
-
-(** Input constraints and hints for laying out a node, passed from its parent.
-*)
-module Layout_input : sig
-  type t
-  (** The abstract type for layout input. *)
-
-  val make :
-    run_mode:Run_mode.t ->
-    sizing_mode:Sizing_mode.t ->
-    axis:Requested_axis.t ->
-    known_dimensions:float option Geometry.size ->
-    parent_size:float option Geometry.size ->
-    available_space:Available_space.t Geometry.size ->
-    vertical_margins_are_collapsible:bool Geometry.line ->
-    t
-  (** Create a new layout input. *)
-
-  val run_mode : t -> Run_mode.t
-  val sizing_mode : t -> Sizing_mode.t
-  val axis : t -> Requested_axis.t
-  val known_dimensions : t -> float option Geometry.size
-  val parent_size : t -> float option Geometry.size
-  val available_space : t -> Available_space.t Geometry.size
-  val vertical_margins_are_collapsible : t -> bool Geometry.line
-
-  val hidden : t
-  (** A pre-defined layout input for hidden nodes. *)
-end
-
-(** The result of laying out a single node, returned up to the parent. *)
-module Layout_output : sig
-  type t
-  (** The abstract type for layout output. *)
-
-  val make :
-    size:float Geometry.size ->
-    content_size:float Geometry.size ->
-    first_baselines:float option Geometry.point ->
-    top_margin:Collapsible_margin_set.t ->
-    bottom_margin:Collapsible_margin_set.t ->
-    margins_can_collapse_through:bool ->
-    t
-  (** Create a new layout output. *)
-
-  val size : t -> float Geometry.size
-  val content_size : t -> float Geometry.size
-  val first_baselines : t -> float option Geometry.point
-  val top_margin : t -> Collapsible_margin_set.t
-  val bottom_margin : t -> Collapsible_margin_set.t
-  val margins_can_collapse_through : t -> bool
-
-  val hidden : t
-  (** An all-zero layout output for hidden nodes. *)
-
-  val default : t
-  (** A blank layout output. *)
-
-  val from_outer_size : float Geometry.size -> t
-  (** Construct a layout output from just the container's size. *)
-
-  val from_sizes_and_baselines :
-    float Geometry.size ->
-    float Geometry.size ->
-    float option Geometry.point ->
-    t
-  (** Construct a layout output from size and baselines. *)
-end
-
-(** The final result of a layout algorithm for a single node. *)
-module Layout : sig
-  type t
-  (** The abstract type for layout. *)
-
-  val make :
-    order:int ->
-    location:float Geometry.point ->
-    size:float Geometry.size ->
-    content_size:float Geometry.size ->
-    scrollbar_size:float Geometry.size ->
-    border:float Geometry.rect ->
-    padding:float Geometry.rect ->
-    margin:float Geometry.rect ->
-    t
-  (** Create a new layout. *)
-
-  val order : t -> int
-  val location : t -> float Geometry.point
-  val size : t -> float Geometry.size
-  val content_size : t -> float Geometry.size
-  val scrollbar_size : t -> float Geometry.size
-  val border : t -> float Geometry.rect
-  val padding : t -> float Geometry.rect
-  val margin : t -> float Geometry.rect
-
-  val default : t
-  (** A new zero-layout. *)
-
-  val with_order : int -> t
-  (** A new zero-layout with a specified order. *)
-
-  val content_box_width : t -> float
-  (** Get the width of the node's content box. *)
-
-  val content_box_height : t -> float
-  (** Get the height of the node's content box. *)
-
-  val content_box_size : t -> float Geometry.size
-  (** Get the size of the node's content box. *)
-
-  val content_box_x : t -> float
-  (** Get the x-offset of the node's content box relative to its parent. *)
-
-  val content_box_y : t -> float
-  (** Get the y-offset of the node's content box relative to its parent. *)
-
-  val scroll_width : t -> float
-  (** The scroll width of the node. *)
-
-  val scroll_height : t -> float
-  (** The scroll height of the node. *)
-end
-
-(** A cache for storing the results of layout computations. *)
-module Cache : sig
-  type t
-
-  val make : unit -> t
-  (** Create a new empty cache. *)
-
-  type clear_state =
-    | Cleared
-    | Already_empty  (** The result of a clear operation. *)
-
-  val get :
-    t ->
-    known_dimensions:float option Geometry.size ->
-    available_space:Available_space.t Geometry.size ->
-    run_mode:Run_mode.t ->
-    Layout_output.t option
-  (** Try to retrieve a cached result. *)
-
-  val store :
-    t ->
-    known_dimensions:float option Geometry.size ->
-    available_space:Available_space.t Geometry.size ->
-    run_mode:Run_mode.t ->
-    Layout_output.t ->
-    unit
-  (** Store a computed result in the cache. *)
-
-  val clear : t -> clear_state
-  (** Clear all cache entries. *)
-
-  val is_empty : t -> bool
-  (** Check if the cache is empty. *)
-end
-
-(** {1 Tree Types} *)
-
-(** Taffy's abstraction for downward tree traversal of immediate children. *)
+    Provides access to a node's direct children. Implementations need only
+    support access to a single container node and its immediate children, not
+    full recursive traversal. *)
 module type TRAVERSE_PARTIAL_TREE = sig
   type t
-  (** The type of the tree structure. *)
+  (** The tree structure type. *)
 
   val child_ids : t -> Node_id.t -> Node_id.t Seq.t
+  (** [child_ids tree node] returns a sequence of [node]'s child IDs. *)
+
   val child_count : t -> Node_id.t -> int
+  (** [child_count tree node] returns the number of children of [node]. *)
+
   val get_child_id : t -> Node_id.t -> int -> Node_id.t
+  (** [get_child_id tree node n] returns the [n]th child ID of [node].
+
+      @raise Invalid_argument if [n] is negative or >= [child_count tree node].
+  *)
 end
 
-(** A marker signature which implies `TRAVERSE_PARTIAL_TREE` can be used to
-    recurse infinitely down the tree. *)
+(** Tree traversal with full recursive access.
+
+    Extends {!TRAVERSE_PARTIAL_TREE} with a guarantee that [child_ids],
+    [child_count], and [get_child_id] can be called recursively on any
+    descendant node. Required by {!ROUND_TREE} and {!PRINT_TREE}, which must
+    traverse entire subtrees. *)
 module type TRAVERSE_TREE = sig
   include TRAVERSE_PARTIAL_TREE
 end
 
-(** A signature for a tree that can be laid out using Taffy's algorithms. *)
+(** Tree interface for layout algorithms.
+
+    Extends {!TRAVERSE_PARTIAL_TREE} with style access, layout storage, and
+    recursive child layout. Required by Flexbox, Grid, and Block layout
+    algorithms. *)
 module type LAYOUT_PARTIAL_TREE = sig
   include TRAVERSE_PARTIAL_TREE
 
   val get_core_container_style : t -> Node_id.t -> Style.t
+  (** [get_core_container_style tree node] returns the style for [node].
+
+      Layout algorithms read properties such as [display], [flex_direction],
+      [grid_template_rows], [padding], [margin], and box model properties. *)
+
   val set_unrounded_layout : t -> Node_id.t -> Layout.t -> unit
+  (** [set_unrounded_layout tree node layout] stores the computed layout for
+      [node].
+
+      Called by layout algorithms with float-valued results before pixel
+      rounding. *)
+
   val compute_child_layout : t -> Node_id.t -> Layout_input.t -> Layout_output.t
+  (** [compute_child_layout tree node input] recursively computes layout for
+      [node].
+
+      Called by parent nodes to lay out their children. Implementations dispatch
+      to the appropriate algorithm (Flexbox, Grid, Block) based on [node]'s
+      [display] style. *)
 
   val resolve_calc_value : t -> int -> float -> float
-  (** Resolve CSS calc() expressions. The first parameter is an identifier for
-      the calc expression, and the second is the basis value (e.g., parent width
-      for percentage calculations). Returns the resolved pixel value. A default
-      implementation that returns 0.0 can be used if calc() support is not
-      needed. *)
+  (** [resolve_calc_value tree id basis] resolves a CSS [calc()] expression.
+
+      - [id]: Opaque identifier for the calc expression (internal pointer)
+      - [basis]: Basis value for percentage resolution
+
+      Implementations without [calc()] support can return [0.0]. *)
 end
 
-(** A signature for a tree that can store and retrieve cached layout results. *)
+(** Tree interface for layout caching.
+
+    Provides methods for storing and retrieving cached layout results. Enables
+    memoization of layout computations across multiple passes. *)
 module type CACHE_TREE = sig
   type t
+  (** The tree structure type. *)
 
   val cache_get :
     t ->
@@ -354,6 +145,10 @@ module type CACHE_TREE = sig
     available_space:Available_space.t Geometry.size ->
     run_mode:Run_mode.t ->
     Layout_output.t option
+  (** [cache_get tree node ~known_dimensions ~available_space ~run_mode]
+      retrieves a cached layout result for [node].
+
+      Returns [None] if no cached result matches the constraints. *)
 
   val cache_store :
     t ->
@@ -363,30 +158,63 @@ module type CACHE_TREE = sig
     run_mode:Run_mode.t ->
     Layout_output.t ->
     unit
+  (** [cache_store tree node ~known_dimensions ~available_space ~run_mode
+       output] stores [output] as a cached result for [node]. *)
 
   val cache_clear : t -> Node_id.t -> unit
+  (** [cache_clear tree node] removes all cached entries for [node].
+
+      Call when the node's style or content changes to invalidate stale results.
+  *)
 end
 
-(** A signature for a tree whose float-valued layouts can be rounded to integer
-    pixels. *)
+(** Tree interface for pixel rounding.
+
+    Extends {!TRAVERSE_TREE} with access to unrounded layouts and storage for
+    final pixel-snapped layouts. Used by [round_layout] to convert float layouts
+    to integer coordinates. *)
 module type ROUND_TREE = sig
   include TRAVERSE_TREE
 
   val get_unrounded_layout : t -> Node_id.t -> Layout.t
+  (** [get_unrounded_layout tree node] returns the float-valued layout computed
+      by layout algorithms. *)
+
   val set_final_layout : t -> Node_id.t -> Layout.t -> unit
+  (** [set_final_layout tree node layout] stores the final pixel-rounded layout
+      for [node]. *)
 end
 
-(** A signature for a tree that can be printed for debugging purposes. *)
+(** Tree interface for debug printing.
+
+    Extends {!TRAVERSE_TREE} with methods for pretty-printing layout tree
+    structure. Used by {!print_tree}. *)
 module type PRINT_TREE = sig
   include TRAVERSE_TREE
 
   val get_debug_label : t -> Node_id.t -> string
+  (** [get_debug_label tree node] returns a human-readable label for [node].
+
+      Typically describes the node type: "Flex", "Grid", "Block", or "Text". *)
+
   val get_final_layout : t -> Node_id.t -> Layout.t
+  (** [get_final_layout tree node] returns the final computed layout for [node].
+  *)
 end
 
 (** {1 Tree Functions} *)
 
 val print_tree : (module PRINT_TREE with type t = 'a) -> 'a -> Node_id.t -> unit
-(** Print a debug representation of the computed layout for a tree of nodes,
-    starting with the passed root node. The tree must implement the PRINT_TREE
-    signature which provides tree traversal and layout access capabilities. *)
+(** [print_tree (module Tree) tree root] prints a debug representation of the
+    layout tree rooted at [root] to stdout.
+
+    Output format:
+    {v
+TREE
+└── Flex [x: 0 y: 0 w: 800 h: 600 content_w: 780 content_h: 580 ...] (Node 0)
+    ├── Block [x: 10 y: 10 w: 200 h: 100 ...] (Node 1)
+    └── Text [x: 10 y: 120 w: 150 h: 20 ...] (Node 2)
+    v}
+
+    Each line shows the node's label, location, size, content_size, border,
+    padding, and node ID. Children are indented with tree drawing characters. *)

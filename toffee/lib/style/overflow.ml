@@ -1,24 +1,4 @@
-(** Controls what happens when content overflows a container *)
-
-type t =
-  | Visible
-      (** The automatic minimum size of this node as a flexbox/grid item should
-          be based on the size of its content. Content that overflows this node
-          should contribute to the scroll region of its parent. *)
-  | Clip
-      (** The automatic minimum size of this node as a flexbox/grid item should
-          be based on the size of its content. Content that overflows this node
-          should NOT contribute to the scroll region of its parent. *)
-  | Hidden
-      (** The automatic minimum size of this node as a flexbox/grid item should
-          be 0. Content that overflows this node should NOT contribute to the
-          scroll region of its parent. *)
-  | Scroll
-      (** The automatic minimum size of this node as a flexbox/grid item should
-          be 0. Additionally, space should be reserved for a scrollbar. The
-          amount of space reserved is controlled by the scrollbar_width
-          property. Content that overflows this node should NOT contribute to
-          the scroll region of its parent. *)
+type t = Visible | Clip | Hidden | Scroll
 
 let default = Visible
 

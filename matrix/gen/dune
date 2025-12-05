@@ -1,0 +1,4 @@
+; (executable
+;  (name gen_data)
+;  (modules gen_data)
+;  (libraries uucp))

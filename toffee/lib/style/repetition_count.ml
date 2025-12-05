@@ -1,10 +1,3 @@
-(* The first argument to a repeated track definition. 
-    This type represents the type of automatic repetition to perform.
-    
-    See https://www.w3.org/TR/css-grid-1/#auto-repeat for an explanation 
-    of how auto-repeated track definitions work and the difference between 
-    Auto_fit and Auto_fill. *)
-
 type t =
   | Count of int (* The specified tracks should be repeated exactly N times *)
   | Auto_fill
@@ -12,7 +5,11 @@ type t =
   | Auto_fit
 (* Auto-repeating tracks should be generated to fit the container *)
 
-let count n = Count n
+let count n =
+  if n <= 0 then
+    invalid_arg "Repetition_count.count: repetition count must be positive"
+  else Count n
+
 let auto_fill = Auto_fill
 let auto_fit = Auto_fit
 

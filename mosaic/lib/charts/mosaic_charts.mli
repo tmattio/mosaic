@@ -1,32 +1,315 @@
-(** Draw charts on the terminal with Mosaic.
+(** Minimal, canvas-first charting API for Mosaic.
 
-    This module provides functions to create various types of charts as
-    [Ui.element] values, which can then be composed into a larger user
-    interface.
+    Build a plot by layering marks, then obtain a draw function to pass as the
+    [~draw] callback of a [Mosaic_ui.canvas] node. *)
 
-    Example Usage:
-    {[
-      let line_data =
-        [ { x = 0.0; y = 1.0 }; { x = 1.0; y = 3.0 }; { x = 2.0; y = 2.0 } ]
-      in
-      let my_chart =
-        Mosaic_charts.line
-          ~series_styles:[ Style.fg Style.red ]
-          [ ("Series A", line_data) ]
-      in
+module Plot : sig
+  type t
+  type line_kind = [ `Line | `Braille | `Wave | `Points of string ]
+  type heatmap_agg = [ `Last | `Avg | `Max ]
+  type scatter_kind = [ `Cell | `Braille ]
+  type margins = { top : int; right : int; bottom : int; left : int }
 
-      let ui = Ui.vbox [ Ui.text "My Awesome Chart"; Ui.panel my_chart ] in
+  val make : ?margins:margins -> ?axes:bool -> ?grid:bool -> unit -> t
+  (** [make ?margins ?axes ?grid ()] creates an empty plot.
 
-      Ui.print ui
-    ]} *)
+      Defaults:
+      - [margins]: [{ top = 0; right = 0; bottom = 1; left = 2 }]
+      - [axes]: [true]
+      - [grid]: [false] *)
 
-(** {1 Common Data Types} *)
+  val palette : Ansi.Color.t list -> t -> t
+  (** [palette colors plot] sets the series color palette used when a series
+      does not specify an explicit style. *)
 
-type point = { x : float; y : float }
-(** A single data point in a 2D Cartesian coordinate system. *)
+  val x_domain : float * float -> t -> t
+  (** [x_domain (min,max) plot] sets numeric X domain, disabling auto-infer. *)
+
+  val y_domain : float * float -> t -> t
+  (** [y_domain (min,max) plot] sets numeric Y domain, disabling auto-infer. *)
+
+  val x_view : float * float -> t -> t
+  (** [x_view (min,max) plot] sets the X viewing window used for scaling. When
+      set, scaling uses this range instead of the full domain. *)
+
+  val y_view : float * float -> t -> t
+  (** [y_view (min,max) plot] sets the Y viewing window used for scaling. When
+      set, scaling uses this range instead of the full domain. *)
+
+  val x_band : ?padding:float -> string list -> t -> t
+  (** [x_band ?padding cats plot] uses a band (categorical) scale on X.
+      [padding] is 0.0..1.0, default 0.1. *)
+
+  val y_band : ?padding:float -> string list -> t -> t
+  (** [y_band ?padding cats plot] uses a band (categorical) scale on Y. *)
+
+  val axes :
+    ?style:Ansi.Style.t ->
+    ?x_ticks:int ->
+    ?y_ticks:int ->
+    ?x_label:(int -> float -> string) ->
+    ?y_label:(int -> float -> string) ->
+    t ->
+    t
+  (** [axes ?style ?x_ticks ?y_ticks ?x_label ?y_label plot] enables axes and
+      optionally configures tick density and label formatters for each axis. If
+      unspecified, defaults keep current behavior. *)
+
+  val grid :
+    ?style:Ansi.Style.t ->
+    ?x:bool ->
+    ?y:bool ->
+    ?x_step:int ->
+    ?y_step:int ->
+    t ->
+    t
+  (** [grid ?style ?x ?y ?x_step ?y_step plot] toggles/sets grid lines; defaults
+      to both axes. Optionally control the grid step (in cells) independently
+      for X/Y. *)
+
+  val line :
+    ?style:Ansi.Style.t ->
+    ?kind:line_kind ->
+    x:('a -> float) ->
+    y:('a -> float) ->
+    'a list ->
+    t ->
+    t
+  (** [line ?style ?kind ~x ~y data plot] adds a line/scatter series. *)
+
+  val line_opt :
+    ?style:Ansi.Style.t ->
+    ?kind:line_kind ->
+    x:('a -> float) ->
+    y:('a -> float option) ->
+    'a list ->
+    t ->
+    t
+  (** [line_opt] treats [None] as a gap (discontinuous segments). *)
+
+  val scatter :
+    ?style:Ansi.Style.t ->
+    ?glyph:string ->
+    ?kind:scatter_kind ->
+    x:('a -> float) ->
+    y:('a -> float) ->
+    'a list ->
+    t ->
+    t
+  (** [scatter ?style ?glyph ?kind ~x ~y data] adds a point-only series.
+      [kind=`Cell] (default) draws 1-cell glyphs; [kind=`Braille] uses a braille
+      grid (2x horizontal, 4x vertical) for higher precision. *)
+
+  val bar_y :
+    ?style:Ansi.Style.t ->
+    x:('a -> string) ->
+    y:('a -> float) ->
+    'a list ->
+    t ->
+    t
+  (** [bar_y ?style ~x ~y data] vertical bars: categories on X, values on Y. *)
+
+  val bar_x :
+    ?style:Ansi.Style.t ->
+    y:('a -> string) ->
+    x:('a -> float) ->
+    'a list ->
+    t ->
+    t
+  (** [bar_x ?style ~y ~x data] horizontal bars: categories on Y, values on X.
+  *)
+
+  val bars_y_stacked :
+    ?gap:int ->
+    ?bar_width:int ->
+    (string * (float * Ansi.Style.t) list) list ->
+    t ->
+    t
+  (** [bars_y_stacked ?gap ?bar_width data] vertical stacked bars. *)
+
+  val bars_x_stacked :
+    ?gap:int ->
+    ?bar_width:int ->
+    (string * (float * Ansi.Style.t) list) list ->
+    t ->
+    t
+  (** [bars_x_stacked] horizontal stacked bars. *)
+
+  val rule_y : ?style:Ansi.Style.t -> float -> t -> t
+  (** [rule_y ?style v plot] adds a horizontal reference line at Y = [v]. *)
+
+  val rule_x : ?style:Ansi.Style.t -> float -> t -> t
+  (** [rule_x ?style v plot] adds a vertical reference line at X = [v]. *)
+
+  val heatmap :
+    ?color_scale:Ansi.Color.t list ->
+    ?value_range:float * float ->
+    ?auto_value_range:bool ->
+    ?shaded:bool ->
+    ?agg:heatmap_agg ->
+    x:('a -> float) ->
+    y:('a -> float) ->
+    value:('a -> float) ->
+    'a list ->
+    t ->
+    t
+  (** [heatmap] draws value intensity as shaded cells, colored by scale. *)
+
+  val circle :
+    ?style:Ansi.Style.t ->
+    ?kind:[ `Line | `Braille ] ->
+    cx:('a -> float) ->
+    cy:('a -> float) ->
+    r:('a -> float) ->
+    'a list ->
+    t ->
+    t
+  (** [circle ?style ?kind ~cx ~cy ~r data] draws circles for each datum. *)
+
+  val candles :
+    ?bullish:Ansi.Style.t ->
+    ?bearish:Ansi.Style.t ->
+    time:('a -> float) ->
+    open_:('a -> float) ->
+    high:('a -> float) ->
+    low:('a -> float) ->
+    close:('a -> float) ->
+    'a list ->
+    t ->
+    t
+  (** [candles] adds OHLC candlesticks. *)
+
+  val shade_x : ?style:Ansi.Style.t -> min:float -> max:float -> t -> t
+  (** [shade_x ?style ~min ~max plot] shades the vertical region between X =
+      [min] and X = [max] in plot coordinates. Draw it before series to appear
+      behind lines/bars. *)
+
+  val column_background : ?style:Ansi.Style.t -> float -> t -> t
+  (** [column_background ?style x plot] shades the vertical column at X = [x].
+  *)
+
+  val draw : t -> Mosaic_ui.Canvas.t -> width:int -> height:int -> unit
+  (** [draw plot] returns a drawing callback suitable for [Vnode.canvas ~draw].
+  *)
+
+  val draw_into :
+    t -> canvas:Mosaic_ui.Canvas.t -> width:int -> height:int -> unit
+  (** [draw_into plot ~canvas ~width ~height] draws the plot immediately. *)
+end
+
+type spark_kind = [ `Bars | `Line | `Braille ]
+
+val sparkline :
+  ?style:Ansi.Style.t ->
+  ?kind:spark_kind ->
+  float list ->
+  Mosaic_ui.Canvas.t ->
+  width:int ->
+  height:int ->
+  unit
+(** [sparkline ?style ?kind values] returns a compact draw function suitable for
+    a single-row canvas. *)
+
+module Sparkline : sig
+  type t
+  (** Model storing sparkline state and rendering options. *)
+
+  val make :
+    width:int ->
+    height:int ->
+    ?style:Ansi.Style.t ->
+    ?auto_max:bool ->
+    ?max_value:float ->
+    ?data:float list ->
+    unit ->
+    t
+  (** [make ~width ~height ?style ?auto_max ?max_value ?data ()] creates a
+      sparkline model with a fixed-capacity ring buffer sized to [width]. Values
+      are clamped to [0.0] on push. When [auto_max] is [true] (default), pushing
+      a value greater than the current [max_value] updates scaling. *)
+
+  val clear : t -> unit
+  (** [clear t] clears the internal buffer. The expected maximum is preserved.
+  *)
+
+  val push : t -> float -> unit
+  (** [push t v] appends a value to the buffer (clamped to [0.0]). When capacity
+      is reached, the oldest value is discarded. *)
+
+  val push_all : t -> float list -> unit
+  (** [push_all t vs] appends all values in order. *)
+
+  val set_max : t -> float -> unit
+  (** [set_max t m] sets the expected maximum value used for scaling. *)
+
+  val resize : t -> width:int -> height:int -> unit
+  (** [resize t ~width ~height] resizes capacity and drawing height, preserving
+      the most recent values up to the new [width]. *)
+
+  val draw :
+    t ->
+    kind:[ `Bars | `Braille ] ->
+    ?columns_only:bool ->
+    Mosaic_ui.Canvas.t ->
+    width:int ->
+    height:int ->
+    unit
+  (** [draw t ~kind ?columns_only canvas ~width ~height] draws the model into
+      [canvas] aligned to the right edge, scaling values into [height]. When
+      [columns_only] is [true], only the columns/line are styled; when [false]
+      (default), the canvas background is filled if the style has a background
+      color. *)
+end
+
+val line :
+  ?style:Ansi.Style.t ->
+  (float * float) list ->
+  Mosaic_ui.Canvas.t ->
+  width:int ->
+  height:int ->
+  unit
+(** [line ?style points] one-off line chart draw function for quick usage. *)
 
 type time_series_point = { time : float; value : float }
-(** A data point for time series charts, where [time] is a Unix timestamp. *)
+
+val time_series :
+  ?styles:Ansi.Style.t list ->
+  (string * time_series_point list) list ->
+  Mosaic_ui.Canvas.t ->
+  width:int ->
+  height:int ->
+  unit
+
+val line_with_gaps :
+  ?styles:Ansi.Style.t list ->
+  (string * (float * float option) list) list ->
+  Mosaic_ui.Canvas.t ->
+  width:int ->
+  height:int ->
+  unit
+
+type bar_segment = {
+  value : float;
+  style : Ansi.Style.t;
+  label : string option;
+}
+
+type bar = { label : string; segments : bar_segment list }
+
+val bar :
+  ?orientation:[ `Vertical | `Horizontal ] ->
+  ?gap:int ->
+  ?bar_width:int ->
+  ?min_value:float ->
+  ?max_value:float ->
+  ?show_axis:bool ->
+  ?axis_style:Ansi.Style.t ->
+  ?label_style:Ansi.Style.t ->
+  bar list ->
+  Mosaic_ui.Canvas.t ->
+  width:int ->
+  height:int ->
+  unit
 
 type ohlc_point = {
   time : float;
@@ -35,178 +318,48 @@ type ohlc_point = {
   low : float;
   close : float;
 }
-(** A data point for Open-High-Low-Close (candlestick) charts. *)
-
-type bar_segment = { value : float; style : Ui.Style.t; label : string option }
-(** A single segment within a stacked bar. *)
-
-type bar = { label : string; segments : bar_segment list }
-(** A single bar, which can be composed of multiple segments for stacking. *)
-
-type heat_point = { x : float; y : float; value : float }
-(** A single data point for a heatmap, with a value for color mapping. *)
-
-(** {1 Chart Elements} *)
-
-(** The rendering style for line-based charts. *)
-type line_render_kind =
-  | Lines  (** Render using box-drawing characters. *)
-  | Braille  (** Render using high-resolution braille patterns. *)
-  | Points of string  (** Render as a scatter plot with the given character. *)
-
-type sparkline_render_kind = [ `Bars | `Line | `Braille ]
-(** The rendering style for sparkline charts. *)
-
-val line :
-  ?width:Ui.dimension ->
-  ?height:Ui.dimension ->
-  ?x_range:float * float ->
-  ?y_range:float * float ->
-  ?show_axes:bool ->
-  ?axis_style:Ui.Style.t ->
-  ?label_style:Ui.Style.t ->
-  ?series_styles:Ui.Style.t list ->
-  ?show_grid:bool ->
-  ?grid_style:Ui.Style.t ->
-  ?render_kind:line_render_kind ->
-  (string * point list) list ->
-  Ui.element
-(** [line data] creates a line chart.
-
-    @param x_range
-      Manually specifies the X-axis bounds. If [None], bounds are calculated
-      from the data.
-    @param y_range
-      Manually specifies the Y-axis bounds. If [None], bounds are calculated
-      from the data.
-    @param show_axes If [true] (default), draws X and Y axes with labels.
-    @param series_styles A list of styles to cycle through for each data series.
-    @param render_kind The method used to draw the lines (default: [Lines]).
-    @param data
-      A list of named data series. Each series is a tuple of
-      [(name, point list)]. *)
-
-val time_series :
-  ?width:Ui.dimension ->
-  ?height:Ui.dimension ->
-  ?time_range:float * float ->
-  ?y_range:float * float ->
-  ?show_axes:bool ->
-  ?axis_style:Ui.Style.t ->
-  ?label_style:Ui.Style.t ->
-  ?x_label_format:string ->
-  ?series_styles:Ui.Style.t list ->
-  ?render_kind:line_render_kind ->
-  (string * time_series_point list) list ->
-  Ui.element
-(** [time_series data] creates a line chart with a time-based X-axis.
-
-    @param time_range Manually specifies the time bounds as Unix timestamps.
-    @param y_range Manually specifies the Y-axis value bounds.
-    @param x_label_format
-      The format string for time labels on the X-axis (see [strftime]). Defaults
-      to a sensible date/time format.
-    @param data A list of named time series. *)
-
-val bar :
-  ?width:Ui.dimension ->
-  ?height:Ui.dimension ->
-  ?orientation:[ `Vertical | `Horizontal ] ->
-  ?max_value:float ->
-  ?min_value:float ->
-  ?bar_width:int ->
-  ?gap:int ->
-  ?show_axes:bool ->
-  ?axis_style:Ui.Style.t ->
-  ?label_style:Ui.Style.t ->
-  bar list ->
-  Ui.element
-(** [bar data] creates a bar chart. Can be stacked by providing multiple
-    segments per bar.
-
-    @param orientation The direction of the bars (default: [`Vertical]).
-    @param max_value
-      The value corresponding to the full height/width of the chart. If [None],
-      it's calculated from the data.
-    @param bar_width The width of each bar in characters (for vertical charts).
-    @param gap The space between bars in characters. *)
-
-val sparkline :
-  ?width:int ->
-  ?range:float * float ->
-  ?style:Ui.Style.t ->
-  ?render_kind:sparkline_render_kind ->
-  float list ->
-  Ui.element
-(** [sparkline data] creates a compact, inline chart without axes or labels. It
-    renders within a single line of text height.
-
-    @param width The total width of the sparkline in characters.
-    @param range
-      The min/max values for scaling. If [None], calculated from data.
-    @param style The style for the chart elements.
-    @param render_kind The method used to draw the chart (default: [`Bars]). *)
-
-val heatmap :
-  ?width:Ui.dimension ->
-  ?height:Ui.dimension ->
-  ?x_range:float * float ->
-  ?y_range:float * float ->
-  ?value_range:float * float ->
-  ?color_scale:Ui.Style.color list ->
-  ?show_axes:bool ->
-  ?axis_style:Ui.Style.t ->
-  ?label_style:Ui.Style.t ->
-  heat_point list ->
-  Ui.element
-(** [heatmap data] creates a chart where data values are mapped to a color
-    gradient on a 2D grid.
-
-    @param value_range
-      The min/max values for the color mapping. If [None], calculated from data.
-    @param color_scale
-      A list of colors representing the gradient from min to max value. Defaults
-      to a greyscale gradient. *)
 
 val candlestick :
-  ?width:Ui.dimension ->
-  ?height:Ui.dimension ->
-  ?time_range:float * float ->
-  ?y_range:float * float ->
-  ?show_axes:bool ->
-  ?axis_style:Ui.Style.t ->
-  ?label_style:Ui.Style.t ->
-  ?bullish_style:Ui.Style.t ->
-  ?bearish_style:Ui.Style.t ->
+  ?bullish:Ansi.Style.t ->
+  ?bearish:Ansi.Style.t ->
   ohlc_point list ->
-  Ui.element
-(** [candlestick data] creates an OHLC/candlestick chart for financial data.
+  Mosaic_ui.Canvas.t ->
+  width:int ->
+  height:int ->
+  unit
 
-    @param bullish_style
-      Style for candles where [close > open] (default: green).
-    @param bearish_style Style for candles where [close < open] (default: red).
-*)
+type heat_point = { x : float; y : float; value : float }
 
-(** {2 Helper Functions} *)
+val heatmap :
+  ?color_scale:Ansi.Color.t list ->
+  ?value_range:float * float ->
+  ?auto_value_range:bool ->
+  ?shaded:bool ->
+  ?agg:Plot.heatmap_agg ->
+  heat_point list ->
+  Mosaic_ui.Canvas.t ->
+  width:int ->
+  height:int ->
+  unit
 
-val legend : (string * Ui.Style.t) list -> Ui.element
-(** [legend items] creates a horizontal legend from a list of (label, style)
-    pairs. The style is used to color a marker (line or box) before each label.
-*)
+val legend :
+  (string * Ansi.Style.t) list ->
+  Mosaic_ui.Canvas.t ->
+  width:int ->
+  height:int ->
+  unit
 
-val line_with_gaps :
-  ?width:Ui.dimension ->
-  ?height:Ui.dimension ->
-  ?x_range:float * float ->
-  ?y_range:float * float ->
-  ?show_axes:bool ->
-  ?axis_style:Ui.Style.t ->
-  ?label_style:Ui.Style.t ->
-  ?series_styles:Ui.Style.t list ->
-  ?show_grid:bool ->
-  ?grid_style:Ui.Style.t ->
-  ?render_kind:line_render_kind ->
-  (string * (float * float option) list) list ->
-  Ui.element
-(** [line_with_gaps data] creates a line chart that supports data gaps. Each
-    point is a pair of (x, y option) where None represents a missing value. *)
+val stacked_legend :
+  (string * Ansi.Style.t) list ->
+  Mosaic_ui.Canvas.t ->
+  width:int ->
+  height:int ->
+  unit
+
+(* Convenience axis label formatters for time-based X axes (UTC). *)
+val x_label_mmdd : int -> float -> string
+val x_label_hhmmss : int -> float -> string
+
+(* Global heatmap defaults *)
+val heatmap_default_scale : unit -> Ansi.Color.t list
+val set_heatmap_default_scale : Ansi.Color.t list -> unit

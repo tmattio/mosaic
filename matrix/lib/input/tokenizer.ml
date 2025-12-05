@@ -1,0 +1,319 @@
+let esc = Char.chr 0x1b
+let br_paste_start = "\x1b[200~"
+let br_paste_end = "\x1b[201~"
+let br_paste_start_len = String.length br_paste_start
+let br_paste_end_len = String.length br_paste_end
+
+let br_paste_end_failure =
+  let len = br_paste_end_len in
+  let fail = Array.make len 0 in
+  let j = ref 0 in
+  for i = 1 to len - 1 do
+    while !j > 0 && br_paste_end.[!j] <> br_paste_end.[i] do
+      j := fail.(!j - 1)
+    done;
+    if br_paste_end.[!j] = br_paste_end.[i] then incr j;
+    fail.(i) <- !j
+  done;
+  fail
+
+type token = Sequence of string | Text of string | Paste of string
+
+type parser = {
+  buffer : Buffer.t;
+  mutable paste_buffer : bytes;
+  mutable paste_len : int;
+  mutable paste_match : int;
+  mutable flush_deadline : float option;
+  mutable mode : [ `Normal | `Paste ];
+}
+
+let flush_delay = 0.005
+
+let schedule_flush t =
+  if t.mode = `Paste || Buffer.length t.buffer = 0 then t.flush_deadline <- None
+  else t.flush_deadline <- Some (Unix.gettimeofday () +. flush_delay)
+
+let create () =
+  {
+    buffer = Buffer.create 128;
+    paste_buffer = Bytes.create 128;
+    paste_len = 0;
+    paste_match = 0;
+    flush_deadline = None;
+    mode = `Normal;
+  }
+
+let pending t = Bytes.of_string (Buffer.contents t.buffer)
+
+let reset t =
+  Buffer.clear t.buffer;
+  t.paste_len <- 0;
+  t.paste_match <- 0;
+  t.mode <- `Normal;
+  t.flush_deadline <- None
+
+(* helpers *)
+
+let push_tokens acc tokens =
+  (* tokens are in left-to-right order; we build acc in reverse *)
+  List.rev_append tokens acc
+
+let add_paste_tokens acc payload =
+  let acc = if payload = "" then acc else Paste payload :: acc in
+  Sequence br_paste_end :: acc
+
+let has_substring_at s ~sub ~pos =
+  let sub_len = String.length sub in
+  let limit = String.length s - sub_len in
+  if pos < 0 || pos > limit then false
+  else
+    let rec loop i =
+      if i = sub_len then true
+      else if s.[pos + i] <> sub.[i] then false
+      else loop (i + 1)
+    in
+    loop 0
+
+let find_substring_from s sub start =
+  let sub_len = String.length sub in
+  let len = String.length s in
+  let limit = len - sub_len in
+  let rec scan i =
+    if i > limit then -1
+    else if has_substring_at s ~sub ~pos:i then i
+    else scan (i + 1)
+  in
+  if sub_len = 0 || start > limit then -1 else scan start
+
+let ensure_paste_capacity t needed =
+  let required = t.paste_len + needed in
+  if required > Bytes.length t.paste_buffer then (
+    let new_cap = max required (Bytes.length t.paste_buffer * 2) in
+    let buf = Bytes.create new_cap in
+    Bytes.blit t.paste_buffer 0 buf 0 t.paste_len;
+    t.paste_buffer <- buf)
+
+let reset_paste_state t =
+  t.paste_len <- 0;
+  t.paste_match <- 0
+
+let complete_paste t =
+  let payload_len = t.paste_len - br_paste_end_len in
+  let payload =
+    if payload_len <= 0 then ""
+    else Bytes.sub_string t.paste_buffer 0 payload_len
+  in
+  reset_paste_state t;
+  t.mode <- `Normal;
+  payload
+
+let rec advance_paste_match current c =
+  if c = br_paste_end.[current] then current + 1
+  else if current = 0 then 0
+  else advance_paste_match br_paste_end_failure.(current - 1) c
+
+let add_paste_char t c =
+  ensure_paste_capacity t 1;
+  Bytes.unsafe_set t.paste_buffer t.paste_len c;
+  t.paste_len <- t.paste_len + 1;
+  t.paste_match <- advance_paste_match t.paste_match c;
+  t.paste_match = br_paste_end_len
+
+(* escape-sequence parsing *)
+
+let is_csi_final c =
+  let code = Char.code c in
+  (code >= 0x40 && code <= 0x7e) || code = 0x24 || code = 0x5e
+
+let rec find_st s i len =
+  if i + 1 >= len then None
+  else if s.[i] = esc && s.[i + 1] = '\\' then Some (i + 2)
+  else find_st s (i + 1) len
+
+let find_sequence_end s start len =
+  if start + 1 >= len then None
+  else
+    match s.[start + 1] with
+    | '[' ->
+        (* Mouse reporting: ESC [ M ... (3 bytes after M) *)
+        if start + 2 < len && s.[start + 2] = 'M' then
+          let expected = start + 6 in
+          if expected <= len then Some expected else None
+        else
+          let rec loop i =
+            if i >= len then None
+            else if is_csi_final s.[i] then
+              if (s.[i] = '$' || s.[i] = '^') && i + 1 < len then loop (i + 1)
+              else Some (i + 1)
+            else loop (i + 1)
+          in
+          loop (start + 2)
+    | ']' ->
+        (* OSC terminates with BEL or ST (ESC \) *)
+        let rec loop i =
+          if i >= len then None
+          else
+            let c = s.[i] in
+            if c = '\x07' then Some (i + 1)
+            else if c = esc && i + 1 < len && s.[i + 1] = '\\' then Some (i + 2)
+            else loop (i + 1)
+        in
+        loop (start + 2)
+    | 'P' | '_' ->
+        (* DCS / APC, terminated by ST *)
+        find_st s (start + 2) len
+    | 'O' ->
+        (* SS3: ESC O <char> *)
+        if start + 2 < len then Some (start + 3) else None
+    | _ ->
+        (* Generic short escape: ESC X *)
+        Some (start + 2)
+
+let extract_sequences_from s =
+  let len = String.length s in
+  let rec loop pos acc =
+    if pos >= len then (List.rev acc, "")
+    else
+      let c = s.[pos] in
+      if c = esc then
+        match find_sequence_end s pos len with
+        | None ->
+            (* incomplete sequence: keep the rest for later *)
+            (List.rev acc, String.sub s pos (len - pos))
+        | Some end_pos ->
+            let seq = String.sub s pos (end_pos - pos) in
+            loop end_pos (Sequence seq :: acc)
+      else
+        (* run of plain text until next ESC or end *)
+        let rec find_esc i =
+          if i >= len then len else if s.[i] = esc then i else find_esc (i + 1)
+        in
+        let stop = find_esc (pos + 1) in
+        let txt = String.sub s pos (stop - pos) in
+        loop stop (Text txt :: acc)
+  in
+  loop 0 []
+
+(* state machine *)
+
+let consume_paste_from_string t s start stop acc =
+  if start >= stop then (acc, None)
+  else
+    let rec loop i acc =
+      if i >= stop then (acc, None)
+      else
+        let matched = add_paste_char t s.[i] in
+        if matched then
+          let payload = complete_paste t in
+          let acc = add_paste_tokens acc payload in
+          (acc, Some (i + 1))
+        else loop (i + 1) acc
+    in
+    loop start acc
+
+let consume_paste_from_bytes t bytes start stop acc =
+  if start >= stop then (acc, None)
+  else
+    let rec loop i acc =
+      if i >= stop then (acc, None)
+      else
+        let matched = add_paste_char t (Bytes.unsafe_get bytes i) in
+        if matched then
+          let payload = complete_paste t in
+          let acc = add_paste_tokens acc payload in
+          (acc, Some (i + 1))
+        else loop (i + 1) acc
+    in
+    loop start acc
+
+let rec process t acc =
+  if t.mode = `Paste then List.rev acc
+  else if Buffer.length t.buffer = 0 then List.rev acc
+  else
+    let buf_str = Buffer.contents t.buffer in
+    Buffer.clear t.buffer;
+    let len = String.length buf_str in
+    let start_idx = find_substring_from buf_str br_paste_start 0 in
+    if start_idx < 0 then (
+      let seqs, rem = extract_sequences_from buf_str in
+      if rem <> "" then (
+        Buffer.add_string t.buffer rem;
+        schedule_flush t)
+      else t.flush_deadline <- None;
+      let acc = push_tokens acc seqs in
+      List.rev acc)
+    else
+      let before = String.sub buf_str 0 start_idx in
+      let after_start = start_idx + br_paste_start_len in
+      let after_len = len - after_start in
+      let after =
+        if after_len > 0 then String.sub buf_str after_start after_len else ""
+      in
+      let seqs, rem = extract_sequences_from before in
+      reset_paste_state t;
+      t.mode <- `Paste;
+      t.flush_deadline <- None;
+      let acc = push_tokens acc seqs in
+      let acc = Sequence br_paste_start :: acc in
+      let acc, rem_stop =
+        if rem = "" then (acc, None)
+        else consume_paste_from_string t rem 0 (String.length rem) acc
+      in
+      if t.mode = `Normal then (
+        (match rem_stop with
+        | Some idx when idx < String.length rem ->
+            Buffer.add_substring t.buffer rem idx (String.length rem - idx)
+        | _ -> ());
+        if after <> "" then Buffer.add_string t.buffer after;
+        t.flush_deadline <- None;
+        process t acc)
+      else
+        let acc, after_stop =
+          if after = "" then (acc, None)
+          else consume_paste_from_string t after 0 (String.length after) acc
+        in
+        if t.mode = `Normal then (
+          (match after_stop with
+          | Some idx when idx < String.length after ->
+              Buffer.add_substring t.buffer after idx (String.length after - idx)
+          | _ -> ());
+          t.flush_deadline <- None;
+          process t acc)
+        else List.rev acc
+
+let feed t bytes off len =
+  if off < 0 || len < 0 || off + len > Bytes.length bytes then
+    invalid_arg "Input_tokenizer.feed: out of bounds";
+  if t.mode = `Paste then (
+    let acc, stop_opt = consume_paste_from_bytes t bytes off (off + len) [] in
+    match stop_opt with
+    | None -> List.rev acc
+    | Some stop ->
+        let remaining = off + len - stop in
+        if remaining > 0 then Buffer.add_subbytes t.buffer bytes stop remaining;
+        t.flush_deadline <- None;
+        process t acc)
+  else (
+    if len = 1 then
+      let byte = Char.code (Bytes.get bytes off) in
+      if byte > 0x7f && byte land 0xC0 <> 0x80 then (
+        Buffer.add_char t.buffer esc;
+        Buffer.add_char t.buffer (Char.chr (byte - 0x80)))
+      else Buffer.add_subbytes t.buffer bytes off len
+    else Buffer.add_subbytes t.buffer bytes off len;
+    t.flush_deadline <- None;
+    process t [])
+
+let deadline t = t.flush_deadline
+
+let flush_expired t now =
+  match t.flush_deadline with
+  | Some expiry when now >= expiry && t.mode = `Normal ->
+      t.flush_deadline <- None;
+      if Buffer.length t.buffer = 0 then []
+      else
+        let leftover = Buffer.contents t.buffer in
+        Buffer.clear t.buffer;
+        if leftover = "" then [] else [ Sequence leftover ]
+  | _ -> []

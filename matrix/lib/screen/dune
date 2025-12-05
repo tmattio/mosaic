@@ -1,4 +1,4 @@
 (library
  (name screen)
  (public_name matrix.screen)
- (libraries ansi grid fmt))
+ (libraries ansi glyph grid uutf bigarray unix))

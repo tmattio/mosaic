@@ -1,20 +1,15 @@
-(* alignment.ml *)
-
-(* Style types for controlling alignment *)
-
-(* Module for AlignItems *)
 module Align_items = struct
   type t =
     | Start (* Items are packed toward the start of the axis *)
     | End (* Items are packed toward the end of the axis *)
     | Flex_start
       (* Items are packed towards the flex-relative start of the axis.
-                 For flex containers with flex_direction RowReverse or ColumnReverse this is equivalent
-                 to End. In all other cases it is equivalent to Start. *)
+         For flex containers with flex_direction RowReverse or ColumnReverse this is equivalent
+         to End. In all other cases it is equivalent to Start. *)
     | Flex_end
       (* Items are packed towards the flex-relative end of the axis.
-               For flex containers with flex_direction RowReverse or ColumnReverse this is equivalent
-               to Start. In all other cases it is equivalent to End. *)
+         For flex containers with flex_direction RowReverse or ColumnReverse this is equivalent
+         to Start. In all other cases it is equivalent to End. *)
     | Center (* Items are packed along the center of the cross axis *)
     | Baseline (* Items are aligned such as their baselines align *)
     | Stretch (* Stretch to fill the container *)
@@ -32,7 +27,6 @@ module Align_items = struct
     | Stretch -> "stretch"
 end
 
-(* Module for JustifyItems *)
 module Justify_items = struct
   type t = Align_items.t
 
@@ -40,7 +34,6 @@ module Justify_items = struct
   let to_string = Align_items.to_string
 end
 
-(* Module for AlignSelf *)
 module Align_self = struct
   type t = Align_items.t
 
@@ -48,7 +41,6 @@ module Align_self = struct
   let to_string = Align_items.to_string
 end
 
-(* Module for JustifySelf *)
 module Justify_self = struct
   type t = Align_items.t
 
@@ -56,7 +48,6 @@ module Justify_self = struct
   let to_string = Align_items.to_string
 end
 
-(* Module for AlignContent *)
 module Align_content = struct
   type t =
     | Start (* Items are packed toward the start of the axis *)
@@ -96,7 +87,6 @@ module Align_content = struct
     | Space_around -> "space-around"
 end
 
-(* Module for JustifyContent *)
 module Justify_content = struct
   type t = Align_content.t
 

@@ -1,240 +1,507 @@
-(** Screen.mli
+(** Terminal rendering with zero-allocation frame building.
 
-    Double‑buffer screen abstraction built on {!Grid}. A [Screen.t] encapsulates
-    *two* grids:
+    Provides a declarative, composable API for building and rendering terminal
+    frames with efficient in-place buffer mutation, differential rendering, and
+    optional post-processing effects.
 
-    - The **front buffer** (what is currently shown)
-    - The **back buffer** (what the caller is drawing for the next frame)
+    {1 Overview}
 
-    Callers draw exclusively to the back buffer through the convenience
-    functions below or by grabbing the buffer itself. They commit the frame with
-    {!present}, which swaps the buffers, diffs them, and returns the minimal set
-    of regions that must be redrawn. *)
+    This module manages terminal rendering through a double-buffered
+    architecture. Frames are built by mutating a next buffer, then diffed
+    against the current buffer to generate minimal ANSI escape sequences.
+    Post-processing transforms can be registered to apply effects like
+    animations or visual filters before diffing occurs.
+
+    The API is designed for zero allocations during frame building. {!build}
+    returns the same screen value, so you can compose operations with [|>] while
+    still mutating the next buffer in-place.
+
+    {1 Usage Basics}
+
+    Create a screen and build frames:
+    {[
+      let screen = create () in
+      let output =
+        build screen ~width:80 ~height:24 (fun grid hits ->
+            Grid.draw_text grid ~x:0 ~y:0 ~text:"Hello, world!")
+        |> render
+      in
+      Unix.write Unix.stdout (Bytes.of_string output) 0 (String.length output)
+    ]}
+
+    Register interaction regions for mouse handling:
+    {[
+      build screen ~width:80 ~height:24 (fun grid hits ->
+          Grid.draw_text grid ~x:10 ~y:5 ~text:"[ OK ]";
+          Hit_grid.add hits ~x:10 ~y:5 ~width:6 ~height:1 ~id:42)
+      |> render
+    ]}
+
+    Chain post-processing effects:
+    {[
+      let frame =
+        build screen ~width:80 ~height:24 draw_ui
+        |> post_process fade_effect |> post_process blur_effect
+      in
+      render frame
+    ]}
+
+    {1 Key Concepts}
+
+    {2 Double Buffering}
+
+    The screen maintains two grid buffers: current and next. During {!build},
+    you populate the next buffer. During {!render}, the next buffer is diffed
+    against current to generate minimal ANSI output, then the buffers swap. This
+    enables efficient incremental rendering - only changed cells produce output.
+
+    {2 Hit Testing}
+
+    The screen maintains hit grids alongside visual grids, mapping screen
+    coordinates to element IDs for mouse interaction. Call {!Hit_grid.add}
+    during frame building to register clickable regions. Query coordinates with
+    {!query_hit} to identify which element was clicked.
+
+    {2 Post-Processing}
+
+    Post-processors are persistent functions that transform the next buffer
+    after building but before diffing. They receive the grid and delta time
+    since the last frame, enabling time-based animations. Processors run in
+    insertion order each frame until removed.
+
+    {1 Invariants}
+
+    - The [Grid.t] passed to {!build} and {!grid} is the **next** buffer. The
+      module clears it after each render, so you start from a blank frame every
+      time. If you want to preserve content across frames, copy it explicitly
+      (for example with {!Grid.blit}) before mutating.
+    - Visual and hit buffers swap on {!render}: regions added via
+      {!Hit_grid.add} (or {!add_hit_region}) become queryable only after the
+      following render, and mutating a previously returned grid/hit grid after
+      rendering corrupts the diff baseline.
+    - Post-processors always run after the builder and before diffing, even if
+      the frame would otherwise render no changes. Their [~delta] argument is
+      the milliseconds since the last {!render} call (0. for the first frame).
+    - Input toggles set through {!set_mouse_enabled} and {!set_cursor_visible}
+      are applied lazily: the appropriate escape sequences are emitted as part
+      of the next render's prefix.
+
+    {1 Performance Characteristics}
+
+    Frame building: O(1) allocations (zero with careful usage). Rendering:
+    O(changed cells) for diffing, O(output size) for ANSI generation.
+    Post-processing: O(processors × grid cells) worst case, typically O(changed
+    cells). Hit testing: O(1) lookup, O(region area) registration.
+
+    The functional API compiles to direct pointer passing. [build] returns the
+    same screen so you can compose operations with [|>] while still mutating the
+    next buffer in-place. *)
+
+module Hit_grid = Hit_grid
+
+(** {1 Types} *)
 
 type t
-(** A double‑buffered terminal screen. *)
+(** Opaque screen state.
 
-(** {1 Construction & sizing} *)
+    Manages double-buffered grids, hit grids, post-processing pipeline,
+    statistics collection, and frame rate control. Create with {!create}. *)
+
+type stats = { frame_count : int; total_cells : int; total_bytes : int }
+(** Cumulative rendering statistics.
+
+    - [frame_count]: Total frames rendered since the screen was created (or
+      since {!reset}).
+    - [total_cells]: Sum of all cells diffed across frames.
+    - [total_bytes]: Sum of all ANSI bytes emitted (via {!render},
+      {!render_full}, or streaming variants). *)
+
+type frame_metrics = {
+  frame_count : int;
+  cells : int;
+  bytes : int;
+  frame_time_ms : float;
+  interval_ms : float;
+  reset_ms : float;
+  overall_frame_ms : float;
+  frame_callback_ms : float;
+  stdout_ms : float;
+  mouse_enabled : bool;
+  cursor_visible : bool;
+  timestamp_s : float;
+}
+(** Snapshot of the most recent frame.
+
+    - [frame_count]: Index (1-based) of the emitted frame.
+    - [cells]: Cells diffed in the frame.
+    - [bytes]: ANSI bytes written for the frame.
+    - [frame_time_ms]: Diff/render duration in milliseconds.
+    - [interval_ms]: Time since the previous render.
+    - [reset_ms]: Buffer swap/reset duration.
+    - [overall_frame_ms]: Wall-clock duration of {!render_frame}.
+    - [frame_callback_ms]: Time spent executing the frame builder callback.
+    - [stdout_ms]: Time spent writing the rendered bytes to the output.
+    - [mouse_enabled]/[cursor_visible]: Input flags applied while rendering.
+    - [timestamp_s]: [Unix.gettimeofday] timestamp when rendering finished. *)
+
+(** {1 Screen Creation} *)
 
 val create :
-  rows:int ->
-  cols:int ->
-  ?east_asian_context:bool ->
-  ?style:Ansi.Style.t ->
+  ?glyph_pool:Glyph.pool ->
+  ?width_method:Glyph.width_method ->
+  ?respect_alpha:bool ->
+  ?mouse_enabled:bool ->
+  ?cursor_visible:bool ->
+  ?explicit_width:bool ->
   unit ->
   t
-(** [create ~rows ~cols ?east_asian_context ?style ()] creates a new screen. If
-    [style] is provided, both front and back buffers are initialized with empty
-    cells having that style (useful for setting a default background color for
-    alpha blending). *)
+(** [create ?glyph_pool ?width_method ?respect_alpha ?mouse_enabled
+     ?cursor_visible ?explicit_width ()] creates a screen.
 
-val rows : t -> int
-val cols : t -> int
+    @param glyph_pool
+      Glyph pool for storing multi-width grapheme clusters. Defaults to a fresh
+      pool. Share a pool across screens to reduce memory for common text.
+    @param width_method
+      Character width computation method. Defaults to [`Unicode]. See
+      {!Glyph.width_method} for options.
+    @param respect_alpha
+      Whether to apply alpha blending when drawing cells. Defaults to [false].
+      Enable for semi-transparent overlays at a small performance cost.
+    @param mouse_enabled
+      Whether to emit mouse tracking enable/disable sequences. Defaults to
+      [true].
+    @param cursor_visible Initial cursor visibility. Defaults to [true].
+    @param explicit_width
+      Emit explicit-width OSC sequences for graphemes when [true]. Defaults to
+      [false].
 
-val resize : t -> rows:int -> cols:int -> unit
-(** Resizing preserves as much front‑buffer content as possible, then sizes both
-    buffers identically. Back‑buffer damage is marked so the next {!present}
-    will redraw the whole visible area if needed. *)
+    The screen's grids start at 0×0 dimensions and are resized automatically on
+    the first {!build} call. Statistics and post-processing state are
+    initialized from the provided options. *)
 
-(** {1 Viewport} *)
+(** {1 Frame Building} *)
 
-module Viewport : sig
-  type t
-  (** A rectangular clipping region, inclusive of all its rows and columns. *)
+val build : t -> width:int -> height:int -> (Grid.t -> Hit_grid.t -> unit) -> t
+(** [build screen ~width ~height f] builds a frame with visual and hit regions.
 
-  val make : row:int -> col:int -> width:int -> height:int -> t
-  val intersect : t -> t -> t option
-  val contains : t -> row:int -> col:int -> bool
+    Resizes the screen's buffers to [width] × [height] (when both dimensions are
+    positive), clears the hit grid, then calls [f] with the next grid and hit
+    grid for in-place mutation. Returns a frame handle for rendering or further
+    transformation.
 
-  val full : rows:int -> cols:int -> t
-  (** Viewport that covers the whole screen size given. *)
+    @param width
+      Frame width in cells. When [width <= 0], [f] is not called, the visual
+      buffer is left untouched, and only the hit grid is cleared.
+    @param height
+      Frame height in cells. When [height <= 0], behavior matches the
+      [width <= 0] case.
+    @param f
+      Builder function receiving [grid] and [hits]. All mutations affect the
+      screen's next buffer, which becomes current on {!render}. Treat the
+      arguments as ephemeral handles: if you retain them, do not mutate them
+      after the next {!render}, because the buffers become the diff baseline.
 
-  (** {2 Pretty-printing and Equality} *)
+    Resizing preserves existing grid content where dimensions overlap, and grid
+    cells are never cleared automatically. Call {!Grid.clear} first when you
+    need a blank frame. The hit grid is always cleared before invoking [f].
 
-  val pp : Format.formatter -> t -> unit
-  (** [pp fmt viewport] pretty-prints a viewport for debugging. *)
+    {4 Example}
 
-  val equal : t -> t -> bool
-  (** [equal v1 v2] returns true if the two viewports are equal. *)
-end
+    Build a frame with clickable button:
+    {[
+      build screen ~width:80 ~height:24 (fun grid hits ->
+          Grid.draw_text grid ~x:10 ~y:5 ~text:"[ OK ]";
+          Hit_grid.add hits ~x:10 ~y:5 ~width:6 ~height:1 ~id:42)
+    ]} *)
 
-val with_viewport : t -> Viewport.t -> (t -> unit) -> unit
-(** Temporarily restrict all drawing operations to viewport bounds. Note: The
-    caller must pass the viewport parameter to drawing functions explicitly.
-    Example:
-    [with_viewport screen clip (fun s -> set_text ~viewport s ~row:0 ~col:0
-     ...)] *)
+(** {1 Shared Resources} *)
 
-val render_viewport : t -> Viewport.t -> string
-(** Render a specific rectangular region as ANSI string *)
+val glyph_pool : t -> Glyph.pool
+(** [glyph_pool t] returns the glyph pool shared by the screen's grids. *)
 
-val copy_viewport :
-  src:t ->
-  dst:t ->
-  src_viewport:Viewport.t ->
-  dst_row:int ->
-  dst_col:int ->
-  unit
-(** Copy a clipped region from src to dst at specified position *)
+(** {1 Frame Transformation} *)
 
-(** {1 Drawing – all operate on the back buffer} *)
+val post_process : (Grid.t -> delta:float -> unit) -> t -> t
+(** [post_process f frame] registers a persistent post-processing transform.
 
-val clear : ?viewport:Viewport.t -> t -> unit
+    The function [f] is called during each {!render} after frame building but
+    before diffing. It receives the next grid and delta time in milliseconds
+    since the last render (0. on the first frame). Processors run in insertion
+    order and persist across frames until removed, even if no grid cells change
+    in a given frame.
 
-val clear_rect :
-  ?viewport:Viewport.t ->
-  t ->
-  row_start:int ->
-  row_end:int ->
-  col_start:int ->
-  col_end:int ->
-  unit
+    @param f
+      Post-processing function. Receives [grid] (the next buffer) and [~delta]
+      (milliseconds since last frame). Mutates [grid] in-place.
 
-val clear_line : ?viewport:Viewport.t -> t -> row:int -> col:int -> unit
+    {4 Example}
 
-val set_grapheme :
-  ?viewport:Viewport.t ->
-  t ->
-  row:int ->
-  col:int ->
-  glyph:string ->
-  attrs:Ansi.Style.t ->
-  unit
+    Chain fade and noise effects:
+    {[
+      let fade_fn grid ~delta:_ = apply_fade grid in
+      let noise_fn grid ~delta = animated_noise grid ~delta in
+      build screen ~width:80 ~height:24 draw_scene
+      |> post_process fade_fn |> post_process noise_fn |> render
+    ]} *)
 
-val set_text :
-  ?viewport:Viewport.t ->
-  t ->
-  row:int ->
-  col:int ->
-  text:string ->
-  attrs:Ansi.Style.t ->
-  int * int
-(** Writes a single‑line UTF‑8 string, returns (lines_written,
-    columns_advanced). For single-line text, lines_written will be 1 if any text
-    was written, 0 otherwise. *)
+val remove_post_process : (Grid.t -> delta:float -> unit) -> t -> t
+(** [remove_post_process f frame] unregisters a post-processor.
 
-val set_multiline_text :
-  ?viewport:Viewport.t ->
-  t ->
-  row:int ->
-  col:int ->
-  text:string ->
-  attrs:Ansi.Style.t ->
-  int * int
-(** Writes text containing newlines; returns (lines_written,
-    max_columns_advanced). max_columns_advanced is the maximum width reached
-    across all lines. *)
+    Removes every occurrence of [f] using physical equality ([==]). Returns
+    [frame] for chaining.
 
-(** {1 Low‑level access} *)
+    Store function references to enable removal:
+    {[
+      let blur grid ~delta:_ = apply_blur grid in
+      let frame = post_process blur frame in
+      (* Later... *)
+      remove_post_process blur frame
+    ]} *)
 
-val back : t -> Grid.t
-(** Direct back‑buffer access. *)
+val clear_post_processes : t -> t
+(** [clear_post_processes frame] removes all post-processing functions.
 
-val front : t -> Grid.t
-(** Direct front‑buffer access. *)
+    Returns [frame] for chaining. *)
 
-(** {1 Frame lifecycle} *)
+val add_hit_region :
+  t -> x:int -> y:int -> width:int -> height:int -> id:int -> t
+(** [add_hit_region frame ~x ~y ~width ~height ~id] registers a hit region.
 
-val begin_frame : t -> unit
+    Convenience wrapper around {!Hit_grid.add} for registering regions after
+    frame building. Useful for overlays, popups rendered directly via {!grid},
+    or any situation where hit regions must change without rebuilder access.
 
-val present : t -> Grid.dirty_region list
-(** Swap buffers, compute **rectangular** dirty regions, and return them. *)
+    @param x Region left edge (cell coordinates).
+    @param y Region top edge (cell coordinates).
+    @param width Region width in cells (negative clamped to zero).
+    @param height Region height in cells (negative clamped to zero).
+    @param id
+      Unique identifier for this region. Use 0 to clear regions. Queries return
+      this ID when coordinates fall within the region.
 
-val batch : t -> (t -> 'a) -> 'a
-(** [batch screen f] automatically calls begin_frame, executes f, and returns
-    its result. This is a convenience function for typical draw-present cycles.
-    Example:
-    [batch screen (fun s -> set_text s ~row:0 ~col:0 ~text:"Hello" ~attrs)] *)
+    Regions outside grid bounds are clipped. Returns [frame] for chaining.
 
-val diff_cells : t -> (int * int * Grid.Cell.t) list
-(** Compute the list of changed cells that would be produced by [present],
-    **without** swapping buffers or mutating state. Returns individual cells. *)
+    {4 Example}
 
-val flush_damage : t -> Grid.rect list
-(** Retrieve & clear raw damage rectangles accumulated so far. *)
-
-(** {1 Copy/Clone operations} *)
-
-val clone : t -> t
-(** Creates a deep copy of the screen with independent buffers *)
-
-val snapshot : t -> Grid.t
-(** Returns an immutable copy of the back buffer for background processing *)
-
-val copy_to : src:t -> dst:t -> unit
-(** Copies the back buffer of src to the back buffer of dst *)
+    Add multiple clickable regions:
+    {[
+      build_visual screen ~width:80 ~height:24 draw_base
+      |> add_hit_region ~x:0 ~y:0 ~width:10 ~height:1 ~id:1
+      |> add_hit_region ~x:0 ~y:2 ~width:10 ~height:1 ~id:2
+    ]} *)
 
 (** {1 Rendering} *)
 
-(** Rendering patch for incremental updates *)
-type patch =
-  | Run of {
-      row : int;
-      col : int;
-      text : string;  (** Concatenated graphemes *)
-      style : Ansi.Style.t;
-      width : int;  (** Total column width *)
-    }  (** Run of cells with same style. Efficient for rendering *)
-  | Clear_region of { row : int; col : int; width : int; height : int }
-      (** Clear a rectangular region *)
-  | Clear_line of { row : int; from_col : int }
-      (** Clear from column to end of line *)
-  | Clear_screen  (** Clear the entire screen *)
+val render : ?full:bool -> t -> string
+(** [render ?full frame] generates ANSI escape sequences for terminal output.
 
-(** {2 Pretty-printing and Equality for patches} *)
+    Applies post-processors with delta time (milliseconds since last render),
+    performs differential rendering (or full rendering if [full] is [true]),
+    then swaps buffers so the next grid becomes the current grid. Hit regions
+    registered during this frame become queryable via {!query_hit} after this
+    call returns.
 
-val pp_patch : Format.formatter -> patch -> unit
-(** [pp_patch fmt patch] pretty-prints a patch for debugging. *)
+    @param full
+      When [true], renders all cells regardless of changes. When [false]
+      (default), renders only cells that differ from the current buffer.
 
-val patch_equal : patch -> patch -> bool
-(** [patch_equal p1 p2] returns true if the two patches are equal. *)
+    Returns the ANSI output as a string. Allocates a 65536-byte internal buffer;
+    frames exceeding this size are truncated. For large outputs, use
+    {!render_to_bytes} with a sized buffer. *)
 
-val render : t -> patch list
-(** Smart render: compares back buffer with front buffer and returns patches.
-    May return [Clear_screen; ...] for full redraw or incremental patches. *)
+val render_to_bytes : ?full:bool -> t -> Bytes.t -> int
+(** [render_to_bytes ?full frame bytes] renders into the given bytes buffer.
 
-val render_to_string : t -> string
-(** Simple full render of back buffer to ANSI string *)
+    Applies post-processors with delta time, performs differential rendering (or
+    full rendering if [full] is [true]), then swaps buffers so the next grid
+    becomes the current grid.
 
-val patch_to_sgr : ?prev_style:Ansi.Style.t option -> patch -> string
-(** Convert a single patch to ANSI escape sequences *)
+    @param full
+      When [true], renders all cells regardless of changes. When [false]
+      (default), renders only cells that differ from the current buffer.
+    @param bytes
+      Output buffer for ANSI escape sequences. Must be large enough to hold the
+      rendered output. No bounds checking is performed; if the buffer is too
+      small, behavior is undefined.
 
-val patches_to_sgr : patch list -> string
-(** Convert patches to ANSI escape sequences *)
+    Returns the number of bytes written to [bytes]. *)
 
-val patches_to_sgr_synchronized : patch list -> string
-(** Convert patches to ANSI escape sequences wrapped with synchronized update
-    mode. This reduces flicker by telling the terminal to buffer all updates and
-    apply them atomically. *)
+(** {1 Screen State} *)
 
-(** {1 Cursor management} *)
+val set_mouse_enabled : t -> bool -> unit
+(** [set_mouse_enabled screen enabled] toggles emission of mouse enable/disable
+    sequences.
 
-val get_cursor : t -> (int * int) option
-(** Get current cursor position from back buffer *)
+    The escape sequences are emitted in the prefix of the next {!render}, so
+    repeated toggles before rendering coalesce to the last value. *)
 
-val set_cursor : t -> row:int -> col:int -> unit
-(** Set cursor position in back buffer *)
+val set_cursor_visible : t -> bool -> unit
+(** [set_cursor_visible screen visible] controls cursor visibility during
+    rendering.
 
-(** {1 Hash helpers} *)
+    Visibility changes are applied in the next render prefix. Combined with
+    {!render}'s suffix logic, this guarantees the cursor returns to the most
+    recent setting even if the diff body raises. *)
 
-val hash_front : t -> int
-val hash_back : t -> int
+val set_explicit_width : t -> bool -> unit
+(** [set_explicit_width screen enabled] toggles explicit-width OSC emission for
+    graphemes.
 
-(** {1 Performance monitoring} *)
+    When enabled and the terminal supports it, emits OSC sequences specifying
+    the exact width of multi-width characters to prevent terminal-side width
+    mismatch. Useful for ensuring consistent display of wide characters (e.g.,
+    emoji, CJK glyphs) across terminals with varying Unicode width tables. *)
 
-module Perf : sig
-  type counter = {
-    mutable bytes_allocated : int;
-    mutable cells_diffed : int;
-    mutable frames_rendered : int;
-    mutable patches_generated : int;
-    mutable cache_hits : int;
-    mutable cache_misses : int;
-  }
+val set_cursor_position : t -> row:int -> col:int -> unit
+(** [set_cursor_position screen ~row ~col] configures the cursor coordinates
+    restored in the render suffix.
 
-  val reset : unit -> unit
-  (** Reset all performance counters to zero *)
+    Coordinates are 1-based terminal coordinates where [(1, 1)] is the top-left
+    corner. The [row_offset] (set via {!set_row_offset}) is automatically added
+    to [row] during rendering. *)
 
-  val get : unit -> counter
-  (** Get a snapshot of current performance counters *)
-end
+val clear_cursor_position : t -> unit
+(** [clear_cursor_position screen] clears any requested cursor position so the
+    terminal cursor remains wherever the diff body last moved it. *)
+
+val set_cursor_style :
+  t -> style:[ `Block | `Line | `Underline ] -> blinking:bool -> unit
+(** [set_cursor_style screen ~style ~blinking] configures the cursor's visual
+    style.
+
+    @param style
+      Cursor shape: [`Block] for a filled block, [`Line] for a vertical bar, or
+      [`Underline] for a horizontal line.
+    @param blinking Whether the cursor blinks.
+
+    {4 Example}
+
+    Configure a non-blinking vertical bar cursor:
+    {[
+      set_cursor_style screen ~style:`Line ~blinking:false
+    ]} *)
+
+val set_cursor_color : t -> r:int -> g:int -> b:int -> unit
+(** [set_cursor_color screen ~r ~g ~b] sets the cursor color via OSC 12. Inputs
+    outside [0,255] are clamped. *)
+
+val reset_cursor_color : t -> unit
+(** [reset_cursor_color screen] restores the terminal's default cursor color. *)
+
+val apply_capabilities : t -> explicit_width:bool -> hyperlinks:bool -> unit
+(** [apply_capabilities screen ~explicit_width ~hyperlinks] applies terminal
+    capability flags for screens that manage their own capability detection.
+
+    Use this after querying terminal capabilities (e.g., via terminfo or runtime
+    queries) to configure width and hyperlink support based on terminal
+    responses. For screens embedded in higher-level runtimes, the runtime
+    typically handles capability detection automatically.
+
+    @param explicit_width
+      Whether the terminal supports explicit-width OSC sequences. When [true]
+      and {!set_explicit_width} is enabled, OSC sequences are emitted.
+    @param hyperlinks
+      Whether the terminal supports OSC 8 hyperlinks. When [true], hyperlink
+      attributes are rendered as clickable links. *)
+
+val set_width_method : t -> Glyph.width_method -> unit
+(** [set_width_method screen method_] sets the grapheme width computation method
+    on BOTH the current and next buffers.
+
+    Use this after terminal capability changes that affect width calculation
+    semantics to keep buffers consistent across swaps. *)
+
+val resize : t -> width:int -> height:int -> unit
+(** [resize screen ~width ~height] resizes all internal buffers.
+
+    Resizes both current and next grids plus hit grids to [width] × [height].
+    Grid contents are preserved where dimensions overlap; new cells are
+    initialized to spaces with a transparent background. Hit grids are resized
+    and cleared. This operation updates dimensions in place without
+    auto-clearing the framebuffer content that remains.
+
+    Normally unnecessary — {!build} resizes automatically. Use this to pre-size
+    buffers for a known terminal size.
+
+    @param width New width in cells. Must be strictly positive.
+    @param height New height in cells. Must be strictly positive.
+
+    @raise Invalid_argument if [width <= 0] or [height <= 0]. *)
+
+val reset : t -> unit
+(** [reset screen] clears buffers and statistics.
+
+    Clears the next grid to transparent black, empties hit grids, zeros
+    statistics, and resets frame timing. The current grid (diff baseline) is
+    left intact so the next render can efficiently clear previously rendered
+    content. Useful for clearing artifacts or starting a fresh rendering session
+    without losing knowledge of what was last on-screen.
+
+    Post-processors and configuration are preserved. *)
+
+(** {1 Statistics and Debugging} *)
+
+val stats : t -> stats
+(** [stats screen] returns cumulative rendering statistics since creation or the
+    last {!reset}. *)
+
+val last_metrics : t -> frame_metrics
+(** [last_metrics screen] returns metrics for the most recent frame. *)
+
+val record_runtime_metrics :
+  t ->
+  frame_callback_ms:float ->
+  overall_frame_ms:float ->
+  stdout_ms:float ->
+  unit
+(** [record_runtime_metrics screen ~frame_callback_ms ~overall_frame_ms
+     ~stdout_ms] supplements the most recent metrics with runtime measurements.
+
+    This is intended for higher-level runtimes (e.g. {!Matrix.run}) that can
+    measure draw-call duration, total wall-clock time, and output flush time on
+    behalf of the screen. Values are in milliseconds. *)
+
+(** {1 Direct Access}
+
+    Direct access to internal buffers for advanced use cases. These functions
+    bypass the builder API, useful for performance-critical code, gradual
+    migration, or debugging. *)
+
+val grid : t -> Grid.t
+(** [grid frame] returns the next buffer grid.
+
+    This is the grid that will be rendered on the next {!render} call. You can
+    draw to it directly using {!Grid} functions, bypassing {!build}.
+
+    Mutations persist until the next {!Grid.clear} or {!reset}. Do not mutate
+    the returned grid after calling {!render}, because it becomes the current
+    buffer used for diff baselines. *)
+
+val hit_grid : t -> Hit_grid.t
+(** [hit_grid frame] returns the next hit grid.
+
+    This is the hit grid that will be active after the next {!render}. You can
+    register or query hit regions directly using {!Hit_grid} functions. As with
+    {!grid}, avoid mutating the returned value once {!render} runs, because it
+    becomes the visible baseline for subsequent queries. *)
+
+val query_hit : t -> x:int -> y:int -> int
+(** [query_hit frame ~x ~y] returns the element ID at coordinates [(x, y)].
+
+    Queries the CURRENT frame's hit grid (i.e. regions registered during the
+    most recent {!render}). Call this after rendering to observe the hit regions
+    that are visible on screen. Returns 0 if out of bounds or no region is
+    registered at [(x, y)]. *)
+
+val set_row_offset : t -> int -> unit
+(** [set_row_offset screen offset] sets the vertical origin offset applied to
+    all subsequent renders. Useful when drawing on the primary screen without
+    the alternate buffer. Negative offsets are clamped to zero. *)
+
+val row_offset : t -> int
+(** [row_offset screen] returns the current vertical origin offset. *)
+
+val active_height : t -> int
+(** [active_height screen] computes the effective number of rows containing
+    non-blank content in the next buffer. Background-only fills (spaces) are
+    ignored. Useful for sizing inline primary rendering regions. *)

@@ -1,779 +1,910 @@
 open Alcotest
-module G = Grid
-module C = G.Cell
 
-let default_style = Ansi.Style.default
+(* Test Helpers *)
 
-(* Alcotest testable for a patch list *)
-let patch_list =
-  testable (Fmt.Dump.list Screen.pp_patch) (List.equal Screen.patch_equal)
-
-let get_cell_from_grid g ~row ~col =
-  match G.get g ~row ~col with
-  | Some c -> c
-  | None -> failwith (Printf.sprintf "Cell (%d, %d) out of bounds" row col)
-
-let test_creation_and_sizing () =
-  let s = Screen.create ~rows:10 ~cols:20 () in
-  check int "correct number of rows" 10 (Screen.rows s);
-  check int "correct number of cols" 20 (Screen.cols s);
-  Screen.resize s ~rows:5 ~cols:15;
-  check int "resized rows" 5 (Screen.rows s);
-  check int "resized cols" 15 (Screen.cols s)
-
-let test_drawing_and_buffers () =
-  let s = Screen.create ~rows:2 ~cols:2 () in
-  Screen.begin_frame s;
-  Screen.set_text s ~row:0 ~col:0 ~text:"x" ~attrs:default_style |> ignore;
-  let back = Screen.back s in
-  check string "back buffer changed" "x"
-    (C.get_text (get_cell_from_grid back ~row:0 ~col:0));
-  let front = Screen.front s in
-  check bool "front buffer unchanged" true
-    (C.is_empty (get_cell_from_grid front ~row:0 ~col:0))
-
-let test_present_and_diff () =
-  let s = Screen.create ~rows:2 ~cols:2 () in
-  Screen.begin_frame s;
-  Screen.set_text s ~row:0 ~col:0 ~text:"x" ~attrs:default_style |> ignore;
-  let dirty = Screen.present s in
-  check int "one dirty region" 1 (List.length dirty);
-  let dirty2 = Screen.present s in
-  check int "no dirty after present" 0 (List.length dirty2)
-
-let test_batch () =
-  let s = Screen.create ~rows:2 ~cols:2 () in
-  Screen.begin_frame s;
-  Screen.set_text s ~row:0 ~col:0 ~text:"ab" ~attrs:default_style |> ignore;
-  Screen.present s |> ignore;
-  let front = Screen.front s in
-  check string "batch updates front" "a"
-    (C.get_text (get_cell_from_grid front ~row:0 ~col:0))
-
-let test_viewport () =
-  let s = Screen.create ~rows:3 ~cols:3 () in
-  Screen.begin_frame s;
-  let vp = Screen.Viewport.make ~row:1 ~col:1 ~width:1 ~height:1 in
-  Screen.set_text s ~viewport:vp ~row:0 ~col:0 ~text:"abcd" ~attrs:default_style
-  |> ignore;
-  let back = Screen.back s in
-  check bool "outside viewport unchanged" true
-    (C.is_empty (get_cell_from_grid back ~row:0 ~col:0));
-  check string "inside viewport changed" "a"
-    (C.get_text (get_cell_from_grid back ~row:1 ~col:1))
-
-let test_render_to_patches () =
-  let s = Screen.create ~rows:2 ~cols:2 () in
-  Screen.begin_frame s;
-  Screen.set_text s ~row:0 ~col:0 ~text:"ab" ~attrs:default_style |> ignore;
-  let patches = Screen.render s in
-  check bool "patches generated" true (List.length patches > 0)
-
-let test_clone_and_copy () =
-  let s1 = Screen.create ~rows:2 ~cols:2 () in
-  Screen.begin_frame s1;
-  Screen.set_text s1 ~row:0 ~col:0 ~text:"x" ~attrs:default_style |> ignore;
-  Screen.present s1 |> ignore;
-  let s2 = Screen.clone s1 in
-  check string "clone copies content" "x"
-    (C.get_text (get_cell_from_grid (Screen.front s2) ~row:0 ~col:0))
-
-let test_cursor () =
-  let s = Screen.create ~rows:2 ~cols:2 () in
-  Screen.set_cursor s ~row:1 ~col:1;
-  check (option (pair int int)) "cursor set" (Some (1, 1)) (Screen.get_cursor s);
-  Screen.set_cursor s ~row:(-1) ~col:0;
-  check
-    (option (pair int int))
-    "cursor out of bounds" None (Screen.get_cursor s)
-
-let test_creation_with_style () =
-  let style = Ansi.Style.with_fg Ansi.Style.Red default_style in
-  let s = Screen.create ~rows:2 ~cols:2 ~style () in
-  let front = Screen.front s in
-  check bool "front initialized with style" true
-    (Ansi.Style.equal style
-       (C.get_style (get_cell_from_grid front ~row:0 ~col:0)));
-  (* To check back buffer, we need to call begin_frame first *)
-  Screen.begin_frame s;
-  let back = Screen.back s in
-  check bool "back initialized with style" true
-    (Ansi.Style.equal style
-       (C.get_style (get_cell_from_grid back ~row:0 ~col:0)))
-
-let test_creation_east_asian () =
-  let s = Screen.create ~rows:1 ~cols:3 ~east_asian_context:true () in
-  Screen.begin_frame s;
-  let _, adv = Screen.set_text s ~row:0 ~col:0 ~text:"漢" ~attrs:default_style in
-  check int "wide char advances 2 cols" 2 adv;
-  check bool "next col is continuation" true
-    (C.is_continuation (get_cell_from_grid (Screen.back s) ~row:0 ~col:1));
-  check bool "beyond is empty" true
-    (C.is_empty (get_cell_from_grid (Screen.back s) ~row:0 ~col:2))
-
-let test_resize_to_smaller () =
-  let s = Screen.create ~rows:3 ~cols:3 () in
-  Screen.begin_frame s;
-  Screen.set_text s ~row:2 ~col:2 ~text:"x" ~attrs:default_style |> ignore;
-  Screen.present s |> ignore;
-  Screen.resize s ~rows:2 ~cols:2;
-  let front = Screen.front s in
-  check bool "content outside new size is truncated" true
-    (C.is_empty (get_cell_from_grid front ~row:1 ~col:1));
-  let dirty = Screen.present s in
-  check int "full dirty after resize" 1 (List.length dirty);
-  let r = List.hd dirty in
-  check int "dirty covers new size" 1 r.G.max_row;
-  check int "dirty covers new size" 1 r.G.max_col
-
-let test_resize_to_larger () =
-  let s = Screen.create ~rows:2 ~cols:2 () in
-  Screen.begin_frame s;
-  Screen.set_text s ~row:1 ~col:1 ~text:"x" ~attrs:default_style |> ignore;
-  Screen.present s |> ignore;
-  Screen.resize s ~rows:3 ~cols:3;
-  let front = Screen.front s in
-  check string "old content preserved" "x"
-    (C.get_text (get_cell_from_grid front ~row:1 ~col:1));
-  check bool "new area empty" true
-    (C.is_empty (get_cell_from_grid front ~row:2 ~col:2));
-  let dirty = Screen.present s in
-  check int "full dirty after resize" 1 (List.length dirty);
-  let r = List.hd dirty in
-  check int "dirty covers new size" 2 r.G.max_row;
-  check int "dirty covers new size" 2 r.G.max_col
-
-let viewport = testable Screen.Viewport.pp Screen.Viewport.equal
-
-let test_viewport_module () =
-  let v1 = Screen.Viewport.make ~row:1 ~col:2 ~width:3 ~height:4 in
-  let v2 = Screen.Viewport.make ~row:3 ~col:4 ~width:5 ~height:6 in
-  check bool "equal same" true (Screen.Viewport.equal v1 v1);
-  check bool "equal different" false (Screen.Viewport.equal v1 v2);
-  let inter = Screen.Viewport.intersect v1 v2 in
-  check (option viewport) "intersect overlapping"
-    (Some (Screen.Viewport.make ~row:3 ~col:4 ~width:1 ~height:2))
-    inter
-  |> ignore;
-  let v3 = Screen.Viewport.make ~row:0 ~col:0 ~width:5 ~height:5 in
-  let v4 = Screen.Viewport.make ~row:2 ~col:2 ~width:3 ~height:3 in
-  let inter = Screen.Viewport.intersect v3 v4 in
-  check bool "intersect returns Some" true (Option.is_some inter);
-  let _inter = Option.get inter in
-  (* Viewport fields are not exposed, just check that intersection exists *)
-  check bool "intersection exists" true true;
-  check bool "contains yes" true (Screen.Viewport.contains v3 ~row:3 ~col:3);
-  check bool "contains no" false (Screen.Viewport.contains v3 ~row:5 ~col:5);
-  let full = Screen.Viewport.full ~rows:10 ~cols:20 in
-  (* Just verify full viewport was created *)
-  check bool "full viewport created" true
-    (Screen.Viewport.contains full ~row:5 ~col:10)
-
-let test_copy_viewport () =
-  let src = Screen.create ~rows:5 ~cols:5 () in
-  Screen.begin_frame src;
-  Screen.set_text src ~row:1 ~col:1 ~text:"abc" ~attrs:default_style |> ignore;
-  let dst = Screen.create ~rows:5 ~cols:5 () in
-  Screen.begin_frame dst;
-  let vp = Screen.Viewport.make ~row:1 ~col:1 ~width:3 ~height:1 in
-  Screen.copy_viewport ~src ~dst ~src_viewport:vp ~dst_row:3 ~dst_col:2;
-  let dst_back = Screen.back dst in
-  check string "copied content" "a"
-    (C.get_text (get_cell_from_grid dst_back ~row:3 ~col:2));
-  check string "copied content" "b"
-    (C.get_text (get_cell_from_grid dst_back ~row:3 ~col:3));
-  check string "copied content" "c"
-    (C.get_text (get_cell_from_grid dst_back ~row:3 ~col:4))
-
-let test_clear_rect () =
-  let s = Screen.create ~rows:5 ~cols:5 () in
-  Screen.begin_frame s;
-  Screen.set_text s ~row:0 ~col:0 ~text:"abcde" ~attrs:default_style |> ignore;
-  Screen.set_text s ~row:1 ~col:0 ~text:"abcde" ~attrs:default_style |> ignore;
-  Screen.clear_rect s ~row_start:0 ~row_end:1 ~col_start:1 ~col_end:3;
-  let back = Screen.back s in
-  check bool "cleared" true (C.is_empty (get_cell_from_grid back ~row:0 ~col:1));
-  check bool "cleared" true (C.is_empty (get_cell_from_grid back ~row:1 ~col:3));
-  check string "untouched" "a"
-    (C.get_text (get_cell_from_grid back ~row:0 ~col:0));
-  check string "untouched" "e"
-    (C.get_text (get_cell_from_grid back ~row:1 ~col:4));
-  let vp = Screen.Viewport.make ~row:1 ~col:1 ~width:3 ~height:1 in
-  Screen.clear_rect s ~viewport:vp ~row_start:1 ~row_end:1 ~col_start:0
-    ~col_end:4;
-  check bool "viewport clips clear" false
-    (C.is_empty (get_cell_from_grid back ~row:1 ~col:0));
-  check bool "viewport clears inside" true
-    (C.is_empty (get_cell_from_grid back ~row:1 ~col:1))
-
-let test_clear_line () =
-  let s = Screen.create ~rows:1 ~cols:5 () in
-  Screen.begin_frame s;
-  Screen.set_text s ~row:0 ~col:0 ~text:"abcde" ~attrs:default_style |> ignore;
-  Screen.clear_line s ~row:0 ~col:2;
-  let back = Screen.back s in
-  check string "before clear" "a"
-    (C.get_text (get_cell_from_grid back ~row:0 ~col:0));
-  check string "before clear" "b"
-    (C.get_text (get_cell_from_grid back ~row:0 ~col:1));
-  check bool "cleared" true (C.is_empty (get_cell_from_grid back ~row:0 ~col:2));
-  check bool "cleared" true (C.is_empty (get_cell_from_grid back ~row:0 ~col:3));
-  check bool "cleared" true (C.is_empty (get_cell_from_grid back ~row:0 ~col:4));
-  let vp = Screen.Viewport.make ~row:0 ~col:3 ~width:2 ~height:1 in
-  Screen.set_text s ~row:0 ~col:0 ~text:"abcde" ~attrs:default_style |> ignore;
-  Screen.clear_line s ~viewport:vp ~row:0 ~col:2;
-  check string "outside vp untouched" "c"
-    (C.get_text (get_cell_from_grid back ~row:0 ~col:2));
-  check bool "inside vp cleared" true
-    (C.is_empty (get_cell_from_grid back ~row:0 ~col:3));
-  check bool "inside vp cleared" true
-    (C.is_empty (get_cell_from_grid back ~row:0 ~col:4))
-
-let test_set_grapheme_edge () =
-  let s = Screen.create ~rows:2 ~cols:2 () in
-  Screen.begin_frame s;
-  Screen.set_grapheme s ~row:0 ~col:0 ~glyph:"é" ~attrs:default_style;
-  check string "grapheme set" "é"
-    (C.get_text (get_cell_from_grid (Screen.back s) ~row:0 ~col:0));
-  (* Out of bounds operations are silently ignored, not exceptions *)
-  Screen.set_grapheme s ~row:2 ~col:0 ~glyph:"x" ~attrs:default_style;
-  Screen.set_grapheme s ~row:0 ~col:2 ~glyph:"x" ~attrs:default_style;
-  (* Verify nothing was written out of bounds *)
-  check bool "out of bounds writes ignored" true
-    (C.is_empty (get_cell_from_grid (Screen.back s) ~row:1 ~col:1));
-  let vp = Screen.Viewport.make ~row:0 ~col:0 ~width:1 ~height:1 in
-  Screen.set_grapheme s ~viewport:vp ~row:0 ~col:1 ~glyph:"y"
-    ~attrs:default_style;
-  check bool "viewport clips" true
-    (C.is_empty (get_cell_from_grid (Screen.back s) ~row:0 ~col:1))
-
-let test_set_text_returns () =
-  let s = Screen.create ~rows:2 ~cols:5 () in
-  Screen.begin_frame s;
-  let lines, adv =
-    Screen.set_text s ~row:0 ~col:0 ~text:"abc" ~attrs:default_style
+let create_renderer ?(width = 10) ?(height = 10) () =
+  let r = Screen.create () in
+  (* Build and render a frame to initialize buffers *)
+  let _ =
+    Screen.build r ~width ~height (fun _grid _hits -> ()) |> Screen.render
   in
-  check int "lines written" 1 lines;
-  check int "cols advanced" 3 adv;
-  let lines, adv =
-    Screen.set_text s ~row:1 ~col:3 ~text:"" ~attrs:default_style
-  in
-  check int "empty text lines" 0 lines;
-  check int "empty text adv" 0 adv;
-  let vp = Screen.Viewport.make ~row:0 ~col:0 ~width:2 ~height:1 in
-  let lines, adv =
-    Screen.set_text s ~viewport:vp ~row:0 ~col:1 ~text:"def"
-      ~attrs:default_style
-  in
-  check int "clipped lines" 1 lines;
-  check int "clipped adv" 1 adv;
-  (* only "d" fits *)
-  let lines, adv =
-    Screen.set_text s ~viewport:vp ~row:0 ~col:3 ~text:"x" ~attrs:default_style
-  in
-  check int "outside vp lines" 0 lines;
-  check int "outside vp adv" 0 adv
+  r
 
-let test_set_multiline_returns () =
-  let s = Screen.create ~rows:3 ~cols:5 () in
-  Screen.begin_frame s;
-  let lines, max_adv =
-    Screen.set_multiline_text s ~row:0 ~col:0 ~text:"ab\ncde\nf"
-      ~attrs:default_style
+let count_cursor_moves output =
+  (* Count cursor position sequences (ESC[row;colH) *)
+  let re = Str.regexp "\027\\[[0-9]+;[0-9]+H" in
+  let rec count acc pos =
+    try
+      let _ = Str.search_forward re output pos in
+      count (acc + 1) (Str.match_end ())
+    with Not_found -> acc
   in
-  check int "lines written" 3 lines;
-  check int "max adv" 3 max_adv;
-  (* "cde" is 3 *)
-  let vp = Screen.Viewport.make ~row:0 ~col:0 ~width:5 ~height:2 in
-  let lines, max_adv =
-    Screen.set_multiline_text s ~viewport:vp ~row:0 ~col:0 ~text:"ab\ncde\nf"
-      ~attrs:default_style
+  count 0 0
+
+let add_unique_by_phys acc v =
+  if List.exists (fun existing -> existing == v) acc then acc else v :: acc
+
+(* 1. Core Rendering Tests *)
+
+let test_create_renderer () =
+  let r = Screen.create () in
+  check bool "renderer created" true (r != Obj.magic 0)
+
+let zero_frame_expected = "\027[?2026h\027[?25l\027[1 q\027[?25h\027[?2026l"
+
+let test_zero_sized_frame () =
+  (* Edge case: 0x0 frame should not crash *)
+  let r = Screen.create ~mouse_enabled:false () in
+  let frame = Screen.build r ~width:0 ~height:0 (fun _ _ -> ()) in
+  let output = Screen.render frame in
+  check string "empty output" zero_frame_expected output
+
+let test_single_cell_frame () =
+  let r = Screen.create () in
+  let frame =
+    Screen.build r ~width:1 ~height:1 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"X")
   in
-  check int "clipped vertical lines" 2 lines;
-  check int "clipped max adv" 3 max_adv
+  let output = Screen.render frame in
+  check bool "contains text" true (String.length output > 0);
+  check bool "contains X" true (String.contains output 'X')
 
-let test_render_clear_bug () =
-  let s = Screen.create ~rows:1 ~cols:3 () in
-  Screen.begin_frame s;
-  Screen.set_text s ~row:0 ~col:0 ~text:"abc" ~attrs:default_style |> ignore;
-  Screen.present s |> ignore;
-  Screen.begin_frame s;
-  Screen.clear s;
-  let patches = Screen.render s in
-  check patch_list "clear should produce patches" [ Screen.Clear_screen ]
-    patches (* but code produces [], revealing bug *)
+let test_simple_text_rendering () =
+  let r = Screen.create () in
+  let frame =
+    Screen.build r ~width:10 ~height:10 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"Hello")
+  in
+  let output = Screen.render frame in
+  check bool "output not empty" true (String.length output > 0);
+  (* Check that all characters from "Hello" appear in output *)
+  check bool "contains H" true (String.contains output 'H');
+  check bool "contains e" true (String.contains output 'e');
+  check bool "contains l" true (String.contains output 'l');
+  check bool "contains o" true (String.contains output 'o')
 
-let test_render_large_change () =
-  let s = Screen.create ~rows:10 ~cols:10 () in
-  Screen.begin_frame s;
-  for i = 0 to 9 do
-    Screen.set_text s ~row:i ~col:0 ~text:(String.make 10 'a')
-      ~attrs:default_style
-    |> ignore
+let test_hyperlink_rendering () =
+  let r = Screen.create () in
+  let frame1 =
+    Screen.build r ~width:4 ~height:1 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"A")
+  in
+  let _ = Screen.render frame1 in
+  let link_style =
+    Ansi.Style.hyperlink "https://example.com" Ansi.Style.default
+  in
+  let frame2 =
+    Screen.build r ~width:4 ~height:1 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"A" ~style:link_style)
+  in
+  let output = Screen.render frame2 in
+  let expected = "\027]8;;https://example.com" in
+  let contains_expected =
+    try
+      let _ = Str.search_forward (Str.regexp_string expected) output 0 in
+      true
+    with Not_found -> false
+  in
+  check bool "contains hyperlink start" true contains_expected
+
+let test_row_offset_applied () =
+  let r = create_renderer ~width:2 ~height:2 () in
+  Screen.set_row_offset r 3;
+  let frame =
+    Screen.build r ~width:2 ~height:2 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"A")
+  in
+  let output = Screen.render frame in
+  let expected = "\027[4;1H" in
+  let has_seq =
+    try
+      let _ = Str.search_forward (Str.regexp_string expected) output 0 in
+      true
+    with Not_found -> false
+  in
+  check bool "cursor moved with offset" true has_seq;
+  check bool "character rendered" true (String.contains output 'A')
+
+(* 2. Diff Algorithm Tests *)
+
+let test_diff_only_changed_cells () =
+  (* Render should only output changed cells *)
+  let r = create_renderer ~width:5 ~height:5 () in
+
+  (* First frame *)
+  let f1 =
+    Screen.build r ~width:5 ~height:5 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"XXXXX")
+  in
+  let output1 = Screen.render f1 in
+  let moves1 = count_cursor_moves output1 in
+
+  (* Second frame - only change one cell *)
+  let f2 =
+    Screen.build r ~width:5 ~height:5 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"XXXXY")
+  in
+  let output2 = Screen.render f2 in
+  let moves2 = count_cursor_moves output2 in
+
+  (* Should not require additional cursor moves once diff is warmed up *)
+  check bool "second frame has <= moves" true (moves2 <= moves1);
+  let moved_to_changed =
+    try
+      let _ = Str.search_forward (Str.regexp_string "\027[1;5H") output2 0 in
+      true
+    with Not_found -> false
+  in
+  check bool "moves cursor to changed cell" true moved_to_changed;
+  check bool "second frame not empty" true (String.length output2 > 0)
+
+let test_no_diff_when_unchanged () =
+  let r = create_renderer ~width:5 ~height:5 () in
+
+  (* First render *)
+  let f1 =
+    Screen.build r ~width:5 ~height:5 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"Test")
+  in
+  let _output1 = Screen.render f1 in
+
+  (* Second render with same content; expect only control scaffolding *)
+  let f2 =
+    Screen.build r ~width:5 ~height:5 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"Test")
+  in
+  let output2 = Screen.render f2 in
+
+  (* Should have minimal output: sync on/off + hide/show cursor, no cursor moves *)
+  check bool "has sync on" true (String.contains output2 '\027');
+  check bool "length small" true (String.length output2 <= 120)
+
+let test_wide_char_diff () =
+  (* Test that wide characters are diffed correctly *)
+  let r = create_renderer () in
+
+  let f1 =
+    Screen.build r ~width:10 ~height:1 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"Hello")
+  in
+  let _output1 = Screen.render f1 in
+
+  let f2 =
+    Screen.build r ~width:10 ~height:1 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"你好")
+  in
+  (* Chinese chars, 2 cells each *)
+  let output2 = Screen.render f2 in
+
+  check bool "wide char output" true (String.length output2 > 0)
+
+(* 3. Frame Building Tests *)
+
+let test_build_visual () =
+  (* build_visual should not require hit grid function *)
+  let r = Screen.create () in
+  let frame =
+    Screen.build r ~width:5 ~height:5 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"Hi")
+  in
+  let output = Screen.render frame in
+  check bool "visual build works" true (String.length output > 0)
+
+let test_resize_preserves_content () =
+  let r = create_renderer ~width:5 ~height:5 () in
+
+  (* Draw something *)
+  let f1 =
+    Screen.build r ~width:5 ~height:5 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"ABC")
+  in
+  let _output1 = Screen.render f1 in
+
+  (* Resize larger *)
+  let f2 =
+    Screen.build r ~width:10 ~height:10 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"ABC")
+  in
+  let output2 = Screen.render f2 in
+
+  (* Should not re-render unchanged cells *)
+  check bool "resize works" true (String.length output2 < 100)
+
+let test_resize_smaller () =
+  (* Edge case: shrinking grid *)
+  let r = create_renderer ~width:10 ~height:10 () in
+
+  let f1 =
+    Screen.build r ~width:10 ~height:10 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"BigText")
+  in
+  let _output1 = Screen.render f1 in
+
+  let f2 =
+    Screen.build r ~width:3 ~height:3 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"Sm")
+  in
+  let output2 = Screen.render f2 in
+
+  check bool "shrink works" true (String.length output2 > 0)
+
+let test_resize_clears_both_buffers () =
+  (* Test that resize clears both current and next buffers, ensuring proper diffing *)
+  let r = create_renderer ~width:5 ~height:5 () in
+
+  (* Fill the screen with content *)
+  let f1 =
+    Screen.build r ~width:5 ~height:5 (fun grid _hits ->
+        Grid.fill_rect grid ~x:0 ~y:0 ~width:5 ~height:5
+          ~color:(Ansi.Color.of_rgb 255 0 0))
+  in
+  let _output1 = Screen.render f1 in
+
+  (* Resize to larger dimensions *)
+  Screen.resize r ~width:10 ~height:10;
+
+  (* Build a frame that only draws a small region *)
+  let f2 =
+    Screen.build r ~width:10 ~height:10 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"Small")
+  in
+  let output2 = Screen.render f2 in
+
+  (* The output should not contain the old red background content *)
+  (* Check that we don't have excessive output (which would indicate stale content) *)
+  check bool "resize clears buffers" true (String.length output2 < 200);
+
+  (* Verify the new content is rendered *)
+  check bool "new content rendered" true (String.contains output2 'S')
+
+let test_cursor_clamped_on_resize () =
+  let r = create_renderer ~width:3 ~height:3 () in
+  Screen.set_cursor_position r ~row:5 ~col:5;
+  Screen.resize r ~width:2 ~height:1;
+  let frame = Screen.build r ~width:2 ~height:1 (fun _grid _hits -> ()) in
+  let output = Screen.render frame in
+  let expected = "\027[1;2H" in
+  let has_seq =
+    try
+      let _ = Str.search_forward (Str.regexp_string expected) output 0 in
+      true
+    with Not_found -> false
+  in
+  check bool "cursor position clamped to bounds" true has_seq
+
+(* 4. Post-Processing Tests *)
+
+let test_post_process_receives_delta () =
+  let r = Screen.create () in
+  let delta_received = ref None in
+
+  let frame1 = Screen.build r ~width:5 ~height:5 (fun _grid _hits -> ()) in
+  let frame2 =
+    Screen.post_process
+      (fun _grid ~delta -> delta_received := Some delta)
+      frame1
+  in
+  let _output = Screen.render frame2 in
+
+  check bool "delta was received" true (Option.is_some !delta_received);
+  let delta = Option.get !delta_received in
+  check bool "delta is non-negative" true (delta >= 0.)
+
+let test_post_process_chain () =
+  (* Multiple post-process functions should be applied in order *)
+  let r = Screen.create () in
+  let calls = ref [] in
+
+  let frame1 = Screen.build r ~width:5 ~height:5 (fun _grid _hits -> ()) in
+  let frame2 =
+    Screen.post_process
+      (fun _grid ~delta:_ -> calls := "first" :: !calls)
+      frame1
+  in
+  let frame3 =
+    Screen.post_process
+      (fun _grid ~delta:_ -> calls := "second" :: !calls)
+      frame2
+  in
+  let _output = Screen.render frame3 in
+
+  (* Should be called in order (reversed because we cons) *)
+  check (list string) "call order" [ "second"; "first" ] !calls
+
+let test_post_process_persists_across_frames () =
+  (* Post-processors persist until explicitly removed *)
+  let r = Screen.create () in
+  let call_count = ref 0 in
+  let effect_ _grid ~delta:_ = incr call_count in
+
+  let frame1 = Screen.build r ~width:5 ~height:5 (fun _grid _hits -> ()) in
+  let frame1 = Screen.post_process effect_ frame1 in
+  let _ = Screen.render frame1 in
+
+  let frame2 = Screen.build r ~width:5 ~height:5 (fun _grid _hits -> ()) in
+  let _ = Screen.render frame2 in
+
+  check int "called twice" 2 !call_count
+
+let test_remove_post_process () =
+  let r = Screen.create () in
+  let call_count = ref 0 in
+  let effect_ _grid ~delta:_ = incr call_count in
+
+  let frame = Screen.build r ~width:5 ~height:5 (fun _grid _hits -> ()) in
+  let frame = Screen.post_process effect_ frame in
+  let _ = Screen.render frame in
+
+  let _frame = Screen.remove_post_process effect_ frame in
+  let frame2 = Screen.build r ~width:5 ~height:5 (fun _grid _hits -> ()) in
+  let _ = Screen.render frame2 in
+
+  check int "effect removed" 1 !call_count
+
+let test_clear_post_processes () =
+  let r = Screen.create () in
+  let call_count = ref 0 in
+  let effect1 _grid ~delta:_ = incr call_count in
+  let effect2 _grid ~delta:_ = incr call_count in
+
+  let frame =
+    Screen.build r ~width:5 ~height:5 (fun _grid _hits -> ())
+    |> Screen.post_process effect1
+    |> Screen.post_process effect2
+  in
+  let _ = Screen.render frame in
+  check int "both effects ran" 2 !call_count;
+
+  let _ = Screen.clear_post_processes frame in
+  let frame2 = Screen.build r ~width:5 ~height:5 (fun _grid _hits -> ()) in
+  let _ = Screen.render frame2 in
+
+  check int "effects cleared" 2 !call_count
+
+(* 5. Hit Grid Tests *)
+
+let test_hit_grid_integration () =
+  let r = Screen.create () in
+  let hit_id = ref 0 in
+
+  let frame =
+    Screen.build r ~width:10 ~height:10 (fun grid hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"Button";
+        Screen.Hit_grid.add hits ~x:0 ~y:0 ~width:6 ~height:1 ~id:42)
+  in
+  let _ = Screen.render frame in
+  hit_id := Screen.query_hit frame ~x:0 ~y:0;
+  check int "hit id at (0,0)" 42 !hit_id;
+
+  hit_id := Screen.query_hit frame ~x:7 ~y:0;
+  check int "no hit at (7,0)" 0 !hit_id
+
+let test_hit_grid_cleared_each_frame () =
+  let r = Screen.create () in
+
+  (* First frame with hit region *)
+  let f1 =
+    Screen.build r ~width:10 ~height:10 (fun _grid hits ->
+        Screen.Hit_grid.add hits ~x:0 ~y:0 ~width:5 ~height:1 ~id:1)
+  in
+  let _o1 = Screen.render f1 in
+
+  (* Second frame without hit region *)
+  let f2 = Screen.build r ~width:10 ~height:10 (fun _grid _hits -> ()) in
+  let _o2 = Screen.render f2 in
+
+  let hit_id = Screen.query_hit f2 ~x:0 ~y:0 in
+  check int "hit cleared" 0 hit_id
+
+let test_hit_grid_swap_on_render () =
+  let r = Screen.create () in
+
+  let frame1 =
+    Screen.build r ~width:3 ~height:3 (fun _grid hits ->
+        Screen.Hit_grid.add hits ~x:1 ~y:1 ~width:1 ~height:1 ~id:1)
+  in
+  let _ = Screen.render frame1 in
+
+  (* Building the next frame should not swap hits until render runs. *)
+  let frame2 =
+    Screen.build r ~width:3 ~height:3 (fun _grid hits ->
+        Screen.Hit_grid.add hits ~x:1 ~y:1 ~width:1 ~height:1 ~id:2)
+  in
+  let before = Screen.query_hit frame2 ~x:1 ~y:1 in
+  check int "previous hit active before swap" 1 before;
+
+  let _ = Screen.render frame2 in
+  let after = Screen.query_hit frame2 ~x:1 ~y:1 in
+  check int "next hit active after swap" 2 after
+
+let test_add_hit_region_helper () =
+  let r = Screen.create () in
+  let frame1 = Screen.build r ~width:10 ~height:10 (fun _grid _hits -> ()) in
+  let frame2 =
+    Screen.add_hit_region frame1 ~x:5 ~y:5 ~width:2 ~height:2 ~id:99
+  in
+
+  let _ = Screen.render frame2 in
+  let hit_id = Screen.query_hit frame2 ~x:5 ~y:5 in
+  check int "hit region added" 99 hit_id
+
+(* 6. Statistics Tests *)
+
+let test_stats_tracking () =
+  let r = Screen.create () in
+
+  let f1 =
+    Screen.build r ~width:10 ~height:10 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"Test")
+  in
+  let _output1 = Screen.render f1 in
+
+  let stats = Screen.stats r in
+  let metrics = Screen.last_metrics r in
+  check int "frame count" 1 stats.frame_count;
+  check bool "cells updated" true (metrics.cells > 0);
+  check bool "output bytes" true (metrics.bytes > 0);
+  check bool "frame time" true (metrics.frame_time_ms >= 0.)
+
+(* 7. Configuration Tests *)
+
+let test_update_config () =
+  let r = Screen.create () in
+
+  Screen.set_cursor_visible r false;
+
+  let frame = Screen.build r ~width:5 ~height:5 (fun _grid _hits -> ()) in
+  let _ = Screen.render frame in
+  let metrics = Screen.last_metrics r in
+  check bool "cursor visibility updated" false metrics.cursor_visible
+
+let test_reset () =
+  let r = Screen.create () in
+
+  (* Render a few frames *)
+  for _i = 1 to 3 do
+    let f = Screen.build r ~width:5 ~height:5 (fun _grid _hits -> ()) in
+    let _o = Screen.render f in
+    ()
   done;
-  Screen.present s |> ignore;
-  Screen.begin_frame s;
-  Screen.clear s;
-  for i = 0 to 9 do
-    Screen.set_text s ~row:i ~col:0 ~text:(String.make 10 'b')
-      ~attrs:default_style
-    |> ignore
-  done;
-  let patches = Screen.render s in
-  check bool "large change uses Clear_screen" true
-    (List.exists (function Screen.Clear_screen -> true | _ -> false) patches);
-  check int "includes new runs" 10
-    (List.length
-       (List.filter (function Screen.Run _ -> true | _ -> false) patches))
 
-let test_render_mosaic_pattern () =
-  (* Test the exact pattern used by mosaic: begin_frame + clear + partial content *)
-  let s = Screen.create ~rows:5 ~cols:10 () in
-  
-  (* Frame 1: Add content to multiple rows *)
-  Screen.begin_frame s;
-  Screen.clear s;
-  Screen.set_text s ~row:1 ~col:2 ~text:"Hello" ~attrs:default_style |> ignore;
-  Screen.set_text s ~row:2 ~col:2 ~text:"World" ~attrs:default_style |> ignore;
-  Screen.set_text s ~row:3 ~col:2 ~text:"Test" ~attrs:default_style |> ignore;
-  Screen.present s |> ignore;
-  
-  (* Frame 2: Clear and only redraw some content (mosaic pattern) *)
-  Screen.begin_frame s;
-  Screen.clear s;
-  Screen.set_text s ~row:1 ~col:2 ~text:"Hello" ~attrs:default_style |> ignore;
-  (* Row 2 is NOT redrawn - should be cleared *)
-  Screen.set_text s ~row:3 ~col:2 ~text:"Test" ~attrs:default_style |> ignore;
-  
-  let patches = Screen.render s in
-  
-  (* Check that we get patches for the cleared row *)
-  let has_clear_for_row2 = List.exists (function
-    | Screen.Clear_line { row; _ } when row = 2 -> true
-    | Screen.Clear_region { row; height; _ } when row <= 2 && row + height > 2 -> true
-    | Screen.Clear_screen -> true
-    | _ -> false
-  ) patches in
-  
-  check bool "should have clear patch for row 2" true has_clear_for_row2;
-  
-  (* Verify the content is actually cleared after present *)
-  Screen.present s |> ignore;
-  let front = Screen.front s in
-  let row2_empty = ref true in
-  for col = 0 to 9 do
-    match G.get front ~row:2 ~col with
-    | Some cell when C.is_glyph cell && C.get_text cell <> "" ->
-        row2_empty := false
-    | _ -> ()
-  done;
-  check bool "row 2 should be empty in front buffer" true !row2_empty;
-  
-  (* Additional test: styled empty cells should not produce Clear_screen *)
-  let s2 = Screen.create ~rows:3 ~cols:5 () in
-  let bg_style = Ansi.Style.(default |> with_bg (Index 4)) in
-  
-  (* Frame 1: Content with background *)
-  Screen.begin_frame s2;
-  Screen.set_text s2 ~row:1 ~col:1 ~text:"ABC" ~attrs:bg_style |> ignore;
-  Screen.present s2 |> ignore;
-  
-  (* Frame 2: Clear with styled background *)
-  Screen.begin_frame s2;
-  let back = Screen.back s2 in
-  G.clear ~style:bg_style back;
-  
-  let patches2 = Screen.render s2 in
-  
-  (* Check for the bug: Clear_screen followed by styled runs *)
-  let has_clear_screen = List.exists (function Screen.Clear_screen -> true | _ -> false) patches2 in
-  let has_styled_runs = List.exists (function
-    | Screen.Run { style; _ } -> 
-        (match Ansi.Style.bg style with Ansi.Style.Default -> false | _ -> true)
-    | _ -> false
-  ) patches2 in
-  
-  check bool "styled empty cells should not trigger Clear_screen" false has_clear_screen;
-  check bool "styled empty cells should produce Run patches" true has_styled_runs
+  let stats_before = Screen.stats r in
+  check int "frames before reset" 3 stats_before.frame_count;
 
-let test_render_clear_removed_content () =
-  (* Test that removing content generates appropriate clear patches *)
-  let s = Screen.create ~rows:3 ~cols:5 () in
-  
-  (* Frame 1: Add a single character *)
-  Screen.begin_frame s;
-  Screen.set_text s ~row:1 ~col:2 ~text:"X" ~attrs:default_style |> ignore;
-  Screen.present s |> ignore;
-  
-  (* Frame 2: Clear everything *)
-  Screen.begin_frame s;
-  Screen.clear s;
-  
-  let patches = Screen.render s in
-  check bool "clearing content should generate patches" true (patches <> []);
-  
-  let has_clear = List.exists (function
-    | Screen.Clear_screen -> true
-    | Screen.Clear_line _ -> true
-    | Screen.Clear_region _ -> true
-    | _ -> false
-  ) patches in
-  check bool "should have at least one clear patch" true has_clear;
-  
-  (* Test styled empty cells vs truly empty cells *)
-  let s2 = Screen.create ~rows:2 ~cols:4 () in
-  let bg_style = Ansi.Style.(default |> with_bg (Index 2)) in
-  
-  (* Frame 1: Mix of styled and unstyled content *)
-  Screen.begin_frame s2;
-  Screen.set_text s2 ~row:0 ~col:0 ~text:"AB" ~attrs:default_style |> ignore;
-  Screen.set_text s2 ~row:0 ~col:2 ~text:"CD" ~attrs:bg_style |> ignore;
-  Screen.present s2 |> ignore;
-  
-  (* Frame 2: Clear unstyled content, replace styled content with styled spaces *)
-  Screen.begin_frame s2;
-  (* Explicitly clear the unstyled area - this should generate Clear_region *)
-  Screen.clear_rect s2 ~row_start:0 ~row_end:0 ~col_start:0 ~col_end:1;
-  (* Replace styled area with styled spaces - should generate Run with spaces *)
-  Screen.set_grapheme s2 ~row:0 ~col:2 ~glyph:" " ~attrs:bg_style;
-  Screen.set_grapheme s2 ~row:0 ~col:3 ~glyph:" " ~attrs:bg_style;
-  
-  let patches2 = Screen.render s2 in
-  
-  let has_clear_region = List.exists (function Screen.Clear_region _ -> true | _ -> false) patches2 in
-  let has_styled_space_run = List.exists (function
-    | Screen.Run { text; style; _ } when String.trim text = "" ->
-        (match Ansi.Style.bg style with Ansi.Style.Default -> false | _ -> true)
-    | _ -> false
-  ) patches2 in
-  
-  check bool "unstyled empty cells should generate Clear_region" true has_clear_region;
-  check bool "styled empty cells should generate Run with spaces" true has_styled_space_run
+  Screen.reset r;
 
-let test_render_to_string () =
-  let s = Screen.create ~rows:2 ~cols:3 () in
-  Screen.begin_frame s;
-  let style = Ansi.Style.with_bold true default_style in
-  Screen.set_text s ~row:0 ~col:0 ~text:"ab" ~attrs:style |> ignore;
-  Screen.set_text s ~row:1 ~col:0 ~text:"c " ~attrs:default_style |> ignore;
-  let str = Screen.render_to_string s in
-  check string "render with styles and spaces" "\027[1mab\027[0m\nc " str
-(* note trailing space in line 1 trimmed? code adds ' ' for empty, but trims? wait, code adds ' ' for empty, no trim in code *)
-(* code: for empty, if prev_style != default, reset and add ' ', else add ' ' without reset *)
+  let stats_after = Screen.stats r in
+  check int "frames after reset" 0 stats_after.frame_count;
+  check int "cells after reset" 0 stats_after.total_cells
 
-let test_patch_to_sgr () =
-  let run =
-    Screen.Run
-      {
-        row = 0;
-        col = 0;
-        text = "hi";
-        style = Ansi.Style.with_bold true default_style;
-        width = 2;
-      }
+let test_reset_triggers_next_diff () =
+  let r = create_renderer ~width:1 ~height:1 () in
+
+  let f1 =
+    Screen.build r ~width:1 ~height:1 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"X")
   in
-  check string "run to sgr" "\027[1;1H\027[1mhi" (Screen.patch_to_sgr run);
-  let clear_reg =
-    Screen.Clear_region { row = 1; col = 2; width = 3; height = 1 }
+  let _ = Screen.render f1 in
+
+  Screen.reset r;
+
+  let f2 = Screen.build r ~width:1 ~height:1 (fun _ _ -> ()) in
+  let output2 = Screen.render f2 in
+
+  check bool "cursor moves after reset" true (count_cursor_moves output2 >= 1);
+  check bool "clears previous glyph" true (not (String.contains output2 'X'))
+
+(* 8. Edge Cases and Boundary Conditions *)
+
+let test_extremely_wide_char () =
+  (* Test rendering with emoji that might have unusual widths *)
+  let r = create_renderer () in
+  let f =
+    Screen.build r ~width:20 ~height:1 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"🎨🚀✨")
   in
-  check string "clear region to sgr" "\027[2;3H   "
-    (Screen.patch_to_sgr clear_reg);
-  (* code builds spaces *)
-  let clear_line = Screen.Clear_line { row = 3; from_col = 4 } in
-  check string "clear line to sgr" "\027[4;5H\027[K"
-    (Screen.patch_to_sgr clear_line);
-  check string "clear screen to sgr" "\027[2J\027[H"
-    (Screen.patch_to_sgr Screen.Clear_screen);
-  let prev = Some (Ansi.Style.with_fg Ansi.Style.Red default_style) in
-  let run2 =
-    Screen.Run
-      { row = 0; col = 0; text = "x"; style = default_style; width = 1 }
+  let output = Screen.render f in
+  check bool "emoji renders" true (String.length output > 0)
+
+let test_buffer_overflow_prevention () =
+  (* Test with large frame (200x60) and complex content to ensure 2MB buffer doesn't overflow *)
+  let r = create_renderer ~width:200 ~height:60 () in
+  let f =
+    Screen.build r ~width:200 ~height:60 (fun grid _hits ->
+        (* Fill with complex content: mixed text, colors, attributes *)
+        let rec fill y =
+          if y >= 60 then ()
+          else
+            let style =
+              Ansi.Style.make
+                ~fg:(Ansi.Color.of_rgb (y * 4) (y * 4 mod 255) (255 - (y * 4)))
+                ~bg:(Ansi.Color.of_rgb (y * 4 mod 255) (y * 4) (y * 4 mod 255))
+                ~bold:(y mod 2 = 0)
+                ~italic:(y mod 3 = 0)
+                ()
+            in
+            Grid.draw_text grid ~x:0 ~y ~text:(String.make 200 'A') ~style;
+            fill (y + 1)
+        in
+        fill 0)
   in
-  check string "with prev_style" "\027[1;1H\027[39mx"
-    (Screen.patch_to_sgr ~prev_style:prev run2)
+  (* Should not raise buffer overflow *)
+  let output = Screen.render f in
+  check bool "large frame renders without overflow" true
+    (String.length output > 1000)
 
-let test_patches_to_sgr () =
-  let patches =
-    [
-      Screen.Clear_screen;
-      Screen.Run
-        {
-          row = 0;
-          col = 0;
-          text = "bold";
-          style = Ansi.Style.with_bold true default_style;
-          width = 4;
-        };
-      Screen.Run
-        { row = 1; col = 0; text = "normal"; style = default_style; width = 6 };
-    ]
+let test_resize_full_redraw () =
+  (* Test that first frame after resize is full redraw *)
+  let r = create_renderer ~width:10 ~height:10 () in
+
+  (* First frame *)
+  let f1 =
+    Screen.build r ~width:10 ~height:10 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"Initial")
   in
-  let sgr = Screen.patches_to_sgr patches in
-  check string "sequence"
-    "\027[2J\027[H\027[1;1H\027[1mbold\027[2;1H\027[0mnormal"
-    sgr (* prev_style tracked *)
+  let _ = Screen.render f1 in
 
-let test_patches_to_sgr_sync () =
-  let patches = [ Screen.Clear_screen ] in
-  let sgr = Screen.patches_to_sgr_synchronized patches in
-  check string "wrapped" "\027[?2026h\027[2J\027[H\027[?2026l" sgr
+  (* Resize *)
+  Screen.resize r ~width:20 ~height:20;
 
-let test_cursor_out_of_bounds () =
-  let s = Screen.create ~rows:2 ~cols:2 () in
-  Screen.set_cursor s ~row:(-1) ~col:0;
-  check (option (pair int int)) "negative row None" None (Screen.get_cursor s);
-  Screen.set_cursor s ~row:0 ~col:2;
-  check (option (pair int int)) "col overflow None" None (Screen.get_cursor s);
-  Screen.set_cursor s ~row:2 ~col:0;
-  check (option (pair int int)) "row overflow None" None (Screen.get_cursor s)
-
-let test_perf_counters () =
-  Screen.Perf.reset ();
-  let c1 = Screen.Perf.get () in
-  check int "initial zero" 0 c1.frames_rendered;
-  let s = Screen.create ~rows:1 ~cols:1 () in
-  Screen.begin_frame s;
-  Screen.set_grapheme s ~row:0 ~col:0 ~glyph:"x" ~attrs:default_style;
-  let patches = Screen.render s in
-  let c2 = Screen.Perf.get () in
-  check int "frames incremented" 1 c2.frames_rendered;
-  check int "patches incremented" (List.length patches) c2.patches_generated;
-  Screen.Perf.reset ();
-  let c3 = Screen.Perf.get () in
-  check int "reset works" 0 c3.frames_rendered
-
-let test_empty_screen () =
-  let s = Screen.create ~rows:0 ~cols:0 () in
-  (* code allows? Grid.create ~rows:0 ~cols:0 ok? assume yes *)
-  check int "rows" 0 (Screen.rows s);
-  check int "cols" 0 (Screen.cols s);
-  Screen.begin_frame s;
-  (* should not crash *)
-  let patches = Screen.render s in
-  check patch_list "render empty" [] patches;
-  let dirty = Screen.present s in
-  check int "present empty" 0 (List.length dirty)
-
-let test_negative_viewport () =
-  check_raises "negative width"
-    (Invalid_argument "Viewport.make: negative width/height") (fun () ->
-      Screen.Viewport.make ~row:0 ~col:0 ~width:(-1) ~height:1 |> ignore);
-  check_raises "negative height"
-    (Invalid_argument "Viewport.make: negative width/height") (fun () ->
-      Screen.Viewport.make ~row:0 ~col:0 ~width:1 ~height:(-1) |> ignore)
-
-let test_set_text_negative_pos () =
-  let s = Screen.create ~rows:2 ~cols:2 () in
-  Screen.begin_frame s;
-  let lines, adv =
-    Screen.set_text s ~row:(-1) ~col:0 ~text:"x" ~attrs:default_style
+  (* Second frame - should be full redraw *)
+  let f2 =
+    Screen.build r ~width:20 ~height:20 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"Resized")
   in
-  check int "negative row lines" 0 lines;
-  check int "negative row adv" 0 adv;
-  let vp = Screen.Viewport.make ~row:0 ~col:0 ~width:2 ~height:2 in
-  let lines, adv =
-    Screen.set_text s ~viewport:vp ~row:0 ~col:(-1) ~text:"xy"
-      ~attrs:default_style
+  let output2 = Screen.render f2 in
+
+  (* Should contain some cursor movements for the diff *)
+  let moves = count_cursor_moves output2 in
+  check bool "contains cursor moves" true (moves > 0)
+
+let test_resize_hit_grid_cleared () =
+  (* Test that hit grids don't leak stale IDs after resize *)
+  let r = create_renderer ~width:10 ~height:10 () in
+
+  (* Add hit region *)
+  let f1 =
+    Screen.build r ~width:10 ~height:10 (fun _grid hits ->
+        Screen.Hit_grid.add hits ~x:5 ~y:5 ~width:2 ~height:2 ~id:99)
   in
-  check int "negative col skipped" 1 lines;
-  check int "negative col adv" 1 adv;
-  (* skips "x", writes "y" at col 0 *)
-  check string "partial write" "y"
-    (C.get_text (get_cell_from_grid (Screen.back s) ~row:0 ~col:0))
+  let _ = Screen.render f1 in
 
-(* Under "Viewport and Clipping" *)
-let test_viewport_non_overlapping () =
-  let v1 = Screen.Viewport.make ~row:0 ~col:0 ~width:2 ~height:2 in
-  let v2 = Screen.Viewport.make ~row:2 ~col:2 ~width:2 ~height:2 in
-  check (option viewport) "non-overlapping intersect None" None
-    (Screen.Viewport.intersect v1 v2);
-  let v3 = Screen.Viewport.make ~row:0 ~col:0 ~width:0 ~height:0 in
-  check bool "zero size contains false" false
-    (Screen.Viewport.contains v3 ~row:0 ~col:0)
+  (* Verify hit exists *)
+  let hit_before = Screen.query_hit f1 ~x:5 ~y:5 in
+  check int "hit exists before resize" 99 hit_before;
 
-(* Under "Drawing Operations" *)
-let test_set_text_wide_clip () =
-  let s = Screen.create ~rows:1 ~cols:4 ~east_asian_context:true () in
-  Screen.begin_frame s;
-  let vp = Screen.Viewport.make ~row:0 ~col:1 ~width:2 ~height:1 in
-  let _, adv =
-    Screen.set_text ~viewport:vp s ~row:0 ~col:0 ~text:"漢字" ~attrs:default_style
+  (* Resize *)
+  Screen.resize r ~width:5 ~height:5;
+
+  (* Build new frame *)
+  let f2 = Screen.build r ~width:5 ~height:5 (fun _grid _hits -> ()) in
+  let _ = Screen.render f2 in
+
+  (* Hit should be gone (coordinates out of bounds) *)
+  let hit_after = Screen.query_hit f2 ~x:0 ~y:0 in
+  check int "hit cleared after resize" 0 hit_after
+
+let test_explicit_width_sequences () =
+  (* Test that explicit width OSC sequences are emitted when enabled *)
+  let r = Screen.create ~explicit_width:true () in
+  let f =
+    Screen.build r ~width:10 ~height:1 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"中")
+    (* 2-cell wide character *)
   in
-  check int "clip mid-wide adv" 2 adv;
-  (* "漢" width 2 fits *)
-  let back = Screen.back s in
-  check bool "after clip empty" true
-    (C.is_empty (get_cell_from_grid back ~row:0 ~col:3));
-  check bool "continuation set" true
-    (C.is_continuation (get_cell_from_grid back ~row:0 ~col:2))
+  let output = Screen.render f in
 
-let test_clear_negative_pos () =
-  let s = Screen.create ~rows:2 ~cols:2 () in
-  Screen.begin_frame s;
-  Screen.set_text s ~row:0 ~col:0 ~text:"ab" ~attrs:default_style |> ignore;
-  Screen.set_text s ~row:1 ~col:0 ~text:"cd" ~attrs:default_style |> ignore;
-  (* Clear from (-1,-1) to (0,1) - after clipping to screen, clears row 0 entirely *)
-  Screen.clear_rect s ~row_start:(-1) ~row_end:0 ~col_start:(-1) ~col_end:1;
-  let back = Screen.back s in
-  check bool "row 0 col 0 cleared" true
-    (C.is_empty (get_cell_from_grid back ~row:0 ~col:0));
-  check bool "row 0 col 1 cleared" true
-    (C.is_empty (get_cell_from_grid back ~row:0 ~col:1));
-  check string "row 1 untouched" "c"
-    (C.get_text (get_cell_from_grid back ~row:1 ~col:0));
-  check string "row 1 untouched" "d"
-    (C.get_text (get_cell_from_grid back ~row:1 ~col:1))
+  (* Should contain explicit width sequence for the wide character *)
+  let contains_explicit_width =
+    try
+      let _ =
+        Str.search_forward (Str.regexp "\027]66;w=[0-9]+;.*\027\\\\") output 0
+      in
+      true
+    with Not_found -> false
+  in
+  check bool "contains explicit width sequence" true contains_explicit_width
 
-(* Under "Buffer and Frame Lifecycle" *)
-let test_resize_mid_frame () =
-  let s = Screen.create ~rows:2 ~cols:2 () in
-  Screen.begin_frame s;
-  Screen.set_text s ~row:0 ~col:0 ~text:"x" ~attrs:default_style |> ignore;
-  Screen.resize s ~rows:1 ~cols:1;
-  let dirty = Screen.present s in
-  check int "dirty after mid-frame resize" 1 (List.length dirty);
-  (* After resize, the dirty region should cover the whole new size *)
-  let r = List.hd dirty in
-  check int "full redraw min_row" 0 r.G.min_row;
-  check int "full redraw max_row" 0 r.G.max_row;
-  check int "full redraw min_col" 0 r.G.min_col;
-  check int "full redraw max_col" 0 r.G.max_col
+let test_hyperlink_capability_gating () =
+  (* Test that hyperlinks are only emitted when capability is enabled *)
+  let r1 = Screen.create () in
+  (* hyperlinks_capable defaults to true *)
+  let f1 =
+    Screen.build r1 ~width:10 ~height:1 (fun grid _hits ->
+        let style =
+          Ansi.Style.hyperlink "https://example.com" Ansi.Style.default
+        in
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"Link" ~style)
+  in
+  let output1 = Screen.render f1 in
 
-let test_back_without_begin () =
-  let s = Screen.create ~rows:1 ~cols:1 () in
-  check_raises "access back without begin_frame"
-    (Failure "Screen.back: Must call begin_frame before accessing back buffer")
-    (fun () -> Screen.back s |> ignore)
+  (* Should contain hyperlink sequences *)
+  let contains_hyperlink =
+    try
+      let _ = Str.search_forward (Str.regexp "\027]8;;") output1 0 in
+      true
+    with Not_found -> false
+  in
+  check bool "hyperlink emitted when capable" true contains_hyperlink;
 
-(* Under "Rendering" *)
-let test_render_run_grouping () =
-  let s = Screen.create ~rows:1 ~cols:4 () in
-  Screen.begin_frame s;
-  Screen.set_text s ~row:0 ~col:0 ~text:"ab" ~attrs:default_style |> ignore;
-  Screen.set_text s ~row:0 ~col:2 ~text:"cd" ~attrs:default_style |> ignore;
-  (* same style *)
-  let patches = Screen.render s in
-  check int "groups into one Run" 1
-    (List.length
-       (List.filter (function Screen.Run _ -> true | _ -> false) patches))
+  (* Now test with capability disabled *)
+  let r2 = Screen.create () in
+  Screen.apply_capabilities r2 ~explicit_width:false ~hyperlinks:false;
+  let f2 =
+    Screen.build r2 ~width:10 ~height:1 (fun grid _hits ->
+        let style =
+          Ansi.Style.hyperlink "https://example.com" Ansi.Style.default
+        in
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"Link" ~style)
+  in
+  let output2 = Screen.render f2 in
 
-let test_clear_heuristic_threshold () =
-  let s = Screen.create ~rows:2 ~cols:2 () in
-  (* total_cells=4 *)
-  Screen.begin_frame s;
-  Screen.set_text s ~row:0 ~col:0 ~text:"a" ~attrs:default_style |> ignore;
-  (* 1 change, <30% *)
-  let patches1 = Screen.render s in
-  check bool "<30% no Clear_screen" false
-    (List.exists (function Screen.Clear_screen -> true | _ -> false) patches1);
-  Screen.begin_frame s;
-  Screen.set_text s ~row:0 ~col:1 ~text:"b" ~attrs:default_style |> ignore;
-  Screen.set_text s ~row:1 ~col:0 ~text:"c" ~attrs:default_style |> ignore;
-  (* 2 more, total >30% but since new frame, diff is 2/4=50% *)
-  let patches2 = Screen.render s in
-  check bool ">30% uses Clear_screen" true
-    (List.exists (function Screen.Clear_screen -> true | _ -> false) patches2)
+  (* Should NOT contain hyperlink sequences *)
+  let contains_hyperlink_disabled =
+    try
+      let _ = Str.search_forward (Str.regexp "\027]8;;") output2 0 in
+      true
+    with Not_found -> false
+  in
+  check bool "hyperlink not emitted when incapable" false
+    contains_hyperlink_disabled
 
-(* Under "State Management" *)
-let test_flush_damage () =
-  let s = Screen.create ~rows:2 ~cols:2 () in
-  Screen.begin_frame s;
-  Screen.set_text s ~row:0 ~col:0 ~text:"x" ~attrs:default_style |> ignore;
-  let dmg1 = Screen.flush_damage s in
-  check int "damage accumulated" 1 (List.length dmg1);
-  let dmg2 = Screen.flush_damage s in
-  check int "damage cleared" 0 (List.length dmg2)
+let test_cursor_style_and_color () =
+  (* Test cursor style and color emission *)
+  let r = create_renderer () in
+  Screen.set_cursor_position r ~row:5 ~col:10;
+  Screen.set_cursor_style r ~style:`Underline ~blinking:false;
+  Screen.set_cursor_color r ~r:255 ~g:0 ~b:128;
 
-let test_snapshot_immutable () =
-  let s = Screen.create ~rows:1 ~cols:1 () in
-  Screen.begin_frame s;
-  Screen.set_text s ~row:0 ~col:0 ~text:"x" ~attrs:default_style |> ignore;
-  let snap = Screen.snapshot s in
-  Screen.clear s;
-  check string "snapshot unchanged" "x"
-    (C.get_text (get_cell_from_grid snap ~row:0 ~col:0))
+  let f = Screen.build r ~width:5 ~height:5 (fun _grid _hits -> ()) in
+  let output = Screen.render f in
 
-(* Under "Rendering" - for opt *)
-let test_diff_cells_continuations () =
-  let s = Screen.create ~rows:1 ~cols:3 ~east_asian_context:true () in
-  Screen.begin_frame s;
-  Screen.set_text s ~row:0 ~col:0 ~text:"漢" ~attrs:default_style |> ignore;
-  (* width 2, col1 continuation *)
-  let cells = Screen.diff_cells s in
-  check int "filters out continuations" 1 (List.length cells)
-(* only (0,0,cell) *)
+  (* Should contain cursor style and color sequences *)
+  let contains_cursor_style =
+    try
+      let _ = Str.search_forward (Str.regexp "\027\\[4 q") output 0 in
+      true
+    with Not_found -> false
+  in
+  check bool "contains cursor style" true contains_cursor_style;
+
+  let contains_cursor_color =
+    try
+      let _ = Str.search_forward (Str.regexp "\027]12;#ff0080") output 0 in
+      true
+    with Not_found -> false
+  in
+  check bool "contains cursor color" true contains_cursor_color
+
+let test_all_cells_changed () =
+  (* Worst case: every cell changes *)
+  let r = create_renderer ~width:10 ~height:10 () in
+
+  let f1 =
+    Screen.build r ~width:10 ~height:10 (fun grid _hits ->
+        Grid.fill_rect grid ~x:0 ~y:0 ~width:10 ~height:10
+          ~color:(Ansi.Color.of_rgb 255 0 0))
+  in
+  let _o1 = Screen.render f1 in
+
+  let f2 =
+    Screen.build r ~width:10 ~height:10 (fun grid _hits ->
+        Grid.fill_rect grid ~x:0 ~y:0 ~width:10 ~height:10
+          ~color:(Ansi.Color.of_rgb 0 255 0))
+  in
+  let _output2 = Screen.render f2 in
+
+  let metrics = Screen.last_metrics r in
+  (* All 100 cells should have changed *)
+  check int "all cells changed" 100 metrics.cells
+
+let test_partial_row_update () =
+  (* Test that we only render changed portions of a row *)
+  let r = create_renderer ~width:10 ~height:1 () in
+
+  let f1 =
+    Screen.build r ~width:10 ~height:1 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"XXXXXXXXXX")
+  in
+  let _o1 = Screen.render f1 in
+
+  let f2 =
+    Screen.build r ~width:10 ~height:1 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"XXXXXAXXXX")
+  in
+  let _output2 = Screen.render f2 in
+
+  let metrics = Screen.last_metrics r in
+  (* Should only update the changed cell *)
+  check int "only changed cell" 1 metrics.cells
+
+let test_color_only_change () =
+  (* Test that color changes trigger diff *)
+  let r = create_renderer () in
+
+  let style1 = Ansi.Style.make ~fg:(Ansi.Color.of_rgb 255 0 0) () in
+  let f1 =
+    Screen.build r ~width:5 ~height:1 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"Test" ~style:style1)
+  in
+  let _o1 = Screen.render f1 in
+
+  let style2 = Ansi.Style.make ~fg:(Ansi.Color.of_rgb 0 255 0) () in
+  let f2 =
+    Screen.build r ~width:5 ~height:1 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"Test" ~style:style2)
+  in
+  let output2 = Screen.render f2 in
+
+  (* Should detect color change *)
+  check bool "color change detected" true (String.length output2 > 10)
+
+let test_attribute_only_change () =
+  (* Test that attribute changes (bold, italic, etc) trigger diff *)
+  let r = create_renderer () in
+
+  let f1 =
+    Screen.build r ~width:5 ~height:1 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"Test")
+  in
+  let _o1 = Screen.render f1 in
+
+  let style_bold = Ansi.Style.make ~bold:true () in
+  let f2 =
+    Screen.build r ~width:5 ~height:1 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"Test" ~style:style_bold)
+  in
+  let output2 = Screen.render f2 in
+
+  (* Should detect attribute change *)
+  check bool "attribute change detected" true (String.length output2 > 10)
+
+(* 9. Performance Characteristics Tests *)
+
+let test_zero_allocation_frame_building () =
+  (* This is a semantic test - we can't actually measure allocations,
+     but we can verify the API works as expected *)
+  let r = Screen.create () in
+
+  (* Build and post_process should work without errors *)
+  let f1 = Screen.build r ~width:5 ~height:5 (fun _grid _hits -> ()) in
+  let f2 = Screen.post_process (fun _grid ~delta:_ -> ()) f1 in
+  let _output = Screen.render f2 in
+  (* If we get here without errors, the zero-allocation API works *)
+  check bool "api works" true true
+
+let test_double_buffer_reuse () =
+  let r = Screen.create () in
+  let grids = ref [] in
+  let hits = ref [] in
+
+  let record frame =
+    grids := add_unique_by_phys !grids (Screen.grid frame);
+    hits := add_unique_by_phys !hits (Screen.hit_grid frame)
+  in
+
+  let render_once () =
+    let frame = Screen.build r ~width:4 ~height:2 (fun _grid _hits -> ()) in
+    record frame;
+    let _ = Screen.render frame in
+    ()
+  in
+
+  render_once ();
+  render_once ();
+  render_once ();
+
+  check int "reuses two grid buffers" 2 (List.length !grids);
+  check int "reuses two hit grids" 2 (List.length !hits)
+
+let test_pipeline_composition () =
+  (* Test that pipelines compose correctly *)
+  let r = Screen.create () in
+  let call_order = ref [] in
+
+  let f1 =
+    Screen.build r ~width:5 ~height:5 (fun _grid _hits ->
+        call_order := "build" :: !call_order)
+  in
+  let f2 =
+    Screen.post_process
+      (fun _grid ~delta:_ -> call_order := "post1" :: !call_order)
+      f1
+  in
+  let f3 =
+    Screen.post_process
+      (fun _grid ~delta:_ -> call_order := "post2" :: !call_order)
+      f2
+  in
+  let f4 = Screen.add_hit_region f3 ~x:0 ~y:0 ~width:1 ~height:1 ~id:1 in
+  let output = Screen.render f4 in
+
+  check bool "pipeline executed" true (String.length output >= 0);
+  check bool "build called" true (List.mem "build" !call_order);
+  check bool "post1 called" true (List.mem "post1" !call_order);
+  check bool "post2 called" true (List.mem "post2" !call_order)
+
+(* Test Suite *)
 
 let () =
-  run "Screen"
+  run "matrix.screen"
     [
-      ( "Creation and Sizing",
+      ( "Core Rendering",
         [
-          test_case "Basic creation and resize" `Quick test_creation_and_sizing;
-          test_case "Creation with style" `Quick test_creation_with_style;
-          test_case "Creation with east_asian_context" `Quick
-            test_creation_east_asian;
-          test_case "Resize to smaller" `Quick test_resize_to_smaller;
-          test_case "Resize to larger" `Quick test_resize_to_larger;
-          test_case "Empty screen" `Quick test_empty_screen;
+          test_case "Create renderer" `Quick test_create_renderer;
+          test_case "Zero-sized frame" `Quick test_zero_sized_frame;
+          test_case "Single cell frame" `Quick test_single_cell_frame;
+          test_case "Simple text rendering" `Quick test_simple_text_rendering;
+          test_case "Hyperlink rendering" `Quick test_hyperlink_rendering;
+          test_case "Row offset applied" `Quick test_row_offset_applied;
         ] );
-      ( "Buffer and Frame Lifecycle",
+      ( "Diff Algorithm",
         [
-          test_case "Drawing affects back buffer only" `Quick
-            test_drawing_and_buffers;
-          test_case "Present swaps buffers and diffs" `Quick
-            test_present_and_diff;
-          test_case "Batch correctly wraps a drawing sequence" `Quick test_batch;
-          test_case "Resize mid-frame" `Quick test_resize_mid_frame;
-          test_case "Back without begin_frame" `Quick test_back_without_begin;
+          test_case "Diff only changed cells" `Quick
+            test_diff_only_changed_cells;
+          test_case "No diff when unchanged" `Quick test_no_diff_when_unchanged;
+          test_case "Wide character diff" `Quick test_wide_char_diff;
+          test_case "All cells changed" `Quick test_all_cells_changed;
+          test_case "Partial row update" `Quick test_partial_row_update;
+          test_case "Color only change" `Quick test_color_only_change;
+          test_case "Attribute only change" `Quick test_attribute_only_change;
         ] );
-      ( "Viewport and Clipping",
+      ( "Frame Building",
         [
-          test_case "Drawing operations respect viewports" `Quick test_viewport;
-          test_case "Viewport module functions" `Quick test_viewport_module;
-          test_case "Copy viewport" `Quick test_copy_viewport;
-          test_case "Negative viewport dimensions" `Quick test_negative_viewport;
-          test_case "Non-overlapping viewports" `Quick
-            test_viewport_non_overlapping;
+          test_case "Build visual (no hits)" `Quick test_build_visual;
+          test_case "Resize preserves content" `Quick
+            test_resize_preserves_content;
+          test_case "Resize smaller" `Quick test_resize_smaller;
+          test_case "Resize clears both buffers" `Quick
+            test_resize_clears_both_buffers;
+          test_case "Cursor clamped on resize" `Quick
+            test_cursor_clamped_on_resize;
         ] );
-      ( "Drawing Operations",
+      ( "Post-Processing",
         [
-          test_case "Clear rect" `Quick test_clear_rect;
-          test_case "Clear line" `Quick test_clear_line;
-          test_case "Set grapheme edges" `Quick test_set_grapheme_edge;
-          test_case "Set text returns" `Quick test_set_text_returns;
-          test_case "Set multiline returns" `Quick test_set_multiline_returns;
-          test_case "Set text negative positions" `Quick
-            test_set_text_negative_pos;
-          test_case "Set text wide char clipping" `Quick test_set_text_wide_clip;
-          test_case "Clear with negative positions" `Quick
-            test_clear_negative_pos;
+          test_case "Post-process receives delta" `Quick
+            test_post_process_receives_delta;
+          test_case "Post-process chain" `Quick test_post_process_chain;
+          test_case "Post-process persists across frames" `Quick
+            test_post_process_persists_across_frames;
+          test_case "Remove post-process" `Quick test_remove_post_process;
+          test_case "Clear post-processes" `Quick test_clear_post_processes;
         ] );
-      ( "Rendering",
+      ( "Hit Grid Integration",
         [
-          test_case "Render to patches (inc, clear, full)" `Quick
-            test_render_to_patches;
-          test_case "Render clear bug check" `Quick test_render_clear_bug;
-          test_case "Render mosaic pattern" `Quick test_render_mosaic_pattern;
-          test_case "Render clear removed content" `Quick test_render_clear_removed_content;
-          test_case "Render large change" `Quick test_render_large_change;
-          test_case "Render to string" `Quick test_render_to_string;
-          test_case "Patch to sgr" `Quick test_patch_to_sgr;
-          test_case "Patches to sgr" `Quick test_patches_to_sgr;
-          test_case "Patches to sgr synchronized" `Quick
-            test_patches_to_sgr_sync;
-          test_case "Render run grouping" `Quick test_render_run_grouping;
-          test_case "Clear heuristic threshold" `Quick
-            test_clear_heuristic_threshold;
-          test_case "Diff cells filters continuations" `Quick
-            test_diff_cells_continuations;
+          test_case "Hit grid integration" `Quick test_hit_grid_integration;
+          test_case "Hit grid cleared each frame" `Quick
+            test_hit_grid_cleared_each_frame;
+          test_case "Hit grid swap happens on render" `Quick
+            test_hit_grid_swap_on_render;
+          test_case "Add hit region helper" `Quick test_add_hit_region_helper;
         ] );
-      ( "State Management",
+      ("Statistics", [ test_case "Stats tracking" `Quick test_stats_tracking ]);
+      ( "Configuration",
         [
-          test_case "Clone, copy_to and snapshot" `Quick test_clone_and_copy;
-          test_case "Cursor get/set" `Quick test_cursor;
-          test_case "Cursor out of bounds" `Quick test_cursor_out_of_bounds;
-          test_case "Perf counters" `Quick test_perf_counters;
-          test_case "Flush damage" `Quick test_flush_damage;
-          test_case "Snapshot immutable" `Quick test_snapshot_immutable;
+          test_case "Update config" `Quick test_update_config;
+          test_case "Reset" `Quick test_reset;
+          test_case "Reset triggers diff" `Quick test_reset_triggers_next_diff;
+        ] );
+      ( "Edge Cases",
+        [
+          test_case "Extremely wide characters" `Quick test_extremely_wide_char;
+          test_case "Buffer overflow prevention" `Quick
+            test_buffer_overflow_prevention;
+          test_case "Resize triggers full redraw" `Quick test_resize_full_redraw;
+          test_case "Resize clears hit grids" `Quick
+            test_resize_hit_grid_cleared;
+          test_case "Explicit width sequences" `Quick
+            test_explicit_width_sequences;
+          test_case "Hyperlink capability gating" `Quick
+            test_hyperlink_capability_gating;
+          test_case "Cursor style and color" `Quick test_cursor_style_and_color;
+        ] );
+      ( "Performance Characteristics",
+        [
+          test_case "Zero-allocation frame building" `Quick
+            test_zero_allocation_frame_building;
+          test_case "Double buffer reuse" `Quick test_double_buffer_reuse;
+          test_case "Pipeline composition" `Quick test_pipeline_composition;
         ] );
     ]

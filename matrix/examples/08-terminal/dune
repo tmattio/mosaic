@@ -1,0 +1,3 @@
+(executable
+ (name main)
+ (libraries matrix matrix.pty matrix.vte unix))

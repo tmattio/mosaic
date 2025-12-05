@@ -1,15 +1,13 @@
-(include_subdirs unqualified)
-
 (library
  (name mosaic_tea)
  (public_name mosaic.tea)
  (libraries
-  matrix.tty
-  matrix.ansi
-  matrix.input
-  mosaic.engine
   mosaic.ui
-  unix
-  eio
-  eio.unix
-  eio_main))
+  mosaic.syntax
+  mosaic.markdown
+  matrix
+  matrix.ansi
+  matrix.grid
+  matrix.screen
+  toffee
+  unix))

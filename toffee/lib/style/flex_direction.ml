@@ -1,14 +1,4 @@
-(** The direction of the flexbox layout main axis *)
-
-type t =
-  | Row
-      (** Defines +x as the main axis. Items will be added from left to right *)
-  | Column
-      (** Defines +y as the main axis. Items will be added from top to bottom *)
-  | Row_reverse
-      (** Defines -x as the main axis. Items will be added from right to left *)
-  | Column_reverse
-      (** Defines -y as the main axis. Items will be added from bottom to top *)
+type t = Row | Column | Row_reverse | Column_reverse
 
 let default = Row
 

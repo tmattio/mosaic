@@ -182,14 +182,14 @@ let align_and_position_item (type t)
   let padding =
     Style.padding style
     |> Rect.map (fun p ->
-           Length_percentage.resolve_or_zero p (Some grid_area_size.width)
-             (Tree.resolve_calc_value tree))
+        Length_percentage.resolve_or_zero p (Some grid_area_size.width)
+          (Tree.resolve_calc_value tree))
   in
   let border =
     Style.border style
     |> Rect.map (fun p ->
-           Length_percentage.resolve_or_zero p (Some grid_area_size.width)
-             (Tree.resolve_calc_value tree))
+        Length_percentage.resolve_or_zero p (Some grid_area_size.width)
+          (Tree.resolve_calc_value tree))
   in
   let padding_border_size = Rect.sum_axes (Rect.add padding border) in
 
@@ -212,8 +212,8 @@ let align_and_position_item (type t)
               (Tree.resolve_calc_value tree);
         }
     in
-    let with_aspect = Size.apply_aspect_ratio resolved_size aspect_ratio in
-    Size.maybe_add with_aspect box_sizing_adjustment
+    let with_aspect = Size.apply_aspect_ratio aspect_ratio resolved_size in
+    Size.maybe_add box_sizing_adjustment with_aspect
   in
   let min_size =
     let style_min_size = Style.min_size style in
@@ -231,14 +231,14 @@ let align_and_position_item (type t)
         }
     in
     let with_box_sizing =
-      Size.maybe_add resolved_min_size box_sizing_adjustment
+      Size.maybe_add box_sizing_adjustment resolved_min_size
     in
     let with_padding_border =
       Size.choose_first with_box_sizing
         (Size.map Option.some padding_border_size)
     in
-    let max_with_pb = Size.maybe_max with_padding_border padding_border_size in
-    Size.apply_aspect_ratio max_with_pb aspect_ratio
+    let max_with_pb = Size.maybe_max padding_border_size with_padding_border in
+    Size.apply_aspect_ratio aspect_ratio max_with_pb
   in
   let max_size =
     let style_max_size = Style.max_size style in
@@ -255,8 +255,8 @@ let align_and_position_item (type t)
               (Tree.resolve_calc_value tree);
         }
     in
-    let with_aspect = Size.apply_aspect_ratio resolved_max_size aspect_ratio in
-    Size.maybe_add with_aspect box_sizing_adjustment
+    let with_aspect = Size.apply_aspect_ratio aspect_ratio resolved_max_size in
+    Size.maybe_add box_sizing_adjustment with_aspect
   in
 
   (* Resolve default alignment styles if they are set on neither the parent or the node itself
@@ -291,9 +291,9 @@ let align_and_position_item (type t)
   let margin =
     Style.margin style
     |> Rect.map (fun margin ->
-           Length_percentage_auto.resolve_to_option_with_calc margin
-             grid_area_size.width
-             (Tree.resolve_calc_value tree))
+        Length_percentage_auto.resolve_to_option_with_calc margin
+          grid_area_size.width
+          (Tree.resolve_calc_value tree))
   in
 
   let subtract_option base opt_val =
@@ -343,9 +343,8 @@ let align_and_position_item (type t)
 
   (* Reapply aspect ratio after stretch and absolute position width adjustments *)
   let size1 =
-    Size.apply_aspect_ratio
+    Size.apply_aspect_ratio aspect_ratio
       Size.{ width; height = inherent_size.height }
-      aspect_ratio
   in
 
   let height =
@@ -375,18 +374,40 @@ let align_and_position_item (type t)
 
   (* Reapply aspect ratio after stretch and absolute position height adjustments *)
   let size2 =
-    Size.apply_aspect_ratio Size.{ width = size1.width; height } aspect_ratio
+    Size.apply_aspect_ratio aspect_ratio Size.{ width = size1.width; height }
   in
 
   (* Clamp size by min and max width/height *)
-  let clamped_size = Size.clamp_option size2 min_size max_size in
+  let clamped_size = Size.clamp_option min_size max_size size2 in
+
+  (* Resolve missing size for absolutely positioned items by performing a sizing-only pass *)
+  let size =
+    if
+      position = Position.Absolute
+      && (Option.is_none width || Option.is_none height)
+    then
+      let measured_size =
+        Tree.compute_child_layout tree node
+          (Layout_input.make ~run_mode:Run_mode.Compute_size
+             ~sizing_mode:Sizing_mode.Inherent_size ~axis:Requested_axis.Both
+             ~known_dimensions:clamped_size
+             ~parent_size:(Size.map Option.some grid_area_size)
+             ~available_space:
+               (Size.map Available_space.of_float
+                  grid_area_minus_item_margins_size)
+             ~vertical_margins_are_collapsible:Line.both_false)
+        |> Layout_output.size
+      in
+      Size.map Option.some measured_size
+    else clamped_size
+  in
 
   (* Layout node *)
   let layout_output =
     Tree.compute_child_layout tree node
       (Layout_input.make ~run_mode:Run_mode.Perform_layout
          ~sizing_mode:Sizing_mode.Inherent_size ~axis:Requested_axis.Both
-         ~known_dimensions:clamped_size
+         ~known_dimensions:size
          ~parent_size:(Size.map Option.some grid_area_size)
          ~available_space:
            (Size.map Available_space.of_float grid_area_minus_item_margins_size)
@@ -396,8 +417,8 @@ let align_and_position_item (type t)
   (* Resolve final size *)
   let final_size =
     let measured_size = Layout_output.size layout_output in
-    let unwrapped_size = Size.unwrap_or clamped_size measured_size in
-    Size.clamp unwrapped_size min_size max_size
+    let chosen_size = Size.unwrap_or measured_size size in
+    Size.clamp min_size max_size chosen_size
   in
 
   let x, x_margin =

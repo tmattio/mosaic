@@ -76,30 +76,33 @@ let get t ~known_dimensions ~available_space ~run_mode =
           then Some entry.content
           else None)
   | Compute_size ->
-      let rec find_in_entries = function
-        | [] -> None
-        | None :: rest -> find_in_entries rest
-        | Some entry :: rest ->
-            let cached_size = entry.content in
-            if
-              (known_dimensions.Geometry.Size.width
-               = entry.known_dimensions.Geometry.Size.width
-              || known_dimensions.Geometry.Size.width
-                 = Some cached_size.Geometry.Size.width)
-              && (known_dimensions.Geometry.Size.height
-                  = entry.known_dimensions.Geometry.Size.height
-                 || known_dimensions.Geometry.Size.height
-                    = Some cached_size.Geometry.Size.height)
-              && (Option.is_some known_dimensions.Geometry.Size.width
-                 || is_roughly_equal entry.available_space.Geometry.Size.width
-                      available_space.Geometry.Size.width)
-              && (Option.is_some known_dimensions.Geometry.Size.height
-                 || is_roughly_equal entry.available_space.Geometry.Size.height
-                      available_space.Geometry.Size.height)
-            then Some (Layout_output.from_outer_size cached_size)
-            else find_in_entries rest
+      let rec loop i =
+        if i >= cache_size then None
+        else
+          match t.measure_entries.(i) with
+          | None -> loop (i + 1)
+          | Some entry ->
+              let cached_size = entry.content in
+              if
+                (known_dimensions.Geometry.Size.width
+                 = entry.known_dimensions.Geometry.Size.width
+                || known_dimensions.Geometry.Size.width
+                   = Some cached_size.Geometry.Size.width)
+                && (known_dimensions.Geometry.Size.height
+                    = entry.known_dimensions.Geometry.Size.height
+                   || known_dimensions.Geometry.Size.height
+                      = Some cached_size.Geometry.Size.height)
+                && (Option.is_some known_dimensions.Geometry.Size.width
+                   || is_roughly_equal entry.available_space.Geometry.Size.width
+                        available_space.Geometry.Size.width)
+                && (Option.is_some known_dimensions.Geometry.Size.height
+                   || is_roughly_equal
+                        entry.available_space.Geometry.Size.height
+                        available_space.Geometry.Size.height)
+              then Some (Layout_output.from_outer_size cached_size)
+              else loop (i + 1)
       in
-      find_in_entries (Array.to_list t.measure_entries)
+      loop 0
   | Perform_hidden_layout -> None
 
 let store t ~known_dimensions ~available_space ~run_mode layout_output =

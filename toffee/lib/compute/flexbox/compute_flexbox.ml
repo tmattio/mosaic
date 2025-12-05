@@ -26,10 +26,6 @@ module Flex_direction_ext = struct
   let _cross_size size dir =
     if is_row dir then size.Size.height else size.Size.width
 
-  let with_main_size size dir value =
-    if is_row dir then Size.{ size with width = value }
-    else Size.{ size with height = value }
-
   let _with_cross_size size dir value =
     if is_row dir then Size.{ size with height = value }
     else Size.{ size with width = value }
@@ -93,14 +89,15 @@ type flex_item = {
   (* Content flex fraction *)
   mutable content_flex_fraction : float;
   (* Either the max- or min- content flex fraction *)
-  (* Hypothetical sizes *)
-  mutable hypothetical_inner_size : float size;
-      (* The proposed inner size of this item *)
-  mutable hypothetical_outer_size : float size;
-      (* The proposed outer size of this item *)
-  mutable target_size : float size; (* The size that this item wants to be *)
-  mutable outer_target_size : float size;
-  (* The size that this item wants to be, plus any padding and border *)
+  (* Hypothetical and target sizes (flattened) *)
+  mutable hypothetical_inner_width : float;
+  mutable hypothetical_inner_height : float;
+  mutable hypothetical_outer_width : float;
+  mutable hypothetical_outer_height : float;
+  mutable target_width : float; (* The size that this item wants to be *)
+  mutable target_height : float;
+  mutable outer_target_width : float;
+  mutable outer_target_height : float;
   (* Baseline *)
   mutable baseline : float; (* The position of the bottom edge of this item *)
   (* Offsets *)
@@ -172,12 +169,12 @@ let compute_constants (type t)
   let padding =
     Style.padding style
     |> Rect.map (fun lp ->
-           Length_percentage.resolve_or_zero lp parent_size.width calc)
+        Length_percentage.resolve_or_zero lp parent_size.width calc)
   in
   let border =
     Style.border style
     |> Rect.map (fun lp ->
-           Length_percentage.resolve_or_zero lp parent_size.width calc)
+        Length_percentage.resolve_or_zero lp parent_size.width calc)
   in
 
   let padding_border_sum = Rect.sum_axes (Rect.add padding border) in
@@ -229,10 +226,10 @@ let compute_constants (type t)
     Size.
       {
         width =
-          Length_percentage.resolve_or_zero (Size.get gap_size Inline)
+          Length_percentage.resolve_or_zero (Size.get Inline gap_size)
             (Some gap_base.width) calc;
         height =
-          Length_percentage.resolve_or_zero (Size.get gap_size Block)
+          Length_percentage.resolve_or_zero (Size.get Block gap_size)
             (Some gap_base.height) calc;
       }
   in
@@ -243,13 +240,12 @@ let compute_constants (type t)
     Size.
       {
         width =
-          Dimension.maybe_resolve (Size.get dims Inline) parent_size.width calc;
+          Dimension.maybe_resolve (Size.get Inline dims) parent_size.width calc;
         height =
-          Dimension.maybe_resolve (Size.get dims Block) parent_size.height calc;
+          Dimension.maybe_resolve (Size.get Block dims) parent_size.height calc;
       }
-    |> fun s ->
-    Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-    Size.maybe_add s box_sizing_adjustment
+    |> Size.apply_aspect_ratio aspect_ratio
+    |> Size.maybe_add box_sizing_adjustment
   in
 
   let max_size =
@@ -257,13 +253,12 @@ let compute_constants (type t)
     Size.
       {
         width =
-          Dimension.maybe_resolve (Size.get dims Inline) parent_size.width calc;
+          Dimension.maybe_resolve (Size.get Inline dims) parent_size.width calc;
         height =
-          Dimension.maybe_resolve (Size.get dims Block) parent_size.height calc;
+          Dimension.maybe_resolve (Size.get Block dims) parent_size.height calc;
       }
-    |> fun s ->
-    Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-    Size.maybe_add s box_sizing_adjustment
+    |> Size.apply_aspect_ratio aspect_ratio
+    |> Size.maybe_add box_sizing_adjustment
   in
 
   {
@@ -291,140 +286,153 @@ let compute_constants (type t)
 (* Generate anonymous flex items *)
 let generate_anonymous_flex_items (type t)
     (module Tree : Tree.LAYOUT_PARTIAL_TREE with type t = t) (tree : t)
-    (node : Node_id.t) (constants : algo_constants) : flex_item list =
+    (node : Node_id.t) (constants : algo_constants) : flex_item array =
   let calc = Tree.resolve_calc_value tree in
+  let keep_child style =
+    Style.position style <> Position.Absolute
+    && Style.box_generation_mode style <> Box_generation_mode.None
+  in
+  let child_count = Tree.child_count tree node in
+  (* First pass: count kept children *)
+  let kept = ref 0 in
+  for i = 0 to child_count - 1 do
+    let child = Tree.get_child_id tree node i in
+    let style = Tree.get_core_container_style tree child in
+    if keep_child style then incr kept
+  done;
+  let items = if !kept = 0 then [||] else Array.make !kept (Obj.magic 0) in
+  let insert_at = ref 0 in
+  for index = 0 to child_count - 1 do
+    let child_node = Tree.get_child_id tree node index in
+    let child_style = Tree.get_core_container_style tree child_node in
+    if keep_child child_style then (
+      let aspect_ratio = Style.aspect_ratio child_style in
+      let padding =
+        Style.padding child_style
+        |> Rect.map (fun lp ->
+            Length_percentage.resolve_or_zero lp constants.node_inner_size.width
+              calc)
+      in
+      let border =
+        Style.border child_style
+        |> Rect.map (fun lp ->
+            Length_percentage.resolve_or_zero lp constants.node_inner_size.width
+              calc)
+      in
+      let pb_sum = Rect.sum_axes (Rect.add padding border) in
+      let box_sizing_adjustment =
+        if Style.box_sizing child_style = Box_sizing.Content_box then pb_sum
+        else Size.zero
+      in
 
-  Tree.child_ids tree node
-  |> Seq.mapi (fun index child_node ->
-         (index, child_node, Tree.get_core_container_style tree child_node))
-  |> Seq.filter (fun (_, _, style) ->
-         Style.position style <> Position.Absolute
-         && Style.box_generation_mode style <> Box_generation_mode.None)
-  |> Seq.map (fun (index, child_node, child_style) ->
-         let aspect_ratio = Style.aspect_ratio child_style in
-         let padding =
-           Style.padding child_style
-           |> Rect.map (fun lp ->
-                  Length_percentage.resolve_or_zero lp
-                    constants.node_inner_size.width calc)
-         in
-         let border =
-           Style.border child_style
-           |> Rect.map (fun lp ->
-                  Length_percentage.resolve_or_zero lp
-                    constants.node_inner_size.width calc)
-         in
-         let pb_sum = Rect.sum_axes (Rect.add padding border) in
-         let box_sizing_adjustment =
-           if Style.box_sizing child_style = Box_sizing.Content_box then pb_sum
-           else Size.zero
-         in
+      let size =
+        Style.size child_style |> fun dims ->
+        Size.
+          {
+            width =
+              Dimension.maybe_resolve (Size.get Inline dims)
+                constants.node_inner_size.width calc;
+            height =
+              Dimension.maybe_resolve (Size.get Block dims)
+                constants.node_inner_size.height calc;
+          }
+        |> Size.apply_aspect_ratio aspect_ratio
+        |> Size.maybe_add box_sizing_adjustment
+      in
 
-         (* Resolve size, min_size, max_size *)
-         let size =
-           Style.size child_style |> fun dims ->
-           Size.
-             {
-               width =
-                 Dimension.maybe_resolve (Size.get dims Inline)
-                   constants.node_inner_size.width calc;
-               height =
-                 Dimension.maybe_resolve (Size.get dims Block)
-                   constants.node_inner_size.height calc;
-             }
-           |> fun s ->
-           Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-           Size.maybe_add s box_sizing_adjustment
-         in
+      let min_size =
+        Style.min_size child_style |> fun dims ->
+        Size.
+          {
+            width =
+              Dimension.maybe_resolve (Size.get Inline dims)
+                constants.node_inner_size.width calc;
+            height =
+              Dimension.maybe_resolve (Size.get Block dims)
+                constants.node_inner_size.height calc;
+          }
+        |> Size.apply_aspect_ratio aspect_ratio
+        |> Size.maybe_add box_sizing_adjustment
+      in
 
-         let min_size =
-           Style.min_size child_style |> fun dims ->
-           Size.
-             {
-               width =
-                 Dimension.maybe_resolve (Size.get dims Inline)
-                   constants.node_inner_size.width calc;
-               height =
-                 Dimension.maybe_resolve (Size.get dims Block)
-                   constants.node_inner_size.height calc;
-             }
-           |> fun s ->
-           Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-           Size.maybe_add s box_sizing_adjustment
-         in
+      let max_size =
+        Style.max_size child_style |> fun dims ->
+        Size.
+          {
+            width =
+              Dimension.maybe_resolve (Size.get Inline dims)
+                constants.node_inner_size.width calc;
+            height =
+              Dimension.maybe_resolve (Size.get Block dims)
+                constants.node_inner_size.height calc;
+          }
+        |> Size.apply_aspect_ratio aspect_ratio
+        |> Size.maybe_add box_sizing_adjustment
+      in
 
-         let max_size =
-           Style.max_size child_style |> fun dims ->
-           Size.
-             {
-               width =
-                 Dimension.maybe_resolve (Size.get dims Inline)
-                   constants.node_inner_size.width calc;
-               height =
-                 Dimension.maybe_resolve (Size.get dims Block)
-                   constants.node_inner_size.height calc;
-             }
-           |> fun s ->
-           Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-           Size.maybe_add s box_sizing_adjustment
-         in
+      let inset =
+        Style.inset child_style
+        |> Rect.zip_size constants.node_inner_size (fun p s ->
+            Length_percentage_auto.maybe_resolve p s calc)
+      in
 
-         (* Resolve inset *)
-         let inset =
-           Style.inset child_style |> fun rect ->
-           Rect.zip_size rect constants.node_inner_size (fun p s ->
-               Length_percentage_auto.maybe_resolve p s calc)
-         in
+      let margin =
+        Style.margin child_style
+        |> Rect.map (fun lpa ->
+            Length_percentage_auto.resolve_or_zero lpa
+              constants.node_inner_size.width calc)
+      in
 
-         (* Resolve margin *)
-         let margin =
-           Style.margin child_style
-           |> Rect.map (fun lpa ->
-                  Length_percentage_auto.resolve_or_zero lpa
-                    constants.node_inner_size.width calc)
-         in
+      let margin_is_auto =
+        Style.margin child_style |> Rect.map Length_percentage_auto.is_auto
+      in
 
-         let margin_is_auto =
-           Style.margin child_style |> Rect.map Length_percentage_auto.is_auto
-         in
+      let align_self =
+        match Style.align_self child_style with
+        | Some align -> align
+        | None -> constants.align_items
+      in
 
-         let align_self =
-           match Style.align_self child_style with
-           | Some align -> align
-           | None -> constants.align_items
-         in
-
-         {
-           node = child_node;
-           order = index;
-           size;
-           min_size;
-           max_size;
-           align_self;
-           overflow = Style.overflow child_style;
-           scrollbar_width = Style.scrollbar_width child_style;
-           flex_grow = Style.flex_grow child_style;
-           flex_shrink = Style.flex_shrink child_style;
-           flex_basis = 0.0;
-           inner_flex_basis = 0.0;
-           violation = 0.0;
-           frozen = false;
-           resolved_minimum_main_size = 0.0;
-           inset;
-           margin;
-           margin_is_auto;
-           padding;
-           border;
-           hypothetical_inner_size = Size.zero;
-           hypothetical_outer_size = Size.zero;
-           target_size = Size.zero;
-           outer_target_size = Size.zero;
-           content_flex_fraction = 0.0;
-           baseline = 0.0;
-           offset_main = 0.0;
-           offset_cross = 0.0;
-         })
-  |> List.of_seq
+      let item =
+        {
+          node = child_node;
+          order = index;
+          size;
+          min_size;
+          max_size;
+          align_self;
+          overflow = Style.overflow child_style;
+          scrollbar_width = Style.scrollbar_width child_style;
+          flex_grow = Style.flex_grow child_style;
+          flex_shrink = Style.flex_shrink child_style;
+          flex_basis = 0.0;
+          inner_flex_basis = 0.0;
+          violation = 0.0;
+          frozen = false;
+          resolved_minimum_main_size = 0.0;
+          inset;
+          margin;
+          margin_is_auto;
+          padding;
+          border;
+          hypothetical_inner_width = 0.0;
+          hypothetical_inner_height = 0.0;
+          hypothetical_outer_width = 0.0;
+          hypothetical_outer_height = 0.0;
+          target_width = 0.0;
+          target_height = 0.0;
+          outer_target_width = 0.0;
+          outer_target_height = 0.0;
+          content_flex_fraction = 0.0;
+          baseline = 0.0;
+          offset_main = 0.0;
+          offset_cross = 0.0;
+        }
+      in
+      items.(!insert_at) <- item;
+      incr insert_at)
+  done;
+  items
 
 (* Determine available space *)
 let determine_available_space (known_dimensions : float option size)
@@ -457,10 +465,10 @@ let determine_available_space (known_dimensions : float option size)
 let determine_flex_base_size (type t)
     (module Tree : Tree.LAYOUT_PARTIAL_TREE with type t = t) (tree : t)
     (constants : algo_constants) (available_space : Available_space.t size)
-    (flex_items : flex_item list) : unit =
+    (flex_items : flex_item array) : unit =
   let calc = Tree.resolve_calc_value tree in
 
-  List.iter
+  Array.iter
     (fun child ->
       let child_style = Tree.get_core_container_style tree child.node in
 
@@ -523,21 +531,20 @@ let determine_flex_base_size (type t)
       let child_known_dimensions =
         let base_size =
           if constants.is_row then
-            Size.{ width = None; height = child.size.height }
-          else Size.{ width = child.size.width; height = None }
+            { Size.width = None; height = child.size.height }
+          else { Size.width = child.size.width; height = None }
         in
         (* Handle stretch alignment *)
-        if
-          child.align_self = Stretch
-          && (if constants.is_row then base_size.height else base_size.width)
-             = None
-        then
+        let cross_dim =
+          if constants.is_row then base_size.height else base_size.width
+        in
+        if child.align_self = Stretch && cross_dim = None then
           let cross_size =
             Available_space.to_option cross_axis_available_space
             |> Option.map (fun v -> v -. cross_axis_margin_sum)
           in
-          if constants.is_row then Size.{ base_size with height = cross_size }
-          else Size.{ base_size with width = cross_size }
+          if constants.is_row then { base_size with height = cross_size }
+          else { base_size with width = cross_size }
         else base_size
       in
 
@@ -703,8 +710,8 @@ let determine_flex_base_size (type t)
                  if constants.is_row then child.size.width
                  else child.size.height
                with
-              | Some size -> Float.min v size
-              | None -> v)
+                | Some size -> Float.min v size
+                | None -> v)
               |> fun v ->
               match
                 if constants.is_row then child.max_size.width
@@ -719,7 +726,7 @@ let determine_flex_base_size (type t)
       let hypothetical_inner_min_main =
         Float.max child.resolved_minimum_main_size padding_border_sum
       in
-      let hypothetical_inner_size =
+      let hypothetical_inner_width =
         let max_main =
           if constants.is_row then child.max_size.width
           else child.max_size.height
@@ -730,50 +737,33 @@ let determine_flex_base_size (type t)
               (Float.max hypothetical_inner_min_main max)
         | None -> Float.max child.flex_basis hypothetical_inner_min_main
       in
-      let hypothetical_outer_size =
-        hypothetical_inner_size
+      let hypothetical_outer_width =
+        hypothetical_inner_width
         +.
         if constants.is_row then child.margin.left +. child.margin.right
         else child.margin.top +. child.margin.bottom
       in
 
-      child.hypothetical_inner_size <-
-        (if constants.is_row then
-           Size.
-             {
-               child.hypothetical_inner_size with
-               width = hypothetical_inner_size;
-             }
-         else
-           Size.
-             {
-               child.hypothetical_inner_size with
-               height = hypothetical_inner_size;
-             });
-
-      child.hypothetical_outer_size <-
-        (if constants.is_row then
-           Size.
-             {
-               child.hypothetical_outer_size with
-               width = hypothetical_outer_size;
-             }
-         else
-           Size.
-             {
-               child.hypothetical_outer_size with
-               height = hypothetical_outer_size;
-             }))
+      if constants.is_row then (
+        child.hypothetical_inner_width <- hypothetical_inner_width;
+        child.hypothetical_outer_width <- hypothetical_outer_width)
+      else (
+        child.hypothetical_inner_height <- hypothetical_inner_width;
+        child.hypothetical_outer_height <- hypothetical_outer_width))
     flex_items
 
 (* Collect flex items into flex lines *)
 let collect_flex_lines (constants : algo_constants)
-    (available_space : Available_space.t size) (flex_items : flex_item list) :
+    (available_space : Available_space.t size) (flex_items : flex_item array) :
     flex_line list =
   if not constants.is_wrap then
     (* Single line - all items go in one line *)
     [
-      { items = Array.of_list flex_items; cross_size = 0.0; offset_cross = 0.0 };
+      {
+        items = Array.init (Array.length flex_items) (Array.get flex_items);
+        cross_size = 0.0;
+        offset_cross = 0.0;
+      };
     ]
   else
     (* Multi-line wrapping *)
@@ -809,17 +799,21 @@ let collect_flex_lines (constants : algo_constants)
         (* Max content - items never wrap *)
         [
           {
-            items = Array.of_list flex_items;
+            items = Array.init (Array.length flex_items) (Array.get flex_items);
             cross_size = 0.0;
             offset_cross = 0.0;
           };
         ]
     | Available_space.Min_content ->
         (* Min content - each item gets its own line *)
-        List.map
-          (fun item ->
-            { items = [| item |]; cross_size = 0.0; offset_cross = 0.0 })
-          flex_items
+        let lines = ref [] in
+        for i = Array.length flex_items - 1 downto 0 do
+          let item = flex_items.(i) in
+          lines :=
+            { items = [| item |]; cross_size = 0.0; offset_cross = 0.0 }
+            :: !lines
+        done;
+        !lines
     | Available_space.Definite main_axis_available_space ->
         (* Definite size - wrap based on available space *)
         let main_axis_gap =
@@ -827,60 +821,47 @@ let collect_flex_lines (constants : algo_constants)
         in
 
         (* Process flex items into lines *)
-        let rec collect_lines items lines =
-          match items with
-          | [] -> List.rev lines
-          | _ ->
-              (* Find where to split the items for this line *)
-              let line_length = ref 0.0 in
+        let rec collect_lines start_index lines =
+          if start_index >= Array.length flex_items then List.rev lines
+          else
+            let line_length = ref 0.0 in
+            let rec find_split idx =
+              if idx >= Array.length flex_items then idx
+              else
+                let item = flex_items.(idx) in
+                let gap_contribution =
+                  if idx = start_index then 0.0 else main_axis_gap
+                in
+                let item_size =
+                  if constants.is_row then item.hypothetical_outer_width
+                  else item.hypothetical_outer_height
+                in
+                let new_length =
+                  !line_length +. item_size +. gap_contribution
+                in
 
-              (* Find the index where items stop fitting *)
-              let rec find_split idx = function
-                | [] -> idx
-                | item :: rest ->
-                    let gap_contribution =
-                      if idx = 0 then 0.0 else main_axis_gap
-                    in
-                    let item_size =
-                      if constants.is_row then
-                        item.hypothetical_outer_size.width
-                      else item.hypothetical_outer_size.height
-                    in
-                    let new_length =
-                      !line_length +. item_size +. gap_contribution
-                    in
+                if new_length > main_axis_available_space && idx <> start_index
+                then idx
+                else (
+                  line_length := new_length;
+                  find_split (idx + 1))
+            in
 
-                    if new_length > main_axis_available_space && idx <> 0 then
-                      idx (* Stop here, this item doesn't fit *)
-                    else (
-                      line_length := new_length;
-                      find_split (idx + 1) rest)
-              in
+            let split_idx = find_split start_index in
+            let split_idx =
+              if split_idx = start_index then start_index + 1 else split_idx
+            in
+            let line_items_len = split_idx - start_index in
+            let line_items = Array.sub flex_items start_index line_items_len in
 
-              let index = find_split 0 items in
-              (* Ensure we take at least one item per line *)
-              let index = if index = 0 then 1 else index in
+            let line =
+              { items = line_items; cross_size = 0.0; offset_cross = 0.0 }
+            in
 
-              (* Split the items at the index *)
-              let rec split_at n acc = function
-                | [] -> (List.rev acc, [])
-                | lst when n = 0 -> (List.rev acc, lst)
-                | h :: t -> split_at (n - 1) (h :: acc) t
-              in
-              let line_items, rest = split_at index [] items in
-
-              let line =
-                {
-                  items = Array.of_list line_items;
-                  cross_size = 0.0;
-                  offset_cross = 0.0;
-                }
-              in
-
-              collect_lines rest (line :: lines)
+            collect_lines split_idx (line :: lines)
         in
 
-        collect_lines flex_items []
+        collect_lines 0 []
 
 (* Helper to sum axis gaps *)
 let sum_axis_gaps gap num_items =
@@ -1063,202 +1044,207 @@ let determine_container_main_size (type t)
                       | None, None -> Float.infinity
                     in
 
+                    let margin_sum =
+                      if constants.is_row then
+                        flex_item.margin.left +. flex_item.margin.right
+                      else flex_item.margin.top +. flex_item.margin.bottom
+                    in
+
                     let content_contribution =
-                      if is_scroll_container flex_item then
-                        (* Scroll containers use their flex basis *)
-                        flex_item.flex_basis
-                        +.
-                        if constants.is_row then
-                          flex_item.margin.left +. flex_item.margin.right
-                        else flex_item.margin.top +. flex_item.margin.bottom
-                      else
-                        match (style_min, style_preferred, max_main_size) with
-                        (* If clamping values are such that max <= min, avoid computing content size *)
-                        | _, Some pref, max
-                          when max <= min_main_size || max <= pref ->
+                      match (style_min, style_preferred, max_main_size) with
+                      (* If clamping values are such that max <= min, avoid computing content size *)
+                      | _, Some pref, max
+                        when max <= min_main_size || max <= pref ->
+                          let clamped =
+                            Float.min pref max |> Float.max min_main_size
+                          in
+                          clamped +. margin_sum
+                      | _, _, max when max <= min_main_size ->
+                          min_main_size +. margin_sum
+                      | _ when is_scroll_container flex_item ->
+                          (* Scroll containers use their flex basis but still honour min/max and padding/border insets *)
+                          let content_main_size =
+                            flex_item.flex_basis +. margin_sum
+                          in
+                          if constants.is_row then
                             let clamped =
-                              Float.min pref max |> Float.max min_main_size
+                              match (style_min, style_max) with
+                              | Some min, Some max ->
+                                  Float.max min
+                                    (Float.min content_main_size max)
+                              | Some min, None ->
+                                  Float.max min content_main_size
+                              | None, Some max ->
+                                  Float.min content_main_size max
+                              | None, None -> content_main_size
                             in
-                            clamped
-                            +.
+                            Float.max clamped main_content_box_inset
+                          else
+                            let with_flex_basis =
+                              Float.max content_main_size flex_item.flex_basis
+                            in
+                            let clamped =
+                              match (style_min, style_max) with
+                              | Some min, Some max ->
+                                  Float.max min (Float.min with_flex_basis max)
+                              | Some min, None -> Float.max min with_flex_basis
+                              | None, Some max -> Float.min with_flex_basis max
+                              | None, None -> with_flex_basis
+                            in
+                            Float.max clamped main_content_box_inset
+                      | _ ->
+                          (* Need to compute content size *)
+                          let cross_axis_parent_size =
                             if constants.is_row then
-                              flex_item.margin.left +. flex_item.margin.right
-                            else flex_item.margin.top +. flex_item.margin.bottom
-                        | _, _, max when max <= min_main_size ->
-                            min_main_size
-                            +.
+                              constants.node_inner_size.height
+                            else constants.node_inner_size.width
+                          in
+
+                          let cross_axis_margin_sum =
                             if constants.is_row then
-                              flex_item.margin.left +. flex_item.margin.right
-                            else flex_item.margin.top +. flex_item.margin.bottom
-                        | _ ->
-                            (* Need to compute content size *)
-                            let cross_axis_parent_size =
-                              if constants.is_row then
-                                constants.node_inner_size.height
-                              else constants.node_inner_size.width
-                            in
+                              flex_item.margin.top +. flex_item.margin.bottom
+                            else flex_item.margin.left +. flex_item.margin.right
+                          in
 
-                            let cross_axis_margin_sum =
-                              if constants.is_row then
-                                flex_item.margin.top +. flex_item.margin.bottom
-                              else
-                                flex_item.margin.left +. flex_item.margin.right
-                            in
+                          let child_min_cross =
+                            (if constants.is_row then flex_item.min_size.height
+                             else flex_item.min_size.width)
+                            |> Option.map (fun v -> v +. cross_axis_margin_sum)
+                          in
+                          let child_max_cross =
+                            (if constants.is_row then flex_item.max_size.height
+                             else flex_item.max_size.width)
+                            |> Option.map (fun v -> v +. cross_axis_margin_sum)
+                          in
 
-                            let child_min_cross =
-                              (if constants.is_row then
-                                 flex_item.min_size.height
-                               else flex_item.min_size.width)
-                              |> Option.map (fun v ->
-                                     v +. cross_axis_margin_sum)
+                          let cross_axis_available_space =
+                            let available_cross =
+                              if constants.is_row then available_space.height
+                              else available_space.width
                             in
-                            let child_max_cross =
-                              (if constants.is_row then
-                                 flex_item.max_size.height
-                               else flex_item.max_size.width)
-                              |> Option.map (fun v ->
-                                     v +. cross_axis_margin_sum)
-                            in
-
-                            let cross_axis_available_space =
-                              let available_cross =
-                                if constants.is_row then available_space.height
-                                else available_space.width
-                              in
-                              match available_cross with
-                              | Available_space.Definite val_ ->
-                                  let clamped =
-                                    Option.value cross_axis_parent_size
-                                      ~default:val_
-                                    |> fun v ->
-                                    match
-                                      (child_min_cross, child_max_cross)
-                                    with
-                                    | Some min, Some max ->
-                                        Float.max min (Float.min v max)
-                                    | Some min, None -> Float.max min v
-                                    | None, Some max -> Float.min v max
-                                    | None, None -> v
-                                  in
-                                  Available_space.of_float clamped
-                              | _ -> available_cross
-                            in
-
-                            let child_available_space =
-                              if constants.is_row then
-                                Size.
-                                  {
-                                    width = available_space.width;
-                                    height = cross_axis_available_space;
-                                  }
-                              else
-                                Size.
-                                  {
-                                    width = cross_axis_available_space;
-                                    height = available_space.height;
-                                  }
-                            in
-
-                            (* Known dimensions for child sizing *)
-                            let child_known_dimensions =
-                              let base_size =
-                                if constants.is_row then
-                                  Size.
-                                    {
-                                      width = None;
-                                      height = flex_item.size.height;
-                                    }
-                                else
-                                  Size.
-                                    {
-                                      width = flex_item.size.width;
-                                      height = None;
-                                    }
-                              in
-                              if
-                                flex_item.align_self = Stretch
-                                && (if constants.is_row then base_size.height
-                                    else base_size.width)
-                                   = None
-                              then
-                                let cross_size =
-                                  Available_space.to_option
-                                    cross_axis_available_space
-                                  |> Option.map (fun v ->
-                                         v
-                                         -.
-                                         if constants.is_row then
-                                           flex_item.margin.top
-                                           +. flex_item.margin.bottom
-                                         else
-                                           flex_item.margin.left
-                                           +. flex_item.margin.right)
+                            match available_cross with
+                            | Available_space.Definite val_ ->
+                                let clamped =
+                                  Option.value cross_axis_parent_size
+                                    ~default:val_
+                                  |> fun v ->
+                                  match (child_min_cross, child_max_cross) with
+                                  | Some min, Some max ->
+                                      Float.max min (Float.min v max)
+                                  | Some min, None -> Float.max min v
+                                  | None, Some max -> Float.min v max
+                                  | None, None -> v
                                 in
-                                if constants.is_row then
-                                  Size.{ base_size with height = cross_size }
-                                else Size.{ base_size with width = cross_size }
-                              else base_size
-                            in
+                                Available_space.of_float clamped
+                            | _ -> available_cross
+                          in
 
-                            let layout_output =
-                              Tree.compute_child_layout tree flex_item.node
-                                (Layout_input.make
-                                   ~run_mode:Run_mode.Compute_size
-                                   ~sizing_mode:Sizing_mode.Inherent_size
-                                   ~axis:
-                                     (if constants.is_row then
-                                        Requested_axis.Horizontal
-                                      else Requested_axis.Vertical)
-                                   ~known_dimensions:child_known_dimensions
-                                   ~parent_size:constants.node_inner_size
-                                   ~available_space:child_available_space
-                                   ~vertical_margins_are_collapsible:
-                                     Line.both_false)
-                            in
-
-                            let content_main_size =
-                              let measured_size =
-                                Layout_output.size layout_output
-                              in
-                              (if constants.is_row then measured_size.width
-                               else measured_size.height)
-                              +.
-                              if constants.is_row then
-                                flex_item.margin.left +. flex_item.margin.right
-                              else
-                                flex_item.margin.top +. flex_item.margin.bottom
-                            in
-
-                            (* Apply different clamping based on row vs column *)
+                          let child_available_space =
                             if constants.is_row then
-                              let clamped =
-                                match (style_min, style_max) with
-                                | Some min, Some max ->
-                                    Float.max min
-                                      (Float.min content_main_size max)
-                                | Some min, None ->
-                                    Float.max min content_main_size
-                                | None, Some max ->
-                                    Float.min content_main_size max
-                                | None, None -> content_main_size
-                              in
-                              Float.max clamped main_content_box_inset
+                              Size.
+                                {
+                                  width = available_space.width;
+                                  height = cross_axis_available_space;
+                                }
                             else
-                              let with_flex_basis =
-                                Float.max content_main_size flex_item.flex_basis
+                              Size.
+                                {
+                                  width = cross_axis_available_space;
+                                  height = available_space.height;
+                                }
+                          in
+
+                          (* Known dimensions for child sizing *)
+                          let child_known_dimensions =
+                            let base_size =
+                              if constants.is_row then
+                                {
+                                  Size.width = None;
+                                  height = flex_item.size.height;
+                                }
+                              else
+                                {
+                                  Size.width = flex_item.size.width;
+                                  height = None;
+                                }
+                            in
+                            let cross_dim =
+                              if constants.is_row then base_size.height
+                              else base_size.width
+                            in
+                            if
+                              flex_item.align_self = Stretch && cross_dim = None
+                            then
+                              let cross_size =
+                                Available_space.to_option
+                                  cross_axis_available_space
+                                |> Option.map (fun v ->
+                                    v
+                                    -.
+                                    if constants.is_row then
+                                      flex_item.margin.top
+                                      +. flex_item.margin.bottom
+                                    else
+                                      flex_item.margin.left
+                                      +. flex_item.margin.right)
                               in
-                              let clamped =
-                                match (style_min, style_max) with
-                                | Some min, Some max ->
-                                    Float.max min
-                                      (Float.min with_flex_basis max)
-                                | Some min, None ->
-                                    Float.max min with_flex_basis
-                                | None, Some max ->
-                                    Float.min with_flex_basis max
-                                | None, None -> with_flex_basis
-                              in
-                              Float.max clamped main_content_box_inset
+                              if constants.is_row then
+                                { base_size with height = cross_size }
+                              else { base_size with width = cross_size }
+                            else base_size
+                          in
+
+                          let layout_output =
+                            Tree.compute_child_layout tree flex_item.node
+                              (Layout_input.make ~run_mode:Run_mode.Compute_size
+                                 ~sizing_mode:Sizing_mode.Inherent_size
+                                 ~axis:
+                                   (if constants.is_row then
+                                      Requested_axis.Horizontal
+                                    else Requested_axis.Vertical)
+                                 ~known_dimensions:child_known_dimensions
+                                 ~parent_size:constants.node_inner_size
+                                 ~available_space:child_available_space
+                                 ~vertical_margins_are_collapsible:
+                                   Line.both_false)
+                          in
+
+                          let content_main_size =
+                            let measured_size =
+                              Layout_output.size layout_output
+                            in
+                            (if constants.is_row then measured_size.width
+                             else measured_size.height)
+                            +. margin_sum
+                          in
+
+                          (* Apply different clamping based on row vs column *)
+                          if constants.is_row then
+                            let clamped =
+                              match (style_min, style_max) with
+                              | Some min, Some max ->
+                                  Float.max min
+                                    (Float.min content_main_size max)
+                              | Some min, None ->
+                                  Float.max min content_main_size
+                              | None, Some max ->
+                                  Float.min content_main_size max
+                              | None, None -> content_main_size
+                            in
+                            Float.max clamped main_content_box_inset
+                          else
+                            let with_flex_basis =
+                              Float.max content_main_size flex_item.flex_basis
+                            in
+                            let clamped =
+                              match (style_min, style_max) with
+                              | Some min, Some max ->
+                                  Float.max min (Float.min with_flex_basis max)
+                              | Some min, None -> Float.max min with_flex_basis
+                              | None, Some max -> Float.min with_flex_basis max
+                              | None, None -> with_flex_basis
+                            in
+                            Float.max clamped main_content_box_inset
                     in
 
                     (* Compute content flex fraction *)
@@ -1295,14 +1281,12 @@ let determine_container_main_size (type t)
                         else 0.0
                       in
                       let size = item.flex_basis +. flex_contribution in
-                      item.outer_target_size <-
-                        (if constants.is_row then
-                           Size.{ item.outer_target_size with width = size }
-                         else Size.{ item.outer_target_size with height = size });
-                      item.target_size <-
-                        (if constants.is_row then
-                           Size.{ item.target_size with width = size }
-                         else Size.{ item.target_size with height = size });
+                      if constants.is_row then (
+                        item.outer_target_width <- size;
+                        item.target_width <- size)
+                      else (
+                        item.outer_target_height <- size;
+                        item.target_height <- size);
                       sum +. size)
                     0.0 line.items
                 in
@@ -1349,20 +1333,20 @@ let determine_container_main_size (type t)
   in
 
   (* Update constants *)
-  constants.container_size <-
-    (if constants.is_row then
-       Size.{ constants.container_size with width = outer_main_size }
-     else Size.{ constants.container_size with height = outer_main_size });
-
-  constants.inner_container_size <-
-    (if constants.is_row then
-       Size.{ constants.inner_container_size with width = inner_main_size }
-     else Size.{ constants.inner_container_size with height = inner_main_size });
-
-  constants.node_inner_size <-
-    (if constants.is_row then
-       Size.{ constants.node_inner_size with width = Some inner_main_size }
-     else Size.{ constants.node_inner_size with height = Some inner_main_size })
+  if constants.is_row then (
+    constants.container_size <-
+      { constants.container_size with width = outer_main_size };
+    constants.inner_container_size <-
+      { constants.inner_container_size with width = inner_main_size };
+    constants.node_inner_size <-
+      { constants.node_inner_size with width = Some inner_main_size })
+  else (
+    constants.container_size <-
+      { constants.container_size with height = outer_main_size };
+    constants.inner_container_size <-
+      { constants.inner_container_size with height = inner_main_size };
+    constants.node_inner_size <-
+      { constants.node_inner_size with height = Some inner_main_size })
 
 (* Resolve flexible lengths *)
 let resolve_flexible_lengths (line : flex_line) (constants : algo_constants) :
@@ -1379,8 +1363,8 @@ let resolve_flexible_lengths (line : flex_line) (constants : algo_constants) :
       (fun sum child ->
         sum
         +.
-        if constants.is_row then child.hypothetical_outer_size.width
-        else child.hypothetical_outer_size.height)
+        if constants.is_row then child.hypothetical_outer_width
+        else child.hypothetical_outer_height)
       0.0 line.items
   in
   let used_flex_factor =
@@ -1399,13 +1383,11 @@ let resolve_flexible_lengths (line : flex_line) (constants : algo_constants) :
   Array.iter
     (fun child ->
       let inner_target_size =
-        if constants.is_row then child.hypothetical_inner_size.width
-        else child.hypothetical_inner_size.height
+        if constants.is_row then child.hypothetical_inner_width
+        else child.hypothetical_inner_height
       in
-      child.target_size <-
-        (if constants.is_row then
-           Size.{ child.target_size with width = inner_target_size }
-         else Size.{ child.target_size with height = inner_target_size });
+      if constants.is_row then child.target_width <- inner_target_size
+      else child.target_height <- inner_target_size;
 
       if
         exactly_sized
@@ -1420,10 +1402,8 @@ let resolve_flexible_lengths (line : flex_line) (constants : algo_constants) :
           if constants.is_row then child.margin.left +. child.margin.right
           else child.margin.top +. child.margin.bottom
         in
-        child.outer_target_size <-
-          (if constants.is_row then
-             Size.{ child.outer_target_size with width = outer_target_size }
-           else Size.{ child.outer_target_size with height = outer_target_size })))
+        if constants.is_row then child.outer_target_width <- outer_target_size
+        else child.outer_target_height <- outer_target_size))
     line.items;
 
   if exactly_sized then ()
@@ -1436,8 +1416,8 @@ let resolve_flexible_lengths (line : flex_line) (constants : algo_constants) :
              if child.frozen then
                sum
                +.
-               if constants.is_row then child.outer_target_size.width
-               else child.outer_target_size.height
+               if constants.is_row then child.outer_target_width
+               else child.outer_target_height
              else
                sum +. child.flex_basis
                +.
@@ -1456,16 +1436,12 @@ let resolve_flexible_lengths (line : flex_line) (constants : algo_constants) :
         (* b. Calculate the remaining free space *)
         let used_space = calc_used_space () in
 
-        let unfrozen =
-          Array.to_list line.items
-          |> List.filter (fun child -> not child.frozen)
-        in
-
         let sum_flex_grow, sum_flex_shrink =
-          List.fold_left
-            (fun (grow, shrink) item ->
-              (grow +. item.flex_grow, shrink +. item.flex_shrink))
-            (0.0, 0.0) unfrozen
+          Array.fold_left
+            (fun (grow, shrink) child ->
+              if child.frozen then (grow, shrink)
+              else (grow +. child.flex_grow, shrink +. child.flex_shrink))
+            (0.0, 0.0) line.items
         in
 
         let free_space =
@@ -1483,98 +1459,89 @@ let resolve_flexible_lengths (line : flex_line) (constants : algo_constants) :
         (* c. Distribute free space proportional to the flex factors *)
         (if Float.is_finite free_space && free_space <> 0.0 then
            if growing && sum_flex_grow > 0.0 then
-             List.iter
+             Array.iter
                (fun child ->
-                 let new_size =
-                   child.flex_basis
-                   +. (free_space *. (child.flex_grow /. sum_flex_grow))
-                 in
-                 child.target_size <-
-                   (if constants.is_row then
-                      Size.{ child.target_size with width = new_size }
-                    else Size.{ child.target_size with height = new_size }))
-               unfrozen
-           else if shrinking && sum_flex_shrink > 0.0 then
-             let sum_scaled_shrink_factor =
-               List.fold_left
-                 (fun sum child ->
-                   sum +. (child.inner_flex_basis *. child.flex_shrink))
-                 0.0 unfrozen
-             in
-             if sum_scaled_shrink_factor > 0.0 then
-               List.iter
-                 (fun child ->
-                   let scaled_shrink_factor =
-                     child.inner_flex_basis *. child.flex_shrink
-                   in
+                 if not child.frozen then
                    let new_size =
                      child.flex_basis
-                     +. free_space
-                        *. (scaled_shrink_factor /. sum_scaled_shrink_factor)
+                     +. (free_space *. (child.flex_grow /. sum_flex_grow))
                    in
-                   child.target_size <-
-                     (if constants.is_row then
-                        Size.{ child.target_size with width = new_size }
-                      else Size.{ child.target_size with height = new_size }))
-                 unfrozen);
+                   if constants.is_row then child.target_width <- new_size
+                   else child.target_height <- new_size)
+               line.items
+           else if shrinking && sum_flex_shrink > 0.0 then
+             let sum_scaled_shrink_factor =
+               Array.fold_left
+                 (fun sum child ->
+                   if child.frozen then sum
+                   else sum +. (child.inner_flex_basis *. child.flex_shrink))
+                 0.0 line.items
+             in
+             if sum_scaled_shrink_factor > 0.0 then
+               Array.iter
+                 (fun child ->
+                   if not child.frozen then
+                     let scaled_shrink_factor =
+                       child.inner_flex_basis *. child.flex_shrink
+                     in
+                     let new_size =
+                       child.flex_basis
+                       +. free_space
+                          *. (scaled_shrink_factor /. sum_scaled_shrink_factor)
+                     in
+                     if constants.is_row then child.target_width <- new_size
+                     else child.target_height <- new_size)
+                 line.items);
 
         (* d. Fix min/max violations *)
         let total_violation =
-          List.fold_left
+          Array.fold_left
             (fun acc child ->
-              let current_size =
-                if constants.is_row then child.target_size.width
-                else child.target_size.height
-              in
-              let resolved_min = Some child.resolved_minimum_main_size in
-              let max_main =
-                if constants.is_row then child.max_size.width
-                else child.max_size.height
-              in
-              let clamped =
-                let v =
-                  match (resolved_min, max_main) with
-                  | Some min, Some max ->
-                      Float.max min (Float.min current_size max)
-                  | Some min, None -> Float.max min current_size
-                  | None, Some max -> Float.min current_size max
-                  | None, None -> current_size
+              if child.frozen then acc
+              else
+                let current_size =
+                  if constants.is_row then child.target_width
+                  else child.target_height
                 in
-                Float.max 0.0 v
-              in
-              child.violation <- clamped -. current_size;
-              child.target_size <-
-                (if constants.is_row then
-                   Size.{ child.target_size with width = clamped }
-                 else Size.{ child.target_size with height = clamped });
-              child.outer_target_size <-
-                (if constants.is_row then
-                   Size.
-                     {
-                       child.outer_target_size with
-                       width =
-                         clamped +. child.margin.left +. child.margin.right;
-                     }
-                 else
-                   Size.
-                     {
-                       child.outer_target_size with
-                       height =
-                         clamped +. child.margin.top +. child.margin.bottom;
-                     });
+                let resolved_min = Some child.resolved_minimum_main_size in
+                let max_main =
+                  if constants.is_row then child.max_size.width
+                  else child.max_size.height
+                in
+                let clamped =
+                  let v =
+                    match (resolved_min, max_main) with
+                    | Some min, Some max ->
+                        Float.max min (Float.min current_size max)
+                    | Some min, None -> Float.max min current_size
+                    | None, Some max -> Float.min current_size max
+                    | None, None -> current_size
+                  in
+                  Float.max 0.0 v
+                in
+                child.violation <- clamped -. current_size;
+                if constants.is_row then (
+                  child.target_width <- clamped;
+                  child.outer_target_width <-
+                    clamped +. child.margin.left +. child.margin.right)
+                else (
+                  child.target_height <- clamped;
+                  child.outer_target_height <-
+                    clamped +. child.margin.top +. child.margin.bottom);
 
-              acc +. child.violation)
-            0.0 unfrozen
+                acc +. child.violation)
+            0.0 line.items
         in
 
         (* e. Freeze over-flexed items *)
-        List.iter
+        Array.iter
           (fun child ->
-            child.frozen <-
-              (if total_violation > 0.0 then child.violation > 0.0
-               else if total_violation < 0.0 then child.violation < 0.0
-               else true))
-          unfrozen;
+            if not child.frozen then
+              child.frozen <-
+                (if total_violation > 0.0 then child.violation > 0.0
+                 else if total_violation < 0.0 then child.violation < 0.0
+                 else true))
+          line.items;
 
         (* f. Return to the start of this loop *)
         flex_loop ()
@@ -1661,28 +1628,21 @@ let determine_hypothetical_cross_size (type t)
             (* Need to measure the child *)
             let child_known_dimensions =
               if constants.is_row then
-                Size.
-                  { width = Some child.target_size.width; height = child_cross }
+                { Size.width = Some child.target_width; height = child_cross }
               else
-                Size.
-                  {
-                    width = child_cross;
-                    height = Some child.target_size.height;
-                  }
+                { Size.width = child_cross; height = Some child.target_height }
             in
             let child_available_space =
               if constants.is_row then
-                Size.
-                  {
-                    width = Available_space.of_float child_known_main;
-                    height = child_available_cross;
-                  }
+                {
+                  Size.width = Available_space.of_float child_known_main;
+                  height = child_available_cross;
+                }
               else
-                Size.
-                  {
-                    width = child_available_cross;
-                    height = Available_space.of_float child_known_main;
-                  }
+                {
+                  Size.width = child_available_cross;
+                  height = Available_space.of_float child_known_main;
+                }
             in
             let layout_output =
               Tree.compute_child_layout tree child.node
@@ -1726,19 +1686,12 @@ let determine_hypothetical_cross_size (type t)
         else child.margin.left +. child.margin.right
       in
 
-      child.hypothetical_inner_size <-
-        (if constants.is_row then
-           Size.
-             { child.hypothetical_inner_size with height = child_inner_cross }
-         else
-           Size.{ child.hypothetical_inner_size with width = child_inner_cross });
-
-      child.hypothetical_outer_size <-
-        (if constants.is_row then
-           Size.
-             { child.hypothetical_outer_size with height = child_outer_cross }
-         else
-           Size.{ child.hypothetical_outer_size with width = child_outer_cross }))
+      if constants.is_row then (
+        child.hypothetical_inner_height <- child_inner_cross;
+        child.hypothetical_outer_height <- child_outer_cross)
+      else (
+        child.hypothetical_inner_width <- child_inner_cross;
+        child.hypothetical_outer_width <- child_outer_cross))
     line.items
 
 (* Calculate children baselines *)
@@ -1773,41 +1726,35 @@ let calculate_children_base_lines (type t)
                        ~axis:Requested_axis.Both
                        ~known_dimensions:
                          (if constants.is_row then
-                            Size.
-                              {
-                                width = Some child.target_size.width;
-                                height =
-                                  Some child.hypothetical_inner_size.height;
-                              }
+                            {
+                              Size.width = Some child.target_width;
+                              height = Some child.hypothetical_inner_height;
+                            }
                           else
-                            Size.
-                              {
-                                width = Some child.hypothetical_inner_size.width;
-                                height = Some child.target_size.height;
-                              })
+                            {
+                              Size.width = Some child.hypothetical_inner_width;
+                              height = Some child.target_height;
+                            })
                        ~parent_size:constants.node_inner_size
                        ~available_space:
                          (if constants.is_row then
-                            Size.
-                              {
-                                width =
-                                  Available_space.of_float
-                                    constants.container_size.width;
-                                height =
-                                  Available_space.set_or_self
-                                    available_space.height
-                                    known_dimensions.height;
-                              }
+                            {
+                              Size.width =
+                                Available_space.of_float
+                                  constants.container_size.width;
+                              height =
+                                Available_space.set_or_self
+                                  available_space.height known_dimensions.height;
+                            }
                           else
-                            Size.
-                              {
-                                width =
-                                  Available_space.set_or_self
-                                    available_space.width known_dimensions.width;
-                                height =
-                                  Available_space.of_float
-                                    constants.container_size.height;
-                              })
+                            {
+                              Size.width =
+                                Available_space.set_or_self
+                                  available_space.width known_dimensions.width;
+                              height =
+                                Available_space.of_float
+                                  constants.container_size.height;
+                            })
                        ~vertical_margins_are_collapsible:Line.both_false)
                 in
 
@@ -1899,13 +1846,13 @@ let calculate_cross_size (flex_lines : flex_line list)
                   (* Baseline aligned items with non-auto margins *)
                   max_baseline -. child.baseline
                   +.
-                  if constants.is_row then child.hypothetical_outer_size.height
-                  else child.hypothetical_outer_size.width
+                  if constants.is_row then child.hypothetical_outer_height
+                  else child.hypothetical_outer_width
                 else if
                   (* Other items *)
                   constants.is_row
-                then child.hypothetical_outer_size.height
-                else child.hypothetical_outer_size.width
+                then child.hypothetical_outer_height
+                else child.hypothetical_outer_width
               in
               Float.max acc child_cross_size)
             0.0 line.items
@@ -2049,14 +1996,14 @@ let determine_used_cross_size (type t)
               let padding =
                 Style.padding child_style
                 |> Rect.map (fun lp ->
-                       Length_percentage.resolve_or_zero lp
-                         constants.node_inner_size.width calc)
+                    Length_percentage.resolve_or_zero lp
+                      constants.node_inner_size.width calc)
               in
               let border =
                 Style.border child_style
                 |> Rect.map (fun lp ->
-                       Length_percentage.resolve_or_zero lp
-                         constants.node_inner_size.width calc)
+                    Length_percentage.resolve_or_zero lp
+                      constants.node_inner_size.width calc)
               in
               let pb_sum = Rect.sum_axes (Rect.add padding border) in
               let box_sizing_adjustment =
@@ -2069,13 +2016,13 @@ let determine_used_cross_size (type t)
                 Size.
                   {
                     width =
-                      Dimension.maybe_resolve (Size.get dims Inline)
+                      Dimension.maybe_resolve (Size.get Inline dims)
                         constants.node_inner_size.width calc;
                     height =
-                      Dimension.maybe_resolve (Size.get dims Block)
+                      Dimension.maybe_resolve (Size.get Block dims)
                         constants.node_inner_size.height calc;
                   }
-                |> fun s -> Size.maybe_add s box_sizing_adjustment
+                |> Size.maybe_add box_sizing_adjustment
               in
 
               let cross_margin_sum =
@@ -2102,17 +2049,13 @@ let determine_used_cross_size (type t)
             else if
               (* Use hypothetical size *)
               constants.is_row
-            then child.hypothetical_inner_size.height
-            else child.hypothetical_inner_size.width
+            then child.hypothetical_inner_height
+            else child.hypothetical_inner_width
           in
 
           (* Set target size *)
-          if constants.is_row then
-            child.target_size <-
-              { child.target_size with height = cross_target_size }
-          else
-            child.target_size <-
-              { child.target_size with width = cross_target_size };
+          if constants.is_row then child.target_height <- cross_target_size
+          else child.target_width <- cross_target_size;
 
           (* Set outer target size *)
           let cross_margin_sum =
@@ -2121,17 +2064,8 @@ let determine_used_cross_size (type t)
           in
 
           if constants.is_row then
-            child.outer_target_size <-
-              {
-                child.outer_target_size with
-                height = cross_target_size +. cross_margin_sum;
-              }
-          else
-            child.outer_target_size <-
-              {
-                child.outer_target_size with
-                width = cross_target_size +. cross_margin_sum;
-              })
+            child.outer_target_height <- cross_target_size +. cross_margin_sum
+          else child.outer_target_width <- cross_target_size +. cross_margin_sum)
         line.items)
     flex_lines
 
@@ -2147,15 +2081,28 @@ let sum_axis_gaps (gap : float) (num_items : int) : float =
 
 (* Helper function to apply alignment fallback *)
 let apply_alignment_fallback (free_space : float) (num_items : int)
-    (alignment_mode : align_content) (_is_safe : bool) : align_content =
-  (* Fallback occurs in two cases:
-     1. If there is only a single item being aligned and alignment is a distributed alignment keyword
-     2. If free space is negative *)
-  if num_items <= 1 || free_space <= 0.0 then
-    match alignment_mode with
-    | Space_between | Space_around | Space_evenly -> Flex_start
-    | other -> other
-  else alignment_mode
+    (alignment_mode : align_content) (is_safe : bool) : align_content =
+  (* Fallback occurs in two cases: *)
+
+  (* 1. If there is only a single item being aligned and alignment is a distributed alignment keyword
+        https://www.w3.org/TR/css-align-3/#distribution-values *)
+  let alignment_mode, is_safe =
+    if num_items <= 1 || free_space <= 0.0 then
+      match alignment_mode with
+      | Align_content.Stretch -> (Align_content.Flex_start, true)
+      | Align_content.Space_between -> (Align_content.Flex_start, true)
+      | Align_content.Space_around -> (Center, true)
+      | Align_content.Space_evenly -> (Center, true)
+      | _ -> (alignment_mode, is_safe)
+    else (alignment_mode, is_safe)
+  in
+
+  (* 2. If free space is negative the "safe" alignment variants all fallback to Start alignment *)
+  let alignment_mode =
+    if free_space <= 0.0 && is_safe then Align_content.Start else alignment_mode
+  in
+
+  alignment_mode
 
 (* Helper function to compute alignment offset *)
 let compute_alignment_offset (free_space : float) (num_items : int)
@@ -2163,7 +2110,7 @@ let compute_alignment_offset (free_space : float) (num_items : int)
     (layout_is_flex_reversed : bool) (is_first : bool) : float =
   if is_first then
     match alignment_mode with
-    | Start -> 0.0
+    | Align_content.Start -> 0.0
     | Flex_start -> if layout_is_flex_reversed then free_space else 0.0
     | End -> free_space
     | Flex_end -> if layout_is_flex_reversed then 0.0 else free_space
@@ -2179,7 +2126,7 @@ let compute_alignment_offset (free_space : float) (num_items : int)
   else
     (* For non-first items *)
     match alignment_mode with
-    | Space_between ->
+    | Align_content.Space_between ->
         gap
         +.
         if num_items > 1 then free_space /. float_of_int (num_items - 1)
@@ -2212,8 +2159,8 @@ let distribute_remaining_free_space (flex_lines : flex_line list)
              (fun acc child ->
                acc
                +.
-               if constants.is_row then child.outer_target_size.width
-               else child.outer_target_size.height)
+               if constants.is_row then child.outer_target_width
+               else child.outer_target_height)
              0.0 line.items
       in
       let free_space =
@@ -2273,11 +2220,10 @@ let distribute_remaining_free_space (flex_lines : flex_line list)
         in
 
         if layout_reverse then
-          (* Process items in reverse order for reverse layouts *)
-          let items_rev =
-            Array.to_list line.items |> List.rev |> Array.of_list
-          in
-          Array.iteri justify_item items_rev
+          for i = Array.length line.items - 1 downto 0 do
+            let rev_i = Array.length line.items - 1 - i in
+            justify_item rev_i line.items.(i)
+          done
         else Array.iteri justify_item line.items)
     flex_lines
 
@@ -2320,8 +2266,8 @@ let resolve_cross_axis_auto_margins (flex_lines : flex_line list)
           let free_space =
             line_cross_size
             -.
-            if constants.is_row then child.outer_target_size.height
-            else child.outer_target_size.width
+            if constants.is_row then child.outer_target_height
+            else child.outer_target_width
           in
 
           let cross_start_auto =
@@ -2469,7 +2415,12 @@ let final_layout_pass (type t)
       Tree.compute_child_layout tree item.node
         (Layout_input.make ~run_mode:Run_mode.Perform_layout
            ~sizing_mode:Sizing_mode.Content_size ~axis:Requested_axis.Both
-           ~known_dimensions:(Size.map (fun x -> Some x) item.target_size)
+           ~known_dimensions:
+             Size.
+               {
+                 width = Some item.target_width;
+                 height = Some item.target_height;
+               }
            ~parent_size:node_inner_size
            ~available_space:(Size.map Available_space.of_float container_size)
            ~vertical_margins_are_collapsible:Line.both_false)
@@ -2597,19 +2548,20 @@ let final_layout_pass (type t)
     in
     let line_offset_cross = line.offset_cross in
 
-    let is_reverse = Flex_direction_ext.is_reverse direction in
-
-    let items =
-      if is_reverse then
-        Array.to_list (Array.of_list (List.rev (Array.to_list line.items)))
-      else Array.to_list line.items
-    in
-    List.iter
-      (fun item ->
+    if Flex_direction_ext.is_reverse direction then
+      for i = Array.length line.items - 1 downto 0 do
+        let item = line.items.(i) in
         calculate_flex_item item total_offset_main !total_offset_cross
           line_offset_cross content_size container_size node_inner_size
-          direction)
-      items;
+          direction
+      done
+    else
+      Array.iter
+        (fun item ->
+          calculate_flex_item item total_offset_main !total_offset_cross
+            line_offset_cross content_size container_size node_inner_size
+            direction)
+        line.items;
 
     total_offset_cross :=
       !total_offset_cross +. line_offset_cross +. line.cross_size
@@ -2688,24 +2640,24 @@ let perform_absolute_layout_on_absolute_children (type t)
       let margin =
         Style.margin child_style
         |> Rect.map (fun m ->
-               Length_percentage_auto.resolve_to_option_with_calc m
-                 inset_relative_size.width calc)
+            Length_percentage_auto.resolve_to_option_with_calc m
+              inset_relative_size.width calc)
       in
 
       (* Resolve padding *)
       let padding =
         Style.padding child_style
         |> Rect.map (fun p ->
-               Length_percentage.resolve_or_zero p
-                 (Some inset_relative_size.width) calc)
+            Length_percentage.resolve_or_zero p (Some inset_relative_size.width)
+              calc)
       in
 
       (* Resolve border *)
       let border =
         Style.border child_style
         |> Rect.map (fun b ->
-               Length_percentage.resolve_or_zero b
-                 (Some inset_relative_size.width) calc)
+            Length_percentage.resolve_or_zero b (Some inset_relative_size.width)
+              calc)
       in
 
       let padding_border_sum = Rect.add padding border |> Rect.sum_axes in
@@ -2738,303 +2690,222 @@ let perform_absolute_layout_on_absolute_children (type t)
       in
 
       (* Compute known dimensions from min/max/inherent size styles *)
-      let style_size =
-        Style.size child_style |> fun size ->
-        Size.
-          {
-            width =
-              Dimension.maybe_resolve size.width
-                (Some inset_relative_size.width) calc;
-            height =
-              Dimension.maybe_resolve size.height
-                (Some inset_relative_size.height) calc;
-          }
+      let style_dims = Style.size child_style in
+      let style_width =
+        Dimension.maybe_resolve style_dims.width
+          (Some inset_relative_size.width) calc
       in
-      (* Apply aspect ratio if needed *)
-      let style_size =
-        match (aspect_ratio, style_size.width, style_size.height) with
-        | Some ratio, Some w, None ->
-            { style_size with height = Some (w /. ratio) }
-        | Some ratio, None, Some h ->
-            { style_size with width = Some (h *. ratio) }
-        | _ -> style_size
+      let style_height =
+        Dimension.maybe_resolve style_dims.height
+          (Some inset_relative_size.height) calc
       in
-      (* Add box sizing adjustment *)
-      let style_size =
+      let style_width, style_height =
+        match (aspect_ratio, style_width, style_height) with
+        | Some ratio, Some w, None -> (Some w, Some (w /. ratio))
+        | Some ratio, None, Some h -> (Some (h *. ratio), Some h)
+        | _ -> (style_width, style_height)
+      in
+      let style_width, style_height =
         match (box_sizing_adjustment.width, box_sizing_adjustment.height) with
-        | 0.0, 0.0 -> style_size
+        | 0.0, 0.0 -> (style_width, style_height)
         | bw, bh ->
-            Size.
-              {
-                width = Option.map (fun w -> w +. bw) style_size.width;
-                height = Option.map (fun h -> h +. bh) style_size.height;
-              }
+            ( Option.map (fun w -> w +. bw) style_width,
+              Option.map (fun h -> h +. bh) style_height )
       in
 
-      let min_size =
-        Style.min_size child_style |> fun size ->
-        Size.
-          {
-            width =
-              Dimension.maybe_resolve size.width
-                (Some inset_relative_size.width) calc;
-            height =
-              Dimension.maybe_resolve size.height
-                (Some inset_relative_size.height) calc;
-          }
+      let min_dims = Style.min_size child_style in
+      let min_width =
+        Dimension.maybe_resolve min_dims.width (Some inset_relative_size.width)
+          calc
       in
-      (* Apply aspect ratio if needed *)
-      let min_size =
-        match (aspect_ratio, min_size.width, min_size.height) with
-        | Some ratio, Some w, None ->
-            { min_size with height = Some (w /. ratio) }
-        | Some ratio, None, Some h ->
-            { min_size with width = Some (h *. ratio) }
-        | _ -> min_size
+      let min_height =
+        Dimension.maybe_resolve min_dims.height
+          (Some inset_relative_size.height) calc
       in
-      (* Add box sizing adjustment *)
-      let min_size =
+      let min_width, min_height =
+        match (aspect_ratio, min_width, min_height) with
+        | Some ratio, Some w, None -> (Some w, Some (w /. ratio))
+        | Some ratio, None, Some h -> (Some (h *. ratio), Some h)
+        | _ -> (min_width, min_height)
+      in
+      let min_width, min_height =
         match (box_sizing_adjustment.width, box_sizing_adjustment.height) with
-        | 0.0, 0.0 -> min_size
+        | 0.0, 0.0 -> (min_width, min_height)
         | bw, bh ->
-            Size.
-              {
-                width = Option.map (fun w -> w +. bw) min_size.width;
-                height = Option.map (fun h -> h +. bh) min_size.height;
-              }
+            ( Option.map (fun w -> w +. bw) min_width,
+              Option.map (fun h -> h +. bh) min_height )
       in
-      let min_size =
-        Size.
-          {
-            width =
-              (match min_size.width with
-              | Some w -> Some (Float.max w padding_border_sum.width)
-              | None -> Some padding_border_sum.width);
-            height =
-              (match min_size.height with
-              | Some h -> Some (Float.max h padding_border_sum.height)
-              | None -> Some padding_border_sum.height);
-          }
+      let min_width =
+        Some
+          (Float.max
+             (Option.value min_width ~default:padding_border_sum.width)
+             padding_border_sum.width)
+      in
+      let min_height =
+        Some
+          (Float.max
+             (Option.value min_height ~default:padding_border_sum.height)
+             padding_border_sum.height)
       in
 
-      let max_size =
-        Style.max_size child_style |> fun size ->
-        Size.
-          {
-            width =
-              Dimension.maybe_resolve size.width
-                (Some inset_relative_size.width) calc;
-            height =
-              Dimension.maybe_resolve size.height
-                (Some inset_relative_size.height) calc;
-          }
+      let max_dims = Style.max_size child_style in
+      let max_width =
+        Dimension.maybe_resolve max_dims.width (Some inset_relative_size.width)
+          calc
       in
-      (* Apply aspect ratio if needed *)
-      let max_size =
-        match (aspect_ratio, max_size.width, max_size.height) with
-        | Some ratio, Some w, None ->
-            { max_size with height = Some (w /. ratio) }
-        | Some ratio, None, Some h ->
-            { max_size with width = Some (h *. ratio) }
-        | _ -> max_size
+      let max_height =
+        Dimension.maybe_resolve max_dims.height
+          (Some inset_relative_size.height) calc
       in
-      (* Add box sizing adjustment *)
-      let max_size =
+      let max_width, max_height =
+        match (aspect_ratio, max_width, max_height) with
+        | Some ratio, Some w, None -> (Some w, Some (w /. ratio))
+        | Some ratio, None, Some h -> (Some (h *. ratio), Some h)
+        | _ -> (max_width, max_height)
+      in
+      let max_width, max_height =
         match (box_sizing_adjustment.width, box_sizing_adjustment.height) with
-        | 0.0, 0.0 -> max_size
+        | 0.0, 0.0 -> (max_width, max_height)
         | bw, bh ->
-            Size.
-              {
-                width = Option.map (fun w -> w +. bw) max_size.width;
-                height = Option.map (fun h -> h +. bh) max_size.height;
-              }
+            ( Option.map (fun w -> w +. bw) max_width,
+              Option.map (fun h -> h +. bh) max_height )
+      in
+
+      (* Helper to clamp a value between optional min and max *)
+      let clamp_opt value min_val max_val =
+        match (value, min_val, max_val) with
+        | Some v, Some min_v, Some max_v ->
+            Some (Float.max min_v (Float.min v max_v))
+        | Some v, Some min_v, None -> Some (Float.max min_v v)
+        | Some v, None, Some max_v -> Some (Float.min v max_v)
+        | v, _, _ -> v
       in
 
       (* Clamp style_size between min and max *)
       let known_dimensions =
-        ref
-          Size.
-            {
-              width =
-                (match (style_size.width, min_size.width, max_size.width) with
-                | Some w, Some min_w, Some max_w ->
-                    Some (Float.max min_w (Float.min w max_w))
-                | Some w, Some min_w, None -> Some (Float.max min_w w)
-                | Some w, None, Some max_w -> Some (Float.min w max_w)
-                | w, _, _ -> w);
-              height =
-                (match
-                   (style_size.height, min_size.height, max_size.height)
-                 with
-                | Some h, Some min_h, Some max_h ->
-                    Some (Float.max min_h (Float.min h max_h))
-                | Some h, Some min_h, None -> Some (Float.max min_h h)
-                | Some h, None, Some max_h -> Some (Float.min h max_h)
-                | h, _, _ -> h);
-            }
+        {
+          Size.width = clamp_opt style_width min_width max_width;
+          height = clamp_opt style_height min_height max_height;
+        }
       in
 
       (* Fill in width from left/right and reapply aspect ratio if:
          - Width is not already known
          - Item has both left and right inset properties set *)
-      (match (!known_dimensions.width, left, right) with
-      | None, Some l, Some r ->
-          let new_width_raw =
-            inset_relative_size.width
-            -. Option.value margin.left ~default:0.0
-            -. Option.value margin.right ~default:0.0
-            -. l -. r
-          in
-          known_dimensions :=
+      let known_dimensions =
+        match (known_dimensions.width, left, right) with
+        | None, Some l, Some r ->
+            let new_width_raw =
+              inset_relative_size.width
+              -. Option.value margin.left ~default:0.0
+              -. Option.value margin.right ~default:0.0
+              -. l -. r
+            in
+            let width = Some (Float.max new_width_raw 0.0) in
+            let width, height =
+              match (aspect_ratio, width, known_dimensions.height) with
+              | Some ratio, Some w, None -> (Some w, Some (w /. ratio))
+              | Some ratio, None, Some h -> (Some (h *. ratio), Some h)
+              | _ -> (width, known_dimensions.height)
+            in
             {
-              !known_dimensions with
-              width = Some (Float.max new_width_raw 0.0);
-            };
-          (* Apply aspect ratio if needed *)
-          (known_dimensions :=
-             match
-               (aspect_ratio, !known_dimensions.width, !known_dimensions.height)
-             with
-             | Some ratio, Some w, None ->
-                 { !known_dimensions with height = Some (w /. ratio) }
-             | Some ratio, None, Some h ->
-                 { !known_dimensions with width = Some (h *. ratio) }
-             | _ -> !known_dimensions);
-          (* Clamp between min and max *)
-          known_dimensions :=
-            Size.
-              {
-                width =
-                  (match
-                     (!known_dimensions.width, min_size.width, max_size.width)
-                   with
-                  | Some w, Some min_w, Some max_w ->
-                      Some (Float.max min_w (Float.min w max_w))
-                  | Some w, Some min_w, None -> Some (Float.max min_w w)
-                  | Some w, None, Some max_w -> Some (Float.min w max_w)
-                  | w, _, _ -> w);
-                height =
-                  (match
-                     (!known_dimensions.height, min_size.height, max_size.height)
-                   with
-                  | Some h, Some min_h, Some max_h ->
-                      Some (Float.max min_h (Float.min h max_h))
-                  | Some h, Some min_h, None -> Some (Float.max min_h h)
-                  | Some h, None, Some max_h -> Some (Float.min h max_h)
-                  | h, _, _ -> h);
-              }
-      | _ -> ());
+              Size.width = clamp_opt width min_width max_width;
+              height = clamp_opt height min_height max_height;
+            }
+        | _ -> known_dimensions
+      in
 
       (* Fill in height from top/bottom and reapply aspect ratio if:
          - Height is not already known
          - Item has both top and bottom inset properties set *)
-      (match (!known_dimensions.height, top, bottom) with
-      | None, Some t, Some b ->
-          let new_height_raw =
-            inset_relative_size.height
-            -. Option.value margin.top ~default:0.0
-            -. Option.value margin.bottom ~default:0.0
-            -. t -. b
-          in
-          known_dimensions :=
+      let known_dimensions =
+        match (known_dimensions.height, top, bottom) with
+        | None, Some t, Some b ->
+            let new_height_raw =
+              inset_relative_size.height
+              -. Option.value margin.top ~default:0.0
+              -. Option.value margin.bottom ~default:0.0
+              -. t -. b
+            in
+            let height = Some (Float.max new_height_raw 0.0) in
+            let width, height =
+              match (aspect_ratio, known_dimensions.width, height) with
+              | Some ratio, Some w, None -> (Some w, Some (w /. ratio))
+              | Some ratio, None, Some h -> (Some (h *. ratio), Some h)
+              | _ -> (known_dimensions.width, height)
+            in
             {
-              !known_dimensions with
-              height = Some (Float.max new_height_raw 0.0);
-            };
-          (* Apply aspect ratio if needed *)
-          (known_dimensions :=
-             match
-               (aspect_ratio, !known_dimensions.width, !known_dimensions.height)
-             with
-             | Some ratio, Some w, None ->
-                 { !known_dimensions with height = Some (w /. ratio) }
-             | Some ratio, None, Some h ->
-                 { !known_dimensions with width = Some (h *. ratio) }
-             | _ -> !known_dimensions);
-          (* Clamp between min and max *)
-          known_dimensions :=
-            Size.
-              {
-                width =
-                  (match
-                     (!known_dimensions.width, min_size.width, max_size.width)
-                   with
-                  | Some w, Some min_w, Some max_w ->
-                      Some (Float.max min_w (Float.min w max_w))
-                  | Some w, Some min_w, None -> Some (Float.max min_w w)
-                  | Some w, None, Some max_w -> Some (Float.min w max_w)
-                  | w, _, _ -> w);
-                height =
-                  (match
-                     (!known_dimensions.height, min_size.height, max_size.height)
-                   with
-                  | Some h, Some min_h, Some max_h ->
-                      Some (Float.max min_h (Float.min h max_h))
-                  | Some h, Some min_h, None -> Some (Float.max min_h h)
-                  | Some h, None, Some max_h -> Some (Float.min h max_h)
-                  | h, _, _ -> h);
-              }
-      | _ -> ());
-
-      (* Perform child layout *)
-      let layout_output =
-        Tree.compute_child_layout tree child
-          (Layout_input.make ~run_mode:Run_mode.Perform_layout
-             ~sizing_mode:Sizing_mode.Inherent_size ~axis:Requested_axis.Both
-             ~known_dimensions:!known_dimensions
-             ~parent_size:constants.node_inner_size
-             ~available_space:
-               Size.
-                 {
-                   width =
-                     Available_space.of_float
-                       (Option.value
-                          (Option.map
-                             (fun w ->
-                               Float.min w
-                                 (Option.value max_size.width ~default:w))
-                             (Option.map
-                                (fun w ->
-                                  Float.max w
-                                    (Option.value min_size.width ~default:w))
-                                (Some container_width)))
-                          ~default:container_width);
-                   height =
-                     Available_space.of_float
-                       (Option.value
-                          (Option.map
-                             (fun h ->
-                               Float.min h
-                                 (Option.value max_size.height ~default:h))
-                             (Option.map
-                                (fun h ->
-                                  Float.max h
-                                    (Option.value min_size.height ~default:h))
-                                (Some container_height)))
-                          ~default:container_height);
-                 }
-             ~vertical_margins_are_collapsible:Line.both_false)
+              Size.width = clamp_opt width min_width max_width;
+              height = clamp_opt height min_height max_height;
+            }
+        | _ -> known_dimensions
       in
 
-      let measured_size = Layout_output.size layout_output in
-      let final_size = Size.unwrap_or !known_dimensions measured_size in
+      let available_space =
+        Size.
+          {
+            width =
+              Available_space.of_float
+                (Option.value
+                   (Option.map
+                      (fun w -> Float.min w (Option.value max_width ~default:w))
+                      (Option.map
+                         (fun w ->
+                           Float.max w (Option.value min_width ~default:w))
+                         (Some container_width)))
+                   ~default:container_width);
+            height =
+              Available_space.of_float
+                (Option.value
+                   (Option.map
+                      (fun h ->
+                        Float.min h (Option.value max_height ~default:h))
+                      (Option.map
+                         (fun h ->
+                           Float.max h (Option.value min_height ~default:h))
+                         (Some container_height)))
+                   ~default:container_height);
+          }
+      in
+
+      (* Measure child to determine its inherent size *)
+      let measure_output =
+        Tree.compute_child_layout tree child
+          (Layout_input.make ~run_mode:Run_mode.Compute_size
+             ~sizing_mode:Sizing_mode.Inherent_size ~axis:Requested_axis.Both
+             ~known_dimensions ~parent_size:constants.node_inner_size
+             ~available_space ~vertical_margins_are_collapsible:Line.both_false)
+      in
+
+      let measured_size = Layout_output.size measure_output in
+      let final_size = Size.unwrap_or measured_size known_dimensions in
       (* Clamp final size between min and max - min wins over max when they conflict *)
       let final_size =
         Size.
           {
             width =
-              (match (final_size.width, min_size.width, max_size.width) with
+              (match (final_size.width, min_width, max_width) with
               | w, Some min_w, Some max_w -> Float.max min_w (Float.min w max_w)
               | w, Some min_w, None -> Float.max min_w w
               | w, None, Some max_w -> Float.min w max_w
               | w, _, _ -> w);
             height =
-              (match (final_size.height, min_size.height, max_size.height) with
+              (match (final_size.height, min_height, max_height) with
               | h, Some min_h, Some max_h -> Float.max min_h (Float.min h max_h)
               | h, Some min_h, None -> Float.max min_h h
               | h, None, Some max_h -> Float.min h max_h
               | h, _, _ -> h);
           }
+      in
+
+      (* Perform child layout with resolved size *)
+      let layout_output =
+        Tree.compute_child_layout tree child
+          (Layout_input.make ~run_mode:Run_mode.Perform_layout
+             ~sizing_mode:Sizing_mode.Inherent_size ~axis:Requested_axis.Both
+             ~known_dimensions:(Size.map Option.some final_size)
+             ~parent_size:constants.node_inner_size ~available_space
+             ~vertical_margins_are_collapsible:Line.both_false)
       in
 
       (* Calculate non-auto margins *)
@@ -3365,29 +3236,38 @@ let compute_preliminary (type t)
         +. Flex_direction_ext.main_axis_sum constants.content_box_inset
              constants.dir
       in
-      constants.inner_container_size <-
-        Flex_direction_ext.with_main_size constants.inner_container_size
-          constants.dir inner_main_size;
-      constants.container_size <-
-        Flex_direction_ext.with_main_size constants.container_size constants.dir
-          outer_main_size
+      if constants.is_row then (
+        constants.inner_container_size <-
+          { constants.inner_container_size with width = inner_main_size };
+        constants.container_size <-
+          { constants.container_size with width = outer_main_size })
+      else (
+        constants.inner_container_size <-
+          { constants.inner_container_size with height = inner_main_size };
+        constants.container_size <-
+          { constants.container_size with height = outer_main_size })
   | None ->
       (* Sets constants.container_size and constants.inner_container_size *)
       determine_container_main_size
         (module Tree)
         tree available_space flex_lines constants;
-      constants.node_inner_size <-
-        Flex_direction_ext.with_main_size constants.node_inner_size
+      let inner_main =
+        Flex_direction_ext.main_size constants.inner_container_size
           constants.dir
-          (Some
-             (Flex_direction_ext.main_size constants.inner_container_size
-                constants.dir));
-      constants.node_outer_size <-
-        Flex_direction_ext.with_main_size constants.node_outer_size
-          constants.dir
-          (Some
-             (Flex_direction_ext.main_size constants.container_size
-                constants.dir));
+      in
+      let outer_main =
+        Flex_direction_ext.main_size constants.container_size constants.dir
+      in
+      if constants.is_row then (
+        constants.node_inner_size <-
+          { constants.node_inner_size with width = Some inner_main };
+        constants.node_outer_size <-
+          { constants.node_outer_size with width = Some outer_main })
+      else (
+        constants.node_inner_size <-
+          { constants.node_inner_size with height = Some inner_main };
+        constants.node_outer_size <-
+          { constants.node_outer_size with height = Some outer_main });
 
       (* Re-resolve percentage gaps *)
       let style = Tree.get_core_container_style tree node in
@@ -3400,16 +3280,17 @@ let compute_preliminary (type t)
         Style.gap style |> fun gap_size ->
         match constants.dir with
         | Row | Row_reverse ->
-            Length_percentage.maybe_resolve (Size.get gap_size Inline)
+            Length_percentage.maybe_resolve (Size.get Inline gap_size)
               (Some inner_container_size) calc
             |> Option.value ~default:0.0
         | Column | Column_reverse ->
-            Length_percentage.maybe_resolve (Size.get gap_size Block)
+            Length_percentage.maybe_resolve (Size.get Block gap_size)
               (Some inner_container_size) calc
             |> Option.value ~default:0.0
       in
-      constants.gap <-
-        Flex_direction_ext.with_main_size constants.gap constants.dir new_gap);
+      if constants.is_row then
+        constants.gap <- { constants.gap with width = new_gap }
+      else constants.gap <- { constants.gap with height = new_gap });
 
   (* 6. Resolve the flexible lengths of all the flex items to find their used main size *)
   List.iter (fun line -> resolve_flexible_lengths line constants) flex_lines;
@@ -3505,30 +3386,33 @@ let compute_preliminary (type t)
       | first_line :: _ -> (
           (* For row containers: find item with baseline alignment or fallback to first item
              For column containers: always use first item *)
-          let items_list = first_line.items |> Array.to_list in
+          let items = first_line.items in
+          let len = Array.length items in
           let baseline_item =
             if Flex_direction_ext.is_row constants.dir then
-              List.find_opt (fun item -> item.align_self = Baseline) items_list
+              let rec find i =
+                if i >= len then None
+                else
+                  let item = items.(i) in
+                  if item.align_self = Baseline then Some item else find (i + 1)
+              in
+              find 0
             else None
           in
-          let item_to_use =
+          let item_opt =
             match baseline_item with
             | Some item -> Some item
-            | None ->
-                (* Fallback to first item if no baseline item found *)
-                if Array.length first_line.items > 0 then
-                  Some first_line.items.(0)
-                else None
+            | None -> if len > 0 then Some items.(0) else None
           in
-          match item_to_use with
+          match item_opt with
+          | None -> None
           | Some item ->
               let offset_cross =
                 if Flex_direction_ext.is_row constants.dir then
                   item.offset_cross
                 else item.offset_main
               in
-              Some (offset_cross +. item.baseline)
-          | None -> None)
+              Some (offset_cross +. item.baseline))
     in
 
     (* Return final layout output *)
@@ -3556,12 +3440,12 @@ let compute_flexbox_layout (type t)
   let padding =
     Style.padding style
     |> Rect.map (fun lp ->
-           Length_percentage.resolve_or_zero lp parent_size.width calc)
+        Length_percentage.resolve_or_zero lp parent_size.width calc)
   in
   let border =
     Style.border style
     |> Rect.map (fun lp ->
-           Length_percentage.resolve_or_zero lp parent_size.width calc)
+        Length_percentage.resolve_or_zero lp parent_size.width calc)
   in
   let padding_border_sum = Rect.sum_axes (Rect.add padding border) in
   let box_sizing_adjustment =
@@ -3574,13 +3458,12 @@ let compute_flexbox_layout (type t)
     Size.
       {
         width =
-          Dimension.maybe_resolve (Size.get dims Inline) parent_size.width calc;
+          Dimension.maybe_resolve (Size.get Inline dims) parent_size.width calc;
         height =
-          Dimension.maybe_resolve (Size.get dims Block) parent_size.height calc;
+          Dimension.maybe_resolve (Size.get Block dims) parent_size.height calc;
       }
-    |> fun s ->
-    Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-    Size.maybe_add s box_sizing_adjustment
+    |> Size.apply_aspect_ratio aspect_ratio
+    |> Size.maybe_add box_sizing_adjustment
   in
 
   let max_size =
@@ -3588,13 +3471,12 @@ let compute_flexbox_layout (type t)
     Size.
       {
         width =
-          Dimension.maybe_resolve (Size.get dims Inline) parent_size.width calc;
+          Dimension.maybe_resolve (Size.get Inline dims) parent_size.width calc;
         height =
-          Dimension.maybe_resolve (Size.get dims Block) parent_size.height calc;
+          Dimension.maybe_resolve (Size.get Block dims) parent_size.height calc;
       }
-    |> fun s ->
-    Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-    Size.maybe_add s box_sizing_adjustment
+    |> Size.apply_aspect_ratio aspect_ratio
+    |> Size.maybe_add box_sizing_adjustment
   in
 
   let clamped_style_size =
@@ -3603,16 +3485,15 @@ let compute_flexbox_layout (type t)
       Size.
         {
           width =
-            Dimension.maybe_resolve (Size.get dims Inline) parent_size.width
+            Dimension.maybe_resolve (Size.get Inline dims) parent_size.width
               calc;
           height =
-            Dimension.maybe_resolve (Size.get dims Block) parent_size.height
+            Dimension.maybe_resolve (Size.get Block dims) parent_size.height
               calc;
         }
-      |> fun s ->
-      Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-      Size.maybe_add s box_sizing_adjustment |> fun s ->
-      Size.clamp_option s min_size max_size
+      |> Size.apply_aspect_ratio aspect_ratio
+      |> Size.maybe_add box_sizing_adjustment
+      |> Size.clamp_option min_size max_size
     else Size.none
   in
 
@@ -3628,10 +3509,10 @@ let compute_flexbox_layout (type t)
 
   (* The size of the container should be floored by the padding and border *)
   let styled_based_known_dimensions =
-    known_dimensions |> fun dims ->
-    Size.choose_first dims min_max_definite_size |> fun dims ->
-    Size.choose_first dims clamped_style_size |> fun dims ->
-    Size.maybe_max dims padding_border_sum
+    known_dimensions
+    |> Size.choose_first min_max_definite_size
+    |> Size.choose_first clamped_style_size
+    |> Size.maybe_max padding_border_sum
   in
 
   (* Short-circuit layout if the container's size is fully determined and we're in ComputeSize mode *)

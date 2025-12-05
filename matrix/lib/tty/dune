@@ -1,7 +1,0 @@
-(library
- (name tty)
- (public_name matrix.tty)
- (libraries unix ansi)
- (foreign_stubs
-  (language c)
-  (names tty_stubs)))

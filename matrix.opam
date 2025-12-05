@@ -10,12 +10,10 @@ tags: ["terminal" "ansi" "input" "grid" "rendering" "unicode" "pty" "vte"]
 homepage: "https://github.com/tmattio/mosaic"
 bug-reports: "https://github.com/tmattio/mosaic/issues"
 depends: [
-  "ocaml" {>= "5.1"}
+  "ocaml" {>= "5.4"}
   "dune" {>= "3.19"}
   "uutf"
-  "uucp"
-  "uuseg" {>= "16.0.0"}
-  "fmt"
+  "topkg" {<= "1.1.0"}
   "alcotest" {with-test}
   "odoc" {with-doc}
 ]

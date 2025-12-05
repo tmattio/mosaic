@@ -1,22 +1,33 @@
-(tests
- (package matrix)
- (names
-  test_ansi
-  test_grid
-  test_input
-  test_vte
-  test_pty
-  test_screen
-  test_vte_unicode
-  test_vte_damage
-  test_vte_vttest)
- (libraries
-  alcotest
-  unix
-  fmt
-  matrix.ansi
-  matrix.input
-  matrix.pty
-  matrix.screen
-  matrix.vte
-  matrix.grid))
+(data_only_dirs data)
+
+(test
+ (name test_ansi)
+ (libraries alcotest ansi))
+
+(test
+ (name test_glyph)
+ (libraries alcotest glyph))
+
+(test
+ (name test_grid)
+ (libraries alcotest uutf grid glyph ansi))
+
+(test
+ (name test_input)
+ (libraries alcotest unix input))
+
+(test
+ (name test_vte)
+ (libraries alcotest uutf vte grid ansi))
+
+(test
+ (name test_pty)
+ (libraries alcotest unix pty))
+
+(test
+ (name test_terminal)
+ (libraries alcotest terminal unix ansi input))
+
+(test
+ (name test_screen)
+ (libraries alcotest str screen grid glyph ansi terminal unix input))

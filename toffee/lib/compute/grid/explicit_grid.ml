@@ -5,18 +5,6 @@ open Geometry
 open Style
 open Style.Grid
 
-(* Helper functions for Seq that might not exist in standard library *)
-module Seq_ext = struct
-  let rec cycle seq () =
-    match seq () with
-    | Seq.Nil -> cycle seq ()
-    | Seq.Cons (x, xs) -> Seq.Cons (x, fun () -> Seq.append xs (cycle seq) ())
-
-  let repeat x =
-    let rec go () = Seq.Cons (x, go) in
-    go
-end
-
 (* The auto-repeat fit strategy to use *)
 type auto_repeat_strategy =
   | Max_repetitions_that_do_not_overflow
@@ -173,7 +161,7 @@ let compute_explicit_grid_size_in_axis ~style ~auto_fit_container_size
 
               let gap_size =
                 let gap = Style.gap style in
-                Size.get_absolute gap axis |> fun lp ->
+                Size.get_absolute axis gap |> fun lp ->
                 Length_percentage.resolve_or_zero lp parent_size
                   resolve_calc_value
               in
@@ -241,24 +229,22 @@ let compute_explicit_grid_size_in_axis ~style ~auto_fit_container_size
         (num_repetitions, grid_template_track_count)
 
 (* Utility function for repeating logic of creating implicit tracks *)
-let create_implicit_tracks tracks count auto_tracks_iter
+let create_implicit_tracks tracks count
+    (auto_tracks : Track_sizing_function.t array)
     (gap : Style.length_percentage) =
-  let rec loop i iter =
-    if i < count then
-      match iter () with
-      | Seq.Nil -> failwith "auto_tracks_iter exhausted unexpectedly"
-      | Seq.Cons (track_def, rest) ->
-          let track =
-            Track_sizing_function.make
-              ~min:(Track_sizing_function.min_sizing_function track_def)
-              ~max:(Track_sizing_function.max_sizing_function track_def)
-            |> Grid_track.create
-          in
-          tracks := !tracks @ [ track ];
-          tracks := !tracks @ [ Grid_track.gutter gap ];
-          loop (i + 1) rest
-  in
-  loop 0 auto_tracks_iter
+  let auto_len = Array.length auto_tracks in
+  if auto_len = 0 then invalid_arg "create_implicit_tracks: empty auto_tracks";
+  for i = 0 to count - 1 do
+    let track_def = auto_tracks.(i mod auto_len) in
+    let track =
+      Track_sizing_function.make
+        ~min:(Track_sizing_function.min_sizing_function track_def)
+        ~max:(Track_sizing_function.max_sizing_function track_def)
+      |> Grid_track.create
+    in
+    tracks := !tracks @ [ track ];
+    tracks := !tracks @ [ Grid_track.gutter gap ]
+  done
 
 (* Resolve the track sizing functions of explicit tracks, automatically created tracks, and gutters
    given a set of track counts and all of the relevant styles *)
@@ -286,29 +272,24 @@ let initialize_grid_tracks ~tracks ~counts ~style ~axis ~track_has_items =
   let auto_track_count = List.length auto_tracks in
 
   (* Create negative implicit tracks *)
-  (if Grid_track_counts.negative_implicit counts > 0 then
-     if auto_track_count = 0 then
-       let iter =
-         Seq_ext.repeat Track_sizing_function.auto
-         |> Seq.take (Grid_track_counts.negative_implicit counts)
-       in
-       create_implicit_tracks tracks
-         (Grid_track_counts.negative_implicit counts)
-         (fun () -> iter ())
-         gap
-     else
-       let offset =
-         auto_track_count
-         - (Grid_track_counts.negative_implicit counts mod auto_track_count)
-       in
-       let iter =
-         List.to_seq auto_tracks |> Seq_ext.cycle |> Seq.drop offset
-         |> Seq.take (Grid_track_counts.negative_implicit counts)
-       in
-       create_implicit_tracks tracks
-         (Grid_track_counts.negative_implicit counts)
-         (fun () -> iter ())
-         gap);
+  if Grid_track_counts.negative_implicit counts > 0 then (
+    if auto_track_count = 0 then
+      create_implicit_tracks tracks
+        (Grid_track_counts.negative_implicit counts)
+        (Array.make
+           (Grid_track_counts.negative_implicit counts)
+           Track_sizing_function.auto)
+        gap
+    else
+      let total = Grid_track_counts.negative_implicit counts in
+      let offset = auto_track_count - (total mod auto_track_count) in
+      let auto_array = Array.of_list auto_tracks in
+      let filled = Array.make total Track_sizing_function.auto in
+      for i = 0 to total - 1 do
+        let src = (offset + i) mod auto_track_count in
+        filled.(i) <- auto_array.(src)
+      done;
+      create_implicit_tracks tracks total filled gap);
 
   let current_track_index = ref (Grid_track_counts.negative_implicit counts) in
 
@@ -335,63 +316,56 @@ let initialize_grid_tracks ~tracks ~counts ~style ~axis ~track_has_items =
               match Repetition.count rep with
               | Repetition_count.Count count ->
                   let track_list = Repetition.tracks rep in
-                  let track_iter =
-                    List.to_seq track_list |> Seq_ext.cycle
-                    |> Seq.take (Repetition.track_count rep * count)
-                  in
-                  Seq.iter
-                    (fun sizing_function ->
-                      let track =
-                        Track_sizing_function.make
-                          ~min:
-                            (Track_sizing_function.min_sizing_function
-                               sizing_function)
-                          ~max:
-                            (Track_sizing_function.max_sizing_function
-                               sizing_function)
-                        |> Grid_track.create
-                      in
-                      tracks := !tracks @ [ track ];
-                      tracks := !tracks @ [ Grid_track.gutter gap ];
-                      incr current_track_index)
-                    track_iter
+                  let track_array = Array.of_list track_list in
+                  let track_len = Array.length track_array in
+                  let total = Repetition.track_count rep * count in
+                  for i = 0 to total - 1 do
+                    let sizing_function = track_array.(i mod track_len) in
+                    let track =
+                      Track_sizing_function.make
+                        ~min:
+                          (Track_sizing_function.min_sizing_function
+                             sizing_function)
+                        ~max:
+                          (Track_sizing_function.max_sizing_function
+                             sizing_function)
+                      |> Grid_track.create
+                    in
+                    tracks := !tracks @ [ track ];
+                    tracks := !tracks @ [ Grid_track.gutter gap ];
+                    incr current_track_index
+                  done
               | Repetition_count.Auto_fit | Repetition_count.Auto_fill ->
                   let auto_repeated_track_count =
                     Grid_track_counts.explicit counts
                     - (List.length track_template - 1)
                   in
                   let track_list = Repetition.tracks rep in
-                  let iter =
-                    List.to_seq track_list |> Seq_ext.cycle
-                    |> Seq.take auto_repeated_track_count
-                  in
-                  Seq.iter
-                    (fun track_def ->
-                      let track =
-                        Track_sizing_function.make
-                          ~min:
-                            (Track_sizing_function.min_sizing_function track_def)
-                          ~max:
-                            (Track_sizing_function.max_sizing_function track_def)
-                        |> Grid_track.create
-                      in
-                      let gutter = Grid_track.gutter gap in
-
-                      (* Auto-fit tracks that don't contain should be collapsed. *)
-                      let track, gutter =
-                        if
-                          Repetition.count rep = Repetition_count.Auto_fit
-                          && not (track_has_items !current_track_index)
-                        then
-                          (Grid_track.collapse track, Grid_track.collapse gutter)
-                        else (track, gutter)
-                      in
-
-                      tracks := !tracks @ [ track ];
-                      tracks := !tracks @ [ gutter ];
-
-                      incr current_track_index)
-                    iter))
+                  let track_array = Array.of_list track_list in
+                  let track_len = Array.length track_array in
+                  for i = 0 to auto_repeated_track_count - 1 do
+                    let track_def = track_array.(i mod track_len) in
+                    let track =
+                      Track_sizing_function.make
+                        ~min:
+                          (Track_sizing_function.min_sizing_function track_def)
+                        ~max:
+                          (Track_sizing_function.max_sizing_function track_def)
+                      |> Grid_track.create
+                    in
+                    let gutter = Grid_track.gutter gap in
+                    let track, gutter =
+                      if
+                        Repetition.count rep = Repetition_count.Auto_fit
+                        && not (track_has_items !current_track_index)
+                      then
+                        (Grid_track.collapse track, Grid_track.collapse gutter)
+                      else (track, gutter)
+                    in
+                    tracks := !tracks @ [ track ];
+                    tracks := !tracks @ [ gutter ];
+                    incr current_track_index
+                  done))
         track_template;
 
   let grid_area_tracks =
@@ -401,31 +375,29 @@ let initialize_grid_tracks ~tracks ~counts ~style ~axis ~track_has_items =
   in
 
   (* Create positive implicit tracks *)
-  if auto_track_count = 0 then
-    let iter =
-      Seq_ext.repeat Track_sizing_function.auto
-      |> Seq.take (Grid_track_counts.positive_implicit counts + grid_area_tracks)
-    in
-    create_implicit_tracks tracks
-      (Grid_track_counts.positive_implicit counts + grid_area_tracks)
-      (fun () -> iter ())
-      gap
-  else
-    let iter =
-      List.to_seq auto_tracks |> Seq_ext.cycle
-      |> Seq.take (Grid_track_counts.positive_implicit counts + grid_area_tracks)
-    in
-    create_implicit_tracks tracks
-      (Grid_track_counts.positive_implicit counts + grid_area_tracks)
-      (fun () -> iter ())
-      gap;
+  let () =
+    let total = Grid_track_counts.positive_implicit counts + grid_area_tracks in
+    if total > 0 then (
+      if auto_track_count = 0 then
+        create_implicit_tracks tracks total
+          (Array.make total Track_sizing_function.auto)
+          gap
+      else
+        let auto_array = Array.of_list auto_tracks in
+        let auto_len = Array.length auto_array in
+        let filled = Array.make total Track_sizing_function.auto in
+        for i = 0 to total - 1 do
+          filled.(i) <- auto_array.(i mod auto_len)
+        done;
+        create_implicit_tracks tracks total filled gap)
+  in
 
-    (* Mark first and last grid lines as collapsed *)
-    match !tracks with
-    | [] -> ()
-    | first :: rest -> (
-        tracks := Grid_track.collapse first :: rest;
-        match List.rev !tracks with
-        | [] -> ()
-        | last :: rest_rev ->
-            tracks := List.rev (Grid_track.collapse last :: rest_rev))
+  (* Mark first and last grid lines as collapsed *)
+  match !tracks with
+  | [] -> ()
+  | first :: rest -> (
+      tracks := Grid_track.collapse first :: rest;
+      match List.rev !tracks with
+      | [] -> ()
+      | last :: rest_rev ->
+          tracks := List.rev (Grid_track.collapse last :: rest_rev))

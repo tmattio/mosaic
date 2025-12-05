@@ -1,0 +1,18 @@
+(include_subdirs unqualified)
+
+(library
+ (name tree_sitter_ocaml)
+ (public_name tree-sitter.ocaml)
+ (libraries tree-sitter)
+ (foreign_stubs
+  (language c)
+  (names
+   parser_ocaml
+   scanner_ocaml
+   parser_interface
+   scanner_interface
+   parser_type
+   scanner_type
+   tree_sitter_ocaml_stubs)
+  (flags (:standard) -I ../../include)
+  (include_dirs ocaml interface type)))

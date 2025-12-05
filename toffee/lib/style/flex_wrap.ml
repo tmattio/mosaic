@@ -1,13 +1,4 @@
-(** Controls whether flex items are forced onto one line or can wrap onto
-    multiple lines *)
-
-type t =
-  | No_wrap  (** Items will not wrap and stay on a single line *)
-  | Wrap
-      (** Items will wrap according to their flex-shrink and flex-grow values *)
-  | Wrap_reverse
-      (** Items will wrap in the opposite direction to the flex container's main
-          axis *)
+type t = No_wrap | Wrap | Wrap_reverse
 
 let default = No_wrap
 

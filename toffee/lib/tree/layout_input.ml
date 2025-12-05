@@ -33,8 +33,8 @@ let hidden =
     run_mode = Run_mode.Perform_hidden_layout;
     sizing_mode = Sizing_mode.Inherent_size;
     axis = Requested_axis.Both;
-    known_dimensions = Geometry.Size.none;
-    parent_size = Geometry.Size.none;
+    known_dimensions = Geometry.(Size.none);
+    parent_size = Geometry.(Size.none);
     available_space =
       {
         width = Available_space.Max_content;

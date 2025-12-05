@@ -1,0 +1,26 @@
+(lang dune 3.19)
+
+(name tree-sitter)
+
+(generate_opam_files true)
+
+(source
+ (github tmattio/ocaml-tree-sitter))
+
+(authors "Thibaut Mattio <thibaut.mattio@gmail.com>")
+
+(maintainers "Thibaut Mattio <thibaut.mattio@gmail.com>")
+
+(license MIT)
+
+(package
+ (name tree-sitter)
+ (synopsis "OCaml bindings to Tree-sitter")
+ (description
+  "OCaml bindings to Tree-sitter, an incremental parsing system for programming tools. Provides efficient parsing and syntax tree manipulation for source code analysis, syntax highlighting, and code navigation.")
+ (depends
+  ocaml
+  dune
+  (alcotest :with-test))
+ (tags
+  (parsing tree-sitter syntax "syntax-tree" "incremental-parsing")))

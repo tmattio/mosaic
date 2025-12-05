@@ -1,19 +1,9 @@
-(** Defines a grid area *)
-
 type t = {
-  name : string;  (** The name of the grid area *)
+  name : string;
   row_start : int;
-      (** The index of the row at which the grid area starts in grid coordinates
-      *)
   row_end : int;
-      (** The index of the row at which the grid area ends in grid coordinates
-      *)
   column_start : int;
-      (** The index of the column at which the grid area starts in grid
-          coordinates *)
   column_end : int;
-      (** The index of the column at which the grid area ends in grid
-          coordinates *)
 }
 
 let make ~name ~row_start ~row_end ~column_start ~column_end =

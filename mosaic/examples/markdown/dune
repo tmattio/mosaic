@@ -1,3 +1,0 @@
-(executable
- (name markdown)
- (libraries mosaic mosaic.markdown))

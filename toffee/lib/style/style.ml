@@ -1,27 +1,17 @@
-(** Style types for CSS layout *)
-
-(* Type for calc resolver function *)
 type calc_resolver = Compact_length.calc_resolver
 
-(* Re-export dimension modules *)
 module Compact_length = Compact_length
 module Length_percentage = Length_percentage
 module Length_percentage_auto = Length_percentage_auto
 module Dimension = Dimension
-
-(* Re-export layout control modules *)
 module Display = Display
 module Position = Position
 module Overflow = Overflow
 module Box_sizing = Box_sizing
 module Box_generation_mode = Box_generation_mode
 module Text_align = Text_align
-
-(* Re-export flexbox modules *)
 module Flex_direction = Flex_direction
 module Flex_wrap = Flex_wrap
-
-(* Re-export alignment modules *)
 module Align_items = Alignment.Align_items
 module Align_self = Alignment.Align_self
 module Align_content = Alignment.Align_content
@@ -29,7 +19,6 @@ module Justify_items = Alignment.Justify_items
 module Justify_self = Alignment.Justify_self
 module Justify_content = Alignment.Justify_content
 
-(* Re-export grid modules *)
 module Grid = struct
   include Grid
   module Auto_flow = Grid_auto_flow
@@ -40,6 +29,14 @@ module Grid = struct
   module Template_component = Grid_template_component
   module Template_area = Grid_template_area
 end
+
+module Grid_auto_flow = Grid_auto_flow
+module Grid_placement = Grid_placement
+module Grid_repetition = Grid_repetition
+module Grid_template_area = Grid_template_area
+module Grid_template_component = Grid_template_component
+module Repetition_count = Repetition_count
+module Track_sizing_function = Track_sizing_function
 
 (* Type aliases for convenience *)
 type length_percentage = Length_percentage.t
@@ -66,6 +63,57 @@ type repetition_count = Grid.Repetition_count.t
 type grid_repetition = Grid.Repetition.t
 type grid_template_component = Grid.Template_component.t
 type grid_template_area = Grid.Template_area.t
+
+module Rect_dim = struct
+  let all_px v = Geometry.Rect.all (Length_percentage.length v)
+  let all_px_auto v = Geometry.Rect.all (Length_percentage_auto.length v)
+
+  let xy_px ~x ~y =
+    Geometry.Rect.make
+      ~left:(Length_percentage.length x)
+      ~right:(Length_percentage.length x)
+      ~top:(Length_percentage.length y)
+      ~bottom:(Length_percentage.length y)
+
+  let xy_px_auto ~x ~y =
+    Geometry.Rect.make
+      ~left:(Length_percentage_auto.length x)
+      ~right:(Length_percentage_auto.length x)
+      ~top:(Length_percentage_auto.length y)
+      ~bottom:(Length_percentage_auto.length y)
+
+  let horizontal_px v =
+    Geometry.Rect.make
+      ~left:(Length_percentage.length v)
+      ~right:(Length_percentage.length v)
+      ~top:Length_percentage.zero ~bottom:Length_percentage.zero
+
+  let horizontal_px_auto v =
+    Geometry.Rect.make
+      ~left:(Length_percentage_auto.length v)
+      ~right:(Length_percentage_auto.length v)
+      ~top:Length_percentage_auto.zero ~bottom:Length_percentage_auto.zero
+
+  let vertical_px v =
+    Geometry.Rect.make ~left:Length_percentage.zero
+      ~right:Length_percentage.zero
+      ~top:(Length_percentage.length v)
+      ~bottom:(Length_percentage.length v)
+
+  let vertical_px_auto v =
+    Geometry.Rect.make ~left:Length_percentage_auto.zero
+      ~right:Length_percentage_auto.zero
+      ~top:(Length_percentage_auto.length v)
+      ~bottom:(Length_percentage_auto.length v)
+end
+
+module Size_dim = struct
+  let px ~w ~h =
+    Geometry.Size.{ width = Dimension.length w; height = Dimension.length h }
+
+  let pct ~w ~h =
+    Geometry.Size.{ width = Dimension.pct w; height = Dimension.pct h }
+end
 
 (* Main Style type *)
 type t = {
@@ -196,7 +244,7 @@ let box_generation_mode t =
   | Display.None -> Box_generation_mode.None
   | _ -> Box_generation_mode.Normal
 
-let set_box_generation_mode t mode =
+let set_box_generation_mode mode t =
   match mode with
   | Box_generation_mode.None -> { t with display = Display.None }
   | Box_generation_mode.Normal -> t (* Keep current display mode *)
@@ -239,51 +287,74 @@ let grid_row t = t.grid_row
 let grid_column t = t.grid_column
 
 (* Functional updates *)
-let set_display t display = { t with display }
-let set_position t position = { t with position }
-let set_overflow t overflow = { t with overflow }
-let set_scrollbar_width t scrollbar_width = { t with scrollbar_width }
-let set_text_align t text_align = { t with text_align }
-let set_inset t inset = { t with inset }
-let set_size t size = { t with size }
-let set_min_size t min_size = { t with min_size }
-let set_max_size t max_size = { t with max_size }
-let set_aspect_ratio t aspect_ratio = { t with aspect_ratio }
-let set_margin t margin = { t with margin }
-let set_padding t padding = { t with padding }
-let set_border t border = { t with border }
-let set_gap t gap = { t with gap }
-let set_align_items t align_items = { t with align_items }
-let set_align_self t align_self = { t with align_self }
-let set_align_content t align_content = { t with align_content }
-let set_justify_items t justify_items = { t with justify_items }
-let set_justify_self t justify_self = { t with justify_self }
-let set_justify_content t justify_content = { t with justify_content }
-let set_flex_direction t flex_direction = { t with flex_direction }
-let set_flex_wrap t flex_wrap = { t with flex_wrap }
-let set_flex_grow t flex_grow = { t with flex_grow }
-let set_flex_shrink t flex_shrink = { t with flex_shrink }
-let set_flex_basis t flex_basis = { t with flex_basis }
-let set_grid_template_rows t grid_template_rows = { t with grid_template_rows }
+let set_display display t = { t with display }
+let set_position position t = { t with position }
+let set_overflow overflow t = { t with overflow }
+let set_scrollbar_width scrollbar_width t = { t with scrollbar_width }
+let set_text_align text_align t = { t with text_align }
+let set_inset inset t = { t with inset }
+let set_size size t = { t with size }
+let set_width width t = { t with size = { t.size with width } }
+let set_height height t = { t with size = { t.size with height } }
+let set_min_size min_size t = { t with min_size }
+let set_min_width width t = { t with min_size = { t.min_size with width } }
+let set_min_height height t = { t with min_size = { t.min_size with height } }
+let set_max_size max_size t = { t with max_size }
+let set_max_width width t = { t with max_size = { t.max_size with width } }
+let set_max_height height t = { t with max_size = { t.max_size with height } }
+let set_aspect_ratio aspect_ratio t = { t with aspect_ratio }
+let set_margin margin t = { t with margin }
+let set_margin_left left t = { t with margin = { t.margin with left } }
+let set_margin_right right t = { t with margin = { t.margin with right } }
+let set_margin_top top t = { t with margin = { t.margin with top } }
+let set_margin_bottom bottom t = { t with margin = { t.margin with bottom } }
+let set_margin_x v t = { t with margin = { t.margin with left = v; right = v } }
+let set_margin_y v t = { t with margin = { t.margin with top = v; bottom = v } }
+let set_padding padding t = { t with padding }
+let set_padding_left left t = { t with padding = { t.padding with left } }
+let set_padding_right right t = { t with padding = { t.padding with right } }
+let set_padding_top top t = { t with padding = { t.padding with top } }
+let set_padding_bottom bottom t = { t with padding = { t.padding with bottom } }
 
-let set_grid_template_columns t grid_template_columns =
+let set_padding_x v t =
+  { t with padding = { t.padding with left = v; right = v } }
+
+let set_padding_y v t =
+  { t with padding = { t.padding with top = v; bottom = v } }
+
+let set_border border t = { t with border }
+let set_gap gap t = { t with gap }
+let set_align_items align_items t = { t with align_items }
+let set_align_self align_self t = { t with align_self }
+let set_align_content align_content t = { t with align_content }
+let set_justify_items justify_items t = { t with justify_items }
+let set_justify_self justify_self t = { t with justify_self }
+let set_justify_content justify_content t = { t with justify_content }
+let set_flex_direction flex_direction t = { t with flex_direction }
+let set_flex_wrap flex_wrap t = { t with flex_wrap }
+let set_flex_grow flex_grow t = { t with flex_grow }
+let set_flex_shrink flex_shrink t = { t with flex_shrink }
+let set_flex_basis flex_basis t = { t with flex_basis }
+let set_grid_template_rows grid_template_rows t = { t with grid_template_rows }
+
+let set_grid_template_columns grid_template_columns t =
   { t with grid_template_columns }
 
-let set_grid_auto_rows t grid_auto_rows = { t with grid_auto_rows }
-let set_grid_auto_columns t grid_auto_columns = { t with grid_auto_columns }
-let set_grid_auto_flow t grid_auto_flow = { t with grid_auto_flow }
+let set_grid_auto_rows grid_auto_rows t = { t with grid_auto_rows }
+let set_grid_auto_columns grid_auto_columns t = { t with grid_auto_columns }
+let set_grid_auto_flow grid_auto_flow t = { t with grid_auto_flow }
 
-let set_grid_template_areas t grid_template_areas =
+let set_grid_template_areas grid_template_areas t =
   { t with grid_template_areas }
 
-let set_grid_template_column_names t grid_template_column_names =
+let set_grid_template_column_names grid_template_column_names t =
   { t with grid_template_column_names }
 
-let set_grid_template_row_names t grid_template_row_names =
+let set_grid_template_row_names grid_template_row_names t =
   { t with grid_template_row_names }
 
-let set_grid_row t grid_row = { t with grid_row }
-let set_grid_column t grid_column = { t with grid_column }
+let set_grid_row grid_row t = { t with grid_row }
+let set_grid_column grid_column t = { t with grid_column }
 
 (* Smart constructor *)
 let make ?display ?(box_sizing = default.box_sizing)

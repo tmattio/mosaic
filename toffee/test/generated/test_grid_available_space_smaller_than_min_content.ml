@@ -3,125 +3,36 @@
 
 open Toffee
 
-(* Test context for nodes *)
-module MeasureFunction = struct
-  type t =
-    | Fixed of float Geometry.size
-    | Text of string
-    | Text_vertical of string
-  [@@warning "-37"]
-end
-
-(* Test measure function *)
-let measure_function known_dimensions available_space _node_id node_context
-    _style =
-  match node_context with
-  | Some (MeasureFunction.Fixed size) -> size
-  | Some (MeasureFunction.Text text) ->
-      (* Ahem font simulation: each character is 10x10 *)
-      let h_width = 10.0 in
-      let h_height = 10.0 in
-      let lines =
-        (* Split on zero-width space - OCaml's split_on_char works on bytes, 
-           so we need to split on the UTF-8 sequence *)
-        let split_on_string sep str =
-          let sep_len = String.length sep in
-          let rec aux acc start =
-            try
-              let pos = String.index_from str start (String.get sep 0) in
-              if
-                pos + sep_len <= String.length str
-                && String.sub str pos sep_len = sep
-              then
-                aux (String.sub str start (pos - start) :: acc) (pos + sep_len)
-              else aux acc (pos + 1)
-            with Not_found ->
-              List.rev (String.sub str start (String.length str - start) :: acc)
-          in
-          aux [] 0
-        in
-        split_on_string "\u{200b}" text
-      in
-      let min_line_length =
-        List.fold_left max 0 (List.map String.length lines)
-      in
-      let max_line_length =
-        List.fold_left ( + ) 0 (List.map String.length lines)
-      in
-
-      let inline_size =
-        match known_dimensions.Geometry.Size.width with
-        | Some w -> w
-        | None ->
-            (match available_space.Geometry.Size.width with
-            | Available_space.Min_content ->
-                float_of_int min_line_length *. h_width
-            | Available_space.Max_content ->
-                float_of_int max_line_length *. h_width
-            | Available_space.Definite inline_size ->
-                Float.min inline_size (float_of_int max_line_length *. h_width))
-            |> Float.max (float_of_int min_line_length *. h_width)
-      in
-
-      let block_size =
-        match known_dimensions.Geometry.Size.height with
-        | Some h -> h
-        | None ->
-            let inline_line_length =
-              int_of_float (Float.floor (inline_size /. h_width))
-            in
-            (* Match Taffy's exact line counting logic *)
-            let line_count = ref 1 in
-            let current_line_length = ref 0 in
-            List.iter
-              (fun line ->
-                let line_len = String.length line in
-                if !current_line_length + line_len > inline_line_length then (
-                  if !current_line_length > 0 then incr line_count;
-                  current_line_length := line_len)
-                else current_line_length := !current_line_length + line_len)
-              lines;
-            float_of_int !line_count *. h_height
-      in
-      { width = inline_size; height = block_size }
-  | Some (MeasureFunction.Text_vertical text) ->
-      (* Vertical text: height is based on text length, width is based on available space *)
-      let h_width = 10.0 in
-      let h_height = 10.0 in
-      let text_length = String.length text in
-
-      let block_size = float_of_int text_length *. h_height in
-      let inline_size =
-        match known_dimensions.Geometry.Size.width with
-        | Some w -> w
-        | None -> (
-            match available_space.Geometry.Size.width with
-            | Available_space.Min_content -> h_width
-            | Available_space.Max_content -> h_width
-            | Available_space.Definite w -> w)
-      in
-      { width = inline_size; height = block_size }
-  | None -> { width = 0.0; height = 0.0 }
-
-let test_grid_available_space_smaller_than_min_content_border_box
-    measure_function () =
+let test_grid_available_space_smaller_than_min_content_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
     check (float 0.001) msg expected actual
   in
 
-  let tree = new_tree () in
+  let tree = Gentest_helpers.new_test_tree () in
 
   (* Create nodes *)
-  let node1 = new_leaf tree Style.default |> Result.get_ok in
-  let _ =
-    set_node_context tree node1 (Some (MeasureFunction.Text "HHHH​HHHH"))
+  let node1 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Border_box ())
     |> Result.get_ok
   in
-  let node2 = new_leaf tree Style.default |> Result.get_ok in
   let _ =
-    set_node_context tree node2 (Some (MeasureFunction.Text "HHHH​HHHH"))
+    set_node_context tree node1
+      (Some
+         (Gentest_helpers.ahem_text "HHHH​HHHH"
+            Gentest_helpers.Writing_mode.Horizontal))
+    |> Result.get_ok
+  in
+  let node2 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Border_box ())
+    |> Result.get_ok
+  in
+  let _ =
+    set_node_context tree node2
+      (Some
+         (Gentest_helpers.ahem_text "HHHH​HHHH"
+            Gentest_helpers.Writing_mode.Horizontal))
     |> Result.get_ok
   in
   let node0 =
@@ -134,7 +45,7 @@ let test_grid_available_space_smaller_than_min_content_border_box
              Style.Grid.Template_component.single
                Style.Grid.Track_sizing_function.auto;
            ]
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
       [| node1; node2 |]
     |> Result.get_ok
   in
@@ -143,10 +54,10 @@ let test_grid_available_space_smaller_than_min_content_border_box
   let _ =
     compute_layout_with_measure tree node0
       {
-        width = Available_space.Max_content;
+        width = Available_space.Definite 60.0;
         height = Available_space.Max_content;
       }
-      measure_function
+      Gentest_helpers.test_measure_function
     |> Result.get_ok
   in
 
@@ -173,15 +84,14 @@ let test_grid_available_space_smaller_than_min_content_border_box
   assert_eq ~msg:"y of node0" 0.0 (Layout.location layout_result).y;
   ()
 
-let test_grid_available_space_smaller_than_min_content_content_box
-    measure_function () =
+let test_grid_available_space_smaller_than_min_content_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
     check (float 0.001) msg expected actual
   in
 
-  let tree = new_tree () in
+  let tree = Gentest_helpers.new_test_tree () in
 
   (* Create nodes *)
   let node1 =
@@ -189,7 +99,10 @@ let test_grid_available_space_smaller_than_min_content_content_box
     |> Result.get_ok
   in
   let _ =
-    set_node_context tree node1 (Some (MeasureFunction.Text "HHHH​HHHH"))
+    set_node_context tree node1
+      (Some
+         (Gentest_helpers.ahem_text "HHHH​HHHH"
+            Gentest_helpers.Writing_mode.Horizontal))
     |> Result.get_ok
   in
   let node2 =
@@ -197,7 +110,10 @@ let test_grid_available_space_smaller_than_min_content_content_box
     |> Result.get_ok
   in
   let _ =
-    set_node_context tree node2 (Some (MeasureFunction.Text "HHHH​HHHH"))
+    set_node_context tree node2
+      (Some
+         (Gentest_helpers.ahem_text "HHHH​HHHH"
+            Gentest_helpers.Writing_mode.Horizontal))
     |> Result.get_ok
   in
   let node0 =
@@ -219,10 +135,10 @@ let test_grid_available_space_smaller_than_min_content_content_box
   let _ =
     compute_layout_with_measure tree node0
       {
-        width = Available_space.Max_content;
+        width = Available_space.Definite 60.0;
         height = Available_space.Max_content;
       }
-      measure_function
+      Gentest_helpers.test_measure_function
     |> Result.get_ok
   in
 
@@ -254,11 +170,7 @@ let tests =
   let open Alcotest in
   [
     test_case "available_space_smaller_than_min_content (border-box)" `Quick
-      (fun () ->
-        test_grid_available_space_smaller_than_min_content_border_box
-          measure_function ());
+      test_grid_available_space_smaller_than_min_content_border_box;
     test_case "available_space_smaller_than_min_content (content-box)" `Quick
-      (fun () ->
-        test_grid_available_space_smaller_than_min_content_content_box
-          measure_function ());
+      test_grid_available_space_smaller_than_min_content_content_box;
   ]

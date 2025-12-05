@@ -1,4 +1,8 @@
-(** Compute helpers - Helper functions used by layout algorithms *)
+(** Shared utilities for layout algorithms.
+
+    This module provides common functions used across Flexbox, Grid, and Block
+    layout implementations. All functions are ported from taffy's
+    [compute/common] module. *)
 
 val compute_content_size_contribution :
   location:float Geometry.Point.t ->
@@ -6,19 +10,19 @@ val compute_content_size_contribution :
   content_size:float Geometry.Size.t ->
   overflow:Style.Overflow.t Geometry.Point.t ->
   float Geometry.Size.t
-(** Compute how much width/height a child contributes to its parent's intrinsic
-    content size.
+(** [compute_content_size_contribution ~location ~size ~content_size ~overflow]
+    computes how much a child contributes to its parent's intrinsic content
+    size.
 
-    @param location The position of the child relative to its parent
-    @param size The border-box size of the child
-    @param content_size
-      The content size of the child (may overflow the border-box)
-    @param overflow The overflow settings for the child (x and y axes)
-    @return The size contribution to the parent's content size
+    Algorithm:
 
-    This function respects overflow settings - only visible overflow contributes
-    to the parent's content size. For non-visible overflow modes (clip, hidden,
-    scroll), only the border-box size is considered. *)
+    + For each axis, if overflow is [Visible], use [max size content_size];
+      otherwise use [size]
+    + If both dimensions > 0, return [location + computed_size]
+    + Otherwise return zero size
+
+    Only [Visible] overflow contributes beyond border-box. Non-visible modes
+    ([Clip], [Hidden], [Scroll]) clamp contribution to border-box size. *)
 
 val apply_alignment_fallback :
   free_space:float ->
@@ -26,23 +30,19 @@ val apply_alignment_fallback :
   alignment_mode:Style.Align_content.t ->
   is_safe:bool ->
   Style.Align_content.t
-(** Implement fallback alignment.
+(** [apply_alignment_fallback ~free_space ~num_items ~alignment_mode ~is_safe]
+    resolves alignment mode fallbacks per CSS Box Alignment spec and CSSWG issue
+    10154.
 
-    In addition to the spec at {{:https://www.w3.org/TR/css-align-3/} CSS Align}
-    this implementation follows the resolution of
-    {{:https://github.com/w3c/csswg-drafts/issues/10154} Issue 10154}.
+    Fallback rules:
 
-    @param free_space The amount of free space available
-    @param num_items The number of items being aligned
-    @param alignment_mode The requested alignment mode
-    @param is_safe Whether safe alignment is requested
-    @return The alignment mode to use after applying fallback rules
+    + Distributed alignments ([Stretch], [Space_between], [Space_around],
+      [Space_evenly]) fall back when [num_items <= 1] or [free_space <= 0]:
+      [Stretch], [Space_between] -> [Flex_start] (safe); [Space_around],
+      [Space_evenly] -> [Center] (safe)
+    + When [free_space <= 0] and [is_safe] is true, all modes -> [Start]
 
-    Fallback occurs in two cases: 1. If there is only a single item being
-    aligned and alignment is a distributed alignment keyword
-    ({{:https://www.w3.org/TR/css-align-3/#distribution-values} distribution
-      values}) 2. If free space is negative and "safe" alignment variants are
-    requested, all fallback to Start alignment *)
+    See {{:https://www.w3.org/TR/css-align-3/} CSS Box Alignment Module}. *)
 
 val compute_alignment_offset :
   free_space:float ->
@@ -52,17 +52,27 @@ val compute_alignment_offset :
   layout_is_flex_reversed:bool ->
   is_first:bool ->
   float
-(** Generic alignment function that is used:
-    - For both align-content and justify-content alignment
-    - For both the Flexbox and CSS Grid algorithms
+(** [compute_alignment_offset ~free_space ~num_items ~gap ~alignment_mode
+     ~layout_is_flex_reversed ~is_first] computes the positional offset for
+    align-content and justify-content in both Flexbox and Grid.
 
-    @param free_space The amount of free space to distribute
-    @param num_items The number of items being aligned
-    @param gap The gap between items (should be 0.0 for CSS Grid)
-    @param alignment_mode The alignment mode to apply
-    @param layout_is_flex_reversed Whether the flex layout is reversed
-    @param is_first Whether this is the first item
-    @return The offset to apply for alignment
+    For first item ([is_first = true]):
+    - [Start], [Stretch], [Space_between]: 0
+    - [Flex_start]: [free_space] if reversed, else 0
+    - [End]: [free_space]
+    - [Flex_end]: 0 if reversed, else [free_space]
+    - [Center]: [free_space / 2]
+    - [Space_around]: [free_space / num_items / 2] (if positive), else
+      [free_space / 2]
+    - [Space_evenly]: [free_space / (num_items + 1)] (if positive), else
+      [free_space / 2]
 
-    CSS Grid does not apply gaps as part of alignment, so the gap parameter
-    should always be set to zero for CSS Grid. *)
+    For subsequent items ([is_first = false]):
+    - All non-distributed modes: [gap + 0]
+    - [Space_between]: [gap + free_space / (num_items - 1)]
+    - [Space_around]: [gap + free_space / num_items]
+    - [Space_evenly]: [gap + free_space / (num_items + 1)]
+
+    Negative [free_space] is clamped to 0 for subsequent items.
+
+    Invariant: For Grid, [gap] must be 0 as Grid handles gaps separately. *)

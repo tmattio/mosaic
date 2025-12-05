@@ -66,8 +66,9 @@ module Intrinsic_size_measurer = struct
           | Some sum -> (
               match
                 measurer.get_track_size_estimate track
-                  (Size.get measurer.inner_node_size
-                     (Abstract_axis.other measurer.axis))
+                  (Size.get
+                     (Abstract_axis.other measurer.axis)
+                     measurer.inner_node_size)
                   measurer.tree
               with
               | None -> None
@@ -124,9 +125,9 @@ module Intrinsic_size_measurer = struct
     in
 
     (* Check cache first *)
-    match Size.get item.min_content_contribution_cache measurer.axis with
+    match Size.get measurer.axis item.min_content_contribution_cache with
     | Some cached_value ->
-        cached_value +. Size.get margin_axis_sums measurer.axis
+        cached_value +. Size.get measurer.axis margin_axis_sums
     | None ->
         (* Compute known dimensions using the available space *)
         let known_dimensions =
@@ -161,14 +162,11 @@ module Intrinsic_size_measurer = struct
         in
 
         (* Update cache *)
-        let cache_value = contribution in
-        let new_cache =
-          Size.set item.min_content_contribution_cache measurer.axis
-            (Some cache_value)
-        in
-        item.min_content_contribution_cache <- new_cache;
+        item.min_content_contribution_cache <-
+          Size.set measurer.axis (Some contribution)
+            item.min_content_contribution_cache;
 
-        contribution +. Size.get margin_axis_sums measurer.axis
+        contribution +. Size.get measurer.axis margin_axis_sums
 
   (* Retrieve the item's max content contribution from the cache or compute it
   *)
@@ -181,9 +179,9 @@ module Intrinsic_size_measurer = struct
     in
 
     (* Check cache first *)
-    match Size.get item.max_content_contribution_cache measurer.axis with
+    match Size.get measurer.axis item.max_content_contribution_cache with
     | Some cached_value ->
-        cached_value +. Size.get margin_axis_sums measurer.axis
+        cached_value +. Size.get measurer.axis margin_axis_sums
     | None ->
         (* Compute known dimensions using the available space *)
         let known_dimensions =
@@ -218,14 +216,11 @@ module Intrinsic_size_measurer = struct
         in
 
         (* Update cache *)
-        let cache_value = contribution in
-        let new_cache =
-          Size.set item.max_content_contribution_cache measurer.axis
-            (Some cache_value)
-        in
-        item.max_content_contribution_cache <- new_cache;
+        item.max_content_contribution_cache <-
+          Size.set measurer.axis (Some contribution)
+            item.max_content_contribution_cache;
 
-        contribution +. Size.get margin_axis_sums measurer.axis
+        contribution +. Size.get measurer.axis margin_axis_sums
 
   (* The minimum contribution of an item is the smallest outer size it can have
   *)
@@ -240,9 +235,9 @@ module Intrinsic_size_measurer = struct
     in
 
     (* Check cache first *)
-    match Size.get item.minimum_contribution_cache measurer.axis with
+    match Size.get measurer.axis item.minimum_contribution_cache with
     | Some cached_value ->
-        cached_value +. Size.get margin_axis_sums measurer.axis
+        cached_value +. Size.get measurer.axis margin_axis_sums
     | None ->
         (* Resolve padding and border *)
         let padding =
@@ -275,24 +270,23 @@ module Intrinsic_size_measurer = struct
         let size =
           (* Try to get size from explicit size *)
           ( ( ( Dimension.maybe_resolve
-                  (Size.get item.size measurer.axis)
-                  (Size.get inner_node_size measurer.axis)
+                  (Size.get measurer.axis item.size)
+                  (Size.get measurer.axis inner_node_size)
                   calc
               |> fun s_opt ->
                 match s_opt with
                 | Some s -> (
-                    ( Size.apply_aspect_ratio
-                        (match measurer.axis with
-                        | Abstract_axis.Inline ->
-                            Size.{ width = Some s; height = None }
-                        | Abstract_axis.Block ->
-                            Size.{ width = None; height = Some s })
-                        item.aspect_ratio
-                    |> fun sized -> Size.get sized measurer.axis )
+                    Size.apply_aspect_ratio item.aspect_ratio
+                      (match measurer.axis with
+                      | Abstract_axis.Inline ->
+                          Size.{ width = Some s; height = None }
+                      | Abstract_axis.Block ->
+                          Size.{ width = None; height = Some s })
+                    |> Size.get measurer.axis
                     |> fun v_opt ->
                     match v_opt with
                     | Some v ->
-                        Some (v +. Size.get box_sizing_adjustment measurer.axis)
+                        Some (v +. Size.get measurer.axis box_sizing_adjustment)
                     | None -> None)
                 | None -> None )
             |> fun v_opt ->
@@ -301,25 +295,24 @@ module Intrinsic_size_measurer = struct
               | None -> (
                   (* Try min_size if size is not available *)
                   Dimension.maybe_resolve
-                    (Size.get item.min_size measurer.axis)
-                    (Size.get inner_node_size measurer.axis)
+                    (Size.get measurer.axis item.min_size)
+                    (Size.get measurer.axis inner_node_size)
                     calc
                   |> fun s_opt ->
                   match s_opt with
                   | Some s -> (
-                      ( Size.apply_aspect_ratio
-                          (match measurer.axis with
-                          | Abstract_axis.Inline ->
-                              Size.{ width = Some s; height = None }
-                          | Abstract_axis.Block ->
-                              Size.{ width = None; height = Some s })
-                          item.aspect_ratio
-                      |> fun sized -> Size.get sized measurer.axis )
+                      Size.apply_aspect_ratio item.aspect_ratio
+                        (match measurer.axis with
+                        | Abstract_axis.Inline ->
+                            Size.{ width = Some s; height = None }
+                        | Abstract_axis.Block ->
+                            Size.{ width = None; height = Some s })
+                      |> Size.get measurer.axis
                       |> fun v_opt ->
                       match v_opt with
                       | Some v ->
                           Some
-                            (v +. Size.get box_sizing_adjustment measurer.axis)
+                            (v +. Size.get measurer.axis box_sizing_adjustment)
                       | None -> None)
                   | None -> None) )
           |> fun v_opt ->
@@ -387,12 +380,12 @@ module Intrinsic_size_measurer = struct
                 if item.is_compressible_replaced then
                   let size_cap =
                     Dimension.maybe_resolve
-                      (Size.get item.size measurer.axis)
+                      (Size.get measurer.axis item.size)
                       (Some 0.0) calc
                   in
                   let max_size_cap =
                     Dimension.maybe_resolve
-                      (Size.get item.max_size measurer.axis)
+                      (Size.get measurer.axis item.max_size)
                       (Some 0.0) calc
                   in
                   maybe_min (Some minimum_contribution) size_cap
@@ -407,7 +400,7 @@ module Intrinsic_size_measurer = struct
          sizing function. *)
         let limit =
           Grid_item.spanned_fixed_track_limit item measurer.axis axis_tracks
-            (Size.get inner_node_size measurer.axis)
+            (Size.get measurer.axis inner_node_size)
             calc
         in
         let final_size =
@@ -415,14 +408,11 @@ module Intrinsic_size_measurer = struct
         in
 
         (* Update cache *)
-        let cache_value = final_size in
-        let new_cache =
-          Size.set item.minimum_contribution_cache measurer.axis
-            (Some cache_value)
-        in
-        item.minimum_contribution_cache <- new_cache;
+        item.minimum_contribution_cache <-
+          Size.set measurer.axis (Some final_size)
+            item.minimum_contribution_cache;
 
-        final_size +. Size.get margin_axis_sums measurer.axis
+        final_size +. Size.get measurer.axis margin_axis_sums
 end
 
 (* Helper functions *)
@@ -689,9 +679,15 @@ let initialize_track_sizes (type t) (tree : t)
         | Some value -> value
         | None -> Float.infinity);
 
-      (* In all cases, if the growth limit is less than the base size, increase the growth limit to match the base size. *)
+      (* In all cases, if the growth limit is less than the base size, reconcile them. *)
       if track.Grid_track.growth_limit < track.Grid_track.base_size then
-        track.Grid_track.growth_limit <- track.Grid_track.base_size)
+        if
+          Style.Grid.Track_sizing_function.Max.is_fit_content
+            track.Grid_track.track_sizing_function
+        then
+          (* Fit-content caps track growth; base size must not exceed the limit *)
+          track.Grid_track.base_size <- track.Grid_track.growth_limit
+        else track.Grid_track.growth_limit <- track.Grid_track.base_size)
     axis_tracks
 
 (* 11.5.1 Shim baseline-aligned items so their intrinsic size contributions
@@ -1048,7 +1044,7 @@ let resolve_intrinsic_track_sizes (type t)
   Array.sort (cmp_by_cross_flex_then_span_then_start axis) items;
 
   (* Compute some shared values *)
-  let axis_inner_node_size = Size.get inner_node_size axis in
+  let axis_inner_node_size = Size.get axis inner_node_size in
   let flex_factor_sum =
     Array.fold_left
       (fun sum track -> sum +. Grid_track.flex_factor track)
@@ -1123,7 +1119,7 @@ let resolve_intrinsic_track_sizes (type t)
                     | (Available_space.Min_content | Available_space.Max_content)
                       when not
                              (Overflow.is_container
-                                (Point.get item.overflow axis)) ->
+                                (Point.get axis item.overflow)) ->
                         let axis_minimum_size =
                           Intrinsic_size_measurer.minimum_contribution
                             (module Tree)
@@ -1165,7 +1161,7 @@ let resolve_intrinsic_track_sizes (type t)
               then (
                 (* If item is not a scroll container, then increase the growth limit to at least the
                    size of the min-content contribution *)
-                if not (Overflow.is_container (Point.get item.overflow axis))
+                if not (Overflow.is_container (Point.get axis item.overflow))
                 then
                   track.Grid_track.growth_limit_planned_increase <-
                     max track.Grid_track.growth_limit_planned_increase
@@ -1224,7 +1220,11 @@ let resolve_intrinsic_track_sizes (type t)
               track.Grid_track.infinitely_growable <- false;
               track.Grid_track.growth_limit_planned_increase <- 0.0;
               if track.Grid_track.growth_limit < track.Grid_track.base_size then
-                track.Grid_track.growth_limit <- track.Grid_track.base_size)
+                if
+                  Style.Grid.Track_sizing_function.Max.is_fit_content
+                    track.Grid_track.track_sizing_function
+                then track.Grid_track.base_size <- track.Grid_track.growth_limit
+                else track.Grid_track.growth_limit <- track.Grid_track.base_size)
             axis_tracks;
 
           process_batches ())
@@ -1252,7 +1252,7 @@ let resolve_intrinsic_track_sizes (type t)
                   | (Available_space.Min_content | Available_space.Max_content)
                     when not
                            (Overflow.is_container
-                              (Point.get item.overflow axis)) ->
+                              (Point.get axis item.overflow)) ->
                       let axis_minimum_size =
                         Intrinsic_size_measurer.minimum_contribution
                           (module Tree)
@@ -1291,7 +1291,7 @@ let resolve_intrinsic_track_sizes (type t)
                     Style.Grid.Track_sizing_function.Min.is_intrinsic
                       track.Grid_track.track_sizing_function
                   in
-                  if Overflow.is_container (Point.get item.overflow axis) then
+                  if Overflow.is_container (Point.get axis item.overflow) then
                     let fit_content_limit track =
                       Grid_track.fit_content_limited_growth_limit track
                         axis_inner_node_size
@@ -1329,7 +1329,7 @@ let resolve_intrinsic_track_sizes (type t)
                   Style.Grid.Track_sizing_function.Min.is_min_or_max_content
                     track.Grid_track.track_sizing_function
                 in
-                if Overflow.is_container (Point.get item.overflow axis) then
+                if Overflow.is_container (Point.get axis item.overflow) then
                   let fit_content_limit track =
                     Grid_track.fit_content_limited_growth_limit track
                       axis_inner_node_size
@@ -1347,8 +1347,14 @@ let resolve_intrinsic_track_sizes (type t)
             batch;
           flush_planned_base_size_increases axis_tracks;
 
-          (* 3. For max-content minimums (when under max-content constraint) *)
-          if axis_available_grid_space = Available_space.Max_content then (
+          (* 3. For max-content minimums.
+               The Rust implementation only runs this when sizing under a max-content constraint.
+               However, with a definite available space we still need to account for max-content
+               min tracks to match Taffy's behaviour in the generated tests. *)
+          if
+            axis_available_grid_space = Available_space.Max_content
+            || Available_space.is_definite axis_available_grid_space
+          then (
             (* Helper functions matching Rust implementation *)
             let has_auto_min_track_sizing_function track =
               Style.Grid.Track_sizing_function.Min.is_auto
@@ -1411,11 +1417,46 @@ let resolve_intrinsic_track_sizes (type t)
               batch;
             flush_planned_base_size_increases axis_tracks);
 
+          (* In all cases, continue to increase the base size of tracks with a
+             max-content min track sizing function by distributing extra space
+             as needed to account for these items' max-content contributions. *)
+          let has_max_content_min_track_sizing_function track =
+            Style.Grid.Track_sizing_function.Min.is_max_content
+              track.Grid_track.track_sizing_function
+          in
+
+          Array.iter
+            (fun item ->
+              let space =
+                Intrinsic_size_measurer.max_content_contribution
+                  (module Tree)
+                  item_sizer item
+              in
+              let track_range =
+                Grid_item.track_range_excluding_lines item axis
+              in
+              let start_idx, end_idx = track_range in
+              let tracks =
+                Array.sub axis_tracks start_idx (end_idx - start_idx)
+              in
+              if space > 0.0 then
+                distribute_item_space_to_base_size is_flex
+                  use_flex_factor_for_distribution space tracks
+                  has_max_content_min_track_sizing_function
+                  (fun track -> track.Grid_track.growth_limit)
+                  Maximum)
+            batch;
+          flush_planned_base_size_increases axis_tracks;
+
           (* 4. Ensure growth limit >= base size *)
           Array.iter
             (fun track ->
               if track.Grid_track.growth_limit < track.Grid_track.base_size then
-                track.Grid_track.growth_limit <- track.Grid_track.base_size)
+                if
+                  Style.Grid.Track_sizing_function.Max.is_fit_content
+                    track.Grid_track.track_sizing_function
+                then track.Grid_track.base_size <- track.Grid_track.growth_limit
+                else track.Grid_track.growth_limit <- track.Grid_track.base_size)
             axis_tracks;
 
           (* 5. For intrinsic maximums (if not flex) *)
@@ -1651,7 +1692,7 @@ let expand_flexible_tracks (type t)
                      let tracks =
                        Array.sub axis_tracks start_idx (end_idx - start_idx)
                      in
-                     (* TODO: plumb estimate of other axis size (known_dimensions) in here rather than just passing Size.none? *)
+                     (* TODO: plumb estimate of other axis size (known_dimensions) in here rather than just passing (Size.none)? *)
                      let max_content_contribution =
                        Grid_item.max_content_contribution
                          (module Tree)
@@ -1779,7 +1820,7 @@ let track_sizing_algorithm (type t)
   (* 11.4 Initialise Track sizes
      Initialize each track's base size and growth limit. *)
   let percentage_basis =
-    match Size.get inner_node_size axis with
+    match Size.get axis inner_node_size with
     | Some value -> Some value
     | None -> axis_min_size
   in
@@ -1803,7 +1844,7 @@ let track_sizing_algorithm (type t)
        in the opposite axis based on the alignment, container size, and estimated track sizes in that axis *)
     let gutter_alignment_adjustment =
       compute_alignment_gutter_adjustment other_axis_alignment
-        (Size.get inner_node_size (Abstract_axis.other axis))
+        (Size.get (Abstract_axis.other axis) inner_node_size)
         (fun track basis -> get_track_size_estimate track basis tree)
         other_axis_tracks
     in
@@ -1823,24 +1864,24 @@ let track_sizing_algorithm (type t)
     resolve_intrinsic_track_sizes
       (module Tree)
       tree axis axis_tracks other_axis_tracks items
-      (Size.get available_grid_space axis)
+      (Size.get axis available_grid_space)
       inner_node_size get_track_size_estimate;
 
     (* 11.6. Maximise Tracks
      Distributes free space (if any) to tracks with FINITE growth limits, up to their limits. *)
     maximise_tracks axis_tracks
-      (Size.get inner_node_size axis)
-      (Size.get available_grid_space axis);
+      (Size.get axis inner_node_size)
+      (Size.get axis available_grid_space);
 
     (* For the purpose of the final two expansion steps ("Expand Flexible Tracks" and "Stretch auto Tracks"), we only want to expand
      into space generated by the grid container's size (as defined by either it's preferred size style or by it's parent node through
      something like stretch alignment), not just any available space. To do this we map definite available space to AvailableSpace::MaxContent
      in the case that inner_node_size is None *)
     let axis_available_space_for_expansion =
-      match Size.get inner_node_size axis with
+      match Size.get axis inner_node_size with
       | Some available_space -> Available_space.Definite available_space
       | None -> (
-          match Size.get available_grid_space axis with
+          match Size.get axis available_grid_space with
           | Available_space.Min_content -> Available_space.Min_content
           | Available_space.Max_content | Available_space.Definite _ ->
               Available_space.Max_content)

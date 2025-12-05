@@ -1,243 +1,196 @@
-module G = Grid
-module C = G.Cell
-open Ubench
+module C = Ansi.Color
+module S = Ansi.Style
 
-let cols = 80
-let rows = 24
-let large_cols = 1000
-let large_rows = 1000
-let text_short = "Hello"
-let text_long = String.make cols 'A'
-let style = Ansi.Style.make ~fg:Ansi.Style.Red ~bg:Ansi.Style.Blue ~bold:true ()
+let grid_width = 160
+let grid_height = 48
+let solid_fill = C.of_rgb 28 32 36
+let translucent_fill = C.of_rgba 64 128 224 110
 
-let wide_grapheme =
-  "\xF0\x9F\x91\xA8\xE2\x80\x8D\xF0\x9F\x91\xA9\xE2\x80\x8D\xF0\x9F\x91\xA6"
-(* Family emoji *)
+let ascii_style =
+  S.make ~fg:(C.of_rgb 232 232 232) ~bg:(C.of_rgb 18 20 24) ~bold:true ()
 
-let rect_small = { G.row = 0; col = 0; width = 10; height = 5 }
-let rect_large = { G.row = 0; col = 0; width = cols; height = rows }
+let make_ascii_line len =
+  String.init len (fun i -> Char.chr (Char.code 'a' + (i mod 26)))
 
-let bench_creation () =
-  let _ = G.create ~rows ~cols () in
-  ()
+let ascii_line = make_ascii_line (grid_width - 2)
 
-let bench_creation_large () =
-  let _ = G.create ~rows:large_rows ~cols:large_cols () in
-  ()
-
-let bench_set_cell grid () =
-  G.set grid ~row:0 ~col:0
-    (Some (C.make_glyph ~style ~east_asian_context:false "A"))
-
-let bench_set_grapheme_narrow grid () =
-  G.set_grapheme grid ~row:0 ~col:0 ~glyph:"A" ~attrs:style
-
-let bench_set_grapheme_wide grid () =
-  G.set_grapheme grid ~row:0 ~col:0 ~glyph:wide_grapheme ~attrs:style
-
-let bench_set_text_short grid () =
-  let _ = G.set_text grid ~row:0 ~col:0 ~text:text_short ~attrs:style in
-  ()
-
-let bench_set_text_long grid () =
-  let _ = G.set_text grid ~row:0 ~col:0 ~text:text_long ~attrs:style in
-  ()
-
-let bench_clear grid () = G.clear grid
-let bench_clear_line grid () = G.clear_line grid 0 0
-
-let bench_clear_rect grid () =
-  G.clear_rect grid ~row_start:0 ~row_end:(rows - 1) ~col_start:0
-    ~col_end:(cols - 1)
-
-let bench_resize_larger grid () = G.resize grid ~rows:(rows * 2) ~cols:(cols * 2)
-
-let bench_resize_smaller grid () =
-  G.resize grid ~rows:(rows / 2) ~cols:(cols / 2)
-
-let bench_blit_small src dst () =
-  G.blit ~src ~src_rect:rect_small ~dst ~dst_pos:(0, 0)
-
-let bench_blit_large src dst () =
-  G.blit ~src ~src_rect:rect_large ~dst ~dst_pos:(0, 0)
-
-let bench_diff_no_change prev curr () =
-  let _ = G.diff prev curr in
-  ()
-
-let bench_diff_single_change prev curr () =
-  G.set curr ~row:0 ~col:0
-    (Some (C.make_glyph ~style ~east_asian_context:false "B"));
-  let _ = G.diff prev curr in
-  ()
-
-let bench_diff_row_change prev curr () =
-  for c = 0 to cols - 1 do
-    G.set curr ~row:0 ~col:c
-      (Some (C.make_glyph ~style ~east_asian_context:false "B"))
+let emoji_line =
+  (* Mixed emoji payload to stress grapheme/width handling *)
+  let fragments = [| "👩‍🚀"; "🛰️"; "🌌"; "✨"; "🚀"; "🪐"; "🌠"; "👨‍💻" |] in
+  let buf = Buffer.create (Array.length fragments * 32) in
+  for i = 0 to 31 do
+    Buffer.add_string buf fragments.(i land 7)
   done;
-  let _ = G.diff prev curr in
-  ()
+  Buffer.contents buf
 
-let bench_diff_full_change prev curr () =
-  for r = 0 to rows - 1 do
-    for c = 0 to cols - 1 do
-      G.set curr ~row:r ~col:c
-        (Some (C.make_glyph ~style ~east_asian_context:false "B"))
-    done
+let scroll_seed =
+  (* Representative line for terminal scroll / log output *)
+  let base = "Matrix terminal benchmark line " in
+  let target = grid_width in
+  let buf = Buffer.create (String.length base * 4) in
+  while Buffer.length buf < target do
+    Buffer.add_string buf base
   done;
-  let _ = G.diff prev curr in
-  ()
+  let contents = Buffer.contents buf in
+  String.sub contents 0 target
 
-let bench_scroll grid () =
-  let src_rect = { G.row = 1; col = 0; width = cols; height = rows - 1 } in
-  G.blit ~src:grid ~src_rect ~dst:grid ~dst_pos:(0, 0);
-  G.clear_line grid (rows - 1) 0
+let make_grid ?(respect_alpha = false) () =
+  Grid.create ~width:grid_width ~height:grid_height ~respect_alpha ()
 
-let bench_insert_line grid () =
-  let src_rect = { G.row = 5; col = 0; width = cols; height = rows - 6 } in
-  G.blit ~src:grid ~src_rect ~dst:grid ~dst_pos:(6, 0);
-  G.clear_line grid 5 0
+(* Bulk fills: opaque & translucent overlays *)
 
-let bench_typing grid () =
-  for i = 0 to 10 do
-    let _ = G.set_text grid ~row:0 ~col:i ~text:"A" ~attrs:style in
-    ()
-  done
+let fill_rect_opaque_full =
+  Ubench.create_with_setup "grid.fill_rect/opaque-full"
+    ~setup:(fun () -> make_grid ())
+    ~teardown:(fun _ -> ())
+    ~f:(fun grid ->
+      Grid.fill_rect grid ~x:0 ~y:0 ~width:grid_width ~height:grid_height
+        ~color:solid_fill)
 
-let creation_benches =
+let fill_rect_translucent_overlay =
+  Ubench.create_with_setup "grid.fill_rect/translucent-overlay"
+    ~setup:(fun () -> make_grid ~respect_alpha:true ())
+    ~teardown:(fun _ -> ())
+    ~f:(fun grid ->
+      Grid.fill_rect grid ~x:0 ~y:0 ~width:grid_width ~height:grid_height
+        ~color:translucent_fill)
+
+(* Full-screen text: ASCII vs emoji-heavy *)
+
+let draw_text_ascii_full =
+  Ubench.create_with_setup "grid.draw_text/ascii-full-screen"
+    ~setup:(fun () ->
+      let grid = make_grid () in
+      Grid.clear grid ~color:(C.of_rgb 0 0 0);
+      grid)
+    ~teardown:(fun _ -> ())
+    ~f:(fun grid ->
+      (* Typical "code editor" / log viewer workload: full ASCII text. *)
+      for row = 0 to grid_height - 1 do
+        Grid.draw_text ~style:ascii_style grid ~x:0 ~y:row ~text:ascii_line
+      done)
+
+let draw_text_emoji_full =
+  Ubench.create_with_setup "grid.draw_text/emoji-full-screen"
+    ~setup:(fun () ->
+      let grid = make_grid () in
+      Grid.clear grid ~color:(C.of_rgb 0 0 0);
+      grid)
+    ~teardown:(fun _ -> ())
+    ~f:(fun grid ->
+      (* Emoji-heavy / chat-like workload: full screen mixed-width graphemes. *)
+      for row = 0 to grid_height - 1 do
+        Grid.draw_text ~style:ascii_style grid ~x:0 ~y:row ~text:emoji_line
+      done)
+
+(* Scrolling region: terminal-like scrollback *)
+
+let scroll_terminal_region =
+  let top = 0 in
+  let bottom = grid_height - 2 in
+  let iterations = 20 in
+  Ubench.create_with_setup "grid.scroll/terminal-region"
+    ~setup:(fun () ->
+      let grid = make_grid () in
+      Grid.clear grid ~color:(C.of_rgb 0 0 0);
+      for row = 0 to grid_height - 1 do
+        Grid.draw_text ~style:ascii_style grid ~x:0 ~y:row ~text:scroll_seed
+      done;
+      grid)
+    ~teardown:(fun _ -> ())
+    ~f:(fun grid ->
+      (* Simulate a burst of log lines arriving. *)
+      for _ = 1 to iterations do
+        Grid.scroll_up grid ~top ~bottom ~n:1;
+        Grid.draw_text ~style:ascii_style grid ~x:0 ~y:bottom ~text:scroll_seed
+      done)
+
+(* Partial updates: status line + sparse cells (cursor/status) *)
+
+let partial_status_line =
+  let status_text_1 =
+    "matrix.ml  [NORMAL]  line 42, col 7   3 warnings (F5: build)"
+  in
+  let status_text_2 =
+    "matrix.ml  [INSERT]  line 42, col 9   modified   (Ctrl+S: save)"
+  in
+  let toggle = ref false in
+  let grid_ref = ref None in
+  Ubench.create_with_setup "grid.partial_update/status-line"
+    ~setup:(fun () ->
+      let grid =
+        match !grid_ref with
+        | Some g -> g
+        | None ->
+            let g = make_grid () in
+            Grid.clear g ~color:(C.of_rgb 0 0 0);
+            (* Fill main area once with ASCII text to approximate editor body. *)
+            for row = 0 to grid_height - 2 do
+              Grid.draw_text ~style:ascii_style g ~x:0 ~y:row ~text:ascii_line
+            done;
+            grid_ref := Some g;
+            g
+      in
+      toggle := false;
+      grid)
+    ~teardown:(fun _ -> ())
+    ~f:(fun grid ->
+      toggle := not !toggle;
+      let status_bg = C.of_rgb 200 200 200 in
+      let status_fg = C.of_rgb 0 0 0 in
+      let status_style = S.make ~fg:status_fg ~bg:status_bg ~bold:true () in
+      let y = grid_height - 1 in
+      let text = if !toggle then status_text_1 else status_text_2 in
+      Grid.draw_text ~style:status_style grid ~x:0 ~y ~text)
+
+let partial_update_sparse_cells =
+  (* Cursor location + three status bar "slots" across the top row. *)
+  let update_positions =
+    [| (40, 12); (0, 0); (grid_width / 2, 0); (grid_width - 1, 0) |]
+  in
+  let grid_ref = ref None in
+  Ubench.create_with_setup "grid.partial_update/sparse-cells"
+    ~setup:(fun () ->
+      let grid =
+        match !grid_ref with
+        | Some g -> g
+        | None ->
+            let g = make_grid () in
+            Grid.clear g ~color:(C.of_rgb 0 0 0);
+            for row = 0 to grid_height - 1 do
+              Grid.draw_text ~style:ascii_style g ~x:0 ~y:row ~text:ascii_line
+            done;
+            grid_ref := Some g;
+            g
+      in
+      grid)
+    ~teardown:(fun _ -> ())
+    ~f:(fun grid ->
+      (* Small, scattered updates as you'd get from a cursor + tiny UI chrome. *)
+      for i = 0 to Array.length update_positions - 1 do
+        let x, y = update_positions.(i) in
+        Grid.set_cell_alpha grid ~x ~y
+          ~code:(Int32.of_int (Char.code 'A' + i))
+          ~fg:(C.of_rgb 255 255 0) ~bg:(C.of_rgb 0 0 0) ~attrs:Ansi.Attr.empty
+          ()
+      done)
+
+(* Group + entry point *)
+
+let benchmarks =
   [
-    create "create_small" bench_creation;
-    create "create_large" bench_creation_large;
+    (* Bulk operations *)
+    fill_rect_opaque_full;
+    fill_rect_translucent_overlay;
+    (* Full-screen text workloads *)
+    draw_text_ascii_full;
+    draw_text_emoji_full;
+    (* Terminal-style scrollback *)
+    scroll_terminal_region;
+    (* Fine-grained partial updates *)
+    partial_status_line;
+    partial_update_sparse_cells;
   ]
+  |> Ubench.group "grid"
 
-let setting_benches =
-  [
-    create_with_setup "set_cell"
-      ~setup:(fun () -> G.create ~rows ~cols ())
-      ~teardown:(fun _ -> ())
-      ~f:bench_set_cell;
-    create_with_setup "set_grapheme_narrow"
-      ~setup:(fun () -> G.create ~rows ~cols ())
-      ~teardown:(fun _ -> ())
-      ~f:bench_set_grapheme_narrow;
-    create_with_setup "set_grapheme_wide"
-      ~setup:(fun () -> G.create ~rows ~cols ())
-      ~teardown:(fun _ -> ())
-      ~f:bench_set_grapheme_wide;
-    create_with_setup "set_text_short"
-      ~setup:(fun () -> G.create ~rows ~cols ())
-      ~teardown:(fun _ -> ())
-      ~f:bench_set_text_short;
-    create_with_setup "set_text_long"
-      ~setup:(fun () -> G.create ~rows ~cols ())
-      ~teardown:(fun _ -> ())
-      ~f:bench_set_text_long;
-  ]
-
-let clearing_benches =
-  [
-    create_with_setup "clear"
-      ~setup:(fun () -> G.create ~rows ~cols ())
-      ~teardown:(fun _ -> ())
-      ~f:bench_clear;
-    create_with_setup "clear_line"
-      ~setup:(fun () -> G.create ~rows ~cols ())
-      ~teardown:(fun _ -> ())
-      ~f:bench_clear_line;
-    create_with_setup "clear_rect"
-      ~setup:(fun () -> G.create ~rows ~cols ())
-      ~teardown:(fun _ -> ())
-      ~f:bench_clear_rect;
-  ]
-
-let resizing_benches =
-  [
-    create_with_setup "resize_larger"
-      ~setup:(fun () -> G.create ~rows ~cols ())
-      ~teardown:(fun _ -> ())
-      ~f:bench_resize_larger;
-    create_with_setup "resize_smaller"
-      ~setup:(fun () -> G.create ~rows:(rows * 2) ~cols:(cols * 2) ())
-      ~teardown:(fun _ -> ())
-      ~f:bench_resize_smaller;
-  ]
-
-let blitting_benches =
-  [
-    create_with_setup "blit_small"
-      ~setup:(fun () ->
-        let src = G.create ~rows ~cols () in
-        let dst = G.create ~rows ~cols () in
-        (src, dst))
-      ~teardown:(fun _ -> ())
-      ~f:(fun (src, dst) -> bench_blit_small src dst ());
-    create_with_setup "blit_large"
-      ~setup:(fun () ->
-        let src = G.create ~rows ~cols () in
-        let dst = G.create ~rows ~cols () in
-        (src, dst))
-      ~teardown:(fun _ -> ())
-      ~f:(fun (src, dst) -> bench_blit_large src dst ());
-  ]
-
-let diffing_benches =
-  [
-    create_with_setup "diff_no_change"
-      ~setup:(fun () ->
-        let prev = G.create ~rows ~cols () in
-        let curr = G.copy prev in
-        (prev, curr))
-      ~teardown:(fun _ -> ())
-      ~f:(fun (prev, curr) -> bench_diff_no_change prev curr ());
-    create_with_setup "diff_single_change"
-      ~setup:(fun () ->
-        let prev = G.create ~rows ~cols () in
-        let curr = G.copy prev in
-        (prev, curr))
-      ~teardown:(fun _ -> ())
-      ~f:(fun (prev, curr) -> bench_diff_single_change prev curr ());
-    create_with_setup "diff_row_change"
-      ~setup:(fun () ->
-        let prev = G.create ~rows ~cols () in
-        let curr = G.copy prev in
-        (prev, curr))
-      ~teardown:(fun _ -> ())
-      ~f:(fun (prev, curr) -> bench_diff_row_change prev curr ());
-    create_with_setup "diff_full_change"
-      ~setup:(fun () ->
-        let prev = G.create ~rows ~cols () in
-        let curr = G.copy prev in
-        (prev, curr))
-      ~teardown:(fun _ -> ())
-      ~f:(fun (prev, curr) -> bench_diff_full_change prev curr ());
-  ]
-
-let composite_benches =
-  [
-    create_with_setup "scroll"
-      ~setup:(fun () -> G.create ~rows ~cols ())
-      ~teardown:(fun _ -> ())
-      ~f:bench_scroll;
-    create_with_setup "insert_line"
-      ~setup:(fun () -> G.create ~rows ~cols ())
-      ~teardown:(fun _ -> ())
-      ~f:bench_insert_line;
-    create_with_setup "typing"
-      ~setup:(fun () -> G.create ~rows ~cols ())
-      ~teardown:(fun _ -> ())
-      ~f:bench_typing;
-  ]
-
-let all_benches =
-  [
-    group "creation" creation_benches;
-    group "setting" setting_benches;
-    group "clearing" clearing_benches;
-    group "resizing" resizing_benches;
-    group "blitting" blitting_benches;
-    group "diffing" diffing_benches;
-    group "composite" composite_benches;
-  ]
-
-let () = Ubench.run_cli all_benches
+let () = Ubench.run_cli [ benchmarks ]

@@ -1,12 +1,5 @@
-(* A grid line placement specification. Used for grid-[row/column]-[start/end]. 
-    Named tracks are supported through string names.
-    
-    Defaults to Auto *)
-
-(* Grid line coordinate - just an integer in CSS Grid coordinates *)
 type grid_line = int
 
-(* Grid placement specification for a single axis *)
 type t =
   | Auto (* Place item according to auto-placement algorithm *)
   | Line of grid_line (* Place item at specified line index *)

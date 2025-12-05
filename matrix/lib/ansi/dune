@@ -1,4 +1,4 @@
 (library
  (name ansi)
  (public_name matrix.ansi)
- (libraries fmt))
+ (libraries uutf))

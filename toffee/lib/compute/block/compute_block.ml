@@ -8,7 +8,7 @@ open Tree
 module Helpers = struct
   let maybe_clamp value min max =
     match (min, max) with
-    | Some min_val, Some max_val -> Float.min max_val (Float.max min_val value)
+    | Some min_val, Some max_val -> Float.max min_val (Float.min max_val value)
     | Some min_val, None -> Float.max min_val value
     | None, Some max_val -> Float.min max_val value
     | None, None -> value
@@ -38,8 +38,6 @@ type block_item = {
   border : float rect; (* The border of this item *)
   padding_border_sum : float size;
       (* The sum of padding and border for this item *)
-  mutable computed_size : float size;
-      (* The computed border box size of this item *)
   mutable static_position : float point;
       (* The computed "static position" of this item. The static position is the position
       taking into account padding, border, margins, and scrollbar_gutters but not inset *)
@@ -54,100 +52,103 @@ let generate_item_list (type t)
   (* Get calc resolver from tree *)
   let calc = Tree.resolve_calc_value tree in
 
-  Tree.child_ids tree node
-  |> Seq.map (fun child_node_id ->
-         (child_node_id, Tree.get_core_container_style tree child_node_id))
-  |> Seq.filter (fun (_, child_style) ->
-         Style.box_generation_mode child_style <> Box_generation_mode.None)
-  |> Seq.mapi (fun order (child_node_id, child_style) ->
-         let aspect_ratio = Style.aspect_ratio child_style in
-         let padding =
-           Style.padding child_style
-           |> Rect.map (fun lp ->
-                  Length_percentage.resolve_or_zero lp node_inner_size.width
-                    calc)
-         in
-         let border =
-           Style.border child_style
-           |> Rect.map (fun lp ->
-                  Length_percentage.resolve_or_zero lp node_inner_size.width
-                    calc)
-         in
-         let pb_sum = Rect.sum_axes (Rect.add padding border) in
-         let box_sizing_adjustment =
-           if Style.box_sizing child_style = Box_sizing.Content_box then pb_sum
-           else Size.zero
-         in
+  let child_count = Tree.child_count tree node in
+  let items = ref [] in
+  let order = ref 0 in
+  for i = 0 to child_count - 1 do
+    let child_node_id = Tree.get_child_id tree node i in
+    let child_style = Tree.get_core_container_style tree child_node_id in
+    if Style.box_generation_mode child_style <> Box_generation_mode.None then (
+      let aspect_ratio = Style.aspect_ratio child_style in
+      let padding =
+        Style.padding child_style
+        |> Rect.map (fun lp ->
+            Length_percentage.resolve_or_zero lp node_inner_size.width calc)
+      in
+      let border =
+        Style.border child_style
+        |> Rect.map (fun lp ->
+            Length_percentage.resolve_or_zero lp node_inner_size.width calc)
+      in
+      let pb_sum = Rect.sum_axes (Rect.add padding border) in
+      let box_sizing_adjustment =
+        if Style.box_sizing child_style = Box_sizing.Content_box then pb_sum
+        else Size.zero
+      in
 
-         {
-           node_id = child_node_id;
-           order;
-           is_table = is_table child_style;
-           size =
-             (let size_dimensions = Style.size child_style in
-              let resolved_size : float option size =
-                {
-                  width =
-                    Dimension.maybe_resolve
-                      (Size.get size_dimensions Inline)
-                      node_inner_size.width calc;
-                  height =
-                    Dimension.maybe_resolve
-                      (Size.get size_dimensions Block)
-                      node_inner_size.height calc;
-                }
-              in
-              resolved_size |> fun size ->
-              Size.apply_aspect_ratio size aspect_ratio |> fun size ->
-              Size.maybe_add size box_sizing_adjustment);
-           min_size =
-             (let min_size_dimensions = Style.min_size child_style in
-              let resolved_min_size : float option size =
-                {
-                  width =
-                    Dimension.maybe_resolve
-                      (Size.get min_size_dimensions Inline)
-                      node_inner_size.width calc;
-                  height =
-                    Dimension.maybe_resolve
-                      (Size.get min_size_dimensions Block)
-                      node_inner_size.height calc;
-                }
-              in
-              resolved_min_size |> fun size ->
-              Size.apply_aspect_ratio size aspect_ratio |> fun size ->
-              Size.maybe_add size box_sizing_adjustment);
-           max_size =
-             (let max_size_dimensions = Style.max_size child_style in
-              let resolved_max_size : float option size =
-                {
-                  width =
-                    Dimension.maybe_resolve
-                      (Size.get max_size_dimensions Inline)
-                      node_inner_size.width calc;
-                  height =
-                    Dimension.maybe_resolve
-                      (Size.get max_size_dimensions Block)
-                      node_inner_size.height calc;
-                }
-              in
-              resolved_max_size |> fun size ->
-              Size.apply_aspect_ratio size aspect_ratio |> fun size ->
-              Size.maybe_add size box_sizing_adjustment);
-           overflow = Style.overflow child_style;
-           scrollbar_width = Style.scrollbar_width child_style;
-           position = Style.position child_style;
-           inset = Style.inset child_style;
-           margin = Style.margin child_style;
-           padding;
-           border;
-           padding_border_sum = pb_sum;
-           (* Fields to be computed later (for now we initialise with dummy values) *)
-           computed_size = Size.zero;
-           static_position = Point.zero;
-           can_be_collapsed_through = false;
-         })
-  |> List.of_seq
+      let item =
+        {
+          node_id = child_node_id;
+          order = !order;
+          is_table = is_table child_style;
+          size =
+            (let size_dimensions = Style.size child_style in
+             let resolved_size : float option size =
+               {
+                 width =
+                   Dimension.maybe_resolve
+                     (Size.get Inline size_dimensions)
+                     node_inner_size.width calc;
+                 height =
+                   Dimension.maybe_resolve
+                     (Size.get Block size_dimensions)
+                     node_inner_size.height calc;
+               }
+             in
+             resolved_size
+             |> Size.apply_aspect_ratio aspect_ratio
+             |> Size.maybe_add box_sizing_adjustment);
+          min_size =
+            (let min_size_dimensions = Style.min_size child_style in
+             let resolved_min_size : float option size =
+               {
+                 width =
+                   Dimension.maybe_resolve
+                     (Size.get Inline min_size_dimensions)
+                     node_inner_size.width calc;
+                 height =
+                   Dimension.maybe_resolve
+                     (Size.get Block min_size_dimensions)
+                     node_inner_size.height calc;
+               }
+             in
+             resolved_min_size
+             |> Size.apply_aspect_ratio aspect_ratio
+             |> Size.maybe_add box_sizing_adjustment);
+          max_size =
+            (let max_size_dimensions = Style.max_size child_style in
+             let resolved_max_size : float option size =
+               {
+                 width =
+                   Dimension.maybe_resolve
+                     (Size.get Inline max_size_dimensions)
+                     node_inner_size.width calc;
+                 height =
+                   Dimension.maybe_resolve
+                     (Size.get Block max_size_dimensions)
+                     node_inner_size.height calc;
+               }
+             in
+             resolved_max_size
+             |> Size.apply_aspect_ratio aspect_ratio
+             |> Size.maybe_add box_sizing_adjustment);
+          overflow = Style.overflow child_style;
+          scrollbar_width = Style.scrollbar_width child_style;
+          position = Style.position child_style;
+          inset = Style.inset child_style;
+          margin = Style.margin child_style;
+          padding;
+          border;
+          padding_border_sum = pb_sum;
+          (* Fields to be computed later (for now we initialise with dummy values) *)
+          static_position = Point.zero;
+          can_be_collapsed_through = false;
+        }
+      in
+      items := item :: !items;
+      order := !order + 1)
+  done;
+  List.rev !items
 
 (* Compute the content-based width when the container width is not known *)
 let determine_content_based_container_width (type t)
@@ -162,7 +163,7 @@ let determine_content_based_container_width (type t)
     (fun item ->
       if item.position <> Position.Absolute then
         let known_dimensions =
-          Size.clamp_option item.size item.min_size item.max_size
+          Size.clamp_option item.min_size item.max_size item.size
         in
 
         let width =
@@ -259,8 +260,8 @@ let perform_final_layout_on_in_flow_children (type t)
         let item_margin =
           item.margin
           |> Rect.map (fun margin ->
-                 Length_percentage_auto.resolve_to_option_with_calc margin
-                   container_outer_width calc)
+              Length_percentage_auto.resolve_to_option_with_calc margin
+                container_outer_width calc)
         in
         let item_non_auto_margin =
           item_margin |> Rect.map (fun m -> Option.value m ~default:0.0)
@@ -274,21 +275,21 @@ let perform_final_layout_on_in_flow_children (type t)
           else
             item.size
             |> Size.map_width (fun width ->
-                   (* TODO: Allow stretch-sizing to be conditional, as there are exceptions.
+                (* TODO: Allow stretch-sizing to be conditional, as there are exceptions.
                  e.g. Table children of blocks do not stretch fit *)
-                   match width with
-                   | Some w ->
-                       Some
-                         (Helpers.maybe_clamp w item.min_size.width
-                            item.max_size.width)
-                   | None ->
-                       let stretched_width =
-                         container_inner_width -. item_non_auto_x_margin_sum
-                       in
-                       Some
-                         (Helpers.maybe_clamp stretched_width
-                            item.min_size.width item.max_size.width))
-            |> fun size -> Size.clamp_option size item.min_size item.max_size
+                match width with
+                | Some w ->
+                    Some
+                      (Helpers.maybe_clamp w item.min_size.width
+                         item.max_size.width)
+                | None ->
+                    let stretched_width =
+                      container_inner_width -. item_non_auto_x_margin_sum
+                    in
+                    Some
+                      (Helpers.maybe_clamp stretched_width item.min_size.width
+                         item.max_size.width))
+            |> Size.clamp_option item.min_size item.max_size
         in
 
         let item_layout =
@@ -356,9 +357,10 @@ let perform_final_layout_on_in_flow_children (type t)
 
         (* Resolve item inset *)
         let inset =
-          Rect.zip_size item.inset
+          Rect.zip_size
             Size.{ width = container_inner_width; height = 0.0 }
             (fun p s -> Length_percentage_auto.maybe_resolve p (Some s) calc)
+            item.inset
         in
         let inset_offset =
           Point.
@@ -388,7 +390,6 @@ let perform_final_layout_on_in_flow_children (type t)
                  resolved_margin.top)
         in
 
-        item.computed_size <- final_size;
         item.can_be_collapsed_through <-
           Layout_output.margins_can_collapse_through item_layout;
         item.static_position <-
@@ -532,18 +533,18 @@ let perform_absolute_layout_on_absolute_children (type t)
           let margin =
             Style.margin child_style
             |> Rect.map (fun margin ->
-                   Length_percentage_auto.resolve_to_option_with_calc margin
-                     area_width calc)
+                Length_percentage_auto.resolve_to_option_with_calc margin
+                  area_width calc)
           in
           let padding =
             Style.padding child_style
             |> Rect.map (fun p ->
-                   Length_percentage.resolve_or_zero p (Some area_width) calc)
+                Length_percentage.resolve_or_zero p (Some area_width) calc)
           in
           let border =
             Style.border child_style
             |> Rect.map (fun b ->
-                   Length_percentage.resolve_or_zero b (Some area_width) calc)
+                Length_percentage.resolve_or_zero b (Some area_width) calc)
           in
           let padding_border_sum = Rect.sum_axes (Rect.add padding border) in
           let box_sizing_adjustment =
@@ -577,47 +578,47 @@ let perform_absolute_layout_on_absolute_children (type t)
             Size.
               {
                 width =
-                  Dimension.maybe_resolve (Size.get dims Inline)
+                  Dimension.maybe_resolve (Size.get Inline dims)
                     (Some area_width) calc;
                 height =
-                  Dimension.maybe_resolve (Size.get dims Block)
+                  Dimension.maybe_resolve (Size.get Block dims)
                     (Some area_height) calc;
               }
-            |> fun s ->
-            Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-            Size.maybe_add s box_sizing_adjustment
+            |> Size.apply_aspect_ratio aspect_ratio
+            |> Size.maybe_add box_sizing_adjustment
           in
-          let min_size =
+          let resolved_min_size =
             Style.min_size child_style |> fun dims ->
             Size.
               {
                 width =
-                  Dimension.maybe_resolve (Size.get dims Inline)
+                  Dimension.maybe_resolve (Size.get Inline dims)
                     (Some area_width) calc;
                 height =
-                  Dimension.maybe_resolve (Size.get dims Block)
+                  Dimension.maybe_resolve (Size.get Block dims)
                     (Some area_height) calc;
               }
-            |> fun s ->
-            Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-            Size.maybe_add s box_sizing_adjustment |> fun s ->
-            Size.choose_first s (Size.map Option.some padding_border_sum)
-            |> fun s -> Size.maybe_max s padding_border_sum
+            |> Size.apply_aspect_ratio aspect_ratio
+            |> Size.maybe_add box_sizing_adjustment
+          in
+          let min_size =
+            resolved_min_size |> fun size ->
+            Size.choose_first size (Size.map Option.some padding_border_sum)
+            |> Size.maybe_max padding_border_sum
           in
           let max_size =
             Style.max_size child_style |> fun dims ->
             Size.
               {
                 width =
-                  Dimension.maybe_resolve (Size.get dims Inline)
+                  Dimension.maybe_resolve (Size.get Inline dims)
                     (Some area_width) calc;
                 height =
-                  Dimension.maybe_resolve (Size.get dims Block)
+                  Dimension.maybe_resolve (Size.get Block dims)
                     (Some area_height) calc;
               }
-            |> fun s ->
-            Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-            Size.maybe_add s box_sizing_adjustment
+            |> Size.apply_aspect_ratio aspect_ratio
+            |> Size.maybe_add box_sizing_adjustment
           in
           (* If both min and max in a given axis are set and max <= min then this determines the size in that axis *)
           let min_max_definite_size =
@@ -631,7 +632,7 @@ let perform_absolute_layout_on_absolute_children (type t)
           let known_dimensions =
             ref
               (Size.choose_first min_max_definite_size
-                 (Size.clamp_option style_size min_size max_size))
+                 (Size.clamp_option min_size max_size style_size))
           in
 
           (* Fill in width from left/right and reapply aspect ratio if:
@@ -651,10 +652,10 @@ let perform_absolute_layout_on_absolute_children (type t)
                   width = Some (Float.max new_width_raw 0.0);
                 };
               known_dimensions :=
-                !known_dimensions |> fun s ->
-                Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-                Size.choose_first min_max_definite_size
-                  (Size.clamp_option s min_size max_size)
+                !known_dimensions
+                |> Size.apply_aspect_ratio aspect_ratio
+                |> Size.clamp_option min_size max_size
+                |> Size.choose_first min_max_definite_size
           | _ -> ());
 
           (* Fill in height from top/bottom and reapply aspect ratio if:
@@ -674,15 +675,15 @@ let perform_absolute_layout_on_absolute_children (type t)
                   height = Some (Float.max new_height_raw 0.0);
                 };
               known_dimensions :=
-                !known_dimensions |> fun s ->
-                Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-                Size.choose_first min_max_definite_size
-                  (Size.clamp_option s min_size max_size)
+                !known_dimensions
+                |> Size.apply_aspect_ratio aspect_ratio
+                |> Size.clamp_option min_size max_size
+                |> Size.choose_first min_max_definite_size
           | _ -> ());
 
-          let layout_output =
+          let measured_size =
             Tree.compute_child_layout tree item.node_id
-              (Layout_input.make ~run_mode:Run_mode.Perform_layout
+              (Layout_input.make ~run_mode:Run_mode.Compute_size
                  ~sizing_mode:Sizing_mode.Content_size ~axis:Requested_axis.Both
                  ~known_dimensions:!known_dimensions
                  ~parent_size:(Size.map Option.some area_size)
@@ -699,14 +700,35 @@ let perform_absolute_layout_on_absolute_children (type t)
                               max_size.height);
                      }
                  ~vertical_margins_are_collapsible:Line.both_false)
+            |> Layout_output.size
           in
-          let measured_size = Layout_output.size layout_output in
           let final_size =
-            Size.unwrap_or !known_dimensions measured_size |> fun s ->
+            Size.unwrap_or measured_size !known_dimensions |> fun s ->
             let s_opt = Size.map Option.some s in
             Size.choose_first min_max_definite_size
-              (Size.clamp_option s_opt min_size max_size)
-            |> fun s_opt -> Size.unwrap_or s_opt s
+              (Size.clamp_option min_size max_size s_opt)
+            |> fun s_opt -> Size.unwrap_or s s_opt
+          in
+
+          let layout_output =
+            Tree.compute_child_layout tree item.node_id
+              (Layout_input.make ~run_mode:Run_mode.Perform_layout
+                 ~sizing_mode:Sizing_mode.Content_size ~axis:Requested_axis.Both
+                 ~known_dimensions:(Size.map Option.some final_size)
+                 ~parent_size:(Size.map Option.some area_size)
+                 ~available_space:
+                   Size.
+                     {
+                       width =
+                         Available_space.of_float
+                           (Helpers.maybe_clamp area_width min_size.width
+                              max_size.width);
+                       height =
+                         Available_space.of_float
+                           (Helpers.maybe_clamp area_height min_size.height
+                              max_size.height);
+                     }
+                 ~vertical_margins_are_collapsible:Line.both_false)
           in
 
           let non_auto_margin =
@@ -903,12 +925,12 @@ let compute_inner (type t)
   let padding =
     raw_padding
     |> Rect.map (fun lp ->
-           Style.Length_percentage.resolve_or_zero lp parent_size.width calc)
+        Style.Length_percentage.resolve_or_zero lp parent_size.width calc)
   in
   let border =
     raw_border
     |> Rect.map (fun lp ->
-           Style.Length_percentage.resolve_or_zero lp parent_size.width calc)
+        Style.Length_percentage.resolve_or_zero lp parent_size.width calc)
   in
 
   (* Scrollbar gutters are reserved when the `overflow` property is set to `Overflow::Scroll`.
@@ -919,8 +941,8 @@ let compute_inner (type t)
     let offsets =
       Point.{ x = overflow.y; y = overflow.x }
       |> Point.map (function
-           | Overflow.Scroll -> Style.scrollbar_width style
-           | _ -> 0.0)
+        | Overflow.Scroll -> Style.scrollbar_width style
+        | _ -> 0.0)
     in
     (* TODO: make side configurable based on the `direction` property *)
     Rect.{ top = 0.0; left = 0.0; right = offsets.x; bottom = offsets.y }
@@ -929,7 +951,7 @@ let compute_inner (type t)
   let padding_border_size = Rect.sum_axes padding_border in
   let content_box_inset = Rect.add padding_border scrollbar_gutter in
   let container_content_box_size =
-    Size.maybe_sub known_dimensions (Rect.sum_axes content_box_inset)
+    Size.maybe_sub (Rect.sum_axes content_box_inset) known_dimensions
   in
 
   let box_sizing_adjustment =
@@ -944,9 +966,8 @@ let compute_inner (type t)
         height =
           Style.Dimension.maybe_resolve dims.height parent_size.height calc;
       }
-    |> fun s ->
-    Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-    Size.maybe_add s box_sizing_adjustment
+    |> Size.apply_aspect_ratio aspect_ratio
+    |> Size.maybe_add box_sizing_adjustment
   in
   let min_size =
     Style.min_size style |> fun dims ->
@@ -956,9 +977,8 @@ let compute_inner (type t)
         height =
           Style.Dimension.maybe_resolve dims.height parent_size.height calc;
       }
-    |> fun s ->
-    Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-    Size.maybe_add s box_sizing_adjustment
+    |> Size.apply_aspect_ratio aspect_ratio
+    |> Size.maybe_add box_sizing_adjustment
   in
   let max_size =
     Style.max_size style |> fun dims ->
@@ -968,9 +988,8 @@ let compute_inner (type t)
         height =
           Style.Dimension.maybe_resolve dims.height parent_size.height calc;
       }
-    |> fun s ->
-    Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-    Size.maybe_add s box_sizing_adjustment
+    |> Size.apply_aspect_ratio aspect_ratio
+    |> Size.maybe_add box_sizing_adjustment
   in
 
   (* Determine margin collapsing behaviour *)
@@ -1027,10 +1046,10 @@ let compute_inner (type t)
         in
         intrinsic_width |> fun w ->
         (match (min_size.width, max_size.width) with
-        | Some min, Some max -> Float.min max (Float.max min w)
-        | Some min, None -> Float.max min w
-        | None, Some max -> Float.min max w
-        | None, None -> w)
+          | Some min, Some max -> Float.max min (Float.min max w)
+          | Some min, None -> Float.max min w
+          | None, Some max -> Float.min max w
+          | None, None -> w)
         |> Float.max padding_border_size.width
   in
 
@@ -1044,14 +1063,14 @@ let compute_inner (type t)
       let resolved_padding =
         raw_padding
         |> Rect.map (fun lp ->
-               Style.Length_percentage.resolve_or_zero lp
-                 (Some container_outer_width) calc)
+            Style.Length_percentage.resolve_or_zero lp
+              (Some container_outer_width) calc)
       in
       let resolved_border =
         raw_border
         |> Rect.map (fun lp ->
-               Style.Length_percentage.resolve_or_zero lp
-                 (Some container_outer_width) calc)
+            Style.Length_percentage.resolve_or_zero lp
+              (Some container_outer_width) calc)
       in
       let resolved_content_box_inset =
         Rect.add (Rect.add resolved_padding resolved_border) scrollbar_gutter
@@ -1185,12 +1204,12 @@ let compute_block_layout (type t)
   let padding =
     Style.padding style
     |> Rect.map (fun lp ->
-           Length_percentage.resolve_or_zero lp parent_size.width calc)
+        Length_percentage.resolve_or_zero lp parent_size.width calc)
   in
   let border =
     Style.border style
     |> Rect.map (fun lp ->
-           Length_percentage.resolve_or_zero lp parent_size.width calc)
+        Length_percentage.resolve_or_zero lp parent_size.width calc)
   in
   let padding_border_size = Rect.sum_axes (Rect.add padding border) in
   let box_sizing_adjustment =
@@ -1203,26 +1222,24 @@ let compute_block_layout (type t)
     Size.
       {
         width =
-          Dimension.maybe_resolve (Size.get dims Inline) parent_size.width calc;
+          Dimension.maybe_resolve (Size.get Inline dims) parent_size.width calc;
         height =
-          Dimension.maybe_resolve (Size.get dims Block) parent_size.height calc;
+          Dimension.maybe_resolve (Size.get Block dims) parent_size.height calc;
       }
-    |> fun s ->
-    Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-    Size.maybe_add s box_sizing_adjustment
+    |> Size.apply_aspect_ratio aspect_ratio
+    |> Size.maybe_add box_sizing_adjustment
   in
   let max_size =
     Style.max_size style |> fun dims ->
     Size.
       {
         width =
-          Dimension.maybe_resolve (Size.get dims Inline) parent_size.width calc;
+          Dimension.maybe_resolve (Size.get Inline dims) parent_size.width calc;
         height =
-          Dimension.maybe_resolve (Size.get dims Block) parent_size.height calc;
+          Dimension.maybe_resolve (Size.get Block dims) parent_size.height calc;
       }
-    |> fun s ->
-    Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-    Size.maybe_add s box_sizing_adjustment
+    |> Size.apply_aspect_ratio aspect_ratio
+    |> Size.maybe_add box_sizing_adjustment
   in
   let clamped_style_size =
     if sizing_mode = Sizing_mode.Inherent_size then
@@ -1230,16 +1247,15 @@ let compute_block_layout (type t)
       Size.
         {
           width =
-            Dimension.maybe_resolve (Size.get dims Inline) parent_size.width
+            Dimension.maybe_resolve (Size.get Inline dims) parent_size.width
               calc;
           height =
-            Dimension.maybe_resolve (Size.get dims Block) parent_size.height
+            Dimension.maybe_resolve (Size.get Block dims) parent_size.height
               calc;
         }
-      |> fun s ->
-      Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-      Size.maybe_add s box_sizing_adjustment |> fun s ->
-      Size.clamp_option s min_size max_size
+      |> Size.apply_aspect_ratio aspect_ratio
+      |> Size.maybe_add box_sizing_adjustment
+      |> Size.clamp_option min_size max_size
     else Size.none
   in
 
@@ -1256,8 +1272,8 @@ let compute_block_layout (type t)
   let styled_based_known_dimensions =
     known_dimensions |> fun dims ->
     Size.choose_first dims min_max_definite_size |> fun dims ->
-    Size.choose_first dims clamped_style_size |> fun dims ->
-    Size.maybe_max dims padding_border_size
+    Size.choose_first dims clamped_style_size
+    |> Size.maybe_max padding_border_size
   in
 
   (* Short-circuit layout if the container's size is fully determined by the container's size and the run mode

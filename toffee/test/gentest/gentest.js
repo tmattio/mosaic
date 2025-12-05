@@ -334,10 +334,17 @@ function styleToOCaml(style, boxSizing) {
     }
   }
 
-  // Box sizing - add for all nodes when test is content-box mode
-  // In the Rust tests, when a test is run with content-box, ALL nodes get ContentBox
-  if (boxSizing === 'content_box') {
-    params.push('~box_sizing:Style.Box_sizing.Content_box');
+  // Box sizing: use the computed box-sizing for each node. This mirrors the browser
+  // output captured in the fixtures (body toggles border-box/content-box classes).
+  if (style.boxSizing) {
+    const boxSizingMap = {
+      'border-box': 'Border_box',
+      'content-box': 'Content_box',
+    };
+    const sizing = boxSizingMap[style.boxSizing];
+    if (sizing) {
+      params.push(`~box_sizing:Style.Box_sizing.${sizing}`);
+    }
   }
 
   return params.length > 0
@@ -357,20 +364,20 @@ function getTrackSizeValue(track) {
   switch (track.unit) {
     case 'px':
     case 'points':
-      return `(Style.Length_percentage.length ${floatValue(track.value)})`;
+      return `(Style.Compact_length.length ${floatValue(track.value)})`;
     case 'percent':
-      return `(Style.Length_percentage.percent ${floatValue(track.value)})`;
+      return `(Style.Compact_length.percent ${floatValue(track.value)})`;
     case 'fr':
     case 'fraction':
-      return `(Style.Length_percentage.length 0.0)`; // Fr not valid for min/max in Length_percentage
+      return `(Style.Compact_length.fr ${floatValue(track.value)})`;
     case 'auto':
-      return `(Style.Length_percentage.length 0.0)`; // Auto maps to 0 for Length_percentage
+      return `Style.Compact_length.auto`;
     case 'min-content':
-      return `(Style.Length_percentage.length 0.0)`; // Min-content maps to 0 for Length_percentage
+      return `Style.Compact_length.min_content`;
     case 'max-content':
-      return `(Style.Length_percentage.length 0.0)`; // Max-content maps to 0 for Length_percentage
+      return `Style.Compact_length.max_content`;
     default:
-      return `(Style.Length_percentage.length 0.0)`;
+      return `Style.Compact_length.auto`;
   }
 }
 
@@ -409,23 +416,28 @@ function nonRepeatedTrackToOCaml(track) {
       const max = track.arguments[1];
       const minVal = getTrackSizeValue(min);
       const maxVal = getTrackSizeValue(max);
-      return `(Style.Grid.Track_sizing_function.minmax ~min:${minVal} ~max:${maxVal})`;
+      const wrap = (v) => (v.startsWith('(') ? v : `(${v})`);
+      return `(Style.Grid.Track_sizing_function.minmax ~min:${wrap(minVal)} ~max:${wrap(maxVal)})`;
     } else if (track.name === 'fit-content' && track.arguments?.length === 1) {
-      // fit-content(limit) expects a Length_percentage.t, not a Grid type
       const arg = track.arguments[0];
-      let limitValue;
-
-      if (arg.unit === 'px' || arg.unit === 'points') {
-        const floatVal = String(arg.value).includes('.') ? arg.value : `${arg.value}.0`;
-        limitValue = `(Style.Length_percentage.length ${floatVal})`;
-      } else if (arg.unit === 'percent') {
-        const percentVal = String(arg.value).includes('.') ? arg.value : `${arg.value}.0`;
-        limitValue = `(Style.Length_percentage.percent ${percentVal})`;
-      } else {
-        limitValue = `(Style.Length_percentage.length 0.0)`;
-      }
-
-      return `(Style.Grid.Track_sizing_function.fit_content ${limitValue})`;
+      const limitValue = (() => {
+        const floatVal = (val) => {
+          const strVal = String(val);
+          const floatStr = strVal.includes('.') ? strVal : `${strVal}.0`;
+          return floatStr.startsWith('-') ? `(${floatStr})` : floatStr;
+        };
+        switch (arg.unit) {
+          case 'px':
+          case 'points':
+            return `(Style.Compact_length.fit_content_px ${floatVal(arg.value)})`;
+          case 'percent':
+            return `(Style.Compact_length.fit_content_percent ${floatVal(arg.value)})`;
+          default:
+            return getTrackSizeValue(arg);
+        }
+      })();
+      const wrap = (v) => (v.startsWith('(') ? v : `(${v})`);
+      return `(Style.Grid.Track_sizing_function.fit_content ${wrap(limitValue)})`;
     }
   }
   return `Style.Grid.Track_sizing_function.auto`;
@@ -437,21 +449,28 @@ function trackToOCaml(track) {
     const repetitionArg = track.arguments[0];
     let repetition;
 
-    if (repetitionArg.kind === 'keyword') {
-      switch (repetitionArg.value) {
-        case 'auto-fill':
+    const repetitionUnit = repetitionArg.unit || repetitionArg.kind;
+    switch (repetitionUnit) {
+      case 'auto-fill':
+        repetition = 'Style.Grid.Repetition_count.auto_fill';
+        break;
+      case 'auto-fit':
+        repetition = 'Style.Grid.Repetition_count.auto_fit';
+        break;
+      case 'integer':
+        repetition = `Style.Grid.Repetition_count.count ${repetitionArg.value}`;
+        break;
+      default:
+        // Preserve compatibility if upstream ever emits a keyword-based node
+        if (repetitionArg.value === 'auto-fill') {
           repetition = 'Style.Grid.Repetition_count.auto_fill';
-          break;
-        case 'auto-fit':
+        } else if (repetitionArg.value === 'auto-fit') {
           repetition = 'Style.Grid.Repetition_count.auto_fit';
-          break;
-        default:
+        } else if (repetitionArg.value !== undefined) {
+          repetition = `Style.Grid.Repetition_count.count ${repetitionArg.value}`;
+        } else {
           repetition = 'Style.Grid.Repetition_count.count 1';
-      }
-    } else if (repetitionArg.kind === 'integer') {
-      repetition = `Style.Grid.Repetition_count.count ${repetitionArg.value}`;
-    } else {
-      repetition = 'Style.Grid.Repetition_count.count 1';
+        }
     }
 
     // Process the track list (all arguments after the repetition)
@@ -616,7 +635,9 @@ function availableSpaceToOCaml(space) {
   };
 
   switch (space.unit) {
-    case 'points': return `Available_space.Definite ${floatValue(space.value)}`;
+    case 'px':
+    case 'points':
+      return `Available_space.Definite ${floatValue(space.value)}`;
     // Match Rust behavior: min-content maps to MaxContent (likely a Taffy test suite simplification)
     case 'min-content': return 'Available_space.Max_content';
     case 'max-content': return 'Available_space.Max_content';
@@ -624,7 +645,7 @@ function availableSpaceToOCaml(space) {
   }
 }
 
-function generateNode(nodeVar, node, _parentVar, boxSizing) {
+function generateNode(nodeVar, node, boxSizing) {
   const style = styleToOCaml(node.style, boxSizing);
   const textContent = node.textContent;
   const writingMode = node.style?.writingMode;
@@ -641,8 +662,8 @@ function generateNode(nodeVar, node, _parentVar, boxSizing) {
     const escapedText = textContent.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     // Determine if vertical writing mode
     const isVertical = writingMode === 'vertical-rl' || writingMode === 'vertical-lr';
-    const contextType = isVertical ? 'Text_vertical' : 'Text';
-    nodeCreation += `\n  let _ = set_node_context tree ${nodeVar} (Some (MeasureFunction.${contextType} "${escapedText}")) |> Result.get_ok in`;
+    const writingModeToken = isVertical ? 'Gentest_helpers.Writing_mode.Vertical' : 'Gentest_helpers.Writing_mode.Horizontal';
+    nodeCreation += `\n  let _ = set_node_context tree ${nodeVar} (Some (Gentest_helpers.ahem_text "${escapedText}" ${writingModeToken})) |> Result.get_ok in`;
   }
 
   return nodeCreation;
@@ -679,9 +700,12 @@ function generateAssertions(nodeVar, node, useRounding) {
   if (isScrollContainer && layout.scrollWidth !== undefined && layout.scrollHeight !== undefined) {
     // Calculate scroll dimensions like the Rust version does
     // Use naivelyRoundedLayout for client dimensions to match Rust implementation
-    const naiveLayout = node.naivelyRoundedLayout || layout;
-    const scrollWidth = Math.max(0, (layout.scrollWidth || 0) - (naiveLayout.clientWidth || naiveLayout.width));
-    const scrollHeight = Math.max(0, (layout.scrollHeight || 0) - (naiveLayout.clientHeight || naiveLayout.height));
+    const naiveLayout = node.naivelyRoundedLayout;
+    if (!naiveLayout || naiveLayout.clientWidth === undefined || naiveLayout.clientHeight === undefined) {
+      throw new Error(`naivelyRoundedLayout.clientWidth/clientHeight missing for ${nodeVar}`);
+    }
+    const scrollWidth = Math.max(0, layout.scrollWidth - naiveLayout.clientWidth);
+    const scrollHeight = Math.max(0, layout.scrollHeight - naiveLayout.clientHeight);
 
     assertions += `
   (* Content size assertions for scroll container *)
@@ -696,18 +720,6 @@ function generateAssertions(nodeVar, node, useRounding) {
 function generateTest(name, testData, boxSizing, category = '') {
   const data = testData;
   const useRounding = data.useRounding !== false;
-
-  // Check if we have any text nodes
-  let hasTextNodes = false;
-  function checkForTextNodes(node) {
-    if (node.textContent) {
-      hasTextNodes = true;
-    }
-    if (node.children) {
-      node.children.forEach(checkForTextNodes);
-    }
-  }
-  checkForTextNodes(data);
 
   // Generate node creation and tree building
   const nodes = [];
@@ -726,14 +738,14 @@ function generateTest(name, testData, boxSizing, category = '') {
   }
 
   // Second pass: generate code
-  function generateNodeCode(node, parentVar) {
+  function generateNodeCode(node) {
     const nodeVar = nodeMap.get(node);
     const hasChildren = node.children && node.children.length > 0;
     
     if (hasChildren) {
       // Generate children first
       node.children.forEach(child => {
-        generateNodeCode(child, nodeVar);
+        generateNodeCode(child);
       });
       
       // Now create the parent node with children
@@ -743,7 +755,7 @@ function generateTest(name, testData, boxSizing, category = '') {
       nodes.push(`let ${nodeVar} = new_with_children tree (${style}) ${childrenArray} |> Result.get_ok in`);
     } else {
       // Leaf node - use new_leaf
-      nodes.push(generateNode(nodeVar, node, parentVar, boxSizing));
+      nodes.push(generateNode(nodeVar, node, boxSizing));
     }
 
     // Generate assertions for this node
@@ -751,7 +763,7 @@ function generateTest(name, testData, boxSizing, category = '') {
   }
 
   assignNodeVars(data);
-  generateNodeCode(data, null);
+  generateNodeCode(data);
   
   // Get the root node variable
   const rootNodeVar = nodeMap.get(data);
@@ -763,29 +775,27 @@ function generateTest(name, testData, boxSizing, category = '') {
     height = ${availableSpaceToOCaml(viewport.height)};
   }`;
 
-  // Generate test function - note we need measure_function parameter if hasTextNodes
-  const measureParam = hasTextNodes ? ' measure_function' : '';
   const functionPrefix = category ? `${category}_` : '';
 
   return `
-let test_${functionPrefix}${name}_${boxSizing}${measureParam} () =
+let test_${functionPrefix}${name}_${boxSizing} () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
     let open Alcotest in
     check (float ${useRounding ? `0.001` : `0.1`}) msg expected actual
   in
   
-  let tree = new_tree () in
+  let tree = Gentest_helpers.new_test_tree () in
   ${useRounding ? '' : 'let tree = disable_rounding tree in'}
   
   (* Create nodes *)
   ${nodes.join('\n  ')}
   
   (* Compute layout *)
-  ${hasTextNodes
-      ? `let _ = compute_layout_with_measure tree ${rootNodeVar} ${availableSpace} measure_function |> Result.get_ok in`
-      : `let _ = compute_layout tree ${rootNodeVar} ${availableSpace} |> Result.get_ok in`
-    }
+  let _ =
+    compute_layout_with_measure tree ${rootNodeVar} ${availableSpace}
+      Gentest_helpers.test_measure_function
+    |> Result.get_ok in
   
   (* Print tree for debugging *)
   Printf.printf "\\nComputed tree:\\n";
@@ -797,90 +807,176 @@ let test_${functionPrefix}${name}_${boxSizing}${measureParam} () =
 `;
 }
 
-function generateMeasureFunction() {
-  return `
-(* Test measure function *)
-let measure_function known_dimensions available_space _node_id node_context _style =
-  match node_context with
-  | Some (MeasureFunction.Fixed size) -> size
-  | Some (MeasureFunction.Text text) ->
-      (* Ahem font simulation: each character is 10x10 *)
-      let h_width = 10.0 in
-      let h_height = 10.0 in
-      let lines = 
-        (* Split on zero-width space - OCaml's split_on_char works on bytes, 
-           so we need to split on the UTF-8 sequence *)
-        let split_on_string sep str =
-          let sep_len = String.length sep in
-          let rec aux acc start =
-            try
-              let pos = String.index_from str start (String.get sep 0) in
-              if pos + sep_len <= String.length str && 
-                 String.sub str pos sep_len = sep then
-                aux (String.sub str start (pos - start) :: acc) (pos + sep_len)
-              else
-                aux acc (pos + 1)
-            with Not_found ->
-              List.rev (String.sub str start (String.length str - start) :: acc)
-          in
-          aux [] 0
+function generateHelpersModule() {
+  return `(* Shared test helpers for generated tests *)
+open Toffee
+open Geometry
+
+module Writing_mode = struct
+  type t =
+    | Horizontal
+    | Vertical
+end
+
+type measure_data =
+  | Zero
+  | Fixed of float size
+  | Aspect_ratio of aspect_ratio_data
+  | Ahem_text of ahem_text_data
+
+and aspect_ratio_data = { width : float; height_ratio : float }
+
+and ahem_text_data = { text_content : string; writing_mode : Writing_mode.t }
+
+type test_node_context = { mutable count : int; measure_data : measure_data }
+
+let new_test_tree () = new_tree ()
+
+let zero = { count = 0; measure_data = Zero }
+
+let fixed width height = { count = 0; measure_data = Fixed { width; height } }
+
+let aspect_ratio width height_ratio =
+  { count = 0; measure_data = Aspect_ratio { width; height_ratio } }
+
+let ahem_text text_content writing_mode =
+  { count = 0; measure_data = Ahem_text { text_content; writing_mode } }
+
+let option_or_zero = function Some value -> value | None -> 0.0
+
+let apply_known_dimension known fallback =
+  match known with Some value -> value | None -> fallback
+
+let measure_aspect_ratio (known_dimensions : float option size)
+    (data : aspect_ratio_data) =
+  let Size.{ width = known_width; height = known_height } = known_dimensions in
+  let { width = data_width; height_ratio } = data in
+  let width = apply_known_dimension known_width data_width in
+  let height =
+    apply_known_dimension known_height (width *. height_ratio)
+  in
+  Size.{ width; height }
+
+let split_on_zws str =
+  let zws = "\\xE2\\x80\\x8B" (* U+200B zero width space *) in
+  let zws_len = String.length zws in
+  let rec loop acc start =
+    match String.index_from_opt str start zws.[0] with
+    | None ->
+        List.rev (String.sub str start (String.length str - start) :: acc)
+    | Some idx ->
+        if idx + zws_len <= String.length str
+           && String.sub str idx zws_len = zws
+        then
+          let part = String.sub str start (idx - start) in
+          loop (part :: acc) (idx + zws_len)
+        else loop acc (idx + 1)
+  in
+  loop [] 0
+
+let measure_ahem_text
+    (known_dimensions : float option size)
+    (available_space : Available_space.t size)
+    (data : ahem_text_data) =
+  let { text_content; writing_mode } = data in
+  let Size.{ width = known_width; height = known_height } = known_dimensions in
+  let Size.{ width = available_width; height = available_height } =
+    available_space in
+  let inline_axis =
+    match writing_mode with
+    | Writing_mode.Horizontal -> Absolute_axis.Horizontal
+    | Writing_mode.Vertical -> Absolute_axis.Vertical
+  in
+  let lines = split_on_zws text_content in
+  let min_line_length =
+    List.fold_left (fun acc line -> max acc (String.length line)) 0 lines
+  in
+  let max_line_length =
+    List.fold_left (fun acc line -> acc + String.length line) 0 lines
+  in
+  let inline_available =
+    match inline_axis with
+    | Absolute_axis.Horizontal -> available_width
+    | Absolute_axis.Vertical -> available_height
+  in
+  let inline_known, block_known =
+    match inline_axis with
+    | Absolute_axis.Horizontal -> known_width, known_height
+    | Absolute_axis.Vertical -> known_height, known_width
+  in
+  let h_width = 10.0 in
+  let h_height = 10.0 in
+  let inline_size =
+    match inline_known with
+    | Some size -> size
+    | None -> (
+        match inline_available with
+        | Available_space.Min_content -> float_of_int min_line_length *. h_width
+        | Available_space.Max_content -> float_of_int max_line_length *. h_width
+        | Available_space.Definite size ->
+            Float.min size (float_of_int max_line_length *. h_width))
+  in
+  let inline_size =
+    Float.max inline_size (float_of_int min_line_length *. h_width)
+  in
+  let block_size =
+    match block_known with
+    | Some size -> size
+    | None ->
+        let inline_line_length =
+          int_of_float (Float.floor (inline_size /. h_width))
         in
-        split_on_string "\\u{200b}" text in
-      let min_line_length = List.fold_left max 0 (List.map String.length lines) in
-      let max_line_length = List.fold_left (+) 0 (List.map String.length lines) in
-      
-      let inline_size = 
-        match known_dimensions.Geometry.Size.width with
-        | Some w -> w
-        | None -> (
-            match available_space.Geometry.Size.width with
-            | Available_space.Min_content -> float_of_int min_line_length *. h_width
-            | Available_space.Max_content -> float_of_int max_line_length *. h_width
-            | Available_space.Definite inline_size -> 
-                Float.min inline_size (float_of_int max_line_length *. h_width)
-        ) |> Float.max (float_of_int min_line_length *. h_width)
-      in
-      
-      let block_size =
-        match known_dimensions.Geometry.Size.height with
-        | Some h -> h
-        | None ->
-            let inline_line_length = int_of_float (Float.floor (inline_size /. h_width)) in
-            (* Match Taffy's exact line counting logic *)
-            let line_count = ref 1 in
-            let current_line_length = ref 0 in
-            List.iter (fun line ->
-              let line_len = String.length line in
-              if !current_line_length + line_len > inline_line_length then begin
-                if !current_line_length > 0 then
-                  incr line_count;
-                current_line_length := line_len
-              end else begin
-                current_line_length := !current_line_length + line_len
-              end
-            ) lines;
-            float_of_int !line_count *. h_height
-      in
-      { width = inline_size; height = block_size }
-  | Some (MeasureFunction.Text_vertical text) ->
-      (* Vertical text: height is based on text length, width is based on available space *)
-      let h_width = 10.0 in
-      let h_height = 10.0 in
-      let text_length = String.length text in
-      
-      let block_size = float_of_int text_length *. h_height in
-      let inline_size = 
-        match known_dimensions.Geometry.Size.width with
-        | Some w -> w
-        | None -> (
-            match available_space.Geometry.Size.width with
-            | Available_space.Min_content -> h_width
-            | Available_space.Max_content -> h_width
-            | Available_space.Definite w -> w
-        )
-      in
-      { width = inline_size; height = block_size }
-  | None -> { width = 0.0; height = 0.0 }
+        let line_count = ref 1 in
+        let current_line_length = ref 0 in
+        List.iter
+          (fun line ->
+            let line_len = String.length line in
+            if !current_line_length + line_len > inline_line_length then begin
+              if !current_line_length > 0 then incr line_count;
+              current_line_length := line_len
+            end else current_line_length := !current_line_length + line_len)
+          lines;
+        float_of_int !line_count *. h_height
+  in
+  match writing_mode with
+  | Writing_mode.Horizontal ->
+      Size.{ width = inline_size; height = block_size }
+  | Writing_mode.Vertical -> Size.{ width = block_size; height = inline_size }
+
+let test_measure_function
+    (known_dimensions : float option size)
+    (available_space : Available_space.t size)
+    (node_id : Node_id.t)
+    (context : test_node_context option)
+    (style : Style.t) =
+  ignore node_id;
+  ignore style;
+  let Size.{ width = known_width; height = known_height } = known_dimensions in
+  match known_dimensions with
+  | Size.{ width = Some width; height = Some height } ->
+      Size.{ width; height }
+  | _ -> (
+      match context with
+      | None ->
+          Size.
+            {
+              width = option_or_zero known_width;
+              height = option_or_zero known_height;
+            }
+      | Some context ->
+          context.count <- context.count + 1;
+          let computed =
+            match context.measure_data with
+            | Zero -> Size.{ width = 0.0; height = 0.0 }
+            | Fixed size -> size
+            | Aspect_ratio data -> measure_aspect_ratio known_dimensions data
+            | Ahem_text data -> measure_ahem_text known_dimensions available_space data
+          in
+          Size.
+            {
+              width = apply_known_dimension known_width computed.width;
+              height = apply_known_dimension known_height computed.height;
+            })
 `;
 }
 
@@ -1005,32 +1101,11 @@ async function main() {
         throw new Error(`Failed to generate test functions for ${fixturePath}`);
       }
 
-      // Check if we have any text nodes
-      let hasTextNodes = false;
-      function checkForTextNodes(node) {
-        if (node.textContent) hasTextNodes = true;
-        if (node.children) node.children.forEach(checkForTextNodes);
-      }
-      checkForTextNodes(borderBoxData);
-      checkForTextNodes(contentBoxData);
-
       const testModule = `
 (* Generated test for ${name} *)
 (* Do not edit this file directly. It is generated by gentest.js *)
 
 open Toffee
-
-${hasTextNodes ? `(* Test context for nodes *)
-module MeasureFunction = struct
-  type t = 
-    | Fixed of float Geometry.size
-    | Text of string
-    | Text_vertical of string
-  [@@warning "-37"]
-end
-
-${generateMeasureFunction()}
-` : ''}
 
 ${borderBoxTest}
 
@@ -1040,14 +1115,17 @@ ${contentBoxTest}
 let tests =
   let open Alcotest in
   [
-    test_case "${name} (border-box)" \`Quick ${hasTextNodes ? '(fun () -> test_' + name.replace(/-/g, '_') + '_border_box measure_function ())' : 'test_' + name.replace(/-/g, '_') + '_border_box'};
-    test_case "${name} (content-box)" \`Quick ${hasTextNodes ? '(fun () -> test_' + name.replace(/-/g, '_') + '_content_box measure_function ())' : 'test_' + name.replace(/-/g, '_') + '_content_box'};
+    test_case "${name} (border-box)" \`Quick test_${name.replace(/-/g, '_')}_border_box;
+    test_case "${name} (content-box)" \`Quick test_${name.replace(/-/g, '_')}_content_box;
   ]
 `;
 
       const outputName = `test_${name.replace(/-/g, '_')}.ml`;
-      const outputPath = path.join(testDir, 'generated', outputName);
-      await fs.mkdir(path.dirname(outputPath), { recursive: true });
+      const generatedDir = path.join(testDir, 'generated');
+      await fs.mkdir(generatedDir, { recursive: true });
+      const helpersPath = path.join(generatedDir, 'gentest_helpers.ml');
+      await fs.writeFile(helpersPath, generateHelpersModule());
+      const outputPath = path.join(generatedDir, outputName);
       await fs.writeFile(outputPath, testModule);
 
       console.log(`Generated ${outputPath}`);
@@ -1066,6 +1144,8 @@ let tests =
   // Create generated directory
   const generatedDir = path.join(testDir, 'generated');
   await fs.mkdir(generatedDir, { recursive: true });
+  const helpersPath = path.join(generatedDir, 'gentest_helpers.ml');
+  await fs.writeFile(helpersPath, generateHelpersModule());
 
   for (const category of categories) {
     const categoryDir = path.join(fixturesDir, category);
@@ -1121,15 +1201,6 @@ let tests =
             throw new Error(`Failed to generate test functions for ${file}`);
           }
 
-          // Check if we have any text nodes to determine if we need measure functions
-          let hasTextNodes = false;
-          function checkForTextNodes(node) {
-            if (node.textContent) hasTextNodes = true;
-            if (node.children) node.children.forEach(checkForTextNodes);
-          }
-          checkForTextNodes(borderBoxData);
-          checkForTextNodes(contentBoxData);
-
           // Write individual test file without test runner
           const testModuleName = `test_${category}_${cleanName.replace(/-/g, '_')}`;
           const testName = cleanName.replace(/-/g, '_').replace(/\./g, '_');
@@ -1139,18 +1210,6 @@ let tests =
 
 open Toffee
 
-${hasTextNodes ? `(* Test context for nodes *)
-module MeasureFunction = struct
-  type t = 
-    | Fixed of float Geometry.size
-    | Text of string
-    | Text_vertical of string
-  [@@warning "-37"]
-end
-
-${generateMeasureFunction()}
-` : ''}
-
 ${borderBoxTest}
 
 ${contentBoxTest}
@@ -1159,8 +1218,8 @@ ${contentBoxTest}
 let tests =
   let open Alcotest in
   [
-    test_case "${testName} (border-box)" \`Quick ${hasTextNodes ? '(fun () -> test_' + category + '_' + testName + '_border_box measure_function ())' : 'test_' + category + '_' + testName + '_border_box'};
-    test_case "${testName} (content-box)" \`Quick ${hasTextNodes ? '(fun () -> test_' + category + '_' + testName + '_content_box measure_function ())' : 'test_' + category + '_' + testName + '_content_box'};
+    test_case "${testName} (border-box)" \`Quick test_${category}_${testName}_border_box;
+    test_case "${testName} (content-box)" \`Quick test_${category}_${testName}_content_box;
   ]
 `;
 
@@ -1231,6 +1290,7 @@ let tests =
       .filter(f => f.endsWith('.ml') && f.startsWith('test_') && f !== 'test_runner.ml')
       .map(f => f.replace('.ml', ''))
       .sort();
+    const helperModule = 'gentest_helpers';
 
     if (testFiles.length > 0) {
       // Group test files by category
@@ -1284,11 +1344,12 @@ let () =
       console.log('Generated test_runner.ml');
 
       // Generate dune file
+      const moduleList = [helperModule, ...testFiles, 'test_runner'].join(' ');
       const duneContent = `(test
  (package toffee)
  (name test_runner)
- (libraries toffee alcotest)
- (modules ${testFiles.join(' ')} test_runner))
+ (libraries toffee toffee.style alcotest)
+ (modules ${moduleList}))
 `;
 
       await fs.writeFile(path.join(generatedDir, 'dune'), duneContent);

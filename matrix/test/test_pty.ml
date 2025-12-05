@@ -1,70 +1,43 @@
-open Pty
+open Alcotest
 
-let test_spawn_echo () =
-  (* Spawn echo process with a simple message *)
-  let pty = spawn ~prog:"echo" ~args:[ "Hello, PTY!" ] () in
+(* Test Helpers *)
 
-  (* Set non-blocking mode *)
-  set_nonblock pty;
-
-  (* Buffer for reading *)
-  let buffer = Bytes.create 256 in
-  let total_read = ref 0 in
-
-  (* Read loop with timeout *)
+let read_with_select pty buffer offset length timeout =
   let start_time = Unix.gettimeofday () in
+  let total_read = ref 0 in
   let continue = ref true in
-  while !continue && Unix.gettimeofday () -. start_time < 1.0 do
-    let read_fds = [ in_fd pty ] in
+  while !continue && Unix.gettimeofday () -. start_time < timeout do
+    let read_fds = [ Pty.in_fd pty ] in
     let ready_read, _, _ = Unix.select read_fds [] [] 0.1 in
     if ready_read <> [] then
       try
         let n =
-          read pty buffer !total_read (Bytes.length buffer - !total_read)
+          Pty.read pty buffer (offset + !total_read) (length - !total_read)
         in
         if n > 0 then total_read := !total_read + n
-        else if n = 0 then
-          (* EOF reached *)
-          continue := false
+        else if n = 0 then continue := false (* EOF *)
       with
       | Unix.Unix_error (Unix.EAGAIN, _, _)
       | Unix.Unix_error (Unix.EWOULDBLOCK, _, _)
       ->
         ()
   done;
+  !total_read
 
-  (* Verify we got output *)
-  Alcotest.(check bool) "read some data" true (!total_read > 0);
-  let output = Bytes.sub_string buffer 0 !total_read in
-  Alcotest.(check bool) "contains Hello" true (String.contains output 'H');
-
-  (* Clean up *)
-  close pty
-
-let test_spawn_cat_small () =
-  (* Spawn cat process *)
-  let pty = spawn ~prog:"cat" ~args:[] () in
-
-  (* Set non-blocking mode *)
-  set_nonblock pty;
-
-  (* Small test data *)
-  let test_data = "Hello, world!\n" in
-
-  (* Write test data *)
+let write_all_with_select pty data timeout =
+  Pty.set_nonblock pty;
   let written = ref 0 in
   let start_time = Unix.gettimeofday () in
   while
-    !written < String.length test_data
-    && Unix.gettimeofday () -. start_time < 1.0
+    !written < String.length data
+    && Unix.gettimeofday () -. start_time < timeout
   do
-    let write_fds = [ out_fd pty ] in
+    let write_fds = [ Pty.out_fd pty ] in
     let _, ready_write, _ = Unix.select [] write_fds [] 0.1 in
     if ready_write <> [] then
       try
         let n =
-          write_string pty test_data !written
-            (String.length test_data - !written)
+          Pty.write_string pty data !written (String.length data - !written)
         in
         if n > 0 then written := !written + n
       with
@@ -73,132 +46,137 @@ let test_spawn_cat_small () =
       ->
         ()
   done;
+  !written
 
-  Alcotest.(check int) "wrote all data" (String.length test_data) !written;
+(* Basic PTY Operations *)
 
-  (* Read back the data *)
-  let buffer = Bytes.create 256 in
-  let total_read = ref 0 in
+let test_open_pty () =
+  let master, slave = Pty.open_pty () in
+  check bool "master fd valid" true Unix.(Pty.file_descr master <> stdin);
+  check bool "slave fd valid" true Unix.(Pty.file_descr slave <> stdin);
+  check bool "fds different" true (Pty.file_descr master <> Pty.file_descr slave);
+  Pty.close master;
+  Pty.close slave
 
-  (* Read loop with timeout *)
-  let start_time = Unix.gettimeofday () in
-  while
-    !total_read < String.length test_data
-    && Unix.gettimeofday () -. start_time < 1.0
-  do
-    let read_fds = [ in_fd pty ] in
-    let ready_read, _, _ = Unix.select read_fds [] [] 0.1 in
-    if ready_read <> [] then
-      try
-        let n =
-          read pty buffer !total_read (Bytes.length buffer - !total_read)
-        in
-        if n > 0 then total_read := !total_read + n
-      with
-      | Unix.Unix_error (Unix.EAGAIN, _, _)
-      | Unix.Unix_error (Unix.EWOULDBLOCK, _, _)
-      ->
-        ()
-  done;
+let test_open_pty_with_winsize () =
+  let ws = Pty.{ rows = 24; cols = 80; xpixel = 0; ypixel = 0 } in
+  let master, slave = Pty.open_pty ~winsize:ws () in
+  let actual_ws = Pty.get_winsize slave in
+  check int "rows set" 24 actual_ws.rows;
+  check int "cols set" 80 actual_ws.cols;
+  Pty.close master;
+  Pty.close slave
 
-  (* Verify we read back what we wrote - PTY might convert \n to \r\n *)
-  Alcotest.(check bool)
-    "read at least the data" true
-    (!total_read >= String.length test_data);
-  let read_data = Bytes.sub_string buffer 0 !total_read in
-
-  (* PTY often converts line endings, so just check that our data is present *)
-  let contains_data =
-    try
-      let _ = String.index read_data 'H' in
-      let _ = String.index read_data 'w' in
-      true
-    with Not_found -> false
+let test_with_pty () =
+  let result =
+    Pty.with_pty (fun master _slave ->
+        check bool "master valid" true Unix.(Pty.file_descr master <> stdin);
+        42)
   in
-  Alcotest.(check bool) "contains test data" true contains_data;
+  check int "result returned" 42 result
 
-  (* Clean up *)
-  close pty
+(* Window Size Management *)
 
-let test_spawn_sh () =
-  (* Spawn sh with a simple command *)
-  let pty = spawn ~prog:"sh" ~args:[ "-c"; "echo 'Shell test'" ] () in
-
-  (* Set non-blocking mode *)
-  set_nonblock pty;
-
-  (* Buffer for reading *)
-  let buffer = Bytes.create 256 in
-  let total_read = ref 0 in
-
-  (* Read loop with timeout *)
-  let start_time = Unix.gettimeofday () in
-  let continue = ref true in
-  while !continue && Unix.gettimeofday () -. start_time < 1.0 do
-    let read_fds = [ in_fd pty ] in
-    let ready_read, _, _ = Unix.select read_fds [] [] 0.1 in
-    if ready_read <> [] then
-      try
-        let n =
-          read pty buffer !total_read (Bytes.length buffer - !total_read)
-        in
-        if n > 0 then total_read := !total_read + n
-        else if n = 0 then
-          (* EOF reached *)
-          continue := false
-      with
-      | Unix.Unix_error (Unix.EAGAIN, _, _)
-      | Unix.Unix_error (Unix.EWOULDBLOCK, _, _)
-      ->
-        ()
-  done;
-
-  (* Verify we got output *)
-  Alcotest.(check bool) "read some data" true (!total_read > 0);
-  let output = Bytes.sub_string buffer 0 !total_read in
-  Alcotest.(check bool) "contains Shell" true (String.contains output 'S');
-
-  (* Clean up *)
-  close pty
+let test_winsize_operations () =
+  let master, slave = Pty.open_pty () in
+  let ws = Pty.{ rows = 30; cols = 120; xpixel = 0; ypixel = 0 } in
+  Pty.set_winsize slave ws;
+  let actual = Pty.get_winsize slave in
+  check int "rows match" 30 actual.rows;
+  check int "cols match" 120 actual.cols;
+  Pty.close master;
+  Pty.close slave
 
 let test_resize () =
-  (* Spawn a long-running process *)
-  let pty =
-    spawn ~prog:"sh" ~args:[ "-c"; "sleep 0.1; echo 'Resize test'" ] ()
-  in
+  let master, slave = Pty.open_pty () in
+  Pty.resize slave ~rows:25 ~cols:100;
+  let ws = Pty.get_winsize slave in
+  check int "rows resized" 25 ws.rows;
+  check int "cols resized" 100 ws.cols;
+  Pty.close master;
+  Pty.close slave
 
-  (* Test resize (this should not fail even if the process doesn't use the size) *)
-  resize pty ~cols:80 ~rows:24;
-  resize pty ~cols:100 ~rows:30;
-  resize pty ~cols:40 ~rows:20;
+let test_inherit_size () =
+  let master1, slave1 = Pty.open_pty () in
+  let master2, slave2 = Pty.open_pty () in
+  Pty.resize slave1 ~rows:40 ~cols:160;
+  Pty.inherit_size ~src:slave1 ~dst:slave2;
+  let ws2 = Pty.get_winsize slave2 in
+  check int "inherited rows" 40 ws2.rows;
+  check int "inherited cols" 160 ws2.cols;
+  Pty.close master1;
+  Pty.close slave1;
+  Pty.close master2;
+  Pty.close slave2
 
-  (* Set non-blocking mode for cleanup *)
-  set_nonblock pty;
+(* Process Spawning *)
 
-  (* Wait briefly for process to complete *)
-  Unix.sleepf 0.2;
-
-  (* Try to read any output *)
+let test_spawn_echo () =
+  let pty = Pty.spawn ~prog:"echo" ~args:[ "Hello, PTY!" ] () in
+  Pty.set_nonblock pty;
   let buffer = Bytes.create 256 in
-  let _ =
-    try read pty buffer 0 256 with Unix.Unix_error (Unix.EAGAIN, _, _) -> 0
-  in
+  let n = read_with_select pty buffer 0 256 1.0 in
+  check bool "read some data" true (n > 0);
+  let output = Bytes.sub_string buffer 0 n in
+  check bool "contains Hello" true (String.contains output 'H');
+  Pty.close pty
 
-  (* Clean up *)
-  close pty
+let test_spawn_cat () =
+  let pty = Pty.spawn ~prog:"cat" ~args:[] () in
+  Pty.set_nonblock pty;
+  let test_data = "Hello, world!\n" in
+  let written = write_all_with_select pty test_data 1.0 in
+  check int "wrote all data" (String.length test_data) written;
+
+  let buffer = Bytes.create 256 in
+  let n = read_with_select pty buffer 0 256 1.0 in
+  check bool "read at least the data" true (n >= String.length test_data);
+  let output = Bytes.sub_string buffer 0 n in
+  check bool "contains test data" true (String.contains output 'H');
+  Pty.close pty
+
+let test_spawn_sh () =
+  let pty = Pty.spawn ~prog:"sh" ~args:[ "-c"; "echo 'Shell test'" ] () in
+  Pty.set_nonblock pty;
+  let buffer = Bytes.create 256 in
+  let n = read_with_select pty buffer 0 256 1.0 in
+  check bool "read some data" true (n > 0);
+  let output = Bytes.sub_string buffer 0 n in
+  check bool "contains Shell" true (String.contains output 'S');
+  Pty.close pty
+
+let test_spawn_with_env () =
+  let env = [| "TEST_VAR=hello" |] in
+  let pty = Pty.spawn ~env ~prog:"sh" ~args:[ "-c"; "echo $TEST_VAR" ] () in
+  Pty.set_nonblock pty;
+  let buffer = Bytes.create 256 in
+  let n = read_with_select pty buffer 0 256 1.0 in
+  let output = Bytes.sub_string buffer 0 n in
+  check bool "env var in output" true (String.contains output 'h');
+  Pty.close pty
+
+let test_spawn_with_cwd () =
+  let pty = Pty.spawn ~cwd:"/tmp" ~prog:"pwd" ~args:[] () in
+  Pty.set_nonblock pty;
+  let buffer = Bytes.create 256 in
+  let n = read_with_select pty buffer 0 256 1.0 in
+  let output = String.trim (Bytes.sub_string buffer 0 n) in
+  (* /tmp may be a symlink to /private/tmp on macOS *)
+  check bool "working directory is tmp" true
+    (output = "/tmp" || output = "/private/tmp");
+  Pty.close pty
+
+(* Non-blocking I/O *)
 
 let test_nonblocking_io () =
-  (* Spawn cat process *)
-  let pty = spawn ~prog:"cat" ~args:[] () in
+  let pty = Pty.spawn ~prog:"cat" ~args:[] () in
+  Pty.set_nonblock pty;
 
-  (* Set non-blocking mode *)
-  set_nonblock pty;
-
-  (* Try to read when no data available - should not block *)
+  (* Read when no data available - should return EAGAIN *)
   let buffer = Bytes.create 256 in
   let result =
     try
-      let n = read pty buffer 0 256 in
+      let n = Pty.read pty buffer 0 256 in
       Some n
     with
     | Unix.Unix_error (Unix.EAGAIN, _, _)
@@ -206,116 +184,99 @@ let test_nonblocking_io () =
     ->
       None
   in
-
-  Alcotest.(check (option int)) "read returns EAGAIN" None result;
+  check (option int) "read returns EAGAIN" None result;
 
   (* Write some data *)
   let test_data = "Test\n" in
-  let _ = write_string pty test_data 0 (String.length test_data) in
+  let _ = Pty.write_string pty test_data 0 (String.length test_data) in
 
-  (* Now read should work after a brief delay *)
+  (* Now read should work after brief delay *)
   Unix.sleepf 0.1;
   let n =
-    try read pty buffer 0 256 with Unix.Unix_error (Unix.EAGAIN, _, _) -> 0
+    try Pty.read pty buffer 0 256
+    with Unix.Unix_error (Unix.EAGAIN, _, _) -> 0
   in
-
-  Alcotest.(check bool) "read some data" true (n > 0);
-
-  (* Clean up *)
-  close pty
+  check bool "read some data" true (n > 0);
+  Pty.close pty
 
 let test_multiple_writes () =
-  (* Spawn cat process *)
-  let pty = spawn ~prog:"cat" ~args:[] () in
+  let pty = Pty.spawn ~prog:"cat" ~args:[] () in
+  Pty.set_nonblock pty;
 
-  (* Set non-blocking mode *)
-  set_nonblock pty;
-
-  (* Write multiple lines *)
   let lines = [ "First line\n"; "Second line\n"; "Third line\n" ] in
   List.iter
     (fun line ->
-      let written = ref 0 in
-      while !written < String.length line do
-        let n =
-          write_string pty line !written (String.length line - !written)
-        in
-        written := !written + n
-      done)
+      let _ = write_all_with_select pty line 1.0 in
+      ())
     lines;
 
-  (* Read all data back *)
   let buffer = Bytes.create 1024 in
-  let total_read = ref 0 in
   let expected_total =
     List.fold_left (fun acc s -> acc + String.length s) 0 lines
   in
+  let n = read_with_select pty buffer 0 1024 1.0 in
 
-  let start_time = Unix.gettimeofday () in
-  while
-    !total_read < expected_total && Unix.gettimeofday () -. start_time < 1.0
-  do
-    try
-      let n = read pty buffer !total_read (Bytes.length buffer - !total_read) in
-      if n > 0 then total_read := !total_read + n
-    with Unix.Unix_error (Unix.EAGAIN, _, _) -> Unix.sleepf 0.01
-  done;
+  check bool "read at least expected data" true (n >= expected_total);
+  let output = Bytes.sub_string buffer 0 n in
+  check bool "contains all lines" true
+    (String.contains output 'F' && String.contains output 'S'
+   && String.contains output 'T');
+  Pty.close pty
 
-  (* With cat, we might get extra characters, so check we got at least what we sent *)
-  Alcotest.(check bool)
-    "read at least expected data" true
-    (!total_read >= expected_total);
-  let output = Bytes.sub_string buffer 0 !total_read in
-  (* Verify all our lines are present *)
-  let contains_all =
-    String.contains output 'F'
-    (* First *)
-    && String.contains output 'S'
-    &&
-    (* Second *)
-    String.contains output 'T' (* Third *)
-  in
-  Alcotest.(check bool) "contains all lines" true contains_all;
+(* Edge Cases *)
 
-  (* Clean up *)
-  close pty
+let test_close_idempotent () =
+  let master, slave = Pty.open_pty () in
+  Pty.close master;
+  Pty.close master;
+  (* Should not crash *)
+  Pty.close slave
+
+let test_eof_on_close () =
+  let master, slave = Pty.open_pty () in
+  Pty.close master;
+  let buf = Bytes.create 10 in
+  let n = Pty.read slave buf 0 10 in
+  check int "EOF on master close" 0 n;
+  Pty.close slave
 
 let test_pty_close () =
-  (* Spawn a process *)
-  let pty = spawn ~prog:"cat" ~args:[] () in
-
-  (* Close the PTY *)
-  close pty;
-
-  (* Try to use closed PTY - should fail *)
+  let pty = Pty.spawn ~prog:"cat" ~args:[] () in
+  Pty.close pty;
   let buffer = Bytes.create 16 in
   let failed =
     try
-      let _ = read pty buffer 0 16 in
+      let _ = Pty.read pty buffer 0 16 in
       false
-    with
-    | Unix.Unix_error (Unix.EBADF, _, _) -> true
-    | _ -> false
+    with Unix.Unix_error (Unix.EBADF, _, _) -> true
   in
+  check bool "read after close fails" true failed
 
-  Alcotest.(check bool) "read after close fails" true failed
+(* Test Suite *)
 
-(* Test suite *)
-let () =
-  let open Alcotest in
-  run "PTY"
-    [
-      ( "basic",
-        [
-          test_case "spawn echo" `Quick test_spawn_echo;
-          test_case "spawn cat small" `Quick test_spawn_cat_small;
-          test_case "spawn sh" `Quick test_spawn_sh;
-        ] );
-      ( "features",
-        [
-          test_case "resize" `Quick test_resize;
-          test_case "non-blocking I/O" `Quick test_nonblocking_io;
-          test_case "multiple writes" `Quick test_multiple_writes;
-        ] );
-      ("lifecycle", [ test_case "close" `Quick test_pty_close ]);
-    ]
+let tests =
+  [
+    (* Basic Operations *)
+    test_case "open pty" `Quick test_open_pty;
+    test_case "open pty with winsize" `Quick test_open_pty_with_winsize;
+    test_case "with_pty" `Quick test_with_pty;
+    (* Window Size *)
+    test_case "winsize operations" `Quick test_winsize_operations;
+    test_case "resize" `Quick test_resize;
+    test_case "inherit size" `Quick test_inherit_size;
+    (* Process Spawning *)
+    test_case "spawn echo" `Quick test_spawn_echo;
+    test_case "spawn cat" `Quick test_spawn_cat;
+    test_case "spawn sh" `Quick test_spawn_sh;
+    test_case "spawn with env" `Quick test_spawn_with_env;
+    test_case "spawn with cwd" `Quick test_spawn_with_cwd;
+    (* Non-blocking I/O *)
+    test_case "nonblocking io" `Quick test_nonblocking_io;
+    test_case "multiple writes" `Quick test_multiple_writes;
+    (* Edge Cases *)
+    test_case "close idempotent" `Quick test_close_idempotent;
+    test_case "eof on close" `Quick test_eof_on_close;
+    test_case "pty close" `Quick test_pty_close;
+  ]
+
+let () = run "matrix.pty" [ ("pty", tests) ]

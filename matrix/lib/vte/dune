@@ -1,4 +1,4 @@
 (library
  (name vte)
  (public_name matrix.vte)
- (libraries uutf uuseg ansi str grid))
+ (libraries ansi glyph grid uutf bigarray))

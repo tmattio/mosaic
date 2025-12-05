@@ -1,0 +1,12 @@
+(library
+ (name matrix)
+ (public_name matrix)
+ (libraries
+  matrix.ansi
+  matrix.grid
+  matrix.screen
+  matrix.input
+  matrix.terminal
+  matrix.glyph
+  unix
+  threads))

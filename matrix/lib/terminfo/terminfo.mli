@@ -1,35 +1,68 @@
-(** Type-safe terminfo library using GADTs.
+(** Typed access to terminfo capabilities.
 
-    This library provides a strongly-typed interface to terminal capabilities,
-    eliminating string-based lookups and runtime errors from typos.
+    [Terminfo] loads entries from the system terminfo database and exposes each
+    capability as a phantom-typed token, so the compiler enforces the return
+    type of every lookup while staying close to the original terminfo design.
+
+    {1 Overview}
+
+    - [load] reads a single entry and returns an immutable {!t}.
+    - [get] performs an O(1) lookup by supplying a {!cap}.
+    - Parameterized capabilities return formatters that emit ready-to-send
+      escape sequences using the entry's [%]-expressions.
+
+    {1 Loading entries}
+
+    [load] searches [/usr/share/terminfo], [/lib/terminfo], [/etc/terminfo], and
+    [$HOME/.terminfo] (when present) for the entry named by [?term] or by the
+    [TERM] environment variable. The parser allocates fresh hashtables for the
+    entry's boolean, numeric, and string tables and populates them from the
+    file, making each handle independent and safe to use concurrently. Errors
+    surface as [`Not_found] when no entry exists or [`Parse_error _] when the
+    file is malformed.
+
+    {1 Capability tokens}
+
+    Capabilities are represented by the {!cap} GADT. The phantom type encodes
+    whether [get] returns [bool], [int], [string], or higher-order functions
+    such as [int -> string] or [(int * int) -> string]. Supplying a mismatched
+    constructor is a compile-time error, and each constructor maps directly to a
+    documented terminfo capability name.
+
+    {1 Retrieval}
+
+    [get ti cap] never mutates [ti] and returns [None] when the capability is
+    missing. Parameterized capabilities close over the underlying formatter: the
+    returned function evaluates the terminfo [%] expression on every call and
+    produces a fresh string ready to write to the terminal. Arguments are passed
+    through the formatter verbatim. If the capability string contains the [%i]
+    increment directive, coordinates are adjusted by the formatter; otherwise,
+    use the exact values expected by the terminal (typically 0-based or 1-based
+    depending on the capability). {!Has_colors} is synthesized from the numeric
+    [colors] field and therefore always yields [Some true] or [Some false].
 
     {1 Example}
 
     {[
       match Terminfo.load () with
-      | Error `Not_found -> prerr_endline "No terminfo database found"
-      | Error (`Parse_error msg) -> prerr_endline ("Parse error: " ^ msg)
+      | Error (`Parse_error msg) ->
+          prerr_endline ("terminfo parse error: " ^ msg)
+      | Error `Not_found -> prerr_endline "missing terminfo entry"
       | Ok ti -> (
-          (* Clear screen - type system knows this returns string option *)
-          (match Terminfo.get ti Clear_screen with
-          | None -> print_string "\027[2J\027[H" (* ANSI fallback *)
-          | Some clear -> print_string clear);
-
-          (* Move cursor - type system knows this returns (int * int -> string) option *)
-          (match Terminfo.get ti Cursor_position with
-          | None -> Printf.printf "\027[%d;%dH" 10 20 (* ANSI fallback *)
-          | Some move -> print_string (move (10, 20)));
-
-          (* Check capabilities - type system knows this returns bool option *)
-          match Terminfo.get ti Has_colors with
-          | Some true -> print_endline "Terminal supports colors!"
-          | _ -> print_endline "No color support")
+          Option.iter print_string (Terminfo.get ti Terminfo.Clear_screen);
+          (match Terminfo.get ti Terminfo.Cursor_position with
+          | Some goto -> print_string (goto (5, 10))
+          | None -> ());
+          match Terminfo.get ti Terminfo.Has_colors with
+          | Some true -> print_endline "colors enabled"
+          | _ -> print_endline "monochrome fallback")
     ]} *)
 
 (** {1 Terminal Capabilities} *)
 
-(** Terminal capability with its return type encoded in the type parameter. The
-    type system ensures you get the correct return type for each capability. *)
+(** Terminal capability token whose phantom type encodes the return type. Each
+    constructor mirrors a standard terminfo capability and constrains {!get} to
+    return the associated OCaml type. *)
 type _ cap =
   (* Boolean capabilities *)
   | Auto_left_margin : bool cap  (** Terminal has automatic left margins (bw) *)
@@ -39,7 +72,10 @@ type _ cap =
   | Can_change : bool cap  (** Terminal can redefine existing colors (ccc) *)
   | Eat_newline_glitch : bool cap
       (** Newline ignored after 80 columns (xenl) *)
-  | Has_colors : bool cap  (** Terminal can display colors (colors) *)
+  | Has_colors : bool cap
+      (** Terminal can display colors. Synthesized from the numeric [colors]
+          capability rather than the boolean table. Returns [Some true] if
+          [colors] is present and greater than 0, otherwise [Some false]. *)
   | Has_meta_key : bool cap  (** Terminal has a meta key (km) *)
   | Insert_null_glitch : bool cap  (** Insert mode distinguishes nulls (in) *)
   | Move_insert_mode : bool cap  (** Safe to move while in insert mode (mir) *)
@@ -103,7 +139,9 @@ type _ cap =
   (* Parameterized capabilities *)
   | Column_address : (int -> string) cap  (** Move cursor to column (hpa) *)
   | Cursor_position : (int * int -> string) cap
-      (** Move cursor to row, col (cup) - 0-based *)
+      (** Move cursor to [(row, col)] (cup). The terminfo formatter applies any
+          coordinate transformations specified in the capability string, such as
+          [%i] for 1-based conversion. *)
   | Delete_chars : (int -> string) cap  (** Delete n characters (dch) *)
   | Delete_lines : (int -> string) cap  (** Delete n lines (dl) *)
   | Insert_chars : (int -> string) cap  (** Insert n characters (ich) *)
@@ -124,21 +162,38 @@ type _ cap =
 (** {1 Terminal Information} *)
 
 type t
-(** An opaque type representing a loaded terminfo database for a terminal. *)
+(** Immutable handle to a parsed terminfo entry. All lookups reuse in-memory
+    tables and the value can be shared freely across threads. *)
 
 val load :
   ?term:string -> unit -> (t, [ `Not_found | `Parse_error of string ]) result
-(** [load ?term ()] attempts to load the terminfo entry for the specified
-    terminal. If [term] is not provided, it uses the TERM environment variable.
-    Returns [Error `Not_found] if the entry cannot be found, or
-    [Error (`Parse_error msg)] if parsing fails. *)
+(** [load ?term ()] loads the terminfo entry named by [term] or by the [TERM]
+    environment variable. Search order matches the ncurses database layout:
+    [/usr/share/terminfo], [/lib/terminfo], [/etc/terminfo], and
+    [$HOME/.terminfo] (when present). The entire entry is parsed eagerly and
+    loaded into memory.
+
+    Each call creates a new independent handle with fresh hashtables populated
+    from the file. No caching is performed across calls.
+
+    Returns [Error `Not_found] if no entry can be located and
+    [Error (`Parse_error msg)] if the file cannot be decoded.
+
+    @raise Sys_error if the located entry exists but cannot be opened or read.
+*)
 
 val get : t -> 'a cap -> 'a option
-(** [get ti cap] retrieves a capability from the terminal database. The return
-    type is determined by the capability type:
-    - Boolean capabilities return [bool option]
-    - Numeric capabilities return [int option]
-    - String capabilities return [string option]
-    - Parameterized capabilities return function options
+(** [get ti cap] returns the capability associated with [cap] from [ti].
 
-    Returns [None] if the capability is not defined for this terminal. *)
+    - Boolean capabilities return [bool option].
+    - Numeric capabilities return [int option].
+    - String capabilities return [string option].
+    - Parameterized capabilities return an option-wrapped formatter that
+      produces escape sequences using the terminfo [%] expression. Each call to
+      the returned function evaluates the [%] expression and allocates a fresh
+      string.
+
+    The function never mutates [ti] and returns [None] when the capability is
+    undeclared. {!Has_colors} always yields [Some true] or [Some false] because
+    it is synthesized from the numeric [colors] field rather than the boolean
+    table, ensuring a definite result. *)

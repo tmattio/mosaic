@@ -1,3 +1,0 @@
-(executable
- (name katakana)
- (libraries unix uutf matrix.grid matrix.screen matrix.ansi matrix.tty))

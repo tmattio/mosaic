@@ -1,5 +1,3 @@
-(* Container that holds an item in each absolute axis *)
-
 type 'a t = { horizontal : 'a; vertical : 'a }
 
 let make ~horizontal ~vertical = { horizontal; vertical }

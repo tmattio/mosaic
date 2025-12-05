@@ -1,0 +1,12 @@
+; Uncomment the following rule to regenerate data.ml when needed
+; (rule
+;  (targets data.ml)
+;  (deps ../../gen/gen_data.exe)
+;  (mode promote)
+;  (action
+;   (run %{exe:../../gen/gen_data.exe} %{targets})))
+
+(library
+ (name glyph)
+ (public_name matrix.glyph)
+ (libraries))
