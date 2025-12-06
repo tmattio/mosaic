@@ -18,7 +18,7 @@ The repository also includes:
 Install via opam:
 
 ```bash
-opam install mmosaic
+opam install mosaic
 ```
 
 Or build locally:
