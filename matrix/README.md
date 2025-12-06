@@ -93,6 +93,18 @@ Matrix is organized into focused libraries that can be used together or independ
 
 API documentation is available in the corresponding `.mli` files under `lib/`.
 
+### Matrix vs Notty
+
+| Aspect              | Matrix                                                                                                                                        | Notty                                                                                                 |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Rendering model     | Immediate-mode, double-buffered grid with ANSI diffing; only changed cells emit bytes; built for high FPS.                                    | Declarative images; redraws full image on refresh; simpler, not diff-based.                           |
+| Performance tactics | Zero-allocation hot loops, glyph pooling, optional render thread, explicit-width output for graphemes.                                        | Allocates per render; no diffing or explicit-width negotiation.                                       |
+| Features            | RGBA with alpha blending, OSC8 hyperlinks, hit regions, inline/alt/split display modes, debug overlay, frame dumps.                           | Core fg/bg + styles; compact feature set; no alpha/hyperlinks or built-in diagnostics.                |
+| Protocols and input | Auto-negotiates Kitty keyboard, SGR/URXVT/X10 mouse, bracketed paste, focus, explicit width; separates capability responses from user events. | Minimal, broadly compatible protocols by design; no capability probing; basic key/mouse/paste events. |
+| Unicode handling    | Unicode width tables plus explicit-width negotiation to stay aligned with modern emoji/wide glyphs.                                           | Width hints only; no explicit-width negotiation.                                                      |
+| API surface         | Mutable `Grid` for hot paths + Notty-inspired `Image` DSL; choose imperative or declarative.                                                  | Compositional image API; no mutable grid for rendering.                                               |
+| Runtime and cleanup | Manages raw mode, alt/inline/split modes, cursor/mouse/paste/focus state, and restores the terminal on exit.                                  | Alt-screen runtime; inline helpers but no managed mode negotiation or runtime loop.                   |
+
 ## Acknowledgements
 
 Matrix draws inspiration from several excellent projects:
