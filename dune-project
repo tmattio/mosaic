@@ -54,29 +54,11 @@
   "Matrix is a highly optimized terminal programming toolkit providing efficient grid representation with damage tracking, double-buffered rendering, and comprehensive Unicode support. It includes an incremental input parser supporting Kitty keyboard protocol, complete ANSI escape sequence generation, terminal control (TTY), pseudo-terminal operations (PTY), and a virtual terminal emulator (VTE). Features mouse support with X10/SGR/URXVT protocols.")
  (depends
   (ocaml
-   (>= 5.1))
+   (>= 5.4))
   dune
-  uutf
-  uucp
-  (uuseg
-   (>= 16.0.0))
-  fmt
   (alcotest :with-test))
  (tags
   (terminal ansi input grid rendering unicode pty vte)))
-
-(package
- (name matrix-term)
- (synopsis "Terminal emulator example using Matrix and SDL2")
- (description
-  "Matrix-term is an example terminal emulator application demonstrating Matrix's virtual terminal emulator (VTE) capabilities. It uses SDL2 for rendering and showcases how to build a fully functional terminal emulator with Matrix's infrastructure.")
- (depends
-  ocaml
-  dune
-  matrix
-  tsdl
-  tsdl-ttf
-  (alcotest :with-test)))
 
 (package
  (name toffee)
