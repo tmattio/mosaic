@@ -29,43 +29,70 @@ let update msg model =
   | Toggle -> ({ model with running = not model.running }, Cmd.none)
   | Quit -> (model, Cmd.quit)
 
+(* Palette *)
+let header_bg = Ansi.Color.of_rgb 30 80 100
+let footer_bg = Ansi.Color.grayscale ~level:3
+let border_color = Ansi.Color.grayscale ~level:8
+let muted = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:16) ()
+let hint = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:14) ()
+let accent = Ansi.Color.cyan
+
 let view model =
-  box ~align_items:Center ~justify_content:Center
+  box ~flex_direction:Column
     ~size:{ width = pct 100; height = pct 100 }
     [
-      box ~flex_direction:Column ~gap:(gap 2) ~border:true ~padding:(padding 2)
-        ~title:"Spinners"
+      (* Header *)
+      box ~padding:(padding 1) ~background:header_bg
         [
-          (* Current spinner with label *)
-          box ~flex_direction:Row ~align_items:Center ~gap:(gap 2)
+          box ~flex_direction:Row ~justify_content:Space_between
+            ~align_items:Center
+            ~size:{ width = pct 100; height = auto }
             [
-              spinner ~preset:model.preset ~autoplay:model.running
-                ~color:Ansi.Color.cyan ();
-              text
-                ~content:
-                  (Printf.sprintf "%s %s" (preset_name model.preset)
-                     (if model.running then "(running)" else "(stopped)"))
+              text ~content:"▸ Spinners"
+                ~text_style:(Ansi.Style.make ~bold:true ())
                 ();
+              text ~content:"▄▀ mosaic" ~text_style:muted ();
             ];
-          (* All presets in a row *)
-          box ~flex_direction:Row ~gap:(gap 3) ~margin:(margin 1)
-            (Array.to_list
-               (Array.map
-                  (fun preset ->
-                    box ~flex_direction:Column ~align_items:Center ~gap:(gap 1)
-                      [
-                        spinner ~preset ~autoplay:model.running ();
-                        text ~content:(preset_name preset)
-                          ~text_style:
-                            (Ansi.Style.make ~dim:(preset <> model.preset) ())
-                          ();
-                      ])
-                  presets));
-          (* Help *)
-          text
-            ~content:"Press 'n' for next preset, Space to toggle, 'q' to quit"
-            ();
         ];
+      (* Content *)
+      box ~flex_grow:1. ~align_items:Center ~justify_content:Center
+        [
+          box ~flex_direction:Column ~gap:(gap 2) ~border:true ~border_color
+            ~padding:(padding 2)
+            [
+              (* Current spinner with label *)
+              box ~flex_direction:Row ~align_items:Center ~gap:(gap 2)
+                [
+                  spinner ~preset:model.preset ~autoplay:model.running
+                    ~color:accent ();
+                  text
+                    ~content:
+                      (Printf.sprintf "%s %s" (preset_name model.preset)
+                         (if model.running then "(running)" else "(stopped)"))
+                    ();
+                ];
+              (* All presets in a row *)
+              box ~flex_direction:Row ~gap:(gap 3)
+                (Array.to_list
+                   (Array.map
+                      (fun preset ->
+                        box ~flex_direction:Column ~align_items:Center
+                          ~gap:(gap 1)
+                          [
+                            spinner ~preset ~autoplay:model.running ();
+                            text ~content:(preset_name preset)
+                              ~text_style:
+                                (if preset = model.preset then
+                                   Ansi.Style.make ~fg:accent ()
+                                 else Ansi.Style.make ~dim:true ())
+                              ();
+                          ])
+                      presets));
+            ];
+        ];
+      (* Footer *)
+      box ~padding:(padding 1) ~background:footer_bg
+        [ text ~content:"n next  •  Space toggle  •  q quit" ~text_style:hint () ];
     ]
 
 let subscriptions _model =

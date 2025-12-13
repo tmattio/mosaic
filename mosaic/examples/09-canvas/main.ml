@@ -21,6 +21,12 @@ let update msg model =
 
 let mode_name = function Normal -> "Normal" | Braille -> "Braille (sub-cell)"
 
+(* Palette *)
+let header_bg = Ansi.Color.of_rgb 30 80 100
+let footer_bg = Ansi.Color.grayscale ~level:3
+let muted = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:16) ()
+let hint = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:14) ()
+
 let draw_canvas model canvas ~width ~height =
   let cx = width / 2 in
   let cy = height / 2 in
@@ -30,8 +36,8 @@ let draw_canvas model canvas ~width ~height =
   Canvas.clear canvas;
 
   (* Draw border box *)
-  Canvas.draw_box canvas ~x:0 ~y:0 ~width ~height ~border_color:Ansi.Color.blue
-    ~title:"Canvas" ();
+  Canvas.draw_box canvas ~x:0 ~y:0 ~width ~height
+    ~border_color:(Ansi.Color.grayscale ~level:8) ();
 
   (* Draw coordinate axes *)
   Canvas.draw_line canvas ~x1:1 ~y1:cy ~x2:(width - 2) ~y2:cy
@@ -78,10 +84,7 @@ let draw_canvas model canvas ~width ~height =
   Canvas.fill_rect canvas ~x:(width - 7) ~y:(height - 4) ~width:5 ~height:2
     ~color:Ansi.Color.yellow;
 
-  (* Plot some text *)
-  Canvas.plot canvas ~x:(cx - 3) ~y:1
-    ~style:(Ansi.Style.make ~bold:true ~fg:Ansi.Color.white ())
-    "Canvas";
+  (* Plot mode indicator *)
   Canvas.plot canvas ~x:2 ~y:(height - 2)
     ~style:(Ansi.Style.make ~dim:true ())
     (mode_name model.mode)
@@ -90,6 +93,19 @@ let view model =
   box ~flex_direction:Column
     ~size:{ width = pct 100; height = pct 100 }
     [
+      (* Header *)
+      box ~padding:(padding 1) ~background:header_bg
+        [
+          box ~flex_direction:Row ~justify_content:Space_between
+            ~align_items:Center
+            ~size:{ width = pct 100; height = auto }
+            [
+              text ~content:"▸ Canvas"
+                ~text_style:(Ansi.Style.make ~bold:true ())
+                ();
+              text ~content:"▄▀ mosaic" ~text_style:muted ();
+            ];
+        ];
       (* Canvas area *)
       box ~flex_grow:1. ~padding:(padding 1)
         [
@@ -99,14 +115,9 @@ let view model =
             ~size:{ width = pct 100; height = pct 100 }
             ();
         ];
-      (* Help *)
-      box ~padding:(padding 1)
-        [
-          text
-            ~content:
-              "Press 'm' to toggle line mode (Normal/Braille), 'q' to quit"
-            ();
-        ];
+      (* Footer *)
+      box ~padding:(padding 1) ~background:footer_bg
+        [ text ~content:"m toggle mode  •  q quit" ~text_style:hint () ];
     ]
 
 let subscriptions _model =

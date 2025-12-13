@@ -136,16 +136,28 @@ end
 let init () = ((), Cmd.none)
 let update msg () = match msg with Quit -> ((), Cmd.quit)
 
+(* Palette *)
+let header_bg = Ansi.Color.of_rgb 30 80 100
+let footer_bg = Ansi.Color.grayscale ~level:3
+let muted = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:16) ()
+let hint = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:14) ()
+
 let view () =
   box ~flex_direction:Column
     ~size:{ width = pct 100; height = pct 100 }
     [
       (* Header *)
-      box ~padding:(padding 1) ~background:Ansi.Color.blue
+      box ~padding:(padding 1) ~background:header_bg
         [
-          text ~content:"Markdown Renderer Demo"
-            ~text_style:(Ansi.Style.make ~bold:true ~fg:Ansi.Color.white ())
-            ();
+          box ~flex_direction:Row ~justify_content:Space_between
+            ~align_items:Center
+            ~size:{ width = pct 100; height = auto }
+            [
+              text ~content:"▸ Markdown"
+                ~text_style:(Ansi.Style.make ~bold:true ())
+                ();
+              text ~content:"▄▀ mosaic" ~text_style:muted ();
+            ];
         ];
       (* Scrollable markdown content *)
       box ~flex_grow:1. ~padding:(padding 1)
@@ -154,11 +166,9 @@ let view () =
             ~size:{ width = pct 100; height = pct 100 }
             [ markdown ~width:78 ~content:markdown_content () ];
         ];
-      (* Help *)
-      box ~padding:(padding 1)
-        [
-          text ~content:"Scroll with mouse wheel or arrow keys, 'q' to quit" ();
-        ];
+      (* Footer *)
+      box ~padding:(padding 1) ~background:footer_bg
+        [ text ~content:"scroll with mouse wheel  •  q quit" ~text_style:hint () ];
     ]
 
 let subscriptions () =

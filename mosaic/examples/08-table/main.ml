@@ -94,33 +94,55 @@ let rows =
       ];
   ]
 
+(* Palette *)
+let header_bg = Ansi.Color.of_rgb 30 80 100
+let footer_bg = Ansi.Color.grayscale ~level:3
+let muted = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:16) ()
+let hint = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:14) ()
+
 let view model =
-  box ~align_items:Center ~justify_content:Center
+  box ~flex_direction:Column
     ~size:{ width = pct 100; height = pct 100 }
     [
-      box ~flex_direction:Column ~gap:(gap 2)
+      (* Header *)
+      box ~padding:(padding 1) ~background:header_bg
         [
-          (* Table with current style *)
-          table ~columns ~rows
-            ~box_style:(style_to_prop model.style)
-            ~show_header:true ~show_edge:true ~show_lines:true
-            ~table_padding:(1, 1, 1, 1)
-            ~header_style:(Ansi.Style.make ~bold:true ())
-            ~row_styles:
-              [
-                Ansi.Style.default;
-                Ansi.Style.make ~bg:(Ansi.Color.grayscale ~level:3) ();
-              ]
-            ();
-          (* Style indicator *)
-          text
-            ~content:
-              (Printf.sprintf "Box style: %s (press 's' to cycle)"
-                 (style_name model.style))
-            ();
-          (* Help *)
-          text ~content:"Press 'q' to quit" ();
+          box ~flex_direction:Row ~justify_content:Space_between
+            ~align_items:Center
+            ~size:{ width = pct 100; height = auto }
+            [
+              text ~content:"▸ Table"
+                ~text_style:(Ansi.Style.make ~bold:true ())
+                ();
+              text ~content:"▄▀ mosaic" ~text_style:muted ();
+            ];
         ];
+      (* Content *)
+      box ~flex_grow:1. ~align_items:Center ~justify_content:Center
+        [
+          box ~flex_direction:Column ~gap:(gap 2)
+            [
+              (* Table with current style *)
+              table ~columns ~rows
+                ~box_style:(style_to_prop model.style)
+                ~show_header:true ~show_edge:true ~show_lines:true
+                ~table_padding:(1, 1, 1, 1)
+                ~header_style:(Ansi.Style.make ~bold:true ())
+                ~row_styles:
+                  [
+                    Ansi.Style.default;
+                    Ansi.Style.make ~bg:(Ansi.Color.grayscale ~level:3) ();
+                  ]
+                ();
+              (* Style indicator *)
+              text
+                ~content:(Printf.sprintf "Style: %s" (style_name model.style))
+                ~text_style:hint ();
+            ];
+        ];
+      (* Footer *)
+      box ~padding:(padding 1) ~background:footer_bg
+        [ text ~content:"s cycle style  •  q quit" ~text_style:hint () ];
     ]
 
 let subscriptions _model =

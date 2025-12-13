@@ -34,16 +34,28 @@ let box_colors =
     Ansi.Color.grayscale ~level:6;
   |]
 
+(* Palette *)
+let header_bg = Ansi.Color.of_rgb 30 80 100
+let footer_bg = Ansi.Color.grayscale ~level:3
+let muted = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:16) ()
+let hint = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:14) ()
+
 let view () =
   box ~flex_direction:Column
     ~size:{ width = pct 100; height = pct 100 }
     [
       (* Header *)
-      box ~padding:(padding 1) ~background:Ansi.Color.blue
+      box ~padding:(padding 1) ~background:header_bg
         [
-          text ~content:"Text Selection Demo"
-            ~text_style:(Ansi.Style.make ~bold:true ~fg:Ansi.Color.white ())
-            ();
+          box ~flex_direction:Row ~justify_content:Space_between
+            ~align_items:Center
+            ~size:{ width = pct 100; height = auto }
+            [
+              text ~content:"▸ Text Selection"
+                ~text_style:(Ansi.Style.make ~bold:true ())
+                ();
+              text ~content:"▄▀ mosaic" ~text_style:muted ();
+            ];
         ];
       (* Main content area *)
       box ~flex_grow:1. ~flex_direction:Row ~gap:(gap 1) ~padding:(padding 1)
@@ -140,30 +152,11 @@ let view () =
                 ];
             ];
         ];
-      (* Instructions *)
-      box ~border:true ~title:"Instructions" ~padding:(padding 1)
-        ~background:(Ansi.Color.grayscale ~level:2)
-        ~flex_direction:Column
+      (* Footer *)
+      box ~padding:(padding 1) ~background:footer_bg
         [
-          text ~content:"Click and drag to select text across multiple elements"
-            ~text_style:(Ansi.Style.make ~fg:Ansi.Color.white ())
-            ();
-          text
-            ~content:
-              "Selection works within scroll boxes and across nested boxes"
-            ~text_style:
-              (Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:16) ())
-            ();
-        ];
-      (* Help bar *)
-      box ~padding:(padding 1)
-        [
-          text
-            ~content:
-              "Click and drag to select | Ctrl+click to extend | 'q' to quit"
-            ~text_style:
-              (Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:16) ())
-            ();
+          text ~content:"click and drag to select  •  Ctrl+click extend  •  q quit"
+            ~text_style:hint ();
         ];
     ]
 

@@ -30,32 +30,57 @@ let cursor_style_to_prop = function
   | Line -> `Line
   | Underline -> `Underline
 
+(* Palette *)
+let header_bg = Ansi.Color.of_rgb 30 80 100
+let footer_bg = Ansi.Color.grayscale ~level:3
+let border_color = Ansi.Color.grayscale ~level:8
+let muted = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:16) ()
+let hint = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:14) ()
+
 let view model =
-  box ~align_items:Center ~justify_content:Center
+  box ~flex_direction:Column
     ~size:{ width = pct 100; height = pct 100 }
     [
-      box ~flex_direction:Column ~gap:(gap 2) ~border:true ~padding:(padding 2)
-        ~title:"Text Input"
+      (* Header *)
+      box ~padding:(padding 1) ~background:header_bg
         [
-          (* Input field *)
-          box ~flex_direction:Row ~align_items:Center ~gap:(gap 1)
+          box ~flex_direction:Row ~justify_content:Space_between
+            ~align_items:Center
+            ~size:{ width = pct 100; height = auto }
             [
-              text ~content:"Name:" ();
-              text_input ~autofocus:true ~placeholder:"Type your name..."
-                ~cursor_style:(cursor_style_to_prop model.cursor_style)
-                ~cursor_blinking:true
-                ~size:{ width = px 30; height = px 1 }
-                ~value:model.value ();
+              text ~content:"▸ Text Input"
+                ~text_style:(Ansi.Style.make ~bold:true ())
+                ();
+              text ~content:"▄▀ mosaic" ~text_style:muted ();
             ];
-          (* Cursor style display *)
-          text
-            ~content:
-              (Printf.sprintf "Cursor style: %s"
-                 (cursor_style_name model.cursor_style))
-            ();
-          (* Help *)
-          text ~content:"Press 'c' to cycle cursor style, Esc to quit" ();
         ];
+      (* Content *)
+      box ~flex_grow:1. ~align_items:Center ~justify_content:Center
+        [
+          box ~flex_direction:Column ~gap:(gap 2) ~border:true ~border_color
+            ~padding:(padding 2)
+            [
+              (* Input field *)
+              box ~flex_direction:Row ~align_items:Center ~gap:(gap 1)
+                [
+                  text ~content:"Name:" ();
+                  text_input ~autofocus:true ~placeholder:"Type your name..."
+                    ~cursor_style:(cursor_style_to_prop model.cursor_style)
+                    ~cursor_blinking:true
+                    ~size:{ width = px 30; height = px 1 }
+                    ~value:model.value ();
+                ];
+              (* Cursor style display *)
+              text
+                ~content:
+                  (Printf.sprintf "Cursor style: %s"
+                     (cursor_style_name model.cursor_style))
+                ~text_style:hint ();
+            ];
+        ];
+      (* Footer *)
+      box ~padding:(padding 1) ~background:footer_bg
+        [ text ~content:"c cycle cursor  •  Esc quit" ~text_style:hint () ];
     ]
 
 let subscriptions _model =

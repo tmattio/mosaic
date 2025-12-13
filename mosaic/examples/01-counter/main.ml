@@ -12,16 +12,46 @@ let update msg model =
   | Decrement -> (model - 1, Cmd.none)
   | Quit -> (model, Cmd.quit)
 
+(* Palette *)
+let header_bg = Ansi.Color.of_rgb 30 80 100
+let footer_bg = Ansi.Color.grayscale ~level:3
+let border_color = Ansi.Color.grayscale ~level:8
+let muted = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:16) ()
+let hint = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:14) ()
+
 let view model =
-  box ~align_items:Center ~justify_content:Center
+  box ~flex_direction:Column
     ~size:{ width = pct 100; height = pct 100 }
     [
-      box ~flex_direction:Column ~align_items:Center ~gap:(gap 1) ~border:true
-        ~padding:(padding 2) ~title:"Counter"
+      (* Header *)
+      box ~padding:(padding 1) ~background:header_bg
         [
-          text ~content:(Printf.sprintf "Count: %d" model) ();
-          text ~content:"Press + or - to change, q to quit" ();
+          box ~flex_direction:Row ~justify_content:Space_between
+            ~align_items:Center
+            ~size:{ width = pct 100; height = auto }
+            [
+              text ~content:"▸ Counter"
+                ~text_style:(Ansi.Style.make ~bold:true ())
+                ();
+              text ~content:"▄▀ mosaic" ~text_style:muted ();
+            ];
         ];
+      (* Content *)
+      box ~flex_grow:1. ~align_items:Center ~justify_content:Center
+        [
+          box ~flex_direction:Column ~align_items:Center ~gap:(gap 2)
+            ~border:true ~border_color ~padding:(padding 3)
+            [
+              text
+                ~content:(Printf.sprintf "%d" model)
+                ~text_style:(Ansi.Style.make ~bold:true ())
+                ();
+              text ~content:"Press + or - to change" ~text_style:hint ();
+            ];
+        ];
+      (* Footer *)
+      box ~padding:(padding 1) ~background:footer_bg
+        [ text ~content:"+ increment  •  - decrement  •  q quit" ~text_style:hint () ];
     ]
 
 let subscriptions _model =

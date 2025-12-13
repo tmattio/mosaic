@@ -55,30 +55,46 @@ let lang_content = function OCaml -> ocaml_sample | JSON -> json_sample
 let lang_filetype = function OCaml -> "ml" | JSON -> "json"
 let syntax_client = Mosaic_syntax.default_client ()
 
+(* Palette *)
+let header_bg = Ansi.Color.of_rgb 30 80 100
+let footer_bg = Ansi.Color.grayscale ~level:3
+let border_color = Ansi.Color.grayscale ~level:8
+let muted = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:16) ()
+let hint = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:14) ()
+
 let view model =
   box ~flex_direction:Column
     ~size:{ width = pct 100; height = pct 100 }
     [
       (* Header *)
-      box ~padding:(padding 1) ~background:Ansi.Color.blue
+      box ~padding:(padding 1) ~background:header_bg
         [
-          text
-            ~content:(Printf.sprintf "Language: %s" (lang_name model.lang))
-            ~text_style:(Ansi.Style.make ~bold:true ~fg:Ansi.Color.white ())
-            ();
+          box ~flex_direction:Row ~justify_content:Space_between
+            ~align_items:Center
+            ~size:{ width = pct 100; height = auto }
+            [
+              text
+                ~content:(Printf.sprintf "▸ Code (%s)" (lang_name model.lang))
+                ~text_style:(Ansi.Style.make ~bold:true ())
+                ();
+              text ~content:"▄▀ mosaic" ~text_style:muted ();
+            ];
         ];
       (* Code display *)
-      box ~flex_grow:1. ~padding:(padding 1) ~border:true ~title:"Code"
+      box ~flex_grow:1. ~padding:(padding 1)
         [
-          code ~content:(lang_content model.lang)
-            ~filetype:(lang_filetype model.lang) ~tree_syntax:syntax_client
-            ~syntax_style:(Code.Syntax_style.of_default_theme ())
-            ~size:{ width = pct 100; height = pct 100 }
-            ();
+          box ~border:true ~border_color ~flex_grow:1.
+            [
+              code ~content:(lang_content model.lang)
+                ~filetype:(lang_filetype model.lang) ~tree_syntax:syntax_client
+                ~syntax_style:(Code.Syntax_style.of_default_theme ())
+                ~size:{ width = pct 100; height = pct 100 }
+                ();
+            ];
         ];
-      (* Help *)
-      box ~padding:(padding 1)
-        [ text ~content:"Press 'l' to toggle language, 'q' to quit" () ];
+      (* Footer *)
+      box ~padding:(padding 1) ~background:footer_bg
+        [ text ~content:"l toggle language  •  q quit" ~text_style:hint () ];
     ]
 
 let subscriptions _model =
