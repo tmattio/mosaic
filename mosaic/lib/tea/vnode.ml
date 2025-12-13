@@ -217,8 +217,8 @@ let text ?id ?key
     ?grid_auto_columns ?grid_auto_flow ?grid_template_areas ?grid_row
     ?grid_column
     (* Text props *)
-    ?text_style ?(content = "") ?wrap_mode ?tab_indicator ?tab_indicator_color
-    ?selection_bg ?selection_fg ?selectable () =
+    ?text_style ?wrap_mode ?tab_indicator ?tab_indicator_color
+    ?selection_bg ?selection_fg ?selectable content =
   let handlers = { on_mouse; on_key; on_paste } in
   let style =
     Toffee.Style.make ?display ?box_sizing ?position ?overflow ?scrollbar_width

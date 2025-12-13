@@ -69,10 +69,8 @@ let view model =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~content:"▸ Sliders"
-                ~text_style:(Ansi.Style.make ~bold:true ())
-                ();
-              text ~content:"▄▀ mosaic" ~text_style:muted ();
+              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Sliders";
+              text ~text_style:muted "▄▀ mosaic";
             ];
         ];
       (* Content *)
@@ -84,9 +82,7 @@ let view model =
               (* Horizontal slider *)
               box ~flex_direction:Column ~gap:(gap 1)
                 [
-                  text
-                    ~content:(Printf.sprintf "Horizontal: %.0f%%" model.h_value)
-                    ();
+                  text (Printf.sprintf "Horizontal: %.0f%%" model.h_value);
                   slider ~orientation:`Horizontal ~min:0. ~max:100.
                     ~value:model.h_value ~viewport_size:10.
                     ~track_color:(Ansi.Color.grayscale ~level:5)
@@ -98,9 +94,7 @@ let view model =
               (* Vertical slider *)
               box ~flex_direction:Row ~gap:(gap 2) ~align_items:Center
                 [
-                  text
-                    ~content:(Printf.sprintf "Vertical: %.0f%%" model.v_value)
-                    ();
+                  text (Printf.sprintf "Vertical: %.0f%%" model.v_value);
                   slider ~orientation:`Vertical ~min:0. ~max:100.
                     ~value:model.v_value ~viewport_size:10.
                     ~track_color:(Ansi.Color.grayscale ~level:5)
@@ -112,7 +106,7 @@ let view model =
               (* Color sliders *)
               box ~flex_direction:Column ~gap:(gap 1)
                 [
-                  text ~content:"RGB Color Picker:" ();
+                  text "RGB Color Picker:";
                   box ~flex_direction:Row ~gap:(gap 2)
                     [
                       (* Red slider *)
@@ -126,7 +120,7 @@ let view model =
                             ~on_change:(fun v -> Some (Set_r v))
                             ~size:{ width = px 1; height = px 5 }
                             ();
-                          text ~content:"R" ();
+                          text "R";
                         ];
                       (* Green slider *)
                       box ~flex_direction:Column ~align_items:Center
@@ -139,7 +133,7 @@ let view model =
                             ~on_change:(fun v -> Some (Set_g v))
                             ~size:{ width = px 1; height = px 5 }
                             ();
-                          text ~content:"G" ();
+                          text "G";
                         ];
                       (* Blue slider *)
                       box ~flex_direction:Column ~align_items:Center
@@ -152,7 +146,7 @@ let view model =
                             ~on_change:(fun v -> Some (Set_b v))
                             ~size:{ width = px 1; height = px 5 }
                             ();
-                          text ~content:"B" ();
+                          text "B";
                         ];
                       (* Color preview box *)
                       box
@@ -168,8 +162,7 @@ let view model =
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
         [
-          text ~content:"drag sliders  •  r reset  •  q quit" ~text_style:hint
-            ();
+          text ~text_style:hint "drag sliders  •  r reset  •  q quit";
         ];
     ]
 

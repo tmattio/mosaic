@@ -30,10 +30,8 @@ let view model =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~content:"▸ Counter"
-                ~text_style:(Ansi.Style.make ~bold:true ())
-                ();
-              text ~content:"▄▀ mosaic" ~text_style:muted ();
+              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Counter";
+              text ~text_style:muted "▄▀ mosaic";
             ];
         ];
       (* Content *)
@@ -42,18 +40,15 @@ let view model =
           box ~flex_direction:Column ~align_items:Center ~gap:(gap 2)
             ~border:true ~border_color ~padding:(padding 3)
             [
-              text
-                ~content:(Printf.sprintf "%d" model)
-                ~text_style:(Ansi.Style.make ~bold:true ())
-                ();
-              text ~content:"Press + or - to change" ~text_style:hint ();
+              text ~text_style:(Ansi.Style.make ~bold:true ())
+                (Printf.sprintf "%d" model);
+              text ~text_style:hint "Press + or - to change";
             ];
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
         [
-          text ~content:"+ increment  •  - decrement  •  q quit"
-            ~text_style:hint ();
+          text ~text_style:hint "+ increment  •  - decrement  •  q quit";
         ];
     ]
 

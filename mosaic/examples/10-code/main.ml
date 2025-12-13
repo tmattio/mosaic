@@ -74,11 +74,9 @@ let view model =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text
-                ~content:(Printf.sprintf "▸ Code (%s)" (lang_name model.lang))
-                ~text_style:(Ansi.Style.make ~bold:true ())
-                ();
-              text ~content:"▄▀ mosaic" ~text_style:muted ();
+              text ~text_style:(Ansi.Style.make ~bold:true ())
+                (Printf.sprintf "▸ Code (%s)" (lang_name model.lang));
+              text ~text_style:muted "▄▀ mosaic";
             ];
         ];
       (* Code display *)
@@ -95,7 +93,7 @@ let view model =
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [ text ~content:"l toggle language  •  q quit" ~text_style:hint () ];
+        [ text ~text_style:hint "l toggle language  •  q quit" ];
     ]
 
 let subscriptions _model =

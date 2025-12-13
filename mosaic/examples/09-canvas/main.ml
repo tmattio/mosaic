@@ -101,10 +101,8 @@ let view model =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~content:"▸ Canvas"
-                ~text_style:(Ansi.Style.make ~bold:true ())
-                ();
-              text ~content:"▄▀ mosaic" ~text_style:muted ();
+              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Canvas";
+              text ~text_style:muted "▄▀ mosaic";
             ];
         ];
       (* Canvas area *)
@@ -118,7 +116,7 @@ let view model =
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [ text ~content:"m toggle mode  •  q quit" ~text_style:hint () ];
+        [ text ~text_style:hint "m toggle mode  •  q quit" ];
     ]
 
 let subscriptions _model =

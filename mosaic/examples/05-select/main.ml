@@ -38,10 +38,8 @@ let view () =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~content:"▸ Select"
-                ~text_style:(Ansi.Style.make ~bold:true ())
-                ();
-              text ~content:"▄▀ mosaic" ~text_style:muted ();
+              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Select";
+              text ~text_style:muted "▄▀ mosaic";
             ];
         ];
       (* Content *)
@@ -50,9 +48,8 @@ let view () =
           box ~flex_direction:Column ~gap:(gap 2) ~border:true ~border_color
             ~padding:(padding 2)
             [
-              text ~content:"Choose a language:"
-                ~text_style:(Ansi.Style.make ~bold:true ())
-                ();
+              text ~text_style:(Ansi.Style.make ~bold:true ())
+                "Choose a language:";
               (* Select component *)
               select ~options:languages ~show_description:true
                 ~show_scroll_indicator:true ~wrap_selection:true
@@ -65,8 +62,7 @@ let view () =
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
         [
-          text ~content:"↑/↓ navigate  •  j/k vim  •  q quit" ~text_style:hint
-            ();
+          text ~text_style:hint "↑/↓ navigate  •  j/k vim  •  q quit";
         ];
     ]
 

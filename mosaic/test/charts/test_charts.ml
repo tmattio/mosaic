@@ -541,7 +541,7 @@ let%expect_test "sparkline bars" =
   let draw = sparkline ~kind:`Bars [ 1.0; 3.0; 2.0; 5.0; 4.0; 3.0; 2.0; 4.0 ] in
   let node =
     column ~id:"sparkline"
-      [ text ~id:"label" ~content:"CPU Usage:" ();
+      [ text ~id:"label" "CPU Usage:";
         canvas ~id:"spark" ~initial_width:15 ~initial_height:1 ~draw () ]
   in
   render_node ~width:20 ~height:3 node;

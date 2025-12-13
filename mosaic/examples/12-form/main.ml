@@ -80,10 +80,8 @@ let view model =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~content:"▸ Form"
-                ~text_style:(Ansi.Style.make ~bold:true ())
-                ();
-              text ~content:"▄▀ mosaic" ~text_style:muted ();
+              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Form";
+              text ~text_style:muted "▄▀ mosaic";
             ];
         ];
       (* Content *)
@@ -92,15 +90,13 @@ let view model =
           box ~flex_direction:Column ~gap:(gap 2) ~border:true ~border_color
             ~padding:(padding 2)
             [
-              text ~content:"Registration"
-                ~text_style:(Ansi.Style.make ~bold:true ())
-                ();
+              text ~text_style:(Ansi.Style.make ~bold:true ()) "Registration";
               (* Name field *)
               box ~flex_direction:Row ~align_items:Center ~gap:(gap 1)
                 [
                   box
                     ~size:{ width = px 8; height = px 1 }
-                    [ text ~content:"Name:" () ];
+                    [ text "Name:" ];
                   text_input ~id:(field_id Name)
                     ~placeholder:"Enter your name..."
                     ~size:{ width = px 25; height = px 1 }
@@ -113,7 +109,7 @@ let view model =
                 [
                   box
                     ~size:{ width = px 8; height = px 1 }
-                    [ text ~content:"Email:" () ];
+                    [ text "Email:" ];
                   text_input ~id:(field_id Email)
                     ~placeholder:"Enter your email..."
                     ~size:{ width = px 25; height = px 1 }
@@ -126,7 +122,7 @@ let view model =
                 [
                   box
                     ~size:{ width = px 8; height = px 1 }
-                    [ text ~content:"Role:" () ];
+                    [ text "Role:" ];
                   select ~id:(field_id Role) ~options:roles
                     ~show_description:true ~selected_background:accent
                     ~selected_text_color:Ansi.Color.black
@@ -143,36 +139,31 @@ let view model =
                       match Mosaic_ui.Event.Mouse.kind ev with
                       | Down -> Some Submit
                       | _ -> None)
-                    [ text ~content:"Submit" () ];
+                    [ text "Submit" ];
                   box ~border:true ~border_color ~padding:(padding 1)
                     ~on_mouse:(fun ev ->
                       match Mosaic_ui.Event.Mouse.kind ev with
                       | Down -> Some Reset
                       | _ -> None)
-                    [ text ~content:"Reset" () ];
+                    [ text "Reset" ];
                 ];
               (* Submission feedback *)
               (if model.submitted then
                  box ~padding:(padding 1)
                    ~background:(Ansi.Color.grayscale ~level:3)
                    [
-                     text
-                       ~content:
-                         (Printf.sprintf "Submitted: %s <%s> as %s" model.name
-                            model.email (List.nth roles model.role).name)
-                       ~text_style:(Ansi.Style.make ~fg:Ansi.Color.green ())
-                       ();
+                     text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.green ())
+                       (Printf.sprintf "Submitted: %s <%s> as %s" model.name
+                          model.email (List.nth roles model.role).name);
                    ]
-               else
-                 text ~content:"Fill in the form and click Submit"
-                   ~text_style:hint ());
+               else text ~text_style:hint "Fill in the form and click Submit");
             ];
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
         [
-          text ~content:"Tab/Shift+Tab navigate  •  Enter submit  •  q quit"
-            ~text_style:hint ();
+          text ~text_style:hint
+            "Tab/Shift+Tab navigate  •  Enter submit  •  q quit";
         ];
     ]
 

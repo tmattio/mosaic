@@ -21,7 +21,7 @@ let subscriptions _model =
 let view (m : model) : msg t =
   box
     ~size:(size ~width:100 ~height:100)
-    [ text ~content:(Printf.sprintf "Count: %d" m.count) () ]
+    [ text (Printf.sprintf "Count: %d" m.count) ]
 
 let%expect_test "tea counter: initial render" =
   let t = Harness.create ~width:12 ~height:1 ~init ~update ~view ~subscriptions () in

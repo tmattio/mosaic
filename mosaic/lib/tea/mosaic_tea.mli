@@ -333,16 +333,15 @@ val text :
   ?grid_row:Toffee.Style.grid_placement Toffee.Geometry.line ->
   ?grid_column:Toffee.Style.grid_placement Toffee.Geometry.line ->
   ?text_style:Ansi.Style.t ->
-  ?content:string ->
   ?wrap_mode:[ `None | `Char | `Word ] ->
   ?tab_indicator:int ->
   ?tab_indicator_color:Ansi.Color.t ->
   ?selection_bg:Ansi.Color.t ->
   ?selection_fg:Ansi.Color.t ->
   ?selectable:bool ->
-  unit ->
+  string ->
   'msg t
-(** [text ()] creates a text element. *)
+(** [text content] creates a text element. *)
 
 val canvas :
   ?id:string ->

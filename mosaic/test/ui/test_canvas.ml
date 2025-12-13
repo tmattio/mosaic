@@ -202,7 +202,7 @@ let%expect_test "canvas clear_intrinsic_size returns to content-driven size" =
              Canvas.clear_intrinsic_size c;
              Canvas.plot c ~x:0 ~y:0 "A")
            ();
-         text ~id:"t" ~content:"B" ();
+         text ~id:"t" "B";
        ]);
   [%expect_exact {|
 AB

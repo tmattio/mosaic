@@ -48,10 +48,8 @@ let view model =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~content:"▸ Spinners"
-                ~text_style:(Ansi.Style.make ~bold:true ())
-                ();
-              text ~content:"▄▀ mosaic" ~text_style:muted ();
+              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Spinners";
+              text ~text_style:muted "▄▀ mosaic";
             ];
         ];
       (* Content *)
@@ -66,10 +64,8 @@ let view model =
                   spinner ~preset:model.preset ~autoplay:model.running
                     ~color:accent ();
                   text
-                    ~content:
-                      (Printf.sprintf "%s %s" (preset_name model.preset)
-                         (if model.running then "(running)" else "(stopped)"))
-                    ();
+                    (Printf.sprintf "%s %s" (preset_name model.preset)
+                       (if model.running then "(running)" else "(stopped)"));
                 ];
               (* All presets in a row *)
               box ~flex_direction:Row ~gap:(gap 3)
@@ -80,12 +76,12 @@ let view model =
                           ~gap:(gap 1)
                           [
                             spinner ~preset ~autoplay:model.running ();
-                            text ~content:(preset_name preset)
+                            text
                               ~text_style:
                                 (if preset = model.preset then
                                    Ansi.Style.make ~fg:accent ()
                                  else Ansi.Style.make ~dim:true ())
-                              ();
+                              (preset_name preset);
                           ])
                       presets));
             ];
@@ -93,7 +89,7 @@ let view model =
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
         [
-          text ~content:"n next  •  Space toggle  •  q quit" ~text_style:hint ();
+          text ~text_style:hint "n next  •  Space toggle  •  q quit";
         ];
     ]
 

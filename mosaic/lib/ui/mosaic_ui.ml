@@ -229,10 +229,10 @@ let text
     ?grid_auto_columns ?grid_auto_flow ?grid_template_areas ?grid_row
     ?grid_column
     (* Text props *)
-    ?text_style ?content ?wrap_mode ?tab_indicator ?tab_indicator_color
+    ?text_style ?wrap_mode ?tab_indicator ?tab_indicator_color
     ?selection_bg ?selection_fg ?selectable
     (* Callback *)
-    ?on_mount () : element =
+    ?on_mount content : element =
   let style =
     Toffee.Style.make ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin ?padding ?gap
@@ -243,7 +243,7 @@ let text
       ?grid_column ()
   in
   let text_props =
-    Text.Props.make ?text_style ?content ?wrap_mode ?tab_indicator
+    Text.Props.make ?text_style ~content ?wrap_mode ?tab_indicator
       ?tab_indicator_color ?selection_bg ?selection_fg ?selectable ()
   in
   let ctor (renderer : renderer) (text_props : Text.Props.t) =

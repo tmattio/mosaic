@@ -676,10 +676,8 @@ let muted_bg = Ansi.Color.grayscale ~level:3
 let pill ~label ~color =
   box ~padding:(padding 0) ~background:color
     [
-      text
-        ~content:(Printf.sprintf " %s " label)
-        ~text_style:(Ansi.Style.make ~bold:true ~fg:Ansi.Color.black ())
-        ();
+      text ~text_style:(Ansi.Style.make ~bold:true ~fg:Ansi.Color.black ())
+        (Printf.sprintf " %s " label);
     ]
 
 let tab_button (m : model) tab =
@@ -692,13 +690,11 @@ let tab_button (m : model) tab =
     [
       box ~flex_direction:Column
         [
-          text ~content:(tab_label tab)
-            ~text_style:(Ansi.Style.make ~bold:true ~fg ())
-            ();
-          text ~content:(tab_hint tab)
+          text ~text_style:(Ansi.Style.make ~bold:true ~fg ()) (tab_label tab);
+          text
             ~text_style:
               (Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:9) ~dim:true ())
-            ();
+            (tab_hint tab);
         ];
     ]
 
@@ -714,25 +710,20 @@ let run_row (m : model) (r : run) =
     [
       box ~flex_direction:Row ~gap:(gap 1) ~align_items:Center
         [
-          text ~content:"●"
-            ~text_style:(Ansi.Style.make ~fg:(status_color r.status) ())
-            ();
-          text ~content:r.name
-            ~text_style:(Ansi.Style.make ~bold:true ~fg ())
-            ();
+          text ~text_style:(Ansi.Style.make ~fg:(status_color r.status) ()) "●";
+          text ~text_style:(Ansi.Style.make ~bold:true ~fg ()) r.name;
           text
-            ~content:(Printf.sprintf "#%d" r.step)
             ~text_style:
               (Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:10) ())
-            ();
+            (Printf.sprintf "#%d" r.step);
           box ~flex_grow:1. [];
-          text ~content:(status_label r.status)
+          text
             ~text_style:
               (Ansi.Style.make
                  ~fg:
                    (if selected then Ansi.Color.white else status_color r.status)
                  ~dim:(r.status <> Running) ())
-            ();
+            (status_label r.status);
         ];
     ]
 
@@ -751,7 +742,7 @@ let run_panel (m : model) =
             [
               box ~flex_direction:Row ~gap:(gap 1) ~align_items:Center
                 [
-                  text ~content:"Filter:" ~text_style:dim_style ();
+                  text ~text_style:dim_style "Filter:";
                   text_input ~placeholder:"run id or model..."
                     ~cursor_blinking:focused
                     ~size:{ width = pct 100; height = px 1 }
@@ -775,10 +766,8 @@ let run_panel (m : model) =
                   | Down -> Some Toggle_stream
                   | _ -> None)
                 [
-                  text
-                    ~content:(if m.streaming then "Pause" else "Resume")
-                    ~text_style:(Ansi.Style.make ~bold:true ())
-                    ();
+                  text ~text_style:(Ansi.Style.make ~bold:true ())
+                    (if m.streaming then "Pause" else "Resume");
                 ];
               box ~border:true ~padding:(padding 1)
                 ~on_mouse:(fun ev ->
@@ -786,10 +775,10 @@ let run_panel (m : model) =
                   | Down -> Some Reset_selected
                   | _ -> None)
                 [
-                  text ~content:"Reset run"
+                  text
                     ~text_style:
                       (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
-                    ();
+                    "Reset run";
                 ];
             ];
         ];
@@ -800,10 +789,8 @@ let sys_metric_card ~title ~value ~unit_ ~color ~spark =
     [
       box ~flex_direction:Column ~gap:(gap 1)
         [
-          text
-            ~content:(Printf.sprintf "%5.1f%s" value unit_)
-            ~text_style:(Ansi.Style.make ~bold:true ~fg:color ())
-            ();
+          text ~text_style:(Ansi.Style.make ~bold:true ~fg:color ())
+            (Printf.sprintf "%5.1f%s" value unit_);
           canvas
             ~draw:(fun canvas ~width ~height ->
               Charts.Sparkline.draw spark ~kind:`Bars canvas ~width ~height)
@@ -821,20 +808,19 @@ let sys_panel (m : model) =
         [
           box ~flex_direction:Row ~justify_content:Space_between
             [
-              text ~content:"Collector" ~text_style:dim_style ();
+              text ~text_style:dim_style "Collector";
               box ~flex_direction:Row ~gap:(gap 1) ~align_items:Center
                 [
                   spinner ~preset:Spinner.Dots ~autoplay:m.streaming
                     ~color:Ansi.Color.bright_white ();
                   text
-                    ~content:(if m.streaming then "LIVE" else "PAUSED")
                     ~text_style:
                       (Ansi.Style.make ~bold:true
                          ~fg:
                            (if m.streaming then Ansi.Color.green
                             else Ansi.Color.yellow)
                          ())
-                    ();
+                    (if m.streaming then "LIVE" else "PAUSED");
                 ];
             ];
           box ~flex_direction:Row ~gap:(gap 1)
@@ -865,12 +851,11 @@ let sys_panel (m : model) =
                        [
                          box ~flex_direction:Row ~justify_content:Space_between
                            [
-                             text ~content:name ();
+                             text name;
                              text
-                               ~content:(Printf.sprintf "%4.1f%%" cpu)
                                ~text_style:
                                  (Ansi.Style.make ~fg:Ansi.Color.cyan ())
-                               ();
+                               (Printf.sprintf "%4.1f%%" cpu);
                            ];
                        ])
                    m.sys.top);
@@ -880,7 +865,7 @@ let sys_panel (m : model) =
 
 let summary_card ~title ~value ~style =
   box ~border:true ~padding:(padding 1) ~title
-    [ text ~content:value ~text_style:style () ]
+    [ text ~text_style:style value ]
 
 let scalars_tab (m : model) (r : run) =
   let latest xs = match xs with p :: _ -> p.y | [] -> 0.0 in
@@ -938,24 +923,20 @@ let scalars_tab (m : model) (r : run) =
             [
               box ~flex_direction:Column ~gap:(gap 1)
                 [
-                  text ~content:"Charts"
-                    ~text_style:(Ansi.Style.make ~bold:true ())
-                    ();
+                  text ~text_style:(Ansi.Style.make ~bold:true ()) "Charts";
                   box ~flex_direction:Row ~justify_content:Space_between
                     [
-                      text ~content:(Printf.sprintf "Window: %d" m.window) ();
+                      text (Printf.sprintf "Window: %d" m.window);
                       box ~border:true ~padding:(padding 1)
                         ~on_mouse:(fun ev ->
                           match Event.Mouse.kind ev with
                           | Down -> Some Cycle_window
                           | _ -> None)
-                        [ text ~content:"Cycle (w)" ~text_style:dim_style () ];
+                        [ text ~text_style:dim_style "Cycle (w)" ];
                     ];
                   box ~flex_direction:Row ~justify_content:Space_between
                     [
-                      text
-                        ~content:(Printf.sprintf "Smoothing: %d" m.smoothing)
-                        ();
+                      text (Printf.sprintf "Smoothing: %d" m.smoothing);
                       box ~flex_direction:Row ~gap:(gap 1)
                         [
                           box ~border:true ~padding:(padding 1)
@@ -963,21 +944,13 @@ let scalars_tab (m : model) (r : run) =
                               match Event.Mouse.kind ev with
                               | Down -> Some Smoothing_down
                               | _ -> None)
-                            [
-                              text ~content:"-"
-                                ~text_style:(Ansi.Style.make ~bold:true ())
-                                ();
-                            ];
+                            [ text ~text_style:(Ansi.Style.make ~bold:true ()) "-" ];
                           box ~border:true ~padding:(padding 1)
                             ~on_mouse:(fun ev ->
                               match Event.Mouse.kind ev with
                               | Down -> Some Smoothing_up
                               | _ -> None)
-                            [
-                              text ~content:"+"
-                                ~text_style:(Ansi.Style.make ~bold:true ())
-                                ();
-                            ];
+                            [ text ~text_style:(Ansi.Style.make ~bold:true ()) "+" ];
                         ];
                     ];
                   slider ~orientation:`Horizontal ~min:1. ~max:50.
@@ -995,10 +968,8 @@ let scalars_tab (m : model) (r : run) =
                           | _ -> None)
                         [
                           text
-                            ~content:
-                              (Printf.sprintf "[%s] Grid"
-                                 (if m.show_grid then "x" else " "))
-                            ();
+                            (Printf.sprintf "[%s] Grid"
+                               (if m.show_grid then "x" else " "));
                         ];
                       box ~border:true ~padding:(padding 1)
                         ~on_mouse:(fun ev ->
@@ -1007,10 +978,8 @@ let scalars_tab (m : model) (r : run) =
                           | _ -> None)
                         [
                           text
-                            ~content:
-                              (Printf.sprintf "[%s] Axes"
-                                 (if m.show_axes then "x" else " "))
-                            ();
+                            (Printf.sprintf "[%s] Axes"
+                               (if m.show_axes then "x" else " "));
                         ];
                     ];
                   box ~border:true ~padding:(padding 1)
@@ -1040,8 +1009,8 @@ let scalars_tab (m : model) (r : run) =
                          ~size:{ width = pct 100; height = px 6 }
                          ());
                     ];
-                  text ~content:"Tip: / focuses run filter. ]/[ changes tab."
-                    ~text_style:dim_style ();
+                  text ~text_style:dim_style
+                    "Tip: / focuses run filter. ]/[ changes tab.";
                 ];
             ];
         ];
@@ -1067,20 +1036,14 @@ let heatmap_tab (m : model) (r : run) =
             [
               box ~flex_direction:Column ~gap:(gap 1)
                 [
-                  text ~content:"Heatmap demo"
-                    ~text_style:(Ansi.Style.make ~bold:true ())
-                    ();
-                  text
-                    ~content:
-                      "Use this panel to validate: heatmap aggregation, color \
-                       scales, axes labels, and embedding multiple views in \
-                       the same app."
-                    ~wrap_mode:`Word ();
-                  text
-                    ~content:
-                      "(In a real ML dashboard: attention maps, confusion \
-                       matrices, per-layer activations.)"
-                    ~text_style:dim_style ~wrap_mode:`Word ();
+                  text ~text_style:(Ansi.Style.make ~bold:true ()) "Heatmap demo";
+                  text ~wrap_mode:`Word
+                    "Use this panel to validate: heatmap aggregation, color \
+                     scales, axes labels, and embedding multiple views in \
+                     the same app.";
+                  text ~text_style:dim_style ~wrap_mode:`Word
+                    "(In a real ML dashboard: attention maps, confusion \
+                     matrices, per-layer activations.)";
                 ];
             ];
         ];
@@ -1101,12 +1064,10 @@ let embeddings_tab (_m : model) (r : run) =
         ];
       box ~border:true ~padding:(padding 1)
         [
-          text
-            ~content:
-              "This is a synthetic embedding ring. In a real app: points \
-               colored by label, hover tooltips, selection + metadata \
-               inspector."
-            ~text_style:dim_style ();
+          text ~text_style:dim_style
+            "This is a synthetic embedding ring. In a real app: points \
+             colored by label, hover tooltips, selection + metadata \
+             inspector.";
         ];
     ]
 
@@ -1123,7 +1084,7 @@ let logs_tab (m : model) (r : run) =
         [
           box ~flex_direction:Row ~gap:(gap 1) ~align_items:Center
             [
-              text ~content:"Log filter:" ~text_style:dim_style ();
+              text ~text_style:dim_style "Log filter:";
               text_input ~placeholder:"substring..." ~cursor_blinking:focused
                 ~size:{ width = pct 100; height = px 1 }
                 ~value:m.log_filter ();
@@ -1133,9 +1094,8 @@ let logs_tab (m : model) (r : run) =
                   | Down -> Some (Focus Focus_log_filter)
                   | _ -> None)
                 [
-                  text
-                    ~content:(if focused then "Focused" else "Focus")
-                    ~text_style:dim_style ();
+                  text ~text_style:dim_style
+                    (if focused then "Focused" else "Focus");
                 ];
             ];
         ];
@@ -1150,7 +1110,7 @@ let logs_tab (m : model) (r : run) =
                  box ~key:(string_of_int i) ~padding:(padding 1)
                    ~background:
                      (if i mod 2 = 0 then Ansi.Color.default else muted_bg)
-                   [ text ~content:line ~wrap_mode:`Char () ])
+                   [ text ~wrap_mode:`Char line ])
                logs);
         ];
     ]
@@ -1287,8 +1247,8 @@ let header (m : model) =
         [
           box ~flex_direction:Row ~gap:(gap 2) ~align_items:Center
             [
-              text ~content:"Mosaic ML Dashboard" ~text_style:header_style ();
-              text ~content:run_line ~text_style:subheader_style ();
+              text ~text_style:header_style "Mosaic ML Dashboard";
+              text ~text_style:subheader_style run_line;
             ];
           box ~flex_direction:Row ~gap:(gap 1) ~align_items:Center
             [
@@ -1316,11 +1276,9 @@ let footer (m : model) =
       box ~flex_direction:Row ~justify_content:Space_between
         [
           text
-            ~content:
-              "[j/k] run  [[]/[]] tab  [Space] pause  [/] run filter  [g] \
-               grid  [a] axes  [s/S] smooth  [w] window  [q] quit"
-            ();
-          text ~content:focus ~text_style:dim_style ();
+            "[j/k] run  [[]/[]] tab  [Space] pause  [/] run filter  [g] \
+             grid  [a] axes  [s/S] smooth  [w] window  [q] quit";
+          text ~text_style:dim_style focus;
         ];
     ]
 

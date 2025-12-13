@@ -111,10 +111,8 @@ let view model =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~content:"▸ Table"
-                ~text_style:(Ansi.Style.make ~bold:true ())
-                ();
-              text ~content:"▄▀ mosaic" ~text_style:muted ();
+              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Table";
+              text ~text_style:muted "▄▀ mosaic";
             ];
         ];
       (* Content *)
@@ -135,14 +133,13 @@ let view model =
                   ]
                 ();
               (* Style indicator *)
-              text
-                ~content:(Printf.sprintf "Style: %s" (style_name model.style))
-                ~text_style:hint ();
+              text ~text_style:hint
+                (Printf.sprintf "Style: %s" (style_name model.style));
             ];
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [ text ~content:"s cycle style  •  q quit" ~text_style:hint () ];
+        [ text ~text_style:hint "s cycle style  •  q quit" ];
     ]
 
 let subscriptions _model =

@@ -51,10 +51,8 @@ let view () =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~content:"▸ Text Selection"
-                ~text_style:(Ansi.Style.make ~bold:true ())
-                ();
-              text ~content:"▄▀ mosaic" ~text_style:muted ();
+              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Text Selection";
+              text ~text_style:muted "▄▀ mosaic";
             ];
         ];
       (* Main content area *)
@@ -68,22 +66,22 @@ let view () =
                 ~background:(Ansi.Color.grayscale ~level:2)
                 ~flex_direction:Column ~gap:(gap 0)
                 [
-                  text ~content:"This is a paragraph in the first box."
-                    ~text_style:section1_style ~selectable:true
+                  text ~text_style:section1_style ~selectable:true
                     ~selection_bg:(Ansi.Color.of_rgb 88 166 255)
-                    ~selection_fg:Ansi.Color.white ();
-                  text ~content:"It contains multiple lines of text."
-                    ~text_style:section1_style ~selectable:true
+                    ~selection_fg:Ansi.Color.white
+                    "This is a paragraph in the first box.";
+                  text ~text_style:section1_style ~selectable:true
                     ~selection_bg:(Ansi.Color.of_rgb 88 166 255)
-                    ~selection_fg:Ansi.Color.white ();
-                  text ~content:"You can select across these lines."
-                    ~text_style:section1_style ~selectable:true
+                    ~selection_fg:Ansi.Color.white
+                    "It contains multiple lines of text.";
+                  text ~text_style:section1_style ~selectable:true
                     ~selection_bg:(Ansi.Color.of_rgb 88 166 255)
-                    ~selection_fg:Ansi.Color.white ();
-                  text ~content:"Unicode: 世界, 你好世界, 中文, 한글"
-                    ~text_style:section1_style ~selectable:true
+                    ~selection_fg:Ansi.Color.white
+                    "You can select across these lines.";
+                  text ~text_style:section1_style ~selectable:true
                     ~selection_bg:(Ansi.Color.of_rgb 88 166 255)
-                    ~selection_fg:Ansi.Color.white ();
+                    ~selection_fg:Ansi.Color.white
+                    "Unicode: 世界, 你好世界, 中文, 한글";
                 ];
               (* Section 2: Code example *)
               box ~border:true ~title:"Code Example" ~padding:(padding 1)
@@ -91,26 +89,18 @@ let view () =
                 ~border_color:(Ansi.Color.of_rgb 248 81 73)
                 ~flex_direction:Column
                 [
-                  text ~content:"function handleSelection() {"
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.cyan ())
-                    ~selectable:true
-                    ~selection_bg:(Ansi.Color.of_rgb 74 85 104)
-                    ();
-                  text ~content:"  const selected = getSelectedText()"
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.white ())
-                    ~selectable:true
-                    ~selection_bg:(Ansi.Color.of_rgb 74 85 104)
-                    ();
-                  text ~content:"  console.log(selected)"
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.yellow ())
-                    ~selectable:true
-                    ~selection_bg:(Ansi.Color.of_rgb 74 85 104)
-                    ();
-                  text ~content:"}"
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.white ())
-                    ~selectable:true
-                    ~selection_bg:(Ansi.Color.of_rgb 74 85 104)
-                    ();
+                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.cyan ())
+                    ~selectable:true ~selection_bg:(Ansi.Color.of_rgb 74 85 104)
+                    "function handleSelection() {";
+                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.white ())
+                    ~selectable:true ~selection_bg:(Ansi.Color.of_rgb 74 85 104)
+                    "  const selected = getSelectedText()";
+                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.yellow ())
+                    ~selectable:true ~selection_bg:(Ansi.Color.of_rgb 74 85 104)
+                    "  console.log(selected)";
+                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.white ())
+                    ~selectable:true ~selection_bg:(Ansi.Color.of_rgb 74 85 104)
+                    "}";
                 ];
             ];
           (* Right panel: Scrollable content *)
@@ -128,26 +118,23 @@ let view () =
                            ~background:bg ~flex_direction:Column
                            [
                              text
-                               ~content:(Printf.sprintf "Box %d" (i + 1))
                                ~text_style:
                                  (Ansi.Style.make ~bold:true
                                     ~fg:Ansi.Color.white ())
                                ~selectable:true
                                ~selection_bg:(Ansi.Color.of_rgb 122 162 247)
-                               ();
+                               (Printf.sprintf "Box %d" (i + 1));
                              fragment
                                (List.init num_lines (fun j ->
                                     let line_idx =
                                       ((i * 3) + j) mod Array.length lorem_lines
                                     in
                                     text ~key:(string_of_int j)
-                                      ~content:lorem_lines.(line_idx)
                                       ~text_style:
                                         (Ansi.Style.make ~fg:Ansi.Color.white ())
                                       ~selectable:true
-                                      ~selection_bg:
-                                        (Ansi.Color.of_rgb 122 162 247)
-                                      ()));
+                                      ~selection_bg:(Ansi.Color.of_rgb 122 162 247)
+                                      lorem_lines.(line_idx)));
                            ]));
                 ];
             ];
@@ -155,9 +142,8 @@ let view () =
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
         [
-          text
-            ~content:"click and drag to select  •  Ctrl+click extend  •  q quit"
-            ~text_style:hint ();
+          text ~text_style:hint
+            "click and drag to select  •  Ctrl+click extend  •  q quit";
         ];
     ]
 

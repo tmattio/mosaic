@@ -42,10 +42,8 @@ let view model =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~content:"▸ Text Styles"
-                ~text_style:(Ansi.Style.make ~bold:true ())
-                ();
-              text ~content:"▄▀ mosaic" ~text_style:muted ();
+              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Text Styles";
+              text ~text_style:muted "▄▀ mosaic";
             ];
         ];
       (* Content *)
@@ -58,95 +56,74 @@ let view model =
               box ~border:true ~border_color ~padding:(padding 1)
                 ~title:"Text Styles" ~flex_direction:Column ~gap:(gap 1)
                 [
-                  text ~content:"Bold text"
-                    ~text_style:(Ansi.Style.make ~bold:true ())
-                    ();
-                  text ~content:"Italic text"
-                    ~text_style:(Ansi.Style.make ~italic:true ())
-                    ();
-                  text ~content:"Underlined text"
-                    ~text_style:(Ansi.Style.make ~underline:true ())
-                    ();
-                  text ~content:"Strikethrough text"
-                    ~text_style:(Ansi.Style.make ~strikethrough:true ())
-                    ();
-                  text ~content:"Dim text"
-                    ~text_style:(Ansi.Style.make ~dim:true ())
-                    ();
-                  text ~content:"Blink text"
-                    ~text_style:(Ansi.Style.make ~blink:true ())
-                    ();
-                  text ~content:"Bold + Italic"
-                    ~text_style:(Ansi.Style.make ~bold:true ~italic:true ())
-                    ();
+                  text ~text_style:(Ansi.Style.make ~bold:true ()) "Bold text";
+                  text ~text_style:(Ansi.Style.make ~italic:true ()) "Italic text";
+                  text ~text_style:(Ansi.Style.make ~underline:true ())
+                    "Underlined text";
+                  text ~text_style:(Ansi.Style.make ~strikethrough:true ())
+                    "Strikethrough text";
+                  text ~text_style:(Ansi.Style.make ~dim:true ()) "Dim text";
+                  text ~text_style:(Ansi.Style.make ~blink:true ()) "Blink text";
+                  text ~text_style:(Ansi.Style.make ~bold:true ~italic:true ())
+                    "Bold + Italic";
                 ];
               (* Foreground Colors *)
               box ~border:true ~border_color ~padding:(padding 1)
                 ~title:"Foreground" ~flex_direction:Column ~gap:(gap 1)
                 ~size:{ width = px 14; height = auto }
                 [
-                  text ~content:"Red"
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.red ())
-                    ();
-                  text ~content:"Green"
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.green ())
-                    ();
-                  text ~content:"Blue"
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.blue ())
-                    ();
-                  text ~content:"Yellow"
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.yellow ())
-                    ();
-                  text ~content:"Cyan"
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.cyan ())
-                    ();
-                  text ~content:"Magenta"
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.magenta ())
-                    ();
-                  text ~content:"White"
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.white ())
-                    ();
+                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.red ()) "Red";
+                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.green ())
+                    "Green";
+                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.blue ()) "Blue";
+                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.yellow ())
+                    "Yellow";
+                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.cyan ()) "Cyan";
+                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.magenta ())
+                    "Magenta";
+                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.white ())
+                    "White";
                 ];
               (* Background Colors *)
               box ~border:true ~border_color ~padding:(padding 1)
                 ~title:"Background" ~flex_direction:Column ~gap:(gap 1)
                 ~size:{ width = px 14; height = auto }
                 [
-                  text ~content:" Red "
+                  text
                     ~text_style:
                       (Ansi.Style.make ~bg:Ansi.Color.red ~fg:Ansi.Color.white
                          ())
-                    ();
-                  text ~content:" Green "
+                    " Red ";
+                  text
                     ~text_style:
                       (Ansi.Style.make ~bg:Ansi.Color.green ~fg:Ansi.Color.black
                          ())
-                    ();
-                  text ~content:" Blue "
+                    " Green ";
+                  text
                     ~text_style:
                       (Ansi.Style.make ~bg:Ansi.Color.blue ~fg:Ansi.Color.white
                          ())
-                    ();
-                  text ~content:" Yellow "
+                    " Blue ";
+                  text
                     ~text_style:
                       (Ansi.Style.make ~bg:Ansi.Color.yellow
                          ~fg:Ansi.Color.black ())
-                    ();
-                  text ~content:" Cyan "
+                    " Yellow ";
+                  text
                     ~text_style:
                       (Ansi.Style.make ~bg:Ansi.Color.cyan ~fg:Ansi.Color.black
                          ())
-                    ();
-                  text ~content:" Magenta "
+                    " Cyan ";
+                  text
                     ~text_style:
                       (Ansi.Style.make ~bg:Ansi.Color.magenta
                          ~fg:Ansi.Color.white ())
-                    ();
-                  text ~content:" White "
+                    " Magenta ";
+                  text
                     ~text_style:
                       (Ansi.Style.make ~bg:Ansi.Color.white ~fg:Ansi.Color.black
                          ())
-                    ();
+                    " White ";
                 ];
               (* Grayscale *)
               box ~border:true ~border_color ~padding:(padding 1)
@@ -158,9 +135,8 @@ let view model =
                      let fg =
                        if i < 12 then Ansi.Color.white else Ansi.Color.black
                      in
-                     text ~content:(Printf.sprintf "%02d" i)
-                       ~text_style:(Ansi.Style.make ~bg:color ~fg ())
-                       ()));
+                     text ~text_style:(Ansi.Style.make ~bg:color ~fg ())
+                       (Printf.sprintf "%02d" i)));
             ];
           (* Second row: Wrap mode demo *)
           box ~border:true ~border_color ~padding:(padding 1)
@@ -168,18 +144,15 @@ let view model =
               (Printf.sprintf "Wrap Mode: %s" (wrap_mode_to_string model.wrap))
             ~size:{ width = px 40; height = auto }
             [
-              text
-                ~content:
-                  "This is a longer text that demonstrates different wrapping \
-                   behaviors. Press 'w' to cycle through wrap modes."
-                ~size:{ width = pct 100; height = auto }
+              text ~size:{ width = pct 100; height = auto }
                 ~wrap_mode:(wrap_mode_to_prop model.wrap)
-                ();
+                "This is a longer text that demonstrates different wrapping \
+                 behaviors. Press 'w' to cycle through wrap modes.";
             ];
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [ text ~content:"w cycle wrap  •  q quit" ~text_style:hint () ];
+        [ text ~text_style:hint "w cycle wrap  •  q quit" ];
     ]
 
 let subscriptions _model =

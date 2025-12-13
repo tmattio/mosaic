@@ -12,12 +12,12 @@ let update (Scrolled y) model =
   if model.scroll = y then (model, Cmd.none) else ({ scroll = y }, Cmd.none)
 
 let items =
-  List.init 20 (fun i -> text ~content:(Printf.sprintf "Row %02d" (i + 1)) ())
+  List.init 20 (fun i -> text (Printf.sprintf "Row %02d" (i + 1)))
 
 let view ~scroll_ref model =
   let header =
     box ~size:(size ~width:22 ~height:1)
-      [ text ~content:(Printf.sprintf "scroll=%d" model.scroll) () ]
+      [ text (Printf.sprintf "scroll=%d" model.scroll) ]
   in
   let scroll =
     scroll_box

@@ -385,7 +385,6 @@ val text :
   ?grid_row:Toffee.Style.grid_placement Toffee.Geometry.line ->
   ?grid_column:Toffee.Style.grid_placement Toffee.Geometry.line ->
   ?text_style:Ansi.Style.t ->
-  ?content:string ->
   ?wrap_mode:[ `None | `Char | `Word ] ->
   ?tab_indicator:int ->
   ?tab_indicator_color:Ansi.Color.t ->
@@ -393,7 +392,7 @@ val text :
   ?selection_fg:Ansi.Color.t ->
   ?selectable:bool ->
   ?on_mount:(Text.t -> unit) ->
-  unit ->
+  string ->
   element
 (** [text ...] creates a text element.
 

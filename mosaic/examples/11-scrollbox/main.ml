@@ -30,10 +30,8 @@ let view () =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~content:"▸ Scroll Box"
-                ~text_style:(Ansi.Style.make ~bold:true ())
-                ();
-              text ~content:"▄▀ mosaic" ~text_style:muted ();
+              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Scroll Box";
+              text ~text_style:muted "▄▀ mosaic";
             ];
         ];
       (* Scrollable content *)
@@ -49,14 +47,14 @@ let view () =
                        ~background:
                          (if i mod 2 = 0 then Ansi.Color.default
                           else Ansi.Color.grayscale ~level:3)
-                       [ text ~content:item () ])
+                       [ text item ])
                    items);
             ];
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
         [
-          text ~content:"scroll with mouse wheel  •  q quit" ~text_style:hint ();
+          text ~text_style:hint "scroll with mouse wheel  •  q quit";
         ];
     ]
 

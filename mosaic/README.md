@@ -54,8 +54,8 @@ let view model =
       box ~flex_direction:Column ~align_items:Center ~gap:(gap 1)
         ~border:true ~padding:(padding 2) ~title:"Counter"
         [
-          text ~content:(Printf.sprintf "Count: %d" model) ();
-          text ~content:"Press + or - to change, q to quit" ();
+          text (Printf.sprintf "Count: %d" model);
+          text "Press + or - to change, q to quit";
         ];
     ]
 

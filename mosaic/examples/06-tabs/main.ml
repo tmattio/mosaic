@@ -50,10 +50,8 @@ let view model =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~content:"▸ Tabs"
-                ~text_style:(Ansi.Style.make ~bold:true ())
-                ();
-              text ~content:"▄▀ mosaic" ~text_style:muted ();
+              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Tabs";
+              text ~text_style:muted "▄▀ mosaic";
             ];
         ];
       (* Tab bar *)
@@ -72,17 +70,15 @@ let view model =
         [
           box ~flex_direction:Column ~gap:(gap 1)
             [
-              text ~content:(List.nth tabs model.tab).label
-                ~text_style:(Ansi.Style.make ~bold:true ())
-                ();
-              text ~content:(content_for_tab model.tab) ();
+              text ~text_style:(Ansi.Style.make ~bold:true ())
+                (List.nth tabs model.tab).label;
+              text (content_for_tab model.tab);
             ];
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
         [
-          text ~content:"←/→ navigate  •  [/] vim  •  q quit" ~text_style:hint
-            ();
+          text ~text_style:hint "←/→ navigate  •  [/] vim  •  q quit";
         ];
     ]
 

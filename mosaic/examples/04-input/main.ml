@@ -48,10 +48,8 @@ let view model =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~content:"▸ Text Input"
-                ~text_style:(Ansi.Style.make ~bold:true ())
-                ();
-              text ~content:"▄▀ mosaic" ~text_style:muted ();
+              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Text Input";
+              text ~text_style:muted "▄▀ mosaic";
             ];
         ];
       (* Content *)
@@ -63,7 +61,7 @@ let view model =
               (* Input field *)
               box ~flex_direction:Row ~align_items:Center ~gap:(gap 1)
                 [
-                  text ~content:"Name:" ();
+                  text "Name:";
                   text_input ~autofocus:true ~placeholder:"Type your name..."
                     ~cursor_style:(cursor_style_to_prop model.cursor_style)
                     ~cursor_blinking:true
@@ -71,16 +69,14 @@ let view model =
                     ~value:model.value ();
                 ];
               (* Cursor style display *)
-              text
-                ~content:
-                  (Printf.sprintf "Cursor style: %s"
-                     (cursor_style_name model.cursor_style))
-                ~text_style:hint ();
+              text ~text_style:hint
+                (Printf.sprintf "Cursor style: %s"
+                   (cursor_style_name model.cursor_style));
             ];
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [ text ~content:"c cycle cursor  •  Esc quit" ~text_style:hint () ];
+        [ text ~text_style:hint "c cycle cursor  •  Esc quit" ];
     ]
 
 let subscriptions _model =

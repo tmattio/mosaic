@@ -15,7 +15,7 @@ let%expect_test "border disabled ignores custom sides" =
   let content =
     box ~id:"test" ~size:(size ~width:16 ~height:5) ~border:false
       ~border_sides:[ `Top; `Bottom ]
-      [ text ~id:"text" ~content:"No border" () ]
+      [ text ~id:"text" "No border" ]
   in
   render_boxed ~width:16 ~height:5 content;
   [%expect_exact
@@ -32,7 +32,7 @@ let%expect_test "border disabled ignores custom sides" =
 let%expect_test "border clips content area" =
   let content =
     box ~id:"test" ~size:(size ~width:14 ~height:4) ~border:true
-      [ text ~id:"text" ~content:"ABCDEFGHIJKLMN" ~wrap_mode:`None () ]
+      [ text ~id:"text" ~wrap_mode:`None "ABCDEFGHIJKLMN" ]
   in
   render_boxed ~width:14 ~height:4 content;
   [%expect_exact
@@ -49,7 +49,7 @@ let%expect_test "box with selective sides" =
   let content =
     box ~id:"test" ~size:(size ~width:18 ~height:4) ~border:true
       ~border_sides:[ `Top; `Bottom ]
-      [ text ~id:"text" ~content:"Horizontal" ~wrap_mode:`None () ]
+      [ text ~id:"text" ~wrap_mode:`None "Horizontal" ]
   in
   render_boxed ~width:18 ~height:4 content;
   [%expect_exact
@@ -64,7 +64,7 @@ let%expect_test "box with selective sides" =
 
 let style_box label border_style =
   box ~id:label ~size:(size ~width:14 ~height:3) ~border:true ~border_style
-    [ text ~id:(label ^ "_text") ~content:label () ]
+    [ text ~id:(label ^ "_text") label ]
 
 let%expect_test "box border styles" =
   let content =
@@ -103,7 +103,7 @@ let%expect_test "box border styles" =
 let title_box title alignment =
   box ~id:title ~size:(size ~width:18 ~height:4) ~border:true ~title
     ~title_alignment:alignment
-    [ text ~id:(title ^ "_text") ~content:(String.capitalize_ascii title) () ]
+    [ text ~id:(title ^ "_text") (String.capitalize_ascii title) ]
 
 let%expect_test "box title alignments" =
   let content =
@@ -141,7 +141,7 @@ let%expect_test "title omitted without top border" =
   let content =
     box ~id:"test" ~size:(size ~width:16 ~height:5) ~border:true ~title:"Hidden"
       ~border_sides:[ `Left; `Right; `Bottom ]
-      [ text ~id:"text" ~content:"No top border" () ]
+      [ text ~id:"text" "No top border" ]
   in
   render_boxed ~width:16 ~height:5 content;
   [%expect_exact
@@ -174,7 +174,7 @@ let%expect_test "custom border characters" =
   let content =
     box ~id:"test" ~size:(size ~width:14 ~height:4) ~border:true
       ~custom_border_chars:funky_border
-      [ text ~id:"text" ~content:"Custom" () ]
+      [ text ~id:"text" "Custom" ]
   in
   render_boxed ~width:14 ~height:4 content;
   [%expect_exact
@@ -191,7 +191,7 @@ let%expect_test "border style via props" =
   let content =
     box ~id:"test" ~size:(size ~width:14 ~height:4) ~border:true
       ~border_style:Border.double
-      [ text ~id:"text" ~content:"Double" () ]
+      [ text ~id:"text" "Double" ]
   in
   render_boxed ~width:14 ~height:4 content;
   [%expect_exact
@@ -208,7 +208,7 @@ let%expect_test "nested boxes render without overlap" =
   (* inner box needs height:3 to have 1 row of content (height - 2 for borders) *)
   let inner =
     box ~id:"inner" ~size:(size ~width:8 ~height:3) ~border:true
-      [ text ~id:"inner_text" ~content:"Inner" () ]
+      [ text ~id:"inner_text" "Inner" ]
   in
   let content =
     box ~id:"outer_box" ~size:(size ~width:12 ~height:6) ~border:true [ inner ]
@@ -242,8 +242,8 @@ let%expect_test "colored box renders orange background" =
         box ~id:"inner_box" ~flex_direction:Column ~align_items:Center
           ~justify_content:Center
           [
-            text ~id:"ideas" ~content:"Ideas" ~text_style:bold_dark ();
-            text ~id:"drag" ~content:"Drag me" ~text_style:dim_dark ();
+            text ~id:"ideas" ~text_style:bold_dark "Ideas";
+            text ~id:"drag" ~text_style:dim_dark "Drag me";
           ];
       ]
   in
