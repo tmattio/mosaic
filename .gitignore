@@ -1,3 +1,6 @@
+# opam switch
+_opam/
+
 # Build output directory
 _build/
 
@@ -6,6 +9,3 @@ dune.lock/
 
 # Development tools lock files
 dev-tools.locks/
-
-# taffy
-taffy/
