@@ -1,1597 +1,1417 @@
-module Cell = Cell
+(* grid.ml *)
 
-type rect = { row : int; col : int; width : int; height : int }
+module Buf = struct
+  type ('a, 'b) t = ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t
 
-(* Columnar storage for cells using Bigarray for better memory locality *)
-module Storage = struct
-  (* Lightweight cell view for performance-critical operations *)
-  type cell_view = {
-    cell_type : int; (* 0=empty, 1=glyph, 2=continuation *)
-    style : int64; (* Style bits *)
-  }
+  let create kind len = Bigarray.Array1.create kind Bigarray.c_layout len
+  let make_float len = create Bigarray.float32 len
+  let make_int16 len = create Bigarray.int16_unsigned len
+  let make_int32 len = create Bigarray.int32 len
+  let make_int len = create Bigarray.int len
 
-  type t = {
-    (* Text storage: use Bytes array for inline storage (up to 8 bytes per cell) *)
-    mutable texts : Bytes.t array;
-    (* Style storage: packed int64 *)
-    mutable styles :
-      (int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array2.t;
-    (* Width storage: 0=empty/continuation, 1-2=glyph width *)
-    mutable widths :
-      (int, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array2.t;
-    (* Cell type: 0=empty, 1=glyph, 2=continuation *)
-    mutable types :
-      (int, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array2.t;
-    (* String pool for deduplication *)
-    string_pool : (string, int) Hashtbl.t;
-    mutable pool_strings : string array;
-    mutable pool_size : int;
-    (* Link storage - ID to URL mapping *)
-    link_table : (int, string) Hashtbl.t;
-    mutable next_link_id : int;
-  }
-
-  let create rows cols =
-    let styles =
-      Bigarray.Array2.create Bigarray.int64 Bigarray.c_layout rows cols
-    in
-    let widths =
-      Bigarray.Array2.create Bigarray.int8_unsigned Bigarray.c_layout rows cols
-    in
-    let types =
-      Bigarray.Array2.create Bigarray.int8_unsigned Bigarray.c_layout rows cols
-    in
-
-    (* Initialize bigarrays to prevent garbage values *)
-    Bigarray.Array2.fill styles (Ansi.Style.default :> int64);
-    Bigarray.Array2.fill widths 0;
-    Bigarray.Array2.fill types 0;
-
-    {
-      texts =
-        Array.init rows (fun _ ->
-            let bytes = Bytes.create (cols * 8) in
-            (* Initialize all bytes to zero to ensure deterministic behavior *)
-            Bytes.fill bytes 0 (Bytes.length bytes) '\000';
-            bytes);
-      styles;
-      widths;
-      types;
-      string_pool = Hashtbl.create 1024;
-      pool_strings = Array.make 1024 "";
-      pool_size = 0;
-      link_table = Hashtbl.create 64;
-      next_link_id = 1;
-    }
-
-  let resize storage new_rows new_cols old_rows old_cols =
-    let new_texts =
-      Array.init new_rows (fun _ ->
-          let bytes = Bytes.create (new_cols * 8) in
-          (* Initialize all bytes to zero to ensure deterministic behavior *)
-          Bytes.fill bytes 0 (Bytes.length bytes) '\000';
-          bytes)
-    in
-    let new_styles =
-      Bigarray.Array2.create Bigarray.int64 Bigarray.c_layout new_rows new_cols
-    in
-    let new_widths =
-      Bigarray.Array2.create Bigarray.int8_unsigned Bigarray.c_layout new_rows
-        new_cols
-    in
-    let new_types =
-      Bigarray.Array2.create Bigarray.int8_unsigned Bigarray.c_layout new_rows
-        new_cols
-    in
-
-    (* Initialize bigarrays to zero to prevent garbage values *)
-    Bigarray.Array2.fill new_styles (Ansi.Style.default :> int64);
-    Bigarray.Array2.fill new_widths 0;
-    Bigarray.Array2.fill new_types 0;
-
-    (* Copy existing data *)
-    let copy_rows = min old_rows new_rows in
-    let copy_cols = min old_cols new_cols in
-    for r = 0 to copy_rows - 1 do
-      (* Use unsafe operations for better performance in tight loops *)
-      for c = 0 to copy_cols - 1 do
-        Bigarray.Array2.unsafe_set new_types r c
-          (Bigarray.Array2.unsafe_get storage.types r c);
-        Bigarray.Array2.unsafe_set new_widths r c
-          (Bigarray.Array2.unsafe_get storage.widths r c);
-        Bigarray.Array2.unsafe_set new_styles r c
-          (Bigarray.Array2.unsafe_get storage.styles r c)
-      done;
-      (* Copy text bytes in bulk for the entire row *)
-      if copy_cols > 0 then (
-        let bytes_to_copy = copy_cols * 8 in
-        Bytes.blit storage.texts.(r) 0 new_texts.(r) 0 bytes_to_copy;
-        (* Zero out any remaining bytes in partially-filled rows *)
-        if copy_cols < new_cols then
-          let start_offset = copy_cols * 8 in
-          let bytes_to_clear = (new_cols - copy_cols) * 8 in
-          Bytes.fill new_texts.(r) start_offset bytes_to_clear '\000')
-    done;
-
-    storage.texts <- new_texts;
-    storage.styles <- new_styles;
-    storage.widths <- new_widths;
-    storage.types <- new_types
-
-  let intern_string storage s =
-    if String.length s <= 7 then
-      (* Store inline - return negative to indicate inline storage *)
-      -1
-    else
-      match Hashtbl.find_opt storage.string_pool s with
-      | Some idx -> idx
-      | None ->
-          let idx = storage.pool_size in
-          if idx >= Array.length storage.pool_strings then (
-            (* Grow pool *)
-            let new_size = Array.length storage.pool_strings * 2 in
-            let new_pool = Array.make new_size "" in
-            Array.blit storage.pool_strings 0 new_pool 0 storage.pool_size;
-            storage.pool_strings <- new_pool);
-          storage.pool_strings.(idx) <- s;
-          Hashtbl.add storage.string_pool s idx;
-          storage.pool_size <- idx + 1;
-          idx
-
-  let get_string storage row col =
-    let base = col * 8 in
-    if row < 0 || row >= Array.length storage.texts then ""
-    else
-      let texts = storage.texts.(row) in
-      if base >= Bytes.length texts then ""
-      else
-        (* Check first byte to see if it's inline or pooled *)
-        let b0 = Char.code (Bytes.unsafe_get texts base) in
-        if b0 = 0 then ""
-        else if b0 = 255 then
-          (* Pooled string - next 4 bytes are index *)
-          let idx =
-            Char.code (Bytes.unsafe_get texts (base + 1))
-            lor (Char.code (Bytes.unsafe_get texts (base + 2)) lsl 8)
-            lor (Char.code (Bytes.unsafe_get texts (base + 3)) lsl 16)
-            lor (Char.code (Bytes.unsafe_get texts (base + 4)) lsl 24)
-          in
-          if idx >= 0 && idx < storage.pool_size then storage.pool_strings.(idx)
-          else "" (* Invalid index, return empty string *)
-        else
-          (* Inline string - first byte is length, rest is string data *)
-          let len = b0 in
-          if len > 7 then "" (* Invalid length *)
-          else
-            let buf = Bytes.create len in
-            for i = 0 to len - 1 do
-              Bytes.unsafe_set buf i (Bytes.unsafe_get texts (base + 1 + i))
-            done;
-            Bytes.to_string buf
-
-  let set_string storage row col s =
-    let base = col * 8 in
-    if row < 0 || row >= Array.length storage.texts then ()
-    else
-      let texts = storage.texts.(row) in
-      if base + 7 >= Bytes.length texts then ()
-      else
-        let len = String.length s in
-        if len = 0 then
-          (* Clear all bytes *)
-          Bytes.fill texts base 8 '\000'
-        else if len <= 7 then (
-          (* Inline storage - first byte is length *)
-          Bytes.unsafe_set texts base (Char.chr len);
-          (* Use blit for faster copy *)
-          Bytes.blit_string s 0 texts (base + 1) len;
-          (* Clear remaining bytes *)
-          if len < 7 then Bytes.fill texts (base + 1 + len) (7 - len) '\000')
-        else
-          (* Pool storage *)
-          let idx = intern_string storage s in
-          Bytes.unsafe_set texts base '\255';
-          (* Marker for pooled *)
-          Bytes.unsafe_set texts (base + 1) (Char.chr (idx land 0xFF));
-          Bytes.unsafe_set texts (base + 2) (Char.chr ((idx lsr 8) land 0xFF));
-          Bytes.unsafe_set texts (base + 3) (Char.chr ((idx lsr 16) land 0xFF));
-          Bytes.unsafe_set texts (base + 4) (Char.chr ((idx lsr 24) land 0xFF));
-          Bytes.fill texts (base + 5) 3 '\000'
-
-  let get_cell storage row col =
-    let rows = Bigarray.Array2.dim1 storage.types in
-    let cols = Bigarray.Array2.dim2 storage.types in
-    if row < 0 || row >= rows || col < 0 || col >= cols then Cell.empty
-    else
-      let cell_type = Bigarray.Array2.unsafe_get storage.types row col in
-      match cell_type with
-      | 0 ->
-          (* Empty cell - check if it has a style *)
-          let style_int64 = Bigarray.Array2.unsafe_get storage.styles row col in
-          let style = Ansi.Style.of_int64 style_int64 in
-          if Ansi.Style.equal style Ansi.Style.default then Cell.empty
-          else
-            (* Empty cell with style - create a glyph with space to preserve style *)
-            Cell.make_glyph " " ~style ~east_asian_context:false
-      | 1 ->
-          let text = get_string storage row col in
-          let style =
-            Ansi.Style.of_int64
-              (Bigarray.Array2.unsafe_get storage.styles row col)
-          in
-          (* Note: links are handled at storage level, not cell level *)
-          Cell.make_glyph text ~style ~east_asian_context:false
-      | 2 ->
-          let style =
-            Ansi.Style.of_int64
-              (Bigarray.Array2.unsafe_get storage.styles row col)
-          in
-          Cell.make_continuation ~style
-      | _ -> Cell.empty
-
-  (* Fast hash without allocation - directly hash the raw data *)
-  let fast_hash storage row col =
-    let rows = Bigarray.Array2.dim1 storage.types in
-    let cols = Bigarray.Array2.dim2 storage.types in
-    if row < 0 || row >= rows || col < 0 || col >= cols then 0
-    else
-      let typ = Bigarray.Array2.unsafe_get storage.types row col in
-      let sty = Bigarray.Array2.unsafe_get storage.styles row col in
-      let wid = Bigarray.Array2.unsafe_get storage.widths row col in
-      (* Hash type, style, and width together *)
-      let h1 = typ lxor (typ lsl 7) in
-      let h2 = Int64.(to_int (logxor sty (shift_right_logical sty 32))) in
-      let h3 = wid lxor (wid lsl 3) in
-      let base_hash = h1 lxor h2 lxor h3 in
-      (* For glyphs, also hash the text *)
-      if typ = 1 then
-        let text = get_string storage row col in
-        base_hash lxor Hashtbl.hash text
-      else base_hash
-
-  let cell_hash storage row col = fast_hash storage row col
-
-  let set_cell_with_old_hash storage row col cell =
-    let old_hash = cell_hash storage row col in
-    (if Cell.is_empty cell then (
-       Bigarray.Array2.unsafe_set storage.types row col 0;
-       Bigarray.Array2.unsafe_set storage.widths row col 0;
-       Bigarray.Array2.unsafe_set storage.styles row col
-         (Ansi.Style.default :> int64);
-       set_string storage row col "")
-     else if Cell.is_continuation cell then (
-       let style = Cell.get_style cell in
-       Bigarray.Array2.unsafe_set storage.types row col 2;
-       Bigarray.Array2.unsafe_set storage.widths row col 0;
-       Bigarray.Array2.unsafe_set storage.styles row col (style :> int64);
-       set_string storage row col "")
-     else
-       (* Glyph *)
-       let text = Cell.get_text cell in
-       let width = Cell.width cell in
-       let style = Cell.get_style cell in
-       Bigarray.Array2.unsafe_set storage.types row col 1;
-       Bigarray.Array2.unsafe_set storage.widths row col width;
-       Bigarray.Array2.unsafe_set storage.styles row col (style :> int64);
-       set_string storage row col text);
-    (* Return old hash for incremental updates *)
-    old_hash
-
-  let set_cell storage row col cell =
-    let _ = set_cell_with_old_hash storage row col cell in
-    ()
-
-  (* Fast cell view access without allocation *)
-  let get_cell_view storage row col =
-    let rows = Bigarray.Array2.dim1 storage.types in
-    let cols = Bigarray.Array2.dim2 storage.types in
-    if row < 0 || row >= rows || col < 0 || col >= cols then
-      { cell_type = 0; style = (Ansi.Style.default :> int64) }
-    else
-      {
-        cell_type = Bigarray.Array2.unsafe_get storage.types row col;
-        style = Bigarray.Array2.unsafe_get storage.styles row col;
-      }
-
-  (* Fast cell comparison without full Cell construction *)
-  let cells_equal storage1 row1 col1 storage2 row2 col2 =
-    let v1 = get_cell_view storage1 row1 col1 in
-    let v2 = get_cell_view storage2 row2 col2 in
-
-    (* Quick type and style check - styles include link IDs *)
-    if v1.cell_type <> v2.cell_type || v1.style <> v2.style then false
-    else if v1.cell_type = 0 then true (* Both empty *)
-    else if v1.cell_type = 2 then true
-      (* Continuation cells - style already compared *)
-    else
-      (* Glyph cells - compare text bytes directly to avoid string allocation *)
-      let base1 = col1 * 8 in
-      let base2 = col2 * 8 in
-      if
-        row1 >= 0
-        && row1 < Array.length storage1.texts
-        && row2 >= 0
-        && row2 < Array.length storage2.texts
-      then
-        let texts1 = storage1.texts.(row1) in
-        let texts2 = storage2.texts.(row2) in
-        (* Compare the 8 bytes directly *)
-        let rec compare_bytes i =
-          if i >= 8 then true
-          else if
-            Bytes.unsafe_get texts1 (base1 + i)
-            <> Bytes.unsafe_get texts2 (base2 + i)
-          then false
-          else compare_bytes (i + 1)
-        in
-        compare_bytes 0
-      else false
+  (* Unsafe accessors for performance (bounds checked at Grid level) *)
+  let[@inline] get arr i = Bigarray.Array1.unsafe_get arr i
+  let[@inline] set arr i v = Bigarray.Array1.unsafe_set arr i v
+  let fill = Bigarray.Array1.fill
+  let blit = Bigarray.Array1.blit
+  let sub = Bigarray.Array1.sub
+  let dim = Bigarray.Array1.dim
 end
 
-(* Compute hash of a row for quick comparison - using XOR with better mixing *)
-let row_hash storage row cols =
-  (* Use XOR-based hash for O(1) incremental updates, with better mixing to avoid collisions *)
-  (* Mix position more strongly: use a larger prime and rotate bits *)
-  let hash = ref 0 in
-  for col = 0 to cols - 1 do
-    let cell_hash = Storage.fast_hash storage row col in
-    (* Mix position with cell hash using multiplication and rotation *)
-    (* This ensures 'a' at position 0 differs from 'b' at position 0 *)
-    let position_factor = 0x45d9f3b in
-    (* Large prime for mixing *)
-    let mixed = cell_hash lxor (cell_hash lsl 13) in
-    (* Self-mix the cell hash *)
-    let position_mixed = mixed lxor ((col + 1) * position_factor) in
-    (* +1 to avoid col=0 issues *)
-    (* Rotate to spread bits *)
-    let rotated = (position_mixed lsl 7) lor (position_mixed lsr 25) in
-    hash := !hash lxor rotated
-  done;
-  !hash
+module Color_plane = struct
+  let channels = 4
+  let[@inline] get arr idx off = Buf.get arr ((idx * channels) + off)
+  let[@inline] set arr idx off v = Buf.set arr ((idx * channels) + off) v
 
-(* Compute row hash from cached cell hashes - for incremental updates *)
-let row_hash_from_cache cell_hashes cols =
-  let hash = ref 0 in
-  for col = 0 to cols - 1 do
-    let cell_hash = cell_hashes.(col) in
-    (* Same mixing as above for consistency *)
-    let position_factor = 0x45d9f3b in
-    let mixed = cell_hash lxor (cell_hash lsl 13) in
-    let position_mixed = mixed lxor ((col + 1) * position_factor) in
-    let rotated = (position_mixed lsl 7) lor (position_mixed lsr 25) in
-    hash := !hash lxor rotated
-  done;
-  !hash
+  let clamp v =
+    let v = v *. 255. |> Float.round |> int_of_float in
+    max 0 (min 255 v)
+
+  let[@inline] perceptual_alpha a =
+    if a >= 0.8 then
+      let norm = (a -. 0.8) *. 5. in
+      0.8 +. (Float.pow norm 0.2 *. 0.2)
+    else Float.pow a 0.9
+
+  let[@inline] mix src dst alpha = (src *. alpha) +. (dst *. (1. -. alpha))
+
+  (* IO operations *)
+  let read_rgba arr idx =
+    let base = idx * channels in
+    ( Buf.get arr base,
+      Buf.get arr (base + 1),
+      Buf.get arr (base + 2),
+      Buf.get arr (base + 3) )
+
+  let equal_eps ?(eps = 0.00001) arr1 idx1 arr2 idx2 =
+    let b1 = idx1 * channels in
+    let b2 = idx2 * channels in
+    Float.abs (Buf.get arr1 b1 -. Buf.get arr2 b2) < eps
+    && Float.abs (Buf.get arr1 (b1 + 1) -. Buf.get arr2 (b2 + 1)) < eps
+    && Float.abs (Buf.get arr1 (b1 + 2) -. Buf.get arr2 (b2 + 2)) < eps
+    && Float.abs (Buf.get arr1 (b1 + 3) -. Buf.get arr2 (b2 + 3)) < eps
+end
+
+module Rect = struct
+  type t = { x : int; y : int; width : int; height : int }
+
+  let intersection a b =
+    let x = max a.x b.x in
+    let y = max a.y b.y in
+    let w = min (a.x + a.width) (b.x + b.width) - x in
+    let h = min (a.y + a.height) (b.y + b.height) - y in
+    if w > 0 && h > 0 then Some { x; y; width = w; height = h } else None
+
+  let clip_to_bounds max_w max_h r =
+    let x = max 0 r.x in
+    let y = max 0 r.y in
+    let w = min (r.x + r.width) max_w - x in
+    let h = min (r.y + r.height) max_h - y in
+    if w > 0 && h > 0 then Some { x; y; width = w; height = h } else None
+end
+
+module Scissor_stack = struct
+  type t = Rect.t Dynarray.t
+
+  let create_scissor_stack () = Dynarray.create ()
+  let current s = if Dynarray.is_empty s then None else Dynarray.find_last s
+  let push s r = Dynarray.add_last s r
+  let pop s = ignore (Dynarray.pop_last_opt s)
+  let clear s = Dynarray.clear s
+
+  let is_contained rect_opt ~x ~y =
+    let open Rect in
+    match rect_opt with
+    | None -> true
+    | Some r -> x >= r.x && y >= r.y && x < r.x + r.width && y < r.y + r.height
+end
+
+module Cell_code = struct
+  (*
+    Bit Layout (aligned with Glyph.t for direct compatibility):
+    bit 30: grapheme flag (0 = simple/scalar, 1 = complex grapheme)
+    bit 29: continuation flag (0 = start, 1 = continuation)
+    bits 27-28: right_extent (width - 1 for start, distance to end for cont)
+    bits 25-26: left_extent (distance to start for continuation cells)
+    bits 0-24: payload (Unicode scalar for simple, or Glyph pool data for complex)
+
+    This layout matches Glyph.t exactly, allowing direct storage of glyph values
+    without transformation. Simple ASCII glyphs are stored as-is (no flags set).
+    Complex glyphs from Glyph.encode/intern can be stored directly.
+  *)
+
+  let flag_grapheme = 0x40000000 (* bit 30 *)
+  let flag_complex_cont = 0x60000000 (* bits 30 + 29: complex continuation *)
+  let mask_right_ext = 0x18000000 (* bits 27-28 *)
+  let shift_right_ext = 27
+  let mask_left_ext = 0x06000000 (* bits 25-26 *)
+  let shift_left_ext = 25
+  let mask_payload = 0x01FFFFFF (* bits 0-24 *)
+  let empty = 0 (* Null/Empty cell *)
+  let space = 32 (* ASCII Space *)
+
+  (* Predicates - aligned with Glyph.is_simple, etc. *)
+  let[@inline] is_simple c = c land flag_grapheme = 0
+  let[@inline] is_complex c = c land flag_grapheme <> 0
+  let[@inline] is_continuation c = c land flag_complex_cont = flag_complex_cont
+  let[@inline] is_start c = is_complex c && not (is_continuation c)
+
+  (* Extraction *)
+  let[@inline] payload c = c land mask_payload
+
+  let[@inline] width c =
+    if is_simple c then 1
+    else if is_continuation c then 0
+    else
+      let w_minus_1 = (c land mask_right_ext) lsr shift_right_ext in
+      w_minus_1 + 1
+
+  (* Extent extraction for O(1) cleanup *)
+  let[@inline] left_extent c = (c land mask_left_ext) lsr shift_left_ext
+  let[@inline] right_extent c = (c land mask_right_ext) lsr shift_right_ext
+
+  (* Construction - for continuation cells created during draw_text.
+     Start cells can now use the Glyph.t value directly. *)
+  let make_cont ~id ~left ~right =
+    let l_enc = min 3 left in
+    let r_enc = min 3 right in
+    flag_complex_cont lor (id land mask_payload) lor (l_enc lsl shift_left_ext)
+    lor (r_enc lsl shift_right_ext)
+end
+
+module Links = struct
+  type t = {
+    mutable next_id : int32;
+    forward : (string, int32) Hashtbl.t;
+    reverse : (int32, string) Hashtbl.t;
+  }
+
+  let create () =
+    { next_id = 1l; forward = Hashtbl.create 32; reverse = Hashtbl.create 32 }
+
+  let no_link = -1l
+
+  let clear t =
+    t.next_id <- 1l;
+    Hashtbl.clear t.forward;
+    Hashtbl.clear t.reverse
+
+  let copy_state ~src ~dst =
+    clear dst;
+    dst.next_id <- src.next_id;
+    Hashtbl.iter (fun k v -> Hashtbl.add dst.forward k v) src.forward;
+    Hashtbl.iter (fun k v -> Hashtbl.add dst.reverse k v) src.reverse
+
+  let intern t url_opt =
+    match url_opt with
+    | None -> no_link
+    | Some url -> (
+        match Hashtbl.find_opt t.forward url with
+        | Some id -> id
+        | None ->
+            let id = t.next_id in
+            t.next_id <- Int32.add id 1l;
+            Hashtbl.add t.forward url id;
+            Hashtbl.add t.reverse id url;
+            id)
+
+  let resolve t id = Hashtbl.find_opt t.reverse id
+  let resolve_direct t id = try Hashtbl.find t.reverse id with Not_found -> ""
+end
+
+module Border = Border
+
+type clip_rect = Rect.t = { x : int; y : int; width : int; height : int }
 
 type t = {
-  mutable storage : Storage.t;
-  mutable rows : int;
-  mutable cols : int;
-  mutable row_hashes : int array; (* Cache for row hashes *)
-  mutable cell_hashes : int array array;
-      (* Cache individual cell hashes for incremental updates *)
-  mutable dirty_rows : bool array; (* Track which rows are dirty *)
-  mutable col_dirty : int64 array array; (* Per-row dirty column bitsets *)
-  east_asian_context : bool;
-  mutable batch_updates : bool; (* Whether we're in a batch update *)
-  mutable batch_dirty_rows : int list; (* Rows modified during batch *)
+  mutable width : int;
+  mutable height : int;
+  (* Configuration *)
+  glyph_pool : Glyph.pool;
+  mutable width_method : Glyph.width_method;
+  mutable respect_alpha : bool;
+  (* Storage *)
+  mutable chars : (int, Bigarray.int_elt) Buf.t;
+  mutable fg : (float, Bigarray.float32_elt) Buf.t;
+  mutable bg : (float, Bigarray.float32_elt) Buf.t;
+  mutable attrs : (int, Bigarray.int16_unsigned_elt) Buf.t;
+  mutable links : (int32, Bigarray.int32_elt) Buf.t;
+  (* Subsystems *)
+  link_registry : Links.t;
+  grapheme_tracker : Grapheme_tracker.t;
+  scissor_stack : Scissor_stack.t;
 }
 
-let create ~rows ~cols ?(east_asian_context = false) () =
-  let storage = Storage.create rows cols in
-  (* Optimization: All empty cells have the same hash, compute once *)
-  let empty_cell_hash =
-    if rows > 0 && cols > 0 then Storage.fast_hash storage 0 0 else 0
+(* ---- Constants ---- *)
+
+let null_cell = Cell_code.empty
+let space_cell = Cell_code.space
+let no_link = Links.no_link
+
+(* ---- Initialization & Lifecycle ---- *)
+
+let fill_defaults t =
+  Grapheme_tracker.clear t.grapheme_tracker;
+  Links.clear t.link_registry;
+  Scissor_stack.clear t.scissor_stack;
+
+  Buf.fill t.chars space_cell;
+  Buf.fill t.attrs 0;
+  Buf.fill t.links no_link;
+  Buf.fill t.fg 1.0;
+  Buf.fill t.bg 0.0
+
+let create ~width ~height ?glyph_pool ?width_method ?(respect_alpha = false) ()
+    =
+  if width <= 0 || height <= 0 then
+    invalid_arg "Grid.create: width and height must be > 0";
+
+  let size = width * height in
+  let pool = Option.value glyph_pool ~default:(Glyph.create_pool ()) in
+  let w_method = Option.value width_method ~default:`Unicode in
+
+  let t =
+    {
+      width;
+      height;
+      glyph_pool = pool;
+      width_method = w_method;
+      respect_alpha;
+      chars = Buf.make_int size;
+      fg = Buf.make_float (size * 4);
+      bg = Buf.make_float (size * 4);
+      attrs = Buf.make_int16 size;
+      links = Buf.make_int32 size;
+      link_registry = Links.create ();
+      grapheme_tracker = Grapheme_tracker.create pool;
+      scissor_stack = Scissor_stack.create_scissor_stack ();
+    }
   in
-  (* Initialize cell hashes with the empty hash value *)
-  let cell_hashes =
-    Array.init rows (fun _ -> Array.make cols empty_cell_hash)
+  fill_defaults t;
+  t
+
+(* ---- Accessors ---- *)
+
+let width t = t.width
+let height t = t.height
+let glyph_pool t = t.glyph_pool
+let width_method t = t.width_method
+let set_width_method t m = t.width_method <- m
+let respect_alpha t = t.respect_alpha
+let set_respect_alpha t b = t.respect_alpha <- b
+
+let hyperlink_url t id =
+  if id = no_link then None else Links.resolve t.link_registry id
+
+let hyperlink_url_direct t id =
+  if id = no_link then "" else Links.resolve_direct t.link_registry id
+
+(* ---- Cell Accessors ---- *)
+
+(* Cell_code is aligned with Glyph.t, so cell codes are valid Glyph.t values *)
+let[@inline] get_code t idx = Buf.get t.chars idx
+let[@inline] get_glyph t idx = Buf.get t.chars idx
+let[@inline] get_attrs t idx = Buf.get t.attrs idx
+let[@inline] get_link t idx = Buf.get t.links idx
+let[@inline] get_fg_r t idx = Color_plane.get t.fg idx 0
+let[@inline] get_fg_g t idx = Color_plane.get t.fg idx 1
+let[@inline] get_fg_b t idx = Color_plane.get t.fg idx 2
+let[@inline] get_fg_a t idx = Color_plane.get t.fg idx 3
+let[@inline] get_bg_r t idx = Color_plane.get t.bg idx 0
+let[@inline] get_bg_g t idx = Color_plane.get t.bg idx 1
+let[@inline] get_bg_b t idx = Color_plane.get t.bg idx 2
+let[@inline] get_bg_a t idx = Color_plane.get t.bg idx 3
+
+let get_style t idx =
+  let attrs = Ansi.Attr.unpack (Buf.get t.attrs idx) in
+  let link_id = Buf.get t.links idx in
+  let link = hyperlink_url t link_id in
+
+  let to_color plane idx =
+    let r = Color_plane.get plane idx 0 in
+    let g = Color_plane.get plane idx 1 in
+    let b = Color_plane.get plane idx 2 in
+    let a = Color_plane.get plane idx 3 in
+    (* Use Color_plane.clamp for consistent rounding/clamping with get_background *)
+    Ansi.Color.of_rgba (Color_plane.clamp r) (Color_plane.clamp g)
+      (Color_plane.clamp b) (Color_plane.clamp a)
   in
-  (* For empty grid, all rows have the same hash pattern *)
-  let row_hashes = Array.make rows 0 in
-  if cols > 0 then (
-    (* Compute row hash once for empty row using XOR with mixing *)
-    let empty_row_hash = ref 0 in
-    let position_factor = 0x45d9f3b in
-    for col = 0 to cols - 1 do
-      let mixed = empty_cell_hash lxor (empty_cell_hash lsl 13) in
-      let position_mixed = mixed lxor ((col + 1) * position_factor) in
-      let rotated = (position_mixed lsl 7) lor (position_mixed lsr 25) in
-      empty_row_hash := !empty_row_hash lxor rotated
-    done;
-    (* All rows have the same hash initially *)
-    Array.fill row_hashes 0 rows !empty_row_hash);
-  let dirty_rows = Array.make rows false in
-  let col_dirty = Array.init rows (fun _ -> Array.make ((cols + 63) / 64) 0L) in
-  {
-    storage;
-    rows;
-    cols;
-    row_hashes;
-    cell_hashes;
-    dirty_rows;
-    col_dirty;
-    east_asian_context;
-    batch_updates = false;
-    batch_dirty_rows = [];
-  }
 
-(* Helper functions for column dirty tracking *)
-let mark_col_dirty grid row col =
-  if row >= 0 && row < grid.rows && col >= 0 && col < grid.cols then
-    let word = col / 64 in
-    let bit = Int64.shift_left 1L (col mod 64) in
-    if word < Array.length grid.col_dirty.(row) then
-      grid.col_dirty.(row).(word) <- Int64.logor grid.col_dirty.(row).(word) bit
+  Ansi.Style.make ~fg:(to_color t.fg idx) ~bg:(to_color t.bg idx) ?link ()
+  |> Ansi.Style.with_attrs attrs
 
-let clear_col_dirty grid row =
-  if row >= 0 && row < grid.rows then
-    Array.fill grid.col_dirty.(row) 0 (Array.length grid.col_dirty.(row)) 0L
+let get_background t idx =
+  let r, g, b, a = Color_plane.read_rgba t.bg idx in
+  Ansi.Color.of_rgba (Color_plane.clamp r) (Color_plane.clamp g)
+    (Color_plane.clamp b) (Color_plane.clamp a)
 
-(* Get dirty column ranges for a row - useful for incremental updates within a grid
-   Currently unused but kept for potential future optimizations *)
-let _get_dirty_col_ranges grid row =
-  if row < 0 || row >= grid.rows then []
+let get_text t idx =
+  (* Cell_code is aligned with Glyph.t, so cell codes can be passed
+     directly to Glyph.to_string *)
+  let c = Buf.get t.chars idx in
+  if Cell_code.is_continuation c then "" else Glyph.to_string t.glyph_pool c
+
+let is_empty t idx = Buf.get t.chars idx = Cell_code.empty
+let is_continuation t idx = Cell_code.is_continuation (Buf.get t.chars idx)
+let is_simple t idx = Cell_code.is_simple (Buf.get t.chars idx)
+let cell_width t idx = Cell_code.width (Buf.get t.chars idx)
+
+let[@inline] cells_equal t1 idx1 t2 idx2 =
+  Buf.get t1.chars idx1 = Buf.get t2.chars idx2
+  && Buf.get t1.attrs idx1 = Buf.get t2.attrs idx2
+  && Buf.get t1.links idx1 = Buf.get t2.links idx2
+  && Color_plane.equal_eps t1.fg idx1 t2.fg idx2
+  && Color_plane.equal_eps t1.bg idx1 t2.bg idx2
+
+(* ---- Grapheme Cleanup ---- *)
+
+let cleanup_grapheme_at t idx =
+  let code = Buf.get t.chars idx in
+
+  if Cell_code.is_simple code then ()
   else
-    let ranges = ref [] in
-    let row_dirty = grid.col_dirty.(row) in
-    for w = 0 to Array.length row_dirty - 1 do
-      let bits = row_dirty.(w) in
-      if bits <> 0L then
-        let base_col = w * 64 in
-        (* Use bit manipulation to find contiguous ranges *)
-        let rec scan_bits pos =
-          if pos >= 64 then ()
-          else if Int64.logand bits (Int64.shift_left 1L pos) <> 0L then (
-            let start = base_col + pos in
-            let rec find_end e =
-              if e >= 64 || Int64.logand bits (Int64.shift_left 1L e) = 0L then
-                e - 1
-              else find_end (e + 1)
-            in
-            let end_pos = find_end (pos + 1) in
-            ranges := (start, base_col + end_pos) :: !ranges;
-            scan_bits (end_pos + 1))
-          else scan_bits (pos + 1)
-        in
-        scan_bits 0
+    let left = Cell_code.left_extent code in
+    let right = Cell_code.right_extent code in
+
+    if left = 0 && right = 0 then ()
+    else
+      let start_idx = idx - left in
+      let end_idx = idx + right in
+      let limit = Buf.dim t.chars in
+
+      if start_idx >= 0 && end_idx < limit then
+        for i = start_idx to end_idx do
+          if i <> idx then
+            let neighbor_code = Buf.get t.chars i in
+            if neighbor_code <> space_cell then (
+              Grapheme_tracker.remove t.grapheme_tracker neighbor_code;
+              Buf.set t.chars i space_cell;
+              Buf.set t.attrs i 0;
+              Buf.set t.links i no_link)
+        done
+
+(* ---- Lifecycle: Clear & Resize ---- *)
+
+let clear ?color t =
+  Grapheme_tracker.clear t.grapheme_tracker;
+  Links.clear t.link_registry;
+
+  Buf.fill t.chars space_cell;
+  Buf.fill t.attrs 0;
+  Buf.fill t.links no_link;
+  Buf.fill t.fg 1.0;
+
+  let br, bg, bb, ba =
+    match color with
+    | None -> (0., 0., 0., 0.)
+    | Some c -> Ansi.Color.to_rgba_f c
+  in
+  let len = t.width * t.height in
+  for i = 0 to len - 1 do
+    Color_plane.set t.bg i 0 br;
+    Color_plane.set t.bg i 1 bg;
+    Color_plane.set t.bg i 2 bb;
+    Color_plane.set t.bg i 3 ba
+  done
+
+let resize t ~width ~height =
+  if width <= 0 || height <= 0 then
+    invalid_arg "Grid.resize: width and height must be > 0";
+
+  if width = t.width && height = t.height then ()
+  else
+    let old_width = t.width in
+    let old_height = t.height in
+    let old_chars = t.chars in
+    let old_attrs = t.attrs in
+    let old_links = t.links in
+    let old_fg = t.fg in
+    let old_bg = t.bg in
+
+    if width < old_width || height < old_height then
+      for y = 0 to old_height - 1 do
+        for x = 0 to old_width - 1 do
+          if x >= width || y >= height then
+            let idx = (y * old_width) + x in
+            let code = Buf.get old_chars idx in
+            Grapheme_tracker.remove t.grapheme_tracker code
+        done
+      done;
+
+    (* When shrinking width, drop any grapheme starts whose span crosses the
+       new right edge to avoid dangling extents into the next row. *)
+    (if width < old_width then
+       let max_row = min (old_height - 1) (height - 1) in
+       for y = 0 to max_row do
+         let row_start = y * old_width in
+         for x = 0 to width - 1 do
+           let idx = row_start + x in
+           let code = Buf.get old_chars idx in
+           if Cell_code.is_start code then
+             let span = Cell_code.width code in
+             if span > width - x then (
+               cleanup_grapheme_at t idx;
+               Grapheme_tracker.remove t.grapheme_tracker code;
+               Buf.set old_chars idx space_cell;
+               Buf.set old_attrs idx 0;
+               Buf.set old_links idx no_link;
+               Color_plane.set old_fg idx 0 1.0;
+               Color_plane.set old_fg idx 1 1.0;
+               Color_plane.set old_fg idx 2 1.0;
+               Color_plane.set old_fg idx 3 1.0;
+               Color_plane.set old_bg idx 0 0.0;
+               Color_plane.set old_bg idx 1 0.0;
+               Color_plane.set old_bg idx 2 0.0;
+               Color_plane.set old_bg idx 3 0.0)
+         done
+       done);
+
+    let new_size = width * height in
+    let new_chars = Buf.make_int new_size in
+    let new_attrs = Buf.make_int16 new_size in
+    let new_links = Buf.make_int32 new_size in
+    let new_fg = Buf.make_float (new_size * 4) in
+    let new_bg = Buf.make_float (new_size * 4) in
+
+    Buf.fill new_chars space_cell;
+    Buf.fill new_attrs 0;
+    Buf.fill new_links no_link;
+    Buf.fill new_fg 1.0;
+    Buf.fill new_bg 0.0;
+
+    let copy_w = min old_width width in
+    let copy_h = min old_height height in
+
+    for y = 0 to copy_h - 1 do
+      let src_start = y * old_width in
+      let dst_start = y * width in
+      Buf.blit
+        (Buf.sub old_chars src_start copy_w)
+        (Buf.sub new_chars dst_start copy_w);
+      Buf.blit
+        (Buf.sub old_attrs src_start copy_w)
+        (Buf.sub new_attrs dst_start copy_w);
+      Buf.blit
+        (Buf.sub old_links src_start copy_w)
+        (Buf.sub new_links dst_start copy_w);
+      Buf.blit
+        (Buf.sub old_fg (src_start * 4) (copy_w * 4))
+        (Buf.sub new_fg (dst_start * 4) (copy_w * 4));
+      Buf.blit
+        (Buf.sub old_bg (src_start * 4) (copy_w * 4))
+        (Buf.sub new_bg (dst_start * 4) (copy_w * 4))
     done;
-    List.rev !ranges
 
-(* Update row hash incrementally for a single cell change *)
-let update_row_hash_incremental grid row col =
-  if row >= 0 && row < grid.rows && col >= 0 && col < grid.cols then (
-    (* Get the old cell hash before updating *)
-    let old_cell_hash = grid.cell_hashes.(row).(col) in
-    (* Update the cell hash cache *)
-    let new_cell_hash = Storage.fast_hash grid.storage row col in
-    grid.cell_hashes.(row).(col) <- new_cell_hash;
+    t.width <- width;
+    t.height <- height;
+    t.chars <- new_chars;
+    t.attrs <- new_attrs;
+    t.links <- new_links;
+    t.fg <- new_fg;
+    t.bg <- new_bg
 
-    (* XOR-based incremental update: remove old contribution, add new *)
-    (* Use the same mixing as in row_hash for consistency *)
-    let position_factor = 0x45d9f3b in
+(* ---- Scissor Operations ---- *)
 
-    (* Remove old contribution *)
-    let old_mixed = old_cell_hash lxor (old_cell_hash lsl 13) in
-    let old_position_mixed = old_mixed lxor ((col + 1) * position_factor) in
-    let old_rotated =
-      (old_position_mixed lsl 7) lor (old_position_mixed lsr 25)
+let push_scissor t rect = Scissor_stack.push t.scissor_stack rect
+let pop_scissor t = Scissor_stack.pop t.scissor_stack
+let clear_scissor t = Scissor_stack.clear t.scissor_stack
+
+let with_scissor t rect f =
+  push_scissor t rect;
+  Fun.protect ~finally:(fun () -> pop_scissor t) f
+
+let[@inline] is_clipped t x y =
+  let scissor = Scissor_stack.current t.scissor_stack in
+  not (Scissor_stack.is_contained scissor ~x ~y)
+
+(* ---- Core Cell Writing ---- *)
+
+(* Zero-alloc core cell writer.
+   Takes unpacked colors to avoid tuple allocation in hot loops. *)
+let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
+    ~bg_a ~attrs ~link_id ~blending =
+  if blending && (bg_a < 0.999 || fg_a < 0.999) then (
+    (* Blending Path *)
+    (* Flattened read of destination colors *)
+    let dr_bg = Color_plane.get t.bg idx 0 in
+    let dg_bg = Color_plane.get t.bg idx 1 in
+    let db_bg = Color_plane.get t.bg idx 2 in
+    let da_bg = Color_plane.get t.bg idx 3 in
+
+    let dest_code = Buf.get t.chars idx in
+    let overlay_is_space = code = space_cell || code = null_cell in
+    let dest_has_content = dest_code <> null_cell && dest_code <> space_cell in
+    let preserve =
+      overlay_is_space && dest_has_content && Cell_code.width dest_code = 1
     in
 
-    (* Add new contribution *)
-    let new_mixed = new_cell_hash lxor (new_cell_hash lsl 13) in
-    let new_position_mixed = new_mixed lxor ((col + 1) * position_factor) in
-    let new_rotated =
-      (new_position_mixed lsl 7) lor (new_position_mixed lsr 25)
-    in
+    (if preserve then (
+       if
+         (* Preserve existing glyph/attrs/link; tint foreground over it *)
+         bg_a >= 0.999
+       then (
+         (* Opaque overlay: replace fg color entirely *)
+         Color_plane.set t.fg idx 0 bg_r;
+         Color_plane.set t.fg idx 1 bg_g;
+         Color_plane.set t.fg idx 2 bg_b)
+       else if bg_a > 0.001 then (
+         let dr_fg = Color_plane.get t.fg idx 0 in
+         let dg_fg = Color_plane.get t.fg idx 1 in
+         let db_fg = Color_plane.get t.fg idx 2 in
+         let pa = Color_plane.perceptual_alpha bg_a in
+         Color_plane.set t.fg idx 0 (Color_plane.mix bg_r dr_fg pa);
+         Color_plane.set t.fg idx 1 (Color_plane.mix bg_g dg_fg pa);
+         Color_plane.set t.fg idx 2 (Color_plane.mix bg_b db_fg pa)
+         (* else transparent: keep existing fg *)))
+     else
+       (* Normal blended overwrite of glyph & style *)
+       let old_code = dest_code in
+       if old_code <> code then (
+         let old_simple = Cell_code.is_simple old_code in
+         let new_simple = Cell_code.is_simple code in
+         if not old_simple then cleanup_grapheme_at t idx;
+         (* Update grapheme tracker only when complex graphemes are involved *)
+         (match (old_simple, new_simple) with
+         | true, true -> ()
+         | true, false -> Grapheme_tracker.add t.grapheme_tracker code
+         | false, true -> Grapheme_tracker.remove t.grapheme_tracker old_code
+         | false, false ->
+             Grapheme_tracker.replace t.grapheme_tracker ~old_id:old_code
+               ~new_id:code);
+         Buf.set t.chars idx code);
+       Buf.set t.attrs idx attrs;
+       Buf.set t.links idx link_id;
 
-    (* XOR is self-inverse: A xor B xor B = A *)
-    grid.row_hashes.(row) <-
-      grid.row_hashes.(row) lxor old_rotated lxor new_rotated;
+       (* Blend incoming FG over destination BG *)
+       if fg_a < 0.999 then (
+         let pa = Color_plane.perceptual_alpha fg_a in
+         Color_plane.set t.fg idx 0 (Color_plane.mix fg_r dr_bg pa);
+         Color_plane.set t.fg idx 1 (Color_plane.mix fg_g dg_bg pa);
+         Color_plane.set t.fg idx 2 (Color_plane.mix fg_b db_bg pa);
+         Color_plane.set t.fg idx 3 da_bg)
+       else (
+         Color_plane.set t.fg idx 0 fg_r;
+         Color_plane.set t.fg idx 1 fg_g;
+         Color_plane.set t.fg idx 2 fg_b;
+         Color_plane.set t.fg idx 3 fg_a));
 
-    grid.dirty_rows.(row) <- true;
-    mark_col_dirty grid row col)
+    (* Always blend BG over dest BG *)
+    if bg_a <= 0.001 then
+      (* Transparent: preserve dest BG *)
+      ()
+    else if bg_a >= 0.999 then (
+      (* Opaque: direct overwrite, no blending *)
+      Color_plane.set t.bg idx 0 bg_r;
+      Color_plane.set t.bg idx 1 bg_g;
+      Color_plane.set t.bg idx 2 bg_b;
+      Color_plane.set t.bg idx 3 bg_a)
+    else
+      let pa = Color_plane.perceptual_alpha bg_a in
+      Color_plane.set t.bg idx 0 (Color_plane.mix bg_r dr_bg pa);
+      Color_plane.set t.bg idx 1 (Color_plane.mix bg_g dg_bg pa);
+      Color_plane.set t.bg idx 2 (Color_plane.mix bg_b db_bg pa);
+      Color_plane.set t.bg idx 3 bg_a)
+  else
+    (* Fast Path: Opaque Overwrite *)
+    let old_code = Buf.get t.chars idx in
+    if old_code <> code then (
+      let old_simple = Cell_code.is_simple old_code in
+      let new_simple = Cell_code.is_simple code in
+      if not old_simple then cleanup_grapheme_at t idx;
+      (* Only touch grapheme tracker when complex graphemes are involved.
+         Simple -> simple (ASCII etc.) is now tracker-free. *)
+      (match (old_simple, new_simple) with
+      | true, true -> ()
+      | true, false -> Grapheme_tracker.add t.grapheme_tracker code
+      | false, true -> Grapheme_tracker.remove t.grapheme_tracker old_code
+      | false, false ->
+          Grapheme_tracker.replace t.grapheme_tracker ~old_id:old_code
+            ~new_id:code);
+      Buf.set t.chars idx code);
+    Buf.set t.attrs idx attrs;
+    Buf.set t.links idx link_id;
+    Color_plane.set t.fg idx 0 fg_r;
+    Color_plane.set t.fg idx 1 fg_g;
+    Color_plane.set t.fg idx 2 fg_b;
+    Color_plane.set t.fg idx 3 fg_a;
+    Color_plane.set t.bg idx 0 bg_r;
+    Color_plane.set t.bg idx 1 bg_g;
+    Color_plane.set t.bg idx 2 bg_b;
+    Color_plane.set t.bg idx 3 bg_a
 
-(* Full row hash recomputation - used when incremental isn't possible *)
-let update_row_hash grid row =
-  if grid.batch_updates then (
-    if
-      (* Defer actual recomputation; just remember the row *)
-      not (List.mem row grid.batch_dirty_rows)
-    then grid.batch_dirty_rows <- row :: grid.batch_dirty_rows)
+(* Public Wrappers *)
+
+let set_cell t ~x ~y ~code ~fg ~bg ~attrs ?link () =
+  if x >= 0 && y >= 0 && x < t.width && y < t.height && not (is_clipped t x y)
+  then
+    let idx = (y * t.width) + x in
+    let fg_r, fg_g, fg_b, fg_a = Ansi.Color.to_rgba_f fg in
+    let bg_r, bg_g, bg_b, bg_a = Ansi.Color.to_rgba_f bg in
+    let link_id = Links.intern t.link_registry link in
+    let attrs_packed = Ansi.Attr.pack attrs in
+    set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
+      ~bg_a ~attrs:attrs_packed ~link_id ~blending:t.respect_alpha
+
+let set_cell_alpha t ~x ~y ~code ~fg ~bg ~attrs ?link () =
+  if x >= 0 && y >= 0 && x < t.width && y < t.height && not (is_clipped t x y)
+  then
+    let idx = (y * t.width) + x in
+    let fg_r, fg_g, fg_b, fg_a = Ansi.Color.to_rgba_f fg in
+    let bg_r, bg_g, bg_b, bg_a = Ansi.Color.to_rgba_f bg in
+    let link_id = Links.intern t.link_registry link in
+    let attrs_packed = Ansi.Attr.pack attrs in
+    set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
+      ~bg_a ~attrs:attrs_packed ~link_id ~blending:true
+
+(* ---- Bulk Operations ---- *)
+
+let fill_rect t ~x ~y ~width ~height ~color =
+  let open Rect in
+  let target = { x; y; width; height } in
+  let scissor = Scissor_stack.current t.scissor_stack in
+  let clipped =
+    match scissor with
+    | None -> clip_to_bounds t.width t.height target
+    | Some s -> (
+        match intersection target s with
+        | None -> None
+        | Some i -> clip_to_bounds t.width t.height i)
+  in
+
+  match clipped with
+  | None -> ()
+  | Some r ->
+      let bg_r, bg_g, bg_b, bg_a = Ansi.Color.to_rgba_f color in
+      let x_start = r.Rect.x in
+      let row_len = r.Rect.width in
+      let y_start = r.Rect.y in
+      let y_end = y_start + r.Rect.height - 1 in
+
+      if bg_a <= 0.001 then begin
+        (* Fully transparent fills: clear characters/attrs but keep background. *)
+        let fg_r, fg_g, fg_b, fg_a = (1.0, 1.0, 1.0, 1.0) in
+        let attrs = 0 in
+        let link_id = no_link in
+        for row = y_start to y_end do
+          let base_idx = (row * t.width) + x_start in
+          for dx = 0 to row_len - 1 do
+            let idx = base_idx + dx in
+            let cur_bg_r = Color_plane.get t.bg idx 0 in
+            let cur_bg_g = Color_plane.get t.bg idx 1 in
+            let cur_bg_b = Color_plane.get t.bg idx 2 in
+            let cur_bg_a = Color_plane.get t.bg idx 3 in
+            set_cell_internal t ~idx ~code:space_cell ~fg_r ~fg_g ~fg_b ~fg_a
+              ~bg_r:cur_bg_r ~bg_g:cur_bg_g ~bg_b:cur_bg_b ~bg_a:cur_bg_a ~attrs
+              ~link_id ~blending:false
+          done
+        done
+      end
+      else if bg_a < 0.999 then begin
+        (* Semi-transparent fill: per-cell alpha blending without allocations. *)
+        let fg_r, fg_g, fg_b, fg_a = Ansi.Color.to_rgba_f Ansi.Color.white in
+        let attrs = Ansi.Attr.pack Ansi.Attr.empty in
+        let link_id = no_link in
+        for row = y_start to y_end do
+          let base_idx = (row * t.width) + x_start in
+          for dx = 0 to row_len - 1 do
+            let idx = base_idx + dx in
+            set_cell_internal t ~idx ~code:space_cell ~fg_r ~fg_g ~fg_b ~fg_a
+              ~bg_r ~bg_g ~bg_b ~bg_a ~attrs ~link_id ~blending:true
+          done
+        done
+      end
+      else begin
+        (* Fast Path: Bulk fill with Bigarray operations *)
+        let code = space_cell in
+        let link = no_link in
+        let attrs = 0 in
+        let has_complex =
+          Grapheme_tracker.unique_count t.grapheme_tracker > 0
+        in
+        for row = y_start to y_end do
+          let start_idx = (row * t.width) + x_start in
+          let end_idx = start_idx + row_len - 1 in
+
+          (* 1. Grapheme Cleanup: Only scan if we know complex chars exist *)
+          if has_complex then
+            for i = start_idx to end_idx do
+              let old = Buf.get t.chars i in
+              if old <> code && not (Cell_code.is_simple old) then (
+                cleanup_grapheme_at t i;
+                Grapheme_tracker.remove t.grapheme_tracker old)
+            done;
+
+          (* 2. Bulk fill primitives *)
+          Buf.fill (Buf.sub t.chars start_idx row_len) code;
+          Buf.fill (Buf.sub t.attrs start_idx row_len) attrs;
+          Buf.fill (Buf.sub t.links start_idx row_len) link;
+
+          (* 3. Set Colors: foreground to white, background to [color] *)
+          for i = start_idx to end_idx do
+            Color_plane.set t.fg i 0 1.0;
+            Color_plane.set t.fg i 1 1.0;
+            Color_plane.set t.fg i 2 1.0;
+            Color_plane.set t.fg i 3 1.0;
+            Color_plane.set t.bg i 0 bg_r;
+            Color_plane.set t.bg i 1 bg_g;
+            Color_plane.set t.bg i 2 bg_b;
+            Color_plane.set t.bg i 3 bg_a
+          done
+        done
+      end
+
+let blit ~src ~dst =
+  (* Self-blit is a no-op: blitting a grid to itself would corrupt grapheme
+     tracker state since we clear dst.grapheme_tracker while src still
+     references those glyphs. *)
+  if src == dst then ()
   else (
-    (* Immediate recomputation when not batching *)
-    for c = 0 to grid.cols - 1 do
-      grid.cell_hashes.(row).(c) <- Storage.fast_hash grid.storage row c
-    done;
-    grid.row_hashes.(row) <-
-      row_hash_from_cache grid.cell_hashes.(row) grid.cols)
+    resize dst ~width:src.width ~height:src.height;
+    dst.width_method <- src.width_method;
+    dst.respect_alpha <- src.respect_alpha;
 
-let rows grid = grid.rows
-let cols grid = grid.cols
+    Buf.blit src.fg dst.fg;
+    Buf.blit src.bg dst.bg;
+    Buf.blit src.attrs dst.attrs;
 
-let get grid ~row ~col =
-  if row >= 0 && row < grid.rows && col >= 0 && col < grid.cols then
-    Some (Storage.get_cell grid.storage row col)
-  else None
-
-let set grid ~row ~col cell =
-  if row >= 0 && row < grid.rows && col >= 0 && col < grid.cols then (
-    (match cell with
-    | Some c -> Storage.set_cell grid.storage row col c
-    | None -> Storage.set_cell grid.storage row col Cell.empty);
-    (* Use incremental hash update for single cell change *)
-    if grid.batch_updates then
-      update_row_hash grid row (* Defer in batch mode *)
-    else update_row_hash_incremental grid row col;
-    (* Mark row and column as dirty *)
-    grid.dirty_rows.(row) <- true;
-    mark_col_dirty grid row col)
-
-let set_grapheme ?link ?east_asian_context grid ~row ~col ~glyph ~attrs =
-  if row >= 0 && row < grid.rows && col >= 0 && col < grid.cols then (
-    let east_asian_context =
-      Option.value east_asian_context ~default:grid.east_asian_context
-    in
-
-    (* Handle link if provided *)
-    let attrs =
-      match link with
-      | None -> attrs
-      | Some url ->
-          (* Add link to storage and get ID *)
-          let link_id =
-            (* Check if URL already exists *)
-            let existing_id = ref None in
-            Hashtbl.iter
-              (fun id stored_url ->
-                if stored_url = url then existing_id := Some id)
-              grid.storage.link_table;
-            match !existing_id with
-            | Some id -> id
-            | None ->
-                (* Add new link *)
-                let id = grid.storage.next_link_id in
-                Hashtbl.add grid.storage.link_table id url;
-                grid.storage.next_link_id <- grid.storage.next_link_id + 1;
-                id
-          in
-          (* Encode link ID in style *)
-          Ansi.Style.set_link_id attrs link_id
-    in
-
-    (* Check the width of the existing cell to clear orphan continuations *)
-    let existing_cell = Storage.get_cell grid.storage row col in
-    let old_width = Cell.width existing_cell in
-
-    (* Handle alpha blending for RGBA colors - optimized to avoid unnecessary work *)
-    let attrs, preserve_existing_glyph =
-      let fg = Ansi.Style.fg attrs in
-      let bg = Ansi.Style.bg attrs in
-
-      (* Quick check: skip blending if no RGBA colors *)
-      let has_rgba =
-        match (fg, bg) with
-        | Ansi.Style.RGBA (_, _, _, a), _ when a < 255 -> true
-        | _, Ansi.Style.RGBA (_, _, _, a) when a < 255 -> true
-        | _ -> false
-      in
-
-      if not has_rgba then (attrs, false)
-      else
-        let existing_style = Cell.get_style existing_cell in
-        let existing_fg = Ansi.Style.fg existing_style in
-        let existing_bg = Ansi.Style.bg existing_style in
-
-        (* Check if we're only updating background (glyph is space) *)
-        let is_background_only = glyph = " " in
-
-        (* Blend foreground if it's RGBA with alpha < 255 *)
-        let attrs =
-          match fg with
-          | Ansi.Style.RGBA (_, _, _, a) when a < 255 ->
-              let blended_fg =
-                Ansi.Style.blend_colors ~src:fg ~dst:existing_fg
-              in
-              Ansi.Style.with_fg blended_fg attrs
-          | _ -> attrs
-        in
-
-        (* Blend background if it's RGBA with alpha < 255 *)
-        let attrs, should_preserve =
-          match bg with
-          | Ansi.Style.RGBA (_, _, _, a) when a < 255 ->
-              let blended_bg =
-                Ansi.Style.blend_colors ~src:bg ~dst:existing_bg
-              in
-              (Ansi.Style.with_bg blended_bg attrs, is_background_only)
-          | _ -> (attrs, false)
-        in
-        (attrs, should_preserve)
-    in
-
-    (* If we're only updating background with alpha, preserve existing glyph *)
-    let final_glyph =
-      if preserve_existing_glyph then
-        let existing_text = Cell.get_text existing_cell in
-        if existing_text <> "" then existing_text else glyph
-      else glyph
-    in
-
-    let cell = Cell.make_glyph final_glyph ~style:attrs ~east_asian_context in
-    let width = Cell.width cell in
-
-    (* Check if we have enough space for the full width *)
-    let available_width = grid.cols - col in
-
-    if width > available_width then (
-      (* Not enough space - replace with U+FFFD (replacement character) *)
-      let replacement_cell =
-        Cell.make_glyph "\xEF\xBF\xBD" ~style:attrs ~east_asian_context
-      in
-      Storage.set_cell grid.storage row col replacement_cell;
-
-      (* Clear any remaining cells if replacement is narrower than original attempt *)
-      if old_width > 1 then
-        for i = 1 to min (old_width - 1) (grid.cols - col - 1) do
-          Storage.set_cell grid.storage row (col + i) Cell.empty
-        done)
+    if src.glyph_pool == dst.glyph_pool then (
+      Buf.blit src.chars dst.chars;
+      Buf.blit src.links dst.links;
+      Links.copy_state ~src:src.link_registry ~dst:dst.link_registry;
+      Grapheme_tracker.clear dst.grapheme_tracker;
+      let len = src.width * src.height in
+      for i = 0 to len - 1 do
+        let c = Buf.get dst.chars i in
+        if Cell_code.is_complex c then
+          Grapheme_tracker.add dst.grapheme_tracker c
+      done)
     else (
-      (* Enough space - set the cell normally *)
-      Storage.set_cell grid.storage row col cell;
+      (* Cross-pool blit: need to copy grapheme data between pools.
+       Cell_code is aligned with Glyph.t, so cell codes can be passed
+       directly to Glyph.copy and results stored directly. *)
+      Grapheme_tracker.clear dst.grapheme_tracker;
+      Links.clear dst.link_registry;
+      let cache = Hashtbl.create 64 in
+      let len = src.width * src.height in
 
-      (* For wide characters, set continuation cells *)
-      if width > 1 then
-        for i = 1 to width - 1 do
-          Storage.set_cell grid.storage row (col + i)
-            (Cell.make_continuation ~style:attrs)
-        done;
+      for i = 0 to len - 1 do
+        let src_c = Buf.get src.chars i in
+        let dst_c =
+          if Cell_code.is_simple src_c then src_c
+          else
+            (* Cache by payload to avoid re-copying identical graphemes *)
+            let src_payload = Cell_code.payload src_c in
+            match Hashtbl.find_opt cache src_payload with
+            | Some dst_glyph ->
+                (* Reconstruct cell code with cached glyph and original extents *)
+                if Cell_code.is_start src_c then dst_glyph
+                else
+                  Cell_code.make_cont
+                    ~id:(Cell_code.payload dst_glyph)
+                    ~left:(Cell_code.left_extent src_c)
+                    ~right:(Cell_code.right_extent src_c)
+            | None ->
+                (* Copy glyph to destination pool - src_c is a valid Glyph.t *)
+                let dst_glyph =
+                  Glyph.copy src.glyph_pool src_c dst.glyph_pool
+                in
+                Hashtbl.add cache src_payload dst_glyph;
+                if Cell_code.is_start src_c then dst_glyph
+                else
+                  Cell_code.make_cont
+                    ~id:(Cell_code.payload dst_glyph)
+                    ~left:(Cell_code.left_extent src_c)
+                    ~right:(Cell_code.right_extent src_c)
+        in
+        Buf.set dst.chars i dst_c;
+        if Cell_code.is_complex dst_c then
+          Grapheme_tracker.add dst.grapheme_tracker dst_c;
 
-      (* Clear any orphan continuation cells from the previous wider character *)
-      if old_width > width then
-        for i = width to min (old_width - 1) (grid.cols - col - 1) do
-          Storage.set_cell grid.storage row (col + i) Cell.empty
-        done);
+        let src_l = Buf.get src.links i in
+        let dst_l =
+          match Links.resolve src.link_registry src_l with
+          | None -> no_link
+          | Some url -> Links.intern dst.link_registry (Some url)
+        in
+        Buf.set dst.links i dst_l
+      done))
 
-    (* Update row hash - must recompute full row with FNV-1a *)
-    update_row_hash grid row;
+let copy t =
+  let dst =
+    create ~width:t.width ~height:t.height ~glyph_pool:t.glyph_pool
+      ~width_method:t.width_method ~respect_alpha:t.respect_alpha ()
+  in
+  blit ~src:t ~dst;
+  dst
 
-    (* Mark row and affected columns as dirty *)
-    grid.dirty_rows.(row) <- true;
-    (* Mark all columns affected (including continuation cells and cleared cells) *)
-    let max_width = max width old_width in
-    for i = 0 to max_width - 1 do
-      if col + i < grid.cols then mark_col_dirty grid row (col + i)
+(* Bulk update graphemes: Optimized to skip if tracker is empty *)
+let bulk_update_graphemes t ~src_idx ~dst_idx ~len =
+  if Grapheme_tracker.unique_count t.grapheme_tracker > 0 then (
+    (* 1. Decrement counts for the region being overwritten (dst) *)
+    for i = 0 to len - 1 do
+      let code = Buf.get t.chars (dst_idx + i) in
+      if not (Cell_code.is_simple code) then
+        Grapheme_tracker.remove t.grapheme_tracker code
+    done;
+    (* 2. Increment counts for the region being copied (src) *)
+    for i = 0 to len - 1 do
+      let code = Buf.get t.chars (src_idx + i) in
+      if not (Cell_code.is_simple code) then
+        Grapheme_tracker.add t.grapheme_tracker code
     done)
 
-let set_text ?link ?east_asian_context ?max_width grid ~row ~col ~text ~attrs =
-  if String.length text = 0 then 0
-  else if row < 0 || row >= grid.rows then 0
-  else
-    let east_asian_context =
-      Option.value east_asian_context ~default:grid.east_asian_context
-    in
-    let current_col = ref col in
-    let total_width = ref 0 in
-    let max_col =
-      match max_width with
-      | None -> grid.cols
-      | Some w -> min grid.cols (col + w)
-    in
-    if col >= grid.cols then 0
-    else
-      let is_pure_ascii =
-        let rec check i =
-          if i >= String.length text then true
-          else
-            let c = Char.code text.[i] in
-            if c >= 128 then false else check (i + 1)
-        in
-        check 0
-      in
-      if is_pure_ascii then (
-        (* ASCII fast path - batch all changes, update hash once *)
-        (* Handle link if provided *)
-        let attrs =
-          match link with
-          | None -> attrs
-          | Some url ->
-              (* Add link to storage and get ID *)
-              let link_id =
-                (* Check if URL already exists *)
-                let existing_id = ref None in
-                Hashtbl.iter
-                  (fun id stored_url ->
-                    if stored_url = url then existing_id := Some id)
-                  grid.storage.link_table;
-                match !existing_id with
-                | Some id -> id
-                | None ->
-                    (* Add new link *)
-                    let id = grid.storage.next_link_id in
-                    Hashtbl.add grid.storage.link_table id url;
-                    grid.storage.next_link_id <- grid.storage.next_link_id + 1;
-                    id
-              in
-              (* Encode link ID in style *)
-              Ansi.Style.set_link_id attrs link_id
-        in
-        (* Clear any existing wide characters in the range first *)
-        for i = 0 to String.length text - 1 do
-          if col + i < grid.cols then
-            let existing_cell = Storage.get_cell grid.storage row (col + i) in
-            let old_width = Cell.width existing_cell in
-            if old_width > 1 then
-              (* Clear continuation cells from wide chars *)
-              for j = 1 to min (old_width - 1) (grid.cols - col - i - 1) do
-                Storage.set_cell grid.storage row (col + i + j) Cell.empty
-              done
-        done;
-        (* Now set all ASCII characters directly *)
-        for i = 0 to String.length text - 1 do
-          if !current_col < max_col then
-            let c = text.[i] in
-            let c_code = Char.code c in
-            if c_code >= 32 && c_code < 127 then (
-              (* Printable ASCII character - set directly without using set_grapheme *)
-              let cell =
-                Cell.make_glyph (String.make 1 c) ~style:attrs
-                  ~east_asian_context
-              in
-              if !current_col >= 0 then (
-                Storage.set_cell grid.storage row !current_col cell;
-                (* Update cell hash cache *)
-                grid.cell_hashes.(row).(!current_col) <-
-                  Storage.fast_hash grid.storage row !current_col;
-                mark_col_dirty grid row !current_col);
-              incr current_col;
-              incr total_width) (* Skip control characters *)
-        done;
-        (* Update row hash once for all changes *)
-        if !total_width > 0 then (
-          (* Recompute row hash from cell hashes *)
-          grid.row_hashes.(row) <-
-            row_hash_from_cache grid.cell_hashes.(row) grid.cols;
-          grid.dirty_rows.(row) <- true);
-        !total_width)
-      else
-        (* Full Unicode path - use Uuseg for grapheme cluster segmentation *)
-        (* Fold over grapheme clusters in the text *)
-        let folder () grapheme =
-          if !current_col < max_col then
-            let width =
-              Ucwidth.string_width ~east_asian:east_asian_context grapheme
-            in
-            if width > 0 then (
-              (* Normal width grapheme *)
-              set_grapheme ?link grid ~row ~col:!current_col ~glyph:grapheme
-                ~attrs ~east_asian_context;
-              (* Only count the width that was actually written *)
-              let actual_width = min width (max_col - !current_col) in
-              current_col := !current_col + actual_width;
-              total_width := !total_width + actual_width)
-            else if width = 0 then
-              (* Zero-width grapheme (combining characters, ZWJ, VS15/16, etc) *)
-              (* Check if this is a combining mark character *)
-              let is_combining_mark =
-                match
-                  Uutf.decode (Uutf.decoder ~encoding:`UTF_8 (`String grapheme))
-                with
-                | `Uchar u ->
-                    let gc = Uucp.Gc.general_category u in
-                    gc = `Mn || gc = `Mc || gc = `Me
-                | _ -> false
-              in
+let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
+  let width = max 0 width in
+  let height = max 0 height in
 
-              if is_combining_mark then (
-                (* Combining mark fed as separate grapheme - advance cursor *)
-                (if !current_col > col then
-                   (* Try to append to previous cell first *)
-                   let prev_col = !current_col - 1 in
-                   match Storage.get_cell grid.storage row prev_col with
-                   | cell
-                     when (not (Cell.is_empty cell))
-                          && not (Cell.is_continuation cell) ->
-                       (* Append to previous cell's text *)
-                       let prev_text = Cell.get_text cell in
-                       let combined_text = prev_text ^ grapheme in
-                       let combined_cell =
-                         Cell.make_glyph combined_text
-                           ~style:(Cell.get_style cell) ~east_asian_context
-                       in
-                       Storage.set_cell grid.storage row prev_col combined_cell
-                   | _ ->
-                       (* No valid previous cell - place as standalone *)
-                       set_grapheme ?link grid ~row ~col:!current_col
-                         ~glyph:grapheme ~attrs ~east_asian_context);
-                (* Advance cursor for separately-fed combining marks 
-               This matches terminal behavior when combining marks are sent as separate characters *)
-                current_col := !current_col + 1;
-                total_width := !total_width + 1)
-              else if !current_col > col then
-                (* Other zero-width characters (ZWJ, VS, etc) - don't advance cursor *)
-                let prev_col = !current_col - 1 in
-                match Storage.get_cell grid.storage row prev_col with
-                | cell
-                  when (not (Cell.is_empty cell))
-                       && not (Cell.is_continuation cell) ->
-                    (* Append to previous cell's text *)
-                    let prev_text = Cell.get_text cell in
-                    let combined_text = prev_text ^ grapheme in
-                    let combined_cell =
-                      Cell.make_glyph combined_text ~style:(Cell.get_style cell)
-                        ~east_asian_context
-                    in
-                    Storage.set_cell grid.storage row prev_col combined_cell;
-                    (* Don't advance cursor for other zero-width chars *)
-                    ()
-                | _ ->
-                    (* No previous cell or it's empty/continuation - skip this grapheme *)
-                    ()
-          (* else: zero-width at start of line - skip it *)
-        in
-
-        Uuseg_string.fold_utf_8 `Grapheme_cluster folder () text;
-        !total_width
-
-let clear ?style grid =
-  let nrows = grid.rows in
-  let ncols = grid.cols in
-  let style = Option.value style ~default:Ansi.Style.default in
-  (* Compute the empty cell hash for the given style *)
-  let empty_hash =
-    if style = Ansi.Style.default then
-      (* Type 0, default style, width 0 *)
-      let h1 = 0 in
-      let h2 =
-        Int64.(
-          to_int
-            (logxor
-               (Ansi.Style.default :> int64)
-               (shift_right_logical (Ansi.Style.default :> int64) 32)))
-      in
-      let h3 = 0 in
-      h1 lxor h2 lxor h3
-    else
-      (* Need to compute hash for styled empty cell *)
-      let h1 = 0 in
-      let h2 =
-        Int64.(
-          to_int
-            (logxor (style :> int64) (shift_right_logical (style :> int64) 32)))
-      in
-      let h3 = 0 in
-      h1 lxor h2 lxor h3
+  let clipped_src_x, clipped_dst_x, width =
+    if src_x < 0 then (0, dst_x - src_x, width + src_x)
+    else (src_x, dst_x, width)
   in
-  (* Clear all bigarrays in bulk - much faster than cell-by-cell *)
-  for r = 0 to nrows - 1 do
-    (* Use Bigarray.Array1 slice for efficient row clearing *)
-    let row_slice_types = Bigarray.Array2.slice_left grid.storage.types r in
-    let row_slice_widths = Bigarray.Array2.slice_left grid.storage.widths r in
-    let row_slice_styles = Bigarray.Array2.slice_left grid.storage.styles r in
-    Bigarray.Array1.fill row_slice_types 0;
-    (* Still empty cells *)
-    Bigarray.Array1.fill row_slice_widths 0;
-    Bigarray.Array1.fill row_slice_styles (style :> int64);
-    (* But with the given style *)
-    (* Clear text storage for this row *)
-    Bytes.fill grid.storage.texts.(r) 0 (ncols * 8) '\000';
-    (* Update cell hashes to match the cleared state *)
-    Array.fill grid.cell_hashes.(r) 0 ncols empty_hash;
-    (* Recompute row hash for empty row using XOR with mixing *)
-    let row_hash_val = ref 0 in
-    let position_factor = 0x45d9f3b in
-    for col = 0 to ncols - 1 do
-      let mixed = empty_hash lxor (empty_hash lsl 13) in
-      let position_mixed = mixed lxor ((col + 1) * position_factor) in
-      let rotated = (position_mixed lsl 7) lor (position_mixed lsr 25) in
-      row_hash_val := !row_hash_val lxor rotated
-    done;
-    grid.row_hashes.(r) <- !row_hash_val;
-    grid.dirty_rows.(r) <- true;
-    (* Mark all columns as dirty for this row *)
-    for c = 0 to ncols - 1 do
-      mark_col_dirty grid r c
-    done
-  done
+  let clipped_src_y, clipped_dst_y, height =
+    if src_y < 0 then (0, dst_y - src_y, height + src_y)
+    else (src_y, dst_y, height)
+  in
+  let final_src_x, final_dst_x, width =
+    if clipped_dst_x < 0 then
+      (clipped_src_x - clipped_dst_x, 0, width + clipped_dst_x)
+    else (clipped_src_x, clipped_dst_x, width)
+  in
+  let final_src_y, final_dst_y, height =
+    if clipped_dst_y < 0 then
+      (clipped_src_y - clipped_dst_y, 0, height + clipped_dst_y)
+    else (clipped_src_y, clipped_dst_y, height)
+  in
+  let width =
+    min width (min (src.width - final_src_x) (dst.width - final_dst_x))
+  in
+  let height =
+    min height (min (src.height - final_src_y) (dst.height - final_dst_y))
+  in
 
-let clear_line grid row from_col =
-  if row >= 0 && row < grid.rows then (
-    let ncols = grid.cols in
-    for i = from_col to ncols - 1 do
-      Storage.set_cell grid.storage row i Cell.empty;
-      mark_col_dirty grid row i
-    done;
-    (* Update row hash *)
-    update_row_hash grid row;
-    if from_col < ncols then grid.dirty_rows.(row) <- true)
+  if width > 0 && height > 0 then
+    let open Rect in
+    let target = { x = final_dst_x; y = final_dst_y; width; height } in
+    let clipped =
+      match Scissor_stack.current dst.scissor_stack with
+      | None -> Some target
+      | Some scissor -> intersection target scissor
+    in
+    match clipped with
+    | None -> ()
+    | Some clipped ->
+        let dst_x = clipped.x in
+        let dst_y = clipped.y in
+        let width = clipped.width in
+        let height = clipped.height in
+        let src_x = final_src_x + (dst_x - final_dst_x) in
+        let src_y = final_src_y + (dst_y - final_dst_y) in
+        let same_grid = src == dst in
+        let y_start, y_limit, y_step =
+          if same_grid && src_y < dst_y then (height - 1, -1, -1)
+          else (0, height, 1)
+        in
 
-let clear_rect grid ~row_start ~row_end ~col_start ~col_end =
-  let row_start = max 0 row_start in
-  let row_end = min (grid.rows - 1) row_end in
-  let col_start = max 0 col_start in
-  let col_end = min (grid.cols - 1) col_end in
-  for r = row_start to row_end do
-    (* Clear cells in the range more efficiently using unsafe operations *)
-    for c = col_start to col_end do
-      Bigarray.Array2.unsafe_set grid.storage.types r c 0;
-      Bigarray.Array2.unsafe_set grid.storage.widths r c 0;
-      Bigarray.Array2.unsafe_set grid.storage.styles r c
-        (Ansi.Style.default :> int64)
-    done;
-    (* Clear text bytes for the range *)
-    if col_end >= col_start then (
-      let start_byte = col_start * 8 in
-      let num_bytes = (col_end - col_start + 1) * 8 in
-      Bytes.fill grid.storage.texts.(r) start_byte num_bytes '\000';
-      (* Mark dirty columns *)
-      for c = col_start to col_end do
-        mark_col_dirty grid r c
-      done;
-      (* Update row hash for this row *)
-      update_row_hash grid r;
-      grid.dirty_rows.(r) <- true)
-  done
+        (* Fast path is only safe for full-width blits (scrolling). Partial
+           width blits may copy continuation cells without their start cells,
+           creating orphan continuations. The slow path handles this via the
+           is_orphan check that converts orphaned continuations to spaces. *)
+        let use_fast_path =
+          same_grid && src_x = 0 && dst_x = 0 && width = src.width
+        in
+        if use_fast_path then
+          (* Fast Path: Full-width Self-Blit (Scrolling) *)
+          let i = ref y_start in
+          while !i <> y_limit do
+            let sy = src_y + !i in
+            let dy = dst_y + !i in
+            let src_idx = sy * src.width in
+            let dst_idx = dy * dst.width in
 
-let copy_row grid row =
-  if row >= 0 && row < grid.rows then
-    Array.init grid.cols (fun col -> Storage.get_cell grid.storage row col)
-  else [||]
+            bulk_update_graphemes src ~src_idx ~dst_idx ~len:width;
 
-let set_row grid row new_row =
-  if row >= 0 && row < grid.rows && Array.length new_row = grid.cols then (
-    Array.iteri
-      (fun col cell -> Storage.set_cell grid.storage row col cell)
-      new_row;
-    update_row_hash grid row;
-    grid.dirty_rows.(row) <- true)
+            Buf.blit
+              (Buf.sub src.chars src_idx width)
+              (Buf.sub dst.chars dst_idx width);
+            Buf.blit
+              (Buf.sub src.attrs src_idx width)
+              (Buf.sub dst.attrs dst_idx width);
+            Buf.blit
+              (Buf.sub src.links src_idx width)
+              (Buf.sub dst.links dst_idx width);
+            Buf.blit
+              (Buf.sub src.fg (src_idx * 4) (width * 4))
+              (Buf.sub dst.fg (dst_idx * 4) (width * 4));
+            Buf.blit
+              (Buf.sub src.bg (src_idx * 4) (width * 4))
+              (Buf.sub dst.bg (dst_idx * 4) (width * 4));
 
-let make_empty_row ~cols = Array.make cols Cell.empty
-
-let fill_space ?(style = Ansi.Style.default) grid =
-  let nrows = grid.rows in
-  let ncols = grid.cols in
-  let style64 = (style :> int64) in
-  for r = 0 to nrows - 1 do
-    let row_types = Bigarray.Array2.slice_left grid.storage.types r in
-    let row_widths = Bigarray.Array2.slice_left grid.storage.widths r in
-    let row_styles = Bigarray.Array2.slice_left grid.storage.styles r in
-    Bigarray.Array1.fill row_types 1;
-    Bigarray.Array1.fill row_widths 1;
-    Bigarray.Array1.fill row_styles style64;
-    for c = 0 to ncols - 1 do
-      Storage.set_string grid.storage r c " ";
-      mark_col_dirty grid r c
-    done;
-    update_row_hash grid r;
-    grid.dirty_rows.(r) <- true
-  done
-
-let flush_damage grid =
-  (* Convert dirty rows to rectangular regions *)
-  let regions = ref [] in
-  let rows = grid.rows in
-  let i = ref 0 in
-
-  while !i < rows do
-    if grid.dirty_rows.(!i) then (
-      let start_row = !i in
-      while !i < rows && grid.dirty_rows.(!i) do
-        grid.dirty_rows.(!i) <- false;
-        (* Clear dirty flag *)
-        clear_col_dirty grid !i;
-        (* Clear column dirty bits *)
-        incr i
-      done;
-      let end_row = !i - 1 in
-      regions :=
-        {
-          row = start_row;
-          col = 0;
-          width = grid.cols;
-          height = end_row - start_row + 1;
-        }
-        :: !regions)
-    else incr i
-  done;
-
-  List.rev !regions
-
-let swap grids =
-  let grid1, grid2 = grids in
-  (* Swap storage *)
-  let temp_storage = grid1.storage in
-  grid1.storage <- grid2.storage;
-  grid2.storage <- temp_storage;
-  (* Swap dimensions *)
-  let temp_rows = grid1.rows in
-  let temp_cols = grid1.cols in
-  grid1.rows <- grid2.rows;
-  grid1.cols <- grid2.cols;
-  grid2.rows <- temp_rows;
-  grid2.cols <- temp_cols;
-  (* Swap row hashes *)
-  let temp_hashes = grid1.row_hashes in
-  grid1.row_hashes <- grid2.row_hashes;
-  grid2.row_hashes <- temp_hashes;
-  (* Swap dirty rows *)
-  let temp_dirty = grid1.dirty_rows in
-  grid1.dirty_rows <- grid2.dirty_rows;
-  grid2.dirty_rows <- temp_dirty;
-  (* Swap column dirty bits *)
-  let temp_col_dirty = grid1.col_dirty in
-  grid1.col_dirty <- grid2.col_dirty;
-  grid2.col_dirty <- temp_col_dirty
-(* Don't automatically mark all rows as dirty - let the client decide 
-     what's dirty via diffing. This enables true minimal-update render loops. *)
-
-let resize grid ~rows:new_rows ~cols:new_cols =
-  let old_rows = grid.rows in
-  let old_cols = grid.cols in
-
-  (* Resize storage *)
-  Storage.resize grid.storage new_rows new_cols old_rows old_cols;
-
-  (* Update dimensions *)
-  grid.rows <- new_rows;
-  grid.cols <- new_cols;
-
-  (* Check for cut wide characters at the new column boundary *)
-  if new_cols < old_cols then
-    for
-      (* When shrinking columns, check if any wide characters are cut *)
-      r = 0 to min new_rows old_rows - 1
-    do
-      if new_cols > 0 then
-        (* Check the last column - if it's a wide character that would extend beyond boundary *)
-        let last_col = new_cols - 1 in
-        let cell = Storage.get_cell grid.storage r last_col in
-        if Cell.is_glyph cell && Cell.width cell > 1 then
-          (* This wide character would extend beyond the new boundary *)
-          (* Clear the cell - don't leave half a double-width glyph *)
-          Storage.set_cell grid.storage r last_col Cell.empty
-        else if Cell.is_continuation cell then
-          (* This is an orphaned continuation - clear both the lead and trail *)
-          (* Find the start of the wide character by going backwards *)
-          let rec find_start col =
-            if col <= 0 then 0
-            else
-              let prev_cell = Storage.get_cell grid.storage r (col - 1) in
-              if Cell.is_continuation prev_cell then find_start (col - 1)
-              else col - 1
-          in
-          let start_col = find_start last_col in
-          (* Clear all cells from the start of the wide char to the continuation *)
-          for c = start_col to last_col do
-            Storage.set_cell grid.storage r c Cell.empty
+            i := !i + y_step
           done
-    done;
+        else
+          (* Slow Path: Cross-Grid / General Blit
+             Cell_code is aligned with Glyph.t, so cell codes can be passed
+             directly to Glyph.copy and results stored directly. *)
+          let grapheme_map = Hashtbl.create 64 in
+          let copy_glyph code =
+            (* Cache by payload to avoid re-copying identical graphemes *)
+            let payload = Cell_code.payload code in
+            match Hashtbl.find_opt grapheme_map payload with
+            | Some dst_glyph ->
+                if Cell_code.is_start code then dst_glyph
+                else
+                  Cell_code.make_cont
+                    ~id:(Cell_code.payload dst_glyph)
+                    ~left:(Cell_code.left_extent code)
+                    ~right:(Cell_code.right_extent code)
+            | None ->
+                (* code is a valid Glyph.t due to aligned formats *)
+                let dst_glyph = Glyph.copy src.glyph_pool code dst.glyph_pool in
+                Hashtbl.add grapheme_map payload dst_glyph;
+                if Cell_code.is_start code then dst_glyph
+                else
+                  Cell_code.make_cont
+                    ~id:(Cell_code.payload dst_glyph)
+                    ~left:(Cell_code.left_extent code)
+                    ~right:(Cell_code.right_extent code)
+          in
 
-  (* Resize cell hashes array *)
-  let new_cell_hashes =
-    Array.init new_rows (fun r ->
-        Array.init new_cols (fun c ->
-            if r < old_rows && c < old_cols then grid.cell_hashes.(r).(c)
-            else Storage.fast_hash grid.storage r c))
+          let x_start, x_limit, x_step =
+            if same_grid && src_x < dst_x then (width - 1, -1, -1)
+            else (0, width, 1)
+          in
+          let i = ref y_start in
+          while !i <> y_limit do
+            let sy = src_y + !i in
+            let dy = dst_y + !i in
+            let k = ref x_start in
+            while !k <> x_limit do
+              let sx = src_x + !k in
+              let dx = dst_x + !k in
+              let sidx = (sy * src.width) + sx in
+
+              let code = Buf.get src.chars sidx in
+              let fg_r, fg_g, fg_b, fg_a = Color_plane.read_rgba src.fg sidx in
+              let bg_r, bg_g, bg_b, bg_a = Color_plane.read_rgba src.bg sidx in
+              let attrs = Buf.get src.attrs sidx in
+              let src_link = Buf.get src.links sidx in
+
+              let link_id =
+                match Links.resolve src.link_registry src_link with
+                | Some url -> Links.intern dst.link_registry (Some url)
+                | None -> no_link
+              in
+
+              let is_orphan =
+                if Cell_code.is_continuation code then
+                  let left = Cell_code.left_extent code in
+                  sx - left < src_x
+                else false
+              in
+
+              let final_code_mapped =
+                if is_orphan then space_cell
+                else if
+                  src.glyph_pool == dst.glyph_pool || Cell_code.is_simple code
+                then code
+                else copy_glyph code
+              in
+
+              (* If we mapped to space due to orphan/missing logic, reset style *)
+              let is_reset =
+                final_code_mapped = space_cell && code <> space_cell
+              in
+              let attrs = if is_reset then 0 else attrs in
+              let link_id = if is_reset then no_link else link_id in
+              let fg_r, fg_g, fg_b, fg_a =
+                if is_reset then (1., 1., 1., 1.) else (fg_r, fg_g, fg_b, fg_a)
+              in
+
+              (* NOTE: We calculate index here again, but it's the slow path anyway *)
+              (* For same-grid blits, don't infer blending from alpha - just use
+                 respect_alpha. This prevents the "preserve existing content" logic
+                 from incorrectly keeping destination content when copying cells
+                 with transparent backgrounds (e.g., during DCH operations). *)
+              let blending =
+                if same_grid then dst.respect_alpha
+                else dst.respect_alpha || fg_a < 0.999 || bg_a < 0.999
+              in
+              set_cell_internal dst
+                ~idx:((dy * dst.width) + dx)
+                ~code:final_code_mapped ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g
+                ~bg_b ~bg_a ~attrs ~link_id ~blending;
+
+              k := !k + x_step
+            done;
+            i := !i + y_step
+          done
+
+(* ---- Scrolling ---- *)
+
+let scroll t ~top ~bottom ~delta =
+  if delta = 0 || top >= bottom then ()
+  else
+    let region_h = bottom - top + 1 in
+    let abs_delta = abs delta in
+
+    if abs_delta >= region_h then
+      let clear_c = Ansi.Color.of_rgba 0 0 0 0 in
+      fill_rect t ~x:0 ~y:top ~width:t.width ~height:region_h ~color:clear_c
+    else
+      let copy_h = region_h - abs_delta in
+      let clear_c = Ansi.Color.of_rgba 0 0 0 0 in
+
+      if delta > 0 then (
+        blit_region ~src:t ~dst:t ~src_x:0 ~src_y:top ~width:t.width
+          ~height:copy_h ~dst_x:0 ~dst_y:(top + delta);
+        fill_rect t ~x:0 ~y:top ~width:t.width ~height:abs_delta ~color:clear_c)
+      else (
+        blit_region ~src:t ~dst:t ~src_x:0 ~src_y:(top + abs_delta)
+          ~width:t.width ~height:copy_h ~dst_x:0 ~dst_y:top;
+        fill_rect t ~x:0
+          ~y:(bottom - abs_delta + 1)
+          ~width:t.width ~height:abs_delta ~color:clear_c)
+
+let scroll_up t ~top ~bottom ~n = scroll t ~top ~bottom ~delta:(-n)
+let scroll_down t ~top ~bottom ~n = scroll t ~top ~bottom ~delta:n
+
+(* ---- Text Rendering ---- *)
+
+let draw_text ?style ?(tab_width = 2) t ~x ~y ~text =
+  if text = "" || y < 0 || y >= t.height then ()
+  else
+    let s = Option.value style ~default:Ansi.Style.default in
+    let fg_r, fg_g, fg_b, fg_a =
+      match s.fg with
+      | Some c -> Ansi.Color.to_rgba_f c
+      | None -> (1., 1., 1., 1.)
+    in
+    let explicit_bg =
+      match s.bg with Some c -> Some (Ansi.Color.to_rgba_f c) | None -> None
+    in
+    let attrs = Ansi.Attr.pack s.attrs in
+    let link_id = Links.intern t.link_registry s.link in
+
+    let cur_x = ref x in
+    let tabw = if tab_width <= 0 then 2 else tab_width in
+
+    let scissor = Scissor_stack.current t.scissor_stack in
+    let row_visible =
+      match scissor with
+      | None -> true
+      | Some rect -> y >= rect.y && y < rect.y + rect.height
+    in
+
+    if not row_visible then ()
+    else
+      let cell_visible =
+        match scissor with
+        | None -> fun _ -> true
+        | Some rect ->
+            let x_min = rect.x in
+            let x_max = rect.x + rect.width in
+            fun x -> x >= x_min && x < x_max
+      in
+
+      let writer code =
+        if Cell_code.is_simple code && Cell_code.payload code = 9 then
+          let spaces = tabw in
+          let start_visible = cell_visible !cur_x in
+          for _ = 1 to spaces do
+            if !cur_x >= 0 && !cur_x < t.width then (
+              (if start_visible && cell_visible !cur_x then
+                 let idx = (y * t.width) + !cur_x in
+                 let br, bg, bb, ba =
+                   match explicit_bg with
+                   | Some (r, g, b, a) -> (r, g, b, a)
+                   | None -> Color_plane.read_rgba t.bg idx
+                 in
+                 let blending = fg_a < 0.999 || ba < 0.999 || t.respect_alpha in
+                 set_cell_internal t ~idx ~code:space_cell ~fg_r ~fg_g ~fg_b
+                   ~fg_a ~bg_r:br ~bg_g:bg ~bg_b:bb ~bg_a:ba ~attrs ~link_id
+                   ~blending);
+              incr cur_x)
+          done
+        else if !cur_x < t.width then
+          let w = Cell_code.width code in
+          if w > 0 then (
+            let bounds_ok = !cur_x + w <= t.width && !cur_x >= 0 in
+            let start_visible = cell_visible !cur_x in
+
+            (if bounds_ok && start_visible then (
+               let idx = (y * t.width) + !cur_x in
+               let br, bg, bb, ba =
+                 match explicit_bg with
+                 | Some (r, g, b, a) -> (r, g, b, a)
+                 | None -> Color_plane.read_rgba t.bg idx
+               in
+               let blending = fg_a < 0.999 || ba < 0.999 || t.respect_alpha in
+
+               set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r:br
+                 ~bg_g:bg ~bg_b:bb ~bg_a:ba ~attrs ~link_id ~blending;
+               if w > 1 then
+                 for i = 1 to w - 1 do
+                   let c_x = !cur_x + i in
+                   if cell_visible c_x then
+                     let c_idx = (y * t.width) + c_x in
+                     let br_c, bg_c, bb_c, ba_c =
+                       match explicit_bg with
+                       | Some (r, g, b, a) -> (r, g, b, a)
+                       | None -> Color_plane.read_rgba t.bg c_idx
+                     in
+                     let cont =
+                       Cell_code.make_cont ~id:(Cell_code.payload code) ~left:i
+                         ~right:(w - 1 - i)
+                     in
+                     let blending_c =
+                       fg_a < 0.999 || ba_c < 0.999 || t.respect_alpha
+                     in
+                     set_cell_internal t ~idx:c_idx ~code:cont ~fg_r ~fg_g ~fg_b
+                       ~fg_a ~bg_r:br_c ~bg_g:bg_c ~bg_b:bb_c ~bg_a:ba_c ~attrs
+                       ~link_id ~blending:blending_c
+                 done)
+             else if (not bounds_ok) && !cur_x >= 0 && !cur_x < t.width then
+               (* Clear the remainder of the row with styled spaces when a glyph
+                  would overflow. Only do this for actual overflow, not for
+                  scissor-clipped glyphs - those should just be skipped. *)
+               let start_x = !cur_x in
+               for x_fill = start_x to t.width - 1 do
+                 if cell_visible x_fill then
+                   let idx = (y * t.width) + x_fill in
+                   let br, bg, bb, ba =
+                     match explicit_bg with
+                     | Some (r, g, b, a) -> (r, g, b, a)
+                     | None -> Color_plane.read_rgba t.bg idx
+                   in
+                   set_cell_internal t ~idx ~code:space_cell ~fg_r ~fg_g ~fg_b
+                     ~fg_a ~bg_r:br ~bg_g:bg ~bg_b:bb ~bg_a:ba ~attrs ~link_id
+                     ~blending:false
+               done);
+
+            cur_x := !cur_x + w)
+      in
+      Glyph.encode t.glyph_pool ~width_method:t.width_method ~tab_width:tabw
+        text (fun g ->
+          if Glyph.is_continuation g then ()
+          else
+            (* Cell_code is aligned with Glyph.t, so we can store directly *)
+            writer g)
+
+(* ---- Box Drawing ---- *)
+
+let draw_box t ~x ~y ~width ~height ~border_chars ~border_sides ~border_style
+    ~bg_color ~should_fill ?title ?title_alignment ?title_style () =
+  if width <= 0 || height <= 0 then ()
+  else
+    let target = Rect.{ x; y; width; height } in
+    let scissor_ok =
+      match Scissor_stack.current t.scissor_stack with
+      | None -> true
+      | Some scissor -> Option.is_some (Rect.intersection target scissor)
+    in
+    if not scissor_ok then ()
+    else
+      let open Border in
+      let sx = max 0 x in
+      let sy = max 0 y in
+      let ex = min (t.width - 1) (x + width - 1) in
+      let ey = min (t.height - 1) (y + height - 1) in
+
+      (if should_fill then
+         let has_l, has_r =
+           (List.mem `Left border_sides, List.mem `Right border_sides)
+         in
+         let has_t, has_b =
+           (List.mem `Top border_sides, List.mem `Bottom border_sides)
+         in
+         let ix = if has_l then x + 1 else x in
+         let iy = if has_t then y + 1 else y in
+         let iw = width - (if has_l then 1 else 0) - if has_r then 1 else 0 in
+         let ih = height - (if has_t then 1 else 0) - if has_b then 1 else 0 in
+         if iw > 0 && ih > 0 then
+           fill_rect t ~x:ix ~y:iy ~width:iw ~height:ih ~color:bg_color);
+
+      let b_fg_r, b_fg_g, b_fg_b, b_fg_a =
+        match border_style.Ansi.Style.fg with
+        | Some c -> Ansi.Color.to_rgba_f c
+        | None -> (1., 1., 1., 1.)
+      in
+      let b_bg_r, b_bg_g, b_bg_b, b_bg_a = Ansi.Color.to_rgba_f bg_color in
+      let b_attrs = Ansi.Attr.pack border_style.attrs in
+      let blending = true in
+
+      let draw_b x y code =
+        if
+          x >= 0 && y >= 0 && x < t.width && y < t.height
+          && not (is_clipped t x y)
+        then
+          (* ASCII can be stored directly; non-ASCII must be interned *)
+          let cell =
+            if code < 128 then code else Glyph.intern_char t.glyph_pool code
+          in
+          set_cell_internal t
+            ~idx:((y * t.width) + x)
+            ~code:cell ~fg_r:b_fg_r ~fg_g:b_fg_g ~fg_b:b_fg_b ~fg_a:b_fg_a
+            ~bg_r:b_bg_r ~bg_g:b_bg_g ~bg_b:b_bg_b ~bg_a:b_bg_a ~attrs:b_attrs
+            ~link_id:no_link ~blending
+      in
+
+      let has s = List.mem s border_sides in
+      let is_left x' = x' = x in
+      let is_right x' = x' = x + width - 1 in
+
+      let left_border_only =
+        has `Left && (not (has `Top)) && not (has `Bottom)
+      in
+      let right_border_only =
+        has `Right && (not (has `Top)) && not (has `Bottom)
+      in
+      let bottom_only_with_verts =
+        has `Bottom && (not (has `Top)) && (has `Left || has `Right)
+      in
+      let top_only_with_verts =
+        has `Top && (not (has `Bottom)) && (has `Left || has `Right)
+      in
+
+      let extend_verts_to_top =
+        left_border_only || right_border_only || bottom_only_with_verts
+      in
+      let extend_verts_to_bottom =
+        left_border_only || right_border_only || top_only_with_verts
+      in
+
+      if has `Top || has `Bottom then (
+        let row y_pos top =
+          if y_pos >= 0 && y_pos < t.height then
+            for c = sx to ex do
+              if c >= x && c < x + width then
+                let char =
+                  if is_left c then
+                    if has `Left then
+                      if top then border_chars.top_left
+                      else border_chars.bottom_left
+                    else border_chars.horizontal
+                  else if is_right c then
+                    if has `Right then
+                      if top then border_chars.top_right
+                      else border_chars.bottom_right
+                    else border_chars.horizontal
+                  else border_chars.horizontal
+                in
+                draw_b c y_pos char
+            done
+        in
+        if has `Top then row y true;
+        if has `Bottom then row (y + height - 1) false);
+
+      let vy_start = if extend_verts_to_top then y else y + 1 in
+      let vy_end =
+        if extend_verts_to_bottom then y + height - 1 else y + height - 2
+      in
+      let vy_start = max sy vy_start in
+      let vy_end = min ey vy_end in
+
+      if vy_start <= vy_end then (
+        if has `Left && x >= 0 && x < t.width then
+          for r = vy_start to vy_end do
+            draw_b x r border_chars.vertical
+          done;
+        if has `Right && x + width - 1 >= 0 && x + width - 1 < t.width then
+          for r = vy_start to vy_end do
+            draw_b (x + width - 1) r border_chars.vertical
+          done);
+
+      match title with
+      | Some txt when has `Top && width >= 4 ->
+          let w = Glyph.measure ~width_method:t.width_method ~tab_width:2 txt in
+          if w <= width - 4 then
+            let pad =
+              match title_alignment with
+              | Some `Right -> width - 2 - w
+              | Some `Center -> (width - w) / 2
+              | _ -> 2
+            in
+            let style =
+              Option.value title_style ~default:border_style
+              |> Ansi.Style.bg bg_color
+            in
+            draw_text t ~x:(x + pad) ~y ~text:txt ~style
+      | _ -> ()
+
+(* ---- Inspection & Utilities ---- *)
+
+let active_height t =
+  let rec find_row y =
+    if y < 0 then 0
+    else
+      let row_start = y * t.width in
+      let rec scan_col x =
+        if x >= t.width then false
+        else
+          let idx = row_start + x in
+          let code = Buf.get t.chars idx in
+          if code <> space_cell && code <> null_cell then true
+          else scan_col (x + 1)
+      in
+      if scan_col 0 then y + 1 else find_row (y - 1)
   in
-  grid.cell_hashes <- new_cell_hashes;
+  find_row (t.height - 1)
 
-  (* Resize and update row hash cache *)
-  let new_row_hashes = Array.make new_rows 0 in
-  for r = 0 to new_rows - 1 do
-    new_row_hashes.(r) <- row_hash grid.storage r new_cols
-  done;
-  grid.row_hashes <- new_row_hashes;
+let iter_diffs prev curr f =
+  let max_w = max prev.width curr.width in
+  let max_h = max prev.height curr.height in
 
-  (* Resize dirty rows array and mark all as dirty *)
-  let new_dirty_rows = Array.make new_rows true in
-  grid.dirty_rows <- new_dirty_rows;
-
-  (* Resize column dirty bits *)
-  let new_col_dirty =
-    Array.init new_rows (fun _ -> Array.make ((new_cols + 63) / 64) 0L)
-  in
-  grid.col_dirty <- new_col_dirty
-
-let blit ~src ~src_rect ~dst ~dst_pos =
-  let src_row = src_rect.row in
-  let src_col = src_rect.col in
-  let width = src_rect.width in
-  let height = src_rect.height in
-  let dst_row, dst_col = dst_pos in
-
-  (* Calculate the actual region to copy considering boundaries *)
-  let src_row_start = max 0 src_row in
-  let src_col_start = max 0 src_col in
-  let src_row_end = min src.rows (src_row + height) in
-  let src_col_end = min src.cols (src_col + width) in
-
-  let dst_row_start = max 0 dst_row in
-  let dst_col_start = max 0 dst_col in
-  let dst_row_end = min dst.rows (dst_row + (src_row_end - src_row_start)) in
-  let dst_col_end = min dst.cols (dst_col + (src_col_end - src_col_start)) in
-
-  (* Calculate the actual dimensions to copy *)
-  let copy_height =
-    min (src_row_end - src_row_start) (dst_row_end - dst_row_start)
-  in
-  let copy_width =
-    min (src_col_end - src_col_start) (dst_col_end - dst_col_start)
+  let colors_different plane1 idx1 plane2 idx2 =
+    not (Color_plane.equal_eps plane1 idx1 plane2 idx2)
   in
 
-  (* Copy the data row by row *)
-  for i = 0 to copy_height - 1 do
-    let src_r = src_row_start + i in
-    let dst_r = dst_row_start + i in
+  for y = 0 to max_h - 1 do
+    for x = 0 to max_w - 1 do
+      let in_prev = x < prev.width && y < prev.height in
+      let in_curr = x < curr.width && y < curr.height in
 
-    (* Use Bigarray slices for more efficient bulk copy *)
-    if copy_width > 0 then (
-      (* Get row slices *)
-      let src_types_slice =
-        Bigarray.Array2.slice_left src.storage.types src_r
-      in
-      let dst_types_slice =
-        Bigarray.Array2.slice_left dst.storage.types dst_r
-      in
-      let src_widths_slice =
-        Bigarray.Array2.slice_left src.storage.widths src_r
-      in
-      let dst_widths_slice =
-        Bigarray.Array2.slice_left dst.storage.widths dst_r
-      in
-      let src_styles_slice =
-        Bigarray.Array2.slice_left src.storage.styles src_r
-      in
-      let dst_styles_slice =
-        Bigarray.Array2.slice_left dst.storage.styles dst_r
-      in
+      match (in_prev, in_curr) with
+      | false, false -> ()
+      | true, false | false, true -> f y x
+      | true, true ->
+          let p_idx = (y * prev.width) + x in
+          let c_idx = (y * curr.width) + x in
 
-      (* Create sub-arrays for the exact range we want to copy *)
-      let src_sub_types =
-        Bigarray.Array1.sub src_types_slice src_col_start copy_width
-      in
-      let dst_sub_types =
-        Bigarray.Array1.sub dst_types_slice dst_col_start copy_width
-      in
-      let src_sub_widths =
-        Bigarray.Array1.sub src_widths_slice src_col_start copy_width
-      in
-      let dst_sub_widths =
-        Bigarray.Array1.sub dst_widths_slice dst_col_start copy_width
-      in
-      let src_sub_styles =
-        Bigarray.Array1.sub src_styles_slice src_col_start copy_width
-      in
-      let dst_sub_styles =
-        Bigarray.Array1.sub dst_styles_slice dst_col_start copy_width
-      in
-
-      (* Use Bigarray blit for efficient memory copy *)
-      Bigarray.Array1.blit src_sub_types dst_sub_types;
-      Bigarray.Array1.blit src_sub_widths dst_sub_widths;
-      Bigarray.Array1.blit src_sub_styles dst_sub_styles);
-
-    (* Copy text bytes for this row segment *)
-    (if copy_width > 0 then
-       let src_byte_offset = src_col_start * 8 in
-       let dst_byte_offset = dst_col_start * 8 in
-       let bytes_to_copy = copy_width * 8 in
-       Bytes.blit src.storage.texts.(src_r) src_byte_offset
-         dst.storage.texts.(dst_r) dst_byte_offset bytes_to_copy);
-
-    (* Update row hash and mark as dirty for destination row *)
-    update_row_hash dst dst_r;
-    dst.dirty_rows.(dst_r) <- true;
-    (* Mark affected columns as dirty *)
-    for c = dst_col_start to dst_col_start + copy_width - 1 do
-      mark_col_dirty dst dst_r c
+          if
+            Buf.get prev.chars p_idx <> Buf.get curr.chars c_idx
+            || Buf.get prev.attrs p_idx <> Buf.get curr.attrs c_idx
+            || colors_different prev.fg p_idx curr.fg c_idx
+            || colors_different prev.bg p_idx curr.bg c_idx
+            || Buf.get prev.links p_idx <> Buf.get curr.links c_idx
+          then f y x
     done
   done
 
-let to_string grid =
-  let nrows = grid.rows in
-  let ncols = grid.cols in
-  let buffer = Buffer.create (nrows * (ncols + 1)) in
-  for r = 0 to nrows - 1 do
-    let c = ref 0 in
-    while !c < ncols do
-      let cell = Storage.get_cell grid.storage r !c in
-      if Cell.is_empty cell then (
-        Buffer.add_char buffer ' ';
-        incr c)
-      else if Cell.is_continuation cell then
-        (* Skip continuation cells *)
-        incr c
-      else
-        (* Glyph cell *)
-        let text = Cell.get_text cell in
-        let width = Cell.width cell in
-        Buffer.add_string buffer text;
-        (* Skip continuation cells for wide characters *)
-        c := !c + width
-    done;
-    if r < nrows - 1 then Buffer.add_char buffer '\n'
-  done;
-  let lines = String.split_on_char '\n' (Buffer.contents buffer) in
-  let trim_right s =
-    let len = String.length s in
-    let rec find_end i =
-      if i < 0 || s.[i] <> ' ' then i + 1 else find_end (i - 1)
-    in
-    let end_pos = find_end (len - 1) in
-    if end_pos = len then s else String.sub s 0 end_pos
-  in
-  String.concat "\n" (List.map trim_right lines)
+let diff_cells prev curr =
+  let diffs = Dynarray.create () in
+  iter_diffs prev curr (fun y x -> Dynarray.add_last diffs (y, x));
+  Dynarray.to_array diffs
 
-(* Cell-level diff for efficient rendering *)
+(* Snapshotting *)
 
-type dirty_region = {
-  min_row : int;
-  max_row : int;
-  min_col : int;
-  max_col : int;
-}
+let snapshot ?(reset = true) t : string =
+  let width = width t in
+  let height = height t in
+  if width <= 0 || height <= 0 then ""
+  else
+    let pool = glyph_pool t in
+    let scratch = ref (Bytes.create 256) in
 
-(* Find dirty rows between two grids *)
-let find_dirty_rows prev_grid curr_grid =
-  let nrows = curr_grid.rows in
-  let prev_rows = prev_grid.rows in
-  let dirty = Array.make nrows false in
-  for r = 0 to nrows - 1 do
-    if r < prev_rows then
-      dirty.(r) <- prev_grid.row_hashes.(r) <> curr_grid.row_hashes.(r)
-    else
-      (* New rows that didn't exist in prev_grid are dirty *)
-      dirty.(r) <- true
-  done;
-  dirty
+    Ansi.Escape.to_string (fun w ->
+        let style = Ansi.Sgr_state.create () in
 
-(* Convert dirty rows to minimal bounding regions *)
-let compute_dirty_regions dirty_rows cols =
-  let regions = ref [] in
-  let rows = Array.length dirty_rows in
-  let i = ref 0 in
+        for y = 0 to height - 1 do
+          if y > 0 then Ansi.Escape.emit (Ansi.Escape.char '\n') w;
 
-  while !i < rows do
-    if dirty_rows.(!i) then (
-      let start_row = !i in
-      while !i < rows && dirty_rows.(!i) do
-        incr i
-      done;
-      let end_row = !i - 1 in
+          let x = ref 0 in
+          while !x < width do
+            let idx = (y * width) + !x in
+            let code = get_code t idx in
+            let cell_w = cell_width t idx in
 
-      (* For each dirty row range, find the column bounds *)
-      regions :=
-        {
-          min_row = start_row;
-          max_row = end_row;
-          min_col = 0;
-          max_col = cols - 1;
-        }
-        :: !regions)
-    else incr i
-  done;
+            if cell_w > 0 then (
+              (* Style/colors/attrs/hyperlinks *)
+              let attrs = get_attrs t idx in
+              let link = hyperlink_url_direct t (get_link t idx) in
+              let fg_r = get_fg_r t idx in
+              let fg_g = get_fg_g t idx in
+              let fg_b = get_fg_b t idx in
+              let fg_a = get_fg_a t idx in
+              let bg_r = get_bg_r t idx in
+              let bg_g = get_bg_g t idx in
+              let bg_b = get_bg_b t idx in
+              let bg_a = get_bg_a t idx in
+              Ansi.Sgr_state.update style w ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g
+                ~bg_b ~bg_a ~attrs ~link;
 
-  List.rev !regions
-
-(* Merge overlapping or adjacent regions to reduce patch count *)
-let merge_regions regions =
-  match regions with
-  | [] | [ _ ] -> regions
-  | _ ->
-      (* Sort regions by min_row, then min_col *)
-      let sorted =
-        List.sort
-          (fun a b ->
-            let row_cmp = compare a.min_row b.min_row in
-            if row_cmp = 0 then compare a.min_col b.min_col else row_cmp)
-          regions
-      in
-
-      (* Merge overlapping or adjacent regions *)
-      let rec merge acc = function
-        | [] -> List.rev acc
-        | [ r ] -> List.rev (r :: acc)
-        | r1 :: r2 :: rest ->
-            (* Check if regions overlap or are adjacent *)
-            (* Adjacent means they touch or are within 1 row of each other *)
-            if
-              r1.max_row + 1 >= r2.min_row
-              && r1.min_col <= r2.max_col && r1.max_col >= r2.min_col
-            then
-              (* Merge the regions *)
-              let merged =
-                {
-                  min_row = min r1.min_row r2.min_row;
-                  max_row = max r1.max_row r2.max_row;
-                  min_col = min r1.min_col r2.min_col;
-                  max_col = max r1.max_col r2.max_col;
-                }
-              in
-              merge acc (merged :: rest)
-            else merge (r1 :: acc) (r2 :: rest)
-      in
-      merge [] sorted
-
-(* Find exact cell-level differences within a region *)
-let find_cell_changes prev_grid curr_grid region =
-  let changed_cells = ref [] in
-
-  for row = region.min_row to region.max_row do
-    (* When comparing two different grids, don't use column dirty bits
-       as they track changes within a single grid, not between grids *)
-    for col = region.min_col to region.max_col do
-      (* Use fast cell comparison without allocation *)
-      let cells_differ =
-        not
-          (Storage.cells_equal prev_grid.storage row col curr_grid.storage row
-             col)
-      in
-      if cells_differ then changed_cells := (row, col) :: !changed_cells
-    done
-  done;
-
-  List.rev !changed_cells
-
-(* Compute minimal update regions from a list of changed cells *)
-let compute_update_regions changed_cells =
-  match changed_cells with
-  | [] -> []
-  | _ ->
-      (* Sort cells by row then column for linear sweep *)
-      let sorted_cells =
-        List.sort
-          (fun (r1, c1) (r2, c2) ->
-            let row_cmp = compare r1 r2 in
-            if row_cmp = 0 then compare c1 c2 else row_cmp)
-          changed_cells
-      in
-
-      (* Linear sweep to build row intervals *)
-      let rec build_row_intervals cells current_row start_col end_col intervals
-          =
-        match cells with
-        | [] ->
-            if current_row >= 0 then
-              (current_row, start_col, end_col) :: intervals
-            else intervals
-        | (r, c) :: rest ->
-            if current_row = r then
-              (* Same row - decide whether to extend or start new interval *)
-              if c <= end_col + 2 then
-                (* Allow small gaps to be merged (up to 1 column gap) *)
-                build_row_intervals rest r start_col (max end_col c) intervals
+              (* Emit grapheme - Cell_code is aligned with Glyph.t *)
+              if
+                Cell_code.is_continuation code || Int.equal code Cell_code.empty
+              then Ansi.Escape.emit (Ansi.Escape.char ' ') w
               else
-                (* Gap too large - start new interval on same row *)
-                build_row_intervals rest r c c
-                  ((current_row, start_col, end_col) :: intervals)
-            else
-              (* New row *)
-              let new_intervals =
-                if current_row >= 0 then
-                  (current_row, start_col, end_col) :: intervals
-                else intervals
-              in
-              build_row_intervals rest r c c new_intervals
-      in
+                (* code is a valid Glyph.t due to aligned formats *)
+                let len = Glyph.length pool code in
+                if len <= 0 then Ansi.Escape.emit (Ansi.Escape.char ' ') w
+                else (
+                  if len > Bytes.length !scratch then
+                    scratch :=
+                      Bytes.create (max (Bytes.length !scratch * 2) len);
+                  let written = Glyph.blit pool code !scratch 0 in
+                  Ansi.Escape.emit
+                    (Ansi.Escape.bytes !scratch ~off:0 ~len:written)
+                    w));
 
-      let row_intervals =
-        match sorted_cells with
-        | [] -> []
-        | (r, c) :: rest -> build_row_intervals rest r c c [] |> List.rev
-      in
+            x := !x + cell_w
+          done;
 
-      (* Merge adjacent row intervals into rectangles *)
-      let rec merge_intervals intervals current_rect rects =
-        match intervals with
-        | [] -> (
-            match current_rect with None -> rects | Some rect -> rect :: rects)
-        | (row, start_col, end_col) :: rest -> (
-            match current_rect with
-            | None ->
-                (* Start new rectangle *)
-                let rect =
-                  {
-                    min_row = row;
-                    max_row = row;
-                    min_col = start_col;
-                    max_col = end_col;
-                  }
-                in
-                merge_intervals rest (Some rect) rects
-            | Some rect ->
-                if
-                  row = rect.max_row + 1
-                  && start_col = rect.min_col && end_col = rect.max_col
-                then
-                  (* Extend rectangle vertically *)
-                  let extended_rect = { rect with max_row = row } in
-                  merge_intervals rest (Some extended_rect) rects
-                else
-                  (* Start new rectangle *)
-                  let new_rect =
-                    {
-                      min_row = row;
-                      max_row = row;
-                      min_col = start_col;
-                      max_col = end_col;
-                    }
-                  in
-                  merge_intervals rest (Some new_rect) (rect :: rects))
-      in
+          Ansi.Sgr_state.close_link style w;
+          Ansi.Escape.emit Ansi.Escape.reset w;
+          Ansi.Sgr_state.reset style
+        done;
 
-      merge_intervals row_intervals None [] |> List.rev
-
-(* Diff functions *)
-let diff_rows prev_grid curr_grid =
-  let nrows = curr_grid.rows in
-  let prev_rows = prev_grid.rows in
-  let dirty_rows = ref [] in
-  for r = 0 to nrows - 1 do
-    if r < prev_rows then (
-      if prev_grid.row_hashes.(r) <> curr_grid.row_hashes.(r) then
-        dirty_rows := r :: !dirty_rows)
-    else
-      (* New rows that didn't exist in prev_grid are dirty *)
-      dirty_rows := r :: !dirty_rows
-  done;
-  List.rev !dirty_rows
-
-let diff_regions prev_grid curr_grid =
-  let dirty_rows_array = find_dirty_rows prev_grid curr_grid in
-  let regions = compute_dirty_regions dirty_rows_array curr_grid.cols in
-  merge_regions regions
-
-let diff_cells prev_grid curr_grid =
-  let regions = diff_regions prev_grid curr_grid in
-  List.fold_left
-    (fun acc region ->
-      let cells = find_cell_changes prev_grid curr_grid region in
-      List.rev_append cells acc)
-    [] regions
-  |> List.rev
-
-let diff_regions_detailed prev_grid curr_grid =
-  let regions = diff_regions prev_grid curr_grid in
-  (* For each region, find the actual changed cells and create more granular regions *)
-  List.fold_left
-    (fun acc region ->
-      let changed_cells = find_cell_changes prev_grid curr_grid region in
-      if changed_cells = [] then acc
-      else
-        (* Compute minimal regions from the changed cells *)
-        let cell_regions = compute_update_regions changed_cells in
-        (* Return each region with its cells *)
-        List.fold_left
-          (fun acc2 cell_region ->
-            let cells_in_region =
-              List.filter
-                (fun (r, c) ->
-                  r >= cell_region.min_row && r <= cell_region.max_row
-                  && c >= cell_region.min_col && c <= cell_region.max_col)
-                changed_cells
-            in
-            (cell_region, cells_in_region) :: acc2)
-          acc cell_regions)
-    [] regions
-  |> List.rev
-
-let diff prev_grid curr_grid =
-  (* Integrated diff function that combines row hash comparison 
-     and dirty region computation for maximum efficiency *)
-  let dirty_rows_array = find_dirty_rows prev_grid curr_grid in
-  compute_dirty_regions dirty_rows_array curr_grid.cols
-
-(* Create a deep copy of the grid *)
-let copy grid =
-  let new_storage = Storage.create grid.rows grid.cols in
-
-  (* Copy each cell *)
-  for r = 0 to grid.rows - 1 do
-    for c = 0 to grid.cols - 1 do
-      let cell = Storage.get_cell grid.storage r c in
-      Storage.set_cell new_storage r c cell
-    done
-  done;
-
-  (* Copy string pool *)
-  Hashtbl.iter
-    (fun k v -> Hashtbl.add new_storage.string_pool k v)
-    grid.storage.string_pool;
-  new_storage.pool_strings <- Array.copy grid.storage.pool_strings;
-  new_storage.pool_size <- grid.storage.pool_size;
-
-  (* Copy link table *)
-  Hashtbl.iter
-    (fun k v -> Hashtbl.add new_storage.link_table k v)
-    grid.storage.link_table;
-  new_storage.next_link_id <- grid.storage.next_link_id;
-
-  {
-    grid with
-    storage = new_storage;
-    row_hashes = Array.copy grid.row_hashes;
-    dirty_rows = Array.make grid.rows false;
-    col_dirty = Array.map Array.copy grid.col_dirty;
-  }
-
-let with_updates grid f =
-  (* Save current state for potential rollback *)
-  let backup = copy grid in
-
-  (* Set batch mode *)
-  grid.batch_updates <- true;
-  grid.batch_dirty_rows <- [];
-
-  (* Execute the function *)
-  let result =
-    try
-      let res = f grid in
-      (* Success - update all dirty row hashes at once *)
-      List.iter
-        (fun row ->
-          grid.row_hashes.(row) <- row_hash grid.storage row grid.cols)
-        grid.batch_dirty_rows;
-      res
-    with e ->
-      (* Rollback changes on exception *)
-      (* Copy storage back from backup *)
-      Storage.resize backup.storage grid.rows grid.cols backup.rows backup.cols;
-      grid.storage <- backup.storage;
-      grid.cell_hashes <- Array.map Array.copy backup.cell_hashes;
-      grid.row_hashes <- Array.copy backup.row_hashes;
-      grid.dirty_rows <- Array.copy backup.dirty_rows;
-      (* Restore batch mode state *)
-      grid.batch_updates <- false;
-      grid.batch_dirty_rows <- [];
-      raise e
-  in
-
-  (* Clear batch mode *)
-  grid.batch_updates <- false;
-  grid.batch_dirty_rows <- [];
-  result
-
-(* Pretty-printing functions using Fmt *)
-
-let pp_rect ppf rect =
-  Fmt.pf ppf "@[<h>{row=%d; col=%d; width=%d; height=%d}@]" rect.row rect.col
-    rect.width rect.height
-
-let pp_dirty_region ppf region =
-  Fmt.pf ppf "@[<h>{min_row=%d; max_row=%d; min_col=%d; max_col=%d}@]"
-    region.min_row region.max_row region.min_col region.max_col
-
-let pp ppf grid =
-  Fmt.pf ppf
-    "@[<v>Grid {@;\
-     <0 2>@[<v>dimensions: %dx%d@ east_asian_context: %b@ non-empty cells:@ \
-     @[<v>%a@]@]@,\
-     }@]"
-    grid.rows grid.cols grid.east_asian_context
-    (fun ppf () ->
-      for row = 0 to grid.rows - 1 do
-        for col = 0 to grid.cols - 1 do
-          match get grid ~row ~col with
-          | Some cell when not (Cell.is_empty cell) ->
-              Fmt.pf ppf "[%d,%d]: %a@ " row col Cell.pp cell
-          | _ -> ()
-        done
-      done)
-    ()
-
-(* Equality functions *)
-
-let equal_rect r1 r2 =
-  r1.row = r2.row && r1.col = r2.col && r1.width = r2.width
-  && r1.height = r2.height
-
-let equal_dirty_region r1 r2 =
-  r1.min_row = r2.min_row && r1.max_row = r2.max_row && r1.min_col = r2.min_col
-  && r1.max_col = r2.max_col
-
-let char_width ?(east_asian = false) uchar =
-  Ucwidth.char_width ~east_asian uchar
-
-let string_width ?(east_asian = false) str =
-  Ucwidth.string_width ~east_asian str
+        if reset then Ansi.Escape.emit Ansi.Escape.reset w)

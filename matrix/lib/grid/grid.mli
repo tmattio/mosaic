@@ -1,236 +1,700 @@
-(** Grid management for the VTE module.
+(** Mutable grid of terminal cells with rich text support.
 
-    This module provides operations for managing the character grid that
-    represents the terminal display. *)
+    Grid provides a high-level framebuffer API for terminal applications, built
+    on top of efficient Bigarray storage. It manages terminal cells with Unicode
+    grapheme clusters, colors, text attributes, and alpha blending, enabling
+    rich terminal UIs with full color support and proper handling of multi-width
+    characters.
 
-module Cell = Cell
-(** @inline *)
+    {1 Overview}
 
-type rect = { row : int; col : int; width : int; height : int }
-(** A rectangular region in the grid *)
+    A grid is a two-dimensional array of terminal cells, where each cell stores:
+    - A character code or grapheme cluster reference
+    - Foreground and background colors (RGBA)
+    - Text attributes (bold, italic, underline, etc.)
+    - Display width (for multi-cell characters like CJK)
+
+    Grids are mutable and support efficient in-place updates, making them
+    suitable for interactive terminal applications with frequent redraws.
+
+    {1 Usage Basics}
+
+    Create a grid and draw text:
+    {[
+      let grid = Grid.create ~width:80 ~height:24 () in
+      Grid.draw_text grid ~x:0 ~y:0 ~text:"Hello, world!";
+      Grid.draw_text
+        ~style:(Ansi.Style.make ~fg:Ansi.Color.red ~bold:true ())
+        grid ~x:0 ~y:1 ~text:"Error: Operation failed"
+    ]}
+
+    Fill regions and copy content:
+    {[
+      Grid.fill_rect grid ~x:10 ~y:5 ~width:20 ~height:3
+        ~color:(Ansi.Color.of_rgb 100 100 100);
+      let other = Grid.create ~width:80 ~height:24 () in
+      Grid.blit ~src:grid ~dst:other
+    ]}
+
+    Use clipping for constrained drawing:
+    {[
+      Grid.with_scissor grid { x = 10; y = 5; width = 30; height = 10 }
+        (fun () -> Grid.draw_text grid ~x:0 ~y:0 ~text:"This text is clipped")
+    ]}
+
+    {1 Key Concepts}
+
+    {2 Character Encoding}
+
+    The grid uses a compact encoding scheme for characters:
+    - Unicode scalar values (single codepoints) are stored directly as 32-bit
+      codes with embedded width and flag information
+    - Multi-codepoint grapheme clusters (emoji with ZWJ, combining characters)
+      are stored via the glyph pool with reference counting
+    - Wide characters (e.g., CJK, emoji) span multiple cells: a start cell
+      followed by continuation markers
+
+    This hybrid approach minimizes memory usage and glyph pool lookups while
+    supporting full Unicode.
+
+    {2 Glyph Pool}
+
+    The glyph pool provides reference-counted storage for multi-codepoint
+    grapheme clusters. Multiple cells can reference the same grapheme, reducing
+    memory overhead for repeated text. The pool automatically manages reference
+    counts during cell updates and grid resize operations.
+
+    {2 Width Computation}
+
+    Character display width is calculated using one of three methods:
+    - [`Wcwidth]: POSIX wcwidth(3) compatible (fastest, limited emoji support)
+    - [`Unicode]: Full Unicode-aware width with proper emoji handling
+    - [`No_zwj]: Unicode-aware but splits zero-width joiner sequences
+
+    The width method affects how {!draw_text} positions characters and can be
+    changed dynamically with {!set_width_method}.
+
+    {2 Alpha Blending}
+
+    When {!respect_alpha} is enabled, colors with alpha < 1.0 are blended with
+    existing cell colors using perceptual alpha mixing. This enables
+    semi-transparent overlays and smooth color transitions. The blending uses a
+    perceptual curve that preserves visual contrast better than linear alpha
+    compositing. Note that this is not physically correct alpha compositing; the
+    output alpha value is the source alpha, not a composited value.
+
+    Use {!set_cell_alpha} to write cells with alpha blending regardless of the
+    {!respect_alpha} setting, or set {!respect_alpha} to enable blending for all
+    cell writes.
+
+    {2 Scissor Clipping}
+
+    The scissor stack enables hierarchical clipping regions. Drawing operations
+    outside the active scissor rectangle are silently ignored. Scissors are
+    useful for implementing scrollable regions, panels, and constrained layouts.
+
+    {1 Performance Considerations}
+
+    - Grid resizing is O(cells_outside_new_bounds) for releasing truncated
+      cells, plus O(new_width × new_height) for allocation if storage grows
+    - Cell updates are O(1) but may trigger glyph pool reference counting
+    - Blitting is O(src_width × src_height) with bounds checking
+    - Text drawing is O(grapheme_count) with width calculations per grapheme
+    - Scissor checks are O(1) per cell write
+    - Zero-allocation cell accessors ({!get_fg_r}, {!get_bg_r}, etc.) enable
+      efficient rendering loops without tuple allocation
+
+    {1 Invariants}
+
+    - Grid dimensions are strictly positive (zero-sized grids are invalid)
+    - Cell indices are row-major: [index = y * width + x]
+    - Color planes store RGBA as 4 consecutive normalized floats per cell (range
+      [0.0, 1.0])
+    - Wide characters use continuation codes in trailing cells
+    - Scissor stack operations are balanced (push/pop pairs) *)
 
 type t
-(** The type of a grid with damage tracking *)
+(** Mutable grid of terminal cells.
 
-val create : rows:int -> cols:int -> ?east_asian_context:bool -> unit -> t
-(** [create ~rows ~cols ?east_asian_context ()] creates a new empty grid with
-    the specified dimensions.
-    @param east_asian_context
-      If true, ambiguous width characters are treated as width 2. Defaults to
-      false. *)
+    An opaque handle storing terminal cell data with efficient memory layout.
+    Query dimensions via {!width} and {!height}; access cells via {!get_code},
+    {!get_style}, and {!get_text}. *)
 
-val rows : t -> int
-(** [rows grid] returns the number of rows in the grid *)
+type clip_rect = { x : int; y : int; width : int; height : int }
+(** Clipping rectangle in cell coordinates.
 
-val cols : t -> int
-(** [cols grid] returns the number of columns in the grid *)
+    Coordinates describe the top-left cell ([x], [y]) and positive extents in
+    cells. The rectangle covers all cells satisfying [x <= col < x + width] and
+    [y <= row < y + height]. Supplying non-positive [width] or [height] yields
+    an empty rectangle and therefore clips all subsequent writes. *)
 
-val get : t -> row:int -> col:int -> Cell.t option
-(** [get grid ~row ~col] returns the cell at the specified position, or [None]
-    if the position is out of bounds *)
+(** {1 Grid Creation} *)
 
-val set : t -> row:int -> col:int -> Cell.t option -> unit
-(** [set grid ~row ~col cell] sets the cell at the specified position. If cell
-    is None, sets the cell to Empty. Does nothing if the position is out of
-    bounds *)
+val create :
+  width:int ->
+  height:int ->
+  ?glyph_pool:Glyph.pool ->
+  ?width_method:Glyph.width_method ->
+  ?respect_alpha:bool ->
+  unit ->
+  t
+(** [create ~width ~height ?glyph_pool ?width_method ?respect_alpha ()] creates
+    a grid.
 
-val set_grapheme :
-  ?link:string ->
-  ?east_asian_context:bool ->
-  t ->
-  row:int ->
-  col:int ->
-  glyph:string ->
-  attrs:Ansi.Style.t ->
-  unit
-(** [set_grapheme grid ~row ~col ~glyph ~attrs ?link ?east_asian_context] sets a
-    grapheme cluster at the specified position, automatically handling wide
-    characters by setting continuation cells. If the style contains RGBA colors,
-    they will be automatically blended with the existing cell colors using alpha
-    compositing before being written as opaque RGB colors.
-    @param link Optional hyperlink URL to associate with this cell
-    @param east_asian_context
-      If provided, overrides the grid's default setting. If true, ambiguous
-      width characters are treated as width 2 Does nothing if the position is
-      out of bounds. *)
+    @param width Grid width in cells. Must be strictly positive (> 0).
+    @param height Grid height in cells. Must be strictly positive (> 0).
+    @param glyph_pool
+      Optional glyph pool for grapheme storage. If omitted, a fresh pool is
+      allocated. Sharing a pool across multiple grids reduces memory for common
+      text.
+    @param width_method
+      Grapheme width computation method. Defaults to [`Unicode] for
+      compatibility with most terminals.
+    @param respect_alpha
+      Whether to honor alpha blending when writing cells. Defaults to [false].
+      Enable for semi-transparent overlays.
 
-val set_text :
-  ?link:string ->
-  ?east_asian_context:bool ->
-  ?max_width:int ->
-  t ->
-  row:int ->
-  col:int ->
-  text:string ->
-  attrs:Ansi.Style.t ->
-  int
-(** [set_text grid ~row ~col ~text ~attrs ?link ?east_asian_context ?max_width]
-    sets text at the specified position, automatically handling grapheme
-    segmentation and wide characters. Returns the number of columns advanced.
-    @param text UTF-8 encoded text (may contain multiple graphemes)
-    @param link Optional hyperlink URL to associate with all cells of this text
-    @param east_asian_context
-      If provided, overrides the grid's default setting. If true, ambiguous
-      width characters are treated as width 2
-    @param max_width
-      Maximum number of columns to write (text will be truncated at grapheme
-      boundaries)
-    @return The total width of all graphemes written *)
+    All cells are initialized as spaces with opaque white foreground and
+    transparent black background, matching the result of {!clear} with default
+    color. The scissor stack is empty.
 
-val clear : ?style:Ansi.Style.t -> t -> unit
-(** [clear ?style grid] clears all cells in the grid. If [style] is provided,
-    cells are set to empty but with the given style (background color).
-    Otherwise, cells are set to empty with default style. Using a style is
-    useful for initializing a grid with a specific background color for proper
-    alpha blending. *)
+    @raise Invalid_argument if [width <= 0] or [height <= 0]. *)
 
-val fill_space : ?style:Ansi.Style.t -> t -> unit
-(** [fill_space ?style grid] fills all cells in the grid with space characters.
-    If [style] is provided, spaces are set with the given style. Otherwise,
-    spaces are set with default style. This is useful for initializing a buffer
-    where unwritten areas should be spaces rather than empty cells, ensuring
-    proper diff behavior for UI transitions. *)
+(** {1 Grid Properties} *)
 
-val clear_line : t -> int -> int -> unit
-(** [clear_line grid row from_col] clears all cells in the specified row
-    starting from [from_col] to the end of the line *)
+val glyph_pool : t -> Glyph.pool
+(** [glyph_pool t] returns the glyph pool used by [t]. Sharing pools across
+    grids enables efficient {!blit} operations. *)
 
-val clear_rect :
-  t -> row_start:int -> row_end:int -> col_start:int -> col_end:int -> unit
-(** [clear_rect grid ~row_start ~row_end ~col_start ~col_end] clears all cells
-    in the specified rectangular region (inclusive) *)
+val width_method : t -> Glyph.width_method
+(** [width_method t] returns the current width computation method. *)
 
-val copy_row : t -> int -> Cell.t array
-(** [copy_row grid row] returns a copy of the specified row, or an empty array
-    if the row is out of bounds *)
+val set_width_method : t -> Glyph.width_method -> unit
+(** [set_width_method t method_] changes the width computation method.
 
-val set_row : t -> int -> Cell.t array -> unit
-(** [set_row grid row new_row] replaces the specified row with a new row. The
-    new row must have the same number of columns as the grid *)
+    Subsequent {!draw_text} calls use the new method. Existing cell widths are
+    not updated; only new text rendering is affected.
 
-val make_empty_row : cols:int -> Cell.t array
-(** [make_empty_row ~cols] creates a new empty row with the specified number of
-    columns, filled with Empty cells *)
+    Use this to switch between terminals with different emoji support or to
+    experiment with width calculation strategies. *)
 
-val swap : t * t -> unit
-(** [swap (grid1, grid2)] swaps the contents of two grids. Both grids must have
-    the same dimensions *)
+val respect_alpha : t -> bool
+(** [respect_alpha t] returns whether alpha blending is enabled for {!set_cell}
+    and cross-grid {!blit_region}.
 
-val resize : t -> rows:int -> cols:int -> unit
-(** [resize grid ~rows ~cols] resizes the grid to the new dimensions. Content is
-    preserved as much as possible. If the new size is smaller, content is
-    truncated. If larger, new cells are empty. *)
+    When [true], these operations blend colors based on source alpha values.
+    When [false], they overwrite destination colors opaquely. Other operations
+    manage blending internally based on color alpha values. *)
 
-val blit : src:t -> src_rect:rect -> dst:t -> dst_pos:int * int -> unit
-(** [blit ~src ~src_rect ~dst ~dst_pos] efficiently copies a rectangular region
-    from the source grid to the destination grid at the specified position. The
-    operation handles boundary conditions and clipping automatically. Only the
-    affected destination rows are marked as dirty and have their hashes updated.
-*)
+val set_respect_alpha : t -> bool -> unit
+(** [set_respect_alpha t enabled] sets the alpha blending mode.
 
-val with_updates : t -> (t -> unit) -> unit
-(** [with_updates grid f] executes function [f] with row hash updates deferred.
-    This is useful for batch operations where multiple cells are modified. Row
-    hashes are recalculated only once at the end for all dirty rows,
-    significantly improving performance for bulk updates. *)
+    See {!respect_alpha}. The flag only affects future operations; existing
+    cells are unchanged. *)
 
-(** {2 Damage Tracking} *)
+val width : t -> int
+(** [width t] returns the grid width in cells. *)
 
-val flush_damage : t -> rect list
-(** [flush_damage grid] returns the list of dirty rectangles since the last
-    flush and clears the damage tracking. The second component is unit. *)
+val height : t -> int
+(** [height t] returns the grid height in cells. *)
 
-val to_string : t -> string
-(** [to_string grid] returns a string representation of the grid content,
-    stripping all styling information. Each line is trimmed of trailing
-    whitespace *)
+val active_height : t -> int
+(** [active_height t] returns the number of rows from the top that contain
+    non-blank content cells.
 
-(** {2 Grid Diffing} *)
+    A content cell is one whose character code is neither 0 nor a space
+    (U+0020). Pure background fills (spaces with background color) do not
+    contribute to [active_height], making this suitable for sizing inline
+    primary rendering regions. Returns 0 when the grid has no content.
 
-type dirty_region = {
-  min_row : int;
-  max_row : int;
-  min_col : int;
-  max_col : int;
-}
-(** A rectangular region that has changed *)
+    Note: After {!clear}, cells contain spaces (U+0020) with styling, not
+    character code 0, so cleared grids have [active_height] = 0. *)
 
-val diff_rows : t -> t -> int list
-(** [diff_rows prev curr] returns a list of row indices that have changed.
-    Useful for line-based terminal updates. *)
+(** {1 Cell Access} *)
 
-val diff_regions : t -> t -> dirty_region list
-(** [diff_regions prev curr] returns a list of rectangular regions that changed.
-    Useful for optimized screen redraws. *)
+val get_code : t -> int -> int
+(** [get_code t idx] returns the cell code at linear index [idx].
 
-val diff_cells : t -> t -> (int * int) list
-(** [diff_cells prev curr] returns a list of (row, col) coordinates for cells
-    that changed. Useful for precise cell-level updates. *)
+    For use with Grid operations like {!set_cell}. Cell codes are aligned with
+    {!Glyph.t}, so they can also be passed to glyph pool operations.
+    Zero-allocation. *)
 
-val diff_regions_detailed : t -> t -> (dirty_region * (int * int) list) list
-(** [diff_regions_detailed prev curr] returns regions with the specific cells
-    that changed within each region. Useful when you need both region bounds and
-    exact cells. *)
+val get_glyph : t -> int -> Glyph.t
+(** [get_glyph t idx] returns the glyph value at linear index [idx].
 
-val compute_dirty_regions : bool array -> int -> dirty_region list
-(** [compute_dirty_regions dirty_rows cols] converts an array of dirty row flags
-    into a list of rectangular regions that need to be redrawn. *)
+    For use with glyph pool operations like {!Glyph.blit}, {!Glyph.length}, and
+    {!Glyph.to_string}. Zero-allocation. *)
 
-val compute_update_regions : (int * int) list -> dirty_region list
-(** [compute_update_regions changed_cells] computes minimal bounding regions
-    from a list of changed cell coordinates. *)
+val get_attrs : t -> int -> int
+(** [get_attrs t idx] returns the packed attribute integer at [idx]. *)
 
-val diff : t -> t -> dirty_region list
-(** [diff prev curr] performs a complete diff operation between two grids,
-    combining row hash comparison and dirty region computation into a single
-    efficient operation. This is the recommended way to find changes between
-    grids as it performs all necessary steps internally. *)
+val get_link : t -> int -> int32
+(** [get_link t idx] returns the internal hyperlink ID at [idx]. *)
 
-(** {2 Utilities} *)
+val get_fg_r : t -> int -> float
+(** [get_fg_r t idx] returns the red component of foreground color at [idx] in
+    the range 0.0 to 1.0. *)
+
+val get_fg_g : t -> int -> float
+(** [get_fg_g t idx] returns the green component of foreground color at [idx] in
+    the range 0.0 to 1.0. *)
+
+val get_fg_b : t -> int -> float
+(** [get_fg_b t idx] returns the blue component of foreground color at [idx] in
+    the range 0.0 to 1.0. *)
+
+val get_fg_a : t -> int -> float
+(** [get_fg_a t idx] returns the alpha component of foreground color at [idx] in
+    the range 0.0 to 1.0. *)
+
+val get_bg_r : t -> int -> float
+(** [get_bg_r t idx] returns the red component of background color at [idx] in
+    the range 0.0 to 1.0. *)
+
+val get_bg_g : t -> int -> float
+(** [get_bg_g t idx] returns the green component of background color at [idx] in
+    the range 0.0 to 1.0. *)
+
+val get_bg_b : t -> int -> float
+(** [get_bg_b t idx] returns the blue component of background color at [idx] in
+    the range 0.0 to 1.0. *)
+
+val get_bg_a : t -> int -> float
+(** [get_bg_a t idx] returns the alpha component of background color at [idx] in
+    the range 0.0 to 1.0. *)
+
+val get_text : t -> int -> string
+(** [get_text t idx] decodes the grapheme at [idx] into a string. Returns an
+    empty string for empty cells or continuation cells. Note: This allocates a
+    new string. *)
+
+val get_style : t -> int -> Ansi.Style.t
+(** [get_style t idx] reconstructs the high-level style object for the cell at
+    [idx]. Note: This allocates a new [Ansi.Style.t]. *)
+
+val get_background : t -> int -> Ansi.Color.t
+(** [get_background t idx] reads the background color stored at [idx]
+    (row-major). *)
+
+val is_empty : t -> int -> bool
+(** [is_empty t idx] returns true if the cell contains the null code (0). *)
+
+val is_continuation : t -> int -> bool
+(** [is_continuation t idx] returns true if the cell is the trailing part of a
+    wide character. *)
+
+val is_simple : t -> int -> bool
+(** [is_simple t idx] returns true if the cell contains a simple character
+    (ASCII or single Unicode scalar) that doesn't require glyph pool lookup. *)
+
+val cell_width : t -> int -> int
+(** [cell_width t idx] returns the display width of the cell (0, 1, or more). *)
+
+val cells_equal : t -> int -> t -> int -> bool
+(** [cells_equal t1 idx1 t2 idx2] returns true if cells at [idx1] in [t1] and
+    [idx2] in [t2] have identical content and styling. Colors are compared with
+    small epsilon for float rounding tolerance. *)
+
+val hyperlink_url : t -> int32 -> string option
+(** [hyperlink_url t id] resolves [id] (from {!get_link}) to a URL if present.
+    Returns [None] when [id] represents "no hyperlink" or the identifier is
+    unknown. *)
+
+val hyperlink_url_direct : t -> int32 -> string
+(** [hyperlink_url_direct t id] resolves [id] to a URL string.
+
+    Returns the empty string [""] when [id] represents "no hyperlink" or the
+    identifier is unknown. This is a zero-allocation alternative to
+    {!hyperlink_url} for performance-critical render loops. *)
+
+(** {1 Grid Manipulation} *)
+
+val resize : t -> width:int -> height:int -> unit
+(** [resize t ~width ~height] resizes the grid, preserving existing contents
+    where possible.
+
+    @param width New width in cells. Must be strictly positive (> 0).
+    @param height New height in cells. Must be strictly positive (> 0).
+
+    If the new dimensions are smaller, cells outside the new bounds are released
+    (glyph pool references are decremented). If larger, new cells are
+    zero-initialized.
+
+    Resizing to identical dimensions is a no-op.
+
+    @raise Invalid_argument if [width <= 0] or [height <= 0].
+
+    Time complexity: O(cells_outside_new_bounds) for releasing truncated cells,
+    plus O(new_width × new_height) for allocation if storage grows. *)
+
+val clear : ?color:Ansi.Color.t -> t -> unit
+(** [clear ?color t] resets all cells to the given color.
+
+    @param color Fill color. Defaults to transparent black (RGBA = 0, 0, 0, 0).
+
+    All cells are set to character code 32 (space), foreground set to opaque
+    white and background set to [color], attributes cleared, and widths reset to
+    1. RGBA raw planes store normalized floats in [0.0, 1.0]. Glyph pool
+    references from existing cells are released. The scissor stack is preserved.
+
+    This creates "visible" blank cells that match the terminal's cleared state,
+    where spaces with appropriate styling represent empty areas rather than
+    invisible content.
+
+    Time complexity: O(width × height). *)
+
+val blit : src:t -> dst:t -> unit
+(** [blit ~src ~dst] copies the full contents of [src] into [dst].
+
+    Resizes [dst] to match [src] dimensions, then copies all cell data
+    (characters, colors, attributes, hyperlinks). Existing grapheme references
+    in [dst] are released before copying.
+
+    If [src] and [dst] share the same {!glyph_pool}, character codes and link
+    identifiers are copied verbatim and the destination's grapheme tracker is
+    rebuilt, reusing the underlying pool entries. If they use different pools,
+    each distinct grapheme is copied once into [dst]'s pool and reused for all
+    matching cells.
+
+    The scissor stack on [dst] is not modified, and no alpha blending is
+    performed because the copy operates directly on the backing buffers.
+
+    Time complexity: O(src_width × src_height). *)
 
 val copy : t -> t
-(** [copy grid] creates a deep copy of the grid with all cells duplicated. The
-    returned grid is independent from the original. *)
+(** [copy t] creates a deep copy of [t], sharing the underlying glyph pool.
 
-val char_width : ?east_asian:bool -> Uchar.t -> int
-(** Calculate the display width of a single Unicode character.
+    Metadata such as width method and {!respect_alpha} is preserved, while the
+    scissor stack starts empty on the copy. Use this for snapshots before
+    diffing or serialization. *)
 
-    @param east_asian
-      If true, ambiguous width characters are treated as width 2. Defaults to
-      false.
-    @param uchar The Unicode character to measure
-    @return
-      The display width in terminal columns (-1 for control, 0-2 for others) *)
+val blit_region :
+  src:t ->
+  dst:t ->
+  src_x:int ->
+  src_y:int ->
+  width:int ->
+  height:int ->
+  dst_x:int ->
+  dst_y:int ->
+  unit
+(** [blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y] copies a
+    rectangular region from [src] to [dst].
 
-val string_width : ?east_asian:bool -> string -> int
-(** Calculate the display width of a string using proper grapheme segmentation.
+    @param src_x Source region left edge (inclusive).
+    @param src_y Source region top edge (inclusive).
+    @param width Region width in cells, clamped to non-negative values.
+    @param height Region height in cells, clamped to non-negative values.
+    @param dst_x Destination region left edge.
+    @param dst_y Destination region top edge.
 
-    This handles complex emoji sequences, ZWJ sequences, variation selectors,
-    and multi-codepoint grapheme clusters according to Unicode standards.
+    The function clamps the region to valid bounds in both grids. Negative
+    source or destination coordinates shift the region inward by adjusting
+    offsets and shrinking [width] / [height]. Cells outside the overlapping
+    rectangle are ignored.
 
-    @param east_asian
-      If true, ambiguous width characters are treated as width 2. Defaults to
-      false.
-    @param s The UTF-8 encoded string
-    @return The total display width in terminal columns *)
+    Complex graphemes and hyperlinks are preserved where possible: destination
+    cells in the target rectangle are released, then the grapheme data and link
+    URLs from [src] are copied. When [src] and [dst] share the same
+    {!glyph_pool}, character codes are copied verbatim and reference counts are
+    adjusted. When the pools differ, each distinct grapheme is re-interned once
+    into [dst]'s pool and reused for all matching cells.
 
-(** {2 Pretty-printing} *)
+    The scissor stack on [dst] clips writes; coordinates outside the active
+    scissor are not modified. When [src] and [dst] are the same grid,
+    overlapping regions are handled correctly by copying rows in the appropriate
+    direction. When they are different grids, the copy proceeds cell by cell.
+    Colors are blended with the destination when either [dst.respect_alpha] is
+    true or the source colors have alpha < 1.0; otherwise cells are overwritten.
 
-val pp : Format.formatter -> t -> unit
-(** [pp fmt grid] pretty-prints the grid structure for debugging. Shows
-    dimensions and non-empty cells with their content. *)
+    The operation never resizes [dst]; regions that extend beyond either grid's
+    bounds are truncated.
 
-val pp_rect : Format.formatter -> rect -> unit
-(** [pp_rect fmt rect] pretty-prints a rectangular region. *)
+    Time complexity: O(width × height) over the visible part of the region. *)
 
-val pp_dirty_region : Format.formatter -> dirty_region -> unit
-(** [pp_dirty_region fmt region] pretty-prints a dirty region. *)
+val fill_rect :
+  t -> x:int -> y:int -> width:int -> height:int -> color:Ansi.Color.t -> unit
+(** [fill_rect t ~x ~y ~width ~height ~color] fills a rectangle.
 
-(** {2 Equality} *)
+    @param x Rectangle left edge.
+    @param y Rectangle top edge.
+    @param width Rectangle width, clamped to non-negative values.
+    @param height Rectangle height, clamped to non-negative values.
+    @param color Base color applied to the region.
 
-val equal_rect : rect -> rect -> bool
-(** [equal_rect r1 r2] returns true if the two rectangles are equal. *)
+    Behavior:
+    - If [color] has alpha close to 0 (fully transparent), cells in the
+      rectangle are reset to a "blank" state: character code 32 (space),
+      attributes cleared and hyperlinks removed, but each cell's existing
+      background color is preserved.
+    - If [color] has [0 < alpha < 1], the region is updated via per-cell alpha
+      compositing: the new background color is blended over the existing
+      background, and a space glyph with reset attributes is drawn.
+    - If [color] is fully opaque, all cells in the rectangle are rewritten in
+      bulk with character code 32 (space), foreground pinned to opaque white,
+      background set to [color], attributes cleared and width set to 1. Existing
+      complex graphemes in the region are released first so reference counts
+      remain correct.
 
-val equal_dirty_region : dirty_region -> dirty_region -> bool
-(** [equal_dirty_region r1 r2] returns true if the two dirty regions are equal.
-*)
+    The rectangle is clipped to grid bounds and respects the active scissor.
+    Time complexity: O(width × height) for the clipped region. *)
+
+(** {1 Drawing} *)
+
+val draw_text :
+  ?style:Ansi.Style.t ->
+  ?tab_width:int ->
+  t ->
+  x:int ->
+  y:int ->
+  text:string ->
+  unit
+(** [draw_text ?style t ~x ~y ~text] draws a single-line text string starting at
+    [(x, y)].
+
+    @param style
+      Optional text style. Defaults to {!Ansi.Style.default} (terminal default
+      colors, no attributes).
+    @param tab_width
+      Width of a tab stop in cells. Values ≤ 0 fall back to 2. Only used when
+      [text] contains the tab character.
+    @param x Starting column (may be negative for partial rendering).
+    @param y Row (must be in \[0, height\) or drawing is skipped).
+    @param text UTF-8 encoded text to render.
+
+    The text is segmented into grapheme clusters using Unicode extended grapheme
+    cluster boundaries. Each grapheme's display width is calculated using the
+    current {!width_method}. Wide characters (width ≥ 2) occupy multiple cells
+    with continuation markers in trailing cells.
+
+    Newlines are skipped without advancing the cursor position. Tabs are
+    expanded to spaces using [tab_width] (default 2). Use multiple {!draw_text}
+    calls for multi-line text.
+
+    Drawing respects the active scissor region; cells outside the scissor are
+    not modified. Alpha blending occurs when the resolved background color
+    (explicit style background if present, otherwise the destination cell
+    background) has alpha < 0.999; in that case colors are alpha-composited with
+    the existing cell instead of simply overwriting them. Ordinary glyphs
+    replace the previous text; when the character being drawn is a space on a
+    partially transparent background, the existing glyph is preserved and its
+    colors are tinted instead. Foreground-only transparency is ignored because
+    terminals render the glyph itself, not a tinted version of the destination
+    background.
+
+    Graphemes that do not fully fit in the remaining columns clear the rest of
+    the row with styled spaces instead of drawing a truncated cluster. This
+    matches how hardware terminals treat wide glyphs.
+
+    Graphemes are stored directly as character codes if single-width ASCII
+    (32-126 except 127), otherwise interned in the glyph pool.
+
+    Time complexity: O(grapheme_count × width_calculation_cost). Width
+    calculation is O(1) for ASCII, O(codepoint_count) for complex emoji. *)
+
+module Border = Border
+
+val draw_box :
+  t ->
+  x:int ->
+  y:int ->
+  width:int ->
+  height:int ->
+  border_chars:Border.t ->
+  border_sides:Border.side list ->
+  border_style:Ansi.Style.t ->
+  bg_color:Ansi.Color.t ->
+  should_fill:bool ->
+  ?title:string ->
+  ?title_alignment:[ `Left | `Center | `Right ] ->
+  ?title_style:Ansi.Style.t ->
+  unit ->
+  unit
+(** [draw_box t ~x ~y ~width ~height ~border_chars ~border_sides ~border_style
+     ~bg_color ~should_fill ?title ?title_style ()] draws a box with Unicode
+    borders.
+
+    @param x Left edge of the box.
+    @param y Top edge of the box.
+    @param width Box width in cells (must be ≥ 2 for visible borders).
+    @param height Box height in cells (must be ≥ 2 for visible borders).
+    @param border_chars
+      Character set for drawing borders (corners, edges, etc.).
+    @param border_sides List of sides to draw (empty list draws no borders).
+    @param border_style
+      Style for border characters. Note: any background color in [border_style]
+      is ignored; border cells use [bg_color] for their background.
+    @param bg_color
+      Background color for the interior (when [should_fill] is true) and for
+      border cells.
+    @param should_fill
+      If [true], fills the interior with [bg_color]. When [false], leaves
+      interior cells untouched.
+    @param title Optional title text displayed on the top border.
+    @param title_alignment
+      Optional title alignment: [`Left] (default), [`Center], or [`Right].
+      Left/right use a 2‑cell padding from the edge.
+    @param title_style
+      Optional style for title text. Defaults to [border_style].
+
+    Drawing respects the scissor stack and silently skips cells outside the grid
+    bounds. When [should_fill] is [true], the box interior is filled with
+    [bg_color] before borders are rendered. Titles are placed on the top border
+    only when [`Top] is included and [width >= title width + 4]; otherwise they
+    are dropped. The title is padded by two cells on each side, clamped to the
+    box width, and defaults to [border_style] when [title_style] is omitted. *)
+
+(** {1 Direct Cell Access} *)
+
+val set_cell :
+  t ->
+  x:int ->
+  y:int ->
+  code:int ->
+  fg:Ansi.Color.t ->
+  bg:Ansi.Color.t ->
+  attrs:Ansi.Attr.t ->
+  ?link:string ->
+  unit ->
+  unit
+(** [set_cell t ~x ~y ~code ~fg ~bg ~attrs] writes a single cell
+    unconditionally.
+
+    Cells falling outside the grid or the active scissor are ignored. Any
+    existing grapheme that spans this cell is cleaned up so continuation cells
+    and reference counts remain consistent. When you write the start cell of a
+    multi-column grapheme, you are responsible for writing the matching
+    continuation cells yourself; prefer {!draw_text} unless you need this
+    low-level control. *)
+
+val set_cell_alpha :
+  t ->
+  x:int ->
+  y:int ->
+  code:int ->
+  fg:Ansi.Color.t ->
+  bg:Ansi.Color.t ->
+  attrs:Ansi.Attr.t ->
+  ?link:string ->
+  unit ->
+  unit
+(** [set_cell_alpha t ~x ~y ~code ~fg ~bg ~attrs] writes a single cell using
+    alpha blending unconditionally.
+
+    Blends [fg] and [bg] with the existing cell colors regardless of
+    {!respect_alpha}, ensuring translucent overlays behave consistently even
+    when the grid normally treats writes as opaque. Cells falling outside the
+    grid or the active scissor are ignored.
+
+    As with {!set_cell}, this function only updates the cell at [(x, y)].
+    Multi-column graphemes must be written with matching continuation cells by
+    the caller; existing graphemes spanning this cell are cleaned up so pool
+    reference counts remain correct. *)
+
+(** {1 Scissor Clipping} *)
+
+val push_scissor : t -> clip_rect -> unit
+(** [push_scissor t rect] pushes a clipping rectangle onto the stack.
+
+    Subsequent drawing operations ({!set_cell_alpha}, {!draw_text},
+    {!fill_rect}) are clipped to [rect]. The most recently pushed scissor
+    becomes active, completely replacing any previous scissor. Supplying a
+    rectangle with non-positive width or height effectively disables rendering
+    until it is popped.
+
+    The scissor remains active until removed with {!pop_scissor} or
+    {!clear_scissor}. *)
+
+val pop_scissor : t -> unit
+(** [pop_scissor t] removes the most recently pushed clipping rectangle.
+
+    If the scissor stack is empty, this is a no-op. After popping, the previous
+    scissor (if any) becomes active. *)
+
+val clear_scissor : t -> unit
+(** [clear_scissor t] removes all clipping rectangles.
+
+    Drawing operations are no longer clipped. Equivalent to popping all
+    scissors. *)
+
+val with_scissor : t -> clip_rect -> (unit -> 'a) -> 'a
+(** [with_scissor t rect f] executes [f] with [rect] as the active scissor.
+
+    Pushes [rect], calls [f ()], then pops [rect] before returning. The scissor
+    is popped even if [f] raises an exception.
+
+    This is the recommended way to use scissor clipping for scoped drawing. *)
+
+(** {1 Scrolling Operations}
+
+    Efficient scrolling primitives for terminal emulation. These are optimized
+    for the common case of scrolling content within a rectangular region,
+    automatically handling overlapping memory operations. *)
+
+val scroll_up : t -> top:int -> bottom:int -> n:int -> unit
+(** [scroll_up t ~top ~bottom ~n] scrolls the region \[top..bottom\] up by [n]
+    lines.
+
+    Lines scrolled off the top are lost. New blank lines (filled with
+    transparent black) appear at the bottom. This is equivalent to the terminal
+    operation that happens when output reaches the bottom of the screen.
+
+    @param top Top row of scroll region (inclusive, 0-based).
+    @param bottom Bottom row of scroll region (inclusive, 0-based).
+    @param n Number of lines to scroll (clamped to region height).
+
+    Complexity: O(width × height) with optimized bulk memory operations. Writes
+    are clipped by the active scissor because the implementation delegates to
+    {!blit_region} and {!fill_rect}.
+
+    Preconditions:
+    - [0 <= top <= bottom < height]
+    - [n > 0]
+
+    Invalid parameters (including [n <= 0]) are ignored (no-op). *)
+
+val scroll_down : t -> top:int -> bottom:int -> n:int -> unit
+(** [scroll_down t ~top ~bottom ~n] scrolls the region \[top..bottom\] down by
+    [n] lines.
+
+    Lines scrolled off the bottom are lost. New blank lines appear at the top.
+    This is the reverse of {!scroll_up}, used for reverse index (RI) terminal
+    operations.
+
+    @param top Top row of scroll region (inclusive, 0-based).
+    @param bottom Bottom row of scroll region (inclusive, 0-based).
+    @param n Number of lines to scroll (clamped to region height).
+
+    Complexity: O(width × height) with optimized bulk memory operations. Handles
+    overlapping memory regions correctly and respects the active scissor.
+
+    Preconditions: Same as {!scroll_up}. Passing [n <= 0] leaves the grid
+    unchanged. *)
+
+(** {1 Grid Comparison} *)
+
+val diff_cells : t -> t -> (int * int) array
+(** [diff_cells prev curr] returns the array of cell coordinates that differ
+    between [prev] and [curr]. Cells outside either grid's bounds are treated as
+    empty cells. The function iterates over the union of both grids' dimensions,
+    so any cell that exists in one grid but not the other, or has different
+    content, is reported.
+
+    Colors are compared using a small epsilon to ignore float32 rounding noise
+    in the RGBA planes. The returned array is sorted by row, then column. *)
+
+(** {1 Snapshotting} *)
+
+val snapshot : ?reset:bool -> t -> string
+(** [snapshot ?reset grid] renders the entire grid to a string containing full
+    ANSI escape sequences (as if rendered with `Full mode).
+
+    The output includes:
+    - All rows from row 0 to [height-1]
+    - Proper style handling (truecolor RGB, attributes, hyperlinks)
+    - Correct rendering of wide/complex graphemes
+    - A final reset sequence if [reset] is [true] (default)
+
+    This is useful for debugging, logging, tests, or generating static ANSI
+    output from a grid without a [Screen.t]. It matches exactly what
+    [Screen.render ~full:true] would produce (ignoring cursor/mouse state). *)
