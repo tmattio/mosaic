@@ -1,265 +1,285 @@
-(** {1 Core Types} *)
+(** Text styling composition and management.
 
-(** [color] represents terminal color values.
+    This module aggregates foreground color, background color, text attributes,
+    and hyperlinks into immutable [Style.t] objects.
 
-    Basic colors map to standard 16-color palette (0-7). Bright variants use
-    high-intensity palette (8-15). Default resets to terminal's configured
-    color. Index accesses 256-color palette. RGB enables 24-bit true color.
+    {1 Overview}
 
-    Compatibility:
-    - Basic and bright colors: universal support
-    - Default: universal (SGR 39/49)
-    - Index: common in modern terminals (xterm-256color)
-    - RGB: varies; graceful fallback to nearest 256-color
+    A style consists of four components:
 
-    Examples:
+    - {b Colors}: Optional foreground and background. [None] inherits the
+      terminal's current color.
+    - {b Attributes}: A bitmask of flags (e.g., bold, italic).
+    - {b Hyperlink}: An optional OSC 8 hyperlink URL.
+
+    Styles are composed using overlay semantics: colors and hyperlinks from the
+    overlay replace those in the base, while attributes are unioned.
+
+    {1 Usage Basics}
+
+    Create and combine styles:
     {[
-      let red_text = Ansi.sgr [ `Fg Red ]
-      let bright_bg = Ansi.sgr [ `Bg Bright_yellow ]
-      let orange = Ansi.sgr [ `Fg (Index 208) ]
-      let custom = Ansi.sgr [ `Fg (RGB (255, 128, 0)) ]
-    ]} *)
-type color =
-  | Black
-  | Red
-  | Green
-  | Yellow
-  | Blue
-  | Magenta
-  | Cyan
-  | White
-  | Default
-  | Bright_black
-  | Bright_red
-  | Bright_green
-  | Bright_yellow
-  | Bright_blue
-  | Bright_magenta
-  | Bright_cyan
-  | Bright_white
-  | Index of int  (** 256-color palette index *)
-  | RGB of int * int * int  (** 24-bit RGB color *)
-  | RGBA of int * int * int * int
-      (** 32-bit RGBA color with alpha channel for blending *)
-
-type style =
-  [ `Bold  (** Increases font weight (SGR 1) *)
-  | `Dim  (** Reduces intensity (SGR 2) *)
-  | `Italic  (** Slants text (SGR 3; limited support) *)
-  | `Underline  (** Single underline (SGR 4) *)
-  | `Double_underline
-    (** Double underline (SGR 21; conflicts with bold reset on some terminals)
-    *)
-  | `Blink  (** Flashing text (SGR 5; often disabled by users) *)
-  | `Reverse  (** Swaps foreground/background (SGR 7) *)
-  | `Conceal  (** Hides text (SGR 8; limited support) *)
-  | `Strikethrough  (** Line through text (SGR 9) *)
-  | `Overline  (** Line above text (SGR 53; limited support) *)
-  | `Framed  (** Frame border (SGR 51; rare support) *)
-  | `Encircled  (** Circle border (SGR 52; rare support) *) ]
-(** [style] represents text formatting attributes.
-
-    Styles modify text appearance. Multiple styles can combine. Support varies
-    by terminal:
-    - Universal: Bold, Underline, Reverse
-    - Common: Dim, Strikethrough, Italic
-    - Limited: Double_underline, Blink, Conceal
-    - Rare: Overline, Framed, Encircled
-
-    Reset functions remove specific styles without affecting others. Use
-    {!reset} to clear all attributes.
-
-    Example:
-    {[
-      let title = Ansi.style [ `Bold; `Underline ] "Chapter 1"
-      let secret = Ansi.style [ `Conceal ] "password123"
+      let error = Style.make ~fg:Color.red ~bold:true ()
+      let base = Style.make ~bg:Color.white ()
+      let combined = base ++ error
     ]} *)
 
-type attr =
-  [ `Fg of color  (** Sets foreground (text) color *)
-  | `Bg of color  (** Sets background color *)
-  | `Reset  (** Resets all attributes to defaults (SGR 0) *)
-  | `No_bold  (** SGR 22: Neither bold nor dim *)
-  | `No_dim  (** SGR 22: Neither bold nor dim *)
-  | `No_italic  (** SGR 23 *)
-  | `No_underline  (** SGR 24 *)
-  | `No_blink  (** SGR 25 *)
-  | `No_reverse  (** SGR 27 *)
-  | `No_conceal  (** SGR 28 *)
-  | `No_strikethrough  (** SGR 29 *)
-  | `No_overline  (** SGR 55 *)
-  | `No_framed  (** SGR 54 *)
-  | `No_encircled  (** SGR 54 *)
-  | style ]
-(** [attr] combines colors and styles into display attributes.
+type t = private {
+  fg : Color.t option;
+  bg : Color.t option;
+  attrs : Attr.t;
+  link : string option;
+}
+(** The read-only style definition.
 
-    Attributes can be combined in {!sgr} or {!style}. Later attributes override
-    earlier ones for the same property. [`Reset] clears all attributes; prefer
-    targeted resets when preserving some attributes.
+    Fields are exposed for pattern matching but cannot be modified directly. Use
+    {!make} or the modifier functions to create new instances. *)
 
-    Precedence rules:
-    - Multiple [`Fg] values: last one wins
-    - Multiple [`Bg] values: last one wins
-    - [`Bold] and [`Dim]: both can be active unless [`Reset] intervenes
-    - [`Reset]: clears everything, position in list matters
-
-    Example:
-    {[
-      (* Bold red on blue background *)
-      let attrs = Ansi.sgr [ `Bold; `Fg Red; `Bg Blue ]
-
-      (* Override red with green *)
-      let changed = Ansi.sgr [ `Fg Red; `Fg Green ] (* Results in green *)
-    ]} *)
-
-(** {1 Style Management} *)
-
-type t = private int64
-(** Represents the graphical styling of a single terminal cell. Bit-packed for
-    performance with full RGB color support. The type is private to ensure
-    styles are only created through the proper constructors. *)
+(** {1 Predefined Styles} *)
 
 val default : t
-(** The default style attributes for a new terminal or after a reset. *)
+(** [default] is the empty style.
+
+    It contains no colors, no attributes, and no hyperlink. Emitting this style
+    performs a reset if the previous style was different. *)
+
+val error : t
+(** [error] is a standard style for errors.
+
+    Defined as bright red foreground. *)
+
+val success : t
+(** [success] is a standard style for success messages.
+
+    Defined as bright green foreground. *)
+
+val warning : t
+(** [warning] is a standard style for warnings.
+
+    Defined as bright yellow foreground. *)
+
+val info : t
+(** [info] is a standard style for informational messages.
+
+    Defined as bright blue foreground. *)
+
+(** {1 Construction} *)
 
 val make :
+  ?fg:Color.t ->
+  ?bg:Color.t ->
   ?bold:bool ->
   ?dim:bool ->
   ?italic:bool ->
   ?underline:bool ->
-  ?double_underline:bool ->
-  ?fg:color ->
-  ?bg:color ->
-  ?reversed:bool ->
+  ?blink:bool ->
+  ?inverse:bool ->
+  ?hidden:bool ->
   ?strikethrough:bool ->
   ?overline:bool ->
-  ?blink:bool ->
+  ?double_underline:bool ->
+  ?framed:bool ->
+  ?encircled:bool ->
+  ?link:string ->
   unit ->
   t
-(** Create a style with the given attributes. All attributes default to the
-    default style values. *)
+(** [make ?fg ?bg ... ()] creates a new style with the specified properties.
 
-val apply_sgr_attr : t -> attr -> t
-(** [apply_sgr_attr style attr] applies an ANSI SGR attribute to a style,
-    returning the updated style. *)
+    All parameters are optional:
+    - [fg] and [bg] default to [None] (inherit terminal default).
+    - All boolean attributes (e.g., [bold], [italic]) default to [false].
+    - [link] defaults to [None] (no hyperlink). *)
 
-val equal : t -> t -> bool
-(** [equal a b] performs equality check on styles. More efficient than
-    polymorphic equality. *)
+(** {1 Modifiers} *)
 
-(** {2 Style composition} *)
+(** {2 Colors} *)
 
-val merge : t -> t -> t
-(** [merge parent child] merges two styles, with the child style taking
-    precedence for any conflicting attributes.
+val fg : Color.t -> t -> t
+(** [fg color t] sets the foreground color of [t] to [color]. *)
 
-    Merge rules:
-    - Foreground color: child overrides parent if not Default
-    - Background color: child overrides parent if not Default
-    - Style flags: union of both (e.g., parent bold + child italic = both)
-    - Link ID: child overrides parent if non-zero
-
-    This is useful for composing styles in declarative UI frameworks where a
-    component inherits a base style from its container but can override specific
-    attributes. *)
-
-val ( ++ ) : t -> t -> t
-(** [parent ++ child] is an infix operator for [merge parent child]. The child
-    style takes precedence over the parent style. *)
-
-(** {2 Accessors} *)
-
-val bold : t -> bool
-val dim : t -> bool
-val italic : t -> bool
-val underline : t -> bool
-val double_underline : t -> bool
-val fg : t -> color
-val bg : t -> color
-val reversed : t -> bool
-val strikethrough : t -> bool
-val overline : t -> bool
-val blink : t -> bool
-
-(** {2 Style builders} *)
-
-val with_fg : color -> t -> t
-val with_bg : color -> t -> t
+val bg : Color.t -> t -> t
+(** [bg color t] sets the background color of [t] to [color]. *)
 
 val with_no_fg : t -> t
-(** [with_no_fg t] removes the foreground color, causing it to inherit from
-    parent/existing content *)
+(** [with_no_fg t] removes the foreground color from [t].
+
+    The resulting style will inherit the terminal's default foreground. *)
 
 val with_no_bg : t -> t
-(** [with_no_bg t] removes the background color, causing it to inherit from
-    parent/existing content *)
+(** [with_no_bg t] removes the background color from [t].
+
+    The resulting style will inherit the terminal's default background. *)
+
+(** {2 Attributes} *)
+
+val with_attrs : Attr.t -> t -> t
+(** [with_attrs attrs t] replaces the attribute set of [t] with [attrs]. *)
+
+val overlay_attrs : t -> Attr.t -> t
+(** [overlay_attrs t attrs] adds [attrs] to the existing attributes of [t].
+
+    Equivalent to taking the union of [t.attrs] and [attrs]. *)
+
+val add_attr : Attr.flag -> t -> t
+(** [add_attr flag t] enables the specific attribute [flag] in [t]. *)
+
+val remove_attr : Attr.flag -> t -> t
+(** [remove_attr flag t] disables the specific attribute [flag] in [t]. *)
 
 val with_bold : bool -> t -> t
-val with_italic : bool -> t -> t
-val with_underline : bool -> t -> t
-val with_double_underline : bool -> t -> t
-val with_strikethrough : bool -> t -> t
-val with_reversed : bool -> t -> t
-val with_blink : bool -> t -> t
+(** [with_bold enabled t] sets or clears the bold attribute. *)
+
 val with_dim : bool -> t -> t
+(** [with_dim enabled t] sets or clears the dim attribute. *)
+
+val with_italic : bool -> t -> t
+(** [with_italic enabled t] sets or clears the italic attribute. *)
+
+val with_underline : bool -> t -> t
+(** [with_underline enabled t] sets or clears the underline attribute. *)
+
+val with_double_underline : bool -> t -> t
+(** [with_double_underline enabled t] sets or clears the double-underline
+    attribute. *)
+
+val with_blink : bool -> t -> t
+(** [with_blink enabled t] sets or clears the blink attribute. *)
+
+val with_inverse : bool -> t -> t
+(** [with_inverse enabled t] sets or clears the inverse attribute (swap
+    foreground and background). *)
+
+val with_hidden : bool -> t -> t
+(** [with_hidden enabled t] sets or clears the hidden attribute. *)
+
+val with_strikethrough : bool -> t -> t
+(** [with_strikethrough enabled t] sets or clears the strikethrough attribute.
+*)
+
 val with_overline : bool -> t -> t
+(** [with_overline enabled t] sets or clears the overline attribute. *)
 
-(* Internal functions exposed for testing *)
-val encode_color : color -> int64
-val decode_color : int64 -> color
+val with_framed : bool -> t -> t
+(** [with_framed enabled t] sets or clears the framed attribute. *)
 
-(* Link ID accessors for Grid.Storage *)
-val get_link_id : t -> int
-val set_link_id : t -> int -> t
+val with_encircled : bool -> t -> t
+(** [with_encircled enabled t] sets or clears the encircled attribute. *)
 
-val to_sgr : ?prev_style:t option -> t -> string
-(** [to_sgr ?prev_style style] generates the ANSI SGR escape sequence string for this style.
-      If [prev_style] is provided, it will detect when attributes are turning off and emit
-      a reset if needed. Returns "\027[0m" for default style to ensure clean state. *)
+(** {2 Hyperlinks} *)
+
+val hyperlink : string -> t -> t
+(** [hyperlink url t] sets the OSC 8 hyperlink URL of [t].
+
+    If [url] is empty, behavior depends on the terminal, but typically no link
+    is created. *)
+
+val link : t -> string option
+(** [link t] returns the current hyperlink URL of [t], if any. *)
+
+val unlink : t -> t
+(** [unlink t] removes the hyperlink from [t]. *)
+
+(** {1 Composition} *)
+
+val merge : base:t -> overlay:t -> t
+(** [merge ~base ~overlay] combines two styles.
+
+    The composition rules are:
+    - {b Colors}: [overlay] takes precedence. If [overlay.fg] is [None],
+      [base.fg] is kept.
+    - {b Link}: [overlay] takes precedence.
+    - {b Attributes}: The union of [base.attrs] and [overlay.attrs] is used. *)
+
+val ( ++ ) : t -> t -> t
+(** [base ++ overlay] is an infix alias for {!merge}.
+
+    Example:
+    {[
+      let s = Style.default ++ Style.make ~bold:true () ++ Style.fg Color.red
+    ]} *)
+
+val resolve : t list -> t
+(** [resolve styles] merges a list of styles from left to right.
+
+    Starts with {!default} as the accumulator. *)
+
+(** {1 Comparison} *)
+
+val equal : t -> t -> bool
+(** [equal a b] tests structural equality.
+
+    Returns [true] if all colors, attributes, and links are identical. *)
+
+val compare : t -> t -> int
+(** [compare a b] returns a total ordering for styles.
+
+    {b Performance Note}: Comparison is optimized. It uses integer operations
+    for attributes and packed 64-bit integer comparisons for colors, avoiding
+    heavy structural recursion or float allocation.
+
+    This function is suitable for using styles as keys in [Map] or [Set]. *)
 
 val hash : t -> int
-(** [hash style] returns a hash value for the style. Suitable for use with
-    Hashtbl. *)
+(** [hash t] computes a hash value for the style.
 
-val of_int64 : int64 -> t
-(** [of_int64 i] converts a raw int64 to a style. This is for internal use only
-    when reading styles from storage. The int64 must have been created by a
-    valid style constructor. *)
+    Compatible with {!equal}. *)
 
-val color_to_codes : bg:bool -> color -> int list
-(** [color_to_codes ~bg color] converts a color to a list of SGR codes. If [~bg]
-    is true, it generates background color codes; otherwise, it generates
-    foreground color codes. *)
+(** {1 Emission} *)
 
-val style_to_code : style -> int
-(** [style_to_code style] converts a style to an SGR code. This is used for
-    rendering styles in ANSI escape sequences. *)
+val to_sgr_codes : ?prev:t -> t -> int list
+(** [to_sgr_codes ?prev t] calculates the minimal list of SGR integer codes
+    required to transition from [prev] to [t].
 
-val attr_to_codes : attr -> int list
-(** [attr_to_codes attr] converts an attr to a list of SGR codes. This is used
-    for rendering attributes in ANSI escape sequences. *)
+    {ul
+     {- If [prev] is omitted, it defaults to {!default}. }
+     {- Returns an empty list if [prev] and [t] are equal. }
+     {- If [t] is {!default}, returns [[0]] (reset). }
+     {- Otherwise, returns only the codes needed to:
+        - Disable attributes present in [prev] but not in [t]
+        - Change foreground color (or [[39]] to reset to default)
+        - Change background color (or [[49]] to reset to default)
+        - Enable attributes present in [t] but not in [prev]
+     }
+    }
 
-(** {2 Pretty-printing} *)
+    {b Note}: Allocates a list. Use {!emit} for allocation-sensitive code. *)
+
+val sgr_sequence : ?prev:t -> t -> string
+(** [sgr_sequence ?prev t] returns the ANSI escape sequence string for [t].
+
+    Equivalent to converting the result of {!to_sgr_codes} to a string. Returns
+    an empty string if no transition is required. *)
+
+val emit : ?prev:t -> t -> Escape.writer -> unit
+(** [emit ?prev t writer] writes the minimal SGR codes to [writer].
+
+    Computes the minimal state difference between [prev] (defaulting to
+    {!default}) and [t], emitting only the codes necessary to transition:
+
+    - Attribute disable codes for attributes being removed
+    - Color codes only if colors changed (or [[39]]/[[49]] to reset to default)
+    - Attribute enable codes for attributes being added
+
+    Handles shared disable codes correctly: Bold/Dim share code 22,
+    Underline/Double_underline share 24, Framed/Encircled share 54.
+
+    {b Note}: This function emits SGR sequences only (colors/attributes). The
+    [link] field is not emitted here. For hyperlink support, use {!Ansi.render}
+    or {!Ansi.emit} which handle OSC 8 sequences.
+
+    {b Example}: Transitioning from [bold + red] to [italic + red] emits only
+    [[22;3]] (disable bold, enable italic), not [[0;3;38;2;255;0;0]]. *)
+
+val styled : ?reset:bool -> t -> string -> string
+(** [styled ?reset t s] returns the string [s] wrapped in the escape codes for
+    [t].
+
+    If [reset] is [true] (default: [false]), the function appends a reset
+    sequence ([ESC\[0m]) to the end of the string. *)
+
+(** {1 Debugging} *)
 
 val pp : Format.formatter -> t -> unit
-(** [pp fmt style] pretty-prints a style for debugging. *)
+(** [pp fmt t] prints a human-readable representation of the style.
 
-val pp_color : Format.formatter -> color -> unit
-(** [pp_color fmt color] pretty-prints a color value. *)
-
-(** {2 Equality} *)
-
-val equal_color : color -> color -> bool
-(** [equal_color c1 c2] returns true if the two colors are equal. *)
-
-(** {2 Alpha Blending} *)
-
-val color_to_rgba : color -> int * int * int * int
-(** [color_to_rgba color] converts any color to RGBA tuple (r, g, b, a) where
-    each component is 0-255. Non-RGBA colors are treated as fully opaque
-    (alpha=255). *)
-
-val blend_colors : src:color -> dst:color -> color
-(** [blend_colors ~src ~dst] performs alpha blending of src over dst using the
-    standard Porter-Duff "over" operator. The result is always an opaque RGB
-    color. *)
+    Example output: [Style{fg=#FF0000, attrs=[Bold, Underline]}] *)
