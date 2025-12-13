@@ -52,7 +52,7 @@ let json_sample =
 
 let lang_name = function OCaml -> "OCaml" | JSON -> "JSON"
 let lang_content = function OCaml -> ocaml_sample | JSON -> json_sample
-let lang_filetype = function OCaml -> "ml" | JSON -> "json"
+let lang_filetype = function OCaml -> "ocaml" | JSON -> "json"
 let syntax_client = Mosaic_syntax.default_client ()
 let syntax_style = Code.Syntax_style.of_default_theme ()
 

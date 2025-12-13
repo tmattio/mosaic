@@ -579,8 +579,6 @@ let set_draw_unstyled_text t v =
     schedule_update t)
 
 let apply_props t (props : Props.t) =
-  let oc = Lazy.force debug_oc in
-  Printf.fprintf oc "APPLY_PROPS: syntax_style_eq=%b\n%!" (t.syntax_style == props.syntax_style);
   (* Core content and language configuration *)
   set_content t props.content;
   set_filetype t props.filetype;
