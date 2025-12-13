@@ -1,11 +1,4 @@
-(* Text alignment options for block layout - implements legacy HTML alignment behavior *)
-
-type t =
-  | Auto  (** No special legacy text align behaviour *)
-  | Legacy_left  (** Corresponds to -webkit-left or -moz-left in browsers *)
-  | Legacy_right  (** Corresponds to -webkit-right or -moz-right in browsers *)
-  | Legacy_center
-      (** Corresponds to -webkit-center or -moz-center in browsers *)
+type t = Auto | Legacy_left | Legacy_right | Legacy_center
 
 let default = Auto
 

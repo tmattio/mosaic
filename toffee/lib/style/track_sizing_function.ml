@@ -1,9 +1,3 @@
-(* The sizing function for a grid track (row/column)
-    
-    May either be a MinMax variant which specifies separate values for the min-/max- track sizing functions
-    or a scalar value which applies to both track sizing functions. *)
-
-(* Track sizing function - combination of min and max sizing functions *)
 type t = {
   min : Compact_length.t; (* Minimum track sizing function *)
   max : Compact_length.t; (* Maximum track sizing function *)

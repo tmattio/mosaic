@@ -1,14 +1,4 @@
-(** Controls whether a node's position is determined by the normal flow of
-    layout or not *)
-
-type t =
-  | Relative
-      (** The offset is computed relative to the final position given by the
-          layout algorithm. Offsets do not affect the position of any other
-          items. *)
-  | Absolute
-      (** The node is taken out of the normal flow of layout and positioned
-          relative to its parent. *)
+type t = Relative | Absolute
 
 let default = Relative
 let to_string = function Relative -> "relative" | Absolute -> "absolute"

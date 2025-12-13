@@ -1,14 +1,9 @@
-(* A compact, tagged representation of a length value.
-
-    
-    This module provides an efficient representation of CSS length values
-    using a single float with tag bits to distinguish between different types.
-    Based on the Rust taffy implementation. *)
-
 type t = float
 
 (* Tag constants - using the lower 8 bits for tagging *)
 
+(* Non-calc tags must always set at least one of the lower 3 bits.
+   Calc values rely on those bits being 0 for detection via [is_calc]. *)
 let calc_tag = 0b0000_0000 (* calc uses tag 0 with lower 3 bits *)
 let length_tag = 0b0000_0001
 let percent_tag = 0b0000_0010
@@ -177,8 +172,10 @@ let resolved_percentage_size_with_calc t parent_size calc_resolver =
 
 let value t =
   let tag = get_tag t in
-  if tag = auto_tag || tag = min_content_tag || tag = max_content_tag then
-    failwith "Cannot get value from auto/min-content/max-content"
+  if
+    tag = auto_tag || tag = min_content_tag || tag = max_content_tag
+    || is_calc t
+  then failwith "Cannot get value from auto/min-content/max-content/calc"
   else get_value t
 
 (* Pretty printing for debugging *)

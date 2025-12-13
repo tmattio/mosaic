@@ -1,10 +1,4 @@
-(** Defines how an element generates boxes and how its children are laid out *)
-
-type t =
-  | Block  (** The children will follow the block layout algorithm *)
-  | Flex  (** The children will follow the flexbox layout algorithm *)
-  | Grid  (** The children will follow the CSS grid layout algorithm *)
-  | None  (** The node is hidden and does not generate any boxes *)
+type t = Block | Flex | Grid | None
 
 let default = Flex
 

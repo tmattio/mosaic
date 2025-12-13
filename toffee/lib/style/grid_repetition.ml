@@ -1,9 +1,7 @@
-(* A typed representation of a repeat(..) in grid-template-* value *)
-
 type t = {
-  count : Repetition_count.t; (* The number of times the repeat is repeated *)
-  tracks : Track_sizing_function.t list; (* The tracks to repeat *)
-  line_names : string list list; (* The line names for the repeated tracks *)
+  count : Repetition_count.t;
+  tracks : Track_sizing_function.t list;
+  line_names : string list list;
 }
 
 let make ~count ~tracks ~line_names = { count; tracks; line_names }

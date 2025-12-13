@@ -1,12 +1,4 @@
-(** Defines which box sizing model to use *)
-
-type t =
-  | Border_box
-      (** Size styles such as size, min_size, max_size specify the box's "border
-          box" (the size excluding margin but including padding/border) *)
-  | Content_box
-      (** Size styles such as size, min_size, max_size specify the box's
-          "content box" (the size excluding padding/border/margin) *)
+type t = Border_box | Content_box
 
 let default = Border_box
 

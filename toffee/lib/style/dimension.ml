@@ -1,6 +1,3 @@
-(** A unit of linear measurement, covering Length, Percentage, and Auto. Used
-    for main sizing properties like width, height, and flex_basis. *)
-
 type t = Compact_length.t
 
 (* Constructors *)
@@ -9,6 +6,8 @@ let length value = Compact_length.length value
 let percent value = Compact_length.percent value
 let auto = Compact_length.auto
 let calc index = Compact_length.calc index
+let px value = length value
+let pct value = percent (value /. 100.0)
 
 (* Constants *)
 
@@ -67,7 +66,10 @@ let maybe_resolve t context calc_resolver =
     match context with
     | None -> None
     | Some dim -> Some (calc_resolver (Compact_length.get_calc_index t) dim)
-  else failwith "Invalid dimension value"
+  else
+    failwith
+      "Dimension.maybe_resolve: unsupported tag (expected \
+       length/percent/auto/calc)"
 
 let resolve_or_zero t context calc_resolver =
   match maybe_resolve t context calc_resolver with Some v -> v | None -> 0.0

@@ -1,8 +1,3 @@
-(* An element in a grid-template-columns or grid-template-rows definition.
-    Either a track sizing function or a repeat().
-    
-    See https://developer.mozilla.org/en-US/docs/Web/CSS/grid-template-columns *)
-
 type t =
   | Single of Track_sizing_function.t (* A single non-repeated track *)
   | Repeat of Grid_repetition.t
