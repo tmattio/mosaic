@@ -40,16 +40,15 @@ let view model =
           box ~flex_direction:Column ~align_items:Center ~gap:(gap 2)
             ~border:true ~border_color ~padding:(padding 3)
             [
-              text ~text_style:(Ansi.Style.make ~bold:true ())
+              text
+                ~text_style:(Ansi.Style.make ~bold:true ())
                 (Printf.sprintf "%d" model);
               text ~text_style:hint "Press + or - to change";
             ];
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [
-          text ~text_style:hint "+ increment  •  - decrement  •  q quit";
-        ];
+        [ text ~text_style:hint "+ increment  •  - decrement  •  q quit" ];
     ]
 
 let subscriptions _model =

@@ -429,7 +429,7 @@ let spinner = Vnode.spinner
 let tab_select = Vnode.tab_select
 let scroll_bar = Vnode.scroll_bar
 let scroll_box = Vnode.scroll_box
-let text_input = Vnode.text_input
+let input = Vnode.input
 let code = Vnode.code
 let markdown = Vnode.markdown
 

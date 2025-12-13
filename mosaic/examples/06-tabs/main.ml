@@ -7,12 +7,12 @@ type msg = Quit | Tab_changed of int
 
 let tabs =
   [
-    Tab_select.{ label = "Home"; description = Some "Main dashboard" };
-    { label = "Files"; description = Some "Browse files" };
-    { label = "Settings"; description = Some "Configure options" };
-    { label = "Network"; description = Some "Connection status" };
-    { label = "Logs"; description = Some "System logs" };
-    { label = "Help"; description = Some "Documentation" };
+    ("Home", Some "Main dashboard");
+    ("Files", Some "Browse files");
+    ("Settings", Some "Configure options");
+    ("Network", Some "Connection status");
+    ("Logs", Some "System logs");
+    ("Help", Some "Documentation");
   ]
 
 let init () = ({ tab = 0 }, Cmd.none)
@@ -57,12 +57,11 @@ let view model =
       (* Tab bar *)
       box ~padding:(padding 1)
         [
-          tab_select ~autofocus:true ~options:tabs ~show_description:true
-            ~show_underline:true ~show_scroll_arrows:true ~wrap_selection:true
-            ~tab_width:12 ~selected_background:accent
-            ~selected_text:Ansi.Color.black
+          tab_select ~autofocus:true ~show_description:true ~show_underline:true
+            ~show_scroll_arrows:true ~wrap_selection:true ~tab_width:12
+            ~selected_background:accent ~selected_text:Ansi.Color.black
             ~on_change:(fun i -> Some (Tab_changed i))
-            ();
+            tabs;
         ];
       (* Content area *)
       box ~flex_grow:1. ~border:true ~border_color ~padding:(padding 2)
@@ -70,16 +69,15 @@ let view model =
         [
           box ~flex_direction:Column ~gap:(gap 1)
             [
-              text ~text_style:(Ansi.Style.make ~bold:true ())
-                (List.nth tabs model.tab).label;
+              text
+                ~text_style:(Ansi.Style.make ~bold:true ())
+                (fst (List.nth tabs model.tab));
               text (content_for_tab model.tab);
             ];
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [
-          text ~text_style:hint "←/→ navigate  •  [/] vim  •  q quit";
-        ];
+        [ text ~text_style:hint "←/→ navigate  •  [/] vim  •  q quit" ];
     ]
 
 let subscriptions _model =

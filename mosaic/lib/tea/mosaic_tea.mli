@@ -644,7 +644,6 @@ val select :
   ?grid_template_areas:Toffee.Style.grid_template_area list ->
   ?grid_row:Toffee.Style.grid_placement Toffee.Geometry.line ->
   ?grid_column:Toffee.Style.grid_placement Toffee.Geometry.line ->
-  ?options:Select.item list ->
   ?background:Ansi.Color.t ->
   ?text_color:Ansi.Color.t ->
   ?focused_background:Ansi.Color.t ->
@@ -662,9 +661,9 @@ val select :
   ?autofocus:bool ->
   ?on_change:(int -> 'msg option) ->
   ?on_activate:(int -> 'msg option) ->
-  unit ->
+  Select.item list ->
   'msg t
-(** [select ()] creates a select list element. *)
+(** [select options] creates a select list element. *)
 
 (** {2 Spinner} *)
 
@@ -733,11 +732,6 @@ val spinner :
 
 (** {2 Tab Select} *)
 
-module Tab_select : sig
-  type tab = { label : string; description : string option }
-  (** A tab with label and optional description. *)
-end
-
 val tab_select :
   ?id:string ->
   ?key:string ->
@@ -781,7 +775,6 @@ val tab_select :
   ?grid_template_areas:Toffee.Style.grid_template_area list ->
   ?grid_row:Toffee.Style.grid_placement Toffee.Geometry.line ->
   ?grid_column:Toffee.Style.grid_placement Toffee.Geometry.line ->
-  ?options:Tab_select.tab list ->
   ?wrap_selection:bool ->
   ?show_description:bool ->
   ?show_underline:bool ->
@@ -798,11 +791,11 @@ val tab_select :
   ?selected_description:Ansi.Color.t ->
   ?on_change:(int -> 'msg option) ->
   ?on_activate:(int -> 'msg option) ->
-  ?on_change_full:(int * Mosaic_ui.Tab_select.tab -> 'msg option) ->
-  ?on_activate_full:(int * Mosaic_ui.Tab_select.tab -> 'msg option) ->
-  unit ->
+  ?on_change_full:(int * (string * string option) -> 'msg option) ->
+  ?on_activate_full:(int * (string * string option) -> 'msg option) ->
+  (string * string option) list ->
   'msg t
-(** [tab_select ()] creates a tab selector element. *)
+(** [tab_select options] creates a tab selector element. *)
 
 (** {2 Scroll Bar} *)
 
@@ -942,7 +935,7 @@ val scroll_box :
 
 (** {2 Text Input} *)
 
-val text_input :
+val input :
   ?id:string ->
   ?key:string ->
   ?visible:bool ->

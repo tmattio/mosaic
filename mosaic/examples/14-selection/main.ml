@@ -51,7 +51,9 @@ let view () =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Text Selection";
+              text
+                ~text_style:(Ansi.Style.make ~bold:true ())
+                "▸ Text Selection";
               text ~text_style:muted "▄▀ mosaic";
             ];
         ];
@@ -80,8 +82,7 @@ let view () =
                     "You can select across these lines.";
                   text ~text_style:section1_style ~selectable:true
                     ~selection_bg:(Ansi.Color.of_rgb 88 166 255)
-                    ~selection_fg:Ansi.Color.white
-                    "Unicode: 世界, 你好世界, 中文, 한글";
+                    ~selection_fg:Ansi.Color.white "Unicode: 世界, 你好世界, 中文, 한글";
                 ];
               (* Section 2: Code example *)
               box ~border:true ~title:"Code Example" ~padding:(padding 1)
@@ -89,17 +90,25 @@ let view () =
                 ~border_color:(Ansi.Color.of_rgb 248 81 73)
                 ~flex_direction:Column
                 [
-                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.cyan ())
-                    ~selectable:true ~selection_bg:(Ansi.Color.of_rgb 74 85 104)
+                  text
+                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.cyan ())
+                    ~selectable:true
+                    ~selection_bg:(Ansi.Color.of_rgb 74 85 104)
                     "function handleSelection() {";
-                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.white ())
-                    ~selectable:true ~selection_bg:(Ansi.Color.of_rgb 74 85 104)
+                  text
+                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.white ())
+                    ~selectable:true
+                    ~selection_bg:(Ansi.Color.of_rgb 74 85 104)
                     "  const selected = getSelectedText()";
-                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.yellow ())
-                    ~selectable:true ~selection_bg:(Ansi.Color.of_rgb 74 85 104)
+                  text
+                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.yellow ())
+                    ~selectable:true
+                    ~selection_bg:(Ansi.Color.of_rgb 74 85 104)
                     "  console.log(selected)";
-                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.white ())
-                    ~selectable:true ~selection_bg:(Ansi.Color.of_rgb 74 85 104)
+                  text
+                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.white ())
+                    ~selectable:true
+                    ~selection_bg:(Ansi.Color.of_rgb 74 85 104)
                     "}";
                 ];
             ];
@@ -133,7 +142,8 @@ let view () =
                                       ~text_style:
                                         (Ansi.Style.make ~fg:Ansi.Color.white ())
                                       ~selectable:true
-                                      ~selection_bg:(Ansi.Color.of_rgb 122 162 247)
+                                      ~selection_bg:
+                                        (Ansi.Color.of_rgb 122 162 247)
                                       lorem_lines.(line_idx)));
                            ]));
                 ];

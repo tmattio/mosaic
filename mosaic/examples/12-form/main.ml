@@ -94,11 +94,8 @@ let view model =
               (* Name field *)
               box ~flex_direction:Row ~align_items:Center ~gap:(gap 1)
                 [
-                  box
-                    ~size:{ width = px 8; height = px 1 }
-                    [ text "Name:" ];
-                  text_input ~id:(field_id Name)
-                    ~placeholder:"Enter your name..."
+                  box ~size:{ width = px 8; height = px 1 } [ text "Name:" ];
+                  input ~id:(field_id Name) ~placeholder:"Enter your name..."
                     ~size:{ width = px 25; height = px 1 }
                     ~value:model.name
                     ~on_input:(fun v -> Some (Set_name v))
@@ -107,11 +104,8 @@ let view model =
               (* Email field *)
               box ~flex_direction:Row ~align_items:Center ~gap:(gap 1)
                 [
-                  box
-                    ~size:{ width = px 8; height = px 1 }
-                    [ text "Email:" ];
-                  text_input ~id:(field_id Email)
-                    ~placeholder:"Enter your email..."
+                  box ~size:{ width = px 8; height = px 1 } [ text "Email:" ];
+                  input ~id:(field_id Email) ~placeholder:"Enter your email..."
                     ~size:{ width = px 25; height = px 1 }
                     ~value:model.email
                     ~on_input:(fun v -> Some (Set_email v))
@@ -120,16 +114,14 @@ let view model =
               (* Role selector *)
               box ~flex_direction:Row ~align_items:Flex_start ~gap:(gap 1)
                 [
-                  box
-                    ~size:{ width = px 8; height = px 1 }
-                    [ text "Role:" ];
-                  select ~id:(field_id Role) ~options:roles
-                    ~show_description:true ~selected_background:accent
+                  box ~size:{ width = px 8; height = px 1 } [ text "Role:" ];
+                  select ~id:(field_id Role) ~show_description:true
+                    ~selected_background:accent
                     ~selected_text_color:Ansi.Color.black
                     ~selected_index:model.role
                     ~on_change:(fun idx -> Some (Set_role idx))
                     ~size:{ width = px 25; height = px 5 }
-                    ();
+                    roles;
                 ];
               (* Buttons *)
               box ~flex_direction:Row ~gap:(gap 2)
@@ -152,7 +144,8 @@ let view model =
                  box ~padding:(padding 1)
                    ~background:(Ansi.Color.grayscale ~level:3)
                    [
-                     text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.green ())
+                     text
+                       ~text_style:(Ansi.Style.make ~fg:Ansi.Color.green ())
                        (Printf.sprintf "Submitted: %s <%s> as %s" model.name
                           model.email (List.nth roles model.role).name);
                    ]
@@ -171,8 +164,7 @@ let subscriptions _model =
   Sub.on_key (fun ev ->
       let data = Mosaic_ui.Event.Key.data ev in
       match data.key with
-      | Tab ->
-          if data.modifier.shift then Some Focus_prev else Some Focus_next
+      | Tab -> if data.modifier.shift then Some Focus_prev else Some Focus_next
       | Enter -> Some Submit
       | Char c when Uchar.equal c (Uchar.of_char 'q') -> Some Quit
       | Escape -> Some Quit

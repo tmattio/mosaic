@@ -57,14 +57,19 @@ let view model =
                 ~title:"Text Styles" ~flex_direction:Column ~gap:(gap 1)
                 [
                   text ~text_style:(Ansi.Style.make ~bold:true ()) "Bold text";
-                  text ~text_style:(Ansi.Style.make ~italic:true ()) "Italic text";
-                  text ~text_style:(Ansi.Style.make ~underline:true ())
+                  text
+                    ~text_style:(Ansi.Style.make ~italic:true ())
+                    "Italic text";
+                  text
+                    ~text_style:(Ansi.Style.make ~underline:true ())
                     "Underlined text";
-                  text ~text_style:(Ansi.Style.make ~strikethrough:true ())
+                  text
+                    ~text_style:(Ansi.Style.make ~strikethrough:true ())
                     "Strikethrough text";
                   text ~text_style:(Ansi.Style.make ~dim:true ()) "Dim text";
                   text ~text_style:(Ansi.Style.make ~blink:true ()) "Blink text";
-                  text ~text_style:(Ansi.Style.make ~bold:true ~italic:true ())
+                  text
+                    ~text_style:(Ansi.Style.make ~bold:true ~italic:true ())
                     "Bold + Italic";
                 ];
               (* Foreground Colors *)
@@ -73,15 +78,23 @@ let view model =
                 ~size:{ width = px 14; height = auto }
                 [
                   text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.red ()) "Red";
-                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.green ())
+                  text
+                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.green ())
                     "Green";
-                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.blue ()) "Blue";
-                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.yellow ())
+                  text
+                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.blue ())
+                    "Blue";
+                  text
+                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.yellow ())
                     "Yellow";
-                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.cyan ()) "Cyan";
-                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.magenta ())
+                  text
+                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.cyan ())
+                    "Cyan";
+                  text
+                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.magenta ())
                     "Magenta";
-                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.white ())
+                  text
+                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.white ())
                     "White";
                 ];
               (* Background Colors *)
@@ -135,7 +148,8 @@ let view model =
                      let fg =
                        if i < 12 then Ansi.Color.white else Ansi.Color.black
                      in
-                     text ~text_style:(Ansi.Style.make ~bg:color ~fg ())
+                     text
+                       ~text_style:(Ansi.Style.make ~bg:color ~fg ())
                        (Printf.sprintf "%02d" i)));
             ];
           (* Second row: Wrap mode demo *)
@@ -144,7 +158,8 @@ let view model =
               (Printf.sprintf "Wrap Mode: %s" (wrap_mode_to_string model.wrap))
             ~size:{ width = px 40; height = auto }
             [
-              text ~size:{ width = pct 100; height = auto }
+              text
+                ~size:{ width = pct 100; height = auto }
                 ~wrap_mode:(wrap_mode_to_prop model.wrap)
                 "This is a longer text that demonstrates different wrapping \
                  behaviors. Press 'w' to cycle through wrap modes.";

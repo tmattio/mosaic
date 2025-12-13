@@ -11,8 +11,7 @@ let init () = ({ scroll = 0 }, Cmd.none)
 let update (Scrolled y) model =
   if model.scroll = y then (model, Cmd.none) else ({ scroll = y }, Cmd.none)
 
-let items =
-  List.init 20 (fun i -> text (Printf.sprintf "Row %02d" (i + 1)))
+let items = List.init 20 (fun i -> text (Printf.sprintf "Row %02d" (i + 1)))
 
 let view ~scroll_ref model =
   let header =

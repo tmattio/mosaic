@@ -81,8 +81,8 @@ type 'a tab_select_spec = {
   tab_select_props : Tab_select.Props.t;
   tab_select_on_change : (int -> 'a) option;
   tab_select_on_activate : (int -> 'a) option;
-  tab_select_on_change_full : (int * Tab_select.tab -> 'a) option;
-  tab_select_on_activate_full : (int * Tab_select.tab -> 'a) option;
+  tab_select_on_change_full : (int * (string * string option) -> 'a) option;
+  tab_select_on_activate_full : (int * (string * string option) -> 'a) option;
 }
 
 type 'a text_input_spec = {
@@ -217,8 +217,8 @@ let text ?id ?key
     ?grid_auto_columns ?grid_auto_flow ?grid_template_areas ?grid_row
     ?grid_column
     (* Text props *)
-    ?text_style ?wrap_mode ?tab_indicator ?tab_indicator_color
-    ?selection_bg ?selection_fg ?selectable content =
+    ?text_style ?wrap_mode ?tab_indicator ?tab_indicator_color ?selection_bg
+    ?selection_fg ?selectable content =
   let handlers = { on_mouse; on_key; on_paste } in
   let style =
     Toffee.Style.make ?display ?box_sizing ?position ?overflow ?scrollbar_width
@@ -393,11 +393,11 @@ let select ?id ?key
     ?grid_auto_columns ?grid_auto_flow ?grid_template_areas ?grid_row
     ?grid_column
     (* Select props *)
-    ?options ?background ?text_color ?focused_background ?focused_text_color
+    ?background ?text_color ?focused_background ?focused_text_color
     ?selected_background ?selected_text_color ?description_color
     ?selected_description_color ?show_scroll_indicator ?wrap_selection
     ?show_description ?item_spacing ?fast_scroll_step ?selected_index ?autofocus
-    ?on_change ?on_activate () =
+    ?on_change ?on_activate options =
   let handlers = { on_mouse; on_key; on_paste } in
   let style =
     Toffee.Style.make ?display ?box_sizing ?position ?overflow ?scrollbar_width
@@ -409,7 +409,7 @@ let select ?id ?key
       ?grid_column ()
   in
   let select_props =
-    Select.Props.make ?options ?background ?text_color ?focused_background
+    Select.Props.make ~options ?background ?text_color ?focused_background
       ?focused_text_color ?selected_background ?selected_text_color
       ?description_color ?selected_description_color ?show_scroll_indicator
       ?wrap_selection ?show_description ?item_spacing ?fast_scroll_step
@@ -489,11 +489,11 @@ let tab_select ?id ?key
     ?grid_auto_columns ?grid_auto_flow ?grid_template_areas ?grid_row
     ?grid_column
     (* Tab_select props *)
-    ?options ?wrap_selection ?show_description ?show_underline
-    ?show_scroll_arrows ?mouse_navigation ?autofocus ?tab_width ?background
-    ?text_color ?focused_background ?focused_text ?selected_background
-    ?selected_text ?selected_description ?on_change ?on_activate ?on_change_full
-    ?on_activate_full () =
+    ?wrap_selection ?show_description ?show_underline ?show_scroll_arrows
+    ?mouse_navigation ?autofocus ?tab_width ?background ?text_color
+    ?focused_background ?focused_text ?selected_background ?selected_text
+    ?selected_description ?on_change ?on_activate ?on_change_full
+    ?on_activate_full options =
   let handlers = { on_mouse; on_key; on_paste } in
   let style =
     Toffee.Style.make ?display ?box_sizing ?position ?overflow ?scrollbar_width
@@ -505,7 +505,7 @@ let tab_select ?id ?key
       ?grid_column ()
   in
   let tab_select_props =
-    Tab_select.Props.make ?options ?wrap_selection ?show_description
+    Tab_select.Props.make ~options ?wrap_selection ?show_description
       ?show_underline ?show_scroll_arrows ?mouse_navigation ?autofocus
       ?tab_width ?background ?text_color ?focused_background ?focused_text
       ?selected_background ?selected_text ?selected_description ()
@@ -613,7 +613,7 @@ let scroll_box ?id ?key
   in
   Element { tag = Scroll_box; key; props; children }
 
-let text_input ?id ?key
+let input ?id ?key
     (* Host props *)
     ?(visible = true) ?(z_index = 0) ?(live = false) ?(buffer = `None)
     (* Ref *)
@@ -685,8 +685,8 @@ let code ?id ?key
     ?grid_auto_columns ?grid_auto_flow ?grid_template_areas ?grid_row
     ?grid_column
     (* Code props *)
-    ?filetype ?grammar ?syntax_client ?conceal ?draw_unstyled_text
-    ?wrap_mode ?tab_indicator ?tab_indicator_color ?selection_bg ?selection_fg
+    ?filetype ?grammar ?syntax_client ?conceal ?draw_unstyled_text ?wrap_mode
+    ?tab_indicator ?tab_indicator_color ?selection_bg ?selection_fg
     ?default_style ?selectable ?syntax_style content =
   let handlers = { on_mouse; on_key; on_paste } in
   let style =

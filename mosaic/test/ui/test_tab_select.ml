@@ -12,18 +12,13 @@ let render_boxed ?(width = 40) ?(height = 3) element =
 let make_tabs ?(with_desc = false) labels =
   List.map
     (fun label ->
-      Tab_select.
-        {
-          label;
-          description =
-            (if with_desc then Some (label ^ " description") else None);
-        })
+      (label, if with_desc then Some (label ^ " description") else None))
     labels
 
 let%expect_test "empty tab select renders blank" =
   render_boxed ~width:20 ~height:1
-    (tab_select ~id:"t" ~options:[] ~show_description:false ~show_underline:false
-       ~size:(size ~width:20 ~height:1) ());
+    (tab_select ~id:"t" ~show_description:false ~show_underline:false
+       ~size:(size ~width:20 ~height:1) []);
   [%expect_exact
     {|
 ┌────────────────────┐
@@ -33,10 +28,8 @@ let%expect_test "empty tab select renders blank" =
 
 let%expect_test "single tab without underline" =
   render_boxed ~width:20 ~height:1
-    (tab_select ~id:"t"
-       ~options:(make_tabs [ "Home" ])
-       ~show_description:false ~show_underline:false ~tab_width:10
-       ~size:(size ~width:20 ~height:1) ());
+    (tab_select ~id:"t" ~show_description:false ~show_underline:false ~tab_width:10
+       ~size:(size ~width:20 ~height:1) (make_tabs [ "Home" ]));
   [%expect_exact
     {|
 ┌────────────────────┐
@@ -46,10 +39,8 @@ let%expect_test "single tab without underline" =
 
 let%expect_test "single tab with underline" =
   render_boxed ~width:20 ~height:2
-    (tab_select ~id:"t"
-       ~options:(make_tabs [ "Home" ])
-       ~show_description:false ~show_underline:true ~tab_width:10
-       ~size:(size ~width:20 ~height:2) ());
+    (tab_select ~id:"t" ~show_description:false ~show_underline:true ~tab_width:10
+       ~size:(size ~width:20 ~height:2) (make_tabs [ "Home" ]));
   [%expect_exact
     {|
 ┌────────────────────┐
@@ -60,10 +51,9 @@ let%expect_test "single tab with underline" =
 
 let%expect_test "multiple tabs first selected" =
   render_boxed ~width:30 ~height:2
-    (tab_select ~id:"t"
-       ~options:(make_tabs [ "Home"; "Settings"; "Help" ])
-       ~show_description:false ~show_underline:true ~tab_width:10
-       ~size:(size ~width:30 ~height:2) ());
+    (tab_select ~id:"t" ~show_description:false ~show_underline:true ~tab_width:10
+       ~size:(size ~width:30 ~height:2)
+       (make_tabs [ "Home"; "Settings"; "Help" ]));
   [%expect_exact
     {|
 ┌──────────────────────────────┐
@@ -74,10 +64,9 @@ let%expect_test "multiple tabs first selected" =
 
 let%expect_test "tab with description" =
   render_boxed ~width:30 ~height:3
-    (tab_select ~id:"t"
-       ~options:(make_tabs ~with_desc:true [ "Home"; "Settings" ])
-       ~show_description:true ~show_underline:true ~tab_width:15
-       ~size:(size ~width:30 ~height:3) ());
+    (tab_select ~id:"t" ~show_description:true ~show_underline:true ~tab_width:15
+       ~size:(size ~width:30 ~height:3)
+       (make_tabs ~with_desc:true [ "Home"; "Settings" ]));
   [%expect_exact
     {|
 ┌──────────────────────────────┐
@@ -89,10 +78,9 @@ let%expect_test "tab with description" =
 
 let%expect_test "narrow tabs truncate labels" =
   render_boxed ~width:16 ~height:1
-    (tab_select ~id:"t"
-       ~options:(make_tabs [ "VeryLongLabel"; "Another" ])
-       ~show_description:false ~show_underline:false ~tab_width:8
-       ~size:(size ~width:16 ~height:1) ());
+    (tab_select ~id:"t" ~show_description:false ~show_underline:false ~tab_width:8
+       ~size:(size ~width:16 ~height:1)
+       (make_tabs [ "VeryLongLabel"; "Another" ]));
   [%expect_exact
     {|
 ┌────────────────┐
@@ -104,11 +92,10 @@ let%expect_test "narrow tabs truncate labels" =
 
 let%expect_test "set_selected_index changes tab selection" =
   render_boxed ~width:30 ~height:2
-    (tab_select ~id:"t"
-       ~options:(make_tabs [ "Home"; "Settings"; "Help" ])
-       ~show_description:false ~show_underline:true ~tab_width:10
+    (tab_select ~id:"t" ~show_description:false ~show_underline:true ~tab_width:10
        ~on_mount:(fun ts -> Tab_select.set_selected_index ts 1)
-       ~size:(size ~width:30 ~height:2) ());
+       ~size:(size ~width:30 ~height:2)
+       (make_tabs [ "Home"; "Settings"; "Help" ]));
   [%expect_exact
     {|
 ┌──────────────────────────────┐
@@ -119,11 +106,10 @@ let%expect_test "set_selected_index changes tab selection" =
 
 let%expect_test "set_selected_index to last tab" =
   render_boxed ~width:30 ~height:2
-    (tab_select ~id:"t"
-       ~options:(make_tabs [ "Home"; "Settings"; "Help" ])
-       ~show_description:false ~show_underline:true ~tab_width:10
+    (tab_select ~id:"t" ~show_description:false ~show_underline:true ~tab_width:10
        ~on_mount:(fun ts -> Tab_select.set_selected_index ts 2)
-       ~size:(size ~width:30 ~height:2) ());
+       ~size:(size ~width:30 ~height:2)
+       (make_tabs [ "Home"; "Settings"; "Help" ]));
   [%expect_exact
     {|
 ┌──────────────────────────────┐
@@ -134,13 +120,12 @@ let%expect_test "set_selected_index to last tab" =
 
 let%expect_test "set_options replaces tabs and clamps selection" =
   render_boxed ~width:30 ~height:2
-    (tab_select ~id:"t"
-       ~options:(make_tabs [ "A"; "B"; "C"; "D" ])
-       ~show_description:false ~show_underline:true ~tab_width:10
+    (tab_select ~id:"t" ~show_description:false ~show_underline:true ~tab_width:10
        ~on_mount:(fun ts ->
          Tab_select.set_selected_index ts 3; (* select "D" *)
          Tab_select.set_options ts (make_tabs [ "X"; "Y" ])) (* now only 2 tabs *)
-       ~size:(size ~width:30 ~height:2) ());
+       ~size:(size ~width:30 ~height:2)
+       (make_tabs [ "A"; "B"; "C"; "D" ]));
   [%expect_exact
     {|
 ┌──────────────────────────────┐
@@ -151,11 +136,10 @@ let%expect_test "set_options replaces tabs and clamps selection" =
 
 let%expect_test "set_show_description toggles description visibility" =
   render_boxed ~width:30 ~height:3
-    (tab_select ~id:"t"
-       ~options:(make_tabs ~with_desc:true [ "Home"; "Settings" ])
-       ~show_description:true ~show_underline:true ~tab_width:15
+    (tab_select ~id:"t" ~show_description:true ~show_underline:true ~tab_width:15
        ~on_mount:(fun ts -> Tab_select.set_show_description ts false)
-       ~size:(size ~width:30 ~height:3) ());
+       ~size:(size ~width:30 ~height:3)
+       (make_tabs ~with_desc:true [ "Home"; "Settings" ]));
   [%expect_exact
     {|
 ┌──────────────────────────────┐
@@ -167,11 +151,9 @@ let%expect_test "set_show_description toggles description visibility" =
 
 let%expect_test "set_show_underline toggles underline" =
   render_boxed ~width:30 ~height:2
-    (tab_select ~id:"t"
-       ~options:(make_tabs [ "Home"; "Settings" ])
-       ~show_description:false ~show_underline:true ~tab_width:10
+    (tab_select ~id:"t" ~show_description:false ~show_underline:true ~tab_width:10
        ~on_mount:(fun ts -> Tab_select.set_show_underline ts false)
-       ~size:(size ~width:30 ~height:2) ());
+       ~size:(size ~width:30 ~height:2) (make_tabs [ "Home"; "Settings" ]));
   [%expect_exact
     {|
 ┌──────────────────────────────┐
@@ -182,11 +164,9 @@ let%expect_test "set_show_underline toggles underline" =
 
 let%expect_test "set_tab_width changes tab sizing" =
   render_boxed ~width:30 ~height:2
-    (tab_select ~id:"t"
-       ~options:(make_tabs [ "Home"; "Settings" ])
-       ~show_description:false ~show_underline:true ~tab_width:10
+    (tab_select ~id:"t" ~show_description:false ~show_underline:true ~tab_width:10
        ~on_mount:(fun ts -> Tab_select.set_tab_width ts 15)
-       ~size:(size ~width:30 ~height:2) ());
+       ~size:(size ~width:30 ~height:2) (make_tabs [ "Home"; "Settings" ]));
   [%expect_exact
     {|
 ┌──────────────────────────────┐
@@ -200,12 +180,10 @@ let%expect_test "set_wrap_selection setter is callable" =
      Wrapping behavior itself requires keyboard input simulation which
      is not available in this test harness. *)
   render_boxed ~width:30 ~height:2
-    (tab_select ~id:"t"
-       ~options:(make_tabs [ "A"; "B"; "C" ])
-       ~show_description:false ~show_underline:true ~tab_width:10
+    (tab_select ~id:"t" ~show_description:false ~show_underline:true ~tab_width:10
        ~wrap_selection:false
        ~on_mount:(fun ts -> Tab_select.set_wrap_selection ts true)
-       ~size:(size ~width:30 ~height:2) ());
+       ~size:(size ~width:30 ~height:2) (make_tabs [ "A"; "B"; "C" ]));
   [%expect_exact
     {|
 ┌──────────────────────────────┐

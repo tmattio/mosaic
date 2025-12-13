@@ -50,8 +50,8 @@ type 'a tab_select_spec = {
   tab_select_props : Mosaic_ui.Tab_select.Props.t;
   tab_select_on_change : (int -> 'a) option;
   tab_select_on_activate : (int -> 'a) option;
-  tab_select_on_change_full : (int * Mosaic_ui.Tab_select.tab -> 'a) option;
-  tab_select_on_activate_full : (int * Mosaic_ui.Tab_select.tab -> 'a) option;
+  tab_select_on_change_full : (int * (string * string option) -> 'a) option;
+  tab_select_on_activate_full : (int * (string * string option) -> 'a) option;
 }
 
 type 'a text_input_spec = {
@@ -498,7 +498,6 @@ val select :
   ?grid_template_areas:Toffee.Style.grid_template_area list ->
   ?grid_row:Toffee.Style.grid_placement Toffee.Geometry.line ->
   ?grid_column:Toffee.Style.grid_placement Toffee.Geometry.line ->
-  ?options:Mosaic_ui.Select.item list ->
   ?background:Ansi.Color.t ->
   ?text_color:Ansi.Color.t ->
   ?focused_background:Ansi.Color.t ->
@@ -516,9 +515,9 @@ val select :
   ?autofocus:bool ->
   ?on_change:(int -> 'a) ->
   ?on_activate:(int -> 'a) ->
-  unit ->
+  Mosaic_ui.Select.item list ->
   'a t
-(** [select ()] creates a select list vnode. *)
+(** [select options] creates a select list vnode. *)
 
 val spinner :
   ?id:string ->
@@ -616,7 +615,6 @@ val tab_select :
   ?grid_template_areas:Toffee.Style.grid_template_area list ->
   ?grid_row:Toffee.Style.grid_placement Toffee.Geometry.line ->
   ?grid_column:Toffee.Style.grid_placement Toffee.Geometry.line ->
-  ?options:Mosaic_ui.Tab_select.tab list ->
   ?wrap_selection:bool ->
   ?show_description:bool ->
   ?show_underline:bool ->
@@ -633,11 +631,11 @@ val tab_select :
   ?selected_description:Ansi.Color.t ->
   ?on_change:(int -> 'a) ->
   ?on_activate:(int -> 'a) ->
-  ?on_change_full:(int * Mosaic_ui.Tab_select.tab -> 'a) ->
-  ?on_activate_full:(int * Mosaic_ui.Tab_select.tab -> 'a) ->
-  unit ->
+  ?on_change_full:(int * (string * string option) -> 'a) ->
+  ?on_activate_full:(int * (string * string option) -> 'a) ->
+  (string * string option) list ->
   'a t
-(** [tab_select ()] creates a tab selector vnode. *)
+(** [tab_select options] creates a tab selector vnode. *)
 
 val scroll_bar :
   ?id:string ->
@@ -751,7 +749,7 @@ val scroll_box :
   'a t
 (** [scroll_box children] creates a scrollable container vnode. *)
 
-val text_input :
+val input :
   ?id:string ->
   ?key:string ->
   ?visible:bool ->

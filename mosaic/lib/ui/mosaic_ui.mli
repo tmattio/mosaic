@@ -27,9 +27,7 @@
     renderables via {!instantiate}:
 
     {[
-      let ui =
-        box ~id:"root" ~border:true [ text ~id:"greeting" "Hello" ]
-      in
+      let ui = box ~id:"root" ~border:true [ text ~id:"greeting" "Hello" ] in
       match instantiate renderer ui with
       | Ok node -> ignore (Renderer.set_root renderer node)
       | Error _ -> failwith "Failed to instantiate"
@@ -665,7 +663,6 @@ val select :
   ?grid_template_areas:Toffee.Style.grid_template_area list ->
   ?grid_row:Toffee.Style.grid_placement Toffee.Geometry.line ->
   ?grid_column:Toffee.Style.grid_placement Toffee.Geometry.line ->
-  ?options:Select.item list ->
   ?background:Ansi.Color.t ->
   ?text_color:Ansi.Color.t ->
   ?focused_background:Ansi.Color.t ->
@@ -682,14 +679,13 @@ val select :
   ?selected_index:int ->
   ?autofocus:bool ->
   ?on_mount:(Select.t -> unit) ->
-  unit ->
+  Select.item list ->
   element
-(** [select ...] creates a vertical list selector element.
+(** [select options] creates a vertical list selector element.
 
     Select provides a focusable, keyboard-navigable list.
 
     {2 Select Props}
-    - [options]: List of selectable items
     - [wrap_selection]: Wrap around at edges (default false)
     - [show_description]: Show item descriptions (default true)
     - [show_scroll_indicator]: Show scroll position (default false) *)
@@ -791,7 +787,6 @@ val tab_select :
   ?grid_template_areas:Toffee.Style.grid_template_area list ->
   ?grid_row:Toffee.Style.grid_placement Toffee.Geometry.line ->
   ?grid_column:Toffee.Style.grid_placement Toffee.Geometry.line ->
-  ?options:Tab_select.tab list ->
   ?wrap_selection:bool ->
   ?show_description:bool ->
   ?show_underline:bool ->
@@ -807,14 +802,13 @@ val tab_select :
   ?selected_text:Ansi.Color.t ->
   ?selected_description:Ansi.Color.t ->
   ?on_mount:(Tab_select.t -> unit) ->
-  unit ->
+  (string * string option) list ->
   element
-(** [tab_select ...] creates a horizontal tab selector element.
+(** [tab_select options] creates a horizontal tab selector element.
 
     Tab selectors provide keyboard and mouse navigable tab bars.
 
     {2 Tab_select Props}
-    - [options]: List of tabs with labels and optional descriptions
     - [wrap_selection]: Wrap around at edges (default false)
     - [show_description]: Show tab descriptions (default false)
     - [show_underline]: Show selection underline (default true)
@@ -942,7 +936,7 @@ val scroll_box :
     - [viewport_culling]: Only render visible children (default true)
     - [autofocus]: Request focus on mount (default false) *)
 
-val text_input :
+val input :
   ?id:string ->
   ?visible:bool ->
   ?z_index:int ->

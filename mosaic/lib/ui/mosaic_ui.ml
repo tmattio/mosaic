@@ -229,8 +229,8 @@ let text
     ?grid_auto_columns ?grid_auto_flow ?grid_template_areas ?grid_row
     ?grid_column
     (* Text props *)
-    ?text_style ?wrap_mode ?tab_indicator ?tab_indicator_color
-    ?selection_bg ?selection_fg ?selectable
+    ?text_style ?wrap_mode ?tab_indicator ?tab_indicator_color ?selection_bg
+    ?selection_fg ?selectable
     (* Callback *)
     ?on_mount content : element =
   let style =
@@ -434,12 +434,12 @@ let select
     ?grid_auto_columns ?grid_auto_flow ?grid_template_areas ?grid_row
     ?grid_column
     (* Select props *)
-    ?options ?background ?text_color ?focused_background ?focused_text_color
+    ?background ?text_color ?focused_background ?focused_text_color
     ?selected_background ?selected_text_color ?description_color
     ?selected_description_color ?show_scroll_indicator ?wrap_selection
     ?show_description ?item_spacing ?fast_scroll_step ?selected_index ?autofocus
     (* Callback *)
-    ?on_mount () : element =
+    ?on_mount options : element =
   let style =
     Toffee.Style.make ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin ?padding ?gap
@@ -450,7 +450,7 @@ let select
       ?grid_column ()
   in
   let select_props =
-    Select.Props.make ?options ?background ?text_color ?focused_background
+    Select.Props.make ~options ?background ?text_color ?focused_background
       ?focused_text_color ?selected_background ?selected_text_color
       ?description_color ?selected_description_color ?show_scroll_indicator
       ?wrap_selection ?show_description ?item_spacing ?fast_scroll_step
@@ -536,12 +536,12 @@ let tab_select
     ?grid_auto_columns ?grid_auto_flow ?grid_template_areas ?grid_row
     ?grid_column
     (* Tab_select props *)
-    ?options ?wrap_selection ?show_description ?show_underline
-    ?show_scroll_arrows ?mouse_navigation ?autofocus ?tab_width ?background
-    ?text_color ?focused_background ?focused_text ?selected_background
-    ?selected_text ?selected_description
+    ?wrap_selection ?show_description ?show_underline ?show_scroll_arrows
+    ?mouse_navigation ?autofocus ?tab_width ?background ?text_color
+    ?focused_background ?focused_text ?selected_background ?selected_text
+    ?selected_description
     (* Callback *)
-    ?on_mount () : element =
+    ?on_mount options : element =
   let style =
     Toffee.Style.make ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin ?padding ?gap
@@ -552,7 +552,7 @@ let tab_select
       ?grid_column ()
   in
   let tab_select_props =
-    Tab_select.Props.make ?options ?wrap_selection ?show_description
+    Tab_select.Props.make ~options ?wrap_selection ?show_description
       ?show_underline ?show_scroll_arrows ?mouse_navigation ?autofocus
       ?tab_width ?background ?text_color ?focused_background ?focused_text
       ?selected_background ?selected_text ?selected_description ()
@@ -669,7 +669,7 @@ let scroll_box
   in
   make (Renderable ctor) scroll_box_props (List.map (fun e -> Child e) children)
 
-let text_input
+let input
     (* Node identity *)
     ?id
     (* Host props *)
@@ -738,8 +738,8 @@ let code
     ?grid_auto_columns ?grid_auto_flow ?grid_template_areas ?grid_row
     ?grid_column
     (* Code props *)
-    ?filetype ?grammar ?syntax_client ?conceal ?draw_unstyled_text
-    ?wrap_mode ?tab_indicator ?tab_indicator_color ?selection_bg ?selection_fg
+    ?filetype ?grammar ?syntax_client ?conceal ?draw_unstyled_text ?wrap_mode
+    ?tab_indicator ?tab_indicator_color ?selection_bg ?selection_fg
     ?default_style ?selectable ?syntax_style
     (* Callback *)
     ?on_mount content : element =

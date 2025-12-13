@@ -1,8 +1,6 @@
-type tab = { label : string; description : string option }
-
 module Props = struct
   type t = {
-    options : tab list;
+    options : (string * string option) list;
     wrap_selection : bool;
     show_description : bool;
     show_underline : bool;
@@ -63,9 +61,8 @@ module Props = struct
   let default = make ()
 
   let equal a b =
-    let tab_equal (x : tab) (y : tab) =
-      String.equal x.label y.label
-      && Option.equal String.equal x.description y.description
+    let tab_equal (label1, desc1) (label2, desc2) =
+      String.equal label1 label2 && Option.equal String.equal desc1 desc2
     in
     let rec list_eq eq xs ys =
       match (xs, ys) with
@@ -93,14 +90,14 @@ end
 type t = {
   node : Renderable.t;
   mutable props : Props.t;
-  mutable options : tab array;
+  mutable options : (string * string option) array;
   mutable selected_index : int;
   mutable scroll_offset : int;
   mutable extra_navigation : bool;
   mutable on_change : (int -> unit) option;
   mutable on_activate : (int -> unit) option;
-  mutable on_change_full : (int * tab -> unit) option;
-  mutable on_activate_full : (int * tab -> unit) option;
+  mutable on_change_full : (int * (string * string option) -> unit) option;
+  mutable on_activate_full : (int * (string * string option) -> unit) option;
 }
 
 let node t = t.node
@@ -252,7 +249,7 @@ let render t renderable grid ~delta:_ =
             let left_padding = if available > 0 then 1 else 0 in
             let right_padding = if available - left_padding > 0 then 1 else 0 in
             let label_width = available - left_padding - right_padding in
-            let label = truncate_text tab.label label_width in
+            let label = truncate_text (fst tab) label_width in
             let label_color =
               if is_selected then t.props.selected_text else base_text
             in
@@ -281,7 +278,7 @@ let render t renderable grid ~delta:_ =
        && height >= if t.props.show_underline then 3 else 2
      then
        if option_count t > 0 then
-         match t.options.(t.selected_index).description with
+         match snd t.options.(t.selected_index) with
          | None -> ()
          | Some desc ->
              let row = ly + if t.props.show_underline then 2 else 1 in

@@ -88,9 +88,7 @@ let view model =
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [
-          text ~text_style:hint "n next  •  Space toggle  •  q quit";
-        ];
+        [ text ~text_style:hint "n next  •  Space toggle  •  q quit" ];
     ]
 
 let subscriptions _model =

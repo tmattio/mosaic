@@ -17,9 +17,9 @@
       let renderer = Renderer.create () in
       let tabs =
         [
-          { Tab_select.label = "Home"; description = Some "Main page" };
-          { label = "Settings"; description = Some "Configure app" };
-          { label = "Help"; description = None };
+          ("Home", Some "Main page");
+          ("Settings", Some "Configure app");
+          ("Help", None);
         ]
       in
       match Renderer.create_node renderer () with
@@ -38,16 +38,13 @@
     - Mouse: Click tabs, scroll wheel to navigate
     - Wrapping: Enable with [wrap_selection] to cycle through edges *)
 
-type tab = { label : string; description : string option }
-(** Tab definition with label and optional description text. *)
-
 type t
 
 module Props : sig
   type t
 
   val make :
-    ?options:tab list ->
+    ?options:(string * string option) list ->
     ?wrap_selection:bool ->
     ?show_description:bool ->
     ?show_underline:bool ->
@@ -75,22 +72,22 @@ val mount : ?props:Props.t -> Renderable.t -> t
 val node : t -> Renderable.t
 (** [node t] returns the underlying renderable node. *)
 
-val options : t -> tab list
+val options : t -> (string * string option) list
 (** [options t] returns current tab list. *)
 
-val option_at : t -> int -> tab option
-(** [option_at t i] returns [Some tab] at index [i] or [None] if out of bounds.
-*)
+val option_at : t -> int -> (string * string option) option
+(** [option_at t i] returns [Some (label, desc)] at index [i] or [None] if out
+    of bounds. *)
 
-val set_options : t -> tab list -> unit
+val set_options : t -> (string * string option) list -> unit
 (** [set_options t tabs] replaces tab list. Clamps selected index to valid
     range. *)
 
 val selected_index : t -> int
 (** [selected_index t] returns current selection index. *)
 
-val selected_option : t -> tab option
-(** [selected_option t] returns the currently selected tab option, if any. *)
+val selected_option : t -> (string * string option) option
+(** [selected_option t] returns the currently selected tab, if any. *)
 
 val set_selected_index : t -> int -> unit
 (** [set_selected_index t index] selects tab at [index]. Fires [on_change]
@@ -143,15 +140,16 @@ val set_on_change : t -> (int -> unit) option -> unit
 val set_on_activate : t -> (int -> unit) option -> unit
 (** [set_on_activate t callback] registers activation (Enter key) handler. *)
 
-val set_on_change_full : t -> (int * tab -> unit) option -> unit
+val set_on_change_full :
+  t -> (int * (string * string option) -> unit) option -> unit
 (** [set_on_change_full t callback] registers selection change handler that
-    receives both index and option. The index-only and full handlers both fire
-    when set. *)
+    receives both index and tab. The index-only and full handlers both fire when
+    set. *)
 
-val set_on_activate_full : t -> (int * tab -> unit) option -> unit
+val set_on_activate_full :
+  t -> (int * (string * string option) -> unit) option -> unit
 (** [set_on_activate_full t callback] registers activation handler that receives
-    both index and option. The index-only and full handlers both fire when set.
-*)
+    both index and tab. The index-only and full handlers both fire when set. *)
 
 val handle_key : t -> Event.key -> bool
 (** [handle_key t event] processes keyboard input. Returns [true] if consumed.

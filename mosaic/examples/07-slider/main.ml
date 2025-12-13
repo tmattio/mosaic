@@ -161,9 +161,7 @@ let view model =
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [
-          text ~text_style:hint "drag sliders  •  r reset  •  q quit";
-        ];
+        [ text ~text_style:hint "drag sliders  •  r reset  •  q quit" ];
     ]
 
 let subscriptions _model =

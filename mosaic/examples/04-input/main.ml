@@ -62,7 +62,7 @@ let view model =
               box ~flex_direction:Row ~align_items:Center ~gap:(gap 1)
                 [
                   text "Name:";
-                  text_input ~autofocus:true ~placeholder:"Type your name..."
+                  input ~autofocus:true ~placeholder:"Type your name..."
                     ~cursor_style:(cursor_style_to_prop model.cursor_style)
                     ~cursor_blinking:true
                     ~size:{ width = px 30; height = px 1 }

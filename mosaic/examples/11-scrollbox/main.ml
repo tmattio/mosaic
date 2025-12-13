@@ -53,9 +53,7 @@ let view () =
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [
-          text ~text_style:hint "scroll with mouse wheel  •  q quit";
-        ];
+        [ text ~text_style:hint "scroll with mouse wheel  •  q quit" ];
     ]
 
 let subscriptions () =

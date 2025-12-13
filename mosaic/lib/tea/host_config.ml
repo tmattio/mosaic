@@ -112,11 +112,11 @@ let create_instance (renderer : Renderer.t) (tag : Vnode.tag)
       Option.iter (Scroll_box.on_scroll scroll_box) spec.scroll_box_on_scroll;
       Scroll_box_instance scroll_box
   | Vnode.Text_input, Vnode.Text_input_spec spec ->
-      let text_input = Text_input.mount ~props:spec.text_input_props node in
-      Text_input.set_callbacks text_input ?on_input:spec.text_input_on_input
+      let input = Text_input.mount ~props:spec.text_input_props node in
+      Text_input.set_callbacks input ?on_input:spec.text_input_on_input
         ?on_change:spec.text_input_on_change
         ?on_submit:spec.text_input_on_submit ();
-      Text_input_instance text_input
+      Text_input_instance input
   | Vnode.Code, Vnode.Code_spec spec ->
       let code = Code.mount ~props:spec node in
       Code_instance code

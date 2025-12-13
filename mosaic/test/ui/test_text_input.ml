@@ -11,7 +11,7 @@ let render_boxed ?(width = 20) ?(height = 1) element =
 
 let%expect_test "empty text input shows placeholder" =
   render_boxed ~width:20 ~height:1
-    (text_input ~id:"ti" ~placeholder:"Type here..."
+    (input ~id:"ti" ~placeholder:"Type here..."
        ~size:(size ~width:20 ~height:1) ());
   [%expect_exact
     {|
@@ -22,7 +22,7 @@ let%expect_test "empty text input shows placeholder" =
 
 let%expect_test "text input with value" =
   render_boxed ~width:20 ~height:1
-    (text_input ~id:"ti" ~value:"Hello world"
+    (input ~id:"ti" ~value:"Hello world"
        ~size:(size ~width:20 ~height:1) ());
   [%expect_exact
     {|
@@ -33,7 +33,7 @@ let%expect_test "text input with value" =
 
 let%expect_test "text input empty without placeholder" =
   render_boxed ~width:15 ~height:1
-    (text_input ~id:"ti" ~size:(size ~width:15 ~height:1) ());
+    (input ~id:"ti" ~size:(size ~width:15 ~height:1) ());
   [%expect_exact
     {|
 ┌───────────────┐
@@ -43,7 +43,7 @@ let%expect_test "text input empty without placeholder" =
 
 let%expect_test "text input truncated placeholder" =
   render_boxed ~width:10 ~height:1
-    (text_input ~id:"ti" ~placeholder:"This is a very long placeholder"
+    (input ~id:"ti" ~placeholder:"This is a very long placeholder"
        ~size:(size ~width:10 ~height:1) ());
   [%expect_exact
     {|
@@ -54,7 +54,7 @@ let%expect_test "text input truncated placeholder" =
 
 let%expect_test "long value with cursor at end scrolls to show end" =
   render_boxed ~width:12 ~height:1
-    (text_input ~id:"ti" ~value:"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    (input ~id:"ti" ~value:"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
        ~size:(size ~width:12 ~height:1) ());
   [%expect_exact
     {|
@@ -65,7 +65,7 @@ let%expect_test "long value with cursor at end scrolls to show end" =
 
 let%expect_test "long value with cursor at start scrolls to show start" =
   render_boxed ~width:12 ~height:1
-    (text_input ~id:"ti" ~value:"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    (input ~id:"ti" ~value:"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
        ~on_mount:(fun ti -> Text_input.set_cursor ti 0)
        ~size:(size ~width:12 ~height:1) ());
   [%expect_exact
@@ -77,7 +77,7 @@ let%expect_test "long value with cursor at start scrolls to show start" =
 
 let%expect_test "long value with cursor in middle scrolls to show cursor" =
   render_boxed ~width:12 ~height:1
-    (text_input ~id:"ti" ~value:"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    (input ~id:"ti" ~value:"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
        ~on_mount:(fun ti -> Text_input.set_cursor ti 13)
        ~size:(size ~width:12 ~height:1) ());
   [%expect_exact
@@ -89,7 +89,7 @@ let%expect_test "long value with cursor in middle scrolls to show cursor" =
 
 let%expect_test "set_value updates content" =
   render_boxed ~width:15 ~height:1
-    (text_input ~id:"ti" ~value:"Initial"
+    (input ~id:"ti" ~value:"Initial"
        ~on_mount:(fun ti -> Text_input.set_value ti "Changed")
        ~size:(size ~width:15 ~height:1) ());
   [%expect_exact
@@ -103,7 +103,7 @@ let%expect_test "set_value updates content" =
 
 let%expect_test "set_value with cursor preserves cursor position when valid" =
   render_boxed ~width:15 ~height:1
-    (text_input ~id:"ti" ~value:"Hello"
+    (input ~id:"ti" ~value:"Hello"
        ~on_mount:(fun ti ->
          Text_input.set_cursor ti 2;
          Text_input.set_value ti "World")
@@ -117,7 +117,7 @@ let%expect_test "set_value with cursor preserves cursor position when valid" =
 
 let%expect_test "set_value clamps cursor to new length" =
   render_boxed ~width:15 ~height:1
-    (text_input ~id:"ti" ~value:"LongText"
+    (input ~id:"ti" ~value:"LongText"
        ~on_mount:(fun ti ->
          (* cursor at end = 8, then set shorter value *)
          Text_input.set_value ti "Hi")
@@ -131,7 +131,7 @@ let%expect_test "set_value clamps cursor to new length" =
 
 let%expect_test "cursor at position 0 shows start of long text" =
   render_boxed ~width:12 ~height:1
-    (text_input ~id:"ti" ~value:"0123456789ABCDEF"
+    (input ~id:"ti" ~value:"0123456789ABCDEF"
        ~on_mount:(fun ti -> Text_input.set_cursor ti 0)
        ~size:(size ~width:12 ~height:1) ());
   [%expect_exact
@@ -143,7 +143,7 @@ let%expect_test "cursor at position 0 shows start of long text" =
 
 let%expect_test "cursor at end shows end of long text" =
   render_boxed ~width:12 ~height:1
-    (text_input ~id:"ti" ~value:"0123456789ABCDEF"
+    (input ~id:"ti" ~value:"0123456789ABCDEF"
        ~size:(size ~width:12 ~height:1) ());
   (* cursor defaults to end *)
   [%expect_exact
@@ -155,7 +155,7 @@ let%expect_test "cursor at end shows end of long text" =
 
 let%expect_test "cursor movement scrolls viewport" =
   render_boxed ~width:10 ~height:1
-    (text_input ~id:"ti" ~value:"ABCDEFGHIJKLMNOP"
+    (input ~id:"ti" ~value:"ABCDEFGHIJKLMNOP"
        ~on_mount:(fun ti ->
          (* Start at end, move cursor to position 5 *)
          Text_input.set_cursor ti 5)
@@ -169,7 +169,7 @@ let%expect_test "cursor movement scrolls viewport" =
 
 let%expect_test "set_placeholder updates placeholder text" =
   render_boxed ~width:20 ~height:1
-    (text_input ~id:"ti" ~placeholder:"Original"
+    (input ~id:"ti" ~placeholder:"Original"
        ~on_mount:(fun ti -> Text_input.set_placeholder ti "Updated placeholder")
        ~size:(size ~width:20 ~height:1) ());
   [%expect_exact
@@ -181,7 +181,7 @@ let%expect_test "set_placeholder updates placeholder text" =
 
 let%expect_test "set_max_length truncates existing content" =
   render_boxed ~width:15 ~height:1
-    (text_input ~id:"ti" ~value:"Hello World"
+    (input ~id:"ti" ~value:"Hello World"
        ~on_mount:(fun ti -> Text_input.set_max_length ti 5)
        ~size:(size ~width:15 ~height:1) ());
   [%expect_exact
@@ -193,7 +193,7 @@ let%expect_test "set_max_length truncates existing content" =
 
 let%expect_test "max_length prevents longer initial value" =
   render_boxed ~width:15 ~height:1
-    (text_input ~id:"ti" ~value:"TooLong" ~max_length:3
+    (input ~id:"ti" ~value:"TooLong" ~max_length:3
        ~size:(size ~width:15 ~height:1) ());
   (* max_length is applied after set_value, so initial value is not truncated *)
   [%expect_exact

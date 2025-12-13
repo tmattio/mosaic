@@ -74,7 +74,8 @@ let view model =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~text_style:(Ansi.Style.make ~bold:true ())
+              text
+                ~text_style:(Ansi.Style.make ~bold:true ())
                 (Printf.sprintf "▸ Code (%s)" (lang_name model.lang));
               text ~text_style:muted "▄▀ mosaic";
             ];
@@ -85,7 +86,8 @@ let view model =
           box ~border:true ~border_color ~flex_grow:1.
             [
               code ~filetype:(lang_filetype model.lang) ~syntax_client
-                ~syntax_style ~size:{ width = pct 100; height = pct 100 }
+                ~syntax_style
+                ~size:{ width = pct 100; height = pct 100 }
                 (lang_content model.lang);
             ];
         ];
