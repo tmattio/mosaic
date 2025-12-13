@@ -51,6 +51,7 @@ type config = { use_rounding : bool }
 
 let default_config = { use_rounding = true }
 
+(* Node data stored for each node *)
 type node_data = {
   style : Style.t;
   unrounded_layout : Layout.t;
@@ -58,7 +59,6 @@ type node_data = {
   has_context : bool;
   cache : Cache.t;
 }
-(* Node data stored for each node *)
 
 let new_node_data style =
   {
@@ -71,353 +71,479 @@ let new_node_data style =
 
 let mark_dirty node_data = Cache.clear node_data.cache
 
+(* Growable children buffer for each node *)
+type children_buffer = { mutable data : Node_id.t array; mutable len : int }
+
+let empty_children () = { data = [||]; len = 0 }
+let clear_children buffer = buffer.len <- 0
+
+let ensure_child_capacity buffer required =
+  let capacity = Array.length buffer.data in
+  if required <= capacity then ()
+  else
+    let next_capacity = max required (max 1 (capacity * 2)) in
+    let placeholder = Node_id.make 0 in
+    let new_data = Array.make next_capacity placeholder in
+    Array.blit buffer.data 0 new_data 0 buffer.len;
+    buffer.data <- new_data
+
+let append_child buffer child =
+  ensure_child_capacity buffer (buffer.len + 1);
+  buffer.data.(buffer.len) <- child;
+  buffer.len <- buffer.len + 1
+
+let insert_child buffer index child =
+  ensure_child_capacity buffer (buffer.len + 1);
+  Array.blit buffer.data index buffer.data (index + 1) (buffer.len - index);
+  buffer.data.(index) <- child;
+  buffer.len <- buffer.len + 1
+
+let child_at buffer index = buffer.data.(index)
+
+let replace_child_at buffer index child =
+  let old = buffer.data.(index) in
+  buffer.data.(index) <- child;
+  old
+
+let remove_child_at buffer index =
+  let removed = buffer.data.(index) in
+  let tail_len = buffer.len - index - 1 in
+  if tail_len > 0 then
+    Array.blit buffer.data (index + 1) buffer.data index tail_len;
+  buffer.len <- buffer.len - 1;
+  removed
+
+let remove_children_range_in_buffer buffer start_index end_index =
+  let keep_from = end_index + 1 in
+  let tail_len = buffer.len - keep_from in
+  if tail_len > 0 then
+    Array.blit buffer.data keep_from buffer.data start_index tail_len;
+  buffer.len <- buffer.len - (end_index - start_index + 1)
+
+let find_child_index buffer child =
+  let rec loop idx =
+    if idx >= buffer.len then None
+    else if Node_id.equal buffer.data.(idx) child then Some idx
+    else loop (idx + 1)
+  in
+  loop 0
+
+let remove_child_value buffer child =
+  match find_child_index buffer child with
+  | None -> None
+  | Some idx -> Some (remove_child_at buffer idx)
+
+let children_to_seq buffer =
+  let rec aux idx () =
+    if idx >= buffer.len then Seq.Nil
+    else Seq.Cons (buffer.data.(idx), aux (idx + 1))
+  in
+  aux 0
+
+let children_to_list buffer =
+  let rec build acc idx =
+    if idx < 0 then acc else build (buffer.data.(idx) :: acc) (idx - 1)
+  in
+  build [] (buffer.len - 1)
+
 type 'context tree = {
-  mutable nodes : node_data Node_id.Map.t;
-  mutable node_context_data : 'context Node_id.Map.t;
-  mutable children : Node_id.t list Node_id.Map.t;
-  mutable parents : Node_id.t option Node_id.Map.t;
-  mutable next_id : int;
+  mutable nodes : node_data array;
+  mutable parents : Node_id.t option array;
+  mutable children : children_buffer array;
+  mutable node_context_data : 'context option array;
+  mutable generations : int array;
+  mutable free_list : int list;
+  mutable next_index : int;
+  mutable live_node_count : int;
   config : config;
 }
 (* The main TaffyTree type *)
 
-(* Create a new TaffyTree *)
-let new_tree () =
+let default_capacity = 16
+
+let make_arrays capacity config =
   {
-    nodes = Node_id.Map.empty;
-    node_context_data = Node_id.Map.empty;
-    children = Node_id.Map.empty;
-    parents = Node_id.Map.empty;
-    next_id = 0;
-    config = default_config;
+    nodes = Array.init capacity (fun _ -> new_node_data Style.default);
+    parents = Array.make capacity None;
+    children = Array.init capacity (fun _ -> empty_children ());
+    node_context_data = Array.make capacity None;
+    generations = Array.make capacity 0;
+    free_list = [];
+    next_index = 0;
+    live_node_count = 0;
+    config;
   }
 
-let with_capacity _capacity = new_tree ()
+let grow tree required_index =
+  let old_capacity = Array.length tree.nodes in
+  let new_capacity = max (required_index + 1) (old_capacity * 2) in
+  let copy_or_default arr default =
+    Array.init new_capacity (fun idx ->
+        if idx < old_capacity then arr.(idx) else default ())
+  in
+  tree.nodes <-
+    copy_or_default tree.nodes (fun () -> new_node_data Style.default);
+  tree.parents <- copy_or_default tree.parents (fun () -> None);
+  tree.children <- copy_or_default tree.children empty_children;
+  tree.node_context_data <-
+    copy_or_default tree.node_context_data (fun () -> None);
+  tree.generations <- copy_or_default tree.generations (fun () -> 0)
+
+let ensure_capacity tree required_index =
+  if required_index < Array.length tree.nodes then ()
+  else grow tree required_index
+
+(* Create a new TaffyTree *)
+let new_tree () = make_arrays default_capacity default_config
+let with_capacity capacity = make_arrays (max capacity 0) default_config
 
 (* Enable/disable rounding *)
 let enable_rounding tree = { tree with config = { use_rounding = true } }
 let disable_rounding tree = { tree with config = { use_rounding = false } }
 
+let is_valid tree node =
+  let index = Node_id.index node in
+  index < tree.next_index && tree.generations.(index) = Node_id.generation node
+
+let node_index tree node =
+  let idx = Node_id.index node in
+  if is_valid tree node then Ok idx else Error (Invalid_input_node node)
+
+let node_index_exn tree node =
+  match node_index tree node with
+  | Ok idx -> idx
+  | Error _ -> invalid_arg "Invalid node id"
+
+let parent_index tree parent =
+  let idx = Node_id.index parent in
+  if is_valid tree parent then Ok idx else Error (Invalid_parent_node parent)
+
+let child_index tree child =
+  let idx = Node_id.index child in
+  if is_valid tree child then Ok idx else Error (Invalid_child_node child)
+
+let id_of_index tree idx =
+  Node_id.make_with_generation idx tree.generations.(idx)
+
+let rec mark_dirty_recursive tree idx =
+  match mark_dirty tree.nodes.(idx) with
+  | Cache.Already_empty -> ()
+  | Cache.Cleared -> (
+      match tree.parents.(idx) with
+      | Some parent -> mark_dirty_recursive tree (Node_id.index parent)
+      | None -> ())
+
+let allocate_index tree =
+  match tree.free_list with
+  | idx :: rest ->
+      tree.free_list <- rest;
+      tree.live_node_count <- tree.live_node_count + 1;
+      idx
+  | [] ->
+      let idx = tree.next_index in
+      ensure_capacity tree idx;
+      tree.next_index <- tree.next_index + 1;
+      tree.live_node_count <- tree.live_node_count + 1;
+      idx
+
+let reset_slot tree idx node_data context_opt =
+  tree.nodes.(idx) <- node_data;
+  tree.parents.(idx) <- None;
+  tree.node_context_data.(idx) <- context_opt;
+  clear_children tree.children.(idx)
+
 (* Node creation *)
 let new_leaf tree style =
-  let id = Node_id.make tree.next_id in
-  tree.next_id <- tree.next_id + 1;
-  tree.nodes <- Node_id.Map.add id (new_node_data style) tree.nodes;
-  tree.children <- Node_id.Map.add id [] tree.children;
-  tree.parents <- Node_id.Map.add id None tree.parents;
-  Ok id
+  let idx = allocate_index tree in
+  reset_slot tree idx (new_node_data style) None;
+  Ok (id_of_index tree idx)
 
 let new_leaf_with_context tree style context =
-  let id = Node_id.make tree.next_id in
-  tree.next_id <- tree.next_id + 1;
+  let idx = allocate_index tree in
   let node_data = { (new_node_data style) with has_context = true } in
-  tree.nodes <- Node_id.Map.add id node_data tree.nodes;
-  tree.node_context_data <- Node_id.Map.add id context tree.node_context_data;
-  tree.children <- Node_id.Map.add id [] tree.children;
-  tree.parents <- Node_id.Map.add id None tree.parents;
-  Ok id
+  reset_slot tree idx node_data (Some context);
+  Ok (id_of_index tree idx)
+
+let validate_children tree children =
+  let rec loop index =
+    if index = Array.length children then Ok ()
+    else
+      match child_index tree children.(index) with
+      | Ok _ -> loop (index + 1)
+      | Error _ as e -> e
+  in
+  loop 0
 
 let new_with_children tree style children =
-  let id = Node_id.make tree.next_id in
-  tree.next_id <- tree.next_id + 1;
-  tree.nodes <- Node_id.Map.add id (new_node_data style) tree.nodes;
-  tree.children <- Node_id.Map.add id (Array.to_list children) tree.children;
-  tree.parents <- Node_id.Map.add id None tree.parents;
+  match validate_children tree children with
+  | Error _ as e -> e
+  | Ok () ->
+      let idx = allocate_index tree in
+      reset_slot tree idx (new_node_data style) None;
+      Array.iter
+        (fun child ->
+          let child_idx = Node_id.index child in
+          tree.parents.(child_idx) <- Some (id_of_index tree idx))
+        children;
+      let buffer = tree.children.(idx) in
+      Array.iter (append_child buffer) children;
+      Ok (id_of_index tree idx)
 
-  (* Set parent for all children *)
-  Array.iter
-    (fun child -> tree.parents <- Node_id.Map.add child (Some id) tree.parents)
-    children;
-
-  Ok id
+let invalidate_node tree idx =
+  tree.generations.(idx) <- tree.generations.(idx) + 1;
+  tree.free_list <- idx :: tree.free_list;
+  tree.live_node_count <- tree.live_node_count - 1;
+  tree.parents.(idx) <- None;
+  tree.node_context_data.(idx) <- None;
+  clear_children tree.children.(idx);
+  tree.nodes.(idx) <- new_node_data Style.default
 
 (* Tree operations *)
 let clear tree =
-  tree.nodes <- Node_id.Map.empty;
-  tree.node_context_data <- Node_id.Map.empty;
-  tree.children <- Node_id.Map.empty;
-  tree.parents <- Node_id.Map.empty;
-  tree.next_id <- 0
+  for idx = 0 to tree.next_index - 1 do
+    tree.generations.(idx) <- tree.generations.(idx) + 1;
+    tree.parents.(idx) <- None;
+    tree.node_context_data.(idx) <- None;
+    clear_children tree.children.(idx);
+    tree.nodes.(idx) <- new_node_data Style.default
+  done;
+  tree.live_node_count <- 0;
+  tree.free_list <- [];
+  tree.next_index <- 0
 
 let remove tree node =
-  match Node_id.Map.find_opt node tree.parents with
-  | None -> Error (Invalid_input_node node)
-  | Some parent_opt ->
-      (* Remove from parent's children list *)
-      (match parent_opt with
+  match node_index tree node with
+  | Error _ as e -> e
+  | Ok idx ->
+      (match tree.parents.(idx) with
       | Some parent ->
-          let parent_children = Node_id.Map.find parent tree.children in
-          let new_children =
-            List.filter (fun n -> not (Node_id.equal n node)) parent_children
-          in
-          tree.children <- Node_id.Map.add parent new_children tree.children
+          let parent_idx = Node_id.index parent in
+          ignore (remove_child_value tree.children.(parent_idx) node);
+          mark_dirty_recursive tree parent_idx
       | None -> ());
 
-      (* Remove parent references from this node's children *)
-      (match Node_id.Map.find_opt node tree.children with
-      | Some children ->
-          List.iter
-            (fun child ->
-              tree.parents <- Node_id.Map.add child None tree.parents)
-            children
-      | None -> ());
+      let children = tree.children.(idx) in
+      for child_idx = 0 to children.len - 1 do
+        let child = child_at children child_idx in
+        tree.parents.(Node_id.index child) <- None
+      done;
 
-      (* Remove the node *)
-      tree.nodes <- Node_id.Map.remove node tree.nodes;
-      tree.node_context_data <- Node_id.Map.remove node tree.node_context_data;
-      tree.children <- Node_id.Map.remove node tree.children;
-      tree.parents <- Node_id.Map.remove node tree.parents;
-
+      invalidate_node tree idx;
       Ok node
 
 (* Context operations *)
-let rec mark_dirty_recursive tree node =
-  match Node_id.Map.find_opt node tree.nodes with
-  | None -> ()
-  | Some node_data -> (
-      match mark_dirty node_data with
-      | Cache.Already_empty -> ()
-      | Cache.Cleared -> (
-          tree.nodes <-
-            Node_id.Map.add node
-              { node_data with cache = node_data.cache }
-              tree.nodes;
-          match Node_id.Map.find_opt node tree.parents with
-          | Some (Some parent) -> mark_dirty_recursive tree parent
-          | _ -> ()))
-
 let set_node_context tree node context_opt =
-  match Node_id.Map.find_opt node tree.nodes with
-  | None -> Error (Invalid_input_node node)
-  | Some node_data ->
-      (match context_opt with
-      | Some context ->
-          tree.nodes <-
-            Node_id.Map.add node
-              { node_data with has_context = true }
-              tree.nodes;
-          tree.node_context_data <-
-            Node_id.Map.add node context tree.node_context_data
-      | None ->
-          tree.nodes <-
-            Node_id.Map.add node
-              { node_data with has_context = false }
-              tree.nodes;
-          tree.node_context_data <-
-            Node_id.Map.remove node tree.node_context_data);
-      mark_dirty_recursive tree node;
+  match node_index tree node with
+  | Error _ as e -> e
+  | Ok idx ->
+      let has_context = Option.is_some context_opt in
+      let node_data = tree.nodes.(idx) in
+      tree.nodes.(idx) <- { node_data with has_context };
+      tree.node_context_data.(idx) <- context_opt;
+      mark_dirty_recursive tree idx;
       Ok ()
 
 let get_node_context tree node =
-  Node_id.Map.find_opt node tree.node_context_data
+  match node_index tree node with
+  | Ok idx -> tree.node_context_data.(idx)
+  | Error _ -> None
 
-let get_node_context_mut tree node =
-  Node_id.Map.find_opt node tree.node_context_data
+let get_node_context_mut = get_node_context
 
 (* Child management *)
 let add_child tree parent child =
-  match Node_id.Map.find_opt parent tree.children with
-  | None -> Error (Invalid_parent_node parent)
-  | Some children ->
-      tree.parents <- Node_id.Map.add child (Some parent) tree.parents;
-      tree.children <-
-        Node_id.Map.add parent (children @ [ child ]) tree.children;
-      mark_dirty_recursive tree parent;
-      Ok ()
+  match parent_index tree parent with
+  | Error _ as e -> e
+  | Ok parent_idx -> (
+      match child_index tree child with
+      | Error _ as e -> e
+      | Ok child_idx ->
+          tree.parents.(child_idx) <- Some parent;
+          append_child tree.children.(parent_idx) child;
+          mark_dirty_recursive tree parent_idx;
+          Ok ())
 
-let insert_child_at_index tree parent child_index child =
-  match Node_id.Map.find_opt parent tree.children with
-  | None -> Error (Invalid_parent_node parent)
-  | Some children ->
-      let child_count = List.length children in
-      if child_index > child_count then
-        Error (Child_index_out_of_bounds { parent; child_index; child_count })
-      else
-        let rec insert_at idx lst =
-          match (idx, lst) with
-          | 0, _ -> child :: lst
-          | n, h :: t -> h :: insert_at (n - 1) t
-          | _, [] -> [ child ]
-        in
-        tree.parents <- Node_id.Map.add child (Some parent) tree.parents;
-        tree.children <-
-          Node_id.Map.add parent (insert_at child_index children) tree.children;
-        mark_dirty_recursive tree parent;
-        Ok ()
+let insert_child_at_index tree parent child_position child =
+  match parent_index tree parent with
+  | Error _ as e -> e
+  | Ok parent_idx -> (
+      match child_index tree child with
+      | Error _ as e -> e
+      | Ok child_idx ->
+          let children = tree.children.(parent_idx) in
+          let child_count = children.len in
+          if child_position > child_count then
+            Error
+              (Child_index_out_of_bounds
+                 { parent; child_index = child_position; child_count })
+          else (
+            tree.parents.(child_idx) <- Some parent;
+            insert_child children child_position child;
+            mark_dirty_recursive tree parent_idx;
+            Ok ()))
 
 let set_children tree parent new_children =
-  match Node_id.Map.find_opt parent tree.children with
-  | None -> Error (Invalid_parent_node parent)
-  | Some old_children ->
-      (* Remove parent from old children *)
-      List.iter
-        (fun child -> tree.parents <- Node_id.Map.add child None tree.parents)
-        old_children;
+  match parent_index tree parent with
+  | Error _ as e -> e
+  | Ok parent_idx -> (
+      match validate_children tree new_children with
+      | Error _ as e -> e
+      | Ok () ->
+          let current_children = tree.children.(parent_idx) in
+          for i = 0 to current_children.len - 1 do
+            let child = child_at current_children i in
+            tree.parents.(Node_id.index child) <- None
+          done;
 
-      (* Remove children from their previous parents and set new parent *)
-      Array.iter
-        (fun child ->
-          (match Node_id.Map.find_opt child tree.parents with
-          | Some (Some old_parent) when not (Node_id.equal old_parent parent) ->
-              let old_parent_children =
-                Node_id.Map.find old_parent tree.children
-              in
-              let new_children =
-                List.filter
-                  (fun n -> not (Node_id.equal n child))
-                  old_parent_children
-              in
-              tree.children <-
-                Node_id.Map.add old_parent new_children tree.children
-          | _ -> ());
-          tree.parents <- Node_id.Map.add child (Some parent) tree.parents)
-        new_children;
+          Array.iter
+            (fun child ->
+              let child_idx = Node_id.index child in
+              (match tree.parents.(child_idx) with
+              | Some old_parent when not (Node_id.equal old_parent parent) ->
+                  let old_parent_idx = Node_id.index old_parent in
+                  let old_children = tree.children.(old_parent_idx) in
+                  ignore (remove_child_value old_children child);
+                  mark_dirty_recursive tree old_parent_idx
+              | _ -> ());
+              tree.parents.(child_idx) <- Some parent)
+            new_children;
 
-      tree.children <-
-        Node_id.Map.add parent (Array.to_list new_children) tree.children;
-      mark_dirty_recursive tree parent;
-      Ok ()
+          clear_children current_children;
+          Array.iter (append_child current_children) new_children;
+          mark_dirty_recursive tree parent_idx;
+          Ok ())
 
-let rec remove_child tree parent child =
-  match Node_id.Map.find_opt parent tree.children with
-  | None -> Error (Invalid_parent_node parent)
-  | Some children -> (
-      match List.find_opt (fun n -> Node_id.equal n child) children with
+let remove_child tree parent child =
+  match parent_index tree parent with
+  | Error _ as e -> e
+  | Ok parent_idx -> (
+      let children = tree.children.(parent_idx) in
+      match find_child_index children child with
       | None -> Error (Invalid_child_node child)
-      | Some _ -> (
-          match
-            List.find_index
-              (fun (_, n) -> Node_id.equal n child)
-              (List.mapi (fun i x -> (i, x)) children)
-          with
-          | None -> Error (Invalid_child_node child)
-          | Some idx -> remove_child_at_index tree parent idx))
+      | Some idx ->
+          let removed_child = remove_child_at children idx in
+          tree.parents.(Node_id.index removed_child) <- None;
+          mark_dirty_recursive tree parent_idx;
+          Ok removed_child)
 
-and remove_child_at_index tree parent child_index =
-  match Node_id.Map.find_opt parent tree.children with
-  | None -> Error (Invalid_parent_node parent)
-  | Some children ->
-      let child_count = List.length children in
+let remove_child_at_index tree parent child_index =
+  match parent_index tree parent with
+  | Error _ as e -> e
+  | Ok parent_idx ->
+      let children = tree.children.(parent_idx) in
+      let child_count = children.len in
       if child_index >= child_count then
         Error (Child_index_out_of_bounds { parent; child_index; child_count })
       else
-        let rec remove_at idx lst =
-          match (idx, lst) with
-          | 0, h :: t -> (h, t)
-          | n, h :: t ->
-              let removed, rest = remove_at (n - 1) t in
-              (removed, h :: rest)
-          | _, [] -> failwith "Index out of bounds"
-        in
-        let removed_child, new_children = remove_at child_index children in
-        tree.parents <- Node_id.Map.add removed_child None tree.parents;
-        tree.children <- Node_id.Map.add parent new_children tree.children;
-        mark_dirty_recursive tree parent;
+        let removed_child = remove_child_at children child_index in
+        tree.parents.(Node_id.index removed_child) <- None;
+        mark_dirty_recursive tree parent_idx;
         Ok removed_child
 
-let remove_children_range tree parent range =
-  match Node_id.Map.find_opt parent tree.children with
-  | None -> Error (Invalid_parent_node parent)
-  | Some children ->
-      let start_idx, end_idx = range in
-      let rec remove_range idx lst acc =
-        match lst with
-        | [] -> List.rev acc
-        | h :: t ->
-            if idx >= start_idx && idx <= end_idx then (
-              tree.parents <- Node_id.Map.add h None tree.parents;
-              remove_range (idx + 1) t acc)
-            else remove_range (idx + 1) t (h :: acc)
-      in
-      let new_children = remove_range 0 children [] in
-      tree.children <- Node_id.Map.add parent new_children tree.children;
-      mark_dirty_recursive tree parent;
-      Ok ()
+let remove_children_range tree parent (start_idx, end_idx) =
+  match parent_index tree parent with
+  | Error _ as e -> e
+  | Ok parent_idx ->
+      let children = tree.children.(parent_idx) in
+      let child_count = children.len in
+      if start_idx < 0 || end_idx < start_idx || end_idx >= child_count then
+        Error
+          (Child_index_out_of_bounds
+             { parent; child_index = end_idx; child_count })
+      else (
+        for idx = start_idx to end_idx do
+          let child = child_at children idx in
+          tree.parents.(Node_id.index child) <- None
+        done;
+        remove_children_range_in_buffer children start_idx end_idx;
+        mark_dirty_recursive tree parent_idx;
+        Ok ())
 
-let replace_child_at_index tree parent child_index new_child =
-  match Node_id.Map.find_opt parent tree.children with
-  | None -> Error (Invalid_parent_node parent)
-  | Some children ->
-      let child_count = List.length children in
-      if child_index >= child_count then
-        Error (Child_index_out_of_bounds { parent; child_index; child_count })
-      else
-        let rec replace_at idx lst =
-          match (idx, lst) with
-          | 0, h :: t ->
-              tree.parents <- Node_id.Map.add h None tree.parents;
-              (h, new_child :: t)
-          | n, h :: t ->
-              let old, rest = replace_at (n - 1) t in
-              (old, h :: rest)
-          | _, [] -> failwith "Index out of bounds"
-        in
-        let old_child, new_children = replace_at child_index children in
-        tree.parents <- Node_id.Map.add new_child (Some parent) tree.parents;
-        tree.children <- Node_id.Map.add parent new_children tree.children;
-        mark_dirty_recursive tree parent;
-        Ok old_child
+let replace_child_at_index tree parent child_position new_child =
+  match parent_index tree parent with
+  | Error _ as e -> e
+  | Ok parent_idx -> (
+      match child_index tree new_child with
+      | Error _ as e -> e
+      | Ok new_child_idx ->
+          let children = tree.children.(parent_idx) in
+          let child_count = children.len in
+          if child_position >= child_count then
+            Error
+              (Child_index_out_of_bounds
+                 { parent; child_index = child_position; child_count })
+          else
+            let old_child =
+              replace_child_at children child_position new_child
+            in
+            tree.parents.(Node_id.index old_child) <- None;
+            tree.parents.(new_child_idx) <- Some parent;
+            mark_dirty_recursive tree parent_idx;
+            Ok old_child)
 
 (* Query operations *)
 let child_at_index tree parent child_index =
-  match Node_id.Map.find_opt parent tree.children with
-  | None -> Error (Invalid_parent_node parent)
-  | Some children ->
-      let child_count = List.length children in
+  match parent_index tree parent with
+  | Error _ as e -> e
+  | Ok parent_idx ->
+      let children = tree.children.(parent_idx) in
+      let child_count = children.len in
       if child_index >= child_count then
         Error (Child_index_out_of_bounds { parent; child_index; child_count })
-      else Ok (List.nth children child_index)
+      else Ok (child_at children child_index)
 
-let total_node_count tree = Node_id.Map.cardinal tree.nodes
+let total_node_count tree = tree.live_node_count
 
 let parent tree child =
-  match Node_id.Map.find_opt child tree.parents with
-  | None -> None
-  | Some parent_opt -> parent_opt
+  match node_index tree child with
+  | Error _ -> None
+  | Ok idx -> tree.parents.(idx)
 
 let children tree parent =
-  match Node_id.Map.find_opt parent tree.children with
-  | None -> Error (Invalid_parent_node parent)
-  | Some children -> Ok children
+  match parent_index tree parent with
+  | Error _ as e -> e
+  | Ok parent_idx -> Ok (children_to_list tree.children.(parent_idx))
 
 (* Style operations *)
 let set_style tree node style =
-  match Node_id.Map.find_opt node tree.nodes with
-  | None -> Error (Invalid_input_node node)
-  | Some node_data ->
-      tree.nodes <- Node_id.Map.add node { node_data with style } tree.nodes;
-      mark_dirty_recursive tree node;
+  match node_index tree node with
+  | Error _ as e -> e
+  | Ok idx ->
+      let node_data = tree.nodes.(idx) in
+      tree.nodes.(idx) <- { node_data with style };
+      mark_dirty_recursive tree idx;
       Ok ()
 
 let style tree node =
-  match Node_id.Map.find_opt node tree.nodes with
-  | None -> Error (Invalid_input_node node)
-  | Some node_data -> Ok node_data.style
+  match node_index tree node with
+  | Error _ as e -> e
+  | Ok idx -> Ok tree.nodes.(idx).style
 
 (* Layout operations *)
 let layout tree node =
-  match Node_id.Map.find_opt node tree.nodes with
-  | None -> Error (Invalid_input_node node)
-  | Some node_data ->
+  match node_index tree node with
+  | Error _ as e -> e
+  | Ok idx ->
+      let node_data = tree.nodes.(idx) in
       if tree.config.use_rounding then Ok node_data.final_layout
       else Ok node_data.unrounded_layout
 
 let unrounded_layout tree node =
-  match Node_id.Map.find_opt node tree.nodes with
-  | None -> Layout.default
-  | Some node_data -> node_data.unrounded_layout
+  match node_index tree node with
+  | Error _ -> Layout.default
+  | Ok idx -> tree.nodes.(idx).unrounded_layout
 
 let mark_dirty tree node =
-  match Node_id.Map.find_opt node tree.nodes with
-  | None -> Error (Invalid_input_node node)
-  | Some _ ->
-      mark_dirty_recursive tree node;
+  match node_index tree node with
+  | Error _ as e -> e
+  | Ok idx ->
+      mark_dirty_recursive tree idx;
       Ok ()
 
 let dirty tree node =
-  match Node_id.Map.find_opt node tree.nodes with
-  | None -> Error (Invalid_input_node node)
-  | Some node_data -> Ok (Cache.is_empty node_data.cache)
+  match node_index tree node with
+  | Error _ as e -> e
+  | Ok idx -> Ok (Cache.is_empty tree.nodes.(idx).cache)
 
 type 'context measure_function =
   float option size ->
@@ -437,56 +563,44 @@ module View = struct
 
   (* Traverse_partial_tree implementation *)
   let child_ids tree parent_node_id =
-    match Node_id.Map.find_opt parent_node_id tree.taffy.children with
-    | None -> Seq.empty
-    | Some children -> List.to_seq children
+    let idx = node_index_exn tree.taffy parent_node_id in
+    children_to_seq tree.taffy.children.(idx)
 
   let child_count tree parent_node_id =
-    match Node_id.Map.find_opt parent_node_id tree.taffy.children with
-    | None -> 0
-    | Some children -> List.length children
+    let idx = node_index_exn tree.taffy parent_node_id in
+    tree.taffy.children.(idx).len
 
   let get_child_id tree parent_node_id index =
-    match Node_id.Map.find_opt parent_node_id tree.taffy.children with
-    | None -> failwith "Invalid parent node"
-    | Some children -> List.nth children index
+    let idx = node_index_exn tree.taffy parent_node_id in
+    child_at tree.taffy.children.(idx) index
 
   (* LayoutPartialTree implementation *)
   let get_core_container_style tree node_id =
-    match Node_id.Map.find_opt node_id tree.taffy.nodes with
-    | None -> Style.default
-    | Some node_data -> node_data.style
+    tree.taffy.nodes.(node_index_exn tree.taffy node_id).style
 
   let set_unrounded_layout tree node_id layout =
-    match Node_id.Map.find_opt node_id tree.taffy.nodes with
-    | None -> ()
-    | Some node_data ->
-        tree.taffy.nodes <-
-          Node_id.Map.add node_id
-            { node_data with unrounded_layout = layout }
-            tree.taffy.nodes
+    let idx = node_index_exn tree.taffy node_id in
+    let node_data = tree.taffy.nodes.(idx) in
+    tree.taffy.nodes.(idx) <- { node_data with unrounded_layout = layout }
 
   let resolve_calc_value _tree _val _basis = 0.0
 
   (* Cache operations *)
   let cache_get tree node_id ~known_dimensions ~available_space ~run_mode =
-    match Node_id.Map.find_opt node_id tree.taffy.nodes with
-    | None -> None
-    | Some node_data ->
-        Cache.get node_data.cache ~known_dimensions ~available_space ~run_mode
+    let node_data = tree.taffy.nodes.(node_index_exn tree.taffy node_id) in
+    Cache.get node_data.cache ~known_dimensions ~available_space ~run_mode
 
   let cache_store tree node_id ~known_dimensions ~available_space ~run_mode
       layout_output =
-    match Node_id.Map.find_opt node_id tree.taffy.nodes with
-    | None -> ()
-    | Some node_data ->
-        Cache.store node_data.cache ~known_dimensions ~available_space ~run_mode
-          layout_output
+    let idx = node_index_exn tree.taffy node_id in
+    let node_data = tree.taffy.nodes.(idx) in
+    Cache.store node_data.cache ~known_dimensions ~available_space ~run_mode
+      layout_output
 
   let cache_clear tree node_id =
-    match Node_id.Map.find_opt node_id tree.taffy.nodes with
-    | None -> ()
-    | Some node_data -> ignore (Cache.clear node_data.cache)
+    let idx = node_index_exn tree.taffy node_id in
+    let node_data = tree.taffy.nodes.(idx) in
+    ignore (Cache.clear node_data.cache)
 
   let rec compute_child_layout : type ctx.
       ctx t -> Node_id.t -> Layout_input.t -> Layout_output.t =
@@ -522,107 +636,99 @@ module View = struct
       compute_cached_layout
         (module CacheM : CACHE_TREE with type t = ctx t)
         tree node inputs
-        (fun tree node _inputs ->
-          match Node_id.Map.find_opt node tree.taffy.nodes with
-          | None -> Layout_output.hidden
-          | Some node_data -> (
-              let display_mode = Style.display node_data.style in
-              let has_children = child_count tree node > 0 in
+        (fun tree node _ ->
+          let node_idx = node_index_exn tree.taffy node in
+          let node_data = tree.taffy.nodes.(node_idx) in
+          let display_mode = Style.display node_data.style in
+          let has_children = child_count tree node > 0 in
 
-              match (display_mode, has_children) with
-              | None, _ ->
-                  compute_hidden_layout
-                    (module struct
-                      type nonrec t = ctx t
+          match (display_mode, has_children) with
+          | None, _ ->
+              compute_hidden_layout
+                (module struct
+                  type nonrec t = ctx t
 
-                      let child_ids = child_ids
-                      let child_count = child_count
-                      let get_child_id = get_child_id
-                      let get_core_container_style = get_core_container_style
-                      let set_unrounded_layout = set_unrounded_layout
-                      let compute_child_layout = compute_child_layout
-                      let resolve_calc_value = resolve_calc_value
-                      let cache_get = cache_get
-                      let cache_store = cache_store
-                      let cache_clear = cache_clear
-                    end : CACHE_LAYOUT_PARTIAL_TREE
-                      with type t = ctx t)
-                    tree node
-              | Block, true ->
-                  compute_block_layout
-                    (module struct
-                      type nonrec t = ctx t
+                  let child_ids = child_ids
+                  let child_count = child_count
+                  let get_child_id = get_child_id
+                  let get_core_container_style = get_core_container_style
+                  let set_unrounded_layout = set_unrounded_layout
+                  let compute_child_layout = compute_child_layout
+                  let resolve_calc_value = resolve_calc_value
+                  let cache_get = cache_get
+                  let cache_store = cache_store
+                  let cache_clear = cache_clear
+                end : CACHE_LAYOUT_PARTIAL_TREE
+                  with type t = ctx t)
+                tree node
+          | Block, true ->
+              compute_block_layout
+                (module struct
+                  type nonrec t = ctx t
 
-                      let child_ids = child_ids
-                      let child_count = child_count
-                      let get_child_id = get_child_id
-                      let get_core_container_style = get_core_container_style
-                      let set_unrounded_layout = set_unrounded_layout
-                      let compute_child_layout = compute_child_layout
-                      let resolve_calc_value = resolve_calc_value
-                    end : LAYOUT_PARTIAL_TREE
-                      with type t = ctx t)
-                    tree node inputs
-              | Flex, true ->
-                  compute_flexbox_layout
-                    (module struct
-                      type nonrec t = ctx t
+                  let child_ids = child_ids
+                  let child_count = child_count
+                  let get_child_id = get_child_id
+                  let get_core_container_style = get_core_container_style
+                  let set_unrounded_layout = set_unrounded_layout
+                  let compute_child_layout = compute_child_layout
+                  let resolve_calc_value = resolve_calc_value
+                end : LAYOUT_PARTIAL_TREE
+                  with type t = ctx t)
+                tree node inputs
+          | Flex, true ->
+              compute_flexbox_layout
+                (module struct
+                  type nonrec t = ctx t
 
-                      let child_ids = child_ids
-                      let child_count = child_count
-                      let get_child_id = get_child_id
-                      let get_core_container_style = get_core_container_style
-                      let set_unrounded_layout = set_unrounded_layout
-                      let compute_child_layout = compute_child_layout
-                      let resolve_calc_value = resolve_calc_value
-                    end : LAYOUT_PARTIAL_TREE
-                      with type t = ctx t)
-                    tree node inputs
-              | Grid, true ->
-                  compute_grid_layout
-                    (module struct
-                      type nonrec t = ctx t
+                  let child_ids = child_ids
+                  let child_count = child_count
+                  let get_child_id = get_child_id
+                  let get_core_container_style = get_core_container_style
+                  let set_unrounded_layout = set_unrounded_layout
+                  let compute_child_layout = compute_child_layout
+                  let resolve_calc_value = resolve_calc_value
+                end : LAYOUT_PARTIAL_TREE
+                  with type t = ctx t)
+                tree node inputs
+          | Grid, true ->
+              compute_grid_layout
+                (module struct
+                  type nonrec t = ctx t
 
-                      let child_ids = child_ids
-                      let child_count = child_count
-                      let get_child_id = get_child_id
-                      let get_core_container_style = get_core_container_style
-                      let set_unrounded_layout = set_unrounded_layout
-                      let compute_child_layout = compute_child_layout
-                      let resolve_calc_value = resolve_calc_value
-                    end : LAYOUT_PARTIAL_TREE
-                      with type t = ctx t)
-                    ~tree ~node ~inputs
-              | _, false ->
-                  (* Leaf node *)
-                  let style = node_data.style in
-                  let node_context =
-                    if node_data.has_context then
-                      Node_id.Map.find_opt node tree.taffy.node_context_data
-                    else None
-                  in
-                  let measure_function known_dimensions available_space =
-                    tree.measure_function known_dimensions available_space node
-                      node_context style
-                  in
-                  compute_leaf_layout ~inputs ~style
-                    ~resolve_calc_value:(resolve_calc_value tree)
-                    ~measure_function))
+                  let child_ids = child_ids
+                  let child_count = child_count
+                  let get_child_id = get_child_id
+                  let get_core_container_style = get_core_container_style
+                  let set_unrounded_layout = set_unrounded_layout
+                  let compute_child_layout = compute_child_layout
+                  let resolve_calc_value = resolve_calc_value
+                end : LAYOUT_PARTIAL_TREE
+                  with type t = ctx t)
+                ~tree ~node ~inputs
+          | _, false ->
+              (* Leaf node *)
+              let style = node_data.style in
+              let node_context =
+                if node_data.has_context then
+                  tree.taffy.node_context_data.(node_idx)
+                else None
+              in
+              let measure_function known_dimensions available_space =
+                tree.measure_function known_dimensions available_space node
+                  node_context style
+              in
+              compute_leaf_layout ~inputs ~style
+                ~resolve_calc_value:(resolve_calc_value tree) ~measure_function)
 
   (* RoundTree implementation *)
   let get_unrounded_layout tree node =
-    match Node_id.Map.find_opt node tree.taffy.nodes with
-    | None -> Layout.default
-    | Some node_data -> node_data.unrounded_layout
+    tree.taffy.nodes.(node_index_exn tree.taffy node).unrounded_layout
 
   let set_final_layout tree node_id layout =
-    match Node_id.Map.find_opt node_id tree.taffy.nodes with
-    | None -> ()
-    | Some node_data ->
-        tree.taffy.nodes <-
-          Node_id.Map.add node_id
-            { node_data with final_layout = layout }
-            tree.taffy.nodes
+    let idx = node_index_exn tree.taffy node_id in
+    let node_data = tree.taffy.nodes.(idx) in
+    tree.taffy.nodes.(idx) <- { node_data with final_layout = layout }
 end
 
 (* Main layout computation *)
@@ -668,42 +774,31 @@ module Traverse_partial_tree = struct
   type 'context t = 'context tree
 
   let child_ids tree parent_node_id =
-    match Node_id.Map.find_opt parent_node_id tree.children with
-    | None -> Seq.empty
-    | Some children -> List.to_seq children
+    children_to_seq tree.children.(node_index_exn tree parent_node_id)
 
   let child_count tree parent_node_id =
-    match Node_id.Map.find_opt parent_node_id tree.children with
-    | None -> 0
-    | Some children -> List.length children
+    tree.children.(node_index_exn tree parent_node_id).len
 
   let get_child_id tree parent_node_id index =
-    match Node_id.Map.find_opt parent_node_id tree.children with
-    | None -> failwith "Invalid parent node"
-    | Some children -> List.nth children index
+    child_at tree.children.(node_index_exn tree parent_node_id) index
 end
 
 module Cache_tree = struct
   type 'context t = 'context tree
 
   let cache_get tree node_id ~known_dimensions ~available_space ~run_mode =
-    match Node_id.Map.find_opt node_id tree.nodes with
-    | None -> None
-    | Some node_data ->
-        Cache.get node_data.cache ~known_dimensions ~available_space ~run_mode
+    let node_data = tree.nodes.(node_index_exn tree node_id) in
+    Cache.get node_data.cache ~known_dimensions ~available_space ~run_mode
 
   let cache_store tree node_id ~known_dimensions ~available_space ~run_mode
       layout_output =
-    match Node_id.Map.find_opt node_id tree.nodes with
-    | None -> ()
-    | Some node_data ->
-        Cache.store node_data.cache ~known_dimensions ~available_space ~run_mode
-          layout_output
+    let node_data = tree.nodes.(node_index_exn tree node_id) in
+    Cache.store node_data.cache ~known_dimensions ~available_space ~run_mode
+      layout_output
 
   let cache_clear tree node_id =
-    match Node_id.Map.find_opt node_id tree.nodes with
-    | None -> ()
-    | Some node_data -> ignore (Cache.clear node_data.cache)
+    let node_data = tree.nodes.(node_index_exn tree node_id) in
+    ignore (Cache.clear node_data.cache)
 end
 
 module Print_tree = struct
@@ -714,27 +809,23 @@ module Print_tree = struct
   let get_child_id = Traverse_partial_tree.get_child_id
 
   let get_debug_label tree node_id =
-    match Node_id.Map.find_opt node_id tree.nodes with
-    | None -> "UNKNOWN"
-    | Some node_data -> (
-        let display = Style.display node_data.style in
-        let num_children = Traverse_partial_tree.child_count tree node_id in
-        match (display, num_children) with
-        | None, _ -> "NONE"
-        | _, 0 -> "LEAF"
-        | Block, _ -> "BLOCK"
-        | Flex, _ -> (
-            match Style.flex_direction node_data.style with
-            | Row | Row_reverse -> "FLEX ROW"
-            | Column | Column_reverse -> "FLEX COL")
-        | Grid, _ -> "GRID")
+    let node_data = tree.nodes.(node_index_exn tree node_id) in
+    let display = Style.display node_data.style in
+    let num_children = Traverse_partial_tree.child_count tree node_id in
+    match (display, num_children) with
+    | None, _ -> "NONE"
+    | _, 0 -> "LEAF"
+    | Block, _ -> "BLOCK"
+    | Flex, _ -> (
+        match Style.flex_direction node_data.style with
+        | Row | Row_reverse -> "FLEX ROW"
+        | Column | Column_reverse -> "FLEX COL")
+    | Grid, _ -> "GRID"
 
   let get_final_layout tree node_id =
-    match Node_id.Map.find_opt node_id tree.nodes with
-    | None -> Layout.default
-    | Some node_data ->
-        if tree.config.use_rounding then node_data.final_layout
-        else node_data.unrounded_layout
+    let node_data = tree.nodes.(node_index_exn tree node_id) in
+    if tree.config.use_rounding then node_data.final_layout
+    else node_data.unrounded_layout
 end
 
 (* Print tree for debugging *)
