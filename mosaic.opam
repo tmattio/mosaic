@@ -15,16 +15,7 @@ depends: [
   "dune" {>= "3.19"}
   "matrix"
   "toffee"
-  "uutf"
-  "uucp"
-  "uuseg" {>= "16.0.0"}
-  "eio"
-  "eio_main"
-  "logs"
-  "fmt"
   "cmarkit"
-  "textmate-language"
-  "yojson"
   "alcotest" {with-test}
   "ppx_expect" {with-test}
   "odoc" {with-doc}

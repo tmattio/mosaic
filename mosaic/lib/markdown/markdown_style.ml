@@ -1,7 +1,7 @@
-open Ui
+let palette idx = Ansi.Color.of_palette_index idx
 
 type block = {
-  style : Style.t;
+  text_style : Ansi.Style.t;
   margin_top : int;
   margin_bottom : int;
   padding_left : int;
@@ -11,26 +11,33 @@ type block = {
 type list_block = {
   block : block;
   item_prefix : string;
-  item_prefix_style : Style.t;
+  item_prefix_style : Ansi.Style.t;
   item_gap : int;
   level_indent : int;
-  task_style : Style.t;
-  checked_style : Style.t;
+  task_style : Ansi.Style.t;
+  checked_style : Ansi.Style.t;
 }
 
-type code_block = { block : block; lang_style : Style.t; fence_style : Style.t }
+type code_block = {
+  block : block;
+  lang_style : Ansi.Style.t;
+  fence_style : Ansi.Style.t;
+  show_fences : bool;
+}
 
 type table_block = {
   block : block;
-  header_style : Style.t;
-  separator_style : Style.t * string;
+  header_style : Ansi.Style.t;
+  cell_style : Ansi.Style.t;
+  separator_style : Ansi.Style.t * string;
+  box_style : Mosaic_ui.Table.box_style;
 }
 
 type t = {
   document : block;
   paragraph : block;
   heading : block;
-  heading_prefix : Style.t;
+  heading_prefix : Ansi.Style.t;
   h1 : block;
   h2 : block;
   h3 : block;
@@ -39,115 +46,81 @@ type t = {
   h6 : block;
   block_quote : block;
   code_block : code_block;
-  horizontal_rule : Style.t * string;
+  horizontal_rule : Ansi.Style.t * string;
   list : list_block;
   table : table_block;
-  emph : Style.t;
-  strong : Style.t;
-  code : Style.t;
-  link : Style.t;
-  image : Style.t;
-  html : Style.t;
-  strike : Style.t;
+  emph : Ansi.Style.t;
+  strong : Ansi.Style.t;
+  code : Ansi.Style.t;
+  link : Ansi.Style.t;
+  image : Ansi.Style.t;
+  html : Ansi.Style.t;
+  strike : Ansi.Style.t;
 }
 
-let default_block =
-  {
-    style = Style.empty;
-    margin_top = 0;
-    margin_bottom = 0;
-    padding_left = 0;
-    padding_right = 0;
-  }
+let block ?(text_style = Ansi.Style.default) ?(margin_top = 0)
+    ?(margin_bottom = 0) ?(padding_left = 0) ?(padding_right = 0) () =
+  { text_style; margin_top; margin_bottom; padding_left; padding_right }
 
 let default =
+  let heading_colors = [ 228; 220; 214; 208; 202; 196 ] |> List.map palette in
+  let make_heading color =
+    block
+      ~text_style:(Ansi.Style.make ~bold:true ~fg:color ())
+      ~margin_bottom:1 ()
+  in
+  let list_block =
+    {
+      block = block ~margin_bottom:1 ();
+      item_prefix = "•";
+      item_prefix_style = Ansi.Style.make ~fg:(palette 39) ();
+      item_gap = 1;
+      level_indent = 0;
+      task_style = Ansi.Style.make ~fg:(palette 244) ();
+      checked_style = Ansi.Style.make ~fg:(palette 39) ();
+    }
+  in
+  let table_block =
+    {
+      block = block ~margin_bottom:1 ();
+      header_style = Ansi.Style.make ~bold:true ();
+      cell_style = Ansi.Style.default;
+      separator_style = (Ansi.Style.make ~fg:(palette 240) (), "-");
+      box_style = Mosaic_ui.Table.Heavy_head;
+    }
+  in
   {
-    document = { default_block with margin_bottom = 0 };
-    paragraph = { default_block with margin_bottom = 0 };
+    document = block ();
+    paragraph = block ~margin_bottom:1 ();
     heading =
-      {
-        default_block with
-        margin_bottom = 0;
-        style = Style.(bold ++ fg (Index 39));
-      };
-    heading_prefix = Style.(fg (Index 244));
-    h1 =
-      {
-        default_block with
-        margin_bottom = 0;
-        style = Style.(bold ++ fg (Index 228));
-      };
-    h2 =
-      {
-        default_block with
-        margin_bottom = 0;
-        style = Style.(bold ++ fg (Index 220));
-      };
-    h3 =
-      {
-        default_block with
-        margin_bottom = 0;
-        style = Style.(bold ++ fg (Index 214));
-      };
-    h4 =
-      {
-        default_block with
-        margin_bottom = 0;
-        style = Style.(bold ++ fg (Index 208));
-      };
-    h5 =
-      {
-        default_block with
-        margin_bottom = 0;
-        style = Style.(bold ++ fg (Index 202));
-      };
-    h6 =
-      {
-        default_block with
-        margin_bottom = 0;
-        style = Style.(bold ++ fg (Index 196));
-      };
+      block ~text_style:(Ansi.Style.make ~bold:true ~fg:(palette 39) ()) ();
+    heading_prefix = Ansi.Style.make ~fg:(palette 244) ();
+    h1 = make_heading (List.nth heading_colors 0);
+    h2 = make_heading (List.nth heading_colors 1);
+    h3 = make_heading (List.nth heading_colors 2);
+    h4 = make_heading (List.nth heading_colors 3);
+    h5 = make_heading (List.nth heading_colors 4);
+    h6 = make_heading (List.nth heading_colors 5);
     block_quote =
-      {
-        default_block with
-        margin_bottom = 0;
-        padding_left = 2;
-        style = Style.(fg (Index 244));
-      };
+      block ~text_style:Ansi.Style.default ~padding_left:1 ~margin_bottom:1 ();
     code_block =
       {
         block =
-          {
-            default_block with
-            margin_bottom = 0;
-            padding_left = 2;
-            padding_right = 2;
-          };
-        lang_style = Style.(fg (Index 244));
-        fence_style = Style.(fg (Index 240));
+          block ~padding_left:0 ~padding_right:0 ~margin_bottom:1
+            ~text_style:(Ansi.Style.make ~fg:(palette 252) ())
+            ();
+        lang_style = Ansi.Style.make ~fg:(palette 244) ();
+        fence_style = Ansi.Style.make ~fg:(palette 240) ();
+        show_fences = true;
       };
-    horizontal_rule = (Style.(fg (Index 240)), "-");
-    list =
-      {
-        block = { default_block with margin_bottom = 0 };
-        item_prefix = "•";
-        item_prefix_style = Style.(fg (Index 39));
-        item_gap = 1;
-        level_indent = 2;
-        task_style = Style.(fg (Index 244));
-        checked_style = Style.(fg (Index 39));
-      };
-    table =
-      {
-        block = { default_block with margin_bottom = 0 };
-        header_style = Style.bold;
-        separator_style = (Style.(fg (Index 240)), "-");
-      };
-    emph = Style.italic;
-    strong = Style.bold;
-    code = Style.(fg (Index 203) ++ bg (Index 236));
-    link = Style.(underline ++ fg (Index 30));
-    image = Style.(fg (Index 212));
-    html = Style.(fg (Index 244) ++ italic);
-    strike = Style.strikethrough;
+    horizontal_rule = (Ansi.Style.make ~fg:(palette 240) (), "─");
+    list = list_block;
+    table = table_block;
+    emph = Ansi.Style.make ~italic:true ();
+    strong = Ansi.Style.make ~bold:true ();
+    code = Ansi.Style.make ~fg:(palette 203) ~bg:(palette 236) ();
+    link = Ansi.Style.make ~fg:(palette 30) ~underline:true ();
+    image = Ansi.Style.make ~fg:(palette 212) ();
+    html = Ansi.Style.make ~fg:(palette 244) ~italic:true ();
+    strike = Ansi.Style.make ~strikethrough:true ();
   }

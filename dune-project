@@ -15,38 +15,6 @@
 
 (implicit_transitive_deps false)
 
-(using menhir 3.0)
-
-(package
- (name mosaic)
- (synopsis
-  "A modern terminal UI framework for OCaml with React-inspired hooks")
- (description
-  "Mosaic is a high-performance terminal UI framework that brings React's component model and hooks to terminal applications through OCaml 5's algebraic effects. It provides a direct-style API with hooks like use_state and use_effect, a rich component library, and supports both React-style and Elm Architecture patterns. Built on Matrix for terminal I/O and Toffee for CSS layouts.")
- (depends
-  (ocaml
-   (>= 5.1))
-  dune
-  matrix
-  toffee
-  uutf
-  uucp
-  (uuseg
-   (>= 16.0.0))
-  eio
-  eio_main
-  logs
-  fmt
-  ; for mosaic.markdown
-  cmarkit
-  ; for mosaic.syntax
-  textmate-language
-  yojson
-  (alcotest :with-test)
-  (ppx_expect :with-test))
- (tags
-  (tui terminal react hooks "algebraic-effects" "user-interface")))
-
 (package
  (name matrix)
  (synopsis "High-performance terminal infrastructure for OCaml")
@@ -72,3 +40,22 @@
   (alcotest :with-test))
  (tags
   (css layout flexbox grid "css-grid" taffy "layout-engine")))
+
+(package
+ (name mosaic)
+ (synopsis
+  "A modern terminal UI framework for OCaml with React-inspired hooks")
+ (description
+  "Mosaic is a high-performance terminal UI framework that brings React's component model and hooks to terminal applications through OCaml 5's algebraic effects. It provides a direct-style API with hooks like use_state and use_effect, a rich component library, and supports both React-style and Elm Architecture patterns. Built on Matrix for terminal I/O and Toffee for CSS layouts.")
+ (depends
+  (ocaml
+   (>= 5.1))
+  dune
+  matrix
+  toffee
+  ; for mosaic.markdown
+  cmarkit
+  (alcotest :with-test)
+  (ppx_expect :with-test))
+ (tags
+  (tui terminal react hooks "algebraic-effects" "user-interface")))

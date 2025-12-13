@@ -1,6 +1,13 @@
 (library
- (name test_expect)
+ (name test_mosaic_tea)
  (inline_tests)
- (libraries test_utils mosaic.ui mosaic.charts unix)
+ (libraries
+  mosaic.tea
+  mosaic.ui
+  matrix
+  matrix.grid
+  matrix.screen
+  matrix.input
+  matrix.vte)
  (preprocess
   (pps ppx_expect)))

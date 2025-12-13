@@ -1,3 +1,0 @@
-(executables
- (names drag)
- (libraries mosaic))

@@ -1,5 +1,0 @@
-(executable
- (public_name form)
- (package mosaic)
- (name form)
- (libraries mosaic))

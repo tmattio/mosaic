@@ -1,3 +1,0 @@
-(executables
- (names markdown_viewer)
- (libraries mosaic mosaic.markdown cmarkit eio_main unix))

@@ -1,6 +1,15 @@
 (include_subdirs unqualified)
 
 (library
- (name ui)
+ (name mosaic_ui)
  (public_name mosaic.ui)
- (libraries matrix.ansi matrix.screen matrix.grid toffee uutf logs))
+ (libraries
+  toffee
+  unix
+  mosaic.syntax
+  matrix.ansi
+  matrix.input
+  matrix.grid
+  matrix.glyph
+  matrix.screen
+  mosaic.tree-sitter))

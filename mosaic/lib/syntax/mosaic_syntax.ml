@@ -1,214 +1,180 @@
-type lang =
-  [ `OCaml
-  | `OCaml_interface
-  | `Dune
-  | `Shell
-  | `Diff
-  | `Custom of TmLanguage.grammar ]
+type filetype = string
 
-type theme =
-  [ `Dracula
-  | `Solarized_dark
-  | `Solarized_light
-  | `Custom of (string * Ui.Style.t) list ]
+module Injection_mapping = struct
+  type t = {
+    node_types : (string, filetype) Hashtbl.t;
+    info_string_map : (string, filetype) Hashtbl.t;
+  }
+end
 
-type error = [ `Unknown_lang of string ]
+module Language = struct
+  type t = {
+    filetype : filetype;
+    ts_language : Tree_sitter.Language.t;
+    highlight_query : Tree_sitter.Query.t;
+    injection_query : Tree_sitter.Query.t option;
+    injection_mapping : Injection_mapping.t option;
+  }
+end
 
-let default_dark_theme : theme = `Dracula
+module Highlight = struct
+  type meta = {
+    is_injection : bool;
+    injection_lang : filetype option;
+    contains_injection : bool;
+    conceal : string option;
+    conceal_lines : string option;
+  }
 
-module String_map = Map.Make (String)
+  type t = {
+    start_offset : int;
+    end_offset : int;
+    group : string;
+    meta : meta option;
+  }
+end
 
-let rec highlight_tokens i spans line = function
-  | [] -> List.rev spans
-  | tok :: toks ->
-      let j = TmLanguage.ending tok in
-      if j > String.length line then
-        (* Token extends beyond line length, likely includes the newline *)
-        List.rev spans
-      else if j > i then
-        let text = String.sub line i (j - i) in
-        let scopes = TmLanguage.scopes tok in
-        highlight_tokens j ((scopes, text) :: spans) line toks
-      else
-        (* Skip zero-length tokens *)
-        highlight_tokens j spans line toks
+type options = { parsers : Language.t list }
+type parser_entry = { lang : Language.t; parser : Tree_sitter.Parser.t }
+type t = { languages : (filetype, parser_entry) Hashtbl.t }
 
-let lang_to_grammars lang =
-  match lang with
-  | `OCaml -> [ TmLanguage.of_yojson_exn Grammars.ocaml ]
-  | `OCaml_interface -> [ TmLanguage.of_yojson_exn Grammars.ocaml_interface ]
-  | `Dune -> [ TmLanguage.of_yojson_exn Grammars.dune ]
-  | `Shell -> [ TmLanguage.of_yojson_exn Grammars.shell ]
-  | `Diff -> [ TmLanguage.of_yojson_exn Grammars.diff ]
-  | `Custom grammar -> [ grammar ]
+let create_parser (lang : Language.t) =
+  let parser = Tree_sitter.Parser.create () in
+  Tree_sitter.Parser.set_language parser lang.ts_language;
+  { lang; parser }
 
-let find_style (theme_map : Ui.Style.t String_map.t) (scopes : string list) :
-    Ui.Style.t =
-  (* Try to match scopes from most specific to least specific *)
-  let rec try_scopes = function
-    | [] -> Ui.Style.default
-    | scope :: rest ->
-        (* Split the scope into parts and try matching from most to least specific *)
-        let parts = String.split_on_char '.' scope in
-        let rec try_parts parts =
-          match parts with
-          | [] -> try_scopes rest
-          | _ -> (
-              let key = String.concat "." parts in
-              match String_map.find_opt key theme_map with
-              | Some style -> style
-              | None -> (
-                  (* Try with one less part *)
-                  match List.rev parts with
-                  | [] -> try_scopes rest
-                  | _ :: rev_rest -> try_parts (List.rev rev_rest)))
-        in
-        try_parts parts
+let create { parsers } =
+  let table = Hashtbl.create (max 8 (List.length parsers)) in
+  List.iter
+    (fun lang ->
+      let entry = create_parser lang in
+      Hashtbl.replace table lang.Language.filetype entry)
+    parsers;
+  { languages = table }
+
+let register_language t (lang : Language.t) =
+  let entry =
+    match Hashtbl.find_opt t.languages lang.Language.filetype with
+    | None -> create_parser lang
+    | Some existing ->
+        Tree_sitter.Parser.set_language existing.parser lang.ts_language;
+        { existing with lang }
   in
-  try_scopes scopes
+  Hashtbl.replace t.languages lang.Language.filetype entry
 
-(* This function is internal and does not produce styled text *)
-let tokenize_to_scopes t grammar stack str =
-  let lines = String.split_on_char '\n' str in
-  let rec loop stack acc = function
-    | [] -> List.rev acc
-    | line :: lines ->
-        (* Add newline for proper pattern matching *)
-        let line_with_nl = line ^ "\n" in
-        let tokens, stack =
-          TmLanguage.tokenize_exn t grammar stack line_with_nl
-        in
-        (* Use line_with_nl for tokenization to handle newlines correctly *)
-        let spans = highlight_tokens 0 [] line_with_nl tokens in
-        loop stack (spans :: acc) lines
-  in
-  loop stack [] lines
+let has_language t filetype = Hashtbl.mem t.languages filetype
 
-(* Parse hex color to RGB *)
-let color_from_hex hex =
-  let hex =
-    if String.starts_with ~prefix:"#" hex then
-      String.sub hex 1 (String.length hex - 1)
-    else hex
-  in
-  if String.length hex = 6 then
-    try
-      let r = int_of_string ("0x" ^ String.sub hex 0 2) in
-      let g = int_of_string ("0x" ^ String.sub hex 2 2) in
-      let b = int_of_string ("0x" ^ String.sub hex 4 2) in
-      Ansi.RGB (r, g, b)
-    with _ -> Ansi.Default
-  else Ansi.Default
+let highlight_once t ~filetype ~content =
+  match Hashtbl.find_opt t.languages filetype with
+  | None ->
+      Error (Printf.sprintf " no language registered for filetype %S" filetype)
+  | Some entry ->
+      let open Language in
+      let tree = Tree_sitter.Parser.parse_string entry.parser content in
+      let root = Tree_sitter.Tree.root_node tree in
+      let cursor = Tree_sitter.Query_cursor.create () in
+      (* Restrict to full document range. *)
+      Tree_sitter.Query_cursor.set_byte_range cursor ~start:0
+        ~end_:(String.length content);
+      Tree_sitter.Query_cursor.exec cursor entry.lang.highlight_query root;
+      let rec gather acc =
+        match
+          Tree_sitter.Query_cursor.next_capture cursor
+            entry.lang.highlight_query
+        with
+        | None -> acc
+        | Some capture ->
+            let acc =
+              match
+                Tree_sitter.Query.capture_name_for_id entry.lang.highlight_query
+                  capture.capture_index
+              with
+              | None -> acc
+              | Some group ->
+                  let node = capture.node in
+                  let start_offset = Tree_sitter.Node.start_byte node in
+                  let end_offset = Tree_sitter.Node.end_byte node in
+                  if start_offset < end_offset then
+                    let h : Highlight.t =
+                      { start_offset; end_offset; group; meta = None }
+                    in
+                    h :: acc
+                  else acc
+            in
+            gather acc
+      in
+      let highlights = gather [] in
+      Tree_sitter.Query_cursor.delete cursor;
+      let arr = Array.of_list highlights in
+      Array.sort
+        (fun a b ->
+          match Int.compare a.Highlight.start_offset b.start_offset with
+          | 0 -> Int.compare a.end_offset b.end_offset
+          | c -> c)
+        arr;
+      Ok arr
 
-let parse_textmate_theme json =
-  let open Yojson.Safe.Util in
-  let theme_entries = ref [] in
+(* -------------------------------------------------------------------------- *)
+(* Default, process-wide client *)
 
-  try
-    let token_colors = json |> member "tokenColors" |> to_list in
-    List.iter
-      (fun entry ->
-        let scopes =
-          try
-            match member "scope" entry with
-            | `String s -> [ s ]
-            | `List l -> List.map to_string l
-            | _ -> []
-          with _ -> []
-        in
+let default_client_ref : t option ref = ref None
 
-        let settings = member "settings" entry in
-        let foreground =
-          try Some (settings |> member "foreground" |> to_string)
-          with _ -> None
-        in
-        let font_style =
-          try Some (settings |> member "fontStyle" |> to_string)
-          with _ -> None
-        in
-
-        match foreground with
-        | None -> ()
-        | Some fg_color ->
-            let color = color_from_hex fg_color in
-            let style_attrs = ref [ Ui.Style.Fg color ] in
-            (match font_style with
-            | Some "italic" -> style_attrs := Ui.Style.Italic :: !style_attrs
-            | Some "bold" -> style_attrs := Ui.Style.Bold :: !style_attrs
-            | Some "underline" ->
-                style_attrs := Ui.Style.Underline :: !style_attrs
-            | _ -> ());
-
-            let style = Ui.Style.of_list !style_attrs in
-            List.iter
-              (fun scope -> theme_entries := (scope, style) :: !theme_entries)
-              scopes)
-      token_colors;
-
-    !theme_entries
-  with _ -> []
-
-let get_theme_def = function
-  | `Dracula -> parse_textmate_theme Themes.dracula
-  | `Solarized_dark -> parse_textmate_theme Themes.solarized_dark
-  | `Solarized_light -> parse_textmate_theme Themes.solarized_light
-  | `Custom theme_def -> theme_def
-
-let highlight ?(theme = default_dark_theme) ?tm ~lang src =
-  try
-    let theme_def = get_theme_def theme in
-    let theme_map = String_map.of_list theme_def in
-
-    let t, grammar =
-      match (tm, lang) with
-      | Some tm, `Custom g -> (tm, g)
-      | Some tm, _ -> (
-          let grammar_name =
-            match lang with
-            | `OCaml -> "OCaml"
-            | `OCaml_interface -> "OCaml Interface"
-            | `Dune -> "Dune"
-            | `Shell -> "Shell Script"
-            | `Diff -> "Diff"
-            | `Custom _ -> assert false (* handled above *)
-          in
-          ( tm,
-            match TmLanguage.find_by_name tm grammar_name with
-            | Some g -> g
-            | None ->
-                failwith
-                  (Printf.sprintf "Grammar '%s' not found in TM instance"
-                     grammar_name) ))
-      | None, _ ->
-          let t = TmLanguage.create () in
-          let grammars = lang_to_grammars lang in
-          List.iter (TmLanguage.add_grammar t) grammars;
-          (t, List.hd grammars)
+let make_default_parsers () : Language.t list =
+  let ocaml_language () =
+    let ts_language = Tree_sitter_ocaml.ocaml () in
+    let highlight_query =
+      Tree_sitter.Query.create ts_language
+        ~source:
+          {|
+      (comment) @comment
+      (string) @string
+      (character) @string
+      (constructor_name) @type
+      (type_constructor) @type
+      (module_name) @module
+      ["let" "in" "match" "with" "function" "fun" "if" "then" "else" "type" "module" "open" "struct" "end" "sig" "val" "and" "rec" "of" "true" "false"] @keyword
+      (value_name) @variable
+      (number) @number
+      |}
     in
-
-    let lines_of_tokens = tokenize_to_scopes t grammar TmLanguage.empty src in
-
-    let line_elements =
-      List.map
-        (fun line ->
-          let styled_segments =
-            List.map
-              (fun (scopes, text) ->
-                let style = find_style theme_map scopes in
-                (* Strip trailing newline from text *)
-                let text =
-                  if
-                    String.length text > 0
-                    && text.[String.length text - 1] = '\n'
-                  then String.sub text 0 (String.length text - 1)
-                  else text
-                in
-                (text, style))
-              line
-          in
-          Ui.rich_text styled_segments)
-        lines_of_tokens
+    Language.
+      {
+        filetype = "ml";
+        ts_language;
+        highlight_query;
+        injection_query = None;
+        injection_mapping = None;
+      }
+  in
+  let json_language () =
+    let ts_language = Tree_sitter_json.language () in
+    let highlight_query =
+      Tree_sitter.Query.create ts_language
+        ~source:
+          {|
+      (string) @string
+      (number) @number
+      (null) @constant
+      (true) @constant
+      (false) @constant
+      (pair key: (string) @property)
+      |}
     in
+    Language.
+      {
+        filetype = "json";
+        ts_language;
+        highlight_query;
+        injection_query = None;
+        injection_mapping = None;
+      }
+  in
+  [ ocaml_language (); json_language () ]
 
-    Ok (Ui.vbox line_elements)
-  with Failure msg -> Error (`Unknown_lang msg)
+let default_client () =
+  match !default_client_ref with
+  | Some client -> client
+  | None ->
+      let client = create { parsers = make_default_parsers () } in
+      default_client_ref := Some client;
+      client

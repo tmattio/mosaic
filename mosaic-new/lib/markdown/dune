@@ -1,4 +1,0 @@
-(library
- (name mosaic_markdown)
- (public_name mosaic.markdown)
- (libraries mosaic.ui matrix.ansi toffee cmarkit))
