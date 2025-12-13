@@ -238,21 +238,21 @@ val iter_wrap_breaks :
       break.
 
     Breaks occur after graphemes containing:
-    - ASCII: space, tab, hyphen, path separators ([/] [\]), punctuation
-      ([.] [,] [;] [:] [!] [?]), brackets ([() \[\] {}])
-    - Unicode: NBSP (U+00A0), ZWSP (U+200B), soft hyphen (U+00AD), typographic
-      spaces (U+2000-U+200A, U+3000), and other space-like codepoints
+    - ASCII: space, tab, hyphen, path separators, punctuation, and brackets
+    - Unicode: NBSP, ZWSP, soft hyphen, typographic spaces, and other space-like
+      codepoints
 
-    [width_method] controls grapheme boundary detection: [`Unicode] treats ZWJ
-    sequences as single graphemes, [`No_zwj] breaks them apart.
+    The optional [width_method] argument controls grapheme boundary detection:
+    [`Unicode] treats ZWJ sequences as single graphemes, [`No_zwj] breaks them
+    apart.
 
+    Example:
     {[
-      iter_wrap_breaks (fun ~byte_offset ~grapheme_offset ->
-          Printf.printf "break at byte %d, grapheme %d\n"
-            byte_offset grapheme_offset)
+      iter_wrap_breaks
+        (fun ~byte_offset ~grapheme_offset ->
+          Printf.printf "break at byte %d, grapheme %d\n" byte_offset
+            grapheme_offset)
         "hi 👋!"
-      (* Output: break at byte 3, grapheme 2 *)
-      (* Output: break at byte 8, grapheme 4 *)
     ]} *)
 
 type line_break_kind = [ `LF | `CR | `CRLF ]
