@@ -10,6 +10,24 @@ module Plot : sig
   type scatter_kind = [ `Cell | `Braille ]
   type margins = { top : int; right : int; bottom : int; left : int }
 
+  (** {1 Coordinate Transforms}
+
+      Types for converting between screen coordinates (pixels/cells) and data
+      coordinates. Returned by {!draw} for use in interactive charts. *)
+
+  type plot_rect = { x : int; y : int; width : int; height : int }
+  (** Plot area bounds in screen coordinates, excluding margins and axes. *)
+
+  type transforms = {
+    px_to_data : int -> int -> (float * float) option;
+        (** [px_to_data px py] converts screen coordinates to data coordinates.
+            Returns [None] if the point is outside the plot area. *)
+    data_to_px : float -> float -> int * int;
+        (** [data_to_px x y] converts data coordinates to screen coordinates. *)
+    plot_rect : plot_rect;
+        (** The plot area bounds for hit testing. *)
+  }
+
   val make : ?margins:margins -> ?axes:bool -> ?grid:bool -> unit -> t
   (** [make ?margins ?axes ?grid ()] creates an empty plot.
 
@@ -188,13 +206,77 @@ module Plot : sig
   (** [column_background ?style x plot] shades the vertical column at X = [x].
   *)
 
-  val draw : t -> Mosaic_ui.Canvas.t -> width:int -> height:int -> unit
-  (** [draw plot] returns a drawing callback suitable for [Vnode.canvas ~draw].
-  *)
+  val draw : t -> Mosaic_ui.Canvas.t -> width:int -> height:int -> transforms
+  (** [draw plot canvas ~width ~height] draws the plot and returns coordinate
+      transforms for interactive features. Use the returned {!transforms} to
+      convert mouse positions to data coordinates. *)
 
   val draw_into :
-    t -> canvas:Mosaic_ui.Canvas.t -> width:int -> height:int -> unit
-  (** [draw_into plot ~canvas ~width ~height] draws the plot immediately. *)
+    t -> canvas:Mosaic_ui.Canvas.t -> width:int -> height:int -> transforms
+  (** [draw_into plot ~canvas ~width ~height] draws the plot immediately and
+      returns coordinate transforms. *)
+
+  (** {1 Interactive Overlays}
+
+      Drawing helpers for interactive chart features like tooltips and
+      crosshairs. These take {!transforms} returned by {!draw}. *)
+
+  val draw_crosshair :
+    ?style:Ansi.Style.t ->
+    transforms ->
+    Mosaic_ui.Canvas.t ->
+    x:float ->
+    y:float ->
+    unit
+  (** [draw_crosshair ?style transforms canvas ~x ~y] draws horizontal and
+      vertical lines intersecting at the data point [(x, y)]. *)
+
+  val draw_marker :
+    ?style:Ansi.Style.t ->
+    ?glyph:string ->
+    transforms ->
+    Mosaic_ui.Canvas.t ->
+    x:float ->
+    y:float ->
+    unit
+  (** [draw_marker ?style ?glyph transforms canvas ~x ~y] draws a marker glyph
+      at the data point [(x, y)]. Default glyph is ["●"]. *)
+
+  val draw_tooltip :
+    ?style:Ansi.Style.t ->
+    ?anchor:[ `Left | `Right ] ->
+    transforms ->
+    Mosaic_ui.Canvas.t ->
+    x:float ->
+    y:float ->
+    string list ->
+    unit
+  (** [draw_tooltip ?style ?anchor transforms canvas ~x ~y lines] draws a
+      tooltip with the given [lines] near the data point [(x, y)]. The tooltip
+      automatically repositions to stay within the plot bounds. *)
+
+  (** {1 Viewport Helpers}
+
+      Pure functions for manipulating viewport domains. Use these with
+      {!x_view} and {!y_view} to implement zoom and pan. *)
+
+  val zoom : float * float -> factor:float -> float * float
+  (** [zoom domain ~factor] scales the domain around its center.
+      [factor > 1.0] zooms in (smaller range), [factor < 1.0] zooms out. *)
+
+  val zoom_around : float * float -> center:float -> factor:float -> float * float
+  (** [zoom_around domain ~center ~factor] scales the domain around a specific
+      data coordinate. Useful for zoom-to-cursor when you have the data
+      coordinates from {!transforms.px_to_data}. *)
+
+  val pan : float * float -> delta:float -> float * float
+  (** [pan domain ~delta] shifts the domain by [delta] in data units.
+      Positive delta shifts right/up, negative shifts left/down. *)
+
+  val bounds : 'a list -> f:('a -> float) -> float * float
+  (** [bounds data ~f] computes the min/max range of [f] applied to [data].
+      Returns [(0., 1.)] for empty lists. Useful for computing auto-fit
+      domains. *)
 end
 
 type spark_kind = [ `Bars | `Line | `Braille ]

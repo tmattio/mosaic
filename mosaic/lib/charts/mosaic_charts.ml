@@ -111,7 +111,7 @@ let time_series ?styles (data : (string * time_series_point list) list) =
     in
     plot
   in
-  Plot.draw plot canvas ~width ~height
+  ignore (Plot.draw plot canvas ~width ~height)
 
 let line_with_gaps ?styles
     (series : (string * (float * float option) list) list) =
@@ -125,7 +125,7 @@ let line_with_gaps ?styles
         (i + 1, p))
       (0, base) series
   in
-  Plot.draw plot canvas ~width ~height
+  ignore (Plot.draw plot canvas ~width ~height)
 
 (* Stacked bar charts *)
 
@@ -174,7 +174,7 @@ let bar ?(orientation = `Vertical) ?(gap = 1) ?bar_width ?min_value ?max_value
         let p = Plot.y_domain (implied_min, implied_max) p in
         Plot.(p |> bars_y_stacked ~gap ?bar_width data)
       in
-      Plot.draw plot canvas ~width ~height;
+      ignore (Plot.draw plot canvas ~width ~height);
       let ox = margins.left in
       let plot_w = max 0 (width - margins.left - margins.right) in
       (* Draw axis and labels below *)
@@ -220,7 +220,7 @@ let bar ?(orientation = `Vertical) ?(gap = 1) ?bar_width ?min_value ?max_value
         let p = Plot.x_domain (implied_min, implied_max) p in
         Plot.(p |> bars_x_stacked ~gap ?bar_width data)
       in
-      Plot.draw plot canvas ~width ~height;
+      ignore (Plot.draw plot canvas ~width ~height);
       let ox = margins.left in
       let plot_h = max 0 (height - margins.top - margins.bottom) in
       (* Draw axis and labels to the left *)
@@ -278,7 +278,7 @@ let candlestick ?bullish ?bearish (data : ohlc_point list) =
            ~close:(fun p -> p.close)
            data)
   in
-  Plot.draw plot canvas ~width ~height
+  ignore (Plot.draw plot canvas ~width ~height)
 
 (* Heatmap helper *)
 
@@ -410,12 +410,12 @@ let heatmap ?color_scale ?value_range ?auto_value_range ?shaded ?agg
     Plot.(
       make ~axes:false ()
       |> heatmap ?color_scale ?value_range ?auto_value_range ?shaded ?agg
-           ~x:(fun pt -> pt.x)
-           ~y:(fun pt -> pt.y)
-           ~value:(fun pt -> pt.value)
+           ~x:(fun (pt : heat_point) -> pt.x)
+           ~y:(fun (pt : heat_point) -> pt.y)
+           ~value:(fun (pt : heat_point) -> pt.value)
            pts)
   in
-  Plot.draw plot canvas ~width ~height
+  ignore (Plot.draw plot canvas ~width ~height)
 
 (* Legends *)
 

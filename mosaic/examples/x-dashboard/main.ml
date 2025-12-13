@@ -567,7 +567,7 @@ let draw_loss_plot (m : model) (r : run) canvas ~width ~height =
            (Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:6) ~dim:true ())
          1.0
   in
-  Plot.draw plot canvas ~width ~height
+  ignore (Plot.draw plot canvas ~width ~height)
 
 let draw_acc_lr_plot (m : model) (r : run) canvas ~width ~height =
   let acc =
@@ -604,7 +604,7 @@ let draw_acc_lr_plot (m : model) (r : run) canvas ~width ~height =
          ~y:(fun p -> p.y)
          lr
   in
-  Plot.draw plot canvas ~width ~height
+  ignore (Plot.draw plot canvas ~width ~height)
 
 let confusion_points seed =
   (* 8x8 confusion-ish matrix *)
@@ -635,7 +635,7 @@ let draw_confusion_heatmap _m (r : run) canvas ~width ~height =
          ~value:(fun p -> p.value)
          pts
   in
-  Plot.draw plot canvas ~width ~height
+  ignore (Plot.draw plot canvas ~width ~height)
 
 type embed = { ex : float; ey : float }
 
@@ -664,7 +664,7 @@ let draw_embeddings_plot _m (r : run) canvas ~width ~height =
          ~y:(fun p -> p.ey)
          pts
   in
-  Plot.draw plot canvas ~width ~height
+  ignore (Plot.draw plot canvas ~width ~height)
 
 (* ---------- View building blocks ---------- *)
 

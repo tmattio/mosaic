@@ -34,6 +34,13 @@ module Util = struct
       let denom = Float.max 1e-12 (vmax -. vmin) in
       let t = (v -. vmin) /. denom in
       if t < 0. then 0. else if t > 1. then 1. else t
+
+  let invert ~domain:(dmin, dmax) ~range:(rmin, rmax) v =
+    let eps = 1e-12 in
+    if Float.abs (rmax -. rmin) < eps then dmin
+    else
+      let t = (v -. rmin) /. (rmax -. rmin) in
+      dmin +. (t *. (dmax -. dmin))
 end
 
 (* Heatmap default colors *)
@@ -59,6 +66,14 @@ type scatter_kind = [ `Cell | `Braille ]
 type heatmap_agg = [ `Last | `Avg | `Max ]
 type margins = { top : int; right : int; bottom : int; left : int }
 type band = { cats : string list; padding : float }
+
+type plot_rect = { x : int; y : int; width : int; height : int }
+
+type transforms = {
+  px_to_data : int -> int -> (float * float) option;
+  data_to_px : float -> float -> int * int;
+  plot_rect : plot_rect;
+}
 
 type series =
   | Line : {
@@ -1620,7 +1635,121 @@ let draw_impl t (canvas : Canvas.t) ~width ~height =
           Canvas.draw_line canvas ~x1:x ~y1:oy ~x2:x
             ~y2:(oy + plot_h - 1)
             ~style:st ~kind:`Line ())
-    t.series
+    t.series;
+
+  (* Build and return transforms *)
+  let px_to_data px py =
+    let rel_x = px - ox in
+    let rel_y = py - oy in
+    if rel_x < 0 || rel_x >= plot_w || rel_y < 0 || rel_y >= plot_h then None
+    else
+      let data_x =
+        Util.invert ~domain:x_dom ~range:(0., float (plot_w - 1)) (float rel_x)
+      in
+      (* Y is inverted: top of plot = max Y, bottom = min Y *)
+      let data_y =
+        Util.invert
+          ~domain:(snd y_dom, fst y_dom)
+          ~range:(0., float (plot_h - 1))
+          (float rel_y)
+      in
+      Some (data_x, data_y)
+  in
+  let data_to_px data_x data_y = (x_to_px data_x, y_to_px data_y) in
+  {
+    px_to_data;
+    data_to_px;
+    plot_rect = { x = ox; y = oy; width = plot_w; height = plot_h };
+  }
 
 let draw t = fun canvas ~width ~height -> draw_impl t canvas ~width ~height
 let draw_into t ~canvas ~width ~height = draw_impl t canvas ~width ~height
+
+(* Pure domain helpers for zoom/pan *)
+
+let zoom (min, max) ~factor =
+  let center = (min +. max) /. 2.0 in
+  let half_range = (max -. min) /. 2.0 /. factor in
+  (center -. half_range, center +. half_range)
+
+let zoom_around (min, max) ~center ~factor =
+  let range = max -. min in
+  let new_range = range /. factor in
+  let ratio = (center -. min) /. range in
+  let new_min = center -. (ratio *. new_range) in
+  let new_max = new_min +. new_range in
+  (new_min, new_max)
+
+let pan (min, max) ~delta =
+  (min +. delta, max +. delta)
+
+let bounds data ~f =
+  match data with
+  | [] -> (0., 1.)
+  | hd :: tl ->
+      let v0 = f hd in
+      List.fold_left
+        (fun (mn, mx) a ->
+          let v = f a in
+          (Float.min mn v, Float.max mx v))
+        (v0, v0) tl
+
+(* Drawing helpers for interactive overlays *)
+
+let draw_crosshair ?(style = Style.default) transforms (canvas : Canvas.t) ~x ~y
+    =
+  let px, py = transforms.data_to_px x y in
+  let rect = transforms.plot_rect in
+  (* Vertical line *)
+  if px >= rect.x && px < rect.x + rect.width then
+    Canvas.draw_line canvas ~x1:px ~y1:rect.y ~x2:px
+      ~y2:(rect.y + rect.height - 1)
+      ~style ~kind:`Line ();
+  (* Horizontal line *)
+  if py >= rect.y && py < rect.y + rect.height then
+    Canvas.draw_line canvas ~x1:rect.x ~y1:py
+      ~x2:(rect.x + rect.width - 1)
+      ~y2:py ~style ~kind:`Line ()
+
+let draw_marker ?(style = Style.default) ?(glyph = "●") transforms
+    (canvas : Canvas.t) ~x ~y =
+  let px, py = transforms.data_to_px x y in
+  let rect = transforms.plot_rect in
+  if
+    px >= rect.x
+    && px < rect.x + rect.width
+    && py >= rect.y
+    && py < rect.y + rect.height
+  then Canvas.plot canvas ~x:px ~y:py ~style glyph
+
+let draw_tooltip ?(style = Style.default) ?(anchor = `Right) transforms
+    (canvas : Canvas.t) ~x ~y lines =
+  let px, py = transforms.data_to_px x y in
+  let rect = transforms.plot_rect in
+  (* Only draw if within plot bounds *)
+  if
+    px >= rect.x
+    && px < rect.x + rect.width
+    && py >= rect.y
+    && py < rect.y + rect.height
+  then
+    let max_len =
+      List.fold_left (fun acc s -> max acc (String.length s)) 0 lines
+    in
+    let num_lines = List.length lines in
+    (* Position tooltip to the right or left of the point *)
+    let tooltip_x =
+      match anchor with
+      | `Right ->
+          let x' = px + 2 in
+          if x' + max_len >= rect.x + rect.width then px - max_len - 1 else x'
+      | `Left ->
+          let x' = px - max_len - 1 in
+          if x' < rect.x then px + 2 else x'
+    in
+    (* Center vertically around the point *)
+    let tooltip_y = py - (num_lines / 2) in
+    let tooltip_y = max rect.y (min tooltip_y (rect.y + rect.height - num_lines)) in
+    List.iteri
+      (fun i line -> Canvas.plot canvas ~x:tooltip_x ~y:(tooltip_y + i) ~style line)
+      lines
