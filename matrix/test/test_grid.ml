@@ -477,18 +477,20 @@ let blit_region_blends_without_respect_alpha () =
   check bool "background blended adds red" true (r > 0 && r < 255);
   check int "alpha preserved" 128 a
 
-let scissor_push_overrides_parent () =
+let scissor_push_intersects_parent () =
   let grid = Grid.create ~width:4 ~height:1 () in
+  (* Parent scissor clips to first cell *)
   Grid.push_scissor grid { x = 0; y = 0; width = 1; height = 1 };
+  (* Child scissor outside parent should intersect to empty, so writes are clipped *)
   Grid.push_scissor grid { x = 2; y = 0; width = 1; height = 1 };
   Grid.set_cell_alpha grid ~x:2 ~y:0 ~code:(Char.code 'B') ~fg:Ansi.Color.white
     ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
+  (* Pop child, write inside parent *)
   Grid.pop_scissor grid;
   Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'A') ~fg:Ansi.Color.white
     ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   Grid.pop_scissor grid;
-  check int "topmost scissor overrides parent" (Char.code 'B')
-    (read_char grid 2 0);
+  check int "child write clipped by parent" (Char.code ' ') (read_char grid 2 0);
   check int "parent restored after pop" (Char.code 'A') (read_char grid 0 0)
 
 let clear_scissor_allows_future_writes () =
@@ -957,8 +959,8 @@ let tests =
       draw_text_blends_fg_alpha_over_opaque_bg;
     test_case "blit_region blends semi-transparent src without respect_alpha"
       `Quick blit_region_blends_without_respect_alpha;
-    test_case "scissor push overrides parent" `Quick
-      scissor_push_overrides_parent;
+    test_case "scissor push intersects parent" `Quick
+      scissor_push_intersects_parent;
     (* Alpha overlay semantics *)
     test_case "semi-transparent overlay preserves text and tints fg" `Quick
       (fun () ->

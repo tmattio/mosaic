@@ -59,5 +59,6 @@ let%expect_test "nested scroll box should receive wheel events" =
   let after = (Harness.model t).scroll in
   Printf.printf "scroll before: %d\nscroll after: %d\n" before after;
   [%expect_exact {|scroll before: 0
-scroll after: 1|}]
+scroll after: 1
+|}]
 [@@ocamlformat "disable"]
