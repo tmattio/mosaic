@@ -109,7 +109,7 @@ let max t rhs =
 
 let clamp t min max =
   match t with
-  | Definite val1 -> Definite (Float.min max (Float.max min val1))
+  | Definite val1 -> Definite (Float.max min (Float.min max val1))
   | Min_content -> Min_content
   | Max_content -> Max_content
 
@@ -146,7 +146,7 @@ let max_or_self t rhs =
 let clamp_or_self t min max =
   match (t, min, max) with
   | Definite val1, Some min_val, Some max_val ->
-      Definite (Float.min max_val (Float.max min_val val1))
+      Definite (Float.max min_val (Float.min max_val val1))
   | Definite val1, None, Some max_val -> Definite (Float.min max_val val1)
   | Definite val1, Some min_val, None -> Definite (Float.max min_val val1)
   | Definite val1, None, None -> Definite val1

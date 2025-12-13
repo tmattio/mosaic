@@ -97,13 +97,10 @@ let print_tree (type a) (module Tree : PRINT_TREE with type t = a) tree root =
     let new_string = lines_string ^ bar in
 
     (* Recurse into children *)
-    Tree.child_ids tree node_id
-    |> Seq.fold_left
-         (fun (index, _) child ->
-           let has_sibling = index < num_children - 1 in
-           print_node child has_sibling new_string;
-           (index + 1, ()))
-         (0, ())
-    |> ignore
+    for index = 0 to num_children - 1 do
+      let child = Tree.get_child_id tree node_id index in
+      let has_sibling = index < num_children - 1 in
+      print_node child has_sibling new_string
+    done
   in
   print_node root false ""

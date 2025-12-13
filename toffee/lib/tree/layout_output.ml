@@ -29,7 +29,7 @@ let hidden =
   {
     size = Geometry.Size.zero;
     content_size = Geometry.Size.zero;
-    first_baselines = Geometry.Point.none;
+    first_baselines = Geometry.(Point.none);
     top_margin = Collapsible_margin_set.zero;
     bottom_margin = Collapsible_margin_set.zero;
     margins_can_collapse_through = false;
@@ -39,7 +39,7 @@ let default =
   {
     size = Geometry.Size.zero;
     content_size = Geometry.Size.zero;
-    first_baselines = Geometry.Point.none;
+    first_baselines = Geometry.(Point.none);
     top_margin = Collapsible_margin_set.zero;
     bottom_margin = Collapsible_margin_set.zero;
     margins_can_collapse_through = false;
@@ -48,8 +48,9 @@ let default =
 let from_outer_size size =
   {
     size;
-    content_size = size;
-    first_baselines = Geometry.Point.none;
+    (* Match Taffy: when only the outer size is known, content size is zero. *)
+    content_size = Geometry.Size.zero;
+    first_baselines = Geometry.(Point.none);
     top_margin = Collapsible_margin_set.zero;
     bottom_margin = Collapsible_margin_set.zero;
     margins_can_collapse_through = false;
