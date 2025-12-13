@@ -24,20 +24,20 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)
   let margin =
     Style.margin style
     |> Rect.map (fun lpa ->
-           Style.Length_percentage_auto.resolve_or_zero lpa parent_inline_size
-             resolve_calc_value)
+        Style.Length_percentage_auto.resolve_or_zero lpa parent_inline_size
+          resolve_calc_value)
   in
   let padding =
     Style.padding style
     |> Rect.map (fun lp ->
-           Style.Length_percentage.resolve_or_zero lp parent_inline_size
-             resolve_calc_value)
+        Style.Length_percentage.resolve_or_zero lp parent_inline_size
+          resolve_calc_value)
   in
   let border =
     Style.border style
     |> Rect.map (fun lp ->
-           Style.Length_percentage.resolve_or_zero lp parent_inline_size
-             resolve_calc_value)
+        Style.Length_percentage.resolve_or_zero lp parent_inline_size
+          resolve_calc_value)
   in
   let padding_border = Rect.add padding border in
   let pb_sum = Rect.sum_axes padding_border in
@@ -66,9 +66,8 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)
                 Style.Dimension.maybe_resolve dims.height parent_size.height
                   resolve_calc_value;
             }
-          |> fun size ->
-          Size.apply_aspect_ratio size aspect_ratio |> fun size ->
-          Size.maybe_add size box_sizing_adjustment
+          |> Size.apply_aspect_ratio aspect_ratio
+          |> Size.maybe_add box_sizing_adjustment
         in
 
         let style_min_size =
@@ -82,9 +81,8 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)
                 Style.Dimension.maybe_resolve dims.height parent_size.height
                   resolve_calc_value;
             }
-          |> fun size ->
-          Size.apply_aspect_ratio size aspect_ratio |> fun size ->
-          Size.maybe_add size box_sizing_adjustment
+          |> Size.apply_aspect_ratio aspect_ratio
+          |> Size.maybe_add box_sizing_adjustment
         in
 
         let style_max_size =
@@ -98,7 +96,7 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)
                 Style.Dimension.maybe_resolve dims.height parent_size.height
                   resolve_calc_value;
             }
-          |> fun size -> Size.maybe_add size box_sizing_adjustment
+          |> Size.maybe_add box_sizing_adjustment
         in
 
         let node_size = Size.choose_first known_dimensions style_size in
@@ -112,8 +110,8 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)
     let overflow = Style.overflow style in
     Point.{ x = overflow.y; y = overflow.x }
     |> Point.map (function
-         | Style.Overflow.Scroll -> Style.scrollbar_width style
-         | _ -> 0.0)
+      | Style.Overflow.Scroll -> Style.scrollbar_width style
+      | _ -> 0.0)
   in
   (* TODO: make side configurable based on the `direction` property *)
   let content_box_inset =
@@ -134,7 +132,9 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)
     || border.bottom > 0.0
     || (match node_size.height with Some h when h > 0.0 -> true | _ -> false)
     ||
-    match node_min_size.height with Some h when h > 0.0 -> true | _ -> false
+    match node_min_size.height with
+    | Some h when h > 0.0 -> true
+    | _ -> false
   in
 
   (* Return early if both width and height are known *)
@@ -144,7 +144,7 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)
   | Run_mode.Compute_size, true, { width = Some width; height = Some height } ->
       let size =
         Size.{ width; height } |> fun s ->
-        Size.clamp s node_min_size node_max_size |> fun s -> Size.max s pb_sum
+        Size.clamp node_min_size node_max_size s |> fun s -> Size.max s pb_sum
       in
       Layout_output.make ~size ~content_size:Size.zero
         ~first_baselines:Point.none ~top_margin:Collapsible_margin_set.zero
@@ -178,7 +178,7 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)
               (* Clamp to min/max constraints *)
               let clamped =
                 match (node_min_size_axis, node_max_size_axis) with
-                | Some min, Some max -> Float.min max (Float.max min size)
+                | Some min, Some max -> Float.max min (Float.min max size)
                 | Some min, None -> Float.max min size
                 | None, Some max -> Float.min max size
                 | None, None -> size
@@ -233,7 +233,7 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)
         in
 
         (* Clamp to min/max constraints *)
-        Size.clamp base_size node_min_size node_max_size
+        Size.clamp node_min_size node_max_size base_size
       in
 
       (* Apply aspect ratio AFTER clamping, matching Taffy's logic exactly *)
