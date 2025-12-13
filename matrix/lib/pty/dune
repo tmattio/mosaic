@@ -1,7 +1,7 @@
 (library
  (name pty)
  (public_name matrix.pty)
+ (libraries unix)
  (foreign_stubs
   (language c)
-  (names pty_stubs pty_win32))
- (libraries unix))
+  (names pty_stubs pty_win32)))

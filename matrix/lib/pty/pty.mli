@@ -1,55 +1,209 @@
-(** A library for using Unix pseudo-terminals.
+(** Unix pseudo-terminal (PTY) support for terminal emulation.
 
-    {b Note:} This library is currently supported on Linux and macOS. *)
+    This module provides cross-platform PTY operations for creating and managing
+    pseudo-terminals, spawning processes within them, and controlling terminal
+    properties. PTYs are bidirectional communication channels that emulate a
+    terminal device, allowing programs to interact with processes as if they
+    were running in a real terminal.
+
+    {1 PTY Overview}
+
+    A pseudo-terminal consists of two sides:
+    - {b Master}: The controlling side, used by the terminal emulator to send
+      input and receive output
+    - {b Slave}: The controlled side, connected to a child process as its
+      controlling terminal
+
+    The master and slave communicate bidirectionally. Data written to the master
+    appears on the slave's stdin, and data written to the slave's stdout/stderr
+    appears on the master.
+
+    {1 Basic Usage}
+
+    Spawn a process and interact with it:
+    {@ocaml[
+      (* Spawn a shell in a PTY *)
+      let pty = Pty.spawn ~prog:"/bin/bash" ~args:[] () in
+
+      (* Send a command *)
+      let cmd = "echo hello\n" in
+      let _ = Pty.write_string pty cmd 0 (String.length cmd) in
+
+      (* Read output from the shell *)
+      let buf = Bytes.create 4096 in
+      let n = Pty.read pty buf 0 (Bytes.length buf) in
+      Printf.printf "Output: %s\n" (Bytes.sub_string buf 0 n);
+
+      (* Clean up *)
+      Pty.close pty
+    ]}
+
+    For automatic resource cleanup, use {!with_spawn}:
+    {@ocaml[
+      let output =
+        Pty.with_spawn ~prog:"echo" ~args:[ "hello" ] (fun pty ->
+            let buf = Bytes.create 1024 in
+            let n = Pty.read pty buf 0 (Bytes.length buf) in
+            Bytes.sub_string buf 0 n)
+      in
+      Printf.printf "Got: %s\n" output
+    ]}
+
+    {1 Platform Support}
+
+    {2 POSIX (Linux, macOS)}
+
+    Full support via POSIX PTY APIs (posix_openpt, grantpt, unlockpt):
+    - All operations supported
+    - File descriptors are true Unix file descriptors
+    - [Unix.select] and [Unix.poll] work correctly
+    - SIGWINCH delivered to child processes on resize
+
+    {2 Windows (ConPTY)}
+
+    Limited support via Windows Console Pseudo-terminal (ConPTY), available on
+    Windows 10 version 1809 (October 2018) and later:
+    - {!spawn} is not yet supported (requires CreateProcess API integration)
+    - {!open_pty} creates a ConPTY with pipe handles for I/O
+    - {!get_winsize} returns the last size set via {!set_winsize} or the initial
+      size, as ConPTY provides no direct query API
+    - {!set_winsize} works via [ResizePseudoConsole]
+    - I/O operations use Windows named pipes wrapped as Unix file descriptors
+    - Custom OCaml blocks ensure GC safety; handles cleaned up automatically
+
+    {1 Process Management}
+
+    PTYs created with {!spawn} automatically track the child process ID. The
+    module ensures proper cleanup:
+    - {!close} sends SIGTERM, waits briefly, then SIGKILL if needed, and calls
+      waitpid to prevent zombies
+    - {!terminate} and {!kill} send signals without closing the PTY
+    - Always call {!close} to prevent resource leaks
+
+    Process lifecycle example:
+    {@ocaml[
+      let pty = Pty.spawn ~prog:"cat" ~args:[] () in
+
+      (* Get the child PID *)
+      match Pty.pid pty with
+      | Some pid -> Printf.printf "Child PID: %d\n" pid
+      | None -> assert false
+
+      (* Graceful shutdown *)
+      Pty.terminate pty;  (* Send SIGTERM *)
+      Unix.sleepf 0.1;    (* Wait for graceful exit *)
+      Pty.close pty       (* Clean up and reap *)
+    ]}
+
+    {1 Async Integration}
+
+    This library uses blocking I/O by default. For async/concurrent usage:
+
+    {2 Using Unix.select}
+
+    Enable non-blocking mode and use [Unix.select] for readiness notification:
+    {@ocaml[
+      let pty = Pty.spawn ~prog:"cat" ~args:[] () in
+      Pty.set_nonblock pty;
+
+      let rec read_loop () =
+        let read_fds = [ Pty.in_fd pty ] in
+        let ready, _, _ = Unix.select read_fds [] [] 0.1 in
+        if ready <> [] then
+          try
+            let buf = Bytes.create 4096 in
+            let n = Pty.read pty buf 0 (Bytes.length buf) in
+            if n > 0 then (
+              (* Process the output *)
+              Printf.printf "%s" (Bytes.sub_string buf 0 n);
+              read_loop ())
+          with Unix.Unix_error (Unix.EAGAIN, _, _) -> read_loop ()
+        else read_loop ()
+      in
+      read_loop ();
+      Pty.close pty
+    ]}
+
+    {2 Using Lwt or Async}
+
+    Wrap the file descriptor with [Lwt_unix.of_unix_file_descr] or equivalent:
+    {@ocaml[
+      (* With Lwt *)
+      let lwt_fd = Lwt_unix.of_unix_file_descr (Pty.file_descr pty) in
+      Lwt_unix.read lwt_fd buf 0 (Bytes.length buf)
+    ]}
+
+    Note: The [Unix.sleepf] call in {!close} is synchronous. For fully
+    non-blocking cleanup, use [wait:false] and implement custom reaping.
+
+    {1 Thread Safety}
+
+    This module is {b not} thread-safe. The {!t} type contains mutable state
+    (the [pid] field) that should not be accessed concurrently from multiple
+    threads without external synchronization (e.g., a mutex).
+
+    However, C stubs release the OCaml runtime lock during blocking operations
+    (via [caml_enter_blocking_section]/[caml_leave_blocking_section]), allowing
+    other OCaml threads to run while I/O is in progress.
+
+    {1 Resource Management}
+
+    {b Invariants:}
+    - Each {!t} value owns a file descriptor that must be closed
+    - {!spawn} PTYs also own a child process that must be reaped
+    - {!close} is idempotent; calling it multiple times is safe
+    - After {!close}, I/O operations raise [Unix.Unix_error (Unix.EBADF, _, _)]
+
+    {b Best Practices:}
+    - Always call {!close} or use {!with_pty}/{!with_spawn} for cleanup
+    - Call {!close} with [wait:true] (default) to prevent zombie processes
+    - If using [wait:false], manually call [Unix.waitpid] to reap the child
+    - Read until EOF (return value 0) to detect child process exit *)
+
+(** {1 Types} *)
 
 type t
-(** An abstract type representing a pseudo-terminal handle. *)
+(** A handle to a pseudo-terminal.
 
-type winsize = { rows : int; cols : int; x : int; y : int }
-(** A record representing the terminal window size. *)
+    Represents either the master or slave side of a PTY pair. Created by
+    {!open_pty} (which returns both master and slave) or {!spawn} (which returns
+    the master and manages the slave internally).
 
-val in_fd : t -> Unix.file_descr
-(** [in_fd pty] returns the input file descriptor for the pty. *)
+    Each [t] value owns a file descriptor and possibly a child process (for
+    spawned PTYs). After {!close}, the [t] value is invalidated; further I/O
+    operations raise [Unix.Unix_error (EBADF, _, _)]. For handles created by
+    {!spawn}, {!pid} returns [Some pid] until {!close} reaps the child and
+    clears the PID; handles created via {!open_pty} or already closed always
+    report [None]. *)
 
-val out_fd : t -> Unix.file_descr
-(** [out_fd pty] returns the output file descriptor for the pty. *)
+type winsize = {
+  rows : int;  (** Number of rows (lines) *)
+  cols : int;  (** Number of columns (characters per line) *)
+  xpixel : int;  (** Width in pixels (often unused, set to 0) *)
+  ypixel : int;  (** Height in pixels (often unused, set to 0) *)
+}
+(** Terminal window size information.
 
-val close : t -> unit
-(** [close pty] closes the pseudo-terminal. This is equivalent to
-    [Unix.close (to_file_descr pty)] but provided for convenience. *)
+    Used to inform applications of the terminal dimensions. Applications like
+    text editors and pagers use this to layout content appropriately. Provide
+    non-negative values; the OS rejects negative dimensions with
+    [Unix.Unix_error (Unix.EINVAL, _, _)]. *)
+
+(** {1 PTY Creation} *)
 
 val open_pty : ?winsize:winsize -> unit -> t * t
-(** [open_pty ?winsize ()] opens a new pseudo-terminal, returning a pair of PTY
-    handles for the master and slave ends, respectively.
+(** [open_pty ?winsize ()] creates a new pseudo-terminal pair.
 
-    If [winsize] is provided, it sets the initial terminal size.
+    Returns [(master, slave)] where [master] is the controlling side used by the
+    terminal emulator, and [slave] is the controlled side connected to a child
+    process. Both handles must be closed with {!close} when done. The slave side
+    should be connected to a child process's stdin/stdout/stderr via
+    {!Unix.dup2}.
 
-    @param winsize optional initial terminal size
-    @raise Unix.Unix_error if the operation fails.
-    @return (master, slave) *)
-
-val get_winsize : t -> winsize
-(** [get_winsize fd] returns the window size of the terminal associated with the
-    file descriptor [fd].
-
-    @raise Unix.Unix_error on failure. *)
-
-val set_winsize : t -> winsize -> unit
-(** [set_winsize fd ws] sets the window size of the terminal associated with the
-    file descriptor [fd].
-
-    @raise Unix.Unix_error on failure. *)
-
-val inherit_size : src:t -> dst:t -> unit
-(** [inherit_size ~src ~dst] reads the window size from the terminal [src] and
-    applies it to the terminal [dst]. This is useful for propagating window size
-    changes (e.g., from a SIGWINCH signal). *)
-
-val resize : t -> cols:int -> rows:int -> unit
-(** [resize t ~cols ~rows] sets the window size of the terminal to the specified
-    number of columns and rows. This is useful as a SIGWINCH helper.
-
-    @raise Unix.Unix_error on failure. *)
+    @param winsize Initial terminal size. Defaults to system default if omitted.
+    @return A pair [(master, slave)] of PTY handles
+    @raise Unix.Unix_error if PTY creation fails (e.g., resource limits reached)
+*)
 
 val spawn :
   ?env:string array ->
@@ -59,76 +213,276 @@ val spawn :
   args:string list ->
   unit ->
   t
-(** [spawn ?env ?cwd ?winsize ~prog ~args] starts a new command in a
-    pseudo-terminal. This function: 1. Creates a new pty/tty pair. 2. Forks a
-    new process. 3. In the child, makes the tty its controlling terminal and
-    connects its stdin, stdout, and stderr to it. 4. In the child, executes the
-    command [prog] with arguments [args]. 5. In the parent, closes the tty and
-    returns the pty.
+(** [spawn ?env ?cwd ?winsize ~prog ~args ()] spawns a program in a new PTY.
 
-    If [env] is provided, it sets the environment variables for the child
-    process. If [cwd] is provided, it changes to that directory before executing
-    the command. If [winsize] is provided, it sets the initial terminal size.
+    Creates a PTY pair, forks a child process, configures the child with the
+    slave PTY as its controlling terminal, and executes the program. Returns the
+    master PTY handle for communication with the child. The slave is
+    automatically closed in the parent.
 
-    @raise Unix.Unix_error on failure.
+    The child process is configured with:
+    - A new session (via [setsid])
+    - The slave PTY as its controlling terminal (via [TIOCSCTTY])
+    - [stdin], [stdout], and [stderr] redirected to the slave PTY
+    - Optional custom working directory and environment
 
-    @return the pty handle *)
+    @param env
+      Environment variables for the child as an array of ["KEY=value"] strings.
+      If omitted, inherits the parent's environment. Passed to [Unix.execvpe]
+      when provided; otherwise [Unix.execvp] is used.
+    @param cwd
+      Working directory for the child. If omitted, inherits the parent's working
+      directory. The child calls [Unix.chdir] before exec; if this fails, the
+      child exits with the errno code.
+    @param winsize Initial terminal size. If omitted, uses system default.
+    @param prog
+      Program to execute. If relative or a basename, searched in [PATH] (via
+      [execvp]/[execvpe]). If absolute, executed directly.
+    @param args
+      Command-line arguments (excluding [argv[0]], which is set to [prog]).
+    @return Master PTY handle. The child's PID is available via {!pid}.
+    @raise Unix.Unix_error
+      if PTY creation or fork fails. Exec failures in the child process are not
+      reported as exceptions to the parent; the child exits with the errno value
+      as its exit code (e.g., ENOENT=2, EACCES=13). Monitor via [Unix.waitpid]
+      on {!pid}.
+
+    {b Note:} The child process terminates if the master PTY is closed, as it
+    receives [SIGHUP] when its controlling terminal disappears. *)
 
 val with_pty : ?winsize:winsize -> (t -> t -> 'a) -> 'a
-(** [with_pty ?winsize f] opens a new pseudo-terminal pair, applies function [f]
-    to the master and slave PTY handles, and ensures that both PTYs are closed
-    after [f] completes (even if [f] raises an exception).
+(** [with_pty ?winsize f] opens a PTY pair with automatic cleanup.
 
-    If [winsize] is provided, it sets the initial terminal size.
+    Creates a master/slave PTY pair, applies [f master slave], and ensures both
+    handles are closed via [Fun.protect] even if [f] raises an exception. Use
+    this for custom process spawning or testing scenarios.
 
-    @param winsize optional initial terminal size
-    @param f a function that receives the master and slave PTY handles
-    @return the result of applying [f]
-    @raise any exception raised by [f] (after closing the PTYs) *)
+    @param winsize Initial terminal size
+    @param f Function receiving [master] then [slave] PTY handles
+    @return Result of [f]
+    @raise Unix.Unix_error
+      if PTY creation fails or the initial size cannot be applied
+    @raise Any exception raised by [f] (after both PTYs are closed) *)
 
-(** {2 Input/Output Operations} *)
+(** {1 PTY Operations} *)
+
+val pid : t -> int option
+(** [pid pty] returns the child process ID. Returns [Some pid] for PTYs created
+    by {!spawn} until {!close} reaps the process and clears the PID. Returns
+    [None] for PTYs created via {!open_pty} or after {!close}. *)
+
+val close : ?wait:bool -> t -> unit
+(** [close ?wait pty] closes the pseudo-terminal and releases resources.
+
+    Closes the file descriptor. For PTYs created by {!spawn}, also terminates
+    the child process via the following sequence:
+
+    - Sends SIGTERM for graceful shutdown
+    - If [wait] is [true] (default), sleeps 100ms, checks whether the process
+      exited with [Unix.waitpid [Unix.WNOHANG] pid], and escalates to SIGKILL
+      before waiting for completion if it is still running
+    - Reaps the child with [Unix.waitpid] to prevent zombie processes
+
+    @param wait
+      Whether to wait for child termination. Defaults to [true]. Set to [false]
+      for non-blocking close, but you must manually call [Unix.waitpid] on the
+      PID to prevent zombie processes.
+
+    This function is idempotent and safe to call multiple times. Subsequent
+    calls are no-ops. After closing, I/O operations raise
+    [Unix.Unix_error (Unix.EBADF, _, _)]. Errors from [Unix.kill] or
+    [Unix.close] are ignored, so [close] itself never raises. *)
+
+val terminate : t -> unit
+(** [terminate pty] sends SIGTERM to the child process without closing the PTY.
+    Only affects PTYs created by {!spawn}.
+
+    Unix errors from [Unix.kill] are silently ignored (e.g., [ESRCH] if the
+    process already exited).
+
+    @raise Invalid_argument
+      if [pty] has no associated child process (created via {!open_pty} or
+      already closed) *)
+
+val kill : t -> unit
+(** [kill pty] sends SIGKILL to forcefully terminate the child process. Only
+    affects PTYs created by {!spawn}. Unlike {!terminate}, this signal cannot be
+    caught or ignored by the child.
+
+    Unix errors from [Unix.kill] are silently ignored (e.g., [ESRCH] if the
+    process already exited).
+
+    @raise Invalid_argument
+      if [pty] has no associated child process (created via {!open_pty} or
+      already closed) *)
+
+val file_descr : t -> Unix.file_descr
+(** [file_descr pty] returns the underlying Unix file descriptor for use with
+    [Unix.select], [Unix.poll], or async I/O libraries. The descriptor becomes
+    invalid immediately after {!close}. *)
+
+val in_fd : t -> Unix.file_descr
+(** [in_fd pty] returns the file descriptor for reading from the PTY (i.e.,
+    reading child process output). For PTY handles, this is the same as
+    {!file_descr} and {!out_fd}, as PTYs use a single bidirectional file
+    descriptor. The descriptor shares the same lifetime as {!file_descr}. *)
+
+val out_fd : t -> Unix.file_descr
+(** [out_fd pty] returns the file descriptor for writing to the PTY (i.e.,
+    sending input to the child process). For PTY handles, this is the same as
+    {!file_descr} and {!in_fd}, as PTYs use a single bidirectional file
+    descriptor. The descriptor shares the same lifetime as {!file_descr}. *)
+
+(** {1 Window Size Management} *)
+
+val get_winsize : t -> winsize
+(** [get_winsize pty] retrieves the current terminal window size.
+
+    On POSIX systems, queries the PTY's current size. On Windows (ConPTY),
+    returns the last size set via {!set_winsize} or the initial size, as ConPTY
+    lacks a direct query API.
+
+    @return The current window size
+    @raise Unix.Unix_error if the ioctl fails (POSIX) or handle is invalid *)
+
+val set_winsize : t -> winsize -> unit
+(** [set_winsize pty ws] sets the terminal window size.
+
+    Updates the PTY's window size and triggers SIGWINCH in child processes that
+    have this PTY as their controlling terminal. Applications listening for
+    SIGWINCH will adapt to the new dimensions (e.g., text editors, shells).
+
+    @param ws
+      The new window size. [xpixel] and [ypixel] are often unused; set to [0] if
+      unknown.
+    @raise Unix.Unix_error if the operation fails *)
+
+val resize : t -> rows:int -> cols:int -> unit
+(** [resize pty ~rows ~cols] resizes the terminal. Convenience wrapper for
+    {!set_winsize} that sets [xpixel] and [ypixel] to [0].
+
+    @param rows Number of rows (lines)
+    @param cols Number of columns (characters per line)
+    @raise Unix.Unix_error if the operation fails *)
+
+val inherit_size : src:t -> dst:t -> unit
+(** [inherit_size ~src ~dst] copies the window size from [src] to [dst].
+
+    Reads the size from [src] using {!get_winsize} and writes it to [dst] using
+    {!set_winsize}. Useful for propagating terminal resize events between PTYs.
+
+    Example of handling SIGWINCH to resize a spawned process:
+    {@ocaml[
+      let () =
+        Sys.set_signal Sys.sigwinch
+          (Sys.Signal_handle
+             (fun _ -> Pty.inherit_size ~src:controlling_tty ~dst:child_pty))
+    ]}
+
+    @param src Source PTY to read size from
+    @param dst Destination PTY to write size to
+    @raise Unix.Unix_error if reading from [src] or writing to [dst] fails *)
+
+(** {1 I/O Operations} *)
 
 val read : t -> bytes -> int -> int -> int
-(** [read pty buf ofs len] reads up to [len] bytes from [pty], storing them in
-    [buf] starting at position [ofs]. Returns the number of bytes actually read.
+(** [read pty buf ofs len] reads up to [len] bytes from the PTY.
 
-    This is equivalent to [Unix.read (to_file_descr pty) buf ofs len] but
-    provided for convenience.
+    Reads from the PTY and stores data in [buf] starting at offset [ofs].
+    Returns the number of bytes actually read, which may be less than [len] if
+    less data is available. Returns [0] on EOF (writing end closed, typically
+    when child process exits).
 
-    @return the number of bytes read (0 indicates end-of-file)
-    @raise Unix.Unix_error on error *)
+    Blocks until data is available unless the PTY is in non-blocking mode (see
+    {!set_nonblock}). In non-blocking mode, raises
+    [Unix.Unix_error (EAGAIN, _, _)] if no data is ready.
+
+    @return Number of bytes read ([0] indicates EOF)
+    @raise Unix.Unix_error
+      on error (e.g., [EAGAIN] in non-blocking mode, [EBADF] if PTY is closed)
+*)
 
 val write : t -> bytes -> int -> int -> int
-(** [write pty buf ofs len] writes up to [len] bytes from [buf] starting at
-    position [ofs] to [pty]. Returns the number of bytes actually written.
+(** [write pty buf ofs len] writes up to [len] bytes to the PTY.
 
-    This is equivalent to [Unix.write (to_file_descr pty) buf ofs len] but
-    provided for convenience.
+    Writes data from [buf] starting at offset [ofs] to the PTY. Returns the
+    number of bytes actually written, which may be less than [len] if the PTY's
+    internal buffer is full.
 
-    @return the number of bytes written
-    @raise Unix.Unix_error on error *)
+    Blocks until at least some data can be written unless the PTY is in
+    non-blocking mode.
+
+    @return Number of bytes actually written
+    @raise Unix.Unix_error
+      on error (e.g., [EAGAIN] in non-blocking mode, [EPIPE] if child closed its
+      end) *)
 
 val write_string : t -> string -> int -> int -> int
-(** [write_string pty str ofs len] writes up to [len] characters from [str]
-    starting at position [ofs] to [pty]. Returns the number of bytes actually
-    written.
+(** [write_string pty str ofs len] writes a substring to the PTY. Equivalent to
+    {!write} but accepts a string instead of bytes.
 
-    This is equivalent to [Unix.write_substring (to_file_descr pty) str ofs len]
-    but provided for convenience.
-
-    @return the number of bytes written
+    @return Number of bytes actually written
     @raise Unix.Unix_error on error *)
 
-(** {2 Non-blocking I/O} *)
+(** {1 Non-blocking I/O} *)
 
 val set_nonblock : t -> unit
-(** [set_nonblock pty] sets the file descriptor to non-blocking mode.
+(** [set_nonblock pty] enables non-blocking mode on the PTY.
 
-    This is equivalent to [Unix.set_nonblock (to_file_descr pty)] but provided
-    for convenience. *)
+    After calling this, {!read} and {!write} operations return immediately
+    rather than blocking. If an operation would block, it raises
+    [Unix.Unix_error (EAGAIN, _, _)] instead. Essential for event-driven I/O,
+    integration with [Unix.select]/[Unix.poll], and async libraries.
+
+    This setting persists until {!clear_nonblock} is called or the PTY is
+    closed.
+
+    @raise Unix.Unix_error
+      if toggling non-blocking mode fails (e.g., the file descriptor has already
+      been closed) *)
 
 val clear_nonblock : t -> unit
-(** [clear_nonblock pty] clears the non-blocking mode on the file descriptor.
+(** [clear_nonblock pty] disables non-blocking mode, restoring default blocking
+    behavior.
 
-    This is equivalent to [Unix.clear_nonblock (to_file_descr pty)] but provided
-    for convenience. *)
+    @raise Unix.Unix_error if toggling blocking mode fails *)
+
+(** {1 Higher-Level Utilities} *)
+
+val with_spawn :
+  ?env:string array ->
+  ?cwd:string ->
+  ?winsize:winsize ->
+  prog:string ->
+  args:string list ->
+  (t -> 'a) ->
+  'a
+(** [with_spawn ?env ?cwd ?winsize ~prog ~args f] spawns a process with
+    automatic cleanup.
+
+    Combines {!spawn} with resource management via [Fun.protect]. The PTY is
+    automatically closed (and child process terminated and reaped) when [f]
+    returns or raises an exception, ensuring no resource leaks or zombie
+    processes. Relies on {!spawn}, so it is only available on platforms with
+    POSIX-style [Unix.fork].
+
+    Example running a command and capturing output:
+    {@ocaml[
+      let output =
+        Pty.with_spawn ~prog:"/bin/echo" ~args:[ "hello" ] (fun pty ->
+            let buf = Bytes.create 1024 in
+            let n = Pty.read pty buf 0 (Bytes.length buf) in
+            Bytes.sub_string buf 0 n)
+      in
+      assert (output = "hello\n")
+    ]}
+
+    @param env Environment variables for the child
+    @param cwd Working directory for the child
+    @param winsize Initial terminal size
+    @param prog Program path (searched in PATH if relative)
+    @param args Command-line arguments (excluding argv[0])
+    @param f Function receiving the PTY handle
+    @return Result of [f]
+    @raise Unix.Unix_error if PTY creation or fork fails before [f] runs
+    @raise Any exception raised by [f] (after PTY cleanup) *)

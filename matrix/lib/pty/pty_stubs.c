@@ -1,3 +1,7 @@
+// This file only compiles on Unix platforms (Linux, macOS)
+// Windows PTY support is in pty_win32.c
+#ifndef _WIN32
+
 #define _GNU_SOURCE  // For ptsname on Linux
 #include <errno.h>
 #include <fcntl.h>
@@ -198,4 +202,6 @@ CAMLprim value ocaml_raise_fork_error(value unit) {
   return Val_unit;
 }
 
-#endif  // Windows implementations are in pty_win32.c
+#endif  // !defined(__linux__) && !defined(__APPLE__)
+
+#endif  // _WIN32 - Windows implementations are in pty_win32.c
