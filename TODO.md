@@ -10,8 +10,6 @@ example 12-installer: output displays above the prompt and interleaves static an
 
 ## mosaic
 
-example 11-form: cannot tab to change focus
-
 example 14-selection: text selection doesn't work in Document Section and Code Example boxes when terminal is zoomed out. Works when zoomed in. Selection works in scroll_box content at any zoom level.
 
 example x-dashboard: canvas seems to draw outside its bounds

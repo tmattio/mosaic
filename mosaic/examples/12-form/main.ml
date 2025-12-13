@@ -2,7 +2,23 @@
 
 open Mosaic_tea
 
-type model = { name : string; email : string; role : int; submitted : bool }
+(* Field identifiers for focus management *)
+type field = Name | Email | Role
+
+let all_fields = [| Name; Email; Role |]
+
+let field_id = function
+  | Name -> "name-input"
+  | Email -> "email-input"
+  | Role -> "role-select"
+
+type model = {
+  name : string;
+  email : string;
+  role : int;
+  submitted : bool;
+  focus : int; (* index into all_fields *)
+}
 
 type msg =
   | Submit
@@ -11,6 +27,8 @@ type msg =
   | Set_role of int
   | Set_name of string
   | Set_email of string
+  | Focus_next
+  | Focus_prev
 
 let roles =
   [
@@ -20,16 +38,28 @@ let roles =
     { name = "Analyst"; description = Some "Analyze data" };
   ]
 
-let init () = ({ name = ""; email = ""; role = 0; submitted = false }, Cmd.none)
+let init () =
+  ( { name = ""; email = ""; role = 0; submitted = false; focus = 0 },
+    Cmd.focus (field_id Name) )
+
+let num_fields = Array.length all_fields
 
 let update msg model =
   match msg with
   | Submit -> ({ model with submitted = true }, Cmd.none)
-  | Reset -> init ()
+  | Reset ->
+      ( { name = ""; email = ""; role = 0; submitted = false; focus = 0 },
+        Cmd.focus (field_id Name) )
   | Set_role role -> ({ model with role }, Cmd.none)
   | Set_name name -> ({ model with name; submitted = false }, Cmd.none)
   | Set_email email -> ({ model with email; submitted = false }, Cmd.none)
   | Quit -> (model, Cmd.quit)
+  | Focus_next ->
+      let next = (model.focus + 1) mod num_fields in
+      ({ model with focus = next }, Cmd.focus (field_id all_fields.(next)))
+  | Focus_prev ->
+      let prev = (model.focus - 1 + num_fields) mod num_fields in
+      ({ model with focus = prev }, Cmd.focus (field_id all_fields.(prev)))
 
 (* Palette *)
 let header_bg = Ansi.Color.of_rgb 30 80 100
@@ -71,7 +101,8 @@ let view model =
                   box
                     ~size:{ width = px 8; height = px 1 }
                     [ text ~content:"Name:" () ];
-                  text_input ~placeholder:"Enter your name..."
+                  text_input ~id:(field_id Name)
+                    ~placeholder:"Enter your name..."
                     ~size:{ width = px 25; height = px 1 }
                     ~value:model.name
                     ~on_input:(fun v -> Some (Set_name v))
@@ -83,7 +114,8 @@ let view model =
                   box
                     ~size:{ width = px 8; height = px 1 }
                     [ text ~content:"Email:" () ];
-                  text_input ~placeholder:"Enter your email..."
+                  text_input ~id:(field_id Email)
+                    ~placeholder:"Enter your email..."
                     ~size:{ width = px 25; height = px 1 }
                     ~value:model.email
                     ~on_input:(fun v -> Some (Set_email v))
@@ -95,8 +127,8 @@ let view model =
                   box
                     ~size:{ width = px 8; height = px 1 }
                     [ text ~content:"Role:" () ];
-                  select ~options:roles ~show_description:true
-                    ~selected_background:accent
+                  select ~id:(field_id Role) ~options:roles
+                    ~show_description:true ~selected_background:accent
                     ~selected_text_color:Ansi.Color.black
                     ~selected_index:model.role
                     ~on_change:(fun idx -> Some (Set_role idx))
@@ -139,14 +171,17 @@ let view model =
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
         [
-          text ~content:"Tab navigate  •  Enter submit  •  q quit"
+          text ~content:"Tab/Shift+Tab navigate  •  Enter submit  •  q quit"
             ~text_style:hint ();
         ];
     ]
 
 let subscriptions _model =
   Sub.on_key (fun ev ->
-      match (Mosaic_ui.Event.Key.data ev).key with
+      let data = Mosaic_ui.Event.Key.data ev in
+      match data.key with
+      | Tab ->
+          if data.modifier.shift then Some Focus_prev else Some Focus_next
       | Enter -> Some Submit
       | Char c when Uchar.equal c (Uchar.of_char 'q') -> Some Quit
       | Escape -> Some Quit
