@@ -3,6 +3,7 @@
     This module provides a declarative, functional API for building terminal
     applications using the Model-View-Update pattern. *)
 
+module Ansi = Matrix.Ansi
 module Renderer = Mosaic_ui.Renderer
 module Renderable = Mosaic_ui.Renderable
 module Event = Mosaic_ui.Event
