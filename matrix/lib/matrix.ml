@@ -1097,7 +1097,12 @@ let run ?on_frame ?on_input ?on_resize ~on_render t =
           if dt <= 0. then Some 0. else Some dt
       | None -> None
     in
-    min_opt (min_opt deadline_timeout t.input_timeout) pending_timeout
+    (* When redraw is requested with no cadence, don't wait *)
+    let immediate_redraw_timeout =
+      if t.redraw_requested && t.frame_interval = None then Some 0. else None
+    in
+    min_opt immediate_redraw_timeout
+      (min_opt (min_opt deadline_timeout t.input_timeout) pending_timeout)
   in
 
   (* Pre-allocate select list for stdout capture check *)
