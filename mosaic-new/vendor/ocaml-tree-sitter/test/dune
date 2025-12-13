@@ -1,0 +1,7 @@
+(test
+ (name test_tree_sitter)
+ (libraries
+  mosaic.tree-sitter
+  mosaic.tree-sitter.json
+  mosaic.tree-sitter.ocaml
+  alcotest))

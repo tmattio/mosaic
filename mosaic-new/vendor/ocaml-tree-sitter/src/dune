@@ -1,0 +1,12 @@
+(library
+ (name tree_sitter)
+ (public_name mosaic.tree-sitter)
+ (foreign_stubs
+  (language c)
+  (names tree_sitter_stubs tree_sitter_runtime)
+  (flags
+   (:standard)
+   (:include ../config/cflags.sexp))
+  (include_dirs ../vendor/tree-sitter ../include))
+ (c_library_flags
+  (:include ../config/clibs.sexp)))

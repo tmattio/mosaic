@@ -1,0 +1,10 @@
+(executable
+ (name discover)
+ (modules discover)
+ (libraries unix))
+
+(rule
+ (targets cflags.sexp clibs.sexp)
+ (deps discover.exe)
+ (action
+  (run ./discover.exe)))

@@ -1,0 +1,8 @@
+(library
+ (name tree_sitter_json)
+ (public_name mosaic.tree-sitter.json)
+ (libraries mosaic.tree-sitter)
+ (foreign_stubs
+  (language c)
+  (names parser tree_sitter_json_stubs)
+  (flags (:standard) -I ../../include)))
