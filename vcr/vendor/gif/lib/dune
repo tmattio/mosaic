@@ -1,5 +1,0 @@
-(library
- (name gif)
- (public_name vcr.gif)
- (modules gif types palette lzw encoder decoder)
- (libraries))

@@ -1,5 +1,0 @@
-(executable
- (name main)
- (public_name vcr)
- (package vcr)
- (libraries cmdliner logs logs.cli logs.fmt fmt.tty vcr vcr.tape unix))

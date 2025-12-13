@@ -1,4 +1,0 @@
-(test
- (package vcr)
- (name test_freetype)
- (libraries freetype))

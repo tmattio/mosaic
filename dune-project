@@ -79,24 +79,6 @@
   (alcotest :with-test)))
 
 (package
- (name vcr)
- (synopsis "Terminal session recording and playback tool")
- (description
-  "VCR is a comprehensive tool for recording, replaying, and converting terminal sessions. It captures terminal output and input events with accurate timing to create reproducible terminal animations, demos, and documentation. Supports various export formats for sharing terminal sessions.")
- (depends
-  ocaml
-  dune
-  matrix
-  menhir
-  vg
-  cmdliner
-  logs
-  fmt
-  (alcotest :with-test))
- (tags
-  (terminal recording playback demo)))
-
-(package
  (name toffee)
  (synopsis "Pure OCaml port of the Taffy CSS layout engine")
  (description

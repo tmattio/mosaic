@@ -1,9 +1,0 @@
-(library
- (name tape_lang)
- (public_name vcr.tape)
- (libraries))
-
-(ocamllex lexer)
-
-(menhir
- (modules parser))
