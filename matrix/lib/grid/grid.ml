@@ -75,7 +75,18 @@ module Scissor_stack = struct
 
   let create_scissor_stack () = Dynarray.create ()
   let current s = if Dynarray.is_empty s then None else Dynarray.find_last s
-  let push s r = Dynarray.add_last s r
+
+  let push s r =
+    let r =
+      match current s with
+      | None -> r
+      | Some c -> (
+          match Rect.intersection c r with
+          | Some i -> i
+          | None -> Rect.{ x = 0; y = 0; width = 0; height = 0 })
+    in
+    Dynarray.add_last s r
+
   let pop s = ignore (Dynarray.pop_last_opt s)
   let clear s = Dynarray.clear s
 
