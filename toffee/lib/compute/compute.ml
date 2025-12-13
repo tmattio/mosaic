@@ -24,17 +24,17 @@ let compute_root_layout (type t)
      let margin =
        Style.margin style
        |> Rect.map (fun lpa ->
-              Length_percentage_auto.resolve_or_zero lpa parent_size.width calc)
+           Length_percentage_auto.resolve_or_zero lpa parent_size.width calc)
      in
      let padding =
        Style.padding style
        |> Rect.map (fun lp ->
-              Length_percentage.resolve_or_zero lp parent_size.width calc)
+           Length_percentage.resolve_or_zero lp parent_size.width calc)
      in
      let border =
        Style.border style
        |> Rect.map (fun lp ->
-              Length_percentage.resolve_or_zero lp parent_size.width calc)
+           Length_percentage.resolve_or_zero lp parent_size.width calc)
      in
      let padding_border_size = Rect.sum_axes (Rect.add padding border) in
      let box_sizing_adjustment =
@@ -50,9 +50,8 @@ let compute_root_layout (type t)
            width = Dimension.maybe_resolve dims.width parent_size.width calc;
            height = Dimension.maybe_resolve dims.height parent_size.height calc;
          }
-       |> fun s ->
-       Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-       Size.maybe_add s box_sizing_adjustment
+       |> Size.apply_aspect_ratio aspect_ratio
+       |> Size.maybe_add box_sizing_adjustment
      in
      let max_size =
        Style.max_size style |> fun dims ->
@@ -61,9 +60,8 @@ let compute_root_layout (type t)
            width = Dimension.maybe_resolve dims.width parent_size.width calc;
            height = Dimension.maybe_resolve dims.height parent_size.height calc;
          }
-       |> fun s ->
-       Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-       Size.maybe_add s box_sizing_adjustment
+       |> Size.apply_aspect_ratio aspect_ratio
+       |> Size.maybe_add box_sizing_adjustment
      in
      let clamped_style_size =
        Style.size style |> fun dims ->
@@ -72,10 +70,9 @@ let compute_root_layout (type t)
            width = Dimension.maybe_resolve dims.width parent_size.width calc;
            height = Dimension.maybe_resolve dims.height parent_size.height calc;
          }
-       |> fun s ->
-       Size.apply_aspect_ratio s aspect_ratio |> fun s ->
-       Size.maybe_add s box_sizing_adjustment |> fun s ->
-       Size.clamp_option s min_size max_size
+       |> Size.apply_aspect_ratio aspect_ratio
+       |> Size.maybe_add box_sizing_adjustment
+       |> Size.clamp_option min_size max_size
      in
 
      (* If both min and max in a given axis are set and max <= min then this determines the size in that axis *)
@@ -106,7 +103,7 @@ let compute_root_layout (type t)
        Size.choose_first dims min_max_definite_size |> fun dims ->
        Size.choose_first dims clamped_style_size |> fun dims ->
        Size.choose_first dims available_space_based_size |> fun dims ->
-       Size.maybe_max dims padding_border_size
+       Size.maybe_max padding_border_size dims
      in
 
      mut_known_dimensions := styled_based_known_dimensions);
@@ -125,23 +122,23 @@ let compute_root_layout (type t)
   let padding =
     Style.padding style
     |> Rect.map (fun lp ->
-           Length_percentage.resolve_or_zero lp
-             (Available_space.to_option available_space.width)
-             calc)
+        Length_percentage.resolve_or_zero lp
+          (Available_space.to_option available_space.width)
+          calc)
   in
   let border =
     Style.border style
     |> Rect.map (fun lp ->
-           Length_percentage.resolve_or_zero lp
-             (Available_space.to_option available_space.width)
-             calc)
+        Length_percentage.resolve_or_zero lp
+          (Available_space.to_option available_space.width)
+          calc)
   in
   let margin =
     Style.margin style
     |> Rect.map (fun lpa ->
-           Length_percentage_auto.resolve_or_zero lpa
-             (Available_space.to_option available_space.width)
-             calc)
+        Length_percentage_auto.resolve_or_zero lpa
+          (Available_space.to_option available_space.width)
+          calc)
   in
   let scrollbar_size =
     Size.
@@ -208,7 +205,11 @@ let compute_cached_layout (type t)
 let round_layout (type t) (module Tree : Tree.ROUND_TREE with type t = t)
     (tree : t) (node_id : Node_id.t) : unit =
   (* Helper for rounding - matches Rust's round function behavior *)
-  let round f = Float.round f in
+  let round f =
+    let epsilon = 1e-6 in
+    if f >= 0.0 then Float.floor (f +. 0.5 +. epsilon)
+    else Float.ceil (f -. 0.5 -. epsilon)
+  in
 
   (* Recursive function to apply rounding to all descendants *)
   let rec round_layout_inner node_id cumulative_x cumulative_y =
