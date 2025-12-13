@@ -1,9 +1,5 @@
-open Internal
-
-let max_escape_length = 256 (* increased for complex SGR sequences *)
-
-let max_osc_length =
-  8192 (* OSC can be much longer, especially for hyperlinks and titles *)
+let max_escape_length = 256
+let max_osc_length = 8192
 
 type control =
   | CUU of int
@@ -17,241 +13,209 @@ type control =
   | CUP of int * int
   | ED of int
   | EL of int
-  | IL of int  (** Insert Line *)
-  | DL of int  (** Delete Line *)
+  | IL of int
+  | DL of int
+  | DCH of int
+  | ICH of int
   | OSC of int * string
-  | Hyperlink of ((string * string) list * string) option  (** OSC 8 *)
-  | Reset  (** ESC c (RIS) *)
+  | Hyperlink of ((string * string) list * string) option
+  | Reset
+  | DECSC
+  | DECRC
   | Unknown of string
-  | DECSC  (** ESC 7 - Save cursor *)
-  | DECRC  (** ESC 8 - Restore cursor *)
 
-type token = Text of string | SGR of attr list | Control of control
+type sgr_attr =
+  [ `Reset
+  | `Bold
+  | `Dim
+  | `Italic
+  | `Underline
+  | `Double_underline
+  | `Blink
+  | `Reverse
+  | `Conceal
+  | `Strikethrough
+  | `Overline
+  | `Framed
+  | `Encircled
+  | `No_bold
+  | `No_dim
+  | `No_italic
+  | `No_underline
+  | `No_blink
+  | `No_reverse
+  | `No_conceal
+  | `No_strikethrough
+  | `No_overline
+  | `No_framed
+  | `No_encircled
+  | `Fg of Color.t
+  | `Bg of Color.t ]
+
+type token = Text of string | SGR of sgr_attr list | Control of control
 
 let is_final_byte c =
   let code = Char.code c in
   code >= 0x40 && code <= 0x7e
 
-let int_of_string_opt s =
-  match int_of_string s with v -> Some v | exception _ -> None
-
-let utf8_len b =
-  let n = Char.code b in
-  if n < 0x80 then 1
-  else if n < 0xC0 then 1
-  else if n < 0xE0 then 2
-  else if n < 0xF0 then 3
-  else if n < 0xF8 then 4
-  else 1
-
-let parse_sgr_params params =
-  let acc = ref [] in
-  let push x = acc := x :: !acc in
-  let rec loop i =
-    if i >= Array.length params then ()
+(* Parse SGR parameters - tail-recursive, no refs *)
+let parse_sgr_params params len =
+  let rec loop i acc =
+    if i >= len then List.rev acc
     else
-      match params.(i) with
-      | 0 ->
-          push `Reset;
-          loop (i + 1)
-      | 1 ->
-          push `Bold;
-          loop (i + 1)
-      | 2 ->
-          push `Dim;
-          loop (i + 1)
-      | 3 ->
-          push `Italic;
-          loop (i + 1)
-      | 4 ->
-          push `Underline;
-          loop (i + 1)
-      | 21 ->
-          push `Double_underline;
-          loop (i + 1)
-      | 5 ->
-          push `Blink;
-          loop (i + 1)
-      | 7 ->
-          push `Reverse;
-          loop (i + 1)
-      | 8 ->
-          push `Conceal;
-          loop (i + 1)
-      | 9 ->
-          push `Strikethrough;
-          loop (i + 1)
-      | 53 ->
-          push `Overline;
-          loop (i + 1)
-      | 51 ->
-          push `Framed;
-          loop (i + 1)
-      | 52 ->
-          push `Encircled;
-          loop (i + 1)
-      | 22 ->
-          push `No_bold;
-          push `No_dim;
-          loop (i + 1)
-      | 23 ->
-          push `No_italic;
-          loop (i + 1)
-      | 24 ->
-          push `No_underline;
-          loop (i + 1)
-      | 25 ->
-          push `No_blink;
-          loop (i + 1)
-      | 27 ->
-          push `No_reverse;
-          loop (i + 1)
-      | 28 ->
-          push `No_conceal;
-          loop (i + 1)
-      | 29 ->
-          push `No_strikethrough;
-          loop (i + 1)
-      | 54 ->
-          push `No_framed;
-          push `No_encircled;
-          loop (i + 1)
-      | 55 ->
-          push `No_overline;
-          loop (i + 1)
-      | 39 ->
-          push (`Fg Style.Default);
-          loop (i + 1)
-      | 49 ->
-          push (`Bg Style.Default);
-          loop (i + 1)
-      | n when (30 <= n && n <= 37) || (90 <= n && n <= 97) ->
-          let color =
-            match n with
-            | 30 -> Style.Black
-            | 31 -> Style.Red
-            | 32 -> Style.Green
-            | 33 -> Style.Yellow
-            | 34 -> Style.Blue
-            | 35 -> Style.Magenta
-            | 36 -> Style.Cyan
-            | 37 -> Style.White
-            | 90 -> Style.Bright_black
-            | 91 -> Style.Bright_red
-            | 92 -> Style.Bright_green
-            | 93 -> Style.Bright_yellow
-            | 94 -> Style.Bright_blue
-            | 95 -> Style.Bright_magenta
-            | 96 -> Style.Bright_cyan
-            | 97 -> Style.Bright_white
-            | _ -> Style.Default
-          in
-          push (`Fg color);
-          loop (i + 1)
-      | n when (40 <= n && n <= 47) || (100 <= n && n <= 107) ->
-          let color =
-            match n with
-            | 40 -> Style.Black
-            | 41 -> Style.Red
-            | 42 -> Style.Green
-            | 43 -> Style.Yellow
-            | 44 -> Style.Blue
-            | 45 -> Style.Magenta
-            | 46 -> Style.Cyan
-            | 47 -> Style.White
-            | 100 -> Style.Bright_black
-            | 101 -> Style.Bright_red
-            | 102 -> Style.Bright_green
-            | 103 -> Style.Bright_yellow
-            | 104 -> Style.Bright_blue
-            | 105 -> Style.Bright_magenta
-            | 106 -> Style.Bright_cyan
-            | 107 -> Style.Bright_white
-            | _ -> Style.Default
-          in
-          push (`Bg color);
-          loop (i + 1)
-      | (38 | 48) as first -> (
-          let bg = first = 48 in
-          if i + 1 < Array.length params then
-            match params.(i + 1) with
-            | 5 when i + 2 < Array.length params ->
-                push
-                  (if bg then `Bg (Style.Index params.(i + 2))
-                   else `Fg (Style.Index params.(i + 2)));
-                loop (i + 3)
-            | 2 when i + 4 < Array.length params ->
-                let r, g, b =
-                  (params.(i + 2), params.(i + 3), params.(i + 4))
-                in
-                push
-                  (if bg then `Bg (Style.RGB (r, g, b))
-                   else `Fg (Style.RGB (r, g, b)));
-                loop (i + 5)
-            | _ -> loop (i + 1))
-      | _ -> loop (i + 1)
+      let param = params.(i) in
+      match param with
+      | 0 -> loop (i + 1) (`Reset :: acc)
+      | 1 -> loop (i + 1) (`Bold :: acc)
+      | 2 -> loop (i + 1) (`Dim :: acc)
+      | 3 -> loop (i + 1) (`Italic :: acc)
+      | 4 -> loop (i + 1) (`Underline :: acc)
+      | 21 -> loop (i + 1) (`Double_underline :: acc)
+      | 5 -> loop (i + 1) (`Blink :: acc)
+      | 7 -> loop (i + 1) (`Reverse :: acc)
+      | 8 -> loop (i + 1) (`Conceal :: acc)
+      | 9 -> loop (i + 1) (`Strikethrough :: acc)
+      | 53 -> loop (i + 1) (`Overline :: acc)
+      | 51 -> loop (i + 1) (`Framed :: acc)
+      | 52 -> loop (i + 1) (`Encircled :: acc)
+      | 22 -> loop (i + 1) (`No_dim :: `No_bold :: acc)
+      | 23 -> loop (i + 1) (`No_italic :: acc)
+      | 24 -> loop (i + 1) (`No_underline :: acc)
+      | 25 -> loop (i + 1) (`No_blink :: acc)
+      | 27 -> loop (i + 1) (`No_reverse :: acc)
+      | 28 -> loop (i + 1) (`No_conceal :: acc)
+      | 29 -> loop (i + 1) (`No_strikethrough :: acc)
+      | 54 -> loop (i + 1) (`No_encircled :: `No_framed :: acc)
+      | 55 -> loop (i + 1) (`No_overline :: acc)
+      | 39 -> loop (i + 1) (`Fg Color.default :: acc)
+      | 49 -> loop (i + 1) (`Bg Color.default :: acc)
+      | n when 30 <= n && n <= 37 ->
+          loop (i + 1) (`Fg (Color.of_palette_index (n - 30)) :: acc)
+      | n when 90 <= n && n <= 97 ->
+          loop (i + 1) (`Fg (Color.of_palette_index (n - 90 + 8)) :: acc)
+      | n when 40 <= n && n <= 47 ->
+          loop (i + 1) (`Bg (Color.of_palette_index (n - 40)) :: acc)
+      | n when 100 <= n && n <= 107 ->
+          loop (i + 1) (`Bg (Color.of_palette_index (n - 100 + 8)) :: acc)
+      | 38 when i + 2 < len && params.(i + 1) = 5 ->
+          let idx = params.(i + 2) in
+          loop (i + 3) (`Fg (Color.of_palette_index idx) :: acc)
+      | 38 when i + 4 < len && params.(i + 1) = 2 ->
+          let r = params.(i + 2) in
+          let g = params.(i + 3) in
+          let b = params.(i + 4) in
+          loop (i + 5) (`Fg (Color.of_rgb r g b) :: acc)
+      | 48 when i + 2 < len && params.(i + 1) = 5 ->
+          let idx = params.(i + 2) in
+          loop (i + 3) (`Bg (Color.of_palette_index idx) :: acc)
+      | 48 when i + 4 < len && params.(i + 1) = 2 ->
+          let r = params.(i + 2) in
+          let g = params.(i + 3) in
+          let b = params.(i + 4) in
+          loop (i + 5) (`Bg (Color.of_rgb r g b) :: acc)
+      | _ -> loop (i + 1) acc
   in
-  loop 0;
-  List.rev !acc
+  loop 0 []
 
-let parse_csi body final : token option =
-  let ints =
-    if body = "" then [||]
+(* Maximum CSI parameters supported. 32 covers even complex SGR sequences. *)
+let max_csi_params = 32
+
+(* Parse CSI body into parameters - returns param count *)
+let parse_csi_params body body_len params max_params =
+  let rec parse i current count =
+    if i >= body_len then (
+      if count < max_params then params.(count) <- current;
+      min (count + 1) max_params)
     else
-      (* Parse parameters, treating empty strings as None *)
-      let params = String.split_on_char ';' body in
-      Array.of_list
-        (List.map
-           (fun s -> if s = "" then None else int_of_string_opt s)
-           params)
+      match body.[i] with
+      | ';' ->
+          if count < max_params then params.(count) <- current;
+          parse (i + 1) 0 (count + 1)
+      | '0' .. '9' as c ->
+          parse (i + 1) ((current * 10) + Char.code c - 48) count
+      | _ -> parse (i + 1) current count
   in
-  let get n =
-    if n < Array.length ints then match ints.(n) with Some v -> v | None -> 1
-    else 1
-  in
-  let get_default default n =
-    if n < Array.length ints then
-      match ints.(n) with Some v -> v | None -> default
-    else default
-  in
+  if body_len > 0 then parse 0 0 0 else 0
+
+let parse_csi ~params body final : token option =
+  let body_len = String.length body in
+  (* Zero out params for reuse - only need to clear used portion *)
+  let param_count = parse_csi_params body body_len params max_csi_params in
+  let get n default = if n < param_count then params.(n) else default in
   match final with
-  | 'A' -> Some (Control (CUU (get 0)))
-  | 'B' -> Some (Control (CUD (get 0)))
-  | 'C' -> Some (Control (CUF (get 0)))
-  | 'D' -> Some (Control (CUB (get 0)))
-  | 'E' -> Some (Control (CNL (get 0)))
-  | 'F' -> Some (Control (CPL (get 0)))
-  | 'G' -> Some (Control (CHA (get 0)))
-  | 'd' -> Some (Control (VPA (get 0)))
-  | 'H' | 'f' -> Some (Control (CUP (get 0, get 1)))
-  | 'J' -> Some (Control (ED (get_default 0 0)))
-  | 'K' -> Some (Control (EL (get_default 0 0)))
-  | 'L' -> Some (Control (IL (get 0)))
-  | 'M' -> Some (Control (DL (get 0)))
+  | 'A' -> Some (Control (CUU (get 0 1)))
+  | 'B' -> Some (Control (CUD (get 0 1)))
+  | 'C' -> Some (Control (CUF (get 0 1)))
+  | 'D' -> Some (Control (CUB (get 0 1)))
+  | 'E' -> Some (Control (CNL (get 0 1)))
+  | 'F' -> Some (Control (CPL (get 0 1)))
+  | 'G' -> Some (Control (CHA (get 0 1)))
+  | 'd' -> Some (Control (VPA (get 0 1)))
+  | 'H' | 'f' -> Some (Control (CUP (get 0 1, get 1 1)))
+  | 'J' -> Some (Control (ED (get 0 0)))
+  | 'K' -> Some (Control (EL (get 0 0)))
+  | 'L' -> Some (Control (IL (get 0 1)))
+  | 'M' -> Some (Control (DL (get 0 1)))
+  | 'P' -> Some (Control (DCH (get 0 1)))
+  | '@' -> Some (Control (ICH (get 0 1)))
   | 'm' ->
-      (* Convert option array to int array for SGR parsing *)
-      let int_params = Array.map (function Some v -> v | None -> 0) ints in
-      Some (SGR (parse_sgr_params int_params))
-  | 'c' ->
-      Some (Control (Unknown (Printf.sprintf "CSI[%s%c" body final)))
-      (* DA - Device Attributes *)
+      let attrs =
+        if param_count = 0 then [ `Reset ]
+        else parse_sgr_params params param_count
+      in
+      Some (SGR attrs)
+  | 's' -> Some (Control DECSC) (* CSI s - save cursor position *)
+  | 'u' -> Some (Control DECRC) (* CSI u - restore cursor position *)
   | _ -> Some (Control (Unknown (Printf.sprintf "CSI[%s%c" body final)))
 
-let parse_hyperlink data : control option =
-  let parts = String.split_on_char ';' data in
-  match parts with
-  | [ ""; "" ] -> Some (Hyperlink None) (* close tag *)
-  | [ ""; link ] -> Some (Hyperlink (Some ([], link)))
-  | [ params; link ] ->
-      let kv_pairs =
-        params |> String.split_on_char ';'
-        |> List.filter_map (fun s ->
-               match String.split_on_char '=' s with
-               | [ k; v ] -> Some (k, v)
-               | _ -> None)
-      in
-      Some (Hyperlink (Some (kv_pairs, link)))
-  | _ -> None
+(* Parse OSC 8 hyperlink parameters and URL *)
+let parse_hyperlink data =
+  let len = String.length data in
+  (* Find first semicolon *)
+  let rec find_semi i =
+    if i >= len then -1 else if data.[i] = ';' then i else find_semi (i + 1)
+  in
+  match find_semi 0 with
+  | -1 -> None
+  | semi1 ->
+      let params_str = String.sub data 0 semi1 in
+      let link = String.sub data (semi1 + 1) (len - semi1 - 1) in
+      if params_str = "" && link = "" then Some (Hyperlink None)
+      else if params_str = "" then Some (Hyperlink (Some ([], link)))
+      else
+        (* Parse key=value pairs from params *)
+        let rec parse_kv i acc =
+          if i >= String.length params_str then List.rev acc
+          else
+            (* Find next colon or end *)
+            let rec find_delim j =
+              if j >= String.length params_str then j
+              else if params_str.[j] = ':' then j
+              else find_delim (j + 1)
+            in
+            let next_colon = find_delim i in
+            let segment = String.sub params_str i (next_colon - i) in
+            (* Find = in segment *)
+            let rec find_eq k =
+              if k >= String.length segment then -1
+              else if segment.[k] = '=' then k
+              else find_eq (k + 1)
+            in
+            let acc' =
+              match find_eq 0 with
+              | -1 -> acc
+              | eq_pos ->
+                  let key = String.sub segment 0 eq_pos in
+                  let value =
+                    String.sub segment (eq_pos + 1)
+                      (String.length segment - eq_pos - 1)
+                  in
+                  (key, value) :: acc
+            in
+            parse_kv (next_colon + 1) acc'
+        in
+        let kv_pairs = parse_kv 0 [] in
+        Some (Hyperlink (Some (kv_pairs, link)))
 
 let parse_osc body : token =
   match String.index_opt body ';' with
@@ -267,178 +231,281 @@ let parse_osc body : token =
       | Some code -> Control (OSC (code, data))
       | None -> Control (Unknown ("OSC " ^ body)))
 
-type state =
-  | Normal
-  | Esc
-  | Csi of Buffer.t
-  | Osc of Buffer.t
-  | Osc_esc of Buffer.t
+type state = Normal | Escape | Csi | Osc | Osc_escape
 
 type t = {
-  mutable buf : bytes;
-  mutable len : int;
-  text : Buffer.t;
-  mutable st : state;
+  (* Pending bytes buffer - for incomplete escape sequences at chunk boundaries *)
+  mutable pending_buf : bytes;
+  mutable pending_len : int;
+  (* State machine *)
+  mutable state : state;
+  (* Escape sequence accumulators *)
+  csi_buf : Buffer.t;
+  osc_buf : Buffer.t;
+  (* Decoded text accumulator *)
+  text_buf : Buffer.t;
+  (* UTF-8 incomplete sequence buffer (max 3 bytes needed) *)
+  utf8_buf : bytes;
+  mutable utf8_len : int;
+  (* Pre-allocated CSI params array to avoid allocation per CSI sequence *)
+  csi_params : int array;
 }
 
 let create () =
-  { buf = Bytes.create 4096; len = 0; text = Buffer.create 128; st = Normal }
+  {
+    pending_buf = Bytes.create 256;
+    pending_len = 0;
+    state = Normal;
+    csi_buf = Buffer.create 32;
+    osc_buf = Buffer.create 64;
+    text_buf = Buffer.create 128;
+    utf8_buf = Bytes.create 4;
+    utf8_len = 0;
+    csi_params = Array.make max_csi_params 0;
+  }
 
 let reset p =
-  p.len <- 0;
-  p.st <- Normal;
-  Buffer.clear p.text
+  p.pending_len <- 0;
+  p.state <- Normal;
+  Buffer.clear p.csi_buf;
+  Buffer.clear p.osc_buf;
+  Buffer.clear p.text_buf;
+  p.utf8_len <- 0
 
-let pending p = Bytes.sub p.buf 0 p.len
+let has_pending p = p.pending_len > 0 || p.state <> Normal || p.utf8_len > 0
+let pending p = Bytes.sub p.pending_buf 0 p.pending_len
 
-let flush_text p acc =
-  if Buffer.length p.text = 0 then acc
-  else
-    let t = Text (Buffer.contents p.text) in
-    Buffer.clear p.text;
-    t :: acc
+(* Decode UTF-8 bytes to text_buf. Handles chunk boundaries for streaming input. *)
+let decode_utf8 p src off len =
+  if len <= 0 then ()
+  else begin
+    let buf = p.text_buf in
+    let end_pos = off + len in
+    let i = ref off in
+    (* Complete any pending incomplete sequence from previous chunk *)
+    if p.utf8_len > 0 then begin
+      (* Try adding bytes until we get a valid decode or run out *)
+      while p.utf8_len < 4 && !i < end_pos do
+        Bytes.set p.utf8_buf p.utf8_len (Bytes.get src !i);
+        p.utf8_len <- p.utf8_len + 1;
+        incr i;
+        let d = Bytes.get_utf_8_uchar p.utf8_buf 0 in
+        if Uchar.utf_decode_is_valid d then begin
+          Buffer.add_utf_8_uchar buf (Uchar.utf_decode_uchar d);
+          p.utf8_len <- 0
+        end
+      done;
+      (* If we filled 4 bytes and still invalid, emit replacement *)
+      if p.utf8_len = 4 then begin
+        Buffer.add_utf_8_uchar buf Uchar.rep;
+        p.utf8_len <- 0
+      end
+    end;
+    (* Process remaining bytes using stdlib decoder *)
+    while !i < end_pos do
+      let d = Bytes.get_utf_8_uchar src !i in
+      if Uchar.utf_decode_is_valid d then begin
+        Buffer.add_utf_8_uchar buf (Uchar.utf_decode_uchar d);
+        i := !i + Uchar.utf_decode_length d
+      end
+      else begin
+        (* Invalid or incomplete - check if it's a truncated sequence at end *)
+        let remaining = end_pos - !i in
+        let b = Bytes.get_uint8 src !i in
+        (* Valid UTF-8 lead bytes are 0xC2-0xF4. 0xC0-0xC1 are overlong,
+           0xF5-0xFF encode values beyond Unicode range. *)
+        let is_valid_lead = b >= 0xC2 && b <= 0xF4 in
+        if remaining < 4 && is_valid_lead then begin
+          (* Might be incomplete at chunk boundary - buffer it *)
+          Bytes.blit src !i p.utf8_buf 0 remaining;
+          p.utf8_len <- remaining;
+          i := end_pos
+        end
+        else begin
+          (* Truly invalid - emit replacement, skip one byte *)
+          Buffer.add_utf_8_uchar buf Uchar.rep;
+          incr i
+        end
+      end
+    done
+  end
 
-let overshoot_csi buf = Buffer.length buf > max_escape_length
-let overshoot_osc buf = Buffer.length buf > max_osc_length
+(* Flush incomplete UTF-8 at EOF - emit replacement for incomplete sequence *)
+let flush_utf8 p =
+  if p.utf8_len > 0 then begin
+    Buffer.add_utf_8_uchar p.text_buf Uchar.rep;
+    p.utf8_len <- 0
+  end
 
-let feed p (src : bytes) off len : token list =
-  (* grow buffer if necessary *)
-  if p.len + len > Bytes.length p.buf then (
-    let nbuf = Bytes.create (max (p.len + len) (2 * Bytes.length p.buf)) in
-    Bytes.blit p.buf 0 nbuf 0 p.len;
-    p.buf <- nbuf);
-  Bytes.blit src off p.buf p.len len;
-  p.len <- p.len + len;
+(* Emit text token if buffer non-empty - callback version *)
+let[@inline] emit_text_cb p emit =
+  if Buffer.length p.text_buf > 0 then (
+    emit (Text (Buffer.contents p.text_buf));
+    Buffer.clear p.text_buf)
 
-  let rec loop tokens pos =
-    if pos >= p.len then (tokens, pos)
+(* Main parsing loop - callback-based, zero list allocation *)
+let feed p src off len emit =
+  let eof = len = 0 in
+  (* Determine effective input: pending bytes + new input *)
+  let input, input_off, input_len =
+    if p.pending_len = 0 then (src, off, len)
     else
-      match p.st with
-      | Normal ->
-          let b = Bytes.get p.buf pos in
-          if b = '\x1b' then (
-            let tokens = flush_text p tokens in
-            p.st <- Esc;
-            loop tokens (pos + 1))
-          else
-            let need = utf8_len b in
-            if pos + need > p.len then (tokens, pos)
-            else (
-              Buffer.add_subbytes p.text p.buf pos need;
-              loop tokens (pos + need))
-      | Esc -> (
-          if pos >= p.len then (tokens, pos)
-          else
-            let c = Bytes.get p.buf pos in
-            match c with
-            | '[' ->
-                p.st <- Csi (Buffer.create 32);
-                loop tokens (pos + 1)
-            | ']' ->
-                p.st <- Osc (Buffer.create 64);
-                loop tokens (pos + 1)
-            | 'c' ->
-                (*   ESC c : RIS   *)
-                let tokens = Control Reset :: flush_text p tokens in
-                p.st <- Normal;
-                loop tokens (pos + 1)
-            | '7' ->
-                (* ESC 7 : DECSC - Save cursor *)
-                let tokens = Control DECSC :: flush_text p tokens in
-                p.st <- Normal;
-                loop tokens (pos + 1)
-            | '8' ->
-                (* ESC 8 : DECRC - Restore cursor *)
-                let tokens = Control DECRC :: flush_text p tokens in
-                p.st <- Normal;
-                loop tokens (pos + 1)
-            | '%' ->
-                (* ESC % - Character set selection, consume next char *)
-                if pos + 1 < p.len then (
-                  (* Skip the character set designator *)
-                  p.st <- Normal;
-                  loop tokens (pos + 2))
-                else
-                  ( (* Need more data *)
-                    tokens,
-                    pos - 1 )
-            | '(' | ')' | '*' | '+' ->
-                (* ESC ( ) * + - Character set designation for G0-G3 *)
-                if pos + 1 < p.len then (
-                  (* Skip the character set designator *)
-                  p.st <- Normal;
-                  loop tokens (pos + 2))
-                else
-                  ( (* Need more data *)
-                    tokens,
-                    pos - 1 )
-            | _ ->
-                Buffer.add_char p.text '\x1b';
-                p.st <- Normal;
-                loop tokens pos)
-      | Csi buf ->
-          if pos >= p.len then (tokens, pos)
-          else
-            let c = Bytes.get p.buf pos in
-            Buffer.add_char buf c;
-            if overshoot_csi buf then (
-              let tokens = Control (Unknown "ESCAPE_TOO_LONG") :: tokens in
-              Buffer.clear buf;
-              p.st <- Normal;
-              loop tokens (pos + 1))
-            else if is_final_byte c then (
-              let body = Buffer.sub buf 0 (Buffer.length buf - 1) in
-              let tok =
-                Option.value ~default:(Control (Unknown "")) (parse_csi body c)
-              in
-              Buffer.clear buf;
-              p.st <- Normal;
-              loop (tok :: tokens) (pos + 1))
-            else loop tokens (pos + 1)
-      | Osc buf ->
-          if pos >= p.len then (tokens, pos)
-          else
-            let c = Bytes.get p.buf pos in
-            if c = '\x07' then (* BEL terminator *)
-              (
-              let tok = parse_osc (Buffer.contents buf) in
-              Buffer.clear buf;
-              p.st <- Normal;
-              loop (tok :: tokens) (pos + 1))
-            else if c = '\x1b' then (
-              p.st <- Osc_esc buf;
-              loop tokens (pos + 1))
-            else (
-              Buffer.add_char buf c;
-              if overshoot_osc buf then (
-                let tok = Control (Unknown "ESCAPE_TOO_LONG") in
-                Buffer.clear buf;
-                p.st <- Normal;
-                loop (tok :: tokens) (pos + 1))
-              else loop tokens (pos + 1))
-      | Osc_esc buf ->
-          if pos >= p.len then (tokens, pos)
-          else
-            let c = Bytes.get p.buf pos in
-            if c = '\\' then (* ST terminator *)
-              (
-              let tok = parse_osc (Buffer.contents buf) in
-              Buffer.clear buf;
-              p.st <- Normal;
-              loop (tok :: tokens) (pos + 1))
-            else (
-              Buffer.add_char buf '\x1b';
-              p.st <- Osc buf;
-              loop tokens pos)
+      (* Append new data to pending buffer *)
+      let total = p.pending_len + len in
+      if total > Bytes.length p.pending_buf then (
+        let new_size = max total (Bytes.length p.pending_buf * 2) in
+        let new_buf = Bytes.create new_size in
+        Bytes.blit p.pending_buf 0 new_buf 0 p.pending_len;
+        p.pending_buf <- new_buf);
+      Bytes.blit src off p.pending_buf p.pending_len len;
+      p.pending_len <- p.pending_len + len;
+      (p.pending_buf, 0, p.pending_len)
   in
-  let tokens, consumed = loop [] 0 in
-  if consumed > 0 then (
-    let rem = p.len - consumed in
-    if rem > 0 then Bytes.blit p.buf consumed p.buf 0 rem;
-    p.len <- rem);
-  List.rev (flush_text p tokens)
+  let rec loop pos =
+    if pos >= input_len then pos
+    else
+      match p.state with
+      | Normal ->
+          (* Scan for ESC, accumulating text *)
+          let rec scan_text start i =
+            if i >= input_len then (
+              (* Decode text from start to i *)
+              if i > start then
+                decode_utf8 p input (input_off + start) (i - start);
+              i)
+            else
+              let c = Bytes.get input (input_off + i) in
+              if c = '\x1b' then (
+                (* Decode text up to ESC *)
+                if i > start then
+                  decode_utf8 p input (input_off + start) (i - start);
+                emit_text_cb p emit;
+                p.state <- Escape;
+                loop (i + 1))
+              else scan_text start (i + 1)
+          in
+          scan_text pos pos
+      | Escape -> (
+          let c = Bytes.get input (input_off + pos) in
+          match c with
+          | '[' ->
+              Buffer.clear p.csi_buf;
+              p.state <- Csi;
+              loop (pos + 1)
+          | ']' ->
+              Buffer.clear p.osc_buf;
+              p.state <- Osc;
+              loop (pos + 1)
+          | 'c' ->
+              p.state <- Normal;
+              emit (Control Reset);
+              loop (pos + 1)
+          | '7' ->
+              p.state <- Normal;
+              emit (Control DECSC);
+              loop (pos + 1)
+          | '8' ->
+              p.state <- Normal;
+              emit (Control DECRC);
+              loop (pos + 1)
+          | '%' | '(' | ')' | '*' | '+' ->
+              (* Character set selection - skip next byte *)
+              if pos + 1 < input_len then (
+                p.state <- Normal;
+                loop (pos + 2))
+              else (
+                (* Need more data, back up to ESC and reset state *)
+                p.state <- Normal;
+                pos - 1)
+          | _ ->
+              (* Unknown escape, emit ESC as text and reprocess current char *)
+              Buffer.add_char p.text_buf '\x1b';
+              p.state <- Normal;
+              loop pos)
+      | Csi ->
+          let c = Bytes.get input (input_off + pos) in
+          if Buffer.length p.csi_buf >= max_escape_length then (
+            (* Overflow - emit unknown and reset *)
+            p.state <- Normal;
+            Buffer.clear p.csi_buf;
+            emit (Control (Unknown "CSI_TOO_LONG"));
+            loop (pos + 1))
+          else if is_final_byte c then (
+            let body = Buffer.contents p.csi_buf in
+            let tok =
+              match parse_csi ~params:p.csi_params body c with
+              | Some t -> t
+              | None -> Control (Unknown "")
+            in
+            p.state <- Normal;
+            emit tok;
+            loop (pos + 1))
+          else (
+            Buffer.add_char p.csi_buf c;
+            loop (pos + 1))
+      | Osc ->
+          let c = Bytes.get input (input_off + pos) in
+          if c = '\x07' then (
+            (* BEL terminates OSC *)
+            let body = Buffer.contents p.osc_buf in
+            let tok = parse_osc body in
+            p.state <- Normal;
+            emit tok;
+            loop (pos + 1))
+          else if c = '\x1b' then (
+            (* Potential ST terminator *)
+            p.state <- Osc_escape;
+            loop (pos + 1))
+          else if Buffer.length p.osc_buf >= max_osc_length then (
+            (* Overflow - emit unknown and reset *)
+            p.state <- Normal;
+            Buffer.clear p.osc_buf;
+            emit (Control (Unknown "OSC_TOO_LONG"));
+            loop (pos + 1))
+          else (
+            Buffer.add_char p.osc_buf c;
+            loop (pos + 1))
+      | Osc_escape ->
+          let c = Bytes.get input (input_off + pos) in
+          if c = '\\' then (
+            (* ST terminator complete *)
+            let body = Buffer.contents p.osc_buf in
+            let tok = parse_osc body in
+            p.state <- Normal;
+            emit tok;
+            loop (pos + 1))
+          else (
+            (* Not ST - add ESC to buffer and reprocess *)
+            Buffer.add_char p.osc_buf '\x1b';
+            p.state <- Osc;
+            loop pos)
+  in
+  let consumed = loop 0 in
+  (* Handle remaining bytes *)
+  let remaining = input_len - consumed in
+  if remaining > 0 then (
+    (* Copy remaining to pending buffer *)
+    if input == p.pending_buf then (
+      if
+        (* Already using pending_buf - shift remaining bytes down if consumed > 0 *)
+        consumed > 0
+      then Bytes.blit p.pending_buf consumed p.pending_buf 0 remaining)
+    else (
+      (* New input - copy to pending buffer *)
+      if remaining > Bytes.length p.pending_buf then
+        p.pending_buf <- Bytes.create (max remaining 256);
+      Bytes.blit input (input_off + consumed) p.pending_buf 0 remaining);
+    p.pending_len <- remaining)
+  else p.pending_len <- 0;
+  (* Flush incomplete UTF-8 on EOF *)
+  if eof then flush_utf8 p;
+  emit_text_cb p emit
 
 let parse s =
   let p = create () in
-  let t1 = feed p (Bytes.of_string s) 0 (String.length s) in
-  t1 @ feed p Bytes.empty 0 0
+  let acc = ref [] in
+  let collect tok = acc := tok :: !acc in
+  feed p (Bytes.unsafe_of_string s) 0 (String.length s) collect;
+  (* Flush with EOF *)
+  feed p Bytes.empty 0 0 collect;
+  List.rev !acc
