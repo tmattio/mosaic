@@ -302,12 +302,7 @@ let measure t ~known_dimensions ~available_space ~style:_ =
           | Toffee.Geometry.Size.{ height; _ } ->
               Toffee.Available_space.to_option height
         in
-        match from_available with
-        | Some h when h > 0. -> Some h
-        | _ -> (
-            match t.viewport with
-            | Some vp when vp.height > 0 -> Some (float vp.height)
-            | _ -> None))
+        match from_available with Some h when h > 0. -> Some h | _ -> None)
   in
   (* Apply wrap width for measurement. *)
   let previous_hint = t.wrap_width_hint in
