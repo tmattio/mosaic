@@ -37,7 +37,8 @@ let draw_canvas model canvas ~width ~height =
 
   (* Draw border box *)
   Canvas.draw_box canvas ~x:0 ~y:0 ~width ~height
-    ~border_color:(Ansi.Color.grayscale ~level:8) ();
+    ~border_color:(Ansi.Color.grayscale ~level:8)
+    ();
 
   (* Draw coordinate axes *)
   Canvas.draw_line canvas ~x1:1 ~y1:cy ~x2:(width - 2) ~y2:cy

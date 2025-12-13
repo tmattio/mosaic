@@ -56,14 +56,18 @@ let view () =
               (* Select component *)
               select ~options:languages ~show_description:true
                 ~show_scroll_indicator:true ~wrap_selection:true
-                ~selected_background:accent ~selected_text_color:Ansi.Color.black
+                ~selected_background:accent
+                ~selected_text_color:Ansi.Color.black
                 ~size:{ width = px 40; height = px 10 }
                 ();
             ];
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [ text ~content:"↑/↓ navigate  •  j/k vim  •  q quit" ~text_style:hint () ];
+        [
+          text ~content:"↑/↓ navigate  •  j/k vim  •  q quit" ~text_style:hint
+            ();
+        ];
     ]
 
 let subscriptions () =

@@ -131,12 +131,17 @@ let view model =
                        ~text_style:(Ansi.Style.make ~fg:Ansi.Color.green ())
                        ();
                    ]
-               else text ~content:"Fill in the form and click Submit" ~text_style:hint ());
+               else
+                 text ~content:"Fill in the form and click Submit"
+                   ~text_style:hint ());
             ];
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [ text ~content:"Tab navigate  •  Enter submit  •  q quit" ~text_style:hint () ];
+        [
+          text ~content:"Tab navigate  •  Enter submit  •  q quit"
+            ~text_style:hint ();
+        ];
     ]
 
 let subscriptions _model =

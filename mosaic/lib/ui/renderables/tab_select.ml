@@ -197,14 +197,15 @@ let move_right t =
 
 let measure t ~known_dimensions ~available_space ~style:_ =
   (* Content-based default: show all tabs if possible *)
-  let content_width =
-    Float.of_int (option_count t * max 1 t.props.tab_width)
-  in
+  let content_width = Float.of_int (option_count t * max 1 t.props.tab_width) in
   let width =
     match known_dimensions.Toffee.Geometry.Size.width with
     | Some w when w > 0. -> w
     | _ -> (
-        match Toffee.Available_space.to_option available_space.Toffee.Geometry.Size.width with
+        match
+          Toffee.Available_space.to_option
+            available_space.Toffee.Geometry.Size.width
+        with
         | Some w when w > 0. -> w
         | _ -> content_width)
   in

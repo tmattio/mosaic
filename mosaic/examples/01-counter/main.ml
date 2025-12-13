@@ -51,7 +51,10 @@ let view model =
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [ text ~content:"+ increment  •  - decrement  •  q quit" ~text_style:hint () ];
+        [
+          text ~content:"+ increment  •  - decrement  •  q quit"
+            ~text_style:hint ();
+        ];
     ]
 
 let subscriptions _model =

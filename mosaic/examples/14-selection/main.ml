@@ -155,7 +155,8 @@ let view () =
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
         [
-          text ~content:"click and drag to select  •  Ctrl+click extend  •  q quit"
+          text
+            ~content:"click and drag to select  •  Ctrl+click extend  •  q quit"
             ~text_style:hint ();
         ];
     ]

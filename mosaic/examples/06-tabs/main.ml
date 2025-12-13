@@ -59,10 +59,12 @@ let view model =
       (* Tab bar *)
       box ~padding:(padding 1)
         [
-          tab_select ~autofocus:true ~options:tabs ~show_description:true ~show_underline:true
-            ~show_scroll_arrows:true ~wrap_selection:true ~tab_width:12
-            ~selected_background:accent ~selected_text:Ansi.Color.black
-            ~on_change:(fun i -> Some (Tab_changed i)) ();
+          tab_select ~autofocus:true ~options:tabs ~show_description:true
+            ~show_underline:true ~show_scroll_arrows:true ~wrap_selection:true
+            ~tab_width:12 ~selected_background:accent
+            ~selected_text:Ansi.Color.black
+            ~on_change:(fun i -> Some (Tab_changed i))
+            ();
         ];
       (* Content area *)
       box ~flex_grow:1. ~border:true ~border_color ~padding:(padding 2)
@@ -78,7 +80,10 @@ let view model =
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [ text ~content:"←/→ navigate  •  [/] vim  •  q quit" ~text_style:hint () ];
+        [
+          text ~content:"←/→ navigate  •  [/] vim  •  q quit" ~text_style:hint
+            ();
+        ];
     ]
 
 let subscriptions _model =

@@ -962,10 +962,7 @@ let parse_csi parser s start end_ : parsed option =
           if parser.csi_param_count >= 2 && get_csi_param parser 0 = 997 then
             let value = get_csi_param parser 1 in
             let scheme =
-              match value with
-              | 1 -> `Dark
-              | 2 -> `Light
-              | v -> `Unknown v
+              match value with 1 -> `Dark | 2 -> `Light | v -> `Unknown v
             in
             Some (`Caps (Caps.Color_scheme scheme))
           else None)

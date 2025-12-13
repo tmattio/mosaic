@@ -116,7 +116,8 @@ let view model =
                   box ~flex_direction:Row ~gap:(gap 2)
                     [
                       (* Red slider *)
-                      box ~flex_direction:Column ~align_items:Center ~gap:(gap 1)
+                      box ~flex_direction:Column ~align_items:Center
+                        ~gap:(gap 1)
                         [
                           slider ~orientation:`Vertical ~min:0. ~max:255.
                             ~value:model.r
@@ -128,7 +129,8 @@ let view model =
                           text ~content:"R" ();
                         ];
                       (* Green slider *)
-                      box ~flex_direction:Column ~align_items:Center ~gap:(gap 1)
+                      box ~flex_direction:Column ~align_items:Center
+                        ~gap:(gap 1)
                         [
                           slider ~orientation:`Vertical ~min:0. ~max:255.
                             ~value:model.g
@@ -140,7 +142,8 @@ let view model =
                           text ~content:"G" ();
                         ];
                       (* Blue slider *)
-                      box ~flex_direction:Column ~align_items:Center ~gap:(gap 1)
+                      box ~flex_direction:Column ~align_items:Center
+                        ~gap:(gap 1)
                         [
                           slider ~orientation:`Vertical ~min:0. ~max:255.
                             ~value:model.b
@@ -164,7 +167,10 @@ let view model =
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [ text ~content:"drag sliders  •  r reset  •  q quit" ~text_style:hint () ];
+        [
+          text ~content:"drag sliders  •  r reset  •  q quit" ~text_style:hint
+            ();
+        ];
     ]
 
 let subscriptions _model =

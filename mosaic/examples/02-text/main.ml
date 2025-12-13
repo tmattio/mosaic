@@ -55,8 +55,8 @@ let view model =
           box ~flex_direction:Row ~gap:(gap 1)
             [
               (* Text styles *)
-              box ~border:true ~border_color ~padding:(padding 1) ~title:"Text Styles"
-                ~flex_direction:Column ~gap:(gap 1)
+              box ~border:true ~border_color ~padding:(padding 1)
+                ~title:"Text Styles" ~flex_direction:Column ~gap:(gap 1)
                 [
                   text ~content:"Bold text"
                     ~text_style:(Ansi.Style.make ~bold:true ())
@@ -81,8 +81,8 @@ let view model =
                     ();
                 ];
               (* Foreground Colors *)
-              box ~border:true ~border_color ~padding:(padding 1) ~title:"Foreground"
-                ~flex_direction:Column ~gap:(gap 1)
+              box ~border:true ~border_color ~padding:(padding 1)
+                ~title:"Foreground" ~flex_direction:Column ~gap:(gap 1)
                 ~size:{ width = px 14; height = auto }
                 [
                   text ~content:"Red"
@@ -108,49 +108,64 @@ let view model =
                     ();
                 ];
               (* Background Colors *)
-              box ~border:true ~border_color ~padding:(padding 1) ~title:"Background"
-                ~flex_direction:Column ~gap:(gap 1)
+              box ~border:true ~border_color ~padding:(padding 1)
+                ~title:"Background" ~flex_direction:Column ~gap:(gap 1)
                 ~size:{ width = px 14; height = auto }
                 [
                   text ~content:" Red "
-                    ~text_style:(Ansi.Style.make ~bg:Ansi.Color.red ~fg:Ansi.Color.white ())
+                    ~text_style:
+                      (Ansi.Style.make ~bg:Ansi.Color.red ~fg:Ansi.Color.white
+                         ())
                     ();
                   text ~content:" Green "
-                    ~text_style:(Ansi.Style.make ~bg:Ansi.Color.green ~fg:Ansi.Color.black ())
+                    ~text_style:
+                      (Ansi.Style.make ~bg:Ansi.Color.green ~fg:Ansi.Color.black
+                         ())
                     ();
                   text ~content:" Blue "
-                    ~text_style:(Ansi.Style.make ~bg:Ansi.Color.blue ~fg:Ansi.Color.white ())
+                    ~text_style:
+                      (Ansi.Style.make ~bg:Ansi.Color.blue ~fg:Ansi.Color.white
+                         ())
                     ();
                   text ~content:" Yellow "
-                    ~text_style:(Ansi.Style.make ~bg:Ansi.Color.yellow ~fg:Ansi.Color.black ())
+                    ~text_style:
+                      (Ansi.Style.make ~bg:Ansi.Color.yellow
+                         ~fg:Ansi.Color.black ())
                     ();
                   text ~content:" Cyan "
-                    ~text_style:(Ansi.Style.make ~bg:Ansi.Color.cyan ~fg:Ansi.Color.black ())
+                    ~text_style:
+                      (Ansi.Style.make ~bg:Ansi.Color.cyan ~fg:Ansi.Color.black
+                         ())
                     ();
                   text ~content:" Magenta "
-                    ~text_style:(Ansi.Style.make ~bg:Ansi.Color.magenta ~fg:Ansi.Color.white ())
+                    ~text_style:
+                      (Ansi.Style.make ~bg:Ansi.Color.magenta
+                         ~fg:Ansi.Color.white ())
                     ();
                   text ~content:" White "
-                    ~text_style:(Ansi.Style.make ~bg:Ansi.Color.white ~fg:Ansi.Color.black ())
+                    ~text_style:
+                      (Ansi.Style.make ~bg:Ansi.Color.white ~fg:Ansi.Color.black
+                         ())
                     ();
                 ];
               (* Grayscale *)
-              box ~border:true ~border_color ~padding:(padding 1) ~title:"Grayscale"
-                ~flex_direction:Row ~gap:(gap 1) ~flex_wrap:Wrap
+              box ~border:true ~border_color ~padding:(padding 1)
+                ~title:"Grayscale" ~flex_direction:Row ~gap:(gap 1)
+                ~flex_wrap:Wrap
                 ~size:{ width = px 14; height = auto }
                 (List.init 24 (fun i ->
                      let color = Ansi.Color.grayscale ~level:i in
                      let fg =
                        if i < 12 then Ansi.Color.white else Ansi.Color.black
                      in
-                     text
-                       ~content:(Printf.sprintf "%02d" i)
+                     text ~content:(Printf.sprintf "%02d" i)
                        ~text_style:(Ansi.Style.make ~bg:color ~fg ())
                        ()));
             ];
           (* Second row: Wrap mode demo *)
           box ~border:true ~border_color ~padding:(padding 1)
-            ~title:(Printf.sprintf "Wrap Mode: %s" (wrap_mode_to_string model.wrap))
+            ~title:
+              (Printf.sprintf "Wrap Mode: %s" (wrap_mode_to_string model.wrap))
             ~size:{ width = px 40; height = auto }
             [
               text
