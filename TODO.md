@@ -10,18 +10,10 @@ example 12-installer: output displays above the prompt and interleaves static an
 
 ## mosaic
 
-example 02-text: the text box doesn't grow when cyclying from None wrapping to wrapping.
-
-example 04-input: displays [?997;1n in the text input
-
-example 06-tabs:
-- underline of tab takes one cell more than their background on the right
-- changing tab doesn't change content
-
 example 10-code: initially shows code for a frame, then re-renders with no code
 
 example 11-form: cannot tab to change focus
 
-example 12-markdown: code doesn't have syntax highlighting
+example 14-selection: text selection doesn't work in Document Section and Code Example boxes when terminal is zoomed out. Works when zoomed in. Selection works in scroll_box content at any zoom level.
 
 example x-dashboard: canvas seems to draw outside its bounds
