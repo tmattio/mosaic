@@ -1,3 +1,21 @@
-(executables
- (names bench_grid bench_screen)
- (libraries ubench matrix.ansi matrix.grid matrix.screen))
+(executable
+ (name bench_ansi)
+ (libraries ubench matrix.ansi))
+
+(executable
+ (name bench_glyph)
+ (libraries ubench matrix.glyph))
+
+(executable
+ (name bench_input)
+ (libraries ubench matrix.input))
+
+(executable
+ (name bench_grid)
+ (modules bench_grid)
+ (libraries ubench matrix.grid matrix.ansi))
+
+(executable
+ (name bench_screen)
+ (modules bench_screen)
+ (libraries ubench matrix.screen matrix.grid matrix.ansi))
