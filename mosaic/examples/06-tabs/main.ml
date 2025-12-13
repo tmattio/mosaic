@@ -59,7 +59,7 @@ let view model =
       (* Tab bar *)
       box ~padding:(padding 1)
         [
-          tab_select ~options:tabs ~show_description:true ~show_underline:true
+          tab_select ~autofocus:true ~options:tabs ~show_description:true ~show_underline:true
             ~show_scroll_arrows:true ~wrap_selection:true ~tab_width:12
             ~selected_background:accent ~selected_text:Ansi.Color.black
             ~on_change:(fun i -> Some (Tab_changed i)) ();

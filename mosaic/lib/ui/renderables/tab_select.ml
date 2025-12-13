@@ -196,18 +196,20 @@ let move_right t =
     set_selected_index_internal t 0 (visible_count_from_layout t)
 
 let measure t ~known_dimensions ~available_space ~style:_ =
-  let open Toffee.Geometry.Size in
-  let default_width = 20. in
+  (* Content-based default: show all tabs if possible *)
+  let content_width =
+    Float.of_int (option_count t * max 1 t.props.tab_width)
+  in
   let width =
-    match known_dimensions.width with
+    match known_dimensions.Toffee.Geometry.Size.width with
     | Some w when w > 0. -> w
     | _ -> (
-        match Toffee.Available_space.to_option available_space.width with
+        match Toffee.Available_space.to_option available_space.Toffee.Geometry.Size.width with
         | Some w when w > 0. -> w
-        | _ -> default_width)
+        | _ -> content_width)
   in
-  let height = float (base_height t) in
-  { width; height }
+  let height = Float.of_int (base_height t) in
+  Toffee.Geometry.Size.{ width; height }
 
 let effective_background t focused =
   if focused then t.props.focused_background else t.props.background
