@@ -372,6 +372,7 @@ module Caps = struct
     | Xtversion of string
     | Kitty_graphics_reply of string
     | Kitty_keyboard of { level : int; flags : int option }
+    | Color_scheme of [ `Dark | `Light | `Unknown of int ]
 
   let equal_event (a : event) (b : event) = a = b
 
@@ -391,6 +392,14 @@ module Caps = struct
         | None -> Format.fprintf fmt "Kitty_keyboard(level=%d)" level
         | Some f ->
             Format.fprintf fmt "Kitty_keyboard(level=%d,flags=%d)" level f)
+    | Color_scheme scheme ->
+        let s =
+          match scheme with
+          | `Dark -> "Dark"
+          | `Light -> "Light"
+          | `Unknown v -> Printf.sprintf "Unknown(%d)" v
+        in
+        Format.fprintf fmt "Color_scheme(%s)" s
 end
 
 type t =

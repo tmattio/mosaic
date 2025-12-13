@@ -637,6 +637,30 @@ let test_mode_report () =
       Alcotest.failf "Expected single mode report, got %d events"
         (List.length (parse_caps "\x1b[?1004;2$y"))
 
+let test_color_scheme_report () =
+  (* Color scheme DSR response: CSI ? 997 ; value n
+     Response to CSI ? 996 n query. Value 1 = dark, 2 = light. *)
+  (match parse_caps "\x1b[?997;1n" with
+  | [ Input.Caps.Color_scheme `Dark ] -> ()
+  | _ ->
+      Alcotest.failf "Expected Color_scheme Dark, got %d events"
+        (List.length (parse_caps "\x1b[?997;1n")));
+  (match parse_caps "\x1b[?997;2n" with
+  | [ Input.Caps.Color_scheme `Light ] -> ()
+  | _ ->
+      Alcotest.failf "Expected Color_scheme Light, got %d events"
+        (List.length (parse_caps "\x1b[?997;2n")));
+  (* Unknown value should still be handled *)
+  (match parse_caps "\x1b[?997;99n" with
+  | [ Input.Caps.Color_scheme (`Unknown 99) ] -> ()
+  | _ ->
+      Alcotest.failf "Expected Color_scheme Unknown, got %d events"
+        (List.length (parse_caps "\x1b[?997;99n")));
+  (* Verify it doesn't leak into user events *)
+  let user, caps = parse_single "\x1b[?997;1n" in
+  Alcotest.(check int) "no user events" 0 (List.length user);
+  Alcotest.(check int) "one caps event" 1 (List.length caps)
+
 let test_user_and_caps_split () =
   let user, caps = parse_single "\x1b[?1004;2$yab" in
   Alcotest.(check (list caps_event_testable))
@@ -924,6 +948,7 @@ let tests =
     ("cursor position report", `Quick, test_cursor_position_report);
     ("device attributes", `Quick, test_device_attributes);
     ("mode report", `Quick, test_mode_report);
+    ("color scheme report", `Quick, test_color_scheme_report);
     ("user and caps split", `Quick, test_user_and_caps_split);
     ("X10 mouse", `Quick, test_x10_mouse);
     ("URXVT mouse", `Quick, test_urxvt_mouse);

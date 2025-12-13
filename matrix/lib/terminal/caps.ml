@@ -333,6 +333,11 @@ let apply_event_internal (caps, info) (event : Input.Caps.event) =
         if level > 0 then { caps with kitty_keyboard = true } else caps
       in
       (caps, info)
+  | Input.Caps.Color_scheme _ ->
+      (* Color scheme DSR response. The scheme value (Dark/Light) could be
+         stored if needed, but for now we just acknowledge the capability. *)
+      let caps = { caps with color_scheme_updates = true } in
+      (caps, info)
 
 (* Single-event version for callback-based parsing - no list allocation *)
 let apply_event ?(apply_env_overrides = false) ~caps ~info event =

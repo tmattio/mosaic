@@ -328,6 +328,10 @@ module Caps : sig
         (** Kitty keyboard protocol query response: [CSI ? level [; flags] u].
             [level] is non-zero when the protocol is supported. [flags] carries
             the optional terminal-reported bitfield when present. *)
+    | Color_scheme of [ `Dark | `Light | `Unknown of int ]
+        (** Color scheme DSR response: [CSI ? 997 ; value n]. Indicates the
+            terminal's current color scheme preference. Value 1 = dark mode,
+            value 2 = light mode. This is the response to [CSI ? 996 n] query. *)
 
   val equal_event : event -> event -> bool
   (** [equal_event a b] tests structural equality on capability events. *)

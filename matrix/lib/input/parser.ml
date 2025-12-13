@@ -954,6 +954,22 @@ let parse_csi parser s start end_ : parsed option =
         in
         let modes = parse_pairs [] 0 in
         Some (`Caps (Caps.Mode_report { Caps.is_private; modes }))
+    (* Color scheme DSR response: CSI ? 997 ; value n
+       Response to CSI ? 996 n query. Value 1 = dark, 2 = light. *)
+    | 'n' ->
+        if start < !params_end && s.[start] = '?' then (
+          parse_csi_params_into parser s (start + 1) !params_end;
+          if parser.csi_param_count >= 2 && get_csi_param parser 0 = 997 then
+            let value = get_csi_param parser 1 in
+            let scheme =
+              match value with
+              | 1 -> `Dark
+              | 2 -> `Light
+              | v -> `Unknown v
+            in
+            Some (`Caps (Caps.Color_scheme scheme))
+          else None)
+        else None
     (* Window manipulation *)
     | 't' ->
         let p0 = get_csi_param parser 0 in
