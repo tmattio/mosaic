@@ -1,0 +1,4 @@
+(library
+ (name glyph)
+ (public_name matrix.glyph)
+ (libraries bigarray))
