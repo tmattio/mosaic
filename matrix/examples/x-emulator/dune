@@ -1,0 +1,14 @@
+(executable
+ (name main)
+ (public_name matrix)
+ (package matrix-term)
+ (modules main)
+ (libraries
+  matrix.ansi
+  matrix.pty
+  matrix.vte
+  matrix.grid
+  matrix.glyph
+  tsdl
+  tsdl-ttf
+  unix))

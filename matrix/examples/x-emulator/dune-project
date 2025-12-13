@@ -1,0 +1,29 @@
+(lang dune 3.19)
+
+(name matrix-term)
+
+; (generate_opam_files true)
+
+(source
+ (github tmattio/matrix))
+
+(authors "Thibaut Mattio <thibaut.mattio@gmail.com>")
+
+(maintainers "Thibaut Mattio <thibaut.mattio@gmail.com>")
+
+(license ISC)
+
+(implicit_transitive_deps false)
+
+(package
+ (name matrix-term)
+ (synopsis "Terminal emulator example using Matrix and SDL2")
+ (description
+  "Matrix-term is an example terminal emulator application demonstrating Matrix's virtual terminal emulator (VTE) capabilities. It uses SDL2 for rendering and showcases how to build a fully functional terminal emulator with Matrix's infrastructure.")
+ (depends
+  ocaml
+  dune
+  matrix
+  tsdl
+  tsdl-ttf
+  (alcotest :with-test)))
