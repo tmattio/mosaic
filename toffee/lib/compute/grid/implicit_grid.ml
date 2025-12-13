@@ -112,8 +112,9 @@ let get_known_child_positions children_seq explicit_col_count explicit_row_count
 
   Seq.iter
     (fun child_style ->
-      (* Note: that the children reference the lines in between (and around) the tracks not tracks themselves,
-         and thus we must subtract 1 to get an accurate estimate of the number of tracks *)
+      (* Note: children reference the lines in between (and around) the tracks
+         not tracks themselves, and thus we must subtract 1 to get an accurate
+         estimate of the number of tracks *)
       let child_col_min, child_col_max, child_col_span =
         child_min_line_max_line_span
           (Style.grid_column child_style)

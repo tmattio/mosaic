@@ -235,32 +235,32 @@ let known_dimensions (type tree)
 
   (* Resolve inherent size *)
   let inherent_size =
-    ( Size.map2
-        (fun dim grid_size -> Dimension.maybe_resolve dim grid_size calc)
-        t.size grid_area_size
-    |> fun s -> Size.apply_aspect_ratio s t.aspect_ratio )
-    |> fun s -> Size.maybe_add s box_sizing_adjustment
+    Size.map2
+      (fun dim grid_size -> Dimension.maybe_resolve dim grid_size calc)
+      t.size grid_area_size
+    |> Size.apply_aspect_ratio t.aspect_ratio
+    |> Size.maybe_add box_sizing_adjustment
   in
 
   (* Resolve min/max sizes *)
   let min_size =
-    ( Size.map2
-        (fun dim grid_size -> Dimension.maybe_resolve dim grid_size calc)
-        t.min_size grid_area_size
-    |> fun s -> Size.apply_aspect_ratio s t.aspect_ratio )
-    |> fun s -> Size.maybe_add s box_sizing_adjustment
+    Size.map2
+      (fun dim grid_size -> Dimension.maybe_resolve dim grid_size calc)
+      t.min_size grid_area_size
+    |> Size.apply_aspect_ratio t.aspect_ratio
+    |> Size.maybe_add box_sizing_adjustment
   in
 
   let max_size =
-    ( Size.map2
-        (fun dim grid_size -> Dimension.maybe_resolve dim grid_size calc)
-        t.max_size grid_area_size
-    |> fun s -> Size.apply_aspect_ratio s t.aspect_ratio )
-    |> fun s -> Size.maybe_add s box_sizing_adjustment
+    Size.map2
+      (fun dim grid_size -> Dimension.maybe_resolve dim grid_size calc)
+      t.max_size grid_area_size
+    |> Size.apply_aspect_ratio t.aspect_ratio
+    |> Size.maybe_add box_sizing_adjustment
   in
 
   let grid_area_minus_item_margins_size =
-    Size.maybe_sub grid_area_size margins
+    Size.maybe_sub margins grid_area_size
   in
 
   (* Apply stretch alignment for width *)
@@ -279,7 +279,7 @@ let known_dimensions (type tree)
   (* Reapply aspect ratio after stretch *)
   let size_after_width = Size.{ width; height = inherent_size.height } in
   let size_after_width =
-    Size.apply_aspect_ratio size_after_width t.aspect_ratio
+    Size.apply_aspect_ratio t.aspect_ratio size_after_width
   in
 
   (* Apply stretch alignment for height *)
@@ -297,10 +297,10 @@ let known_dimensions (type tree)
 
   (* Reapply aspect ratio after stretch *)
   let final_size = Size.{ width = size_after_width.width; height } in
-  let final_size = Size.apply_aspect_ratio final_size t.aspect_ratio in
+  let final_size = Size.apply_aspect_ratio t.aspect_ratio final_size in
 
   (* Clamp by min/max *)
-  Size.clamp_option final_size min_size max_size
+  Size.clamp_option min_size max_size final_size
 
 (* Similar to the spanned_track_limit, but excludes FitContent arguments from the limit.
    Used to clamp the automatic minimum contributions of an item *)
@@ -366,7 +366,7 @@ let min_content_contribution (type tree)
 let min_content_contribution_cached t axis (type tree)
     (module Tree : Tree.LAYOUT_PARTIAL_TREE with type t = tree) tree
     available_space inner_node_size =
-  match Size.get t.min_content_contribution_cache axis with
+  match Size.get axis t.min_content_contribution_cache with
   | Some cached_value -> cached_value
   | None ->
       let contribution =
@@ -374,10 +374,8 @@ let min_content_contribution_cached t axis (type tree)
           (module Tree)
           t axis tree available_space inner_node_size
       in
-      let new_cache =
-        Size.set t.min_content_contribution_cache axis (Some contribution)
-      in
-      t.min_content_contribution_cache <- new_cache;
+      t.min_content_contribution_cache <-
+        Size.set axis (Some contribution) t.min_content_contribution_cache;
       contribution
 
 (* Compute the item's max content contribution from the provided parameters *)
@@ -412,7 +410,7 @@ let max_content_contribution (type tree)
 let max_content_contribution_cached t axis (type tree)
     (module Tree : Tree.LAYOUT_PARTIAL_TREE with type t = tree) tree
     available_space inner_node_size =
-  match Size.get t.max_content_contribution_cache axis with
+  match Size.get axis t.max_content_contribution_cache with
   | Some cached_value -> cached_value
   | None ->
       let contribution =
@@ -420,10 +418,8 @@ let max_content_contribution_cached t axis (type tree)
           (module Tree)
           t axis tree available_space inner_node_size
       in
-      let new_cache =
-        Size.set t.max_content_contribution_cache axis (Some contribution)
-      in
-      t.max_content_contribution_cache <- new_cache;
+      t.max_content_contribution_cache <-
+        Size.set axis (Some contribution) t.max_content_contribution_cache;
       contribution
 
 (* Compute the available space for an item in a given axis based on the tracks it spans *)
@@ -448,5 +444,4 @@ let available_space t axis other_axis_tracks other_axis_available_space
             ))
       (Some 0.0) spanned_tracks
   in
-  let mut_size = Size.none in
-  Size.set mut_size other_axis item_other_axis_size
+  Size.set other_axis item_other_axis_size Size.none

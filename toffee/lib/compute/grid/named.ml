@@ -10,8 +10,6 @@ type t = {
       (* Map of row line names to line numbers. Each line name may correspond to multiple lines *)
   column_lines : (string, int list) Hashtbl.t;
       (* Map of column line names to line numbers. Each line name may correspond to multiple lines *)
-  areas : (string, grid_template_area) Hashtbl.t;
-      (* Map of area names to area definitions (start and end lines numbers in each axis) *)
   area_column_count : int;
       (* Number of columns implied by grid area definitions *)
   area_row_count : int; (* Number of rows implied by grid area definitions *)
@@ -31,7 +29,6 @@ let upsert_line_name_map map key value =
 
 (* Create and initialise a new NamedLineResolver *)
 let create style column_auto_repetitions row_auto_repetitions =
-  let areas = Hashtbl.create 16 in
   let column_lines = Hashtbl.create 16 in
   let row_lines = Hashtbl.create 16 in
 
@@ -41,8 +38,6 @@ let create style column_auto_repetitions row_auto_repetitions =
   (* Process grid template areas *)
   List.iter
     (fun area ->
-      Hashtbl.add areas (Grid.Template_area.name area) area;
-
       area_column_count :=
         max !area_column_count (max 1 (Grid.Template_area.column_end area) - 1);
       area_row_count :=
@@ -176,8 +171,6 @@ let create style column_auto_repetitions row_auto_repetitions =
     explicit_column_count = 0;
     (* Overwritten later *)
     explicit_row_count = 0;
-    (* Overwritten later *)
-    areas;
     row_lines;
     column_lines;
   }

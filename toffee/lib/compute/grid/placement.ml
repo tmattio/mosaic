@@ -5,34 +5,59 @@ open Geometry
 open Style
 open Tree
 
-(* Type aliases *)
-type origin_zero_line = Grid.origin_zero_line
-type origin_zero_placement = Grid.Origin_zero_placement.t
-
 (* Helper module for grid placement operations *)
 module OriginZeroPlacement = struct
-  type t = origin_zero_placement
-
   let is_definite = function
     | Grid.Origin_zero_placement.Line _ -> true
     | _ -> false
-
-  let indefinite_span = function
-    | Grid.Origin_zero_placement.Span n -> n
-    | _ -> 1
 end
 
 (* Helper module for Line<OriginZeroPlacement> operations *)
 module PlacementLine = struct
   let is_definite line =
     OriginZeroPlacement.is_definite line.Line.start
-    && OriginZeroPlacement.is_definite line.Line.end_
+    || OriginZeroPlacement.is_definite line.Line.end_
+
+  let indefinite_span line =
+    match (line.Line.start, line.Line.end_) with
+    | Grid.Origin_zero_placement.Line _, Grid.Origin_zero_placement.Auto -> 1
+    | Grid.Origin_zero_placement.Auto, Grid.Origin_zero_placement.Line _ -> 1
+    | Grid.Origin_zero_placement.Auto, Grid.Origin_zero_placement.Auto -> 1
+    | Grid.Origin_zero_placement.Line _, Grid.Origin_zero_placement.Span span ->
+        span
+    | Grid.Origin_zero_placement.Span span, Grid.Origin_zero_placement.Line _ ->
+        span
+    | Grid.Origin_zero_placement.Span span, Grid.Origin_zero_placement.Auto ->
+        span
+    | Grid.Origin_zero_placement.Auto, Grid.Origin_zero_placement.Span span ->
+        span
+    | Grid.Origin_zero_placement.Span span, Grid.Origin_zero_placement.Span _ ->
+        span
+    | Grid.Origin_zero_placement.Line _, Grid.Origin_zero_placement.Line _ ->
+        failwith
+          "indefinite_span should only be called on indefinite grid tracks"
 
   let resolve_definite_grid_lines line =
     match (line.Line.start, line.Line.end_) with
     | ( Grid.Origin_zero_placement.Line start,
+        Grid.Origin_zero_placement.Line end_ )
+      when start = end_ ->
+        Line.{ start; end_ = start + 1 }
+    | ( Grid.Origin_zero_placement.Line start,
         Grid.Origin_zero_placement.Line end_ ) ->
-        Line.{ start; end_ }
+        let start_line = min start end_ in
+        let end_line = max start end_ in
+        Line.{ start = start_line; end_ = end_line }
+    | ( Grid.Origin_zero_placement.Line start,
+        Grid.Origin_zero_placement.Span span ) ->
+        Line.{ start; end_ = start + span }
+    | Grid.Origin_zero_placement.Line start, Grid.Origin_zero_placement.Auto ->
+        Line.{ start; end_ = start + 1 }
+    | Grid.Origin_zero_placement.Span span, Grid.Origin_zero_placement.Line end_
+      ->
+        Line.{ start = end_ - span; end_ }
+    | Grid.Origin_zero_placement.Auto, Grid.Origin_zero_placement.Line end_ ->
+        Line.{ start = end_ - 1; end_ }
     | _ -> failwith "resolve_definite_grid_lines called on indefinite placement"
 
   let resolve_indefinite_grid_tracks line position =
@@ -139,7 +164,7 @@ let place_indefinitely_positioned_item cell_occupancy_matrix placement auto_flow
   in
 
   let secondary_span =
-    OriginZeroPlacement.indefinite_span secondary_placement_style.Line.start
+    PlacementLine.indefinite_span secondary_placement_style
   in
   let has_definite_primary_axis_position =
     PlacementLine.is_definite primary_placement_style
@@ -201,9 +226,7 @@ let place_indefinitely_positioned_item cell_occupancy_matrix placement auto_flow
     in
     loop ())
   else
-    let primary_span =
-      OriginZeroPlacement.indefinite_span primary_placement_style.Line.start
-    in
+    let primary_span = PlacementLine.indefinite_span primary_placement_style in
 
     (* Item does not have any fixed axis, so we search along the primary axis until we hit the end of the already
        existent tracks, and then we reset the primary axis back to zero and increment the secondary axis index.
@@ -310,52 +333,62 @@ let place_grid_items (type t)
   in
 
   (* Helper to iterate children, filtering out display:none and position:absolute items *)
-  let children_seq () =
-    Tree.child_ids tree parent_node
-    |> Seq.mapi (fun index child_id ->
-           let child_style = Tree.get_core_container_style tree child_id in
-           (index, child_id, child_style))
-    |> Seq.filter (fun (_, _, style) ->
-           Style.box_generation_mode style <> Box_generation_mode.None
-           && Style.position style <> Position.Absolute)
+  let children_array =
+    let count = Tree.child_count tree parent_node in
+    let acc = ref [] in
+    for index = count - 1 downto 0 do
+      let child_id = Tree.get_child_id tree parent_node index in
+      let child_style = Tree.get_core_container_style tree child_id in
+      if
+        Style.box_generation_mode child_style <> Box_generation_mode.None
+        && Style.position child_style <> Position.Absolute
+      then acc := (index, child_id, child_style) :: !acc
+    done;
+    Array.of_list !acc
   in
 
   (* 1. Place children with definite positions *)
-  children_seq ()
-  |> Seq.map map_child_style_to_origin_zero_placement
-  |> Seq.filter (fun (_, _, placement, _) ->
-         PlacementLine.is_definite placement.In_both_abs_axis.horizontal
-         && PlacementLine.is_definite placement.In_both_abs_axis.vertical)
-  |> Seq.iter (fun (index, child_node, child_placement, style) ->
-         let primary_span, secondary_span =
-           place_definite_grid_item child_placement primary_axis
-         in
-         record_grid_placement cell_occupancy_matrix items child_node index
-           style align_items justify_items primary_axis primary_span
-           secondary_span Cell_occupancy.DefinitelyPlaced);
+  Array.iter
+    (fun (index, child_node, child_style) ->
+      let _, _, child_placement, style =
+        map_child_style_to_origin_zero_placement (index, child_node, child_style)
+      in
+      if
+        PlacementLine.is_definite child_placement.In_both_abs_axis.horizontal
+        && PlacementLine.is_definite child_placement.In_both_abs_axis.vertical
+      then
+        let primary_span, secondary_span =
+          place_definite_grid_item child_placement primary_axis
+        in
+        record_grid_placement cell_occupancy_matrix items child_node index style
+          align_items justify_items primary_axis primary_span secondary_span
+          Cell_occupancy.DefinitelyPlaced)
+    children_array;
 
   (* 2. Place remaining children with definite secondary axis positions *)
-  children_seq ()
-  |> Seq.map map_child_style_to_origin_zero_placement
-  |> Seq.filter (fun (_, _, placement, _) ->
-         let secondary_definite =
-           PlacementLine.is_definite
-             (PlacementInBothAxes.get placement secondary_axis)
-         in
-         let primary_indefinite =
-           not
-             (PlacementLine.is_definite
-                (PlacementInBothAxes.get placement primary_axis))
-         in
-         secondary_definite && primary_indefinite)
-  |> Seq.iter (fun (index, child_node, child_placement, style) ->
-         let primary_span, secondary_span =
-           place_definite_secondary_axis_item cell_occupancy_matrix
-             child_placement grid_auto_flow
-         in
-         record_grid_placement cell_occupancy_matrix items child_node index
-           style align_items justify_items primary_axis primary_span
-           secondary_span Cell_occupancy.AutoPlaced);
+  Array.iter
+    (fun (index, child_node, child_style) ->
+      let _, _, child_placement, style =
+        map_child_style_to_origin_zero_placement (index, child_node, child_style)
+      in
+      let secondary_definite =
+        PlacementLine.is_definite
+          (PlacementInBothAxes.get child_placement secondary_axis)
+      in
+      let primary_indefinite =
+        not
+          (PlacementLine.is_definite
+             (PlacementInBothAxes.get child_placement primary_axis))
+      in
+      if secondary_definite && primary_indefinite then
+        let primary_span, secondary_span =
+          place_definite_secondary_axis_item cell_occupancy_matrix
+            child_placement grid_auto_flow
+        in
+        record_grid_placement cell_occupancy_matrix items child_node index style
+          align_items justify_items primary_axis primary_span secondary_span
+          Cell_occupancy.AutoPlaced)
+    children_array;
 
   (* 3. Determine the number of columns in the implicit grid
      By the time we get to this point in the execution, this is actually already accounted for:
@@ -389,29 +422,33 @@ let place_grid_items (type t)
   let grid_start_position = (-primary_neg_tracks, -secondary_neg_tracks) in
   let grid_position = ref grid_start_position in
 
-  children_seq ()
-  |> Seq.map map_child_style_to_origin_zero_placement
-  |> Seq.filter (fun (_, _, placement, _) ->
-         not
-           (PlacementLine.is_definite
-              (PlacementInBothAxes.get placement secondary_axis)))
-  |> Seq.iter (fun (index, child_node, child_placement, style) ->
-         (* Compute placement *)
-         let primary_span, secondary_span =
-           place_indefinitely_positioned_item cell_occupancy_matrix
-             child_placement grid_auto_flow !grid_position
-         in
+  Array.iter
+    (fun (index, child_node, child_style) ->
+      let _, _, child_placement, style =
+        map_child_style_to_origin_zero_placement (index, child_node, child_style)
+      in
+      if
+        not
+          (PlacementLine.is_definite
+             (PlacementInBothAxes.get child_placement secondary_axis))
+      then (
+        (* Compute placement *)
+        let primary_span, secondary_span =
+          place_indefinitely_positioned_item cell_occupancy_matrix
+            child_placement grid_auto_flow !grid_position
+        in
 
-         (* Record item *)
-         record_grid_placement cell_occupancy_matrix items child_node index
-           style align_items justify_items primary_axis primary_span
-           secondary_span Cell_occupancy.AutoPlaced;
+        (* Record item *)
+        record_grid_placement cell_occupancy_matrix items child_node index style
+          align_items justify_items primary_axis primary_span secondary_span
+          Cell_occupancy.AutoPlaced;
 
-         (* If using the "dense" placement algorithm then reset the grid position back to grid_start_position ready for the next item
+        (* If using the "dense" placement algorithm then reset the grid position back to grid_start_position ready for the next item
           Otherwise set it to the position of the current item so that the next item it placed after it. *)
-         grid_position :=
-           if Grid.Auto_flow.is_dense grid_auto_flow then grid_start_position
-           else (primary_span.Line.end_, secondary_span.Line.start));
+        grid_position :=
+          if Grid.Auto_flow.is_dense grid_auto_flow then grid_start_position
+          else (primary_span.Line.end_, secondary_span.Line.start)))
+    children_array;
 
   (* Reverse the items list to maintain original order (we accumulated in reverse for performance) *)
   items := List.rev !items
