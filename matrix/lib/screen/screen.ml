@@ -215,6 +215,23 @@ let render_generic ~pool ~row_offset ~use_explicit_width ~use_hyperlinks ~mode
 
   let total = process_rows 0 0 in
 
+  (* Clear any cells that were present in the previous frame but are now
+     outside the current grid bounds. This prevents stale rows/columns from
+     lingering when the grid shrinks. *)
+  (if prev_width > width then
+     let start_col = width + 1 in
+     let rows = min height prev_height in
+     for y = 0 to rows - 1 do
+       Esc.cursor_position ~row:(row_offset + y + 1) ~col:start_col writer;
+       Esc.erase_line ~mode:0 writer
+     done);
+
+  if prev_height > height then
+    for y = height to prev_height - 1 do
+      Esc.cursor_position ~row:(row_offset + y + 1) ~col:1 writer;
+      Esc.erase_line ~mode:2 writer
+    done;
+
   Ansi.Sgr_state.close_link sgr_state writer;
   Ansi.Sgr_state.reset sgr_state;
   total
