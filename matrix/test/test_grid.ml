@@ -1,828 +1,1123 @@
 open Alcotest
-module G = Grid
-module C = G.Cell
 
-let default_style = Ansi.Style.default
-let cell = testable C.pp C.equal
+(* Helper to calculate linear index *)
+let idx grid x y = (y * Grid.width grid) + x
 
-let get_cell g ~row ~col =
-  match G.get g ~row ~col with
-  | Some c -> c
-  | None -> failwith (Printf.sprintf "Cell (%d, %d) out of bounds" row col)
+(* Updated: Use Grid.get_text and predicates instead of Cell matching *)
+let read_char grid x y =
+  let i = idx grid x y in
+  if Grid.is_empty grid i then 32 (* Space *)
+  else if Grid.is_continuation grid i then 32 (* Treat continuation as space *)
+  else
+    let text = Grid.get_text grid i in
+    if String.length text = 0 then 32
+    else
+      let decoder = String.get_utf_8_uchar text 0 in
+      Uchar.to_int (Uchar.utf_decode_uchar decoder)
 
-let dirty_region = testable G.pp_dirty_region G.equal_dirty_region
+(* Updated: Use Grid.cell_width *)
+let read_width grid x y =
+  let i = idx grid x y in
+  if Grid.is_empty grid i then 1 else Grid.cell_width grid i
 
-let test_creation_and_sizing () =
-  let g = G.create ~rows:10 ~cols:20 () in
-  check int "correct number of rows" 10 (G.rows g);
-  check int "correct number of cols" 20 (G.cols g);
-  check cell "initial cell is empty" C.empty (get_cell g ~row:5 ~col:10);
-  G.resize g ~rows:5 ~cols:15;
-  check int "resized rows" 5 (G.rows g);
-  check int "resized cols" 15 (G.cols g);
-  check (option cell) "get out of bounds after resize" None
-    (G.get g ~row:8 ~col:18);
-  let g_zero = G.create ~rows:0 ~cols:0 () in
-  check int "zero rows" 0 (G.rows g_zero);
-  check int "zero cols" 0 (G.cols g_zero)
+(* Updated: Use Grid.attrs *)
+let read_attr grid x y = Grid.get_attrs grid (idx grid x y)
 
-let test_cell_access () =
-  let g = G.create ~rows:3 ~cols:5 () in
-  let glyph = C.make_glyph "a" ~style:default_style ~east_asian_context:false in
-  G.set g ~row:1 ~col:2 (Some glyph);
-  check (option cell) "get returns set cell" (Some glyph)
-    (G.get g ~row:1 ~col:2);
-  check (option cell) "other cells remain empty" (Some C.empty)
-    (G.get g ~row:1 ~col:1);
-  G.set g ~row:1 ~col:2 None;
-  check (option cell) "set None clears cell" (Some C.empty)
-    (G.get g ~row:1 ~col:2);
-  G.set g ~row:10 ~col:10 (Some glyph);
-  (* No-op, should not raise error *)
-  check (option cell) "get out of bounds is None" None (G.get g ~row:10 ~col:10)
+(* Updated: Use Grid.Fg/Bg submodules and convert float back to int *)
+let to_byte f = Float.round (f *. 255.) |> int_of_float
 
-let test_set_grapheme () =
-  let g = G.create ~rows:2 ~cols:10 () in
-  (* Test narrow char *)
-  G.set_grapheme g ~row:0 ~col:0 ~glyph:"a" ~attrs:default_style;
-  let expected_a =
-    C.make_glyph "a" ~style:default_style ~east_asian_context:false
-  in
-  check cell "set narrow grapheme" expected_a (get_cell g ~row:0 ~col:0);
-  (* Test wide char *)
-  G.set_grapheme g ~row:0 ~col:1 ~glyph:"宽" ~attrs:default_style;
-  let expected_wide =
-    C.make_glyph "宽" ~style:default_style ~east_asian_context:false
-  in
-  let expected_cont = C.make_continuation ~style:default_style in
-  check cell "set wide grapheme" expected_wide (get_cell g ~row:0 ~col:1);
-  check cell "continuation cell is correct" expected_cont
-    (get_cell g ~row:0 ~col:2);
-  (* Test overwriting wide char with narrow *)
-  G.set_grapheme g ~row:0 ~col:1 ~glyph:"b" ~attrs:default_style;
-  let expected_b =
-    C.make_glyph "b" ~style:default_style ~east_asian_context:false
-  in
-  check cell "overwrite wide with narrow" expected_b (get_cell g ~row:0 ~col:1);
-  check cell "continuation cell is cleared" C.empty (get_cell g ~row:0 ~col:2);
-  (* Test wide char at edge of screen (should be replaced with U+FFFD) *)
-  G.set_grapheme g ~row:0 ~col:9 ~glyph:"宽" ~attrs:default_style;
-  let expected_replace =
-    C.make_glyph "�" ~style:default_style ~east_asian_context:false
-  in
-  check cell "wide grapheme at edge is replaced" expected_replace
-    (get_cell g ~row:0 ~col:9)
+let read_fg grid x y =
+  let i = idx grid x y in
+  ( to_byte (Grid.get_fg_r grid i),
+    to_byte (Grid.get_fg_g grid i),
+    to_byte (Grid.get_fg_b grid i),
+    to_byte (Grid.get_fg_a grid i) )
 
-let test_set_text () =
-  let g = G.create ~rows:2 ~cols:10 () in
-  let width = G.set_text g ~row:0 ~col:1 ~text:"hello" ~attrs:default_style in
-  check int "set_text returns correct width" 5 width;
-  check char "char 'h' is set" 'h' (C.get_text (get_cell g ~row:0 ~col:1)).[0];
-  check char "char 'o' is set" 'o' (C.get_text (get_cell g ~row:0 ~col:5)).[0];
-  (* Test with mixed-width and clipping *)
-  let width2 = G.set_text g ~row:1 ~col:7 ~text:"a宽b" ~attrs:default_style in
-  check int "clipped mixed-width text returns correct width" 3 width2;
-  check string "clipped text 'a'" "a" (C.get_text (get_cell g ~row:1 ~col:7));
-  let wide_cell = get_cell g ~row:1 ~col:8 in
-  check string "clipped text '宽'" "宽" (C.get_text wide_cell);
-  check int "clipped wide cell width" 2 (C.width wide_cell);
-  (* Column 9 is the continuation of the wide character at column 8 *)
-  check bool "col 9 is continuation cell" true
-    (C.is_continuation (get_cell g ~row:1 ~col:9))
+let read_bg grid x y =
+  let i = idx grid x y in
+  ( to_byte (Grid.get_bg_r grid i),
+    to_byte (Grid.get_bg_g grid i),
+    to_byte (Grid.get_bg_b grid i),
+    to_byte (Grid.get_bg_a grid i) )
 
-let test_set_text_emoji () =
-  let g = G.create ~rows:1 ~cols:10 ~east_asian_context:true () in
-  (* Test complex ZWJ emoji sequence: woman + ZWJ + woman + ZWJ + girl + ZWJ + boy *)
-  let emoji = "👩‍👩‍👧‍👦" in
-  let width = G.set_text g ~row:0 ~col:0 ~text:emoji ~attrs:default_style in
-  check int "complex emoji width" 2 width;
-  let emoji_cell = get_cell g ~row:0 ~col:0 in
-  check bool "emoji cell is a glyph" true (C.is_glyph emoji_cell);
-  check string "emoji cell text" emoji (C.get_text emoji_cell);
-  check int "emoji cell reported width" 2 (C.width emoji_cell);
-  check bool "continuation cell for emoji" true
-    (C.is_continuation (get_cell g ~row:0 ~col:1))
+let rgba = Alcotest.(pair int (pair int (pair int int)))
 
-let test_clear_operations () =
-  let g = G.create ~rows:5 ~cols:5 () in
-  let _ = G.set_text g ~row:1 ~col:0 ~text:"12345" ~attrs:default_style in
-  let _ = G.set_text g ~row:2 ~col:0 ~text:"abcde" ~attrs:default_style in
-  let _ = G.set_text g ~row:3 ~col:0 ~text:"XYZ" ~attrs:default_style in
-  (* Test clear_line *)
-  G.clear_line g 2 2;
-  check string "clear_line keeps start" "a"
-    (C.get_text (get_cell g ~row:2 ~col:0));
-  check string "clear_line keeps middle" "b"
-    (C.get_text (get_cell g ~row:2 ~col:1));
-  check cell "clear_line clears cell" C.empty (get_cell g ~row:2 ~col:2);
-  check cell "clear_line clears to end" C.empty (get_cell g ~row:2 ~col:4);
-  (* Test clear_rect *)
-  G.clear_rect g ~row_start:1 ~row_end:3 ~col_start:0 ~col_end:1;
-  check cell "clear_rect clears top-left" C.empty (get_cell g ~row:1 ~col:0);
-  check string "clear_rect leaves outside" "3"
-    (C.get_text (get_cell g ~row:1 ~col:2));
-  check cell "clear_rect clears bottom-right" C.empty (get_cell g ~row:3 ~col:1);
-  check string "clear_rect leaves outside" "Z"
-    (C.get_text (get_cell g ~row:3 ~col:2));
-  (* Test clear *)
-  G.clear g;
-  check cell "clear clears all" C.empty (get_cell g ~row:1 ~col:2)
-
-let test_row_operations () =
-  let g = G.create ~rows:2 ~cols:5 () in
-  let _ = G.set_text g ~row:0 ~col:0 ~text:"hello" ~attrs:default_style in
-  let row_copy = G.copy_row g 0 in
-  check int "copied row has correct length" 5 (Array.length row_copy);
-  check string "copied row content" "e" (C.get_text row_copy.(1));
-  G.set_row g 1 row_copy;
-  check string "set_row copies content" "h"
-    (C.get_text (get_cell g ~row:1 ~col:0));
-  check string "set_row copies content" "o"
-    (C.get_text (get_cell g ~row:1 ~col:4));
-  let empty_row = G.make_empty_row ~cols:5 in
-  G.set_row g 0 empty_row;
-  check cell "make_empty_row works" C.empty (get_cell g ~row:0 ~col:2)
-
-let test_blit () =
-  let src = G.create ~rows:5 ~cols:5 () in
-  let dst = G.create ~rows:5 ~cols:5 () in
-  let _ = G.set_text src ~row:1 ~col:1 ~text:"ab" ~attrs:default_style in
-  let _ = G.set_text src ~row:2 ~col:1 ~text:"cd" ~attrs:default_style in
-  (* Simple blit *)
-  let src_rect = { G.row = 1; col = 1; width = 2; height = 2 } in
-  G.blit ~src ~src_rect ~dst ~dst_pos:(2, 2);
-  check string "blit content top-left" "a"
-    (C.get_text (get_cell dst ~row:2 ~col:2));
-  check string "blit content bottom-right" "d"
-    (C.get_text (get_cell dst ~row:3 ~col:3));
-  check cell "blit leaves other cells empty" C.empty
-    (get_cell dst ~row:1 ~col:1);
-  (* Overlapping blit on same grid *)
-  let g = G.create ~rows:5 ~cols:5 () in
-  let _ = G.set_text g ~row:0 ~col:0 ~text:"12" ~attrs:default_style in
-  let overlap_rect = { G.row = 0; col = 0; width = 2; height = 1 } in
-  G.blit ~src:g ~src_rect:overlap_rect ~dst:g ~dst_pos:(0, 1);
-  check string "overlapping blit shifts content" "1"
-    (C.get_text (get_cell g ~row:0 ~col:1));
-  check string "overlapping blit shifts content" "2"
-    (C.get_text (get_cell g ~row:0 ~col:2))
-
-let test_swap_and_copy () =
-  let g1 = G.create ~rows:2 ~cols:2 () in
-  G.set_grapheme g1 ~row:0 ~col:0 ~glyph:"a" ~attrs:default_style;
-  let g2 = G.create ~rows:2 ~cols:2 () in
-  G.set_grapheme g2 ~row:0 ~col:0 ~glyph:"b" ~attrs:default_style;
-  G.swap (g1, g2);
-  check string "g1 has g2's content after swap" "b"
-    (C.get_text (get_cell g1 ~row:0 ~col:0));
-  check string "g2 has g1's content after swap" "a"
-    (C.get_text (get_cell g2 ~row:0 ~col:0));
-  let g3 = G.copy g1 in
-  G.set_grapheme g1 ~row:0 ~col:0 ~glyph:"c" ~attrs:default_style;
-  check string "copy is a deep copy" "b"
-    (C.get_text (get_cell g3 ~row:0 ~col:0))
-
-let test_damage_and_diff () =
-  let prev = G.create ~rows:5 ~cols:10 () in
-  let _ = G.set_text prev ~row:0 ~col:0 ~text:"line 0" ~attrs:default_style in
-  let _ = G.set_text prev ~row:4 ~col:0 ~text:"line 4" ~attrs:default_style in
-  let curr = G.copy prev in
-  (* No changes *)
-  check (list int) "diff_rows on identical grids is empty" []
-    (G.diff_rows prev curr);
-  check
-    (list (pair int int))
-    "diff_cells on identical grids is empty" [] (G.diff_cells prev curr);
-  (* Make some changes *)
-  G.set_grapheme curr ~row:1 ~col:5 ~glyph:"X" ~attrs:default_style;
-  G.set_grapheme curr ~row:3 ~col:2 ~glyph:"Y" ~attrs:default_style;
-  G.set_grapheme curr ~row:3 ~col:3 ~glyph:"Z" ~attrs:default_style;
-  (* Verify the changes actually happened *)
-  check string "change 1 applied" "X" (C.get_text (get_cell curr ~row:1 ~col:5));
-  check string "change 2 applied" "Y" (C.get_text (get_cell curr ~row:3 ~col:2));
-  check string "change 3 applied" "Z" (C.get_text (get_cell curr ~row:3 ~col:3));
-  (* Check that prev is unchanged *)
-  check cell "prev unchanged at 1,5" C.empty (get_cell prev ~row:1 ~col:5);
-  check cell "prev unchanged at 3,2" C.empty (get_cell prev ~row:3 ~col:2);
-  let dirty_rows = G.diff_rows prev curr in
-  check (list int) "diff_rows finds changed rows" [ 1; 3 ] dirty_rows;
-  let dirty_cells = G.diff_cells prev curr in
-  check
-    (list (pair int int))
-    "diff_cells finds changed cells"
-    [ (1, 5); (3, 2); (3, 3) ]
-    dirty_cells;
-  let regions = G.diff prev curr in
-  check int "diff finds correct number of regions" 2 (List.length regions);
-  let r1 = List.nth regions 0 in
-  let r2 = List.nth regions 1 in
-  check int "region 1 min_row" 1 r1.G.min_row;
-  check int "region 1 max_row" 1 r1.G.max_row;
-  check int "region 2 min_row" 3 r2.G.min_row;
-  check int "region 2 max_row" 3 r2.G.max_row;
-  (* Test flush_damage *)
-  let g_damage = G.create ~rows:5 ~cols:10 () in
-  G.set_grapheme g_damage ~row:1 ~col:1 ~glyph:"A" ~attrs:default_style;
-  G.set_grapheme g_damage ~row:2 ~col:1 ~glyph:"B" ~attrs:default_style;
-  let damage_regions = G.flush_damage g_damage in
-  check int "flush_damage merges contiguous rows" 1 (List.length damage_regions);
-  let dr = List.hd damage_regions in
-  check int "flushed region start row" 1 dr.G.row;
-  check int "flushed region start col" 0 dr.G.col;
-  check int "flushed region height" 2 dr.G.height;
-  check int "flushed region width" 10 dr.G.width;
-  let no_damage = G.flush_damage g_damage in
-  check (list (of_pp G.pp_rect)) "flush_damage clears damage" [] no_damage
-
-let test_to_string () =
-  let g = G.create ~rows:3 ~cols:10 () in
-  let _ = G.set_text g ~row:0 ~col:0 ~text:"hello" ~attrs:default_style in
-  let _ = G.set_text g ~row:1 ~col:0 ~text:"a宽b" ~attrs:default_style in
-  let _ = G.set_text g ~row:2 ~col:0 ~text:"end " ~attrs:default_style in
-  let expected = "hello\na宽b\nend" in
-  check string "to_string represents grid content correctly" expected
-    (G.to_string g)
-
-let test_with_updates () =
-  let g = G.create ~rows:2 ~cols:5 () in
-  let prev_copy = G.copy g in
-  G.with_updates g (fun g' ->
-      G.set_grapheme g' ~row:0 ~col:0 ~glyph:"a" ~attrs:default_style;
-      G.set_grapheme g' ~row:1 ~col:4 ~glyph:"b" ~attrs:default_style;
-      (* At this point, inside the function, row hashes are not yet updated *)
-      let dirty_rows_inside = G.diff_rows prev_copy g' in
-      (* This check is a bit implementation-specific, but demonstrates the deferral *)
-      check (list int) "hashes are not updated inside with_updates" []
-        dirty_rows_inside);
-  (* After the function, hashes should be updated *)
-  let dirty_rows_after = G.diff_rows prev_copy g in
-  check (list int) "hashes are updated after with_updates" [ 0; 1 ]
-    dirty_rows_after;
-  check string "cell 'a' is set" "a" (C.get_text (get_cell g ~row:0 ~col:0));
-  check string "cell 'b' is set" "b" (C.get_text (get_cell g ~row:1 ~col:4))
-
-(* New tests start here *)
-let test_set_grapheme_link () =
-  let g = G.create ~rows:1 ~cols:1 () in
-  let link = "https://example.com" in
-  G.set_grapheme ~link g ~row:0 ~col:0 ~glyph:"a" ~attrs:default_style;
-  let cell = get_cell g ~row:0 ~col:0 in
-  check string "glyph with link" "a" (C.get_text cell);
-  (* Note: Link ID is internal; test via diff or copy to ensure preservation *)
-  let copy = G.copy g in
-  check bool "link preserved in copy" (G.diff_cells g copy = []) true
-
-let test_set_grapheme_east_asian_override () =
-  let g = G.create ~rows:1 ~cols:3 ~east_asian_context:false () in
-  let ambiguous = "￦" in
-  (* U+FFE6, ambiguous width *)
-  G.set_grapheme ~east_asian_context:true g ~row:0 ~col:0 ~glyph:ambiguous
-    ~attrs:default_style;
-  check int "ambiguous wide in east_asian override" 2
-    (C.width (get_cell g ~row:0 ~col:0));
-  check bool "continuation for ambiguous wide" true
-    (C.is_continuation (get_cell g ~row:0 ~col:1))
-
-let test_set_grapheme_alpha_blend () =
-  let g = G.create ~rows:1 ~cols:1 () in
-  let fg = Ansi.Style.RGB (255, 0, 0) in
-  (* Red *)
-  let bg = Ansi.Style.RGBA (0, 255, 0, 128) in
-  (* Semi-transparent green *)
-  let attrs = Ansi.Style.with_fg fg (Ansi.Style.with_bg bg default_style) in
-  G.set_grapheme g ~row:0 ~col:0 ~glyph:"a" ~attrs;
-  let cell = get_cell g ~row:0 ~col:0 in
-  let style = C.get_style cell in
-  check bool "blended bg is opaque"
-    (match Ansi.Style.bg style with Ansi.Style.RGB _ -> true | _ -> false)
-    true
-
-let test_set_text_link () =
-  let g = G.create ~rows:1 ~cols:5 () in
-  let link = "https://example.com" in
-  ignore (G.set_text ~link g ~row:0 ~col:0 ~text:"abc" ~attrs:default_style);
-  let copy = G.copy g in
-  check bool "links preserved across cells" (G.diff_cells g copy = []) true
-
-let test_set_text_east_asian_override () =
-  let g = G.create ~rows:1 ~cols:5 ~east_asian_context:false () in
-  let text = "￦￦" in
-  (* Two ambiguous width chars *)
-  let width =
-    G.set_text ~east_asian_context:true g ~row:0 ~col:0 ~text
-      ~attrs:default_style
-  in
-  check int "ambiguous wide in override" 4 width
-
-let test_set_text_max_width () =
-  let g = G.create ~rows:1 ~cols:5 () in
-  let width =
-    G.set_text ~max_width:3 g ~row:0 ~col:0 ~text:"abcde" ~attrs:default_style
-  in
-  check int "truncated at max_width" 3 width;
-  check cell "beyond max_width unchanged" C.empty (get_cell g ~row:0 ~col:3)
-
-let test_set_text_zero_width () =
-  let g = G.create ~rows:1 ~cols:5 () in
-  let width =
-    G.set_text g ~row:0 ~col:0 ~text:"a\u{200D}b" ~attrs:default_style
-  in
-  (* a + ZWJ + b - ZWJ sticks to 'a' but doesn't join with 'b' *)
-  (* First grapheme cluster "a\u{200D}" goes to cell 0 *)
-  check string "first cluster contains a+ZWJ" "a\u{200D}"
-    (C.get_text (get_cell g ~row:0 ~col:0));
-  check int "first cluster width" 1 (C.width (get_cell g ~row:0 ~col:0));
-  (* Second grapheme cluster "b" goes to cell 1 *)
-  check string "second cluster contains b" "b"
-    (C.get_text (get_cell g ~row:0 ~col:1));
-  check int "second cluster width" 1 (C.width (get_cell g ~row:0 ~col:1));
-  (* Total width should be 2 *)
-  check int "total width" 2 width
-
-let test_set_text_combining_marks () =
-  let g = G.create ~rows:1 ~cols:5 () in
-  ignore (G.set_text g ~row:0 ~col:0 ~text:"e\u{0301}" ~attrs:default_style);
-  (* e + acute *)
-  check string "combining mark appends" "e\u{0301}"
-    (C.get_text (get_cell g ~row:0 ~col:0));
-  check int "combining mark width 1" 1 (C.width (get_cell g ~row:0 ~col:0))
-
-let test_clear_with_style () =
-  let g = G.create ~rows:1 ~cols:1 () in
-  let style = Ansi.Style.with_bg (Ansi.Style.RGB (255, 0, 0)) default_style in
-  G.clear ~style g;
-  check bool "clear with style sets bg"
-    (Ansi.Style.bg (C.get_style (get_cell g ~row:0 ~col:0))
-    = Ansi.Style.RGB (255, 0, 0))
-    true
-
-let test_fill_space () =
-  let g = G.create ~rows:1 ~cols:2 () in
-  G.fill_space g;
-  check string "fills with space" " " (C.get_text (get_cell g ~row:0 ~col:0));
-  let style = Ansi.Style.with_fg (Ansi.Style.RGB (0, 255, 0)) default_style in
-  G.fill_space ~style g;
-  check bool "fills with style"
-    (Ansi.Style.fg (C.get_style (get_cell g ~row:0 ~col:0))
-    = Ansi.Style.RGB (0, 255, 0))
-    true
-
-let test_resize_preservation () =
-  let g = G.create ~rows:2 ~cols:2 () in
-  G.set_grapheme g ~row:0 ~col:0 ~glyph:"a" ~attrs:default_style;
-  G.set_grapheme g ~row:1 ~col:1 ~glyph:"b" ~attrs:default_style;
-  G.resize g ~rows:3 ~cols:3;
-  check string "preserves content" "a" (C.get_text (get_cell g ~row:0 ~col:0));
-  check cell "new cells empty" C.empty (get_cell g ~row:2 ~col:2);
-  G.resize g ~rows:1 ~cols:1;
-  check string "truncates content" "a" (C.get_text (get_cell g ~row:0 ~col:0))
-
-let test_blit_clipping () =
-  let src = G.create ~rows:3 ~cols:3 () in
-  let _ = G.set_text src ~row:0 ~col:0 ~text:"abc" ~attrs:default_style in
-  let dst = G.create ~rows:2 ~cols:2 () in
-  let src_rect = { G.row = 0; col = 0; width = 3; height = 3 } in
-  G.blit ~src ~src_rect ~dst ~dst_pos:(0, 0);
-  check string "clips to dst bounds" "a"
-    (C.get_text (get_cell dst ~row:0 ~col:0));
-  check string "clips to dst bounds" "b"
-    (C.get_text (get_cell dst ~row:0 ~col:1))
-
-let test_blit_negative_pos () =
-  let src = G.create ~rows:1 ~cols:1 () in
-  G.set_grapheme src ~row:0 ~col:0 ~glyph:"a" ~attrs:default_style;
-  let dst = G.create ~rows:1 ~cols:1 () in
-  let src_rect = { G.row = 0; col = 0; width = 1; height = 1 } in
-  G.blit ~src ~src_rect ~dst ~dst_pos:(-1, -1);
-  check cell "negative pos no-op" C.empty (get_cell dst ~row:0 ~col:0)
-
-let test_flush_damage_multi_ops () =
-  let g = G.create ~rows:3 ~cols:3 () in
-  G.set_grapheme g ~row:0 ~col:0 ~glyph:"a" ~attrs:default_style;
-  G.clear_line g 1 0;
-  let regions = G.flush_damage g in
-  check int "multi ops merge regions" 1 (List.length regions);
-  let r = List.hd regions in
-  check int "covers all dirty" 2 r.G.height
-
-let test_diff_after_resize () =
-  let prev = G.create ~rows:2 ~cols:2 () in
-  let curr = G.copy prev in
-  G.resize curr ~rows:3 ~cols:3;
-  let regions = G.diff prev curr in
-  check int "diff detects resize changes" 1 (List.length regions)
-
-let test_copy_preserves_links () =
-  let g = G.create ~rows:1 ~cols:1 () in
-  G.set_grapheme ~link:"url" g ~row:0 ~col:0 ~glyph:"a" ~attrs:default_style;
-  let copy = G.copy g in
-  check bool "copy preserves links via diff" (G.diff_cells g copy = []) true
-
-let test_char_width () =
-  check int "narrow char" 1 (G.char_width (Uchar.of_char 'a'));
-  check int "wide char" 2 (G.char_width (Uchar.of_int 0x4E9C));
-  (* 亚 *)
-  check int "control char" (-1) (G.char_width (Uchar.of_int 0x000A));
-  (* LF *)
-  check int "ambiguous wide in east_asian" 2
-    (G.char_width ~east_asian:true (Uchar.of_int 0xFFE6))
-
-let test_string_width () =
-  check int "simple string" 5 (G.string_width "hello");
-  check int "with wide" 3 (G.string_width "a宽");
-  check int "emoji sequence" 2 (G.string_width "👩‍👩‍👧‍👦");
-  check int "combining" 1 (G.string_width "e\u{0301}");
-  check int "zero width" 1 (G.string_width "a\u{200D}")
-
-let test_rect_equality () =
-  let r1 = { G.row = 0; col = 0; width = 1; height = 1 } in
-  let r2 = { G.row = 0; col = 0; width = 1; height = 1 } in
-  check bool "equal rects" true (G.equal_rect r1 r2);
-  let r3 = { r1 with width = 2 } in
-  check bool "unequal rects" false (G.equal_rect r1 r3)
-
-let test_dirty_region_equality () =
-  let dr1 = { G.min_row = 0; max_row = 1; min_col = 0; max_col = 1 } in
-  let dr2 = { G.min_row = 0; max_row = 1; min_col = 0; max_col = 1 } in
-  check bool "equal dirty regions" true (G.equal_dirty_region dr1 dr2);
-  let dr3 = { dr1 with max_row = 2 } in
-  check bool "unequal dirty regions" false (G.equal_dirty_region dr1 dr3)
-
-let test_compute_dirty_regions () =
-  let dirty_flags = [| false; true; true; false |] in
-  let regions = G.compute_dirty_regions dirty_flags 5 in
-  check (list dirty_region) "groups contiguous dirty rows"
-    [ { G.min_row = 1; max_row = 2; min_col = 0; max_col = 4 } ]
-    regions
-
-let test_compute_update_regions () =
-  let cells = [ (0, 0); (0, 2); (1, 0); (1, 1); (3, 0) ] in
-  let regions = G.compute_update_regions cells in
-  check (list dirty_region) "merges into minimal regions"
-    [
-      { G.min_row = 0; max_row = 0; min_col = 0; max_col = 2 };
-      { G.min_row = 1; max_row = 1; min_col = 0; max_col = 1 };
-      { G.min_row = 3; max_row = 3; min_col = 0; max_col = 0 };
-    ]
-    regions
-
-let test_diff_regions_detailed () =
-  let prev = G.create ~rows:2 ~cols:2 () in
-  let curr = G.copy prev in
-  G.set_grapheme curr ~row:0 ~col:0 ~glyph:"a" ~attrs:default_style;
-  G.set_grapheme curr ~row:1 ~col:1 ~glyph:"b" ~attrs:default_style;
-  let detailed = G.diff_regions_detailed prev curr in
-  check int "detailed regions count" 2 (List.length detailed);
-  let _r1, c1 = List.nth detailed 0 in
-  check (list (pair int int)) "cells in region 1" [ (0, 0) ] c1;
-  let _r2, c2 = List.nth detailed 1 in
-  check (list (pair int int)) "cells in region 2" [ (1, 1) ] c2
-
-let test_edge_cases_zero_dims () =
-  let g = G.create ~rows:0 ~cols:0 () in
-  G.set_grapheme g ~row:0 ~col:0 ~glyph:"a" ~attrs:default_style;
-  (* no-op *)
-  check int "set on zero dims no crash" 0 (G.rows g);
-  G.resize g ~rows:1 ~cols:1;
-  check cell "resize from zero" C.empty (get_cell g ~row:0 ~col:0)
-
-let test_edge_cases_negative_indices () =
-  let g = G.create ~rows:2 ~cols:2 () in
-  G.set g ~row:(-1) ~col:(-1)
-    (Some (C.make_glyph "a" ~style:default_style ~east_asian_context:false));
-  (* no-op *)
-  check (option cell) "negative get" None (G.get g ~row:(-1) ~col:(-1));
-  G.clear_rect g ~row_start:(-1) ~row_end:1 ~col_start:(-1) ~col_end:1;
-  check string "negative clear doesn't affect" ""
-    (C.get_text (get_cell g ~row:0 ~col:0))
-(* still empty *)
-
-let test_edge_cases_empty_inputs () =
-  let g = G.create ~rows:1 ~cols:1 () in
-  let width = G.set_text g ~row:0 ~col:0 ~text:"" ~attrs:default_style in
-  check int "empty text width 0" 0 width;
-  check cell "empty text no change" C.empty (get_cell g ~row:0 ~col:0);
-  G.set_grapheme g ~row:0 ~col:0 ~glyph:"" ~attrs:default_style;
-  check cell "empty glyph no change" C.empty (get_cell g ~row:0 ~col:0)
-
-let test_edge_cases_wide_overwrite_wide () =
-  let g = G.create ~rows:1 ~cols:3 () in
-  G.set_grapheme g ~row:0 ~col:0 ~glyph:"宽" ~attrs:default_style;
-  G.set_grapheme g ~row:0 ~col:0 ~glyph:"広" ~attrs:default_style;
-  (* Another wide *)
-  check string "wide overwrites wide" "広"
-    (C.get_text (get_cell g ~row:0 ~col:0));
-  check bool "continuation updated" true
-    (C.is_continuation (get_cell g ~row:0 ~col:1));
-  check cell "no orphan continuation" C.empty (get_cell g ~row:0 ~col:2)
-
-let test_edge_cases_clear_wide () =
-  let g = G.create ~rows:1 ~cols:3 () in
-  G.set_grapheme g ~row:0 ~col:0 ~glyph:"宽" ~attrs:default_style;
-  G.clear_rect g ~row_start:0 ~row_end:0 ~col_start:0 ~col_end:1;
-  check cell "clear removes glyph" C.empty (get_cell g ~row:0 ~col:0);
-  check cell "clear removes continuation" C.empty (get_cell g ~row:0 ~col:1)
-
-let test_batch_many_changes () =
-  let g = G.create ~rows:10 ~cols:10 () in
-  G.with_updates g (fun g' ->
-      for i = 0 to 9 do
-        G.set_grapheme g' ~row:i ~col:i ~glyph:"x" ~attrs:default_style
-      done);
-  let prev = G.create ~rows:10 ~cols:10 () in
-  check (list int) "batch detects all rows"
-    (List.init 10 (fun i -> i))
-    (G.diff_rows prev g)
-
-(* Add to "Cell Access and Modification" suite *)
-
-let test_set_text_regional_indicators () =
-  let g = G.create ~rows:1 ~cols:4 () in
-  let flag = "🇺🇸" in
-  (* US flag: two regional indicators *)
-  let width = G.set_text g ~row:0 ~col:0 ~text:flag ~attrs:default_style in
-  check int "flag width 2" 2 width;
-  check string "flag cluster" flag (C.get_text (get_cell g ~row:0 ~col:0));
-  check bool "flag continuation" true
-    (C.is_continuation (get_cell g ~row:0 ~col:1))
-(* Covers regional indicator pairs as single wide cluster. *)
-
-let test_set_grapheme_skin_tone () =
-  let g = G.create ~rows:1 ~cols:2 () in
-  let emoji = "👍🏽" in
-  (* Thumbs up with medium skin tone *)
-  G.set_grapheme g ~row:0 ~col:0 ~glyph:emoji ~attrs:default_style;
-  check int "skin tone emoji width 2" 2 (C.width (get_cell g ~row:0 ~col:0));
-  check string "skin tone preserved" emoji
-    (C.get_text (get_cell g ~row:0 ~col:0))
-(* Covers emoji with skin tone modifiers in clusters. *)
-
-let test_set_text_malformed_utf8 () =
-  let g = G.create ~rows:1 ~cols:1 () in
-  let malformed = "\x80" in
-  (* Invalid UTF-8 byte *)
-  let width = G.set_text g ~row:0 ~col:0 ~text:malformed ~attrs:default_style in
-  check int "malformed treated as width 1" 1 width;
-  check string "malformed as replacement" "�"
-    (C.get_text (get_cell g ~row:0 ~col:0))
-(* Covers robustness to malformed UTF-8, using replacement char. *)
-
-let test_set_grapheme_variation_selector () =
-  let g = G.create ~rows:1 ~cols:2 () in
-  let text_vs = "⭐\u{FE0E}" in
-  (* Star with VS-15: text presentation, width 1 *)
-  let emoji_vs = "⭐\u{FE0F}" in
-  (* Star with VS-16: emoji, width 2 *)
-  G.set_grapheme g ~row:0 ~col:0 ~glyph:text_vs ~attrs:default_style;
-  check int "VS15 forces width 1" 1 (C.width (get_cell g ~row:0 ~col:0));
-  G.set_grapheme g ~row:0 ~col:0 ~glyph:emoji_vs ~attrs:default_style;
-  check int "VS16 forces width 2" 2 (C.width (get_cell g ~row:0 ~col:0))
-(* Covers variation selectors affecting presentation/width. *)
-
-let test_set_grapheme_alpha_blend_transparent () =
-  let g = G.create ~rows:1 ~cols:1 () in
-  let existing_bg =
-    Ansi.Style.with_bg (Ansi.Style.RGB (255, 0, 0)) default_style
-  in
-  G.set_grapheme g ~row:0 ~col:0 ~glyph:" " ~attrs:existing_bg;
-  let transparent = Ansi.Style.RGBA (0, 255, 0, 0) in
-  (* Fully transparent green *)
-  let attrs = Ansi.Style.with_bg transparent default_style in
-  G.set_grapheme g ~row:0 ~col:0 ~glyph:"a" ~attrs;
-  let final_bg = Ansi.Style.bg (C.get_style (get_cell g ~row:0 ~col:0)) in
-  check bool "transparent blends to existing"
-    (final_bg = Ansi.Style.RGB (255, 0, 0))
-    true
-(* Covers fully transparent blending preserving underlying color. *)
-
-(* Add to "Bulk Operations" suite *)
-
-let test_resize_cut_wide_char () =
-  let g = G.create ~rows:1 ~cols:3 () in
-  G.set_grapheme g ~row:0 ~col:1 ~glyph:"宽" ~attrs:default_style;
-  (* Wide at col 1-2 *)
-  G.resize g ~rows:1 ~cols:2;
-  (* Cut to cols=2 *)
-  check bool "wide char cleared when cut" true
-    (C.is_empty (get_cell g ~row:0 ~col:1));
-  G.resize g ~rows:1 ~cols:3;
-  (* Expand back *)
-  check cell "no orphan on expand" C.empty (get_cell g ~row:0 ~col:2)
-(* Covers resize truncating wide chars, preventing orphans on re-expand. *)
-
-let test_blit_wide_cross_boundary () =
-  let src = G.create ~rows:1 ~cols:3 () in
-  G.set_grapheme src ~row:0 ~col:1 ~glyph:"宽" ~attrs:default_style;
-  (* Wide at 1-2 *)
-  let dst = G.create ~rows:1 ~cols:3 () in
-  let src_rect = { G.row = 0; col = 1; width = 2; height = 1 } in
-  G.blit ~src ~src_rect ~dst ~dst_pos:(0, 0);
-  check string "blit wide preserved" "宽"
-    (C.get_text (get_cell dst ~row:0 ~col:0));
-  check bool "blit continuation" true
-    (C.is_continuation (get_cell dst ~row:0 ~col:1))
-(* Covers blitting regions with wide chars, preserving continuations. *)
-
-let test_clear_styled_with_links () =
-  let g = G.create ~rows:1 ~cols:1 () in
-  G.set_grapheme ~link:"url" g ~row:0 ~col:0 ~glyph:"a" ~attrs:default_style;
-  let bg_style =
-    Ansi.Style.with_bg (Ansi.Style.RGB (0, 255, 0)) default_style
-  in
-  G.clear ~style:bg_style g;
-  let cell = get_cell g ~row:0 ~col:0 in
-  check bool "clear removes link"
-    (Ansi.Style.get_link_id (C.get_style cell) = 0)
-    true;
-  check bool "clear sets bg"
-    (Ansi.Style.bg (C.get_style cell) = Ansi.Style.RGB (0, 255, 0))
-    true
-(* Covers clear removing links while applying styles. *)
-
-(* Add to "Damage Tracking and Diffing" suite *)
-
-let test_diff_mismatched_sizes () =
-  let prev = G.create ~rows:2 ~cols:2 () in
-  let curr = G.create ~rows:3 ~cols:3 () in
-  let regions = G.diff prev curr in
-  check int "treats extra as dirty" 1 (List.length regions);
-  let r = List.hd regions in
-  check int "full height dirty" 3 (r.G.max_row + 1)
-(* Covers diff on size mismatch, treating new areas as dirty. *)
-
-let test_cell_hash_equal_direct () =
-  let s1 = Ansi.Style.with_fg (Ansi.Style.RGB (255, 0, 0)) default_style in
-  let c1 = C.make_continuation ~style:s1 in
-  let c2 = C.make_continuation ~style:s1 in
-  check bool "equal continuations" true (C.equal c1 c2);
-  check int "hash match" (C.hash c1) (C.hash c2);
-  let c3 = C.make_continuation ~style:default_style in
-  check bool "unequal styles" false (C.equal c1 c3)
-(* Covers direct hash/equal for styled continuations, verifying collision avoidance. *)
-
-(* Add to "Performance and Batching" suite *)
-
-let test_batch_with_exception () =
-  let g = G.create ~rows:1 ~cols:1 () in
-  let prev = G.copy g in
-  (try
-     G.with_updates g (fun g' ->
-         G.set_grapheme g' ~row:0 ~col:0 ~glyph:"x" ~attrs:default_style;
-         raise Not_found)
-   with Not_found -> ());
-  (* Changes should be rolled back on exception *)
-  let diffs = G.diff_cells prev g in
-  check int "no changes after exception rollback" 0 (List.length diffs)
-(* Covers batch transactional behavior - rollback on errors. *)
-
-let test_storage_inline_vs_pooled () =
-  let g = G.create ~rows:1 ~cols:20 () in
-  let short = "abc" in
-  (* <8 bytes - will be stored inline *)
-  let long = String.make 10 'x' in
-  (* >7 bytes - will be pooled *)
-  (* Set text at different positions with enough space *)
-  let _ = G.set_text g ~row:0 ~col:0 ~text:short ~attrs:default_style in
-  let _ = G.set_text g ~row:0 ~col:5 ~text:long ~attrs:default_style in
-  let copy = G.copy g in
-  check bool "inline/pool preserved in copy" true (G.diff_cells g copy = []);
-  (* Verify text is preserved correctly across inline/pooled boundary *)
-  (* For set_text, each character goes to a separate cell *)
-  check string "first char of short" "a"
-    (C.get_text (get_cell copy ~row:0 ~col:0));
-  check string "second char of short" "b"
-    (C.get_text (get_cell copy ~row:0 ~col:1));
-  check string "third char of short" "c"
-    (C.get_text (get_cell copy ~row:0 ~col:2));
-  check string "first char of long" "x"
-    (C.get_text (get_cell copy ~row:0 ~col:5))
-(* Covers inline (<8) vs pooled storage correctness. *)
-
-let test_string_width_cache () =
-  let east_asian = false in
-  for i = 1 to 3000 do
-    (* Many unique strings *)
-    ignore (G.string_width ~east_asian (string_of_int i))
+(* Updated: Iterate width and use predicates/get_text *)
+let row_to_string grid y =
+  let width = Grid.width grid in
+  let buf = Buffer.create width in
+  for x = 0 to width - 1 do
+    let i = idx grid x y in
+    if Grid.is_empty grid i then Buffer.add_char buf ' '
+    else if Grid.is_continuation grid i then ()
+    else Buffer.add_string buf (Grid.get_text grid i)
   done;
-  let hit1 = G.string_width ~east_asian "1" in
-  (* Should still work correctly *)
-  check int "cache handles many strings" 1 hit1
-(* Covers string width cache under load. *)
+  Buffer.contents buf
 
-(* Add to "Utilities and Equality" suite *)
+let trim_right s =
+  let len = String.length s in
+  let rec loop i =
+    if i < 0 then ""
+    else if s.[i] = ' ' then loop (i - 1)
+    else String.sub s 0 (i + 1)
+  in
+  if len = 0 then s else loop (len - 1)
 
-let test_string_width_control_in_cluster () =
-  let s = "a\x0A b" in
-  (* a + LF (control) + space + b *)
-  check int "control skips width" 3 (G.string_width s)
-(* Covers control chars in clusters not adding width. *)
+let row_trimmed grid y = trim_right (row_to_string grid y)
 
-let test_diff_no_changes () =
-  let g1 = G.create ~rows:1 ~cols:1 () in
-  let g2 = G.copy g1 in
-  let diffs = G.diff_cells g1 g2 in
-  check int "no changes detected" 0 (List.length diffs)
-(* Covers diff optimization for identical grids. *)
+(* --- Tests --- *)
 
-(* Test suite definition *)
-let () =
-  run "Grid"
-    [
-      ( "Creation and Sizing",
-        [
-          test_case "Basic creation and resize" `Quick test_creation_and_sizing;
-          test_case "Zero dimensions and resize from zero" `Quick
-            test_edge_cases_zero_dims;
-        ] );
-      ( "Cell Access and Modification",
-        [
-          test_case "Get and Set" `Quick test_cell_access;
-          test_case "Set Grapheme (narrow, wide, overwrite, clip)" `Quick
-            test_set_grapheme;
-          test_case "Set Grapheme with link" `Quick test_set_grapheme_link;
-          test_case "Set Grapheme east_asian override" `Quick
-            test_set_grapheme_east_asian_override;
-          test_case "Set Grapheme alpha blending" `Quick
-            test_set_grapheme_alpha_blend;
-          test_case "Set Text (basic, clip, mixed-width)" `Quick test_set_text;
-          test_case "Set Text with link" `Quick test_set_text_link;
-          test_case "Set Text east_asian override" `Quick
-            test_set_text_east_asian_override;
-          test_case "Set Text with max_width" `Quick test_set_text_max_width;
-          test_case "Set Text (complex emoji)" `Quick test_set_text_emoji;
-          test_case "Set Text zero-width joiner" `Quick test_set_text_zero_width;
-          test_case "Set Text combining marks" `Quick
-            test_set_text_combining_marks;
-          test_case "Set Text regional indicators" `Quick
-            test_set_text_regional_indicators;
-          test_case "Set Grapheme skin tone" `Quick test_set_grapheme_skin_tone;
-          test_case "Set Text malformed UTF-8" `Quick
-            test_set_text_malformed_utf8;
-          test_case "Set Grapheme variation selector" `Quick
-            test_set_grapheme_variation_selector;
-          test_case "Set Grapheme alpha blend transparent" `Quick
-            test_set_grapheme_alpha_blend_transparent;
-        ] );
-      ( "Bulk Operations",
-        [
-          test_case "Clear, Clear Line, Clear Rect" `Quick test_clear_operations;
-          test_case "Clear with style" `Quick test_clear_with_style;
-          test_case "Fill space (with/without style)" `Quick test_fill_space;
-          test_case "Row Copy and Set" `Quick test_row_operations;
-          test_case "Blit (simple, overlapping)" `Quick test_blit;
-          test_case "Blit with clipping" `Quick test_blit_clipping;
-          test_case "Blit negative position" `Quick test_blit_negative_pos;
-          test_case "Swap and Deep Copy" `Quick test_swap_and_copy;
-          test_case "Resize with preservation/truncation" `Quick
-            test_resize_preservation;
-          test_case "Resize cut wide char" `Quick test_resize_cut_wide_char;
-          test_case "Blit wide cross boundary" `Quick
-            test_blit_wide_cross_boundary;
-          test_case "Clear styled with links" `Quick
-            test_clear_styled_with_links;
-        ] );
-      ( "Damage Tracking and Diffing",
-        [
-          test_case "Damage and Diffing logic" `Quick test_damage_and_diff;
-          test_case "Flush damage after multi ops" `Quick
-            test_flush_damage_multi_ops;
-          test_case "Diff after resize" `Quick test_diff_after_resize;
-          test_case "to_string conversion" `Quick test_to_string;
-          test_case "Compute dirty regions" `Quick test_compute_dirty_regions;
-          test_case "Compute update regions" `Quick test_compute_update_regions;
-          test_case "Diff regions detailed" `Quick test_diff_regions_detailed;
-          test_case "Diff mismatched sizes" `Quick test_diff_mismatched_sizes;
-          test_case "Cell hash equal direct" `Quick test_cell_hash_equal_direct;
-        ] );
-      ( "Performance and Batching",
-        [
-          test_case "with_updates defers hash calculation" `Quick
-            test_with_updates;
-          test_case "Batch with many changes" `Quick test_batch_many_changes;
-          test_case "Batch with exception" `Quick test_batch_with_exception;
-          test_case "Storage inline vs pooled" `Quick
-            test_storage_inline_vs_pooled;
-        ] );
-      ( "Utilities and Equality",
-        [
-          test_case "Copy preserves links" `Quick test_copy_preserves_links;
-          test_case "Char width (narrow, wide, control, ambiguous)" `Quick
-            test_char_width;
-          test_case "String width (simple, wide, emoji, combining)" `Quick
-            test_string_width;
-          test_case "Rect equality" `Quick test_rect_equality;
-          test_case "Dirty region equality" `Quick test_dirty_region_equality;
-          test_case "String width cache" `Quick test_string_width_cache;
-          test_case "String width control in cluster" `Quick
-            test_string_width_control_in_cluster;
-          test_case "Diff no changes" `Quick test_diff_no_changes;
-        ] );
-      ( "Edge Cases",
-        [
-          test_case "Negative indices" `Quick test_edge_cases_negative_indices;
-          test_case "Empty inputs" `Quick test_edge_cases_empty_inputs;
-          test_case "Wide overwrite wide" `Quick
-            test_edge_cases_wide_overwrite_wide;
-          test_case "Clear wide characters" `Quick test_edge_cases_clear_wide;
-        ] );
-    ]
+let inherit_bg_on_unwritten_ascii () =
+  let grid = Grid.create ~width:2 ~height:1 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"A";
+  let r, g, b, a = read_bg grid 0 0 in
+  check int "bg r" 0 r;
+  check int "bg g" 0 g;
+  check int "bg b" 0 b;
+  check int "bg a" 0 a;
+  ()
+
+let unicode_inherit_bg_on_unwritten_cell () =
+  let grid = Grid.create ~width:4 ~height:1 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"中";
+  let r0, g0, b0, a0 = read_bg grid 0 0 in
+  check int "bg r0" 0 r0;
+  check int "bg g0" 0 g0;
+  check int "bg b0" 0 b0;
+  check int "bg a0" 0 a0;
+  let r1, g1, b1, a1 = read_bg grid 1 0 in
+  check int "bg r1" 0 r1;
+  check int "bg g1" 0 g1;
+  check int "bg b1" 0 b1;
+  check int "bg a1" 0 a1;
+  ()
+
+let overflow_respects_scissor_for_wide_grapheme () =
+  let grid = Grid.create ~width:4 ~height:1 () in
+  Grid.push_scissor grid { x = 0; y = 0; width = 3; height = 1 };
+  Grid.draw_text grid ~x:2 ~y:0 ~text:"中";
+  Grid.pop_scissor grid;
+  check int "x=3 untouched" 32 (read_char grid 3 0)
+
+let alpha_blit_orphan_continuation_draws_space () =
+  let src = Grid.create ~width:3 ~height:1 ~respect_alpha:true () in
+  let style = Ansi.Style.make ~bg:(Ansi.Color.of_rgba 0 255 0 128) () in
+  Grid.draw_text src ~x:0 ~y:0 ~text:"中" ~style;
+  let dst = Grid.create ~width:1 ~height:1 () in
+  Grid.blit_region ~src ~dst ~src_x:1 ~src_y:0 ~width:1 ~height:1 ~dst_x:0
+    ~dst_y:0;
+  check int "dst(0,0) is space" (Char.code ' ') (read_char dst 0 0)
+
+let cross_pool_blit_remaps_graphemes () =
+  let src = Grid.create ~width:2 ~height:1 () in
+  Grid.draw_text src ~x:0 ~y:0 ~text:"😊";
+  let other_pool = Glyph.create_pool () in
+  let dst = Grid.create ~width:2 ~height:1 ~glyph_pool:other_pool () in
+  Grid.blit_region ~src ~dst ~src_x:0 ~src_y:0 ~width:2 ~height:1 ~dst_x:0
+    ~dst_y:0;
+  check string "text copied" "😊" (row_trimmed dst 0);
+  let start_idx = idx dst 0 0 in
+  let cont_idx = idx dst 1 0 in
+  check int "width preserved" 2 (Grid.cell_width dst start_idx);
+  check bool "continuation copied" true (Grid.is_continuation dst cont_idx)
+
+let blit_preserves_respect_alpha () =
+  let src = Grid.create ~width:2 ~height:2 ~respect_alpha:true () in
+  let dst = Grid.create ~width:2 ~height:2 () in
+  Grid.blit ~src ~dst;
+  check bool "respect alpha copied" true (Grid.respect_alpha dst)
+
+let blit_bulk_tracks_graphemes () =
+  let pool = Glyph.create_pool () in
+  let src = Grid.create ~width:4 ~height:1 ~glyph_pool:pool () in
+  let dst = Grid.create ~width:4 ~height:1 ~glyph_pool:pool () in
+  Grid.draw_text src ~x:0 ~y:0 ~text:"a😊a";
+  Grid.blit_region ~src ~dst ~src_x:0 ~src_y:0 ~width:4 ~height:1 ~dst_x:0
+    ~dst_y:0;
+  Grid.clear src;
+  (* Updated: use Grid.get_text directly *)
+  let text = Grid.get_text dst (idx dst 1 0) in
+  check string "emoji text" "😊" text
+
+let overlap_blit_direction_correctness () =
+  let grid = Grid.create ~width:5 ~height:1 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"ABCDE";
+  Grid.blit_region ~src:grid ~dst:grid ~src_x:0 ~src_y:0 ~width:4 ~height:1
+    ~dst_x:1 ~dst_y:0;
+  check string "overlap result" "AABCD" (row_trimmed grid 0)
+
+let box_title_left_aligned () =
+  let grid = Grid.create ~width:12 ~height:3 () in
+  let border_chars : Grid.Border.t =
+    {
+      top_left = 0x250C;
+      (* ┌ *)
+      top_right = 0x2510;
+      (* ┐ *)
+      bottom_left = 0x2514;
+      (* └ *)
+      bottom_right = 0x2518;
+      (* ┘ *)
+      horizontal = 0x2500;
+      (* ─ *)
+      vertical = 0x2502;
+      (* │ *)
+      top_t = 0;
+      bottom_t = 0;
+      left_t = 0;
+      right_t = 0;
+      cross = 0;
+    }
+  in
+  let style = Ansi.Style.default in
+  Grid.draw_box grid ~x:0 ~y:0 ~width:12 ~height:3 ~border_chars
+    ~border_sides:[ `Top; `Left; `Right ] ~border_style:style
+    ~bg_color:(Ansi.Color.of_rgba 0 0 0 0)
+    ~should_fill:false ~title:"Title" ();
+  check int "T at x=2" (Char.code 'T') (read_char grid 2 0)
+
+let diff_detects_single_rgb_step () =
+  let a = Grid.create ~width:1 ~height:1 () in
+  let b = Grid.copy a in
+  (* Instead of hacking raw arrays, we set the cell with a minimal color difference.
+     1/255 is approx 0.0039, which is > the internal epsilon (0.00001). *)
+  let minimal_diff_color = Ansi.Color.of_rgba 1 1 1 1 in
+  Grid.set_cell b ~x:0 ~y:0 ~code:(Grid.get_code a 0) ~fg:Ansi.Color.white
+    ~bg:minimal_diff_color ~attrs:Ansi.Attr.empty ();
+  let diffs = Grid.diff_cells a b in
+  check
+    (list (pair int int))
+    "diffs include cell when RGB changes by 1 step"
+    [ (0, 0) ]
+    (Array.to_list diffs)
+
+let alpha_blit_blends_fg_bg () =
+  let src = Grid.create ~width:1 ~height:1 ~respect_alpha:true () in
+  let dst = Grid.create ~width:1 ~height:1 () in
+  let blue = Ansi.Color.of_rgba 0 0 255 255 in
+  Grid.fill_rect dst ~x:0 ~y:0 ~width:1 ~height:1 ~color:blue;
+  let semi_red = Ansi.Color.of_rgba 255 0 0 128 in
+  let semi_green = Ansi.Color.of_rgba 0 255 0 128 in
+  let style = Ansi.Style.make ~fg:semi_red ~bg:semi_green () in
+  Grid.draw_text src ~x:0 ~y:0 ~text:"C" ~style;
+  Grid.blit_region ~src ~dst ~src_x:0 ~src_y:0 ~width:1 ~height:1 ~dst_x:0
+    ~dst_y:0;
+  let r_bg, g_bg, b_bg, a_bg = read_bg dst 0 0 in
+  (* Validate qualitative blend: green increases from 0, blue decreases from 255.
+     Background alpha should match the overlay value (128) rather than
+     compositing with the destination alpha. *)
+  check bool "bg green increased" true (g_bg > 0);
+  check bool "bg blue decreased" true (b_bg < 255);
+  check int "bg red stays 0" 0 r_bg;
+  check int "bg alpha is 128" 128 a_bg;
+  let r_fg, _g_fg, _b_fg, a_fg = read_fg dst 0 0 in
+  (* With src FG alpha resolved to 0 in the source buffer, FG tint contribution
+     is zero; alpha uses destination background (255). *)
+  check int "fg red stays 0" 0 r_fg;
+  check int "fg alpha 255" 255 a_fg
+
+let resize_shrink_clips_continuation () =
+  let grid = Grid.create ~width:2 ~height:1 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"中";
+  Grid.resize grid ~width:1 ~height:1;
+  check string "row after shrink clears truncated grapheme" ""
+    (row_trimmed grid 0);
+  ignore (read_char grid 0 0)
+
+let resize_truncated_grapheme_does_not_bleed () =
+  let grid = Grid.create ~width:5 ~height:2 () in
+  Grid.draw_text grid ~x:3 ~y:0 ~text:"中";
+  Grid.draw_text grid ~x:0 ~y:1 ~text:"B";
+  Grid.resize grid ~width:4 ~height:2;
+  Grid.draw_text grid ~x:3 ~y:0 ~text:"X";
+  check string "bottom row preserved" "B" (row_trimmed grid 1)
+
+let create_defaults () =
+  let grid = Grid.create ~width:2 ~height:3 () in
+  check int "width" 2 (Grid.width grid);
+  check int "height" 3 (Grid.height grid);
+  check bool "respect alpha" false (Grid.respect_alpha grid);
+  check bool "width method" true (Grid.width_method grid = `Unicode)
+
+let create_with_configuration () =
+  let pool = Glyph.create_pool () in
+  let grid =
+    Grid.create ~width:1 ~height:1 ~glyph_pool:pool ~width_method:`Wcwidth
+      ~respect_alpha:true ()
+  in
+  check bool "glyph pool reused" true (Grid.glyph_pool grid == pool);
+  check bool "width method" true (Grid.width_method grid = `Wcwidth);
+  check bool "respect alpha" true (Grid.respect_alpha grid)
+
+let set_width_method_updates () =
+  let grid = Grid.create ~width:1 ~height:1 () in
+  Grid.set_width_method grid `Wcwidth;
+  check bool "updated" true (Grid.width_method grid = `Wcwidth)
+
+let set_respect_alpha_updates () =
+  let grid = Grid.create ~width:1 ~height:1 () in
+  Grid.set_respect_alpha grid true;
+  check bool "updated" true (Grid.respect_alpha grid)
+
+let set_cell_writes_all_planes () =
+  let grid = Grid.create ~width:2 ~height:2 () in
+  let attrs = Ansi.Attr.bold in
+  Grid.set_cell_alpha grid ~x:1 ~y:0 ~code:(Char.code 'A') ~fg:Ansi.Color.red
+    ~bg:Ansi.Color.blue ~attrs ();
+  check int "char" (Char.code 'A') (read_char grid 1 0);
+  check int "width" 1 (read_width grid 1 0);
+  check int "attrs" (Ansi.Attr.pack attrs) (read_attr grid 1 0);
+  let r_fg, g_fg, b_fg, a_fg = read_fg grid 1 0 in
+  let er, eg, eb, ea = Ansi.Color.to_rgba Ansi.Color.red in
+  check rgba "fg color" (er, (eg, (eb, ea))) (r_fg, (g_fg, (b_fg, a_fg)));
+  let r_bg, g_bg, b_bg, a_bg = read_bg grid 1 0 in
+  let br, bg, bb, ba = Ansi.Color.to_rgba Ansi.Color.blue in
+  check rgba "bg color" (br, (bg, (bb, ba))) (r_bg, (g_bg, (b_bg, a_bg)))
+
+let set_cell_outside_scissor_ignored () =
+  let grid = Grid.create ~width:2 ~height:2 () in
+  Grid.push_scissor grid { x = 1; y = 1; width = 1; height = 1 };
+  Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'X') ~fg:Ansi.Color.white
+    ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
+  Grid.pop_scissor grid;
+  check int "char remains empty" 32 (read_char grid 0 0)
+
+let with_scissor_restores_stack () =
+  let grid = Grid.create ~width:2 ~height:2 () in
+  let result =
+    Grid.with_scissor grid { x = 0; y = 0; width = 1; height = 1 } (fun () ->
+        Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'Y')
+          ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
+        42)
+  in
+  check int "scoped result" 42 result;
+  check int "inside write" (Char.code 'Y') (read_char grid 0 0);
+  (* After scope, writing outside should succeed. *)
+  Grid.set_cell_alpha grid ~x:1 ~y:1 ~code:(Char.code 'Z') ~fg:Ansi.Color.white
+    ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
+  check int "char set" (Char.code 'Z') (read_char grid 1 1)
+
+let set_cell_records_hyperlink () =
+  let grid = Grid.create ~width:1 ~height:1 () in
+  Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'L') ~fg:Ansi.Color.white
+    ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ~link:"https://example.com" ();
+  (* Use the new zero-alloc accessor to get the ID *)
+  let id = Grid.get_link grid 0 in
+  match Grid.hyperlink_url grid id with
+  | Some url -> check string "link stored" "https://example.com" url
+  | None -> failwith "expected hyperlink"
+
+let draw_text_applies_style () =
+  let grid = Grid.create ~width:4 ~height:1 () in
+  let fg_color = Ansi.Color.of_rgb 50 100 150 in
+  let bg_color = Ansi.Color.of_rgba 10 20 30 200 in
+  let style = Ansi.Style.make ~fg:fg_color ~bg:bg_color ~bold:true () in
+  Grid.draw_text grid ~x:1 ~y:0 ~text:"Hi" ~style;
+  check int "first char" (Char.code 'H') (read_char grid 1 0);
+  check int "second char" (Char.code 'i') (read_char grid 2 0);
+  let attrs = style.Ansi.Style.attrs in
+  check int "attr first" (Ansi.Attr.pack attrs) (read_attr grid 1 0);
+  check int "attr second" (Ansi.Attr.pack attrs) (read_attr grid 2 0);
+  let expected_fg =
+    let r, g, b, a = Ansi.Color.to_rgba fg_color in
+    (r, (g, (b, a)))
+  in
+  let expected_bg_color =
+    Ansi.Color.blend ~src:bg_color ~dst:Ansi.Color.default ()
+  in
+  let expected_bg =
+    let r, g, b, a = Ansi.Color.to_rgba expected_bg_color in
+    (r, (g, (b, a)))
+  in
+  let r, g, b, a = read_fg grid 1 0 in
+  check rgba "fg first" expected_fg (r, (g, (b, a)));
+  let r, g, b, a = read_fg grid 2 0 in
+  check rgba "fg second" expected_fg (r, (g, (b, a)));
+  let r, g, b, a = read_bg grid 1 0 in
+  check rgba "bg first" expected_bg (r, (g, (b, a)));
+  let r, g, b, a = read_bg grid 2 0 in
+  check rgba "bg second" expected_bg (r, (g, (b, a)))
+
+let draw_text_inherits_existing_background () =
+  let grid = Grid.create ~width:4 ~height:1 () in
+  let bg_color = Ansi.Color.of_rgb 40 80 120 in
+  Grid.fill_rect grid ~x:0 ~y:0 ~width:4 ~height:1 ~color:bg_color;
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"Hi";
+  check int "char H" (Char.code 'H') (read_char grid 0 0);
+  check int "char i" (Char.code 'i') (read_char grid 1 0);
+  let expected =
+    let r, g, b, a = Ansi.Color.to_rgba bg_color in
+    (r, (g, (b, a)))
+  in
+  let assert_bg x =
+    let r, g, b, a = read_bg grid x 0 in
+    check rgba (Printf.sprintf "bg cell %d" x) expected (r, (g, (b, a)))
+  in
+  assert_bg 0;
+  assert_bg 1;
+  assert_bg 2;
+  assert_bg 3
+
+let draw_text_skips_newline () =
+  let grid = Grid.create ~width:3 ~height:1 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"A\nB";
+  check int "A at x=0" (Char.code 'A') (read_char grid 0 0);
+  check int "B at x=1" (Char.code 'B') (read_char grid 1 0);
+  check int "x=2 space" (Char.code ' ') (read_char grid 2 0)
+
+let draw_box_left_border_spans_full_height () =
+  let grid = Grid.create ~width:3 ~height:4 () in
+  let border_chars : Grid.Border.t =
+    {
+      top_left = 0;
+      top_right = 0;
+      bottom_left = 0;
+      bottom_right = 0;
+      horizontal = 0;
+      vertical = 0x2502;
+      top_t = 0;
+      bottom_t = 0;
+      left_t = 0;
+      right_t = 0;
+      cross = 0;
+    }
+  in
+  Grid.draw_box grid ~x:0 ~y:0 ~width:3 ~height:4 ~border_chars
+    ~border_sides:[ `Left ] ~border_style:Ansi.Style.default
+    ~bg_color:(Ansi.Color.of_rgba 0 0 0 0)
+    ~should_fill:true ();
+  let pipe = 0x2502 in
+  check int "top cell" pipe (read_char grid 0 0);
+  check int "middle cell" pipe (read_char grid 0 1);
+  check int "bottom cell" pipe (read_char grid 0 3)
+
+let set_cell_alpha_honours_blending () =
+  let grid = Grid.create ~width:1 ~height:1 ~respect_alpha:true () in
+  Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'B') ~fg:Ansi.Color.blue
+    ~bg:Ansi.Color.blue ~attrs:Ansi.Attr.empty ();
+  let semi_red = Ansi.Color.of_rgba 255 0 0 128 in
+  let semi_green = Ansi.Color.of_rgba 0 255 0 128 in
+  Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'C') ~fg:semi_red
+    ~bg:semi_green ~attrs:Ansi.Attr.empty ();
+  let expected_fg = Ansi.Color.blend ~src:semi_red ~dst:Ansi.Color.blue () in
+  (* Background alpha is replaced by the overlay alpha instead of being blended,
+     matching the renderer's contract for translucent backgrounds. *)
+  let expected_bg =
+    let blended = Ansi.Color.blend ~src:semi_green ~dst:Ansi.Color.blue () in
+    let r, g, b, _ = Ansi.Color.to_rgba blended in
+    (* overlay alpha = 128 *)
+    Ansi.Color.of_rgba r g b 128
+  in
+  check int "char" (Char.code 'C') (read_char grid 0 0);
+  check int "width" 1 (read_width grid 0 0);
+  let expected_fg =
+    let r, g, b, a = Ansi.Color.to_rgba expected_fg in
+    (r, (g, (b, a)))
+  in
+  let expected_bg =
+    let r, g, b, a = Ansi.Color.to_rgba expected_bg in
+    (r, (g, (b, a)))
+  in
+  let actual_fg =
+    let r, g, b, a = read_fg grid 0 0 in
+    (r, (g, (b, a)))
+  in
+  let actual_bg =
+    let r, g, b, a = read_bg grid 0 0 in
+    (r, (g, (b, a)))
+  in
+  check rgba "fg blended" expected_fg actual_fg;
+  check rgba "bg blended" expected_bg actual_bg
+
+let set_cell_alpha_without_respect_skips_blend () =
+  let grid = Grid.create ~width:1 ~height:1 () in
+  let semi_red = Ansi.Color.of_rgba 255 0 0 128 in
+  Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'C') ~fg:semi_red
+    ~bg:semi_red ~attrs:Ansi.Attr.empty ();
+  check int "char" (Char.code 'C') (read_char grid 0 0);
+  check int "width" 1 (read_width grid 0 0);
+  (* {!Grid.set_cell_alpha} always blends and keeps the destination alpha for
+     the foreground channel, so the default background alpha (0) persists. *)
+  let expected =
+    let blended = Ansi.Color.blend ~src:semi_red ~dst:Ansi.Color.default () in
+    let r, g, b, _ = Ansi.Color.to_rgba blended in
+    (r, (g, (b, 0)))
+  in
+  let actual =
+    let r, g, b, a = read_fg grid 0 0 in
+    (r, (g, (b, a)))
+  in
+  check rgba "fg blended" expected actual
+
+let draw_text_blends_fg_alpha_over_opaque_bg () =
+  let grid = Grid.create ~width:1 ~height:1 () in
+  let opaque_blue = Ansi.Color.of_rgba 0 0 255 255 in
+  Grid.fill_rect grid ~x:0 ~y:0 ~width:1 ~height:1 ~color:opaque_blue;
+  let semi_red = Ansi.Color.of_rgba 255 0 0 128 in
+  let style = Ansi.Style.make ~fg:semi_red () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"X" ~style;
+  let r, _g, b, a = read_fg grid 0 0 in
+  (* Blended path sets fg alpha to destination bg alpha and retains some blue *)
+  check int "fg alpha promoted" 255 a;
+  check bool "blue component preserved" true (b > 0);
+  check bool "red component applied" true (r > 0)
+
+let blit_region_blends_without_respect_alpha () =
+  let src = Grid.create ~width:1 ~height:1 () in
+  let semi_red = Ansi.Color.of_rgba 255 0 0 128 in
+  Grid.set_cell_alpha src ~x:0 ~y:0 ~code:(Char.code 'R') ~fg:Ansi.Color.white
+    ~bg:semi_red ~attrs:Ansi.Attr.empty ();
+  let dst = Grid.create ~width:1 ~height:1 () in
+  let opaque_blue = Ansi.Color.of_rgba 0 0 255 255 in
+  Grid.fill_rect dst ~x:0 ~y:0 ~width:1 ~height:1 ~color:opaque_blue;
+  Grid.blit_region ~src ~dst ~src_x:0 ~src_y:0 ~width:1 ~height:1 ~dst_x:0
+    ~dst_y:0;
+  let r, _g, b, a = read_bg dst 0 0 in
+  check bool "background blended keeps blue" true (b > 0 && b < 255);
+  check bool "background blended adds red" true (r > 0 && r < 255);
+  check int "alpha preserved" 128 a
+
+let scissor_push_overrides_parent () =
+  let grid = Grid.create ~width:4 ~height:1 () in
+  Grid.push_scissor grid { x = 0; y = 0; width = 1; height = 1 };
+  Grid.push_scissor grid { x = 2; y = 0; width = 1; height = 1 };
+  Grid.set_cell_alpha grid ~x:2 ~y:0 ~code:(Char.code 'B') ~fg:Ansi.Color.white
+    ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
+  Grid.pop_scissor grid;
+  Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'A') ~fg:Ansi.Color.white
+    ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
+  Grid.pop_scissor grid;
+  check int "topmost scissor overrides parent" (Char.code 'B')
+    (read_char grid 2 0);
+  check int "parent restored after pop" (Char.code 'A') (read_char grid 0 0)
+
+let clear_scissor_allows_future_writes () =
+  let grid = Grid.create ~width:2 ~height:2 () in
+  Grid.push_scissor grid { x = 0; y = 0; width = 1; height = 1 };
+  Grid.clear_scissor grid;
+  Grid.set_cell_alpha grid ~x:1 ~y:1 ~code:(Char.code 'W') ~fg:Ansi.Color.white
+    ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
+  check int "write succeeded" (Char.code 'W') (read_char grid 1 1)
+
+let fill_rect_fills_region () =
+  let grid = Grid.create ~width:3 ~height:3 () in
+  Grid.fill_rect grid ~x:1 ~y:1 ~width:2 ~height:2 ~color:Ansi.Color.green;
+  for y = 0 to 2 do
+    for x = 0 to 2 do
+      let inside = x >= 1 && x <= 2 && y >= 1 && y <= 2 in
+      if inside then (
+        check int "char" (Char.code ' ') (read_char grid x y);
+        check int "width" 1 (read_width grid x y);
+        let r, g, b, _ = read_bg grid x y in
+        let er, eg, eb, _ = Ansi.Color.to_rgba Ansi.Color.green in
+        check (triple int int int) "color" (er, eg, eb) (r, g, b))
+      else check int "outside char" 32 (read_char grid x y)
+    done
+  done
+
+let replace_wide_grapheme_clears_continuations () =
+  let grid = Grid.create ~width:3 ~height:1 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"😊";
+  Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'A') ~fg:Ansi.Color.white
+    ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
+  check int "continuation cleared to space" 32 (read_char grid 1 0);
+  check int "continuation width reset" 1 (read_width grid 1 0)
+
+let fill_rect_alpha_preserves_glyph () =
+  let grid = Grid.create ~width:1 ~height:1 ~respect_alpha:true () in
+  Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'X') ~fg:Ansi.Color.white
+    ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
+  let overlay = Ansi.Color.of_rgba 0 255 0 128 in
+  Grid.fill_rect grid ~x:0 ~y:0 ~width:1 ~height:1 ~color:overlay;
+  check int "char preserved" (Char.code 'X') (read_char grid 0 0);
+  (* BG alpha becomes overlay alpha with RGB blended against dest BG. *)
+  let blended_bg = Ansi.Color.blend ~src:overlay ~dst:Ansi.Color.black () in
+  let er, eg, eb, _ = Ansi.Color.to_rgba blended_bg in
+  let ea = 128 in
+  let r, g, b, a = read_bg grid 0 0 in
+  check rgba "background blended" (er, (eg, (eb, ea))) (r, (g, (b, a)));
+  let expected_fg = Ansi.Color.blend ~src:overlay ~dst:Ansi.Color.white () in
+  let fr, fg, fb, fa = Ansi.Color.to_rgba expected_fg in
+  let r, g, b, a = read_fg grid 0 0 in
+  check rgba "foreground tinted" (fr, (fg, (fb, fa))) (r, (g, (b, a)))
+
+let fill_rect_transparent_preserves_background () =
+  let grid = Grid.create ~width:3 ~height:1 () in
+  let bg_color = Ansi.Color.of_rgb 10 20 30 in
+  Grid.fill_rect grid ~x:0 ~y:0 ~width:3 ~height:1 ~color:bg_color;
+  let transparent = Ansi.Color.of_rgba 0 0 0 0 in
+  Grid.fill_rect grid ~x:0 ~y:0 ~width:3 ~height:1 ~color:transparent;
+  let expected =
+    let r, g, b, a = Ansi.Color.to_rgba bg_color in
+    (r, (g, (b, a)))
+  in
+  for x = 0 to 2 do
+    check int
+      (Printf.sprintf "char cleared %d" x)
+      (Char.code ' ') (read_char grid x 0);
+    let r, g, b, a = read_bg grid x 0 in
+    check rgba (Printf.sprintf "bg preserved %d" x) expected (r, (g, (b, a)))
+  done
+
+let scroll_uses_transparent_background () =
+  let grid = Grid.create ~width:2 ~height:2 () in
+  (* Write something on the first row to force a scroll source. *)
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"AA";
+  Grid.scroll_up grid ~top:0 ~bottom:1 ~n:1;
+  (* Bottom row is newly cleared; its background should stay transparent. *)
+  let r, g, b, a = read_bg grid 0 1 in
+  check rgba "transparent bg" (0, (0, (0, 0))) (r, (g, (b, a)));
+  check int "space char" (Char.code ' ') (read_char grid 0 1)
+
+let draw_text_overwrite_clears_span () =
+  let grid = Grid.create ~width:4 ~height:1 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"中";
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"a";
+  check int "start replaced" (Char.code 'a') (read_char grid 0 0);
+  check int "continuation cleared" 32 (read_char grid 1 0);
+  check int "start width" 1 (read_width grid 0 0);
+  check int "continuation width cleared" 1 (read_width grid 1 0)
+
+let blit_region_skips_partial_span () =
+  let src = Grid.create ~width:3 ~height:1 () in
+  Grid.draw_text src ~x:0 ~y:0 ~text:"中a";
+  let dst = Grid.create ~width:2 ~height:1 () in
+  Grid.blit_region ~src ~dst ~src_x:1 ~src_y:0 ~width:2 ~height:1 ~dst_x:0
+    ~dst_y:0;
+  check int "orphan cleared" 32 (read_char dst 0 0);
+  check int "orphan width" 1 (read_width dst 0 0);
+  check int "trailing char copied" (Char.code 'a') (read_char dst 1 0);
+  check int "trailing width" 1 (read_width dst 1 0)
+
+let draw_text_overflow_does_nothing () =
+  let grid = Grid.create ~width:2 ~height:1 () in
+  Grid.draw_text grid ~x:1 ~y:0 ~text:"中";
+  (* Wide graphemes that overflow are discarded by clearing to end-of-line with
+     styled spaces, preventing partially drawn clusters. *)
+  check int "overflow clears to space" (Char.code ' ') (read_char grid 1 0);
+  check int "width set to 1" 1 (read_width grid 1 0)
+
+let ambiguous_width_defaults_to_one () =
+  let check_width label s =
+    let width = Glyph.measure ~width_method:`Unicode ~tab_width:2 s in
+    check int label 1 width
+  in
+  check_width "┌ width" "┌";
+  check_width "┐ width" "┐";
+  check_width "─ width" "─";
+  check_width "│ width" "│"
+
+let canvas_like_primitives_render () =
+  let grid = Grid.create ~width:8 ~height:4 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"────────";
+  for y = 0 to 3 do
+    Grid.draw_text grid ~x:0 ~y ~text:"│"
+  done;
+  Grid.draw_text grid ~x:3 ~y:2 ~text:"x";
+  check string "row 0" "│───────" (row_trimmed grid 0);
+  check string "row 1" "│" (row_trimmed grid 1);
+  check string "row 2" "│  x" (row_trimmed grid 2);
+  check string "row 3" "│" (row_trimmed grid 3)
+
+let canvas_like_resizing () =
+  let grid = Grid.create ~width:1 ~height:1 () in
+  let write_text text ~x ~y =
+    let width =
+      Glyph.measure ~width_method:(Grid.width_method grid) ~tab_width:2 text
+    in
+    let width = if width <= 0 then 1 else width in
+    if x + width > Grid.width grid then
+      Grid.resize grid ~width:(x + width) ~height:(Grid.height grid);
+    if y + 1 > Grid.height grid then
+      Grid.resize grid ~width:(Grid.width grid) ~height:(y + 1);
+    Grid.draw_text grid ~x ~y ~text
+  in
+  for x = 0 to 7 do
+    write_text "─" ~x ~y:0
+  done;
+  for y = 0 to 3 do
+    write_text "│" ~x:0 ~y
+  done;
+  Grid.draw_text grid ~x:3 ~y:2 ~text:"x";
+  check int "width resized" 8 (Grid.width grid);
+  check string "row 0 after resize" "│───────" (row_trimmed grid 0);
+  check string "row 2 after resize" "│  x    " (row_to_string grid 2)
+
+let canvas_blit_into_box () =
+  let canvas = Grid.create ~width:8 ~height:4 () in
+  Grid.draw_text canvas ~x:0 ~y:0 ~text:"────────";
+  for y = 0 to 3 do
+    Grid.draw_text canvas ~x:0 ~y ~text:"│"
+  done;
+  Grid.draw_text canvas ~x:3 ~y:2 ~text:"x";
+  let dest = Grid.create ~width:10 ~height:6 () in
+  (* Draw outer border manually *)
+  Grid.draw_text dest ~x:0 ~y:0 ~text:"┌";
+  Grid.draw_text dest ~x:9 ~y:0 ~text:"┐";
+  Grid.draw_text dest ~x:0 ~y:5 ~text:"└";
+  Grid.draw_text dest ~x:9 ~y:5 ~text:"┘";
+  Grid.draw_text dest ~x:1 ~y:0 ~text:"────────";
+  Grid.draw_text dest ~x:1 ~y:5 ~text:"────────";
+  for y = 1 to 4 do
+    Grid.draw_text dest ~x:0 ~y ~text:"│";
+    Grid.draw_text dest ~x:9 ~y ~text:"│"
+  done;
+  Grid.push_scissor dest { x = 1; y = 1; width = 8; height = 4 };
+  Grid.blit_region ~src:canvas ~dst:dest ~src_x:0 ~src_y:0 ~width:8 ~height:4
+    ~dst_x:1 ~dst_y:1;
+  Grid.pop_scissor dest;
+  check string "blit row 0" "┌────────┐" (row_trimmed dest 0);
+  check string "blit row 1" "││───────│" (row_trimmed dest 1);
+  check string "blit row 2" "││       │" (row_trimmed dest 2);
+  check string "blit row 3" "││  x    │" (row_trimmed dest 3);
+  check string "blit row 4" "││       │" (row_trimmed dest 4);
+  check string "blit row 5" "└────────┘" (row_trimmed dest 5)
+
+let clear_resets_grid () =
+  let grid = Grid.create ~width:2 ~height:2 () in
+  Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'Q') ~fg:Ansi.Color.white
+    ~bg:Ansi.Color.white ~attrs:Ansi.Attr.bold ();
+  let color = Ansi.Color.of_rgb 10 20 30 in
+  Grid.clear ~color grid;
+  for y = 0 to 1 do
+    for x = 0 to 1 do
+      (* After clear, chars are spaces so blank cells mirror terminal defaults. *)
+      check int "char" (Char.code ' ') (read_char grid x y);
+      check int "width" 1 (read_width grid x y);
+      let r, g, b, _ = read_bg grid x y in
+      let er, eg, eb, _ = Ansi.Color.to_rgba color in
+      check (triple int int int) "color" (er, eg, eb) (r, g, b)
+    done
+  done
+
+let resize_updates_dimensions () =
+  let grid = Grid.create ~width:2 ~height:2 () in
+  Grid.resize grid ~width:4 ~height:1;
+  check int "width" 4 (Grid.width grid);
+  check int "height" 1 (Grid.height grid)
+
+let blit_copies_full_buffer () =
+  let src = Grid.create ~width:2 ~height:2 () in
+  Grid.set_cell_alpha src ~x:0 ~y:0 ~code:(Char.code 'A') ~fg:Ansi.Color.cyan
+    ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
+  let dst = Grid.create ~width:1 ~height:1 () in
+  Grid.blit ~src ~dst;
+  check int "width" 2 (Grid.width dst);
+  check int "height" 2 (Grid.height dst);
+  check int "copied char" (Char.code 'A') (read_char dst 0 0)
+
+let blit_region_copies_subrect () =
+  let src = Grid.create ~width:3 ~height:3 () in
+  for y = 0 to 2 do
+    for x = 0 to 2 do
+      let char = Char.code 'a' + idx src x y in
+      Grid.set_cell_alpha src ~x ~y ~code:char ~fg:Ansi.Color.white
+        ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ()
+    done
+  done;
+  let dst = Grid.create ~width:3 ~height:3 () in
+  Grid.blit_region ~src ~dst ~src_x:1 ~src_y:1 ~width:2 ~height:2 ~dst_x:0
+    ~dst_y:0;
+  check int "copy (0,0)" (read_char src 1 1) (read_char dst 0 0);
+  check int "copy (1,1)" (read_char src 2 2) (read_char dst 1 1);
+  check int "outside untouched" 32 (read_char dst 2 2)
+
+(* Regression test: ASCII fast path produces correct output *)
+let ascii_fast_path_correctness () =
+  let grid = Grid.create ~width:10 ~height:1 () in
+  let style =
+    Ansi.Style.make
+      ~fg:(Ansi.Color.of_rgb 100 150 200)
+      ~bg:(Ansi.Color.of_rgb 20 30 40)
+      ~bold:true ()
+  in
+  Grid.draw_text ~style grid ~x:0 ~y:0 ~text:"Hello";
+  check int "char H" (Char.code 'H') (read_char grid 0 0);
+  check int "char o" (Char.code 'o') (read_char grid 4 0);
+  let r, g, _b, _a = read_fg grid 0 0 in
+  check int "fg red" 100 r;
+  check int "fg green" 150 g;
+  let attrs = read_attr grid 0 0 |> Ansi.Attr.unpack in
+  check bool "bold set" true (Ansi.Attr.mem Ansi.Attr.Bold attrs)
+
+(* Regression test: ASCII overwrites middle of wide grapheme *)
+let ascii_overwrites_wide_grapheme_middle () =
+  let grid = Grid.create ~width:5 ~height:1 () in
+  Grid.draw_text grid ~x:1 ~y:0 ~text:"😊";
+  check int "continuation width" 0 (read_width grid 2 0);
+  Grid.draw_text grid ~x:2 ~y:0 ~text:"X";
+  check int "emoji cleared" 32 (read_char grid 1 0);
+  check int "X written" (Char.code 'X') (read_char grid 2 0);
+  check int "width reset" 1 (read_width grid 1 0)
+
+(* Regression test: Mixed ASCII and emoji both render (control flow bug) *)
+let mixed_ascii_emoji_render () =
+  let grid = Grid.create ~width:10 ~height:1 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"Hi";
+  Grid.draw_text grid ~x:2 ~y:0 ~text:"😊";
+  Grid.draw_text grid ~x:4 ~y:0 ~text:"Ok";
+  check int "H" (Char.code 'H') (read_char grid 0 0);
+  check bool "emoji rendered" true (read_char grid 2 0 <> 0);
+  check int "O" (Char.code 'O') (read_char grid 4 0)
+
+(* Regression test: Clear resets all cells including after graphemes *)
+let clear_after_graphemes () =
+  let grid = Grid.create ~width:5 ~height:1 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"😊🚀";
+  check bool "grapheme written" true (read_char grid 0 0 <> 0);
+  Grid.clear grid ~color:(Ansi.Color.of_rgb 10 20 30);
+  (* All cells should be cleared *)
+  check int "char cleared" (Char.code ' ') (read_char grid 0 0);
+  check int "width reset" 1 (read_width grid 0 0);
+  let r, g, b, _a = read_bg grid 0 0 in
+  check int "bg red" 10 r;
+  check int "bg green" 20 g;
+  check int "bg blue" 30 b
+
+(* Edge case: Empty string is safe no-op *)
+let empty_string_is_noop () =
+  let grid = Grid.create ~width:3 ~height:1 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"ABC";
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"";
+  check int "A preserved" (Char.code 'A') (read_char grid 0 0)
+
+(* Edge case: Negative x clips correctly *)
+let negative_x_clips_text () =
+  let grid = Grid.create ~width:5 ~height:1 () in
+  Grid.draw_text grid ~x:(-2) ~y:0 ~text:"ABCDE";
+  check int "C at x=0" (Char.code 'C') (read_char grid 0 0);
+  check int "x=3 empty" 32 (read_char grid 3 0)
+
+let box_drawing_characters_render () =
+  let grid = Grid.create ~width:4 ~height:4 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"┌──┐";
+  Grid.draw_text grid ~x:0 ~y:3 ~text:"└──┘";
+  Grid.draw_text grid ~x:0 ~y:1 ~text:"│";
+  Grid.draw_text grid ~x:0 ~y:2 ~text:"│";
+  Grid.draw_text grid ~x:3 ~y:1 ~text:"│";
+  Grid.draw_text grid ~x:3 ~y:2 ~text:"│";
+  check string "top row" "┌──┐" (row_to_string grid 0);
+  check string "inner row 1" "│  │" (row_to_string grid 1);
+  check string "inner row 2" "│  │" (row_to_string grid 2);
+  check string "bottom row" "└──┘" (row_to_string grid 3)
+
+let draw_text_ascii_respects_scissor () =
+  let grid = Grid.create ~width:5 ~height:1 () in
+  (* Only columns 2..4 are writable *)
+  Grid.push_scissor grid { x = 2; y = 0; width = 3; height = 1 };
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"Hello";
+  Grid.pop_scissor grid;
+  (* Outside scissor should be untouched *)
+  check int "x=0 untouched" 32 (read_char grid 0 0);
+  check int "x=1 untouched" 32 (read_char grid 1 0);
+  (* Inside scissor has clipped text: 'llo' at 2..4 *)
+  check int "x=2 l" (Char.code 'l') (read_char grid 2 0);
+  check int "x=3 l" (Char.code 'l') (read_char grid 3 0);
+  check int "x=4 o" (Char.code 'o') (read_char grid 4 0)
+
+let fill_rect_respects_scissor () =
+  let grid = Grid.create ~width:4 ~height:2 () in
+  Grid.push_scissor grid { x = 1; y = 0; width = 2; height = 2 };
+  let color = Ansi.Color.green in
+  Grid.fill_rect grid ~x:0 ~y:0 ~width:4 ~height:2 ~color;
+  Grid.pop_scissor grid;
+  (* Only x=1 and x=2 columns should be filled with spaces and color *)
+  let er, eg, eb, _ = Ansi.Color.to_rgba color in
+  for y = 0 to 1 do
+    (* outside left *)
+    check int (Printf.sprintf "(%d, %d) untouched" 0 y) 32 (read_char grid 0 y);
+    (* inside *)
+    check int
+      (Printf.sprintf "(%d, %d) space" 1 y)
+      (Char.code ' ') (read_char grid 1 y);
+    let r, g, b, _ = read_bg grid 1 y in
+    check (triple int int int) "bg left in scissor" (er, eg, eb) (r, g, b);
+    check int
+      (Printf.sprintf "(%d, %d) space" 2 y)
+      (Char.code ' ') (read_char grid 2 y);
+    let r2, g2, b2, _ = read_bg grid 2 y in
+    check (triple int int int) "bg right in scissor" (er, eg, eb) (r2, g2, b2);
+    (* outside right *)
+    check int (Printf.sprintf "(%d, %d) untouched" 3 y) 32 (read_char grid 3 y)
+  done
+
+let blit_region_respects_scissor () =
+  let src = Grid.create ~width:3 ~height:1 () in
+  Grid.draw_text src ~x:0 ~y:0 ~text:"ABC";
+  let dst = Grid.create ~width:3 ~height:1 () in
+  Grid.push_scissor dst { x = 1; y = 0; width = 2; height = 1 };
+  Grid.blit_region ~src ~dst ~src_x:0 ~src_y:0 ~width:3 ~height:1 ~dst_x:0
+    ~dst_y:0;
+  Grid.pop_scissor dst;
+  check int "dst(0) untouched" 32 (read_char dst 0 0);
+  check int "dst(1)=B" (Char.code 'B') (read_char dst 1 0);
+  check int "dst(2)=C" (Char.code 'C') (read_char dst 2 0)
+
+let clear_preserves_scissor_state () =
+  let grid = Grid.create ~width:3 ~height:1 () in
+  Grid.push_scissor grid { x = 1; y = 0; width = 1; height = 1 };
+  Grid.clear grid;
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"A";
+  Grid.pop_scissor grid;
+  check int "write outside preserved scissor ignored" 32 (read_char grid 0 0)
+
+let draw_text_overflow_clears_row_tail () =
+  let grid = Grid.create ~width:3 ~height:1 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"XYZ";
+  Grid.draw_text grid ~x:2 ~y:0 ~text:"中";
+  check int "overflow start cleared" (Char.code ' ') (read_char grid 2 0);
+  check string "prefix preserved" "XY" (String.sub (row_to_string grid 0) 0 2)
+
+let tests =
+  [
+    test_case "create defaults" `Quick create_defaults;
+    test_case "create with configuration" `Quick create_with_configuration;
+    test_case "set width method" `Quick set_width_method_updates;
+    test_case "set respect alpha" `Quick set_respect_alpha_updates;
+    test_case "set cell writes all planes" `Quick set_cell_writes_all_planes;
+    test_case "set cell stores hyperlink" `Quick set_cell_records_hyperlink;
+    test_case "set cell outside scissor" `Quick set_cell_outside_scissor_ignored;
+    test_case "with scissor restores" `Quick with_scissor_restores_stack;
+    test_case "clear preserves scissor" `Quick clear_preserves_scissor_state;
+    test_case "draw text applies style" `Quick draw_text_applies_style;
+    test_case "draw text inherits background" `Quick
+      draw_text_inherits_existing_background;
+    test_case "draw text skips newline" `Quick draw_text_skips_newline;
+    test_case "clear scissor" `Quick clear_scissor_allows_future_writes;
+    test_case "set cell alpha blends" `Quick set_cell_alpha_honours_blending;
+    test_case "set cell alpha without respect" `Quick
+      set_cell_alpha_without_respect_skips_blend;
+    test_case "fill rect" `Quick fill_rect_fills_region;
+    test_case "replace wide grapheme clears continuations" `Quick
+      replace_wide_grapheme_clears_continuations;
+    test_case "fill rect alpha preserves glyph" `Quick
+      fill_rect_alpha_preserves_glyph;
+    test_case "fill rect transparent preserves background" `Quick
+      fill_rect_transparent_preserves_background;
+    test_case "scroll uses transparent background" `Quick
+      scroll_uses_transparent_background;
+    test_case "draw text overwrites grapheme span" `Quick
+      draw_text_overwrite_clears_span;
+    test_case "draw text overflow clears row tail" `Quick
+      draw_text_overflow_clears_row_tail;
+    test_case "blit region skips partial spans" `Quick
+      blit_region_skips_partial_span;
+    test_case "draw text overflow does nothing" `Quick
+      draw_text_overflow_does_nothing;
+    test_case "box left border spans full height" `Quick
+      draw_box_left_border_spans_full_height;
+    test_case "canvas-like resizing" `Quick canvas_like_resizing;
+    test_case "clear" `Quick clear_resets_grid;
+    test_case "resize" `Quick resize_updates_dimensions;
+    test_case "resize truncated grapheme does not bleed" `Quick
+      resize_truncated_grapheme_does_not_bleed;
+    test_case "blit" `Quick blit_copies_full_buffer;
+    test_case "blit region" `Quick blit_region_copies_subrect;
+    (* Regression tests for optimization bugs *)
+    test_case "ascii fast path correctness" `Quick ascii_fast_path_correctness;
+    test_case "ascii overwrites wide grapheme middle" `Quick
+      ascii_overwrites_wide_grapheme_middle;
+    test_case "mixed ascii emoji render" `Quick mixed_ascii_emoji_render;
+    test_case "clear after graphemes" `Quick clear_after_graphemes;
+    test_case "empty string is noop" `Quick empty_string_is_noop;
+    test_case "negative x clips text" `Quick negative_x_clips_text;
+    test_case "ambiguous width defaults to one" `Quick
+      ambiguous_width_defaults_to_one;
+    test_case "canvas-like primitives render" `Quick
+      canvas_like_primitives_render;
+    test_case "canvas blit into box" `Quick canvas_blit_into_box;
+    test_case "box drawing characters render" `Quick
+      box_drawing_characters_render;
+    (* Scissor for fast paths *)
+    test_case "draw_text ASCII respects scissor" `Quick
+      draw_text_ascii_respects_scissor;
+    test_case "fill_rect respects scissor" `Quick fill_rect_respects_scissor;
+    test_case "blit_region respects scissor" `Quick blit_region_respects_scissor;
+    test_case "inherit bg on unwritten ascii" `Quick
+      inherit_bg_on_unwritten_ascii;
+    test_case "unicode inherit bg on unwritten cell" `Quick
+      unicode_inherit_bg_on_unwritten_cell;
+    test_case "overflow respects scissor for wide grapheme" `Quick
+      overflow_respects_scissor_for_wide_grapheme;
+    test_case "alpha blit orphan continuation draws space" `Quick
+      alpha_blit_orphan_continuation_draws_space;
+    test_case "cross-pool blit remaps graphemes" `Quick
+      cross_pool_blit_remaps_graphemes;
+    test_case "blit preserves respect alpha" `Quick blit_preserves_respect_alpha;
+    test_case "same-pool bulk blit tracks graphemes" `Quick
+      blit_bulk_tracks_graphemes;
+    test_case "overlap blit direction correctness" `Quick
+      overlap_blit_direction_correctness;
+    test_case "box title left aligned" `Quick box_title_left_aligned;
+    test_case "diff detects single RGB step" `Quick diff_detects_single_rgb_step;
+    test_case "alpha blit blends fg and bg" `Quick alpha_blit_blends_fg_bg;
+    test_case "resize shrink clips continuation" `Quick
+      resize_shrink_clips_continuation;
+    test_case "draw_text blends FG alpha over opaque BG" `Quick
+      draw_text_blends_fg_alpha_over_opaque_bg;
+    test_case "blit_region blends semi-transparent src without respect_alpha"
+      `Quick blit_region_blends_without_respect_alpha;
+    test_case "scissor push overrides parent" `Quick
+      scissor_push_overrides_parent;
+    (* Alpha overlay semantics *)
+    test_case "semi-transparent overlay preserves text and tints fg" `Quick
+      (fun () ->
+        let grid = Grid.create ~width:1 ~height:1 ~respect_alpha:true () in
+        (* Draw text with white fg on black bg *)
+        let white = Ansi.Color.of_rgba 255 255 255 255 in
+        let black = Ansi.Color.of_rgba 0 0 0 255 in
+        let style = Ansi.Style.make ~fg:white ~bg:black () in
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"X" ~style;
+        (* Overlay with semi-transparent red background *)
+        let semi_red = Ansi.Color.of_rgba 255 0 0 128 in
+        Grid.fill_rect grid ~x:0 ~y:0 ~width:1 ~height:1 ~color:semi_red;
+        (* Text should be preserved *)
+        check int "char preserved" (Char.code 'X') (read_char grid 0 0);
+        (* FG should be tinted (white + red overlay) *)
+        let r_fg, g_fg, b_fg, a_fg = read_fg grid 0 0 in
+        check bool "fg red increased" true (r_fg > 128);
+        (* Should be blended *)
+        check bool "fg green decreased" true (g_fg < 255);
+        check bool "fg blue decreased" true (b_fg < 255);
+        check int "fg alpha preserved" 255 a_fg;
+        (* BG should be blended (red over black) *)
+        let r_bg, g_bg, b_bg, a_bg = read_bg grid 0 0 in
+        check bool "bg red blended" true (r_bg > 128 && r_bg < 255);
+        check int "bg green blended" 0 g_bg;
+        check int "bg blue blended" 0 b_bg;
+        check int "bg alpha is overlay" 128 a_bg);
+    test_case "semi-transparent overlay on space doesn't preserve" `Quick
+      (fun () ->
+        let grid = Grid.create ~width:1 ~height:1 ~respect_alpha:true () in
+        (* Fill with white background (space) *)
+        let white = Ansi.Color.of_rgba 255 255 255 255 in
+        Grid.fill_rect grid ~x:0 ~y:0 ~width:1 ~height:1 ~color:white;
+        (* Overlay with semi-transparent red *)
+        let semi_red = Ansi.Color.of_rgba 255 0 0 128 in
+        Grid.fill_rect grid ~x:0 ~y:0 ~width:1 ~height:1 ~color:semi_red;
+        (* Should remain a space, no text preservation *)
+        check int "remains space" (Char.code ' ') (read_char grid 0 0);
+        (* BG should be blended (red over white = pink) *)
+        let r_bg, g_bg, b_bg, a_bg = read_bg grid 0 0 in
+        check int "bg red full" 255 r_bg;
+        check bool "bg green blended" true (g_bg > 0 && g_bg < 255);
+        check bool "bg blue blended" true (b_bg > 0 && b_bg < 255);
+        check int "bg alpha is overlay" 128 a_bg);
+    (* Box clipping tests *)
+    test_case "box partially off left edge uses correct corners" `Quick
+      (fun () ->
+        let grid = Grid.create ~width:3 ~height:3 () in
+        let border_chars = Grid.Border.single in
+        Grid.draw_box grid ~x:(-1) ~y:0 ~width:4 ~height:3 ~border_chars
+          ~border_sides:[ `Top; `Right; `Bottom; `Left ]
+          ~border_style:Ansi.Style.default ~bg_color:Ansi.Color.black
+          ~should_fill:false ();
+        (* Box is clipped on left, so no left corners are drawn *)
+        check int "horizontal at (0,0)" border_chars.horizontal
+          (read_char grid 0 0);
+        check int "top-right corner at (2,0)" border_chars.top_right
+          (read_char grid 2 0);
+        check int "horizontal at (0,2)" border_chars.horizontal
+          (read_char grid 0 2);
+        check int "bottom-right corner at (2,2)" border_chars.bottom_right
+          (read_char grid 2 2));
+    test_case "box partially off top edge extends verticals down" `Quick
+      (fun () ->
+        let grid = Grid.create ~width:3 ~height:3 () in
+        let border_chars = Grid.Border.single in
+        Grid.draw_box grid ~x:0 ~y:(-1) ~width:3 ~height:4 ~border_chars
+          ~border_sides:[ `Top; `Left ] ~border_style:Ansi.Style.default
+          ~bg_color:Ansi.Color.black ~should_fill:false ();
+        (* Top not drawn, so verticals should extend to top of screen *)
+        check int "left border at (0,0)" border_chars.vertical
+          (read_char grid 0 0);
+        check int "left border at (0,1)" border_chars.vertical
+          (read_char grid 0 1);
+        check int "left border at (0,2)" border_chars.vertical
+          (read_char grid 0 2));
+    test_case "box partially off right edge uses correct right corners" `Quick
+      (fun () ->
+        let grid = Grid.create ~width:3 ~height:3 () in
+        let border_chars = Grid.Border.single in
+        Grid.draw_box grid ~x:1 ~y:0 ~width:3 ~height:3 ~border_chars
+          ~border_sides:[ `Top; `Right; `Bottom; `Left ]
+          ~border_style:Ansi.Style.default ~bg_color:Ansi.Color.black
+          ~should_fill:false ();
+        (* Box extends beyond right edge, so no right corners are drawn *)
+        check int "horizontal at (2,0)" border_chars.horizontal
+          (read_char grid 2 0);
+        check int "horizontal at (2,2)" border_chars.horizontal
+          (read_char grid 2 2));
+    test_case "box fully inside grid works normally" `Quick (fun () ->
+        let grid = Grid.create ~width:5 ~height:5 () in
+        let border_chars = Grid.Border.single in
+        Grid.draw_box grid ~x:1 ~y:1 ~width:3 ~height:3 ~border_chars
+          ~border_sides:[ `Top; `Right; `Bottom; `Left ]
+          ~border_style:Ansi.Style.default ~bg_color:Ansi.Color.black
+          ~should_fill:false ();
+        check int "top-left corner" border_chars.top_left (read_char grid 1 1);
+        check int "top-right corner" border_chars.top_right (read_char grid 3 1);
+        check int "bottom-left corner" border_chars.bottom_left
+          (read_char grid 1 3);
+        check int "bottom-right corner" border_chars.bottom_right
+          (read_char grid 3 3));
+    (* Diff tests *)
+    test_case "diff identical grids produces no diffs" `Quick (fun () ->
+        let a = Grid.create ~width:2 ~height:2 () in
+        let b = Grid.copy a in
+        let diffs = Grid.diff_cells a b in
+        check int "no diffs" 0 (Array.length diffs));
+    test_case "diff detects single char change" `Quick (fun () ->
+        let a = Grid.create ~width:2 ~height:2 () in
+        let b = Grid.copy a in
+        Grid.set_cell_alpha b ~x:1 ~y:1 ~code:(Char.code 'X')
+          ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
+        let diffs = Grid.diff_cells a b in
+        check
+          (list (pair int int))
+          "single diff at changed cell"
+          [ (1, 1) ]
+          (Array.to_list diffs));
+    test_case "diff detects single color change" `Quick (fun () ->
+        let a = Grid.create ~width:2 ~height:2 () in
+        let b = Grid.copy a in
+        Grid.fill_rect b ~x:0 ~y:0 ~width:1 ~height:1 ~color:Ansi.Color.red;
+        let diffs = Grid.diff_cells a b in
+        check
+          (list (pair int int))
+          "single diff at colored cell"
+          [ (0, 0) ]
+          (Array.to_list diffs));
+    test_case "diff detects hyperlink change" `Quick (fun () ->
+        let a = Grid.create ~width:2 ~height:2 () in
+        let b = Grid.copy a in
+        Grid.set_cell_alpha b ~x:0 ~y:0 ~code:(Char.code 'A')
+          ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty
+          ~link:"http://example.com" ();
+        let diffs = Grid.diff_cells a b in
+        check
+          (list (pair int int))
+          "single diff at linked cell"
+          [ (0, 0) ]
+          (Array.to_list diffs));
+    (* Resize tests *)
+    test_case "resize preserves overlapping content" `Quick (fun () ->
+        let grid = Grid.create ~width:4 ~height:2 () in
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"ABCD";
+        Grid.draw_text grid ~x:0 ~y:1 ~text:"EFGH";
+        (* Resize to smaller - should preserve top-left content *)
+        Grid.resize grid ~width:2 ~height:1;
+        check int "width after resize" 2 (Grid.width grid);
+        check int "height after resize" 1 (Grid.height grid);
+        check string "preserved content" "AB" (row_trimmed grid 0));
+    test_case "resize up fills new areas with spaces" `Quick (fun () ->
+        let grid = Grid.create ~width:2 ~height:1 () in
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"AB";
+        Grid.resize grid ~width:4 ~height:2;
+        check int "width after resize" 4 (Grid.width grid);
+        check int "height after resize" 2 (Grid.height grid);
+        check string "original content preserved" "AB  " (row_to_string grid 0);
+        check string "new row is spaces" "    " (row_to_string grid 1));
+  ]
+
+let () = run "matrix.grid" [ ("grid", tests) ]
