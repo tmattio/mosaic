@@ -10,7 +10,7 @@ let test_flex_align_content_not_stretch_with_align_items_stretch_border_box () =
     check (float 0.001) msg expected actual
   in
 
-  let tree = new_tree () in
+  let tree = Gentest_helpers.new_test_tree () in
 
   (* Create nodes *)
   let node2 =
@@ -21,12 +21,13 @@ let test_flex_align_content_not_stretch_with_align_items_stretch_border_box () =
              width = Style.Dimension.length 272.0;
              height = Style.Dimension.length 44.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
     |> Result.get_ok
   in
   let node1 =
     new_with_children tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column ())
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~box_sizing:Style.Box_sizing.Border_box ())
       [| node2 |]
     |> Result.get_ok
   in
@@ -38,12 +39,13 @@ let test_flex_align_content_not_stretch_with_align_items_stretch_border_box () =
              width = Style.Dimension.length 56.0;
              height = Style.Dimension.length 44.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
     |> Result.get_ok
   in
   let node3 =
     new_with_children tree
-      (Style.make ~flex_direction:Style.Flex_direction.Column ())
+      (Style.make ~flex_direction:Style.Flex_direction.Column
+         ~box_sizing:Style.Box_sizing.Border_box ())
       [| node4 |]
     |> Result.get_ok
   in
@@ -56,18 +58,19 @@ let test_flex_align_content_not_stretch_with_align_items_stretch_border_box () =
              width = Style.Dimension.length 328.0;
              height = Style.Dimension.length 52.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
       [| node1; node3 |]
     |> Result.get_ok
   in
 
   (* Compute layout *)
   let _ =
-    compute_layout tree node0
+    compute_layout_with_measure tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
       }
+      Gentest_helpers.test_measure_function
     |> Result.get_ok
   in
 
@@ -112,7 +115,7 @@ let test_flex_align_content_not_stretch_with_align_items_stretch_content_box ()
     check (float 0.001) msg expected actual
   in
 
-  let tree = new_tree () in
+  let tree = Gentest_helpers.new_test_tree () in
 
   (* Create nodes *)
   let node2 =
@@ -167,11 +170,12 @@ let test_flex_align_content_not_stretch_with_align_items_stretch_content_box ()
 
   (* Compute layout *)
   let _ =
-    compute_layout tree node0
+    compute_layout_with_measure tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
       }
+      Gentest_helpers.test_measure_function
     |> Result.get_ok
   in
 

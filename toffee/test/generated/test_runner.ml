@@ -21,6 +21,7 @@ let grid_tests =
       Test_grid_absolute_container_top_bottom_margin.tests;
       Test_grid_absolute_container_top_right.tests;
       Test_grid_absolute_container_top_right_margin.tests;
+      Test_grid_absolute_correct_cross_child_size_with_percentage.tests;
       Test_grid_absolute_justify_self_sized_all.tests;
       Test_grid_absolute_layout_within_border.tests;
       Test_grid_absolute_layout_within_border_static.tests;
@@ -288,6 +289,7 @@ let flex_tests =
       Test_flex_absolute_child_with_max_height.tests;
       Test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild
       .tests;
+      Test_flex_absolute_correct_cross_child_size_with_percentage.tests;
       Test_flex_absolute_layout_align_items_and_justify_content_center.tests;
       Test_flex_absolute_layout_align_items_and_justify_content_center_and_bottom_position
       .tests;
@@ -488,6 +490,7 @@ let flex_tests =
       Test_flex_bevy_issue_10343_flex.tests;
       Test_flex_bevy_issue_10343_grid.tests;
       Test_flex_bevy_issue_16304.tests;
+      Test_flex_bevy_issue_21240.tests;
       Test_flex_bevy_issue_7976_3_level.tests;
       Test_flex_bevy_issue_7976_4_level.tests;
       Test_flex_bevy_issue_7976_reduced.tests;
@@ -720,7 +723,6 @@ let flex_tests =
       Test_flex_padding_border_overrides_max_size.tests;
       Test_flex_padding_border_overrides_min_size.tests;
       Test_flex_padding_border_overrides_size.tests;
-      Test_flex_padding_border_overrides_size_flex_basis_0.tests;
       Test_flex_padding_border_overrides_size_flex_basis_0_growable.tests;
       Test_flex_padding_border_overrides_size_root.tests;
       Test_flex_padding_center_child.tests;
@@ -848,6 +850,7 @@ let block_tests =
       Test_block_absolute_child_with_margin_x.tests;
       Test_block_absolute_child_with_margin_y.tests;
       Test_block_absolute_child_with_max_height.tests;
+      Test_block_absolute_correct_cross_child_size_with_percentage.tests;
       Test_block_absolute_layout_child_order.tests;
       Test_block_absolute_layout_no_size.tests;
       Test_block_absolute_layout_percentage_bottom_based_on_parent_height.tests;

@@ -1,8 +1,9 @@
 (test
  (package toffee)
  (name test_runner)
- (libraries toffee alcotest)
+ (libraries toffee toffee.style alcotest)
  (modules
+  gentest_helpers
   test_block_absolute_aspect_ratio_aspect_ratio_overrides_height_of_full_inset
   test_block_absolute_aspect_ratio_fill_height
   test_block_absolute_aspect_ratio_fill_height_from_inset
@@ -17,6 +18,7 @@
   test_block_absolute_child_with_margin_x
   test_block_absolute_child_with_margin_y
   test_block_absolute_child_with_max_height
+  test_block_absolute_correct_cross_child_size_with_percentage
   test_block_absolute_layout_child_order
   test_block_absolute_layout_no_size
   test_block_absolute_layout_percentage_bottom_based_on_parent_height
@@ -213,6 +215,7 @@
   test_flex_absolute_child_with_main_margin
   test_flex_absolute_child_with_max_height
   test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild
+  test_flex_absolute_correct_cross_child_size_with_percentage
   test_flex_absolute_layout_align_items_and_justify_content_center
   test_flex_absolute_layout_align_items_and_justify_content_center_and_bottom_position
   test_flex_absolute_layout_align_items_and_justify_content_center_and_left_position
@@ -400,6 +403,7 @@
   test_flex_bevy_issue_10343_flex
   test_flex_bevy_issue_10343_grid
   test_flex_bevy_issue_16304
+  test_flex_bevy_issue_21240
   test_flex_bevy_issue_7976_3_level
   test_flex_bevy_issue_7976_4_level
   test_flex_bevy_issue_7976_reduced
@@ -629,7 +633,6 @@
   test_flex_padding_border_overrides_max_size
   test_flex_padding_border_overrides_min_size
   test_flex_padding_border_overrides_size
-  test_flex_padding_border_overrides_size_flex_basis_0
   test_flex_padding_border_overrides_size_flex_basis_0_growable
   test_flex_padding_border_overrides_size_root
   test_flex_padding_center_child
@@ -748,6 +751,7 @@
   test_grid_absolute_container_top_bottom_margin
   test_grid_absolute_container_top_right
   test_grid_absolute_container_top_right_margin
+  test_grid_absolute_correct_cross_child_size_with_percentage
   test_grid_absolute_justify_self_sized_all
   test_grid_absolute_layout_within_border
   test_grid_absolute_layout_within_border_static

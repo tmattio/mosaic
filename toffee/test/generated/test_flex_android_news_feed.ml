@@ -10,7 +10,7 @@ let test_flex_android_news_feed_border_box () =
     check (float 0.001) msg expected actual
   in
 
-  let tree = new_tree () in
+  let tree = Gentest_helpers.new_test_tree () in
 
   (* Create nodes *)
   let node6 =
@@ -21,24 +21,28 @@ let test_flex_android_news_feed_border_box () =
              width = Style.Dimension.length 120.0;
              height = Style.Dimension.length 120.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
     |> Result.get_ok
   in
   let node5 =
     new_with_children tree
       (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_content:Stretch ~flex_shrink:0.0 ())
+         ~align_content:Stretch ~flex_shrink:0.0
+         ~box_sizing:Style.Box_sizing.Border_box ())
       [| node6 |]
     |> Result.get_ok
   in
   let node8 =
     new_leaf tree
       (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_content:Stretch ~flex_shrink:1.0 ())
+         ~align_content:Stretch ~flex_shrink:1.0
+         ~box_sizing:Style.Box_sizing.Border_box ())
     |> Result.get_ok
   in
   let node9 =
-    new_leaf tree (Style.make ~align_content:Stretch ~flex_shrink:1.0 ())
+    new_leaf tree
+      (Style.make ~align_content:Stretch ~flex_shrink:1.0
+         ~box_sizing:Style.Box_sizing.Border_box ())
     |> Result.get_ok
   in
   let node7 =
@@ -59,7 +63,7 @@ let test_flex_android_news_feed_border_box () =
              top = Style.Length_percentage.length 21.0;
              bottom = Style.Length_percentage.length 18.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
       [| node8; node9 |]
     |> Result.get_ok
   in
@@ -74,14 +78,14 @@ let test_flex_android_news_feed_border_box () =
              top = Style.Length_percentage_auto.length 24.0;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
       [| node5; node7 |]
     |> Result.get_ok
   in
   let node3 =
     new_with_children tree
       (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~align_content:Stretch ())
+         ~align_content:Stretch ~box_sizing:Style.Box_sizing.Border_box ())
       [| node4 |]
     |> Result.get_ok
   in
@@ -93,24 +97,28 @@ let test_flex_android_news_feed_border_box () =
              width = Style.Dimension.length 72.0;
              height = Style.Dimension.length 72.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
     |> Result.get_ok
   in
   let node12 =
     new_with_children tree
       (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_content:Stretch ~flex_shrink:0.0 ())
+         ~align_content:Stretch ~flex_shrink:0.0
+         ~box_sizing:Style.Box_sizing.Border_box ())
       [| node13 |]
     |> Result.get_ok
   in
   let node15 =
     new_leaf tree
       (Style.make ~flex_direction:Style.Flex_direction.Row
-         ~align_content:Stretch ~flex_shrink:1.0 ())
+         ~align_content:Stretch ~flex_shrink:1.0
+         ~box_sizing:Style.Box_sizing.Border_box ())
     |> Result.get_ok
   in
   let node16 =
-    new_leaf tree (Style.make ~align_content:Stretch ~flex_shrink:1.0 ())
+    new_leaf tree
+      (Style.make ~align_content:Stretch ~flex_shrink:1.0
+         ~box_sizing:Style.Box_sizing.Border_box ())
     |> Result.get_ok
   in
   let node14 =
@@ -131,7 +139,7 @@ let test_flex_android_news_feed_border_box () =
              top = Style.Length_percentage.length 21.0;
              bottom = Style.Length_percentage.length 18.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
       [| node15; node16 |]
     |> Result.get_ok
   in
@@ -146,28 +154,28 @@ let test_flex_android_news_feed_border_box () =
              top = Style.Length_percentage_auto.length 24.0;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
       [| node12; node14 |]
     |> Result.get_ok
   in
   let node10 =
     new_with_children tree
       (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~align_content:Stretch ())
+         ~align_content:Stretch ~box_sizing:Style.Box_sizing.Border_box ())
       [| node11 |]
     |> Result.get_ok
   in
   let node2 =
     new_with_children tree
       (Style.make ~flex_direction:Style.Flex_direction.Column
-         ~align_content:Stretch ())
+         ~align_content:Stretch ~box_sizing:Style.Box_sizing.Border_box ())
       [| node3; node10 |]
     |> Result.get_ok
   in
   let node1 =
     new_with_children tree
       (Style.make ~flex_direction:Style.Flex_direction.Column ~flex_shrink:0.0
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
       [| node2 |]
     |> Result.get_ok
   in
@@ -180,18 +188,19 @@ let test_flex_android_news_feed_border_box () =
              width = Style.Dimension.length 1080.0;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
       [| node1 |]
     |> Result.get_ok
   in
 
   (* Compute layout *)
   let _ =
-    compute_layout tree node0
+    compute_layout_with_measure tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
       }
+      Gentest_helpers.test_measure_function
     |> Result.get_ok
   in
 
@@ -295,7 +304,7 @@ let test_flex_android_news_feed_content_box () =
     check (float 0.001) msg expected actual
   in
 
-  let tree = new_tree () in
+  let tree = Gentest_helpers.new_test_tree () in
 
   (* Create nodes *)
   let node6 =
@@ -480,11 +489,12 @@ let test_flex_android_news_feed_content_box () =
 
   (* Compute layout *)
   let _ =
-    compute_layout tree node0
+    compute_layout_with_measure tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
       }
+      Gentest_helpers.test_measure_function
     |> Result.get_ok
   in
 

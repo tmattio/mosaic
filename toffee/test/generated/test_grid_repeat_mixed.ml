@@ -10,18 +10,45 @@ let test_grid_repeat_mixed_border_box () =
     check (float 0.001) msg expected actual
   in
 
-  let tree = new_tree () in
+  let tree = Gentest_helpers.new_test_tree () in
 
   (* Create nodes *)
-  let node1 = new_leaf tree Style.default |> Result.get_ok in
-  let node2 = new_leaf tree Style.default |> Result.get_ok in
-  let node3 = new_leaf tree Style.default |> Result.get_ok in
-  let node4 = new_leaf tree Style.default |> Result.get_ok in
-  let node5 = new_leaf tree Style.default |> Result.get_ok in
-  let node6 = new_leaf tree Style.default |> Result.get_ok in
-  let node7 = new_leaf tree Style.default |> Result.get_ok in
-  let node8 = new_leaf tree Style.default |> Result.get_ok in
-  let node9 = new_leaf tree Style.default |> Result.get_ok in
+  let node1 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Border_box ())
+    |> Result.get_ok
+  in
+  let node2 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Border_box ())
+    |> Result.get_ok
+  in
+  let node3 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Border_box ())
+    |> Result.get_ok
+  in
+  let node4 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Border_box ())
+    |> Result.get_ok
+  in
+  let node5 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Border_box ())
+    |> Result.get_ok
+  in
+  let node6 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Border_box ())
+    |> Result.get_ok
+  in
+  let node7 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Border_box ())
+    |> Result.get_ok
+  in
+  let node8 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Border_box ())
+    |> Result.get_ok
+  in
+  let node9 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Border_box ())
+    |> Result.get_ok
+  in
   let node0 =
     new_with_children tree
       (Style.make ~display:Style.Display.Grid
@@ -36,7 +63,7 @@ let test_grid_repeat_mixed_border_box () =
                   ~line_names:[]);
              Style.Grid.Template_component.repeat
                (Style.Grid.Repetition.make
-                  ~count:(Style.Grid.Repetition_count.count 1)
+                  ~count:Style.Grid.Repetition_count.auto_fill
                   ~tracks:[ Style.Grid.Track_sizing_function.length 40.0 ]
                   ~line_names:[]);
            ]
@@ -51,7 +78,7 @@ let test_grid_repeat_mixed_border_box () =
                   ~line_names:[]);
              Style.Grid.Template_component.repeat
                (Style.Grid.Repetition.make
-                  ~count:(Style.Grid.Repetition_count.count 1)
+                  ~count:Style.Grid.Repetition_count.auto_fill
                   ~tracks:[ Style.Grid.Track_sizing_function.length 40.0 ]
                   ~line_names:[]);
            ]
@@ -60,18 +87,19 @@ let test_grid_repeat_mixed_border_box () =
              width = Style.Dimension.length 120.0;
              height = Style.Dimension.length 120.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
       [| node1; node2; node3; node4; node5; node6; node7; node8; node9 |]
     |> Result.get_ok
   in
 
   (* Compute layout *)
   let _ =
-    compute_layout tree node0
+    compute_layout_with_measure tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
       }
+      Gentest_helpers.test_measure_function
     |> Result.get_ok
   in
 
@@ -140,7 +168,7 @@ let test_grid_repeat_mixed_content_box () =
     check (float 0.001) msg expected actual
   in
 
-  let tree = new_tree () in
+  let tree = Gentest_helpers.new_test_tree () in
 
   (* Create nodes *)
   let node1 =
@@ -193,7 +221,7 @@ let test_grid_repeat_mixed_content_box () =
                   ~line_names:[]);
              Style.Grid.Template_component.repeat
                (Style.Grid.Repetition.make
-                  ~count:(Style.Grid.Repetition_count.count 1)
+                  ~count:Style.Grid.Repetition_count.auto_fill
                   ~tracks:[ Style.Grid.Track_sizing_function.length 40.0 ]
                   ~line_names:[]);
            ]
@@ -208,7 +236,7 @@ let test_grid_repeat_mixed_content_box () =
                   ~line_names:[]);
              Style.Grid.Template_component.repeat
                (Style.Grid.Repetition.make
-                  ~count:(Style.Grid.Repetition_count.count 1)
+                  ~count:Style.Grid.Repetition_count.auto_fill
                   ~tracks:[ Style.Grid.Track_sizing_function.length 40.0 ]
                   ~line_names:[]);
            ]
@@ -224,11 +252,12 @@ let test_grid_repeat_mixed_content_box () =
 
   (* Compute layout *)
   let _ =
-    compute_layout tree node0
+    compute_layout_with_measure tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
       }
+      Gentest_helpers.test_measure_function
     |> Result.get_ok
   in
 

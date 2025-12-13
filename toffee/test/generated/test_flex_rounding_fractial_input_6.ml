@@ -10,7 +10,7 @@ let test_flex_rounding_fractial_input_6_border_box () =
     check (float 0.001) msg expected actual
   in
 
-  let tree = new_tree () in
+  let tree = Gentest_helpers.new_test_tree () in
 
   (* Create nodes *)
   let node2 =
@@ -21,7 +21,7 @@ let test_flex_rounding_fractial_input_6_border_box () =
              width = Style.Dimension.length 2.0;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
     |> Result.get_ok
   in
   let node3 =
@@ -32,7 +32,7 @@ let test_flex_rounding_fractial_input_6_border_box () =
              width = Style.Dimension.length 2.0;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
     |> Result.get_ok
   in
   let node1 =
@@ -43,7 +43,7 @@ let test_flex_rounding_fractial_input_6_border_box () =
              width = Style.Dimension.percent 0.5;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
       [| node2; node3 |]
     |> Result.get_ok
   in
@@ -55,7 +55,7 @@ let test_flex_rounding_fractial_input_6_border_box () =
              width = Style.Dimension.length 2.0;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
     |> Result.get_ok
   in
   let node6 =
@@ -66,7 +66,7 @@ let test_flex_rounding_fractial_input_6_border_box () =
              width = Style.Dimension.length 2.0;
              height = Style.Dimension.length 10.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
     |> Result.get_ok
   in
   let node4 =
@@ -77,7 +77,7 @@ let test_flex_rounding_fractial_input_6_border_box () =
              width = Style.Dimension.percent 0.5;
              height = Style.Dimension.auto;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
       [| node5; node6 |]
     |> Result.get_ok
   in
@@ -86,18 +86,19 @@ let test_flex_rounding_fractial_input_6_border_box () =
       (Style.make
          ~size:
            { width = Style.Dimension.length 7.0; height = Style.Dimension.auto }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
       [| node1; node4 |]
     |> Result.get_ok
   in
 
   (* Compute layout *)
   let _ =
-    compute_layout tree node0
+    compute_layout_with_measure tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
       }
+      Gentest_helpers.test_measure_function
     |> Result.get_ok
   in
 
@@ -151,7 +152,7 @@ let test_flex_rounding_fractial_input_6_content_box () =
     check (float 0.001) msg expected actual
   in
 
-  let tree = new_tree () in
+  let tree = Gentest_helpers.new_test_tree () in
 
   (* Create nodes *)
   let node2 =
@@ -234,11 +235,12 @@ let test_flex_rounding_fractial_input_6_content_box () =
 
   (* Compute layout *)
   let _ =
-    compute_layout tree node0
+    compute_layout_with_measure tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
       }
+      Gentest_helpers.test_measure_function
     |> Result.get_ok
   in
 

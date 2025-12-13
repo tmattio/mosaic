@@ -10,10 +10,13 @@ let test_flex_bevy_issue_7976_4_level_border_box () =
     check (float 0.001) msg expected actual
   in
 
-  let tree = new_tree () in
+  let tree = Gentest_helpers.new_test_tree () in
 
   (* Create nodes *)
-  let node3 = new_leaf tree Style.default |> Result.get_ok in
+  let node3 =
+    new_leaf tree (Style.make ~box_sizing:Style.Box_sizing.Border_box ())
+    |> Result.get_ok
+  in
   let node2 =
     new_with_children tree
       (Style.make
@@ -29,7 +32,7 @@ let test_flex_bevy_issue_7976_4_level_border_box () =
              top = Style.Length_percentage.length 5.0;
              bottom = Style.Length_percentage.length 5.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
       [| node3 |]
     |> Result.get_ok
   in
@@ -55,7 +58,7 @@ let test_flex_bevy_issue_7976_4_level_border_box () =
              top = Style.Length_percentage.length 5.0;
              bottom = Style.Length_percentage.length 5.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
       [| node2 |]
     |> Result.get_ok
   in
@@ -67,18 +70,19 @@ let test_flex_bevy_issue_7976_4_level_border_box () =
              width = Style.Dimension.length 200.0;
              height = Style.Dimension.length 200.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
       [| node1 |]
     |> Result.get_ok
   in
 
   (* Compute layout *)
   let _ =
-    compute_layout tree node0
+    compute_layout_with_measure tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
       }
+      Gentest_helpers.test_measure_function
     |> Result.get_ok
   in
 
@@ -117,7 +121,7 @@ let test_flex_bevy_issue_7976_4_level_content_box () =
     check (float 0.001) msg expected actual
   in
 
-  let tree = new_tree () in
+  let tree = Gentest_helpers.new_test_tree () in
 
   (* Create nodes *)
   let node3 =
@@ -184,11 +188,12 @@ let test_flex_bevy_issue_7976_4_level_content_box () =
 
   (* Compute layout *)
   let _ =
-    compute_layout tree node0
+    compute_layout_with_measure tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
       }
+      Gentest_helpers.test_measure_function
     |> Result.get_ok
   in
 

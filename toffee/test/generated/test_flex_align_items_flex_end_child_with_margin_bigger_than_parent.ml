@@ -11,7 +11,7 @@ let test_flex_align_items_flex_end_child_with_margin_bigger_than_parent_border_b
     check (float 0.001) msg expected actual
   in
 
-  let tree = new_tree () in
+  let tree = Gentest_helpers.new_test_tree () in
 
   (* Create nodes *)
   let node2 =
@@ -29,11 +29,14 @@ let test_flex_align_items_flex_end_child_with_margin_bigger_than_parent_border_b
              top = Style.Length_percentage_auto.length 0.0;
              bottom = Style.Length_percentage_auto.length 0.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
     |> Result.get_ok
   in
   let node1 =
-    new_with_children tree (Style.make ~align_items:Flex_end ()) [| node2 |]
+    new_with_children tree
+      (Style.make ~align_items:Flex_end ~box_sizing:Style.Box_sizing.Border_box
+         ())
+      [| node2 |]
     |> Result.get_ok
   in
   let node0 =
@@ -44,18 +47,19 @@ let test_flex_align_items_flex_end_child_with_margin_bigger_than_parent_border_b
              width = Style.Dimension.length 50.0;
              height = Style.Dimension.length 50.0;
            }
-         ())
+         ~box_sizing:Style.Box_sizing.Border_box ())
       [| node1 |]
     |> Result.get_ok
   in
 
   (* Compute layout *)
   let _ =
-    compute_layout tree node0
+    compute_layout_with_measure tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
       }
+      Gentest_helpers.test_measure_function
     |> Result.get_ok
   in
 
@@ -90,7 +94,7 @@ let test_flex_align_items_flex_end_child_with_margin_bigger_than_parent_content_
     check (float 0.001) msg expected actual
   in
 
-  let tree = new_tree () in
+  let tree = Gentest_helpers.new_test_tree () in
 
   (* Create nodes *)
   let node2 =
@@ -133,11 +137,12 @@ let test_flex_align_items_flex_end_child_with_margin_bigger_than_parent_content_
 
   (* Compute layout *)
   let _ =
-    compute_layout tree node0
+    compute_layout_with_measure tree node0
       {
         width = Available_space.Max_content;
         height = Available_space.Max_content;
       }
+      Gentest_helpers.test_measure_function
     |> Result.get_ok
   in
 
