@@ -90,6 +90,10 @@ val has_language : t -> filetype -> bool
 (** [has_language client filetype] reports whether a language has been
     registered for [filetype]. *)
 
+val get_language : t -> filetype -> Language.t option
+(** [get_language client filetype] returns the language registered for
+    [filetype], or [None] if no language is registered. *)
+
 val highlight_once :
   t -> filetype:filetype -> content:string -> (Highlight.t array, string) result
 (** [highlight_once client ~filetype ~content] parses [content] using the

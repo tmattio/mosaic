@@ -30,8 +30,7 @@ module Props : sig
     content : string;
     filetype : string option;
     grammar : grammar option;
-    grammar_resolver : (string -> grammar option) option;
-    tree_syntax : Mosaic_syntax.t option;
+    syntax_client : Mosaic_syntax.t;
     syntax_style : Syntax_style.t;
     conceal : bool;
     draw_unstyled_text : bool;
@@ -48,7 +47,7 @@ module Props : sig
     ?content:string ->
     ?filetype:string ->
     ?grammar:grammar ->
-    ?grammar_resolvers:(string -> grammar option) list ->
+    ?syntax_client:Mosaic_syntax.t ->
     ?conceal:bool ->
     ?draw_unstyled_text:bool ->
     ?wrap_mode:wrap_mode ->
@@ -58,7 +57,6 @@ module Props : sig
     ?selection_fg:Ansi.Color.t ->
     ?default_style:Ansi.Style.t ->
     ?selectable:bool ->
-    ?tree_syntax:Mosaic_syntax.t ->
     ?syntax_style:Syntax_style.t ->
     unit ->
     t
@@ -80,7 +78,7 @@ val node : t -> Renderable.t
 val set_content : t -> string -> unit
 val set_filetype : t -> string option -> unit
 val set_grammar : t -> grammar option -> unit
-val set_tree_syntax : t -> Mosaic_syntax.t option -> unit
+val set_syntax_client : t -> Mosaic_syntax.t -> unit
 val set_syntax_style : t -> Syntax_style.t -> unit
 val set_wrap_mode : t -> Props.wrap_mode -> unit
 val set_conceal : t -> bool -> unit

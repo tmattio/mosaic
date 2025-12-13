@@ -16,18 +16,19 @@ module Props : sig
     ?style:Style.t ->
     ?width:int ->
     ?strict:bool ->
-    ?code_grammar_resolvers:(string -> Mosaic_ui.Code.grammar option) list ->
+    ?syntax_client:Mosaic_syntax.t ->
     ?content:string ->
     unit ->
     t
-  (** [make ?style ?width ?strict ?code_grammar_resolvers ?content ()] creates
-      markdown props.
+  (** [make ?style ?width ?strict ?syntax_client ?content ()] creates markdown
+      props.
 
       @param style Theme configuration (defaults to {!Style.default})
       @param width Target width constraint for layout (defaults to 80)
       @param strict Parse strictly according to CommonMark (default [false])
-      @param code_grammar_resolvers
-        Grammar resolvers for fenced code blocks syntax highlighting
+      @param syntax_client
+        Syntax client for fenced code blocks highlighting (defaults to
+        {!Mosaic_syntax.default_client})
       @param content Markdown text to render *)
 
   val default : t
@@ -63,10 +64,9 @@ val set_width : t -> int -> unit
 val set_strict : t -> bool -> unit
 (** [set_strict t strict] updates the CommonMark strict parsing mode. *)
 
-val set_code_grammar_resolvers :
-  t -> (string -> Mosaic_ui.Code.grammar option) list option -> unit
-(** [set_code_grammar_resolvers t resolvers] updates the grammar resolvers for
-    code block syntax highlighting. *)
+val set_syntax_client : t -> Mosaic_syntax.t -> unit
+(** [set_syntax_client t client] updates the syntax client for code block
+    highlighting. *)
 
 val apply_props : t -> Props.t -> unit
 (** [apply_props t props] applies [props] to a mounted markdown using its
@@ -115,7 +115,7 @@ val markdown :
   ?style:Style.t ->
   ?width:int ->
   ?strict:bool ->
-  ?code_grammar_resolvers:(string -> Mosaic_ui.Code.grammar option) list ->
+  ?syntax_client:Mosaic_syntax.t ->
   ?content:string ->
   ?on_mount:(t -> unit) ->
   unit ->
@@ -140,5 +140,6 @@ val markdown :
     - [style]: Theme configuration (defaults to {!Style.default})
     - [width]: Target width constraint for layout (defaults to 80)
     - [strict]: Parse strictly according to CommonMark (default false)
-    - [code_grammar_resolvers]: Grammar resolvers for code block highlighting
+    - [syntax_client]: Syntax client for code block highlighting (defaults to
+      {!Mosaic_syntax.default_client})
     - [content]: Markdown text to render *)

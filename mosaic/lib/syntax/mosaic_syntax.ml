@@ -64,6 +64,11 @@ let register_language t (lang : Language.t) =
 
 let has_language t filetype = Hashtbl.mem t.languages filetype
 
+let get_language t filetype =
+  match Hashtbl.find_opt t.languages filetype with
+  | None -> None
+  | Some entry -> Some entry.lang
+
 let highlight_once t ~filetype ~content =
   match Hashtbl.find_opt t.languages filetype with
   | None ->
@@ -139,7 +144,7 @@ let make_default_parsers () : Language.t list =
     in
     Language.
       {
-        filetype = "ml";
+        filetype = "ocaml";
         ts_language;
         highlight_query;
         injection_query = None;

@@ -685,9 +685,9 @@ let code ?id ?key
     ?grid_auto_columns ?grid_auto_flow ?grid_template_areas ?grid_row
     ?grid_column
     (* Code props *)
-    ?content ?filetype ?grammar ?grammar_resolvers ?conceal ?draw_unstyled_text
+    ?content ?filetype ?grammar ?syntax_client ?conceal ?draw_unstyled_text
     ?wrap_mode ?tab_indicator ?tab_indicator_color ?selection_bg ?selection_fg
-    ?default_style ?selectable ?tree_syntax ?syntax_style () =
+    ?default_style ?selectable ?syntax_style () =
   let handlers = { on_mouse; on_key; on_paste } in
   let style =
     Toffee.Style.make ?display ?box_sizing ?position ?overflow ?scrollbar_width
@@ -699,10 +699,9 @@ let code ?id ?key
       ?grid_column ()
   in
   let code_props =
-    Code.Props.make ?content ?filetype ?grammar ?grammar_resolvers ?conceal
+    Code.Props.make ?content ?filetype ?grammar ?syntax_client ?conceal
       ?draw_unstyled_text ?wrap_mode ?tab_indicator ?tab_indicator_color
-      ?selection_bg ?selection_fg ?default_style ?selectable ?tree_syntax
-      ?syntax_style ()
+      ?selection_bg ?selection_fg ?default_style ?selectable ?syntax_style ()
   in
   let spec = Code_spec code_props in
   let props =
@@ -730,8 +729,8 @@ let markdown ?id ?key
     ?grid_auto_columns ?grid_auto_flow ?grid_template_areas ?grid_row
     ?grid_column
     (* Markdown props *)
-    ?style:markdown_style ?width:markdown_width ?strict ?code_grammar_resolvers
-    ?content () =
+    ?style:markdown_style ?width:markdown_width ?strict ?syntax_client ?content
+    () =
   let handlers = { on_mouse; on_key; on_paste } in
   let style =
     Toffee.Style.make ?display ?box_sizing ?position ?overflow ?scrollbar_width
@@ -744,7 +743,7 @@ let markdown ?id ?key
   in
   let markdown_props =
     Markdown.Props.make ?style:markdown_style ?width:markdown_width ?strict
-      ?code_grammar_resolvers ?content ()
+      ?syntax_client ?content ()
   in
   let spec = Markdown_spec markdown_props in
   let props =

@@ -861,7 +861,7 @@ val code :
   ?content:string ->
   ?filetype:string ->
   ?grammar:Mosaic_ui.Code.grammar ->
-  ?grammar_resolvers:(string -> Mosaic_ui.Code.grammar option) list ->
+  ?syntax_client:Mosaic_syntax.t ->
   ?conceal:bool ->
   ?draw_unstyled_text:bool ->
   ?wrap_mode:Mosaic_ui.Code.Props.wrap_mode ->
@@ -871,7 +871,6 @@ val code :
   ?selection_fg:Ansi.Color.t ->
   ?default_style:Ansi.Style.t ->
   ?selectable:bool ->
-  ?tree_syntax:Mosaic_syntax.t ->
   ?syntax_style:Mosaic_ui.Code.Syntax_style.t ->
   unit ->
   'a t
@@ -923,7 +922,7 @@ val markdown :
   ?style:Mosaic_markdown.Style.t ->
   ?width:int ->
   ?strict:bool ->
-  ?code_grammar_resolvers:(string -> Mosaic_ui.Code.grammar option) list ->
+  ?syntax_client:Mosaic_syntax.t ->
   ?content:string ->
   unit ->
   'a t

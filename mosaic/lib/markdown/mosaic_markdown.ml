@@ -8,21 +8,19 @@ module Props = struct
     style : Style.t;
     width : int;
     strict : bool;
-    code_grammar_resolvers : (string -> Ui.Code.grammar option) list option;
+    syntax_client : Mosaic_syntax.t;
     content : string;
   }
 
   let make ?(style = Style.default) ?(width = 80) ?(strict = false)
-      ?code_grammar_resolvers ?(content = "") () =
-    { style; width; strict; code_grammar_resolvers; content }
+      ?(syntax_client = Mosaic_syntax.default_client ()) ?(content = "") () =
+    { style; width; strict; syntax_client; content }
 
   let default = make ()
 
   let equal a b =
     a.style == b.style && a.width = b.width && a.strict = b.strict
-    && Option.equal
-         (fun _ _ -> false)
-         a.code_grammar_resolvers b.code_grammar_resolvers
+    && a.syntax_client == b.syntax_client
     && String.equal a.content b.content
 end
 
@@ -35,7 +33,7 @@ type render_ctx = {
   style : Style.t;
   width : int option;
   link_defs : (string, string) Hashtbl.t;
-  code_grammar_resolvers : (string -> Ui.Code.grammar option) list option;
+  syntax_client : Mosaic_syntax.t;
   mutable list_stack : list_state list;
   mutable quote_depth : int;
 }
@@ -135,15 +133,14 @@ let make_text_fragments ctx ?text_style ?wrap_mode ?size ?flex_grow ?flex_shrink
       Ui.Text.set_fragments t fragments;
       Some node
 
-let make_code ctx ?syntax_style ?filetype ?grammar_resolvers ?wrap_mode content
-    =
+let make_code ctx ?syntax_style ?filetype ?wrap_mode content =
   let style = Toffee.Style.make () in
   match create_node ctx ~style () with
   | None -> None
   | Some node ->
       let code_props =
-        Ui.Code.Props.make ?syntax_style ?filetype ?grammar_resolvers ?wrap_mode
-          ~content ()
+        Ui.Code.Props.make ?syntax_style ?filetype
+          ~syntax_client:ctx.syntax_client ?wrap_mode ~content ()
       in
       let _ = Ui.Code.mount ~props:code_props node in
       Some node
@@ -641,12 +638,7 @@ and render_code_block ctx ~base_style ~next_is_thematic_break code =
   in
   let syntax_style = build_syntax_style text_style in
   let code_node =
-    match ctx.code_grammar_resolvers with
-    | None ->
-        make_code ctx ~syntax_style ?filetype ~wrap_mode:`None code_content
-    | Some resolvers ->
-        make_code ctx ~syntax_style ?filetype ~grammar_resolvers:resolvers
-          ~wrap_mode:`None code_content
+    make_code ctx ~syntax_style ?filetype ~wrap_mode:`None code_content
   in
   match code_node with
   | None -> []
@@ -829,7 +821,7 @@ let render_content t =
         style = props.style;
         width = (if props.width > 0 then Some props.width else None);
         link_defs = Hashtbl.create 16;
-        code_grammar_resolvers = props.code_grammar_resolvers;
+        syntax_client = props.syntax_client;
         list_stack = [];
         quote_depth = 0;
       }
@@ -921,15 +913,16 @@ let set_strict t strict =
     t.props <- { t.props with strict };
     render_content t)
 
-let set_code_grammar_resolvers t resolvers =
-  t.props <- { t.props with code_grammar_resolvers = resolvers };
-  render_content t
+let set_syntax_client t client =
+  if t.props.syntax_client != client then (
+    t.props <- { t.props with syntax_client = client };
+    render_content t)
 
 let apply_props t (props : Props.t) =
   set_style t props.style;
   set_width t props.width;
   set_strict t props.strict;
-  set_code_grammar_resolvers t props.code_grammar_resolvers;
+  set_syntax_client t props.syntax_client;
   set_content t props.content
 
 (* --- Element API --- *)
@@ -940,8 +933,8 @@ let markdown ?id ?visible ?z_index ?buffer ?live ?display ?box_sizing ?position
     ?justify_self ?justify_content ?flex_direction ?flex_wrap ?flex_grow
     ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
     ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
-    ?grid_row ?grid_column ?style ?width ?strict ?code_grammar_resolvers
-    ?content ?on_mount () : Ui.element =
+    ?grid_row ?grid_column ?style ?width ?strict ?syntax_client ?content
+    ?on_mount () : Ui.element =
   let layout_style =
     Toffee.Style.make ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin ?padding ?gap
@@ -952,7 +945,7 @@ let markdown ?id ?visible ?z_index ?buffer ?live ?display ?box_sizing ?position
       ?grid_column ()
   in
   let markdown_props =
-    Props.make ?style ?width ?strict ?code_grammar_resolvers ?content ()
+    Props.make ?style ?width ?strict ?syntax_client ?content ()
   in
   let ctor (renderer : Ui.Renderer.t) (markdown_props : Props.t) =
     let id = Option.value id ~default:(Ui.Renderer.gen_id renderer) in

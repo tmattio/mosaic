@@ -176,8 +176,8 @@ val run :
 
     All parameters are forwarded to {!Matrix.create}. Defaults match the
     previous behaviour: alternate screen, raw mode, 60 FPS cap, mouse and
-    bracketed paste enabled, and Ctrl+C exits the application
-    ([exit_on_ctrl_c] defaults to [true]). *)
+    bracketed paste enabled, and Ctrl+C exits the application ([exit_on_ctrl_c]
+    defaults to [true]). *)
 
 (** {1 Internal Modules}
 
@@ -1069,7 +1069,7 @@ val code :
   ?content:string ->
   ?filetype:string ->
   ?grammar:Code.grammar ->
-  ?grammar_resolvers:(string -> Code.grammar option) list ->
+  ?syntax_client:Mosaic_syntax.t ->
   ?conceal:bool ->
   ?draw_unstyled_text:bool ->
   ?wrap_mode:[ `None | `Char | `Word ] ->
@@ -1079,7 +1079,6 @@ val code :
   ?selection_fg:Ansi.Color.t ->
   ?default_style:Ansi.Style.t ->
   ?selectable:bool ->
-  ?tree_syntax:Mosaic_syntax.t ->
   ?syntax_style:Code.Syntax_style.t ->
   unit ->
   'msg t
@@ -1131,7 +1130,7 @@ val markdown :
   ?style:Mosaic_markdown.Style.t ->
   ?width:int ->
   ?strict:bool ->
-  ?code_grammar_resolvers:(string -> Code.grammar option) list ->
+  ?syntax_client:Mosaic_syntax.t ->
   ?content:string ->
   unit ->
   'msg t

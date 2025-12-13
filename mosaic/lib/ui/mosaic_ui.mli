@@ -1049,7 +1049,7 @@ val code :
   ?content:string ->
   ?filetype:string ->
   ?grammar:Code.grammar ->
-  ?grammar_resolvers:(string -> Code.grammar option) list ->
+  ?syntax_client:Mosaic_syntax.t ->
   ?conceal:bool ->
   ?draw_unstyled_text:bool ->
   ?wrap_mode:Code.Props.wrap_mode ->
@@ -1059,7 +1059,6 @@ val code :
   ?selection_fg:Ansi.Color.t ->
   ?default_style:Ansi.Style.t ->
   ?selectable:bool ->
-  ?tree_syntax:Mosaic_syntax.t ->
   ?syntax_style:Code.Syntax_style.t ->
   ?on_mount:(Code.t -> unit) ->
   unit ->

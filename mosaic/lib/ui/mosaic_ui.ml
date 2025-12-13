@@ -738,9 +738,9 @@ let code
     ?grid_auto_columns ?grid_auto_flow ?grid_template_areas ?grid_row
     ?grid_column
     (* Code props *)
-    ?content ?filetype ?grammar ?grammar_resolvers ?conceal ?draw_unstyled_text
+    ?content ?filetype ?grammar ?syntax_client ?conceal ?draw_unstyled_text
     ?wrap_mode ?tab_indicator ?tab_indicator_color ?selection_bg ?selection_fg
-    ?default_style ?selectable ?tree_syntax ?syntax_style
+    ?default_style ?selectable ?syntax_style
     (* Callback *)
     ?on_mount () : element =
   let style =
@@ -753,10 +753,9 @@ let code
       ?grid_column ()
   in
   let code_props =
-    Code.Props.make ?content ?filetype ?grammar ?grammar_resolvers ?conceal
+    Code.Props.make ?content ?filetype ?grammar ?syntax_client ?conceal
       ?draw_unstyled_text ?wrap_mode ?tab_indicator ?tab_indicator_color
-      ?selection_bg ?selection_fg ?default_style ?selectable ?tree_syntax
-      ?syntax_style ()
+      ?selection_bg ?selection_fg ?default_style ?selectable ?syntax_style ()
   in
   let ctor (renderer : renderer) (code_props : Code.Props.t) =
     let id = Option.value id ~default:(Renderer.gen_id renderer) in

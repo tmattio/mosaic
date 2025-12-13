@@ -79,8 +79,7 @@ module Props = struct
     content : string;
     filetype : string option;
     grammar : grammar option;
-    grammar_resolver : (string -> grammar option) option;
-    tree_syntax : Mosaic_syntax.t option;
+    syntax_client : Mosaic_syntax.t;
     syntax_style : Syntax_style.t;
     conceal : bool;
     draw_unstyled_text : bool;
@@ -93,21 +92,12 @@ module Props = struct
     selectable : bool;
   }
 
-  let make ?(content = "") ?filetype ?grammar ?grammar_resolvers
-      ?(conceal = true) ?(draw_unstyled_text = true)
-      ?(wrap_mode = (`Word : wrap_mode)) ?tab_indicator ?tab_indicator_color
-      ?selection_bg ?selection_fg ?(default_style = Ansi.Style.default)
-      ?(selectable = true) ?tree_syntax ?syntax_style () =
-    let compose_resolvers (rs : (string -> grammar option) list) :
-        string -> grammar option =
-     fun filetype ->
-      let rec loop = function
-        | [] -> None
-        | r :: tl -> ( match r filetype with None -> loop tl | some -> some)
-      in
-      loop rs
-    in
-    let grammar_resolver = Option.map compose_resolvers grammar_resolvers in
+  let make ?(content = "") ?filetype ?grammar
+      ?(syntax_client = Mosaic_syntax.default_client ()) ?(conceal = true)
+      ?(draw_unstyled_text = true) ?(wrap_mode = (`Word : wrap_mode))
+      ?tab_indicator ?tab_indicator_color ?selection_bg ?selection_fg
+      ?(default_style = Ansi.Style.default) ?(selectable = true) ?syntax_style
+      () =
     let syntax_style =
       match syntax_style with
       | Some s -> s
@@ -117,8 +107,7 @@ module Props = struct
       content;
       filetype;
       grammar;
-      grammar_resolver;
-      tree_syntax;
+      syntax_client;
       syntax_style;
       conceal;
       draw_unstyled_text;
@@ -143,11 +132,8 @@ module Props = struct
     String.equal a.content b.content
     && Option.equal String.equal a.filetype b.filetype
     && lang_eq a.grammar b.grammar
-    && lang_eq a.tree_syntax b.tree_syntax
+    && a.syntax_client == b.syntax_client
     && a.syntax_style == b.syntax_style
-    && Bool.equal
-         (Option.is_some a.grammar_resolver)
-         (Option.is_some b.grammar_resolver)
     && Bool.equal a.conceal b.conceal
     && Bool.equal a.draw_unstyled_text b.draw_unstyled_text
     && a.wrap_mode = b.wrap_mode
@@ -244,8 +230,7 @@ type t = {
   mutable content : string;
   mutable filetype : string option;
   mutable grammar : grammar option;
-  mutable grammar_resolver : (string -> grammar option) option;
-  mutable tree_syntax : Mosaic_syntax.t option;
+  mutable syntax_client : Mosaic_syntax.t;
   mutable syntax_style : Syntax_style.t;
   mutable pending_update : bool;
   mutable conceal : bool;
@@ -434,21 +419,22 @@ let update_buffer_with_tokens t tokens =
     Array.iter
       (fun b ->
         let offset = b.offset in
-        if !current_offset < offset then
-          match !active with
-          | [] -> write_range ~style:default_style !current_offset offset
-          | active_indices -> (
-              (match conceal_replacement active_indices with
-              | Some replacement ->
-                  write_chunk ~style:default_style ~text:replacement
-              | None ->
-                  let style = resolve_style_for_active active_indices in
-                  write_range ~style !current_offset offset);
-              current_offset := offset;
-              match b.kind with
-              | Start -> active := b.index :: !active
-              | End -> active := List.filter (fun idx -> idx <> b.index) !active
-              ))
+        (* Write text from current_offset to this boundary if there's a gap *)
+        (if !current_offset < offset then
+           match !active with
+           | [] -> write_range ~style:default_style !current_offset offset
+           | active_indices -> (
+               match conceal_replacement active_indices with
+               | Some replacement ->
+                   write_chunk ~style:default_style ~text:replacement
+               | None ->
+                   let style = resolve_style_for_active active_indices in
+                   write_range ~style !current_offset offset));
+        (* Always update offset and process boundary kind *)
+        current_offset := offset;
+        match b.kind with
+        | Start -> active := b.index :: !active
+        | End -> active := List.filter (fun idx -> idx <> b.index) !active)
       boundaries;
     if !current_offset < content_len then
       match !active with
@@ -509,16 +495,11 @@ let apply_highlighting t =
           t.should_render_text_buffer <- true;
           write_plain_text t t.content t.default_style
       | Some ft ->
-          let client =
-            match t.tree_syntax with
-            | Some c -> c
-            | None -> Mosaic_syntax.default_client ()
-          in
           let result =
             try
-              Mosaic_syntax.highlight_once client ~filetype:ft
+              Mosaic_syntax.highlight_once t.syntax_client ~filetype:ft
                 ~content:t.content
-            with _ -> Error "tree_syntax: unexpected exception"
+            with _ -> Error "syntax_client: unexpected exception"
           in
           (match result with
           | Error _ ->
@@ -568,9 +549,9 @@ let set_grammar t grammar_opt =
     update_grammar t grammar_opt;
     schedule_update t)
 
-let set_tree_syntax t tree_syntax_opt =
-  if t.tree_syntax != tree_syntax_opt then (
-    t.tree_syntax <- tree_syntax_opt;
+let set_syntax_client t client =
+  if t.syntax_client != client then (
+    t.syntax_client <- client;
     schedule_update t)
 
 let set_syntax_style t ss =
@@ -598,18 +579,13 @@ let set_draw_unstyled_text t v =
     schedule_update t)
 
 let apply_props t (props : Props.t) =
+  let oc = Lazy.force debug_oc in
+  Printf.fprintf oc "APPLY_PROPS: syntax_style_eq=%b\n%!" (t.syntax_style == props.syntax_style);
   (* Core content and language configuration *)
   set_content t props.content;
   set_filetype t props.filetype;
   set_grammar t props.grammar;
-  (* Grammar resolver presence controls lazy grammar resolution; update
-     the resolver function and schedule a refresh when it changes. *)
-  (match (t.grammar_resolver, props.grammar_resolver) with
-  | Some old_r, Some new_r when old_r == new_r -> ()
-  | _ ->
-      t.grammar_resolver <- props.grammar_resolver;
-      schedule_update t);
-  set_tree_syntax t props.tree_syntax;
+  set_syntax_client t props.syntax_client;
   set_syntax_style t props.syntax_style;
   (* Rendering behaviour *)
   set_conceal t props.conceal;
@@ -963,8 +939,7 @@ let mount ?(props = Props.default) (node : Renderable.t) =
       content = props.content;
       filetype = props.filetype;
       grammar = props.grammar;
-      grammar_resolver = props.grammar_resolver;
-      tree_syntax = props.tree_syntax;
+      syntax_client = props.syntax_client;
       syntax_style = props.syntax_style;
       pending_update = false;
       conceal = props.conceal;
@@ -978,10 +953,6 @@ let mount ?(props = Props.default) (node : Renderable.t) =
   Text_buffer.set_default_attrs buffer (Some t.default_style.Ansi.Style.attrs);
   Text_buffer.finalise buffer;
   update_grammar t t.grammar;
-
-  (match (t.grammar, t.filetype, t.grammar_resolver) with
-  | None, Some ft, Some resolve -> update_grammar t (resolve ft)
-  | _ -> ());
 
   Renderable.set_render node (render t);
   Renderable.set_measure node (Some (measure t));
@@ -1058,9 +1029,6 @@ let mount ?(props = Props.default) (node : Renderable.t) =
        (fun _ ~delta:_ ->
          if t.pending_update then (
            t.pending_update <- false;
-           (match (t.grammar, t.filetype, t.grammar_resolver) with
-           | None, Some ft, Some resolve -> update_grammar t (resolve ft)
-           | _ -> ());
            update_content t t.content)));
 
   update_content t t.content;

@@ -1200,8 +1200,7 @@ let config_tab (r : run) =
       box ~border:true ~title:"config.json (syntax highlighted)"
         ~padding:(padding 1) ~flex_grow:1.
         [
-          code ~content:(config_json r) ~filetype:"json"
-            ~tree_syntax:syntax_client
+          code ~content:(config_json r) ~filetype:"json" ~syntax_client
             ~syntax_style:(Code.Syntax_style.of_default_theme ())
             ~size:{ width = pct 100; height = pct 100 }
             ();
