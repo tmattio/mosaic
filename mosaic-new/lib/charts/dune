@@ -1,0 +1,4 @@
+(library
+ (name mosaic_charts)
+ (public_name mosaic.charts)
+ (libraries mosaic.ui matrix.ansi matrix.glyph unix))
