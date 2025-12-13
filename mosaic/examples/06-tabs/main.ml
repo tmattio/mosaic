@@ -3,7 +3,7 @@
 open Mosaic_tea
 
 type model = { tab : int }
-type msg = Quit
+type msg = Quit | Tab_changed of int
 
 let tabs =
   [
@@ -16,7 +16,11 @@ let tabs =
   ]
 
 let init () = ({ tab = 0 }, Cmd.none)
-let update msg model = match msg with Quit -> (model, Cmd.quit)
+
+let update msg model =
+  match msg with
+  | Quit -> (model, Cmd.quit)
+  | Tab_changed i -> ({ tab = i }, Cmd.none)
 
 let content_for_tab = function
   | 0 -> "Welcome to the Home tab. This is the main dashboard."
@@ -57,7 +61,8 @@ let view model =
         [
           tab_select ~options:tabs ~show_description:true ~show_underline:true
             ~show_scroll_arrows:true ~wrap_selection:true ~tab_width:12
-            ~selected_background:accent ~selected_text:Ansi.Color.black ();
+            ~selected_background:accent ~selected_text:Ansi.Color.black
+            ~on_change:(fun i -> Some (Tab_changed i)) ();
         ];
       (* Content area *)
       box ~flex_grow:1. ~border:true ~border_color ~padding:(padding 2)
