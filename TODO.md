@@ -1,19 +1,10 @@
 # to do
 
-mosaic
+## matrix
 
-- bug: fix style leaking to button border
-- static content: add api in mosaic for perstisted content
-- bug: in non-alt screen, application still take the full height (scrolls down and hide content)
-- perf: we clear Screen.t on each render because Ui doesn't clear content that's not used anymore, that's inneficient, ideally ui would clear what it needs to clear so we can have incremental rendering
-- perf: we don't see to be re-rendering only what's needed, despite having dirty flag to our element tree in mosaic.ml
+- bug: primary screen mode is broken, see counter and package management examples
 
----
+## mosaic
 
-vcr
-- fix jqp example
+- bug: scroll box content overflows (on border for example 11, and beyond for 13)
 
----
-
-- finish toffee port - tests pass
-- fix mosaic program rendering - tests pass
