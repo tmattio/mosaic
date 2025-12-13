@@ -1,464 +1,597 @@
 open Alcotest
 open Ansi
 
-(** Test SGR (Select Graphic Rendition) generation *)
-let test_sgr () =
-  check string "empty" "" (sgr []);
-  check string "reset" "\x1b[0m" (sgr [ `Reset ]);
-  check string "bold" "\x1b[1m" (sgr [ `Bold ]);
-  check string "red fg" "\x1b[31m" (sgr [ `Fg Red ]);
-  check string "blue bg" "\x1b[44m" (sgr [ `Bg Blue ]);
-  check string "multiple attrs" "\x1b[31;44;1m"
-    (sgr [ `Fg Red; `Bg Blue; `Bold ]);
-  check string "rgb color" "\x1b[38;2;255;128;0m"
-    (sgr [ `Fg (RGB (255, 128, 0)) ]);
-  check string "complex" "\x1b[38;5;200;48;2;0;0;255;1;3;4m"
-    (sgr [ `Fg (Index 200); `Bg (RGB (0, 0, 255)); `Bold; `Italic; `Underline ])
+(* --- Helpers --- *)
 
-(** Test cursor movement *)
-let test_cursor_movement () =
-  check string "up 0" "" (cursor_up 0);
-  check string "up 1" "\x1b[1A" (cursor_up 1);
-  check string "up 10" "\x1b[10A" (cursor_up 10);
+(* Test helper that wraps callback-based feed to return a list *)
+let feed_to_list p bytes off len =
+  let acc = ref [] in
+  Parser.feed p bytes off len (fun tok -> acc := tok :: !acc);
+  List.rev !acc
 
-  check string "down 0" "" (cursor_down 0);
-  check string "down 5" "\x1b[5B" (cursor_down 5);
+let check_color = testable Color.pp Color.equal
 
-  check string "forward 0" "" (cursor_forward 0);
-  check string "forward 3" "\x1b[3C" (cursor_forward 3);
+(* Strict checking for escape sequences *)
+let check_seq msg expected actual = check string msg expected actual
 
-  check string "back 0" "" (cursor_back 0);
-  check string "back 7" "\x1b[7D" (cursor_back 7);
+(* --- 1. Color Logic & Math --- *)
 
-  check string "position 1,1" "\x1b[1;1H" (cursor_position 1 1);
-  check string "position 10,20" "\x1b[10;20H" (cursor_position 10 20)
+let color_parsing_hex () =
+  let c = Color.of_hex_exn in
+  (* Standard 6 digit *)
+  check check_color "hex 6 digit" (Color.of_rgb 255 0 128) (c "#ff0080");
+  (* Short 3 digit *)
+  check check_color "hex 3 digit" (Color.of_rgb 255 0 255) (c "#f0f");
+  (* Alpha 8 digit *)
+  check check_color "hex 8 digit" (Color.of_rgba 0 255 0 128) (c "#00ff0080");
+  (* Case insensitivity *)
+  check check_color "hex case" (Color.of_rgb 170 187 204) (c "#AABBCC");
+  (* Failures *)
+  check bool "invalid hex len" true (Color.of_hex "12" = None);
+  check bool "invalid hex char" true (Color.of_hex "GG0000" = None)
 
-(** Test cursor visibility and style *)
-let test_cursor_style () =
-  check string "save" "\x1b[s" cursor_save;
-  check string "restore" "\x1b[u" cursor_restore;
-  check string "show" "\x1b[?25h" cursor_show;
-  check string "hide" "\x1b[?25l" cursor_hide;
-  check string "blinking block" "\x1b[1 q" set_cursor_style_blinking_block;
-  check string "steady block" "\x1b[2 q" set_cursor_style_steady_block;
-  check string "blinking underline" "\x1b[3 q"
-    set_cursor_style_blinking_underline;
-  check string "steady underline" "\x1b[4 q" set_cursor_style_steady_underline;
-  check string "blinking bar" "\x1b[5 q" set_cursor_style_blinking_bar;
-  check string "steady bar" "\x1b[6 q" set_cursor_style_steady_bar
+let color_hsl_roundtrip () =
+  (* Pure Red (RGB): 0 deg, 100%, 50% *)
+  (* Use explicit RGB rather than Color.red since ANSI red varies by terminal *)
+  let pure_red = Color.of_rgb 255 0 0 in
+  let h, s, l, _ = Color.to_hsl pure_red in
+  check (float 0.01) "red hue" 0.0 h;
+  check (float 0.01) "red saturation" 1.0 s;
+  check (float 0.01) "red lightness" 0.5 l;
 
-(** Test screen and line clearing *)
-let test_clearing () =
-  check string "clear screen" "\x1b[2J" clear_screen;
-  check string "clear above" "\x1b[1J" clear_screen_above;
-  check string "clear below" "\x1b[J" clear_screen_below;
-  check string "clear line" "\x1b[2K" clear_line;
-  check string "clear line left" "\x1b[1K" clear_line_left;
-  check string "clear line right" "\x1b[K" clear_line_right
+  (* Roundtrip reconstruction *)
+  let reconstructed = Color.of_hsl ~h ~s ~l () in
+  check check_color "red roundtrip" pure_red reconstructed
 
-(** Test scrolling *)
-let test_scrolling () =
-  check string "scroll up 1" "\x1b[1S" (scroll_up 1);
-  check string "scroll up 5" "\x1b[5S" (scroll_up 5);
-  check string "scroll down 1" "\x1b[1T" (scroll_down 1);
-  check string "scroll down 3" "\x1b[3T" (scroll_down 3)
+let color_blending () =
+  let bg = Color.of_rgb 0 0 0 in
+  (* Black *)
+  let fg = Color.of_rgba 255 255 255 128 in
+  (* 50% White *)
 
-(** Test screen switching and modes *)
-let test_screen_modes () =
-  check string "alt screen on" "\x1b[?1049h" alternate_screen_on;
-  check string "alt screen off" "\x1b[?1049l" alternate_screen_off;
-  check string "mouse on" "\x1b[?1000;1002;1006h" mouse_on;
-  check string "mouse off" "\x1b[?1000;1002;1006l" mouse_off;
-  check string "bracketed paste on" "\x1b[?2004h" bracketed_paste_on;
-  check string "bracketed paste off" "\x1b[?2004l" bracketed_paste_off
+  (* Linear blend: 50% white over black should be approx gray 127 *)
+  let res = Color.blend ~mode:`Linear ~src:fg ~dst:bg () in
+  match res with
+  | Color.Rgb { r; g; b } ->
+      check bool "blend result roughly gray" true
+        (r > 120 && r < 135 && r = g && g = b)
+  | _ -> fail "Expected opaque RGB result from blend"
 
-(** Test window title *)
-let test_window_title () =
-  check string "empty title" "\x1b[]0;\x07" (set_window_title "");
-  check string "simple title" "\x1b[]0;Hello\x07" (set_window_title "Hello");
-  check string "title with spaces" "\x1b[]0;My Window\x07"
-    (set_window_title "My Window")
+let color_downgrade_semantics () =
+  (* 1. Truecolor -> Truecolor (Identity) *)
+  let c = Color.of_rgb 100 150 200 in
+  check check_color "identity downgrade" c (Color.downgrade ~level:`Truecolor c);
 
-(** Test ANSI stripping *)
-let test_strip () =
-  (* No ANSI codes *)
-  check string "plain text" "Hello World" (strip "Hello World");
-  check string "empty string" "" (strip "");
+  (* 2. Grayscale mapping in Ansi256 *)
+  (* 256 palette has a grayscale ramp from 232 (dark) to 255 (light) *)
+  (* Gray 10/10/10 should map low in the ramp *)
+  let dark_gray = Color.of_rgb 8 8 8 in
+  let down = Color.downgrade ~level:`Ansi256 dark_gray in
+  match down with
+  | Color.Extended n -> check bool "mapped to grayscale ramp" true (n = 232)
+  | _ -> fail "Expected extended color index"
 
-  (* Simple CSI sequences *)
-  check string "color codes" "Hello" (strip "\x1b[31mHello\x1b[0m");
-  check string "cursor movement" "Text" (strip "\x1b[10;20HText");
-  check string "multiple attrs" "Bold" (strip "\x1b[1;31;44mBold");
+(* --- 2. Attributes & Style --- *)
 
-  (* Complex sequences *)
-  check string "sgr with params" "Test" (strip "\x1b[38;2;255;0;0mTest");
-  check string "mixed content" "Hello World"
-    (strip "\x1b[31mHello\x1b[0m World");
-
-  (* OSC sequences *)
-  check string "window title BEL" "Text" (strip "\x1b]0;Title\x07Text");
-  check string "window title ST" "Text" (strip "\x1b]0;Title\x1b\\Text");
-  check string "hyperlink" "Link"
-    (strip "\x1b]8;;http://example.com\x1b\\Link\x1b]8;;\x1b\\");
-
-  (* Other escape sequences *)
-  check string "SS2" "" (strip "\x1bNX");
-  (* SS2 consumes the next char *)
-  check string "SS3" "" (strip "\x1bOY");
-  (* SS3 consumes the next char *)
-  check string "DCS" "End" (strip "\x1bPdata\x1b\\End");
-  check string "SOS" "End" (strip "\x1bXdata\x1b\\End");
-  check string "PM" "End" (strip "\x1b^data\x1b\\End");
-  check string "APC" "End" (strip "\x1b_data\x1b\\End");
-
-  (* Edge cases *)
-  check string "lone ESC at end" "Text" (strip "Text\x1b");
-  check string "incomplete CSI" "Start" (strip "Start\x1b[");
-  check string "incomplete OSC no terminator" "Start"
-    (strip "Start\x1b]0;Title");
-  check string "nested sequences" "AB" (strip "\x1b[31mA\x1b[32mB\x1b[0m");
-
-  (* Real-world examples *)
-  let colored_prompt = "\x1b[1;32muser@host\x1b[0m:\x1b[1;34m~/dir\x1b[0m$ " in
-  check string "colored prompt" "user@host:~/dir$ " (strip colored_prompt);
-
-  let complex = "\x1b[H\x1b[2J\x1b[3J\x1b[1;1HHello\x1b[2;1HWorld" in
-  check string "complex terminal output" "HelloWorld" (strip complex)
-
-(** Test hyperlink generation *)
-let test_hyperlink () =
-  check string "simple link"
-    "\x1b]8;;http://example.com\x1b\\Click\x1b]8;;\x1b\\"
-    (hyperlink ~uri:"http://example.com" "Click");
-  check string "empty text" "\x1b]8;;http://example.com\x1b\\\x1b]8;;\x1b\\"
-    (hyperlink ~uri:"http://example.com" "");
-  check string "complex uri"
-    "\x1b]8;;https://example.com/path?q=1&r=2\x1b\\Link\x1b]8;;\x1b\\"
-    (hyperlink ~uri:"https://example.com/path?q=1&r=2" "Link")
-
-(** Test style function *)
-let test_style_function () =
-  check string "styled text" "\x1b[31mRed Text\x1b[39m"
-    (style [ `Fg Red ] "Red Text");
-  check string "multiple styles" "\x1b[1;4;31mBold Underline Red\x1b[22;24;39m"
-    (style [ `Bold; `Underline; `Fg Red ] "Bold Underline Red");
-  check string "empty attrs" "Plain" (style [] "Plain")
-
-(** Test reset sequences *)
-let test_reset_sequences () =
-  check string "reset all" "\x1b[0m" reset;
-  check string "reset bold/dim" "\x1b[22m" reset_bold_dim;
-  check string "reset underline" "\x1b[24m" reset_underline;
-  check string "reset blink" "\x1b[25m" reset_blink;
-  check string "reset reverse" "\x1b[27m" reset_reverse;
-  check string "reset strikethrough" "\x1b[29m" reset_strikethrough;
-  check string "reset overline" "\x1b[55m" reset_overline
-
-(** Test color types *)
-let test_color_types () =
-  (* Basic colors *)
-  let basic_colors =
-    [
-      Black;
-      Red;
-      Green;
-      Yellow;
-      Blue;
-      Magenta;
-      Cyan;
-      White;
-      Default;
-      Bright_black;
-      Bright_red;
-      Bright_green;
-      Bright_yellow;
-      Bright_blue;
-      Bright_magenta;
-      Bright_cyan;
-      Bright_white;
-    ]
+let attr_bitmask_integrity () =
+  (* Verify bitmasks don't overlap using a set operation *)
+  let all_set =
+    Attr.combine ~bold:true ~dim:true ~italic:true ~underline:true ~blink:true
+      ~inverse:true ~hidden:true ~strikethrough:true ~double_underline:true
+      ~overline:true ~framed:true ~encircled:true ()
   in
+  let count = Attr.cardinal all_set in
+  check int "all flags distinct" 12 count;
 
-  (* Test that all basic colors work with SGR *)
-  List.iter
-    (fun color ->
-      let fg_seq = sgr [ `Fg color ] in
-      let bg_seq = sgr [ `Bg color ] in
-      check bool "fg sequence not empty" true (String.length fg_seq > 0);
-      check bool "bg sequence not empty" true (String.length bg_seq > 0))
-    basic_colors;
+  (* Check that removing one specific flag works *)
+  let minus_bold = Attr.remove Attr.Bold all_set in
+  check bool "removed bold" false (Attr.mem Attr.Bold minus_bold);
+  check bool "kept italic" true (Attr.mem Attr.Italic minus_bold)
 
-  (* Test indexed colors *)
-  check string "index 0" "\x1b[38;5;0m" (sgr [ `Fg (Index 0) ]);
-  check string "index 255" "\x1b[38;5;255m" (sgr [ `Fg (Index 255) ]);
+let style_composition_and_hash () =
+  let s1 = Style.make ~fg:Color.red () in
+  let s2 = Style.make ~bg:Color.blue () in
+  let s3 = Style.merge ~base:s1 ~overlay:s2 in
 
-  (* Test RGB colors *)
-  check string "rgb black" "\x1b[38;2;0;0;0m" (sgr [ `Fg (RGB (0, 0, 0)) ]);
-  check string "rgb white" "\x1b[38;2;255;255;255m"
-    (sgr [ `Fg (RGB (255, 255, 255)) ]);
-  check string "rgb custom" "\x1b[38;2;128;64;192m"
-    (sgr [ `Fg (RGB (128, 64, 192)) ])
+  check check_color "composed fg" Color.red (Option.get s3.fg);
+  check check_color "composed bg" Color.blue (Option.get s3.bg);
 
-(** Convert style variant to string for test descriptions *)
-let string_of_style : Ansi.Style.attr -> string = function
-  | `Bold -> "Bold"
-  | `Dim -> "Dim"
-  | `Italic -> "Italic"
-  | `Underline -> "Underline"
-  | `Double_underline -> "Double_underline"
-  | `Blink -> "Blink"
-  | `Reverse -> "Reverse"
-  | `Conceal -> "Conceal"
-  | `Strikethrough -> "Strikethrough"
-  | `Overline -> "Overline"
-  | `Framed -> "Framed"
-  | `Encircled -> "Encircled"
-  | `Reset -> "Reset"
-  | `Fg _ -> "Fg"
-  | `Bg _ -> "Bg"
-  | `No_bold -> "No_bold"
-  | `No_dim -> "No_dim"
-  | `No_italic -> "No_italic"
-  | `No_underline -> "No_underline"
-  | `No_blink -> "No_blink"
-  | `No_reverse -> "No_reverse"
-  | `No_conceal -> "No_conceal"
-  | `No_strikethrough -> "No_strikethrough"
-  | `No_overline -> "No_overline"
-  | `No_framed -> "No_framed"
-  | `No_encircled -> "No_encircled"
+  (* Hash consistency *)
+  let s3_clone = Style.make ~fg:Color.red ~bg:Color.blue () in
+  check int "hash stable" (Style.hash s3) (Style.hash s3_clone)
 
-(** Test style attributes *)
-let test_style_attrs () =
-  let styles : (Ansi.Style.attr * string) list =
-    [
-      (`Bold, "\x1b[1m");
-      (`Dim, "\x1b[2m");
-      (`Italic, "\x1b[3m");
-      (`Underline, "\x1b[4m");
-      (`Blink, "\x1b[5m");
-      (`Reverse, "\x1b[7m");
-      (`Strikethrough, "\x1b[9m");
-      (`Double_underline, "\x1b[21m");
-      (`Overline, "\x1b[53m");
-    ]
+let attr_extended_ordering () =
+  let style =
+    Style.make ~double_underline:true ~overline:true ~framed:true
+      ~encircled:true ()
   in
+  (* Minimal SGR: no reset needed when going from default, just enable attrs *)
+  check_seq "extended attr ordering" "\x1b[21;53;51;52m"
+    (Style.sgr_sequence style);
+  check string "no-op when unchanged" "" (Style.sgr_sequence ~prev:style style)
 
-  List.iter
-    (fun (attr, expected) ->
-      check string (string_of_style attr) expected (sgr [ attr ]))
-    styles
+let style_shared_disable_codes () =
+  (* Bold and Dim share disable code 22. When transitioning from bold+dim to
+     dim-only, we must re-enable dim after disabling bold. *)
+  let bold_dim = Style.make ~bold:true ~dim:true () in
+  let dim_only = Style.make ~dim:true () in
+  let codes = Style.to_sgr_codes ~prev:bold_dim dim_only in
+  (* Should contain 22 (disable bold/dim) and 2 (re-enable dim) *)
+  check bool "contains disable code 22" true (List.mem 22 codes);
+  check bool "contains re-enable dim code 2" true (List.mem 2 codes);
 
-(** Test invalid inputs and edge cases *)
-let test_invalid_inputs () =
-  (* Test negative values in cursor movements - should be treated as 0 *)
-  check string "negative cursor up" "" (cursor_up (-5));
-  check string "negative cursor down" "" (cursor_down (-10));
-  check string "negative cursor forward" "" (cursor_forward (-1));
-  check string "negative cursor back" "" (cursor_back (-100));
+  (* Underline and Double_underline share disable code 24 *)
+  let underline_double = Style.make ~underline:true ~double_underline:true () in
+  let underline_only = Style.make ~underline:true () in
+  let codes2 = Style.to_sgr_codes ~prev:underline_double underline_only in
+  check bool "contains disable code 24" true (List.mem 24 codes2);
+  check bool "contains re-enable underline code 4" true (List.mem 4 codes2)
 
-  (* Test negative scroll values *)
-  check string "negative scroll up" "" (scroll_up (-1));
-  check string "negative scroll down" "" (scroll_down (-5));
+let style_emit_function () =
+  (* Test that emit produces the same output as sgr_sequence *)
+  let style = Style.make ~fg:Color.red ~bold:true () in
+  let buf = Bytes.create 64 in
+  let w = Escape.make buf in
+  Style.emit style w;
+  let emitted = Bytes.sub_string buf 0 (Escape.len w) in
+  let seq = Style.sgr_sequence style in
+  check_seq "emit matches sgr_sequence" seq emitted;
 
-  (* Test edge case cursor positions *)
-  check string "zero cursor position" "\x1b[1;1H" (cursor_position 0 0);
-  check string "negative cursor position" "\x1b[1;1H"
-    (cursor_position (-5) (-10));
-  check string "large cursor position" "\x1b[99999;99999H"
-    (cursor_position 99999 99999);
+  (* Test emit with prev style *)
+  let buf2 = Bytes.create 64 in
+  let w2 = Escape.make buf2 in
+  let style2 = Style.make ~fg:Color.red ~italic:true () in
+  Style.emit ~prev:style style2 w2;
+  let emitted2 = Bytes.sub_string buf2 0 (Escape.len w2) in
+  (* Should only disable bold (22) and enable italic (3) - not emit fg again *)
+  let codes2 = Style.to_sgr_codes ~prev:style style2 in
+  check bool "emit delta non-empty" true (String.length emitted2 > 0);
+  check bool "delta contains disable bold (22)" true (List.mem 22 codes2);
+  check bool "delta contains enable italic (3)" true (List.mem 3 codes2);
+  check bool "delta does not re-emit fg (31)" false (List.mem 31 codes2)
 
-  (* RGB colors with out-of-range values should be clamped *)
-  check string "rgb negative values clamped" "\x1b[38;2;0;0;0m"
-    (sgr [ `Fg (RGB (-10, -20, -30)) ]);
-  check string "rgb over 255 clamped" "\x1b[38;2;255;255;255m"
-    (sgr [ `Fg (RGB (300, 400, 500)) ]);
+let style_resolve_multiple () =
+  let s1 = Style.make ~fg:Color.red () in
+  let s2 = Style.make ~bg:Color.blue () in
+  let s3 = Style.make ~bold:true () in
+  let resolved = Style.resolve [ s1; s2; s3 ] in
+  check check_color "resolve fg" Color.red (Option.get resolved.fg);
+  check check_color "resolve bg" Color.blue (Option.get resolved.bg);
+  check bool "resolve has bold" true (Attr.mem Attr.Bold resolved.attrs);
 
-  (* Test index colors at boundaries - also clamped *)
-  check string "index negative clamped" "\x1b[38;5;0m"
-    (sgr [ `Fg (Index (-1)) ]);
-  check string "index over 255 clamped" "\x1b[38;5;255m"
-    (sgr [ `Fg (Index 256) ]);
-  check string "index max int clamped" "\x1b[38;5;255m"
-    (sgr [ `Fg (Index max_int) ])
+  (* Later styles override colors *)
+  let s4 = Style.make ~fg:Color.green () in
+  let resolved2 = Style.resolve [ s1; s4 ] in
+  check check_color "resolve override fg" Color.green (Option.get resolved2.fg)
 
-(** Test complex nested and malformed sequences in strip *)
-let test_strip_advanced () =
-  (* Nested OSC and CSI sequences *)
-  check string "osc inside csi" "" (strip "\x1b]0;\x1b[31mTitle\x07");
-  check string "csi inside osc" "Text"
-    (strip "\x1b[31m\x1b]0;Title\x07Text\x1b[0m");
+let style_compare_and_hash () =
+  let s1 = Style.make ~fg:Color.red ~bold:true () in
+  let s2 = Style.make ~fg:Color.red ~bold:true () in
+  let s3 = Style.make ~fg:Color.blue ~bold:true () in
 
-  (* Incomplete sequences *)
-  (* Note: 'T' is consumed as CSI terminator (scroll down command) *)
-  check string "incomplete sgr params" "est" (strip "\x1b[38;2;255Test");
-  check string "osc missing terminator at end" "" (strip "\x1b]0;Title");
-  (* Note: \x1b[B is CSI B (cursor down), \x1b]C starts unterminated OSC *)
-  check string "multiple incomplete" "A" (strip "A\x1b[B\x1b]C");
+  (* Equal styles should compare equal *)
+  check int "equal styles compare 0" 0 (Style.compare s1 s2);
+  (* Equal styles should have same hash *)
+  check int "equal styles same hash" (Style.hash s1) (Style.hash s2);
 
-  (* Very long sequences *)
-  let long_params = String.make 1000 '9' in
-  check string "long csi params" "Text"
-    (strip (Printf.sprintf "\x1b[%smText" long_params));
+  (* Different styles should not compare equal *)
+  check bool "different styles compare non-zero" true (Style.compare s1 s3 <> 0);
 
-  (* Mixed terminators *)
-  (* OSC without proper terminator consumes everything *)
-  check string "osc with wrong terminator" "" (strip "\x1b]0;Title\x1b[mEnd");
+  (* Ordering should be consistent *)
+  let cmp12 = Style.compare s1 s3 in
+  let cmp21 = Style.compare s3 s1 in
+  check bool "compare antisymmetric" true
+    (cmp12 = -cmp21 || (cmp12 = 0 && cmp21 = 0))
 
-  (* OSC should end with BEL or ST *)
+(* --- 3. SGR State Machine (Diffing) --- *)
 
-  (* Multiple escape characters *)
-  check string "double escape" "" (strip "\x1b\x1b");
-  (* Note: Each ESC is handled separately, third ESC-T might be consumed as a command *)
-  check string "triple escape with text" "ext" (strip "\x1b\x1b\x1bText");
+let sgr_state_transitions () =
+  let buf = Bytes.create 128 in
+  let w = Escape.make buf in
+  let state = Sgr_state.create () in
 
-  (* Real-world malformed sequences *)
-  (* First CSI is incomplete, second ESC starts new CSI, 'm' terminates it *)
-  check string "broken prompt" "m$ " (strip "\x1b[1;32\x1b[m$ ");
-  check string "interleaved sequences" "HelloWorld"
-    (strip "\x1b[31mHe\x1b]0;Title\x07llo\x1b[0mWorld")
+  (* 1. Initial: emits reset(0) + attributes *)
+  Sgr_state.update state w ~fg_r:1.0 ~fg_g:0.0 ~fg_b:0.0 ~fg_a:1.0 (* Red *)
+    ~bg_r:0.0 ~bg_g:0.0 ~bg_b:0.0 ~bg_a:0.0 (* Black (transparent) *)
+    ~attrs:(Attr.pack Attr.bold) ~link:"";
 
-(** Test hyperlink edge cases *)
-let test_hyperlink_edge () =
-  (* Empty URI *)
-  check string "empty uri" "\x1b]8;;\x1b\\text\x1b]8;;\x1b\\"
-    (hyperlink ~uri:"" "text");
+  let out1 = Escape.slice w in
+  (* Expect: Reset(0); FG(Red); Bold(1) *)
+  (* Sequence: \x1b[0;38;2;255;0;0;1m *)
+  check_seq "initial transition" "\x1b[0;38;2;255;0;0;1m" (Bytes.to_string out1);
 
-  (* Very long URI *)
-  let long_uri = String.make 2000 'a' in
-  let expected = Printf.sprintf "\x1b]8;;%s\x1b\\text\x1b]8;;\x1b\\" long_uri in
-  check string "long uri" expected (hyperlink ~uri:long_uri "text");
+  (* 2. No-op: update with exact same values *)
+  let w2 = Escape.make buf in
+  Sgr_state.update state w2 ~fg_r:1.0 ~fg_g:0.0 ~fg_b:0.0 ~fg_a:1.0 ~bg_r:0.0
+    ~bg_g:0.0 ~bg_b:0.0 ~bg_a:0.0 ~attrs:(Attr.pack Attr.bold) ~link:"";
+  check int "noop update empty" 0 (Escape.len w2);
 
-  (* Special characters in URI *)
-  check string "uri with spaces"
-    "\x1b]8;;http://example.com/path with spaces\x1b\\click\x1b]8;;\x1b\\"
-    (hyperlink ~uri:"http://example.com/path with spaces" "click");
-  check string "uri with unicode"
-    "\x1b]8;;http://example.com/❤️\x1b\\heart\x1b]8;;\x1b\\"
-    (hyperlink ~uri:"http://example.com/❤️" "heart");
+  (* 3. Delta: Remove Bold, keep color *)
+  let w3 = Escape.make buf in
+  Sgr_state.update state w3 ~fg_r:1.0 ~fg_g:0.0 ~fg_b:0.0 ~fg_a:1.0 ~bg_r:0.0
+    ~bg_g:0.0 ~bg_b:0.0 ~bg_a:0.0 ~attrs:0 ~link:"";
 
-  (* Text with ANSI codes *)
-  check string "text with ansi"
-    "\x1b]8;;http://example.com\x1b\\\x1b[31mRed Link\x1b[0m\x1b]8;;\x1b\\"
-    (hyperlink ~uri:"http://example.com" "\x1b[31mRed Link\x1b[0m")
+  (* No bold *)
 
-(** Test window title edge cases *)
-let test_window_title_edge () =
-  (* Special characters *)
-  check string "title with bell" "\x1b[]0;Title\x07Text\x07"
-    (set_window_title "Title\x07Text");
-  check string "title with escape" "\x1b[]0;Title\x1bText\x07"
-    (set_window_title "Title\x1bText");
-  check string "title with null" "\x1b[]0;Title\x00Text\x07"
-    (set_window_title "Title\x00Text");
+  (* Expect: Reset(0); FG(Red) -- Bold is implicitly removed by Reset, need to restore Color *)
+  let out3 = Bytes.to_string (Escape.slice w3) in
+  check_seq "delta transition" "\x1b[0;38;2;255;0;0m" out3
 
-  (* Very long title *)
-  let long_title = String.make 1000 'X' in
-  let expected = Printf.sprintf "\x1b[]0;%s\x07" long_title in
-  check string "long title" expected (set_window_title long_title);
+let sgr_transparent_bg_resets () =
+  let buf = Bytes.create 128 in
+  let state = Sgr_state.create () in
+  let w1 = Escape.make buf in
+  Sgr_state.update state w1 ~fg_r:1.0 ~fg_g:0.0 ~fg_b:0.0 ~fg_a:1.0 ~bg_r:0.0
+    ~bg_g:0.0 ~bg_b:1.0 ~bg_a:1.0 ~attrs:0 ~link:"";
+  check_seq "bg applied" "\x1b[0;38;2;255;0;0;48;2;0;0;255m"
+    (Bytes.to_string (Escape.slice w1));
+  let w2 = Escape.make buf in
+  Sgr_state.update state w2 ~fg_r:1.0 ~fg_g:0.0 ~fg_b:0.0 ~fg_a:1.0 ~bg_r:0.0
+    ~bg_g:0.0 ~bg_b:1.0 ~bg_a:0.0 ~attrs:0 ~link:"";
+  check_seq "bg cleared to default" "\x1b[0;38;2;255;0;0m"
+    (Bytes.to_string (Escape.slice w2))
 
-  (* Unicode in title *)
-  check string "unicode title" "\x1b[]0;🌍 World\x07"
-    (set_window_title "🌍 World")
+(* --- 4. Parser Resilience --- *)
 
-(** Test style function with edge cases *)
-let test_style_edge () =
-  (* Empty text *)
-  check string "empty text with styles" "\x1b[31m\x1b[39m"
-    (style [ `Fg Red ] "");
+let parser_chunked_utf8 () =
+  let p = Parser.create () in
+  (* Euro sign: \xE2\x82\xAC *)
 
-  (* Reset in attrs *)
-  check string "reset in attrs" "\x1b[0;31mText\x1b[0m"
-    (style [ `Reset; `Fg Red ] "Text");
+  (* Feed byte 1 *)
+  let t1 = feed_to_list p (Bytes.of_string "\xE2") 0 1 in
+  check int "chunk 1 buffered" 0 (List.length t1);
 
-  (* Duplicate attributes *)
-  check string "duplicate colors" "\x1b[31;32mText\x1b[39m"
-    (style [ `Fg Red; `Fg Green ] "Text");
+  (* Feed byte 2 *)
+  let t2 = feed_to_list p (Bytes.of_string "\x82") 0 1 in
+  check int "chunk 2 buffered" 0 (List.length t2);
 
-  (* Many attributes *)
-  let many_attrs =
-    [
-      `Bold;
-      `Dim;
-      `Italic;
-      `Underline;
-      `Blink;
-      `Reverse;
-      `Strikethrough;
-      `Fg Red;
-      `Bg Blue;
-    ]
+  (* Feed byte 3 + extra text *)
+  let t3 = feed_to_list p (Bytes.of_string "\xACok") 0 3 in
+  let combined =
+    match t3 with
+    | [ Parser.Text s ] -> s
+    | [ Parser.Text utf8; Parser.Text plain ] -> utf8 ^ plain
+    | _ -> ""
   in
-  let result = style many_attrs "X" in
-  check bool "many attrs not empty" true (String.length result > 2)
+  check string "utf8 reconstructed" "€ok" combined
 
-(** Property test helpers - simple property-based tests without external libs *)
-let test_properties () =
-  (* Property: strip should be idempotent *)
-  let test_idempotent s =
-    let stripped = strip s in
-    check string "idempotent strip" stripped (strip stripped)
+let parser_chunked_escape () =
+  let p = Parser.create () in
+  (* Sequence: \x1b[31m (Red) *)
+
+  (* Feed partial CSI *)
+  let t1 = feed_to_list p (Bytes.of_string "\x1b[3") 0 3 in
+  check int "partial csi buffered" 0 (List.length t1);
+
+  (* Finish it *)
+  let t2 = feed_to_list p (Bytes.of_string "1m") 0 2 in
+  match t2 with
+  | [ Parser.SGR [ `Fg c ] ] -> check check_color "parsed split csi" Color.red c
+  | _ -> fail "Failed to reconstruct split CSI"
+
+let parser_malformed_input () =
+  (* 1. Lone ESC at end of string *)
+  let t1 = Parser.parse "foo\x1b" in
+  (* Should probably ignore the lone ESC or treat as text depending on implementation details.
+     The current implementation buffers it waiting for more. Since parse calls feed with 0 at end... *)
+  match t1 with
+  | [ Parser.Text "foo" ] -> () (* It was dropped/buffered as incomplete *)
+  | _ -> fail "Lone ESC handling unexpected"
+
+(* Regression test: 0xFE and 0xFF are never valid UTF-8 lead bytes.
+   Previously, the parser incorrectly treated any byte >= 0xC0 as a potential
+   multi-byte sequence start and would buffer it, causing subsequent bytes to
+   be lost. Valid UTF-8 lead bytes are only 0xC2-0xF4. *)
+let parser_invalid_utf8_lead_bytes () =
+  let p = Parser.create () in
+  (* Input: 'A', 0xFF (invalid), 0xFE (invalid), 'B', 'C' *)
+  let input = Bytes.create 5 in
+  Bytes.set input 0 'A';
+  Bytes.set input 1 '\xff';
+  Bytes.set input 2 '\xfe';
+  Bytes.set input 3 'B';
+  Bytes.set input 4 'C';
+
+  let tokens = feed_to_list p input 0 5 in
+  (* Flush any pending state *)
+  let tokens = tokens @ feed_to_list p Bytes.empty 0 0 in
+
+  match tokens with
+  | [ Parser.Text s ] ->
+      (* Should be: A + replacement + replacement + B + C *)
+      (* U+FFFD in UTF-8 is \xEF\xBF\xBD *)
+      let expected = "A\xEF\xBF\xBD\xEF\xBF\xBDBC" in
+      check string "invalid lead bytes produce replacements" expected s
+  | _ -> fail "Expected single text token with replacements"
+
+let parser_max_length_overflow () =
+  (* Construct a massive garbage sequence *)
+  let huge_seq = "\x1b[" ^ String.make 300 '1' ^ "m" in
+  let tokens = Parser.parse huge_seq in
+  match tokens with
+  | Parser.Control (Parser.Unknown msg) :: _ ->
+      check string "overflow detected" "CSI_TOO_LONG" msg
+  | _ -> fail "Parser should reject oversized sequences"
+
+let parser_osc8_st_terminated () =
+  let seq = "\x1b]8;;http://foo\x1b\\txt\x1b]8;;\x1b\\" in
+  match Parser.parse seq with
+  | [
+   Parser.Control (Parser.Hyperlink (Some ([], link)));
+   Parser.Text "txt";
+   Parser.Control (Parser.Hyperlink None);
+  ] ->
+      check string "parsed link url" "http://foo" link
+  | _ -> fail "OSC 8 ST tokens mismatch"
+
+let parser_osc8_bel_terminated () =
+  let seq = "\x1b]8;;http://foo\x07txt\x1b]8;;\x07" in
+  match Parser.parse seq with
+  | [
+   Parser.Control (Parser.Hyperlink (Some ([], link)));
+   Parser.Text "txt";
+   Parser.Control (Parser.Hyperlink None);
+  ] ->
+      check string "parsed link url bel" "http://foo" link
+  | _ -> fail "OSC 8 BEL tokens mismatch"
+
+(* --- 5. Writer & Low-Level Escape --- *)
+
+let writer_utf8_encoding () =
+  let buf = Bytes.create 16 in
+  let w = Escape.make buf in
+
+  (* 1 byte: A *)
+  Escape.utf8 (Char.code 'A') w;
+  (* 3 byte: € (0x20AC) *)
+  Escape.utf8 0x20AC w;
+  (* 4 byte: 🚀 (Rocket 0x1F680) *)
+  Escape.utf8 0x1F680 w;
+
+  let out = Bytes.to_string (Escape.slice w) in
+  check string "utf8 encoding" "A€🚀" out
+
+let writer_hyperlink_params () =
+  let buf = Bytes.create 64 in
+  let w = Escape.make buf in
+  Escape.hyperlink_start ~params:"id=123" ~url:"http://foo" w;
+  let out = Bytes.to_string (Escape.slice w) in
+  (* OSC 8 ; params ; url ST (\x1b\\) *)
+  check_seq "hyperlink with params" "\x1b]8;id=123;http://foo\x1b\\" out
+
+let writer_invalid_scalar_replacement () =
+  let buf = Bytes.create 8 in
+  let w = Escape.make buf in
+  (* Surrogate code point should be clamped to U+FFFD *)
+  Escape.utf8 0xD800 w;
+  check_seq "invalid scalar -> replacement" "\xef\xbf\xbd"
+    (Bytes.to_string (Escape.slice w))
+
+(* --- 6. High Level API --- *)
+
+let strip_edge_cases () =
+  (* Standard *)
+  check string "strip standard" "foo" (Ansi.strip "\x1b[31mfoo\x1b[0m");
+  (* Incomplete at end *)
+  check string "strip incomplete" "foo" (Ansi.strip "foo\x1b[");
+  (* Lone ESC *)
+  check string "strip lone esc" "foo" (Ansi.strip "foo\x1b");
+  (* OSC title *)
+  check string "strip osc" "foo" (Ansi.strip "\x1b]0;Title\007foo")
+
+let parameter_clamping () =
+  (* Cursor movement: negative -> 0 -> empty string *)
+  check_seq "negative lines" "" (Ansi.cursor_up ~n:(-5));
+  check_seq "zero lines" "" (Ansi.cursor_up ~n:0);
+  (* Absolute position: negative/zero -> 1 *)
+  check_seq "clamp row/col" "\x1b[1;1H" (Ansi.cursor_position ~row:0 ~col:(-5))
+
+let explicit_error_handling () =
+  try
+    let _ = Ansi.set_scrolling_region ~top:10 ~bottom:5 in
+    fail "scrolling region validation failed"
+  with Invalid_argument _ -> ()
+
+let cursor_and_explicit_width_sequences () =
+  check_seq "cursor color osc12" "\x1b]12;#010203\x07"
+    (Ansi.cursor_color ~r:1 ~g:2 ~b:3);
+  check_seq "explicit width osc66" "\x1b]66;w=5;hi\x1b\\"
+    (Ansi.explicit_width ~width:5 ~text:"hi")
+
+let hyperlink_lifecycle () =
+  let link_style = Style.hyperlink "http://foo" Style.default in
+  let rendered = Ansi.render [ (link_style, "hi") ] in
+  (* Minimal SGR: no SGR emitted when only link changes, just OSC 8 + text + end + reset *)
+  check_seq "osc8 opened/closed with reset"
+    "\x1b]8;;http://foo\x1b\\hi\x1b]8;;\x1b\\\x1b[0m" rendered;
+  (* Test that hyperlinks are suppressed when disabled *)
+  let rendered_no_links =
+    Ansi.render ~hyperlinks_enabled:false [ (link_style, "hi") ]
   in
+  (* No OSC8 sequences, just text + reset *)
+  check_seq "osc8 suppressed when disabled" "hi\x1b[0m" rendered_no_links
 
-  List.iter test_idempotent
-    [
-      "plain text";
-      "\x1b[31mcolored\x1b[0m";
-      "\x1b]0;Title\x07text";
-      "\x1b[1;2;3mcomplex\x1b[0m";
-    ];
+(* --- 7. Self Round-Trip Tests --- *)
 
-  (* Property: strip removes all escape sequences *)
-  let has_escape s = String.contains s '\x1b' in
-
-  let test_no_escapes s =
-    let stripped = strip s in
-    check bool "no escapes after strip" false (has_escape stripped)
+(* Verify parser recognizes sequences the library emits *)
+let roundtrip_cursor_sequences () =
+  (* Test cursor movement sequences *)
+  let test_cursor name seq expected_control =
+    let tokens = Parser.parse (Escape.to_string seq) in
+    match tokens with
+    | [ Parser.Control c ] -> check bool name true (c = expected_control)
+    | _ -> fail (Printf.sprintf "%s: unexpected tokens" name)
   in
+  test_cursor "cursor up" (Escape.cursor_up ~n:5) (Parser.CUU 5);
+  test_cursor "cursor down" (Escape.cursor_down ~n:3) (Parser.CUD 3);
+  test_cursor "cursor forward" (Escape.cursor_forward ~n:10) (Parser.CUF 10);
+  test_cursor "cursor back" (Escape.cursor_back ~n:2) (Parser.CUB 2);
+  test_cursor "cursor position"
+    (Escape.cursor_position ~row:10 ~col:20)
+    (Parser.CUP (10, 20));
+  test_cursor "cursor next line" (Escape.cursor_next_line ~n:3) (Parser.CNL 3);
+  test_cursor "cursor prev line"
+    (Escape.cursor_previous_line ~n:2)
+    (Parser.CPL 2);
+  test_cursor "cursor horiz abs"
+    (Escape.cursor_horizontal_absolute 15)
+    (Parser.CHA 15);
+  test_cursor "cursor vert abs"
+    (Escape.cursor_vertical_absolute 8)
+    (Parser.VPA 8);
+  (* Test cursor save/restore (CSI s/u) *)
+  test_cursor "cursor save" Escape.cursor_save Parser.DECSC;
+  test_cursor "cursor restore" Escape.cursor_restore Parser.DECRC
 
-  List.iter test_no_escapes
-    [
-      "\x1b[31mred\x1b[0m";
-      "\x1b]0;Title\x07\x1b[1mBold\x1b[0m";
-      "text\x1b[31m\x1b[32m\x1b[0m";
-    ];
-
-  (* Property: style with no attrs should return unchanged text *)
-  let test_no_style_change s =
-    check string "no attrs no change" s (style [] s)
+let roundtrip_screen_sequences () =
+  let test_screen name seq expected_control =
+    let tokens = Parser.parse (Escape.to_string seq) in
+    match tokens with
+    | [ Parser.Control c ] -> check bool name true (c = expected_control)
+    | _ -> fail (Printf.sprintf "%s: unexpected tokens" name)
   in
+  test_screen "erase display 0" (Escape.erase_display ~mode:0) (Parser.ED 0);
+  test_screen "erase display 2" (Escape.erase_display ~mode:2) (Parser.ED 2);
+  test_screen "erase line 0" (Escape.erase_line ~mode:0) (Parser.EL 0);
+  test_screen "erase line 2" (Escape.erase_line ~mode:2) (Parser.EL 2);
+  test_screen "insert lines" (Escape.insert_lines ~n:5) (Parser.IL 5);
+  test_screen "delete lines" (Escape.delete_lines ~n:3) (Parser.DL 3)
 
-  List.iter test_no_style_change [ "plain"; "with spaces"; "unicode 🎉" ];
+let roundtrip_sgr_sequences () =
+  (* Test that SGR sequences round-trip through parser *)
+  let test_sgr name seq check_fn =
+    let tokens = Parser.parse (Escape.to_string seq) in
+    match tokens with
+    | [ Parser.SGR attrs ] -> check_fn attrs
+    | _ -> fail (Printf.sprintf "%s: expected SGR token" name)
+  in
+  (* Reset *)
+  test_sgr "sgr reset" Escape.reset (fun attrs ->
+      check bool "has reset" true (List.mem `Reset attrs));
+  (* Bold via sgr [1] *)
+  test_sgr "sgr bold" (Escape.sgr [ 1 ]) (fun attrs ->
+      check bool "has bold" true (List.mem `Bold attrs));
+  (* Truecolor foreground via sgr [38;2;r;g;b] *)
+  test_sgr "sgr truecolor fg"
+    (Escape.sgr [ 38; 2; 100; 150; 200 ])
+    (fun attrs ->
+      match attrs with
+      | [ `Fg c ] ->
+          let r, g, b = Color.to_rgb c in
+          check int "r" 100 r;
+          check int "g" 150 g;
+          check int "b" 200 b
+      | _ -> fail "expected fg color")
 
-  (* Property: cursor movements with 0 should produce empty string *)
-  let movements = [ cursor_up; cursor_down; cursor_forward; cursor_back ] in
-  List.iter (fun f -> check string "zero movement empty" "" (f 0)) movements
+let roundtrip_hyperlink_sequences () =
+  (* Test hyperlink sequences *)
+  let test_link name seq check_fn =
+    let tokens = Parser.parse (Escape.to_string seq) in
+    match tokens with
+    | [ Parser.Control (Parser.Hyperlink h) ] -> check_fn h
+    | _ -> fail (Printf.sprintf "%s: expected hyperlink control" name)
+  in
+  (* Open hyperlink *)
+  test_link "hyperlink open" (Escape.hyperlink_start ~url:"http://test.com")
+    (fun h ->
+      match h with
+      | Some ([], url) -> check string "url" "http://test.com" url
+      | _ -> fail "expected open hyperlink");
+  (* Close hyperlink *)
+  test_link "hyperlink close" Escape.hyperlink_end (fun h ->
+      check bool "is close" true (h = None))
 
-let () =
-  run "ANSI"
-    [
-      ("SGR generation", [ test_case "sgr" `Quick test_sgr ]);
-      ( "Cursor movement",
-        [ test_case "cursor movement" `Quick test_cursor_movement ] );
-      ("Cursor style", [ test_case "cursor style" `Quick test_cursor_style ]);
-      ("Clearing", [ test_case "clearing" `Quick test_clearing ]);
-      ("Scrolling", [ test_case "scrolling" `Quick test_scrolling ]);
-      ("Screen modes", [ test_case "screen modes" `Quick test_screen_modes ]);
-      ("Window title", [ test_case "window title" `Quick test_window_title ]);
-      ("Strip ANSI", [ test_case "strip" `Quick test_strip ]);
-      ("Hyperlinks", [ test_case "hyperlink" `Quick test_hyperlink ]);
-      ("Style function", [ test_case "style" `Quick test_style_function ]);
-      ("Reset sequences", [ test_case "reset" `Quick test_reset_sequences ]);
-      ("Color types", [ test_case "color types" `Quick test_color_types ]);
-      ("Style attributes", [ test_case "style attrs" `Quick test_style_attrs ]);
-      ( "Invalid inputs",
-        [ test_case "invalid inputs" `Quick test_invalid_inputs ] );
-      ( "Strip advanced",
-        [ test_case "strip advanced" `Quick test_strip_advanced ] );
-      ( "Hyperlink edge cases",
-        [ test_case "hyperlink edge" `Quick test_hyperlink_edge ] );
-      ( "Window title edge cases",
-        [ test_case "window title edge" `Quick test_window_title_edge ] );
-      ("Style edge cases", [ test_case "style edge" `Quick test_style_edge ]);
-      ("Properties", [ test_case "properties" `Quick test_properties ]);
-    ]
+let roundtrip_strip_removes_all () =
+  (* Verify strip removes all sequences we emit *)
+  let test_strip name input expected =
+    let stripped = Ansi.strip input in
+    check string name expected stripped
+  in
+  (* Cursor sequences *)
+  test_strip "strip cursor up" (Ansi.cursor_up ~n:5 ^ "text") "text";
+  test_strip "strip cursor position"
+    (Ansi.cursor_position ~row:10 ~col:20 ^ "text")
+    "text";
+  (* SGR sequences *)
+  test_strip "strip sgr" (Ansi.styled ~fg:Color.red ~bold:true "text") "text";
+  test_strip "strip reset" (Ansi.reset ^ "text") "text";
+  (* Screen control *)
+  test_strip "strip clear" (Ansi.clear ^ "text") "text";
+  test_strip "strip erase display" (Ansi.erase_display ~mode:2 ^ "text") "text";
+  (* Hyperlinks *)
+  test_strip "strip hyperlink"
+    (Ansi.hyperlink ~url:"http://test" ~text:"link")
+    "link";
+  (* Title *)
+  test_strip "strip title" (Ansi.set_title ~title:"test" ^ "text") "text";
+  (* Alternate screen *)
+  test_strip "strip alt screen"
+    (Ansi.enter_alternate_screen ^ "text" ^ Ansi.exit_alternate_screen)
+    "text";
+  (* Mouse modes *)
+  test_strip "strip mouse on"
+    (Ansi.mouse_tracking_on ^ "text" ^ Ansi.mouse_tracking_off)
+    "text"
+
+let tests =
+  [
+    ( "Color Logic",
+      [
+        test_case "hex parsing" `Quick color_parsing_hex;
+        test_case "hsl roundtrip" `Quick color_hsl_roundtrip;
+        test_case "blending" `Quick color_blending;
+        test_case "downgrade" `Quick color_downgrade_semantics;
+      ] );
+    ( "Attributes & Style",
+      [
+        test_case "bitmask integrity" `Quick attr_bitmask_integrity;
+        test_case "style composition" `Quick style_composition_and_hash;
+        test_case "extended attr ordering" `Quick attr_extended_ordering;
+        test_case "shared disable codes" `Quick style_shared_disable_codes;
+        test_case "emit function" `Quick style_emit_function;
+        test_case "resolve multiple" `Quick style_resolve_multiple;
+        test_case "compare and hash" `Quick style_compare_and_hash;
+      ] );
+    ( "SGR Engine",
+      [
+        test_case "state diffing" `Quick sgr_state_transitions;
+        test_case "transparent bg reset" `Quick sgr_transparent_bg_resets;
+      ] );
+    ( "Parser",
+      [
+        test_case "chunked utf8" `Quick parser_chunked_utf8;
+        test_case "chunked escape" `Quick parser_chunked_escape;
+        test_case "malformed inputs" `Quick parser_malformed_input;
+        test_case "invalid utf8 lead bytes" `Quick
+          parser_invalid_utf8_lead_bytes;
+        test_case "overflow protection" `Quick parser_max_length_overflow;
+        test_case "osc8 st terminated" `Quick parser_osc8_st_terminated;
+        test_case "osc8 bel terminated" `Quick parser_osc8_bel_terminated;
+      ] );
+    ( "Writer & Seq",
+      [
+        test_case "utf8 encoding" `Quick writer_utf8_encoding;
+        test_case "hyperlink params" `Quick writer_hyperlink_params;
+        test_case "invalid scalar replacement" `Quick
+          writer_invalid_scalar_replacement;
+      ] );
+    ( "High Level API",
+      [
+        test_case "strip semantics" `Quick strip_edge_cases;
+        test_case "param clamping" `Quick parameter_clamping;
+        test_case "input validation" `Quick explicit_error_handling;
+        test_case "cursor & explicit width" `Quick
+          cursor_and_explicit_width_sequences;
+        test_case "hyperlink lifecycle" `Quick hyperlink_lifecycle;
+      ] );
+    ( "Round-Trip",
+      [
+        test_case "cursor sequences" `Quick roundtrip_cursor_sequences;
+        test_case "screen sequences" `Quick roundtrip_screen_sequences;
+        test_case "sgr sequences" `Quick roundtrip_sgr_sequences;
+        test_case "hyperlink sequences" `Quick roundtrip_hyperlink_sequences;
+        test_case "strip removes all" `Quick roundtrip_strip_removes_all;
+      ] );
+  ]
+
+let () = run "matrix.ansi" tests
