@@ -256,6 +256,24 @@ let mount ?(props = Props.default) node =
   if should_init_border then box.props <- { box.props with border = true };
   Renderable.set_render node (box_render box);
   Renderable.set_child_clip node (Some (child_clip box));
+  (* Let flex-growing boxes shrink by default (Yoga parity) without affecting
+     non-growing items like headers. Only override auto min-size when flex_grow > 0. *)
+  let st0 = Renderable.style node in
+  let st =
+    let open Toffee.Style in
+    let min_sz = min_size st0 in
+    let needs_override =
+      flex_grow st0 > 0.
+      && (Dimension.is_auto min_sz.width || Dimension.is_auto min_sz.height)
+    in
+    if not needs_override then st0
+    else
+      let zero = Dimension.length 0. in
+      let w = if Dimension.is_auto min_sz.width then zero else min_sz.width in
+      let h = if Dimension.is_auto min_sz.height then zero else min_sz.height in
+      set_min_size (Toffee.Geometry.Size.make w h) st0
+  in
+  ignore (Renderable.set_style node st);
   apply_border_style box;
   (* Apply initial gap props if provided: gap sets both axes first,
      then row/column refine their respective axis. *)
