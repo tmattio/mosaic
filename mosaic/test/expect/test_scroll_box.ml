@@ -1,5 +1,4 @@
 open Mosaic_tea
-
 module Renderable = Mosaic_ui.Renderable
 module Mouse = Mosaic_ui.Event.Mouse
 module Key = Matrix.Input.Key
@@ -10,12 +9,10 @@ type msg = Scrolled of int
 let init () = ({ scroll = 0 }, Cmd.none)
 
 let update (Scrolled y) model =
-  if model.scroll = y then (model, Cmd.none)
-  else ({ scroll = y }, Cmd.none)
+  if model.scroll = y then (model, Cmd.none) else ({ scroll = y }, Cmd.none)
 
 let items =
-  List.init 20 (fun i ->
-      text ~content:(Printf.sprintf "Row %02d" (i + 1)) ())
+  List.init 20 (fun i -> text ~content:(Printf.sprintf "Row %02d" (i + 1)) ())
 
 let view ~scroll_ref model =
   let header =
@@ -23,7 +20,9 @@ let view ~scroll_ref model =
       [ text ~content:(Printf.sprintf "scroll=%d" model.scroll) () ]
   in
   let scroll =
-    scroll_box ~ref:(fun n -> scroll_ref := Some n) ~flex_grow:1.
+    scroll_box
+      ~ref:(fun n -> scroll_ref := Some n)
+      ~flex_grow:1.
       ~on_scroll:(fun ~x:_ ~y -> Some (Scrolled y))
       items
   in
@@ -31,7 +30,8 @@ let view ~scroll_ref model =
     box ~padding:(padding 1) ~flex_grow:1.
       [ box ~border:true ~flex_grow:1. [ scroll ] ]
   in
-  box ~flex_direction:Column ~size:(size ~width:22 ~height:10)
+  box ~flex_direction:Column
+    ~size:(size ~width:22 ~height:10)
     [ header; scroll_area ]
 
 let scroll_event ~x ~y =
