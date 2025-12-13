@@ -27,7 +27,7 @@ let map2 f r1 r2 =
     bottom = f r1.bottom r2.bottom;
   }
 
-let zip_size rect size f =
+let zip_size size f rect =
   {
     left = f rect.left size.Size.width;
     right = f rect.right size.Size.width;
@@ -60,7 +60,7 @@ let vertical_axis_sum rect = rect.top +. rect.bottom
 let sum_axes rect =
   { Size.width = horizontal_axis_sum rect; height = vertical_axis_sum rect }
 
-let grid_axis_sum rect axis =
+let grid_axis_sum axis rect =
   match axis with
   | Absolute_axis.Horizontal -> rect.left +. rect.right
   | Absolute_axis.Vertical -> rect.top +. rect.bottom

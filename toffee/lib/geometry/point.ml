@@ -27,17 +27,17 @@ let map2 f p1 p2 = { x = f p1.x p2.x; y = f p1.y p2.y }
 
 (* Axis accessors *)
 
-let get point axis =
+let get axis point =
   match axis with
   | Abstract_axis.Inline -> point.x
   | Abstract_axis.Block -> point.y
 
-let set point axis value =
+let set axis value point =
   match axis with
   | Abstract_axis.Inline -> { point with x = value }
   | Abstract_axis.Block -> { point with y = value }
 
-(* Conversion *)
+(* Transformations *)
 
 let transpose point = { x = point.y; y = point.x }
 
