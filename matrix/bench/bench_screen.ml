@@ -1,178 +1,388 @@
-let rows, cols = (24, 80 (* Standard terminal size *))
-let large_rows, large_cols = (100, 200 (* Larger for stress testing *))
+module C = Ansi.Color
+module S = Ansi.Style
 
-let random_style () =
-  Ansi.Style.make ~bold:(Random.bool ()) ~italic:(Random.bool ())
-    ~underline:(Random.bool ())
-    ~fg:(Ansi.Style.Index (Random.int 256))
-    ~bg:(Ansi.Style.Index (Random.int 256))
-    ()
+let grid_width = 160
+let grid_height = 48
 
-let random_text len = String.init len (fun _ -> Char.chr (32 + Random.int 95))
+let ascii_style =
+  S.make ~fg:(C.of_rgb 232 232 232) ~bg:(C.of_rgb 18 20 24) ~bold:true ()
 
-let full_screen_text () =
-  String.concat "\n" (List.init rows (fun _ -> random_text cols))
+let make_ascii_line len =
+  String.init len (fun i -> Char.chr (Char.code 'a' + (i mod 26)))
 
-(* Group 1: Creation and Resizing *)
-let bench_create () = ignore (Screen.create ~rows ~cols ())
+let ascii_line = make_ascii_line (grid_width - 2)
 
-let bench_resize s =
-  Screen.resize s ~rows:large_rows ~cols:large_cols;
-  Screen.resize s ~rows ~cols
+let emoji_line =
+  let fragments = [| "👩‍🚀"; "🛰️"; "🌌"; "✨"; "🚀"; "🪐"; "🌠"; "👨‍💻" |] in
+  let buf = Buffer.create (Array.length fragments * 32) in
+  for i = 0 to 31 do
+    Buffer.add_string buf fragments.(i land 7)
+  done;
+  Buffer.contents buf
 
-(* Group 2: Drawing Operations *)
-let bench_clear s = Screen.clear s
+(* For convenience *)
+module Hit_grid = Screen.Hit_grid
 
-let bench_set_grapheme s =
-  for r = 0 to rows - 1 do
-    for c = 0 to cols - 1 do
-      Screen.set_grapheme s ~row:r ~col:c ~glyph:"A" ~attrs:(random_style ())
-    done
-  done
+(* Diff micro-benchmarks *)
 
-let bench_set_text s =
-  for r = 0 to rows - 1 do
-    ignore
-      (Screen.set_text s ~row:r ~col:0 ~text:(random_text cols)
-         ~attrs:(random_style ()))
-  done
+(* Full-screen change: typical "mode switch" or theme change. *)
+let diff_full_screen =
+  Ubench.create_with_setup "render.diff/full-screen"
+    ~setup:(fun () ->
+      let screen = Screen.create () in
+      let frame =
+        Screen.build screen ~width:grid_width ~height:grid_height
+          (fun grid _hits ->
+            let bg0 = C.of_rgb 0 0 0 in
+            Grid.clear grid ~color:bg0;
+            for row = 0 to grid_height - 1 do
+              Grid.draw_text ~style:ascii_style grid ~x:0 ~y:row
+                ~text:ascii_line
+            done)
+      in
+      let _ = Screen.render frame in
+      screen)
+    ~teardown:(fun _ -> ())
+    ~f:(fun screen ->
+      let frame =
+        Screen.build screen ~width:grid_width ~height:grid_height
+          (fun grid _hits ->
+            let bg1 = C.of_rgb 18 20 24 in
+            Grid.clear grid ~color:bg1;
+            for row = 0 to grid_height - 1 do
+              Grid.draw_text ~style:ascii_style grid ~x:0 ~y:row
+                ~text:ascii_line
+            done)
+      in
+      ignore (Screen.render frame))
 
-let bench_set_multiline_text s =
-  ignore
-    (Screen.set_multiline_text s ~row:0 ~col:0 ~text:(full_screen_text ())
-       ~attrs:(random_style ()))
-
-(* Group 3: Frame Lifecycle *)
-let bench_begin_present s =
-  Screen.begin_frame s;
-  bench_set_text s;
-  (* Simulate drawing *)
-  ignore (Screen.present s)
-
-let bench_batch s = Screen.batch s (fun s' -> bench_set_multiline_text s')
-
-(* Group 4: Diffing and Rendering *)
-let bench_diff_cells s =
-  Screen.begin_frame s;
-  bench_set_grapheme s;
-  (* Maximize differences *)
-  ignore (Screen.diff_cells s)
-
-let bench_render s =
-  Screen.begin_frame s;
-  bench_set_text s;
-  ignore (Screen.render s)
-
-let bench_render_to_string s =
-  Screen.begin_frame s;
-  bench_set_multiline_text s;
-  ignore (Screen.render_to_string s)
-
-let bench_patches_to_sgr s =
-  Screen.begin_frame s;
-  bench_set_text s;
-  let patches = Screen.render s in
-  ignore (Screen.patches_to_sgr patches)
-
-(* Group 5: Viewport Operations *)
-let bench_with_viewport s =
-  let vp =
-    Screen.Viewport.make ~row:0 ~col:0 ~width:(cols / 2) ~height:(rows / 2)
+(* Single line change in a full-screen text buffer. *)
+let diff_single_line =
+  let changed_row = grid_height / 2 in
+  let clear_color = C.of_rgb 0 0 0 in
+  let changed_style =
+    S.make ~fg:(C.of_rgb 255 80 80) ~bg:clear_color ~bold:true ()
   in
-  Screen.with_viewport s vp (fun s' -> bench_set_multiline_text s')
+  Ubench.create_with_setup "render.diff/single-line"
+    ~setup:(fun () ->
+      let screen = Screen.create () in
+      let frame =
+        Screen.build screen ~width:grid_width ~height:grid_height
+          (fun grid _hits ->
+            Grid.clear grid ~color:clear_color;
+            for row = 0 to grid_height - 1 do
+              Grid.draw_text ~style:ascii_style grid ~x:0 ~y:row
+                ~text:ascii_line
+            done)
+      in
+      let _ = Screen.render frame in
+      screen)
+    ~teardown:(fun _ -> ())
+    ~f:(fun screen ->
+      let frame =
+        Screen.build screen ~width:grid_width ~height:grid_height
+          (fun grid _hits ->
+            Grid.clear grid ~color:clear_color;
+            for row = 0 to grid_height - 1 do
+              if row = changed_row then
+                Grid.draw_text ~style:changed_style grid ~x:0 ~y:row
+                  ~text:"CHANGED LINE"
+              else
+                Grid.draw_text ~style:ascii_style grid ~x:0 ~y:row
+                  ~text:ascii_line
+            done)
+      in
+      ignore (Screen.render frame))
 
-let bench_render_viewport s =
-  let vp = Screen.Viewport.full ~rows ~cols in
-  ignore (Screen.render_viewport s vp)
-
-let bench_copy_viewport s_src s_dst =
-  let vp = Screen.Viewport.full ~rows ~cols in
-  Screen.copy_viewport ~src:s_src ~dst:s_dst ~src_viewport:vp ~dst_row:0
-    ~dst_col:0
-
-(* Group 6: Cloning and Copying *)
-let bench_clone s = ignore (Screen.clone s)
-let bench_copy_to s_src s_dst = Screen.copy_to ~src:s_src ~dst:s_dst
-
-(* Setup for benchmarks requiring screens *)
-let setup_screen () =
-  let s = Screen.create ~rows ~cols () in
-  Screen.batch s (fun s' -> bench_set_multiline_text s');
-  s
-
-let () =
-  let open Ubench in
-  let benches =
-    [
-      group "Creation/Resizing"
-        [
-          create "create" bench_create;
-          create_with_setup "resize" ~setup:setup_screen
-            ~teardown:(fun _ -> ())
-            ~f:bench_resize;
-        ];
-      group "Drawing"
-        [
-          create_with_setup "clear" ~setup:setup_screen
-            ~teardown:(fun _ -> ())
-            ~f:bench_clear;
-          create_with_setup "set_grapheme" ~setup:setup_screen
-            ~teardown:(fun _ -> ())
-            ~f:bench_set_grapheme;
-          create_with_setup "set_text" ~setup:setup_screen
-            ~teardown:(fun _ -> ())
-            ~f:bench_set_text;
-          create_with_setup "set_multiline_text" ~setup:setup_screen
-            ~teardown:(fun _ -> ())
-            ~f:bench_set_multiline_text;
-        ];
-      group "Frame Lifecycle"
-        [
-          create_with_setup "begin_present" ~setup:setup_screen
-            ~teardown:(fun _ -> ())
-            ~f:bench_begin_present;
-          create_with_setup "batch" ~setup:setup_screen
-            ~teardown:(fun _ -> ())
-            ~f:bench_batch;
-        ];
-      group "Diffing/Rendering"
-        [
-          create_with_setup "diff_cells" ~setup:setup_screen
-            ~teardown:(fun _ -> ())
-            ~f:bench_diff_cells;
-          create_with_setup "render" ~setup:setup_screen
-            ~teardown:(fun _ -> ())
-            ~f:bench_render;
-          create_with_setup "render_to_string" ~setup:setup_screen
-            ~teardown:(fun _ -> ())
-            ~f:bench_render_to_string;
-          create_with_setup "patches_to_sgr" ~setup:setup_screen
-            ~teardown:(fun _ -> ())
-            ~f:bench_patches_to_sgr;
-        ];
-      group "Viewport"
-        [
-          create_with_setup "with_viewport" ~setup:setup_screen
-            ~teardown:(fun _ -> ())
-            ~f:bench_with_viewport;
-          create_with_setup "render_viewport" ~setup:setup_screen
-            ~teardown:(fun _ -> ())
-            ~f:bench_render_viewport;
-          create_with_setup "copy_viewport"
-            ~setup:(fun () -> (setup_screen (), setup_screen ()))
-            ~teardown:(fun _ -> ())
-            ~f:(fun (src, dst) -> bench_copy_viewport src dst);
-        ];
-      group "Cloning/Copying"
-        [
-          create_with_setup "clone" ~setup:setup_screen
-            ~teardown:(fun _ -> ())
-            ~f:bench_clone;
-          create_with_setup "copy_to"
-            ~setup:(fun () -> (setup_screen (), setup_screen ()))
-            ~teardown:(fun _ -> ())
-            ~f:(fun (src, dst) -> bench_copy_to src dst);
-        ];
-    ]
+(* Sparse cells only: cursor + a few status cells. *)
+let diff_sparse_cells =
+  let clear_color = C.of_rgb 0 0 0 in
+  let update_positions =
+    [| (40, 12); (0, 0); (grid_width / 2, 0); (grid_width - 1, 0) |]
   in
-  run_cli benches
+  Ubench.create_with_setup "render.diff/sparse-cells"
+    ~setup:(fun () ->
+      let screen = Screen.create () in
+      let frame =
+        Screen.build screen ~width:grid_width ~height:grid_height
+          (fun grid _hits ->
+            Grid.clear grid ~color:clear_color;
+            for row = 0 to grid_height - 1 do
+              Grid.draw_text ~style:ascii_style grid ~x:0 ~y:row
+                ~text:ascii_line
+            done)
+      in
+      let _ = Screen.render frame in
+      screen)
+    ~teardown:(fun _ -> ())
+    ~f:(fun screen ->
+      let frame =
+        Screen.build screen ~width:grid_width ~height:grid_height
+          (fun grid _hits ->
+            Grid.clear grid ~color:clear_color;
+            for row = 0 to grid_height - 1 do
+              Grid.draw_text ~style:ascii_style grid ~x:0 ~y:row
+                ~text:ascii_line
+            done;
+            for i = 0 to Array.length update_positions - 1 do
+              let x, y = update_positions.(i) in
+              Grid.set_cell grid ~x ~y
+                ~code:(Char.code 'A' + i)
+                ~fg:(C.of_rgb 255 255 0) ~bg:clear_color ~attrs:Ansi.Attr.empty
+                ()
+            done)
+      in
+      ignore (Screen.render frame))
+
+(* Nothing changes: cost of diffing two identical full frames. *)
+let diff_no_changes =
+  let clear_color = C.of_rgb 0 0 0 in
+  let build_full_ascii screen =
+    Screen.build screen ~width:grid_width ~height:grid_height (fun grid _hits ->
+        Grid.clear grid ~color:clear_color;
+        for row = 0 to grid_height - 1 do
+          Grid.draw_text ~style:ascii_style grid ~x:0 ~y:row ~text:ascii_line
+        done)
+  in
+  Ubench.create_with_setup "render.diff/no-changes"
+    ~setup:(fun () ->
+      let screen = Screen.create () in
+      let frame = build_full_ascii screen in
+      let _ = Screen.render frame in
+      screen)
+    ~teardown:(fun _ -> ())
+    ~f:(fun screen ->
+      let frame = build_full_ascii screen in
+      ignore (Screen.render frame))
+
+(* Scenario: text editor / TUI layout *)
+
+let scenario_text_editor =
+  let toggle = ref false in
+  let code_bg = C.of_rgb 18 20 24 in
+  let status_fg = C.of_rgb 0 0 0 in
+  let status_bg = C.of_rgb 200 200 200 in
+  let status_style = S.make ~fg:status_fg ~bg:status_bg ~bold:true () in
+  let cursor_row = 12 in
+  let cursor_col = 8 in
+  Ubench.create_with_setup "render.scenario/text-editor"
+    ~setup:(fun () ->
+      toggle := false;
+      let screen = Screen.create () in
+      let frame =
+        Screen.build screen ~width:grid_width ~height:grid_height
+          (fun grid hits ->
+            Grid.clear grid ~color:code_bg;
+            (* Code area *)
+            for row = 0 to grid_height - 2 do
+              Grid.draw_text ~style:ascii_style grid ~x:0 ~y:row
+                ~text:ascii_line
+            done;
+            (* Initial cursor line + status bar *)
+            let cursor_style =
+              S.make ~fg:(C.of_rgb 255 255 0) ~bg:(C.of_rgb 40 40 0) ~bold:true
+                ()
+            in
+            Grid.draw_text ~style:cursor_style grid ~x:cursor_col ~y:cursor_row
+              ~text:"let value = 42 in";
+            Grid.draw_text ~style:status_style grid ~x:0 ~y:(grid_height - 1)
+              ~text:"-- NORMAL --  matrix.ml  42L, 1C  All tests passing";
+            Hit_grid.add hits ~x:0 ~y:(grid_height - 1) ~width:grid_width
+              ~height:1 ~id:1)
+      in
+      let _ = Screen.render frame in
+      screen)
+    ~teardown:(fun _ -> ())
+    ~f:(fun screen ->
+      toggle := not !toggle;
+      let mode_label = if !toggle then "-- INSERT --" else "-- NORMAL --" in
+      let cursor_style =
+        if !toggle then
+          S.make ~fg:(C.of_rgb 255 255 0) ~bg:(C.of_rgb 40 40 0) ~bold:true ()
+        else
+          S.make ~fg:(C.of_rgb 200 200 255) ~bg:(C.of_rgb 30 30 40) ~italic:true
+            ()
+      in
+      let status_text =
+        mode_label ^ "  matrix.ml  42L, 1C  All tests passing"
+      in
+      let frame =
+        Screen.build screen ~width:grid_width ~height:grid_height
+          (fun grid hits ->
+            Grid.clear grid ~color:code_bg;
+            for row = 0 to grid_height - 2 do
+              Grid.draw_text ~style:ascii_style grid ~x:0 ~y:row
+                ~text:ascii_line
+            done;
+            Grid.draw_text ~style:cursor_style grid ~x:cursor_col ~y:cursor_row
+              ~text:"let value = 42 in";
+            Grid.draw_text ~style:status_style grid ~x:0 ~y:(grid_height - 1)
+              ~text:status_text;
+            Hit_grid.add hits ~x:0 ~y:(grid_height - 1) ~width:grid_width
+              ~height:1 ~id:1)
+      in
+      ignore (Screen.render frame))
+
+(* Scenario: CI log viewer / heavy style + hyperlinks *)
+
+type log_line = { level : string; message : string; path : string option }
+
+let log_lines : log_line array =
+  [|
+    { level = "INFO"; message = "Starting build (matrix)"; path = None };
+    {
+      level = "INFO";
+      message = "Running tests (unit / integration)";
+      path = Some "tests/test_matrix.ml:42";
+    };
+    {
+      level = "WARN";
+      message = "Flaky test detected; retry scheduled";
+      path = Some "tests/flaky_pipeline.ml:10";
+    };
+    {
+      level = "ERROR";
+      message = "Compilation failed: unresolved reference";
+      path = Some "src/main.ml:120";
+    };
+  |]
+
+let log_timestamp = "[2025-11-20T12:34:56Z]"
+let log_timestamp_width = String.length log_timestamp
+
+let level_tag level =
+  match level with
+  | "INFO" -> "[INFO]"
+  | "WARN" -> "[WARN]"
+  | "ERROR" -> "[ERROR]"
+  | other -> "[" ^ other ^ "]"
+
+let level_style level =
+  match level with
+  | "INFO" -> S.make ~fg:(C.of_rgb 120 200 120) ~bold:true ()
+  | "WARN" -> S.make ~fg:(C.of_rgb 230 200 80) ~bold:true ()
+  | "ERROR" -> S.make ~fg:(C.of_rgb 255 80 80) ~bold:true ()
+  | _ -> S.make ~fg:(C.of_rgb 180 180 180) ()
+
+let timestamp_style = S.make ~fg:(C.of_rgb 130 130 130) ()
+let message_style = ascii_style
+
+let render_ci_logs grid ~progress_line =
+  let rows_for_logs = grid_height - 1 in
+  for row = 0 to rows_for_logs - 1 do
+    let entry = log_lines.(row mod Array.length log_lines) in
+    let y = row in
+    (* timestamp *)
+    Grid.draw_text ~style:timestamp_style grid ~x:0 ~y ~text:log_timestamp;
+    (* level *)
+    let level_txt = level_tag entry.level in
+    let x_level = log_timestamp_width + 1 in
+    Grid.draw_text ~style:(level_style entry.level) grid ~x:x_level ~y
+      ~text:level_txt;
+    (* message *)
+    let x_msg = x_level + String.length level_txt + 1 in
+    Grid.draw_text ~style:message_style grid ~x:x_msg ~y ~text:entry.message;
+    (* optional clickable path at the right edge *)
+    match entry.path with
+    | None -> ()
+    | Some path ->
+        let path_text = " → " ^ path in
+        let w = String.length path_text in
+        let x_path = max x_msg (grid_width - w) in
+        let link = "file://" ^ path in
+        let path_style =
+          S.make ~fg:(C.of_rgb 140 180 255) ~underline:true ~link ()
+        in
+        Grid.draw_text ~style:path_style grid ~x:x_path ~y ~text:path_text
+  done;
+  (* bottom progress line *)
+  let progress_style = S.make ~fg:(C.of_rgb 200 200 200) ~bold:true () in
+  Grid.draw_text ~style:progress_style grid ~x:0 ~y:(grid_height - 1)
+    ~text:progress_line
+
+let progress_line_a =
+  "Progress: [##########..........]  42%  (5/12 jobs succeeded)"
+
+let progress_line_b =
+  "Progress: [############........]  58%  (7/12 jobs succeeded)"
+
+let scenario_ci_log_view =
+  let toggle = ref false in
+  Ubench.create_with_setup "render.scenario/ci-log-view"
+    ~setup:(fun () ->
+      toggle := false;
+      let screen = Screen.create () in
+      let frame =
+        Screen.build screen ~width:grid_width ~height:grid_height
+          (fun grid _hits ->
+            Grid.clear grid ~color:(C.of_rgb 0 0 0);
+            render_ci_logs grid ~progress_line:progress_line_a)
+      in
+      let _ = Screen.render frame in
+      screen)
+    ~teardown:(fun _ -> ())
+    ~f:(fun screen ->
+      toggle := not !toggle;
+      let progress_line =
+        if !toggle then progress_line_b else progress_line_a
+      in
+      let frame =
+        Screen.build screen ~width:grid_width ~height:grid_height
+          (fun grid _hits ->
+            Grid.clear grid ~color:(C.of_rgb 0 0 0);
+            render_ci_logs grid ~progress_line)
+      in
+      ignore (Screen.render frame))
+
+(* Emoji / explicit-width full-screen render *)
+
+let emoji_full_screen =
+  let toggle = ref false in
+  Ubench.create_with_setup "render.emoji/full-screen"
+    ~setup:(fun () ->
+      toggle := false;
+      let screen = Screen.create ~explicit_width:true () in
+      let frame =
+        Screen.build screen ~width:grid_width ~height:grid_height
+          (fun grid _hits ->
+            let bg = C.of_rgb 0 0 0 in
+            Grid.clear grid ~color:bg;
+            for row = 0 to grid_height - 1 do
+              let text = if row land 1 = 0 then emoji_line else ascii_line in
+              Grid.draw_text ~style:ascii_style grid ~x:0 ~y:row ~text
+            done)
+      in
+      let _ = Screen.render frame in
+      screen)
+    ~teardown:(fun _ -> ())
+    ~f:(fun screen ->
+      toggle := not !toggle;
+      let bg = if !toggle then C.of_rgb 0 0 0 else C.of_rgb 10 10 20 in
+      let frame =
+        Screen.build screen ~width:grid_width ~height:grid_height
+          (fun grid _hits ->
+            Grid.clear grid ~color:bg;
+            for row = 0 to grid_height - 1 do
+              let text = if row land 1 = 0 then emoji_line else ascii_line in
+              Grid.draw_text ~style:ascii_style grid ~x:0 ~y:row ~text
+            done)
+      in
+      ignore (Screen.render frame))
+
+(* Group + entry point *)
+
+let benchmarks =
+  [
+    (* Diff micro-benchmarks *)
+    diff_full_screen;
+    diff_single_line;
+    diff_sparse_cells;
+    diff_no_changes;
+    (* Realistic scenarios *)
+    scenario_text_editor;
+    scenario_ci_log_view;
+    emoji_full_screen;
+  ]
+  |> Ubench.group "render"
+
+let () = Ubench.run_cli [ benchmarks ]
