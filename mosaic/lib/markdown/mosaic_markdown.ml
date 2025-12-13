@@ -933,8 +933,8 @@ let markdown ?id ?visible ?z_index ?buffer ?live ?display ?box_sizing ?position
     ?justify_self ?justify_content ?flex_direction ?flex_wrap ?flex_grow
     ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
     ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
-    ?grid_row ?grid_column ?style ?width ?strict ?syntax_client ?content
-    ?on_mount () : Ui.element =
+    ?grid_row ?grid_column ?style ?width ?strict ?syntax_client
+    ?on_mount content : Ui.element =
   let layout_style =
     Toffee.Style.make ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin ?padding ?gap
@@ -945,7 +945,7 @@ let markdown ?id ?visible ?z_index ?buffer ?live ?display ?box_sizing ?position
       ?grid_column ()
   in
   let markdown_props =
-    Props.make ?style ?width ?strict ?syntax_client ?content ()
+    Props.make ?style ?width ?strict ?syntax_client ~content ()
   in
   let ctor (renderer : Ui.Renderer.t) (markdown_props : Props.t) =
     let id = Option.value id ~default:(Ui.Renderer.gen_id renderer) in

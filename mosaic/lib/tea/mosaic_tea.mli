@@ -1065,7 +1065,6 @@ val code :
   ?grid_template_areas:Toffee.Style.grid_template_area list ->
   ?grid_row:Toffee.Style.grid_placement Toffee.Geometry.line ->
   ?grid_column:Toffee.Style.grid_placement Toffee.Geometry.line ->
-  ?content:string ->
   ?filetype:string ->
   ?grammar:Code.grammar ->
   ?syntax_client:Mosaic_syntax.t ->
@@ -1079,9 +1078,9 @@ val code :
   ?default_style:Ansi.Style.t ->
   ?selectable:bool ->
   ?syntax_style:Code.Syntax_style.t ->
-  unit ->
+  string ->
   'msg t
-(** [code ()] creates a syntax-highlighted code element. *)
+(** [code content] creates a syntax-highlighted code element. *)
 
 val markdown :
   ?id:string ->
@@ -1130,7 +1129,6 @@ val markdown :
   ?width:int ->
   ?strict:bool ->
   ?syntax_client:Mosaic_syntax.t ->
-  ?content:string ->
-  unit ->
+  string ->
   'msg t
-(** [markdown ()] creates a markdown rendering element. *)
+(** [markdown content] creates a markdown rendering element. *)

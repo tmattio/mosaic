@@ -738,11 +738,11 @@ let code
     ?grid_auto_columns ?grid_auto_flow ?grid_template_areas ?grid_row
     ?grid_column
     (* Code props *)
-    ?content ?filetype ?grammar ?syntax_client ?conceal ?draw_unstyled_text
+    ?filetype ?grammar ?syntax_client ?conceal ?draw_unstyled_text
     ?wrap_mode ?tab_indicator ?tab_indicator_color ?selection_bg ?selection_fg
     ?default_style ?selectable ?syntax_style
     (* Callback *)
-    ?on_mount () : element =
+    ?on_mount content : element =
   let style =
     Toffee.Style.make ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin ?padding ?gap
@@ -753,7 +753,7 @@ let code
       ?grid_column ()
   in
   let code_props =
-    Code.Props.make ?content ?filetype ?grammar ?syntax_client ?conceal
+    Code.Props.make ~content ?filetype ?grammar ?syntax_client ?conceal
       ?draw_unstyled_text ?wrap_mode ?tab_indicator ?tab_indicator_color
       ?selection_bg ?selection_fg ?default_style ?selectable ?syntax_style ()
   in

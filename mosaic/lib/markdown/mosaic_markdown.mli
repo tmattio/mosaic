@@ -116,11 +116,10 @@ val markdown :
   ?width:int ->
   ?strict:bool ->
   ?syntax_client:Mosaic_syntax.t ->
-  ?content:string ->
   ?on_mount:(t -> unit) ->
-  unit ->
+  string ->
   Mosaic_ui.element
-(** [markdown ...] creates a markdown element.
+(** [markdown content] creates a markdown element.
 
     Renders CommonMark markdown content as a composable UI element. Supports
     headings, paragraphs, lists, code blocks with syntax highlighting,

@@ -28,7 +28,7 @@
 
     {[
       let ui =
-        box ~id:"root" ~border:true [ text ~id:"greeting" ~content:"Hello" () ]
+        box ~id:"root" ~border:true [ text ~id:"greeting" "Hello" ]
       in
       match instantiate renderer ui with
       | Ok node -> ignore (Renderer.set_root renderer node)
@@ -1045,7 +1045,6 @@ val code :
   ?grid_template_areas:Toffee.Style.grid_template_area list ->
   ?grid_row:Toffee.Style.grid_placement Toffee.Geometry.line ->
   ?grid_column:Toffee.Style.grid_placement Toffee.Geometry.line ->
-  ?content:string ->
   ?filetype:string ->
   ?grammar:Code.grammar ->
   ?syntax_client:Mosaic_syntax.t ->
@@ -1060,9 +1059,9 @@ val code :
   ?selectable:bool ->
   ?syntax_style:Code.Syntax_style.t ->
   ?on_mount:(Code.t -> unit) ->
-  unit ->
+  string ->
   element
-(** [code ...] creates a syntax-highlighted code element.
+(** [code content] creates a syntax-highlighted code element.
 
     Code elements render text with Tree-sitter syntax highlighting.
 
