@@ -1,0 +1,15 @@
+(include_subdirs unqualified)
+
+(library
+ (name mosaic_ui)
+ (public_name mosaic.ui)
+ (libraries
+  toffee
+  unix
+  mosaic.syntax
+  matrix.ansi
+  matrix.input
+  matrix.grid
+  matrix.glyph
+  matrix.screen
+  mosaic.tree-sitter))
