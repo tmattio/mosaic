@@ -176,8 +176,8 @@ val run :
 
     All parameters are forwarded to {!Matrix.create}. Defaults match the
     previous behaviour: alternate screen, raw mode, 60 FPS cap, mouse and
-    bracketed paste enabled, and Ctrl+C left to the application
-    ([exit_on_ctrl_c] defaults to [false]). *)
+    bracketed paste enabled, and Ctrl+C exits the application
+    ([exit_on_ctrl_c] defaults to [true]). *)
 
 (** {1 Internal Modules}
 

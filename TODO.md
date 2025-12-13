@@ -10,8 +10,6 @@ example 12-installer: output displays above the prompt and interleaves static an
 
 ## mosaic
 
-examples: ctrl+c doesn't exit
-
 example 02-text: the text box doesn't grow when cyclying from None wrapping to wrapping.
 
 example 04-input: displays [?997;1n in the text input
