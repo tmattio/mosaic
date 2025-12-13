@@ -1,0 +1,92 @@
+(** Syntax-highlighted code with Mosaic_syntax and Tree-sitter. *)
+
+open Mosaic_tea
+
+type lang = OCaml | JSON
+type model = { lang : lang }
+type msg = Toggle_lang | Quit
+
+let init () = ({ lang = OCaml }, Cmd.none)
+
+let update msg model =
+  match msg with
+  | Toggle_lang ->
+      let lang = match model.lang with OCaml -> JSON | JSON -> OCaml in
+      ({ lang }, Cmd.none)
+  | Quit -> (model, Cmd.quit)
+
+let ocaml_sample =
+  {|let greet name =
+  Printf.printf "Hello, %s!\n" name
+
+type color = Red | Green | Blue
+
+let rgb_of_color = function
+  | Red -> (255, 0, 0)
+  | Green -> (0, 255, 0)
+  | Blue -> (0, 0, 255)
+
+let () =
+  greet "World";
+  let r, g, b = rgb_of_color Blue in
+  Printf.printf "RGB: (%d, %d, %d)\n" r g b|}
+
+let json_sample =
+  {|{
+  "name": "mosaic",
+  "version": "0.1.0",
+  "description": "TUI library for OCaml",
+  "keywords": ["terminal", "tui", "ocaml"],
+  "dependencies": {
+    "matrix": "^1.0.0",
+    "toffee": "^1.0.0"
+  },
+  "author": {
+    "name": "Anonymous",
+    "email": "dev@example.com"
+  },
+  "license": "MIT",
+  "active": true,
+  "stars": 42
+}|}
+
+let lang_name = function OCaml -> "OCaml" | JSON -> "JSON"
+let lang_content = function OCaml -> ocaml_sample | JSON -> json_sample
+let lang_filetype = function OCaml -> "ml" | JSON -> "json"
+let syntax_client = Mosaic_syntax.default_client ()
+
+let view model =
+  box ~flex_direction:Column
+    ~size:{ width = pct 100; height = pct 100 }
+    [
+      (* Header *)
+      box ~padding:(padding 1) ~background:Ansi.Color.blue
+        [
+          text
+            ~content:(Printf.sprintf "Language: %s" (lang_name model.lang))
+            ~text_style:(Ansi.Style.make ~bold:true ~fg:Ansi.Color.white ())
+            ();
+        ];
+      (* Code display *)
+      box ~flex_grow:1. ~padding:(padding 1) ~border:true ~title:"Code"
+        [
+          code ~content:(lang_content model.lang)
+            ~filetype:(lang_filetype model.lang) ~tree_syntax:syntax_client
+            ~syntax_style:(Code.Syntax_style.of_default_theme ())
+            ~size:{ width = pct 100; height = pct 100 }
+            ();
+        ];
+      (* Help *)
+      box ~padding:(padding 1)
+        [ text ~content:"Press 'l' to toggle language, 'q' to quit" () ];
+    ]
+
+let subscriptions _model =
+  Sub.on_key (fun ev ->
+      match (Mosaic_ui.Event.Key.data ev).key with
+      | Char c when Uchar.equal c (Uchar.of_char 'l') -> Some Toggle_lang
+      | Char c when Uchar.equal c (Uchar.of_char 'q') -> Some Quit
+      | Escape -> Some Quit
+      | _ -> None)
+
+let () = run { init; update; view; subscriptions }
