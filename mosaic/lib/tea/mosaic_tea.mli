@@ -1119,8 +1119,16 @@ val markdown :
   ?grid_row:Toffee.Style.grid_placement Toffee.Geometry.line ->
   ?grid_column:Toffee.Style.grid_placement Toffee.Geometry.line ->
   ?style:Mosaic_markdown.Style.t ->
-  ?width:int ->
-  ?strict:bool ->
+  ?wrap_width:Mosaic_markdown.Props.wrap_width ->
+  ?paragraph_wrap:Mosaic_markdown.Props.wrap_mode ->
+  ?block_quote_wrap:Mosaic_markdown.Props.wrap_mode ->
+  ?headings:Mosaic_markdown.Props.headings ->
+  ?code_blocks:Mosaic_markdown.Props.code_blocks ->
+  ?raw_html:Mosaic_markdown.Props.raw_html ->
+  ?links:Mosaic_markdown.Props.link ->
+  ?images:Mosaic_markdown.Props.image ->
+  ?unknown_inline:Mosaic_markdown.Props.unknown ->
+  ?unknown_block:Mosaic_markdown.Props.unknown ->
   ?syntax_client:Mosaic_syntax.t ->
   string ->
   'msg t

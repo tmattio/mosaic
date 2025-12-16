@@ -1221,7 +1221,7 @@ let help_tab () =
         [
           scroll_box ~scroll_y:true ~scroll_x:false
             ~size:{ width = pct 100; height = pct 100 }
-            [ markdown ~width:78 help_markdown ];
+            [ markdown ~wrap_width:(`Columns 78) help_markdown ];
         ];
     ]
 

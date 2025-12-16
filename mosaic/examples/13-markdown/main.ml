@@ -162,7 +162,7 @@ let view () =
         [
           scroll_box ~scroll_y:true ~scroll_x:false
             ~size:{ width = pct 100; height = pct 100 }
-            [ markdown ~width:78 markdown_content ];
+            [ markdown ~wrap_width:(`Columns 78) markdown_content ];
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg

@@ -10,8 +10,11 @@ let render_boxed ?(width = 40) ?(height = 10) element =
   print_newline ();
   print ~colors:false ~width:(width + 2) ~height:(height + 2) content
 
+let md ?wrap_width content =
+  markdown ~props:(Props.make ~content ?wrap_width ()) ()
+
 let%expect_test "empty content" =
-  render_boxed ~width:20 ~height:3 (markdown "");
+  render_boxed ~width:20 ~height:3 (md "");
   [%expect_exact
     {|
 ┌────────────────────┐
@@ -23,7 +26,7 @@ let%expect_test "empty content" =
 
 let%expect_test "simple paragraph" =
   render_boxed ~width:30 ~height:3
-    (markdown ~width:30 "Hello, world!");
+    (md ~wrap_width:(`Columns 30) "Hello, world!");
   [%expect_exact
     {|
 ┌──────────────────────────────┐
@@ -35,7 +38,7 @@ let%expect_test "simple paragraph" =
 
 let%expect_test "heading level 1" =
   render_boxed ~width:30 ~height:3
-    (markdown ~width:30 "# Title");
+    (md ~wrap_width:(`Columns 30) "# Title");
   [%expect_exact
     {|
 ┌──────────────────────────────┐
@@ -47,7 +50,7 @@ let%expect_test "heading level 1" =
 
 let%expect_test "heading level 2" =
   render_boxed ~width:30 ~height:3
-    (markdown ~width:30 "## Subtitle");
+    (md ~wrap_width:(`Columns 30) "## Subtitle");
   [%expect_exact
     {|
 ┌──────────────────────────────┐
@@ -59,7 +62,7 @@ let%expect_test "heading level 2" =
 
 let%expect_test "unordered list" =
   render_boxed ~width:30 ~height:5
-    (markdown ~width:30 "- Item 1\n- Item 2\n- Item 3");
+    (md ~wrap_width:(`Columns 30) "- Item 1\n- Item 2\n- Item 3");
   [%expect_exact
     {|
 ┌──────────────────────────────┐
@@ -73,7 +76,7 @@ let%expect_test "unordered list" =
 
 let%expect_test "ordered list" =
   render_boxed ~width:30 ~height:5
-    (markdown ~width:30 "1. First\n2. Second\n3. Third");
+    (md ~wrap_width:(`Columns 30) "1. First\n2. Second\n3. Third");
   [%expect_exact
     {|
 ┌──────────────────────────────┐
@@ -87,7 +90,7 @@ let%expect_test "ordered list" =
 
 let%expect_test "code block" =
   render_boxed ~width:30 ~height:6
-    (markdown ~width:30 "```ocaml\nlet x = 1\n```");
+    (md ~wrap_width:(`Columns 30) "```ocaml\nlet x = 1\n```");
   [%expect_exact
     {|
 ┌──────────────────────────────┐
@@ -102,7 +105,7 @@ let%expect_test "code block" =
 
 let%expect_test "blockquote" =
   render_boxed ~width:30 ~height:4
-    (markdown ~width:30 "> A wise quote");
+    (md ~wrap_width:(`Columns 30) "> A wise quote");
   [%expect_exact
     {|
 ┌──────────────────────────────┐
@@ -115,7 +118,7 @@ let%expect_test "blockquote" =
 
 let%expect_test "horizontal rule" =
   render_boxed ~width:30 ~height:5
-    (markdown ~width:30 "Above\n\n---\n\nBelow");
+    (md ~wrap_width:(`Columns 30) "Above\n\n---\n\nBelow");
   [%expect_exact
     {|
 ┌──────────────────────────────┐
@@ -129,7 +132,7 @@ let%expect_test "horizontal rule" =
 
 let%expect_test "multiple paragraphs" =
   render_boxed ~width:30 ~height:5
-    (markdown ~width:30 "First paragraph.\n\nSecond paragraph.");
+    (md ~wrap_width:(`Columns 30) "First paragraph.\n\nSecond paragraph.");
   [%expect_exact
     {|
 ┌──────────────────────────────┐
@@ -143,7 +146,7 @@ let%expect_test "multiple paragraphs" =
 
 let%expect_test "word wrap in paragraph" =
   render_boxed ~width:20 ~height:4
-    (markdown ~width:20 "This is a longer sentence that should wrap.");
+    (md ~wrap_width:(`Columns 20) "This is a longer sentence that should wrap.");
   [%expect_exact
     {|
 ┌────────────────────┐
@@ -156,7 +159,7 @@ let%expect_test "word wrap in paragraph" =
 
 let%expect_test "nested list" =
   render_boxed ~width:30 ~height:5
-    (markdown ~width:30 "- Parent\n  - Child\n- Another");
+    (md ~wrap_width:(`Columns 30) "- Parent\n  - Child\n- Another");
   [%expect_exact
     {|
 ┌──────────────────────────────┐
