@@ -49,17 +49,21 @@ let draw_canvas model canvas ~width ~height =
     ();
 
   (* Draw rotating lines from center *)
-  let line_kind =
-    match model.mode with Normal -> `Line | Braille -> `Braille
+  let line_kind, x_scale, y_scale =
+    match model.mode with Normal -> (`Line, 1, 1) | Braille -> (`Braille, 2, 4)
   in
-  let scale = if model.mode = Braille then 2 else 1 in
+  let cx_scaled = cx * x_scale in
+  let cy_scaled = cy * y_scale in
+  let radius_f = Float.of_int radius in
   for i = 0 to 5 do
     let angle = model.angle +. (Float.pi *. Float.of_int i /. 3.) in
     let x2 =
-      cx + int_of_float (Float.cos angle *. Float.of_int (radius * scale))
+      (cx + int_of_float (Float.cos angle *. radius_f)) * x_scale
     in
     let y2 =
-      cy + int_of_float (Float.sin angle *. Float.of_int (radius * scale / 2))
+      (cy
+      + int_of_float (Float.sin angle *. (radius_f /. 2.)))
+      * y_scale
     in
     let color =
       match i mod 6 with
@@ -70,7 +74,7 @@ let draw_canvas model canvas ~width ~height =
       | 4 -> Ansi.Color.blue
       | _ -> Ansi.Color.magenta
     in
-    Canvas.draw_line canvas ~x1:(cx * scale) ~y1:(cy * scale) ~x2 ~y2
+    Canvas.draw_line canvas ~x1:cx_scaled ~y1:cy_scaled ~x2 ~y2
       ~kind:line_kind
       ~style:(Ansi.Style.make ~fg:color ())
       ()
