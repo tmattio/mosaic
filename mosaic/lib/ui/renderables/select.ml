@@ -105,6 +105,8 @@ end
 type t = {
   node : Renderable.t;
   mutable props : Props.t;
+  (* Last selected_index provided via props; used to detect external updates. *)
+  mutable prop_selected_index : int;
   mutable items : item array;
   mutable selected_index : int;
   mutable scroll_offset : int;
@@ -398,6 +400,7 @@ let mount ?(props = Props.default) node =
     {
       node;
       props;
+      prop_selected_index = props.selected_index;
       items;
       selected_index = initial_selected;
       scroll_offset = 0;
@@ -428,7 +431,9 @@ let mount ?(props = Props.default) node =
 let apply_props t (props : Props.t) =
   (* Options and navigation *)
   set_options t props.options;
-  set_selected_index t props.selected_index;
+  if props.selected_index <> t.prop_selected_index then (
+    t.prop_selected_index <- props.selected_index;
+    set_selected_index t props.selected_index);
   set_wrap_selection t props.wrap_selection;
   set_show_description t props.show_description;
   set_show_scroll_indicator t props.show_scroll_indicator;

@@ -163,6 +163,8 @@ let notify handlers variant value =
 type t = {
   surface : Text_surface.t;
   mutable props : Props.t;
+  (* Last value provided via props; used to detect external value changes. *)
+  mutable prop_value : string;
   mutable value : string;
   (* Cached grapheme count for the current [value] *)
   mutable graphemes : int;
@@ -518,6 +520,7 @@ let mount ?(props = Props.default) (rnode : Renderable.t) =
     {
       surface;
       props;
+      prop_value = props.value;
       value = props.value;
       graphemes = grapheme_count props.value;
       cursor = grapheme_count props.value;
@@ -657,4 +660,6 @@ let apply_props t (props : Props.t) =
   set_cursor_blinking t props.cursor_blinking;
   (* Length limit and value *)
   set_max_length t props.max_length;
-  set_value t props.value
+  if not (String.equal props.value t.prop_value) then (
+    t.prop_value <- props.value;
+    set_value t props.value)

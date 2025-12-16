@@ -50,6 +50,8 @@ end
 type t = {
   node : Renderable.t;
   mutable props : Props.t;
+  (* Last value provided via props; used to detect external value changes. *)
+  mutable prop_value : float;
   mutable dragging : bool;
   mutable drag_offset_virtual : float;
 }
@@ -423,7 +425,9 @@ let mount ?props node =
     Props.make ~orientation:`Horizontal ~min:0. ~max:100. ~value:0. ()
   in
   let props = Option.value props ~default:default_props in
-  let slider = { node; props; dragging = false; drag_offset_virtual = 0. } in
+  let slider =
+    { node; props; prop_value = props.value; dragging = false; drag_offset_virtual = 0. }
+  in
   let clamped_initial = clamp_value slider slider.props.value in
   if not (Float.equal clamped_initial slider.props.value) then
     slider.props <- { slider.props with value = clamped_initial };
@@ -447,7 +451,9 @@ let apply_props t (props : Props.t) =
     (not (Float.equal t.props.min_value props.min_value))
     || not (Float.equal t.props.max_value props.max_value)
   then set_range t ~min:props.min_value ~max:props.max_value;
-  set_value t props.value;
+  if not (Float.equal props.value t.prop_value) then (
+    t.prop_value <- props.value;
+    set_value t props.value);
   (match props.viewport_size with
   | Some v -> set_viewport_size t v
   | None -> ());
