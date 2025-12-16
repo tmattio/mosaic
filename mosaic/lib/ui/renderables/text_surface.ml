@@ -281,12 +281,7 @@ let measure t ~known_dimensions ~available_space ~style:_ =
           | Toffee.Geometry.Size.{ width; _ } ->
               Toffee.Available_space.to_option width
         in
-        match from_available with
-        | Some w when w > 0. -> Some w
-        | _ -> (
-            match t.viewport with
-            | Some vp when vp.width > 0 -> Some (float vp.width)
-            | _ -> None))
+        match from_available with Some w when w > 0. -> Some w | _ -> None)
   in
   let resolved_height =
     let from_known =
