@@ -1,36 +1,44 @@
 (* Use local modules directly within mosaic.ui to avoid cyclic deps *)
 
-module Syntax_style = struct
-  type t = { default : Ansi.Style.t; styles : (string, Ansi.Style.t) Hashtbl.t }
+module Theme = struct
+  type t = {
+    base : Ansi.Style.t;
+    overlays : (string, Ansi.Style.t) Hashtbl.t;
+  }
 
-  let create ~default rules =
-    let styles = Hashtbl.create 32 in
-    List.iter (fun (scope, style) -> Hashtbl.replace styles scope style) rules;
-    { default; styles }
+  let create ~base rules =
+    let overlays = Hashtbl.create 32 in
+    List.iter (fun (scope, style) -> Hashtbl.replace overlays scope style) rules;
+    { base; overlays }
 
-  let default t = t.default
+  let base t = t.base
 
-  let rec find_style t scope =
-    match Hashtbl.find_opt t.styles scope with
+  (* Prefer “remove last segment” fallback:
+     keyword.control.flow -> keyword.control -> keyword *)
+  let rec find_overlay t scope =
+    match Hashtbl.find_opt t.overlays scope with
     | Some s -> Some s
     | None -> (
-        match String.index_opt scope '.' with
+        match String.rindex_opt scope '.' with
         | None -> None
         | Some i ->
             let prefix = String.sub scope 0 i in
-            find_style t prefix)
+            find_overlay t prefix)
+
+  (* internal: used for proper overlay composition *)
+  let overlay_opt = find_overlay
 
   let resolve t scope =
-    match find_style t scope with
-    | None -> t.default
-    | Some overlay -> Ansi.Style.merge ~base:t.default ~overlay
+    match find_overlay t scope with
+    | None -> t.base
+    | Some overlay -> Ansi.Style.merge ~base:t.base ~overlay
 
-  let of_default_theme ?(base = Ansi.Style.default) () =
+  let default ?(base = Ansi.Style.default) () =
     let palette idx = Ansi.Color.of_palette_index idx in
     let style ?bold ?italic idx =
       Ansi.Style.make ?bold ?italic ~fg:(palette idx) ()
     in
-    let default_overlays =
+    let rules =
       [
         ("comment", style ~italic:true 244);
         ("comment.line", style ~italic:true 244);
@@ -59,154 +67,72 @@ module Syntax_style = struct
         ("punctuation.special", style 244);
       ]
     in
-    let rules =
-      List.map
-        (fun (cap, overlay) -> (cap, Ansi.Style.merge ~base ~overlay))
-        default_overlays
-    in
-    create ~default:base rules
+    create ~base rules
 end
-
-type grammar = {
-  ts_language : Tree_sitter.Language.t;
-  query : Tree_sitter.Query.t;
-}
 
 module Props = struct
   type wrap_mode = [ `None | `Char | `Word ]
 
   type t = {
     content : string;
-    filetype : string option;
-    grammar : grammar option;
-    syntax_client : Mosaic_syntax.t;
-    syntax_style : Syntax_style.t;
+    filetype : Mosaic_syntax.filetype option;
+    languages : Mosaic_syntax.Set.t;
+    theme : Theme.t;
     conceal : bool;
     draw_unstyled_text : bool;
     wrap_mode : wrap_mode;
+    tab_width : int;
     tab_indicator : int option;
     tab_indicator_color : Ansi.Color.t option;
     selection_bg : Ansi.Color.t option;
     selection_fg : Ansi.Color.t option;
-    default_style : Ansi.Style.t;
     selectable : bool;
   }
 
-  let make ?(content = "") ?filetype ?grammar
-      ?(syntax_client = Mosaic_syntax.default_client ()) ?(conceal = true)
-      ?(draw_unstyled_text = true) ?(wrap_mode = (`Word : wrap_mode))
+  let make ?(content = "") ?filetype
+      ?(languages = Mosaic_syntax.builtins ())
+      ?theme ?(conceal = true) ?(draw_unstyled_text = true)
+      ?(wrap_mode = (`Word : wrap_mode))
+      ?(tab_width = 4)
       ?tab_indicator ?tab_indicator_color ?selection_bg ?selection_fg
-      ?(default_style = Ansi.Style.default) ?(selectable = true) ?syntax_style
-      () =
-    let syntax_style =
-      match syntax_style with
-      | Some s -> s
-      | None -> Syntax_style.of_default_theme ~base:default_style ()
+      ?(selectable = true) () =
+    let theme =
+      match theme with
+      | Some t -> t
+      | None -> Theme.default ~base:Ansi.Style.default ()
     in
     {
       content;
       filetype;
-      grammar;
-      syntax_client;
-      syntax_style;
+      languages;
+      theme;
       conceal;
       draw_unstyled_text;
       wrap_mode;
+      tab_width;
       tab_indicator;
       tab_indicator_color;
       selection_bg;
       selection_fg;
-      default_style;
       selectable;
     }
 
   let default = make ()
 
   let equal a b =
-    let lang_eq l r =
-      match (l, r) with
-      | None, None -> true
-      | Some x, Some y -> x == y
-      | _ -> false
-    in
     String.equal a.content b.content
-    && Option.equal String.equal a.filetype b.filetype
-    && lang_eq a.grammar b.grammar
-    && a.syntax_client == b.syntax_client
-    && a.syntax_style == b.syntax_style
+    && a.filetype = b.filetype
+    && a.languages == b.languages
+    && a.theme == b.theme
     && Bool.equal a.conceal b.conceal
     && Bool.equal a.draw_unstyled_text b.draw_unstyled_text
     && a.wrap_mode = b.wrap_mode
+    && Int.equal a.tab_width b.tab_width
     && Option.equal Int.equal a.tab_indicator b.tab_indicator
     && Option.equal Ansi.Color.equal a.tab_indicator_color b.tab_indicator_color
     && Option.equal Ansi.Color.equal a.selection_bg b.selection_bg
     && Option.equal Ansi.Color.equal a.selection_fg b.selection_fg
-    && Ansi.Style.equal a.default_style b.default_style
     && Bool.equal a.selectable b.selectable
-end
-
-module Highlighter = struct
-  type t = {
-    parser : Tree_sitter.Parser.t;
-    cursor : Tree_sitter.Query_cursor.t;
-    query : Tree_sitter.Query.t;
-    mutable tree : Tree_sitter.Tree.t option;
-  }
-
-  type token = { start_byte : int; end_byte : int; capture : string }
-
-  let create (g : grammar) =
-    let parser = Tree_sitter.Parser.create () in
-    Tree_sitter.Parser.set_language parser g.ts_language;
-    let cursor = Tree_sitter.Query_cursor.create () in
-    { parser; cursor; query = g.query; tree = None }
-
-  let cleanup t =
-    t.tree <- None;
-    Tree_sitter.Query_cursor.delete t.cursor;
-    Tree_sitter.Parser.delete t.parser
-
-  let capture_name query index =
-    Tree_sitter.Query.capture_name_for_id query index
-
-  let should_skip_capture name = String.length name = 0 || name.[0] = '_'
-
-  let highlight t content =
-    let new_tree =
-      match t.tree with
-      | None -> Tree_sitter.Parser.parse_string t.parser content
-      | Some old -> Tree_sitter.Parser.parse_string ~old t.parser content
-    in
-    t.tree <- Some new_tree;
-    let root = Tree_sitter.Tree.root_node new_tree in
-    Tree_sitter.Query_cursor.exec t.cursor t.query root;
-    let rec gather acc =
-      match Tree_sitter.Query_cursor.next_capture t.cursor t.query with
-      | None -> acc
-      | Some capture ->
-          let acc =
-            match capture_name t.query capture.capture_index with
-            | Some name when not (should_skip_capture name) ->
-                let node = capture.node in
-                let start_byte = Tree_sitter.Node.start_byte node in
-                let end_byte = Tree_sitter.Node.end_byte node in
-                if start_byte < end_byte then
-                  { start_byte; end_byte; capture = name } :: acc
-                else acc
-            | _ -> acc
-          in
-          gather acc
-    in
-    let tokens = gather [] in
-    let tokens =
-      List.sort
-        (fun a b ->
-          match Int.compare a.start_byte b.start_byte with
-          | 0 -> Int.compare a.end_byte b.end_byte
-          | c -> c)
-        tokens
-    in
-    Array.of_list tokens
 end
 
 let background_at grid ~x ~y =
@@ -215,28 +141,57 @@ let background_at grid ~x ~y =
 
 type viewport = { x : int; y : int; width : int; height : int }
 
+type token = {
+  start_byte : int;
+  end_byte : int;
+  capture : string;
+  origin : Mosaic_syntax.Highlight.origin;
+}
+
+type boundary_kind = Start | End
+type boundary = { offset : int; kind : boundary_kind; index : int }
+
+let compare_boundary a b =
+  match Int.compare a.offset b.offset with
+  | 0 -> (
+      match (a.kind, b.kind) with End, Start -> -1 | Start, End -> 1 | _ -> 0)
+  | c -> c
+
+let specificity_of_scope scope =
+  let rec loop acc idx =
+    match String.index_from_opt scope idx '.' with
+    | None -> acc
+    | Some i -> loop (acc + 1) (i + 1)
+  in
+  loop 1 0
+
 type t = {
   node : Renderable.t;
   buffer : Text_buffer.t;
   view : Text_buffer_view.t;
+
   mutable wrap_mode : Props.wrap_mode;
   mutable applied_wrap_mode : Text_buffer.wrap_mode;
-  mutable default_style : Ansi.Style.t;
   mutable wrap_width_hint : int option;
   mutable viewport : viewport option;
+
   mutable selection_bg : Ansi.Color.t option;
   mutable selection_fg : Ansi.Color.t option;
+
   (* code/highlighting state *)
   mutable content : string;
-  mutable filetype : string option;
-  mutable grammar : grammar option;
-  mutable syntax_client : Mosaic_syntax.t;
-  mutable syntax_style : Syntax_style.t;
+  mutable filetype : Mosaic_syntax.filetype option;
+  mutable languages : Mosaic_syntax.Set.t;
+  mutable session : Mosaic_syntax.Session.t option;
+  mutable theme : Theme.t;
+  mutable base_style : Ansi.Style.t;
+
   mutable pending_update : bool;
   mutable conceal : bool;
   mutable draw_unstyled_text : bool;
   mutable should_render_text_buffer : bool;
-  mutable highlighter : Highlighter.t option;
+
+  selectable : bool;
 }
 
 let node t = t.node
@@ -299,27 +254,39 @@ let write_plain_text t text style =
     ignore (Renderable.mark_layout_dirty t.node);
     Renderable.request_render t.node)
 
-type boundary_kind = Start | End
-type boundary = { offset : int; kind : boundary_kind; index : int }
+let should_skip_capture name = String.length name = 0 || name.[0] = '_'
 
-let compare_boundary a b =
-  match Int.compare a.offset b.offset with
-  | 0 -> (
-      match (a.kind, b.kind) with End, Start -> -1 | Start, End -> 1 | _ -> 0)
-  | c -> c
+let tokens_of_highlights (highlights : Mosaic_syntax.Highlight.t array) : token array =
+  let acc = ref [] in
+  Array.iter
+    (fun (h : Mosaic_syntax.Highlight.t) ->
+      let open Mosaic_syntax.Highlight in
+      let { start_byte; end_byte; group; origin } = h in
+      if start_byte < end_byte && not (should_skip_capture group) then
+        acc :=
+          { start_byte; end_byte; capture = group; origin } :: !acc)
+    highlights;
+  Array.of_list (List.rev !acc)
 
-let specificity_of_scope scope =
-  let rec loop acc idx =
-    match String.index_from_opt scope idx '.' with
-    | None -> acc
-    | Some i -> loop (acc + 1) (i + 1)
-  in
-  loop 1 0
+let cleanup_session_opt = function
+  | None -> ()
+  | Some s -> Mosaic_syntax.Session.close s
 
-let update_buffer_with_tokens t tokens =
-  let default_style = t.default_style in
+let update_session t =
+  cleanup_session_opt t.session;
+  t.session <-
+    match t.filetype with
+    | None -> None
+    | Some ft -> (
+        match Mosaic_syntax.Session.create t.languages ~filetype:ft with
+        | Ok s -> Some s
+        | Error _ -> None)
+
+let update_buffer_with_tokens t (tokens : token array) =
+  let base_style = t.base_style in
   let content_len = String.length t.content in
   Text_buffer.reset t.buffer;
+
   let len = Array.length tokens in
   let boundaries =
     let count = ref 0 in
@@ -329,8 +296,8 @@ let update_buffer_with_tokens t tokens =
     in
     for i = 0 to len - 1 do
       let token = tokens.(i) in
-      let start_offset = token.Highlighter.start_byte in
-      let end_offset = token.Highlighter.end_byte in
+      let start_offset = token.start_byte in
+      let end_offset = token.end_byte in
       if start_offset < end_offset then (
         tmp.(!count) <- { offset = start_offset; kind = Start; index = i };
         incr count;
@@ -339,191 +306,147 @@ let update_buffer_with_tokens t tokens =
     done;
     if !count = 0 then [||] else Array.sub tmp 0 !count
   in
-  if Array.length boundaries = 0 then (
-    if content_len > 0 then
-      let text = String.sub t.content 0 content_len in
+
+  let write_chunk ~style ~text =
+    if text <> "" then
       let chunk =
         Text_buffer.Chunk.
           {
             text = Bytes.of_string text;
-            fg = default_style.Ansi.Style.fg;
-            bg = default_style.Ansi.Style.bg;
-            attrs = default_style.Ansi.Style.attrs;
-            link = default_style.Ansi.Style.link;
+            fg = style.Ansi.Style.fg;
+            bg = style.Ansi.Style.bg;
+            attrs = style.Ansi.Style.attrs;
+            link = style.Ansi.Style.link;
           }
       in
-      ignore (Text_buffer.write_chunk t.buffer chunk))
+      ignore (Text_buffer.write_chunk t.buffer chunk)
+  in
+
+  let write_range ~style start finish =
+    let slice_start = max 0 start in
+    let slice_end = min content_len finish in
+    if slice_end > slice_start then
+      let text = String.sub t.content slice_start (slice_end - slice_start) in
+      write_chunk ~style ~text
+  in
+
+  if Array.length boundaries = 0 then (
+    if content_len > 0 then write_range ~style:base_style 0 content_len)
   else (
     Array.sort compare_boundary boundaries;
     let active : int list ref = ref [] in
     let current_offset = ref 0 in
-    let write_chunk ~style ~text =
-      if text <> "" then
-        let chunk =
-          Text_buffer.Chunk.
-            {
-              text = Bytes.of_string text;
-              fg = style.Ansi.Style.fg;
-              bg = style.Ansi.Style.bg;
-              attrs = style.Ansi.Style.attrs;
-              link = style.Ansi.Style.link;
-            }
-        in
-        ignore (Text_buffer.write_chunk t.buffer chunk)
-    in
-    let write_range ~style start finish =
-      let slice_start = max 0 start in
-      let slice_end = min content_len finish in
-      if slice_end > slice_start then
-        let text = String.sub t.content slice_start (slice_end - slice_start) in
-        write_chunk ~style ~text
-    in
+
     let conceal_replacement active_indices =
       if not t.conceal then None
       else
         let rec find = function
           | [] -> None
           | idx :: rest ->
-              let capture = tokens.(idx).Highlighter.capture in
+              let capture = tokens.(idx).capture in
               if String.equal capture "conceal.with.space" then Some " "
               else if
-                String.length capture >= 7 && String.sub capture 0 7 = "conceal"
+                String.length capture >= 7
+                && String.sub capture 0 7 = "conceal"
               then Some ""
               else find rest
         in
         find active_indices
     in
+
     let resolve_style_for_active active_indices =
+      (* Ensure injection captures apply after host captures. *)
       let groups =
         List.map
           (fun idx ->
-            let capture = tokens.(idx).Highlighter.capture in
-            let spec = specificity_of_scope capture in
-            (capture, spec, idx))
+            let tok = tokens.(idx) in
+            let spec = specificity_of_scope tok.capture in
+            let inj_weight =
+              match tok.origin with `Host -> 0 | `Injection _ -> 1
+            in
+            (inj_weight, tok.capture, spec, idx))
           active_indices
       in
       let groups =
         List.sort
-          (fun (_, spec_a, idx_a) (_, spec_b, idx_b) ->
-            match Int.compare spec_a spec_b with
-            | 0 -> Int.compare idx_a idx_b
+          (fun (w_a, _, spec_a, idx_a) (w_b, _, spec_b, idx_b) ->
+            match Int.compare w_a w_b with
+            | 0 -> (
+                match Int.compare spec_a spec_b with
+                | 0 -> Int.compare idx_a idx_b
+                | c -> c)
             | c -> c)
           groups
       in
       List.fold_left
-        (fun acc (group, _, _) ->
-          let style = Syntax_style.resolve t.syntax_style group in
-          Ansi.Style.merge ~base:acc ~overlay:style)
-        default_style groups
+        (fun acc (_w, group, _spec, _idx) ->
+          match Theme.overlay_opt t.theme group with
+          | None -> acc
+          | Some overlay -> Ansi.Style.merge ~base:acc ~overlay)
+        base_style groups
     in
+
     Array.iter
       (fun b ->
         let offset = b.offset in
-        (* Write text from current_offset to this boundary if there's a gap *)
-        (if !current_offset < offset then
-           match !active with
-           | [] -> write_range ~style:default_style !current_offset offset
-           | active_indices -> (
-               match conceal_replacement active_indices with
-               | Some replacement ->
-                   write_chunk ~style:default_style ~text:replacement
-               | None ->
-                   let style = resolve_style_for_active active_indices in
-                   write_range ~style !current_offset offset));
-        (* Always update offset and process boundary kind *)
+        if !current_offset < offset then
+          match !active with
+          | [] -> write_range ~style:base_style !current_offset offset
+          | active_indices -> (
+              match conceal_replacement active_indices with
+              | Some replacement ->
+                  write_chunk ~style:base_style ~text:replacement
+              | None ->
+                  let style = resolve_style_for_active active_indices in
+                  write_range ~style !current_offset offset);
+
         current_offset := offset;
         match b.kind with
         | Start -> active := b.index :: !active
         | End -> active := List.filter (fun idx -> idx <> b.index) !active)
       boundaries;
+
     if !current_offset < content_len then
       match !active with
-      | [] -> write_range ~style:default_style !current_offset content_len
+      | [] -> write_range ~style:base_style !current_offset content_len
       | active_indices -> (
           match conceal_replacement active_indices with
           | Some replacement ->
-              write_chunk ~style:default_style ~text:replacement
+              write_chunk ~style:base_style ~text:replacement
           | None ->
               let style = resolve_style_for_active active_indices in
               write_range ~style !current_offset content_len));
+
   Text_buffer.finalise t.buffer;
   ignore (Renderable.mark_layout_dirty t.node);
   Renderable.request_render t.node
 
-let tokens_of_highlights (highlights : Mosaic_syntax.Highlight.t array) :
-    Highlighter.token array =
-  let should_skip_capture name = String.length name = 0 || name.[0] = '_' in
-  let acc = ref [] in
-  Array.iter
-    (fun (h : Mosaic_syntax.Highlight.t) ->
-      let open Mosaic_syntax.Highlight in
-      let { start_offset; end_offset; group; _ } = h in
-      if start_offset < end_offset && not (should_skip_capture group) then
-        let token =
-          Highlighter.
-            {
-              start_byte = start_offset;
-              end_byte = end_offset;
-              capture = group;
-            }
-        in
-        acc := token :: !acc)
-    highlights;
-  Array.of_list (List.rev !acc)
-
-let cleanup_highlighter_opt = function
-  | None -> ()
-  | Some h -> Highlighter.cleanup h
-
-let update_grammar t grammar_opt =
-  cleanup_highlighter_opt t.highlighter;
-  t.highlighter <- Option.map Highlighter.create grammar_opt
-
 let apply_highlighting t =
-  match t.highlighter with
-  | Some highlighter -> (
+  match t.session with
+  | None ->
+      t.should_render_text_buffer <- true;
+      write_plain_text t t.content t.base_style
+  | Some session -> (
       try
-        let tokens = Highlighter.highlight highlighter t.content in
+        let highlights =
+          Mosaic_syntax.Session.highlight session ~content:t.content
+        in
+        let tokens = tokens_of_highlights highlights in
         t.should_render_text_buffer <- true;
-        update_buffer_with_tokens t tokens
+        if Array.length tokens = 0 then
+          write_plain_text t t.content t.base_style
+        else update_buffer_with_tokens t tokens
       with _ ->
         t.should_render_text_buffer <- true;
-        write_plain_text t t.content t.default_style)
-  | None -> (
-      match t.filetype with
-      | None ->
-          t.should_render_text_buffer <- true;
-          write_plain_text t t.content t.default_style
-      | Some ft ->
-          let result =
-            try
-              Mosaic_syntax.highlight_once t.syntax_client ~filetype:ft
-                ~content:t.content
-            with _ -> Error "syntax_client: unexpected exception"
-          in
-          (match result with
-          | Error _ ->
-              t.should_render_text_buffer <- true;
-              write_plain_text t t.content t.default_style
-          | Ok highlights ->
-              let tokens = tokens_of_highlights highlights in
-              if Array.length tokens = 0 then (
-                t.should_render_text_buffer <- true;
-                write_plain_text t t.content t.default_style)
-              else (
-                t.should_render_text_buffer <- true;
-                update_buffer_with_tokens t tokens));
-          Renderable.request_render t.node)
+        write_plain_text t t.content t.base_style)
 
 let update_content t content =
   t.content <- content;
   if String.length content = 0 then (
-    (* Avoid heavy work for empty content; just clear buffer. *)
     t.should_render_text_buffer <- false;
-    write_plain_text t "" t.default_style)
+    write_plain_text t "" t.base_style)
   else (
-    (* Show fallback first. Optionally suppress drawing until highlight. *)
-    write_plain_text t content t.default_style;
+    write_plain_text t content t.base_style;
     if (not t.draw_unstyled_text) && Option.is_some t.filetype then
       t.should_render_text_buffer <- false
     else t.should_render_text_buffer <- true;
@@ -541,36 +464,28 @@ let set_content t s =
 let set_filetype t ft =
   if t.filetype <> ft then (
     t.filetype <- ft;
+    update_session t;
     schedule_update t)
 
-let set_grammar t grammar_opt =
-  if t.grammar != grammar_opt then (
-    t.grammar <- grammar_opt;
-    update_grammar t grammar_opt;
+let set_languages t langs =
+  if t.languages != langs then (
+    t.languages <- langs;
+    update_session t;
     schedule_update t)
 
-let set_syntax_client t client =
-  if t.syntax_client != client then (
-    t.syntax_client <- client;
-    schedule_update t)
-
-let set_syntax_style t ss =
-  (* physical equality check when possible *)
-  if t.syntax_style != ss then (
-    t.syntax_style <- ss;
-    t.default_style <- Syntax_style.default ss;
-    (* Push defaults into buffer so styles compose once. *)
-    Text_buffer.set_default_fg t.buffer t.default_style.Ansi.Style.fg;
-    Text_buffer.set_default_bg t.buffer t.default_style.Ansi.Style.bg;
-    Text_buffer.set_default_attrs t.buffer
-      (Some t.default_style.Ansi.Style.attrs);
+let set_theme t th =
+  if t.theme != th then (
+    t.theme <- th;
+    t.base_style <- Theme.base th;
+    Text_buffer.set_default_fg t.buffer t.base_style.Ansi.Style.fg;
+    Text_buffer.set_default_bg t.buffer t.base_style.Ansi.Style.bg;
+    Text_buffer.set_default_attrs t.buffer (Some t.base_style.Ansi.Style.attrs);
     Text_buffer.finalise t.buffer;
     schedule_update t)
 
 let set_conceal t v =
   if t.conceal <> v then (
     t.conceal <- v;
-    (* Placeholder: conceal not transforming content currently. Still re-run. *)
     schedule_update t)
 
 let set_draw_unstyled_text t v =
@@ -579,17 +494,16 @@ let set_draw_unstyled_text t v =
     schedule_update t)
 
 let apply_props t (props : Props.t) =
-  (* Core content and language configuration *)
   set_content t props.content;
+  set_languages t props.languages;
   set_filetype t props.filetype;
-  set_grammar t props.grammar;
-  set_syntax_client t props.syntax_client;
-  set_syntax_style t props.syntax_style;
-  (* Rendering behaviour *)
+  set_theme t props.theme;
+
   set_conceal t props.conceal;
   set_draw_unstyled_text t props.draw_unstyled_text;
   set_wrap_mode t props.wrap_mode;
-  (* Selection and tab indicators *)
+
+  set_tab_width t props.tab_width;
   set_selection_bg t props.selection_bg;
   set_selection_fg t props.selection_fg;
   set_tab_indicator t props.tab_indicator;
@@ -604,7 +518,9 @@ let measure t ~known_dimensions ~available_space ~style:_ =
       if t.applied_wrap_mode <> m then (
         Text_buffer_view.set_wrap_mode t.view m;
         t.applied_wrap_mode <- m));
+
   let wrap_enabled = match t.wrap_mode with `None -> false | _ -> true in
+
   let resolved_width =
     let from_known =
       match known_dimensions with
@@ -626,6 +542,7 @@ let measure t ~known_dimensions ~available_space ~style:_ =
             | Some vp when vp.width > 0 -> Some (float vp.width)
             | _ -> None))
   in
+
   let resolved_height =
     let from_known =
       match known_dimensions with
@@ -647,6 +564,7 @@ let measure t ~known_dimensions ~available_space ~style:_ =
             | Some vp when vp.height > 0 -> Some (float vp.height)
             | _ -> None))
   in
+
   let wrap_hint =
     match (wrap_enabled, resolved_width) with
     | false, _ -> None
@@ -659,6 +577,7 @@ let measure t ~known_dimensions ~available_space ~style:_ =
   Text_buffer.finalise t.buffer;
   if previous_hint <> t.wrap_width_hint then
     ignore (Renderable.mark_layout_dirty t.node);
+
   let width_for_measure = match wrap_hint with Some w -> w | None -> 0 in
   let height_hint =
     match resolved_height with
@@ -671,6 +590,7 @@ let measure t ~known_dimensions ~available_space ~style:_ =
   in
   let measured_width = max 1 measured.max_width in
   let measured_height = max 1 measured.line_count in
+
   let final_width =
     match resolved_width with
     | Some w when w > 0. -> min measured_width (int_of_float (Float.floor w))
@@ -691,6 +611,7 @@ let render t (_rn : Renderable.t) (grid : Grid.t) ~delta:_ =
     let ly = Renderable.y t.node in
     let lw = Renderable.width t.node in
     let lh = Renderable.height t.node in
+
     let requested_width =
       match t.wrap_mode with
       | `None -> None
@@ -700,6 +621,7 @@ let render t (_rn : Renderable.t) (grid : Grid.t) ~delta:_ =
           | _ when lw > 0 -> Some lw
           | _ -> None)
     in
+
     let need_set_mode =
       match t.wrap_mode with
       | `None -> false
@@ -713,12 +635,15 @@ let render t (_rn : Renderable.t) (grid : Grid.t) ~delta:_ =
        | (`Char | `Word) as m ->
            Text_buffer_view.set_wrap_mode t.view m;
            t.applied_wrap_mode <- m);
+
     if need_set_width then (
       Text_buffer_view.set_wrap_width t.view requested_width;
       t.wrap_width_hint <- requested_width);
+
     if need_set_mode || need_set_width then (
       Text_buffer.finalise t.buffer;
       if need_set_width then ignore (Renderable.mark_layout_dirty t.node));
+
     let gwm = Grid.width_method grid in
     Text_buffer.set_width_method t.buffer gwm;
     let view = Text_buffer.View.create t.buffer in
@@ -730,10 +655,12 @@ let render t (_rn : Renderable.t) (grid : Grid.t) ~delta:_ =
     let tab_w = Text_buffer.tab_width t.buffer in
     let sel_bounds = Text_buffer_view.selection_bounds t.view in
     let sel_style = Text_buffer_view.selection_style t.view in
+
     let resolve_link idx =
       let raw = Text_buffer.View.raw_link view idx in
       if raw = -1 then None else Text_buffer.link_at_index t.buffer raw
     in
+
     let apply_selection base_fg base_bg idx =
       match sel_bounds with
       | None -> (base_fg, base_bg)
@@ -769,6 +696,7 @@ let render t (_rn : Renderable.t) (grid : Grid.t) ~delta:_ =
                   (inv_fg, base_fg)))
       | _ -> (base_fg, base_bg)
     in
+
     let buffer_width = Grid.width grid in
     let buffer_height = Grid.height grid in
     let write_cell = Grid.set_cell_alpha in
@@ -788,6 +716,7 @@ let render t (_rn : Renderable.t) (grid : Grid.t) ~delta:_ =
       | Some v when v.width > 0 -> v.width
       | _ -> if lw > 0 then lw else max 0 (buffer_width - max 0 lx)
     in
+
     for line_idx = start_line to end_line - 1 do
       let line = lines.(line_idx) in
       let dest_y = ly + (line_idx - start_line) in
@@ -802,7 +731,7 @@ let render t (_rn : Renderable.t) (grid : Grid.t) ~delta:_ =
               match Text_buffer.View.fg_opt view idx with
               | Some c -> c
               | None ->
-                  Option.value t.default_style.Ansi.Style.fg
+                  Option.value t.base_style.Ansi.Style.fg
                     ~default:Ansi.Color.white
             in
             let attrs = Text_buffer.View.attrs view idx in
@@ -814,7 +743,7 @@ let render t (_rn : Renderable.t) (grid : Grid.t) ~delta:_ =
                   match Text_buffer.View.bg_opt view idx with
                   | Some c -> c
                   | None ->
-                      Option.value t.default_style.Ansi.Style.bg
+                      Option.value t.base_style.Ansi.Style.bg
                         ~default:(background_at grid ~x:dest_x ~y:dest_y)
                 in
                 let bg =
@@ -912,12 +841,7 @@ let mount ?(props = Props.default) (node : Renderable.t) =
       ~width_method:`Unicode ()
   in
   let view = Text_buffer_view.create buffer in
-  Option.iter
-    (fun i -> Text_buffer_view.set_tab_indicator view (Some i))
-    props.tab_indicator;
-  Option.iter
-    (fun c -> Text_buffer_view.set_tab_indicator_color view (Some c))
-    props.tab_indicator_color;
+
   let t =
     {
       node;
@@ -929,28 +853,43 @@ let mount ?(props = Props.default) (node : Renderable.t) =
         | `None -> `Word
         | `Char -> `Char
         | `Word -> `Word);
-      default_style = props.default_style;
       wrap_width_hint = None;
       viewport = None;
+
       selection_bg = props.selection_bg;
       selection_fg = props.selection_fg;
+
       content = props.content;
       filetype = props.filetype;
-      grammar = props.grammar;
-      syntax_client = props.syntax_client;
-      syntax_style = props.syntax_style;
+      languages = props.languages;
+      session = None;
+
+      theme = props.theme;
+      base_style = Theme.base props.theme;
+
       pending_update = false;
       conceal = props.conceal;
       draw_unstyled_text = props.draw_unstyled_text;
       should_render_text_buffer = true;
-      highlighter = None;
+
+      selectable = props.selectable;
     }
   in
-  Text_buffer.set_default_fg buffer t.default_style.Ansi.Style.fg;
-  Text_buffer.set_default_bg buffer t.default_style.Ansi.Style.bg;
-  Text_buffer.set_default_attrs buffer (Some t.default_style.Ansi.Style.attrs);
+
+  Text_buffer.set_default_fg buffer t.base_style.Ansi.Style.fg;
+  Text_buffer.set_default_bg buffer t.base_style.Ansi.Style.bg;
+  Text_buffer.set_default_attrs buffer (Some t.base_style.Ansi.Style.attrs);
   Text_buffer.finalise buffer;
-  update_grammar t t.grammar;
+
+  Text_buffer.set_tab_width buffer props.tab_width;
+  Option.iter
+    (fun i -> Text_buffer_view.set_tab_indicator view (Some i))
+    props.tab_indicator;
+  Option.iter
+    (fun c -> Text_buffer_view.set_tab_indicator_color view (Some c))
+    props.tab_indicator_color;
+
+  update_session t;
 
   Renderable.set_render node (render t);
   Renderable.set_measure node (Some (measure t));
@@ -973,7 +912,7 @@ let mount ?(props = Props.default) (node : Renderable.t) =
     {
       should_start =
         (fun ~x ~y ->
-          if not props.selectable then false
+          if not t.selectable then false
           else
             let nx = Renderable.x node and ny = Renderable.y node in
             let nw = Renderable.width node and nh = Renderable.height node in
@@ -1018,7 +957,7 @@ let mount ?(props = Props.default) (node : Renderable.t) =
       get_text = (fun () -> get_selected_text t);
     }
   in
-  if props.selectable then
+  if t.selectable then
     Renderable.set_selection node (Some selection_capability)
   else Renderable.set_selection node None;
 

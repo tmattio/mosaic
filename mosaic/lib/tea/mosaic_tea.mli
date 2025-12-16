@@ -1000,18 +1000,15 @@ val input :
 (** {2 Code} *)
 
 module Code : sig
-  type grammar = Mosaic_ui.Code.grammar
-  (** Tree-sitter grammar for syntax highlighting. *)
-
-  module Syntax_style : sig
+  module Theme : sig
     type t
-    (** Syntax highlighting style configuration. *)
+    (** Syntax highlighting theme configuration. *)
 
-    val create : default:Ansi.Style.t -> (string * Ansi.Style.t) list -> t
-    (** [create ~default rules] creates a syntax style from capture rules. *)
+    val create : base:Ansi.Style.t -> (string * Ansi.Style.t) list -> t
+    (** [create ~base rules] creates a theme from capture rules. *)
 
-    val of_default_theme : ?base:Ansi.Style.t -> unit -> t
-    (** [of_default_theme ()] returns the default syntax highlighting theme. *)
+    val default : ?base:Ansi.Style.t -> unit -> t
+    (** [default ()] returns the default syntax highlighting theme. *)
   end
 end
 
@@ -1058,19 +1055,18 @@ val code :
   ?grid_template_areas:Toffee.Style.grid_template_area list ->
   ?grid_row:Toffee.Style.grid_placement Toffee.Geometry.line ->
   ?grid_column:Toffee.Style.grid_placement Toffee.Geometry.line ->
-  ?filetype:string ->
-  ?grammar:Code.grammar ->
-  ?syntax_client:Mosaic_syntax.t ->
+  ?filetype:Mosaic_syntax.filetype ->
+  ?languages:Mosaic_syntax.Set.t ->
+  ?theme:Code.Theme.t ->
   ?conceal:bool ->
   ?draw_unstyled_text:bool ->
   ?wrap_mode:[ `None | `Char | `Word ] ->
+  ?tab_width:int ->
   ?tab_indicator:int ->
   ?tab_indicator_color:Ansi.Color.t ->
   ?selection_bg:Ansi.Color.t ->
   ?selection_fg:Ansi.Color.t ->
-  ?default_style:Ansi.Style.t ->
   ?selectable:bool ->
-  ?syntax_style:Code.Syntax_style.t ->
   string ->
   'msg t
 (** [code content] creates a syntax-highlighted code element. *)
@@ -1129,7 +1125,7 @@ val markdown :
   ?images:Mosaic_markdown.Props.image ->
   ?unknown_inline:Mosaic_markdown.Props.unknown ->
   ?unknown_block:Mosaic_markdown.Props.unknown ->
-  ?syntax_client:Mosaic_syntax.t ->
+  ?languages:Mosaic_syntax.Set.t ->
   string ->
   'msg t
 (** [markdown content] creates a markdown rendering element. *)

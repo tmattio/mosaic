@@ -338,10 +338,10 @@ module Props : sig
             Defaults to true. *)
     wrap : wrap_mode;
         (** Text wrapping mode for code content. Defaults to [`None]. *)
-    syntax : [ `Auto | `Style of Mosaic_ui.Code.Syntax_style.t ];
-        (** Syntax highlighting configuration. [`Auto] builds a default syntax
-            style from {!Style.code_block.block.text}. Custom styles can be
-            provided via [`Style]. *)
+    syntax : [ `Auto | `Theme of Mosaic_ui.Code.Theme.t ];
+        (** Syntax highlighting configuration. [`Auto] builds a default theme
+            from {!Style.code_block.block.text}. Custom themes can be
+            provided via [`Theme]. *)
   }
   (** Code block rendering configuration. *)
 
@@ -353,7 +353,7 @@ module Props : sig
   val code_blocks :
     ?show_fences:bool ->
     ?wrap:wrap_mode ->
-    ?syntax:[ `Auto | `Style of Mosaic_ui.Code.Syntax_style.t ] ->
+    ?syntax:[ `Auto | `Theme of Mosaic_ui.Code.Theme.t ] ->
     unit ->
     code_blocks
   (** [code_blocks ?show_fences ?wrap ?syntax ()] creates a code block
@@ -389,8 +389,8 @@ module Props : sig
         (** Handling strategy for unsupported inline elements. *)
     unknown_block : unknown;
         (** Handling strategy for unsupported block elements. *)
-    syntax_client : Mosaic_syntax.t;
-        (** Syntax highlighting client for code blocks. *)
+    languages : Mosaic_syntax.Set.t;
+        (** Language set for syntax highlighting in code blocks. *)
   }
   (** Complete props configuration for the markdown renderer.
 
@@ -411,7 +411,7 @@ module Props : sig
     ?images:image ->
     ?unknown_inline:unknown ->
     ?unknown_block:unknown ->
-    ?syntax_client:Mosaic_syntax.t ->
+    ?languages:Mosaic_syntax.Set.t ->
     unit ->
     t
   (** [make ?content ?style ?wrap_width ...  ()] creates props with the given
@@ -431,7 +431,7 @@ module Props : sig
       - [images]: [Alt_and_url]
       - [unknown_inline]: [`Plain_text]
       - [unknown_block]: [`Plain_text]
-      - [syntax_client]: {!Mosaic_syntax.default_client ()} *)
+      - [languages]: {!Mosaic_syntax.builtins ()} *)
 
   val default : t
   (** Default props configuration. Equivalent to [make ()]. *)
@@ -440,7 +440,7 @@ module Props : sig
   (** [equal a b] compares two props for equality.
 
       Uses structural equality for [content] and physical equality for [style]
-      and [syntax_client]; structural equality for other fields. This enables
+      and [languages]; structural equality for other fields. This enables
       efficient change detection to avoid redundant re-renders. *)
 end
 
@@ -490,10 +490,10 @@ val set_style : t -> Style.t -> unit
 
     Equivalent to [update t (fun p -> { p with style })]. *)
 
-val set_syntax_client : t -> Mosaic_syntax.t -> unit
-(** [set_syntax_client t client] updates the syntax highlighting client.
+val set_languages : t -> Mosaic_syntax.Set.t -> unit
+(** [set_languages t languages] updates the language set for syntax highlighting.
 
-    Equivalent to [update t (fun p -> { p with syntax_client = client })]. *)
+    Equivalent to [update t (fun p -> { p with languages })]. *)
 
 val parse : ?strict:bool -> string -> Cmarkit.Doc.t
 (** [parse ?strict markdown] parses a markdown string into a document.
@@ -540,7 +540,7 @@ val markdown :
 
     Render a markdown string:
     {[
-      markdown ~props:(Props.make ~doc:(parse "# Hello\n\nWorld!") ()) ()
+      markdown ~props:(Props.make ~content:"# Hello\n\nWorld!" ()) ()
     ]}
 
     Render with custom theme and on_mount callback:
@@ -548,7 +548,7 @@ val markdown :
       let md_ref = ref None in
       markdown
         ~props:(Props.make
-          ~doc:(parse content)
+          ~content
           ~style:Style.default_light
           ())
         ~on_mount:(fun m -> md_ref := Some m)

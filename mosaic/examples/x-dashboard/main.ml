@@ -1145,7 +1145,7 @@ let config_json (r : run) =
     r.id r.name (status_label r.status) r.step hp
 
 let config_tab (r : run) =
-  let syntax_client = Mosaic_syntax.default_client () in
+  let languages = Mosaic_syntax.builtins () in
   let columns =
     [
       Table.column ~header:(Table.cell "Key") ~width:(`Fixed 16) ~justify:`Left
@@ -1171,8 +1171,8 @@ let config_tab (r : run) =
       box ~border:true ~title:"config.json (syntax highlighted)"
         ~padding:(padding 1) ~flex_grow:1.
         [
-          code ~filetype:"json" ~syntax_client
-            ~syntax_style:(Code.Syntax_style.of_default_theme ())
+          code ~filetype:"json" ~languages
+            ~theme:(Code.Theme.default ())
             ~size:{ width = pct 100; height = pct 100 }
             (config_json r);
         ];

@@ -854,19 +854,18 @@ val code :
   ?grid_template_areas:Toffee.Style.grid_template_area list ->
   ?grid_row:Toffee.Style.grid_placement Toffee.Geometry.line ->
   ?grid_column:Toffee.Style.grid_placement Toffee.Geometry.line ->
-  ?filetype:string ->
-  ?grammar:Mosaic_ui.Code.grammar ->
-  ?syntax_client:Mosaic_syntax.t ->
+  ?filetype:Mosaic_syntax.filetype ->
+  ?languages:Mosaic_syntax.Set.t ->
+  ?theme:Mosaic_ui.Code.Theme.t ->
   ?conceal:bool ->
   ?draw_unstyled_text:bool ->
   ?wrap_mode:Mosaic_ui.Code.Props.wrap_mode ->
+  ?tab_width:int ->
   ?tab_indicator:int ->
   ?tab_indicator_color:Ansi.Color.t ->
   ?selection_bg:Ansi.Color.t ->
   ?selection_fg:Ansi.Color.t ->
-  ?default_style:Ansi.Style.t ->
   ?selectable:bool ->
-  ?syntax_style:Mosaic_ui.Code.Syntax_style.t ->
   string ->
   'a t
 (** [code content] creates a syntax-highlighted code vnode. *)
@@ -925,7 +924,7 @@ val markdown :
   ?images:Mosaic_markdown.Props.image ->
   ?unknown_inline:Mosaic_markdown.Props.unknown ->
   ?unknown_block:Mosaic_markdown.Props.unknown ->
-  ?syntax_client:Mosaic_syntax.t ->
+  ?languages:Mosaic_syntax.Set.t ->
   string ->
   'a t
 (** [markdown content] creates a markdown rendering vnode. *)

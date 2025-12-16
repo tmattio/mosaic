@@ -272,7 +272,7 @@ module Props = struct
   type code_blocks = {
     show_fences : bool;
     wrap : wrap_mode;
-    syntax : [ `Auto | `Style of Ui.Code.Syntax_style.t ];
+    syntax : [ `Auto | `Theme of Ui.Code.Theme.t ];
   }
 
   let headings ?(show_prefix = true) ?(wrap = `Word) () = { show_prefix; wrap }
@@ -293,7 +293,7 @@ module Props = struct
     images : image;
     unknown_inline : unknown;
     unknown_block : unknown;
-    syntax_client : Mosaic_syntax.t;
+    languages : Mosaic_syntax.Set.t;
   }
 
   let default =
@@ -310,7 +310,7 @@ module Props = struct
       images = Alt_and_url;
       unknown_inline = `Plain_text;
       unknown_block = `Plain_text;
-      syntax_client = Mosaic_syntax.default_client ();
+      languages = Mosaic_syntax.builtins ();
     }
 
   let make ?(content = default.content) ?(style = default.style)
@@ -321,7 +321,7 @@ module Props = struct
       ?(raw_html = default.raw_html) ?(links = default.links)
       ?(images = default.images) ?(unknown_inline = default.unknown_inline)
       ?(unknown_block = default.unknown_block)
-      ?(syntax_client = default.syntax_client) () =
+      ?(languages = default.languages) () =
     {
       content;
       style;
@@ -335,7 +335,7 @@ module Props = struct
       images;
       unknown_inline;
       unknown_block;
-      syntax_client;
+      languages;
     }
 
   let equal a b =
@@ -347,7 +347,7 @@ module Props = struct
     && a.raw_html = b.raw_html && a.links = b.links && a.images = b.images
     && a.unknown_inline = b.unknown_inline
     && a.unknown_block = b.unknown_block
-    && a.syntax_client == b.syntax_client
+    && a.languages == b.languages
 end
 
 (* --- Internal layout helpers from Style --- *)
@@ -439,13 +439,13 @@ let make_text_fragments ~parent ?text_style ?wrap_mode ?size ?flex_grow
       Ui.Text.set_fragments t fragments;
       Some node
 
-let make_code ~parent ?syntax_style ?filetype ?wrap_mode ~syntax_client content =
+let make_code ~parent ?theme ?filetype ?wrap_mode ~languages content =
   let style = Toffee.Style.make () in
   match create_node parent ~style () with
   | None -> None
   | Some node ->
       let code_props =
-        Ui.Code.Props.make ?syntax_style ?filetype ~syntax_client ?wrap_mode
+        Ui.Code.Props.make ?theme ?filetype ~languages ?wrap_mode
           ?selection_bg:default_selection_bg ?selection_fg:default_selection_fg
           ~content ()
       in
@@ -505,13 +505,8 @@ let default_syntax_overlays =
     ("punctuation.special", style 244);
   ]
 
-let build_syntax_style default =
-  let rules =
-    List.map
-      (fun (capture, overlay) -> (capture, merge_style default overlay))
-      default_syntax_overlays
-  in
-  Ui.Code.Syntax_style.create ~default rules
+let build_theme base =
+  Ui.Code.Theme.create ~base default_syntax_overlays
 
 (* --- Rendering context --- *)
 
@@ -1119,15 +1114,15 @@ and render_code_block ctx ~base_style ~next_is_thematic_break code =
   let filetype =
     match String.lowercase_ascii language with "" -> None | lang -> Some lang
   in
-  let syntax_style =
+  let theme =
     match ctx.props.code_blocks.syntax with
-    | `Style s -> Some s
-    | `Auto -> Some (build_syntax_style text_style)
+    | `Theme t -> t
+    | `Auto -> build_theme text_style
   in
   let code_node =
-    make_code ~parent:ctx.parent ?syntax_style ?filetype
+    make_code ~parent:ctx.parent ~theme ?filetype
       ~wrap_mode:(ui_code_wrap_mode ctx.props.code_blocks.wrap)
-      ~syntax_client:ctx.props.syntax_client code_content
+      ~languages:ctx.props.languages code_content
   in
   match code_node with
   | None -> []
@@ -1413,7 +1408,7 @@ let apply_props t (p : Props.t) =
 let update t f = apply_props t (f t.props)
 let set_content t content = update t (fun p -> { p with content })
 let set_style t style = update t (fun p -> { p with style })
-let set_syntax_client t syntax_client = update t (fun p -> { p with syntax_client })
+let set_languages t languages = update t (fun p -> { p with languages })
 
 (* --- Element API --- *)
 

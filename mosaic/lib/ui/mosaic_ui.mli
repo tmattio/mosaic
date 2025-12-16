@@ -1039,32 +1039,32 @@ val code :
   ?grid_template_areas:Toffee.Style.grid_template_area list ->
   ?grid_row:Toffee.Style.grid_placement Toffee.Geometry.line ->
   ?grid_column:Toffee.Style.grid_placement Toffee.Geometry.line ->
-  ?filetype:string ->
-  ?grammar:Code.grammar ->
-  ?syntax_client:Mosaic_syntax.t ->
+  ?filetype:Mosaic_syntax.filetype ->
+  ?languages:Mosaic_syntax.Set.t ->
+  ?theme:Code.Theme.t ->
   ?conceal:bool ->
   ?draw_unstyled_text:bool ->
   ?wrap_mode:Code.Props.wrap_mode ->
+  ?tab_width:int ->
   ?tab_indicator:int ->
   ?tab_indicator_color:Ansi.Color.t ->
   ?selection_bg:Ansi.Color.t ->
   ?selection_fg:Ansi.Color.t ->
-  ?default_style:Ansi.Style.t ->
   ?selectable:bool ->
-  ?syntax_style:Code.Syntax_style.t ->
   ?on_mount:(Code.t -> unit) ->
   string ->
   element
 (** [code content] creates a syntax-highlighted code element.
 
-    Code elements render text with Tree-sitter syntax highlighting.
+    Code elements render text with Tree-sitter syntax highlighting via
+    [Mosaic_syntax].
 
     {2 Code Props}
     - [content]: Source code text
-    - [filetype]: Language identifier for grammar resolution
-    - [grammar]: Explicit Tree-sitter grammar
-    - [syntax_style]: Color theme for syntax highlighting
-    - [wrap_mode]: Line wrapping behavior (default None)
+    - [filetype]: Language identifier for highlighting
+    - [languages]: Set of available languages (default: built-ins)
+    - [theme]: Color theme for syntax highlighting
+    - [wrap_mode]: Line wrapping behavior (default Word)
     - [selectable]: Enable text selection (default true) *)
 
 (** {1 Rendering} *)
