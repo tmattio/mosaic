@@ -27,7 +27,6 @@ type t = {
   mutable intrinsic_width : int option;
   mutable intrinsic_height : int option;
   mutable draw : (t -> width:int -> height:int -> unit) option;
-  mutable last_drawn : (int * int) option;
 }
 
 let node t = t.node
@@ -53,13 +52,14 @@ let current_dimensions t =
 let run_draw t ~width ~height =
   match t.draw with
   | Some draw when width > 0 && height > 0 ->
-      draw t ~width ~height;
-      t.last_drawn <- Some (width, height)
+      let w = width and h = height in
+      Grid.clear t.surface;
+      let rect = Grid.{ x = 0; y = 0; width = w; height = h } in
+      Grid.with_scissor t.surface rect (fun () -> draw t ~width:w ~height:h)
   | _ -> ()
 
 let set_draw t draw =
   t.draw <- draw;
-  t.last_drawn <- None;
   match draw with
   | None -> ()
   | Some _ ->
@@ -71,23 +71,15 @@ let mark_layout_dirty t =
 
 let clamp_non_negative value = if value < 0 then 0 else value
 
-let ensure_surface_capacity t ~x ~y ~width ~height =
-  let width = clamp_non_negative width in
-  let height = clamp_non_negative height in
-  let end_x = max 0 (x + width) in
-  let end_y = max 0 (y + height) in
-  let surface_width = Grid.width t.surface in
-  let surface_height = Grid.height t.surface in
-  let target_width = max surface_width end_x in
-  let target_height = max surface_height end_y in
-  if target_width <> surface_width || target_height <> surface_height then
-    Grid.resize t.surface ~width:target_width ~height:target_height
-
 let update_bounds t ~x ~y ~width ~height =
   let width = clamp_non_negative width in
   let height = clamp_non_negative height in
   let end_x = max 0 (x + width) in
   let end_y = max 0 (y + height) in
+  let layout_w = Renderable.width t.node in
+  let layout_h = Renderable.height t.node in
+  let end_x = if layout_w > 0 then min end_x layout_w else end_x in
+  let end_y = if layout_h > 0 then min end_y layout_h else end_y in
   let changed = ref false in
   if end_x > t.content_width then (
     t.content_width <- end_x;
@@ -110,7 +102,6 @@ let write_text t ~x ~y ?style text =
     let str_width = text_display_width t text in
     if str_width <= 0 then false
     else (
-      ensure_surface_capacity t ~x ~y ~width:str_width ~height:1;
       ignore (update_bounds t ~x ~y ~width:str_width ~height:1);
       Grid.draw_text ?style t.surface ~x ~y ~text;
       true)
@@ -129,7 +120,6 @@ let plot t ~x ~y ?(style = Ansi.Style.default) text =
 let fill_rect t ~x ~y ~width ~height ~color =
   if width <= 0 || height <= 0 then ()
   else (
-    ensure_surface_capacity t ~x ~y ~width ~height;
     ignore (update_bounds t ~x ~y ~width ~height);
     Grid.fill_rect t.surface ~x ~y ~width ~height ~color;
     request_render t)
@@ -138,8 +128,7 @@ let draw_box t ~x ~y ~width ~height ?(border_style = Grid.Border.single)
     ?border_sides ?(border_color = Ansi.Color.default)
     ?(background = transparent) ?title ?title_alignment () =
   if width <= 0 || height <= 0 then ()
-  else (
-    ensure_surface_capacity t ~x ~y ~width ~height;
+  else
     let border_chars = border_style in
     let border_style = Ansi.Style.make ~fg:border_color ~bg:background () in
     let sides =
@@ -151,7 +140,7 @@ let draw_box t ~x ~y ~width ~height ?(border_style = Grid.Border.single)
     Grid.draw_box t.surface ~x ~y ~width ~height ~border_chars
       ~border_sides:sides ~border_style ~bg_color:background ~should_fill:true
       ?title ?title_alignment ();
-    request_render t)
+    request_render t
 
 let set_intrinsic_size t ~width ~height =
   t.intrinsic_width <- Some (max 1 width);
@@ -194,14 +183,6 @@ let measure t ~(known_dimensions : float option Toffee.Geometry.Size.t)
 
 let draw_line t ~x1 ~y1 ~x2 ~y2 ?(style = Ansi.Style.default) ?(kind = `Line) ()
     =
-  let min_x = min x1 x2 in
-  let max_x = max x1 x2 in
-  let min_y = min y1 y2 in
-  let max_y = max y1 y2 in
-  let bounds_width = max_x - min_x + 1 in
-  let bounds_height = max_y - min_y + 1 in
-  ensure_surface_capacity t ~x:min_x ~y:min_y ~width:bounds_width
-    ~height:bounds_height;
   let changed = ref false in
   let draw_cell x y glyph =
     if write_text t ~x ~y ~style glyph then changed := true
@@ -286,17 +267,15 @@ let render_canvas t renderable grid ~delta:_ =
   if lw <= 0 || lh <= 0 then ()
   else (
     resize_surface_to_layout t;
-    (match t.draw with
-    | None -> ()
-    | Some _ ->
-        let dims = (lw, lh) in
-        if t.last_drawn <> Some dims then run_draw t ~width:lw ~height:lh);
+    (match t.draw with None -> () | Some _ -> run_draw t ~width:lw ~height:lh);
     let src = t.surface in
-    let width = min lw (Grid.width src) in
-    let height = min lh (Grid.height src) in
-    if width > 0 && height > 0 then
-      Grid.blit_region ~src ~dst:grid ~src_x:0 ~src_y:0 ~width ~height ~dst_x:lx
-        ~dst_y:ly)
+    let blit_w = min lw (Grid.width src) in
+    let blit_h = min lh (Grid.height src) in
+    if blit_w > 0 && blit_h > 0 then
+      let rect = Grid.{ x = lx; y = ly; width = blit_w; height = blit_h } in
+      Grid.with_scissor grid rect (fun () ->
+          Grid.blit_region ~src ~dst:grid ~src_x:0 ~src_y:0 ~width:blit_w
+            ~height:blit_h ~dst_x:lx ~dst_y:ly))
 
 let mount ?(props = Props.default) node =
   let iw = max 0 props.initial_width in
@@ -314,7 +293,6 @@ let mount ?(props = Props.default) node =
       intrinsic_width = (if iw > 0 then Some iw else None);
       intrinsic_height = (if ih > 0 then Some ih else None);
       draw = None;
-      last_drawn = None;
     }
   in
   Renderable.set_render node (render_canvas canvas);
