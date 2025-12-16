@@ -67,7 +67,6 @@ let set_default_style t style =
   Text_buffer.set_default_bg t.buffer style.Ansi.Style.bg;
   Text_buffer.set_default_attrs t.buffer (Some style.Ansi.Style.attrs);
   Text_buffer.finalise t.buffer;
-  ignore (Renderable.mark_layout_dirty t.node);
   Renderable.request_render t.node
 
 let request_render t = Renderable.request_render t.node
