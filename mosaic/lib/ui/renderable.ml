@@ -532,7 +532,6 @@ let set_style t style =
         t.original_display <- display;
       t.layout_dirty <- true;
       t.primary_sorted_dirty <- true;
-      invalidate_cache t;
       t.schedule ();
       Ok ()
 
@@ -541,7 +540,6 @@ let style t =
 
 let mark_layout_dirty t =
   t.layout_dirty <- true;
-  invalidate_cache t;
   Error.map_toffee_error (Toffee.mark_dirty t.tree t.node)
 
 let layout_dirty t = t.layout_dirty

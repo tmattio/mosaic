@@ -534,10 +534,12 @@ let overflow_scissor (node : Renderable.t) ~(target_is_buffered : bool) :
 let rec render_node_shared (captured_num : int option) (node : Renderable.t)
     (grid : Grid.t) (hits : Screen.Hit_grid.t) ~delta : unit =
   if Renderable.visible node then (
-    Renderable.Internal.pre_render_update node ~delta;
+    (* Capture layout values BEFORE pre_render_update, as callbacks like
+       on_size_change can mark layout dirty and invalidate the cache. *)
     let w = Renderable.width node and h = Renderable.height node in
+    let hx = Renderable.x node and hy = Renderable.y node in
+    Renderable.Internal.pre_render_update node ~delta;
     if w > 0 && h > 0 then (
-      let hx = Renderable.x node and hy = Renderable.y node in
       let nid = Renderable.Internal.number node in
 
       let self_target, using_buffer =
