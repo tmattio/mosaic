@@ -426,7 +426,13 @@ let mount ?props node =
   in
   let props = Option.value props ~default:default_props in
   let slider =
-    { node; props; prop_value = props.value; dragging = false; drag_offset_virtual = 0. }
+    {
+      node;
+      props;
+      prop_value = props.value;
+      dragging = false;
+      drag_offset_virtual = 0.;
+    }
   in
   let clamped_initial = clamp_value slider slider.props.value in
   if not (Float.equal clamped_initial slider.props.value) then

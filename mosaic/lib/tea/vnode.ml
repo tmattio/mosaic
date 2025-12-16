@@ -700,8 +700,8 @@ let code ?id ?key
   in
   let code_props =
     Code.Props.make ~content ?filetype ?languages ?theme ?conceal
-      ?draw_unstyled_text ?wrap_mode ?tab_width ?tab_indicator ?tab_indicator_color
-      ?selection_bg ?selection_fg ?selectable ()
+      ?draw_unstyled_text ?wrap_mode ?tab_width ?tab_indicator
+      ?tab_indicator_color ?selection_bg ?selection_fg ?selectable ()
   in
   let spec = Code_spec code_props in
   let props =

@@ -18,12 +18,11 @@ let read_with_select pty buffer offset length timeout =
         else if n = 0 then continue := false (* EOF *)
       with
       | Unix.Unix_error (Unix.EAGAIN, _, _)
-      | Unix.Unix_error (Unix.EWOULDBLOCK, _, _)
-      ->
-        ()
+      | Unix.Unix_error (Unix.EWOULDBLOCK, _, _) ->
+          ()
       | Unix.Unix_error (Unix.EIO, _, _) ->
-        (* EIO on PTY master means child process exited - treat as EOF *)
-        continue := false
+          (* EIO on PTY master means child process exited - treat as EOF *)
+          continue := false
   done;
   !total_read
 

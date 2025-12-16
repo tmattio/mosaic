@@ -85,8 +85,7 @@ let view model =
         [
           box ~border:true ~border_color ~flex_grow:1.
             [
-              code ~filetype:(lang_filetype model.lang) ~languages
-                ~theme
+              code ~filetype:(lang_filetype model.lang) ~languages ~theme
                 ~size:{ width = pct 100; height = pct 100 }
                 (lang_content model.lang);
             ];

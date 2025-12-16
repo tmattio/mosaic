@@ -393,10 +393,10 @@ let handle_key t event =
   let kev = Event.Key.data event in
   match kev.event_type with
   | Release -> false
-  | Press | Repeat ->
+  | Press | Repeat -> (
       let w = Renderable.width t.node in
       let visible_count = calculate_visible_count t ~width:w in
-      (match kev.key with
+      match kev.key with
       | Left ->
           move_left t;
           true

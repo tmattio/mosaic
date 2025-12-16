@@ -320,8 +320,8 @@ module Props = struct
       ?(headings = default.headings) ?(code_blocks = default.code_blocks)
       ?(raw_html = default.raw_html) ?(links = default.links)
       ?(images = default.images) ?(unknown_inline = default.unknown_inline)
-      ?(unknown_block = default.unknown_block)
-      ?(languages = default.languages) () =
+      ?(unknown_block = default.unknown_block) ?(languages = default.languages)
+      () =
     {
       content;
       style;
@@ -340,10 +340,12 @@ module Props = struct
 
   let equal a b =
     String.equal a.content b.content
-    && a.style == b.style && a.wrap_width = b.wrap_width
+    && a.style == b.style
+    && a.wrap_width = b.wrap_width
     && a.paragraph_wrap = b.paragraph_wrap
     && a.block_quote_wrap = b.block_quote_wrap
-    && a.headings = b.headings && a.code_blocks = b.code_blocks
+    && a.headings = b.headings
+    && a.code_blocks = b.code_blocks
     && a.raw_html = b.raw_html && a.links = b.links && a.images = b.images
     && a.unknown_inline = b.unknown_inline
     && a.unknown_block = b.unknown_block
@@ -505,8 +507,7 @@ let default_syntax_overlays =
     ("punctuation.special", style 244);
   ]
 
-let build_theme base =
-  Ui.Code.Theme.create ~base default_syntax_overlays
+let build_theme base = Ui.Code.Theme.create ~base default_syntax_overlays
 
 (* --- Rendering context --- *)
 
@@ -591,7 +592,8 @@ let render_unknown_inline ctx (inline : Cmarkit.Inline.t) =
         if plain = "" then "[unsupported inline]" else "[unsupported inline] "
       in
       let s =
-        merge_style ctx.props.style.inline.raw_html (Ansi.Style.make ~bold:true ())
+        merge_style ctx.props.style.inline.raw_html
+          (Ansi.Style.make ~bold:true ())
       in
       if plain = "" then [ Fragment.text ~style:s msg ]
       else [ Fragment.text ~style:s (msg ^ plain) ]
@@ -658,7 +660,8 @@ and render_link ctx (link : Cmarkit.Inline.Link.t) =
         | Some uri -> Ansi.Style.hyperlink uri ctx.props.style.inline.link
       in
       [ Fragment.span ~style text_frags ]
-  | Props.Plain -> [ Fragment.span ~style:ctx.props.style.inline.link text_frags ]
+  | Props.Plain ->
+      [ Fragment.span ~style:ctx.props.style.inline.link text_frags ]
   | Props.Inline_url { left; right; style } ->
       let link_text =
         [ Fragment.span ~style:ctx.props.style.inline.link text_frags ]
@@ -802,16 +805,15 @@ and render_unknown_block ctx ~base_style (blk : Cmarkit.Block.t) =
         match node with
         | None -> []
         | Some n -> (
-            match
-              block_container ~parent:ctx.parent block_style [ n ]
-            with
+            match block_container ~parent:ctx.parent block_style [ n ] with
             | None -> []
             | Some c -> [ c ]))
   | `Debug -> (
       ignore "mosaic.markdown: unknown block node (debug)";
       let msg = "[unsupported block]" in
       let s =
-        merge_style ctx.props.style.inline.raw_html (Ansi.Style.make ~bold:true ())
+        merge_style ctx.props.style.inline.raw_html
+          (Ansi.Style.make ~bold:true ())
       in
       let node =
         make_text ~parent:ctx.parent ~text_style:s
@@ -822,8 +824,7 @@ and render_unknown_block ctx ~base_style (blk : Cmarkit.Block.t) =
       | None -> []
       | Some n -> (
           match
-            block_container ~parent:ctx.parent ctx.props.style.paragraph
-              [ n ]
+            block_container ~parent:ctx.parent ctx.props.style.paragraph [ n ]
           with
           | None -> []
           | Some c -> [ c ]))
@@ -858,15 +859,12 @@ and render_paragraph ctx ~base_style ~next_is_thematic_break paragraph =
         make_text ~parent:ctx.parent ~text_style ~wrap_mode
           (inline_plain_text inline)
     | _ ->
-        make_text_fragments ~parent:ctx.parent ~text_style
-          ~wrap_mode fragments
+        make_text_fragments ~parent:ctx.parent ~text_style ~wrap_mode fragments
   in
   match text_node with
   | None -> []
   | Some node -> (
-      match
-        block_container ~parent:ctx.parent block_style [ node ]
-      with
+      match block_container ~parent:ctx.parent block_style [ node ] with
       | None -> []
       | Some container -> [ container ])
 
@@ -882,16 +880,17 @@ and render_heading ctx ~base_style ~next_is_thematic_break heading =
   let text_style = merge_style base_style block_style.text in
   let wrap_mode = ui_text_wrap_mode ctx.props.headings.wrap in
   let heading_text =
-    make_text_fragments ~parent:ctx.parent ~text_style ~wrap_mode
-      fragments
+    make_text_fragments ~parent:ctx.parent ~text_style ~wrap_mode fragments
   in
   let row =
     if ctx.props.headings.show_prefix then
       let hashes = String.make (clamp 1 6 level) '#' in
-      let prefix_style = merge_style base_style ctx.props.style.headings.prefix in
+      let prefix_style =
+        merge_style base_style ctx.props.style.headings.prefix
+      in
       let prefix =
-        make_text ~parent:ctx.parent ~text_style:prefix_style
-          ~wrap_mode:`None hashes
+        make_text ~parent:ctx.parent ~text_style:prefix_style ~wrap_mode:`None
+          hashes
       in
       match (prefix, heading_text) with
       | Some p, Some h ->
@@ -909,9 +908,7 @@ and render_heading ctx ~base_style ~next_is_thematic_break heading =
   match row with
   | None -> []
   | Some r -> (
-      match
-        block_container ~parent:ctx.parent block_style [ r ]
-      with
+      match block_container ~parent:ctx.parent block_style [ r ] with
       | None -> []
       | Some container -> [ container ])
 
@@ -1048,8 +1045,8 @@ and render_list_item ctx ~base_style
   in
   let marker_content = indent_prefix ^ marker_text in
   match
-    make_text ~parent:ctx.parent ~text_style:marker_style
-      ~wrap_mode:`None marker_content
+    make_text ~parent:ctx.parent ~text_style:marker_style ~wrap_mode:`None
+      marker_content
   with
   | None -> None
   | Some marker -> (
@@ -1082,8 +1079,7 @@ and render_list_content ctx ~base_style block =
   | Paragraph (p, _) -> (
       let fragments = fragments_of_inline ctx (Paragraph.inline p) in
       match
-        make_text_fragments ~parent:ctx.parent
-          ~text_style:base_style
+        make_text_fragments ~parent:ctx.parent ~text_style:base_style
           ~wrap_mode:(ui_text_wrap_mode ctx.paragraph_wrap)
           fragments
       with
@@ -1096,7 +1092,8 @@ and render_list_content ctx ~base_style block =
 
 and render_code_block ctx ~base_style ~next_is_thematic_break code =
   let block_style =
-    normalize_block_spacing ctx.props.style.code_block.block ~next_is_thematic_break
+    normalize_block_spacing ctx.props.style.code_block.block
+      ~next_is_thematic_break
   in
   let text_style = merge_style base_style block_style.text in
   let lines =
@@ -1140,8 +1137,7 @@ and render_code_block ctx ~base_style ~next_is_thematic_break code =
               ]
           in
           let start_fence =
-            make_text_fragments ~parent:ctx.parent ~wrap_mode:`None
-              start_frags
+            make_text_fragments ~parent:ctx.parent ~wrap_mode:`None start_frags
           in
           let end_fence =
             make_text ~parent:ctx.parent ~text_style:fence_style
@@ -1159,10 +1155,7 @@ and render_code_block ctx ~base_style ~next_is_thematic_break code =
       with
       | None -> []
       | Some inner -> (
-          match
-            block_container ~parent:ctx.parent block_style
-              [ inner ]
-          with
+          match block_container ~parent:ctx.parent block_style [ inner ] with
           | None -> []
           | Some container -> [ container ]))
 
@@ -1189,15 +1182,11 @@ and render_thematic_break ctx =
       }
   in
   match
-    make_text ~parent:ctx.parent ~text_style:style ~wrap_mode:`None
-      line
+    make_text ~parent:ctx.parent ~text_style:style ~wrap_mode:`None line
   with
   | None -> []
   | Some text_node -> (
-      match
-        block_container ~parent:ctx.parent block_style
-          [ text_node ]
-      with
+      match block_container ~parent:ctx.parent block_style [ text_node ] with
       | None -> []
       | Some container -> [ container ])
 
@@ -1210,7 +1199,8 @@ and render_html_block ctx ~base_style ~next_is_thematic_break lines =
         List.map Cmarkit.Block_line.to_string lines |> String.concat "\n"
       in
       let block_style =
-        normalize_block_spacing ctx.props.style.paragraph ~next_is_thematic_break
+        normalize_block_spacing ctx.props.style.paragraph
+          ~next_is_thematic_break
       in
       match
         make_text ~parent:ctx.parent ~text_style
@@ -1220,8 +1210,7 @@ and render_html_block ctx ~base_style ~next_is_thematic_break lines =
       | None -> []
       | Some text_node -> (
           match
-            block_container ~parent:ctx.parent block_style
-              [ text_node ]
+            block_container ~parent:ctx.parent block_style [ text_node ]
           with
           | None -> []
           | Some container -> [ container ]))
@@ -1283,19 +1272,18 @@ and render_table ctx ~next_is_thematic_break table =
         body
     in
     let block =
-      normalize_block_spacing ctx.props.style.table.block ~next_is_thematic_break
+      normalize_block_spacing ctx.props.style.table.block
+        ~next_is_thematic_break
     in
     match
       make_table ~parent:ctx.parent ~columns ~rows:table_rows
         ~box_style:ctx.props.style.table.box_style
-        ~border_style:ctx.props.style.table.border ~cell_style:ctx.props.style.table.cell
-        ~show_header:(headers <> []) ()
+        ~border_style:ctx.props.style.table.border
+        ~cell_style:ctx.props.style.table.cell ~show_header:(headers <> []) ()
     with
     | None -> []
     | Some table_node -> (
-        match
-          block_container ~parent:ctx.parent block [ table_node ]
-        with
+        match block_container ~parent:ctx.parent block [ table_node ] with
         | None -> []
         | Some container -> [ container ])
 
@@ -1348,9 +1336,7 @@ let render_content t =
   in
 
   (* Apply document theming as a root container, without touching host layout. *)
-  (match
-     block_container ~parent:ctx.parent p.style.document children
-   with
+  (match block_container ~parent:ctx.parent p.style.document children with
   | None -> ignore (append_children ~parent:t.content children)
   | Some root -> ignore (append_child ~parent:t.content ~child:root));
 

@@ -16,7 +16,8 @@ let render_node ~width ~height node =
 let render_chart ~width ~height draw =
   let draw' canvas ~width ~height = ignore (draw canvas ~width ~height) in
   let canvas =
-    canvas ~id:"canvas" ~initial_width:width ~initial_height:height ~draw:draw' ()
+    canvas ~id:"canvas" ~initial_width:width ~initial_height:height ~draw:draw'
+      ()
   in
   render_node ~width ~height canvas
 

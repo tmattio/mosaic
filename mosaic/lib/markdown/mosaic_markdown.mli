@@ -8,8 +8,8 @@
 
     - {!Style}: purely visual theming (colors, margins/padding)
     - {!Props}: component configuration including the document to render,
-      rendering policy (wrapping, link/image behavior, fences, etc.), and
-      syntax highlighting client
+      rendering policy (wrapping, link/image behavior, fences, etc.), and syntax
+      highlighting client
 
     Use {!parse} to convert a markdown string into a {!Cmarkit.Doc.t}, then pass
     the doc to the renderer via {!Props}. This separation allows caching parsed
@@ -61,8 +61,8 @@ module Style : sig
   }
   (** Heading theme configuration.
 
-      Heading styles combine [base] with per-level overrides from [levels].
-      Use {!heading} to resolve the final style for a given level. *)
+      Heading styles combine [base] with per-level overrides from [levels]. Use
+      {!heading} to resolve the final style for a given level. *)
 
   type list_style = {
     block : block;
@@ -98,13 +98,13 @@ module Style : sig
       lists with custom markers and styles. *)
 
   type code_block = {
-    block : block;
-        (** Block style for code block containers. *)
+    block : block;  (** Block style for code block containers. *)
     fence : Ansi.Style.t;
         (** Style for fence markers (the backticks: ```). Only rendered when
             {!Props.code_blocks.show_fences} is true. *)
     language : Ansi.Style.t;
-        (** Style for the language identifier appearing after the opening fence. *)
+        (** Style for the language identifier appearing after the opening fence.
+        *)
   }
   (** Code block theme configuration.
 
@@ -119,17 +119,13 @@ module Style : sig
       to "─" in the default themes. Empty glyphs are replaced with "-". *)
 
   type table_style = {
-    block : block;
-        (** Block style for table containers. *)
-    header : Ansi.Style.t;
-        (** Text style for table header cells. *)
-    cell : Ansi.Style.t;
-        (** Text style for table body cells. *)
-    border : Ansi.Style.t;
-        (** Style for table borders and dividers. *)
+    block : block;  (** Block style for table containers. *)
+    header : Ansi.Style.t;  (** Text style for table header cells. *)
+    cell : Ansi.Style.t;  (** Text style for table body cells. *)
+    border : Ansi.Style.t;  (** Style for table borders and dividers. *)
     box_style : Mosaic_ui.Table.box_style;
-        (** Box drawing style for table borders. See {!Mosaic_ui.Table.box_style}
-            for available styles. *)
+        (** Box drawing style for table borders. See
+            {!Mosaic_ui.Table.box_style} for available styles. *)
   }
   (** Table theme configuration for GFM tables. *)
 
@@ -138,8 +134,7 @@ module Style : sig
         (** Style for emphasized text (typically rendered as italic). *)
     strong : Ansi.Style.t;
         (** Style for strong emphasis (typically rendered as bold). *)
-    code : Ansi.Style.t;
-        (** Style for inline code spans. *)
+    code : Ansi.Style.t;  (** Style for inline code spans. *)
     link : Ansi.Style.t;
         (** Style for links. Hyperlink rendering behavior is controlled by
             {!Props.links}. *)
@@ -149,8 +144,7 @@ module Style : sig
     raw_html : Ansi.Style.t;
         (** Style for raw HTML when rendered as text. Only used when
             {!Props.raw_html} is [`Show_as_text]. *)
-    strike : Ansi.Style.t;
-        (** Style for strikethrough text (GFM extension). *)
+    strike : Ansi.Style.t;  (** Style for strikethrough text (GFM extension). *)
   }
   (** Inline element theme configuration.
 
@@ -161,23 +155,18 @@ module Style : sig
     document : block;
         (** Root document container style. Applied to the outermost markdown
             container. *)
-    paragraph : block;
-        (** Style for paragraph blocks. *)
-    headings : headings;
-        (** Heading configuration for all levels (1-6). *)
+    paragraph : block;  (** Style for paragraph blocks. *)
+    headings : headings;  (** Heading configuration for all levels (1-6). *)
     block_quote : block;
         (** Style for block quotes. Rendered with a left border using the
             foreground color from [block_quote.text]. *)
     list : list_style;
         (** List configuration for ordered, unordered, and task lists. *)
-    code_block : code_block;
-        (** Code block configuration. *)
+    code_block : code_block;  (** Code block configuration. *)
     thematic_break : thematic_break;
         (** Thematic break (horizontal rule) configuration. *)
-    table : table_style;
-        (** Table configuration for GFM tables. *)
-    inline : inline;
-        (** Inline element styles. *)
+    table : table_style;  (** Table configuration for GFM tables. *)
+    inline : inline;  (** Inline element styles. *)
   }
   (** Complete theme configuration for markdown rendering.
 
@@ -278,6 +267,11 @@ module Props : sig
       - [`Debug]: Render as plain text with a debug marker prefix. Useful for
         identifying unsupported content. *)
 
+  (** Link rendering strategy.
+
+      Controls how markdown links are rendered. The link destination is resolved
+      from inline link definitions or reference-style link definitions in the
+      document. *)
   type link =
     | Hyperlink
         (** Render as terminal hyperlink using ANSI escape codes. Link text is
@@ -298,15 +292,14 @@ module Props : sig
         (text:Mosaic_ui.Text.Fragment.t list ->
         dest:string option ->
         Mosaic_ui.Text.Fragment.t list)
-        (** Custom link renderer. [text] contains the link text fragments, [dest]
-            is the link destination if available. Returns the final fragments to
-            render. *)
-  (** Link rendering strategy.
+        (** Custom link renderer. [text] contains the link text fragments,
+            [dest] is the link destination if available. Returns the final
+            fragments to render. *)
 
-      Controls how markdown links are rendered. The link destination is resolved
-      from inline link definitions or reference-style link definitions in the
-      document. *)
+  (** Image rendering strategy.
 
+      Terminal applications cannot display images directly, so this controls how
+      image references are represented in text. *)
   type image =
     | Alt_only
         (** Render alt text as "[Image: <alt>]" with {!Style.inline.image}
@@ -314,16 +307,11 @@ module Props : sig
     | Alt_and_url
         (** Render as "[Image: <alt> <<uri>>]" with {!Style.inline.image}
             styling. If no URI is provided, renders like [Alt_only]. *)
-    | Hidden
-        (** Omit images from output entirely. *)
+    | Hidden  (** Omit images from output entirely. *)
     | Custom of
         (alt:string -> uri:string option -> Mosaic_ui.Text.Fragment.t list)
         (** Custom image renderer. [alt] is the image alt text, [uri] is the
             image source if available. Returns fragments to render. *)
-  (** Image rendering strategy.
-
-      Terminal applications cannot display images directly, so this controls how
-      image references are represented in text. *)
 
   type headings = { show_prefix : bool; wrap : wrap_mode }
   (** Heading rendering configuration.
@@ -340,8 +328,8 @@ module Props : sig
         (** Text wrapping mode for code content. Defaults to [`None]. *)
     syntax : [ `Auto | `Theme of Mosaic_ui.Code.Theme.t ];
         (** Syntax highlighting configuration. [`Auto] builds a default theme
-            from {!Style.code_block.block.text}. Custom themes can be
-            provided via [`Theme]. *)
+            from {!Style.code_block.block.text}. Custom themes can be provided
+            via [`Theme]. *)
   }
   (** Code block rendering configuration. *)
 
@@ -359,7 +347,8 @@ module Props : sig
   (** [code_blocks ?show_fences ?wrap ?syntax ()] creates a code block
       configuration.
 
-      Defaults: [show_fences] is true, [wrap] is [`None], [syntax] is [`Auto]. *)
+      Defaults: [show_fences] is true, [wrap] is [`None], [syntax] is [`Auto].
+  *)
 
   (** {2 Props record} *)
 
@@ -369,22 +358,17 @@ module Props : sig
     style : Style.t;
         (** Visual theme configuration for all markdown elements. *)
     wrap_width : wrap_width;
-        (** Logical wrapping width for the renderer. [`Auto] uses the host node's
-            measured width; [`Columns n] uses a fixed width. *)
-    paragraph_wrap : wrap_mode;
-        (** Text wrapping mode for paragraph blocks. *)
+        (** Logical wrapping width for the renderer. [`Auto] uses the host
+            node's measured width; [`Columns n] uses a fixed width. *)
+    paragraph_wrap : wrap_mode;  (** Text wrapping mode for paragraph blocks. *)
     block_quote_wrap : wrap_mode;
         (** Text wrapping mode for block quote content. *)
-    headings : headings;
-        (** Heading rendering configuration. *)
+    headings : headings;  (** Heading rendering configuration. *)
     code_blocks : code_blocks;
         (** Code block rendering and syntax highlighting configuration. *)
-    raw_html : raw_html;
-        (** Raw HTML handling strategy. *)
-    links : link;
-        (** Link rendering strategy. *)
-    images : image;
-        (** Image rendering strategy. *)
+    raw_html : raw_html;  (** Raw HTML handling strategy. *)
+    links : link;  (** Link rendering strategy. *)
+    images : image;  (** Image rendering strategy. *)
     unknown_inline : unknown;
         (** Handling strategy for unsupported inline elements. *)
     unknown_block : unknown;
@@ -417,8 +401,8 @@ module Props : sig
   (** [make ?content ?style ?wrap_width ...  ()] creates props with the given
       configuration.
 
-      All parameters are optional and default to sensible values from {!default}.
-      Defaults include:
+      All parameters are optional and default to sensible values from
+      {!default}. Defaults include:
       - [content]: Empty string
       - [style]: {!Style.default_dark}
       - [wrap_width]: [`Auto]
@@ -491,7 +475,8 @@ val set_style : t -> Style.t -> unit
     Equivalent to [update t (fun p -> { p with style })]. *)
 
 val set_languages : t -> Mosaic_syntax.Set.t -> unit
-(** [set_languages t languages] updates the language set for syntax highlighting.
+(** [set_languages t languages] updates the language set for syntax
+    highlighting.
 
     Equivalent to [update t (fun p -> { p with languages })]. *)
 
@@ -528,7 +513,8 @@ val markdown :
     - [id]: Optional element identifier. Auto-generated if omitted.
     - [visible]: Visibility flag. Defaults to true.
     - [z_index]: Rendering layer. Defaults to 0.
-    - [buffer]: Buffer mode for rendering. See {!Mosaic_ui.Renderable.Props.buffer_mode}.
+    - [buffer]: Buffer mode for rendering. See
+      {!Mosaic_ui.Renderable.Props.buffer_mode}.
     - [live]: Live update mode flag.
     - [layout]: Toffee layout style for the host node. Defaults to a vertical
       flex container with 100% width.
@@ -547,10 +533,7 @@ val markdown :
     {[
       let md_ref = ref None in
       markdown
-        ~props:(Props.make
-          ~content
-          ~style:Style.default_light
-          ())
+        ~props:(Props.make ~content ~style:Style.default_light ())
         ~on_mount:(fun m -> md_ref := Some m)
         ()
     ]} *)

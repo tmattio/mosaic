@@ -1,10 +1,7 @@
 (* Use local modules directly within mosaic.ui to avoid cyclic deps *)
 
 module Theme = struct
-  type t = {
-    base : Ansi.Style.t;
-    overlays : (string, Ansi.Style.t) Hashtbl.t;
-  }
+  type t = { base : Ansi.Style.t; overlays : (string, Ansi.Style.t) Hashtbl.t }
 
   let create ~base rules =
     let overlays = Hashtbl.create 32 in
@@ -89,13 +86,10 @@ module Props = struct
     selectable : bool;
   }
 
-  let make ?(content = "") ?filetype
-      ?(languages = Mosaic_syntax.builtins ())
+  let make ?(content = "") ?filetype ?(languages = Mosaic_syntax.builtins ())
       ?theme ?(conceal = true) ?(draw_unstyled_text = true)
-      ?(wrap_mode = (`Word : wrap_mode))
-      ?(tab_width = 4)
-      ?tab_indicator ?tab_indicator_color ?selection_bg ?selection_fg
-      ?(selectable = true) () =
+      ?(wrap_mode = (`Word : wrap_mode)) ?(tab_width = 4) ?tab_indicator
+      ?tab_indicator_color ?selection_bg ?selection_fg ?(selectable = true) () =
     let theme =
       match theme with
       | Some t -> t
@@ -121,8 +115,7 @@ module Props = struct
 
   let equal a b =
     String.equal a.content b.content
-    && a.filetype = b.filetype
-    && a.languages == b.languages
+    && a.filetype = b.filetype && a.languages == b.languages
     && a.theme == b.theme
     && Bool.equal a.conceal b.conceal
     && Bool.equal a.draw_unstyled_text b.draw_unstyled_text
@@ -169,15 +162,12 @@ type t = {
   node : Renderable.t;
   buffer : Text_buffer.t;
   view : Text_buffer_view.t;
-
   mutable wrap_mode : Props.wrap_mode;
   mutable applied_wrap_mode : Text_buffer.wrap_mode;
   mutable wrap_width_hint : int option;
   mutable viewport : viewport option;
-
   mutable selection_bg : Ansi.Color.t option;
   mutable selection_fg : Ansi.Color.t option;
-
   (* code/highlighting state *)
   mutable content : string;
   mutable filetype : Mosaic_syntax.filetype option;
@@ -185,12 +175,10 @@ type t = {
   mutable session : Mosaic_syntax.Session.t option;
   mutable theme : Theme.t;
   mutable base_style : Ansi.Style.t;
-
   mutable pending_update : bool;
   mutable conceal : bool;
   mutable draw_unstyled_text : bool;
   mutable should_render_text_buffer : bool;
-
   selectable : bool;
 }
 
@@ -256,15 +244,15 @@ let write_plain_text t text style =
 
 let should_skip_capture name = String.length name = 0 || name.[0] = '_'
 
-let tokens_of_highlights (highlights : Mosaic_syntax.Highlight.t array) : token array =
+let tokens_of_highlights (highlights : Mosaic_syntax.Highlight.t array) :
+    token array =
   let acc = ref [] in
   Array.iter
     (fun (h : Mosaic_syntax.Highlight.t) ->
       let open Mosaic_syntax.Highlight in
       let { start_byte; end_byte; group; origin } = h in
       if start_byte < end_byte && not (should_skip_capture group) then
-        acc :=
-          { start_byte; end_byte; capture = group; origin } :: !acc)
+        acc := { start_byte; end_byte; capture = group; origin } :: !acc)
     highlights;
   Array.of_list (List.rev !acc)
 
@@ -275,12 +263,12 @@ let cleanup_session_opt = function
 let update_session t =
   cleanup_session_opt t.session;
   t.session <-
-    match t.filetype with
+    (match t.filetype with
     | None -> None
     | Some ft -> (
         match Mosaic_syntax.Session.create t.languages ~filetype:ft with
         | Ok s -> Some s
-        | Error _ -> None)
+        | Error _ -> None))
 
 let update_buffer_with_tokens t (tokens : token array) =
   let base_style = t.base_style in
@@ -346,8 +334,7 @@ let update_buffer_with_tokens t (tokens : token array) =
               let capture = tokens.(idx).capture in
               if String.equal capture "conceal.with.space" then Some " "
               else if
-                String.length capture >= 7
-                && String.sub capture 0 7 = "conceal"
+                String.length capture >= 7 && String.sub capture 0 7 = "conceal"
               then Some ""
               else find rest
         in
@@ -393,17 +380,18 @@ let update_buffer_with_tokens t (tokens : token array) =
           match !active with
           | [] -> write_range ~style:base_style !current_offset offset
           | active_indices -> (
-              match conceal_replacement active_indices with
+              (match conceal_replacement active_indices with
               | Some replacement ->
                   write_chunk ~style:base_style ~text:replacement
               | None ->
                   let style = resolve_style_for_active active_indices in
                   write_range ~style !current_offset offset);
 
-        current_offset := offset;
-        match b.kind with
-        | Start -> active := b.index :: !active
-        | End -> active := List.filter (fun idx -> idx <> b.index) !active)
+              current_offset := offset;
+              match b.kind with
+              | Start -> active := b.index :: !active
+              | End -> active := List.filter (fun idx -> idx <> b.index) !active
+              ))
       boundaries;
 
     if !current_offset < content_len then
@@ -411,8 +399,7 @@ let update_buffer_with_tokens t (tokens : token array) =
       | [] -> write_range ~style:base_style !current_offset content_len
       | active_indices -> (
           match conceal_replacement active_indices with
-          | Some replacement ->
-              write_chunk ~style:base_style ~text:replacement
+          | Some replacement -> write_chunk ~style:base_style ~text:replacement
           | None ->
               let style = resolve_style_for_active active_indices in
               write_range ~style !current_offset content_len));
@@ -855,23 +842,18 @@ let mount ?(props = Props.default) (node : Renderable.t) =
         | `Word -> `Word);
       wrap_width_hint = None;
       viewport = None;
-
       selection_bg = props.selection_bg;
       selection_fg = props.selection_fg;
-
       content = props.content;
       filetype = props.filetype;
       languages = props.languages;
       session = None;
-
       theme = props.theme;
       base_style = Theme.base props.theme;
-
       pending_update = false;
       conceal = props.conceal;
       draw_unstyled_text = props.draw_unstyled_text;
       should_render_text_buffer = true;
-
       selectable = props.selectable;
     }
   in
@@ -957,8 +939,7 @@ let mount ?(props = Props.default) (node : Renderable.t) =
       get_text = (fun () -> get_selected_text t);
     }
   in
-  if t.selectable then
-    Renderable.set_selection node (Some selection_capability)
+  if t.selectable then Renderable.set_selection node (Some selection_capability)
   else Renderable.set_selection node None;
 
   Renderable.set_on_frame node

@@ -24,8 +24,7 @@ module Plot : sig
             Returns [None] if the point is outside the plot area. *)
     data_to_px : float -> float -> int * int;
         (** [data_to_px x y] converts data coordinates to screen coordinates. *)
-    plot_rect : plot_rect;
-        (** The plot area bounds for hit testing. *)
+    plot_rect : plot_rect;  (** The plot area bounds for hit testing. *)
   }
 
   val make : ?margins:margins -> ?axes:bool -> ?grid:bool -> unit -> t
@@ -257,26 +256,27 @@ module Plot : sig
 
   (** {1 Viewport Helpers}
 
-      Pure functions for manipulating viewport domains. Use these with
-      {!x_view} and {!y_view} to implement zoom and pan. *)
+      Pure functions for manipulating viewport domains. Use these with {!x_view}
+      and {!y_view} to implement zoom and pan. *)
 
   val zoom : float * float -> factor:float -> float * float
-  (** [zoom domain ~factor] scales the domain around its center.
-      [factor > 1.0] zooms in (smaller range), [factor < 1.0] zooms out. *)
+  (** [zoom domain ~factor] scales the domain around its center. [factor > 1.0]
+      zooms in (smaller range), [factor < 1.0] zooms out. *)
 
-  val zoom_around : float * float -> center:float -> factor:float -> float * float
+  val zoom_around :
+    float * float -> center:float -> factor:float -> float * float
   (** [zoom_around domain ~center ~factor] scales the domain around a specific
       data coordinate. Useful for zoom-to-cursor when you have the data
       coordinates from {!transforms.px_to_data}. *)
 
   val pan : float * float -> delta:float -> float * float
-  (** [pan domain ~delta] shifts the domain by [delta] in data units.
-      Positive delta shifts right/up, negative shifts left/down. *)
+  (** [pan domain ~delta] shifts the domain by [delta] in data units. Positive
+      delta shifts right/up, negative shifts left/down. *)
 
   val bounds : 'a list -> f:('a -> float) -> float * float
   (** [bounds data ~f] computes the min/max range of [f] applied to [data].
-      Returns [(0., 1.)] for empty lists. Useful for computing auto-fit
-      domains. *)
+      Returns [(0., 1.)] for empty lists. Useful for computing auto-fit domains.
+  *)
 end
 
 type spark_kind = [ `Bars | `Line | `Braille ]

@@ -536,7 +536,8 @@ let rec render_node_shared (captured_num : int option) (node : Renderable.t)
   if Renderable.visible node then (
     (* Capture layout values BEFORE pre_render_update, as callbacks like
        on_size_change can mark layout dirty and invalidate the cache. *)
-    let w = Renderable.width node and h = Renderable.height node in
+    let w = Renderable.width node
+    and h = Renderable.height node in
     let hx = Renderable.x node and hy = Renderable.y node in
     Renderable.Internal.pre_render_update node ~delta;
     if w > 0 && h > 0 then (

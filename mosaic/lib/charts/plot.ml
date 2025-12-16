@@ -66,7 +66,6 @@ type scatter_kind = [ `Cell | `Braille ]
 type heatmap_agg = [ `Last | `Avg | `Max ]
 type margins = { top : int; right : int; bottom : int; left : int }
 type band = { cats : string list; padding : float }
-
 type plot_rect = { x : int; y : int; width : int; height : int }
 
 type transforms = {
@@ -1680,8 +1679,7 @@ let zoom_around (min, max) ~center ~factor =
   let new_max = new_min +. new_range in
   (new_min, new_max)
 
-let pan (min, max) ~delta =
-  (min +. delta, max +. delta)
+let pan (min, max) ~delta = (min +. delta, max +. delta)
 
 let bounds data ~f =
   match data with
@@ -1749,7 +1747,10 @@ let draw_tooltip ?(style = Style.default) ?(anchor = `Right) transforms
     in
     (* Center vertically around the point *)
     let tooltip_y = py - (num_lines / 2) in
-    let tooltip_y = max rect.y (min tooltip_y (rect.y + rect.height - num_lines)) in
+    let tooltip_y =
+      max rect.y (min tooltip_y (rect.y + rect.height - num_lines))
+    in
     List.iteri
-      (fun i line -> Canvas.plot canvas ~x:tooltip_x ~y:(tooltip_y + i) ~style line)
+      (fun i line ->
+        Canvas.plot canvas ~x:tooltip_x ~y:(tooltip_y + i) ~style line)
       lines

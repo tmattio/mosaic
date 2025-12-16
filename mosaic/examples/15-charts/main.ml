@@ -35,7 +35,8 @@ type msg =
   | Quit
 
 let init () =
-  ({ chart = Line_interactive; hover = None; x_view = None; y_view = None }, Cmd.none)
+  ( { chart = Line_interactive; hover = None; x_view = None; y_view = None },
+    Cmd.none )
 
 let next_chart chart =
   match chart with
@@ -67,20 +68,39 @@ let line_y_bounds = Plot.bounds line_data ~f:snd
 let update msg model =
   match msg with
   | Next_chart ->
-      ({ chart = next_chart model.chart; hover = None; x_view = None; y_view = None }, Cmd.none)
+      ( {
+          chart = next_chart model.chart;
+          hover = None;
+          x_view = None;
+          y_view = None;
+        },
+        Cmd.none )
   | Prev_chart ->
-      ({ chart = prev_chart model.chart; hover = None; x_view = None; y_view = None }, Cmd.none)
+      ( {
+          chart = prev_chart model.chart;
+          hover = None;
+          x_view = None;
+          y_view = None;
+        },
+        Cmd.none )
   | Set_hover hover -> ({ model with hover }, Cmd.none)
   | Zoom_in ->
-      let x_view = Plot.zoom (Option.value model.x_view ~default:line_x_bounds) ~factor:1.2 in
-      let y_view = Plot.zoom (Option.value model.y_view ~default:line_y_bounds) ~factor:1.2 in
+      let x_view =
+        Plot.zoom (Option.value model.x_view ~default:line_x_bounds) ~factor:1.2
+      in
+      let y_view =
+        Plot.zoom (Option.value model.y_view ~default:line_y_bounds) ~factor:1.2
+      in
       ({ model with x_view = Some x_view; y_view = Some y_view }, Cmd.none)
   | Zoom_out ->
-      let x_view = Plot.zoom (Option.value model.x_view ~default:line_x_bounds) ~factor:0.8 in
-      let y_view = Plot.zoom (Option.value model.y_view ~default:line_y_bounds) ~factor:0.8 in
+      let x_view =
+        Plot.zoom (Option.value model.x_view ~default:line_x_bounds) ~factor:0.8
+      in
+      let y_view =
+        Plot.zoom (Option.value model.y_view ~default:line_y_bounds) ~factor:0.8
+      in
       ({ model with x_view = Some x_view; y_view = Some y_view }, Cmd.none)
-  | Reset_zoom ->
-      ({ model with x_view = None; y_view = None }, Cmd.none)
+  | Reset_zoom -> ({ model with x_view = None; y_view = None }, Cmd.none)
   | Quit -> (model, Cmd.quit)
 
 let scatter_data =
@@ -159,9 +179,7 @@ let draw_line_chart model canvas ~width ~height =
     | None -> base_plot
   in
   let plot =
-    match model.y_view with
-    | Some yv -> Plot.y_view yv plot
-    | None -> plot
+    match model.y_view with Some yv -> Plot.y_view yv plot | None -> plot
   in
   let t = Plot.draw plot canvas ~width ~height in
   (* Draw interactive overlay if hovering *)
@@ -345,7 +363,8 @@ let view model =
           text ~text_style:hint
             (match model.chart with
             | Line_interactive ->
-                "< > cycle  |  scroll/+- zoom  |  r reset  |  hover for tooltip  |  q quit"
+                "< > cycle  |  scroll/+- zoom  |  r reset  |  hover for \
+                 tooltip  |  q quit"
             | _ -> "< > cycle charts  |  q quit");
         ];
     ]
@@ -363,13 +382,21 @@ let subscriptions model =
       | Left -> Some Prev_chart
       | Tab when data.modifier.shift -> Some Prev_chart
       (* Zoom controls for interactive chart *)
-      | Char c when Uchar.equal c (Uchar.of_char '+') && model.chart = Line_interactive ->
+      | Char c
+        when Uchar.equal c (Uchar.of_char '+') && model.chart = Line_interactive
+        ->
           Some Zoom_in
-      | Char c when Uchar.equal c (Uchar.of_char '=') && model.chart = Line_interactive ->
+      | Char c
+        when Uchar.equal c (Uchar.of_char '=') && model.chart = Line_interactive
+        ->
           Some Zoom_in
-      | Char c when Uchar.equal c (Uchar.of_char '-') && model.chart = Line_interactive ->
+      | Char c
+        when Uchar.equal c (Uchar.of_char '-') && model.chart = Line_interactive
+        ->
           Some Zoom_out
-      | Char c when Uchar.equal c (Uchar.of_char 'r') && model.chart = Line_interactive ->
+      | Char c
+        when Uchar.equal c (Uchar.of_char 'r') && model.chart = Line_interactive
+        ->
           Some Reset_zoom
       | _ -> None)
 

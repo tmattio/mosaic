@@ -1,14 +1,13 @@
 (** Code renderable with Tree-sitter highlighting via [Mosaic_syntax].
 
     This renderable owns a text buffer, performs syntax highlighting using
-    [Mosaic_syntax.Session] (incremental parsing), and renders directly into
-    the grid. Wrapping, selection, and measurement are implemented inline.
+    [Mosaic_syntax.Session] (incremental parsing), and renders directly into the
+    grid. Wrapping, selection, and measurement are implemented inline.
 
     Mental model for users:
     - Provide [Props.languages] (an immutable [Mosaic_syntax.Set.t]).
     - Set [Props.filetype] to enable highlighting. [None] renders plain text.
-    - Provide a [Theme.t] that maps capture group names to [Ansi.Style.t].
-*)
+    - Provide a [Theme.t] that maps capture group names to [Ansi.Style.t]. *)
 
 module Theme : sig
   type t
@@ -79,7 +78,6 @@ val set_selection_fg : t -> Ansi.Color.t option -> unit
 val set_tab_width : t -> int -> unit
 val set_tab_indicator : t -> int option -> unit
 val set_tab_indicator_color : t -> Ansi.Color.t option -> unit
-
 val plain_text : t -> string
 val has_selection : t -> bool
 val get_selected_text : t -> string

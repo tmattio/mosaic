@@ -754,8 +754,8 @@ let code
   in
   let code_props =
     Code.Props.make ~content ?filetype ?languages ?theme ?conceal
-      ?draw_unstyled_text ?wrap_mode ?tab_width ?tab_indicator ?tab_indicator_color
-      ?selection_bg ?selection_fg ?selectable ()
+      ?draw_unstyled_text ?wrap_mode ?tab_width ?tab_indicator
+      ?tab_indicator_color ?selection_bg ?selection_fg ?selectable ()
   in
   let ctor (renderer : renderer) (code_props : Code.Props.t) =
     let id = Option.value id ~default:(Renderer.gen_id renderer) in
