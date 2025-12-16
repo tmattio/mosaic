@@ -14,6 +14,7 @@ jobs:
         os:
           - ubuntu-latest
           - macos-latest
+          - windows-latest
 
     runs-on: ${{ matrix.os }}
 
@@ -24,28 +25,26 @@ jobs:
       - name: Set-up OCaml
         uses: ocaml/setup-ocaml@v3
         with:
-          ocaml-compiler: 5.4
+          ocaml-compiler: 5
+          dune-cache: true
 
       - name: Install OCaml dependencies
-        run: opam install . --deps-only --with-test
+        run: |
+          opam install . --deps-only --with-test
+          # For matrix's terminal emulator demo
+          opam install tsdl tsdl-ttf
 
       - name: Build and test matrix
         run: |
-          echo "::group::matrix"
           opam exec -- dune build matrix
           opam exec -- dune build @matrix/runtest
-          echo "::endgroup::"
 
       - name: Build and test toffee
         run: |
-          echo "::group::toffee"
           opam exec -- dune build toffee
           opam exec -- dune build @toffee/runtest
-          echo "::endgroup::"
 
       - name: Build and test mosaic
         run: |
-          echo "::group::mosaic"
           opam exec -- dune build mosaic
           opam exec -- dune build @mosaic/runtest
-          echo "::endgroup::"
