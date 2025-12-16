@@ -1,0 +1,51 @@
+name: Build and test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout tree
+        uses: actions/checkout@v4
+
+      - name: Set-up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5.4
+
+      - name: Install OCaml dependencies
+        run: opam install . --deps-only --with-test
+
+      - name: Build and test matrix
+        run: |
+          echo "::group::matrix"
+          opam exec -- dune build matrix
+          opam exec -- dune build @matrix/runtest
+          echo "::endgroup::"
+
+      - name: Build and test toffee
+        run: |
+          echo "::group::toffee"
+          opam exec -- dune build toffee
+          opam exec -- dune build @toffee/runtest
+          echo "::endgroup::"
+
+      - name: Build and test mosaic
+        run: |
+          echo "::group::mosaic"
+          opam exec -- dune build mosaic
+          opam exec -- dune build @mosaic/runtest
+          echo "::endgroup::"
