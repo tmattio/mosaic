@@ -376,22 +376,20 @@ let update_buffer_with_tokens t (tokens : token array) =
     Array.iter
       (fun b ->
         let offset = b.offset in
-        if !current_offset < offset then
+        if !current_offset < offset then (
           match !active with
           | [] -> write_range ~style:base_style !current_offset offset
           | active_indices -> (
-              (match conceal_replacement active_indices with
+              match conceal_replacement active_indices with
               | Some replacement ->
                   write_chunk ~style:base_style ~text:replacement
               | None ->
                   let style = resolve_style_for_active active_indices in
-                  write_range ~style !current_offset offset);
-
-              current_offset := offset;
-              match b.kind with
-              | Start -> active := b.index :: !active
-              | End -> active := List.filter (fun idx -> idx <> b.index) !active
-              ))
+                  write_range ~style !current_offset offset));
+        current_offset := offset;
+        match b.kind with
+        | Start -> active := b.index :: !active
+        | End -> active := List.filter (fun idx -> idx <> b.index) !active)
       boundaries;
 
     if !current_offset < content_len then
