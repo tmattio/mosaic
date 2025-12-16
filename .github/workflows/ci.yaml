@@ -14,7 +14,8 @@ jobs:
         os:
           - ubuntu-latest
           - macos-latest
-          - windows-latest
+          # Fails building tsdl
+          # - windows-latest
 
     runs-on: ${{ matrix.os }}
 
