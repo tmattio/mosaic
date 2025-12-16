@@ -21,6 +21,9 @@ let read_with_select pty buffer offset length timeout =
       | Unix.Unix_error (Unix.EWOULDBLOCK, _, _)
       ->
         ()
+      | Unix.Unix_error (Unix.EIO, _, _) ->
+        (* EIO on PTY master means child process exited - treat as EOF *)
+        continue := false
   done;
   !total_read
 
