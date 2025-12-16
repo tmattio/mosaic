@@ -391,6 +391,7 @@ val canvas :
   ?initial_width:int ->
   ?initial_height:int ->
   ?draw:(Mosaic_ui.Canvas.t -> width:int -> height:int -> unit) ->
+  ?on_resize:(width:int -> height:int -> 'msg option) ->
   unit ->
   'msg t
 (** [canvas ()] creates a canvas for custom drawing. *)

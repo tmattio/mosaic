@@ -21,117 +21,76 @@ let render_chart ~width ~height draw =
   in
   render_node ~width ~height canvas
 
-let simple_points = [ (0.0, 0.0); (1.0, 2.0); (2.0, 1.0); (3.0, 3.0) ]
+let simple_points = [| (0.0, 0.0); (1.0, 2.0); (2.0, 1.0); (3.0, 3.0) |]
 
 let sine_wave points =
-  List.init points (fun i ->
+  Array.init points (fun i ->
       let x = float_of_int i /. float_of_int (points - 1) *. 2.0 *. Float.pi in
       (x, sin x))
 
 let gapped_series =
-  [
-    ( "Incomplete",
-      [
-        (0.0, Some 1.0);
-        (1.0, Some 2.0);
-        (2.0, None);
-        (3.0, None);
-        (4.0, Some 1.5);
-        (5.0, Some 2.5);
-      ] );
-  ]
+  [|
+    (0.0, Some 1.0);
+    (1.0, Some 2.0);
+    (2.0, None);
+    (3.0, None);
+    (4.0, Some 1.5);
+    (5.0, Some 2.5);
+  |]
 
-let time_series_points =
-  let base_time = 1_700_000_000.0 in
-  List.init 10 (fun i ->
-      {
-        time = base_time +. (float_of_int i *. 3600.0);
-        value = 50.0 +. (20.0 *. sin (float_of_int i /. 4.0));
-      })
-
-let bar_simple =
-  [
-    {
-      label = "Q1";
-      segments = [ { value = 30.0; style = Style.default; label = None } ];
-    };
-    {
-      label = "Q2";
-      segments = [ { value = 45.0; style = Style.default; label = None } ];
-    };
-    {
-      label = "Q3";
-      segments = [ { value = 25.0; style = Style.default; label = None } ];
-    };
-    {
-      label = "Q4";
-      segments = [ { value = 50.0; style = Style.default; label = None } ];
-    };
-  ]
-
-let horizontal_bars =
-  [
-    {
-      label = "A";
-      segments = [ { value = 20.0; style = Style.default; label = None } ];
-    };
-    {
-      label = "B";
-      segments = [ { value = 30.0; style = Style.default; label = None } ];
-    };
-    {
-      label = "C";
-      segments = [ { value = 15.0; style = Style.default; label = None } ];
-    };
-  ]
+let bar_simple = [| ("Q1", 30.0); ("Q2", 45.0); ("Q3", 25.0); ("Q4", 50.0) |]
+let horizontal_bars = [| ("A", 20.0); ("B", 30.0); ("C", 15.0) |]
 
 let heat_points =
-  List.flatten
-    (List.init 5 (fun x ->
-         List.init 5 (fun y ->
-             {
-               x = float_of_int x;
-               y = float_of_int y;
-               value = sin (float_of_int x /. 2.0) *. cos (float_of_int y /. 2.0);
-             })))
+  Array.concat
+    (List.map Array.of_list
+       (List.init 5 (fun x ->
+            List.init 5 (fun y ->
+                ( float_of_int x,
+                  float_of_int y,
+                  sin (float_of_int x /. 2.0) *. cos (float_of_int y /. 2.0) )))))
 
-let candles =
-  [
-    { time = 0.0; open_ = 100.0; high = 110.0; low = 95.0; close = 105.0 };
-    { time = 1.0; open_ = 105.0; high = 115.0; low = 100.0; close = 98.0 };
-    { time = 2.0; open_ = 98.0; high = 105.0; low = 92.0; close = 102.0 };
-  ]
+let candle_data =
+  [|
+    Mark.{ time = 0.0; open_ = 100.0; high = 110.0; low = 95.0; close = 105.0 };
+    Mark.{ time = 1.0; open_ = 105.0; high = 115.0; low = 100.0; close = 98.0 };
+    Mark.{ time = 2.0; open_ = 98.0; high = 105.0; low = 92.0; close = 102.0 };
+  |]
 
 let%expect_test "line chart with axes" =
-  let draw =
-    let open Plot in
-    (make ~axes:true ()
-    |> line ~x:fst ~y:snd simple_points
-    |> draw)
+  let draw canvas ~width ~height =
+    let chart =
+      empty ()
+      |> with_axes ~x:Axis.default ~y:Axis.default
+      |> line ~x:fst ~y:snd simple_points
+    in
+    draw chart canvas ~width ~height
   in
   render_chart ~width:30 ~height:10 draw;
   [%expect_exact {|
 ┌──────────────────────────────┐
-││                            ╱│
-││                          ╱╱ │
-││          ╲╲            ╱╱   │
-││        ╱╱  ╲╲╲       ╱╱     │
-││       ╱       ╲╲╲  ╱╱       │
-││     ╱╱           ╲╱         │
-││    ╱                        │
-││  ╱╱                         │
-││ ╱                           │
-│└─────────────────────────────│
+│  3 ─│                      ╱╱│
+│2.5 ─│                    ╱╱  │
+│  2 ─│       ╱╲╲╲╲     ╱╱╱    │
+│1.5 ─│     ╱╱     ╲╲╲╱╱       │
+│0.5 ─│  ╱╱╱                   │
+│  0 ─│╱╱                      │
+│     └────────────────────────│
+│      │   │   │   │  │   │   ││
+│      0  0.5  1  1.5 2  2.5  3│
+│                              │
 └──────────────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "line simple arc (no axes)" =
-  let draw =
-    let data = [ (0., 0.); (9., 4.) ] in
-    let plot =
-      Plot.(make ~axes:false () |> line ~kind:`Wave ~x:fst ~y:snd data)
+  let draw canvas ~width ~height =
+    let data = [| (0., 0.); (9., 4.) |] in
+    let chart =
+      empty ()
+      |> with_axes ~x:Axis.hidden ~y:Axis.hidden
+      |> line ~kind:`Wave ~x:fst ~y:snd data
     in
-    Plot.draw plot
+    draw chart canvas ~width ~height
   in
   render_chart ~width:10 ~height:5 draw;
   [%expect_exact
@@ -146,15 +105,15 @@ let%expect_test "line simple arc (no axes)" =
 |}]
 
 let%expect_test "line simple horizontal (no axes)" =
-  let draw =
-    let plot =
-      Plot.(
-        make ~axes:false ()
-        |> x_domain (0., 9.)
-        |> y_domain (0., 4.)
-        |> line ~kind:`Line ~x:fst ~y:snd [ (0., 2.); (9., 2.) ])
+  let draw canvas ~width ~height =
+    let chart =
+      empty ()
+      |> with_axes ~x:Axis.hidden ~y:Axis.hidden
+      |> with_x_scale (Scale.numeric ~domain:(`Domain (0., 9.)) ())
+      |> with_y_scale (Scale.numeric ~domain:(`Domain (0., 4.)) ())
+      |> line ~kind:`Line ~x:fst ~y:snd [| (0., 2.); (9., 2.) |]
     in
-    Plot.draw plot
+    draw chart canvas ~width ~height
   in
   render_chart ~width:10 ~height:5 draw;
   [%expect_exact
@@ -169,34 +128,38 @@ let%expect_test "line simple horizontal (no axes)" =
 |}]
 
 let%expect_test "line chart with braille rendering" =
-  let draw =
-    let open Plot in
-    (make ~axes:true ()
-    |> line ~kind:`Braille ~x:fst ~y:snd (sine_wave 20)
-    |> draw)
+  let draw canvas ~width ~height =
+    let chart =
+      empty ()
+      |> with_axes ~x:Axis.default ~y:Axis.default
+      |> line ~kind:`Braille ~x:fst ~y:snd (sine_wave 20)
+    in
+    draw chart canvas ~width ~height
   in
   render_chart ~width:25 ~height:8 draw;
   [%expect_exact {|
 ┌─────────────────────────┐
-││    ⠠⠈⠉⠉⠢⡀              │
-││  ⢀⠐⠁    ⠈⢀             │
-││ ⢠⠊       ⠈⢀            │
-││ ⠃          ⢣          ⡠│
-││             ⢣        ⠰⠁│
-││              ⠱⡀    ⢀⠜  │
-││               ⠈⠠⢀⣀⡠⠊   │
-│└────────────────────────│
+│     1 ─│ ⢀⠐⠈⠉⠠⡀         │
+│   0.5 ─│⡠⠃    ⠈⢠        │
+│  -0.0 ─│        ⠢⡀    ⠠⠊│
+│    -1 ─│         ⠈⠠⢀⣀⠔⠁ │
+│        └────────────────│
+│         │ │  │ │  │ │ │ │
+│         0 1  2 3  4 5 6 │
+│                         │
 └─────────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "line braille (no axes)" =
-  let draw =
-    let open Plot in
-    make ~axes:false ()
-    |> x_domain (0., 9.)
-    |> y_domain (0., 4.)
-    |> line ~kind:`Braille ~x:fst ~y:snd [ (0., 0.); (9., 4.) ]
-    |> draw
+  let draw canvas ~width ~height =
+    let chart =
+      empty ()
+      |> with_axes ~x:Axis.hidden ~y:Axis.hidden
+      |> with_x_scale (Scale.numeric ~domain:(`Domain (0., 9.)) ())
+      |> with_y_scale (Scale.numeric ~domain:(`Domain (0., 4.)) ())
+      |> line ~kind:`Braille ~x:fst ~y:snd [| (0., 0.); (9., 4.) |]
+    in
+    draw chart canvas ~width ~height
   in
   render_chart ~width:10 ~height:5 draw;
   [%expect_exact
@@ -211,51 +174,39 @@ let%expect_test "line braille (no axes)" =
 |}]
 
 let%expect_test "line with gaps skips missing points" =
-  let draw =
-    let open Plot in
-    (make ~axes:true ()
-    |> line_opt ~x:fst ~y:(fun (_, y) -> y) (List.assoc "Incomplete" gapped_series)
-    |> draw)
+  let draw canvas ~width ~height =
+    let chart =
+      empty ()
+      |> with_axes ~x:Axis.default ~y:Axis.default
+      |> add (Mark.line_opt ~x:fst ~y:(fun (_, y) -> y) gapped_series)
+    in
+    draw chart canvas ~width ~height
   in
   render_chart ~width:30 ~height:8 draw;
   [%expect_exact {|
 ┌──────────────────────────────┐
-││                            ╱│
-││                          ╱╱ │
-││      ╱                  ╱   │
-││     ╱                 ╱╱    │
-││   ╱╱                 ╱      │
-││  ╱                          │
-││ ╱                           │
-│└─────────────────────────────│
-└──────────────────────────────┘
-|}] [@@ocamlformat "disable"]
-
-let%expect_test "time series uses time for x axis" =
-  let draw = time_series [ ("Temperature", time_series_points) ] in
-  render_chart ~width:30 ~height:8 draw;
-  [%expect_exact {|
-┌──────────────────────────────┐
-││            ╱────────────╲╲  │
-││          ╱╱               ╲╲│
-││        ╱╱                   │
-││      ╱╱                     │
-││    ╱╱                       │
-││  ╱╱                         │
-││ ╱                           │
-│└─────────────────────────────│
+│2.6 ─│                      ╱╱│
+│2.2 ─│    ╱╱              ╱╱  │
+│1.6 ─│  ╱╱              ╱╱    │
+│1.2 ─│╱╱                      │
+│     └────────────────────────│
+│      │    │   │    │   │    ││
+│      0    1   2    3   4    5│
+│                              │
 └──────────────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "scatter X glyph" =
-  let draw =
-    let pts = [ (1., 1.); (3., 3.); (8., 2.) ] in
-    let open Plot in
-    make ~axes:false ()
-    |> x_domain (0., 9.)
-    |> y_domain (0., 4.)
-    |> scatter ~glyph:"X" ~x:fst ~y:snd pts
-    |> draw
+  let draw canvas ~width ~height =
+    let pts = [| (1., 1.); (3., 3.); (8., 2.) |] in
+    let chart =
+      empty ()
+      |> with_axes ~x:Axis.hidden ~y:Axis.hidden
+      |> with_x_scale (Scale.numeric ~domain:(`Domain (0., 9.)) ())
+      |> with_y_scale (Scale.numeric ~domain:(`Domain (0., 4.)) ())
+      |> scatter ~glyph:"X" ~x:fst ~y:snd pts
+    in
+    draw chart canvas ~width ~height
   in
   render_chart ~width:10 ~height:5 draw;
   [%expect_exact
@@ -270,14 +221,16 @@ let%expect_test "scatter X glyph" =
 |}]
 
 let%expect_test "scatter braille" =
-  let draw =
-    let pts = [ (1., 1.); (3., 3.); (8., 2.) ] in
-    let open Plot in
-    make ~axes:false ()
-    |> x_domain (0., 9.)
-    |> y_domain (0., 4.)
-    |> scatter ~kind:`Braille ~x:fst ~y:snd pts
-    |> draw
+  let draw canvas ~width ~height =
+    let pts = [| (1., 1.); (3., 3.); (8., 2.) |] in
+    let chart =
+      empty ()
+      |> with_axes ~x:Axis.hidden ~y:Axis.hidden
+      |> with_x_scale (Scale.numeric ~domain:(`Domain (0., 9.)) ())
+      |> with_y_scale (Scale.numeric ~domain:(`Domain (0., 4.)) ())
+      |> scatter ~kind:`Braille ~x:fst ~y:snd pts
+    in
+    draw chart canvas ~width ~height
   in
   render_chart ~width:10 ~height:5 draw;
   [%expect_exact
@@ -292,13 +245,18 @@ let%expect_test "scatter braille" =
 |}]
 
 let%expect_test "circle (line)" =
-  let draw =
-    let open Plot in
-    make ~axes:false ()
-    |> x_domain (0., 11.)
-    |> y_domain (0., 7.)
-    |> circle ~kind:`Line ~cx:fst ~cy:snd ~r:(fun _ -> 3.) [ (6., 4.) ]
-    |> draw
+  let draw canvas ~width ~height =
+    let chart =
+      empty ()
+      |> with_axes ~x:Axis.hidden ~y:Axis.hidden
+      |> with_x_scale (Scale.numeric ~domain:(`Domain (0., 11.)) ())
+      |> with_y_scale (Scale.numeric ~domain:(`Domain (0., 7.)) ())
+      |> add
+           (Mark.circle ~kind:`Line ~cx:fst ~cy:snd
+              ~r:(fun _ -> 3.)
+              [| (6., 4.) |])
+    in
+    draw chart canvas ~width ~height
   in
   render_chart ~width:12 ~height:8 draw;
   [%expect_exact
@@ -316,13 +274,18 @@ let%expect_test "circle (line)" =
 |}]
 
 let%expect_test "circle braille" =
-  let draw =
-    let open Plot in
-    make ~axes:false ()
-    |> x_domain (0., 11.)
-    |> y_domain (0., 7.)
-    |> circle ~kind:`Braille ~cx:fst ~cy:snd ~r:(fun _ -> 3.) [ (6., 4.) ]
-    |> draw
+  let draw canvas ~width ~height =
+    let chart =
+      empty ()
+      |> with_axes ~x:Axis.hidden ~y:Axis.hidden
+      |> with_x_scale (Scale.numeric ~domain:(`Domain (0., 11.)) ())
+      |> with_y_scale (Scale.numeric ~domain:(`Domain (0., 7.)) ())
+      |> add
+           (Mark.circle ~kind:`Braille ~cx:fst ~cy:snd
+              ~r:(fun _ -> 3.)
+              [| (6., 4.) |])
+    in
+    draw chart canvas ~width ~height
   in
   render_chart ~width:12 ~height:8 draw;
   [%expect_exact
@@ -340,207 +303,190 @@ let%expect_test "circle braille" =
 |}]
 
 let%expect_test "vertical bar chart renders columns" =
-  let draw = bar ~orientation:`Vertical bar_simple in
+  let draw canvas ~width ~height =
+    let chart =
+      empty ()
+      |> with_frame { margins = (0, 1, 2, 0); inner_padding = 0 }
+      |> with_x_scale (Scale.band ())
+      |> with_axes ~x:Axis.default ~y:Axis.hidden
+      |> bars_y ~x:fst ~y:snd bar_simple
+    in
+    draw chart canvas ~width ~height
+  in
   render_chart ~width:25 ~height:10 draw;
   [%expect_exact {|
 ┌─────────────────────────┐
-│      ▂▂▂▂▂       █████  │
-│      █████       █████  │
-│      █████       █████  │
-│▆▆▆▆▆ █████       █████  │
-│█████ █████ █████ █████  │
-│█████ █████ █████ █████  │
-│█████ █████ █████ █████  │
-│█████ █████ █████ █████  │
-│─────────────────────────│
-│Q1    Q2    Q3    Q4     │
+│      ▅▅▅▅       ████    │
+│ ▃▃▃▃ ████       ████    │
+│ ████ ████  ████ ████    │
+│ ████ ████  ████ ████    │
+│──────────────────────── │
+│   │    │     │    │     │
+│  Q1   Q2    Q3   Q4     │
+│                         │
+│                         │
+│                         │
 └─────────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "horizontal bar chart" =
-  let draw = bar ~orientation:`Horizontal ~bar_width:1 horizontal_bars in
+  let draw canvas ~width ~height =
+    let chart =
+      empty ()
+      |> with_frame { margins = (0, 2, 0, 0); inner_padding = 0 }
+      |> with_y_scale (Scale.band ())
+      |> with_axes ~x:Axis.hidden ~y:Axis.default
+      |> add (Mark.bars_x ~y:fst ~x:snd horizontal_bars)
+    in
+    draw chart canvas ~width ~height
+  in
   render_chart ~width:30 ~height:8 draw;
   [%expect_exact {|
 ┌──────────────────────────────┐
-│A│██████████████████▋         │
-│ │                            │
-│B│████████████████████████████│
-│ │                            │
-│C│██████████████              │
-│ │                            │
-│ │                            │
-│ │                            │
+│A ─│████████████████          │
+│   │                          │
+│B ─│████████████████████████  │
+│   │                          │
+│   │                          │
+│C ─│████████████              │
+│   │                          │
+│   │                          │
 └──────────────────────────────┘
 |}] [@@ocamlformat "disable"]
 
+let simple_bars = [| ("A", 2.); ("B", 5.); ("C", 3.); ("D", 6.) |]
+
 let%expect_test "vertical bars (no axis)" =
-  let draw =
-    let bars : bar list =
-      [
-        {
-          label = "A";
-          segments = [ { value = 2.; style = Style.default; label = None } ];
-        };
-        {
-          label = "B";
-          segments = [ { value = 5.; style = Style.default; label = None } ];
-        };
-        {
-          label = "C";
-          segments = [ { value = 3.; style = Style.default; label = None } ];
-        };
-        {
-          label = "D";
-          segments = [ { value = 6.; style = Style.default; label = None } ];
-        };
-      ]
+  let draw canvas ~width ~height =
+    let chart =
+      empty ()
+      |> with_axes ~x:Axis.hidden ~y:Axis.hidden
+      |> with_x_scale (Scale.band ())
+      |> bars_y ~x:fst ~y:snd simple_bars
     in
-    bar ~orientation:`Vertical ~show_axis:false bars
+    draw chart canvas ~width ~height
   in
   render_chart ~width:11 ~height:8 draw;
-  [%expect_exact
-    {|
+  [%expect_exact {|
 ┌───────────┐
-│         ██│
-│   ▅▅    ██│
-│   ██    ██│
-│   ██    ██│
-│   ██ ██ ██│
-│▅▅ ██ ██ ██│
-│██ ██ ██ ██│
-│██ ██ ██ ██│
+│       █   │
+│   ▅   █   │
+│   █   █   │
+│   █   █   │
+│   █ █ █   │
+│▅  █ █ █   │
+│█  █ █ █   │
+│█  █ █ █   │
 └───────────┘
-|}]
+|}] [@@ocamlformat "disable"]
+
+let horizontal_bars_2 = [| ("Alpha", 4.); ("Beta", 8.); ("Gamma", 3.) |]
 
 let%expect_test "horizontal bars (no axis)" =
-  let draw =
-    let bars : bar list =
-      [
-        {
-          label = "Alpha";
-          segments = [ { value = 4.; style = Style.default; label = None } ];
-        };
-        {
-          label = "Beta";
-          segments = [ { value = 8.; style = Style.default; label = None } ];
-        };
-        {
-          label = "Gamma";
-          segments = [ { value = 3.; style = Style.default; label = None } ];
-        };
-      ]
+  let draw canvas ~width ~height =
+    let chart =
+      empty ()
+      |> with_axes ~x:Axis.hidden ~y:Axis.hidden
+      |> with_y_scale (Scale.band ())
+      |> add (Mark.bars_x ~y:fst ~x:snd horizontal_bars_2)
     in
-    bar ~orientation:`Horizontal ~show_axis:false bars
+    draw chart canvas ~width ~height
   in
   render_chart ~width:16 ~height:6 draw;
-  [%expect_exact
-    {|
+  [%expect_exact {|
 ┌────────────────┐
 │████████        │
 │                │
 │████████████████│
-│                │
 │██████          │
 │                │
+│                │
 └────────────────┘
-|}]
+|}] [@@ocamlformat "disable"]
+
+let stacked_bars_data =
+  let st = Style.default in
+  [|
+    Mark.
+      {
+        category = "A";
+        segments =
+          [
+            { value = 2.; style = st; label = None };
+            { value = 2.; style = st; label = None };
+          ];
+      };
+    Mark.
+      {
+        category = "B";
+        segments =
+          [
+            { value = 3.; style = st; label = None };
+            { value = 1.; style = st; label = None };
+          ];
+      };
+    Mark.
+      {
+        category = "C";
+        segments =
+          [
+            { value = 1.; style = st; label = None };
+            { value = 4.; style = st; label = None };
+          ];
+      };
+  |]
 
 let%expect_test "stacked bars vertical (no axis)" =
-  let draw =
-    let st = Style.default in
-    let bars : bar list =
-      [
-        {
-          label = "A";
-          segments =
-            [
-              { value = 2.; style = st; label = None };
-              { value = 2.; style = st; label = None };
-            ];
-        };
-        {
-          label = "B";
-          segments =
-            [
-              { value = 3.; style = st; label = None };
-              { value = 1.; style = st; label = None };
-            ];
-        };
-        {
-          label = "C";
-          segments =
-            [
-              { value = 1.; style = st; label = None };
-              { value = 4.; style = st; label = None };
-            ];
-        };
-      ]
+  let draw canvas ~width ~height =
+    let chart =
+      empty ()
+      |> with_axes ~x:Axis.hidden ~y:Axis.hidden
+      |> with_x_scale (Scale.band ())
+      |> add (Mark.stacked_bars_y stacked_bars_data)
     in
-    bar ~orientation:`Vertical ~show_axis:false bars
+    draw chart canvas ~width ~height
   in
   render_chart ~width:15 ~height:8 draw;
-  [%expect_exact
-    {|
+  [%expect_exact {|
 ┌───────────────┐
-│          ████ │
-│▃▃▃▃ ▃▃▃▃ ████ │
-│████ ████ ████ │
-│████ ▆▆▆▆ ████ │
-│▂▂▂▂ ████ ████ │
-│████ ████ ████ │
-│████ ████ ▅▅▅▅ │
-│████ ████ ████ │
+│         ██    │
+│▃▃   ▃▃  ██    │
+│██   ██  ██    │
+│██   ██  ██    │
+│██   ██  ██    │
+│██   ██  ██    │
+│██   ██  ██    │
+│██   ██  ██    │
 └───────────────┘
-|}]
+|}] [@@ocamlformat "disable"]
 
 let%expect_test "stacked bars horizontal (no axis)" =
-  let draw =
-    let st = Style.default in
-    let bars : bar list =
-      [
-        {
-          label = "A";
-          segments =
-            [
-              { value = 2.; style = st; label = None };
-              { value = 2.; style = st; label = None };
-            ];
-        };
-        {
-          label = "B";
-          segments =
-            [
-              { value = 3.; style = st; label = None };
-              { value = 1.; style = st; label = None };
-            ];
-        };
-        {
-          label = "C";
-          segments =
-            [
-              { value = 1.; style = st; label = None };
-              { value = 4.; style = st; label = None };
-            ];
-        };
-      ]
+  let draw canvas ~width ~height =
+    let chart =
+      empty ()
+      |> with_axes ~x:Axis.hidden ~y:Axis.hidden
+      |> with_y_scale (Scale.band ())
+      |> add (Mark.stacked_bars_x stacked_bars_data)
     in
-    bar ~orientation:`Horizontal ~show_axis:false bars
+    draw chart canvas ~width ~height
   in
   render_chart ~width:20 ~height:6 draw;
-  [%expect_exact
-    {|
+  [%expect_exact {|
 ┌────────────────────┐
 │████████████████    │
 │                    │
 │████████████████    │
-│                    │
 │████████████████████│
 │                    │
+│                    │
 └────────────────────┘
-|}]
+|}] [@@ocamlformat "disable"]
 
 let%expect_test "sparkline bars" =
-  let draw = sparkline ~kind:`Bars [ 1.0; 3.0; 2.0; 5.0; 4.0; 3.0; 2.0; 4.0 ] in
+  let draw canvas ~width ~height =
+    Sparkline.draw_values ~kind:`Bars [ 1.0; 3.0; 2.0; 5.0; 4.0; 3.0; 2.0; 4.0 ]
+      canvas ~width ~height
+  in
   let node =
     column ~id:"sparkline"
       [ text ~id:"label" "CPU Usage:";
@@ -556,7 +502,11 @@ let%expect_test "sparkline bars" =
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "sparkline bars (no layout)" =
-  let draw = sparkline ~kind:`Bars [ 1.; 3.; 2.; 5.; 4.; 3.; 2.; 4. ] in
+  let draw canvas ~width ~height =
+    Sparkline.draw_values ~kind:`Bars
+      [ 1.; 3.; 2.; 5.; 4.; 3.; 2.; 4. ]
+      canvas ~width ~height
+  in
   render_chart ~width:12 ~height:3 draw;
   [%expect_exact
     {|
@@ -568,11 +518,10 @@ let%expect_test "sparkline bars (no layout)" =
 |}]
 
 let%expect_test "sparkline braille" =
-  let draw =
-    Sparkline.(
-      let m = make ~width:10 ~height:3 () in
-      push_all m [ 0.; 2.; 4.; 3.; 5.; 4.; 2.; 1. ];
-      fun canvas ~width ~height -> draw m ~kind:`Braille canvas ~width ~height)
+  let draw canvas ~width ~height =
+    let m = Sparkline.create ~capacity:10 () in
+    Sparkline.push_all m [ 0.; 2.; 4.; 3.; 5.; 4.; 2.; 1. ];
+    Sparkline.draw m ~kind:`Braille canvas ~width ~height
   in
   render_chart ~width:10 ~height:3 draw;
   [%expect_exact
@@ -584,16 +533,25 @@ let%expect_test "sparkline braille" =
 └──────────┘
 |}]
 
-let%expect_test "heatmap fills cells" =
-  let draw =
-    heatmap ~shaded:true ~color_scale:
-      [ Ansi.Color.Extended 232;
-        Ansi.Color.Extended 236;
-        Ansi.Color.Extended 240;
-        Ansi.Color.Extended 244;
-        Ansi.Color.Extended 248;
-        Ansi.Color.Extended 252 ]
-      heat_points
+let%expect_test "heatmap fills cells (shaded)" =
+  let draw canvas ~width ~height =
+    let chart =
+      empty ()
+      |> with_axes ~x:Axis.hidden ~y:Axis.hidden
+      |> heatmap ~auto_value_range:true ~render:Mark.Shaded
+           ~color_scale:
+             [ Ansi.Color.Extended 232;
+               Ansi.Color.Extended 236;
+               Ansi.Color.Extended 240;
+               Ansi.Color.Extended 244;
+               Ansi.Color.Extended 248;
+               Ansi.Color.Extended 252 ]
+           ~x:(fun (x, _, _) -> x)
+           ~y:(fun (_, y, _) -> y)
+           ~value:(fun (_, _, v) -> v)
+           heat_points
+    in
+    draw chart canvas ~width ~height
   in
   render_chart ~width:25 ~height:10 draw;
   [%expect_exact {|
@@ -612,45 +570,54 @@ let%expect_test "heatmap fills cells" =
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "candlestick draws bodies and wicks" =
-  let draw = candlestick candles in
+  let draw canvas ~width ~height =
+    let chart =
+      empty ()
+      |> with_axes ~x:Axis.default ~y:Axis.hidden
+      |> candles candle_data
+    in
+    draw chart canvas ~width ~height
+  in
   render_chart ~width:20 ~height:10 draw;
   [%expect_exact {|
 ┌────────────────────┐
+│          │         │
 ││         │         │
-││ │       │         │
-││ │       │         │
-││ ┃       ┃        ││
-││ ┃       ┃        ┃│
-││ ┃       ┃        ┃│
-││ │                ││
-││                  ││
-││                  ││
-│└───────────────────│
+│┃         ┃        ││
+││         │        ┃│
+││         │        ││
+│                   ││
+│────────────────────│
+││    │    │   │    ││
+│0   0.5   1  1.5   2│
+│                    │
 └────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "legend arranges entries horizontally" =
-  let draw =
-    legend
-      [ ("Revenue", Style.make ~fg:Ansi.Color.green ());
-        ("Costs", Style.make ~fg:Ansi.Color.red ());
-        ("Profit", Style.make ~fg:Ansi.Color.blue ()) ]
+  let draw canvas ~width ~height =
+    Legend.draw ~direction:`Horizontal
+      [ { label = "Revenue"; style = Style.make ~fg:Ansi.Color.green (); marker = "●" };
+        { label = "Costs"; style = Style.make ~fg:Ansi.Color.red (); marker = "●" };
+        { label = "Profit"; style = Style.make ~fg:Ansi.Color.blue (); marker = "●" } ]
+      canvas ~width ~height
   in
   render_chart ~width:40 ~height:3 draw;
   [%expect_exact {|
 ┌────────────────────────────────────────┐
-│●●  Revenue  ●●  Costs  ●●  Profit      │
+│● Revenue  ● Costs  ● Profit            │
 │                                        │
 │                                        │
 └────────────────────────────────────────┘
 |}] [@@ocamlformat "disable"]
 
 let%expect_test "stacked legend renders vertical list" =
-  let draw =
-    stacked_legend
-      [ ("Alpha", Style.make ~fg:Ansi.Color.yellow ());
-        ("Beta", Style.make ~fg:Ansi.Color.cyan ());
-        ("Gamma", Style.make ~fg:Ansi.Color.magenta ()) ]
+  let draw canvas ~width ~height =
+    Legend.draw ~direction:`Vertical
+      [ { label = "Alpha"; style = Style.make ~fg:Ansi.Color.yellow (); marker = "●" };
+        { label = "Beta"; style = Style.make ~fg:Ansi.Color.cyan (); marker = "●" };
+        { label = "Gamma"; style = Style.make ~fg:Ansi.Color.magenta (); marker = "●" } ]
+      canvas ~width ~height
   in
   render_chart ~width:18 ~height:5 draw;
   [%expect_exact {|

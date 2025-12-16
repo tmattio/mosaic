@@ -1,47 +1,86 @@
-(** Streaming terminal sparklines. *)
+(** Sparkline charts for compact time series visualization.
 
-type kind = [ `Bars | `Braille ]
-(** Rendering modes:
-    - [`Bars]: vertical columns using block characters
-    - [`Braille]: higher-resolution line using braille cells *)
+    Sparklines render recent data points in a fixed-width buffer using either
+    bar glyphs or Braille dots. The rendering adapts to available canvas
+    dimensions.
+
+    {1 Usage}
+
+    Create a sparkline with a fixed capacity, push values incrementally, and
+    draw to a canvas:
+    {[
+      let sp = Sparkline.create ~capacity:50 () in
+      Sparkline.push sp 42.5;
+      Sparkline.draw sp ~kind:`Bars canvas ~width:50 ~height:5
+    ]}
+
+    For one-off rendering without state:
+    {[
+      Sparkline.draw_values ~kind:`Braille [ 1.; 2.; 3.; 5.; 8. ] canvas
+        ~width:10 ~height:3
+    ]} *)
 
 type t
-(** A mutable, fixed-capacity sparkline buffer. *)
+(** A sparkline with a circular buffer for recent values.
 
-val make :
-  width:int ->
-  height:int ->
+    The buffer has fixed capacity and automatically evicts old values when full.
+*)
+
+type kind = [ `Bars | `Braille ]
+(** Rendering style.
+
+    - [`Bars]: Uses block glyphs (▁▂▃▄▅▆▇█) for vertical bars, supporting
+      fractional heights.
+    - [`Braille]: Uses Braille patterns for higher resolution line rendering. *)
+
+val create :
   ?style:Ansi.Style.t ->
   ?auto_max:bool ->
   ?max_value:float ->
-  ?data:float list ->
+  capacity:int ->
   unit ->
   t
-(** [make ~width ~height ?style ?auto_max ?max_value ?data ()] creates a new
-    sparkline buffer.
-    - [width], [height]: initial drawing dimensions (minimum 1).
-    - [style]: text style (foreground/background); default:
-      [Ansi.Style.default].
-    - [auto_max]: if [true], automatically increases [max_value] when pushed
-      values exceed it; default: [true].
-    - [max_value]: initial maximum value for scaling; default: [1.0].
-    - [data]: optional initial list of values to push. *)
+(** [create ~capacity ()] creates a sparkline buffer.
+
+    The buffer holds up to [capacity] values in a circular queue. When full, the
+    oldest value is replaced by new pushes.
+
+    @param style Rendering style for glyphs. Default is {!Ansi.Style.default}.
+    @param auto_max
+      When [true], [max_value] adapts dynamically as larger values are pushed.
+      Default is [true].
+    @param max_value
+      Initial maximum for scaling. Values exceeding this are clipped unless
+      [auto_max] is [true]. Defaults to [1.0] if [None] or negative.
+    @param capacity
+      Buffer size. Must be at least [1]; values less than [1] are clamped to
+      [1].
+
+    Invariant: Negative values are clamped to [0.0] on push. *)
 
 val clear : t -> unit
-(** Clear all stored values. *)
+(** [clear t] empties the buffer.
+
+    The capacity and configuration remain unchanged. Subsequent draws render
+    nothing until new values are pushed. *)
 
 val push : t -> float -> unit
-(** Append a new sample value. Negative values are clamped to 0. *)
+(** [push t v] appends [v] to the buffer.
+
+    If the buffer is full, the oldest value is evicted. Negative [v] is clamped
+    to [0.0]. If [auto_max] is [true] and [v] exceeds [max_value], [max_value]
+    is updated to [v]. *)
 
 val push_all : t -> float list -> unit
-(** Append all values in the given list, in order. *)
+(** [push_all t vs] pushes each value in [vs] sequentially. Equivalent to
+    [List.iter (push t) vs]. *)
 
 val set_max : t -> float -> unit
-(** [set_max t m] sets the expected maximum value used for scaling. *)
+(** [set_max t m] sets the scaling maximum to [m].
 
-val resize : t -> width:int -> height:int -> unit
-(** Change the logical drawing size. Preserves as many of the most recent values
-    as fit in the new width. *)
+    If [m] is less than or equal to [0.0], it is set to [1.0]. This overrides
+    [auto_max] temporarily until a larger value is pushed (if [auto_max] is
+    [true]). *)
 
 val draw :
   t ->
@@ -51,12 +90,47 @@ val draw :
   width:int ->
   height:int ->
   unit
-(** [draw t ~kind ?columns_only canvas ~width ~height] renders the sparkline
-    into [canvas] with the given dimensions.
+(** [draw t ~kind canvas ~width ~height] renders the sparkline to [canvas].
 
-    - [kind]: rendering mode ([`Bars] or [`Braille]).
-    - [columns_only]: if [true], only draw the sparkline glyphs and do not fill
-      the background, even if [style.bg] is set; default: [false].
+    Only the most recent [width] values are shown, right-aligned. Values are
+    scaled by [max_value]; bars fill from bottom upward. The canvas is cleared
+    before drawing.
 
-    The internal buffer is resized to [width]×[height] before drawing,
-    preserving the most recent values. *)
+    @param kind Rendering style. See {!type-kind}.
+    @param columns_only
+      When [true], skips background fill (style's [bg] is ignored). Default is
+      [false].
+    @param width
+      Canvas width. Determines how many recent values are visible. Clamped to at
+      least [1].
+    @param height
+      Canvas height. Bar heights scale proportionally. Clamped to at least [1].
+
+    [`Bars] uses block glyphs for vertical bars. [`Braille] draws connected line
+    segments using 2x4 Braille dot grids per cell, employing Bresenham's line
+    algorithm for anti-aliased appearance. *)
+
+val draw_values :
+  ?style:Ansi.Style.t ->
+  kind:kind ->
+  float list ->
+  Mosaic_ui.Canvas.t ->
+  width:int ->
+  height:int ->
+  unit
+(** [draw_values ~kind vs canvas ~width ~height] renders [vs] directly without
+    state.
+
+    Creates a temporary sparkline with [capacity] equal to [width], pushes all
+    [vs], then draws. Useful for one-off rendering.
+
+    @param style Rendering style. Default is {!Ansi.Style.default}.
+    @param kind Rendering style. See {!type-kind}.
+
+    {4 Example}
+
+    Render a quick trend:
+    {[
+      Sparkline.draw_values ~kind:`Bars [ 10.; 20.; 15.; 25. ] canvas ~width:10
+        ~height:3
+    ]} *)

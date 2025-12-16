@@ -72,16 +72,19 @@ type box_spec = Mosaic_ui.Box.Props.t
 type text_spec = Mosaic_ui.Text.Props.t
 (** Text-specific properties, using [Text.Props.t]. *)
 
-type canvas_spec = {
+type 'a canvas_spec = {
   props : Mosaic_ui.Canvas.Props.t;
   draw : (Mosaic_ui.Canvas.t -> width:int -> height:int -> unit) option;
+  on_resize : (width:int -> height:int -> 'a) option;
 }
-(** Canvas-specific properties: renderable props plus optional draw callback. *)
+(** Canvas-specific properties: renderable props, draw callback, and resize
+    callback. The [on_resize] callback is invoked when the canvas size changes,
+    enabling interactive applications to respond to layout changes. *)
 
 type 'a spec =
   | Box_spec of box_spec
   | Text_spec of text_spec
-  | Canvas_spec of canvas_spec
+  | Canvas_spec of 'a canvas_spec
   | Table_spec of Mosaic_ui.Table.Props.t
   | Slider_spec of 'a slider_spec
   | Select_spec of 'a select_spec
@@ -316,11 +319,16 @@ val canvas :
   ?initial_width:int ->
   ?initial_height:int ->
   ?draw:(Mosaic_ui.Canvas.t -> width:int -> height:int -> unit) ->
+  ?on_resize:(width:int -> height:int -> 'a) ->
   unit ->
   'a t
 (** [canvas ()] creates a canvas vnode for custom drawing.
 
-    @param draw Callback invoked on each render with canvas and dimensions *)
+    @param draw Callback invoked on each render with canvas and dimensions
+    @param on_resize
+      Callback invoked when canvas size changes. Receives the new width and
+      height. Useful for interactive charts that need layout dimensions for
+      hit-testing or zoom calculations. *)
 
 val table :
   ?id:string ->

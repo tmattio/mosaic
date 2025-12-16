@@ -51,6 +51,13 @@ val set_draw : t -> (t -> width:int -> height:int -> unit) option -> unit
     again whenever canvas dimensions change via the [on_size_change] callback.
     Passing [None] removes the callback. *)
 
+val set_on_resize : t -> (width:int -> height:int -> unit) option -> unit
+(** [set_on_resize t callback] installs a resize callback that is invoked
+    whenever the canvas size changes. This is useful for interactive
+    applications that need to respond to layout changes, such as updating
+    hit-testing layouts for charts. The callback receives the new width and
+    height. Passing [None] removes the callback. *)
+
 val width : t -> int
 (** [width t] returns current off-screen buffer width in cells. *)
 

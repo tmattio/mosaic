@@ -79,6 +79,7 @@ let create_instance (renderer : Renderer.t) (tag : Vnode.tag)
   | Vnode.Canvas, Vnode.Canvas_spec spec ->
       let canvas = Canvas.mount ~props:spec.props node in
       Canvas.set_draw canvas spec.draw;
+      Canvas.set_on_resize canvas spec.on_resize;
       Canvas_instance canvas
   | Vnode.Table, Vnode.Table_spec spec ->
       let table = Table.mount ~props:spec node in
@@ -167,10 +168,17 @@ let update_props (instance : instance) ~(old_props : unit Vnode.props)
         let props_changed =
           not (Canvas.Props.equal old_spec.props new_spec.props)
         in
+        let on_resize_changed =
+          not
+            (Bool.equal
+               (Option.is_some old_spec.on_resize)
+               (Option.is_some new_spec.on_resize))
+        in
         if props_changed then Canvas.apply_props canvas new_spec.props;
         (* Update draw callback unconditionally to mirror previous semantics. *)
         Canvas.set_draw canvas new_spec.draw;
-        props_changed || Option.is_some new_spec.draw
+        Canvas.set_on_resize canvas new_spec.on_resize;
+        props_changed || Option.is_some new_spec.draw || on_resize_changed
     | Table_instance table, Vnode.Table_spec old_spec, Vnode.Table_spec new_spec
       ->
         if Table.Props.equal old_spec new_spec then false

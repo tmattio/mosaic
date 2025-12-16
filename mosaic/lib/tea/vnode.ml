@@ -100,15 +100,16 @@ type 'a scroll_box_spec = {
 type box_spec = Box.Props.t
 type text_spec = Text.Props.t
 
-type canvas_spec = {
+type 'a canvas_spec = {
   props : Canvas.Props.t;
   draw : (Canvas.t -> width:int -> height:int -> unit) option;
+  on_resize : (width:int -> height:int -> 'a) option;
 }
 
 type 'a spec =
   | Box_spec of box_spec
   | Text_spec of text_spec
-  | Canvas_spec of canvas_spec
+  | Canvas_spec of 'a canvas_spec
   | Table_spec of Table.Props.t
   | Slider_spec of 'a slider_spec
   | Select_spec of 'a select_spec
@@ -259,7 +260,8 @@ let canvas ?id ?key
     ?grid_auto_columns ?grid_auto_flow ?grid_template_areas ?grid_row
     ?grid_column
     (* Canvas props *)
-    ?respect_alpha ?width_method ?initial_width ?initial_height ?draw () =
+    ?respect_alpha ?width_method ?initial_width ?initial_height ?draw ?on_resize
+    () =
   let handlers = { on_mouse; on_key; on_paste } in
   let style =
     Toffee.Style.make ?display ?box_sizing ?position ?overflow ?scrollbar_width
@@ -274,7 +276,7 @@ let canvas ?id ?key
     Canvas.Props.make ?respect_alpha ?width_method ?initial_width
       ?initial_height ()
   in
-  let spec = Canvas_spec { props = canvas_props; draw } in
+  let spec = Canvas_spec { props = canvas_props; draw; on_resize } in
   let props =
     { id; style; visible; z_index; live; buffer; handlers; ref; spec }
   in
@@ -808,10 +810,17 @@ let map_scroll_box_spec f spec =
       Option.map (fun cb ~x ~y -> f (cb ~x ~y)) spec.scroll_box_on_scroll;
   }
 
+let map_canvas_spec f spec =
+  {
+    spec with
+    on_resize =
+      Option.map (fun cb ~width ~height -> f (cb ~width ~height)) spec.on_resize;
+  }
+
 let map_spec (f : 'a -> 'b) : 'a spec -> 'b spec = function
   | Box_spec s -> Box_spec s
   | Text_spec s -> Text_spec s
-  | Canvas_spec s -> Canvas_spec s
+  | Canvas_spec s -> Canvas_spec (map_canvas_spec f s)
   | Table_spec s -> Table_spec s
   | Slider_spec s -> Slider_spec (map_slider_spec f s)
   | Select_spec s -> Select_spec (map_select_spec f s)
@@ -898,7 +907,7 @@ let instantiate_element (renderer : Renderer.t) (props : 'a props) :
           | Text_spec spec ->
               ignore (Text.mount ~props:spec node);
               Ok node
-          | Canvas_spec { props = canvas_props; draw } ->
+          | Canvas_spec { props = canvas_props; draw; _ } ->
               let c = Canvas.mount ~props:canvas_props node in
               Option.iter (fun f -> Canvas.set_draw c (Some f)) draw;
               Ok node

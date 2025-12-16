@@ -4,7 +4,6 @@
 
 open Mosaic_tea
 module Charts = Mosaic_charts
-module Plot = Mosaic_charts.Plot
 
 (* ---------- Small utils ---------- *)
 
@@ -322,8 +321,8 @@ type msg =
 
 let make_sys () =
   let mk ~fg ~maxv =
-    Charts.Sparkline.make ~width:30 ~height:4 ~style:(Ansi.Style.make ~fg ())
-      ~auto_max:false ~max_value:maxv ()
+    Charts.Sparkline.create ~style:(Ansi.Style.make ~fg ()) ~auto_max:false
+      ~max_value:maxv ~capacity:30 ()
   in
   {
     cpu = 0.;
@@ -532,116 +531,150 @@ let points_recent ~window (newest_first : point list) =
 
 let draw_loss_plot (m : model) (r : run) canvas ~width ~height =
   let loss =
-    points_recent ~window:m.window r.loss |> smooth ~window:m.smoothing
+    points_recent ~window:m.window r.loss
+    |> smooth ~window:m.smoothing |> Array.of_list
   in
   let vloss =
-    points_recent ~window:m.window r.val_loss |> smooth ~window:m.smoothing
+    points_recent ~window:m.window r.val_loss
+    |> smooth ~window:m.smoothing |> Array.of_list
   in
-  let plot =
-    Plot.make
-      ~margins:{ top = 0; right = 1; bottom = 1; left = 4 }
-      ~axes:m.show_axes ~grid:m.show_grid ()
+  let chart =
+    Charts.empty ()
+    |> Charts.with_frame { margins = (0, 1, 1, 4); inner_padding = 0 }
   in
-  let plot =
-    if m.show_axes then Plot.axes ~style:axis_style ~x_ticks:5 ~y_ticks:4 plot
-    else plot
+  let chart =
+    if m.show_axes then
+      chart
+      |> Charts.with_axes
+           ~x:
+             (Charts.Axis.default |> Charts.Axis.with_ticks 5
+             |> Charts.Axis.with_style axis_style)
+           ~y:
+             (Charts.Axis.default |> Charts.Axis.with_ticks 4
+             |> Charts.Axis.with_style axis_style)
+    else chart
   in
-  let plot =
-    if m.show_grid then Plot.grid ~style:grid_style ~x:true ~y:true plot
-    else plot
+  let chart =
+    if m.show_grid then
+      chart
+      |> Charts.with_grid
+           (Charts.Grid.default
+           |> Charts.Grid.with_style grid_style
+           |> Charts.Grid.with_x true |> Charts.Grid.with_y true)
+    else chart
   in
-  let plot =
-    plot
-    |> Plot.line ~kind:`Braille
+  let chart =
+    chart
+    |> Charts.line ~kind:`Braille
          ~style:(line_style Ansi.Color.cyan)
          ~x:(fun p -> p.x)
          ~y:(fun p -> p.y)
          loss
-    |> Plot.line ~kind:`Braille
+    |> Charts.line ~kind:`Braille
          ~style:(line_style Ansi.Color.magenta)
          ~x:(fun p -> p.x)
          ~y:(fun p -> p.y)
          vloss
-    |> Plot.rule_y
-         ~style:
-           (Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:6) ~dim:true ())
-         1.0
+    |> Charts.add
+         (Charts.Mark.rule_y
+            ~style:
+              (Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:6) ~dim:true ())
+            1.0)
   in
-  ignore (Plot.draw plot canvas ~width ~height)
+  ignore (Charts.draw chart canvas ~width ~height)
 
 let draw_acc_lr_plot (m : model) (r : run) canvas ~width ~height =
   let acc =
     points_recent ~window:m.window r.acc
     |> smooth ~window:(max 1 (m.smoothing / 2))
+    |> Array.of_list
   in
-  let lr = points_recent ~window:m.window r.lr in
-  let plot =
-    Plot.make
-      ~margins:{ top = 0; right = 1; bottom = 1; left = 4 }
-      ~axes:m.show_axes ~grid:m.show_grid ()
+  let lr = points_recent ~window:m.window r.lr |> Array.of_list in
+  let chart =
+    Charts.empty ()
+    |> Charts.with_frame { margins = (0, 1, 1, 4); inner_padding = 0 }
   in
-  let plot =
+  let chart =
     if m.show_axes then
-      Plot.axes ~style:axis_style ~x_ticks:5 ~y_ticks:4
-        ~y_label:(fun _ v -> Printf.sprintf "%.1f" v)
-        plot
-    else plot
+      chart
+      |> Charts.with_axes
+           ~x:
+             (Charts.Axis.default |> Charts.Axis.with_ticks 5
+             |> Charts.Axis.with_style axis_style)
+           ~y:
+             (Charts.Axis.default |> Charts.Axis.with_ticks 4
+             |> Charts.Axis.with_style axis_style
+             |> Charts.Axis.with_format (fun _ v -> Printf.sprintf "%.1f" v))
+    else chart
   in
-  let plot =
-    if m.show_grid then Plot.grid ~style:grid_style ~x:true ~y:true plot
-    else plot
+  let chart =
+    if m.show_grid then
+      chart
+      |> Charts.with_grid
+           (Charts.Grid.default
+           |> Charts.Grid.with_style grid_style
+           |> Charts.Grid.with_x true |> Charts.Grid.with_y true)
+    else chart
   in
-  let plot =
-    plot
-    |> Plot.line ~kind:`Line
+  let chart =
+    chart
+    |> Charts.line ~kind:`Line
          ~style:(line_style Ansi.Color.green)
          ~x:(fun p -> p.x)
          ~y:(fun p -> p.y)
          acc
-    |> Plot.line ~kind:`Line
+    |> Charts.line ~kind:`Line
          ~style:(line_style Ansi.Color.yellow)
          ~x:(fun p -> p.x)
          ~y:(fun p -> p.y)
          lr
   in
-  ignore (Plot.draw plot canvas ~width ~height)
+  ignore (Charts.draw chart canvas ~width ~height)
 
 let confusion_points seed =
   (* 8x8 confusion-ish matrix *)
   let n = 8 in
-  List.concat
-    (List.init n (fun y ->
-         List.init n (fun x ->
-             let base = if x = y then 0.8 else 0.15 in
-             let wobble =
-               (noise (seed + x + (y * 17)) ((x * 19) + (y * 23)) -. 0.5)
-               *. 0.25
-             in
-             let v = clamp 0.0 1.0 (base +. wobble) in
-             Charts.{ x = Float.of_int x; y = Float.of_int y; value = v })))
+  Array.concat
+    (List.map Array.of_list
+       (List.init n (fun y ->
+            List.init n (fun x ->
+                let base = if x = y then 0.8 else 0.15 in
+                let wobble =
+                  (noise (seed + x + (y * 17)) ((x * 19) + (y * 23)) -. 0.5)
+                  *. 0.25
+                in
+                let v = clamp 0.0 1.0 (base +. wobble) in
+                (Float.of_int x, Float.of_int y, v)))))
 
 let draw_confusion_heatmap _m (r : run) canvas ~width ~height =
   let pts = confusion_points r.seed in
-  let plot =
-    Plot.make
-      ~margins:{ top = 0; right = 0; bottom = 1; left = 2 }
-      ~axes:true ~grid:false ()
-    |> Plot.axes ~style:axis_style ~x_ticks:8 ~y_ticks:8
-         ~x_label:(fun _ v -> Printf.sprintf "%d" (int_of_float v))
-         ~y_label:(fun _ v -> Printf.sprintf "%d" (int_of_float v))
-    |> Plot.heatmap ~shaded:true ~auto_value_range:true ~agg:`Avg
-         ~x:(fun (p : Charts.heat_point) -> p.x)
-         ~y:(fun p -> p.y)
-         ~value:(fun p -> p.value)
+  let chart =
+    Charts.empty ()
+    |> Charts.with_frame { margins = (0, 0, 1, 2); inner_padding = 0 }
+    |> Charts.with_axes
+         ~x:
+           (Charts.Axis.default |> Charts.Axis.with_ticks 8
+           |> Charts.Axis.with_style axis_style
+           |> Charts.Axis.with_format (fun _ v ->
+               Printf.sprintf "%d" (int_of_float v)))
+         ~y:
+           (Charts.Axis.default |> Charts.Axis.with_ticks 8
+           |> Charts.Axis.with_style axis_style
+           |> Charts.Axis.with_format (fun _ v ->
+               Printf.sprintf "%d" (int_of_float v)))
+    |> Charts.heatmap ~auto_value_range:true ~agg:`Avg
+         ~x:(fun (x, _, _) -> x)
+         ~y:(fun (_, y, _) -> y)
+         ~value:(fun (_, _, v) -> v)
          pts
   in
-  ignore (Plot.draw plot canvas ~width ~height)
+  ignore (Charts.draw chart canvas ~width ~height)
 
 type embed = { ex : float; ey : float }
 
 let embeddings seed =
   let n = 260 in
-  List.init n (fun i ->
+  Array.init n (fun i ->
       let t = Float.of_int i /. Float.of_int n *. (Float.pi *. 2.0) in
       let wob = (noise seed (i * 31) -. 0.5) *. 0.35 in
       let r = 0.9 +. wob in
@@ -652,19 +685,27 @@ let embeddings seed =
 
 let draw_embeddings_plot _m (r : run) canvas ~width ~height =
   let pts = embeddings r.seed in
-  let plot =
-    Plot.make
-      ~margins:{ top = 0; right = 0; bottom = 1; left = 2 }
-      ~axes:true ~grid:true ()
-    |> Plot.axes ~style:axis_style ~x_ticks:4 ~y_ticks:4
-    |> Plot.grid ~style:grid_style ~x:true ~y:true
-    |> Plot.scatter ~kind:`Braille ~glyph:"•"
+  let chart =
+    Charts.empty ()
+    |> Charts.with_frame { margins = (0, 0, 1, 2); inner_padding = 0 }
+    |> Charts.with_axes
+         ~x:
+           (Charts.Axis.default |> Charts.Axis.with_ticks 4
+           |> Charts.Axis.with_style axis_style)
+         ~y:
+           (Charts.Axis.default |> Charts.Axis.with_ticks 4
+           |> Charts.Axis.with_style axis_style)
+    |> Charts.with_grid
+         (Charts.Grid.default
+         |> Charts.Grid.with_style grid_style
+         |> Charts.Grid.with_x true |> Charts.Grid.with_y true)
+    |> Charts.scatter ~kind:`Braille ~glyph:"•"
          ~style:(Ansi.Style.make ~fg:Ansi.Color.cyan ())
          ~x:(fun p -> p.ex)
          ~y:(fun p -> p.ey)
          pts
   in
-  ignore (Plot.draw plot canvas ~width ~height)
+  ignore (Charts.draw chart canvas ~width ~height)
 
 (* ---------- View building blocks ---------- *)
 

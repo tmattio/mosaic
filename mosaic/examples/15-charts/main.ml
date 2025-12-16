@@ -1,4 +1,10 @@
-(** Interactive charts with tooltips and multiple chart types. *)
+(** Interactive charts with tooltips and multiple chart types.
+
+    Demonstrates the new Chart API:
+    - Building charts with marks via {!add} or convenience functions
+    - {!Layout.t} for coordinate transforms and hit testing
+    - {!View} for zoom/pan state management
+    - {!Overlay} for crosshairs, markers, and tooltips *)
 
 open Mosaic_tea
 open Mosaic_charts
@@ -21,21 +27,27 @@ let chart_name = function
 type model = {
   chart : chart_type;
   hover : (int * int) option;
-  x_view : (float * float) option;
-  y_view : (float * float) option;
+  view : View.t;
+  canvas_size : (int * int) option;
 }
 
 type msg =
   | Next_chart
   | Prev_chart
   | Set_hover of (int * int) option
-  | Zoom_in
-  | Zoom_out
+  | Zoom_at of int * int * [ `In | `Out ]
+  | Zoom_center of [ `In | `Out ]
   | Reset_zoom
+  | Set_canvas_size of int * int
   | Quit
 
 let init () =
-  ( { chart = Line_interactive; hover = None; x_view = None; y_view = None },
+  ( {
+      chart = Line_interactive;
+      hover = None;
+      view = View.empty;
+      canvas_size = None;
+    },
     Cmd.none )
 
 let next_chart chart =
@@ -54,63 +66,93 @@ let prev_chart chart =
   | Heatmap -> Bar
   | Candlestick -> Heatmap
 
-(* Sample data - defined before update so bounds can be used *)
+(* Sample data - using arrays for the new API *)
 let line_data =
-  List.init 50 (fun i ->
+  Array.init 50 (fun i ->
       let x = float_of_int i in
       let y = (sin (x *. 0.2) *. 3.0) +. (cos (x *. 0.1) *. 2.0) +. 5.0 in
       (x, y))
 
-(* Default bounds for line data - used for zoom *)
-let line_x_bounds = Plot.bounds line_data ~f:fst
-let line_y_bounds = Plot.bounds line_data ~f:snd
+(* Styles used by update - defined here to be available before other data *)
+let axis_style = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:12) ()
+let grid_style = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:5) ()
+
+(* Helper to build the line chart spec - shared between update and draw *)
+let make_line_chart () =
+  empty ()
+  |> with_frame { margins = (1, 2, 2, 6); inner_padding = 0 }
+  |> with_axes
+       ~x:(Axis.default |> Axis.with_ticks 8 |> Axis.with_style axis_style)
+       ~y:(Axis.default |> Axis.with_ticks 5 |> Axis.with_style axis_style)
+  |> with_grid (Grid.default |> Grid.with_style grid_style)
+  |> line ~kind:`Braille
+       ~style:(Ansi.Style.make ~fg:Ansi.Color.cyan ())
+       ~x:fst ~y:snd line_data
 
 let update msg model =
   match msg with
   | Next_chart ->
       ( {
+          model with
           chart = next_chart model.chart;
           hover = None;
-          x_view = None;
-          y_view = None;
+          view = View.empty;
+          (* Keep canvas_size - it's independent of chart type *)
         },
         Cmd.none )
   | Prev_chart ->
       ( {
+          model with
           chart = prev_chart model.chart;
           hover = None;
-          x_view = None;
-          y_view = None;
+          view = View.empty;
+          (* Keep canvas_size - it's independent of chart type *)
         },
         Cmd.none )
   | Set_hover hover -> ({ model with hover }, Cmd.none)
-  | Zoom_in ->
-      let x_view =
-        Plot.zoom (Option.value model.x_view ~default:line_x_bounds) ~factor:1.2
-      in
-      let y_view =
-        Plot.zoom (Option.value model.y_view ~default:line_y_bounds) ~factor:1.2
-      in
-      ({ model with x_view = Some x_view; y_view = Some y_view }, Cmd.none)
-  | Zoom_out ->
-      let x_view =
-        Plot.zoom (Option.value model.x_view ~default:line_x_bounds) ~factor:0.8
-      in
-      let y_view =
-        Plot.zoom (Option.value model.y_view ~default:line_y_bounds) ~factor:0.8
-      in
-      ({ model with x_view = Some x_view; y_view = Some y_view }, Cmd.none)
-  | Reset_zoom -> ({ model with x_view = None; y_view = None }, Cmd.none)
+  | Zoom_at (px, py, direction) -> (
+      let factor = match direction with `In -> 1.3 | `Out -> 0.7 in
+      match model.canvas_size with
+      | Some (width, height) ->
+          (* Compute layout using current canvas size *)
+          let chart = make_line_chart () in
+          let ly = layout ~view:model.view chart ~width ~height in
+          if Layout.is_inside_plot ly ~px ~py then
+            let view' =
+              Layout.zoom_view_around_px ly ~view:model.view ~axis:`Both ~px ~py
+                ~factor
+            in
+            let view' = Layout.clamp_view ly view' in
+            ({ model with view = view' }, Cmd.none)
+          else (model, Cmd.none)
+      | None -> (model, Cmd.none))
+  | Zoom_center direction -> (
+      let factor = match direction with `In -> 1.3 | `Out -> 0.7 in
+      match model.canvas_size with
+      | Some (width, height) ->
+          (* Compute layout using current canvas size *)
+          let chart = make_line_chart () in
+          let ly = layout ~view:model.view chart ~width ~height in
+          let view' =
+            Layout.zoom_view_around_center ly ~view:model.view ~axis:`Both
+              ~factor
+          in
+          let view' = Layout.clamp_view ly view' in
+          ({ model with view = view' }, Cmd.none)
+      | None -> (model, Cmd.none))
+  | Reset_zoom -> ({ model with view = View.empty }, Cmd.none)
+  | Set_canvas_size (width, height) ->
+      ({ model with canvas_size = Some (width, height) }, Cmd.none)
   | Quit -> (model, Cmd.quit)
 
 let scatter_data =
-  List.init 100 (fun i ->
+  Array.init 100 (fun i ->
       let x = float_of_int (i mod 20) +. (Random.float 0.5 -. 0.25) in
       let y = float_of_int (i / 20) +. (Random.float 0.5 -. 0.25) in
       (x, y))
 
 let bar_data =
-  [
+  [|
     ("Mon", 12.0);
     ("Tue", 19.0);
     ("Wed", 8.0);
@@ -118,33 +160,30 @@ let bar_data =
     ("Fri", 22.0);
     ("Sat", 10.0);
     ("Sun", 14.0);
-  ]
+  |]
 
 let heatmap_data =
-  List.concat
-    (List.init 10 (fun y ->
-         List.init 10 (fun x ->
-             let value =
-               sin (float_of_int x *. 0.5) *. cos (float_of_int y *. 0.5)
-             in
-             {
-               x = float_of_int x;
-               y = float_of_int y;
-               value = (value +. 1.0) /. 2.0;
-             })))
+  Array.concat
+    (List.map Array.of_list
+       (List.init 10 (fun y ->
+            List.init 10 (fun x ->
+                let value =
+                  sin (float_of_int x *. 0.5) *. cos (float_of_int y *. 0.5)
+                in
+                (float_of_int x, float_of_int y, (value +. 1.0) /. 2.0)))))
 
 let candlestick_data =
   let base = 100.0 in
-  List.init 20 (fun i ->
+  Array.init 20 (fun i ->
       let open_ =
         base +. (float_of_int i *. 0.5) +. (Random.float 5.0 -. 2.5)
       in
       let close = open_ +. (Random.float 6.0 -. 3.0) in
       let high = max open_ close +. Random.float 2.0 in
       let low = min open_ close -. Random.float 2.0 in
-      { time = float_of_int i; open_; high; low; close })
+      Mark.{ time = float_of_int i; open_; high; low; close })
 
-(* Styles *)
+(* Additional styles *)
 let header_bg = Ansi.Color.of_rgb 40 60 80
 let footer_bg = Ansi.Color.grayscale ~level:3
 let muted = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:16) ()
@@ -156,133 +195,116 @@ let tooltip_style =
 let crosshair_style = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:10) ()
 let marker_style = Ansi.Style.make ~fg:Ansi.Color.yellow ~bold:true ()
 
+(* Helper to find nearest point in data *)
+let nearest_xy data ~x ~y =
+  if Array.length data = 0 then None
+  else
+    let best = ref None in
+    let best_dist = ref Float.infinity in
+    Array.iter
+      (fun (px, py) ->
+        let dist = ((px -. x) ** 2.) +. ((py -. y) ** 2.) in
+        if dist < !best_dist then begin
+          best_dist := dist;
+          best := Some (px, py)
+        end)
+      data;
+    !best
+
 (* Chart drawing functions *)
 let draw_line_chart model canvas ~width ~height =
-  let base_plot =
-    Plot.make
-      ~margins:{ top = 1; right = 2; bottom = 2; left = 6 }
-      ~axes:true ~grid:true ()
-    |> Plot.axes
-         ~style:(Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:12) ())
-         ~x_ticks:8 ~y_ticks:5
-    |> Plot.grid
-         ~style:(Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:5) ())
-         ~x:true ~y:true
-    |> Plot.line ~kind:`Braille
+  let chart =
+    empty ()
+    |> with_frame { margins = (1, 2, 2, 6); inner_padding = 0 }
+    |> with_axes
+         ~x:(Axis.default |> Axis.with_ticks 8 |> Axis.with_style axis_style)
+         ~y:(Axis.default |> Axis.with_ticks 5 |> Axis.with_style axis_style)
+    |> with_grid (Grid.default |> Grid.with_style grid_style)
+    |> line ~kind:`Braille
          ~style:(Ansi.Style.make ~fg:Ansi.Color.cyan ())
          ~x:fst ~y:snd line_data
   in
-  (* Apply viewport if zoomed *)
-  let plot =
-    match model.x_view with
-    | Some xv -> Plot.x_view xv base_plot
-    | None -> base_plot
-  in
-  let plot =
-    match model.y_view with Some yv -> Plot.y_view yv plot | None -> plot
-  in
-  let t = Plot.draw plot canvas ~width ~height in
+  let layout = draw ~view:model.view chart canvas ~width ~height in
   (* Draw interactive overlay if hovering *)
   (match model.hover with
   | Some (px, py) -> (
-      match t.px_to_data px py with
+      match Layout.data_of_px layout ~px ~py with
       | Some (dx, dy) -> (
-          (* Find nearest data point for snapping using 2D distance *)
-          let nearest =
-            List.fold_left
-              (fun best (x, y) ->
-                let dist_x = x -. dx in
-                let dist_y = y -. dy in
-                let dist = sqrt ((dist_x *. dist_x) +. (dist_y *. dist_y)) in
-                match best with
-                | None -> Some (x, y, dist)
-                | Some (_, _, d) when dist < d -> Some (x, y, dist)
-                | _ -> best)
-              None line_data
-          in
-          match nearest with
-          | Some (snap_x, snap_y, _) ->
-              Plot.draw_crosshair ~style:crosshair_style t canvas ~x:snap_x
+          match nearest_xy line_data ~x:dx ~y:dy with
+          | Some (snap_x, snap_y) ->
+              Overlay.crosshair ~style:crosshair_style layout canvas ~x:snap_x
                 ~y:snap_y;
-              Plot.draw_marker ~style:marker_style ~glyph:"*" t canvas ~x:snap_x
-                ~y:snap_y;
-              Plot.draw_tooltip ~style:tooltip_style t canvas ~x:snap_x
+              Overlay.marker ~style:marker_style ~glyph:"*" layout canvas
+                ~x:snap_x ~y:snap_y;
+              Overlay.tooltip ~style:tooltip_style layout canvas ~x:snap_x
                 ~y:snap_y
                 [
-                  Printf.sprintf " x: %.1f " snap_x;
-                  Printf.sprintf " y: %.2f " snap_y;
+                  Printf.sprintf "x: %.1f" snap_x;
+                  Printf.sprintf "y: %.2f" snap_y;
                 ]
           | None -> ())
       | None -> ())
   | None -> ());
-  t
+  layout
 
 let draw_scatter_chart _model canvas ~width ~height =
-  let plot =
-    Plot.make
-      ~margins:{ top = 1; right = 2; bottom = 2; left = 4 }
-      ~axes:true ~grid:true ()
-    |> Plot.axes
-         ~style:(Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:12) ())
-         ~x_ticks:5 ~y_ticks:5
-    |> Plot.grid ~style:(Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:5) ())
-    |> Plot.scatter ~kind:`Braille ~glyph:"."
+  let chart =
+    empty ()
+    |> with_frame { margins = (1, 2, 2, 4); inner_padding = 0 }
+    |> with_axes
+         ~x:(Axis.default |> Axis.with_ticks 5 |> Axis.with_style axis_style)
+         ~y:(Axis.default |> Axis.with_ticks 5 |> Axis.with_style axis_style)
+    |> with_grid (Grid.default |> Grid.with_style grid_style)
+    |> scatter ~kind:`Braille ~glyph:"."
          ~style:(Ansi.Style.make ~fg:Ansi.Color.green ())
          ~x:fst ~y:snd scatter_data
   in
-  Plot.draw plot canvas ~width ~height
+  draw chart canvas ~width ~height
 
 let draw_bar_chart _model canvas ~width ~height =
-  let plot =
-    Plot.make
-      ~margins:{ top = 1; right = 1; bottom = 2; left = 4 }
-      ~axes:true ()
-    |> Plot.axes
-         ~style:(Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:12) ())
-         ~y_ticks:5
-    |> Plot.x_band (List.map fst bar_data)
-    |> Plot.bar_y
+  let categories = Array.to_list (Array.map fst bar_data) in
+  let chart =
+    empty ()
+    |> with_frame { margins = (1, 1, 2, 4); inner_padding = 0 }
+    |> with_x_scale (Scale.band ~categories ())
+    |> with_axes
+         ~x:(Axis.default |> Axis.with_style axis_style)
+         ~y:(Axis.default |> Axis.with_ticks 5 |> Axis.with_style axis_style)
+    |> bars_y
          ~style:(Ansi.Style.make ~fg:Ansi.Color.blue ())
          ~x:fst ~y:snd bar_data
   in
-  Plot.draw plot canvas ~width ~height
+  draw chart canvas ~width ~height
 
 let draw_heatmap_chart _model canvas ~width ~height =
-  let plot =
-    Plot.make
-      ~margins:{ top = 1; right = 1; bottom = 2; left = 3 }
-      ~axes:true ()
-    |> Plot.axes
-         ~style:(Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:12) ())
-         ~x_ticks:5 ~y_ticks:5
-    |> Plot.heatmap ~shaded:true ~auto_value_range:true
-         ~x:(fun (p : heat_point) -> p.x)
-         ~y:(fun (p : heat_point) -> p.y)
-         ~value:(fun (p : heat_point) -> p.value)
+  let chart =
+    empty ()
+    |> with_frame { margins = (1, 1, 2, 3); inner_padding = 0 }
+    |> with_axes
+         ~x:(Axis.default |> Axis.with_ticks 5 |> Axis.with_style axis_style)
+         ~y:(Axis.default |> Axis.with_ticks 5 |> Axis.with_style axis_style)
+    |> heatmap ~auto_value_range:true
+         ~x:(fun (x, _, _) -> x)
+         ~y:(fun (_, y, _) -> y)
+         ~value:(fun (_, _, v) -> v)
          heatmap_data
   in
-  Plot.draw plot canvas ~width ~height
+  draw chart canvas ~width ~height
 
 let draw_candlestick_chart _model canvas ~width ~height =
-  let plot =
-    Plot.make
-      ~margins:{ top = 1; right = 1; bottom = 2; left = 6 }
-      ~axes:true ~grid:true ()
-    |> Plot.axes
-         ~style:(Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:12) ())
-         ~x_ticks:5 ~y_ticks:5
-    |> Plot.grid ~style:(Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:5) ())
-    |> Plot.candles
+  let chart =
+    empty ()
+    |> with_frame { margins = (1, 1, 2, 6); inner_padding = 0 }
+    |> with_axes
+         ~x:(Axis.default |> Axis.with_ticks 5 |> Axis.with_style axis_style)
+         ~y:(Axis.default |> Axis.with_ticks 5 |> Axis.with_style axis_style)
+    |> with_grid (Grid.default |> Grid.with_style grid_style)
+    |> candles
          ~bullish:(Ansi.Style.make ~fg:Ansi.Color.green ())
          ~bearish:(Ansi.Style.make ~fg:Ansi.Color.red ())
-         ~time:(fun p -> p.time)
-         ~open_:(fun p -> p.open_)
-         ~high:(fun p -> p.high)
-         ~low:(fun p -> p.low)
-         ~close:(fun p -> p.close)
          candlestick_data
   in
-  Plot.draw plot canvas ~width ~height
+  draw chart canvas ~width ~height
 
 let view model =
   let chart_index =
@@ -316,20 +338,21 @@ let view model =
           | Line_interactive ->
               canvas
                 ~on_mouse:(fun ev ->
+                  let px, py = (Event.Mouse.x ev, Event.Mouse.y ev) in
                   match Event.Mouse.kind ev with
-                  | Move ->
-                      Some
-                        (Set_hover (Some (Event.Mouse.x ev, Event.Mouse.y ev)))
+                  | Move -> Some (Set_hover (Some (px, py)))
                   | Out -> Some (Set_hover None)
                   | Scroll -> (
                       match Event.Mouse.scroll_delta ev with
-                      | Some (Scroll_up, _) -> Some Zoom_in
-                      | Some (Scroll_down, _) -> Some Zoom_out
+                      | Some (Scroll_up, _) -> Some (Zoom_at (px, py, `In))
+                      | Some (Scroll_down, _) -> Some (Zoom_at (px, py, `Out))
                       | _ -> None)
                   | _ -> None)
+                ~on_resize:(fun ~width ~height ->
+                  Some (Set_canvas_size (width, height)))
                 ~draw:(fun canvas ~width ~height ->
-                  let _ = draw_line_chart model canvas ~width ~height in
-                  ())
+                  let layout = draw_line_chart model canvas ~width ~height in
+                  ignore layout)
                 ~size:{ width = pct 100; height = pct 100 }
                 ()
           | Scatter ->
@@ -381,19 +404,19 @@ let subscriptions model =
       | Tab when not data.modifier.shift -> Some Next_chart
       | Left -> Some Prev_chart
       | Tab when data.modifier.shift -> Some Prev_chart
-      (* Zoom controls for interactive chart *)
+      (* Zoom controls for interactive chart - zoom around center with keyboard *)
       | Char c
         when Uchar.equal c (Uchar.of_char '+') && model.chart = Line_interactive
         ->
-          Some Zoom_in
+          Some (Zoom_center `In)
       | Char c
         when Uchar.equal c (Uchar.of_char '=') && model.chart = Line_interactive
         ->
-          Some Zoom_in
+          Some (Zoom_center `In)
       | Char c
         when Uchar.equal c (Uchar.of_char '-') && model.chart = Line_interactive
         ->
-          Some Zoom_out
+          Some (Zoom_center `Out)
       | Char c
         when Uchar.equal c (Uchar.of_char 'r') && model.chart = Line_interactive
         ->

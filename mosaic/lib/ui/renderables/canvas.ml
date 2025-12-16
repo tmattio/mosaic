@@ -27,6 +27,7 @@ type t = {
   mutable intrinsic_width : int option;
   mutable intrinsic_height : int option;
   mutable draw : (t -> width:int -> height:int -> unit) option;
+  mutable on_resize : (width:int -> height:int -> unit) option;
 }
 
 let node t = t.node
@@ -277,11 +278,14 @@ let render_canvas t renderable grid ~delta:_ =
           Grid.blit_region ~src ~dst:grid ~src_x:0 ~src_y:0 ~width:blit_w
             ~height:blit_h ~dst_x:lx ~dst_y:ly))
 
+let set_on_resize t callback = t.on_resize <- callback
+
 let mount ?(props = Props.default) node =
   let iw = max 0 props.initial_width in
   let ih = max 0 props.initial_height in
+  let glyph_pool = Renderable.Internal.glyph_pool node in
   let surface =
-    Grid.create ~width:(max 1 iw) ~height:(max 1 ih)
+    Grid.create ~width:(max 1 iw) ~height:(max 1 ih) ?glyph_pool
       ?width_method:props.width_method ~respect_alpha:props.respect_alpha ()
   in
   let canvas =
@@ -293,6 +297,7 @@ let mount ?(props = Props.default) node =
       intrinsic_width = (if iw > 0 then Some iw else None);
       intrinsic_height = (if ih > 0 then Some ih else None);
       draw = None;
+      on_resize = None;
     }
   in
   Renderable.set_render node (render_canvas canvas);
@@ -301,7 +306,14 @@ let mount ?(props = Props.default) node =
     (Some
        (fun _ ->
          resize_surface_to_layout canvas;
-         request_render canvas));
+         request_render canvas;
+         (* Invoke user's on_resize callback if set *)
+         match canvas.on_resize with
+         | Some cb ->
+             let width = Renderable.width canvas.node in
+             let height = Renderable.height canvas.node in
+             if width > 0 && height > 0 then cb ~width ~height
+         | None -> ()));
   request_render canvas;
   canvas
 
