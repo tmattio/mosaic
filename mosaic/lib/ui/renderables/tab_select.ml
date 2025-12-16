@@ -390,35 +390,38 @@ let set_on_change_full t cb = t.on_change_full <- cb
 let set_on_activate_full t cb = t.on_activate_full <- cb
 
 let handle_key t event =
-  let w = Renderable.width t.node in
-  let visible_count = calculate_visible_count t ~width:w in
   let kev = Event.Key.data event in
-  match kev.key with
-  | Left ->
-      move_left t;
-      true
-  | Right ->
-      move_right t;
-      true
-  | Char c when Uchar.equal c (Uchar.of_char '[') ->
-      move_left t;
-      true
-  | Char c when Uchar.equal c (Uchar.of_char ']') ->
-      move_right t;
-      true
-  | Home when t.extra_navigation ->
-      set_selected_index_internal t 0 visible_count;
-      true
-  | End when t.extra_navigation ->
-      let len = option_count t in
-      if len > 0 then (
-        set_selected_index_internal t (len - 1) visible_count;
-        true)
-      else true
-  | Enter | KP_enter ->
-      notify_activate t;
-      true
-  | _ -> false
+  match kev.event_type with
+  | Release -> false
+  | Press | Repeat ->
+      let w = Renderable.width t.node in
+      let visible_count = calculate_visible_count t ~width:w in
+      (match kev.key with
+      | Left ->
+          move_left t;
+          true
+      | Right ->
+          move_right t;
+          true
+      | Char c when Uchar.equal c (Uchar.of_char '[') ->
+          move_left t;
+          true
+      | Char c when Uchar.equal c (Uchar.of_char ']') ->
+          move_right t;
+          true
+      | Home when t.extra_navigation ->
+          set_selected_index_internal t 0 visible_count;
+          true
+      | End when t.extra_navigation ->
+          let len = option_count t in
+          if len > 0 then (
+            set_selected_index_internal t (len - 1) visible_count;
+            true)
+          else true
+      | Enter | KP_enter ->
+          notify_activate t;
+          true
+      | _ -> false)
 
 let handle_mouse t (event : Event.mouse) =
   let lx = Renderable.x t.node in
