@@ -124,11 +124,9 @@ let rec write_fragment buffer current_style = function
       List.iter (write_fragment buffer next_style) children
 
 let rebuild_buffer t =
-  (* Traverse fragments starting from the current surface default style, so
-     inherited defaults (fg/bg/attrs) are preserved. We seed traversal with
-     the renderable defaults. Per-chunk styles stay minimal: Text_buffer will
-     compose defaults with encoded base styles during rebuild_styles. *)
-  let base = Text_surface.default_style t.surface in
+  (* Encode only per-fragment style overlays; defaults are applied later by the
+     text buffer using its configured default style. *)
+  let base = Ansi.Style.default in
   Text_surface.replace_content t.surface (fun buffer ->
       match t.fragments with
       | [] -> ()
@@ -247,8 +245,11 @@ let set_content t content =
   else t.flat_cache <- Some [ { text = content; style = None } ]
 
 let set_text_style t style =
-  Text_surface.set_default_style t.surface style;
-  t.flat_cache <- None
+  let current = Text_surface.default_style t.surface in
+  if Ansi.Style.equal current style then ()
+  else (
+    Text_surface.set_default_style t.surface style;
+    t.flat_cache <- None)
 
 let wrap_mode t =
   match Text_surface.wrap_mode t.surface with
