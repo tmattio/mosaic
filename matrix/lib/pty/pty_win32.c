@@ -1,14 +1,9 @@
 #ifdef _WIN32
 
 // Require Windows 10 version 1809 or later for ConPTY API
-#ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0A00
-#endif
 
-// Include winsock2.h before windows.h to avoid warning
-#include <winsock2.h>
 #include <windows.h>
-#include <consoleapi.h>  // For HPCON and ConPTY functions
 #include <process.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,7 +16,12 @@
 #include <caml/mlvalues.h>
 #include <caml/unixsupport.h>
 
-// ConPTY API (available in Windows 10 1809+)
+// HPCON is defined in Windows SDK 10.0.17763.0+ but may be missing in MinGW
+#ifndef HPCON
+typedef VOID *HPCON;
+#endif
+
+// ConPTY function signatures (loaded dynamically from kernel32.dll)
 typedef HRESULT(WINAPI *CreatePseudoConsole_t)(COORD, HANDLE, HANDLE, DWORD,
                                                HPCON *);
 typedef void(WINAPI *ClosePseudoConsole_t)(HPCON);
