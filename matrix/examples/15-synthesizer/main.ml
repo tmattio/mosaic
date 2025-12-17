@@ -232,9 +232,15 @@ let draw_controls grid ~x ~y state =
   let total_time = state.duration in
   let sustain_time = max 0.0 (total_time -. attack_time -. release_time) in
   (* Scale to env_width based on actual timings *)
-  let attack_w = max 1 (int_of_float (attack_time /. total_time *. float_of_int env_width)) in
-  let release_w = max 1 (int_of_float (release_time /. total_time *. float_of_int env_width)) in
-  let sustain_w = max 0 (int_of_float (sustain_time /. total_time *. float_of_int env_width)) in
+  let attack_w =
+    max 1 (int_of_float (attack_time /. total_time *. float_of_int env_width))
+  in
+  let release_w =
+    max 1 (int_of_float (release_time /. total_time *. float_of_int env_width))
+  in
+  let sustain_w =
+    max 0 (int_of_float (sustain_time /. total_time *. float_of_int env_width))
+  in
   (* Top line (attack peak to sustain) *)
   for i = 0 to attack_w - 1 do
     Grid.draw_text ~style:env_style grid ~x:(x + i) ~y:env_y ~text:"╱"

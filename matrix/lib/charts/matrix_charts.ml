@@ -3974,9 +3974,9 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
         let dx = xmax -. xmin and dy = ymax -. ymin in
         (* Clip bounds in braille coordinates *)
         let clip_xmin = r.x * 2 in
-        let clip_xmax = (r.x + r.width) * 2 - 1 in
+        let clip_xmax = ((r.x + r.width) * 2) - 1 in
         let clip_ymin = r.y * 4 in
-        let clip_ymax = (r.y + r.height) * 4 - 1 in
+        let clip_ymax = ((r.y + r.height) * 4) - 1 in
         let prev = ref None in
         Data.iter data (fun a ->
             let x' = x a and y' = y a in
@@ -4109,9 +4109,9 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
         let dx = xmax -. xmin and dy = ymax -. ymin in
         (* Clip bounds in braille coordinates *)
         let clip_xmin = r.x * 2 in
-        let clip_xmax = (r.x + r.width) * 2 - 1 in
+        let clip_xmax = ((r.x + r.width) * 2) - 1 in
         let clip_ymin = r.y * 4 in
-        let clip_ymax = (r.y + r.height) * 4 - 1 in
+        let clip_ymax = ((r.y + r.height) * 4) - 1 in
         let prev = ref None in
         Data.iter data (fun a ->
             match y a with

@@ -20,7 +20,17 @@ type chart_type =
   | Dual_axis
 
 let all_charts =
-  [ Line; Scatter; Bar; Stacked_bar; Heatmap; Candlestick; Area; Histogram; Dual_axis ]
+  [
+    Line;
+    Scatter;
+    Bar;
+    Stacked_bar;
+    Heatmap;
+    Candlestick;
+    Area;
+    Histogram;
+    Dual_axis;
+  ]
 
 let chart_name = function
   | Line -> "Line"
@@ -217,7 +227,9 @@ let histogram_data =
       (* Box-Muller transform for normal distribution *)
       let u1 = Random.float 1.0 in
       let u2 = Random.float 1.0 in
-      let z = sqrt (-2.0 *. log (max 0.0001 u1)) *. cos (2.0 *. Float.pi *. u2) in
+      let z =
+        sqrt (-2.0 *. log (max 0.0001 u1)) *. cos (2.0 *. Float.pi *. u2)
+      in
       (* Mean 50, stddev 15 *)
       50.0 +. (z *. 15.0))
 
@@ -510,7 +522,9 @@ let spec_for (m : model) (ct : chart_type) : Matrix_charts.t =
       |> histogram ~id:"dist" ~label:"Distribution" ~style:hist_style
            ~bins:(Mark.Bins 20) ~normalize:`Count ~x:Fun.id histogram_data
   | Dual_axis ->
-      let price_style = Ansi.Style.make ~fg:(Ansi.Color.of_rgb 100 200 255) () in
+      let price_style =
+        Ansi.Style.make ~fg:(Ansi.Color.of_rgb 100 200 255) ()
+      in
       let volume_style =
         Ansi.Style.make ~fg:(Ansi.Color.of_rgb 255 180 100) ()
       in
@@ -783,10 +797,14 @@ let update (msg : msg) (m : model) =
             Cmd.none )
       | Bar | Stacked_bar | Candlestick | Area | Histogram | Dual_axis ->
           (m, Cmd.none))
-  | Toggle_smoothing -> ({ m with show_smoothing = not m.show_smoothing }, Cmd.none)
-  | Toggle_confidence -> ({ m with show_confidence = not m.show_confidence }, Cmd.none)
-  | Toggle_annotations -> ({ m with show_annotations = not m.show_annotations }, Cmd.none)
-  | Toggle_log_scale -> ({ m with use_log_scale = not m.use_log_scale }, Cmd.none)
+  | Toggle_smoothing ->
+      ({ m with show_smoothing = not m.show_smoothing }, Cmd.none)
+  | Toggle_confidence ->
+      ({ m with show_confidence = not m.show_confidence }, Cmd.none)
+  | Toggle_annotations ->
+      ({ m with show_annotations = not m.show_annotations }, Cmd.none)
+  | Toggle_log_scale ->
+      ({ m with use_log_scale = not m.use_log_scale }, Cmd.none)
   | Cycle_grid_pattern ->
       ({ m with grid_pattern = cycle_grid_pattern m.grid_pattern }, Cmd.none)
   | Cycle_charset -> ({ m with charset = cycle_charset m.charset }, Cmd.none)
