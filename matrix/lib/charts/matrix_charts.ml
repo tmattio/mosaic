@@ -1,10 +1,207 @@
 module Style = Ansi.Style
 module Color = Ansi.Color
-module Canvas = Mosaic_ui.Canvas
+module G = Grid
 
 (* *)
 
 module Sparkline = Sparkline
+
+(* --- Charset --- *)
+
+module Charset = struct
+  type line_pattern = [ `Solid | `Dashed | `Dotted ]
+
+  type frame = {
+    tl : string;
+    tr : string;
+    bl : string;
+    br : string;
+    h : string;
+    v : string;
+    tee_up : string;
+    tee_down : string;
+    tee_left : string;
+    tee_right : string;
+    cross : string;
+  }
+
+  type t = {
+    frame : frame;
+    axis_h : string;
+    axis_v : string;
+    tick_h : string;
+    tick_v : string;
+    grid_h_solid : string;
+    grid_v_solid : string;
+    grid_h_dashed : string;
+    grid_v_dashed : string;
+    grid_h_dotted : string;
+    grid_v_dotted : string;
+    point_default : string;
+    point_heavy : string;
+    bar_fill : string;
+    shade_levels : string array;
+    tooltip_frame : frame;
+    diag_up : string;
+    diag_down : string;
+  }
+
+  let ascii_frame =
+    {
+      tl = "+";
+      tr = "+";
+      bl = "+";
+      br = "+";
+      h = "-";
+      v = "|";
+      tee_up = "+";
+      tee_down = "+";
+      tee_left = "+";
+      tee_right = "+";
+      cross = "+";
+    }
+
+  let light_frame =
+    {
+      tl = "┌";
+      tr = "┐";
+      bl = "└";
+      br = "┘";
+      h = "─";
+      v = "│";
+      tee_up = "┴";
+      tee_down = "┬";
+      tee_left = "┤";
+      tee_right = "├";
+      cross = "┼";
+    }
+
+  let heavy_frame =
+    {
+      tl = "┏";
+      tr = "┓";
+      bl = "┗";
+      br = "┛";
+      h = "━";
+      v = "┃";
+      tee_up = "┻";
+      tee_down = "┳";
+      tee_left = "┫";
+      tee_right = "┣";
+      cross = "╋";
+    }
+
+  let rounded_frame =
+    {
+      tl = "╭";
+      tr = "╮";
+      bl = "╰";
+      br = "╯";
+      h = "─";
+      v = "│";
+      tee_up = "┴";
+      tee_down = "┬";
+      tee_left = "┤";
+      tee_right = "├";
+      cross = "┼";
+    }
+
+  let ascii =
+    {
+      frame = ascii_frame;
+      axis_h = "-";
+      axis_v = "|";
+      tick_h = "-";
+      tick_v = "|";
+      grid_h_solid = "-";
+      grid_v_solid = "|";
+      grid_h_dashed = "-";
+      grid_v_dashed = "|";
+      grid_h_dotted = ".";
+      grid_v_dotted = ":";
+      point_default = "*";
+      point_heavy = "O";
+      bar_fill = "#";
+      shade_levels = [| " "; "."; "o"; "O"; "#" |];
+      tooltip_frame = ascii_frame;
+      diag_up = "/";
+      diag_down = "\\";
+    }
+
+  let unicode_light =
+    {
+      frame = light_frame;
+      axis_h = "─";
+      axis_v = "│";
+      tick_h = "─";
+      tick_v = "│";
+      grid_h_solid = "─";
+      grid_v_solid = "│";
+      grid_h_dashed = "┄";
+      grid_v_dashed = "┆";
+      grid_h_dotted = "┈";
+      grid_v_dotted = "┊";
+      point_default = "∙";
+      point_heavy = "●";
+      bar_fill = "█";
+      shade_levels = [| " "; "░"; "▒"; "▓"; "█" |];
+      tooltip_frame = rounded_frame;
+      diag_up = "╱";
+      diag_down = "╲";
+    }
+
+  let unicode_heavy =
+    {
+      frame = heavy_frame;
+      axis_h = "━";
+      axis_v = "┃";
+      tick_h = "━";
+      tick_v = "┃";
+      grid_h_solid = "━";
+      grid_v_solid = "┃";
+      grid_h_dashed = "┅";
+      grid_v_dashed = "┇";
+      grid_h_dotted = "┉";
+      grid_v_dotted = "┋";
+      point_default = "∙";
+      point_heavy = "●";
+      bar_fill = "█";
+      shade_levels = [| " "; "░"; "▒"; "▓"; "█" |];
+      tooltip_frame = heavy_frame;
+      diag_up = "╱";
+      diag_down = "╲";
+    }
+
+  let unicode_rounded =
+    {
+      frame = rounded_frame;
+      axis_h = "─";
+      axis_v = "│";
+      tick_h = "─";
+      tick_v = "│";
+      grid_h_solid = "─";
+      grid_v_solid = "│";
+      grid_h_dashed = "┄";
+      grid_v_dashed = "┆";
+      grid_h_dotted = "┈";
+      grid_v_dotted = "┊";
+      point_default = "∙";
+      point_heavy = "●";
+      bar_fill = "█";
+      shade_levels = [| " "; "░"; "▒"; "▓"; "█" |];
+      tooltip_frame = rounded_frame;
+      diag_up = "╱";
+      diag_down = "╲";
+    }
+
+  let default = unicode_light
+end
+
+(* --- Raster --- *)
+
+module Raster = struct
+  type resolution = [ `Cell | `Wave | `Block2x2 | `Braille2x4 ]
+end
 
 (* --- small utilities --- *)
 
@@ -33,6 +230,45 @@ let braille_glyph_of_bits bits =
   in
   utf8_of_uchar u
 
+(* Block2x2 quadrant glyphs: 4 bits = [top-left, top-right, bottom-left, bottom-right]
+   Bit layout: bit 0 = top-left, bit 1 = top-right, bit 2 = bottom-left, bit 3 = bottom-right *)
+let quadrant_glyphs =
+  [|
+    " ";
+    (* 0000 *)
+    "▘";
+    (* 0001 - top-left *)
+    "▝";
+    (* 0010 - top-right *)
+    "▀";
+    (* 0011 - top half *)
+    "▖";
+    (* 0100 - bottom-left *)
+    "▌";
+    (* 0101 - left half *)
+    "▞";
+    (* 0110 - diagonal: top-right + bottom-left *)
+    "▛";
+    (* 0111 - all but bottom-right *)
+    "▗";
+    (* 1000 - bottom-right *)
+    "▚";
+    (* 1001 - diagonal: top-left + bottom-right *)
+    "▐";
+    (* 1010 - right half *)
+    "▜";
+    (* 1011 - all but bottom-left *)
+    "▄";
+    (* 1100 - bottom half *)
+    "▙";
+    (* 1101 - all but top-right *)
+    "▟";
+    (* 1110 - all but top-left *)
+    "█";
+    (* 1111 - full block *)
+  |]
+
+let quadrant_glyph_of_bits bits = quadrant_glyphs.(bits land 0xF)
 let lerp a b t = a +. ((b -. a) *. t)
 
 (* Nice ticks algorithm: chooses step sizes from {1, 2, 5} × 10^k *)
@@ -65,6 +301,9 @@ let nice_ticks ~min_val ~max_val ~target_ticks =
     in
     let ticks = gen [] start in
     if ticks = [] then [ min_val; max_val ] else ticks
+
+let draw_text ?style ?tab_width grid ~x ~y text =
+  G.draw_text ?style ?tab_width grid ~x ~y ~text
 
 (* Cohen-Sutherland line clipping algorithm for geometric clipping *)
 module Clip = struct
@@ -191,12 +430,15 @@ module Theme = struct
     palette : Color.t list;
     background : Color.t option;
     axes : Style.t;
+    border : Style.t;
     grid : Style.t;
+    grid_minor : Style.t;
     labels : Style.t;
     tooltip : Style.t;
     tooltip_border : Style.t option;
     crosshair : Style.t;
     marker : Style.t;
+    charset : Charset.t;
   }
 
   let default_palette =
@@ -217,12 +459,15 @@ module Theme = struct
       palette = default_palette;
       background = None;
       axes = Style.make ~fg:(Color.grayscale ~level:13) ();
+      border = Style.make ~fg:(Color.grayscale ~level:10) ();
       grid = Style.make ~fg:(Color.grayscale ~level:5) ();
+      grid_minor = Style.make ~fg:(Color.grayscale ~level:3) ();
       labels = Style.make ~fg:(Color.grayscale ~level:14) ();
       tooltip = Style.make ~fg:Color.white ~bg:(Color.grayscale ~level:4) ();
       tooltip_border = Some (Style.make ~fg:(Color.grayscale ~level:10) ());
       crosshair = Style.make ~fg:(Color.grayscale ~level:10) ();
       marker = Style.make ~fg:Color.yellow ~bold:true ();
+      charset = Charset.unicode_light;
     }
 
   let light =
@@ -230,41 +475,75 @@ module Theme = struct
       palette = default_palette;
       background = None;
       axes = Style.make ~fg:(Color.grayscale ~level:2) ();
+      border = Style.make ~fg:(Color.grayscale ~level:5) ();
       grid = Style.make ~fg:(Color.grayscale ~level:18) ();
+      grid_minor = Style.make ~fg:(Color.grayscale ~level:20) ();
       labels = Style.make ~fg:(Color.grayscale ~level:1) ();
       tooltip = Style.make ~fg:Color.black ~bg:(Color.grayscale ~level:20) ();
       tooltip_border = Some (Style.make ~fg:(Color.grayscale ~level:8) ());
       crosshair = Style.make ~fg:(Color.grayscale ~level:8) ();
       marker = Style.make ~fg:Color.red ~bold:true ();
+      charset = Charset.unicode_light;
     }
 
   let default = dark
+  let with_charset charset t = { t with charset }
 end
 
 (* --- Format --- *)
 
 module Format = struct
   let float ?(precision = 3) () : int -> float -> string =
-   fun _ v ->
-    (* Use a general/compact float format by default. *)
-    match precision with
-    | 0 -> Printf.sprintf "%.0g" v
-    | 1 -> Printf.sprintf "%.1g" v
-    | 2 -> Printf.sprintf "%.2g" v
-    | 3 -> Printf.sprintf "%.3g" v
-    | 4 -> Printf.sprintf "%.4g" v
-    | 5 -> Printf.sprintf "%.5g" v
-    | 6 -> Printf.sprintf "%.6g" v
-    | _ -> Printf.sprintf "%.*g" precision v
+   fun _ v -> Printf.sprintf "%.*g" precision v
+
+  (* Days in each month for non-leap and leap years *)
+  let days_in_month ~leap m =
+    match m with
+    | 1 -> 31
+    | 2 -> if leap then 29 else 28
+    | 3 -> 31
+    | 4 -> 30
+    | 5 -> 31
+    | 6 -> 30
+    | 7 -> 31
+    | 8 -> 31
+    | 9 -> 30
+    | 10 -> 31
+    | 11 -> 30
+    | 12 -> 31
+    | _ -> 30
+
+  let is_leap_year y = y mod 4 = 0 && (y mod 100 <> 0 || y mod 400 = 0)
+
+  let timestamp_to_date v =
+    let secs = int_of_float v in
+    let days = secs / 86400 in
+    let rem = secs mod 86400 in
+    let hour = rem / 3600 in
+    let min = rem mod 3600 / 60 in
+    let sec = rem mod 60 in
+    (* Days since 1970-01-01 *)
+    let rec find_year days year =
+      let days_in_year = if is_leap_year year then 366 else 365 in
+      if days < days_in_year then (year, days)
+      else find_year (days - days_in_year) (year + 1)
+    in
+    let year, day_of_year = find_year days 1970 in
+    let leap = is_leap_year year in
+    let rec find_month day month =
+      let dim = days_in_month ~leap month in
+      if day < dim then (month, day + 1) else find_month (day - dim) (month + 1)
+    in
+    let month, day = find_month day_of_year 1 in
+    (year, month, day, hour, min, sec)
 
   let mmdd_utc _ v =
-    let tm = Unix.gmtime v in
-    Printf.sprintf "%02d/%02d" (tm.Unix.tm_mon + 1) tm.Unix.tm_mday
+    let _, month, day, _, _, _ = timestamp_to_date v in
+    Printf.sprintf "%02d/%02d" month day
 
   let hhmmss_utc _ v =
-    let tm = Unix.gmtime v in
-    Printf.sprintf "%02d:%02d:%02d" tm.Unix.tm_hour tm.Unix.tm_min
-      tm.Unix.tm_sec
+    let _, _, _, hour, min, sec = timestamp_to_date v in
+    Printf.sprintf "%02d:%02d:%02d" hour min sec
 end
 
 (* --- Scale --- *)
@@ -289,9 +568,12 @@ end
 
 module Axis = struct
   type formatter = int -> float -> string
+  type line = [ `None | `Axis_only | `Frame ]
+  type title = { text : string; style : Style.t option }
 
   type t = {
     show : bool;
+    line : line;
     ticks : int;
     format : formatter;
     style : Style.t;
@@ -299,11 +581,13 @@ module Axis = struct
     label_style : Style.t;
     tick_length : int;
     label_padding : int;
+    title : title option;
   }
 
   let hidden =
     {
       show = false;
+      line = `None;
       ticks = 0;
       format = Format.float ();
       style = Style.default;
@@ -311,11 +595,13 @@ module Axis = struct
       label_style = Style.default;
       tick_length = 0;
       label_padding = 0;
+      title = None;
     }
 
   let default =
     {
       show = true;
+      line = `Axis_only;
       ticks = 6;
       format = Format.float ();
       style = Style.default;
@@ -323,6 +609,7 @@ module Axis = struct
       label_style = Style.default;
       tick_length = 1;
       label_padding = 1;
+      title = None;
     }
 
   let with_ticks ticks a = { a with ticks = max 0 ticks }
@@ -336,18 +623,24 @@ module Axis = struct
 
   let with_label_padding label_padding a =
     { a with label_padding = max 0 label_padding }
+
+  let with_line line a = { a with line }
+  let with_title ?style text a = { a with title = Some { text; style } }
 end
 
-(* --- Grid --- *)
+(* --- Gridlines --- *)
 
-module Grid = struct
+module Gridlines = struct
   type t = {
     show : bool;
     x : bool;
     y : bool;
     style : Style.t;
+    pattern : Charset.line_pattern;
     x_step : int option;
     y_step : int option;
+    minor : int option;
+    minor_style : Style.t option;
   }
 
   let hidden =
@@ -356,8 +649,11 @@ module Grid = struct
       x = true;
       y = true;
       style = Style.default;
+      pattern = `Dotted;
       x_step = None;
       y_step = None;
+      minor = None;
+      minor_style = None;
     }
 
   let default =
@@ -366,15 +662,21 @@ module Grid = struct
       x = true;
       y = true;
       style = Style.make ~dim:true ();
+      pattern = `Dotted;
       x_step = None;
       y_step = None;
+      minor = None;
+      minor_style = None;
     }
 
   let with_style style g = { g with style }
+  let with_pattern pattern g = { g with pattern }
   let with_x x g = { g with x }
   let with_y y g = { g with y }
   let with_x_step x_step g = { g with x_step }
   let with_y_step y_step g = { g with y_step }
+  let with_minor minor g = { g with minor }
+  let with_minor_style minor_style g = { g with minor_style }
 end
 
 (* --- View --- *)
@@ -412,11 +714,10 @@ module View = struct
     window ~min:(w.min +. delta) ~max:(w.max +. delta)
 
   let clamp ~domain (w : window) =
-    let dom = domain in
     let size = w.max -. w.min in
-    if size <= 0. then dom
+    if size <= 0. then domain
     else
-      let min' = max dom.min (min w.min (dom.max -. size)) in
+      let min' = max domain.min (min w.min (domain.max -. size)) in
       window ~min:min' ~max:(min' +. size)
 end
 
@@ -424,10 +725,19 @@ end
 
 module Mark = struct
   type id = string
-  type line_kind = [ `Line | `Braille | `Wave | `Points of string ]
-  type scatter_kind = [ `Cell | `Braille ]
+  type scatter_mode = [ `Cell | `Braille | `Density ]
   type heatmap_agg = [ `Last | `Avg | `Max ]
-  type heatmap_render = Cells | Dense_bilinear | Shaded
+
+  type heatmap_mode =
+    | Cells_fg
+    | Cells_bg
+    | Halfblock_fg_bg
+    | Shaded
+    | Dense_bilinear
+
+  type bar_mode = [ `Cell | `Half_block ]
+  type candle_body = [ `Filled | `Hollow ]
+  type candle_width = [ `One | `Two ]
   type bar_segment = { value : float; style : Style.t; label : string option }
   type stacked_bar = { category : string; segments : bar_segment list }
 
@@ -442,8 +752,11 @@ module Mark = struct
   type t =
     | Line : {
         id : id option;
+        label : string option;
         style : Style.t option;
-        kind : line_kind;
+        resolution : Raster.resolution;
+        pattern : Charset.line_pattern;
+        glyph : string option;
         x : 'a -> float;
         y : 'a -> float;
         data : 'a array;
@@ -451,8 +764,11 @@ module Mark = struct
         -> t
     | Line_opt : {
         id : id option;
+        label : string option;
         style : Style.t option;
-        kind : line_kind;
+        resolution : Raster.resolution;
+        pattern : Charset.line_pattern;
+        glyph : string option;
         x : 'a -> float;
         y : 'a -> float option;
         data : 'a array;
@@ -460,9 +776,10 @@ module Mark = struct
         -> t
     | Scatter : {
         id : id option;
+        label : string option;
         style : Style.t option;
-        glyph : string;
-        kind : scatter_kind;
+        glyph : string option;
+        mode : scatter_mode;
         x : 'a -> float;
         y : 'a -> float;
         data : 'a array;
@@ -470,7 +787,9 @@ module Mark = struct
         -> t
     | Bars_y : {
         id : id option;
+        label : string option;
         style : Style.t option;
+        mode : bar_mode;
         x : 'a -> string;
         y : 'a -> float;
         data : 'a array;
@@ -478,7 +797,9 @@ module Mark = struct
         -> t
     | Bars_x : {
         id : id option;
+        label : string option;
         style : Style.t option;
+        mode : bar_mode;
         y : 'a -> string;
         x : 'a -> float;
         data : 'a array;
@@ -488,23 +809,35 @@ module Mark = struct
         id : id option;
         gap : int;
         bar_width : int option;
+        mode : bar_mode;
         data : stacked_bar array;
       }
     | Stacked_bars_x of {
         id : id option;
         gap : int;
         bar_height : int option;
+        mode : bar_mode;
         data : stacked_bar array;
       }
-    | Rule_y of { id : id option; style : Style.t option; y : float }
-    | Rule_x of { id : id option; style : Style.t option; x : float }
+    | Rule_y of {
+        id : id option;
+        style : Style.t option;
+        pattern : Charset.line_pattern;
+        y : float;
+      }
+    | Rule_x of {
+        id : id option;
+        style : Style.t option;
+        pattern : Charset.line_pattern;
+        x : float;
+      }
     | Heatmap : {
         id : id option;
         color_scale : Color.t list;
         value_range : (float * float) option;
         auto_value_range : bool;
         agg : heatmap_agg;
-        render : heatmap_render;
+        mode : heatmap_mode;
         x : 'a -> float;
         y : 'a -> float;
         value : 'a -> float;
@@ -515,12 +848,14 @@ module Mark = struct
         id : id option;
         bullish : Style.t;
         bearish : Style.t;
+        width : candle_width;
+        body : candle_body;
         data : ohlc array;
       }
     | Circle : {
         id : id option;
         style : Style.t option;
-        kind : [ `Line | `Braille ];
+        resolution : Raster.resolution;
         cx : 'a -> float;
         cy : 'a -> float;
         r : 'a -> float;
@@ -535,31 +870,38 @@ module Mark = struct
       }
     | Column_background of { id : id option; style : Style.t option; x : float }
 
-  let line ?id ?style ?(kind = (`Line : line_kind)) ~x ~y data =
-    Line { id; style; kind; x; y; data }
+  let line ?id ?label ?style ?(resolution = `Cell) ?(pattern = `Solid) ?glyph ~x
+      ~y data =
+    Line { id; label; style; resolution; pattern; glyph; x; y; data }
 
-  let line_opt ?id ?style ?(kind = (`Line : line_kind)) ~x ~y data =
-    Line_opt { id; style; kind; x; y; data }
+  let line_opt ?id ?label ?style ?(resolution = `Cell) ?(pattern = `Solid)
+      ?glyph ~x ~y data =
+    Line_opt { id; label; style; resolution; pattern; glyph; x; y; data }
 
-  let scatter ?id ?style ?(glyph = "∙") ?(kind = (`Cell : scatter_kind)) ~x ~y
+  let scatter ?id ?label ?style ?glyph ?(mode = (`Cell : scatter_mode)) ~x ~y
       data =
-    Scatter { id; style; glyph; kind; x; y; data }
+    Scatter { id; label; style; glyph; mode; x; y; data }
 
-  let bars_y ?id ?style ~x ~y data = Bars_y { id; style; x; y; data }
-  let bars_x ?id ?style ~y ~x data = Bars_x { id; style; y; x; data }
+  let bars_y ?id ?label ?style ?(mode = (`Cell : bar_mode)) ~x ~y data =
+    Bars_y { id; label; style; mode; x; y; data }
 
-  let stacked_bars_y ?id ?(gap = 1) ?bar_width data =
-    Stacked_bars_y { id; gap = max 0 gap; bar_width; data }
+  let bars_x ?id ?label ?style ?(mode = (`Cell : bar_mode)) ~y ~x data =
+    Bars_x { id; label; style; mode; y; x; data }
 
-  let stacked_bars_x ?id ?(gap = 1) ?bar_height data =
-    Stacked_bars_x { id; gap = max 0 gap; bar_height; data }
+  let stacked_bars_y ?id ?(gap = 1) ?bar_width ?(mode = (`Cell : bar_mode)) data
+      =
+    Stacked_bars_y { id; gap = max 0 gap; bar_width; mode; data }
 
-  let rule_y ?id ?style y = Rule_y { id; style; y }
-  let rule_x ?id ?style x = Rule_x { id; style; x }
+  let stacked_bars_x ?id ?(gap = 1) ?bar_height ?(mode = (`Cell : bar_mode))
+      data =
+    Stacked_bars_x { id; gap = max 0 gap; bar_height; mode; data }
+
+  let rule_y ?id ?style ?(pattern = `Solid) y = Rule_y { id; style; pattern; y }
+  let rule_x ?id ?style ?(pattern = `Solid) x = Rule_x { id; style; pattern; x }
 
   let heatmap ?id ?(color_scale = Theme.default.palette) ?value_range
       ?(auto_value_range = true) ?(agg = (`Last : heatmap_agg))
-      ?(render = Cells) ~x ~y ~value data =
+      ?(mode = Cells_fg) ~x ~y ~value data =
     Heatmap
       {
         id;
@@ -567,24 +909,26 @@ module Mark = struct
         value_range;
         auto_value_range;
         agg;
-        render;
+        mode;
         x;
         y;
         value;
         data;
       }
 
-  let candles ?id ?bullish ?bearish data =
+  let candles ?id ?bullish ?bearish ?(width = (`One : candle_width))
+      ?(body = (`Filled : candle_body)) data =
     let bullish =
       Option.value bullish ~default:(Style.fg Color.Green Style.default)
     in
     let bearish =
       Option.value bearish ~default:(Style.fg Color.Red Style.default)
     in
-    Candles { id; bullish; bearish; data }
+    Candles { id; bullish; bearish; width; body; data }
 
-  let circle ?id ?style ?(kind = `Line) ~cx ~cy ~r data =
-    Circle { id; style; kind; cx; cy; r; data }
+  let circle ?id ?style ?(resolution = (`Cell : Raster.resolution)) ~cx ~cy ~r
+      data =
+    Circle { id; style; resolution; cx; cy; r; data }
 
   let shade_x ?id ?style ~min ~max () =
     let x0, x1 = if min <= max then (min, max) else (max, min) in
@@ -644,7 +988,10 @@ type axis_kind =
 type compiled_mark =
   | CLine : {
       id : string option;
-      kind : Mark.line_kind;
+      label : string option;
+      resolution : Raster.resolution;
+      pattern : Charset.line_pattern;
+      glyph : string option;
       style : Style.t;
       x : 'a -> float;
       y : 'a -> float;
@@ -653,7 +1000,10 @@ type compiled_mark =
       -> compiled_mark
   | CLine_opt : {
       id : string option;
-      kind : Mark.line_kind;
+      label : string option;
+      resolution : Raster.resolution;
+      pattern : Charset.line_pattern;
+      glyph : string option;
       style : Style.t;
       x : 'a -> float;
       y : 'a -> float option;
@@ -662,7 +1012,8 @@ type compiled_mark =
       -> compiled_mark
   | CScatter : {
       id : string option;
-      kind : Mark.scatter_kind;
+      label : string option;
+      mode : Mark.scatter_mode;
       glyph : string;
       style : Style.t;
       x : 'a -> float;
@@ -672,6 +1023,8 @@ type compiled_mark =
       -> compiled_mark
   | CBars_y : {
       id : string option;
+      label : string option;
+      mode : Mark.bar_mode;
       style : Style.t;
       x : 'a -> string;
       y : 'a -> float;
@@ -680,6 +1033,8 @@ type compiled_mark =
       -> compiled_mark
   | CBars_x : {
       id : string option;
+      label : string option;
+      mode : Mark.bar_mode;
       style : Style.t;
       y : 'a -> string;
       x : 'a -> float;
@@ -690,23 +1045,35 @@ type compiled_mark =
       id : string option;
       gap : int;
       bar_width : int option;
+      mode : Mark.bar_mode;
       data : Mark.stacked_bar array;
     }
   | CStacked_x of {
       id : string option;
       gap : int;
       bar_height : int option;
+      mode : Mark.bar_mode;
       data : Mark.stacked_bar array;
     }
-  | CRule_y of { id : string option; style : Style.t; y : float }
-  | CRule_x of { id : string option; style : Style.t; x : float }
+  | CRule_y of {
+      id : string option;
+      style : Style.t;
+      pattern : Charset.line_pattern;
+      y : float;
+    }
+  | CRule_x of {
+      id : string option;
+      style : Style.t;
+      pattern : Charset.line_pattern;
+      x : float;
+    }
   | CHeatmap : {
       id : string option;
       color_scale : Color.t list;
       value_range : (float * float) option;
       auto_value_range : bool;
       agg : Mark.heatmap_agg;
-      render : Mark.heatmap_render;
+      mode : Mark.heatmap_mode;
       x : 'a -> float;
       y : 'a -> float;
       value : 'a -> float;
@@ -717,11 +1084,13 @@ type compiled_mark =
       id : string option;
       bullish : Style.t;
       bearish : Style.t;
+      width : Mark.candle_width;
+      body : Mark.candle_body;
       data : Mark.ohlc array;
     }
   | CCircle : {
       id : string option;
-      kind : [ `Line | `Braille ];
+      resolution : Raster.resolution;
       style : Style.t;
       cx : 'a -> float;
       cy : 'a -> float;
@@ -741,6 +1110,7 @@ module Layout = struct
     x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
 
   type axis = [ `X | `Y | `Both ]
+  type title_info = { text : string; style : Style.t }
 
   type t = {
     width : int;
@@ -759,12 +1129,14 @@ module Layout = struct
     (* axis and grid config for drawing (used by Chart.draw) *)
     x_axis : Axis.t;
     y_axis : Axis.t;
-    grid : Grid.t;
+    grid : Gridlines.t;
     frame_inner_padding : int;
     margin_left : int;
     y_axis_width : int;
     (* compiled marks (used by hit-testing) *)
     marks : compiled_mark list;
+    (* title *)
+    title : title_info option;
   }
 
   let size t = (t.width, t.height)
@@ -1375,33 +1747,50 @@ end
 
 module Overlay = struct
   type tooltip_anchor = [ `Auto | `Left | `Right | `Top | `Bottom ]
+  type tooltip_border = [ `Theme | `None | `Style of Ansi.Style.t ]
 
-  let crosshair ?style (layout : Layout.t) (canvas : Canvas.t) ~x ~y =
+  let crosshair ?style ?(pattern = `Solid) (layout : Layout.t) (grid : G.t) ~x
+      ~y =
     let style = Option.value style ~default:layout.theme.crosshair in
     let px, py = Layout.px_of_data layout ~x ~y in
     let r = Layout.plot_rect layout in
-    if px >= r.x && px < r.x + r.width then
-      Canvas.draw_line canvas ~x1:px ~y1:r.y ~x2:px
-        ~y2:(r.y + r.height - 1)
-        ~style ~kind:`Line ();
+    let charset = layout.theme.charset in
+    (if px >= r.x && px < r.x + r.width then
+       let glyph =
+         match pattern with
+         | `Solid -> charset.grid_v_solid
+         | `Dashed -> charset.grid_v_dashed
+         | `Dotted -> charset.grid_v_dotted
+       in
+       for yy = r.y to r.y + r.height - 1 do
+         draw_text grid ~x:px ~y:yy ~style glyph
+       done);
     if py >= r.y && py < r.y + r.height then
-      Canvas.draw_line canvas ~x1:r.x ~y1:py
-        ~x2:(r.x + r.width - 1)
-        ~y2:py ~style ~kind:`Line ()
+      let glyph =
+        match pattern with
+        | `Solid -> charset.grid_h_solid
+        | `Dashed -> charset.grid_h_dashed
+        | `Dotted -> charset.grid_h_dotted
+      in
+      for xx = r.x to r.x + r.width - 1 do
+        draw_text grid ~x:xx ~y:py ~style glyph
+      done
 
-  let marker ?style ?(glyph = "●") (layout : Layout.t) (canvas : Canvas.t) ~x ~y
-      =
+  let marker ?style ?(glyph = "●") (layout : Layout.t) (grid : G.t) ~x ~y =
     let style = Option.value style ~default:layout.theme.marker in
     let px, py = Layout.px_of_data layout ~x ~y in
     let r = Layout.plot_rect layout in
     if Layout.rect_contains r ~x:px ~y:py then
-      Canvas.plot canvas ~x:px ~y:py ~style glyph
+      draw_text grid ~x:px ~y:py ~style glyph
 
-  let tooltip ?style ?border ?(padding = 1) ?(anchor = `Auto)
-      (layout : Layout.t) (canvas : Canvas.t) ~x ~y (lines : string list) =
+  let tooltip ?style ?(border = `Theme) ?(padding = 1) ?(anchor = `Auto)
+      (layout : Layout.t) (grid : G.t) ~x ~y (lines : string list) =
     let style = Option.value style ~default:layout.theme.tooltip in
     let border =
-      match border with Some b -> Some b | None -> layout.theme.tooltip_border
+      match border with
+      | `Theme -> layout.theme.tooltip_border
+      | `None -> None
+      | `Style s -> Some s
     in
     let padding = max 0 padding in
     let px, py = Layout.px_of_data layout ~x ~y in
@@ -1480,7 +1869,7 @@ module Overlay = struct
           for xx = 0 to box_w - 1 do
             let x = x0 + xx and y = y0 + yy in
             if Layout.rect_contains rect ~x ~y then
-              Canvas.plot canvas ~x ~y ~style " "
+              draw_text grid ~x ~y ~style " "
           done
         done;
 
@@ -1488,25 +1877,22 @@ module Overlay = struct
         (match border with
         | None -> ()
         | Some bst ->
+            let tf = layout.theme.charset.tooltip_frame in
             if box_w >= 2 && box_h >= 2 then (
               let top = y0 and bot = y0 + box_h - 1 in
               let left = x0 and right = x0 + box_w - 1 in
-              Canvas.plot canvas ~x:left ~y:top ~style:bst "┌";
-              Canvas.plot canvas ~x:right ~y:top ~style:bst "┐";
-              Canvas.plot canvas ~x:left ~y:bot ~style:bst "└";
-              Canvas.plot canvas ~x:right ~y:bot ~style:bst "┘";
-              if box_w > 2 then
-                Canvas.draw_line canvas ~x1:(left + 1) ~y1:top ~x2:(right - 1)
-                  ~y2:top ~style:bst ~kind:`Line ();
-              if box_w > 2 then
-                Canvas.draw_line canvas ~x1:(left + 1) ~y1:bot ~x2:(right - 1)
-                  ~y2:bot ~style:bst ~kind:`Line ();
-              if box_h > 2 then
-                Canvas.draw_line canvas ~x1:left ~y1:(top + 1) ~x2:left
-                  ~y2:(bot - 1) ~style:bst ~kind:`Line ();
-              if box_h > 2 then
-                Canvas.draw_line canvas ~x1:right ~y1:(top + 1) ~x2:right
-                  ~y2:(bot - 1) ~style:bst ~kind:`Line ()));
+              draw_text grid ~x:left ~y:top ~style:bst tf.tl;
+              draw_text grid ~x:right ~y:top ~style:bst tf.tr;
+              draw_text grid ~x:left ~y:bot ~style:bst tf.bl;
+              draw_text grid ~x:right ~y:bot ~style:bst tf.br;
+              for xx = left + 1 to right - 1 do
+                draw_text grid ~x:xx ~y:top ~style:bst tf.h;
+                draw_text grid ~x:xx ~y:bot ~style:bst tf.h
+              done;
+              for yy = top + 1 to bot - 1 do
+                draw_text grid ~x:left ~y:yy ~style:bst tf.v;
+                draw_text grid ~x:right ~y:yy ~style:bst tf.v
+              done));
         (* content *)
         let inner_x =
           x0 + (match border with Some _ -> 1 | None -> 0) + padding
@@ -1518,7 +1904,7 @@ module Overlay = struct
           (fun i line ->
             let y = inner_y + i in
             if y >= rect.y && y < rect.y + rect.height then
-              Canvas.plot canvas ~x:inner_x ~y ~style line)
+              draw_text grid ~x:inner_x ~y ~style line)
           lines
 end
 
@@ -1527,7 +1913,7 @@ end
 module Legend = struct
   type item = { label : string; style : Style.t; marker : string }
 
-  let draw ?(direction = `Vertical) ?(gap = 0) items (canvas : Canvas.t) ~width
+  let draw ?(direction = `Vertical) ?(gap = 0) items (grid : G.t) ~width
       ~height:_ =
     match direction with
     | `Horizontal ->
@@ -1540,9 +1926,9 @@ module Legend = struct
             let w_block = text_width block in
             let w_label = text_width label in
             if !x < width then (
-              Canvas.plot canvas ~x:!x ~y ~style block;
+              draw_text grid ~x:!x ~y ~style block;
               let x' = !x + w_block in
-              if x' < width then Canvas.plot canvas ~x:x' ~y label;
+              if x' < width then draw_text grid ~x:x' ~y label;
               x := x' + w_label + gap))
           items
     | `Vertical ->
@@ -1550,15 +1936,45 @@ module Legend = struct
         let gap = max 0 gap in
         List.iter
           (fun { label; style; marker } ->
-            Canvas.plot canvas ~x:0 ~y:!y ~style marker;
-            Canvas.plot canvas ~x:(text_width marker + 1) ~y:!y label;
+            draw_text grid ~x:0 ~y:!y ~style marker;
+            draw_text grid ~x:(text_width marker + 1) ~y:!y label;
             y := !y + 1 + gap)
           items
+
+  let items_of_layout (layout : Layout.t) : item list =
+    let extract_item ~label ~style ~marker =
+      match label with
+      | Some l -> Some { label = l; style; marker }
+      | None -> None
+    in
+    let charset = layout.theme.charset in
+    List.filter_map
+      (function
+        | CLine { label; style; glyph; _ } ->
+            let marker =
+              match glyph with Some g -> g | None -> charset.frame.h
+            in
+            extract_item ~label ~style ~marker
+        | CLine_opt { label; style; glyph; _ } ->
+            let marker =
+              match glyph with Some g -> g | None -> charset.frame.h
+            in
+            extract_item ~label ~style ~marker
+        | CScatter { label; style; glyph; _ } ->
+            extract_item ~label ~style ~marker:glyph
+        | CBars_y { label; style; _ } ->
+            extract_item ~label ~style ~marker:charset.bar_fill
+        | CBars_x { label; style; _ } ->
+            extract_item ~label ~style ~marker:charset.bar_fill
+        | _ -> None)
+      layout.marks
 end
 
 (* *)
 
-type frame = { margins : int * int * int * int; inner_padding : int }
+type frame_config = { margins : int * int * int * int; inner_padding : int }
+type frame = Auto | Manual of frame_config
+type title = { text : string; style : Style.t option }
 
 type t = {
   theme : Theme.t;
@@ -1567,13 +1983,17 @@ type t = {
   y_scale : Scale.t;
   x_axis : Axis.t;
   y_axis : Axis.t;
-  grid : Grid.t;
+  grid : Gridlines.t;
   marks_rev : Mark.t list; (* Stored in reverse order for O(1) add *)
+  title : title option;
 }
 
 (* Get marks in correct order (reverses the internal list) *)
 let marks t = List.rev t.marks_rev
-let default_frame = { margins = (0, 0, 0, 0); inner_padding = 0 }
+let default_frame = Auto
+
+let manual_frame ?(margins = (0, 0, 0, 0)) ?(inner_padding = 0) () =
+  Manual { margins; inner_padding }
 
 let apply_theme_defaults (theme : Theme.t) (a : Axis.t) =
   {
@@ -1585,7 +2005,7 @@ let apply_theme_defaults (theme : Theme.t) (a : Axis.t) =
       (if a.label_style = Style.default then theme.labels else a.label_style);
   }
 
-let apply_grid_theme (theme : Theme.t) (g : Grid.t) =
+let apply_grid_theme (theme : Theme.t) (g : Gridlines.t) =
   { g with style = (if g.style = Style.default then theme.grid else g.style) }
 
 let empty ?(theme = Theme.default) () =
@@ -1596,8 +2016,9 @@ let empty ?(theme = Theme.default) () =
     y_scale = Scale.Auto;
     x_axis = apply_theme_defaults theme Axis.default;
     y_axis = apply_theme_defaults theme Axis.default;
-    grid = apply_grid_theme theme Grid.hidden;
+    grid = apply_grid_theme theme Gridlines.hidden;
     marks_rev = [];
+    title = None;
   }
 
 let with_theme theme t =
@@ -1610,8 +2031,14 @@ let with_theme theme t =
   }
 
 let with_frame frame t =
-  { t with frame = { frame with inner_padding = max 0 frame.inner_padding } }
+  let frame =
+    match frame with
+    | Auto -> Auto
+    | Manual cfg -> Manual { cfg with inner_padding = max 0 cfg.inner_padding }
+  in
+  { t with frame }
 
+let with_title ?style text t = { t with title = Some { text; style } }
 let with_x_scale x_scale t = { t with x_scale }
 let with_y_scale y_scale t = { t with y_scale }
 
@@ -1629,39 +2056,42 @@ let with_grid g t = { t with grid = apply_grid_theme t.theme g }
 (* O(1) mark addition by prepending to reversed list *)
 let add m t = { t with marks_rev = m :: t.marks_rev }
 
-let line ?id ?style ?kind ~x ~y data t =
-  add (Mark.line ?id ?style ?kind ~x ~y data) t
+let line ?id ?label ?style ?resolution ?pattern ?glyph ~x ~y data t =
+  add (Mark.line ?id ?label ?style ?resolution ?pattern ?glyph ~x ~y data) t
 
-let line_opt ?id ?style ?kind ~x ~y data t =
-  add (Mark.line_opt ?id ?style ?kind ~x ~y data) t
+let line_opt ?id ?label ?style ?resolution ?pattern ?glyph ~x ~y data t =
+  add (Mark.line_opt ?id ?label ?style ?resolution ?pattern ?glyph ~x ~y data) t
 
-let scatter ?id ?style ?glyph ?kind ~x ~y data t =
-  add (Mark.scatter ?id ?style ?glyph ?kind ~x ~y data) t
+let scatter ?id ?label ?style ?glyph ?mode ~x ~y data t =
+  add (Mark.scatter ?id ?label ?style ?glyph ?mode ~x ~y data) t
 
-let bars_y ?id ?style ~x ~y data t = add (Mark.bars_y ?id ?style ~x ~y data) t
-let bars_x ?id ?style ~y ~x data t = add (Mark.bars_x ?id ?style ~y ~x data) t
+let bars_y ?id ?label ?style ?mode ~x ~y data t =
+  add (Mark.bars_y ?id ?label ?style ?mode ~x ~y data) t
 
-let stacked_bars_y ?id ?gap ?bar_width data t =
-  add (Mark.stacked_bars_y ?id ?gap ?bar_width data) t
+let bars_x ?id ?label ?style ?mode ~y ~x data t =
+  add (Mark.bars_x ?id ?label ?style ?mode ~y ~x data) t
 
-let stacked_bars_x ?id ?gap ?bar_height data t =
-  add (Mark.stacked_bars_x ?id ?gap ?bar_height data) t
+let stacked_bars_y ?id ?gap ?bar_width ?mode data t =
+  add (Mark.stacked_bars_y ?id ?gap ?bar_width ?mode data) t
 
-let rule_y ?id ?style y t = add (Mark.rule_y ?id ?style y) t
-let rule_x ?id ?style x t = add (Mark.rule_x ?id ?style x) t
+let stacked_bars_x ?id ?gap ?bar_height ?mode data t =
+  add (Mark.stacked_bars_x ?id ?gap ?bar_height ?mode data) t
 
-let heatmap ?id ?color_scale ?value_range ?auto_value_range ?agg ?render ~x ~y
+let rule_y ?id ?style ?pattern y t = add (Mark.rule_y ?id ?style ?pattern y) t
+let rule_x ?id ?style ?pattern x t = add (Mark.rule_x ?id ?style ?pattern x) t
+
+let heatmap ?id ?color_scale ?value_range ?auto_value_range ?agg ?mode ~x ~y
     ~value data t =
   add
-    (Mark.heatmap ?id ?color_scale ?value_range ?auto_value_range ?agg ?render
-       ~x ~y ~value data)
+    (Mark.heatmap ?id ?color_scale ?value_range ?auto_value_range ?agg ?mode ~x
+       ~y ~value data)
     t
 
-let candles ?id ?bullish ?bearish data t =
-  add (Mark.candles ?id ?bullish ?bearish data) t
+let candles ?id ?bullish ?bearish ?width ?body data t =
+  add (Mark.candles ?id ?bullish ?bearish ?width ?body data) t
 
-let circle ?id ?style ?kind ~cx ~cy ~r data t =
-  add (Mark.circle ?id ?style ?kind ~cx ~cy ~r data) t
+let circle ?id ?style ?resolution ~cx ~cy ~r data t =
+  add (Mark.circle ?id ?style ?resolution ~cx ~cy ~r data) t
 
 let shade_x ?id ?style ~min ~max () t =
   add (Mark.shade_x ?id ?style ~min ~max ()) t
@@ -1897,31 +2327,36 @@ let compile_marks (theme : Theme.t) (marks : Mark.t list) : compiled_mark list =
   in
   List.map
     (function
-      | Mark.Line { id; style; kind; x; y; data } ->
+      | Mark.Line { id; label; style; resolution; pattern; glyph; x; y; data }
+        ->
           let st = Option.value style ~default:(next_default ()) in
-          CLine { id; kind; style = st; x; y; data }
-      | Mark.Line_opt { id; style; kind; x; y; data } ->
+          CLine
+            { id; label; resolution; pattern; glyph; style = st; x; y; data }
+      | Mark.Line_opt
+          { id; label; style; resolution; pattern; glyph; x; y; data } ->
           let st = Option.value style ~default:(next_default ()) in
-          CLine_opt { id; kind; style = st; x; y; data }
-      | Mark.Scatter { id; style; glyph; kind; x; y; data } ->
+          CLine_opt
+            { id; label; resolution; pattern; glyph; style = st; x; y; data }
+      | Mark.Scatter { id; label; style; glyph; mode; x; y; data } ->
           let st = Option.value style ~default:(next_default ()) in
-          CScatter { id; kind; glyph; style = st; x; y; data }
-      | Mark.Bars_y { id; style; x; y; data } ->
+          let glyph = Option.value glyph ~default:theme.charset.point_default in
+          CScatter { id; label; mode; glyph; style = st; x; y; data }
+      | Mark.Bars_y { id; label; style; mode; x; y; data } ->
           let st = Option.value style ~default:(next_default ()) in
-          CBars_y { id; style = st; x; y; data }
-      | Mark.Bars_x { id; style; y; x; data } ->
+          CBars_y { id; label; mode; style = st; x; y; data }
+      | Mark.Bars_x { id; label; style; mode; y; x; data } ->
           let st = Option.value style ~default:(next_default ()) in
-          CBars_x { id; style = st; y; x; data }
-      | Mark.Stacked_bars_y { id; gap; bar_width; data } ->
-          CStacked_y { id; gap; bar_width; data }
-      | Mark.Stacked_bars_x { id; gap; bar_height; data } ->
-          CStacked_x { id; gap; bar_height; data }
-      | Mark.Rule_y { id; style; y } ->
+          CBars_x { id; label; mode; style = st; y; x; data }
+      | Mark.Stacked_bars_y { id; gap; bar_width; mode; data } ->
+          CStacked_y { id; gap; bar_width; mode; data }
+      | Mark.Stacked_bars_x { id; gap; bar_height; mode; data } ->
+          CStacked_x { id; gap; bar_height; mode; data }
+      | Mark.Rule_y { id; style; pattern; y } ->
           let st = Option.value style ~default:(next_default ()) in
-          CRule_y { id; style = st; y }
-      | Mark.Rule_x { id; style; x } ->
+          CRule_y { id; style = st; pattern; y }
+      | Mark.Rule_x { id; style; pattern; x } ->
           let st = Option.value style ~default:(next_default ()) in
-          CRule_x { id; style = st; x }
+          CRule_x { id; style = st; pattern; x }
       | Mark.Heatmap
           {
             id;
@@ -1929,7 +2364,7 @@ let compile_marks (theme : Theme.t) (marks : Mark.t list) : compiled_mark list =
             value_range;
             auto_value_range;
             agg;
-            render;
+            mode;
             x;
             y;
             value;
@@ -1942,17 +2377,17 @@ let compile_marks (theme : Theme.t) (marks : Mark.t list) : compiled_mark list =
               value_range;
               auto_value_range;
               agg;
-              render;
+              mode;
               x;
               y;
               value;
               data;
             }
-      | Mark.Candles { id; bullish; bearish; data } ->
-          CCandles { id; bullish; bearish; data }
-      | Mark.Circle { id; style; kind; cx; cy; r; data } ->
+      | Mark.Candles { id; bullish; bearish; width; body; data } ->
+          CCandles { id; bullish; bearish; width; body; data }
+      | Mark.Circle { id; style; resolution; cx; cy; r; data } ->
           let st = Option.value style ~default:(next_default ()) in
-          CCircle { id; kind; style = st; cx; cy; r; data }
+          CCircle { id; resolution; style = st; cx; cy; r; data }
       | Mark.Shade_x { id; style; x0; x1 } ->
           let st = Option.value style ~default:(default_shade_style ()) in
           CShade_x { id; style = st; x0; x1 }
@@ -1978,11 +2413,18 @@ let axis_label_width_band (axis : Axis.t) (cats : string list) : int =
   if not axis.show then 0
   else List.fold_left (fun acc s -> max acc (text_width s)) 0 cats
 
-let compute_layout ?(view = View.empty) (t : t) ~width ~height : Layout.t =
+let compute_layout ?(view = View.empty) ?(x = 0) ?(y = 0) (t : t) ~width ~height
+    : Layout.t =
   let width = max 1 width and height = max 1 height in
-  let mt, mr, mb, ml = t.frame.margins in
-  let mt = max 0 mt and mr = max 0 mr and mb = max 0 mb and ml = max 0 ml in
-  let ip = max 0 t.frame.inner_padding in
+  (* Resolve frame config - Auto mode computes margins from axis requirements *)
+  let mt, mr, mb, ml, ip =
+    match t.frame with
+    | Manual { margins = mt, mr, mb, ml; inner_padding } ->
+        (max 0 mt, max 0 mr, max 0 mb, max 0 ml, max 0 inner_padding)
+    | Auto ->
+        (* In Auto mode: left margin accommodates y-axis, bottom accommodates x-axis *)
+        (0, 0, 0, 0, 0)
+  in
 
   let t_marks = marks t in
   let x_kind = infer_axis_kind_x t.x_scale t_marks in
@@ -2044,15 +2486,26 @@ let compute_layout ?(view = View.empty) (t : t) ~width ~height : Layout.t =
       1 + t.x_axis.tick_length + t.x_axis.label_padding + 1
   in
 
-  let plot_x = ml + y_axis_width + ip in
-  let plot_y = mt + ip in
-  let plot_w = max 1 (width - plot_x - mr - ip) in
-  let plot_h = max 1 (height - plot_y - (mb + x_axis_height + ip)) in
+  let plot_x_rel = ml + y_axis_width + ip in
+  let plot_y_rel = mt + ip in
+  let plot_w = max 1 (width - plot_x_rel - mr - ip) in
+  let plot_h = max 1 (height - plot_y_rel - (mb + x_axis_height + ip)) in
+  let plot_x = x + plot_x_rel in
+  let plot_y = y + plot_y_rel in
   let plot : Layout.rect =
     { x = plot_x; y = plot_y; width = plot_w; height = plot_h }
   in
 
   let compiled_marks = compile_marks t.theme t_marks in
+
+  (* Resolve title info *)
+  let title =
+    match t.title with
+    | None -> None
+    | Some { text; style } ->
+        let st = Option.value style ~default:t.theme.labels in
+        Some Layout.{ text; style = st }
+  in
 
   {
     Layout.width;
@@ -2072,9 +2525,11 @@ let compute_layout ?(view = View.empty) (t : t) ~width ~height : Layout.t =
     margin_left = ml;
     y_axis_width;
     marks = compiled_marks;
+    title;
   }
 
-let layout ?view t ~width ~height = compute_layout ?view t ~width ~height
+let layout ?view ?x ?y t ~width ~height =
+  compute_layout ?view ?x ?y t ~width ~height
 
 (* --- drawing helpers --- *)
 
@@ -2094,28 +2549,48 @@ let y_to_px ~minv ~maxv ~extent ~origin ~clamp v =
 let x_to_px ~minv ~maxv ~extent ~origin ~clamp v =
   scale_to_px ~minv ~maxv ~extent ~origin ~clamp v
 
-let draw_grid (layout : Layout.t) (canvas : Canvas.t) =
+let draw_grid (layout : Layout.t) (grid : G.t) =
   let g = layout.grid in
   if not g.show then ()
   else
     let r = layout.plot in
     let style = g.style in
+    let ch = layout.theme.charset in
+    (* Get the appropriate glyph based on pattern *)
+    let v_glyph =
+      match g.pattern with
+      | `Solid -> ch.grid_v_solid
+      | `Dashed -> ch.grid_v_dashed
+      | `Dotted -> ch.grid_v_dotted
+    in
+    let h_glyph =
+      match g.pattern with
+      | `Solid -> ch.grid_h_solid
+      | `Dashed -> ch.grid_h_dashed
+      | `Dotted -> ch.grid_h_dotted
+    in
+    (* Draw a vertical grid line at x using the pattern glyph *)
+    let draw_v_line x =
+      for y = r.y to r.y + r.height - 1 do
+        draw_text grid ~x ~y ~style v_glyph
+      done
+    in
+    (* Draw a horizontal grid line at y using the pattern glyph *)
+    let draw_h_line y =
+      for x = r.x to r.x + r.width - 1 do
+        draw_text grid ~x ~y ~style h_glyph
+      done
+    in
     let draw_every_x step =
       if step > 0 then
         for x = r.x to r.x + r.width - 1 do
-          if (x - r.x) mod step = 0 then
-            Canvas.draw_line canvas ~x1:x ~y1:r.y ~x2:x
-              ~y2:(r.y + r.height - 1)
-              ~style ~kind:`Line ()
+          if (x - r.x) mod step = 0 then draw_v_line x
         done
     in
     let draw_every_y step =
       if step > 0 then
         for y = r.y to r.y + r.height - 1 do
-          if (y - r.y) mod step = 0 then
-            Canvas.draw_line canvas ~x1:r.x ~y1:y
-              ~x2:(r.x + r.width - 1)
-              ~y2:y ~style ~kind:`Line ()
+          if (y - r.y) mod step = 0 then draw_h_line y
         done
     in
     (* explicit step wins, else use nice ticks if numeric. *)
@@ -2135,9 +2610,7 @@ let draw_grid (layout : Layout.t) (canvas : Canvas.t) =
                     x_to_px ~minv:layout.x_view.min ~maxv:layout.x_view.max
                       ~extent:r.width ~origin:r.x ~clamp:true v
                   in
-                  Canvas.draw_line canvas ~x1:px ~y1:r.y ~x2:px
-                    ~y2:(r.y + r.height - 1)
-                    ~style ~kind:`Line ())
+                  draw_v_line px)
                 tick_values
           | Band { categories; padding; _ } ->
               let offset, bw =
@@ -2148,9 +2621,7 @@ let draw_grid (layout : Layout.t) (canvas : Canvas.t) =
                 let x0 =
                   r.x + int_of_float (Float.round (offset +. (float i *. bw)))
                 in
-                Canvas.draw_line canvas ~x1:x0 ~y1:r.y ~x2:x0
-                  ~y2:(r.y + r.height - 1)
-                  ~style ~kind:`Line ()
+                draw_v_line x0
               done));
 
     match g.y_step with
@@ -2169,9 +2640,7 @@ let draw_grid (layout : Layout.t) (canvas : Canvas.t) =
                     y_to_px ~minv:layout.y_view.min ~maxv:layout.y_view.max
                       ~extent:r.height ~origin:r.y ~clamp:true v
                   in
-                  Canvas.draw_line canvas ~x1:r.x ~y1:py
-                    ~x2:(r.x + r.width - 1)
-                    ~y2:py ~style ~kind:`Line ())
+                  draw_h_line py)
                 tick_values
           | Band { categories; padding; _ } ->
               let offset, bw =
@@ -2182,20 +2651,19 @@ let draw_grid (layout : Layout.t) (canvas : Canvas.t) =
                 let y0 =
                   r.y + int_of_float (Float.round (offset +. (float i *. bw)))
                 in
-                Canvas.draw_line canvas ~x1:r.x ~y1:y0
-                  ~x2:(r.x + r.width - 1)
-                  ~y2:y0 ~style ~kind:`Line ()
+                draw_h_line y0
               done)
 
-let draw_axes (layout : Layout.t) (canvas : Canvas.t) =
+let draw_axes (layout : Layout.t) (grid : G.t) =
   let r = layout.plot in
   let ip = layout.frame_inner_padding in
+  let ch = layout.theme.charset in
 
   (* y axis *)
   if layout.y_axis.show then (
     let ax = layout.margin_left + layout.y_axis_width - 1 in
     let st = layout.y_axis.style in
-    Canvas.draw_line canvas ~x1:ax ~y1:r.y ~x2:ax
+    G.draw_line grid ~x1:ax ~y1:r.y ~x2:ax
       ~y2:(r.y + r.height - 1)
       ~style:st ~kind:`Line ();
 
@@ -2216,7 +2684,8 @@ let draw_axes (layout : Layout.t) (canvas : Canvas.t) =
             for k = 1 to layout.y_axis.tick_length do
               let x = ax - k in
               if x >= 0 then
-                Canvas.plot canvas ~x ~y:py ~style:layout.y_axis.tick_style "─"
+                draw_text grid ~x ~y:py ~style:layout.y_axis.tick_style
+                  ch.tick_h
             done;
             (* label *)
             let label = layout.y_axis.format i v in
@@ -2225,8 +2694,8 @@ let draw_axes (layout : Layout.t) (canvas : Canvas.t) =
               ax - layout.y_axis.tick_length - layout.y_axis.label_padding - lw
             in
             if label_x >= 0 then
-              Canvas.plot canvas ~x:label_x ~y:py
-                ~style:layout.y_axis.label_style label)
+              draw_text grid ~x:label_x ~y:py ~style:layout.y_axis.label_style
+                label)
           tick_values
     | Band { categories; padding; _ } ->
         let offset, bw =
@@ -2240,28 +2709,29 @@ let draw_axes (layout : Layout.t) (canvas : Canvas.t) =
             for k = 1 to layout.y_axis.tick_length do
               let x = ax - k in
               if x >= 0 then
-                Canvas.plot canvas ~x ~y:py ~style:layout.y_axis.tick_style "─"
+                draw_text grid ~x ~y:py ~style:layout.y_axis.tick_style
+                  ch.tick_h
             done;
             let lw = text_width cat in
             let label_x =
               ax - layout.y_axis.tick_length - layout.y_axis.label_padding - lw
             in
             if label_x >= 0 then
-              Canvas.plot canvas ~x:label_x ~y:py
-                ~style:layout.y_axis.label_style cat)
+              draw_text grid ~x:label_x ~y:py ~style:layout.y_axis.label_style
+                cat)
           categories);
 
     (* y axis meets plot padding: draw a corner marker if x axis is on *)
     if layout.x_axis.show then
       let y_corner = r.y + r.height + ip in
       if y_corner >= 0 && y_corner < layout.height then
-        Canvas.plot canvas ~x:ax ~y:y_corner ~style:st "└");
+        draw_text grid ~x:ax ~y:y_corner ~style:st ch.frame.bl);
 
   (* x axis *)
   if layout.x_axis.show then (
     let ay = r.y + r.height + ip in
     let st = layout.x_axis.style in
-    Canvas.draw_line canvas ~x1:r.x ~y1:ay
+    G.draw_line grid ~x1:r.x ~y1:ay
       ~x2:(r.x + r.width - 1)
       ~y2:ay ~style:st ~kind:`Line ();
 
@@ -2284,7 +2754,8 @@ let draw_axes (layout : Layout.t) (canvas : Canvas.t) =
             for k = 1 to layout.x_axis.tick_length do
               let y = ay + k in
               if y >= 0 && y < layout.height then
-                Canvas.plot canvas ~x:px ~y ~style:layout.x_axis.tick_style "│"
+                draw_text grid ~x:px ~y ~style:layout.x_axis.tick_style
+                  ch.tick_v
             done;
             (* label - skip if it would overlap with previous label *)
             let label = layout.x_axis.format i v in
@@ -2298,7 +2769,7 @@ let draw_axes (layout : Layout.t) (canvas : Canvas.t) =
               label_y >= 0 && label_y < layout.height
               && label_x > !last_label_right
             then (
-              Canvas.plot canvas ~x:(max 0 label_x) ~y:label_y
+              draw_text grid ~x:(max 0 label_x) ~y:label_y
                 ~style:layout.x_axis.label_style label;
               last_label_right := label_x + lw))
           tick_values
@@ -2317,7 +2788,8 @@ let draw_axes (layout : Layout.t) (canvas : Canvas.t) =
             for k = 1 to layout.x_axis.tick_length do
               let y = ay + k in
               if y >= 0 && y < layout.height then
-                Canvas.plot canvas ~x:px ~y ~style:layout.x_axis.tick_style "│"
+                draw_text grid ~x:px ~y ~style:layout.x_axis.tick_style
+                  ch.tick_v
             done;
             (* label - skip if it would overlap with previous label *)
             let lw = text_width cat in
@@ -2329,13 +2801,47 @@ let draw_axes (layout : Layout.t) (canvas : Canvas.t) =
               label_y >= 0 && label_y < layout.height
               && label_x > !last_label_right
             then (
-              Canvas.plot canvas ~x:(max 0 label_x) ~y:label_y
+              draw_text grid ~x:(max 0 label_x) ~y:label_y
                 ~style:layout.x_axis.label_style cat;
               last_label_right := label_x + lw))
-          categories)
+          categories);
+
+  (* Draw axis titles *)
+  (* Y-axis title: draw vertically (one char per row) to the left of labels *)
+  (match layout.y_axis.title with
+  | None -> ()
+  | Some { text; style } ->
+      let title_style = Option.value ~default:layout.y_axis.label_style style in
+      let title_len = text_width text in
+      (* Center title vertically along the y-axis *)
+      let title_y_start = r.y + ((r.height - title_len) / 2) in
+      (* Position to the left edge (column 0) *)
+      let title_x = 0 in
+      (* Draw each character vertically *)
+      String.iteri
+        (fun i c ->
+          let y = title_y_start + i in
+          if y >= r.y && y < r.y + r.height then
+            draw_text grid ~x:title_x ~y ~style:title_style (String.make 1 c))
+        text);
+
+  (* X-axis title: draw horizontally centered below x-axis labels *)
+  match layout.x_axis.title with
+  | None -> ()
+  | Some { text; style } ->
+      let title_style = Option.value ~default:layout.x_axis.label_style style in
+      let title_w = text_width text in
+      let title_x = r.x + ((r.width - title_w) / 2) in
+      (* Position below the tick labels: axis + tick_length + label_padding + 1 (label row) + 1 *)
+      let title_y =
+        r.y + r.height + ip + layout.x_axis.tick_length
+        + layout.x_axis.label_padding + 2
+      in
+      if title_y < layout.height then
+        draw_text grid ~x:(max 0 title_x) ~y:title_y ~style:title_style text
 
 (* wave helper (based on the old implementation) *)
-let draw_wave_from_px_points canvas (r : Layout.rect) ~style
+let draw_wave_from_px_points grid (r : Layout.rect) ~style
     (pts : (int * int) list) =
   let pts = List.sort (fun (x1, _) (x2, _) -> compare x1 x2) pts in
   let seq_y = Array.make r.width (-1) in
@@ -2369,22 +2875,22 @@ let draw_wave_from_px_points canvas (r : Layout.rect) ~style
     else
       match !prev_y with
       | None ->
-          Canvas.plot canvas ~x:(r.x + i) ~y ~style "─";
+          draw_text grid ~x:(r.x + i) ~y ~style "─";
           prev_y := Some y
       | Some py ->
           let x = r.x + i in
-          if py = y then Canvas.plot canvas ~x ~y ~style "─"
+          if py = y then draw_text grid ~x ~y ~style "─"
           else if py > y then (
-            Canvas.plot canvas ~x ~y ~style "╭";
-            Canvas.plot canvas ~x ~y:py ~style "╯";
+            draw_text grid ~x ~y ~style "╭";
+            draw_text grid ~x ~y:py ~style "╯";
             for yy = y + 1 to py - 1 do
-              Canvas.plot canvas ~x ~y:yy ~style "│"
+              draw_text grid ~x ~y:yy ~style "│"
             done)
           else (
-            Canvas.plot canvas ~x ~y ~style "╰";
-            Canvas.plot canvas ~x ~y:py ~style "╮";
+            draw_text grid ~x ~y ~style "╰";
+            draw_text grid ~x ~y:py ~style "╮";
             for yy = py + 1 to y - 1 do
-              Canvas.plot canvas ~x ~y:yy ~style "│"
+              draw_text grid ~x ~y:yy ~style "│"
             done);
           prev_y := Some y
   done
@@ -2400,7 +2906,7 @@ let heatmap_color_fun ~color_scale ~vmin ~vmax =
     let idx = clamp_int 0 (len - 1) raw in
     Option.value (List.nth_opt color_scale idx) ~default:Color.default
 
-let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
+let draw_marks (layout : Layout.t) (grid : G.t) =
   let r = layout.plot in
 
   (* numeric mapping funcs (even if axis band, used for overlays etc.)
@@ -2482,7 +2988,7 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
     for x = a to b do
       if x >= r.x && x < r.x + r.width then
         for y = r.y to r.y + r.height - 1 do
-          Canvas.plot canvas ~x ~y ~style " "
+          draw_text grid ~x ~y ~style " "
         done
     done
   in
@@ -2491,26 +2997,108 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
     let px = x_to_px_cell x in
     if px >= r.x && px < r.x + r.width then
       for y = r.y to r.y + r.height - 1 do
-        Canvas.plot canvas ~x:px ~y ~style " "
+        draw_text grid ~x:px ~y ~style " "
       done
   in
 
   let draw_line_segment style ~kind (x1, y1) (x2, y2) =
     match kind with
-    | `Line -> Canvas.draw_line canvas ~x1 ~y1 ~x2 ~y2 ~style ~kind:`Line ()
+    | `Line -> G.draw_line grid ~x1 ~y1 ~x2 ~y2 ~style ~kind:`Line ()
     | `Braille ->
         (* map already in braille coordinates; caller must provide those *)
-        Canvas.draw_line canvas ~x1 ~y1 ~x2 ~y2 ~style ~kind:`Braille ()
+        G.draw_line grid ~x1 ~y1 ~x2 ~y2 ~style ~kind:`Braille ()
   in
 
-  let draw_line_series ~style ~kind ~x ~y data =
+  (* Block2x2 rendering: accumulate bits into hashtable, then render glyphs *)
+  let draw_block2x2_line (x1, y1) (x2, y2) dots =
+    (* Bresenham's line algorithm for 2x2 subgrid coordinates *)
+    let dx = abs (x2 - x1) and dy = abs (y2 - y1) in
+    let sx = if x1 < x2 then 1 else -1 in
+    let sy = if y1 < y2 then 1 else -1 in
+    let err = ref (dx - dy) in
+    let x = ref x1 and y = ref y1 in
+    let set_dot px py =
+      let cell_x = px / 2 in
+      let cell_y = py / 2 in
+      let sub_x = px mod 2 in
+      let sub_y = py mod 2 in
+      (* Bit layout: bit 0=top-left, bit 1=top-right, bit 2=bottom-left, bit 3=bottom-right *)
+      let bit = (sub_y * 2) + sub_x in
+      let key = (cell_x, cell_y) in
+      let cur = Option.value (Hashtbl.find_opt dots key) ~default:0 in
+      Hashtbl.replace dots key (cur lor (1 lsl bit))
+    in
+    while not (!x = x2 && !y = y2) do
+      set_dot !x !y;
+      let e2 = 2 * !err in
+      if e2 > -dy then (
+        err := !err - dy;
+        x := !x + sx);
+      if e2 < dx then (
+        err := !err + dx;
+        y := !y + sy)
+    done;
+    set_dot x2 y2
+  in
+
+  let render_block2x2_dots style dots =
+    Hashtbl.iter
+      (fun (cx, cy) bits ->
+        if cx >= r.x && cx < r.x + r.width && cy >= r.y && cy < r.y + r.height
+        then
+          let glyph = quadrant_glyph_of_bits bits in
+          draw_text grid ~x:cx ~y:cy ~style glyph)
+      dots
+  in
+
+  (* Stipple mask for line patterns: returns true if step should be drawn *)
+  let stipple_should_draw ~pattern ~step =
+    match pattern with
+    | `Solid -> true
+    | `Dashed ->
+        (* Draw 3, skip 2 pattern *)
+        let cycle = step mod 5 in
+        cycle < 3
+    | `Dotted ->
+        (* Draw 1, skip 1 pattern *)
+        step mod 2 = 0
+  in
+
+  (* Draw a stippled line segment using Bresenham's algorithm *)
+  let draw_stippled_line ~style ~pattern ~step_counter (x1, y1) (x2, y2) =
+    let dx = abs (x2 - x1) and dy = abs (y2 - y1) in
+    let sx = if x1 < x2 then 1 else -1 in
+    let sy = if y1 < y2 then 1 else -1 in
+    let err = ref (dx - dy) in
+    let px = ref x1 and py = ref y1 in
+    let glyph = if dx > dy then "─" else if dy > dx then "│" else "·" in
+    while not (!px = x2 && !py = y2) do
+      if stipple_should_draw ~pattern ~step:!step_counter then
+        if Layout.rect_contains r ~x:!px ~y:!py then
+          draw_text grid ~x:!px ~y:!py ~style glyph;
+      incr step_counter;
+      let e2 = 2 * !err in
+      if e2 > -dy then (
+        err := !err - dy;
+        px := !px + sx);
+      if e2 < dx then (
+        err := !err + dx;
+        py := !py + sy)
+    done;
+    if stipple_should_draw ~pattern ~step:!step_counter then
+      if Layout.rect_contains r ~x:x2 ~y:y2 then
+        draw_text grid ~x:x2 ~y:y2 ~style glyph;
+    incr step_counter
+  in
+
+  let draw_line_series ~style ~pattern ~kind ~x ~y data =
     match kind with
     | `Points glyph ->
         Data.iter data (fun a ->
             let px = x_to_px_cell (x a) in
             let py = y_to_px_cell (y a) in
             if Layout.rect_contains r ~x:px ~y:py then
-              Canvas.plot canvas ~x:px ~y:py ~style glyph)
+              draw_text grid ~x:px ~y:py ~style glyph)
     | `Wave ->
         let pts =
           Data.fold data ~init:[] ~f:(fun acc a ->
@@ -2519,12 +3107,13 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
               (px, py) :: acc)
           |> List.rev
         in
-        draw_wave_from_px_points canvas r ~style pts
+        draw_wave_from_px_points grid r ~style pts
     | `Line ->
         (* Use unclamped coordinates and geometric clipping for proper line rendering *)
         let prev = ref None in
         let xmin = r.x and xmax = r.x + r.width - 1 in
         let ymin = r.y and ymax = r.y + r.height - 1 in
+        let step_counter = ref 0 in
         Data.iter data (fun a ->
             let px = x_to_px_unclamped (x a) in
             let py = y_to_px_unclamped (y a) in
@@ -2536,11 +3125,39 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
                   Clip.line_to_rect ~xmin ~xmax ~ymin ~ymax ~x1:px0 ~y1:py0
                     ~x2:px ~y2:py
                 with
-                | Some (x1, y1, x2, y2) ->
-                    Canvas.draw_line canvas ~x1 ~y1 ~x2 ~y2 ~style ~kind:`Line
-                      ()
-                | None -> (* Line completely outside plot *) ()));
+                | Some (x1, y1, x2, y2) -> (
+                    match pattern with
+                    | `Solid ->
+                        G.draw_line grid ~x1 ~y1 ~x2 ~y2 ~style ~kind:`Line ()
+                    | `Dashed | `Dotted ->
+                        draw_stippled_line ~style ~pattern ~step_counter
+                          (x1, y1) (x2, y2))
+                | None -> ()));
             prev := Some (px, py))
+    | `Block2x2 ->
+        (* Project into 2x2 subgrid per cell *)
+        let gx = r.width * 2 in
+        let gy = r.height * 2 in
+        let xmin = layout.x_view.min and xmax = layout.x_view.max in
+        let ymin = layout.y_view.min and ymax = layout.y_view.max in
+        let dx = xmax -. xmin and dy = ymax -. ymin in
+        let dots : (int * int, int) Hashtbl.t = Hashtbl.create 128 in
+        let prev = ref None in
+        Data.iter data (fun a ->
+            let x' = x a and y' = y a in
+            let sx =
+              if dx <= 0. then 0. else (x' -. xmin) *. float (gx - 1) /. dx
+            in
+            let sy =
+              if dy <= 0. then 0. else (y' -. ymin) *. float (gy - 1) /. dy
+            in
+            let px = (r.x * 2) + int_of_float (Float.round sx) in
+            let py = (r.y * 2) + (gy - 1 - int_of_float (Float.round sy)) in
+            (match !prev with
+            | None -> ()
+            | Some (px0, py0) -> draw_block2x2_line (px0, py0) (px, py) dots);
+            prev := Some (px, py));
+        render_block2x2_dots style dots
     | `Braille ->
         (* project into 2x4 braille subgrid inside plot *)
         let gx = r.width * 2 in
@@ -2566,7 +3183,7 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
             prev := Some (px, py))
   in
 
-  let draw_line_opt_series ~style ~kind ~x ~y data =
+  let draw_line_opt_series ~style ~pattern ~kind ~x ~y data =
     match kind with
     | `Points glyph ->
         Data.iter data (fun a ->
@@ -2576,7 +3193,7 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
                 let px = x_to_px_cell (x a) in
                 let py = y_to_px_cell yy in
                 if Layout.rect_contains r ~x:px ~y:py then
-                  Canvas.plot canvas ~x:px ~y:py ~style glyph)
+                  draw_text grid ~x:px ~y:py ~style glyph)
     | `Wave ->
         (* wave: fall back to simple line segments with geometric clipping *)
         let prev = ref None in
@@ -2596,8 +3213,7 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
                         ~x2:px ~y2:py
                     with
                     | Some (x1, y1, x2, y2) ->
-                        Canvas.draw_line canvas ~x1 ~y1 ~x2 ~y2 ~style
-                          ~kind:`Line ()
+                        G.draw_line grid ~x1 ~y1 ~x2 ~y2 ~style ~kind:`Line ()
                     | None -> ()));
                 prev := Some (px, py))
     | `Line ->
@@ -2605,9 +3221,12 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
         let prev = ref None in
         let xmin = r.x and xmax = r.x + r.width - 1 in
         let ymin = r.y and ymax = r.y + r.height - 1 in
+        let step_counter = ref 0 in
         Data.iter data (fun a ->
             match y a with
-            | None -> prev := None
+            | None ->
+                step_counter := 0;
+                prev := None
             | Some yy ->
                 let px = x_to_px_unclamped (x a) in
                 let py = y_to_px_unclamped yy in
@@ -2618,11 +3237,47 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
                       Clip.line_to_rect ~xmin ~xmax ~ymin ~ymax ~x1:px0 ~y1:py0
                         ~x2:px ~y2:py
                     with
-                    | Some (x1, y1, x2, y2) ->
-                        Canvas.draw_line canvas ~x1 ~y1 ~x2 ~y2 ~style
-                          ~kind:`Line ()
+                    | Some (x1, y1, x2, y2) -> (
+                        match pattern with
+                        | `Solid ->
+                            G.draw_line grid ~x1 ~y1 ~x2 ~y2 ~style ~kind:`Line
+                              ()
+                        | `Dashed | `Dotted ->
+                            draw_stippled_line ~style ~pattern ~step_counter
+                              (x1, y1) (x2, y2))
                     | None -> ()));
                 prev := Some (px, py))
+    | `Block2x2 ->
+        (* Project into 2x2 subgrid per cell *)
+        let gx = r.width * 2 in
+        let gy = r.height * 2 in
+        let xmin = layout.x_view.min and xmax = layout.x_view.max in
+        let ymin = layout.y_view.min and ymax = layout.y_view.max in
+        let dx = xmax -. xmin and dy = ymax -. ymin in
+        let dots : (int * int, int) Hashtbl.t = Hashtbl.create 128 in
+        let prev = ref None in
+        Data.iter data (fun a ->
+            match y a with
+            | None ->
+                (* Render accumulated dots before gap, then reset *)
+                render_block2x2_dots style dots;
+                Hashtbl.clear dots;
+                prev := None
+            | Some yy ->
+                let x' = x a in
+                let sx =
+                  if dx <= 0. then 0. else (x' -. xmin) *. float (gx - 1) /. dx
+                in
+                let sy =
+                  if dy <= 0. then 0. else (yy -. ymin) *. float (gy - 1) /. dy
+                in
+                let px = (r.x * 2) + int_of_float (Float.round sx) in
+                let py = (r.y * 2) + (gy - 1 - int_of_float (Float.round sy)) in
+                (match !prev with
+                | None -> ()
+                | Some (px0, py0) -> draw_block2x2_line (px0, py0) (px, py) dots);
+                prev := Some (px, py));
+        render_block2x2_dots style dots
     | `Braille ->
         (* Project into 2x4 braille subgrid inside plot, same as draw_line_series *)
         let gx = r.width * 2 in
@@ -2658,7 +3313,34 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
             let px = x_to_px_cell (x a) in
             let py = y_to_px_cell (y a) in
             if Layout.rect_contains r ~x:px ~y:py then
-              Canvas.plot canvas ~x:px ~y:py ~style glyph)
+              draw_text grid ~x:px ~y:py ~style glyph)
+    | `Density ->
+        (* Density mode: count points per cell and render with shade_levels *)
+        let counts : (int * int, int) Hashtbl.t = Hashtbl.create 128 in
+        let max_count = ref 0 in
+        Data.iter data (fun a ->
+            let px = x_to_px_cell (x a) in
+            let py = y_to_px_cell (y a) in
+            if Layout.rect_contains r ~x:px ~y:py then (
+              let key = (px, py) in
+              let cur = Option.value (Hashtbl.find_opt counts key) ~default:0 in
+              let new_count = cur + 1 in
+              Hashtbl.replace counts key new_count;
+              max_count := max !max_count new_count));
+        let shade_chars = layout.theme.charset.shade_levels in
+        let num_levels = Array.length shade_chars in
+        let max_c = max 1 !max_count in
+        Hashtbl.iter
+          (fun (px, py) count ->
+            if Layout.rect_contains r ~x:px ~y:py then
+              let t = float count /. float max_c in
+              let idx =
+                max 0
+                  (min (num_levels - 1)
+                     (int_of_float (t *. float (num_levels - 1))))
+              in
+              draw_text grid ~x:px ~y:py ~style shade_chars.(idx))
+          counts
     | `Braille ->
         let gx = r.width * 2 in
         let gy = r.height * 4 in
@@ -2704,7 +3386,7 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
         Hashtbl.iter
           (fun (cx, cy) bits ->
             let glyph = braille_glyph_of_bits bits in
-            Canvas.plot canvas ~x:cx ~y:cy ~style glyph)
+            draw_text grid ~x:cx ~y:cy ~style glyph)
           dots
   in
 
@@ -2745,7 +3427,7 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
                     for xx = 0 to band_w - 1 do
                       let px = x0 + xx in
                       if px >= r.x && px < r.x + r.width then
-                        Canvas.plot canvas ~x:px ~y:yy ~style "█"
+                        draw_text grid ~x:px ~y:yy ~style "█"
                     done
                 done;
                 (* Draw fractional top cell if any *)
@@ -2757,7 +3439,7 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
                       for xx = 0 to band_w - 1 do
                         let px = x0 + xx in
                         if px >= r.x && px < r.x + r.width then
-                          Canvas.plot canvas ~x:px ~y:yy ~style glyph
+                          draw_text grid ~x:px ~y:yy ~style glyph
                       done))
   in
 
@@ -2798,7 +3480,7 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
                     for yy = 0 to band_h - 1 do
                       let py = y0 + yy in
                       if py >= r.y && py < r.y + r.height then
-                        Canvas.plot canvas ~x:xx ~y:py ~style "█"
+                        draw_text grid ~x:xx ~y:py ~style "█"
                     done
                 done;
                 (* Draw fractional right cell if any *)
@@ -2810,7 +3492,7 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
                       for yy = 0 to band_h - 1 do
                         let py = y0 + yy in
                         if py >= r.y && py < r.y + r.height then
-                          Canvas.plot canvas ~x:xx ~y:py ~style glyph
+                          draw_text grid ~x:xx ~y:py ~style glyph
                       done))
   in
 
@@ -2860,7 +3542,7 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
                         for xx = 0 to bw_cells - 1 do
                           let px = x0 + xx in
                           if px >= r.x && px < r.x + r.width then
-                            Canvas.plot canvas ~x:px ~y:yy ~style:seg.style "█"
+                            draw_text grid ~x:px ~y:yy ~style:seg.style "█"
                         done
                     done;
                     (* Draw fractional top cell if any *)
@@ -2872,8 +3554,7 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
                           for xx = 0 to bw_cells - 1 do
                             let px = x0 + xx in
                             if px >= r.x && px < r.x + r.width then
-                              Canvas.plot canvas ~x:px ~y:yy ~style:seg.style
-                                glyph
+                              draw_text grid ~x:px ~y:yy ~style:seg.style glyph
                           done)
                   b.segments)
   in
@@ -2924,7 +3605,7 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
                         for yy = 0 to bh_cells - 1 do
                           let py = y0 + yy in
                           if py >= r.y && py < r.y + r.height then
-                            Canvas.plot canvas ~x:xx ~y:py ~style:seg.style "█"
+                            draw_text grid ~x:xx ~y:py ~style:seg.style "█"
                         done
                     done;
                     (* Draw fractional right cell if any *)
@@ -2936,26 +3617,39 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
                           for yy = 0 to bh_cells - 1 do
                             let py = y0 + yy in
                             if py >= r.y && py < r.y + r.height then
-                              Canvas.plot canvas ~x:xx ~y:py ~style:seg.style
-                                glyph
+                              draw_text grid ~x:xx ~y:py ~style:seg.style glyph
                           done)
                   b.segments)
   in
 
-  let draw_rule_x ~style x =
+  let charset = layout.theme.charset in
+
+  let draw_rule_x ~style ~pattern x =
     let px = x_to_px_cell x in
     if px >= r.x && px < r.x + r.width then
-      Canvas.draw_line canvas ~x1:px ~y1:r.y ~x2:px
-        ~y2:(r.y + r.height - 1)
-        ~style ~kind:`Line ()
+      let glyph =
+        match pattern with
+        | `Solid -> charset.grid_v_solid
+        | `Dashed -> charset.grid_v_dashed
+        | `Dotted -> charset.grid_v_dotted
+      in
+      for y = r.y to r.y + r.height - 1 do
+        draw_text grid ~x:px ~y ~style glyph
+      done
   in
 
-  let draw_rule_y ~style y =
+  let draw_rule_y ~style ~pattern y =
     let py = y_to_px_cell y in
     if py >= r.y && py < r.y + r.height then
-      Canvas.draw_line canvas ~x1:r.x ~y1:py
-        ~x2:(r.x + r.width - 1)
-        ~y2:py ~style ~kind:`Line ()
+      let glyph =
+        match pattern with
+        | `Solid -> charset.grid_h_solid
+        | `Dashed -> charset.grid_h_dashed
+        | `Dotted -> charset.grid_h_dotted
+      in
+      for x = r.x to r.x + r.width - 1 do
+        draw_text grid ~x ~y:py ~style glyph
+      done
   in
 
   let draw_candles ~bullish ~bearish data =
@@ -2975,15 +3669,15 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
         if cx >= r.x && cx < r.x + r.width then (
           for yy = min y_wick_top y_body_top to max y_wick_top y_body_top do
             if yy >= r.y && yy < r.y + r.height then
-              Canvas.plot canvas ~x:cx ~y:yy ~style:st "│"
+              draw_text grid ~x:cx ~y:yy ~style:st "│"
           done;
           for yy = min y_body_top y_body_bot to max y_body_top y_body_bot do
             if yy >= r.y && yy < r.y + r.height then
-              Canvas.plot canvas ~x:cx ~y:yy ~style:st "┃"
+              draw_text grid ~x:cx ~y:yy ~style:st "┃"
           done;
           for yy = min y_body_bot y_wick_bot to max y_body_bot y_wick_bot do
             if yy >= r.y && yy < r.y + r.height then
-              Canvas.plot canvas ~x:cx ~y:yy ~style:st "│"
+              draw_text grid ~x:cx ~y:yy ~style:st "│"
           done))
       arr
   in
@@ -3031,7 +3725,7 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
                   Layout.px_of_data layout ~x:(float xd) ~y:(float yd)
                 in
                 if Layout.rect_contains r ~x:px ~y:py then
-                  Canvas.plot canvas ~x:px ~y:py ~style "█")
+                  draw_text grid ~x:px ~y:py ~style "█")
               pts)
     | `Braille ->
         (* accumulate braille dots inside plot *)
@@ -3087,7 +3781,7 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
         Hashtbl.iter
           (fun (cx, cy) bits ->
             let glyph = braille_glyph_of_bits bits in
-            Canvas.plot canvas ~x:cx ~y:cy ~style glyph)
+            draw_text grid ~x:cx ~y:cy ~style glyph)
           dots
   in
 
@@ -3115,12 +3809,12 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
 
     let draw_cell px py v =
       if Layout.rect_contains r ~x:px ~y:py then
-        Canvas.plot canvas ~x:px ~y:py ~style:(style_of_color (color_of v)) " "
+        draw_text grid ~x:px ~y:py ~style:(style_of_color (color_of v)) " "
     in
 
     match render with
-    | Mark.Cells -> (
-        (* cell aggregation based on agg *)
+    | Mark.Cells_bg -> (
+        (* Cells_bg: colored background with space glyph *)
         let tbl : (int * int, float * int) Hashtbl.t = Hashtbl.create 256 in
         let tbl_max : (int * int, float) Hashtbl.t = Hashtbl.create 256 in
         Data.iter data (fun a ->
@@ -3148,6 +3842,111 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
               tbl
         | `Last | `Max ->
             Hashtbl.iter (fun (px, py) v -> draw_cell px py v) tbl_max)
+    | Mark.Cells_fg -> (
+        (* Cells_fg: colored foreground glyph (█) *)
+        let draw_cell_fg px py v =
+          if Layout.rect_contains r ~x:px ~y:py then
+            let st = Style.make ~fg:(color_of v) () in
+            draw_text grid ~x:px ~y:py ~style:st charset.bar_fill
+        in
+        let tbl : (int * int, float * int) Hashtbl.t = Hashtbl.create 256 in
+        let tbl_max : (int * int, float) Hashtbl.t = Hashtbl.create 256 in
+        Data.iter data (fun a ->
+            let px = x_to_px_cell (x a) in
+            let py = y_to_px_cell (y a) in
+            let v = value a in
+            if Layout.rect_contains r ~x:px ~y:py then
+              match agg with
+              | `Last -> Hashtbl.replace tbl_max (px, py) v
+              | `Max ->
+                  let cur =
+                    Option.value (Hashtbl.find_opt tbl_max (px, py)) ~default:v
+                  in
+                  Hashtbl.replace tbl_max (px, py) (Float.max cur v)
+              | `Avg ->
+                  let s, n =
+                    Option.value (Hashtbl.find_opt tbl (px, py)) ~default:(0., 0)
+                  in
+                  Hashtbl.replace tbl (px, py) (s +. v, n + 1));
+        match agg with
+        | `Avg ->
+            Hashtbl.iter
+              (fun (px, py) (s, n) ->
+                if n > 0 then draw_cell_fg px py (s /. float n))
+              tbl
+        | `Last | `Max ->
+            Hashtbl.iter (fun (px, py) v -> draw_cell_fg px py v) tbl_max)
+    | Mark.Halfblock_fg_bg ->
+        (* Halfblock_fg_bg: Two values per row using ▀ with fg/bg colors.
+           Each terminal cell represents two data rows (top half and bottom half),
+           doubling vertical resolution. *)
+        (* We aggregate data at 2x vertical resolution, then render pairs *)
+        let tbl : (int * int, float * int) Hashtbl.t = Hashtbl.create 256 in
+        let tbl_max : (int * int, float) Hashtbl.t = Hashtbl.create 256 in
+        (* Map data to half-cell coordinates: py_half = py * 2 + (0 or 1) *)
+        Data.iter data (fun a ->
+            let px = x_to_px_cell (x a) in
+            (* Map to double-resolution y coordinate *)
+            let y_data = y a in
+            let py_float =
+              let minv = layout.y_view.min and maxv = layout.y_view.max in
+              let extent = r.height * 2 in
+              (* 2x resolution *)
+              if Float.abs (maxv -. minv) < 1e-12 then float (extent / 2)
+              else
+                let t = (y_data -. minv) /. (maxv -. minv) in
+                (* y inverted: top=min, bottom=max *)
+                float (extent - 1) *. (1. -. t)
+            in
+            let py_half = int_of_float (Float.round py_float) in
+            let py_half = max 0 (min ((r.height * 2) - 1) py_half) in
+            let v = value a in
+            let key = (px, py_half) in
+            if px >= r.x && px < r.x + r.width then
+              match agg with
+              | `Last -> Hashtbl.replace tbl_max key v
+              | `Max ->
+                  let cur =
+                    Option.value (Hashtbl.find_opt tbl_max key) ~default:v
+                  in
+                  Hashtbl.replace tbl_max key (Float.max cur v)
+              | `Avg ->
+                  let s, n =
+                    Option.value (Hashtbl.find_opt tbl key) ~default:(0., 0)
+                  in
+                  Hashtbl.replace tbl key (s +. v, n + 1));
+        let get_value key =
+          match agg with
+          | `Avg -> (
+              match Hashtbl.find_opt tbl key with
+              | None -> None
+              | Some (s, n) -> if n > 0 then Some (s /. float n) else None)
+          | `Last | `Max -> Hashtbl.find_opt tbl_max key
+        in
+        (* Render cell-by-cell: each cell covers py_half = [py*2, py*2+1] *)
+        for py = r.y to r.y + r.height - 1 do
+          for px = r.x to r.x + r.width - 1 do
+            let py_rel = py - r.y in
+            let py_half_top = py_rel * 2 in
+            let py_half_bot = (py_rel * 2) + 1 in
+            let v_top = get_value (px, py_half_top) in
+            let v_bot = get_value (px, py_half_bot) in
+            match (v_top, v_bot) with
+            | None, None -> ()
+            | Some vt, None ->
+                (* Only top half has data *)
+                let st = Style.make ~fg:(color_of vt) () in
+                draw_text grid ~x:px ~y:py ~style:st "▀"
+            | None, Some vb ->
+                (* Only bottom half has data *)
+                let st = Style.make ~fg:(color_of vb) () in
+                draw_text grid ~x:px ~y:py ~style:st "▄"
+            | Some vt, Some vb ->
+                (* Both halves have data: top=fg, bottom=bg, glyph=▀ *)
+                let st = Style.make ~fg:(color_of vt) ~bg:(color_of vb) () in
+                draw_text grid ~x:px ~y:py ~style:st "▀"
+          done
+        done
     | Mark.Dense_bilinear ->
         (* bilinear upsample across plot rect using unique X/Y from inputs *)
         (* collect unique xs/ys *)
@@ -3165,7 +3964,7 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
         if nx <= 1 || ny <= 1 then
           (* fallback *)
           draw_heatmap ~color_scale ~value_range ~auto_value_range ~agg
-            ~render:Mark.Cells ~x ~y ~value data
+            ~render:Mark.Cells_bg ~x ~y ~value data
         else
           let xs = Array.of_list xs and ys = Array.of_list ys in
           let grid : (int * int, float * int) Hashtbl.t =
@@ -3253,17 +4052,19 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
           done
     | Mark.Shaded ->
         (* Shaded mode: bilinear upsample with text characters instead of colors *)
-        let shade_chars = [| " "; "░"; "▒"; "▓"; "█" |] in
+        let shade_chars = charset.shade_levels in
+        let num_levels = Array.length shade_chars in
         let shade_idx v =
           let t = (v -. vmin) /. Float.max 1e-12 (vmax -. vmin) in
           let t = clamp01 t in
-          max 0 (min 4 (int_of_float (t *. 4.)))
+          max 0
+            (min (num_levels - 1) (int_of_float (t *. float (num_levels - 1))))
         in
         let draw_shaded_cell px py v =
           if Layout.rect_contains r ~x:px ~y:py then
             let color = color_of v in
             let st = Style.make ~fg:color () in
-            Canvas.plot canvas ~x:px ~y:py ~style:st shade_chars.(shade_idx v)
+            draw_text grid ~x:px ~y:py ~style:st shade_chars.(shade_idx v)
         in
         (* collect unique xs/ys for bilinear interpolation *)
         let xs_tbl = Hashtbl.create 64 and ys_tbl = Hashtbl.create 64 in
@@ -3379,57 +4180,86 @@ let draw_marks (layout : Layout.t) (canvas : Canvas.t) =
     (function
       | CShade_x { style; x0; x1; _ } -> draw_shade_x style x0 x1
       | CColumn_bg { style; x; _ } -> draw_column_bg style x
-      | CLine { style; kind; x; y; data; _ } ->
-          draw_line_series ~style ~kind ~x ~y data
-      | CLine_opt { style; kind; x; y; data; _ } ->
-          draw_line_opt_series ~style ~kind ~x ~y data
-      | CScatter { style; glyph; kind; x; y; data; _ } ->
-          draw_scatter_series ~style ~glyph ~kind ~x ~y data
+      | CLine { style; resolution; pattern; glyph; x; y; data; _ } ->
+          let kind =
+            match resolution with
+            | `Cell -> ( match glyph with Some g -> `Points g | None -> `Line)
+            | `Wave -> `Wave
+            | `Block2x2 -> `Block2x2
+            | `Braille2x4 -> `Braille
+          in
+          draw_line_series ~style ~pattern ~kind ~x ~y data
+      | CLine_opt { style; resolution; pattern; glyph; x; y; data; _ } ->
+          let kind =
+            match resolution with
+            | `Cell -> ( match glyph with Some g -> `Points g | None -> `Line)
+            | `Wave -> `Wave
+            | `Block2x2 -> `Block2x2
+            | `Braille2x4 -> `Braille
+          in
+          draw_line_opt_series ~style ~pattern ~kind ~x ~y data
+      | CScatter { style; glyph; mode; x; y; data; _ } ->
+          draw_scatter_series ~style ~glyph ~kind:mode ~x ~y data
       | CBars_y { style; x; y; data; _ } -> draw_bars_y ~style ~x ~y data
       | CBars_x { style; y; x; data; _ } -> draw_bars_x ~style ~y ~x data
       | CStacked_y { gap; bar_width; data; _ } ->
           draw_stacked_y ~gap ~bar_width data
       | CStacked_x { gap; bar_height; data; _ } ->
           draw_stacked_x ~gap ~bar_height data
-      | CRule_x { style; x; _ } -> draw_rule_x ~style x
-      | CRule_y { style; y; _ } -> draw_rule_y ~style y
+      | CRule_x { style; pattern; x; _ } -> draw_rule_x ~style ~pattern x
+      | CRule_y { style; pattern; y; _ } -> draw_rule_y ~style ~pattern y
       | CHeatmap
           {
             color_scale;
             value_range;
             auto_value_range;
             agg;
-            render;
+            mode;
             x;
             y;
             value;
             data;
             _;
           } ->
-          draw_heatmap ~color_scale ~value_range ~auto_value_range ~agg ~render
-            ~x ~y ~value data
+          draw_heatmap ~color_scale ~value_range ~auto_value_range ~agg
+            ~render:mode ~x ~y ~value data
       | CCandles { bullish; bearish; data; _ } ->
           draw_candles ~bullish ~bearish data
-      | CCircle { style; kind; cx; cy; r; data; _ } ->
+      | CCircle { style; resolution; cx; cy; r; data; _ } ->
+          let kind =
+            match resolution with
+            | `Cell | `Wave | `Block2x2 -> `Line
+            | `Braille2x4 -> `Braille
+          in
           draw_circle ~style ~kind ~cx ~cy ~radius_fn:r data)
     layout.marks
 
-let draw ?view (t : t) (canvas : Canvas.t) ~width ~height : Layout.t =
-  let layout = compute_layout ?view t ~width ~height in
-  Canvas.clear canvas;
-  (* background fill (entire canvas) if requested *)
+let draw ?view ?(x = 0) ?(y = 0) (t : t) (grid : G.t) ~width ~height : Layout.t
+    =
+  let layout = compute_layout ?view ~x ~y t ~width ~height in
+  (* background fill (chart area) if requested *)
   (match t.theme.background with
   | None -> ()
-  | Some bg -> Canvas.fill_rect canvas ~x:0 ~y:0 ~width ~height ~color:bg);
+  | Some bg -> G.fill_rect grid ~x ~y ~width ~height ~color:bg);
 
   (* clear plot area if background exists? If no background, we still want a clean plot region. *)
   (match t.theme.background with
   | None -> ()
   | Some bg ->
-      Canvas.fill_rect canvas ~x:layout.plot.x ~y:layout.plot.y
+      G.fill_rect grid ~x:layout.plot.x ~y:layout.plot.y
         ~width:layout.plot.width ~height:layout.plot.height ~color:bg);
 
-  draw_grid layout canvas;
-  draw_marks layout canvas;
-  draw_axes layout canvas;
+  draw_grid layout grid;
+  draw_marks layout grid;
+  draw_axes layout grid;
+
+  (* Draw chart title centered above plot *)
+  (match layout.title with
+  | None -> ()
+  | Some { text; style } ->
+      let text_w = text_width text in
+      let center_x = layout.plot.x + (layout.plot.width / 2) - (text_w / 2) in
+      let title_y = max y (layout.plot.y - 1) in
+      G.draw_text grid ~x:center_x ~y:title_y ~text ~style);
+
   layout

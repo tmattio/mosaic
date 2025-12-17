@@ -544,6 +544,30 @@ val draw_box :
     are dropped. The title is padded by two cells on each side, clamped to the
     box width, and defaults to [border_style] when [title_style] is omitted. *)
 
+val draw_line :
+  t ->
+  x1:int ->
+  y1:int ->
+  x2:int ->
+  y2:int ->
+  ?style:Ansi.Style.t ->
+  ?kind:[ `Line | `Braille ] ->
+  unit ->
+  unit
+(** [draw_line t ~x1 ~y1 ~x2 ~y2 ?style ?kind ()] draws a line from [(x1, y1)]
+    to [(x2, y2)].
+
+    Uses Bresenham's line algorithm for efficient rasterization.
+
+    @param style Line style. Default is {!Ansi.Style.default}.
+    @param kind
+      Rendering mode. [`Line] uses box-drawing characters (["│"], ["─"], ["╲"],
+      ["╱"]). [`Braille] uses 2×4 Braille dot patterns for higher resolution.
+      Default is [`Line].
+
+    Drawing respects the scissor stack; cells outside the active scissor are not
+    modified. *)
+
 (** {1 Direct Cell Access} *)
 
 val set_cell :

@@ -1,23 +1,23 @@
 (** Sparkline charts for compact time series visualization.
 
     Sparklines render recent data points in a fixed-width buffer using either
-    bar glyphs or Braille dots. The rendering adapts to available canvas
+    bar glyphs or Braille dots. The rendering adapts to available grid
     dimensions.
 
     {1 Usage}
 
     Create a sparkline with a fixed capacity, push values incrementally, and
-    draw to a canvas:
+    draw to a grid:
     {[
       let sp = Sparkline.create ~capacity:50 () in
       Sparkline.push sp 42.5;
-      Sparkline.draw sp ~kind:`Bars canvas ~width:50 ~height:5
+      Sparkline.draw sp ~kind:`Bars grid ~width:50 ~height:5
     ]}
 
     For one-off rendering without state:
     {[
-      Sparkline.draw_values ~kind:`Braille [ 1.; 2.; 3.; 5.; 8. ] canvas
-        ~width:10 ~height:3
+      Sparkline.draw_values ~kind:`Braille [ 1.; 2.; 3.; 5.; 8. ] grid ~width:10
+        ~height:3
     ]} *)
 
 type t
@@ -86,25 +86,28 @@ val draw :
   t ->
   kind:kind ->
   ?columns_only:bool ->
-  Mosaic_ui.Canvas.t ->
+  ?x:int ->
+  ?y:int ->
+  Grid.t ->
   width:int ->
   height:int ->
   unit
-(** [draw t ~kind canvas ~width ~height] renders the sparkline to [canvas].
+(** [draw t ~kind grid ~width ~height] renders the sparkline to [grid].
 
     Only the most recent [width] values are shown, right-aligned. Values are
-    scaled by [max_value]; bars fill from bottom upward. The canvas is cleared
-    before drawing.
+    scaled by [max_value]; bars fill from bottom upward.
 
     @param kind Rendering style. See {!type-kind}.
     @param columns_only
       When [true], skips background fill (style's [bg] is ignored). Default is
       [false].
+    @param x Horizontal offset in [grid]. Default is [0].
+    @param y Vertical offset in [grid]. Default is [0].
     @param width
-      Canvas width. Determines how many recent values are visible. Clamped to at
+      Grid width. Determines how many recent values are visible. Clamped to at
       least [1].
     @param height
-      Canvas height. Bar heights scale proportionally. Clamped to at least [1].
+      Grid height. Bar heights scale proportionally. Clamped to at least [1].
 
     [`Bars] uses block glyphs for vertical bars. [`Braille] draws connected line
     segments using 2x4 Braille dot grids per cell, employing Bresenham's line
@@ -113,12 +116,14 @@ val draw :
 val draw_values :
   ?style:Ansi.Style.t ->
   kind:kind ->
+  ?x:int ->
+  ?y:int ->
   float list ->
-  Mosaic_ui.Canvas.t ->
+  Grid.t ->
   width:int ->
   height:int ->
   unit
-(** [draw_values ~kind vs canvas ~width ~height] renders [vs] directly without
+(** [draw_values ~kind vs grid ~width ~height] renders [vs] directly without
     state.
 
     Creates a temporary sparkline with [capacity] equal to [width], pushes all
@@ -126,11 +131,13 @@ val draw_values :
 
     @param style Rendering style. Default is {!Ansi.Style.default}.
     @param kind Rendering style. See {!type-kind}.
+    @param x Horizontal offset in [grid]. Default is [0].
+    @param y Vertical offset in [grid]. Default is [0].
 
     {4 Example}
 
     Render a quick trend:
     {[
-      Sparkline.draw_values ~kind:`Bars [ 10.; 20.; 15.; 25. ] canvas ~width:10
+      Sparkline.draw_values ~kind:`Bars [ 10.; 20.; 15.; 25. ] grid ~width:10
         ~height:3
     ]} *)

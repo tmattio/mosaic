@@ -13,6 +13,7 @@ depends: [
   "ocaml" {>= "5.4"}
   "dune" {>= "3.19"}
   "alcotest" {with-test}
+  "ppx_expect" {with-test}
   "odoc" {with-doc}
 ]
 build: [

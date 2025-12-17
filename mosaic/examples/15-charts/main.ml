@@ -2,20 +2,21 @@
 *)
 
 open Mosaic_tea
-open Mosaic_charts
+open Matrix_charts
 module Canvas = Mosaic_ui.Canvas
 module Event = Mosaic_ui.Event
 
 (* --- Chart types --- *)
 
-type chart_type = Line | Scatter | Bar | Heatmap | Candlestick
+type chart_type = Line | Scatter | Bar | Stacked_bar | Heatmap | Candlestick
 
-let all_charts = [ Line; Scatter; Bar; Heatmap; Candlestick ]
+let all_charts = [ Line; Scatter; Bar; Stacked_bar; Heatmap; Candlestick ]
 
 let chart_name = function
   | Line -> "Line"
   | Scatter -> "Scatter"
   | Bar -> "Bar"
+  | Stacked_bar -> "Stacked Bar"
   | Heatmap -> "Heatmap"
   | Candlestick -> "Candlestick"
 
@@ -33,6 +34,83 @@ let chart_of_index (i : int) : chart_type =
 
 let next_chart c = chart_of_index (chart_index c + 1)
 let prev_chart c = chart_of_index (chart_index c - 1)
+
+(* --- Line style options --- *)
+
+type line_resolution = [ `Cell | `Wave | `Block2x2 | `Braille2x4 ]
+
+let line_resolution_name : line_resolution -> string = function
+  | `Cell -> "Cell"
+  | `Wave -> "Wave"
+  | `Block2x2 -> "Block2x2"
+  | `Braille2x4 -> "Braille"
+
+let cycle_line_resolution : line_resolution -> line_resolution = function
+  | `Cell -> `Wave
+  | `Wave -> `Block2x2
+  | `Block2x2 -> `Braille2x4
+  | `Braille2x4 -> `Cell
+
+type line_pattern = [ `Solid | `Dashed | `Dotted ]
+
+let line_pattern_name : line_pattern -> string = function
+  | `Solid -> "Solid"
+  | `Dashed -> "Dashed"
+  | `Dotted -> "Dotted"
+
+let cycle_line_pattern : line_pattern -> line_pattern = function
+  | `Solid -> `Dashed
+  | `Dashed -> `Dotted
+  | `Dotted -> `Solid
+
+(* --- Scatter mode options --- *)
+
+type scatter_mode = [ `Cell | `Braille | `Density ]
+
+let scatter_mode_name : scatter_mode -> string = function
+  | `Cell -> "Cell"
+  | `Braille -> "Braille"
+  | `Density -> "Density"
+
+let cycle_scatter_mode : scatter_mode -> scatter_mode = function
+  | `Cell -> `Braille
+  | `Braille -> `Density
+  | `Density -> `Cell
+
+(* --- Grid pattern options --- *)
+
+let grid_pattern_name : Charset.line_pattern -> string = function
+  | `Solid -> "Solid"
+  | `Dashed -> "Dashed"
+  | `Dotted -> "Dotted"
+
+let cycle_grid_pattern : Charset.line_pattern -> Charset.line_pattern = function
+  | `Solid -> `Dashed
+  | `Dashed -> `Dotted
+  | `Dotted -> `Solid
+
+(* --- Charset options --- *)
+
+type charset_mode =
+  [ `Unicode_light | `Unicode_heavy | `Unicode_rounded | `Ascii ]
+
+let charset_name : charset_mode -> string = function
+  | `Unicode_light -> "Light"
+  | `Unicode_heavy -> "Heavy"
+  | `Unicode_rounded -> "Rounded"
+  | `Ascii -> "ASCII"
+
+let cycle_charset : charset_mode -> charset_mode = function
+  | `Unicode_light -> `Unicode_heavy
+  | `Unicode_heavy -> `Unicode_rounded
+  | `Unicode_rounded -> `Ascii
+  | `Ascii -> `Unicode_light
+
+let charset_of_mode : charset_mode -> Charset.t = function
+  | `Unicode_light -> Charset.unicode_light
+  | `Unicode_heavy -> Charset.unicode_heavy
+  | `Unicode_rounded -> Charset.unicode_rounded
+  | `Ascii -> Charset.ascii
 
 (* --- Sample data --- *)
 
@@ -57,6 +135,35 @@ let bar_data =
     ("Fri", 22.0);
     ("Sat", 10.0);
     ("Sun", 14.0);
+  |]
+
+(* Stacked bar data using Mark.stacked_bar type *)
+let stacked_bar_data =
+  let colors =
+    [|
+      Ansi.Color.of_rgb 100 180 255;
+      Ansi.Color.of_rgb 255 150 100;
+      Ansi.Color.of_rgb 150 220 150;
+    |]
+  in
+  let labels = [| "Product A"; "Product B"; "Product C" |] in
+  let make_segments values =
+    Array.to_list
+      (Array.mapi
+         (fun i v ->
+           Mark.
+             {
+               value = v;
+               style = Ansi.Style.make ~fg:colors.(i) ();
+               label = Some labels.(i);
+             })
+         values)
+  in
+  [|
+    Mark.{ category = "Q1"; segments = make_segments [| 15.0; 22.0; 18.0 |] };
+    Mark.{ category = "Q2"; segments = make_segments [| 20.0; 18.0; 25.0 |] };
+    Mark.{ category = "Q3"; segments = make_segments [| 12.0; 28.0; 20.0 |] };
+    Mark.{ category = "Q4"; segments = make_segments [| 25.0; 15.0; 22.0 |] };
   |]
 
 let heatmap_data =
@@ -106,7 +213,14 @@ type model = {
   show_grid : bool;
   theme : theme_mode;
   show_help : bool;
-  heatmap_render : Mark.heatmap_render;
+  heatmap_mode : Mark.heatmap_mode;
+  (* style options for demo *)
+  line_resolution : line_resolution;
+  line_pattern : line_pattern;
+  show_line_points : bool;
+  scatter_mode : scatter_mode;
+  grid_pattern : Charset.line_pattern;
+  charset : charset_mode;
 }
 
 type msg =
@@ -125,7 +239,10 @@ type msg =
   | Toggle_grid
   | Toggle_theme
   | Toggle_help
-  | Cycle_heatmap_render
+  | Toggle_line_points
+  | Cycle_style
+  | Cycle_grid_pattern
+  | Cycle_charset
   | Quit
 
 let init () =
@@ -139,7 +256,13 @@ let init () =
       show_grid = true;
       theme = `Dark;
       show_help = false;
-      heatmap_render = Mark.Cells;
+      heatmap_mode = Mark.Cells_bg;
+      line_resolution = `Braille2x4;
+      line_pattern = `Solid;
+      show_line_points = false;
+      scatter_mode = `Braille;
+      grid_pattern = `Solid;
+      charset = `Unicode_light;
     },
     Cmd.none )
 
@@ -160,68 +283,96 @@ let reset_all_views (m : model) : model =
   { m with views }
 
 let theme_of_model (m : model) : Theme.t =
-  match m.theme with `Dark -> Theme.dark | `Light -> Theme.light
+  let base = match m.theme with `Dark -> Theme.dark | `Light -> Theme.light in
+  Theme.with_charset (charset_of_mode m.charset) base
 
-let grid_of_model (m : model) : Grid.t =
-  if not m.show_grid then Grid.hidden
+let grid_of_model (m : model) : Gridlines.t =
+  if not m.show_grid then Gridlines.hidden
   else
     (* Set style to Style.default so the theme can supply grid style. *)
-    Grid.default |> Grid.with_style Ansi.Style.default
+    Gridlines.default
+    |> Gridlines.with_style Ansi.Style.default
+    |> Gridlines.with_pattern m.grid_pattern
 
 (* --- Chart specifications (pure) --- *)
 
-let spec_for (m : model) (ct : chart_type) : Mosaic_charts.t =
+let spec_for (m : model) (ct : chart_type) : Matrix_charts.t =
   let theme = theme_of_model m in
   match ct with
   | Line ->
-      empty ~theme ()
-      |> with_frame { margins = (1, 2, 2, 6); inner_padding = 0 }
-      |> with_axes
-           ~x:(Axis.default |> Axis.with_ticks 8)
-           ~y:(Axis.default |> Axis.with_ticks 6)
-      |> with_grid (grid_of_model m)
-      (* line + points makes hit-testing nicer *)
-      |> line ~id:"line" ~kind:`Braille ~x:fst ~y:snd line_data
-      |> scatter ~id:"points" ~glyph:"∙" ~kind:`Cell ~x:fst ~y:snd line_data
+      let chart =
+        empty ~theme ()
+        |> with_title "Waveform Analysis"
+        |> with_frame (manual_frame ~margins:(2, 2, 3, 8) ())
+        |> with_axes
+             ~x:
+               (Axis.default |> Axis.with_ticks 8
+               |> Axis.with_title "Time (samples)")
+             ~y:
+               (Axis.default |> Axis.with_ticks 6 |> Axis.with_title "Amplitude")
+        |> with_grid (grid_of_model m)
+        |> line ~id:"line" ~label:"Signal" ~resolution:m.line_resolution
+             ~pattern:m.line_pattern ~x:fst ~y:snd line_data
+      in
+      if m.show_line_points then
+        chart
+        |> scatter ~id:"points" ~label:"Samples" ~glyph:"∙" ~mode:`Cell ~x:fst
+             ~y:snd line_data
+      else chart
   | Scatter ->
       empty ~theme ()
-      |> with_frame { margins = (1, 2, 2, 5); inner_padding = 0 }
+      |> with_title "Cluster Distribution"
+      |> with_frame (manual_frame ~margins:(2, 2, 3, 7) ())
       |> with_axes
-           ~x:(Axis.default |> Axis.with_ticks 6)
-           ~y:(Axis.default |> Axis.with_ticks 6)
+           ~x:(Axis.default |> Axis.with_ticks 6 |> Axis.with_title "X Position")
+           ~y:(Axis.default |> Axis.with_ticks 6 |> Axis.with_title "Y Position")
       |> with_grid (grid_of_model m)
-      |> scatter ~id:"scatter" ~kind:`Braille ~glyph:"·" ~x:fst ~y:snd
-           scatter_data
+      |> scatter ~id:"scatter" ~label:"Points" ~mode:m.scatter_mode ~glyph:"·"
+           ~x:fst ~y:snd scatter_data
   | Bar ->
       let categories = Array.to_list (Array.map fst bar_data) in
       empty ~theme ()
-      |> with_frame { margins = (1, 2, 2, 6); inner_padding = 0 }
+      |> with_title "Weekly Activity"
+      |> with_frame (manual_frame ~margins:(2, 2, 3, 8) ())
       |> with_x_scale (Scale.band ~categories ~padding:0.18 ())
       |> with_axes
-           ~x:(Axis.default |> Axis.with_ticks 0)
-             (* band labels are categories *)
-           ~y:(Axis.default |> Axis.with_ticks 6)
+           ~x:(Axis.default |> Axis.with_ticks 0 |> Axis.with_title "Day")
+           ~y:(Axis.default |> Axis.with_ticks 6 |> Axis.with_title "Count")
       |> with_grid (grid_of_model m)
-      |> bars_y ~id:"bars" ~x:fst ~y:snd bar_data
+      |> bars_y ~id:"bars" ~label:"Activity" ~x:fst ~y:snd bar_data
+      |> rule_y 0.0
+  | Stacked_bar ->
+      let categories =
+        Array.to_list (Array.map (fun b -> b.Mark.category) stacked_bar_data)
+      in
+      empty ~theme ()
+      |> with_title "Quarterly Revenue"
+      |> with_frame (manual_frame ~margins:(2, 2, 3, 8) ())
+      |> with_x_scale (Scale.band ~categories ~padding:0.18 ())
+      |> with_axes
+           ~x:(Axis.default |> Axis.with_ticks 0 |> Axis.with_title "Quarter")
+           ~y:(Axis.default |> Axis.with_ticks 6 |> Axis.with_title "Revenue")
+      |> with_grid (grid_of_model m)
+      |> stacked_bars_y ~id:"stacked" stacked_bar_data
       |> rule_y 0.0
   | Heatmap ->
-      empty ~theme ()
-      |> with_frame { margins = (1, 2, 2, 5); inner_padding = 0 }
+      empty ~theme () |> with_title "Intensity Map"
+      |> with_frame (manual_frame ~margins:(2, 2, 3, 7) ())
       |> with_axes
-           ~x:(Axis.default |> Axis.with_ticks 6)
-           ~y:(Axis.default |> Axis.with_ticks 6)
-      |> with_grid (if m.show_grid then grid_of_model m else Grid.hidden)
-      |> heatmap ~id:"heat" ~auto_value_range:true ~render:m.heatmap_render
+           ~x:(Axis.default |> Axis.with_ticks 6 |> Axis.with_title "Column")
+           ~y:(Axis.default |> Axis.with_ticks 6 |> Axis.with_title "Row")
+      |> with_grid (if m.show_grid then grid_of_model m else Gridlines.hidden)
+      |> heatmap ~id:"heat" ~auto_value_range:true ~mode:m.heatmap_mode
            ~x:(fun (x, _, _) -> x)
            ~y:(fun (_, y, _) -> y)
            ~value:(fun (_, _, v) -> v)
            heatmap_data
   | Candlestick ->
-      empty ~theme ()
-      |> with_frame { margins = (1, 2, 2, 6); inner_padding = 0 }
+      empty ~theme () |> with_title "Price Action"
+      |> with_frame (manual_frame ~margins:(2, 2, 3, 8) ())
       |> with_axes
-           ~x:(Axis.default |> Axis.with_ticks 7)
-           ~y:(Axis.default |> Axis.with_ticks 6)
+           ~x:(Axis.default |> Axis.with_ticks 7 |> Axis.with_title "Time")
+           ~y:(Axis.default |> Axis.with_ticks 6 |> Axis.with_title "Price")
       |> with_grid (grid_of_model m)
       |> candles ~id:"ohlc" candlestick_data
 
@@ -233,7 +384,7 @@ let with_layout_for (m : model) ~(view : View.t) (f : Layout.t -> model * 'a) :
   | None -> None
   | Some (w, h) ->
       let chart = spec_for m m.chart in
-      let layout = Mosaic_charts.layout ~view chart ~width:w ~height:h in
+      let layout = Matrix_charts.layout ~view chart ~width:w ~height:h in
       Some (f layout)
 
 let plot_center_px (layout : Layout.t) : int * int =
@@ -258,7 +409,7 @@ let hit_params (ct : chart_type) : int * Hit.policy =
   match ct with
   | Line -> (4, `Nearest_x)
   | Scatter -> (4, `Nearest_px)
-  | Bar -> (2, `Nearest_px)
+  | Bar | Stacked_bar -> (2, `Nearest_px)
   | Heatmap -> (3, `Nearest_px)
   | Candlestick -> (2, `Nearest_x)
 
@@ -308,17 +459,13 @@ let hit_tooltip (layout : Layout.t) (hit : Hit.t) : float * float * string list
           Printf.sprintf "index: %d" hit.index;
         ] )
   | Hit.Bar { category; value } ->
-      let x = x_center_for_category layout category in
-      let y = value in
-      ( x,
-        y,
+      ( x_center_for_category layout category,
+        value,
         [ header; "category: " ^ category; Printf.sprintf "value: %.3g" value ]
       )
   | Hit.Stacked_bar { category; segment_index; value; total } ->
-      let x = x_center_for_category layout category in
-      let y = total in
-      ( x,
-        y,
+      ( x_center_for_category layout category,
+        total,
         [
           header;
           "category: " ^ category;
@@ -350,9 +497,11 @@ let hit_tooltip (layout : Layout.t) (hit : Hit.t) : float * float * string list
 (* --- Update (interaction state machine) --- *)
 
 let cycle_heatmap_render = function
-  | Mark.Cells -> Mark.Dense_bilinear
-  | Mark.Dense_bilinear -> Mark.Shaded
-  | Mark.Shaded -> Mark.Cells
+  | Mark.Cells_fg -> Mark.Cells_bg
+  | Mark.Cells_bg -> Mark.Halfblock_fg_bg
+  | Mark.Halfblock_fg_bg -> Mark.Shaded
+  | Mark.Shaded -> Mark.Dense_bilinear
+  | Mark.Dense_bilinear -> Mark.Cells_fg
 
 let update (msg : msg) (m : model) =
   match msg with
@@ -454,16 +603,38 @@ let update (msg : msg) (m : model) =
       let theme = match m.theme with `Dark -> `Light | `Light -> `Dark in
       ({ m with theme }, Cmd.none)
   | Toggle_help -> ({ m with show_help = not m.show_help }, Cmd.none)
-  | Cycle_heatmap_render ->
-      if m.chart <> Heatmap then (m, Cmd.none)
-      else
-        ( { m with heatmap_render = cycle_heatmap_render m.heatmap_render },
-          Cmd.none )
+  | Toggle_line_points ->
+      ({ m with show_line_points = not m.show_line_points }, Cmd.none)
+  | Cycle_style -> (
+      match m.chart with
+      | Line ->
+          (* Cycle: resolution -> pattern -> resolution... *)
+          if m.line_pattern <> `Solid then
+            ( { m with line_pattern = cycle_line_pattern m.line_pattern },
+              Cmd.none )
+          else if m.line_resolution = `Braille2x4 then
+            ( { m with line_resolution = `Cell; line_pattern = `Dashed },
+              Cmd.none )
+          else
+            ( {
+                m with
+                line_resolution = cycle_line_resolution m.line_resolution;
+              },
+              Cmd.none )
+      | Scatter ->
+          ({ m with scatter_mode = cycle_scatter_mode m.scatter_mode }, Cmd.none)
+      | Heatmap ->
+          ( { m with heatmap_mode = cycle_heatmap_render m.heatmap_mode },
+            Cmd.none )
+      | Bar | Stacked_bar | Candlestick -> (m, Cmd.none))
+  | Cycle_grid_pattern ->
+      ({ m with grid_pattern = cycle_grid_pattern m.grid_pattern }, Cmd.none)
+  | Cycle_charset -> ({ m with charset = cycle_charset m.charset }, Cmd.none)
   | Quit -> (m, Cmd.quit)
 
 (* --- Drawing overlays (hover + help) --- *)
 
-let draw_hover_overlay (m : model) (layout : Layout.t) (canvas : Canvas.t) =
+let draw_hover_overlay (m : model) (layout : Layout.t) (grid : Grid.t) =
   match m.hover with
   | None -> ()
   | Some (px, py) -> (
@@ -473,19 +644,19 @@ let draw_hover_overlay (m : model) (layout : Layout.t) (canvas : Canvas.t) =
         match Layout.hit_test layout ~px ~py ~radius ~policy with
         | Some hit ->
             let x, y, lines = hit_tooltip layout hit in
-            Overlay.crosshair layout canvas ~x ~y;
-            Overlay.marker layout canvas ~x ~y;
-            Overlay.tooltip layout canvas ~x ~y lines
+            Overlay.crosshair layout grid ~x ~y;
+            Overlay.marker layout grid ~x ~y;
+            Overlay.tooltip layout grid ~x ~y lines
         | None -> (
             (* Free cursor readout when not near a mark *)
             match Layout.data_of_px layout ~px ~py with
             | None -> ()
             | Some (x, y) ->
                 let lines = cursor_readout_lines layout ~px ~py in
-                Overlay.crosshair layout canvas ~x ~y;
-                Overlay.tooltip ~anchor:`Right layout canvas ~x ~y lines))
+                Overlay.crosshair layout grid ~x ~y;
+                Overlay.tooltip ~anchor:`Right layout grid ~x ~y lines))
 
-let draw_help_overlay (m : model) (layout : Layout.t) (canvas : Canvas.t) =
+let draw_help_overlay (m : model) (layout : Layout.t) (grid : Grid.t) =
   if not m.show_help then ()
   else
     let r = Layout.plot_rect layout in
@@ -494,10 +665,17 @@ let draw_help_overlay (m : model) (layout : Layout.t) (canvas : Canvas.t) =
     match Layout.data_of_px layout ~px ~py with
     | None -> ()
     | Some (x, y) ->
-        let heatmap_line =
-          if m.chart = Heatmap then
-            [ "m: cycle heatmap render (Cells / Dense / Shaded)" ]
-          else []
+        let mode_line =
+          match m.chart with
+          | Line ->
+              [
+                "m: cycle line mode (Cell/Wave/Block2x2/Braille + pattern)";
+                "p: toggle data points";
+              ]
+          | Scatter -> [ "m: cycle scatter mode (Cell/Braille/Density)" ]
+          | Heatmap ->
+              [ "m: cycle heatmap mode (Cells/Halfblock/Shaded/Dense)" ]
+          | Bar | Stacked_bar | Candlestick -> []
         in
         let lines =
           [
@@ -511,24 +689,53 @@ let draw_help_overlay (m : model) (layout : Layout.t) (canvas : Canvas.t) =
             "0: reset all views";
             "Tab / Shift+Tab or < / >: switch chart";
             "g: toggle grid";
+            "G: cycle grid pattern (Solid/Dashed/Dotted)";
+            "c: cycle charset (Light/Heavy/Rounded/ASCII)";
             "t: toggle theme";
             "h: toggle this help";
             "q / Esc: quit";
           ]
-          @ heatmap_line
+          @ mode_line
         in
-        Overlay.tooltip ~anchor:`Top layout canvas ~x ~y lines
+        Overlay.tooltip ~anchor:`Top layout grid ~x ~y lines
 
-let draw_chart (m : model) (canvas : Canvas.t) ~(width : int) ~(height : int) :
+let draw_legend (layout : Layout.t) (grid : Grid.t) =
+  let items = Legend.items_of_layout layout in
+  if items = [] then ()
+  else
+    let r = Layout.plot_rect layout in
+    (* Position legend in top-right corner of plot, with some padding *)
+    let legend_x = r.x + r.width - 1 in
+    let legend_y = r.y + 1 in
+    List.iteri
+      (fun i { Legend.label; style; marker } ->
+        let y = legend_y + i in
+        if y < r.y + r.height - 1 then (
+          let text = marker ^ " " ^ label in
+          let w = String.length text in
+          let x = max r.x (legend_x - w) in
+          Grid.draw_text grid ~x ~y ~style ~text:marker;
+          Grid.draw_text grid ~x:(x + String.length marker + 1) ~y ~text:label))
+      items
+
+let draw_chart (m : model) (grid : Grid.t) ~(width : int) ~(height : int) :
     Layout.t =
   let chart = spec_for m m.chart in
   let view = get_view m in
-  let layout = Mosaic_charts.draw ~view chart canvas ~width ~height in
-  draw_hover_overlay m layout canvas;
-  draw_help_overlay m layout canvas;
+  let layout = Matrix_charts.draw ~view chart grid ~width ~height in
+  draw_legend layout grid;
+  draw_hover_overlay m layout grid;
+  draw_help_overlay m layout grid;
   layout
 
 (* --- View --- *)
+
+let heatmap_mode_name = function
+  | Mark.Cells_fg -> "Cells_fg"
+  | Mark.Cells_bg -> "Cells_bg"
+  | Mark.Halfblock_fg_bg -> "Halfblock"
+  | Mark.Shaded -> "Shaded"
+  | Mark.Dense_bilinear -> "Dense"
 
 let view (m : model) =
   let idx = chart_index m.chart in
@@ -538,11 +745,25 @@ let view (m : model) =
     | Some (w : View.window) -> Printf.sprintf "%.3g..%.3g" w.min w.max
   in
   let v = get_view m in
+  let style_info =
+    match m.chart with
+    | Line ->
+        Printf.sprintf "  line:%s/%s"
+          (line_resolution_name m.line_resolution)
+          (line_pattern_name m.line_pattern)
+    | Scatter ->
+        Printf.sprintf "  scatter:%s" (scatter_mode_name m.scatter_mode)
+    | Heatmap ->
+        Printf.sprintf "  heatmap:%s" (heatmap_mode_name m.heatmap_mode)
+    | Bar | Stacked_bar | Candlestick -> ""
+  in
   let status =
-    Printf.sprintf "theme:%s  grid:%s  view[x=%s y=%s]%s"
+    Printf.sprintf "theme:%s  charset:%s  grid:%s(%s)%s  view[x=%s y=%s]%s"
       (match m.theme with `Dark -> "dark" | `Light -> "light")
+      (charset_name m.charset)
       (if m.show_grid then "on" else "off")
-      (view_to_s v.x) (view_to_s v.y)
+      (grid_pattern_name m.grid_pattern)
+      style_info (view_to_s v.x) (view_to_s v.y)
       (match m.dragging with None -> "" | Some _ -> "  (dragging)")
   in
 
@@ -580,8 +801,8 @@ let view (m : model) =
                   | Some (Scroll_down, _) -> Some (Scroll_zoom (px, py, `Out))
                   | _ -> None)
               | _ -> None)
-            ~draw:(fun canvas ~width ~height ->
-              ignore (draw_chart m canvas ~width ~height))
+            ~draw:(fun grid ~width ~height ->
+              ignore (draw_chart m grid ~width ~height))
             ~size:{ width = pct 100; height = pct 100 }
             ();
         ];
@@ -589,9 +810,9 @@ let view (m : model) =
       box ~padding:(padding 1) ~background:footer_bg ~flex_direction:Column
         [
           text ~text_style:hint
-            "Tab/Shift+Tab or </>: switch  |  wheel: zoom  |  drag: pan  |  \
-             +/-: zoom center  |  r reset  |  0 reset all  |  g grid  |  t \
-             theme  |  h help  |  q quit";
+            "Tab/</>: switch  |  wheel: zoom  |  drag: pan  |  +/-: zoom  |  r \
+             reset  |  g grid  |  c charset  |  m mode  |  t theme  |  h help  \
+             |  q quit";
           text ~text_style:muted status;
         ];
     ]
@@ -610,8 +831,6 @@ let subscriptions (_m : model) =
       | Tab when data.modifier.shift -> Some Prev_chart
       | Char c when Uchar.equal c (Uchar.of_char '>') -> Some Next_chart
       | Char c when Uchar.equal c (Uchar.of_char '<') -> Some Prev_chart
-      | Char c when Uchar.equal c (Uchar.of_char 'n') -> Some Next_chart
-      | Char c when Uchar.equal c (Uchar.of_char 'p') -> Some Prev_chart
       (* Zoom *)
       | Char c when Uchar.equal c (Uchar.of_char '+') -> Some (Zoom_center `In)
       | Char c when Uchar.equal c (Uchar.of_char '=') -> Some (Zoom_center `In)
@@ -628,9 +847,11 @@ let subscriptions (_m : model) =
       | Char c when Uchar.equal c (Uchar.of_char 'g') -> Some Toggle_grid
       | Char c when Uchar.equal c (Uchar.of_char 't') -> Some Toggle_theme
       | Char c when Uchar.equal c (Uchar.of_char 'h') -> Some Toggle_help
-      (* Heatmap mode *)
-      | Char c when Uchar.equal c (Uchar.of_char 'm') ->
-          Some Cycle_heatmap_render
+      (* Style cycling *)
+      | Char c when Uchar.equal c (Uchar.of_char 'm') -> Some Cycle_style
+      | Char c when Uchar.equal c (Uchar.of_char 'p') -> Some Toggle_line_points
+      | Char c when Uchar.equal c (Uchar.of_char 'G') -> Some Cycle_grid_pattern
+      | Char c when Uchar.equal c (Uchar.of_char 'c') -> Some Cycle_charset
       | _ -> None)
 
 let () =

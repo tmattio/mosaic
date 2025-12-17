@@ -14,11 +14,10 @@ let render_boxed ?(width = 20) ?(height = 8) element =
 let%expect_test "canvas plots text at explicit coordinates" =
   render_boxed ~width:16 ~height:6
     (canvas ~id:"c" ~size:(size ~width:16 ~height:6)
-       ~draw:(fun c ~width:_ ~height:_ ->
-         Canvas.clear c;
-         Canvas.plot c ~x:1 ~y:0 "Top";
-         Canvas.plot c ~x:4 ~y:2 "Center";
-         Canvas.plot c ~x:0 ~y:5 "Bottom")
+       ~draw:(fun g ~width:_ ~height:_ ->
+         Grid.draw_text g ~x:1 ~y:0 ~text:"Top";
+         Grid.draw_text g ~x:4 ~y:2 ~text:"Center";
+         Grid.draw_text g ~x:0 ~y:5 ~text:"Bottom")
        ());
   [%expect_exact
     {|
@@ -36,10 +35,9 @@ let%expect_test "canvas grows when plotting beyond initial buffer" =
   render_boxed ~width:18 ~height:5
     (canvas ~id:"c" ~size:(size ~width:18 ~height:5) ~initial_width:2
        ~initial_height:1
-       ~draw:(fun c ~width:_ ~height:_ ->
-         Canvas.clear c;
-         Canvas.plot c ~x:0 ~y:0 "A";
-         Canvas.plot c ~x:12 ~y:2 "Far")
+       ~draw:(fun g ~width:_ ~height:_ ->
+         Grid.draw_text g ~x:0 ~y:0 ~text:"A";
+         Grid.draw_text g ~x:12 ~y:2 ~text:"Far")
        ());
   [%expect_exact
     {|
@@ -55,11 +53,11 @@ let%expect_test "canvas grows when plotting beyond initial buffer" =
 let%expect_test "canvas clear removes previous drawings" =
   render_boxed ~width:12 ~height:4
     (canvas ~id:"c" ~size:(size ~width:12 ~height:4)
-       ~draw:(fun c ~width:_ ~height:_ ->
-         Canvas.plot c ~x:0 ~y:0 "Old";
-         Canvas.plot c ~x:6 ~y:3 "Data";
-         Canvas.clear c;
-         Canvas.plot c ~x:2 ~y:1 "New")
+       ~draw:(fun g ~width:_ ~height:_ ->
+         Grid.draw_text g ~x:0 ~y:0 ~text:"Old";
+         Grid.draw_text g ~x:6 ~y:3 ~text:"Data";
+         Grid.clear g;
+         Grid.draw_text g ~x:2 ~y:1 ~text:"New")
        ());
   [%expect_exact
     {|
@@ -74,11 +72,13 @@ let%expect_test "canvas clear removes previous drawings" =
 let%expect_test "canvas draw_box with double border draws frame" =
   render_boxed ~width:14 ~height:8
     (canvas ~id:"c" ~size:(size ~width:14 ~height:8)
-       ~draw:(fun c ~width:_ ~height:_ ->
-         Canvas.clear c;
-         Canvas.draw_box c ~x:1 ~y:1 ~width:12 ~height:6
-           ~border_style:Grid.Border.double ();
-         Canvas.plot c ~x:4 ~y:3 "Hi")
+       ~draw:(fun g ~width:_ ~height:_ ->
+         Grid.draw_box g ~x:1 ~y:1 ~width:12 ~height:6
+           ~border_chars:Grid.Border.double
+           ~border_sides:[ `Top; `Right; `Bottom; `Left ]
+           ~border_style:Ansi.Style.default ~bg_color:Ansi.Color.default
+           ~should_fill:false ();
+         Grid.draw_text g ~x:4 ~y:3 ~text:"Hi")
        ());
   [%expect_exact
     {|
@@ -97,11 +97,12 @@ let%expect_test "canvas draw_box with double border draws frame" =
 let%expect_test "canvas draw_box can limit sides" =
   render_boxed ~width:18 ~height:6
     (canvas ~id:"c" ~size:(size ~width:18 ~height:6)
-       ~draw:(fun c ~width:_ ~height:_ ->
-         Canvas.clear c;
-         Canvas.draw_box c ~x:1 ~y:1 ~width:16 ~height:4
-           ~border_sides:[ `Top; `Bottom ] ();
-         Canvas.plot c ~x:6 ~y:2 "Only edges")
+       ~draw:(fun g ~width:_ ~height:_ ->
+         Grid.draw_box g ~x:1 ~y:1 ~width:16 ~height:4
+           ~border_chars:Grid.Border.single ~border_sides:[ `Top; `Bottom ]
+           ~border_style:Ansi.Style.default ~bg_color:Ansi.Color.default
+           ~should_fill:false ();
+         Grid.draw_text g ~x:6 ~y:2 ~text:"Only edges")
        ());
   [%expect_exact
     {|
@@ -118,13 +119,12 @@ let%expect_test "canvas draw_box can limit sides" =
 let%expect_test "canvas draw_line renders basic directions" =
   render_boxed ~width:12 ~height:6
     (canvas ~id:"c" ~size:(size ~width:12 ~height:6)
-       ~draw:(fun c ~width ~height ->
-         Canvas.clear c;
+       ~draw:(fun g ~width ~height ->
          let max_x = width - 1 in
          let max_y = height - 1 in
-         Canvas.draw_line c ~x1:0 ~y1:0 ~x2:max_x ~y2:0 ();
-         Canvas.draw_line c ~x1:0 ~y1:0 ~x2:0 ~y2:max_y ();
-         Canvas.draw_line c ~x1:0 ~y1:max_y ~x2:max_x ~y2:0 ())
+         Grid.draw_line g ~x1:0 ~y1:0 ~x2:max_x ~y2:0 ();
+         Grid.draw_line g ~x1:0 ~y1:0 ~x2:0 ~y2:max_y ();
+         Grid.draw_line g ~x1:0 ~y1:max_y ~x2:max_x ~y2:0 ())
        ());
   [%expect_exact
     {|
@@ -141,11 +141,10 @@ let%expect_test "canvas draw_line renders basic directions" =
 let%expect_test "canvas draw_line with braille resolution" =
   render_boxed ~width:8 ~height:4
     (canvas ~id:"c" ~size:(size ~width:8 ~height:4)
-       ~draw:(fun c ~width ~height ->
-         Canvas.clear c;
+       ~draw:(fun g ~width ~height ->
          let x2 = (width * 2) - 1 in
          let y2 = (height * 4) - 1 in
-         Canvas.draw_line c ~x1:0 ~y1:0 ~x2 ~y2 ~kind:`Braille ())
+         Grid.draw_line g ~x1:0 ~y1:0 ~x2 ~y2 ~kind:`Braille ())
        ());
   [%expect_exact
     {|
@@ -158,12 +157,16 @@ let%expect_test "canvas draw_line with braille resolution" =
 |}]
 
 let%expect_test "canvas set_intrinsic_size controls layout size" =
+  let c = ref None in
   print_newline ();
   print ~colors:false ~width:6 ~height:3
     (canvas ~id:"c" ~initial_width:1 ~initial_height:1
-       ~draw:(fun c ~width:_ ~height:_ ->
-         Canvas.set_intrinsic_size c ~width:6 ~height:3;
-         Canvas.plot c ~x:5 ~y:2 "X")
+       ~on_mount:(fun canvas -> c := Some canvas)
+       ~draw:(fun g ~width:_ ~height:_ ->
+         Option.iter
+           (fun c -> Canvas.set_intrinsic_size c ~width:6 ~height:3)
+           !c;
+         Grid.draw_text g ~x:5 ~y:2 ~text:"X")
        ());
   [%expect_exact {|
       
@@ -174,10 +177,12 @@ let%expect_test "canvas set_intrinsic_size controls layout size" =
 let%expect_test "canvas draw_box with title centered alignment" =
   render_boxed ~width:18 ~height:6
     (canvas ~id:"c" ~size:(size ~width:18 ~height:6)
-       ~draw:(fun c ~width:_ ~height:_ ->
-         Canvas.clear c;
-         Canvas.draw_box c ~x:1 ~y:1 ~width:16 ~height:4 ~title:"Centered"
-           ~title_alignment:`Center ())
+       ~draw:(fun g ~width:_ ~height:_ ->
+         Grid.draw_box g ~x:1 ~y:1 ~width:16 ~height:4
+           ~border_chars:Grid.Border.single
+           ~border_sides:[ `Top; `Right; `Bottom; `Left ]
+           ~border_style:Ansi.Style.default ~bg_color:Ansi.Color.default
+           ~should_fill:false ~title:"Centered" ~title_alignment:`Center ())
        ());
   [%expect_exact
     {|
@@ -192,15 +197,20 @@ let%expect_test "canvas draw_box with title centered alignment" =
 |}]
 
 let%expect_test "canvas clear_intrinsic_size returns to content-driven size" =
+  let c = ref None in
   print_newline ();
   print ~colors:false
     (box ~id:"row" ~flex_direction:Row
        [
          canvas ~id:"c" ~initial_width:1 ~initial_height:1
-           ~draw:(fun c ~width:_ ~height:_ ->
-             Canvas.set_intrinsic_size c ~width:5 ~height:1;
-             Canvas.clear_intrinsic_size c;
-             Canvas.plot c ~x:0 ~y:0 "A")
+           ~on_mount:(fun canvas -> c := Some canvas)
+           ~draw:(fun g ~width:_ ~height:_ ->
+             Option.iter
+               (fun c ->
+                 Canvas.set_intrinsic_size c ~width:5 ~height:1;
+                 Canvas.clear_intrinsic_size c)
+               !c;
+             Grid.draw_text g ~x:0 ~y:0 ~text:"A")
            ();
          text ~id:"t" "B";
        ]);
@@ -209,16 +219,19 @@ AB
 |}]
 
 let%expect_test "canvas set_draw swaps callbacks immediately" =
+  let c = ref None in
   render_boxed ~width:12 ~height:4
     (canvas ~id:"c" ~size:(size ~width:12 ~height:4)
-       ~draw:(fun c ~width:_ ~height:_ ->
-         Canvas.clear c;
-         Canvas.plot c ~x:0 ~y:0 "First";
-         Canvas.set_draw c
-           (Some
-              (fun c ~width:_ ~height:_ ->
-                Canvas.clear c;
-                Canvas.plot c ~x:2 ~y:1 "Next")))
+       ~on_mount:(fun canvas -> c := Some canvas)
+       ~draw:(fun g ~width:_ ~height:_ ->
+         Grid.draw_text g ~x:0 ~y:0 ~text:"First";
+         Option.iter
+           (fun c ->
+             Canvas.set_draw c
+               (Some
+                  (fun g ~width:_ ~height:_ ->
+                    Grid.draw_text g ~x:2 ~y:1 ~text:"Next")))
+           !c)
        ());
   [%expect_exact
     {|

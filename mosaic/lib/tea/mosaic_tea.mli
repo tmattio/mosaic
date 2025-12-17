@@ -390,11 +390,14 @@ val canvas :
   ?width_method:[ `Unicode | `Wcwidth | `No_zwj ] ->
   ?initial_width:int ->
   ?initial_height:int ->
-  ?draw:(Mosaic_ui.Canvas.t -> width:int -> height:int -> unit) ->
+  ?draw:(Grid.t -> width:int -> height:int -> unit) ->
   ?on_resize:(width:int -> height:int -> 'msg option) ->
   unit ->
   'msg t
-(** [canvas ()] creates a canvas for custom drawing. *)
+(** [canvas ()] creates a canvas for custom drawing.
+
+    The [draw] callback receives the underlying grid for direct drawing
+    operations. *)
 
 (** {2 Table} *)
 

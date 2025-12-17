@@ -27,26 +27,21 @@ let footer_bg = Ansi.Color.grayscale ~level:3
 let muted = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:16) ()
 let hint = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:14) ()
 
-let draw_canvas model canvas ~width ~height =
+let draw_canvas model grid ~width ~height =
   let cx = width / 2 in
   let cy = height / 2 in
   let radius = min cx cy - 2 in
 
-  (* Clear canvas *)
-  Canvas.clear canvas;
-
   (* Draw border box *)
-  Canvas.draw_box canvas ~x:0 ~y:0 ~width ~height
-    ~border_color:(Ansi.Color.grayscale ~level:8)
-    ();
+  let border_style = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:8) () in
+  Grid.draw_box grid ~x:0 ~y:0 ~width ~height ~border_chars:Grid.Border.single
+    ~border_sides:[ `Top; `Right; `Bottom; `Left ]
+    ~border_style ~bg_color:Ansi.Color.default ~should_fill:false ();
 
   (* Draw coordinate axes *)
-  Canvas.draw_line canvas ~x1:1 ~y1:cy ~x2:(width - 2) ~y2:cy
-    ~style:(Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:8) ())
-    ();
-  Canvas.draw_line canvas ~x1:cx ~y1:1 ~x2:cx ~y2:(height - 2)
-    ~style:(Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:8) ())
-    ();
+  let axis_style = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:8) () in
+  Grid.draw_line grid ~x1:1 ~y1:cy ~x2:(width - 2) ~y2:cy ~style:axis_style ();
+  Grid.draw_line grid ~x1:cx ~y1:1 ~x2:cx ~y2:(height - 2) ~style:axis_style ();
 
   (* Draw rotating lines from center *)
   let line_kind, x_scale, y_scale =
@@ -70,24 +65,24 @@ let draw_canvas model canvas ~width ~height =
       | 4 -> Ansi.Color.blue
       | _ -> Ansi.Color.magenta
     in
-    Canvas.draw_line canvas ~x1:cx_scaled ~y1:cy_scaled ~x2 ~y2 ~kind:line_kind
+    Grid.draw_line grid ~x1:cx_scaled ~y1:cy_scaled ~x2 ~y2 ~kind:line_kind
       ~style:(Ansi.Style.make ~fg:color ())
       ()
   done;
 
   (* Draw some filled rectangles *)
-  Canvas.fill_rect canvas ~x:2 ~y:2 ~width:5 ~height:2 ~color:Ansi.Color.red;
-  Canvas.fill_rect canvas ~x:(width - 7) ~y:2 ~width:5 ~height:2
+  Grid.fill_rect grid ~x:2 ~y:2 ~width:5 ~height:2 ~color:Ansi.Color.red;
+  Grid.fill_rect grid ~x:(width - 7) ~y:2 ~width:5 ~height:2
     ~color:Ansi.Color.green;
-  Canvas.fill_rect canvas ~x:2 ~y:(height - 4) ~width:5 ~height:2
+  Grid.fill_rect grid ~x:2 ~y:(height - 4) ~width:5 ~height:2
     ~color:Ansi.Color.blue;
-  Canvas.fill_rect canvas ~x:(width - 7) ~y:(height - 4) ~width:5 ~height:2
+  Grid.fill_rect grid ~x:(width - 7) ~y:(height - 4) ~width:5 ~height:2
     ~color:Ansi.Color.yellow;
 
-  (* Plot mode indicator *)
-  Canvas.plot canvas ~x:2 ~y:(height - 2)
+  (* Draw mode indicator *)
+  Grid.draw_text grid ~x:2 ~y:(height - 2)
     ~style:(Ansi.Style.make ~dim:true ())
-    (mode_name model.mode)
+    ~text:(mode_name model.mode)
 
 let view model =
   box ~flex_direction:Column

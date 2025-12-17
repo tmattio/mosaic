@@ -74,12 +74,13 @@ type text_spec = Mosaic_ui.Text.Props.t
 
 type 'a canvas_spec = {
   props : Mosaic_ui.Canvas.Props.t;
-  draw : (Mosaic_ui.Canvas.t -> width:int -> height:int -> unit) option;
+  draw : (Grid.t -> width:int -> height:int -> unit) option;
   on_resize : (width:int -> height:int -> 'a) option;
 }
 (** Canvas-specific properties: renderable props, draw callback, and resize
-    callback. The [on_resize] callback is invoked when the canvas size changes,
-    enabling interactive applications to respond to layout changes. *)
+    callback. The draw callback receives the underlying grid for direct drawing.
+    The [on_resize] callback is invoked when the canvas size changes, enabling
+    interactive applications to respond to layout changes. *)
 
 type 'a spec =
   | Box_spec of box_spec
@@ -318,13 +319,13 @@ val canvas :
   ?width_method:[ `Unicode | `Wcwidth | `No_zwj ] ->
   ?initial_width:int ->
   ?initial_height:int ->
-  ?draw:(Mosaic_ui.Canvas.t -> width:int -> height:int -> unit) ->
+  ?draw:(Grid.t -> width:int -> height:int -> unit) ->
   ?on_resize:(width:int -> height:int -> 'a) ->
   unit ->
   'a t
 (** [canvas ()] creates a canvas vnode for custom drawing.
 
-    @param draw Callback invoked on each render with canvas and dimensions
+    @param draw Callback invoked on each render with the grid and dimensions
     @param on_resize
       Callback invoked when canvas size changes. Receives the new width and
       height. Useful for interactive charts that need layout dimensions for

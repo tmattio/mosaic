@@ -1,26 +1,32 @@
 (** Off-screen drawing canvas for procedural rendering.
 
-    Canvas provides an off-screen grid buffer for imperative drawing operations.
-    It supports text plotting, shapes, lines, and fills with automatic size
-    tracking and layout integration. The canvas surface expands to match the
-    renderable's layout dimensions during rendering.
+    Canvas wraps an off-screen {!Grid.t} with a renderable node, enabling
+    procedural graphics within the layout system. The canvas surface resizes to
+    match the renderable's layout dimensions during rendering.
 
-    {1 Overview}
+    {1 Usage}
 
-    Canvas combines an off-screen {!Grid.t} with a renderable node, enabling
-    procedural graphics within the layout system. The canvas supports sub-cell
-    line rendering via Braille characters.
+    Drawing is done via {!set_draw}, which installs a callback invoked on each
+    render. Use {!grid} to access the underlying {!Grid.t} for drawing:
+
+    {[
+      let canvas = Canvas.mount node in
+      Canvas.set_draw canvas
+        (Some
+           (fun grid ~width ~height ->
+             Grid.clear grid;
+             Grid.draw_text grid ~x:0 ~y:0 ~text:"Hello";
+             Grid.draw_line grid ~x1:0 ~y1:1 ~x2:(width - 1) ~y2:1 ()))
+    ]}
+
+    Call {!request_render} after modifying the grid outside [set_draw] to
+    schedule a redraw.
 
     {1 Size Management}
 
-    The canvas tracks two sizes:
-    - Content size: Expands automatically when drawing outside current bounds.
-      Drawing operations automatically expand content size to encompass drawn
-      regions.
-    - Intrinsic size: Explicit override for measurement, set via
-      {!set_intrinsic_size}
-
-    Measurement uses intrinsic size if set, otherwise content size. *)
+    The canvas can report an intrinsic size for layout measurement via
+    {!set_intrinsic_size}. Without an intrinsic size, the canvas relies on
+    parent constraints or defaults to its initial dimensions. *)
 
 module Props : sig
   type t
@@ -46,10 +52,11 @@ val mount : ?props:Props.t -> Renderable.t -> t
 val node : t -> Renderable.t
 (** [node t] returns the underlying renderable node. *)
 
-val set_draw : t -> (t -> width:int -> height:int -> unit) option -> unit
+val set_draw : t -> (Grid.t -> width:int -> height:int -> unit) option -> unit
 (** [set_draw t callback] installs a drawing callback that runs immediately, and
     again whenever canvas dimensions change via the [on_size_change] callback.
-    Passing [None] removes the callback. *)
+    The callback receives the underlying grid for direct drawing. Passing [None]
+    removes the callback. *)
 
 val set_on_resize : t -> (width:int -> height:int -> unit) option -> unit
 (** [set_on_resize t callback] installs a resize callback that is invoked
@@ -64,74 +71,15 @@ val width : t -> int
 val height : t -> int
 (** [height t] returns current off-screen buffer height in cells. *)
 
+val grid : t -> Grid.t
+(** [grid t] returns the underlying off-screen grid buffer.
+
+    This enables direct access to {!Grid} drawing operations for advanced use
+    cases like composing with {!Matrix_charts}. The grid dimensions match the
+    canvas layout size after rendering. *)
+
 val request_render : t -> unit
 (** [request_render t] schedules a redraw of the canvas contents. *)
-
-val clear : ?color:Ansi.Color.t -> t -> unit
-(** [clear t] resets the canvas to a solid fill.
-
-    All content is cleared and content size is reset to zero. Default color is
-    fully transparent.
-
-    @param color Fill color. Default is transparent (RGBA 0,0,0,0). *)
-
-val plot : t -> x:int -> y:int -> ?style:Ansi.Style.t -> string -> unit
-(** [plot t ~x ~y text] draws [text] starting at cell [(x, y)].
-
-    The canvas expands if needed to accommodate the text. Only single-line text
-    is supported; newlines are not processed and render as visible characters.
-
-    @param style Text styling. Default is {!Ansi.Style.default}. *)
-
-val fill_rect :
-  t -> x:int -> y:int -> width:int -> height:int -> color:Ansi.Color.t -> unit
-(** [fill_rect t ~x ~y ~width ~height ~color] fills a rectangular region.
-
-    The [color] applies to both foreground and background of all cells in the
-    rectangle. Negative or zero dimensions are ignored. *)
-
-val draw_box :
-  t ->
-  x:int ->
-  y:int ->
-  width:int ->
-  height:int ->
-  ?border_style:Grid.Border.t ->
-  ?border_sides:Grid.Border.side list ->
-  ?border_color:Ansi.Color.t ->
-  ?background:Ansi.Color.t ->
-  ?title:string ->
-  ?title_alignment:[ `Left | `Center | `Right ] ->
-  unit ->
-  unit
-(** [draw_box t ~x ~y ~width ~height ()] draws a bordered box.
-
-    @param border_style Border character set. Default is [Grid.Border.single].
-    @param border_sides Sides to draw. Default is all sides.
-    @param border_color Border color. Default is {!Ansi.Color.default}.
-    @param background Interior fill color. Default is transparent.
-    @param title Optional title text drawn on the top border.
-    @param title_alignment
-      Optional title alignment: [`Left] (default), [`Center], or [`Right].
-      Left/right use a 2‑cell padding from the edge. *)
-
-val draw_line :
-  t ->
-  x1:int ->
-  y1:int ->
-  x2:int ->
-  y2:int ->
-  ?style:Ansi.Style.t ->
-  ?kind:[ `Line | `Braille ] ->
-  unit ->
-  unit
-(** [draw_line t ~x1 ~y1 ~x2 ~y2 ()] draws a line from [(x1, y1)] to [(x2, y2)].
-
-    Line rendering uses Bresenham's algorithm. [`Braille] mode provides 2x4
-    sub-cell resolution per cell using Unicode Braille patterns.
-
-    @param kind Line rendering mode. Default is [`Line].
-    @param style Line styling. Default is {!Ansi.Style.default}. *)
 
 val set_intrinsic_size : t -> width:int -> height:int -> unit
 (** [set_intrinsic_size t ~width ~height] overrides measurement size.

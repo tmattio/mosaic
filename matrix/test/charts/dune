@@ -1,6 +1,6 @@
 (library
  (name test_charts)
  (inline_tests)
- (libraries matrix.ansi mosaic.ui mosaic.charts)
+ (libraries matrix.ansi matrix.grid matrix.charts)
  (preprocess
   (pps ppx_expect)))

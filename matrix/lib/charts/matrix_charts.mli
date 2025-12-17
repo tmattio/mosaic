@@ -1,8 +1,8 @@
-(** Canvas-first charts for Mosaic terminal UIs.
+(** Terminal charts for Matrix.
 
     {1 Overview}
 
-    Mosaic.charts provides a composable charting library optimized for terminal
+    Matrix_charts provides a composable charting library optimized for terminal
     rendering. Charts are immutable specifications compiled into a {!Layout.t}
     for efficient drawing and interaction.
 
@@ -30,7 +30,7 @@
         |> line ~x:fst ~y:snd data
         |> scatter ~x:fst ~y:snd data
       in
-      let layout = draw chart canvas ~width:80 ~height:24 in
+      let layout = draw chart grid ~width:80 ~height:24 in
       (* Use layout for hit-testing or overlays *)
     ]}
 
@@ -39,22 +39,141 @@
       let view =
         View.empty |> View.set_x (Some (View.window ~min:0. ~max:10.))
       in
-      draw ~view chart canvas ~width:80 ~height:24
+      draw ~view chart grid ~width:80 ~height:24
     ]}
 
     Add tooltips on hover (pattern match on payload variant):
     {[
       match Layout.hit_test layout ~px ~py with
       | Some { Hit.payload = Hit.XY { x; y }; _ } ->
-          Overlay.tooltip layout canvas ~x ~y [ "Value: " ^ string_of_float y ]
+          Overlay.tooltip layout grid ~x ~y [ "Value: " ^ string_of_float y ]
       | Some { payload = Hit.Bar { category; value }; _ } ->
-          Overlay.tooltip layout canvas ~x:0. ~y:value
+          Overlay.tooltip layout grid ~x:0. ~y:value
             [ category ^ ": " ^ string_of_float value ]
       | Some { payload = Hit.Heat { x; y; value }; _ } ->
-          Overlay.tooltip layout canvas ~x ~y
-            [ "Heat: " ^ string_of_float value ]
+          Overlay.tooltip layout grid ~x ~y [ "Heat: " ^ string_of_float value ]
       | _ -> ()
-    ]} *)
+    ]}
+
+    {1 Coordinate Systems}
+
+    The library uses two distinct coordinate systems:
+
+    {2 Cell coordinates ([px], [py])}
+
+    Cell coordinates identify terminal cells (columns and rows). These are
+    integer coordinates used throughout the {!Layout} module for hit-testing,
+    panning, and position queries.
+
+    - [px]: Horizontal position in terminal columns (0 = left edge).
+    - [py]: Vertical position in terminal rows (0 = top edge).
+    - Cell [(0, 0)] is the top-left corner of the chart area.
+
+    Cell coordinates map directly to the {!Grid.t} positions. When handling
+    mouse input, use terminal cursor coordinates as [px]/[py].
+
+    {2 Data coordinates ([x], [y])}
+
+    Data coordinates are floating-point values in your data's domain. These are
+    used when specifying mark positions, view windows, and overlay anchors.
+
+    - [x]: Horizontal position in data units (e.g., time, category index).
+    - [y]: Vertical position in data units (e.g., price, count).
+
+    Convert between coordinate systems using:
+    - {!Layout.data_of_px}: cell → data
+    - {!Layout.px_of_data}: data → cell
+
+    {2 Sub-cell rendering}
+
+    Some marks support sub-cell resolution (e.g., [`Braille2x4] renders at 2×4
+    dots per cell). Sub-cell rendering is purely visual — all coordinates in the
+    API remain in cell units. Hit-testing snaps to the nearest cell, not to
+    individual braille dots or block quadrants.
+
+    Example: A braille-rendered line at data point [(5.0, 10.0)] might render
+    dots at sub-cell positions, but {!Layout.hit_test} returns the enclosing
+    cell's [px]/[py] and the exact data coordinates in {!Hit.payload}. *)
+
+module Charset : sig
+  (** Character sets for chart rendering.
+
+      Charsets define the glyphs used for borders, axes, grids, and marks.
+      Different charsets provide varying levels of visual fidelity depending on
+      terminal capabilities. *)
+
+  type line_pattern = [ `Solid | `Dashed | `Dotted ]
+  (** Line rendering pattern.
+
+      - [`Solid]: Continuous line (e.g., "─").
+      - [`Dashed]: Dashed line (e.g., "╌" or "┄").
+      - [`Dotted]: Dotted line (e.g., "┈" or "·"). *)
+
+  type frame = {
+    tl : string;  (** Top-left corner. *)
+    tr : string;  (** Top-right corner. *)
+    bl : string;  (** Bottom-left corner. *)
+    br : string;  (** Bottom-right corner. *)
+    h : string;  (** Horizontal line. *)
+    v : string;  (** Vertical line. *)
+    tee_up : string;  (** T-junction pointing up (┴). *)
+    tee_down : string;  (** T-junction pointing down (┬). *)
+    tee_left : string;  (** T-junction pointing left (┤). *)
+    tee_right : string;  (** T-junction pointing right (├). *)
+    cross : string;  (** Four-way intersection (┼). *)
+  }
+  (** Frame characters for borders and boxes. *)
+
+  type t = {
+    frame : frame;  (** Border and box drawing characters. *)
+    axis_h : string;  (** Horizontal axis line. *)
+    axis_v : string;  (** Vertical axis line. *)
+    tick_h : string;  (** Horizontal tick mark on vertical axis. *)
+    tick_v : string;  (** Vertical tick mark on horizontal axis. *)
+    grid_h_solid : string;  (** Horizontal grid line (solid). *)
+    grid_v_solid : string;  (** Vertical grid line (solid). *)
+    grid_h_dashed : string;  (** Horizontal grid line (dashed). *)
+    grid_v_dashed : string;  (** Vertical grid line (dashed). *)
+    grid_h_dotted : string;  (** Horizontal grid line (dotted). *)
+    grid_v_dotted : string;  (** Vertical grid line (dotted). *)
+    point_default : string;  (** Default scatter point glyph (e.g., "∙"). *)
+    point_heavy : string;  (** Heavy point marker (e.g., "●"). *)
+    bar_fill : string;  (** Bar fill character (e.g., "█"). *)
+    shade_levels : string array;
+        (** Shade gradient for density rendering (e.g.,
+            [|" "; "░"; "▒"; "▓"; "█"|]). *)
+    tooltip_frame : frame;  (** Frame characters for tooltips. *)
+    diag_up : string;  (** Diagonal line going up (e.g., "╱" or "/"). *)
+    diag_down : string;  (** Diagonal line going down (e.g., "╲" or "\\"). *)
+  }
+  (** A complete character set specification.
+
+      Charsets are applied via {!Theme.t} to control all glyph rendering. *)
+
+  val ascii : t
+  (** [ascii] uses only ASCII characters for maximum compatibility.
+
+      Suitable for terminals without Unicode support. Uses characters like [+],
+      [-], [|], [#] for borders and fills. *)
+
+  val unicode_light : t
+  (** [unicode_light] uses light Unicode box-drawing characters.
+
+      Uses thin lines (─│┌┐└┘┼) for a clean, minimal appearance. *)
+
+  val unicode_heavy : t
+  (** [unicode_heavy] uses heavy Unicode box-drawing characters.
+
+      Uses thick lines (━┃┏┓┗┛╋) for bold, prominent borders. *)
+
+  val unicode_rounded : t
+  (** [unicode_rounded] uses rounded Unicode box-drawing characters.
+
+      Uses rounded corners (╭╮╰╯) with light lines for a softer appearance. *)
+
+  val default : t
+  (** [default] is an alias for {!unicode_light}. *)
+end
 
 module Theme : sig
   (** Color and style themes for charts.
@@ -68,13 +187,16 @@ module Theme : sig
     background : Ansi.Color.t option;
         (** Chart background. [None] for terminal default. *)
     axes : Ansi.Style.t;  (** Axis lines and tick marks. *)
+    border : Ansi.Style.t;  (** Frame and bounding box style. *)
     grid : Ansi.Style.t;  (** Background grid lines. *)
+    grid_minor : Ansi.Style.t;  (** Minor grid lines (dimmer than major). *)
     labels : Ansi.Style.t;  (** Axis tick labels. *)
     tooltip : Ansi.Style.t;  (** Tooltip text and background. *)
     tooltip_border : Ansi.Style.t option;
         (** Tooltip border. [None] for no border. *)
     crosshair : Ansi.Style.t;  (** Crosshair overlay lines. *)
     marker : Ansi.Style.t;  (** Point markers in overlays. *)
+    charset : Charset.t;  (** Character set for rendering. *)
   }
   (** A complete theme specification.
 
@@ -85,15 +207,20 @@ module Theme : sig
   val dark : t
   (** [dark] is a dark terminal theme with muted grids and bright accents.
 
-      Default palette includes cyan, magenta, yellow, green, blue, and red. *)
+      Default palette includes cyan, magenta, yellow, green, blue, and red. Uses
+      {!Charset.unicode_light} for glyphs. *)
 
   val light : t
   (** [light] is a light terminal theme optimized for bright backgrounds.
 
-      Uses darker axes and labels for contrast. *)
+      Uses darker axes and labels for contrast. Uses {!Charset.unicode_light}
+      for glyphs. *)
 
   val default : t
   (** [default] is an alias for {!dark}. *)
+
+  val with_charset : Charset.t -> t -> t
+  (** [with_charset charset t] returns [t] with the given [charset]. *)
 end
 
 module Format : sig
@@ -179,8 +306,19 @@ module Axis : sig
       The [index] argument is the tick index (0-based), [value] is the data
       coordinate. *)
 
+  type line = [ `None | `Axis_only | `Frame ]
+  (** Axis line rendering mode.
+
+      - [`None]: No axis line is drawn.
+      - [`Axis_only]: Draw only the axis line at the edge of the plot.
+      - [`Frame]: Draw a complete frame around the plot area. *)
+
+  type title = { text : string; style : Ansi.Style.t option }
+  (** Axis title configuration. *)
+
   type t = {
     show : bool;  (** Render axis and ticks. *)
+    line : line;  (** Axis line rendering mode. *)
     ticks : int;
         (** Target number of ticks. Actual count may vary for alignment. *)
     format : formatter;  (** Label formatter. *)
@@ -189,6 +327,7 @@ module Axis : sig
     label_style : Ansi.Style.t;  (** Style for tick labels. *)
     tick_length : int;  (** Tick mark length in cells. *)
     label_padding : int;  (** Spacing between ticks and labels in cells. *)
+    title : title option;  (** Optional axis title. *)
   }
   (** Axis configuration. *)
 
@@ -201,7 +340,7 @@ module Axis : sig
   (** [default] provides standard axis rendering.
 
       Enables axis with [6] ticks, default float formatter, [1]-cell tick marks,
-      and [1]-cell label padding. *)
+      and [1]-cell label padding. Uses [`Axis_only] line mode. *)
 
   val with_ticks : int -> t -> t
   (** [with_ticks n t] sets target tick count to [n].
@@ -229,9 +368,17 @@ module Axis : sig
   (** [with_label_padding pad t] sets label padding to [pad].
 
       Negative [pad] is clamped to [0]. *)
+
+  val with_line : line -> t -> t
+  (** [with_line mode t] sets axis line rendering mode to [mode]. *)
+
+  val with_title : ?style:Ansi.Style.t -> string -> t -> t
+  (** [with_title text t] sets the axis title to [text].
+
+      @param style Title style. [None] uses the theme's label style. *)
 end
 
-module Grid : sig
+module Gridlines : sig
   (** Background grid configuration.
 
       Grids render lines aligned to axis ticks or at fixed intervals. *)
@@ -241,12 +388,18 @@ module Grid : sig
     x : bool;  (** Draw vertical grid lines. *)
     y : bool;  (** Draw horizontal grid lines. *)
     style : Ansi.Style.t;  (** Grid line style. *)
+    pattern : Charset.line_pattern;  (** Line pattern (solid/dashed/dotted). *)
     x_step : int option;
         (** Fixed vertical line spacing in pixels. [None] aligns to X axis
             ticks. *)
     y_step : int option;
         (** Fixed horizontal line spacing in pixels. [None] aligns to Y axis
             ticks. *)
+    minor : int option;
+        (** Minor grid frequency. [Some n] draws minor grids every [n] major
+            steps. [None] disables minor grids. *)
+    minor_style : Ansi.Style.t option;
+        (** Style for minor grid lines. [None] uses theme's [grid_minor]. *)
   }
   (** Grid configuration. *)
 
@@ -254,12 +407,16 @@ module Grid : sig
   (** [hidden] disables grid rendering. *)
 
   val default : t
-  (** [default] enables grid with dimmed style, aligned to axis ticks.
+  (** [default] enables grid with dotted pattern, aligned to axis ticks.
 
-      Both [x] and [y] are [true]; [x_step] and [y_step] are [None]. *)
+      Both [x] and [y] are [true]; [pattern] is [`Dotted]; [x_step] and [y_step]
+      are [None]. *)
 
   val with_style : Ansi.Style.t -> t -> t
   (** [with_style s t] sets grid line style to [s]. *)
+
+  val with_pattern : Charset.line_pattern -> t -> t
+  (** [with_pattern p t] sets grid line pattern to [p]. *)
 
   val with_x : bool -> t -> t
   (** [with_x b t] enables or disables vertical grid lines. *)
@@ -276,6 +433,14 @@ module Grid : sig
   (** [with_y_step step t] sets horizontal line spacing.
 
       [None] aligns to Y axis ticks. [Some n] uses fixed [n]-pixel spacing. *)
+
+  val with_minor : int option -> t -> t
+  (** [with_minor n t] sets minor grid frequency.
+
+      [Some n] draws minor grids every [n] major steps. [None] disables. *)
+
+  val with_minor_style : Ansi.Style.t option -> t -> t
+  (** [with_minor_style s t] sets minor grid style to [s]. *)
 end
 
 module View : sig
@@ -340,6 +505,20 @@ module View : sig
       [domain], it is shifted to overlap maximally. *)
 end
 
+module Raster : sig
+  (** Sub-cell resolution modes for high-fidelity rendering. *)
+
+  type resolution = [ `Cell | `Wave | `Block2x2 | `Braille2x4 ]
+  (** Raster resolution for mark rendering.
+
+      - [`Cell]: One data point per terminal cell using diagonal line characters
+        (╱╲).
+      - [`Wave]: Smooth curves using Unicode box-drawing characters (╭╮╰╯─│).
+        Produces visually appealing connected lines.
+      - [`Block2x2]: Two data points per cell using quadrant blocks (▘▝▖▗).
+      - [`Braille2x4]: Eight data points per cell using Braille patterns. *)
+end
+
 module Mark : sig
   (** Chart marks (visual encodings of data).
 
@@ -357,19 +536,12 @@ module Mark : sig
       Marks are polymorphic over their data type, allowing type-safe accessors.
   *)
 
-  type line_kind = [ `Line | `Braille | `Wave | `Points of string ]
-  (** Line rendering style.
-
-      - [`Line]: Standard cell-based line drawing.
-      - [`Braille]: Higher resolution using Braille dot patterns.
-      - [`Wave]: Sine wave approximation for smooth curves.
-      - [`Points s]: Custom glyph [s] at each data point. *)
-
-  type scatter_kind = [ `Cell | `Braille ]
-  (** Scatter point rendering style.
+  type scatter_mode = [ `Cell | `Braille | `Density ]
+  (** Scatter point rendering mode.
 
       - [`Cell]: One glyph per cell.
-      - [`Braille]: Higher resolution using Braille dots. *)
+      - [`Braille]: Higher resolution using Braille dots.
+      - [`Density]: Heat-style density rendering using shade levels. *)
 
   type heatmap_agg = [ `Last | `Avg | `Max ]
   (** Aggregation strategy when multiple values map to the same cell.
@@ -378,15 +550,34 @@ module Mark : sig
       - [`Avg]: Average all values.
       - [`Max]: Use the maximum value. *)
 
-  type heatmap_render =
-    | Cells
-    | Dense_bilinear
-    | Shaded
-        (** Heatmap rendering mode.
+  (** Heatmap rendering mode. *)
+  type heatmap_mode =
+    | Cells_fg  (** Colored foreground glyph (e.g., "█"). *)
+    | Cells_bg  (** Colored background with space glyph. *)
+    | Halfblock_fg_bg
+        (** Two values per row using "▀" with fg/bg colors. Doubles vertical
+            resolution. *)
+    | Shaded  (** Shaded block glyphs for intensity (works without color). *)
+    | Dense_bilinear  (** Bilinear interpolation onto target resolution. *)
 
-            - [Cells]: Discrete colored cells.
-            - [Dense_bilinear]: Bilinear interpolation for smooth gradients.
-            - [Shaded]: Shaded block glyphs for intensity. *)
+  type bar_mode = [ `Cell | `Half_block ]
+  (** Bar rendering mode.
+
+      - [`Cell]: Standard cell-based bars.
+      - [`Half_block]: Uses ▄▀ for 2x vertical resolution (vertical bars) or ▌▐
+        for 2x horizontal resolution (horizontal bars). *)
+
+  type candle_body = [ `Filled | `Hollow ]
+  (** Candlestick body style.
+
+      - [`Filled]: Solid filled body using block characters.
+      - [`Hollow]: Empty body using box-drawing characters. *)
+
+  type candle_width = [ `One | `Two ]
+  (** Candlestick body width.
+
+      - [`One]: Single-column body (compact).
+      - [`Two]: Two-column body (enables better hollow box rendering). *)
 
   type bar_segment = {
     value : float;  (** Segment height or width. *)
@@ -411,8 +602,11 @@ module Mark : sig
 
   val line :
     ?id:id ->
+    ?label:string ->
     ?style:Ansi.Style.t ->
-    ?kind:line_kind ->
+    ?resolution:Raster.resolution ->
+    ?pattern:Charset.line_pattern ->
+    ?glyph:string ->
     x:('a -> float) ->
     y:('a -> float) ->
     'a array ->
@@ -423,26 +617,36 @@ module Mark : sig
       order.
 
       @param id Optional identifier for hit-testing.
+      @param label Optional label for auto-legend generation.
       @param style Line color. Defaults to theme palette.
-      @param kind Rendering style. Default is [`Line]. *)
+      @param resolution Sub-cell resolution. Default is [`Cell].
+      @param pattern Line pattern. Default is [`Solid].
+      @param glyph
+        When set, draws this glyph at each data point instead of connecting
+        lines. *)
 
   val line_opt :
     ?id:id ->
+    ?label:string ->
     ?style:Ansi.Style.t ->
-    ?kind:line_kind ->
+    ?resolution:Raster.resolution ->
+    ?pattern:Charset.line_pattern ->
+    ?glyph:string ->
     x:('a -> float) ->
     y:('a -> float option) ->
     'a array ->
     t
   (** [line_opt ~x ~y data] creates a line mark with optional Y values.
 
-      Points where [y] returns [None] are skipped, creating gaps in the line. *)
+      Points where [y] returns [None] are skipped, creating gaps in the line.
+      See {!line} for parameter documentation. *)
 
   val scatter :
     ?id:id ->
+    ?label:string ->
     ?style:Ansi.Style.t ->
     ?glyph:string ->
-    ?kind:scatter_kind ->
+    ?mode:scatter_mode ->
     x:('a -> float) ->
     y:('a -> float) ->
     'a array ->
@@ -451,12 +655,19 @@ module Mark : sig
 
       Plots individual points at each coordinate.
 
-      @param glyph Character(s) to render at each point. Default is ["∙"].
-      @param kind Rendering style. Default is [`Cell]. *)
+      @param label Optional label for auto-legend generation.
+      @param glyph
+        Character(s) to render at each point. Default is the charset's
+        [point_default] (e.g., ["∙"] for Unicode, ["*"] for ASCII).
+      @param mode
+        Rendering mode. Default is [`Cell]. Use [`Density] for overplotting
+        visualization. *)
 
   val bars_y :
     ?id:id ->
+    ?label:string ->
     ?style:Ansi.Style.t ->
+    ?mode:bar_mode ->
     x:('a -> string) ->
     y:('a -> float) ->
     'a array ->
@@ -464,11 +675,18 @@ module Mark : sig
   (** [bars_y ~x ~y data] creates vertical bars.
 
       Bars extend from [0] to [y] for each category [x]. Requires a
-      {!Scale.Band} on the X-axis. *)
+      {!Scale.Band} on the X-axis.
+
+      @param label Optional label for auto-legend generation.
+      @param render
+        Bar resolution. Default is [`Cell]. [`Half_block] uses ▄▀ for smoother
+        tops. *)
 
   val bars_x :
     ?id:id ->
+    ?label:string ->
     ?style:Ansi.Style.t ->
+    ?mode:bar_mode ->
     y:('a -> string) ->
     x:('a -> float) ->
     'a array ->
@@ -476,10 +694,19 @@ module Mark : sig
   (** [bars_x ~y ~x data] creates horizontal bars.
 
       Bars extend from [0] to [x] for each category [y]. Requires a
-      {!Scale.Band} on the Y-axis. *)
+      {!Scale.Band} on the Y-axis.
+
+      @param render
+        Bar resolution. Default is [`Cell]. [`Half_block] uses ▌▐ for smoother
+        edges. *)
 
   val stacked_bars_y :
-    ?id:id -> ?gap:int -> ?bar_width:int -> stacked_bar array -> t
+    ?id:id ->
+    ?gap:int ->
+    ?bar_width:int ->
+    ?mode:bar_mode ->
+    stacked_bar array ->
+    t
   (** [stacked_bars_y data] creates vertical stacked bars.
 
       Each bar is composed of segments stacked from bottom to top. Segment
@@ -489,10 +716,16 @@ module Mark : sig
         Spacing between bars in pixels. Default is [1]. Negative values are
         clamped to [0].
       @param bar_width
-        Explicit bar width in pixels. [None] auto-sizes based on band width. *)
+        Explicit bar width in pixels. [None] auto-sizes based on band width.
+      @param render Bar resolution. Default is [`Cell]. *)
 
   val stacked_bars_x :
-    ?id:id -> ?gap:int -> ?bar_height:int -> stacked_bar array -> t
+    ?id:id ->
+    ?gap:int ->
+    ?bar_height:int ->
+    ?mode:bar_mode ->
+    stacked_bar array ->
+    t
   (** [stacked_bars_x data] creates horizontal stacked bars.
 
       Each bar is composed of segments stacked from left to right.
@@ -502,17 +735,23 @@ module Mark : sig
         clamped to [0].
       @param bar_height
         Explicit bar height in pixels. [None] auto-sizes based on band height.
-  *)
+      @param render Bar resolution. Default is [`Cell]. *)
 
-  val rule_y : ?id:id -> ?style:Ansi.Style.t -> float -> t
+  val rule_y :
+    ?id:id -> ?style:Ansi.Style.t -> ?pattern:Charset.line_pattern -> float -> t
   (** [rule_y y] creates a horizontal rule at Y-coordinate [y].
 
-      Draws a line spanning the full plot width. *)
+      Draws a line spanning the full plot width.
 
-  val rule_x : ?id:id -> ?style:Ansi.Style.t -> float -> t
+      @param pattern Line pattern. Default is [`Solid]. *)
+
+  val rule_x :
+    ?id:id -> ?style:Ansi.Style.t -> ?pattern:Charset.line_pattern -> float -> t
   (** [rule_x x] creates a vertical rule at X-coordinate [x].
 
-      Draws a line spanning the full plot height. *)
+      Draws a line spanning the full plot height.
+
+      @param pattern Line pattern. Default is [`Solid]. *)
 
   val heatmap :
     ?id:id ->
@@ -520,7 +759,7 @@ module Mark : sig
     ?value_range:float * float ->
     ?auto_value_range:bool ->
     ?agg:heatmap_agg ->
-    ?render:heatmap_render ->
+    ?mode:heatmap_mode ->
     x:('a -> float) ->
     y:('a -> float) ->
     value:('a -> float) ->
@@ -536,22 +775,30 @@ module Mark : sig
       @param auto_value_range
         Adjust [value_range] dynamically. Default is [true].
       @param agg Aggregation for overlapping cells. Default is [`Last].
-      @param render Rendering mode. Default is [Cells]. *)
+      @param render Rendering mode. Default is [Cells_fg]. *)
 
   val candles :
-    ?id:id -> ?bullish:Ansi.Style.t -> ?bearish:Ansi.Style.t -> ohlc array -> t
+    ?id:id ->
+    ?bullish:Ansi.Style.t ->
+    ?bearish:Ansi.Style.t ->
+    ?width:candle_width ->
+    ?body:candle_body ->
+    ohlc array ->
+    t
   (** [candles data] creates a candlestick chart.
 
       Renders OHLC data with wicks (high/low) and bodies (open/close). Body
       color indicates direction.
 
       @param bullish Style for up candles ([close > open]). Default is green.
-      @param bearish Style for down candles ([close < open]). Default is red. *)
+      @param bearish Style for down candles ([close < open]). Default is red.
+      @param width Body width. Default is [`One].
+      @param body Body style. Default is [`Filled]. *)
 
   val circle :
     ?id:id ->
     ?style:Ansi.Style.t ->
-    ?kind:[ `Line | `Braille ] ->
+    ?resolution:Raster.resolution ->
     cx:('a -> float) ->
     cy:('a -> float) ->
     r:('a -> float) ->
@@ -561,7 +808,7 @@ module Mark : sig
 
       Draws circles centered at [(cx, cy)] with radius [r] for each datum.
 
-      @param kind Rendering style. Default is [`Line]. *)
+      @param render Resolution mode. Default is [`Cell]. *)
 
   val shade_x :
     ?id:id -> ?style:Ansi.Style.t -> min:float -> max:float -> unit -> t
@@ -631,7 +878,7 @@ module Layout : sig
   (** Compiled chart layout for rendering and interaction.
 
       A {!t} captures the resolved dimensions, scales, and coordinate mappings
-      for a given chart, view, and canvas size. Layouts are immutable and
+      for a given chart, view, and grid size. Layouts are immutable and
       efficient to query. *)
 
   type t
@@ -644,7 +891,7 @@ module Layout : sig
   (** A rectangular region in pixel coordinates. *)
 
   val size : t -> int * int
-  (** [size t] returns the full canvas dimensions [(width, height)]. *)
+  (** [size t] returns the full grid dimensions [(width, height)]. *)
 
   val plot_rect : t -> rect
   (** [plot_rect t] returns the inner plot area, excluding axes and margins. *)
@@ -766,28 +1013,30 @@ module Overlay : sig
 
   val crosshair :
     ?style:Ansi.Style.t ->
+    ?pattern:Charset.line_pattern ->
     Layout.t ->
-    Mosaic_ui.Canvas.t ->
+    Grid.t ->
     x:float ->
     y:float ->
     unit
-  (** [crosshair layout canvas ~x ~y] draws crosshair lines at data coordinates
+  (** [crosshair layout grid ~x ~y] draws crosshair lines at data coordinates
       [(x, y)].
 
       Draws a vertical line at [x] and a horizontal line at [y], each spanning
       the full plot area. Lines are clipped to the plot rectangle.
 
-      @param style Line style. Default is theme's [crosshair] style. *)
+      @param style Line style. Default is theme's [crosshair] style.
+      @param pattern Line pattern. Default is [`Solid]. *)
 
   val marker :
     ?style:Ansi.Style.t ->
     ?glyph:string ->
     Layout.t ->
-    Mosaic_ui.Canvas.t ->
+    Grid.t ->
     x:float ->
     y:float ->
     unit
-  (** [marker layout canvas ~x ~y] draws a marker glyph at data coordinates
+  (** [marker layout grid ~x ~y] draws a marker glyph at data coordinates
       [(x, y)].
 
       The marker is only rendered if [(x, y)] maps to a pixel within the plot
@@ -807,19 +1056,26 @@ module Overlay : sig
 
       The tooltip is adjusted to stay within the plot area. *)
 
+  type tooltip_border = [ `Theme | `None | `Style of Ansi.Style.t ]
+  (** Tooltip border configuration.
+
+      - [`Theme]: Use the theme's default tooltip border.
+      - [`None]: No border.
+      - [`Style s]: Use a custom border style [s]. *)
+
   val tooltip :
     ?style:Ansi.Style.t ->
-    ?border:Ansi.Style.t ->
+    ?border:tooltip_border ->
     ?padding:int ->
     ?anchor:tooltip_anchor ->
     Layout.t ->
-    Mosaic_ui.Canvas.t ->
+    Grid.t ->
     x:float ->
     y:float ->
     string list ->
     unit
-  (** [tooltip layout canvas ~x ~y lines] draws a tooltip box at data
-      coordinates [(x, y)].
+  (** [tooltip layout grid ~x ~y lines] draws a tooltip box at data coordinates
+      [(x, y)].
 
       The tooltip displays [lines] with optional border and padding. Lines are
       padded to equal width for consistent background fill. The box is
@@ -829,8 +1085,8 @@ module Overlay : sig
       @param style
         Text and background style. Default is theme's [tooltip] style.
       @param border
-        Border style. Default is theme's [tooltip_border]. [None] renders no
-        border.
+        Border configuration. Default is [`Theme] which uses theme's
+        [tooltip_border]. Use [`None] to explicitly disable the border.
       @param padding
         Internal padding in cells. Default is [1]. Negative values are clamped
         to [0].
@@ -851,11 +1107,11 @@ module Legend : sig
     ?direction:[ `Horizontal | `Vertical ] ->
     ?gap:int ->
     item list ->
-    Mosaic_ui.Canvas.t ->
+    Grid.t ->
     width:int ->
     height:int ->
     unit
-  (** [draw items canvas ~width ~height] renders a legend.
+  (** [draw items grid ~width ~height] renders a legend.
 
       Items are laid out in [direction] order, with spacing controlled by [gap].
 
@@ -863,6 +1119,14 @@ module Legend : sig
       @param gap
         Spacing between items in cells. Default is [0]. For [`Horizontal],
         defaults to [2] if [0]. Negative values are clamped to [0]. *)
+
+  val items_of_layout : Layout.t -> item list
+  (** [items_of_layout layout] extracts legend items from marks that have
+      labels.
+
+      Returns a list of legend items for marks with [~label] set. Use this to
+      auto-generate a legend from the chart without manually constructing items.
+      Only marks with labels are included. *)
 end
 
 module Sparkline = Sparkline
@@ -874,16 +1138,34 @@ type t
     Charts are built by layering marks and configuration. Use {!empty} to start,
     then compose with {!with_theme}, {!with_x_scale}, {!add}, etc. *)
 
-type frame = { margins : int * int * int * int; inner_padding : int }
-(** Frame configuration for layout spacing.
+type frame_config = { margins : int * int * int * int; inner_padding : int }
+(** Manual frame configuration for layout spacing.
 
     - [margins]: [(top, right, bottom, left)] in cells. Reserves space for axes.
     - [inner_padding]: Padding between plot area and frame in cells. *)
 
-val default_frame : frame
-(** [default_frame] has zero margins and padding.
+type frame =
+  | Auto
+  | Manual of frame_config
+      (** Frame mode for layout spacing.
 
-    Axes and labels are rendered in the plot area without reserved space. *)
+          - [Auto]: Automatically compute margins based on axis requirements.
+          - [Manual cfg]: Use explicit margin and padding configuration. *)
+
+type title = { text : string; style : Ansi.Style.t option }
+(** Chart title configuration. *)
+
+val default_frame : frame
+(** [default_frame] is [Auto].
+
+    Auto mode computes margins from axis label widths and tick sizes. *)
+
+val manual_frame :
+  ?margins:int * int * int * int -> ?inner_padding:int -> unit -> frame
+(** [manual_frame ?margins ?inner_padding ()] creates a manual frame config.
+
+    @param margins [(top, right, bottom, left)] in cells. Default [(0,0,0,0)].
+    @param inner_padding Padding between plot area and frame. Default [0]. *)
 
 val empty : ?theme:Theme.t -> unit -> t
 (** [empty ()] creates an empty chart.
@@ -891,7 +1173,7 @@ val empty : ?theme:Theme.t -> unit -> t
     @param theme Chart theme. Default is {!Theme.default}.
 
     The chart uses {!Scale.Auto} for both axes, {!Axis.default} for rendering,
-    and {!Grid.hidden} for no grid. *)
+    and {!Gridlines.hidden} for no grid. *)
 
 val with_theme : Theme.t -> t -> t
 (** [with_theme theme t] applies [theme] to [t].
@@ -902,7 +1184,14 @@ val with_theme : Theme.t -> t -> t
 val with_frame : frame -> t -> t
 (** [with_frame frame t] sets the layout frame to [frame].
 
-    [inner_padding] is clamped to non-negative values. *)
+    For [Manual] frames, [inner_padding] is clamped to non-negative values. *)
+
+val with_title : ?style:Ansi.Style.t -> string -> t -> t
+(** [with_title text t] sets the chart title to [text].
+
+    The title is rendered centered above the plot area.
+
+    @param style Title style. [None] uses the theme's label style. *)
 
 val with_x_scale : Scale.t -> t -> t
 (** [with_x_scale scale t] sets the X-axis scale to [scale]. *)
@@ -916,7 +1205,7 @@ val with_axes : ?x:Axis.t -> ?y:Axis.t -> t -> t
     Theme defaults are applied to provided axes. [None] preserves existing axis
     configuration. *)
 
-val with_grid : Grid.t -> t -> t
+val with_grid : Gridlines.t -> t -> t
 (** [with_grid grid t] sets the grid configuration to [grid].
 
     Theme defaults are applied to [grid]. *)
@@ -929,8 +1218,11 @@ val add : Mark.t -> t -> t
 
 val line :
   ?id:Mark.id ->
+  ?label:string ->
   ?style:Ansi.Style.t ->
-  ?kind:Mark.line_kind ->
+  ?resolution:Raster.resolution ->
+  ?pattern:Charset.line_pattern ->
+  ?glyph:string ->
   x:('a -> float) ->
   y:('a -> float) ->
   'a array ->
@@ -943,8 +1235,11 @@ val line :
 
 val line_opt :
   ?id:Mark.id ->
+  ?label:string ->
   ?style:Ansi.Style.t ->
-  ?kind:Mark.line_kind ->
+  ?resolution:Raster.resolution ->
+  ?pattern:Charset.line_pattern ->
+  ?glyph:string ->
   x:('a -> float) ->
   y:('a -> float option) ->
   'a array ->
@@ -957,9 +1252,10 @@ val line_opt :
 
 val scatter :
   ?id:Mark.id ->
+  ?label:string ->
   ?style:Ansi.Style.t ->
   ?glyph:string ->
-  ?kind:Mark.scatter_kind ->
+  ?mode:Mark.scatter_mode ->
   x:('a -> float) ->
   y:('a -> float) ->
   'a array ->
@@ -971,7 +1267,9 @@ val scatter :
 
 val bars_y :
   ?id:Mark.id ->
+  ?label:string ->
   ?style:Ansi.Style.t ->
+  ?mode:Mark.bar_mode ->
   x:('a -> string) ->
   y:('a -> float) ->
   'a array ->
@@ -983,7 +1281,9 @@ val bars_y :
 
 val bars_x :
   ?id:Mark.id ->
+  ?label:string ->
   ?style:Ansi.Style.t ->
+  ?mode:Mark.bar_mode ->
   y:('a -> string) ->
   x:('a -> float) ->
   'a array ->
@@ -994,23 +1294,47 @@ val bars_x :
     Convenience for [add (Mark.bars_x ~y ~x data) t]. *)
 
 val stacked_bars_y :
-  ?id:Mark.id -> ?gap:int -> ?bar_width:int -> Mark.stacked_bar array -> t -> t
+  ?id:Mark.id ->
+  ?gap:int ->
+  ?bar_width:int ->
+  ?mode:Mark.bar_mode ->
+  Mark.stacked_bar array ->
+  t ->
+  t
 (** [stacked_bars_y data t] adds vertically stacked bars to [t].
 
     Convenience for [add (Mark.stacked_bars_y data) t]. *)
 
 val stacked_bars_x :
-  ?id:Mark.id -> ?gap:int -> ?bar_height:int -> Mark.stacked_bar array -> t -> t
+  ?id:Mark.id ->
+  ?gap:int ->
+  ?bar_height:int ->
+  ?mode:Mark.bar_mode ->
+  Mark.stacked_bar array ->
+  t ->
+  t
 (** [stacked_bars_x data t] adds horizontally stacked bars to [t].
 
     Convenience for [add (Mark.stacked_bars_x data) t]. *)
 
-val rule_y : ?id:Mark.id -> ?style:Ansi.Style.t -> float -> t -> t
+val rule_y :
+  ?id:Mark.id ->
+  ?style:Ansi.Style.t ->
+  ?pattern:Charset.line_pattern ->
+  float ->
+  t ->
+  t
 (** [rule_y y t] adds a horizontal rule at y position [y].
 
     Convenience for [add (Mark.rule_y y) t]. *)
 
-val rule_x : ?id:Mark.id -> ?style:Ansi.Style.t -> float -> t -> t
+val rule_x :
+  ?id:Mark.id ->
+  ?style:Ansi.Style.t ->
+  ?pattern:Charset.line_pattern ->
+  float ->
+  t ->
+  t
 (** [rule_x x t] adds a vertical rule at x position [x].
 
     Convenience for [add (Mark.rule_x x) t]. *)
@@ -1021,7 +1345,7 @@ val heatmap :
   ?value_range:float * float ->
   ?auto_value_range:bool ->
   ?agg:Mark.heatmap_agg ->
-  ?render:Mark.heatmap_render ->
+  ?mode:Mark.heatmap_mode ->
   x:('a -> float) ->
   y:('a -> float) ->
   value:('a -> float) ->
@@ -1036,6 +1360,8 @@ val candles :
   ?id:Mark.id ->
   ?bullish:Ansi.Style.t ->
   ?bearish:Ansi.Style.t ->
+  ?width:Mark.candle_width ->
+  ?body:Mark.candle_body ->
   Mark.ohlc array ->
   t ->
   t
@@ -1046,7 +1372,7 @@ val candles :
 val circle :
   ?id:Mark.id ->
   ?style:Ansi.Style.t ->
-  ?kind:[ `Line | `Braille ] ->
+  ?resolution:Raster.resolution ->
   cx:('a -> float) ->
   cy:('a -> float) ->
   r:('a -> float) ->
@@ -1068,20 +1394,32 @@ val column_background : ?id:Mark.id -> ?style:Ansi.Style.t -> float -> t -> t
 
     Convenience for [add (Mark.column_background x) t]. *)
 
-val layout : ?view:View.t -> t -> width:int -> height:int -> Layout.t
+val layout :
+  ?view:View.t -> ?x:int -> ?y:int -> t -> width:int -> height:int -> Layout.t
 (** [layout t ~width ~height] compiles [t] into a {!Layout.t}.
 
     Resolves scales, infers domains from mark data, and computes coordinate
-    mappings for the given canvas size.
+    mappings for the given grid size.
 
-    @param view Viewport restriction. [None] uses full data extent. *)
+    @param view Viewport restriction. [None] uses full data extent.
+    @param x Horizontal offset in the grid. Default is [0].
+    @param y Vertical offset in the grid. Default is [0]. *)
 
 val draw :
-  ?view:View.t -> t -> Mosaic_ui.Canvas.t -> width:int -> height:int -> Layout.t
-(** [draw t canvas ~width ~height] renders [t] to [canvas] and returns the
-    computed layout.
+  ?view:View.t ->
+  ?x:int ->
+  ?y:int ->
+  t ->
+  Grid.t ->
+  width:int ->
+  height:int ->
+  Layout.t
+(** [draw t grid ~width ~height] renders [t] to [grid] and returns the computed
+    layout.
 
-    First computes a {!Layout.t} via {!layout}, then draws axes, grid, and all
-    marks. The returned layout can be used for hit-testing and overlays.
+    First computes a {!Layout.t} via {!layout}, then draws axes, gridlines, and
+    all marks. The returned layout can be used for hit-testing and overlays.
 
-    @param view Viewport restriction. [None] uses full data extent. *)
+    @param view Viewport restriction. [None] uses full data extent.
+    @param x Horizontal offset in the grid. Default is [0].
+    @param y Vertical offset in the grid. Default is [0]. *)

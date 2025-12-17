@@ -459,7 +459,7 @@ val canvas :
   ?width_method:Glyph.width_method ->
   ?initial_width:int ->
   ?initial_height:int ->
-  ?draw:(Canvas.t -> width:int -> height:int -> unit) ->
+  ?draw:(Grid.t -> width:int -> height:int -> unit) ->
   ?on_mount:(Canvas.t -> unit) ->
   unit ->
   element

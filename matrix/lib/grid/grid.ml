@@ -1332,6 +1332,81 @@ let draw_box t ~x ~y ~width ~height ~border_chars ~border_sides ~border_style
             draw_text t ~x:(x + pad) ~y ~text:txt ~style
       | _ -> ()
 
+(* ---- Line Drawing ---- *)
+
+let draw_line t ~x1 ~y1 ~x2 ~y2 ?(style = Ansi.Style.default) ?(kind = `Line) ()
+    =
+  let dx = abs (x2 - x1) in
+  let dy = abs (y2 - y1) in
+  let sx = if x1 < x2 then 1 else -1 in
+  let sy = if y1 < y2 then 1 else -1 in
+  let plot_basic () =
+    let glyph =
+      if dx = 0 then "│"
+      else if dy = 0 then "─"
+      else if (x2 - x1) * (y2 - y1) > 0 then "╲"
+      else "╱"
+    in
+    let rec loop x y err =
+      draw_text t ~x ~y ~text:glyph ~style;
+      if x = x2 && y = y2 then ()
+      else
+        let e2 = 2 * err in
+        let x, err = if e2 > -dy then (x + sx, err - dy) else (x, err) in
+        let y, err = if e2 < dx then (y + sy, err + dx) else (y, err) in
+        loop x y err
+    in
+    loop x1 y1 (dx - dy)
+  in
+  let plot_braille () =
+    let buffer = Hashtbl.create 32 in
+    let set_dot x y =
+      let cell_x = x / 2 in
+      let cell_y = y / 4 in
+      let bit_x = x mod 2 in
+      let bit_y = y mod 4 in
+      let bit_pos =
+        match (bit_x, bit_y) with
+        | 0, 0 -> 0
+        | 0, 1 -> 1
+        | 0, 2 -> 2
+        | 0, 3 -> 6
+        | 1, 0 -> 3
+        | 1, 1 -> 4
+        | 1, 2 -> 5
+        | 1, 3 -> 7
+        | _ -> 0
+      in
+      let key = (cell_x, cell_y) in
+      let current = Option.value (Hashtbl.find_opt buffer key) ~default:0 in
+      Hashtbl.replace buffer key (current lor (1 lsl bit_pos))
+    in
+    let rec loop x y err =
+      set_dot x y;
+      if x = x2 && y = y2 then ()
+      else
+        let e2 = 2 * err in
+        let x, err = if e2 > -dy then (x + sx, err - dy) else (x, err) in
+        let y, err = if e2 < dx then (y + sy, err + dx) else (y, err) in
+        loop x y err
+    in
+    loop x1 y1 (dx - dy);
+    Hashtbl.iter
+      (fun (cell_x, cell_y) bits ->
+        let code = 0x2800 + bits in
+        let uchar =
+          match Uchar.of_int code with
+          | exception Invalid_argument _ -> Uchar.of_int 0x2800
+          | c -> c
+        in
+        let b = Buffer.create 4 in
+        Buffer.add_utf_8_uchar b uchar;
+        let glyph = Buffer.contents b in
+        draw_text t ~x:cell_x ~y:cell_y ~text:glyph ~style)
+      buffer
+  in
+  match kind with `Line -> plot_basic () | `Braille -> plot_braille ()
+
 (* ---- Inspection & Utilities ---- *)
 
 let active_height t =

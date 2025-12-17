@@ -102,7 +102,7 @@ type text_spec = Text.Props.t
 
 type 'a canvas_spec = {
   props : Canvas.Props.t;
-  draw : (Canvas.t -> width:int -> height:int -> unit) option;
+  draw : (Grid.t -> width:int -> height:int -> unit) option;
   on_resize : (width:int -> height:int -> 'a) option;
 }
 

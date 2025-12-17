@@ -1,6 +1,5 @@
 module Style = Ansi.Style
 module Color = Ansi.Color
-module Canvas = Mosaic_ui.Canvas
 
 let utf8_of_uchar (u : Uchar.t) : string =
   let b = Buffer.create 4 in
@@ -73,14 +72,14 @@ let iter_visible ?max_points t f =
     done;
     keep
 
-let fill_background canvas ~width ~height style =
+let fill_background canvas ~x ~y ~width ~height style =
   match style.Style.bg with
   | None -> ()
-  | Some bg -> Canvas.fill_rect canvas ~x:0 ~y:0 ~width ~height ~color:bg
+  | Some bg -> Grid.fill_rect canvas ~x ~y ~width ~height ~color:bg
 
-let draw_bars t canvas ~width ~height ~columns_only =
-  Canvas.clear canvas;
-  if not columns_only then fill_background canvas ~width ~height t.style;
+let draw_bars t canvas ~x:ox ~y:oy ~width ~height ~columns_only =
+  if not columns_only then
+    fill_background canvas ~x:ox ~y:oy ~width ~height t.style;
   let keep = iter_visible ~max_points:width t (fun _ _ -> ()) in
   if keep = 0 then ()
   else
@@ -107,26 +106,26 @@ let draw_bars t canvas ~width ~height ~columns_only =
     in
     ignore
       (iter_visible ~max_points:width t (fun i v ->
-           let x = start_x + i in
+           let x = ox + start_x + i in
            let sv = v *. scale in
            if sv > 0. then (
              let n = Float.floor sv in
              let full = int_of_float n in
              let frac = sv -. n in
              for j = 0 to full - 1 do
-               let y = bottom - j in
-               if y >= 0 && y < height then
-                 Canvas.plot canvas ~x ~y ~style:t.style "█"
+               let y = oy + bottom - j in
+               if y >= oy && y < oy + height then
+                 Grid.draw_text ~style:t.style canvas ~x ~y ~text:"█"
              done;
              let top = lower_block_char frac in
              if top <> "" then
-               let y = bottom - full in
-               if y >= 0 && y < height then
-                 Canvas.plot canvas ~x ~y ~style:t.style top)))
+               let y = oy + bottom - full in
+               if y >= oy && y < oy + height then
+                 Grid.draw_text ~style:t.style canvas ~x ~y ~text:top)))
 
-let draw_braille t canvas ~width ~height ~columns_only =
-  Canvas.clear canvas;
-  if not columns_only then fill_background canvas ~width ~height t.style;
+let draw_braille t canvas ~x:ox ~y:oy ~width ~height ~columns_only =
+  if not columns_only then
+    fill_background canvas ~x:ox ~y:oy ~width ~height t.style;
   let keep = iter_visible ~max_points:width t (fun _ _ -> ()) in
   if keep = 0 then ()
   else
@@ -239,17 +238,19 @@ let draw_braille t canvas ~width ~height ~columns_only =
                prev := Some pt));
     Hashtbl.iter
       (fun (cx, cy) bits ->
-        Canvas.plot canvas ~x:cx ~y:cy ~style:t.style
-          (braille_glyph_of_bits bits))
+        Grid.draw_text ~style:t.style canvas ~x:(ox + cx) ~y:(oy + cy)
+          ~text:(braille_glyph_of_bits bits))
       dots
 
-let draw t ~kind ?(columns_only = false) canvas ~width ~height =
+let draw t ~kind ?(columns_only = false) ?(x = 0) ?(y = 0) canvas ~width ~height
+    =
   let width = max 1 width and height = max 1 height in
   match kind with
-  | `Bars -> draw_bars t canvas ~width ~height ~columns_only
-  | `Braille -> draw_braille t canvas ~width ~height ~columns_only
+  | `Bars -> draw_bars t canvas ~x ~y ~width ~height ~columns_only
+  | `Braille -> draw_braille t canvas ~x ~y ~width ~height ~columns_only
 
-let draw_values ?(style = Style.default) ~kind values canvas ~width ~height =
+let draw_values ?(style = Style.default) ~kind ?(x = 0) ?(y = 0) values canvas
+    ~width ~height =
   let t = create ~style ~capacity:(max 1 width) () in
   push_all t values;
-  draw t ~kind canvas ~width ~height
+  draw t ~kind ~x ~y canvas ~width ~height

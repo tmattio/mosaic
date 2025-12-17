@@ -24,7 +24,8 @@
   (ocaml
    (>= 5.4))
   dune
-  (alcotest :with-test))
+  (alcotest :with-test)
+  (ppx_expect :with-test))
  (tags
   (terminal ansi input grid rendering unicode pty vte)))
 
