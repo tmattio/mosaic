@@ -25,6 +25,8 @@ dune exec ./mosaic/examples/<name>/main.exe
 | `12-form`      | Multi-component form with focus management       |
 | `13-markdown`  | Markdown rendering with scrollable content       |
 | `14-selection` | Text selection across renderables                |
+| `15-charts`    | Interactive charts with zoom, pan, and tooltips  |
+| `16-timer`     | Countdown timer with tick subscriptions          |
 | `x-dashboard`  | Component composition with TEA `map`             |
 
 ## Descriptions
@@ -102,6 +104,19 @@ tables, and task lists. Demonstrates scroll_box for large content.
 Cross-renderable text selection with mouse. Shows selection across multiple
 text elements, within scrollable content, and with custom selection colors.
 Demonstrates Unicode text selection and selection state tracking.
+
+### `15-charts` – Interactive charts
+
+Interactive chart viewer integrating matrix.charts with mosaic. Demonstrates
+six chart types (line, scatter, bar, stacked bar, heatmap, candlestick) with
+zoom/pan via mouse wheel and drag, hover tooltips with hit testing, theme
+switching, and per-chart view persistence.
+
+### `16-timer` – Countdown timer
+
+Countdown timer with start/stop/reset controls. Shows time-based subscriptions
+using `Sub.on_tick`, input field handling with validation, and combining
+keyboard shortcuts with mouse-clickable buttons.
 
 ### `x-dashboard` – Component composition
 

@@ -25,6 +25,7 @@ dune exec ./examples/<name>/main.exe
 | `12-installer`  | Package installer with static_print output         |
 | `13-dragdrop`   | Drag-and-drop demo with alpha blending             |
 | `14-particles`  | Procedural particle system with multiple modes     |
+| `15-synthesizer`| Waveform synth with charts visualization           |
 | `x-emulator`    | SDL2-based graphical terminal emulator             |
 
 ## Descriptions
@@ -105,6 +106,13 @@ Procedural particle system with multiple emission modes: burst, rainbow,
 fountain, explosion, and firework. Demonstrates physics simulation with gravity,
 lifetime-based color transitions, and alpha fading. Supports mouse interaction
 for spawning particles and adjustable parameters.
+
+### `15-synthesizer` – Waveform synthesizer
+
+Audio waveform synthesizer showcasing `matrix.charts`. Generates sine, square,
+sawtooth, and triangle waves with adjustable frequency, volume, and duration.
+Visualizes waveform shape with Braille rendering, harmonic spectrum as colored
+bars, and amplitude envelope as a sparkline. Displays frequency as musical note.
 
 ### `x-emulator` – SDL2 terminal
 
