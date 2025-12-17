@@ -94,7 +94,10 @@ let () =
       | _ -> ())
     ~on_render:(fun app ->
       let grid = Matrix.grid app in
-      let rows_needed = 4 + List.length !state.items in
+      (* Counter at y=0, help at y=1, box at y=3 with height = items_len + 2
+         Bottom border at y = 3 + (items_len + 2) - 1 = items_len + 4
+         Grid height needs to be items_len + 5 *)
+      let rows_needed = 5 + List.length !state.items in
       Grid.resize grid ~width:(Grid.width grid) ~height:rows_needed;
       Grid.clear grid;
       render grid !state)
