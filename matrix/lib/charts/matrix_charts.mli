@@ -250,6 +250,44 @@ module Format : sig
       Expects [v] as Unix timestamp. *)
 end
 
+module Transform : sig
+  (** Data smoothing and transformation utilities.
+
+      These functions transform [(x, y)] data arrays, preserving X values while
+      smoothing Y values. Apply before passing data to chart marks.
+
+      {[
+        let smoothed = Transform.ema 0.1 raw_data in
+        chart |> line ~x:fst ~y:snd smoothed
+      ]} *)
+
+  val ema : float -> (float * float) array -> (float * float) array
+  (** [ema alpha data] applies exponential moving average.
+
+      Each output Y is [alpha * y + (1 - alpha) * prev_smoothed].
+
+      @param alpha
+        Smoothing factor in [(0, 1)]. Lower values = more smoothing. Typical
+        values: [0.1] (heavy), [0.3] (moderate), [0.5] (light). *)
+
+  val sma : int -> (float * float) array -> (float * float) array
+  (** [sma window data] applies simple moving average.
+
+      Each output Y is the mean of the surrounding [window] points. Initial
+      points use partial windows.
+
+      @param window Number of points to average. Must be positive. *)
+
+  val gaussian : float -> (float * float) array -> (float * float) array
+  (** [gaussian sigma data] applies Gaussian smoothing.
+
+      Convolves data with a Gaussian kernel of the given standard deviation.
+      Preserves endpoints better than EMA/SMA.
+
+      @param sigma
+        Standard deviation in index units. Typical values: [1.0] to [5.0]. *)
+end
+
 module Scale : sig
   (** Axis scaling strategies for continuous and categorical data.
 
@@ -274,6 +312,10 @@ module Scale : sig
     | Numeric of { domain : numeric_domain; clamp : bool }
         (** Continuous linear scale. [clamp] restricts view windows to domain
             bounds. *)
+    | Log of { base : float; domain : numeric_domain; clamp : bool }
+        (** Logarithmic scale. Useful for data spanning multiple orders of
+            magnitude. [base] is typically 10 or e. Values <= 0 are handled
+            gracefully. *)
     | Band of { categories : string list option; padding : float }
         (** Categorical scale with evenly spaced bands. [padding] is the
             fraction of the axis reserved for gaps (0.0 to 1.0). *)
@@ -281,6 +323,14 @@ module Scale : sig
   val numeric : ?domain:numeric_domain -> ?clamp:bool -> unit -> t
   (** [numeric ~domain ~clamp ()] creates a numeric scale.
 
+      @param domain Domain strategy. Default is [`Auto].
+      @param clamp Restrict view windows to domain. Default is [true]. *)
+
+  val log : ?base:float -> ?domain:numeric_domain -> ?clamp:bool -> unit -> t
+  (** [log ~base ~domain ~clamp ()] creates a logarithmic scale.
+
+      @param base
+        Log base. Default is [10.0]. Common values: [10.0], [2.0], [e].
       @param domain Domain strategy. Default is [`Auto].
       @param clamp Restrict view windows to domain. Default is [true]. *)
 
@@ -567,6 +617,29 @@ module Mark : sig
       - [`Half_block]: Uses ▄▀ for 2x vertical resolution (vertical bars) or ▌▐
         for 2x horizontal resolution (horizontal bars). *)
 
+  type area_baseline = [ `Zero | `Value of float ]
+  (** Area chart baseline specification.
+
+      - [`Zero]: Fill from y=0 to data values.
+      - [`Value v]: Fill from y=v to data values. *)
+
+  (** Histogram binning method.
+
+      - [Bins n]: Divide data range into [n] equal-width bins.
+      - [Width w]: Use bins of width [w].
+      - [Edges arr]: Use explicit bin edges (length = num_bins + 1). *)
+  type bin_method =
+    | Bins of int  (** Fixed number of bins *)
+    | Width of float  (** Fixed bin width *)
+    | Edges of float array  (** Explicit bin edges *)
+
+  type histogram_normalize = [ `Count | `Density | `Probability ]
+  (** Histogram normalization mode.
+
+      - [`Count]: Raw bin counts.
+      - [`Density]: count / (total * bin_width) for density estimation.
+      - [`Probability]: count / total for probability distribution. *)
+
   type candle_body = [ `Filled | `Hollow ]
   (** Candlestick body style.
 
@@ -600,6 +673,15 @@ module Mark : sig
   }
   (** OHLC (Open-High-Low-Close) candlestick data. *)
 
+  type y_axis_selector = [ `Y1 | `Y2 ]
+  (** Selector for which Y-axis a mark should use.
+
+      - [`Y1]: Primary Y-axis (left side, default).
+      - [`Y2]: Secondary Y-axis (right side).
+
+      Use with {!with_y2_scale} and {!with_y2_axis} to configure dual-axis
+      charts. Marks default to [`Y1] if not specified. *)
+
   val line :
     ?id:id ->
     ?label:string ->
@@ -607,6 +689,7 @@ module Mark : sig
     ?resolution:Raster.resolution ->
     ?pattern:Charset.line_pattern ->
     ?glyph:string ->
+    ?y_axis:y_axis_selector ->
     x:('a -> float) ->
     y:('a -> float) ->
     'a array ->
@@ -623,7 +706,8 @@ module Mark : sig
       @param pattern Line pattern. Default is [`Solid].
       @param glyph
         When set, draws this glyph at each data point instead of connecting
-        lines. *)
+        lines.
+      @param y_axis Which Y-axis to use. Default is [`Y1]. *)
 
   val line_opt :
     ?id:id ->
@@ -632,6 +716,7 @@ module Mark : sig
     ?resolution:Raster.resolution ->
     ?pattern:Charset.line_pattern ->
     ?glyph:string ->
+    ?y_axis:y_axis_selector ->
     x:('a -> float) ->
     y:('a -> float option) ->
     'a array ->
@@ -647,6 +732,7 @@ module Mark : sig
     ?style:Ansi.Style.t ->
     ?glyph:string ->
     ?mode:scatter_mode ->
+    ?y_axis:y_axis_selector ->
     x:('a -> float) ->
     y:('a -> float) ->
     'a array ->
@@ -661,7 +747,8 @@ module Mark : sig
         [point_default] (e.g., ["∙"] for Unicode, ["*"] for ASCII).
       @param mode
         Rendering mode. Default is [`Cell]. Use [`Density] for overplotting
-        visualization. *)
+        visualization.
+      @param y_axis Which Y-axis to use. Default is [`Y1]. *)
 
   val bars_y :
     ?id:id ->
@@ -738,12 +825,18 @@ module Mark : sig
       @param render Bar resolution. Default is [`Cell]. *)
 
   val rule_y :
-    ?id:id -> ?style:Ansi.Style.t -> ?pattern:Charset.line_pattern -> float -> t
+    ?id:id ->
+    ?style:Ansi.Style.t ->
+    ?pattern:Charset.line_pattern ->
+    ?y_axis:y_axis_selector ->
+    float ->
+    t
   (** [rule_y y] creates a horizontal rule at Y-coordinate [y].
 
       Draws a line spanning the full plot width.
 
-      @param pattern Line pattern. Default is [`Solid]. *)
+      @param pattern Line pattern. Default is [`Solid].
+      @param y_axis Which Y-axis to use. Default is [`Y1]. *)
 
   val rule_x :
     ?id:id -> ?style:Ansi.Style.t -> ?pattern:Charset.line_pattern -> float -> t
@@ -783,6 +876,7 @@ module Mark : sig
     ?bearish:Ansi.Style.t ->
     ?width:candle_width ->
     ?body:candle_body ->
+    ?y_axis:y_axis_selector ->
     ohlc array ->
     t
   (** [candles data] creates a candlestick chart.
@@ -793,12 +887,14 @@ module Mark : sig
       @param bullish Style for up candles ([close > open]). Default is green.
       @param bearish Style for down candles ([close < open]). Default is red.
       @param width Body width. Default is [`One].
-      @param body Body style. Default is [`Filled]. *)
+      @param body Body style. Default is [`Filled].
+      @param y_axis Which Y-axis to use. Default is [`Y1]. *)
 
   val circle :
     ?id:id ->
     ?style:Ansi.Style.t ->
     ?resolution:Raster.resolution ->
+    ?y_axis:y_axis_selector ->
     cx:('a -> float) ->
     cy:('a -> float) ->
     r:('a -> float) ->
@@ -808,7 +904,8 @@ module Mark : sig
 
       Draws circles centered at [(cx, cy)] with radius [r] for each datum.
 
-      @param render Resolution mode. Default is [`Cell]. *)
+      @param render Resolution mode. Default is [`Cell].
+      @param y_axis Which Y-axis to use. Default is [`Y1]. *)
 
   val shade_x :
     ?id:id -> ?style:Ansi.Style.t -> min:float -> max:float -> unit -> t
@@ -822,6 +919,66 @@ module Mark : sig
 
       Fills a single column spanning the plot height. Useful for highlighting
       time ranges. *)
+
+  val area :
+    ?id:id ->
+    ?label:string ->
+    ?style:Ansi.Style.t ->
+    ?baseline:area_baseline ->
+    ?resolution:Raster.resolution ->
+    ?y_axis:y_axis_selector ->
+    x:('a -> float) ->
+    y:('a -> float) ->
+    'a array ->
+    t
+  (** [area ~x ~y data] creates a filled area chart.
+
+      Fills the region between the data line and a baseline.
+
+      @param baseline
+        Bottom of fill region. Default is [`Zero]. Use [`Value v] for a custom
+        baseline.
+      @param resolution
+        Rendering resolution. [`Cell] uses full blocks, [`Braille2x4] provides
+        sub-cell precision.
+      @param y_axis Which Y-axis to use. Default is [`Y1]. *)
+
+  val fill_between :
+    ?id:id ->
+    ?label:string ->
+    ?style:Ansi.Style.t ->
+    ?resolution:Raster.resolution ->
+    ?y_axis:y_axis_selector ->
+    x:('a -> float) ->
+    y_low:('a -> float) ->
+    y_high:('a -> float) ->
+    'a array ->
+    t
+  (** [fill_between ~x ~y_low ~y_high data] fills the region between two lines.
+
+      Useful for showing confidence intervals, error bounds, or ranges.
+
+      @param resolution
+        Rendering resolution. [`Cell] uses medium-shade blocks, [`Braille2x4]
+        provides sub-cell precision.
+      @param y_axis Which Y-axis to use. Default is [`Y1]. *)
+
+  val histogram :
+    ?id:id ->
+    ?label:string ->
+    ?style:Ansi.Style.t ->
+    ?bins:bin_method ->
+    ?normalize:histogram_normalize ->
+    x:('a -> float) ->
+    'a array ->
+    t
+  (** [histogram ~x data] creates a histogram from continuous data.
+
+      Automatically bins the data and creates vertical bars showing the
+      distribution.
+
+      @param bins Binning method. Default is [Bins 10].
+      @param normalize Output values. Default is [`Count]. *)
 end
 
 module Hit : sig
@@ -908,6 +1065,11 @@ module Layout : sig
   val y_domain : t -> View.window
   (** [y_domain t] returns the full Y-axis data domain. *)
 
+  val y2_domain : t -> View.window option
+  (** [y2_domain t] returns the secondary Y-axis data domain.
+
+      Returns [None] if no Y2 scale is configured. *)
+
   val x_view : t -> View.window
   (** [x_view t] returns the effective X-axis view window used for rendering.
 
@@ -916,6 +1078,22 @@ module Layout : sig
 
   val y_view : t -> View.window
   (** [y_view t] returns the effective Y-axis view window. *)
+
+  val y2_view : t -> View.window option
+  (** [y2_view t] returns the secondary Y-axis view window.
+
+      Returns [None] if no Y2 scale is configured. *)
+
+  val y2_axis_width : t -> int
+  (** [y2_axis_width t] returns the width reserved for the secondary Y-axis.
+
+      Returns [0] if no Y2 axis is configured. *)
+
+  val has_y2 : t -> bool
+  (** [has_y2 t] returns [true] if the layout has a secondary Y-axis configured.
+
+      This is [true] when both {!with_y2_scale} and {!with_y2_axis} have been
+      called on the chart specification. *)
 
   val data_of_px : t -> px:int -> py:int -> (float * float) option
   (** [data_of_px t ~px ~py] converts pixel coordinates to data coordinates.
@@ -1091,6 +1269,65 @@ module Overlay : sig
         Internal padding in cells. Default is [1]. Negative values are clamped
         to [0].
       @param anchor Positioning hint. Default is [`Auto]. *)
+
+  type h_anchor = [ `Left | `Center | `Right ]
+  (** Horizontal text alignment.
+
+      - [`Left]: Anchor at left edge of text.
+      - [`Center]: Anchor at center of text.
+      - [`Right]: Anchor at right edge of text. *)
+
+  type v_anchor = [ `Top | `Middle | `Bottom ]
+  (** Vertical text alignment.
+
+      - [`Top]: Anchor at top of text.
+      - [`Middle]: Anchor at vertical center.
+      - [`Bottom]: Anchor at bottom of text. *)
+
+  val text :
+    ?style:Ansi.Style.t ->
+    ?anchor:h_anchor ->
+    ?v_anchor:v_anchor ->
+    Layout.t ->
+    Grid.t ->
+    x:float ->
+    y:float ->
+    string ->
+    unit
+  (** [text layout grid ~x ~y label] draws text at data coordinates [(x, y)].
+
+      The text is positioned according to [anchor] (horizontal) and [v_anchor]
+      (vertical). The text is only rendered if it falls within the plot area.
+
+      @param style Text style. Default is theme's [labels] style.
+      @param anchor Horizontal alignment. Default is [`Left].
+      @param v_anchor Vertical alignment. Default is [`Middle]. *)
+
+  type arrow_head = [ `None | `Arrow | `Dot ]
+  (** Arrow head style.
+
+      - [`None]: No head (plain line).
+      - [`Arrow]: Directional arrow head.
+      - [`Dot]: Circular dot at endpoint. *)
+
+  val arrow :
+    ?style:Ansi.Style.t ->
+    ?head:arrow_head ->
+    Layout.t ->
+    Grid.t ->
+    x1:float ->
+    y1:float ->
+    x2:float ->
+    y2:float ->
+    unit
+  (** [arrow layout grid ~x1 ~y1 ~x2 ~y2] draws an arrow from [(x1, y1)] to
+      [(x2, y2)] in data coordinates.
+
+      The line is drawn using a simple step pattern. The arrow head (if any) is
+      rendered at [(x2, y2)].
+
+      @param style Line style. Default is theme's [labels] style.
+      @param head Arrow head style. Default is [`Arrow]. *)
 end
 
 module Legend : sig
@@ -1199,11 +1436,23 @@ val with_x_scale : Scale.t -> t -> t
 val with_y_scale : Scale.t -> t -> t
 (** [with_y_scale scale t] sets the Y-axis scale to [scale]. *)
 
+val with_y2_scale : Scale.t -> t -> t
+(** [with_y2_scale scale t] sets the secondary Y-axis scale.
+
+    Use with marks that have [~y_axis:`Y2] to plot data on an independent
+    right-side axis. The scale domain is computed from Y2 marks only. *)
+
 val with_axes : ?x:Axis.t -> ?y:Axis.t -> t -> t
 (** [with_axes ~x ~y t] configures axis rendering.
 
     Theme defaults are applied to provided axes. [None] preserves existing axis
     configuration. *)
+
+val with_y2_axis : Axis.t -> t -> t
+(** [with_y2_axis axis t] configures the secondary Y-axis rendering.
+
+    The Y2 axis is drawn on the right side of the plot. Theme defaults are
+    applied. Use with {!with_y2_scale} to enable dual-axis charts. *)
 
 val with_grid : Gridlines.t -> t -> t
 (** [with_grid grid t] sets the grid configuration to [grid].
@@ -1223,6 +1472,7 @@ val line :
   ?resolution:Raster.resolution ->
   ?pattern:Charset.line_pattern ->
   ?glyph:string ->
+  ?y_axis:Mark.y_axis_selector ->
   x:('a -> float) ->
   y:('a -> float) ->
   'a array ->
@@ -1240,6 +1490,7 @@ val line_opt :
   ?resolution:Raster.resolution ->
   ?pattern:Charset.line_pattern ->
   ?glyph:string ->
+  ?y_axis:Mark.y_axis_selector ->
   x:('a -> float) ->
   y:('a -> float option) ->
   'a array ->
@@ -1256,6 +1507,7 @@ val scatter :
   ?style:Ansi.Style.t ->
   ?glyph:string ->
   ?mode:Mark.scatter_mode ->
+  ?y_axis:Mark.y_axis_selector ->
   x:('a -> float) ->
   y:('a -> float) ->
   'a array ->
@@ -1321,6 +1573,7 @@ val rule_y :
   ?id:Mark.id ->
   ?style:Ansi.Style.t ->
   ?pattern:Charset.line_pattern ->
+  ?y_axis:Mark.y_axis_selector ->
   float ->
   t ->
   t
@@ -1362,6 +1615,7 @@ val candles :
   ?bearish:Ansi.Style.t ->
   ?width:Mark.candle_width ->
   ?body:Mark.candle_body ->
+  ?y_axis:Mark.y_axis_selector ->
   Mark.ohlc array ->
   t ->
   t
@@ -1373,6 +1627,7 @@ val circle :
   ?id:Mark.id ->
   ?style:Ansi.Style.t ->
   ?resolution:Raster.resolution ->
+  ?y_axis:Mark.y_axis_selector ->
   cx:('a -> float) ->
   cy:('a -> float) ->
   r:('a -> float) ->
@@ -1393,6 +1648,71 @@ val column_background : ?id:Mark.id -> ?style:Ansi.Style.t -> float -> t -> t
 (** [column_background x t] adds a vertical background column at x position [x].
 
     Convenience for [add (Mark.column_background x) t]. *)
+
+val area :
+  ?id:Mark.id ->
+  ?label:string ->
+  ?style:Ansi.Style.t ->
+  ?baseline:Mark.area_baseline ->
+  ?resolution:Raster.resolution ->
+  ?y_axis:Mark.y_axis_selector ->
+  x:('a -> float) ->
+  y:('a -> float) ->
+  'a array ->
+  t ->
+  t
+(** [area ~x ~y data t] adds a filled area chart.
+
+    Fills the region between the data line and a baseline. Useful for showing
+    cumulative values or emphasizing the magnitude of a time series.
+
+    @param baseline
+      Bottom of fill region. Default is [`Zero]. Use [`Value v] for a custom
+      baseline.
+    @param resolution
+      Rendering resolution. [`Cell] uses full blocks, [`Braille2x4] provides
+      sub-cell precision.
+    @param y_axis Which Y-axis to use. Default is [`Y1]. *)
+
+val fill_between :
+  ?id:Mark.id ->
+  ?label:string ->
+  ?style:Ansi.Style.t ->
+  ?resolution:Raster.resolution ->
+  ?y_axis:Mark.y_axis_selector ->
+  x:('a -> float) ->
+  y_low:('a -> float) ->
+  y_high:('a -> float) ->
+  'a array ->
+  t ->
+  t
+(** [fill_between ~x ~y_low ~y_high data t] fills the region between two lines.
+
+    Useful for showing confidence intervals, error bounds, or ranges between two
+    related series.
+
+    @param resolution
+      Rendering resolution. [`Cell] uses medium-shade blocks, [`Braille2x4]
+      provides sub-cell precision.
+    @param y_axis Which Y-axis to use. Default is [`Y1]. *)
+
+val histogram :
+  ?id:Mark.id ->
+  ?label:string ->
+  ?style:Ansi.Style.t ->
+  ?bins:Mark.bin_method ->
+  ?normalize:Mark.histogram_normalize ->
+  x:('a -> float) ->
+  'a array ->
+  t ->
+  t
+(** [histogram ~x data t] creates a histogram from continuous data.
+
+    Automatically bins the data and renders vertical bars showing the
+    distribution. Useful for visualizing data distributions.
+
+    @param bins Binning method. Default is [Bins 10].
+    @param normalize Output values. Default is [`Count]. *)
 
 val layout :
   ?view:View.t -> ?x:int -> ?y:int -> t -> width:int -> height:int -> Layout.t

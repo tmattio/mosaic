@@ -8,9 +8,19 @@ module Event = Mosaic_ui.Event
 
 (* --- Chart types --- *)
 
-type chart_type = Line | Scatter | Bar | Stacked_bar | Heatmap | Candlestick
+type chart_type =
+  | Line
+  | Scatter
+  | Bar
+  | Stacked_bar
+  | Heatmap
+  | Candlestick
+  | Area
+  | Histogram
+  | Dual_axis
 
-let all_charts = [ Line; Scatter; Bar; Stacked_bar; Heatmap; Candlestick ]
+let all_charts =
+  [ Line; Scatter; Bar; Stacked_bar; Heatmap; Candlestick; Area; Histogram; Dual_axis ]
 
 let chart_name = function
   | Line -> "Line"
@@ -19,6 +29,9 @@ let chart_name = function
   | Stacked_bar -> "Stacked Bar"
   | Heatmap -> "Heatmap"
   | Candlestick -> "Candlestick"
+  | Area -> "Area"
+  | Histogram -> "Histogram"
+  | Dual_axis -> "Dual Axis"
 
 let chart_index (c : chart_type) : int =
   let rec find i = function
@@ -190,6 +203,41 @@ let candlestick_data =
       let low = min open_ close -. Random.float 2.4 in
       Mark.{ time = float_of_int i; open_; high; low; close })
 
+(* Area chart data - CPU usage over time with variation *)
+let area_data =
+  Array.init 60 (fun i ->
+      let x = float_of_int i in
+      let base = 40.0 +. (sin (x *. 0.1) *. 20.0) in
+      let noise = Random.float 10.0 -. 5.0 in
+      (x, max 5.0 (min 95.0 (base +. noise))))
+
+(* Histogram data - normally distributed values *)
+let histogram_data =
+  Array.init 500 (fun _ ->
+      (* Box-Muller transform for normal distribution *)
+      let u1 = Random.float 1.0 in
+      let u2 = Random.float 1.0 in
+      let z = sqrt (-2.0 *. log (max 0.0001 u1)) *. cos (2.0 *. Float.pi *. u2) in
+      (* Mean 50, stddev 15 *)
+      50.0 +. (z *. 15.0))
+
+(* Dual axis data - price and volume *)
+let dual_axis_price_data =
+  Array.init 50 (fun i ->
+      let x = float_of_int i in
+      let trend = 100.0 +. (x *. 0.5) in
+      let cycle = sin (x *. 0.15) *. 10.0 in
+      let noise = Random.float 4.0 -. 2.0 in
+      (x, trend +. cycle +. noise))
+
+let dual_axis_volume_data =
+  Array.init 50 (fun i ->
+      let x = float_of_int i in
+      let base = 1000.0 +. (sin (x *. 0.2) *. 400.0) in
+      let spike = if i mod 7 = 0 then 800.0 else 0.0 in
+      let noise = Random.float 200.0 -. 100.0 in
+      (x, max 100.0 (base +. spike +. noise)))
+
 (* --- UI styles (for header/footer only) --- *)
 
 let header_bg = Ansi.Color.of_rgb 40 60 80
@@ -218,9 +266,13 @@ type model = {
   line_resolution : line_resolution;
   line_pattern : line_pattern;
   show_line_points : bool;
+  show_smoothing : bool;
+  show_confidence : bool;
+  show_annotations : bool;
   scatter_mode : scatter_mode;
   grid_pattern : Charset.line_pattern;
   charset : charset_mode;
+  use_log_scale : bool;
 }
 
 type msg =
@@ -240,6 +292,10 @@ type msg =
   | Toggle_theme
   | Toggle_help
   | Toggle_line_points
+  | Toggle_smoothing
+  | Toggle_confidence
+  | Toggle_annotations
+  | Toggle_log_scale
   | Cycle_style
   | Cycle_grid_pattern
   | Cycle_charset
@@ -260,9 +316,13 @@ let init () =
       line_resolution = `Braille2x4;
       line_pattern = `Solid;
       show_line_points = false;
+      show_smoothing = false;
+      show_confidence = false;
+      show_annotations = false;
       scatter_mode = `Braille;
       grid_pattern = `Solid;
       charset = `Unicode_light;
+      use_log_scale = false;
     },
     Cmd.none )
 
@@ -300,6 +360,16 @@ let spec_for (m : model) (ct : chart_type) : Matrix_charts.t =
   let theme = theme_of_model m in
   match ct with
   | Line ->
+      let smoothed_data =
+        if m.show_smoothing then Transform.ema 0.15 line_data else line_data
+      in
+      let confidence_data =
+        Array.map
+          (fun (x, y) ->
+            let band = 0.8 +. (sin (x *. 0.1) *. 0.3) in
+            (x, y -. band, y +. band))
+          line_data
+      in
       let chart =
         empty ~theme ()
         |> with_title "Waveform Analysis"
@@ -311,14 +381,45 @@ let spec_for (m : model) (ct : chart_type) : Matrix_charts.t =
              ~y:
                (Axis.default |> Axis.with_ticks 6 |> Axis.with_title "Amplitude")
         |> with_grid (grid_of_model m)
-        |> line ~id:"line" ~label:"Signal" ~resolution:m.line_resolution
-             ~pattern:m.line_pattern ~x:fst ~y:snd line_data
       in
-      if m.show_line_points then
+      (* Add confidence band first (behind line) *)
+      let chart =
+        if m.show_confidence then
+          chart
+          |> fill_between ~id:"confidence" ~label:"±1σ"
+               ~style:(Ansi.Style.make ~fg:(Ansi.Color.of_rgb 100 150 200) ())
+               ~resolution:`Cell
+               ~x:(fun (x, _, _) -> x)
+               ~y_low:(fun (_, lo, _) -> lo)
+               ~y_high:(fun (_, _, hi) -> hi)
+               confidence_data
+        else chart
+      in
+      (* Add main line *)
+      let chart =
         chart
-        |> scatter ~id:"points" ~label:"Samples" ~glyph:"∙" ~mode:`Cell ~x:fst
-             ~y:snd line_data
-      else chart
+        |> line ~id:"line" ~label:"Signal" ~resolution:m.line_resolution
+             ~pattern:m.line_pattern ~x:fst ~y:snd
+             (if m.show_smoothing then smoothed_data else line_data)
+      in
+      (* Add original data points if smoothing is on *)
+      let chart =
+        if m.show_smoothing then
+          chart
+          |> scatter ~id:"raw" ~label:"Raw"
+               ~style:(Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:12) ())
+               ~glyph:"·" ~mode:`Cell ~x:fst ~y:snd line_data
+        else chart
+      in
+      (* Add sample points if toggled *)
+      let chart =
+        if m.show_line_points then
+          chart
+          |> scatter ~id:"points" ~label:"Samples" ~glyph:"∙" ~mode:`Cell ~x:fst
+               ~y:snd line_data
+        else chart
+      in
+      chart
   | Scatter ->
       empty ~theme ()
       |> with_title "Cluster Distribution"
@@ -368,13 +469,67 @@ let spec_for (m : model) (ct : chart_type) : Matrix_charts.t =
            ~value:(fun (_, _, v) -> v)
            heatmap_data
   | Candlestick ->
-      empty ~theme () |> with_title "Price Action"
+      let title =
+        if m.use_log_scale then "Price Action (Log Scale)" else "Price Action"
+      in
+      let base =
+        empty ~theme () |> with_title title
+        |> with_frame (manual_frame ~margins:(2, 2, 3, 8) ())
+        |> with_axes
+             ~x:(Axis.default |> Axis.with_ticks 7 |> Axis.with_title "Time")
+             ~y:(Axis.default |> Axis.with_ticks 6 |> Axis.with_title "Price")
+        |> with_grid (grid_of_model m)
+      in
+      let chart =
+        if m.use_log_scale then base |> with_y_scale (Scale.log ()) else base
+      in
+      chart |> candles ~id:"ohlc" candlestick_data
+  | Area ->
+      let area_style = Ansi.Style.make ~fg:(Ansi.Color.of_rgb 100 180 255) () in
+      let line_style = Ansi.Style.make ~fg:(Ansi.Color.of_rgb 50 130 220) () in
+      empty ~theme ()
+      |> with_title "CPU Usage Over Time"
       |> with_frame (manual_frame ~margins:(2, 2, 3, 8) ())
       |> with_axes
-           ~x:(Axis.default |> Axis.with_ticks 7 |> Axis.with_title "Time")
-           ~y:(Axis.default |> Axis.with_ticks 6 |> Axis.with_title "Price")
+           ~x:(Axis.default |> Axis.with_ticks 6 |> Axis.with_title "Time (s)")
+           ~y:(Axis.default |> Axis.with_ticks 5 |> Axis.with_title "Usage (%)")
       |> with_grid (grid_of_model m)
-      |> candles ~id:"ohlc" candlestick_data
+      |> area ~id:"cpu" ~label:"CPU" ~style:area_style ~baseline:`Zero
+           ~resolution:`Cell ~x:fst ~y:snd area_data
+      |> line ~id:"cpu-line" ~style:line_style ~resolution:`Braille2x4 ~x:fst
+           ~y:snd area_data
+  | Histogram ->
+      let hist_style = Ansi.Style.make ~fg:(Ansi.Color.of_rgb 150 200 100) () in
+      empty ~theme ()
+      |> with_title "Value Distribution"
+      |> with_frame (manual_frame ~margins:(2, 2, 3, 8) ())
+      |> with_axes
+           ~x:(Axis.default |> Axis.with_ticks 6 |> Axis.with_title "Value")
+           ~y:(Axis.default |> Axis.with_ticks 5 |> Axis.with_title "Count")
+      |> with_grid (grid_of_model m)
+      |> histogram ~id:"dist" ~label:"Distribution" ~style:hist_style
+           ~bins:(Mark.Bins 20) ~normalize:`Count ~x:Fun.id histogram_data
+  | Dual_axis ->
+      let price_style = Ansi.Style.make ~fg:(Ansi.Color.of_rgb 100 200 255) () in
+      let volume_style =
+        Ansi.Style.make ~fg:(Ansi.Color.of_rgb 255 180 100) ()
+      in
+      empty ~theme ()
+      |> with_title "Price & Volume (Dual Axis)"
+      |> with_frame (manual_frame ~margins:(2, 2, 3, 8) ())
+      |> with_axes
+           ~x:(Axis.default |> Axis.with_ticks 6 |> Axis.with_title "Time")
+           ~y:(Axis.default |> Axis.with_ticks 5 |> Axis.with_title "Price ($)")
+      |> with_y2_scale (Scale.numeric ())
+      |> with_y2_axis
+           (Axis.default |> Axis.with_ticks 4 |> Axis.with_title "Volume")
+      |> with_grid (grid_of_model m)
+      (* Volume as area on Y2 axis (drawn first, behind price line) *)
+      |> area ~id:"volume" ~label:"Volume" ~style:volume_style ~y_axis:`Y2
+           ~baseline:`Zero ~resolution:`Cell ~x:fst ~y:snd dual_axis_volume_data
+      (* Price line on Y1 axis *)
+      |> line ~id:"price" ~label:"Price" ~style:price_style
+           ~resolution:`Braille2x4 ~x:fst ~y:snd dual_axis_price_data
 
 (* --- Layout helpers used in update (interaction) --- *)
 
@@ -407,9 +562,9 @@ let string_of_hit_kind : Hit.kind -> string = function
 
 let hit_params (ct : chart_type) : int * Hit.policy =
   match ct with
-  | Line -> (4, `Nearest_x)
+  | Line | Area | Dual_axis -> (4, `Nearest_x)
   | Scatter -> (4, `Nearest_px)
-  | Bar | Stacked_bar -> (2, `Nearest_px)
+  | Bar | Stacked_bar | Histogram -> (2, `Nearest_px)
   | Heatmap -> (3, `Nearest_px)
   | Candlestick -> (2, `Nearest_x)
 
@@ -626,7 +781,12 @@ let update (msg : msg) (m : model) =
       | Heatmap ->
           ( { m with heatmap_mode = cycle_heatmap_render m.heatmap_mode },
             Cmd.none )
-      | Bar | Stacked_bar | Candlestick -> (m, Cmd.none))
+      | Bar | Stacked_bar | Candlestick | Area | Histogram | Dual_axis ->
+          (m, Cmd.none))
+  | Toggle_smoothing -> ({ m with show_smoothing = not m.show_smoothing }, Cmd.none)
+  | Toggle_confidence -> ({ m with show_confidence = not m.show_confidence }, Cmd.none)
+  | Toggle_annotations -> ({ m with show_annotations = not m.show_annotations }, Cmd.none)
+  | Toggle_log_scale -> ({ m with use_log_scale = not m.use_log_scale }, Cmd.none)
   | Cycle_grid_pattern ->
       ({ m with grid_pattern = cycle_grid_pattern m.grid_pattern }, Cmd.none)
   | Cycle_charset -> ({ m with charset = cycle_charset m.charset }, Cmd.none)
@@ -671,11 +831,17 @@ let draw_help_overlay (m : model) (layout : Layout.t) (grid : Grid.t) =
               [
                 "m: cycle line mode (Cell/Wave/Block2x2/Braille + pattern)";
                 "p: toggle data points";
+                "s: toggle smoothing (EMA)";
+                "f: toggle confidence bands";
               ]
           | Scatter -> [ "m: cycle scatter mode (Cell/Braille/Density)" ]
           | Heatmap ->
               [ "m: cycle heatmap mode (Cells/Halfblock/Shaded/Dense)" ]
-          | Bar | Stacked_bar | Candlestick -> []
+          | Bar | Stacked_bar -> []
+          | Candlestick -> [ "l: toggle log scale" ]
+          | Area -> []
+          | Histogram -> []
+          | Dual_axis -> []
         in
         let lines =
           [
@@ -755,7 +921,7 @@ let view (m : model) =
         Printf.sprintf "  scatter:%s" (scatter_mode_name m.scatter_mode)
     | Heatmap ->
         Printf.sprintf "  heatmap:%s" (heatmap_mode_name m.heatmap_mode)
-    | Bar | Stacked_bar | Candlestick -> ""
+    | Bar | Stacked_bar | Candlestick | Area | Histogram | Dual_axis -> ""
   in
   let status =
     Printf.sprintf "theme:%s  charset:%s  grid:%s(%s)%s  view[x=%s y=%s]%s"
@@ -852,6 +1018,11 @@ let subscriptions (_m : model) =
       | Char c when Uchar.equal c (Uchar.of_char 'p') -> Some Toggle_line_points
       | Char c when Uchar.equal c (Uchar.of_char 'G') -> Some Cycle_grid_pattern
       | Char c when Uchar.equal c (Uchar.of_char 'c') -> Some Cycle_charset
+      (* Feature toggles for Line/Candlestick charts *)
+      | Char c when Uchar.equal c (Uchar.of_char 's') -> Some Toggle_smoothing
+      | Char c when Uchar.equal c (Uchar.of_char 'f') -> Some Toggle_confidence
+      | Char c when Uchar.equal c (Uchar.of_char 'a') -> Some Toggle_annotations
+      | Char c when Uchar.equal c (Uchar.of_char 'l') -> Some Toggle_log_scale
       | _ -> None)
 
 let () =
