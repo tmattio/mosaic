@@ -212,28 +212,24 @@ let apply_metrics t ~viewport_w ~viewport_h =
 
 let get_auto_dir_x t mouse_x : int =
   let rel_x = mouse_x - Renderable.x t.node in
-  let dist_left = rel_x in
   let dist_right = Renderable.width t.node - rel_x in
-  if dist_left <= 3 then if t.scroll_x > 0 then -1 else 0
+  if rel_x <= 3 then if t.scroll_x > 0 then -1 else 0
   else if dist_right <= 3 then if t.scroll_x < t.max_scroll_x then 1 else 0
   else 0
 
 let get_auto_dir_y t mouse_y : int =
   let rel_y = mouse_y - Renderable.y t.node in
-  let dist_top = rel_y in
   let dist_bottom = Renderable.height t.node - rel_y in
-  if dist_top <= 3 then if t.scroll_y > 0 then -1 else 0
+  if rel_y <= 3 then if t.scroll_y > 0 then -1 else 0
   else if dist_bottom <= 3 then if t.scroll_y < t.max_scroll_y then 1 else 0
   else 0
 
 let get_auto_speed t mouse_x mouse_y : float =
   let rel_x = mouse_x - Renderable.x t.node in
   let rel_y = mouse_y - Renderable.y t.node in
-  let dist_left = rel_x in
   let dist_right = Renderable.width t.node - rel_x in
-  let dist_top = rel_y in
   let dist_bottom = Renderable.height t.node - rel_y in
-  let min_d = min dist_left (min dist_right (min dist_top dist_bottom)) in
+  let min_d = min rel_x (min dist_right (min rel_y dist_bottom)) in
   if min_d <= 1 then 72. else if min_d <= 2 then 36. else 6.
 
 let stop_auto_scroll t =

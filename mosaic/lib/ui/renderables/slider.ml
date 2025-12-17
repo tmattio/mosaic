@@ -133,10 +133,10 @@ let set_viewport_size t size =
       t.props <- { t.props with viewport_size = Some size };
       request t
 
-let set_range t ~min ~max =
-  let min_v = min in
-  let max_v = max in
-  let min_v, max_v = if max_v < min_v then (max_v, min_v) else (min_v, max_v) in
+let set_range t ~min:min_val ~max:max_val =
+  let min_v, max_v =
+    if max_val < min_val then (max_val, min_val) else (min_val, max_val)
+  in
   let changed =
     not
       (Float.equal min_v t.props.min_value
