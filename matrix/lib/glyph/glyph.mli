@@ -14,7 +14,7 @@
 
     {[
       let pool = create_pool () in
-      encode pool "Hello 👋 World" (fun glyph ->
+      encode pool ~width_method:`Unicode ~tab_width:2 "Hello 👋 World" (fun glyph ->
           Printf.printf "%s " (to_string pool glyph))
       (* Output: H e l l o   👋     W o r l d *)
     ]}
@@ -135,6 +135,22 @@ val intern :
 
     {b UTF-8 handling}: Invalid byte sequences are replaced with U+FFFD
     (replacement character). *)
+
+val iter_grapheme_info :
+  width_method:width_method ->
+  tab_width:int ->
+  string ->
+  (offset:int -> len:int -> width:int -> unit) ->
+  unit
+(** [iter_grapheme_info ~width_method ~tab_width str f] walks grapheme clusters
+    in [str] and calls [f] with their byte [offset], byte [len], and display
+    [width].
+
+    Uses the same width calculation and ZWJ handling as [encode]. Graphemes
+    whose width resolves to 0 (control / zero-width sequences) are skipped.
+
+    {b UTF-8 handling}: Invalid byte sequences are treated as individual
+    replacement characters (U+FFFD). *)
 
 val intern_char : pool -> int -> t
 (** [intern_char pool codepoint] creates a glyph from a single Unicode

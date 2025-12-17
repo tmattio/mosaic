@@ -558,56 +558,124 @@ let intern_char pool u =
 
 (* Encoding (string -> glyph stream) *)
 
-let rec encode_loop pool seg method_ tab_width ignore_zwj str len f i =
-  if i >= len then ()
-  else if
-    i + 4 <= len
-    &&
-    let c0 = Char.code (String.unsafe_get str i) in
-    let c1 = Char.code (String.unsafe_get str (i + 1)) in
-    let c2 = Char.code (String.unsafe_get str (i + 2)) in
-    let c3 = Char.code (String.unsafe_get str (i + 3)) in
-    c0 lor c1 lor c2 lor c3 < 128
-  then (
-    let c0 = Char.code (String.unsafe_get str i) in
-    let c1 = Char.code (String.unsafe_get str (i + 1)) in
-    let c2 = Char.code (String.unsafe_get str (i + 2)) in
-    let c3 = Char.code (String.unsafe_get str (i + 3)) in
-    let w0 = ascii_width ~tab_width c0 in
-    let w1 = ascii_width ~tab_width c1 in
-    let w2 = ascii_width ~tab_width c2 in
-    let w3 = ascii_width ~tab_width c3 in
-    if w0 > 0 then f c0;
-    if w1 > 0 then f c1;
-    if w2 > 0 then f c2;
-    if w3 > 0 then f c3;
-    encode_loop pool seg method_ tab_width ignore_zwj str len f (i + 4))
-  else
-    let c = String.unsafe_get str i in
-    if Char.code c < 128 then (
-      let w = ascii_width ~tab_width (Char.code c) in
-      if w > 0 then f (Char.code c);
-      encode_loop pool seg method_ tab_width ignore_zwj str len f (i + 1))
+let encode_lazy pool ~width_method ~tab_width str on_grapheme =
+  let tab_width = normalize_tab_width tab_width in
+
+  (* Emit helper: builds a lazily allocated emitter for a complex grapheme. *)
+  let make_complex_emitter ~str ~off ~len ~width =
+    let cached = ref None in
+    fun f ->
+      let start, idx, gen =
+        match !cached with
+        | Some triple -> triple
+        | None ->
+            let idx = alloc_string pool str off len in
+            let gen = Array.unsafe_get pool.generations idx in
+            let start = pack_start idx gen width in
+            let triple = (start, idx, gen) in
+            cached := Some triple;
+            triple
+      in
+      f start;
+      if width > 1 then
+        let max_span = min 4 width - 1 in
+        for k = 1 to max_span do
+          f (pack_continuation ~idx ~gen ~left:k ~right:(max_span - k))
+        done
+  in
+
+  let rec loop seg method_ ignore_zwj str len i =
+    if i >= len then ()
+    else if
+      i + 4 <= len
+      &&
+      let c0 = Char.code (String.unsafe_get str i) in
+      let c1 = Char.code (String.unsafe_get str (i + 1)) in
+      let c2 = Char.code (String.unsafe_get str (i + 2)) in
+      let c3 = Char.code (String.unsafe_get str (i + 3)) in
+      c0 lor c1 lor c2 lor c3 < 128
+    then (
+      let emit_ascii b =
+        let w = ascii_width ~tab_width b in
+        if w > 0 then
+          on_grapheme ~width:w
+            ~emit:(fun f -> if w > 0 then f b else ())
+      in
+      emit_ascii (Char.code (String.unsafe_get str i));
+      emit_ascii (Char.code (String.unsafe_get str (i + 1)));
+      emit_ascii (Char.code (String.unsafe_get str (i + 2)));
+      emit_ascii (Char.code (String.unsafe_get str (i + 3)));
+      loop seg method_ ignore_zwj str len (i + 4))
     else
-      let end_pos = next_boundary seg ~ignore_zwj str i len in
-      let clus_len = end_pos - i in
-      let w = grapheme_width ~method_ ~tab_width str i clus_len in
-      if w > 0 then (
-        let idx = alloc_string pool str i clus_len in
-        let gen = Array.unsafe_get pool.generations idx in
-        f (pack_start idx gen w);
-        if w > 1 then
-          for k = 1 to min 4 w - 1 do
-            f (pack_continuation ~idx ~gen ~left:k ~right:(min 4 w - 1 - k))
-          done;
-        encode_loop pool seg method_ tab_width ignore_zwj str len f end_pos)
-      else encode_loop pool seg method_ tab_width ignore_zwj str len f end_pos
+      let c = String.unsafe_get str i in
+      if Char.code c < 128 then (
+        let w = ascii_width ~tab_width (Char.code c) in
+        if w > 0 then
+          on_grapheme ~width:w
+            ~emit:(fun f -> if w > 0 then f (Char.code c) else ());
+        loop seg method_ ignore_zwj str len (i + 1))
+      else
+        let end_pos = next_boundary seg ~ignore_zwj str i len in
+        let clus_len = end_pos - i in
+        let w = grapheme_width ~method_ ~tab_width str i clus_len in
+        if w > 0 then (
+          let emit = make_complex_emitter ~str ~off:i ~len:clus_len ~width:w in
+          on_grapheme ~width:w ~emit;
+          loop seg method_ ignore_zwj str len end_pos)
+        else loop seg method_ ignore_zwj str len end_pos
+  in
+
+  let seg = Uuseg_grapheme_cluster.create () in
+  loop seg width_method (width_method = `No_zwj) str (String.length str) 0
 
 let encode pool ~width_method ~tab_width str f =
+  encode_lazy pool ~width_method ~tab_width str (fun ~width ~emit ->
+      if width > 0 then emit f)
+
+let iter_grapheme_info ~width_method ~tab_width str f =
   let tab_width = normalize_tab_width tab_width in
-  let seg = Uuseg_grapheme_cluster.create () in
-  encode_loop pool seg width_method tab_width (width_method = `No_zwj) str
-    (String.length str) f 0
+  let len = String.length str in
+  if len = 0 then ()
+  else
+    let seg = Uuseg_grapheme_cluster.create () in
+    let ignore_zwj = width_method = `No_zwj in
+
+    let emit_ascii i =
+      let b = Char.code (String.unsafe_get str i) in
+      let w = ascii_width ~tab_width b in
+      if w > 0 then f ~offset:i ~len:1 ~width:w
+    in
+
+    let rec loop i =
+      if i >= len then ()
+      else if
+        i + 4 <= len
+        &&
+        let c0 = Char.code (String.unsafe_get str i) in
+        let c1 = Char.code (String.unsafe_get str (i + 1)) in
+        let c2 = Char.code (String.unsafe_get str (i + 2)) in
+        let c3 = Char.code (String.unsafe_get str (i + 3)) in
+        c0 lor c1 lor c2 lor c3 < 128
+      then (
+        emit_ascii i;
+        emit_ascii (i + 1);
+        emit_ascii (i + 2);
+        emit_ascii (i + 3);
+        loop (i + 4))
+      else
+        let c = String.unsafe_get str i in
+        if Char.code c < 128 then (
+          emit_ascii i;
+          loop (i + 1))
+        else
+          let end_pos = next_boundary seg ~ignore_zwj str i len in
+          let clus_len = end_pos - i in
+          let w = grapheme_width ~method_:width_method ~tab_width str i clus_len in
+          if w > 0 then (f ~offset:i ~len:clus_len ~width:w; loop end_pos)
+          else loop end_pos
+    in
+
+    loop 0
 
 (* Grapheme Iteration *)
 
