@@ -49,8 +49,6 @@ type app = {
   mutable force_full_next_frame : bool;
   mutable frame_interval : float option;
   mutable next_frame_deadline : float option;
-  frame_writer : Frame_writer.t;
-  mutable render_bytes : Bytes.t;
   (* Config *)
   mode : mode;
   raw_mode : bool;
@@ -158,20 +156,6 @@ let terminal t = t.terminal
 let capabilities t = t.caps
 let running t = t.running
 let wake_loop t = Terminal.wake t.terminal
-
-let is_linux () =
-  Sys.os_type = "Unix"
-  &&
-    try
-      let ic = Unix.open_process_in "uname -s" in
-      let result =
-        Fun.protect
-          ~finally:(fun () ->
-            try ignore (Unix.close_process_in ic) with _ -> ())
-          (fun () -> try Some (input_line ic) with End_of_file -> None)
-      in
-      match result with Some "Linux" -> true | _ -> false
-    with _ -> false
 
 let request_redraw t =
   if t.control_state <> `Explicit_suspended then (
@@ -363,6 +347,9 @@ let ensure_trailing_newline s =
 let static_write_raw t text =
   if t.mode = `Alt then ()
   else (
+    (* All output goes through Terminal.write for proper serialization.
+       Terminal.write automatically drains pending writes before writing. *)
+    let send s = Terminal.write t.terminal s in
     (match t.mode with
     | `Primary_split ->
         (* Temporarily release the reserved region, print static text, then
@@ -371,8 +358,7 @@ let static_write_raw t text =
         let rows =
           if String.length text = 0 then 0
           else (
-            Terminal.write t.terminal text;
-            Terminal.flush t.terminal;
+            send text;
             rows_of_string text)
         in
         if rows <> 0 then t.static_height <- t.static_height + rows;
@@ -407,7 +393,6 @@ let static_clear t =
   else (
     release_primary_region t;
     Terminal.write t.terminal Ansi.clear_and_home;
-    Terminal.flush t.terminal;
     let cols, rows = Terminal.size t.terminal in
     t.width <- max 1 cols;
     t.screen_height <- max 1 rows;
@@ -584,7 +569,10 @@ let submit t =
       | `Stdout -> true
       | `Fd fd -> ( try Unix.isatty fd with _ -> false)
     in
-    let send s = if String.length s > 0 then Terminal.write t.terminal s in
+
+    (* All output goes through Terminal to ensure proper serialization
+       and prevent interleaving between frame writes and control sequences. *)
+    let send s = Terminal.write t.terminal s in
     let sync_on =
       if use_sync then Some (Ansi.Escape.to_string Ansi.Escape.sync_output_on)
       else None
@@ -599,19 +587,19 @@ let submit t =
     (* 4. Render to Bytes *)
     let forced_full = t.force_full_next_frame in
     if forced_full then t.force_full_next_frame <- false;
+    let render_buf = Terminal.render_buffer t.terminal in
     let len =
-      Screen.render_to_bytes ~full:forced_full t.screen t.render_bytes
+      Screen.render_to_bytes ~full:forced_full t.screen render_buf
     in
 
-    (* 5. Flush *)
+    (* 5. Present *)
     let stdout_start = monotonic_now () in
-    if len > 0 then
-      t.render_bytes <- Frame_writer.submit t.frame_writer t.render_bytes len;
+    if len > 0 then Terminal.present t.terminal len;
 
     (* When sync sequences are enabled, ensure the frame bytes have flushed
        before emitting the trailing sync_off to avoid interleaving on threaded
        writers. *)
-    if use_sync then Frame_writer.drain t.frame_writer;
+    if use_sync then Terminal.drain t.terminal;
     Option.iter send sync_off;
     (match t.output with `Stdout -> Terminal.flush t.terminal | `Fd _ -> ());
 
@@ -867,7 +855,6 @@ let close t =
         deregister_shutdown_handler handler;
         t.signal_handler <- None
     | None -> ());
-    Frame_writer.close t.frame_writer;
     let term = t.terminal in
     ignore (flush_stdout_capture t);
     (try Terminal.flush_input term with _ -> ());
@@ -916,7 +903,7 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     ?(debug_overlay_corner = `Bottom_right) ?(debug_overlay_capacity = 120)
     ?(frame_dump_every = 0) ?frame_dump_dir ?frame_dump_pattern
     ?(frame_dump_hits = false) ?(cursor_visible = true) ?explicit_width
-    ?(render_thread = not (is_linux ())) ?(input_timeout = None)
+    ?render_thread ?(input_timeout = None)
     ?(resize_debounce = Some 0.1) ?initial_caps ?(output = `Stdout)
     ?(signal_handlers = true) () : app =
   let capture, stdout_restore_fd, stdout_tui_fd = setup_stdout_capture output in
@@ -926,9 +913,10 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     | None, `Stdout -> Unix.stdout
     | None, `Fd fd -> fd
   in
+  let render_buffer_size = 1024 * 1024 * 2 in
   let terminal =
     Terminal.open_terminal ~probe:true ~probe_timeout:1.0 ~output:term_output
-      ?initial_caps ()
+      ?initial_caps ?render_thread ~render_buffer_size ()
   in
   let caps = Terminal.capabilities terminal in
   let initial_cols, initial_rows = Terminal.size terminal in
@@ -949,15 +937,6 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
   let bracketed_paste = bracketed_paste in
   let focus_reporting = focus_reporting && caps.focus_tracking in
   let target_fps = target_fps in
-  let writer_fd =
-    match output with `Stdout -> Terminal.output_fd terminal | `Fd fd -> fd
-  in
-  let render_bytes = Bytes.create (1024 * 1024 * 2) in
-  let frame_writer =
-    Frame_writer.create ~fd:writer_fd
-      ~size:(Bytes.length render_bytes)
-      ~use_thread:render_thread
-  in
   let effective_mouse_mode =
     if mouse_enabled then
       match mouse with Some m -> Some m | None -> Some `Sgr_any
@@ -991,8 +970,6 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
       force_full_next_frame = true;
       frame_interval = None;
       next_frame_deadline = None;
-      frame_writer;
-      render_bytes;
       mode;
       raw_mode;
       mouse_mode = effective_mouse_mode;

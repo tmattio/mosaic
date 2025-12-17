@@ -227,10 +227,12 @@ val open_terminal :
   ?input:file_descr ->
   ?output:file_descr ->
   ?initial_caps:capabilities ->
+  ?render_thread:bool ->
+  ?render_buffer_size:int ->
   unit ->
   t
-(** [open_terminal ?probe ?probe_timeout ?input ?output ?initial_caps ()]
-    creates a terminal session.
+(** [open_terminal ?probe ?probe_timeout ?input ?output ?initial_caps
+    ?render_thread ?render_buffer_size ()] creates a terminal session.
 
     The handle starts in cooked mode with no extra protocols enabled. The
     function:
@@ -240,7 +242,8 @@ val open_terminal :
       be restored by {!close};
     - installs a global SIGWINCH handler (shared across all terminal sessions;
       each session enqueues its own resize events independently) that enqueues
-      {!Input.Resize} events and wakes the event loop; and
+      {!Input.Resize} events and wakes the event loop;
+    - initializes the frame writer for serialized output; and
     - on Windows, enables VT100 emulation and sets the console output codepage
       to UTF-8. {b Note}: the codepage change affects the entire process, not
       just this terminal handle. Failures are silently ignored as this is a
@@ -266,6 +269,9 @@ val open_terminal :
     @param input defaults to [Unix.stdin]
     @param output defaults to [Unix.stdout]
     @param probe_timeout probe window in seconds
+    @param render_thread if [true], uses a background thread for frame writes;
+           defaults to [true] on non-Linux platforms, [false] on Linux
+    @param render_buffer_size initial size of frame buffers; defaults to 2MB
     @raise Unix.Unix_error if creating internal pipes or reading termios fails
 *)
 
@@ -516,9 +522,9 @@ val size : t -> int * int
 val write : t -> string -> unit
 (** [write t s] writes string [s] to the terminal output.
 
-    Performs a complete write, retrying on [EINTR]/[EAGAIN]. For TTY outputs,
-    behaviour matches normal terminal writes. For non-TTY outputs, data may be
-    buffered until {!flush} is called.
+    This function routes through the frame writer, draining any pending frame
+    writes first to ensure proper ordering. Use this for control sequences
+    that must be serialized with frame data.
 
     @raise Error if the write ultimately fails *)
 
@@ -527,6 +533,33 @@ val write_bytes : t -> bytes -> unit
 
     Equivalent to {!write} but accepts [bytes]. Retries on [EINTR]/[EAGAIN] and
     raises {!Error} on hard failures. *)
+
+val render_buffer : t -> bytes
+(** [render_buffer t] returns the buffer to render into.
+
+    The returned buffer remains valid until the next call to {!present}.
+    After present, the buffer may have been swapped (in threaded mode), so
+    always call {!render_buffer} again before the next frame. *)
+
+val drain : t -> unit
+(** [drain t] blocks until any pending frame write has completed.
+
+    No-op if writer uses direct mode. *)
+
+val present : t -> int -> unit
+(** [present t len] presents the first [len] bytes of the render buffer
+    to the terminal.
+
+    In threaded mode:
+    - Blocks if the writer is currently busy (backpressure).
+    - Swaps the render buffer with the write buffer internally.
+    - Wakes up the writer thread.
+
+    In direct mode:
+    - Writes immediately to the output fd.
+
+    After calling this, the previous render buffer may no longer be valid.
+    Call {!render_buffer} to get the buffer for the next frame. *)
 
 val output_fd : t -> file_descr
 (** [output_fd t] returns the output file descriptor associated with the

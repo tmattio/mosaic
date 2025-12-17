@@ -55,10 +55,6 @@ let write_string fd str =
   let len = String.length str in
   if len > 0 then write_all fd (Bytes.unsafe_of_string str) 0 len
 
-let write_bytes fd bytes =
-  let len = Bytes.length bytes in
-  if len > 0 then write_all fd bytes 0 len
-
 let ignore_unix_errors f x = try f x with Unix_error _ -> ()
 let ignore_exn f x = try f x with _ -> ()
 let osc_prefix = "\027]"
@@ -125,6 +121,7 @@ type t = {
   mutable winch_handler : (unit -> unit) option;
   mutable pixel_resolution : (int * int) option;
   env_overrides : bool;
+  mutable writer : Frame_writer.t option;
 }
 
 let is_tty fd = try Unix.isatty fd with Unix_error _ -> false
@@ -577,8 +574,33 @@ let register_winch_handler, deregister_winch_handler =
   ( (fun fn -> handlers := fn :: !handlers),
     fun fn -> handlers := List.filter (fun f -> f != fn) !handlers )
 
+(* Platform detection for render_thread default *)
+let is_linux () =
+  Sys.os_type = "Unix"
+  &&
+    try
+      let ic = Unix.open_process_in "uname -s" in
+      let result =
+        Fun.protect
+          ~finally:(fun () ->
+            try ignore (Unix.close_process_in ic) with _ -> ())
+          (fun () -> try Some (input_line ic) with End_of_file -> None)
+      in
+      match result with Some "Linux" -> true | _ -> false
+    with _ -> false
+
+let default_render_buffer_size = 1024 * 1024 * 2 (* 2MB *)
+
 let open_terminal ?(probe = true) ?(probe_timeout = 0.2) ?(input = Unix.stdin)
-    ?(output = Unix.stdout) ?initial_caps () =
+    ?(output = Unix.stdout) ?initial_caps ?render_thread ?render_buffer_size () =
+  let use_thread = match render_thread with
+    | Some v -> v
+    | None -> not (is_linux ())
+  in
+  let buffer_size = match render_buffer_size with
+    | Some v -> v
+    | None -> default_render_buffer_size
+  in
   let input_is_tty = is_tty input in
   let output_is_tty = is_tty output in
   let parser = Input.Parser.create () in
@@ -633,6 +655,7 @@ let open_terminal ?(probe = true) ?(probe_timeout = 0.2) ?(input = Unix.stdin)
       winch_handler = None;
       pixel_resolution = None;
       env_overrides;
+      writer = Some (Frame_writer.create ~fd:output ~size:buffer_size ~use_thread);
     }
   in
   let cb =
@@ -650,6 +673,9 @@ let open_terminal ?(probe = true) ?(probe_timeout = 0.2) ?(input = Unix.stdin)
   result
 
 let close t =
+  (* Shutdown writer first to flush pending output *)
+  Option.iter (fun w -> ignore_exn Frame_writer.close w) t.writer;
+  t.writer <- None;
   ignore_exn reset_state t;
   Option.iter (fun cb -> ignore_exn deregister_winch_handler cb) t.winch_handler;
   t.winch_handler <- None;
@@ -696,11 +722,37 @@ let query_cursor_position ?(timeout = 0.05) t =
     in
     loop ())
 
-let write t str = write_string t.output str
-let write_bytes t bytes = write_bytes t.output bytes
 let output_fd t = t.output
 
 let query_pixel_resolution t =
   if t.output_is_tty then send t Esc.(to_string request_pixel_size)
 
 let pixel_resolution t = t.pixel_resolution
+
+
+(* Frame writing API *)
+
+let render_buffer t =
+  match t.writer with
+  | None -> failwith "Terminal.render_buffer: writer not initialized"
+  | Some w -> Frame_writer.render_buffer w
+
+let drain t =
+  match t.writer with
+  | None -> ()
+  | Some w -> Frame_writer.drain w
+
+let present t len =
+  match t.writer with
+  | None -> ()
+  | Some w -> Frame_writer.present w len
+
+let write t str =
+  match t.writer with
+  | None -> write_string t.output str
+  | Some w -> Frame_writer.submit_string w str
+
+let write_bytes t bytes =
+  let len = Bytes.length bytes in
+  if len > 0 then write t (Bytes.unsafe_to_string bytes)
+

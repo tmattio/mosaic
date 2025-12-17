@@ -18,24 +18,29 @@ let rec write_all fd bytes off len =
         wait_writable fd;
         write_all fd bytes off len
     | Unix_error (err, fn, arg) ->
-        Printf.eprintf "[Matrix] Frame_writer I/O error: %s\n%!"
+        Printf.eprintf "[Terminal] Frame_writer I/O error: %s\n%!"
           (Unix.error_message err);
         raise (Unix_error (err, fn, arg))
 
-(* Threaded Logic *)
+(* Direct mode: single buffer, synchronous writes *)
+type direct_state = {
+  fd : Unix.file_descr;
+  buffer : bytes;
+}
 
+(* Threaded mode: double buffering with async writes *)
 type threaded_state = {
   fd : Unix.file_descr;
   mutex : Mutex.t;
   cond : Condition.t;
-  (* The buffer currently owned by the worker thread *)
+  (* The buffer the app renders into *)
+  mutable render_buffer : bytes;
+  (* The buffer the worker thread writes from *)
   mutable write_buffer : bytes;
   mutable write_len : int;
-  (* Status flags *)
-  mutable busy : bool; (* True if worker has data to write *)
+  mutable busy : bool;
   mutable closing : bool;
   mutable thread : Thread.t option;
-  (* Error tracking: stores the first error encountered by worker thread *)
   mutable error : Unix.error option;
 }
 
@@ -82,39 +87,15 @@ let worker_loop state =
 
 (* Main API *)
 
-type t = Direct of Unix.file_descr | Threaded of threaded_state
-
-let drain = function
-  | Direct _ -> ()
-  | Threaded state ->
-      Mutex.lock state.mutex;
-      (try
-         while state.busy do
-           Condition.wait state.cond state.mutex
-         done
-       with _ -> ());
-      Mutex.unlock state.mutex
-
-let last_error = function
-  | Direct _ -> None
-  | Threaded state ->
-      Mutex.lock state.mutex;
-      let err = state.error in
-      Mutex.unlock state.mutex;
-      err
-
-let clear_error = function
-  | Direct _ -> ()
-  | Threaded state ->
-      Mutex.lock state.mutex;
-      state.error <- None;
-      Mutex.unlock state.mutex
+type t = Direct of direct_state | Threaded of threaded_state
 
 let create ~fd ~size ~use_thread =
-  if not use_thread then Direct fd
+  if not use_thread then
+    Direct { fd; buffer = Bytes.create size }
   else
     let mutex = Mutex.create () in
     let cond = Condition.create () in
+    let render_buffer = Bytes.create size in
     let write_buffer = Bytes.create size in
 
     let state =
@@ -122,6 +103,7 @@ let create ~fd ~size ~use_thread =
         fd;
         mutex;
         cond;
+        render_buffer;
         write_buffer;
         write_len = 0;
         busy = false;
@@ -135,14 +117,27 @@ let create ~fd ~size ~use_thread =
     state.thread <- Some t;
     Threaded state
 
-let submit t app_buffer len =
-  match t with
-  | Direct fd ->
-      if len > 0 then write_all fd app_buffer 0 len;
-      app_buffer
+let render_buffer = function
+  | Direct state -> state.buffer
+  | Threaded state -> state.render_buffer
+
+let drain = function
+  | Direct _ -> ()
   | Threaded state ->
-      if len <= 0 then app_buffer
-      else (
+      Mutex.lock state.mutex;
+      (try
+         while state.busy do
+           Condition.wait state.cond state.mutex
+         done
+       with _ -> ());
+      Mutex.unlock state.mutex
+
+let present t len =
+  match t with
+  | Direct state ->
+      if len > 0 then write_all state.fd state.buffer 0 len
+  | Threaded state ->
+      if len > 0 then (
         Mutex.lock state.mutex;
 
         (* BACKPRESSURE: Wait if worker is still writing previous frame *)
@@ -150,28 +145,39 @@ let submit t app_buffer len =
           Condition.wait state.cond state.mutex
         done;
 
-        if state.closing then (
-          Mutex.unlock state.mutex;
-          app_buffer)
-        else
+        if state.closing then Mutex.unlock state.mutex
+        else (
           (* SWAP BUFFERS *)
-          let spare_buffer = state.write_buffer in
+          let old_render = state.render_buffer in
+          let old_write = state.write_buffer in
 
-          (* Handle resizing if necessary *)
-          let spare_buffer =
-            if Bytes.length spare_buffer < len then Bytes.create len
-            else spare_buffer
+          (* Handle resizing if write buffer is too small *)
+          let new_write =
+            if Bytes.length old_render > Bytes.length old_write then
+              Bytes.create (Bytes.length old_render)
+            else old_write
           in
 
-          state.write_buffer <- app_buffer;
+          state.write_buffer <- old_render;
+          state.render_buffer <- new_write;
           state.write_len <- len;
           state.busy <- true;
 
           Condition.signal state.cond;
-          Mutex.unlock state.mutex;
+          Mutex.unlock state.mutex))
 
-          (* Return the spare buffer to the app *)
-          spare_buffer)
+(* Submit a string for writing. This drains any pending writes first to ensure
+   proper ordering, then writes the string synchronously. Use this for control
+   sequences that must be serialized with frame data. *)
+let submit_string t s =
+  if String.length s = 0 then ()
+  else (
+    drain t;
+    match t with
+    | Direct state ->
+        write_all state.fd (Bytes.unsafe_of_string s) 0 (String.length s)
+    | Threaded state ->
+        write_all state.fd (Bytes.unsafe_of_string s) 0 (String.length s))
 
 let close t =
   match t with
