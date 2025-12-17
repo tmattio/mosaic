@@ -23,10 +23,7 @@ let rec write_all fd bytes off len =
         raise (Unix_error (err, fn, arg))
 
 (* Direct mode: single buffer, synchronous writes *)
-type direct_state = {
-  fd : Unix.file_descr;
-  buffer : bytes;
-}
+type direct_state = { fd : Unix.file_descr; buffer : bytes }
 
 (* Threaded mode: double buffering with async writes *)
 type threaded_state = {
@@ -90,8 +87,7 @@ let worker_loop state =
 type t = Direct of direct_state | Threaded of threaded_state
 
 let create ~fd ~size ~use_thread =
-  if not use_thread then
-    Direct { fd; buffer = Bytes.create size }
+  if not use_thread then Direct { fd; buffer = Bytes.create size }
   else
     let mutex = Mutex.create () in
     let cond = Condition.create () in
@@ -134,8 +130,7 @@ let drain = function
 
 let present t len =
   match t with
-  | Direct state ->
-      if len > 0 then write_all state.fd state.buffer 0 len
+  | Direct state -> if len > 0 then write_all state.fd state.buffer 0 len
   | Threaded state ->
       if len > 0 then (
         Mutex.lock state.mutex;
@@ -146,7 +141,7 @@ let present t len =
         done;
 
         if state.closing then Mutex.unlock state.mutex
-        else (
+        else
           (* SWAP BUFFERS *)
           let old_render = state.render_buffer in
           let old_write = state.write_buffer in
@@ -164,7 +159,7 @@ let present t len =
           state.busy <- true;
 
           Condition.signal state.cond;
-          Mutex.unlock state.mutex))
+          Mutex.unlock state.mutex)
 
 (* Submit a string for writing. This drains any pending writes first to ensure
    proper ordering, then writes the string synchronously. Use this for control

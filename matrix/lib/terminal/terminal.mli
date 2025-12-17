@@ -232,7 +232,7 @@ val open_terminal :
   unit ->
   t
 (** [open_terminal ?probe ?probe_timeout ?input ?output ?initial_caps
-    ?render_thread ?render_buffer_size ()] creates a terminal session.
+     ?render_thread ?render_buffer_size ()] creates a terminal session.
 
     The handle starts in cooked mode with no extra protocols enabled. The
     function:
@@ -269,8 +269,9 @@ val open_terminal :
     @param input defaults to [Unix.stdin]
     @param output defaults to [Unix.stdout]
     @param probe_timeout probe window in seconds
-    @param render_thread if [true], uses a background thread for frame writes;
-           defaults to [true] on non-Linux platforms, [false] on Linux
+    @param render_thread
+      if [true], uses a background thread for frame writes; defaults to [true]
+      on non-Linux platforms, [false] on Linux
     @param render_buffer_size initial size of frame buffers; defaults to 2MB
     @raise Unix.Unix_error if creating internal pipes or reading termios fails
 *)
@@ -523,8 +524,8 @@ val write : t -> string -> unit
 (** [write t s] writes string [s] to the terminal output.
 
     This function routes through the frame writer, draining any pending frame
-    writes first to ensure proper ordering. Use this for control sequences
-    that must be serialized with frame data.
+    writes first to ensure proper ordering. Use this for control sequences that
+    must be serialized with frame data.
 
     @raise Error if the write ultimately fails *)
 
@@ -537,9 +538,9 @@ val write_bytes : t -> bytes -> unit
 val render_buffer : t -> bytes
 (** [render_buffer t] returns the buffer to render into.
 
-    The returned buffer remains valid until the next call to {!present}.
-    After present, the buffer may have been swapped (in threaded mode), so
-    always call {!render_buffer} again before the next frame. *)
+    The returned buffer remains valid until the next call to {!present}. After
+    present, the buffer may have been swapped (in threaded mode), so always call
+    {!render_buffer} again before the next frame. *)
 
 val drain : t -> unit
 (** [drain t] blocks until any pending frame write has completed.
@@ -547,8 +548,8 @@ val drain : t -> unit
     No-op if writer uses direct mode. *)
 
 val present : t -> int -> unit
-(** [present t len] presents the first [len] bytes of the render buffer
-    to the terminal.
+(** [present t len] presents the first [len] bytes of the render buffer to the
+    terminal.
 
     In threaded mode:
     - Blocks if the writer is currently busy (backpressure).
@@ -558,8 +559,8 @@ val present : t -> int -> unit
     In direct mode:
     - Writes immediately to the output fd.
 
-    After calling this, the previous render buffer may no longer be valid.
-    Call {!render_buffer} to get the buffer for the next frame. *)
+    After calling this, the previous render buffer may no longer be valid. Call
+    {!render_buffer} to get the buffer for the next frame. *)
 
 val output_fd : t -> file_descr
 (** [output_fd t] returns the output file descriptor associated with the

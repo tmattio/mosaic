@@ -346,7 +346,7 @@ let ensure_trailing_newline s =
 
 let static_write_raw t text =
   if t.mode = `Alt then ()
-  else (
+  else
     (* All output goes through Terminal.write for proper serialization.
        Terminal.write automatically drains pending writes before writing. *)
     let send s = Terminal.write t.terminal s in
@@ -383,7 +383,7 @@ let static_write_raw t text =
           Terminal.flush t.terminal;
           if rows > 0 then bump_inline_base_row t ~delta:rows)
     | `Alt -> ());
-    request_redraw t)
+    request_redraw t
 
 let static_write t text = static_write_raw t text
 let static_print t text = static_write_raw t (ensure_trailing_newline text)
@@ -588,9 +588,7 @@ let submit t =
     let forced_full = t.force_full_next_frame in
     if forced_full then t.force_full_next_frame <- false;
     let render_buf = Terminal.render_buffer t.terminal in
-    let len =
-      Screen.render_to_bytes ~full:forced_full t.screen render_buf
-    in
+    let len = Screen.render_to_bytes ~full:forced_full t.screen render_buf in
 
     (* 5. Present *)
     let stdout_start = monotonic_now () in
@@ -903,9 +901,8 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     ?(debug_overlay_corner = `Bottom_right) ?(debug_overlay_capacity = 120)
     ?(frame_dump_every = 0) ?frame_dump_dir ?frame_dump_pattern
     ?(frame_dump_hits = false) ?(cursor_visible = true) ?explicit_width
-    ?render_thread ?(input_timeout = None)
-    ?(resize_debounce = Some 0.1) ?initial_caps ?(output = `Stdout)
-    ?(signal_handlers = true) () : app =
+    ?render_thread ?(input_timeout = None) ?(resize_debounce = Some 0.1)
+    ?initial_caps ?(output = `Stdout) ?(signal_handlers = true) () : app =
   let capture, stdout_restore_fd, stdout_tui_fd = setup_stdout_capture output in
   let term_output =
     match (stdout_tui_fd, output) with

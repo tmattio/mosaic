@@ -19,8 +19,8 @@ val render_buffer : t -> bytes
     valid until the next call to {!present}. *)
 
 val present : t -> int -> unit
-(** [present t len] presents the first [len] bytes of the render buffer to
-    the output.
+(** [present t len] presents the first [len] bytes of the render buffer to the
+    output.
 
     In Threaded mode:
     - Blocks if the writer is currently busy (backpressure).
@@ -33,14 +33,14 @@ val present : t -> int -> unit
     - The render buffer remains unchanged. *)
 
 val drain : t -> unit
-(** [drain t] blocks until any in-flight write has completed.
-    No-op for direct writers. *)
+(** [drain t] blocks until any in-flight write has completed. No-op for direct
+    writers. *)
 
 val submit_string : t -> string -> unit
 (** [submit_string t s] writes a string through the frame writer. This drains
     any pending writes first to ensure proper ordering, then writes the string.
-    Use this for control sequences (sync, cursor positioning, etc.) that must
-    be serialized with frame data to prevent output interleaving. *)
+    Use this for control sequences (sync, cursor positioning, etc.) that must be
+    serialized with frame data to prevent output interleaving. *)
 
 val close : t -> unit
 (** [close t] stops the thread and flushes pending writes if possible. *)

@@ -1167,30 +1167,29 @@ let draw_text ?style ?(tab_width = 2) t ~x ~y ~text =
             cur_x := !cur_x + w)
       in
       let stop = ref false in
-      (try
-         Glyph.iter_grapheme_info ~width_method:t.width_method ~tab_width:tabw
-           text (fun ~offset ~len ~width:w ->
-             if !stop || w <= 0 then ()
-             else
-               let start_x = !cur_x in
-               let end_x = start_x + w in
-               if end_x <= 0 then cur_x := end_x
-               else if start_x >= t.width then (
-                 stop := true;
-                 raise Exit)
-               else if
-                 match scissor_bounds with
-                 | None -> false
-                 | Some (x_min, x_max) -> end_x <= x_min || start_x >= x_max
-               then cur_x := end_x
-               else
-                 let g =
-                   Glyph.intern t.glyph_pool ~width_method:t.width_method
-                     ~tab_width:tabw ~width:w ~off:offset ~len text
-                 in
-                 if Glyph.is_continuation g then ()
-                 else writer g)
-       with Exit -> ())
+      try
+        Glyph.iter_grapheme_info ~width_method:t.width_method ~tab_width:tabw
+          text (fun ~offset ~len ~width:w ->
+            if !stop || w <= 0 then ()
+            else
+              let start_x = !cur_x in
+              let end_x = start_x + w in
+              if end_x <= 0 then cur_x := end_x
+              else if start_x >= t.width then (
+                stop := true;
+                raise Exit)
+              else if
+                match scissor_bounds with
+                | None -> false
+                | Some (x_min, x_max) -> end_x <= x_min || start_x >= x_max
+              then cur_x := end_x
+              else
+                let g =
+                  Glyph.intern t.glyph_pool ~width_method:t.width_method
+                    ~tab_width:tabw ~width:w ~off:offset ~len text
+                in
+                if Glyph.is_continuation g then () else writer g)
+      with Exit -> ()
 
 (* ---- Box Drawing ---- *)
 

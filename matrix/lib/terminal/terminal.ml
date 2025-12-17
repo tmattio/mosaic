@@ -592,12 +592,13 @@ let is_linux () =
 let default_render_buffer_size = 1024 * 1024 * 2 (* 2MB *)
 
 let open_terminal ?(probe = true) ?(probe_timeout = 0.2) ?(input = Unix.stdin)
-    ?(output = Unix.stdout) ?initial_caps ?render_thread ?render_buffer_size () =
-  let use_thread = match render_thread with
-    | Some v -> v
-    | None -> not (is_linux ())
+    ?(output = Unix.stdout) ?initial_caps ?render_thread ?render_buffer_size ()
+    =
+  let use_thread =
+    match render_thread with Some v -> v | None -> not (is_linux ())
   in
-  let buffer_size = match render_buffer_size with
+  let buffer_size =
+    match render_buffer_size with
     | Some v -> v
     | None -> default_render_buffer_size
   in
@@ -655,7 +656,8 @@ let open_terminal ?(probe = true) ?(probe_timeout = 0.2) ?(input = Unix.stdin)
       winch_handler = None;
       pixel_resolution = None;
       env_overrides;
-      writer = Some (Frame_writer.create ~fd:output ~size:buffer_size ~use_thread);
+      writer =
+        Some (Frame_writer.create ~fd:output ~size:buffer_size ~use_thread);
     }
   in
   let cb =
@@ -729,7 +731,6 @@ let query_pixel_resolution t =
 
 let pixel_resolution t = t.pixel_resolution
 
-
 (* Frame writing API *)
 
 let render_buffer t =
@@ -737,15 +738,10 @@ let render_buffer t =
   | None -> failwith "Terminal.render_buffer: writer not initialized"
   | Some w -> Frame_writer.render_buffer w
 
-let drain t =
-  match t.writer with
-  | None -> ()
-  | Some w -> Frame_writer.drain w
+let drain t = match t.writer with None -> () | Some w -> Frame_writer.drain w
 
 let present t len =
-  match t.writer with
-  | None -> ()
-  | Some w -> Frame_writer.present w len
+  match t.writer with None -> () | Some w -> Frame_writer.present w len
 
 let write t str =
   match t.writer with
@@ -755,4 +751,3 @@ let write t str =
 let write_bytes t bytes =
   let len = Bytes.length bytes in
   if len > 0 then write t (Bytes.unsafe_to_string bytes)
-
