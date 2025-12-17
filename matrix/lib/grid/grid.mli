@@ -544,6 +544,23 @@ val draw_box :
     are dropped. The title is padded by two cells on each side, clamped to the
     box width, and defaults to [border_style] when [title_style] is omitted. *)
 
+type line_glyphs = {
+  h : string;  (** Horizontal segment glyph (e.g., ["─"]). *)
+  v : string;  (** Vertical segment glyph (e.g., ["│"]). *)
+  diag_up : string;  (** Diagonal up-right glyph (e.g., ["╱"]). *)
+  diag_down : string;  (** Diagonal down-right glyph (e.g., ["╲"]). *)
+}
+(** Glyph set for line rendering.
+
+    Used by {!draw_line} to customize which characters are used for different
+    line segment orientations. *)
+
+val default_line_glyphs : line_glyphs
+(** Default Unicode box-drawing glyphs: ["─"], ["│"], ["╱"], ["╲"]. *)
+
+val ascii_line_glyphs : line_glyphs
+(** ASCII-compatible glyphs: ["-"], ["|"], ["/"], ["\\"]. *)
+
 val draw_line :
   t ->
   x1:int ->
@@ -551,19 +568,33 @@ val draw_line :
   x2:int ->
   y2:int ->
   ?style:Ansi.Style.t ->
+  ?glyphs:line_glyphs ->
   ?kind:[ `Line | `Braille ] ->
   unit ->
   unit
-(** [draw_line t ~x1 ~y1 ~x2 ~y2 ?style ?kind ()] draws a line from [(x1, y1)]
-    to [(x2, y2)].
+(** [draw_line t ~x1 ~y1 ~x2 ~y2 ?style ?glyphs ?kind ()] draws a line from
+    [(x1, y1)] to [(x2, y2)].
 
     Uses Bresenham's line algorithm for efficient rasterization.
 
     @param style Line style. Default is {!Ansi.Style.default}.
+    @param glyphs
+      Glyph set for line segments. Default is {!default_line_glyphs}. Ignored
+      when [kind] is [`Braille].
     @param kind
-      Rendering mode. [`Line] uses box-drawing characters (["│"], ["─"], ["╲"],
-      ["╱"]). [`Braille] uses 2×4 Braille dot patterns for higher resolution.
+      Rendering mode. [`Line] uses box-drawing characters with per-step glyph
+      selection based on the Bresenham step direction (horizontal, vertical, or
+      diagonal). [`Braille] uses 2×4 Braille dot patterns for higher resolution.
       Default is [`Line].
+
+    In [`Line] mode, each step of the algorithm chooses the appropriate glyph
+    based on whether it moves horizontally, vertically, or both (diagonal). This
+    produces visually correct lines at all slopes, including shallow angles
+    where most segments should be horizontal with occasional vertical drops.
+
+    In [`Braille] mode, dots are accumulated into a buffer and then merged with
+    any existing Braille patterns in the grid cells. This allows multiple line
+    segments to share cells without overwriting each other's dots.
 
     Drawing respects the scissor stack; cells outside the active scissor are not
     modified. *)

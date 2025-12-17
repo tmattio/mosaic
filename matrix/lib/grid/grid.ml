@@ -1334,74 +1334,150 @@ let draw_box t ~x ~y ~width ~height ~border_chars ~border_sides ~border_style
 
 (* ---- Line Drawing ---- *)
 
-let draw_line t ~x1 ~y1 ~x2 ~y2 ?(style = Ansi.Style.default) ?(kind = `Line) ()
-    =
+type line_glyphs = {
+  h : string;
+  v : string;
+  diag_up : string;
+  diag_down : string;
+}
+
+let default_line_glyphs = { h = "─"; v = "│"; diag_up = "╱"; diag_down = "╲" }
+
+let ascii_line_glyphs = { h = "-"; v = "|"; diag_up = "/"; diag_down = "\\" }
+
+(* Braille lookup table: precompute all 256 braille patterns once.
+   This avoids per-cell Buffer allocation during line drawing. *)
+let braille_lut : string array =
+  Array.init 256 (fun bits ->
+      let u = Uchar.of_int (0x2800 + bits) in
+      let b = Buffer.create 4 in
+      Buffer.add_utf_8_uchar b u;
+      Buffer.contents b)
+
+(* Braille base codepoint for detecting existing braille cells *)
+let braille_base = 0x2800
+let braille_max = 0x28FF
+
+(* Decode an existing braille cell to get its bits, returns 0 for non-braille cells *)
+let decode_braille_bits t ~x ~y =
+  if x < 0 || y < 0 || x >= t.width || y >= t.height then 0
+  else
+    let idx = (y * t.width) + x in
+    let code = Buf.get t.chars idx in
+    if Cell_code.is_simple code then
+      (* Simple cell: direct codepoint check *)
+      if code >= braille_base && code <= braille_max then code - braille_base
+      else 0
+    else if Cell_code.is_start code then
+      (* Complex cell: decode from glyph pool. Braille is 3-byte UTF-8. *)
+      let s = Glyph.to_string t.glyph_pool code in
+      if String.length s = 3 then
+        (* Decode 3-byte UTF-8: 1110xxxx 10xxxxxx 10xxxxxx *)
+        let b0 = Char.code (String.unsafe_get s 0) in
+        let b1 = Char.code (String.unsafe_get s 1) in
+        let b2 = Char.code (String.unsafe_get s 2) in
+        if b0 land 0xF0 = 0xE0 && b1 land 0xC0 = 0x80 && b2 land 0xC0 = 0x80
+        then
+          let cp =
+            ((b0 land 0x0F) lsl 12) lor ((b1 land 0x3F) lsl 6) lor (b2 land 0x3F)
+          in
+          if cp >= braille_base && cp <= braille_max then cp - braille_base
+          else 0
+        else 0
+      else 0
+    else 0
+
+(* Compute braille bit position from sub-cell coordinates *)
+let[@inline] braille_bit_pos bit_x bit_y =
+  match (bit_x, bit_y) with
+  | 0, 0 -> 0
+  | 0, 1 -> 1
+  | 0, 2 -> 2
+  | 0, 3 -> 6
+  | 1, 0 -> 3
+  | 1, 1 -> 4
+  | 1, 2 -> 5
+  | 1, 3 -> 7
+  | _ -> 0
+
+let draw_line t ~x1 ~y1 ~x2 ~y2 ?(style = Ansi.Style.default)
+    ?(glyphs = default_line_glyphs) ?(kind = `Line) () =
   let dx = abs (x2 - x1) in
   let dy = abs (y2 - y1) in
   let sx = if x1 < x2 then 1 else -1 in
   let sy = if y1 < y2 then 1 else -1 in
+
   let plot_basic () =
-    let glyph =
-      if dx = 0 then "│"
-      else if dy = 0 then "─"
-      else if (x2 - x1) * (y2 - y1) > 0 then "╲"
-      else "╱"
+    (* Determine diagonal direction for this line *)
+    let diag_glyph =
+      if (x2 - x1) * (y2 - y1) > 0 then glyphs.diag_down else glyphs.diag_up
     in
-    let rec loop x y err =
-      draw_text t ~x ~y ~text:glyph ~style;
-      if x = x2 && y = y2 then ()
-      else
-        let e2 = 2 * err in
-        let x, err = if e2 > -dy then (x + sx, err - dy) else (x, err) in
-        let y, err = if e2 < dx then (y + sy, err + dx) else (y, err) in
-        loop x y err
+    let x = ref x1 and y = ref y1 and err = ref (dx - dy) in
+    while not (!x = x2 && !y = y2) do
+      (* Compute next step *)
+      let e2 = 2 * !err in
+      let move_x = e2 > -dy in
+      let move_y = e2 < dx in
+      (* Choose glyph based on step direction *)
+      let glyph =
+        if move_x && move_y then diag_glyph
+        else if move_x then glyphs.h
+        else glyphs.v
+      in
+      draw_text t ~x:!x ~y:!y ~text:glyph ~style;
+      if move_x then (
+        x := !x + sx;
+        err := !err - dy);
+      if move_y then (
+        y := !y + sy;
+        err := !err + dx)
+    done;
+    (* Draw final point *)
+    let final_glyph =
+      if dx = 0 && dy = 0 then glyphs.h (* single point *)
+      else if dx = 0 then glyphs.v
+      else if dy = 0 then glyphs.h
+      else diag_glyph
     in
-    loop x1 y1 (dx - dy)
+    draw_text t ~x:!x ~y:!y ~text:final_glyph ~style
   in
+
   let plot_braille () =
+    (* Use array-based buffer for efficiency *)
     let buffer = Hashtbl.create 32 in
     let set_dot x y =
-      let cell_x = x / 2 in
-      let cell_y = y / 4 in
-      let bit_x = x mod 2 in
-      let bit_y = y mod 4 in
-      let bit_pos =
-        match (bit_x, bit_y) with
-        | 0, 0 -> 0
-        | 0, 1 -> 1
-        | 0, 2 -> 2
-        | 0, 3 -> 6
-        | 1, 0 -> 3
-        | 1, 1 -> 4
-        | 1, 2 -> 5
-        | 1, 3 -> 7
-        | _ -> 0
-      in
-      let key = (cell_x, cell_y) in
-      let current = Option.value (Hashtbl.find_opt buffer key) ~default:0 in
-      Hashtbl.replace buffer key (current lor (1 lsl bit_pos))
+      (* Floor division for negative coordinates *)
+      let cell_x = if x >= 0 then x / 2 else ((x + 1) / 2) - 1 in
+      let cell_y = if y >= 0 then y / 4 else ((y + 1) / 4) - 1 in
+      (* Clip to grid bounds *)
+      if cell_x >= 0 && cell_x < t.width && cell_y >= 0 && cell_y < t.height
+      then
+        let bit_x = ((x mod 2) + 2) mod 2 in
+        let bit_y = ((y mod 4) + 4) mod 4 in
+        let bit_pos = braille_bit_pos bit_x bit_y in
+        let key = (cell_x, cell_y) in
+        let current = Option.value (Hashtbl.find_opt buffer key) ~default:0 in
+        Hashtbl.replace buffer key (current lor (1 lsl bit_pos))
     in
-    let rec loop x y err =
-      set_dot x y;
-      if x = x2 && y = y2 then ()
-      else
-        let e2 = 2 * err in
-        let x, err = if e2 > -dy then (x + sx, err - dy) else (x, err) in
-        let y, err = if e2 < dx then (y + sy, err + dx) else (y, err) in
-        loop x y err
-    in
-    loop x1 y1 (dx - dy);
+    let x = ref x1 and y = ref y1 and err = ref (dx - dy) in
+    while not (!x = x2 && !y = y2) do
+      set_dot !x !y;
+      let e2 = 2 * !err in
+      if e2 > -dy then (
+        x := !x + sx;
+        err := !err - dy);
+      if e2 < dx then (
+        y := !y + sy;
+        err := !err + dx)
+    done;
+    set_dot x2 y2;
+    (* Commit buffer to grid, merging with existing braille cells *)
     Hashtbl.iter
       (fun (cell_x, cell_y) bits ->
-        let code = 0x2800 + bits in
-        let uchar =
-          match Uchar.of_int code with
-          | exception Invalid_argument _ -> Uchar.of_int 0x2800
-          | c -> c
-        in
-        let b = Buffer.create 4 in
-        Buffer.add_utf_8_uchar b uchar;
-        let glyph = Buffer.contents b in
+        (* Read existing braille bits from the grid *)
+        let existing_bits = decode_braille_bits t ~x:cell_x ~y:cell_y in
+        let merged_bits = existing_bits lor bits in
+        let glyph = braille_lut.(merged_bits) in
         draw_text t ~x:cell_x ~y:cell_y ~text:glyph ~style)
       buffer
   in

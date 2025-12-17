@@ -183,7 +183,8 @@ module Theme : sig
   *)
 
   type t = {
-    palette : Ansi.Color.t list;  (** Colors for marks, cycled by index. *)
+    palette : Ansi.Color.t array;
+        (** Colors for marks, cycled by index. O(1) access. *)
     background : Ansi.Color.t option;
         (** Chart background. [None] for terminal default. *)
     axes : Ansi.Style.t;  (** Axis lines and tick marks. *)
@@ -223,8 +224,10 @@ module Theme : sig
   (** [with_charset charset t] returns [t] with the given [charset]. *)
 end
 
-module Format : sig
+module Label_format : sig
   (** Number and date formatting utilities for axis labels.
+
+      Renamed from [Format] to avoid confusion with [Stdlib.Format].
 
       Formatters follow the signature [int -> float -> string], where the first
       argument is the tick index. *)
@@ -372,14 +375,20 @@ module Axis : sig
     ticks : int;
         (** Target number of ticks. Actual count may vary for alignment. *)
     format : formatter;  (** Label formatter. *)
-    style : Ansi.Style.t;  (** Style for axis line. *)
-    tick_style : Ansi.Style.t;  (** Style for tick marks. *)
-    label_style : Ansi.Style.t;  (** Style for tick labels. *)
+    style : Ansi.Style.t option;
+        (** Style for axis line. [None] uses theme default. *)
+    tick_style : Ansi.Style.t option;
+        (** Style for tick marks. [None] uses theme default. *)
+    label_style : Ansi.Style.t option;
+        (** Style for tick labels. [None] uses theme default. *)
     tick_length : int;  (** Tick mark length in cells. *)
     label_padding : int;  (** Spacing between ticks and labels in cells. *)
     title : title option;  (** Optional axis title. *)
   }
-  (** Axis configuration. *)
+  (** Axis configuration.
+
+      Style fields default to [None], which means the theme's default styles
+      will be used. Set explicit styles to override theme defaults. *)
 
   val hidden : t
   (** [hidden] disables axis rendering.
@@ -505,22 +514,26 @@ module View : sig
       Invariant: [min] and [max] are automatically swapped if [min > max] during
       construction. *)
 
-  type t = { x : window option; y : window option }
+  type t = { x : window option; y : window option; y2 : window option }
   (** Viewport specification.
 
       [None] uses the full data domain. [Some w] restricts the visible range to
-      [w]. *)
+      [w]. The [y2] field controls the secondary Y-axis independently from [y].
+  *)
 
   val empty : t
-  (** [empty] shows the full data extent on both axes.
+  (** [empty] shows the full data extent on all axes.
 
-      Both [x] and [y] are [None]. *)
+      All fields ([x], [y], [y2]) are [None]. *)
 
   val set_x : window option -> t -> t
   (** [set_x w t] sets the X-axis view window to [w]. *)
 
   val set_y : window option -> t -> t
-  (** [set_y w t] sets the Y-axis view window to [w]. *)
+  (** [set_y w t] sets the primary Y-axis view window to [w]. *)
+
+  val set_y2 : window option -> t -> t
+  (** [set_y2 w t] sets the secondary Y-axis view window to [w]. *)
 
   val window : min:float -> max:float -> window
   (** [window ~min ~max] creates a view window.
@@ -848,7 +861,7 @@ module Mark : sig
 
   val heatmap :
     ?id:id ->
-    ?color_scale:Ansi.Color.t list ->
+    ?color_scale:Ansi.Color.t array ->
     ?value_range:float * float ->
     ?auto_value_range:bool ->
     ?agg:heatmap_agg ->
@@ -1083,6 +1096,11 @@ module Layout : sig
   (** [y2_view t] returns the secondary Y-axis view window.
 
       Returns [None] if no Y2 scale is configured. *)
+
+  val y_axis_title_width : t -> int
+  (** [y_axis_title_width t] returns the width reserved for the Y-axis title.
+
+      Returns [0] if no Y-axis title is configured. *)
 
   val y2_axis_width : t -> int
   (** [y2_axis_width t] returns the width reserved for the secondary Y-axis.
@@ -1594,7 +1612,7 @@ val rule_x :
 
 val heatmap :
   ?id:Mark.id ->
-  ?color_scale:Ansi.Color.t list ->
+  ?color_scale:Ansi.Color.t array ->
   ?value_range:float * float ->
   ?auto_value_range:bool ->
   ?agg:Mark.heatmap_agg ->

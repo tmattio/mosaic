@@ -208,9 +208,29 @@ end
 let clamp_int lo hi v = if v < lo then lo else if v > hi then hi else v
 let clamp01 v = if v < 0. then 0. else if v > 1. then 1. else v
 
-let safe_range (a : float) (b : float) =
+(* Safe range for domain inference: when the inferred domain is degenerate
+   (min == max), expand it by an absolute amount. This is appropriate for
+   domain inference where we don't know the scale of the data. *)
+let safe_domain_range (a : float) (b : float) =
   let eps = 1e-12 in
   if Float.abs (b -. a) < eps then (a -. 1.0, b +. 1.0) else (a, b)
+
+(* Safe range for view windows: when the view range is degenerate,
+   expand it relative to the magnitude of the values. This prevents
+   large absolute expansions when working with small-scale data.
+   Guarantees the resulting span is always >= epsilon (1e-12). *)
+let safe_view_range (a : float) (b : float) =
+  let epsilon = 1e-12 in
+  let span = Float.abs (b -. a) in
+  if span >= epsilon then (a, b)
+  else
+    let scale = Float.max (Float.abs a) (Float.abs b) in
+    (* expansion must be at least epsilon/2 so that 2*expansion >= epsilon *)
+    let expansion = Float.max (epsilon /. 2.) (1e-6 *. scale) in
+    (a -. expansion, b +. expansion)
+
+(* Legacy alias for backwards compatibility *)
+let safe_range = safe_domain_range
 
 let text_width (s : string) : int =
   (* matrix.glyph provides Glyph.measure; preserve Unicode correctness. *)
@@ -302,6 +322,53 @@ let nice_ticks ~min_val ~max_val ~target_ticks =
     let ticks = gen [] start in
     if ticks = [] then [ min_val; max_val ] else ticks
 
+(* Log scale transformation helper *)
+let log_transform ~base v =
+  if v <= 0. then Float.neg_infinity else Float.log v /. Float.log base
+
+(* Generate nice tick values for log scale *)
+let log_ticks ~base ~min_val ~max_val ~target_ticks =
+  if min_val <= 0. || max_val <= 0. then [ min_val; max_val ]
+  else
+    let log_min = Float.floor (log_transform ~base min_val) in
+    let log_max = Float.ceil (log_transform ~base max_val) in
+    let num_decades = log_max -. log_min in
+    (* Generate major ticks at powers of base *)
+    let rec gen_major acc exp =
+      if exp > log_max +. 0.5 then List.rev acc
+      else
+        let v = Float.pow base exp in
+        if v >= min_val *. 0.999 && v <= max_val *. 1.001 then
+          gen_major (v :: acc) (exp +. 1.)
+        else gen_major acc (exp +. 1.)
+    in
+    let major = gen_major [] log_min in
+    (* If we have very few ticks and room for more, add minor ticks *)
+    if List.length major < target_ticks && num_decades <= 3. then
+      (* Add 2 and 5 between powers for base 10 *)
+      let minors =
+        if base = 10. then
+          let rec gen_minor acc exp =
+            if exp >= log_max then acc
+            else
+              let base_val = Float.pow base exp in
+              let m2 = base_val *. 2. in
+              let m5 = base_val *. 5. in
+              let acc =
+                if m2 >= min_val && m2 <= max_val then m2 :: acc else acc
+              in
+              let acc =
+                if m5 >= min_val && m5 <= max_val then m5 :: acc else acc
+              in
+              gen_minor acc (exp +. 1.)
+          in
+          gen_minor [] log_min
+        else []
+      in
+      List.sort Float.compare (major @ minors)
+    else if major = [] then [ min_val; max_val ]
+    else major
+
 let draw_text ?style ?tab_width grid ~x ~y text =
   G.draw_text ?style ?tab_width grid ~x ~y ~text
 
@@ -346,17 +413,22 @@ module Clip = struct
         let code_out = if !code1 <> 0 then !code1 else !code2 in
         let x = ref 0. and y = ref 0. in
         let dx = !x2 -. !x1 and dy = !y2 -. !y1 in
+        (* Guard against divide-by-zero for horizontal/vertical lines.
+           For horizontal lines (dy=0), top/bottom clips are impossible since
+           code_out can only have left/right bits set. Similarly for vertical
+           lines (dx=0), left/right clips are impossible. However, we guard
+           anyway for safety in case of floating point edge cases. *)
         if code_out land top <> 0 then (
-          x := !x1 +. (dx *. (ymax -. !y1) /. dy);
+          x := if dy = 0. then !x1 else !x1 +. (dx *. (ymax -. !y1) /. dy);
           y := ymax)
         else if code_out land bottom <> 0 then (
-          x := !x1 +. (dx *. (ymin -. !y1) /. dy);
+          x := if dy = 0. then !x1 else !x1 +. (dx *. (ymin -. !y1) /. dy);
           y := ymin)
         else if code_out land right <> 0 then (
-          y := !y1 +. (dy *. (xmax -. !x1) /. dx);
+          y := if dx = 0. then !y1 else !y1 +. (dy *. (xmax -. !x1) /. dx);
           x := xmax)
         else if code_out land left <> 0 then (
-          y := !y1 +. (dy *. (xmin -. !x1) /. dx);
+          y := if dx = 0. then !y1 else !y1 +. (dy *. (xmin -. !x1) /. dx);
           x := xmin);
         if code_out = !code1 then (
           x1 := !x;
@@ -396,6 +468,28 @@ let lower_block_glyph frac =
     | 7 -> Some "▇"
     | _ -> Some "█"
 
+(* Upper block glyphs fill from the top down (▔▀ etc.)
+   Note: Unicode only has ▀ (upper half) and ▔ (upper eighth).
+   For intermediate values, we use ▀ with proportional coverage. *)
+let upper_block_glyph frac =
+  if frac <= 0. then None
+  else if frac >= 1. then Some "█"
+  else
+    let eighth = 0.125 in
+    let e = int_of_float (Float.floor (frac /. eighth)) in
+    let rem = frac -. (float e *. eighth) in
+    let e = if rem >= 0.0625 then e + 1 else e in
+    match e with
+    | 0 -> None
+    | 1 -> Some "▔"
+    | 2 -> Some "▔" (* No 2/8 upper block in Unicode, use 1/8 *)
+    | 3 -> Some "▀" (* Use half block for 3/8 *)
+    | 4 -> Some "▀"
+    | 5 -> Some "▀" (* No 5/8 upper block, use half *)
+    | 6 -> Some "▀" (* No 6/8 upper block, use half *)
+    | 7 -> Some "█" (* Close to full *)
+    | _ -> Some "█"
+
 let left_block_glyph frac =
   if frac <= 0. then None
   else if frac >= 1. then Some "█"
@@ -415,19 +509,38 @@ let left_block_glyph frac =
     | 7 -> Some "▉"
     | _ -> Some "█"
 
+(* Right block glyphs fill from the right side (▕▐ etc.)
+   Note: Unicode only has ▐ (right half) and ▕ (right eighth). *)
+let right_block_glyph frac =
+  if frac <= 0. then None
+  else if frac >= 1. then Some "█"
+  else
+    let eighth = 0.125 in
+    let e = int_of_float (Float.floor (frac /. eighth)) in
+    let rem = frac -. (float e *. eighth) in
+    let e = if rem >= 0.0625 then e + 1 else e in
+    match e with
+    | 0 -> None
+    | 1 -> Some "▕"
+    | 2 -> Some "▕" (* No 2/8 right block in Unicode *)
+    | 3 -> Some "▐" (* Use half block *)
+    | 4 -> Some "▐"
+    | 5 -> Some "▐"
+    | 6 -> Some "▐"
+    | 7 -> Some "█"
+    | _ -> Some "█"
+
 (* --- internal Data helpers --- *)
 
 module Data = struct
   let iter arr f = Array.iter f arr
-  let fold arr ~init ~f = Array.fold_left f init arr
-  let to_list arr = Array.to_list arr
 end
 
 (* --- Theme --- *)
 
 module Theme = struct
   type t = {
-    palette : Color.t list;
+    palette : Color.t array;
     background : Color.t option;
     axes : Style.t;
     border : Style.t;
@@ -442,7 +555,7 @@ module Theme = struct
   }
 
   let default_palette =
-    [
+    [|
       Color.Cyan;
       Color.Magenta;
       Color.Yellow;
@@ -452,7 +565,7 @@ module Theme = struct
       Color.Extended 33;
       Color.Extended 39;
       Color.Extended 45;
-    ]
+    |]
 
   let dark =
     {
@@ -490,9 +603,10 @@ module Theme = struct
   let with_charset charset t = { t with charset }
 end
 
-(* --- Format --- *)
+(* --- Label_format --- *)
 
-module Format = struct
+(* Renamed from Format to avoid confusion with Stdlib.Format *)
+module Label_format = struct
   let float ?(precision = 3) () : int -> float -> string =
    fun _ v -> Printf.sprintf "%.*g" precision v
 
@@ -670,9 +784,9 @@ module Axis = struct
     line : line;
     ticks : int;
     format : formatter;
-    style : Style.t;
-    tick_style : Style.t;
-    label_style : Style.t;
+    style : Style.t option; (* None = use theme.axes *)
+    tick_style : Style.t option; (* None = use theme.axes *)
+    label_style : Style.t option; (* None = use theme.labels *)
     tick_length : int;
     label_padding : int;
     title : title option;
@@ -683,10 +797,10 @@ module Axis = struct
       show = false;
       line = `None;
       ticks = 0;
-      format = Format.float ();
-      style = Style.default;
-      tick_style = Style.default;
-      label_style = Style.default;
+      format = Label_format.float ();
+      style = None;
+      tick_style = None;
+      label_style = None;
       tick_length = 0;
       label_padding = 0;
       title = None;
@@ -697,10 +811,10 @@ module Axis = struct
       show = true;
       line = `Axis_only;
       ticks = 6;
-      format = Format.float ();
-      style = Style.default;
-      tick_style = Style.default;
-      label_style = Style.default;
+      format = Label_format.float ();
+      style = None;
+      tick_style = None;
+      label_style = None;
       tick_length = 1;
       label_padding = 1;
       title = None;
@@ -708,9 +822,9 @@ module Axis = struct
 
   let with_ticks ticks a = { a with ticks = max 0 ticks }
   let with_format format a = { a with format }
-  let with_style style a = { a with style }
-  let with_tick_style tick_style a = { a with tick_style }
-  let with_label_style label_style a = { a with label_style }
+  let with_style style a = { a with style = Some style }
+  let with_tick_style tick_style a = { a with tick_style = Some tick_style }
+  let with_label_style label_style a = { a with label_style = Some label_style }
 
   let with_tick_length tick_length a =
     { a with tick_length = max 0 tick_length }
@@ -777,15 +891,16 @@ end
 
 module View = struct
   type window = { min : float; max : float }
-  type t = { x : window option; y : window option }
+  type t = { x : window option; y : window option; y2 : window option }
 
-  let empty = { x = None; y = None }
+  let empty = { x = None; y = None; y2 = None }
   let set_x x t = { t with x }
   let set_y y t = { t with y }
+  let set_y2 y2 t = { t with y2 }
 
   let window ~min ~max =
     let min, max = if min <= max then (min, max) else (max, min) in
-    let min, max = safe_range min max in
+    let min, max = safe_view_range min max in
     { min; max }
 
   let zoom (w : window) ~factor =
@@ -809,10 +924,12 @@ module View = struct
 
   let clamp ~domain (w : window) =
     let size = w.max -. w.min in
-    if size <= 0. then domain
+    let dom_size = domain.max -. domain.min in
+    if size <= 0. || dom_size <= 0. then domain
+    else if size >= dom_size then domain
     else
-      let min' = max domain.min (min w.min (domain.max -. size)) in
-      window ~min:min' ~max:(min' +. size)
+      let min' = Float.max domain.min (Float.min w.min (domain.max -. size)) in
+      { min = min'; max = min' +. size }
 end
 
 (* --- Marks --- *)
@@ -829,6 +946,8 @@ module Mark = struct
     | Shaded
     | Dense_bilinear
 
+  (* TODO: bar_mode is defined but not yet implemented in rendering.
+     Currently all bars render as half-block sub-cell precision. *)
   type bar_mode = [ `Cell | `Half_block ]
   type candle_body = [ `Filled | `Hollow ]
   type candle_width = [ `One | `Two ]
@@ -939,7 +1058,7 @@ module Mark = struct
       }
     | Heatmap : {
         id : id option;
-        color_scale : Color.t list;
+        color_scale : Color.t array;
         value_range : (float * float) option;
         auto_value_range : bool;
         agg : heatmap_agg;
@@ -1144,10 +1263,19 @@ type axis_kind =
     }
   | Band of {
       categories : string list;
+      categories_arr : string array; (* O(1) index-to-category *)
+      index_of : (string, int) Hashtbl.t; (* O(1) category-to-index *)
       padding : float;
       domain : View.window;
       view : View.window;
     }
+
+(* Helper to create Band with precomputed structures *)
+let make_band ~categories ~padding ~domain ~view =
+  let categories_arr = Array.of_list categories in
+  let index_of = Hashtbl.create (List.length categories) in
+  List.iteri (fun i cat -> Hashtbl.add index_of cat i) categories;
+  Band { categories; categories_arr; index_of; padding; domain; view }
 
 type compiled_mark =
   | CLine : {
@@ -1237,7 +1365,7 @@ type compiled_mark =
     }
   | CHeatmap : {
       id : string option;
-      color_scale : Color.t list;
+      color_scale : Color.t array;
       value_range : (float * float) option;
       auto_value_range : bool;
       agg : Mark.heatmap_agg;
@@ -1330,6 +1458,10 @@ module Layout = struct
     x_view : View.window;
     y_view : View.window;
     y2_view : View.window option; (* Secondary Y-axis view *)
+    (* precomputed tick values for axes (computed once during layout) *)
+    x_ticks : float list;
+    y_ticks : float list;
+    y2_ticks : float list option;
     (* axis and grid config for drawing (used by Chart.draw) *)
     x_axis : Axis.t;
     y_axis : Axis.t;
@@ -1338,6 +1470,7 @@ module Layout = struct
     frame_inner_padding : int;
     margin_left : int;
     y_axis_width : int;
+    y_axis_title_width : int; (* Space reserved for y-axis title *)
     y2_axis_width : int; (* Right margin for secondary Y-axis *)
     (* compiled marks (used by hit-testing) *)
     marks : compiled_mark list;
@@ -1354,10 +1487,83 @@ module Layout = struct
   let x_view t = t.x_view
   let y_view t = t.y_view
   let y2_view t = t.y2_view
+  let y_axis_title_width t = t.y_axis_title_width
   let y2_axis_width t = t.y2_axis_width
 
   (* Check if Y2 axis is enabled *)
   let has_y2 t = Option.is_some t.y2_scale && Option.is_some t.y2_axis
+
+  (* Scale-aware inverse transform: convert normalized t value [0,1] to data value *)
+  let inverse_x_transform t tx =
+    match t.x_scale with
+    | Numeric _ | Band _ -> lerp t.x_view.min t.x_view.max tx
+    | Log { base; view; _ } ->
+        (* Inverse of log scale: t maps to log space, then exponentiate *)
+        let safe_min = Float.max 1e-10 view.min in
+        let safe_max = Float.max 1e-10 view.max in
+        let log_min = log_transform ~base safe_min in
+        let log_max = log_transform ~base safe_max in
+        let log_v = lerp log_min log_max tx in
+        Float.pow base log_v
+
+  let inverse_y_transform t ty =
+    match t.y_scale with
+    | Numeric _ | Band _ ->
+        (* y is inverted: ty=0 is top (max), ty=1 is bottom (min) *)
+        lerp t.y_view.max t.y_view.min ty
+    | Log { base; view; _ } ->
+        let safe_min = Float.max 1e-10 view.min in
+        let safe_max = Float.max 1e-10 view.max in
+        let log_min = log_transform ~base safe_min in
+        let log_max = log_transform ~base safe_max in
+        (* y is inverted: ty=0 is top (max), ty=1 is bottom (min) *)
+        let log_v = lerp log_max log_min ty in
+        Float.pow base log_v
+
+  (* Scale-aware forward transform: convert data value to normalized t [0,1] *)
+  let forward_x_transform t x =
+    match t.x_scale with
+    | Numeric _ | Band _ ->
+        if Float.abs (t.x_view.max -. t.x_view.min) < 1e-12 then 0.
+        else (x -. t.x_view.min) /. (t.x_view.max -. t.x_view.min)
+    | Log { base; view; _ } ->
+        let safe_min = Float.max 1e-10 view.min in
+        let safe_max = Float.max 1e-10 view.max in
+        let safe_x = Float.max 1e-10 x in
+        let log_min = log_transform ~base safe_min in
+        let log_max = log_transform ~base safe_max in
+        if Float.abs (log_max -. log_min) < 1e-12 then 0.
+        else (log_transform ~base safe_x -. log_min) /. (log_max -. log_min)
+
+  let forward_y_transform t y =
+    match t.y_scale with
+    | Numeric _ | Band _ ->
+        if Float.abs (t.y_view.max -. t.y_view.min) < 1e-12 then 0.
+        else (t.y_view.max -. y) /. (t.y_view.max -. t.y_view.min)
+    | Log { base; view; _ } ->
+        let safe_min = Float.max 1e-10 view.min in
+        let safe_max = Float.max 1e-10 view.max in
+        let safe_y = Float.max 1e-10 y in
+        let log_min = log_transform ~base safe_min in
+        let log_max = log_transform ~base safe_max in
+        if Float.abs (log_max -. log_min) < 1e-12 then 0.
+        else (log_max -. log_transform ~base safe_y) /. (log_max -. log_min)
+
+  (* Secondary Y-axis transform (Y2) - falls back to Y1 if Y2 not configured *)
+  let forward_y2_transform t y =
+    match (t.y2_scale, t.y2_view) with
+    | Some (Numeric _ | Band _), Some view ->
+        if Float.abs (view.max -. view.min) < 1e-12 then 0.
+        else (view.max -. y) /. (view.max -. view.min)
+    | Some (Log { base; view; _ }), _ ->
+        let safe_min = Float.max 1e-10 view.min in
+        let safe_max = Float.max 1e-10 view.max in
+        let safe_y = Float.max 1e-10 y in
+        let log_min = log_transform ~base safe_min in
+        let log_max = log_transform ~base safe_max in
+        if Float.abs (log_max -. log_min) < 1e-12 then 0.
+        else (log_max -. log_transform ~base safe_y) /. (log_max -. log_min)
+    | _ -> forward_y_transform t y (* Fallback to Y1 *)
 
   let data_of_px t ~px ~py =
     if not (rect_contains t.plot ~x:px ~y:py) then None
@@ -1368,36 +1574,29 @@ module Layout = struct
       let h = max 1 (t.plot.height - 1) in
       let tx = float rel_x /. float w in
       let ty = float rel_y /. float h in
-      let x = lerp t.x_view.min t.x_view.max tx in
-      (* y is inverted *)
-      let y = lerp t.y_view.max t.y_view.min ty in
+      let x = inverse_x_transform t tx in
+      let y = inverse_y_transform t ty in
       Some (x, y)
 
-  (* Internal: unclamped version for hit-testing - returns None if outside view *)
-  let px_of_data_unclamped t ~x ~y =
+  (* Internal: unclamped version for hit-testing - returns None if outside view.
+     Respects y_axis selector for marks that use Y2 axis. *)
+  let px_of_data_unclamped ?(y_axis : Mark.y_axis_selector = `Y1) t ~x ~y =
+    let forward_y =
+      match y_axis with
+      | `Y1 -> forward_y_transform t y
+      | `Y2 -> forward_y2_transform t y
+    in
     (* Handle single-cell plots *)
     if t.plot.width <= 1 && t.plot.height <= 1 then
-      let tx =
-        if Float.abs (t.x_view.max -. t.x_view.min) < 1e-12 then 0.
-        else (x -. t.x_view.min) /. (t.x_view.max -. t.x_view.min)
-      in
-      let ty =
-        if Float.abs (t.y_view.max -. t.y_view.min) < 1e-12 then 0.
-        else (t.y_view.max -. y) /. (t.y_view.max -. t.y_view.min)
-      in
+      let tx = forward_x_transform t x in
+      let ty = forward_y in
       if tx < 0. || tx > 1. || ty < 0. || ty > 1. then None
       else Some (t.plot.x, t.plot.y)
     else
       let w = max 0 (t.plot.width - 1) in
       let h = max 0 (t.plot.height - 1) in
-      let tx =
-        if Float.abs (t.x_view.max -. t.x_view.min) < 1e-12 || w = 0 then 0.
-        else (x -. t.x_view.min) /. (t.x_view.max -. t.x_view.min)
-      in
-      let ty =
-        if Float.abs (t.y_view.max -. t.y_view.min) < 1e-12 || h = 0 then 0.
-        else (t.y_view.max -. y) /. (t.y_view.max -. t.y_view.min)
-      in
+      let tx = forward_x_transform t x in
+      let ty = forward_y in
       (* Check if point is within view before returning *)
       if tx < 0. || tx > 1. || ty < 0. || ty > 1. then None
       else
@@ -1411,16 +1610,8 @@ module Layout = struct
     else
       let w = max 0 (t.plot.width - 1) in
       let h = max 0 (t.plot.height - 1) in
-      let tx =
-        if Float.abs (t.x_view.max -. t.x_view.min) < 1e-12 || w = 0 then 0.
-        else (x -. t.x_view.min) /. (t.x_view.max -. t.x_view.min)
-      in
-      let ty =
-        if Float.abs (t.y_view.max -. t.y_view.min) < 1e-12 || h = 0 then 0.
-        else (t.y_view.max -. y) /. (t.y_view.max -. t.y_view.min)
-      in
-      let tx = clamp01 tx in
-      let ty = clamp01 ty in
+      let tx = clamp01 (forward_x_transform t x) in
+      let ty = clamp01 (forward_y_transform t y) in
       let px = t.plot.x + int_of_float (Float.round (tx *. float w)) in
       let py = t.plot.y + int_of_float (Float.round (ty *. float h)) in
       (px, py)
@@ -1435,16 +1626,27 @@ module Layout = struct
     let bw = Float.max 1e-6 (band_extent /. float n) in
     (pad /. 2., bw)
 
-  let band_index cats s =
-    let rec aux i = function
-      | [] -> None
-      | c :: tl -> if String.equal c s then Some i else aux (i + 1) tl
-    in
-    aux 0 cats
+  (* Convert band index to pixel position (start of band).
+     Uses Float.round for consistency across gridlines and bars. *)
+  let band_start_px ~origin ~offset ~bw ~index =
+    origin + int_of_float (Float.round (offset +. (float index *. bw)))
+
+  (* Compute the band width in pixels (excluding 1px for inter-band gap).
+     Ensures minimum of 1 pixel. Uses Float.max 1. to ensure non-negative
+     before subtracting, then applies outer max 1 for safety. *)
+  let band_size_px ~bw = max 1 (int_of_float (Float.max 1. (bw -. 1.)))
+
+  (* O(1) category-to-index lookup using precomputed hashtable *)
+  let band_index_fast index_of s = Hashtbl.find_opt index_of s
+
+  (* O(1) index-to-category lookup using precomputed array *)
+  let band_category_fast categories_arr i =
+    if i >= 0 && i < Array.length categories_arr then Some categories_arr.(i)
+    else None
 
   let x_category_of_px t ~px =
     match t.x_scale with
-    | Band { categories; padding; _ } ->
+    | Band { categories_arr; padding; categories; _ } ->
         if t.plot.width <= 0 then None
         else if px < t.plot.x || px >= t.plot.x + t.plot.width then None
         else
@@ -1453,13 +1655,13 @@ module Layout = struct
           in
           let rel = float (px - t.plot.x) in
           let i = int_of_float ((rel -. offset) /. bw) in
-          let i = clamp_int 0 (List.length categories - 1) i in
-          List.nth_opt categories i
+          let i = clamp_int 0 (Array.length categories_arr - 1) i in
+          band_category_fast categories_arr i
     | _ -> None
 
   let y_category_of_px t ~py =
     match t.y_scale with
-    | Band { categories; padding; _ } ->
+    | Band { categories_arr; padding; categories; _ } ->
         if t.plot.height <= 0 then None
         else if py < t.plot.y || py >= t.plot.y + t.plot.height then None
         else
@@ -1468,53 +1670,59 @@ module Layout = struct
           in
           let rel = float (py - t.plot.y) in
           let i = int_of_float ((rel -. offset) /. bw) in
-          let i = clamp_int 0 (List.length categories - 1) i in
-          List.nth_opt categories i
+          let i = clamp_int 0 (Array.length categories_arr - 1) i in
+          band_category_fast categories_arr i
     | _ -> None
 
   let px_of_x_category t cat =
     match t.x_scale with
-    | Band { categories; padding; _ } -> (
-        match band_index categories cat with
+    | Band { index_of; padding; categories; _ } -> (
+        match band_index_fast index_of cat with
         | None -> None
         | Some i ->
             let offset, bw =
               band_params ~cats:categories ~padding ~extent:t.plot.width
             in
-            let band_w = max 1 (int_of_float (Float.max 1. (bw -. 1.))) in
-            let x0 = t.plot.x + int_of_float (offset +. (float i *. bw)) in
+            let band_w = band_size_px ~bw in
+            let x0 = band_start_px ~origin:t.plot.x ~offset ~bw ~index:i in
             Some (x0 + (band_w / 2)))
     | _ -> None
 
   let py_of_y_category t cat =
     match t.y_scale with
-    | Band { categories; padding; _ } -> (
-        match band_index categories cat with
+    | Band { index_of; padding; categories; _ } -> (
+        match band_index_fast index_of cat with
         | None -> None
         | Some i ->
             let offset, bw =
               band_params ~cats:categories ~padding ~extent:t.plot.height
             in
-            let band_h = max 1 (int_of_float (Float.max 1. (bw -. 1.))) in
-            let y0 = t.plot.y + int_of_float (offset +. (float i *. bw)) in
+            let band_h = band_size_px ~bw in
+            let y0 = band_start_px ~origin:t.plot.y ~offset ~bw ~index:i in
             Some (y0 + (band_h / 2)))
     | _ -> None
 
   let clamp_view t (v : View.t) =
-    let clamp_axis scale domain win_opt =
-      match (scale, win_opt) with
-      (* Only clamp if the scale's clamp flag is true *)
-      | Numeric { clamp = true; _ }, Some w | Log { clamp = true; _ }, Some w ->
+    let clamp_axis scale_opt domain_opt win_opt =
+      match (scale_opt, domain_opt, win_opt) with
+      (* Only clamp if the scale's clamp flag is true and domain is available *)
+      | Some (Numeric { clamp = true; _ }), Some domain, Some w
+      | Some (Log { clamp = true; _ }), Some domain, Some w ->
           Some (View.clamp ~domain w)
-      | Numeric { clamp = false; _ }, Some w | Log { clamp = false; _ }, Some w
-        ->
+      (* clamp=true but no domain: pass through without clamping *)
+      | Some (Numeric { clamp = true; _ }), None, Some w
+      | Some (Log { clamp = true; _ }), None, Some w ->
           Some w
-      | Numeric _, None | Log _, None -> None
-      | Band _, _ -> None
+      | Some (Numeric { clamp = false; _ }), _, Some w
+      | Some (Log { clamp = false; _ }), _, Some w ->
+          Some w
+      | Some (Numeric _), _, None | Some (Log _), _, None -> None
+      | Some (Band _), _, _ | None, _, _ -> None
     in
     {
-      View.x = clamp_axis t.x_scale t.x_domain v.View.x;
-      y = clamp_axis t.y_scale t.y_domain v.View.y;
+      View.x = clamp_axis (Some t.x_scale) (Some t.x_domain) v.View.x;
+      y = clamp_axis (Some t.y_scale) (Some t.y_domain) v.View.y;
+      y2 = clamp_axis t.y2_scale t.y2_domain v.View.y2;
     }
 
   let zoom_view_around_px t ~view ~axis ~px ~py ~factor =
@@ -1539,6 +1747,13 @@ module Layout = struct
       | Numeric { clamp; _ } | Log { clamp; _ } -> (true, clamp)
       | Band _ -> (false, false)
     in
+    (* Y2 axis zoom support *)
+    let apply_y2, clamp_y2, y2_domain =
+      match t.y2_scale with
+      | Some (Numeric { clamp; _ }) | Some (Log { clamp; _ }) ->
+          (true, clamp, t.y2_domain)
+      | Some (Band _) | None -> (false, false, None)
+    in
     let x =
       if apply_x && (axis = `X || axis = `Both) then
         let w = Option.value base.View.x ~default:t.x_view in
@@ -1553,7 +1768,36 @@ module Layout = struct
         Some (if clamp_y then View.clamp ~domain:t.y_domain zoomed else zoomed)
       else base.View.y
     in
-    { View.x; y }
+    (* Y2 zooms together with Y when axis = `Y or `Both *)
+    let y2 =
+      match (apply_y2, axis, base.View.y2, t.y2_view) with
+      | true, (`Y | `Both), Some w, _ ->
+          let center_y2 =
+            match t.y2_view with
+            | Some v -> (v.min +. v.max) /. 2.0
+            | None -> center_y
+          in
+          let zoomed = View.zoom_around w ~center:center_y2 ~factor in
+          let clamped =
+            match (clamp_y2, y2_domain) with
+            | true, Some domain -> View.clamp ~domain zoomed
+            | _ -> zoomed
+          in
+          Some clamped
+      | true, (`Y | `Both), None, Some default_view ->
+          let center_y2 = (default_view.min +. default_view.max) /. 2.0 in
+          let zoomed =
+            View.zoom_around default_view ~center:center_y2 ~factor
+          in
+          let clamped =
+            match (clamp_y2, y2_domain) with
+            | true, Some domain -> View.clamp ~domain zoomed
+            | _ -> zoomed
+          in
+          Some clamped
+      | _ -> base.View.y2
+    in
+    { View.x; y; y2 }
 
   let pan_view_by_px t ~view ~dx ~dy =
     let base = clamp_view t view in
@@ -1567,6 +1811,13 @@ module Layout = struct
       match t.y_scale with
       | Numeric { clamp; _ } | Log { clamp; _ } -> (true, clamp)
       | Band _ -> (false, false)
+    in
+    (* Y2 axis pan support *)
+    let apply_y2, clamp_y2, y2_domain =
+      match t.y2_scale with
+      | Some (Numeric { clamp; _ }) | Some (Log { clamp; _ }) ->
+          (true, clamp, t.y2_domain)
+      | Some (Band _) | None -> (false, false, None)
     in
     let pan_x =
       if not apply_x then None
@@ -1586,7 +1837,36 @@ module Layout = struct
         let panned = View.pan w ~delta in
         Some (if clamp_y then View.clamp ~domain:t.y_domain panned else panned)
     in
-    { View.x = pan_x; y = pan_y }
+    (* Y2 pans together with Y *)
+    let pan_y2 =
+      if not apply_y2 then base.View.y2
+      else
+        match (base.View.y2, t.y2_view) with
+        | Some w, _ ->
+            let denom = float (max 1 (t.plot.height - 1)) in
+            let delta = float dy *. (w.max -. w.min) /. denom in
+            let panned = View.pan w ~delta in
+            let clamped =
+              match (clamp_y2, y2_domain) with
+              | true, Some domain -> View.clamp ~domain panned
+              | _ -> panned
+            in
+            Some clamped
+        | None, Some default_view ->
+            let denom = float (max 1 (t.plot.height - 1)) in
+            let delta =
+              float dy *. (default_view.max -. default_view.min) /. denom
+            in
+            let panned = View.pan default_view ~delta in
+            let clamped =
+              match (clamp_y2, y2_domain) with
+              | true, Some domain -> View.clamp ~domain panned
+              | _ -> panned
+            in
+            Some clamped
+        | None, None -> None
+    in
+    { View.x = pan_x; y = pan_y; y2 = pan_y2 }
 
   let plot_center_px t =
     let px = t.plot.x + (t.plot.width / 2) in
@@ -1620,13 +1900,14 @@ module Layout = struct
         | Some b when cand.distance_px <= b.distance_px -> best := Some cand
         | _ -> ()
       in
-      (* Use unclamped version for hit-testing to filter out offscreen points *)
-      let map_xy_unclamped x y = px_of_data_unclamped t ~x ~y in
+      (* Use unclamped version for hit-testing to filter out offscreen points.
+         Now respects y_axis selector for Y2 axis support. *)
+      let map_xy_unclamped ~y_axis x y = px_of_data_unclamped ~y_axis t ~x ~y in
 
-      let check_points ~mark_id ~kind ~payload_of ~data_iter =
+      let check_points ~y_axis ~mark_id ~kind ~payload_of ~data_iter =
         data_iter (fun idx (x, y) ->
             (* Only consider points that are within the current view *)
-            match map_xy_unclamped x y with
+            match map_xy_unclamped ~y_axis x y with
             | None -> () (* Point is outside view, skip it *)
             | Some (xpx, ypx) ->
                 let d = hit_distance ~policy ~px ~py ~x:xpx ~y:ypx in
@@ -1681,8 +1962,8 @@ module Layout = struct
 
       List.iter
         (function
-          | CLine { id; x; y; data; _ } ->
-              check_points ~mark_id:id ~kind:`Line
+          | CLine { id; x; y; y_axis; data; _ } ->
+              check_points ~y_axis ~mark_id:id ~kind:`Line
                 ~payload_of:(fun x y -> Hit.XY { x; y })
                 ~data_iter:(fun f ->
                   let idx = ref 0 in
@@ -1690,8 +1971,8 @@ module Layout = struct
                       let i = !idx in
                       incr idx;
                       f i (x a, y a)))
-          | CLine_opt { id; x; y; data; _ } ->
-              check_points ~mark_id:id ~kind:`Line
+          | CLine_opt { id; x; y; y_axis; data; _ } ->
+              check_points ~y_axis ~mark_id:id ~kind:`Line
                 ~payload_of:(fun x y -> Hit.XY { x; y })
                 ~data_iter:(fun f ->
                   let idx = ref 0 in
@@ -1699,8 +1980,8 @@ module Layout = struct
                       let i = !idx in
                       incr idx;
                       match y a with None -> () | Some yy -> f i (x a, yy)))
-          | CScatter { id; x; y; data; _ } ->
-              check_points ~mark_id:id ~kind:`Scatter
+          | CScatter { id; x; y; y_axis; data; _ } ->
+              check_points ~y_axis ~mark_id:id ~kind:`Scatter
                 ~payload_of:(fun x y -> Hit.XY { x; y })
                 ~data_iter:(fun f ->
                   let idx = ref 0 in
@@ -1710,7 +1991,7 @@ module Layout = struct
                       f i (x a, y a)))
           | CBars_y { id; x; y; data; _ } -> (
               match t.x_scale with
-              | Band { categories; padding; _ } ->
+              | Band { categories; index_of; padding; _ } ->
                   let offset, bw =
                     band_params ~cats:categories ~padding ~extent:t.plot.width
                   in
@@ -1724,7 +2005,7 @@ module Layout = struct
                           let i = !idx in
                           incr idx;
                           let cat = x a in
-                          match band_index categories cat with
+                          match band_index_fast index_of cat with
                           | None -> ()
                           | Some bi ->
                               let x0 =
@@ -1745,7 +2026,7 @@ module Layout = struct
               | _ -> ())
           | CBars_x { id; y; x; data; _ } -> (
               match t.y_scale with
-              | Band { categories; padding; _ } ->
+              | Band { categories; index_of; padding; _ } ->
                   let offset, bw =
                     band_params ~cats:categories ~padding ~extent:t.plot.height
                   in
@@ -1759,7 +2040,7 @@ module Layout = struct
                           let i = !idx in
                           incr idx;
                           let cat = y a in
-                          match band_index categories cat with
+                          match band_index_fast index_of cat with
                           | None -> ()
                           | Some bi ->
                               let y0 =
@@ -1778,7 +2059,7 @@ module Layout = struct
               | _ -> ())
           | CStacked_y { id; data; _ } -> (
               match t.x_scale with
-              | Band { categories; padding; _ } ->
+              | Band { categories; index_of; padding; _ } ->
                   let offset, bw =
                     band_params ~cats:categories ~padding ~extent:t.plot.width
                   in
@@ -1797,7 +2078,7 @@ module Layout = struct
                       Data.iter data (fun bar ->
                           let i = !idx in
                           incr idx;
-                          match band_index categories bar.Mark.category with
+                          match band_index_fast index_of bar.Mark.category with
                           | None -> ()
                           | Some bi ->
                               let x0 =
@@ -1835,7 +2116,7 @@ module Layout = struct
               | _ -> ())
           | CStacked_x { id; data; _ } -> (
               match t.y_scale with
-              | Band { categories; padding; _ } ->
+              | Band { categories; index_of; padding; _ } ->
                   let offset, bw =
                     band_params ~cats:categories ~padding ~extent:t.plot.height
                   in
@@ -1854,7 +2135,7 @@ module Layout = struct
                       Data.iter data (fun bar ->
                           let i = !idx in
                           incr idx;
-                          match band_index categories bar.Mark.category with
+                          match band_index_fast index_of bar.Mark.category with
                           | None -> ()
                           | Some bi ->
                               let y0 =
@@ -1891,7 +2172,8 @@ module Layout = struct
                                 bar.segments))
               | _ -> ())
           | CHeatmap { id; x; y; value = value_fn; data; _ } ->
-              (* nearest-point heat hit - now passes value through *)
+              (* nearest-point heat hit - now passes value through.
+                 CHeatmap always uses Y1 axis. *)
               let idx = ref 0 in
               Data.iter data (fun a ->
                   let i = !idx in
@@ -1900,7 +2182,7 @@ module Layout = struct
                   let yv = y a in
                   let v = value_fn a in
                   (* Only consider points within current view *)
-                  match map_xy_unclamped xv yv with
+                  match map_xy_unclamped ~y_axis:`Y1 xv yv with
                   | None -> () (* Point outside view, skip *)
                   | Some (xpx, ypx) ->
                       let d = hit_distance ~policy ~px ~py ~x:xpx ~y:ypx in
@@ -1915,13 +2197,13 @@ module Layout = struct
                             distance_px = d;
                             payload = Hit.Heat { x = xv; y = yv; value = v };
                           })
-          | CCandles { id; data; _ } ->
+          | CCandles { id; y_axis; data; _ } ->
               let idx = ref 0 in
               Data.iter data (fun o ->
                   let i = !idx in
                   incr idx;
                   (* Check if candle's x position is within view *)
-                  match map_xy_unclamped o.Mark.time t.y_view.min with
+                  match map_xy_unclamped ~y_axis o.Mark.time t.y_view.min with
                   | None -> () (* Candle outside view, skip *)
                   | Some (cx, _) ->
                       let d = hit_distance ~policy ~px ~py ~x:cx ~y:py in
@@ -1944,8 +2226,8 @@ module Layout = struct
                                   close = o.close;
                                 };
                           })
-          | CCircle { id; cx; cy; data; _ } ->
-              check_points ~mark_id:id ~kind:`Circle
+          | CCircle { id; y_axis; cx; cy; data; _ } ->
+              check_points ~y_axis ~mark_id:id ~kind:`Circle
                 ~payload_of:(fun x y -> Hit.XY { x; y })
                 ~data_iter:(fun f ->
                   let idx = ref 0 in
@@ -2146,11 +2428,21 @@ module Overlay = struct
   let arrow ?style ?(head = `Arrow) (layout : Layout.t) (grid : G.t) ~x1 ~y1 ~x2
       ~y2 =
     let style = Option.value style ~default:layout.theme.labels in
+    let ch = layout.theme.charset in
+    let line_glyphs : G.line_glyphs =
+      {
+        G.h = ch.frame.h;
+        v = ch.frame.v;
+        diag_up = ch.diag_up;
+        diag_down = ch.diag_down;
+      }
+    in
     let px1, py1 = Layout.px_of_data layout ~x:x1 ~y:y1 in
     let px2, py2 = Layout.px_of_data layout ~x:x2 ~y:y2 in
     let rect = Layout.plot_rect layout in
     (* Draw line from (px1,py1) to (px2,py2) *)
-    G.draw_line grid ~x1:px1 ~y1:py1 ~x2:px2 ~y2:py2 ~style ~kind:`Line ();
+    G.draw_line grid ~x1:px1 ~y1:py1 ~x2:px2 ~y2:py2 ~style ~glyphs:line_glyphs
+      ~kind:`Line ();
     (* Draw arrow head at endpoint if within plot *)
     if Layout.rect_contains rect ~x:px2 ~y:py2 then
       match head with
@@ -2265,11 +2557,9 @@ let manual_frame ?(margins = (0, 0, 0, 0)) ?(inner_padding = 0) () =
 let apply_theme_defaults (theme : Theme.t) (a : Axis.t) =
   {
     a with
-    style = (if a.style = Style.default then theme.axes else a.style);
-    tick_style =
-      (if a.tick_style = Style.default then theme.axes else a.tick_style);
-    label_style =
-      (if a.label_style = Style.default then theme.labels else a.label_style);
+    style = Some (Option.value a.style ~default:theme.axes);
+    tick_style = Some (Option.value a.tick_style ~default:theme.axes);
+    label_style = Some (Option.value a.label_style ~default:theme.labels);
   }
 
 let apply_grid_theme (theme : Theme.t) (g : Gridlines.t) =
@@ -2404,7 +2694,9 @@ type dom_acc = {
 let dom_acc () = { has = false; minv = 0.; maxv = 0. }
 
 let dom_add acc v =
-  if not acc.has then (
+  (* Skip non-finite values (NaN, Infinity) to prevent domain corruption *)
+  if not (Float.is_finite v) then ()
+  else if not acc.has then (
     acc.has <- true;
     acc.minv <- v;
     acc.maxv <- v)
@@ -2503,6 +2795,77 @@ let infer_axis_kind_y (scale : Scale.t) marks =
 type axis_kind_poly =
   [ `Band of string list * float | `Numeric of bool | `Log of float * bool ]
 
+(* Histogram binning helpers - defined here so they can be used in domain inference *)
+let compute_histogram_bins ~(bins : Mark.bin_method)
+    ~(normalize : Mark.histogram_normalize) ~(x : 'a -> float) (data : 'a array)
+    : float array * float array =
+  let n = Array.length data in
+  if n = 0 then ([||], [||])
+  else
+    (* Extract values and compute range *)
+    let values = Array.map x data in
+    Array.sort Float.compare values;
+    let vmin = values.(0) in
+    let vmax = values.(n - 1) in
+    let range = vmax -. vmin in
+    let range = if range <= 0. then 1. else range in
+    (* Compute bin edges *)
+    let edges =
+      match bins with
+      | Mark.Bins num_bins ->
+          let num_bins = max 1 num_bins in
+          let width = range /. float num_bins in
+          Array.init (num_bins + 1) (fun i -> vmin +. (float i *. width))
+      | Mark.Width w ->
+          let w = if w <= 0. then range /. 10. else w in
+          let num_bins = max 1 (int_of_float (Float.ceil (range /. w))) in
+          Array.init (num_bins + 1) (fun i -> vmin +. (float i *. w))
+      | Mark.Edges e ->
+          (* Edges array must have at least 2 elements to define one bin.
+             If invalid, fall back to auto-computed edges. *)
+          if Array.length e >= 2 then e
+          else
+            let num_bins = 10 in
+            let width = range /. float num_bins in
+            Array.init (num_bins + 1) (fun i -> vmin +. (float i *. width))
+    in
+    let num_bins = Array.length edges - 1 in
+    (* Count values in each bin *)
+    let counts = Array.make num_bins 0 in
+    Array.iter
+      (fun v ->
+        (* Find bin using binary search *)
+        let rec find lo hi =
+          if lo >= hi then lo
+          else
+            let mid = (lo + hi) / 2 in
+            if mid + 1 < Array.length edges && v >= edges.(mid + 1) then
+              find (mid + 1) hi
+            else find lo mid
+        in
+        let bin = min (num_bins - 1) (find 0 (num_bins - 1)) in
+        counts.(bin) <- counts.(bin) + 1)
+      values;
+    (* Normalize counts *)
+    let bin_values =
+      match normalize with
+      | `Count -> Array.map float counts
+      | `Probability ->
+          let total = float n in
+          Array.map (fun c -> float c /. total) counts
+      | `Density ->
+          let total = float n in
+          Array.mapi
+            (fun i c ->
+              let bin_width =
+                if i + 1 < Array.length edges then edges.(i + 1) -. edges.(i)
+                else 1.
+              in
+              float c /. (total *. bin_width))
+            counts
+    in
+    (edges, bin_values)
+
 let resolve_numeric_domains (t : t) (x_kind : axis_kind_poly)
     (y_kind : axis_kind_poly) =
   let xacc = dom_acc () in
@@ -2592,11 +2955,18 @@ let resolve_numeric_domains (t : t) (x_kind : axis_kind_poly)
               dom_add xacc (x a);
               add_y y_axis (y_low a);
               add_y y_axis (y_high a))
-      | Mark.Histogram { x; data; _ } ->
-          (* For histogram domain, just include data range on x-axis;
-             y-axis domain will be computed during rendering based on bin counts *)
+      | Mark.Histogram { bins; normalize; x; data; _ } ->
+          (* Include data range on x-axis *)
+          Data.iter data (fun a -> dom_add xacc (x a));
+          (* Compute histogram bins to determine y-axis domain *)
           include_zero_y1 ();
-          Data.iter data (fun a -> dom_add xacc (x a)))
+          let _bin_edges, bin_values =
+            compute_histogram_bins ~bins ~normalize ~x data
+          in
+          (* Add max bin value to y domain *)
+          if Array.length bin_values > 0 then
+            let max_bin = Array.fold_left Float.max bin_values.(0) bin_values in
+            dom_add y1acc max_bin)
     (marks t);
 
   (* If axis is Band, numeric domain becomes [0,n] internal. *)
@@ -2624,83 +2994,27 @@ let apply_domain_override (scale : Scale.t) (dom : View.window) : View.window =
       View.window ~min:a ~max:b
   | _ -> dom
 
-let resolve_view (dom : View.window) (view_opt : View.window option) :
+let resolve_view ~clamp (dom : View.window) (view_opt : View.window option) :
     View.window =
-  match view_opt with None -> dom | Some v -> View.clamp ~domain:dom v
+  match view_opt with
+  | None -> dom
+  | Some v -> if clamp then View.clamp ~domain:dom v else v
+
+(* Validate and adjust log scale domain. If the domain contains non-positive
+   values, adjust to use a safe minimum (1e-10 or the smallest positive value).
+   Returns the adjusted (min, max) pair. *)
+let validate_log_domain (w : View.window) : View.window =
+  let safe_min = 1e-10 in
+  let min' = if w.min <= 0. then safe_min else w.min in
+  let max' = if w.max <= 0. then safe_min *. 10. else w.max in
+  (* Ensure min < max *)
+  let min', max' = if min' >= max' then (min', min' *. 10.) else (min', max') in
+  { View.min = min'; max = max' }
 
 let resolve_style_from_palette (theme : Theme.t) (i : int) : Style.t =
-  let color =
-    match
-      List.nth_opt theme.palette (i mod max 1 (List.length theme.palette))
-    with
-    | None -> Color.default
-    | Some c -> c
-  in
+  let len = Array.length theme.palette in
+  let color = if len = 0 then Color.default else theme.palette.(i mod len) in
   Style.fg color Style.default
-
-(* Histogram binning helpers *)
-let compute_histogram_bins ~(bins : Mark.bin_method)
-    ~(normalize : Mark.histogram_normalize) ~(x : 'a -> float) (data : 'a array)
-    : float array * float array =
-  let n = Array.length data in
-  if n = 0 then ([||], [||])
-  else
-    (* Extract values and compute range *)
-    let values = Array.map x data in
-    Array.sort Float.compare values;
-    let vmin = values.(0) in
-    let vmax = values.(n - 1) in
-    let range = vmax -. vmin in
-    let range = if range <= 0. then 1. else range in
-    (* Compute bin edges *)
-    let edges =
-      match bins with
-      | Mark.Bins num_bins ->
-          let num_bins = max 1 num_bins in
-          let width = range /. float num_bins in
-          Array.init (num_bins + 1) (fun i -> vmin +. (float i *. width))
-      | Mark.Width w ->
-          let w = if w <= 0. then range /. 10. else w in
-          let num_bins = max 1 (int_of_float (Float.ceil (range /. w))) in
-          Array.init (num_bins + 1) (fun i -> vmin +. (float i *. w))
-      | Mark.Edges e -> e
-    in
-    let num_bins = max 1 (Array.length edges - 1) in
-    (* Count values in each bin *)
-    let counts = Array.make num_bins 0 in
-    Array.iter
-      (fun v ->
-        (* Find bin using binary search *)
-        let rec find lo hi =
-          if lo >= hi then lo
-          else
-            let mid = (lo + hi) / 2 in
-            if mid + 1 < Array.length edges && v >= edges.(mid + 1) then
-              find (mid + 1) hi
-            else find lo mid
-        in
-        let bin = min (num_bins - 1) (find 0 (num_bins - 1)) in
-        counts.(bin) <- counts.(bin) + 1)
-      values;
-    (* Normalize counts *)
-    let bin_values =
-      match normalize with
-      | `Count -> Array.map float counts
-      | `Probability ->
-          let total = float n in
-          Array.map (fun c -> float c /. total) counts
-      | `Density ->
-          let total = float n in
-          Array.mapi
-            (fun i c ->
-              let bin_width =
-                if i + 1 < Array.length edges then edges.(i + 1) -. edges.(i)
-                else 1.
-              in
-              float c /. (total *. bin_width))
-            counts
-    in
-    (edges, bin_values)
 
 let compile_marks (theme : Theme.t) (marks : Mark.t list) : compiled_mark list =
   let idx = ref 0 in
@@ -2796,7 +3110,14 @@ let compile_marks (theme : Theme.t) (marks : Mark.t list) : compiled_mark list =
               data;
             }
       | Mark.Candles { id; bullish; bearish; width; body; y_axis; data } ->
-          CCandles { id; bullish; bearish; width; body; y_axis; data }
+          (* Pre-sort candles by time during compilation for O(1) draw access *)
+          let sorted_data =
+            Array.copy data |> fun arr ->
+            Array.sort (fun a b -> compare a.Mark.time b.Mark.time) arr;
+            arr
+          in
+          CCandles
+            { id; bullish; bearish; width; body; y_axis; data = sorted_data }
       | Mark.Circle { id; style; resolution; y_axis; cx; cy; r; data } ->
           let st = Option.value style ~default:(next_default ()) in
           CCircle { id; resolution; style = st; y_axis; cx; cy; r; data }
@@ -2834,18 +3155,34 @@ let compile_marks (theme : Theme.t) (marks : Mark.t list) : compiled_mark list =
           CHistogram { id; label; style = st; bin_edges; bin_values })
     marks
 
+(* Compute axis label width using the actual tick values that will be displayed.
+   This ensures consistent layout regardless of scale type (linear vs log). *)
+let axis_label_width_from_ticks (axis : Axis.t) (tick_values : float list) : int
+    =
+  if not axis.show then 0
+  else
+    List.fold_left
+      (fun (acc, i) v ->
+        let s = axis.format i v in
+        (max acc (text_width s), i + 1))
+      (0, 0) tick_values
+    |> fst
+
 let axis_label_width_numeric (axis : Axis.t) (w : View.window) : int =
   if not axis.show then 0
   else
-    let ticks = max 2 axis.ticks in
-    let acc = ref 0 in
-    for i = 0 to ticks - 1 do
-      let t = float i /. float (ticks - 1) in
-      let v = lerp w.min w.max t in
-      let s = axis.format i v in
-      acc := max !acc (text_width s)
-    done;
-    !acc
+    let tick_values =
+      nice_ticks ~min_val:w.min ~max_val:w.max ~target_ticks:axis.ticks
+    in
+    axis_label_width_from_ticks axis tick_values
+
+let axis_label_width_log (axis : Axis.t) ~base (w : View.window) : int =
+  if not axis.show then 0
+  else
+    let tick_values =
+      log_ticks ~base ~min_val:w.min ~max_val:w.max ~target_ticks:axis.ticks
+    in
+    axis_label_width_from_ticks axis tick_values
 
 let axis_label_width_band (axis : Axis.t) (cats : string list) : int =
   if not axis.show then 0
@@ -2878,14 +3215,16 @@ let compute_layout ?(view = View.empty) ?(x = 0) ?(y = 0) (t : t) ~width ~height
     match x_kind with
     | `Band (cats, padding) ->
         let dom = View.window ~min:0. ~max:(float (max 1 (List.length cats))) in
-        Band { categories = cats; padding; domain = dom; view = dom }
+        make_band ~categories:cats ~padding ~domain:dom ~view:dom
     | `Numeric clamp ->
         let dom = x_domain in
-        let v = resolve_view dom view.View.x in
+        let v = resolve_view ~clamp dom view.View.x in
         Numeric { domain = dom; view = v; clamp }
     | `Log (base, clamp) ->
-        let dom = x_domain in
-        let v = resolve_view dom view.View.x in
+        (* Validate log domain - adjust non-positive values to safe minimum *)
+        let dom = validate_log_domain x_domain in
+        let v = resolve_view ~clamp dom view.View.x in
+        let v = validate_log_domain v in
         Log { base; domain = dom; view = v; clamp }
   in
 
@@ -2893,14 +3232,16 @@ let compute_layout ?(view = View.empty) ?(x = 0) ?(y = 0) (t : t) ~width ~height
     match y_kind with
     | `Band (cats, padding) ->
         let dom = View.window ~min:0. ~max:(float (max 1 (List.length cats))) in
-        Band { categories = cats; padding; domain = dom; view = dom }
+        make_band ~categories:cats ~padding ~domain:dom ~view:dom
     | `Numeric clamp ->
         let dom = y_domain in
-        let v = resolve_view dom view.View.y in
+        let v = resolve_view ~clamp dom view.View.y in
         Numeric { domain = dom; view = v; clamp }
     | `Log (base, clamp) ->
-        let dom = y_domain in
-        let v = resolve_view dom view.View.y in
+        (* Validate log domain - adjust non-positive values to safe minimum *)
+        let dom = validate_log_domain y_domain in
+        let v = resolve_view ~clamp dom view.View.y in
+        let v = validate_log_domain v in
         Log { base; domain = dom; view = v; clamp }
   in
 
@@ -2921,12 +3262,17 @@ let compute_layout ?(view = View.empty) ?(x = 0) ?(y = 0) (t : t) ~width ~height
               let dom =
                 View.window ~min:0. ~max:(float (max 1 (List.length cats)))
               in
-              Band { categories = cats; padding; domain = dom; view = dom }
+              make_band ~categories:cats ~padding ~domain:dom ~view:dom
           | `Numeric clamp ->
-              let v = resolve_view y2_dom view.View.y in
+              (* Use y2 view if provided, otherwise use domain (not y view!) *)
+              let v = resolve_view ~clamp y2_dom view.View.y2 in
               Numeric { domain = y2_dom; view = v; clamp }
           | `Log (base, clamp) ->
-              let v = resolve_view y2_dom view.View.y in
+              (* Validate log domain - adjust non-positive values to safe minimum *)
+              let y2_dom = validate_log_domain y2_dom in
+              (* Use y2 view if provided, otherwise use domain (not y view!) *)
+              let v = resolve_view ~clamp y2_dom view.View.y2 in
+              let v = validate_log_domain v in
               Log { base; domain = y2_dom; view = v; clamp }
         in
         let view_win =
@@ -2953,8 +3299,8 @@ let compute_layout ?(view = View.empty) ?(x = 0) ?(y = 0) (t : t) ~width ~height
     else
       let label_w =
         match y_scale_res with
-        | Numeric { domain; _ } | Log { domain; _ } ->
-            axis_label_width_numeric t.y_axis domain
+        | Numeric { domain; _ } -> axis_label_width_numeric t.y_axis domain
+        | Log { base; domain; _ } -> axis_label_width_log t.y_axis ~base domain
         | Band { categories; _ } -> axis_label_width_band t.y_axis categories
       in
       (* label area + padding + tick_length + axis line *)
@@ -2963,8 +3309,14 @@ let compute_layout ?(view = View.empty) ?(x = 0) ?(y = 0) (t : t) ~width ~height
   let x_axis_height =
     if not t.x_axis.show then 0
     else
-      (* axis line + tick_length + label_padding + label row *)
-      1 + t.x_axis.tick_length + t.x_axis.label_padding + 1
+      (* axis line + tick_length + label_padding + label row + optional title row *)
+      let base = 1 + t.x_axis.tick_length + t.x_axis.label_padding + 1 in
+      let title_space = match t.x_axis.title with None -> 0 | Some _ -> 1 in
+      base + title_space
+  in
+  (* Y-axis title space - reserve columns to the left if y-axis has a title (title + gap) *)
+  let y_axis_title_width =
+    match t.y_axis.title with None -> 0 | Some _ -> 3
   in
 
   (* Y2 axis width - computed if y2_axis is configured *)
@@ -2973,15 +3325,15 @@ let compute_layout ?(view = View.empty) ?(x = 0) ?(y = 0) (t : t) ~width ~height
     | Some y2_ax, Some y2_sc when y2_ax.Axis.show ->
         let label_w =
           match y2_sc with
-          | Numeric { domain; _ } | Log { domain; _ } ->
-              axis_label_width_numeric y2_ax domain
+          | Numeric { domain; _ } -> axis_label_width_numeric y2_ax domain
+          | Log { base; domain; _ } -> axis_label_width_log y2_ax ~base domain
           | Band { categories; _ } -> axis_label_width_band y2_ax categories
         in
         label_w + y2_ax.label_padding + y2_ax.tick_length + 1
     | _ -> 0
   in
 
-  let plot_x_rel = ml + y_axis_width + ip in
+  let plot_x_rel = ml + y_axis_title_width + y_axis_width + ip in
   let plot_y_rel = mt + ip in
   let plot_w = max 1 (width - plot_x_rel - mr - ip - y2_axis_width) in
   let plot_h = max 1 (height - plot_y_rel - (mb + x_axis_height + ip)) in
@@ -3002,6 +3354,41 @@ let compute_layout ?(view = View.empty) ?(x = 0) ?(y = 0) (t : t) ~width ~height
         Some Layout.{ text; style = st }
   in
 
+  (* Precompute tick values for axes (computed once, used in draw_grid and draw_axes) *)
+  let x_ticks =
+    match x_scale_res with
+    | Numeric _ ->
+        nice_ticks ~min_val:x_view.min ~max_val:x_view.max
+          ~target_ticks:t.x_axis.ticks
+    | Log { base; view; _ } ->
+        log_ticks ~base ~min_val:view.min ~max_val:view.max
+          ~target_ticks:t.x_axis.ticks
+    | Band _ -> [] (* Band scales use categories, not numeric ticks *)
+  in
+  let y_ticks =
+    match y_scale_res with
+    | Numeric _ ->
+        nice_ticks ~min_val:y_view.min ~max_val:y_view.max
+          ~target_ticks:t.y_axis.ticks
+    | Log { base; view; _ } ->
+        log_ticks ~base ~min_val:view.min ~max_val:view.max
+          ~target_ticks:t.y_axis.ticks
+    | Band _ -> []
+  in
+  let y2_ticks =
+    match (y2_scale_res, t.y2_axis) with
+    | Some (Numeric _), Some y2_ax ->
+        let y2v = Option.get y2_view_res in
+        Some
+          (nice_ticks ~min_val:y2v.min ~max_val:y2v.max
+             ~target_ticks:y2_ax.ticks)
+    | Some (Log { base; view; _ }), Some y2_ax ->
+        Some
+          (log_ticks ~base ~min_val:view.min ~max_val:view.max
+             ~target_ticks:y2_ax.ticks)
+    | _ -> None
+  in
+
   {
     Layout.width;
     height;
@@ -3016,6 +3403,9 @@ let compute_layout ?(view = View.empty) ?(x = 0) ?(y = 0) (t : t) ~width ~height
     x_view;
     y_view;
     y2_view = y2_view_res;
+    x_ticks;
+    y_ticks;
+    y2_ticks;
     x_axis = t.x_axis;
     y_axis = t.y_axis;
     y2_axis = t.y2_axis;
@@ -3023,6 +3413,7 @@ let compute_layout ?(view = View.empty) ?(x = 0) ?(y = 0) (t : t) ~width ~height
     frame_inner_padding = ip;
     margin_left = ml;
     y_axis_width;
+    y_axis_title_width;
     y2_axis_width;
     (* Computed above based on y2_axis *)
     marks = compiled_marks;
@@ -3050,18 +3441,18 @@ let y_to_px ~minv ~maxv ~extent ~origin ~clamp v =
 let x_to_px ~minv ~maxv ~extent ~origin ~clamp v =
   scale_to_px ~minv ~maxv ~extent ~origin ~clamp v
 
-(* Log scale transformation helpers *)
-let log_transform ~base v =
-  if v <= 0. then Float.neg_infinity else Float.log v /. Float.log base
-
+(* Log scale pixel mapping helpers - use log_transform defined earlier *)
 let log_scale_to_px ~base ~minv ~maxv ~extent ~origin ~clamp v =
-  if minv <= 0. || maxv <= 0. then origin
-  else if Float.abs (maxv -. minv) < 1e-12 then origin
+  (* Apply safe minimum for log scale - values <= 0 are mapped to the safe min *)
+  let safe_minv = Float.max 1e-10 minv in
+  let safe_maxv = Float.max 1e-10 maxv in
+  if Float.abs (safe_maxv -. safe_minv) < 1e-12 then origin
   else if extent <= 1 then origin
   else
-    let log_min = log_transform ~base minv in
-    let log_max = log_transform ~base maxv in
-    let log_v = log_transform ~base (Float.max 1e-12 v) in
+    let log_min = log_transform ~base safe_minv in
+    let log_max = log_transform ~base safe_maxv in
+    let safe_v = Float.max 1e-10 v in
+    let log_v = log_transform ~base safe_v in
     let t = (log_v -. log_min) /. (log_max -. log_min) in
     let t = if clamp then clamp01 t else t in
     origin + int_of_float (Float.round (t *. float (extent - 1)))
@@ -3073,55 +3464,15 @@ let y_to_px_log ~base ~minv ~maxv ~extent ~origin ~clamp v =
 let x_to_px_log ~base ~minv ~maxv ~extent ~origin ~clamp v =
   log_scale_to_px ~base ~minv ~maxv ~extent ~origin ~clamp v
 
-(* Generate nice tick values for log scale *)
-let log_ticks ~base ~min_val ~max_val ~target_ticks =
-  if min_val <= 0. || max_val <= 0. then [ min_val; max_val ]
-  else
-    let log_min = Float.floor (log_transform ~base min_val) in
-    let log_max = Float.ceil (log_transform ~base max_val) in
-    let num_decades = log_max -. log_min in
-    (* Generate major ticks at powers of base *)
-    let rec gen_major acc exp =
-      if exp > log_max +. 0.5 then List.rev acc
-      else
-        let v = Float.pow base exp in
-        if v >= min_val *. 0.999 && v <= max_val *. 1.001 then
-          gen_major (v :: acc) (exp +. 1.)
-        else gen_major acc (exp +. 1.)
-    in
-    let major = gen_major [] log_min in
-    (* If we have very few ticks and room for more, add minor ticks *)
-    if List.length major < target_ticks && num_decades <= 3. then
-      (* Add 2 and 5 between powers for base 10 *)
-      let minors =
-        if base = 10. then
-          let rec gen_minor acc exp =
-            if exp >= log_max then acc
-            else
-              let base_val = Float.pow base exp in
-              let m2 = base_val *. 2. in
-              let m5 = base_val *. 5. in
-              let acc =
-                if m2 >= min_val && m2 <= max_val then m2 :: acc else acc
-              in
-              let acc =
-                if m5 >= min_val && m5 <= max_val then m5 :: acc else acc
-              in
-              gen_minor acc (exp +. 1.)
-          in
-          gen_minor [] log_min
-        else []
-      in
-      List.sort Float.compare (major @ minors)
-    else if major = [] then [ min_val; max_val ]
-    else major
-
 let draw_grid (layout : Layout.t) (grid : G.t) =
   let g = layout.grid in
   if not g.show then ()
   else
     let r = layout.plot in
     let style = g.style in
+    let minor_style =
+      match g.minor_style with Some s -> s | None -> layout.theme.grid_minor
+    in
     let ch = layout.theme.charset in
     (* Get the appropriate glyph based on pattern *)
     let v_glyph =
@@ -3137,15 +3488,17 @@ let draw_grid (layout : Layout.t) (grid : G.t) =
       | `Dotted -> ch.grid_h_dotted
     in
     (* Draw a vertical grid line at x using the pattern glyph *)
-    let draw_v_line x =
+    let draw_v_line ?(minor = false) x =
+      let st = if minor then minor_style else style in
       for y = r.y to r.y + r.height - 1 do
-        draw_text grid ~x ~y ~style v_glyph
+        draw_text grid ~x ~y ~style:st v_glyph
       done
     in
     (* Draw a horizontal grid line at y using the pattern glyph *)
-    let draw_h_line y =
+    let draw_h_line ?(minor = false) y =
+      let st = if minor then minor_style else style in
       for x = r.x to r.x + r.width - 1 do
-        draw_text grid ~x ~y ~style h_glyph
+        draw_text grid ~x ~y ~style:st h_glyph
       done
     in
     let draw_every_x step =
@@ -3160,38 +3513,61 @@ let draw_grid (layout : Layout.t) (grid : G.t) =
           if (y - r.y) mod step = 0 then draw_h_line y
         done
     in
-    (* explicit step wins, else use nice ticks if numeric. *)
+    (* Draw minor gridlines between consecutive pixel positions *)
+    let draw_minor_v ~n px0 px1 =
+      if n > 1 then
+        let span = px1 - px0 in
+        for i = 1 to n - 1 do
+          let px = px0 + (span * i / n) in
+          if px > px0 && px < px1 && px >= r.x && px < r.x + r.width then
+            draw_v_line ~minor:true px
+        done
+    in
+    let draw_minor_h ~n py0 py1 =
+      if n > 1 then
+        let span = py1 - py0 in
+        for i = 1 to n - 1 do
+          let py = py0 + (span * i / n) in
+          if py > py0 && py < py1 && py >= r.y && py < r.y + r.height then
+            draw_h_line ~minor:true py
+        done
+    in
+    (* explicit step wins, else use precomputed ticks if numeric. *)
     (match g.x_step with
     | Some s -> if g.x then draw_every_x s
     | None -> (
         if g.x then
           match layout.x_scale with
           | Numeric _ ->
-              let tick_values =
-                nice_ticks ~min_val:layout.x_view.min ~max_val:layout.x_view.max
-                  ~target_ticks:layout.x_axis.ticks
-              in
+              (* Use precomputed ticks from layout *)
+              let prev_px = ref None in
               List.iter
                 (fun v ->
                   let px =
                     x_to_px ~minv:layout.x_view.min ~maxv:layout.x_view.max
                       ~extent:r.width ~origin:r.x ~clamp:true v
                   in
+                  (match (g.minor, !prev_px) with
+                  | Some n, Some px0 -> draw_minor_v ~n px0 px
+                  | _ -> ());
+                  prev_px := Some px;
                   draw_v_line px)
-                tick_values
+                layout.x_ticks
           | Log { base; view; _ } ->
-              let tick_values =
-                log_ticks ~base ~min_val:view.min ~max_val:view.max
-                  ~target_ticks:layout.x_axis.ticks
-              in
+              (* Use precomputed ticks from layout *)
+              let prev_px = ref None in
               List.iter
                 (fun v ->
                   let px =
                     x_to_px_log ~base ~minv:view.min ~maxv:view.max
                       ~extent:r.width ~origin:r.x ~clamp:true v
                   in
+                  (match (g.minor, !prev_px) with
+                  | Some n, Some px0 -> draw_minor_v ~n px0 px
+                  | _ -> ());
+                  prev_px := Some px;
                   draw_v_line px)
-                tick_values
+                layout.x_ticks
           | Band { categories; padding; _ } ->
               let offset, bw =
                 Layout.band_params ~cats:categories ~padding ~extent:r.width
@@ -3201,7 +3577,8 @@ let draw_grid (layout : Layout.t) (grid : G.t) =
                 let x0 =
                   r.x + int_of_float (Float.round (offset +. (float i *. bw)))
                 in
-                draw_v_line x0
+                (* Clamp to plot bounds to avoid drawing outside *)
+                if x0 >= r.x && x0 < r.x + r.width then draw_v_line x0
               done));
 
     match g.y_step with
@@ -3210,31 +3587,35 @@ let draw_grid (layout : Layout.t) (grid : G.t) =
         if g.y then
           match layout.y_scale with
           | Numeric _ ->
-              let tick_values =
-                nice_ticks ~min_val:layout.y_view.min ~max_val:layout.y_view.max
-                  ~target_ticks:layout.y_axis.ticks
-              in
+              (* Use precomputed ticks from layout *)
+              let prev_py = ref None in
               List.iter
                 (fun v ->
                   let py =
                     y_to_px ~minv:layout.y_view.min ~maxv:layout.y_view.max
                       ~extent:r.height ~origin:r.y ~clamp:true v
                   in
+                  (match (g.minor, !prev_py) with
+                  | Some n, Some py0 -> draw_minor_h ~n py0 py
+                  | _ -> ());
+                  prev_py := Some py;
                   draw_h_line py)
-                tick_values
+                layout.y_ticks
           | Log { base; view; _ } ->
-              let tick_values =
-                log_ticks ~base ~min_val:view.min ~max_val:view.max
-                  ~target_ticks:layout.y_axis.ticks
-              in
+              (* Use precomputed ticks from layout *)
+              let prev_py = ref None in
               List.iter
                 (fun v ->
                   let py =
                     y_to_px_log ~base ~minv:view.min ~maxv:view.max
                       ~extent:r.height ~origin:r.y ~clamp:true v
                   in
+                  (match (g.minor, !prev_py) with
+                  | Some n, Some py0 -> draw_minor_h ~n py0 py
+                  | _ -> ());
+                  prev_py := Some py;
                   draw_h_line py)
-                tick_values
+                layout.y_ticks
           | Band { categories; padding; _ } ->
               let offset, bw =
                 Layout.band_params ~cats:categories ~padding ~extent:r.height
@@ -3244,29 +3625,87 @@ let draw_grid (layout : Layout.t) (grid : G.t) =
                 let y0 =
                   r.y + int_of_float (Float.round (offset +. (float i *. bw)))
                 in
-                draw_h_line y0
+                (* Clamp to plot bounds to avoid drawing outside *)
+                if y0 >= r.y && y0 < r.y + r.height then draw_h_line y0
               done)
 
 let draw_axes (layout : Layout.t) (grid : G.t) =
   let r = layout.plot in
   let ip = layout.frame_inner_padding in
   let ch = layout.theme.charset in
+  let line_glyphs : G.line_glyphs =
+    {
+      G.h = ch.frame.h;
+      v = ch.frame.v;
+      diag_up = ch.diag_up;
+      diag_down = ch.diag_down;
+    }
+  in
+
+  (* Helper to draw frame lines based on Axis.line setting *)
+  let draw_y_axis_line ~ax ~st =
+    match layout.y_axis.line with
+    | `None -> ()
+    | `Axis_only ->
+        G.draw_line grid ~x1:ax ~y1:r.y ~x2:ax
+          ~y2:(r.y + r.height - 1)
+          ~style:st ~glyphs:line_glyphs ~kind:`Line ()
+    | `Frame ->
+        (* Draw left side of frame and top/bottom edges *)
+        G.draw_line grid ~x1:ax ~y1:r.y ~x2:ax
+          ~y2:(r.y + r.height - 1)
+          ~style:st ~glyphs:line_glyphs ~kind:`Line ();
+        (* Draw top edge *)
+        G.draw_line grid ~x1:ax ~y1:r.y
+          ~x2:(r.x + r.width - 1)
+          ~y2:r.y ~style:st ~glyphs:line_glyphs ~kind:`Line ();
+        (* Draw bottom edge (if x axis is hidden) *)
+        if not layout.x_axis.show then
+          G.draw_line grid ~x1:ax
+            ~y1:(r.y + r.height - 1)
+            ~x2:(r.x + r.width - 1)
+            ~y2:(r.y + r.height - 1)
+            ~style:st ~glyphs:line_glyphs ~kind:`Line ()
+  in
+
+  let draw_x_axis_line ~ay ~st =
+    match layout.x_axis.line with
+    | `None -> ()
+    | `Axis_only ->
+        G.draw_line grid ~x1:r.x ~y1:ay
+          ~x2:(r.x + r.width - 1)
+          ~y2:ay ~style:st ~glyphs:line_glyphs ~kind:`Line ()
+    | `Frame ->
+        (* Draw bottom edge and left/right if y axis is hidden *)
+        G.draw_line grid ~x1:r.x ~y1:ay
+          ~x2:(r.x + r.width - 1)
+          ~y2:ay ~style:st ~glyphs:line_glyphs ~kind:`Line ();
+        (* Draw right edge *)
+        G.draw_line grid
+          ~x1:(r.x + r.width - 1)
+          ~y1:r.y
+          ~x2:(r.x + r.width - 1)
+          ~y2:ay ~style:st ~glyphs:line_glyphs ~kind:`Line ();
+        (* Draw left edge (if y axis is hidden) *)
+        if not layout.y_axis.show then
+          G.draw_line grid ~x1:r.x ~y1:r.y ~x2:r.x ~y2:ay ~style:st
+            ~glyphs:line_glyphs ~kind:`Line ()
+  in
 
   (* y axis *)
   if layout.y_axis.show then (
-    let ax = layout.margin_left + layout.y_axis_width - 1 in
-    let st = layout.y_axis.style in
-    G.draw_line grid ~x1:ax ~y1:r.y ~x2:ax
-      ~y2:(r.y + r.height - 1)
-      ~style:st ~kind:`Line ();
+    let ax =
+      layout.margin_left + layout.y_axis_title_width + layout.y_axis_width - 1
+    in
+    let st = Option.get layout.y_axis.style in
+    let tick_st = Option.get layout.y_axis.tick_style in
+    let label_st = Option.get layout.y_axis.label_style in
+    draw_y_axis_line ~ax ~st;
 
-    (* ticks + labels - use nice ticks algorithm *)
+    (* ticks + labels - use precomputed ticks from layout *)
     (match layout.y_scale with
     | Numeric _ ->
-        let tick_values =
-          nice_ticks ~min_val:layout.y_view.min ~max_val:layout.y_view.max
-            ~target_ticks:layout.y_axis.ticks
-        in
+        (* Use precomputed ticks from layout *)
         List.iteri
           (fun i v ->
             let py =
@@ -3276,9 +3715,7 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
             (* tick *)
             for k = 1 to layout.y_axis.tick_length do
               let x = ax - k in
-              if x >= 0 then
-                draw_text grid ~x ~y:py ~style:layout.y_axis.tick_style
-                  ch.tick_h
+              if x >= 0 then draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
             done;
             (* label *)
             let label = layout.y_axis.format i v in
@@ -3287,14 +3724,10 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
               ax - layout.y_axis.tick_length - layout.y_axis.label_padding - lw
             in
             if label_x >= 0 then
-              draw_text grid ~x:label_x ~y:py ~style:layout.y_axis.label_style
-                label)
-          tick_values
+              draw_text grid ~x:label_x ~y:py ~style:label_st label)
+          layout.y_ticks
     | Log { base; view; _ } ->
-        let tick_values =
-          log_ticks ~base ~min_val:view.min ~max_val:view.max
-            ~target_ticks:layout.y_axis.ticks
-        in
+        (* Use precomputed ticks from layout *)
         List.iteri
           (fun i v ->
             let py =
@@ -3304,9 +3737,7 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
             (* tick *)
             for k = 1 to layout.y_axis.tick_length do
               let x = ax - k in
-              if x >= 0 then
-                draw_text grid ~x ~y:py ~style:layout.y_axis.tick_style
-                  ch.tick_h
+              if x >= 0 then draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
             done;
             (* label *)
             let label = layout.y_axis.format i v in
@@ -3315,9 +3746,8 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
               ax - layout.y_axis.tick_length - layout.y_axis.label_padding - lw
             in
             if label_x >= 0 then
-              draw_text grid ~x:label_x ~y:py ~style:layout.y_axis.label_style
-                label)
-          tick_values
+              draw_text grid ~x:label_x ~y:py ~style:label_st label)
+          layout.y_ticks
     | Band { categories; padding; _ } ->
         let offset, bw =
           Layout.band_params ~cats:categories ~padding ~extent:r.height
@@ -3329,17 +3759,14 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
             let py = y0 + (band_h / 2) in
             for k = 1 to layout.y_axis.tick_length do
               let x = ax - k in
-              if x >= 0 then
-                draw_text grid ~x ~y:py ~style:layout.y_axis.tick_style
-                  ch.tick_h
+              if x >= 0 then draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
             done;
             let lw = text_width cat in
             let label_x =
               ax - layout.y_axis.tick_length - layout.y_axis.label_padding - lw
             in
             if label_x >= 0 then
-              draw_text grid ~x:label_x ~y:py ~style:layout.y_axis.label_style
-                cat)
+              draw_text grid ~x:label_x ~y:py ~style:label_st cat)
           categories);
 
     (* y axis meets plot padding: draw a corner marker if x axis is on *)
@@ -3351,18 +3778,15 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
   (* x axis *)
   if layout.x_axis.show then (
     let ay = r.y + r.height + ip in
-    let st = layout.x_axis.style in
-    G.draw_line grid ~x1:r.x ~y1:ay
-      ~x2:(r.x + r.width - 1)
-      ~y2:ay ~style:st ~kind:`Line ();
+    let st = Option.get layout.x_axis.style in
+    let tick_st = Option.get layout.x_axis.tick_style in
+    let label_st = Option.get layout.x_axis.label_style in
+    draw_x_axis_line ~ay ~st;
 
-    (* Use nice ticks algorithm for X axis with label collision avoidance *)
+    (* Use precomputed ticks for X axis with label collision avoidance *)
     match layout.x_scale with
     | Numeric _ ->
-        let tick_values =
-          nice_ticks ~min_val:layout.x_view.min ~max_val:layout.x_view.max
-            ~target_ticks:layout.x_axis.ticks
-        in
+        (* Use precomputed ticks from layout *)
         (* Track the rightmost edge of the last rendered label *)
         let last_label_right = ref min_int in
         List.iteri
@@ -3375,8 +3799,7 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
             for k = 1 to layout.x_axis.tick_length do
               let y = ay + k in
               if y >= 0 && y < layout.height then
-                draw_text grid ~x:px ~y ~style:layout.x_axis.tick_style
-                  ch.tick_v
+                draw_text grid ~x:px ~y ~style:tick_st ch.tick_v
             done;
             (* label - skip if it would overlap with previous label *)
             let label = layout.x_axis.format i v in
@@ -3390,15 +3813,11 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
               label_y >= 0 && label_y < layout.height
               && label_x > !last_label_right
             then (
-              draw_text grid ~x:(max 0 label_x) ~y:label_y
-                ~style:layout.x_axis.label_style label;
+              draw_text grid ~x:(max 0 label_x) ~y:label_y ~style:label_st label;
               last_label_right := label_x + lw))
-          tick_values
+          layout.x_ticks
     | Log { base; view; _ } ->
-        let tick_values =
-          log_ticks ~base ~min_val:view.min ~max_val:view.max
-            ~target_ticks:layout.x_axis.ticks
-        in
+        (* Use precomputed ticks from layout *)
         (* Track the rightmost edge of the last rendered label *)
         let last_label_right = ref min_int in
         List.iteri
@@ -3411,8 +3830,7 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
             for k = 1 to layout.x_axis.tick_length do
               let y = ay + k in
               if y >= 0 && y < layout.height then
-                draw_text grid ~x:px ~y ~style:layout.x_axis.tick_style
-                  ch.tick_v
+                draw_text grid ~x:px ~y ~style:tick_st ch.tick_v
             done;
             (* label - skip if it would overlap with previous label *)
             let label = layout.x_axis.format i v in
@@ -3426,10 +3844,9 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
               label_y >= 0 && label_y < layout.height
               && label_x > !last_label_right
             then (
-              draw_text grid ~x:(max 0 label_x) ~y:label_y
-                ~style:layout.x_axis.label_style label;
+              draw_text grid ~x:(max 0 label_x) ~y:label_y ~style:label_st label;
               last_label_right := label_x + lw))
-          tick_values
+          layout.x_ticks
     | Band { categories; padding; _ } ->
         let offset, bw =
           Layout.band_params ~cats:categories ~padding ~extent:r.width
@@ -3445,8 +3862,7 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
             for k = 1 to layout.x_axis.tick_length do
               let y = ay + k in
               if y >= 0 && y < layout.height then
-                draw_text grid ~x:px ~y ~style:layout.x_axis.tick_style
-                  ch.tick_v
+                draw_text grid ~x:px ~y ~style:tick_st ch.tick_v
             done;
             (* label - skip if it would overlap with previous label *)
             let lw = text_width cat in
@@ -3458,8 +3874,7 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
               label_y >= 0 && label_y < layout.height
               && label_x > !last_label_right
             then (
-              draw_text grid ~x:(max 0 label_x) ~y:label_y
-                ~style:layout.x_axis.label_style cat;
+              draw_text grid ~x:(max 0 label_x) ~y:label_y ~style:label_st cat;
               last_label_right := label_x + lw))
           categories);
 
@@ -3468,18 +3883,38 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
   | Some y2_ax, Some y2_sc, Some y2_view when y2_ax.Axis.show ->
       (* Y2 axis line is drawn at the right edge of the plot + inner padding *)
       let ax2 = r.x + r.width + ip in
-      let st = y2_ax.style in
-      G.draw_line grid ~x1:ax2 ~y1:r.y ~x2:ax2
-        ~y2:(r.y + r.height - 1)
-        ~style:st ~kind:`Line ();
+      let st = Option.get y2_ax.style in
+      let tick_st = Option.get y2_ax.tick_style in
+      let label_st = Option.get y2_ax.label_style in
+      (* Respect y2 axis line setting *)
+      (match y2_ax.line with
+      | `None -> ()
+      | `Axis_only ->
+          G.draw_line grid ~x1:ax2 ~y1:r.y ~x2:ax2
+            ~y2:(r.y + r.height - 1)
+            ~style:st ~glyphs:line_glyphs ~kind:`Line ()
+      | `Frame ->
+          (* Draw right side of frame *)
+          G.draw_line grid ~x1:ax2 ~y1:r.y ~x2:ax2
+            ~y2:(r.y + r.height - 1)
+            ~style:st ~glyphs:line_glyphs ~kind:`Line ();
+          (* Draw top edge if y axis is hidden *)
+          if not layout.y_axis.show then
+            G.draw_line grid ~x1:r.x ~y1:r.y ~x2:ax2 ~y2:r.y ~style:st
+              ~glyphs:line_glyphs ~kind:`Line ();
+          (* Draw bottom edge if x axis is hidden *)
+          if not layout.x_axis.show then
+            G.draw_line grid ~x1:r.x
+              ~y1:(r.y + r.height - 1)
+              ~x2:ax2
+              ~y2:(r.y + r.height - 1)
+              ~style:st ~glyphs:line_glyphs ~kind:`Line ());
 
-      (* ticks + labels on the right side *)
+      (* ticks + labels on the right side - use precomputed ticks *)
+      let y2_tick_values = Option.value layout.y2_ticks ~default:[] in
       (match y2_sc with
       | Numeric _ ->
-          let tick_values =
-            nice_ticks ~min_val:y2_view.min ~max_val:y2_view.max
-              ~target_ticks:y2_ax.ticks
-          in
+          (* Use precomputed ticks from layout *)
           List.iteri
             (fun i v ->
               let py =
@@ -3490,19 +3925,16 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
               for k = 1 to y2_ax.tick_length do
                 let x = ax2 + k in
                 if x < layout.width then
-                  draw_text grid ~x ~y:py ~style:y2_ax.tick_style ch.tick_h
+                  draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
               done;
               (* label - to the right of ticks *)
               let label = y2_ax.format i v in
               let label_x = ax2 + y2_ax.tick_length + y2_ax.label_padding in
               if label_x < layout.width then
-                draw_text grid ~x:label_x ~y:py ~style:y2_ax.label_style label)
-            tick_values
+                draw_text grid ~x:label_x ~y:py ~style:label_st label)
+            y2_tick_values
       | Log { base; view; _ } ->
-          let tick_values =
-            log_ticks ~base ~min_val:view.min ~max_val:view.max
-              ~target_ticks:y2_ax.ticks
-          in
+          (* Use precomputed ticks from layout *)
           List.iteri
             (fun i v ->
               let py =
@@ -3513,14 +3945,14 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
               for k = 1 to y2_ax.tick_length do
                 let x = ax2 + k in
                 if x < layout.width then
-                  draw_text grid ~x ~y:py ~style:y2_ax.tick_style ch.tick_h
+                  draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
               done;
               (* label - to the right of ticks *)
               let label = y2_ax.format i v in
               let label_x = ax2 + y2_ax.tick_length + y2_ax.label_padding in
               if label_x < layout.width then
-                draw_text grid ~x:label_x ~y:py ~style:y2_ax.label_style label)
-            tick_values
+                draw_text grid ~x:label_x ~y:py ~style:label_st label)
+            y2_tick_values
       | Band { categories; padding; _ } ->
           let offset, bw =
             Layout.band_params ~cats:categories ~padding ~extent:r.height
@@ -3533,11 +3965,11 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
               for k = 1 to y2_ax.tick_length do
                 let x = ax2 + k in
                 if x < layout.width then
-                  draw_text grid ~x ~y:py ~style:y2_ax.tick_style ch.tick_h
+                  draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
               done;
               let label_x = ax2 + y2_ax.tick_length + y2_ax.label_padding in
               if label_x < layout.width then
-                draw_text grid ~x:label_x ~y:py ~style:y2_ax.label_style cat)
+                draw_text grid ~x:label_x ~y:py ~style:label_st cat)
             categories);
 
       (* Y2 axis meets x-axis: draw a corner marker *)
@@ -3552,25 +3984,34 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
   (match layout.y_axis.title with
   | None -> ()
   | Some { text; style } ->
-      let title_style = Option.value ~default:layout.y_axis.label_style style in
-      let title_len = text_width text in
+      let default_st = Option.get layout.y_axis.label_style in
+      let title_style = Option.value ~default:default_st style in
+      (* Use Unicode-aware iteration for proper grapheme cluster handling *)
+      let graphemes = ref [] in
+      Glyph.iter_graphemes
+        (fun ~offset ~len ->
+          graphemes := String.sub text offset len :: !graphemes)
+        text;
+      let chars = List.rev !graphemes in
+      let title_len = List.length chars in
       (* Center title vertically along the y-axis *)
       let title_y_start = r.y + ((r.height - title_len) / 2) in
-      (* Position to the left edge (column 0) *)
-      let title_x = 0 in
-      (* Draw each character vertically *)
-      String.iteri
-        (fun i c ->
+      (* Position in the reserved title column (at margin_left position) *)
+      let title_x = layout.margin_left in
+      (* Draw each grapheme cluster vertically *)
+      List.iteri
+        (fun i char_str ->
           let y = title_y_start + i in
           if y >= r.y && y < r.y + r.height then
-            draw_text grid ~x:title_x ~y ~style:title_style (String.make 1 c))
-        text);
+            draw_text grid ~x:title_x ~y ~style:title_style char_str)
+        chars);
 
   (* X-axis title: draw horizontally centered below x-axis labels *)
   match layout.x_axis.title with
   | None -> ()
   | Some { text; style } ->
-      let title_style = Option.value ~default:layout.x_axis.label_style style in
+      let default_st = Option.get layout.x_axis.label_style in
+      let title_style = Option.value ~default:default_st style in
       let title_w = text_width text in
       let title_x = r.x + ((r.width - title_w) / 2) in
       (* Position below the tick labels: axis + tick_length + label_padding + 1 (label row) + 1 *)
@@ -3581,71 +4022,25 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
       if title_y < layout.height then
         draw_text grid ~x:(max 0 title_x) ~y:title_y ~style:title_style text
 
-(* wave helper (based on the old implementation) *)
-let draw_wave_from_px_points grid (r : Layout.rect) ~style
-    (pts : (int * int) list) =
-  let pts = List.sort (fun (x1, _) (x2, _) -> compare x1 x2) pts in
-  let seq_y = Array.make r.width (-1) in
-  let set_col x y =
-    let ix = x - r.x in
-    if ix >= 0 && ix < r.width then seq_y.(ix) <- y
-  in
-  let draw_seg (x1, y1) (x2, y2) =
-    if x1 = x2 then set_col x1 y2
-    else
-      let x_start = min x1 x2 and x_end = max x1 x2 in
-      for x = x_start to x_end do
-        let t = float (x - x1) /. float (x2 - x1) in
-        let y =
-          int_of_float (Float.round (float y1 +. (t *. float (y2 - y1))))
-        in
-        set_col x y
-      done
-  in
-  let rec loop = function
-    | p1 :: (p2 :: _ as tl) ->
-        draw_seg p1 p2;
-        loop tl
-    | _ -> ()
-  in
-  loop pts;
-  let prev_y = ref None in
-  for i = 0 to r.width - 1 do
-    let y = seq_y.(i) in
-    if y < 0 then prev_y := None
-    else
-      match !prev_y with
-      | None ->
-          draw_text grid ~x:(r.x + i) ~y ~style "─";
-          prev_y := Some y
-      | Some py ->
-          let x = r.x + i in
-          if py = y then draw_text grid ~x ~y ~style "─"
-          else if py > y then (
-            draw_text grid ~x ~y ~style "╭";
-            draw_text grid ~x ~y:py ~style "╯";
-            for yy = y + 1 to py - 1 do
-              draw_text grid ~x ~y:yy ~style "│"
-            done)
-          else (
-            draw_text grid ~x ~y ~style "╰";
-            draw_text grid ~x ~y:py ~style "╮";
-            for yy = py + 1 to y - 1 do
-              draw_text grid ~x ~y:yy ~style "│"
-            done);
-          prev_y := Some y
-  done
-
 let heatmap_color_fun ~color_scale ~vmin ~vmax =
-  let len = max 1 (List.length color_scale) in
-  fun v ->
+  let len = Array.length color_scale in
+  if len = 0 then fun _ -> Color.default
+  else fun v ->
     let t =
       if Float.equal vmin vmax then 0.
       else clamp01 ((v -. vmin) /. Float.max 1e-12 (vmax -. vmin))
     in
     let raw = int_of_float (t *. float len) in
     let idx = clamp_int 0 (len - 1) raw in
-    Option.value (List.nth_opt color_scale idx) ~default:Color.default
+    color_scale.(idx)
+
+let heatmap_color_idx ~len ~vmin ~vmax v =
+  let t =
+    if Float.equal vmin vmax then 0.
+    else clamp01 ((v -. vmin) /. Float.max 1e-12 (vmax -. vmin))
+  in
+  let raw = int_of_float (t *. float len) in
+  clamp_int 0 (len - 1) raw
 
 let draw_marks (layout : Layout.t) (grid : G.t) =
   let r = layout.plot in
@@ -3765,24 +4160,24 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
   (* helpers for band axis bar placement *)
   let x_band =
     match layout.x_scale with
-    | Band { categories; padding; _ } ->
+    | Band { categories; index_of; padding; _ } ->
         let offset, bw =
           Layout.band_params ~cats:categories ~padding ~extent:r.width
         in
         (* Bar width: use band width minus 1 for visual gap, minimum 1 *)
         let band_w = max 1 (int_of_float bw - 1) in
-        Some (categories, offset, bw, band_w)
+        Some (categories, index_of, offset, bw, band_w)
     | _ -> None
   in
   let y_band =
     match layout.y_scale with
-    | Band { categories; padding; _ } ->
+    | Band { categories; index_of; padding; _ } ->
         let offset, bw =
           Layout.band_params ~cats:categories ~padding ~extent:r.height
         in
         (* Bar height: use band width minus 1 for visual gap, minimum 1 *)
         let band_h = max 1 (int_of_float bw - 1) in
-        Some (categories, offset, bw, band_h)
+        Some (categories, index_of, offset, bw, band_h)
     | _ -> None
   in
 
@@ -3805,35 +4200,110 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
       done
   in
 
-  let draw_line_segment style ~kind (x1, y1) (x2, y2) =
-    match kind with
-    | `Line -> G.draw_line grid ~x1 ~y1 ~x2 ~y2 ~style ~kind:`Line ()
-    | `Braille ->
-        (* map already in braille coordinates; caller must provide those *)
-        G.draw_line grid ~x1 ~y1 ~x2 ~y2 ~style ~kind:`Braille ()
+  (* Convert charset to Grid.line_glyphs for theme-aware line rendering *)
+  let line_glyphs : G.line_glyphs =
+    let charset = layout.theme.charset in
+    {
+      G.h = charset.frame.h;
+      v = charset.frame.v;
+      diag_up = charset.diag_up;
+      diag_down = charset.diag_down;
+    }
   in
 
-  (* Block2x2 rendering: accumulate bits into hashtable, then render glyphs *)
-  let draw_block2x2_line (x1, y1) (x2, y2) dots =
+  (* Array-based dot buffer for block2x2 rendering.
+     Uses a flat array indexed by (cx - r.x) + (cy - r.y) * r.width.
+     Much faster than Hashtbl for accumulating dots in tight loops. *)
+  let block2x2_dots = Array.make (r.width * r.height) 0 in
+
+  let block2x2_set_dot px py =
+    let cell_x = px / 2 in
+    let cell_y = py / 2 in
+    if
+      cell_x >= r.x
+      && cell_x < r.x + r.width
+      && cell_y >= r.y
+      && cell_y < r.y + r.height
+    then
+      let sub_x = px mod 2 in
+      let sub_y = py mod 2 in
+      (* Bit layout: bit 0=top-left, bit 1=top-right, bit 2=bottom-left, bit 3=bottom-right *)
+      let bit = (sub_y * 2) + sub_x in
+      let idx = cell_x - r.x + ((cell_y - r.y) * r.width) in
+      Array.unsafe_set block2x2_dots idx
+        (Array.unsafe_get block2x2_dots idx lor (1 lsl bit))
+  in
+
+  let block2x2_clear () = Array.fill block2x2_dots 0 (r.width * r.height) 0 in
+
+  let render_block2x2 style =
+    for cy = r.y to r.y + r.height - 1 do
+      for cx = r.x to r.x + r.width - 1 do
+        let idx = cx - r.x + ((cy - r.y) * r.width) in
+        let bits = Array.unsafe_get block2x2_dots idx in
+        if bits <> 0 then
+          let glyph = quadrant_glyph_of_bits bits in
+          draw_text grid ~x:cx ~y:cy ~style glyph
+      done
+    done
+  in
+
+  (* Array-based dot buffer for braille rendering (2x4 subgrid per cell).
+     Uses a flat array indexed by (cx - r.x) + (cy - r.y) * r.width. *)
+  let braille_dots = Array.make (r.width * r.height) 0 in
+
+  let braille_set_dot x_sub y_sub =
+    let cell_x = x_sub / 2 in
+    let cell_y = y_sub / 4 in
+    if
+      cell_x >= r.x
+      && cell_x < r.x + r.width
+      && cell_y >= r.y
+      && cell_y < r.y + r.height
+    then
+      let bit_x = x_sub land 1 in
+      let bit_y = y_sub mod 4 in
+      let bit_pos =
+        match (bit_x, bit_y) with
+        | 0, 0 -> 0
+        | 0, 1 -> 1
+        | 0, 2 -> 2
+        | 0, 3 -> 6
+        | 1, 0 -> 3
+        | 1, 1 -> 4
+        | 1, 2 -> 5
+        | 1, 3 -> 7
+        | _ -> 0
+      in
+      let idx = cell_x - r.x + ((cell_y - r.y) * r.width) in
+      Array.unsafe_set braille_dots idx
+        (Array.unsafe_get braille_dots idx lor (1 lsl bit_pos))
+  in
+
+  let braille_clear () = Array.fill braille_dots 0 (r.width * r.height) 0 in
+
+  let render_braille style =
+    for cy = r.y to r.y + r.height - 1 do
+      for cx = r.x to r.x + r.width - 1 do
+        let idx = cx - r.x + ((cy - r.y) * r.width) in
+        let bits = Array.unsafe_get braille_dots idx in
+        if bits <> 0 then
+          let glyph = braille_glyph_of_bits bits in
+          draw_text grid ~x:cx ~y:cy ~style glyph
+      done
+    done
+  in
+
+  (* Block2x2 rendering: accumulate bits using array, then render glyphs *)
+  let draw_block2x2_line (x1, y1) (x2, y2) =
     (* Bresenham's line algorithm for 2x2 subgrid coordinates *)
     let dx = abs (x2 - x1) and dy = abs (y2 - y1) in
     let sx = if x1 < x2 then 1 else -1 in
     let sy = if y1 < y2 then 1 else -1 in
     let err = ref (dx - dy) in
     let x = ref x1 and y = ref y1 in
-    let set_dot px py =
-      let cell_x = px / 2 in
-      let cell_y = py / 2 in
-      let sub_x = px mod 2 in
-      let sub_y = py mod 2 in
-      (* Bit layout: bit 0=top-left, bit 1=top-right, bit 2=bottom-left, bit 3=bottom-right *)
-      let bit = (sub_y * 2) + sub_x in
-      let key = (cell_x, cell_y) in
-      let cur = Option.value (Hashtbl.find_opt dots key) ~default:0 in
-      Hashtbl.replace dots key (cur lor (1 lsl bit))
-    in
     while not (!x = x2 && !y = y2) do
-      set_dot !x !y;
+      block2x2_set_dot !x !y;
       let e2 = 2 * !err in
       if e2 > -dy then (
         err := !err - dy;
@@ -3842,17 +4312,7 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
         err := !err + dx;
         y := !y + sy)
     done;
-    set_dot x2 y2
-  in
-
-  let render_block2x2_dots style dots =
-    Hashtbl.iter
-      (fun (cx, cy) bits ->
-        if cx >= r.x && cx < r.x + r.width && cy >= r.y && cy < r.y + r.height
-        then
-          let glyph = quadrant_glyph_of_bits bits in
-          draw_text grid ~x:cx ~y:cy ~style glyph)
-      dots
+    block2x2_set_dot x2 y2
   in
 
   (* Stipple mask for line patterns: returns true if step should be drawn *)
@@ -3895,114 +4355,8 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
     incr step_counter
   in
 
-  let draw_line_series ~y_axis ~style ~pattern ~kind ~x ~y data =
-    let y_to_px_cell' = select_y_to_px_cell y_axis in
-    let y_to_px_unclamped' = select_y_to_px_unclamped y_axis in
-    let y_view = select_y_view y_axis in
-    match kind with
-    | `Points glyph ->
-        Data.iter data (fun a ->
-            let px = x_to_px_cell (x a) in
-            let py = y_to_px_cell' (y a) in
-            if Layout.rect_contains r ~x:px ~y:py then
-              draw_text grid ~x:px ~y:py ~style glyph)
-    | `Wave ->
-        let pts =
-          Data.fold data ~init:[] ~f:(fun acc a ->
-              let px = x_to_px_cell (x a) in
-              let py = y_to_px_cell' (y a) in
-              (px, py) :: acc)
-          |> List.rev
-        in
-        draw_wave_from_px_points grid r ~style pts
-    | `Line ->
-        (* Use unclamped coordinates and geometric clipping for proper line rendering *)
-        let prev = ref None in
-        let xmin = r.x and xmax = r.x + r.width - 1 in
-        let ymin = r.y and ymax = r.y + r.height - 1 in
-        let step_counter = ref 0 in
-        Data.iter data (fun a ->
-            let px = x_to_px_unclamped (x a) in
-            let py = y_to_px_unclamped' (y a) in
-            (match !prev with
-            | None -> ()
-            | Some (px0, py0) -> (
-                (* Clip line segment to plot rectangle *)
-                match
-                  Clip.line_to_rect ~xmin ~xmax ~ymin ~ymax ~x1:px0 ~y1:py0
-                    ~x2:px ~y2:py
-                with
-                | Some (x1, y1, x2, y2) -> (
-                    match pattern with
-                    | `Solid ->
-                        G.draw_line grid ~x1 ~y1 ~x2 ~y2 ~style ~kind:`Line ()
-                    | `Dashed | `Dotted ->
-                        draw_stippled_line ~style ~pattern ~step_counter
-                          (x1, y1) (x2, y2))
-                | None -> ()));
-            prev := Some (px, py))
-    | `Block2x2 ->
-        (* Project into 2x2 subgrid per cell *)
-        let gx = r.width * 2 in
-        let gy = r.height * 2 in
-        let xmin = layout.x_view.min and xmax = layout.x_view.max in
-        let ymin = y_view.min and ymax = y_view.max in
-        let dx = xmax -. xmin and dy = ymax -. ymin in
-        let dots : (int * int, int) Hashtbl.t = Hashtbl.create 128 in
-        let prev = ref None in
-        Data.iter data (fun a ->
-            let x' = x a and y' = y a in
-            let sx =
-              if dx <= 0. then 0. else (x' -. xmin) *. float (gx - 1) /. dx
-            in
-            let sy =
-              if dy <= 0. then 0. else (y' -. ymin) *. float (gy - 1) /. dy
-            in
-            let px = (r.x * 2) + int_of_float (Float.round sx) in
-            let py = (r.y * 2) + (gy - 1 - int_of_float (Float.round sy)) in
-            (match !prev with
-            | None -> ()
-            | Some (px0, py0) -> draw_block2x2_line (px0, py0) (px, py) dots);
-            prev := Some (px, py));
-        render_block2x2_dots style dots
-    | `Braille ->
-        (* project into 2x4 braille subgrid inside plot *)
-        let gx = r.width * 2 in
-        let gy = r.height * 4 in
-        let xmin = layout.x_view.min and xmax = layout.x_view.max in
-        let ymin = y_view.min and ymax = y_view.max in
-        let dx = xmax -. xmin and dy = ymax -. ymin in
-        (* Clip bounds in braille coordinates *)
-        let clip_xmin = r.x * 2 in
-        let clip_xmax = ((r.x + r.width) * 2) - 1 in
-        let clip_ymin = r.y * 4 in
-        let clip_ymax = ((r.y + r.height) * 4) - 1 in
-        let prev = ref None in
-        Data.iter data (fun a ->
-            let x' = x a and y' = y a in
-            let sx =
-              if dx <= 0. then 0. else (x' -. xmin) *. float (gx - 1) /. dx
-            in
-            let sy =
-              if dy <= 0. then 0. else (y' -. ymin) *. float (gy - 1) /. dy
-            in
-            let px = (r.x * 2) + int_of_float (Float.round sx) in
-            let py = (r.y * 4) + (gy - 1 - int_of_float (Float.round sy)) in
-            (match !prev with
-            | None -> ()
-            | Some (px0, py0) -> (
-                match
-                  Clip.line_to_rect ~xmin:clip_xmin ~xmax:clip_xmax
-                    ~ymin:clip_ymin ~ymax:clip_ymax ~x1:px0 ~y1:py0 ~x2:px
-                    ~y2:py
-                with
-                | Some (x1, y1, x2, y2) ->
-                    draw_line_segment style ~kind:`Braille (x1, y1) (x2, y2)
-                | None -> ()));
-            prev := Some (px, py))
-  in
-
-  let draw_line_opt_series ~y_axis ~style ~pattern ~kind ~x ~y data =
+  (* Unified line drawing function that handles optional y values (gaps) *)
+  let draw_line_series_impl ~y_axis ~style ~pattern ~kind ~x ~y data =
     let y_to_px_cell' = select_y_to_px_cell y_axis in
     let y_to_px_unclamped' = select_y_to_px_unclamped y_axis in
     let y_view = select_y_view y_axis in
@@ -4017,27 +4371,67 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                 if Layout.rect_contains r ~x:px ~y:py then
                   draw_text grid ~x:px ~y:py ~style glyph)
     | `Wave ->
-        (* wave: fall back to simple line segments with geometric clipping *)
+        (* Wave: render with box-drawing characters for smooth curves.
+           Collect points, interpolate per-column, then render with ╭╮╯╰│─ *)
+        let seq_y = Array.make r.width (-1) in
+        let set_col x yval =
+          let ix = x - r.x in
+          if ix >= 0 && ix < r.width then seq_y.(ix) <- yval
+        in
+        let draw_seg (x1, y1) (x2, y2) =
+          if x1 = x2 then set_col x1 y2
+          else
+            let x_start = min x1 x2 and x_end = max x1 x2 in
+            for xc = x_start to x_end do
+              let t = float (xc - x1) /. float (x2 - x1) in
+              let yc =
+                int_of_float (Float.round (float y1 +. (t *. float (y2 - y1))))
+              in
+              set_col xc yc
+            done
+        in
         let prev = ref None in
-        let xmin = r.x and xmax = r.x + r.width - 1 in
-        let ymin = r.y and ymax = r.y + r.height - 1 in
         Data.iter data (fun a ->
             match y a with
             | None -> prev := None
             | Some yy ->
-                let px = x_to_px_unclamped (x a) in
-                let py = y_to_px_unclamped' yy in
+                let px = x_to_px_cell (x a) in
+                let py = y_to_px_cell' yy in
                 (match !prev with
                 | None -> ()
-                | Some (px0, py0) -> (
-                    match
-                      Clip.line_to_rect ~xmin ~xmax ~ymin ~ymax ~x1:px0 ~y1:py0
-                        ~x2:px ~y2:py
-                    with
-                    | Some (x1, y1, x2, y2) ->
-                        G.draw_line grid ~x1 ~y1 ~x2 ~y2 ~style ~kind:`Line ()
-                    | None -> ()));
-                prev := Some (px, py))
+                | Some (px0, py0) -> draw_seg (px0, py0) (px, py));
+                prev := Some (px, py));
+        (* Render the interpolated wave *)
+        let prev_y = ref None in
+        for i = 0 to r.width - 1 do
+          let yval = seq_y.(i) in
+          if yval < 0 then prev_y := None
+          else if yval >= r.y && yval < r.y + r.height then
+            match !prev_y with
+            | None ->
+                draw_text grid ~x:(r.x + i) ~y:yval ~style "─";
+                prev_y := Some yval
+            | Some py ->
+                let xc = r.x + i in
+                if py = yval then draw_text grid ~x:xc ~y:yval ~style "─"
+                else if py > yval then (
+                  draw_text grid ~x:xc ~y:yval ~style "╭";
+                  if py >= r.y && py < r.y + r.height then
+                    draw_text grid ~x:xc ~y:py ~style "╯";
+                  for yy = yval + 1 to py - 1 do
+                    if yy >= r.y && yy < r.y + r.height then
+                      draw_text grid ~x:xc ~y:yy ~style "│"
+                  done)
+                else (
+                  draw_text grid ~x:xc ~y:yval ~style "╰";
+                  if py >= r.y && py < r.y + r.height then
+                    draw_text grid ~x:xc ~y:py ~style "╮";
+                  for yy = py + 1 to yval - 1 do
+                    if yy >= r.y && yy < r.y + r.height then
+                      draw_text grid ~x:xc ~y:yy ~style "│"
+                  done);
+                prev_y := Some yval
+        done
     | `Line ->
         (* Use unclamped coordinates and geometric clipping *)
         let prev = ref None in
@@ -4062,8 +4456,8 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                     | Some (x1, y1, x2, y2) -> (
                         match pattern with
                         | `Solid ->
-                            G.draw_line grid ~x1 ~y1 ~x2 ~y2 ~style ~kind:`Line
-                              ()
+                            G.draw_line grid ~x1 ~y1 ~x2 ~y2 ~style
+                              ~glyphs:line_glyphs ~kind:`Line ()
                         | `Dashed | `Dotted ->
                             draw_stippled_line ~style ~pattern ~step_counter
                               (x1, y1) (x2, y2))
@@ -4076,14 +4470,19 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
         let xmin = layout.x_view.min and xmax = layout.x_view.max in
         let ymin = y_view.min and ymax = y_view.max in
         let dx = xmax -. xmin and dy = ymax -. ymin in
-        let dots : (int * int, int) Hashtbl.t = Hashtbl.create 128 in
+        (* Clip bounds in block2x2 coordinates *)
+        let clip_xmin = r.x * 2 in
+        let clip_xmax = ((r.x + r.width) * 2) - 1 in
+        let clip_ymin = r.y * 2 in
+        let clip_ymax = ((r.y + r.height) * 2) - 1 in
+        block2x2_clear ();
         let prev = ref None in
         Data.iter data (fun a ->
             match y a with
             | None ->
                 (* Render accumulated dots before gap, then reset *)
-                render_block2x2_dots style dots;
-                Hashtbl.clear dots;
+                render_block2x2 style;
+                block2x2_clear ();
                 prev := None
             | Some yy ->
                 let x' = x a in
@@ -4097,11 +4496,20 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                 let py = (r.y * 2) + (gy - 1 - int_of_float (Float.round sy)) in
                 (match !prev with
                 | None -> ()
-                | Some (px0, py0) -> draw_block2x2_line (px0, py0) (px, py) dots);
+                | Some (px0, py0) -> (
+                    (* Clip line segment to plot rectangle in block2x2 coordinates *)
+                    match
+                      Clip.line_to_rect ~xmin:clip_xmin ~xmax:clip_xmax
+                        ~ymin:clip_ymin ~ymax:clip_ymax ~x1:px0 ~y1:py0 ~x2:px
+                        ~y2:py
+                    with
+                    | Some (x1, y1, x2, y2) ->
+                        draw_block2x2_line (x1, y1) (x2, y2)
+                    | None -> ()));
                 prev := Some (px, py));
-        render_block2x2_dots style dots
+        render_block2x2 style
     | `Braille ->
-        (* Project into 2x4 braille subgrid inside plot, same as draw_line_series *)
+        (* Project into 2x4 braille subgrid inside plot *)
         let gx = r.width * 2 in
         let gy = r.height * 4 in
         let xmin = layout.x_view.min and xmax = layout.x_view.max in
@@ -4135,9 +4543,22 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                         ~y2:py
                     with
                     | Some (x1, y1, x2, y2) ->
-                        draw_line_segment style ~kind:`Braille (x1, y1) (x2, y2)
+                        G.draw_line grid ~x1 ~y1 ~x2 ~y2 ~style ~kind:`Braille
+                          ()
                     | None -> ()));
                 prev := Some (px, py))
+  in
+
+  (* Wrapper for Line: wraps non-optional y with Some *)
+  let draw_line_series ~y_axis ~style ~pattern ~kind ~x ~y data =
+    draw_line_series_impl ~y_axis ~style ~pattern ~kind ~x
+      ~y:(fun a -> Some (y a))
+      data
+  in
+
+  (* Wrapper for Line_opt: y already returns option *)
+  let draw_line_opt_series ~y_axis ~style ~pattern ~kind ~x ~y data =
+    draw_line_series_impl ~y_axis ~style ~pattern ~kind ~x ~y data
   in
 
   let draw_scatter_series ~y_axis ~style ~glyph ~kind ~x ~y data =
@@ -4151,61 +4572,44 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
             if Layout.rect_contains r ~x:px ~y:py then
               draw_text grid ~x:px ~y:py ~style glyph)
     | `Density ->
-        (* Density mode: count points per cell and render with shade_levels *)
-        let counts : (int * int, int) Hashtbl.t = Hashtbl.create 128 in
-        let max_count = ref 0 in
-        Data.iter data (fun a ->
-            let px = x_to_px_cell (x a) in
-            let py = y_to_px_cell' (y a) in
-            if Layout.rect_contains r ~x:px ~y:py then (
-              let key = (px, py) in
-              let cur = Option.value (Hashtbl.find_opt counts key) ~default:0 in
-              let new_count = cur + 1 in
-              Hashtbl.replace counts key new_count;
-              max_count := max !max_count new_count));
-        let shade_chars = layout.theme.charset.shade_levels in
-        let num_levels = Array.length shade_chars in
-        let max_c = max 1 !max_count in
-        Hashtbl.iter
-          (fun (px, py) count ->
-            if Layout.rect_contains r ~x:px ~y:py then
-              let t = float count /. float max_c in
-              let idx =
-                max 0
-                  (min (num_levels - 1)
-                     (int_of_float (t *. float (num_levels - 1))))
-              in
-              draw_text grid ~x:px ~y:py ~style shade_chars.(idx))
-          counts
+        (* Density mode: count points per cell and render with shade_levels.
+           Use flat array for O(1) access instead of Hashtbl. *)
+        let w = r.width and h = r.height in
+        if w > 0 && h > 0 then (
+          let counts = Array.make (w * h) 0 in
+          let max_count = ref 0 in
+          Data.iter data (fun a ->
+              let px = x_to_px_cell (x a) in
+              let py = y_to_px_cell' (y a) in
+              if Layout.rect_contains r ~x:px ~y:py then (
+                let idx = ((py - r.y) * w) + (px - r.x) in
+                let new_count = counts.(idx) + 1 in
+                counts.(idx) <- new_count;
+                max_count := max !max_count new_count));
+          let shade_chars = layout.theme.charset.shade_levels in
+          let num_levels = Array.length shade_chars in
+          let max_c = max 1 !max_count in
+          for py = r.y to r.y + h - 1 do
+            for px = r.x to r.x + w - 1 do
+              let idx = ((py - r.y) * w) + (px - r.x) in
+              let count = counts.(idx) in
+              if count > 0 then
+                let t = float count /. float max_c in
+                let level_idx =
+                  max 0
+                    (min (num_levels - 1)
+                       (int_of_float (t *. float (num_levels - 1))))
+                in
+                draw_text grid ~x:px ~y:py ~style shade_chars.(level_idx)
+            done
+          done)
     | `Braille ->
         let gx = r.width * 2 in
         let gy = r.height * 4 in
         let xmin = layout.x_view.min and xmax = layout.x_view.max in
         let ymin = y_view.min and ymax = y_view.max in
         let dx = xmax -. xmin and dy = ymax -. ymin in
-        let dots : (int * int, int) Hashtbl.t = Hashtbl.create 128 in
-        let set_dot x_sub y_sub =
-          let cell_x = x_sub / 2 in
-          let cell_y = y_sub / 4 in
-          if Layout.rect_contains r ~x:cell_x ~y:cell_y then
-            let bit_x = x_sub land 1 in
-            let bit_y = y_sub mod 4 in
-            let bit_pos =
-              match (bit_x, bit_y) with
-              | 0, 0 -> 0
-              | 0, 1 -> 1
-              | 0, 2 -> 2
-              | 0, 3 -> 6
-              | 1, 0 -> 3
-              | 1, 1 -> 4
-              | 1, 2 -> 5
-              | 1, 3 -> 7
-              | _ -> 0
-            in
-            let key = (cell_x, cell_y) in
-            let cur = Option.value (Hashtbl.find_opt dots key) ~default:0 in
-            Hashtbl.replace dots key (cur lor (1 lsl bit_pos))
-        in
+        braille_clear ();
         Data.iter data (fun a ->
             let xa = x a and ya = y a in
             let sx =
@@ -4218,12 +4622,8 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
             let yg = int_of_float (Float.round sy) in
             let x_sub = (r.x * 2) + xg in
             let y_sub = (r.y * 4) + (gy - 1 - yg) in
-            set_dot x_sub y_sub);
-        Hashtbl.iter
-          (fun (cx, cy) bits ->
-            let glyph = braille_glyph_of_bits bits in
-            draw_text grid ~x:cx ~y:cy ~style glyph)
-          dots
+            braille_set_dot x_sub y_sub);
+        render_braille style
   in
 
   (* Area fill rendering: fills the region from baseline to y values *)
@@ -4259,29 +4659,7 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
           let xmin = layout.x_view.min and xmax = layout.x_view.max in
           let ymin = y_view.min and ymax = y_view.max in
           let dx = xmax -. xmin and dy = ymax -. ymin in
-          let dots : (int * int, int) Hashtbl.t = Hashtbl.create 128 in
-          let set_dot x_sub y_sub =
-            let cell_x = x_sub / 2 in
-            let cell_y = y_sub / 4 in
-            if Layout.rect_contains r ~x:cell_x ~y:cell_y then
-              let bit_x = x_sub land 1 in
-              let bit_y = y_sub mod 4 in
-              let bit_pos =
-                match (bit_x, bit_y) with
-                | 0, 0 -> 0
-                | 0, 1 -> 1
-                | 0, 2 -> 2
-                | 0, 3 -> 6
-                | 1, 0 -> 3
-                | 1, 1 -> 4
-                | 1, 2 -> 5
-                | 1, 3 -> 7
-                | _ -> 0
-              in
-              let key = (cell_x, cell_y) in
-              let cur = Option.value (Hashtbl.find_opt dots key) ~default:0 in
-              Hashtbl.replace dots key (cur lor (1 lsl bit_pos))
-          in
+          braille_clear ();
           let base_sub =
             let sy =
               if dy <= 0. then 0.
@@ -4305,14 +4683,10 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
             let y_bot = max y_sub base_sub in
             (* Fill column from top to bottom *)
             for ys = y_top to y_bot do
-              set_dot x_sub ys
+              braille_set_dot x_sub ys
             done
           done;
-          Hashtbl.iter
-            (fun (cx, cy) bits ->
-              let glyph = braille_glyph_of_bits bits in
-              draw_text grid ~x:cx ~y:cy ~style glyph)
-            dots
+          render_braille style
   in
 
   (* Fill between two y values *)
@@ -4348,29 +4722,7 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
           let xmin = layout.x_view.min and xmax = layout.x_view.max in
           let ymin = y_view.min and ymax = y_view.max in
           let dx = xmax -. xmin and dy = ymax -. ymin in
-          let dots : (int * int, int) Hashtbl.t = Hashtbl.create 128 in
-          let set_dot x_sub y_sub =
-            let cell_x = x_sub / 2 in
-            let cell_y = y_sub / 4 in
-            if Layout.rect_contains r ~x:cell_x ~y:cell_y then
-              let bit_x = x_sub land 1 in
-              let bit_y = y_sub mod 4 in
-              let bit_pos =
-                match (bit_x, bit_y) with
-                | 0, 0 -> 0
-                | 0, 1 -> 1
-                | 0, 2 -> 2
-                | 0, 3 -> 6
-                | 1, 0 -> 3
-                | 1, 1 -> 4
-                | 1, 2 -> 5
-                | 1, 3 -> 7
-                | _ -> 0
-              in
-              let key = (cell_x, cell_y) in
-              let cur = Option.value (Hashtbl.find_opt dots key) ~default:0 in
-              Hashtbl.replace dots key (cur lor (1 lsl bit_pos))
-          in
+          braille_clear ();
           for i = 0 to n - 1 do
             let datum = data.(i) in
             let xv = x datum in
@@ -4395,146 +4747,196 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
             let y_top = min y_sub_low y_sub_high in
             let y_bot = max y_sub_low y_sub_high in
             for ys = y_top to y_bot do
-              set_dot x_sub ys
+              braille_set_dot x_sub ys
             done
           done;
-          Hashtbl.iter
-            (fun (cx, cy) bits ->
-              let glyph = braille_glyph_of_bits bits in
-              draw_text grid ~x:cx ~y:cy ~style glyph)
-            dots
+          render_braille style
   in
 
-  let draw_bars_y ~style ~x ~y data =
+  let draw_bars_y ~style ~mode ~x ~y data =
     match x_band with
     | None -> ()
-    | Some (cats, offset, bw, band_w) ->
-        (* Calculate sub-cell precision scale based on y domain *)
+    | Some (_cats, index_of, offset, bw, band_w) ->
         let y_view = layout.y_view in
         let y_span = y_view.max -. y_view.min in
         let y_span = if y_span <= 0. then 1. else y_span in
         let scale = float r.height /. y_span in
-        (* Baseline is at y=0 in data space, clamped to view *)
         let baseline_data = 0. in
         let baseline_clamped =
           Float.max y_view.min (Float.min y_view.max baseline_data)
         in
         Data.iter data (fun a ->
             let cat = x a in
-            match Layout.band_index cats cat with
+            match Layout.band_index_fast index_of cat with
             | None -> ()
             | Some i -> (
                 let x0 = r.x + int_of_float (offset +. (float i *. bw)) in
                 let v = y a in
-                (* Calculate bar extent in floating point cells from bottom *)
                 let y0v = Float.min baseline_clamped v in
                 let y1v = Float.max baseline_clamped v in
                 let y0_f = (y0v -. y_view.min) *. scale in
                 let y1_f = (y1v -. y_view.min) *. scale in
-                let y0_cells = int_of_float (Float.floor y0_f) in
-                let y1_cells = int_of_float (Float.floor y1_f) in
-                let y1_frac = y1_f -. float y1_cells in
-                let top_glyph = lower_block_glyph y1_frac in
-                (* Draw full block cells from bottom of bar to top *)
-                for k = y0_cells to y1_cells - 1 do
-                  let yy = r.y + r.height - 1 - k in
-                  if yy >= r.y && yy < r.y + r.height then
-                    for xx = 0 to band_w - 1 do
-                      let px = x0 + xx in
-                      if px >= r.x && px < r.x + r.width then
-                        draw_text grid ~x:px ~y:yy ~style "█"
+                match mode with
+                | `Cell ->
+                    (* Simple full-cell rendering *)
+                    let lo_cell = int_of_float (Float.round y0_f) in
+                    let hi_cell = int_of_float (Float.round y1_f) in
+                    for k = lo_cell to hi_cell - 1 do
+                      let yy = r.y + r.height - 1 - k in
+                      if yy >= r.y && yy < r.y + r.height then
+                        for xx = 0 to band_w - 1 do
+                          let px = x0 + xx in
+                          if px >= r.x && px < r.x + r.width then
+                            draw_text grid ~x:px ~y:yy ~style "█"
+                        done
                     done
-                done;
-                (* Draw fractional top cell if any *)
-                match top_glyph with
-                | None -> ()
-                | Some glyph ->
-                    let yy = r.y + r.height - 1 - y1_cells in
-                    if yy >= r.y && yy < r.y + r.height then
-                      for xx = 0 to band_w - 1 do
-                        let px = x0 + xx in
-                        if px >= r.x && px < r.x + r.width then
-                          draw_text grid ~x:px ~y:yy ~style glyph
-                      done))
+                | `Half_block -> (
+                    (* Sub-cell precision using half-block characters *)
+                    let lo_cell = int_of_float (Float.floor y0_f) in
+                    let hi_cell = int_of_float (Float.floor y1_f) in
+                    let lo_frac = y0_f -. float lo_cell in
+                    let hi_frac = y1_f -. float hi_cell in
+                    let bot_glyph =
+                      if lo_frac > 1e-6 then upper_block_glyph (1. -. lo_frac)
+                      else None
+                    in
+                    let top_glyph = lower_block_glyph hi_frac in
+                    (match bot_glyph with
+                    | None -> ()
+                    | Some glyph ->
+                        let yy = r.y + r.height - 1 - lo_cell in
+                        if yy >= r.y && yy < r.y + r.height then
+                          for xx = 0 to band_w - 1 do
+                            let px = x0 + xx in
+                            if px >= r.x && px < r.x + r.width then
+                              draw_text grid ~x:px ~y:yy ~style glyph
+                          done);
+                    let start_cell =
+                      if lo_frac > 1e-6 then lo_cell + 1 else lo_cell
+                    in
+                    for k = start_cell to hi_cell - 1 do
+                      let yy = r.y + r.height - 1 - k in
+                      if yy >= r.y && yy < r.y + r.height then
+                        for xx = 0 to band_w - 1 do
+                          let px = x0 + xx in
+                          if px >= r.x && px < r.x + r.width then
+                            draw_text grid ~x:px ~y:yy ~style "█"
+                        done
+                    done;
+                    match top_glyph with
+                    | None -> ()
+                    | Some glyph ->
+                        let yy = r.y + r.height - 1 - hi_cell in
+                        if yy >= r.y && yy < r.y + r.height then
+                          for xx = 0 to band_w - 1 do
+                            let px = x0 + xx in
+                            if px >= r.x && px < r.x + r.width then
+                              draw_text grid ~x:px ~y:yy ~style glyph
+                          done)))
   in
 
-  let draw_bars_x ~style ~y ~x data =
+  let draw_bars_x ~style ~mode ~y ~x data =
     match y_band with
     | None -> ()
-    | Some (cats, offset, bw, band_h) ->
-        (* Calculate sub-cell precision scale based on x domain *)
+    | Some (_cats, index_of, offset, bw, band_h) ->
         let x_view = layout.x_view in
         let x_span = x_view.max -. x_view.min in
         let x_span = if x_span <= 0. then 1. else x_span in
         let scale = float r.width /. x_span in
-        (* Baseline is at x=0 in data space, clamped to view *)
         let baseline_data = 0. in
         let baseline_clamped =
           Float.max x_view.min (Float.min x_view.max baseline_data)
         in
         Data.iter data (fun a ->
             let cat = y a in
-            match Layout.band_index cats cat with
+            match Layout.band_index_fast index_of cat with
             | None -> ()
             | Some i -> (
                 let y0 = r.y + int_of_float (offset +. (float i *. bw)) in
                 let v = x a in
-                (* Calculate bar extent in floating point cells from left *)
                 let x0v = Float.min baseline_clamped v in
                 let x1v = Float.max baseline_clamped v in
                 let x0_f = (x0v -. x_view.min) *. scale in
                 let x1_f = (x1v -. x_view.min) *. scale in
-                let x0_cells = int_of_float (Float.floor x0_f) in
-                let x1_cells = int_of_float (Float.floor x1_f) in
-                let x1_frac = x1_f -. float x1_cells in
-                let right_glyph = left_block_glyph x1_frac in
-                (* Draw full block cells from left of bar to right *)
-                for k = x0_cells to x1_cells - 1 do
-                  let xx = r.x + k in
-                  if xx >= r.x && xx < r.x + r.width then
-                    for yy = 0 to band_h - 1 do
-                      let py = y0 + yy in
-                      if py >= r.y && py < r.y + r.height then
-                        draw_text grid ~x:xx ~y:py ~style "█"
+                match mode with
+                | `Cell ->
+                    (* Simple full-cell rendering *)
+                    let lo_cell = int_of_float (Float.round x0_f) in
+                    let hi_cell = int_of_float (Float.round x1_f) in
+                    for k = lo_cell to hi_cell - 1 do
+                      let xx = r.x + k in
+                      if xx >= r.x && xx < r.x + r.width then
+                        for yy = 0 to band_h - 1 do
+                          let py = y0 + yy in
+                          if py >= r.y && py < r.y + r.height then
+                            draw_text grid ~x:xx ~y:py ~style "█"
+                        done
                     done
-                done;
-                (* Draw fractional right cell if any *)
-                match right_glyph with
-                | None -> ()
-                | Some glyph ->
-                    let xx = r.x + x1_cells in
-                    if xx >= r.x && xx < r.x + r.width then
-                      for yy = 0 to band_h - 1 do
-                        let py = y0 + yy in
-                        if py >= r.y && py < r.y + r.height then
-                          draw_text grid ~x:xx ~y:py ~style glyph
-                      done))
+                | `Half_block -> (
+                    (* Sub-cell precision using half-block characters *)
+                    let lo_cell = int_of_float (Float.floor x0_f) in
+                    let hi_cell = int_of_float (Float.floor x1_f) in
+                    let lo_frac = x0_f -. float lo_cell in
+                    let hi_frac = x1_f -. float hi_cell in
+                    let left_glyph =
+                      if lo_frac > 1e-6 then right_block_glyph (1. -. lo_frac)
+                      else None
+                    in
+                    let right_glyph = left_block_glyph hi_frac in
+                    (match left_glyph with
+                    | None -> ()
+                    | Some glyph ->
+                        let xx = r.x + lo_cell in
+                        if xx >= r.x && xx < r.x + r.width then
+                          for yy = 0 to band_h - 1 do
+                            let py = y0 + yy in
+                            if py >= r.y && py < r.y + r.height then
+                              draw_text grid ~x:xx ~y:py ~style glyph
+                          done);
+                    let start_cell =
+                      if lo_frac > 1e-6 then lo_cell + 1 else lo_cell
+                    in
+                    for k = start_cell to hi_cell - 1 do
+                      let xx = r.x + k in
+                      if xx >= r.x && xx < r.x + r.width then
+                        for yy = 0 to band_h - 1 do
+                          let py = y0 + yy in
+                          if py >= r.y && py < r.y + r.height then
+                            draw_text grid ~x:xx ~y:py ~style "█"
+                        done
+                    done;
+                    match right_glyph with
+                    | None -> ()
+                    | Some glyph ->
+                        let xx = r.x + hi_cell in
+                        if xx >= r.x && xx < r.x + r.width then
+                          for yy = 0 to band_h - 1 do
+                            let py = y0 + yy in
+                            if py >= r.y && py < r.y + r.height then
+                              draw_text grid ~x:xx ~y:py ~style glyph
+                          done)))
   in
 
-  let draw_stacked_y ~gap ~bar_width data =
+  let draw_stacked_y ~gap ~bar_width ~mode data =
     match x_band with
     | None -> ()
-    | Some (cats, offset, bw, band_w_auto) ->
-        (* Use band_params for consistent placement with hit-testing *)
+    | Some (_cats, index_of, offset, bw, band_w_auto) ->
         let bw_cells =
           match bar_width with
           | Some w -> w
           | None ->
-              (* Apply gap reduction to band width *)
               let gap = max 0 gap in
               max 1 (int_of_float bw - gap - 1)
         in
         let bw_cells = min bw_cells band_w_auto in
-        (* Calculate sub-cell precision scale based on y domain *)
         let y_view = layout.y_view in
         let y_span = y_view.max -. y_view.min in
         let y_span = if y_span <= 0. then 1. else y_span in
         let scale = float r.height /. y_span in
         Data.iter data (fun b ->
-            match Layout.band_index cats b.Mark.category with
+            match Layout.band_index_fast index_of b.Mark.category with
             | None -> ()
             | Some i ->
-                (* Use same band_params calculation as hit-testing *)
                 let x0 = r.x + int_of_float (offset +. (float i *. bw)) in
                 let cum = ref 0. in
                 List.iter
@@ -4543,41 +4945,53 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                     let y0v = !cum in
                     cum := !cum +. v;
                     let y1v = !cum in
-                    (* Calculate bar heights in floating point for sub-cell precision *)
                     let y0_f = (y0v -. y_view.min) *. scale in
                     let y1_f = (y1v -. y_view.min) *. scale in
-                    let y0_cells = int_of_float (Float.floor y0_f) in
-                    let y1_cells = int_of_float (Float.floor y1_f) in
-                    let y1_frac = y1_f -. float y1_cells in
-                    let top_glyph = lower_block_glyph y1_frac in
-                    (* Draw full block cells from bottom of segment to top *)
-                    for k = y0_cells to y1_cells - 1 do
-                      let yy = r.y + r.height - 1 - k in
-                      if yy >= r.y && yy < r.y + r.height then
-                        for xx = 0 to bw_cells - 1 do
-                          let px = x0 + xx in
-                          if px >= r.x && px < r.x + r.width then
-                            draw_text grid ~x:px ~y:yy ~style:seg.style "█"
+                    match mode with
+                    | `Cell ->
+                        let y0_cells = int_of_float (Float.round y0_f) in
+                        let y1_cells = int_of_float (Float.round y1_f) in
+                        for k = y0_cells to y1_cells - 1 do
+                          let yy = r.y + r.height - 1 - k in
+                          if yy >= r.y && yy < r.y + r.height then
+                            for xx = 0 to bw_cells - 1 do
+                              let px = x0 + xx in
+                              if px >= r.x && px < r.x + r.width then
+                                draw_text grid ~x:px ~y:yy ~style:seg.style "█"
+                            done
                         done
-                    done;
-                    (* Draw fractional top cell if any *)
-                    match top_glyph with
-                    | None -> ()
-                    | Some glyph ->
-                        let yy = r.y + r.height - 1 - y1_cells in
-                        if yy >= r.y && yy < r.y + r.height then
-                          for xx = 0 to bw_cells - 1 do
-                            let px = x0 + xx in
-                            if px >= r.x && px < r.x + r.width then
-                              draw_text grid ~x:px ~y:yy ~style:seg.style glyph
-                          done)
+                    | `Half_block -> (
+                        let y0_cells = int_of_float (Float.floor y0_f) in
+                        let y1_cells = int_of_float (Float.floor y1_f) in
+                        let y1_frac = y1_f -. float y1_cells in
+                        let top_glyph = lower_block_glyph y1_frac in
+                        for k = y0_cells to y1_cells - 1 do
+                          let yy = r.y + r.height - 1 - k in
+                          if yy >= r.y && yy < r.y + r.height then
+                            for xx = 0 to bw_cells - 1 do
+                              let px = x0 + xx in
+                              if px >= r.x && px < r.x + r.width then
+                                draw_text grid ~x:px ~y:yy ~style:seg.style "█"
+                            done
+                        done;
+                        match top_glyph with
+                        | None -> ()
+                        | Some glyph ->
+                            let yy = r.y + r.height - 1 - y1_cells in
+                            if yy >= r.y && yy < r.y + r.height then
+                              for xx = 0 to bw_cells - 1 do
+                                let px = x0 + xx in
+                                if px >= r.x && px < r.x + r.width then
+                                  draw_text grid ~x:px ~y:yy ~style:seg.style
+                                    glyph
+                              done))
                   b.segments)
   in
 
-  let draw_stacked_x ~gap ~bar_height data =
+  let draw_stacked_x ~gap ~bar_height ~mode data =
     match y_band with
     | None -> ()
-    | Some (cats, offset, bw, band_h_auto) ->
+    | Some (_cats, index_of, offset, bw, band_h_auto) ->
         (* Use band_params for consistent placement with hit-testing *)
         let bh_cells =
           match bar_height with
@@ -4594,7 +5008,7 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
         let x_span = if x_span <= 0. then 1. else x_span in
         let scale = float r.width /. x_span in
         Data.iter data (fun b ->
-            match Layout.band_index cats b.Mark.category with
+            match Layout.band_index_fast index_of b.Mark.category with
             | None -> ()
             | Some i ->
                 (* Use same band_params calculation as hit-testing *)
@@ -4609,31 +5023,46 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                     (* Calculate bar widths in floating point for sub-cell precision *)
                     let x0_f = (x0v -. x_view.min) *. scale in
                     let x1_f = (x1v -. x_view.min) *. scale in
-                    let x0_cells = int_of_float (Float.floor x0_f) in
-                    let x1_cells = int_of_float (Float.floor x1_f) in
-                    let x1_frac = x1_f -. float x1_cells in
-                    let right_glyph = left_block_glyph x1_frac in
-                    (* Draw full block cells from left of segment to right *)
-                    for k = x0_cells to x1_cells - 1 do
-                      let xx = r.x + k in
-                      if xx >= r.x && xx < r.x + r.width then
-                        for yy = 0 to bh_cells - 1 do
-                          let py = y0 + yy in
-                          if py >= r.y && py < r.y + r.height then
-                            draw_text grid ~x:xx ~y:py ~style:seg.style "█"
+                    match mode with
+                    | `Cell ->
+                        let x0_cells = int_of_float (Float.round x0_f) in
+                        let x1_cells = int_of_float (Float.round x1_f) in
+                        for k = x0_cells to x1_cells - 1 do
+                          let xx = r.x + k in
+                          if xx >= r.x && xx < r.x + r.width then
+                            for yy = 0 to bh_cells - 1 do
+                              let py = y0 + yy in
+                              if py >= r.y && py < r.y + r.height then
+                                draw_text grid ~x:xx ~y:py ~style:seg.style "█"
+                            done
                         done
-                    done;
-                    (* Draw fractional right cell if any *)
-                    match right_glyph with
-                    | None -> ()
-                    | Some glyph ->
-                        let xx = r.x + x1_cells in
-                        if xx >= r.x && xx < r.x + r.width then
-                          for yy = 0 to bh_cells - 1 do
-                            let py = y0 + yy in
-                            if py >= r.y && py < r.y + r.height then
-                              draw_text grid ~x:xx ~y:py ~style:seg.style glyph
-                          done)
+                    | `Half_block -> (
+                        let x0_cells = int_of_float (Float.floor x0_f) in
+                        let x1_cells = int_of_float (Float.floor x1_f) in
+                        let x1_frac = x1_f -. float x1_cells in
+                        let right_glyph = left_block_glyph x1_frac in
+                        (* Draw full block cells from left of segment to right *)
+                        for k = x0_cells to x1_cells - 1 do
+                          let xx = r.x + k in
+                          if xx >= r.x && xx < r.x + r.width then
+                            for yy = 0 to bh_cells - 1 do
+                              let py = y0 + yy in
+                              if py >= r.y && py < r.y + r.height then
+                                draw_text grid ~x:xx ~y:py ~style:seg.style "█"
+                            done
+                        done;
+                        (* Draw fractional right cell if any *)
+                        match right_glyph with
+                        | None -> ()
+                        | Some glyph ->
+                            let xx = r.x + x1_cells in
+                            if xx >= r.x && xx < r.x + r.width then
+                              for yy = 0 to bh_cells - 1 do
+                                let py = y0 + yy in
+                                if py >= r.y && py < r.y + r.height then
+                                  draw_text grid ~x:xx ~y:py ~style:seg.style
+                                    glyph
+                              done))
                   b.segments)
   in
 
@@ -4668,35 +5097,44 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
       done
   in
 
-  let draw_candles ~y_axis ~bullish ~bearish data =
+  let draw_candles ~y_axis ~bullish ~bearish ~width ~body data =
     let y_to_px_cell' = select_y_to_px_cell y_axis in
-    (* draw in time order *)
-    let arr =
-      Data.to_list data
-      |> List.sort (fun a b -> compare a.Mark.time b.Mark.time)
+    (* Data is pre-sorted by time during compilation *)
+    (* Determine candle rendering characters based on width and body options *)
+    let body_char, body_filled_char =
+      match width with `One -> ("┃", "┃") | `Two -> ("▐▌", "██")
     in
-    List.iter
-      (fun (o : Mark.ohlc) ->
+    let wick_char = match width with `One -> "│" | `Two -> " │" in
+    Data.iter data (fun (o : Mark.ohlc) ->
         let cx = x_to_px_cell o.time in
         let st = if o.close >= o.open_ then bullish else bearish in
+        let is_bullish = o.close >= o.open_ in
         let y_body_top = y_to_px_cell' (max o.open_ o.close) in
         let y_body_bot = y_to_px_cell' (min o.open_ o.close) in
         let y_wick_top = y_to_px_cell' o.high in
         let y_wick_bot = y_to_px_cell' o.low in
+        (* Select body rendering based on body style *)
+        let body_str =
+          match body with
+          | `Filled -> body_filled_char
+          | `Hollow -> if is_bullish then body_char else body_filled_char
+        in
         if cx >= r.x && cx < r.x + r.width then (
+          (* Upper wick *)
           for yy = min y_wick_top y_body_top to max y_wick_top y_body_top do
             if yy >= r.y && yy < r.y + r.height then
-              draw_text grid ~x:cx ~y:yy ~style:st "│"
+              draw_text grid ~x:cx ~y:yy ~style:st wick_char
           done;
+          (* Body *)
           for yy = min y_body_top y_body_bot to max y_body_top y_body_bot do
             if yy >= r.y && yy < r.y + r.height then
-              draw_text grid ~x:cx ~y:yy ~style:st "┃"
+              draw_text grid ~x:cx ~y:yy ~style:st body_str
           done;
+          (* Lower wick *)
           for yy = min y_body_bot y_wick_bot to max y_body_bot y_wick_bot do
             if yy >= r.y && yy < r.y + r.height then
-              draw_text grid ~x:cx ~y:yy ~style:st "│"
+              draw_text grid ~x:cx ~y:yy ~style:st wick_char
           done))
-      arr
   in
 
   let get_circle_points ~cx ~cy ~radius =
@@ -4752,29 +5190,7 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
         let xmin = layout.x_view.min and xmax = layout.x_view.max in
         let ymin = y_view.min and ymax = y_view.max in
         let dx = xmax -. xmin and dy = ymax -. ymin in
-        let dots : (int * int, int) Hashtbl.t = Hashtbl.create 128 in
-        let set_dot x_sub y_sub =
-          let cell_x = x_sub / 2 in
-          let cell_y = y_sub / 4 in
-          if Layout.rect_contains r ~x:cell_x ~y:cell_y then
-            let bit_x = x_sub land 1 in
-            let bit_y = y_sub mod 4 in
-            let bit_pos =
-              match (bit_x, bit_y) with
-              | 0, 0 -> 0
-              | 0, 1 -> 1
-              | 0, 2 -> 2
-              | 0, 3 -> 6
-              | 1, 0 -> 3
-              | 1, 1 -> 4
-              | 1, 2 -> 5
-              | 1, 3 -> 7
-              | _ -> 0
-            in
-            let key = (cell_x, cell_y) in
-            let cur = Option.value (Hashtbl.find_opt dots key) ~default:0 in
-            Hashtbl.replace dots key (cur lor (1 lsl bit_pos))
-        in
+        braille_clear ();
         Data.iter data (fun a ->
             let cxv = cx a and cyv = cy a and rv = radius_fn a in
             let cx_i = int_of_float (Float.round cxv) in
@@ -4794,122 +5210,144 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                 let yg = int_of_float (Float.round sy) in
                 let x_sub = (r.x * 2) + xg in
                 let y_sub = (r.y * 4) + (gy - 1 - yg) in
-                set_dot x_sub y_sub)
+                braille_set_dot x_sub y_sub)
               pts);
-        Hashtbl.iter
-          (fun (cx, cy) bits ->
-            let glyph = braille_glyph_of_bits bits in
-            draw_text grid ~x:cx ~y:cy ~style glyph)
-          dots
+        render_braille style
   in
 
   let rec draw_heatmap ~color_scale ~value_range ~auto_value_range ~agg ~render
       ~x ~y ~value data =
-    let values =
-      Data.fold data ~init:[] ~f:(fun acc a -> value a :: acc) |> List.rev
-    in
+    (* Compute min/max directly without building intermediate list *)
     let vmin, vmax =
       match value_range with
       | Some (a, b) -> (a, b)
-      | None -> (
+      | None ->
           if not auto_value_range then (0., 1.)
+          else if Array.length data = 0 then (0., 1.)
           else
-            match values with
-            | [] -> (0., 1.)
-            | hd :: tl ->
-                List.fold_left
-                  (fun (mn, mx) v -> (Float.min mn v, Float.max mx v))
-                  (hd, hd) tl)
+            let mn = ref (value data.(0)) in
+            let mx = ref !mn in
+            for i = 1 to Array.length data - 1 do
+              let v = value data.(i) in
+              if v < !mn then mn := v;
+              if v > !mx then mx := v
+            done;
+            (!mn, !mx)
     in
     let vmin, vmax = safe_range vmin vmax in
     let color_of = heatmap_color_fun ~color_scale ~vmin ~vmax in
-    let style_of_color c = Style.make ~bg:c () in
+    let ncolors = Array.length color_scale in
+    (* Pre-build style caches to avoid allocation in inner loops *)
+    let bg_styles = Array.map (fun c -> Style.make ~bg:c ()) color_scale in
+    let fg_styles = Array.map (fun c -> Style.make ~fg:c ()) color_scale in
+    let color_idx v = heatmap_color_idx ~len:ncolors ~vmin ~vmax v in
 
     let draw_cell px py v =
       if Layout.rect_contains r ~x:px ~y:py then
-        draw_text grid ~x:px ~y:py ~style:(style_of_color (color_of v)) " "
+        draw_text grid ~x:px ~y:py ~style:bg_styles.(color_idx v) " "
     in
 
     match render with
-    | Mark.Cells_bg -> (
+    | Mark.Cells_bg ->
         (* Cells_bg: colored background with space glyph *)
-        let tbl : (int * int, float * int) Hashtbl.t = Hashtbl.create 256 in
-        let tbl_max : (int * int, float) Hashtbl.t = Hashtbl.create 256 in
+        (* Use flat arrays instead of Hashtbl for O(1) access *)
+        let size = r.width * r.height in
+        let idx px py = px - r.x + ((py - r.y) * r.width) in
+        let values_arr = Array.make size 0. in
+        let counts_arr = Array.make size 0 in
         Data.iter data (fun a ->
             let px = x_to_px_cell (x a) in
             let py = y_to_px_cell (y a) in
             let v = value a in
             if Layout.rect_contains r ~x:px ~y:py then
+              let i = idx px py in
               match agg with
-              | `Last -> Hashtbl.replace tbl_max (px, py) v
+              | `Last ->
+                  values_arr.(i) <- v;
+                  counts_arr.(i) <- 1
               | `Max ->
-                  let cur =
-                    Option.value (Hashtbl.find_opt tbl_max (px, py)) ~default:v
-                  in
-                  Hashtbl.replace tbl_max (px, py) (Float.max cur v)
+                  if counts_arr.(i) = 0 then (
+                    values_arr.(i) <- v;
+                    counts_arr.(i) <- 1)
+                  else values_arr.(i) <- Float.max values_arr.(i) v
               | `Avg ->
-                  let s, n =
-                    Option.value (Hashtbl.find_opt tbl (px, py)) ~default:(0., 0)
-                  in
-                  Hashtbl.replace tbl (px, py) (s +. v, n + 1));
-        match agg with
-        | `Avg ->
-            Hashtbl.iter
-              (fun (px, py) (s, n) ->
-                if n > 0 then draw_cell px py (s /. float n))
-              tbl
-        | `Last | `Max ->
-            Hashtbl.iter (fun (px, py) v -> draw_cell px py v) tbl_max)
-    | Mark.Cells_fg -> (
+                  values_arr.(i) <- values_arr.(i) +. v;
+                  counts_arr.(i) <- counts_arr.(i) + 1);
+        for py = r.y to r.y + r.height - 1 do
+          for px = r.x to r.x + r.width - 1 do
+            let i = idx px py in
+            let n = counts_arr.(i) in
+            if n > 0 then
+              let v =
+                match agg with
+                | `Avg -> values_arr.(i) /. float n
+                | _ -> values_arr.(i)
+              in
+              draw_cell px py v
+          done
+        done
+    | Mark.Cells_fg ->
         (* Cells_fg: colored foreground glyph (█) *)
         let draw_cell_fg px py v =
           if Layout.rect_contains r ~x:px ~y:py then
-            let st = Style.make ~fg:(color_of v) () in
-            draw_text grid ~x:px ~y:py ~style:st charset.bar_fill
+            draw_text grid ~x:px ~y:py
+              ~style:fg_styles.(color_idx v)
+              charset.bar_fill
         in
-        let tbl : (int * int, float * int) Hashtbl.t = Hashtbl.create 256 in
-        let tbl_max : (int * int, float) Hashtbl.t = Hashtbl.create 256 in
+        (* Use flat arrays instead of Hashtbl for O(1) access *)
+        let size = r.width * r.height in
+        let idx px py = px - r.x + ((py - r.y) * r.width) in
+        let values_arr = Array.make size 0. in
+        let counts_arr = Array.make size 0 in
         Data.iter data (fun a ->
             let px = x_to_px_cell (x a) in
             let py = y_to_px_cell (y a) in
             let v = value a in
             if Layout.rect_contains r ~x:px ~y:py then
+              let i = idx px py in
               match agg with
-              | `Last -> Hashtbl.replace tbl_max (px, py) v
+              | `Last ->
+                  values_arr.(i) <- v;
+                  counts_arr.(i) <- 1
               | `Max ->
-                  let cur =
-                    Option.value (Hashtbl.find_opt tbl_max (px, py)) ~default:v
-                  in
-                  Hashtbl.replace tbl_max (px, py) (Float.max cur v)
+                  if counts_arr.(i) = 0 then (
+                    values_arr.(i) <- v;
+                    counts_arr.(i) <- 1)
+                  else values_arr.(i) <- Float.max values_arr.(i) v
               | `Avg ->
-                  let s, n =
-                    Option.value (Hashtbl.find_opt tbl (px, py)) ~default:(0., 0)
-                  in
-                  Hashtbl.replace tbl (px, py) (s +. v, n + 1));
-        match agg with
-        | `Avg ->
-            Hashtbl.iter
-              (fun (px, py) (s, n) ->
-                if n > 0 then draw_cell_fg px py (s /. float n))
-              tbl
-        | `Last | `Max ->
-            Hashtbl.iter (fun (px, py) v -> draw_cell_fg px py v) tbl_max)
+                  values_arr.(i) <- values_arr.(i) +. v;
+                  counts_arr.(i) <- counts_arr.(i) + 1);
+        for py = r.y to r.y + r.height - 1 do
+          for px = r.x to r.x + r.width - 1 do
+            let i = idx px py in
+            let n = counts_arr.(i) in
+            if n > 0 then
+              let v =
+                match agg with
+                | `Avg -> values_arr.(i) /. float n
+                | _ -> values_arr.(i)
+              in
+              draw_cell_fg px py v
+          done
+        done
     | Mark.Halfblock_fg_bg ->
         (* Halfblock_fg_bg: Two values per row using ▀ with fg/bg colors.
            Each terminal cell represents two data rows (top half and bottom half),
            doubling vertical resolution. *)
-        (* We aggregate data at 2x vertical resolution, then render pairs *)
-        let tbl : (int * int, float * int) Hashtbl.t = Hashtbl.create 256 in
-        let tbl_max : (int * int, float) Hashtbl.t = Hashtbl.create 256 in
-        (* Map data to half-cell coordinates: py_half = py * 2 + (0 or 1) *)
+        (* Use flat arrays for 2x vertical resolution *)
+        let half_height = r.height * 2 in
+        let size = r.width * half_height in
+        let idx px py_half = px - r.x + (py_half * r.width) in
+        let values_arr = Array.make size 0. in
+        let counts_arr = Array.make size 0 in
+        (* Map data to half-cell coordinates *)
         Data.iter data (fun a ->
             let px = x_to_px_cell (x a) in
             (* Map to double-resolution y coordinate *)
             let y_data = y a in
             let py_float =
               let minv = layout.y_view.min and maxv = layout.y_view.max in
-              let extent = r.height * 2 in
-              (* 2x resolution *)
+              let extent = half_height in
               if Float.abs (maxv -. minv) < 1e-12 then float (extent / 2)
               else
                 let t = (y_data -. minv) /. (maxv -. minv) in
@@ -4917,29 +5355,31 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                 float (extent - 1) *. (1. -. t)
             in
             let py_half = int_of_float (Float.round py_float) in
-            let py_half = max 0 (min ((r.height * 2) - 1) py_half) in
+            let py_half = max 0 (min (half_height - 1) py_half) in
             let v = value a in
-            let key = (px, py_half) in
             if px >= r.x && px < r.x + r.width then
+              let i = idx px py_half in
               match agg with
-              | `Last -> Hashtbl.replace tbl_max key v
+              | `Last ->
+                  values_arr.(i) <- v;
+                  counts_arr.(i) <- 1
               | `Max ->
-                  let cur =
-                    Option.value (Hashtbl.find_opt tbl_max key) ~default:v
-                  in
-                  Hashtbl.replace tbl_max key (Float.max cur v)
+                  if counts_arr.(i) = 0 then (
+                    values_arr.(i) <- v;
+                    counts_arr.(i) <- 1)
+                  else values_arr.(i) <- Float.max values_arr.(i) v
               | `Avg ->
-                  let s, n =
-                    Option.value (Hashtbl.find_opt tbl key) ~default:(0., 0)
-                  in
-                  Hashtbl.replace tbl key (s +. v, n + 1));
-        let get_value key =
-          match agg with
-          | `Avg -> (
-              match Hashtbl.find_opt tbl key with
-              | None -> None
-              | Some (s, n) -> if n > 0 then Some (s /. float n) else None)
-          | `Last | `Max -> Hashtbl.find_opt tbl_max key
+                  values_arr.(i) <- values_arr.(i) +. v;
+                  counts_arr.(i) <- counts_arr.(i) + 1);
+        let get_value px py_half =
+          let i = idx px py_half in
+          let n = counts_arr.(i) in
+          if n = 0 then None
+          else
+            Some
+              (match agg with
+              | `Avg -> values_arr.(i) /. float n
+              | _ -> values_arr.(i))
         in
         (* Render cell-by-cell: each cell covers py_half = [py*2, py*2+1] *)
         for py = r.y to r.y + r.height - 1 do
@@ -4947,18 +5387,16 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
             let py_rel = py - r.y in
             let py_half_top = py_rel * 2 in
             let py_half_bot = (py_rel * 2) + 1 in
-            let v_top = get_value (px, py_half_top) in
-            let v_bot = get_value (px, py_half_bot) in
+            let v_top = get_value px py_half_top in
+            let v_bot = get_value px py_half_bot in
             match (v_top, v_bot) with
             | None, None -> ()
             | Some vt, None ->
                 (* Only top half has data *)
-                let st = Style.make ~fg:(color_of vt) () in
-                draw_text grid ~x:px ~y:py ~style:st "▀"
+                draw_text grid ~x:px ~y:py ~style:fg_styles.(color_idx vt) "▀"
             | None, Some vb ->
                 (* Only bottom half has data *)
-                let st = Style.make ~fg:(color_of vb) () in
-                draw_text grid ~x:px ~y:py ~style:st "▄"
+                draw_text grid ~x:px ~y:py ~style:fg_styles.(color_idx vb) "▄"
             | Some vt, Some vb ->
                 (* Both halves have data: top=fg, bottom=bg, glyph=▀ *)
                 let st = Style.make ~fg:(color_of vt) ~bg:(color_of vb) () in
@@ -4985,60 +5423,67 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
             ~render:Mark.Cells_bg ~x ~y ~value data
         else
           let xs = Array.of_list xs and ys = Array.of_list ys in
-          let grid : (int * int, float * int) Hashtbl.t =
-            Hashtbl.create (nx * ny)
-          in
-          let grid_max : (int * int, float) Hashtbl.t =
-            Hashtbl.create (nx * ny)
-          in
+          (* Use flat arrays instead of Hashtbl for O(1) access *)
+          let grid_size = nx * ny in
+          let idx ix iy = ix + (iy * nx) in
+          let values_arr = Array.make grid_size 0. in
+          let counts_arr = Array.make grid_size 0 in
+          (* Binary search to find the interval [arr.(i), arr.(i+1)] containing v *)
           let find_interval arr v =
             let len = Array.length arr in
             if len = 1 then (0, 0, arr.(0), arr.(0))
+            else if len = 2 then (0, 1, arr.(0), arr.(1))
             else
-              let rec loop i =
-                if i + 1 >= len then
-                  (len - 2, len - 1, arr.(len - 2), arr.(len - 1))
-                else if Float.compare arr.(i + 1) v >= 0 then
-                  (i, i + 1, arr.(i), arr.(i + 1))
-                else loop (i + 1)
+              (* Binary search for largest i where arr.(i) <= v *)
+              let rec bsearch lo hi =
+                if lo >= hi then lo
+                else
+                  let mid = lo + ((hi - lo + 1) / 2) in
+                  if Float.compare arr.(mid) v <= 0 then bsearch mid hi
+                  else bsearch lo (mid - 1)
               in
-              loop 0
+              let i = bsearch 0 (len - 2) in
+              (i, i + 1, arr.(i), arr.(i + 1))
           in
+          (* Binary search to find floor index: largest i where arr.(i) <= v *)
           let find_index_floor arr v =
             let len = Array.length arr in
-            let rec loop i =
-              if i + 1 >= len then i
-              else if Float.compare arr.(i + 1) v > 0 then i
-              else loop (i + 1)
-            in
-            loop 0
+            if len = 1 then 0
+            else
+              let rec bsearch lo hi =
+                if lo >= hi then lo
+                else
+                  let mid = lo + ((hi - lo + 1) / 2) in
+                  if Float.compare arr.(mid) v <= 0 then bsearch mid hi
+                  else bsearch lo (mid - 1)
+              in
+              bsearch 0 (len - 1)
           in
-          (* populate grid *)
+          (* populate grid arrays *)
           Data.iter data (fun a ->
               let xi = find_index_floor xs (x a) in
               let yi = find_index_floor ys (y a) in
-              let key = (xi, yi) in
+              let i = idx xi yi in
               let v = value a in
               match agg with
-              | `Last -> Hashtbl.replace grid_max key v
+              | `Last ->
+                  values_arr.(i) <- v;
+                  counts_arr.(i) <- 1
               | `Max ->
-                  let cur =
-                    Option.value (Hashtbl.find_opt grid_max key) ~default:v
-                  in
-                  Hashtbl.replace grid_max key (Float.max cur v)
+                  if counts_arr.(i) = 0 then (
+                    values_arr.(i) <- v;
+                    counts_arr.(i) <- 1)
+                  else values_arr.(i) <- Float.max values_arr.(i) v
               | `Avg ->
-                  let s, n =
-                    Option.value (Hashtbl.find_opt grid key) ~default:(0., 0)
-                  in
-                  Hashtbl.replace grid key (s +. v, n + 1));
+                  values_arr.(i) <- values_arr.(i) +. v;
+                  counts_arr.(i) <- counts_arr.(i) + 1);
           let lookup ix iy =
+            let i = idx ix iy in
             match agg with
-            | `Avg -> (
-                match Hashtbl.find_opt grid (ix, iy) with
-                | None -> 0.
-                | Some (s, n) -> if n <= 0 then 0. else s /. float n)
-            | `Last | `Max ->
-                Option.value (Hashtbl.find_opt grid_max (ix, iy)) ~default:0.
+            | `Avg ->
+                let n = counts_arr.(i) in
+                if n <= 0 then 0. else values_arr.(i) /. float n
+            | `Last | `Max -> values_arr.(i)
           in
           let sample xq yq =
             let ix0, ix1, x0, x1 = find_interval xs xq in
@@ -5080,9 +5525,9 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
         in
         let draw_shaded_cell px py v =
           if Layout.rect_contains r ~x:px ~y:py then
-            let color = color_of v in
-            let st = Style.make ~fg:color () in
-            draw_text grid ~x:px ~y:py ~style:st shade_chars.(shade_idx v)
+            draw_text grid ~x:px ~y:py
+              ~style:fg_styles.(color_idx v)
+              shade_chars.(shade_idx v)
         in
         (* collect unique xs/ys for bilinear interpolation *)
         let xs_tbl = Hashtbl.create 64 and ys_tbl = Hashtbl.create 64 in
@@ -5097,71 +5542,88 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
         in
         let nx = List.length xs and ny = List.length ys in
         if nx <= 1 || ny <= 1 then (
-          (* sparse fallback - just plot individual cells *)
-          let tbl_max : (int * int, float) Hashtbl.t = Hashtbl.create 256 in
+          (* sparse fallback - just plot individual cells using flat array *)
+          let size = r.width * r.height in
+          let idx px py = px - r.x + ((py - r.y) * r.width) in
+          let values_arr = Array.make size 0. in
+          let has_value = Array.make size false in
           Data.iter data (fun a ->
               let px = x_to_px_cell (x a) in
               let py = y_to_px_cell (y a) in
               let v = value a in
-              if Layout.rect_contains r ~x:px ~y:py then
-                Hashtbl.replace tbl_max (px, py) v);
-          Hashtbl.iter (fun (px, py) v -> draw_shaded_cell px py v) tbl_max)
+              if Layout.rect_contains r ~x:px ~y:py then (
+                let i = idx px py in
+                values_arr.(i) <- v;
+                has_value.(i) <- true));
+          for py = r.y to r.y + r.height - 1 do
+            for px = r.x to r.x + r.width - 1 do
+              let i = idx px py in
+              if has_value.(i) then draw_shaded_cell px py values_arr.(i)
+            done
+          done)
         else
           let xs = Array.of_list xs and ys = Array.of_list ys in
-          let grid : (int * int, float * int) Hashtbl.t =
-            Hashtbl.create (nx * ny)
-          in
-          let grid_max : (int * int, float) Hashtbl.t =
-            Hashtbl.create (nx * ny)
-          in
+          (* Use flat arrays instead of Hashtbl for O(1) access *)
+          let grid_size = nx * ny in
+          let idx ix iy = ix + (iy * nx) in
+          let values_arr = Array.make grid_size 0. in
+          let counts_arr = Array.make grid_size 0 in
+          (* Binary search to find the interval [arr.(i), arr.(i+1)] containing v *)
           let find_interval arr v =
             let len = Array.length arr in
             if len = 1 then (0, 0, arr.(0), arr.(0))
+            else if len = 2 then (0, 1, arr.(0), arr.(1))
             else
-              let rec loop i =
-                if i + 1 >= len then
-                  (len - 2, len - 1, arr.(len - 2), arr.(len - 1))
-                else if Float.compare arr.(i + 1) v >= 0 then
-                  (i, i + 1, arr.(i), arr.(i + 1))
-                else loop (i + 1)
+              (* Binary search for largest i where arr.(i) <= v *)
+              let rec bsearch lo hi =
+                if lo >= hi then lo
+                else
+                  let mid = lo + ((hi - lo + 1) / 2) in
+                  if Float.compare arr.(mid) v <= 0 then bsearch mid hi
+                  else bsearch lo (mid - 1)
               in
-              loop 0
+              let i = bsearch 0 (len - 2) in
+              (i, i + 1, arr.(i), arr.(i + 1))
           in
+          (* Binary search to find floor index: largest i where arr.(i) <= v *)
           let find_index_floor arr v =
             let len = Array.length arr in
-            let rec loop i =
-              if i + 1 >= len then i
-              else if Float.compare arr.(i + 1) v > 0 then i
-              else loop (i + 1)
-            in
-            loop 0
+            if len = 1 then 0
+            else
+              let rec bsearch lo hi =
+                if lo >= hi then lo
+                else
+                  let mid = lo + ((hi - lo + 1) / 2) in
+                  if Float.compare arr.(mid) v <= 0 then bsearch mid hi
+                  else bsearch lo (mid - 1)
+              in
+              bsearch 0 (len - 1)
           in
-          (* populate grid *)
+          (* populate grid arrays *)
           Data.iter data (fun a ->
               let xi = find_index_floor xs (x a) in
               let yi = find_index_floor ys (y a) in
-              let key = (xi, yi) in
+              let i = idx xi yi in
               let v = value a in
               match agg with
-              | `Last -> Hashtbl.replace grid_max key v
+              | `Last ->
+                  values_arr.(i) <- v;
+                  counts_arr.(i) <- 1
               | `Max ->
-                  let cur =
-                    Option.value (Hashtbl.find_opt grid_max key) ~default:v
-                  in
-                  Hashtbl.replace grid_max key (Float.max cur v)
+                  if counts_arr.(i) = 0 then (
+                    values_arr.(i) <- v;
+                    counts_arr.(i) <- 1)
+                  else values_arr.(i) <- Float.max values_arr.(i) v
               | `Avg ->
-                  let s, n =
-                    Option.value (Hashtbl.find_opt grid key) ~default:(0., 0)
-                  in
-                  Hashtbl.replace grid key (s +. v, n + 1));
+                  values_arr.(i) <- values_arr.(i) +. v;
+                  counts_arr.(i) <- counts_arr.(i) + 1);
           let lookup ix iy =
+            let i = idx ix iy in
             match agg with
-            | `Avg -> (
-                match Hashtbl.find_opt grid (ix, iy) with
-                | None -> 0.
-                | Some (s, n) -> if n <= 0 then 0. else s /. float n)
-            | `Last | `Max ->
-                Option.value (Hashtbl.find_opt grid_max (ix, iy)) ~default:0.
+            | `Avg ->
+                let n = counts_arr.(i) in
+                if n <= 0 then 0. else values_arr.(i) /. float n
+            | `Last | `Max -> values_arr.(i)
           in
           let sample xq yq =
             let ix0, ix1, x0, x1 = find_interval xs xq in
@@ -5219,12 +5681,14 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
           draw_line_opt_series ~y_axis ~style ~pattern ~kind ~x ~y data
       | CScatter { style; glyph; mode; x; y; y_axis; data; _ } ->
           draw_scatter_series ~y_axis ~style ~glyph ~kind:mode ~x ~y data
-      | CBars_y { style; x; y; data; _ } -> draw_bars_y ~style ~x ~y data
-      | CBars_x { style; y; x; data; _ } -> draw_bars_x ~style ~y ~x data
-      | CStacked_y { gap; bar_width; data; _ } ->
-          draw_stacked_y ~gap ~bar_width data
-      | CStacked_x { gap; bar_height; data; _ } ->
-          draw_stacked_x ~gap ~bar_height data
+      | CBars_y { style; mode; x; y; data; _ } ->
+          draw_bars_y ~style ~mode ~x ~y data
+      | CBars_x { style; mode; y; x; data; _ } ->
+          draw_bars_x ~style ~mode ~y ~x data
+      | CStacked_y { gap; bar_width; mode; data; _ } ->
+          draw_stacked_y ~gap ~bar_width ~mode data
+      | CStacked_x { gap; bar_height; mode; data; _ } ->
+          draw_stacked_x ~gap ~bar_height ~mode data
       | CRule_x { style; pattern; x; _ } -> draw_rule_x ~style ~pattern x
       | CRule_y { style; pattern; y; y_axis; _ } ->
           draw_rule_y ~y_axis ~style ~pattern y
@@ -5243,8 +5707,8 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
           } ->
           draw_heatmap ~color_scale ~value_range ~auto_value_range ~agg
             ~render:mode ~x ~y ~value data
-      | CCandles { bullish; bearish; y_axis; data; _ } ->
-          draw_candles ~y_axis ~bullish ~bearish data
+      | CCandles { bullish; bearish; width; body; y_axis; data; _ } ->
+          draw_candles ~y_axis ~bullish ~bearish ~width ~body data
       | CCircle { style; resolution; cx; cy; r; y_axis; data; _ } ->
           let kind =
             match resolution with
@@ -5285,17 +5749,11 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
 let draw ?view ?(x = 0) ?(y = 0) (t : t) (grid : G.t) ~width ~height : Layout.t
     =
   let layout = compute_layout ?view ~x ~y t ~width ~height in
-  (* background fill (chart area) if requested *)
-  (match t.theme.background with
-  | None -> ()
-  | Some bg -> G.fill_rect grid ~x ~y ~width ~height ~color:bg);
-
-  (* clear plot area if background exists? If no background, we still want a clean plot region. *)
-  (match t.theme.background with
-  | None -> ()
-  | Some bg ->
-      G.fill_rect grid ~x:layout.plot.x ~y:layout.plot.y
-        ~width:layout.plot.width ~height:layout.plot.height ~color:bg);
+  (* Always clear the entire chart area to prevent stale axis labels/ticks
+     from persisting between frames. Use background color if set, otherwise
+     Color.Default clears cells to blank (space with alpha=0). *)
+  let bg = Option.value t.theme.background ~default:Color.Default in
+  G.fill_rect grid ~x ~y ~width ~height ~color:bg;
 
   draw_grid layout grid;
   draw_marks layout grid;
