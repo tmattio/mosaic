@@ -3972,6 +3972,11 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
         let xmin = layout.x_view.min and xmax = layout.x_view.max in
         let ymin = y_view.min and ymax = y_view.max in
         let dx = xmax -. xmin and dy = ymax -. ymin in
+        (* Clip bounds in braille coordinates *)
+        let clip_xmin = r.x * 2 in
+        let clip_xmax = (r.x + r.width) * 2 - 1 in
+        let clip_ymin = r.y * 4 in
+        let clip_ymax = (r.y + r.height) * 4 - 1 in
         let prev = ref None in
         Data.iter data (fun a ->
             let x' = x a and y' = y a in
@@ -3985,8 +3990,15 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
             let py = (r.y * 4) + (gy - 1 - int_of_float (Float.round sy)) in
             (match !prev with
             | None -> ()
-            | Some (px0, py0) ->
-                draw_line_segment style ~kind:`Braille (px0, py0) (px, py));
+            | Some (px0, py0) -> (
+                match
+                  Clip.line_to_rect ~xmin:clip_xmin ~xmax:clip_xmax
+                    ~ymin:clip_ymin ~ymax:clip_ymax ~x1:px0 ~y1:py0 ~x2:px
+                    ~y2:py
+                with
+                | Some (x1, y1, x2, y2) ->
+                    draw_line_segment style ~kind:`Braille (x1, y1) (x2, y2)
+                | None -> ()));
             prev := Some (px, py))
   in
 
@@ -4095,6 +4107,11 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
         let xmin = layout.x_view.min and xmax = layout.x_view.max in
         let ymin = y_view.min and ymax = y_view.max in
         let dx = xmax -. xmin and dy = ymax -. ymin in
+        (* Clip bounds in braille coordinates *)
+        let clip_xmin = r.x * 2 in
+        let clip_xmax = (r.x + r.width) * 2 - 1 in
+        let clip_ymin = r.y * 4 in
+        let clip_ymax = (r.y + r.height) * 4 - 1 in
         let prev = ref None in
         Data.iter data (fun a ->
             match y a with
@@ -4111,8 +4128,15 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                 let py = (r.y * 4) + (gy - 1 - int_of_float (Float.round sy)) in
                 (match !prev with
                 | None -> ()
-                | Some (px0, py0) ->
-                    draw_line_segment style ~kind:`Braille (px0, py0) (px, py));
+                | Some (px0, py0) -> (
+                    match
+                      Clip.line_to_rect ~xmin:clip_xmin ~xmax:clip_xmax
+                        ~ymin:clip_ymin ~ymax:clip_ymax ~x1:px0 ~y1:py0 ~x2:px
+                        ~y2:py
+                    with
+                    | Some (x1, y1, x2, y2) ->
+                        draw_line_segment style ~kind:`Braille (x1, y1) (x2, y2)
+                    | None -> ()));
                 prev := Some (px, py))
   in
 
