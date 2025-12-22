@@ -355,65 +355,49 @@ let view model =
                   box ~border:true ~padding:(padding 1) ~title:"Disk Usage"
                     ~size:{ width = pct 100; height = pct 50 }
                     [
-                      box ~flex_direction:Row ~gap:(gap 3)
-                        ~size:{ width = pct 100; height = pct 100 }
+                      (* Disk Metrics *)
+                      box ~flex_direction:Column ~gap:(gap 1)
+                        ~size:{ width = pct 100; height = auto }
                         [
-                          (* Left: Disk Metrics *)
-                          box ~flex_direction:Column ~gap:(gap 1)
-                            ~size:{ width = pct 55; height = auto }
+                          (* Total Disk *)
+                          box ~flex_direction:Row ~justify_content:Space_between
+                            ~align_items:Center
                             [
-                              (* Total Disk *)
-                              box ~flex_direction:Row ~justify_content:Space_between
-                                ~align_items:Center
-                                [
-                                  text ~text_style:muted "Total:";
-                                  text
-                                    ~text_style:
-                                      (Ansi.Style.make ~bold:true ~fg:Ansi.Color.white ())
-                                    (Printf.sprintf "%.1f GB" model.disk.total_gb);
-                                ];
-                              (* Used Disk *)
-                              box ~flex_direction:Row ~justify_content:Space_between
-                                ~align_items:Center
-                                [
-                                  text ~text_style:muted "Used:";
-                                  text
-                                    ~text_style:
-                                      (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
-                                    (Printf.sprintf "%.1f GB" model.disk.used_gb);
-                                ];
-                              (* Available Disk *)
-                              box ~flex_direction:Row ~justify_content:Space_between
-                                ~align_items:Center
-                                [
-                                  text ~text_style:muted "Avail:";
-                                  text
-                                    ~text_style:
-                                      (Ansi.Style.make ~bold:true ~fg:Ansi.Color.green ())
-                                    (Printf.sprintf "%.1f GB" model.disk.avail_gb);
-                                ];
-                              (* Usage Percentage *)
-                              box ~flex_direction:Row ~justify_content:Space_between
-                                ~align_items:Center
-                                [
-                                  text ~text_style:muted "Usage:";
-                                  text
-                                    ~text_style:
-                                      (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
-                                    (Printf.sprintf "%.1f%%" model.disk.used_percent);
-                                ];
+                              text ~text_style:muted "Total:";
+                              text
+                                ~text_style:
+                                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.white ())
+                                (Printf.sprintf "%.1f GB" model.disk.total_gb);
                             ];
-                          (* Right: Disk Usage Graph *)
-                          box ~flex_direction:Column ~gap:(gap 1)
-                            ~size:{ width = pct 45; height = auto }
+                          (* Used Disk *)
+                          box ~flex_direction:Row ~justify_content:Space_between
+                            ~align_items:Center
                             [
-                              text ~text_style:muted "Disk Load:";
-                              canvas
-                                ~draw:(fun canvas ~width ~height ->
-                                  Charts.Sparkline.draw model.sparkline_disk ~kind:`Braille
-                                    canvas ~width ~height)
-                                ~size:{ width = pct 100; height = px 8 }
-                                ();
+                              text ~text_style:muted "Used:";
+                              text
+                                ~text_style:
+                                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
+                                (Printf.sprintf "%.1f GB" model.disk.used_gb);
+                            ];
+                          (* Available Disk *)
+                          box ~flex_direction:Row ~justify_content:Space_between
+                            ~align_items:Center
+                            [
+                              text ~text_style:muted "Avail:";
+                              text
+                                ~text_style:
+                                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.green ())
+                                (Printf.sprintf "%.1f GB" model.disk.avail_gb);
+                            ];
+                          (* Usage Percentage *)
+                          box ~flex_direction:Row ~justify_content:Space_between
+                            ~align_items:Center
+                            [
+                              text ~text_style:muted "Usage:";
+                              text
+                                ~text_style:
+                                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
+                                (Printf.sprintf "%.1f%%" model.disk.used_percent);
                             ];
                         ];
                     ];
