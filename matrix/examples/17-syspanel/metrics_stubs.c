@@ -2,51 +2,84 @@
 #include <caml/fail.h>
 #include <caml/memory.h>
 #include <caml/mlvalues.h>
+#include <stdint.h>
 
 #ifdef __APPLE__
 #include <mach/mach.h>
 #include <mach/host_info.h>
 #include <mach/mach_host.h>
 
-/* Get CPU load statistics using host_statistics */
+static value caml_copy_int64_i(int64_t x) { return caml_copy_int64(x); }
+
+static value alloc_int64_array_from(const int64_t* vals, mlsize_t n) {
+  CAMLparam0();
+  CAMLlocal1(arr);
+  arr = caml_alloc(n, 0);
+  for (mlsize_t i = 0; i < n; i++)
+    Store_field(arr, i, caml_copy_int64_i(vals[i]));
+  CAMLreturn(arr);
+}
+
+static value alloc_cpu_row(int64_t user, int64_t nice, int64_t sys, int64_t idle) {
+  int64_t vals[4];
+  vals[0] = user;
+  vals[1] = nice;
+  vals[2] = sys;
+  vals[3] = idle;
+  return alloc_int64_array_from(vals, 4);
+}
+
+/* Get CPU load statistics using host_processor_info (returns per-core + total) */
 CAMLprim value caml_metrics_get_cpu_load(value unit) {
   CAMLparam1(unit);
-  CAMLlocal1(result);
+  CAMLlocal3(outer, row, totalrow);
   
-  host_cpu_load_info_data_t cpu_load;
-  mach_msg_type_number_t count = HOST_CPU_LOAD_INFO_COUNT;
-  kern_return_t status;
+  natural_t ncpu = 0;
+  processor_info_array_t cpuInfo;
+  mach_msg_type_number_t numCpuInfo;
   
-  status = host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO,
-                          (host_info_t)&cpu_load, &count);
-  
-  if (status != KERN_SUCCESS) {
-    caml_failwith("host_statistics failed");
+  kern_return_t kr = host_processor_info(
+      mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &ncpu, &cpuInfo, &numCpuInfo);
+  if (kr != KERN_SUCCESS || ncpu == 0) {
+    outer = caml_alloc(0, 0);
+    CAMLreturn(outer);
   }
   
-  /* Return tuple: (user, system, idle, nice) */
-  /* natural_t is unsigned int, convert to int64 for OCaml */
-  result = caml_alloc(4, 0);
-  Store_field(result, 0, caml_copy_int64((int64_t)cpu_load.cpu_ticks[CPU_STATE_USER]));
-  Store_field(result, 1, caml_copy_int64((int64_t)cpu_load.cpu_ticks[CPU_STATE_SYSTEM]));
-  Store_field(result, 2, caml_copy_int64((int64_t)cpu_load.cpu_ticks[CPU_STATE_IDLE]));
-  Store_field(result, 3, caml_copy_int64((int64_t)cpu_load.cpu_ticks[CPU_STATE_NICE]));
+  /* cpuInfo is integer_t*, groups of CPU_STATE_MAX (=4) per cpu */
+  int64_t sum_user = 0, sum_nice = 0, sum_sys = 0, sum_idle = 0;
+  outer = caml_alloc((mlsize_t)(ncpu + 1), 0);
   
-  CAMLreturn(result);
+  for (natural_t i = 0; i < ncpu; i++) {
+    integer_t* base = cpuInfo + (CPU_STATE_MAX * i);
+    int64_t user = (int64_t)base[CPU_STATE_USER];
+    int64_t nice = (int64_t)base[CPU_STATE_NICE];
+    int64_t sys = (int64_t)base[CPU_STATE_SYSTEM];
+    int64_t idle = (int64_t)base[CPU_STATE_IDLE];
+    
+    sum_user += user;
+    sum_nice += nice;
+    sum_sys += sys;
+    sum_idle += idle;
+    
+    row = alloc_cpu_row(user, nice, sys, idle);
+    Store_field(outer, (mlsize_t)(i + 1), row);
+  }
+  
+  totalrow = alloc_cpu_row(sum_user, sum_nice, sum_sys, sum_idle);
+  Store_field(outer, 0, totalrow);
+  
+  vm_deallocate(mach_task_self(), (vm_address_t)cpuInfo,
+                (vm_size_t)(numCpuInfo * sizeof(integer_t)));
+  CAMLreturn(outer);
 }
 
 #else
-/* Non-macOS: return dummy values */
+/* Non-macOS: return empty array (Linux uses /proc/stat in OCaml) */
 CAMLprim value caml_metrics_get_cpu_load(value unit) {
   CAMLparam1(unit);
   CAMLlocal1(result);
   
-  result = caml_alloc(4, 0);
-  Store_field(result, 0, caml_copy_int64(0));
-  Store_field(result, 1, caml_copy_int64(0));
-  Store_field(result, 2, caml_copy_int64(0));
-  Store_field(result, 3, caml_copy_int64(0));
-  
+  result = caml_alloc(0, 0);
   CAMLreturn(result);
 }
 #endif

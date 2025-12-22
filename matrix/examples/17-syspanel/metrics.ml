@@ -4,7 +4,7 @@
 exception Unavailable of string
 
 (* ---------- C Bindings ---------- *)
-external c_get_cpu_load : unit -> int64 * int64 * int64 * int64 = "caml_metrics_get_cpu_load"
+external c_get_cpu_load : unit -> int64 array array = "caml_metrics_get_cpu_load"
 
 (* ---------- Helper Functions ---------- *)
 let is_space = function ' ' | '\t' | '\r' | '\n' -> true | _ -> false
@@ -27,6 +27,23 @@ module Cpu = struct
     system : float;
     idle : float;
   }
+
+  type sample_result = {
+    total : times;
+    per_core : times array;
+  }
+
+  (* Convert array [user, nice, system, idle] to times *)
+  let times_of_array arr =
+    if Array.length arr < 4 then None
+    else
+      Some
+        {
+          user = arr.(0);
+          nice = arr.(1);
+          system = arr.(2);
+          idle = arr.(3);
+        }
 
   (* Sample CPU counters (raw values, cumulative since boot) *)
   let sample () : times option =
@@ -72,16 +89,103 @@ module Cpu = struct
             | _ -> None
           with _ -> None)
       else
-        (* macOS: Use host_statistics API via C bindings *)
+        (* macOS: Use host_processor_info API via C bindings *)
         try
-          let user_ticks, system_ticks, idle_ticks, nice_ticks = c_get_cpu_load () in
-          Some
-            {
-              user = Int64.add user_ticks nice_ticks;
-              nice = nice_ticks;
-              system = system_ticks;
-              idle = idle_ticks;
-            }
+          let cpu_data = c_get_cpu_load () in
+          if Array.length cpu_data = 0 then None
+          else
+            (* First element (index 0) is the total/aggregate *)
+            match times_of_array cpu_data.(0) with
+            | Some total -> Some total
+            | None -> None
+        with _ -> None
+    with _ -> None
+
+  (* Sample CPU counters with per-core data *)
+  let sample_all () : sample_result option =
+    try
+      if Sys.file_exists "/proc/stat" then (
+        (* Linux: Read /proc/stat for per-core data *)
+        let ic = open_in "/proc/stat" in
+        let total = ref None in
+        let cores = ref [] in
+        let rec loop () =
+          match input_line ic with
+          | line ->
+              if String.length line >= 4 && String.sub line 0 4 = "cpu " then (
+                (* Total CPU *)
+                let parts = String.split_on_char ' ' line in
+                let parts = List.filter (fun s -> s <> "") parts in
+                (match parts with
+                | _ :: user :: nice :: system :: idle :: iowait :: _ ->
+                    let user_val = Int64.of_string user in
+                    let nice_val = Int64.of_string nice in
+                    let system_val = Int64.of_string system in
+                    let idle_val = Int64.of_string idle in
+                    let iowait_val = Int64.of_string iowait in
+                    total :=
+                      Some
+                        {
+                          user = Int64.add user_val nice_val;
+                          nice = nice_val;
+                          system = system_val;
+                          idle = Int64.add idle_val iowait_val;
+                        }
+                | _ -> ());
+                loop ())
+              else if String.length line >= 4 && String.sub line 0 3 = "cpu" then (
+                (* Per-core CPU (cpu0, cpu1, etc.) *)
+                let parts = String.split_on_char ' ' line in
+                let parts = List.filter (fun s -> s <> "") parts in
+                (match parts with
+                | _ :: user :: nice :: system :: idle :: iowait :: _ ->
+                    let user_val = Int64.of_string user in
+                    let nice_val = Int64.of_string nice in
+                    let system_val = Int64.of_string system in
+                    let idle_val = Int64.of_string idle in
+                    let iowait_val = Int64.of_string iowait in
+                    cores :=
+                      {
+                        user = Int64.add user_val nice_val;
+                        nice = nice_val;
+                        system = system_val;
+                        idle = Int64.add idle_val iowait_val;
+                      }
+                      :: !cores
+                | _ -> ());
+                loop ())
+              else loop ()
+          | exception End_of_file -> ()
+        in
+        (try loop () with _ -> ());
+        close_in_noerr ic;
+        match !total with
+        | Some t -> Some { total = t; per_core = Array.of_list (List.rev !cores) }
+        | None -> None)
+      else
+        (* macOS: Use host_processor_info API via C bindings *)
+        try
+          let cpu_data = c_get_cpu_load () in
+          if Array.length cpu_data = 0 then None
+          else
+            match times_of_array cpu_data.(0) with
+            | Some total ->
+                let per_core =
+                  if Array.length cpu_data <= 1 then [||]
+                  else
+                    Array.init (Array.length cpu_data - 1) (fun i ->
+                        match times_of_array cpu_data.(i + 1) with
+                        | Some t -> t
+                        | None ->
+                            {
+                              user = 0L;
+                              nice = 0L;
+                              system = 0L;
+                              idle = 0L;
+                            })
+                in
+                Some { total; per_core }
+            | None -> None
         with _ -> None
     with _ -> None
 
@@ -101,6 +205,18 @@ module Cpu = struct
           idle = (Int64.to_float di /. dt_f) *. 100.;
         })
     else None
+
+  (* Calculate per-core CPU usage *)
+  let usage_per_core ~(prev : sample_result) ~(next : sample_result) : stats array option =
+    if Array.length prev.per_core <> Array.length next.per_core then None
+    else
+      Some
+        (Array.mapi
+           (fun i prev_core ->
+             match usage ~prev:prev_core ~next:next.per_core.(i) with
+             | Some stats -> stats
+             | None -> { user = 0.0; system = 0.0; idle = 100.0 })
+           prev.per_core)
 end
 
 (* ---------- Memory Module ---------- *)
