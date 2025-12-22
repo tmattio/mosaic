@@ -1,0 +1,13 @@
+(library
+ (name metrics)
+ (modules metrics)
+ (libraries unix str)
+ (foreign_stubs
+  (language c)
+  (names metrics_stubs)))
+
+(executable
+ (name main)
+ (modules main)
+ (libraries mosaic.tea mosaic.ui matrix.charts matrix.ansi metrics unix))
+

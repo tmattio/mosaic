@@ -1,0 +1,276 @@
+(** System metrics panel UI.
+    Uses Metrics library for data collection. *)
+open Mosaic_tea
+module Charts = Matrix_charts
+module Metrics = Metrics
+
+(* ---------- Model ---------- *)
+type model = {
+  cpu : Metrics.cpu_stats;
+  memory : Metrics.memory_stats;
+  cpu_prev : Metrics.Cpu.times option;
+  sample_acc : float;
+  sparkline_cpu : Charts.Sparkline.t;
+  sparkline_memory : Charts.Sparkline.t;
+}
+
+type msg =
+  | Quit
+  | Tick of float
+
+(* ---------- Init ---------- *)
+let init () =
+  let sparkline_cpu =
+    Charts.Sparkline.create ~style:(Ansi.Style.make ~fg:Ansi.Color.cyan ())
+      ~auto_max:false ~max_value:100. ~capacity:30 ()
+  in
+  let sparkline_memory =
+    Charts.Sparkline.create ~style:(Ansi.Style.make ~fg:Ansi.Color.magenta ())
+      ~auto_max:false ~max_value:100. ~capacity:30 ()
+  in
+  (* Get initial CPU sample *)
+  let cpu_prev = Metrics.Cpu.sample () in
+  let cpu =
+    Option.value
+      ~default:{ user = 0.0; system = 0.0; idle = 100.0 }
+      (match cpu_prev with
+      | Some prev ->
+          (* Wait a tiny bit and sample again for initial delta *)
+          Unix.sleepf 0.1;
+          (match Metrics.Cpu.sample () with
+          | Some next -> Metrics.Cpu.usage ~prev ~next
+          | None -> None)
+      | None -> None)
+  in
+  let memory =
+    Option.value
+      ~default:{ total_gb = 0.0; used_gb = 0.0; used_percent = 0.0 }
+      (Metrics.Mem.sample ())
+  in
+  (* Push initial values to sparklines *)
+  let total_cpu = cpu.user +. cpu.system in
+  Charts.Sparkline.push sparkline_cpu total_cpu;
+  Charts.Sparkline.push sparkline_memory memory.used_percent;
+  ( {
+      cpu;
+      memory;
+      cpu_prev;
+      sample_acc = 0.0;
+      sparkline_cpu;
+      sparkline_memory;
+    },
+    Cmd.none )
+
+(* ---------- Update ---------- *)
+let update msg m =
+  match msg with
+  | Quit -> (m, Cmd.quit)
+  | Tick dt ->
+      (* Sample at ~1Hz (every 1s) *)
+      let sample_acc = m.sample_acc +. dt in
+      if sample_acc < 1.0 then
+        ( {
+            cpu = m.cpu;
+            memory = m.memory;
+            cpu_prev = m.cpu_prev;
+            sample_acc;
+            sparkline_cpu = m.sparkline_cpu;
+            sparkline_memory = m.sparkline_memory;
+          },
+          Cmd.none )
+      else
+        (* Update CPU and Memory *)
+        let cpu, cpu_prev =
+          match m.cpu_prev with
+          | Some prev -> (
+              match Metrics.Cpu.sample () with
+              | Some next -> (
+                  match Metrics.Cpu.usage ~prev ~next with
+                  | Some stats -> (stats, Some next)
+                  | None -> (m.cpu, Some next))
+              | None -> (m.cpu, m.cpu_prev))
+          | None -> (
+              match Metrics.Cpu.sample () with
+              | Some next -> (m.cpu, Some next)
+              | None -> (m.cpu, None))
+        in
+        let memory =
+          Option.value ~default:m.memory (Metrics.Mem.sample ())
+        in
+        (* Push values to sparklines *)
+        let total_cpu = cpu.user +. cpu.system in
+        Charts.Sparkline.push m.sparkline_cpu total_cpu;
+        Charts.Sparkline.push m.sparkline_memory memory.used_percent;
+        ( {
+            cpu;
+            memory;
+            cpu_prev;
+            sample_acc = 0.0;
+            sparkline_cpu = m.sparkline_cpu;
+            sparkline_memory = m.sparkline_memory;
+          },
+          Cmd.none )
+
+(* ---------- View ---------- *)
+let header_bg = Ansi.Color.of_rgb 30 80 100
+let footer_bg = Ansi.Color.grayscale ~level:3
+let muted = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:16) ()
+let hint = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:14) ()
+
+let view model =
+  box ~flex_direction:Column
+    ~size:{ width = pct 100; height = pct 100 }
+    [
+      (* Header *)
+      box ~padding:(padding 1) ~background:header_bg
+        [
+          box ~flex_direction:Row ~justify_content:Space_between
+            ~align_items:Center
+            ~size:{ width = pct 100; height = auto }
+            [
+              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ System Panel";
+              text ~text_style:muted "▄▀ mosaic";
+            ];
+        ];
+      (* Content *)
+      box ~flex_grow:1. ~padding:(padding 1)
+        [
+          box ~flex_direction:Row ~gap:(gap 1)
+            ~size:{ width = pct 100; height = pct 100 }
+            [
+              (* CPU Card *)
+              box ~border:true ~padding:(padding 1) ~title:"CPU Usage"
+                ~flex_grow:1.
+                ~size:{ width = pct 50; height = pct 100 }
+                [
+                  box ~flex_direction:Row ~gap:(gap 1)
+                    ~size:{ width = pct 100; height = auto }
+                    [
+                      (* Left: CPU Metrics *)
+                      box ~flex_direction:Column ~gap:(gap 1)
+                        ~size:{ width = pct 40; height = auto }
+                        [
+                          (* User CPU *)
+                          box ~flex_direction:Row ~justify_content:Space_between
+                            ~align_items:Center
+                            [
+                              text ~text_style:muted "User:";
+                              text
+                                ~text_style:
+                                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.cyan ())
+                                (Printf.sprintf "%.1f%%" model.cpu.user);
+                            ];
+                          (* System CPU *)
+                          box ~flex_direction:Row ~justify_content:Space_between
+                            ~align_items:Center
+                            [
+                              text ~text_style:muted "System:";
+                              text
+                                ~text_style:
+                                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.magenta ())
+                                (Printf.sprintf "%.1f%%" model.cpu.system);
+                            ];
+                          (* Idle CPU *)
+                          box ~flex_direction:Row ~justify_content:Space_between
+                            ~align_items:Center
+                            [
+                              text ~text_style:muted "Idle:";
+                              text
+                                ~text_style:
+                                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.green ())
+                                (Printf.sprintf "%.1f%%" model.cpu.idle);
+                            ];
+                        ];
+                      (* Right: CPU Usage Graph *)
+                      box ~flex_direction:Column ~gap:(gap 1)
+                        ~flex_grow:1.
+                        ~size:{ width = pct 60; height = auto }
+                        [
+                          text ~text_style:muted "CPU Load:";
+                          canvas
+                            ~draw:(fun canvas ~width ~height ->
+                              Charts.Sparkline.draw model.sparkline_cpu ~kind:`Braille
+                                canvas ~width ~height)
+                            ~size:{ width = pct 100; height = px 8 }
+                            ();
+                        ];
+                    ];
+                ];
+              (* Memory Card *)
+              box ~border:true ~padding:(padding 1) ~title:"Memory Usage"
+                ~flex_grow:1.
+                ~size:{ width = pct 50; height = pct 100 }
+                [
+                  box ~flex_direction:Row ~gap:(gap 1)
+                    ~size:{ width = pct 100; height = auto }
+                    [
+                      (* Left: Memory Metrics *)
+                      box ~flex_direction:Column ~gap:(gap 1)
+                        ~size:{ width = pct 40; height = auto }
+                        [
+                          (* Total Memory *)
+                          box ~flex_direction:Row ~justify_content:Space_between
+                            ~align_items:Center
+                            [
+                              text ~text_style:muted "Total:";
+                              text
+                                ~text_style:
+                                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.white ())
+                                (Printf.sprintf "%.1f GB" model.memory.total_gb);
+                            ];
+                          (* Used Memory *)
+                          box ~flex_direction:Row ~justify_content:Space_between
+                            ~align_items:Center
+                            [
+                              text ~text_style:muted "Used:";
+                              text
+                                ~text_style:
+                                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.magenta ())
+                                (Printf.sprintf "%.1f GB" model.memory.used_gb);
+                            ];
+                          (* Usage Percentage *)
+                          box ~flex_direction:Row ~justify_content:Space_between
+                            ~align_items:Center
+                            [
+                              text ~text_style:muted "Usage:";
+                              text
+                                ~text_style:
+                                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
+                                (Printf.sprintf "%.1f%%" model.memory.used_percent);
+                            ];
+                        ];
+                      (* Right: Memory Usage Graph *)
+                      box ~flex_direction:Column ~gap:(gap 1)
+                        ~flex_grow:1.
+                        ~size:{ width = pct 60; height = auto }
+                        [
+                          text ~text_style:muted "Memory Load:";
+                          canvas
+                            ~draw:(fun canvas ~width ~height ->
+                              Charts.Sparkline.draw model.sparkline_memory ~kind:`Braille
+                                canvas ~width ~height)
+                            ~size:{ width = pct 100; height = px 8 }
+                            ();
+                        ];
+                    ];
+                ];
+            ];
+        ];
+      (* Footer *)
+      box ~padding:(padding 1) ~background:footer_bg
+        [ text ~text_style:hint "q quit" ];
+    ]
+
+(* ---------- Subscriptions ---------- *)
+let subscriptions _model =
+  Sub.batch
+    [
+      Sub.on_tick (fun ~dt -> Tick dt);
+      Sub.on_key (fun ev ->
+          match (Mosaic_ui.Event.Key.data ev).key with
+          | Char c when Uchar.equal c (Uchar.of_char 'q') -> Some Quit
+          | Escape -> Some Quit
+          | _ -> None);
+    ]
+
+let () = run { init; update; view; subscriptions }
