@@ -9,10 +9,12 @@ type model = {
   cpu : Metrics.cpu_stats;
   cpu_per_core : Metrics.cpu_stats array;
   memory : Metrics.memory_stats;
+  disk : Metrics.disk_stats;
   cpu_prev : Metrics.Cpu.sample_result option;
   sample_acc : float;
   sparkline_cpu : Charts.Sparkline.t;
   sparkline_memory : Charts.Sparkline.t;
+  sparkline_disk : Charts.Sparkline.t;
 }
 
 type msg =
@@ -27,6 +29,10 @@ let init () =
   in
   let sparkline_memory =
     Charts.Sparkline.create ~style:(Ansi.Style.make ~fg:Ansi.Color.magenta ())
+      ~auto_max:false ~max_value:100. ~capacity:30 ()
+  in
+  let sparkline_disk =
+    Charts.Sparkline.create ~style:(Ansi.Style.make ~fg:Ansi.Color.yellow ())
       ~auto_max:false ~max_value:100. ~capacity:30 ()
   in
   (* Get initial CPU sample *)
@@ -60,18 +66,26 @@ let init () =
       ~default:{ total_gb = 0.0; used_gb = 0.0; used_percent = 0.0 }
       (Metrics.Mem.sample ())
   in
+  let disk =
+    Option.value
+      ~default:{ total_gb = 0.0; used_gb = 0.0; avail_gb = 0.0; used_percent = 0.0 }
+      (Metrics.Disk.sample ())
+  in
   (* Push initial values to sparklines *)
   let total_cpu = cpu.user +. cpu.system in
   Charts.Sparkline.push sparkline_cpu total_cpu;
   Charts.Sparkline.push sparkline_memory memory.used_percent;
+  Charts.Sparkline.push sparkline_disk disk.used_percent;
   ( {
       cpu;
       cpu_per_core;
       memory;
+      disk;
       cpu_prev;
       sample_acc = 0.0;
       sparkline_cpu;
       sparkline_memory;
+      sparkline_disk;
     },
     Cmd.none )
 
@@ -87,14 +101,16 @@ let update msg m =
             cpu = m.cpu;
             cpu_per_core = m.cpu_per_core;
             memory = m.memory;
+            disk = m.disk;
             cpu_prev = m.cpu_prev;
             sample_acc;
             sparkline_cpu = m.sparkline_cpu;
             sparkline_memory = m.sparkline_memory;
+            sparkline_disk = m.sparkline_disk;
           },
           Cmd.none )
       else
-        (* Update CPU and Memory *)
+        (* Update CPU, Memory, and Disk *)
         let cpu, cpu_per_core, cpu_prev =
           match m.cpu_prev with
           | Some prev -> (
@@ -117,18 +133,24 @@ let update msg m =
         let memory =
           Option.value ~default:m.memory (Metrics.Mem.sample ())
         in
+        let disk =
+          Option.value ~default:m.disk (Metrics.Disk.sample ())
+        in
         (* Push values to sparklines *)
         let total_cpu = cpu.user +. cpu.system in
         Charts.Sparkline.push m.sparkline_cpu total_cpu;
         Charts.Sparkline.push m.sparkline_memory memory.used_percent;
+        Charts.Sparkline.push m.sparkline_disk disk.used_percent;
         ( {
             cpu;
             cpu_per_core;
             memory;
+            disk;
             cpu_prev;
             sample_acc = 0.0;
             sparkline_cpu = m.sparkline_cpu;
             sparkline_memory = m.sparkline_memory;
+            sparkline_disk = m.sparkline_disk;
           },
           Cmd.none )
 
@@ -153,13 +175,13 @@ let view model =
               text ~text_style:muted "▄▀ mosaic";
             ];
         ];
-      (* Content *)
+      (* Content - Merged CPU Column Layout *)
       box ~flex_grow:1. ~padding:(padding 1)
         [
           box ~flex_direction:Row ~gap:(gap 1)
             ~size:{ width = pct 100; height = pct 100 }
             [
-              (* CPU Card *)
+              (* Left: CPU Column (merged - spans full height) *)
               box ~border:true ~padding:(padding 1) ~title:"CPU Usage"
                 ~flex_grow:1.
                 ~size:{ width = pct 50; height = pct 100 }
@@ -266,19 +288,23 @@ let view model =
                                      model.cpu_per_core))
                            ]
                        else box ~size:{ width = pct 100; height = px 0 } []);
-                        ];
                     ];
-                  (* Memory Card *)
-              box ~border:true ~padding:(padding 1) ~title:"Memory Usage"
+                ];
+              (* Right: Memory and Disk Column *)
+              box ~flex_direction:Column ~gap:(gap 1)
                 ~flex_grow:1.
                 ~size:{ width = pct 50; height = pct 100 }
                 [
-                  box ~flex_direction:Row ~gap:(gap 3)
-                    ~size:{ width = pct 100; height = auto }
+                  (* Top: Memory *)
+                  box ~border:true ~padding:(padding 1) ~title:"Memory Usage"
+                    ~size:{ width = pct 100; height = pct 50 }
                     [
-                      (* Left: Memory Metrics *)
-                      box ~flex_direction:Column ~gap:(gap 1)
-                        ~size:{ width = pct 55; height = auto }
+                      box ~flex_direction:Row ~gap:(gap 3)
+                        ~size:{ width = pct 100; height = pct 100 }
+                        [
+                          (* Left: Memory Metrics *)
+                          box ~flex_direction:Column ~gap:(gap 1)
+                            ~size:{ width = pct 55; height = auto }
                             [
                               (* Total Memory *)
                               box ~flex_direction:Row ~justify_content:Space_between
@@ -313,15 +339,82 @@ let view model =
                             ];
                           (* Right: Memory Usage Graph *)
                           box ~flex_direction:Column ~gap:(gap 1)
-                        ~size:{ width = pct 45; height = auto }
+                            ~size:{ width = pct 45; height = auto }
                             [
                               text ~text_style:muted "Memory Load:";
                               canvas
                                 ~draw:(fun canvas ~width ~height ->
-                              Charts.Sparkline.draw model.sparkline_memory ~kind:`Braille
+                                  Charts.Sparkline.draw model.sparkline_memory ~kind:`Braille
                                     canvas ~width ~height)
                                 ~size:{ width = pct 100; height = px 8 }
                                 ();
+                            ];
+                        ];
+                    ];
+                  (* Bottom: Disk *)
+                  box ~border:true ~padding:(padding 1) ~title:"Disk Usage"
+                    ~size:{ width = pct 100; height = pct 50 }
+                    [
+                      box ~flex_direction:Row ~gap:(gap 3)
+                        ~size:{ width = pct 100; height = pct 100 }
+                        [
+                          (* Left: Disk Metrics *)
+                          box ~flex_direction:Column ~gap:(gap 1)
+                            ~size:{ width = pct 55; height = auto }
+                            [
+                              (* Total Disk *)
+                              box ~flex_direction:Row ~justify_content:Space_between
+                                ~align_items:Center
+                                [
+                                  text ~text_style:muted "Total:";
+                                  text
+                                    ~text_style:
+                                      (Ansi.Style.make ~bold:true ~fg:Ansi.Color.white ())
+                                    (Printf.sprintf "%.1f GB" model.disk.total_gb);
+                                ];
+                              (* Used Disk *)
+                              box ~flex_direction:Row ~justify_content:Space_between
+                                ~align_items:Center
+                                [
+                                  text ~text_style:muted "Used:";
+                                  text
+                                    ~text_style:
+                                      (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
+                                    (Printf.sprintf "%.1f GB" model.disk.used_gb);
+                                ];
+                              (* Available Disk *)
+                              box ~flex_direction:Row ~justify_content:Space_between
+                                ~align_items:Center
+                                [
+                                  text ~text_style:muted "Avail:";
+                                  text
+                                    ~text_style:
+                                      (Ansi.Style.make ~bold:true ~fg:Ansi.Color.green ())
+                                    (Printf.sprintf "%.1f GB" model.disk.avail_gb);
+                                ];
+                              (* Usage Percentage *)
+                              box ~flex_direction:Row ~justify_content:Space_between
+                                ~align_items:Center
+                                [
+                                  text ~text_style:muted "Usage:";
+                                  text
+                                    ~text_style:
+                                      (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
+                                    (Printf.sprintf "%.1f%%" model.disk.used_percent);
+                                ];
+                            ];
+                          (* Right: Disk Usage Graph *)
+                          box ~flex_direction:Column ~gap:(gap 1)
+                            ~size:{ width = pct 45; height = auto }
+                            [
+                              text ~text_style:muted "Disk Load:";
+                              canvas
+                                ~draw:(fun canvas ~width ~height ->
+                                  Charts.Sparkline.draw model.sparkline_disk ~kind:`Braille
+                                    canvas ~width ~height)
+                                ~size:{ width = pct 100; height = px 8 }
+                                ();
+                            ];
                         ];
                     ];
                 ];
@@ -345,3 +438,4 @@ let subscriptions _model =
     ]
 
 let () = run { init; update; view; subscriptions }
+
