@@ -94,9 +94,9 @@ let update msg m =
   match msg with
   | Quit -> (m, Cmd.quit)
   | Tick dt ->
-      (* Sample at ~1Hz (every 1s) *)
+      (* Sample at ~5Hz (every 0.2s) *)
       let sample_acc = m.sample_acc +. dt in
-      if sample_acc < 1.0 then
+      if sample_acc < 0.2 then
         ( {
             cpu = m.cpu;
             cpu_per_core = m.cpu_per_core;
