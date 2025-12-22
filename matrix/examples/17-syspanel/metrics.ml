@@ -5,6 +5,7 @@ exception Unavailable of string
 
 (* ---------- C Bindings ---------- *)
 external c_get_cpu_load : unit -> int64 array array = "caml_metrics_get_cpu_load"
+external c_statvfs : string -> int64 * int64 * int64 = "caml_metrics_statvfs"
 
 (* ---------- Helper Functions ---------- *)
 let is_space = function ' ' | '\t' | '\r' | '\n' -> true | _ -> false
@@ -352,7 +353,34 @@ module Mem = struct
     with _ -> None
 end
 
+(* ---------- Disk Module ---------- *)
+module Disk = struct
+  type t = {
+    total_gb : float;
+    used_gb : float;
+    avail_gb : float;
+    used_percent : float;
+  }
+
+  (* Sample disk filesystem statistics *)
+  let sample ?(path = "/") () : t option =
+    try
+      let total, free, avail = c_statvfs path in
+      if total < 0L then None
+      else
+        let used = Int64.max 0L Int64.(sub total free) in
+        let total_gb = Int64.to_float total /. (1024. *. 1024. *. 1024.) in
+        let used_gb = Int64.to_float used /. (1024. *. 1024. *. 1024.) in
+        let avail_gb = Int64.to_float avail /. (1024. *. 1024. *. 1024.) in
+        let used_percent =
+          if total > 0L then (Int64.to_float used /. Int64.to_float total) *. 100. else 0.0
+        in
+        Some { total_gb; used_gb; avail_gb; used_percent }
+    with _ -> None
+end
+
 (* ---------- Convenience type aliases ---------- *)
 type cpu_stats = Cpu.stats
 type memory_stats = Mem.t
+type disk_stats = Disk.t
 

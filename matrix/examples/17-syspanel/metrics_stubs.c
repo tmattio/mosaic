@@ -4,6 +4,8 @@
 #include <caml/mlvalues.h>
 #include <stdint.h>
 
+#include <sys/statvfs.h>
+
 #ifdef __APPLE__
 #include <mach/mach.h>
 #include <mach/host_info.h>
@@ -83,4 +85,27 @@ CAMLprim value caml_metrics_get_cpu_load(value unit) {
   CAMLreturn(result);
 }
 #endif
+
+/* Get disk filesystem statistics using statvfs */
+CAMLprim value caml_metrics_statvfs(value v_path) {
+  CAMLparam1(v_path);
+  CAMLlocal1(tup);
+  
+  const char* path = String_val(v_path);
+  struct statvfs st;
+  if (statvfs(path, &st) != 0) {
+    caml_failwith("statvfs failed");
+  }
+  
+  uint64_t fr = (st.f_frsize != 0) ? (uint64_t)st.f_frsize : (uint64_t)st.f_bsize;
+  uint64_t total = fr * (uint64_t)st.f_blocks;
+  uint64_t free = fr * (uint64_t)st.f_bfree;
+  uint64_t avail = fr * (uint64_t)st.f_bavail;
+  
+  tup = caml_alloc_tuple(3);
+  Store_field(tup, 0, caml_copy_int64_i((int64_t)total));
+  Store_field(tup, 1, caml_copy_int64_i((int64_t)free));
+  Store_field(tup, 2, caml_copy_int64_i((int64_t)avail));
+  CAMLreturn(tup);
+}
 
