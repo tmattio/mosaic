@@ -71,7 +71,7 @@ let init () =
   in
   let disk =
     Option.value
-      ~default:{ total_gb = 0.0; used_gb = 0.0; avail_gb = 0.0; used_percent = 0.0 }
+      ~default:{ total_gb = 0.0; used_gb = 0.0; avail_gb = 0.0; used_percent = 0.0; partitions = [] }
       (Metrics.Disk.sample ())
   in
   (* Get initial process sample *)
@@ -487,6 +487,59 @@ let view model =
                                   (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
                                 (Printf.sprintf "%.1f%%" model.disk.used_percent);
                             ];
+                          (* Partitions *)
+                          (if List.length model.disk.partitions > 0 then
+                             box ~flex_direction:Column ~gap:(gap 1)
+                               ~size:{ width = pct 100; height = auto }
+                               [
+                                 text ~text_style:muted "Partitions:";
+                                 scroll_box ~scroll_y:true ~scroll_x:false
+                                   ~size:{ width = pct 100; height = px 8 }
+                                   (List.mapi
+                                      (fun i (part : Metrics.disk_partition) ->
+                                        box
+                                          ~key:(Printf.sprintf "partition-%d" i)
+                                          ~padding:(padding 1)
+                                          ~background:
+                                            (if i mod 2 = 0 then Ansi.Color.default
+                                             else Ansi.Color.grayscale ~level:3)
+                                          [
+                                            box ~flex_direction:Row ~justify_content:Space_between
+                                              ~align_items:Center
+                                              ~size:{ width = pct 100; height = auto }
+                                              [
+                                                (* Left: Mount point *)
+                                                text
+                                                  ~text_style:
+                                                    (Ansi.Style.make ~bold:true
+                                                       ~fg:Ansi.Color.white ())
+                                                  part.mount_point;
+                                                (* Right: Used and percentage *)
+                                                box ~flex_direction:Row ~gap:(gap 1)
+                                                  ~align_items:Center
+                                                  [
+                                                    text
+                                                      ~text_style:
+                                                        (Ansi.Style.make ~bold:true
+                                                           ~fg:Ansi.Color.yellow ())
+                                                      (Printf.sprintf "%.1f GB" part.used_gb);
+                                                    text
+                                                      ~text_style:
+                                                        (Ansi.Style.make ~bold:true
+                                                           ~fg:Ansi.Color.yellow ())
+                                                      (Printf.sprintf "(%.1f%%)" part.used_percent);
+                                                  ];
+                                              ];
+                                          ])
+                                      model.disk.partitions)
+                               ]
+                           else
+                             box ~flex_direction:Row ~justify_content:Center
+                               ~align_items:Center
+                               ~padding:(padding 1)
+                               [
+                                 text ~text_style:muted "no partitions found";
+                               ]);
                         ];
                     ];
                   (* Bottom: Process *)
