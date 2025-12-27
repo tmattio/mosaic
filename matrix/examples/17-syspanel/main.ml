@@ -378,7 +378,7 @@ let view model =
                         [
                           (* Left: Memory Metrics *)
                           box ~flex_direction:Column ~gap:(gap 1)
-                            ~size:{ width = pct 55; height = auto }
+                            ~size:{ width = pct 70; height = auto }
                             [
                               (* Total Memory *)
                               box ~flex_direction:Row ~justify_content:Space_between
@@ -390,57 +390,51 @@ let view model =
                                       (Ansi.Style.make ~bold:true ~fg:Ansi.Color.white ())
                                     (Printf.sprintf "%.1f GB" model.memory.total_gb);
                                 ];
-                              (* Used Memory *)
+                              (* Used Memory with inline percentage *)
                               box ~flex_direction:Row ~justify_content:Space_between
                                 ~align_items:Center
                                 [
                                   text ~text_style:muted "Used:";
-                                  text
-                                    ~text_style:
-                                      (Ansi.Style.make ~bold:true ~fg:Ansi.Color.magenta ())
-                                    (Printf.sprintf "%.1f GB" model.memory.used_gb);
+                                  box ~flex_direction:Row ~gap:(gap 0) ~align_items:Center
+                                    [
+                                      text
+                                        ~text_style:
+                                          (Ansi.Style.make ~bold:true ~fg:Ansi.Color.magenta ())
+                                        (Printf.sprintf "%.1f GB" model.memory.used_gb);
+                                      text
+                                        ~text_style:
+                                          (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
+                                        (Printf.sprintf " (%.1f%%)" model.memory.used_percent);
+                                    ];
                                 ];
-                              (* Usage Percentage *)
-                              box ~flex_direction:Row ~justify_content:Space_between
-                                ~align_items:Center
-                                [
-                                  text ~text_style:muted "Usage:";
-                                  text
-                                    ~text_style:
-                                      (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
-                                    (Printf.sprintf "%.1f%%" model.memory.used_percent);
-                                ];
-                              (* Swap Used *)
+                              (* Swap Used with inline percentage *)
                               box ~flex_direction:Row ~justify_content:Space_between
                                 ~align_items:Center
                                 [
                                   text ~text_style:muted "Swap Used:";
-                                  text
-                                    ~text_style:
-                                      (Ansi.Style.make ~bold:true ~fg:Ansi.Color.magenta ())
-                                    (Printf.sprintf "%.1f GB" model.memory.swap_used_gb);
-                                ];
-                              (* Swap Usage Percentage *)
-                              box ~flex_direction:Row ~justify_content:Space_between
-                                ~align_items:Center
-                                [
-                                  text ~text_style:muted "Swap Usage:";
-                                  text
-                                    ~text_style:
-                                      (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
-                                    (Printf.sprintf "%.1f%%" model.memory.swap_used_percent);
+                                  box ~flex_direction:Row ~gap:(gap 0) ~align_items:Center
+                                    [
+                                      text
+                                        ~text_style:
+                                          (Ansi.Style.make ~bold:true ~fg:Ansi.Color.magenta ())
+                                        (Printf.sprintf "%.1f GB" model.memory.swap_used_gb);
+                                      text
+                                        ~text_style:
+                                          (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
+                                        (Printf.sprintf " (%.1f%%)" model.memory.swap_used_percent);
+                                    ];
                                 ];
                             ];
                           (* Right: Memory Usage Graph *)
                           box ~flex_direction:Column ~gap:(gap 1)
-                            ~size:{ width = pct 45; height = auto }
+                            ~size:{ width = pct 30; height = auto }
                             [
                               text ~text_style:muted "Memory Load:";
                               canvas
                                 ~draw:(fun canvas ~width ~height ->
                                   Charts.Sparkline.draw model.sparkline_memory ~kind:`Braille
                                     canvas ~width ~height)
-                                ~size:{ width = pct 100; height = px 8 }
+                                ~size:{ width = pct 100; height = px 4 }
                                 ();
                             ];
                         ];
