@@ -10,6 +10,8 @@
 #include <mach/mach.h>
 #include <mach/host_info.h>
 #include <mach/mach_host.h>
+#include <mach/task_info.h>
+#include <mach/task.h>
 
 static value caml_copy_int64_i(int64_t x) { return caml_copy_int64(x); }
 
@@ -107,5 +109,34 @@ CAMLprim value caml_metrics_statvfs(value v_path) {
   Store_field(tup, 1, caml_copy_int64_i((int64_t)free));
   Store_field(tup, 2, caml_copy_int64_i((int64_t)avail));
   CAMLreturn(tup);
+}
+
+/* Get process (self) memory statistics */
+CAMLprim value caml_metrics_proc_self_mem(value unit) {
+  CAMLparam1(unit);
+  CAMLlocal1(tup);
+  
+#ifdef __APPLE__
+  mach_task_basic_info_data_t info;
+  mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+  kern_return_t kr = task_info(mach_task_self(), MACH_TASK_BASIC_INFO,
+                               (task_info_t)&info, &count);
+  if (kr != KERN_SUCCESS) {
+    tup = caml_alloc_tuple(2);
+    Store_field(tup, 0, caml_copy_int64_i(-1));
+    Store_field(tup, 1, caml_copy_int64_i(-1));
+    CAMLreturn(tup);
+  }
+  tup = caml_alloc_tuple(2);
+  Store_field(tup, 0, caml_copy_int64_i((int64_t)info.resident_size));
+  Store_field(tup, 1, caml_copy_int64_i((int64_t)info.virtual_size));
+  CAMLreturn(tup);
+#else
+  /* Linux handled in OCaml via /proc/self/stat */
+  tup = caml_alloc_tuple(2);
+  Store_field(tup, 0, caml_copy_int64_i(-1));
+  Store_field(tup, 1, caml_copy_int64_i(-1));
+  CAMLreturn(tup);
+#endif
 }
 

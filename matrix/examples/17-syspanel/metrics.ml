@@ -6,6 +6,7 @@ exception Unavailable of string
 (* ---------- C Bindings ---------- *)
 external c_get_cpu_load : unit -> int64 array array = "caml_metrics_get_cpu_load"
 external c_statvfs : string -> int64 * int64 * int64 = "caml_metrics_statvfs"
+external c_proc_self_mem : unit -> int64 * int64 = "caml_metrics_proc_self_mem"
 
 (* ---------- Helper Functions ---------- *)
 let is_space = function ' ' | '\t' | '\r' | '\n' -> true | _ -> false
@@ -226,6 +227,9 @@ module Mem = struct
     total_gb : float;
     used_gb : float;
     used_percent : float;
+    swap_total_gb : float;
+    swap_used_gb : float;
+    swap_used_percent : float;
   }
 
   (* Sample memory statistics (instantaneous, no diffing needed) *)
@@ -236,7 +240,9 @@ module Mem = struct
         let ic = open_in "/proc/meminfo" in
         let mem_total = ref None
         and mem_available = ref None
-        and mem_free = ref None in
+        and mem_free = ref None
+        and swap_total = ref None
+        and swap_free = ref None in
         let read_kb_value (line : string) : int64 option =
           let len = String.length line in
           let rec find_digit i =
@@ -267,12 +273,29 @@ module Mem = struct
               in
               if starts_with ~prefix:"MemTotal:" line then set mem_total
               else if starts_with ~prefix:"MemAvailable:" line then set mem_available
-              else if starts_with ~prefix:"MemFree:" line then set mem_free;
+              else if starts_with ~prefix:"MemFree:" line then set mem_free
+              else if starts_with ~prefix:"SwapTotal:" line then set swap_total
+              else if starts_with ~prefix:"SwapFree:" line then set swap_free;
               loop ()
           | exception End_of_file -> ()
         in
         (try loop () with _ -> ());
         close_in_noerr ic;
+        (* Calculate swap memory *)
+        let swap_total_gb, swap_used_gb, swap_used_percent =
+          match (!swap_total, !swap_free) with
+          | Some total_swap, Some free_swap ->
+              let used_swap = Int64.sub total_swap free_swap in
+              let total_gb = Int64.to_float total_swap /. (1024. *. 1024. *. 1024.) in
+              let used_gb = Int64.to_float used_swap /. (1024. *. 1024. *. 1024.) in
+              let used_percent =
+                if total_swap > 0L then
+                  (Int64.to_float used_swap /. Int64.to_float total_swap) *. 100.
+                else 0.0
+              in
+              (total_gb, used_gb, used_percent)
+          | _ -> (0.0, 0.0, 0.0)
+        in
         match (!mem_total, !mem_available, !mem_free) with
         | Some total_bytes, Some avail_bytes, _ ->
             let used_bytes = Int64.sub total_bytes avail_bytes in
@@ -283,7 +306,7 @@ module Mem = struct
                 (Int64.to_float used_bytes /. Int64.to_float total_bytes) *. 100.
               else 0.0
             in
-            Some { total_gb; used_gb; used_percent }
+            Some { total_gb; used_gb; used_percent; swap_total_gb; swap_used_gb; swap_used_percent }
         | Some total_bytes, None, Some free_bytes ->
             let used_bytes = Int64.sub total_bytes free_bytes in
             let total_gb = Int64.to_float total_bytes /. (1024. *. 1024. *. 1024.) in
@@ -293,7 +316,7 @@ module Mem = struct
                 (Int64.to_float used_bytes /. Int64.to_float total_bytes) *. 100.
               else 0.0
             in
-            Some { total_gb; used_gb; used_percent }
+            Some { total_gb; used_gb; used_percent; swap_total_gb; swap_used_gb; swap_used_percent }
         | _ -> None)
       else
         (* macOS: Use vm_stat and sysctl *)
@@ -348,7 +371,52 @@ module Mem = struct
                 (used_bytes /. Int64.to_float total_bytes) *. 100.
               else 0.0
             in
-            Some { total_gb; used_gb; used_percent }
+            (* Get swap info from sysctl vm.swapusage *)
+            let swap_total_gb, swap_used_gb, swap_used_percent =
+              try
+                let cmd_swap = "sysctl -n vm.swapusage 2>/dev/null" in
+                let ic_swap = Unix.open_process_in cmd_swap in
+                let swap_line =
+                  try
+                    let result = input_line ic_swap in
+                    (try Unix.close_process_in ic_swap |> ignore with _ -> ());
+                    result
+                  with
+                  | End_of_file ->
+                      (try Unix.close_process_in ic_swap |> ignore with _ -> ());
+                      ""
+                  | e ->
+                      (try Unix.close_process_in ic_swap |> ignore with _ -> ());
+                      raise e
+                in
+                (* Parse: "total = 1024.00M  used = 512.00M  free = 512.00M  (encrypted)" *)
+                let parse_size s =
+                  (* Extract number and unit (M, G, etc.) *)
+                  let re = Str.regexp "\\([0-9]+\\.?[0-9]*\\)\\([MG]\\)" in
+                  if Str.string_match re s 0 then
+                    let value = float_of_string (Str.matched_group 1 s) in
+                    let unit = Str.matched_group 2 s in
+                    match unit with
+                    | "G" -> value
+                    | "M" -> value /. 1024.0
+                    | _ -> 0.0
+                  else 0.0
+                in
+                let extract_field field_name =
+                  (* Match: "field_name = 123.45M" - search anywhere in the string *)
+                  let re = Str.regexp (Printf.sprintf "%s = \\([0-9]+\\.?[0-9]*[MG]\\)" (Str.quote field_name)) in
+                  try
+                    ignore (Str.search_forward re swap_line 0);
+                    parse_size (Str.matched_group 1 swap_line)
+                  with Not_found -> 0.0
+                in
+                let total = extract_field "total" in
+                let used = extract_field "used" in
+                let used_percent = if total > 0.0 then (used /. total) *. 100.0 else 0.0 in
+                (total, used, used_percent)
+              with _ -> (0.0, 0.0, 0.0)
+            in
+            Some { total_gb; used_gb; used_percent; swap_total_gb; swap_used_gb; swap_used_percent }
         with _ -> None
     with _ -> None
 end
@@ -379,8 +447,125 @@ module Disk = struct
     with _ -> None
 end
 
+(* ---------- Process Module ---------- *)
+module Proc = struct
+  type t = {
+    cpu_percent : float;
+    rss_mb : float;
+    vsize_mb : float;
+  }
+
+  (* Helper to skip spaces in string *)
+  let skip_spaces s i =
+    let len = String.length s in
+    let j = ref i in
+    while !j < len && is_space s.[!j] do
+      incr j
+    done;
+    !j
+
+  (* Parse /proc/self/stat on Linux to get RSS and VSIZE *)
+  let linux_self_rss_vsz () : (int64 option * int64 option) =
+    try
+      let ic = open_in "/proc/self/stat" in
+      let line =
+        try
+          let s = input_line ic in
+          close_in ic;
+          s
+        with e ->
+          close_in_noerr ic;
+          raise e
+      in
+      (* Find the closing paren to skip process name *)
+      match String.rindex_opt line ')' with
+      | None -> (None, None)
+      | Some k ->
+          let rest =
+            if k + 2 <= String.length line then
+              String.sub line (k + 2) (String.length line - (k + 2))
+            else ""
+          in
+          (* Parse space-separated tokens *)
+          let rec gather i acc =
+            let i = skip_spaces rest i in
+            if i >= String.length rest then List.rev acc
+            else (
+              let j = ref i in
+              while !j < String.length rest && not (is_space rest.[!j]) do
+                incr j
+              done;
+              let tok = String.sub rest i (!j - i) in
+              gather !j (tok :: acc))
+          in
+          let toks = gather 0 [] in
+          let get_tok idx =
+            if idx < List.length toks then Some (List.nth toks idx) else None
+          in
+          let page_size = 4096L in
+          (* Field 22 is VSIZE, field 23 is RSS (in pages) *)
+          let vsize =
+            match get_tok 20 with
+            | Some s -> (try Some (Int64.of_string s) with _ -> None)
+            | None -> None
+          in
+          let rss =
+            match get_tok 21 with
+            | Some s -> (
+                try
+                  let pages = Int64.of_string s in
+                  Some Int64.(mul pages page_size)
+                with _ -> None)
+            | None -> None
+          in
+          (rss, vsize)
+    with _ -> (None, None)
+
+  (* Sample process (self) statistics *)
+  let sample ~prev_utime ~prev_stime ~dt () : t option =
+    try
+      (* Get CPU time using Unix.times() *)
+      let t = Unix.times () in
+      let utime = t.Unix.tms_utime in
+      let stime = t.Unix.tms_stime in
+      
+      (* Calculate CPU percentage if we have previous sample *)
+      let cpu_percent =
+        match (prev_utime, prev_stime) with
+        | Some prev_u, Some prev_s ->
+            let cpu_delta = (utime -. prev_u) +. (stime -. prev_s) in
+            if dt > 0.0 && cpu_delta >= 0.0 then (cpu_delta /. dt) *. 100.0 else 0.0
+        | _ -> 0.0
+      in
+      
+      (* Get memory info *)
+      let rss, vsize =
+        if Sys.file_exists "/proc/self/stat" then
+          linux_self_rss_vsz ()
+        else (
+          let rss_v, vsz_v = c_proc_self_mem () in
+          let opt_i64 x = if x < 0L then None else Some x in
+          (opt_i64 rss_v, opt_i64 vsz_v))
+      in
+      
+      let rss_mb =
+        match rss with
+        | Some r -> Int64.to_float r /. (1024. *. 1024.)
+        | None -> 0.0
+      in
+      let vsize_mb =
+        match vsize with
+        | Some v -> Int64.to_float v /. (1024. *. 1024.)
+        | None -> 0.0
+      in
+      
+      Some { cpu_percent; rss_mb; vsize_mb }
+    with _ -> None
+end
+
 (* ---------- Convenience type aliases ---------- *)
 type cpu_stats = Cpu.stats
 type memory_stats = Mem.t
 type disk_stats = Disk.t
+type process_stats = Proc.t
 
