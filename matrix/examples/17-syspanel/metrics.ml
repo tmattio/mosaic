@@ -423,12 +423,169 @@ end
 
 (* ---------- Disk Module ---------- *)
 module Disk = struct
-  type t = {
+  type partition = {
+    mount_point : string;
     total_gb : float;
     used_gb : float;
     avail_gb : float;
     used_percent : float;
   }
+
+  type t = {
+    total_gb : float;
+    used_gb : float;
+    avail_gb : float;
+    used_percent : float;
+    partitions : partition list;
+  }
+
+  (* Read partitions using df command *)
+  let read_partitions () : partition list =
+    try
+      let cmd = "df -h 2>/dev/null" in
+      let ic = Unix.open_process_in cmd in
+      let partitions = ref [] in
+      try
+        (* Skip header line *)
+        ignore (input_line ic);
+        while true do
+          let line = input_line ic in
+          (* Parse df output - format differs between macOS and Linux *)
+          (* macOS: Filesystem Size Used Avail Capacity iused ifree %iused Mounted on *)
+          (* Linux: Filesystem Size Used Avail Use% Mounted on *)
+          (* Split by whitespace and filter empty strings *)
+          let parts = String.split_on_char ' ' line in
+          let parts = List.filter (fun s -> s <> "") parts in
+          (* Detect format by checking if 4th field ends with % (Capacity/Use%) *)
+          let is_macos_format =
+            List.length parts >= 5
+            && (let field4 = List.nth parts 4 in
+                String.length field4 > 0 && field4.[String.length field4 - 1] = '%')
+          in
+          if is_macos_format && List.length parts >= 9 then (
+            (* macOS format: filesystem, size, used, avail, capacity%, iused, ifree, %iused, mountpoint... *)
+            let filesystem = List.nth parts 0 in
+            let size_str = List.nth parts 1 in
+            let used_str = List.nth parts 2 in
+            let avail_str = List.nth parts 3 in
+            let percent_str = List.nth parts 4 in
+            (* Mount point is everything after the 8th field (%iused), which is index 8 *)
+            let mount_point_parts = List.tl (List.tl (List.tl (List.tl (List.tl (List.tl (List.tl (List.tl parts))))))) in
+            let mount_point = String.concat " " mount_point_parts in
+            (* Parse size strings like "500Gi", "200Gi", "300Gi", "40%" *)
+            let parse_size s =
+              let len = String.length s in
+              if len < 2 then 0.0
+              else
+                try
+                  let num_str = String.sub s 0 (len - 2) in
+                  let unit = String.sub s (len - 2) 2 in
+                  let num = float_of_string num_str in
+                  match unit with
+                  | "Gi" -> num
+                  | "Mi" -> num /. 1024.0
+                  | "Ki" -> num /. (1024. *. 1024.)
+                  | "Ti" -> num *. 1024.0
+                  | "Bi" -> 0.0 (* Bytes, too small *)
+                  | _ -> 0.0
+                with _ -> 0.0
+            in
+            let parse_percent s =
+              try
+                let len = String.length s in
+                if len > 0 && s.[len - 1] = '%' then
+                  let pct_str = String.sub s 0 (len - 1) in
+                  float_of_string pct_str
+                else 0.0
+              with _ -> 0.0
+            in
+            let total_gb = parse_size size_str in
+            let used_gb = parse_size used_str in
+            let avail_gb = parse_size avail_str in
+            let used_percent = parse_percent percent_str in
+            (* Filter out system partitions *)
+            if total_gb > 0.1
+               && not (String.contains mount_point '\000')
+               && not (starts_with ~prefix:"/dev" mount_point)
+               && not (starts_with ~prefix:"/proc" mount_point)
+               && not (starts_with ~prefix:"/sys" mount_point)
+               && not (starts_with ~prefix:"tmpfs" filesystem)
+               && not (starts_with ~prefix:"devtmpfs" filesystem)
+               && not (starts_with ~prefix:"devfs" filesystem)
+            then
+              partitions :=
+                {
+                  mount_point;
+                  total_gb;
+                  used_gb;
+                  avail_gb;
+                  used_percent;
+                }
+                :: !partitions)
+          else if List.length parts >= 6 then (
+            (* Linux format: filesystem, size, used, avail, use%, mountpoint... *)
+            let filesystem = List.nth parts 0 in
+            let size_str = List.nth parts 1 in
+            let used_str = List.nth parts 2 in
+            let avail_str = List.nth parts 3 in
+            let percent_str = List.nth parts 4 in
+            (* Mount point is everything after use% *)
+            let mount_point = String.concat " " (List.tl (List.tl (List.tl (List.tl (List.tl parts))))) in
+            (* Parse size strings *)
+            let parse_size s =
+              let len = String.length s in
+              if len < 2 then 0.0
+              else
+                try
+                  let num_str = String.sub s 0 (len - 2) in
+                  let unit = String.sub s (len - 2) 2 in
+                  let num = float_of_string num_str in
+                  match unit with
+                  | "Gi" -> num
+                  | "Mi" -> num /. 1024.0
+                  | "Ki" -> num /. (1024. *. 1024.)
+                  | "Ti" -> num *. 1024.0
+                  | "Bi" -> 0.0
+                  | _ -> 0.0
+                with _ -> 0.0
+            in
+            let parse_percent s =
+              try
+                let len = String.length s in
+                if len > 0 && s.[len - 1] = '%' then
+                  let pct_str = String.sub s 0 (len - 1) in
+                  float_of_string pct_str
+                else 0.0
+              with _ -> 0.0
+            in
+            let total_gb = parse_size size_str in
+            let used_gb = parse_size used_str in
+            let avail_gb = parse_size avail_str in
+            let used_percent = parse_percent percent_str in
+            (* Filter out system partitions *)
+            if total_gb > 0.1
+               && not (String.contains mount_point '\000')
+               && not (starts_with ~prefix:"/dev" mount_point)
+               && not (starts_with ~prefix:"/proc" mount_point)
+               && not (starts_with ~prefix:"/sys" mount_point)
+               && not (starts_with ~prefix:"tmpfs" filesystem)
+               && not (starts_with ~prefix:"devtmpfs" filesystem)
+            then
+              partitions :=
+                {
+                  mount_point;
+                  total_gb;
+                  used_gb;
+                  avail_gb;
+                  used_percent;
+                }
+                :: !partitions)
+        done;
+        assert false
+      with End_of_file ->
+        (try Unix.close_process_in ic |> ignore with _ -> ());
+        List.rev !partitions
+    with _ -> []
 
   (* Sample disk filesystem statistics *)
   let sample ?(path = "/") () : t option =
@@ -443,7 +600,8 @@ module Disk = struct
         let used_percent =
           if total > 0L then (Int64.to_float used /. Int64.to_float total) *. 100. else 0.0
         in
-        Some { total_gb; used_gb; avail_gb; used_percent }
+        let partitions = read_partitions () in
+        Some { total_gb; used_gb; avail_gb; used_percent; partitions }
     with _ -> None
 end
 
@@ -567,5 +725,6 @@ end
 type cpu_stats = Cpu.stats
 type memory_stats = Mem.t
 type disk_stats = Disk.t
+type disk_partition = Disk.partition
 type process_stats = Proc.t
 
