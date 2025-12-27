@@ -9,5 +9,5 @@
 (executable
  (name main)
  (modules main)
- (libraries mosaic.tea mosaic.ui matrix.charts matrix.ansi metrics unix))
+ (libraries mosaic.tea mosaic.ui matrix.charts matrix.grid matrix.ansi metrics unix))
 
