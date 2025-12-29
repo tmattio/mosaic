@@ -11,6 +11,7 @@ type model = {
   memory : Metrics.memory_stats;
   disk : Metrics.disk_stats;
   process : Metrics.process_stats;
+  processes : Metrics.process_info list;
   cpu_prev : Metrics.Cpu.sample_result option;
   proc_prev_utime : float option;
   proc_prev_stime : float option;
@@ -88,12 +89,14 @@ let init () =
   Charts.Sparkline.push sparkline_cpu total_cpu;
   Charts.Sparkline.push sparkline_memory memory.used_percent;
   Charts.Sparkline.push sparkline_disk disk.used_percent;
+  let processes = Metrics.Processes.read_top_processes ~limit:10 ~sort_by:`Cpu () in
   ( {
       cpu;
       cpu_per_core;
       memory;
       disk;
       process;
+      processes;
       cpu_prev;
       proc_prev_utime = Some proc_utime;
       proc_prev_stime = Some proc_stime;
@@ -118,6 +121,7 @@ let update msg m =
             memory = m.memory;
             disk = m.disk;
             process = m.process;
+            processes = m.processes;
             cpu_prev = m.cpu_prev;
             proc_prev_utime = m.proc_prev_utime;
             proc_prev_stime = m.proc_prev_stime;
@@ -165,6 +169,8 @@ let update msg m =
                ~prev_utime:m.proc_prev_utime ~prev_stime:m.proc_prev_stime
                ~dt:sample_acc ())
         in
+        (* Update process list *)
+        let processes = Metrics.Processes.read_top_processes ~limit:10 ~sort_by:`Cpu () in
         (* Push values to sparklines *)
         let total_cpu = cpu.user +. cpu.system in
         Charts.Sparkline.push m.sparkline_cpu total_cpu;
@@ -176,6 +182,7 @@ let update msg m =
             memory;
             disk;
             process;
+            processes;
             cpu_prev;
             proc_prev_utime = Some proc_utime;
             proc_prev_stime = Some proc_stime;
@@ -361,6 +368,84 @@ let view model =
                                   rows)
                            ]
                        else box ~size:{ width = pct 100; height = px 0 } []);
+                      (* Top Processes *)
+                      box ~border:true ~padding:(padding 1) ~title:"Top Processes"
+                        ~size:{ width = pct 100; height = auto }
+                        [
+                          (if List.length model.processes > 0 then
+                             scroll_box ~scroll_y:true ~scroll_x:false
+                               ~size:{ width = pct 100; height = px 10 }
+                               (List.mapi
+                                  (fun i (proc : Metrics.process_info) ->
+                                    box
+                                      ~key:(Printf.sprintf "process-%d" proc.pid)
+                                      ~padding:(padding 1)
+                                      ~background:
+                                        (if i mod 2 = 0 then Ansi.Color.default
+                                         else Ansi.Color.grayscale ~level:3)
+                                      [
+                                        box ~flex_direction:Row ~justify_content:Space_between
+                                          ~align_items:Center
+                                          ~size:{ width = pct 100; height = auto }
+                                          [
+                                            (* Left: Process name and PID *)
+                                            box ~flex_direction:Column ~gap:(gap 0)
+                                              ~size:{ width = pct 50; height = auto }
+                                              [
+                                                (* Process name with potential wrapping *)
+                                                box ~size:{ width = pct 100; height = auto }
+                                                  [
+                                                    text
+                                                      ~text_style:
+                                                        (Ansi.Style.make ~bold:true
+                                                           ~fg:Ansi.Color.white ())
+                                                      proc.name;
+                                                  ];
+                                                text
+                                                  ~text_style:muted
+                                                  (Printf.sprintf "PID: %d" proc.pid);
+                                              ];
+                                            (* Right: CPU and Memory usage *)
+                                            box ~flex_direction:Row ~gap:(gap 2)
+                                              ~align_items:Center
+                                              ~size:{ width = auto; height = auto }
+                                              [
+                                                box ~flex_direction:Row ~gap:(gap 0)
+                                                  ~align_items:Center
+                                                  [
+                                                    text
+                                                      ~text_style:
+                                                        (Ansi.Style.make ~bold:true
+                                                           ~fg:Ansi.Color.cyan ())
+                                                      (Printf.sprintf "%.1f%%" proc.cpu_percent);
+                                                    text ~text_style:muted " CPU";
+                                                  ];
+                                                box ~flex_direction:Row ~gap:(gap 0)
+                                                  ~align_items:Center
+                                                  [
+                                                    text
+                                                      ~text_style:
+                                                        (Ansi.Style.make ~bold:true
+                                                           ~fg:Ansi.Color.magenta ())
+                                                      (Printf.sprintf "%.1f%%" proc.mem_percent);
+                                                    text ~text_style:muted " MEM";
+                                                  ];
+                                                text
+                                                  ~text_style:
+                                                    (Ansi.Style.make ~fg:Ansi.Color.white ())
+                                                  (Printf.sprintf "%.1f MB" proc.rss_mb);
+                                              ];
+                                          ];
+                                      ])
+                                  model.processes)
+                           else
+                             box ~flex_direction:Row ~justify_content:Center
+                               ~align_items:Center
+                               ~padding:(padding 1)
+                               [
+                                 text ~text_style:muted "no processes found";
+                               ]);
+                        ];
                     ];
                 ];
               (* Right: Memory, Disk, and Process Column *)
@@ -542,7 +627,7 @@ let view model =
                                ]);
                         ];
                     ];
-                  (* Bottom: Process *)
+                  (* Bottom: Process (self) *)
                   box ~border:true ~padding:(padding 1) ~title:"Process (self)"
                     ~size:{ width = pct 100; height = auto }
                     [
@@ -580,11 +665,11 @@ let view model =
                                   (Ansi.Style.make ~bold:true ~fg:Ansi.Color.white ())
                                 (Printf.sprintf "%.1f MB" model.process.vsize_mb);
                             ];
-                            ];
                         ];
                     ];
                 ];
             ];
+          ];
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg

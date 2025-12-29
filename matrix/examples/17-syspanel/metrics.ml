@@ -721,10 +721,111 @@ module Proc = struct
     with _ -> None
 end
 
+(* ---------- Processes Module ---------- *)
+module Processes = struct
+  type process = {
+    pid : int;
+    name : string;
+    cpu_percent : float;
+    mem_percent : float;
+    rss_mb : float;
+  }
+
+  (* Read top processes using ps command *)
+  let read_top_processes ?(limit = 10) ?(sort_by = `Cpu) () : process list =
+    try
+      (* Use ps aux to get process list, works on both Linux and macOS *)
+      let cmd = "ps aux 2>/dev/null" in
+      let ic = Unix.open_process_in cmd in
+      let processes = ref [] in
+      try
+        (* Skip header line *)
+        ignore (input_line ic);
+        while true do
+          let line = input_line ic in
+          (* Parse: USER PID %CPU %MEM VSZ RSS TT STAT STARTED TIME COMMAND *)
+          (* Split by whitespace, but command can have spaces *)
+          let parts = String.split_on_char ' ' line in
+          let parts = List.filter (fun s -> s <> "") parts in
+          (* Need at least 11 fields: USER, PID, %CPU, %MEM, VSZ, RSS, TT, STAT, STARTED, TIME, COMMAND... *)
+          if List.length parts >= 11 then
+            try
+              let pid = int_of_string (List.nth parts 1) in
+              let cpu_str = List.nth parts 2 in
+              let mem_str = List.nth parts 3 in
+              let rss_str = List.nth parts 5 in
+              (* Command is everything from field 10 onwards *)
+              let cmd_parts = List.tl (List.tl (List.tl (List.tl (List.tl (List.tl (List.tl (List.tl (List.tl (List.tl parts))))))))) in
+              let name = String.concat " " cmd_parts in
+              (* Smart truncation: extract basename and truncate intelligently *)
+              let truncate_name s max_len =
+                if String.length s <= max_len then s
+                else (
+                  (* Try to extract basename (last component) *)
+                  let basename =
+                    try
+                      let last_slash = String.rindex s '/' in
+                      String.sub s (last_slash + 1) (String.length s - last_slash - 1)
+                    with Not_found -> s
+                  in
+                  if String.length basename <= max_len then basename
+                  else (
+                    (* If basename is still too long, truncate with "..." in the middle *)
+                    let prefix_len = (max_len - 3) / 2 in
+                    let suffix_len = max_len - 3 - prefix_len in
+                    let prefix = String.sub basename 0 prefix_len in
+                    let suffix = String.sub basename (String.length basename - suffix_len) suffix_len in
+                    prefix ^ "..." ^ suffix
+                  )
+                )
+              in
+              let name = truncate_name name 30 in
+              (* Parse percentages *)
+              let cpu_percent = try float_of_string cpu_str with _ -> 0.0 in
+              let mem_percent = try float_of_string mem_str with _ -> 0.0 in
+              (* Parse RSS (in KB on Linux, might be different on macOS) *)
+              let rss_kb = try float_of_string rss_str with _ -> 0.0 in
+              let rss_mb = rss_kb /. 1024.0 in
+              (* Filter out kernel processes and very low usage processes *)
+              if cpu_percent > 0.0 || mem_percent > 0.0 then
+                processes :=
+                  {
+                    pid;
+                    name;
+                    cpu_percent;
+                    mem_percent;
+                    rss_mb;
+                  }
+                  :: !processes
+            with _ -> ()
+        done;
+        assert false
+      with End_of_file ->
+        (try Unix.close_process_in ic |> ignore with _ -> ());
+        (* Sort by specified criteria *)
+        let sorted =
+          match sort_by with
+          | `Cpu ->
+              List.sort (fun a b -> compare b.cpu_percent a.cpu_percent) !processes
+          | `Mem ->
+              List.sort (fun a b -> compare b.mem_percent a.mem_percent) !processes
+          | `Rss ->
+              List.sort (fun a b -> compare b.rss_mb a.rss_mb) !processes
+        in
+        (* Take top N processes *)
+        let rec take n = function
+          | [] -> []
+          | x :: xs -> if n <= 0 then [] else x :: take (n - 1) xs
+        in
+        take limit sorted
+    with _ -> []
+end
+
 (* ---------- Convenience type aliases ---------- *)
 type cpu_stats = Cpu.stats
 type memory_stats = Mem.t
 type disk_stats = Disk.t
 type disk_partition = Disk.partition
 type process_stats = Proc.t
+type process_info = Processes.process
 
