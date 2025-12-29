@@ -30,11 +30,8 @@ let test_create_renderer () =
   let r = Screen.create () in
   check bool "renderer created" true (r != Obj.magic 0)
 
-(* Mouse disable sequences are now emitted on first render when mouse_enabled:false
-   because terminal state starts as unknown (None) and we must ensure correct state *)
-let zero_frame_expected =
-  "\027[?1003l\027[?1002l\027[?1000l\027[?1006l\027[?2026h\027[?25l\027[1 \
-   q\027[?25h\027[?2026l"
+(* Screen rendering is pure diff output; no terminal-side effects are emitted. *)
+let zero_frame_expected = ""
 
 let test_zero_sized_frame () =
   (* Edge case: 0x0 frame should not crash *)
@@ -152,16 +149,14 @@ let test_no_diff_when_unchanged () =
   in
   let _output1 = Screen.render f1 in
 
-  (* Second render with same content; expect only control scaffolding *)
+  (* Second render with same content; expect no output *)
   let f2 =
     Screen.build r ~width:5 ~height:5 (fun grid _hits ->
         Grid.draw_text grid ~x:0 ~y:0 ~text:"Test")
   in
   let output2 = Screen.render f2 in
 
-  (* Should have minimal output: sync on/off + hide/show cursor, no cursor moves *)
-  check bool "has sync on" true (String.contains output2 '\027');
-  check bool "length small" true (String.length output2 <= 120)
+  check string "no diff output" "" output2
 
 let test_wide_char_diff () =
   (* Test that wide characters are diffed correctly *)
@@ -265,16 +260,10 @@ let test_cursor_clamped_on_resize () =
   let r = create_renderer ~width:3 ~height:3 () in
   Screen.set_cursor_position r ~row:5 ~col:5;
   Screen.resize r ~width:2 ~height:1;
-  let frame = Screen.build r ~width:2 ~height:1 (fun _grid _hits -> ()) in
-  let output = Screen.render frame in
-  let expected = "\027[1;2H" in
-  let has_seq =
-    try
-      let _ = Str.search_forward (Str.regexp_string expected) output 0 in
-      true
-    with Not_found -> false
-  in
-  check bool "cursor position clamped to bounds" true has_seq
+  let _frame = Screen.build r ~width:2 ~height:1 (fun _grid _hits -> ()) in
+  let info = Screen.cursor_info r in
+  check int "cursor row clamped" 1 info.row;
+  check int "cursor col clamped" 2 info.col
 
 (* 4. Post-Processing Tests *)
 
@@ -654,31 +643,21 @@ let test_hyperlink_capability_gating () =
     contains_hyperlink_disabled
 
 let test_cursor_style_and_color () =
-  (* Test cursor style and color emission *)
+  (* Test cursor style and color state *)
   let r = create_renderer () in
   Screen.set_cursor_position r ~row:5 ~col:10;
   Screen.set_cursor_style r ~style:`Underline ~blinking:false;
   Screen.set_cursor_color r ~r:255 ~g:0 ~b:128;
 
-  let f = Screen.build r ~width:5 ~height:5 (fun _grid _hits -> ()) in
-  let output = Screen.render f in
-
-  (* Should contain cursor style and color sequences *)
-  let contains_cursor_style =
-    try
-      let _ = Str.search_forward (Str.regexp "\027\\[4 q") output 0 in
-      true
-    with Not_found -> false
-  in
-  check bool "contains cursor style" true contains_cursor_style;
-
-  let contains_cursor_color =
-    try
-      let _ = Str.search_forward (Str.regexp "\027]12;#ff0080") output 0 in
-      true
-    with Not_found -> false
-  in
-  check bool "contains cursor color" true contains_cursor_color
+  let _f = Screen.build r ~width:5 ~height:5 (fun _grid _hits -> ()) in
+  let info = Screen.cursor_info r in
+  check bool "cursor visible" true info.visible;
+  check bool "cursor position set" true info.has_position;
+  check int "cursor row stored" 5 info.row;
+  check int "cursor col stored" 5 info.col;
+  check bool "cursor underline" true (info.style = `Underline);
+  check bool "cursor non-blinking" true (not info.blinking);
+  check bool "cursor color stored" true (info.color = Some (255, 0, 128))
 
 let test_all_cells_changed () =
   (* Worst case: every cell changes *)

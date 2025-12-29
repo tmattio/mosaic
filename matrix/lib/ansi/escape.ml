@@ -357,6 +357,8 @@ let set_scrolling_region ~top ~bottom w =
     invalid_arg "Escape.set_scrolling_region: invalid bounds";
   csi_nn 'r' top bottom w
 
+let reset_scrolling_region : t = literal "\027[r"
+
 (* Colors and Attributes *)
 
 (* RGB color helper - combines consecutive writes *)

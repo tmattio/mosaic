@@ -70,8 +70,8 @@ let render grid state =
 let () =
   Random.self_init ();
   let app =
-    Matrix.create ~mode:`Primary_inline ~target_fps:(Some 30.)
-      ~mouse_enabled:false ~debug_overlay:false ()
+    Matrix.create ~mode:`Primary ~target_fps:(Some 30.) ~mouse_enabled:false
+      ~debug_overlay:false ()
   in
   let state = ref initial_state in
   Matrix.run app

@@ -375,6 +375,10 @@ val set_scrolling_region : top:int -> bottom:int -> t
     {b Invariant}: [top] must be >= 1 and [bottom] > [top].
     @raise Invalid_argument if bounds are invalid. *)
 
+val reset_scrolling_region : t
+(** [reset_scrolling_region] resets the scrolling region to the full screen
+    (DECSTBM reset). Equivalent to emitting [ESC \[ r]. *)
+
 (** {1 Colors and Attributes} *)
 
 val set_foreground : r:int -> g:int -> b:int -> t

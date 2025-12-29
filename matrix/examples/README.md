@@ -21,7 +21,7 @@ dune exec ./examples/<name>/main.exe
 | `08-terminal`   | Embedded PTY shell using matrix.pty and matrix.vte |
 | `09-snake`      | Classic snake game                                 |
 | `10-dashboard`  | System monitor with progress bars and logs         |
-| `11-counter`    | Simple counter using Primary_inline mode           |
+| `11-counter`    | Simple counter using Primary mode                  |
 | `12-installer`  | Package installer with static_print output         |
 | `13-dragdrop`   | Drag-and-drop demo with alpha blending             |
 | `14-particles`  | Procedural particle system with multiple modes     |
@@ -84,8 +84,8 @@ Demonstrates box drawing, multi-panel layouts, and keyboard-driven scrolling.
 
 ### `11-counter` – Inline mode
 
-Simple counter using `Primary_inline` mode. Renders below the shell prompt
-instead of taking over the screen, with dynamic height based on content.
+Simple counter using `Primary` mode. Renders below the shell prompt instead of
+taking over the screen, with dynamic height based on content.
 
 ### `12-installer` – Static output
 

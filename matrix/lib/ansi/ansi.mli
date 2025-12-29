@@ -486,6 +486,9 @@ val set_scrolling_region : top:int -> bottom:int -> string
 
     Both are 1-based. Raises [Invalid_argument] if bounds are invalid. *)
 
+val reset_scrolling_region : string
+(** [reset_scrolling_region] resets the scrolling region to the full screen. *)
+
 (** {1 Colors and Attributes} *)
 
 val reset : string

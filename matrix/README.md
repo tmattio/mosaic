@@ -60,17 +60,16 @@ Matrix switches the TTY to raw mode, negotiates terminal features, and restores 
 
 ### Display Modes
 
-Matrix supports three rendering modes:
+Matrix supports two rendering modes:
 
 - **`Alt`** (default) – Full-screen alternate buffer, content restored on exit
-- **`Primary_inline`** – Renders below the shell prompt, grows dynamically
-- **`Primary_split`** – Fixed region at bottom of primary screen
+- **`Primary`** – Inline on primary screen, grows/shrinks dynamically with full scrollback
 
-Use `Primary_inline` for CLI tools that should leave output in terminal history:
+Use `Primary` for CLI tools that should leave output in terminal history:
 
 ```ocaml
-let app = Matrix.create ~mode:`Primary_inline () in
-(* Use Matrix.static_print to write persistent output above the UI *)
+let app = Matrix.create ~mode:`Primary () in
+(* Use Matrix.static_print to write persistent output above the TUI *)
 ```
 
 ## API Overview
