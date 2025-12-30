@@ -79,10 +79,15 @@ let init () =
   let t = Unix.times () in
   let proc_utime = t.Unix.tms_utime in
   let proc_stime = t.Unix.tms_stime in
+  (* Get number of CPU cores for normalization *)
+  let num_cores = Array.length cpu_per_core in
   let process =
     Option.value
       ~default:{ cpu_percent = 0.0; rss_mb = 0.0; vsize_mb = 0.0 }
-      (Metrics.Proc.sample ~prev_utime:None ~prev_stime:None ~dt:0.2 ())
+      (Metrics.Proc.sample
+         ~prev_utime:None ~prev_stime:None ~dt:0.2
+         ~num_cores:(if num_cores > 0 then Some num_cores else None)
+         ())
   in
   (* Push initial values to sparklines *)
   let total_cpu = cpu.user +. cpu.system in
@@ -162,12 +167,16 @@ let update msg m =
         let t = Unix.times () in
         let proc_utime = t.Unix.tms_utime in
         let proc_stime = t.Unix.tms_stime in
+        (* Get number of CPU cores for normalization *)
+        let num_cores = Array.length m.cpu_per_core in
         let process =
           Option.value
             ~default:m.process
             (Metrics.Proc.sample
                ~prev_utime:m.proc_prev_utime ~prev_stime:m.proc_prev_stime
-               ~dt:sample_acc ())
+               ~dt:sample_acc
+               ~num_cores:(if num_cores > 0 then Some num_cores else None)
+               ())
         in
         (* Update process list *)
         let processes = Metrics.Processes.read_top_processes ~limit:10 ~sort_by:`Cpu () in
