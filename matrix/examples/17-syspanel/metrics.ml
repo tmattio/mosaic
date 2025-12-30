@@ -680,7 +680,7 @@ module Proc = struct
     with _ -> (None, None)
 
   (* Sample process (self) statistics *)
-  let sample ~prev_utime ~prev_stime ~dt () : t option =
+  let sample ~prev_utime ~prev_stime ~dt ~num_cores () : t option =
     try
       (* Get CPU time using Unix.times() *)
       let t = Unix.times () in
@@ -692,7 +692,27 @@ module Proc = struct
         match (prev_utime, prev_stime) with
         | Some prev_u, Some prev_s ->
             let cpu_delta = (utime -. prev_u) +. (stime -. prev_s) in
-            if dt > 0.0 && cpu_delta >= 0.0 then (cpu_delta /. dt) *. 100.0 else 0.0
+            (* Handle potential time wrapping or negative deltas *)
+            let cpu_delta = max 0.0 cpu_delta in
+            (* Ensure dt is reasonable (between 0.01 and 10 seconds) *)
+            if dt > 0.01 && dt < 10.0 && cpu_delta >= 0.0 then (
+              (* Calculate CPU percentage: cpu_time / wall_time * 100 *)
+              (* On multi-core systems, this can exceed 100% (e.g., 200% = using 2 cores at 100%) *)
+              (* Normalize by number of cores to show as percentage of total system capacity *)
+              let raw_percent = (cpu_delta /. dt) *. 100.0 in
+              (* Cap at reasonable maximum (e.g., 1000% for safety) *)
+              let capped_percent = min raw_percent 1000.0 in
+              match num_cores with
+              | Some n when n > 0 && n <= 128 ->
+                  (* Normalize by cores: divide by number of cores to get system-wide percentage *)
+                  let normalized = capped_percent /. float_of_int n in
+                  (* Cap normalized value at 100% *)
+                  min normalized 100.0
+              | _ -> 
+                  (* If cores unknown or invalid, show raw percentage but cap at 100% per core *)
+                  (* Assume max 8 cores for safety *)
+                  min capped_percent 800.0
+            ) else 0.0
         | _ -> 0.0
       in
       
