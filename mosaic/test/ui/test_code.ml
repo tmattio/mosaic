@@ -105,3 +105,18 @@ let%expect_test "code json string without grammar (no conceal)" =
 │"X"       │
 └──────────┘
 |}] [@@ocamlformat "disable"]
+
+let%expect_test "json keys captured only as property" =
+  let languages = Mosaic_syntax.builtins () in
+  let session = Mosaic_syntax.Session.create_exn languages ~filetype:"json" in
+  let content = {|{"key": "value"}|} in
+  let highlights = Mosaic_syntax.Session.highlight session ~content in
+  let key_captures =
+    Array.to_list highlights
+    |> List.filter (fun h ->
+        h.Mosaic_syntax.Highlight.start_byte = 1 && h.end_byte = 6)
+    |> List.map (fun h -> h.Mosaic_syntax.Highlight.group)
+  in
+  print_endline (String.concat ", " key_captures);
+  Mosaic_syntax.Session.close session;
+  [%expect {| property |}]
