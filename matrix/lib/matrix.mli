@@ -56,16 +56,15 @@ type kitty_keyboard = [ `Auto | `Disabled | `Enabled of int ]
       {{:https://sw.kovidgoyal.net/kitty/keyboard-protocol/}Kitty keyboard
        protocol} for exact bits). *)
 
-type mode = [ `Alt | `Primary_split | `Primary_inline ]
+type mode = [ `Alt | `Primary ]
 (** Presentation mode for the renderer:
 
     - [`Alt] (default) uses the terminal's alternate screen buffer where the app
       fully owns the screen and content is restored on exit.
-    - [`Primary_split] reserves a bottom-aligned render region on the primary
-      screen; scrollback above remains visible.
-    - [`Primary_inline] renders inline below the shell prompt and grows on
-      demand, inserting blank lines as needed to avoid overwriting shell output.
-*)
+    - [`Primary] renders inline on the primary screen anchored below the current
+      cursor row. The UI occupies the remaining terminal height (while keeping a
+      static row when possible), static output flows above it naturally, and all
+      content enters native scrollback. *)
 
 type debug_overlay_corner =
   [ `Top_left | `Top_right | `Bottom_left | `Bottom_right ]
@@ -114,8 +113,7 @@ val create :
 
     @param mode
       Presentation mode for the renderer. Defaults to [`Alt] (alternate screen).
-      See {!mode} for full description of [`Alt], [`Primary_split], and
-      [`Primary_inline] modes.
+      See {!mode} for full description of [`Alt] and [`Primary] modes.
     @param raw_mode
       Whether to switch the TTY into raw mode (disables line buffering and
       echo). Defaults to [true]. Set to [false] for cooked mode if the
@@ -127,8 +125,8 @@ val create :
       Whether to honor alpha blending when rendering cells. Defaults to [false].
       Enable for semi-transparent overlays.
     @param cursor_visible
-      Initial cursor visibility. Defaults to [true]. The cursor is hidden
-      automatically in [`Alt] mode.
+      Initial cursor visibility. Defaults to [true] in [`Alt] mode and [false]
+      in [`Primary] mode. The cursor is hidden automatically in [`Alt] mode.
     @param explicit_width
       Whether to use explicit wcwidth values instead of querying the terminal.
       Defaults to the terminal's reported capability. Override when the
@@ -142,10 +140,7 @@ val create :
       (useful for tests or environments that want to bypass probing).
     @param output
       Output target. Defaults to [`Stdout]. Use [`Fd fd] to write to a specific
-      file descriptor (e.g., for splitting output from logs). In
-      [`Primary_inline] and [`Primary_split] modes, Matrix captures [stdout]
-      into a pipe so stray prints do not corrupt the render region; captured
-      output is replayed above the TUI and flushed on shutdown.
+      file descriptor (e.g., for splitting output from logs).
 
     {4 Frame Timing}
 
@@ -153,9 +148,8 @@ val create :
       Optional FPS cap in Hz. Defaults to [Some 30.]. Limits the maximum frame
       rate to prevent excessive CPU usage. Set to [None] for uncapped rendering.
     @param resize_debounce
-      Debounce window in seconds for resize events. Defaults to [Some 0.1].
-      Ignored in [`Primary_split] mode. Set to [None] to apply resizes
-      immediately.
+      Debounce window in seconds for resize events. Defaults to [Some 0.1]. Set
+      to [None] to apply resizes immediately.
 
     {4 Input Configuration}
 
@@ -368,16 +362,17 @@ val static_write : app -> string -> unit
 (** [static_write app text] writes [text] to the primary screen above the
     renderer.
 
-    Static output is ignored in [`Alt] mode. In primary-screen modes it adjusts
-    bookkeeping so the dynamic render region stays on-screen. *)
+    Static output is ignored in [`Alt] mode. In [`Primary] mode it writes into
+    the scroll region above the UI when available; if no static region exists,
+    the output scrolls the full screen and the UI is fully repainted. *)
 
 val static_print : app -> string -> unit
 (** [static_print app text] behaves like {!static_write} but ensures [text] ends
     with a newline. *)
 
 val static_clear : app -> unit
-(** [static_clear app] clears previously written static content and restores the
-    screen to occupy the full terminal height. *)
+(** [static_clear app] clears previously written static content and resets the
+    primary scroll region (leaving one static row when possible). *)
 
 (** {1 Cursor Control} *)
 

@@ -402,6 +402,28 @@ val leave_alternate_screen : t -> unit
 
     Idempotent: calling when already on the primary screen has no effect. *)
 
+val set_scroll_region : t -> top:int -> bottom:int -> unit
+(** [set_scroll_region t ~top ~bottom] sets the terminal scrolling region to
+    lines [top] through [bottom] (1-based, inclusive).
+
+    Content written within this region will scroll naturally when it reaches the
+    bottom margin. Lines outside this region are protected from scrolling. This
+    is implemented via DECSTBM (DEC Set Top and Bottom Margins).
+
+    For non-TTY outputs, only updates internal state. Setting the same region
+    again is a no-op. *)
+
+val clear_scroll_region : t -> unit
+(** [clear_scroll_region t] resets the scrolling region to the full screen.
+
+    This removes any previously set scroll margins. For TTY outputs, emits the
+    DECSTBM reset sequence. Idempotent: calling when no region is set is a
+    no-op. *)
+
+val scroll_region : t -> (int * int) option
+(** [scroll_region t] returns the current scroll region as [Some (top, bottom)]
+    or [None] if scrolling applies to the full screen. *)
+
 val set_mouse_mode : t -> mouse_mode -> unit
 (** [set_mouse_mode t mode] configures mouse event tracking.
 
@@ -570,11 +592,10 @@ val output_fd : t -> file_descr
     descriptor must not be closed directly; use {!close} instead. *)
 
 val flush : t -> unit
-(** [flush t] ensures buffered output has been written.
+(** [flush t] blocks until any pending frame write has completed.
 
-    For TTY outputs, this is a no-op since writes are unbuffered. For non-TTY
-    outputs, this is also a no-op by design; explicit synchronization (via
-    Unix.fsync) should be performed by the caller if required. *)
+    This drains the frame writer and ensures control sequences and static output
+    are visible. For durable storage, use [Unix.fsync] on the output fd. *)
 
 val reset_state : t -> unit
 (** [reset_state t] resets terminal visual/protocol state to defaults.
@@ -659,3 +680,6 @@ val set_cursor_color : t -> r:float -> g:float -> b:float -> a:float -> unit
 
     For TTY outputs, sends OSC 12 with the computed RGB value. The cursor must
     be visible for changes to take effect. *)
+
+val reset_cursor_color : t -> unit
+(** [reset_cursor_color t] restores the terminal's default cursor color. *)

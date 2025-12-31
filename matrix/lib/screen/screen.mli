@@ -84,8 +84,7 @@
       the frame would otherwise render no changes. Their [~delta] argument is
       the milliseconds since the last {!render} call (0. for the first frame).
     - Input toggles set through {!set_mouse_enabled} and {!set_cursor_visible}
-      are applied lazily: the appropriate escape sequences are emitted as part
-      of the next render's prefix.
+      update state only; rendering does not emit terminal mode changes.
 
     {1 Performance Characteristics}
 
@@ -142,7 +141,7 @@ type frame_metrics = {
     - [overall_frame_ms]: Wall-clock duration of {!render_frame}.
     - [frame_callback_ms]: Time spent executing the frame builder callback.
     - [stdout_ms]: Time spent writing the rendered bytes to the output.
-    - [mouse_enabled]/[cursor_visible]: Input flags applied while rendering.
+    - [mouse_enabled]/[cursor_visible]: Desired input flags captured at render.
     - [timestamp_s]: [Unix.gettimeofday] timestamp when rendering finished. *)
 
 (** {1 Screen Creation} *)
@@ -168,9 +167,7 @@ val create :
     @param respect_alpha
       Whether to apply alpha blending when drawing cells. Defaults to [false].
       Enable for semi-transparent overlays at a small performance cost.
-    @param mouse_enabled
-      Whether to emit mouse tracking enable/disable sequences. Defaults to
-      [true].
+    @param mouse_enabled Whether mouse input is considered enabled.
     @param cursor_visible Initial cursor visibility. Defaults to [true].
     @param explicit_width
       Emit explicit-width OSC sequences for graphemes when [true]. Defaults to
@@ -293,8 +290,9 @@ val add_hit_region :
 
 (** {1 Rendering} *)
 
-val render : ?full:bool -> t -> string
-(** [render ?full frame] generates ANSI escape sequences for terminal output.
+val render : ?full:bool -> ?height_limit:int -> t -> string
+(** [render ?full ?height_limit frame] generates ANSI escape sequences for
+    terminal output.
 
     Applies post-processors with delta time (milliseconds since last render),
     performs differential rendering (or full rendering if [full] is [true]),
@@ -305,12 +303,16 @@ val render : ?full:bool -> t -> string
     @param full
       When [true], renders all cells regardless of changes. When [false]
       (default), renders only cells that differ from the current buffer.
+    @param height_limit
+      When provided, limits rendering to the first [height_limit] rows of the
+      grid.
 
     Returns the ANSI output as a string. Allocates a 65536-byte internal buffer.
     For large outputs, use {!render_to_bytes} with a sized buffer. *)
 
-val render_to_bytes : ?full:bool -> t -> Bytes.t -> int
-(** [render_to_bytes ?full frame bytes] renders into the given bytes buffer.
+val render_to_bytes : ?full:bool -> ?height_limit:int -> t -> Bytes.t -> int
+(** [render_to_bytes ?full ?height_limit frame bytes] renders into the given
+    bytes buffer.
 
     Applies post-processors with delta time, performs differential rendering (or
     full rendering if [full] is [true]), then swaps buffers so the next grid
@@ -319,6 +321,10 @@ val render_to_bytes : ?full:bool -> t -> Bytes.t -> int
     @param full
       When [true], renders all cells regardless of changes. When [false]
       (default), renders only cells that differ from the current buffer.
+    @param height_limit
+      When provided, limits rendering to the first [height_limit] rows of the
+      grid. This is useful for clamping output to a smaller viewport without
+      resizing buffers.
     @param bytes
       Output buffer for ANSI escape sequences. Must be large enough to hold the
       rendered output. The underlying writer may raise or truncate if the buffer
@@ -329,19 +335,12 @@ val render_to_bytes : ?full:bool -> t -> Bytes.t -> int
 (** {1 Screen State} *)
 
 val set_mouse_enabled : t -> bool -> unit
-(** [set_mouse_enabled screen enabled] toggles emission of mouse enable/disable
-    sequences.
-
-    The escape sequences are emitted in the prefix of the next {!render}, so
-    repeated toggles before rendering coalesce to the last value. *)
+(** [set_mouse_enabled screen enabled] updates the desired mouse-enabled state.
+*)
 
 val set_cursor_visible : t -> bool -> unit
-(** [set_cursor_visible screen visible] controls cursor visibility during
-    rendering.
-
-    Visibility changes are applied in the next render prefix. Combined with
-    {!render}'s suffix logic, this guarantees the cursor returns to the most
-    recent setting even if the diff body raises. *)
+(** [set_cursor_visible screen visible] updates the desired cursor visibility
+    state stored on the screen. *)
 
 val set_explicit_width : t -> bool -> unit
 (** [set_explicit_width screen enabled] toggles explicit-width OSC emission for
@@ -353,12 +352,12 @@ val set_explicit_width : t -> bool -> unit
     emoji, CJK glyphs) across terminals with varying Unicode width tables. *)
 
 val set_cursor_position : t -> row:int -> col:int -> unit
-(** [set_cursor_position screen ~row ~col] configures the cursor coordinates
-    restored in the render suffix.
+(** [set_cursor_position screen ~row ~col] configures the desired cursor
+    coordinates.
 
     Coordinates are 1-based terminal coordinates where [(1, 1)] is the top-left
-    corner. The [row_offset] (set via {!set_row_offset}) is automatically added
-    to [row] during rendering. *)
+    corner. The [row_offset] (set via {!set_row_offset}) is applied by the
+    caller when emitting cursor movement. *)
 
 val clear_cursor_position : t -> unit
 (** [clear_cursor_position screen] clears any requested cursor position so the
@@ -387,6 +386,22 @@ val set_cursor_color : t -> r:int -> g:int -> b:int -> unit
 
 val reset_cursor_color : t -> unit
 (** [reset_cursor_color screen] restores the terminal's default cursor color. *)
+
+(** {1 Cursor State} *)
+
+type cursor_info = {
+  row : int;
+  col : int;
+  has_position : bool;
+  style : [ `Block | `Line | `Underline ];
+  blinking : bool;
+  color : (int * int * int) option;
+  visible : bool;
+}
+(** Snapshot of the desired cursor state. *)
+
+val cursor_info : t -> cursor_info
+(** [cursor_info screen] returns the current desired cursor state. *)
 
 val apply_capabilities : t -> explicit_width:bool -> hyperlinks:bool -> unit
 (** [apply_capabilities screen ~explicit_width ~hyperlinks] applies terminal
@@ -500,6 +515,18 @@ val set_row_offset : t -> int -> unit
 
 val row_offset : t -> int
 (** [row_offset screen] returns the current vertical origin offset. *)
+
+val invalidate_presented : t -> unit
+(** [invalidate_presented screen] clears the "previously presented" buffer,
+    making the diff renderer treat all cells as changed on the next render.
+
+    Call this after physically erasing the terminal region (e.g., in primary/
+    inline mode) to keep the renderer's baseline in sync with the actual
+    terminal state. This maintains the invariant that the [current] buffer
+    matches what's on the terminal.
+
+    Does NOT emit any terminal escape sequences - it only affects internal
+    state. *)
 
 val active_height : t -> int
 (** [active_height screen] computes the effective number of rows containing
