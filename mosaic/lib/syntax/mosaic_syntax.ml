@@ -429,6 +429,7 @@ let builtins () : Set.t =
     let ts_language = Tree_sitter_json.language () in
     let highlights =
       {|
+      (document (string) @string)
       (pair value: (string) @string)
       (array (string) @string)
       (number) @number
