@@ -126,4 +126,4 @@ components. Shows status bar, counters, and stopwatch in a unified layout.
 
 ### `x-syspanel` – System metrics monitor
 
-Terminal-based system monitor displaying real-time CPU (per-core with progress bars), memory (total, used, swap), disk partitions, and top processes sorted by CPU usage. Demonstrates cross-platform metric collection using Unix system calls, custom progress bar drawing with canvas, sparkline charts for time-series visualization, and scrollable lists for partitions and processes. Works on both Linux and macOS.
+Terminal-based system monitor displaying real-time CPU (per-core with progress bars), memory (total, used, swap), disk partitions, and top processes sorted by CPU usage. 
