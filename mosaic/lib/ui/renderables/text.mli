@@ -19,7 +19,7 @@
 
     Styles merge hierarchically: parent styles provide the base and child
     overrides apply on top, preserving unspecified parent attributes. The
-    [text_style] parameter provides the base style for all fragments. *)
+    [style] parameter provides the base style for all fragments. *)
 
 type t
 type wrap_mode = [ `None | `Char | `Word ]
@@ -70,7 +70,7 @@ module Props : sig
   type t
 
   val make :
-    ?text_style:Ansi.Style.t ->
+    ?style:Ansi.Style.t ->
     ?content:string ->
     ?wrap_mode:wrap_mode ->
     ?tab_indicator:int ->

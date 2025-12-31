@@ -412,28 +412,28 @@ let make_box ~parent ?(flex_direction = Toffee.Style.Flex_direction.Column) ?gap
 let default_selection_bg = Some (Ansi.Color.of_rgb 88 166 255)
 let default_selection_fg = Some Ansi.Color.white
 
-let make_text ~parent ?text_style ?wrap_mode ?size ?flex_grow ?flex_shrink
+let make_text ~parent ?style ?wrap_mode ?size ?flex_grow ?flex_shrink
     content =
-  let style = Toffee.Style.make ?size ?flex_grow ?flex_shrink () in
-  match create_node parent ~style () with
+  let layout_style = Toffee.Style.make ?size ?flex_grow ?flex_shrink () in
+  match create_node parent ~style:layout_style () with
   | None -> None
   | Some node ->
       let text_props =
-        Ui.Text.Props.make ?text_style ?wrap_mode ~content
+        Ui.Text.Props.make ?style ?wrap_mode ~content
           ?selection_bg:default_selection_bg ?selection_fg:default_selection_fg
           ()
       in
       let _ = Ui.Text.mount ~props:text_props node in
       Some node
 
-let make_text_fragments ~parent ?text_style ?wrap_mode ?size ?flex_grow
+let make_text_fragments ~parent ?style ?wrap_mode ?size ?flex_grow
     ?flex_shrink fragments =
-  let style = Toffee.Style.make ?size ?flex_grow ?flex_shrink () in
-  match create_node parent ~style () with
+  let layout_style = Toffee.Style.make ?size ?flex_grow ?flex_shrink () in
+  match create_node parent ~style:layout_style () with
   | None -> None
   | Some node ->
       let text_props =
-        Ui.Text.Props.make ?text_style ?wrap_mode ~content:""
+        Ui.Text.Props.make ?style ?wrap_mode ~content:""
           ?selection_bg:default_selection_bg ?selection_fg:default_selection_fg
           ()
       in
@@ -796,9 +796,9 @@ and render_unknown_block ctx ~base_style (blk : Cmarkit.Block.t) =
           normalize_block_spacing ctx.props.style.paragraph
             ~next_is_thematic_break:false
         in
-        let text_style = merge_style base_style block_style.text in
+        let style = merge_style base_style block_style.text in
         let node =
-          make_text ~parent:ctx.parent ~text_style
+          make_text ~parent:ctx.parent ~style
             ~wrap_mode:(ui_text_wrap_mode ctx.paragraph_wrap)
             text
         in
@@ -816,7 +816,7 @@ and render_unknown_block ctx ~base_style (blk : Cmarkit.Block.t) =
           (Ansi.Style.make ~bold:true ())
       in
       let node =
-        make_text ~parent:ctx.parent ~text_style:s
+        make_text ~parent:ctx.parent ~style:s
           ~wrap_mode:(ui_text_wrap_mode ctx.paragraph_wrap)
           msg
       in
@@ -851,15 +851,15 @@ and render_paragraph ctx ~base_style ~next_is_thematic_break paragraph =
   let block_style =
     normalize_block_spacing ctx.props.style.paragraph ~next_is_thematic_break
   in
-  let text_style = merge_style base_style block_style.text in
+  let style = merge_style base_style block_style.text in
   let wrap_mode = ui_text_wrap_mode ctx.paragraph_wrap in
   let text_node =
     match fragments with
     | [] ->
-        make_text ~parent:ctx.parent ~text_style ~wrap_mode
+        make_text ~parent:ctx.parent ~style ~wrap_mode
           (inline_plain_text inline)
     | _ ->
-        make_text_fragments ~parent:ctx.parent ~text_style ~wrap_mode fragments
+        make_text_fragments ~parent:ctx.parent ~style ~wrap_mode fragments
   in
   match text_node with
   | None -> []
@@ -877,10 +877,10 @@ and render_heading ctx ~base_style ~next_is_thematic_break heading =
   let fragments =
     fragments_of_inline ctx (Cmarkit.Block.Heading.inline heading)
   in
-  let text_style = merge_style base_style block_style.text in
+  let style = merge_style base_style block_style.text in
   let wrap_mode = ui_text_wrap_mode ctx.props.headings.wrap in
   let heading_text =
-    make_text_fragments ~parent:ctx.parent ~text_style ~wrap_mode fragments
+    make_text_fragments ~parent:ctx.parent ~style ~wrap_mode fragments
   in
   let row =
     if ctx.props.headings.show_prefix then
@@ -889,7 +889,7 @@ and render_heading ctx ~base_style ~next_is_thematic_break heading =
         merge_style base_style ctx.props.style.headings.prefix
       in
       let prefix =
-        make_text ~parent:ctx.parent ~text_style:prefix_style ~wrap_mode:`None
+        make_text ~parent:ctx.parent ~style:prefix_style ~wrap_mode:`None
           hashes
       in
       match (prefix, heading_text) with
@@ -918,7 +918,7 @@ and render_blockquote_content ctx ~base_style block =
   | Paragraph (p, _) -> (
       let fragments = fragments_of_inline ctx (Paragraph.inline p) in
       match
-        make_text_fragments ~parent:ctx.parent ~text_style:base_style
+        make_text_fragments ~parent:ctx.parent ~style:base_style
           ~wrap_mode:(ui_text_wrap_mode ctx.paragraph_wrap)
           fragments
       with
@@ -1045,7 +1045,7 @@ and render_list_item ctx ~base_style
   in
   let marker_content = indent_prefix ^ marker_text in
   match
-    make_text ~parent:ctx.parent ~text_style:marker_style ~wrap_mode:`None
+    make_text ~parent:ctx.parent ~style:marker_style ~wrap_mode:`None
       marker_content
   with
   | None -> None
@@ -1079,7 +1079,7 @@ and render_list_content ctx ~base_style block =
   | Paragraph (p, _) -> (
       let fragments = fragments_of_inline ctx (Paragraph.inline p) in
       match
-        make_text_fragments ~parent:ctx.parent ~text_style:base_style
+        make_text_fragments ~parent:ctx.parent ~style:base_style
           ~wrap_mode:(ui_text_wrap_mode ctx.paragraph_wrap)
           fragments
       with
@@ -1140,7 +1140,7 @@ and render_code_block ctx ~base_style ~next_is_thematic_break code =
             make_text_fragments ~parent:ctx.parent ~wrap_mode:`None start_frags
           in
           let end_fence =
-            make_text ~parent:ctx.parent ~text_style:fence_style
+            make_text ~parent:ctx.parent ~style:fence_style
               ~wrap_mode:`None "```"
           in
           match (start_fence, end_fence) with
@@ -1182,7 +1182,7 @@ and render_thematic_break ctx =
       }
   in
   match
-    make_text ~parent:ctx.parent ~text_style:style ~wrap_mode:`None line
+    make_text ~parent:ctx.parent ~style:style ~wrap_mode:`None line
   with
   | None -> []
   | Some text_node -> (
@@ -1194,7 +1194,7 @@ and render_html_block ctx ~base_style ~next_is_thematic_break lines =
   match ctx.props.raw_html with
   | `Drop -> []
   | `Show_as_text -> (
-      let text_style = merge_style base_style ctx.props.style.inline.raw_html in
+      let style = merge_style base_style ctx.props.style.inline.raw_html in
       let content =
         List.map Cmarkit.Block_line.to_string lines |> String.concat "\n"
       in
@@ -1203,7 +1203,7 @@ and render_html_block ctx ~base_style ~next_is_thematic_break lines =
           ~next_is_thematic_break
       in
       match
-        make_text ~parent:ctx.parent ~text_style
+        make_text ~parent:ctx.parent ~style
           ~wrap_mode:(ui_text_wrap_mode ctx.paragraph_wrap)
           content
       with

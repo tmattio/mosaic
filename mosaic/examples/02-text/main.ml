@@ -42,8 +42,8 @@ let view model =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Text Styles";
-              text ~text_style:muted "▄▀ mosaic";
+              text ~style:(Ansi.Style.make ~bold:true ()) "▸ Text Styles";
+              text ~style:muted "▄▀ mosaic";
             ];
         ];
       (* Content *)
@@ -56,20 +56,20 @@ let view model =
               box ~border:true ~border_color ~padding:(padding 1)
                 ~title:"Text Styles" ~flex_direction:Column ~gap:(gap 1)
                 [
-                  text ~text_style:(Ansi.Style.make ~bold:true ()) "Bold text";
+                  text ~style:(Ansi.Style.make ~bold:true ()) "Bold text";
                   text
-                    ~text_style:(Ansi.Style.make ~italic:true ())
+                    ~style:(Ansi.Style.make ~italic:true ())
                     "Italic text";
                   text
-                    ~text_style:(Ansi.Style.make ~underline:true ())
+                    ~style:(Ansi.Style.make ~underline:true ())
                     "Underlined text";
                   text
-                    ~text_style:(Ansi.Style.make ~strikethrough:true ())
+                    ~style:(Ansi.Style.make ~strikethrough:true ())
                     "Strikethrough text";
-                  text ~text_style:(Ansi.Style.make ~dim:true ()) "Dim text";
-                  text ~text_style:(Ansi.Style.make ~blink:true ()) "Blink text";
+                  text ~style:(Ansi.Style.make ~dim:true ()) "Dim text";
+                  text ~style:(Ansi.Style.make ~blink:true ()) "Blink text";
                   text
-                    ~text_style:(Ansi.Style.make ~bold:true ~italic:true ())
+                    ~style:(Ansi.Style.make ~bold:true ~italic:true ())
                     "Bold + Italic";
                 ];
               (* Foreground Colors *)
@@ -77,24 +77,24 @@ let view model =
                 ~title:"Foreground" ~flex_direction:Column ~gap:(gap 1)
                 ~size:{ width = px 14; height = auto }
                 [
-                  text ~text_style:(Ansi.Style.make ~fg:Ansi.Color.red ()) "Red";
+                  text ~style:(Ansi.Style.make ~fg:Ansi.Color.red ()) "Red";
                   text
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.green ())
+                    ~style:(Ansi.Style.make ~fg:Ansi.Color.green ())
                     "Green";
                   text
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.blue ())
+                    ~style:(Ansi.Style.make ~fg:Ansi.Color.blue ())
                     "Blue";
                   text
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.yellow ())
+                    ~style:(Ansi.Style.make ~fg:Ansi.Color.yellow ())
                     "Yellow";
                   text
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.cyan ())
+                    ~style:(Ansi.Style.make ~fg:Ansi.Color.cyan ())
                     "Cyan";
                   text
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.magenta ())
+                    ~style:(Ansi.Style.make ~fg:Ansi.Color.magenta ())
                     "Magenta";
                   text
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.white ())
+                    ~style:(Ansi.Style.make ~fg:Ansi.Color.white ())
                     "White";
                 ];
               (* Background Colors *)
@@ -103,37 +103,37 @@ let view model =
                 ~size:{ width = px 14; height = auto }
                 [
                   text
-                    ~text_style:
+                    ~style:
                       (Ansi.Style.make ~bg:Ansi.Color.red ~fg:Ansi.Color.white
                          ())
                     " Red ";
                   text
-                    ~text_style:
+                    ~style:
                       (Ansi.Style.make ~bg:Ansi.Color.green ~fg:Ansi.Color.black
                          ())
                     " Green ";
                   text
-                    ~text_style:
+                    ~style:
                       (Ansi.Style.make ~bg:Ansi.Color.blue ~fg:Ansi.Color.white
                          ())
                     " Blue ";
                   text
-                    ~text_style:
+                    ~style:
                       (Ansi.Style.make ~bg:Ansi.Color.yellow
                          ~fg:Ansi.Color.black ())
                     " Yellow ";
                   text
-                    ~text_style:
+                    ~style:
                       (Ansi.Style.make ~bg:Ansi.Color.cyan ~fg:Ansi.Color.black
                          ())
                     " Cyan ";
                   text
-                    ~text_style:
+                    ~style:
                       (Ansi.Style.make ~bg:Ansi.Color.magenta
                          ~fg:Ansi.Color.white ())
                     " Magenta ";
                   text
-                    ~text_style:
+                    ~style:
                       (Ansi.Style.make ~bg:Ansi.Color.white ~fg:Ansi.Color.black
                          ())
                     " White ";
@@ -149,7 +149,7 @@ let view model =
                        if i < 12 then Ansi.Color.white else Ansi.Color.black
                      in
                      text
-                       ~text_style:(Ansi.Style.make ~bg:color ~fg ())
+                       ~style:(Ansi.Style.make ~bg:color ~fg ())
                        (Printf.sprintf "%02d" i)));
             ];
           (* Second row: Wrap mode demo *)
@@ -167,7 +167,7 @@ let view model =
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [ text ~text_style:hint "w cycle wrap  •  q quit" ];
+        [ text ~style:hint "w cycle wrap  •  q quit" ];
     ]
 
 let subscriptions _model =

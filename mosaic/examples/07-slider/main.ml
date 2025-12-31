@@ -69,8 +69,8 @@ let view model =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Sliders";
-              text ~text_style:muted "▄▀ mosaic";
+              text ~style:(Ansi.Style.make ~bold:true ()) "▸ Sliders";
+              text ~style:muted "▄▀ mosaic";
             ];
         ];
       (* Content *)
@@ -161,7 +161,7 @@ let view model =
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [ text ~text_style:hint "drag sliders  •  r reset  •  q quit" ];
+        [ text ~style:hint "drag sliders  •  r reset  •  q quit" ];
     ]
 
 let subscriptions _model =

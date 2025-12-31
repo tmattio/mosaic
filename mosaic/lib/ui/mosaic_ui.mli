@@ -382,7 +382,7 @@ val text :
   ?grid_template_areas:Toffee.Style.grid_template_area list ->
   ?grid_row:Toffee.Style.grid_placement Toffee.Geometry.line ->
   ?grid_column:Toffee.Style.grid_placement Toffee.Geometry.line ->
-  ?text_style:Ansi.Style.t ->
+  ?style:Ansi.Style.t ->
   ?wrap_mode:[ `None | `Char | `Word ] ->
   ?tab_indicator:int ->
   ?tab_indicator_color:Ansi.Color.t ->
@@ -408,7 +408,7 @@ val text :
     Same as {!box}.
 
     {2 Text Props}
-    - [text_style]: Default ANSI style for text
+    - [style]: Default ANSI style for text
     - [content]: Text content string
     - [wrap_mode]: Line wrapping behavior (default [`Word])
     - [tab_indicator]: Character code for tab indicator

@@ -7,7 +7,7 @@ type wrap_mode = [ `None | `Char | `Word ]
 
 module Props = struct
   type t = {
-    text_style : Ansi.Style.t;
+    style : Ansi.Style.t;
     content : string;
     wrap_mode : wrap_mode;
     tab_indicator : int option;
@@ -17,12 +17,12 @@ module Props = struct
     selectable : bool;
   }
 
-  let make ?(text_style = Ansi.Style.default) ?(content = "")
+  let make ?(style = Ansi.Style.default) ?(content = "")
       ?wrap_mode:(wrap_mode' = (`Word : wrap_mode)) ?tab_indicator
       ?tab_indicator_color ?selection_bg ?selection_fg ?(selectable = true) () =
     let wrap_mode = wrap_mode' in
     {
-      text_style;
+      style;
       content;
       wrap_mode;
       tab_indicator;
@@ -35,7 +35,7 @@ module Props = struct
   let default = make ()
 
   let equal a b =
-    Ansi.Style.equal a.text_style b.text_style
+    Ansi.Style.equal a.style b.style
     && String.equal a.content b.content
     && a.wrap_mode = b.wrap_mode
     && Option.equal Int.equal a.tab_indicator b.tab_indicator
@@ -305,12 +305,12 @@ let mount ?(props = Props.default) (rnode : Renderable.t) =
            ?tab_indicator:props.tab_indicator
            ?tab_indicator_color:props.tab_indicator_color
            ?selection_bg:props.selection_bg ?selection_fg:props.selection_fg
-           ~selectable:props.selectable ~default_style:props.text_style ())
+           ~selectable:props.selectable ~default_style:props.style ())
       rnode
   in
   (* Ensure base text style is applied to the underlying buffer immediately
      so initial content composes against the correct defaults. *)
-  Text_surface.set_default_style surface props.text_style;
+  Text_surface.set_default_style surface props.style;
   let initial_fragments, initial_cache =
     if props.content = "" then ([], Some [])
     else
@@ -329,7 +329,7 @@ let mount ?(props = Props.default) (rnode : Renderable.t) =
 
 let apply_props t (props : Props.t) =
   (* Text content and style *)
-  set_text_style t props.text_style;
+  set_text_style t props.style;
   set_content t props.content;
   (* Wrapping and selection-related props *)
   set_wrap_mode t props.wrap_mode;

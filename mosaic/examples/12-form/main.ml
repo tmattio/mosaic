@@ -80,8 +80,8 @@ let view model =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Form";
-              text ~text_style:muted "▄▀ mosaic";
+              text ~style:(Ansi.Style.make ~bold:true ()) "▸ Form";
+              text ~style:muted "▄▀ mosaic";
             ];
         ];
       (* Content *)
@@ -90,7 +90,7 @@ let view model =
           box ~flex_direction:Column ~gap:(gap 2) ~border:true ~border_color
             ~padding:(padding 2)
             [
-              text ~text_style:(Ansi.Style.make ~bold:true ()) "Registration";
+              text ~style:(Ansi.Style.make ~bold:true ()) "Registration";
               (* Name field *)
               box ~flex_direction:Row ~align_items:Center ~gap:(gap 1)
                 [
@@ -145,17 +145,17 @@ let view model =
                    ~background:(Ansi.Color.grayscale ~level:3)
                    [
                      text
-                       ~text_style:(Ansi.Style.make ~fg:Ansi.Color.green ())
+                       ~style:(Ansi.Style.make ~fg:Ansi.Color.green ())
                        (Printf.sprintf "Submitted: %s <%s> as %s" model.name
                           model.email (List.nth roles model.role).name);
                    ]
-               else text ~text_style:hint "Fill in the form and click Submit");
+               else text ~style:hint "Fill in the form and click Submit");
             ];
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
         [
-          text ~text_style:hint
+          text ~style:hint
             "Tab/Shift+Tab navigate  •  Enter submit  •  q quit";
         ];
     ]

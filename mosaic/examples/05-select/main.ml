@@ -38,8 +38,8 @@ let view () =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Select";
-              text ~text_style:muted "▄▀ mosaic";
+              text ~style:(Ansi.Style.make ~bold:true ()) "▸ Select";
+              text ~style:muted "▄▀ mosaic";
             ];
         ];
       (* Content *)
@@ -49,7 +49,7 @@ let view () =
             ~padding:(padding 2)
             [
               text
-                ~text_style:(Ansi.Style.make ~bold:true ())
+                ~style:(Ansi.Style.make ~bold:true ())
                 "Choose a language:";
               (* Select component *)
               select ~show_description:true ~show_scroll_indicator:true
@@ -61,7 +61,7 @@ let view () =
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [ text ~text_style:hint "↑/↓ navigate  •  j/k vim  •  q quit" ];
+        [ text ~style:hint "↑/↓ navigate  •  j/k vim  •  q quit" ];
     ]
 
 let subscriptions () =
