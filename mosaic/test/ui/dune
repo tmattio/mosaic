@@ -1,6 +1,6 @@
 (library
  (name test_mosaic_ui)
  (inline_tests)
- (libraries mosaic.ui toffee matrix.ansi matrix.grid)
+ (libraries mosaic.ui mosaic.syntax toffee matrix.ansi matrix.grid)
  (preprocess
   (pps ppx_expect)))
