@@ -29,10 +29,6 @@ jobs:
           ocaml-compiler: 5
           dune-cache: true
 
-      - name: Update apt packages (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update
-
       - name: Install OCaml dependencies
         run: |
           opam install . --deps-only --with-test
