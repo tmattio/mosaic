@@ -1,7 +1,0 @@
-(executable
- (name main)
- (libraries mosaic.tea mosaic.ui matrix.charts matrix.ansi unix str)
- (foreign_stubs
-  (language c)
-  (names cpu_stubs)))
-
