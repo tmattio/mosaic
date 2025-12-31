@@ -19,6 +19,20 @@ val reset : t -> unit
 (** [reset t] marks the cursor state as unknown, forcing full re-emission on the
     next {!emit} call. *)
 
+type snapshot = {
+  row : int;
+  col : int;
+  has_position : bool;
+  style : [ `Block | `Line | `Underline ];
+  blinking : bool;
+  color : (int * int * int) option;
+  visible : bool;
+}
+(** Snapshot of desired cursor state. *)
+
+val snapshot : t -> snapshot
+(** [snapshot t] returns the current desired cursor state. *)
+
 (** {1 State Management} *)
 
 val set_position : t -> row:int -> col:int -> unit

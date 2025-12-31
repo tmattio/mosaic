@@ -33,11 +33,17 @@ type frame_metrics = {
   timestamp_s : float;
 }
 
-type input_state = {
-  mutable mouse_enabled : bool;
-  mutable applied_mouse_enabled : bool option;
-      (* None = unknown terminal state, forces emission on first render *)
+type cursor_info = Cursor_state.snapshot = {
+  row : int;
+  col : int;
+  has_position : bool;
+  style : [ `Block | `Line | `Underline ];
+  blinking : bool;
+  color : (int * int * int) option;
+  visible : bool;
 }
+
+type input_state = { mutable mouse_enabled : bool }
 
 (* screen state - mutable internal state for maximum performance *)
 type t = {
@@ -110,14 +116,24 @@ type render_mode = [ `Diff | `Full ]
 (* The hot loop. Scans grid, checks dirty flags, diffs against previous frame, emits sequences.
    Zero-allocation implementation using tail-recursive loops with accumulators. *)
 let render_generic ~pool ~row_offset ~use_explicit_width ~use_hyperlinks ~mode
-    ~writer ~scratch ~sgr_state ~prev ~curr =
+    ~height_limit ~writer ~scratch ~sgr_state ~prev ~curr =
   let width = Grid.width curr in
-  let height = Grid.height curr in
+  let curr_height = Grid.height curr in
+  let height =
+    match height_limit with
+    | None -> curr_height
+    | Some limit -> max 0 (min curr_height limit)
+  in
   let row_offset = max 0 row_offset in
 
   (* Extract prev grid dimensions once - no tuple allocation *)
   let prev_width = match prev with None -> 0 | Some p -> Grid.width p in
-  let prev_height = match prev with None -> 0 | Some p -> Grid.height p in
+  let prev_height_raw = match prev with None -> 0 | Some p -> Grid.height p in
+  let prev_height =
+    match height_limit with
+    | None -> prev_height_raw
+    | Some _ -> min prev_height_raw height
+  in
 
   (* Inline cell change detection - no closure allocation *)
   let[@inline] is_cell_changed y x idx curr_width =
@@ -305,63 +321,17 @@ let finalize_frame r ~now ~delta_seconds ~elapsed_ms ~cells ~output_len =
 
 (* --- Input / Cursor Handling --- *)
 
-let mouse_enable_sequences =
-  [
-    Esc.mouse_tracking_on;
-    Esc.mouse_button_tracking_on;
-    Esc.mouse_motion_on;
-    Esc.mouse_sgr_mode_on;
-  ]
-
-let mouse_disable_sequences =
-  [
-    Esc.mouse_motion_off;
-    Esc.mouse_button_tracking_off;
-    Esc.mouse_tracking_off;
-    Esc.mouse_sgr_mode_off;
-  ]
-
-let emit_input_side_effects r (w : Esc.writer) =
-  (* Emit mouse sequences if state differs from applied, or if state is unknown *)
-  let needs_emit =
-    match r.input.applied_mouse_enabled with
-    | None -> true (* Unknown state, always emit *)
-    | Some applied -> r.input.mouse_enabled <> applied
-  in
-  if needs_emit then (
-    let sequences =
-      if r.input.mouse_enabled then mouse_enable_sequences
-      else mouse_disable_sequences
-    in
-    List.iter ~f:(fun seq -> Esc.emit seq w) sequences;
-    r.input.applied_mouse_enabled <- Some r.input.mouse_enabled)
-
-let emit_prefix r (w : Esc.writer) =
-  emit_input_side_effects r w;
-  Esc.emit Esc.sync_output_on w;
-  Cursor_state.hide_temporarily r.cursor w
-
-let emit_suffix r (w : Esc.writer) =
-  Cursor_state.emit r.cursor ~row_offset:r.row_offset w;
-  Esc.emit Esc.sync_output_off w
-
 (* --- Public API --- *)
 
-let submit r ~(mode : render_mode) ~(writer : Esc.writer) =
+let submit ~(mode : render_mode) ?height_limit ~(writer : Esc.writer) r =
   let now, delta_seconds = prepare_frame r in
-  emit_prefix r writer;
-
-  (* Use Fun.protect to guarantee suffix execution even if render raises.
-     This ensures the terminal is left in a usable state (cursor visible,
-     sync mode off) even on error. *)
+  (* Use Fun.protect to guarantee SGR cleanup even if render raises. *)
   let cells = ref 0 in
   let elapsed_ms = ref 0. in
   Fun.protect
     ~finally:(fun () ->
-      (* Always attempt to restore terminal state *)
       Ansi.Sgr_state.close_link r.sgr_state writer;
-      Ansi.Sgr_state.reset r.sgr_state;
-      emit_suffix r writer)
+      Ansi.Sgr_state.reset r.sgr_state)
     (fun () ->
       let scratch = ref r.scratch_bytes in
       let render_start = Unix.gettimeofday () in
@@ -370,8 +340,8 @@ let submit r ~(mode : render_mode) ~(writer : Esc.writer) =
       cells :=
         render_generic ~pool:r.glyph_pool ~row_offset:r.row_offset
           ~use_explicit_width:r.use_explicit_width
-          ~use_hyperlinks:r.hyperlinks_capable ~mode ~writer ~scratch
-          ~sgr_state:r.sgr_state ~prev ~curr:r.next;
+          ~use_hyperlinks:r.hyperlinks_capable ~mode ~height_limit ~writer
+          ~scratch ~sgr_state:r.sgr_state ~prev ~curr:r.next;
 
       elapsed_ms := (Unix.gettimeofday () -. render_start) *. 1000.;
       r.scratch_bytes <- !scratch);
@@ -380,15 +350,15 @@ let submit r ~(mode : render_mode) ~(writer : Esc.writer) =
   finalize_frame r ~now ~delta_seconds ~elapsed_ms:!elapsed_ms ~cells:!cells
     ~output_len
 
-let render_to_bytes ?(full = false) frame bytes =
+let render_to_bytes ?(full = false) ?height_limit frame bytes =
   let writer = Esc.make bytes in
   let mode = if full then `Full else `Diff in
-  submit frame ~mode ~writer;
+  submit frame ~mode ?height_limit ~writer;
   Esc.len writer
 
-let render ?(full = false) frame =
+let render ?(full = false) ?height_limit frame =
   let bytes = Bytes.create 65536 in
-  let len = render_to_bytes ~full frame bytes in
+  let len = render_to_bytes ~full ?height_limit frame bytes in
   Bytes.sub_string bytes ~pos:0 ~len
 
 let glyph_pool t = t.glyph_pool
@@ -430,7 +400,7 @@ let create ?glyph_pool ?width_method ?respect_alpha ?(mouse_enabled = true)
           ~respect_alpha:r_alpha ();
       hit_current = Hit_grid.create ~width:0 ~height:0;
       hit_next = Hit_grid.create ~width:0 ~height:0;
-      input = { mouse_enabled; applied_mouse_enabled = None };
+      input = { mouse_enabled };
       cursor = Cursor_state.create ();
       sgr_state = Ansi.Sgr_state.create ();
       row_offset = 0;
@@ -488,6 +458,14 @@ let hit_grid frame = frame.hit_next
 let query_hit frame ~x ~y = Hit_grid.get frame.hit_current ~x ~y
 let row_offset t = t.row_offset
 let set_row_offset t offset = t.row_offset <- max 0 offset
+
+let invalidate_presented t =
+  (* Clear the current buffer so diff sees all cells as changed.
+     This maintains the invariant: current = what's on terminal.
+     After erasing the terminal region, the terminal is "blank",
+     so current should also be blank. *)
+  Grid.clear t.current
+
 let active_height (t : t) = Grid.active_height t.next
 
 let stats t =
@@ -522,6 +500,7 @@ let set_cursor_color t ~r ~g ~b =
     (Some (clamp_byte r, clamp_byte g, clamp_byte b))
 
 let reset_cursor_color t = Cursor_state.set_color t.cursor None
+let cursor_info t = Cursor_state.snapshot t.cursor
 
 let apply_capabilities r ~explicit_width ~hyperlinks =
   r.explicit_width_capable <- explicit_width;

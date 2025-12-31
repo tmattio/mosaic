@@ -295,3 +295,5 @@ let delete_lines ~n =
 
 let set_scrolling_region ~top ~bottom =
   Escape.to_string (Escape.set_scrolling_region ~top ~bottom)
+
+let reset_scrolling_region = Escape.to_string Escape.reset_scrolling_region

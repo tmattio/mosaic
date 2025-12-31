@@ -98,6 +98,7 @@ let render grid state =
     (fun i (pkg, pkg_state) ->
       let y = 3 + i in
       let name_text = Printf.sprintf "%-16s %s" pkg.name pkg.version in
+      let status_x = max 25 (2 + String.length name_text + 1) in
       let style =
         match pkg_state with
         | Pending -> pending_style
@@ -108,33 +109,37 @@ let render grid state =
       (* Progress bar for active package *)
       match pkg_state with
       | Downloading p ->
-          let bar_width = min 30 (cols - 35) in
+          let bar_width = max 0 (min 30 (cols - (status_x + 10))) in
           let filled = int_of_float (p *. float_of_int bar_width) in
           let bar_bg = Ansi.Style.make ~bg:(Ansi.Color.grayscale ~level:3) () in
           let bar_fg = Ansi.Style.make ~bg:Ansi.Color.bright_blue () in
           for j = 0 to bar_width - 1 do
             let bar_style = if j < filled then bar_fg else bar_bg in
-            Grid.draw_text ~style:bar_style grid ~x:(25 + j) ~y ~text:" "
+            Grid.draw_text ~style:bar_style grid ~x:(status_x + j) ~y ~text:" "
           done;
           let pct = Printf.sprintf " %3.0f%% DL" (p *. 100.) in
-          Grid.draw_text ~style:progress_style grid ~x:(26 + bar_width) ~y
-            ~text:pct
+          Grid.draw_text ~style:progress_style grid
+            ~x:(status_x + 1 + bar_width)
+            ~y ~text:pct
       | Installing p ->
-          let bar_width = min 30 (cols - 35) in
+          let bar_width = max 0 (min 30 (cols - (status_x + 10))) in
           let filled = int_of_float (p *. float_of_int bar_width) in
           let bar_bg = Ansi.Style.make ~bg:(Ansi.Color.grayscale ~level:3) () in
           let bar_fg = Ansi.Style.make ~bg:Ansi.Color.bright_green () in
           for j = 0 to bar_width - 1 do
             let bar_style = if j < filled then bar_fg else bar_bg in
-            Grid.draw_text ~style:bar_style grid ~x:(25 + j) ~y ~text:" "
+            Grid.draw_text ~style:bar_style grid ~x:(status_x + j) ~y ~text:" "
           done;
           let pct = Printf.sprintf " %3.0f%% inst" (p *. 100.) in
-          Grid.draw_text ~style:progress_style grid ~x:(26 + bar_width) ~y
-            ~text:pct
+          Grid.draw_text ~style:progress_style grid
+            ~x:(status_x + 1 + bar_width)
+            ~y ~text:pct
       | Done ->
-          Grid.draw_text ~style:done_style grid ~x:25 ~y ~text:"✓ installed"
+          Grid.draw_text ~style:done_style grid ~x:status_x ~y
+            ~text:"✓ installed"
       | Pending ->
-          Grid.draw_text ~style:pending_style grid ~x:25 ~y ~text:"waiting...")
+          Grid.draw_text ~style:pending_style grid ~x:status_x ~y
+            ~text:"waiting...")
     state.packages;
   (* Write completed packages to static output *)
   let newly_done =
@@ -156,11 +161,12 @@ let render grid state =
 
 let () =
   let app =
-    Matrix.create ~mode:`Primary_inline ~target_fps:(Some 30.)
-      ~mouse_enabled:false ~debug_overlay:false ()
+    Matrix.create ~mode:`Primary ~target_fps:(Some 30.) ~mouse_enabled:false
+      ~debug_overlay:false ()
   in
   let state = ref initial_state in
   let last_completed = ref 0 in
+  let completed_at = ref None in
   Matrix.run app
     ~on_frame:(fun app ~dt ->
       let prev_state = !state in
@@ -190,8 +196,12 @@ let () =
           just_completed;
         last_completed := curr_completed);
       (* Stop when all done after a brief delay *)
-      if all_done !state && !state.elapsed > prev_state.elapsed +. 1.0 then
-        Matrix.stop app)
+      if all_done !state then (
+        if Option.is_none !completed_at then completed_at := Some !state.elapsed;
+        match !completed_at with
+        | Some done_at when !state.elapsed -. done_at >= 1.0 -> Matrix.stop app
+        | _ -> ())
+      else completed_at := None)
     ~on_input:(fun app event ->
       match event with
       | Input.Key { key = Input.Key.Escape; _ } -> Matrix.stop app
@@ -201,7 +211,7 @@ let () =
       | _ -> ())
     ~on_render:(fun app ->
       let grid = Matrix.grid app in
-      let rows_needed = 5 + List.length !state.packages in
+      let rows_needed = 6 + List.length !state.packages in
       Grid.resize grid ~width:(Grid.width grid) ~height:rows_needed;
       Grid.clear grid;
       render grid !state)

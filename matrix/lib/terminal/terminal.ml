@@ -31,45 +31,11 @@ type terminal_info = Caps.terminal_info = {
   from_xtversion : bool;
 }
 
-(* SIGWINCH is Unix-specific; on Windows this signal doesn't exist.
-   Sys.sigwinch may not be available on all OCaml versions/platforms. *)
-let sigwinch =
-  (* OCaml 4.03+ provides Sys.sigwinch on Unix systems *)
-  try Sys.sigwinch with Invalid_argument _ -> 28
-
-let write_all fd bytes off len =
-  let rec loop ofs rem =
-    if rem = 0 then ()
-    else
-      match Unix.write fd bytes ofs rem with
-      | n -> loop (ofs + n) (rem - n)
-      | exception Unix_error ((EINTR | EAGAIN), _, _) ->
-          ignore (Unix.select [] [ fd ] [] (-1.0));
-          loop ofs rem
-      | exception Unix_error (err, _, _) ->
-          raise (Error (Unix.error_message err))
-  in
-  loop off len
-
-let write_string fd str =
-  let len = String.length str in
-  if len > 0 then write_all fd (Bytes.unsafe_of_string str) 0 len
-
 let ignore_unix_errors f x = try f x with Unix_error _ -> ()
 let ignore_exn f x = try f x with _ -> ()
 let osc_prefix = "\027]"
 let osc_suffix = "\007"
 let[@inline] make_osc payload = osc_prefix ^ payload ^ osc_suffix
-
-let disable_all_mouse_fd fd =
-  List.iter (write_string fd)
-    [
-      Esc.(to_string mouse_tracking_off);
-      Esc.(to_string mouse_button_tracking_off);
-      Esc.(to_string mouse_motion_off);
-      Esc.(to_string urxvt_mouse_off);
-      Esc.(to_string mouse_sgr_mode_off);
-    ]
 
 type mode = [ `Raw | `Cooked | `Custom of terminal_io -> terminal_io ]
 
@@ -120,6 +86,7 @@ type t = {
   mutable unicode_mode_enabled : bool;
   mutable winch_handler : (unit -> unit) option;
   mutable pixel_resolution : (int * int) option;
+  mutable scroll_region : (int * int) option;
   env_overrides : bool;
   mutable writer : Frame_writer.t option;
 }
@@ -155,7 +122,20 @@ let kitty_cursor_line = Esc.(to_string cursor_line)
 let kitty_cursor_line_blink = Esc.(to_string cursor_line_blink)
 let kitty_cursor_underline = Esc.(to_string cursor_underline)
 let kitty_cursor_underline_blink = Esc.(to_string cursor_underline_blink)
-let send t seq = if t.output_is_tty then write_string t.output seq
+
+let submit_string t s =
+  match t.writer with
+  | Some w -> Frame_writer.submit_string w s
+  | None -> raise (Error "Terminal.write: writer not initialized")
+
+let send t seq = if t.output_is_tty then submit_string t seq
+
+let disable_all_mouse t =
+  send t Esc.(to_string mouse_tracking_off);
+  send t Esc.(to_string mouse_button_tracking_off);
+  send t Esc.(to_string mouse_motion_off);
+  send t Esc.(to_string urxvt_mouse_off);
+  send t Esc.(to_string mouse_sgr_mode_off)
 
 let toggle_feature t ~current ~set ~enable ~on_seq ~off_seq =
   if not t.output_is_tty then set enable
@@ -181,7 +161,7 @@ let set_mouse_mode t mode =
   if not t.output_is_tty then t.mouse_mode <- mode
   else if t.mouse_mode = mode then ()
   else (
-    disable_all_mouse_fd t.output;
+    disable_all_mouse t;
     (match mode with
     | `Off -> ()
     | `X10 -> send t Esc.(to_string mouse_x10_on)
@@ -299,15 +279,14 @@ let set_cursor_color t ~r ~g ~b ~a =
   t.cursor.color <- (r, g, b, a);
   if t.output_is_tty then set_cursor_visuals t
 
-let set_title t title = if t.output_is_tty then send t (make_osc ("0;" ^ title))
+let reset_cursor_color t =
+  t.cursor.color <- (1., 1., 1., 1.);
+  if t.output_is_tty then (
+    send t Ansi.reset_cursor_color_fallback;
+    send t Ansi.reset_cursor_color)
 
-let flush _t =
-  (* For TTY output, the terminal handles buffering.
-     For non-TTY output (redirected files), we rely on OS buffering.
-     fsync is extremely expensive and usually unnecessary - the OS will
-     flush to disk on its own schedule. If explicit flushing is needed,
-     the caller can use Unix.fsync directly. *)
-  ()
+let set_title t title = if t.output_is_tty then send t (make_osc ("0;" ^ title))
+let flush t = match t.writer with None -> () | Some w -> Frame_writer.drain w
 
 (* Shared buffer for draining the wakeup pipe, avoids allocation on every wake *)
 let wakeup_drain_buffer = Bytes.create 64
@@ -367,6 +346,9 @@ let reset_state t =
     if t.mouse_mode <> `Off then set_mouse_mode t `Off;
     if t.bracketed_paste_enabled then enable_bracketed_paste t false;
     if t.focus_enabled then enable_focus_reporting t false;
+    if t.scroll_region <> None then (
+      send t Ansi.reset_scrolling_region;
+      t.scroll_region <- None);
     if t.alt_screen then (
       send t alternate_off;
       t.alt_screen <- false)
@@ -491,7 +473,7 @@ let read ?(timeout = -1.) t on_event =
 
 let poll t on_event = read ~timeout:0. t on_event
 
-let apply_mode t mode =
+let switch_mode t mode =
   (if not t.input_is_tty then ()
    else
      match mode with
@@ -525,10 +507,8 @@ let apply_mode t mode =
 
 let with_mode t mode f =
   let previous = t.current_mode in
-  apply_mode t mode;
-  Fun.protect f ~finally:(fun () -> apply_mode t previous)
-
-let switch_mode t mode = apply_mode t mode
+  switch_mode t mode;
+  Fun.protect f ~finally:(fun () -> switch_mode t previous)
 
 let query_capabilities ?(timeout = 0.2) t =
   if not (t.input_is_tty && t.output_is_tty) then ()
@@ -560,6 +540,22 @@ let leave_alternate_screen t =
     send t alternate_off;
     t.alt_screen <- false)
 
+let set_scroll_region t ~top ~bottom =
+  if not t.output_is_tty then t.scroll_region <- Some (top, bottom)
+  else if t.scroll_region = Some (top, bottom) then ()
+  else (
+    send t (Ansi.set_scrolling_region ~top ~bottom);
+    t.scroll_region <- Some (top, bottom))
+
+let clear_scroll_region t =
+  if not t.output_is_tty then t.scroll_region <- None
+  else if t.scroll_region = None then ()
+  else (
+    send t Ansi.reset_scrolling_region;
+    t.scroll_region <- None)
+
+let scroll_region t = t.scroll_region
+
 let register_winch_handler, deregister_winch_handler =
   let handlers : (unit -> unit) list ref = ref [] in
   (* Signal handlers must never let exceptions escape, as this can crash
@@ -568,13 +564,14 @@ let register_winch_handler, deregister_winch_handler =
   let callback _ = List.iter safe_call !handlers in
   (* SIGWINCH is not available on Windows - silently ignore if unavailable *)
   let () =
-    try Sys.set_signal sigwinch (Sys.Signal_handle callback)
+    try Sys.set_signal Sys.sigwinch (Sys.Signal_handle callback)
     with Invalid_argument _ -> ()
   in
   ( (fun fn -> handlers := fn :: !handlers),
     fun fn -> handlers := List.filter (fun f -> f != fn) !handlers )
 
-(* Platform detection for render_thread default *)
+(* Platform detection for render_thread default.
+   Threaded rendering is disabled on Linux due to instability. *)
 let is_linux () =
   Sys.os_type = "Unix"
   &&
@@ -655,6 +652,7 @@ let open_terminal ?(probe = true) ?(probe_timeout = 0.2) ?(input = Unix.stdin)
       unicode_mode_enabled = false;
       winch_handler = None;
       pixel_resolution = None;
+      scroll_region = None;
       env_overrides;
       writer =
         Some (Frame_writer.create ~fd:output ~size:buffer_size ~use_thread);
@@ -675,10 +673,10 @@ let open_terminal ?(probe = true) ?(probe_timeout = 0.2) ?(input = Unix.stdin)
   result
 
 let close t =
-  (* Shutdown writer first to flush pending output *)
+  (* Reset state while the writer is still active for proper ordering. *)
+  ignore_exn reset_state t;
   Option.iter (fun w -> ignore_exn Frame_writer.close w) t.writer;
   t.writer <- None;
-  ignore_exn reset_state t;
   Option.iter (fun cb -> ignore_exn deregister_winch_handler cb) t.winch_handler;
   t.winch_handler <- None;
   ignore_exn Unix.close t.wakeup_r;
@@ -694,35 +692,38 @@ let flush_input t =
 
 let query_cursor_position ?(timeout = 0.05) t =
   if not t.output_is_tty then None
-  else (
-    send t cursor_position_request;
-    let deadline = Unix.gettimeofday () +. max 0. timeout in
-    let rec loop () =
-      let now = Unix.gettimeofday () in
-      if now >= deadline then None
-      else
-        let remaining = deadline -. now in
-        let ready = wait_readable t ~timeout:remaining in
-        if not ready then None
-        else
-          let read =
-            read_bytes_nonblocking t t.input_buffer 0
-              (Bytes.length t.input_buffer)
-          in
-          if read <= 0 then None
+  else
+    (* Must use raw mode to properly read the CPR response.
+       In cooked mode, echo is enabled and the response may be printed. *)
+    with_mode t `Raw (fun () ->
+        send t cursor_position_request;
+        let deadline = Unix.gettimeofday () +. max 0. timeout in
+        let rec loop () =
+          let now = Unix.gettimeofday () in
+          if now >= deadline then None
           else
-            let cursor_pos = ref None in
-            Input.Parser.feed t.parser t.input_buffer 0 read ~now
-              ~on_event:(fun e -> Queue.add e t.pending_events)
-              ~on_caps:(fun c ->
-                apply_capability_event t c;
-                match c with
-                | Input.Caps.Cursor_position (row, col) ->
-                    cursor_pos := Some (row, col)
-                | _ -> ());
-            match !cursor_pos with Some _ as r -> r | None -> loop ()
-    in
-    loop ())
+            let remaining = deadline -. now in
+            let ready = wait_readable t ~timeout:remaining in
+            if not ready then None
+            else
+              let read =
+                read_bytes_nonblocking t t.input_buffer 0
+                  (Bytes.length t.input_buffer)
+              in
+              if read <= 0 then None
+              else
+                let cursor_pos = ref None in
+                Input.Parser.feed t.parser t.input_buffer 0 read ~now
+                  ~on_event:(fun e -> Queue.add e t.pending_events)
+                  ~on_caps:(fun c ->
+                    apply_capability_event t c;
+                    match c with
+                    | Input.Caps.Cursor_position (row, col) ->
+                        cursor_pos := Some (row, col)
+                    | _ -> ());
+                match !cursor_pos with Some _ as r -> r | None -> loop ()
+        in
+        loop ())
 
 let output_fd t = t.output
 
@@ -743,10 +744,7 @@ let drain t = match t.writer with None -> () | Some w -> Frame_writer.drain w
 let present t len =
   match t.writer with None -> () | Some w -> Frame_writer.present w len
 
-let write t str =
-  match t.writer with
-  | None -> write_string t.output str
-  | Some w -> Frame_writer.submit_string w str
+let write t str = submit_string t str
 
 let write_bytes t bytes =
   let len = Bytes.length bytes in

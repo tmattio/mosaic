@@ -19,6 +19,16 @@ type t = {
   mutable last_color : (int * int * int) option;
 }
 
+type snapshot = {
+  row : int;
+  col : int;
+  has_position : bool;
+  style : style;
+  blinking : bool;
+  color : (int * int * int) option;
+  visible : bool;
+}
+
 let create () =
   {
     row = 1;
@@ -35,29 +45,40 @@ let create () =
     last_color = None;
   }
 
-let reset t =
+let reset (t : t) =
   (* Mark all applied state as unknown to force full re-emission *)
   t.last_visible <- None;
   t.last_style <- None;
   t.last_blink <- None;
   t.last_color <- None
 
-let set_position t ~row ~col =
+let snapshot (t : t) =
+  {
+    row = t.row;
+    col = t.col;
+    has_position = t.has_pos;
+    style = t.style;
+    blinking = t.blinking;
+    color = t.color;
+    visible = t.visible;
+  }
+
+let set_position (t : t) ~row ~col =
   t.row <- max 1 row;
   t.col <- max 1 col;
   t.has_pos <- true
 
-let clear_position t = t.has_pos <- false
+let clear_position (t : t) = t.has_pos <- false
 
-let set_style t ~style ~blinking =
+let set_style (t : t) ~style ~blinking =
   t.style <- style;
   t.blinking <- blinking
 
-let set_color t c = t.color <- c
-let set_visible t v = t.visible <- v
-let is_visible t = t.visible
+let set_color (t : t) c = t.color <- c
+let set_visible (t : t) v = t.visible <- v
+let is_visible (t : t) = t.visible
 
-let clamp_to_bounds t ~max_row ~max_col =
+let clamp_to_bounds (t : t) ~max_row ~max_col =
   if t.has_pos then (
     t.row <- max 1 (min max_row t.row);
     t.col <- max 1 (min max_col t.col))
@@ -71,7 +92,7 @@ let cursor_style_seq style blinking =
   | `Underline, true -> Esc.cursor_underline_blink
   | `Underline, false -> Esc.cursor_underline
 
-let hide_temporarily t w =
+let hide_temporarily (t : t) w =
   (* Hide cursor if it's visible or in unknown state.
      When state is unknown, we hide to be safe during render. *)
   match t.last_visible with
@@ -80,7 +101,7 @@ let hide_temporarily t w =
       Esc.emit Esc.hide_cursor w;
       t.last_visible <- Some false
 
-let emit t ~row_offset w =
+let emit (t : t) ~row_offset w =
   (* 1. Visibility Check *)
   if not t.visible then (
     (* Hide cursor if visible or unknown *)

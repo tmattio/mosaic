@@ -21,7 +21,7 @@ Mosaic is a high-level terminal UI framework for OCaml, built on Matrix and Toff
 Matrix is a low-level, high-performance terminal UI library for OCaml, designed from the ground up to leverage modern terminal capabilities and provide a solid base for building rich terminal applications. Key features include:
 
 - **Immediate-mode runtime** – `Matrix.run` with `on_frame`, `on_render`, `on_input`, `on_resize` callbacks, configurable FPS capping, and safe teardown that restores terminal state even on exceptions
-- **Three display modes** – Full-screen alternate buffer (`Alt`), inline below prompt (`Primary_inline`), or fixed bottom region (`Primary_split`) with `static_print` for persistent output
+- **Two display modes** – Full-screen alternate buffer (`Alt`) or inline on primary screen (`Primary`) with dynamic height and full scrollback
 - **Declarative Image API** – Notty-inspired compositional DSL with `hcat`, `vcat`, `overlay`, padding, cropping, and hit regions for mouse interaction
 - **Full Unicode support** – Grapheme cluster handling, emoji, wide characters, and configurable width calculation (wcwidth, Unicode tables)
 - **Modern terminal protocols** – Kitty keyboard (with auto-detection), SGR/X10/URXVT mouse tracking, bracketed paste, focus reporting—all negotiated automatically
