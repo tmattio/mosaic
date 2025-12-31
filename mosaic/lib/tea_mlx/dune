@@ -1,0 +1,14 @@
+(library
+ (name mosaic_tea_mlx)
+ (public_name mosaic.tea_mlx)
+ (libraries
+  mosaic.tea
+  mosaic.ui
+  mosaic.syntax
+  mosaic.markdown
+  matrix
+  matrix.ansi
+  matrix.grid
+  matrix.screen
+  toffee
+  unix))
