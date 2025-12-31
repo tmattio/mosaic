@@ -106,8 +106,8 @@ let view model =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Timer";
-              text ~text_style:muted "▄▀ mosaic";
+              text ~style:(Ansi.Style.make ~bold:true ()) "▸ Timer";
+              text ~style:muted "▄▀ mosaic";
             ];
         ];
       (* Content *)
@@ -122,12 +122,12 @@ let view model =
                   box ~flex_direction:Row ~align_items:Center ~gap:(gap 1)
                     [
                       text
-                        ~text_style:
+                        ~style:
                           (Ansi.Style.make ~bold:true ~fg:Ansi.Color.white ())
                         (format_time model.time_remaining);
                     ];
                   text
-                    ~text_style:(Ansi.Style.make ~dim:true ())
+                    ~style:(Ansi.Style.make ~dim:true ())
                     (match model.state with
                     | Idle -> "Status: Idle"
                     | Running -> "Status: Running"
@@ -154,7 +154,7 @@ let view model =
                       | _ -> None)
                     [
                       text
-                        ~text_style:(Ansi.Style.make ~bold:true ())
+                        ~style:(Ansi.Style.make ~bold:true ())
                         "Set Time";
                     ];
                   box ~flex_direction:Row ~gap:(gap 1)
@@ -166,7 +166,7 @@ let view model =
                           | _ -> None)
                         [
                           text
-                            ~text_style:
+                            ~style:
                               (Ansi.Style.make ~bold:true ~fg:Ansi.Color.green
                                  ())
                             "Start";
@@ -178,7 +178,7 @@ let view model =
                           | _ -> None)
                         [
                           text
-                            ~text_style:
+                            ~style:
                               (Ansi.Style.make ~bold:true ~fg:Ansi.Color.red ())
                             "Stop";
                         ];
@@ -189,7 +189,7 @@ let view model =
                           | _ -> None)
                         [
                           text
-                            ~text_style:
+                            ~style:
                               (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow
                                  ())
                             "Reset";
@@ -200,7 +200,7 @@ let view model =
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [ text ~text_style:hint "Space start/stop  •  r reset  •  q quit" ];
+        [ text ~style:hint "Space start/stop  •  r reset  •  q quit" ];
     ]
 
 let subscriptions model =

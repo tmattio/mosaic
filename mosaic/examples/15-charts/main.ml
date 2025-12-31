@@ -961,8 +961,8 @@ let view (m : model) =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~text_style:emph "Charts (interactive)";
-              text ~text_style:muted
+              text ~style:emph "Charts (interactive)";
+              text ~style:muted
                 (Printf.sprintf "[%d/%d] %s" (idx + 1) n (chart_name m.chart));
             ];
         ];
@@ -993,11 +993,11 @@ let view (m : model) =
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg ~flex_direction:Column
         [
-          text ~text_style:hint
+          text ~style:hint
             "Tab/</>: switch  |  wheel: zoom  |  drag: pan  |  +/-: zoom  |  r \
              reset  |  g grid  |  c charset  |  m mode  |  t theme  |  h help  \
              |  q quit";
-          text ~text_style:muted status;
+          text ~style:muted status;
         ];
     ]
 

@@ -218,10 +218,10 @@ let text ?id ?key
     ?grid_auto_columns ?grid_auto_flow ?grid_template_areas ?grid_row
     ?grid_column
     (* Text props *)
-    ?text_style ?wrap_mode ?tab_indicator ?tab_indicator_color ?selection_bg
+    ?style ?wrap_mode ?tab_indicator ?tab_indicator_color ?selection_bg
     ?selection_fg ?selectable content =
   let handlers = { on_mouse; on_key; on_paste } in
-  let style =
+  let layout_style =
     Toffee.Style.make ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin ?padding ?gap
       ?align_items ?align_self ?align_content ?justify_items ?justify_self
@@ -231,12 +231,12 @@ let text ?id ?key
       ?grid_column ()
   in
   let text_props =
-    Text.Props.make ?text_style ~content ?wrap_mode ?tab_indicator
+    Text.Props.make ?style ~content ?wrap_mode ?tab_indicator
       ?tab_indicator_color ?selection_bg ?selection_fg ?selectable ()
   in
   let spec = Text_spec text_props in
   let props =
-    { id; style; visible; z_index; live; buffer; handlers; ref; spec }
+    { id; style = layout_style; visible; z_index; live; buffer; handlers; ref; spec }
   in
   Element { tag = Text; key; props; children = [] }
 

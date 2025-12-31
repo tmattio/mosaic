@@ -52,9 +52,9 @@ let view () =
             ~size:{ width = pct 100; height = auto }
             [
               text
-                ~text_style:(Ansi.Style.make ~bold:true ())
+                ~style:(Ansi.Style.make ~bold:true ())
                 "▸ Text Selection";
-              text ~text_style:muted "▄▀ mosaic";
+              text ~style:muted "▄▀ mosaic";
             ];
         ];
       (* Main content area *)
@@ -68,19 +68,19 @@ let view () =
                 ~background:(Ansi.Color.grayscale ~level:2)
                 ~flex_direction:Column ~gap:(gap 0)
                 [
-                  text ~text_style:section1_style ~selectable:true
+                  text ~style:section1_style ~selectable:true
                     ~selection_bg:(Ansi.Color.of_rgb 88 166 255)
                     ~selection_fg:Ansi.Color.white
                     "This is a paragraph in the first box.";
-                  text ~text_style:section1_style ~selectable:true
+                  text ~style:section1_style ~selectable:true
                     ~selection_bg:(Ansi.Color.of_rgb 88 166 255)
                     ~selection_fg:Ansi.Color.white
                     "It contains multiple lines of text.";
-                  text ~text_style:section1_style ~selectable:true
+                  text ~style:section1_style ~selectable:true
                     ~selection_bg:(Ansi.Color.of_rgb 88 166 255)
                     ~selection_fg:Ansi.Color.white
                     "You can select across these lines.";
-                  text ~text_style:section1_style ~selectable:true
+                  text ~style:section1_style ~selectable:true
                     ~selection_bg:(Ansi.Color.of_rgb 88 166 255)
                     ~selection_fg:Ansi.Color.white "Unicode: 世界, 你好世界, 中文, 한글";
                 ];
@@ -91,22 +91,22 @@ let view () =
                 ~flex_direction:Column
                 [
                   text
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.cyan ())
+                    ~style:(Ansi.Style.make ~fg:Ansi.Color.cyan ())
                     ~selectable:true
                     ~selection_bg:(Ansi.Color.of_rgb 74 85 104)
                     "function handleSelection() {";
                   text
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.white ())
+                    ~style:(Ansi.Style.make ~fg:Ansi.Color.white ())
                     ~selectable:true
                     ~selection_bg:(Ansi.Color.of_rgb 74 85 104)
                     "  const selected = getSelectedText()";
                   text
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.yellow ())
+                    ~style:(Ansi.Style.make ~fg:Ansi.Color.yellow ())
                     ~selectable:true
                     ~selection_bg:(Ansi.Color.of_rgb 74 85 104)
                     "  console.log(selected)";
                   text
-                    ~text_style:(Ansi.Style.make ~fg:Ansi.Color.white ())
+                    ~style:(Ansi.Style.make ~fg:Ansi.Color.white ())
                     ~selectable:true
                     ~selection_bg:(Ansi.Color.of_rgb 74 85 104)
                     "}";
@@ -127,7 +127,7 @@ let view () =
                            ~background:bg ~flex_direction:Column
                            [
                              text
-                               ~text_style:
+                               ~style:
                                  (Ansi.Style.make ~bold:true
                                     ~fg:Ansi.Color.white ())
                                ~selectable:true
@@ -139,7 +139,7 @@ let view () =
                                       ((i * 3) + j) mod Array.length lorem_lines
                                     in
                                     text ~key:(string_of_int j)
-                                      ~text_style:
+                                      ~style:
                                         (Ansi.Style.make ~fg:Ansi.Color.white ())
                                       ~selectable:true
                                       ~selection_bg:
@@ -152,7 +152,7 @@ let view () =
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
         [
-          text ~text_style:hint
+          text ~style:hint
             "click and drag to select  •  Ctrl+click extend  •  q quit";
         ];
     ]

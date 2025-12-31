@@ -30,8 +30,8 @@ let view model =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Counter";
-              text ~text_style:muted "▄▀ mosaic";
+              text ~style:(Ansi.Style.make ~bold:true ()) "▸ Counter";
+              text ~style:muted "▄▀ mosaic";
             ];
         ];
       (* Content *)
@@ -41,14 +41,14 @@ let view model =
             ~border:true ~border_color ~padding:(padding 3)
             [
               text
-                ~text_style:(Ansi.Style.make ~bold:true ())
+                ~style:(Ansi.Style.make ~bold:true ())
                 (Printf.sprintf "%d" model);
-              text ~text_style:hint "Press + or - to change";
+              text ~style:hint "Press + or - to change";
             ];
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [ text ~text_style:hint "+ increment  •  - decrement  •  q quit" ];
+        [ text ~style:hint "+ increment  •  - decrement  •  q quit" ];
     ]
 
 let subscriptions _model =

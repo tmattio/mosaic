@@ -153,8 +153,8 @@ let view () =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Markdown";
-              text ~text_style:muted "▄▀ mosaic";
+              text ~style:(Ansi.Style.make ~bold:true ()) "▸ Markdown";
+              text ~style:muted "▄▀ mosaic";
             ];
         ];
       (* Scrollable markdown content *)
@@ -166,7 +166,7 @@ let view () =
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [ text ~text_style:hint "scroll with mouse wheel  •  q quit" ];
+        [ text ~style:hint "scroll with mouse wheel  •  q quit" ];
     ]
 
 let subscriptions () =

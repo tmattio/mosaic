@@ -48,8 +48,8 @@ let view model =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Text Input";
-              text ~text_style:muted "▄▀ mosaic";
+              text ~style:(Ansi.Style.make ~bold:true ()) "▸ Text Input";
+              text ~style:muted "▄▀ mosaic";
             ];
         ];
       (* Content *)
@@ -69,14 +69,14 @@ let view model =
                     ~value:model.value ();
                 ];
               (* Cursor style display *)
-              text ~text_style:hint
+              text ~style:hint
                 (Printf.sprintf "Cursor style: %s"
                    (cursor_style_name model.cursor_style));
             ];
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [ text ~text_style:hint "c cycle cursor  •  Esc quit" ];
+        [ text ~style:hint "c cycle cursor  •  Esc quit" ];
     ]
 
 let subscriptions _model =

@@ -242,8 +242,8 @@ let%expect_test "colored box renders orange background" =
         box ~id:"inner_box" ~flex_direction:Column ~align_items:Center
           ~justify_content:Center
           [
-            text ~id:"ideas" ~text_style:bold_dark "Ideas";
-            text ~id:"drag" ~text_style:dim_dark "Drag me";
+            text ~id:"ideas" ~style:bold_dark "Ideas";
+            text ~id:"drag" ~style:dim_dark "Drag me";
           ];
       ]
   in

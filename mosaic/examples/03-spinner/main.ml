@@ -48,8 +48,8 @@ let view model =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ Spinners";
-              text ~text_style:muted "▄▀ mosaic";
+              text ~style:(Ansi.Style.make ~bold:true ()) "▸ Spinners";
+              text ~style:muted "▄▀ mosaic";
             ];
         ];
       (* Content *)
@@ -77,7 +77,7 @@ let view model =
                           [
                             spinner ~preset ~autoplay:model.running ();
                             text
-                              ~text_style:
+                              ~style:
                                 (if preset = model.preset then
                                    Ansi.Style.make ~fg:accent ()
                                  else Ansi.Style.make ~dim:true ())
@@ -88,7 +88,7 @@ let view model =
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [ text ~text_style:hint "n next  •  Space toggle  •  q quit" ];
+        [ text ~style:hint "n next  •  Space toggle  •  q quit" ];
     ]
 
 let subscriptions _model =

@@ -75,9 +75,9 @@ let view model =
             ~size:{ width = pct 100; height = auto }
             [
               text
-                ~text_style:(Ansi.Style.make ~bold:true ())
+                ~style:(Ansi.Style.make ~bold:true ())
                 (Printf.sprintf "▸ Code (%s)" (lang_name model.lang));
-              text ~text_style:muted "▄▀ mosaic";
+              text ~style:muted "▄▀ mosaic";
             ];
         ];
       (* Code display *)
@@ -92,7 +92,7 @@ let view model =
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [ text ~text_style:hint "l toggle language  •  q quit" ];
+        [ text ~style:hint "l toggle language  •  q quit" ];
     ]
 
 let subscriptions _model =

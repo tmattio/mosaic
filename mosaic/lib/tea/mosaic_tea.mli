@@ -332,7 +332,7 @@ val text :
   ?grid_template_areas:Toffee.Style.grid_template_area list ->
   ?grid_row:Toffee.Style.grid_placement Toffee.Geometry.line ->
   ?grid_column:Toffee.Style.grid_placement Toffee.Geometry.line ->
-  ?text_style:Ansi.Style.t ->
+  ?style:Ansi.Style.t ->
   ?wrap_mode:[ `None | `Char | `Word ] ->
   ?tab_indicator:int ->
   ?tab_indicator_color:Ansi.Color.t ->
