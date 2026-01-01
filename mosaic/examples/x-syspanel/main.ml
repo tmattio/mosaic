@@ -223,21 +223,426 @@ let draw_progress_bar grid ~width ~height ~value ~max_value ~fill_color =
       Grid.fill_rect grid ~x:0 ~y:0 ~width:filled_width ~height:bar_height
         ~color:fill_color)
 
+(* ---------- View Components ---------- *)
+
+let view_header () =
+  box ~padding:(padding 1) ~background:header_bg
+    [
+      box ~flex_direction:Row ~justify_content:Space_between
+        ~align_items:Center
+        ~size:{ width = pct 100; height = auto }
+        [
+          text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ System Panel";
+          text ~text_style:muted "▄▀ mosaic";
+        ];
+    ]
+
+let view_footer () =
+  box ~padding:(padding 1) ~background:footer_bg
+    [ text ~text_style:hint "q quit" ]
+
+let view_per_core_cpu (cpu_per_core : Metrics.cpu_stats array) =
+  if Array.length cpu_per_core > 0 then
+    box ~flex_direction:Column ~gap:(gap 1)
+      ~size:{ width = pct 100; height = auto }
+      [
+        text ~text_style:muted "Per-Core Usage:";
+        scroll_box ~scroll_y:true ~scroll_x:false
+          ~size:{ width = pct 100; height = px 12 }
+          (let cores = Array.to_list (Array.mapi (fun i stats -> (i, stats)) cpu_per_core) in
+           (* Group cores into pairs for rows *)
+           let rec chunk_pairs = function
+             | [] -> []
+             | [x] -> [[x]]
+             | x :: y :: rest -> [x; y] :: chunk_pairs rest
+           in
+           let rows = chunk_pairs cores in
+           List.mapi
+             (fun row_idx row ->
+               box
+                 ~key:(Printf.sprintf "row-%d" row_idx)
+                 ~flex_direction:Row ~gap:(gap 1)
+                 ~size:{ width = pct 100; height = auto }
+                 (List.mapi
+                    (fun _col_idx (i, (core_stats : Metrics.cpu_stats)) ->
+                      let total_usage = core_stats.user +. core_stats.system in
+                      let bar_color =
+                        if total_usage > 80. then Ansi.Color.red
+                        else if total_usage > 50. then Ansi.Color.yellow
+                        else Ansi.Color.green
+                      in
+                      box
+                        ~key:(Printf.sprintf "core-%d" i)
+                        ~padding:(padding 1)
+                        ~background:
+                          (if i mod 2 = 0 then Ansi.Color.default
+                           else Ansi.Color.grayscale ~level:3)
+                        ~size:{ width = pct 50; height = auto }
+                        [
+                          box ~flex_direction:Column ~gap:(gap 0)
+                            ~size:{ width = pct 100; height = auto }
+                            [
+                              (* Core label and percentage *)
+                              box ~flex_direction:Row ~justify_content:Space_between
+                                ~align_items:Center
+                                ~size:{ width = pct 100; height = auto }
+                                [
+                                  text
+                                    ~text_style:
+                                      (Ansi.Style.make ~fg:bar_color ())
+                                    (string_of_int i);
+                                  text
+                                    ~text_style:
+                                      (Ansi.Style.make ~bold:true ~fg:bar_color ())
+                                    (Printf.sprintf "%.1f%%" total_usage);
+                                ];
+                              (* Progress bar *)
+                              canvas
+                                ~draw:(fun grid ~width ~height ->
+                                  draw_progress_bar grid ~width ~height
+                                    ~value:total_usage ~max_value:100.0
+                                    ~fill_color:bar_color)
+                                ~size:{ width = pct 100; height = px 1 }
+                                ();
+                            ];
+                        ])
+                    row))
+             rows)
+      ]
+  else box ~size:{ width = pct 100; height = px 0 } []
+
+let view_cpu_usage (cpu : Metrics.cpu_stats) (cpu_per_core : Metrics.cpu_stats array) (sparkline_cpu : Charts.Sparkline.t) =
+  box ~border:true ~padding:(padding 1) ~title:"CPU Usage"
+    ~background:Ansi.Color.default
+    ~size:{ width = pct 100; height = auto }
+    [
+      box ~flex_direction:Column ~gap:(gap 0)
+        ~size:{ width = pct 100; height = auto }
+        [
+          (* Top: Overall CPU Metrics and Graph *)
+          box ~flex_direction:Row ~gap:(gap 3)
+            ~size:{ width = pct 100; height = auto }
+            [
+              (* Left: CPU Metrics *)
+              box ~flex_direction:Column ~gap:(gap 1)
+                ~size:{ width = pct 55; height = auto }
+                [
+                  (* User CPU *)
+                  box ~flex_direction:Row ~justify_content:Space_between
+                    ~align_items:Center
+                    [
+                      text ~text_style:muted "User:";
+                      text
+                        ~text_style:
+                          (Ansi.Style.make ~bold:true ~fg:Ansi.Color.cyan ())
+                        (Printf.sprintf "%.1f%%" cpu.user);
+                    ];
+                  (* System CPU *)
+                  box ~flex_direction:Row ~justify_content:Space_between
+                    ~align_items:Center
+                    [
+                      text ~text_style:muted "System:";
+                      text
+                        ~text_style:
+                          (Ansi.Style.make ~bold:true ~fg:Ansi.Color.magenta ())
+                        (Printf.sprintf "%.1f%%" cpu.system);
+                    ];
+                  (* Idle CPU *)
+                  box ~flex_direction:Row ~justify_content:Space_between
+                    ~align_items:Center
+                    [
+                      text ~text_style:muted "Idle:";
+                      text
+                        ~text_style:
+                          (Ansi.Style.make ~bold:true ~fg:Ansi.Color.green ())
+                        (Printf.sprintf "%.1f%%" cpu.idle);
+                    ];
+                ];
+              (* Right: CPU Usage Graph *)
+              box ~flex_direction:Column ~gap:(gap 1)
+                ~size:{ width = pct 45; height = auto }
+                [
+                  text ~text_style:muted "CPU Load:";
+                  canvas
+                    ~draw:(fun canvas ~width ~height ->
+                      Charts.Sparkline.draw sparkline_cpu ~kind:`Braille
+                        canvas ~width ~height)
+                    ~size:{ width = pct 100; height = px 8 }
+                    ();
+                ];
+            ];
+          (* Bottom: Per-Core CPU Usage *)
+          view_per_core_cpu cpu_per_core;
+        ];
+    ]
+
+let view_top_processes (processes : Metrics.process_info list) =
+  box ~border:true ~padding:(padding 1) ~title:"Top Processes"
+    ~size:{ width = pct 100; height = auto }
+    [
+      (if List.length processes > 0 then
+         scroll_box ~scroll_y:true ~scroll_x:false
+           ~size:{ width = pct 100; height = px 10 }
+           (List.mapi
+              (fun i (proc : Metrics.process_info) ->
+                box
+                  ~key:(Printf.sprintf "process-%d" proc.pid)
+                  ~padding:(padding 1)
+                  ~background:
+                    (if i mod 2 = 0 then Ansi.Color.default
+                     else Ansi.Color.grayscale ~level:3)
+                  [
+                    box ~flex_direction:Row ~justify_content:Space_between
+                      ~align_items:Center
+                      ~size:{ width = pct 100; height = auto }
+                      [
+                        (* Left: Process name and PID *)
+                        box ~flex_direction:Column ~gap:(gap 0)
+                          ~size:{ width = pct 50; height = auto }
+                          [
+                            (* Process name with potential wrapping *)
+                            box ~size:{ width = pct 100; height = auto }
+                              [
+                                text
+                                  ~text_style:
+                                    (Ansi.Style.make ~bold:true
+                                       ~fg:Ansi.Color.white ())
+                                  proc.name;
+                              ];
+                            text
+                              ~text_style:muted
+                              (Printf.sprintf "PID: %d" proc.pid);
+                          ];
+                        (* Right: CPU usage *)
+                        text
+                          ~text_style:
+                            (Ansi.Style.make ~bold:true
+                               ~fg:Ansi.Color.cyan ())
+                          (Printf.sprintf "%.1f%%" proc.cpu_percent);
+                      ];
+                  ])
+              processes)
+       else
+         box ~flex_direction:Row ~justify_content:Center
+           ~align_items:Center
+           ~padding:(padding 1)
+           [
+             text ~text_style:muted "no processes found";
+           ]);
+    ]
+
+let view_memory_usage (memory : Metrics.memory_stats) (sparkline_memory : Charts.Sparkline.t) =
+  box ~border:true ~padding:(padding 1) ~title:"Memory Usage"
+    ~size:{ width = pct 100; height = auto }
+    [
+      box ~flex_direction:Row ~gap:(gap 3)
+        ~size:{ width = pct 100; height = pct 100 }
+        [
+          (* Left: Memory Metrics *)
+          box ~flex_direction:Column ~gap:(gap 1)
+            ~size:{ width = pct 70; height = auto }
+            [
+              (* Total Memory *)
+              box ~flex_direction:Row ~justify_content:Space_between
+                ~align_items:Center
+                [
+                  text ~text_style:muted "Total:";
+                  text
+                    ~text_style:
+                      (Ansi.Style.make ~bold:true ~fg:Ansi.Color.white ())
+                    (Printf.sprintf "%.1f GB" memory.total_gb);
+                ];
+              (* Used Memory with inline percentage *)
+              box ~flex_direction:Row ~justify_content:Space_between
+                ~align_items:Center
+                [
+                  text ~text_style:muted "Used:";
+                  box ~flex_direction:Row ~gap:(gap 0) ~align_items:Center
+                    [
+                      text
+                        ~text_style:
+                          (Ansi.Style.make ~bold:true ~fg:Ansi.Color.magenta ())
+                        (Printf.sprintf "%.1f GB" memory.used_gb);
+                      text
+                        ~text_style:
+                          (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
+                        (Printf.sprintf " (%.1f%%)" memory.used_percent);
+                    ];
+                ];
+              (* Swap Used with inline percentage *)
+              box ~flex_direction:Row ~justify_content:Space_between
+                ~align_items:Center
+                [
+                  text ~text_style:muted "Swap Used:";
+                  box ~flex_direction:Row ~gap:(gap 0) ~align_items:Center
+                    [
+                      text
+                        ~text_style:
+                          (Ansi.Style.make ~bold:true ~fg:Ansi.Color.magenta ())
+                        (Printf.sprintf "%.1f GB" memory.swap_used_gb);
+                      text
+                        ~text_style:
+                          (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
+                        (Printf.sprintf " (%.1f%%)" memory.swap_used_percent);
+                    ];
+                ];
+            ];
+          (* Right: Memory Usage Graph *)
+          box ~flex_direction:Column ~gap:(gap 1)
+            ~size:{ width = pct 30; height = auto }
+            [
+              text ~text_style:muted "Memory Load:";
+              canvas
+                ~draw:(fun canvas ~width ~height ->
+                  Charts.Sparkline.draw sparkline_memory ~kind:`Braille
+                    canvas ~width ~height)
+                ~size:{ width = pct 100; height = px 4 }
+                ();
+            ];
+        ];
+    ]
+
+let view_disk_usage (disk : Metrics.disk_stats) =
+  box ~border:true ~padding:(padding 1) ~title:"Disk Usage"
+    ~size:{ width = pct 100; height = auto }
+    [
+      (* Disk Metrics *)
+      box ~flex_direction:Column ~gap:(gap 1)
+        ~size:{ width = pct 100; height = auto }
+        [
+          (* Total Disk *)
+          box ~flex_direction:Row ~justify_content:Space_between
+            ~align_items:Center
+            [
+              text ~text_style:muted "Total:";
+              text
+                ~text_style:
+                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.white ())
+                (Printf.sprintf "%.1f GB" disk.total_gb);
+            ];
+          (* Used Disk *)
+          box ~flex_direction:Row ~justify_content:Space_between
+            ~align_items:Center
+            [
+              text ~text_style:muted "Used:";
+              text
+                ~text_style:
+                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
+                (Printf.sprintf "%.1f GB" disk.used_gb);
+            ];
+          (* Available Disk *)
+          box ~flex_direction:Row ~justify_content:Space_between
+            ~align_items:Center
+            [
+              text ~text_style:muted "Avail:";
+              text
+                ~text_style:
+                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.green ())
+                (Printf.sprintf "%.1f GB" disk.avail_gb);
+            ];
+          (* Usage Percentage *)
+          box ~flex_direction:Row ~justify_content:Space_between
+            ~align_items:Center
+            [
+              text ~text_style:muted "Usage:";
+              text
+                ~text_style:
+                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
+                (Printf.sprintf "%.1f%%" disk.used_percent);
+            ];
+          (* Partitions *)
+          (if List.length disk.partitions > 0 then
+             box ~flex_direction:Column ~gap:(gap 1)
+               ~size:{ width = pct 100; height = auto }
+               [
+                 text ~text_style:muted "Partitions:";
+                 scroll_box ~scroll_y:true ~scroll_x:false
+                   ~size:{ width = pct 100; height = px 8 }
+                   (List.mapi
+                      (fun i (part : Metrics.disk_partition) ->
+                        box
+                          ~key:(Printf.sprintf "partition-%d" i)
+                          ~padding:(padding 1)
+                          ~background:
+                            (if i mod 2 = 0 then Ansi.Color.default
+                             else Ansi.Color.grayscale ~level:3)
+                          [
+                            box ~flex_direction:Row ~justify_content:Space_between
+                              ~align_items:Center
+                              ~size:{ width = pct 100; height = auto }
+                              [
+                                (* Left: Mount point *)
+                                text
+                                  ~text_style:
+                                    (Ansi.Style.make ~bold:true
+                                       ~fg:Ansi.Color.white ())
+                                  part.mount_point;
+                                (* Right: Used and percentage *)
+                                box ~flex_direction:Row ~gap:(gap 1)
+                                  ~align_items:Center
+                                  [
+                                    text
+                                      ~text_style:
+                                        (Ansi.Style.make ~bold:true
+                                           ~fg:Ansi.Color.yellow ())
+                                      (Printf.sprintf "%.1f GB" part.used_gb);
+                                    text
+                                      ~text_style:
+                                        (Ansi.Style.make ~bold:true
+                                           ~fg:Ansi.Color.yellow ())
+                                      (Printf.sprintf "(%.1f%%)" part.used_percent);
+                                  ];
+                              ];
+                          ])
+                      disk.partitions)
+               ]
+           else
+             box ~flex_direction:Row ~justify_content:Center
+               ~align_items:Center
+               ~padding:(padding 1)
+               [
+                 text ~text_style:muted "no partitions found";
+               ]);
+        ];
+    ]
+
+let view_process_self (process : Metrics.process_stats) =
+  box ~border:true ~padding:(padding 1) ~title:"Process (self)"
+    ~size:{ width = pct 100; height = auto }
+    [
+      (* Process Metrics *)
+      box ~flex_direction:Column ~gap:(gap 1)
+        ~size:{ width = pct 100; height = auto }
+        [
+          (* CPU Usage *)
+          box ~flex_direction:Row ~justify_content:Space_between
+            ~align_items:Center
+            [
+              text ~text_style:muted "CPU:";
+              text
+                ~text_style:
+                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.cyan ())
+                (Printf.sprintf "%.1f%%" process.cpu_percent);
+            ];
+          (* RSS Memory *)
+          box ~flex_direction:Row ~justify_content:Space_between
+            ~align_items:Center
+            [
+              text ~text_style:muted "RSS:";
+              text
+                ~text_style:
+                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.magenta ())
+                (Printf.sprintf "%.1f MB" process.rss_mb);
+            ];
+        ];
+    ]
+
 let view model =
   box ~flex_direction:Column
     ~size:{ width = pct 100; height = pct 100 }
     [
       (* Header *)
-      box ~padding:(padding 1) ~background:header_bg
-        [
-          box ~flex_direction:Row ~justify_content:Space_between
-            ~align_items:Center
-            ~size:{ width = pct 100; height = auto }
-            [
-              text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ System Panel";
-              text ~text_style:muted "▄▀ mosaic";
-            ];
-        ];
+      view_header ();
       (* Content - Merged CPU Column Layout *)
       scroll_box ~scroll_y:true ~scroll_x:false ~flex_grow:1.
         ~size:{ width = pct 100; height = pct 100 }
@@ -248,412 +653,28 @@ let view model =
               box ~flex_direction:Row ~gap:(gap 1)
                 ~size:{ width = pct 100; height = auto }
                 [
-              (* Left: CPU Column (merged - spans full height) *)
-              box ~flex_direction:Column ~gap:(gap 1)
-                ~size:{ width = pct 50; height = auto }
-                [
-                  (* CPU Usage Box *)
-                  box ~border:true ~padding:(padding 1) ~title:"CPU Usage"
+                  (* Left: CPU Column *)
+                  box ~flex_direction:Column ~gap:(gap 1)
+                    ~size:{ width = pct 50; height = auto }
+                    [
+                      view_cpu_usage model.cpu model.cpu_per_core model.sparkline_cpu;
+                      view_top_processes model.processes;
+                    ];
+                  (* Right: Memory, Disk, and Process Column *)
+                  box ~flex_direction:Column ~gap:(gap 1)
+                    ~flex_grow:1.
                     ~background:Ansi.Color.default
-                    ~size:{ width = pct 100; height = auto }
+                    ~size:{ width = pct 50; height = auto }
                     [
-                      box ~flex_direction:Column ~gap:(gap 0)
-                        ~size:{ width = pct 100; height = auto }
-                        [
-                          (* Top: Overall CPU Metrics and Graph *)
-                          box ~flex_direction:Row ~gap:(gap 3)
-                            ~size:{ width = pct 100; height = auto }
-                            [
-                              (* Left: CPU Metrics *)
-                              box ~flex_direction:Column ~gap:(gap 1)
-                                ~size:{ width = pct 55; height = auto }
-                                [
-                                  (* User CPU *)
-                                  box ~flex_direction:Row ~justify_content:Space_between
-                                    ~align_items:Center
-                                    [
-                                      text ~text_style:muted "User:";
-                                      text
-                                        ~text_style:
-                                          (Ansi.Style.make ~bold:true ~fg:Ansi.Color.cyan ())
-                                        (Printf.sprintf "%.1f%%" model.cpu.user);
-                                    ];
-                                  (* System CPU *)
-                                  box ~flex_direction:Row ~justify_content:Space_between
-                                    ~align_items:Center
-                                    [
-                                      text ~text_style:muted "System:";
-                                      text
-                                        ~text_style:
-                                          (Ansi.Style.make ~bold:true ~fg:Ansi.Color.magenta ())
-                                        (Printf.sprintf "%.1f%%" model.cpu.system);
-                                    ];
-                                  (* Idle CPU *)
-                                  box ~flex_direction:Row ~justify_content:Space_between
-                                    ~align_items:Center
-                                    [
-                                      text ~text_style:muted "Idle:";
-                                      text
-                                        ~text_style:
-                                          (Ansi.Style.make ~bold:true ~fg:Ansi.Color.green ())
-                                        (Printf.sprintf "%.1f%%" model.cpu.idle);
-                                    ];
-                                ];
-                              (* Right: CPU Usage Graph *)
-                              box ~flex_direction:Column ~gap:(gap 1)
-                                ~size:{ width = pct 45; height = auto }
-                                [
-                                  text ~text_style:muted "CPU Load:";
-                                  canvas
-                                    ~draw:(fun canvas ~width ~height ->
-                                      Charts.Sparkline.draw model.sparkline_cpu ~kind:`Braille
-                                        canvas ~width ~height)
-                                    ~size:{ width = pct 100; height = px 8 }
-                                    ();
-                                ];
-                            ];
-                          (* Bottom: Per-Core CPU Usage *)
-                          (if Array.length model.cpu_per_core > 0 then
-                             box ~flex_direction:Column ~gap:(gap 1)
-                               ~size:{ width = pct 100; height = auto }
-                               [
-                                 text ~text_style:muted "Per-Core Usage:";
-                                 scroll_box ~scroll_y:true ~scroll_x:false
-                                   ~size:{ width = pct 100; height = px 12 }
-                                   (let cores = Array.to_list (Array.mapi (fun i (stats : Metrics.cpu_stats) -> (i, stats)) model.cpu_per_core) in
-                                    (* Group cores into pairs for rows *)
-                                    let rec chunk_pairs = function
-                                      | [] -> []
-                                      | [x] -> [[x]]
-                                      | x :: y :: rest -> [x; y] :: chunk_pairs rest
-                                    in
-                                    let rows = chunk_pairs cores in
-                                    List.mapi
-                                      (fun row_idx row ->
-                                        box
-                                          ~key:(Printf.sprintf "row-%d" row_idx)
-                                          ~flex_direction:Row ~gap:(gap 1)
-                                          ~size:{ width = pct 100; height = auto }
-                                          (List.mapi
-                                             (fun _col_idx (i, (core_stats : Metrics.cpu_stats)) ->
-                                               let total_usage = core_stats.user +. core_stats.system in
-                                               let bar_color =
-                                                 if total_usage > 80. then Ansi.Color.red
-                                                 else if total_usage > 50. then Ansi.Color.yellow
-                                                 else Ansi.Color.green
-                                               in
-                                               box
-                                                 ~key:(Printf.sprintf "core-%d" i)
-                                                 ~padding:(padding 1)
-                                                 ~background:
-                                                   (if i mod 2 = 0 then Ansi.Color.default
-                                                    else Ansi.Color.grayscale ~level:3)
-                                                 ~size:{ width = pct 50; height = auto }
-                                                 [
-                                                   box ~flex_direction:Column ~gap:(gap 0)
-                                                     ~size:{ width = pct 100; height = auto }
-                                                     [
-                                                       (* Core label and percentage *)
-                                                       box ~flex_direction:Row ~justify_content:Space_between
-                                                         ~align_items:Center
-                                                         ~size:{ width = pct 100; height = auto }
-                                                         [
-                                                           text
-                                                             ~text_style:
-                                                               (Ansi.Style.make ~fg:bar_color ())
-                                                             (string_of_int i);
-                                                           text
-                                                             ~text_style:
-                                                               (Ansi.Style.make ~bold:true ~fg:bar_color ())
-                                                             (Printf.sprintf "%.1f%%" total_usage);
-                                                         ];
-                                                       (* Progress bar *)
-                                                       canvas
-                                                         ~draw:(fun grid ~width ~height ->
-                                                           draw_progress_bar grid ~width ~height
-                                                             ~value:total_usage ~max_value:100.0
-                                                             ~fill_color:bar_color)
-                                                         ~size:{ width = pct 100; height = px 1 }
-                                                         ();
-                                                     ];
-                                                 ])
-                                             row))
-                                      rows)
-                               ]
-                           else box ~size:{ width = pct 100; height = px 0 } []);
-                        ];
-                    ];
-                  (* Top Processes Box - separate sibling box *)
-                  box ~border:true ~padding:(padding 1) ~title:"Top Processes"
-                    ~size:{ width = pct 100; height = auto }
-                    [
-                      (if List.length model.processes > 0 then
-                         scroll_box ~scroll_y:true ~scroll_x:false
-                           ~size:{ width = pct 100; height = px 10 }
-                           (List.mapi
-                              (fun i (proc : Metrics.process_info) ->
-                                box
-                                  ~key:(Printf.sprintf "process-%d" proc.pid)
-                                  ~padding:(padding 1)
-                                  ~background:
-                                    (if i mod 2 = 0 then Ansi.Color.default
-                                     else Ansi.Color.grayscale ~level:3)
-                                  [
-                                    box ~flex_direction:Row ~justify_content:Space_between
-                                      ~align_items:Center
-                                      ~size:{ width = pct 100; height = auto }
-                                      [
-                                        (* Left: Process name and PID *)
-                                        box ~flex_direction:Column ~gap:(gap 0)
-                                          ~size:{ width = pct 50; height = auto }
-                                          [
-                                            (* Process name with potential wrapping *)
-                                            box ~size:{ width = pct 100; height = auto }
-                                              [
-                                                text
-                                                  ~text_style:
-                                                    (Ansi.Style.make ~bold:true
-                                                       ~fg:Ansi.Color.white ())
-                                                  proc.name;
-                                              ];
-                                            text
-                                              ~text_style:muted
-                                              (Printf.sprintf "PID: %d" proc.pid);
-                                          ];
-                                        (* Right: CPU usage *)
-                                        text
-                                          ~text_style:
-                                            (Ansi.Style.make ~bold:true
-                                               ~fg:Ansi.Color.cyan ())
-                                          (Printf.sprintf "%.1f%%" proc.cpu_percent);
-                                      ];
-                                  ])
-                              model.processes)
-                       else
-                         box ~flex_direction:Row ~justify_content:Center
-                           ~align_items:Center
-                           ~padding:(padding 1)
-                           [
-                             text ~text_style:muted "no processes found";
-                           ]);
-                    ];
-                ];
-              (* Right: Memory, Disk, and Process Column *)
-              box ~flex_direction:Column ~gap:(gap 1)
-                ~flex_grow:1.
-                ~background:Ansi.Color.default
-                ~size:{ width = pct 50; height = auto }
-                [
-                  (* Top: Memory *)
-                  box ~border:true ~padding:(padding 1) ~title:"Memory Usage"
-                    ~size:{ width = pct 100; height = auto }
-                    [
-                      box ~flex_direction:Row ~gap:(gap 3)
-                        ~size:{ width = pct 100; height = pct 100 }
-                        [
-                          (* Left: Memory Metrics *)
-                          box ~flex_direction:Column ~gap:(gap 1)
-                            ~size:{ width = pct 70; height = auto }
-                            [
-                              (* Total Memory *)
-                              box ~flex_direction:Row ~justify_content:Space_between
-                                ~align_items:Center
-                                [
-                                  text ~text_style:muted "Total:";
-                                  text
-                                    ~text_style:
-                                      (Ansi.Style.make ~bold:true ~fg:Ansi.Color.white ())
-                                    (Printf.sprintf "%.1f GB" model.memory.total_gb);
-                                ];
-                              (* Used Memory with inline percentage *)
-                              box ~flex_direction:Row ~justify_content:Space_between
-                                ~align_items:Center
-                                [
-                                  text ~text_style:muted "Used:";
-                                  box ~flex_direction:Row ~gap:(gap 0) ~align_items:Center
-                                    [
-                                      text
-                                        ~text_style:
-                                          (Ansi.Style.make ~bold:true ~fg:Ansi.Color.magenta ())
-                                        (Printf.sprintf "%.1f GB" model.memory.used_gb);
-                                      text
-                                        ~text_style:
-                                          (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
-                                        (Printf.sprintf " (%.1f%%)" model.memory.used_percent);
-                                    ];
-                                ];
-                              (* Swap Used with inline percentage *)
-                              box ~flex_direction:Row ~justify_content:Space_between
-                                ~align_items:Center
-                                [
-                                  text ~text_style:muted "Swap Used:";
-                                  box ~flex_direction:Row ~gap:(gap 0) ~align_items:Center
-                                    [
-                                      text
-                                        ~text_style:
-                                          (Ansi.Style.make ~bold:true ~fg:Ansi.Color.magenta ())
-                                        (Printf.sprintf "%.1f GB" model.memory.swap_used_gb);
-                                      text
-                                        ~text_style:
-                                          (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
-                                        (Printf.sprintf " (%.1f%%)" model.memory.swap_used_percent);
-                                    ];
-                                ];
-                            ];
-                          (* Right: Memory Usage Graph *)
-                          box ~flex_direction:Column ~gap:(gap 1)
-                            ~size:{ width = pct 30; height = auto }
-                            [
-                              text ~text_style:muted "Memory Load:";
-                              canvas
-                                ~draw:(fun canvas ~width ~height ->
-                                  Charts.Sparkline.draw model.sparkline_memory ~kind:`Braille
-                                    canvas ~width ~height)
-                                ~size:{ width = pct 100; height = px 4 }
-                                ();
-                            ];
-                        ];
-                    ];
-                  (* Middle: Disk *)
-                  box ~border:true ~padding:(padding 1) ~title:"Disk Usage"
-                    ~size:{ width = pct 100; height = auto }
-                    [
-                      (* Disk Metrics *)
-                      box ~flex_direction:Column ~gap:(gap 1)
-                        ~size:{ width = pct 100; height = auto }
-                        [
-                          (* Total Disk *)
-                          box ~flex_direction:Row ~justify_content:Space_between
-                            ~align_items:Center
-                            [
-                              text ~text_style:muted "Total:";
-                              text
-                                ~text_style:
-                                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.white ())
-                                (Printf.sprintf "%.1f GB" model.disk.total_gb);
-                            ];
-                          (* Used Disk *)
-                          box ~flex_direction:Row ~justify_content:Space_between
-                            ~align_items:Center
-                            [
-                              text ~text_style:muted "Used:";
-                              text
-                                ~text_style:
-                                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
-                                (Printf.sprintf "%.1f GB" model.disk.used_gb);
-                            ];
-                          (* Available Disk *)
-                          box ~flex_direction:Row ~justify_content:Space_between
-                            ~align_items:Center
-                            [
-                              text ~text_style:muted "Avail:";
-                              text
-                                ~text_style:
-                                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.green ())
-                                (Printf.sprintf "%.1f GB" model.disk.avail_gb);
-                            ];
-                          (* Usage Percentage *)
-                          box ~flex_direction:Row ~justify_content:Space_between
-                            ~align_items:Center
-                            [
-                              text ~text_style:muted "Usage:";
-                              text
-                                ~text_style:
-                                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
-                                (Printf.sprintf "%.1f%%" model.disk.used_percent);
-                            ];
-                          (* Partitions *)
-                          (if List.length model.disk.partitions > 0 then
-                             box ~flex_direction:Column ~gap:(gap 1)
-                               ~size:{ width = pct 100; height = auto }
-                               [
-                                 text ~text_style:muted "Partitions:";
-                                 scroll_box ~scroll_y:true ~scroll_x:false
-                                   ~size:{ width = pct 100; height = px 8 }
-                                   (List.mapi
-                                      (fun i (part : Metrics.disk_partition) ->
-                                        box
-                                          ~key:(Printf.sprintf "partition-%d" i)
-                                          ~padding:(padding 1)
-                                          ~background:
-                                            (if i mod 2 = 0 then Ansi.Color.default
-                                             else Ansi.Color.grayscale ~level:3)
-                                          [
-                                            box ~flex_direction:Row ~justify_content:Space_between
-                                              ~align_items:Center
-                                              ~size:{ width = pct 100; height = auto }
-                                              [
-                                                (* Left: Mount point *)
-                                                text
-                                                  ~text_style:
-                                                    (Ansi.Style.make ~bold:true
-                                                       ~fg:Ansi.Color.white ())
-                                                  part.mount_point;
-                                                (* Right: Used and percentage *)
-                                                box ~flex_direction:Row ~gap:(gap 1)
-                                                  ~align_items:Center
-                                                  [
-                                                    text
-                                                      ~text_style:
-                                                        (Ansi.Style.make ~bold:true
-                                                           ~fg:Ansi.Color.yellow ())
-                                                      (Printf.sprintf "%.1f GB" part.used_gb);
-                                                    text
-                                                      ~text_style:
-                                                        (Ansi.Style.make ~bold:true
-                                                           ~fg:Ansi.Color.yellow ())
-                                                      (Printf.sprintf "(%.1f%%)" part.used_percent);
-                                                  ];
-                                              ];
-                                          ])
-                                      model.disk.partitions)
-                               ]
-                           else
-                             box ~flex_direction:Row ~justify_content:Center
-                               ~align_items:Center
-                               ~padding:(padding 1)
-                               [
-                                 text ~text_style:muted "no partitions found";
-                               ]);
-                        ];
-                    ];
-                  (* Bottom: Process (self) *)
-                  box ~border:true ~padding:(padding 1) ~title:"Process (self)"
-                    ~size:{ width = pct 100; height = auto }
-                    [
-                      (* Process Metrics *)
-                      box ~flex_direction:Column ~gap:(gap 1)
-                        ~size:{ width = pct 100; height = auto }
-                        [
-                          (* CPU Usage *)
-                          box ~flex_direction:Row ~justify_content:Space_between
-                            ~align_items:Center
-                            [
-                              text ~text_style:muted "CPU:";
-                              text
-                                ~text_style:
-                                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.cyan ())
-                                (Printf.sprintf "%.1f%%" model.process.cpu_percent);
-                            ];
-                          (* RSS Memory *)
-                          box ~flex_direction:Row ~justify_content:Space_between
-                            ~align_items:Center
-                            [
-                              text ~text_style:muted "RSS:";
-                              text
-                                ~text_style:
-                                  (Ansi.Style.make ~bold:true ~fg:Ansi.Color.magenta ())
-                                (Printf.sprintf "%.1f MB" model.process.rss_mb);
-                            ];
-                        ];
+                      view_memory_usage model.memory model.sparkline_memory;
+                      view_disk_usage model.disk;
+                      view_process_self model.process;
                     ];
                 ];
             ];
-          ];
         ];
       (* Footer *)
-      box ~padding:(padding 1) ~background:footer_bg
-        [ text ~text_style:hint "q quit" ];
+      view_footer ();
     ]
 
 (* ---------- Subscriptions ---------- *)
