@@ -28,6 +28,7 @@ dune exec ./mosaic/examples/<name>/main.exe
 | `15-charts`    | Interactive charts with zoom, pan, and tooltips  |
 | `16-timer`     | Countdown timer with tick subscriptions          |
 | `x-dashboard`  | Component composition with TEA `map`             |
+| `x-syspanel`  | System metrics monitor with CPU, memory, disk, and processes |
 
 ## Descriptions
 
@@ -122,3 +123,7 @@ keyboard shortcuts with mouse-clickable buttons.
 
 Multi-component dashboard using TEA's `map` function to compose independent
 components. Shows status bar, counters, and stopwatch in a unified layout.
+
+### `x-syspanel` – System metrics monitor
+
+Terminal-based system monitor displaying real-time CPU (per-core with progress bars), memory (total, used, swap), disk partitions, and top processes sorted by CPU usage. 
