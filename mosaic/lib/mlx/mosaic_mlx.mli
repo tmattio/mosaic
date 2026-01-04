@@ -1,5 +1,5 @@
-(** This module provides mlx compatible wrappers for Mosaic_tea
-    functions.Exposes everything from Mosaic_tea. *)
+(** This module provides mlx compatible wrappers for Mosaic functions.Exposes
+    everything from Mosaic. *)
 
 module Ansi = Matrix.Ansi
 module Event = Mosaic_ui.Event
@@ -10,7 +10,7 @@ module Event = Mosaic_ui.Event
     [Some msg] to dispatch a message, or [None] to ignore the event. This keeps
     view functions pure - the runtime handles dispatch. *)
 
-type 'msg t = 'msg option Mosaic_tea.Vnode.t
+type 'msg t = 'msg option Mosaic.Vnode.t
 (** A view node parameterized by message type ['msg]. Handlers return
     ['msg option] - [Some msg] to dispatch, [None] to ignore. *)
 
@@ -181,10 +181,10 @@ val run :
 
     These modules are exposed for testing and advanced use cases. *)
 
-module Vnode = Mosaic_tea.Vnode
+module Vnode = Mosaic.Vnode
 (** Virtual node types for the view tree. *)
 
-module Reconciler = Mosaic_tea.Reconciler
+module Reconciler = Mosaic.Reconciler
 (** The reconciler manages vnode-to-renderable mapping. *)
 
 (** {1 Dimension Helpers} *)
@@ -331,7 +331,7 @@ val text :
   ?grid_template_areas:Toffee.Style.grid_template_area list ->
   ?grid_row:Toffee.Style.grid_placement Toffee.Geometry.line ->
   ?grid_column:Toffee.Style.grid_placement Toffee.Geometry.line ->
-  ?text_style:Ansi.Style.t ->
+  ?style:Ansi.Style.t ->
   ?wrap_mode:[ `None | `Char | `Word ] ->
   ?tab_indicator:int ->
   ?tab_indicator_color:Ansi.Color.t ->
