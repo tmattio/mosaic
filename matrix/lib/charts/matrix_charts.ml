@@ -1144,17 +1144,17 @@ module Mark = struct
       ?(y_axis = `Y1) ~x ~y data =
     Scatter { id; label; style; glyph; mode; y_axis; x; y; data }
 
-  let bars_y ?id ?label ?style ?(mode = (`Cell : bar_mode)) ~x ~y data =
+  let bars_y ?id ?label ?style ?(mode = (`Half_block : bar_mode)) ~x ~y data =
     Bars_y { id; label; style; mode; x; y; data }
 
-  let bars_x ?id ?label ?style ?(mode = (`Cell : bar_mode)) ~y ~x data =
+  let bars_x ?id ?label ?style ?(mode = (`Half_block : bar_mode)) ~y ~x data =
     Bars_x { id; label; style; mode; y; x; data }
 
-  let stacked_bars_y ?id ?(gap = 1) ?bar_width ?(mode = (`Cell : bar_mode)) data
-      =
+  let stacked_bars_y ?id ?(gap = 1) ?bar_width ?(mode = (`Half_block : bar_mode))
+      data =
     Stacked_bars_y { id; gap = max 0 gap; bar_width; mode; data }
 
-  let stacked_bars_x ?id ?(gap = 1) ?bar_height ?(mode = (`Cell : bar_mode))
+  let stacked_bars_x ?id ?(gap = 1) ?bar_height ?(mode = (`Half_block : bar_mode))
       data =
     Stacked_bars_x { id; gap = max 0 gap; bar_height; mode; data }
 
