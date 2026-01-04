@@ -412,8 +412,7 @@ let make_box ~parent ?(flex_direction = Toffee.Style.Flex_direction.Column) ?gap
 let default_selection_bg = Some (Ansi.Color.of_rgb 88 166 255)
 let default_selection_fg = Some Ansi.Color.white
 
-let make_text ~parent ?style ?wrap_mode ?size ?flex_grow ?flex_shrink
-    content =
+let make_text ~parent ?style ?wrap_mode ?size ?flex_grow ?flex_shrink content =
   let layout_style = Toffee.Style.make ?size ?flex_grow ?flex_shrink () in
   match create_node parent ~style:layout_style () with
   | None -> None
@@ -426,8 +425,8 @@ let make_text ~parent ?style ?wrap_mode ?size ?flex_grow ?flex_shrink
       let _ = Ui.Text.mount ~props:text_props node in
       Some node
 
-let make_text_fragments ~parent ?style ?wrap_mode ?size ?flex_grow
-    ?flex_shrink fragments =
+let make_text_fragments ~parent ?style ?wrap_mode ?size ?flex_grow ?flex_shrink
+    fragments =
   let layout_style = Toffee.Style.make ?size ?flex_grow ?flex_shrink () in
   match create_node parent ~style:layout_style () with
   | None -> None
@@ -858,8 +857,7 @@ and render_paragraph ctx ~base_style ~next_is_thematic_break paragraph =
     | [] ->
         make_text ~parent:ctx.parent ~style ~wrap_mode
           (inline_plain_text inline)
-    | _ ->
-        make_text_fragments ~parent:ctx.parent ~style ~wrap_mode fragments
+    | _ -> make_text_fragments ~parent:ctx.parent ~style ~wrap_mode fragments
   in
   match text_node with
   | None -> []
@@ -889,8 +887,7 @@ and render_heading ctx ~base_style ~next_is_thematic_break heading =
         merge_style base_style ctx.props.style.headings.prefix
       in
       let prefix =
-        make_text ~parent:ctx.parent ~style:prefix_style ~wrap_mode:`None
-          hashes
+        make_text ~parent:ctx.parent ~style:prefix_style ~wrap_mode:`None hashes
       in
       match (prefix, heading_text) with
       | Some p, Some h ->
@@ -1140,8 +1137,8 @@ and render_code_block ctx ~base_style ~next_is_thematic_break code =
             make_text_fragments ~parent:ctx.parent ~wrap_mode:`None start_frags
           in
           let end_fence =
-            make_text ~parent:ctx.parent ~style:fence_style
-              ~wrap_mode:`None "```"
+            make_text ~parent:ctx.parent ~style:fence_style ~wrap_mode:`None
+              "```"
           in
           match (start_fence, end_fence) with
           | Some sf, Some ef -> [ sf; code_nd; ef ]
@@ -1181,9 +1178,7 @@ and render_thematic_break ctx =
         margin = { ctx.props.style.paragraph.margin with top = 0; bottom = 0 };
       }
   in
-  match
-    make_text ~parent:ctx.parent ~style:style ~wrap_mode:`None line
-  with
+  match make_text ~parent:ctx.parent ~style ~wrap_mode:`None line with
   | None -> []
   | Some text_node -> (
       match block_container ~parent:ctx.parent block_style [ text_node ] with

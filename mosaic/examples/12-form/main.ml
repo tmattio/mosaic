@@ -155,8 +155,7 @@ let view model =
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
         [
-          text ~style:hint
-            "Tab/Shift+Tab navigate  •  Enter submit  •  q quit";
+          text ~style:hint "Tab/Shift+Tab navigate  •  Enter submit  •  q quit";
         ];
     ]
 

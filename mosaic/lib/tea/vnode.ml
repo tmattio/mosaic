@@ -236,7 +236,17 @@ let text ?id ?key
   in
   let spec = Text_spec text_props in
   let props =
-    { id; style = layout_style; visible; z_index; live; buffer; handlers; ref; spec }
+    {
+      id;
+      style = layout_style;
+      visible;
+      z_index;
+      live;
+      buffer;
+      handlers;
+      ref;
+      spec;
+    }
   in
   Element { tag = Text; key; props; children = [] }
 

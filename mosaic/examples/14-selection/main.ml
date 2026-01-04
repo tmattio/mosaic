@@ -51,9 +51,7 @@ let view () =
             ~align_items:Center
             ~size:{ width = pct 100; height = auto }
             [
-              text
-                ~style:(Ansi.Style.make ~bold:true ())
-                "▸ Text Selection";
+              text ~style:(Ansi.Style.make ~bold:true ()) "▸ Text Selection";
               text ~style:muted "▄▀ mosaic";
             ];
         ];

@@ -152,11 +152,7 @@ let view model =
                       match Mosaic_ui.Event.Mouse.kind ev with
                       | Down -> Some Set_time
                       | _ -> None)
-                    [
-                      text
-                        ~style:(Ansi.Style.make ~bold:true ())
-                        "Set Time";
-                    ];
+                    [ text ~style:(Ansi.Style.make ~bold:true ()) "Set Time" ];
                   box ~flex_direction:Row ~gap:(gap 1)
                     [
                       box ~border:true ~padding:(padding 1)

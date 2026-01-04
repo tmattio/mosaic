@@ -48,9 +48,7 @@ let view () =
           box ~flex_direction:Column ~gap:(gap 2) ~border:true ~border_color
             ~padding:(padding 2)
             [
-              text
-                ~style:(Ansi.Style.make ~bold:true ())
-                "Choose a language:";
+              text ~style:(Ansi.Style.make ~bold:true ()) "Choose a language:";
               (* Select component *)
               select ~show_description:true ~show_scroll_indicator:true
                 ~wrap_selection:true ~selected_background:accent

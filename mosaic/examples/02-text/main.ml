@@ -57,9 +57,7 @@ let view model =
                 ~title:"Text Styles" ~flex_direction:Column ~gap:(gap 1)
                 [
                   text ~style:(Ansi.Style.make ~bold:true ()) "Bold text";
-                  text
-                    ~style:(Ansi.Style.make ~italic:true ())
-                    "Italic text";
+                  text ~style:(Ansi.Style.make ~italic:true ()) "Italic text";
                   text
                     ~style:(Ansi.Style.make ~underline:true ())
                     "Underlined text";
@@ -78,24 +76,16 @@ let view model =
                 ~size:{ width = px 14; height = auto }
                 [
                   text ~style:(Ansi.Style.make ~fg:Ansi.Color.red ()) "Red";
-                  text
-                    ~style:(Ansi.Style.make ~fg:Ansi.Color.green ())
-                    "Green";
-                  text
-                    ~style:(Ansi.Style.make ~fg:Ansi.Color.blue ())
-                    "Blue";
+                  text ~style:(Ansi.Style.make ~fg:Ansi.Color.green ()) "Green";
+                  text ~style:(Ansi.Style.make ~fg:Ansi.Color.blue ()) "Blue";
                   text
                     ~style:(Ansi.Style.make ~fg:Ansi.Color.yellow ())
                     "Yellow";
-                  text
-                    ~style:(Ansi.Style.make ~fg:Ansi.Color.cyan ())
-                    "Cyan";
+                  text ~style:(Ansi.Style.make ~fg:Ansi.Color.cyan ()) "Cyan";
                   text
                     ~style:(Ansi.Style.make ~fg:Ansi.Color.magenta ())
                     "Magenta";
-                  text
-                    ~style:(Ansi.Style.make ~fg:Ansi.Color.white ())
-                    "White";
+                  text ~style:(Ansi.Style.make ~fg:Ansi.Color.white ()) "White";
                 ];
               (* Background Colors *)
               box ~border:true ~border_color ~padding:(padding 1)

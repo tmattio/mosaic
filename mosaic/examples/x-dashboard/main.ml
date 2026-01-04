@@ -758,8 +758,7 @@ let run_row (m : model) (r : run) =
           text ~style:(Ansi.Style.make ~fg:(status_color r.status) ()) "●";
           text ~style:(Ansi.Style.make ~bold:true ~fg ()) r.name;
           text
-            ~style:
-              (Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:10) ())
+            ~style:(Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:10) ())
             (Printf.sprintf "#%d" r.step);
           box ~flex_grow:1. [];
           text
@@ -822,8 +821,7 @@ let run_panel (m : model) =
                   | _ -> None)
                 [
                   text
-                    ~style:
-                      (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
+                    ~style:(Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
                     "Reset run";
                 ];
             ];
@@ -900,8 +898,7 @@ let sys_panel (m : model) =
                            [
                              text name;
                              text
-                               ~style:
-                                 (Ansi.Style.make ~fg:Ansi.Color.cyan ())
+                               ~style:(Ansi.Style.make ~fg:Ansi.Color.cyan ())
                                (Printf.sprintf "%4.1f%%" cpu);
                            ];
                        ])
@@ -911,7 +908,7 @@ let sys_panel (m : model) =
     ]
 
 let summary_card ~title ~value ~style =
-  box ~border:true ~padding:(padding 1) ~title [ text ~style:style value ]
+  box ~border:true ~padding:(padding 1) ~title [ text ~style value ]
 
 let scalars_tab (m : model) (r : run) =
   let latest xs = match xs with p :: _ -> p.y | [] -> 0.0 in
@@ -990,21 +987,13 @@ let scalars_tab (m : model) (r : run) =
                               match Event.Mouse.kind ev with
                               | Down -> Some Smoothing_down
                               | _ -> None)
-                            [
-                              text
-                                ~style:(Ansi.Style.make ~bold:true ())
-                                "-";
-                            ];
+                            [ text ~style:(Ansi.Style.make ~bold:true ()) "-" ];
                           box ~border:true ~padding:(padding 1)
                             ~on_mouse:(fun ev ->
                               match Event.Mouse.kind ev with
                               | Down -> Some Smoothing_up
                               | _ -> None)
-                            [
-                              text
-                                ~style:(Ansi.Style.make ~bold:true ())
-                                "+";
-                            ];
+                            [ text ~style:(Ansi.Style.make ~bold:true ()) "+" ];
                         ];
                     ];
                   slider ~orientation:`Horizontal ~min:1. ~max:50.
@@ -1090,9 +1079,7 @@ let heatmap_tab (m : model) (r : run) =
             [
               box ~flex_direction:Column ~gap:(gap 1)
                 [
-                  text
-                    ~style:(Ansi.Style.make ~bold:true ())
-                    "Heatmap demo";
+                  text ~style:(Ansi.Style.make ~bold:true ()) "Heatmap demo";
                   text ~wrap_mode:`Word
                     "Use this panel to validate: heatmap aggregation, color \
                      scales, axes labels, and embedding multiple views in the \
@@ -1149,8 +1136,7 @@ let logs_tab (m : model) (r : run) =
                   | Down -> Some (Focus Focus_log_filter)
                   | _ -> None)
                 [
-                  text ~style:dim_style
-                    (if focused then "Focused" else "Focus");
+                  text ~style:dim_style (if focused then "Focused" else "Focus");
                 ];
             ];
         ];
