@@ -2,24 +2,48 @@
     Uses Metrics library for data collection. *)
 open Mosaic_tea
 module Charts = Matrix_charts
-module Metrics = Metrics
 
 (* ---------- Model ---------- *)
 type model = {
-  cpu : Metrics.cpu_stats;
-  cpu_per_core : Metrics.cpu_stats array;
-  memory : Metrics.memory_stats;
-  disk : Metrics.disk_stats;
-  process : Metrics.process_stats;
-  processes : Metrics.process_info list;
-  cpu_prev : Metrics.Cpu.sample_result option;
-  proc_prev_utime : float option;
-  proc_prev_stime : float option;
+  cpu : Sysstat.Cpu.stats;
+  cpu_per_core : Sysstat.Cpu.stats array;
+  memory : Sysstat.Mem.t;
+  disk : Sysstat.Fs.t;
+  process : Sysstat.Proc.Self.stats;
+  processes : Sysstat.Proc.Table.stats list;
+  cpu_prev : Sysstat.Cpu.t;
+  cpu_per_core_prev : Sysstat.Cpu.t array;
+  proc_self_prev : Sysstat.Proc.Self.t;
+  proc_list_prev : Sysstat.Proc.Table.t list;
   sample_acc : float;
   sparkline_cpu : Charts.Sparkline.t;
   sparkline_memory : Charts.Sparkline.t;
   sparkline_disk : Charts.Sparkline.t;
 }
+
+(* Helper functions for display formatting *)
+let bytes_to_gb b = Int64.to_float b /. (1024. *. 1024. *. 1024.)
+let bytes_to_mb b = Int64.to_float b /. (1024. *. 1024.)
+
+let disk_used_percent (disk : Sysstat.Fs.t) =
+  if disk.total_bytes > 0L then
+    Int64.to_float disk.used_bytes /. Int64.to_float disk.total_bytes *. 100.
+  else 0.0
+
+let partition_used_percent (p : Sysstat.Fs.partition) =
+  if p.total_bytes > 0L then
+    Int64.to_float p.used_bytes /. Int64.to_float p.total_bytes *. 100.
+  else 0.0
+
+let mem_total_gb (m : Sysstat.Mem.t) = bytes_to_gb m.total
+let mem_used_gb (m : Sysstat.Mem.t) = bytes_to_gb m.used
+let mem_used_percent (m : Sysstat.Mem.t) =
+  if m.total > 0L then Int64.to_float m.used /. Int64.to_float m.total *. 100.
+  else 0.0
+let mem_swap_used_gb (m : Sysstat.Mem.t) = bytes_to_gb m.swap_used
+let mem_swap_used_percent (m : Sysstat.Mem.t) =
+  if m.swap_total > 0L then Int64.to_float m.swap_used /. Int64.to_float m.swap_total *. 100.
+  else 0.0
 
 type msg =
   | Quit
@@ -40,71 +64,45 @@ let init () =
       ~auto_max:false ~max_value:100. ~capacity:30 ()
   in
   (* Get initial CPU sample *)
-  let cpu_prev = Metrics.Cpu.sample_all () in
-  let cpu, cpu_per_core =
-    match cpu_prev with
-    | Some prev ->
-        (* Wait a tiny bit and sample again for initial delta *)
-        Unix.sleepf 0.1;
-        (match Metrics.Cpu.sample_all () with
-        | Some next -> (
-            match Metrics.Cpu.usage ~prev:prev.total ~next:next.total with
-            | Some stats ->
-                ( stats,
-    Option.value
-                    ~default:[||]
-                    (Metrics.Cpu.usage_per_core ~prev ~next) )
-            | None ->
-                ( ({ user = 0.0; system = 0.0; idle = 100.0 } : Metrics.cpu_stats),
-                  Array.make (Array.length prev.per_core)
-                    ({ user = 0.0; system = 0.0; idle = 100.0 } : Metrics.cpu_stats) ))
-        | None ->
-            ( ({ user = 0.0; system = 0.0; idle = 100.0 } : Metrics.cpu_stats),
-              (match cpu_prev with
-              | Some p -> Array.make (Array.length p.per_core) ({ user = 0.0; system = 0.0; idle = 100.0 } : Metrics.cpu_stats)
-              | None -> [||]) ))
-    | None -> (({ user = 0.0; system = 0.0; idle = 100.0 } : Metrics.cpu_stats), [||])
-  in
-  let memory =
-    Option.value
-      ~default:{ total_gb = 0.0; used_gb = 0.0; used_percent = 0.0; swap_total_gb = 0.0; swap_used_gb = 0.0; swap_used_percent = 0.0 }
-      (Metrics.Mem.sample ())
-  in
-  let disk =
-    Option.value
-      ~default:{ total_gb = 0.0; used_gb = 0.0; avail_gb = 0.0; used_percent = 0.0; partitions = [] }
-      (Metrics.Disk.sample ())
-  in
+  let cpu_prev = Sysstat.Cpu.sample () in
+  let cpu_per_core_prev = Sysstat.Cpu.sample_per_core () in
+  (* Wait a tiny bit and sample again for initial delta *)
+  Unix.sleepf 0.1;
+  let cpu_next = Sysstat.Cpu.sample () in
+  let cpu_per_core_next = Sysstat.Cpu.sample_per_core () in
+  let cpu = Sysstat.Cpu.compute ~prev:cpu_prev ~next:cpu_next in
+  let cpu_per_core = Array.map2 (fun p n -> Sysstat.Cpu.compute ~prev:p ~next:n) cpu_per_core_prev cpu_per_core_next in
+  let cpu_prev = cpu_next in
+  let cpu_per_core_prev = cpu_per_core_next in
+  let memory = Sysstat.Mem.sample () in
+  let disk = Sysstat.Fs.sample () in
   (* Get initial process sample *)
-  let t = Unix.times () in
-  let proc_utime = t.Unix.tms_utime in
-  let proc_stime = t.Unix.tms_stime in
-  (* Get number of CPU cores for normalization *)
-  let num_cores = Array.length cpu_per_core in
+  let proc_self_prev = Sysstat.Proc.Self.sample () in
   let process =
-    Option.value
-      ~default:{ cpu_percent = 0.0; rss_mb = 0.0; vsize_mb = 0.0 }
-      (Metrics.Proc.sample
-         ~prev_utime:None ~prev_stime:None ~dt:0.2
-         ~num_cores:(if num_cores > 0 then Some num_cores else None)
-         ())
+    { Sysstat.Proc.Self.cpu_percent = 0.0; rss_bytes = 0L; vsize_bytes = 0L }
   in
   (* Push initial values to sparklines *)
   let total_cpu = cpu.user +. cpu.system in
+  let mem_used_pct =
+    if memory.total > 0L then (Int64.to_float memory.used /. Int64.to_float memory.total) *. 100.
+    else 0.0
+  in
   Charts.Sparkline.push sparkline_cpu total_cpu;
-  Charts.Sparkline.push sparkline_memory memory.used_percent;
-  Charts.Sparkline.push sparkline_disk disk.used_percent;
-  let processes = Metrics.Processes.read_top_processes ~limit:10 ~sort_by:`Cpu () in
+  Charts.Sparkline.push sparkline_memory mem_used_pct;
+  Charts.Sparkline.push sparkline_disk (disk_used_percent disk);
+  (* Sample initial process list for native CPU delta calculation *)
+  let proc_list_prev = Sysstat.Proc.Table.sample () in
   ( {
       cpu;
       cpu_per_core;
       memory;
       disk;
       process;
-      processes;
+      processes = [];  (* Will be populated on first tick *)
       cpu_prev;
-      proc_prev_utime = Some proc_utime;
-      proc_prev_stime = Some proc_stime;
+      cpu_per_core_prev;
+      proc_self_prev;
+      proc_list_prev;
       sample_acc = 0.0;
       sparkline_cpu;
       sparkline_memory;
@@ -120,71 +118,43 @@ let update msg m =
       (* Sample at ~5Hz (every 0.2s) *)
       let sample_acc = m.sample_acc +. dt in
       if sample_acc < 0.2 then
-        ( {
-            cpu = m.cpu;
-            cpu_per_core = m.cpu_per_core;
-            memory = m.memory;
-            disk = m.disk;
-            process = m.process;
-            processes = m.processes;
-            cpu_prev = m.cpu_prev;
-            proc_prev_utime = m.proc_prev_utime;
-            proc_prev_stime = m.proc_prev_stime;
-            sample_acc;
-            sparkline_cpu = m.sparkline_cpu;
-            sparkline_memory = m.sparkline_memory;
-            sparkline_disk = m.sparkline_disk;
-          },
+        ( { m with sample_acc },
           Cmd.none )
       else
         (* Update CPU, Memory, Disk, and Process *)
-        let cpu, cpu_per_core, cpu_prev =
-          match m.cpu_prev with
-          | Some prev -> (
-              match Metrics.Cpu.sample_all () with
-              | Some next -> (
-                  match Metrics.Cpu.usage ~prev:prev.total ~next:next.total with
-                  | Some stats ->
-                      ( stats,
-                        Option.value
-                          ~default:m.cpu_per_core
-                          (Metrics.Cpu.usage_per_core ~prev ~next),
-                        Some next )
-                  | None -> (m.cpu, m.cpu_per_core, Some next))
-              | None -> (m.cpu, m.cpu_per_core, m.cpu_prev))
-          | None -> (
-              match Metrics.Cpu.sample_all () with
-              | Some next -> (m.cpu, m.cpu_per_core, Some next)
-              | None -> (m.cpu, m.cpu_per_core, None))
-        in
-        let memory =
-          Option.value ~default:m.memory (Metrics.Mem.sample ())
-        in
-        let disk =
-          Option.value ~default:m.disk (Metrics.Disk.sample ())
-        in
+        let cpu_next = Sysstat.Cpu.sample () in
+        let cpu_per_core_next = Sysstat.Cpu.sample_per_core () in
+        let cpu = Sysstat.Cpu.compute ~prev:m.cpu_prev ~next:cpu_next in
+        let cpu_per_core = Array.map2 (fun p n -> Sysstat.Cpu.compute ~prev:p ~next:n) m.cpu_per_core_prev cpu_per_core_next in
+        let cpu_prev = cpu_next in
+        let cpu_per_core_prev = cpu_per_core_next in
+        let memory = Sysstat.Mem.sample () in
+        let disk = Sysstat.Fs.sample () in
         (* Update process metrics *)
-        let t = Unix.times () in
-        let proc_utime = t.Unix.tms_utime in
-        let proc_stime = t.Unix.tms_stime in
+        let proc_self_next = Sysstat.Proc.Self.sample () in
         (* Get number of CPU cores for normalization *)
         let num_cores = Array.length m.cpu_per_core in
-        let process =
-          Option.value
-            ~default:m.process
-            (Metrics.Proc.sample
-               ~prev_utime:m.proc_prev_utime ~prev_stime:m.proc_prev_stime
-               ~dt:sample_acc
-               ~num_cores:(if num_cores > 0 then Some num_cores else None)
-               ())
+        let process = Sysstat.Proc.Self.compute ~prev:m.proc_self_prev ~next:proc_self_next ~dt:sample_acc
+            ~num_cores:(if num_cores > 0 then Some num_cores else None) in
+        let proc_self_prev = proc_self_next in
+        (* Update process list using native API *)
+        let proc_list_next = Sysstat.Proc.Table.sample () in
+        let processes =
+          Sysstat.Proc.Table.compute
+            ~prev:m.proc_list_prev ~next:proc_list_next ~dt:sample_acc
+          |> List.sort (fun (a : Sysstat.Proc.Table.stats) (b : Sysstat.Proc.Table.stats) ->
+              compare b.cpu_percent a.cpu_percent)
+          |> (fun l -> List.filteri (fun i _ -> i < 10) l)
         in
-        (* Update process list *)
-        let processes = Metrics.Processes.read_top_processes ~limit:10 ~sort_by:`Cpu () in
         (* Push values to sparklines *)
         let total_cpu = cpu.user +. cpu.system in
+        let mem_used_pct =
+          if memory.total > 0L then (Int64.to_float memory.used /. Int64.to_float memory.total) *. 100.
+          else 0.0
+        in
         Charts.Sparkline.push m.sparkline_cpu total_cpu;
-        Charts.Sparkline.push m.sparkline_memory memory.used_percent;
-        Charts.Sparkline.push m.sparkline_disk disk.used_percent;
+        Charts.Sparkline.push m.sparkline_memory mem_used_pct;
+        Charts.Sparkline.push m.sparkline_disk (disk_used_percent disk);
         ( {
             cpu;
             cpu_per_core;
@@ -193,8 +163,9 @@ let update msg m =
             process;
             processes;
             cpu_prev;
-            proc_prev_utime = Some proc_utime;
-            proc_prev_stime = Some proc_stime;
+            cpu_per_core_prev;
+            proc_self_prev;
+            proc_list_prev = proc_list_next;
             sample_acc = 0.0;
             sparkline_cpu = m.sparkline_cpu;
             sparkline_memory = m.sparkline_memory;
@@ -232,21 +203,21 @@ let view_header () =
         ~align_items:Center
         ~size:{ width = pct 100; height = auto }
         [
-          text ~text_style:(Ansi.Style.make ~bold:true ()) "▸ System Panel";
-          text ~text_style:muted "▄▀ mosaic";
+          text ~style:(Ansi.Style.make ~bold:true ()) "▸ System Panel";
+          text ~style:muted "▄▀ mosaic";
         ];
     ]
 
 let view_footer () =
   box ~padding:(padding 1) ~background:footer_bg
-    [ text ~text_style:hint "q quit" ]
+    [ text ~style:hint "q quit" ]
 
-let view_per_core_cpu (cpu_per_core : Metrics.cpu_stats array) =
+let view_per_core_cpu (cpu_per_core : Sysstat.Cpu.stats array) =
   if Array.length cpu_per_core > 0 then
     box ~flex_direction:Column ~gap:(gap 1)
       ~size:{ width = pct 100; height = auto }
       [
-        text ~text_style:muted "Per-Core Usage:";
+        text ~style:muted "Per-Core Usage:";
         scroll_box ~scroll_y:true ~scroll_x:false
           ~size:{ width = pct 100; height = px 12 }
           (let cores = Array.to_list (Array.mapi (fun i stats -> (i, stats)) cpu_per_core) in
@@ -264,7 +235,7 @@ let view_per_core_cpu (cpu_per_core : Metrics.cpu_stats array) =
                  ~flex_direction:Row ~gap:(gap 1)
                  ~size:{ width = pct 100; height = auto }
                  (List.mapi
-                    (fun _col_idx (i, (core_stats : Metrics.cpu_stats)) ->
+                    (fun _col_idx (i, (core_stats : Sysstat.Cpu.stats)) ->
                       let total_usage = core_stats.user +. core_stats.system in
                       let bar_color =
                         if total_usage > 80. then Ansi.Color.red
@@ -288,11 +259,11 @@ let view_per_core_cpu (cpu_per_core : Metrics.cpu_stats array) =
                                 ~size:{ width = pct 100; height = auto }
                                 [
                                   text
-                                    ~text_style:
+                                    ~style:
                                       (Ansi.Style.make ~fg:bar_color ())
                                     (string_of_int i);
                                   text
-                                    ~text_style:
+                                    ~style:
                                       (Ansi.Style.make ~bold:true ~fg:bar_color ())
                                     (Printf.sprintf "%.1f%%" total_usage);
                                 ];
@@ -311,7 +282,7 @@ let view_per_core_cpu (cpu_per_core : Metrics.cpu_stats array) =
       ]
   else box ~size:{ width = pct 100; height = px 0 } []
 
-let view_cpu_usage (cpu : Metrics.cpu_stats) (cpu_per_core : Metrics.cpu_stats array) (sparkline_cpu : Charts.Sparkline.t) =
+let view_cpu_usage (cpu : Sysstat.Cpu.stats) (cpu_per_core : Sysstat.Cpu.stats array) (sparkline_cpu : Charts.Sparkline.t) =
   box ~border:true ~padding:(padding 1) ~title:"CPU Usage"
     ~background:Ansi.Color.default
     ~size:{ width = pct 100; height = auto }
@@ -331,9 +302,9 @@ let view_cpu_usage (cpu : Metrics.cpu_stats) (cpu_per_core : Metrics.cpu_stats a
                   box ~flex_direction:Row ~justify_content:Space_between
                     ~align_items:Center
                     [
-                      text ~text_style:muted "User:";
+                      text ~style:muted "User:";
                       text
-                        ~text_style:
+                        ~style:
                           (Ansi.Style.make ~bold:true ~fg:Ansi.Color.cyan ())
                         (Printf.sprintf "%.1f%%" cpu.user);
                     ];
@@ -341,9 +312,9 @@ let view_cpu_usage (cpu : Metrics.cpu_stats) (cpu_per_core : Metrics.cpu_stats a
                   box ~flex_direction:Row ~justify_content:Space_between
                     ~align_items:Center
                     [
-                      text ~text_style:muted "System:";
+                      text ~style:muted "System:";
                       text
-                        ~text_style:
+                        ~style:
                           (Ansi.Style.make ~bold:true ~fg:Ansi.Color.magenta ())
                         (Printf.sprintf "%.1f%%" cpu.system);
                     ];
@@ -351,9 +322,9 @@ let view_cpu_usage (cpu : Metrics.cpu_stats) (cpu_per_core : Metrics.cpu_stats a
                   box ~flex_direction:Row ~justify_content:Space_between
                     ~align_items:Center
                     [
-                      text ~text_style:muted "Idle:";
+                      text ~style:muted "Idle:";
                       text
-                        ~text_style:
+                        ~style:
                           (Ansi.Style.make ~bold:true ~fg:Ansi.Color.green ())
                         (Printf.sprintf "%.1f%%" cpu.idle);
                     ];
@@ -362,7 +333,7 @@ let view_cpu_usage (cpu : Metrics.cpu_stats) (cpu_per_core : Metrics.cpu_stats a
               box ~flex_direction:Column ~gap:(gap 1)
                 ~size:{ width = pct 45; height = auto }
                 [
-                  text ~text_style:muted "CPU Load:";
+                  text ~style:muted "CPU Load:";
                   canvas
                     ~draw:(fun canvas ~width ~height ->
                       Charts.Sparkline.draw sparkline_cpu ~kind:`Braille
@@ -376,7 +347,7 @@ let view_cpu_usage (cpu : Metrics.cpu_stats) (cpu_per_core : Metrics.cpu_stats a
         ];
     ]
 
-let view_top_processes (processes : Metrics.process_info list) =
+let view_top_processes (processes : Sysstat.Proc.Table.stats list) =
   box ~border:true ~padding:(padding 1) ~title:"Top Processes"
     ~size:{ width = pct 100; height = auto }
     [
@@ -384,7 +355,7 @@ let view_top_processes (processes : Metrics.process_info list) =
          scroll_box ~scroll_y:true ~scroll_x:false
            ~size:{ width = pct 100; height = px 10 }
            (List.mapi
-              (fun i (proc : Metrics.process_info) ->
+              (fun i (proc : Sysstat.Proc.Table.stats) ->
                 box
                   ~key:(Printf.sprintf "process-%d" proc.pid)
                   ~padding:(padding 1)
@@ -404,18 +375,18 @@ let view_top_processes (processes : Metrics.process_info list) =
                             box ~size:{ width = pct 100; height = auto }
                               [
                                 text
-                                  ~text_style:
+                                  ~style:
                                     (Ansi.Style.make ~bold:true
                                        ~fg:Ansi.Color.white ())
                                   proc.name;
                               ];
                             text
-                              ~text_style:muted
+                              ~style:muted
                               (Printf.sprintf "PID: %d" proc.pid);
                           ];
                         (* Right: CPU usage *)
                         text
-                          ~text_style:
+                          ~style:
                             (Ansi.Style.make ~bold:true
                                ~fg:Ansi.Color.cyan ())
                           (Printf.sprintf "%.1f%%" proc.cpu_percent);
@@ -427,11 +398,11 @@ let view_top_processes (processes : Metrics.process_info list) =
            ~align_items:Center
            ~padding:(padding 1)
            [
-             text ~text_style:muted "no processes found";
+             text ~style:muted "no processes found";
            ]);
     ]
 
-let view_memory_usage (memory : Metrics.memory_stats) (sparkline_memory : Charts.Sparkline.t) =
+let view_memory_usage (memory : Sysstat.Mem.t) (sparkline_memory : Charts.Sparkline.t) =
   box ~border:true ~padding:(padding 1) ~title:"Memory Usage"
     ~size:{ width = pct 100; height = auto }
     [
@@ -446,44 +417,44 @@ let view_memory_usage (memory : Metrics.memory_stats) (sparkline_memory : Charts
               box ~flex_direction:Row ~justify_content:Space_between
                 ~align_items:Center
                 [
-                  text ~text_style:muted "Total:";
+                  text ~style:muted "Total:";
                   text
-                    ~text_style:
+                    ~style:
                       (Ansi.Style.make ~bold:true ~fg:Ansi.Color.white ())
-                    (Printf.sprintf "%.1f GB" memory.total_gb);
+                    (Printf.sprintf "%.1f GB" (mem_total_gb memory));
                 ];
               (* Used Memory with inline percentage *)
               box ~flex_direction:Row ~justify_content:Space_between
                 ~align_items:Center
                 [
-                  text ~text_style:muted "Used:";
+                  text ~style:muted "Used:";
                   box ~flex_direction:Row ~gap:(gap 0) ~align_items:Center
                     [
                       text
-                        ~text_style:
+                        ~style:
                           (Ansi.Style.make ~bold:true ~fg:Ansi.Color.magenta ())
-                        (Printf.sprintf "%.1f GB" memory.used_gb);
+                        (Printf.sprintf "%.1f GB" (mem_used_gb memory));
                       text
-                        ~text_style:
+                        ~style:
                           (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
-                        (Printf.sprintf " (%.1f%%)" memory.used_percent);
+                        (Printf.sprintf " (%.1f%%)" (mem_used_percent memory));
                     ];
                 ];
               (* Swap Used with inline percentage *)
               box ~flex_direction:Row ~justify_content:Space_between
                 ~align_items:Center
                 [
-                  text ~text_style:muted "Swap Used:";
+                  text ~style:muted "Swap Used:";
                   box ~flex_direction:Row ~gap:(gap 0) ~align_items:Center
                     [
                       text
-                        ~text_style:
+                        ~style:
                           (Ansi.Style.make ~bold:true ~fg:Ansi.Color.magenta ())
-                        (Printf.sprintf "%.1f GB" memory.swap_used_gb);
+                        (Printf.sprintf "%.1f GB" (mem_swap_used_gb memory));
                       text
-                        ~text_style:
+                        ~style:
                           (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
-                        (Printf.sprintf " (%.1f%%)" memory.swap_used_percent);
+                        (Printf.sprintf " (%.1f%%)" (mem_swap_used_percent memory));
                     ];
                 ];
             ];
@@ -491,7 +462,7 @@ let view_memory_usage (memory : Metrics.memory_stats) (sparkline_memory : Charts
           box ~flex_direction:Column ~gap:(gap 1)
             ~size:{ width = pct 30; height = auto }
             [
-              text ~text_style:muted "Memory Load:";
+              text ~style:muted "Memory Load:";
               canvas
                 ~draw:(fun canvas ~width ~height ->
                   Charts.Sparkline.draw sparkline_memory ~kind:`Braille
@@ -502,7 +473,7 @@ let view_memory_usage (memory : Metrics.memory_stats) (sparkline_memory : Charts
         ];
     ]
 
-let view_disk_usage (disk : Metrics.disk_stats) =
+let view_disk_usage (disk : Sysstat.Fs.t) =
   box ~border:true ~padding:(padding 1) ~title:"Disk Usage"
     ~size:{ width = pct 100; height = auto }
     [
@@ -514,52 +485,52 @@ let view_disk_usage (disk : Metrics.disk_stats) =
           box ~flex_direction:Row ~justify_content:Space_between
             ~align_items:Center
             [
-              text ~text_style:muted "Total:";
+              text ~style:muted "Total:";
               text
-                ~text_style:
+                ~style:
                   (Ansi.Style.make ~bold:true ~fg:Ansi.Color.white ())
-                (Printf.sprintf "%.1f GB" disk.total_gb);
+                (Printf.sprintf "%.1f GB" (bytes_to_gb disk.total_bytes));
             ];
           (* Used Disk *)
           box ~flex_direction:Row ~justify_content:Space_between
             ~align_items:Center
             [
-              text ~text_style:muted "Used:";
+              text ~style:muted "Used:";
               text
-                ~text_style:
+                ~style:
                   (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
-                (Printf.sprintf "%.1f GB" disk.used_gb);
+                (Printf.sprintf "%.1f GB" (bytes_to_gb disk.used_bytes));
             ];
           (* Available Disk *)
           box ~flex_direction:Row ~justify_content:Space_between
             ~align_items:Center
             [
-              text ~text_style:muted "Avail:";
+              text ~style:muted "Avail:";
               text
-                ~text_style:
+                ~style:
                   (Ansi.Style.make ~bold:true ~fg:Ansi.Color.green ())
-                (Printf.sprintf "%.1f GB" disk.avail_gb);
+                (Printf.sprintf "%.1f GB" (bytes_to_gb disk.avail_bytes));
             ];
           (* Usage Percentage *)
           box ~flex_direction:Row ~justify_content:Space_between
             ~align_items:Center
             [
-              text ~text_style:muted "Usage:";
+              text ~style:muted "Usage:";
               text
-                ~text_style:
+                ~style:
                   (Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
-                (Printf.sprintf "%.1f%%" disk.used_percent);
+                (Printf.sprintf "%.1f%%" (disk_used_percent disk));
             ];
           (* Partitions *)
           (if List.length disk.partitions > 0 then
              box ~flex_direction:Column ~gap:(gap 1)
                ~size:{ width = pct 100; height = auto }
                [
-                 text ~text_style:muted "Partitions:";
+                 text ~style:muted "Partitions:";
                  scroll_box ~scroll_y:true ~scroll_x:false
                    ~size:{ width = pct 100; height = px 8 }
                    (List.mapi
-                      (fun i (part : Metrics.disk_partition) ->
+                      (fun i (part : Sysstat.Fs.partition) ->
                         box
                           ~key:(Printf.sprintf "partition-%d" i)
                           ~padding:(padding 1)
@@ -573,7 +544,7 @@ let view_disk_usage (disk : Metrics.disk_stats) =
                               [
                                 (* Left: Mount point *)
                                 text
-                                  ~text_style:
+                                  ~style:
                                     (Ansi.Style.make ~bold:true
                                        ~fg:Ansi.Color.white ())
                                   part.mount_point;
@@ -582,15 +553,15 @@ let view_disk_usage (disk : Metrics.disk_stats) =
                                   ~align_items:Center
                                   [
                                     text
-                                      ~text_style:
+                                      ~style:
                                         (Ansi.Style.make ~bold:true
                                            ~fg:Ansi.Color.yellow ())
-                                      (Printf.sprintf "%.1f GB" part.used_gb);
+                                      (Printf.sprintf "%.1f GB" (bytes_to_gb part.used_bytes));
                                     text
-                                      ~text_style:
+                                      ~style:
                                         (Ansi.Style.make ~bold:true
                                            ~fg:Ansi.Color.yellow ())
-                                      (Printf.sprintf "(%.1f%%)" part.used_percent);
+                                      (Printf.sprintf "(%.1f%%)" (partition_used_percent part));
                                   ];
                               ];
                           ])
@@ -601,12 +572,12 @@ let view_disk_usage (disk : Metrics.disk_stats) =
                ~align_items:Center
                ~padding:(padding 1)
                [
-                 text ~text_style:muted "no partitions found";
+                 text ~style:muted "no partitions found";
                ]);
         ];
     ]
 
-let view_process_self (process : Metrics.process_stats) =
+let view_process_self (process : Sysstat.Proc.Self.stats) =
   box ~border:true ~padding:(padding 1) ~title:"Process (self)"
     ~size:{ width = pct 100; height = auto }
     [
@@ -618,9 +589,9 @@ let view_process_self (process : Metrics.process_stats) =
           box ~flex_direction:Row ~justify_content:Space_between
             ~align_items:Center
             [
-              text ~text_style:muted "CPU:";
+              text ~style:muted "CPU:";
               text
-                ~text_style:
+                ~style:
                   (Ansi.Style.make ~bold:true ~fg:Ansi.Color.cyan ())
                 (Printf.sprintf "%.1f%%" process.cpu_percent);
             ];
@@ -628,11 +599,11 @@ let view_process_self (process : Metrics.process_stats) =
           box ~flex_direction:Row ~justify_content:Space_between
             ~align_items:Center
             [
-              text ~text_style:muted "RSS:";
+              text ~style:muted "RSS:";
               text
-                ~text_style:
+                ~style:
                   (Ansi.Style.make ~bold:true ~fg:Ansi.Color.magenta ())
-                (Printf.sprintf "%.1f MB" process.rss_mb);
+                (Printf.sprintf "%.1f MB" (bytes_to_mb process.rss_bytes));
             ];
         ];
     ]
