@@ -11,12 +11,12 @@ type ('model, 'msg) t
 (** {1 Creation} *)
 
 val create :
-  ?subscriptions:('model -> 'msg Mosaic_tea.Sub.t) ->
+  ?subscriptions:('model -> 'msg Mosaic.Sub.t) ->
   width:int ->
   height:int ->
-  init:(unit -> 'model * 'msg Mosaic_tea.Cmd.t) ->
-  update:('msg -> 'model -> 'model * 'msg Mosaic_tea.Cmd.t) ->
-  view:('model -> 'msg Mosaic_tea.t) ->
+  init:(unit -> 'model * 'msg Mosaic.Cmd.t) ->
+  update:('msg -> 'model -> 'model * 'msg Mosaic.Cmd.t) ->
+  view:('model -> 'msg Mosaic.t) ->
   unit ->
   ('model, 'msg) t
 (** [create ?subscriptions ~width ~height ~init ~update ~view ()] creates a

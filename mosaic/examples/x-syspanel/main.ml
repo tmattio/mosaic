@@ -1,4 +1,4 @@
-open Mosaic_tea
+open Mosaic
 (** System metrics panel UI. Uses Metrics library for data collection. *)
 
 module Charts = Matrix_charts

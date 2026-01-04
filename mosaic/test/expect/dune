@@ -1,8 +1,8 @@
 (library
- (name test_mosaic_tea)
+ (name test_Mosaic)
  (inline_tests)
  (libraries
-  mosaic.tea
+  mosaic
   mosaic.ui
   matrix
   matrix.grid

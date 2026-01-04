@@ -2,7 +2,7 @@
     layout, scrollboxes, text inputs, tables, code highlight, and multiple
     charts via Matrix_charts on a canvas. *)
 
-open Mosaic_tea
+open Mosaic
 module Charts = Matrix_charts
 
 (* ---------- Small utils ---------- *)

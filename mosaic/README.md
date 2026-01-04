@@ -35,7 +35,7 @@ dune exec ./examples/01-counter/main.exe
 Mosaic follows The Elm Architecture (TEA): define your model, messages, update logic, and view.
 
 ```ocaml
-open Mosaic_tea
+open Mosaic
 
 type msg = Increment | Decrement | Quit
 

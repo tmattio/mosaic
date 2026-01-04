@@ -1,4 +1,4 @@
-open Mosaic_tea
+open Mosaic
 module Renderer = Mosaic_ui.Renderer
 module Renderable = Mosaic_ui.Renderable
 module Event = Mosaic_ui.Event
@@ -73,7 +73,7 @@ let process_pending_msgs t =
     List.iter (dispatch t) msgs
   done
 
-let compile ~dispatch (view : 'msg Mosaic_tea.t) : unit Vnode.t =
+let compile ~dispatch (view : 'msg Mosaic.t) : unit Vnode.t =
   Vnode.map_handlers (function Some msg -> dispatch msg | None -> ()) view
 
 let ensure_size t =

@@ -1,6 +1,6 @@
 (** Horizontal and vertical sliders with sub-cell precision. *)
 
-open Mosaic_tea
+open Mosaic
 
 type model = {
   h_value : float;

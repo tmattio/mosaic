@@ -20,7 +20,7 @@
  (name main)
  (modules main)
  (libraries
-  mosaic.tea
+  mosaic
   mosaic.ui
   matrix.charts
   matrix.grid

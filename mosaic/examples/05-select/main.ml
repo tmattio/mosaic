@@ -1,6 +1,6 @@
 (** Vertical list selection with keyboard navigation. *)
 
-open Mosaic_tea
+open Mosaic
 
 type msg = Quit
 

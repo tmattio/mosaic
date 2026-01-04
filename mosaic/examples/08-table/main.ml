@@ -1,6 +1,6 @@
 (** Data tables with columns, headers, and styling. *)
 
-open Mosaic_tea
+open Mosaic
 
 type box_style = Rounded | Heavy | Double | Ascii | Minimal
 type model = { style : box_style }

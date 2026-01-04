@@ -1,4 +1,4 @@
-open Mosaic_tea
+open Mosaic
 module Renderable = Mosaic_ui.Renderable
 module Mouse = Mosaic_ui.Event.Mouse
 module Key = Matrix.Input.Key

@@ -1,6 +1,6 @@
 (** Multi-component form with focus management. *)
 
-open Mosaic_tea
+open Mosaic
 
 (* Field identifiers for focus management *)
 type field = Name | Email | Role

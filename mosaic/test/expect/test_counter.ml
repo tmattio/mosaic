@@ -1,4 +1,4 @@
-open Mosaic_tea
+open Mosaic
 
 type model = { count : int }
 type msg = Inc | Dec

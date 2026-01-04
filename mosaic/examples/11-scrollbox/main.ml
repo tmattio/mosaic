@@ -1,6 +1,6 @@
 (** Scrollable content with scroll bars. *)
 
-open Mosaic_tea
+open Mosaic
 
 type msg = Quit
 

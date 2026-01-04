@@ -1,7 +1,7 @@
 (** Interactive charts demo: zoom, pan, hover tooltips for multiple chart types.
 *)
 
-open Mosaic_tea
+open Mosaic
 open Matrix_charts
 module Canvas = Mosaic_ui.Canvas
 module Event = Mosaic_ui.Event

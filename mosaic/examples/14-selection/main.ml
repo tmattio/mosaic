@@ -1,6 +1,6 @@
 (** Text selection across renderables and scroll boxes. *)
 
-open Mosaic_tea
+open Mosaic
 
 type msg = Quit
 

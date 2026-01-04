@@ -1,6 +1,6 @@
 (** Syntax-highlighted code with Mosaic_syntax and Tree-sitter. *)
 
-open Mosaic_tea
+open Mosaic
 
 type lang = OCaml | JSON
 type model = { lang : lang }

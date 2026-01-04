@@ -1,6 +1,6 @@
 (** Countdown timer with start/stop/reset controls. *)
 
-open Mosaic_tea
+open Mosaic
 
 type timer_state = Idle | Running | Paused
 

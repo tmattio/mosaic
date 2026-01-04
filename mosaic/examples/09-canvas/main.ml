@@ -1,6 +1,6 @@
 (** Procedural drawing with shapes and braille lines. *)
 
-open Mosaic_tea
+open Mosaic
 module Canvas = Mosaic_ui.Canvas
 
 type line_mode = Normal | Braille

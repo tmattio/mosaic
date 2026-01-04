@@ -1,6 +1,6 @@
 (** Markdown rendering demonstration. *)
 
-open Mosaic_tea
+open Mosaic
 
 type msg = Quit
 
