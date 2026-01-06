@@ -1,5 +1,5 @@
 open Mosaic
-(** System metrics panel UI. Uses Metrics library for data collection. *)
+(** System metrics panel UI. Uses Sysstat library for data collection. *)
 
 module Charts = Matrix_charts
 
@@ -9,10 +9,12 @@ type model = {
   cpu_per_core : Sysstat.Cpu.stats array;
   memory : Sysstat.Mem.t;
   disk : Sysstat.Fs.t;
+  network : Sysstat.Net.stats;
   process : Sysstat.Proc.Self.stats;
   processes : Sysstat.Proc.Table.stats list;
   cpu_prev : Sysstat.Cpu.t;
   cpu_per_core_prev : Sysstat.Cpu.t array;
+  net_prev : Sysstat.Net.t;
   proc_self_prev : Sysstat.Proc.Self.t;
   proc_list_prev : Sysstat.Proc.Table.t list;
   sample_acc : float;
@@ -48,6 +50,9 @@ let mem_swap_used_percent (m : Sysstat.Mem.t) =
   if m.swap_total > 0L then
     Int64.to_float m.swap_used /. Int64.to_float m.swap_total *. 100.
   else 0.0
+
+(* Network I/O formatting helpers *)
+let bytes_per_sec_to_mbps bps = bps /. (1024. *. 1024.)
 
 type msg = Quit | Tick of float
 
@@ -85,6 +90,17 @@ let init () =
   let cpu_per_core_prev = cpu_per_core_next in
   let memory = Sysstat.Mem.sample () in
   let disk = Sysstat.Fs.sample () in
+  (* Get initial network sample *)
+  let net_prev = Sysstat.Net.sample () in
+  let network =
+    (* Initial network stats are zero (no delta yet) *)
+    {
+      Sysstat.Net.rx_bytes_per_sec = 0.0;
+      rx_packets_per_sec = 0.0;
+      tx_bytes_per_sec = 0.0;
+      tx_packets_per_sec = 0.0;
+    }
+  in
   (* Get initial process sample *)
   let proc_self_prev = Sysstat.Proc.Self.sample () in
   let process =
@@ -107,11 +123,13 @@ let init () =
       cpu_per_core;
       memory;
       disk;
+      network;
       process;
       processes = [];
       (* Will be populated on first tick *)
       cpu_prev;
       cpu_per_core_prev;
+      net_prev;
       proc_self_prev;
       proc_list_prev;
       sample_acc = 0.0;
@@ -143,6 +161,12 @@ let update msg m =
         let cpu_per_core_prev = cpu_per_core_next in
         let memory = Sysstat.Mem.sample () in
         let disk = Sysstat.Fs.sample () in
+        (* Update network metrics *)
+        let net_next = Sysstat.Net.sample () in
+        let network =
+          Sysstat.Net.compute ~prev:m.net_prev ~next:net_next ~dt:sample_acc
+        in
+        let net_prev = net_next in
         (* Update process metrics *)
         let proc_self_next = Sysstat.Proc.Self.sample () in
         (* Get number of CPU cores for normalization *)
@@ -180,10 +204,12 @@ let update msg m =
             cpu_per_core;
             memory;
             disk;
+            network;
             process;
             processes;
             cpu_prev;
             cpu_per_core_prev;
+            net_prev;
             proc_self_prev;
             proc_list_prev = proc_list_next;
             sample_acc = 0.0;
@@ -308,6 +334,7 @@ let view_per_core_cpu (cpu_per_core : Sysstat.Cpu.stats array) =
 let view_cpu_usage (cpu : Sysstat.Cpu.stats)
     (cpu_per_core : Sysstat.Cpu.stats array)
     (sparkline_cpu : Charts.Sparkline.t) =
+  let is_linux = Sys.file_exists "/proc" in
   box ~border:true ~padding:(padding 1) ~title:"CPU Usage"
     ~background:Ansi.Color.default
     ~size:{ width = pct 100; height = auto }
@@ -333,6 +360,18 @@ let view_cpu_usage (cpu : Sysstat.Cpu.stats)
                           (Ansi.Style.make ~bold:true ~fg:Ansi.Color.cyan ())
                         (Printf.sprintf "%.1f%%" cpu.user);
                     ];
+                  (* Nice CPU *)
+                  (if cpu.nice >= 0.00 then
+                     box ~flex_direction:Row ~justify_content:Space_between
+                       ~align_items:Center
+                       [
+                         text ~style:muted "Nice:";
+                         text
+                           ~style:
+                             (Ansi.Style.make ~bold:true ~fg:Ansi.Color.blue ())
+                           (Printf.sprintf "%.1f%%" cpu.nice);
+                       ]
+                   else box ~size:{ width = pct 100; height = px 0 } []);
                   (* System CPU *)
                   box ~flex_direction:Row ~justify_content:Space_between
                     ~align_items:Center
@@ -343,6 +382,78 @@ let view_cpu_usage (cpu : Sysstat.Cpu.stats)
                           (Ansi.Style.make ~bold:true ~fg:Ansi.Color.magenta ())
                         (Printf.sprintf "%.1f%%" cpu.system);
                     ];
+                  (* Linux-only fields *)
+                  (if is_linux then
+                     box ~flex_direction:Column ~gap:(gap 1)
+                       ~size:{ width = pct 100; height = auto }
+                       [
+                         (* IOWait CPU *)
+                         (if cpu.iowait > 0.01 then
+                            box ~flex_direction:Row
+                              ~justify_content:Space_between ~align_items:Center
+                              [
+                                text ~style:muted "IOWait:";
+                                text
+                                  ~style:
+                                    (Ansi.Style.make ~bold:true
+                                       ~fg:Ansi.Color.yellow ())
+                                  (Printf.sprintf "%.1f%%" cpu.iowait);
+                              ]
+                          else box ~size:{ width = pct 100; height = px 0 } []);
+                         (* IRQ CPU *)
+                         (if cpu.irq > 0.01 then
+                            box ~flex_direction:Row
+                              ~justify_content:Space_between ~align_items:Center
+                              [
+                                text ~style:muted "IRQ:";
+                                text
+                                  ~style:
+                                    (Ansi.Style.make ~bold:true
+                                       ~fg:Ansi.Color.red ())
+                                  (Printf.sprintf "%.1f%%" cpu.irq);
+                              ]
+                          else box ~size:{ width = pct 100; height = px 0 } []);
+                         (* SoftIRQ CPU *)
+                         (if cpu.softirq > 0.01 then
+                            box ~flex_direction:Row
+                              ~justify_content:Space_between ~align_items:Center
+                              [
+                                text ~style:muted "SoftIRQ:";
+                                text
+                                  ~style:
+                                    (Ansi.Style.make ~bold:true
+                                       ~fg:Ansi.Color.red ())
+                                  (Printf.sprintf "%.1f%%" cpu.softirq);
+                              ]
+                          else box ~size:{ width = pct 100; height = px 0 } []);
+                         (* Steal CPU *)
+                         (if cpu.steal > 0.01 then
+                            box ~flex_direction:Row
+                              ~justify_content:Space_between ~align_items:Center
+                              [
+                                text ~style:muted "Steal:";
+                                text
+                                  ~style:
+                                    (Ansi.Style.make ~bold:true
+                                       ~fg:Ansi.Color.yellow ())
+                                  (Printf.sprintf "%.1f%%" cpu.steal);
+                              ]
+                          else box ~size:{ width = pct 100; height = px 0 } []);
+                         (* Guest CPU *)
+                         (if cpu.guest > 0.01 then
+                            box ~flex_direction:Row
+                              ~justify_content:Space_between ~align_items:Center
+                              [
+                                text ~style:muted "Guest:";
+                                text
+                                  ~style:
+                                    (Ansi.Style.make ~bold:true
+                                       ~fg:Ansi.Color.cyan ())
+                                  (Printf.sprintf "%.1f%%" cpu.guest);
+                              ]
+                          else box ~size:{ width = pct 100; height = px 0 } []);
+                       ]
+                   else box ~size:{ width = pct 100; height = px 0 } []);
                   (* Idle CPU *)
                   box ~flex_direction:Row ~justify_content:Space_between
                     ~align_items:Center
@@ -425,6 +536,7 @@ let view_top_processes (processes : Sysstat.Proc.Table.stats list) =
 
 let view_memory_usage (memory : Sysstat.Mem.t)
     (sparkline_memory : Charts.Sparkline.t) =
+  let is_linux = Sys.file_exists "/proc" in
   box ~border:true ~padding:(padding 1) ~title:"Memory Usage"
     ~size:{ width = pct 100; height = auto }
     [
@@ -461,6 +573,127 @@ let view_memory_usage (memory : Sysstat.Mem.t)
                         (Printf.sprintf " (%.1f%%)" (mem_used_percent memory));
                     ];
                 ];
+              (* Free Memory - common on both platforms *)
+              (if memory.free > 0L then
+                 box ~flex_direction:Row ~justify_content:Space_between
+                   ~align_items:Center
+                   [
+                     text ~style:muted "Free:";
+                     text
+                       ~style:
+                         (Ansi.Style.make ~bold:true ~fg:Ansi.Color.green ())
+                       (Printf.sprintf "%.1f GB" (bytes_to_gb memory.free));
+                   ]
+               else box ~size:{ width = pct 100; height = px 0 } []);
+              (* Available Memory - common on both platforms *)
+              (if memory.available > 0L then
+                 box ~flex_direction:Row ~justify_content:Space_between
+                   ~align_items:Center
+                   [
+                     text ~style:muted "Available:";
+                     text
+                       ~style:
+                         (Ansi.Style.make ~bold:true ~fg:Ansi.Color.green ())
+                       (Printf.sprintf "%.1f GB" (bytes_to_gb memory.available));
+                   ]
+               else box ~size:{ width = pct 100; height = px 0 } []);
+              (* Platform-specific fields *)
+              (if is_linux then
+                 (* Linux-specific fields *)
+                 box ~flex_direction:Column ~gap:(gap 1)
+                   ~size:{ width = pct 100; height = auto }
+                   [
+                     (* Cached (inactive on Linux) *)
+                     (if memory.inactive > 0L then
+                        box ~flex_direction:Row ~justify_content:Space_between
+                          ~align_items:Center
+                          [
+                            text ~style:muted "Cached:";
+                            text
+                              ~style:
+                                (Ansi.Style.make ~bold:true
+                                   ~fg:Ansi.Color.yellow ())
+                              (Printf.sprintf "%.1f GB"
+                                 (bytes_to_gb memory.inactive));
+                          ]
+                      else box ~size:{ width = pct 100; height = px 0 } []);
+                     (* Buffers (purgeable on Linux) *)
+                     (if memory.purgeable > 0L then
+                        box ~flex_direction:Row ~justify_content:Space_between
+                          ~align_items:Center
+                          [
+                            text ~style:muted "Buffers:";
+                            text
+                              ~style:
+                                (Ansi.Style.make ~bold:true ~fg:Ansi.Color.blue
+                                   ())
+                              (Printf.sprintf "%.1f GB"
+                                 (bytes_to_gb memory.purgeable));
+                          ]
+                      else box ~size:{ width = pct 100; height = px 0 } []);
+                   ]
+               else
+                 (* macOS-specific fields *)
+                 box ~flex_direction:Column ~gap:(gap 1)
+                   ~size:{ width = pct 100; height = auto }
+                   [
+                     (* Active Memory *)
+                     (if memory.active > 0L then
+                        box ~flex_direction:Row ~justify_content:Space_between
+                          ~align_items:Center
+                          [
+                            text ~style:muted "Active:";
+                            text
+                              ~style:
+                                (Ansi.Style.make ~bold:true ~fg:Ansi.Color.green
+                                   ())
+                              (Printf.sprintf "%.1f GB"
+                                 (bytes_to_gb memory.active));
+                          ]
+                      else box ~size:{ width = pct 100; height = px 0 } []);
+                     (* Inactive Memory *)
+                     (if memory.inactive > 0L then
+                        box ~flex_direction:Row ~justify_content:Space_between
+                          ~align_items:Center
+                          [
+                            text ~style:muted "Inactive:";
+                            text
+                              ~style:
+                                (Ansi.Style.make ~bold:true
+                                   ~fg:Ansi.Color.yellow ())
+                              (Printf.sprintf "%.1f GB"
+                                 (bytes_to_gb memory.inactive));
+                          ]
+                      else box ~size:{ width = pct 100; height = px 0 } []);
+                     (* Wired Memory *)
+                     (if memory.wired > 0L then
+                        box ~flex_direction:Row ~justify_content:Space_between
+                          ~align_items:Center
+                          [
+                            text ~style:muted "Wired:";
+                            text
+                              ~style:
+                                (Ansi.Style.make ~bold:true ~fg:Ansi.Color.red
+                                   ())
+                              (Printf.sprintf "%.1f GB"
+                                 (bytes_to_gb memory.wired));
+                          ]
+                      else box ~size:{ width = pct 100; height = px 0 } []);
+                     (* Compressed Memory *)
+                     (if memory.compressed > 0L then
+                        box ~flex_direction:Row ~justify_content:Space_between
+                          ~align_items:Center
+                          [
+                            text ~style:muted "Compressed:";
+                            text
+                              ~style:
+                                (Ansi.Style.make ~bold:true ~fg:Ansi.Color.cyan
+                                   ())
+                              (Printf.sprintf "%.1f GB"
+                                 (bytes_to_gb memory.compressed));
+                          ]
+                      else box ~size:{ width = pct 100; height = px 0 } []);
+                   ]);
               (* Swap Used with inline percentage *)
               box ~flex_direction:Row ~justify_content:Space_between
                 ~align_items:Center
@@ -594,6 +827,49 @@ let view_disk_usage (disk : Sysstat.Fs.t) =
         ];
     ]
 
+let view_network_io (network : Sysstat.Net.stats) =
+  box ~border:true ~padding:(padding 1) ~title:"Network I/O"
+    ~size:{ width = pct 100; height = auto }
+    [
+      (* Network Metrics *)
+      box ~flex_direction:Column ~gap:(gap 1)
+        ~size:{ width = pct 100; height = auto }
+        [
+          (* Receive *)
+          box ~flex_direction:Column ~gap:(gap 0)
+            ~size:{ width = pct 100; height = auto }
+            [
+              text ~style:muted "Receive:";
+              box ~flex_direction:Row ~justify_content:Space_between
+                ~align_items:Center
+                [
+                  text
+                    ~style:(Ansi.Style.make ~bold:true ~fg:Ansi.Color.green ())
+                    (Printf.sprintf "%.2f MB/s"
+                       (bytes_per_sec_to_mbps network.rx_bytes_per_sec));
+                  text ~style:muted
+                    (Printf.sprintf "%.0f pkt/s" network.rx_packets_per_sec);
+                ];
+            ];
+          (* Transmit *)
+          box ~flex_direction:Column ~gap:(gap 0)
+            ~size:{ width = pct 100; height = auto }
+            [
+              text ~style:muted "Transmit:";
+              box ~flex_direction:Row ~justify_content:Space_between
+                ~align_items:Center
+                [
+                  text
+                    ~style:(Ansi.Style.make ~bold:true ~fg:Ansi.Color.yellow ())
+                    (Printf.sprintf "%.2f MB/s"
+                       (bytes_per_sec_to_mbps network.tx_bytes_per_sec));
+                  text ~style:muted
+                    (Printf.sprintf "%.0f pkt/s" network.tx_packets_per_sec);
+                ];
+            ];
+        ];
+    ]
+
 let view_process_self (process : Sysstat.Proc.Self.stats) =
   box ~border:true ~padding:(padding 1) ~title:"Process (self)"
     ~size:{ width = pct 100; height = auto }
@@ -620,6 +896,17 @@ let view_process_self (process : Sysstat.Proc.Self.stats) =
                 ~style:(Ansi.Style.make ~bold:true ~fg:Ansi.Color.magenta ())
                 (Printf.sprintf "%.1f MB" (bytes_to_mb process.rss_bytes));
             ];
+          (* Virtual Memory Size *)
+          (if process.vsize_bytes > 0L then
+             box ~flex_direction:Row ~justify_content:Space_between
+               ~align_items:Center
+               [
+                 text ~style:muted "VSIZE:";
+                 text
+                   ~style:(Ansi.Style.make ~bold:true ~fg:Ansi.Color.blue ())
+                   (Printf.sprintf "%.1f GB" (bytes_to_gb process.vsize_bytes));
+               ]
+           else box ~size:{ width = pct 100; height = px 0 } []);
         ];
     ]
 
@@ -639,13 +926,14 @@ let view model =
               box ~flex_direction:Row ~gap:(gap 1)
                 ~size:{ width = pct 100; height = auto }
                 [
-                  (* Left: CPU Column *)
+                  (* Left: CPU, Processes, and Network Column *)
                   box ~flex_direction:Column ~gap:(gap 1)
                     ~size:{ width = pct 50; height = auto }
                     [
                       view_cpu_usage model.cpu model.cpu_per_core
                         model.sparkline_cpu;
                       view_top_processes model.processes;
+                      view_network_io model.network;
                     ];
                   (* Right: Memory, Disk, and Process Column *)
                   box ~flex_direction:Column ~gap:(gap 1) ~flex_grow:1.
