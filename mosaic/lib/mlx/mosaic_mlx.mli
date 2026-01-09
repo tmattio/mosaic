@@ -338,7 +338,7 @@ val text :
   ?selection_bg:Ansi.Color.t ->
   ?selection_fg:Ansi.Color.t ->
   ?selectable:bool ->
-  ?children:string ->
+  ?children:string list ->
   unit ->
   'msg t
 (** [text ?children ()] creates a text element. *)
@@ -998,6 +998,7 @@ val input :
   ?on_input:(string -> 'msg option) ->
   ?on_change:(string -> 'msg option) ->
   ?on_submit:(string -> 'msg option) ->
+  ?children:'msg t list ->
   unit ->
   'msg t
 (** [text_input ()] creates a text input element. *)
@@ -1072,7 +1073,7 @@ val code :
   ?selection_bg:Ansi.Color.t ->
   ?selection_fg:Ansi.Color.t ->
   ?selectable:bool ->
-  ?children:string ->
+  ?children:string list ->
   unit ->
   'msg t
 (** [code ?children ()] creates a syntax-highlighted code element. *)
@@ -1132,7 +1133,7 @@ val markdown :
   ?unknown_inline:Mosaic_markdown.Props.unknown ->
   ?unknown_block:Mosaic_markdown.Props.unknown ->
   ?languages:Mosaic_syntax.Set.t ->
-  ?children:string ->
+  ?children:string list ->
   unit ->
   'msg t
 (** [markdown ?children ()] creates a markdown rendering element. *)
