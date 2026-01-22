@@ -68,8 +68,11 @@ module Sub = struct
     | Every of float * (unit -> 'msg)
     | On_tick of (dt:float -> 'msg)
     | On_key of (Event.key -> 'msg option)
+    | On_key_all of (Event.key -> 'msg option)
     | On_mouse of (Event.mouse -> 'msg option)
+    | On_mouse_all of (Event.mouse -> 'msg option)
     | On_paste of (Event.paste -> 'msg option)
+    | On_paste_all of (Event.paste -> 'msg option)
     | On_resize of (width:int -> height:int -> 'msg)
     | On_focus of 'msg
     | On_blur of 'msg
@@ -79,8 +82,11 @@ module Sub = struct
   let every interval f = Every (interval, f)
   let on_tick f = On_tick f
   let on_key f = On_key f
+  let on_key_all f = On_key_all f
   let on_mouse f = On_mouse f
+  let on_mouse_all f = On_mouse_all f
   let on_paste f = On_paste f
+  let on_paste_all f = On_paste_all f
   let on_resize f = On_resize f
   let on_focus msg = On_focus msg
   let on_blur msg = On_blur msg
@@ -92,8 +98,11 @@ module Sub = struct
     | Every (interval, g) -> Every (interval, fun () -> f (g ()))
     | On_tick g -> On_tick (fun ~dt -> f (g ~dt))
     | On_key g -> On_key (fun ev -> Option.map f (g ev))
+    | On_key_all g -> On_key_all (fun ev -> Option.map f (g ev))
     | On_mouse g -> On_mouse (fun ev -> Option.map f (g ev))
+    | On_mouse_all g -> On_mouse_all (fun ev -> Option.map f (g ev))
     | On_paste g -> On_paste (fun ev -> Option.map f (g ev))
+    | On_paste_all g -> On_paste_all (fun ev -> Option.map f (g ev))
     | On_resize g -> On_resize (fun ~width ~height -> f (g ~width ~height))
     | On_focus msg -> On_focus (f msg)
     | On_blur msg -> On_blur (f msg)
@@ -118,9 +127,12 @@ type ('model, 'msg) runtime = {
   matrix_app : Matrix.app;
   renderer : Renderer.t;
   reconciler : Reconciler.t;
-  mutable key_subs : (Event.key -> 'msg option) list;
-  mutable mouse_subs : (Event.mouse -> 'msg option) list;
-  mutable paste_subs : (Event.paste -> 'msg option) list;
+  (* Each subscription is (all_events, handler) where all_events=true means
+     receive all events regardless of consumption, false means only
+     unconsumed *)
+  mutable key_subs : (bool * (Event.key -> 'msg option)) list;
+  mutable mouse_subs : (bool * (Event.mouse -> 'msg option)) list;
+  mutable paste_subs : (bool * (Event.paste -> 'msg option)) list;
   mutable resize_sub : (width:int -> height:int -> 'msg) option;
   mutable tick_sub : (dt:float -> 'msg) option;
   mutable every_subs : (float * float * (unit -> 'msg)) list;
@@ -190,9 +202,12 @@ let rec collect_subs runtime (sub : _ Sub.t) =
   | Sub.Every (interval, f) ->
       runtime.every_subs <- (interval, 0., f) :: runtime.every_subs
   | Sub.On_tick f -> runtime.tick_sub <- Some f
-  | Sub.On_key f -> runtime.key_subs <- f :: runtime.key_subs
-  | Sub.On_mouse f -> runtime.mouse_subs <- f :: runtime.mouse_subs
-  | Sub.On_paste f -> runtime.paste_subs <- f :: runtime.paste_subs
+  | Sub.On_key f -> runtime.key_subs <- (false, f) :: runtime.key_subs
+  | Sub.On_key_all f -> runtime.key_subs <- (true, f) :: runtime.key_subs
+  | Sub.On_mouse f -> runtime.mouse_subs <- (false, f) :: runtime.mouse_subs
+  | Sub.On_mouse_all f -> runtime.mouse_subs <- (true, f) :: runtime.mouse_subs
+  | Sub.On_paste f -> runtime.paste_subs <- (false, f) :: runtime.paste_subs
+  | Sub.On_paste_all f -> runtime.paste_subs <- (true, f) :: runtime.paste_subs
   | Sub.On_resize f -> runtime.resize_sub <- Some f
   | Sub.On_focus msg -> runtime.focus_sub <- Some msg
   | Sub.On_blur msg -> runtime.blur_sub <- Some msg
@@ -226,21 +241,28 @@ let process_pending_msgs runtime =
 (* Event handling *)
 
 let handle_key runtime (event : Event.key) =
+  let consumed = Event.Key.default_prevented event in
   List.iter
-    (fun f ->
-      match f event with Some msg -> dispatch runtime msg | None -> ())
+    (fun (all_events, f) ->
+      (* Run handler if: all_events=true OR event was not consumed *)
+      if all_events || not consumed then
+        match f event with Some msg -> dispatch runtime msg | None -> ())
     runtime.key_subs
 
 let handle_mouse runtime (event : Event.mouse) =
+  let consumed = Event.Mouse.default_prevented event in
   List.iter
-    (fun f ->
-      match f event with Some msg -> dispatch runtime msg | None -> ())
+    (fun (all_events, f) ->
+      if all_events || not consumed then
+        match f event with Some msg -> dispatch runtime msg | None -> ())
     runtime.mouse_subs
 
 let handle_paste runtime (event : Event.paste) =
+  let consumed = Event.Paste.default_prevented event in
   List.iter
-    (fun f ->
-      match f event with Some msg -> dispatch runtime msg | None -> ())
+    (fun (all_events, f) ->
+      if all_events || not consumed then
+        match f event with Some msg -> dispatch runtime msg | None -> ())
     runtime.paste_subs
 
 let handle_resize runtime ~width ~height =
@@ -332,18 +354,21 @@ let handle_input runtime (input : Matrix.Input.t) =
   | _ -> (
       match convert_key_event input with
       | Some ev ->
-          handle_key runtime ev;
-          Renderer.handle_key runtime.renderer ev
+          (* Renderer first: components can consume events via
+             prevent_default *)
+          Renderer.handle_key runtime.renderer ev;
+          (* Then subscriptions: on_key skips consumed, on_key_all sees all *)
+          handle_key runtime ev
       | None -> (
           match convert_mouse_event input with
           | Some ev ->
-              handle_mouse runtime ev;
-              Renderer.handle_mouse runtime.renderer ev
+              Renderer.handle_mouse runtime.renderer ev;
+              handle_mouse runtime ev
           | None -> (
               match convert_paste_event input with
               | Some ev ->
-                  handle_paste runtime ev;
-                  Renderer.handle_paste runtime.renderer ev
+                  Renderer.handle_paste runtime.renderer ev;
+                  handle_paste runtime ev
               | None -> ())))
 
 (* Rendering *)

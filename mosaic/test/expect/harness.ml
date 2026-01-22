@@ -43,8 +43,11 @@ let rec collect_subs t (sub : _ Sub.t) =
   | Sub.Every (interval, f) -> t.every_subs <- (interval, 0., f) :: t.every_subs
   | Sub.On_tick f -> t.tick_sub <- Some f
   | Sub.On_key f -> t.key_subs <- f :: t.key_subs
+  | Sub.On_key_all f -> t.key_subs <- f :: t.key_subs
   | Sub.On_mouse f -> t.mouse_subs <- f :: t.mouse_subs
+  | Sub.On_mouse_all f -> t.mouse_subs <- f :: t.mouse_subs
   | Sub.On_paste f -> t.paste_subs <- f :: t.paste_subs
+  | Sub.On_paste_all f -> t.paste_subs <- f :: t.paste_subs
   | Sub.On_resize f -> t.resize_sub <- Some f
   | Sub.On_focus msg -> t.focus_sub <- Some msg
   | Sub.On_blur msg -> t.blur_sub <- Some msg

@@ -77,8 +77,11 @@ module Sub : sig
     | Every of float * (unit -> 'msg)
     | On_tick of (dt:float -> 'msg)
     | On_key of (Event.key -> 'msg option)
+    | On_key_all of (Event.key -> 'msg option)
     | On_mouse of (Event.mouse -> 'msg option)
+    | On_mouse_all of (Event.mouse -> 'msg option)
     | On_paste of (Event.paste -> 'msg option)
+    | On_paste_all of (Event.paste -> 'msg option)
     | On_resize of (width:int -> height:int -> 'msg)
     | On_focus of 'msg
     | On_blur of 'msg
@@ -99,14 +102,30 @@ module Sub : sig
       Use for animations that need smooth timing. *)
 
   val on_key : (Event.key -> 'msg option) -> 'msg t
-  (** [on_key f] subscribes to keyboard events. Return [Some msg] to dispatch.
-  *)
+  (** [on_key f] subscribes to keyboard events that were NOT consumed by focused
+      components. Use this for application shortcuts that should not fire when
+      typing in a text input. Return [Some msg] to dispatch. *)
+
+  val on_key_all : (Event.key -> 'msg option) -> 'msg t
+  (** [on_key_all f] subscribes to ALL keyboard events regardless of whether
+      they were consumed by focused components. Use this for critical shortcuts
+      like Ctrl+C that must always work. Return [Some msg] to dispatch. *)
 
   val on_mouse : (Event.mouse -> 'msg option) -> 'msg t
-  (** [on_mouse f] subscribes to mouse events. Return [Some msg] to dispatch. *)
+  (** [on_mouse f] subscribes to mouse events that were NOT consumed by focused
+      components. Return [Some msg] to dispatch. *)
+
+  val on_mouse_all : (Event.mouse -> 'msg option) -> 'msg t
+  (** [on_mouse_all f] subscribes to ALL mouse events regardless of consumption.
+      Return [Some msg] to dispatch. *)
 
   val on_paste : (Event.paste -> 'msg option) -> 'msg t
-  (** [on_paste f] subscribes to paste events. Return [Some msg] to dispatch. *)
+  (** [on_paste f] subscribes to paste events that were NOT consumed by focused
+      components. Return [Some msg] to dispatch. *)
+
+  val on_paste_all : (Event.paste -> 'msg option) -> 'msg t
+  (** [on_paste_all f] subscribes to ALL paste events regardless of consumption.
+      Return [Some msg] to dispatch. *)
 
   val on_resize : (width:int -> height:int -> 'msg) -> 'msg t
   (** [on_resize f] subscribes to terminal resize events. *)

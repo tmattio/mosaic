@@ -76,13 +76,16 @@ let view model =
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
-        [ text ~style:hint "c cycle cursor  •  Esc quit" ];
+        [ text ~style:hint "Tab cycle cursor  •  Esc quit" ];
     ]
 
 let subscriptions _model =
+  (* Using on_key means these shortcuts only fire when not consumed by the
+     focused text_input. Tab and Escape are not consumed by text_input, so they
+     work even when the input is focused. *)
   Sub.on_key (fun ev ->
       match (Mosaic_ui.Event.Key.data ev).key with
-      | Char c when Uchar.equal c (Uchar.of_char 'c') -> Some Cycle_cursor
+      | Tab -> Some Cycle_cursor
       | Escape -> Some Quit
       | _ -> None)
 

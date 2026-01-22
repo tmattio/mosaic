@@ -543,9 +543,13 @@ let mount ?(props = Props.default) (rnode : Renderable.t) =
   Renderable.set_buffer renderable `Self;
   Renderable.set_focusable renderable true;
   (* Register the default key handler in the third tier so user on_key handlers
-     (tier 2) can call key_prevent_default to suppress it. *)
+     (tier 2) can call key_prevent_default to suppress it. When we handle a key,
+     mark the event as consumed via prevent_default so that TEA subscriptions
+     using on_key (not on_key_all) will skip it. *)
   Renderable.set_default_key_handler renderable
-    (Some (fun event -> ignore (handle_key input event)));
+    (Some
+       (fun event ->
+         if handle_key input event then Event.Key.prevent_default event));
   Renderable.set_hardware_cursor_provider renderable
     (Some
        (fun _ ->
