@@ -66,6 +66,10 @@ module Cmd : sig
 
   val static_clear : 'msg t
   (** [static_clear] clears previously written static content. *)
+
+  val map : ('a -> 'b) -> 'a t -> 'b t
+  (** [map f cmd] transforms messages in a command using function [f]. Useful
+      for composing components with different message types. *)
 end
 
 (** {1 Subscriptions}
@@ -118,6 +122,10 @@ module Sub : sig
 
   val on_blur : 'msg -> 'msg t
   (** [on_blur msg] dispatches [msg] when the terminal window loses focus. *)
+
+  val map : ('a -> 'b) -> 'a t -> 'b t
+  (** [map f sub] transforms messages in a subscription using function [f].
+      Useful for composing components with different message types. *)
 end
 
 (** {1 Application}

@@ -45,6 +45,18 @@ module Cmd = struct
   let static_write text = Static_write text
   let static_print text = Static_print text
   let static_clear = Static_clear
+
+  let rec map (f : 'a -> 'b) (cmd : 'a t) : 'b t =
+    match cmd with
+    | None -> None
+    | Batch cmds -> Batch (List.map (map f) cmds)
+    | Perform g -> Perform (fun dispatch -> g (fun msg -> dispatch (f msg)))
+    | Quit -> Quit
+    | Set_title title -> Set_title title
+    | Focus id -> Focus id
+    | Static_write text -> Static_write text
+    | Static_print text -> Static_print text
+    | Static_clear -> Static_clear
 end
 
 (* Sub module *)
@@ -72,6 +84,19 @@ module Sub = struct
   let on_resize f = On_resize f
   let on_focus msg = On_focus msg
   let on_blur msg = On_blur msg
+
+  let rec map (f : 'a -> 'b) (sub : 'a t) : 'b t =
+    match sub with
+    | None -> None
+    | Batch subs -> Batch (List.map (map f) subs)
+    | Every (interval, g) -> Every (interval, fun () -> f (g ()))
+    | On_tick g -> On_tick (fun ~dt -> f (g ~dt))
+    | On_key g -> On_key (fun ev -> Option.map f (g ev))
+    | On_mouse g -> On_mouse (fun ev -> Option.map f (g ev))
+    | On_paste g -> On_paste (fun ev -> Option.map f (g ev))
+    | On_resize g -> On_resize (fun ~width ~height -> f (g ~width ~height))
+    | On_focus msg -> On_focus (f msg)
+    | On_blur msg -> On_blur (f msg)
 end
 
 (* Application configuration *)
