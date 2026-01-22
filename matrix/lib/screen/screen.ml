@@ -1,7 +1,7 @@
 (* matrix/lib/screen.ml *)
 
-(* High-performance terminal screen with functional API.
-   Zero-allocation frame building through direct buffer mutation. *)
+(* High-performance terminal screen with functional API. Zero-allocation frame
+   building through direct buffer mutation. *)
 
 open StdLabels
 module Hit_grid = Hit_grid
@@ -113,8 +113,9 @@ let[@inline] add_code_to_writer ~explicit_width ~cell_width pool
 
 type render_mode = [ `Diff | `Full ]
 
-(* The hot loop. Scans grid, checks dirty flags, diffs against previous frame, emits sequences.
-   Zero-allocation implementation using tail-recursive loops with accumulators. *)
+(* The hot loop. Scans grid, checks dirty flags, diffs against previous frame,
+   emits sequences. Zero-allocation implementation using tail-recursive loops
+   with accumulators. *)
 let render_generic ~pool ~row_offset ~use_explicit_width ~use_hyperlinks ~mode
     ~height_limit ~writer ~scratch ~sgr_state ~prev ~curr =
   let width = Grid.width curr in
@@ -154,8 +155,8 @@ let render_generic ~pool ~row_offset ~use_explicit_width ~use_hyperlinks ~mode
   (* SGR State Tracking - use pre-allocated state *)
   Ansi.Sgr_state.reset sgr_state;
 
-  (* Inner loop: Write consecutive changed cells, return new x position.
-     Cells written = new_x - start_x (no tuple allocation needed). *)
+  (* Inner loop: Write consecutive changed cells, return new x position. Cells
+     written = new_x - start_x (no tuple allocation needed). *)
   let rec write_run y x =
     if x >= width then x
     else
@@ -231,9 +232,9 @@ let render_generic ~pool ~row_offset ~use_explicit_width ~use_hyperlinks ~mode
 
   let total = process_rows 0 0 in
 
-  (* Clear any cells that were present in the previous frame but are now
-     outside the current grid bounds. This prevents stale rows/columns from
-     lingering when the grid shrinks. *)
+  (* Clear any cells that were present in the previous frame but are now outside
+     the current grid bounds. This prevents stale rows/columns from lingering
+     when the grid shrinks. *)
   (if prev_width > width then
      let start_col = width + 1 in
      let rows = min height prev_height in
@@ -289,7 +290,8 @@ let prepare_frame r =
 let finalize_frame r ~now ~delta_seconds ~elapsed_ms ~cells ~output_len =
   let t_reset_start = Unix.gettimeofday () in
 
-  (* Swap buffers; [next] is cleared to provide a fresh canvas for the builder. *)
+  (* Swap buffers; [next] is cleared to provide a fresh canvas for the
+     builder. *)
   swap_buffers r;
 
   let t_reset_end = Unix.gettimeofday () in
@@ -460,10 +462,9 @@ let row_offset t = t.row_offset
 let set_row_offset t offset = t.row_offset <- max 0 offset
 
 let invalidate_presented t =
-  (* Clear the current buffer so diff sees all cells as changed.
-     This maintains the invariant: current = what's on terminal.
-     After erasing the terminal region, the terminal is "blank",
-     so current should also be blank. *)
+  (* Clear the current buffer so diff sees all cells as changed. This maintains
+     the invariant: current = what's on terminal. After erasing the terminal
+     region, the terminal is "blank", so current should also be blank. *)
   Grid.clear t.current
 
 let active_height (t : t) = Grid.active_height t.next

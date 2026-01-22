@@ -638,8 +638,8 @@ let test_mode_report () =
         (List.length (parse_caps "\x1b[?1004;2$y"))
 
 let test_color_scheme_report () =
-  (* Color scheme DSR response: CSI ? 997 ; value n
-     Response to CSI ? 996 n query. Value 1 = dark, 2 = light. *)
+  (* Color scheme DSR response: CSI ? 997 ; value n Response to CSI ? 996 n
+     query. Value 1 = dark, 2 = light. *)
   (match parse_caps "\x1b[?997;1n" with
   | [ Input.Caps.Color_scheme `Dark ] -> ()
   | _ ->
@@ -768,9 +768,9 @@ let test_parsing_efficiency () =
         (String.length s)
   | _ -> Alcotest.fail "large paste not optimized to single event"
 
-(* Split-boundary tests: verify parsing works correctly when input is split
-   at every possible byte boundary. This catches bugs related to buffering
-   and state management across feed calls. *)
+(* Split-boundary tests: verify parsing works correctly when input is split at
+   every possible byte boundary. This catches bugs related to buffering and
+   state management across feed calls. *)
 
 (* Helper: feed a string one byte at a time and collect all events *)
 let feed_byte_by_byte parser s =

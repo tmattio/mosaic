@@ -382,7 +382,8 @@ let make ?display ?(box_sizing = default.box_sizing)
     match display with
     | Some d -> d
     | None ->
-        (* Default to Flex to match Taffy's behavior when flexbox feature is enabled *)
+        (* Default to Flex to match Taffy's behavior when flexbox feature is
+           enabled *)
         Display.Flex
   in
   {

@@ -438,7 +438,8 @@ let generate_anonymous_flex_items (type t)
 let determine_available_space (known_dimensions : float option size)
     (available_space : Available_space.t size) (constants : algo_constants) :
     Available_space.t size =
-  (* Note: min/max/preferred size styles have already been applied to known_dimensions in the compute function above *)
+  (* Note: min/max/preferred size styles have already been applied to
+     known_dimensions in the compute function above *)
   let width =
     match known_dimensions.width with
     | Some node_width ->
@@ -578,7 +579,8 @@ let determine_flex_base_size (type t)
 
       (* Compute flex basis according to spec *)
       child.flex_basis <-
-        (* A. If the item has a definite used flex basis, that's the flex base size. *)
+        (* A. If the item has a definite used flex basis, that's the flex base
+           size. *)
         (let main_size =
            if constants.is_row then child.size.width else child.size.height
          in
@@ -1052,7 +1054,8 @@ let determine_container_main_size (type t)
 
                     let content_contribution =
                       match (style_min, style_preferred, max_main_size) with
-                      (* If clamping values are such that max <= min, avoid computing content size *)
+                      (* If clamping values are such that max <= min, avoid
+                         computing content size *)
                       | _, Some pref, max
                         when max <= min_main_size || max <= pref ->
                           let clamped =
@@ -1062,7 +1065,8 @@ let determine_container_main_size (type t)
                       | _, _, max when max <= min_main_size ->
                           min_main_size +. margin_sum
                       | _ when is_scroll_container flex_item ->
-                          (* Scroll containers use their flex basis but still honour min/max and padding/border insets *)
+                          (* Scroll containers use their flex basis but still
+                             honour min/max and padding/border insets *)
                           let content_main_size =
                             flex_item.flex_basis +. margin_sum
                           in
@@ -1700,13 +1704,14 @@ let calculate_children_base_lines (type t)
     (known_dimensions : float option size)
     (available_space : Available_space.t size) (flex_lines : flex_line list)
     (constants : algo_constants) : unit =
-  (* Only compute baselines for flex rows because we only support baseline alignment in the cross axis
-     where that axis is also the inline axis *)
+  (* Only compute baselines for flex rows because we only support baseline
+     alignment in the cross axis where that axis is also the inline axis *)
   if not constants.is_row then ()
   else
     List.iter
       (fun line ->
-        (* If a flex line has one or zero items participating in baseline alignment then baseline alignment is a no-op so we skip *)
+        (* If a flex line has one or zero items participating in baseline
+           alignment then baseline alignment is a no-op so we skip *)
         let line_baseline_child_count =
           Array.fold_left
             (fun count child ->
@@ -1717,7 +1722,8 @@ let calculate_children_base_lines (type t)
         else
           Array.iter
             (fun child ->
-              (* Only calculate baselines for children participating in baseline alignment *)
+              (* Only calculate baselines for children participating in baseline
+                 alignment *)
               if child.align_self = Baseline then
                 let measured_size_and_baselines =
                   Tree.compute_child_layout tree child.node
@@ -1773,8 +1779,8 @@ let calculate_children_base_lines (type t)
 (* Calculate cross size *)
 let calculate_cross_size (flex_lines : flex_line list)
     (known_dimensions : float option size) (constants : algo_constants) : unit =
-  (* If the flex container is single-line and has a definite cross size,
-     the cross size of the flex line is the flex container's inner cross size. *)
+  (* If the flex container is single-line and has a definite cross size, the
+     cross size of the flex line is the flex container's inner cross size. *)
   if
     (not constants.is_wrap)
     && (if constants.is_row then known_dimensions.height
@@ -2084,8 +2090,9 @@ let apply_alignment_fallback (free_space : float) (num_items : int)
     (alignment_mode : align_content) (is_safe : bool) : align_content =
   (* Fallback occurs in two cases: *)
 
-  (* 1. If there is only a single item being aligned and alignment is a distributed alignment keyword
-        https://www.w3.org/TR/css-align-3/#distribution-values *)
+  (* 1. If there is only a single item being aligned and alignment is a
+     distributed alignment keyword
+     https://www.w3.org/TR/css-align-3/#distribution-values *)
   let alignment_mode, is_safe =
     if num_items <= 1 || free_space <= 0.0 then
       match alignment_mode with
@@ -2097,7 +2104,8 @@ let apply_alignment_fallback (free_space : float) (num_items : int)
     else (alignment_mode, is_safe)
   in
 
-  (* 2. If free space is negative the "safe" alignment variants all fallback to Start alignment *)
+  (* 2. If free space is negative the "safe" alignment variants all fallback to
+     Start alignment *)
   let alignment_mode =
     if free_space <= 0.0 && is_safe then Align_content.Start else alignment_mode
   in
@@ -2241,8 +2249,9 @@ let align_flex_items_along_cross_axis (child : flex_item) (free_space : float)
   | Style.Align_items.Baseline ->
       if constants.is_row then max_baseline -. child.baseline
       else if
-        (* Until we support vertical writing modes, baseline alignment only makes sense if
-           the direction is row, so we treat it as flex-start alignment in columns. *)
+        (* Until we support vertical writing modes, baseline alignment only
+           makes sense if the direction is row, so we treat it as flex-start
+           alignment in columns. *)
         constants.is_wrap_reverse
       then free_space
       else 0.0
@@ -2789,9 +2798,9 @@ let perform_absolute_layout_on_absolute_children (type t)
         }
       in
 
-      (* Fill in width from left/right and reapply aspect ratio if:
-         - Width is not already known
-         - Item has both left and right inset properties set *)
+      (* Fill in width from left/right and reapply aspect ratio if: - Width is
+         not already known - Item has both left and right inset properties
+         set *)
       let known_dimensions =
         match (known_dimensions.width, left, right) with
         | None, Some l, Some r ->
@@ -2815,9 +2824,9 @@ let perform_absolute_layout_on_absolute_children (type t)
         | _ -> known_dimensions
       in
 
-      (* Fill in height from top/bottom and reapply aspect ratio if:
-         - Height is not already known
-         - Item has both top and bottom inset properties set *)
+      (* Fill in height from top/bottom and reapply aspect ratio if: - Height is
+         not already known - Item has both top and bottom inset properties
+         set *)
       let known_dimensions =
         match (known_dimensions.height, top, bottom) with
         | None, Some t, Some b ->
@@ -2879,7 +2888,8 @@ let perform_absolute_layout_on_absolute_children (type t)
 
       let measured_size = Layout_output.size measure_output in
       let final_size = Size.unwrap_or measured_size known_dimensions in
-      (* Clamp final size between min and max - min wins over max when they conflict *)
+      (* Clamp final size between min and max - min wins over max when they
+         conflict *)
       let final_size =
         Size.
           {
@@ -3071,7 +3081,8 @@ let perform_absolute_layout_on_absolute_children (type t)
                 else resolved_margin.right
             | None -> (
                 match (align_self, constants.is_wrap_reverse) with
-                (* Stretch alignment does not apply to absolutely positioned items *)
+                (* Stretch alignment does not apply to absolutely positioned
+                   items *)
                 | Start, _
                 | Baseline, false
                 | Stretch, false
@@ -3188,7 +3199,8 @@ let compute_preliminary (type t)
   let run_mode = Layout_input.run_mode inputs in
   let _sizing_mode = Layout_input.sizing_mode inputs in
 
-  (* Define some general constants we will need for the remainder of the algorithm *)
+  (* Define some general constants we will need for the remainder of the
+     algorithm *)
   let constants =
     compute_constants
       (module Tree)
@@ -3292,7 +3304,8 @@ let compute_preliminary (type t)
         constants.gap <- { constants.gap with width = new_gap }
       else constants.gap <- { constants.gap with height = new_gap });
 
-  (* 6. Resolve the flexible lengths of all the flex items to find their used main size *)
+  (* 6. Resolve the flexible lengths of all the flex items to find their used
+     main size *)
   List.iter (fun line -> resolve_flexible_lengths line constants) flex_lines;
 
   (* 9.4. Cross Size Determination *)
@@ -3336,7 +3349,8 @@ let compute_preliminary (type t)
     determine_container_cross_size flex_lines known_dimensions constants
   in
 
-  (* We have the container size. If our caller does not care about performing layout we are done now *)
+  (* We have the container size. If our caller does not care about performing
+     layout we are done now *)
   if run_mode = Run_mode.Compute_size then
     Layout_output.from_outer_size constants.container_size
   else (
@@ -3349,7 +3363,8 @@ let compute_preliminary (type t)
       final_layout_pass (module Tree) tree flex_lines constants
     in
 
-    (* Before returning we perform absolute layout on all absolutely positioned children *)
+    (* Before returning we perform absolute layout on all absolutely positioned
+       children *)
     let absolute_content_size =
       perform_absolute_layout_on_absolute_children
         (module Tree)
@@ -3384,8 +3399,8 @@ let compute_preliminary (type t)
       match flex_lines with
       | [] -> None
       | first_line :: _ -> (
-          (* For row containers: find item with baseline alignment or fallback to first item
-             For column containers: always use first item *)
+          (* For row containers: find item with baseline alignment or fallback
+             to first item For column containers: always use first item *)
           let items = first_line.items in
           let len = Array.length items in
           let baseline_item =
@@ -3497,7 +3512,8 @@ let compute_flexbox_layout (type t)
     else Size.none
   in
 
-  (* If both min and max in a given axis are set and max <= min then this determines the size in that axis *)
+  (* If both min and max in a given axis are set and max <= min then this
+     determines the size in that axis *)
   let min_max_definite_size =
     Size.map2
       (fun min max ->
@@ -3515,7 +3531,8 @@ let compute_flexbox_layout (type t)
     |> Size.maybe_max padding_border_sum
   in
 
-  (* Short-circuit layout if the container's size is fully determined and we're in ComputeSize mode *)
+  (* Short-circuit layout if the container's size is fully determined and we're
+     in ComputeSize mode *)
   if run_mode = Run_mode.Compute_size then
     match styled_based_known_dimensions with
     | { width = Some width; height = Some height } ->

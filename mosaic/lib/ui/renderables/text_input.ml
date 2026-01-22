@@ -208,7 +208,8 @@ let update_buffer t =
 
 let measure t ~known_dimensions ~available_space ~style:_ =
   ignore t;
-  (* Respect layout hints; avoid content-based width which causes reflow on edits. *)
+  (* Respect layout hints; avoid content-based width which causes reflow on
+     edits. *)
   let width_hint =
     match known_dimensions with
     | Toffee.Geometry.Size.{ width = Some w; _ } when w > 0. -> Some w
@@ -471,7 +472,8 @@ let render_input t renderable grid ~delta:_ =
       Text_buffer_view.set_wrap_width view None;
       Text_buffer.finalise buffer;
       t.buffer_dirty <- false);
-    (* Align buffer width method with grid when buffer is empty (safe to change). *)
+    (* Align buffer width method with grid when buffer is empty (safe to
+       change). *)
     (if Text_buffer.length buffer = 0 then
        let gwm = Grid.width_method grid in
        Text_buffer.set_width_method buffer gwm);
@@ -540,8 +542,8 @@ let mount ?(props = Props.default) (rnode : Renderable.t) =
   Renderable.set_measure renderable (Some (measure input));
   Renderable.set_buffer renderable `Self;
   Renderable.set_focusable renderable true;
-  (* Register the default key handler in the third tier so user on_key
-     handlers (tier 2) can call key_prevent_default to suppress it. *)
+  (* Register the default key handler in the third tier so user on_key handlers
+     (tier 2) can call key_prevent_default to suppress it. *)
   Renderable.set_default_key_handler renderable
     (Some (fun event -> ignore (handle_key input event)));
   Renderable.set_hardware_cursor_provider renderable
@@ -613,8 +615,8 @@ let set_placeholder_color t color =
 let set_cursor_color t color =
   if not (Ansi.Color.equal t.props.cursor_color color) then (
     t.props <- { t.props with cursor_color = color };
-    (* Only request a render when focused, as cursor color affects the
-       hardware cursor. *)
+    (* Only request a render when focused, as cursor color affects the hardware
+       cursor. *)
     if Renderable.focused (surface_node t) then request_render t)
 
 let set_cursor_style t style =

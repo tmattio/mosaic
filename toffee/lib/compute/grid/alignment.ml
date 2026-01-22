@@ -4,9 +4,10 @@ open Geometry
 open Style
 open Tree
 
-(* Align the grid tracks within the grid according to the align-content (rows) or
-   justify-content (columns) property. This only does anything if the size of the
-   grid is not equal to the size of the grid container in the axis being aligned. *)
+(* Align the grid tracks within the grid according to the align-content (rows)
+   or justify-content (columns) property. This only does anything if the size of
+   the grid is not equal to the size of the grid container in the axis being
+   aligned. *)
 let align_tracks ~grid_container_content_box_size ~padding ~border ~tracks
     ~track_alignment_style =
   let used_size =
@@ -26,8 +27,8 @@ let align_tracks ~grid_container_content_box_size ~padding ~border ~tracks
     !count
   in
 
-  (* Grid layout treats gaps as full tracks rather than applying them at alignment so we
-     simply pass zero here. Grid layout is never reversed. *)
+  (* Grid layout treats gaps as full tracks rather than applying them at
+     alignment so we simply pass zero here. Grid layout is never reversed. *)
   let gap = 0.0 in
   let layout_is_reversed = false in
   let is_safe = false in
@@ -41,7 +42,8 @@ let align_tracks ~grid_container_content_box_size ~padding ~border ~tracks
   let total_offset = ref origin in
   Array.iteri
     (fun i track ->
-      (* Odd tracks are gutters (but arrays are zero-indexed, so odd tracks have even indices) *)
+      (* Odd tracks are gutters (but arrays are zero-indexed, so odd tracks have
+         even indices) *)
       let is_gutter = i mod 2 = 0 in
 
       (* The first non-gutter track is index 1 *)
@@ -106,7 +108,8 @@ let align_item_within_area ~grid_area ~(alignment_style : Align_items.t)
         (grid_area_size -. resolved_size +. resolved_margin.Line.start
        -. resolved_margin.Line.end_)
         /. 2.0
-    (* TODO: Add support for baseline alignment. For now we treat it as "start". *)
+    (* TODO: Add support for baseline alignment. For now we treat it as
+       "start". *)
     | Align_items.Baseline -> resolved_margin.Line.start
     | Align_items.Stretch -> resolved_margin.Line.start
   in
@@ -259,10 +262,11 @@ let align_and_position_item (type t)
     Size.maybe_add box_sizing_adjustment with_aspect
   in
 
-  (* Resolve default alignment styles if they are set on neither the parent or the node itself
-     Note: if the child has a preferred aspect ratio but neither width or height are set, then the width is stretched
-     and the then height is calculated from the width according the aspect ratio
-     See: https://www.w3.org/TR/css-grid-1/#grid-item-sizing *)
+  (* Resolve default alignment styles if they are set on neither the parent or
+     the node itself Note: if the child has a preferred aspect ratio but neither
+     width or height are set, then the width is stretched and the then height is
+     calculated from the width according the aspect ratio See:
+     https://www.w3.org/TR/css-grid-1/#grid-item-sizing *)
   let alignment_styles =
     In_both_abs_axis.
       {
@@ -286,8 +290,8 @@ let align_and_position_item (type t)
       }
   in
 
-  (* Note: This is not a bug. It is part of the CSS spec that both horizontal and vertical margins
-     resolve against the WIDTH of the grid area. *)
+  (* Note: This is not a bug. It is part of the CSS spec that both horizontal
+     and vertical margins resolve against the WIDTH of the grid area. *)
   let margin =
     Style.margin style
     |> Rect.map (fun margin ->
@@ -312,14 +316,14 @@ let align_and_position_item (type t)
       }
   in
 
-  (* If node is absolutely positioned and width is not set explicitly, then deduce it
-     from left, right and container_content_box if both are set. *)
+  (* If node is absolutely positioned and width is not set explicitly, then
+     deduce it from left, right and container_content_box if both are set. *)
   let width =
     match inherent_size.width with
     | Some w -> Some w
     | None ->
-        (* Apply width derived from both the left and right properties of an absolutely
-           positioned element being set *)
+        (* Apply width derived from both the left and right properties of an
+           absolutely positioned element being set *)
         if position = Position.Absolute then
           match (inset_horizontal.start, inset_horizontal.end_) with
           | Some left, Some right ->
@@ -328,10 +332,9 @@ let align_and_position_item (type t)
                    (grid_area_minus_item_margins_size.width -. left -. right)
                    0.0)
           | _ -> None
-          (* Apply width based on stretch alignment if:
-           - Alignment style is "stretch"
-           - The node is not absolutely positioned
-           - The node does not have auto margins in this axis. *)
+          (* Apply width based on stretch alignment if: - Alignment style is
+             "stretch" - The node is not absolutely positioned - The node does
+             not have auto margins in this axis. *)
         else if
           Option.is_some margin.left
           && Option.is_some margin.right
@@ -341,7 +344,8 @@ let align_and_position_item (type t)
         else None
   in
 
-  (* Reapply aspect ratio after stretch and absolute position width adjustments *)
+  (* Reapply aspect ratio after stretch and absolute position width
+     adjustments *)
   let size1 =
     Size.apply_aspect_ratio aspect_ratio
       Size.{ width; height = inherent_size.height }
@@ -359,10 +363,9 @@ let align_and_position_item (type t)
                    (grid_area_minus_item_margins_size.height -. top -. bottom)
                    0.0)
           | _ -> None
-          (* Apply height based on stretch alignment if:
-           - Alignment style is "stretch"
-           - The node is not absolutely positioned
-           - The node does not have auto margins in this axis. *)
+          (* Apply height based on stretch alignment if: - Alignment style is
+             "stretch" - The node is not absolutely positioned - The node does
+             not have auto margins in this axis. *)
         else if
           Option.is_some margin.top
           && Option.is_some margin.bottom
@@ -372,7 +375,8 @@ let align_and_position_item (type t)
         else None
   in
 
-  (* Reapply aspect ratio after stretch and absolute position height adjustments *)
+  (* Reapply aspect ratio after stretch and absolute position height
+     adjustments *)
   let size2 =
     Size.apply_aspect_ratio aspect_ratio Size.{ width = size1.width; height }
   in
@@ -380,7 +384,8 @@ let align_and_position_item (type t)
   (* Clamp size by min and max width/height *)
   let clamped_size = Size.clamp_option min_size max_size size2 in
 
-  (* Resolve missing size for absolutely positioned items by performing a sizing-only pass *)
+  (* Resolve missing size for absolutely positioned items by performing a
+     sizing-only pass *)
   let size =
     if
       position = Position.Absolute

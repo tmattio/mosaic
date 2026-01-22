@@ -71,9 +71,8 @@ let flag_to_sgr_code = function
   | Framed -> 51
   | Encircled -> 52
 
-(* SGR codes to disable attributes.
-   Note: Bold/Dim share 22, Underline/Double_underline share 24,
-   Framed/Encircled share 54. *)
+(* SGR codes to disable attributes. Note: Bold/Dim share 22,
+   Underline/Double_underline share 24, Framed/Encircled share 54. *)
 let flag_to_sgr_disable_code = function
   | Bold -> 22 (* normal intensity *)
   | Dim -> 22 (* normal intensity *)
@@ -161,7 +160,8 @@ let iter_sgr_codes f mask =
     all_flags
 
 (* Unrolled loop to avoid allocations. Deduplicates shared disable codes:
-   Bold/Dim share 22, Underline/Double_underline share 24, Framed/Encircled share 54. *)
+   Bold/Dim share 22, Underline/Double_underline share 24, Framed/Encircled
+   share 54. *)
 let iter_sgr_disable_codes f mask =
   (* Code 22: normal intensity (disables Bold and Dim) *)
   if mask land (bold lor dim) <> 0 then f 22;

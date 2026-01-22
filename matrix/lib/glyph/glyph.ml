@@ -19,13 +19,10 @@ type pool = {
 
 (* Constants & Bit Layout *)
 
-(* Bit layout (31 bits used, compatible with 32-bit OCaml):
-   bit 30: grapheme flag
-   bit 29: continuation flag
-   bits 27-28: right_extent (2 bits)
-   bits 25-26: left_extent (2 bits)
-   bits 18-24: generation (7 bits)
-   bits 0-17: index (18 bits) → 262K max IDs *)
+(* Bit layout (31 bits used, compatible with 32-bit OCaml): bit 30: grapheme
+   flag bit 29: continuation flag bits 27-28: right_extent (2 bits) bits 25-26:
+   left_extent (2 bits) bits 18-24: generation (7 bits) bits 0-17: index (18
+   bits) → 262K max IDs *)
 
 let flag_grapheme = 0x40000000
 let flag_continuation = 0x20000000
@@ -40,8 +37,7 @@ let initial_pool_bytes = 4096 * 8
 
 (* ASCII Helpers *)
 
-(* Pre-computed widths for 0-255.
-   -1 indicates control characters (C0, DEL, C1).
+(* Pre-computed widths for 0-255. -1 indicates control characters (C0, DEL, C1).
    1 indicates printable (including Latin-1). *)
 let ascii_width_table =
   let arr = Array.make 256 1 in
@@ -193,9 +189,9 @@ let rec find_boundary_loop seg str limit pos =
     if Uuseg_grapheme_cluster.check_boundary seg u then pos
     else find_boundary_loop seg str limit (pos + Uchar.utf_decode_length d)
 
-(* Find the next grapheme cluster boundary starting at [start].
-   Returns the byte offset after the grapheme cluster.
-   When [ignore_zwj] is true, GB11 is disabled (no emoji ZWJ sequences). *)
+(* Find the next grapheme cluster boundary starting at [start]. Returns the byte
+   offset after the grapheme cluster. When [ignore_zwj] is true, GB11 is
+   disabled (no emoji ZWJ sequences). *)
 let next_boundary seg ~ignore_zwj str start limit =
   if start >= limit then limit
   else (

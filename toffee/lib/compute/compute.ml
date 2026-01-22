@@ -75,7 +75,8 @@ let compute_root_layout (type t)
        |> Size.clamp_option min_size max_size
      in
 
-     (* If both min and max in a given axis are set and max <= min then this determines the size in that axis *)
+     (* If both min and max in a given axis are set and max <= min then this
+        determines the size in that axis *)
      let min_max_definite_size =
        Size.map2
          (fun min max ->
@@ -85,7 +86,8 @@ let compute_root_layout (type t)
          min_size max_size
      in
 
-     (* Block nodes automatically stretch fit their width to fit available space if available space is definite *)
+     (* Block nodes automatically stretch fit their width to fit available space
+        if available space is definite *)
      let available_space_based_size =
        Size.
          {

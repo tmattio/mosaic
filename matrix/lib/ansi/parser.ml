@@ -234,7 +234,8 @@ let parse_osc body : token =
 type state = Normal | Escape | Csi | Osc | Osc_escape
 
 type t = {
-  (* Pending bytes buffer - for incomplete escape sequences at chunk boundaries *)
+  (* Pending bytes buffer - for incomplete escape sequences at chunk
+     boundaries *)
   mutable pending_buf : bytes;
   mutable pending_len : int;
   (* State machine *)
@@ -275,7 +276,8 @@ let reset p =
 let has_pending p = p.pending_len > 0 || p.state <> Normal || p.utf8_len > 0
 let pending p = Bytes.sub p.pending_buf 0 p.pending_len
 
-(* Decode UTF-8 bytes to text_buf. Handles chunk boundaries for streaming input. *)
+(* Decode UTF-8 bytes to text_buf. Handles chunk boundaries for streaming
+   input. *)
 let decode_utf8 p src off len =
   if len <= 0 then ()
   else begin
@@ -487,7 +489,8 @@ let feed p src off len emit =
     (* Copy remaining to pending buffer *)
     if input == p.pending_buf then (
       if
-        (* Already using pending_buf - shift remaining bytes down if consumed > 0 *)
+        (* Already using pending_buf - shift remaining bytes down if consumed >
+           0 *)
         consumed > 0
       then Bytes.blit p.pending_buf consumed p.pending_buf 0 remaining)
     else (

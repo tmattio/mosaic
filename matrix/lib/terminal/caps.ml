@@ -84,7 +84,8 @@ let colorterm_truecolor value =
   String.equal v "truecolor" || String.equal v "24bit"
 
 let apply_environment_overrides caps =
-  (* On Windows, assume modern terminal capabilities (Windows Terminal, ConPTY, etc.) *)
+  (* On Windows, assume modern terminal capabilities (Windows Terminal, ConPTY,
+     etc.) *)
   let caps =
     if Sys.win32 then
       {
@@ -252,16 +253,13 @@ let mark_kitty_terminal caps =
   }
 
 let apply_mode_report caps report =
-  (* DECRQM response values:
-     0 = not recognized (mode not supported)
-     1 = set (mode is enabled)
-     2 = reset (mode is disabled but supported)
-     3 = permanently set
-     4 = permanently reset
+  (* DECRQM response values: 0 = not recognized (mode not supported) 1 = set
+     (mode is enabled) 2 = reset (mode is disabled but supported) 3 =
+     permanently set 4 = permanently reset
 
-     For most modes, a response of 1 or 2 indicates the terminal supports
-     the mode. For mode 2027 (Unicode width), the value indicates the
-     current state: 1 = Unicode mode active, 2 = wcwidth mode active. *)
+     For most modes, a response of 1 or 2 indicates the terminal supports the
+     mode. For mode 2027 (Unicode width), the value indicates the current state:
+     1 = Unicode mode active, 2 = wcwidth mode active. *)
   let is_supported value = value = 1 || value = 2 in
   let update caps (mode, value) =
     match mode with
@@ -326,9 +324,9 @@ let apply_event_internal (caps, info) (event : Input.Caps.event) =
       in
       (caps, info)
   | Input.Caps.Kitty_keyboard { level; _ } ->
-      (* Kitty keyboard reply only confirms keyboard protocol support.
-         Other terminals (e.g., foot, WezTerm) may support the Kitty keyboard
-         protocol without supporting Kitty graphics or other Kitty features. *)
+      (* Kitty keyboard reply only confirms keyboard protocol support. Other
+         terminals (e.g., foot, WezTerm) may support the Kitty keyboard protocol
+         without supporting Kitty graphics or other Kitty features. *)
       let caps =
         if level > 0 then { caps with kitty_keyboard = true } else caps
       in

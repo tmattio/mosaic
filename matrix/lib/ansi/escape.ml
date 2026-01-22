@@ -111,8 +111,8 @@ let add_uint w n =
 let add_int w n =
   if n >= 0 then add_uint w n
   else (
-    (* Work in negative space to handle Int.min_int without overflow.
-       For negative n: q = n / 10 is negative or zero, r = n - q*10 is in [-9, 0] *)
+    (* Work in negative space to handle Int.min_int without overflow. For
+       negative n: q = n / 10 is negative or zero, r = n - q*10 is in [-9, 0] *)
     write_char w '-';
     let rec emit_negative n =
       let q = n / 10 in
@@ -195,7 +195,8 @@ let to_string (t : t) =
     t w;
     Bytes.unsafe_to_string bytes
 
-(* to_buffer: convenience wrapper via to_string (allocates intermediate string) *)
+(* to_buffer: convenience wrapper via to_string (allocates intermediate
+   string) *)
 let to_buffer t buf = Buffer.add_string buf (to_string t)
 
 (* CSI / SGR helpers *)
@@ -225,7 +226,8 @@ let sgr codes w =
       loop rest;
       write_char w 'm'
 
-(* sgr_direct uses writer position to track separator state without ref allocation *)
+(* sgr_direct uses writer position to track separator state without ref
+   allocation *)
 let sgr_direct write_codes w =
   write_string w "\027[";
   let start_pos = w.pos in

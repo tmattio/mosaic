@@ -279,7 +279,8 @@ let test_node_siblings () =
 let test_node_descendant_for_range () =
   with_parsed_json json_simple (fun tree ->
       let root = Tree.root_node tree in
-      (* Find node at position of "name" - may be string or string_content depending on grammar *)
+      (* Find node at position of "name" - may be string or string_content
+         depending on grammar *)
       let desc = Node.descendant_for_byte_range root ~start:2 ~end_:6 in
       Alcotest.(check bool) "found descendant" true (Option.is_some desc);
       match desc with
@@ -339,9 +340,9 @@ let test_node_descendant_count () =
       Alcotest.(check bool) "has descendants" true (count > 1))
 
 let test_node_tree_reference_safety () =
-  (* This test verifies that nodes keep the tree alive via GC.
-     The Node.t type holds a reference to Tree.t, preventing GC from
-     collecting the tree while nodes are still in use. *)
+  (* This test verifies that nodes keep the tree alive via GC. The Node.t type
+     holds a reference to Tree.t, preventing GC from collecting the tree while
+     nodes are still in use. *)
   let node =
     with_json_parser (fun parser ->
         let tree = Parser.parse_string parser json_simple in

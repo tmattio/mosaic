@@ -79,7 +79,8 @@ let tui_frame =
 
 let styled_inline =
   Ubench.create "inline_styled" (fun () ->
-      (* Logging-style single-call styling, e.g. direct use from application code *)
+      (* Logging-style single-call styling, e.g. direct use from application
+         code *)
       let s =
         A.styled ~reset:true ~fg:C.red ~bold:true
           "ERROR: failed to connect to upstream (status=502, retries=3)"
@@ -88,7 +89,8 @@ let styled_inline =
 
 let styled_segments =
   Ubench.create "render_log_segments" (fun () ->
-      (* Renderer-style segmented output, e.g. logging framework or TUI header *)
+      (* Renderer-style segmented output, e.g. logging framework or TUI
+         header *)
       let out = A.render log_segments in
       ignore (Sys.opaque_identity out))
 
@@ -114,8 +116,8 @@ let parse_ansi_block_bench =
 
 let parse_tui_frame_bench =
   Ubench.create "parse_tui_frame" (fun () ->
-      (* Parsing a TUI frame: lots of CSI, SGR and control sequences mixed
-         with text. Representative of terminal emulators or log recorders. *)
+      (* Parsing a TUI frame: lots of CSI, SGR and control sequences mixed with
+         text. Representative of terminal emulators or log recorders. *)
       let tokens = A.parse tui_frame in
       ignore (Sys.opaque_identity tokens))
 
@@ -193,9 +195,9 @@ let sgr_writer_tui = Esc.make sgr_buf
 
 let sgr_tui_frame_80x24 =
   Ubench.create "sgr_tui_frame_80x24" (fun () ->
-      (* Simulate rendering a full 80x24 TUI frame with varied styles.
-         This is the primary use case for Sgr_state: rendering a grid
-         where adjacent cells often share styles (state diffing wins). *)
+      (* Simulate rendering a full 80x24 TUI frame with varied styles. This is
+         the primary use case for Sgr_state: rendering a grid where adjacent
+         cells often share styles (state diffing wins). *)
       Sgr.reset sgr_state_tui;
       Esc.reset_pos sgr_writer_tui;
       for row = 0 to 23 do
@@ -218,9 +220,9 @@ let sgr_writer_same = Esc.make sgr_buf
 
 let sgr_same_style_1920 =
   Ubench.create "sgr_same_style_1920" (fun () ->
-      (* Best case: 1920 cells (one row at 1920px) with identical style.
-         After the first update, all subsequent calls should be no-ops.
-         Tests the fast path where state diffing avoids all output. *)
+      (* Best case: 1920 cells (one row at 1920px) with identical style. After
+         the first update, all subsequent calls should be no-ops. Tests the fast
+         path where state diffing avoids all output. *)
       Sgr.reset sgr_state_same;
       Esc.reset_pos sgr_writer_same;
       for _ = 0 to 1919 do
@@ -234,8 +236,8 @@ let sgr_writer_alt = Esc.make sgr_buf
 
 let sgr_alternating_styles_1920 =
   Ubench.create "sgr_alternating_styles_1920" (fun () ->
-      (* Worst case: style changes on every cell (checkerboard pattern).
-         Every update emits a full SGR sequence. Tests raw throughput. *)
+      (* Worst case: style changes on every cell (checkerboard pattern). Every
+         update emits a full SGR sequence. Tests raw throughput. *)
       Sgr.reset sgr_state_alt;
       Esc.reset_pos sgr_writer_alt;
       for i = 0 to 1919 do

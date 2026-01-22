@@ -87,8 +87,8 @@ module PlacementInBothAxes = struct
     get_absolute placement (Abstract_axis.to_absolute_naive axis)
 end
 
-(* 8.5. Grid Item Placement Algorithm
-   Place a single definitely placed item into the grid *)
+(* 8.5. Grid Item Placement Algorithm Place a single definitely placed item into
+   the grid *)
 let place_definite_grid_item placement primary_axis =
   (* Resolve spans to tracks *)
   let primary_span =
@@ -101,8 +101,8 @@ let place_definite_grid_item placement primary_axis =
   in
   (primary_span, secondary_span)
 
-(* 8.5. Grid Item Placement Algorithm
-   Step 2. Place remaining children with definite secondary axis positions *)
+(* 8.5. Grid Item Placement Algorithm Step 2. Place remaining children with
+   definite secondary axis positions *)
 let place_definite_secondary_axis_item cell_occupancy_matrix placement auto_flow
     =
   let primary_axis = Grid.Auto_flow.primary_axis auto_flow in
@@ -149,8 +149,8 @@ let place_definite_secondary_axis_item cell_occupancy_matrix placement auto_flow
   in
   loop ()
 
-(* 8.5. Grid Item Placement Algorithm
-   Step 4. Position the remaining grid items *)
+(* 8.5. Grid Item Placement Algorithm Step 4. Position the remaining grid
+   items *)
 let place_indefinitely_positioned_item cell_occupancy_matrix placement auto_flow
     grid_position =
   let primary_axis = Grid.Auto_flow.primary_axis auto_flow in
@@ -209,8 +209,8 @@ let place_indefinitely_positioned_item cell_occupancy_matrix placement auto_flow
       else if primary_span.Line.start < !primary_idx then !secondary_idx + 1
       else !secondary_idx;
 
-    (* Item has fixed primary axis position: so we simply increment the secondary axis position
-       until we find a space that the item fits in *)
+    (* Item has fixed primary axis position: so we simply increment the
+       secondary axis position until we find a space that the item fits in *)
     let rec loop () =
       let secondary_span =
         Line.{ start = !secondary_idx; end_ = !secondary_idx + secondary_span }
@@ -228,9 +228,10 @@ let place_indefinitely_positioned_item cell_occupancy_matrix placement auto_flow
   else
     let primary_span = PlacementLine.indefinite_span primary_placement_style in
 
-    (* Item does not have any fixed axis, so we search along the primary axis until we hit the end of the already
-       existent tracks, and then we reset the primary axis back to zero and increment the secondary axis index.
-       We continue in this vein until we find a space that the item fits in. *)
+    (* Item does not have any fixed axis, so we search along the primary axis
+       until we hit the end of the already existent tracks, and then we reset
+       the primary axis back to zero and increment the secondary axis index. We
+       continue in this vein until we find a space that the item fits in. *)
     let rec loop () =
       let primary_span =
         Line.{ start = !primary_idx; end_ = !primary_idx + primary_span }
@@ -239,8 +240,8 @@ let place_indefinitely_positioned_item cell_occupancy_matrix placement auto_flow
         Line.{ start = !secondary_idx; end_ = !secondary_idx + secondary_span }
       in
 
-      (* If the primary index is out of bounds, then increment the secondary index and reset the primary
-         index back to the start of the grid *)
+      (* If the primary index is out of bounds, then increment the secondary
+         index and reset the primary index back to the start of the grid *)
       let primary_out_of_bounds =
         primary_span.Line.end_ > primary_axis_grid_end_line
       in
@@ -258,8 +259,8 @@ let place_indefinitely_positioned_item cell_occupancy_matrix placement auto_flow
     in
     loop ()
 
-(* Record the grid item in both CellOccupancyMatrix and the GridItems list
-   once a definite placement has been determined *)
+(* Record the grid item in both CellOccupancyMatrix and the GridItems list once
+   a definite placement has been determined *)
 let record_grid_placement cell_occupancy_matrix items node index style
     parent_align_items parent_justify_items primary_axis primary_span
     secondary_span placement_type =
@@ -280,9 +281,9 @@ let record_grid_placement cell_occupancy_matrix items node index style
   in
   items := item :: !items
 
-(* 8.5. Grid Item Placement Algorithm
-   Place items into the grid, generating new rows/column into the implicit grid as required
-   
+(* 8.5. Grid Item Placement Algorithm Place items into the grid, generating new
+   rows/column into the implicit grid as required
+
    [Specification](https://www.w3.org/TR/css-grid-2/#auto-placement-algo) *)
 let place_grid_items (type t)
     (module Tree : LAYOUT_PARTIAL_TREE with type t = t) ~cell_occupancy_matrix
@@ -332,7 +333,8 @@ let place_grid_items (type t)
       (index, node, origin_zero_placement, style)
   in
 
-  (* Helper to iterate children, filtering out display:none and position:absolute items *)
+  (* Helper to iterate children, filtering out display:none and
+     position:absolute items *)
   let children_array =
     let count = Tree.child_count tree parent_node in
     let acc = ref [] in
@@ -390,25 +392,26 @@ let place_grid_items (type t)
           Cell_occupancy.AutoPlaced)
     children_array;
 
-  (* 3. Determine the number of columns in the implicit grid
-     By the time we get to this point in the execution, this is actually already accounted for:
-     
-     3.1 Start with the columns from the explicit grid
-           => Handled by grid size estimate which is used to pre-size the GridOccupancyMatrix
-     
-     3.2 Among all the items with a definite column position (explicitly positioned items, items positioned in the previous step,
-         and items not yet positioned but with a definite column) add columns to the beginning and end of the implicit grid as necessary
-         to accommodate those items.
-           => Handled by expand_to_fit_range which expands the GridOccupancyMatrix as necessary
-              -> Called by mark_area_as
-              -> Called by record_grid_placement
-     
-     3.3 If the largest column span among all the items without a definite column position is larger than the width of
-         the implicit grid, add columns to the end of the implicit grid to accommodate that column span.
-           => Handled by grid size estimate which is used to pre-size the GridOccupancyMatrix *)
+  (* 3. Determine the number of columns in the implicit grid By the time we get
+     to this point in the execution, this is actually already accounted for:
 
-  (* 4. Position the remaining grid items
-     (which either have definite position only in the secondary axis or indefinite positions in both axis) *)
+     3.1 Start with the columns from the explicit grid => Handled by grid size
+     estimate which is used to pre-size the GridOccupancyMatrix
+
+     3.2 Among all the items with a definite column position (explicitly
+     positioned items, items positioned in the previous step, and items not yet
+     positioned but with a definite column) add columns to the beginning and end
+     of the implicit grid as necessary to accommodate those items. => Handled by
+     expand_to_fit_range which expands the GridOccupancyMatrix as necessary ->
+     Called by mark_area_as -> Called by record_grid_placement
+
+     3.3 If the largest column span among all the items without a definite
+     column position is larger than the width of the implicit grid, add columns
+     to the end of the implicit grid to accommodate that column span. => Handled
+     by grid size estimate which is used to pre-size the GridOccupancyMatrix *)
+
+  (* 4. Position the remaining grid items (which either have definite position
+     only in the secondary axis or indefinite positions in both axis) *)
   let primary_neg_tracks =
     Cell_occupancy.track_counts cell_occupancy_matrix
       (Abstract_axis.to_absolute_naive primary_axis)
@@ -443,12 +446,15 @@ let place_grid_items (type t)
           align_items justify_items primary_axis primary_span secondary_span
           Cell_occupancy.AutoPlaced;
 
-        (* If using the "dense" placement algorithm then reset the grid position back to grid_start_position ready for the next item
-          Otherwise set it to the position of the current item so that the next item it placed after it. *)
+        (* If using the "dense" placement algorithm then reset the grid position
+           back to grid_start_position ready for the next item Otherwise set it
+           to the position of the current item so that the next item it placed
+           after it. *)
         grid_position :=
           if Grid.Auto_flow.is_dense grid_auto_flow then grid_start_position
           else (primary_span.Line.end_, secondary_span.Line.start)))
     children_array;
 
-  (* Reverse the items list to maintain original order (we accumulated in reverse for performance) *)
+  (* Reverse the items list to maintain original order (we accumulated in
+     reverse for performance) *)
   items := List.rev !items

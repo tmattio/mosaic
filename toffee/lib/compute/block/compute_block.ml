@@ -17,12 +17,14 @@ end
 (* Helper to determine if a style represents a table *)
 let is_table (style : Style.t) : bool = Style.item_is_table style
 
-(* Per-child data that is accumulated and modified over the course of the layout algorithm *)
+(* Per-child data that is accumulated and modified over the course of the layout
+   algorithm *)
 type block_item = {
   node_id : Node_id.t; (* The identifier for the associated node *)
   order : int;
-      (* The "source order" of the item. This is the index of the item within the children iterator,
-      and controls the order in which the nodes are placed *)
+      (* The "source order" of the item. This is the index of the item within
+         the children iterator, and controls the order in which the nodes are
+         placed *)
   is_table : bool;
       (* Items that are tables don't have stretch sizing applied to them *)
   size : float option size; (* The base size of this item *)
@@ -39,8 +41,9 @@ type block_item = {
   padding_border_sum : float size;
       (* The sum of padding and border for this item *)
   mutable static_position : float point;
-      (* The computed "static position" of this item. The static position is the position
-      taking into account padding, border, margins, and scrollbar_gutters but not inset *)
+      (* The computed "static position" of this item. The static position is the
+         position taking into account padding, border, margins, and
+         scrollbar_gutters but not inset *)
   mutable can_be_collapsed_through : bool;
       (* Whether margins can be collapsed through this item *)
 }
@@ -140,7 +143,8 @@ let generate_item_list (type t)
           padding;
           border;
           padding_border_sum = pb_sum;
-          (* Fields to be computed later (for now we initialise with dummy values) *)
+          (* Fields to be computed later (for now we initialise with dummy
+             values) *)
           static_position = Point.zero;
           can_be_collapsed_through = false;
         }
@@ -224,7 +228,8 @@ let perform_final_layout_on_in_flow_children (type t)
     (content_box_inset : float rect) (resolved_content_box_inset : float rect)
     (text_align : Text_align.t) (own_margins_collapse_with_children : bool line)
     : float size * float * Collapsible_margin_set.t * Collapsible_margin_set.t =
-  (* Resolve container_inner_width for sizing child nodes using initial content_box_inset *)
+  (* Resolve container_inner_width for sizing child nodes using initial
+     content_box_inset *)
   let container_inner_width =
     container_outer_width -. Rect.horizontal_axis_sum content_box_inset
   in
@@ -275,8 +280,9 @@ let perform_final_layout_on_in_flow_children (type t)
           else
             item.size
             |> Size.map_width (fun width ->
-                (* TODO: Allow stretch-sizing to be conditional, as there are exceptions.
-                 e.g. Table children of blocks do not stretch fit *)
+                (* TODO: Allow stretch-sizing to be conditional, as there are
+                   exceptions. e.g. Table children of blocks do not stretch
+                   fit *)
                 match width with
                 | Some w ->
                     Some
@@ -620,7 +626,8 @@ let perform_absolute_layout_on_absolute_children (type t)
             |> Size.apply_aspect_ratio aspect_ratio
             |> Size.maybe_add box_sizing_adjustment
           in
-          (* If both min and max in a given axis are set and max <= min then this determines the size in that axis *)
+          (* If both min and max in a given axis are set and max <= min then
+             this determines the size in that axis *)
           let min_max_definite_size =
             Size.map2
               (fun min max ->
@@ -635,9 +642,9 @@ let perform_absolute_layout_on_absolute_children (type t)
                  (Size.clamp_option min_size max_size style_size))
           in
 
-          (* Fill in width from left/right and reapply aspect ratio if:
-           - Width is not already known
-           - Item has both left and right inset properties set *)
+          (* Fill in width from left/right and reapply aspect ratio if: - Width
+             is not already known - Item has both left and right inset
+             properties set *)
           (match (!known_dimensions.width, left, right) with
           | None, Some l, Some r ->
               let new_width_raw =
@@ -658,9 +665,9 @@ let perform_absolute_layout_on_absolute_children (type t)
                 |> Size.choose_first min_max_definite_size
           | _ -> ());
 
-          (* Fill in height from top/bottom and reapply aspect ratio if:
-           - Height is not already known
-           - Item has both top and bottom inset properties set *)
+          (* Fill in height from top/bottom and reapply aspect ratio if: -
+             Height is not already known - Item has both top and bottom inset
+             properties set *)
           (match (!known_dimensions.height, top, bottom) with
           | None, Some t, Some b ->
               let new_height_raw =
@@ -756,8 +763,9 @@ let perform_absolute_layout_on_absolute_children (type t)
           (* Expand auto margins to fill available space *)
           (* https://www.w3.org/TR/CSS21/visudet.html#abs-non-replaced-width *)
           let auto_margin =
-            (* Auto margins for absolutely positioned elements in block containers only resolve
-             if inset is set. Otherwise they resolve to 0. *)
+            (* Auto margins for absolutely positioned elements in block
+               containers only resolve if inset is set. Otherwise they resolve
+               to 0. *)
             let absolute_auto_margin_space =
               Point.
                 {
@@ -871,8 +879,8 @@ let perform_absolute_layout_on_absolute_children (type t)
               }
           in
 
-          (* Note: axis intentionally switched here as scrollbars take up space in the opposite axis
-           to the axis in which scrolling is enabled. *)
+          (* Note: axis intentionally switched here as scrollbars take up space
+             in the opposite axis to the axis in which scrolling is enabled. *)
           let scrollbar_size =
             Size.
               {
@@ -933,9 +941,10 @@ let compute_inner (type t)
         Style.Length_percentage.resolve_or_zero lp parent_size.width calc)
   in
 
-  (* Scrollbar gutters are reserved when the `overflow` property is set to `Overflow::Scroll`.
-     However, the axis are switched (transposed) because a node that scrolls vertically needs
-     *horizontal* space to be reserved for a scrollbar *)
+  (* Scrollbar gutters are reserved when the `overflow` property is set to
+     `Overflow::Scroll`. However, the axis are switched (transposed) because a
+     node that scrolls vertically needs *horizontal* space to be reserved for a
+     scrollbar *)
   let scrollbar_gutter =
     let overflow = Style.overflow style in
     let offsets =
@@ -1129,8 +1138,8 @@ let compute_inner (type t)
           if Style.box_generation_mode child_style = Box_generation_mode.None
           then (
             Tree.set_unrounded_layout tree child (Layout.with_order order);
-            (* Note: Rust uses perform_child_layout which internally uses RunMode::PerformLayout,
-               not a special hidden layout mode *)
+            (* Note: Rust uses perform_child_layout which internally uses
+               RunMode::PerformLayout, not a special hidden layout mode *)
             Tree.compute_child_layout tree child
               (Layout_input.make ~run_mode:Run_mode.Perform_layout
                  ~sizing_mode:Sizing_mode.Inherent_size
@@ -1186,7 +1195,8 @@ let compute_inner (type t)
           ~first_baselines:Point.none ~top_margin ~bottom_margin
           ~margins_can_collapse_through:can_be_collapsed_through
 
-(* Computes the layout of a block container according to the block layout algorithm *)
+(* Computes the layout of a block container according to the block layout
+   algorithm *)
 let compute_block_layout (type t)
     (module Tree : Tree.LAYOUT_PARTIAL_TREE with type t = t) (tree : t)
     (node_id : Node_id.t) (inputs : Layout_input.t) : Layout_output.t =
@@ -1259,7 +1269,8 @@ let compute_block_layout (type t)
     else Size.none
   in
 
-  (* If both min and max in a given axis are set and max <= min then this determines the size in that axis *)
+  (* If both min and max in a given axis are set and max <= min then this
+     determines the size in that axis *)
   let min_max_definite_size =
     Size.map2
       (fun min max ->
@@ -1276,14 +1287,16 @@ let compute_block_layout (type t)
     |> Size.maybe_max padding_border_size
   in
 
-  (* Short-circuit layout if the container's size is fully determined by the container's size and the run mode
-     is ComputeSize (and thus the container's size is all that we're interested in) *)
+  (* Short-circuit layout if the container's size is fully determined by the
+     container's size and the run mode is ComputeSize (and thus the container's
+     size is all that we're interested in) *)
   if run_mode = Run_mode.Compute_size then
     match styled_based_known_dimensions with
     | { width = Some width; height = Some height } ->
         Layout_output.from_outer_size Size.{ width; height }
     | _ ->
-        (* Continue with compute_inner even in Compute_size mode if size not fully determined *)
+        (* Continue with compute_inner even in Compute_size mode if size not
+           fully determined *)
         compute_inner
           (module Tree)
           tree node_id

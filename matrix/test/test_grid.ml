@@ -179,8 +179,9 @@ let box_title_left_aligned () =
 let diff_detects_single_rgb_step () =
   let a = Grid.create ~width:1 ~height:1 () in
   let b = Grid.copy a in
-  (* Instead of hacking raw arrays, we set the cell with a minimal color difference.
-     1/255 is approx 0.0039, which is > the internal epsilon (0.00001). *)
+  (* Instead of hacking raw arrays, we set the cell with a minimal color
+     difference. 1/255 is approx 0.0039, which is > the internal epsilon
+     (0.00001). *)
   let minimal_diff_color = Ansi.Color.of_rgba 1 1 1 1 in
   Grid.set_cell b ~x:0 ~y:0 ~code:(Grid.get_code a 0) ~fg:Ansi.Color.white
     ~bg:minimal_diff_color ~attrs:Ansi.Attr.empty ();
@@ -203,8 +204,8 @@ let alpha_blit_blends_fg_bg () =
   Grid.blit_region ~src ~dst ~src_x:0 ~src_y:0 ~width:1 ~height:1 ~dst_x:0
     ~dst_y:0;
   let r_bg, g_bg, b_bg, a_bg = read_bg dst 0 0 in
-  (* Validate qualitative blend: green increases from 0, blue decreases from 255.
-     Background alpha should match the overlay value (128) rather than
+  (* Validate qualitative blend: green increases from 0, blue decreases from
+     255. Background alpha should match the overlay value (128) rather than
      compositing with the destination alpha. *)
   check bool "bg green increased" true (g_bg > 0);
   check bool "bg blue decreased" true (b_bg < 255);
@@ -481,7 +482,8 @@ let scissor_push_intersects_parent () =
   let grid = Grid.create ~width:4 ~height:1 () in
   (* Parent scissor clips to first cell *)
   Grid.push_scissor grid { x = 0; y = 0; width = 1; height = 1 };
-  (* Child scissor outside parent should intersect to empty, so writes are clipped *)
+  (* Child scissor outside parent should intersect to empty, so writes are
+     clipped *)
   Grid.push_scissor grid { x = 2; y = 0; width = 1; height = 1 };
   Grid.set_cell_alpha grid ~x:2 ~y:0 ~code:(Char.code 'B') ~fg:Ansi.Color.white
     ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
@@ -683,7 +685,8 @@ let clear_resets_grid () =
   Grid.clear ~color grid;
   for y = 0 to 1 do
     for x = 0 to 1 do
-      (* After clear, chars are spaces so blank cells mirror terminal defaults. *)
+      (* After clear, chars are spaces so blank cells mirror terminal
+         defaults. *)
       check int "char" (Char.code ' ') (read_char grid x y);
       check int "width" 1 (read_width grid x y);
       let r, g, b, _ = read_bg grid x y in

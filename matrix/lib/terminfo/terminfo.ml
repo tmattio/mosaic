@@ -945,7 +945,8 @@ let get : type a. t -> a cap -> a option =
       | Some fmt ->
           Some
             (fun (row, col) ->
-              (* cup uses 0-based coordinates but some terminals expect 1-based *)
+              (* cup uses 0-based coordinates but some terminals expect
+                 1-based *)
               let fmt_has_incr = String.contains fmt 'i' in
               if fmt_has_incr then parm fmt [ Int row; Int col ]
               else parm fmt [ Int row; Int col ])

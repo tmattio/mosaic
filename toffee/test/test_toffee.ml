@@ -280,7 +280,8 @@ let test_padding () =
           | Ok layout ->
               let float_eq, _ = test_helpers in
               let size = Layout.size layout in
-              (* With padding, the size should remain 100x100 for content-box sizing *)
+              (* With padding, the size should remain 100x100 for content-box
+                 sizing *)
               Alcotest.(check bool)
                 "Width with padding"
                 (float_eq size.width 100.0)

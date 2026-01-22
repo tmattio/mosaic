@@ -950,7 +950,8 @@ and render_block_quote ctx ~base_style ~next_is_thematic_break quote =
     | None -> Ansi.Color.of_rgb 128 128 128
   in
 
-  (* Apply block_quote.padding inside the border container, and block_quote.margin outside. *)
+  (* Apply block_quote.padding inside the border container, and
+     block_quote.margin outside. *)
   let inner_box =
     match
       make_box ~parent:ctx.parent
@@ -1330,7 +1331,8 @@ let render_content t =
     render_block ctx ~base_style:p.style.document.text (Cmarkit.Doc.block doc)
   in
 
-  (* Apply document theming as a root container, without touching host layout. *)
+  (* Apply document theming as a root container, without touching host
+     layout. *)
   (match block_container ~parent:ctx.parent p.style.document children with
   | None -> ignore (append_children ~parent:t.content children)
   | Some root -> ignore (append_child ~parent:t.content ~child:root));

@@ -1,7 +1,8 @@
 type cursor = { mutable row : int; mutable col : int; mutable visible : bool }
 (* Internal cursor state *)
 
-(* Style run for compressed scrollback - represents contiguous bytes with same style *)
+(* Style run for compressed scrollback - represents contiguous bytes with same
+   style *)
 type style_run = {
   start_byte : int; (* Byte offset in UTF-8 string *)
   end_byte : int; (* Byte offset (exclusive) *)
@@ -254,9 +255,9 @@ let create ?(scrollback = 10000) ?glyph_pool ?width_method
     bracketed_paste = false;
   }
 
-(* Efficient destructive erase using the new Grid API:
-   replace region with spaces, with BG matching current style (or default),
-   using an opaque background color to avoid alpha blending quirks. *)
+(* Efficient destructive erase using the new Grid API: replace region with
+   spaces, with BG matching current style (or default), using an opaque
+   background color to avoid alpha blending quirks. *)
 let erase_region t ~x ~y ~width ~height =
   if width <= 0 || height <= 0 then ()
   else
@@ -537,7 +538,8 @@ let put_text t text =
           let insert_w = min w (line_width - t.cursor.col) in
 
           if insert_w > 0 then (
-            (* Shift existing cells to the right, grapheme-aware, from end to start. *)
+            (* Shift existing cells to the right, grapheme-aware, from end to
+               start. *)
             let rec shift x =
               if x < t.cursor.col then ()
               else
@@ -581,7 +583,8 @@ let put_text t text =
           let s = !remaining in
           let len = String.length s in
 
-          (* Fast path: if the whole string fits in remaining columns, draw once. *)
+          (* Fast path: if the whole string fits in remaining columns, draw
+             once. *)
           let total_w = Glyph.measure ~width_method ~tab_width:2 s in
           if total_w <= available then (
             Grid.draw_text t.active_grid ~x:t.cursor.col ~y:t.cursor.row ~text:s
@@ -607,9 +610,9 @@ let put_text t text =
               s;
 
             if !bytes_consumed = 0 && len > 0 then (
-              (* First grapheme doesn't fit in remaining width.
-                 Defer to Grid.draw_text to handle truncation/clearing semantics
-                 for this line, then stop. *)
+              (* First grapheme doesn't fit in remaining width. Defer to
+                 Grid.draw_text to handle truncation/clearing semantics for this
+                 line, then stop. *)
               Grid.draw_text t.active_grid ~x:t.cursor.col ~y:t.cursor.row
                 ~text:s ~style;
               mark_row_dirty t t.cursor.row;

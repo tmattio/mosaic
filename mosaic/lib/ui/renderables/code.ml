@@ -10,8 +10,8 @@ module Theme = struct
 
   let base t = t.base
 
-  (* Prefer “remove last segment” fallback:
-     keyword.control.flow -> keyword.control -> keyword *)
+  (* Prefer “remove last segment” fallback: keyword.control.flow ->
+     keyword.control -> keyword *)
   let rec find_overlay t scope =
     match Hashtbl.find_opt t.overlays scope with
     | Some s -> Some s
@@ -494,7 +494,8 @@ let apply_props t (props : Props.t) =
   set_tab_indicator t props.tab_indicator;
   set_tab_indicator_color t props.tab_indicator_color
 
-(* Rendering and measurement largely mirror Text_surface to avoid composition. *)
+(* Rendering and measurement largely mirror Text_surface to avoid
+   composition. *)
 
 let measure t ~known_dimensions ~available_space ~style:_ =
   (match t.wrap_mode with

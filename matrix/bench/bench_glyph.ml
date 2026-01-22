@@ -33,15 +33,9 @@ let ascii_line =
      succeeded. "
     8
 
-(* A small, reusable hot set of complex graphemes:
-   - emoji ZWJ sequences
-   - flags (regional indicators)
-   - emoji with skin tone modifiers
-   - rainbow flag (ZWJ + emoji)
-   - Indic conjuncts
-   - CJK
-   - Latin + combining accent
-*)
+(* A small, reusable hot set of complex graphemes: - emoji ZWJ sequences - flags
+   (regional indicators) - emoji with skin tone modifiers - rainbow flag (ZWJ +
+   emoji) - Indic conjuncts - CJK - Latin + combining accent *)
 let unicode_graphemes =
   [|
     "👩\u{200D}🚀";
@@ -65,8 +59,8 @@ let unicode_graphemes =
 (* Emoji / complex text heavy line: status bars, dashboards, fancy prompts. *)
 let complex_line = cycle_concat unicode_graphemes 256
 
-(* Pool hot set: small number of frequently reused tokens
-   (separators, keywords, icons, etc.). *)
+(* Pool hot set: small number of frequently reused tokens (separators, keywords,
+   icons, etc.). *)
 let hotset_tokens =
   Array.concat
     [
@@ -82,8 +76,8 @@ let unique_tokens =
 
 (* Micro-bench wrappers *)
 
-(* Reusable callback for iter_graphemes - avoids closure allocation per call.
-   We use a mutable counter that gets reset before each benchmark iteration. *)
+(* Reusable callback for iter_graphemes - avoids closure allocation per call. We
+   use a mutable counter that gets reset before each benchmark iteration. *)
 let segment_counter = ref 0
 let segment_callback ~offset:_ ~len:_ = incr segment_counter
 
@@ -98,7 +92,8 @@ let width_bench name method_ text =
       let w = G.measure ~width_method:method_ ~tab_width:2 text in
       ignore (Sys.opaque_identity w))
 
-(* For encode benchmarks, use setup to create pool and reusable callback state *)
+(* For encode benchmarks, use setup to create pool and reusable callback
+   state *)
 let encode_bench name method_ text =
   let pool = G.create_pool () in
   let cols = ref 0 in
@@ -119,8 +114,8 @@ let encode_bench name method_ text =
 
 (* Pool-level benchmarks *)
 
-(* Scenario: small hotset of frequently reused graphemes
-   (borders, separators, icons, keywords). *)
+(* Scenario: small hotset of frequently reused graphemes (borders, separators,
+   icons, keywords). *)
 let pool_intern_hotset =
   Ubench.bench_with_setup "pool/intern_hotset"
     ~setup:(fun () ->
@@ -191,7 +186,8 @@ let benchmarks =
         [
           (* Pure ASCII fast path. *)
           width_bench "width/ascii/unicode" `Unicode ascii_line;
-          (* Complex text with full Unicode width semantics (ZWJ, flags, Indic). *)
+          (* Complex text with full Unicode width semantics (ZWJ, flags,
+             Indic). *)
           width_bench "width/complex/unicode" `Unicode complex_line;
           (* Same text but with No_zwj semantics (split ZWJ sequences). *)
           width_bench "width/complex/no_zwj" `No_zwj complex_line;

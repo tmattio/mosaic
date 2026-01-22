@@ -149,8 +149,8 @@ val should_start_selection : t -> x:int -> y:int -> bool
     [(x, y)]. Returns [false] when [selectable] is [false] or the point is
     outside the renderable bounds. *)
 
-(* Viewport sizing/culling is handled internally by Text_surface;
-   Text does not expose separate viewport controls. *)
+(* Viewport sizing/culling is handled internally by Text_surface; Text does not
+   expose separate viewport controls. *)
 
 val set_selection : t -> Text_buffer.Selection.t -> unit
 (** [set_selection t selection] highlights a text range. *)

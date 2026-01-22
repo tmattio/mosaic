@@ -30,7 +30,8 @@ let test_create_renderer () =
   let r = Screen.create () in
   check bool "renderer created" true (r != Obj.magic 0)
 
-(* Screen rendering is pure diff output; no terminal-side effects are emitted. *)
+(* Screen rendering is pure diff output; no terminal-side effects are
+   emitted. *)
 let zero_frame_expected = ""
 
 let test_zero_sized_frame () =
@@ -228,7 +229,8 @@ let test_resize_smaller () =
   check bool "shrink works" true (String.length output2 > 0)
 
 let test_resize_clears_both_buffers () =
-  (* Test that resize clears both current and next buffers, ensuring proper diffing *)
+  (* Test that resize clears both current and next buffers, ensuring proper
+     diffing *)
   let r = create_renderer ~width:5 ~height:5 () in
 
   (* Fill the screen with content *)
@@ -500,7 +502,8 @@ let test_extremely_wide_char () =
   check bool "emoji renders" true (String.length output > 0)
 
 let test_buffer_overflow_prevention () =
-  (* Test with large frame (200x60) and complex content to ensure 2MB buffer doesn't overflow *)
+  (* Test with large frame (200x60) and complex content to ensure 2MB buffer
+     doesn't overflow *)
   let r = create_renderer ~width:200 ~height:60 () in
   let f =
     Screen.build r ~width:200 ~height:60 (fun grid _hits ->
@@ -745,8 +748,8 @@ let test_attribute_only_change () =
 (* 9. Performance Characteristics Tests *)
 
 let test_zero_allocation_frame_building () =
-  (* This is a semantic test - we can't actually measure allocations,
-     but we can verify the API works as expected *)
+  (* This is a semantic test - we can't actually measure allocations, but we can
+     verify the API works as expected *)
   let r = Screen.create () in
 
   (* Build and post_process should work without errors *)

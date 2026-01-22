@@ -208,17 +208,17 @@ end
 let clamp_int lo hi v = if v < lo then lo else if v > hi then hi else v
 let clamp01 v = if v < 0. then 0. else if v > 1. then 1. else v
 
-(* Safe range for domain inference: when the inferred domain is degenerate
-   (min == max), expand it by an absolute amount. This is appropriate for
-   domain inference where we don't know the scale of the data. *)
+(* Safe range for domain inference: when the inferred domain is degenerate (min
+   == max), expand it by an absolute amount. This is appropriate for domain
+   inference where we don't know the scale of the data. *)
 let safe_domain_range (a : float) (b : float) =
   let eps = 1e-12 in
   if Float.abs (b -. a) < eps then (a -. 1.0, b +. 1.0) else (a, b)
 
-(* Safe range for view windows: when the view range is degenerate,
-   expand it relative to the magnitude of the values. This prevents
-   large absolute expansions when working with small-scale data.
-   Guarantees the resulting span is always >= epsilon (1e-12). *)
+(* Safe range for view windows: when the view range is degenerate, expand it
+   relative to the magnitude of the values. This prevents large absolute
+   expansions when working with small-scale data. Guarantees the resulting span
+   is always >= epsilon (1e-12). *)
 let safe_view_range (a : float) (b : float) =
   let epsilon = 1e-12 in
   let span = Float.abs (b -. a) in
@@ -250,8 +250,9 @@ let braille_glyph_of_bits bits =
   in
   utf8_of_uchar u
 
-(* Block2x2 quadrant glyphs: 4 bits = [top-left, top-right, bottom-left, bottom-right]
-   Bit layout: bit 0 = top-left, bit 1 = top-right, bit 2 = bottom-left, bit 3 = bottom-right *)
+(* Block2x2 quadrant glyphs: 4 bits = [top-left, top-right, bottom-left,
+   bottom-right] Bit layout: bit 0 = top-left, bit 1 = top-right, bit 2 =
+   bottom-left, bit 3 = bottom-right *)
 let quadrant_glyphs =
   [|
     " ";
@@ -389,8 +390,8 @@ module Clip = struct
     else if y > ymax then code := !code lor top;
     !code
 
-  (* Clip a line segment to a rectangle. Returns None if completely outside,
-     or Some (x1', y1', x2', y2') with clipped coordinates. *)
+  (* Clip a line segment to a rectangle. Returns None if completely outside, or
+     Some (x1', y1', x2', y2') with clipped coordinates. *)
   let line_to_rect ~xmin ~xmax ~ymin ~ymax ~x1 ~y1 ~x2 ~y2 =
     let x1 = ref (float x1) and y1 = ref (float y1) in
     let x2 = ref (float x2) and y2 = ref (float y2) in
@@ -413,8 +414,8 @@ module Clip = struct
         let code_out = if !code1 <> 0 then !code1 else !code2 in
         let x = ref 0. and y = ref 0. in
         let dx = !x2 -. !x1 and dy = !y2 -. !y1 in
-        (* Guard against divide-by-zero for horizontal/vertical lines.
-           For horizontal lines (dy=0), top/bottom clips are impossible since
+        (* Guard against divide-by-zero for horizontal/vertical lines. For
+           horizontal lines (dy=0), top/bottom clips are impossible since
            code_out can only have left/right bits set. Similarly for vertical
            lines (dx=0), left/right clips are impossible. However, we guard
            anyway for safety in case of floating point edge cases. *)
@@ -468,9 +469,9 @@ let lower_block_glyph frac =
     | 7 -> Some "▇"
     | _ -> Some "█"
 
-(* Upper block glyphs fill from the top down (▔▀ etc.)
-   Note: Unicode only has ▀ (upper half) and ▔ (upper eighth).
-   For intermediate values, we use ▀ with proportional coverage. *)
+(* Upper block glyphs fill from the top down (▔▀ etc.) Note: Unicode only has ▀
+   (upper half) and ▔ (upper eighth). For intermediate values, we use ▀ with
+   proportional coverage. *)
 let upper_block_glyph frac =
   if frac <= 0. then None
   else if frac >= 1. then Some "█"
@@ -509,8 +510,8 @@ let left_block_glyph frac =
     | 7 -> Some "▉"
     | _ -> Some "█"
 
-(* Right block glyphs fill from the right side (▕▐ etc.)
-   Note: Unicode only has ▐ (right half) and ▕ (right eighth). *)
+(* Right block glyphs fill from the right side (▕▐ etc.) Note: Unicode only has
+   ▐ (right half) and ▕ (right eighth). *)
 let right_block_glyph frac =
   if frac <= 0. then None
   else if frac >= 1. then Some "█"
@@ -946,8 +947,8 @@ module Mark = struct
     | Shaded
     | Dense_bilinear
 
-  (* TODO: bar_mode is defined but not yet implemented in rendering.
-     Currently all bars render as half-block sub-cell precision. *)
+  (* TODO: bar_mode is defined but not yet implemented in rendering. Currently
+     all bars render as half-block sub-cell precision. *)
   type bar_mode = [ `Cell | `Half_block ]
   type candle_body = [ `Filled | `Hollow ]
   type candle_width = [ `One | `Two ]
@@ -1150,12 +1151,12 @@ module Mark = struct
   let bars_x ?id ?label ?style ?(mode = (`Half_block : bar_mode)) ~y ~x data =
     Bars_x { id; label; style; mode; y; x; data }
 
-  let stacked_bars_y ?id ?(gap = 1) ?bar_width ?(mode = (`Half_block : bar_mode))
-      data =
+  let stacked_bars_y ?id ?(gap = 1) ?bar_width
+      ?(mode = (`Half_block : bar_mode)) data =
     Stacked_bars_y { id; gap = max 0 gap; bar_width; mode; data }
 
-  let stacked_bars_x ?id ?(gap = 1) ?bar_height ?(mode = (`Half_block : bar_mode))
-      data =
+  let stacked_bars_x ?id ?(gap = 1) ?bar_height
+      ?(mode = (`Half_block : bar_mode)) data =
     Stacked_bars_x { id; gap = max 0 gap; bar_height; mode; data }
 
   let rule_y ?id ?style ?(pattern = `Solid) ?(y_axis = `Y1) y =
@@ -1493,7 +1494,8 @@ module Layout = struct
   (* Check if Y2 axis is enabled *)
   let has_y2 t = Option.is_some t.y2_scale && Option.is_some t.y2_axis
 
-  (* Scale-aware inverse transform: convert normalized t value [0,1] to data value *)
+  (* Scale-aware inverse transform: convert normalized t value [0,1] to data
+     value *)
   let inverse_x_transform t tx =
     match t.x_scale with
     | Numeric _ | Band _ -> lerp t.x_view.min t.x_view.max tx
@@ -1626,14 +1628,14 @@ module Layout = struct
     let bw = Float.max 1e-6 (band_extent /. float n) in
     (pad /. 2., bw)
 
-  (* Convert band index to pixel position (start of band).
-     Uses Float.round for consistency across gridlines and bars. *)
+  (* Convert band index to pixel position (start of band). Uses Float.round for
+     consistency across gridlines and bars. *)
   let band_start_px ~origin ~offset ~bw ~index =
     origin + int_of_float (Float.round (offset +. (float index *. bw)))
 
   (* Compute the band width in pixels (excluding 1px for inter-band gap).
-     Ensures minimum of 1 pixel. Uses Float.max 1. to ensure non-negative
-     before subtracting, then applies outer max 1 for safety. *)
+     Ensures minimum of 1 pixel. Uses Float.max 1. to ensure non-negative before
+     subtracting, then applies outer max 1 for safety. *)
   let band_size_px ~bw = max 1 (int_of_float (Float.max 1. (bw -. 1.)))
 
   (* O(1) category-to-index lookup using precomputed hashtable *)
@@ -2172,8 +2174,8 @@ module Layout = struct
                                 bar.segments))
               | _ -> ())
           | CHeatmap { id; x; y; value = value_fn; data; _ } ->
-              (* nearest-point heat hit - now passes value through.
-                 CHeatmap always uses Y1 axis. *)
+              (* nearest-point heat hit - now passes value through. CHeatmap
+                 always uses Y1 axis. *)
               let idx = ref 0 in
               Data.iter data (fun a ->
                   let i = !idx in
@@ -2795,7 +2797,8 @@ let infer_axis_kind_y (scale : Scale.t) marks =
 type axis_kind_poly =
   [ `Band of string list * float | `Numeric of bool | `Log of float * bool ]
 
-(* Histogram binning helpers - defined here so they can be used in domain inference *)
+(* Histogram binning helpers - defined here so they can be used in domain
+   inference *)
 let compute_histogram_bins ~(bins : Mark.bin_method)
     ~(normalize : Mark.histogram_normalize) ~(x : 'a -> float) (data : 'a array)
     : float array * float array =
@@ -2821,8 +2824,8 @@ let compute_histogram_bins ~(bins : Mark.bin_method)
           let num_bins = max 1 (int_of_float (Float.ceil (range /. w))) in
           Array.init (num_bins + 1) (fun i -> vmin +. (float i *. w))
       | Mark.Edges e ->
-          (* Edges array must have at least 2 elements to define one bin.
-             If invalid, fall back to auto-computed edges. *)
+          (* Edges array must have at least 2 elements to define one bin. If
+             invalid, fall back to auto-computed edges. *)
           if Array.length e >= 2 then e
           else
             let num_bins = 10 in
@@ -3197,7 +3200,8 @@ let compute_layout ?(view = View.empty) ?(x = 0) ?(y = 0) (t : t) ~width ~height
     | Manual { margins = mt, mr, mb, ml; inner_padding } ->
         (max 0 mt, max 0 mr, max 0 mb, max 0 ml, max 0 inner_padding)
     | Auto ->
-        (* In Auto mode: left margin accommodates y-axis, bottom accommodates x-axis *)
+        (* In Auto mode: left margin accommodates y-axis, bottom accommodates
+           x-axis *)
         (0, 0, 0, 0, 0)
   in
 
@@ -3268,7 +3272,8 @@ let compute_layout ?(view = View.empty) ?(x = 0) ?(y = 0) (t : t) ~width ~height
               let v = resolve_view ~clamp y2_dom view.View.y2 in
               Numeric { domain = y2_dom; view = v; clamp }
           | `Log (base, clamp) ->
-              (* Validate log domain - adjust non-positive values to safe minimum *)
+              (* Validate log domain - adjust non-positive values to safe
+                 minimum *)
               let y2_dom = validate_log_domain y2_dom in
               (* Use y2 view if provided, otherwise use domain (not y view!) *)
               let v = resolve_view ~clamp y2_dom view.View.y2 in
@@ -3293,7 +3298,8 @@ let compute_layout ?(view = View.empty) ?(x = 0) ?(y = 0) (t : t) ~width ~height
     | Band { view; _ } -> view
   in
 
-  (* axis reserved sizes - use domain (not view) for stable layout during zoom *)
+  (* axis reserved sizes - use domain (not view) for stable layout during
+     zoom *)
   let y_axis_width =
     if not t.y_axis.show then 0
     else
@@ -3309,12 +3315,14 @@ let compute_layout ?(view = View.empty) ?(x = 0) ?(y = 0) (t : t) ~width ~height
   let x_axis_height =
     if not t.x_axis.show then 0
     else
-      (* axis line + tick_length + label_padding + label row + optional title row *)
+      (* axis line + tick_length + label_padding + label row + optional title
+         row *)
       let base = 1 + t.x_axis.tick_length + t.x_axis.label_padding + 1 in
       let title_space = match t.x_axis.title with None -> 0 | Some _ -> 1 in
       base + title_space
   in
-  (* Y-axis title space - reserve columns to the left if y-axis has a title (title + gap) *)
+  (* Y-axis title space - reserve columns to the left if y-axis has a title
+     (title + gap) *)
   let y_axis_title_width =
     match t.y_axis.title with None -> 0 | Some _ -> 3
   in
@@ -3354,7 +3362,8 @@ let compute_layout ?(view = View.empty) ?(x = 0) ?(y = 0) (t : t) ~width ~height
         Some Layout.{ text; style = st }
   in
 
-  (* Precompute tick values for axes (computed once, used in draw_grid and draw_axes) *)
+  (* Precompute tick values for axes (computed once, used in draw_grid and
+     draw_axes) *)
   let x_ticks =
     match x_scale_res with
     | Numeric _ ->
@@ -3443,7 +3452,8 @@ let x_to_px ~minv ~maxv ~extent ~origin ~clamp v =
 
 (* Log scale pixel mapping helpers - use log_transform defined earlier *)
 let log_scale_to_px ~base ~minv ~maxv ~extent ~origin ~clamp v =
-  (* Apply safe minimum for log scale - values <= 0 are mapped to the safe min *)
+  (* Apply safe minimum for log scale - values <= 0 are mapped to the safe
+     min *)
   let safe_minv = Float.max 1e-10 minv in
   let safe_maxv = Float.max 1e-10 maxv in
   if Float.abs (safe_maxv -. safe_minv) < 1e-12 then origin
@@ -4014,7 +4024,8 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
       let title_style = Option.value ~default:default_st style in
       let title_w = text_width text in
       let title_x = r.x + ((r.width - title_w) / 2) in
-      (* Position below the tick labels: axis + tick_length + label_padding + 1 (label row) + 1 *)
+      (* Position below the tick labels: axis + tick_length + label_padding + 1
+         (label row) + 1 *)
       let title_y =
         r.y + r.height + ip + layout.x_axis.tick_length
         + layout.x_axis.label_padding + 2
@@ -4045,8 +4056,9 @@ let heatmap_color_idx ~len ~vmin ~vmax v =
 let draw_marks (layout : Layout.t) (grid : G.t) =
   let r = layout.plot in
 
-  (* numeric mapping funcs (even if axis band, used for overlays etc.)
-     We provide both clamped (for points/scatter) and unclamped (for line clipping) versions. *)
+  (* numeric mapping funcs (even if axis band, used for overlays etc.) We
+     provide both clamped (for points/scatter) and unclamped (for line clipping)
+     versions. *)
   let x_to_px_cell =
     match layout.x_scale with
     | Numeric { view; _ } ->
@@ -4211,9 +4223,9 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
     }
   in
 
-  (* Array-based dot buffer for block2x2 rendering.
-     Uses a flat array indexed by (cx - r.x) + (cy - r.y) * r.width.
-     Much faster than Hashtbl for accumulating dots in tight loops. *)
+  (* Array-based dot buffer for block2x2 rendering. Uses a flat array indexed by
+     (cx - r.x) + (cy - r.y) * r.width. Much faster than Hashtbl for
+     accumulating dots in tight loops. *)
   let block2x2_dots = Array.make (r.width * r.height) 0 in
 
   let block2x2_set_dot px py =
@@ -4227,7 +4239,8 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
     then
       let sub_x = px mod 2 in
       let sub_y = py mod 2 in
-      (* Bit layout: bit 0=top-left, bit 1=top-right, bit 2=bottom-left, bit 3=bottom-right *)
+      (* Bit layout: bit 0=top-left, bit 1=top-right, bit 2=bottom-left, bit
+         3=bottom-right *)
       let bit = (sub_y * 2) + sub_x in
       let idx = cell_x - r.x + ((cell_y - r.y) * r.width) in
       Array.unsafe_set block2x2_dots idx
@@ -4248,8 +4261,8 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
     done
   in
 
-  (* Array-based dot buffer for braille rendering (2x4 subgrid per cell).
-     Uses a flat array indexed by (cx - r.x) + (cy - r.y) * r.width. *)
+  (* Array-based dot buffer for braille rendering (2x4 subgrid per cell). Uses a
+     flat array indexed by (cx - r.x) + (cy - r.y) * r.width. *)
   let braille_dots = Array.make (r.width * r.height) 0 in
 
   let braille_set_dot x_sub y_sub =
@@ -4371,8 +4384,8 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                 if Layout.rect_contains r ~x:px ~y:py then
                   draw_text grid ~x:px ~y:py ~style glyph)
     | `Wave ->
-        (* Wave: render with box-drawing characters for smooth curves.
-           Collect points, interpolate per-column, then render with ╭╮╯╰│─ *)
+        (* Wave: render with box-drawing characters for smooth curves. Collect
+           points, interpolate per-column, then render with ╭╮╯╰│─ *)
         let seq_y = Array.make r.width (-1) in
         let set_col x yval =
           let ix = x - r.x in
@@ -4497,7 +4510,8 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                 (match !prev with
                 | None -> ()
                 | Some (px0, py0) -> (
-                    (* Clip line segment to plot rectangle in block2x2 coordinates *)
+                    (* Clip line segment to plot rectangle in block2x2
+                       coordinates *)
                     match
                       Clip.line_to_rect ~xmin:clip_xmin ~xmax:clip_xmax
                         ~ymin:clip_ymin ~ymax:clip_ymax ~x1:px0 ~y1:py0 ~x2:px
@@ -4572,8 +4586,8 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
             if Layout.rect_contains r ~x:px ~y:py then
               draw_text grid ~x:px ~y:py ~style glyph)
     | `Density ->
-        (* Density mode: count points per cell and render with shade_levels.
-           Use flat array for O(1) access instead of Hashtbl. *)
+        (* Density mode: count points per cell and render with shade_levels. Use
+           flat array for O(1) access instead of Hashtbl. *)
         let w = r.width and h = r.height in
         if w > 0 && h > 0 then (
           let counts = Array.make (w * h) 0 in
@@ -5020,7 +5034,8 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                     let x0v = !cum in
                     cum := !cum +. v;
                     let x1v = !cum in
-                    (* Calculate bar widths in floating point for sub-cell precision *)
+                    (* Calculate bar widths in floating point for sub-cell
+                       precision *)
                     let x0_f = (x0v -. x_view.min) *. scale in
                     let x1_f = (x1v -. x_view.min) *. scale in
                     match mode with
@@ -5041,7 +5056,8 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                         let x1_cells = int_of_float (Float.floor x1_f) in
                         let x1_frac = x1_f -. float x1_cells in
                         let right_glyph = left_block_glyph x1_frac in
-                        (* Draw full block cells from left of segment to right *)
+                        (* Draw full block cells from left of segment to
+                           right *)
                         for k = x0_cells to x1_cells - 1 do
                           let xx = r.x + k in
                           if xx >= r.x && xx < r.x + r.width then
@@ -5428,7 +5444,8 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
           let idx ix iy = ix + (iy * nx) in
           let values_arr = Array.make grid_size 0. in
           let counts_arr = Array.make grid_size 0 in
-          (* Binary search to find the interval [arr.(i), arr.(i+1)] containing v *)
+          (* Binary search to find the interval [arr.(i), arr.(i+1)] containing
+             v *)
           let find_interval arr v =
             let len = Array.length arr in
             if len = 1 then (0, 0, arr.(0), arr.(0))
@@ -5514,7 +5531,8 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
             done
           done
     | Mark.Shaded ->
-        (* Shaded mode: bilinear upsample with text characters instead of colors *)
+        (* Shaded mode: bilinear upsample with text characters instead of
+           colors *)
         let shade_chars = charset.shade_levels in
         let num_levels = Array.length shade_chars in
         let shade_idx v =
@@ -5568,7 +5586,8 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
           let idx ix iy = ix + (iy * nx) in
           let values_arr = Array.make grid_size 0. in
           let counts_arr = Array.make grid_size 0 in
-          (* Binary search to find the interval [arr.(i), arr.(i+1)] containing v *)
+          (* Binary search to find the interval [arr.(i), arr.(i+1)] containing
+             v *)
           let find_interval arr v =
             let len = Array.length arr in
             if len = 1 then (0, 0, arr.(0), arr.(0))
@@ -5749,8 +5768,8 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
 let draw ?view ?(x = 0) ?(y = 0) (t : t) (grid : G.t) ~width ~height : Layout.t
     =
   let layout = compute_layout ?view ~x ~y t ~width ~height in
-  (* Always clear the entire chart area to prevent stale axis labels/ticks
-     from persisting between frames. Use background color if set, otherwise
+  (* Always clear the entire chart area to prevent stale axis labels/ticks from
+     persisting between frames. Use background color if set, otherwise
      Color.Default clears cells to blank (space with alpha=0). *)
   let bg = Option.value t.theme.background ~default:Color.Default in
   G.fill_rect grid ~x ~y ~width ~height ~color:bg;

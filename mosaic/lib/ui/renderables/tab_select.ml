@@ -501,6 +501,7 @@ let apply_props t (props : Props.t) =
     t.props <- props;
     t.options <- Array.of_list props.options;
     t.extra_navigation <- props.mouse_navigation;
-    (* Selection and layout-related behaviour depends on wrap/description/underline. *)
+    (* Selection and layout-related behaviour depends on
+       wrap/description/underline. *)
     update_scroll_offset t (visible_count_from_layout t);
     request t)

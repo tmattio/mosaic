@@ -23,7 +23,8 @@ let add t id =
       match Hashtbl.find_opt t.counts key with
       | Some entry -> entry.count <- entry.count + 1
       | None ->
-          (* First sighting of this grapheme in the grid: grab a pool ref once *)
+          (* First sighting of this grapheme in the grid: grab a pool ref
+             once *)
           Glyph.incref t.pool id;
           Hashtbl.add t.counts key { sample = id; count = 1 };
           t.unique <- t.unique + 1)

@@ -9,20 +9,20 @@ open Tree
 type item_batcher = {
   axis : abstract_axis;
       (* The axis in which the ItemBatcher is operating. Used when querying
-          properties from items. *)
+         properties from items. *)
   mutable index_offset : int; (* The starting index of the current batch *)
   mutable current_span : int; (* The span of the items in the current batch *)
   mutable current_is_flex : bool;
       (* Whether the current batch of items cross a flexible track *)
 }
 (* Takes an axis, and a list of grid items sorted firstly by whether they cross
-    a flex track in the specified axis (items that don't cross a flex track
-    first) and then by the number of tracks they cross in specified axis
-    (ascending order). *)
+   a flex track in the specified axis (items that don't cross a flex track
+   first) and then by the number of tracks they cross in specified axis
+   (ascending order). *)
 
 (* Whether it is a minimum or maximum size's space being distributed This
-    controls behaviour of the space distribution algorithm when distributing
-    beyond limits *)
+   controls behaviour of the space distribution algorithm when distributing
+   beyond limits *)
 type intrinsic_contribution_type =
   | Minimum (* It's a minimum size's space being distributed *)
   | Maximum (* It's a maximum size's space being distributed *)
@@ -39,15 +39,15 @@ module Intrinsic_size_measurer = struct
     axis : abstract_axis; (* The axis we are currently sizing *)
     inner_node_size : float option size; (* The available grid space *)
   }
-  (* Struct that captures variables used to compute intrinsic sizes of children
-*)
+  (* Struct that captures variables used to compute intrinsic sizes of
+     children *)
 
   (* Compute the available_space to be passed to the child sizing functions *)
   let available_space (type tree) (measurer : tree t) (item : Grid_item.t) :
       float option size =
-    (* These are estimates based on either the max track sizing function or the provisional base size in the opposite
-       axis to the one currently being sized.
-       https://www.w3.org/TR/css-grid-1/#algo-overview *)
+    (* These are estimates based on either the max track sizing function or the
+       provisional base size in the opposite axis to the one currently being
+       sized. https://www.w3.org/TR/css-grid-1/#algo-overview *)
     let item_other_axis_size =
       let track_range =
         Grid_item.track_range_excluding_lines item
@@ -88,8 +88,9 @@ module Intrinsic_size_measurer = struct
   let margins_axis_sums_with_baseline_shims (type tree)
       (module Tree : LAYOUT_PARTIAL_TREE with type t = tree) (measurer : tree t)
       (item : Grid_item.t) : float size =
-    (* Horizontal percentage margins always resolve to zero if the container size is indefinite 
-       as otherwise this would introduce a cyclic dependency. *)
+    (* Horizontal percentage margins always resolve to zero if the container
+       size is indefinite as otherwise this would introduce a cyclic
+       dependency. *)
     let calc = Tree.resolve_calc_value measurer.tree in
     let inner_node_width = measurer.inner_node_size.width in
 
@@ -114,8 +115,8 @@ module Intrinsic_size_measurer = struct
 
     Rect.sum_axes margin_rect
 
-  (* Retrieve the item's min content contribution from the cache or compute it
-  *)
+  (* Retrieve the item's min content contribution from the cache or compute
+     it *)
   let min_content_contribution (type tree)
       (module Tree : LAYOUT_PARTIAL_TREE with type t = tree) (measurer : tree t)
       (item : Grid_item.t) : float =
@@ -168,8 +169,8 @@ module Intrinsic_size_measurer = struct
 
         contribution +. Size.get measurer.axis margin_axis_sums
 
-  (* Retrieve the item's max content contribution from the cache or compute it
-  *)
+  (* Retrieve the item's max content contribution from the cache or compute
+     it *)
   let max_content_contribution (type tree)
       (module Tree : LAYOUT_PARTIAL_TREE with type t = tree) (measurer : tree t)
       (item : Grid_item.t) : float =
@@ -222,8 +223,8 @@ module Intrinsic_size_measurer = struct
 
         contribution +. Size.get measurer.axis margin_axis_sums
 
-  (* The minimum contribution of an item is the smallest outer size it can have
-  *)
+  (* The minimum contribution of an item is the smallest outer size it can
+     have *)
   let minimum_contribution (type tree)
       (module Tree : LAYOUT_PARTIAL_TREE with type t = tree) (measurer : tree t)
       (item : Grid_item.t) (axis_tracks : Grid_track.t array) : float =
@@ -331,7 +332,8 @@ module Intrinsic_size_measurer = struct
           match v_opt with
           | Some v -> v
           | None ->
-              (* Automatic minimum size. See https://www.w3.org/TR/css-grid-1/#min-size-auto *)
+              (* Automatic minimum size. See
+                 https://www.w3.org/TR/css-grid-1/#min-size-auto *)
               let start_idx, end_idx =
                 Grid_item.track_range_excluding_lines item measurer.axis
               in
@@ -339,7 +341,8 @@ module Intrinsic_size_measurer = struct
                 Array.sub axis_tracks start_idx (end_idx - start_idx)
               in
 
-              (* it spans at least one track in that axis whose min track sizing function is auto *)
+              (* it spans at least one track in that axis whose min track sizing
+                 function is auto *)
               let spans_auto_min_track =
                 Array.exists
                   (fun track ->
@@ -348,7 +351,8 @@ module Intrinsic_size_measurer = struct
                   item_axis_tracks
               in
 
-              (* if it spans more than one track in that axis, none of those tracks are flexible *)
+              (* if it spans more than one track in that axis, none of those
+                 tracks are flexible *)
               let only_span_one_track = Array.length item_axis_tracks = 1 in
               let spans_a_flexible_track =
                 Array.exists
@@ -366,7 +370,8 @@ module Intrinsic_size_measurer = struct
               (* Otherwise, the automatic minimum size is zero, as usual. *)
               if use_content_based_minimum then
                 let minimum_contribution =
-                  (* Pass known_dimensions to min_content_contribution_cached in grid_item *)
+                  (* Pass known_dimensions to min_content_contribution_cached in
+                     grid_item *)
                   let available_space_for_contribution = known_dimensions in
                   Grid_item.min_content_contribution_cached item measurer.axis
                     (module Tree)
@@ -374,9 +379,11 @@ module Intrinsic_size_measurer = struct
                     inner_node_size
                 in
 
-                (* If the item is a compressible replaced element, and has a definite preferred size or maximum size in the
-                 relevant axis, the size suggestion is capped by those sizes; for this purpose, any indefinite percentages
-                 in these sizes are resolved against zero (and considered definite). *)
+                (* If the item is a compressible replaced element, and has a
+                   definite preferred size or maximum size in the relevant axis,
+                   the size suggestion is capped by those sizes; for this
+                   purpose, any indefinite percentages in these sizes are
+                   resolved against zero (and considered definite). *)
                 if item.is_compressible_replaced then
                   let size_cap =
                     Dimension.maybe_resolve
@@ -395,9 +402,10 @@ module Intrinsic_size_measurer = struct
               else 0.0
         in
 
-        (* In all cases, the size suggestion is additionally clamped by the maximum size in the affected axis, if it's definite.
-         Note: The argument to fit-content() does not clamp the content-based minimum size in the same way as a fixed max track
-         sizing function. *)
+        (* In all cases, the size suggestion is additionally clamped by the
+           maximum size in the affected axis, if it's definite. Note: The
+           argument to fit-content() does not clamp the content-based minimum
+           size in the same way as a fixed max track sizing function. *)
         let limit =
           Grid_item.spanned_fixed_track_limit item measurer.axis axis_tracks
             (Size.get measurer.axis inner_node_size)
@@ -422,7 +430,7 @@ let new_item_batcher (axis : abstract_axis) : item_batcher =
   { axis; index_offset = 0; current_span = 1; current_is_flex = false }
 
 (* This is basically a manual version of Iterator::next which passes `items` in
-    as a parameter on each iteration to work around borrow checker rules *)
+   as a parameter on each iteration to work around borrow checker rules *)
 let item_batcher_next (batcher : item_batcher) (items : Grid_item.t array) :
     (Grid_item.t array * bool) option =
   if batcher.current_is_flex || batcher.index_offset >= Array.length items then
@@ -436,7 +444,8 @@ let item_batcher_next (batcher : item_batcher) (items : Grid_item.t array) :
     let next_index_offset =
       if batcher.current_is_flex then Array.length items
       else
-        (* Find the first item after current offset that either crosses flexible track or has larger span *)
+        (* Find the first item after current offset that either crosses flexible
+           track or has larger span *)
         let rec find_next idx =
           if idx >= Array.length items then Array.length items
           else
@@ -476,18 +485,19 @@ let cmp_by_cross_flex_then_span_then_start (axis : abstract_axis)
       | 0 -> Int.compare placement_a.start placement_b.start
       | cmp -> cmp)
 
-(* When applying the track sizing algorithm and estimating the size in the
-    other axis for content sizing items we should take into account
-    align-content/justify-content if both the grid container and all items in
-    the other axis have definite sizes. *)
+(* When applying the track sizing algorithm and estimating the size in the other
+   axis for content sizing items we should take into account
+   align-content/justify-content if both the grid container and all items in the
+   other axis have definite sizes. *)
 let compute_alignment_gutter_adjustment (alignment : align_content)
     (axis_inner_node_size : float option)
     (get_track_size_estimate : Grid_track.t -> float option -> float option)
     (tracks : Grid_track.t array) : float =
   if Array.length tracks <= 1 then 0.0
   else
-    (* As items never cross the outermost gutters in a grid, we can simplify our calculations by treating
-       AlignContent::Start and AlignContent::End the same *)
+    (* As items never cross the outermost gutters in a grid, we can simplify our
+       calculations by treating AlignContent::Start and AlignContent::End the
+       same *)
     let outer_gutter_weight =
       match alignment with
       | Start | Flex_start | End | Flex_end | Center -> 1
@@ -537,8 +547,8 @@ let compute_alignment_gutter_adjustment (alignment : align_content)
           /. float_of_int weighted_track_count
           *. float_of_int inner_gutter_weight
 
-(* Convert origin-zero coordinates track placement in grid track vector indexes
-*)
+(* Convert origin-zero coordinates track placement in grid track vector
+   indexes *)
 let resolve_item_track_indexes (items : Grid_item.t array)
     (column_counts : Style.Grid.track_counts)
     (row_counts : Style.Grid.track_counts) : unit =
@@ -546,8 +556,9 @@ let resolve_item_track_indexes (items : Grid_item.t array)
     (fun item ->
       (* Convert origin-zero line coordinates to track vector indices *)
       let into_track_vec_index line track_counts =
-        (* In origin-zero coordinates, negative lines are stored first in the track vector,
-           followed by explicit tracks, then positive implicit tracks *)
+        (* In origin-zero coordinates, negative lines are stored first in the
+           track vector, followed by explicit tracks, then positive implicit
+           tracks *)
         let negative_implicit = track_counts.Style.Grid.negative_implicit in
         if line < -negative_implicit then
           failwith
@@ -563,10 +574,12 @@ let resolve_item_track_indexes (items : Grid_item.t array)
               "OriginZero grid line cannot be more than the number of positive \
                grid lines"
           else
-            (* Multiply by 2 to account for gutters - each line maps to an even index *)
+            (* Multiply by 2 to account for gutters - each line maps to an even
+               index *)
             2 * (negative_implicit + line)
         else
-          (* Multiply by 2 to account for gutters - each line maps to an even index *)
+          (* Multiply by 2 to account for gutters - each line maps to an even
+             index *)
           2 * (negative_implicit + line)
       in
       item.Grid_item.column_indexes <-
@@ -611,7 +624,7 @@ let determine_if_item_crosses_flexible_or_intrinsic_tracks
     items
 
 (* Add any planned base size increases to the base size after a round of
-    distributing space to base sizes *)
+   distributing space to base sizes *)
 let flush_planned_base_size_increases (tracks : Grid_track.t array) : unit =
   Array.iter
     (fun track ->
@@ -622,7 +635,7 @@ let flush_planned_base_size_increases (tracks : Grid_track.t array) : unit =
     tracks
 
 (* Add any planned growth limit increases to the growth limit after a round of
-    distributing space to growth limits *)
+   distributing space to growth limits *)
 let flush_planned_growth_limit_increases (tracks : Grid_track.t array)
     (set_infinitely_growable : bool) : unit =
   Array.iter
@@ -641,19 +654,18 @@ let flush_planned_growth_limit_increases (tracks : Grid_track.t array)
     tracks
 
 (* 11.4 Initialise Track sizes Initialize each track's base size and growth
-    limit. *)
+   limit. *)
 let initialize_track_sizes (type t) (tree : t)
     (resolve_calc_value : t -> int -> float -> float)
     (axis_tracks : Grid_track.t array) (axis_inner_node_size : float option) :
     unit =
   Array.iter
     (fun track ->
-      (* For each track, if the track's min track sizing function is:
-         - A fixed sizing function
-             Resolve to an absolute length and use that size as the track's initial base size.
-             Note: Indefinite lengths cannot occur, as they're treated as auto.
-         - An intrinsic sizing function
-             Use an initial base size of zero. *)
+      (* For each track, if the track's min track sizing function is: - A fixed
+         sizing function Resolve to an absolute length and use that size as the
+         track's initial base size. Note: Indefinite lengths cannot occur, as
+         they're treated as auto. - An intrinsic sizing function Use an initial
+         base size of zero. *)
       track.Grid_track.base_size <-
         (match
            Style.Grid.Track_sizing_function.Min.definite_value_with_calc
@@ -663,13 +675,11 @@ let initialize_track_sizes (type t) (tree : t)
         | Some value -> value
         | None -> 0.0);
 
-      (* For each track, if the track's max track sizing function is:
-         - A fixed sizing function
-             Resolve to an absolute length and use that size as the track's initial growth limit.
-         - An intrinsic sizing function
-             Use an initial growth limit of infinity.
-         - A flexible sizing function
-             Use an initial growth limit of infinity. *)
+      (* For each track, if the track's max track sizing function is: - A fixed
+         sizing function Resolve to an absolute length and use that size as the
+         track's initial growth limit. - An intrinsic sizing function Use an
+         initial growth limit of infinity. - A flexible sizing function Use an
+         initial growth limit of infinity. *)
       track.Grid_track.growth_limit <-
         (match
            Style.Grid.Track_sizing_function.Max.definite_value_with_calc
@@ -679,25 +689,28 @@ let initialize_track_sizes (type t) (tree : t)
         | Some value -> value
         | None -> Float.infinity);
 
-      (* In all cases, if the growth limit is less than the base size, reconcile them. *)
+      (* In all cases, if the growth limit is less than the base size, reconcile
+         them. *)
       if track.Grid_track.growth_limit < track.Grid_track.base_size then
         if
           Style.Grid.Track_sizing_function.Max.is_fit_content
             track.Grid_track.track_sizing_function
         then
-          (* Fit-content caps track growth; base size must not exceed the limit *)
+          (* Fit-content caps track growth; base size must not exceed the
+             limit *)
           track.Grid_track.base_size <- track.Grid_track.growth_limit
         else track.Grid_track.growth_limit <- track.Grid_track.base_size)
     axis_tracks
 
 (* 11.5.1 Shim baseline-aligned items so their intrinsic size contributions
-    reflect their baseline alignment. *)
+   reflect their baseline alignment. *)
 let resolve_item_baselines (type t)
     (module Tree : LAYOUT_PARTIAL_TREE with type t = t) (tree : t)
     (axis : abstract_axis) (items : Grid_item.t array)
     (inner_node_size : float option size) : unit =
-  (* Sort items by track in the other axis (row) start position so that we can iterate items in groups which
-     are in the same track in the other axis (row) *)
+  (* Sort items by track in the other axis (row) start position so that we can
+     iterate items in groups which are in the same track in the other axis
+     (row) *)
   let other_axis = Abstract_axis.other axis in
   Array.sort
     (fun a b ->
@@ -726,9 +739,10 @@ let resolve_item_baselines (type t)
       let end_idx = find_row_end start_idx in
       let row_items = Array.sub items start_idx (end_idx - start_idx) in
 
-      (* Count how many items in *this row* are baseline aligned
-         If a row has one or zero items participating in baseline alignment then baseline alignment is a no-op
-         for those items and we skip further computations for that row *)
+      (* Count how many items in *this row* are baseline aligned If a row has
+         one or zero items participating in baseline alignment then baseline
+         alignment is a no-op for those items and we skip further computations
+         for that row *)
       let row_baseline_item_count =
         Array.fold_left
           (fun count item ->
@@ -787,7 +801,7 @@ let resolve_item_baselines (type t)
   process_rows 0
 
 (* Helper function for distributing space to tracks evenly Used by both
-    distribute_item_space_to_base_size and maximise_tracks steps *)
+   distribute_item_space_to_base_size and maximise_tracks steps *)
 let distribute_space_up_to_limits (space_to_distribute : float)
     (tracks : Grid_track.t array) (track_is_affected : Grid_track.t -> bool)
     (track_distribution_proportion : Grid_track.t -> float)
@@ -798,7 +812,8 @@ let distribute_space_up_to_limits (space_to_distribute : float)
 
   let space_to_distribute = ref space_to_distribute in
   while !space_to_distribute > threshold do
-    (* Calculate the sum of distribution proportions for tracks that can still grow *)
+    (* Calculate the sum of distribution proportions for tracks that can still
+       grow *)
     let track_distribution_proportion_sum =
       Array.fold_left
         (fun sum track ->
@@ -863,11 +878,12 @@ let distribute_space_up_to_limits (space_to_distribute : float)
   !space_to_distribute
 
 (* 11.5.1. Distributing Extra Space Across Spanned Tracks This is simplified
-    (and faster) version of the algorithm for growth limits *)
+   (and faster) version of the algorithm for growth limits *)
 let distribute_item_space_to_growth_limit (space : float)
     (tracks : Grid_track.t array) (track_is_affected : Grid_track.t -> bool)
     (axis_inner_node_size : float option) : unit =
-  (* Skip this distribution if there is either no space to distribute or no affected tracks *)
+  (* Skip this distribution if there is either no space to distribute or no
+     affected tracks *)
   if space = 0.0 || not (Array.exists track_is_affected tracks) then ()
   else
     (* 1. Find the space to distribute *)
@@ -943,17 +959,20 @@ let distribute_item_space_to_base_size (is_flex : bool)
     (tracks : Grid_track.t array) (track_is_affected : Grid_track.t -> bool)
     (track_limit : Grid_track.t -> float)
     (intrinsic_contribution_type : intrinsic_contribution_type) : unit =
-  (* Skip this distribution if there is either no space to distribute or no affected tracks *)
+  (* Skip this distribution if there is either no space to distribute or no
+     affected tracks *)
   if space = 0.0 || not (Array.exists track_is_affected tracks) then ()
   else
-    (* Choose the distribution proportion function based on whether we're distributing to flex tracks *)
+    (* Choose the distribution proportion function based on whether we're
+       distributing to flex tracks *)
     let track_distribution_proportion =
       if is_flex && use_flex_factor_for_distribution then fun track ->
         Grid_track.flex_factor track
       else fun _ -> 1.0
     in
 
-    (* Filter affected tracks to only include flexible tracks when distributing to flex tracks *)
+    (* Filter affected tracks to only include flexible tracks when distributing
+       to flex tracks *)
     let final_track_is_affected =
       if is_flex then fun track ->
         Grid_track.is_flexible track && track_is_affected track
@@ -983,12 +1002,14 @@ let distribute_item_space_to_base_size (is_flex : bool)
        let filter =
          match intrinsic_contribution_type with
          | Minimum ->
-             (* For minimum contributions: tracks with intrinsic max sizing function *)
+             (* For minimum contributions: tracks with intrinsic max sizing
+                function *)
              fun track ->
                Style.Grid.Track_sizing_function.Max.is_intrinsic
                  track.Grid_track.track_sizing_function
          | Maximum ->
-             (* For maximum contributions: tracks with max-content min or max/fit-content max *)
+             (* For maximum contributions: tracks with max-content min or
+                max/fit-content max *)
              fun track ->
                Style.Grid.Track_sizing_function.Min.is_max_content
                  track.Grid_track.track_sizing_function
@@ -1036,7 +1057,8 @@ let resolve_intrinsic_track_sizes (type t)
     (inner_node_size : float option size)
     (get_track_size_estimate :
       Grid_track.t -> float option -> t -> float option) : unit =
-  (* Step 1. Shim baseline-aligned items - already done in resolve_item_baselines *)
+  (* Step 1. Shim baseline-aligned items - already done in
+     resolve_item_baselines *)
 
   (* Step 2. Sort items by span size and whether they cross flex tracks *)
   (* The track sizing algorithm requires us to iterate through the items in ascending order of the number of
@@ -1096,8 +1118,9 @@ let resolve_intrinsic_track_sizes (type t)
                     track.Grid_track.track_sizing_function
                   && Option.is_none axis_inner_node_size
                 then
-                  (* If the container size is indefinite and has not yet been resolved then percentage sized
-                     tracks should be treated as min-content *)
+                  (* If the container size is indefinite and has not yet been
+                     resolved then percentage sized tracks should be treated as
+                     min-content *)
                   max track.Grid_track.base_size
                     (Intrinsic_size_measurer.min_content_contribution
                        (module Tree)
@@ -1159,8 +1182,8 @@ let resolve_intrinsic_track_sizes (type t)
                 Style.Grid.Track_sizing_function.Max.is_fit_content
                   track.Grid_track.track_sizing_function
               then (
-                (* If item is not a scroll container, then increase the growth limit to at least the
-                   size of the min-content contribution *)
+                (* If item is not a scroll container, then increase the growth
+                   limit to at least the size of the min-content contribution *)
                 if not (Overflow.is_container (Point.get axis item.overflow))
                 then
                   track.Grid_track.growth_limit_planned_increase <-
@@ -1169,8 +1192,8 @@ let resolve_intrinsic_track_sizes (type t)
                          (module Tree)
                          item_sizer item);
 
-                (* Always increase the growth limit to at least the size of the *fit-content limited*
-                   max-content contribution *)
+                (* Always increase the growth limit to at least the size of the
+                   "fit-content limited" max-content contribution *)
                 let fit_content_limit =
                   Grid_track.fit_content_limit track axis_inner_node_size
                 in
@@ -1207,7 +1230,8 @@ let resolve_intrinsic_track_sizes (type t)
                        item_sizer item))
             batch;
 
-          (* Apply growth limit increases and ensure growth_limit >= base_size *)
+          (* Apply growth limit increases and ensure growth_limit >=
+             base_size *)
           Array.iter
             (fun track ->
               if track.Grid_track.growth_limit_planned_increase > 0.0 then
@@ -1242,11 +1266,13 @@ let resolve_intrinsic_track_sizes (type t)
           Array.iter
             (fun item ->
               if Grid_item.crosses_intrinsic_track item axis then
-                (* QUIRK: The spec says that:
-                   If the grid container is being sized under a min- or max-content constraint, use the items' limited min-content contributions
-                   in place of their minimum contributions here.
-                   However, in practice browsers only seem to apply this rule if the item is not a scroll container,
-                   giving the automatic minimum size of scroll containers (zero) precedence over the min-content contributions. *)
+                (* QUIRK: The spec says that: If the grid container is being
+                   sized under a min- or max-content constraint, use the items'
+                   limited min-content contributions in place of their minimum
+                   contributions here. However, in practice browsers only seem
+                   to apply this rule if the item is not a scroll container,
+                   giving the automatic minimum size of scroll containers (zero)
+                   precedence over the min-content contributions. *)
                 let space =
                   match axis_available_grid_space with
                   | (Available_space.Min_content | Available_space.Max_content)
@@ -1347,10 +1373,10 @@ let resolve_intrinsic_track_sizes (type t)
             batch;
           flush_planned_base_size_increases axis_tracks;
 
-          (* 3. For max-content minimums.
-               The Rust implementation only runs this when sizing under a max-content constraint.
-               However, with a definite available space we still need to account for max-content
-               min tracks to match Taffy's behaviour in the generated tests. *)
+          (* 3. For max-content minimums. The Rust implementation only runs this
+             when sizing under a max-content constraint. However, with a
+             definite available space we still need to account for max-content
+             min tracks to match Taffy's behaviour in the generated tests. *)
           if
             axis_available_grid_space = Available_space.Max_content
             || Available_space.is_definite axis_available_grid_space
@@ -1393,9 +1419,10 @@ let resolve_intrinsic_track_sizes (type t)
                   Array.sub axis_tracks start_idx (end_idx - start_idx)
                 in
                 if space > 0.0 then
-                  (* If any of the tracks spanned by the item have a MaxContent min track sizing function then
-                     distribute space only to those tracks. Otherwise distribute space to tracks with an Auto min
-                     track sizing function. *)
+                  (* If any of the tracks spanned by the item have a MaxContent
+                     min track sizing function then distribute space only to
+                     those tracks. Otherwise distribute space to tracks with an
+                     Auto min track sizing function. *)
                   if
                     Array.exists has_max_content_min_track_sizing_function
                       tracks
@@ -1515,7 +1542,8 @@ let resolve_intrinsic_track_sizes (type t)
   in
   process_batches ();
 
-  (* Step 5. If any track still has an infinite growth limit, set its growth limit to its base size *)
+  (* Step 5. If any track still has an infinite growth limit, set its growth
+     limit to its base size *)
   Array.iter
     (fun track ->
       if track.Grid_track.growth_limit = Float.infinity then
@@ -1523,7 +1551,7 @@ let resolve_intrinsic_track_sizes (type t)
     axis_tracks
 
 (* 11.6 Maximise Tracks Distributes free space (if any) to tracks with FINITE
-    growth limits, up to their limits. *)
+   growth limits, up to their limits. *)
 let maximise_tracks (axis_tracks : Grid_track.t array)
     (axis_inner_node_size : float option)
     (axis_available_grid_space : Available_space.t) : unit =
@@ -1537,7 +1565,8 @@ let maximise_tracks (axis_tracks : Grid_track.t array)
   in
 
   if free_space = Float.infinity then
-    (* If free space is infinite, set all track base sizes to their growth limits *)
+    (* If free space is infinite, set all track base sizes to their growth
+       limits *)
     Array.iter
       (fun track -> track.Grid_track.base_size <- track.Grid_track.growth_limit)
       axis_tracks
@@ -1560,15 +1589,15 @@ let maximise_tracks (axis_tracks : Grid_track.t array)
       axis_tracks)
 
 (* 11.7.1. Find the Size of an fr This algorithm finds the largest size that an
-    fr unit can be without exceeding the target size. *)
+   fr unit can be without exceeding the target size. *)
 let find_size_of_fr (tracks : Grid_track.t array) (space_to_fill : float) :
     float =
   (* Handle the trivial case where there is no space to fill *)
   if space_to_fill = 0.0 then 0.0
   else
-    (* If the product of the hypothetical fr size and any flexible track's flex factor
-       is less than the track's base size, then we must restart this algorithm treating
-       all such tracks as inflexible. *)
+    (* If the product of the hypothetical fr size and any flexible track's flex
+       factor is less than the track's base size, then we must restart this
+       algorithm treating all such tracks as inflexible. *)
     let rec find_fr_size hypothetical_fr_size =
       (* Calculate leftover space and flex factor sum *)
       let used_space = ref 0.0 in
@@ -1576,7 +1605,8 @@ let find_size_of_fr (tracks : Grid_track.t array) (space_to_fill : float) :
 
       Array.iter
         (fun track ->
-          (* Tracks for which flex_factor * hypothetical_fr_size < track.base_size are treated as inflexible *)
+          (* Tracks for which flex_factor * hypothetical_fr_size <
+             track.base_size are treated as inflexible *)
           if
             Style.Grid.Track_sizing_function.Max.is_fr
               track.Grid_track.track_sizing_function
@@ -1625,8 +1655,8 @@ let find_size_of_fr (tracks : Grid_track.t array) (space_to_fill : float) :
     find_fr_size Float.infinity
 
 (* 11.7. Expand Flexible Tracks This step sizes flexible tracks using the
-    largest value it can assign to an fr without exceeding the available space.
-*)
+   largest value it can assign to an fr without exceeding the available
+   space. *)
 let expand_flexible_tracks (type t)
     (module Tree : LAYOUT_PARTIAL_TREE with type t = t) (tree : t)
     (axis : abstract_axis) (axis_tracks : Grid_track.t array)
@@ -1637,10 +1667,10 @@ let expand_flexible_tracks (type t)
   (* First, find the grid's used flex fraction *)
   let flex_fraction =
     match axis_available_space_for_expansion with
-    (* If the free space is zero: The used flex fraction is zero.
-       Otherwise, if the free space is a definite length:
-       The used flex fraction is the result of finding the size of an fr using all of the grid tracks and
-       a space to fill of the available grid space. *)
+    (* If the free space is zero: The used flex fraction is zero. Otherwise, if
+       the free space is a definite length: The used flex fraction is the result
+       of finding the size of an fr using all of the grid tracks and a space to
+       fill of the available grid space. *)
     | Available_space.Definite available_space ->
         let used_space =
           Array.fold_left
@@ -1650,15 +1680,17 @@ let expand_flexible_tracks (type t)
         let free_space = available_space -. used_space in
         if free_space <= 0.0 then 0.0
         else find_size_of_fr axis_tracks available_space
-    (* If ... sizing the grid container under a min-content constraint the used flex fraction is zero. *)
+    (* If ... sizing the grid container under a min-content constraint the used
+       flex fraction is zero. *)
     | Available_space.Min_content -> 0.0
     (* Otherwise, if the free space is an indefinite length: *)
     | Available_space.Max_content ->
         (* The used flex fraction is the maximum of: *)
         let flex_fraction =
           max
-            (* For each flexible track, if the flexible track's flex factor is greater than one,
-             the result of dividing the track's base size by its flex factor; otherwise, the track's base size. *)
+            (* For each flexible track, if the flexible track's flex factor is
+               greater than one, the result of dividing the track's base size by
+               its flex factor; otherwise, the track's base size. *)
             (let max_track_factor =
                Array.fold_left
                  (fun curr_max track ->
@@ -1680,8 +1712,10 @@ let expand_flexible_tracks (type t)
                  0.0 axis_tracks
              in
              max_track_factor)
-            (* For each grid item that crosses a flexible track, the result of finding the size of an fr using all the grid tracks
-             that the item crosses and a space to fill of the item's max-content contribution. *)
+            (* For each grid item that crosses a flexible track, the result of
+               finding the size of an fr using all the grid tracks that the item
+               crosses and a space to fill of the item's max-content
+               contribution. *)
             (let max_item_factor =
                Array.fold_left
                  (fun curr_max item ->
@@ -1692,7 +1726,9 @@ let expand_flexible_tracks (type t)
                      let tracks =
                        Array.sub axis_tracks start_idx (end_idx - start_idx)
                      in
-                     (* TODO: plumb estimate of other axis size (known_dimensions) in here rather than just passing (Size.none)? *)
+                     (* TODO: plumb estimate of other axis size
+                        (known_dimensions) in here rather than just passing
+                        (Size.none)? *)
                      let max_content_contribution =
                        Grid_item.max_content_contribution
                          (module Tree)
@@ -1708,10 +1744,13 @@ let expand_flexible_tracks (type t)
              max_item_factor)
         in
 
-        (* If using this flex fraction would cause the grid to be smaller than the grid container's min-width/height (or larger than the
-           grid container's max-width/height), then redo this step, treating the free space as definite and the available grid space as equal
-           to the grid container's inner size when it's sized to its min-width/height (max-width/height).
-           (Note: min_size takes precedence over max_size) *)
+        (* If using this flex fraction would cause the grid to be smaller than
+           the grid container's min-width/height (or larger than the grid
+           container's max-width/height), then redo this step, treating the free
+           space as definite and the available grid space as equal to the grid
+           container's inner size when it's sized to its min-width/height
+           (max-width/height). (Note: min_size takes precedence over
+           max_size) *)
         let hypothetical_grid_size =
           Array.fold_left
             (fun sum track ->
@@ -1740,8 +1779,9 @@ let expand_flexible_tracks (type t)
         else flex_fraction
   in
 
-  (* For each flexible track, if the product of the used flex fraction and the track's flex factor is greater
-     than the track's base size, set its base size to that product. *)
+  (* For each flexible track, if the product of the used flex fraction and the
+     track's flex factor is greater than the track's base size, set its base
+     size to that product. *)
   Array.iter
     (fun track ->
       if
@@ -1757,8 +1797,8 @@ let expand_flexible_tracks (type t)
     axis_tracks
 
 (* 11.8. Stretch auto Tracks This step expands tracks that have an auto max
-    track sizing function by dividing any remaining positive, definite free
-    space equally amongst them. *)
+   track sizing function by dividing any remaining positive, definite free space
+   equally amongst them. *)
 let stretch_auto_tracks (axis_tracks : Grid_track.t array)
     (axis_min_size : float option)
     (axis_available_space_for_expansion : Available_space.t) : unit =
@@ -1780,8 +1820,9 @@ let stretch_auto_tracks (axis_tracks : Grid_track.t array)
         0.0 axis_tracks
     in
 
-    (* If the free space is indefinite, but the grid container has a definite min-width/height
-       use that size to calculate the free space for this step instead. *)
+    (* If the free space is indefinite, but the grid container has a definite
+       min-width/height use that size to calculate the free space for this step
+       instead. *)
     let free_space =
       if Available_space.is_definite axis_available_space_for_expansion then
         Available_space.compute_free_space axis_available_space_for_expansion
@@ -1805,7 +1846,7 @@ let stretch_auto_tracks (axis_tracks : Grid_track.t array)
         axis_tracks
 
 (* Track sizing algorithm Note: Gutters are treated as empty fixed-size tracks
-    for the purpose of the track sizing algorithm. *)
+   for the purpose of the track sizing algorithm. *)
 let track_sizing_algorithm (type t)
     (module Tree : LAYOUT_PARTIAL_TREE with type t = t) (tree : t)
     (axis : abstract_axis) (axis_min_size : float option)
@@ -1817,8 +1858,8 @@ let track_sizing_algorithm (type t)
     (get_track_size_estimate :
       Grid_track.t -> float option -> t -> float option)
     (has_baseline_aligned_item : bool) : unit =
-  (* 11.4 Initialise Track sizes
-     Initialize each track's base size and growth limit. *)
+  (* 11.4 Initialise Track sizes Initialize each track's base size and growth
+     limit. *)
   let percentage_basis =
     match Size.get axis inner_node_size with
     | Some value -> Some value
@@ -1832,16 +1873,18 @@ let track_sizing_algorithm (type t)
   if has_baseline_aligned_item then
     resolve_item_baselines (module Tree) tree axis items inner_node_size;
 
-  (* If all tracks have base_size = growth_limit, then skip the rest of this function.
-     Note: this can only happen both track sizing function have the same fixed track sizing function *)
+  (* If all tracks have base_size = growth_limit, then skip the rest of this
+     function. Note: this can only happen both track sizing function have the
+     same fixed track sizing function *)
   if
     Array.for_all
       (fun track -> track.Grid_track.base_size = track.Grid_track.growth_limit)
       axis_tracks
   then ()
   else (* Pre-computations for 11.5 Resolve Intrinsic Track Sizes *)
-    (* Compute an additional amount to add to each spanned gutter when computing item's estimated size in the
-       in the opposite axis based on the alignment, container size, and estimated track sizes in that axis *)
+    (* Compute an additional amount to add to each spanned gutter when computing
+       item's estimated size in the in the opposite axis based on the alignment,
+       container size, and estimated track sizes in that axis *)
     let gutter_alignment_adjustment =
       compute_alignment_gutter_adjustment other_axis_alignment
         (Size.get (Abstract_axis.other axis) inner_node_size)
@@ -1867,16 +1910,19 @@ let track_sizing_algorithm (type t)
       (Size.get axis available_grid_space)
       inner_node_size get_track_size_estimate;
 
-    (* 11.6. Maximise Tracks
-     Distributes free space (if any) to tracks with FINITE growth limits, up to their limits. *)
+    (* 11.6. Maximise Tracks Distributes free space (if any) to tracks with
+       FINITE growth limits, up to their limits. *)
     maximise_tracks axis_tracks
       (Size.get axis inner_node_size)
       (Size.get axis available_grid_space);
 
-    (* For the purpose of the final two expansion steps ("Expand Flexible Tracks" and "Stretch auto Tracks"), we only want to expand
-     into space generated by the grid container's size (as defined by either it's preferred size style or by it's parent node through
-     something like stretch alignment), not just any available space. To do this we map definite available space to AvailableSpace::MaxContent
-     in the case that inner_node_size is None *)
+    (* For the purpose of the final two expansion steps ("Expand Flexible
+       Tracks" and "Stretch auto Tracks"), we only want to expand into space
+       generated by the grid container's size (as defined by either it's
+       preferred size style or by it's parent node through something like
+       stretch alignment), not just any available space. To do this we map
+       definite available space to AvailableSpace::MaxContent in the case that
+       inner_node_size is None *)
     let axis_available_space_for_expansion =
       match Size.get axis inner_node_size with
       | Some available_space -> Available_space.Definite available_space
@@ -1887,15 +1933,17 @@ let track_sizing_algorithm (type t)
               Available_space.Max_content)
     in
 
-    (* 11.7. Expand Flexible Tracks
-     This step sizes flexible tracks using the largest value it can assign to an fr without exceeding the available space. *)
+    (* 11.7. Expand Flexible Tracks This step sizes flexible tracks using the
+       largest value it can assign to an fr without exceeding the available
+       space. *)
     expand_flexible_tracks
       (module Tree)
       tree axis axis_tracks items axis_min_size axis_max_size
       axis_available_space_for_expansion inner_node_size;
 
-    (* 11.8. Stretch auto Tracks
-     This step expands tracks that have an auto max track sizing function by dividing any remaining positive, definite free space equally amongst them. *)
+    (* 11.8. Stretch auto Tracks This step expands tracks that have an auto max
+       track sizing function by dividing any remaining positive, definite free
+       space equally amongst them. *)
     if axis_alignment = Align_content.Stretch then
       stretch_auto_tracks axis_tracks axis_min_size
         axis_available_space_for_expansion

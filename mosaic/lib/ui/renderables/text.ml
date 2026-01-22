@@ -115,8 +115,8 @@ let write_chunk buffer style text =
 
 let rec write_fragment buffer current_style = function
   | Text { text; style } ->
-      (* Preserve hierarchical fragment styles by merging parent -> child,
-         but do NOT bake the global default style into chunks. *)
+      (* Preserve hierarchical fragment styles by merging parent -> child, but
+         do NOT bake the global default style into chunks. *)
       let effective = merge_style current_style style in
       write_chunk buffer effective text
   | Span { style; children } ->
@@ -308,8 +308,8 @@ let mount ?(props = Props.default) (rnode : Renderable.t) =
            ~selectable:props.selectable ~default_style:props.style ())
       rnode
   in
-  (* Ensure base text style is applied to the underlying buffer immediately
-     so initial content composes against the correct defaults. *)
+  (* Ensure base text style is applied to the underlying buffer immediately so
+     initial content composes against the correct defaults. *)
   Text_surface.set_default_style surface props.style;
   let initial_fragments, initial_cache =
     if props.content = "" then ([], Some [])

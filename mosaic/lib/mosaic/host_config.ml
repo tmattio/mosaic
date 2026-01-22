@@ -50,7 +50,8 @@ let node_of = function
 
 let create_instance (renderer : Renderer.t) (tag : Vnode.tag)
     (props : unit Vnode.props) : instance =
-  (* Generate stable ID if not provided - this ID remains constant for the fiber's lifetime *)
+  (* Generate stable ID if not provided - this ID remains constant for the
+     fiber's lifetime *)
   let id = Option.value props.id ~default:(Renderer.gen_id renderer) in
   let host_props =
     Renderable.Props.make ~id ~visible:props.visible ~z_index:props.z_index

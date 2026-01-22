@@ -1,4 +1,5 @@
-(* Terminal input events: keys, modifiers, mouse, capabilities and high-level events. *)
+(* Terminal input events: keys, modifiers, mouse, capabilities and high-level
+   events. *)
 
 module Key = struct
   type t =
@@ -416,8 +417,8 @@ type t =
 let equal (e1 : t) (e2 : t) =
   match (e1, e2) with
   | Key k1, Key k2 ->
-      (* Retain the "semantic equality" from the old [event_equal]:
-         compare only key + modifiers. *)
+      (* Retain the "semantic equality" from the old [event_equal]: compare only
+         key + modifiers. *)
       Key.equal k1.key k2.key && Key.equal_modifier k1.modifier k2.modifier
   | Mouse m1, Mouse m2 -> Mouse.equal_event m1 m2
   | Scroll (x1, y1, d1, s1, m1), Scroll (x2, y2, d2, s2, m2) ->

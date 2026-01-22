@@ -6,8 +6,8 @@ let ensure_dir dir =
   with Unix.Unix_error (Unix.ENOENT, _, _) -> (
     try Unix.mkdir dir 0o755
     with Unix.Unix_error (Unix.EEXIST, _, _) ->
-      (* Race condition: another thread/process created the directory
-           between our stat and mkdir. Verify it's actually a directory. *)
+      (* Race condition: another thread/process created the directory between
+         our stat and mkdir. Verify it's actually a directory. *)
       let st = Unix.stat dir in
       if st.Unix.st_kind <> Unix.S_DIR then
         raise (Unix.Unix_error (Unix.ENOTDIR, dir, "")))

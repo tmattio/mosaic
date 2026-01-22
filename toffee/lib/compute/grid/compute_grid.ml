@@ -1,6 +1,5 @@
-(* Grid layout algorithm implementation
-   This module implements the CSS Grid Level 1 specification
-   https://www.w3.org/TR/css-grid-1/ *)
+(* Grid layout algorithm implementation This module implements the CSS Grid
+   Level 1 specification https://www.w3.org/TR/css-grid-1/ *)
 
 open Geometry
 open Style
@@ -13,12 +12,9 @@ module Grid_item = Grid_item
 module Placement = Placement
 module Named = Named
 
-(* Grid layout algorithm
-   This consists of a few phases:
-   - Resolving the explicit grid
-   - Placing items (which also resolves the implicit grid)
-   - Track (row/column) sizing
-   - Alignment & Final item placement *)
+(* Grid layout algorithm This consists of a few phases: - Resolving the explicit
+   grid - Placing items (which also resolves the implicit grid) - Track
+   (row/column) sizing - Alignment & Final item placement *)
 let compute_grid_layout (type t)
     (module Tree : LAYOUT_PARTIAL_TREE with type t = t) ~tree ~node ~inputs =
   let known_dimensions = Layout_input.known_dimensions inputs in
@@ -88,9 +84,10 @@ let compute_grid_layout (type t)
     else Size.none
   in
 
-  (* Scrollbar gutters are reserved when the `overflow` property is set to `Overflow::Scroll`.
-     However, the axes are switched (transposed) because a node that scrolls vertically needs
-     *horizontal* space to be reserved for a scrollbar *)
+  (* Scrollbar gutters are reserved when the `overflow` property is set to
+     `Overflow::Scroll`. However, the axes are switched (transposed) because a
+     node that scrolls vertically needs *horizontal* space to be reserved for a
+     scrollbar *)
   let scrollbar_gutter =
     let overflow = Style.overflow style in
     Point.transpose overflow
@@ -117,10 +114,10 @@ let compute_grid_layout (type t)
   let align_items = Style.align_items style in
   let justify_items = Style.justify_items style in
 
-  (* Note: we avoid accessing the grid rows/columns methods more than once as this can
-     cause an expensive-ish computation
-     In OCaml, we pass the style directly to functions that need it rather than
-     extracting these values early *)
+  (* Note: we avoid accessing the grid rows/columns methods more than once as
+     this can cause an expensive-ish computation In OCaml, we pass the style
+     directly to functions that need it rather than extracting these values
+     early *)
   let constrained_available_space =
     ( Size.map2
         (fun opt_size space ->
@@ -189,8 +186,9 @@ let compute_grid_layout (type t)
   | _ ->
       (* 2. Resolve the explicit grid *)
 
-      (* This is very similar to the inner_node_size except if the inner_node_size is not definite but the node
-         has a min- or max- size style then that will be used in its place. *)
+      (* This is very similar to the inner_node_size except if the
+         inner_node_size is not definite but the node has a min- or max- size
+         style then that will be used in its place. *)
       let auto_fit_container_size =
         Size.choose_first outer_node_size max_size |> fun s ->
         Size.choose_first s min_size
@@ -274,7 +272,8 @@ let compute_grid_layout (type t)
         ~justify_items:(Option.value justify_items ~default:Align_items.Stretch)
         ~named_line_resolver:name_resolver;
 
-      (* Extract track counts from previous step (auto-placement can expand the number of tracks) *)
+      (* Extract track counts from previous step (auto-placement can expand the
+         number of tracks) *)
       let final_col_counts =
         Cell_occupancy.track_counts cell_occupancy_matrix
           Absolute_axis.Horizontal
@@ -303,14 +302,17 @@ let compute_grid_layout (type t)
 
       (* 6. Track Sizing *)
 
-      (* Convert grid placements in origin-zero coordinates to indexes into the GridTrack (rows and columns) vectors
-         This computation is relatively trivial, but it requires the final number of negative (implicit) tracks in
-         each axis, and doing it up-front here means we don't have to keep repeating that calculation *)
+      (* Convert grid placements in origin-zero coordinates to indexes into the
+         GridTrack (rows and columns) vectors This computation is relatively
+         trivial, but it requires the final number of negative (implicit) tracks
+         in each axis, and doing it up-front here means we don't have to keep
+         repeating that calculation *)
       Track_sizing.resolve_item_track_indexes items final_col_counts
         final_row_counts;
 
-      (* For each item, and in each axis, determine whether the item crosses any flexible (fr) tracks
-         Record this as a boolean (per-axis) on each item for later use in the track-sizing algorithm *)
+      (* For each item, and in each axis, determine whether the item crosses any
+         flexible (fr) tracks Record this as a boolean (per-axis) on each item
+         for later use in the track-sizing algorithm *)
       Track_sizing.determine_if_item_crosses_flexible_or_intrinsic_tracks items
         columns rows;
 
@@ -483,10 +485,12 @@ let compute_grid_layout (type t)
                 | None, None -> row.Grid_track.base_size))
             rows;
 
-        (* Column sizing must be re-run (once) if:
-           - The grid container's width was initially indefinite and there are any columns with percentage track sizing functions
-           - Any grid item crossing an intrinsically sized track's min content contribution width has changed
-           TODO: Only rerun sizing for tracks that actually require it rather than for all tracks if any need it. *)
+        (* Column sizing must be re-run (once) if: - The grid container's width
+           was initially indefinite and there are any columns with percentage
+           track sizing functions - Any grid item crossing an intrinsically
+           sized track's min content contribution width has changed TODO: Only
+           rerun sizing for tracks that actually require it rather than for all
+           tracks if any need it. *)
         let rerun_column_sizing =
           let has_percentage_column =
             Array.exists (fun track -> Grid_track.uses_percentage track) columns
@@ -497,7 +501,8 @@ let compute_grid_layout (type t)
           let initial = parent_width_indefinite && has_percentage_column in
           if initial then true
           else
-            (* Check if any intrinsic column item min-content contribution changed *)
+            (* Check if any intrinsic column item min-content contribution
+               changed *)
             let changed = ref false in
             let len = Array.length items in
             let i = ref 0 in
@@ -572,10 +577,12 @@ let compute_grid_layout (type t)
             (fun track _ _ -> Some track.Grid_track.base_size)
             has_baseline_aligned_item;
 
-          (* Row sizing must be re-run (once) if:
-             - The grid container's height was initially indefinite and there are any rows with percentage track sizing functions
-             - Any grid item crossing an intrinsically sized track's min content contribution height has changed
-             TODO: Only rerun sizing for tracks that actually require it rather than for all tracks if any need it. *)
+          (* Row sizing must be re-run (once) if: - The grid container's height
+             was initially indefinite and there are any rows with percentage
+             track sizing functions - Any grid item crossing an intrinsically
+             sized track's min content contribution height has changed TODO:
+             Only rerun sizing for tracks that actually require it rather than
+             for all tracks if any need it. *)
           let rerun_row_sizing =
             let has_percentage_row =
               Array.exists (fun track -> Grid_track.uses_percentage track) rows
@@ -684,7 +691,8 @@ let compute_grid_layout (type t)
         (* 9. Size, Align, and Position Grid Items *)
         let item_content_size_contribution = ref Size.zero in
 
-        (* Sort items back into original order to allow them to be matched up with styles *)
+        (* Sort items back into original order to allow them to be matched up
+           with styles *)
         Array.sort
           (fun a b ->
             Int.compare a.Grid_item.source_order b.Grid_item.source_order)
@@ -753,7 +761,8 @@ let compute_grid_layout (type t)
             incr order
             (* Position absolutely positioned child *))
           else if Style.position child_style = Position.Absolute then (
-            (* Convert grid-col-{start/end} into Option's of indexes into the columns vector *)
+            (* Convert grid-col-{start/end} into Option's of indexes into the
+               columns vector *)
             let maybe_col_indexes =
               let grid_placement = Style.grid_column child_style in
               let resolved =
@@ -772,7 +781,8 @@ let compute_grid_layout (type t)
                       Grid_track_counts.oz_line_to_track final_col_counts line))
                 resolved_abs
             in
-            (* Convert grid-row-{start/end} into Option's of indexes into the row vector *)
+            (* Convert grid-row-{start/end} into Option's of indexes into the
+               row vector *)
             let maybe_row_indexes =
               let grid_placement = Style.grid_row child_style in
               let resolved =
@@ -818,7 +828,8 @@ let compute_grid_layout (type t)
                 }
             in
 
-            (* TODO: Baseline alignment support for absolutely positioned items *)
+            (* TODO: Baseline alignment support for absolutely positioned
+               items *)
             let content_size_contribution, _, _ =
               Alignment.align_and_position_item
                 (module Tree)
@@ -832,13 +843,16 @@ let compute_grid_layout (type t)
 
         (* TODO: Set detailed grid information if needed *)
 
-        (* If there are no items then return just the container size (no baseline) *)
+        (* If there are no items then return just the container size (no
+           baseline) *)
         if Array.length items = 0 then
           Layout_output.from_outer_size container_border_box
         else
-          (* Determine the grid container baseline(s) (currently we only compute the first baseline) *)
+          (* Determine the grid container baseline(s) (currently we only compute
+             the first baseline) *)
           let grid_container_baseline =
-            (* Sort items by row start position so that we can iterate items in groups which are in the same row *)
+            (* Sort items by row start position so that we can iterate items in
+               groups which are in the same row *)
             let sorted_items = Array.copy items in
             Array.sort
               (fun a b ->

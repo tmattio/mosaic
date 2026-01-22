@@ -200,8 +200,8 @@ let on_frame ?(corner = `Bottom_right) ?(padding = 1) ?(gap = 1)
   let frame_ring = Avg_ring.create capacity in
   let interval_ring = Avg_ring.create capacity in
   let overlay = create ~padding ~gap () in
-  (* Initialize to None to detect first frame; avoids showing misleading
-     "delta since program start" on the first render. *)
+  (* Initialize to None to detect first frame; avoids showing misleading "delta
+     since program start" on the first render. *)
   let last_minor_words = ref None in
   let last_major_words = ref None in
   fun (screen : Screen.t) ->

@@ -1273,8 +1273,8 @@ let set_rows t rows =
     rebuild t)
 
 let apply_props t (props : Props.t) =
-  (* Update full options snapshot, including columns and rows, then rebuild
-     the render plan in a single pass. *)
+  (* Update full options snapshot, including columns and rows, then rebuild the
+     render plan in a single pass. *)
   t.options <- props;
   t.columns <- props.columns;
   t.rows <- props.rows;

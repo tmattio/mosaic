@@ -27,7 +27,8 @@ let percent value =
 
 (* Create from a length_percentage *)
 let from_length_percentage lp =
-  (* length_percentage is already a Compact_length.t, so we can use it directly *)
+  (* length_percentage is already a Compact_length.t, so we can use it
+     directly *)
   { min = lp; max = lp }
 
 (* Create a fit-content track sizing function *)

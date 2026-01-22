@@ -75,7 +75,8 @@ let into_origin_zero_placement_ignoring_named t explicit_track_count =
   | Named_line _ -> Grid.Origin_zero_placement.Auto
   | Named_span _ -> Grid.Origin_zero_placement.Auto
 
-(* Convert grid placement to origin-zero placement (named lines should already be resolved) *)
+(* Convert grid placement to origin-zero placement (named lines should already
+   be resolved) *)
 let into_origin_zero_placement t explicit_track_count =
   match t with
   | Auto -> Grid.Origin_zero_placement.Auto

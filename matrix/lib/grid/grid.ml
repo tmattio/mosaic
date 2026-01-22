@@ -98,18 +98,17 @@ module Scissor_stack = struct
 end
 
 module Cell_code = struct
-  (*
-    Bit Layout (aligned with Glyph.t for direct compatibility):
-    bit 30: grapheme flag (0 = simple/scalar, 1 = complex grapheme)
-    bit 29: continuation flag (0 = start, 1 = continuation)
-    bits 27-28: right_extent (width - 1 for start, distance to end for cont)
-    bits 25-26: left_extent (distance to start for continuation cells)
-    bits 0-24: payload (Unicode scalar for simple, or Glyph pool data for complex)
+  (* Bit Layout (aligned with Glyph.t for direct compatibility): bit 30:
+     grapheme flag (0 = simple/scalar, 1 = complex grapheme) bit 29:
+     continuation flag (0 = start, 1 = continuation) bits 27-28: right_extent
+     (width - 1 for start, distance to end for cont) bits 25-26: left_extent
+     (distance to start for continuation cells) bits 0-24: payload (Unicode
+     scalar for simple, or Glyph pool data for complex)
 
-    This layout matches Glyph.t exactly, allowing direct storage of glyph values
-    without transformation. Simple ASCII glyphs are stored as-is (no flags set).
-    Complex glyphs from Glyph.encode/intern can be stored directly.
-  *)
+     This layout matches Glyph.t exactly, allowing direct storage of glyph
+     values without transformation. Simple ASCII glyphs are stored as-is (no
+     flags set). Complex glyphs from Glyph.encode/intern can be stored
+     directly. *)
 
   let flag_grapheme = 0x40000000 (* bit 30 *)
   let flag_complex_cont = 0x60000000 (* bits 30 + 29: complex continuation *)
@@ -141,8 +140,8 @@ module Cell_code = struct
   let[@inline] left_extent c = (c land mask_left_ext) lsr shift_left_ext
   let[@inline] right_extent c = (c land mask_right_ext) lsr shift_right_ext
 
-  (* Construction - for continuation cells created during draw_text.
-     Start cells can now use the Glyph.t value directly. *)
+  (* Construction - for continuation cells created during draw_text. Start cells
+     can now use the Glyph.t value directly. *)
   let make_cont ~id ~left ~right =
     let l_enc = min 3 left in
     let r_enc = min 3 right in
@@ -303,7 +302,8 @@ let get_style t idx =
     let g = Color_plane.get plane idx 1 in
     let b = Color_plane.get plane idx 2 in
     let a = Color_plane.get plane idx 3 in
-    (* Use Color_plane.clamp for consistent rounding/clamping with get_background *)
+    (* Use Color_plane.clamp for consistent rounding/clamping with
+       get_background *)
     Ansi.Color.of_rgba (Color_plane.clamp r) (Color_plane.clamp g)
       (Color_plane.clamp b) (Color_plane.clamp a)
   in
@@ -317,8 +317,8 @@ let get_background t idx =
     (Color_plane.clamp b) (Color_plane.clamp a)
 
 let get_text t idx =
-  (* Cell_code is aligned with Glyph.t, so cell codes can be passed
-     directly to Glyph.to_string *)
+  (* Cell_code is aligned with Glyph.t, so cell codes can be passed directly to
+     Glyph.to_string *)
   let c = Buf.get t.chars idx in
   if Cell_code.is_continuation c then "" else Glyph.to_string t.glyph_pool c
 
@@ -409,8 +409,8 @@ let resize t ~width ~height =
         done
       done;
 
-    (* When shrinking width, drop any grapheme starts whose span crosses the
-       new right edge to avoid dangling extents into the next row. *)
+    (* When shrinking width, drop any grapheme starts whose span crosses the new
+       right edge to avoid dangling extents into the next row. *)
     (if width < old_width then
        let max_row = min (old_height - 1) (height - 1) in
        for y = 0 to max_row do
@@ -497,8 +497,8 @@ let[@inline] is_clipped t x y =
 
 (* ---- Core Cell Writing ---- *)
 
-(* Zero-alloc core cell writer.
-   Takes unpacked colors to avoid tuple allocation in hot loops. *)
+(* Zero-alloc core cell writer. Takes unpacked colors to avoid tuple allocation
+   in hot loops. *)
 let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
     ~bg_a ~attrs ~link_id ~blending =
   if blending && (bg_a < 0.999 || fg_a < 0.999) then (
@@ -589,8 +589,8 @@ let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
       let old_simple = Cell_code.is_simple old_code in
       let new_simple = Cell_code.is_simple code in
       if not old_simple then cleanup_grapheme_at t idx;
-      (* Only touch grapheme tracker when complex graphemes are involved.
-         Simple -> simple (ASCII etc.) is now tracker-free. *)
+      (* Only touch grapheme tracker when complex graphemes are involved. Simple
+         -> simple (ASCII etc.) is now tracker-free. *)
       (match (old_simple, new_simple) with
       | true, true -> ()
       | true, false -> Grapheme_tracker.add t.grapheme_tracker code
@@ -659,7 +659,8 @@ let fill_rect t ~x ~y ~width ~height ~color =
       let y_end = y_start + r.Rect.height - 1 in
 
       if bg_a <= 0.001 then begin
-        (* Fully transparent fills: clear characters/attrs but keep background. *)
+        (* Fully transparent fills: clear characters/attrs but keep
+           background. *)
         let fg_r, fg_g, fg_b, fg_a = (1.0, 1.0, 1.0, 1.0) in
         let attrs = 0 in
         let link_id = no_link in
@@ -678,7 +679,8 @@ let fill_rect t ~x ~y ~width ~height ~color =
         done
       end
       else if bg_a < 0.999 then begin
-        (* Semi-transparent fill: per-cell alpha blending without allocations. *)
+        (* Semi-transparent fill: per-cell alpha blending without
+           allocations. *)
         let fg_r, fg_g, fg_b, fg_a = Ansi.Color.to_rgba_f Ansi.Color.white in
         let attrs = Ansi.Attr.pack Ansi.Attr.empty in
         let link_id = no_link in
@@ -757,9 +759,9 @@ let blit ~src ~dst =
           Grapheme_tracker.add dst.grapheme_tracker c
       done)
     else (
-      (* Cross-pool blit: need to copy grapheme data between pools.
-       Cell_code is aligned with Glyph.t, so cell codes can be passed
-       directly to Glyph.copy and results stored directly. *)
+      (* Cross-pool blit: need to copy grapheme data between pools. Cell_code is
+         aligned with Glyph.t, so cell codes can be passed directly to
+         Glyph.copy and results stored directly. *)
       Grapheme_tracker.clear dst.grapheme_tracker;
       Links.clear dst.link_registry;
       let cache = Hashtbl.create 64 in
@@ -774,7 +776,8 @@ let blit ~src ~dst =
             let src_payload = Cell_code.payload src_c in
             match Hashtbl.find_opt cache src_payload with
             | Some dst_glyph ->
-                (* Reconstruct cell code with cached glyph and original extents *)
+                (* Reconstruct cell code with cached glyph and original
+                   extents *)
                 if Cell_code.is_start src_c then dst_glyph
                 else
                   Cell_code.make_cont
@@ -920,9 +923,9 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
             i := !i + y_step
           done
         else
-          (* Slow Path: Cross-Grid / General Blit
-             Cell_code is aligned with Glyph.t, so cell codes can be passed
-             directly to Glyph.copy and results stored directly. *)
+          (* Slow Path: Cross-Grid / General Blit Cell_code is aligned with
+             Glyph.t, so cell codes can be passed directly to Glyph.copy and
+             results stored directly. *)
           let grapheme_map = Hashtbl.create 64 in
           let copy_glyph code =
             (* Cache by payload to avoid re-copying identical graphemes *)
@@ -988,7 +991,8 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
                 else copy_glyph code
               in
 
-              (* If we mapped to space due to orphan/missing logic, reset style *)
+              (* If we mapped to space due to orphan/missing logic, reset
+                 style *)
               let is_reset =
                 final_code_mapped = space_cell && code <> space_cell
               in
@@ -1345,8 +1349,8 @@ let default_line_glyphs = { h = "─"; v = "│"; diag_up = "╱"; diag_down = "
 
 let ascii_line_glyphs = { h = "-"; v = "|"; diag_up = "/"; diag_down = "\\" }
 
-(* Braille lookup table: precompute all 256 braille patterns once.
-   This avoids per-cell Buffer allocation during line drawing. *)
+(* Braille lookup table: precompute all 256 braille patterns once. This avoids
+   per-cell Buffer allocation during line drawing. *)
 let braille_lut : string array =
   Array.init 256 (fun bits ->
       let u = Uchar.of_int (0x2800 + bits) in
@@ -1358,7 +1362,8 @@ let braille_lut : string array =
 let braille_base = 0x2800
 let braille_max = 0x28FF
 
-(* Decode an existing braille cell to get its bits, returns 0 for non-braille cells *)
+(* Decode an existing braille cell to get its bits, returns 0 for non-braille
+   cells *)
 let decode_braille_bits t ~x ~y =
   if x < 0 || y < 0 || x >= t.width || y >= t.height then 0
   else

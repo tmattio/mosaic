@@ -464,7 +464,7 @@ module Node : sig
 
   val descendant_for_byte_range : t -> start:int -> end_:int -> t option
   (** [descendant_for_byte_range node ~start ~end_] finds the smallest
-      descendant that spans [start, end_).
+      descendant that spans [\[start, end_)].
 
       Returns [None] if no descendant spans the given range. The range is
       inclusive of [start] and exclusive of [end_]. This is useful for locating
@@ -481,7 +481,7 @@ module Node : sig
 
   val named_descendant_for_byte_range : t -> start:int -> end_:int -> t option
   (** [named_descendant_for_byte_range node ~start ~end_] finds the smallest
-      named descendant that spans [start, end_).
+      named descendant that spans [\[start, end_)].
 
       Returns [None] if no named descendant spans the range. Only considers
       named nodes. *)
@@ -559,10 +559,10 @@ module Tree : sig
     new_end_point:int * int ->
     unit
   (** [edit tree ~start_byte ~old_end_byte ~new_end_byte ~start_point
-      ~old_end_point ~new_end_point] marks a region of [tree] as edited.
+       ~old_end_point ~new_end_point] marks a region of [tree] as edited.
 
       This prepares [tree] for incremental reparsing. The edit replaces the
-      region from [start_byte, old_end_byte) with a new region ending at
+      region from [\[start_byte, old_end_byte)] with a new region ending at
       [new_end_byte]. Both byte offsets and point coordinates must be provided.
 
       After editing, pass [tree] as the [~old] parameter to
@@ -875,7 +875,8 @@ module Query_cursor : sig
       results multiple times. *)
 
   val set_byte_range : t -> start:int -> end_:int -> unit
-  (** [set_byte_range cursor ~start ~end_] restricts [cursor] to [start, end_).
+  (** [set_byte_range cursor ~start ~end_] restricts [cursor] to
+      [\[start, end_)].
 
       Only matches within the specified byte range are returned. The range is
       inclusive of [start] and exclusive of [end_]. This must be called before

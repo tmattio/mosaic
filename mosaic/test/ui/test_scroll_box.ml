@@ -93,10 +93,10 @@ let%expect_test "scroll box empty content" =
 
 (* Interaction tests *)
 
-(* Note: scroll_to/scroll_by during on_mount don't take effect because
-   layout hasn't been computed yet. These tests verify the API is callable
-   but the visual result shows initial position. For scroll behavior testing,
-   use the TEA harness which supports proper frame sequencing. *)
+(* Note: scroll_to/scroll_by during on_mount don't take effect because layout
+   hasn't been computed yet. These tests verify the API is callable but the
+   visual result shows initial position. For scroll behavior testing, use the
+   TEA harness which supports proper frame sequencing. *)
 
 let%expect_test "scroll_to during on_mount (layout not yet computed)" =
   render_boxed ~width:15 ~height:3

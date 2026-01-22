@@ -220,7 +220,8 @@ let%expect_test "table with lines between rows" =
 
 let%expect_test "table with alternating row styles (layout smoke test)" =
   (* Note: This test verifies layout only. Colors are disabled so alternating
-     row styles are not visible in output. Use colors:true for style verification. *)
+     row styles are not visible in output. Use colors:true for style
+     verification. *)
   let gray = Ansi.Style.make ~bg:(Ansi.Color.of_rgba 80 80 80 255) () in
   render_boxed ~width:25 ~height:8
     (table ~id:"t"
@@ -394,8 +395,8 @@ let%expect_test "table with custom column widths" =
 |}]
 
 let%expect_test "table with header style (layout smoke test)" =
-  (* Note: This test verifies layout only. Colors are disabled so styles
-     are not visible in output. Use colors:true for style verification. *)
+  (* Note: This test verifies layout only. Colors are disabled so styles are not
+     visible in output. Use colors:true for style verification. *)
   let yellow = Ansi.Style.make ~fg:Ansi.Color.yellow ~bold:true () in
   let green = Ansi.Style.make ~fg:Ansi.Color.green ~bold:true () in
   render_boxed ~width:25 ~height:6
@@ -555,8 +556,8 @@ let%expect_test "table with width constraint" =
 |}]
 
 let%expect_test "table with column styles (layout smoke test)" =
-  (* Note: This test verifies layout only. Colors are disabled so styles
-     are not visible in output. Use colors:true for style verification. *)
+  (* Note: This test verifies layout only. Colors are disabled so styles are not
+     visible in output. Use colors:true for style verification. *)
   let green = Ansi.Style.make ~fg:Ansi.Color.green () in
   let yellow = Ansi.Style.make ~fg:Ansi.Color.yellow ~bold:true () in
   render_boxed ~width:30 ~height:6
@@ -578,7 +579,8 @@ let%expect_test "table with column styles (layout smoke test)" =
 
 let%expect_test "table with row styles wraparound (layout smoke test)" =
   (* Note: This test verifies layout only. Colors are disabled so alternating
-     row styles are not visible in output. Use colors:true for style verification. *)
+     row styles are not visible in output. Use colors:true for style
+     verification. *)
   let highlight = Ansi.Style.make ~bg:(Ansi.Color.of_rgba 236 236 236 255) () in
   render_boxed ~width:25 ~height:10
     (table ~id:"t"

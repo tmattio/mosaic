@@ -107,10 +107,9 @@ let update t w ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b ~bg_a ~attrs ~link =
       Escape.sgr_sep w;
       Escape.sgr_code w (float_to_u8 bg_b));
 
-    (* Attributes - unrolled for zero allocation.
-       Bit positions: Bold=0, Dim=1, Italic=2, Underline=3, Blink=4,
-       Inverse=5, Hidden=6, Strikethrough=7, Double_underline=8,
-       Overline=9, Framed=10, Encircled=11 *)
+    (* Attributes - unrolled for zero allocation. Bit positions: Bold=0, Dim=1,
+       Italic=2, Underline=3, Blink=4, Inverse=5, Hidden=6, Strikethrough=7,
+       Double_underline=8, Overline=9, Framed=10, Encircled=11 *)
     if attrs <> 0 then (
       if attrs land 0x001 <> 0 then (
         Escape.sgr_sep w;

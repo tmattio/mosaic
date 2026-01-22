@@ -14,7 +14,8 @@ type parsed = [ `User of event | `Caps of Caps.event ]
 (* Maximum CSI parameters we track. Covers all keyboard/mouse sequences. *)
 let max_csi_params = 8
 
-(* Maximum sub-parameters per CSI param (for Kitty keyboard: code:shifted:base) *)
+(* Maximum sub-parameters per CSI param (for Kitty keyboard:
+   code:shifted:base) *)
 let max_sub_params = 4
 
 type t = {
@@ -126,8 +127,8 @@ let is_csi_final c =
   let code = Char.code c in
   (code >= 0x40 && code <= 0x7e) || code = 0x24 || code = 0x5e
 
-(* Strip ANSI/terminal escape sequences from text. Used to sanitize
-   bracketed paste payloads so pasted content cannot inject control codes. *)
+(* Strip ANSI/terminal escape sequences from text. Used to sanitize bracketed
+   paste payloads so pasted content cannot inject control codes. *)
 let strip_ansi parser s =
   if not (String.contains s '\x1b') then s
   else
@@ -164,7 +165,8 @@ let strip_ansi parser s =
             if !j < len then loop (!j + 1) else Buffer.contents buf)
           else if c2 = ']' || c2 = 'P' || c2 = '_' then
             if
-              (* OSC (]), DCS (P), APC (_): end with ST (ESC \). OSC can also end with BEL. *)
+              (* OSC (]), DCS (P), APC (_): end with ST (ESC \). OSC can also
+                 end with BEL. *)
               c2 = ']'
             then
               let rec find_end k =
@@ -386,9 +388,9 @@ let event_type_of_csi_mod m =
 let ensure_shift m = if m.Key.shift then m else { m with shift = true }
 let ensure_ctrl m = if m.Key.ctrl then m else { m with Key.ctrl = true }
 
-(* Decode a single UTF-8 codepoint at position [pos] in string [s].
-   Returns Some (codepoint, byte_length) or None if invalid/truncated.
-   Used for parsing URXVT mouse coordinates which are UTF-8 encoded. *)
+(* Decode a single UTF-8 codepoint at position [pos] in string [s]. Returns Some
+   (codepoint, byte_length) or None if invalid/truncated. Used for parsing URXVT
+   mouse coordinates which are UTF-8 encoded. *)
 let decode_utf8_char_string s pos =
   if pos >= String.length s then None
   else
@@ -606,7 +608,8 @@ let pua_to_key c : key =
   | 57363 -> Menu
   (* Function keys F1-F35: 57364..57398 *)
   | c when c >= 57364 && c <= 57398 -> F (c - 57363)
-  (* Keypad keys follow the same numbering scheme as Kitty's reference implementation. *)
+  (* Keypad keys follow the same numbering scheme as Kitty's reference
+     implementation. *)
   | 57400 -> KP_0
   | 57401 -> KP_1
   | 57402 -> KP_2
@@ -954,8 +957,8 @@ let parse_csi parser s start end_ : parsed option =
         in
         let modes = parse_pairs [] 0 in
         Some (`Caps (Caps.Mode_report { Caps.is_private; modes }))
-    (* Color scheme DSR response: CSI ? 997 ; value n
-       Response to CSI ? 996 n query. Value 1 = dark, 2 = light. *)
+    (* Color scheme DSR response: CSI ? 997 ; value n Response to CSI ? 996 n
+       query. Value 1 = dark, 2 = light. *)
     | 'n' ->
         if start < !params_end && s.[start] = '?' then (
           parse_csi_params_into parser s (start + 1) !params_end;
@@ -1033,7 +1036,8 @@ let parse_escape_sequence parser s start length : parsed option * int =
       | Some event -> (Some event, length)
       | None -> (None, 0)
     else if esc2 = 'O' && length >= 3 then
-      (* SS3 sequences - used by terminals for arrows, home/end, function keys *)
+      (* SS3 sequences - used by terminals for arrows, home/end, function
+         keys *)
       let event_opt =
         match s.[start + 2] with
         | 'A' -> Some (make_key_event Up)
@@ -1223,7 +1227,8 @@ let special_key_event_of_code code : event option =
            (Char (Uchar.of_int letter)))
   | _ -> None
 
-(* Precomputed ASCII key events to avoid per-character allocation in hot paths. *)
+(* Precomputed ASCII key events to avoid per-character allocation in hot
+   paths. *)
 let ascii_events : event option array =
   Array.init 128 (fun code ->
       match special_key_event_of_code code with
@@ -1367,12 +1372,12 @@ let process_tokens_iter parser tokens ~on_event ~on_caps =
                   on_caps c;
                   loop rest
               | None ->
-                  (* Unknown sequence - emit Escape, convert rest to text.
-                     This handles edge cases like:
-                     - Unknown CSI sequences with valid terminators
-                     - Unusual escape sequences from specific terminals
-                     The tokenizer's protocol-aware timeouts help prevent
-                     prematurely flushed incomplete sequences from reaching here. *)
+                  (* Unknown sequence - emit Escape, convert rest to text. This
+                     handles edge cases like: - Unknown CSI sequences with valid
+                     terminators - Unusual escape sequences from specific
+                     terminals The tokenizer's protocol-aware timeouts help
+                     prevent prematurely flushed incomplete sequences from
+                     reaching here. *)
                   let len = String.length seq in
                   if len > 0 then on_event (ascii_events.(0x1b) |> Option.get);
                   if len > 1 then begin

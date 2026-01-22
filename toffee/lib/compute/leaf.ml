@@ -16,9 +16,10 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)
   let sizing_mode = Layout_input.sizing_mode inputs in
   let run_mode = Layout_input.run_mode inputs in
 
-  (* Note: both horizontal and vertical percentage padding/borders are resolved against 
-     the container's inline size (i.e. width). This is not a bug, but is how CSS is 
-     specified (see: https://developer.mozilla.org/en-US/docs/Web/CSS/padding#values) *)
+  (* Note: both horizontal and vertical percentage padding/borders are resolved
+     against the container's inline size (i.e. width). This is not a bug, but is
+     how CSS is specified (see:
+     https://developer.mozilla.org/en-US/docs/Web/CSS/padding#values) *)
   let parent_inline_size = parent_size.width in
 
   let margin =
@@ -46,9 +47,10 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)
     else Size.zero
   in
 
-  (* Resolve node's preferred/min/max sizes (width/heights) against the available space
-     (percentages resolve to pixel values). For ContentSize mode, we pretend that the 
-     node has no size styles as these should be ignored. *)
+  (* Resolve node's preferred/min/max sizes (width/heights) against the
+     available space (percentages resolve to pixel values). For ContentSize
+     mode, we pretend that the node has no size styles as these should be
+     ignored. *)
   let node_size, node_min_size, node_max_size, aspect_ratio =
     match sizing_mode with
     | Sizing_mode.Content_size -> (known_dimensions, Size.none, Size.none, None)
@@ -103,9 +105,10 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)
         (node_size, style_min_size, style_max_size, aspect_ratio)
   in
 
-  (* Scrollbar gutters are reserved when the `overflow` property is set to `Overflow::Scroll`.
-     However, the axis are switched (transposed) because a node that scrolls vertically needs
-     *horizontal* space to be reserved for a scrollbar *)
+  (* Scrollbar gutters are reserved when the `overflow` property is set to
+     `Overflow::Scroll`. However, the axis are switched (transposed) because a
+     node that scrolls vertically needs *horizontal* space to be reserved for a
+     scrollbar *)
   let scrollbar_gutter =
     let overflow = Style.overflow style in
     Point.{ x = overflow.y; y = overflow.x }
@@ -221,7 +224,8 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)
           Size.add measured_size (Rect.sum_axes content_box_inset)
         in
 
-        (* Taffy's logic: known_dimensions.or(node_size).unwrap_or(measured_size + content_box_inset.sum_axes()) *)
+        (* Taffy's logic: known_dimensions.or(node_size).unwrap_or(measured_size
+           + content_box_inset.sum_axes()) *)
         let base_size =
           match (chosen.width, chosen.height) with
           | Some w, Some h -> Size.{ width = w; height = h }
@@ -240,7 +244,9 @@ let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)
       let size =
         match aspect_ratio with
         | Some ratio ->
-            (* Taffy: height: f32_max(clamped_size.height, aspect_ratio.map(|ratio| clamped_size.width / ratio).unwrap_or(0.0)) *)
+            (* Taffy: height: f32_max(clamped_size.height,
+               aspect_ratio.map(|ratio| clamped_size.width /
+               ratio).unwrap_or(0.0)) *)
             let aspect_height = clamped_size.width /. ratio in
             Size.
               {

@@ -3,22 +3,26 @@
 open Style
 open Geometry
 
-(* Resolver that takes grid lines names and area names as input and can then be used to
-    resolve line names of grid placement properties into line numbers *)
+(* Resolver that takes grid lines names and area names as input and can then be
+   used to resolve line names of grid placement properties into line numbers *)
 type t = {
   row_lines : (string, int list) Hashtbl.t;
-      (* Map of row line names to line numbers. Each line name may correspond to multiple lines *)
+      (* Map of row line names to line numbers. Each line name may correspond to
+         multiple lines *)
   column_lines : (string, int list) Hashtbl.t;
-      (* Map of column line names to line numbers. Each line name may correspond to multiple lines *)
+      (* Map of column line names to line numbers. Each line name may correspond
+         to multiple lines *)
   area_column_count : int;
       (* Number of columns implied by grid area definitions *)
   area_row_count : int; (* Number of rows implied by grid area definitions *)
   mutable explicit_column_count : int;
-      (* The number of explicit columns in the grid. This is an *input* to the NamedLineResolver and is
-      used when computing the fallback line when a non-existent named line is specified *)
+      (* The number of explicit columns in the grid. This is an *input* to the
+         NamedLineResolver and is used when computing the fallback line when a
+         non-existent named line is specified *)
   mutable explicit_row_count : int;
-      (* The number of explicit rows in the grid. This is an *input* to the NamedLineResolver and is
-      used when computing the fallback line when a non-existent named line is specified *)
+      (* The number of explicit rows in the grid. This is an *input* to the
+         NamedLineResolver and is used when computing the fallback line when a
+         non-existent named line is specified *)
 }
 
 (* Utility function to create or update an entry in a line name map *)

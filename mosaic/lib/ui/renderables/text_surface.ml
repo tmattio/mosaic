@@ -120,7 +120,8 @@ let set_wrap_mode t mode =
 
 let set_tab_width t w =
   Text_buffer.set_tab_width t.buffer w;
-  (* Changing tab width affects visual widths and wrapping; trigger re-measure. *)
+  (* Changing tab width affects visual widths and wrapping; trigger
+     re-measure. *)
   ignore (Renderable.mark_layout_dirty t.node);
   request_render t
 
@@ -218,8 +219,8 @@ let background_at grid ~x ~y =
   Grid.get_background grid idx
 
 let replace_content t writer =
-  (* Preserve selection across content updates by refreshing it after
-     buffer changes. *)
+  (* Preserve selection across content updates by refreshing it after buffer
+     changes. *)
   let prev_selection = Text_buffer_view.selection t.view in
   Text_buffer.reset t.buffer;
   writer t.buffer;
@@ -374,7 +375,7 @@ let render t renderable grid ~delta:_ =
     Text_buffer.finalise t.buffer;
     if need_set_width then ignore (Renderable.mark_layout_dirty t.node));
   (* Align buffer width method with the grid’s width method BEFORE pulling any
-       drawing buffers so widths/virtual lines are computed consistently. *)
+     drawing buffers so widths/virtual lines are computed consistently. *)
   let gwm = Grid.width_method grid in
   Text_buffer.set_width_method t.buffer gwm;
   let view = Text_buffer.View.create t.buffer in
@@ -392,7 +393,8 @@ let render t renderable grid ~delta:_ =
     match sel_bounds with
     | None -> (base_fg, base_bg)
     | Some (s, e) when idx >= s && idx < e -> (
-        (* Priority: explicit selection_bg/fg on widget -> selection style bg/fg -> invert fallback *)
+        (* Priority: explicit selection_bg/fg on widget -> selection style bg/fg
+           -> invert fallback *)
         match t.selection_bg with
         | Some sbg ->
             let sfg =
@@ -464,10 +466,10 @@ let render t renderable grid ~delta:_ =
           if code = 10 then loop (i + 1) column
           else
             let dest_x = lx + column in
-            (* When no explicit foreground is provided (neither on the span
-                 nor via the default style), fall back to opaque white rather
-                 than terminal Default. This ensures selection inversion yields
-                 a visible background instead of a transparent one. *)
+            (* When no explicit foreground is provided (neither on the span nor
+               via the default style), fall back to opaque white rather than
+               terminal Default. This ensures selection inversion yields a
+               visible background instead of a transparent one. *)
             if dest_x >= 0 && dest_x < buffer_width then (
               let initial_bg =
                 match Text_buffer.View.bg_opt view idx with
@@ -526,9 +528,9 @@ let render t renderable grid ~delta:_ =
                 let next_column = column + draw_width in
                 loop (i + 1) next_column)
               else
-                (* Preserve continuation semantics: width=0 for continuation cells,
-                     positive width only on start cells. This keeps grid invariants
-                     stable across redraws. *)
+                (* Preserve continuation semantics: width=0 for continuation
+                   cells, positive width only on start cells. This keeps grid
+                   invariants stable across redraws. *)
                 let is_cont = Glyph.is_continuation code in
                 let draw_width = if is_cont then 0 else max 1 base_width in
                 let draw_fg, draw_bg = apply_selection fg bg idx in
@@ -548,7 +550,8 @@ let render t renderable grid ~delta:_ =
                 in
                 loop (i + 1) next_column)
       in
-      (* Horizontal offset: honor viewport.x for both wrapped and unwrapped lines *)
+      (* Horizontal offset: honor viewport.x for both wrapped and unwrapped
+         lines *)
       let start_i =
         match vp with
         | Some v when v.x > 0 ->

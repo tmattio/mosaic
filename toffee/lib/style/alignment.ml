@@ -3,13 +3,13 @@ module Align_items = struct
     | Start (* Items are packed toward the start of the axis *)
     | End (* Items are packed toward the end of the axis *)
     | Flex_start
-      (* Items are packed towards the flex-relative start of the axis.
-         For flex containers with flex_direction RowReverse or ColumnReverse this is equivalent
-         to End. In all other cases it is equivalent to Start. *)
+      (* Items are packed towards the flex-relative start of the axis. For flex
+         containers with flex_direction RowReverse or ColumnReverse this is
+         equivalent to End. In all other cases it is equivalent to Start. *)
     | Flex_end
-      (* Items are packed towards the flex-relative end of the axis.
-         For flex containers with flex_direction RowReverse or ColumnReverse this is equivalent
-         to Start. In all other cases it is equivalent to End. *)
+      (* Items are packed towards the flex-relative end of the axis. For flex
+         containers with flex_direction RowReverse or ColumnReverse this is
+         equivalent to Start. In all other cases it is equivalent to End. *)
     | Center (* Items are packed along the center of the cross axis *)
     | Baseline (* Items are aligned such as their baselines align *)
     | Stretch (* Stretch to fill the container *)
@@ -53,24 +53,24 @@ module Align_content = struct
     | Start (* Items are packed toward the start of the axis *)
     | End (* Items are packed toward the end of the axis *)
     | Flex_start
-      (* Items are packed towards the flex-relative start of the axis.
-                 For flex containers with flex_direction RowReverse or ColumnReverse this is equivalent
-                 to End. In all other cases it is equivalent to Start. *)
+      (* Items are packed towards the flex-relative start of the axis. For flex
+         containers with flex_direction RowReverse or ColumnReverse this is
+         equivalent to End. In all other cases it is equivalent to Start. *)
     | Flex_end
-      (* Items are packed towards the flex-relative end of the axis.
-               For flex containers with flex_direction RowReverse or ColumnReverse this is equivalent
-               to Start. In all other cases it is equivalent to End. *)
+      (* Items are packed towards the flex-relative end of the axis. For flex
+         containers with flex_direction RowReverse or ColumnReverse this is
+         equivalent to Start. In all other cases it is equivalent to End. *)
     | Center (* Items are centered around the middle of the axis *)
     | Stretch (* Items are stretched to fill the container *)
     | Space_between
-      (* The first and last items are aligned flush with the edges of the container (no gap)
-                    The gap between items is distributed evenly. *)
+      (* The first and last items are aligned flush with the edges of the
+         container (no gap) The gap between items is distributed evenly. *)
     | Space_evenly
-      (* The gap between the first and last items is exactly THE SAME as the gap between items.
-                   The gaps are distributed evenly *)
+      (* The gap between the first and last items is exactly THE SAME as the gap
+         between items. The gaps are distributed evenly *)
     | Space_around
-  (* The gap between the first and last items is exactly HALF the gap between items.
-                   The gaps are distributed evenly in proportion to these ratios. *)
+  (* The gap between the first and last items is exactly HALF the gap between
+     items. The gaps are distributed evenly in proportion to these ratios. *)
 
   let default = Stretch
 

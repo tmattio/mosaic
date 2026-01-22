@@ -2,8 +2,8 @@ type t = float
 
 (* Tag constants - using the lower 8 bits for tagging *)
 
-(* Non-calc tags must always set at least one of the lower 3 bits.
-   Calc values rely on those bits being 0 for detection via [is_calc]. *)
+(* Non-calc tags must always set at least one of the lower 3 bits. Calc values
+   rely on those bits being 0 for detection via [is_calc]. *)
 let calc_tag = 0b0000_0000 (* calc uses tag 0 with lower 3 bits *)
 let length_tag = 0b0000_0001
 let percent_tag = 0b0000_0010
@@ -24,15 +24,15 @@ let value_mask = lnot tag_mask
 
 let create_tagged_value value tag =
   if Sys.word_size = 64 then
-    (* On 64-bit platforms, store f32 value in upper 32 bits, tag in lower 8 bits
-       This preserves full f32 precision, matching Taffy's approach *)
+    (* On 64-bit platforms, store f32 value in upper 32 bits, tag in lower 8
+       bits This preserves full f32 precision, matching Taffy's approach *)
     let value_bits = Int32.bits_of_float value in
     let shifted_value = Int64.shift_left (Int64.of_int32 value_bits) 32 in
     let tagged_bits = Int64.logor shifted_value (Int64.of_int tag) in
     Int64.float_of_bits tagged_bits
   else
-    (* On 32-bit platforms, use the old approach
-       TODO: implement a better solution for 32-bit platforms *)
+    (* On 32-bit platforms, use the old approach TODO: implement a better
+       solution for 32-bit platforms *)
     let bits = Int64.bits_of_float value in
     let tagged_bits =
       Int64.logor
@@ -57,7 +57,8 @@ let get_value t =
     let cleared_bits = Int64.logand bits (Int64.of_int value_mask) in
     Int64.float_of_bits cleared_bits
 
-(* Special handling for calc - stores an integer index instead of a float value *)
+(* Special handling for calc - stores an integer index instead of a float
+   value *)
 let create_calc_value index =
   if Sys.word_size = 64 then
     (* Store the index in the upper 32 bits, with calc_tag in lower 3 bits *)

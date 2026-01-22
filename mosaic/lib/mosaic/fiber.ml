@@ -1,6 +1,7 @@
 module Renderable = Mosaic_ui.Renderable
 
-(* Child type - unified representation preserving order of fibers and raw nodes *)
+(* Child type - unified representation preserving order of fibers and raw
+   nodes *)
 type child = C_fiber of t | C_raw of Renderable.t
 
 (* Fiber Type - simplified to use children list instead of sibling pointers *)

@@ -31,7 +31,8 @@
     For complete strings:
     {[
       let tokens = Parser.parse "\027[1;31mHello\027[0m World"
-      (* Returns: [SGR [`Bold; `Fg Red]; Text "Hello"; SGR [`Reset]; Text " World"] *)
+      (* Returns: [SGR [`Bold; `Fg Red]; Text "Hello"; SGR [`Reset]; Text "
+         World"] *)
     ]}
 
     {1 UTF-8 Handling}

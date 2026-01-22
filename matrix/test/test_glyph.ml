@@ -231,8 +231,8 @@ let ascii_fast_path_consistency () =
 
 (* Regression test: measure must iterate grapheme-by-grapheme and sum widths.
    Previously, measure for Unicode mode called calculate_width on the entire
-   string, but calculate_width is designed for single grapheme clusters and
-   only returned the first grapheme's width. *)
+   string, but calculate_width is designed for single grapheme clusters and only
+   returned the first grapheme's width. *)
 let measure_multi_grapheme_regression () =
   (* ASCII + wide characters: "Hello 世界" should be 6 + 2 + 2 = 10 *)
   let s = "Hello 世界" in
@@ -398,7 +398,8 @@ let copy_safety () =
   (* Consume complex, become Stale in p1 *)
   decref p1 complex;
 
-  (* Force slot reuse to bump generation, then copying stale should return empty *)
+  (* Force slot reuse to bump generation, then copying stale should return
+     empty *)
   let _reused = intern p1 "reused" in
   let stale_copy = copy p1 complex p2 in
   check bool "copied stale is empty" true (is_empty stale_copy)

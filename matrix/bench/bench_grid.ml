@@ -124,7 +124,8 @@ let partial_status_line =
         | None ->
             let g = make_grid () in
             Grid.clear g ~color:(C.of_rgb 0 0 0);
-            (* Fill main area once with ASCII text to approximate editor body. *)
+            (* Fill main area once with ASCII text to approximate editor
+               body. *)
             for row = 0 to grid_height - 2 do
               Grid.draw_text ~style:ascii_style g ~x:0 ~y:row ~text:ascii_line
             done;
@@ -166,7 +167,8 @@ let partial_update_sparse_cells =
       grid)
     ~teardown:(fun _ -> ())
     ~f:(fun grid ->
-      (* Small, scattered updates as you'd get from a cursor + tiny UI chrome. *)
+      (* Small, scattered updates as you'd get from a cursor + tiny UI
+         chrome. *)
       for i = 0 to Array.length update_positions - 1 do
         let x, y = update_positions.(i) in
         Grid.set_cell_alpha grid ~x ~y

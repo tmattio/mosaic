@@ -160,9 +160,9 @@ let mount ?(props = Props.default) node =
 let apply_props t (props : Props.t) =
   (* Canvas props are effectively creation-time only for surface size and
      width_method; updating them at runtime would require reallocating the
-     underlying grid. For now, we treat apply_props as a no-op beyond
-     updating respect_alpha and draw callback. *)
+     underlying grid. For now, we treat apply_props as a no-op beyond updating
+     respect_alpha and draw callback. *)
   if not (Bool.equal props.respect_alpha (Grid.respect_alpha t.surface)) then
     Grid.set_respect_alpha t.surface props.respect_alpha
-(* We intentionally do not change width_method or intrinsic dimensions here
-     to avoid reallocations; callers should recreate the canvas if needed. *)
+(* We intentionally do not change width_method or intrinsic dimensions here to
+   avoid reallocations; callers should recreate the canvas if needed. *)

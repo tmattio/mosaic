@@ -562,7 +562,7 @@ let line_body_end t line =
 (* Linear selection rendering is handled at draw time in Text_surface *)
 
 (* Precompute word-wrap break flags for the buffer. A flag at index [i]
-    indicates that a break is allowed after consuming the grapheme at [i]. *)
+   indicates that a break is allowed after consuming the grapheme at [i]. *)
 let compute_wrap_break_flags t : (int, int8_unsigned_elt, c_layout) Array1.t =
   match t.wrap_break_flags with
   | Some flags
@@ -584,8 +584,8 @@ let compute_wrap_break_flags t : (int, int8_unsigned_elt, c_layout) Array1.t =
           Array1.unsafe_set flags i 1
         else if width > 0 then (
           if
-            (* Continuation slots carry packed glyph metadata; only start slots should
-             be used to compute wrap breaks. *)
+            (* Continuation slots carry packed glyph metadata; only start slots
+               should be used to compute wrap breaks. *)
             Glyph.is_continuation code
           then ()
           else
@@ -605,7 +605,8 @@ let compute_wrap_break_flags t : (int, int8_unsigned_elt, c_layout) Array1.t =
               segment;
             if !has_break then Array1.unsafe_set flags i 1)
       done;
-      (* Also mark chunk ends as break opportunities to preserve chunk semantics. *)
+      (* Also mark chunk ends as break opportunities to preserve chunk
+         semantics. *)
       for i = 0 to t.length - 1 do
         if Array1.unsafe_get t.chunk_end_flags i <> 0 then
           Array1.unsafe_set flags i 1
@@ -813,8 +814,8 @@ let rebuild_line_spans t line_idx =
             else if a.is_start then 1
             else -1)
       in
-      (* Choose the style with highest priority. For equal priorities,
-         the most recently added highlight wins (due to cons order). *)
+      (* Choose the style with highest priority. For equal priorities, the most
+         recently added highlight wins (due to cons order). *)
       let highest_style active =
         let rec aux best_style best_priority = function
           | [] -> best_style
@@ -920,7 +921,8 @@ let rebuild_styles t =
   t.styles_dirty <- false
 
 let logical_line_info t =
-  (* Ensure styles are up to date so width calculations (e.g. tabs) are consistent. *)
+  (* Ensure styles are up to date so width calculations (e.g. tabs) are
+     consistent. *)
   if t.styles_dirty then rebuild_styles t;
   compute_lines t;
   let count = t.line_count in
@@ -937,7 +939,8 @@ let logical_line_info t =
       let current_width = ref 0 in
       (* Record global char offset at start of this logical line *)
       starts.(line_idx) <- !running_offset;
-      (* Sum visual widths across the logical line, expanding TABs to the next tab stop. *)
+      (* Sum visual widths across the logical line, expanding TABs to the next
+         tab stop. *)
       for idx = raw_start to raw_end - 1 do
         let code = Array1.unsafe_get t.chars idx in
         let base_width = Array1.unsafe_get t.widths idx in
@@ -988,7 +991,8 @@ let add_highlight_by_char_range t ~char_start ~char_end ~style ~priority ~ref_id
       add_highlight t ~line_idx:line_idx1 ~col_start ~col_end ~style ~priority
         ~ref_id
   | _ -> ()
-(* For now, only handle single-line highlights. Multi-line would need splitting. *)
+(* For now, only handle single-line highlights. Multi-line would need
+   splitting. *)
 
 let finalise t = if t.styles_dirty then rebuild_styles t
 

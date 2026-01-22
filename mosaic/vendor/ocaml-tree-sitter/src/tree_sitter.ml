@@ -39,15 +39,16 @@ module Language = struct
   let field_id_for_name = field_id_for_name_native
 end
 
-(* Tree handle type defined first so Node can reference it without circular dependency *)
+(* Tree handle type defined first so Node can reference it without circular
+   dependency *)
 type tree_handle
 
 module Node = struct
   (* The internal C node handle *)
   type node_handle
 
-  (* Node with a reference to its parent tree. The tree reference ensures
-     the tree is not garbage collected while the node is still in use. *)
+  (* Node with a reference to its parent tree. The tree reference ensures the
+     tree is not garbage collected while the node is still in use. *)
   type t = { node : node_handle; tree : tree_handle }
 
   external is_null_handle : node_handle -> bool = "caml_ts_node_is_null"
@@ -413,7 +414,8 @@ module Query_cursor = struct
     t -> Query.t -> (int * int * int32 * Node.node_handle) option
     = "caml_ts_query_cursor_next_capture"
 
-  (* Store the tree reference for wrapping nodes returned by next_match/next_capture *)
+  (* Store the tree reference for wrapping nodes returned by
+     next_match/next_capture *)
   let current_tree : Tree.t option ref = ref None
 
   let exec t query (node : Node.t) =

@@ -1,6 +1,7 @@
 open Matrix
 
-(* Dashboard: system monitor style UI with progress bars, stats panel, and scrolling logs *)
+(* Dashboard: system monitor style UI with progress bars, stats panel, and
+   scrolling logs *)
 
 type metric = {
   name : string;

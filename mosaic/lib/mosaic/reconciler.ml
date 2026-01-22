@@ -48,8 +48,8 @@ let can_reuse (fiber : Fiber.t) (elem : unit Vnode.element) : bool =
   Vnode.tag_equal (Fiber.tag fiber) elem.Vnode.tag
   && Fiber.key fiber = elem.Vnode.key
 
-(* Build maps for efficient fiber lookup during reconciliation.
-   Stores both the fiber and its original index for O(1) keyed lookup. *)
+(* Build maps for efficient fiber lookup during reconciliation. Stores both the
+   fiber and its original index for O(1) keyed lookup. *)
 type fiber_maps = {
   by_key : (string, Fiber.t * int) Hashtbl.t;
   by_index : Fiber.t array;
@@ -88,8 +88,9 @@ let find_matching_fiber maps new_idx (elem : unit Vnode.element) :
         else None
       else None
 
-(* Commit placement: ensure children are in correct order under parent.
-   Now handles unified child list preserving relative order of fibers and raw nodes. *)
+(* Commit placement: ensure children are in correct order under parent. Now
+   handles unified child list preserving relative order of fibers and raw
+   nodes. *)
 let commit_placement (parent_node : Renderable.t) (children : child list) : unit
     =
   let parent_node = Host_config.reconcile_parent parent_node in
@@ -146,7 +147,8 @@ let rec reconcile_element (t : t) maps elem_idx (elem : unit Vnode.element) :
       (* Reuse existing fiber *)
       let old_props = Fiber.props fiber in
       let new_props = elem.props in
-      (* Update props if changed (handlers update via refs in Fiber.update_props) *)
+      (* Update props if changed (handlers update via refs in
+         Fiber.update_props) *)
       if old_props != new_props then begin
         let changed =
           Host_config.update_props (Fiber.instance fiber) ~old_props ~new_props
@@ -186,7 +188,8 @@ let rec reconcile_element (t : t) maps elem_idx (elem : unit Vnode.element) :
       Fiber.set_child_list fiber new_children;
       fiber
 
-(* Reconcile a flattened child list, preserving order of elements and raw nodes *)
+(* Reconcile a flattened child list, preserving order of elements and raw
+   nodes *)
 and reconcile_flattened (t : t) ~(parent_node : Renderable.t)
     (old_children : child list) (flattened : flattened_child list) : child list
     =

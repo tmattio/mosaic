@@ -1,4 +1,5 @@
-(* Contains CellOccupancyMatrix used to track occupied cells during grid placement *)
+(* Contains CellOccupancyMatrix used to track occupied cells during grid
+   placement *)
 
 open Geometry
 
@@ -8,10 +9,12 @@ type cell_occupancy_state =
   | DefinitelyPlaced
     (* Indicates that a grid cell is occupied by a definitely placed item *)
   | AutoPlaced
-(* Indicates that a grid cell is occupied by an item that was placed by the auto placement algorithm *)
+(* Indicates that a grid cell is occupied by an item that was placed by the auto
+   placement algorithm *)
 
-(* A dynamically sized matrix (2d grid) which tracks the occupancy of each grid cell during auto-placement
-    It also keeps tabs on how many tracks there are and which tracks are implicit and which are explicit *)
+(* A dynamically sized matrix (2d grid) which tracks the occupancy of each grid
+   cell during auto-placement It also keeps tabs on how many tracks there are
+   and which tracks are implicit and which are explicit *)
 type t = {
   mutable inner : cell_occupancy_state array array;
       (* The grid of occupancy states *)
@@ -34,7 +37,8 @@ let row_count t = Array.length t.inner
 (* Get the number of columns *)
 let col_count t = if row_count t > 0 then Array.length t.inner.(0) else 0
 
-(* Determines whether the specified area fits within the tracks currently represented by the matrix *)
+(* Determines whether the specified area fits within the tracks currently
+   represented by the matrix *)
 let is_area_in_range t primary_axis primary_range secondary_range =
   let open Absolute_axis in
   let primary_start, primary_end = primary_range in
@@ -56,12 +60,14 @@ let is_area_in_range t primary_axis primary_range secondary_range =
   && secondary_start >= 0
   && secondary_end <= secondary_count
 
-(* Expands the grid (potentially in all 4 directions) in order to ensure that the specified range fits within the allocated space *)
+(* Expands the grid (potentially in all 4 directions) in order to ensure that
+   the specified range fits within the allocated space *)
 let expand_to_fit_range t row_range col_range =
   let row_start, row_end = row_range in
   let col_start, col_end = col_range in
 
-  (* Calculate number of rows and columns missing to accommodate ranges (if any) *)
+  (* Calculate number of rows and columns missing to accommodate ranges (if
+     any) *)
   let req_negative_rows = max (-row_start) 0 in
   let req_positive_rows = max (row_end - row_count t) 0 in
   let req_negative_cols = max (-col_start) 0 in
@@ -98,7 +104,8 @@ let expand_to_fit_range t row_range col_range =
       positive_implicit = t.columns.positive_implicit + req_positive_cols;
     }
 
-(* Mark an area of the matrix as occupied, expanding the allocated space as necessary to accommodate the passed area *)
+(* Mark an area of the matrix as occupied, expanding the allocated space as
+   necessary to accommodate the passed area *)
 let mark_area_as t primary_axis primary_span secondary_span value =
   let open Absolute_axis in
   let row_span, column_span =
@@ -114,8 +121,9 @@ let mark_area_as t primary_axis primary_span secondary_span value =
     Grid_track_counts.oz_line_range_to_track_range t.rows row_span
   in
 
-  (* Check that if the resolved ranges fit within the allocated grid. And if they don't then expand the grid to fit
-     and then re-resolve the ranges once the grid has been expanded as the resolved indexes may have changed *)
+  (* Check that if the resolved ranges fit within the allocated grid. And if
+     they don't then expand the grid to fit and then re-resolve the ranges once
+     the grid has been expanded as the resolved indexes may have changed *)
   let is_in_range = is_area_in_range t Horizontal col_range row_range in
   let col_range, row_range =
     if not is_in_range then (
@@ -138,8 +146,9 @@ let mark_area_as t primary_axis primary_span secondary_span value =
     done
   done
 
-(* Determines whether a grid area specified by a range of indexes into this CellOccupancyMatrix
-    is entirely unnocupied. Returns true if all grid cells within the grid area are unoccupied, else false *)
+(* Determines whether a grid area specified by a range of indexes into this
+   CellOccupancyMatrix is entirely unnocupied. Returns true if all grid cells
+   within the grid area are unoccupied, else false *)
 let track_area_is_unoccupied t primary_axis primary_range secondary_range =
   let open Absolute_axis in
   let row_range, col_range =
@@ -151,7 +160,8 @@ let track_area_is_unoccupied t primary_axis primary_range secondary_range =
   let row_start, row_end = row_range in
   let col_start, col_end = col_range in
 
-  (* Search for occupied cells in the specified area. Out of bounds cells are considered unoccupied *)
+  (* Search for occupied cells in the specified area. Out of bounds cells are
+     considered unoccupied *)
   try
     for row = row_start to row_end - 1 do
       for col = col_start to col_end - 1 do
@@ -180,8 +190,9 @@ let row_is_occupied t row_index =
       false
     with Exit -> true
 
-(* Determines whether a grid area specified by the bounding grid lines in OriginZero coordinates
-    is entirely unnocupied. Returns true if all grid cells within the grid area are unoccupied, else false *)
+(* Determines whether a grid area specified by the bounding grid lines in
+   OriginZero coordinates is entirely unnocupied. Returns true if all grid cells
+   within the grid area are unoccupied, else false *)
 let line_area_is_unoccupied t primary_axis primary_span secondary_span =
   let primary_range =
     Grid_track_counts.oz_line_range_to_track_range
@@ -208,9 +219,9 @@ let column_is_occupied t column_index =
       false
     with Exit -> true
 
-(* Given an axis and a track index
-    Search backwards from the end of the track and find the last grid cell matching the specified state (if any)
-    Return the index of that cell or None *)
+(* Given an axis and a track index Search backwards from the end of the track
+   and find the last grid cell matching the specified state (if any) Return the
+   index of that cell or None *)
 let last_of_type t track_type start_at kind =
   let open Absolute_axis in
   let track_counts = track_counts t (other track_type) in
@@ -247,7 +258,8 @@ let last_of_type t track_type start_at kind =
     in
     search_backwards max_idx
 
-(* Debug representation that represents the matrix in a compact 2d text format *)
+(* Debug representation that represents the matrix in a compact 2d text
+   format *)
 let to_string t =
   let buf = Buffer.create 256 in
   Printf.bprintf buf "Rows: neg_implicit=%d explicit=%d pos_implicit=%d\n"

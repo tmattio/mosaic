@@ -79,8 +79,8 @@ type app = {
   mutable live_requests : int;
 }
 
-(* Shutdown handler registry for graceful cleanup.
-   Apps register cleanup functions that run on exit or signal. *)
+(* Shutdown handler registry for graceful cleanup. Apps register cleanup
+   functions that run on exit or signal. *)
 let shutdown_handlers : (unit -> unit) list ref = ref []
 let shutdown_mutex = Mutex.create ()
 let shutdown_triggered = ref false
@@ -117,7 +117,8 @@ let shutdown_signal_handler signum =
   run_shutdown_handlers ();
   exit (128 + signum)
 
-(* Helper to safely set signal handlers - on Windows most signals are unavailable *)
+(* Helper to safely set signal handlers - on Windows most signals are
+   unavailable *)
 let try_set_signal sig_num handler =
   try Sys.set_signal sig_num handler with Invalid_argument _ -> ()
 
@@ -204,8 +205,8 @@ let update_feature ~cond ~desired ~enabled ~enable ~disable =
     if enabled then disable ();
     false)
 
-(* Invalidate inline state - force a full repaint and clear the UI region
-   on the next frame. Used on resize and layout changes. *)
+(* Invalidate inline state - force a full repaint and clear the UI region on the
+   next frame. Used on resize and layout changes. *)
 let invalidate_inline_state t =
   t.force_full_next_frame <- true;
   t.needs_region_clear <- true
@@ -400,8 +401,8 @@ let submit t =
         (* 2. Output Synchronization - start early to include clears *)
         let use_sync = is_tty && t.caps.sync in
 
-        (* All output goes through Terminal to ensure proper serialization
-           and prevent interleaving between frame writes and control sequences. *)
+        (* All output goes through Terminal to ensure proper serialization and
+           prevent interleaving between frame writes and control sequences. *)
         let send s = Terminal.write t.terminal s in
 
         (* Begin sync bracket early to include clears (prevents flicker) *)
@@ -778,9 +779,9 @@ let adjust_event_for_offset t =
   if t.mode = `Alt then Fun.id
   else
     let offset = mouse_offset t in
-    (* Map terminal y coordinate to logical coordinate.
-       - Static region (y <= offset): return -1 as sentinel
-       - Dynamic region (y > offset): return 1-based logical row *)
+    (* Map terminal y coordinate to logical coordinate. - Static region (y <=
+       offset): return -1 as sentinel - Dynamic region (y > offset): return
+       1-based logical row *)
     let map_y y = if y <= offset then -1 else y - offset in
     fun event ->
       match event with

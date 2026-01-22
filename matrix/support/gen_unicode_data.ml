@@ -2,8 +2,7 @@
 
    Adapted from notty's generator (Copyright (c) 2020 David Kaloper Meršinjak).
 
-   Usage: dune exec matrix/support/gen_unicode_data.exe
-*)
+   Usage: dune exec matrix/support/gen_unicode_data.exe *)
 
 let filter p seq i = seq (fun x -> if p x then i x)
 let map f seq i = seq (fun x -> i (f x))

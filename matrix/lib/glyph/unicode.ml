@@ -3,12 +3,10 @@
    All properties are packed into a flat lookup table, lazily initialized on
    first access for O(1) lookup. Uses 2 bytes per codepoint (~2.2MB total).
 
-   Layout per 16-bit entry:
-   - bits 0-4: gcb (grapheme_cluster_break, values 0-17)
-   - bits 5-6: incb (indic_conjunct_break, values 0-3)
-   - bit 7: extpic (extended_pictographic, boolean)
-   - bits 8-9: width (encoded: 0=-1, 1=0, 2=1, 3=2)
-*)
+   Layout per 16-bit entry: - bits 0-4: gcb (grapheme_cluster_break, values
+   0-17) - bits 5-6: incb (indic_conjunct_break, values 0-3) - bit 7: extpic
+   (extended_pictographic, boolean) - bits 8-9: width (encoded: 0=-1, 1=0, 2=1,
+   3=2) *)
 
 (* Surrogate packing: skip 0xD800-0xDFFF range *)
 let[@inline] pack_u u = if u > 0xd7ff then u - 0x800 else u
@@ -61,8 +59,8 @@ let interval_search starts ends values u =
 (* Flat property table: 16 bits per codepoint *)
 let unicode_packed_size = 0x110000 - 0x800
 
-(* Lazy initialization: table is built on first access, not at module load.
-   This defers the ~2.2MB initialization cost until actually needed. *)
+(* Lazy initialization: table is built on first access, not at module load. This
+   defers the ~2.2MB initialization cost until actually needed. *)
 let prop_table =
   lazy
     (let table =

@@ -288,7 +288,8 @@ let reset_cursor_color t =
 let set_title t title = if t.output_is_tty then send t (make_osc ("0;" ^ title))
 let flush t = match t.writer with None -> () | Some w -> Frame_writer.drain w
 
-(* Shared buffer for draining the wakeup pipe, avoids allocation on every wake *)
+(* Shared buffer for draining the wakeup pipe, avoids allocation on every
+   wake *)
 let wakeup_drain_buffer = Bytes.create 64
 
 let wait_readable t ~timeout =
@@ -310,8 +311,8 @@ let wait_readable t ~timeout =
   in
   loop ()
 
-(* Non-blocking read: returns 0 on EAGAIN/EWOULDBLOCK instead of blocking.
-   Use wait_readable first if you need to block until data is available. *)
+(* Non-blocking read: returns 0 on EAGAIN/EWOULDBLOCK instead of blocking. Use
+   wait_readable first if you need to block until data is available. *)
 let read_bytes_nonblocking t bytes off len =
   let rec loop () =
     match Unix.read t.input bytes off len with
@@ -558,8 +559,8 @@ let scroll_region t = t.scroll_region
 
 let register_winch_handler, deregister_winch_handler =
   let handlers : (unit -> unit) list ref = ref [] in
-  (* Signal handlers must never let exceptions escape, as this can crash
-     the program or leave it in an inconsistent state. *)
+  (* Signal handlers must never let exceptions escape, as this can crash the
+     program or leave it in an inconsistent state. *)
   let safe_call f = try f () with _ -> () in
   let callback _ = List.iter safe_call !handlers in
   (* SIGWINCH is not available on Windows - silently ignore if unavailable *)
@@ -570,8 +571,8 @@ let register_winch_handler, deregister_winch_handler =
   ( (fun fn -> handlers := fn :: !handlers),
     fun fn -> handlers := List.filter (fun f -> f != fn) !handlers )
 
-(* Platform detection for render_thread default.
-   Threaded rendering is disabled on Linux due to instability. *)
+(* Platform detection for render_thread default. Threaded rendering is disabled
+   on Linux due to instability. *)
 let is_linux () =
   Sys.os_type = "Unix"
   &&
@@ -693,8 +694,8 @@ let flush_input t =
 let query_cursor_position ?(timeout = 0.05) t =
   if not t.output_is_tty then None
   else
-    (* Must use raw mode to properly read the CPR response.
-       In cooked mode, echo is enabled and the response may be printed. *)
+    (* Must use raw mode to properly read the CPR response. In cooked mode, echo
+       is enabled and the response may be printed. *)
     with_mode t `Raw (fun () ->
         send t cursor_position_request;
         let deadline = Unix.gettimeofday () +. max 0. timeout in

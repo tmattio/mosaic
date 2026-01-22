@@ -73,7 +73,7 @@ module Style : sig
         (** Style for unordered list markers. *)
     ordered_marker_style : Ansi.Style.t;
         (** Style for ordered list markers. Markers are rendered as
-            "N{ordered_suffix}", where N is the item number. *)
+            "N\{ordered_suffix\}", where N is the item number. *)
     ordered_suffix : string;
         (** Suffix appended to ordered list numbers, e.g. "." or ")". *)
     item_gap : int;

@@ -1,5 +1,6 @@
-(* This module is not required for spec compliance, but is used as a performance optimisation
-   to reduce the number of allocations required when creating a grid. *)
+(* This module is not required for spec compliance, but is used as a performance
+   optimisation to reduce the number of allocations required when creating a
+   grid. *)
 
 open Geometry
 open Style
@@ -11,8 +12,8 @@ let implied_negative_implicit_tracks line = if line < 0 then abs line else 0
 let implied_positive_implicit_tracks line explicit_track_count =
   if line > explicit_track_count then line - explicit_track_count else 0
 
-(* Resolves the span for an indefinite placement (a placement that does not consist of two Lines).
-   Should only be called on indefinite placements *)
+(* Resolves the span for an indefinite placement (a placement that does not
+   consist of two Lines). Should only be called on indefinite placements *)
 let indefinite_span line =
   let open Origin_zero_placement in
   match (line.Line.start, line.Line.end_) with
@@ -27,19 +28,20 @@ let indefinite_span line =
   | Line _, Line _ ->
       failwith "indefinite_span should only be called on indefinite grid tracks"
 
-(* Helper function for compute_grid_size_estimate
-   Produces a conservative estimate of the greatest and smallest grid lines used by a single grid item
-   
+(* Helper function for compute_grid_size_estimate Produces a conservative
+   estimate of the greatest and smallest grid lines used by a single grid item
+
    Values are returned in origin-zero coordinates *)
 let child_min_line_max_line_span line explicit_track_count =
-  (* 8.3.1. Grid Placement Conflict Handling
-     A. If the placement for a grid item contains two lines, and the start line is further end-ward than the end line, swap the two lines.
-     B. If the start line is equal to the end line, remove the end line.
-     C. If the placement contains two spans, remove the one contributed by the end grid-placement property.
-     D. If the placement contains only a span for a named line, replace it with a span of 1. *)
+  (* 8.3.1. Grid Placement Conflict Handling A. If the placement for a grid item
+     contains two lines, and the start line is further end-ward than the end
+     line, swap the two lines. B. If the start line is equal to the end line,
+     remove the end line. C. If the placement contains two spans, remove the one
+     contributed by the end grid-placement property. D. If the placement
+     contains only a span for a named line, replace it with a span of 1. *)
 
-  (* Convert line into origin-zero coordinates before attempting to analyze
-     We ignore named lines here as they are accounted for separately *)
+  (* Convert line into origin-zero coordinates before attempting to analyze We
+     ignore named lines here as they are accounted for separately *)
   let oz_line =
     Grid.Placement.Line.into_origin_zero_ignoring_named line
       explicit_track_count
@@ -85,8 +87,9 @@ let child_min_line_max_line_span line explicit_track_count =
         0
   in
 
-  (* Calculate span only for indefinitely placed items as we don't need for other items (whose required space will
-     be taken into account by min and max) *)
+  (* Calculate span only for indefinitely placed items as we don't need for
+     other items (whose required space will be taken into account by min and
+     max) *)
   let span =
     match (oz_line.Line.start, oz_line.Line.end_) with
     | ( (Origin_zero_placement.Auto | Origin_zero_placement.Span _),
@@ -97,10 +100,11 @@ let child_min_line_max_line_span line explicit_track_count =
 
   (min, max, span)
 
-(* Iterate over children, producing an estimate of the min and max grid *lines* along with the span of each item
-   
-   Min and max grid lines are returned in origin-zero coordinates)
-   The span is measured in tracks spanned *)
+(* Iterate over children, producing an estimate of the min and max grid *lines*
+   along with the span of each item
+
+   Min and max grid lines are returned in origin-zero coordinates) The span is
+   measured in tracks spanned *)
 let get_known_child_positions children_seq explicit_col_count explicit_row_count
     =
   let col_min = ref 0 in
@@ -136,26 +140,27 @@ let get_known_child_positions children_seq explicit_col_count explicit_row_count
 
   (!col_min, !col_max, !col_max_span, !row_min, !row_max, !row_max_span)
 
-(* Estimate the number of rows and columns in the grid
-   This is used as a performance optimisation to pre-size vectors and reduce allocations. It also forms a necessary step
-   in the auto-placement
-     - The estimates for the explicit and negative implicit track counts are exact.
-     - However, the estimates for the positive explicit track count is a lower bound as auto-placement can affect this
-       in ways which are impossible to predict until the auto-placement algorithm is run.
-   
-   Note that this function internally mixes use of grid track numbers and grid line numbers *)
+(* Estimate the number of rows and columns in the grid This is used as a
+   performance optimisation to pre-size vectors and reduce allocations. It also
+   forms a necessary step in the auto-placement - The estimates for the explicit
+   and negative implicit track counts are exact. - However, the estimates for
+   the positive explicit track count is a lower bound as auto-placement can
+   affect this in ways which are impossible to predict until the auto-placement
+   algorithm is run.
+
+   Note that this function internally mixes use of grid track numbers and grid
+   line numbers *)
 let compute_grid_size_estimate ~explicit_col_count ~explicit_row_count
     ~child_styles_iter =
-  (* Iterate over children, producing an estimate of the min and max grid lines (in origin-zero coordinates where)
-     along with the span of each item *)
+  (* Iterate over children, producing an estimate of the min and max grid lines
+     (in origin-zero coordinates where) along with the span of each item *)
   let col_min, col_max, col_max_span, row_min, row_max, row_max_span =
     get_known_child_positions child_styles_iter explicit_col_count
       explicit_row_count
   in
 
-  (* Compute *track* count estimates for each axis from:
-       - The explicit track counts
-       - The origin-zero coordinate min and max grid line variables *)
+  (* Compute *track* count estimates for each axis from: - The explicit track
+     counts - The origin-zero coordinate min and max grid line variables *)
   let negative_implicit_inline_tracks =
     implied_negative_implicit_tracks col_min
   in
@@ -171,8 +176,8 @@ let compute_grid_size_estimate ~explicit_col_count ~explicit_row_count
     ref (implied_positive_implicit_tracks row_max explicit_row_count)
   in
 
-  (* In each axis, adjust positive track estimate if any items have a span that does not fit within
-     the total number of tracks in the estimate *)
+  (* In each axis, adjust positive track estimate if any items have a span that
+     does not fit within the total number of tracks in the estimate *)
   let tot_inline_tracks =
     negative_implicit_inline_tracks + explicit_inline_tracks
     + !positive_implicit_inline_tracks

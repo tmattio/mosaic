@@ -107,8 +107,8 @@ let equal a b =
   && Option.equal Color.equal a.fg b.fg
   && Option.equal Color.equal a.bg b.bg
 
-(* Check if visual properties (colors, attrs) are equal, ignoring link.
-   Used by emit to avoid emitting empty SGR sequences when only link differs. *)
+(* Check if visual properties (colors, attrs) are equal, ignoring link. Used by
+   emit to avoid emitting empty SGR sequences when only link differs. *)
 let visual_equal a b =
   a.attrs = b.attrs
   && Option.equal Color.equal a.fg b.fg
@@ -152,9 +152,10 @@ let hash t =
 
 (* Emission *)
 
-(* Check if disabling these attributes would also disable attributes we want to keep.
-   Bold/Dim share code 22, Underline/Double_underline share 24, Framed/Encircled share 54.
-   Returns attributes that need to be re-enabled after the disable codes are emitted. *)
+(* Check if disabling these attributes would also disable attributes we want to
+   keep. Bold/Dim share code 22, Underline/Double_underline share 24,
+   Framed/Encircled share 54. Returns attributes that need to be re-enabled
+   after the disable codes are emitted. *)
 let attrs_to_reenable ~to_disable ~to_keep =
   let check_shared_pair a b acc =
     if Attr.mem a to_disable || Attr.mem b to_disable then

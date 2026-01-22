@@ -16,7 +16,7 @@
       let pool = create_pool () in
       encode pool ~width_method:`Unicode ~tab_width:2 "Hello 👋 World"
         (fun glyph -> Printf.printf "%s " (to_string pool glyph))
-      (* Output: H e l l o   👋     W o r l d *)
+      (* Output: H e l l o 👋 W o r l d *)
     ]}
 
     Multi-column characters emit one Start glyph followed by Continuation

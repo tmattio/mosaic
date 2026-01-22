@@ -1,7 +1,8 @@
 open Matrix
 module Charts = Matrix_charts
 
-(* Audio Waveform Synthesizer - Interactive terminal synthesizer with visualization *)
+(* Audio Waveform Synthesizer - Interactive terminal synthesizer with
+   visualization *)
 
 (* --- Audio Types --- *)
 
@@ -143,8 +144,8 @@ let play_audio samples =
     else if Sys.command "which aplay > /dev/null 2>&1" = 0 then "aplay -q"
     else "echo 'No audio player found' #"
   in
-  (* Run in subshell with all output suppressed to avoid terminal artifacts.
-     The subshell also handles cleanup after playback completes. *)
+  (* Run in subshell with all output suppressed to avoid terminal artifacts. The
+     subshell also handles cleanup after playback completes. *)
   let cmd =
     Printf.sprintf "(%s %s >/dev/null 2>&1; rm -f %s) >/dev/null 2>&1 &" player
       (Filename.quote tmpfile) (Filename.quote tmpfile)

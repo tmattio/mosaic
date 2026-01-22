@@ -64,8 +64,8 @@ let ansi_16_rgb =
 
 let cube_level = [| 0; 95; 135; 175; 215; 255 |]
 
-(* Pre-computed flat palette: 256 colors * 3 channels = 768 values.
-   Avoids tuple allocation when looking up palette colors. *)
+(* Pre-computed flat palette: 256 colors * 3 channels = 768 values. Avoids tuple
+   allocation when looking up palette colors. *)
 let palette_flat =
   let arr = Array.make 768 0 in
   for i = 0 to 255 do
@@ -138,8 +138,9 @@ let to_rgba color =
   match color with
   | Default ->
       (* Use alpha=0 as a sentinel to indicate "use terminal default color".
-         This allows Default to be distinguished from explicit Black (0,0,0,255).
-         Renderers should detect alpha=0 and substitute their configured default colors. *)
+         This allows Default to be distinguished from explicit Black
+         (0,0,0,255). Renderers should detect alpha=0 and substitute their
+         configured default colors. *)
       (0, 0, 0, 0)
   | _ ->
       let r, g, b = to_rgb color in
@@ -247,9 +248,9 @@ let to_hsl color =
     let h = h *. 60. in
     (h, s, l, af)
 
-(* Internal helper: extract RGBA components without tuple allocation.
-   Returns components via out parameters encoded as a single int:
-   (r << 24) | (g << 16) | (b << 8) | a *)
+(* Internal helper: extract RGBA components without tuple allocation. Returns
+   components via out parameters encoded as a single int: (r << 24) | (g << 16)
+   | (b << 8) | a *)
 let[@inline] rgba_packed color =
   match color with
   | Default -> 0 (* r=0, g=0, b=0, a=0 *)
@@ -529,7 +530,8 @@ let expand_short_hex s =
     Bytes.unsafe_set buf (i * 2) c;
     Bytes.unsafe_set buf ((i * 2) + 1) c
   done;
-  (* unsafe_to_string is safe here: buf is local and not used after conversion *)
+  (* unsafe_to_string is safe here: buf is local and not used after
+     conversion *)
   Bytes.unsafe_to_string buf
 
 let sanitize_hex s =

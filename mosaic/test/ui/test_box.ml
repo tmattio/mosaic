@@ -137,7 +137,8 @@ let%expect_test "box title alignments" =
 |}]
 
 let%expect_test "title omitted without top border" =
-  (* title is only displayed when top border is present; border_sides excludes top *)
+  (* title is only displayed when top border is present; border_sides excludes
+     top *)
   let content =
     box ~id:"test" ~size:(size ~width:16 ~height:5) ~border:true ~title:"Hidden"
       ~border_sides:[ `Left; `Right; `Bottom ]
@@ -205,7 +206,8 @@ let%expect_test "border style via props" =
 |}]
 
 let%expect_test "nested boxes render without overlap" =
-  (* inner box needs height:3 to have 1 row of content (height - 2 for borders) *)
+  (* inner box needs height:3 to have 1 row of content (height - 2 for
+     borders) *)
   let inner =
     box ~id:"inner" ~size:(size ~width:8 ~height:3) ~border:true
       [ text ~id:"inner_text" "Inner" ]

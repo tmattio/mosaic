@@ -154,7 +154,7 @@ type highlight = {
 }
 (** Highlight overlay for a column range on a single line.
 
-    - [col_start], [col_end]: Half-open column range [[col_start, col_end)].
+    - [col_start], [col_end]: Half-open column range [\[col_start, col_end)].
     - [style]: Style to apply over this range.
     - [priority]: Priority for resolving overlaps. Higher values win.
     - [ref_id]: Identifier for batch removal via {!remove_highlights_by_ref}. *)
@@ -163,7 +163,7 @@ type style_span = { col : int; next_col : int; style : Ansi.Style.t option }
 (** Resolved style span for a column range.
 
     [style] is [None] if no highlight applies, or [Some style] for the
-    highest-priority highlight covering [[col, next_col)]. *)
+    highest-priority highlight covering [\[col, next_col)]. *)
 
 type t
 (** The buffer type. *)
@@ -172,7 +172,7 @@ type t
 
 module Selection : sig
   type linear = { start : int; stop : int; style : Ansi.Style.t }
-  (** Linear selection over a global character range [[start, stop)]. *)
+  (** Linear selection over a global character range [\[start, stop)]. *)
 
   type local = {
     anchor_x : int;
@@ -400,7 +400,7 @@ val add_highlight :
     adds a highlight to line [line_idx].
 
     - [line_idx]: Logical line index.
-    - [col_start], [col_end]: Half-open column range [[col_start, col_end)].
+    - [col_start], [col_end]: Half-open column range [\[col_start, col_end)].
       No-op if [col_end <= col_start].
     - [style]: Style to apply.
     - [priority]: Priority for overlap resolution. Higher values win.
@@ -555,9 +555,9 @@ val get_plain_text : t -> string
 
 val get_text_range : t -> start:int -> stop:int -> string
 (** [get_text_range t ~start ~stop] extracts text from the half-open range
-    [[start, stop)].
+    [\[start, stop)].
 
-    [start] and [stop] are clamped to [[0, length t]]. Returns empty string if
+    [start] and [stop] are clamped to [\[0, length t]]. Returns empty string if
     [start >= stop]. *)
 
 val grapheme_pool : t -> Glyph.pool

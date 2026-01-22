@@ -6,9 +6,11 @@ type t =
   | Definite of float
     (* The amount of space available is the specified number of pixels *)
   | Min_content
-    (* The amount of space available is indefinite and the node should be laid out under a min-content constraint *)
+    (* The amount of space available is indefinite and the node should be laid
+       out under a min-content constraint *)
   | Max_content
-(* The amount of space available is indefinite and the node should be laid out under a max-content constraint *)
+(* The amount of space available is indefinite and the node should be laid out
+   under a max-content constraint *)
 
 let zero = Definite 0.0
 let max_content = Max_content

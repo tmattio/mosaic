@@ -316,9 +316,11 @@ let render_scrollbox t _renderable grid ~delta =
     let viewport_changed =
       visible_vw <> t.last_viewport_w || visible_vh <> t.last_viewport_h
     in
-    (* Always recompute content extents to keep scroll metrics in sync with layout *)
+    (* Always recompute content extents to keep scroll metrics in sync with
+       layout *)
     recalc_content_extents t;
-    (* Update scroll metrics every frame to reflect latest content/viewport sizes *)
+    (* Update scroll metrics every frame to reflect latest content/viewport
+       sizes *)
     apply_metrics t ~viewport_w:visible_vw ~viewport_h:visible_vh;
     if viewport_changed then (
       t.last_viewport_w <- visible_vw;
@@ -453,7 +455,8 @@ let scroll_by_units
         int_of_float (d *. float_of_int (Renderable.width t.viewport))
     | Some (d, `Content) -> int_of_float (d *. float_of_int t.content_w)
     | Some (d, `Step) ->
-        (* No public getter on Scroll_bar; match default semantics where missing step=1 *)
+        (* No public getter on Scroll_bar; match default semantics where missing
+           step=1 *)
         int_of_float (d *. 1.)
   in
   let mul_y =
@@ -703,9 +706,9 @@ let mount ?(props = Props.default) ?renderer node =
       : (unit, Renderable.error) result);
 
   (* Clip the scroll box subtree to the viewport's bounds so that scrollable
-     content is physically constrained to the visible region, regardless of
-     how child layout extends beyond the viewport. The viewport node owns
-     overflow and scissoring for its subtree. *)
+     content is physically constrained to the visible region, regardless of how
+     child layout extends beyond the viewport. The viewport node owns overflow
+     and scissoring for its subtree. *)
   let viewport_clip _viewport =
     let b = Renderable.bounds viewport in
     Some Grid.{ x = b.x; y = b.y; width = b.width; height = b.height }
@@ -713,8 +716,8 @@ let mount ?(props = Props.default) ?renderer node =
   Renderable.set_child_clip viewport (Some viewport_clip);
 
   (* Scrollbars: created and owned by the scroll box. The vertical bar is a
-     sibling of the wrapper on the root; the horizontal bar is a sibling of
-     the viewport inside the wrapper. *)
+     sibling of the wrapper on the root; the horizontal bar is a sibling of the
+     viewport inside the wrapper. *)
   let vbar_node =
     let id = base_id ^ "-vertical-scrollbar" in
     let props_r = Renderable.Props.make ~id () in

@@ -12,18 +12,18 @@ type origin_zero_line = int
 type t = {
   node : Node_id.t; (* The id of the node that this item represents *)
   source_order : int;
-      (* The order of the item in the children array
-      We sort the list of grid items during track sizing. This field allows us to sort back the original order
-      for final positioning *)
+      (* The order of the item in the children array We sort the list of grid
+         items during track sizing. This field allows us to sort back the
+         original order for final positioning *)
   row : origin_zero_line line;
-      (* The item's definite row-start and row-end, as resolved by the placement algorithm
-      (in origin-zero coordinates) *)
+      (* The item's definite row-start and row-end, as resolved by the placement
+         algorithm (in origin-zero coordinates) *)
   column : origin_zero_line line;
-      (* The items definite column-start and column-end, as resolved by the placement algorithm
-      (in origin-zero coordinates) *)
+      (* The items definite column-start and column-end, as resolved by the
+         placement algorithm (in origin-zero coordinates) *)
   is_compressible_replaced : bool;
       (* Is it a compressible replaced element?
-      https://drafts.csswg.org/css-sizing-3/#min-content-zero *)
+         https://drafts.csswg.org/css-sizing-3/#min-content-zero *)
   overflow : overflow point; (* The item's overflow style *)
   box_sizing : box_sizing; (* The item's box_sizing style *)
   size : dimension size; (* The item's size style *)
@@ -34,18 +34,22 @@ type t = {
   border : length_percentage rect; (* The item's border style *)
   margin : length_percentage_auto rect; (* The item's margin style *)
   align_self : align_self;
-      (* The item's align_self property, or the parent's align_items property is not set *)
+      (* The item's align_self property, or the parent's align_items property is
+         not set *)
   justify_self : justify_self;
-      (* The item's justify_self property, or the parent's justify_items property is not set *)
+      (* The item's justify_self property, or the parent's justify_items
+         property is not set *)
   mutable baseline : float option; (* The items first baseline (horizontal) *)
   mutable baseline_shim : float;
       (* Shim for baseline alignment that acts like an extra top margin *)
   mutable row_indexes : int line;
-      (* The item's definite row-start and row-end (same as `row` field, except in a different coordinate system)
-      (as indexes into the Vec<GridTrack> stored in a grid's AbstractAxisTracks) *)
+      (* The item's definite row-start and row-end (same as `row` field, except
+         in a different coordinate system) (as indexes into the Vec<GridTrack>
+         stored in a grid's AbstractAxisTracks) *)
   mutable column_indexes : int line;
-      (* The items definite column-start and column-end (same as `column` field, except in a different coordinate system)
-      (as indexes into the Vec<GridTrack> stored in a grid's AbstractAxisTracks) *)
+      (* The items definite column-start and column-end (same as `column` field,
+         except in a different coordinate system) (as indexes into the
+         Vec<GridTrack> stored in a grid's AbstractAxisTracks) *)
   mutable crosses_flexible_row : bool;
       (* Whether the item crosses a flexible row *)
   mutable crosses_flexible_column : bool;
@@ -64,7 +68,8 @@ type t = {
   mutable max_content_contribution_cache : float option size;
       (* Cache for the max-content size *)
   mutable y_position : float;
-      (* Final y position. Used to compute baseline alignment for the container *)
+      (* Final y position. Used to compute baseline alignment for the
+         container *)
   mutable height : float;
       (* Final height. Used to compute baseline alignment for the container *)
 }
@@ -125,9 +130,9 @@ let placement_indexes t axis =
   | Abstract_axis.Block -> t.row_indexes
   | Abstract_axis.Inline -> t.column_indexes
 
-(* Returns a range which can be used as an index into the GridTrackVec in the specified axis
-    which will produce a sub-slice of covering all the tracks and lines that this item spans
-    excluding the lines that bound it *)
+(* Returns a range which can be used as an index into the GridTrackVec in the
+   specified axis which will produce a sub-slice of covering all the tracks and
+   lines that this item spans excluding the lines that bound it *)
 let track_range_excluding_lines t axis =
   let indexes = placement_indexes t axis in
   (indexes.start + 1, indexes.end_)
@@ -138,22 +143,24 @@ let span t axis =
   | Abstract_axis.Block -> max (t.row.end_ - t.row.start) 0
   | Abstract_axis.Inline -> max (t.column.end_ - t.column.start) 0
 
-(* Returns the pre-computed value indicating whether the grid item crosses a flexible track in
-    the specified axis *)
+(* Returns the pre-computed value indicating whether the grid item crosses a
+   flexible track in the specified axis *)
 let crosses_flexible_track t axis =
   match axis with
   | Abstract_axis.Inline -> t.crosses_flexible_column
   | Abstract_axis.Block -> t.crosses_flexible_row
 
-(* Returns the pre-computed value indicating whether the grid item crosses an intrinsic track in
-    the specified axis *)
+(* Returns the pre-computed value indicating whether the grid item crosses an
+   intrinsic track in the specified axis *)
 let crosses_intrinsic_track t axis =
   match axis with
   | Abstract_axis.Inline -> t.crosses_intrinsic_column
   | Abstract_axis.Block -> t.crosses_intrinsic_row
 
-(* For an item spanning multiple tracks, the upper limit used to calculate its limited min-/max-content contribution is the
-    sum of the fixed max track sizing functions of any tracks it spans, and is applied if it only spans such tracks *)
+(* For an item spanning multiple tracks, the upper limit used to calculate its
+   limited min-/max-content contribution is the sum of the fixed max track
+   sizing functions of any tracks it spans, and is applied if it only spans such
+   tracks *)
 let spanned_track_limit t axis axis_tracks axis_parent_size resolve_calc_value =
   let start_idx, end_idx = track_range_excluding_lines t axis in
   let spanned_tracks = Array.sub axis_tracks start_idx (end_idx - start_idx) in
@@ -183,9 +190,10 @@ let spanned_track_limit t axis axis_tracks axis_parent_size resolve_calc_value =
     Some limit
   else None
 
-(* Compute the known_dimensions to be passed to the child sizing functions
-   The key thing that is being done here is applying stretch alignment, which is necessary to
-   allow percentage sizes further down the tree to resolve properly in some cases *)
+(* Compute the known_dimensions to be passed to the child sizing functions The
+   key thing that is being done here is applying stretch alignment, which is
+   necessary to allow percentage sizes further down the tree to resolve properly
+   in some cases *)
 let known_dimensions (type tree)
     (module Tree : Tree.LAYOUT_PARTIAL_TREE with type t = tree) (t : t)
     (tree : tree) (inner_node_size : float option size)
@@ -302,8 +310,8 @@ let known_dimensions (type tree)
   (* Clamp by min/max *)
   Size.clamp_option min_size max_size final_size
 
-(* Similar to the spanned_track_limit, but excludes FitContent arguments from the limit.
-   Used to clamp the automatic minimum contributions of an item *)
+(* Similar to the spanned_track_limit, but excludes FitContent arguments from
+   the limit. Used to clamp the automatic minimum contributions of an item *)
 let spanned_fixed_track_limit t axis axis_tracks axis_parent_size
     resolve_calc_value =
   let start_idx, end_idx = track_range_excluding_lines t axis in
@@ -362,7 +370,8 @@ let min_content_contribution (type tree)
   | Abstract_axis.Inline -> s.width
   | Abstract_axis.Block -> s.height
 
-(* Retrieve the item's min content contribution from the cache or compute it using the provided parameters *)
+(* Retrieve the item's min content contribution from the cache or compute it
+   using the provided parameters *)
 let min_content_contribution_cached t axis (type tree)
     (module Tree : Tree.LAYOUT_PARTIAL_TREE with type t = tree) tree
     available_space inner_node_size =
@@ -406,7 +415,8 @@ let max_content_contribution (type tree)
   | Abstract_axis.Inline -> s.width
   | Abstract_axis.Block -> s.height
 
-(* Retrieve the item's max content contribution from the cache or compute it using the provided parameters *)
+(* Retrieve the item's max content contribution from the cache or compute it
+   using the provided parameters *)
 let max_content_contribution_cached t axis (type tree)
     (module Tree : Tree.LAYOUT_PARTIAL_TREE with type t = tree) tree
     available_space inner_node_size =
@@ -422,7 +432,8 @@ let max_content_contribution_cached t axis (type tree)
         Size.set axis (Some contribution) t.max_content_contribution_cache;
       contribution
 
-(* Compute the available space for an item in a given axis based on the tracks it spans *)
+(* Compute the available space for an item in a given axis based on the tracks
+   it spans *)
 let available_space t axis other_axis_tracks other_axis_available_space
     get_track_size_estimate =
   let other_axis = Abstract_axis.other axis in

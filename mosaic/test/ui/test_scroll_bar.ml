@@ -9,8 +9,8 @@ let render_boxed ?(colors = false) ?(width = 20) ?(height = 10) element =
   print_newline ();
   print ~colors ~width:(width + 2) ~height:(height + 2) content
 
-(* Scroll bar position tests with colors enabled to show thumb vs track.
-   Without colors, both render as █ and position differences are invisible. *)
+(* Scroll bar position tests with colors enabled to show thumb vs track. Without
+   colors, both render as █ and position differences are invisible. *)
 
 let%expect_test "vertical scroll bar at start (with colors)" =
   let element =

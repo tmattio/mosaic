@@ -11,8 +11,8 @@ type t = {
   mutable blinking : bool;
   mutable color : (int * int * int) option;
   mutable visible : bool;
-  (* Applied State (Snapshot of last emit)
-     None = unknown terminal state, forces re-emission *)
+  (* Applied State (Snapshot of last emit) None = unknown terminal state, forces
+     re-emission *)
   mutable last_visible : bool option;
   mutable last_style : style option;
   mutable last_blink : bool option;
@@ -93,8 +93,8 @@ let cursor_style_seq style blinking =
   | `Underline, false -> Esc.cursor_underline
 
 let hide_temporarily (t : t) w =
-  (* Hide cursor if it's visible or in unknown state.
-     When state is unknown, we hide to be safe during render. *)
+  (* Hide cursor if it's visible or in unknown state. When state is unknown, we
+     hide to be safe during render. *)
   match t.last_visible with
   | Some false -> () (* Already hidden, nothing to do *)
   | Some true | None ->

@@ -1,6 +1,7 @@
 open Matrix
 
-(* Keyboard tester: visualize all key events with modifiers and Kitty metadata *)
+(* Keyboard tester: visualize all key events with modifiers and Kitty
+   metadata *)
 
 type event_record = { event : Input.t; timestamp : float }
 

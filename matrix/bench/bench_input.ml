@@ -34,7 +34,8 @@ let ascii_line =
      succeeded. "
     8
 
-(* A small, reusable hot set of complex graphemes: emoji, flags, Indic, CJK... *)
+(* A small, reusable hot set of complex graphemes: emoji, flags, Indic,
+   CJK... *)
 let unicode_graphemes =
   [|
     "👩\u{200D}🚀";
@@ -163,12 +164,9 @@ let kitty_key_seq ~code ~mods ~text =
   (* CSI code;mods;text u *)
   Printf.sprintf "\x1b[%d;%d;%su" code mods text
 
-(* A small hot set of common Kitty-keyboard events:
-   - Shift+A       (code=65, mods=1)
-   - Ctrl+Shift+C  (code=67, mods=5 = shift(1) + ctrl(4))
-   - Shift+Enter   (code=13, mods=1)
-   - Alt+Tab       (code=9,  mods=2)
-*)
+(* A small hot set of common Kitty-keyboard events: - Shift+A (code=65, mods=1)
+   - Ctrl+Shift+C (code=67, mods=5 = shift(1) + ctrl(4)) - Shift+Enter (code=13,
+   mods=1) - Alt+Tab (code=9, mods=2) *)
 let kitty_keyboard_stream =
   let combos =
     [
@@ -223,11 +221,8 @@ let x10_mouse_seq cb x y =
 let sgr_mouse_seq btn x y final =
   Printf.sprintf "\x1b[<%d;%d;%d%c" btn x y final
 
-(* Mixed mouse workload:
-   - X10 presses/releases
-   - SGR presses, motion, releases
-   - Wheel scroll (up/down)
-*)
+(* Mixed mouse workload: - X10 presses/releases - SGR presses, motion, releases
+   - Wheel scroll (up/down) *)
 let mouse_stream =
   let buf = Buffer.create 4096 in
   for y = 5 to 20 do

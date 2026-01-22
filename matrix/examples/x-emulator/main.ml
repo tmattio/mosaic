@@ -448,7 +448,8 @@ let render state =
       (* Fast path: render live terminal directly *)
       Vte.grid vte
     else (
-      (* Scrollback view: use cached view grid, rebuild only if offset changed *)
+      (* Scrollback view: use cached view grid, rebuild only if offset
+         changed *)
       if state.last_rendered_offset <> display_offset then (
         Vte.render_with_scrollback vte ~offset:display_offset view_grid;
         state.last_rendered_offset <- display_offset);
@@ -525,20 +526,16 @@ let render state =
       let bg_b_f = Grid.get_bg_b grid idx in
       let bg_a_f = Grid.get_bg_a grid idx in
 
-      (* Foreground:
-         - (0.,0.,0.,0.) => default fg
-         - otherwise literal scaled RGBA
-      *)
+      (* Foreground: - (0.,0.,0.,0.) => default fg - otherwise literal scaled
+         RGBA *)
       let fg_r, fg_g, fg_b, fg_a =
         if fg_r_f = 0.0 && fg_g_f = 0.0 && fg_b_f = 0.0 && fg_a_f = 0.0 then
           (default_fg_r, default_fg_g, default_fg_b, default_fg_a)
         else (scale fg_r_f, scale fg_g_f, scale fg_b_f, scale fg_a_f)
       in
 
-      (* Background:
-         - bg_a_f = 0. => no background fill (transparent)
-         - otherwise literal scaled RGBA (including 0,0,0,255 for real black)
-      *)
+      (* Background: - bg_a_f = 0. => no background fill (transparent) -
+         otherwise literal scaled RGBA (including 0,0,0,255 for real black) *)
       let bg_r, bg_g, bg_b, bg_a =
         if bg_a_f = 0.0 then (0, 0, 0, 0)
         else (scale bg_r_f, scale bg_g_f, scale bg_b_f, scale bg_a_f)

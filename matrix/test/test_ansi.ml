@@ -213,7 +213,8 @@ let sgr_state_transitions () =
 
   (* No bold *)
 
-  (* Expect: Reset(0); FG(Red) -- Bold is implicitly removed by Reset, need to restore Color *)
+  (* Expect: Reset(0); FG(Red) -- Bold is implicitly removed by Reset, need to
+     restore Color *)
   let out3 = Bytes.to_string (Escape.slice w3) in
   check_seq "delta transition" "\x1b[0;38;2;255;0;0m" out3
 
@@ -272,16 +273,17 @@ let parser_chunked_escape () =
 let parser_malformed_input () =
   (* 1. Lone ESC at end of string *)
   let t1 = Parser.parse "foo\x1b" in
-  (* Should probably ignore the lone ESC or treat as text depending on implementation details.
-     The current implementation buffers it waiting for more. Since parse calls feed with 0 at end... *)
+  (* Should probably ignore the lone ESC or treat as text depending on
+     implementation details. The current implementation buffers it waiting for
+     more. Since parse calls feed with 0 at end... *)
   match t1 with
   | [ Parser.Text "foo" ] -> () (* It was dropped/buffered as incomplete *)
   | _ -> fail "Lone ESC handling unexpected"
 
-(* Regression test: 0xFE and 0xFF are never valid UTF-8 lead bytes.
-   Previously, the parser incorrectly treated any byte >= 0xC0 as a potential
-   multi-byte sequence start and would buffer it, causing subsequent bytes to
-   be lost. Valid UTF-8 lead bytes are only 0xC2-0xF4. *)
+(* Regression test: 0xFE and 0xFF are never valid UTF-8 lead bytes. Previously,
+   the parser incorrectly treated any byte >= 0xC0 as a potential multi-byte
+   sequence start and would buffer it, causing subsequent bytes to be lost.
+   Valid UTF-8 lead bytes are only 0xC2-0xF4. *)
 let parser_invalid_utf8_lead_bytes () =
   let p = Parser.create () in
   (* Input: 'A', 0xFF (invalid), 0xFE (invalid), 'B', 'C' *)
@@ -401,7 +403,8 @@ let cursor_and_explicit_width_sequences () =
 let hyperlink_lifecycle () =
   let link_style = Style.hyperlink "http://foo" Style.default in
   let rendered = Ansi.render [ (link_style, "hi") ] in
-  (* Minimal SGR: no SGR emitted when only link changes, just OSC 8 + text + end + reset *)
+  (* Minimal SGR: no SGR emitted when only link changes, just OSC 8 + text + end
+     + reset *)
   check_seq "osc8 opened/closed with reset"
     "\x1b]8;;http://foo\x1b\\hi\x1b]8;;\x1b\\\x1b[0m" rendered;
   (* Test that hyperlinks are suppressed when disabled *)
