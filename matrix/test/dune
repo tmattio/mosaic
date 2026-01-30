@@ -2,32 +2,40 @@
 
 (test
  (name test_ansi)
+ (package matrix)
  (libraries alcotest ansi))
 
 (test
  (name test_glyph)
+ (package matrix)
  (libraries alcotest glyph))
 
 (test
  (name test_grid)
+ (package matrix)
  (libraries alcotest grid glyph ansi))
 
 (test
  (name test_input)
+ (package matrix)
  (libraries alcotest unix input))
 
 (test
  (name test_vte)
+ (package matrix)
  (libraries alcotest vte grid ansi))
 
 (test
  (name test_pty)
+ (package matrix)
  (libraries alcotest unix pty))
 
 (test
  (name test_terminal)
+ (package matrix)
  (libraries alcotest terminal unix ansi input))
 
 (test
  (name test_screen)
+ (package matrix)
  (libraries alcotest str screen grid glyph ansi terminal unix input))

@@ -1,5 +1,6 @@
 (library
- (name test_Mosaic)
+ (name test_mosaic)
+ (package mosaic)
  (inline_tests)
  (libraries
   mosaic

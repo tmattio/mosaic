@@ -1,5 +1,6 @@
 (library
  (name test_mosaic_markdown)
+ (package mosaic)
  (inline_tests)
  (libraries mosaic.ui mosaic.markdown)
  (preprocess

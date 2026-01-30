@@ -1,5 +1,6 @@
 (library
  (name test_mosaic_ui)
+ (package mosaic)
  (inline_tests)
  (libraries mosaic.ui mosaic.syntax toffee matrix.ansi matrix.grid)
  (preprocess
