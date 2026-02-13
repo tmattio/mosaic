@@ -1,7 +1,18 @@
-(library
- (name test_mosaic_ui)
+(tests
+ (names
+  test_box
+  test_canvas
+  test_code
+  test_scroll_bar
+  test_scroll_box
+  test_select
+  test_slider
+  test_spinner
+  test_tab_select
+  test_table
+  test_text_input
+  test_text)
  (package mosaic)
- (inline_tests)
  (libraries windtrap mosaic.ui mosaic.syntax toffee matrix.ansi matrix.grid)
  (preprocess
   (pps windtrap.ppx)))

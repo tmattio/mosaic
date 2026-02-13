@@ -1,7 +1,6 @@
-(library
- (name test_mosaic)
+(tests
+ (names test_counter test_scroll_box)
  (package mosaic)
- (inline_tests)
  (libraries
   windtrap
   mosaic

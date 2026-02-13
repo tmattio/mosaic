@@ -1,7 +1,6 @@
-(library
- (name test_mosaic_markdown)
+(test
+ (name test_markdown)
  (package mosaic)
- (inline_tests)
  (libraries windtrap mosaic.ui mosaic.markdown)
  (preprocess
   (pps windtrap.ppx)))

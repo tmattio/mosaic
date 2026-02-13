@@ -1,7 +1,6 @@
-(library
+(test
  (name test_charts)
  (package matrix)
- (inline_tests)
  (libraries windtrap matrix.ansi matrix.grid matrix.charts)
  (preprocess
   (pps windtrap.ppx)))
