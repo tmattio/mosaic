@@ -3,6 +3,7 @@
  (package mosaic)
  (inline_tests)
  (libraries
+  windtrap
   mosaic
   mosaic.ui
   matrix
@@ -11,4 +12,4 @@
   matrix.input
   matrix.vte)
  (preprocess
-  (pps ppx_expect)))
+  (pps windtrap.ppx)))

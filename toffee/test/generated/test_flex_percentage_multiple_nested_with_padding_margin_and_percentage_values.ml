@@ -7,8 +7,7 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -165,8 +164,7 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -321,16 +319,13 @@ let test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_valu
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case
+    Windtrap.test
       "percentage_multiple_nested_with_padding_margin_and_percentage_values \
        (border-box)"
-      `Quick
       test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_values_border_box;
-    test_case
+    Windtrap.test
       "percentage_multiple_nested_with_padding_margin_and_percentage_values \
        (content-box)"
-      `Quick
       test_flex_percentage_multiple_nested_with_padding_margin_and_percentage_values_content_box;
   ]

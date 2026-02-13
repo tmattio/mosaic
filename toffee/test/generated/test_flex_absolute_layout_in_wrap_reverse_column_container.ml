@@ -6,8 +6,7 @@ open Toffee
 let test_flex_absolute_layout_in_wrap_reverse_column_container_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -70,8 +69,7 @@ let test_flex_absolute_layout_in_wrap_reverse_column_container_border_box () =
 let test_flex_absolute_layout_in_wrap_reverse_column_container_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -133,12 +131,11 @@ let test_flex_absolute_layout_in_wrap_reverse_column_container_content_box () =
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case "absolute_layout_in_wrap_reverse_column_container (border-box)"
-      `Quick
+    Windtrap.test
+      "absolute_layout_in_wrap_reverse_column_container (border-box)"
       test_flex_absolute_layout_in_wrap_reverse_column_container_border_box;
-    test_case "absolute_layout_in_wrap_reverse_column_container (content-box)"
-      `Quick
+    Windtrap.test
+      "absolute_layout_in_wrap_reverse_column_container (content-box)"
       test_flex_absolute_layout_in_wrap_reverse_column_container_content_box;
   ]

@@ -7,8 +7,7 @@ let test_flex_absolute_layout_align_items_and_justify_content_center_and_top_pos
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -78,8 +77,7 @@ let test_flex_absolute_layout_align_items_and_justify_content_center_and_top_pos
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -147,16 +145,13 @@ let test_flex_absolute_layout_align_items_and_justify_content_center_and_top_pos
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case
+    Windtrap.test
       "absolute_layout_align_items_and_justify_content_center_and_top_position \
        (border-box)"
-      `Quick
       test_flex_absolute_layout_align_items_and_justify_content_center_and_top_position_border_box;
-    test_case
+    Windtrap.test
       "absolute_layout_align_items_and_justify_content_center_and_top_position \
        (content-box)"
-      `Quick
       test_flex_absolute_layout_align_items_and_justify_content_center_and_top_position_content_box;
   ]

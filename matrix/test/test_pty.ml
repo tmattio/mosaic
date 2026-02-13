@@ -1,4 +1,4 @@
-open Alcotest
+open Windtrap
 
 (* Test Helpers *)
 
@@ -54,9 +54,9 @@ let write_all_with_select pty data timeout =
 
 let test_open_pty () =
   let master, slave = Pty.open_pty () in
-  check bool "master fd valid" true Unix.(Pty.file_descr master <> stdin);
-  check bool "slave fd valid" true Unix.(Pty.file_descr slave <> stdin);
-  check bool "fds different" true (Pty.file_descr master <> Pty.file_descr slave);
+  is_true ~msg:"master fd valid" Unix.(Pty.file_descr master <> stdin);
+  is_true ~msg:"slave fd valid" Unix.(Pty.file_descr slave <> stdin);
+  is_true ~msg:"fds different" (Pty.file_descr master <> Pty.file_descr slave);
   Pty.close master;
   Pty.close slave
 
@@ -64,18 +64,18 @@ let test_open_pty_with_winsize () =
   let ws = Pty.{ rows = 24; cols = 80; xpixel = 0; ypixel = 0 } in
   let master, slave = Pty.open_pty ~winsize:ws () in
   let actual_ws = Pty.get_winsize slave in
-  check int "rows set" 24 actual_ws.rows;
-  check int "cols set" 80 actual_ws.cols;
+  equal ~msg:"rows set" int 24 actual_ws.rows;
+  equal ~msg:"cols set" int 80 actual_ws.cols;
   Pty.close master;
   Pty.close slave
 
 let test_with_pty () =
   let result =
     Pty.with_pty (fun master _slave ->
-        check bool "master valid" true Unix.(Pty.file_descr master <> stdin);
+        is_true ~msg:"master valid" Unix.(Pty.file_descr master <> stdin);
         42)
   in
-  check int "result returned" 42 result
+  equal ~msg:"result returned" int 42 result
 
 (* Window Size Management *)
 
@@ -84,8 +84,8 @@ let test_winsize_operations () =
   let ws = Pty.{ rows = 30; cols = 120; xpixel = 0; ypixel = 0 } in
   Pty.set_winsize slave ws;
   let actual = Pty.get_winsize slave in
-  check int "rows match" 30 actual.rows;
-  check int "cols match" 120 actual.cols;
+  equal ~msg:"rows match" int 30 actual.rows;
+  equal ~msg:"cols match" int 120 actual.cols;
   Pty.close master;
   Pty.close slave
 
@@ -93,8 +93,8 @@ let test_resize () =
   let master, slave = Pty.open_pty () in
   Pty.resize slave ~rows:25 ~cols:100;
   let ws = Pty.get_winsize slave in
-  check int "rows resized" 25 ws.rows;
-  check int "cols resized" 100 ws.cols;
+  equal ~msg:"rows resized" int 25 ws.rows;
+  equal ~msg:"cols resized" int 100 ws.cols;
   Pty.close master;
   Pty.close slave
 
@@ -104,8 +104,8 @@ let test_inherit_size () =
   Pty.resize slave1 ~rows:40 ~cols:160;
   Pty.inherit_size ~src:slave1 ~dst:slave2;
   let ws2 = Pty.get_winsize slave2 in
-  check int "inherited rows" 40 ws2.rows;
-  check int "inherited cols" 160 ws2.cols;
+  equal ~msg:"inherited rows" int 40 ws2.rows;
+  equal ~msg:"inherited cols" int 160 ws2.cols;
   Pty.close master1;
   Pty.close slave1;
   Pty.close master2;
@@ -118,9 +118,9 @@ let test_spawn_echo () =
   Pty.set_nonblock pty;
   let buffer = Bytes.create 256 in
   let n = read_with_select pty buffer 0 256 1.0 in
-  check bool "read some data" true (n > 0);
+  is_true ~msg:"read some data" (n > 0);
   let output = Bytes.sub_string buffer 0 n in
-  check bool "contains Hello" true (String.contains output 'H');
+  is_true ~msg:"contains Hello" (String.contains output 'H');
   Pty.close pty
 
 let test_spawn_cat () =
@@ -128,13 +128,13 @@ let test_spawn_cat () =
   Pty.set_nonblock pty;
   let test_data = "Hello, world!\n" in
   let written = write_all_with_select pty test_data 1.0 in
-  check int "wrote all data" (String.length test_data) written;
+  equal ~msg:"wrote all data" int (String.length test_data) written;
 
   let buffer = Bytes.create 256 in
   let n = read_with_select pty buffer 0 256 1.0 in
-  check bool "read at least the data" true (n >= String.length test_data);
+  is_true ~msg:"read at least the data" (n >= String.length test_data);
   let output = Bytes.sub_string buffer 0 n in
-  check bool "contains test data" true (String.contains output 'H');
+  is_true ~msg:"contains test data" (String.contains output 'H');
   Pty.close pty
 
 let test_spawn_sh () =
@@ -142,9 +142,9 @@ let test_spawn_sh () =
   Pty.set_nonblock pty;
   let buffer = Bytes.create 256 in
   let n = read_with_select pty buffer 0 256 1.0 in
-  check bool "read some data" true (n > 0);
+  is_true ~msg:"read some data" (n > 0);
   let output = Bytes.sub_string buffer 0 n in
-  check bool "contains Shell" true (String.contains output 'S');
+  is_true ~msg:"contains Shell" (String.contains output 'S');
   Pty.close pty
 
 let test_spawn_with_env () =
@@ -154,7 +154,7 @@ let test_spawn_with_env () =
   let buffer = Bytes.create 256 in
   let n = read_with_select pty buffer 0 256 1.0 in
   let output = Bytes.sub_string buffer 0 n in
-  check bool "env var in output" true (String.contains output 'h');
+  is_true ~msg:"env var in output" (String.contains output 'h');
   Pty.close pty
 
 let test_spawn_with_cwd () =
@@ -164,7 +164,7 @@ let test_spawn_with_cwd () =
   let n = read_with_select pty buffer 0 256 1.0 in
   let output = String.trim (Bytes.sub_string buffer 0 n) in
   (* /tmp may be a symlink to /private/tmp on macOS *)
-  check bool "working directory is tmp" true
+  is_true ~msg:"working directory is tmp"
     (output = "/tmp" || output = "/private/tmp");
   Pty.close pty
 
@@ -186,7 +186,7 @@ let test_nonblocking_io () =
     ->
       None
   in
-  check (option int) "read returns EAGAIN" None result;
+  equal ~msg:"read returns EAGAIN" (option int) None result;
 
   (* Write some data *)
   let test_data = "Test\n" in
@@ -198,7 +198,7 @@ let test_nonblocking_io () =
     try Pty.read pty buffer 0 256
     with Unix.Unix_error (Unix.EAGAIN, _, _) -> 0
   in
-  check bool "read some data" true (n > 0);
+  is_true ~msg:"read some data" (n > 0);
   Pty.close pty
 
 let test_multiple_writes () =
@@ -218,9 +218,9 @@ let test_multiple_writes () =
   in
   let n = read_with_select pty buffer 0 1024 1.0 in
 
-  check bool "read at least expected data" true (n >= expected_total);
+  is_true ~msg:"read at least expected data" (n >= expected_total);
   let output = Bytes.sub_string buffer 0 n in
-  check bool "contains all lines" true
+  is_true ~msg:"contains all lines"
     (String.contains output 'F' && String.contains output 'S'
    && String.contains output 'T');
   Pty.close pty
@@ -239,7 +239,7 @@ let test_eof_on_close () =
   Pty.close master;
   let buf = Bytes.create 10 in
   let n = Pty.read slave buf 0 10 in
-  check int "EOF on master close" 0 n;
+  equal ~msg:"EOF on master close" int 0 n;
   Pty.close slave
 
 let test_pty_close () =
@@ -252,33 +252,33 @@ let test_pty_close () =
       false
     with Unix.Unix_error (Unix.EBADF, _, _) -> true
   in
-  check bool "read after close fails" true failed
+  is_true ~msg:"read after close fails" failed
 
 (* Test Suite *)
 
 let tests =
   [
     (* Basic Operations *)
-    test_case "open pty" `Quick test_open_pty;
-    test_case "open pty with winsize" `Quick test_open_pty_with_winsize;
-    test_case "with_pty" `Quick test_with_pty;
+    test "open pty" test_open_pty;
+    test "open pty with winsize" test_open_pty_with_winsize;
+    test "with_pty" test_with_pty;
     (* Window Size *)
-    test_case "winsize operations" `Quick test_winsize_operations;
-    test_case "resize" `Quick test_resize;
-    test_case "inherit size" `Quick test_inherit_size;
+    test "winsize operations" test_winsize_operations;
+    test "resize" test_resize;
+    test "inherit size" test_inherit_size;
     (* Process Spawning *)
-    test_case "spawn echo" `Quick test_spawn_echo;
-    test_case "spawn cat" `Quick test_spawn_cat;
-    test_case "spawn sh" `Quick test_spawn_sh;
-    test_case "spawn with env" `Quick test_spawn_with_env;
-    test_case "spawn with cwd" `Quick test_spawn_with_cwd;
+    test "spawn echo" test_spawn_echo;
+    test "spawn cat" test_spawn_cat;
+    test "spawn sh" test_spawn_sh;
+    test "spawn with env" test_spawn_with_env;
+    test "spawn with cwd" test_spawn_with_cwd;
     (* Non-blocking I/O *)
-    test_case "nonblocking io" `Quick test_nonblocking_io;
-    test_case "multiple writes" `Quick test_multiple_writes;
+    test "nonblocking io" test_nonblocking_io;
+    test "multiple writes" test_multiple_writes;
     (* Edge Cases *)
-    test_case "close idempotent" `Quick test_close_idempotent;
-    test_case "eof on close" `Quick test_eof_on_close;
-    test_case "pty close" `Quick test_pty_close;
+    test "close idempotent" test_close_idempotent;
+    test "eof on close" test_eof_on_close;
+    test "pty close" test_pty_close;
   ]
 
-let () = run "matrix.pty" [ ("pty", tests) ]
+let () = run "matrix.pty" [ group "pty" tests ]

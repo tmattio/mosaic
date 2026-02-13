@@ -6,8 +6,7 @@ open Toffee
 let test_block_display_none_with_margin_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -92,8 +91,7 @@ let test_block_display_none_with_margin_border_box () =
 let test_block_display_none_with_margin_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -177,10 +175,9 @@ let test_block_display_none_with_margin_content_box () =
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case "display_none_with_margin (border-box)" `Quick
+    Windtrap.test "display_none_with_margin (border-box)"
       test_block_display_none_with_margin_border_box;
-    test_case "display_none_with_margin (content-box)" `Quick
+    Windtrap.test "display_none_with_margin (content-box)"
       test_block_display_none_with_margin_content_box;
   ]

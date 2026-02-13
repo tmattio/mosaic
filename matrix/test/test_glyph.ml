@@ -1,4 +1,4 @@
-open Alcotest
+open Windtrap
 open Glyph
 
 (* Helpers *)
@@ -8,7 +8,7 @@ let encode_to_list pool ~width_method ~tab_width str =
   encode pool ~width_method ~tab_width str (fun cell -> lst := cell :: !lst);
   List.rev !lst
 
-let check_width msg expected actual = check int msg expected actual
+let check_width msg expected actual = equal ~msg int expected actual
 
 (* 1. Conformance & Segmentation *)
 
@@ -29,7 +29,7 @@ let grapheme_break_test_path () =
   in
   match List.find_opt Sys.file_exists candidates with
   | Some p -> p
-  | None -> Alcotest.fail "Could not find data/GraphemeBreakTest.txt"
+  | None -> fail "Could not find data/GraphemeBreakTest.txt"
 
 let uchar_to_utf8 cp =
   let buf = Buffer.create 4 in
@@ -259,8 +259,8 @@ let no_zwj_segmentation () =
   let text = "👩\u{200D}🚀" in
   let cells = encode_to_list pool ~width_method:`No_zwj ~tab_width:2 text in
   let starts = List.filter is_start cells in
-  check int "two grapheme starts" 2 (List.length starts);
-  check int "four cells" 4 (List.length cells);
+  equal ~msg:"two grapheme starts" int 2 (List.length starts);
+  equal ~msg:"four cells" int 4 (List.length cells);
   let total =
     List.fold_left
       (fun acc g -> if is_start g then acc + width ~tab_width:8 g else acc)
@@ -289,7 +289,7 @@ let simple_vs_complex_optimization () =
   let del_cells =
     encode_to_list pool ~width_method:`Unicode ~tab_width:2 "\x7F"
   in
-  check int "DEL is zero-width and skipped" 0 (List.length del_cells);
+  equal ~msg:"DEL is zero-width and skipped" int 0 (List.length del_cells);
   check_type "é" false;
   (* Latin-1 supplement > 127 is complex *)
   check_type "€" false
@@ -297,11 +297,11 @@ let simple_vs_complex_optimization () =
 let zero_length_intern () =
   let pool = create_pool () in
   let g = intern pool "" in
-  check bool "empty glyph" true (is_empty g);
-  check int "empty width" 0 (width g);
+  is_true ~msg:"empty glyph" (is_empty g);
+  equal ~msg:"empty width" int 0 (width g);
   (* Empty maps to a NUL sentinel: zero width, single-byte payload *)
-  check int "empty len" 1 (length pool g);
-  check string "empty string" "\000" (to_string pool g)
+  equal ~msg:"empty len" int 1 (length pool g);
+  equal ~msg:"empty string" string "\000" (to_string pool g)
 
 let complex_clustering_behavior () =
   let pool = create_pool () in
@@ -313,19 +313,19 @@ let complex_clustering_behavior () =
   match cells with
   | [ na; _ma; ste_start; ste_cont ] ->
       check_width "Na width" 1 (width na);
-      check bool "Na simple" false (is_simple na);
+      is_false ~msg:"Na simple" (is_simple na);
 
       check_width "Ste width" 2 (width ste_start);
-      check bool "Ste start" true (is_start ste_start);
+      is_true ~msg:"Ste start" (is_start ste_start);
 
-      check bool "Ste cont flag" true (is_continuation ste_cont);
+      is_true ~msg:"Ste cont flag" (is_continuation ste_cont);
       check_width "Ste cont width" 2 (width ste_cont);
 
       (* Verify visual re-assembly *)
       let buf = Bytes.create 32 in
       let len = blit pool ste_start buf 0 in
       let s_out = Bytes.sub_string buf 0 len in
-      check string "Ste content" "स्ते" s_out
+      equal ~msg:"Ste content" string "स्ते" s_out
   | _ -> fail "Unexpected clustering result for Devanagari"
 
 let malformed_utf8_resilience () =
@@ -337,7 +337,7 @@ let malformed_utf8_resilience () =
       encode_to_list pool ~width_method:`Unicode ~tab_width:2 invalid
     in
     let w = List.fold_left (fun acc g -> acc + width g) 0 cells in
-    check bool "produced output without crash" true (w >= 0)
+    is_true ~msg:"produced output without crash" (w >= 0)
   with _ -> fail "Crashed on invalid UTF-8"
 
 (* 4. Lifecycle & Pool *)
@@ -346,22 +346,22 @@ let lifecycle_generation_safety () =
   let pool = create_pool () in
   (* 1. Allocate a complex glyph *)
   let g1 = intern pool "🚀" in
-  check bool "is complex" false (is_simple g1);
+  is_false ~msg:"is complex" (is_simple g1);
 
   (* 2. Verify existence *)
-  check string "content exists" "🚀" (to_string pool g1);
+  equal ~msg:"content exists" string "🚀" (to_string pool g1);
 
   (* 3. Decrement to free it *)
   decref pool g1;
 
   (* 4. Allocate NEW glyph. May reuse slot but bumps generation. *)
   let g2 = intern pool "🛸" in
-  check string "new content correct" "🛸" (to_string pool g2);
+  equal ~msg:"new content correct" string "🛸" (to_string pool g2);
 
   (* 5. SAFETY CHECK: Accessing g1 (Stale) should NOT return "🛸" *)
-  check string "stale string empty" "" (to_string pool g1);
+  equal ~msg:"stale string empty" string "" (to_string pool g1);
   let buf = Bytes.create 8 in
-  check int "stale blit is empty" 0 (blit pool g1 buf 0)
+  equal ~msg:"stale blit is empty" int 0 (blit pool g1 buf 0)
 
 let pool_resize_stress () =
   let pool = create_pool () in
@@ -378,10 +378,10 @@ let pool_resize_stress () =
 
   (* Verify random access after resize *)
   let g_first = handles.(0) in
-  check string "first element intact" "x0" (to_string pool g_first);
+  equal ~msg:"first element intact" string "x0" (to_string pool g_first);
 
   let g_last = handles.(n - 1) in
-  check string "last element intact"
+  equal ~msg:"last element intact" string
     ("x" ^ string_of_int (n - 1))
     (to_string pool g_last)
 
@@ -392,7 +392,7 @@ let copy_safety () =
   let g = intern p1 "abc" in
   (* Simple *)
   let g_copy = copy p1 g p2 in
-  check int "simple copy identity" g g_copy;
+  equal ~msg:"simple copy identity" int g g_copy;
 
   let complex = intern p1 "🚀" in
   (* Consume complex, become Stale in p1 *)
@@ -402,7 +402,7 @@ let copy_safety () =
      empty *)
   let _reused = intern p1 "reused" in
   let stale_copy = copy p1 complex p2 in
-  check bool "copied stale is empty" true (is_empty stale_copy)
+  is_true ~msg:"copied stale is empty" (is_empty stale_copy)
 
 let decref_deduplicates_free_list () =
   (* Test that multiple decrements don't corrupt the pool *)
@@ -416,10 +416,10 @@ let decref_deduplicates_free_list () =
   (* Should be able to allocate new glyphs without issues *)
   let g2 = intern pool "next" in
   let g3 = intern pool "another" in
-  check string "g2 content" "next" (to_string pool g2);
-  check string "g3 content" "another" (to_string pool g3);
+  equal ~msg:"g2 content" string "next" (to_string pool g2);
+  equal ~msg:"g3 content" string "another" (to_string pool g3);
   (* Stale reference should return empty *)
-  check string "stale g empty" "" (to_string pool g)
+  equal ~msg:"stale g empty" string "" (to_string pool g)
 
 (* 5. API Surface *)
 
@@ -432,7 +432,7 @@ let tab_expansion_mechanics () =
   let w_2 =
     List.fold_left (fun acc g -> acc + width ~tab_width:2 g) 0 cells_2
   in
-  check int "width with tab=2" (1 + 2 + 1) w_2;
+  equal ~msg:"width with tab=2" int (1 + 2 + 1) w_2;
 
   let cells_4 =
     encode_to_list pool ~width_method:`Unicode ~tab_width:4 "a\tb"
@@ -440,12 +440,13 @@ let tab_expansion_mechanics () =
   let w_4 =
     List.fold_left (fun acc g -> acc + width ~tab_width:4 g) 0 cells_4
   in
-  check int "width with tab=4" (1 + 4 + 1) w_4;
+  equal ~msg:"width with tab=4" int (1 + 4 + 1) w_4;
 
   (* Ensure the tab glyph itself reports the correct width dynamically *)
   let tab_glyph = List.nth cells_4 1 in
-  check int "tab glyph dynamic width" 4 (width ~tab_width:4 tab_glyph);
-  check int "tab glyph dynamic width re-check" 8 (width ~tab_width:8 tab_glyph)
+  equal ~msg:"tab glyph dynamic width" int 4 (width ~tab_width:4 tab_glyph);
+  equal ~msg:"tab glyph dynamic width re-check" int 8
+    (width ~tab_width:8 tab_glyph)
 
 let tab_cache_offsets () =
   let pool = create_pool () in
@@ -454,17 +455,17 @@ let tab_cache_offsets () =
   in
   match cells with
   | [ _a; tab1; _b; tab2; _c ] ->
-      check bool "tab1 simple" true (is_simple tab1);
-      check bool "tab2 simple" true (is_simple tab2);
-      check int "tab1 width" 4 (width ~tab_width:4 tab1);
-      check int "tab2 width" 4 (width ~tab_width:4 tab2)
+      is_true ~msg:"tab1 simple" (is_simple tab1);
+      is_true ~msg:"tab2 simple" (is_simple tab2);
+      equal ~msg:"tab1 width" int 4 (width ~tab_width:4 tab1);
+      equal ~msg:"tab2 width" int 4 (width ~tab_width:4 tab2)
   | _ -> fail "Expected five glyphs with tabs at positions 1 and 3"
 
 let max_width_clamping () =
   let pool = create_pool () in
   (* Force a width > 4 on a multi-byte grapheme; bit layout clamps to max 4. *)
   let g = intern pool ~width:10 "ab" in
-  check int "clamps large width" 4 (width g)
+  equal ~msg:"clamps large width" int 4 (width g)
 
 let continuation_width_encoding () =
   let pool = create_pool () in
@@ -473,8 +474,8 @@ let continuation_width_encoding () =
   match cells with
   | [ start; cont ] ->
       check_width "start width" 2 (width start);
-      check bool "start is start" true (is_start start);
-      check bool "cont flag" true (is_continuation cont);
+      is_true ~msg:"start is start" (is_start start);
+      is_true ~msg:"cont flag" (is_continuation cont);
       check_width "cont width matches" 2 (width cont)
   | _ -> fail "Expected start+continuation for wide glyph"
 
@@ -500,28 +501,28 @@ let line_breaks_to_list s =
   List.rev !acc
 
 let wrap_break_testable =
-  Alcotest.testable
-    (fun ppf { byte_offset; grapheme_offset } ->
+  Testable.make
+    ~pp:(fun ppf { byte_offset; grapheme_offset } ->
       Format.fprintf ppf "{byte=%d; grapheme=%d}" byte_offset grapheme_offset)
-    ( = )
+    ~equal:( = ) ()
 
 let line_break_testable =
-  Alcotest.testable
-    (fun ppf { pos; kind } ->
+  Testable.make
+    ~pp:(fun ppf { pos; kind } ->
       let kind_s =
         match kind with `LF -> "LF" | `CR -> "CR" | `CRLF -> "CRLF"
       in
       Format.fprintf ppf "{pos=%d; kind=%s}" pos kind_s)
-    ( = )
+    ~equal:( = ) ()
 
 let wrap_breaks_ascii_spaces () =
   (* Break after each space *)
   let breaks = wrap_breaks "hello world test" in
-  check int "two breaks for two spaces" 2 (Array.length breaks);
-  check wrap_break_testable "first break after 'hello '"
+  equal ~msg:"two breaks for two spaces" int 2 (Array.length breaks);
+  equal ~msg:"first break after 'hello '" wrap_break_testable
     { byte_offset = 6; grapheme_offset = 5 }
     breaks.(0);
-  check wrap_break_testable "second break after 'world '"
+  equal ~msg:"second break after 'world '" wrap_break_testable
     { byte_offset = 12; grapheme_offset = 11 }
     breaks.(1)
 
@@ -529,21 +530,21 @@ let wrap_breaks_ascii_punctuation () =
   (* Breaks after punctuation: - / . , ; : ! ? *)
   let breaks = wrap_breaks "a-b/c.d,e;f:g!h?i" in
   (* Each punctuation mark should create a break *)
-  check int "8 breaks for 8 punctuation marks" 8 (Array.length breaks);
+  equal ~msg:"8 breaks for 8 punctuation marks" int 8 (Array.length breaks);
   (* First break after 'a-' at byte 2, grapheme 1 *)
-  check wrap_break_testable "break after hyphen"
+  equal ~msg:"break after hyphen" wrap_break_testable
     { byte_offset = 2; grapheme_offset = 1 }
     breaks.(0)
 
 let wrap_breaks_ascii_brackets () =
   (* Breaks after brackets: ( ) [ ] { } *)
   let breaks = wrap_breaks "(a)[b]{c}" in
-  check int "6 breaks for 6 brackets" 6 (Array.length breaks)
+  equal ~msg:"6 breaks for 6 brackets" int 6 (Array.length breaks)
 
 let wrap_breaks_tabs () =
   let breaks = wrap_breaks "a\tb\tc" in
-  check int "2 breaks for 2 tabs" 2 (Array.length breaks);
-  check wrap_break_testable "break after first tab"
+  equal ~msg:"2 breaks for 2 tabs" int 2 (Array.length breaks);
+  equal ~msg:"break after first tab" wrap_break_testable
     { byte_offset = 2; grapheme_offset = 1 }
     breaks.(0)
 
@@ -557,19 +558,19 @@ let wrap_breaks_unicode_spaces () =
   (* U+3000 *)
 
   let breaks_nbsp = wrap_breaks ("a" ^ nbsp ^ "b") in
-  check int "break after NBSP" 1 (Array.length breaks_nbsp);
+  equal ~msg:"break after NBSP" int 1 (Array.length breaks_nbsp);
 
   let breaks_zwsp = wrap_breaks ("a" ^ zwsp ^ "b") in
-  check int "break after ZWSP" 1 (Array.length breaks_zwsp);
+  equal ~msg:"break after ZWSP" int 1 (Array.length breaks_zwsp);
 
   let breaks_ideo = wrap_breaks ("a" ^ ideographic ^ "b") in
-  check int "break after ideographic space" 1 (Array.length breaks_ideo)
+  equal ~msg:"break after ideographic space" int 1 (Array.length breaks_ideo)
 
 let wrap_breaks_soft_hyphen () =
   (* U+00AD soft hyphen *)
   let soft_hyphen = "\xC2\xAD" in
   let breaks = wrap_breaks ("word" ^ soft_hyphen ^ "break") in
-  check int "break after soft hyphen" 1 (Array.length breaks)
+  equal ~msg:"break after soft hyphen" int 1 (Array.length breaks)
 
 let wrap_breaks_en_space_range () =
   (* U+2000 to U+200A are all break opportunities *)
@@ -579,14 +580,14 @@ let wrap_breaks_en_space_range () =
   (* U+200A *)
 
   let breaks1 = wrap_breaks ("a" ^ en_quad ^ "b") in
-  check int "break after EN QUAD" 1 (Array.length breaks1);
+  equal ~msg:"break after EN QUAD" int 1 (Array.length breaks1);
 
   let breaks2 = wrap_breaks ("a" ^ hair_space ^ "b") in
-  check int "break after HAIR SPACE" 1 (Array.length breaks2)
+  equal ~msg:"break after HAIR SPACE" int 1 (Array.length breaks2)
 
 let wrap_breaks_no_break_in_plain_text () =
   let breaks = wrap_breaks "helloworld" in
-  check int "no breaks in continuous text" 0 (Array.length breaks)
+  equal ~msg:"no breaks in continuous text" int 0 (Array.length breaks)
 
 let wrap_breaks_grapheme_aware () =
   (* Emoji with skin tone modifier is one grapheme *)
@@ -594,15 +595,15 @@ let wrap_breaks_grapheme_aware () =
   (* thumbs up + skin tone *)
   let breaks = wrap_breaks ("a " ^ emoji ^ " b") in
   (* Should have breaks after "a " and after emoji+" " *)
-  check int "breaks respect grapheme boundaries" 2 (Array.length breaks);
+  equal ~msg:"breaks respect grapheme boundaries" int 2 (Array.length breaks);
   (* grapheme_offset should count the emoji as 1 grapheme *)
-  check wrap_break_testable "first break"
+  equal ~msg:"first break" wrap_break_testable
     { byte_offset = 2; grapheme_offset = 1 }
     breaks.(0)
 
 let wrap_breaks_empty_string () =
   let breaks = wrap_breaks "" in
-  check int "no breaks in empty string" 0 (Array.length breaks)
+  equal ~msg:"no breaks in empty string" int 0 (Array.length breaks)
 
 let wrap_breaks_width_method_no_zwj () =
   (* With No_zwj, ZWJ sequences are split into separate graphemes *)
@@ -613,124 +614,120 @@ let wrap_breaks_width_method_no_zwj () =
   let breaks_no_zwj = wrap_breaks ~width_method:`No_zwj zwj_seq in
 
   (* In Unicode mode: 1 grapheme, no breaks (no break chars) *)
-  check int "unicode: no breaks in ZWJ sequence" 0 (Array.length breaks_unicode);
+  equal ~msg:"unicode: no breaks in ZWJ sequence" int 0
+    (Array.length breaks_unicode);
   (* In No_zwj mode: ZWJ (U+200D) could be treated as separate, but it's not a wrap break char *)
   (* The grapheme count will differ though *)
-  check int "no_zwj: still no breaks (ZWJ not a wrap break char)" 0
+  equal ~msg:"no_zwj: still no breaks (ZWJ not a wrap break char)" int 0
     (Array.length breaks_no_zwj)
 
 let line_breaks_lf () =
   let breaks = line_breaks_to_list "a\nb\nc" in
-  check int "two LF breaks" 2 (List.length breaks);
-  check line_break_testable "first LF" { pos = 1; kind = `LF }
+  equal ~msg:"two LF breaks" int 2 (List.length breaks);
+  equal ~msg:"first LF" line_break_testable { pos = 1; kind = `LF }
     (List.nth breaks 0);
-  check line_break_testable "second LF" { pos = 3; kind = `LF }
+  equal ~msg:"second LF" line_break_testable { pos = 3; kind = `LF }
     (List.nth breaks 1)
 
 let line_breaks_cr () =
   let breaks = line_breaks_to_list "a\rb\rc" in
-  check int "two CR breaks" 2 (List.length breaks);
-  check line_break_testable "first CR" { pos = 1; kind = `CR }
+  equal ~msg:"two CR breaks" int 2 (List.length breaks);
+  equal ~msg:"first CR" line_break_testable { pos = 1; kind = `CR }
     (List.nth breaks 0);
-  check line_break_testable "second CR" { pos = 3; kind = `CR }
+  equal ~msg:"second CR" line_break_testable { pos = 3; kind = `CR }
     (List.nth breaks 1)
 
 let line_breaks_crlf () =
   let breaks = line_breaks_to_list "a\r\nb\r\nc" in
-  check int "two CRLF breaks" 2 (List.length breaks);
+  equal ~msg:"two CRLF breaks" int 2 (List.length breaks);
   (* CRLF reports at LF position *)
-  check line_break_testable "first CRLF" { pos = 2; kind = `CRLF }
+  equal ~msg:"first CRLF" line_break_testable { pos = 2; kind = `CRLF }
     (List.nth breaks 0);
-  check line_break_testable "second CRLF" { pos = 5; kind = `CRLF }
+  equal ~msg:"second CRLF" line_break_testable { pos = 5; kind = `CRLF }
     (List.nth breaks 1)
 
 let line_breaks_mixed () =
   let breaks = line_breaks_to_list "a\nb\r\nc\rd" in
-  check int "three mixed breaks" 3 (List.length breaks);
-  check line_break_testable "LF" { pos = 1; kind = `LF } (List.nth breaks 0);
-  check line_break_testable "CRLF" { pos = 4; kind = `CRLF } (List.nth breaks 1);
-  check line_break_testable "CR" { pos = 6; kind = `CR } (List.nth breaks 2)
+  equal ~msg:"three mixed breaks" int 3 (List.length breaks);
+  equal ~msg:"LF" line_break_testable { pos = 1; kind = `LF }
+    (List.nth breaks 0);
+  equal ~msg:"CRLF" line_break_testable { pos = 4; kind = `CRLF }
+    (List.nth breaks 1);
+  equal ~msg:"CR" line_break_testable { pos = 6; kind = `CR }
+    (List.nth breaks 2)
 
 let line_breaks_empty () =
   let breaks = line_breaks_to_list "" in
-  check int "no breaks in empty" 0 (List.length breaks)
+  equal ~msg:"no breaks in empty" int 0 (List.length breaks)
 
 let line_breaks_no_newlines () =
   let breaks = line_breaks_to_list "hello world" in
-  check int "no breaks without newlines" 0 (List.length breaks)
+  equal ~msg:"no breaks without newlines" int 0 (List.length breaks)
 
 let line_breaks_consecutive_lf () =
   let breaks = line_breaks_to_list "a\n\n\nb" in
-  check int "three consecutive LF" 3 (List.length breaks);
-  check line_break_testable "first" { pos = 1; kind = `LF } (List.nth breaks 0);
-  check line_break_testable "second" { pos = 2; kind = `LF } (List.nth breaks 1);
-  check line_break_testable "third" { pos = 3; kind = `LF } (List.nth breaks 2)
+  equal ~msg:"three consecutive LF" int 3 (List.length breaks);
+  equal ~msg:"first" line_break_testable { pos = 1; kind = `LF }
+    (List.nth breaks 0);
+  equal ~msg:"second" line_break_testable { pos = 2; kind = `LF }
+    (List.nth breaks 1);
+  equal ~msg:"third" line_break_testable { pos = 3; kind = `LF }
+    (List.nth breaks 2)
 
-let tests =
-  [
-    ( "Conformance",
-      [
-        test_case "UAX #29 Grapheme Boundaries" `Quick run_grapheme_conformance;
-      ] );
-    ( "Text Segmentation",
-      [
-        test_case "wrap breaks: ASCII spaces" `Quick wrap_breaks_ascii_spaces;
-        test_case "wrap breaks: ASCII punctuation" `Quick
-          wrap_breaks_ascii_punctuation;
-        test_case "wrap breaks: ASCII brackets" `Quick
-          wrap_breaks_ascii_brackets;
-        test_case "wrap breaks: tabs" `Quick wrap_breaks_tabs;
-        test_case "wrap breaks: Unicode spaces" `Quick
-          wrap_breaks_unicode_spaces;
-        test_case "wrap breaks: soft hyphen" `Quick wrap_breaks_soft_hyphen;
-        test_case "wrap breaks: EN space range" `Quick
-          wrap_breaks_en_space_range;
-        test_case "wrap breaks: no break in plain text" `Quick
-          wrap_breaks_no_break_in_plain_text;
-        test_case "wrap breaks: grapheme aware" `Quick
-          wrap_breaks_grapheme_aware;
-        test_case "wrap breaks: empty string" `Quick wrap_breaks_empty_string;
-        test_case "wrap breaks: width_method No_zwj" `Quick
-          wrap_breaks_width_method_no_zwj;
-        test_case "line breaks: LF" `Quick line_breaks_lf;
-        test_case "line breaks: CR" `Quick line_breaks_cr;
-        test_case "line breaks: CRLF" `Quick line_breaks_crlf;
-        test_case "line breaks: mixed" `Quick line_breaks_mixed;
-        test_case "line breaks: empty" `Quick line_breaks_empty;
-        test_case "line breaks: no newlines" `Quick line_breaks_no_newlines;
-        test_case "line breaks: consecutive LF" `Quick
-          line_breaks_consecutive_lf;
-      ] );
-    ( "Measurement Semantics",
-      [
-        test_case "width tables" `Quick measurement_semantics;
-        test_case "ascii fast path" `Quick ascii_fast_path_consistency;
-        test_case "multi-grapheme measure" `Quick
-          measure_multi_grapheme_regression;
-        test_case "no zwj segmentation" `Quick no_zwj_segmentation;
-      ] );
-    ( "Encoding & Storage",
-      [
-        test_case "simple vs complex" `Quick simple_vs_complex_optimization;
-        test_case "zero length intern" `Quick zero_length_intern;
-        test_case "complex clustering" `Quick complex_clustering_behavior;
-        test_case "malformed utf8" `Quick malformed_utf8_resilience;
-      ] );
-    ( "Lifecycle & Pool",
-      [
-        test_case "generation safety" `Quick lifecycle_generation_safety;
-        test_case "pool resize" `Quick pool_resize_stress;
-        test_case "copy safety" `Quick copy_safety;
-        test_case "decref deduplication" `Quick decref_deduplicates_free_list;
-      ] );
-    ( "API Surface",
-      [
-        test_case "tab expansion" `Quick tab_expansion_mechanics;
-        test_case "tab cache offsets" `Quick tab_cache_offsets;
-        test_case "max width clamping" `Quick max_width_clamping;
-        test_case "continuation width encoding" `Quick
-          continuation_width_encoding;
-      ] );
-  ]
-
-let () = run "matrix.glyph" tests
+let () =
+  run "matrix.glyph"
+    [
+      group "Conformance"
+        [ test "UAX #29 Grapheme Boundaries" run_grapheme_conformance ];
+      group "Text Segmentation"
+        [
+          test "wrap breaks: ASCII spaces" wrap_breaks_ascii_spaces;
+          test "wrap breaks: ASCII punctuation" wrap_breaks_ascii_punctuation;
+          test "wrap breaks: ASCII brackets" wrap_breaks_ascii_brackets;
+          test "wrap breaks: tabs" wrap_breaks_tabs;
+          test "wrap breaks: Unicode spaces" wrap_breaks_unicode_spaces;
+          test "wrap breaks: soft hyphen" wrap_breaks_soft_hyphen;
+          test "wrap breaks: EN space range" wrap_breaks_en_space_range;
+          test "wrap breaks: no break in plain text"
+            wrap_breaks_no_break_in_plain_text;
+          test "wrap breaks: grapheme aware" wrap_breaks_grapheme_aware;
+          test "wrap breaks: empty string" wrap_breaks_empty_string;
+          test "wrap breaks: width_method No_zwj"
+            wrap_breaks_width_method_no_zwj;
+          test "line breaks: LF" line_breaks_lf;
+          test "line breaks: CR" line_breaks_cr;
+          test "line breaks: CRLF" line_breaks_crlf;
+          test "line breaks: mixed" line_breaks_mixed;
+          test "line breaks: empty" line_breaks_empty;
+          test "line breaks: no newlines" line_breaks_no_newlines;
+          test "line breaks: consecutive LF" line_breaks_consecutive_lf;
+        ];
+      group "Measurement Semantics"
+        [
+          test "width tables" measurement_semantics;
+          test "ascii fast path" ascii_fast_path_consistency;
+          test "multi-grapheme measure" measure_multi_grapheme_regression;
+          test "no zwj segmentation" no_zwj_segmentation;
+        ];
+      group "Encoding & Storage"
+        [
+          test "simple vs complex" simple_vs_complex_optimization;
+          test "zero length intern" zero_length_intern;
+          test "complex clustering" complex_clustering_behavior;
+          test "malformed utf8" malformed_utf8_resilience;
+        ];
+      group "Lifecycle & Pool"
+        [
+          test "generation safety" lifecycle_generation_safety;
+          test "pool resize" pool_resize_stress;
+          test "copy safety" copy_safety;
+          test "decref deduplication" decref_deduplicates_free_list;
+        ];
+      group "API Surface"
+        [
+          test "tab expansion" tab_expansion_mechanics;
+          test "tab cache offsets" tab_cache_offsets;
+          test "max width clamping" max_width_clamping;
+          test "continuation width encoding" continuation_width_encoding;
+        ];
+    ]

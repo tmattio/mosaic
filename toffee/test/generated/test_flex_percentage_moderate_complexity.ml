@@ -6,8 +6,7 @@ open Toffee
 let test_flex_percentage_moderate_complexity_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.1) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.1) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -124,8 +123,7 @@ let test_flex_percentage_moderate_complexity_border_box () =
 let test_flex_percentage_moderate_complexity_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.1) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.1) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -241,10 +239,9 @@ let test_flex_percentage_moderate_complexity_content_box () =
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case "percentage_moderate_complexity (border-box)" `Quick
+    Windtrap.test "percentage_moderate_complexity (border-box)"
       test_flex_percentage_moderate_complexity_border_box;
-    test_case "percentage_moderate_complexity (content-box)" `Quick
+    Windtrap.test "percentage_moderate_complexity (content-box)"
       test_flex_percentage_moderate_complexity_content_box;
   ]

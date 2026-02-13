@@ -6,8 +6,7 @@ open Toffee
 let test_flex_bevy_issue_9530_reduced3_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -78,8 +77,7 @@ let test_flex_bevy_issue_9530_reduced3_border_box () =
 let test_flex_bevy_issue_9530_reduced3_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -149,10 +147,9 @@ let test_flex_bevy_issue_9530_reduced3_content_box () =
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case "bevy_issue_9530_reduced3 (border-box)" `Quick
+    Windtrap.test "bevy_issue_9530_reduced3 (border-box)"
       test_flex_bevy_issue_9530_reduced3_border_box;
-    test_case "bevy_issue_9530_reduced3 (content-box)" `Quick
+    Windtrap.test "bevy_issue_9530_reduced3 (content-box)"
       test_flex_bevy_issue_9530_reduced3_content_box;
   ]

@@ -3,39 +3,39 @@
 (test
  (name test_ansi)
  (package matrix)
- (libraries alcotest ansi))
+ (libraries windtrap ansi))
 
 (test
  (name test_glyph)
  (package matrix)
- (libraries alcotest glyph))
+ (libraries windtrap glyph))
 
 (test
  (name test_grid)
  (package matrix)
- (libraries alcotest grid glyph ansi))
+ (libraries windtrap grid glyph ansi))
 
 (test
  (name test_input)
  (package matrix)
- (libraries alcotest unix input))
+ (libraries windtrap unix input))
 
 (test
  (name test_vte)
  (package matrix)
- (libraries alcotest vte grid ansi))
+ (libraries windtrap vte grid ansi))
 
 (test
  (name test_pty)
  (package matrix)
- (libraries alcotest unix pty))
+ (libraries windtrap unix pty))
 
 (test
  (name test_terminal)
  (package matrix)
- (libraries alcotest terminal unix ansi input))
+ (libraries windtrap terminal unix ansi input))
 
 (test
  (name test_screen)
  (package matrix)
- (libraries alcotest str screen grid glyph ansi terminal unix input))
+ (libraries windtrap str screen grid glyph ansi terminal unix input))

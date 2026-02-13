@@ -7,8 +7,7 @@ let test_grid_max_content_single_item_span_2_gap_percent_definite_border_box ()
     =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -173,8 +172,7 @@ let test_grid_max_content_single_item_span_2_gap_percent_definite_content_box ()
     =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -337,12 +335,11 @@ let test_grid_max_content_single_item_span_2_gap_percent_definite_content_box ()
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case "max_content_single_item_span_2_gap_percent_definite (border-box)"
-      `Quick
+    Windtrap.test
+      "max_content_single_item_span_2_gap_percent_definite (border-box)"
       test_grid_max_content_single_item_span_2_gap_percent_definite_border_box;
-    test_case
-      "max_content_single_item_span_2_gap_percent_definite (content-box)" `Quick
+    Windtrap.test
+      "max_content_single_item_span_2_gap_percent_definite (content-box)"
       test_grid_max_content_single_item_span_2_gap_percent_definite_content_box;
   ]

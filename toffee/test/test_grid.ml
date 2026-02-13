@@ -3,6 +3,7 @@
 open Toffee
 open Geometry
 open Tree
+open Windtrap
 
 let line = Style.Grid.Placement.line
 let span = Style.Grid.Placement.span
@@ -36,23 +37,17 @@ let test_compute_grid_size_estimate_explicit_children () =
     Compute_grid.Implicit_grid.compute_grid_size_estimate ~explicit_col_count:6
       ~explicit_row_count:8 ~child_styles_iter:(List.to_seq child_styles)
   in
-  Alcotest.(check int)
-    "Inline negative implicit" 0
+  equal ~msg:"Inline negative implicit" int 0
     (Compute_grid.Grid_track_counts.negative_implicit cols);
-  Alcotest.(check int)
-    "Inline explicit" 6
+  equal ~msg:"Inline explicit" int 6
     (Compute_grid.Grid_track_counts.explicit cols);
-  Alcotest.(check int)
-    "Inline positive implicit" 0
+  equal ~msg:"Inline positive implicit" int 0
     (Compute_grid.Grid_track_counts.positive_implicit cols);
-  Alcotest.(check int)
-    "Block negative implicit" 0
+  equal ~msg:"Block negative implicit" int 0
     (Compute_grid.Grid_track_counts.negative_implicit rows);
-  Alcotest.(check int)
-    "Block explicit" 8
+  equal ~msg:"Block explicit" int 8
     (Compute_grid.Grid_track_counts.explicit rows);
-  Alcotest.(check int)
-    "Block positive implicit" 0
+  equal ~msg:"Block positive implicit" int 0
     (Compute_grid.Grid_track_counts.positive_implicit rows)
 
 let test_compute_grid_size_estimate_negative_implicit () =
@@ -68,23 +63,17 @@ let test_compute_grid_size_estimate_negative_implicit () =
     Compute_grid.Implicit_grid.compute_grid_size_estimate ~explicit_col_count:4
       ~explicit_row_count:4 ~child_styles_iter:(List.to_seq child_styles)
   in
-  Alcotest.(check int)
-    "Inline negative implicit" 1
+  equal ~msg:"Inline negative implicit" int 1
     (Compute_grid.Grid_track_counts.negative_implicit cols);
-  Alcotest.(check int)
-    "Inline explicit" 4
+  equal ~msg:"Inline explicit" int 4
     (Compute_grid.Grid_track_counts.explicit cols);
-  Alcotest.(check int)
-    "Inline positive implicit" 0
+  equal ~msg:"Inline positive implicit" int 0
     (Compute_grid.Grid_track_counts.positive_implicit cols);
-  Alcotest.(check int)
-    "Block negative implicit" 3
+  equal ~msg:"Block negative implicit" int 3
     (Compute_grid.Grid_track_counts.negative_implicit rows);
-  Alcotest.(check int)
-    "Block explicit" 4
+  equal ~msg:"Block explicit" int 4
     (Compute_grid.Grid_track_counts.explicit rows);
-  Alcotest.(check int)
-    "Block positive implicit" 0
+  equal ~msg:"Block positive implicit" int 0
     (Compute_grid.Grid_track_counts.positive_implicit rows)
 
 let test_explicit_grid_sizing_auto_fill_exact_fit () =
@@ -124,10 +113,10 @@ let test_explicit_grid_sizing_auto_fill_exact_fit () =
         Compute_grid.Explicit_grid.Max_repetitions_that_do_not_overflow
       ~resolve_calc_value:resolve_calc ~axis:Absolute_axis.Vertical
   in
-  Alcotest.(check int) "Column count" 3 col_count;
-  Alcotest.(check int) "Row count" 4 row_count;
-  Alcotest.(check int) "Auto column reps" 3 auto_cols;
-  Alcotest.(check int) "Auto row reps" 4 auto_rows
+  equal ~msg:"Column count" int 3 col_count;
+  equal ~msg:"Row count" int 4 row_count;
+  equal ~msg:"Auto column reps" int 3 auto_cols;
+  equal ~msg:"Auto row reps" int 4 auto_rows
 
 let test_explicit_grid_sizing_auto_fill_with_gaps () =
   let grid_style =
@@ -171,10 +160,10 @@ let test_explicit_grid_sizing_auto_fill_with_gaps () =
         Compute_grid.Explicit_grid.Max_repetitions_that_do_not_overflow
       ~resolve_calc_value:resolve_calc ~axis:Absolute_axis.Vertical
   in
-  Alcotest.(check int) "Column count with gap" 2 col_count;
-  Alcotest.(check int) "Row count with gap" 3 row_count;
-  Alcotest.(check int) "Auto column reps with gap" 2 auto_cols;
-  Alcotest.(check int) "Auto row reps with gap" 3 auto_rows
+  equal ~msg:"Column count with gap" int 2 col_count;
+  equal ~msg:"Row count with gap" int 3 row_count;
+  equal ~msg:"Auto column reps with gap" int 2 auto_cols;
+  equal ~msg:"Auto row reps with gap" int 3 auto_rows
 
 (* Placement algorithm tests *)
 
@@ -258,12 +247,10 @@ let placement_test_runner ~flow ~explicit_cols ~explicit_rows children
   List.iter2
     (fun (_, _, (exp_col_start, exp_col_end, exp_row_start, exp_row_end)) item
        ->
-      Alcotest.(check (pair int int))
-        "Column placement"
+      equal ~msg:"Column placement" (pair int int)
         (exp_col_start, exp_col_end)
         (expected_to_tuple item.Compute_grid.Grid_item.column);
-      Alcotest.(check (pair int int))
-        "Row placement"
+      equal ~msg:"Row placement" (pair int int)
         (exp_row_start, exp_row_end)
         (expected_to_tuple item.Compute_grid.Grid_item.row))
     sorted_children sorted_items;
@@ -276,28 +263,22 @@ let placement_test_runner ~flow ~explicit_cols ~explicit_rows children
     Compute_grid.Cell_occupancy.track_counts cell_occupancy
       Geometry.Absolute_axis.Horizontal
   in
-  Alcotest.(check int)
-    "Row negative implicit"
+  equal ~msg:"Row negative implicit" int
     (Compute_grid.Grid_track_counts.negative_implicit expected_row_counts)
     (Compute_grid.Grid_track_counts.negative_implicit actual_rows);
-  Alcotest.(check int)
-    "Row explicit"
+  equal ~msg:"Row explicit" int
     (Compute_grid.Grid_track_counts.explicit expected_row_counts)
     (Compute_grid.Grid_track_counts.explicit actual_rows);
-  Alcotest.(check int)
-    "Row positive implicit"
+  equal ~msg:"Row positive implicit" int
     (Compute_grid.Grid_track_counts.positive_implicit expected_row_counts)
     (Compute_grid.Grid_track_counts.positive_implicit actual_rows);
-  Alcotest.(check int)
-    "Col negative implicit"
+  equal ~msg:"Col negative implicit" int
     (Compute_grid.Grid_track_counts.negative_implicit expected_col_counts)
     (Compute_grid.Grid_track_counts.negative_implicit actual_cols);
-  Alcotest.(check int)
-    "Col explicit"
+  equal ~msg:"Col explicit" int
     (Compute_grid.Grid_track_counts.explicit expected_col_counts)
     (Compute_grid.Grid_track_counts.explicit actual_cols);
-  Alcotest.(check int)
-    "Col positive implicit"
+  equal ~msg:"Col positive implicit" int
     (Compute_grid.Grid_track_counts.positive_implicit expected_col_counts)
     (Compute_grid.Grid_track_counts.positive_implicit actual_cols)
 
@@ -470,23 +451,22 @@ let placement_tests =
   ]
 
 let () =
-  let open Alcotest in
   run "Toffee Grid Tests"
     [
-      ( "implicit_grid",
+      group "implicit_grid"
         [
-          test_case "Size estimate explicit children" `Quick
+          test "Size estimate explicit children"
             test_compute_grid_size_estimate_explicit_children;
-          test_case "Size estimate negative implicit" `Quick
+          test "Size estimate negative implicit"
             test_compute_grid_size_estimate_negative_implicit;
-        ] );
-      ( "explicit_grid",
+        ];
+      group "explicit_grid"
         [
-          test_case "Auto-fill exact fit" `Quick
+          test "Auto-fill exact fit"
             test_explicit_grid_sizing_auto_fill_exact_fit;
-          test_case "Auto-fill with gaps" `Quick
+          test "Auto-fill with gaps"
             test_explicit_grid_sizing_auto_fill_with_gaps;
-        ] );
-      ( "placement",
-        List.map (fun (name, fn) -> test_case name `Quick fn) placement_tests );
+        ];
+      group "placement"
+        (List.map (fun (name, fn) -> test name fn) placement_tests);
     ]

@@ -6,8 +6,7 @@ open Toffee
 let test_flex_multiline_min_max_14_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -141,8 +140,7 @@ let test_flex_multiline_min_max_14_border_box () =
 let test_flex_multiline_min_max_14_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -275,10 +273,9 @@ let test_flex_multiline_min_max_14_content_box () =
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case "multiline_min_max_14 (border-box)" `Quick
+    Windtrap.test "multiline_min_max_14 (border-box)"
       test_flex_multiline_min_max_14_border_box;
-    test_case "multiline_min_max_14 (content-box)" `Quick
+    Windtrap.test "multiline_min_max_14 (content-box)"
       test_flex_multiline_min_max_14_content_box;
   ]

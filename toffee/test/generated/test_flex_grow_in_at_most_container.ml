@@ -6,8 +6,7 @@ open Toffee
 let test_flex_grow_in_at_most_container_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -78,8 +77,7 @@ let test_flex_grow_in_at_most_container_border_box () =
 let test_flex_grow_in_at_most_container_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -149,10 +147,9 @@ let test_flex_grow_in_at_most_container_content_box () =
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case "grow_in_at_most_container (border-box)" `Quick
+    Windtrap.test "grow_in_at_most_container (border-box)"
       test_flex_grow_in_at_most_container_border_box;
-    test_case "grow_in_at_most_container (content-box)" `Quick
+    Windtrap.test "grow_in_at_most_container (content-box)"
       test_flex_grow_in_at_most_container_content_box;
   ]

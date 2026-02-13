@@ -7,8 +7,7 @@ let test_flex_justify_content_column_space_between_negative_space_gap_border_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -135,8 +134,7 @@ let test_flex_justify_content_column_space_between_negative_space_gap_content_bo
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -261,14 +259,11 @@ let test_flex_justify_content_column_space_between_negative_space_gap_content_bo
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case
+    Windtrap.test
       "justify_content_column_space_between_negative_space_gap (border-box)"
-      `Quick
       test_flex_justify_content_column_space_between_negative_space_gap_border_box;
-    test_case
+    Windtrap.test
       "justify_content_column_space_between_negative_space_gap (content-box)"
-      `Quick
       test_flex_justify_content_column_space_between_negative_space_gap_content_box;
   ]

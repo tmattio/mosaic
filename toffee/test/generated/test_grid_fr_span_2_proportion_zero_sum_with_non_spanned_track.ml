@@ -7,8 +7,7 @@ let test_grid_fr_span_2_proportion_zero_sum_with_non_spanned_track_border_box ()
     =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -123,8 +122,7 @@ let test_grid_fr_span_2_proportion_zero_sum_with_non_spanned_track_content_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -237,13 +235,11 @@ let test_grid_fr_span_2_proportion_zero_sum_with_non_spanned_track_content_box
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case
-      "fr_span_2_proportion_zero_sum_with_non_spanned_track (border-box)" `Quick
+    Windtrap.test
+      "fr_span_2_proportion_zero_sum_with_non_spanned_track (border-box)"
       test_grid_fr_span_2_proportion_zero_sum_with_non_spanned_track_border_box;
-    test_case
+    Windtrap.test
       "fr_span_2_proportion_zero_sum_with_non_spanned_track (content-box)"
-      `Quick
       test_grid_fr_span_2_proportion_zero_sum_with_non_spanned_track_content_box;
   ]

@@ -7,8 +7,7 @@ let test_block_absolute_layout_percentage_bottom_based_on_parent_height_border_b
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -124,8 +123,7 @@ let test_block_absolute_layout_percentage_bottom_based_on_parent_height_content_
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -239,14 +237,11 @@ let test_block_absolute_layout_percentage_bottom_based_on_parent_height_content_
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case
+    Windtrap.test
       "absolute_layout_percentage_bottom_based_on_parent_height (border-box)"
-      `Quick
       test_block_absolute_layout_percentage_bottom_based_on_parent_height_border_box;
-    test_case
+    Windtrap.test
       "absolute_layout_percentage_bottom_based_on_parent_height (content-box)"
-      `Quick
       test_block_absolute_layout_percentage_bottom_based_on_parent_height_content_box;
   ]

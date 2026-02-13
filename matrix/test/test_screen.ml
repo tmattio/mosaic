@@ -1,4 +1,4 @@
-open Alcotest
+open Windtrap
 
 (* Test Helpers *)
 
@@ -28,7 +28,7 @@ let add_unique_by_phys acc v =
 
 let test_create_renderer () =
   let r = Screen.create () in
-  check bool "renderer created" true (r != Obj.magic 0)
+  is_true ~msg:"renderer created" (r != Obj.magic 0)
 
 (* Screen rendering is pure diff output; no terminal-side effects are
    emitted. *)
@@ -39,7 +39,7 @@ let test_zero_sized_frame () =
   let r = Screen.create ~mouse_enabled:false () in
   let frame = Screen.build r ~width:0 ~height:0 (fun _ _ -> ()) in
   let output = Screen.render frame in
-  check string "empty output" zero_frame_expected output
+  equal ~msg:"empty output" string zero_frame_expected output
 
 let test_single_cell_frame () =
   let r = Screen.create () in
@@ -48,8 +48,8 @@ let test_single_cell_frame () =
         Grid.draw_text grid ~x:0 ~y:0 ~text:"X")
   in
   let output = Screen.render frame in
-  check bool "contains text" true (String.length output > 0);
-  check bool "contains X" true (String.contains output 'X')
+  is_true ~msg:"contains text" (String.length output > 0);
+  is_true ~msg:"contains X" (String.contains output 'X')
 
 let test_simple_text_rendering () =
   let r = Screen.create () in
@@ -58,12 +58,12 @@ let test_simple_text_rendering () =
         Grid.draw_text grid ~x:0 ~y:0 ~text:"Hello")
   in
   let output = Screen.render frame in
-  check bool "output not empty" true (String.length output > 0);
+  is_true ~msg:"output not empty" (String.length output > 0);
   (* Check that all characters from "Hello" appear in output *)
-  check bool "contains H" true (String.contains output 'H');
-  check bool "contains e" true (String.contains output 'e');
-  check bool "contains l" true (String.contains output 'l');
-  check bool "contains o" true (String.contains output 'o')
+  is_true ~msg:"contains H" (String.contains output 'H');
+  is_true ~msg:"contains e" (String.contains output 'e');
+  is_true ~msg:"contains l" (String.contains output 'l');
+  is_true ~msg:"contains o" (String.contains output 'o')
 
 let test_hyperlink_rendering () =
   let r = Screen.create () in
@@ -87,7 +87,7 @@ let test_hyperlink_rendering () =
       true
     with Not_found -> false
   in
-  check bool "contains hyperlink start" true contains_expected
+  is_true ~msg:"contains hyperlink start" contains_expected
 
 let test_row_offset_applied () =
   let r = create_renderer ~width:2 ~height:2 () in
@@ -104,8 +104,8 @@ let test_row_offset_applied () =
       true
     with Not_found -> false
   in
-  check bool "cursor moved with offset" true has_seq;
-  check bool "character rendered" true (String.contains output 'A')
+  is_true ~msg:"cursor moved with offset" has_seq;
+  is_true ~msg:"character rendered" (String.contains output 'A')
 
 (* 2. Diff Algorithm Tests *)
 
@@ -130,15 +130,15 @@ let test_diff_only_changed_cells () =
   let moves2 = count_cursor_moves output2 in
 
   (* Should not require additional cursor moves once diff is warmed up *)
-  check bool "second frame has <= moves" true (moves2 <= moves1);
+  is_true ~msg:"second frame has <= moves" (moves2 <= moves1);
   let moved_to_changed =
     try
       let _ = Str.search_forward (Str.regexp_string "\027[1;5H") output2 0 in
       true
     with Not_found -> false
   in
-  check bool "moves cursor to changed cell" true moved_to_changed;
-  check bool "second frame not empty" true (String.length output2 > 0)
+  is_true ~msg:"moves cursor to changed cell" moved_to_changed;
+  is_true ~msg:"second frame not empty" (String.length output2 > 0)
 
 let test_no_diff_when_unchanged () =
   let r = create_renderer ~width:5 ~height:5 () in
@@ -157,7 +157,7 @@ let test_no_diff_when_unchanged () =
   in
   let output2 = Screen.render f2 in
 
-  check string "no diff output" "" output2
+  equal ~msg:"no diff output" string "" output2
 
 let test_wide_char_diff () =
   (* Test that wide characters are diffed correctly *)
@@ -176,7 +176,7 @@ let test_wide_char_diff () =
   (* Chinese chars, 2 cells each *)
   let output2 = Screen.render f2 in
 
-  check bool "wide char output" true (String.length output2 > 0)
+  is_true ~msg:"wide char output" (String.length output2 > 0)
 
 (* 3. Frame Building Tests *)
 
@@ -188,7 +188,7 @@ let test_build_visual () =
         Grid.draw_text grid ~x:0 ~y:0 ~text:"Hi")
   in
   let output = Screen.render frame in
-  check bool "visual build works" true (String.length output > 0)
+  is_true ~msg:"visual build works" (String.length output > 0)
 
 let test_resize_preserves_content () =
   let r = create_renderer ~width:5 ~height:5 () in
@@ -208,7 +208,7 @@ let test_resize_preserves_content () =
   let output2 = Screen.render f2 in
 
   (* Should not re-render unchanged cells *)
-  check bool "resize works" true (String.length output2 < 100)
+  is_true ~msg:"resize works" (String.length output2 < 100)
 
 let test_resize_smaller () =
   (* Edge case: shrinking grid *)
@@ -226,7 +226,7 @@ let test_resize_smaller () =
   in
   let output2 = Screen.render f2 in
 
-  check bool "shrink works" true (String.length output2 > 0)
+  is_true ~msg:"shrink works" (String.length output2 > 0)
 
 let test_resize_clears_both_buffers () =
   (* Test that resize clears both current and next buffers, ensuring proper
@@ -253,10 +253,10 @@ let test_resize_clears_both_buffers () =
 
   (* The output should not contain the old red background content *)
   (* Check that we don't have excessive output (which would indicate stale content) *)
-  check bool "resize clears buffers" true (String.length output2 < 200);
+  is_true ~msg:"resize clears buffers" (String.length output2 < 200);
 
   (* Verify the new content is rendered *)
-  check bool "new content rendered" true (String.contains output2 'S')
+  is_true ~msg:"new content rendered" (String.contains output2 'S')
 
 let test_cursor_clamped_on_resize () =
   let r = create_renderer ~width:3 ~height:3 () in
@@ -264,8 +264,8 @@ let test_cursor_clamped_on_resize () =
   Screen.resize r ~width:2 ~height:1;
   let _frame = Screen.build r ~width:2 ~height:1 (fun _grid _hits -> ()) in
   let info = Screen.cursor_info r in
-  check int "cursor row clamped" 1 info.row;
-  check int "cursor col clamped" 2 info.col
+  equal ~msg:"cursor row clamped" int 1 info.row;
+  equal ~msg:"cursor col clamped" int 2 info.col
 
 (* 4. Post-Processing Tests *)
 
@@ -281,9 +281,9 @@ let test_post_process_receives_delta () =
   in
   let _output = Screen.render frame2 in
 
-  check bool "delta was received" true (Option.is_some !delta_received);
+  is_true ~msg:"delta was received" (Option.is_some !delta_received);
   let delta = Option.get !delta_received in
-  check bool "delta is non-negative" true (delta >= 0.)
+  is_true ~msg:"delta is non-negative" (delta >= 0.)
 
 let test_post_process_chain () =
   (* Multiple post-process functions should be applied in order *)
@@ -304,7 +304,7 @@ let test_post_process_chain () =
   let _output = Screen.render frame3 in
 
   (* Should be called in order (reversed because we cons) *)
-  check (list string) "call order" [ "second"; "first" ] !calls
+  equal ~msg:"call order" (list string) [ "second"; "first" ] !calls
 
 let test_post_process_persists_across_frames () =
   (* Post-processors persist until explicitly removed *)
@@ -319,7 +319,7 @@ let test_post_process_persists_across_frames () =
   let frame2 = Screen.build r ~width:5 ~height:5 (fun _grid _hits -> ()) in
   let _ = Screen.render frame2 in
 
-  check int "called twice" 2 !call_count
+  equal ~msg:"called twice" int 2 !call_count
 
 let test_remove_post_process () =
   let r = Screen.create () in
@@ -334,7 +334,7 @@ let test_remove_post_process () =
   let frame2 = Screen.build r ~width:5 ~height:5 (fun _grid _hits -> ()) in
   let _ = Screen.render frame2 in
 
-  check int "effect removed" 1 !call_count
+  equal ~msg:"effect removed" int 1 !call_count
 
 let test_clear_post_processes () =
   let r = Screen.create () in
@@ -348,13 +348,13 @@ let test_clear_post_processes () =
     |> Screen.post_process effect2
   in
   let _ = Screen.render frame in
-  check int "both effects ran" 2 !call_count;
+  equal ~msg:"both effects ran" int 2 !call_count;
 
   let _ = Screen.clear_post_processes frame in
   let frame2 = Screen.build r ~width:5 ~height:5 (fun _grid _hits -> ()) in
   let _ = Screen.render frame2 in
 
-  check int "effects cleared" 2 !call_count
+  equal ~msg:"effects cleared" int 2 !call_count
 
 (* 5. Hit Grid Tests *)
 
@@ -369,10 +369,10 @@ let test_hit_grid_integration () =
   in
   let _ = Screen.render frame in
   hit_id := Screen.query_hit frame ~x:0 ~y:0;
-  check int "hit id at (0,0)" 42 !hit_id;
+  equal ~msg:"hit id at (0,0)" int 42 !hit_id;
 
   hit_id := Screen.query_hit frame ~x:7 ~y:0;
-  check int "no hit at (7,0)" 0 !hit_id
+  equal ~msg:"no hit at (7,0)" int 0 !hit_id
 
 let test_hit_grid_cleared_each_frame () =
   let r = Screen.create () in
@@ -389,7 +389,7 @@ let test_hit_grid_cleared_each_frame () =
   let _o2 = Screen.render f2 in
 
   let hit_id = Screen.query_hit f2 ~x:0 ~y:0 in
-  check int "hit cleared" 0 hit_id
+  equal ~msg:"hit cleared" int 0 hit_id
 
 let test_hit_grid_swap_on_render () =
   let r = Screen.create () in
@@ -406,11 +406,11 @@ let test_hit_grid_swap_on_render () =
         Screen.Hit_grid.add hits ~x:1 ~y:1 ~width:1 ~height:1 ~id:2)
   in
   let before = Screen.query_hit frame2 ~x:1 ~y:1 in
-  check int "previous hit active before swap" 1 before;
+  equal ~msg:"previous hit active before swap" int 1 before;
 
   let _ = Screen.render frame2 in
   let after = Screen.query_hit frame2 ~x:1 ~y:1 in
-  check int "next hit active after swap" 2 after
+  equal ~msg:"next hit active after swap" int 2 after
 
 let test_add_hit_region_helper () =
   let r = Screen.create () in
@@ -421,7 +421,7 @@ let test_add_hit_region_helper () =
 
   let _ = Screen.render frame2 in
   let hit_id = Screen.query_hit frame2 ~x:5 ~y:5 in
-  check int "hit region added" 99 hit_id
+  equal ~msg:"hit region added" int 99 hit_id
 
 (* 6. Statistics Tests *)
 
@@ -436,10 +436,10 @@ let test_stats_tracking () =
 
   let stats = Screen.stats r in
   let metrics = Screen.last_metrics r in
-  check int "frame count" 1 stats.frame_count;
-  check bool "cells updated" true (metrics.cells > 0);
-  check bool "output bytes" true (metrics.bytes > 0);
-  check bool "frame time" true (metrics.frame_time_ms >= 0.)
+  equal ~msg:"frame count" int 1 stats.frame_count;
+  is_true ~msg:"cells updated" (metrics.cells > 0);
+  is_true ~msg:"output bytes" (metrics.bytes > 0);
+  is_true ~msg:"frame time" (metrics.frame_time_ms >= 0.)
 
 (* 7. Configuration Tests *)
 
@@ -451,7 +451,7 @@ let test_update_config () =
   let frame = Screen.build r ~width:5 ~height:5 (fun _grid _hits -> ()) in
   let _ = Screen.render frame in
   let metrics = Screen.last_metrics r in
-  check bool "cursor visibility updated" false metrics.cursor_visible
+  is_false ~msg:"cursor visibility updated" metrics.cursor_visible
 
 let test_reset () =
   let r = Screen.create () in
@@ -464,13 +464,13 @@ let test_reset () =
   done;
 
   let stats_before = Screen.stats r in
-  check int "frames before reset" 3 stats_before.frame_count;
+  equal ~msg:"frames before reset" int 3 stats_before.frame_count;
 
   Screen.reset r;
 
   let stats_after = Screen.stats r in
-  check int "frames after reset" 0 stats_after.frame_count;
-  check int "cells after reset" 0 stats_after.total_cells
+  equal ~msg:"frames after reset" int 0 stats_after.frame_count;
+  equal ~msg:"cells after reset" int 0 stats_after.total_cells
 
 let test_reset_triggers_next_diff () =
   let r = create_renderer ~width:1 ~height:1 () in
@@ -486,8 +486,8 @@ let test_reset_triggers_next_diff () =
   let f2 = Screen.build r ~width:1 ~height:1 (fun _ _ -> ()) in
   let output2 = Screen.render f2 in
 
-  check bool "cursor moves after reset" true (count_cursor_moves output2 >= 1);
-  check bool "clears previous glyph" true (not (String.contains output2 'X'))
+  is_true ~msg:"cursor moves after reset" (count_cursor_moves output2 >= 1);
+  is_true ~msg:"clears previous glyph" (not (String.contains output2 'X'))
 
 (* 8. Edge Cases and Boundary Conditions *)
 
@@ -499,7 +499,7 @@ let test_extremely_wide_char () =
         Grid.draw_text grid ~x:0 ~y:0 ~text:"🎨🚀✨")
   in
   let output = Screen.render f in
-  check bool "emoji renders" true (String.length output > 0)
+  is_true ~msg:"emoji renders" (String.length output > 0)
 
 let test_buffer_overflow_prevention () =
   (* Test with large frame (200x60) and complex content to ensure 2MB buffer
@@ -526,7 +526,7 @@ let test_buffer_overflow_prevention () =
   in
   (* Should not raise buffer overflow *)
   let output = Screen.render f in
-  check bool "large frame renders without overflow" true
+  is_true ~msg:"large frame renders without overflow"
     (String.length output > 1000)
 
 let test_resize_full_redraw () =
@@ -552,7 +552,7 @@ let test_resize_full_redraw () =
 
   (* Should contain some cursor movements for the diff *)
   let moves = count_cursor_moves output2 in
-  check bool "contains cursor moves" true (moves > 0)
+  is_true ~msg:"contains cursor moves" (moves > 0)
 
 let test_resize_hit_grid_cleared () =
   (* Test that hit grids don't leak stale IDs after resize *)
@@ -567,7 +567,7 @@ let test_resize_hit_grid_cleared () =
 
   (* Verify hit exists *)
   let hit_before = Screen.query_hit f1 ~x:5 ~y:5 in
-  check int "hit exists before resize" 99 hit_before;
+  equal ~msg:"hit exists before resize" int 99 hit_before;
 
   (* Resize *)
   Screen.resize r ~width:5 ~height:5;
@@ -578,7 +578,7 @@ let test_resize_hit_grid_cleared () =
 
   (* Hit should be gone (coordinates out of bounds) *)
   let hit_after = Screen.query_hit f2 ~x:0 ~y:0 in
-  check int "hit cleared after resize" 0 hit_after
+  equal ~msg:"hit cleared after resize" int 0 hit_after
 
 let test_explicit_width_sequences () =
   (* Test that explicit width OSC sequences are emitted when enabled *)
@@ -599,7 +599,7 @@ let test_explicit_width_sequences () =
       true
     with Not_found -> false
   in
-  check bool "contains explicit width sequence" true contains_explicit_width
+  is_true ~msg:"contains explicit width sequence" contains_explicit_width
 
 let test_hyperlink_capability_gating () =
   (* Test that hyperlinks are only emitted when capability is enabled *)
@@ -621,7 +621,7 @@ let test_hyperlink_capability_gating () =
       true
     with Not_found -> false
   in
-  check bool "hyperlink emitted when capable" true contains_hyperlink;
+  is_true ~msg:"hyperlink emitted when capable" contains_hyperlink;
 
   (* Now test with capability disabled *)
   let r2 = Screen.create () in
@@ -642,7 +642,7 @@ let test_hyperlink_capability_gating () =
       true
     with Not_found -> false
   in
-  check bool "hyperlink not emitted when incapable" false
+  is_false ~msg:"hyperlink not emitted when incapable"
     contains_hyperlink_disabled
 
 let test_cursor_style_and_color () =
@@ -654,13 +654,13 @@ let test_cursor_style_and_color () =
 
   let _f = Screen.build r ~width:5 ~height:5 (fun _grid _hits -> ()) in
   let info = Screen.cursor_info r in
-  check bool "cursor visible" true info.visible;
-  check bool "cursor position set" true info.has_position;
-  check int "cursor row stored" 5 info.row;
-  check int "cursor col stored" 5 info.col;
-  check bool "cursor underline" true (info.style = `Underline);
-  check bool "cursor non-blinking" true (not info.blinking);
-  check bool "cursor color stored" true (info.color = Some (255, 0, 128))
+  is_true ~msg:"cursor visible" info.visible;
+  is_true ~msg:"cursor position set" info.has_position;
+  equal ~msg:"cursor row stored" int 5 info.row;
+  equal ~msg:"cursor col stored" int 5 info.col;
+  is_true ~msg:"cursor underline" (info.style = `Underline);
+  is_true ~msg:"cursor non-blinking" (not info.blinking);
+  is_true ~msg:"cursor color stored" (info.color = Some (255, 0, 128))
 
 let test_all_cells_changed () =
   (* Worst case: every cell changes *)
@@ -682,7 +682,7 @@ let test_all_cells_changed () =
 
   let metrics = Screen.last_metrics r in
   (* All 100 cells should have changed *)
-  check int "all cells changed" 100 metrics.cells
+  equal ~msg:"all cells changed" int 100 metrics.cells
 
 let test_partial_row_update () =
   (* Test that we only render changed portions of a row *)
@@ -702,7 +702,7 @@ let test_partial_row_update () =
 
   let metrics = Screen.last_metrics r in
   (* Should only update the changed cell *)
-  check int "only changed cell" 1 metrics.cells
+  equal ~msg:"only changed cell" int 1 metrics.cells
 
 let test_color_only_change () =
   (* Test that color changes trigger diff *)
@@ -723,7 +723,7 @@ let test_color_only_change () =
   let output2 = Screen.render f2 in
 
   (* Should detect color change *)
-  check bool "color change detected" true (String.length output2 > 10)
+  is_true ~msg:"color change detected" (String.length output2 > 10)
 
 let test_attribute_only_change () =
   (* Test that attribute changes (bold, italic, etc) trigger diff *)
@@ -743,7 +743,7 @@ let test_attribute_only_change () =
   let output2 = Screen.render f2 in
 
   (* Should detect attribute change *)
-  check bool "attribute change detected" true (String.length output2 > 10)
+  is_true ~msg:"attribute change detected" (String.length output2 > 10)
 
 (* 9. Performance Characteristics Tests *)
 
@@ -757,7 +757,7 @@ let test_zero_allocation_frame_building () =
   let f2 = Screen.post_process (fun _grid ~delta:_ -> ()) f1 in
   let _output = Screen.render f2 in
   (* If we get here without errors, the zero-allocation API works *)
-  check bool "api works" true true
+  is_true ~msg:"api works" true
 
 let test_double_buffer_reuse () =
   let r = Screen.create () in
@@ -780,8 +780,8 @@ let test_double_buffer_reuse () =
   render_once ();
   render_once ();
 
-  check int "reuses two grid buffers" 2 (List.length !grids);
-  check int "reuses two hit grids" 2 (List.length !hits)
+  equal ~msg:"reuses two grid buffers" int 2 (List.length !grids);
+  equal ~msg:"reuses two hit grids" int 2 (List.length !hits)
 
 let test_pipeline_composition () =
   (* Test that pipelines compose correctly *)
@@ -805,92 +805,81 @@ let test_pipeline_composition () =
   let f4 = Screen.add_hit_region f3 ~x:0 ~y:0 ~width:1 ~height:1 ~id:1 in
   let output = Screen.render f4 in
 
-  check bool "pipeline executed" true (String.length output >= 0);
-  check bool "build called" true (List.mem "build" !call_order);
-  check bool "post1 called" true (List.mem "post1" !call_order);
-  check bool "post2 called" true (List.mem "post2" !call_order)
+  is_true ~msg:"pipeline executed" (String.length output >= 0);
+  is_true ~msg:"build called" (List.mem "build" !call_order);
+  is_true ~msg:"post1 called" (List.mem "post1" !call_order);
+  is_true ~msg:"post2 called" (List.mem "post2" !call_order)
 
 (* Test Suite *)
 
 let () =
   run "matrix.screen"
     [
-      ( "Core Rendering",
+      group "Core Rendering"
         [
-          test_case "Create renderer" `Quick test_create_renderer;
-          test_case "Zero-sized frame" `Quick test_zero_sized_frame;
-          test_case "Single cell frame" `Quick test_single_cell_frame;
-          test_case "Simple text rendering" `Quick test_simple_text_rendering;
-          test_case "Hyperlink rendering" `Quick test_hyperlink_rendering;
-          test_case "Row offset applied" `Quick test_row_offset_applied;
-        ] );
-      ( "Diff Algorithm",
+          test "Create renderer" test_create_renderer;
+          test "Zero-sized frame" test_zero_sized_frame;
+          test "Single cell frame" test_single_cell_frame;
+          test "Simple text rendering" test_simple_text_rendering;
+          test "Hyperlink rendering" test_hyperlink_rendering;
+          test "Row offset applied" test_row_offset_applied;
+        ];
+      group "Diff Algorithm"
         [
-          test_case "Diff only changed cells" `Quick
-            test_diff_only_changed_cells;
-          test_case "No diff when unchanged" `Quick test_no_diff_when_unchanged;
-          test_case "Wide character diff" `Quick test_wide_char_diff;
-          test_case "All cells changed" `Quick test_all_cells_changed;
-          test_case "Partial row update" `Quick test_partial_row_update;
-          test_case "Color only change" `Quick test_color_only_change;
-          test_case "Attribute only change" `Quick test_attribute_only_change;
-        ] );
-      ( "Frame Building",
+          test "Diff only changed cells" test_diff_only_changed_cells;
+          test "No diff when unchanged" test_no_diff_when_unchanged;
+          test "Wide character diff" test_wide_char_diff;
+          test "All cells changed" test_all_cells_changed;
+          test "Partial row update" test_partial_row_update;
+          test "Color only change" test_color_only_change;
+          test "Attribute only change" test_attribute_only_change;
+        ];
+      group "Frame Building"
         [
-          test_case "Build visual (no hits)" `Quick test_build_visual;
-          test_case "Resize preserves content" `Quick
-            test_resize_preserves_content;
-          test_case "Resize smaller" `Quick test_resize_smaller;
-          test_case "Resize clears both buffers" `Quick
-            test_resize_clears_both_buffers;
-          test_case "Cursor clamped on resize" `Quick
-            test_cursor_clamped_on_resize;
-        ] );
-      ( "Post-Processing",
+          test "Build visual (no hits)" test_build_visual;
+          test "Resize preserves content" test_resize_preserves_content;
+          test "Resize smaller" test_resize_smaller;
+          test "Resize clears both buffers" test_resize_clears_both_buffers;
+          test "Cursor clamped on resize" test_cursor_clamped_on_resize;
+        ];
+      group "Post-Processing"
         [
-          test_case "Post-process receives delta" `Quick
-            test_post_process_receives_delta;
-          test_case "Post-process chain" `Quick test_post_process_chain;
-          test_case "Post-process persists across frames" `Quick
+          test "Post-process receives delta" test_post_process_receives_delta;
+          test "Post-process chain" test_post_process_chain;
+          test "Post-process persists across frames"
             test_post_process_persists_across_frames;
-          test_case "Remove post-process" `Quick test_remove_post_process;
-          test_case "Clear post-processes" `Quick test_clear_post_processes;
-        ] );
-      ( "Hit Grid Integration",
+          test "Remove post-process" test_remove_post_process;
+          test "Clear post-processes" test_clear_post_processes;
+        ];
+      group "Hit Grid Integration"
         [
-          test_case "Hit grid integration" `Quick test_hit_grid_integration;
-          test_case "Hit grid cleared each frame" `Quick
-            test_hit_grid_cleared_each_frame;
-          test_case "Hit grid swap happens on render" `Quick
-            test_hit_grid_swap_on_render;
-          test_case "Add hit region helper" `Quick test_add_hit_region_helper;
-        ] );
-      ("Statistics", [ test_case "Stats tracking" `Quick test_stats_tracking ]);
-      ( "Configuration",
+          test "Hit grid integration" test_hit_grid_integration;
+          test "Hit grid cleared each frame" test_hit_grid_cleared_each_frame;
+          test "Hit grid swap happens on render" test_hit_grid_swap_on_render;
+          test "Add hit region helper" test_add_hit_region_helper;
+        ];
+      group "Statistics" [ test "Stats tracking" test_stats_tracking ];
+      group "Configuration"
         [
-          test_case "Update config" `Quick test_update_config;
-          test_case "Reset" `Quick test_reset;
-          test_case "Reset triggers diff" `Quick test_reset_triggers_next_diff;
-        ] );
-      ( "Edge Cases",
+          test "Update config" test_update_config;
+          test "Reset" test_reset;
+          test "Reset triggers diff" test_reset_triggers_next_diff;
+        ];
+      group "Edge Cases"
         [
-          test_case "Extremely wide characters" `Quick test_extremely_wide_char;
-          test_case "Buffer overflow prevention" `Quick
-            test_buffer_overflow_prevention;
-          test_case "Resize triggers full redraw" `Quick test_resize_full_redraw;
-          test_case "Resize clears hit grids" `Quick
-            test_resize_hit_grid_cleared;
-          test_case "Explicit width sequences" `Quick
-            test_explicit_width_sequences;
-          test_case "Hyperlink capability gating" `Quick
-            test_hyperlink_capability_gating;
-          test_case "Cursor style and color" `Quick test_cursor_style_and_color;
-        ] );
-      ( "Performance Characteristics",
+          test "Extremely wide characters" test_extremely_wide_char;
+          test "Buffer overflow prevention" test_buffer_overflow_prevention;
+          test "Resize triggers full redraw" test_resize_full_redraw;
+          test "Resize clears hit grids" test_resize_hit_grid_cleared;
+          test "Explicit width sequences" test_explicit_width_sequences;
+          test "Hyperlink capability gating" test_hyperlink_capability_gating;
+          test "Cursor style and color" test_cursor_style_and_color;
+        ];
+      group "Performance Characteristics"
         [
-          test_case "Zero-allocation frame building" `Quick
+          test "Zero-allocation frame building"
             test_zero_allocation_frame_building;
-          test_case "Double buffer reuse" `Quick test_double_buffer_reuse;
-          test_case "Pipeline composition" `Quick test_pipeline_composition;
-        ] );
+          test "Double buffer reuse" test_double_buffer_reuse;
+          test "Pipeline composition" test_pipeline_composition;
+        ];
     ]

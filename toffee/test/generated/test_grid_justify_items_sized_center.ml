@@ -6,8 +6,7 @@ open Toffee
 let test_grid_justify_items_sized_center_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -124,8 +123,7 @@ let test_grid_justify_items_sized_center_border_box () =
 let test_grid_justify_items_sized_center_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -241,10 +239,9 @@ let test_grid_justify_items_sized_center_content_box () =
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case "justify_items_sized_center (border-box)" `Quick
+    Windtrap.test "justify_items_sized_center (border-box)"
       test_grid_justify_items_sized_center_border_box;
-    test_case "justify_items_sized_center (content-box)" `Quick
+    Windtrap.test "justify_items_sized_center (content-box)"
       test_grid_justify_items_sized_center_content_box;
   ]

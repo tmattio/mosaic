@@ -7,8 +7,7 @@ let test_grid_align_items_baseline_child_multiline_no_override_on_secondline_bor
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -159,8 +158,7 @@ let test_grid_align_items_baseline_child_multiline_no_override_on_secondline_con
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -309,16 +307,13 @@ let test_grid_align_items_baseline_child_multiline_no_override_on_secondline_con
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case
+    Windtrap.test
       "align_items_baseline_child_multiline_no_override_on_secondline \
        (border-box)"
-      `Quick
       test_grid_align_items_baseline_child_multiline_no_override_on_secondline_border_box;
-    test_case
+    Windtrap.test
       "align_items_baseline_child_multiline_no_override_on_secondline \
        (content-box)"
-      `Quick
       test_grid_align_items_baseline_child_multiline_no_override_on_secondline_content_box;
   ]

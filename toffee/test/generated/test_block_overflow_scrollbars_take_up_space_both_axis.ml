@@ -6,8 +6,7 @@ open Toffee
 let test_block_overflow_scrollbars_take_up_space_both_axis_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -77,8 +76,7 @@ let test_block_overflow_scrollbars_take_up_space_both_axis_border_box () =
 let test_block_overflow_scrollbars_take_up_space_both_axis_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -147,10 +145,9 @@ let test_block_overflow_scrollbars_take_up_space_both_axis_content_box () =
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case "overflow_scrollbars_take_up_space_both_axis (border-box)" `Quick
+    Windtrap.test "overflow_scrollbars_take_up_space_both_axis (border-box)"
       test_block_overflow_scrollbars_take_up_space_both_axis_border_box;
-    test_case "overflow_scrollbars_take_up_space_both_axis (content-box)" `Quick
+    Windtrap.test "overflow_scrollbars_take_up_space_both_axis (content-box)"
       test_block_overflow_scrollbars_take_up_space_both_axis_content_box;
   ]

@@ -7,8 +7,7 @@ let test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hid
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -98,8 +97,7 @@ let test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hid
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -187,16 +185,13 @@ let test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hid
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case
+    Windtrap.test
       "do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hidden_parent \
        (border-box)"
-      `Quick
       test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hidden_parent_border_box;
-    test_case
+    Windtrap.test
       "do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hidden_parent \
        (content-box)"
-      `Quick
       test_flex_do_not_clamp_height_of_absolute_node_to_height_of_its_overflow_hidden_parent_content_box;
   ]

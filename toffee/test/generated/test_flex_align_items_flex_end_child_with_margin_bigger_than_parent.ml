@@ -7,8 +7,7 @@ let test_flex_align_items_flex_end_child_with_margin_bigger_than_parent_border_b
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -90,8 +89,7 @@ let test_flex_align_items_flex_end_child_with_margin_bigger_than_parent_content_
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -171,14 +169,11 @@ let test_flex_align_items_flex_end_child_with_margin_bigger_than_parent_content_
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case
+    Windtrap.test
       "align_items_flex_end_child_with_margin_bigger_than_parent (border-box)"
-      `Quick
       test_flex_align_items_flex_end_child_with_margin_bigger_than_parent_border_box;
-    test_case
+    Windtrap.test
       "align_items_flex_end_child_with_margin_bigger_than_parent (content-box)"
-      `Quick
       test_flex_align_items_flex_end_child_with_margin_bigger_than_parent_content_box;
   ]

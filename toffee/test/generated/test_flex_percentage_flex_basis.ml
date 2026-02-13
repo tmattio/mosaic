@@ -6,8 +6,7 @@ open Toffee
 let test_flex_percentage_flex_basis_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -77,8 +76,7 @@ let test_flex_percentage_flex_basis_border_box () =
 let test_flex_percentage_flex_basis_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -147,10 +145,9 @@ let test_flex_percentage_flex_basis_content_box () =
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case "percentage_flex_basis (border-box)" `Quick
+    Windtrap.test "percentage_flex_basis (border-box)"
       test_flex_percentage_flex_basis_border_box;
-    test_case "percentage_flex_basis (content-box)" `Quick
+    Windtrap.test "percentage_flex_basis (content-box)"
       test_flex_percentage_flex_basis_content_box;
   ]

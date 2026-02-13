@@ -6,8 +6,7 @@ open Toffee
 let test_grid_absolute_align_self_sized_all_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -199,8 +198,7 @@ let test_grid_absolute_align_self_sized_all_border_box () =
 let test_grid_absolute_align_self_sized_all_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -391,10 +389,9 @@ let test_grid_absolute_align_self_sized_all_content_box () =
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case "absolute_align_self_sized_all (border-box)" `Quick
+    Windtrap.test "absolute_align_self_sized_all (border-box)"
       test_grid_absolute_align_self_sized_all_border_box;
-    test_case "absolute_align_self_sized_all (content-box)" `Quick
+    Windtrap.test "absolute_align_self_sized_all (content-box)"
       test_grid_absolute_align_self_sized_all_content_box;
   ]

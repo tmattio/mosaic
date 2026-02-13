@@ -6,8 +6,7 @@ open Toffee
 let test_flex_justify_content_column_center_negative_space_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -128,8 +127,7 @@ let test_flex_justify_content_column_center_negative_space_border_box () =
 let test_flex_justify_content_column_center_negative_space_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -249,10 +247,9 @@ let test_flex_justify_content_column_center_negative_space_content_box () =
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case "justify_content_column_center_negative_space (border-box)" `Quick
+    Windtrap.test "justify_content_column_center_negative_space (border-box)"
       test_flex_justify_content_column_center_negative_space_border_box;
-    test_case "justify_content_column_center_negative_space (content-box)"
-      `Quick test_flex_justify_content_column_center_negative_space_content_box;
+    Windtrap.test "justify_content_column_center_negative_space (content-box)"
+      test_flex_justify_content_column_center_negative_space_content_box;
   ]

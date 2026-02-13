@@ -6,8 +6,7 @@ open Toffee
 let test_grid_aspect_ratio_absolute_height_overrides_inset_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -77,8 +76,7 @@ let test_grid_aspect_ratio_absolute_height_overrides_inset_border_box () =
 let test_grid_aspect_ratio_absolute_height_overrides_inset_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -147,10 +145,9 @@ let test_grid_aspect_ratio_absolute_height_overrides_inset_content_box () =
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case "aspect_ratio_absolute_height_overrides_inset (border-box)" `Quick
+    Windtrap.test "aspect_ratio_absolute_height_overrides_inset (border-box)"
       test_grid_aspect_ratio_absolute_height_overrides_inset_border_box;
-    test_case "aspect_ratio_absolute_height_overrides_inset (content-box)"
-      `Quick test_grid_aspect_ratio_absolute_height_overrides_inset_content_box;
+    Windtrap.test "aspect_ratio_absolute_height_overrides_inset (content-box)"
+      test_grid_aspect_ratio_absolute_height_overrides_inset_content_box;
   ]

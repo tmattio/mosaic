@@ -7,8 +7,7 @@ let test_block_margin_y_first_granchild_collapse_positive_and_negative_border_bo
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -274,8 +273,7 @@ let test_block_margin_y_first_granchild_collapse_positive_and_negative_content_b
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -539,14 +537,11 @@ let test_block_margin_y_first_granchild_collapse_positive_and_negative_content_b
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case
+    Windtrap.test
       "margin_y_first_granchild_collapse_positive_and_negative (border-box)"
-      `Quick
       test_block_margin_y_first_granchild_collapse_positive_and_negative_border_box;
-    test_case
+    Windtrap.test
       "margin_y_first_granchild_collapse_positive_and_negative (content-box)"
-      `Quick
       test_block_margin_y_first_granchild_collapse_positive_and_negative_content_box;
   ]

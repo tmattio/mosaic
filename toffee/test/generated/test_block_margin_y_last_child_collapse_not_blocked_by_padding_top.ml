@@ -7,8 +7,7 @@ let test_block_margin_y_last_child_collapse_not_blocked_by_padding_top_border_bo
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -116,8 +115,7 @@ let test_block_margin_y_last_child_collapse_not_blocked_by_padding_top_content_b
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -223,14 +221,11 @@ let test_block_margin_y_last_child_collapse_not_blocked_by_padding_top_content_b
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case
+    Windtrap.test
       "margin_y_last_child_collapse_not_blocked_by_padding_top (border-box)"
-      `Quick
       test_block_margin_y_last_child_collapse_not_blocked_by_padding_top_border_box;
-    test_case
+    Windtrap.test
       "margin_y_last_child_collapse_not_blocked_by_padding_top (content-box)"
-      `Quick
       test_block_margin_y_last_child_collapse_not_blocked_by_padding_top_content_box;
   ]

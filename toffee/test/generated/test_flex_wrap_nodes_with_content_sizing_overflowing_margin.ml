@@ -6,8 +6,7 @@ open Toffee
 let test_flex_wrap_nodes_with_content_sizing_overflowing_margin_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -134,8 +133,7 @@ let test_flex_wrap_nodes_with_content_sizing_overflowing_margin_border_box () =
 let test_flex_wrap_nodes_with_content_sizing_overflowing_margin_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -261,12 +259,11 @@ let test_flex_wrap_nodes_with_content_sizing_overflowing_margin_content_box () =
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case "wrap_nodes_with_content_sizing_overflowing_margin (border-box)"
-      `Quick
+    Windtrap.test
+      "wrap_nodes_with_content_sizing_overflowing_margin (border-box)"
       test_flex_wrap_nodes_with_content_sizing_overflowing_margin_border_box;
-    test_case "wrap_nodes_with_content_sizing_overflowing_margin (content-box)"
-      `Quick
+    Windtrap.test
+      "wrap_nodes_with_content_sizing_overflowing_margin (content-box)"
       test_flex_wrap_nodes_with_content_sizing_overflowing_margin_content_box;
   ]

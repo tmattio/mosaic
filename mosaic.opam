@@ -16,8 +16,7 @@ depends: [
   "matrix"
   "toffee"
   "cmarkit"
-  "alcotest" {with-test}
-  "ppx_expect" {with-test}
+  "windtrap" {with-test}
   "odoc" {with-doc}
 ]
 build: [

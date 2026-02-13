@@ -7,8 +7,7 @@ let test_flex_align_items_center_with_height_with_padding_border_with_wrap_borde
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -149,8 +148,7 @@ let test_flex_align_items_center_with_height_with_padding_border_with_wrap_conte
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -289,16 +287,13 @@ let test_flex_align_items_center_with_height_with_padding_border_with_wrap_conte
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case
+    Windtrap.test
       "align_items_center_with_height_with_padding_border_with_wrap \
        (border-box)"
-      `Quick
       test_flex_align_items_center_with_height_with_padding_border_with_wrap_border_box;
-    test_case
+    Windtrap.test
       "align_items_center_with_height_with_padding_border_with_wrap \
        (content-box)"
-      `Quick
       test_flex_align_items_center_with_height_with_padding_border_with_wrap_content_box;
   ]

@@ -7,8 +7,7 @@ let test_flex_align_content_center_single_line_negative_space_gap_border_box ()
     =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -103,8 +102,7 @@ let test_flex_align_content_center_single_line_negative_space_gap_content_box ()
     =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -197,12 +195,11 @@ let test_flex_align_content_center_single_line_negative_space_gap_content_box ()
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case "align_content_center_single_line_negative_space_gap (border-box)"
-      `Quick
+    Windtrap.test
+      "align_content_center_single_line_negative_space_gap (border-box)"
       test_flex_align_content_center_single_line_negative_space_gap_border_box;
-    test_case
-      "align_content_center_single_line_negative_space_gap (content-box)" `Quick
+    Windtrap.test
+      "align_content_center_single_line_negative_space_gap (content-box)"
       test_flex_align_content_center_single_line_negative_space_gap_content_box;
   ]

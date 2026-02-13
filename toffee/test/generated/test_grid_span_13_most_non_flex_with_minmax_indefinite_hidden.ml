@@ -7,8 +7,7 @@ let test_grid_span_13_most_non_flex_with_minmax_indefinite_hidden_border_box ()
     =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -262,8 +261,7 @@ let test_grid_span_13_most_non_flex_with_minmax_indefinite_hidden_content_box ()
     =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -515,12 +513,11 @@ let test_grid_span_13_most_non_flex_with_minmax_indefinite_hidden_content_box ()
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case "span_13_most_non_flex_with_minmax_indefinite_hidden (border-box)"
-      `Quick
+    Windtrap.test
+      "span_13_most_non_flex_with_minmax_indefinite_hidden (border-box)"
       test_grid_span_13_most_non_flex_with_minmax_indefinite_hidden_border_box;
-    test_case
-      "span_13_most_non_flex_with_minmax_indefinite_hidden (content-box)" `Quick
+    Windtrap.test
+      "span_13_most_non_flex_with_minmax_indefinite_hidden (content-box)"
       test_grid_span_13_most_non_flex_with_minmax_indefinite_hidden_content_box;
   ]

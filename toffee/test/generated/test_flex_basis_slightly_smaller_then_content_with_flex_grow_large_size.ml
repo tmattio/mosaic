@@ -7,8 +7,7 @@ let test_flex_basis_slightly_smaller_then_content_with_flex_grow_large_size_bord
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -113,8 +112,7 @@ let test_flex_basis_slightly_smaller_then_content_with_flex_grow_large_size_cont
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -217,16 +215,13 @@ let test_flex_basis_slightly_smaller_then_content_with_flex_grow_large_size_cont
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case
+    Windtrap.test
       "basis_slightly_smaller_then_content_with_flex_grow_large_size \
        (border-box)"
-      `Quick
       test_flex_basis_slightly_smaller_then_content_with_flex_grow_large_size_border_box;
-    test_case
+    Windtrap.test
       "basis_slightly_smaller_then_content_with_flex_grow_large_size \
        (content-box)"
-      `Quick
       test_flex_basis_slightly_smaller_then_content_with_flex_grow_large_size_content_box;
   ]

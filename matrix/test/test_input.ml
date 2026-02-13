@@ -1,16 +1,18 @@
 (** Tests for the Input module *)
 
-let event_testable = Alcotest.testable Input.pp Input.equal
+open Windtrap
+
+let event_testable = Testable.make ~pp:Input.pp ~equal:Input.equal ()
 
 let caps_event_testable =
-  Alcotest.testable Input.Caps.pp_event Input.Caps.equal_event
+  Testable.make ~pp:Input.Caps.pp_event ~equal:Input.Caps.equal_event ()
 
 let event_type_pp fmt = function
   | Input.Key.Press -> Format.pp_print_string fmt "Press"
   | Input.Key.Repeat -> Format.pp_print_string fmt "Repeat"
   | Input.Key.Release -> Format.pp_print_string fmt "Release"
 
-let event_type_testable = Alcotest.testable event_type_pp ( = )
+let event_type_testable = Testable.make ~pp:event_type_pp ~equal:( = ) ()
 
 let key_event ?modifier ?event_type ?associated_text ?shifted_key ?base_key key
     =
@@ -47,14 +49,10 @@ let drain_user ?now parser = drain_to_lists ?now parser |> fst
 
 let test_parse_regular_chars () =
   let events = parse_user "a" in
-  Alcotest.(check (list event_testable))
-    "single char 'a'"
-    [ char_event 'a' ]
-    events;
+  equal ~msg:"single char 'a'" (list event_testable) [ char_event 'a' ] events;
 
   let events = parse_user "hello" in
-  Alcotest.(check (list event_testable))
-    "multiple chars 'hello'"
+  equal ~msg:"multiple chars 'hello'" (list event_testable)
     [
       char_event 'h';
       char_event 'e';
@@ -66,24 +64,24 @@ let test_parse_regular_chars () =
 
   match parse_user "A" with
   | [ Input.Key { key = Char u; modifier; _ } ] ->
-      Alcotest.(check char) "uppercase key" 'A' (Uchar.to_char u);
-      Alcotest.(check bool) "shift flag" true modifier.shift
-  | _ -> Alcotest.fail "expected single uppercase char event"
+      equal ~msg:"uppercase key" char 'A' (Uchar.to_char u);
+      is_true ~msg:"shift flag" modifier.shift
+  | _ -> fail "expected single uppercase char event"
 
 let test_char_associated_text_default () =
   match parse_user "q" with
   | [ Input.Key { Input.Key.key = Char u; associated_text; _ } ] ->
-      Alcotest.(check char) "key" 'q' (Uchar.to_char u);
-      Alcotest.(check string) "associated text" "q" associated_text
-  | _ -> Alcotest.fail "expected char key event"
+      equal ~msg:"key" char 'q' (Uchar.to_char u);
+      equal ~msg:"associated text" string "q" associated_text
+  | _ -> fail "expected char key event"
 
 let test_parse_control_chars () =
   let expect ctrl_seq letter =
     match parse_user ctrl_seq with
     | [ Input.Key { key = Char u; modifier; _ } ] ->
-        Alcotest.(check char) "letter" letter (Uchar.to_char u);
-        Alcotest.(check bool) "ctrl modifier" true modifier.ctrl
-    | _ -> Alcotest.fail "expected ctrl key event"
+        equal ~msg:"letter" char letter (Uchar.to_char u);
+        is_true ~msg:"ctrl modifier" modifier.ctrl
+    | _ -> fail "expected ctrl key event"
   in
   expect "\x01" 'A';
   expect "\x03" 'C';
@@ -92,37 +90,32 @@ let test_parse_control_chars () =
 let test_csi_sub_params_with_event_type () =
   match parse_user "\x1b[1:2:3A" with
   | [ Input.Key k ] ->
-      Alcotest.(check bool)
-        "shift modifier from sub-params" true k.modifier.shift;
-      Alcotest.(check event_type_testable)
-        "release event type" Input.Key.Release k.event_type
+      is_true ~msg:"shift modifier from sub-params" k.modifier.shift;
+      equal ~msg:"release event type" event_type_testable Input.Key.Release
+        k.event_type
   | _ ->
-      Alcotest.failf "expected single Up release event, got %d events"
+      failf "expected single Up release event, got %d events"
         (List.length (parse_user "\x1b[1:2:3A"))
 
 let test_parse_special_keys () =
-  Alcotest.(check (list event_testable))
-    "Enter"
+  equal ~msg:"Enter" (list event_testable)
     [ key_event Input.Key.Enter ]
     (parse_user "\r");
 
-  Alcotest.(check (list event_testable))
-    "Line feed"
+  equal ~msg:"Line feed" (list event_testable)
     [ key_event Input.Key.Line_feed ]
     (parse_user "\n");
 
-  Alcotest.(check (list event_testable))
-    "Tab"
+  equal ~msg:"Tab" (list event_testable)
     [ key_event Input.Key.Tab ]
     (parse_user "\t");
 
   let parser = Input.Parser.create () in
   let events = feed_user parser (Bytes.of_string "\x1b") 0 1 in
-  Alcotest.(check (list event_testable)) "Escape buffered" [] events;
+  equal ~msg:"Escape buffered" (list event_testable) [] events;
 
   let events = feed_user parser (Bytes.of_string "\x7f") 0 1 in
-  Alcotest.(check (list event_testable))
-    "Alt+Backspace"
+  equal ~msg:"Alt+Backspace" (list event_testable)
     [
       key_event
         ~modifier:{ Input.Key.no_modifier with Input.Key.alt = true }
@@ -141,10 +134,7 @@ let test_parse_arrow_keys () =
   in
   List.iter
     (fun (seq, key, desc) ->
-      Alcotest.(check (list event_testable))
-        desc
-        [ key_event key ]
-        (parse_user seq))
+      equal ~msg:desc (list event_testable) [ key_event key ] (parse_user seq))
     arrows
 
 let test_parse_function_keys () =
@@ -158,20 +148,17 @@ let test_parse_function_keys () =
   in
   List.iter
     (fun (seq, key) ->
-      Alcotest.(check (list event_testable))
-        "F-key"
+      equal ~msg:"F-key" (list event_testable)
         [ key_event key ]
         (parse_user seq))
     f_keys_ss3;
 
-  Alcotest.(check (list event_testable))
-    "F5"
+  equal ~msg:"F5" (list event_testable)
     [ key_event (Input.Key.F 5) ]
     (parse_user "\x1b[15~")
 
 let test_parse_modifiers () =
-  Alcotest.(check (list event_testable))
-    "Shift+Tab"
+  equal ~msg:"Shift+Tab" (list event_testable)
     [
       key_event
         ~modifier:{ Input.Key.no_modifier with shift = true }
@@ -179,8 +166,7 @@ let test_parse_modifiers () =
     ]
     (parse_user "\x1b[Z");
 
-  Alcotest.(check (list event_testable))
-    "Ctrl+Up"
+  equal ~msg:"Ctrl+Up" (list event_testable)
     [
       key_event
         ~modifier:{ Input.Key.no_modifier with ctrl = true }
@@ -188,8 +174,7 @@ let test_parse_modifiers () =
     ]
     (parse_user "\x1b[1;5A");
 
-  Alcotest.(check (list event_testable))
-    "Alt+Left"
+  equal ~msg:"Alt+Left" (list event_testable)
     [
       key_event
         ~modifier:{ Input.Key.no_modifier with alt = true }
@@ -198,18 +183,15 @@ let test_parse_modifiers () =
     (parse_user "\x1b[1;3D")
 
 let test_parse_mouse_sgr () =
-  Alcotest.(check (list event_testable))
-    "Mouse click"
+  equal ~msg:"Mouse click" (list event_testable)
     [ Input.mouse_press 9 19 Input.Mouse.Left ]
     (parse_user "\x1b[<0;10;20M");
 
-  Alcotest.(check (list event_testable))
-    "Mouse release"
+  equal ~msg:"Mouse release" (list event_testable)
     [ Input.mouse_release 9 19 Input.Mouse.Left ]
     (parse_user "\x1b[<0;10;20m");
 
-  Alcotest.(check (list event_testable))
-    "Mouse motion"
+  equal ~msg:"Mouse motion" (list event_testable)
     [
       Input.mouse_motion 14 24
         Input.Mouse.{ left = true; middle = false; right = false };
@@ -219,23 +201,20 @@ let test_parse_mouse_sgr () =
 let test_parse_paste_mode () =
   match parse_user "\x1b[200~Hello, World!\x1b[201~" with
   | [ Input.Paste content ] ->
-      Alcotest.(check string) "paste content" "Hello, World!" content
-  | _ -> Alcotest.fail "Expected [Paste(content)]"
+      equal ~msg:"paste content" string "Hello, World!" content
+  | _ -> fail "Expected [Paste(content)]"
 
 let test_parse_utf8 () =
-  Alcotest.(check (list event_testable))
-    "UTF-8 emoji"
+  equal ~msg:"UTF-8 emoji" (list event_testable)
     [ key_event (Input.Key.Char (Uchar.of_int 0x1F600)) ]
     (parse_user "😀");
 
-  Alcotest.(check (list event_testable))
-    "UTF-8 accented char"
+  equal ~msg:"UTF-8 accented char" (list event_testable)
     [ key_event (Input.Key.Char (Uchar.of_int 0xE9)) ]
     (parse_user "é")
 
 let test_alt_and_alt_ctrl () =
-  Alcotest.(check (list event_testable))
-    "Alt+Enter"
+  equal ~msg:"Alt+Enter" (list event_testable)
     [
       key_event
         ~modifier:{ Input.Key.no_modifier with Input.Key.alt = true }
@@ -243,8 +222,7 @@ let test_alt_and_alt_ctrl () =
     ]
     (parse_user "\x1b\r");
 
-  Alcotest.(check (list event_testable))
-    "Alt+Line_feed"
+  equal ~msg:"Alt+Line_feed" (list event_testable)
     [
       key_event
         ~modifier:{ Input.Key.no_modifier with Input.Key.alt = true }
@@ -252,8 +230,7 @@ let test_alt_and_alt_ctrl () =
     ]
     (parse_user "\x1b\n");
 
-  Alcotest.(check (list event_testable))
-    "Alt+Ctrl+A"
+  equal ~msg:"Alt+Ctrl+A" (list event_testable)
     [
       char_event
         ~modifier:
@@ -262,8 +239,7 @@ let test_alt_and_alt_ctrl () =
     ]
     (parse_user "\x1b\x01");
 
-  Alcotest.(check (list event_testable))
-    "Alt+Ctrl+Space"
+  equal ~msg:"Alt+Ctrl+Space" (list event_testable)
     [
       char_event
         ~modifier:
@@ -272,8 +248,7 @@ let test_alt_and_alt_ctrl () =
     ]
     (parse_user "\x1b\x00");
 
-  Alcotest.(check (list event_testable))
-    "Alt+Shift+A"
+  equal ~msg:"Alt+Shift+A" (list event_testable)
     [
       char_event
         ~modifier:
@@ -284,14 +259,11 @@ let test_alt_and_alt_ctrl () =
 
 let test_incremental_parsing () =
   let parser = Input.Parser.create () in
-  Alcotest.(check (list event_testable))
-    "no events yet" []
+  equal ~msg:"no events yet" (list event_testable) []
     (feed_user parser (Bytes.of_string "\x1b") 0 1);
-  Alcotest.(check (list event_testable))
-    "still no events" []
+  equal ~msg:"still no events" (list event_testable) []
     (feed_user parser (Bytes.of_string "[") 0 1);
-  Alcotest.(check (list event_testable))
-    "complete escape sequence"
+  equal ~msg:"complete escape sequence" (list event_testable)
     [ key_event Input.Key.Up ]
     (feed_user parser (Bytes.of_string "A") 0 1)
 
@@ -308,10 +280,7 @@ let test_more_key_variants () =
   in
   List.iter
     (fun (seq, key) ->
-      Alcotest.(check (list event_testable))
-        "Key"
-        [ key_event key ]
-        (parse_user seq))
+      equal ~msg:"Key" (list event_testable) [ key_event key ] (parse_user seq))
     keys;
 
   let f_keys =
@@ -320,8 +289,7 @@ let test_more_key_variants () =
   List.iter
     (fun (code, n) ->
       let seq = Printf.sprintf "\x1b[%d~" code in
-      Alcotest.(check (list event_testable))
-        (Printf.sprintf "F%d" n)
+      equal ~msg:(Printf.sprintf "F%d" n) (list event_testable)
         [ key_event (Input.Key.F n) ]
         (parse_user seq))
     f_keys;
@@ -337,8 +305,7 @@ let test_more_key_variants () =
   in
   List.iter
     (fun (seq, key) ->
-      Alcotest.(check (list event_testable))
-        "rxvt shift arrows"
+      equal ~msg:"rxvt shift arrows" (list event_testable)
         [
           key_event
             ~modifier:{ Input.Key.no_modifier with Input.Key.shift = true }
@@ -360,8 +327,7 @@ let test_more_key_variants () =
   List.iter
     (fun (code, key) ->
       let seq = Printf.sprintf "\x1b[%d$" code in
-      Alcotest.(check (list event_testable))
-        "rxvt shift special"
+      equal ~msg:"rxvt shift special" (list event_testable)
         [
           key_event
             ~modifier:{ Input.Key.no_modifier with Input.Key.shift = true }
@@ -372,8 +338,7 @@ let test_more_key_variants () =
   List.iter
     (fun (code, key) ->
       let seq = Printf.sprintf "\x1b[%d^" code in
-      Alcotest.(check (list event_testable))
-        "rxvt ctrl special"
+      equal ~msg:"rxvt ctrl special" (list event_testable)
         [
           key_event
             ~modifier:{ Input.Key.no_modifier with Input.Key.ctrl = true }
@@ -393,8 +358,7 @@ let test_more_key_variants () =
   in
   List.iter
     (fun (seq, key) ->
-      Alcotest.(check (list event_testable))
-        "ss3 ctrl arrows"
+      equal ~msg:"ss3 ctrl arrows" (list event_testable)
         [
           key_event
             ~modifier:{ Input.Key.no_modifier with Input.Key.ctrl = true }
@@ -407,19 +371,17 @@ let test_escape_drain () =
   let parser = Input.Parser.create () in
   (* Feed at time 0.0 - deadline will be set to 0.0 + timeout *)
   let events = feed_user parser (Bytes.of_string "\x1b") 0 1 in
-  Alcotest.(check (list event_testable)) "no immediate escape" [] events;
+  equal ~msg:"no immediate escape" (list event_testable) [] events;
   (* Drain at time 1.0 - well past the timeout deadline *)
   let events = drain_user ~now:1.0 parser in
-  Alcotest.(check (list event_testable))
-    "escape after timeout"
+  equal ~msg:"escape after timeout" (list event_testable)
     [ key_event Input.Key.Escape ]
     events
 
 let test_alt_escape_no_sticky () =
   let parser = Input.Parser.create () in
   let events = feed_user parser (Bytes.of_string "\x1b\x1b") 0 2 in
-  Alcotest.(check (list event_testable))
-    "alt+escape"
+  equal ~msg:"alt+escape" (list event_testable)
     [
       key_event
         ~modifier:{ Input.Key.no_modifier with Input.Key.alt = true }
@@ -428,37 +390,34 @@ let test_alt_escape_no_sticky () =
     events;
   match feed_user parser (Bytes.of_string "a") 0 1 with
   | [ Input.Key { key = Char u; modifier; _ } ] ->
-      Alcotest.(check bool) "alt cleared" false modifier.alt;
-      Alcotest.(check char) "plain a" 'a' (Uchar.to_char u)
-  | _ -> Alcotest.fail "expected plain 'a' after alt escape"
+      is_false ~msg:"alt cleared" modifier.alt;
+      equal ~msg:"plain a" char 'a' (Uchar.to_char u)
+  | _ -> fail "expected plain 'a' after alt escape"
 
 let test_invalid_sequences () =
   let parser = Input.Parser.create () in
-  Alcotest.(check (list event_testable))
-    "incomplete CSI buffered" []
+  equal ~msg:"incomplete CSI buffered" (list event_testable) []
     (feed_user parser (Bytes.of_string "\x1b[") 0 2);
 
   let events = feed_user parser (Bytes.of_string "999999X") 0 7 in
-  Alcotest.(check bool) "parsed as chars" true (List.length events >= 7);
+  is_true ~msg:"parsed as chars" (List.length events >= 7);
 
   let long_seq = "\x1b[" ^ String.make 100 '9' ^ "m" in
   let events = parse_user long_seq in
-  Alcotest.(check bool)
-    "long sequence handled" true
+  is_true ~msg:"long sequence handled"
     (List.length events = 0 || List.length events > 0);
 
   let invalid_utf8 = Bytes.of_string "\xff\xfe" in
   let events = feed_user parser invalid_utf8 0 2 in
-  Alcotest.(check bool) "invalid UTF-8 handled" true (List.length events >= 0);
+  is_true ~msg:"invalid UTF-8 handled" (List.length events >= 0);
 
   match parse_user "a\x1b[999999999999mbc" with
   | Input.Key { key = Char c; _ } :: _ ->
-      Alcotest.(check char) "first char parsed" 'a' (Uchar.to_char c)
-  | _ -> Alcotest.fail "expected at least one char"
+      equal ~msg:"first char parsed" char 'a' (Uchar.to_char c)
+  | _ -> fail "expected at least one char"
 
 let test_combined_inputs () =
-  Alcotest.(check (list event_testable))
-    "Ctrl+Alt+Shift+Up"
+  equal ~msg:"Ctrl+Alt+Shift+Up" (list event_testable)
     [
       key_event
         ~modifier:
@@ -477,73 +436,69 @@ let test_combined_inputs () =
     (parse_user "\x1b[1;8A");
 
   let events = parse_user "\x1b[<0;5;10Ma" in
-  Alcotest.(check int) "mouse + key event count" 2 (List.length events);
+  equal ~msg:"mouse + key event count" int 2 (List.length events);
   (match events with
   | [ Input.Mouse _; Input.Key _ ] -> ()
-  | _ -> Alcotest.fail "expected mouse then key event");
+  | _ -> fail "expected mouse then key event");
 
   (match parse_user "\x1b[200~Hello\nWorld\t!\x1b[201~" with
-  | [ Input.Paste s ] ->
-      Alcotest.(check string) "paste content" "Hello\nWorld\t!" s
-  | _ -> Alcotest.fail "Expected single Paste event");
+  | [ Input.Paste s ] -> equal ~msg:"paste content" string "Hello\nWorld\t!" s
+  | _ -> fail "Expected single Paste event");
 
   let rapid =
     String.concat ""
       (List.init 50 (fun i -> String.make 1 (Char.chr (65 + (i mod 26)))))
   in
-  Alcotest.(check int) "rapid keys parsed" 50 (List.length (parse_user rapid))
+  equal ~msg:"rapid keys parsed" int 50 (List.length (parse_user rapid))
 
 let test_kitty_keyboard () =
   (match parse_user "\x1b[97u" with
   | [ Input.Key { key = Char u; modifier; event_type; associated_text; _ } ] ->
-      Alcotest.(check char) "kitty 'a'" 'a' (Uchar.to_char u);
-      Alcotest.(check bool) "ctrl" false modifier.ctrl;
-      Alcotest.(check bool) "meta" false modifier.meta;
-      Alcotest.(check event_type_testable) "press" Input.Key.Press event_type;
-      Alcotest.(check string) "associated text" "a" associated_text
-  | _ -> Alcotest.fail "expected kitty key");
+      equal ~msg:"kitty 'a'" char 'a' (Uchar.to_char u);
+      is_false ~msg:"ctrl" modifier.ctrl;
+      is_false ~msg:"meta" modifier.meta;
+      equal ~msg:"press" event_type_testable Input.Key.Press event_type;
+      equal ~msg:"associated text" string "a" associated_text
+  | _ -> fail "expected kitty key");
 
   (match parse_user "\x1b[97;5u" with
   | [ Input.Key { key = Char u; modifier; _ } ] ->
-      Alcotest.(check char) "kitty ctrl+a key" 'a' (Uchar.to_char u);
-      Alcotest.(check bool) "ctrl set" true modifier.ctrl
-  | _ -> Alcotest.fail "expected kitty ctrl key event");
+      equal ~msg:"kitty ctrl+a key" char 'a' (Uchar.to_char u);
+      is_true ~msg:"ctrl set" modifier.ctrl
+  | _ -> fail "expected kitty ctrl key event");
 
-  Alcotest.(check (list event_testable))
-    "kitty enter"
+  equal ~msg:"kitty enter" (list event_testable)
     [ key_event Input.Key.Enter ]
     (parse_user "\x1b[13u");
 
   match parse_user "\x1b[97;1:3u" with
   | [ Input.Key { key = Char c; event_type; _ } ] ->
-      Alcotest.(check char) "kitty with event type" 'a' (Uchar.to_char c);
-      Alcotest.(check event_type_testable)
-        "release event" Input.Key.Release event_type
-  | _ -> Alcotest.fail "expected single key event"
+      equal ~msg:"kitty with event type" char 'a' (Uchar.to_char c);
+      equal ~msg:"release event" event_type_testable Input.Key.Release
+        event_type
+  | _ -> fail "expected single key event"
 
 let test_kitty_associated_text_fallback () =
   let expect_text seq expected =
     match parse_user seq with
     | [ Input.Key { associated_text; _ } ] ->
-        Alcotest.(check string) "kitty associated text" expected associated_text
-    | _ -> Alcotest.fail "expected single kitty key event"
+        equal ~msg:"kitty associated text" string expected associated_text
+    | _ -> fail "expected single kitty key event"
   in
   expect_text "\x1b[97u" "a";
   expect_text "\x1b[97:65:97;2u" "A";
   expect_text "\x1b[32;2u" " "
 
 let test_input_edge_cases () =
-  Alcotest.(check (list event_testable)) "empty input" [] (parse_user "");
+  equal ~msg:"empty input" (list event_testable) [] (parse_user "");
 
-  Alcotest.(check (list event_testable))
-    "null byte as Ctrl+Space"
+  equal ~msg:"null byte as Ctrl+Space" (list event_testable)
     [ char_event ~modifier:{ Input.Key.no_modifier with ctrl = true } ' ' ]
     (parse_user "\x00");
 
   let parser = Input.Parser.create () in
   let events = feed_user parser (Bytes.of_string "\x1b\x1b") 0 2 in
-  Alcotest.(check (list event_testable))
-    "first escape parsed as Alt+Escape"
+  equal ~msg:"first escape parsed as Alt+Escape" (list event_testable)
     [
       key_event
         ~modifier:{ Input.Key.no_modifier with Input.Key.alt = true }
@@ -552,40 +507,36 @@ let test_input_edge_cases () =
     events;
 
   let large = String.make 10000 'X' in
-  Alcotest.(check int)
-    "large input parsed" 10000
-    (List.length (parse_user large));
+  equal ~msg:"large input parsed" int 10000 (List.length (parse_user large));
 
   let parser = Input.Parser.create () in
   let data = Bytes.of_string "XXXabcYYY" in
   match feed_user parser data 3 3 with
   | Input.Key { key = Char c; _ } :: _ as events ->
-      Alcotest.(check int) "partial feed count" 3 (List.length events);
-      Alcotest.(check char) "partial feed first char" 'a' (Uchar.to_char c)
-  | _ -> Alcotest.fail "expected char event"
+      equal ~msg:"partial feed count" int 3 (List.length events);
+      equal ~msg:"partial feed first char" char 'a' (Uchar.to_char c)
+  | _ -> fail "expected char event"
 
 let test_split_utf8 () =
   let parser = Input.Parser.create () in
-  Alcotest.(check (list event_testable))
-    "incomplete UTF-8 should be buffered" []
+  equal ~msg:"incomplete UTF-8 should be buffered" (list event_testable) []
     (feed_user parser (Bytes.of_string "\xE2\x82") 0 2);
   match feed_user parser (Bytes.of_string "\xAC") 0 1 with
   | [ Input.Key { key = Char u; _ } ] ->
-      Alcotest.(check int) "euro sign unicode" 0x20AC (Uchar.to_int u)
-  | _ -> Alcotest.fail "expected single UTF-8 character after completion"
+      equal ~msg:"euro sign unicode" int 0x20AC (Uchar.to_int u)
+  | _ -> fail "expected single UTF-8 character after completion"
 
 let test_buffer_overflow () =
   let large = String.make 5000 'X' in
-  Alcotest.(check int)
-    "should parse all characters" 5000
+  equal ~msg:"should parse all characters" int 5000
     (List.length (parse_user large))
 
 let test_paste_mode_collection () =
   let paste_content = String.make 1000 'A' in
   match parse_user ("\x1b[200~" ^ paste_content ^ "\x1b[201~") with
   | [ Input.Paste content ] ->
-      Alcotest.(check string) "paste content matches" paste_content content
-  | _ -> Alcotest.fail "Expected single Paste event"
+      equal ~msg:"paste content matches" string paste_content content
+  | _ -> fail "Expected single Paste event"
 
 let test_reset_aborts_paste () =
   let parser = Input.Parser.create () in
@@ -605,36 +556,34 @@ let test_reset_aborts_paste () =
    Input.Key { key = Input.Key.Char uy; _ };
    Input.Key { key = Input.Key.Char uz; _ };
   ] ->
-      Alcotest.(check char) "first char after reset" 'x' (Uchar.to_char ux);
-      Alcotest.(check char) "second char after reset" 'y' (Uchar.to_char uy);
-      Alcotest.(check char) "third char after reset" 'z' (Uchar.to_char uz)
-  | _ -> Alcotest.fail "expected only text after reset"
+      equal ~msg:"first char after reset" char 'x' (Uchar.to_char ux);
+      equal ~msg:"second char after reset" char 'y' (Uchar.to_char uy);
+      equal ~msg:"third char after reset" char 'z' (Uchar.to_char uz)
+  | _ -> fail "expected only text after reset"
 
 let test_csi_param_overflow () =
   let huge_param = String.make 20 '9' in
   let seq = Printf.sprintf "\x1b[%s;1A" huge_param in
   let events = parse_user seq in
-  Alcotest.(check bool) "got some events" true (List.length events >= 0)
+  is_true ~msg:"got some events" (List.length events >= 0)
 
 let test_cursor_position_report () =
-  Alcotest.(check (list caps_event_testable))
-    "cursor position report"
+  equal ~msg:"cursor position report" (list caps_event_testable)
     [ Input.Caps.Cursor_position (10, 25) ]
     (parse_caps "\x1b[10;25R")
 
 let test_device_attributes () =
-  Alcotest.(check (list caps_event_testable))
-    "device attributes"
+  equal ~msg:"device attributes" (list caps_event_testable)
     [ Input.Caps.Device_attributes [ 1; 2; 6; 9; 15 ] ]
     (parse_caps "\x1b[?1;2;6;9;15c")
 
 let test_mode_report () =
   match parse_caps "\x1b[?1004;2$y" with
   | [ Input.Caps.Mode_report report ] ->
-      Alcotest.(check bool) "private mode" true report.is_private;
-      Alcotest.(check bool) "mode values" true (report.modes = [ (1004, 2) ])
+      is_true ~msg:"private mode" report.is_private;
+      is_true ~msg:"mode values" (report.modes = [ (1004, 2) ])
   | _ ->
-      Alcotest.failf "Expected single mode report, got %d events"
+      failf "Expected single mode report, got %d events"
         (List.length (parse_caps "\x1b[?1004;2$y"))
 
 let test_color_scheme_report () =
@@ -643,69 +592,64 @@ let test_color_scheme_report () =
   (match parse_caps "\x1b[?997;1n" with
   | [ Input.Caps.Color_scheme `Dark ] -> ()
   | _ ->
-      Alcotest.failf "Expected Color_scheme Dark, got %d events"
+      failf "Expected Color_scheme Dark, got %d events"
         (List.length (parse_caps "\x1b[?997;1n")));
   (match parse_caps "\x1b[?997;2n" with
   | [ Input.Caps.Color_scheme `Light ] -> ()
   | _ ->
-      Alcotest.failf "Expected Color_scheme Light, got %d events"
+      failf "Expected Color_scheme Light, got %d events"
         (List.length (parse_caps "\x1b[?997;2n")));
   (* Unknown value should still be handled *)
   (match parse_caps "\x1b[?997;99n" with
   | [ Input.Caps.Color_scheme (`Unknown 99) ] -> ()
   | _ ->
-      Alcotest.failf "Expected Color_scheme Unknown, got %d events"
+      failf "Expected Color_scheme Unknown, got %d events"
         (List.length (parse_caps "\x1b[?997;99n")));
   (* Verify it doesn't leak into user events *)
   let user, caps = parse_single "\x1b[?997;1n" in
-  Alcotest.(check int) "no user events" 0 (List.length user);
-  Alcotest.(check int) "one caps event" 1 (List.length caps)
+  equal ~msg:"no user events" int 0 (List.length user);
+  equal ~msg:"one caps event" int 1 (List.length caps)
 
 let test_user_and_caps_split () =
   let user, caps = parse_single "\x1b[?1004;2$yab" in
-  Alcotest.(check (list caps_event_testable))
-    "caps extracted"
+  equal ~msg:"caps extracted" (list caps_event_testable)
     [ Input.Caps.Mode_report { is_private = true; modes = [ (1004, 2) ] } ]
     caps;
-  Alcotest.(check int) "two user keys" 2 (List.length user);
+  equal ~msg:"two user keys" int 2 (List.length user);
   match user with
   | [ Input.Key { key = Char a; _ }; Input.Key { key = Char b; _ } ] ->
-      Alcotest.(check char) "a" 'a' (Uchar.to_char a);
-      Alcotest.(check char) "b" 'b' (Uchar.to_char b)
-  | _ -> Alcotest.fail "expected two key events after capability"
+      equal ~msg:"a" char 'a' (Uchar.to_char a);
+      equal ~msg:"b" char 'b' (Uchar.to_char b)
+  | _ -> fail "expected two key events after capability"
 
 let test_x10_mouse () =
-  Alcotest.(check (list event_testable))
-    "X10 mouse left press at (4,9)"
+  equal ~msg:"X10 mouse left press at (4,9)" (list event_testable)
     [ Input.mouse_press 4 9 Input.Mouse.Left ]
     (parse_user "\x1b[M \x25\x2A")
 
 let test_urxvt_mouse () =
-  Alcotest.(check (list event_testable))
-    "URXVT mouse left press at (9,19)"
+  equal ~msg:"URXVT mouse left press at (9,19)" (list event_testable)
     [ Input.mouse_press 9 19 Input.Mouse.Left ]
     (parse_user "\x1b[32;10;20M")
 
 let test_osc_sequences () =
   match parse_user "\x1b]52;c;YWJj\x07\x1b]10;#FFFFFF\x07" with
   | [ Input.Clipboard (sel, data); Input.Osc (code, osc_data) ] ->
-      Alcotest.(check string) "clipboard selection" "c" sel;
-      Alcotest.(check string) "clipboard data" "abc" data;
-      Alcotest.(check int) "osc code" 10 code;
-      Alcotest.(check string) "osc data" "#FFFFFF" osc_data
+      equal ~msg:"clipboard selection" string "c" sel;
+      equal ~msg:"clipboard data" string "abc" data;
+      equal ~msg:"osc code" int 10 code;
+      equal ~msg:"osc data" string "#FFFFFF" osc_data
   | _ ->
-      Alcotest.failf "Expected [Clipboard; Osc], got %d events"
+      failf "Expected [Clipboard; Osc], got %d events"
         (List.length (parse_user "\x1b]52;c;YWJj\x07\x1b]10;#FFFFFF\x07"))
 
 let test_window_events () =
-  Alcotest.(check (list event_testable))
-    "focus, blur, resize"
+  equal ~msg:"focus, blur, resize" (list event_testable)
     [ Input.Focus; Input.Blur; Input.Resize (80, 30) ]
     (parse_user "\x1b[I\x1b[O\x1b[8;30;80t")
 
 let test_pixel_resolution_response () =
-  Alcotest.(check (list caps_event_testable))
-    "pixel resolution response"
+  equal ~msg:"pixel resolution response" (list caps_event_testable)
     [ Input.Caps.Pixel_resolution (644, 448) ]
     (parse_caps "\x1b[4;448;644t")
 
@@ -722,18 +666,17 @@ let test_kitty_advanced () =
        modifier = m;
      };
   ] ->
-      Alcotest.(check char) "key" 'a' (Uchar.to_char u);
-      Alcotest.(check char) "shifted" 'A' (Uchar.to_char su);
-      Alcotest.(check char) "base" 'a' (Uchar.to_char bu);
-      Alcotest.(check bool) "ctrl modifier" true m.ctrl;
-      Alcotest.(check event_type_testable)
-        "event type is Release" Input.Key.Release event_type;
-      Alcotest.(check string) "associated text" "bc" associated_text
-  | _ -> Alcotest.fail "expected advanced Kitty key event"
+      equal ~msg:"key" char 'a' (Uchar.to_char u);
+      equal ~msg:"shifted" char 'A' (Uchar.to_char su);
+      equal ~msg:"base" char 'a' (Uchar.to_char bu);
+      is_true ~msg:"ctrl modifier" m.ctrl;
+      equal ~msg:"event type is Release" event_type_testable Input.Key.Release
+        event_type;
+      equal ~msg:"associated text" string "bc" associated_text
+  | _ -> fail "expected advanced Kitty key event"
 
 let test_media_and_modifier_keys () =
-  Alcotest.(check (list event_testable))
-    "media, volume, shift_left"
+  equal ~msg:"media, volume, shift_left" (list event_testable)
     [
       key_event Input.Key.Media_next;
       key_event Input.Key.Volume_up;
@@ -745,28 +688,27 @@ let test_paste_embedded_escapes () =
   let content = "Hello\x1b[31mWorld" in
   match parse_user ("\x1b[200~" ^ content ^ "\x1b[201~") with
   | [ Input.Paste s ] ->
-      Alcotest.(check string) "embedded escapes sanitized" "HelloWorld" s
-  | _ -> Alcotest.fail "expected single paste with embedded seq"
+      equal ~msg:"embedded escapes sanitized" string "HelloWorld" s
+  | _ -> fail "expected single paste with embedded seq"
 
 let test_parsing_efficiency () =
   let long_invalid = "\x1b[" ^ String.make 10000 '9' ^ "X" in
   let t0 = Unix.gettimeofday () in
   let events = parse_user long_invalid in
   let dt = Unix.gettimeofday () -. t0 in
-  Alcotest.(check bool) "fast on long invalid (<0.1s)" true (dt < 0.1);
-  Alcotest.(check bool) "parses many chars" true (List.length events >= 10000);
+  is_true ~msg:"fast on long invalid (<0.1s)" (dt < 0.1);
+  is_true ~msg:"parses many chars" (List.length events >= 10000);
 
   let large_paste = String.make 50000 'A' in
   let t1 = Unix.gettimeofday () in
   match parse_user ("\x1b[200~" ^ large_paste ^ "\x1b[201~") with
   | [ Input.Paste s ] ->
       let dt_large = Unix.gettimeofday () -. t1 in
-      Alcotest.(check bool) "fast large paste (<0.1s)" true (dt_large < 0.1);
-      Alcotest.(check int)
-        "single paste event"
+      is_true ~msg:"fast large paste (<0.1s)" (dt_large < 0.1);
+      equal ~msg:"single paste event" int
         (String.length large_paste)
         (String.length s)
-  | _ -> Alcotest.fail "large paste not optimized to single event"
+  | _ -> fail "large paste not optimized to single event"
 
 (* Split-boundary tests: verify parsing works correctly when input is split at
    every possible byte boundary. This catches bugs related to buffering and
@@ -793,9 +735,9 @@ let test_all_splits s expected_event_count desc =
     let events1 = feed_user parser bytes 0 split_at in
     let events2 = feed_user parser bytes split_at (len - split_at) in
     let total = List.length events1 + List.length events2 in
-    Alcotest.(check int)
-      (Printf.sprintf "%s split at %d" desc split_at)
-      expected_event_count total
+    equal
+      ~msg:(Printf.sprintf "%s split at %d" desc split_at)
+      int expected_event_count total
   done
 
 let test_csi_split_boundaries () =
@@ -815,25 +757,25 @@ let test_osc_split_boundaries () =
   test_all_splits "\x1b]0;title\x07" 1 "OSC title BEL"
 
 let test_utf8_split_boundaries () =
-  (* 2-byte UTF-8: é (U+00E9) = 0xC3 0xA9 *)
+  (* 2-byte UTF-8: e (U+00E9) = 0xC3 0xA9 *)
   let parser = Input.Parser.create () in
   let events = feed_byte_by_byte parser "\xC3\xA9" in
-  Alcotest.(check int) "2-byte UTF-8 byte-by-byte" 1 (List.length events);
+  equal ~msg:"2-byte UTF-8 byte-by-byte" int 1 (List.length events);
 
-  (* 3-byte UTF-8: € (U+20AC) = 0xE2 0x82 0xAC *)
+  (* 3-byte UTF-8: EUR (U+20AC) = 0xE2 0x82 0xAC *)
   let parser = Input.Parser.create () in
   let events = feed_byte_by_byte parser "\xE2\x82\xAC" in
-  Alcotest.(check int) "3-byte UTF-8 byte-by-byte" 1 (List.length events);
+  equal ~msg:"3-byte UTF-8 byte-by-byte" int 1 (List.length events);
 
-  (* 4-byte UTF-8: 😀 (U+1F600) = 0xF0 0x9F 0x98 0x80 *)
+  (* 4-byte UTF-8: U+1F600 = 0xF0 0x9F 0x98 0x80 *)
   let parser = Input.Parser.create () in
   let events = feed_byte_by_byte parser "\xF0\x9F\x98\x80" in
-  Alcotest.(check int) "4-byte UTF-8 byte-by-byte" 1 (List.length events);
+  equal ~msg:"4-byte UTF-8 byte-by-byte" int 1 (List.length events);
 
   (* Multiple UTF-8 characters *)
   let parser = Input.Parser.create () in
   let events = feed_byte_by_byte parser "é€😀" in
-  Alcotest.(check int) "multiple UTF-8 byte-by-byte" 3 (List.length events)
+  equal ~msg:"multiple UTF-8 byte-by-byte" int 3 (List.length events)
 
 let test_paste_split_boundaries () =
   (* Bracketed paste with content *)
@@ -848,12 +790,11 @@ let test_paste_split_boundaries () =
     (* Should get exactly one Paste event with "hello" *)
     match all_events with
     | [ Input.Paste content ] ->
-        Alcotest.(check string)
-          (Printf.sprintf "paste content split at %d" split_at)
-          "hello" content
+        equal
+          ~msg:(Printf.sprintf "paste content split at %d" split_at)
+          string "hello" content
     | _ ->
-        Alcotest.fail
-          (Printf.sprintf "paste split at %d: expected Paste event" split_at)
+        fail (Printf.sprintf "paste split at %d: expected Paste event" split_at)
   done
 
 let test_dcs_split_boundaries () =
@@ -875,98 +816,92 @@ let test_mixed_split_boundaries () =
   let mixed = "abc\x1b[A\xC3\xA9\x1b[B" in
   let parser = Input.Parser.create () in
   let events = feed_byte_by_byte parser mixed in
-  (* Should get: 'a', 'b', 'c', Up, 'é', Down = 6 events *)
-  Alcotest.(check int) "mixed content byte-by-byte" 6 (List.length events)
+  (* Should get: 'a', 'b', 'c', Up, 'e', Down = 6 events *)
+  equal ~msg:"mixed content byte-by-byte" int 6 (List.length events)
 
 let test_modify_other_keys () =
-  let open Input in
   let check_one seq expected_key expected_mod_desc expected_mod =
     match parse_user seq with
-    | [ Key { modifier; _ } ] ->
-        Alcotest.(check bool) expected_mod_desc true (expected_mod modifier);
-        Alcotest.(check (list event_testable))
-          "single key"
+    | [ Input.Key { modifier; _ } ] ->
+        is_true ~msg:expected_mod_desc (expected_mod modifier);
+        equal ~msg:"single key" (list event_testable)
           [ Input.key ~modifier expected_key ]
           (parse_user seq)
-    | _ -> Alcotest.fail "expected single key event"
+    | _ -> fail "expected single key event"
   in
-  check_one "\x1b[27;2;13~" Key.Enter "shift" (fun m -> m.shift);
-  check_one "\x1b[27;5;13~" Key.Enter "ctrl" (fun m -> m.ctrl);
-  check_one "\x1b[27;5;27~" Key.Escape "ctrl" (fun m -> m.ctrl);
-  check_one "\x1b[27;3;32~" (Key.Char (Uchar.of_int 32)) "alt" (fun m -> m.alt)
+  check_one "\x1b[27;2;13~" Input.Key.Enter "shift" (fun m -> m.shift);
+  check_one "\x1b[27;5;13~" Input.Key.Enter "ctrl" (fun m -> m.ctrl);
+  check_one "\x1b[27;5;27~" Input.Key.Escape "ctrl" (fun m -> m.ctrl);
+  check_one "\x1b[27;3;32~"
+    (Input.Key.Char (Uchar.of_int 32))
+    "alt"
+    (fun m -> m.alt)
 
 let test_kitty_keyboard_queries () =
-  Alcotest.(check (list event_testable))
-    "kitty query 1" [] (parse_user "\x1b[?1u");
-  Alcotest.(check (list event_testable))
-    "kitty query 1;2" [] (parse_user "\x1b[?1;2u");
-  Alcotest.(check (list event_testable))
-    "kitty query 0" [] (parse_user "\x1b[?0u");
-  Alcotest.(check (list caps_event_testable))
-    "caps kitty query"
+  equal ~msg:"kitty query 1" (list event_testable) [] (parse_user "\x1b[?1u");
+  equal ~msg:"kitty query 1;2" (list event_testable) []
+    (parse_user "\x1b[?1;2u");
+  equal ~msg:"kitty query 0" (list event_testable) [] (parse_user "\x1b[?0u");
+  equal ~msg:"caps kitty query" (list caps_event_testable)
     [ Input.Caps.Kitty_keyboard { level = 1; flags = None } ]
     (parse_caps "\x1b[?1u");
-  Alcotest.(check (list caps_event_testable))
-    "caps kitty query with flags"
+  equal ~msg:"caps kitty query with flags" (list caps_event_testable)
     [ Input.Caps.Kitty_keyboard { level = 1; flags = Some 2 } ]
     (parse_caps "\x1b[?1;2u");
-  Alcotest.(check (list caps_event_testable))
-    "caps kitty query unsupported"
+  equal ~msg:"caps kitty query unsupported" (list caps_event_testable)
     [ Input.Caps.Kitty_keyboard { level = 0; flags = None } ]
     (parse_caps "\x1b[?0u")
 
 let tests =
   [
-    ("parse regular chars", `Quick, test_parse_regular_chars);
-    ("char associated text default", `Quick, test_char_associated_text_default);
-    ("parse control chars", `Quick, test_parse_control_chars);
-    ("parse special keys", `Quick, test_parse_special_keys);
-    ("parse arrow keys", `Quick, test_parse_arrow_keys);
-    ("parse function keys", `Quick, test_parse_function_keys);
-    ("parse modifiers", `Quick, test_parse_modifiers);
-    ("CSI sub params event type", `Quick, test_csi_sub_params_with_event_type);
-    ("parse mouse SGR", `Quick, test_parse_mouse_sgr);
-    ("parse paste mode", `Quick, test_parse_paste_mode);
-    ("parse UTF-8", `Quick, test_parse_utf8);
-    ("incremental parsing", `Quick, test_incremental_parsing);
-    ("more key variants", `Quick, test_more_key_variants);
-    ("escape drain", `Quick, test_escape_drain);
-    ("alt escape no sticky", `Quick, test_alt_escape_no_sticky);
-    ("invalid sequences", `Quick, test_invalid_sequences);
-    ("combined inputs", `Quick, test_combined_inputs);
-    ("kitty keyboard", `Quick, test_kitty_keyboard);
-    ( "kitty associated text fallback",
-      `Quick,
-      test_kitty_associated_text_fallback );
-    ("edge cases", `Quick, test_input_edge_cases);
-    ("alt and alt+ctrl", `Quick, test_alt_and_alt_ctrl);
-    ("split UTF-8", `Quick, test_split_utf8);
-    ("buffer overflow", `Quick, test_buffer_overflow);
-    ("paste mode collection", `Quick, test_paste_mode_collection);
-    ("reset aborts paste", `Quick, test_reset_aborts_paste);
-    ("CSI param overflow", `Quick, test_csi_param_overflow);
-    ("cursor position report", `Quick, test_cursor_position_report);
-    ("device attributes", `Quick, test_device_attributes);
-    ("mode report", `Quick, test_mode_report);
-    ("color scheme report", `Quick, test_color_scheme_report);
-    ("user and caps split", `Quick, test_user_and_caps_split);
-    ("X10 mouse", `Quick, test_x10_mouse);
-    ("URXVT mouse", `Quick, test_urxvt_mouse);
-    ("OSC sequences", `Quick, test_osc_sequences);
-    ("window events", `Quick, test_window_events);
-    ("pixel resolution response", `Quick, test_pixel_resolution_response);
-    ("kitty advanced", `Quick, test_kitty_advanced);
-    ("media and modifier keys", `Quick, test_media_and_modifier_keys);
-    ("paste embedded escapes", `Quick, test_paste_embedded_escapes);
-    ("modify other keys", `Quick, test_modify_other_keys);
-    ("kitty keyboard queries", `Quick, test_kitty_keyboard_queries);
-    ("parsing efficiency", `Slow, test_parsing_efficiency);
-    ("CSI split boundaries", `Quick, test_csi_split_boundaries);
-    ("OSC split boundaries", `Quick, test_osc_split_boundaries);
-    ("UTF-8 split boundaries", `Quick, test_utf8_split_boundaries);
-    ("paste split boundaries", `Quick, test_paste_split_boundaries);
-    ("DCS split boundaries", `Quick, test_dcs_split_boundaries);
-    ("mixed split boundaries", `Quick, test_mixed_split_boundaries);
+    test "parse regular chars" test_parse_regular_chars;
+    test "char associated text default" test_char_associated_text_default;
+    test "parse control chars" test_parse_control_chars;
+    test "parse special keys" test_parse_special_keys;
+    test "parse arrow keys" test_parse_arrow_keys;
+    test "parse function keys" test_parse_function_keys;
+    test "parse modifiers" test_parse_modifiers;
+    test "CSI sub params event type" test_csi_sub_params_with_event_type;
+    test "parse mouse SGR" test_parse_mouse_sgr;
+    test "parse paste mode" test_parse_paste_mode;
+    test "parse UTF-8" test_parse_utf8;
+    test "incremental parsing" test_incremental_parsing;
+    test "more key variants" test_more_key_variants;
+    test "escape drain" test_escape_drain;
+    test "alt escape no sticky" test_alt_escape_no_sticky;
+    test "invalid sequences" test_invalid_sequences;
+    test "combined inputs" test_combined_inputs;
+    test "kitty keyboard" test_kitty_keyboard;
+    test "kitty associated text fallback" test_kitty_associated_text_fallback;
+    test "edge cases" test_input_edge_cases;
+    test "alt and alt+ctrl" test_alt_and_alt_ctrl;
+    test "split UTF-8" test_split_utf8;
+    test "buffer overflow" test_buffer_overflow;
+    test "paste mode collection" test_paste_mode_collection;
+    test "reset aborts paste" test_reset_aborts_paste;
+    test "CSI param overflow" test_csi_param_overflow;
+    test "cursor position report" test_cursor_position_report;
+    test "device attributes" test_device_attributes;
+    test "mode report" test_mode_report;
+    test "color scheme report" test_color_scheme_report;
+    test "user and caps split" test_user_and_caps_split;
+    test "X10 mouse" test_x10_mouse;
+    test "URXVT mouse" test_urxvt_mouse;
+    test "OSC sequences" test_osc_sequences;
+    test "window events" test_window_events;
+    test "pixel resolution response" test_pixel_resolution_response;
+    test "kitty advanced" test_kitty_advanced;
+    test "media and modifier keys" test_media_and_modifier_keys;
+    test "paste embedded escapes" test_paste_embedded_escapes;
+    test "modify other keys" test_modify_other_keys;
+    test "kitty keyboard queries" test_kitty_keyboard_queries;
+    slow "parsing efficiency" test_parsing_efficiency;
+    test "CSI split boundaries" test_csi_split_boundaries;
+    test "OSC split boundaries" test_osc_split_boundaries;
+    test "UTF-8 split boundaries" test_utf8_split_boundaries;
+    test "paste split boundaries" test_paste_split_boundaries;
+    test "DCS split boundaries" test_dcs_split_boundaries;
+    test "mixed split boundaries" test_mixed_split_boundaries;
   ]
 
-let () = Alcotest.run "Input" [ ("parsing", tests) ]
+let () = run "Input" [ group "parsing" tests ]

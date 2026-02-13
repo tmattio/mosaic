@@ -7,8 +7,7 @@ let test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild_border
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -97,8 +96,7 @@ let test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild_conten
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -185,15 +183,12 @@ let test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild_conten
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case
+    Windtrap.test
       "absolute_child_with_max_height_larger_shrinkable_grandchild (border-box)"
-      `Quick
       test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild_border_box;
-    test_case
+    Windtrap.test
       "absolute_child_with_max_height_larger_shrinkable_grandchild \
        (content-box)"
-      `Quick
       test_flex_absolute_child_with_max_height_larger_shrinkable_grandchild_content_box;
   ]

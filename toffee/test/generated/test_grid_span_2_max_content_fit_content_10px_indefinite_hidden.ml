@@ -7,8 +7,7 @@ let test_grid_span_2_max_content_fit_content_10px_indefinite_hidden_border_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -139,8 +138,7 @@ let test_grid_span_2_max_content_fit_content_10px_indefinite_hidden_content_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -269,14 +267,11 @@ let test_grid_span_2_max_content_fit_content_10px_indefinite_hidden_content_box
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case
+    Windtrap.test
       "span_2_max_content_fit_content_10px_indefinite_hidden (border-box)"
-      `Quick
       test_grid_span_2_max_content_fit_content_10px_indefinite_hidden_border_box;
-    test_case
+    Windtrap.test
       "span_2_max_content_fit_content_10px_indefinite_hidden (content-box)"
-      `Quick
       test_grid_span_2_max_content_fit_content_10px_indefinite_hidden_content_box;
   ]

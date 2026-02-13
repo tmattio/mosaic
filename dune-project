@@ -15,6 +15,11 @@
 
 (implicit_transitive_deps false)
 
+(pin
+ (url git+https://github.com/invariant-hq/windtrap)
+ (package
+  (name windtrap)))
+
 (package
  (name matrix)
  (synopsis "High-performance terminal infrastructure for OCaml")
@@ -24,8 +29,7 @@
   (ocaml
    (>= 5.4))
   dune
-  (alcotest :with-test)
-  (ppx_expect :with-test))
+  (windtrap :with-test))
  (tags
   (terminal ansi input grid rendering unicode pty vte)))
 
@@ -38,7 +42,7 @@
   (ocaml
    (>= 5.1))
   dune
-  (alcotest :with-test))
+  (windtrap :with-test))
  (tags
   (css layout flexbox grid "css-grid" taffy "layout-engine")))
 
@@ -56,7 +60,6 @@
   toffee
   ; for mosaic.markdown
   cmarkit
-  (alcotest :with-test)
-  (ppx_expect :with-test))
+  (windtrap :with-test))
  (tags
   (tui terminal react hooks "algebraic-effects" "user-interface")))

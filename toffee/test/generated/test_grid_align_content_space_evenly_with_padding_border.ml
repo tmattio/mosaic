@@ -6,8 +6,7 @@ open Toffee
 let test_grid_align_content_space_evenly_with_padding_border_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -167,8 +166,7 @@ let test_grid_align_content_space_evenly_with_padding_border_border_box () =
 let test_grid_align_content_space_evenly_with_padding_border_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -327,11 +325,9 @@ let test_grid_align_content_space_evenly_with_padding_border_content_box () =
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case "align_content_space_evenly_with_padding_border (border-box)"
-      `Quick test_grid_align_content_space_evenly_with_padding_border_border_box;
-    test_case "align_content_space_evenly_with_padding_border (content-box)"
-      `Quick
+    Windtrap.test "align_content_space_evenly_with_padding_border (border-box)"
+      test_grid_align_content_space_evenly_with_padding_border_border_box;
+    Windtrap.test "align_content_space_evenly_with_padding_border (content-box)"
       test_grid_align_content_space_evenly_with_padding_border_content_box;
   ]

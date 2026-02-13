@@ -6,8 +6,7 @@ open Toffee
 let test_grid_span_6_all_non_flex_indefinite_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -148,8 +147,7 @@ let test_grid_span_6_all_non_flex_indefinite_border_box () =
 let test_grid_span_6_all_non_flex_indefinite_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -289,10 +287,9 @@ let test_grid_span_6_all_non_flex_indefinite_content_box () =
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case "span_6_all_non_flex_indefinite (border-box)" `Quick
+    Windtrap.test "span_6_all_non_flex_indefinite (border-box)"
       test_grid_span_6_all_non_flex_indefinite_border_box;
-    test_case "span_6_all_non_flex_indefinite (content-box)" `Quick
+    Windtrap.test "span_6_all_non_flex_indefinite (content-box)"
       test_grid_span_6_all_non_flex_indefinite_content_box;
   ]

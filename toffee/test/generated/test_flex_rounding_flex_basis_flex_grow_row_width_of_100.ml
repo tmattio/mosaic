@@ -6,8 +6,7 @@ open Toffee
 let test_flex_rounding_flex_basis_flex_grow_row_width_of_100_border_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -83,8 +82,7 @@ let test_flex_rounding_flex_basis_flex_grow_row_width_of_100_border_box () =
 let test_flex_rounding_flex_basis_flex_grow_row_width_of_100_content_box () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -159,11 +157,9 @@ let test_flex_rounding_flex_basis_flex_grow_row_width_of_100_content_box () =
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case "rounding_flex_basis_flex_grow_row_width_of_100 (border-box)"
-      `Quick test_flex_rounding_flex_basis_flex_grow_row_width_of_100_border_box;
-    test_case "rounding_flex_basis_flex_grow_row_width_of_100 (content-box)"
-      `Quick
+    Windtrap.test "rounding_flex_basis_flex_grow_row_width_of_100 (border-box)"
+      test_flex_rounding_flex_basis_flex_grow_row_width_of_100_border_box;
+    Windtrap.test "rounding_flex_basis_flex_grow_row_width_of_100 (content-box)"
       test_flex_rounding_flex_basis_flex_grow_row_width_of_100_content_box;
   ]

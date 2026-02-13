@@ -7,8 +7,7 @@ let test_flex_position_root_with_rtl_should_position_withoutdirection_border_box
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -72,8 +71,7 @@ let test_flex_position_root_with_rtl_should_position_withoutdirection_content_bo
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -135,14 +133,11 @@ let test_flex_position_root_with_rtl_should_position_withoutdirection_content_bo
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case
+    Windtrap.test
       "position_root_with_rtl_should_position_withoutdirection (border-box)"
-      `Quick
       test_flex_position_root_with_rtl_should_position_withoutdirection_border_box;
-    test_case
+    Windtrap.test
       "position_root_with_rtl_should_position_withoutdirection (content-box)"
-      `Quick
       test_flex_position_root_with_rtl_should_position_withoutdirection_content_box;
   ]

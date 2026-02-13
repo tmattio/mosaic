@@ -2,6 +2,7 @@
 
 open Toffee
 open Geometry
+open Windtrap
 
 let test_helpers =
   (* Helper to check float equality with epsilon *)
@@ -19,8 +20,8 @@ let test_helpers =
 let test_create_tree () =
   let tree = new_tree () in
   match new_leaf tree Style.default with
-  | Ok _node -> Alcotest.(check bool) "Node created" true true
-  | Error e -> Alcotest.failf "Failed to create node: %s" (Error.to_string e)
+  | Ok _node -> is_true ~msg:"Node created" true
+  | Error e -> failf "Failed to create node: %s" (Error.to_string e)
 
 let test_simple_leaf_layout () =
   let tree = new_tree () in
@@ -34,7 +35,7 @@ let test_simple_leaf_layout () =
            }
   in
   match new_leaf tree style with
-  | Error e -> Alcotest.failf "Failed to create node: %s" (Error.to_string e)
+  | Error e -> failf "Failed to create node: %s" (Error.to_string e)
   | Ok node -> (
       let result =
         compute_layout tree node
@@ -53,16 +54,10 @@ let test_simple_leaf_layout () =
               let float_eq, print_layout = test_helpers in
               print_layout layout;
               let size = Layout.size layout in
-              Alcotest.(check bool)
-                "Width is 100"
-                (float_eq size.width 100.0)
-                true;
-              Alcotest.(check bool)
-                "Height is 50"
-                (float_eq size.height 50.0)
-                true
-          | Error _ -> Alcotest.fail "Failed to get layout")
-      | Error _ -> Alcotest.fail "Failed to compute layout")
+              is_true ~msg:"Width is 100" (float_eq size.width 100.0);
+              is_true ~msg:"Height is 50" (float_eq size.height 50.0)
+          | Error _ -> fail "Failed to get layout")
+      | Error _ -> fail "Failed to compute layout")
 
 let test_flexbox_row () =
   let tree = new_tree () in
@@ -92,16 +87,14 @@ let test_flexbox_row () =
   in
 
   match new_leaf tree child_style with
-  | Error e -> Alcotest.failf "Failed to create child1: %s" (Error.to_string e)
+  | Error e -> failf "Failed to create child1: %s" (Error.to_string e)
   | Ok child1 -> (
       match new_leaf tree child_style with
-      | Error e ->
-          Alcotest.failf "Failed to create child2: %s" (Error.to_string e)
+      | Error e -> failf "Failed to create child2: %s" (Error.to_string e)
       | Ok child2 -> (
           match new_with_children tree container_style [| child1; child2 |] with
           | Error e ->
-              Alcotest.failf "Failed to create container: %s"
-                (Error.to_string e)
+              failf "Failed to create container: %s" (Error.to_string e)
           | Ok container -> (
               let result =
                 compute_layout tree container
@@ -121,15 +114,10 @@ let test_flexbox_row () =
                       let size = Layout.size layout in
                       Printf.printf "Container layout: size=(%.1f x %.1f)\n"
                         size.width size.height;
-                      Alcotest.(check bool)
-                        "Container width"
-                        (float_eq size.width 300.0)
-                        true;
-                      Alcotest.(check bool)
-                        "Container height"
+                      is_true ~msg:"Container width" (float_eq size.width 300.0);
+                      is_true ~msg:"Container height"
                         (float_eq size.height 100.0)
-                        true
-                  | Error _ -> Alcotest.fail "Failed to get container layout");
+                  | Error _ -> fail "Failed to get container layout");
 
                   (* Check child layouts *)
                   (match layout tree child1 with
@@ -141,11 +129,9 @@ let test_flexbox_row () =
                         "Child1 layout: location=(%.1f, %.1f), size=(%.1f x \
                          %.1f)\n"
                         location.x location.y size.width size.height;
-                      Alcotest.(check bool)
-                        "Child1 x position" (float_eq location.x 0.0) true;
-                      Alcotest.(check bool)
-                        "Child1 width" (float_eq size.width 50.0) true
-                  | Error _ -> Alcotest.fail "Failed to get child1 layout");
+                      is_true ~msg:"Child1 x position" (float_eq location.x 0.0);
+                      is_true ~msg:"Child1 width" (float_eq size.width 50.0)
+                  | Error _ -> fail "Failed to get child1 layout");
 
                   match layout tree child2 with
                   | Ok layout ->
@@ -156,12 +142,11 @@ let test_flexbox_row () =
                         "Child2 layout: location=(%.1f, %.1f), size=(%.1f x \
                          %.1f)\n"
                         location.x location.y size.width size.height;
-                      Alcotest.(check bool)
-                        "Child2 x position" (float_eq location.x 50.0) true;
-                      Alcotest.(check bool)
-                        "Child2 width" (float_eq size.width 50.0) true
-                  | Error _ -> Alcotest.fail "Failed to get child2 layout")
-              | Error _ -> Alcotest.fail "Failed to compute layout")))
+                      is_true ~msg:"Child2 x position"
+                        (float_eq location.x 50.0);
+                      is_true ~msg:"Child2 width" (float_eq size.width 50.0)
+                  | Error _ -> fail "Failed to get child2 layout")
+              | Error _ -> fail "Failed to compute layout")))
 
 let test_flexbox_column () =
   let tree = new_tree () in
@@ -191,16 +176,14 @@ let test_flexbox_column () =
   in
 
   match new_leaf tree child_style with
-  | Error e -> Alcotest.failf "Failed to create child1: %s" (Error.to_string e)
+  | Error e -> failf "Failed to create child1: %s" (Error.to_string e)
   | Ok child1 -> (
       match new_leaf tree child_style with
-      | Error e ->
-          Alcotest.failf "Failed to create child2: %s" (Error.to_string e)
+      | Error e -> failf "Failed to create child2: %s" (Error.to_string e)
       | Ok child2 -> (
           match new_with_children tree container_style [| child1; child2 |] with
           | Error e ->
-              Alcotest.failf "Failed to create container: %s"
-                (Error.to_string e)
+              failf "Failed to create container: %s" (Error.to_string e)
           | Ok container -> (
               let result =
                 compute_layout tree container
@@ -232,9 +215,8 @@ let test_flexbox_column () =
                         "Column child1 layout: location=(%.1f, %.1f), \
                          size=(%.1f x %.1f)\n"
                         location.x location.y size.width size.height;
-                      Alcotest.(check bool)
-                        "Child1 y position" (float_eq location.y 0.0) true
-                  | Error _ -> Alcotest.fail "Failed to get child1 layout");
+                      is_true ~msg:"Child1 y position" (float_eq location.y 0.0)
+                  | Error _ -> fail "Failed to get child1 layout");
 
                   match layout tree child2 with
                   | Ok layout ->
@@ -245,10 +227,10 @@ let test_flexbox_column () =
                         "Column child2 layout: location=(%.1f, %.1f), \
                          size=(%.1f x %.1f)\n"
                         location.x location.y size.width size.height;
-                      Alcotest.(check bool)
-                        "Child2 y position" (float_eq location.y 50.0) true
-                  | Error _ -> Alcotest.fail "Failed to get child2 layout")
-              | Error _ -> Alcotest.fail "Failed to compute layout")))
+                      is_true ~msg:"Child2 y position"
+                        (float_eq location.y 50.0)
+                  | Error _ -> fail "Failed to get child2 layout")
+              | Error _ -> fail "Failed to compute layout")))
 
 let test_padding () =
   let tree = new_tree () in
@@ -263,7 +245,7 @@ let test_padding () =
   in
 
   match new_leaf tree style with
-  | Error e -> Alcotest.failf "Failed to create node: %s" (Error.to_string e)
+  | Error e -> failf "Failed to create node: %s" (Error.to_string e)
   | Ok node -> (
       let result =
         compute_layout tree node
@@ -282,16 +264,10 @@ let test_padding () =
               let size = Layout.size layout in
               (* With padding, the size should remain 100x100 for content-box
                  sizing *)
-              Alcotest.(check bool)
-                "Width with padding"
-                (float_eq size.width 100.0)
-                true;
-              Alcotest.(check bool)
-                "Height with padding"
-                (float_eq size.height 100.0)
-                true
-          | Error _ -> Alcotest.fail "Failed to get layout")
-      | Error _ -> Alcotest.fail "Failed to compute layout")
+              is_true ~msg:"Width with padding" (float_eq size.width 100.0);
+              is_true ~msg:"Height with padding" (float_eq size.height 100.0)
+          | Error _ -> fail "Failed to get layout")
+      | Error _ -> fail "Failed to compute layout")
 
 let test_margin () =
   let tree = new_tree () in
@@ -321,11 +297,10 @@ let test_margin () =
   in
 
   match new_leaf tree child_style with
-  | Error e -> Alcotest.failf "Failed to create child: %s" (Error.to_string e)
+  | Error e -> failf "Failed to create child: %s" (Error.to_string e)
   | Ok child -> (
       match new_with_children tree parent_style [| child |] with
-      | Error e ->
-          Alcotest.failf "Failed to create parent: %s" (Error.to_string e)
+      | Error e -> failf "Failed to create parent: %s" (Error.to_string e)
       | Ok parent -> (
           let result =
             compute_layout tree parent
@@ -344,12 +319,10 @@ let test_margin () =
                   print_layout layout;
                   let location = Layout.location layout in
                   (* Child should be positioned at (10, 10) due to margin *)
-                  Alcotest.(check bool)
-                    "Child x with margin" (float_eq location.x 10.0) true;
-                  Alcotest.(check bool)
-                    "Child y with margin" (float_eq location.y 10.0) true
-              | Error _ -> Alcotest.fail "Failed to get child layout")
-          | Error _ -> Alcotest.fail "Failed to compute layout"))
+                  is_true ~msg:"Child x with margin" (float_eq location.x 10.0);
+                  is_true ~msg:"Child y with margin" (float_eq location.y 10.0)
+              | Error _ -> fail "Failed to get child layout")
+          | Error _ -> fail "Failed to compute layout"))
 
 let test_flex_grow () =
   let tree = new_tree () in
@@ -379,11 +352,10 @@ let test_flex_grow () =
 
   Printf.printf "Creating child with flex_grow=%.1f\n" 1.0;
   match new_leaf tree child_style with
-  | Error e -> Alcotest.failf "Failed to create child: %s" (Error.to_string e)
+  | Error e -> failf "Failed to create child: %s" (Error.to_string e)
   | Ok child -> (
       match new_with_children tree container_style [| child |] with
-      | Error e ->
-          Alcotest.failf "Failed to create container: %s" (Error.to_string e)
+      | Error e -> failf "Failed to create container: %s" (Error.to_string e)
       | Ok container -> (
           let result =
             compute_layout tree container
@@ -406,12 +378,10 @@ let test_flex_grow () =
                      width=200.0\n"
                     size.width size.height;
                   (* Child should grow to fill container width *)
-                  Alcotest.(check bool)
-                    "Child width with flex_grow"
+                  is_true ~msg:"Child width with flex_grow"
                     (float_eq size.width 200.0)
-                    true
-              | Error _ -> Alcotest.fail "Failed to get child layout")
-          | Error _ -> Alcotest.fail "Failed to compute layout"))
+              | Error _ -> fail "Failed to get child layout")
+          | Error _ -> fail "Failed to compute layout"))
 
 let test_aspect_ratio () =
   let tree = new_tree () in
@@ -428,7 +398,7 @@ let test_aspect_ratio () =
   in
 
   match new_leaf tree style with
-  | Error e -> Alcotest.failf "Failed to create node: %s" (Error.to_string e)
+  | Error e -> failf "Failed to create node: %s" (Error.to_string e)
   | Ok node -> (
       let result =
         compute_layout tree node
@@ -447,13 +417,11 @@ let test_aspect_ratio () =
               print_layout layout;
               let size = Layout.size layout in
               (* Height should be width / aspect_ratio = 100 / 2 = 50 *)
-              Alcotest.(check bool) "Width" (float_eq size.width 100.0) true;
-              Alcotest.(check bool)
-                "Height from aspect ratio"
+              is_true ~msg:"Width" (float_eq size.width 100.0);
+              is_true ~msg:"Height from aspect ratio"
                 (float_eq size.height 50.0)
-                true
-          | Error _ -> Alcotest.fail "Failed to get layout")
-      | Error _ -> Alcotest.fail "Failed to compute layout")
+          | Error _ -> fail "Failed to get layout")
+      | Error _ -> fail "Failed to compute layout")
 
 (* Manual ports of selected taffy tests *)
 
@@ -461,12 +429,12 @@ type measure_ctx = { mutable count : int }
 
 let or_fail msg = function
   | Ok v -> v
-  | Error e -> Alcotest.failf "%s: %s" msg (Error.to_string e)
+  | Error e -> failf "%s: %s" msg (Error.to_string e)
 
 let compute_or_fail tree node available msg =
   match compute_layout tree node available with
   | Ok () -> ()
-  | Error e -> Alcotest.failf "%s: %s" msg (Error.to_string e)
+  | Error e -> failf "%s: %s" msg (Error.to_string e)
 
 let test_measure_count_flexbox () =
   let tree = new_tree () in
@@ -502,11 +470,10 @@ let test_measure_count_flexbox () =
   (match compute_layout_with_measure tree root available measure_function with
   | Ok () -> ()
   | Error e ->
-      Alcotest.failf "Failed to compute layout with measure: %s"
-        (Error.to_string e));
+      failf "Failed to compute layout with measure: %s" (Error.to_string e));
   match get_node_context tree leaf with
-  | None -> Alcotest.fail "Missing node context after layout"
-  | Some data -> Alcotest.(check int) "Measure function call count" 4 data.count
+  | None -> fail "Missing node context after layout"
+  | Some data -> equal ~msg:"Measure function call count" int 4 data.count
 
 let make_size width height =
   Size.
@@ -529,12 +496,12 @@ let test_min_overrides_max () =
   let available = Size.{ width = definite 100.0; height = definite 100.0 } in
   (match compute_layout tree node available with
   | Ok () -> ()
-  | Error e -> Alcotest.failf "Failed to compute layout: %s" (Error.to_string e));
+  | Error e -> failf "Failed to compute layout: %s" (Error.to_string e));
   let layout = Result.get_ok (layout tree node) in
-  Alcotest.(check (float 0.001))
-    "Width clamped to min" 100.0 (Layout.size layout).width;
-  Alcotest.(check (float 0.001))
-    "Height clamped to min" 100.0 (Layout.size layout).height
+  equal ~msg:"Width clamped to min" (float 0.001) 100.0
+    (Layout.size layout).width;
+  equal ~msg:"Height clamped to min" (float 0.001) 100.0
+    (Layout.size layout).height
 
 let test_max_overrides_size () =
   let tree = new_tree () in
@@ -547,12 +514,12 @@ let test_max_overrides_size () =
   let available = Size.{ width = definite 100.0; height = definite 100.0 } in
   (match compute_layout tree node available with
   | Ok () -> ()
-  | Error e -> Alcotest.failf "Failed to compute layout: %s" (Error.to_string e));
+  | Error e -> failf "Failed to compute layout: %s" (Error.to_string e));
   let layout = Result.get_ok (layout tree node) in
-  Alcotest.(check (float 0.001))
-    "Width clamped to max" 10.0 (Layout.size layout).width;
-  Alcotest.(check (float 0.001))
-    "Height clamped to max" 10.0 (Layout.size layout).height
+  equal ~msg:"Width clamped to max" (float 0.001) 10.0
+    (Layout.size layout).width;
+  equal ~msg:"Height clamped to max" (float 0.001) 10.0
+    (Layout.size layout).height
 
 let test_min_overrides_size () =
   let tree = new_tree () in
@@ -565,12 +532,10 @@ let test_min_overrides_size () =
   let available = Size.{ width = definite 100.0; height = definite 100.0 } in
   (match compute_layout tree node available with
   | Ok () -> ()
-  | Error e -> Alcotest.failf "Failed to compute layout: %s" (Error.to_string e));
+  | Error e -> failf "Failed to compute layout: %s" (Error.to_string e));
   let layout = Result.get_ok (layout tree node) in
-  Alcotest.(check (float 0.001))
-    "Width from min" 100.0 (Layout.size layout).width;
-  Alcotest.(check (float 0.001))
-    "Height from min" 100.0 (Layout.size layout).height
+  equal ~msg:"Width from min" (float 0.001) 100.0 (Layout.size layout).width;
+  equal ~msg:"Height from min" (float 0.001) 100.0 (Layout.size layout).height
 
 let test_root_with_percentage_size () =
   let tree = new_tree () in
@@ -587,12 +552,12 @@ let test_root_with_percentage_size () =
   let available = Size.{ width = definite 100.0; height = definite 200.0 } in
   (match compute_layout tree node available with
   | Ok () -> ()
-  | Error e -> Alcotest.failf "Failed to compute layout: %s" (Error.to_string e));
+  | Error e -> failf "Failed to compute layout: %s" (Error.to_string e));
   let layout = Result.get_ok (layout tree node) in
-  Alcotest.(check (float 0.001))
-    "Percent width uses available space" 100.0 (Layout.size layout).width;
-  Alcotest.(check (float 0.001))
-    "Percent height uses available space" 200.0 (Layout.size layout).height
+  equal ~msg:"Percent width uses available space" (float 0.001) 100.0
+    (Layout.size layout).width;
+  equal ~msg:"Percent height uses available space" (float 0.001) 200.0
+    (Layout.size layout).height
 
 let test_root_with_no_size () =
   let tree = new_tree () in
@@ -600,12 +565,12 @@ let test_root_with_no_size () =
   let available = Size.{ width = definite 100.0; height = definite 100.0 } in
   (match compute_layout tree node available with
   | Ok () -> ()
-  | Error e -> Alcotest.failf "Failed to compute layout: %s" (Error.to_string e));
+  | Error e -> failf "Failed to compute layout: %s" (Error.to_string e));
   let layout = Result.get_ok (layout tree node) in
-  Alcotest.(check (float 0.001))
-    "Default width is zero" 0.0 (Layout.size layout).width;
-  Alcotest.(check (float 0.001))
-    "Default height is zero" 0.0 (Layout.size layout).height
+  equal ~msg:"Default width is zero" (float 0.001) 0.0
+    (Layout.size layout).width;
+  equal ~msg:"Default height is zero" (float 0.001) 0.0
+    (Layout.size layout).height
 
 let test_root_with_larger_size () =
   let tree = new_tree () in
@@ -614,12 +579,12 @@ let test_root_with_larger_size () =
   let available = Size.{ width = definite 100.0; height = definite 100.0 } in
   (match compute_layout tree node available with
   | Ok () -> ()
-  | Error e -> Alcotest.failf "Failed to compute layout: %s" (Error.to_string e));
+  | Error e -> failf "Failed to compute layout: %s" (Error.to_string e));
   let layout = Result.get_ok (layout tree node) in
-  Alcotest.(check (float 0.001))
-    "Width keeps explicit size" 200.0 (Layout.size layout).width;
-  Alcotest.(check (float 0.001))
-    "Height keeps explicit size" 200.0 (Layout.size layout).height
+  equal ~msg:"Width keeps explicit size" (float 0.001) 200.0
+    (Layout.size layout).width;
+  equal ~msg:"Height keeps explicit size" (float 0.001) 200.0
+    (Layout.size layout).height
 
 let test_root_padding_and_border_larger_than_definite_size () =
   let tree = new_tree () in
@@ -643,12 +608,12 @@ let test_root_padding_and_border_larger_than_definite_size () =
   in
   (match compute_layout tree root available with
   | Ok () -> ()
-  | Error e -> Alcotest.failf "Failed to compute layout: %s" (Error.to_string e));
+  | Error e -> failf "Failed to compute layout: %s" (Error.to_string e));
   let layout = Result.get_ok (layout tree root) in
-  Alcotest.(check (float 0.001))
-    "Width accounts for padding and border" 40.0 (Layout.size layout).width;
-  Alcotest.(check (float 0.001))
-    "Height accounts for padding and border" 40.0 (Layout.size layout).height
+  equal ~msg:"Width accounts for padding and border" (float 0.001) 40.0
+    (Layout.size layout).width;
+  equal ~msg:"Height accounts for padding and border" (float 0.001) 40.0
+    (Layout.size layout).height
 
 let test_rounding_doesnt_leave_gaps () =
   let tree = new_tree () in
@@ -673,12 +638,12 @@ let test_rounding_doesnt_leave_gaps () =
   in
   (match compute_layout tree root available with
   | Ok () -> ()
-  | Error e -> Alcotest.failf "Failed to compute layout: %s" (Error.to_string e));
+  | Error e -> failf "Failed to compute layout: %s" (Error.to_string e));
   let layout_a = Result.get_ok (layout tree child_a) in
   let layout_b = Result.get_ok (layout tree child_b) in
   let end_of_a = (Layout.location layout_a).x +. (Layout.size layout_a).width in
-  Alcotest.(check (float 0.001))
-    "Children abut after rounding" end_of_a (Layout.location layout_b).x
+  equal ~msg:"Children abut after rounding" (float 0.001) end_of_a
+    (Layout.location layout_b).x
 
 let test_toggle_root_display_none () =
   let tree = new_tree () in
@@ -702,24 +667,20 @@ let test_toggle_root_display_none () =
   in
   compute_or_fail tree node available "Compute hidden layout";
   let layout_none = Result.get_ok (layout tree node) in
-  Alcotest.(check (float 0.001))
-    "Hidden width" 0.0 (Layout.size layout_none).width;
-  Alcotest.(check (float 0.001))
-    "Hidden height" 0.0 (Layout.size layout_none).height;
+  equal ~msg:"Hidden width" (float 0.001) 0.0 (Layout.size layout_none).width;
+  equal ~msg:"Hidden height" (float 0.001) 0.0 (Layout.size layout_none).height;
   set_style tree node flex |> or_fail "set_style flex";
   compute_or_fail tree node available "Compute flex layout";
   let layout_flex = Result.get_ok (layout tree node) in
-  Alcotest.(check (float 0.001))
-    "Flex width" 100.0 (Layout.size layout_flex).width;
-  Alcotest.(check (float 0.001))
-    "Flex height" 100.0 (Layout.size layout_flex).height;
+  equal ~msg:"Flex width" (float 0.001) 100.0 (Layout.size layout_flex).width;
+  equal ~msg:"Flex height" (float 0.001) 100.0 (Layout.size layout_flex).height;
   set_style tree node hidden |> or_fail "set_style hidden";
   compute_or_fail tree node available "Compute hidden layout again";
   let layout_hidden = Result.get_ok (layout tree node) in
-  Alcotest.(check (float 0.001))
-    "Hidden width again" 0.0 (Layout.size layout_hidden).width;
-  Alcotest.(check (float 0.001))
-    "Hidden height again" 0.0 (Layout.size layout_hidden).height
+  equal ~msg:"Hidden width again" (float 0.001) 0.0
+    (Layout.size layout_hidden).width;
+  equal ~msg:"Hidden height again" (float 0.001) 0.0
+    (Layout.size layout_hidden).height
 
 let test_toggle_root_display_none_with_children () =
   let tree = new_tree () in
@@ -742,25 +703,24 @@ let test_toggle_root_display_none_with_children () =
   in
   compute_or_fail tree root available "Compute layout visible root";
   let layout_child = Result.get_ok (layout tree child) in
-  Alcotest.(check (float 0.001))
-    "Child width" 800.0 (Layout.size layout_child).width;
-  Alcotest.(check (float 0.001))
-    "Child height" 100.0 (Layout.size layout_child).height;
+  equal ~msg:"Child width" (float 0.001) 800.0 (Layout.size layout_child).width;
+  equal ~msg:"Child height" (float 0.001) 100.0
+    (Layout.size layout_child).height;
   let hidden_root = Style.set_display Style.Display.None Style.default in
   set_style tree root hidden_root |> or_fail "set_style hidden root";
   compute_or_fail tree root available "Compute layout hidden root";
   let hidden_child = Result.get_ok (layout tree child) in
-  Alcotest.(check (float 0.001))
-    "Hidden child width" 0.0 (Layout.size hidden_child).width;
-  Alcotest.(check (float 0.001))
-    "Hidden child height" 0.0 (Layout.size hidden_child).height;
+  equal ~msg:"Hidden child width" (float 0.001) 0.0
+    (Layout.size hidden_child).width;
+  equal ~msg:"Hidden child height" (float 0.001) 0.0
+    (Layout.size hidden_child).height;
   set_style tree root Style.default |> or_fail "set_style default root";
   compute_or_fail tree root available "Compute layout restored root";
   let restored_child = Result.get_ok (layout tree child) in
-  Alcotest.(check (float 0.001))
-    "Restored child width" 800.0 (Layout.size restored_child).width;
-  Alcotest.(check (float 0.001))
-    "Restored child height" 100.0 (Layout.size restored_child).height
+  equal ~msg:"Restored child width" (float 0.001) 800.0
+    (Layout.size restored_child).width;
+  equal ~msg:"Restored child height" (float 0.001) 100.0
+    (Layout.size restored_child).height
 
 let test_toggle_flex_child_display_none () =
   let tree = new_tree () in
@@ -787,24 +747,21 @@ let test_toggle_flex_child_display_none () =
   in
   compute_or_fail tree root available "Compute layout hidden child";
   let layout_hidden = Result.get_ok (layout tree node) in
-  Alcotest.(check (float 0.001))
-    "Hidden width" 0.0 (Layout.size layout_hidden).width;
-  Alcotest.(check (float 0.001))
-    "Hidden height" 0.0 (Layout.size layout_hidden).height;
+  equal ~msg:"Hidden width" (float 0.001) 0.0 (Layout.size layout_hidden).width;
+  equal ~msg:"Hidden height" (float 0.001) 0.0
+    (Layout.size layout_hidden).height;
   set_style tree node flex |> or_fail "set_style flex child";
   compute_or_fail tree root available "Compute layout flex child";
   let layout_flex = Result.get_ok (layout tree node) in
-  Alcotest.(check (float 0.001))
-    "Flex width" 100.0 (Layout.size layout_flex).width;
-  Alcotest.(check (float 0.001))
-    "Flex height" 100.0 (Layout.size layout_flex).height;
+  equal ~msg:"Flex width" (float 0.001) 100.0 (Layout.size layout_flex).width;
+  equal ~msg:"Flex height" (float 0.001) 100.0 (Layout.size layout_flex).height;
   set_style tree node hidden |> or_fail "set_style hidden child";
   compute_or_fail tree root available "Compute layout child hidden again";
   let layout_hidden_again = Result.get_ok (layout tree node) in
-  Alcotest.(check (float 0.001))
-    "Hidden width again" 0.0 (Layout.size layout_hidden_again).width;
-  Alcotest.(check (float 0.001))
-    "Hidden height again" 0.0 (Layout.size layout_hidden_again).height
+  equal ~msg:"Hidden width again" (float 0.001) 0.0
+    (Layout.size layout_hidden_again).width;
+  equal ~msg:"Hidden height again" (float 0.001) 0.0
+    (Layout.size layout_hidden_again).height
 
 let test_toggle_flex_container_display_none () =
   let tree = new_tree () in
@@ -831,24 +788,24 @@ let test_toggle_flex_container_display_none () =
   in
   compute_or_fail tree root available "Compute layout hidden container";
   let layout_hidden = Result.get_ok (layout tree root) in
-  Alcotest.(check (float 0.001))
-    "Root hidden width" 0.0 (Layout.size layout_hidden).width;
-  Alcotest.(check (float 0.001))
-    "Root hidden height" 0.0 (Layout.size layout_hidden).height;
+  equal ~msg:"Root hidden width" (float 0.001) 0.0
+    (Layout.size layout_hidden).width;
+  equal ~msg:"Root hidden height" (float 0.001) 0.0
+    (Layout.size layout_hidden).height;
   set_style tree root flex |> or_fail "set_style flex container";
   compute_or_fail tree root available "Compute layout flex container";
   let layout_flex = Result.get_ok (layout tree root) in
-  Alcotest.(check (float 0.001))
-    "Root flex width" 100.0 (Layout.size layout_flex).width;
-  Alcotest.(check (float 0.001))
-    "Root flex height" 100.0 (Layout.size layout_flex).height;
+  equal ~msg:"Root flex width" (float 0.001) 100.0
+    (Layout.size layout_flex).width;
+  equal ~msg:"Root flex height" (float 0.001) 100.0
+    (Layout.size layout_flex).height;
   set_style tree root hidden |> or_fail "set_style hidden container";
   compute_or_fail tree root available "Compute layout hidden container again";
   let layout_hidden_again = Result.get_ok (layout tree root) in
-  Alcotest.(check (float 0.001))
-    "Root hidden width again" 0.0 (Layout.size layout_hidden_again).width;
-  Alcotest.(check (float 0.001))
-    "Root hidden height again" 0.0 (Layout.size layout_hidden_again).height
+  equal ~msg:"Root hidden width again" (float 0.001) 0.0
+    (Layout.size layout_hidden_again).width;
+  equal ~msg:"Root hidden height again" (float 0.001) 0.0
+    (Layout.size layout_hidden_again).height
 
 let test_toggle_grid_child_display_none () =
   let tree = new_tree () in
@@ -875,24 +832,21 @@ let test_toggle_grid_child_display_none () =
   in
   compute_or_fail tree root available "Compute layout hidden grid child";
   let layout_hidden = Result.get_ok (layout tree node) in
-  Alcotest.(check (float 0.001))
-    "Hidden width" 0.0 (Layout.size layout_hidden).width;
-  Alcotest.(check (float 0.001))
-    "Hidden height" 0.0 (Layout.size layout_hidden).height;
+  equal ~msg:"Hidden width" (float 0.001) 0.0 (Layout.size layout_hidden).width;
+  equal ~msg:"Hidden height" (float 0.001) 0.0
+    (Layout.size layout_hidden).height;
   set_style tree node grid |> or_fail "set_style grid child";
   compute_or_fail tree root available "Compute layout grid child";
   let layout_grid = Result.get_ok (layout tree node) in
-  Alcotest.(check (float 0.001))
-    "Grid width" 100.0 (Layout.size layout_grid).width;
-  Alcotest.(check (float 0.001))
-    "Grid height" 100.0 (Layout.size layout_grid).height;
+  equal ~msg:"Grid width" (float 0.001) 100.0 (Layout.size layout_grid).width;
+  equal ~msg:"Grid height" (float 0.001) 100.0 (Layout.size layout_grid).height;
   set_style tree node hidden |> or_fail "set_style hidden grid child";
   compute_or_fail tree root available "Compute layout grid child hidden again";
   let layout_hidden_again = Result.get_ok (layout tree node) in
-  Alcotest.(check (float 0.001))
-    "Hidden width again" 0.0 (Layout.size layout_hidden_again).width;
-  Alcotest.(check (float 0.001))
-    "Hidden height again" 0.0 (Layout.size layout_hidden_again).height
+  equal ~msg:"Hidden width again" (float 0.001) 0.0
+    (Layout.size layout_hidden_again).width;
+  equal ~msg:"Hidden height again" (float 0.001) 0.0
+    (Layout.size layout_hidden_again).height
 
 let test_relayout_stable () =
   let tree = new_tree () in
@@ -933,84 +887,66 @@ let test_relayout_stable () =
   let initial1 = Result.get_ok (layout tree node1) in
   for _ = 1 to 5 do
     compute_or_fail tree root available "Recompute layout relayout";
-    Alcotest.(check (float 0.001))
-      "Root x stable" (Layout.location initial).x
+    equal ~msg:"Root x stable" (float 0.001) (Layout.location initial).x
       (Layout.location (Result.get_ok (layout tree root))).x;
-    Alcotest.(check (float 0.001))
-      "Root y stable" (Layout.location initial).y
+    equal ~msg:"Root y stable" (float 0.001) (Layout.location initial).y
       (Layout.location (Result.get_ok (layout tree root))).y;
-    Alcotest.(check (float 0.001))
-      "Node0 x stable" (Layout.location initial0).x
+    equal ~msg:"Node0 x stable" (float 0.001) (Layout.location initial0).x
       (Layout.location (Result.get_ok (layout tree node0))).x;
-    Alcotest.(check (float 0.001))
-      "Node0 y stable" (Layout.location initial0).y
+    equal ~msg:"Node0 y stable" (float 0.001) (Layout.location initial0).y
       (Layout.location (Result.get_ok (layout tree node0))).y;
-    Alcotest.(check (float 0.001))
-      "Node1 x stable" (Layout.location initial1).x
+    equal ~msg:"Node1 x stable" (float 0.001) (Layout.location initial1).x
       (Layout.location (Result.get_ok (layout tree node1))).x;
-    Alcotest.(check (float 0.001))
-      "Node1 y stable" (Layout.location initial1).y
+    equal ~msg:"Node1 y stable" (float 0.001) (Layout.location initial1).y
       (Layout.location (Result.get_ok (layout tree node1))).y
   done
 
 (* Test suite *)
 let () =
-  let open Alcotest in
   run "Toffee Tests"
     [
-      ( "basic",
+      group "basic"
         [
-          test_case "Create tree and node" `Quick test_create_tree;
-          test_case "Simple leaf layout" `Quick test_simple_leaf_layout;
-        ] );
-      ( "flexbox",
+          test "Create tree and node" test_create_tree;
+          test "Simple leaf layout" test_simple_leaf_layout;
+        ];
+      group "flexbox"
         [
-          test_case "Flexbox row" `Quick test_flexbox_row;
-          test_case "Flexbox column" `Quick test_flexbox_column;
-          test_case "Flex grow" `Quick test_flex_grow;
-        ] );
-      ( "spacing",
+          test "Flexbox row" test_flexbox_row;
+          test "Flexbox column" test_flexbox_column;
+          test "Flex grow" test_flex_grow;
+        ];
+      group "spacing" [ test "Padding" test_padding; test "Margin" test_margin ];
+      group "sizing" [ test "Aspect ratio" test_aspect_ratio ];
+      group "caching"
+        [ test "Measure count flexbox" test_measure_count_flexbox ];
+      group "min_max_overrides"
         [
-          test_case "Padding" `Quick test_padding;
-          test_case "Margin" `Quick test_margin;
-        ] );
-      ("sizing", [ test_case "Aspect ratio" `Quick test_aspect_ratio ]);
-      ( "caching",
-        [ test_case "Measure count flexbox" `Quick test_measure_count_flexbox ]
-      );
-      ( "min_max_overrides",
+          test "Min overrides max" test_min_overrides_max;
+          test "Max overrides size" test_max_overrides_size;
+          test "Min overrides size" test_min_overrides_size;
+        ];
+      group "root_constraints"
         [
-          test_case "Min overrides max" `Quick test_min_overrides_max;
-          test_case "Max overrides size" `Quick test_max_overrides_size;
-          test_case "Min overrides size" `Quick test_min_overrides_size;
-        ] );
-      ( "root_constraints",
-        [
-          test_case "Root with percentage size" `Quick
-            test_root_with_percentage_size;
-          test_case "Root with no size" `Quick test_root_with_no_size;
-          test_case "Root with larger size" `Quick test_root_with_larger_size;
-          test_case "Root padding and border larger than size" `Quick
+          test "Root with percentage size" test_root_with_percentage_size;
+          test "Root with no size" test_root_with_no_size;
+          test "Root with larger size" test_root_with_larger_size;
+          test "Root padding and border larger than size"
             test_root_padding_and_border_larger_than_definite_size;
-        ] );
-      ( "rounding",
+        ];
+      group "rounding"
+        [ test "Rounding without gaps" test_rounding_doesnt_leave_gaps ];
+      group "display_none"
         [
-          test_case "Rounding without gaps" `Quick
-            test_rounding_doesnt_leave_gaps;
-        ] );
-      ( "display_none",
-        [
-          test_case "Toggle root display none" `Quick
-            test_toggle_root_display_none;
-          test_case "Toggle root display none with children" `Quick
+          test "Toggle root display none" test_toggle_root_display_none;
+          test "Toggle root display none with children"
             test_toggle_root_display_none_with_children;
-          test_case "Toggle flex child display none" `Quick
+          test "Toggle flex child display none"
             test_toggle_flex_child_display_none;
-          test_case "Toggle flex container display none" `Quick
+          test "Toggle flex container display none"
             test_toggle_flex_container_display_none;
-          test_case "Toggle grid child display none" `Quick
+          test "Toggle grid child display none"
             test_toggle_grid_child_display_none;
-        ] );
-      ( "relayout",
-        [ test_case "Relayout is stable" `Quick test_relayout_stable ] );
+        ];
+      group "relayout" [ test "Relayout is stable" test_relayout_stable ];
     ]

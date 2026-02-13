@@ -7,8 +7,7 @@ let test_grid_placement_definite_in_secondary_axis_with_fully_definite_negative_
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -122,8 +121,7 @@ let test_grid_placement_definite_in_secondary_axis_with_fully_definite_negative_
     () =
   (* Setup test helpers *)
   let assert_eq ~msg expected actual =
-    let open Alcotest in
-    check (float 0.001) msg expected actual
+    Windtrap.equal ~msg (Windtrap.Testable.float 0.001) expected actual
   in
 
   let tree = Gentest_helpers.new_test_tree () in
@@ -235,16 +233,13 @@ let test_grid_placement_definite_in_secondary_axis_with_fully_definite_negative_
 
 (* Export tests for aggregation *)
 let tests =
-  let open Alcotest in
   [
-    test_case
+    Windtrap.test
       "placement_definite_in_secondary_axis_with_fully_definite_negative \
        (border-box)"
-      `Quick
       test_grid_placement_definite_in_secondary_axis_with_fully_definite_negative_border_box;
-    test_case
+    Windtrap.test
       "placement_definite_in_secondary_axis_with_fully_definite_negative \
        (content-box)"
-      `Quick
       test_grid_placement_definite_in_secondary_axis_with_fully_definite_negative_content_box;
   ]
