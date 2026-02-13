@@ -1,6 +1,5 @@
-(tests
+(executables
  (names test_counter test_scroll_box)
- (package mosaic)
  (libraries
   windtrap
   mosaic
@@ -12,3 +11,15 @@
   matrix.vte)
  (preprocess
   (pps windtrap.ppx)))
+
+(rule
+ (alias runtest)
+ (package mosaic)
+ (action
+  (progn
+   (setenv WINDTRAP_PROMOTE true
+    (progn
+     (run ./test_counter.exe)
+     (run ./test_scroll_box.exe)))
+   (diff? test_counter.ml test_counter.ml.corrected)
+   (diff? test_scroll_box.ml test_scroll_box.ml.corrected))))

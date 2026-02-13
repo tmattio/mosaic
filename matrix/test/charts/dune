@@ -1,6 +1,14 @@
-(test
+(executable
  (name test_charts)
- (package matrix)
  (libraries windtrap matrix.ansi matrix.grid matrix.charts)
  (preprocess
   (pps windtrap.ppx)))
+
+(rule
+ (alias runtest)
+ (package matrix)
+ (action
+  (progn
+   (setenv WINDTRAP_PROMOTE true
+    (run ./test_charts.exe))
+   (diff? test_charts.ml test_charts.ml.corrected))))
