@@ -505,7 +505,8 @@ let intern_char pool u =
 
 (* Encoding (string -> glyph stream) *)
 
-let encode pool ~width_method ~tab_width str f =
+let encode pool ?(width_method = `Unicode) ?(tab_width = default_tab_width) str
+    f =
   let tab_width = normalize_tab_width tab_width in
 
   let emit_complex ~str ~off ~len ~width =
@@ -558,7 +559,8 @@ let encode pool ~width_method ~tab_width str f =
   let seg = Uuseg_grapheme_cluster.create () in
   loop seg width_method (width_method = `No_zwj) str (String.length str) 0
 
-let iter_grapheme_info ~width_method ~tab_width str f =
+let iter_grapheme_info ?(width_method = `Unicode) ?(tab_width = default_tab_width)
+    str f =
   let tab_width = normalize_tab_width tab_width in
   let len = String.length str in
   if len = 0 then ()
@@ -748,7 +750,7 @@ let rec measure_segmented seg str len tab_width i total g_w flags =
         measure_segmented seg str len tab_width next total g_w
           (flags land lnot ms_virama)
 
-let measure ~width_method ~tab_width str =
+let measure ?(width_method = `Unicode) ?(tab_width = default_tab_width) str =
   let tab_width = normalize_tab_width tab_width in
   let len = String.length str in
   if len = 0 then 0

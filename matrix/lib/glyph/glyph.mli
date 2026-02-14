@@ -93,13 +93,15 @@ val decref : pool -> t -> unit
 
 val encode :
   pool ->
-  width_method:width_method ->
-  tab_width:int ->
+  ?width_method:width_method ->
+  ?tab_width:int ->
   string ->
   (t -> unit) ->
   unit
-(** [encode pool ~width_method ~tab_width str f] streams glyphs from [str] via
+(** [encode pool ?width_method ?tab_width str f] streams glyphs from [str] via
     callback [f].
+
+    Defaults: [width_method = `Unicode], [tab_width = 2].
 
     The callback [(fun glyph -> ...)] is invoked inline for each glyph in string
     order. Multi-column characters emit one Start glyph followed by
@@ -137,14 +139,16 @@ val intern :
     (replacement character). *)
 
 val iter_grapheme_info :
-  width_method:width_method ->
-  tab_width:int ->
+  ?width_method:width_method ->
+  ?tab_width:int ->
   string ->
   (offset:int -> len:int -> width:int -> unit) ->
   unit
-(** [iter_grapheme_info ~width_method ~tab_width str f] walks grapheme clusters
+(** [iter_grapheme_info ?width_method ?tab_width str f] walks grapheme clusters
     in [str] and calls [f] with their byte [offset], byte [len], and display
     [width].
+
+    Defaults: [width_method = `Unicode], [tab_width = 2].
 
     Uses the same width calculation and ZWJ handling as [encode]. Graphemes
     whose width resolves to 0 (control / zero-width sequences) are skipped.
@@ -229,9 +233,11 @@ val iter_graphemes : (offset:int -> len:int -> unit) -> string -> unit
     {b UTF-8 handling}: Invalid byte sequences are treated as individual
     replacement characters (U+FFFD). *)
 
-val measure : width_method:width_method -> tab_width:int -> string -> int
-(** [measure ~width_method ~tab_width str] calculates the total display width of
+val measure : ?width_method:width_method -> ?tab_width:int -> string -> int
+(** [measure ?width_method ?tab_width str] calculates the total display width of
     [str].
+
+    Defaults: [width_method = `Unicode], [tab_width = 2].
 
     Control characters contribute 0 to the total width.
 
