@@ -251,10 +251,6 @@ val cursor_restore : t
 
     Behavior undefined if called without prior {!cursor_save}. *)
 
-val move_cursor_and_clear : row:int -> col:int -> t
-(** [move_cursor_and_clear row col] moves to [(row, col)] and clears to the end
-    of the screen. *)
-
 (** {2 Appearance} *)
 
 val show_cursor : t

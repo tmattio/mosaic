@@ -266,9 +266,6 @@ let cursor_position ~row ~col w =
 let cursor_save : t = literal "\027[s"
 let cursor_restore : t = literal "\027[u"
 
-let move_cursor_and_clear ~row ~col =
-  seq [ cursor_position ~row ~col; literal "\027[J" ]
-
 (* Cursor Appearance *)
 
 let show_cursor : t = literal "\027[?25h"
