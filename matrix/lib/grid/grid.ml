@@ -1245,7 +1245,8 @@ let draw_box t ~x ~y ~width ~height ~border_chars ~border_sides ~border_style
         then
           (* ASCII can be stored directly; non-ASCII must be interned *)
           let cell =
-            if code < 128 then code else Glyph.intern_char t.glyph_pool code
+            if code < 128 then code
+            else Glyph.intern_uchar t.glyph_pool (Uchar.of_int code)
           in
           set_cell_internal t
             ~idx:((y * t.width) + x)

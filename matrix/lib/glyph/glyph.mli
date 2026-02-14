@@ -161,11 +161,10 @@ val iter_grapheme_info :
     {b UTF-8 handling}: Invalid byte sequences are treated as individual
     replacement characters (U+FFFD). *)
 
-val intern_char : pool -> int -> t
-(** [intern_char pool codepoint] creates a glyph from a single Unicode
-    codepoint.
+val intern_uchar : pool -> Uchar.t -> t
+(** [intern_uchar pool u] creates a glyph from a single Unicode codepoint.
 
-    Returns the empty glyph (0) for control or zero-width codepoints. *)
+    Returns {!empty} for control or zero-width codepoints. *)
 
 (** {1 Introspection} *)
 

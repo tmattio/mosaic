@@ -480,7 +480,8 @@ let intern pool ?(width_method = `Unicode) ?(tab_width = default_tab_width)
   let len = match len with Some l -> l | None -> String.length str - off in
   intern_core pool width_method tab_width width off len str
 
-let intern_char pool u =
+let intern_uchar pool uchar =
+  let u = Uchar.to_int uchar in
   let tab_width = default_tab_width in
   if u < 128 then
     let w = ascii_width ~tab_width u in
