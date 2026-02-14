@@ -593,8 +593,7 @@ let encode_lazy pool ~width_method ~tab_width str on_grapheme =
     then (
       let emit_ascii b =
         let w = ascii_width ~tab_width b in
-        if w > 0 then
-          on_grapheme ~width:w ~emit:(fun f -> if w > 0 then f b else ())
+        if w > 0 then on_grapheme ~width:w ~emit:(fun f -> f b)
       in
       emit_ascii (Char.code (String.unsafe_get str i));
       emit_ascii (Char.code (String.unsafe_get str (i + 1)));
@@ -605,9 +604,7 @@ let encode_lazy pool ~width_method ~tab_width str on_grapheme =
       let c = String.unsafe_get str i in
       if Char.code c < 128 then (
         let w = ascii_width ~tab_width (Char.code c) in
-        if w > 0 then
-          on_grapheme ~width:w ~emit:(fun f ->
-              if w > 0 then f (Char.code c) else ());
+        if w > 0 then on_grapheme ~width:w ~emit:(fun f -> f (Char.code c));
         loop seg method_ ignore_zwj str len (i + 1))
       else
         let end_pos = next_boundary seg ~ignore_zwj str i len in
@@ -624,8 +621,7 @@ let encode_lazy pool ~width_method ~tab_width str on_grapheme =
   loop seg width_method (width_method = `No_zwj) str (String.length str) 0
 
 let encode pool ~width_method ~tab_width str f =
-  encode_lazy pool ~width_method ~tab_width str (fun ~width ~emit ->
-      if width > 0 then emit f)
+  encode_lazy pool ~width_method ~tab_width str (fun ~width:_ ~emit -> emit f)
 
 let iter_grapheme_info ~width_method ~tab_width str f =
   let tab_width = normalize_tab_width tab_width in
