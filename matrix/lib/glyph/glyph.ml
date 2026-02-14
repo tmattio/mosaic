@@ -37,26 +37,15 @@ let initial_pool_bytes = 4096 * 8
 
 (* ASCII Helpers *)
 
-(* Pre-computed widths for 0-255. -1 indicates control characters (C0, DEL, C1).
-   1 indicates printable (including Latin-1). *)
-let ascii_width_table =
-  let arr = Array.make 256 1 in
-  for i = 0 to 31 do
-    arr.(i) <- -1
-  done;
-  arr.(127) <- -1;
-  for i = 128 to 159 do
-    arr.(i) <- -1
-  done;
-  arr
-
 let[@inline] normalize_tab_width w = if w <= 0 then default_tab_width else w
 
+(* Width of an ASCII byte (0-127). Tab returns tab_width, printable
+   (0x20-0x7E) returns 1, control characters return 0. Two comparisons
+   instead of a table lookup (which costs 3 dependent memory loads). *)
 let[@inline] ascii_width ~tab_width b =
   if b = 0x09 then tab_width
-  else
-    let w = Array.unsafe_get ascii_width_table b in
-    if w > 0 then w else 0
+  else if b >= 0x20 && b <= 0x7E then 1
+  else 0
 
 (* Check if string contains only ASCII bytes - processes 4 bytes at a time *)
 let rec is_ascii_only_tail str len j =
