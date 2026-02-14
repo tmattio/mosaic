@@ -96,44 +96,24 @@ let strip str =
       done;
       Buffer.contents buf
 
-let cursor_up ~n =
-  let n = max 0 n in
-  if n = 0 then "" else Escape.to_string (Escape.cursor_up ~n)
-
-let cursor_down ~n =
-  let n = max 0 n in
-  if n = 0 then "" else Escape.to_string (Escape.cursor_down ~n)
-
-let cursor_forward ~n =
-  let n = max 0 n in
-  if n = 0 then "" else Escape.to_string (Escape.cursor_forward ~n)
-
-let cursor_back ~n =
-  let n = max 0 n in
-  if n = 0 then "" else Escape.to_string (Escape.cursor_back ~n)
+let cursor_up ~n = Escape.to_string (Escape.cursor_up ~n)
+let cursor_down ~n = Escape.to_string (Escape.cursor_down ~n)
+let cursor_forward ~n = Escape.to_string (Escape.cursor_forward ~n)
+let cursor_back ~n = Escape.to_string (Escape.cursor_back ~n)
 
 let cursor_position ~row ~col =
-  let row = max 1 row in
-  let col = max 1 col in
   Escape.to_string (Escape.cursor_position ~row ~col)
 
 let move_cursor_and_clear ~row ~col =
   Escape.to_string (Escape.move_cursor_and_clear ~row ~col)
 
-let cursor_next_line ~n =
-  let n = max 0 n in
-  if n = 0 then "" else Escape.to_string (Escape.cursor_next_line ~n)
-
-let cursor_previous_line ~n =
-  let n = max 0 n in
-  if n = 0 then "" else Escape.to_string (Escape.cursor_previous_line ~n)
+let cursor_next_line ~n = Escape.to_string (Escape.cursor_next_line ~n)
+let cursor_previous_line ~n = Escape.to_string (Escape.cursor_previous_line ~n)
 
 let cursor_horizontal_absolute ~col =
-  let col = max 1 col in
   Escape.to_string (Escape.cursor_horizontal_absolute col)
 
 let cursor_vertical_absolute ~row =
-  let row = max 1 row in
   Escape.to_string (Escape.cursor_vertical_absolute row)
 
 (* Cursor Appearance *)
@@ -154,21 +134,10 @@ let reset_cursor_color_fallback =
   Escape.to_string Escape.reset_cursor_color_fallback
 
 (* Screen Control *)
-let erase_display ~mode =
-  let mode = if mode < 0 || mode > 3 then 2 else mode in
-  Escape.to_string (Escape.erase_display ~mode)
-
-let scroll_up ~n =
-  let n = max 0 n in
-  if n = 0 then "" else Escape.to_string (Escape.scroll_up ~n)
-
-let scroll_down ~n =
-  let n = max 0 n in
-  if n = 0 then "" else Escape.to_string (Escape.scroll_down ~n)
-
-let erase_line ~mode =
-  let mode = if mode < 0 || mode > 2 then 2 else mode in
-  Escape.to_string (Escape.erase_line ~mode)
+let erase_display ~mode = Escape.to_string (Escape.erase_display ~mode)
+let scroll_up ~n = Escape.to_string (Escape.scroll_up ~n)
+let scroll_down ~n = Escape.to_string (Escape.scroll_down ~n)
+let erase_line ~mode = Escape.to_string (Escape.erase_line ~mode)
 
 let clear_and_home = Escape.to_string Escape.clear_and_home
 let clear = Escape.to_string Escape.clear
@@ -285,13 +254,8 @@ let request_color_scheme_mode =
 let bracketed_paste_start = Escape.to_string Escape.bracketed_paste_start
 let bracketed_paste_end = Escape.to_string Escape.bracketed_paste_end
 
-let insert_lines ~n =
-  let n = max 0 n in
-  if n = 0 then "" else Escape.to_string (Escape.insert_lines ~n)
-
-let delete_lines ~n =
-  let n = max 0 n in
-  if n = 0 then "" else Escape.to_string (Escape.delete_lines ~n)
+let insert_lines ~n = Escape.to_string (Escape.insert_lines ~n)
+let delete_lines ~n = Escape.to_string (Escape.delete_lines ~n)
 
 let set_scrolling_region ~top ~bottom =
   Escape.to_string (Escape.set_scrolling_region ~top ~bottom)
