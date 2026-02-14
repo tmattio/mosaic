@@ -271,22 +271,21 @@ let alloc_string pool str off len =
 let alloc_codepoint pool u len =
   let id, cursor = alloc_slot pool len in
   let dst = pool.storage in
-  if len = 1 then Bytes.unsafe_set dst cursor (Char.chr u)
-  else if len = 2 then (
-    Bytes.unsafe_set dst cursor (Char.chr (0xc0 lor (u lsr 6)));
-    Bytes.unsafe_set dst (cursor + 1) (Char.chr (0x80 lor (u land 0x3f))))
-  else if len = 3 then (
-    Bytes.unsafe_set dst cursor (Char.chr (0xe0 lor (u lsr 12)));
-    Bytes.unsafe_set dst (cursor + 1)
-      (Char.chr (0x80 lor ((u lsr 6) land 0x3f)));
-    Bytes.unsafe_set dst (cursor + 2) (Char.chr (0x80 lor (u land 0x3f))))
-  else (
-    Bytes.unsafe_set dst cursor (Char.chr (0xf0 lor (u lsr 18)));
-    Bytes.unsafe_set dst (cursor + 1)
-      (Char.chr (0x80 lor ((u lsr 12) land 0x3f)));
-    Bytes.unsafe_set dst (cursor + 2)
-      (Char.chr (0x80 lor ((u lsr 6) land 0x3f)));
-    Bytes.unsafe_set dst (cursor + 3) (Char.chr (0x80 lor (u land 0x3f))));
+  let set i c = Bytes.unsafe_set dst (cursor + i) (Char.chr c) in
+  (match len with
+  | 1 -> set 0 u
+  | 2 ->
+      set 0 (0xc0 lor (u lsr 6));
+      set 1 (0x80 lor (u land 0x3f))
+  | 3 ->
+      set 0 (0xe0 lor (u lsr 12));
+      set 1 (0x80 lor ((u lsr 6) land 0x3f));
+      set 2 (0x80 lor (u land 0x3f))
+  | _ ->
+      set 0 (0xf0 lor (u lsr 18));
+      set 1 (0x80 lor ((u lsr 12) land 0x3f));
+      set 2 (0x80 lor ((u lsr 6) land 0x3f));
+      set 3 (0x80 lor (u land 0x3f)));
   id
 
 let clear pool =
@@ -356,19 +355,19 @@ let incref pool c =
         (Array.unsafe_get pool.refcounts idx + 1)
 
 let decref pool c =
-  if not (is_simple c) then
+  if is_simple c then ()
+  else
     let idx = validate_complex pool c in
-    if idx >= 0 then
+    if idx < 0 then ()
+    else
       let rc = Array.unsafe_get pool.refcounts idx in
-      if rc > 0 then (
+      if rc < 0 then ()
+      else
         let rc' = rc - 1 in
-        Array.unsafe_set pool.refcounts idx rc';
-        if rc' = 0 then (
+        if rc' > 0 then Array.unsafe_set pool.refcounts idx rc'
+        else (
           Array.unsafe_set pool.refcounts idx (-1);
-          push_free pool idx))
-      else if rc = 0 then (
-        Array.unsafe_set pool.refcounts idx (-1);
-        push_free pool idx)
+          push_free pool idx)
 
 (* Data Retrieval *)
 
@@ -508,9 +507,12 @@ let intern_char pool u =
 let encode pool ?(width_method = `Unicode) ?(tab_width = default_tab_width) str
     f =
   let tab_width = normalize_tab_width tab_width in
+  let len = String.length str in
+  let seg = Uuseg_grapheme_cluster.create () in
+  let ignore_zwj = width_method = `No_zwj in
 
-  let emit_complex ~str ~off ~len ~width =
-    let idx = alloc_string pool str off len in
+  let emit_complex ~off ~clus_len ~width =
+    let idx = alloc_string pool str off clus_len in
     let gen = Array.unsafe_get pool.generations idx in
     f (pack_start idx gen width);
     if width > 1 then
@@ -520,7 +522,12 @@ let encode pool ?(width_method = `Unicode) ?(tab_width = default_tab_width) str
       done
   in
 
-  let rec loop seg method_ ignore_zwj str len i =
+  let emit_ascii b =
+    let w = ascii_width ~tab_width b in
+    if w > 0 then f b
+  in
+
+  let rec loop i =
     if i >= len then ()
     else if
       i + 4 <= len
@@ -531,33 +538,24 @@ let encode pool ?(width_method = `Unicode) ?(tab_width = default_tab_width) str
       let c3 = Char.code (String.unsafe_get str (i + 3)) in
       c0 lor c1 lor c2 lor c3 < 128
     then (
-      let emit_ascii b =
-        let w = ascii_width ~tab_width b in
-        if w > 0 then f b
-      in
       emit_ascii (Char.code (String.unsafe_get str i));
       emit_ascii (Char.code (String.unsafe_get str (i + 1)));
       emit_ascii (Char.code (String.unsafe_get str (i + 2)));
       emit_ascii (Char.code (String.unsafe_get str (i + 3)));
-      loop seg method_ ignore_zwj str len (i + 4))
+      loop (i + 4))
     else
       let c = String.unsafe_get str i in
       if Char.code c < 128 then (
-        let w = ascii_width ~tab_width (Char.code c) in
-        if w > 0 then f (Char.code c);
-        loop seg method_ ignore_zwj str len (i + 1))
+        emit_ascii (Char.code c);
+        loop (i + 1))
       else
         let end_pos = next_boundary seg ~ignore_zwj str i len in
         let clus_len = end_pos - i in
-        let w = grapheme_width ~method_ ~tab_width str i clus_len in
-        if w > 0 then (
-          emit_complex ~str ~off:i ~len:clus_len ~width:w;
-          loop seg method_ ignore_zwj str len end_pos)
-        else loop seg method_ ignore_zwj str len end_pos
+        let w = grapheme_width ~method_:width_method ~tab_width str i clus_len in
+        if w > 0 then emit_complex ~off:i ~clus_len ~width:w;
+        loop end_pos
   in
-
-  let seg = Uuseg_grapheme_cluster.create () in
-  loop seg width_method (width_method = `No_zwj) str (String.length str) 0
+  loop 0
 
 let iter_grapheme_info ?(width_method = `Unicode) ?(tab_width = default_tab_width)
     str f =
@@ -827,23 +825,18 @@ type line_break_kind = [ `LF | `CR | `CRLF ]
 let iter_line_breaks f s =
   let len = String.length s in
   let rec loop i =
-    if i >= len then ()
-    else
+    if i < len then
       let b = Char.code (String.unsafe_get s i) in
-      if b = 0x0A then (
-        let kind =
-          if i > 0 && Char.code (String.unsafe_get s (i - 1)) = 0x0D then `CRLF
-          else `LF
-        in
-        if kind = `LF then f ~pos:i ~kind;
-        loop (i + 1))
-      else if b = 0x0D then
+      if b = 0x0D then
         if i + 1 < len && Char.code (String.unsafe_get s (i + 1)) = 0x0A then (
           f ~pos:(i + 1) ~kind:`CRLF;
           loop (i + 2))
         else (
           f ~pos:i ~kind:`CR;
           loop (i + 1))
+      else if b = 0x0A then (
+        f ~pos:i ~kind:`LF;
+        loop (i + 1))
       else loop (i + 1)
   in
   loop 0
