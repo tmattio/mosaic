@@ -43,26 +43,6 @@ val default : t
     It contains no colors, no attributes, and no hyperlink. Emitting this style
     performs a reset if the previous style was different. *)
 
-val error : t
-(** [error] is a standard style for errors.
-
-    Defined as bright red foreground. *)
-
-val success : t
-(** [success] is a standard style for success messages.
-
-    Defined as bright green foreground. *)
-
-val warning : t
-(** [warning] is a standard style for warnings.
-
-    Defined as bright yellow foreground. *)
-
-val info : t
-(** [info] is a standard style for informational messages.
-
-    Defined as bright blue foreground. *)
-
 (** {1 Construction} *)
 
 val make :

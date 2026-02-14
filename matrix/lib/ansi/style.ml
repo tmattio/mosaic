@@ -7,18 +7,6 @@ type t = {
 
 let default = { fg = None; bg = None; attrs = Attr.empty; link = None }
 
-let error =
-  { fg = Some Color.bright_red; bg = None; attrs = Attr.empty; link = None }
-
-let success =
-  { fg = Some Color.bright_green; bg = None; attrs = Attr.empty; link = None }
-
-let warning =
-  { fg = Some Color.bright_yellow; bg = None; attrs = Attr.empty; link = None }
-
-let info =
-  { fg = Some Color.bright_blue; bg = None; attrs = Attr.empty; link = None }
-
 let make ?fg ?bg ?(bold = false) ?(dim = false) ?(italic = false)
     ?(underline = false) ?(blink = false) ?(inverse = false) ?(hidden = false)
     ?(strikethrough = false) ?(overline = false) ?(double_underline = false)
