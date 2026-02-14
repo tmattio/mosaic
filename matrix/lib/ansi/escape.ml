@@ -336,15 +336,10 @@ let cursor_underline : t = literal "\027[4 q"
 let cursor_underline_blink : t = literal "\027[3 q"
 
 let cursor_color ~r ~g ~b w =
-  let r = clamp_byte r in
-  let g = clamp_byte g in
-  let b = clamp_byte b in
-  write_char w '\027';
-  write_char w ']';
-  write_string w "12;#";
-  add_hex2 w r;
-  add_hex2 w g;
-  add_hex2 w b;
+  write_string w "\027]12;#";
+  add_hex2 w (clamp_byte r);
+  add_hex2 w (clamp_byte g);
+  add_hex2 w (clamp_byte b);
   write_terminator w `Bel
 
 let reset_cursor_color : t = literal "\027]112\007"
@@ -419,46 +414,36 @@ let exit_alternate_screen : t = literal "\027[?1049l"
 (* Terminal Properties *)
 
 let set_title ~title w =
-  write_char w '\027';
-  write_char w ']';
-  write_char w '0';
-  write_char w ';';
+  write_string w "\027]0;";
   write_string w title;
   write_terminator w `St
 
-let explicit_width ~width ~text w =
-  write_char w '\027';
-  write_char w ']';
-  write_string w "66;w=";
+let[@inline] write_explicit_width_prefix w width =
+  write_string w "\027]66;w=";
   add_int w width;
-  write_char w ';';
+  write_char w ';'
+
+let explicit_width ~width ~text w =
+  write_explicit_width_prefix w width;
   write_string w text;
   write_terminator w `St
 
 let explicit_width_bytes ~width ~bytes ~off ~len w =
-  write_char w '\027';
-  write_char w ']';
-  write_string w "66;w=";
-  add_int w width;
-  write_char w ';';
+  write_explicit_width_prefix w width;
   write_subbytes w bytes off len;
   write_terminator w `St
 
 (* OSC helpers *)
 
 let osc ?(terminator = `St) ~payload w =
-  write_char w '\027';
-  write_char w ']';
+  write_string w "\027]";
   write_string w payload;
   write_terminator w terminator
 
 (* Hyperlinks (OSC 8) *)
 
 let hyperlink_start ?(params = "") ~url w =
-  write_char w '\027';
-  write_char w ']';
-  write_char w '8';
-  write_char w ';';
+  write_string w "\027]8;";
   if params <> "" then write_string w params;
   write_char w ';';
   write_string w url;
@@ -471,20 +456,13 @@ let hyperlink ?(params = "") ~url ~text w =
   write_string w text;
   hyperlink_end w
 
-(* Direct hyperlink emission - zero allocation versions *)
 let[@inline] hyperlink_open w url =
-  write_char w '\027';
-  write_char w ']';
-  write_char w '8';
-  write_char w ';';
-  write_char w ';';
+  write_string w "\027]8;;";
   write_string w url;
   write_terminator w `St
 
 let[@inline] hyperlink_close w =
-  write_char w '\027';
-  write_char w ']';
-  write_string w "8;;";
+  write_string w "\027]8;;";
   write_terminator w `St
 
 (* Terminal Modes *)

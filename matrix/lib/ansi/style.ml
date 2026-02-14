@@ -132,16 +132,9 @@ let compare a b =
       if c <> 0 then c else Option.compare String.compare a.link b.link
 
 let hash t =
-  (* Avoid tuple allocation by computing hash incrementally *)
   let h = 17 in
-  let h =
-    (h * 31)
-    + match t.fg with None -> 0 | Some c -> Int64.to_int (Color.pack c)
-  in
-  let h =
-    (h * 31)
-    + match t.bg with None -> 0 | Some c -> Int64.to_int (Color.pack c)
-  in
+  let h = (h * 31) + match t.fg with None -> 0 | Some c -> Color.hash c in
+  let h = (h * 31) + match t.bg with None -> 0 | Some c -> Color.hash c in
   let h = (h * 31) + Attr.pack t.attrs in
   let h = (h * 31) + match t.link with None -> 0 | Some s -> Hashtbl.hash s in
   h land max_int

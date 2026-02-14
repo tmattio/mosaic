@@ -271,24 +271,11 @@ let equal a b = rgba_packed a = rgba_packed b
 let compare a b = Int.compare (rgba_packed a) (rgba_packed b)
 
 let hash color =
-  (* Use packed representation directly - no tuple allocation *)
-  let packed = rgba_packed color in
-  (* Simple hash mixing *)
-  let h = packed in
-  let h = h lxor (h lsr 16) in
-  h land max_int
+  let h = rgba_packed color in
+  (h lxor (h lsr 16)) land max_int
 
 let alpha color =
   match color with Default -> 0. | Rgba { a; _ } -> float_of_byte a | _ -> 1.
-
-(* Internal helper: extract RGBA as floats without tuple allocation *)
-let[@inline] rgba_floats color =
-  let packed = rgba_packed color in
-  let r = float_of_byte ((packed lsr 24) land 0xFF) in
-  let g = float_of_byte ((packed lsr 16) land 0xFF) in
-  let b = float_of_byte ((packed lsr 8) land 0xFF) in
-  let a = float_of_byte (packed land 0xFF) in
-  (r, g, b, a)
 
 let[@inline] with_rgba_f color f =
   let packed = rgba_packed color in
@@ -299,39 +286,28 @@ let[@inline] with_rgba_f color f =
   f r g b a
 
 let blend ?(mode = `Perceptual) ~src ~dst () =
-  (* Extract components - rgba_floats returns a tuple but we need the values *)
-  let sr, sg, sb, sa_f = rgba_floats src in
-  let dr, dg, db, da_f = rgba_floats dst in
-  let sa = clamp_channel_f sa_f in
-  if sa >= 0.999 then
-    let r = byte_of_float sr in
-    let g = byte_of_float sg in
-    let b = byte_of_float sb in
-    Rgb { r; g; b }
-  else if sa <= Float.epsilon then dst
-  else
-    match mode with
-    | `Linear ->
-        let blended_channel sc dc = (sa *. sc) +. ((1. -. sa) *. dc) in
-        let r = byte_of_float (blended_channel sr dr) in
-        let g = byte_of_float (blended_channel sg dg) in
-        let b = byte_of_float (blended_channel sb db) in
-        let a = byte_of_float (sa +. da_f -. (sa *. da_f)) in
-        if a = 255 then Rgb { r; g; b } else Rgba { r; g; b; a }
-    | `Perceptual ->
-        let perceptual_alpha alpha =
-          if alpha >= 0.8 then
-            let norm = (alpha -. 0.8) *. 5. in
-            0.8 +. (Float.pow norm 0.2 *. 0.2)
-          else Float.pow alpha 0.9
-        in
-        let sa_adj = perceptual_alpha sa in
-        let blended_channel sc dc = (sa_adj *. sc) +. ((1. -. sa_adj) *. dc) in
-        let r = byte_of_float (blended_channel sr dr) in
-        let g = byte_of_float (blended_channel sg dg) in
-        let b = byte_of_float (blended_channel sb db) in
-        let a = byte_of_float (sa +. da_f -. (sa *. da_f)) in
-        if a = 255 then Rgb { r; g; b } else Rgba { r; g; b; a }
+  with_rgba_f src (fun sr sg sb sa_f ->
+      with_rgba_f dst (fun dr dg db da_f ->
+          let sa = clamp_channel_f sa_f in
+          if sa >= 0.999 then
+            Rgb { r = byte_of_float sr; g = byte_of_float sg; b = byte_of_float sb }
+          else if sa <= Float.epsilon then dst
+          else
+            let sa_blend =
+              match mode with
+              | `Linear -> sa
+              | `Perceptual ->
+                  if sa >= 0.8 then
+                    let norm = (sa -. 0.8) *. 5. in
+                    0.8 +. (Float.pow norm 0.2 *. 0.2)
+                  else Float.pow sa 0.9
+            in
+            let blend sc dc = (sa_blend *. sc) +. ((1. -. sa_blend) *. dc) in
+            let r = byte_of_float (blend sr dr) in
+            let g = byte_of_float (blend sg dg) in
+            let b = byte_of_float (blend sb db) in
+            let a = byte_of_float (sa +. da_f -. (sa *. da_f)) in
+            if a = 255 then Rgb { r; g; b } else Rgba { r; g; b; a }))
 
 (* Check if string contains a substring. Zero-allocation. *)
 let contains_substring s sub =
