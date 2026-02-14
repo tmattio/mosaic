@@ -66,7 +66,8 @@
 
     Functions use widely-supported ANSI escape sequences. Modern features such
     as truecolor, hyperlinks (OSC 8), or explicit width (OSC 66) degrade
-    gracefully on terminals that ignore or partially implement the extensions. *)
+    gracefully on terminals that ignore or partially implement the extensions.
+*)
 
 include module type of struct
   include Escape

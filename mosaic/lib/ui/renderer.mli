@@ -108,7 +108,8 @@ val create :
     The renderer starts with no root, zero dimensions, and no dirty state. Call
     {!resize} before rendering to set terminal dimensions.
 
-    Raises [Invalid_argument] if [width_method] is unsupported by the platform. *)
+    Raises [Invalid_argument] if [width_method] is unsupported by the platform.
+*)
 
 (** {1 Root Management} *)
 

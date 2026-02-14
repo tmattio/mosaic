@@ -28,5 +28,5 @@ val grapheme_props : Uchar.t -> int
 
 val all_props : Uchar.t -> int
 (** [all_props u] returns all properties including width in one lookup. Layout:
-    bits 0-4 = gcb, bits 5-6 = incb, bit 7 = extpic,
-    bits 8-9 = width_enc (0=-1, 1=0, 2=1, 3=2). *)
+    bits 0-4 = gcb, bits 5-6 = incb, bit 7 = extpic, bits 8-9 = width_enc (0=-1,
+    1=0, 2=1, 3=2). *)

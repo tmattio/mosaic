@@ -115,11 +115,19 @@ let cursor_position_request = Esc.(to_string (query Cursor_position))
 let reset_sgr = Esc.(to_string reset)
 let erase_below = Esc.(to_string erase_below_cursor)
 let kitty_cursor_block = Esc.(to_string (cursor_style ~shape:`Block))
-let kitty_cursor_block_blink = Esc.(to_string (cursor_style ~shape:`Blinking_block))
+
+let kitty_cursor_block_blink =
+  Esc.(to_string (cursor_style ~shape:`Blinking_block))
+
 let kitty_cursor_line = Esc.(to_string (cursor_style ~shape:`Bar))
-let kitty_cursor_line_blink = Esc.(to_string (cursor_style ~shape:`Blinking_bar))
+
+let kitty_cursor_line_blink =
+  Esc.(to_string (cursor_style ~shape:`Blinking_bar))
+
 let kitty_cursor_underline = Esc.(to_string (cursor_style ~shape:`Underline))
-let kitty_cursor_underline_blink = Esc.(to_string (cursor_style ~shape:`Blinking_underline))
+
+let kitty_cursor_underline_blink =
+  Esc.(to_string (cursor_style ~shape:`Blinking_underline))
 
 let submit_string t s =
   match t.writer with
@@ -285,6 +293,7 @@ let reset_cursor_color t =
 
 let set_title t title =
   if t.output_is_tty then send t Ansi.(to_string (set_title ~title))
+
 let flush t = match t.writer with None -> () | Some w -> Frame_writer.drain w
 
 (* Shared buffer for draining the wakeup pipe, avoids allocation on every

@@ -7,12 +7,12 @@ type t
 (** {1 Construction} *)
 
 val make : bytes -> t
-(** [make buf] creates a writer targeting [buf]. The buffer must be large
-    enough to contain all generated output. *)
+(** [make buf] creates a writer targeting [buf]. The buffer must be large enough
+    to contain all generated output. *)
 
 val make_counting : unit -> t
-(** [make_counting ()] creates a counting-mode writer that tracks output
-    length without writing any bytes. *)
+(** [make_counting ()] creates a counting-mode writer that tracks output length
+    without writing any bytes. *)
 
 (** {1 Inspection} *)
 
@@ -23,8 +23,8 @@ val pos : t -> int
 (** [pos w] returns the current write position (same as {!len}). *)
 
 val reset_pos : t -> unit
-(** [reset_pos w] resets the write position to zero. The underlying buffer
-    is not cleared. *)
+(** [reset_pos w] resets the write position to zero. The underlying buffer is
+    not cleared. *)
 
 val slice : t -> bytes
 (** [slice w] returns a fresh copy of the bytes written so far. *)
@@ -39,5 +39,5 @@ val write_string : t -> string -> unit
 (** [write_string w s] appends string [s] to the buffer. *)
 
 val write_subbytes : t -> bytes -> int -> int -> unit
-(** [write_subbytes w buf off len] appends [len] bytes from [buf] starting
-    at offset [off]. *)
+(** [write_subbytes w buf off len] appends [len] bytes from [buf] starting at
+    offset [off]. *)

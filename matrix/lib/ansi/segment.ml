@@ -3,8 +3,8 @@ type state = { style : Style.t; link_open : bool }
 
 let initial_state = { style = Style.default; link_open = false }
 
-let emit ?(state = initial_state) ?(hyperlinks_enabled = true)
-    (w : Writer.t) (segments : segment list) : state =
+let emit ?(state = initial_state) ?(hyperlinks_enabled = true) (w : Writer.t)
+    (segments : segment list) : state =
   List.fold_left
     (fun { style = prev_style; link_open } (style, text) ->
       let prev_link = Style.link prev_style in

@@ -67,8 +67,8 @@ val is_calc : t -> bool
 val value : t -> float
 (** [value t] extracts the numeric value from [t].
 
-    Raises [Failure] if [t] is [auto] or a [calc()] expression, as those have
-    no numeric value. *)
+    Raises [Failure] if [t] is [auto] or a [calc()] expression, as those have no
+    numeric value. *)
 
 (** {1 Resolution} *)
 
@@ -82,8 +82,8 @@ val resolve_to_option : t -> float -> float option
 
     Percentage results are rounded to f32 precision to match Taffy behavior.
 
-    Raises [Failure] if [t] is a [calc()] expression or any unsupported tag.
-    Use {!resolve_to_option_with_calc} for calc support. *)
+    Raises [Failure] if [t] is a [calc()] expression or any unsupported tag. Use
+    {!resolve_to_option_with_calc} for calc support. *)
 
 val resolve_to_option_with_calc :
   t -> float -> (int -> float -> float) -> float option

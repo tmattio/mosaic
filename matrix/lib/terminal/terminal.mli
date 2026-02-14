@@ -22,8 +22,8 @@
 
     {!val-open_terminal} seeds capabilities using environment heuristics and
     platform quirks. {!val-query_capabilities} refines the record by issuing
-    DECRQM/DA/XTVersion queries . {!val-capabilities} returns the latest known view
-    and reflects all responses processed so far.
+    DECRQM/DA/XTVersion queries . {!val-capabilities} returns the latest known
+    view and reflects all responses processed so far.
 
     {1 Usage basics}
 
@@ -51,7 +51,8 @@
 
     - All writes retry on [EINTR]/[EAGAIN] before failing with {!Error}.
     - [next_event] supports timeouts, folds capability responses into
-      {!type-capabilities}, and filters them out of the public {!Input.t} stream.
+      {!type-capabilities}, and filters them out of the public {!Input.t}
+      stream.
 
     {b Note}: This module opens [Unix], which imports all Unix types and
     functions into the namespace. *)
@@ -62,9 +63,9 @@ exception Error of string
 (** Raised for terminal I/O failures.
 
     {!Error} wraps an underlying [Unix_error] as a human-readable message via
-    [Unix.error_message]. [EINTR] and [EAGAIN] are retried internally, so
-    seeing this exception indicates a hard failure such as a closed descriptor
-    or an unrecoverable write error. *)
+    [Unix.error_message]. [EINTR] and [EAGAIN] are retried internally, so seeing
+    this exception indicates a hard failure such as a closed descriptor or an
+    unrecoverable write error. *)
 
 (** {1 Modes and protocols} *)
 
@@ -120,8 +121,8 @@ type unicode_width = [ `Wcwidth | `Unicode ]
       setups but inaccurate for some emoji and combining characters.
     - [`Unicode]: use modern Unicode width tables.
 
-    {!val-set_unicode_width} updates both terminal configuration (when supported)
-    and the cached {!type-capabilities}. *)
+    {!val-set_unicode_width} updates both terminal configuration (when
+    supported) and the cached {!type-capabilities}. *)
 
 type cursor_style = [ `Block | `Line | `Underline ]
 (** Cursor visual style.
@@ -368,8 +369,8 @@ val switch_mode : t -> mode -> unit
 
     For non-TTY inputs, only the internal mode field is updated.
 
-    Raises [Unix.Unix_error] if termios operations or non-blocking toggles
-    fail. *)
+    Raises [Unix.Unix_error] if termios operations or non-blocking toggles fail.
+*)
 
 val with_mode : t -> mode -> (unit -> 'a) -> 'a
 (** [with_mode t mode f] runs [f] under [mode] and restores the previous mode.
@@ -624,8 +625,8 @@ val read : ?timeout:float -> t -> (Input.t -> unit) -> bool
     - Drains any queued events from previous reads.
     - Flushes parser timeouts (e.g., lone Escape keys).
     - Reads available bytes from the terminal and parses them.
-    - Folds capability responses into {!type-capabilities} and {!type-terminal_info},
-      excluding them from the event stream.
+    - Folds capability responses into {!type-capabilities} and
+      {!type-terminal_info}, excluding them from the event stream.
 
     @param timeout
       controls blocking behavior:

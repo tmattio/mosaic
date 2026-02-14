@@ -6,21 +6,15 @@
 (** {1 Axis types} *)
 
 module Absolute_axis = Absolute_axis
-
 module Abstract_axis = Abstract_axis
 
 (** {1 Geometric types} *)
 
 module Size = Size
-
 module Point = Point
-
 module Line = Line
-
 module Rect = Rect
-
 module Min_max = Min_max
-
 module In_both_abs_axis = In_both_abs_axis
 
 (** {1 Type aliases} *)

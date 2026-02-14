@@ -1,5 +1,4 @@
 include Escape
-
 module Color = Color
 module Attr = Attr
 module Style = Style
@@ -40,7 +39,8 @@ let strip str =
         | Parser.Text s -> Buffer.add_string buf s
         | Parser.SGR _ | Parser.Control _ -> ()
       in
-      Parser.feed p (Bytes.unsafe_of_string str) ~off:0
-        ~len:(String.length str) collect;
+      Parser.feed p
+        (Bytes.unsafe_of_string str)
+        ~off:0 ~len:(String.length str) collect;
       Parser.feed p Bytes.empty ~off:0 ~len:0 collect;
       Buffer.contents buf

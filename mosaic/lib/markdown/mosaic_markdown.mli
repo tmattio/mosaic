@@ -2,9 +2,9 @@
 
     A Markdown renderer for Mosaic UI.
 
-    This library parses CommonMark (via [Cmarkit]) and renders it into a tree
-    of Mosaic UI nodes (Text / Box / Code / Table). The public API is organized
-    as follows:
+    This library parses CommonMark (via [Cmarkit]) and renders it into a tree of
+    Mosaic UI nodes (Text / Box / Code / Table). The public API is organized as
+    follows:
 
     - {!Style}: purely visual theming (colors, margins/padding)
     - {!Props}: component configuration including the document to render,
@@ -483,9 +483,9 @@ val set_languages : t -> Mosaic_syntax.Set.t -> unit
 val parse : ?strict:bool -> string -> Cmarkit.Doc.t
 (** [parse ?strict markdown] parses a markdown string into a document.
 
-    Returns a [Cmarkit.Doc.t] suitable for rendering via [Props.doc]. Parsing
-    is separate from rendering to enable caching parsed documents and
-    manipulating the AST before display.
+    Returns a [Cmarkit.Doc.t] suitable for rendering via [Props.doc]. Parsing is
+    separate from rendering to enable caching parsed documents and manipulating
+    the AST before display.
 
     The [strict] parameter controls parsing strictness. Defaults to false,
     allowing lenient CommonMark parsing with GFM extensions. Set to true for

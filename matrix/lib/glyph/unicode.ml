@@ -119,12 +119,11 @@ let[@inline] indic_conjunct_break u =
   land 0x03
 
 let[@inline] is_extended_pictographic u =
-  Bigarray.Array1.unsafe_get prop_table (pack_u (Uchar.to_int u)) land 0x80
-  <> 0
+  Bigarray.Array1.unsafe_get prop_table (pack_u (Uchar.to_int u)) land 0x80 <> 0
 
 let[@inline] tty_width_hint u =
-  ((Bigarray.Array1.unsafe_get prop_table (pack_u (Uchar.to_int u)) lsr 8)
-  land 0x03)
+  (Bigarray.Array1.unsafe_get prop_table (pack_u (Uchar.to_int u)) lsr 8)
+  land 0x03
   - 1
 
 (* Combined lookup - returns packed (gcb, incb, extpic) in one Bigarray access.
@@ -133,7 +132,7 @@ let[@inline] grapheme_props u =
   Bigarray.Array1.unsafe_get prop_table (pack_u (Uchar.to_int u)) land 0xFF
 
 (* Full packed lookup - returns all properties including width in one access.
-   Returns: bits 0-4 = gcb, bits 5-6 = incb, bit 7 = extpic,
-            bits 8-9 = width_enc (0=-1, 1=0, 2=1, 3=2) *)
+   Returns: bits 0-4 = gcb, bits 5-6 = incb, bit 7 = extpic, bits 8-9 =
+   width_enc (0=-1, 1=0, 2=1, 3=2) *)
 let[@inline] all_props u =
   Bigarray.Array1.unsafe_get prop_table (pack_u (Uchar.to_int u))

@@ -19,8 +19,7 @@ let[@inline] write_string w s =
   if slen = 0 then ()
   else if w.cap = 0 then w.pos <- w.pos + slen
   else (
-    if w.pos + slen > w.cap then
-      invalid_arg "Writer: buffer overflow (string)";
+    if w.pos + slen > w.cap then invalid_arg "Writer: buffer overflow (string)";
     Bytes.blit_string s 0 w.bytes w.pos slen;
     w.pos <- w.pos + slen)
 
@@ -30,7 +29,6 @@ let[@inline] write_subbytes w bytes off blen =
   if blen = 0 then ()
   else if w.cap = 0 then w.pos <- w.pos + blen
   else (
-    if w.pos + blen > w.cap then
-      invalid_arg "Writer: buffer overflow (bytes)";
+    if w.pos + blen > w.cap then invalid_arg "Writer: buffer overflow (bytes)";
     Bytes.blit bytes off w.bytes w.pos blen;
     w.pos <- w.pos + blen)

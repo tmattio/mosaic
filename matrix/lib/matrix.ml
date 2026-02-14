@@ -407,8 +407,7 @@ let submit t =
         let send s = Terminal.write t.terminal s in
 
         (* Begin sync bracket early to include clears (prevents flicker) *)
-        if use_sync then
-          send Ansi.(to_string (enable Sync_output));
+        if use_sync then send Ansi.(to_string (enable Sync_output));
 
         (* Hide cursor during render to avoid flicker. *)
         if Terminal.cursor_visible t.terminal then

@@ -42,13 +42,11 @@ let initial_pool_bytes = 4096 * 8
 
 let[@inline] normalize_tab_width w = if w <= 0 then default_tab_width else w
 
-(* Width of an ASCII byte (0-127). Tab returns tab_width, printable
-   (0x20-0x7E) returns 1, control characters return 0. Two comparisons
-   instead of a table lookup (which costs 3 dependent memory loads). *)
+(* Width of an ASCII byte (0-127). Tab returns tab_width, printable (0x20-0x7E)
+   returns 1, control characters return 0. Two comparisons instead of a table
+   lookup (which costs 3 dependent memory loads). *)
 let[@inline] ascii_width ~tab_width b =
-  if b = 0x09 then tab_width
-  else if b >= 0x20 && b <= 0x7E then 1
-  else 0
+  if b = 0x09 then tab_width else if b >= 0x20 && b <= 0x7E then 1 else 0
 
 (* Check if string contains only ASCII bytes - processes 4 bytes at a time *)
 let rec is_ascii_only_tail str len j =
@@ -65,13 +63,10 @@ let rec is_ascii_only str len i =
     c0 lor c1 lor c2 lor c3 < 128 && is_ascii_only str len (i + 4)
   else is_ascii_only_tail str len i
 
-
 (* Width Predicates *)
 
 let[@inline] is_regional_indicator cp = cp >= 0x1F1E6 && cp <= 0x1F1FF
-
-let[@inline] is_virama cp =
-  cp land 0x7F = 0x4D && cp >= 0x094D && cp <= 0x0D4D
+let[@inline] is_virama cp = cp land 0x7F = 0x4D && cp >= 0x094D && cp <= 0x0D4D
 
 let[@inline] is_devanagari_base cp =
   (cp >= 0x0915 && cp <= 0x0939) || (cp >= 0x0958 && cp <= 0x095F)
@@ -387,7 +382,7 @@ let copy ~src c ~dst =
       let len = Array.unsafe_get src.lengths idx in
       let src_off = Array.unsafe_get src.offsets idx in
       if src_off + len > Bytes.length src.storage then 0
-      else (
+      else
         let dst_id, cursor = alloc_slot dst len in
         let dst_gen = Array.unsafe_get dst.generations dst_id in
         Bytes.blit ~src:src.storage ~src_pos:src_off ~dst:dst.storage
@@ -395,7 +390,7 @@ let copy ~src c ~dst =
         if is_continuation c then
           pack_continuation ~idx:dst_id ~gen:dst_gen ~left:(left_extent c)
             ~right:(right_extent c)
-        else pack_start dst_id dst_gen (width c))
+        else pack_start dst_id dst_gen (width c)
 
 let to_string pool c =
   if is_simple c then (
@@ -543,14 +538,16 @@ let encode pool ?(width_method = `Unicode) ?(tab_width = default_tab_width) f
       else
         let end_pos = next_boundary seg ~ignore_zwj str i len in
         let clus_len = end_pos - i in
-        let w = grapheme_width ~method_:width_method ~tab_width str i clus_len in
+        let w =
+          grapheme_width ~method_:width_method ~tab_width str i clus_len
+        in
         if w > 0 then emit_complex ~off:i ~clus_len ~width:w;
         loop end_pos
   in
   loop 0
 
-let iter_grapheme_info ?(width_method = `Unicode) ?(tab_width = default_tab_width)
-    f str =
+let iter_grapheme_info ?(width_method = `Unicode)
+    ?(tab_width = default_tab_width) f str =
   let tab_width = normalize_tab_width tab_width in
   let len = String.length str in
   if len = 0 then ()
@@ -648,9 +645,15 @@ let rec measure_ascii_tail str len tab_width i total =
 let rec measure_ascii str len tab_width i total =
   if i + 4 <= len then
     let w0 = ascii_width ~tab_width (Char.code (String.unsafe_get str i)) in
-    let w1 = ascii_width ~tab_width (Char.code (String.unsafe_get str (i + 1))) in
-    let w2 = ascii_width ~tab_width (Char.code (String.unsafe_get str (i + 2))) in
-    let w3 = ascii_width ~tab_width (Char.code (String.unsafe_get str (i + 3))) in
+    let w1 =
+      ascii_width ~tab_width (Char.code (String.unsafe_get str (i + 1)))
+    in
+    let w2 =
+      ascii_width ~tab_width (Char.code (String.unsafe_get str (i + 2)))
+    in
+    let w3 =
+      ascii_width ~tab_width (Char.code (String.unsafe_get str (i + 3)))
+    in
     measure_ascii str len tab_width (i + 4) (total + w0 + w1 + w2 + w3)
   else measure_ascii_tail str len tab_width i total
 
@@ -664,10 +667,9 @@ let rec measure_wcwidth str len tab_width i total =
 
 (* Fused segmentation + width loop for Unicode/No_zwj methods.
 
-   State flags packed in [flags]:
-   - bit 0: has_width (grapheme has a base width)
-   - bit 1: ri_pair (last RI was first of a pair)
-   - bit 2: virama (last codepoint was a virama) *)
+   State flags packed in [flags]: - bit 0: has_width (grapheme has a base width)
+   - bit 1: ri_pair (last RI was first of a pair) - bit 2: virama (last
+   codepoint was a virama) *)
 let ms_has_width = 1
 let ms_ri_pair = 2
 let ms_virama = 4
@@ -683,9 +685,7 @@ let rec measure_segmented seg str len tab_width i total g_w flags =
       Uuseg_grapheme_cluster.check_boundary_with_width seg
         (Uchar.unsafe_of_int cp)
     in
-    let cp_w =
-      if cp = 0x09 then tab_width else (bw land 3) - 1
-    in
+    let cp_w = if cp = 0x09 then tab_width else (bw land 3) - 1 in
     if bw land 4 <> 0 then
       let new_total =
         if flags land ms_has_width <> 0 then total + g_w else total
@@ -701,9 +701,7 @@ let rec measure_segmented seg str len tab_width i total g_w flags =
         measure_segmented seg str len tab_width next new_total cp_w ms_has_width
       else measure_segmented seg str len tab_width next new_total 0 0
     else if cp = 0xFE0F then
-      let new_w =
-        if flags land ms_has_width <> 0 && g_w = 1 then 2 else g_w
-      in
+      let new_w = if flags land ms_has_width <> 0 && g_w = 1 then 2 else g_w in
       measure_segmented seg str len tab_width next total new_w flags
     else if is_virama cp then
       measure_segmented seg str len tab_width next total g_w
@@ -713,9 +711,7 @@ let rec measure_segmented seg str len tab_width i total g_w flags =
         measure_segmented seg str len tab_width next total (g_w + cp_w)
           (ms_has_width land lnot ms_virama)
       else
-        let new_w =
-          if flags land ms_has_width = 0 then cp_w else g_w
-        in
+        let new_w = if flags land ms_has_width = 0 then cp_w else g_w in
         measure_segmented seg str len tab_width next total new_w
           (flags lor ms_has_width lor ms_ri_pair land lnot ms_virama)
     else if
@@ -755,7 +751,7 @@ let measure ?(width_method = `Unicode) ?(tab_width = default_tab_width) str =
         let init_flags =
           (if w > 0 then ms_has_width else 0)
           lor (if is_regional_indicator cp then ms_ri_pair else 0)
-          lor (if is_virama cp then ms_virama else 0)
+          lor if is_virama cp then ms_virama else 0
         in
         measure_segmented seg str len tab_width
           (Uchar.utf_decode_length d)

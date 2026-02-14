@@ -442,15 +442,9 @@ let roundtrip_cursor_sequences () =
     (cursor_position ~row:10 ~col:20)
     (Parser.CUP (10, 20));
   test_cursor "cursor next line" (cursor_next_line ~n:3) (Parser.CNL 3);
-  test_cursor "cursor prev line"
-    (cursor_previous_line ~n:2)
-    (Parser.CPL 2);
-  test_cursor "cursor horiz abs"
-    (cursor_horizontal_absolute 15)
-    (Parser.CHA 15);
-  test_cursor "cursor vert abs"
-    (cursor_vertical_absolute 8)
-    (Parser.VPA 8);
+  test_cursor "cursor prev line" (cursor_previous_line ~n:2) (Parser.CPL 2);
+  test_cursor "cursor horiz abs" (cursor_horizontal_absolute 15) (Parser.CHA 15);
+  test_cursor "cursor vert abs" (cursor_vertical_absolute 8) (Parser.VPA 8);
   (* Test cursor save/restore (CSI s/u) *)
   test_cursor "cursor save" cursor_save Parser.DECSC;
   test_cursor "cursor restore" cursor_restore Parser.DECRC
@@ -504,8 +498,7 @@ let roundtrip_hyperlink_sequences () =
     | _ -> fail (Printf.sprintf "%s: expected hyperlink control" name)
   in
   (* Open hyperlink *)
-  test_link "hyperlink open" (hyperlink_start ~url:"http://test.com")
-    (fun h ->
+  test_link "hyperlink open" (hyperlink_start ~url:"http://test.com") (fun h ->
       match h with
       | Some ([], url) -> equal ~msg:"url" string "http://test.com" url
       | _ -> fail "expected open hyperlink");
@@ -534,7 +527,8 @@ let roundtrip_strip_removes_all () =
     (s (erase_display ~mode:`All) ^ "text")
     "text";
   (* Hyperlinks *)
-  test_strip "strip hyperlink" (s (hyperlink ~url:"http://test" ~text:"link"))
+  test_strip "strip hyperlink"
+    (s (hyperlink ~url:"http://test" ~text:"link"))
     "link";
   (* Title *)
   test_strip "strip title" (s (set_title ~title:"test") ^ "text") "text";
@@ -544,7 +538,8 @@ let roundtrip_strip_removes_all () =
     "text";
   (* Mouse modes *)
   test_strip "strip mouse on"
-    (s (enable Mouse_button_tracking) ^ "text"
+    (s (enable Mouse_button_tracking)
+    ^ "text"
     ^ s (disable Mouse_button_tracking))
     "text"
 

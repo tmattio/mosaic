@@ -9,6 +9,8 @@
  (package matrix)
  (action
   (progn
-   (setenv WINDTRAP_PROMOTE true
+   (setenv
+    WINDTRAP_PROMOTE
+    true
     (run ./test_charts.exe))
    (diff? test_charts.ml test_charts.ml.corrected))))

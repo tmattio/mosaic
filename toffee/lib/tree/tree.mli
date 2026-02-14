@@ -29,23 +29,14 @@
 (** {1 Core Types} *)
 
 module Node_id = Node_id
-
 module Run_mode = Run_mode
-
 module Sizing_mode = Sizing_mode
-
 module Collapsible_margin_set = Collapsible_margin_set
-
 module Requested_axis = Requested_axis
-
 module Available_space = Available_space
-
 module Layout_input = Layout_input
-
 module Layout_output = Layout_output
-
 module Layout = Layout
-
 module Cache = Cache
 
 (** {1 Tree Signatures} *)
@@ -68,8 +59,8 @@ module type TRAVERSE_PARTIAL_TREE = sig
   val get_child_id : t -> Node_id.t -> int -> Node_id.t
   (** [get_child_id tree node n] returns the [n]th child ID of [node].
 
-      Raises [Invalid_argument] if [n] is negative or
-      >= [child_count tree node]. *)
+      Raises [Invalid_argument] if [n] is negative or >=
+      [child_count tree node]. *)
 end
 
 (** Tree traversal with full recursive access.

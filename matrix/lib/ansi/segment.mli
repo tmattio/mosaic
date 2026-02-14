@@ -64,11 +64,7 @@ val initial_state : state
     Use this when starting fresh rendering. *)
 
 val emit :
-  ?state:state ->
-  ?hyperlinks_enabled:bool ->
-  Writer.t ->
-  segment list ->
-  state
+  ?state:state -> ?hyperlinks_enabled:bool -> Writer.t -> segment list -> state
 (** [emit ?state ?hyperlinks_enabled writer segments] renders [segments].
 
     @param state

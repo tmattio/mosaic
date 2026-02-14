@@ -242,10 +242,10 @@ val spawn :
     @param args
       Command-line arguments (excluding [argv[0]], which is set to [prog]).
 
-    Raises [Unix.Unix_error] if PTY creation or fork fails. Exec failures in
-    the child process are not reported as exceptions to the parent; the child
-    exits with the errno value as its exit code (e.g., ENOENT=2, EACCES=13).
-    Monitor via [Unix.waitpid] on {!pid}.
+    Raises [Unix.Unix_error] if PTY creation or fork fails. Exec failures in the
+    child process are not reported as exceptions to the parent; the child exits
+    with the errno value as its exit code (e.g., ENOENT=2, EACCES=13). Monitor
+    via [Unix.waitpid] on {!pid}.
 
     @return Master PTY handle. The child's PID is available via {!pid}.
 
@@ -259,8 +259,8 @@ val with_pty : ?winsize:winsize -> (t -> t -> 'a) -> 'a
     handles are closed via [Fun.protect] even if [f] raises an exception. Use
     this for custom process spawning or testing scenarios.
 
-    Raises [Unix.Unix_error] if PTY creation fails or the initial size cannot
-    be applied. Any exception raised by [f] is re-raised after both PTYs are
+    Raises [Unix.Unix_error] if PTY creation fails or the initial size cannot be
+    applied. Any exception raised by [f] is re-raised after both PTYs are
     closed.
 
     @param winsize Initial terminal size
@@ -443,8 +443,8 @@ val set_nonblock : t -> unit
     This setting persists until {!clear_nonblock} is called or the PTY is
     closed.
 
-    Raises [Unix.Unix_error] if toggling non-blocking mode fails (e.g., the
-    file descriptor has already been closed). *)
+    Raises [Unix.Unix_error] if toggling non-blocking mode fails (e.g., the file
+    descriptor has already been closed). *)
 
 val clear_nonblock : t -> unit
 (** [clear_nonblock pty] disables non-blocking mode, restoring default blocking
@@ -488,8 +488,8 @@ val with_spawn :
     @param prog Program path (searched in PATH if relative)
     @param args Command-line arguments (excluding argv[0])
 
-    Raises [Unix.Unix_error] if PTY creation or fork fails before [f] runs.
-    Any exception raised by [f] is re-raised after PTY cleanup.
+    Raises [Unix.Unix_error] if PTY creation or fork fails before [f] runs. Any
+    exception raised by [f] is re-raised after PTY cleanup.
 
     @param f Function receiving the PTY handle
     @return Result of [f] *)

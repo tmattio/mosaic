@@ -117,8 +117,8 @@ type t
 (** Mutable grid of terminal cells.
 
     An opaque handle storing terminal cell data with efficient memory layout.
-    Query dimensions via {!val-width} and {!val-height}; access cells via {!get_code},
-    {!get_style}, and {!get_text}. *)
+    Query dimensions via {!val-width} and {!val-height}; access cells via
+    {!get_code}, {!get_style}, and {!get_text}. *)
 
 type clip_rect = { x : int; y : int; width : int; height : int }
 (** Clipping rectangle in cell coordinates.

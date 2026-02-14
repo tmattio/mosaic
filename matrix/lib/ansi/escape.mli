@@ -363,6 +363,8 @@ val hyperlink_close : writer -> unit
 
 (** {1 Terminal Modes} *)
 
+(** Terminal private modes. Each variant corresponds to a DEC private mode that
+    can be toggled via {!enable}/{!disable}. *)
 type mode =
   | Cursor_visible  (** DECTCEM 25 — cursor visibility. *)
   | Mouse_tracking  (** DECSET 1000 — basic mouse click reporting. *)
@@ -378,8 +380,6 @@ type mode =
   | Sync_output  (** DECSET 2026 — synchronized output. *)
   | Unicode  (** DECSET 2027 — Unicode mode. *)
   | Color_scheme  (** DECSET 2031 — color scheme reporting. *)
-(** Terminal private modes. Each variant corresponds to a DEC private mode
-    that can be toggled via {!enable}/{!disable}. *)
 
 val enable : mode -> t
 (** [enable mode] emits the DECSET sequence to activate [mode].
@@ -417,6 +417,9 @@ val modify_other_keys_off : t
 
 (** {1 Device and Capability Queries} *)
 
+(** Terminal capability and state queries. Each variant emits the appropriate
+    query sequence; the terminal responds asynchronously. Parse responses via
+    {!Parser} or raw input handling. *)
 type query =
   | Cursor_position  (** DSR 6 — current cursor position. *)
   | Pixel_size  (** CSI 14 t — terminal pixel dimensions. *)
@@ -436,9 +439,6 @@ type query =
   | Sync_mode  (** DECRQM 2026 — synchronized output state. *)
   | Unicode_mode  (** DECRQM 2027 — Unicode mode state. *)
   | Color_scheme_mode  (** DECRQM 2031 — color scheme reporting state. *)
-(** Terminal capability and state queries. Each variant emits the appropriate
-    query sequence; the terminal responds asynchronously. Parse responses via
-    {!Parser} or raw input handling. *)
 
 val query : query -> t
 (** [query q] emits the query sequence for [q]. *)

@@ -411,8 +411,8 @@ val char :
   char ->
   t
 (** [char ?modifier ?event_type ?associated_text ?shifted_key ?base_key c]
-    constructs a {!module-Key} event for ASCII character [c]. Convenience wrapper
-    around {!key} that converts the [char] to [Uchar.t] and sets
+    constructs a {!module-Key} event for ASCII character [c]. Convenience
+    wrapper around {!key} that converts the [char] to [Uchar.t] and sets
     [associated_text]. *)
 
 val key_event :

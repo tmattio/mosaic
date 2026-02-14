@@ -50,8 +50,8 @@
     {2 Layout Integration}
 
     Each renderable wraps a Toffee layout node. Toffee computes flexbox-based
-    positions and dimensions; {!val-x}, {!val-y}, {!width}, and {!height} expose the
-    computed layout. Modifications via {!set_style} or {!mark_layout_dirty}
+    positions and dimensions; {!val-x}, {!val-y}, {!width}, and {!height} expose
+    the computed layout. Modifications via {!set_style} or {!mark_layout_dirty}
     trigger re-layout on the next frame.
 
     {2 Rendering Pipeline}
@@ -78,9 +78,9 @@
 
     {2 Focus Management}
 
-    Mark nodes focusable with {!set_focusable}. Call {!val-focus} to request focus
-    (delegated to the renderer's focus controller). Only one node is focused at
-    a time. Focused nodes receive keyboard and paste events.
+    Mark nodes focusable with {!set_focusable}. Call {!val-focus} to request
+    focus (delegated to the renderer's focus controller). Only one node is
+    focused at a time. Focused nodes receive keyboard and paste events.
 
     {2 Lifecycle Hooks}
 
@@ -114,7 +114,8 @@
     - Child sorting is O(n log n) via insertion sort, cached until z-index or
       position changes
     - Tree mutations ({!append_child}, {!detach}) are O(1) but invalidate caches
-    - Layout queries ({!val-x}, {!val-y}, {!width}, {!height}) are O(1) after caching
+    - Layout queries ({!val-x}, {!val-y}, {!width}, {!height}) are O(1) after
+      caching
     - Viewport culling via {!Internal.children_in_viewport} uses binary search
       for large child lists (>= 16)
 
@@ -138,8 +139,8 @@ type render = t -> Grid.t -> delta:float -> unit
     the main grid or a node's buffered grid); [delta] is elapsed time in
     milliseconds since the last frame.
 
-    Rendering operates within the node's computed layout bounds ({!val-x}, {!val-y},
-    {!width}, {!height}) but may draw outside if not clipped. Use
+    Rendering operates within the node's computed layout bounds ({!val-x},
+    {!val-y}, {!width}, {!height}) but may draw outside if not clipped. Use
     {!Grid.with_scissor} or {!set_child_clip} for constrained rendering. *)
 
 type measure =

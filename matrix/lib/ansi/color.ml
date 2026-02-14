@@ -180,7 +180,8 @@ let of_rgba r g b a =
     { r = clamp_byte r; g = clamp_byte g; b = clamp_byte b; a = clamp_byte a }
 
 let of_rgba_f r g b a =
-  of_rgba (byte_of_float r) (byte_of_float g) (byte_of_float b) (byte_of_float a)
+  of_rgba (byte_of_float r) (byte_of_float g) (byte_of_float b)
+    (byte_of_float a)
 
 (* Pre-allocated Extended colors (16-255) - avoids allocation in hot paths *)
 let extended_colors = Array.init 240 (fun i -> Extended (i + 16))
@@ -272,7 +273,7 @@ let compare a b = Int.compare (rgba_packed a) (rgba_packed b)
 
 let hash color =
   let h = rgba_packed color in
-  (h lxor (h lsr 16)) land max_int
+  h lxor (h lsr 16) land max_int
 
 let alpha color =
   match color with Default -> 0. | Rgba { a; _ } -> float_of_byte a | _ -> 1.
@@ -290,7 +291,12 @@ let blend ?(mode = `Perceptual) ~src ~dst () =
       with_rgba_f dst (fun dr dg db da_f ->
           let sa = clamp_channel_f sa_f in
           if sa >= 0.999 then
-            Rgb { r = byte_of_float sr; g = byte_of_float sg; b = byte_of_float sb }
+            Rgb
+              {
+                r = byte_of_float sr;
+                g = byte_of_float sg;
+                b = byte_of_float sb;
+              }
           else if sa <= Float.epsilon then dst
           else
             let sa_blend =

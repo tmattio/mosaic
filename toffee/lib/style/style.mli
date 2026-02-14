@@ -9,79 +9,52 @@ type calc_resolver = int -> float -> float
 (** {1 Length types} *)
 
 module Compact_length = Compact_length
-
 module Length_percentage = Length_percentage
-
 module Length_percentage_auto = Length_percentage_auto
-
 module Dimension = Dimension
 
 (** {1 Layout control types} *)
 
 module Display = Display
-
 module Position = Position
-
 module Overflow = Overflow
-
 module Box_sizing = Box_sizing
-
 module Box_generation_mode = Box_generation_mode
-
 module Text_align = Text_align
 
 (** {1 Flexbox types} *)
 
 module Flex_direction = Flex_direction
-
 module Flex_wrap = Flex_wrap
 
 (** {1 Alignment types} *)
 
 module Align_items = Alignment.Align_items
-
 module Justify_items = Alignment.Justify_items
-
 module Align_self = Alignment.Align_self
-
 module Justify_self = Alignment.Justify_self
-
 module Align_content = Alignment.Align_content
-
 module Justify_content = Alignment.Justify_content
 
 (** {1 Grid types} *)
 
 module Grid_auto_flow = Grid_auto_flow
-
 module Grid_placement = Grid_placement
-
 module Grid_repetition = Grid_repetition
-
 module Grid_template_area = Grid_template_area
-
 module Grid_template_component = Grid_template_component
-
 module Repetition_count = Repetition_count
-
 module Track_sizing_function = Track_sizing_function
 
 (** Grid coordinate systems and track utilities with submodules. *)
 module Grid : sig
   include module type of Grid
-
   module Auto_flow = Grid_auto_flow
-
   module Placement = Grid_placement
-
   module Track_sizing_function = Track_sizing_function
-
   module Repetition_count = Repetition_count
-
   module Repetition = Grid_repetition
-
   module Template_component = Grid_template_component
-
   module Template_area = Grid_template_area
 end
 

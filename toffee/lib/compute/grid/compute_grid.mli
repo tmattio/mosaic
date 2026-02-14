@@ -142,15 +142,9 @@ val compute_grid_layout :
 (** {1 Submodules} *)
 
 module Implicit_grid = Implicit_grid
-
 module Explicit_grid = Explicit_grid
-
 module Grid_track_counts = Grid_track_counts
-
 module Cell_occupancy = Cell_occupancy
-
 module Grid_item = Grid_item
-
 module Placement = Placement
-
 module Named = Named

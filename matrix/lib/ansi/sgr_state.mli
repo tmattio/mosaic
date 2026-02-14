@@ -14,8 +14,8 @@
 
     {1 Performance}
 
-    {!update} is {b zero-allocation}: it writes directly to the [Writer.t]
-    using low-level primitives. No closures, lists, or intermediate strings are
+    {!update} is {b zero-allocation}: it writes directly to the [Writer.t] using
+    low-level primitives. No closures, lists, or intermediate strings are
     created. This makes it suitable for hot render loops processing thousands of
     cells per frame.
 

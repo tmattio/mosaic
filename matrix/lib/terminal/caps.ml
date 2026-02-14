@@ -355,28 +355,19 @@ let apply_events ?(apply_env_overrides = false) ~caps ~info events =
 let cursor_save = Ansi.(to_string cursor_save)
 let cursor_restore = Ansi.(to_string cursor_restore)
 let home = Ansi.(to_string home)
-
-let explicit_width_query =
-  Ansi.(to_string (query Explicit_width_support))
-
-let scaled_text_query =
-  Ansi.(to_string (query Scaled_text_support))
-
+let explicit_width_query = Ansi.(to_string (query Explicit_width_support))
+let scaled_text_query = Ansi.(to_string (query Scaled_text_support))
 let xtversion_query = Ansi.(to_string (query Terminal_identity))
 let csi_u_query = Ansi.(to_string (query Csi_u_support))
 let decrqm_sgr_pixels = Ansi.(to_string (query Sgr_pixels_mode))
 let decrqm_unicode = Ansi.(to_string (query Unicode_mode))
 let decrqm_color_scheme = Ansi.(to_string (query Color_scheme_query))
 let decrqm_focus = Ansi.(to_string (query Focus_mode))
-
-let decrqm_bracketed_paste =
-  Ansi.(to_string (query Bracketed_paste_mode))
-
+let decrqm_bracketed_paste = Ansi.(to_string (query Bracketed_paste_mode))
 let decrqm_sync = Ansi.(to_string (query Sync_mode))
 let cursor_position_request = Ansi.(to_string (query Cursor_position))
 let kitty_graphics_query = Ansi.(to_string (query Kitty_graphics))
 let primary_device_attrs = Ansi.(to_string (query Device_attributes))
-
 let iterm2_proprietary_query = "\027]1337;ReportCellSize\007"
 
 let build_probe_payload term =

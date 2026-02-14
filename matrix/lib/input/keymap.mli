@@ -62,5 +62,4 @@ val add_key :
 
 val find : 'a t -> Event.t -> 'a option
 (** [find map event] returns the most recently added binding matching a
-    [Event.Key] event with compatible modifiers. Non-key events yield [None].
-*)
+    [Event.Key] event with compatible modifiers. Non-key events yield [None]. *)

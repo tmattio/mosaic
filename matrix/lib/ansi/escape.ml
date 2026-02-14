@@ -291,7 +291,6 @@ let cursor_style ~shape w =
   add_int w (cursor_shape_to_int shape);
   write_string w " q"
 
-
 let cursor_color ~r ~g ~b w =
   write_string w "\027]12;#";
   add_hex2 w (clamp_byte r);
@@ -316,21 +315,13 @@ let erase_display_mode_to_int = function
   | `All -> 2
   | `Scrollback -> 3
 
-let erase_display ~mode w =
-  csi_n 'J' (erase_display_mode_to_int mode) w
-
+let erase_display ~mode w = csi_n 'J' (erase_display_mode_to_int mode) w
 let erase_below_cursor : t = literal "\027[J"
 
 type erase_line_mode = [ `Right | `Left | `All ]
 
-let erase_line_mode_to_int = function
-  | `Right -> 0
-  | `Left -> 1
-  | `All -> 2
-
-let erase_line ~mode w =
-  csi_n 'K' (erase_line_mode_to_int mode) w
-
+let erase_line_mode_to_int = function `Right -> 0 | `Left -> 1 | `All -> 2
+let erase_line ~mode w = csi_n 'K' (erase_line_mode_to_int mode) w
 let insert_lines ~n = csi_n_opt 'L' n
 let delete_lines ~n = csi_n_opt 'M' n
 let scroll_up ~n = csi_n_opt 'S' n
@@ -362,7 +353,6 @@ let set_foreground ~r ~g ~b w = csi_rgb "\027[38;2;" r g b w
 let set_background ~r ~g ~b w = csi_rgb "\027[48;2;" r g b w
 let reset_background : t = literal "\027[49m"
 let reset_foreground : t = literal "\027[39m"
-
 
 (* Terminal Properties *)
 
@@ -518,4 +508,3 @@ let query = function
   | Sync_mode -> literal "\027[?2026$p"
   | Unicode_mode -> literal "\027[?2027$p"
   | Color_scheme_mode -> literal "\027[?2031$p"
-

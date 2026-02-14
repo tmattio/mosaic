@@ -2,9 +2,9 @@
 
     Mosaic_ui provides the core building blocks for terminal user interfaces:
     renderables, a renderer, and UI components. The primary API centers on
-    {!module-Renderable} and {!module-Renderer}, which give full control over node creation,
-    tree manipulation, layout, and rendering for building efficient reconcilers
-    and rendering loops.
+    {!module-Renderable} and {!module-Renderer}, which give full control over
+    node creation, tree manipulation, layout, and rendering for building
+    efficient reconcilers and rendering loops.
 
     {1 Typical Usage}
 
@@ -34,42 +34,28 @@
     ]}
 
     This API is not intended for production reconcilers, which should use the
-    {!module-Renderable} and {!module-Renderer} APIs directly for optimal performance. *)
+    {!module-Renderable} and {!module-Renderer} APIs directly for optimal
+    performance. *)
 
 module Renderable = Renderable
-
 module Renderer = Renderer
-
 module Border = Grid.Border
-
 module Event = Event
 
 (** {1 Renderables} *)
 
 module Box = Box
-
 module Text = Text
-
 module Canvas = Canvas
-
 module Table = Table
-
 module Slider = Slider
-
 module Select = Select
-
 module Spinner = Spinner
-
 module Tab_select = Tab_select
-
 module Scroll_bar = Scroll_bar
-
 module Scroll_box = Scroll_box
-
 module Text_input = Text_input
-
 module Code = Code
-
 module Text_surface = Text_surface
 
 (** {1 Dimension Helpers} *)

@@ -1427,8 +1427,8 @@ val empty : ?theme:Theme.t -> unit -> t
 
     @param theme Chart theme. Default is {!Theme.default}.
 
-    The chart uses {!constructor-Scale.Auto} for both axes, {!Axis.default} for rendering,
-    and {!Gridlines.hidden} for no grid. *)
+    The chart uses {!constructor-Scale.Auto} for both axes, {!Axis.default} for
+    rendering, and {!Gridlines.hidden} for no grid. *)
 
 val with_theme : Theme.t -> t -> t
 (** [with_theme theme t] applies [theme] to [t].

@@ -940,7 +940,9 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
                     ~right:(Cell_code.right_extent code)
             | None ->
                 (* code is a valid Glyph.t due to aligned formats *)
-                let dst_glyph = Glyph.copy ~src:src.glyph_pool code ~dst:dst.glyph_pool in
+                let dst_glyph =
+                  Glyph.copy ~src:src.glyph_pool code ~dst:dst.glyph_pool
+                in
                 Hashtbl.add grapheme_map payload dst_glyph;
                 if Cell_code.is_start code then dst_glyph
                 else
@@ -1594,9 +1596,7 @@ let snapshot ?(reset = true) t : string =
                     scratch :=
                       Bytes.create (max (Bytes.length !scratch * 2) len);
                   let written = Glyph.blit pool code !scratch ~pos:0 in
-                  Ansi.emit
-                    (Ansi.bytes !scratch ~off:0 ~len:written)
-                    w));
+                  Ansi.emit (Ansi.bytes !scratch ~off:0 ~len:written) w));
 
             x := !x + cell_w
           done;
