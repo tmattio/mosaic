@@ -179,6 +179,9 @@ let of_rgba r g b a =
   Rgba
     { r = clamp_byte r; g = clamp_byte g; b = clamp_byte b; a = clamp_byte a }
 
+let of_rgba_f r g b a =
+  of_rgba (byte_of_float r) (byte_of_float g) (byte_of_float b) (byte_of_float a)
+
 (* Pre-allocated Extended colors (16-255) - avoids allocation in hot paths *)
 let extended_colors = Array.init 240 (fun i -> Extended (i + 16))
 

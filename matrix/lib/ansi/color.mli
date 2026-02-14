@@ -168,6 +168,14 @@ val of_rgba : int -> int -> int -> int -> t
 
     All components are clamped to \[0, 255\]. *)
 
+val of_rgba_f : float -> float -> float -> float -> t
+(** [of_rgba_f r g b a] creates a color from normalized RGBA floats in
+    \[0.0, 1.0\].
+
+    Components are clamped to \[0.0, 1.0\] and converted to 8-bit integers.
+    Inverse of {!to_rgba_f}: [of_rgba_f] and {!to_rgba_f} round-trip within
+    rounding tolerance. *)
+
 val of_palette_index : int -> t
 (** [of_palette_index idx] creates a color from 256-color palette index.
 
