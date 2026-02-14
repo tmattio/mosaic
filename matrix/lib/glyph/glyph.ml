@@ -3,6 +3,9 @@ open StdLabels
 (* Types *)
 
 type t = int
+
+let empty = 0
+
 type width_method = [ `Unicode | `Wcwidth | `No_zwj ]
 
 type pool = {

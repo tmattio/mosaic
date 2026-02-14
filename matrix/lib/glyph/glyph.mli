@@ -51,6 +51,11 @@ type t = int
     and 64-bit OCaml. Always unboxed (immediate value) with zero allocation
     overhead. *)
 
+val empty : t
+(** The empty glyph ([0]). Represents control characters, zero-width
+    sequences, and U+0000. This is the only glyph for which {!is_empty}
+    returns [true]. *)
+
 type width_method = [ `Unicode | `Wcwidth | `No_zwj ]
 (** Width calculation method for grapheme clusters.
 
