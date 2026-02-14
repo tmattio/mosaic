@@ -40,60 +40,13 @@ let strip str =
   | None -> str (* Fast path: no escape sequences, zero allocations *)
   | Some _ ->
       let buf = Buffer.create (String.length str) in
-      let len = String.length str in
-      let i = ref 0 in
-      while !i < len do
-        let c = str.[!i] in
-        if c = '\x1b' then
-          if !i + 1 >= len then i := len
-          else
-            match str.[!i + 1] with
-            | '[' ->
-                (* CSI sequences: ESC [ ... <final byte> *)
-                let j = ref (!i + 2) in
-                while
-                  !j < len
-                  &&
-                  let c2 = Char.code str.[!j] in
-                  not (c2 >= 0x40 && c2 <= 0x7e)
-                do
-                  incr j
-                done;
-                if !j < len then i := !j + 1 else i := len
-            | ']' -> (
-                (* OSC sequences: ESC ] ... (BEL | ESC \\) *)
-                let terminator = ref None in
-                let j = ref (!i + 2) in
-                while !j < len && !terminator = None do
-                  if str.[!j] = '\x07' then terminator := Some (!j + 1)
-                  else if
-                    str.[!j] = '\x1b' && !j + 1 < len && str.[!j + 1] = '\\'
-                  then terminator := Some (!j + 2)
-                  else incr j
-                done;
-                i :=
-                  match !terminator with Some end_pos -> end_pos | None -> len)
-            | 'N' | 'O' ->
-                (* SS2/SS3: ESC N/O + one char *)
-                i := if !i + 2 < len then !i + 3 else len
-            | 'P' | 'X' | '^' | '_' -> (
-                (* DCS/SOS/PM/APC: ESC P/X/^/_ ... ESC \\ *)
-                let terminator = ref None in
-                let j = ref (!i + 2) in
-                while !j < len && !terminator = None do
-                  if str.[!j] = '\x1b' && !j + 1 < len && str.[!j + 1] = '\\'
-                  then terminator := Some (!j + 2)
-                  else incr j
-                done;
-                i :=
-                  match !terminator with Some end_pos -> end_pos | None -> len)
-            | _ ->
-                (* Single-char escapes: ESC <char> *)
-                i := !i + 2
-        else (
-          Buffer.add_char buf c;
-          incr i)
-      done;
+      let p = Parser.create () in
+      let collect = function
+        | Parser.Text s -> Buffer.add_string buf s
+        | Parser.SGR _ | Parser.Control _ -> ()
+      in
+      Parser.feed p (Bytes.unsafe_of_string str) 0 (String.length str) collect;
+      Parser.feed p Bytes.empty 0 0 collect;
       Buffer.contents buf
 
 let cursor_up ~n = Escape.to_string (Escape.cursor_up ~n)
