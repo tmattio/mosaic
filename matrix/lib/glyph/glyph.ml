@@ -246,7 +246,7 @@ let[@inline] push_free pool idx =
   Array.unsafe_set pool.free_stack pool.free_count idx;
   pool.free_count <- pool.free_count + 1
 
-let alloc_string pool str off len =
+let[@inline] alloc_slot pool len =
   ensure_id_capacity pool;
   let id = next_free_id pool in
   let cap = Array.unsafe_get pool.lengths id in
@@ -258,24 +258,18 @@ let alloc_string pool str off len =
       pool.storage_cursor <- cur + len;
       cur)
   in
-  Bytes.blit_string ~src:str ~src_pos:off ~dst:pool.storage ~dst_pos:cursor ~len;
   Array.unsafe_set pool.offsets id cursor;
   Array.unsafe_set pool.lengths id len;
   Array.unsafe_set pool.refcounts id 0;
+  (id, cursor)
+
+let alloc_string pool str off len =
+  let id, cursor = alloc_slot pool len in
+  Bytes.blit_string ~src:str ~src_pos:off ~dst:pool.storage ~dst_pos:cursor ~len;
   id
 
 let alloc_codepoint pool u len =
-  ensure_id_capacity pool;
-  let id = next_free_id pool in
-  let cap = Array.unsafe_get pool.lengths id in
-  let cursor =
-    if cap >= len then Array.unsafe_get pool.offsets id
-    else (
-      ensure_storage_capacity pool len;
-      let cur = pool.storage_cursor in
-      pool.storage_cursor <- cur + len;
-      cur)
-  in
+  let id, cursor = alloc_slot pool len in
   let dst = pool.storage in
   if len = 1 then Bytes.unsafe_set dst cursor (Char.chr u)
   else if len = 2 then (
@@ -293,9 +287,6 @@ let alloc_codepoint pool u len =
     Bytes.unsafe_set dst (cursor + 2)
       (Char.chr (0x80 lor ((u lsr 6) land 0x3f)));
     Bytes.unsafe_set dst (cursor + 3) (Char.chr (0x80 lor (u land 0x3f))));
-  Array.unsafe_set pool.offsets id cursor;
-  Array.unsafe_set pool.lengths id len;
-  Array.unsafe_set pool.refcounts id 0;
   id
 
 let clear pool =
@@ -407,23 +398,10 @@ let copy src_pool c dst_pool =
       let src_off = Array.unsafe_get src_pool.offsets idx in
       if src_off + len > Bytes.length src_pool.storage then 0
       else (
-        ensure_id_capacity dst_pool;
-        let dst_id = next_free_id dst_pool in
+        let dst_id, cursor = alloc_slot dst_pool len in
         let dst_gen = Array.unsafe_get dst_pool.generations dst_id in
-        let cap = Array.unsafe_get dst_pool.lengths dst_id in
-        let cursor =
-          if cap >= len then Array.unsafe_get dst_pool.offsets dst_id
-          else (
-            ensure_storage_capacity dst_pool len;
-            let cur = dst_pool.storage_cursor in
-            dst_pool.storage_cursor <- cur + len;
-            cur)
-        in
         Bytes.blit ~src:src_pool.storage ~src_pos:src_off ~dst:dst_pool.storage
           ~dst_pos:cursor ~len;
-        Array.unsafe_set dst_pool.offsets dst_id cursor;
-        Array.unsafe_set dst_pool.lengths dst_id len;
-        Array.unsafe_set dst_pool.refcounts dst_id 0;
         if is_continuation c then
           pack_continuation ~idx:dst_id ~gen:dst_gen ~left:(left_extent c)
             ~right:(right_extent c)
