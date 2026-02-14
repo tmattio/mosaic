@@ -240,13 +240,13 @@ let render_generic ~pool ~row_offset ~use_explicit_width ~use_hyperlinks ~mode
      let rows = min height prev_height in
      for y = 0 to rows - 1 do
        Esc.cursor_position ~row:(row_offset + y + 1) ~col:start_col writer;
-       Esc.erase_line ~mode:0 writer
+       Esc.erase_line ~mode:`Right writer
      done);
 
   if prev_height > height then
     for y = height to prev_height - 1 do
       Esc.cursor_position ~row:(row_offset + y + 1) ~col:1 writer;
-      Esc.erase_line ~mode:2 writer
+      Esc.erase_line ~mode:`All writer
     done;
 
   Ansi.Sgr_state.close_link sgr_state writer;

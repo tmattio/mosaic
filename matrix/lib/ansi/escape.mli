@@ -273,15 +273,18 @@ val show_cursor : t
 val hide_cursor : t
 (** [hide_cursor] hides the cursor (DECTCEM). *)
 
-val cursor_style : shape:int -> t
-(** [cursor_style ~shape] sets the cursor shape (DECSCUSR).
-    - 0: User default.
-    - 1: Blinking block.
-    - 2: Steady block.
-    - 3: Blinking underline.
-    - 4: Steady underline.
-    - 5: Blinking bar.
-    - 6: Steady bar. *)
+type cursor_shape =
+  [ `Default
+  | `Blinking_block
+  | `Block
+  | `Blinking_underline
+  | `Underline
+  | `Blinking_bar
+  | `Bar ]
+(** Cursor shape for DECSCUSR. *)
+
+val cursor_style : shape:cursor_shape -> t
+(** [cursor_style ~shape] sets the cursor shape (DECSCUSR). *)
 
 val default_cursor_style : t
 (** [default_cursor_style] sets the cursor to the user default (Style 0). *)
@@ -339,22 +342,21 @@ val clear_and_home : t
     Moves cursor to (1, 1) then erases entire display. Atomic operation to avoid
     flicker. *)
 
-val erase_display : mode:int -> t
-(** [erase_display mode] erases parts of the screen (ED).
-    - 0: Cursor to end.
-    - 1: Start to cursor.
-    - 2: Entire screen.
-    - 3: Entire screen + scrollback. *)
+type erase_display_mode = [ `Below | `Above | `All | `Scrollback ]
+(** Erase display mode for ED (Erase in Display). *)
+
+val erase_display : mode:erase_display_mode -> t
+(** [erase_display ~mode] erases parts of the screen (ED). *)
 
 val erase_below_cursor : t
 (** [erase_below_cursor] clears from the cursor to the end of the screen (ED 0).
 *)
 
-val erase_line : mode:int -> t
-(** [erase_line mode] erases parts of the current line (EL).
-    - 0: Cursor to end.
-    - 1: Start to cursor.
-    - 2: Entire line. *)
+type erase_line_mode = [ `Right | `Left | `All ]
+(** Erase line mode for EL (Erase in Line). *)
+
+val erase_line : mode:erase_line_mode -> t
+(** [erase_line ~mode] erases parts of the current line (EL). *)
 
 val insert_lines : n:int -> t
 (** [insert_lines ~n] inserts [n] blank lines at the cursor (IL). *)

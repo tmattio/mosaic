@@ -367,15 +367,8 @@ val hide_cursor : string
     pair with {!show_cursor} to restore visibility before program exit to avoid
     leaving terminal cursor hidden. *)
 
-val cursor_style : shape:int -> string
-(** [cursor_style ~shape] sets the cursor shape (DECSCUSR).
-    - 0: User default
-    - 1: Blinking block
-    - 2: Steady block
-    - 3: Blinking underline
-    - 4: Steady underline
-    - 5: Blinking bar
-    - 6: Steady bar *)
+val cursor_style : shape:Escape.cursor_shape -> string
+(** [cursor_style ~shape] sets the cursor shape (DECSCUSR). *)
 
 val default_cursor_style : string
 (** [default_cursor_style] restores the terminal's default cursor appearance.
@@ -417,18 +410,9 @@ val reset_cursor_color_fallback : string
 
 (** {1 Screen Control} *)
 
-val erase_display : mode:int -> string
-(** [erase_display ~mode] erases part of the display.
-
-    @param mode
-      Erase mode:
-      - 0: Cursor to end of screen
-      - 1: Start of screen to cursor
-      - 2: Entire screen (most common)
-      - 3: Entire screen including scrollback buffer
-
-    Mode clamped to [0-3]; invalid values use 2. Cursor position is unchanged.
-*)
+val erase_display : mode:Escape.erase_display_mode -> string
+(** [erase_display ~mode] erases part of the display. Cursor position is
+    unchanged. *)
 
 val scroll_up : n:int -> string
 (** [scroll_up ~n] scrolls the viewport up by [n] lines (CSI S).
@@ -440,22 +424,15 @@ val scroll_down : n:int -> string
 
     Negative or zero values return empty string. *)
 
-val erase_line : mode:int -> string
-(** [erase_line ~mode] erases part of the current line.
-
-    @param mode
-      Erase mode:
-      - 0: Cursor to end of line
-      - 1: Start of line to cursor
-      - 2: Entire line
-
-    Invalid modes default to 2. Cursor position is unchanged. *)
+val erase_line : mode:Escape.erase_line_mode -> string
+(** [erase_line ~mode] erases part of the current line. Cursor position is
+    unchanged. *)
 
 val clear_and_home : string
 (** [clear_and_home] clears the screen and moves cursor to top-left.
 
     Moves cursor to home (1, 1) then erases entire display. Equivalent to
-    {!home} followed by {!erase_display} with mode 2. *)
+    {!home} followed by {!erase_display} with [`All]. *)
 
 val clear : string
 (** [clear] clears the visible screen without moving cursor.

@@ -304,10 +304,27 @@ let move_cursor_and_clear ~row ~col =
 let show_cursor : t = literal "\027[?25h"
 let hide_cursor : t = literal "\027[?25l"
 
+type cursor_shape =
+  [ `Default
+  | `Blinking_block
+  | `Block
+  | `Blinking_underline
+  | `Underline
+  | `Blinking_bar
+  | `Bar ]
+
+let cursor_shape_to_int = function
+  | `Default -> 0
+  | `Blinking_block -> 1
+  | `Block -> 2
+  | `Blinking_underline -> 3
+  | `Underline -> 4
+  | `Blinking_bar -> 5
+  | `Bar -> 6
+
 let cursor_style ~shape w =
-  let n = max 0 (min 6 shape) in
   write_string w "\027[";
-  add_int w n;
+  add_int w (cursor_shape_to_int shape);
   write_string w " q"
 
 let default_cursor_style : t = literal "\027[0 q"
@@ -339,15 +356,28 @@ let clear : t = literal "\027[2J"
 let home : t = literal "\027[H"
 let clear_and_home : t = literal "\027[H\027[2J"
 
+type erase_display_mode = [ `Below | `Above | `All | `Scrollback ]
+
+let erase_display_mode_to_int = function
+  | `Below -> 0
+  | `Above -> 1
+  | `All -> 2
+  | `Scrollback -> 3
+
 let erase_display ~mode w =
-  let mode = if mode < 0 || mode > 3 then 2 else mode in
-  csi_n 'J' mode w
+  csi_n 'J' (erase_display_mode_to_int mode) w
 
 let erase_below_cursor : t = literal "\027[J"
 
+type erase_line_mode = [ `Right | `Left | `All ]
+
+let erase_line_mode_to_int = function
+  | `Right -> 0
+  | `Left -> 1
+  | `All -> 2
+
 let erase_line ~mode w =
-  let mode = if mode < 0 || mode > 2 then 2 else mode in
-  csi_n 'K' mode w
+  csi_n 'K' (erase_line_mode_to_int mode) w
 
 let insert_lines ~n = csi_n_opt 'L' n
 let delete_lines ~n = csi_n_opt 'M' n

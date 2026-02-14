@@ -459,10 +459,10 @@ let roundtrip_screen_sequences () =
     | [ Parser.Control c ] -> is_true ~msg:name (c = expected_control)
     | _ -> fail (Printf.sprintf "%s: unexpected tokens" name)
   in
-  test_screen "erase display 0" (Escape.erase_display ~mode:0) (Parser.ED 0);
-  test_screen "erase display 2" (Escape.erase_display ~mode:2) (Parser.ED 2);
-  test_screen "erase line 0" (Escape.erase_line ~mode:0) (Parser.EL 0);
-  test_screen "erase line 2" (Escape.erase_line ~mode:2) (Parser.EL 2);
+  test_screen "erase display 0" (Escape.erase_display ~mode:`Below) (Parser.ED 0);
+  test_screen "erase display 2" (Escape.erase_display ~mode:`All) (Parser.ED 2);
+  test_screen "erase line 0" (Escape.erase_line ~mode:`Right) (Parser.EL 0);
+  test_screen "erase line 2" (Escape.erase_line ~mode:`All) (Parser.EL 2);
   test_screen "insert lines" (Escape.insert_lines ~n:5) (Parser.IL 5);
   test_screen "delete lines" (Escape.delete_lines ~n:3) (Parser.DL 3)
 
@@ -526,7 +526,7 @@ let roundtrip_strip_removes_all () =
   test_strip "strip reset" (Ansi.reset ^ "text") "text";
   (* Screen control *)
   test_strip "strip clear" (Ansi.clear ^ "text") "text";
-  test_strip "strip erase display" (Ansi.erase_display ~mode:2 ^ "text") "text";
+  test_strip "strip erase display" (Ansi.erase_display ~mode:`All ^ "text") "text";
   (* Hyperlinks *)
   test_strip "strip hyperlink"
     (Ansi.hyperlink ~url:"http://test" ~text:"link")
