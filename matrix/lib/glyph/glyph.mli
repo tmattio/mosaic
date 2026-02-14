@@ -244,6 +244,12 @@ val measure : ?width_method:width_method -> ?tab_width:int -> string -> int
     {b UTF-8 handling}: Invalid byte sequences are replaced with U+FFFD
     (replacement character), each contributing width 1. *)
 
+val grapheme_count : string -> int
+(** [grapheme_count str] returns the number of user-perceived characters
+    (grapheme clusters) in [str].
+
+    Uses full UAX #29 segmentation. *)
+
 (** {1 Text Segmentation}
 
     Line break and word wrap break detection. *)

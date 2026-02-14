@@ -777,6 +777,11 @@ let measure ?(width_method = `Unicode) ?(tab_width = default_tab_width) str =
           (Uchar.utf_decode_length d)
           0 init_w init_flags
 
+let grapheme_count str =
+  let n = ref 0 in
+  iter_graphemes (fun ~offset:_ ~len:_ -> incr n) str;
+  !n
+
 (* Text Segmentation (wrap breaks, line breaks) *)
 
 let[@inline] is_ascii_wrap_break b =
