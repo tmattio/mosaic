@@ -79,8 +79,7 @@ let rec is_ascii_only str len i =
 let[@inline] is_regional_indicator cp = cp >= 0x1F1E6 && cp <= 0x1F1FF
 
 let[@inline] is_virama cp =
-  cp = 0x094D || cp = 0x09CD || cp = 0x0A4D || cp = 0x0ACD || cp = 0x0B4D
-  || cp = 0x0BCD || cp = 0x0C4D || cp = 0x0CCD || cp = 0x0D4D
+  cp land 0x7F = 0x4D && cp >= 0x094D && cp <= 0x0D4D
 
 let[@inline] is_devanagari_base cp =
   (cp >= 0x0915 && cp <= 0x0939) || (cp >= 0x0958 && cp <= 0x095F)
