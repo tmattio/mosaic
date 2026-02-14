@@ -263,12 +263,6 @@ val cursor_restore : t
 
 (** {2 Appearance} *)
 
-val show_cursor : t
-(** [show_cursor] shows the cursor (DECTCEM). *)
-
-val hide_cursor : t
-(** [hide_cursor] hides the cursor (DECTCEM). *)
-
 type cursor_shape =
   [ `Default
   | `Blinking_block
@@ -371,14 +365,6 @@ val reset_foreground : t
 (** [reset_foreground] resets the foreground color to terminal default (SGR 39).
 *)
 
-(** {1 Screen Buffers} *)
-
-val enter_alternate_screen : t
-(** [enter_alternate_screen] switches to the alternate screen buffer. *)
-
-val exit_alternate_screen : t
-(** [exit_alternate_screen] restores the main screen buffer. *)
-
 (** {1 Terminal Properties} *)
 
 val set_title : title:string -> t
@@ -442,6 +428,7 @@ val hyperlink_close : writer -> unit
 (** {1 Terminal Modes} *)
 
 type mode =
+  | Cursor_visible  (** DECTCEM 25 — cursor visibility. *)
   | Mouse_tracking  (** DECSET 1000 — basic mouse click reporting. *)
   | Mouse_button_tracking  (** DECSET 1002 — button-event tracking. *)
   | Mouse_motion  (** DECSET 1003 — any-event (all motion) tracking. *)
@@ -449,6 +436,7 @@ type mode =
   | Mouse_sgr_pixel  (** DECSET 1016 — SGR pixel coordinates (Kitty). *)
   | Mouse_x10  (** DECSET 9 — legacy X10 mouse protocol. *)
   | Urxvt_mouse  (** DECSET 1015 — urxvt extended coordinates. *)
+  | Alternate_screen  (** DECSET 1049 — alternate screen buffer. *)
   | Focus_tracking  (** DECSET 1004 — focus in/out reporting. *)
   | Bracketed_paste  (** DECSET 2004 — paste boundary markers. *)
   | Sync_output  (** DECSET 2026 — synchronized output. *)

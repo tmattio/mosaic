@@ -98,8 +98,8 @@ let clamp_color_component x =
   let v = Float.max 0. (Float.min 1. x) in
   int_of_float (Float.round (v *. 255.))
 
-let alternate_on = Esc.(to_string enter_alternate_screen)
-let alternate_off = Esc.(to_string exit_alternate_screen)
+let alternate_on = Esc.(to_string (enable Alternate_screen))
+let alternate_off = Esc.(to_string (disable Alternate_screen))
 let focus_on = Esc.(to_string (enable Focus_tracking))
 let focus_off = Esc.(to_string (disable Focus_tracking))
 let paste_on = Esc.(to_string (enable Bracketed_paste))
@@ -108,8 +108,8 @@ let kitty_kb_push flags = Printf.sprintf "\027[>%du" flags
 let kitty_kb_pop = "\027[<u"
 let modify_other_keys_on = Esc.(to_string modify_other_keys_on)
 let modify_other_keys_off = Esc.(to_string modify_other_keys_off)
-let cursor_show = Esc.(to_string show_cursor)
-let cursor_hide = Esc.(to_string hide_cursor)
+let cursor_show = Esc.(to_string (enable Cursor_visible))
+let cursor_hide = Esc.(to_string (disable Cursor_visible))
 let sgr_enable = Esc.(to_string (enable Mouse_sgr))
 let unicode_on = Esc.(to_string (enable Unicode))
 let unicode_off = Esc.(to_string (disable Unicode))

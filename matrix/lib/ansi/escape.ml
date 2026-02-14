@@ -268,9 +268,6 @@ let cursor_restore : t = literal "\027[u"
 
 (* Cursor Appearance *)
 
-let show_cursor : t = literal "\027[?25h"
-let hide_cursor : t = literal "\027[?25l"
-
 type cursor_shape =
   [ `Default
   | `Blinking_block
@@ -366,10 +363,6 @@ let set_background ~r ~g ~b w = csi_rgb "\027[48;2;" r g b w
 let reset_background : t = literal "\027[49m"
 let reset_foreground : t = literal "\027[39m"
 
-(* Screen Buffers *)
-
-let enter_alternate_screen : t = literal "\027[?1049h"
-let exit_alternate_screen : t = literal "\027[?1049l"
 
 (* Terminal Properties *)
 
@@ -428,6 +421,7 @@ let[@inline] hyperlink_close w =
 (* Terminal Modes *)
 
 type mode =
+  | Cursor_visible
   | Mouse_tracking
   | Mouse_button_tracking
   | Mouse_motion
@@ -435,6 +429,7 @@ type mode =
   | Mouse_sgr_pixel
   | Mouse_x10
   | Urxvt_mouse
+  | Alternate_screen
   | Focus_tracking
   | Bracketed_paste
   | Sync_output
@@ -442,6 +437,7 @@ type mode =
   | Color_scheme
 
 let mode_code = function
+  | Cursor_visible -> 25
   | Mouse_tracking -> 1000
   | Mouse_button_tracking -> 1002
   | Mouse_motion -> 1003
@@ -449,6 +445,7 @@ let mode_code = function
   | Mouse_sgr_pixel -> 1016
   | Mouse_x10 -> 9
   | Urxvt_mouse -> 1015
+  | Alternate_screen -> 1049
   | Focus_tracking -> 1004
   | Bracketed_paste -> 2004
   | Sync_output -> 2026

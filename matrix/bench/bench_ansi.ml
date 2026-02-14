@@ -51,8 +51,8 @@ let ansi_log_block = repeat (ansi_log_line ^ "\n") 128
 let tui_frame =
   let rows = 24 in
   let buf = Buffer.create 16_384 in
-  Buffer.add_string buf A.(to_string enter_alternate_screen);
-  Buffer.add_string buf A.(to_string hide_cursor);
+  Buffer.add_string buf A.(to_string (enable Alternate_screen));
+  Buffer.add_string buf A.(to_string (disable Cursor_visible));
   for row = 1 to rows do
     (* Move to row start *)
     Buffer.add_string buf A.(to_string (cursor_position ~row ~col:1));
@@ -71,8 +71,8 @@ let tui_frame =
     Buffer.add_string buf A.(to_string reset);
     Buffer.add_char buf '\n'
   done;
-  Buffer.add_string buf A.(to_string show_cursor);
-  Buffer.add_string buf A.(to_string exit_alternate_screen);
+  Buffer.add_string buf A.(to_string (enable Cursor_visible));
+  Buffer.add_string buf A.(to_string (disable Alternate_screen));
   Buffer.contents buf
 
 (* Bench group: styled output (producers) *)

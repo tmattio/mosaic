@@ -540,7 +540,7 @@ let roundtrip_strip_removes_all () =
   test_strip "strip title" (s (set_title ~title:"test") ^ "text") "text";
   (* Alternate screen *)
   test_strip "strip alt screen"
-    (s enter_alternate_screen ^ "text" ^ s exit_alternate_screen)
+    (s (enable Alternate_screen) ^ "text" ^ s (disable Alternate_screen))
     "text";
   (* Mouse modes *)
   test_strip "strip mouse on"

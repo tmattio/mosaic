@@ -98,7 +98,7 @@ let hide_temporarily (t : t) w =
   match t.last_visible with
   | Some false -> () (* Already hidden, nothing to do *)
   | Some true | None ->
-      Esc.emit Esc.hide_cursor w;
+      Esc.emit Esc.(disable Cursor_visible) w;
       t.last_visible <- Some false
 
 let emit (t : t) ~row_offset w =
@@ -108,7 +108,7 @@ let emit (t : t) ~row_offset w =
     match t.last_visible with
     | Some false -> () (* Already hidden *)
     | Some true | None ->
-        Esc.emit Esc.hide_cursor w;
+        Esc.emit Esc.(disable Cursor_visible) w;
         t.last_visible <- Some false;
         (* Clear attributes so they re-apply if we show cursor again *)
         t.last_style <- None;
@@ -145,5 +145,5 @@ let emit (t : t) ~row_offset w =
     match t.last_visible with
     | Some true -> () (* Already visible *)
     | Some false | None ->
-        Esc.emit Esc.show_cursor w;
+        Esc.emit Esc.(enable Cursor_visible) w;
         t.last_visible <- Some true)
