@@ -1,74 +1,8 @@
-(** Low-level ANSI escape sequence builders.
+(** ANSI escape sequence builders.
 
-    This module provides primitives for constructing ANSI escape sequences
-    directly into a buffer using functional combinators. It is the
-    high-performance backend for the library, optimized to minimize allocations
-    and copying.
-
-    Use this module when you need maximum performance or fine-grained control.
-    For most terminal styling, prefer the high-level {!Ansi} module.
-
-    {1 Overview}
-
-    Sequences are represented as functions ([writer -> unit]) that append data
-    to a pre-allocated buffer. This design provides:
-
-    - {b Zero-allocation composition}: Combining sequences creates a new
-      function, not a new string.
-    - {b Safety}: Numeric parameters are automatically clamped to valid ranges.
-    - {b Efficiency}: Output is written directly to the target buffer in a
-      single pass.
-
-    {1 Usage}
-
-    A typical workflow: allocate a buffer, create a writer, compose sequences,
-    then extract the result:
-
-    {[
-      let buf = Bytes.create 1024 in
-      let writer = Escape.make buf in
-      let seq = Escape.seq [
-        Escape.cursor_position ~row:1 ~col:1;
-        Escape.literal "Loading...";
-      ] in
-      Escape.emit seq writer;
-      let result = Escape.slice writer
-    ]}
-
-    {1 Zero-Allocation Primitives}
-
-    For hot render loops where even closure allocation matters, use the
-    low-level SGR and hyperlink primitives that write directly to the buffer:
-
-    {[
-      (* Zero-allocation SGR: \027[0;38;2;255;0;0;1m *)
-      Escape.sgr_open w;
-      Escape.sgr_code w 0;
-      (* reset *)
-      Escape.sgr_sep w;
-      Escape.sgr_code w 38;
-      (* fg color *)
-      Escape.sgr_sep w;
-      Escape.sgr_code w 2;
-      Escape.sgr_sep w;
-      Escape.sgr_code w 255;
-      (* red *)
-      Escape.sgr_sep w;
-      Escape.sgr_code w 0;
-      Escape.sgr_sep w;
-      Escape.sgr_code w 0;
-      Escape.sgr_sep w;
-      Escape.sgr_code w 1;
-      (* bold *)
-      Escape.sgr_close w;
-
-      (* Zero-allocation hyperlinks *)
-      Escape.hyperlink_open w "https://example.com";
-      (* ... emit link text ... *)
-      Escape.hyperlink_close w
-    ]}
-
-    See also {!Sgr_state} which wraps these primitives with state tracking. *)
+    Low-level backend for {!Ansi}. Sequences are functions ([writer -> unit])
+    that append directly to a pre-allocated buffer with zero intermediate
+    allocation. Re-exported by {!Ansi} which adds high-level convenience. *)
 
 (** {1 The Writer} *)
 
@@ -450,7 +384,6 @@ val enable : mode -> t
 
     Example:
     {[
-      (* Enable a set of modes *)
       let setup =
         Escape.seq
           (List.map Escape.enable
@@ -507,4 +440,3 @@ type query =
 
 val query : query -> t
 (** [query q] emits the query sequence for [q]. *)
-
