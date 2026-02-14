@@ -6,7 +6,7 @@ open Ansi
 (* Test helper that wraps callback-based feed to return a list *)
 let feed_to_list p bytes off len =
   let acc = ref [] in
-  Parser.feed p bytes off len (fun tok -> acc := tok :: !acc);
+  Parser.feed p bytes ~off ~len (fun tok -> acc := tok :: !acc);
   List.rev !acc
 
 let check_color = Testable.make ~pp:Color.pp ~equal:Color.equal ()

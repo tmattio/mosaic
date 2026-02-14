@@ -941,7 +941,7 @@ let handle_token t token =
   | Ansi.Parser.Control ctrl -> handle_control t ctrl
 
 let feed t bytes ofs len =
-  Ansi.Parser.feed t.parser bytes ofs len (handle_token t)
+  Ansi.Parser.feed t.parser bytes ~off:ofs ~len (handle_token t)
 
 let feed_string t str =
   let bytes = Bytes.unsafe_of_string str in

@@ -131,8 +131,8 @@ let parse_ansi_block_iter_bench =
       (* Callback-based parsing - avoids list allocation *)
       A.Parser.reset iter_parser;
       let count = ref 0 in
-      A.Parser.feed iter_parser ansi_log_block_bytes 0
-        (Bytes.length ansi_log_block_bytes) (fun _ -> incr count);
+      A.Parser.feed iter_parser ansi_log_block_bytes ~off:0
+        ~len:(Bytes.length ansi_log_block_bytes) (fun _ -> incr count);
       ignore (Sys.opaque_identity !count))
 
 let parse_tui_frame_iter_bench =
@@ -140,8 +140,8 @@ let parse_tui_frame_iter_bench =
       (* Callback-based parsing - avoids list allocation *)
       A.Parser.reset iter_parser;
       let count = ref 0 in
-      A.Parser.feed iter_parser tui_frame_bytes 0 (Bytes.length tui_frame_bytes)
-        (fun _ -> incr count);
+      A.Parser.feed iter_parser tui_frame_bytes ~off:0
+        ~len:(Bytes.length tui_frame_bytes) (fun _ -> incr count);
       ignore (Sys.opaque_identity !count))
 
 (* Bench group: control / cursor sequences *)

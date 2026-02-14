@@ -23,8 +23,8 @@
     Create a parser and feed data incrementally:
     {[
       let parser = Parser.create () in
-      let tokens1 = Parser.feed parser bytes1 0 (Bytes.length bytes1) in
-      let tokens2 = Parser.feed parser bytes2 0 (Bytes.length bytes2) in
+      let tokens1 = Parser.feed parser bytes1 ~off:0 ~len:(Bytes.length bytes1) in
+      let tokens2 = Parser.feed parser bytes2 ~off:0 ~len:(Bytes.length bytes2) in
       (* Process tokens... *)
     ]}
 
@@ -200,8 +200,8 @@ val pending : t -> bytes
     Allocates a new bytes value. Use {!has_pending} if you only need to check
     whether more input is expected. *)
 
-val feed : t -> bytes -> int -> int -> (token -> unit) -> unit
-(** [feed t buf off len f] processes [len] bytes from [buf] starting at [off],
+val feed : t -> bytes -> off:int -> len:int -> (token -> unit) -> unit
+(** [feed t buf ~off ~len f] processes [len] bytes from [buf] starting at [off],
     calling [f] for each complete token.
 
     Incomplete escape sequences and UTF-8 multi-byte sequences at chunk
@@ -211,7 +211,7 @@ val feed : t -> bytes -> int -> int -> (token -> unit) -> unit
     Example:
     {[
       let p = Parser.create () in
-      Parser.feed p bytes 0 len (fun tok ->
+      Parser.feed p bytes ~off:0 ~len (fun tok ->
           match tok with
           | Text s -> print_string s
           | SGR attrs -> apply_styles attrs

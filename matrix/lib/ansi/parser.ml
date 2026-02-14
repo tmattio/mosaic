@@ -346,7 +346,7 @@ let[@inline] emit_text_cb p emit =
     Buffer.clear p.text_buf)
 
 (* Main parsing loop - callback-based, zero list allocation *)
-let feed p src off len emit =
+let feed p src ~off ~len emit =
   let eof = len = 0 in
   (* Determine effective input: pending bytes + new input *)
   let input, input_off, input_len =
@@ -508,7 +508,7 @@ let parse s =
   let p = create () in
   let acc = ref [] in
   let collect tok = acc := tok :: !acc in
-  feed p (Bytes.unsafe_of_string s) 0 (String.length s) collect;
+  feed p (Bytes.unsafe_of_string s) ~off:0 ~len:(String.length s) collect;
   (* Flush with EOF *)
-  feed p Bytes.empty 0 0 collect;
+  feed p Bytes.empty ~off:0 ~len:0 collect;
   List.rev !acc
