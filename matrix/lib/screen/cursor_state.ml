@@ -85,12 +85,12 @@ let clamp_to_bounds (t : t) ~max_row ~max_col =
 
 let cursor_style_seq style blinking =
   match (style, blinking) with
-  | `Block, true -> Esc.cursor_block_blink
-  | `Block, false -> Esc.cursor_block
-  | `Line, true -> Esc.cursor_line_blink
-  | `Line, false -> Esc.cursor_line
-  | `Underline, true -> Esc.cursor_underline_blink
-  | `Underline, false -> Esc.cursor_underline
+  | `Block, true -> Esc.cursor_style ~shape:`Blinking_block
+  | `Block, false -> Esc.cursor_style ~shape:`Block
+  | `Line, true -> Esc.cursor_style ~shape:`Blinking_bar
+  | `Line, false -> Esc.cursor_style ~shape:`Bar
+  | `Underline, true -> Esc.cursor_style ~shape:`Blinking_underline
+  | `Underline, false -> Esc.cursor_style ~shape:`Underline
 
 let hide_temporarily (t : t) w =
   (* Hide cursor if it's visible or in unknown state. When state is unknown, we

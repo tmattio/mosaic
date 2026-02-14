@@ -116,12 +116,12 @@ let unicode_off = Esc.(to_string (disable Unicode))
 let cursor_position_request = Esc.(to_string (query Cursor_position))
 let reset_sgr = Esc.(to_string reset)
 let erase_below = Esc.(to_string erase_below_cursor)
-let kitty_cursor_block = Esc.(to_string cursor_block)
-let kitty_cursor_block_blink = Esc.(to_string cursor_block_blink)
-let kitty_cursor_line = Esc.(to_string cursor_line)
-let kitty_cursor_line_blink = Esc.(to_string cursor_line_blink)
-let kitty_cursor_underline = Esc.(to_string cursor_underline)
-let kitty_cursor_underline_blink = Esc.(to_string cursor_underline_blink)
+let kitty_cursor_block = Esc.(to_string (cursor_style ~shape:`Block))
+let kitty_cursor_block_blink = Esc.(to_string (cursor_style ~shape:`Blinking_block))
+let kitty_cursor_line = Esc.(to_string (cursor_style ~shape:`Bar))
+let kitty_cursor_line_blink = Esc.(to_string (cursor_style ~shape:`Blinking_bar))
+let kitty_cursor_underline = Esc.(to_string (cursor_style ~shape:`Underline))
+let kitty_cursor_underline_blink = Esc.(to_string (cursor_style ~shape:`Blinking_underline))
 
 let submit_string t s =
   match t.writer with
@@ -339,7 +339,7 @@ let reset_state t =
     send t reset_sgr;
     send t Ansi.(to_string reset_cursor_color_fallback);
     send t Ansi.(to_string reset_cursor_color);
-    send t Ansi.(to_string default_cursor_style);
+    send t Ansi.(to_string (cursor_style ~shape:`Default));
     if t.kitty_keyboard_enabled then enable_kitty_keyboard t false;
     if t.modify_other_keys_enabled then (
       send t modify_other_keys_off;

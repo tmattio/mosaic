@@ -282,28 +282,6 @@ type cursor_shape =
 val cursor_style : shape:cursor_shape -> t
 (** [cursor_style ~shape] sets the cursor shape (DECSCUSR). *)
 
-val default_cursor_style : t
-(** [default_cursor_style] sets the cursor to the user default (Style 0). *)
-
-val cursor_block : t
-(** [cursor_block] sets the cursor to a steady block (Style 2). *)
-
-val cursor_block_blink : t
-(** [cursor_block_blink] sets the cursor to a blinking block (Style 1). *)
-
-val cursor_line : t
-(** [cursor_line] sets the cursor to a steady vertical bar (Style 6). *)
-
-val cursor_line_blink : t
-(** [cursor_line_blink] sets the cursor to a blinking vertical bar (Style 5). *)
-
-val cursor_underline : t
-(** [cursor_underline] sets the cursor to a steady underline (Style 4). *)
-
-val cursor_underline_blink : t
-(** [cursor_underline_blink] sets the cursor to a blinking underline (Style 3).
-*)
-
 val cursor_color : r:int -> g:int -> b:int -> t
 (** [cursor_color ~r ~g ~b] sets the cursor color (OSC 12).
 

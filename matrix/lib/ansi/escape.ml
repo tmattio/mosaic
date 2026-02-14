@@ -294,13 +294,6 @@ let cursor_style ~shape w =
   add_int w (cursor_shape_to_int shape);
   write_string w " q"
 
-let default_cursor_style : t = literal "\027[0 q"
-let cursor_block : t = literal "\027[2 q"
-let cursor_block_blink : t = literal "\027[1 q"
-let cursor_line : t = literal "\027[6 q"
-let cursor_line_blink : t = literal "\027[5 q"
-let cursor_underline : t = literal "\027[4 q"
-let cursor_underline_blink : t = literal "\027[3 q"
 
 let cursor_color ~r ~g ~b w =
   write_string w "\027]12;#";
