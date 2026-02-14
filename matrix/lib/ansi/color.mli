@@ -200,6 +200,13 @@ val equal : t -> t -> bool
     Colors with different representations but identical RGBA values are equal.
     For example, [Extended 0] equals [Black] since both map to the same RGB. *)
 
+val compare : t -> t -> int
+(** [compare a b] returns a total ordering over colors based on RGBA components.
+
+    {b Zero-allocation}: uses packed integer comparison internally.
+
+    Consistent with {!equal}. Suitable for use as keys in [Map] or [Set]. *)
+
 val hash : t -> int
 (** [hash color] computes a hash from RGBA components.
 

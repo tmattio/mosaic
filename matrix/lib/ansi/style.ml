@@ -115,19 +115,15 @@ let visual_equal a b =
   && Option.equal Color.equal a.bg b.bg
 
 let compare a b =
-  (* Compare attributes first (fast int comparison) *)
   let c = Attr.compare a.attrs b.attrs in
   if c <> 0 then c
   else
-    (* Compare colors using packed representation. Note: Int64 values are boxed
-       in standard OCaml, so Color.pack allocates. For truly allocation-free
-       comparison in hot paths, consider using Color.equal directly. *)
     let compare_color_opt c1 c2 =
       match (c1, c2) with
       | None, None -> 0
       | None, Some _ -> -1
       | Some _, None -> 1
-      | Some ca, Some cb -> Int64.compare (Color.pack ca) (Color.pack cb)
+      | Some ca, Some cb -> Color.compare ca cb
     in
     let c = compare_color_opt a.fg b.fg in
     if c <> 0 then c

@@ -265,6 +265,7 @@ let[@inline] rgba_packed color =
       (r lsl 24) lor (g lsl 16) lor (b lsl 8) lor 255
 
 let equal a b = rgba_packed a = rgba_packed b
+let compare a b = Int.compare (rgba_packed a) (rgba_packed b)
 
 let hash color =
   (* Use packed representation directly - no tuple allocation *)
