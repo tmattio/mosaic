@@ -73,20 +73,6 @@ let rec is_ascii_only str len i =
     c0 lor c1 lor c2 lor c3 < 128 && is_ascii_only str len (i + 4)
   else is_ascii_only_tail str len i
 
-(* Check if string contains any non-ASCII bytes - processes 4 bytes at a time *)
-let rec has_non_ascii_tail str len j =
-  j < len
-  && (Char.code (String.unsafe_get str j) >= 128
-     || has_non_ascii_tail str len (j + 1))
-
-let rec has_non_ascii str len i =
-  if i + 4 <= len then
-    let c0 = Char.code (String.unsafe_get str i) in
-    let c1 = Char.code (String.unsafe_get str (i + 1)) in
-    let c2 = Char.code (String.unsafe_get str (i + 2)) in
-    let c3 = Char.code (String.unsafe_get str (i + 3)) in
-    c0 lor c1 lor c2 lor c3 >= 128 || has_non_ascii str len (i + 4)
-  else has_non_ascii_tail str len i
 
 (* Width Predicates *)
 
@@ -701,7 +687,7 @@ let rec iter_graphemes_unicode seg str len f i start =
 let iter_graphemes f str =
   let len = String.length str in
   if len = 0 then ()
-  else if not (has_non_ascii str len 0) then iter_graphemes_ascii str len f 0
+  else if is_ascii_only str len 0 then iter_graphemes_ascii str len f 0
   else
     let seg = Uuseg_grapheme_cluster.create () in
     let d = String.get_utf_8_uchar str 0 in
