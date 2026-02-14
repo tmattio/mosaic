@@ -692,63 +692,74 @@ let rec measure_wcwidth str len tab_width i total =
     let w = codepoint_width_wcwidth ~tab_width cp in
     measure_wcwidth str len tab_width (i + Uchar.utf_decode_length d) (total + w)
 
-(* Fused segmentation + width loop for Unicode/No_zwj methods *)
-let rec measure_segmented seg str len tab_width i total g_w g_has g_ri g_vs
-    g_vir =
-  if i >= len then if g_has then total + g_w else total
+(* Fused segmentation + width loop for Unicode/No_zwj methods.
+
+   State flags packed in [flags]:
+   - bit 0: has_width (grapheme has a base width)
+   - bit 1: ri_pair (last RI was first of a pair)
+   - bit 2: virama (last codepoint was a virama)
+   - bit 3: vs16 (last codepoint was VS16) *)
+let ms_has_width = 1
+let ms_ri_pair = 2
+let ms_virama = 4
+
+let rec measure_segmented seg str len tab_width i total g_w flags =
+  if i >= len then if flags land ms_has_width <> 0 then total + g_w else total
   else
     let d = String.get_utf_8_uchar str i in
     let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
     let next = i + Uchar.utf_decode_length d in
     if Uuseg_grapheme_cluster.check_boundary seg (Uchar.unsafe_of_int cp) then
-      let new_total = if g_has then total + g_w else total in
+      let new_total =
+        if flags land ms_has_width <> 0 then total + g_w else total
+      in
       let cp_w = codepoint_width_unicode ~tab_width cp in
       if cp = 0xFE0F then
-        measure_segmented seg str len tab_width next new_total 0 false false
-          true false
+        measure_segmented seg str len tab_width next new_total 0 0
       else if is_virama cp then
-        measure_segmented seg str len tab_width next new_total 0 false false
-          false true
+        measure_segmented seg str len tab_width next new_total 0 ms_virama
       else if is_regional_indicator cp then
-        measure_segmented seg str len tab_width next new_total cp_w true true
-          false false
+        measure_segmented seg str len tab_width next new_total cp_w
+          (ms_has_width lor ms_ri_pair)
       else if cp_w > 0 then
-        measure_segmented seg str len tab_width next new_total cp_w true false
-          false false
+        measure_segmented seg str len tab_width next new_total cp_w ms_has_width
+      else measure_segmented seg str len tab_width next new_total 0 0
+    else if cp = 0xFE0F then
+      let new_w =
+        if flags land ms_has_width <> 0 && g_w = 1 then 2 else g_w
+      in
+      measure_segmented seg str len tab_width next total new_w flags
+    else if is_virama cp then
+      measure_segmented seg str len tab_width next total g_w
+        (flags lor ms_virama)
+    else if is_regional_indicator cp then
+      let cp_w = codepoint_width_unicode ~tab_width cp in
+      if flags land ms_ri_pair <> 0 then
+        measure_segmented seg str len tab_width next total (g_w + cp_w)
+          (ms_has_width land lnot ms_virama)
       else
-        measure_segmented seg str len tab_width next new_total 0 false false
-          false false
+        let new_w =
+          if flags land ms_has_width = 0 then cp_w else g_w
+        in
+        measure_segmented seg str len tab_width next total new_w
+          (flags lor ms_has_width lor ms_ri_pair land lnot ms_virama)
+    else if
+      flags land ms_has_width <> 0
+      && flags land ms_virama <> 0
+      && is_devanagari_base cp
+    then
+      let cp_w = codepoint_width_unicode ~tab_width cp in
+      let add = if cp <> 0x0930 && cp_w > 0 then cp_w else 0 in
+      measure_segmented seg str len tab_width next total (g_w + add)
+        (flags lor ms_has_width land lnot ms_virama)
     else
-      let is_vs16 = cp = 0xFE0F in
-      if is_vs16 then
-        let new_w = if g_has && g_w = 1 then 2 else g_w in
-        measure_segmented seg str len tab_width next total new_w g_has g_ri true
-          g_vir
-      else if is_virama cp then
-        measure_segmented seg str len tab_width next total g_w g_has g_ri g_vs
-          true
-      else if is_regional_indicator cp then
-        let cp_w = codepoint_width_unicode ~tab_width cp in
-        if g_ri then
-          measure_segmented seg str len tab_width next total (g_w + cp_w) true
-            false g_vs false
-        else
-          let new_w = if not g_has then cp_w else g_w in
-          measure_segmented seg str len tab_width next total new_w true true
-            g_vs false
-      else if g_has && g_vir && is_devanagari_base cp then
-        let cp_w = codepoint_width_unicode ~tab_width cp in
-        let add = if cp <> 0x0930 && cp_w > 0 then cp_w else 0 in
-        measure_segmented seg str len tab_width next total (g_w + add) true g_ri
-          g_vs false
+      let cp_w = codepoint_width_unicode ~tab_width cp in
+      if flags land ms_has_width = 0 && cp_w > 0 then
+        measure_segmented seg str len tab_width next total cp_w
+          (flags lor ms_has_width land lnot ms_virama)
       else
-        let cp_w = codepoint_width_unicode ~tab_width cp in
-        if (not g_has) && cp_w > 0 then
-          measure_segmented seg str len tab_width next total cp_w true g_ri g_vs
-            false
-        else
-          measure_segmented seg str len tab_width next total g_w g_has g_ri g_vs
-            false
+        measure_segmented seg str len tab_width next total g_w
+          (flags land lnot ms_virama)
 
 let measure ~width_method ~tab_width str =
   let tab_width = normalize_tab_width tab_width in
@@ -767,11 +778,15 @@ let measure ~width_method ~tab_width str =
           Uuseg_grapheme_cluster.check_boundary seg (Uchar.unsafe_of_int cp)
         in
         let w = codepoint_width_unicode ~tab_width cp in
+        let init_w = if w > 0 then w else 0 in
+        let init_flags =
+          (if w > 0 then ms_has_width else 0)
+          lor (if is_regional_indicator cp then ms_ri_pair else 0)
+          lor (if is_virama cp then ms_virama else 0)
+        in
         measure_segmented seg str len tab_width
           (Uchar.utf_decode_length d)
-          0
-          (if w > 0 then w else 0)
-          (w > 0) (is_regional_indicator cp) (cp = 0xFE0F) (is_virama cp)
+          0 init_w init_flags
 
 (* Text Segmentation (wrap breaks, line breaks) *)
 
