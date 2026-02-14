@@ -254,19 +254,15 @@ let to_hsl color =
 let[@inline] rgba_packed color =
   match color with
   | Default -> 0 (* r=0, g=0, b=0, a=0 *)
+  | Rgb { r; g; b } -> (r lsl 24) lor (g lsl 16) lor (b lsl 8) lor 255
   | Rgba { r; g; b; a } -> (r lsl 24) lor (g lsl 16) lor (b lsl 8) lor a
-  | _ -> (
+  | _ ->
       let idx = palette_index color in
-      if idx >= 0 then
-        let base = idx * 3 in
-        let r = Array.unsafe_get palette_flat base in
-        let g = Array.unsafe_get palette_flat (base + 1) in
-        let b = Array.unsafe_get palette_flat (base + 2) in
-        (r lsl 24) lor (g lsl 16) lor (b lsl 8) lor 255
-      else
-        match color with
-        | Rgb { r; g; b } -> (r lsl 24) lor (g lsl 16) lor (b lsl 8) lor 255
-        | _ -> 255 (* fallback: black opaque *))
+      let base = idx * 3 in
+      let r = Array.unsafe_get palette_flat base in
+      let g = Array.unsafe_get palette_flat (base + 1) in
+      let b = Array.unsafe_get palette_flat (base + 2) in
+      (r lsl 24) lor (g lsl 16) lor (b lsl 8) lor 255
 
 let equal a b = rgba_packed a = rgba_packed b
 
