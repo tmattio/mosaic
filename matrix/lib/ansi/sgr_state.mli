@@ -14,7 +14,7 @@
 
     {1 Performance}
 
-    {!update} is {b zero-allocation}: it writes directly to the {!Escape.writer}
+    {!update} is {b zero-allocation}: it writes directly to the {!Writer.t}
     using low-level primitives. No closures, lists, or intermediate strings are
     created. This makes it suitable for hot render loops processing thousands of
     cells per frame.
@@ -25,7 +25,7 @@
 
     {[
       let buf = Bytes.create 65536 in
-      let writer = Escape.make buf in
+      let writer = Ansi.make buf in
       let state = Sgr_state.create () in
 
       (* In your render loop - zero allocations per cell: *)
@@ -35,7 +35,7 @@
             ~fg_a:1.0 (* Red *)
             ~bg_r:0.0 ~bg_g:0.0 ~bg_b:0.0 ~bg_a:0.0 (* Transparent *)
             ~attrs:(Attr.pack Attr.bold) ~link:"";
-          Escape.emit (Escape.char 'X') writer
+          Ansi.emit (Ansi.char 'X') writer
         done;
         (* Reset at row end to prevent style bleed *)
         Sgr_state.reset state
@@ -67,7 +67,7 @@ val reset : t -> unit
 
 val update :
   t ->
-  Escape.writer ->
+  Writer.t ->
   fg_r:float ->
   fg_g:float ->
   fg_b:float ->
@@ -96,7 +96,7 @@ val update :
     - [link] is the hyperlink URL, or [""] for no link. Using empty string as
       the sentinel avoids Option allocation in hot render loops. *)
 
-val close_link : t -> Escape.writer -> unit
+val close_link : t -> Writer.t -> unit
 (** [close_link t w] closes any open hyperlink.
 
     If a hyperlink is currently open, emits the OSC 8 close sequence and updates

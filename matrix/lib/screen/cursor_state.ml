@@ -1,4 +1,4 @@
-module Esc = Ansi.Escape
+module Esc = Ansi
 
 type style = [ `Block | `Line | `Underline ]
 

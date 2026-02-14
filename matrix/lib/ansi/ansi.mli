@@ -1,145 +1,559 @@
-(** High-level ANSI terminal styling and control.
+(** ANSI terminal escape sequences, styling, and control.
 
-    Unified interface for terminal styling, cursor control, and ANSI parsing.
-    Build rich terminal UIs with colors, attributes, and screen manipulation.
+    Escape sequences are represented as functions ({!type-t}) that write
+    directly to a {!writer} buffer. This provides zero-allocation composition:
+    combining sequences creates a new function, not a new string.
 
-    Use this module for CLI tools, terminal user interfaces (TUIs), progress
-    bars, colored logging, or any application that needs terminal output
-    control.
-
-    {1 Quick Start}
-
-    Style text with inline functions:
+    For quick one-off output, convert to string with {!to_string}:
     {[
-      print_endline (Ansi.styled ~fg:Color.red ~bold:true "Error!");
-      print_endline
-        (Ansi.hyperlink ~url:"https://ocaml.org" ~text:"Visit OCaml")
+      print_string Ansi.(to_string (cursor_position ~row:10 ~col:5))
     ]}
 
-    Build complex outputs with segments:
-    {[
-      let output =
-        Ansi.render
-          [
-            (Style.make ~fg:Color.cyan ~bold:true (), "INFO:");
-            (Style.default, " ");
-            (Style.make ~fg:Color.white (), "Server started on port 8080");
-          ]
-    ]}
-
-    Strip ANSI codes for logging or width calculation:
-    {[
-      let plain = Ansi.strip styled_output in
-      let width = String.length plain
-    ]}
-
-    {1 Performance}
-
-    This module provides two API layers with different performance
-    characteristics:
-
-    {2 High-Level API (this module)}
-
-    Functions like {!styled}, {!render}, {!cursor_position}, etc. return strings
-    and are designed for {b convenience over performance}. Each call allocates:
-    - A closure for the escape sequence builder
-    - A string for the result
-
-    {b Use for}: CLI tools, one-off styling, logging, infrequent operations.
-
-    {2 Low-Level API ({!Escape} + {!Sgr_state})}
-
-    For performance-critical code (render loops, TUI frames), use the low-level
-    modules directly:
-
-    - {!Escape}: Buffer-based sequence builders with zero-allocation primitives
-    - {!Sgr_state}: Terminal state tracker with delta encoding
-
-    {b Example}: Zero-allocation render loop:
+    For performance-critical render loops, use {!emit} with a pre-allocated
+    buffer:
     {[
       let buf = Bytes.create 65536 in
-      let writer = Escape.make buf in
-      let state = Sgr_state.create () in
-
-      (* In your render loop: *)
-      for row = 0 to height - 1 do
-        for col = 0 to width - 1 do
-          (* Update style - only emits codes when style changes *)
-          Sgr_state.update state writer ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g
-            ~bg_b ~bg_a ~attrs ~link:None;
-          (* Emit character *)
-          Escape.emit (Escape.char c) writer
-        done;
-        Sgr_state.reset state
-      done
+      let w = Ansi.make buf in
+      Ansi.emit (Ansi.cursor_position ~row:1 ~col:1) w;
+      Ansi.emit (Ansi.literal "Hello") w
     ]}
+
+    {1 Zero-Allocation Primitives}
+
+    For hot render loops where even closure allocation matters, use the
+    low-level SGR and hyperlink primitives that write directly to the buffer:
+
+    {[
+      Ansi.sgr_open w;
+      Ansi.sgr_code w 0;
+      Ansi.sgr_sep w;
+      Ansi.sgr_code w 38;
+      Ansi.sgr_sep w;
+      Ansi.sgr_code w 2;
+      Ansi.sgr_sep w;
+      Ansi.sgr_code w 255;
+      Ansi.sgr_sep w;
+      Ansi.sgr_code w 0;
+      Ansi.sgr_sep w;
+      Ansi.sgr_code w 0;
+      Ansi.sgr_close w;
+
+      Ansi.hyperlink_open w "https://example.com";
+      (* ... emit link text ... *)
+      Ansi.hyperlink_close w
+    ]}
+
+    See also {!Sgr_state} which wraps these primitives with state tracking.
 
     {1 Contracts and Compatibility}
 
-    - Cursor movement helpers clamp negative distances to zero and return an
-      empty string when the movement would be a no-op.
+    - Cursor movement helpers clamp negative distances to zero and emit nothing
+      when the movement would be a no-op.
     - Absolute coordinates are 1-based; values ≤ 0 are coerced to 1 to match
       terminal semantics.
     - Screen/line erase modes outside their documented ranges fall back to the
       most commonly supported mode.
-    - All string-returning helpers are allocation-free for the no-op cases, so
-      callers can emit them unconditionally.
     - The only API that raises is {!set_scrolling_region}, which follows DECSTBM
       by rejecting invalid bounds with [Invalid_argument].
 
     Functions use widely-supported ANSI escape sequences. Modern features such
     as truecolor, hyperlinks (OSC 8), or explicit width (OSC 66) degrade
-    gracefully on terminals that ignore or partially implement the extensions.
-    When targeting a specific capability level, run {!Color.downgrade} or query
-    the terminal with the {!Escape} builders exposed below. *)
+    gracefully on terminals that ignore or partially implement the extensions. *)
 
-(** {1 Low-Level Modules}
+(** {1 The Writer} *)
 
-    These modules provide fine-grained control over ANSI features. Use them when
-    the high-level API is insufficient or when building custom abstractions.
+type writer = Writer.t
+(** An abstract buffer writer.
 
-    For performance-critical code, {!Escape} and {!Sgr_state} provide
-    zero-allocation APIs suitable for render loops. *)
+    It wraps a [Bytes.t] buffer and manages a write position. It is mutable and
+    not thread-safe. *)
 
-module Color = Color
-(** Color representations and conversions.
+val make : bytes -> writer
+(** [make buf] creates a writer targeting [buf].
 
-    Supports 16 basic colors, 256-color palette, and truecolor RGB/RGBA. See
-    {!Color} for details. *)
+    {b Precondition}: [buf] must be large enough to contain the generated
+    sequences. Operations raise [Invalid_argument] if the buffer capacity is
+    exceeded. *)
 
-module Attr = Attr
-(** Text attribute flags (bold, italic, underline, etc.).
+val len : writer -> int
+(** [len w] returns the number of bytes currently written to [w]. *)
 
-    Efficient bit-flag representation with set operations. See {!Attr} for
-    details. *)
+val reset_pos : writer -> unit
+(** [reset_pos w] resets the write position to zero.
 
-module Style = Style
-(** Complete styling with colors, attributes, and hyperlinks.
+    Allows reusing a writer without allocation. The underlying buffer is not
+    modified; subsequent writes simply overwrite previous content. *)
 
-    Immutable style values with composition support. See {!Style} for details.
+val slice : writer -> bytes
+(** [slice w] returns a fresh copy of the written data.
+
+    Equivalent to [Bytes.sub buf 0 (len w)]. *)
+
+(** {1 Sequence Combinators} *)
+
+type t = writer -> unit
+(** A sequence builder function. *)
+
+val empty : t
+(** [empty] is the identity sequence. It emits nothing. *)
+
+val literal : string -> t
+(** [literal s] emits the string [s] verbatim. *)
+
+val char : char -> t
+(** [char c] emits the character [c]. *)
+
+val concat : t -> t -> t
+(** [concat a b] emits sequence [a] followed by [b]. *)
+
+val seq : t list -> t
+(** [seq xs] emits the list of sequences [xs] in order. *)
+
+val bytes : bytes -> off:int -> len:int -> t
+(** [bytes b ~off ~len] writes a slice of bytes directly to the output.
+
+    {b Zero-allocation}: Copies data immediately into the writer's buffer.
+    @raise Invalid_argument if the slice is out of bounds. *)
+
+val utf8 : int -> t
+(** [utf8 codepoint] encodes a Unicode scalar value into UTF-8 and writes it.
+
+    Handles 1-4 byte sequences. Invalid codepoints (negative, > 0x10FFFF, or
+    surrogates in the range 0xD800-0xDFFF) are replaced with U+FFFD. *)
+
+val emit : t -> writer -> unit
+(** [emit seq w] applies the sequence [seq] to the writer [w]. *)
+
+val to_string : t -> string
+(** [to_string seq] converts the sequence to a string.
+
+    Allocates a temporary buffer. Use [emit] for high-performance scenarios. *)
+
+val to_buffer : t -> Buffer.t -> unit
+(** [to_buffer seq buf] appends the sequence to an existing [Buffer.t].
+
+    Convenience wrapper that allocates an intermediate string via {!to_string}.
+    For high-performance scenarios, prefer {!emit} with a pre-allocated buffer.
 *)
 
-module Parser = Parser
-(** Streaming ANSI escape sequence parser.
+(** {1 Primitives} *)
 
-    Tokenizes ANSI output into high-level tokens. Returns a list, so allocates
-    proportionally to input size. See {!Parser} for details. *)
+val esc : string -> t
+(** [esc body] emits a CSI sequence [ESC \[ body].
 
-module Escape = Escape
-(** Low-level escape sequence builders.
+    Example: [esc "2J"] becomes ["\027\[2J"]. *)
 
-    Composable, buffer-based emitters for efficient sequence construction.
-    Provides zero-allocation primitives ({!Escape.sgr_open}, {!Escape.sgr_code},
-    etc.) for hot render loops. See {!Escape} for details. *)
+val csi : params:string -> command:char -> t
+(** [csi ~params ~command] emits [ESC \[ params command]. *)
 
-module Sgr_state = Sgr_state
-(** Terminal SGR state tracker.
+val sgr : int list -> t
+(** [sgr codes] emits an SGR sequence [ESC \[ codes m].
 
-    Tracks the terminal's current style state to minimize emitted SGR codes.
-    Zero-allocation: {!Sgr_state.update} writes directly to an {!Escape.writer}
-    without intermediate allocations. See {!Sgr_state} for details. *)
+    Example: [sgr [1; 31]] becomes ["\027\[1;31m"].
 
-(** {1 High-Level Styling} *)
+    Note: [sgr []] emits nothing. Use [reset] or [sgr [0]] to clear
+    attributes. *)
+
+val sgr_direct : ((int -> unit) -> unit) -> writer -> unit
+(** [sgr_direct f w] emits SGR codes generated by callback [f].
+
+    {b Optimization}: Avoids list allocation for dynamic styles. The callback
+    [f] receives a [push] function; every call to [push code] appends that
+    integer to the sequence parameter list. *)
+
+(** {2 Low-level SGR Building}
+
+    These primitives allow zero-allocation SGR sequence construction by writing
+    directly to the buffer. Use when the closure overhead of {!sgr_direct} is
+    unacceptable (e.g., in hot render loops).
+
+    {b Usage}:
+    {[
+      (* Emit: \027[0;38;2;255;0;0m (reset + red foreground) *)
+      Ansi.sgr_open w;
+      Ansi.sgr_code w 0;
+      Ansi.sgr_sep w;
+      Ansi.sgr_code w 38;
+      Ansi.sgr_sep w;
+      Ansi.sgr_code w 2;
+      Ansi.sgr_sep w;
+      Ansi.sgr_code w 255;
+      Ansi.sgr_sep w;
+      Ansi.sgr_code w 0;
+      Ansi.sgr_sep w;
+      Ansi.sgr_code w 0;
+      Ansi.sgr_close w
+    ]} *)
+
+val sgr_open : writer -> unit
+(** [sgr_open w] writes the SGR sequence opener [ESC \[]. *)
+
+val sgr_code : writer -> int -> unit
+(** [sgr_code w n] writes an integer parameter. *)
+
+val sgr_sep : writer -> unit
+(** [sgr_sep w] writes the parameter separator [;]. *)
+
+val sgr_close : writer -> unit
+(** [sgr_close w] writes the SGR terminator [m]. *)
+
+val reset : t
+(** [reset] emits the SGR reset sequence [ESC \[ 0 m]. *)
+
+(** {1 Cursor Control} *)
+
+(** {2 Relative Movement} *)
+
+val cursor_up : n:int -> t
+(** [cursor_up ~n] moves the cursor up [n] lines. Clamps negative values to 0.
+*)
+
+val cursor_down : n:int -> t
+(** [cursor_down ~n] moves the cursor down [n] lines. *)
+
+val cursor_forward : n:int -> t
+(** [cursor_forward ~n] moves the cursor right [n] columns. *)
+
+val cursor_back : n:int -> t
+(** [cursor_back ~n] moves the cursor left [n] columns. *)
+
+val cursor_next_line : n:int -> t
+(** [cursor_next_line ~n] moves the cursor down [n] lines and to the first
+    column (CNL). *)
+
+val cursor_previous_line : n:int -> t
+(** [cursor_previous_line ~n] moves the cursor up [n] lines and to the first
+    column (CPL). *)
+
+(** {2 Absolute Positioning} *)
+
+val cursor_horizontal_absolute : int -> t
+(** [cursor_horizontal_absolute col] moves to 1-based column [col]. Clamps
+    values < 1 to 1. *)
+
+val cursor_vertical_absolute : int -> t
+(** [cursor_vertical_absolute row] moves to 1-based row [row]. Clamps values < 1
+    to 1. *)
+
+val cursor_position : row:int -> col:int -> t
+(** [cursor_position ~row ~col] moves to 1-based coordinates [(row, col)]. *)
+
+(** {2 State} *)
+
+val cursor_save : t
+(** [cursor_save] saves cursor position (CSI s).
+
+    Uses the ANSI.SYS/SCO sequence, widely supported by modern terminals. Must
+    be paired with {!cursor_restore}. *)
+
+val cursor_restore : t
+(** [cursor_restore] restores cursor position saved by {!cursor_save} (CSI u).
+
+    Behavior undefined if called without prior {!cursor_save}. *)
+
+val move_cursor_and_clear : row:int -> col:int -> t
+(** [move_cursor_and_clear row col] moves to [(row, col)] and clears to the end
+    of the screen. *)
+
+(** {2 Appearance} *)
+
+val show_cursor : t
+(** [show_cursor] shows the cursor (DECTCEM). *)
+
+val hide_cursor : t
+(** [hide_cursor] hides the cursor (DECTCEM). *)
+
+type cursor_shape =
+  [ `Default
+  | `Blinking_block
+  | `Block
+  | `Blinking_underline
+  | `Underline
+  | `Blinking_bar
+  | `Bar ]
+(** Cursor shape for DECSCUSR. *)
+
+val cursor_style : shape:cursor_shape -> t
+(** [cursor_style ~shape] sets the cursor shape (DECSCUSR). *)
+
+val default_cursor_style : t
+(** [default_cursor_style] sets the cursor to the user default (Style 0). *)
+
+val cursor_block : t
+(** [cursor_block] sets the cursor to a steady block (Style 2). *)
+
+val cursor_block_blink : t
+(** [cursor_block_blink] sets the cursor to a blinking block (Style 1). *)
+
+val cursor_line : t
+(** [cursor_line] sets the cursor to a steady vertical bar (Style 6). *)
+
+val cursor_line_blink : t
+(** [cursor_line_blink] sets the cursor to a blinking vertical bar (Style 5). *)
+
+val cursor_underline : t
+(** [cursor_underline] sets the cursor to a steady underline (Style 4). *)
+
+val cursor_underline_blink : t
+(** [cursor_underline_blink] sets the cursor to a blinking underline (Style 3).
+*)
+
+val cursor_color : r:int -> g:int -> b:int -> t
+(** [cursor_color ~r ~g ~b] sets the cursor color (OSC 12).
+
+    Always pair with either {!reset_cursor_color} (for terminals supporting OSC
+    112) or {!reset_cursor_color_fallback} (for compatibility with terminals
+    that only support OSC 12) during teardown. *)
+
+val reset_cursor_color : t
+(** [reset_cursor_color] resets the cursor color to terminal default (OSC 112).
+
+    Preferred method for terminals supporting OSC 112. *)
+
+val reset_cursor_color_fallback : t
+(** [reset_cursor_color_fallback] resets cursor color using OSC 12 "default".
+
+    Fallback for terminals that only support OSC 12. *)
+
+(** {1 Screen Control} *)
+
+val clear : t
+(** [clear] clears the visible screen without moving cursor (ED 2).
+
+    Erases entire display but leaves cursor position unchanged. Use
+    {!clear_and_home} to also move cursor to home. *)
+
+val home : t
+(** [home] moves the cursor to (1, 1). *)
+
+val clear_and_home : t
+(** [clear_and_home] moves to home, then clears the screen.
+
+    Moves cursor to (1, 1) then erases entire display. Atomic operation to avoid
+    flicker. *)
+
+type erase_display_mode = [ `Below | `Above | `All | `Scrollback ]
+(** Erase display mode for ED (Erase in Display). *)
+
+val erase_display : mode:erase_display_mode -> t
+(** [erase_display ~mode] erases parts of the screen (ED). *)
+
+val erase_below_cursor : t
+(** [erase_below_cursor] clears from the cursor to the end of the screen (ED 0).
+*)
+
+type erase_line_mode = [ `Right | `Left | `All ]
+(** Erase line mode for EL (Erase in Line). *)
+
+val erase_line : mode:erase_line_mode -> t
+(** [erase_line ~mode] erases parts of the current line (EL). *)
+
+val insert_lines : n:int -> t
+(** [insert_lines ~n] inserts [n] blank lines at the cursor (IL). *)
+
+val delete_lines : n:int -> t
+(** [delete_lines ~n] deletes [n] lines at the cursor (DL). *)
+
+val scroll_up : n:int -> t
+(** [scroll_up ~n] scrolls the viewport up by [n] lines (SU). *)
+
+val scroll_down : n:int -> t
+(** [scroll_down ~n] scrolls the viewport down by [n] lines (SD). *)
+
+val set_scrolling_region : top:int -> bottom:int -> t
+(** [set_scrolling_region ~top ~bottom] restricts scrolling to the specified
+    line range.
+
+    {b Invariant}: [top] must be >= 1 and [bottom] > [top].
+    @raise Invalid_argument if bounds are invalid. *)
+
+val reset_scrolling_region : t
+(** [reset_scrolling_region] resets the scrolling region to the full screen
+    (DECSTBM reset). Equivalent to emitting [ESC \[ r]. *)
+
+(** {1 Colors and Attributes} *)
+
+val set_foreground : r:int -> g:int -> b:int -> t
+(** [set_foreground ~r ~g ~b] sets the foreground color (Truecolor). Clamps
+    values to [0-255]. *)
+
+val set_background : r:int -> g:int -> b:int -> t
+(** [set_background ~r ~g ~b] sets the background color (Truecolor). *)
+
+val reset_background : t
+(** [reset_background] resets the background color to default (SGR 49). *)
+
+val reset_foreground : t
+(** [reset_foreground] resets the foreground color to terminal default (SGR 39).
+*)
+
+(** {1 Screen Buffers} *)
+
+val enter_alternate_screen : t
+(** [enter_alternate_screen] switches to the alternate screen buffer. *)
+
+val exit_alternate_screen : t
+(** [exit_alternate_screen] restores the main screen buffer. *)
+
+(** {1 Terminal Properties} *)
+
+val set_title : title:string -> t
+(** [set_title ~title] sets the window title (OSC 0). *)
+
+val explicit_width : width:int -> text:string -> t
+(** [explicit_width ~width ~text] renders [text] while forcing the terminal to
+    treat it as occupying [width] cells.
+
+    Emits OSC 66 sequence. The text payload is emitted verbatim (no escaping);
+    ensure [text] does not contain unescaped ST sequences (ESC \\) which would
+    terminate the OSC prematurely. *)
+
+val explicit_width_bytes : width:int -> bytes:bytes -> off:int -> len:int -> t
+(** [explicit_width_bytes ~width ~bytes ~off ~len] writes directly from a byte
+    buffer without creating intermediate strings.
+
+    Same sanitization requirements apply: ensure the byte slice does not contain
+    unescaped ST sequences. *)
+
+(** {1 Operating System Commands (OSC)} *)
+
+type terminator = [ `Bel | `St ]
+(** OSC terminator type. *)
+
+val osc : ?terminator:terminator -> payload:string -> t
+(** [osc ?terminator ~payload] emits an OSC sequence. *)
+
+(** {2 Hyperlinks (OSC 8)} *)
+
+val hyperlink_start : ?params:string -> url:string -> t
+(** [hyperlink_start ?params ~url] opens a hyperlink.
+
+    Must be paired with {!hyperlink_end}.
+
+    @param params
+      Optional key=value pairs (e.g., "id=link1") for terminal link
+      identification. Defaults to empty string. *)
+
+val hyperlink_end : t
+(** [hyperlink_end] closes the current hyperlink.
+
+    Must be paired with {!hyperlink_start}. *)
+
+val hyperlink : ?params:string -> url:string -> text:string -> t
+(** [hyperlink ...] emits a complete linked text segment. *)
+
+(** {2 Direct Hyperlink Emission}
+
+    Zero-allocation versions for use in hot render loops. *)
+
+val hyperlink_open : writer -> string -> unit
+(** [hyperlink_open w url] opens a hyperlink directly without allocation.
+
+    Equivalent to [emit (hyperlink_start ~url) w] but avoids closure creation.
+*)
+
+val hyperlink_close : writer -> unit
+(** [hyperlink_close w] closes the current hyperlink directly. *)
+
+(** {1 Terminal Modes} *)
+
+type mode =
+  | Mouse_tracking  (** DECSET 1000 — basic mouse click reporting. *)
+  | Mouse_button_tracking  (** DECSET 1002 — button-event tracking. *)
+  | Mouse_motion  (** DECSET 1003 — any-event (all motion) tracking. *)
+  | Mouse_sgr  (** DECSET 1006 — SGR extended coordinates. *)
+  | Mouse_sgr_pixel  (** DECSET 1016 — SGR pixel coordinates (Kitty). *)
+  | Mouse_x10  (** DECSET 9 — legacy X10 mouse protocol. *)
+  | Urxvt_mouse  (** DECSET 1015 — urxvt extended coordinates. *)
+  | Focus_tracking  (** DECSET 1004 — focus in/out reporting. *)
+  | Bracketed_paste  (** DECSET 2004 — paste boundary markers. *)
+  | Sync_output  (** DECSET 2026 — synchronized output. *)
+  | Unicode  (** DECSET 2027 — Unicode mode. *)
+  | Color_scheme  (** DECSET 2031 — color scheme reporting. *)
+(** Terminal private modes. Each variant corresponds to a DEC private mode
+    that can be toggled via {!enable}/{!disable}. *)
+
+val enable : mode -> t
+(** [enable mode] emits the DECSET sequence to activate [mode].
+
+    Example:
+    {[
+      let setup =
+        Ansi.seq
+          (List.map Ansi.enable
+             [ Mouse_sgr; Mouse_motion; Focus_tracking; Bracketed_paste ])
+    ]} *)
+
+val disable : mode -> t
+(** [disable mode] emits the DECRST sequence to deactivate [mode]. *)
+
+(** {2 Keyboard Encoding} *)
+
+val csi_u_on : t
+(** [csi_u_on] enables CSI-u extended keyboard encoding. *)
+
+val csi_u_off : t
+(** [csi_u_off] disables CSI-u encoding. *)
+
+val csi_u_push : flags:int -> t
+(** [csi_u_push ~flags] pushes Kitty keyboard protocol flags. *)
+
+val csi_u_pop : t
+(** [csi_u_pop] pops the Kitty keyboard protocol state. *)
+
+val modify_other_keys_on : t
+(** [modify_other_keys_on] enables Xterm modifyOtherKeys (level 1). *)
+
+val modify_other_keys_off : t
+(** [modify_other_keys_off] disables modifyOtherKeys. *)
+
+(** {1 Device and Capability Queries} *)
+
+type query =
+  | Cursor_position  (** DSR 6 — current cursor position. *)
+  | Pixel_size  (** CSI 14 t — terminal pixel dimensions. *)
+  | Device_attributes  (** DA1 — primary device attributes. *)
+  | Tertiary_attributes  (** DA3 — tertiary device attributes. *)
+  | Terminal_identity  (** XTVERSION — terminal name and version. *)
+  | Device_status  (** DSR 5 — generic status report. *)
+  | Csi_u_support  (** CSI ? u — CSI-u keyboard encoding support. *)
+  | Kitty_graphics  (** Kitty graphics protocol probe. *)
+  | Sixel_geometry  (** Sixel graphics geometry limits. *)
+  | Explicit_width_support  (** OSC 66 — explicit width probe. *)
+  | Scaled_text_support  (** OSC 66 — scaled text probe. *)
+  | Color_scheme_query  (** DSR 996 — terminal color scheme. *)
+  | Focus_mode  (** DECRQM 1004 — focus tracking state. *)
+  | Sgr_pixels_mode  (** DECRQM 1016 — SGR pixel mouse state. *)
+  | Bracketed_paste_mode  (** DECRQM 2004 — bracketed paste state. *)
+  | Sync_mode  (** DECRQM 2026 — synchronized output state. *)
+  | Unicode_mode  (** DECRQM 2027 — Unicode mode state. *)
+  | Color_scheme_mode  (** DECRQM 2031 — color scheme reporting state. *)
+(** Terminal capability and state queries. Each variant emits the appropriate
+    query sequence; the terminal responds asynchronously. Parse responses via
+    {!Parser} or raw input handling. *)
+
+val query : query -> t
+(** [query q] emits the query sequence for [q]. *)
+
+(** {2 Response Markers} *)
+
+val bracketed_paste_start : t
+(** [bracketed_paste_start] is the start marker emitted by the terminal on
+    paste.
+
+    Applications read this sequence, not emit it. Used to detect paste
+    boundaries when bracketed paste mode is enabled. *)
+
+val bracketed_paste_end : t
+(** [bracketed_paste_end] is the end marker emitted by the terminal on paste.
+
+    Applications read this sequence, not emit it. Marks the end of pasted
+    content. *)
+
+(** {1 High-level Convenience}
+
+    These functions operate at a higher abstraction level than the escape
+    builders above. They take strings as input and return strings directly. *)
 
 val styled :
   ?reset:bool ->
@@ -175,39 +589,7 @@ val styled :
 
     {[
       print_string (Ansi.styled ~fg:Color.red "Error: ");
-      print_endline (Ansi.styled ~reset:true ~fg:Color.white "details");
-      (* With hyperlink *)
-      print_endline
-        (Ansi.styled ~fg:Color.blue ~underline:true ~link:"https://ocaml.org"
-           "OCaml")
-    ]} *)
-
-val hyperlink_start : ?params:string -> url:string -> unit -> string
-(** [hyperlink_start ?params ~url ()] emits the OSC 8 start sequence.
-
-    Useful for manually constructing hyperlinks spanning complex layouts. Must
-    be paired with {!hyperlink_end} to close the hyperlink.
-
-    @param params
-      Optional key=value pairs (e.g., "id=link1") for terminal link
-      identification. Defaults to empty string.
-    @param url The URL to link to. *)
-
-val hyperlink_end : string
-(** [hyperlink_end] emits the OSC 8 terminator sequence.
-
-    Closes the most recent hyperlink opened by {!hyperlink_start}. Must be
-    paired with {!hyperlink_start}. *)
-
-val hyperlink : url:string -> text:string -> string
-(** [hyperlink ~url ~text] wraps [text] in an OSC 8 hyperlink.
-
-    Thin wrapper over {!Escape.hyperlink} that produces a ready-to-print string.
-    Hyperlinks degrade gracefully on terminals that ignore OSC 8.
-
-    {[
-      print_endline
-        (Ansi.hyperlink ~url:"https://ocaml.org" ~text:"Visit OCaml")
+      print_endline (Ansi.styled ~reset:true ~fg:Color.white "details")
     ]} *)
 
 val render : ?hyperlinks_enabled:bool -> (Style.t * string) list -> string
@@ -218,11 +600,8 @@ val render : ?hyperlinks_enabled:bool -> (Style.t * string) list -> string
     hyperlinks at the end. Always appends a final reset [\[ESC[0m]].
 
     @param hyperlinks_enabled
-      When [false], suppresses OSC 8 sequences. Defaults to [true]. Useful for
-      terminals without hyperlink support.
-    @param segments List of [(style, text)] pairs.
+      When [false], suppresses OSC 8 sequences. Defaults to [true].
 
-    Example:
     {[
       let output =
         Ansi.render
@@ -233,475 +612,38 @@ val render : ?hyperlinks_enabled:bool -> (Style.t * string) list -> string
     ]}
 
     {b Streaming}: For streaming rendering (e.g., in render loops), use
-    {!Sgr_state} directly. It tracks terminal state including hyperlinks and
-    emits minimal escape sequences. *)
-
-(** {1 Parsing} *)
+    {!Sgr_state} directly. *)
 
 val parse : string -> Parser.token list
 (** [parse s] tokenizes ANSI-encoded string [s].
 
     Parses escape sequences, control codes, and plain text into high-level
-    tokens. See {!Parser.token} for token types. Parsing never raises; malformed
-    sequences are emitted as {!Parser.Unknown} controls so callers can log or
-    ignore them.
-
-    {[
-      let tokens = Ansi.parse "\027[1;31mError\027[0m"
-      (* Returns: [SGR [`Bold; `Fg Red]; Text "Error"; SGR [`Reset]] *)
-    ]} *)
+    tokens. Parsing never raises; malformed sequences are emitted as unknown
+    controls. *)
 
 val strip : string -> string
 (** [strip s] removes all ANSI escape sequences from [s].
 
     Returns only plain text content. Useful for display width calculation,
-    logging to files, or text processing. ESC bytes followed by unrecognized
-    characters are consumed along with the character to avoid leaving partial
-    escape sequences.
-
-    Handles CSI ([ESC \[ ... ]), OSC ([ESC \] ... BEL/ST]), and other standard
-    ANSI escape types. Incomplete sequences at string end are removed. Preserves
-    Unicode.
-
-    Time complexity: O(n).
+    logging to files, or text processing. Time complexity: O(n).
 
     {[
-      Ansi.strip "\x1b[31mRed\x1b[0m" = "Red";;
-
-      (* Calculate display width *)
-      let width = String.length (Ansi.strip styled_text)
+      Ansi.strip "\x1b[31mRed\x1b[0m" = "Red"
     ]} *)
 
-(** {1 Cursor Control} *)
+(** {1 Sub-modules} *)
 
-(** {2 Movement} *)
+module Color = Color
+(** Color representations and conversions. *)
 
-val cursor_up : n:int -> string
-(** [cursor_up ~n] moves cursor up.
+module Attr = Attr
+(** Text attribute flags (bold, italic, underline, etc.). *)
 
-    Cursor stays in same column. Stops at top edge. Negative or zero values
-    return empty string. *)
+module Style = Style
+(** Complete styling with colors, attributes, and hyperlinks. *)
 
-val cursor_down : n:int -> string
-(** [cursor_down ~n] moves cursor down.
+module Parser = Parser
+(** Streaming ANSI escape sequence parser. *)
 
-    Cursor stays in same column. Stops at bottom edge. Negative or zero values
-    return empty string. *)
-
-val cursor_forward : n:int -> string
-(** [cursor_forward ~n] moves cursor right.
-
-    Cursor stays on same line. Stops at right edge. Negative or zero values
-    return empty string. *)
-
-val cursor_back : n:int -> string
-(** [cursor_back ~n] moves cursor left.
-
-    Cursor stays on same line. Stops at left edge. Negative or zero values
-    return empty string. *)
-
-(** {2 Positioning} *)
-
-val cursor_position : row:int -> col:int -> string
-(** [cursor_position ~row ~col] moves to absolute position.
-
-    Uses 1-based coordinates where (1,1) is top-left. Values ≤0 are treated as
-    1.
-
-    Example:
-    {[
-      print_string (Ansi.cursor_position ~row:10 ~col:40);
-      print_string "Text at position (10, 40)"
-    ]} *)
-
-val move_cursor_and_clear : row:int -> col:int -> string
-(** [move_cursor_and_clear ~row ~col] moves the cursor then clears to the end of
-    the screen.
-
-    Atomic operation that repositions cursor then erases to screen end, avoiding
-    flicker between separate calls. Equivalent to {!cursor_position} followed by
-    {!erase_display} with mode 0. *)
-
-(** {2 State} *)
-
-val cursor_save : string
-(** [cursor_save] saves cursor position (CSI s).
-
-    Uses the ANSI.SYS/SCO sequence, widely supported by modern terminals. Must
-    be paired with {!cursor_restore}. *)
-
-val cursor_restore : string
-(** [cursor_restore] restores cursor position saved by {!cursor_save} (CSI u).
-
-    Behavior undefined if called without prior {!cursor_save}. *)
-
-val cursor_next_line : n:int -> string
-(** [cursor_next_line ~n] moves cursor down by [n] lines and to column 1.
-
-    Negative or zero values return empty string. Equivalent to CSI E. *)
-
-val cursor_previous_line : n:int -> string
-(** [cursor_previous_line ~n] moves cursor up by [n] lines and to column 1.
-
-    Negative or zero values return empty string. Equivalent to CSI F. *)
-
-val cursor_horizontal_absolute : col:int -> string
-(** [cursor_horizontal_absolute ~col] moves to absolute column on current row.
-
-    1-based column, values ≤0 treated as 1. Equivalent to CHA. *)
-
-val cursor_vertical_absolute : row:int -> string
-(** [cursor_vertical_absolute ~row] moves to absolute row keeping the column.
-
-    1-based row, values ≤0 treated as 1. Equivalent to VPA. *)
-
-(** {2 Appearance} *)
-
-val show_cursor : string
-(** [show_cursor] makes the cursor visible. *)
-
-val hide_cursor : string
-(** [hide_cursor] makes the cursor invisible.
-
-    Useful for cleaner output during animations or progress indicators. Always
-    pair with {!show_cursor} to restore visibility before program exit to avoid
-    leaving terminal cursor hidden. *)
-
-val cursor_style : shape:Escape.cursor_shape -> string
-(** [cursor_style ~shape] sets the cursor shape (DECSCUSR). *)
-
-val default_cursor_style : string
-(** [default_cursor_style] restores the terminal's default cursor appearance.
-
-    Shape and blink behavior depend on terminal configuration. *)
-
-val cursor_block : string
-(** [cursor_block] selects a steady block cursor. *)
-
-val cursor_block_blink : string
-(** [cursor_block_blink] selects a blinking block cursor. *)
-
-val cursor_line : string
-(** [cursor_line] selects a steady bar cursor. *)
-
-val cursor_line_blink : string
-(** [cursor_line_blink] selects a blinking bar cursor. *)
-
-val cursor_underline : string
-(** [cursor_underline] selects a steady underline cursor. *)
-
-val cursor_underline_blink : string
-(** [cursor_underline_blink] selects a blinking underline cursor. *)
-
-val cursor_color : r:int -> g:int -> b:int -> string
-(** [cursor_color ~r ~g ~b] sets the cursor colour via OSC 12.
-
-    Components outside \[0,255\] are clamped. The request is ignored by
-    terminals that do not expose cursor colour control. Always pair with either
-    {!reset_cursor_color} (for terminals supporting OSC 112) or
-    {!reset_cursor_color_fallback} (for compatibility with terminals that only
-    support OSC 12) during teardown. *)
-
-val reset_cursor_color : string
-(** [reset_cursor_color] resets cursor colour (OSC 112). *)
-
-val reset_cursor_color_fallback : string
-(** [reset_cursor_color_fallback] resets cursor colour using OSC 12 default. *)
-
-(** {1 Screen Control} *)
-
-val erase_display : mode:Escape.erase_display_mode -> string
-(** [erase_display ~mode] erases part of the display. Cursor position is
-    unchanged. *)
-
-val scroll_up : n:int -> string
-(** [scroll_up ~n] scrolls the viewport up by [n] lines (CSI S).
-
-    Negative or zero values return empty string. *)
-
-val scroll_down : n:int -> string
-(** [scroll_down ~n] scrolls the viewport down by [n] lines (CSI T).
-
-    Negative or zero values return empty string. *)
-
-val erase_line : mode:Escape.erase_line_mode -> string
-(** [erase_line ~mode] erases part of the current line. Cursor position is
-    unchanged. *)
-
-val clear_and_home : string
-(** [clear_and_home] clears the screen and moves cursor to top-left.
-
-    Moves cursor to home (1, 1) then erases entire display. Equivalent to
-    {!home} followed by {!erase_display} with [`All]. *)
-
-val clear : string
-(** [clear] clears the visible screen without moving cursor.
-
-    Erases entire display (mode 2) but leaves cursor position unchanged. Use
-    {!clear_and_home} to also move cursor to home. *)
-
-val home : string
-(** [home] moves the cursor to the home position. *)
-
-val erase_below_cursor : string
-(** [erase_below_cursor] erases from cursor to end of screen.
-
-    Equivalent to [erase_display ~mode:0]. *)
-
-val insert_lines : n:int -> string
-(** [insert_lines ~n] inserts [n] blank lines at the cursor row (IL).
-
-    Negative or zero values return empty string. *)
-
-val delete_lines : n:int -> string
-(** [delete_lines ~n] deletes [n] lines from the cursor row (DL).
-
-    Negative or zero values return empty string. *)
-
-val set_scrolling_region : top:int -> bottom:int -> string
-(** [set_scrolling_region ~top ~bottom] constrains scrolling to [top..bottom].
-
-    Both are 1-based. Raises [Invalid_argument] if bounds are invalid. *)
-
-val reset_scrolling_region : string
-(** [reset_scrolling_region] resets the scrolling region to the full screen. *)
-
-(** {1 Colors and Attributes} *)
-
-val reset : string
-(** [reset] resets all styling to terminal defaults.
-
-    Emits [\[ESC [ 0 m]]. Clears colors and attributes, but not cursor position
-    or screen content. *)
-
-val set_foreground : r:int -> g:int -> b:int -> string
-(** [set_foreground ~r ~g ~b] sets the foreground color using truecolor (SGR
-    38;2). Components are clamped to [0, 255]. *)
-
-val set_background : r:int -> g:int -> b:int -> string
-(** [set_background ~r ~g ~b] sets the background color using truecolor (SGR
-    48;2). Components outside \[0,255\] are clamped. *)
-
-val reset_background : string
-(** [reset_background] restores the terminal's default background (SGR 49). *)
-
-val reset_foreground : string
-(** [reset_foreground] restores the terminal's default foreground (SGR 39). *)
-
-(** {1 Screen Buffers} *)
-
-val enter_alternate_screen : string
-(** [enter_alternate_screen] switches to the alternate screen buffer.
-
-    Commonly used by full-screen applications (editors, pagers). The main screen
-    content is preserved and restored with {!exit_alternate_screen}. *)
-
-val exit_alternate_screen : string
-(** [exit_alternate_screen] returns to the main screen buffer.
-
-    Restores the screen state before {!enter_alternate_screen}. *)
-
-(** {1 Terminal Properties} *)
-
-val set_title : title:string -> string
-(** [set_title ~title] sets the terminal window title (OSC 0). *)
-
-val explicit_width : width:int -> text:string -> string
-(** [explicit_width ~width ~text] emits OSC 66 explicit-width text.
-
-    OSC 66 extension for explicit width (WezTerm, foot). Unsupported terminals
-    ignore the sequence. [width] must be strictly positive; terminals treat zero
-    or negative widths as implementation-defined behaviour. The text payload is
-    emitted verbatim (no escaping); ensure [text] does not contain unescaped ST
-    sequences (ESC \\) which would terminate the OSC prematurely. *)
-
-(** {1 Terminal Modes} *)
-
-val mouse_pixel_mode_on : string
-(** [mouse_pixel_mode_on] enables pixel-precise mouse reporting.
-
-    Enables button events (1002), motion (1003), focus (1004), and SGR pixel
-    encoding (1016). Kitty extension. *)
-
-val mouse_pixel_mode_off : string
-(** [mouse_pixel_mode_off] disables pixel-precise mouse reporting.
-
-    Disables button events (1002), motion (1003), focus (1004), and SGR pixel
-    encoding (1016). *)
-
-val bracketed_paste_on : string
-(** [bracketed_paste_on] enables bracketed paste mode (DECSET 2004). *)
-
-val bracketed_paste_off : string
-(** [bracketed_paste_off] disables bracketed paste mode (DECRST 2004). *)
-
-val focus_tracking_on : string
-(** [focus_tracking_on] enables focus reporting (DECSET 1004). *)
-
-val focus_tracking_off : string
-(** [focus_tracking_off] disables focus reporting (DECRST 1004). *)
-
-val sync_output_on : string
-(** [sync_output_on] enables synchronized output (DECSET 2026). *)
-
-val sync_output_off : string
-(** [sync_output_off] disables synchronized output (DECRST 2026). *)
-
-val unicode_mode_on : string
-(** [unicode_mode_on] enables Unicode mode (DECSET 2027). *)
-
-val unicode_mode_off : string
-(** [unicode_mode_off] disables Unicode mode (DECRST 2027). *)
-
-val mouse_tracking_on : string
-(** [mouse_tracking_on] enables basic mouse tracking (DECSET 1000). *)
-
-val mouse_tracking_off : string
-(** [mouse_tracking_off] disables basic mouse tracking (DECRST 1000). *)
-
-val mouse_button_tracking_on : string
-(** [mouse_button_tracking_on] enables button-event tracking (DECSET 1002). *)
-
-val mouse_button_tracking_off : string
-(** [mouse_button_tracking_off] disables button-event tracking (DECRST 1002). *)
-
-val mouse_motion_on : string
-(** [mouse_motion_on] enables any-event mouse tracking (DECSET 1003). *)
-
-val mouse_motion_off : string
-(** [mouse_motion_off] disables any-event mouse tracking (DECRST 1003). *)
-
-val mouse_sgr_mode_on : string
-(** [mouse_sgr_mode_on] enables SGR mouse encoding (DECSET 1006). *)
-
-val mouse_sgr_mode_off : string
-(** [mouse_sgr_mode_off] disables SGR mouse encoding (DECRST 1006). *)
-
-val mouse_x10_on : string
-(** [mouse_x10_on] enables legacy X10 mouse tracking (DECSET 9). *)
-
-val mouse_x10_off : string
-(** [mouse_x10_off] disables legacy X10 mouse tracking (DECRST 9). *)
-
-val urxvt_mouse_on : string
-(** [urxvt_mouse_on] enables urxvt mouse reporting (DECSET 1015). *)
-
-val urxvt_mouse_off : string
-(** [urxvt_mouse_off] disables urxvt mouse reporting (DECRST 1015). *)
-
-val color_scheme_set : string
-(** [color_scheme_set] enables colour-scheme reporting. *)
-
-val color_scheme_reset : string
-(** [color_scheme_reset] disables colour-scheme reporting. *)
-
-(** {1 Key Encoding} *)
-
-val csi_u_on : string
-(** [csi_u_on] enables CSI-u keyboard encoding (ESC \[ > 1 u). *)
-
-val csi_u_off : string
-(** [csi_u_off] disables CSI-u keyboard encoding (ESC \[ < 1 u). *)
-
-val csi_u_push : flags:int -> string
-(** [csi_u_push ~flags] enables kitty keyboard protocol with [flags] (ESC \[ >
-    [flags] u). *)
-
-val csi_u_pop : string
-(** [csi_u_pop] disables kitty keyboard protocol (ESC \[ < u). *)
-
-val modify_other_keys_on : string
-(** [modify_other_keys_on] enables xterm modifyOtherKeys mode (CSI > 4 ; 1 m).
-*)
-
-val modify_other_keys_off : string
-(** [modify_other_keys_off] disables xterm modifyOtherKeys mode (CSI > 4 ; 0 m).
-*)
-
-(** {1 Device and Capability Queries} *)
-
-(** {2 Terminal and Device Information} *)
-
-val request_cursor_position : string
-(** [request_cursor_position] queries current cursor position (DSR 6). *)
-
-val request_pixel_size : string
-(** [request_pixel_size] queries terminal pixel dimensions.
-
-    Emits CSI 14 t query. Terminal responds with [CSI 4 ; height ; width t].
-    Parse response via {!Parser} or raw input. *)
-
-val request_device_attributes : string
-(** [request_device_attributes] queries device attributes (DA1). *)
-
-val request_tertiary_device_attributes : string
-(** [request_tertiary_device_attributes] queries tertiary device attributes
-    (DA3). *)
-
-val request_terminal_identity : string
-(** [request_terminal_identity] queries terminal identity/version (XTVERSION).
-*)
-
-val request_device_status : string
-(** [request_device_status] requests a generic status report (DSR 5). *)
-
-(** {2 Feature and Protocol Support} *)
-
-val request_csi_u_support : string
-(** [request_csi_u_support] queries CSI-u keyboard encoding support. *)
-
-val request_kitty_graphics_support : string
-(** [request_kitty_graphics_support] probes kitty graphics protocol support. *)
-
-val request_sixel_geometry : string
-(** [request_sixel_geometry] queries for Sixel graphics geometry limits. *)
-
-val request_explicit_width_support : string
-(** [request_explicit_width_support] queries explicit-width support.
-
-    OSC 66 extension (WezTerm, foot). Unsupported terminals ignore sequence. *)
-
-val request_scaled_text_support : string
-(** [request_scaled_text_support] queries scaled-text support.
-
-    OSC 66 extension (WezTerm, foot). Unsupported terminals ignore sequence. *)
-
-val request_color_scheme : string
-(** [request_color_scheme] queries terminal colour-scheme support. *)
-
-(** {2 Mode State Queries} *)
-
-val request_focus_mode : string
-(** [request_focus_mode] queries focus tracking mode (DECRQM 1004). *)
-
-val request_sgr_pixels_mode : string
-(** [request_sgr_pixels_mode] queries SGR pixel mouse mode (DECRQM 1016). *)
-
-val request_bracketed_paste_mode : string
-(** [request_bracketed_paste_mode] queries bracketed paste mode (DECRQM 2004).
-*)
-
-val request_sync_mode : string
-(** [request_sync_mode] queries synchronized output mode (DECRQM 2026). *)
-
-val request_unicode_mode : string
-(** [request_unicode_mode] queries Unicode mode (DECRQM 2027). *)
-
-val request_color_scheme_mode : string
-(** [request_color_scheme_mode] queries color scheme mode (DECRQM 2031). *)
-
-(** {2 Response Markers} *)
-
-val bracketed_paste_start : string
-(** [bracketed_paste_start] is the marker sequence emitted by the terminal at
-    paste start.
-
-    Applications read this sequence (ESC \[ 200 ~), not emit it. Used to detect
-    paste boundaries when bracketed paste mode is enabled. *)
-
-val bracketed_paste_end : string
-(** [bracketed_paste_end] is the marker sequence emitted by the terminal at
-    paste end.
-
-    Applications read this sequence (ESC \[ 201 ~), not emit it. Marks the end
-    of pasted content. *)
+module Sgr_state = Sgr_state
+(** Terminal SGR state tracker for delta encoding in render loops. *)

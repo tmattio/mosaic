@@ -192,7 +192,7 @@ let to_sgr_codes ?prev t =
     emit_sgr_diff ~prev t (fun code -> rev_codes := code :: !rev_codes);
     List.rev !rev_codes
 
-let emit ?prev t (w : Escape.writer) =
+let emit ?prev t (w : Writer.t) =
   let prev = Option.value prev ~default in
   (* Check visual properties only - link changes are handled by segment layer *)
   if visual_equal prev t then ()

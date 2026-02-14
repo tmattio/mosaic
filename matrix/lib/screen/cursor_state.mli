@@ -78,7 +78,7 @@ val clamp_to_bounds : t -> max_row:int -> max_col:int -> unit
 
 (** {1 Emission} *)
 
-val hide_temporarily : t -> Ansi.Escape.writer -> unit
+val hide_temporarily : t -> Ansi.writer -> unit
 (** [hide_temporarily t w] emits a hide sequence if the cursor is visible or in
     an unknown state, and updates the internal tracking state to reflect this.
 
@@ -86,7 +86,7 @@ val hide_temporarily : t -> Ansi.Escape.writer -> unit
     logical visibility state. When the terminal state is unknown (e.g., after
     {!reset}), the cursor is hidden to be safe. *)
 
-val emit : t -> row_offset:int -> Ansi.Escape.writer -> unit
+val emit : t -> row_offset:int -> Ansi.writer -> unit
 (** [emit t ~row_offset w] synchronizes the terminal cursor with the desired
     state.
 

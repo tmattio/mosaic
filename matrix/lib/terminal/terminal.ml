@@ -1,5 +1,5 @@
 open Unix
-module Esc = Ansi.Escape
+module Esc = Ansi
 
 exception Error of string
 
@@ -282,8 +282,8 @@ let set_cursor_color t ~r ~g ~b ~a =
 let reset_cursor_color t =
   t.cursor.color <- (1., 1., 1., 1.);
   if t.output_is_tty then (
-    send t Ansi.reset_cursor_color_fallback;
-    send t Ansi.reset_cursor_color)
+    send t Ansi.(to_string reset_cursor_color_fallback);
+    send t Ansi.(to_string reset_cursor_color))
 
 let set_title t title = if t.output_is_tty then send t (make_osc ("0;" ^ title))
 let flush t = match t.writer with None -> () | Some w -> Frame_writer.drain w
@@ -337,9 +337,9 @@ let reset_state t =
   if t.output_is_tty then (
     send t cursor_show;
     send t reset_sgr;
-    send t Ansi.reset_cursor_color_fallback;
-    send t Ansi.reset_cursor_color;
-    send t Ansi.default_cursor_style;
+    send t Ansi.(to_string reset_cursor_color_fallback);
+    send t Ansi.(to_string reset_cursor_color);
+    send t Ansi.(to_string default_cursor_style);
     if t.kitty_keyboard_enabled then enable_kitty_keyboard t false;
     if t.modify_other_keys_enabled then (
       send t modify_other_keys_off;
@@ -348,7 +348,7 @@ let reset_state t =
     if t.bracketed_paste_enabled then enable_bracketed_paste t false;
     if t.focus_enabled then enable_focus_reporting t false;
     if t.scroll_region <> None then (
-      send t Ansi.reset_scrolling_region;
+      send t Ansi.(to_string reset_scrolling_region);
       t.scroll_region <- None);
     if t.alt_screen then (
       send t alternate_off;
@@ -357,7 +357,7 @@ let reset_state t =
       send t "\r";
       let rows = max 0 (t.cursor.y - 1) in
       for _ = 1 to rows do
-        send t (Ansi.cursor_up ~n:1)
+        send t Ansi.(to_string (cursor_up ~n:1))
       done;
       send t erase_below);
     set_title t "";
@@ -545,14 +545,14 @@ let set_scroll_region t ~top ~bottom =
   if not t.output_is_tty then t.scroll_region <- Some (top, bottom)
   else if t.scroll_region = Some (top, bottom) then ()
   else (
-    send t (Ansi.set_scrolling_region ~top ~bottom);
+    send t Ansi.(to_string (set_scrolling_region ~top ~bottom));
     t.scroll_region <- Some (top, bottom))
 
 let clear_scroll_region t =
   if not t.output_is_tty then t.scroll_region <- None
   else if t.scroll_region = None then ()
   else (
-    send t Ansi.reset_scrolling_region;
+    send t Ansi.(to_string reset_scrolling_region);
     t.scroll_region <- None)
 
 let scroll_region t = t.scroll_region

@@ -250,7 +250,7 @@ val sgr_sequence : ?prev:t -> t -> string
     Equivalent to converting the result of {!to_sgr_codes} to a string. Returns
     an empty string if no transition is required. *)
 
-val emit : ?prev:t -> t -> Escape.writer -> unit
+val emit : ?prev:t -> t -> Writer.t -> unit
 (** [emit ?prev t writer] writes the minimal SGR codes to [writer].
 
     Computes the minimal state difference between [prev] (defaulting to

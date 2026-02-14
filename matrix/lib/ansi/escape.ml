@@ -1,6 +1,6 @@
 (* Escape: Low-level ANSI escape sequence builders *)
 
-type writer = { bytes : Bytes.t; cap : int; mutable pos : int }
+type writer = Writer.t
 type t = writer -> unit
 type terminator = [ `Bel | `St ]
 
@@ -8,48 +8,18 @@ type terminator = [ `Bel | `St ]
 let char_0 = Char.code '0' (* 48 *)
 let char_a_hex = Char.code 'a' - 10 (* 87: for hex digits a-f *)
 
-(* Writer primitives *)
+(* Writer primitives — delegated to Writer module *)
 
-let make bytes = { bytes; cap = Bytes.length bytes; pos = 0 }
-let len w = w.pos
-let[@inline] reset_pos w = w.pos <- 0
-let slice w = Bytes.sub w.bytes 0 w.pos
+let make = Writer.make
+let len = Writer.len
+let reset_pos = Writer.reset_pos
+let slice = Writer.slice
 
-(* Low-level writing *)
+(* Low-level writing — delegated to Writer module *)
 
-let[@inline] write_char w c =
-  if w.cap = 0 then
-    (* Counting mode, no actual writes *)
-    w.pos <- w.pos + 1
-  else (
-    if w.pos >= w.cap then invalid_arg "Escape.writer: buffer overflow (char)";
-    Bytes.unsafe_set w.bytes w.pos c;
-    w.pos <- w.pos + 1)
-
-let[@inline] write_string w s =
-  let slen = String.length s in
-  if slen = 0 then ()
-  else if w.cap = 0 then
-    (* Counting mode *)
-    w.pos <- w.pos + slen
-  else (
-    if w.pos + slen > w.cap then
-      invalid_arg "Escape.writer: buffer overflow (string)";
-    Bytes.blit_string s 0 w.bytes w.pos slen;
-    w.pos <- w.pos + slen)
-
-let[@inline] write_subbytes w bytes off blen =
-  if blen < 0 || off < 0 || off + blen > Bytes.length bytes then
-    invalid_arg "Escape.write_subbytes: invalid slice";
-  if blen = 0 then ()
-  else if w.cap = 0 then
-    (* Counting mode *)
-    w.pos <- w.pos + blen
-  else (
-    if w.pos + blen > w.cap then
-      invalid_arg "Escape.writer: buffer overflow (bytes)";
-    Bytes.blit bytes off w.bytes w.pos blen;
-    w.pos <- w.pos + blen)
+let write_char = Writer.write_char
+let write_string = Writer.write_string
+let write_subbytes = Writer.write_subbytes
 
 (* Integer writing - optimized for zero stack allocation *)
 
@@ -183,15 +153,15 @@ let utf8 cp w =
 
 let to_string (t : t) =
   (* Pass 1: counting *)
-  let counter = { bytes = Bytes.create 0; cap = 0; pos = 0 } in
+  let counter = Writer.make_counting () in
   t counter;
-  let len = counter.pos in
+  let n = Writer.len counter in
   (* Fast path: return empty string literal without allocation *)
-  if len = 0 then ""
+  if n = 0 then ""
   else
     (* Pass 2: actual write *)
-    let bytes = Bytes.create len in
-    let w = { bytes; cap = len; pos = 0 } in
+    let bytes = Bytes.create n in
+    let w = Writer.make bytes in
     t w;
     Bytes.unsafe_to_string bytes
 
@@ -230,9 +200,9 @@ let sgr codes w =
    allocation *)
 let sgr_direct write_codes w =
   write_string w "\027[";
-  let start_pos = w.pos in
+  let start_pos = Writer.pos w in
   write_codes (fun code ->
-      if w.pos > start_pos then write_char w ';';
+      if Writer.pos w > start_pos then write_char w ';';
       add_int w code);
   write_char w 'm'
 

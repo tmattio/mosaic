@@ -6,7 +6,7 @@
 open StdLabels
 module Hit_grid = Hit_grid
 module Pool = Glyph
-module Esc = Ansi.Escape
+module Esc = Ansi
 
 (* --- Types & Metrics --- *)
 

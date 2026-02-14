@@ -3,7 +3,7 @@
 module A = Ansi
 module S = Ansi.Style
 module C = Ansi.Color
-module Esc = Ansi.Escape
+module Esc = Ansi
 
 (* Helpers *)
 
@@ -51,28 +51,28 @@ let ansi_log_block = repeat (ansi_log_line ^ "\n") 128
 let tui_frame =
   let rows = 24 in
   let buf = Buffer.create 16_384 in
-  Buffer.add_string buf A.enter_alternate_screen;
-  Buffer.add_string buf A.hide_cursor;
+  Buffer.add_string buf A.(to_string enter_alternate_screen);
+  Buffer.add_string buf A.(to_string hide_cursor);
   for row = 1 to rows do
     (* Move to row start *)
-    Buffer.add_string buf (A.cursor_position ~row ~col:1);
+    Buffer.add_string buf A.(to_string (cursor_position ~row ~col:1));
 
     (* Vary the background color a bit by row to keep SGRs non-trivial *)
     let r = row * 10 land 0xFF in
     let g = (255 - (row * 7)) land 0xFF in
     let b = (50 + (row * 3)) land 0xFF in
-    Buffer.add_string buf (A.set_background ~r ~g ~b);
+    Buffer.add_string buf A.(to_string (set_background ~r ~g ~b));
 
     (* Emit a status line / row payload *)
     Buffer.add_string buf "row ";
     Buffer.add_string buf (string_of_int row);
     Buffer.add_string buf " │ ";
     Buffer.add_string buf plain_log_line;
-    Buffer.add_string buf A.reset;
+    Buffer.add_string buf A.(to_string reset);
     Buffer.add_char buf '\n'
   done;
-  Buffer.add_string buf A.show_cursor;
-  Buffer.add_string buf A.exit_alternate_screen;
+  Buffer.add_string buf A.(to_string show_cursor);
+  Buffer.add_string buf A.(to_string exit_alternate_screen);
   Buffer.contents buf
 
 (* Bench group: styled output (producers) *)
@@ -152,7 +152,7 @@ let cursor_script_80x24 =
       let buf = Buffer.create 32_000 in
       for row = 1 to 24 do
         for col = 1 to 80 do
-          Buffer.add_string buf (A.cursor_position ~row ~col);
+          Buffer.add_string buf A.(to_string (cursor_position ~row ~col));
           Buffer.add_char buf 'X'
         done
       done;

@@ -347,7 +347,7 @@ let static_print t text = static_write_raw t (ensure_trailing_newline text)
 let static_clear t =
   if t.mode = `Alt then ()
   else (
-    Terminal.write t.terminal Ansi.clear_and_home;
+    Terminal.write t.terminal Ansi.(to_string clear_and_home);
     let cols, rows = Terminal.size t.terminal in
     t.width <- max 1 cols;
     t.height <- max 1 rows;
@@ -407,7 +407,7 @@ let submit t =
 
         (* Begin sync bracket early to include clears (prevents flicker) *)
         if use_sync then
-          send (Ansi.Escape.to_string (Ansi.Escape.enable Sync_output));
+          send Ansi.(to_string (enable Sync_output));
 
         (* Hide cursor during render to avoid flicker. *)
         if Terminal.cursor_visible t.terminal then
@@ -445,7 +445,7 @@ let submit t =
               if delta > 0 && is_tty && t.render_offset > 0 then (
                 Terminal.set_scroll_region t.terminal ~top:1
                   ~bottom:t.render_offset;
-                send (Ansi.scroll_up ~n:delta));
+                send Ansi.(to_string (scroll_up ~n:delta)));
               t.render_offset <- new_render_offset;
               t.tui_height <- target_rows;
               if new_render_offset > 0 then
@@ -521,7 +521,7 @@ let submit t =
 
         (* End sync bracket after all frame-mutating writes *)
         if use_sync then (
-          send (Ansi.Escape.to_string (Ansi.Escape.disable Sync_output));
+          send Ansi.(to_string (disable Sync_output));
           Terminal.drain t.terminal);
 
         (match t.output with

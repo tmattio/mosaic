@@ -72,7 +72,7 @@
 
 (** {1 The Writer} *)
 
-type writer
+type writer = Writer.t
 (** An abstract buffer writer.
 
     It wraps a [Bytes.t] buffer and manages a write position. It is mutable and

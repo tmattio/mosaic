@@ -135,18 +135,18 @@ let style_emit_function () =
   (* Test that emit produces the same output as sgr_sequence *)
   let style = Style.make ~fg:Color.red ~bold:true () in
   let buf = Bytes.create 64 in
-  let w = Escape.make buf in
+  let w = make buf in
   Style.emit style w;
-  let emitted = Bytes.sub_string buf 0 (Escape.len w) in
+  let emitted = Bytes.sub_string buf 0 (len w) in
   let seq = Style.sgr_sequence style in
   check_seq "emit matches sgr_sequence" seq emitted;
 
   (* Test emit with prev style *)
   let buf2 = Bytes.create 64 in
-  let w2 = Escape.make buf2 in
+  let w2 = make buf2 in
   let style2 = Style.make ~fg:Color.red ~italic:true () in
   Style.emit ~prev:style style2 w2;
-  let emitted2 = Bytes.sub_string buf2 0 (Escape.len w2) in
+  let emitted2 = Bytes.sub_string buf2 0 (len w2) in
   (* Should only disable bold (22) and enable italic (3) - not emit fg again *)
   let codes2 = Style.to_sgr_codes ~prev:style style2 in
   is_true ~msg:"emit delta non-empty" (String.length emitted2 > 0);
@@ -192,7 +192,7 @@ let style_compare_and_hash () =
 
 let sgr_state_transitions () =
   let buf = Bytes.create 128 in
-  let w = Escape.make buf in
+  let w = make buf in
   let state = Sgr_state.create () in
 
   (* 1. Initial: emits reset(0) + attributes *)
@@ -200,19 +200,19 @@ let sgr_state_transitions () =
     ~bg_r:0.0 ~bg_g:0.0 ~bg_b:0.0 ~bg_a:0.0 (* Black (transparent) *)
     ~attrs:(Attr.pack Attr.bold) ~link:"";
 
-  let out1 = Escape.slice w in
+  let out1 = slice w in
   (* Expect: Reset(0); FG(Red); Bold(1) *)
   (* Sequence: \x1b[0;38;2;255;0;0;1m *)
   check_seq "initial transition" "\x1b[0;38;2;255;0;0;1m" (Bytes.to_string out1);
 
   (* 2. No-op: update with exact same values *)
-  let w2 = Escape.make buf in
+  let w2 = make buf in
   Sgr_state.update state w2 ~fg_r:1.0 ~fg_g:0.0 ~fg_b:0.0 ~fg_a:1.0 ~bg_r:0.0
     ~bg_g:0.0 ~bg_b:0.0 ~bg_a:0.0 ~attrs:(Attr.pack Attr.bold) ~link:"";
-  equal ~msg:"noop update empty" int 0 (Escape.len w2);
+  equal ~msg:"noop update empty" int 0 (len w2);
 
   (* 3. Delta: Remove Bold, keep color *)
-  let w3 = Escape.make buf in
+  let w3 = make buf in
   Sgr_state.update state w3 ~fg_r:1.0 ~fg_g:0.0 ~fg_b:0.0 ~fg_a:1.0 ~bg_r:0.0
     ~bg_g:0.0 ~bg_b:0.0 ~bg_a:0.0 ~attrs:0 ~link:"";
 
@@ -220,22 +220,22 @@ let sgr_state_transitions () =
 
   (* Expect: Reset(0); FG(Red) -- Bold is implicitly removed by Reset, need to
      restore Color *)
-  let out3 = Bytes.to_string (Escape.slice w3) in
+  let out3 = Bytes.to_string (slice w3) in
   check_seq "delta transition" "\x1b[0;38;2;255;0;0m" out3
 
 let sgr_transparent_bg_resets () =
   let buf = Bytes.create 128 in
   let state = Sgr_state.create () in
-  let w1 = Escape.make buf in
+  let w1 = make buf in
   Sgr_state.update state w1 ~fg_r:1.0 ~fg_g:0.0 ~fg_b:0.0 ~fg_a:1.0 ~bg_r:0.0
     ~bg_g:0.0 ~bg_b:1.0 ~bg_a:1.0 ~attrs:0 ~link:"";
   check_seq "bg applied" "\x1b[0;38;2;255;0;0;48;2;0;0;255m"
-    (Bytes.to_string (Escape.slice w1));
-  let w2 = Escape.make buf in
+    (Bytes.to_string (slice w1));
+  let w2 = make buf in
   Sgr_state.update state w2 ~fg_r:1.0 ~fg_g:0.0 ~fg_b:0.0 ~fg_a:1.0 ~bg_r:0.0
     ~bg_g:0.0 ~bg_b:1.0 ~bg_a:0.0 ~attrs:0 ~link:"";
   check_seq "bg cleared to default" "\x1b[0;38;2;255;0;0m"
-    (Bytes.to_string (Escape.slice w2))
+    (Bytes.to_string (slice w2))
 
 (* --- 4. Parser Resilience --- *)
 
@@ -347,33 +347,33 @@ let parser_osc8_bel_terminated () =
 
 let writer_utf8_encoding () =
   let buf = Bytes.create 16 in
-  let w = Escape.make buf in
+  let w = make buf in
 
   (* 1 byte: A *)
-  Escape.utf8 (Char.code 'A') w;
+  utf8 (Char.code 'A') w;
   (* 3 byte: € (0x20AC) *)
-  Escape.utf8 0x20AC w;
+  utf8 0x20AC w;
   (* 4 byte: 🚀 (Rocket 0x1F680) *)
-  Escape.utf8 0x1F680 w;
+  utf8 0x1F680 w;
 
-  let out = Bytes.to_string (Escape.slice w) in
+  let out = Bytes.to_string (slice w) in
   equal ~msg:"utf8 encoding" string "A€🚀" out
 
 let writer_hyperlink_params () =
   let buf = Bytes.create 64 in
-  let w = Escape.make buf in
-  Escape.hyperlink_start ~params:"id=123" ~url:"http://foo" w;
-  let out = Bytes.to_string (Escape.slice w) in
+  let w = make buf in
+  hyperlink_start ~params:"id=123" ~url:"http://foo" w;
+  let out = Bytes.to_string (slice w) in
   (* OSC 8 ; params ; url ST (\x1b\\) *)
   check_seq "hyperlink with params" "\x1b]8;id=123;http://foo\x1b\\" out
 
 let writer_invalid_scalar_replacement () =
   let buf = Bytes.create 8 in
-  let w = Escape.make buf in
+  let w = make buf in
   (* Surrogate code point should be clamped to U+FFFD *)
-  Escape.utf8 0xD800 w;
+  utf8 0xD800 w;
   check_seq "invalid scalar -> replacement" "\xef\xbf\xbd"
-    (Bytes.to_string (Escape.slice w))
+    (Bytes.to_string (slice w))
 
 (* --- 6. High Level API --- *)
 
@@ -389,22 +389,25 @@ let strip_edge_cases () =
 
 let parameter_clamping () =
   (* Cursor movement: negative -> 0 -> empty string *)
-  check_seq "negative lines" "" (Ansi.cursor_up ~n:(-5));
-  check_seq "zero lines" "" (Ansi.cursor_up ~n:0);
+  check_seq "negative lines" "" Ansi.(to_string (cursor_up ~n:(-5)));
+  check_seq "zero lines" "" Ansi.(to_string (cursor_up ~n:0));
   (* Absolute position: negative/zero -> 1 *)
-  check_seq "clamp row/col" "\x1b[1;1H" (Ansi.cursor_position ~row:0 ~col:(-5))
+  check_seq "clamp row/col" "\x1b[1;1H"
+    Ansi.(to_string (cursor_position ~row:0 ~col:(-5)))
 
 let explicit_error_handling () =
   try
-    let _ = Ansi.set_scrolling_region ~top:10 ~bottom:5 in
+    let buf = Bytes.create 16 in
+    let w = make buf in
+    (set_scrolling_region ~top:10 ~bottom:5) w;
     fail "scrolling region validation failed"
   with Invalid_argument _ -> ()
 
 let cursor_and_explicit_width_sequences () =
   check_seq "cursor color osc12" "\x1b]12;#010203\x07"
-    (Ansi.cursor_color ~r:1 ~g:2 ~b:3);
+    Ansi.(to_string (cursor_color ~r:1 ~g:2 ~b:3));
   check_seq "explicit width osc66" "\x1b]66;w=5;hi\x1b\\"
-    (Ansi.explicit_width ~width:5 ~text:"hi")
+    Ansi.(to_string (explicit_width ~width:5 ~text:"hi"))
 
 let hyperlink_lifecycle () =
   let link_style = Style.hyperlink "http://foo" Style.default in
@@ -426,63 +429,63 @@ let hyperlink_lifecycle () =
 let roundtrip_cursor_sequences () =
   (* Test cursor movement sequences *)
   let test_cursor name seq expected_control =
-    let tokens = Parser.parse (Escape.to_string seq) in
+    let tokens = Parser.parse (to_string seq) in
     match tokens with
     | [ Parser.Control c ] -> is_true ~msg:name (c = expected_control)
     | _ -> fail (Printf.sprintf "%s: unexpected tokens" name)
   in
-  test_cursor "cursor up" (Escape.cursor_up ~n:5) (Parser.CUU 5);
-  test_cursor "cursor down" (Escape.cursor_down ~n:3) (Parser.CUD 3);
-  test_cursor "cursor forward" (Escape.cursor_forward ~n:10) (Parser.CUF 10);
-  test_cursor "cursor back" (Escape.cursor_back ~n:2) (Parser.CUB 2);
+  test_cursor "cursor up" (cursor_up ~n:5) (Parser.CUU 5);
+  test_cursor "cursor down" (cursor_down ~n:3) (Parser.CUD 3);
+  test_cursor "cursor forward" (cursor_forward ~n:10) (Parser.CUF 10);
+  test_cursor "cursor back" (cursor_back ~n:2) (Parser.CUB 2);
   test_cursor "cursor position"
-    (Escape.cursor_position ~row:10 ~col:20)
+    (cursor_position ~row:10 ~col:20)
     (Parser.CUP (10, 20));
-  test_cursor "cursor next line" (Escape.cursor_next_line ~n:3) (Parser.CNL 3);
+  test_cursor "cursor next line" (cursor_next_line ~n:3) (Parser.CNL 3);
   test_cursor "cursor prev line"
-    (Escape.cursor_previous_line ~n:2)
+    (cursor_previous_line ~n:2)
     (Parser.CPL 2);
   test_cursor "cursor horiz abs"
-    (Escape.cursor_horizontal_absolute 15)
+    (cursor_horizontal_absolute 15)
     (Parser.CHA 15);
   test_cursor "cursor vert abs"
-    (Escape.cursor_vertical_absolute 8)
+    (cursor_vertical_absolute 8)
     (Parser.VPA 8);
   (* Test cursor save/restore (CSI s/u) *)
-  test_cursor "cursor save" Escape.cursor_save Parser.DECSC;
-  test_cursor "cursor restore" Escape.cursor_restore Parser.DECRC
+  test_cursor "cursor save" cursor_save Parser.DECSC;
+  test_cursor "cursor restore" cursor_restore Parser.DECRC
 
 let roundtrip_screen_sequences () =
   let test_screen name seq expected_control =
-    let tokens = Parser.parse (Escape.to_string seq) in
+    let tokens = Parser.parse (to_string seq) in
     match tokens with
     | [ Parser.Control c ] -> is_true ~msg:name (c = expected_control)
     | _ -> fail (Printf.sprintf "%s: unexpected tokens" name)
   in
-  test_screen "erase display 0" (Escape.erase_display ~mode:`Below) (Parser.ED 0);
-  test_screen "erase display 2" (Escape.erase_display ~mode:`All) (Parser.ED 2);
-  test_screen "erase line 0" (Escape.erase_line ~mode:`Right) (Parser.EL 0);
-  test_screen "erase line 2" (Escape.erase_line ~mode:`All) (Parser.EL 2);
-  test_screen "insert lines" (Escape.insert_lines ~n:5) (Parser.IL 5);
-  test_screen "delete lines" (Escape.delete_lines ~n:3) (Parser.DL 3)
+  test_screen "erase display 0" (erase_display ~mode:`Below) (Parser.ED 0);
+  test_screen "erase display 2" (erase_display ~mode:`All) (Parser.ED 2);
+  test_screen "erase line 0" (erase_line ~mode:`Right) (Parser.EL 0);
+  test_screen "erase line 2" (erase_line ~mode:`All) (Parser.EL 2);
+  test_screen "insert lines" (insert_lines ~n:5) (Parser.IL 5);
+  test_screen "delete lines" (delete_lines ~n:3) (Parser.DL 3)
 
 let roundtrip_sgr_sequences () =
   (* Test that SGR sequences round-trip through parser *)
   let test_sgr name seq check_fn =
-    let tokens = Parser.parse (Escape.to_string seq) in
+    let tokens = Parser.parse (to_string seq) in
     match tokens with
     | [ Parser.SGR attrs ] -> check_fn attrs
     | _ -> fail (Printf.sprintf "%s: expected SGR token" name)
   in
   (* Reset *)
-  test_sgr "sgr reset" Escape.reset (fun attrs ->
+  test_sgr "sgr reset" reset (fun attrs ->
       is_true ~msg:"has reset" (List.mem `Reset attrs));
   (* Bold via sgr [1] *)
-  test_sgr "sgr bold" (Escape.sgr [ 1 ]) (fun attrs ->
+  test_sgr "sgr bold" (sgr [ 1 ]) (fun attrs ->
       is_true ~msg:"has bold" (List.mem `Bold attrs));
   (* Truecolor foreground via sgr [38;2;r;g;b] *)
   test_sgr "sgr truecolor fg"
-    (Escape.sgr [ 38; 2; 100; 150; 200 ])
+    (sgr [ 38; 2; 100; 150; 200 ])
     (fun attrs ->
       match attrs with
       | [ `Fg c ] ->
@@ -495,19 +498,19 @@ let roundtrip_sgr_sequences () =
 let roundtrip_hyperlink_sequences () =
   (* Test hyperlink sequences *)
   let test_link name seq check_fn =
-    let tokens = Parser.parse (Escape.to_string seq) in
+    let tokens = Parser.parse (to_string seq) in
     match tokens with
     | [ Parser.Control (Parser.Hyperlink h) ] -> check_fn h
     | _ -> fail (Printf.sprintf "%s: expected hyperlink control" name)
   in
   (* Open hyperlink *)
-  test_link "hyperlink open" (Escape.hyperlink_start ~url:"http://test.com")
+  test_link "hyperlink open" (hyperlink_start ~url:"http://test.com")
     (fun h ->
       match h with
       | Some ([], url) -> equal ~msg:"url" string "http://test.com" url
       | _ -> fail "expected open hyperlink");
   (* Close hyperlink *)
-  test_link "hyperlink close" Escape.hyperlink_end (fun h ->
+  test_link "hyperlink close" hyperlink_end (fun h ->
       is_true ~msg:"is close" (h = None))
 
 let roundtrip_strip_removes_all () =
@@ -516,30 +519,33 @@ let roundtrip_strip_removes_all () =
     let stripped = Ansi.strip input in
     equal ~msg:name string expected stripped
   in
+  let s = Ansi.to_string in
   (* Cursor sequences *)
-  test_strip "strip cursor up" (Ansi.cursor_up ~n:5 ^ "text") "text";
+  test_strip "strip cursor up" (s (cursor_up ~n:5) ^ "text") "text";
   test_strip "strip cursor position"
-    (Ansi.cursor_position ~row:10 ~col:20 ^ "text")
+    (s (cursor_position ~row:10 ~col:20) ^ "text")
     "text";
   (* SGR sequences *)
   test_strip "strip sgr" (Ansi.styled ~fg:Color.red ~bold:true "text") "text";
-  test_strip "strip reset" (Ansi.reset ^ "text") "text";
+  test_strip "strip reset" (s reset ^ "text") "text";
   (* Screen control *)
-  test_strip "strip clear" (Ansi.clear ^ "text") "text";
-  test_strip "strip erase display" (Ansi.erase_display ~mode:`All ^ "text") "text";
+  test_strip "strip clear" (s clear ^ "text") "text";
+  test_strip "strip erase display"
+    (s (erase_display ~mode:`All) ^ "text")
+    "text";
   (* Hyperlinks *)
-  test_strip "strip hyperlink"
-    (Ansi.hyperlink ~url:"http://test" ~text:"link")
+  test_strip "strip hyperlink" (s (hyperlink ~url:"http://test" ~text:"link"))
     "link";
   (* Title *)
-  test_strip "strip title" (Ansi.set_title ~title:"test" ^ "text") "text";
+  test_strip "strip title" (s (set_title ~title:"test") ^ "text") "text";
   (* Alternate screen *)
   test_strip "strip alt screen"
-    (Ansi.enter_alternate_screen ^ "text" ^ Ansi.exit_alternate_screen)
+    (s enter_alternate_screen ^ "text" ^ s exit_alternate_screen)
     "text";
   (* Mouse modes *)
   test_strip "strip mouse on"
-    (Ansi.mouse_tracking_on ^ "text" ^ Ansi.mouse_tracking_off)
+    (s (enable Mouse_button_tracking) ^ "text"
+    ^ s (disable Mouse_button_tracking))
     "text"
 
 let tests =

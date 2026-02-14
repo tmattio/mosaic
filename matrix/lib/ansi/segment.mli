@@ -66,7 +66,7 @@ val initial_state : state
 val emit :
   ?state:state ->
   ?hyperlinks_enabled:bool ->
-  Escape.writer ->
+  Writer.t ->
   segment list ->
   state
 (** [emit ?state ?hyperlinks_enabled writer segments] renders [segments].

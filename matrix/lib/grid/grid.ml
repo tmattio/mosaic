@@ -1552,11 +1552,11 @@ let snapshot ?(reset = true) t : string =
     let pool = glyph_pool t in
     let scratch = ref (Bytes.create 256) in
 
-    Ansi.Escape.to_string (fun w ->
+    Ansi.to_string (fun w ->
         let style = Ansi.Sgr_state.create () in
 
         for y = 0 to height - 1 do
-          if y > 0 then Ansi.Escape.emit (Ansi.Escape.char '\n') w;
+          if y > 0 then Ansi.emit (Ansi.char '\n') w;
 
           let x = ref 0 in
           while !x < width do
@@ -1582,26 +1582,26 @@ let snapshot ?(reset = true) t : string =
               (* Emit grapheme - Cell_code is aligned with Glyph.t *)
               if
                 Cell_code.is_continuation code || Int.equal code Cell_code.empty
-              then Ansi.Escape.emit (Ansi.Escape.char ' ') w
+              then Ansi.emit (Ansi.char ' ') w
               else
                 (* code is a valid Glyph.t due to aligned formats *)
                 let len = Glyph.length pool code in
-                if len <= 0 then Ansi.Escape.emit (Ansi.Escape.char ' ') w
+                if len <= 0 then Ansi.emit (Ansi.char ' ') w
                 else (
                   if len > Bytes.length !scratch then
                     scratch :=
                       Bytes.create (max (Bytes.length !scratch * 2) len);
                   let written = Glyph.blit pool code !scratch 0 in
-                  Ansi.Escape.emit
-                    (Ansi.Escape.bytes !scratch ~off:0 ~len:written)
+                  Ansi.emit
+                    (Ansi.bytes !scratch ~off:0 ~len:written)
                     w));
 
             x := !x + cell_w
           done;
 
           Ansi.Sgr_state.close_link style w;
-          Ansi.Escape.emit Ansi.Escape.reset w;
+          Ansi.emit Ansi.reset w;
           Ansi.Sgr_state.reset style
         done;
 
-        if reset then Ansi.Escape.emit Ansi.Escape.reset w)
+        if reset then Ansi.emit Ansi.reset w)
