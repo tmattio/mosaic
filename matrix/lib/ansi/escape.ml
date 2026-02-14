@@ -467,30 +467,43 @@ let[@inline] hyperlink_close w =
 
 (* Terminal Modes *)
 
-let bracketed_paste_on : t = literal "\027[?2004h"
-let bracketed_paste_off : t = literal "\027[?2004l"
-let mouse_tracking_on : t = literal "\027[?1000h"
-let mouse_tracking_off : t = literal "\027[?1000l"
-let mouse_button_tracking_on : t = literal "\027[?1002h"
-let mouse_button_tracking_off : t = literal "\027[?1002l"
-let mouse_motion_on : t = literal "\027[?1003h"
-let mouse_motion_off : t = literal "\027[?1003l"
-let mouse_sgr_mode_on : t = literal "\027[?1006h"
-let mouse_sgr_mode_off : t = literal "\027[?1006l"
-let mouse_pixel_mode_on : t = literal "\027[?1002;1003;1004;1016h"
-let mouse_pixel_mode_off : t = literal "\027[?1002;1003;1004;1016l"
-let mouse_x10_on : t = literal "\027[?9h"
-let mouse_x10_off : t = literal "\027[?9l"
-let urxvt_mouse_on : t = literal "\027[?1015h"
-let urxvt_mouse_off : t = literal "\027[?1015l"
-let focus_tracking_on : t = literal "\027[?1004h"
-let focus_tracking_off : t = literal "\027[?1004l"
-let sync_output_on : t = literal "\027[?2026h"
-let sync_output_off : t = literal "\027[?2026l"
-let unicode_mode_on : t = literal "\027[?2027h"
-let unicode_mode_off : t = literal "\027[?2027l"
-let color_scheme_set : t = literal "\027[?2031h"
-let color_scheme_reset : t = literal "\027[?2031l"
+type mode =
+  | Mouse_tracking
+  | Mouse_button_tracking
+  | Mouse_motion
+  | Mouse_sgr
+  | Mouse_sgr_pixel
+  | Mouse_x10
+  | Urxvt_mouse
+  | Focus_tracking
+  | Bracketed_paste
+  | Sync_output
+  | Unicode
+  | Color_scheme
+
+let mode_code = function
+  | Mouse_tracking -> 1000
+  | Mouse_button_tracking -> 1002
+  | Mouse_motion -> 1003
+  | Mouse_sgr -> 1006
+  | Mouse_sgr_pixel -> 1016
+  | Mouse_x10 -> 9
+  | Urxvt_mouse -> 1015
+  | Focus_tracking -> 1004
+  | Bracketed_paste -> 2004
+  | Sync_output -> 2026
+  | Unicode -> 2027
+  | Color_scheme -> 2031
+
+let enable mode w =
+  write_string w "\027[?";
+  add_int w (mode_code mode);
+  write_char w 'h'
+
+let disable mode w =
+  write_string w "\027[?";
+  add_int w (mode_code mode);
+  write_char w 'l'
 
 (* Key Encoding *)
 

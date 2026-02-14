@@ -406,7 +406,8 @@ let submit t =
         let send s = Terminal.write t.terminal s in
 
         (* Begin sync bracket early to include clears (prevents flicker) *)
-        if use_sync then send (Ansi.Escape.to_string Ansi.Escape.sync_output_on);
+        if use_sync then
+          send (Ansi.Escape.to_string (Ansi.Escape.enable Sync_output));
 
         (* Hide cursor during render to avoid flicker. *)
         if Terminal.cursor_visible t.terminal then
@@ -520,7 +521,7 @@ let submit t =
 
         (* End sync bracket after all frame-mutating writes *)
         if use_sync then (
-          send (Ansi.Escape.to_string Ansi.Escape.sync_output_off);
+          send (Ansi.Escape.to_string (Ansi.Escape.disable Sync_output));
           Terminal.drain t.terminal);
 
         (match t.output with

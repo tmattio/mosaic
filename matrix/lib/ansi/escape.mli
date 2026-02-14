@@ -467,51 +467,38 @@ val hyperlink_close : writer -> unit
 
 (** {1 Terminal Modes} *)
 
-(** {2 Mouse} *)
+type mode =
+  | Mouse_tracking  (** DECSET 1000 — basic mouse click reporting. *)
+  | Mouse_button_tracking  (** DECSET 1002 — button-event tracking. *)
+  | Mouse_motion  (** DECSET 1003 — any-event (all motion) tracking. *)
+  | Mouse_sgr  (** DECSET 1006 — SGR extended coordinates. *)
+  | Mouse_sgr_pixel  (** DECSET 1016 — SGR pixel coordinates (Kitty). *)
+  | Mouse_x10  (** DECSET 9 — legacy X10 mouse protocol. *)
+  | Urxvt_mouse  (** DECSET 1015 — urxvt extended coordinates. *)
+  | Focus_tracking  (** DECSET 1004 — focus in/out reporting. *)
+  | Bracketed_paste  (** DECSET 2004 — paste boundary markers. *)
+  | Sync_output  (** DECSET 2026 — synchronized output. *)
+  | Unicode  (** DECSET 2027 — Unicode mode. *)
+  | Color_scheme  (** DECSET 2031 — color scheme reporting. *)
+(** Terminal private modes. Each variant corresponds to a DEC private mode
+    that can be toggled via {!enable}/{!disable}. *)
 
-val mouse_tracking_on : t
-(** [mouse_tracking_on] enables basic X10 mouse tracking. *)
+val enable : mode -> t
+(** [enable mode] emits the DECSET sequence to activate [mode].
 
-val mouse_tracking_off : t
-(** [mouse_tracking_off] disables mouse tracking. *)
+    Example:
+    {[
+      (* Enable a set of modes *)
+      let setup =
+        Escape.seq
+          (List.map Escape.enable
+             [ Mouse_sgr; Mouse_motion; Focus_tracking; Bracketed_paste ])
+    ]} *)
 
-val mouse_button_tracking_on : t
-(** [mouse_button_tracking_on] enables click tracking (DECSET 1002). *)
+val disable : mode -> t
+(** [disable mode] emits the DECRST sequence to deactivate [mode]. *)
 
-val mouse_button_tracking_off : t
-(** [mouse_button_tracking_off] disables click tracking. *)
-
-val mouse_motion_on : t
-(** [mouse_motion_on] enables drag tracking (DECSET 1003). *)
-
-val mouse_motion_off : t
-(** [mouse_motion_off] disables drag tracking. *)
-
-val mouse_sgr_mode_on : t
-(** [mouse_sgr_mode_on] enables SGR-encoded coordinates (DECSET 1006). *)
-
-val mouse_sgr_mode_off : t
-(** [mouse_sgr_mode_off] disables SGR encoding. *)
-
-val mouse_pixel_mode_on : t
-(** [mouse_pixel_mode_on] enables pixel-precise mouse reporting (Kitty). *)
-
-val mouse_pixel_mode_off : t
-(** [mouse_pixel_mode_off] disables pixel-precise mouse reporting. *)
-
-val mouse_x10_on : t
-(** [mouse_x10_on] enables legacy X10 compatibility. *)
-
-val mouse_x10_off : t
-(** [mouse_x10_off] disables X10 compatibility. *)
-
-val urxvt_mouse_on : t
-(** [urxvt_mouse_on] enables urxvt-style extended coordinates. *)
-
-val urxvt_mouse_off : t
-(** [urxvt_mouse_off] disables urxvt-style coordinates. *)
-
-(** {2 Keyboard} *)
+(** {2 Keyboard Encoding} *)
 
 val csi_u_on : t
 (** [csi_u_on] enables CSI-u extended keyboard encoding. *)
@@ -530,38 +517,6 @@ val modify_other_keys_on : t
 
 val modify_other_keys_off : t
 (** [modify_other_keys_off] disables modifyOtherKeys. *)
-
-(** {2 Other Modes} *)
-
-val bracketed_paste_on : t
-(** [bracketed_paste_on] enables bracketed paste. *)
-
-val bracketed_paste_off : t
-(** [bracketed_paste_off] disables bracketed paste. *)
-
-val focus_tracking_on : t
-(** [focus_tracking_on] enables focus reporting. *)
-
-val focus_tracking_off : t
-(** [focus_tracking_off] disables focus reporting. *)
-
-val sync_output_on : t
-(** [sync_output_on] begins a synchronized update block (DECSET 2026). *)
-
-val sync_output_off : t
-(** [sync_output_off] ends a synchronized update block. *)
-
-val unicode_mode_on : t
-(** [unicode_mode_on] enables Unicode mode. *)
-
-val unicode_mode_off : t
-(** [unicode_mode_off] disables Unicode mode. *)
-
-val color_scheme_set : t
-(** [color_scheme_set] enables color scheme updates. *)
-
-val color_scheme_reset : t
-(** [color_scheme_reset] disables color scheme updates. *)
 
 (** {1 Device and Capability Queries} *)
 

@@ -117,33 +117,54 @@ let explicit_width ~width ~text =
   Escape.to_string (Escape.explicit_width ~width ~text)
 
 (* Terminal modes: high-level wrappers for common toggles *)
-let mouse_pixel_mode_on = Escape.to_string Escape.mouse_pixel_mode_on
-let mouse_pixel_mode_off = Escape.to_string Escape.mouse_pixel_mode_off
-let bracketed_paste_on = Escape.to_string Escape.bracketed_paste_on
-let bracketed_paste_off = Escape.to_string Escape.bracketed_paste_off
-let focus_tracking_on = Escape.to_string Escape.focus_tracking_on
-let focus_tracking_off = Escape.to_string Escape.focus_tracking_off
-let sync_output_on = Escape.to_string Escape.sync_output_on
-let sync_output_off = Escape.to_string Escape.sync_output_off
-let unicode_mode_on = Escape.to_string Escape.unicode_mode_on
-let unicode_mode_off = Escape.to_string Escape.unicode_mode_off
-let mouse_tracking_on = Escape.to_string Escape.mouse_tracking_on
-let mouse_tracking_off = Escape.to_string Escape.mouse_tracking_off
-let mouse_button_tracking_on = Escape.to_string Escape.mouse_button_tracking_on
+
+let mouse_pixel_mode_on =
+  Escape.to_string
+    (Escape.seq
+       [
+         Escape.enable Mouse_button_tracking;
+         Escape.enable Mouse_motion;
+         Escape.enable Focus_tracking;
+         Escape.enable Mouse_sgr_pixel;
+       ])
+
+let mouse_pixel_mode_off =
+  Escape.to_string
+    (Escape.seq
+       [
+         Escape.disable Mouse_button_tracking;
+         Escape.disable Mouse_motion;
+         Escape.disable Focus_tracking;
+         Escape.disable Mouse_sgr_pixel;
+       ])
+
+let bracketed_paste_on = Escape.to_string (Escape.enable Bracketed_paste)
+let bracketed_paste_off = Escape.to_string (Escape.disable Bracketed_paste)
+let focus_tracking_on = Escape.to_string (Escape.enable Focus_tracking)
+let focus_tracking_off = Escape.to_string (Escape.disable Focus_tracking)
+let sync_output_on = Escape.to_string (Escape.enable Sync_output)
+let sync_output_off = Escape.to_string (Escape.disable Sync_output)
+let unicode_mode_on = Escape.to_string (Escape.enable Unicode)
+let unicode_mode_off = Escape.to_string (Escape.disable Unicode)
+let mouse_tracking_on = Escape.to_string (Escape.enable Mouse_tracking)
+let mouse_tracking_off = Escape.to_string (Escape.disable Mouse_tracking)
+
+let mouse_button_tracking_on =
+  Escape.to_string (Escape.enable Mouse_button_tracking)
 
 let mouse_button_tracking_off =
-  Escape.to_string Escape.mouse_button_tracking_off
+  Escape.to_string (Escape.disable Mouse_button_tracking)
 
-let mouse_motion_on = Escape.to_string Escape.mouse_motion_on
-let mouse_motion_off = Escape.to_string Escape.mouse_motion_off
-let mouse_sgr_mode_on = Escape.to_string Escape.mouse_sgr_mode_on
-let mouse_sgr_mode_off = Escape.to_string Escape.mouse_sgr_mode_off
-let mouse_x10_on = Escape.to_string Escape.mouse_x10_on
-let mouse_x10_off = Escape.to_string Escape.mouse_x10_off
-let urxvt_mouse_on = Escape.to_string Escape.urxvt_mouse_on
-let urxvt_mouse_off = Escape.to_string Escape.urxvt_mouse_off
-let color_scheme_set = Escape.to_string Escape.color_scheme_set
-let color_scheme_reset = Escape.to_string Escape.color_scheme_reset
+let mouse_motion_on = Escape.to_string (Escape.enable Mouse_motion)
+let mouse_motion_off = Escape.to_string (Escape.disable Mouse_motion)
+let mouse_sgr_mode_on = Escape.to_string (Escape.enable Mouse_sgr)
+let mouse_sgr_mode_off = Escape.to_string (Escape.disable Mouse_sgr)
+let mouse_x10_on = Escape.to_string (Escape.enable Mouse_x10)
+let mouse_x10_off = Escape.to_string (Escape.disable Mouse_x10)
+let urxvt_mouse_on = Escape.to_string (Escape.enable Urxvt_mouse)
+let urxvt_mouse_off = Escape.to_string (Escape.disable Urxvt_mouse)
+let color_scheme_set = Escape.to_string (Escape.enable Color_scheme)
+let color_scheme_reset = Escape.to_string (Escape.disable Color_scheme)
 
 (* Key encoding: CSI-u and kitty keyboard protocol *)
 let csi_u_on = Escape.to_string Escape.csi_u_on

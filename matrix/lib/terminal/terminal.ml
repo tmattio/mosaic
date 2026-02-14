@@ -100,19 +100,19 @@ let clamp_color_component x =
 
 let alternate_on = Esc.(to_string enter_alternate_screen)
 let alternate_off = Esc.(to_string exit_alternate_screen)
-let focus_on = Esc.(to_string focus_tracking_on)
-let focus_off = Esc.(to_string focus_tracking_off)
-let paste_on = Esc.(to_string bracketed_paste_on)
-let paste_off = Esc.(to_string bracketed_paste_off)
+let focus_on = Esc.(to_string (enable Focus_tracking))
+let focus_off = Esc.(to_string (disable Focus_tracking))
+let paste_on = Esc.(to_string (enable Bracketed_paste))
+let paste_off = Esc.(to_string (disable Bracketed_paste))
 let kitty_kb_push flags = Printf.sprintf "\027[>%du" flags
 let kitty_kb_pop = "\027[<u"
 let modify_other_keys_on = Esc.(to_string modify_other_keys_on)
 let modify_other_keys_off = Esc.(to_string modify_other_keys_off)
 let cursor_show = Esc.(to_string show_cursor)
 let cursor_hide = Esc.(to_string hide_cursor)
-let sgr_enable = Esc.(to_string mouse_sgr_mode_on)
-let unicode_on = Esc.(to_string unicode_mode_on)
-let unicode_off = Esc.(to_string unicode_mode_off)
+let sgr_enable = Esc.(to_string (enable Mouse_sgr))
+let unicode_on = Esc.(to_string (enable Unicode))
+let unicode_off = Esc.(to_string (disable Unicode))
 let cursor_position_request = Esc.(to_string request_cursor_position)
 let reset_sgr = Esc.(to_string reset)
 let erase_below = Esc.(to_string erase_below_cursor)
@@ -131,11 +131,11 @@ let submit_string t s =
 let send t seq = if t.output_is_tty then submit_string t seq
 
 let disable_all_mouse t =
-  send t Esc.(to_string mouse_tracking_off);
-  send t Esc.(to_string mouse_button_tracking_off);
-  send t Esc.(to_string mouse_motion_off);
-  send t Esc.(to_string urxvt_mouse_off);
-  send t Esc.(to_string mouse_sgr_mode_off)
+  send t Esc.(to_string (disable Mouse_tracking));
+  send t Esc.(to_string (disable Mouse_button_tracking));
+  send t Esc.(to_string (disable Mouse_motion));
+  send t Esc.(to_string (disable Urxvt_mouse));
+  send t Esc.(to_string (disable Mouse_sgr))
 
 let toggle_feature t ~current ~set ~enable ~on_seq ~off_seq =
   if not t.output_is_tty then set enable
@@ -164,25 +164,25 @@ let set_mouse_mode t mode =
     disable_all_mouse t;
     (match mode with
     | `Off -> ()
-    | `X10 -> send t Esc.(to_string mouse_x10_on)
-    | `Normal -> send t Esc.(to_string mouse_tracking_on)
-    | `Button -> send t Esc.(to_string mouse_button_tracking_on)
-    | `Any -> send t Esc.(to_string mouse_motion_on)
+    | `X10 -> send t Esc.(to_string (enable Mouse_x10))
+    | `Normal -> send t Esc.(to_string (enable Mouse_tracking))
+    | `Button -> send t Esc.(to_string (enable Mouse_button_tracking))
+    | `Any -> send t Esc.(to_string (enable Mouse_motion))
     | `Sgr_normal ->
         (* SGR + press/release only (1000) *)
         send t sgr_enable;
-        send t Esc.(to_string mouse_tracking_on)
+        send t Esc.(to_string (enable Mouse_tracking))
     | `Sgr_button ->
         (* SGR + press/release/drag (1000 + 1002) *)
         send t sgr_enable;
-        send t Esc.(to_string mouse_tracking_on);
-        send t Esc.(to_string mouse_button_tracking_on)
+        send t Esc.(to_string (enable Mouse_tracking));
+        send t Esc.(to_string (enable Mouse_button_tracking))
     | `Sgr_any ->
         (* SGR + all motion (1000 + 1002 + 1003) *)
         send t sgr_enable;
-        send t Esc.(to_string mouse_tracking_on);
-        send t Esc.(to_string mouse_button_tracking_on);
-        send t Esc.(to_string mouse_motion_on));
+        send t Esc.(to_string (enable Mouse_tracking));
+        send t Esc.(to_string (enable Mouse_button_tracking));
+        send t Esc.(to_string (enable Mouse_motion)));
     t.mouse_mode <- mode)
 
 let mouse_mode t = t.mouse_mode
