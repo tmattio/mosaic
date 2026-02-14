@@ -7,7 +7,7 @@
     {1 Usage}
 
     Drawing is done via {!set_draw}, which installs a callback invoked on each
-    render. Use {!grid} to access the underlying {!Grid.t} for drawing:
+    render. Use {!val-grid} to access the underlying {!Grid.t} for drawing:
 
     {[
       let canvas = Canvas.mount node in
@@ -75,7 +75,7 @@ val grid : t -> Grid.t
 (** [grid t] returns the underlying off-screen grid buffer.
 
     This enables direct access to {!Grid} drawing operations for advanced use
-    cases like composing with {!Matrix_charts}. The grid dimensions match the
+    cases like composing with [Matrix_charts]. The grid dimensions match the
     canvas layout size after rendering. *)
 
 val request_render : t -> unit

@@ -72,7 +72,7 @@ val uses_percentage : t -> bool
 val value : t -> float
 (** [value t] extracts the numeric value from [t].
 
-    @raise Failure if [t] is auto, min-content, max-content, or calc. *)
+    Raises [Failure] if [t] is auto, min-content, max-content, or calc. *)
 
 val to_option : t -> float option
 (** [to_option t] returns [Some value] if [t] is a length, [None] otherwise. *)
@@ -111,7 +111,7 @@ val maybe_resolve : t -> float option -> (int -> float -> float) -> float option
 
     Percentage and calc results are rounded to f32 precision.
 
-    @raise Failure if [t] is not length, percentage, auto, or calc. *)
+    Raises [Failure] if [t] is not length, percentage, auto, or calc. *)
 
 val resolve_or_zero : t -> float option -> (int -> float -> float) -> float
 (** [resolve_or_zero t context calc_resolver] resolves [t] or returns 0.0.

@@ -75,7 +75,7 @@
     {2 Keyboard Events}
 
     Keyboard events include the key ({!Key.t}), modifier state
-    ({!Key.modifier}), and optional metadata from the Kitty protocol (associated
+    ({!type-Key.modifier}), and optional metadata from the Kitty protocol (associated
     text, shifted/base keys, event type). Legacy terminals report only press
     events; modern terminals may report press, repeat, and release.
 

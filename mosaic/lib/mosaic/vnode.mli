@@ -976,8 +976,9 @@ val instantiate :
     Invariant: All children are attached to their parent after successful
     instantiation.
 
-    @raise Layout_error if layout operations fail.
-    @raise Tree_mismatch if tree structure is invalid. *)
+    Raises [Layout_error] if layout operations fail.
+
+    Raises [Tree_mismatch] if tree structure is invalid. *)
 
 (** {1 Rendering} *)
 
@@ -993,7 +994,7 @@ val render : ?width:int -> ?height:int -> ?colors:bool -> _ t -> string
     - [colors]: Include ANSI color codes (default true). When false and no
       explicit dimensions, the output is trimmed.
 
-    @raise Failure if instantiation or layout fails. *)
+    Raises [Failure] if instantiation or layout fails. *)
 
 val print : ?width:int -> ?height:int -> ?colors:bool -> _ t -> unit
 (** [print ?width ?height ?colors vnode] renders a vnode to stdout.

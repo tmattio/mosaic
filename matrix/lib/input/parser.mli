@@ -1,7 +1,7 @@
 (** Incremental input parser that produces user-facing events and capability
     reports.
 
-    Consumes bytes via the tokenizer and emits ({!Event.t}, {!Event.Caps.event})
+    Consumes bytes via the tokenizer and emits ([Event.t], [Event.Caps.event])
     pairs. Maintains shared state for both streams. Not thread-safe. *)
 
 type t

@@ -73,10 +73,10 @@
     - {!Explicit_grid}: Track template parsing and auto-repeat resolution
     - {!Implicit_grid}: Track count estimation from item placements
     - {!Placement}: Grid item placement and auto-placement
-    - {!Track_sizing}: Track sizing algorithm implementation
-    - {!Alignment}: Track and item alignment
+    - [Track_sizing]: Track sizing algorithm implementation
+    - [Alignment]: Track and item alignment
     - {!Grid_item}: Item measurement and caching
-    - {!Grid_track}: Track representation and utilities *)
+    - [Grid_track]: Track representation and utilities *)
 
 val compute_grid_layout :
   (module Tree.LAYOUT_PARTIAL_TREE with type t = 't) ->
@@ -106,12 +106,12 @@ val compute_grid_layout :
       auto-fit tracks without items.
     + Resolve track indexes and determine which items cross flexible/intrinsic
       tracks.
-    + Run {!Track_sizing.track_sizing_algorithm} for inline axis, then block
+    + Run [Track_sizing.track_sizing_algorithm] for inline axis, then block
       axis.
     + Resolve percentage track base sizes if container was indefinite.
     + Re-run track sizing if percentage tracks exist or content contributions
       changed.
-    + Align tracks with {!Alignment.align_tracks} per justify-content and
+    + Align tracks with [Alignment.align_tracks] per justify-content and
       align-content.
     + Align and position in-flow items, then absolutely positioned items,
       computing baselines.
@@ -142,22 +142,15 @@ val compute_grid_layout :
 (** {1 Submodules} *)
 
 module Implicit_grid = Implicit_grid
-(** @inline *)
 
 module Explicit_grid = Explicit_grid
-(** @inline *)
 
 module Grid_track_counts = Grid_track_counts
-(** @inline *)
 
 module Cell_occupancy = Cell_occupancy
-(** @inline *)
 
 module Grid_item = Grid_item
-(** @inline *)
 
 module Placement = Placement
-(** @inline *)
 
 module Named = Named
-(** @inline *)

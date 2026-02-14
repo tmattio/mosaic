@@ -2,7 +2,7 @@
 
     Mosaic_ui provides the core building blocks for terminal user interfaces:
     renderables, a renderer, and UI components. The primary API centers on
-    {!Renderable} and {!Renderer}, which give full control over node creation,
+    {!module-Renderable} and {!module-Renderer}, which give full control over node creation,
     tree manipulation, layout, and rendering for building efficient reconcilers
     and rendering loops.
 
@@ -34,60 +34,43 @@
     ]}
 
     This API is not intended for production reconcilers, which should use the
-    {!Renderable} and {!Renderer} APIs directly for optimal performance. *)
+    {!module-Renderable} and {!module-Renderer} APIs directly for optimal performance. *)
 
 module Renderable = Renderable
-(** @inline *)
 
 module Renderer = Renderer
-(** @inline *)
 
 module Border = Grid.Border
-(** @inline *)
 
 module Event = Event
-(** @inline *)
 
 (** {1 Renderables} *)
 
 module Box = Box
-(** @inline *)
 
 module Text = Text
-(** @inline *)
 
 module Canvas = Canvas
-(** @inline *)
 
 module Table = Table
-(** @inline *)
 
 module Slider = Slider
-(** @inline *)
 
 module Select = Select
-(** @inline *)
 
 module Spinner = Spinner
-(** @inline *)
 
 module Tab_select = Tab_select
-(** @inline *)
 
 module Scroll_bar = Scroll_bar
-(** @inline *)
 
 module Scroll_box = Scroll_box
-(** @inline *)
 
 module Text_input = Text_input
-(** @inline *)
 
 module Code = Code
-(** @inline *)
 
 module Text_surface = Text_surface
-(** @inline *)
 
 (** {1 Dimension Helpers} *)
 
@@ -218,8 +201,9 @@ val instantiate : renderer -> element -> (renderable, Renderer.error) result
     Invariant: All children are attached to their parent after successful
     instantiation.
 
-    @raise Layout_error if layout operations fail.
-    @raise Tree_mismatch if tree structure is invalid. *)
+    Raises [Layout_error] if layout operations fail.
+
+    Raises [Tree_mismatch] if tree structure is invalid. *)
 
 val instantiate_child :
   renderer -> child -> (renderable option, Renderer.error) result
@@ -1079,9 +1063,9 @@ val render : ?width:int -> ?height:int -> ?colors:bool -> element -> string
     - [height]: Layout height (default 40, or element's computed height if
       unset)
     - [colors]: Include ANSI color codes (default true). When false and no
-      explicit dimensions, the output is trimmed via {!trim_snapshot}.
+      explicit dimensions, the output is trimmed via [trim_snapshot].
 
-    @raise Failure if instantiation or layout fails. *)
+    Raises [Failure] if instantiation or layout fails. *)
 
 val print : ?width:int -> ?height:int -> ?colors:bool -> element -> unit
 (** [print ?width ?height ?colors element] renders an element to stdout.

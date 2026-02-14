@@ -68,7 +68,6 @@
     as truecolor, hyperlinks (OSC 8), or explicit width (OSC 66) degrade
     gracefully on terminals that ignore or partially implement the extensions. *)
 
-(** @inline *)
 include module type of struct
   include Escape
 end

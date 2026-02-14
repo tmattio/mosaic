@@ -114,7 +114,7 @@ type stats = { frame_count : int; total_cells : int; total_bytes : int }
       since {!reset}).
     - [total_cells]: Sum of all cells diffed across frames.
     - [total_bytes]: Sum of all ANSI bytes emitted (via {!render},
-      {!render_full}, or streaming variants). *)
+      [render_full], or streaming variants). *)
 
 type frame_metrics = {
   frame_count : int;
@@ -138,7 +138,7 @@ type frame_metrics = {
     - [frame_time_ms]: Diff/render duration in milliseconds.
     - [interval_ms]: Time since the previous render.
     - [reset_ms]: Buffer swap/reset duration.
-    - [overall_frame_ms]: Wall-clock duration of {!render_frame}.
+    - [overall_frame_ms]: Wall-clock duration of [render_frame].
     - [frame_callback_ms]: Time spent executing the frame builder callback.
     - [stdout_ms]: Time spent writing the rendered bytes to the output.
     - [mouse_enabled]/[cursor_visible]: Desired input flags captured at render.
@@ -441,7 +441,7 @@ val resize : t -> width:int -> height:int -> unit
     @param width New width in cells. Must be strictly positive.
     @param height New height in cells. Must be strictly positive.
 
-    @raise Invalid_argument if [width <= 0] or [height <= 0]. *)
+    Raises [Invalid_argument] if [width <= 0] or [height <= 0]. *)
 
 val reset : t -> unit
 (** [reset screen] clears buffers and statistics.

@@ -179,7 +179,7 @@ val load :
     Returns [Error `Not_found] if no entry can be located and
     [Error (`Parse_error msg)] if the file cannot be decoded.
 
-    @raise Sys_error if the located entry exists but cannot be opened or read.
+    Raises [Sys_error] if the located entry exists but cannot be opened or read.
 *)
 
 val get : t -> 'a cap -> 'a option

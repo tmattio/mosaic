@@ -29,34 +29,24 @@
 (** {1 Core Types} *)
 
 module Node_id = Node_id
-(** @inline *)
 
 module Run_mode = Run_mode
-(** @inline *)
 
 module Sizing_mode = Sizing_mode
-(** @inline *)
 
 module Collapsible_margin_set = Collapsible_margin_set
-(** @inline *)
 
 module Requested_axis = Requested_axis
-(** @inline *)
 
 module Available_space = Available_space
-(** @inline *)
 
 module Layout_input = Layout_input
-(** @inline *)
 
 module Layout_output = Layout_output
-(** @inline *)
 
 module Layout = Layout
-(** @inline *)
 
 module Cache = Cache
-(** @inline *)
 
 (** {1 Tree Signatures} *)
 
@@ -78,8 +68,8 @@ module type TRAVERSE_PARTIAL_TREE = sig
   val get_child_id : t -> Node_id.t -> int -> Node_id.t
   (** [get_child_id tree node n] returns the [n]th child ID of [node].
 
-      @raise Invalid_argument if [n] is negative or >= [child_count tree node].
-  *)
+      Raises [Invalid_argument] if [n] is negative or
+      >= [child_count tree node]. *)
 end
 
 (** Tree traversal with full recursive access.
@@ -210,10 +200,10 @@ val print_tree : (module PRINT_TREE with type t = 'a) -> 'a -> Node_id.t -> unit
 
     Output format:
     {v
-TREE
-└── Flex [x: 0 y: 0 w: 800 h: 600 content_w: 780 content_h: 580 ...] (Node 0)
-    ├── Block [x: 10 y: 10 w: 200 h: 100 ...] (Node 1)
-    └── Text [x: 10 y: 120 w: 150 h: 20 ...] (Node 2)
+    TREE
+    └── Flex [x: 0 y: 0 w: 800 h: 600 content_w: 780 content_h: 580 ...] (Node 0)
+        ├── Block [x: 10 y: 10 w: 200 h: 100 ...] (Node 1)
+        └── Text [x: 10 y: 120 w: 150 h: 20 ...] (Node 2)
     v}
 
     Each line shows the node's label, location, size, content_size, border,

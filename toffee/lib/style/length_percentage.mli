@@ -59,7 +59,7 @@ val value : t -> float
     For length values, returns the length. For percentage values, returns the
     percentage in the range [0.0, 1.0].
 
-    @raise Failure if [t] is a calc or any unsupported tag. *)
+    Raises [Failure] if [t] is a calc or any unsupported tag. *)
 
 (** {1 Resolution} *)
 
@@ -69,9 +69,9 @@ val resolve : t -> float -> float
     For length values, returns the length unchanged. For percentage values,
     computes [context * value t] with f32 precision.
 
-    @raise Failure
-      if [t] is a calc expression or any unsupported tag (auto/min-/max-content
-      or fit-content). Use {!resolve_with_calc} for calc support. *)
+    Raises [Failure] if [t] is a calc expression or any unsupported tag
+    (auto/min-/max-content or fit-content). Use {!resolve_with_calc} for calc
+    support. *)
 
 val resolve_with_calc : t -> float -> (int -> float -> float) -> float
 (** [resolve_with_calc t context calc_resolver] resolves [t] to an absolute
@@ -81,7 +81,7 @@ val resolve_with_calc : t -> float -> (int -> float -> float) -> float
     invokes [calc_resolver index context] where [index] is the calc expression
     handle.
 
-    @raise Failure if [t] is not a length, percentage, or calc value. *)
+    Raises [Failure] if [t] is not a length, percentage, or calc value. *)
 
 val maybe_resolve : t -> float option -> (int -> float -> float) -> float option
 (** [maybe_resolve t context calc_resolver] resolves [t] if [context] is
@@ -92,7 +92,7 @@ val maybe_resolve : t -> float option -> (int -> float -> float) -> float option
     [None] when [context] is [None] and [t] is a percentage or calc requiring
     context.
 
-    @raise Failure if [t] is not a length, percentage, or calc value. *)
+    Raises [Failure] if [t] is not a length, percentage, or calc value. *)
 
 val resolve_or_zero : t -> float option -> (int -> float -> float) -> float
 (** [resolve_or_zero t context calc_resolver] resolves [t], defaulting to 0.0.

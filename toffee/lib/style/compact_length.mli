@@ -50,7 +50,7 @@ val percent : float -> t
 (** [percent value] creates a percentage length.
 
     Percentage values are resolved relative to the size of the containing block.
-    See {{!Conventions}Conventions} for the percentage range. *)
+    See [Conventions] for the percentage range. *)
 
 val auto : t
 (** [auto] represents automatic sizing.
@@ -211,9 +211,8 @@ val fit_content_percent_tag : int
 val value : t -> float
 (** [value t] extracts the numeric value from [t].
 
-    @raise Failure
-      if [t] is auto, min-content, max-content, or calc, which have no
-      associated numeric value. *)
+    Raises [Failure] if [t] is auto, min-content, max-content, or calc, which
+    have no associated numeric value. *)
 
 val get_calc_index : t -> int
 (** [get_calc_index t] extracts the calc expression index.

@@ -261,7 +261,7 @@ val equal : t -> t -> bool
 val compare : t -> t -> int
 (** [compare a b] compares attribute sets.
 
-    Returns a value compatible with {!Stdlib.compare}: negative if [a < b], zero
+    Returns a value compatible with [Stdlib.compare]: negative if [a < b], zero
     if equal, positive if [a > b]. Comparison is based on integer
     representation. *)
 

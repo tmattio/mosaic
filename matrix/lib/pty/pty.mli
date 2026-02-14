@@ -198,12 +198,13 @@ val open_pty : ?winsize:winsize -> unit -> t * t
     terminal emulator, and [slave] is the controlled side connected to a child
     process. Both handles must be closed with {!close} when done. The slave side
     should be connected to a child process's stdin/stdout/stderr via
-    {!Unix.dup2}.
+    [Unix.dup2].
+
+    Raises [Unix.Unix_error] if PTY creation fails (e.g., resource limits
+    reached).
 
     @param winsize Initial terminal size. Defaults to system default if omitted.
-    @return A pair [(master, slave)] of PTY handles
-    @raise Unix.Unix_error if PTY creation fails (e.g., resource limits reached)
-*)
+    @return A pair [(master, slave)] of PTY handles *)
 
 val spawn :
   ?env:string array ->
@@ -240,12 +241,13 @@ val spawn :
       [execvp]/[execvpe]). If absolute, executed directly.
     @param args
       Command-line arguments (excluding [argv[0]], which is set to [prog]).
+
+    Raises [Unix.Unix_error] if PTY creation or fork fails. Exec failures in
+    the child process are not reported as exceptions to the parent; the child
+    exits with the errno value as its exit code (e.g., ENOENT=2, EACCES=13).
+    Monitor via [Unix.waitpid] on {!pid}.
+
     @return Master PTY handle. The child's PID is available via {!pid}.
-    @raise Unix.Unix_error
-      if PTY creation or fork fails. Exec failures in the child process are not
-      reported as exceptions to the parent; the child exits with the errno value
-      as its exit code (e.g., ENOENT=2, EACCES=13). Monitor via [Unix.waitpid]
-      on {!pid}.
 
     {b Note:} The child process terminates if the master PTY is closed, as it
     receives [SIGHUP] when its controlling terminal disappears. *)
@@ -257,12 +259,13 @@ val with_pty : ?winsize:winsize -> (t -> t -> 'a) -> 'a
     handles are closed via [Fun.protect] even if [f] raises an exception. Use
     this for custom process spawning or testing scenarios.
 
+    Raises [Unix.Unix_error] if PTY creation fails or the initial size cannot
+    be applied. Any exception raised by [f] is re-raised after both PTYs are
+    closed.
+
     @param winsize Initial terminal size
     @param f Function receiving [master] then [slave] PTY handles
-    @return Result of [f]
-    @raise Unix.Unix_error
-      if PTY creation fails or the initial size cannot be applied
-    @raise Any exception raised by [f] (after both PTYs are closed) *)
+    @return Result of [f] *)
 
 (** {1 PTY Operations} *)
 
@@ -300,9 +303,8 @@ val terminate : t -> unit
     Unix errors from [Unix.kill] are silently ignored (e.g., [ESRCH] if the
     process already exited).
 
-    @raise Invalid_argument
-      if [pty] has no associated child process (created via {!open_pty} or
-      already closed) *)
+    Raises [Invalid_argument] if [pty] has no associated child process (created
+    via {!open_pty} or already closed). *)
 
 val kill : t -> unit
 (** [kill pty] sends SIGKILL to forcefully terminate the child process. Only
@@ -312,9 +314,8 @@ val kill : t -> unit
     Unix errors from [Unix.kill] are silently ignored (e.g., [ESRCH] if the
     process already exited).
 
-    @raise Invalid_argument
-      if [pty] has no associated child process (created via {!open_pty} or
-      already closed) *)
+    Raises [Invalid_argument] if [pty] has no associated child process (created
+    via {!open_pty} or already closed). *)
 
 val file_descr : t -> Unix.file_descr
 (** [file_descr pty] returns the underlying Unix file descriptor for use with
@@ -342,8 +343,9 @@ val get_winsize : t -> winsize
     returns the last size set via {!set_winsize} or the initial size, as ConPTY
     lacks a direct query API.
 
-    @return The current window size
-    @raise Unix.Unix_error if the ioctl fails (POSIX) or handle is invalid *)
+    Raises [Unix.Unix_error] if the ioctl fails (POSIX) or handle is invalid.
+
+    @return The current window size *)
 
 val set_winsize : t -> winsize -> unit
 (** [set_winsize pty ws] sets the terminal window size.
@@ -352,18 +354,20 @@ val set_winsize : t -> winsize -> unit
     have this PTY as their controlling terminal. Applications listening for
     SIGWINCH will adapt to the new dimensions (e.g., text editors, shells).
 
+    Raises [Unix.Unix_error] if the operation fails.
+
     @param ws
       The new window size. [xpixel] and [ypixel] are often unused; set to [0] if
-      unknown.
-    @raise Unix.Unix_error if the operation fails *)
+      unknown. *)
 
 val resize : t -> rows:int -> cols:int -> unit
 (** [resize pty ~rows ~cols] resizes the terminal. Convenience wrapper for
     {!set_winsize} that sets [xpixel] and [ypixel] to [0].
 
+    Raises [Unix.Unix_error] if the operation fails.
+
     @param rows Number of rows (lines)
-    @param cols Number of columns (characters per line)
-    @raise Unix.Unix_error if the operation fails *)
+    @param cols Number of columns (characters per line) *)
 
 val inherit_size : src:t -> dst:t -> unit
 (** [inherit_size ~src ~dst] copies the window size from [src] to [dst].
@@ -379,9 +383,10 @@ val inherit_size : src:t -> dst:t -> unit
              (fun _ -> Pty.inherit_size ~src:controlling_tty ~dst:child_pty))
     ]}
 
+    Raises [Unix.Unix_error] if reading from [src] or writing to [dst] fails.
+
     @param src Source PTY to read size from
-    @param dst Destination PTY to write size to
-    @raise Unix.Unix_error if reading from [src] or writing to [dst] fails *)
+    @param dst Destination PTY to write size to *)
 
 (** {1 I/O Operations} *)
 
@@ -397,10 +402,10 @@ val read : t -> bytes -> int -> int -> int
     {!set_nonblock}). In non-blocking mode, raises
     [Unix.Unix_error (EAGAIN, _, _)] if no data is ready.
 
-    @return Number of bytes read ([0] indicates EOF)
-    @raise Unix.Unix_error
-      on error (e.g., [EAGAIN] in non-blocking mode, [EBADF] if PTY is closed)
-*)
+    Raises [Unix.Unix_error] on error (e.g., [EAGAIN] in non-blocking mode,
+    [EBADF] if PTY is closed).
+
+    @return Number of bytes read ([0] indicates EOF) *)
 
 val write : t -> bytes -> int -> int -> int
 (** [write pty buf ofs len] writes up to [len] bytes to the PTY.
@@ -412,17 +417,18 @@ val write : t -> bytes -> int -> int -> int
     Blocks until at least some data can be written unless the PTY is in
     non-blocking mode.
 
-    @return Number of bytes actually written
-    @raise Unix.Unix_error
-      on error (e.g., [EAGAIN] in non-blocking mode, [EPIPE] if child closed its
-      end) *)
+    Raises [Unix.Unix_error] on error (e.g., [EAGAIN] in non-blocking mode,
+    [EPIPE] if child closed its end).
+
+    @return Number of bytes actually written *)
 
 val write_string : t -> string -> int -> int -> int
 (** [write_string pty str ofs len] writes a substring to the PTY. Equivalent to
     {!write} but accepts a string instead of bytes.
 
-    @return Number of bytes actually written
-    @raise Unix.Unix_error on error *)
+    Raises [Unix.Unix_error] on error.
+
+    @return Number of bytes actually written *)
 
 (** {1 Non-blocking I/O} *)
 
@@ -437,15 +443,14 @@ val set_nonblock : t -> unit
     This setting persists until {!clear_nonblock} is called or the PTY is
     closed.
 
-    @raise Unix.Unix_error
-      if toggling non-blocking mode fails (e.g., the file descriptor has already
-      been closed) *)
+    Raises [Unix.Unix_error] if toggling non-blocking mode fails (e.g., the
+    file descriptor has already been closed). *)
 
 val clear_nonblock : t -> unit
 (** [clear_nonblock pty] disables non-blocking mode, restoring default blocking
     behavior.
 
-    @raise Unix.Unix_error if toggling blocking mode fails *)
+    Raises [Unix.Unix_error] if toggling blocking mode fails. *)
 
 (** {1 Higher-Level Utilities} *)
 
@@ -482,7 +487,9 @@ val with_spawn :
     @param winsize Initial terminal size
     @param prog Program path (searched in PATH if relative)
     @param args Command-line arguments (excluding argv[0])
+
+    Raises [Unix.Unix_error] if PTY creation or fork fails before [f] runs.
+    Any exception raised by [f] is re-raised after PTY cleanup.
+
     @param f Function receiving the PTY handle
-    @return Result of [f]
-    @raise Unix.Unix_error if PTY creation or fork fails before [f] runs
-    @raise Any exception raised by [f] (after PTY cleanup) *)
+    @return Result of [f] *)

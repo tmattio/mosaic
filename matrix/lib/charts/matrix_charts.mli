@@ -93,7 +93,7 @@
 
     Example: A braille-rendered line at data point [(5.0, 10.0)] might render
     dots at sub-cell positions, but {!Layout.hit_test} returns the enclosing
-    cell's [px]/[py] and the exact data coordinates in {!Hit.payload}. *)
+    cell's [px]/[py] and the exact data coordinates in {!type-Hit.payload}. *)
 
 module Charset : sig
   (** Character sets for chart rendering.
@@ -1427,7 +1427,7 @@ val empty : ?theme:Theme.t -> unit -> t
 
     @param theme Chart theme. Default is {!Theme.default}.
 
-    The chart uses {!Scale.Auto} for both axes, {!Axis.default} for rendering,
+    The chart uses {!constructor-Scale.Auto} for both axes, {!Axis.default} for rendering,
     and {!Gridlines.hidden} for no grid. *)
 
 val with_theme : Theme.t -> t -> t

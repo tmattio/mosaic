@@ -117,7 +117,7 @@ type t
 (** Mutable grid of terminal cells.
 
     An opaque handle storing terminal cell data with efficient memory layout.
-    Query dimensions via {!width} and {!height}; access cells via {!get_code},
+    Query dimensions via {!val-width} and {!val-height}; access cells via {!get_code},
     {!get_style}, and {!get_text}. *)
 
 type clip_rect = { x : int; y : int; width : int; height : int }
@@ -158,7 +158,7 @@ val create :
     transparent black background, matching the result of {!clear} with default
     color. The scissor stack is empty.
 
-    @raise Invalid_argument if [width <= 0] or [height <= 0]. *)
+    Raises [Invalid_argument] if [width <= 0] or [height <= 0]. *)
 
 (** {1 Grid Properties} *)
 
@@ -322,7 +322,7 @@ val resize : t -> width:int -> height:int -> unit
 
     Resizing to identical dimensions is a no-op.
 
-    @raise Invalid_argument if [width <= 0] or [height <= 0].
+    Raises [Invalid_argument] if [width <= 0] or [height <= 0].
 
     Time complexity: O(cells_outside_new_bounds) for releasing truncated cells,
     plus O(new_width × new_height) for allocation if storage grows. *)

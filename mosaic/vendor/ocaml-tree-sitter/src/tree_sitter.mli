@@ -167,9 +167,9 @@ module Language : sig
             ~symbol:"tree_sitter_json"
       ]}
 
-      @raise Failure
-        with a message indicating the error. Common failures include: library
-        file not found, symbol not exported, or architecture mismatch. *)
+      Raises [Failure] with a message indicating the error. Common failures
+      include: library file not found, symbol not exported, or architecture
+      mismatch. *)
 
   val version : t -> int
   (** [version lang] returns the ABI version of the language.
@@ -640,9 +640,8 @@ module Query : sig
         |}
       ]}
 
-      @raise Failure
-        if [source] contains syntax errors or references non-existent node
-        types. *)
+      Raises [Failure] if [source] contains syntax errors or references
+      non-existent node types. *)
 
   val delete : t -> unit
   (** [delete query] releases resources associated with [query].

@@ -20,7 +20,7 @@
     The primary workflow: 1. Create a tree with {!new_tree}. 2. Build the node
     hierarchy with {!new_leaf}, {!new_with_children}, and {!add_child}. 3.
     Compute layout with {!compute_layout}, providing available space
-    constraints. 4. Query computed layouts with {!layout}.
+    constraints. 4. Query computed layouts with {!val-layout}.
 
     {1 Basic Usage}
 
@@ -143,8 +143,8 @@
     Layout values are floating-point. Enable rounding via {!enable_rounding}
     (default) to round border box dimensions and positions to integer pixels,
     reducing sub-pixel rendering artifacts. Disable via {!disable_rounding} for
-    precise measurements (e.g., testing). Query rounded layouts with {!layout}
-    or unrounded with {!unrounded_layout}.
+    precise measurements (e.g., testing). Query rounded layouts with
+    {!val-layout} or unrounded with {!unrounded_layout}.
 
     {1 Error Handling}
 
@@ -543,7 +543,7 @@ val compute_layout_with_measure :
     function computes intrinsic size for leaves. Returns [Ok ()] on success.
     Returns [Error (Invalid_input_node node_id)] if [node_id] does not exist.
 
-    After computation, query layouts with {!layout}. *)
+    After computation, query layouts with {!val-layout}. *)
 
 val compute_layout :
   'context tree -> Node_id.t -> Available_space.t size -> unit result
@@ -573,7 +573,7 @@ module Traverse_partial_tree : sig
   val get_child_id : 'context t -> Node_id.t -> int -> Node_id.t
   (** [get_child_id tree node_id index] returns the child at [index].
 
-      @raise Invalid_argument if [index] is out of bounds. *)
+      Raises [Invalid_argument] if [index] is out of bounds. *)
 end
 
 module Cache_tree : sig
@@ -622,7 +622,7 @@ module Print_tree : sig
   val get_child_id : 'context t -> Node_id.t -> int -> Node_id.t
   (** [get_child_id tree node_id index] returns the child at [index].
 
-      @raise Invalid_argument if [index] is out of bounds. *)
+      Raises [Invalid_argument] if [index] is out of bounds. *)
 
   val get_debug_label : 'context t -> Node_id.t -> string
   (** [get_debug_label tree node_id] returns a debug label for [node_id].

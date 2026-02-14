@@ -75,7 +75,7 @@ val unwrap_or : t -> float -> float
 val unwrap : t -> float
 (** [unwrap t] returns the definite value.
 
-    @raise Invalid_argument if [t] is not [Definite]. *)
+    Raises [Invalid_argument] if [t] is not [Definite]. *)
 
 val unwrap_or_else : t -> (unit -> float) -> float
 (** [unwrap_or_else t default_cb] returns the definite value or the result of

@@ -375,7 +375,7 @@ val equal : t -> t -> bool
 (** [equal e1 e2] compares events for semantic equality.
 
     For [Key] events, only the [key] and [modifier] fields are compared (to
-    match the historical {!Input.t_equal}). All other variants compare their
+    match the historical [Input.t_equal]). All other variants compare their
     fields structurally. *)
 
 val equal_full : t -> t -> bool
@@ -400,7 +400,7 @@ val key :
   Key.t ->
   t
 (** [key ?modifier ?event_type ?associated_text ?shifted_key ?base_key k]
-    constructs a {!Key} event. *)
+    constructs a {!module-Key} event. *)
 
 val char :
   ?modifier:Key.modifier ->
@@ -411,7 +411,7 @@ val char :
   char ->
   t
 (** [char ?modifier ?event_type ?associated_text ?shifted_key ?base_key c]
-    constructs a {!Key} event for ASCII character [c]. Convenience wrapper
+    constructs a {!module-Key} event for ASCII character [c]. Convenience wrapper
     around {!key} that converts the [char] to [Uchar.t] and sets
     [associated_text]. *)
 

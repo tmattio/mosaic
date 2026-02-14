@@ -15,14 +15,14 @@
       custom termios configuration.
     - Enable protocols with {!set_mouse_mode}, {!enable_bracketed_paste}, and
       related functions.
-    - Consume structured events with {!next_event} or {!poll_events} and render
-      output with {!write} or {!write_bytes}.
+    - Consume structured events with [next_event] or [poll_events] and render
+      output with {!val-write} or {!val-write_bytes}.
 
     {1 Capability model}
 
-    {!open_terminal} seeds capabilities using environment heuristics and
-    platform quirks. {!query_capabilities} refines the record by issuing
-    DECRQM/DA/XTVersion queries . {!capabilities} returns the latest known view
+    {!val-open_terminal} seeds capabilities using environment heuristics and
+    platform quirks. {!val-query_capabilities} refines the record by issuing
+    DECRQM/DA/XTVersion queries . {!val-capabilities} returns the latest known view
     and reflects all responses processed so far.
 
     {1 Usage basics}
@@ -50,10 +50,10 @@
     {1 Performance}
 
     - All writes retry on [EINTR]/[EAGAIN] before failing with {!Error}.
-    - {!next_event} supports timeouts, folds capability responses into
-      {!capabilities}, and filters them out of the public {!Input.t} stream.
+    - [next_event] supports timeouts, folds capability responses into
+      {!type-capabilities}, and filters them out of the public {!Input.t} stream.
 
-    {b Note}: This module opens {!Unix}, which imports all Unix types and
+    {b Note}: This module opens [Unix], which imports all Unix types and
     functions into the namespace. *)
 
 open Unix
@@ -62,7 +62,7 @@ exception Error of string
 (** Raised for terminal I/O failures.
 
     {!Error} wraps an underlying [Unix_error] as a human-readable message via
-    {!Unix.error_message}. [EINTR] and [EAGAIN] are retried internally, so
+    [Unix.error_message]. [EINTR] and [EAGAIN] are retried internally, so
     seeing this exception indicates a hard failure such as a closed descriptor
     or an unrecoverable write error. *)
 
@@ -120,8 +120,8 @@ type unicode_width = [ `Wcwidth | `Unicode ]
       setups but inaccurate for some emoji and combining characters.
     - [`Unicode]: use modern Unicode width tables.
 
-    {!set_unicode_width} updates both terminal configuration (when supported)
-    and the cached {!capabilities}. *)
+    {!val-set_unicode_width} updates both terminal configuration (when supported)
+    and the cached {!type-capabilities}. *)
 
 type cursor_style = [ `Block | `Line | `Underline ]
 (** Cursor visual style.
@@ -182,7 +182,7 @@ type capabilities = {
       updates).
     - [color_scheme_updates]: color scheme update notification support (DECRQM
       2031).
-    - [unicode_width]: active width mode (see {!unicode_width}).
+    - [unicode_width]: active width mode (see {!type-unicode_width}).
     - [sgr_pixels]: SGR pixel-position mouse support.
     - [explicit_width], [scaled_text]: explicit cell width/scaled text support,
       derived from proprietary cursor-position probes.
@@ -254,7 +254,7 @@ val open_terminal :
     - When [initial_caps] is [None], seeds capabilities from environment
       heuristics using the detected [$TERM].
     - When [initial_caps] is [Some caps], that record is used directly and
-      normalised to attach {!terminal_info}.
+      normalised to attach {!type-terminal_info}.
 
     Probing behaviour:
 
@@ -273,8 +273,9 @@ val open_terminal :
       if [true], uses a background thread for frame writes; defaults to [true]
       on non-Linux platforms, [false] on Linux
     @param render_buffer_size initial size of frame buffers; defaults to 2MB
-    @raise Unix.Unix_error if creating internal pipes or reading termios fails
-*)
+
+    Raises [Unix.Unix_error] if creating internal pipes or reading termios
+    fails. *)
 
 val close : t -> unit
 (** [close t] restores terminal state and disables all protocols.
@@ -308,7 +309,7 @@ val capabilities : t -> capabilities
 
 val query_capabilities : ?timeout:float -> t -> unit
 (** [query_capabilities ?timeout t] actively probes the terminal and updates
-    {!capabilities} and {!terminal_info}.
+    {!type-capabilities} and {!type-terminal_info}.
 
     Probing is skipped if either [input] or [output] is not a TTY. Replies are
     parsed interleaved with normal input; capability events are folded into the
@@ -367,7 +368,8 @@ val switch_mode : t -> mode -> unit
 
     For non-TTY inputs, only the internal mode field is updated.
 
-    @raise Unix.Unix_error if termios operations or non-blocking toggles fail *)
+    Raises [Unix.Unix_error] if termios operations or non-blocking toggles
+    fail. *)
 
 val with_mode : t -> mode -> (unit -> 'a) -> 'a
 (** [with_mode t mode f] runs [f] under [mode] and restores the previous mode.
@@ -377,7 +379,8 @@ val with_mode : t -> mode -> (unit -> 'a) -> 'a
     - Restores the original mode in a [Fun.protect] [~finally] block.
 
     @return the result of [f ()]
-    @raise Unix.Unix_error if switching into or out of [mode] fails *)
+
+    Raises [Unix.Unix_error] if switching into or out of [mode] fails. *)
 
 (** {1 Screens and buffers} *)
 
@@ -490,11 +493,11 @@ val modify_other_keys_enabled : t -> bool
 
 val set_unicode_width : t -> unicode_width -> unit
 (** [set_unicode_width t width] sets the Unicode width mode and updates
-    {!capabilities}.
+    {!type-capabilities}.
 
     For terminals that support a Unicode-width mode toggle, this also enables or
     disables the corresponding escape sequence. On terminals that ignore the
-    toggle, only the cached {!capabilities} are updated. *)
+    toggle, only the cached {!type-capabilities} are updated. *)
 
 val set_cursor_visible : t -> bool -> unit
 (** [set_cursor_visible t visible] shows or hides the cursor.
@@ -532,7 +535,7 @@ val set_title : t -> string -> unit
 val wake : t -> unit
 (** [wake t] writes to the internal wakeup pipe.
 
-    This causes a blocked {!next_event} call to resume and re-check timers and
+    This causes a blocked [next_event] call to resume and re-check timers and
     queues. It is safe to call even if the loop is not currently blocked; extra
     bytes are drained automatically. *)
 
@@ -621,7 +624,7 @@ val read : ?timeout:float -> t -> (Input.t -> unit) -> bool
     - Drains any queued events from previous reads.
     - Flushes parser timeouts (e.g., lone Escape keys).
     - Reads available bytes from the terminal and parses them.
-    - Folds capability responses into {!capabilities} and {!terminal_info},
+    - Folds capability responses into {!type-capabilities} and {!type-terminal_info},
       excluding them from the event stream.
 
     @param timeout

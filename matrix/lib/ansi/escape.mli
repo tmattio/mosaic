@@ -57,7 +57,8 @@ val bytes : bytes -> off:int -> len:int -> t
 (** [bytes b ~off ~len] writes a slice of bytes directly to the output.
 
     {b Zero-allocation}: Copies data immediately into the writer's buffer.
-    @raise Invalid_argument if the slice is out of bounds. *)
+
+    Raises [Invalid_argument] if the slice is out of bounds. *)
 
 val utf8 : int -> t
 (** [utf8 codepoint] encodes a Unicode scalar value into UTF-8 and writes it.
@@ -277,7 +278,8 @@ val set_scrolling_region : top:int -> bottom:int -> t
     line range.
 
     {b Invariant}: [top] must be >= 1 and [bottom] > [top].
-    @raise Invalid_argument if bounds are invalid. *)
+
+    Raises [Invalid_argument] if bounds are invalid. *)
 
 val reset_scrolling_region : t
 (** [reset_scrolling_region] resets the scrolling region to the full screen

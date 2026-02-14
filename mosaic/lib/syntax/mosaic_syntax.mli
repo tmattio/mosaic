@@ -304,7 +304,7 @@ module Session : sig
       - All highlights have [start_byte < end_byte].
       - Byte offsets are valid indices into [content].
 
-      @raise Invalid_argument if [session] is closed.
+      Raises [Invalid_argument] if [session] is closed.
 
       {4 Example}
 

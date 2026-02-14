@@ -156,7 +156,7 @@ val create :
     @param mouse_enabled Whether to enable mouse tracking. Defaults to [true].
     @param mouse
       Explicit mouse tracking mode. Defaults to [None], which selects [`Sgr_any]
-      when [mouse_enabled] is [true]. See {!Terminal.mouse_mode} for available
+      when [mouse_enabled] is [true]. See [Terminal.mouse_mode] for available
       modes.
     @param bracketed_paste
       Whether to enable bracketed paste mode. Defaults to [true] (enabled if the

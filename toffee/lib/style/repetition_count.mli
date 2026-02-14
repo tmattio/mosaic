@@ -25,7 +25,7 @@ type t =
 val count : int -> t
 (** [count n] creates a repetition count of exactly [n] times.
 
-    @raise Invalid_argument if [n] is not positive. *)
+    Raises [Invalid_argument] if [n] is not positive. *)
 
 val auto_fill : t
 (** [auto_fill] creates an auto-fill repetition. *)

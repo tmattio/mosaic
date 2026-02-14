@@ -384,4 +384,4 @@ val of_hex : string -> t option
 val of_hex_exn : string -> t
 (** [of_hex_exn hex] parses a hex color string.
 
-    @raise Invalid_argument if parsing fails. *)
+    Raises [Invalid_argument] if parsing fails. *)

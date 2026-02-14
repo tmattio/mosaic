@@ -557,7 +557,7 @@ val get_text_range : t -> start:int -> stop:int -> string
 (** [get_text_range t ~start ~stop] extracts text from the half-open range
     [\[start, stop)].
 
-    [start] and [stop] are clamped to [\[0, length t]]. Returns empty string if
+    [start] and [stop] are clamped to [\[0, length t\]]. Returns empty string if
     [start >= stop]. *)
 
 val grapheme_pool : t -> Glyph.pool

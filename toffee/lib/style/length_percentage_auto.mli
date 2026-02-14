@@ -67,9 +67,8 @@ val is_calc : t -> bool
 val value : t -> float
 (** [value t] extracts the numeric value from [t].
 
-    @raise Failure
-      if [t] is [auto] or a [calc()] expression, as those have no numeric value.
-*)
+    Raises [Failure] if [t] is [auto] or a [calc()] expression, as those have
+    no numeric value. *)
 
 (** {1 Resolution} *)
 
@@ -83,9 +82,8 @@ val resolve_to_option : t -> float -> float option
 
     Percentage results are rounded to f32 precision to match Taffy behavior.
 
-    @raise Failure
-      if [t] is a [calc()] expression or any unsupported tag. Use
-      {!resolve_to_option_with_calc} for calc support. *)
+    Raises [Failure] if [t] is a [calc()] expression or any unsupported tag.
+    Use {!resolve_to_option_with_calc} for calc support. *)
 
 val resolve_to_option_with_calc :
   t -> float -> (int -> float -> float) -> float option
@@ -100,7 +98,7 @@ val resolve_to_option_with_calc :
 
     Percentage results are rounded to f32 precision to match Taffy behavior.
 
-    @raise Failure if [t] is not length, percentage, auto, or calc. *)
+    Raises [Failure] if [t] is not length, percentage, auto, or calc. *)
 
 val maybe_resolve : t -> float option -> (int -> float -> float) -> float option
 (** [maybe_resolve t context calc_resolver] conditionally resolves [t] to an
@@ -118,7 +116,7 @@ val maybe_resolve : t -> float option -> (int -> float -> float) -> float option
 
     This matches taffy's [MaybeResolve] trait for [LengthPercentageAuto].
 
-    @raise Failure if [t] is not length, percentage, auto, or calc. *)
+    Raises [Failure] if [t] is not length, percentage, auto, or calc. *)
 
 val resolve_or_zero : t -> float option -> (int -> float -> float) -> float
 (** [resolve_or_zero t context calc_resolver] resolves [t] to an absolute length
@@ -133,7 +131,7 @@ val resolve_or_zero : t -> float option -> (int -> float -> float) -> float
 
     This matches taffy's [ResolveOrZero] trait for [LengthPercentageAuto].
 
-    @raise Failure if [t] has an invalid tag. *)
+    Raises [Failure] if [t] has an invalid tag. *)
 
 (** {1 Additional Helpers} *)
 

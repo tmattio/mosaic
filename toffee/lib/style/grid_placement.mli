@@ -86,9 +86,8 @@ val into_origin_zero_placement : t -> int -> Grid.Origin_zero_placement.t
     [explicit_track_count] to translate CSS grid coordinates to origin-zero
     coordinates.
 
-    @raise Failure
-      if [placement] is [Named_line] or [Named_span]. Named lines must be
-      resolved before calling this function. *)
+    Raises [Failure] if [placement] is [Named_line] or [Named_span]. Named
+    lines must be resolved before calling this function. *)
 
 (** {1 Comparison and display} *)
 
@@ -129,9 +128,8 @@ module Line : sig
       Applies {!into_origin_zero_placement} to both the start and end
       placements.
 
-      @raise Failure
-        if either placement is [Named_line] or [Named_span]. Named lines must be
-        resolved before calling this function. *)
+      Raises [Failure] if either placement is [Named_line] or [Named_span].
+      Named lines must be resolved before calling this function. *)
 
   val is_definite : t Geometry.Line.t -> bool
   (** [is_definite line] returns [true] if the line placement is definite.

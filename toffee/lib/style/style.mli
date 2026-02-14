@@ -9,112 +9,80 @@ type calc_resolver = int -> float -> float
 (** {1 Length types} *)
 
 module Compact_length = Compact_length
-(** @inline *)
 
 module Length_percentage = Length_percentage
-(** @inline *)
 
 module Length_percentage_auto = Length_percentage_auto
-(** @inline *)
 
 module Dimension = Dimension
-(** @inline *)
 
 (** {1 Layout control types} *)
 
 module Display = Display
-(** @inline *)
 
 module Position = Position
-(** @inline *)
 
 module Overflow = Overflow
-(** @inline *)
 
 module Box_sizing = Box_sizing
-(** @inline *)
 
 module Box_generation_mode = Box_generation_mode
-(** @inline *)
 
 module Text_align = Text_align
-(** @inline *)
 
 (** {1 Flexbox types} *)
 
 module Flex_direction = Flex_direction
-(** @inline *)
 
 module Flex_wrap = Flex_wrap
-(** @inline *)
 
 (** {1 Alignment types} *)
 
 module Align_items = Alignment.Align_items
-(** @inline *)
 
 module Justify_items = Alignment.Justify_items
-(** @inline *)
 
 module Align_self = Alignment.Align_self
-(** @inline *)
 
 module Justify_self = Alignment.Justify_self
-(** @inline *)
 
 module Align_content = Alignment.Align_content
-(** @inline *)
 
 module Justify_content = Alignment.Justify_content
-(** @inline *)
 
 (** {1 Grid types} *)
 
 module Grid_auto_flow = Grid_auto_flow
-(** @inline *)
 
 module Grid_placement = Grid_placement
-(** @inline *)
 
 module Grid_repetition = Grid_repetition
-(** @inline *)
 
 module Grid_template_area = Grid_template_area
-(** @inline *)
 
 module Grid_template_component = Grid_template_component
-(** @inline *)
 
 module Repetition_count = Repetition_count
-(** @inline *)
 
 module Track_sizing_function = Track_sizing_function
-(** @inline *)
 
 (** Grid coordinate systems and track utilities with submodules. *)
 module Grid : sig
   include module type of Grid
 
   module Auto_flow = Grid_auto_flow
-  (** @inline *)
 
   module Placement = Grid_placement
-  (** @inline *)
 
   module Track_sizing_function = Track_sizing_function
-  (** @inline *)
 
   module Repetition_count = Repetition_count
-  (** @inline *)
 
   module Repetition = Grid_repetition
-  (** @inline *)
 
   module Template_component = Grid_template_component
-  (** @inline *)
 
   module Template_area = Grid_template_area
-  (** @inline *)
 end
 
 (** {1 Type aliases} *)

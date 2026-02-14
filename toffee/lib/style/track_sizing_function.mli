@@ -82,11 +82,11 @@ val max : t -> Compact_length.t
 
 val min_sizing_function : t -> Compact_length.t
 (** [min_sizing_function t] returns the minimum sizing function. Alias for
-    {!min}. *)
+    {!val-min}. *)
 
 val max_sizing_function : t -> Compact_length.t
 (** [max_sizing_function t] returns the maximum sizing function. Alias for
-    {!max}. *)
+    {!val-max}. *)
 
 (** {1 Predicates} *)
 

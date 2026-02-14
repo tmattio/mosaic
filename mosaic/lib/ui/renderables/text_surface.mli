@@ -7,7 +7,7 @@
 
     {1 Overview}
 
-    Text_surface combines a {!Text_buffer.t} with a renderable node, providing
+    Text_surface combines a [Text_buffer.t] with a renderable node, providing
     automatic size measurement based on buffer content and configured wrapping
     behavior. Wrap width is determined by Toffee layout computation during the
     measure phase, considering known dimensions and available space. Grapheme

@@ -1,8 +1,8 @@
-(** {0 Mosaic Markdown}
+(** {1 Mosaic Markdown}
 
     A Markdown renderer for Mosaic UI.
 
-    This library parses CommonMark (via {!Cmarkit}) and renders it into a tree
+    This library parses CommonMark (via [Cmarkit]) and renders it into a tree
     of Mosaic UI nodes (Text / Box / Code / Table). The public API is organized
     as follows:
 
@@ -11,7 +11,7 @@
       rendering policy (wrapping, link/image behavior, fences, etc.), and syntax
       highlighting client
 
-    Use {!parse} to convert a markdown string into a {!Cmarkit.Doc.t}, then pass
+    Use {!parse} to convert a markdown string into a [Cmarkit.Doc.t], then pass
     the doc to the renderer via {!Props}. This separation allows caching parsed
     documents and manipulating the AST before rendering.
 
@@ -143,7 +143,7 @@ module Style : sig
             by {!Props.images}. *)
     raw_html : Ansi.Style.t;
         (** Style for raw HTML when rendered as text. Only used when
-            {!Props.raw_html} is [`Show_as_text]. *)
+            [Props.raw_html] is [`Show_as_text]. *)
     strike : Ansi.Style.t;  (** Style for strikethrough text (GFM extension). *)
   }
   (** Inline element theme configuration.
@@ -328,7 +328,7 @@ module Props : sig
         (** Text wrapping mode for code content. Defaults to [`None]. *)
     syntax : [ `Auto | `Theme of Mosaic_ui.Code.Theme.t ];
         (** Syntax highlighting configuration. [`Auto] builds a default theme
-            from {!Style.code_block.block.text}. Custom themes can be provided
+            from [Style.code_block.block.text]. Custom themes can be provided
             via [`Theme]. *)
   }
   (** Code block rendering configuration. *)
@@ -408,14 +408,14 @@ module Props : sig
       - [wrap_width]: [`Auto]
       - [paragraph_wrap]: [`Word]
       - [block_quote_wrap]: [`Word]
-      - [headings]: {!headings ()}
-      - [code_blocks]: {!code_blocks ()}
+      - [headings]: {!headings}[ ()]
+      - [code_blocks]: {!code_blocks}[ ()]
       - [raw_html]: [`Show_as_text]
       - [links]: [Hyperlink]
       - [images]: [Alt_and_url]
       - [unknown_inline]: [`Plain_text]
       - [unknown_block]: [`Plain_text]
-      - [languages]: {!Mosaic_syntax.builtins ()} *)
+      - [languages]: [Mosaic_syntax.builtins ()] *)
 
   val default : t
   (** Default props configuration. Equivalent to [make ()]. *)
@@ -483,7 +483,7 @@ val set_languages : t -> Mosaic_syntax.Set.t -> unit
 val parse : ?strict:bool -> string -> Cmarkit.Doc.t
 (** [parse ?strict markdown] parses a markdown string into a document.
 
-    Returns a {!Cmarkit.Doc.t} suitable for rendering via {!Props.doc}. Parsing
+    Returns a [Cmarkit.Doc.t] suitable for rendering via [Props.doc]. Parsing
     is separate from rendering to enable caching parsed documents and
     manipulating the AST before display.
 
