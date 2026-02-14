@@ -121,8 +121,8 @@ type sgr_attr =
   | `Underline
   | `Double_underline
   | `Blink
-  | `Reverse  (** Swap foreground and background. *)
-  | `Conceal  (** Hidden text. *)
+  | `Inverse  (** Swap foreground and background. *)
+  | `Hidden  (** Hidden text. *)
   | `Strikethrough
   | `Overline
   | `Framed
@@ -132,8 +132,8 @@ type sgr_attr =
   | `No_italic
   | `No_underline
   | `No_blink
-  | `No_reverse
-  | `No_conceal
+  | `No_inverse
+  | `No_hidden
   | `No_strikethrough
   | `No_overline
   | `No_framed

@@ -682,8 +682,8 @@ let apply_sgr_attr style attr =
   | `Underline -> Ansi.Style.with_underline true style
   | `Double_underline -> Ansi.Style.with_double_underline true style
   | `Blink -> Ansi.Style.with_blink true style
-  | `Reverse -> Ansi.Style.with_inverse true style
-  | `Conceal -> Ansi.Style.with_hidden true style
+  | `Inverse -> Ansi.Style.with_inverse true style
+  | `Hidden -> Ansi.Style.with_hidden true style
   | `Strikethrough -> Ansi.Style.with_strikethrough true style
   | `Overline -> Ansi.Style.with_overline true style
   | `Framed -> Ansi.Style.with_framed true style
@@ -693,8 +693,8 @@ let apply_sgr_attr style attr =
   | `No_italic -> Ansi.Style.with_italic false style
   | `No_underline -> Ansi.Style.with_underline false style
   | `No_blink -> Ansi.Style.with_blink false style
-  | `No_reverse -> Ansi.Style.with_inverse false style
-  | `No_conceal -> Ansi.Style.with_hidden false style
+  | `No_inverse -> Ansi.Style.with_inverse false style
+  | `No_hidden -> Ansi.Style.with_hidden false style
   | `No_strikethrough -> Ansi.Style.with_strikethrough false style
   | `No_overline -> Ansi.Style.with_overline false style
   | `No_framed -> Ansi.Style.with_framed false style

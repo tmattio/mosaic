@@ -32,8 +32,8 @@ type sgr_attr =
   | `Underline
   | `Double_underline
   | `Blink
-  | `Reverse
-  | `Conceal
+  | `Inverse
+  | `Hidden
   | `Strikethrough
   | `Overline
   | `Framed
@@ -43,8 +43,8 @@ type sgr_attr =
   | `No_italic
   | `No_underline
   | `No_blink
-  | `No_reverse
-  | `No_conceal
+  | `No_inverse
+  | `No_hidden
   | `No_strikethrough
   | `No_overline
   | `No_framed
@@ -72,8 +72,8 @@ let parse_sgr_params params len =
       | 4 -> loop (i + 1) (`Underline :: acc)
       | 21 -> loop (i + 1) (`Double_underline :: acc)
       | 5 -> loop (i + 1) (`Blink :: acc)
-      | 7 -> loop (i + 1) (`Reverse :: acc)
-      | 8 -> loop (i + 1) (`Conceal :: acc)
+      | 7 -> loop (i + 1) (`Inverse :: acc)
+      | 8 -> loop (i + 1) (`Hidden :: acc)
       | 9 -> loop (i + 1) (`Strikethrough :: acc)
       | 53 -> loop (i + 1) (`Overline :: acc)
       | 51 -> loop (i + 1) (`Framed :: acc)
@@ -82,8 +82,8 @@ let parse_sgr_params params len =
       | 23 -> loop (i + 1) (`No_italic :: acc)
       | 24 -> loop (i + 1) (`No_underline :: acc)
       | 25 -> loop (i + 1) (`No_blink :: acc)
-      | 27 -> loop (i + 1) (`No_reverse :: acc)
-      | 28 -> loop (i + 1) (`No_conceal :: acc)
+      | 27 -> loop (i + 1) (`No_inverse :: acc)
+      | 28 -> loop (i + 1) (`No_hidden :: acc)
       | 29 -> loop (i + 1) (`No_strikethrough :: acc)
       | 54 -> loop (i + 1) (`No_encircled :: `No_framed :: acc)
       | 55 -> loop (i + 1) (`No_overline :: acc)
