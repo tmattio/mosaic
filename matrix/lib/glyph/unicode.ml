@@ -106,27 +106,28 @@ let prop_table =
      done;
      table)
 
-(* Public API - O(1) lookup (after first access forces lazy init) *)
+(* Force once at module init to avoid Lazy.force overhead on each lookup. *)
+let prop_table = Lazy.force prop_table
+
+(* Public API - O(1) lookup *)
 
 let[@inline] grapheme_cluster_break u =
-  let table = Lazy.force prop_table in
-  Bigarray.Array1.unsafe_get table (pack_u (Uchar.to_int u)) land 0x1F
+  Bigarray.Array1.unsafe_get prop_table (pack_u (Uchar.to_int u)) land 0x1F
 
 let[@inline] indic_conjunct_break u =
-  let table = Lazy.force prop_table in
-  (Bigarray.Array1.unsafe_get table (pack_u (Uchar.to_int u)) lsr 5) land 0x03
+  (Bigarray.Array1.unsafe_get prop_table (pack_u (Uchar.to_int u)) lsr 5)
+  land 0x03
 
 let[@inline] is_extended_pictographic u =
-  let table = Lazy.force prop_table in
-  Bigarray.Array1.unsafe_get table (pack_u (Uchar.to_int u)) land 0x80 <> 0
+  Bigarray.Array1.unsafe_get prop_table (pack_u (Uchar.to_int u)) land 0x80
+  <> 0
 
 let[@inline] tty_width_hint u =
-  let table = Lazy.force prop_table in
-  ((Bigarray.Array1.unsafe_get table (pack_u (Uchar.to_int u)) lsr 8) land 0x03)
+  ((Bigarray.Array1.unsafe_get prop_table (pack_u (Uchar.to_int u)) lsr 8)
+  land 0x03)
   - 1
 
 (* Combined lookup - returns packed (gcb, incb, extpic) in one Bigarray access.
    Returns: bits 0-4 = gcb, bits 5-6 = incb, bit 7 = extpic *)
 let[@inline] grapheme_props u =
-  let table = Lazy.force prop_table in
-  Bigarray.Array1.unsafe_get table (pack_u (Uchar.to_int u)) land 0xFF
+  Bigarray.Array1.unsafe_get prop_table (pack_u (Uchar.to_int u)) land 0xFF
