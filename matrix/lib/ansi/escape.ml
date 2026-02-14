@@ -521,35 +521,46 @@ let modify_other_keys_off : t = literal "\027[>4;0m"
 
 (* Device and Capability Queries *)
 
-(* Terminal and Device Information *)
+type query =
+  | Cursor_position
+  | Pixel_size
+  | Device_attributes
+  | Tertiary_attributes
+  | Terminal_identity
+  | Device_status
+  | Csi_u_support
+  | Kitty_graphics
+  | Sixel_geometry
+  | Explicit_width_support
+  | Scaled_text_support
+  | Color_scheme_query
+  | Focus_mode
+  | Sgr_pixels_mode
+  | Bracketed_paste_mode
+  | Sync_mode
+  | Unicode_mode
+  | Color_scheme_mode
 
-let request_cursor_position : t = literal "\027[6n"
-let request_pixel_size : t = literal "\027[14t"
-let request_device_attributes : t = literal "\027[c"
-let request_tertiary_device_attributes : t = literal "\027[=c"
-let request_terminal_identity : t = literal "\027[>0q"
-let request_device_status : t = literal "\027[5n"
-
-(* Feature and Protocol Support *)
-
-let request_csi_u_support : t = literal "\027[?u"
-
-let request_kitty_graphics_support : t =
-  literal "\027_Gi=31337,s=1,v=1,a=q,t=d,f=24;AAAA\027\\\027[c"
-
-let request_sixel_geometry : t = literal "\027[?2;1;0S"
-let request_explicit_width_support : t = literal "\027]66;w=1; \027\\"
-let request_scaled_text_support : t = literal "\027]66;s=2; \027\\"
-let request_color_scheme : t = literal "\027[?996n"
-
-(* Mode State Queries *)
-
-let request_focus_mode : t = literal "\027[?1004$p"
-let request_sgr_pixels_mode : t = literal "\027[?1016$p"
-let request_unicode_mode : t = literal "\027[?2027$p"
-let request_color_scheme_mode : t = literal "\027[?2031$p"
-let request_bracketed_paste_mode : t = literal "\027[?2004$p"
-let request_sync_mode : t = literal "\027[?2026$p"
+let query = function
+  | Cursor_position -> literal "\027[6n"
+  | Pixel_size -> literal "\027[14t"
+  | Device_attributes -> literal "\027[c"
+  | Tertiary_attributes -> literal "\027[=c"
+  | Terminal_identity -> literal "\027[>0q"
+  | Device_status -> literal "\027[5n"
+  | Csi_u_support -> literal "\027[?u"
+  | Kitty_graphics ->
+      literal "\027_Gi=31337,s=1,v=1,a=q,t=d,f=24;AAAA\027\\\027[c"
+  | Sixel_geometry -> literal "\027[?2;1;0S"
+  | Explicit_width_support -> literal "\027]66;w=1; \027\\"
+  | Scaled_text_support -> literal "\027]66;s=2; \027\\"
+  | Color_scheme_query -> literal "\027[?996n"
+  | Focus_mode -> literal "\027[?1004$p"
+  | Sgr_pixels_mode -> literal "\027[?1016$p"
+  | Bracketed_paste_mode -> literal "\027[?2004$p"
+  | Sync_mode -> literal "\027[?2026$p"
+  | Unicode_mode -> literal "\027[?2027$p"
+  | Color_scheme_mode -> literal "\027[?2031$p"
 
 (* Response Markers *)
 

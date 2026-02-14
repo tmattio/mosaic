@@ -113,7 +113,7 @@ let cursor_hide = Esc.(to_string hide_cursor)
 let sgr_enable = Esc.(to_string (enable Mouse_sgr))
 let unicode_on = Esc.(to_string (enable Unicode))
 let unicode_off = Esc.(to_string (disable Unicode))
-let cursor_position_request = Esc.(to_string request_cursor_position)
+let cursor_position_request = Esc.(to_string (query Cursor_position))
 let reset_sgr = Esc.(to_string reset)
 let erase_below = Esc.(to_string erase_below_cursor)
 let kitty_cursor_block = Esc.(to_string cursor_block)
@@ -729,7 +729,7 @@ let query_cursor_position ?(timeout = 0.05) t =
 let output_fd t = t.output
 
 let query_pixel_resolution t =
-  if t.output_is_tty then send t Esc.(to_string request_pixel_size)
+  if t.output_is_tty then send t Esc.(to_string (query Pixel_size))
 
 let pixel_resolution t = t.pixel_resolution
 

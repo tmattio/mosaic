@@ -520,71 +520,31 @@ val modify_other_keys_off : t
 
 (** {1 Device and Capability Queries} *)
 
-(** {2 Terminal and Device Information} *)
+type query =
+  | Cursor_position  (** DSR 6 — current cursor position. *)
+  | Pixel_size  (** CSI 14 t — terminal pixel dimensions. *)
+  | Device_attributes  (** DA1 — primary device attributes. *)
+  | Tertiary_attributes  (** DA3 — tertiary device attributes. *)
+  | Terminal_identity  (** XTVERSION — terminal name and version. *)
+  | Device_status  (** DSR 5 — generic status report. *)
+  | Csi_u_support  (** CSI ? u — CSI-u keyboard encoding support. *)
+  | Kitty_graphics  (** Kitty graphics protocol probe. *)
+  | Sixel_geometry  (** Sixel graphics geometry limits. *)
+  | Explicit_width_support  (** OSC 66 — explicit width probe. *)
+  | Scaled_text_support  (** OSC 66 — scaled text probe. *)
+  | Color_scheme_query  (** DSR 996 — terminal color scheme. *)
+  | Focus_mode  (** DECRQM 1004 — focus tracking state. *)
+  | Sgr_pixels_mode  (** DECRQM 1016 — SGR pixel mouse state. *)
+  | Bracketed_paste_mode  (** DECRQM 2004 — bracketed paste state. *)
+  | Sync_mode  (** DECRQM 2026 — synchronized output state. *)
+  | Unicode_mode  (** DECRQM 2027 — Unicode mode state. *)
+  | Color_scheme_mode  (** DECRQM 2031 — color scheme reporting state. *)
+(** Terminal capability and state queries. Each variant emits the appropriate
+    query sequence; the terminal responds asynchronously. Parse responses via
+    {!Parser} or raw input handling. *)
 
-val request_cursor_position : t
-(** [request_cursor_position] queries the cursor position (DSR 6). *)
-
-val request_pixel_size : t
-(** [request_pixel_size] requests the terminal size in pixels (DECRQSS 14t). *)
-
-val request_device_attributes : t
-(** [request_device_attributes] queries primary device attributes (DA1). *)
-
-val request_tertiary_device_attributes : t
-(** [request_tertiary_device_attributes] queries tertiary device attributes
-    (DA3). *)
-
-val request_terminal_identity : t
-(** [request_terminal_identity] queries terminal identity (XTVERSION). *)
-
-val request_device_status : t
-(** [request_device_status] requests a generic status report (DSR 5). *)
-
-(** {2 Feature and Protocol Support} *)
-
-val request_csi_u_support : t
-(** [request_csi_u_support] queries if CSI-u keyboard encoding is enabled. *)
-
-val request_kitty_graphics_support : t
-(** [request_kitty_graphics_support] probes for Kitty graphics protocol support.
-*)
-
-val request_sixel_geometry : t
-(** [request_sixel_geometry] queries for Sixel graphics geometry limits. *)
-
-val request_explicit_width_support : t
-(** [request_explicit_width_support] probes for OSC 66 support. *)
-
-val request_scaled_text_support : t
-(** [request_scaled_text_support] probes for text scaling support. *)
-
-val request_color_scheme : t
-(** [request_color_scheme] queries the terminal color scheme. *)
-
-(** {2 Mode State Queries} *)
-
-val request_focus_mode : t
-(** [request_focus_mode] queries if focus tracking is enabled (DECRQM 1004). *)
-
-val request_sgr_pixels_mode : t
-(** [request_sgr_pixels_mode] queries if SGR pixel mouse mode is enabled (DECRQM
-    1016). *)
-
-val request_unicode_mode : t
-(** [request_unicode_mode] queries if Unicode mode is enabled (DECRQM 2027). *)
-
-val request_color_scheme_mode : t
-(** [request_color_scheme_mode] queries if color scheme reporting is enabled
-    (DECRQM 2031). *)
-
-val request_bracketed_paste_mode : t
-(** [request_bracketed_paste_mode] queries if bracketed paste is enabled (DECRQM
-    2004). *)
-
-val request_sync_mode : t
-(** [request_sync_mode] queries if synchronized output is enabled (DECRQM 2026).
-*)
+val query : query -> t
+(** [query q] emits the query sequence for [q]. *)
 
 (** {2 Response Markers} *)
 

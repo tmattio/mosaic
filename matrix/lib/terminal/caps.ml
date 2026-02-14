@@ -357,37 +357,25 @@ let cursor_restore = Ansi.Escape.(to_string cursor_restore)
 let home = Ansi.Escape.(to_string home)
 
 let explicit_width_query =
-  Ansi.Escape.(to_string Ansi.Escape.request_explicit_width_support)
+  Ansi.Escape.(to_string (query Explicit_width_support))
 
 let scaled_text_query =
-  Ansi.Escape.(to_string Ansi.Escape.request_scaled_text_support)
+  Ansi.Escape.(to_string (query Scaled_text_support))
 
-let xtversion_query =
-  Ansi.Escape.(to_string Ansi.Escape.request_terminal_identity)
-
-let csi_u_query = Ansi.Escape.(to_string Ansi.Escape.request_csi_u_support)
-
-let decrqm_sgr_pixels =
-  Ansi.Escape.(to_string Ansi.Escape.request_sgr_pixels_mode)
-
-let decrqm_unicode = Ansi.Escape.(to_string Ansi.Escape.request_unicode_mode)
-
-let decrqm_color_scheme =
-  Ansi.Escape.(to_string Ansi.Escape.request_color_scheme)
-
-let decrqm_focus = Ansi.Escape.(to_string Ansi.Escape.request_focus_mode)
+let xtversion_query = Ansi.Escape.(to_string (query Terminal_identity))
+let csi_u_query = Ansi.Escape.(to_string (query Csi_u_support))
+let decrqm_sgr_pixels = Ansi.Escape.(to_string (query Sgr_pixels_mode))
+let decrqm_unicode = Ansi.Escape.(to_string (query Unicode_mode))
+let decrqm_color_scheme = Ansi.Escape.(to_string (query Color_scheme_query))
+let decrqm_focus = Ansi.Escape.(to_string (query Focus_mode))
 
 let decrqm_bracketed_paste =
-  Ansi.Escape.(to_string Ansi.Escape.request_bracketed_paste_mode)
+  Ansi.Escape.(to_string (query Bracketed_paste_mode))
 
-let decrqm_sync = Ansi.Escape.(to_string Ansi.Escape.request_sync_mode)
-let cursor_position_request = Ansi.Escape.(to_string request_cursor_position)
-
-let kitty_graphics_query =
-  Ansi.Escape.(to_string Ansi.Escape.request_kitty_graphics_support)
-
-let primary_device_attrs =
-  Ansi.Escape.(to_string Ansi.Escape.request_device_attributes)
+let decrqm_sync = Ansi.Escape.(to_string (query Sync_mode))
+let cursor_position_request = Ansi.Escape.(to_string (query Cursor_position))
+let kitty_graphics_query = Ansi.Escape.(to_string (query Kitty_graphics))
+let primary_device_attrs = Ansi.Escape.(to_string (query Device_attributes))
 
 let iterm2_proprietary_query = "\027]1337;ReportCellSize\007"
 

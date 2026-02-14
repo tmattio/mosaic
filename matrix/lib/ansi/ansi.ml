@@ -176,52 +176,44 @@ let modify_other_keys_off = Escape.to_string Escape.modify_other_keys_off
 
 (* Device and capability queries *)
 
-(* Terminal and Device Information *)
-
-let request_cursor_position = Escape.to_string Escape.request_cursor_position
-let request_pixel_size = Escape.to_string Escape.request_pixel_size
+let request_cursor_position = Escape.to_string (Escape.query Cursor_position)
+let request_pixel_size = Escape.to_string (Escape.query Pixel_size)
 
 let request_device_attributes =
-  Escape.to_string Escape.request_device_attributes
+  Escape.to_string (Escape.query Device_attributes)
 
 let request_tertiary_device_attributes =
-  Escape.to_string Escape.request_tertiary_device_attributes
+  Escape.to_string (Escape.query Tertiary_attributes)
 
 let request_terminal_identity =
-  Escape.to_string Escape.request_terminal_identity
+  Escape.to_string (Escape.query Terminal_identity)
 
-let request_device_status = Escape.to_string Escape.request_device_status
-
-(* Feature and Protocol Support *)
-
-let request_csi_u_support = Escape.to_string Escape.request_csi_u_support
+let request_device_status = Escape.to_string (Escape.query Device_status)
+let request_csi_u_support = Escape.to_string (Escape.query Csi_u_support)
 
 let request_kitty_graphics_support =
-  Escape.to_string Escape.request_kitty_graphics_support
+  Escape.to_string (Escape.query Kitty_graphics)
 
-let request_sixel_geometry = Escape.to_string Escape.request_sixel_geometry
+let request_sixel_geometry = Escape.to_string (Escape.query Sixel_geometry)
 
 let request_explicit_width_support =
-  Escape.to_string Escape.request_explicit_width_support
+  Escape.to_string (Escape.query Explicit_width_support)
 
 let request_scaled_text_support =
-  Escape.to_string Escape.request_scaled_text_support
+  Escape.to_string (Escape.query Scaled_text_support)
 
-let request_color_scheme = Escape.to_string Escape.request_color_scheme
-
-(* Mode State Queries *)
-
-let request_focus_mode = Escape.to_string Escape.request_focus_mode
-let request_sgr_pixels_mode = Escape.to_string Escape.request_sgr_pixels_mode
+let request_color_scheme = Escape.to_string (Escape.query Color_scheme_query)
+let request_focus_mode = Escape.to_string (Escape.query Focus_mode)
+let request_sgr_pixels_mode = Escape.to_string (Escape.query Sgr_pixels_mode)
 
 let request_bracketed_paste_mode =
-  Escape.to_string Escape.request_bracketed_paste_mode
+  Escape.to_string (Escape.query Bracketed_paste_mode)
 
-let request_sync_mode = Escape.to_string Escape.request_sync_mode
-let request_unicode_mode = Escape.to_string Escape.request_unicode_mode
+let request_sync_mode = Escape.to_string (Escape.query Sync_mode)
+let request_unicode_mode = Escape.to_string (Escape.query Unicode_mode)
 
 let request_color_scheme_mode =
-  Escape.to_string Escape.request_color_scheme_mode
+  Escape.to_string (Escape.query Color_scheme_mode)
 
 (* Response Markers *)
 
