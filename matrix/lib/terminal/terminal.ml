@@ -33,9 +33,7 @@ type terminal_info = Caps.terminal_info = {
 
 let ignore_unix_errors f x = try f x with Unix_error _ -> ()
 let ignore_exn f x = try f x with _ -> ()
-let osc_prefix = "\027]"
-let osc_suffix = "\007"
-let[@inline] make_osc payload = osc_prefix ^ payload ^ osc_suffix
+let make_osc payload = Ansi.(to_string (osc ~terminator:`Bel ~payload))
 
 type mode = [ `Raw | `Cooked | `Custom of terminal_io -> terminal_io ]
 
@@ -104,8 +102,8 @@ let focus_on = Esc.(to_string (enable Focus_tracking))
 let focus_off = Esc.(to_string (disable Focus_tracking))
 let paste_on = Esc.(to_string (enable Bracketed_paste))
 let paste_off = Esc.(to_string (disable Bracketed_paste))
-let kitty_kb_push flags = Printf.sprintf "\027[>%du" flags
-let kitty_kb_pop = "\027[<u"
+let kitty_kb_push flags = Ansi.(to_string (csi_u_push ~flags))
+let kitty_kb_pop = Ansi.(to_string csi_u_pop)
 let modify_other_keys_on = Esc.(to_string modify_other_keys_on)
 let modify_other_keys_off = Esc.(to_string modify_other_keys_off)
 let cursor_show = Esc.(to_string (enable Cursor_visible))
@@ -245,19 +243,19 @@ let move_cursor ?(visible = true) t ~row ~col =
   let col = max 1 col in
   if visible <> t.cursor.visible then set_cursor_visible t visible;
   set_cursor_state t ~x:col ~y:row ~visible:t.cursor.visible;
-  if t.output_is_tty then send t (Printf.sprintf "\027[%d;%dH" row col)
+  if t.output_is_tty then send t Ansi.(to_string (cursor_position ~row ~col))
 
-let clamp_color_string r g b =
+let cursor_color_osc r g b =
   let r = clamp_color_component r in
   let g = clamp_color_component g in
   let b = clamp_color_component b in
-  Printf.sprintf "\027]12;#%02X%02X%02X\007" r g b
+  make_osc (Printf.sprintf "12;#%02X%02X%02X" r g b)
 
 let set_cursor_visuals t =
   if not t.output_is_tty then ()
   else if t.cursor.visible then (
     let r, g, b, _ = t.cursor.color in
-    send t (clamp_color_string r g b);
+    send t (cursor_color_osc r g b);
     let seq =
       match (t.cursor.style, t.cursor.blinking) with
       | `Block, true -> kitty_cursor_block_blink
@@ -285,7 +283,8 @@ let reset_cursor_color t =
     send t Ansi.(to_string reset_cursor_color_fallback);
     send t Ansi.(to_string reset_cursor_color))
 
-let set_title t title = if t.output_is_tty then send t (make_osc ("0;" ^ title))
+let set_title t title =
+  if t.output_is_tty then send t Ansi.(to_string (set_title ~title))
 let flush t = match t.writer with None -> () | Some w -> Frame_writer.drain w
 
 (* Shared buffer for draining the wakeup pipe, avoids allocation on every

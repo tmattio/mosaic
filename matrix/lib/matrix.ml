@@ -236,6 +236,7 @@ let refresh_render_region t =
 
 (* In raw mode, \n doesn't imply CR, so use explicit CRLF for line breaks *)
 let crlf = "\r\n"
+let erase_entire_line = Ansi.(to_string (erase_line ~mode:`All))
 
 let ensure_trailing_newline s =
   let len = String.length s in
@@ -466,7 +467,7 @@ let submit t =
                 for row = start to start + count - 1 do
                   Terminal.move_cursor t.terminal ~row ~col:1
                     ~visible:(Terminal.cursor_visible t.terminal);
-                  send "\x1b[2K"
+                  send erase_entire_line
                 done
               in
               if t.prev_tui_height > 0 && t.render_offset > t.prev_render_offset
@@ -821,7 +822,7 @@ let close t =
       for row = start_row to height do
         Terminal.move_cursor term ~row ~col:1
           ~visible:(Terminal.cursor_visible term);
-        Terminal.write term "\x1b[2K"
+        Terminal.write term erase_entire_line
       done;
       Terminal.move_cursor term ~row:start_row ~col:1 ~visible:true;
       Terminal.flush term);
