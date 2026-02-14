@@ -529,7 +529,3 @@ let query = function
   | Unicode_mode -> literal "\027[?2027$p"
   | Color_scheme_mode -> literal "\027[?2031$p"
 
-(* Response Markers *)
-
-let bracketed_paste_start : t = literal "\027[200~"
-let bracketed_paste_end : t = literal "\027[201~"

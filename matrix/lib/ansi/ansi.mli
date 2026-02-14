@@ -531,21 +531,6 @@ type query =
 val query : query -> t
 (** [query q] emits the query sequence for [q]. *)
 
-(** {2 Response Markers} *)
-
-val bracketed_paste_start : t
-(** [bracketed_paste_start] is the start marker emitted by the terminal on
-    paste.
-
-    Applications read this sequence, not emit it. Used to detect paste
-    boundaries when bracketed paste mode is enabled. *)
-
-val bracketed_paste_end : t
-(** [bracketed_paste_end] is the end marker emitted by the terminal on paste.
-
-    Applications read this sequence, not emit it. Marks the end of pasted
-    content. *)
-
 (** {1 High-level Convenience}
 
     These functions operate at a higher abstraction level than the escape
