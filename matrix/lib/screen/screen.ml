@@ -99,7 +99,7 @@ let[@inline] add_code_to_writer ~explicit_width ~cell_width pool
         scratch := Bytes.create (max (Bytes.length !scratch * 2) len);
 
       (* Zero-alloc copy from Pool -> Scratch *)
-      let written = Pool.blit pool glyph !scratch 0 in
+      let written = Pool.blit pool glyph !scratch ~pos:0 in
 
       if written <= 0 then Esc.emit (Esc.char ' ') w
       else if explicit_width && cell_width >= 2 then

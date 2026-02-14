@@ -323,7 +323,7 @@ let complex_clustering_behavior () =
 
       (* Verify visual re-assembly *)
       let buf = Bytes.create 32 in
-      let len = blit pool ste_start buf 0 in
+      let len = blit pool ste_start buf ~pos:0 in
       let s_out = Bytes.sub_string buf 0 len in
       equal ~msg:"Ste content" string "स्ते" s_out
   | _ -> fail "Unexpected clustering result for Devanagari"
@@ -361,7 +361,7 @@ let lifecycle_generation_safety () =
   (* 5. SAFETY CHECK: Accessing g1 (Stale) should NOT return "🛸" *)
   equal ~msg:"stale string empty" string "" (to_string pool g1);
   let buf = Bytes.create 8 in
-  equal ~msg:"stale blit is empty" int 0 (blit pool g1 buf 0)
+  equal ~msg:"stale blit is empty" int 0 (blit pool g1 buf ~pos:0)
 
 let pool_resize_stress () =
   let pool = create_pool () in
@@ -391,7 +391,7 @@ let copy_safety () =
 
   let g = intern p1 "abc" in
   (* Simple *)
-  let g_copy = copy p1 g p2 in
+  let g_copy = copy ~src:p1 g ~dst:p2 in
   equal ~msg:"simple copy identity" int g g_copy;
 
   let complex = intern p1 "🚀" in
@@ -401,7 +401,7 @@ let copy_safety () =
   (* Force slot reuse to bump generation, then copying stale should return
      empty *)
   let _reused = intern p1 "reused" in
-  let stale_copy = copy p1 complex p2 in
+  let stale_copy = copy ~src:p1 complex ~dst:p2 in
   is_true ~msg:"copied stale is empty" (is_empty stale_copy)
 
 let decref_deduplicates_free_list () =

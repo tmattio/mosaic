@@ -787,7 +787,7 @@ let blit ~src ~dst =
             | None ->
                 (* Copy glyph to destination pool - src_c is a valid Glyph.t *)
                 let dst_glyph =
-                  Glyph.copy src.glyph_pool src_c dst.glyph_pool
+                  Glyph.copy ~src:src.glyph_pool src_c ~dst:dst.glyph_pool
                 in
                 Hashtbl.add cache src_payload dst_glyph;
                 if Cell_code.is_start src_c then dst_glyph
@@ -940,7 +940,7 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
                     ~right:(Cell_code.right_extent code)
             | None ->
                 (* code is a valid Glyph.t due to aligned formats *)
-                let dst_glyph = Glyph.copy src.glyph_pool code dst.glyph_pool in
+                let dst_glyph = Glyph.copy ~src:src.glyph_pool code ~dst:dst.glyph_pool in
                 Hashtbl.add grapheme_map payload dst_glyph;
                 if Cell_code.is_start code then dst_glyph
                 else
@@ -1190,7 +1190,7 @@ let draw_text ?style ?(tab_width = 2) t ~x ~y ~text =
               else
                 let g =
                   Glyph.intern t.glyph_pool ~width_method:t.width_method
-                    ~tab_width:tabw ~width:w ~off:offset ~len text
+                    ~tab_width:tabw ~width:w ~pos:offset ~len text
                 in
                 if Glyph.is_continuation g then () else writer g)
       with Exit -> ()
@@ -1592,7 +1592,7 @@ let snapshot ?(reset = true) t : string =
                   if len > Bytes.length !scratch then
                     scratch :=
                       Bytes.create (max (Bytes.length !scratch * 2) len);
-                  let written = Glyph.blit pool code !scratch 0 in
+                  let written = Glyph.blit pool code !scratch ~pos:0 in
                   Ansi.emit
                     (Ansi.bytes !scratch ~off:0 ~len:written)
                     w));

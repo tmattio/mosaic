@@ -125,11 +125,11 @@ val intern :
   ?width_method:width_method ->
   ?tab_width:int ->
   ?width:int ->
-  ?off:int ->
+  ?pos:int ->
   ?len:int ->
   string ->
   t
-(** [intern pool ?width_method ?tab_width ?width ?off ?len str] creates a single
+(** [intern pool ?width_method ?tab_width ?width ?pos ?len str] creates a single
     glyph from [str].
 
     Returns the empty glyph (0) for control characters or zero-width sequences.
@@ -195,16 +195,16 @@ val is_simple : t -> bool
 
 (** {1 Data Retrieval} *)
 
-val blit : pool -> t -> bytes -> int -> int
-(** [blit pool glyph buf offset] copies UTF-8 bytes of [glyph] to [buf] at
-    [offset].
+val blit : pool -> t -> bytes -> pos:int -> int
+(** [blit pool glyph buf ~pos] copies UTF-8 bytes of [glyph] to [buf] at
+    [pos].
 
     Returns the number of bytes written. The empty glyph (0) is treated as
     U+0000 and writes 1 byte. Returns 0 for stale Complex IDs or insufficient
     buffer space. *)
 
-val copy : pool -> t -> pool -> t
-(** [copy src_pool glyph dst_pool] copies [glyph] from [src_pool] to [dst_pool].
+val copy : src:pool -> t -> dst:pool -> t
+(** [copy ~src glyph ~dst] copies [glyph] from [src] pool to [dst] pool.
 
     Returns [glyph] unchanged if it is a Simple glyph, or a new Complex glyph
     interned in [dst_pool]. Returns the empty glyph (0) for stale IDs. *)

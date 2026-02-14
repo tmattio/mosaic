@@ -362,35 +362,35 @@ let decref pool c =
 
 (* Data Retrieval *)
 
-let blit pool c buf off =
+let blit pool c buf ~pos =
   if is_simple c then
     let u = Uchar.unsafe_of_int c in
     let len = Uchar.utf_8_byte_length u in
-    if len > Bytes.length buf - off then 0 else Bytes.set_utf_8_uchar buf off u
+    if len > Bytes.length buf - pos then 0 else Bytes.set_utf_8_uchar buf pos u
   else
     let idx = validate_complex pool c in
     if idx < 0 then 0
     else
       let len = Array.unsafe_get pool.lengths idx in
-      if len > Bytes.length buf - off then 0
+      if len > Bytes.length buf - pos then 0
       else
         let src_off = Array.unsafe_get pool.offsets idx in
-        Bytes.blit ~src:pool.storage ~src_pos:src_off ~dst:buf ~dst_pos:off ~len;
+        Bytes.blit ~src:pool.storage ~src_pos:src_off ~dst:buf ~dst_pos:pos ~len;
         len
 
-let copy src_pool c dst_pool =
+let copy ~src c ~dst =
   if is_simple c then c
   else
-    let idx = validate_complex src_pool c in
+    let idx = validate_complex src c in
     if idx < 0 then 0
     else
-      let len = Array.unsafe_get src_pool.lengths idx in
-      let src_off = Array.unsafe_get src_pool.offsets idx in
-      if src_off + len > Bytes.length src_pool.storage then 0
+      let len = Array.unsafe_get src.lengths idx in
+      let src_off = Array.unsafe_get src.offsets idx in
+      if src_off + len > Bytes.length src.storage then 0
       else (
-        let dst_id, cursor = alloc_slot dst_pool len in
-        let dst_gen = Array.unsafe_get dst_pool.generations dst_id in
-        Bytes.blit ~src:src_pool.storage ~src_pos:src_off ~dst:dst_pool.storage
+        let dst_id, cursor = alloc_slot dst len in
+        let dst_gen = Array.unsafe_get dst.generations dst_id in
+        Bytes.blit ~src:src.storage ~src_pos:src_off ~dst:dst.storage
           ~dst_pos:cursor ~len;
         if is_continuation c then
           pack_continuation ~idx:dst_id ~gen:dst_gen ~left:(left_extent c)
@@ -475,10 +475,10 @@ let intern_core pool method_ tab_width precomputed_width off len str =
       pack_start idx (Array.unsafe_get pool.generations idx) w
 
 let intern pool ?(width_method = `Unicode) ?(tab_width = default_tab_width)
-    ?width ?(off = 0) ?len str =
+    ?width ?(pos = 0) ?len str =
   let tab_width = normalize_tab_width tab_width in
-  let len = match len with Some l -> l | None -> String.length str - off in
-  intern_core pool width_method tab_width width off len str
+  let len = match len with Some l -> l | None -> String.length str - pos in
+  intern_core pool width_method tab_width width pos len str
 
 let intern_uchar pool uchar =
   let u = Uchar.to_int uchar in
