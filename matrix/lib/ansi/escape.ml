@@ -504,11 +504,9 @@ let modify_other_keys_off : t = literal "\027[>4;0m"
 
 let request_cursor_position : t = literal "\027[6n"
 let request_pixel_size : t = literal "\027[14t"
-let primary_device_attrs : t = literal "\027[c"
-let request_device_attributes = primary_device_attrs
+let request_device_attributes : t = literal "\027[c"
 let request_tertiary_device_attributes : t = literal "\027[=c"
-let xtversion : t = literal "\027[>0q"
-let request_terminal_identity = xtversion
+let request_terminal_identity : t = literal "\027[>0q"
 let request_device_status : t = literal "\027[5n"
 
 (* Feature and Protocol Support *)
