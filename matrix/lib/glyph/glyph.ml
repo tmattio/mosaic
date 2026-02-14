@@ -468,34 +468,21 @@ let intern_core pool method_ tab_width precomputed_width off len str =
     in
     if w <= 0 then 0 else b
   else
-    match precomputed_width with
-    | Some w ->
-        if w <= 0 then 0
-        else
-          let idx = alloc_string pool str off len in
-          pack_start idx (Array.unsafe_get pool.generations idx) w
-    | None ->
-        let first_b = Char.code (String.unsafe_get str off) in
-        if first_b >= 128 then
-          let w = grapheme_width ~method_ ~tab_width str off len in
-          if w <= 0 then 0
+    let w =
+      match precomputed_width with
+      | Some w -> w
+      | None ->
+          let first_b = Char.code (String.unsafe_get str off) in
+          if first_b >= 128 then grapheme_width ~method_ ~tab_width str off len
           else
-            let idx = alloc_string pool str off len in
-            pack_start idx (Array.unsafe_get pool.generations idx) w
-        else
-          let limit = off + len in
-          let ascii_w = ascii_width_loop str limit tab_width off 0 in
-          if ascii_w >= 0 then
-            if ascii_w = 0 then 0
-            else
-              let idx = alloc_string pool str off len in
-              pack_start idx (Array.unsafe_get pool.generations idx) ascii_w
-          else
-            let w = grapheme_width ~method_ ~tab_width str off len in
-            if w <= 0 then 0
-            else
-              let idx = alloc_string pool str off len in
-              pack_start idx (Array.unsafe_get pool.generations idx) w
+            let ascii_w = ascii_width_loop str (off + len) tab_width off 0 in
+            if ascii_w >= 0 then ascii_w
+            else grapheme_width ~method_ ~tab_width str off len
+    in
+    if w <= 0 then 0
+    else
+      let idx = alloc_string pool str off len in
+      pack_start idx (Array.unsafe_get pool.generations idx) w
 
 let intern pool ?(width_method = `Unicode) ?(tab_width = default_tab_width)
     ?width ?(off = 0) ?len str =
