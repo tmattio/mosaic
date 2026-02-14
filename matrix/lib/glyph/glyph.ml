@@ -674,11 +674,18 @@ let rec measure_segmented seg str len tab_width i total g_w flags =
     let d = String.get_utf_8_uchar str i in
     let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
     let next = i + Uchar.utf_decode_length d in
-    if Uuseg_grapheme_cluster.check_boundary seg (Uchar.unsafe_of_int cp) then
+    (* Single property lookup yields both boundary decision and width. *)
+    let bw =
+      Uuseg_grapheme_cluster.check_boundary_with_width seg
+        (Uchar.unsafe_of_int cp)
+    in
+    let cp_w =
+      if cp = 0x09 then tab_width else (bw land 3) - 1
+    in
+    if bw land 4 <> 0 then
       let new_total =
         if flags land ms_has_width <> 0 then total + g_w else total
       in
-      let cp_w = codepoint_width_unicode ~tab_width cp in
       if cp = 0xFE0F then
         measure_segmented seg str len tab_width next new_total 0 0
       else if is_virama cp then
@@ -698,7 +705,6 @@ let rec measure_segmented seg str len tab_width i total g_w flags =
       measure_segmented seg str len tab_width next total g_w
         (flags lor ms_virama)
     else if is_regional_indicator cp then
-      let cp_w = codepoint_width_unicode ~tab_width cp in
       if flags land ms_ri_pair <> 0 then
         measure_segmented seg str len tab_width next total (g_w + cp_w)
           (ms_has_width land lnot ms_virama)
@@ -713,18 +719,15 @@ let rec measure_segmented seg str len tab_width i total g_w flags =
       && flags land ms_virama <> 0
       && is_devanagari_base cp
     then
-      let cp_w = codepoint_width_unicode ~tab_width cp in
       let add = if cp <> 0x0930 && cp_w > 0 then cp_w else 0 in
       measure_segmented seg str len tab_width next total (g_w + add)
         (flags lor ms_has_width land lnot ms_virama)
+    else if flags land ms_has_width = 0 && cp_w > 0 then
+      measure_segmented seg str len tab_width next total cp_w
+        (flags lor ms_has_width land lnot ms_virama)
     else
-      let cp_w = codepoint_width_unicode ~tab_width cp in
-      if flags land ms_has_width = 0 && cp_w > 0 then
-        measure_segmented seg str len tab_width next total cp_w
-          (flags lor ms_has_width land lnot ms_virama)
-      else
-        measure_segmented seg str len tab_width next total g_w
-          (flags land lnot ms_virama)
+      measure_segmented seg str len tab_width next total g_w
+        (flags land lnot ms_virama)
 
 let measure ?(width_method = `Unicode) ?(tab_width = default_tab_width) str =
   let tab_width = normalize_tab_width tab_width in
@@ -739,10 +742,11 @@ let measure ?(width_method = `Unicode) ?(tab_width = default_tab_width) str =
         Uuseg_grapheme_cluster.set_ignore_zwj seg (width_method = `No_zwj);
         let d = String.get_utf_8_uchar str 0 in
         let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
-        let _ =
-          Uuseg_grapheme_cluster.check_boundary seg (Uchar.unsafe_of_int cp)
+        let bw =
+          Uuseg_grapheme_cluster.check_boundary_with_width seg
+            (Uchar.unsafe_of_int cp)
         in
-        let w = codepoint_width_unicode ~tab_width cp in
+        let w = if cp = 0x09 then tab_width else (bw land 3) - 1 in
         let init_w = if w > 0 then w else 0 in
         let init_flags =
           (if w > 0 then ms_has_width else 0)

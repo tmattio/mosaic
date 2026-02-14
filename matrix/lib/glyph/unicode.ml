@@ -131,3 +131,9 @@ let[@inline] tty_width_hint u =
    Returns: bits 0-4 = gcb, bits 5-6 = incb, bit 7 = extpic *)
 let[@inline] grapheme_props u =
   Bigarray.Array1.unsafe_get prop_table (pack_u (Uchar.to_int u)) land 0xFF
+
+(* Full packed lookup - returns all properties including width in one access.
+   Returns: bits 0-4 = gcb, bits 5-6 = incb, bit 7 = extpic,
+            bits 8-9 = width_enc (0=-1, 1=0, 2=1, 3=2) *)
+let[@inline] all_props u =
+  Bigarray.Array1.unsafe_get prop_table (pack_u (Uchar.to_int u))

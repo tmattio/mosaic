@@ -39,4 +39,9 @@ val check_boundary : t -> Uchar.t -> bool
     This is a zero-allocation alternative to {!add} for performance-critical
     code. The first character always returns [true] (GB1). *)
 
+val check_boundary_with_width : t -> Uchar.t -> int
+(** [check_boundary_with_width s u] performs a boundary check and extracts the
+    display width from a single property table lookup. Returns a packed int:
+    bit 2 = is_boundary, bits 0-1 = width encoding (0→-1, 1→0, 2→1, 3→2). *)
+
 val add : t -> [ `Await | `End | `Uchar of Uchar.t ] -> Uuseg_base.ret
