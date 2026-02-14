@@ -232,6 +232,14 @@ val to_rgba_f : t -> float * float * float * float
     {b Allocates} a 4-tuple. For {!Default}, returns [(0.0, 0.0, 0.0, 0.0)]; the
     zero alpha plays the same sentinel role as in {!to_rgba}. *)
 
+val with_rgba_f : t -> (float -> float -> float -> float -> 'a) -> 'a
+(** [with_rgba_f color f] calls [f r g b a] with normalized RGBA floats in
+    \[0.0, 1.0\].
+
+    {b Zero-allocation}: avoids the 4-tuple allocated by {!to_rgba_f}.
+    Equivalent to [let r, g, b, a = to_rgba_f color in f r g b a] but without
+    the intermediate tuple. *)
+
 val to_rgba : t -> int * int * int * int
 (** [to_rgba color] converts to RGBA integers in \[0, 255\].
 

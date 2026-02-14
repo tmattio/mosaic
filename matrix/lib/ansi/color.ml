@@ -287,6 +287,14 @@ let[@inline] rgba_floats color =
   let a = float_of_byte (packed land 0xFF) in
   (r, g, b, a)
 
+let[@inline] with_rgba_f color f =
+  let packed = rgba_packed color in
+  let r = float_of_byte ((packed lsr 24) land 0xFF) in
+  let g = float_of_byte ((packed lsr 16) land 0xFF) in
+  let b = float_of_byte ((packed lsr 8) land 0xFF) in
+  let a = float_of_byte (packed land 0xFF) in
+  f r g b a
+
 let blend ?(mode = `Perceptual) ~src ~dst () =
   (* Extract components - rgba_floats returns a tuple but we need the values *)
   let sr, sg, sb, sa_f = rgba_floats src in
