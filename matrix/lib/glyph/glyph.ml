@@ -149,14 +149,13 @@ let rec grapheme_width_unicode_loop str limit tab_width i width flags =
         (flags land lnot width_flag_virama)
 
 let rec grapheme_width_wcwidth_loop str limit tab_width i acc =
-  if i >= limit then if acc < 0 then 0 else acc
+  if i >= limit then acc
   else
     let d = String.get_utf_8_uchar str i in
     let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
     let next = i + Uchar.utf_decode_length d in
-    let w = codepoint_width_wcwidth ~tab_width cp in
     grapheme_width_wcwidth_loop str limit tab_width next
-      (acc + if w < 0 then 0 else w)
+      (acc + codepoint_width_wcwidth ~tab_width cp)
 
 let grapheme_width ~method_ ~tab_width str off len =
   let limit = off + len in
@@ -348,7 +347,8 @@ let[@inline] width ?(tab_width = default_tab_width) c =
 (* Reference Counting *)
 
 let incref pool c =
-  if not (is_simple c) then
+  if is_simple c then ()
+  else
     let idx = validate_complex pool c in
     if idx >= 0 then
       Array.unsafe_set pool.refcounts idx
@@ -650,25 +650,16 @@ let iter_graphemes f str =
 let rec measure_ascii_tail str len tab_width i total =
   if i >= len then total
   else
-    let b = Char.code (String.unsafe_get str i) in
-    let w = ascii_width ~tab_width b in
-    measure_ascii_tail str len tab_width (i + 1) (total + if w > 0 then w else 0)
+    let w = ascii_width ~tab_width (Char.code (String.unsafe_get str i)) in
+    measure_ascii_tail str len tab_width (i + 1) (total + w)
 
 let rec measure_ascii str len tab_width i total =
   if i + 4 <= len then
-    let b0 = Char.code (String.unsafe_get str i) in
-    let b1 = Char.code (String.unsafe_get str (i + 1)) in
-    let b2 = Char.code (String.unsafe_get str (i + 2)) in
-    let b3 = Char.code (String.unsafe_get str (i + 3)) in
-    let w0 = ascii_width ~tab_width b0 in
-    let w1 = ascii_width ~tab_width b1 in
-    let w2 = ascii_width ~tab_width b2 in
-    let w3 = ascii_width ~tab_width b3 in
-    let add0 = if w0 > 0 then w0 else 0 in
-    let add1 = if w1 > 0 then w1 else 0 in
-    let add2 = if w2 > 0 then w2 else 0 in
-    let add3 = if w3 > 0 then w3 else 0 in
-    measure_ascii str len tab_width (i + 4) (total + add0 + add1 + add2 + add3)
+    let w0 = ascii_width ~tab_width (Char.code (String.unsafe_get str i)) in
+    let w1 = ascii_width ~tab_width (Char.code (String.unsafe_get str (i + 1))) in
+    let w2 = ascii_width ~tab_width (Char.code (String.unsafe_get str (i + 2))) in
+    let w3 = ascii_width ~tab_width (Char.code (String.unsafe_get str (i + 3))) in
+    measure_ascii str len tab_width (i + 4) (total + w0 + w1 + w2 + w3)
   else measure_ascii_tail str len tab_width i total
 
 let rec measure_wcwidth str len tab_width i total =
@@ -684,8 +675,7 @@ let rec measure_wcwidth str len tab_width i total =
    State flags packed in [flags]:
    - bit 0: has_width (grapheme has a base width)
    - bit 1: ri_pair (last RI was first of a pair)
-   - bit 2: virama (last codepoint was a virama)
-   - bit 3: vs16 (last codepoint was VS16) *)
+   - bit 2: virama (last codepoint was a virama) *)
 let ms_has_width = 1
 let ms_ri_pair = 2
 let ms_virama = 4
