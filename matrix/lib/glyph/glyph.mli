@@ -191,8 +191,9 @@ val blit : pool -> t -> bytes -> int -> int
 (** [blit pool glyph buf offset] copies UTF-8 bytes of [glyph] to [buf] at
     [offset].
 
-    Returns the number of bytes written. Returns 0 for stale IDs, empty glyphs,
-    or insufficient buffer space. *)
+    Returns the number of bytes written. The empty glyph (0) is treated as
+    U+0000 and writes 1 byte. Returns 0 for stale Complex IDs or insufficient
+    buffer space. *)
 
 val copy : pool -> t -> pool -> t
 (** [copy src_pool glyph dst_pool] copies [glyph] from [src_pool] to [dst_pool].
@@ -204,15 +205,17 @@ val length : pool -> t -> int
 (** [length pool glyph] returns the byte length of the UTF-8 sequence for
     [glyph].
 
-    Returns 1 for Simple glyphs, the actual byte length for Complex glyphs, and
-    0 for stale IDs or empty glyphs. *)
+    Returns 1 for Simple glyphs (including the empty glyph, which encodes as
+    U+0000), the actual byte length for Complex glyphs, and 0 for stale Complex
+    IDs. *)
 
 val to_string : pool -> t -> string
 (** [to_string pool glyph] allocates a new string containing the UTF-8 sequence
     for [glyph].
 
-    Returns a single-character string for Simple glyphs, the full sequence for
-    Complex glyphs, and an empty string for stale IDs or empty glyphs. *)
+    Returns a single-character string for Simple glyphs (including ["\000"] for
+    the empty glyph), the full sequence for Complex glyphs, and an empty string
+    for stale Complex IDs. *)
 
 (** {1 Utilities} *)
 
