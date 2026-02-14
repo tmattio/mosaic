@@ -1173,7 +1173,7 @@ let draw_text ?style ?(tab_width = 2) t ~x ~y ~text =
       let stop = ref false in
       try
         Glyph.iter_grapheme_info ~width_method:t.width_method ~tab_width:tabw
-          text (fun ~offset ~len ~width:w ->
+          (fun ~offset ~len ~width:w ->
             if !stop || w <= 0 then ()
             else
               let start_x = !cur_x in
@@ -1193,6 +1193,7 @@ let draw_text ?style ?(tab_width = 2) t ~x ~y ~text =
                     ~tab_width:tabw ~width:w ~pos:offset ~len text
                 in
                 if Glyph.is_continuation g then () else writer g)
+          text
       with Exit -> ()
 
 (* ---- Box Drawing ---- *)

@@ -496,8 +496,8 @@ let intern_uchar pool uchar =
 
 (* Encoding (string -> glyph stream) *)
 
-let encode pool ?(width_method = `Unicode) ?(tab_width = default_tab_width) str
-    f =
+let encode pool ?(width_method = `Unicode) ?(tab_width = default_tab_width) f
+    str =
   let tab_width = normalize_tab_width tab_width in
   let len = String.length str in
   let seg = Uuseg_grapheme_cluster.create () in
@@ -550,7 +550,7 @@ let encode pool ?(width_method = `Unicode) ?(tab_width = default_tab_width) str
   loop 0
 
 let iter_grapheme_info ?(width_method = `Unicode) ?(tab_width = default_tab_width)
-    str f =
+    f str =
   let tab_width = normalize_tab_width tab_width in
   let len = String.length str in
   if len = 0 then ()

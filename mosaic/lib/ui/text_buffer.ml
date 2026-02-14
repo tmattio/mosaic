@@ -404,12 +404,13 @@ let encode_chunk t chunk =
   let text = Bytes.to_string chunk.Chunk.text in
   let encode_segment segment =
     Glyph.encode t.pool ~width_method:t.width_method ~tab_width:t.tab_width
-      segment (fun code ->
+      (fun code ->
         let width = Glyph.width code in
         (* Keep continuations with width 0 so indices stay aligned. *)
         if width > 0 || Glyph.is_continuation code then (
           if Glyph.is_start code then Glyph.incref t.pool code;
           push code width style))
+      segment
   in
   (* Track Windows CRLF and old Mac CR line breaks: normalize to a single LF. *)
   let prev_was_cr = ref false in

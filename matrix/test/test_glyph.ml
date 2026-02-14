@@ -5,7 +5,7 @@ open Glyph
 
 let encode_to_list pool ~width_method ~tab_width str =
   let lst = ref [] in
-  encode pool ~width_method ~tab_width str (fun cell -> lst := cell :: !lst);
+  encode pool ~width_method ~tab_width (fun cell -> lst := cell :: !lst) str;
   List.rev !lst
 
 let check_width msg expected actual = equal ~msg int expected actual

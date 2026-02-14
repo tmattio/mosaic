@@ -109,7 +109,7 @@ let encode_bench name method_ text =
   in
   Ubench.create name (fun () ->
       cols := 0;
-      G.encode pool ~width_method:method_ ~tab_width:2 text callback;
+      G.encode pool ~width_method:method_ ~tab_width:2 callback text;
       ignore (Sys.opaque_identity !cols))
 
 (* Pool-level benchmarks *)

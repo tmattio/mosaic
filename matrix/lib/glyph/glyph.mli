@@ -14,8 +14,9 @@
 
     {[
       let pool = create_pool () in
-      encode pool ~width_method:`Unicode ~tab_width:2 "Hello 👋 World"
+      encode pool ~width_method:`Unicode ~tab_width:2
         (fun glyph -> Printf.printf "%s " (to_string pool glyph))
+        "Hello 👋 World"
       (* Output: H e l l o 👋 W o r l d *)
     ]}
 
@@ -100,10 +101,10 @@ val encode :
   pool ->
   ?width_method:width_method ->
   ?tab_width:int ->
-  string ->
   (t -> unit) ->
+  string ->
   unit
-(** [encode pool ?width_method ?tab_width str f] streams glyphs from [str] via
+(** [encode pool ?width_method ?tab_width f str] streams glyphs from [str] via
     callback [f].
 
     Defaults: [width_method = `Unicode], [tab_width = 2].
@@ -146,10 +147,10 @@ val intern :
 val iter_grapheme_info :
   ?width_method:width_method ->
   ?tab_width:int ->
-  string ->
   (offset:int -> len:int -> width:int -> unit) ->
+  string ->
   unit
-(** [iter_grapheme_info ?width_method ?tab_width str f] walks grapheme clusters
+(** [iter_grapheme_info ?width_method ?tab_width f str] walks grapheme clusters
     in [str] and calls [f] with their byte [offset], byte [len], and display
     [width].
 
