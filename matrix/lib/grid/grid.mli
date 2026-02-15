@@ -247,22 +247,23 @@ val draw_box :
   y:int ->
   width:int ->
   height:int ->
-  border_chars:Border.t ->
-  border_sides:Border.side list ->
-  border_style:Ansi.Style.t ->
-  bg_color:Ansi.Color.t ->
-  should_fill:bool ->
+  ?border:Border.t ->
+  ?sides:Border.side list ->
+  ?style:Ansi.Style.t ->
+  ?fill:Ansi.Color.t ->
   ?title:string ->
   ?title_alignment:[ `Left | `Center | `Right ] ->
   ?title_style:Ansi.Style.t ->
   unit ->
   unit
-(** [draw_box t ~x ~y ~width ~height ~border_chars ~border_sides ~border_style
-     ~bg_color ~should_fill ()] draws a box with Unicode borders.
+(** [draw_box t ~x ~y ~width ~height ()] draws a box with Unicode borders.
 
-    When [should_fill] is [true], the interior is filled with [bg_color] before
-    borders are rendered. Border cells use [bg_color] as background regardless
-    of [border_style]'s background setting.
+    @param border Character set for borders. Default {!Border.single}.
+    @param sides Sides to draw. Default {!Border.all} (all four).
+    @param style Style for border characters. Default {!Ansi.Style.default}.
+    @param fill When provided, fills the interior and sets the border cell
+      background to this color. When absent, no fill is applied and border
+      cells use the [style]'s background (or terminal default).
 
     Titles appear on the top border when [`Top] is included and the box is wide
     enough (≥ title width + 4). Title alignment defaults to [`Left] with 2-cell

@@ -34,9 +34,7 @@ let draw_canvas model grid ~width ~height =
 
   (* Draw border box *)
   let border_style = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:8) () in
-  Grid.draw_box grid ~x:0 ~y:0 ~width ~height ~border_chars:Grid.Border.single
-    ~border_sides:[ `Top; `Right; `Bottom; `Left ]
-    ~border_style ~bg_color:Ansi.Color.default ~should_fill:false ();
+  Grid.draw_box grid ~x:0 ~y:0 ~width ~height ~style:border_style ();
 
   (* Draw coordinate axes *)
   let axis_style = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:8) () in

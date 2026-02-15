@@ -1033,8 +1033,9 @@ let draw_text ?style ?(tab_width = 2) t ~x ~y ~text =
 
 (* {1 Box drawing} *)
 
-let draw_box t ~x ~y ~width ~height ~border_chars ~border_sides ~border_style
-    ~bg_color ~should_fill ?title ?title_alignment ?title_style () =
+let draw_box t ~x ~y ~width ~height ?(border = Border.single)
+    ?(sides = Border.all) ?(style = Ansi.Style.default) ?fill ?title
+    ?title_alignment ?title_style () =
   if width <= 0 || height <= 0 then ()
   else
     let target = Rect.{ x; y; width; height } in
@@ -1045,8 +1046,18 @@ let draw_box t ~x ~y ~width ~height ~border_chars ~border_sides ~border_style
     in
     if not scissor_ok then ()
     else begin
+      let border_chars = border in
+      let should_fill = Option.is_some fill in
+      let bg_color =
+        match fill with
+        | Some c -> c
+        | None -> (
+            match style.bg with
+            | Some c -> c
+            | None -> Ansi.Color.default)
+      in
       let open Border in
-      let has side = List.mem side border_sides in
+      let has side = List.mem side sides in
       let sx = max 0 x and sy = max 0 y in
       let ex = min (t.width - 1) (x + width - 1) in
       let ey = min (t.height - 1) (y + height - 1) in
@@ -1064,12 +1075,12 @@ let draw_box t ~x ~y ~width ~height ~border_chars ~border_sides ~border_style
       end;
 
       let b_fg_r, b_fg_g, b_fg_b, b_fg_a =
-        match border_style.Ansi.Style.fg with
+        match style.Ansi.Style.fg with
         | Some c -> Ansi.Color.to_rgba_f c
         | None -> (1., 1., 1., 1.)
       in
       let b_bg_r, b_bg_g, b_bg_b, b_bg_a = Ansi.Color.to_rgba_f bg_color in
-      let b_attrs = Ansi.Attr.pack border_style.attrs in
+      let b_attrs = Ansi.Attr.pack style.attrs in
 
       let draw_b bx by code =
         if bx >= 0 && by >= 0 && bx < t.width && by < t.height
@@ -1150,12 +1161,12 @@ let draw_box t ~x ~y ~width ~height ~border_chars ~border_sides ~border_style
               | Some `Center -> (width - w) / 2
               | _ -> 2
             in
-            let style =
+            let title_s =
               match title_style with
               | Some s -> Ansi.Style.bg bg_color s
-              | None -> Ansi.Style.make ?fg:border_style.fg ~bg:bg_color ()
+              | None -> Ansi.Style.make ?fg:style.fg ~bg:bg_color ()
             in
-            draw_text t ~x:(x + pad) ~y ~text:txt ~style
+            draw_text t ~x:(x + pad) ~y ~text:txt ~style:title_s
       | _ -> ())
     end
 

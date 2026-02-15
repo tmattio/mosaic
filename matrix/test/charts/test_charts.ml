@@ -6,11 +6,7 @@ let render_boxed ~width ~height draw =
   let outer_height = height + 2 in
   let grid = Grid.create ~width:outer_width ~height:outer_height () in
   (* Draw outer border *)
-  Grid.draw_box grid ~x:0 ~y:0 ~width:outer_width ~height:outer_height
-    ~border_chars:Grid.Border.single
-    ~border_sides:[ `Top; `Right; `Bottom; `Left ]
-    ~border_style:Ansi.Style.default ~bg_color:Ansi.Color.default
-    ~should_fill:false ();
+  Grid.draw_box grid ~x:0 ~y:0 ~width:outer_width ~height:outer_height ();
   (* Draw inner content with scissor clipping *)
   let rect : Grid.clip_rect = { x = 1; y = 1; width; height } in
   Grid.with_scissor grid rect (fun () ->
@@ -473,11 +469,7 @@ let%expect_test "stacked bars horizontal (no axis)" =
 let%expect_test "sparkline bars" =
   (* Sparkline with label above *)
   let grid = Grid.create ~width:22 ~height:5 () in
-  Grid.draw_box grid ~x:0 ~y:0 ~width:22 ~height:5
-    ~border_chars:Grid.Border.single
-    ~border_sides:[ `Top; `Right; `Bottom; `Left ]
-    ~border_style:Ansi.Style.default ~bg_color:Ansi.Color.default
-    ~should_fill:false ();
+  Grid.draw_box grid ~x:0 ~y:0 ~width:22 ~height:5 ();
   Grid.draw_text grid ~x:1 ~y:1 ~text:"CPU Usage:";
   Sparkline.draw_values ~kind:`Bars ~x:1 ~y:2
     [ 1.0; 3.0; 2.0; 5.0; 4.0; 3.0; 2.0; 4.0 ] grid ~width:15 ~height:1;

@@ -170,10 +170,8 @@ let box_title_left_aligned () =
     }
   in
   let style = Ansi.Style.default in
-  Grid.draw_box grid ~x:0 ~y:0 ~width:12 ~height:3 ~border_chars
-    ~border_sides:[ `Top; `Left; `Right ] ~border_style:style
-    ~bg_color:(Ansi.Color.of_rgba 0 0 0 0)
-    ~should_fill:false ~title:"Title" ();
+  Grid.draw_box grid ~x:0 ~y:0 ~width:12 ~height:3 ~border:border_chars
+    ~sides:[ `Top; `Left; `Right ] ~style ~title:"Title" ();
   equal ~msg:"T at x=2" int (Char.code 'T') (read_char grid 2 0)
 
 let diff_detects_single_rgb_step () =
@@ -382,10 +380,8 @@ let draw_box_left_border_spans_full_height () =
       cross = 0;
     }
   in
-  Grid.draw_box grid ~x:0 ~y:0 ~width:3 ~height:4 ~border_chars
-    ~border_sides:[ `Left ] ~border_style:Ansi.Style.default
-    ~bg_color:(Ansi.Color.of_rgba 0 0 0 0)
-    ~should_fill:true ();
+  Grid.draw_box grid ~x:0 ~y:0 ~width:3 ~height:4 ~border:border_chars
+    ~sides:[ `Left ] ~fill:(Ansi.Color.of_rgba 0 0 0 0) ();
   let pipe = 0x2502 in
   equal ~msg:"top cell" int pipe (read_char grid 0 0);
   equal ~msg:"middle cell" int pipe (read_char grid 0 1);
@@ -1004,10 +1000,8 @@ let tests =
     test "box partially off left edge uses correct corners" (fun () ->
         let grid = Grid.create ~width:3 ~height:3 () in
         let border_chars = Grid.Border.single in
-        Grid.draw_box grid ~x:(-1) ~y:0 ~width:4 ~height:3 ~border_chars
-          ~border_sides:[ `Top; `Right; `Bottom; `Left ]
-          ~border_style:Ansi.Style.default ~bg_color:Ansi.Color.black
-          ~should_fill:false ();
+        Grid.draw_box grid ~x:(-1) ~y:0 ~width:4 ~height:3 ~border:border_chars
+          ();
         (* Box is clipped on left, so no left corners are drawn *)
         equal ~msg:"horizontal at (0,0)" int border_chars.horizontal
           (read_char grid 0 0);
@@ -1020,9 +1014,8 @@ let tests =
     test "box partially off top edge extends verticals down" (fun () ->
         let grid = Grid.create ~width:3 ~height:3 () in
         let border_chars = Grid.Border.single in
-        Grid.draw_box grid ~x:0 ~y:(-1) ~width:3 ~height:4 ~border_chars
-          ~border_sides:[ `Top; `Left ] ~border_style:Ansi.Style.default
-          ~bg_color:Ansi.Color.black ~should_fill:false ();
+        Grid.draw_box grid ~x:0 ~y:(-1) ~width:3 ~height:4 ~border:border_chars
+          ~sides:[ `Top; `Left ] ();
         (* Top not drawn, so verticals should extend to top of screen *)
         equal ~msg:"left border at (0,0)" int border_chars.vertical
           (read_char grid 0 0);
@@ -1033,10 +1026,8 @@ let tests =
     test "box partially off right edge uses correct right corners" (fun () ->
         let grid = Grid.create ~width:3 ~height:3 () in
         let border_chars = Grid.Border.single in
-        Grid.draw_box grid ~x:1 ~y:0 ~width:3 ~height:3 ~border_chars
-          ~border_sides:[ `Top; `Right; `Bottom; `Left ]
-          ~border_style:Ansi.Style.default ~bg_color:Ansi.Color.black
-          ~should_fill:false ();
+        Grid.draw_box grid ~x:1 ~y:0 ~width:3 ~height:3 ~border:border_chars
+          ();
         (* Box extends beyond right edge, so no right corners are drawn *)
         equal ~msg:"horizontal at (2,0)" int border_chars.horizontal
           (read_char grid 2 0);
@@ -1045,10 +1036,8 @@ let tests =
     test "box fully inside grid works normally" (fun () ->
         let grid = Grid.create ~width:5 ~height:5 () in
         let border_chars = Grid.Border.single in
-        Grid.draw_box grid ~x:1 ~y:1 ~width:3 ~height:3 ~border_chars
-          ~border_sides:[ `Top; `Right; `Bottom; `Left ]
-          ~border_style:Ansi.Style.default ~bg_color:Ansi.Color.black
-          ~should_fill:false ();
+        Grid.draw_box grid ~x:1 ~y:1 ~width:3 ~height:3 ~border:border_chars
+          ();
         equal ~msg:"top-left corner" int border_chars.top_left
           (read_char grid 1 1);
         equal ~msg:"top-right corner" int border_chars.top_right

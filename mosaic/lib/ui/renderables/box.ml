@@ -140,8 +140,6 @@ let resolve_border_chars box =
   | Some cs -> cs
   | None -> box.props.border_style
 
-let base_border_style ~fg = Ansi.Style.make ~fg ~bg:transparent ()
-
 let box_render box renderable grid ~delta:_ =
   let w = Renderable.width renderable in
   let h = Renderable.height renderable in
@@ -150,12 +148,15 @@ let box_render box renderable grid ~delta:_ =
     let bg_color = resolve_bg_color box.props in
     let border_chars = resolve_border_chars box in
     let border_style =
-      base_border_style ~fg:(resolve_active_border_color box renderable)
+      Ansi.Style.make
+        ~fg:(resolve_active_border_color box renderable)
+        ~bg:bg_color ()
     in
     Grid.draw_box grid ~x:(Renderable.x renderable) ~y:(Renderable.y renderable)
-      ~width:w ~height:h ~border_chars
-      ~border_sides:(effective_border_sides box)
-      ~border_style ~bg_color ~should_fill:box.props.should_fill
+      ~width:w ~height:h ~border:border_chars
+      ~sides:(effective_border_sides box)
+      ~style:border_style
+      ?fill:(if box.props.should_fill then Some bg_color else None)
       ?title:box.props.title ~title_alignment:box.props.title_alignment ()
 
 let node t = t.node

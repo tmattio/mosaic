@@ -74,10 +74,7 @@ let%expect_test "canvas draw_box with double border draws frame" =
     (canvas ~id:"c" ~size:(size ~width:14 ~height:8)
        ~draw:(fun g ~width:_ ~height:_ ->
          Grid.draw_box g ~x:1 ~y:1 ~width:12 ~height:6
-           ~border_chars:Grid.Border.double
-           ~border_sides:[ `Top; `Right; `Bottom; `Left ]
-           ~border_style:Ansi.Style.default ~bg_color:Ansi.Color.default
-           ~should_fill:false ();
+           ~border:Grid.Border.double ();
          Grid.draw_text g ~x:4 ~y:3 ~text:"Hi")
        ());
   [%expect_exact
@@ -99,9 +96,7 @@ let%expect_test "canvas draw_box can limit sides" =
     (canvas ~id:"c" ~size:(size ~width:18 ~height:6)
        ~draw:(fun g ~width:_ ~height:_ ->
          Grid.draw_box g ~x:1 ~y:1 ~width:16 ~height:4
-           ~border_chars:Grid.Border.single ~border_sides:[ `Top; `Bottom ]
-           ~border_style:Ansi.Style.default ~bg_color:Ansi.Color.default
-           ~should_fill:false ();
+           ~sides:[ `Top; `Bottom ] ();
          Grid.draw_text g ~x:6 ~y:2 ~text:"Only edges")
        ());
   [%expect_exact
@@ -178,11 +173,8 @@ let%expect_test "canvas draw_box with title centered alignment" =
   render_boxed ~width:18 ~height:6
     (canvas ~id:"c" ~size:(size ~width:18 ~height:6)
        ~draw:(fun g ~width:_ ~height:_ ->
-         Grid.draw_box g ~x:1 ~y:1 ~width:16 ~height:4
-           ~border_chars:Grid.Border.single
-           ~border_sides:[ `Top; `Right; `Bottom; `Left ]
-           ~border_style:Ansi.Style.default ~bg_color:Ansi.Color.default
-           ~should_fill:false ~title:"Centered" ~title_alignment:`Center ())
+         Grid.draw_box g ~x:1 ~y:1 ~width:16 ~height:4 ~title:"Centered"
+           ~title_alignment:`Center ())
        ());
   [%expect_exact
     {|
