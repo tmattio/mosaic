@@ -74,7 +74,7 @@ let inherit_bg_on_unwritten_ascii () =
   equal ~msg:"bg r" int 0 r;
   equal ~msg:"bg g" int 0 g;
   equal ~msg:"bg b" int 0 b;
-  equal ~msg:"bg a" int 0 a;
+  equal ~msg:"bg a" int 255 a;
   ()
 
 let unicode_inherit_bg_on_unwritten_cell () =
@@ -84,12 +84,12 @@ let unicode_inherit_bg_on_unwritten_cell () =
   equal ~msg:"bg r0" int 0 r0;
   equal ~msg:"bg g0" int 0 g0;
   equal ~msg:"bg b0" int 0 b0;
-  equal ~msg:"bg a0" int 0 a0;
+  equal ~msg:"bg a0" int 255 a0;
   let r1, g1, b1, a1 = read_bg grid 1 0 in
   equal ~msg:"bg r1" int 0 r1;
   equal ~msg:"bg g1" int 0 g1;
   equal ~msg:"bg b1" int 0 b1;
-  equal ~msg:"bg a1" int 0 a1;
+  equal ~msg:"bg a1" int 255 a1;
   ()
 
 let overflow_respects_scissor_for_wide_grapheme () =
@@ -211,9 +211,9 @@ let alpha_blit_blends_fg_bg () =
   equal ~msg:"bg red stays 0" int 0 r_bg;
   equal ~msg:"bg alpha is 128" int 128 a_bg;
   let r_fg, _g_fg, _b_fg, a_fg = read_fg dst 0 0 in
-  (* With src FG alpha resolved to 0 in the source buffer, FG tint contribution
-     is zero; alpha uses destination background (255). *)
-  equal ~msg:"fg red stays 0" int 0 r_fg;
+  (* Src FG (semi_red) is blended against the src's opaque black default bg,
+     producing a tinted red. Alpha comes from the destination bg (255). *)
+  is_true ~msg:"fg red > 0" (r_fg > 0);
   equal ~msg:"fg alpha 255" int 255 a_fg
 
 let resize_shrink_clips_continuation () =
@@ -436,12 +436,12 @@ let set_cell_alpha_without_respect_skips_blend () =
     ~bg:semi_red ~attrs:Ansi.Attr.empty ();
   equal ~msg:"char" int (Char.code 'C') (read_char grid 0 0);
   equal ~msg:"width" int 1 (read_width grid 0 0);
-  (* {!Grid.set_cell_alpha} always blends and keeps the destination alpha for
-     the foreground channel, so the default background alpha (0) persists. *)
+  (* {!Grid.set_cell_alpha} always blends. The default background is now
+     opaque black, so the fg alpha blends against that. *)
   let expected =
     let blended = Ansi.Color.blend ~src:semi_red ~dst:Ansi.Color.default () in
     let r, g, b, _ = Ansi.Color.to_rgba blended in
-    (r, (g, (b, 0)))
+    (r, (g, (b, 255)))
   in
   let actual =
     let r, g, b, a = read_fg grid 0 0 in
@@ -572,9 +572,9 @@ let scroll_uses_transparent_background () =
   (* Write something on the first row to force a scroll source. *)
   Grid.draw_text grid ~x:0 ~y:0 ~text:"AA";
   Grid.scroll_up grid ~top:0 ~bottom:1 ~n:1;
-  (* Bottom row is newly cleared; its background should stay transparent. *)
+  (* Bottom row is newly cleared; its background should be opaque black. *)
   let r, g, b, a = read_bg grid 0 1 in
-  equal ~msg:"transparent bg" rgba (0, (0, (0, 0))) (r, (g, (b, a)));
+  equal ~msg:"opaque black bg" rgba (0, (0, (0, 255))) (r, (g, (b, a)));
   equal ~msg:"space char" int (Char.code ' ') (read_char grid 0 1)
 
 let draw_text_overwrite_clears_span () =

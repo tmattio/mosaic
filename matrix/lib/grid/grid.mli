@@ -155,7 +155,7 @@ val create :
       Enable for semi-transparent overlays.
 
     All cells are initialized as spaces with opaque white foreground and
-    transparent black background, matching the result of {!clear} with default
+    opaque black background, matching the result of {!clear} with default
     color. The scissor stack is empty.
 
     Raises [Invalid_argument] if [width <= 0] or [height <= 0]. *)
@@ -330,7 +330,7 @@ val resize : t -> width:int -> height:int -> unit
 val clear : ?color:Ansi.Color.t -> t -> unit
 (** [clear ?color t] resets all cells to the given color.
 
-    @param color Fill color. Defaults to transparent black (RGBA = 0, 0, 0, 0).
+    @param color Fill color. Defaults to opaque black (RGBA = 0, 0, 0, 1).
 
     All cells are set to character code 32 (space), foreground set to opaque
     white and background set to [color], attributes cleared, and widths reset to

@@ -236,7 +236,16 @@ let fill_defaults t =
   Buf.fill t.attrs 0;
   Buf.fill t.links no_link;
   Buf.fill t.fg 1.0;
-  Buf.fill t.bg 0.0
+  (* Default background: opaque black. Cells start fully opaque so that
+     drawing operations take the fast opaque path rather than triggering
+     alpha blending against a transparent backdrop. *)
+  let len = t.width * t.height in
+  for i = 0 to len - 1 do
+    Color_plane.set t.bg i 0 0.0;
+    Color_plane.set t.bg i 1 0.0;
+    Color_plane.set t.bg i 2 0.0;
+    Color_plane.set t.bg i 3 1.0
+  done
 
 let create ~width ~height ?glyph_pool ?width_method ?(respect_alpha = false) ()
     =
@@ -384,7 +393,7 @@ let clear ?color t =
 
   let br, bg, bb, ba =
     match color with
-    | None -> (0., 0., 0., 0.)
+    | None -> (0., 0., 0., 1.)
     | Some c -> Ansi.Color.to_rgba_f c
   in
   let len = t.width * t.height in
@@ -443,7 +452,7 @@ let resize t ~width ~height =
                Color_plane.set old_bg idx 0 0.0;
                Color_plane.set old_bg idx 1 0.0;
                Color_plane.set old_bg idx 2 0.0;
-               Color_plane.set old_bg idx 3 0.0)
+               Color_plane.set old_bg idx 3 1.0)
          done
        done);
 
@@ -458,7 +467,11 @@ let resize t ~width ~height =
     Buf.fill new_attrs 0;
     Buf.fill new_links no_link;
     Buf.fill new_fg 1.0;
+    (* New cells default to opaque black, consistent with fill_defaults/clear *)
     Buf.fill new_bg 0.0;
+    for i = 0 to new_size - 1 do
+      Color_plane.set new_bg i 3 1.0
+    done;
 
     let copy_w = min old_width width in
     let copy_h = min old_height height in

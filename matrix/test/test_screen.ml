@@ -252,8 +252,9 @@ let test_resize_clears_both_buffers () =
   let output2 = Screen.render f2 in
 
   (* The output should not contain the old red background content *)
-  (* Check that we don't have excessive output (which would indicate stale content) *)
-  is_true ~msg:"resize clears buffers" (String.length output2 < 200);
+  (* Check that we don't have excessive output (which would indicate stale content).
+     A full 10x10 redraw would produce ~1000+ bytes; the 5x5 overlap diff is ~250. *)
+  is_true ~msg:"resize clears buffers" (String.length output2 < 400);
 
   (* Verify the new content is rendered *)
   is_true ~msg:"new content rendered" (String.contains output2 'S')
