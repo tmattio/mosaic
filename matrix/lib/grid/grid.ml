@@ -1056,19 +1056,24 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
                 if is_reset then (1., 1., 1., 1.) else (fg_r, fg_g, fg_b, fg_a)
               in
 
-              (* NOTE: We calculate index here again, but it's the slow path anyway *)
-              (* For same-grid blits, don't infer blending from alpha - just use
-                 respect_alpha. This prevents the "preserve existing content" logic
-                 from incorrectly keeping destination content when copying cells
-                 with transparent backgrounds (e.g., during DCH operations). *)
-              let blending =
-                if same_grid then dst.respect_alpha
-                else dst.respect_alpha || fg_a < 0.999 || bg_a < 0.999
-              in
-              set_cell_internal dst
-                ~idx:((dy * dst.width) + dx)
-                ~code:final_code_mapped ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g
-                ~bg_b ~bg_a ~attrs ~link_id ~blending;
+              (* Skip fully transparent source cells: they carry no visual
+                 information and blending them would only waste cycles (or
+                 worse, clear the destination's link/attrs for no reason). *)
+              if (not same_grid) && fg_a <= 0.001 && bg_a <= 0.001 then ()
+              else
+                (* For same-grid blits, don't infer blending from alpha - just
+                   use respect_alpha. This prevents the "preserve existing
+                   content" logic from incorrectly keeping destination content
+                   when copying cells with transparent backgrounds (e.g.,
+                   during DCH operations). *)
+                let blending =
+                  if same_grid then dst.respect_alpha
+                  else dst.respect_alpha || fg_a < 0.999 || bg_a < 0.999
+                in
+                set_cell_internal dst
+                  ~idx:((dy * dst.width) + dx)
+                  ~code:final_code_mapped ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g
+                  ~bg_b ~bg_a ~attrs ~link_id ~blending;
 
               k := !k + x_step
             done;
