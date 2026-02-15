@@ -297,13 +297,16 @@ module Pool = struct
     }
 
   let clear pool =
+    let used = pool.next_id in
     pool.next_id <- 1;
     pool.storage_cursor <- 0;
     pool.free_count <- 0;
-    Array.fill pool.offsets ~pos:0 ~len:(Array.length pool.offsets) 0;
-    Array.fill pool.lengths ~pos:0 ~len:(Array.length pool.lengths) 0;
-    Array.fill pool.refcounts ~pos:0 ~len:(Array.length pool.refcounts) 0;
-    Array.fill pool.generations ~pos:0 ~len:(Array.length pool.generations) 0
+    (* Only zero slots [0..used-1]. Offsets and refcounts are overwritten by
+       alloc_string so they don't need clearing. Lengths must be zeroed to
+       prevent the storage-reuse path from reading stale offsets. Generations
+       must be zeroed so old glyphs fail generation validation. *)
+    Array.fill pool.lengths ~pos:0 ~len:used 0;
+    Array.fill pool.generations ~pos:0 ~len:used 0
 
   let ensure_id_capacity pool =
     let cap = Array.length pool.offsets in
@@ -472,83 +475,87 @@ module Pool = struct
     let tab_width = normalize_tab_width tab_width in
     intern_core pool width_method tab_width None 0 (String.length str) str
 
-  let intern_sub pool ?(width_method = `Unicode)
-      ?(tab_width = default_tab_width) str ~pos ~len ~width =
+  let intern_sub pool ~width_method ~tab_width str ~pos ~len ~width =
     let tab_width = normalize_tab_width tab_width in
     intern_core pool width_method tab_width (Some width) pos len str
 
   (* Encoding (string -> glyph stream) *)
 
-  let encode pool ?(width_method = `Unicode) ?(tab_width = default_tab_width) f
-      str =
+  let encode pool ~width_method ~tab_width f str =
     let tab_width = normalize_tab_width tab_width in
     let len = String.length str in
-    let seg = Uuseg_grapheme_cluster.create () in
-    let ignore_zwj = width_method = `No_zwj in
+    if is_ascii_only str len 0 then
+      for i = 0 to len - 1 do
+        let b = Char.code (String.unsafe_get str i) in
+        if b = 0x09 then f (pack_simple 0x09 0)
+        else if b >= 0x20 && b <= 0x7E then f (pack_simple b 1)
+      done
+    else
+      let seg = Uuseg_grapheme_cluster.create () in
+      let ignore_zwj = width_method = `No_zwj in
 
-    let emit_complex ~off ~clus_len ~width =
-      let idx = alloc_string pool str off clus_len in
-      let gen = Array.unsafe_get pool.generations idx in
-      f (pack_start idx gen width);
-      if width > 1 then
-        let max_span = min 4 width - 1 in
-        for k = 1 to max_span do
-          f (pack_continuation ~idx ~gen ~left:k ~right:(max_span - k))
-        done
-    in
+      let emit_complex ~off ~clus_len ~width =
+        let idx = alloc_string pool str off clus_len in
+        let gen = Array.unsafe_get pool.generations idx in
+        f (pack_start idx gen width);
+        if width > 1 then
+          let max_span = min 4 width - 1 in
+          for k = 1 to max_span do
+            f (pack_continuation ~idx ~gen ~left:k ~right:(max_span - k))
+          done
+      in
 
-    let emit_ascii b =
-      if b = 0x09 then f (pack_simple 0x09 0)
-      else if b >= 0x20 && b <= 0x7E then f (pack_simple b 1)
-    in
+      let emit_ascii b =
+        if b = 0x09 then f (pack_simple 0x09 0)
+        else if b >= 0x20 && b <= 0x7E then f (pack_simple b 1)
+      in
 
-    let rec loop i =
-      if i >= len then ()
-      else if
-        i + 4 <= len
-        &&
-        let c0 = Char.code (String.unsafe_get str i) in
-        let c1 = Char.code (String.unsafe_get str (i + 1)) in
-        let c2 = Char.code (String.unsafe_get str (i + 2)) in
-        let c3 = Char.code (String.unsafe_get str (i + 3)) in
-        c0 lor c1 lor c2 lor c3 < 128
-      then (
-        emit_ascii (Char.code (String.unsafe_get str i));
-        emit_ascii (Char.code (String.unsafe_get str (i + 1)));
-        emit_ascii (Char.code (String.unsafe_get str (i + 2)));
-        emit_ascii (Char.code (String.unsafe_get str (i + 3)));
-        loop (i + 4))
-      else
-        let c = String.unsafe_get str i in
-        if Char.code c < 128 then (
-          emit_ascii (Char.code c);
-          loop (i + 1))
+      let rec loop i =
+        if i >= len then ()
+        else if
+          i + 4 <= len
+          &&
+          let c0 = Char.code (String.unsafe_get str i) in
+          let c1 = Char.code (String.unsafe_get str (i + 1)) in
+          let c2 = Char.code (String.unsafe_get str (i + 2)) in
+          let c3 = Char.code (String.unsafe_get str (i + 3)) in
+          c0 lor c1 lor c2 lor c3 < 128
+        then (
+          emit_ascii (Char.code (String.unsafe_get str i));
+          emit_ascii (Char.code (String.unsafe_get str (i + 1)));
+          emit_ascii (Char.code (String.unsafe_get str (i + 2)));
+          emit_ascii (Char.code (String.unsafe_get str (i + 3)));
+          loop (i + 4))
         else
-          let end_pos = next_boundary seg ~ignore_zwj str i len in
-          let clus_len = end_pos - i in
-          let w =
-            grapheme_width ~method_:width_method ~tab_width str i clus_len
-          in
-          (if w > 0 then
-             let d = String.get_utf_8_uchar str i in
-             if Uchar.utf_decode_length d = clus_len then (
-               (* Single codepoint: store as simple glyph *)
-               let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
-               f (pack_simple cp w);
-               if w > 1 then
-                 let max_span = min 4 w - 1 in
-                 for k = 1 to max_span do
-                   f
-                     (pack_continuation ~idx:0 ~gen:0 ~left:k
-                        ~right:(max_span - k))
-                 done)
-             else emit_complex ~off:i ~clus_len ~width:w);
-          loop end_pos
-    in
-    loop 0
+          let c = String.unsafe_get str i in
+          if Char.code c < 128 then (
+            emit_ascii (Char.code c);
+            loop (i + 1))
+          else
+            let end_pos = next_boundary seg ~ignore_zwj str i len in
+            let clus_len = end_pos - i in
+            let w =
+              grapheme_width ~method_:width_method ~tab_width str i clus_len
+            in
+            (if w > 0 then
+               let d = String.get_utf_8_uchar str i in
+               if Uchar.utf_decode_length d = clus_len then (
+                 (* Single codepoint: store as simple glyph *)
+                 let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
+                 f (pack_simple cp w);
+                 if w > 1 then
+                   let max_span = min 4 w - 1 in
+                   for k = 1 to max_span do
+                     f
+                       (pack_continuation ~idx:0 ~gen:0 ~left:k
+                          ~right:(max_span - k))
+                   done)
+               else emit_complex ~off:i ~clus_len ~width:w);
+            loop end_pos
+      in
+      loop 0
 
-  let iter_grapheme_info ?(width_method = `Unicode)
-      ?(tab_width = default_tab_width) f str =
+  let iter_grapheme_info ~width_method ~tab_width f str =
     let tab_width = normalize_tab_width tab_width in
     let len = String.length str in
     if len = 0 then ()
@@ -823,7 +830,7 @@ module String = struct
         measure_segmented seg str len tab_width next total g_w
           (flags land lnot ms_virama)
 
-  let measure ?(width_method = `Unicode) ?(tab_width = default_tab_width) str =
+  let measure ~width_method ~tab_width str =
     let tab_width = normalize_tab_width tab_width in
     let len = Stdlib.String.length str in
     if len = 0 then 0
