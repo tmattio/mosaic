@@ -716,6 +716,10 @@ let classify_event t evt =
   | Input.Resize (cols, rows) ->
       handle_resize t cols rows;
       Some (`Resize (cols, rows))
+  | Input.Focus ->
+      Terminal.restore_modes t.terminal;
+      let adjusted = adjust_event_for_offset t evt in
+      Some (`Input adjusted)
   | evt ->
       let adjusted = adjust_event_for_offset t evt in
       if t.config.exit_on_ctrl_c then

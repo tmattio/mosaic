@@ -200,6 +200,18 @@ val probe :
     are emitted through [output]. For non-TTY handles, only internal state is
     updated. *)
 
+val restore_modes : t -> unit
+(** [restore_modes t] unconditionally re-sends enable sequences for every
+    currently-active protocol mode (mouse tracking, focus reporting, bracketed
+    paste, Kitty keyboard, modifyOtherKeys).
+
+    Intended for focus-in recovery: some terminal emulators (notably Windows
+    Terminal / ConPTY) strip DEC private modes when the window loses focus.
+    Re-sending the active modes restores correct behavior.
+
+    For the Kitty keyboard protocol, the existing stack entry is popped before
+    re-pushing to avoid unbounded stack growth. *)
+
 val set_mouse_mode : t -> mouse_mode -> unit
 (** Configures mouse event tracking. Disables conflicting modes first. *)
 

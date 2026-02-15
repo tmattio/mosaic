@@ -382,6 +382,25 @@ let reset_cursor_color t =
 let set_title t title = send t Ansi.(to_string (set_title ~title))
 let query_pixel_resolution t = send t Ansi.(to_string (query Pixel_size))
 
+(* Mode restoration *)
+
+let restore_modes t =
+  (match t.mouse_mode with
+  | `Off -> ()
+  | `X10 -> send t mouse_x10
+  | `Normal -> send t mouse_tracking
+  | `Button -> send t mouse_button
+  | `Any -> send t mouse_motion
+  | `Sgr_normal -> send t sgr_normal_seq
+  | `Sgr_button -> send t sgr_button_seq
+  | `Sgr_any -> send t sgr_any_seq);
+  if t.focus_enabled then send t focus_on;
+  if t.bracketed_paste_enabled then send t paste_on;
+  if t.kitty_keyboard_enabled then (
+    send t kitty_kb_pop;
+    send t (kitty_kb_push t.kitty_keyboard_flags));
+  if t.modify_other_keys_enabled then send t modify_other_keys_on_seq
+
 (* Reset and close *)
 
 let reset_state t =
