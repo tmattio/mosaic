@@ -66,6 +66,13 @@ let rec is_ascii_only str len i =
 (* Width Predicates *)
 
 let[@inline] is_regional_indicator cp = cp >= 0x1F1E6 && cp <= 0x1F1FF
+
+(* Detects Indic virama characters (U+094D, U+09CD, U+0A4D, U+0ACD, U+0B4D,
+   U+0BCD, U+0C4D, U+0CCD, U+0D4D). The virama joins two consonants into a
+   conjunct (e.g. क + ् + ष = क्ष) which may be wider than a single cell. We
+   check specific virama codepoints rather than the broader GeneralCategory=Mn
+   class because the conjunct-width logic should only fire for actual virama
+   sequences, not for arbitrary combining marks like diacriticals. *)
 let[@inline] is_virama cp = cp land 0x7F = 0x4D && cp >= 0x094D && cp <= 0x0D4D
 
 let[@inline] is_devanagari_base cp =
