@@ -939,7 +939,7 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
   (* Probe capabilities *)
   let input_buffer = Bytes.create 4096 in
   if input_is_tty then
-    Terminal.probe ~timeout:1.0
+    Terminal.probe ~timeout:0.5
       ~on_event:(fun _ -> ())
       ~read_into:(fun buf off len ->
         try Unix.read input_fd buf off len

@@ -409,22 +409,32 @@ let probe ?(timeout = 0.2) ?(apply_env_overrides = false) ~on_event ~read_into
   send payload;
   let buffer = Bytes.create 4096 in
   let deadline = Unix.gettimeofday () +. max 0. timeout in
-  let rec loop caps info got_explicit got_scaled got_da =
+  (* Grace period after DA: once we receive Device Attributes, the terminal has
+     processed our entire query payload. Any remaining responses (CPR for
+     explicit width/scaled text, XTVersion, etc.) should arrive shortly after.
+     We use a short grace period instead of waiting the full timeout. *)
+  let da_grace = 0.05 in
+  let rec loop caps info got_explicit got_scaled got_da da_time =
     let now = Unix.gettimeofday () in
     let complete =
       (got_explicit || caps.explicit_width)
       && (got_scaled || caps.scaled_text)
       && got_da
     in
-    if now >= deadline || complete then (caps, info)
+    let effective_deadline =
+      match da_time with
+      | Some t -> Float.min deadline (t +. da_grace)
+      | None -> deadline
+    in
+    if now >= effective_deadline || complete then (caps, info)
     else
-      let remaining = deadline -. now in
+      let remaining = effective_deadline -. now in
       let select_timeout = Float.min remaining 0.05 in
       let ready = wait_readable ~timeout:select_timeout in
-      if not ready then loop caps info got_explicit got_scaled got_da
+      if not ready then loop caps info got_explicit got_scaled got_da da_time
       else
         let read = read_into buffer 0 (Bytes.length buffer) in
-        if read <= 0 then loop caps info got_explicit got_scaled got_da
+        if read <= 0 then loop caps info got_explicit got_scaled got_da da_time
         else
           let caps_ref = ref caps in
           let info_ref = ref info in
@@ -443,11 +453,16 @@ let probe ?(timeout = 0.2) ?(apply_env_overrides = false) ~on_event ~read_into
           let caps = !caps_ref in
           let info = !info_ref in
           let has_da = got_da || !found_da in
+          let da_time =
+            if has_da && not got_da then Some now else da_time
+          in
           let got_explicit = got_explicit || caps.explicit_width in
           let got_scaled = got_scaled || caps.scaled_text in
-          loop caps info got_explicit got_scaled has_da
+          loop caps info got_explicit got_scaled has_da da_time
   in
-  let caps, info = loop caps info caps.explicit_width caps.scaled_text false in
+  let caps, info =
+    loop caps info caps.explicit_width caps.scaled_text false None
+  in
   let caps_ref = ref caps in
   let info_ref = ref info in
   let now = Unix.gettimeofday () in
