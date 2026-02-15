@@ -404,6 +404,9 @@ let clear ?color t =
     Color_plane.set t.bg i 3 ba
   done
 
+(* Resize preserves content that fits within the new bounds. This is the
+   correct behavior for terminal emulation: visible content should survive a
+   resize, with only out-of-bounds cells discarded. *)
 let resize t ~width ~height =
   if width <= 0 || height <= 0 then
     invalid_arg "Grid.resize: width and height must be > 0";
