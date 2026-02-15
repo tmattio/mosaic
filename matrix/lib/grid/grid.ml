@@ -332,6 +332,7 @@ let hyperlink_url_direct t id =
 
 (* {1 Cell accessors} *)
 
+let[@inline] idx t ~x ~y = (y * t.width) + x
 let[@inline] get_code t idx = Buf.get t.chars idx
 let[@inline] get_glyph t idx = Buf.get_glyph t.chars idx
 let[@inline] get_attrs t idx = Buf.get t.attrs idx

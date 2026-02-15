@@ -105,6 +105,10 @@ val active_height : t -> int
     Linear index [idx] is row-major: [idx = y * width + x]. All accessors are
     zero-allocation. *)
 
+val idx : t -> x:int -> y:int -> int
+(** [idx t ~x ~y] returns the flat index for cell [(x, y)].
+    Equivalent to [y * width t + x]. No bounds checking. *)
+
 val get_code : t -> int -> int
 (** Cell code at [idx]. Aligned with {!Glyph.t} encoding. *)
 
