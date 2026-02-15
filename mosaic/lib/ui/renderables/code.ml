@@ -784,7 +784,9 @@ let render t (_rn : Renderable.t) (grid : Grid.t) ~delta:_ =
                   let next_column = column + draw_width in
                   loop (i + 1) next_column)
                 else
-                  let is_cont = Glyph.is_continuation code in
+                  let is_cont =
+                    Glyph.is_continuation (Glyph.unsafe_of_int code)
+                  in
                   let draw_width = if is_cont then 0 else max 1 base_width in
                   let draw_fg, draw_bg = apply_selection fg bg idx in
                   let link = resolve_link idx in

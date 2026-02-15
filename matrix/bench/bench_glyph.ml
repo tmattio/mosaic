@@ -120,7 +120,7 @@ let pool_intern_hotset =
   Ubench.bench_with_setup "pool/intern_hotset"
     ~setup:(fun () ->
       let pool = G.create_pool () in
-      let scratch = Array.make (Array.length hotset_tokens) 0 in
+      let scratch = Array.make (Array.length hotset_tokens) G.empty in
       (pool, scratch))
     ~teardown:(fun _ -> ())
     ~f:(fun (pool, scratch) ->
@@ -137,7 +137,7 @@ let pool_intern_unique =
   Ubench.bench_with_setup "pool/intern_unique_256"
     ~setup:(fun () ->
       let pool = G.create_pool () in
-      let scratch = Array.make 256 0 in
+      let scratch = Array.make 256 G.empty in
       (pool, scratch))
     ~teardown:(fun _ -> ())
     ~f:(fun (pool, scratch) ->

@@ -531,7 +531,9 @@ let render t renderable grid ~delta:_ =
                 (* Preserve continuation semantics: width=0 for continuation
                    cells, positive width only on start cells. This keeps grid
                    invariants stable across redraws. *)
-                let is_cont = Glyph.is_continuation code in
+                let is_cont =
+                  Glyph.is_continuation (Glyph.unsafe_of_int code)
+                in
                 let draw_width = if is_cont then 0 else max 1 base_width in
                 let draw_fg, draw_bg = apply_selection fg bg idx in
                 let link = resolve_link idx in

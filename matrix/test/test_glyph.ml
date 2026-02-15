@@ -364,7 +364,7 @@ let pool_resize_stress () =
   let pool = create_pool () in
   let n = 5000 in
   (* Exceeds default 4096 *)
-  let handles = Array.make n 0 in
+  let handles = Array.make n empty in
 
   (* Fill pool *)
   for i = 0 to n - 1 do
@@ -389,7 +389,7 @@ let copy_safety () =
   let g = intern p1 "abc" in
   (* Simple *)
   let g_copy = copy ~src:p1 g ~dst:p2 in
-  equal ~msg:"simple copy identity" int g g_copy;
+  equal ~msg:"simple copy identity" int (to_int g) (to_int g_copy);
 
   (* Use multi-codepoint cluster to exercise pool copy *)
   let complex = intern p1 "e\u{0301}" in

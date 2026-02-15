@@ -330,7 +330,8 @@ let create ?glyph_pool ~capacity ~width_method () =
   create_internal ~capacity ~width_method pool
 
 let release_cell pool cell =
-  if is_grapheme_id cell.code then Glyph.decref pool cell.code
+  let g = Glyph.unsafe_of_int cell.code in
+  if is_grapheme_id g then Glyph.decref pool g
 
 let clear_cell cell =
   cell.code <- 0;
@@ -409,7 +410,7 @@ let encode_chunk t chunk =
         (* Keep continuations with width 0 so indices stay aligned. *)
         if width > 0 || Glyph.is_continuation code then (
           if Glyph.is_start code then Glyph.incref t.pool code;
-          push code width style))
+          push (Glyph.to_int code) width style))
       segment
   in
   (* Track Windows CRLF and old Mac CR line breaks: normalize to a single LF. *)
@@ -579,6 +580,7 @@ let compute_wrap_break_flags t : (int, int8_unsigned_elt, c_layout) Array1.t =
          For each grapheme, check if it contains any wrap-break codepoints. *)
       for i = 0 to t.length - 1 do
         let code = Array1.unsafe_get t.chars i in
+        let g = Glyph.unsafe_of_int code in
         let width = Array1.unsafe_get t.widths i in
         if code = newline_code then
           (* Newline: always allow a break here. *)
@@ -587,12 +589,12 @@ let compute_wrap_break_flags t : (int, int8_unsigned_elt, c_layout) Array1.t =
           if
             (* Continuation slots carry packed glyph metadata; only start slots
                should be used to compute wrap breaks. *)
-            Glyph.is_continuation code
+            Glyph.is_continuation g
           then ()
           else
             (* Check if this grapheme contains wrap-break characters *)
             let segment =
-              if is_grapheme_id code then Glyph.to_string t.pool code
+              if is_grapheme_id g then Glyph.to_string t.pool g
               else if code >= 0 && code < 128 then String.make 1 (Char.chr code)
               else if code <= 0x10FFFF then (
                 let buf = Buffer.create 4 in
@@ -1075,10 +1077,11 @@ module View = struct
 end
 
 let append_code t buf code =
-  if is_continuation code then ()
+  let g = Glyph.unsafe_of_int code in
+  if is_continuation g then ()
   else if code = 10 then Buffer.add_char buf '\n'
-  else if is_grapheme_id code then
-    Buffer.add_string buf (Glyph.to_string t.pool code)
+  else if is_grapheme_id g then
+    Buffer.add_string buf (Glyph.to_string t.pool g)
   else if Uchar.is_valid code then
     Buffer.add_utf_8_uchar buf (Uchar.of_int code)
 

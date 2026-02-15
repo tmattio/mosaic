@@ -45,15 +45,20 @@ type pool
     NOT thread-safe. Use separate pools per thread or external synchronization.
 *)
 
-type t = int
+type t = private int
 (** A packed integer representing a visual glyph.
 
-    Always unboxed (immediate value) with zero allocation overhead.
+    Always unboxed (immediate value) with zero allocation overhead. The type is
+    [private] to prevent construction of invalid glyph values — use {!of_uchar},
+    {!intern}, {!encode}, {!empty}, or {!space} to create glyphs. Reading the
+    integer representation (e.g., for storage in Bigarray) is permitted; use
+    {!unsafe_of_int} when loading from external storage.
 
-    {b Encoding.} Currently uses a 31-bit layout: type flags (2 bits),
+    {b Encoding.} Currently uses a 63-bit layout: type flags (2 bits),
     left/right extent (4 bits), generation counter (7 bits), and pool index
-    (18 bits). Only ASCII (0-127) is stored directly as Simple glyphs; all
-    non-ASCII codepoints are interned in the pool as Complex glyphs. *)
+    (18 bits). Single Unicode scalars (U+0000 - U+10FFFF) are stored directly
+    as Simple glyphs; multi-codepoint clusters are interned in the pool as
+    Complex glyphs. *)
 
 type width_method = [ `Unicode | `Wcwidth | `No_zwj ]
 (** Width calculation method for grapheme clusters.
@@ -271,6 +276,18 @@ val make_continuation : code:t -> left:int -> right:int -> t
     the continuation carries no pool reference (index 0). *)
 
 (** {1 Converting} *)
+
+val to_int : t -> int
+(** [to_int glyph] returns the raw integer representation of [glyph].
+
+    Use when storing glyphs in Bigarray or other integer-based containers. *)
+
+val unsafe_of_int : int -> t
+(** [unsafe_of_int n] interprets [n] as a glyph without validation.
+
+    {b Unsafe.} The caller must ensure [n] is a valid glyph encoding (e.g.,
+    produced by {!to_int} or read from a Bigarray that stores glyphs). Using an
+    invalid integer may cause incorrect behavior in pool operations. *)
 
 val blit : pool -> t -> bytes -> pos:int -> int
 (** [blit pool glyph buf ~pos] copies UTF-8 bytes of [glyph] to [buf] at [pos].

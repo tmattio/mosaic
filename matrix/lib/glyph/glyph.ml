@@ -4,6 +4,9 @@ open StdLabels
 
 type t = int
 
+let[@inline] to_int (x : t) : int = x
+let[@inline] unsafe_of_int (x : int) : t = x
+
 let empty = 0
 
 type width_method = [ `Unicode | `Wcwidth | `No_zwj ]

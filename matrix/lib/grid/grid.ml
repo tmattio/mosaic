@@ -16,6 +16,14 @@ module Buf = struct
   let blit = Bigarray.Array1.blit
   let sub = Bigarray.Array1.sub
   let dim = Bigarray.Array1.dim
+
+  let[@inline] get_glyph arr i =
+    Glyph.unsafe_of_int (Bigarray.Array1.unsafe_get arr i)
+
+  let[@inline] set_glyph arr i (v : Glyph.t) =
+    Bigarray.Array1.unsafe_set arr i (Glyph.to_int v)
+
+  let fill_glyph arr (v : Glyph.t) = Bigarray.Array1.fill arr (Glyph.to_int v)
 end
 
 module Color_plane = struct
@@ -180,7 +188,7 @@ let fill_defaults t =
   Links.clear t.link_registry;
   Scissor_stack.clear t.scissor_stack;
 
-  Buf.fill t.chars space_cell;
+  Buf.fill_glyph t.chars space_cell;
   Buf.fill t.attrs 0;
   Buf.fill t.links no_link;
   Buf.fill t.fg 1.0;
@@ -247,7 +255,7 @@ let hyperlink_url_direct t id =
 
 (* Cell codes are aligned with Glyph.t, so cell codes are valid Glyph.t values *)
 let[@inline] get_code t idx = Buf.get t.chars idx
-let[@inline] get_glyph t idx = Buf.get t.chars idx
+let[@inline] get_glyph t idx = Buf.get_glyph t.chars idx
 let[@inline] get_attrs t idx = Buf.get t.attrs idx
 let[@inline] get_link t idx = Buf.get t.links idx
 let[@inline] get_fg_r t idx = Color_plane.get t.fg idx 0
@@ -286,16 +294,16 @@ let get_background t idx =
 let get_text t idx =
   (* Cell codes are aligned with Glyph.t, so they can be passed directly to
      Glyph.to_string *)
-  let c = Buf.get t.chars idx in
+  let c = Buf.get_glyph t.chars idx in
   if Glyph.is_continuation c then "" else Glyph.to_string t.glyph_pool c
 
-let is_empty t idx = Buf.get t.chars idx = Glyph.empty
-let is_continuation t idx = Glyph.is_continuation (Buf.get t.chars idx)
-let is_simple t idx = Glyph.is_simple (Buf.get t.chars idx)
-let cell_width t idx = Glyph.cell_width (Buf.get t.chars idx)
+let is_empty t idx = Buf.get_glyph t.chars idx = Glyph.empty
+let is_continuation t idx = Glyph.is_continuation (Buf.get_glyph t.chars idx)
+let is_simple t idx = Glyph.is_simple (Buf.get_glyph t.chars idx)
+let cell_width t idx = Glyph.cell_width (Buf.get_glyph t.chars idx)
 
 let[@inline] cells_equal t1 idx1 t2 idx2 =
-  Buf.get t1.chars idx1 = Buf.get t2.chars idx2
+  Buf.get_glyph t1.chars idx1 = Buf.get_glyph t2.chars idx2
   && Buf.get t1.attrs idx1 = Buf.get t2.attrs idx2
   && Buf.get t1.links idx1 = Buf.get t2.links idx2
   && Color_plane.equal_eps t1.fg idx1 t2.fg idx2
@@ -304,7 +312,7 @@ let[@inline] cells_equal t1 idx1 t2 idx2 =
 (* ---- Grapheme Cleanup ---- *)
 
 let cleanup_grapheme_at t idx =
-  let code = Buf.get t.chars idx in
+  let code = Buf.get_glyph t.chars idx in
 
   if Glyph.is_simple code then (
     (* Simple wide glyphs (e.g. CJK) have continuation cells to the right *)
@@ -314,10 +322,10 @@ let cleanup_grapheme_at t idx =
       for i = 1 to w - 1 do
         let ni = idx + i in
         if ni < limit then
-          let nc = Buf.get t.chars ni in
+          let nc = Buf.get_glyph t.chars ni in
           if nc <> space_cell then (
             Grapheme_tracker.remove t.grapheme_tracker nc;
-            Buf.set t.chars ni space_cell;
+            Buf.set_glyph t.chars ni space_cell;
             Buf.set t.attrs ni 0;
             Buf.set t.links ni no_link)
       done)
@@ -334,10 +342,10 @@ let cleanup_grapheme_at t idx =
       if start_idx >= 0 && end_idx < limit then
         for i = start_idx to end_idx do
           if i <> idx then
-            let neighbor_code = Buf.get t.chars i in
+            let neighbor_code = Buf.get_glyph t.chars i in
             if neighbor_code <> space_cell then (
               Grapheme_tracker.remove t.grapheme_tracker neighbor_code;
-              Buf.set t.chars i space_cell;
+              Buf.set_glyph t.chars i space_cell;
               Buf.set t.attrs i 0;
               Buf.set t.links i no_link)
         done
@@ -348,7 +356,7 @@ let clear ?color t =
   Grapheme_tracker.clear t.grapheme_tracker;
   Links.clear t.link_registry;
 
-  Buf.fill t.chars space_cell;
+  Buf.fill_glyph t.chars space_cell;
   Buf.fill t.attrs 0;
   Buf.fill t.links no_link;
   Buf.fill t.fg 1.0;
@@ -388,7 +396,7 @@ let resize t ~width ~height =
         for x = 0 to old_width - 1 do
           if x >= width || y >= height then
             let idx = (y * old_width) + x in
-            let code = Buf.get old_chars idx in
+            let code = Buf.get_glyph old_chars idx in
             Grapheme_tracker.remove t.grapheme_tracker code
         done
       done;
@@ -401,13 +409,13 @@ let resize t ~width ~height =
          let row_start = y * old_width in
          for x = 0 to width - 1 do
            let idx = row_start + x in
-           let code = Buf.get old_chars idx in
+           let code = Buf.get_glyph old_chars idx in
            if Glyph.is_start code then
              let span = Glyph.cell_width code in
              if span > width - x then (
                cleanup_grapheme_at t idx;
                Grapheme_tracker.remove t.grapheme_tracker code;
-               Buf.set old_chars idx space_cell;
+               Buf.set_glyph old_chars idx space_cell;
                Buf.set old_attrs idx 0;
                Buf.set old_links idx no_link;
                Color_plane.set old_fg idx 0 1.0;
@@ -428,7 +436,7 @@ let resize t ~width ~height =
     let new_fg = Buf.make_float (new_size * 4) in
     let new_bg = Buf.make_float (new_size * 4) in
 
-    Buf.fill new_chars space_cell;
+    Buf.fill_glyph new_chars space_cell;
     Buf.fill new_attrs 0;
     Buf.fill new_links no_link;
     Buf.fill new_fg 1.0;
@@ -525,7 +533,7 @@ let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
     let db_bg = Color_plane.get t.bg idx 2 in
     let da_bg = Color_plane.get t.bg idx 3 in
 
-    let dest_code = Buf.get t.chars idx in
+    let dest_code = Buf.get_glyph t.chars idx in
     let overlay_is_space = code = space_cell || code = null_cell in
     let dest_has_content = dest_code <> null_cell && dest_code <> space_cell in
     let preserve =
@@ -567,7 +575,7 @@ let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
          | false, false ->
              Grapheme_tracker.replace t.grapheme_tracker ~old_id:old_code
                ~new_id:code);
-         Buf.set t.chars idx code);
+         Buf.set_glyph t.chars idx code);
        Buf.set t.attrs idx attrs;
        Buf.set t.links idx link_id;
 
@@ -602,7 +610,7 @@ let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
       Color_plane.set t.bg idx 3 bg_a)
   else
     (* Fast Path: Opaque Overwrite *)
-    let old_code = Buf.get t.chars idx in
+    let old_code = Buf.get_glyph t.chars idx in
     if old_code <> code then (
       let old_simple = Glyph.is_simple old_code in
       let new_simple = Glyph.is_simple code in
@@ -617,7 +625,7 @@ let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
       | false, false ->
           Grapheme_tracker.replace t.grapheme_tracker ~old_id:old_code
             ~new_id:code);
-      Buf.set t.chars idx code);
+      Buf.set_glyph t.chars idx code);
     Buf.set t.attrs idx attrs;
     Buf.set t.links idx link_id;
     Color_plane.set t.fg idx 0 fg_r;
@@ -635,6 +643,7 @@ let set_cell t ~x ~y ~code ~fg ~bg ~attrs ?link () =
   if x >= 0 && y >= 0 && x < t.width && y < t.height && not (is_clipped t x y)
   then
     let idx = (y * t.width) + x in
+    let code = Glyph.unsafe_of_int code in
     let fg_r, fg_g, fg_b, fg_a = Ansi.Color.to_rgba_f fg in
     let bg_r, bg_g, bg_b, bg_a = Ansi.Color.to_rgba_f bg in
     let link_id = Links.intern t.link_registry link in
@@ -646,6 +655,7 @@ let set_cell_alpha t ~x ~y ~code ~fg ~bg ~attrs ?link () =
   if x >= 0 && y >= 0 && x < t.width && y < t.height && not (is_clipped t x y)
   then
     let idx = (y * t.width) + x in
+    let code = Glyph.unsafe_of_int code in
     let fg_r, fg_g, fg_b, fg_a = Ansi.Color.to_rgba_f fg in
     let bg_r, bg_g, bg_b, bg_a = Ansi.Color.to_rgba_f bg in
     let link_id = Links.intern t.link_registry link in
@@ -727,14 +737,14 @@ let fill_rect t ~x ~y ~width ~height ~color =
           (* 1. Grapheme Cleanup: Only scan if we know complex chars exist *)
           if has_complex then
             for i = start_idx to end_idx do
-              let old = Buf.get t.chars i in
+              let old = Buf.get_glyph t.chars i in
               if old <> code && not (Glyph.is_simple old) then (
                 cleanup_grapheme_at t i;
                 Grapheme_tracker.remove t.grapheme_tracker old)
             done;
 
           (* 2. Bulk fill primitives *)
-          Buf.fill (Buf.sub t.chars start_idx row_len) code;
+          Buf.fill_glyph (Buf.sub t.chars start_idx row_len) code;
           Buf.fill (Buf.sub t.attrs start_idx row_len) attrs;
           Buf.fill (Buf.sub t.links start_idx row_len) link;
 
@@ -773,7 +783,7 @@ let blit ~src ~dst =
       Grapheme_tracker.clear dst.grapheme_tracker;
       let len = src.width * src.height in
       for i = 0 to len - 1 do
-        let c = Buf.get dst.chars i in
+        let c = Buf.get_glyph dst.chars i in
         if Glyph.is_complex c then
           Grapheme_tracker.add dst.grapheme_tracker c
       done)
@@ -787,7 +797,7 @@ let blit ~src ~dst =
       let len = src.width * src.height in
 
       for i = 0 to len - 1 do
-        let src_c = Buf.get src.chars i in
+        let src_c = Buf.get_glyph src.chars i in
         let dst_c =
           if Glyph.is_simple src_c then src_c
           else
@@ -814,7 +824,7 @@ let blit ~src ~dst =
                     ~left:(Glyph.left_extent src_c)
                     ~right:(Glyph.right_extent src_c)
         in
-        Buf.set dst.chars i dst_c;
+        Buf.set_glyph dst.chars i dst_c;
         if Glyph.is_complex dst_c then
           Grapheme_tracker.add dst.grapheme_tracker dst_c;
 
@@ -840,13 +850,13 @@ let bulk_update_graphemes t ~src_idx ~dst_idx ~len =
   if Grapheme_tracker.unique_count t.grapheme_tracker > 0 then (
     (* 1. Decrement counts for the region being overwritten (dst) *)
     for i = 0 to len - 1 do
-      let code = Buf.get t.chars (dst_idx + i) in
+      let code = Buf.get_glyph t.chars (dst_idx + i) in
       if not (Glyph.is_simple code) then
         Grapheme_tracker.remove t.grapheme_tracker code
     done;
     (* 2. Increment counts for the region being copied (src) *)
     for i = 0 to len - 1 do
-      let code = Buf.get t.chars (src_idx + i) in
+      let code = Buf.get_glyph t.chars (src_idx + i) in
       if not (Glyph.is_simple code) then
         Grapheme_tracker.add t.grapheme_tracker code
     done)
@@ -981,7 +991,7 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
               let dx = dst_x + !k in
               let sidx = (sy * src.width) + sx in
 
-              let code = Buf.get src.chars sidx in
+              let code = Buf.get_glyph src.chars sidx in
               let fg_r, fg_g, fg_b, fg_a = Color_plane.read_rgba src.fg sidx in
               let bg_r, bg_g, bg_b, bg_a = Color_plane.read_rgba src.bg sidx in
               let attrs = Buf.get src.attrs sidx in
@@ -1392,7 +1402,7 @@ let decode_braille_bits t ~x ~y =
   if x < 0 || y < 0 || x >= t.width || y >= t.height then 0
   else
     let idx = (y * t.width) + x in
-    let code = Buf.get t.chars idx in
+    let code = Buf.get_glyph t.chars idx in
     if Glyph.is_simple code then
       (* Simple cell: extract codepoint *)
       let cp = Glyph.codepoint code in
@@ -1524,7 +1534,7 @@ let active_height t =
         if x >= t.width then false
         else
           let idx = row_start + x in
-          let code = Buf.get t.chars idx in
+          let code = Buf.get_glyph t.chars idx in
           if code <> space_cell && code <> null_cell then true
           else scan_col (x + 1)
       in
@@ -1553,7 +1563,7 @@ let iter_diffs prev curr f =
           let c_idx = (y * curr.width) + x in
 
           if
-            Buf.get prev.chars p_idx <> Buf.get curr.chars c_idx
+            Buf.get_glyph prev.chars p_idx <> Buf.get_glyph curr.chars c_idx
             || Buf.get prev.attrs p_idx <> Buf.get curr.attrs c_idx
             || colors_different prev.fg p_idx curr.fg c_idx
             || colors_different prev.bg p_idx curr.bg c_idx
@@ -1586,7 +1596,7 @@ let snapshot ?(reset = true) t : string =
           let x = ref 0 in
           while !x < width do
             let idx = (y * width) + !x in
-            let code = get_code t idx in
+            let code = get_glyph t idx in
             let cell_w = cell_width t idx in
 
             if cell_w > 0 then (
@@ -1604,12 +1614,9 @@ let snapshot ?(reset = true) t : string =
               Ansi.Sgr_state.update style w ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g
                 ~bg_b ~bg_a ~attrs ~link;
 
-              (* Emit grapheme - cell codes are aligned with Glyph.t *)
-              if
-                Glyph.is_continuation code || Int.equal code Glyph.empty
-              then Ansi.emit (Ansi.char ' ') w
+              if Glyph.is_continuation code || Glyph.is_empty code then
+                Ansi.emit (Ansi.char ' ') w
               else
-                (* code is a valid Glyph.t due to aligned formats *)
                 let len = Glyph.length pool code in
                 if len <= 0 then Ansi.emit (Ansi.char ' ') w
                 else (
