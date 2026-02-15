@@ -73,6 +73,10 @@ val empty : t
 (** The empty glyph ([0]). Represents control characters, zero-width sequences,
     and U+0000. This is the only glyph for which {!is_empty} returns [true]. *)
 
+val space : t
+(** The space glyph (U+0020, width 1). Used as the default "blank cell" content
+    in terminal grids. *)
+
 (** {1 Pool} *)
 
 val create_pool : unit -> pool
@@ -199,6 +203,10 @@ val is_continuation : t -> bool
 (** [is_continuation glyph] returns [true] if [glyph] is a placeholder for a
     multi-column character, [false] otherwise. *)
 
+val is_complex : t -> bool
+(** [is_complex glyph] returns [true] if [glyph] is a pool-backed grapheme
+    (Complex Start or Complex Continuation), [false] otherwise. *)
+
 (** {1 Properties} *)
 
 val width : ?tab_width:int -> t -> int
@@ -208,12 +216,59 @@ val width : ?tab_width:int -> t -> int
     Continuation), returns the full cluster width (1-4). Tab characters use
     [tab_width] (default 2). *)
 
+val cell_width : t -> int
+(** [cell_width glyph] returns the display width of a single cell.
+
+    Returns 0 for {!empty} and continuation cells. For start cells (Simple or
+    Complex Start), returns the character's display width (1 for most
+    characters, 2 for wide CJK/emoji). Tab glyphs return 1.
+
+    Unlike {!width}, which returns the full cluster width for continuation
+    cells, this returns 0 for continuations (they occupy no additional columns
+    beyond the start cell). *)
+
+val left_extent : t -> int
+(** [left_extent glyph] returns the left extent of a continuation glyph
+    (distance to the start cell). Returns 0 for Simple and Complex Start
+    glyphs. *)
+
+val right_extent : t -> int
+(** [right_extent glyph] returns the right extent of a glyph (distance to the
+    rightmost continuation cell). For Complex Start, this is [width - 1]. *)
+
+val codepoint : t -> int
+(** [codepoint glyph] extracts the Unicode codepoint from a Simple glyph.
+
+    Returns the raw codepoint (U+0000 - U+10FFFF). Behavior is undefined for
+    Complex glyphs. *)
+
+val pool_payload : t -> int
+(** [pool_payload glyph] extracts the pool identity (index + generation bits)
+    from a Complex glyph. Used as a deduplication key in grapheme trackers.
+
+    Returns 0 for Simple glyphs. *)
+
+val pool_index : t -> int
+(** [pool_index glyph] extracts the pool slot index from a Complex glyph.
+
+    Returns 0 for Simple glyphs and for continuation cells of Simple wide
+    characters. *)
+
 val length : pool -> t -> int
 (** [length pool glyph] returns the byte length of the UTF-8 sequence for
     [glyph].
 
     Returns 1 for Simple glyphs (including {!empty}, which encodes as U+0000),
     the actual byte length for Complex glyphs, and 0 for stale Complex IDs. *)
+
+(** {1 Construction} *)
+
+val make_continuation : code:t -> left:int -> right:int -> t
+(** [make_continuation ~code ~left ~right] creates a continuation cell that
+    references the same pool entry as [code] with the given left/right extents.
+
+    [left] and [right] are clamped to \[0..3\]. If [code] is a Simple glyph,
+    the continuation carries no pool reference (index 0). *)
 
 (** {1 Converting} *)
 

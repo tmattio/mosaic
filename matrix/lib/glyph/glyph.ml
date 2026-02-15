@@ -306,6 +306,7 @@ let[@inline] pack_continuation ~idx ~gen ~left ~right =
 let[@inline] pack_simple cp w = (w lsl shift_width) lor cp
 
 let[@inline] is_simple c = c land flag_grapheme = 0
+let[@inline] is_complex c = c land flag_grapheme <> 0
 let[@inline] is_start c = is_simple c || c land flag_continuation = 0
 
 let[@inline] is_continuation c =
@@ -314,6 +315,9 @@ let[@inline] is_continuation c =
 let[@inline] is_empty c = c = 0
 let[@inline] right_extent c = (c lsr shift_right_extent) land 3
 let[@inline] left_extent c = (c lsr shift_left_extent) land 3
+let[@inline] codepoint c = c land mask_codepoint
+let[@inline] pool_payload c = c land 0x01FFFFFF
+let[@inline] pool_index c = c land mask_index
 let[@inline] unpack_idx c = c land mask_index
 let[@inline] unpack_gen c = (c lsr shift_generation) land mask_generation
 
@@ -327,6 +331,8 @@ let[@inline] validate_complex pool c =
   then idx
   else -1
 
+let space = pack_simple 0x20 1
+
 let[@inline] width ?(tab_width = default_tab_width) c =
   let tab_width = normalize_tab_width tab_width in
   if is_empty c then 0
@@ -337,6 +343,22 @@ let[@inline] width ?(tab_width = default_tab_width) c =
     let l = left_extent c in
     let r = right_extent c in
     if is_continuation c then l + 1 + r else if l <> 0 then 0 else r + 1
+
+let[@inline] cell_width c =
+  if c = 0 then 0
+  else if is_simple c then
+    let w = (c lsr shift_width) land 3 in
+    if w = 0 then 1 else w
+  else if is_continuation c then 0
+  else right_extent c + 1
+
+let make_continuation ~code ~left ~right =
+  let payload = if is_simple code then 0 else pool_payload code in
+  let l_enc = clamp_extent left in
+  let r_enc = clamp_extent right in
+  flag_grapheme lor flag_continuation lor payload
+  lor (l_enc lsl shift_left_extent)
+  lor (r_enc lsl shift_right_extent)
 
 (* Reference Counting *)
 

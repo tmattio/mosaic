@@ -97,60 +97,6 @@ module Scissor_stack = struct
     | Some r -> x >= r.x && y >= r.y && x < r.x + r.width && y < r.y + r.height
 end
 
-module Cell_code = struct
-  (* Bit layout aligned with Glyph.t (63-bit, 64-bit OCaml):
-
-     Simple (single Unicode scalar): bits 62-61 = 00, bits 21-22 = width,
-     bits 0-20 = codepoint.
-
-     Complex Start: bit 62 = 1, bit 61 = 0, bits 59-60 = right_extent,
-     bits 18-24 = generation, bits 0-17 = pool index.
-
-     Complex Continuation: bit 62 = 1, bit 61 = 1, bits 59-60 = right_extent,
-     bits 57-58 = left_extent, bits 18-24 = generation, bits 0-17 = pool
-     index. *)
-
-  let flag_grapheme = 0x4000000000000000
-  let flag_complex_cont = 0x6000000000000000
-  let mask_right_ext = 0x1800000000000000
-  let shift_right_ext = 59
-  let mask_left_ext = 0x0600000000000000
-  let shift_left_ext = 57
-  let mask_payload = 0x01FFFFFF (* bits 0-24: index + generation *)
-  let shift_width = 21
-  let mask_codepoint = 0x1FFFFF
-  let empty = 0
-  let space = (1 lsl 21) lor 0x20 (* pack_simple 0x20 1 *)
-
-  let[@inline] is_simple c = c land flag_grapheme = 0
-  let[@inline] is_complex c = c land flag_grapheme <> 0
-  let[@inline] is_continuation c = c land flag_complex_cont = flag_complex_cont
-  let[@inline] is_start c = is_complex c && not (is_continuation c)
-
-  let[@inline] payload c = c land mask_payload
-  let[@inline] codepoint c = c land mask_codepoint
-
-  let[@inline] width c =
-    if c = 0 then 0
-    else if is_simple c then
-      let w = (c lsr shift_width) land 3 in
-      if w = 0 then 1 else w
-    else if is_continuation c then 0
-    else
-      let w_minus_1 = (c land mask_right_ext) lsr shift_right_ext in
-      w_minus_1 + 1
-
-  let[@inline] left_extent c = (c land mask_left_ext) lsr shift_left_ext
-  let[@inline] right_extent c = (c land mask_right_ext) lsr shift_right_ext
-
-  let make_cont ~code ~left ~right =
-    let id = if is_simple code then 0 else payload code in
-    let l_enc = min 3 left in
-    let r_enc = min 3 right in
-    flag_complex_cont lor id lor (l_enc lsl shift_left_ext)
-    lor (r_enc lsl shift_right_ext)
-end
-
 module Links = struct
   type t = {
     mutable next_id : int32;
@@ -223,8 +169,8 @@ type t = {
 
 (* ---- Constants ---- *)
 
-let null_cell = Cell_code.empty
-let space_cell = Cell_code.space
+let null_cell = Glyph.empty
+let space_cell = Glyph.space
 let no_link = Links.no_link
 
 (* ---- Initialization & Lifecycle ---- *)
@@ -299,7 +245,7 @@ let hyperlink_url_direct t id =
 
 (* ---- Cell Accessors ---- *)
 
-(* Cell_code is aligned with Glyph.t, so cell codes are valid Glyph.t values *)
+(* Cell codes are aligned with Glyph.t, so cell codes are valid Glyph.t values *)
 let[@inline] get_code t idx = Buf.get t.chars idx
 let[@inline] get_glyph t idx = Buf.get t.chars idx
 let[@inline] get_attrs t idx = Buf.get t.attrs idx
@@ -338,15 +284,15 @@ let get_background t idx =
     (Color_plane.clamp b) (Color_plane.clamp a)
 
 let get_text t idx =
-  (* Cell_code is aligned with Glyph.t, so cell codes can be passed directly to
+  (* Cell codes are aligned with Glyph.t, so they can be passed directly to
      Glyph.to_string *)
   let c = Buf.get t.chars idx in
-  if Cell_code.is_continuation c then "" else Glyph.to_string t.glyph_pool c
+  if Glyph.is_continuation c then "" else Glyph.to_string t.glyph_pool c
 
-let is_empty t idx = Buf.get t.chars idx = Cell_code.empty
-let is_continuation t idx = Cell_code.is_continuation (Buf.get t.chars idx)
-let is_simple t idx = Cell_code.is_simple (Buf.get t.chars idx)
-let cell_width t idx = Cell_code.width (Buf.get t.chars idx)
+let is_empty t idx = Buf.get t.chars idx = Glyph.empty
+let is_continuation t idx = Glyph.is_continuation (Buf.get t.chars idx)
+let is_simple t idx = Glyph.is_simple (Buf.get t.chars idx)
+let cell_width t idx = Glyph.cell_width (Buf.get t.chars idx)
 
 let[@inline] cells_equal t1 idx1 t2 idx2 =
   Buf.get t1.chars idx1 = Buf.get t2.chars idx2
@@ -360,9 +306,9 @@ let[@inline] cells_equal t1 idx1 t2 idx2 =
 let cleanup_grapheme_at t idx =
   let code = Buf.get t.chars idx in
 
-  if Cell_code.is_simple code then (
+  if Glyph.is_simple code then (
     (* Simple wide glyphs (e.g. CJK) have continuation cells to the right *)
-    let w = Cell_code.width code in
+    let w = Glyph.cell_width code in
     if w > 1 then
       let limit = Buf.dim t.chars in
       for i = 1 to w - 1 do
@@ -376,8 +322,8 @@ let cleanup_grapheme_at t idx =
             Buf.set t.links ni no_link)
       done)
   else
-    let left = Cell_code.left_extent code in
-    let right = Cell_code.right_extent code in
+    let left = Glyph.left_extent code in
+    let right = Glyph.right_extent code in
 
     if left = 0 && right = 0 then ()
     else
@@ -456,8 +402,8 @@ let resize t ~width ~height =
          for x = 0 to width - 1 do
            let idx = row_start + x in
            let code = Buf.get old_chars idx in
-           if Cell_code.is_start code then
-             let span = Cell_code.width code in
+           if Glyph.is_start code then
+             let span = Glyph.cell_width code in
              if span > width - x then (
                cleanup_grapheme_at t idx;
                Grapheme_tracker.remove t.grapheme_tracker code;
@@ -583,7 +529,7 @@ let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
     let overlay_is_space = code = space_cell || code = null_cell in
     let dest_has_content = dest_code <> null_cell && dest_code <> space_cell in
     let preserve =
-      overlay_is_space && dest_has_content && Cell_code.width dest_code = 1
+      overlay_is_space && dest_has_content && Glyph.cell_width dest_code = 1
     in
 
     (if preserve then (
@@ -609,9 +555,9 @@ let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
        (* Normal blended overwrite of glyph & style *)
        let old_code = dest_code in
        if old_code <> code then (
-         let old_simple = Cell_code.is_simple old_code in
-         let new_simple = Cell_code.is_simple code in
-         (if not old_simple || Cell_code.width old_code > 1 then
+         let old_simple = Glyph.is_simple old_code in
+         let new_simple = Glyph.is_simple code in
+         (if not old_simple || Glyph.cell_width old_code > 1 then
             cleanup_grapheme_at t idx);
          (* Update grapheme tracker only when complex graphemes are involved *)
          (match (old_simple, new_simple) with
@@ -658,9 +604,9 @@ let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
     (* Fast Path: Opaque Overwrite *)
     let old_code = Buf.get t.chars idx in
     if old_code <> code then (
-      let old_simple = Cell_code.is_simple old_code in
-      let new_simple = Cell_code.is_simple code in
-      (if not old_simple || Cell_code.width old_code > 1 then
+      let old_simple = Glyph.is_simple old_code in
+      let new_simple = Glyph.is_simple code in
+      (if not old_simple || Glyph.cell_width old_code > 1 then
          cleanup_grapheme_at t idx);
       (* Only touch grapheme tracker when complex graphemes are involved. Simple
          -> simple (ASCII etc.) is now tracker-free. *)
@@ -782,7 +728,7 @@ let fill_rect t ~x ~y ~width ~height ~color =
           if has_complex then
             for i = start_idx to end_idx do
               let old = Buf.get t.chars i in
-              if old <> code && not (Cell_code.is_simple old) then (
+              if old <> code && not (Glyph.is_simple old) then (
                 cleanup_grapheme_at t i;
                 Grapheme_tracker.remove t.grapheme_tracker old)
             done;
@@ -828,11 +774,11 @@ let blit ~src ~dst =
       let len = src.width * src.height in
       for i = 0 to len - 1 do
         let c = Buf.get dst.chars i in
-        if Cell_code.is_complex c then
+        if Glyph.is_complex c then
           Grapheme_tracker.add dst.grapheme_tracker c
       done)
     else (
-      (* Cross-pool blit: need to copy grapheme data between pools. Cell_code is
+      (* Cross-pool blit: need to copy grapheme data between pools. Cell codes are
          aligned with Glyph.t, so cell codes can be passed directly to
          Glyph.copy and results stored directly. *)
       Grapheme_tracker.clear dst.grapheme_tracker;
@@ -843,33 +789,33 @@ let blit ~src ~dst =
       for i = 0 to len - 1 do
         let src_c = Buf.get src.chars i in
         let dst_c =
-          if Cell_code.is_simple src_c then src_c
+          if Glyph.is_simple src_c then src_c
           else
             (* Cache by payload to avoid re-copying identical graphemes *)
-            let src_payload = Cell_code.payload src_c in
+            let src_payload = Glyph.pool_payload src_c in
             match Hashtbl.find_opt cache src_payload with
             | Some dst_glyph ->
                 (* Reconstruct cell code with cached glyph and original
                    extents *)
-                if Cell_code.is_start src_c then dst_glyph
+                if Glyph.is_start src_c then dst_glyph
                 else
-                  Cell_code.make_cont ~code:dst_glyph
-                    ~left:(Cell_code.left_extent src_c)
-                    ~right:(Cell_code.right_extent src_c)
+                  Glyph.make_continuation ~code:dst_glyph
+                    ~left:(Glyph.left_extent src_c)
+                    ~right:(Glyph.right_extent src_c)
             | None ->
                 (* Copy glyph to destination pool - src_c is a valid Glyph.t *)
                 let dst_glyph =
                   Glyph.copy ~src:src.glyph_pool src_c ~dst:dst.glyph_pool
                 in
                 Hashtbl.add cache src_payload dst_glyph;
-                if Cell_code.is_start src_c then dst_glyph
+                if Glyph.is_start src_c then dst_glyph
                 else
-                  Cell_code.make_cont ~code:dst_glyph
-                    ~left:(Cell_code.left_extent src_c)
-                    ~right:(Cell_code.right_extent src_c)
+                  Glyph.make_continuation ~code:dst_glyph
+                    ~left:(Glyph.left_extent src_c)
+                    ~right:(Glyph.right_extent src_c)
         in
         Buf.set dst.chars i dst_c;
-        if Cell_code.is_complex dst_c then
+        if Glyph.is_complex dst_c then
           Grapheme_tracker.add dst.grapheme_tracker dst_c;
 
         let src_l = Buf.get src.links i in
@@ -895,13 +841,13 @@ let bulk_update_graphemes t ~src_idx ~dst_idx ~len =
     (* 1. Decrement counts for the region being overwritten (dst) *)
     for i = 0 to len - 1 do
       let code = Buf.get t.chars (dst_idx + i) in
-      if not (Cell_code.is_simple code) then
+      if not (Glyph.is_simple code) then
         Grapheme_tracker.remove t.grapheme_tracker code
     done;
     (* 2. Increment counts for the region being copied (src) *)
     for i = 0 to len - 1 do
       let code = Buf.get t.chars (src_idx + i) in
-      if not (Cell_code.is_simple code) then
+      if not (Glyph.is_simple code) then
         Grapheme_tracker.add t.grapheme_tracker code
     done)
 
@@ -994,31 +940,31 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
             i := !i + y_step
           done
         else
-          (* Slow Path: Cross-Grid / General Blit Cell_code is aligned with
+          (* Slow Path: Cross-Grid / General Blit. Cell codes are aligned with
              Glyph.t, so cell codes can be passed directly to Glyph.copy and
              results stored directly. *)
           let grapheme_map = Hashtbl.create 64 in
           let copy_glyph code =
             (* Cache by payload to avoid re-copying identical graphemes *)
-            let payload = Cell_code.payload code in
+            let payload = Glyph.pool_payload code in
             match Hashtbl.find_opt grapheme_map payload with
             | Some dst_glyph ->
-                if Cell_code.is_start code then dst_glyph
+                if Glyph.is_start code then dst_glyph
                 else
-                  Cell_code.make_cont ~code:dst_glyph
-                    ~left:(Cell_code.left_extent code)
-                    ~right:(Cell_code.right_extent code)
+                  Glyph.make_continuation ~code:dst_glyph
+                    ~left:(Glyph.left_extent code)
+                    ~right:(Glyph.right_extent code)
             | None ->
                 (* code is a valid Glyph.t due to aligned formats *)
                 let dst_glyph =
                   Glyph.copy ~src:src.glyph_pool code ~dst:dst.glyph_pool
                 in
                 Hashtbl.add grapheme_map payload dst_glyph;
-                if Cell_code.is_start code then dst_glyph
+                if Glyph.is_start code then dst_glyph
                 else
-                  Cell_code.make_cont ~code:dst_glyph
-                    ~left:(Cell_code.left_extent code)
-                    ~right:(Cell_code.right_extent code)
+                  Glyph.make_continuation ~code:dst_glyph
+                    ~left:(Glyph.left_extent code)
+                    ~right:(Glyph.right_extent code)
           in
 
           let x_start, x_limit, x_step =
@@ -1048,8 +994,8 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
               in
 
               let is_orphan =
-                if Cell_code.is_continuation code then
-                  let left = Cell_code.left_extent code in
+                if Glyph.is_continuation code then
+                  let left = Glyph.left_extent code in
                   sx - left < src_x
                 else false
               in
@@ -1057,7 +1003,7 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
               let final_code_mapped =
                 if is_orphan then space_cell
                 else if
-                  src.glyph_pool == dst.glyph_pool || Cell_code.is_simple code
+                  src.glyph_pool == dst.glyph_pool || Glyph.is_simple code
                 then code
                 else copy_glyph code
               in
@@ -1170,7 +1116,7 @@ let draw_text ?style ?(tab_width = 2) t ~x ~y ~text =
       in
 
       let writer code =
-        if Cell_code.is_simple code && Cell_code.codepoint code = 9 then
+        if Glyph.is_simple code && Glyph.codepoint code = 9 then
           let spaces = tabw in
           let start_visible = cell_visible !cur_x in
           for _ = 1 to spaces do
@@ -1189,7 +1135,7 @@ let draw_text ?style ?(tab_width = 2) t ~x ~y ~text =
               incr cur_x)
           done
         else if !cur_x < t.width then
-          let w = Cell_code.width code in
+          let w = Glyph.cell_width code in
           if w > 0 then (
             let bounds_ok = !cur_x + w <= t.width && !cur_x >= 0 in
             let start_visible = cell_visible !cur_x in
@@ -1216,7 +1162,7 @@ let draw_text ?style ?(tab_width = 2) t ~x ~y ~text =
                        | None -> Color_plane.read_rgba t.bg c_idx
                      in
                      let cont =
-                       Cell_code.make_cont ~code ~left:i ~right:(w - 1 - i)
+                       Glyph.make_continuation ~code ~left:i ~right:(w - 1 - i)
                      in
                      let blending_c =
                        fg_a < 0.999 || ba_c < 0.999 || t.respect_alpha
@@ -1447,12 +1393,12 @@ let decode_braille_bits t ~x ~y =
   else
     let idx = (y * t.width) + x in
     let code = Buf.get t.chars idx in
-    if Cell_code.is_simple code then
+    if Glyph.is_simple code then
       (* Simple cell: extract codepoint *)
-      let cp = Cell_code.codepoint code in
+      let cp = Glyph.codepoint code in
       if cp >= braille_base && cp <= braille_max then cp - braille_base
       else 0
-    else if Cell_code.is_start code then
+    else if Glyph.is_start code then
       (* Complex cell: decode from glyph pool. Braille is 3-byte UTF-8. *)
       let s = Glyph.to_string t.glyph_pool code in
       if String.length s = 3 then
@@ -1658,9 +1604,9 @@ let snapshot ?(reset = true) t : string =
               Ansi.Sgr_state.update style w ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g
                 ~bg_b ~bg_a ~attrs ~link;
 
-              (* Emit grapheme - Cell_code is aligned with Glyph.t *)
+              (* Emit grapheme - cell codes are aligned with Glyph.t *)
               if
-                Cell_code.is_continuation code || Int.equal code Cell_code.empty
+                Glyph.is_continuation code || Int.equal code Glyph.empty
               then Ansi.emit (Ansi.char ' ') w
               else
                 (* code is a valid Glyph.t due to aligned formats *)

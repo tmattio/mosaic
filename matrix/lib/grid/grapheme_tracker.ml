@@ -7,19 +7,13 @@ type t = {
   mutable unique : int;
 }
 
-(* Payload mask covers index (bits 0-17) + generation (bits 18-24) = 25 bits.
-   Must match Cell_code.mask_payload exactly to avoid aliasing bugs. *)
-let payload_mask = 0x01FFFFFF
-
-let mask_index = 0x3FFFF
-
 let[@inline] payload_key id =
   if Glyph.is_simple id then None
   else
-    let key = id land payload_mask in
+    let key = Glyph.pool_payload id in
     (* Pool index 0 is never allocated (slots start at 1). A complex cell with
        index 0 is a continuation of a simple wide glyph — no pool entry. *)
-    if key land mask_index = 0 then None else Some key
+    if Glyph.pool_index id = 0 then None else Some key
 
 let create pool = { counts = Hashtbl.create 128; pool; unique = 0 }
 
