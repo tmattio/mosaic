@@ -833,7 +833,9 @@ let handle_control t ctrl =
                 ~height:1;
               mark_row_dirty t row)
   | Ansi.Parser.ICH n ->
-      (* Insert characters *)
+      (* Insert characters: shift content right by insert_span, clear the gap.
+         Mirror of DCH which shifts left. Grid.blit_region handles overlapping
+         same-grid blits by iterating right-to-left when src_x < dst_x. *)
       if n > 0 then
         let row = t.cursor.row in
         if row >= 0 && row < t.rows then
@@ -843,46 +845,20 @@ let handle_control t ctrl =
           if start_col < t.cols then
             let insert_span = min n (t.cols - start_col) in
             if insert_span > 0 then (
-              let available = t.cols - insert_span - start_col in
-              let rec collect_spans col remaining acc total =
-                if col >= t.cols || remaining <= 0 then (List.rev acc, total)
-                else
-                  let idx = (row * t.cols) + col in
-                  if Grid.is_continuation t.active_grid idx then
-                    collect_spans (col + 1) remaining acc total
-                  else
-                    let width = max 1 (Grid.cell_width t.active_grid idx) in
-                    if width > remaining then (List.rev acc, total)
-                    else
-                      collect_spans (col + width) (remaining - width)
-                        ((col, width) :: acc) (total + width)
-              in
-              let (_ : (int * int) list), copied_width =
-                collect_spans start_col available [] 0
-              in
-
-              if copied_width > 0 then (
-                let tmp =
-                  Grid.create ~width:copied_width ~height:1
-                    ~glyph_pool:(Grid.glyph_pool t.active_grid)
-                    ~width_method:(Grid.width_method t.active_grid)
-                    ~respect_alpha:(Grid.respect_alpha t.active_grid)
-                    ()
+              let move_width = t.cols - start_col - insert_span in
+              if move_width > 0 then (
+                Grid.blit_region ~src:t.active_grid ~dst:t.active_grid
+                  ~src_x:start_col ~src_y:row ~width:move_width ~height:1
+                  ~dst_x:(start_col + insert_span) ~dst_y:row;
+                (* If a wide character at the right edge got truncated by the
+                   shift, erase the orphaned cells. *)
+                let right_start, right_w =
+                  grapheme_start_and_width t.active_grid row (t.cols - 1)
                 in
-                Grid.blit_region ~src:t.active_grid ~dst:tmp ~src_x:start_col
-                  ~src_y:row ~width:copied_width ~height:1 ~dst_x:0 ~dst_y:0;
-
-                (* Clear the affected part of the line, then write preserved
-                   content back at its shifted position. *)
-                erase_region t ~x:start_col ~y:row ~width:(t.cols - start_col)
-                  ~height:1;
-
-                Grid.blit_region ~src:tmp ~dst:t.active_grid ~src_x:0 ~src_y:0
-                  ~width:copied_width ~height:1 ~dst_x:(start_col + insert_span)
-                  ~dst_y:row)
-              else
-                erase_region t ~x:start_col ~y:row ~width:(t.cols - start_col)
-                  ~height:1;
+                if right_start + right_w > t.cols then
+                  erase_region t ~x:right_start ~y:row
+                    ~width:(t.cols - right_start) ~height:1);
+              erase_region t ~x:start_col ~y:row ~width:insert_span ~height:1;
               mark_row_dirty t row)
   | Ansi.Parser.OSC (0, title) | Ansi.Parser.OSC (2, title) -> t.title <- title
   | Ansi.Parser.OSC _ -> () (* Ignore other OSC *)
