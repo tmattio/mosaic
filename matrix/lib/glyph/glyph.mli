@@ -221,20 +221,11 @@ module Pool : sig
       incremented. No-op for Simple glyphs or stale Complex glyphs. *)
 
   val intern :
-    t ->
-    ?width_method:width_method ->
-    ?tab_width:int ->
-    ?width:int ->
-    ?pos:int ->
-    ?len:int ->
-    string ->
-    glyph
-  (** [intern pool ?width_method ?tab_width ?width ?pos ?len str] creates a
-      single glyph from [str].
+    t -> ?width_method:width_method -> ?tab_width:int -> string -> glyph
+  (** [intern pool str] creates a single glyph from [str].
 
       Returns {!empty} for control characters or zero-width sequences. Tab
-      characters use [tab_width] (default 2) for display width. Providing
-      [width] skips width calculation for performance.
+      characters use [tab_width] (default 2) for display width.
 
       Defaults: [width_method = `Unicode], [tab_width = 2].
 
@@ -244,6 +235,24 @@ module Pool : sig
 
       {b UTF-8 handling.} Invalid byte sequences are replaced with U+FFFD
       (replacement character).
+
+      @raise Failure if the pool exceeds 262K interned graphemes. *)
+
+  val intern_sub :
+    t ->
+    ?width_method:width_method ->
+    ?tab_width:int ->
+    string ->
+    pos:int ->
+    len:int ->
+    width:int ->
+    glyph
+  (** [intern_sub pool str ~pos ~len ~width] creates a glyph from the substring
+      [str.[pos] .. str.[pos + len - 1]] with precomputed display [width].
+
+      This is a performance variant of {!intern} for hot paths where the width
+      and substring bounds are already known, avoiding redundant width
+      calculation and [String.sub] allocation.
 
       @raise Failure if the pool exceeds 262K interned graphemes. *)
 

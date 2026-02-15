@@ -468,10 +468,14 @@ module Pool = struct
           pack_start idx (Array.unsafe_get pool.generations idx) w
 
   let intern pool ?(width_method = `Unicode) ?(tab_width = default_tab_width)
-      ?width ?(pos = 0) ?len str =
+      str =
     let tab_width = normalize_tab_width tab_width in
-    let len = match len with Some l -> l | None -> String.length str - pos in
-    intern_core pool width_method tab_width width pos len str
+    intern_core pool width_method tab_width None 0 (String.length str) str
+
+  let intern_sub pool ?(width_method = `Unicode)
+      ?(tab_width = default_tab_width) str ~pos ~len ~width =
+    let tab_width = normalize_tab_width tab_width in
+    intern_core pool width_method tab_width (Some width) pos len str
 
   (* Encoding (string -> glyph stream) *)
 

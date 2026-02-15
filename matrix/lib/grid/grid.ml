@@ -1220,8 +1220,9 @@ let draw_text ?style ?(tab_width = 2) t ~x ~y ~text =
               then cur_x := end_x
               else
                 let g =
-                  Glyph.Pool.intern t.glyph_pool ~width_method:t.width_method
-                    ~tab_width:tabw ~width:w ~pos:offset ~len text
+                  Glyph.Pool.intern_sub t.glyph_pool
+                    ~width_method:t.width_method ~tab_width:tabw text ~pos:offset
+                    ~len ~width:w
                 in
                 if Glyph.is_continuation g then () else writer g)
           text

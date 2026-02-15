@@ -459,7 +459,7 @@ let tab_cache_offsets () =
 let max_width_clamping () =
   let pool = Pool.create () in
   (* Force a width > 4 on a multi-byte grapheme; bit layout clamps to max 4. *)
-  let g = Pool.intern pool ~width:10 "ab" in
+  let g = Pool.intern_sub pool "ab" ~pos:0 ~len:2 ~width:10 in
   equal ~msg:"clamps large width" int 4 (width g)
 
 let continuation_width_encoding () =
