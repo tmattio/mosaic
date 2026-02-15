@@ -190,54 +190,27 @@ let compute_histogram_bins ~(bins : bin_method)
 
 (* {1 Constructors} *)
 
+let extract f data = Array.map f data
+
 let line ?id ?label ?style ?(resolution = `Cell) ?(pattern = `Solid) ?glyph
     ?(y_axis = `Y1) ~x ~y data =
-  let n = Array.length data in
-  let xa = Array.init n (fun i -> x data.(i)) in
-  let ya = Array.init n (fun i -> y data.(i)) in
-  {
-    id;
-    label;
-    style;
-    y_axis;
-    kind = Line { x = xa; y = ya; resolution; pattern; glyph };
-  }
+  let kind = Line { x = extract x data; y = extract y data; resolution; pattern; glyph } in
+  { id; label; style; y_axis; kind }
 
 let line_gaps ?id ?label ?style ?(resolution = `Cell) ?(pattern = `Solid) ?glyph
     ?(y_axis = `Y1) ~x ~y data =
-  let n = Array.length data in
-  let xa = Array.init n (fun i -> x data.(i)) in
-  let ya =
-    Array.init n (fun i ->
-        match y data.(i) with None -> Float.nan | Some v -> v)
-  in
-  {
-    id;
-    label;
-    style;
-    y_axis;
-    kind = Line { x = xa; y = ya; resolution; pattern; glyph };
-  }
+  let ya = extract (fun d -> match y d with None -> Float.nan | Some v -> v) data in
+  let kind = Line { x = extract x data; y = ya; resolution; pattern; glyph } in
+  { id; label; style; y_axis; kind }
 
 let scatter ?id ?label ?style ?glyph ?(mode = (`Cell : scatter_mode))
     ?(y_axis = `Y1) ~x ~y data =
-  let n = Array.length data in
-  let xa = Array.init n (fun i -> x data.(i)) in
-  let ya = Array.init n (fun i -> y data.(i)) in
-  { id; label; style; y_axis; kind = Scatter { x = xa; y = ya; mode; glyph } }
+  { id; label; style; y_axis; kind = Scatter { x = extract x data; y = extract y data; mode; glyph } }
 
 let bar ?id ?label ?style ?(direction = `Vertical)
     ?(mode = (`Half_block : bar_mode)) ~category ~value data =
-  let n = Array.length data in
-  let cats = Array.init n (fun i -> category data.(i)) in
-  let vals = Array.init n (fun i -> value data.(i)) in
-  {
-    id;
-    label;
-    style;
-    y_axis = `Y1;
-    kind = Bar { categories = cats; values = vals; direction; mode };
-  }
+  let kind = Bar { categories = extract category data; values = extract value data; direction; mode } in
+  { id; label; style; y_axis = `Y1; kind }
 
 let stacked_bar ?id ?(direction = `Vertical) ?(gap = 1) ?size
     ?(mode = (`Half_block : bar_mode)) data =
@@ -256,28 +229,20 @@ let rule ?id ?style ?(direction = `Horizontal) ?(pattern = `Solid)
 
 let heatmap ?id ?(color_scale = [||]) ?value_range ?(auto_value_range = true)
     ?(agg = (`Last : heatmap_agg)) ?(mode = Cells_fg) ~x ~y ~value data =
-  let n = Array.length data in
-  let xa = Array.init n (fun i -> x data.(i)) in
-  let ya = Array.init n (fun i -> y data.(i)) in
-  let va = Array.init n (fun i -> value data.(i)) in
-  {
-    id;
-    label = None;
-    style = None;
-    y_axis = `Y1;
-    kind =
-      Heatmap
-        {
-          x = xa;
-          y = ya;
-          values = va;
-          color_scale;
-          value_range;
-          auto_value_range;
-          agg;
-          mode;
-        };
-  }
+  let kind =
+    Heatmap
+      {
+        x = extract x data;
+        y = extract y data;
+        values = extract value data;
+        color_scale;
+        value_range;
+        auto_value_range;
+        agg;
+        mode;
+      }
+  in
+  { id; label = None; style = None; y_axis = `Y1; kind }
 
 let candles ?id ?bullish ?bearish ?(width = (`One : candle_width))
     ?(body = (`Filled : candle_body)) ?(y_axis = `Y1) data =
@@ -303,17 +268,8 @@ let candles ?id ?bullish ?bearish ?(width = (`One : candle_width))
 let circle ?id ?style
     ?(resolution = (`Cell : [ `Cell | `Wave | `Block2x2 | `Braille2x4 ]))
     ?(y_axis = `Y1) ~cx ~cy ~r data =
-  let n = Array.length data in
-  let cxa = Array.init n (fun i -> cx data.(i)) in
-  let cya = Array.init n (fun i -> cy data.(i)) in
-  let ra = Array.init n (fun i -> r data.(i)) in
-  {
-    id;
-    label = None;
-    style;
-    y_axis;
-    kind = Circle { cx = cxa; cy = cya; r = ra; resolution };
-  }
+  let kind = Circle { cx = extract cx data; cy = extract cy data; r = extract r data; resolution } in
+  { id; label = None; style; y_axis; kind }
 
 let shade ?id ?style ~min ~max () =
   let x0, x1 = if min <= max then (min, max) else (max, min) in
@@ -324,36 +280,17 @@ let column_bg ?id ?style x =
 
 let area ?id ?label ?style ?(baseline = `Zero) ?(resolution = `Cell)
     ?(y_axis = `Y1) ~x ~y data =
-  let n = Array.length data in
-  let xa = Array.init n (fun i -> x data.(i)) in
-  let ya = Array.init n (fun i -> y data.(i)) in
-  {
-    id;
-    label;
-    style;
-    y_axis;
-    kind = Area { x = xa; y = ya; baseline; resolution };
-  }
+  let kind = Area { x = extract x data; y = extract y data; baseline; resolution } in
+  { id; label; style; y_axis; kind }
 
 let fill_between ?id ?label ?style ?(resolution = `Cell) ?(y_axis = `Y1) ~x
     ~y_low ~y_high data =
-  let n = Array.length data in
-  let xa = Array.init n (fun i -> x data.(i)) in
-  let yla = Array.init n (fun i -> y_low data.(i)) in
-  let yha = Array.init n (fun i -> y_high data.(i)) in
-  {
-    id;
-    label;
-    style;
-    y_axis;
-    kind = Fill_between { x = xa; y_low = yla; y_high = yha; resolution };
-  }
+  let kind = Fill_between { x = extract x data; y_low = extract y_low data; y_high = extract y_high data; resolution } in
+  { id; label; style; y_axis; kind }
 
 let histogram ?id ?label ?style ?(bins = Bins 10) ?(normalize = `Count) ~x data
     =
-  let n = Array.length data in
-  let xs = Array.init n (fun i -> x data.(i)) in
-  let bin_edges, bin_values = compute_histogram_bins ~bins ~normalize xs in
+  let bin_edges, bin_values = compute_histogram_bins ~bins ~normalize (extract x data) in
   { id; label; style; y_axis = `Y1; kind = Histogram { bin_edges; bin_values } }
 
 (* {1 Domain Inference} *)
@@ -512,7 +449,7 @@ let infer_x_domain_additive (marks : t list) =
 
 (* {1 Category Extraction} *)
 
-let collect_x_categories (marks : t list) =
+let collect_categories ~(dir : direction) (marks : t list) =
   let cats = ref [] in
   let seen = Hashtbl.create 16 in
   let add c =
@@ -524,33 +461,16 @@ let collect_x_categories (marks : t list) =
   List.iter
     (fun m ->
       match m.kind with
-      | Bar { categories; direction = `Vertical; _ } ->
+      | Bar { categories; direction; _ } when direction = dir ->
           Array.iter add categories
-      | Stacked_bar { data; direction = `Vertical; _ } ->
+      | Stacked_bar { data; direction; _ } when direction = dir ->
           Array.iter (fun b -> add b.category) data
       | _ -> ())
     marks;
   List.rev !cats
 
-let collect_y_categories (marks : t list) =
-  let cats = ref [] in
-  let seen = Hashtbl.create 16 in
-  let add c =
-    if not (Hashtbl.mem seen c) then begin
-      Hashtbl.add seen c ();
-      cats := c :: !cats
-    end
-  in
-  List.iter
-    (fun m ->
-      match m.kind with
-      | Bar { categories; direction = `Horizontal; _ } ->
-          Array.iter add categories
-      | Stacked_bar { data; direction = `Horizontal; _ } ->
-          Array.iter (fun b -> add b.category) data
-      | _ -> ())
-    marks;
-  List.rev !cats
+let collect_x_categories marks = collect_categories ~dir:`Vertical marks
+let collect_y_categories marks = collect_categories ~dir:`Horizontal marks
 
 (* {1 Style Resolution} *)
 

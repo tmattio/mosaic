@@ -165,26 +165,20 @@ module Overlay = struct
     let style = Option.value style ~default:layout.theme.crosshair in
     let px, py = Layout.px_of_data layout ~x ~y in
     let r = Layout.plot_rect layout in
-    let charset = layout.theme.charset in
+    let ch = layout.theme.charset in
+    let glyph_v, glyph_h =
+      match pattern with
+      | `Solid -> (ch.grid_v_solid, ch.grid_h_solid)
+      | `Dashed -> (ch.grid_v_dashed, ch.grid_h_dashed)
+      | `Dotted -> (ch.grid_v_dotted, ch.grid_h_dotted)
+    in
     (if px >= r.x && px < r.x + r.width then
-       let glyph =
-         match pattern with
-         | `Solid -> charset.grid_v_solid
-         | `Dashed -> charset.grid_v_dashed
-         | `Dotted -> charset.grid_v_dotted
-       in
        for yy = r.y to r.y + r.height - 1 do
-         Render.draw_text grid ~x:px ~y:yy ~style glyph
+         Render.draw_text grid ~x:px ~y:yy ~style glyph_v
        done);
     if py >= r.y && py < r.y + r.height then
-      let glyph =
-        match pattern with
-        | `Solid -> charset.grid_h_solid
-        | `Dashed -> charset.grid_h_dashed
-        | `Dotted -> charset.grid_h_dotted
-      in
       for xx = r.x to r.x + r.width - 1 do
-        Render.draw_text grid ~x:xx ~y:py ~style glyph
+        Render.draw_text grid ~x:xx ~y:py ~style glyph_h
       done
 
   let marker ?style ?(glyph = "●") (layout : Layout.t) (grid : G.t) ~x ~y =
@@ -193,6 +187,68 @@ module Overlay = struct
     let r = Layout.plot_rect layout in
     if Layout.rect_contains r ~x:px ~y:py then
       Render.draw_text grid ~x:px ~y:py ~style glyph
+
+  let pad_lines lines =
+    let w = List.fold_left (fun acc s -> max acc (Layout.text_width s)) 0 lines in
+    List.map
+      (fun s ->
+        let sw = Layout.text_width s in
+        if sw >= w then s else s ^ String.make (w - sw) ' ')
+      lines
+
+  let border_size = function Some _ -> 2 | None -> 0
+
+  let best_anchor ~rect ~px ~py ~box_w ~box_h =
+    let propose = function
+      | `Right -> (px + 2, py - (box_h / 2))
+      | `Left -> (px - box_w - 2, py - (box_h / 2))
+      | `Top -> (px - (box_w / 2), py - box_h - 2)
+      | `Bottom -> (px - (box_w / 2), py + 2)
+    in
+    let score (x0, y0) =
+      let clip =
+        max 0 (rect.Layout.x - x0)
+        + max 0 (x0 + box_w - (rect.x + rect.width))
+        + max 0 (rect.y - y0)
+        + max 0 (y0 + box_h - (rect.y + rect.height))
+      in
+      let overlap =
+        if px >= x0 && px < x0 + box_w && py >= y0 && py < y0 + box_h
+        then 1000
+        else 0
+      in
+      clip + overlap
+    in
+    let best = ref (propose `Right) in
+    let best_score = ref max_int in
+    List.iter
+      (fun a ->
+        let pos = propose a in
+        let s = score pos in
+        if s < !best_score then (
+          best_score := s;
+          best := pos))
+      [ `Right; `Left; `Top; `Bottom ];
+    !best
+
+  let draw_tooltip_border grid ~style:bst ~charset ~x0 ~y0 ~box_w ~box_h =
+    if box_w >= 2 && box_h >= 2 then begin
+      let tf = charset.Layout.Charset.tooltip_frame in
+      let top = y0 and bot = y0 + box_h - 1 in
+      let left = x0 and right = x0 + box_w - 1 in
+      Render.draw_text grid ~x:left ~y:top ~style:bst tf.tl;
+      Render.draw_text grid ~x:right ~y:top ~style:bst tf.tr;
+      Render.draw_text grid ~x:left ~y:bot ~style:bst tf.bl;
+      Render.draw_text grid ~x:right ~y:bot ~style:bst tf.br;
+      for xx = left + 1 to right - 1 do
+        Render.draw_text grid ~x:xx ~y:top ~style:bst tf.h;
+        Render.draw_text grid ~x:xx ~y:bot ~style:bst tf.h
+      done;
+      for yy = top + 1 to bot - 1 do
+        Render.draw_text grid ~x:left ~y:yy ~style:bst tf.v;
+        Render.draw_text grid ~x:right ~y:yy ~style:bst tf.v
+      done
+    end
 
   let tooltip ?style ?(border = `Theme) ?(padding = 1) ?(anchor = `Auto)
       (layout : Layout.t) (grid : G.t) ~x ~y (lines : string list) =
@@ -208,74 +264,29 @@ module Overlay = struct
     let rect = Layout.plot_rect layout in
     if not (Layout.rect_contains rect ~x:px ~y:py) then ()
     else
-      let lines =
-        let w =
-          List.fold_left (fun acc s -> max acc (Layout.text_width s)) 0 lines
-        in
-        List.map
-          (fun s ->
-            let sw = Layout.text_width s in
-            if sw >= w then s else s ^ String.make (w - sw) ' ')
-          lines
-      in
+      let lines = pad_lines lines in
       let content_w =
         List.fold_left (fun acc s -> max acc (Layout.text_width s)) 0 lines
       in
       let content_h = List.length lines in
-      let box_w =
-        content_w + (2 * padding)
-        + (match border with Some _ -> 2 | None -> 0)
-      in
-      let box_h =
-        content_h + (2 * padding)
-        + (match border with Some _ -> 2 | None -> 0)
-      in
+      let bsz = border_size border in
+      let box_w = content_w + (2 * padding) + bsz in
+      let box_h = content_h + (2 * padding) + bsz in
       if box_w <= 0 || box_h <= 0 then ()
       else
-        let propose_for anchor =
-          match anchor with
-          | `Right -> (px + 2, py - (box_h / 2))
-          | `Left -> (px - box_w - 2, py - (box_h / 2))
-          | `Top -> (px - (box_w / 2), py - box_h - 2)
-          | `Bottom -> (px - (box_w / 2), py + 2)
-        in
-        let clip_amount (x0, y0) =
-          let left_clip = max 0 (rect.x - x0) in
-          let right_clip = max 0 (x0 + box_w - (rect.x + rect.width)) in
-          let top_clip = max 0 (rect.y - y0) in
-          let bottom_clip = max 0 (y0 + box_h - (rect.y + rect.height)) in
-          left_clip + right_clip + top_clip + bottom_clip
-        in
-        let overlaps_point (x0, y0) =
-          px >= x0 && px < x0 + box_w && py >= y0 && py < y0 + box_h
-        in
         let x0, y0 =
           match anchor with
-          | (`Left | `Right | `Top | `Bottom) as a -> propose_for a
-          | `Auto ->
-              let candidates = [ `Right; `Left; `Top; `Bottom ] in
-              let best = ref (propose_for `Right) in
-              let best_score = ref max_int in
-              List.iter
-                (fun a ->
-                  let pos = propose_for a in
-                  let clip = clip_amount pos in
-                  let overlap_penalty =
-                    if overlaps_point pos then 1000 else 0
-                  in
-                  let score = clip + overlap_penalty in
-                  if score < !best_score then (
-                    best_score := score;
-                    best := pos))
-                candidates;
-              !best
+          | (`Left | `Right | `Top | `Bottom) as a ->
+              (match a with
+              | `Right -> (px + 2, py - (box_h / 2))
+              | `Left -> (px - box_w - 2, py - (box_h / 2))
+              | `Top -> (px - (box_w / 2), py - box_h - 2)
+              | `Bottom -> (px - (box_w / 2), py + 2))
+          | `Auto -> best_anchor ~rect ~px ~py ~box_w ~box_h
         in
-        let x0 =
-          Layout.clamp_int rect.x (rect.x + rect.width - box_w) x0
-        in
-        let y0 =
-          Layout.clamp_int rect.y (rect.y + rect.height - box_h) y0
-        in
+        let x0 = Layout.clamp_int rect.x (rect.x + rect.width - box_w) x0 in
+        let y0 = Layout.clamp_int rect.y (rect.y + rect.height - box_h) y0 in
+        (* Clear background *)
         for yy = 0 to box_h - 1 do
           for xx = 0 to box_w - 1 do
             let x = x0 + xx and y = y0 + yy in
@@ -283,36 +294,19 @@ module Overlay = struct
               Render.draw_text grid ~x ~y ~style " "
           done
         done;
-        (match border with
-        | None -> ()
-        | Some bst ->
-            let tf = layout.theme.charset.tooltip_frame in
-            if box_w >= 2 && box_h >= 2 then (
-              let top = y0 and bot = y0 + box_h - 1 in
-              let left = x0 and right = x0 + box_w - 1 in
-              Render.draw_text grid ~x:left ~y:top ~style:bst tf.tl;
-              Render.draw_text grid ~x:right ~y:top ~style:bst tf.tr;
-              Render.draw_text grid ~x:left ~y:bot ~style:bst tf.bl;
-              Render.draw_text grid ~x:right ~y:bot ~style:bst tf.br;
-              for xx = left + 1 to right - 1 do
-                Render.draw_text grid ~x:xx ~y:top ~style:bst tf.h;
-                Render.draw_text grid ~x:xx ~y:bot ~style:bst tf.h
-              done;
-              for yy = top + 1 to bot - 1 do
-                Render.draw_text grid ~x:left ~y:yy ~style:bst tf.v;
-                Render.draw_text grid ~x:right ~y:yy ~style:bst tf.v
-              done));
-        let inner_x =
-          x0 + (match border with Some _ -> 1 | None -> 0) + padding
-        in
-        let inner_y =
-          y0 + (match border with Some _ -> 1 | None -> 0) + padding
-        in
+        (* Draw border *)
+        Option.iter
+          (fun bst ->
+            draw_tooltip_border grid ~style:bst ~charset:layout.theme.charset
+              ~x0 ~y0 ~box_w ~box_h)
+          border;
+        (* Draw content *)
+        let inner_offset = (bsz / 2) + padding in
         List.iteri
           (fun i line ->
-            let y = inner_y + i in
+            let y = y0 + inner_offset + i in
             if y >= rect.y && y < rect.y + rect.height then
-              Render.draw_text grid ~x:inner_x ~y ~style line)
+              Render.draw_text grid ~x:(x0 + inner_offset) ~y ~style line)
           lines
 
   let text ?style ?(anchor = `Left) ?(v_anchor = `Middle) (layout : Layout.t)
@@ -462,7 +456,7 @@ let apply_theme_defaults (theme : Theme.t) (a : Axis.t) =
 let apply_grid_theme (theme : Theme.t) (g : Gridlines.t) =
   { g with style = (if g.style = Style.default then theme.grid else g.style) }
 
-let empty ?(theme = Theme.default) () =
+let create_chart theme ~marks_rev ~title =
   {
     theme;
     frame = default_frame;
@@ -473,24 +467,16 @@ let empty ?(theme = Theme.default) () =
     y_axis = apply_theme_defaults theme Axis.default;
     y2_axis = None;
     grid = apply_grid_theme theme Gridlines.hidden;
-    marks_rev = [];
-    title = None;
+    marks_rev;
+    title;
   }
 
+let empty ?(theme = Theme.default) () =
+  create_chart theme ~marks_rev:[] ~title:None
+
 let make ?(theme = Theme.default) ?title marks =
-  {
-    theme;
-    frame = default_frame;
-    x_scale = Scale.Auto;
-    y_scale = Scale.Auto;
-    y2_scale = None;
-    x_axis = apply_theme_defaults theme Axis.default;
-    y_axis = apply_theme_defaults theme Axis.default;
-    y2_axis = None;
-    grid = apply_grid_theme theme Gridlines.hidden;
-    marks_rev = List.rev marks;
-    title = Option.map (fun text -> { text; style = None }) title;
-  }
+  let title = Option.map (fun text -> { text; style = None }) title in
+  create_chart theme ~marks_rev:(List.rev marks) ~title
 
 let with_theme theme t =
   {
