@@ -866,29 +866,28 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
 
 (* {1 Scrolling} *)
 
-let scroll t ~top ~bottom ~delta =
-  if delta = 0 || top >= bottom then ()
+let scroll t ~top ~bottom n =
+  if n = 0 || top >= bottom then ()
   else
     let region_h = bottom - top + 1 in
-    let abs_delta = abs delta in
+    let abs_n = abs n in
     let clear_c = Ansi.Color.of_rgba 0 0 0 0 in
-    if abs_delta >= region_h then
+    if abs_n >= region_h then
       fill_rect t ~x:0 ~y:top ~width:t.width ~height:region_h ~color:clear_c
     else
-      let copy_h = region_h - abs_delta in
-      if delta > 0 then (
-        blit_region ~src:t ~dst:t ~src_x:0 ~src_y:top ~width:t.width
-          ~height:copy_h ~dst_x:0 ~dst_y:(top + delta);
-        fill_rect t ~x:0 ~y:top ~width:t.width ~height:abs_delta ~color:clear_c)
-      else (
-        blit_region ~src:t ~dst:t ~src_x:0 ~src_y:(top + abs_delta)
+      let copy_h = region_h - abs_n in
+      if n > 0 then (
+        (* Scroll up: shift content up, blank at bottom *)
+        blit_region ~src:t ~dst:t ~src_x:0 ~src_y:(top + abs_n)
           ~width:t.width ~height:copy_h ~dst_x:0 ~dst_y:top;
         fill_rect t ~x:0
-          ~y:(bottom - abs_delta + 1)
-          ~width:t.width ~height:abs_delta ~color:clear_c)
-
-let scroll_up t ~top ~bottom ~n = scroll t ~top ~bottom ~delta:(-n)
-let scroll_down t ~top ~bottom ~n = scroll t ~top ~bottom ~delta:n
+          ~y:(bottom - abs_n + 1)
+          ~width:t.width ~height:abs_n ~color:clear_c)
+      else (
+        (* Scroll down: shift content down, blank at top *)
+        blit_region ~src:t ~dst:t ~src_x:0 ~src_y:top ~width:t.width
+          ~height:copy_h ~dst_x:0 ~dst_y:(top + abs_n);
+        fill_rect t ~x:0 ~y:top ~width:t.width ~height:abs_n ~color:clear_c)
 
 (* {1 Text rendering} *)
 

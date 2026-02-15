@@ -101,7 +101,7 @@ let scroll_terminal_region =
     ~f:(fun grid ->
       (* Simulate a burst of log lines arriving. *)
       for _ = 1 to iterations do
-        Grid.scroll_up grid ~top ~bottom ~n:1;
+        Grid.scroll grid ~top ~bottom 1;
         Grid.draw_text ~style:ascii_style grid ~x:0 ~y:bottom ~text:scroll_seed
       done)
 

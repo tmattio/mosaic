@@ -462,8 +462,8 @@ let scroll_up t n =
       done;
 
     (* Use Grid's optimized scroll operation *)
-    Grid.scroll_up t.active_grid ~top:t.scroll_region.top
-      ~bottom:t.scroll_region.bottom ~n;
+    Grid.scroll t.active_grid ~top:t.scroll_region.top
+      ~bottom:t.scroll_region.bottom n;
 
     mark_rows_dirty t t.scroll_region.top t.scroll_region.bottom
 
@@ -473,8 +473,8 @@ let scroll_down t n =
     let n = min n (t.scroll_region.bottom - t.scroll_region.top + 1) in
 
     (* Use Grid's optimized scroll operation *)
-    Grid.scroll_down t.active_grid ~top:t.scroll_region.top
-      ~bottom:t.scroll_region.bottom ~n;
+    Grid.scroll t.active_grid ~top:t.scroll_region.top
+      ~bottom:t.scroll_region.bottom (-n);
 
     mark_rows_dirty t t.scroll_region.top t.scroll_region.bottom
 

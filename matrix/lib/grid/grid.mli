@@ -359,15 +359,11 @@ val current_opacity : t -> float
 
 (** {1 Scrolling} *)
 
-val scroll_up : t -> top:int -> bottom:int -> n:int -> unit
-(** [scroll_up t ~top ~bottom ~n] scrolls [\[top..bottom\]] up by [n] lines.
-    Lines scrolled off the top are lost; new blank lines appear at the bottom.
-    No-op when [n <= 0] or the region is invalid. *)
-
-val scroll_down : t -> top:int -> bottom:int -> n:int -> unit
-(** [scroll_down t ~top ~bottom ~n] scrolls [\[top..bottom\]] down by [n]
-    lines. Lines scrolled off the bottom are lost; new blank lines appear at
-    the top. No-op when [n <= 0] or the region is invalid. *)
+val scroll : t -> top:int -> bottom:int -> int -> unit
+(** [scroll t ~top ~bottom n] scrolls the region [\[top..bottom\]] by [n]
+    lines. Positive [n] scrolls content up (new blank lines at bottom).
+    Negative [n] scrolls content down (new blank lines at top). Zero is a
+    no-op. *)
 
 (** {1 Comparison} *)
 

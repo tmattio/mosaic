@@ -567,7 +567,7 @@ let scroll_uses_transparent_background () =
   let grid = Grid.create ~width:2 ~height:2 () in
   (* Write something on the first row to force a scroll source. *)
   Grid.draw_text grid ~x:0 ~y:0 ~text:"AA";
-  Grid.scroll_up grid ~top:0 ~bottom:1 ~n:1;
+  Grid.scroll grid ~top:0 ~bottom:1 1;
   (* Bottom row is newly cleared; its background should be opaque black. *)
   let r, g, b, a = read_bg grid 0 1 in
   equal ~msg:"opaque black bg" rgba (0, (0, (0, 255))) (r, (g, (b, a)));
