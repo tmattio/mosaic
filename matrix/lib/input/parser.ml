@@ -608,25 +608,26 @@ let pua_to_key c : key =
   | 57363 -> Menu
   (* Function keys F1-F35: 57364..57398 *)
   | c when c >= 57364 && c <= 57398 -> F (c - 57363)
-  (* Keypad keys follow the same numbering scheme as Kitty's reference
-     implementation. *)
-  | 57400 -> KP_0
-  | 57401 -> KP_1
-  | 57402 -> KP_2
-  | 57403 -> KP_3
-  | 57404 -> KP_4
-  | 57405 -> KP_5
-  | 57406 -> KP_6
-  | 57407 -> KP_7
-  | 57408 -> KP_8
-  | 57409 -> KP_9
-  | 57410 -> KP_decimal
-  | 57411 -> KP_divide
-  | 57412 -> KP_multiply
-  | 57413 -> KP_subtract
-  | 57414 -> KP_add
-  | 57415 -> KP_enter
-  | 57416 -> KP_equal
+  (* Keypad keys: codes per Kitty keyboard protocol spec.
+     https://sw.kovidgoyal.net/kitty/keyboard-protocol/#functional-key-definitions *)
+  | 57399 -> KP_0
+  | 57400 -> KP_1
+  | 57401 -> KP_2
+  | 57402 -> KP_3
+  | 57403 -> KP_4
+  | 57404 -> KP_5
+  | 57405 -> KP_6
+  | 57406 -> KP_7
+  | 57407 -> KP_8
+  | 57408 -> KP_9
+  | 57409 -> KP_decimal
+  | 57410 -> KP_divide
+  | 57411 -> KP_multiply
+  | 57412 -> KP_subtract
+  | 57413 -> KP_add
+  | 57414 -> KP_enter
+  | 57415 -> KP_equal
+  | 57416 -> KP_separator
   | 57417 -> KP_left
   | 57418 -> KP_right
   | 57419 -> KP_up
