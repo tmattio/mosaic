@@ -1391,8 +1391,13 @@ let draw_box t ~x ~y ~width ~height ~border_chars ~border_sides ~border_style
               | _ -> 2
             in
             let style =
-              Option.value title_style ~default:border_style
-              |> Ansi.Style.bg bg_color
+              match title_style with
+              | Some s -> Ansi.Style.bg bg_color s
+              | None ->
+                  (* Title text uses the border's foreground color but no
+                     attributes — bold/italic on borders should not bleed
+                     into the title. *)
+                  Ansi.Style.make ?fg:border_style.fg ~bg:bg_color ()
             in
             draw_text t ~x:(x + pad) ~y ~text:txt ~style
       | _ -> ()
