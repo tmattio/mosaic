@@ -50,7 +50,16 @@ type t = int
 
     Uses 31 bits of the native int for glyph data, compatible with both 32-bit
     and 64-bit OCaml. Always unboxed (immediate value) with zero allocation
-    overhead. *)
+    overhead.
+
+    {b Encoding.} The 31-bit budget is split between type flags (2 bits),
+    left/right extent (4 bits), generation counter (7 bits), and pool index
+    (18 bits). This leaves no room for a full 21-bit Unicode scalar alongside
+    the metadata, so only ASCII (0-127) can be stored directly as Simple
+    glyphs. All non-ASCII codepoints are interned in the pool as Complex
+    glyphs. This is a deliberate trade-off: the 31-bit layout keeps glyphs
+    unboxed on all OCaml platforms while still supporting the full generation +
+    extent metadata needed for safe grid operations. *)
 
 type width_method = [ `Unicode | `Wcwidth | `No_zwj ]
 (** Width calculation method for grapheme clusters.
