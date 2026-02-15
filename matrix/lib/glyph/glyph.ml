@@ -22,18 +22,35 @@ type pool = {
 
 (* Constants & Bit Layout *)
 
-(* Bit layout (31 bits used, compatible with 32-bit OCaml): bit 30: grapheme
-   flag bit 29: continuation flag bits 27-28: right_extent (2 bits) bits 25-26:
-   left_extent (2 bits) bits 18-24: generation (7 bits) bits 0-17: index (18
-   bits) → 262K max IDs *)
+(* 63-bit glyph layout (requires 64-bit OCaml):
 
-let flag_grapheme = 0x40000000
-let flag_continuation = 0x20000000
-let shift_right_extent = 27
-let shift_left_extent = 25
+   Simple (single Unicode scalar, no pool allocation):
+     bits 62-61: 00
+     bits 21-22: width (0 = tab sentinel, 1 = narrow, 2 = wide)
+     bits 0-20:  codepoint (21 bits, U+0000 - U+10FFFF)
+
+   Complex Start (pool-backed grapheme cluster):
+     bit 62: 1, bit 61: 0
+     bits 59-60: right_extent (width - 1, clamped to 3)
+     bits 18-24: generation (7 bits)
+     bits 0-17:  pool index (18 bits, max 262K)
+
+   Complex Continuation (wide-character placeholder):
+     bit 62: 1, bit 61: 1
+     bits 59-60: right_extent (distance to end)
+     bits 57-58: left_extent (distance to start)
+     bits 18-24: generation (7 bits)
+     bits 0-17:  pool index (18 bits) *)
+
+let flag_grapheme = 0x4000000000000000
+let flag_continuation = 0x2000000000000000
+let shift_right_extent = 59
+let shift_left_extent = 57
 let shift_generation = 18
 let mask_generation = 0x7F
 let mask_index = 0x3FFFF
+let shift_width = 21
+let mask_codepoint = 0x1FFFFF
 let default_tab_width = 2
 let initial_pool_ids = 4096
 let initial_pool_bytes = 4096 * 8
@@ -260,26 +277,6 @@ let alloc_string pool str off len =
   Bytes.blit_string ~src:str ~src_pos:off ~dst:pool.storage ~dst_pos:cursor ~len;
   id
 
-let alloc_codepoint pool u len =
-  let id, cursor = alloc_slot pool len in
-  let dst = pool.storage in
-  let set i c = Bytes.unsafe_set dst (cursor + i) (Char.chr c) in
-  (match len with
-  | 1 -> set 0 u
-  | 2 ->
-      set 0 (0xc0 lor (u lsr 6));
-      set 1 (0x80 lor (u land 0x3f))
-  | 3 ->
-      set 0 (0xe0 lor (u lsr 12));
-      set 1 (0x80 lor ((u lsr 6) land 0x3f));
-      set 2 (0x80 lor (u land 0x3f))
-  | _ ->
-      set 0 (0xf0 lor (u lsr 18));
-      set 1 (0x80 lor ((u lsr 12) land 0x3f));
-      set 2 (0x80 lor ((u lsr 6) land 0x3f));
-      set 3 (0x80 lor (u land 0x3f)));
-  id
-
 let clear pool =
   pool.next_id <- 1;
   pool.storage_cursor <- 0;
@@ -306,6 +303,8 @@ let[@inline] pack_continuation ~idx ~gen ~left ~right =
   lor (clamp_extent right lsl shift_right_extent)
   lor (gen lsl shift_generation) lor (idx land mask_index)
 
+let[@inline] pack_simple cp w = (w lsl shift_width) lor cp
+
 let[@inline] is_simple c = c land flag_grapheme = 0
 let[@inline] is_start c = is_simple c || c land flag_continuation = 0
 
@@ -331,7 +330,9 @@ let[@inline] validate_complex pool c =
 let[@inline] width ?(tab_width = default_tab_width) c =
   let tab_width = normalize_tab_width tab_width in
   if is_empty c then 0
-  else if is_simple c then ascii_width ~tab_width (c land 0xFF)
+  else if is_simple c then
+    let cp = c land mask_codepoint in
+    if cp = 0x09 then tab_width else (c lsr shift_width) land 3
   else
     let l = left_extent c in
     let r = right_extent c in
@@ -366,7 +367,7 @@ let decref pool c =
 
 let blit pool c buf ~pos =
   if is_simple c then
-    let u = Uchar.unsafe_of_int c in
+    let u = Uchar.unsafe_of_int (c land mask_codepoint) in
     let len = Uchar.utf_8_byte_length u in
     if len > Bytes.length buf - pos then 0 else Bytes.set_utf_8_uchar buf pos u
   else
@@ -401,7 +402,7 @@ let copy ~src c ~dst =
 
 let to_string pool c =
   if is_simple c then (
-    let u = Uchar.unsafe_of_int c in
+    let u = Uchar.unsafe_of_int (c land mask_codepoint) in
     let len = Uchar.utf_8_byte_length u in
     let buf = Bytes.create len in
     ignore (Bytes.set_utf_8_uchar buf 0 u);
@@ -415,7 +416,8 @@ let to_string pool c =
       Bytes.sub_string pool.storage ~pos:off ~len
 
 let length pool c =
-  if is_simple c then Uchar.utf_8_byte_length (Uchar.unsafe_of_int c)
+  if is_simple c then
+    Uchar.utf_8_byte_length (Uchar.unsafe_of_int (c land mask_codepoint))
   else
     let idx = validate_complex pool c in
     if idx < 0 then 0 else Array.unsafe_get pool.lengths idx
@@ -450,31 +452,47 @@ let rec ascii_width_loop str limit tab_width i acc =
 let intern_core pool method_ tab_width precomputed_width off len str =
   if len = 0 then 0
   else if len = 1 then
+    (* Single byte: always ASCII (0-127) *)
     let b = Char.code (String.unsafe_get str off) in
     let w =
       match precomputed_width with
       | Some w -> w
-      | None ->
-          if b < 128 then ascii_width ~tab_width b
-          else codepoint_width ~method_ ~tab_width b
-    in
-    if w <= 0 then 0 else b
-  else
-    let w =
-      match precomputed_width with
-      | Some w -> w
-      | None ->
-          let first_b = Char.code (String.unsafe_get str off) in
-          if first_b >= 128 then grapheme_width ~method_ ~tab_width str off len
-          else
-            let ascii_w = ascii_width_loop str (off + len) tab_width off 0 in
-            if ascii_w >= 0 then ascii_w
-            else grapheme_width ~method_ ~tab_width str off len
+      | None -> ascii_width ~tab_width b
     in
     if w <= 0 then 0
+    else if b = 0x09 then pack_simple b 0
+    else pack_simple b w
+  else
+    (* Multi-byte: check if single codepoint *)
+    let d = String.get_utf_8_uchar str off in
+    let cp_len = Uchar.utf_decode_length d in
+    if cp_len = len then
+      (* Single Unicode scalar: store directly *)
+      let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
+      let w =
+        match precomputed_width with
+        | Some w -> w
+        | None -> codepoint_width ~method_ ~tab_width cp
+      in
+      if w <= 0 then 0 else pack_simple cp w
     else
-      let idx = alloc_string pool str off len in
-      pack_start idx (Array.unsafe_get pool.generations idx) w
+      (* Multi-codepoint cluster: pool allocation *)
+      let w =
+        match precomputed_width with
+        | Some w -> w
+        | None ->
+            let first_b = Char.code (String.unsafe_get str off) in
+            if first_b >= 128 then
+              grapheme_width ~method_ ~tab_width str off len
+            else
+              let ascii_w = ascii_width_loop str (off + len) tab_width off 0 in
+              if ascii_w >= 0 then ascii_w
+              else grapheme_width ~method_ ~tab_width str off len
+      in
+      if w <= 0 then 0
+      else
+        let idx = alloc_string pool str off len in
+        pack_start idx (Array.unsafe_get pool.generations idx) w
 
 let intern pool ?(width_method = `Unicode) ?(tab_width = default_tab_width)
     ?width ?(pos = 0) ?len str =
@@ -482,19 +500,17 @@ let intern pool ?(width_method = `Unicode) ?(tab_width = default_tab_width)
   let len = match len with Some l -> l | None -> String.length str - pos in
   intern_core pool width_method tab_width width pos len str
 
-let intern_uchar pool uchar =
+let of_uchar uchar =
   let u = Uchar.to_int uchar in
   let tab_width = default_tab_width in
   if u < 128 then
     let w = ascii_width ~tab_width u in
-    if w <= 0 then 0 else u
-  else
-    let len = if u < 0x800 then 2 else if u < 0x10000 then 3 else 4 in
-    let w = codepoint_width ~method_:`Unicode ~tab_width u in
     if w <= 0 then 0
-    else
-      let idx = alloc_codepoint pool u len in
-      pack_start idx (Array.unsafe_get pool.generations idx) w
+    else if u = 0x09 then pack_simple u 0
+    else pack_simple u w
+  else
+    let w = codepoint_width ~method_:`Unicode ~tab_width u in
+    if w <= 0 then 0 else pack_simple u w
 
 (* Encoding (string -> glyph stream) *)
 
@@ -517,8 +533,8 @@ let encode pool ?(width_method = `Unicode) ?(tab_width = default_tab_width) f
   in
 
   let emit_ascii b =
-    let w = ascii_width ~tab_width b in
-    if w > 0 then f b
+    if b = 0x09 then f (pack_simple 0x09 0)
+    else if b >= 0x20 && b <= 0x7E then f (pack_simple b 1)
   in
 
   let rec loop i =
@@ -548,7 +564,20 @@ let encode pool ?(width_method = `Unicode) ?(tab_width = default_tab_width) f
         let w =
           grapheme_width ~method_:width_method ~tab_width str i clus_len
         in
-        if w > 0 then emit_complex ~off:i ~clus_len ~width:w;
+        if w > 0 then (
+          let d = String.get_utf_8_uchar str i in
+          if Uchar.utf_decode_length d = clus_len then (
+            (* Single codepoint: store as simple glyph *)
+            let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
+            f (pack_simple cp w);
+            if w > 1 then
+              let max_span = min 4 w - 1 in
+              for k = 1 to max_span do
+                f
+                  (pack_continuation ~idx:0 ~gen:0 ~left:k
+                     ~right:(max_span - k))
+              done)
+          else emit_complex ~off:i ~clus_len ~width:w);
         loop end_pos
   in
   loop 0

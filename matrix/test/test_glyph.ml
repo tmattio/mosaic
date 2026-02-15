@@ -275,24 +275,24 @@ let simple_vs_complex_optimization () =
   let check_type str expect_simple =
     let lst = encode_to_list pool ~width_method:`Unicode ~tab_width:2 str in
     match lst with
-    | [ g ] ->
+    | g :: _ ->
         if is_simple g <> expect_simple then
           fail
             (Printf.sprintf "Expected %s to be %s" str
                (if expect_simple then "Simple" else "Complex"))
     | [] -> fail (Printf.sprintf "Expected glyph for %s" str)
-    | _ -> fail (Printf.sprintf "Expected 1 glyph for %s" str)
   in
   check_type "a" true;
   check_type "\t" true;
-  (* Tabs remain simple/ASCII encoded; control bytes like DEL are dropped *)
+  (* Tabs remain simple encoded; control bytes like DEL are dropped *)
   let del_cells =
     encode_to_list pool ~width_method:`Unicode ~tab_width:2 "\x7F"
   in
   equal ~msg:"DEL is zero-width and skipped" int 0 (List.length del_cells);
-  check_type "é" false;
-  (* Latin-1 supplement > 127 is complex *)
-  check_type "€" false
+  (* Single codepoints are stored as simple glyphs (no pool allocation) *)
+  check_type "é" true;
+  check_type "€" true;
+  check_type "中" true
 
 let zero_length_intern () =
   let pool = create_pool () in
@@ -313,7 +313,7 @@ let complex_clustering_behavior () =
   match cells with
   | [ na; _ma; ste_start; ste_cont ] ->
       check_width "Na width" 1 (width na);
-      is_false ~msg:"Na simple" (is_simple na);
+      is_true ~msg:"Na simple (single codepoint)" (is_simple na);
 
       check_width "Ste width" 2 (width ste_start);
       is_true ~msg:"Ste start" (is_start ste_start);
@@ -344,21 +344,18 @@ let malformed_utf8_resilience () =
 
 let lifecycle_generation_safety () =
   let pool = create_pool () in
-  (* 1. Allocate a complex glyph *)
-  let g1 = intern pool "🚀" in
+  (* Use multi-codepoint clusters to exercise pool allocation *)
+  let g1 = intern pool "e\u{0301}" in
   is_false ~msg:"is complex" (is_simple g1);
 
-  (* 2. Verify existence *)
-  equal ~msg:"content exists" string "🚀" (to_string pool g1);
+  equal ~msg:"content exists" string "e\u{0301}" (to_string pool g1);
 
-  (* 3. Decrement to free it *)
   decref pool g1;
 
-  (* 4. Allocate NEW glyph. May reuse slot but bumps generation. *)
-  let g2 = intern pool "🛸" in
-  equal ~msg:"new content correct" string "🛸" (to_string pool g2);
+  let g2 = intern pool "a\u{0302}" in
+  equal ~msg:"new content correct" string "a\u{0302}" (to_string pool g2);
 
-  (* 5. SAFETY CHECK: Accessing g1 (Stale) should NOT return "🛸" *)
+  (* Stale reference should return safe defaults *)
   equal ~msg:"stale string empty" string "" (to_string pool g1);
   let buf = Bytes.create 8 in
   equal ~msg:"stale blit is empty" int 0 (blit pool g1 buf ~pos:0)
@@ -394,12 +391,10 @@ let copy_safety () =
   let g_copy = copy ~src:p1 g ~dst:p2 in
   equal ~msg:"simple copy identity" int g g_copy;
 
-  let complex = intern p1 "🚀" in
-  (* Consume complex, become Stale in p1 *)
+  (* Use multi-codepoint cluster to exercise pool copy *)
+  let complex = intern p1 "e\u{0301}" in
   decref p1 complex;
 
-  (* Force slot reuse to bump generation, then copying stale should return
-     empty *)
   let _reused = intern p1 "reused" in
   let stale_copy = copy ~src:p1 complex ~dst:p2 in
   is_true ~msg:"copied stale is empty" (is_empty stale_copy)

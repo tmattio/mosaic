@@ -98,54 +98,56 @@ module Scissor_stack = struct
 end
 
 module Cell_code = struct
-  (* Bit Layout (aligned with Glyph.t for direct compatibility): bit 30:
-     grapheme flag (0 = simple/scalar, 1 = complex grapheme) bit 29:
-     continuation flag (0 = start, 1 = continuation) bits 27-28: right_extent
-     (width - 1 for start, distance to end for cont) bits 25-26: left_extent
-     (distance to start for continuation cells) bits 0-24: payload (Unicode
-     scalar for simple, or Glyph pool data for complex)
+  (* Bit layout aligned with Glyph.t (63-bit, 64-bit OCaml):
 
-     This layout matches Glyph.t exactly, allowing direct storage of glyph
-     values without transformation. Simple ASCII glyphs are stored as-is (no
-     flags set). Complex glyphs from Glyph.encode/intern can be stored
-     directly. *)
+     Simple (single Unicode scalar): bits 62-61 = 00, bits 21-22 = width,
+     bits 0-20 = codepoint.
 
-  let flag_grapheme = 0x40000000 (* bit 30 *)
-  let flag_complex_cont = 0x60000000 (* bits 30 + 29: complex continuation *)
-  let mask_right_ext = 0x18000000 (* bits 27-28 *)
-  let shift_right_ext = 27
-  let mask_left_ext = 0x06000000 (* bits 25-26 *)
-  let shift_left_ext = 25
-  let mask_payload = 0x01FFFFFF (* bits 0-24 *)
-  let empty = 0 (* Null/Empty cell *)
-  let space = 32 (* ASCII Space *)
+     Complex Start: bit 62 = 1, bit 61 = 0, bits 59-60 = right_extent,
+     bits 18-24 = generation, bits 0-17 = pool index.
 
-  (* Predicates - aligned with Glyph.is_simple, etc. *)
+     Complex Continuation: bit 62 = 1, bit 61 = 1, bits 59-60 = right_extent,
+     bits 57-58 = left_extent, bits 18-24 = generation, bits 0-17 = pool
+     index. *)
+
+  let flag_grapheme = 0x4000000000000000
+  let flag_complex_cont = 0x6000000000000000
+  let mask_right_ext = 0x1800000000000000
+  let shift_right_ext = 59
+  let mask_left_ext = 0x0600000000000000
+  let shift_left_ext = 57
+  let mask_payload = 0x01FFFFFF (* bits 0-24: index + generation *)
+  let shift_width = 21
+  let mask_codepoint = 0x1FFFFF
+  let empty = 0
+  let space = (1 lsl 21) lor 0x20 (* pack_simple 0x20 1 *)
+
   let[@inline] is_simple c = c land flag_grapheme = 0
   let[@inline] is_complex c = c land flag_grapheme <> 0
   let[@inline] is_continuation c = c land flag_complex_cont = flag_complex_cont
   let[@inline] is_start c = is_complex c && not (is_continuation c)
 
-  (* Extraction *)
   let[@inline] payload c = c land mask_payload
+  let[@inline] codepoint c = c land mask_codepoint
 
   let[@inline] width c =
-    if is_simple c then 1
+    if c = 0 then 0
+    else if is_simple c then
+      let w = (c lsr shift_width) land 3 in
+      if w = 0 then 1 else w
     else if is_continuation c then 0
     else
       let w_minus_1 = (c land mask_right_ext) lsr shift_right_ext in
       w_minus_1 + 1
 
-  (* Extent extraction for O(1) cleanup *)
   let[@inline] left_extent c = (c land mask_left_ext) lsr shift_left_ext
   let[@inline] right_extent c = (c land mask_right_ext) lsr shift_right_ext
 
-  (* Construction - for continuation cells created during draw_text. Start cells
-     can now use the Glyph.t value directly. *)
-  let make_cont ~id ~left ~right =
+  let make_cont ~code ~left ~right =
+    let id = if is_simple code then 0 else payload code in
     let l_enc = min 3 left in
     let r_enc = min 3 right in
-    flag_complex_cont lor (id land mask_payload) lor (l_enc lsl shift_left_ext)
+    flag_complex_cont lor id lor (l_enc lsl shift_left_ext)
     lor (r_enc lsl shift_right_ext)
 end
 
@@ -835,8 +837,7 @@ let blit ~src ~dst =
                    extents *)
                 if Cell_code.is_start src_c then dst_glyph
                 else
-                  Cell_code.make_cont
-                    ~id:(Cell_code.payload dst_glyph)
+                  Cell_code.make_cont ~code:dst_glyph
                     ~left:(Cell_code.left_extent src_c)
                     ~right:(Cell_code.right_extent src_c)
             | None ->
@@ -847,8 +848,7 @@ let blit ~src ~dst =
                 Hashtbl.add cache src_payload dst_glyph;
                 if Cell_code.is_start src_c then dst_glyph
                 else
-                  Cell_code.make_cont
-                    ~id:(Cell_code.payload dst_glyph)
+                  Cell_code.make_cont ~code:dst_glyph
                     ~left:(Cell_code.left_extent src_c)
                     ~right:(Cell_code.right_extent src_c)
         in
@@ -989,8 +989,7 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
             | Some dst_glyph ->
                 if Cell_code.is_start code then dst_glyph
                 else
-                  Cell_code.make_cont
-                    ~id:(Cell_code.payload dst_glyph)
+                  Cell_code.make_cont ~code:dst_glyph
                     ~left:(Cell_code.left_extent code)
                     ~right:(Cell_code.right_extent code)
             | None ->
@@ -1001,8 +1000,7 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
                 Hashtbl.add grapheme_map payload dst_glyph;
                 if Cell_code.is_start code then dst_glyph
                 else
-                  Cell_code.make_cont
-                    ~id:(Cell_code.payload dst_glyph)
+                  Cell_code.make_cont ~code:dst_glyph
                     ~left:(Cell_code.left_extent code)
                     ~right:(Cell_code.right_extent code)
           in
@@ -1156,7 +1154,7 @@ let draw_text ?style ?(tab_width = 2) t ~x ~y ~text =
       in
 
       let writer code =
-        if Cell_code.is_simple code && Cell_code.payload code = 9 then
+        if Cell_code.is_simple code && Cell_code.codepoint code = 9 then
           let spaces = tabw in
           let start_visible = cell_visible !cur_x in
           for _ = 1 to spaces do
@@ -1202,8 +1200,7 @@ let draw_text ?style ?(tab_width = 2) t ~x ~y ~text =
                        | None -> Color_plane.read_rgba t.bg c_idx
                      in
                      let cont =
-                       Cell_code.make_cont ~id:(Cell_code.payload code) ~left:i
-                         ~right:(w - 1 - i)
+                       Cell_code.make_cont ~code ~left:i ~right:(w - 1 - i)
                      in
                      let blending_c =
                        fg_a < 0.999 || ba_c < 0.999 || t.respect_alpha
@@ -1306,11 +1303,7 @@ let draw_box t ~x ~y ~width ~height ~border_chars ~border_sides ~border_style
           x >= 0 && y >= 0 && x < t.width && y < t.height
           && not (is_clipped t x y)
         then
-          (* ASCII can be stored directly; non-ASCII must be interned *)
-          let cell =
-            if code < 128 then code
-            else Glyph.intern_uchar t.glyph_pool (Uchar.of_int code)
-          in
+          let cell = Glyph.of_uchar (Uchar.of_int code) in
           set_cell_internal t
             ~idx:((y * t.width) + x)
             ~code:cell ~fg_r:b_fg_r ~fg_g:b_fg_g ~fg_b:b_fg_b ~fg_a:b_fg_a
@@ -1439,8 +1432,9 @@ let decode_braille_bits t ~x ~y =
     let idx = (y * t.width) + x in
     let code = Buf.get t.chars idx in
     if Cell_code.is_simple code then
-      (* Simple cell: direct codepoint check *)
-      if code >= braille_base && code <= braille_max then code - braille_base
+      (* Simple cell: extract codepoint *)
+      let cp = Cell_code.codepoint code in
+      if cp >= braille_base && cp <= braille_max then cp - braille_base
       else 0
     else if Cell_code.is_start code then
       (* Complex cell: decode from glyph pool. Braille is 3-byte UTF-8. *)

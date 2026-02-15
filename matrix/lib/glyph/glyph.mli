@@ -1,12 +1,12 @@
 (** High-performance, reference-counted Unicode glyph storage.
 
-    This library provides a 32-bit packed representation of visual characters
+    This library provides a packed integer representation of visual characters
     ("glyphs") optimized for terminal emulators. It distinguishes between:
 
-    - {b Simple}: ASCII characters (0-127) stored directly. Zero allocation,
-      zero lookup.
-    - {b Complex}: Unicode grapheme clusters interned in a pool. Stored as Pool
-      Index + Generation ID + Width + Flags.
+    - {b Simple}: Single Unicode scalars (U+0000 - U+10FFFF) stored directly.
+      Zero allocation, zero lookup.
+    - {b Complex}: Multi-codepoint grapheme clusters interned in a pool. Stored
+      as Pool Index + Generation ID + Width + Flags.
 
     {1 Quick Start}
 
@@ -129,12 +129,11 @@ val intern :
 
     @raise Failure if the pool exceeds 262K interned graphemes. *)
 
-val intern_uchar : pool -> Uchar.t -> t
-(** [intern_uchar pool u] creates a glyph from a single Unicode codepoint.
+val of_uchar : Uchar.t -> t
+(** [of_uchar u] creates a glyph from a single Unicode codepoint.
 
-    Returns {!empty} for control or zero-width codepoints.
-
-    @raise Failure if the pool exceeds 262K interned graphemes. *)
+    Returns {!empty} for control or zero-width codepoints. Single codepoints
+    are stored directly in the packed integer with no pool allocation. *)
 
 val encode :
   pool ->
@@ -153,8 +152,8 @@ val encode :
     [(width - 1)] Continuation glyphs. Control characters and zero-width
     sequences are skipped.
 
-    ASCII characters become Simple glyphs immediately. Unicode clusters are
-    interned and become Complex glyphs.
+    Single codepoints become Simple glyphs immediately. Multi-codepoint
+    grapheme clusters are interned and become Complex glyphs.
 
     {b UTF-8 handling.} Invalid byte sequences are replaced with U+FFFD
     (replacement character) per Unicode best practices. Each invalid byte
@@ -189,8 +188,8 @@ val is_empty : t -> bool
     U+0000. *)
 
 val is_simple : t -> bool
-(** [is_simple glyph] returns [true] if [glyph] is a direct ASCII character that
-    requires no pool lookup, [false] otherwise. *)
+(** [is_simple glyph] returns [true] if [glyph] is a single Unicode scalar
+    stored directly (no pool lookup), [false] otherwise. *)
 
 val is_start : t -> bool
 (** [is_start glyph] returns [true] if [glyph] is the start of a character
@@ -228,8 +227,8 @@ val blit : pool -> t -> bytes -> pos:int -> int
 val copy : src:pool -> t -> dst:pool -> t
 (** [copy ~src glyph ~dst] copies [glyph] from [src] pool to [dst] pool.
 
-    Returns [glyph] unchanged if it is a Simple glyph, or a new Complex glyph
-    interned in [dst]. Returns {!empty} for stale IDs.
+    Returns [glyph] unchanged if it is a Simple glyph (single codepoint), or a
+    new Complex glyph interned in [dst]. Returns {!empty} for stale IDs.
 
     {b Important.} Glyphs obtained from one pool must not be used with a
     different pool. Use [copy] to transfer glyphs between pools. *)
