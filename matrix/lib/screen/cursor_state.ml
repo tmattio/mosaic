@@ -1,4 +1,3 @@
-
 type style = [ `Block | `Line | `Underline ]
 
 type t = {

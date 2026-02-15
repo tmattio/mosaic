@@ -263,8 +263,7 @@ let hash color =
   let h = rgba_packed color in
   h lxor (h lsr 16) land max_int
 
-let alpha color =
-  match color with Rgba { a; _ } -> float_of_byte a | _ -> 1.
+let alpha color = match color with Rgba { a; _ } -> float_of_byte a | _ -> 1.
 
 let[@inline] with_rgba_f color f =
   let packed = rgba_packed color in

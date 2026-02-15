@@ -80,10 +80,10 @@ let[@inline] width_step w = if w <= 0 then 1 else w
 
 (* --- Writer Logic --- *)
 
-(* Writes a grid cell's content to the output buffer. For wide graphemes,
-   uses explicit_width (OSC 66) when available, otherwise falls back to cursor
-   repositioning to prevent column drift in terminals that miscalculate
-   grapheme widths. *)
+(* Writes a grid cell's content to the output buffer. For wide graphemes, uses
+   explicit_width (OSC 66) when available, otherwise falls back to cursor
+   repositioning to prevent column drift in terminals that miscalculate grapheme
+   widths. *)
 let[@inline] add_code_to_writer ~explicit_width ~explicit_cursor_positioning
     ~row_offset ~y ~x ~grid_width ~cell_width pool (scratch : bytes ref)
     (w : Ansi.writer) grid idx =
@@ -110,8 +110,8 @@ let[@inline] add_code_to_writer ~explicit_width ~explicit_cursor_positioning
           w
       else (
         Ansi.emit (Ansi.bytes !scratch ~off:0 ~len:written) w;
-        (* Fallback: reposition cursor after wide graphemes to prevent drift
-           in terminals that support cursor addressing but not OSC 66. *)
+        (* Fallback: reposition cursor after wide graphemes to prevent drift in
+           terminals that support cursor addressing but not OSC 66. *)
         if explicit_cursor_positioning && cell_width >= 2 then
           let next_x = x + cell_width in
           if next_x < grid_width then
@@ -516,8 +516,8 @@ let set_cursor_color t ~r ~g ~b =
 let reset_cursor_color t = Cursor_state.set_color t.cursor None
 let cursor_info t = Cursor_state.snapshot t.cursor
 
-let apply_capabilities r ~explicit_width ~explicit_cursor_positioning ~hyperlinks
-    =
+let apply_capabilities r ~explicit_width ~explicit_cursor_positioning
+    ~hyperlinks =
   r.explicit_width_capable <- explicit_width;
   r.use_explicit_width <- r.prefer_explicit_width && explicit_width;
   r.use_explicit_cursor_positioning <-

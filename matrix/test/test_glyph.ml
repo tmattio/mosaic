@@ -672,8 +672,8 @@ let line_breaks_consecutive_lf () =
 (* 7. Emoji Presentation Width Audit *)
 
 (* Verify that common emoji and symbols are measured as width 2. Terminal
-   emulators generally render these in two columns. This catches any gaps in
-   the tty_width_hint table. *)
+   emulators generally render these in two columns. This catches any gaps in the
+   tty_width_hint table. *)
 let emoji_presentation_widths () =
   let check label cp expected_w =
     let s = uchar_to_utf8 cp in

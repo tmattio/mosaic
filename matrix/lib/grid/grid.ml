@@ -166,10 +166,10 @@ type t = {
   link_registry : Links.t;
   grapheme_tracker : Grapheme_tracker.t;
   scissor_stack : Scissor_stack.t;
-  (* Opacity stack: inherited opacity for hierarchical rendering.
-     opacity_stack stores individual pushed values, opacity_depth tracks the
-     stack pointer, and opacity_product caches the cumulative product for O(1)
-     access in the hot path. *)
+  (* Opacity stack: inherited opacity for hierarchical rendering. opacity_stack
+     stores individual pushed values, opacity_depth tracks the stack pointer,
+     and opacity_product caches the cumulative product for O(1) access in the
+     hot path. *)
   opacity_stack : float array;
   mutable opacity_depth : int;
   mutable opacity_product : float;
@@ -192,9 +192,9 @@ let fill_defaults t =
   Buf.fill t.attrs 0;
   Buf.fill t.links no_link;
   Buf.fill t.fg 1.0;
-  (* Default background: opaque black. Cells start fully opaque so that
-     drawing operations take the fast opaque path rather than triggering
-     alpha blending against a transparent backdrop. *)
+  (* Default background: opaque black. Cells start fully opaque so that drawing
+     operations take the fast opaque path rather than triggering alpha blending
+     against a transparent backdrop. *)
   let len = t.width * t.height in
   for i = 0 to len - 1 do
     Color_plane.set t.bg i 0 0.0;
@@ -253,7 +253,8 @@ let hyperlink_url_direct t id =
 
 (* ---- Cell Accessors ---- *)
 
-(* Cell codes are aligned with Glyph.t, so cell codes are valid Glyph.t values *)
+(* Cell codes are aligned with Glyph.t, so cell codes are valid Glyph.t
+   values *)
 let[@inline] get_code t idx = Buf.get t.chars idx
 let[@inline] get_glyph t idx = Buf.get_glyph t.chars idx
 let[@inline] get_attrs t idx = Buf.get t.attrs idx
@@ -374,9 +375,9 @@ let clear ?color t =
     Color_plane.set t.bg i 3 ba
   done
 
-(* Resize preserves content that fits within the new bounds. This is the
-   correct behavior for terminal emulation: visible content should survive a
-   resize, with only out-of-bounds cells discarded. *)
+(* Resize preserves content that fits within the new bounds. This is the correct
+   behavior for terminal emulation: visible content should survive a resize,
+   with only out-of-bounds cells discarded. *)
 let resize t ~width ~height =
   if width <= 0 || height <= 0 then
     invalid_arg "Grid.resize: width and height must be > 0";
@@ -518,8 +519,8 @@ let[@inline] is_clipped t x y =
    in hot loops. *)
 let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
     ~bg_a ~attrs ~link_id ~blending =
-  (* Apply opacity stack: multiply alpha by the cumulative opacity product.
-     When opacity_product is 1.0 (the common case), skip the multiply. *)
+  (* Apply opacity stack: multiply alpha by the cumulative opacity product. When
+     opacity_product is 1.0 (the common case), skip the multiply. *)
   let fg_a, bg_a, blending =
     if t.opacity_product < 1.0 then
       (fg_a *. t.opacity_product, bg_a *. t.opacity_product, true)
@@ -541,9 +542,9 @@ let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
     in
 
     (if preserve then (
-       (* Preserve existing glyph and attrs; tint foreground over it.
-          The overlay link always wins: the overlay is conceptually in front,
-          so its link state (including "no link") takes precedence. *)
+       (* Preserve existing glyph and attrs; tint foreground over it. The
+          overlay link always wins: the overlay is conceptually in front, so its
+          link state (including "no link") takes precedence. *)
        Buf.set t.links idx link_id;
        if bg_a >= 0.999 then (
          (* Opaque overlay: replace fg color entirely *)
@@ -565,8 +566,8 @@ let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
        if old_code <> code then (
          let old_simple = Glyph.is_simple old_code in
          let new_simple = Glyph.is_simple code in
-         (if not old_simple || Glyph.cell_width old_code > 1 then
-            cleanup_grapheme_at t idx);
+         if (not old_simple) || Glyph.cell_width old_code > 1 then
+           cleanup_grapheme_at t idx;
          (* Update grapheme tracker only when complex graphemes are involved *)
          (match (old_simple, new_simple) with
          | true, true -> ()
@@ -614,8 +615,8 @@ let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
     if old_code <> code then (
       let old_simple = Glyph.is_simple old_code in
       let new_simple = Glyph.is_simple code in
-      (if not old_simple || Glyph.cell_width old_code > 1 then
-         cleanup_grapheme_at t idx);
+      if (not old_simple) || Glyph.cell_width old_code > 1 then
+        cleanup_grapheme_at t idx;
       (* Only touch grapheme tracker when complex graphemes are involved. Simple
          -> simple (ASCII etc.) is now tracker-free. *)
       (match (old_simple, new_simple) with
@@ -784,12 +785,11 @@ let blit ~src ~dst =
       let len = src.width * src.height in
       for i = 0 to len - 1 do
         let c = Buf.get_glyph dst.chars i in
-        if Glyph.is_complex c then
-          Grapheme_tracker.add dst.grapheme_tracker c
+        if Glyph.is_complex c then Grapheme_tracker.add dst.grapheme_tracker c
       done)
     else (
-      (* Cross-pool blit: need to copy grapheme data between pools. Cell codes are
-         aligned with Glyph.t, so cell codes can be passed directly to
+      (* Cross-pool blit: need to copy grapheme data between pools. Cell codes
+         are aligned with Glyph.t, so cell codes can be passed directly to
          Glyph.copy and results stored directly. *)
       Grapheme_tracker.clear dst.grapheme_tracker;
       Links.clear dst.link_registry;
@@ -1012,8 +1012,7 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
 
               let final_code_mapped =
                 if is_orphan then space_cell
-                else if
-                  src.glyph_pool == dst.glyph_pool || Glyph.is_simple code
+                else if src.glyph_pool == dst.glyph_pool || Glyph.is_simple code
                 then code
                 else copy_glyph code
               in
@@ -1037,8 +1036,8 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
                 (* For same-grid blits, don't infer blending from alpha - just
                    use respect_alpha. This prevents the "preserve existing
                    content" logic from incorrectly keeping destination content
-                   when copying cells with transparent backgrounds (e.g.,
-                   during DCH operations). *)
+                   when copying cells with transparent backgrounds (e.g., during
+                   DCH operations). *)
                 let blending =
                   if same_grid then dst.respect_alpha
                   else dst.respect_alpha || fg_a < 0.999 || bg_a < 0.999
@@ -1048,7 +1047,7 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
                   ~code:final_code_mapped ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g
                   ~bg_b ~bg_a ~attrs ~link_id ~blending;
 
-              k := !k + x_step
+                k := !k + x_step
             done;
             i := !i + y_step
           done
@@ -1363,8 +1362,8 @@ let draw_box t ~x ~y ~width ~height ~border_chars ~border_sides ~border_style
               | Some s -> Ansi.Style.bg bg_color s
               | None ->
                   (* Title text uses the border's foreground color but no
-                     attributes — bold/italic on borders should not bleed
-                     into the title. *)
+                     attributes — bold/italic on borders should not bleed into
+                     the title. *)
                   Ansi.Style.make ?fg:border_style.fg ~bg:bg_color ()
             in
             draw_text t ~x:(x + pad) ~y ~text:txt ~style
@@ -1406,8 +1405,7 @@ let decode_braille_bits t ~x ~y =
     if Glyph.is_simple code then
       (* Simple cell: extract codepoint *)
       let cp = Glyph.codepoint code in
-      if cp >= braille_base && cp <= braille_max then cp - braille_base
-      else 0
+      if cp >= braille_base && cp <= braille_max then cp - braille_base else 0
     else if Glyph.is_start code then
       (* Complex cell: decode from glyph pool. Braille is 3-byte UTF-8. *)
       let s = Glyph.to_string t.glyph_pool code in

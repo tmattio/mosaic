@@ -410,8 +410,7 @@ val apply_capabilities :
   hyperlinks:bool ->
   unit
 (** [apply_capabilities screen ~explicit_width ~explicit_cursor_positioning
-      ~hyperlinks]
-    applies terminal capability flags.
+     ~hyperlinks] applies terminal capability flags.
 
     @param explicit_width
       Whether the terminal supports explicit-width OSC sequences. When [true]

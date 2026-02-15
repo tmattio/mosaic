@@ -436,8 +436,8 @@ let set_cell_alpha_without_respect_skips_blend () =
     ~bg:semi_red ~attrs:Ansi.Attr.empty ();
   equal ~msg:"char" int (Char.code 'C') (read_char grid 0 0);
   equal ~msg:"width" int 1 (read_width grid 0 0);
-  (* {!Grid.set_cell_alpha} always blends. The default background is now
-     opaque black, so the fg alpha blends against that. *)
+  (* {!Grid.set_cell_alpha} always blends. The default background is now opaque
+     black, so the fg alpha blends against that. *)
   let expected =
     let blended = Ansi.Color.blend ~src:semi_red ~dst:Ansi.Color.default () in
     let r, g, b, _ = Ansi.Color.to_rgba blended in

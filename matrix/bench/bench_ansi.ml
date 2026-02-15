@@ -80,7 +80,8 @@ let styled_inline =
       (* Logging-style single-call styling, e.g. direct use from application
          code *)
       let s =
-        S.styled ~reset:true (S.make ~fg:C.red ~bold:true ())
+        S.styled ~reset:true
+          (S.make ~fg:C.red ~bold:true ())
           "ERROR: failed to connect to upstream (status=502, retries=3)"
       in
       ignore (Sys.opaque_identity s))

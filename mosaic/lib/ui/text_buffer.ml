@@ -1080,8 +1080,7 @@ let append_code t buf code =
   let g = Glyph.unsafe_of_int code in
   if is_continuation g then ()
   else if code = 10 then Buffer.add_char buf '\n'
-  else if is_grapheme_id g then
-    Buffer.add_string buf (Glyph.to_string t.pool g)
+  else if is_grapheme_id g then Buffer.add_string buf (Glyph.to_string t.pool g)
   else if Uchar.is_valid code then
     Buffer.add_utf_8_uchar buf (Uchar.of_int code)
 

@@ -3,6 +3,7 @@
 (** {1 Writer} *)
 
 type writer = Writer.t
+
 val make : bytes -> writer
 val len : writer -> int
 val reset_pos : writer -> unit

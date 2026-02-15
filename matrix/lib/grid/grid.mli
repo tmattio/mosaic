@@ -154,9 +154,9 @@ val create :
       Whether to honor alpha blending when writing cells. Defaults to [false].
       Enable for semi-transparent overlays.
 
-    All cells are initialized as spaces with opaque white foreground and
-    opaque black background, matching the result of {!clear} with default
-    color. The scissor stack is empty.
+    All cells are initialized as spaces with opaque white foreground and opaque
+    black background, matching the result of {!clear} with default color. The
+    scissor stack is empty.
 
     Raises [Invalid_argument] if [width <= 0] or [height <= 0]. *)
 
@@ -688,21 +688,21 @@ val with_scissor : t -> clip_rect -> (unit -> 'a) -> 'a
     per-widget intervention. Push/pop pairs must be balanced. *)
 
 val push_opacity : t -> float -> unit
-(** [push_opacity t opacity] pushes [opacity] onto the stack. Subsequent
-    drawing operations multiply foreground and background alpha by the product
-    of all stacked opacities. [opacity] is clamped to [[0.0, 1.0]].
+(** [push_opacity t opacity] pushes [opacity] onto the stack. Subsequent drawing
+    operations multiply foreground and background alpha by the product of all
+    stacked opacities. [opacity] is clamped to [[0.0, 1.0]].
 
     Push/pop pairs must be balanced. The stack supports up to 32 levels of
     nesting. *)
 
 val pop_opacity : t -> unit
-(** [pop_opacity t] removes the most recently pushed opacity. No-op if the
-    stack is empty. After popping, the previous cumulative opacity (if any)
-    becomes active. *)
+(** [pop_opacity t] removes the most recently pushed opacity. No-op if the stack
+    is empty. After popping, the previous cumulative opacity (if any) becomes
+    active. *)
 
 val current_opacity : t -> float
-(** [current_opacity t] is the product of all stacked opacities, or [1.0] if
-    the stack is empty. *)
+(** [current_opacity t] is the product of all stacked opacities, or [1.0] if the
+    stack is empty. *)
 
 (** {1 Scrolling Operations}
 
