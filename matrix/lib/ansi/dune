@@ -1,3 +1,4 @@
 (library
  (name ansi)
- (public_name matrix.ansi))
+ (public_name matrix.ansi)
+ (private_modules segment))
