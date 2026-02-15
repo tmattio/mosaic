@@ -129,15 +129,12 @@ let draw_no_pty grid ~cols ~rows =
     ~y:(rows / 2) ~text:msg
 
 let () =
-  let app =
+  let config =
     Matrix.create ~target_fps:(Some 30.) ~mouse_enabled:false
       ~debug_overlay:false ()
   in
-  let cols, rows = Matrix.size app in
-  (* Reserve 2 rows for borders *)
-  let term_rows = max 1 (rows - 2) in
-  let state = ref (create_state ~cols ~rows:term_rows) in
-  Matrix_unix.run app
+  let state = ref (create_state ~cols:1 ~rows:1) in
+  Matrix_unix.run config
     ~on_frame:(fun _ ~dt:_ -> read_pty_output !state)
     ~on_input:(fun app event ->
       match event with

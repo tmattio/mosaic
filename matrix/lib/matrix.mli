@@ -66,9 +66,12 @@ type debug_overlay_corner =
   [ `Top_left | `Top_right | `Bottom_left | `Bottom_right ]
 (** Corner to anchor the debug overlay when enabled. *)
 
+type config
+(** Inert configuration. Created by {!create}. No I/O, no terminal state. *)
+
 type app
-(** Opaque application handle. Created by {!create}, run by a platform-specific
-    runtime such as Matrix_unix. *)
+(** Attached application with I/O wired. All frame, query, and control
+    functions require this type. Created by {!attach} from a {!config}. *)
 
 (** {1 Lifecycle} *)
 
@@ -95,10 +98,10 @@ val create :
   ?input_timeout:float option ->
   ?resize_debounce:float option ->
   unit ->
-  app
-(** [create ()] builds an application with the given configuration.
+  config
+(** [create ()] builds a configuration record.
 
-    The app is inert until passed to a runtime (e.g., [Matrix_unix.run]).
+    The result is inert until passed to {!attach} by a runtime.
     No I/O is performed and no terminal state is modified.
 
     {4 Display Mode}
@@ -174,10 +177,11 @@ val run :
 (** [run ?on_frame ?on_input ?on_resize ~on_render app] drives an immediate-mode
     loop.
 
-    Requires {!attach} to have been called. Matrix manages the lifecycle
-    automatically: 1. Polls for events and invokes [on_input] / [on_resize].
-    2. Calls {!prepare} to clear buffers. 3. Invokes [on_render] (users should
-    draw to {!grid} here). 4. Calls {!submit} to flush output.
+    Matrix manages the lifecycle automatically:
+    1. Polls for events and invokes [on_input] / [on_resize].
+    2. Calls {!prepare} to clear buffers.
+    3. Invokes [on_render] (users should draw to {!grid} here).
+    4. Calls {!submit} to flush output.
 
     [on_frame] runs before [prepare] with the elapsed seconds since the last
     render. The loop exits when {!running} becomes [false] and closes the
@@ -266,6 +270,9 @@ val dump_frame : ?hits:bool -> ?dir:string -> ?pattern:string -> app -> unit
 
 (** {1 Terminal Information} *)
 
+val mode_of_config : config -> mode
+(** [mode_of_config config] returns the presentation mode from a configuration. *)
+
 val mode : app -> mode
 (** [mode app] returns the presentation mode configured at creation time. *)
 
@@ -328,10 +335,8 @@ type io = {
       (** Wake the event loop (cross-thread/signal safe). *)
   terminal_size : unit -> int * int;
       (** Query terminal dimensions as [(cols, rows)]. *)
-  enter_raw_mode : unit -> unit;
-      (** Enter raw mode (idempotent). *)
-  leave_raw_mode : unit -> unit;
-      (** Leave raw mode (idempotent). *)
+  set_raw_mode : bool -> unit;
+      (** Enable or disable raw mode. *)
   flush_input : unit -> unit;
       (** Discard unread input bytes. *)
   read_events : timeout:float option -> on_event:(Input.t -> unit) -> unit;
@@ -345,7 +350,7 @@ type io = {
 (** I/O callback record that platform-specific runtimes provide. *)
 
 val attach :
-  app ->
+  config ->
   io:io ->
   terminal:Terminal.t ->
   width:int ->
@@ -353,14 +358,10 @@ val attach :
   ?render_offset:int ->
   ?static_needs_newline:bool ->
   unit ->
-  unit
-(** [attach app ~io ~terminal ~width ~height ()] wires I/O callbacks and a
-    terminal into the app. Must be called before {!run}. *)
-
-val apply_config : app -> unit
-(** [apply_config app] applies terminal protocol configuration (raw mode, mouse,
-    keyboard, etc.) based on the app's settings. Called by runtimes after
-    {!attach}. *)
+  app
+(** [attach config ~io ~terminal ~width ~height ()] wires I/O callbacks and a
+    terminal into a live application. Applies protocol configuration
+    automatically. *)
 
 val render_offset_of_cursor :
   terminal:Terminal.t -> height:int -> int -> int -> int * bool

@@ -5,22 +5,21 @@
     SIGWINCH, and shutdown signal handlers.
 
     {[
-      let app = Matrix.create ~mode:`Alt () in
-      Matrix_unix.run app ~on_render:(fun app ->
+      let config = Matrix.create ~mode:`Alt () in
+      Matrix_unix.run config ~on_render:(fun app ->
         Grid.put_string (Matrix.grid app) ~row:1 ~col:1 "Hello")
     ]} *)
 
-val setup :
+val create :
   ?output:[ `Stdout | `Fd of Unix.file_descr ] ->
   ?signal_handlers:bool ->
   ?initial_caps:Matrix.Terminal.capabilities ->
-  Matrix.app ->
-  unit
-(** [setup app] attaches Unix I/O to [app] without starting the event loop.
+  Matrix.config ->
+  Matrix.app
+(** [create config] wires Unix I/O to [config] and returns a live application.
 
     Creates the terminal, enters raw mode, probes capabilities, installs
-    signal handlers, and calls {!Matrix.attach} and {!Matrix.apply_config}.
-    After this, {!Matrix.run} can be called directly.
+    signal handlers, and calls {!Matrix.attach}.
 
     @param output
       Output target for rendered frames. Defaults to [`Stdout].
@@ -37,10 +36,11 @@ val run :
   ?output:[ `Stdout | `Fd of Unix.file_descr ] ->
   ?signal_handlers:bool ->
   ?initial_caps:Matrix.Terminal.capabilities ->
-  Matrix.app ->
+  Matrix.config ->
   unit
-(** [run app ~on_render] calls {!setup}, runs the event loop via
-    {!Matrix.run}, and cleans up on exit.
+(** [run config ~on_render] calls {!create}, fires [on_resize] with the
+    initial terminal dimensions, runs the event loop via {!Matrix.run}, and
+    cleans up on exit.
 
     @param output
       Output target for rendered frames. Defaults to [`Stdout].

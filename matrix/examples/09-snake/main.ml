@@ -21,12 +21,14 @@ let opposite_dir d1 d2 =
   | _ -> false
 
 let random_food ~cols ~rows snake =
-  let rec find () =
-    let x = 1 + Random.int (cols - 2) in
-    let y = 2 + Random.int (rows - 4) in
-    if List.mem (x, y) snake then find () else (x, y)
-  in
-  find ()
+  if cols < 3 || rows < 5 then (cols / 2, rows / 2)
+  else
+    let rec find () =
+      let x = 1 + Random.int (cols - 2) in
+      let y = 2 + Random.int (rows - 4) in
+      if List.mem (x, y) snake then find () else (x, y)
+    in
+    find ()
 
 let initial_state ~cols ~rows =
   let cx = cols / 2 in
@@ -144,14 +146,13 @@ let draw_paused grid ~cols ~rows =
 let () =
   Random.self_init ();
   let tick_rate = 0.1 in
-  let app =
+  let config =
     Matrix.create ~target_fps:(Some 60.) ~mouse_enabled:false
       ~debug_overlay:false ()
   in
-  let cols, rows = Matrix.size app in
-  let state = ref (initial_state ~cols ~rows) in
+  let state = ref (initial_state ~cols:1 ~rows:1) in
   let last_tick = ref 0.0 in
-  Matrix_unix.run app
+  Matrix_unix.run config
     ~on_frame:(fun _ ~dt ->
       last_tick := !last_tick +. dt;
       if !last_tick >= tick_rate then (

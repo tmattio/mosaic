@@ -5,8 +5,11 @@ let write_all fd buf off len =
     if remaining > 0 then
       let n =
         try Unix.write fd buf off remaining
-        with Unix.Unix_error (Unix.EINTR, _, _) ->
-          Unix.write fd buf off remaining
+        with
+        | Unix.Unix_error (Unix.EINTR, _, _) -> 0
+        | Unix.Unix_error (Unix.EAGAIN, _, _) ->
+            ignore (Unix.select [] [ fd ] [] (-1.));
+            0
       in
       go (off + n) (remaining - n)
   in
@@ -152,10 +155,10 @@ let query_cursor_position ~terminal ~input_fd ~wakeup_r ~input_buffer ~timeout =
   loop ();
   !result
 
-(* Setup: attach Unix I/O to an app without starting the event loop *)
+(* Create: wire Unix I/O to a config, return a live app *)
 
-let setup ?(output = `Stdout) ?(signal_handlers = true)
-    ?initial_caps (app : Matrix.app) =
+let create ?(output = `Stdout) ?(signal_handlers = true)
+    ?initial_caps (config : Matrix.config) =
   let output_fd =
     match output with `Stdout -> Unix.stdout | `Fd fd -> fd
   in
@@ -190,7 +193,7 @@ let setup ?(output = `Stdout) ?(signal_handlers = true)
   let width = max 1 cols in
   let height = max 1 rows in
   let render_offset, static_needs_newline =
-    if Matrix.mode app = `Primary && input_is_tty then
+    if Matrix.mode_of_config config = `Primary && input_is_tty then
       match
         query_cursor_position ~terminal ~input_fd ~wakeup_r ~input_buffer
           ~timeout:0.1
@@ -207,20 +210,20 @@ let setup ?(output = `Stdout) ?(signal_handlers = true)
       now = Unix.gettimeofday;
       wake = (fun () -> wake_fd wakeup_w);
       terminal_size = (fun () -> Matrix.Terminal.size output_fd);
-      enter_raw_mode =
-        (fun () ->
-          match !original_termios with
-          | Some _ -> ()
-          | None ->
-              if input_is_tty then
-                original_termios := Some (Matrix.Terminal.set_raw input_fd));
-      leave_raw_mode =
-        (fun () ->
-          match !original_termios with
-          | Some saved ->
-              Matrix.Terminal.restore input_fd saved;
-              original_termios := None
-          | None -> ());
+      set_raw_mode =
+        (fun enabled ->
+          if enabled then (
+            match !original_termios with
+            | Some _ -> ()
+            | None ->
+                if input_is_tty then
+                  original_termios := Some (Matrix.Terminal.set_raw input_fd))
+          else
+            match !original_termios with
+            | Some saved ->
+                Matrix.Terminal.restore input_fd saved;
+                original_termios := None
+            | None -> ());
       flush_input =
         (fun () ->
           if input_is_tty then Matrix.Terminal.flush_input input_fd);
@@ -241,21 +244,29 @@ let setup ?(output = `Stdout) ?(signal_handlers = true)
           (try Unix.close wakeup_w with _ -> ()));
     }
   in
-  Matrix.attach app ~io ~terminal ~width ~height ~render_offset
-    ~static_needs_newline ();
+  let app =
+    Matrix.attach config ~io ~terminal ~width ~height ~render_offset
+      ~static_needs_newline ()
+  in
   let shutdown_fn () = Matrix.close app in
   shutdown_fn_ref := Some shutdown_fn;
   if signal_handlers then install_signal_handlers ();
   register_shutdown_handler shutdown_fn;
   install_winch_handler wakeup_w;
-  Matrix.apply_config app;
-  Matrix.Terminal.query_pixel_resolution terminal
+  Matrix.Terminal.query_pixel_resolution terminal;
+  app
 
 (* Entry point *)
 
 let run ?on_frame ?on_input ?on_resize ~on_render
-    ?output ?signal_handlers ?initial_caps (app : Matrix.app) =
-  setup ?output ?signal_handlers ?initial_caps app;
+    ?output ?signal_handlers ?initial_caps (config : Matrix.config) =
+  let app = create ?output ?signal_handlers ?initial_caps config in
+  (* Fire on_resize with initial dimensions so callers can initialize state *)
+  Option.iter
+    (fun f ->
+      let cols, rows = Matrix.size app in
+      f app ~cols ~rows)
+    on_resize;
   Fun.protect
     (fun () ->
       Matrix.run ?on_frame ?on_input ?on_resize ~on_render app)

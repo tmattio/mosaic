@@ -170,7 +170,7 @@ val run : matrix:Matrix.app -> ('model, 'msg) app -> unit
 (** [run ~matrix app] starts the TEA application and blocks until it exits.
 
     The [matrix] app must already be attached to a runtime (e.g., via
-    {!Matrix_unix.setup}). This function calls {!Matrix.run} internally with
+    {!Matrix_unix.create}). This function calls {!Matrix.run} internally with
     the TEA callbacks.
 
     For convenience, use [Mosaic_unix.run] which handles Matrix creation and
