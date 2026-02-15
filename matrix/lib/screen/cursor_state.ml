@@ -1,4 +1,3 @@
-module Esc = Ansi
 
 type style = [ `Block | `Line | `Underline ]
 
@@ -85,12 +84,12 @@ let clamp_to_bounds (t : t) ~max_row ~max_col =
 
 let cursor_style_seq style blinking =
   match (style, blinking) with
-  | `Block, true -> Esc.cursor_style ~shape:`Blinking_block
-  | `Block, false -> Esc.cursor_style ~shape:`Block
-  | `Line, true -> Esc.cursor_style ~shape:`Blinking_bar
-  | `Line, false -> Esc.cursor_style ~shape:`Bar
-  | `Underline, true -> Esc.cursor_style ~shape:`Blinking_underline
-  | `Underline, false -> Esc.cursor_style ~shape:`Underline
+  | `Block, true -> Ansi.cursor_style ~shape:`Blinking_block
+  | `Block, false -> Ansi.cursor_style ~shape:`Block
+  | `Line, true -> Ansi.cursor_style ~shape:`Blinking_bar
+  | `Line, false -> Ansi.cursor_style ~shape:`Bar
+  | `Underline, true -> Ansi.cursor_style ~shape:`Blinking_underline
+  | `Underline, false -> Ansi.cursor_style ~shape:`Underline
 
 let hide_temporarily (t : t) w =
   (* Hide cursor if it's visible or in unknown state. When state is unknown, we
@@ -98,7 +97,7 @@ let hide_temporarily (t : t) w =
   match t.last_visible with
   | Some false -> () (* Already hidden, nothing to do *)
   | Some true | None ->
-      Esc.emit Esc.(disable Cursor_visible) w;
+      Ansi.emit Ansi.(disable Cursor_visible) w;
       t.last_visible <- Some false
 
 let emit (t : t) ~row_offset w =
@@ -108,7 +107,7 @@ let emit (t : t) ~row_offset w =
     match t.last_visible with
     | Some false -> () (* Already hidden *)
     | Some true | None ->
-        Esc.emit Esc.(disable Cursor_visible) w;
+        Ansi.emit Ansi.(disable Cursor_visible) w;
         t.last_visible <- Some false;
         (* Clear attributes so they re-apply if we show cursor again *)
         t.last_style <- None;
@@ -119,7 +118,7 @@ let emit (t : t) ~row_offset w =
     (if t.has_pos then
        let r = max 1 (t.row + row_offset) in
        let c = max 1 t.col in
-       Esc.cursor_position ~row:r ~col:c w);
+       Ansi.cursor_position ~row:r ~col:c w);
 
     (* 3. Style Changes *)
     let style_changed =
@@ -128,22 +127,22 @@ let emit (t : t) ~row_offset w =
       | _ -> true
     in
     if style_changed then (
-      Esc.emit (cursor_style_seq t.style t.blinking) w;
+      Ansi.emit (cursor_style_seq t.style t.blinking) w;
       t.last_style <- Some t.style;
       t.last_blink <- Some t.blinking);
 
     (* 4. Color Changes *)
     if t.color <> t.last_color then (
       (match t.color with
-      | Some (r, g, b) -> Esc.emit (Esc.cursor_color ~r ~g ~b) w
+      | Some (r, g, b) -> Ansi.emit (Ansi.cursor_color ~r ~g ~b) w
       | None ->
-          Esc.emit Esc.reset_cursor_color w;
-          Esc.emit Esc.reset_cursor_color_fallback w);
+          Ansi.emit Ansi.reset_cursor_color w;
+          Ansi.emit Ansi.reset_cursor_color_fallback w);
       t.last_color <- t.color);
 
     (* 5. Ensure Visible (if it was hidden by hide_temporarily or unknown) *)
     match t.last_visible with
     | Some true -> () (* Already visible *)
     | Some false | None ->
-        Esc.emit Esc.(enable Cursor_visible) w;
+        Ansi.emit Ansi.(enable Cursor_visible) w;
         t.last_visible <- Some true)

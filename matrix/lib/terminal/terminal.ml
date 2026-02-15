@@ -1,5 +1,4 @@
 open Unix
-module Esc = Ansi
 
 exception Error of string
 
@@ -97,38 +96,38 @@ let clamp_color_component x =
   let v = Float.max 0. (Float.min 1. x) in
   int_of_float (Float.round (v *. 255.))
 
-let alternate_on = Esc.(to_string (enable Alternate_screen))
-let alternate_off = Esc.(to_string (disable Alternate_screen))
-let focus_on = Esc.(to_string (enable Focus_tracking))
-let focus_off = Esc.(to_string (disable Focus_tracking))
-let paste_on = Esc.(to_string (enable Bracketed_paste))
-let paste_off = Esc.(to_string (disable Bracketed_paste))
+let alternate_on = Ansi.(to_string (enable Alternate_screen))
+let alternate_off = Ansi.(to_string (disable Alternate_screen))
+let focus_on = Ansi.(to_string (enable Focus_tracking))
+let focus_off = Ansi.(to_string (disable Focus_tracking))
+let paste_on = Ansi.(to_string (enable Bracketed_paste))
+let paste_off = Ansi.(to_string (disable Bracketed_paste))
 let kitty_kb_push flags = Ansi.(to_string (csi_u_push ~flags))
 let kitty_kb_pop = Ansi.(to_string csi_u_pop)
-let modify_other_keys_on = Esc.(to_string modify_other_keys_on)
-let modify_other_keys_off = Esc.(to_string modify_other_keys_off)
-let cursor_show = Esc.(to_string (enable Cursor_visible))
-let cursor_hide = Esc.(to_string (disable Cursor_visible))
-let sgr_enable = Esc.(to_string (enable Mouse_sgr))
-let unicode_on = Esc.(to_string (enable Unicode))
-let unicode_off = Esc.(to_string (disable Unicode))
-let cursor_position_request = Esc.(to_string (query Cursor_position))
-let reset_sgr = Esc.(to_string reset)
-let erase_below = Esc.(to_string erase_below_cursor)
-let kitty_cursor_block = Esc.(to_string (cursor_style ~shape:`Block))
+let modify_other_keys_on = Ansi.(to_string modify_other_keys_on)
+let modify_other_keys_off = Ansi.(to_string modify_other_keys_off)
+let cursor_show = Ansi.(to_string (enable Cursor_visible))
+let cursor_hide = Ansi.(to_string (disable Cursor_visible))
+let sgr_enable = Ansi.(to_string (enable Mouse_sgr))
+let unicode_on = Ansi.(to_string (enable Unicode))
+let unicode_off = Ansi.(to_string (disable Unicode))
+let cursor_position_request = Ansi.(to_string (query Cursor_position))
+let reset_sgr = Ansi.(to_string reset)
+let erase_below = Ansi.(to_string erase_below_cursor)
+let kitty_cursor_block = Ansi.(to_string (cursor_style ~shape:`Block))
 
 let kitty_cursor_block_blink =
-  Esc.(to_string (cursor_style ~shape:`Blinking_block))
+  Ansi.(to_string (cursor_style ~shape:`Blinking_block))
 
-let kitty_cursor_line = Esc.(to_string (cursor_style ~shape:`Bar))
+let kitty_cursor_line = Ansi.(to_string (cursor_style ~shape:`Bar))
 
 let kitty_cursor_line_blink =
-  Esc.(to_string (cursor_style ~shape:`Blinking_bar))
+  Ansi.(to_string (cursor_style ~shape:`Blinking_bar))
 
-let kitty_cursor_underline = Esc.(to_string (cursor_style ~shape:`Underline))
+let kitty_cursor_underline = Ansi.(to_string (cursor_style ~shape:`Underline))
 
 let kitty_cursor_underline_blink =
-  Esc.(to_string (cursor_style ~shape:`Blinking_underline))
+  Ansi.(to_string (cursor_style ~shape:`Blinking_underline))
 
 let submit_string t s =
   match t.writer with
@@ -138,11 +137,11 @@ let submit_string t s =
 let send t seq = if t.output_is_tty then submit_string t seq
 
 let disable_all_mouse t =
-  send t Esc.(to_string (disable Mouse_tracking));
-  send t Esc.(to_string (disable Mouse_button_tracking));
-  send t Esc.(to_string (disable Mouse_motion));
-  send t Esc.(to_string (disable Urxvt_mouse));
-  send t Esc.(to_string (disable Mouse_sgr))
+  send t Ansi.(to_string (disable Mouse_tracking));
+  send t Ansi.(to_string (disable Mouse_button_tracking));
+  send t Ansi.(to_string (disable Mouse_motion));
+  send t Ansi.(to_string (disable Urxvt_mouse));
+  send t Ansi.(to_string (disable Mouse_sgr))
 
 let toggle_feature t ~current ~set ~enable ~on_seq ~off_seq =
   if not t.output_is_tty then set enable
@@ -171,25 +170,25 @@ let set_mouse_mode t mode =
     disable_all_mouse t;
     (match mode with
     | `Off -> ()
-    | `X10 -> send t Esc.(to_string (enable Mouse_x10))
-    | `Normal -> send t Esc.(to_string (enable Mouse_tracking))
-    | `Button -> send t Esc.(to_string (enable Mouse_button_tracking))
-    | `Any -> send t Esc.(to_string (enable Mouse_motion))
+    | `X10 -> send t Ansi.(to_string (enable Mouse_x10))
+    | `Normal -> send t Ansi.(to_string (enable Mouse_tracking))
+    | `Button -> send t Ansi.(to_string (enable Mouse_button_tracking))
+    | `Any -> send t Ansi.(to_string (enable Mouse_motion))
     | `Sgr_normal ->
         (* SGR + press/release only (1000) *)
         send t sgr_enable;
-        send t Esc.(to_string (enable Mouse_tracking))
+        send t Ansi.(to_string (enable Mouse_tracking))
     | `Sgr_button ->
         (* SGR + press/release/drag (1000 + 1002) *)
         send t sgr_enable;
-        send t Esc.(to_string (enable Mouse_tracking));
-        send t Esc.(to_string (enable Mouse_button_tracking))
+        send t Ansi.(to_string (enable Mouse_tracking));
+        send t Ansi.(to_string (enable Mouse_button_tracking))
     | `Sgr_any ->
         (* SGR + all motion (1000 + 1002 + 1003) *)
         send t sgr_enable;
-        send t Esc.(to_string (enable Mouse_tracking));
-        send t Esc.(to_string (enable Mouse_button_tracking));
-        send t Esc.(to_string (enable Mouse_motion)));
+        send t Ansi.(to_string (enable Mouse_tracking));
+        send t Ansi.(to_string (enable Mouse_button_tracking));
+        send t Ansi.(to_string (enable Mouse_motion)));
     t.mouse_mode <- mode)
 
 let mouse_mode t = t.mouse_mode
@@ -738,7 +737,7 @@ let query_cursor_position ?(timeout = 0.05) t =
 let output_fd t = t.output
 
 let query_pixel_resolution t =
-  if t.output_is_tty then send t Esc.(to_string (query Pixel_size))
+  if t.output_is_tty then send t Ansi.(to_string (query Pixel_size))
 
 let pixel_resolution t = t.pixel_resolution
 

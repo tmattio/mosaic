@@ -1,9 +1,7 @@
 (* bench_ansi.ml *)
 
-module A = Ansi
 module S = Ansi.Style
 module C = Ansi.Color
-module Esc = Ansi
 
 (* Helpers *)
 
@@ -43,7 +41,7 @@ let log_segments : (S.t * string) list =
     (style_context, "(pid=1234, env=prod)");
   ]
 
-let ansi_log_line = A.render log_segments
+let ansi_log_line = Ansi.render log_segments
 let ansi_log_block = repeat (ansi_log_line ^ "\n") 128
 
 (* A synthetic "frame" of TUI output with cursor movement, RGB background, etc.
@@ -51,28 +49,28 @@ let ansi_log_block = repeat (ansi_log_line ^ "\n") 128
 let tui_frame =
   let rows = 24 in
   let buf = Buffer.create 16_384 in
-  Buffer.add_string buf A.(to_string (enable Alternate_screen));
-  Buffer.add_string buf A.(to_string (disable Cursor_visible));
+  Buffer.add_string buf Ansi.(to_string (enable Alternate_screen));
+  Buffer.add_string buf Ansi.(to_string (disable Cursor_visible));
   for row = 1 to rows do
     (* Move to row start *)
-    Buffer.add_string buf A.(to_string (cursor_position ~row ~col:1));
+    Buffer.add_string buf Ansi.(to_string (cursor_position ~row ~col:1));
 
     (* Vary the background color a bit by row to keep SGRs non-trivial *)
     let r = row * 10 land 0xFF in
     let g = (255 - (row * 7)) land 0xFF in
     let b = (50 + (row * 3)) land 0xFF in
-    Buffer.add_string buf A.(to_string (set_background ~r ~g ~b));
+    Buffer.add_string buf Ansi.(to_string (set_background ~r ~g ~b));
 
     (* Emit a status line / row payload *)
     Buffer.add_string buf "row ";
     Buffer.add_string buf (string_of_int row);
     Buffer.add_string buf " │ ";
     Buffer.add_string buf plain_log_line;
-    Buffer.add_string buf A.(to_string reset);
+    Buffer.add_string buf Ansi.(to_string reset);
     Buffer.add_char buf '\n'
   done;
-  Buffer.add_string buf A.(to_string (enable Cursor_visible));
-  Buffer.add_string buf A.(to_string (disable Alternate_screen));
+  Buffer.add_string buf Ansi.(to_string (enable Cursor_visible));
+  Buffer.add_string buf Ansi.(to_string (disable Alternate_screen));
   Buffer.contents buf
 
 (* Bench group: styled output (producers) *)
@@ -82,7 +80,7 @@ let styled_inline =
       (* Logging-style single-call styling, e.g. direct use from application
          code *)
       let s =
-        A.styled ~reset:true ~fg:C.red ~bold:true
+        S.styled ~reset:true (S.make ~fg:C.red ~bold:true ())
           "ERROR: failed to connect to upstream (status=502, retries=3)"
       in
       ignore (Sys.opaque_identity s))
@@ -91,7 +89,7 @@ let styled_segments =
   Ubench.create "render_log_segments" (fun () ->
       (* Renderer-style segmented output, e.g. logging framework or TUI
          header *)
-      let out = A.render log_segments in
+      let out = Ansi.render log_segments in
       ignore (Sys.opaque_identity out))
 
 (* Bench group: stripping & parsing (consumers / CI log tools) *)
@@ -99,48 +97,48 @@ let styled_segments =
 let strip_plain_block_bench =
   Ubench.create "strip_plain_block" (fun () ->
       (* Fast path: no escape sequences *)
-      let s = A.strip plain_log_block in
+      let s = Ansi.strip plain_log_block in
       ignore (Sys.opaque_identity s))
 
 let strip_ansi_block_bench =
   Ubench.create "strip_ansi_block" (fun () ->
       (* Heavy path: lots of SGR sequences, typical CI log chunk *)
-      let s = A.strip ansi_log_block in
+      let s = Ansi.strip ansi_log_block in
       ignore (Sys.opaque_identity s))
 
 let parse_ansi_block_bench =
   Ubench.create "parse_ansi_block" (fun () ->
       (* Parsing a chunk of colored logs for later reformatting / filtering *)
-      let tokens = A.parse ansi_log_block in
+      let tokens = Ansi.parse ansi_log_block in
       ignore (Sys.opaque_identity tokens))
 
 let parse_tui_frame_bench =
   Ubench.create "parse_tui_frame" (fun () ->
       (* Parsing a TUI frame: lots of CSI, SGR and control sequences mixed with
          text. Representative of terminal emulators or log recorders. *)
-      let tokens = A.parse tui_frame in
+      let tokens = Ansi.parse tui_frame in
       ignore (Sys.opaque_identity tokens))
 
 (* Pre-allocated parser for callback benchmarks - reuse across iterations *)
-let iter_parser = A.Parser.create ()
+let iter_parser = Ansi.Parser.create ()
 let ansi_log_block_bytes = Bytes.unsafe_of_string ansi_log_block
 let tui_frame_bytes = Bytes.unsafe_of_string tui_frame
 
 let parse_ansi_block_iter_bench =
   Ubench.create "parse_ansi_block_iter" (fun () ->
       (* Callback-based parsing - avoids list allocation *)
-      A.Parser.reset iter_parser;
+      Ansi.Parser.reset iter_parser;
       let count = ref 0 in
-      A.Parser.feed iter_parser ansi_log_block_bytes ~off:0
+      Ansi.Parser.feed iter_parser ansi_log_block_bytes ~off:0
         ~len:(Bytes.length ansi_log_block_bytes) (fun _ -> incr count);
       ignore (Sys.opaque_identity !count))
 
 let parse_tui_frame_iter_bench =
   Ubench.create "parse_tui_frame_iter" (fun () ->
       (* Callback-based parsing - avoids list allocation *)
-      A.Parser.reset iter_parser;
+      Ansi.Parser.reset iter_parser;
       let count = ref 0 in
-      A.Parser.feed iter_parser tui_frame_bytes ~off:0
+      Ansi.Parser.feed iter_parser tui_frame_bytes ~off:0
         ~len:(Bytes.length tui_frame_bytes) (fun _ -> incr count);
       ignore (Sys.opaque_identity !count))
 
@@ -152,7 +150,7 @@ let cursor_script_80x24 =
       let buf = Buffer.create 32_000 in
       for row = 1 to 24 do
         for col = 1 to 80 do
-          Buffer.add_string buf A.(to_string (cursor_position ~row ~col));
+          Buffer.add_string buf Ansi.(to_string (cursor_position ~row ~col));
           Buffer.add_char buf 'X'
         done
       done;
@@ -160,8 +158,8 @@ let cursor_script_80x24 =
 
 (* Bench group: Sgr_state (terminal state diffing for render loops) *)
 
-module Sgr = A.Sgr_state
-module Attr = A.Attr
+module Sgr = Ansi.Sgr_state
+module Attr = Ansi.Attr
 
 (* Shared buffer for all Sgr_state benchmarks - reused per iteration.
    Alternating styles at 1920 cells can emit ~50 bytes per cell. *)
@@ -191,7 +189,7 @@ let palette =
 
 (* Pre-allocated state and writer for zero-allocation benchmarks *)
 let sgr_state_tui = Sgr.create ()
-let sgr_writer_tui = Esc.make sgr_buf
+let sgr_writer_tui = Ansi.Writer.make sgr_buf
 
 let sgr_tui_frame_80x24 =
   Ubench.create "sgr_tui_frame_80x24" (fun () ->
@@ -199,7 +197,7 @@ let sgr_tui_frame_80x24 =
          the primary use case for Sgr_state: rendering a grid where adjacent
          cells often share styles (state diffing wins). *)
       Sgr.reset sgr_state_tui;
-      Esc.reset_pos sgr_writer_tui;
+      Ansi.Writer.reset_pos sgr_writer_tui;
       for row = 0 to 23 do
         for col = 0 to 79 do
           (* Pick style based on position - simulates UI regions *)
@@ -213,10 +211,10 @@ let sgr_tui_frame_80x24 =
         (* Reset at end of row like Screen.render does *)
         Sgr.reset sgr_state_tui
       done;
-      ignore (Sys.opaque_identity (Esc.len sgr_writer_tui)))
+      ignore (Sys.opaque_identity (Ansi.Writer.len sgr_writer_tui)))
 
 let sgr_state_same = Sgr.create ()
-let sgr_writer_same = Esc.make sgr_buf
+let sgr_writer_same = Ansi.Writer.make sgr_buf
 
 let sgr_same_style_1920 =
   Ubench.create "sgr_same_style_1920" (fun () ->
@@ -224,22 +222,22 @@ let sgr_same_style_1920 =
          the first update, all subsequent calls should be no-ops. Tests the fast
          path where state diffing avoids all output. *)
       Sgr.reset sgr_state_same;
-      Esc.reset_pos sgr_writer_same;
+      Ansi.Writer.reset_pos sgr_writer_same;
       for _ = 0 to 1919 do
         Sgr.update sgr_state_same sgr_writer_same ~fg_r:1.0 ~fg_g:1.0 ~fg_b:1.0
           ~fg_a:1.0 ~bg_r:0.0 ~bg_g:0.0 ~bg_b:0.0 ~bg_a:0.0 ~attrs:0 ~link:""
       done;
-      ignore (Sys.opaque_identity (Esc.len sgr_writer_same)))
+      ignore (Sys.opaque_identity (Ansi.Writer.len sgr_writer_same)))
 
 let sgr_state_alt = Sgr.create ()
-let sgr_writer_alt = Esc.make sgr_buf
+let sgr_writer_alt = Ansi.Writer.make sgr_buf
 
 let sgr_alternating_styles_1920 =
   Ubench.create "sgr_alternating_styles_1920" (fun () ->
       (* Worst case: style changes on every cell (checkerboard pattern). Every
          update emits a full SGR sequence. Tests raw throughput. *)
       Sgr.reset sgr_state_alt;
-      Esc.reset_pos sgr_writer_alt;
+      Ansi.Writer.reset_pos sgr_writer_alt;
       for i = 0 to 1919 do
         if i land 1 = 0 then
           Sgr.update sgr_state_alt sgr_writer_alt ~fg_r:1.0 ~fg_g:0.0 ~fg_b:0.0
@@ -249,22 +247,22 @@ let sgr_alternating_styles_1920 =
           Sgr.update sgr_state_alt sgr_writer_alt ~fg_r:0.0 ~fg_g:1.0 ~fg_b:0.0
             ~fg_a:1.0 ~bg_r:0.1 ~bg_g:0.1 ~bg_b:0.1 ~bg_a:1.0 ~attrs:0 ~link:""
       done;
-      ignore (Sys.opaque_identity (Esc.len sgr_writer_alt)))
+      ignore (Sys.opaque_identity (Ansi.Writer.len sgr_writer_alt)))
 
 (* Pre-allocated options to avoid boxing in the hot loop *)
 let link_url = "https://example.com/path/to/resource"
 
 (* Pre-allocated literal sequence *)
-let link_text = Esc.literal "link text here"
+let link_text = Ansi.literal "link text here"
 let sgr_state_link = Sgr.create ()
-let sgr_writer_link = Esc.make sgr_buf
+let sgr_writer_link = Ansi.Writer.make sgr_buf
 
 let sgr_hyperlink_transitions =
   Ubench.create "sgr_hyperlink_transitions" (fun () ->
       (* Hyperlink-heavy scenario: alternating between linked and non-linked
          text. Simulates a log viewer or markdown renderer with many links. *)
       Sgr.reset sgr_state_link;
-      Esc.reset_pos sgr_writer_link;
+      Ansi.Writer.reset_pos sgr_writer_link;
       for i = 0 to 199 do
         let link = if i mod 5 < 2 then link_url else "" in
         Sgr.update sgr_state_link sgr_writer_link ~fg_r:0.3 ~fg_g:0.5 ~fg_b:1.0
@@ -272,30 +270,30 @@ let sgr_hyperlink_transitions =
           ~attrs:(if i mod 5 < 2 then Attr.pack Attr.underline else 0)
           ~link;
         (* Simulate emitting some text *)
-        Esc.emit link_text sgr_writer_link
+        Ansi.emit link_text sgr_writer_link
       done;
       Sgr.close_link sgr_state_link sgr_writer_link;
-      ignore (Sys.opaque_identity (Esc.len sgr_writer_link)))
+      ignore (Sys.opaque_identity (Ansi.Writer.len sgr_writer_link)))
 
 (* Pre-allocated colors array for partial changes benchmark *)
 let partial_colors =
   [| (1.0, 0.0, 0.0); (0.0, 1.0, 0.0); (0.0, 0.0, 1.0); (1.0, 1.0, 0.0) |]
 
 let sgr_state_partial = Sgr.create ()
-let sgr_writer_partial = Esc.make sgr_buf
+let sgr_writer_partial = Ansi.Writer.make sgr_buf
 
 let sgr_partial_changes =
   Ubench.create "sgr_partial_changes" (fun () ->
       (* Partial style changes: only foreground changes, background stays.
          Common in syntax highlighting where bg is uniform. *)
       Sgr.reset sgr_state_partial;
-      Esc.reset_pos sgr_writer_partial;
+      Ansi.Writer.reset_pos sgr_writer_partial;
       for i = 0 to 999 do
         let r, g, b = partial_colors.(i mod 4) in
         Sgr.update sgr_state_partial sgr_writer_partial ~fg_r:r ~fg_g:g ~fg_b:b
           ~fg_a:1.0 ~bg_r:0.1 ~bg_g:0.1 ~bg_b:0.15 ~bg_a:1.0 ~attrs:0 ~link:""
       done;
-      ignore (Sys.opaque_identity (Esc.len sgr_writer_partial)))
+      ignore (Sys.opaque_identity (Ansi.Writer.len sgr_writer_partial)))
 
 (* Registration *)
 

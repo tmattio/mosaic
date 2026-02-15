@@ -6,7 +6,6 @@
 open StdLabels
 module Hit_grid = Hit_grid
 module Pool = Glyph
-module Esc = Ansi
 
 (* --- Types & Metrics --- *)
 
@@ -87,35 +86,36 @@ let[@inline] width_step w = if w <= 0 then 1 else w
    grapheme widths. *)
 let[@inline] add_code_to_writer ~explicit_width ~explicit_cursor_positioning
     ~row_offset ~y ~x ~grid_width ~cell_width pool (scratch : bytes ref)
-    (w : Esc.writer) grid idx =
+    (w : Ansi.writer) grid idx =
   let glyph = Grid.get_glyph grid idx in
 
-  if glyph = 0 || Grid.is_continuation grid idx then Esc.emit (Esc.char ' ') w
+  if Glyph.is_empty glyph || Grid.is_continuation grid idx then
+    Ansi.emit (Ansi.char ' ') w
   else
     let len = Pool.length pool glyph in
-    if len <= 0 then Esc.emit (Esc.char ' ') w
-    else if len = 1 && glyph < 128 then
-      Esc.emit (Esc.char (Char.chr glyph)) w
+    if len <= 0 then Ansi.emit (Ansi.char ' ') w
+    else if len = 1 && (glyph :> int) < 128 then
+      Ansi.emit (Ansi.char (Char.chr (glyph :> int))) w
     else (
       if len > Bytes.length !scratch then
         scratch := Bytes.create (max (Bytes.length !scratch * 2) len);
 
       let written = Pool.blit pool glyph !scratch ~pos:0 in
 
-      if written <= 0 then Esc.emit (Esc.char ' ') w
+      if written <= 0 then Ansi.emit (Ansi.char ' ') w
       else if explicit_width && cell_width >= 2 then
-        Esc.emit
-          (Esc.explicit_width_bytes ~width:cell_width ~bytes:!scratch ~off:0
+        Ansi.emit
+          (Ansi.explicit_width_bytes ~width:cell_width ~bytes:!scratch ~off:0
              ~len:written)
           w
       else (
-        Esc.emit (Esc.bytes !scratch ~off:0 ~len:written) w;
+        Ansi.emit (Ansi.bytes !scratch ~off:0 ~len:written) w;
         (* Fallback: reposition cursor after wide graphemes to prevent drift
            in terminals that support cursor addressing but not OSC 66. *)
         if explicit_cursor_positioning && cell_width >= 2 then
           let next_x = x + cell_width in
           if next_x < grid_width then
-            Esc.cursor_position ~row:(row_offset + y + 1) ~col:(next_x + 1) w))
+            Ansi.cursor_position ~row:(row_offset + y + 1) ~col:(next_x + 1) w))
 
 (* --- Core Rendering Logic --- *)
 
@@ -218,7 +218,7 @@ let render_generic ~pool ~row_offset ~use_explicit_width
       else if is_cell_changed y x idx curr_width then (
         (* Move cursor to start of changed run *)
         let target_row = row_offset + y + 1 in
-        Esc.cursor_position ~row:target_row ~col:(x + 1) writer;
+        Ansi.cursor_position ~row:target_row ~col:(x + 1) writer;
 
         (* Write consecutive changed cells *)
         let start_x = x in
@@ -250,14 +250,14 @@ let render_generic ~pool ~row_offset ~use_explicit_width
      let start_col = width + 1 in
      let rows = min height prev_height in
      for y = 0 to rows - 1 do
-       Esc.cursor_position ~row:(row_offset + y + 1) ~col:start_col writer;
-       Esc.erase_line ~mode:`Right writer
+       Ansi.cursor_position ~row:(row_offset + y + 1) ~col:start_col writer;
+       Ansi.erase_line ~mode:`Right writer
      done);
 
   if prev_height > height then
     for y = height to prev_height - 1 do
-      Esc.cursor_position ~row:(row_offset + y + 1) ~col:1 writer;
-      Esc.erase_line ~mode:`All writer
+      Ansi.cursor_position ~row:(row_offset + y + 1) ~col:1 writer;
+      Ansi.erase_line ~mode:`All writer
     done;
 
   Ansi.Sgr_state.close_link sgr_state writer;
@@ -336,7 +336,7 @@ let finalize_frame r ~now ~delta_seconds ~elapsed_ms ~cells ~output_len =
 
 (* --- Public API --- *)
 
-let submit ~(mode : render_mode) ?height_limit ~(writer : Esc.writer) r =
+let submit ~(mode : render_mode) ?height_limit ~(writer : Ansi.writer) r =
   let now, delta_seconds = prepare_frame r in
   (* Use Fun.protect to guarantee SGR cleanup even if render raises. *)
   let cells = ref 0 in
@@ -360,15 +360,15 @@ let submit ~(mode : render_mode) ?height_limit ~(writer : Esc.writer) r =
       elapsed_ms := (Unix.gettimeofday () -. render_start) *. 1000.;
       r.scratch_bytes <- !scratch);
 
-  let output_len = Esc.len writer in
+  let output_len = Ansi.Writer.len writer in
   finalize_frame r ~now ~delta_seconds ~elapsed_ms:!elapsed_ms ~cells:!cells
     ~output_len
 
 let render_to_bytes ?(full = false) ?height_limit frame bytes =
-  let writer = Esc.make bytes in
+  let writer = Ansi.Writer.make bytes in
   let mode = if full then `Full else `Diff in
   submit frame ~mode ?height_limit ~writer;
-  Esc.len writer
+  Ansi.Writer.len writer
 
 let render ?(full = false) ?height_limit frame =
   let bytes = Bytes.create 65536 in
