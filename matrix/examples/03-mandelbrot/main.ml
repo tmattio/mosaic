@@ -394,7 +394,7 @@ let () =
   let app = Matrix.create ~mouse_enabled:true () in
   let cols, rows = Matrix.size app in
   let state = ref (make_state ~cols ~rows) in
-  Matrix.run app
+  Matrix_unix.run app
     ~on_input:(fun app event ->
       match update app event !state with
       | `Continue st' -> state := st'

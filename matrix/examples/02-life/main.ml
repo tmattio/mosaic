@@ -158,7 +158,7 @@ let () =
   let app = Matrix.create ~target_fps:(Some target_fps) () in
   let cols, rows = Matrix.size app in
   let state = ref (initial_state ~cols ~rows) in
-  Matrix.run app
+  Matrix_unix.run app
     ~on_frame:(fun _ ~dt:_ ->
       if not !state.paused then
         let w, h = !state.dim in

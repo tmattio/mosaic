@@ -1,6 +1,7 @@
 (** Horizontal tab bar with navigation. *)
 
 open Mosaic
+open Mosaic_unix
 
 type model = { tab : int }
 type msg = Quit | Tab_changed of int

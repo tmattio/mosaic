@@ -326,7 +326,7 @@ let () =
   in
   let cols, rows = Matrix.size app in
   let state = create_state ~cols ~rows in
-  Matrix.run app
+  Matrix_unix.run app
     ~on_frame:(fun _ ~dt ->
       let dt = Float.min dt 0.1 in
       spawn_from_emitters state dt;

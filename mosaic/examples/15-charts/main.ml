@@ -2,6 +2,7 @@
 *)
 
 open Mosaic
+open Mosaic_unix
 open Matrix_charts
 module Canvas = Mosaic_ui.Canvas
 module Event = Mosaic_ui.Event

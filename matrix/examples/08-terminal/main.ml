@@ -137,7 +137,7 @@ let () =
   (* Reserve 2 rows for borders *)
   let term_rows = max 1 (rows - 2) in
   let state = ref (create_state ~cols ~rows:term_rows) in
-  Matrix.run app
+  Matrix_unix.run app
     ~on_frame:(fun _ ~dt:_ -> read_pty_output !state)
     ~on_input:(fun app event ->
       match event with

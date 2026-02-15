@@ -182,7 +182,7 @@ let () =
   canvas_grid :=
     Some (Grid.create ~width:cols ~height:rows ~respect_alpha:true ());
   Grid.clear ~color:Ansi.Color.black (Option.get !canvas_grid);
-  Matrix.run app
+  Matrix_unix.run app
     ~on_input:(fun app event ->
       match event with
       | Input.Key { key = Input.Key.Escape; _ } -> Matrix.stop app

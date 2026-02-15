@@ -386,23 +386,9 @@ let render runtime =
 
 (* Run the application *)
 
-let run ?mode ?raw_mode ?target_fps ?respect_alpha ?mouse_enabled ?mouse
-    ?bracketed_paste ?focus_reporting ?kitty_keyboard ?exit_on_ctrl_c
-    ?debug_overlay ?debug_overlay_corner ?debug_overlay_capacity
-    ?frame_dump_every ?frame_dump_dir ?frame_dump_pattern ?frame_dump_hits
-    ?cursor_visible ?explicit_width ?input_timeout
-    ?resize_debounce ?initial_caps ?output app =
+let run ~matrix app =
   let model, init_cmd = app.init () in
-  let matrix_app =
-    let target_fps = Option.value target_fps ~default:(Some 60.) in
-    let exit_on_ctrl_c = Option.value exit_on_ctrl_c ~default:true in
-    Matrix.create ?mode ?raw_mode ~target_fps ?respect_alpha ?mouse_enabled
-      ?mouse ?bracketed_paste ?focus_reporting ?kitty_keyboard ~exit_on_ctrl_c
-      ?debug_overlay ?debug_overlay_corner ?debug_overlay_capacity
-      ?frame_dump_every ?frame_dump_dir ?frame_dump_pattern ?frame_dump_hits
-      ?cursor_visible ?explicit_width ?input_timeout
-      ?resize_debounce ?initial_caps ?output ()
-  in
+  let matrix_app = matrix in
   let width, height = Matrix.size matrix_app in
   let base_grid = Matrix.grid matrix_app in
   let renderer =

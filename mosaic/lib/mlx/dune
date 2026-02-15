@@ -10,5 +10,4 @@
   matrix.ansi
   matrix.grid
   matrix.screen
-  toffee
-  unix))
+  toffee))

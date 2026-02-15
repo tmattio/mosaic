@@ -1,6 +1,7 @@
 (** Vertical list selection with keyboard navigation. *)
 
 open Mosaic
+open Mosaic_unix
 
 type msg = Quit
 

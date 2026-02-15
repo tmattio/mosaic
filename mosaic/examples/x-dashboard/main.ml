@@ -3,6 +3,7 @@
     charts via Matrix_charts on a canvas. *)
 
 open Mosaic
+open Mosaic_unix
 module Charts = Matrix_charts
 
 (* ---------- Small utils ---------- *)

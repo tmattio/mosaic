@@ -1,6 +1,7 @@
 (** Countdown timer with start/stop/reset controls. *)
 
 open Mosaic
+open Mosaic_unix
 
 type timer_state = Idle | Running | Paused
 

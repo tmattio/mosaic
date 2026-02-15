@@ -1,6 +1,7 @@
 (** Styled text demonstration with colors and formatting. *)
 
 open Mosaic
+open Mosaic_unix
 
 type wrap_mode = None | Char | Word
 type model = { wrap : wrap_mode }

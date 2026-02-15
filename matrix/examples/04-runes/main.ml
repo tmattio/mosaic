@@ -212,7 +212,7 @@ let update app event () =
 
 let () =
   let app = Matrix.create () in
-  Matrix.run app
+  Matrix_unix.run app
     ~on_input:(fun app event ->
       match update app event () with `Continue () -> () | `Stop -> ())
     ~on_render:(fun app ->

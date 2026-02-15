@@ -132,7 +132,7 @@ let () =
   in
   let cols, rows = Matrix.size app in
   let state = ref (gen (cols, rows)) in
-  Matrix.run app
+  Matrix_unix.run app
     ~on_frame:(fun _ ~dt:_ -> state := step !state)
     ~on_input:(fun app event ->
       match event with

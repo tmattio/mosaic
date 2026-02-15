@@ -1,6 +1,7 @@
 (** Simple counter demonstrating TEA basics. *)
 
 open Mosaic
+open Mosaic_unix
 
 type msg = Increment | Decrement | Quit
 

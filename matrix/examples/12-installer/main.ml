@@ -167,7 +167,7 @@ let () =
   let state = ref initial_state in
   let last_completed = ref 0 in
   let completed_at = ref None in
-  Matrix.run app
+  Matrix_unix.run app
     ~on_frame:(fun app ~dt ->
       let prev_state = !state in
       state := update ~dt !state;

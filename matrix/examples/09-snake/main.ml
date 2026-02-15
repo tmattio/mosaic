@@ -151,7 +151,7 @@ let () =
   let cols, rows = Matrix.size app in
   let state = ref (initial_state ~cols ~rows) in
   let last_tick = ref 0.0 in
-  Matrix.run app
+  Matrix_unix.run app
     ~on_frame:(fun _ ~dt ->
       last_tick := !last_tick +. dt;
       if !last_tick >= tick_rate then (

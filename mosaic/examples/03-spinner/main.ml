@@ -1,6 +1,7 @@
 (** Animated spinners with built-in presets. *)
 
 open Mosaic
+open Mosaic_unix
 
 type model = { preset : Spinner.preset; running : bool }
 type msg = Next_preset | Toggle | Quit

@@ -21,6 +21,7 @@
  (modules main)
  (libraries
   mosaic
+  mosaic.unix
   mosaic.ui
   matrix.charts
   matrix.grid

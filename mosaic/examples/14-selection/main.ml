@@ -1,6 +1,7 @@
 (** Text selection across renderables and scroll boxes. *)
 
 open Mosaic
+open Mosaic_unix
 
 type msg = Quit
 

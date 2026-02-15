@@ -1,6 +1,7 @@
 (** Scrollable content with scroll bars. *)
 
 open Mosaic
+open Mosaic_unix
 
 type msg = Quit
 

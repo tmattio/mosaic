@@ -1,3 +1,3 @@
 (executable
  (name main)
- (libraries mosaic mosaic.ui mosaic.syntax matrix.ansi))
+ (libraries mosaic mosaic.unix mosaic.ui mosaic.syntax matrix.ansi))

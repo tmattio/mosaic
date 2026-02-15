@@ -1,6 +1,7 @@
 (** Text input with cursor and placeholder. *)
 
 open Mosaic
+open Mosaic_unix
 
 type cursor_style = Block | Line | Underline
 type model = { value : string; cursor_style : cursor_style }

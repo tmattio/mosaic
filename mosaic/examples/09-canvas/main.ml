@@ -1,6 +1,7 @@
 (** Procedural drawing with shapes and braille lines. *)
 
 open Mosaic
+open Mosaic_unix
 module Canvas = Mosaic_ui.Canvas
 
 type line_mode = Normal | Braille

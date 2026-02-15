@@ -152,10 +152,9 @@ let query_cursor_position ~terminal ~input_fd ~wakeup_r ~input_buffer ~timeout =
   loop ();
   !result
 
-(* Entry point *)
+(* Setup: attach Unix I/O to an app without starting the event loop *)
 
-let run ?on_frame ?on_input ?on_resize ~on_render
-    ?(output = `Stdout) ?(signal_handlers = true)
+let setup ?(output = `Stdout) ?(signal_handlers = true)
     ?initial_caps (app : Matrix.app) =
   let output_fd =
     match output with `Stdout -> Unix.stdout | `Fd fd -> fd
@@ -171,8 +170,8 @@ let run ?on_frame ?on_input ?on_resize ~on_render
     Matrix.Terminal.make ~output:output_fn ~tty:output_is_tty ?initial_caps ()
   in
   let original_termios = ref None in
-  if input_is_tty then (
-    original_termios := Some (Matrix.Terminal.set_raw input_fd));
+  if input_is_tty then
+    original_termios := Some (Matrix.Terminal.set_raw input_fd);
   let input_buffer = Bytes.create 4096 in
   if input_is_tty then
     Matrix.Terminal.probe ~timeout:0.5
@@ -250,7 +249,13 @@ let run ?on_frame ?on_input ?on_resize ~on_render
   register_shutdown_handler shutdown_fn;
   install_winch_handler wakeup_w;
   Matrix.apply_config app;
-  Matrix.Terminal.query_pixel_resolution terminal;
+  Matrix.Terminal.query_pixel_resolution terminal
+
+(* Entry point *)
+
+let run ?on_frame ?on_input ?on_resize ~on_render
+    ?output ?signal_handlers ?initial_caps (app : Matrix.app) =
+  setup ?output ?signal_handlers ?initial_caps app;
   Fun.protect
     (fun () ->
       Matrix.run ?on_frame ?on_input ?on_resize ~on_render app)

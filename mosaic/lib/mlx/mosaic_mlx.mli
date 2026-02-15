@@ -156,44 +156,11 @@ type ('model, 'msg) app = {
 
 (** {1 Running} *)
 
-val run :
-  ?mode:Matrix.mode ->
-  ?raw_mode:bool ->
-  ?target_fps:float option ->
-  ?respect_alpha:bool ->
-  ?mouse_enabled:bool ->
-  ?mouse:Matrix.Terminal.mouse_mode option ->
-  ?bracketed_paste:bool ->
-  ?focus_reporting:bool ->
-  ?kitty_keyboard:Matrix.kitty_keyboard ->
-  ?exit_on_ctrl_c:bool ->
-  ?debug_overlay:bool ->
-  ?debug_overlay_corner:Matrix.debug_overlay_corner ->
-  ?debug_overlay_capacity:int ->
-  ?frame_dump_every:int ->
-  ?frame_dump_dir:string ->
-  ?frame_dump_pattern:string ->
-  ?frame_dump_hits:bool ->
-  ?cursor_visible:bool ->
-  ?explicit_width:bool ->
-  ?input_timeout:float option ->
-  ?resize_debounce:float option ->
-  ?initial_caps:Matrix.Terminal.capabilities ->
-  ?output:[ `Fd of Unix.file_descr | `Stdout ] ->
-  ('model, 'msg) app ->
-  unit
-(** [run ?mode ?raw_mode ?target_fps ?respect_alpha ?mouse_enabled ?mouse
-     ?bracketed_paste ?focus_reporting ?kitty_keyboard ?exit_on_ctrl_c
-     ?debug_overlay ?debug_overlay_corner ?debug_overlay_capacity
-     ?frame_dump_every ?frame_dump_dir ?frame_dump_pattern ?frame_dump_hits
-     ?cursor_visible ?explicit_width ?input_timeout
-     ?resize_debounce ?initial_caps ?output app] starts the application and
-    blocks until it exits.
+val run : matrix:Matrix.app -> ('model, 'msg) app -> unit
+(** [run ~matrix app] starts the TEA application and blocks until it exits.
 
-    All parameters are forwarded to {!Matrix.create}. Defaults match the
-    previous behaviour: alternate screen, raw mode, 60 FPS cap, mouse and
-    bracketed paste enabled, and Ctrl+C exits the application ([exit_on_ctrl_c]
-    defaults to [true]). *)
+    The [matrix] app must already be attached to a runtime (e.g., via
+    {!Matrix_unix.setup}). For convenience, use [Mosaic_unix.run]. *)
 
 (** {1 Internal Modules}
 

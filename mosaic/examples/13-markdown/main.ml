@@ -1,6 +1,7 @@
 (** Markdown rendering demonstration. *)
 
 open Mosaic
+open Mosaic_unix
 
 type msg = Quit
 
