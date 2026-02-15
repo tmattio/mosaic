@@ -219,3 +219,10 @@ val probe :
     Callers are responsible for ensuring that [read_into], [wait_readable], and
     [send] interact with the same underlying descriptor and do not interfere
     with normal input processing. *)
+
+val build_probe_payload : string -> string
+(** [build_probe_payload term] constructs the compound probe query string for
+    the given [$TERM] value. The payload includes cursor save/restore, DECRQM
+    queries, DA, cursor-position probes, XTVersion, CSI u, and Kitty graphics
+    queries. iTerm2 proprietary queries are appended when [term] contains
+    "iterm". *)

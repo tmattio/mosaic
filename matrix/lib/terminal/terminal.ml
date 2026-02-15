@@ -1,11 +1,23 @@
-open Unix
+(* C stubs *)
 
-exception Error of string
+external get_size : Unix.file_descr -> int * int = "terminal_get_size"
+external enable_vt_raw : Unix.file_descr -> unit = "terminal_enable_vt"
 
-external get_size : file_descr -> int * int = "terminal_get_size"
-external enable_vt : file_descr -> unit = "terminal_enable_vt"
+(* Types *)
+
+type mouse_mode =
+  [ `Off
+  | `X10
+  | `Normal
+  | `Button
+  | `Any
+  | `Sgr_normal
+  | `Sgr_button
+  | `Sgr_any ]
 
 type unicode_width = [ `Wcwidth | `Unicode ]
+type cursor_style = [ `Block | `Line | `Underline ]
+type cursor_position = { x : int; y : int; visible : bool }
 
 type capabilities = Caps.t = {
   term : string;
@@ -31,25 +43,6 @@ type terminal_info = Caps.terminal_info = {
   from_xtversion : bool;
 }
 
-let ignore_unix_errors f x = try f x with Unix_error _ -> ()
-let ignore_exn f x = try f x with _ -> ()
-let make_osc payload = Ansi.(to_string (osc ~terminator:`Bel ~payload))
-
-type mode = [ `Raw | `Cooked | `Custom of terminal_io -> terminal_io ]
-
-type mouse_mode =
-  [ `Off
-  | `X10
-  | `Normal
-  | `Button
-  | `Any
-  | `Sgr_normal
-  | `Sgr_button
-  | `Sgr_any ]
-
-type cursor_style = [ `Block | `Line | `Underline ]
-type cursor_position = { x : int; y : int; visible : bool }
-
 type cursor_state = {
   mutable x : int;
   mutable y : int;
@@ -60,41 +53,26 @@ type cursor_state = {
 }
 
 type t = {
-  input : file_descr;
-  output : file_descr;
-  wakeup_r : file_descr;
-  wakeup_w : file_descr;
-  original_termios : terminal_io option;
-  mutable current_mode : mode;
-  input_is_tty : bool;
-  output_is_tty : bool;
+  output : string -> unit;
+  tty : bool;
   mutable caps : Caps.t;
   mutable terminal_info : Caps.terminal_info;
   parser : Input.Parser.t;
-  pending_events : Input.t Queue.t;
-  input_buffer : bytes;
   mutable mouse_mode : mouse_mode;
-  cursor : cursor_state;
-  mutable alt_screen : bool;
   mutable bracketed_paste_enabled : bool;
   mutable focus_enabled : bool;
   mutable kitty_keyboard_enabled : bool;
   mutable kitty_keyboard_flags : int;
   mutable modify_other_keys_enabled : bool;
   mutable unicode_mode_enabled : bool;
-  mutable winch_handler : (unit -> unit) option;
-  mutable pixel_resolution : (int * int) option;
+  cursor : cursor_state;
+  mutable alt_screen : bool;
   mutable scroll_region : (int * int) option;
+  mutable pixel_resolution : (int * int) option;
   env_overrides : bool;
-  mutable writer : Frame_writer.t option;
 }
 
-let is_tty fd = try Unix.isatty fd with Unix_error _ -> false
-
-let clamp_color_component x =
-  let x = if Float.is_nan x then 0. else x in
-  let v = Float.max 0. (Float.min 1. x) in
-  int_of_float (Float.round (v *. 255.))
+(* Pre-computed escape sequences *)
 
 let alternate_on = Ansi.(to_string (enable Alternate_screen))
 let alternate_off = Ansi.(to_string (disable Alternate_screen))
@@ -104,289 +82,115 @@ let paste_on = Ansi.(to_string (enable Bracketed_paste))
 let paste_off = Ansi.(to_string (disable Bracketed_paste))
 let kitty_kb_push flags = Ansi.(to_string (csi_u_push ~flags))
 let kitty_kb_pop = Ansi.(to_string csi_u_pop)
-let modify_other_keys_on = Ansi.(to_string modify_other_keys_on)
-let modify_other_keys_off = Ansi.(to_string modify_other_keys_off)
+let modify_other_keys_on_seq = Ansi.(to_string modify_other_keys_on)
+let modify_other_keys_off_seq = Ansi.(to_string modify_other_keys_off)
 let cursor_show = Ansi.(to_string (enable Cursor_visible))
 let cursor_hide = Ansi.(to_string (disable Cursor_visible))
 let sgr_enable = Ansi.(to_string (enable Mouse_sgr))
 let unicode_on = Ansi.(to_string (enable Unicode))
 let unicode_off = Ansi.(to_string (disable Unicode))
-let cursor_position_request = Ansi.(to_string (query Cursor_position))
 let reset_sgr = Ansi.(to_string reset)
 let erase_below = Ansi.(to_string erase_below_cursor)
-let kitty_cursor_block = Ansi.(to_string (cursor_style ~shape:`Block))
+let cursor_default = Ansi.(to_string (cursor_style ~shape:`Default))
+let reset_cursor_color_fallback_seq = Ansi.(to_string reset_cursor_color_fallback)
+let reset_cursor_color_seq = Ansi.(to_string reset_cursor_color)
+let cursor_block = Ansi.(to_string (cursor_style ~shape:`Block))
+let cursor_block_blink = Ansi.(to_string (cursor_style ~shape:`Blinking_block))
+let cursor_line = Ansi.(to_string (cursor_style ~shape:`Bar))
+let cursor_line_blink = Ansi.(to_string (cursor_style ~shape:`Blinking_bar))
+let cursor_underline = Ansi.(to_string (cursor_style ~shape:`Underline))
 
-let kitty_cursor_block_blink =
-  Ansi.(to_string (cursor_style ~shape:`Blinking_block))
-
-let kitty_cursor_line = Ansi.(to_string (cursor_style ~shape:`Bar))
-
-let kitty_cursor_line_blink =
-  Ansi.(to_string (cursor_style ~shape:`Blinking_bar))
-
-let kitty_cursor_underline = Ansi.(to_string (cursor_style ~shape:`Underline))
-
-let kitty_cursor_underline_blink =
+let cursor_underline_blink =
   Ansi.(to_string (cursor_style ~shape:`Blinking_underline))
 
-let submit_string t s =
-  match t.writer with
-  | Some w -> Frame_writer.submit_string w s
-  | None -> raise (Error "Terminal.write: writer not initialized")
+let mouse_x10 = Ansi.(to_string (enable Mouse_x10))
+let mouse_tracking = Ansi.(to_string (enable Mouse_tracking))
+let mouse_button = Ansi.(to_string (enable Mouse_button_tracking))
+let mouse_motion = Ansi.(to_string (enable Mouse_motion))
 
-let send t seq = if t.output_is_tty then submit_string t seq
+let disable_all_mouse_seq =
+  String.concat ""
+    [
+      Ansi.(to_string (disable Mouse_tracking));
+      Ansi.(to_string (disable Mouse_button_tracking));
+      Ansi.(to_string (disable Mouse_motion));
+      Ansi.(to_string (disable Urxvt_mouse));
+      Ansi.(to_string (disable Mouse_sgr));
+    ]
 
-let disable_all_mouse t =
-  send t Ansi.(to_string (disable Mouse_tracking));
-  send t Ansi.(to_string (disable Mouse_button_tracking));
-  send t Ansi.(to_string (disable Mouse_motion));
-  send t Ansi.(to_string (disable Urxvt_mouse));
-  send t Ansi.(to_string (disable Mouse_sgr))
+let sgr_normal_seq = String.concat "" [ sgr_enable; mouse_tracking ]
 
-let toggle_feature t ~current ~set ~enable ~on_seq ~off_seq =
-  if not t.output_is_tty then set enable
-  else if current () = enable then ()
+let sgr_button_seq =
+  String.concat "" [ sgr_enable; mouse_tracking; mouse_button ]
+
+let sgr_any_seq =
+  String.concat "" [ sgr_enable; mouse_tracking; mouse_button; mouse_motion ]
+
+(* Helpers *)
+
+let make_osc payload = Ansi.(to_string (osc ~terminator:`Bel ~payload))
+
+let clamp_color_component x =
+  let x = if Float.is_nan x then 0. else x in
+  int_of_float (Float.round (Float.max 0. (Float.min 1. x) *. 255.))
+
+(* Core output *)
+
+let send t seq = if t.tty then t.output seq
+let tty t = t.tty
+let parser t = t.parser
+
+(* Idempotent toggle: checks current state, emits sequence, updates state *)
+let toggle t ~current ~set ~enable ~on_seq ~off_seq =
+  if current () = enable then ()
   else (
     send t (if enable then on_seq else off_seq);
     set enable)
 
-let set_kitty_keyboard t ~enable ~flags =
-  if not t.output_is_tty then (
-    t.kitty_keyboard_enabled <- enable;
-    t.kitty_keyboard_flags <- flags)
-  else if enable then (
-    if (not t.kitty_keyboard_enabled) || t.kitty_keyboard_flags <> flags then (
-      send t (kitty_kb_push flags);
-      t.kitty_keyboard_enabled <- true;
-      t.kitty_keyboard_flags <- flags))
-  else if t.kitty_keyboard_enabled then (
-    send t kitty_kb_pop;
-    t.kitty_keyboard_enabled <- false)
+(* Constructor *)
 
-let set_mouse_mode t mode =
-  if not t.output_is_tty then t.mouse_mode <- mode
-  else if t.mouse_mode = mode then ()
-  else (
-    disable_all_mouse t;
-    (match mode with
-    | `Off -> ()
-    | `X10 -> send t Ansi.(to_string (enable Mouse_x10))
-    | `Normal -> send t Ansi.(to_string (enable Mouse_tracking))
-    | `Button -> send t Ansi.(to_string (enable Mouse_button_tracking))
-    | `Any -> send t Ansi.(to_string (enable Mouse_motion))
-    | `Sgr_normal ->
-        (* SGR + press/release only (1000) *)
-        send t sgr_enable;
-        send t Ansi.(to_string (enable Mouse_tracking))
-    | `Sgr_button ->
-        (* SGR + press/release/drag (1000 + 1002) *)
-        send t sgr_enable;
-        send t Ansi.(to_string (enable Mouse_tracking));
-        send t Ansi.(to_string (enable Mouse_button_tracking))
-    | `Sgr_any ->
-        (* SGR + all motion (1000 + 1002 + 1003) *)
-        send t sgr_enable;
-        send t Ansi.(to_string (enable Mouse_tracking));
-        send t Ansi.(to_string (enable Mouse_button_tracking));
-        send t Ansi.(to_string (enable Mouse_motion)));
-    t.mouse_mode <- mode)
+let make ~output ?(tty = true) ?initial_caps ?parser () =
+  let term = Sys.getenv_opt "TERM" |> Option.value ~default:"unknown" in
+  let caps, terminal_info = Caps.initial ?provided:initial_caps ~term () in
+  let env_overrides = Option.is_none initial_caps in
+  let parser = match parser with Some p -> p | None -> Input.Parser.create () in
+  {
+    output;
+    tty;
+    caps;
+    terminal_info;
+    parser;
+    mouse_mode = `Off;
+    bracketed_paste_enabled = false;
+    focus_enabled = false;
+    kitty_keyboard_enabled = false;
+    kitty_keyboard_flags = 0b00001;
+    modify_other_keys_enabled = false;
+    unicode_mode_enabled = false;
+    cursor =
+      {
+        x = 1;
+        y = 1;
+        visible = true;
+        style = `Block;
+        blinking = false;
+        color = (1., 1., 1., 1.);
+      };
+    alt_screen = false;
+    scroll_region = None;
+    pixel_resolution = None;
+    env_overrides;
+  }
 
-let mouse_mode t = t.mouse_mode
+(* Capability access *)
 
-let set_unicode_enabled t enable =
-  toggle_feature t
-    ~current:(fun () -> t.unicode_mode_enabled)
-    ~set:(fun v -> t.unicode_mode_enabled <- v)
-    ~enable ~on_seq:unicode_on ~off_seq:unicode_off
-
-let set_unicode_width t width =
-  let enable = match width with `Unicode -> true | `Wcwidth -> false in
-  set_unicode_enabled t enable;
-  t.caps <- { t.caps with unicode_width = width }
-
-let enable_bracketed_paste t enable =
-  toggle_feature t
-    ~current:(fun () -> t.bracketed_paste_enabled)
-    ~set:(fun v -> t.bracketed_paste_enabled <- v)
-    ~enable ~on_seq:paste_on ~off_seq:paste_off
-
-let enable_focus_reporting t enable =
-  toggle_feature t
-    ~current:(fun () -> t.focus_enabled)
-    ~set:(fun v -> t.focus_enabled <- v)
-    ~enable ~on_seq:focus_on ~off_seq:focus_off
-
-let enable_kitty_keyboard ?(flags = 0b00001) t enable =
-  set_kitty_keyboard t ~enable ~flags
-
-let enable_modify_other_keys t enable =
-  toggle_feature t
-    ~current:(fun () -> t.modify_other_keys_enabled)
-    ~set:(fun v -> t.modify_other_keys_enabled <- v)
-    ~enable ~on_seq:modify_other_keys_on ~off_seq:modify_other_keys_off
-
-let modify_other_keys_enabled t = t.modify_other_keys_enabled
-
-let set_cursor_visible t visible =
-  toggle_feature t
-    ~current:(fun () -> t.cursor.visible)
-    ~set:(fun v -> t.cursor.visible <- v)
-    ~enable:visible ~on_seq:cursor_show ~off_seq:cursor_hide
-
-let cursor_visible t = t.cursor.visible
-
-let cursor_position t =
-  { x = t.cursor.x; y = t.cursor.y; visible = t.cursor.visible }
-
-let cursor_style_state t = (t.cursor.style, t.cursor.blinking)
-let cursor_color t = t.cursor.color
-
-let set_cursor_state t ~x ~y ~visible =
-  t.cursor.x <- max 1 x;
-  t.cursor.y <- max 1 y;
-  t.cursor.visible <- visible
-
-let move_cursor ?(visible = true) t ~row ~col =
-  let row = max 1 row in
-  let col = max 1 col in
-  if visible <> t.cursor.visible then set_cursor_visible t visible;
-  set_cursor_state t ~x:col ~y:row ~visible:t.cursor.visible;
-  if t.output_is_tty then send t Ansi.(to_string (cursor_position ~row ~col))
-
-let cursor_color_osc r g b =
-  let r = clamp_color_component r in
-  let g = clamp_color_component g in
-  let b = clamp_color_component b in
-  make_osc (Printf.sprintf "12;#%02X%02X%02X" r g b)
-
-let set_cursor_visuals t =
-  if not t.output_is_tty then ()
-  else if t.cursor.visible then (
-    let r, g, b, _ = t.cursor.color in
-    send t (cursor_color_osc r g b);
-    let seq =
-      match (t.cursor.style, t.cursor.blinking) with
-      | `Block, true -> kitty_cursor_block_blink
-      | `Block, false -> kitty_cursor_block
-      | `Line, true -> kitty_cursor_line_blink
-      | `Line, false -> kitty_cursor_line
-      | `Underline, true -> kitty_cursor_underline_blink
-      | `Underline, false -> kitty_cursor_underline
-    in
-    send t seq)
-  else send t cursor_hide
-
-let set_cursor_style t style ~blinking =
-  t.cursor.style <- style;
-  t.cursor.blinking <- blinking;
-  if t.output_is_tty then set_cursor_visuals t
-
-let set_cursor_color t ~r ~g ~b ~a =
-  t.cursor.color <- (r, g, b, a);
-  if t.output_is_tty then set_cursor_visuals t
-
-let reset_cursor_color t =
-  t.cursor.color <- (1., 1., 1., 1.);
-  if t.output_is_tty then (
-    send t Ansi.(to_string reset_cursor_color_fallback);
-    send t Ansi.(to_string reset_cursor_color))
-
-let set_title t title =
-  if t.output_is_tty then send t Ansi.(to_string (set_title ~title))
-
-let flush t = match t.writer with None -> () | Some w -> Frame_writer.drain w
-
-(* Shared buffer for draining the wakeup pipe, avoids allocation on every
-   wake *)
-let wakeup_drain_buffer = Bytes.create 64
-
-let wait_readable t ~timeout =
-  let timeout = if timeout < 0. then -1. else timeout in
-  let rec loop () =
-    try
-      let read, _, _ = Unix.select [ t.input; t.wakeup_r ] [] [] timeout in
-      let woke = List.mem t.wakeup_r read in
-      let input_ready = List.mem t.input read in
-      if woke then (
-        ignore_exn
-          (fun fd -> ignore (Unix.read fd wakeup_drain_buffer 0 64))
-          t.wakeup_r;
-        input_ready)
-      else input_ready
-    with
-    | Unix_error (EINTR, _, _) -> loop ()
-    | Unix_error _ -> false
-  in
-  loop ()
-
-(* Non-blocking read: returns 0 on EAGAIN/EWOULDBLOCK instead of blocking. Use
-   wait_readable first if you need to block until data is available. *)
-let read_bytes_nonblocking t bytes off len =
-  let rec loop () =
-    match Unix.read t.input bytes off len with
-    | n -> n
-    | exception Unix_error (EINTR, _, _) -> loop ()
-    | exception Unix_error ((EAGAIN | EWOULDBLOCK), _, _) -> 0
-    | exception Unix_error (err, _, _) -> raise (Error (Unix.error_message err))
-  in
-  loop ()
-
-let wake_signal = Bytes.of_string "x"
-
-let wake t =
-  try ignore (Unix.write t.wakeup_w wake_signal 0 1) with
-  | Unix_error (EAGAIN, _, _) -> ()
-  | Unix_error (EPIPE, _, _) -> ()
-  | _ -> ()
-
-let size t = try get_size t.output with _ -> (80, 24)
-
-let reset_state t =
-  if t.output_is_tty then (
-    send t cursor_show;
-    send t reset_sgr;
-    send t Ansi.(to_string reset_cursor_color_fallback);
-    send t Ansi.(to_string reset_cursor_color);
-    send t Ansi.(to_string (cursor_style ~shape:`Default));
-    if t.kitty_keyboard_enabled then enable_kitty_keyboard t false;
-    if t.modify_other_keys_enabled then (
-      send t modify_other_keys_off;
-      t.modify_other_keys_enabled <- false);
-    if t.mouse_mode <> `Off then set_mouse_mode t `Off;
-    if t.bracketed_paste_enabled then enable_bracketed_paste t false;
-    if t.focus_enabled then enable_focus_reporting t false;
-    if t.scroll_region <> None then (
-      send t Ansi.(to_string reset_scrolling_region);
-      t.scroll_region <- None);
-    if t.alt_screen then (
-      send t alternate_off;
-      t.alt_screen <- false)
-    else if Sys.win32 then (
-      send t "\r";
-      let rows = max 0 (t.cursor.y - 1) in
-      for _ = 1 to rows do
-        send t Ansi.(to_string (cursor_up ~n:1))
-      done;
-      send t erase_below);
-    set_title t "";
-    (* Ghostty/Alacritty occasionally drop the final cursor restore; send it
-       twice with a small delay and drain the fd to increase reliability. *)
-    send t cursor_show;
-    ignore_exn Unix.tcdrain t.output;
-    (try Unix.sleepf 0.01 with _ -> ());
-    send t cursor_show;
-    (try Unix.sleepf 0.01 with _ -> ());
-    t.cursor.visible <- true)
-
-let detect_term () = Sys.getenv_opt "TERM" |> Option.value ~default:"unknown"
 let capabilities t = t.caps
+let set_capabilities t caps = t.caps <- caps
 let terminal_info t = t.terminal_info
-let terminal_name t = t.terminal_info.name
-let terminal_version t = t.terminal_info.version
-let mode t = t.current_mode
-let take_from_pending t = Queue.take_opt t.pending_events
+let set_terminal_info t info = t.terminal_info <- info
+let pixel_resolution t = t.pixel_resolution
+let set_pixel_resolution t res = t.pixel_resolution <- res
 
-(* Single-event version for callback-based parsing *)
 let apply_capability_event t (event : Input.Caps.event) =
   let caps, info =
     Caps.apply_event ~apply_env_overrides:t.env_overrides ~caps:t.caps
@@ -398,363 +202,240 @@ let apply_capability_event t (event : Input.Caps.event) =
   | Input.Caps.Pixel_resolution (w, h) -> t.pixel_resolution <- Some (w, h)
   | _ -> ()
 
-let read ?(timeout = -1.) t on_event =
-  let got_event = ref false in
-  let emit e =
-    got_event := true;
-    on_event e
+(* Probing *)
+
+let probe ?(timeout = 0.2) ~on_event ~read_into ~wait_readable t =
+  let caps, info =
+    Caps.probe ~timeout ~apply_env_overrides:t.env_overrides ~on_event
+      ~read_into ~wait_readable ~send:(send t) ~caps:t.caps
+      ~info:t.terminal_info ()
   in
+  t.caps <- caps;
+  t.terminal_info <- info
 
-  (* 1. Drain queued events first *)
-  let rec drain_pending () =
-    match take_from_pending t with
-    | Some evt ->
-        emit evt;
-        drain_pending ()
-    | None -> ()
-  in
-  drain_pending ();
+(* Mouse mode *)
 
-  (* 2. Drain parser timeouts *)
-  let drain_parser () =
-    let now = Unix.gettimeofday () in
-    Input.Parser.drain t.parser ~now ~on_event:emit
-      ~on_caps:(apply_capability_event t)
-  in
-  drain_parser ();
+let disable_all_mouse t = send t disable_all_mouse_seq
 
-  (* 3. Read available bytes (non-blocking drain) *)
-  let read_available () =
-    let rec loop () =
-      if wait_readable t ~timeout:0. then
-        let n =
-          read_bytes_nonblocking t t.input_buffer 0
-            (Bytes.length t.input_buffer)
-        in
-        if n > 0 then (
-          let now = Unix.gettimeofday () in
-          Input.Parser.feed t.parser t.input_buffer 0 n ~now ~on_event:emit
-            ~on_caps:(apply_capability_event t);
-          loop ())
-    in
-    loop ()
-  in
-  read_available ();
-  drain_parser ();
+let set_mouse_mode t mode =
+  if t.mouse_mode = mode then ()
+  else (
+    disable_all_mouse t;
+    (match mode with
+    | `Off -> ()
+    | `X10 -> send t mouse_x10
+    | `Normal -> send t mouse_tracking
+    | `Button -> send t mouse_button
+    | `Any -> send t mouse_motion
+    | `Sgr_normal -> send t sgr_normal_seq
+    | `Sgr_button -> send t sgr_button_seq
+    | `Sgr_any -> send t sgr_any_seq);
+    t.mouse_mode <- mode)
 
-  (* 4. If non-blocking (timeout=0) or we got events, we're done *)
-  if timeout = 0. || !got_event then !got_event
-  else
-    (* 5. Blocking: wait for input with timeout *)
-    let deadline =
-      if timeout < 0. then None else Some (Unix.gettimeofday () +. timeout)
-    in
-    let rec wait_loop () =
-      let now = Unix.gettimeofday () in
-      (* Check deadline *)
-      match deadline with
-      | Some d when now >= d -> !got_event
-      | _ ->
-          (* Calculate wait time considering parser drain deadline *)
-          let flush_deadline = Input.Parser.deadline t.parser in
-          let user_wait =
-            match deadline with Some d -> max 0. (d -. now) | None -> -1.
-          in
-          let flush_wait =
-            match flush_deadline with
-            | Some d -> max 0. (d -. now)
-            | None -> -1.
-          in
-          let wait_time =
-            match (user_wait < 0., flush_wait < 0.) with
-            | true, true -> -1.
-            | false, true -> user_wait
-            | true, false -> flush_wait
-            | false, false -> min user_wait flush_wait
-          in
-          let ready = wait_readable t ~timeout:wait_time in
-          if ready then (
-            read_available ();
-            drain_parser ());
-          if !got_event then true else wait_loop ()
-    in
-    wait_loop ()
+let mouse_mode t = t.mouse_mode
 
-let poll t on_event = read ~timeout:0. t on_event
+(* Bracketed paste *)
 
-let switch_mode t mode =
-  (if not t.input_is_tty then ()
-   else
-     match mode with
-     | `Raw ->
-         let termios = Unix.tcgetattr t.input in
-         let raw =
-           {
-             termios with
-             c_echo = false;
-             c_icanon = false;
-             c_isig = false;
-             c_vmin = 1;
-             c_vtime = 0;
-             c_ixon = false;
-             c_icrnl = false;
-           }
-         in
-         Unix.tcsetattr t.input TCSANOW raw;
-         ignore_unix_errors Unix.set_nonblock t.input
-     | `Cooked -> (
-         match t.original_termios with
-         | Some saved ->
-             Unix.tcsetattr t.input TCSANOW saved;
-             ignore_unix_errors Unix.clear_nonblock t.input
-         | None -> ())
-     | `Custom f ->
-         let termios = Unix.tcgetattr t.input in
-         let custom = f termios in
-         Unix.tcsetattr t.input TCSANOW custom);
-  t.current_mode <- mode
+let enable_bracketed_paste t enable =
+  toggle t
+    ~current:(fun () -> t.bracketed_paste_enabled)
+    ~set:(fun v -> t.bracketed_paste_enabled <- v)
+    ~enable ~on_seq:paste_on ~off_seq:paste_off
 
-let with_mode t mode f =
-  let previous = t.current_mode in
-  switch_mode t mode;
-  Fun.protect f ~finally:(fun () -> switch_mode t previous)
+let bracketed_paste_enabled t = t.bracketed_paste_enabled
 
-let query_capabilities ?(timeout = 0.2) t =
-  if not (t.input_is_tty && t.output_is_tty) then ()
-  else
-    with_mode t `Raw (fun () ->
-        let was_visible = t.cursor.visible in
-        if was_visible then send t cursor_hide;
-        let caps, info =
-          Caps.probe ~timeout ~apply_env_overrides:t.env_overrides
-            ~on_event:(fun e -> Queue.add e t.pending_events)
-            ~read_into:(fun buf off len -> read_bytes_nonblocking t buf off len)
-            ~wait_readable:(fun ~timeout -> wait_readable t ~timeout)
-            ~send:(fun payload -> send t payload)
-            ~caps:t.caps ~info:t.terminal_info ()
-        in
-        t.caps <- caps;
-        t.terminal_info <- info;
-        if was_visible then send t cursor_show)
+(* Focus reporting *)
+
+let enable_focus_reporting t enable =
+  toggle t
+    ~current:(fun () -> t.focus_enabled)
+    ~set:(fun v -> t.focus_enabled <- v)
+    ~enable ~on_seq:focus_on ~off_seq:focus_off
+
+let focus_reporting_enabled t = t.focus_enabled
+
+(* Kitty keyboard *)
+
+let enable_kitty_keyboard ?(flags = 0b00001) t enable =
+  if enable then (
+    if (not t.kitty_keyboard_enabled) || t.kitty_keyboard_flags <> flags then (
+      send t (kitty_kb_push flags);
+      t.kitty_keyboard_enabled <- true;
+      t.kitty_keyboard_flags <- flags))
+  else if t.kitty_keyboard_enabled then (
+    send t kitty_kb_pop;
+    t.kitty_keyboard_enabled <- false)
+
+let kitty_keyboard_enabled t = t.kitty_keyboard_enabled
+
+(* Modify other keys *)
+
+let enable_modify_other_keys t enable =
+  toggle t
+    ~current:(fun () -> t.modify_other_keys_enabled)
+    ~set:(fun v -> t.modify_other_keys_enabled <- v)
+    ~enable ~on_seq:modify_other_keys_on_seq ~off_seq:modify_other_keys_off_seq
+
+let modify_other_keys_enabled t = t.modify_other_keys_enabled
+
+(* Unicode width *)
+
+let set_unicode_width t width =
+  let enable = match width with `Unicode -> true | `Wcwidth -> false in
+  toggle t
+    ~current:(fun () -> t.unicode_mode_enabled)
+    ~set:(fun v -> t.unicode_mode_enabled <- v)
+    ~enable ~on_seq:unicode_on ~off_seq:unicode_off;
+  t.caps <- { t.caps with unicode_width = width }
+
+(* Alternate screen *)
 
 let enter_alternate_screen t =
-  if t.output_is_tty && not t.alt_screen then (
+  if not t.alt_screen then (
     send t alternate_on;
     send t cursor_hide;
     t.cursor.visible <- false;
     t.alt_screen <- true)
 
 let leave_alternate_screen t =
-  if t.output_is_tty && t.alt_screen then (
+  if t.alt_screen then (
     send t alternate_off;
     t.alt_screen <- false)
 
+let alt_screen t = t.alt_screen
+
+(* Scroll region *)
+
 let set_scroll_region t ~top ~bottom =
-  if not t.output_is_tty then t.scroll_region <- Some (top, bottom)
-  else if t.scroll_region = Some (top, bottom) then ()
-  else (
+  if t.scroll_region <> Some (top, bottom) then (
     send t Ansi.(to_string (set_scrolling_region ~top ~bottom));
     t.scroll_region <- Some (top, bottom))
 
 let clear_scroll_region t =
-  if not t.output_is_tty then t.scroll_region <- None
-  else if t.scroll_region = None then ()
-  else (
+  if t.scroll_region <> None then (
     send t Ansi.(to_string reset_scrolling_region);
     t.scroll_region <- None)
 
 let scroll_region t = t.scroll_region
 
-let register_winch_handler, deregister_winch_handler =
-  let handlers : (unit -> unit) list ref = ref [] in
-  (* Signal handlers must never let exceptions escape, as this can crash the
-     program or leave it in an inconsistent state. *)
-  let safe_call f = try f () with _ -> () in
-  let callback _ = List.iter safe_call !handlers in
-  (* SIGWINCH is not available on Windows - silently ignore if unavailable *)
-  let () =
-    try Sys.set_signal Sys.sigwinch (Sys.Signal_handle callback)
-    with Invalid_argument _ -> ()
-  in
-  ( (fun fn -> handlers := fn :: !handlers),
-    fun fn -> handlers := List.filter (fun f -> f != fn) !handlers )
+(* Cursor *)
 
-(* Platform detection for render_thread default. Threaded rendering is disabled
-   on Linux due to instability. *)
-let is_linux () =
-  Sys.os_type = "Unix"
-  &&
-    try
-      let ic = Unix.open_process_in "uname -s" in
-      let result =
-        Fun.protect
-          ~finally:(fun () ->
-            try ignore (Unix.close_process_in ic) with _ -> ())
-          (fun () -> try Some (input_line ic) with End_of_file -> None)
-      in
-      match result with Some "Linux" -> true | _ -> false
-    with _ -> false
+let set_cursor_visible t visible =
+  toggle t
+    ~current:(fun () -> t.cursor.visible)
+    ~set:(fun v -> t.cursor.visible <- v)
+    ~enable:visible ~on_seq:cursor_show ~off_seq:cursor_hide
 
-let default_render_buffer_size = 1024 * 1024 * 2 (* 2MB *)
+let cursor_visible t = t.cursor.visible
 
-let open_terminal ?(probe = true) ?(probe_timeout = 0.2) ?(input = Unix.stdin)
-    ?(output = Unix.stdout) ?initial_caps ?render_thread ?render_buffer_size ()
-    =
-  let use_thread =
-    match render_thread with Some v -> v | None -> not (is_linux ())
-  in
-  let buffer_size =
-    match render_buffer_size with
-    | Some v -> v
-    | None -> default_render_buffer_size
-  in
-  let input_is_tty = is_tty input in
-  let output_is_tty = is_tty output in
-  let parser = Input.Parser.create () in
-  let pending_events = Queue.create () in
-  let input_buffer = Bytes.create 4096 in
-  let wake_r, wake_w = Unix.pipe () in
-  ignore_exn Unix.set_nonblock wake_r;
-  ignore_exn Unix.set_nonblock wake_w;
-  ignore_exn Unix.set_close_on_exec wake_r;
-  ignore_exn Unix.set_close_on_exec wake_w;
-  let original_termios =
-    if input_is_tty then
-      try Some (Unix.tcgetattr input) with Unix_error _ -> None
-    else None
-  in
-  if output_is_tty then ignore_exn enable_vt output;
-  let term = detect_term () in
-  let caps, terminal_info = Caps.initial ?provided:initial_caps ~term () in
-  let env_overrides = Option.is_none initial_caps in
-  let result =
+let cursor_position t =
+  { x = t.cursor.x; y = t.cursor.y; visible = t.cursor.visible }
+
+let move_cursor ?(visible = true) t ~row ~col =
+  let row = max 1 row in
+  let col = max 1 col in
+  if visible <> t.cursor.visible then set_cursor_visible t visible;
+  t.cursor.x <- col;
+  t.cursor.y <- row;
+  send t Ansi.(to_string (cursor_position ~row ~col))
+
+let cursor_style_state t = (t.cursor.style, t.cursor.blinking)
+let cursor_color t = t.cursor.color
+
+let cursor_color_osc r g b =
+  let r = clamp_color_component r in
+  let g = clamp_color_component g in
+  let b = clamp_color_component b in
+  make_osc (Printf.sprintf "12;#%02X%02X%02X" r g b)
+
+let cursor_style_seq style blinking =
+  match style, blinking with
+  | `Block, true -> cursor_block_blink
+  | `Block, false -> cursor_block
+  | `Line, true -> cursor_line_blink
+  | `Line, false -> cursor_line
+  | `Underline, true -> cursor_underline_blink
+  | `Underline, false -> cursor_underline
+
+let set_cursor_visuals t =
+  if not t.tty then ()
+  else if t.cursor.visible then (
+    let r, g, b, _ = t.cursor.color in
+    send t (cursor_color_osc r g b);
+    send t (cursor_style_seq t.cursor.style t.cursor.blinking))
+  else send t cursor_hide
+
+let set_cursor_style t style ~blinking =
+  t.cursor.style <- style;
+  t.cursor.blinking <- blinking;
+  set_cursor_visuals t
+
+let set_cursor_color t ~r ~g ~b ~a =
+  t.cursor.color <- (r, g, b, a);
+  set_cursor_visuals t
+
+let reset_cursor_color t =
+  t.cursor.color <- (1., 1., 1., 1.);
+  send t reset_cursor_color_fallback_seq;
+  send t reset_cursor_color_seq
+
+let set_title t title = send t Ansi.(to_string (set_title ~title))
+let query_pixel_resolution t = send t Ansi.(to_string (query Pixel_size))
+
+(* Reset and close *)
+
+let reset_state t =
+  send t cursor_show;
+  send t reset_sgr;
+  send t reset_cursor_color_fallback_seq;
+  send t reset_cursor_color_seq;
+  send t cursor_default;
+  if t.kitty_keyboard_enabled then enable_kitty_keyboard t false;
+  if t.modify_other_keys_enabled then enable_modify_other_keys t false;
+  if t.mouse_mode <> `Off then set_mouse_mode t `Off;
+  if t.bracketed_paste_enabled then enable_bracketed_paste t false;
+  if t.focus_enabled then enable_focus_reporting t false;
+  if t.unicode_mode_enabled then set_unicode_width t `Wcwidth;
+  if t.scroll_region <> None then clear_scroll_region t;
+  if t.alt_screen then leave_alternate_screen t
+  else if Sys.win32 then (
+    send t "\r";
+    for _ = 1 to max 0 (t.cursor.y - 1) do
+      send t Ansi.(to_string (cursor_up ~n:1))
+    done;
+    send t erase_below);
+  set_title t "";
+  send t cursor_show;
+  t.cursor.visible <- true
+
+let close t = reset_state t
+
+(* TTY helpers *)
+
+let is_tty fd = try Unix.isatty fd with Unix.Unix_error _ -> false
+
+let set_raw fd =
+  let original = Unix.tcgetattr fd in
+  let raw =
     {
-      input;
-      output;
-      wakeup_r = wake_r;
-      wakeup_w = wake_w;
-      original_termios;
-      current_mode = `Cooked;
-      input_is_tty;
-      output_is_tty;
-      caps;
-      terminal_info;
-      parser;
-      pending_events;
-      input_buffer;
-      mouse_mode = `Off;
-      cursor =
-        {
-          x = 1;
-          y = 1;
-          visible = true;
-          style = `Block;
-          blinking = false;
-          color = (1., 1., 1., 1.);
-        };
-      alt_screen = false;
-      bracketed_paste_enabled = false;
-      focus_enabled = false;
-      kitty_keyboard_enabled = false;
-      kitty_keyboard_flags = 0b00001;
-      modify_other_keys_enabled = false;
-      unicode_mode_enabled = false;
-      winch_handler = None;
-      pixel_resolution = None;
-      scroll_region = None;
-      env_overrides;
-      writer =
-        Some (Frame_writer.create ~fd:output ~size:buffer_size ~use_thread);
+      original with
+      c_echo = false;
+      c_icanon = false;
+      c_isig = false;
+      c_vmin = 1;
+      c_vtime = 0;
+      c_ixon = false;
+      c_icrnl = false;
     }
   in
-  let cb =
-   fun () ->
-    match size result with
-    | w, h when w > 0 && h > 0 ->
-        if Queue.length result.pending_events < 1024 then
-          Queue.add (Input.Resize (w, h)) result.pending_events;
-        ignore (Unix.write result.wakeup_w wake_signal 0 1)
-    | _ -> ()
-  in
-  register_winch_handler cb;
-  result.winch_handler <- Some cb;
-  if probe then query_capabilities ~timeout:probe_timeout result;
-  result
+  Unix.tcsetattr fd Unix.TCSANOW raw;
+  (try Unix.set_nonblock fd with Unix.Unix_error _ -> ());
+  original
 
-let close t =
-  (* Reset state while the writer is still active for proper ordering. *)
-  ignore_exn reset_state t;
-  Option.iter (fun w -> ignore_exn Frame_writer.close w) t.writer;
-  t.writer <- None;
-  Option.iter (fun cb -> ignore_exn deregister_winch_handler cb) t.winch_handler;
-  t.winch_handler <- None;
-  ignore_exn Unix.close t.wakeup_r;
-  ignore_exn Unix.close t.wakeup_w;
-  match t.original_termios with
-  | Some termios ->
-      ignore_unix_errors (Unix.tcsetattr t.input TCSANOW) termios;
-      ignore_unix_errors Unix.clear_nonblock t.input
-  | None -> ()
+let restore fd termios =
+  Unix.tcsetattr fd Unix.TCSANOW termios;
+  (try Unix.clear_nonblock fd with Unix.Unix_error _ -> ())
 
-let flush_input t =
-  if t.input_is_tty then ignore_unix_errors (Unix.tcflush t.input) Unix.TCIFLUSH
-
-let query_cursor_position ?(timeout = 0.05) t =
-  if not t.output_is_tty then None
-  else
-    (* Must use raw mode to properly read the CPR response. In cooked mode, echo
-       is enabled and the response may be printed. *)
-    with_mode t `Raw (fun () ->
-        send t cursor_position_request;
-        let deadline = Unix.gettimeofday () +. max 0. timeout in
-        let rec loop () =
-          let now = Unix.gettimeofday () in
-          if now >= deadline then None
-          else
-            let remaining = deadline -. now in
-            let ready = wait_readable t ~timeout:remaining in
-            if not ready then None
-            else
-              let read =
-                read_bytes_nonblocking t t.input_buffer 0
-                  (Bytes.length t.input_buffer)
-              in
-              if read <= 0 then None
-              else
-                let cursor_pos = ref None in
-                Input.Parser.feed t.parser t.input_buffer 0 read ~now
-                  ~on_event:(fun e -> Queue.add e t.pending_events)
-                  ~on_caps:(fun c ->
-                    apply_capability_event t c;
-                    match c with
-                    | Input.Caps.Cursor_position (row, col) ->
-                        cursor_pos := Some (row, col)
-                    | _ -> ());
-                match !cursor_pos with Some _ as r -> r | None -> loop ()
-        in
-        loop ())
-
-let output_fd t = t.output
-
-let query_pixel_resolution t =
-  if t.output_is_tty then send t Ansi.(to_string (query Pixel_size))
-
-let pixel_resolution t = t.pixel_resolution
-
-(* Frame writing API *)
-
-let render_buffer t =
-  match t.writer with
-  | None -> failwith "Terminal.render_buffer: writer not initialized"
-  | Some w -> Frame_writer.render_buffer w
-
-let drain t = match t.writer with None -> () | Some w -> Frame_writer.drain w
-
-let present t len =
-  match t.writer with None -> () | Some w -> Frame_writer.present w len
-
-let write t str = submit_string t str
-
-let write_bytes t bytes =
-  let len = Bytes.length bytes in
-  if len > 0 then write t (Bytes.unsafe_to_string bytes)
+let size fd = try get_size fd with _ -> (80, 24)
+let flush_input fd = try Unix.tcflush fd Unix.TCIFLUSH with _ -> ()
+let enable_vt fd = try enable_vt_raw fd with _ -> ()

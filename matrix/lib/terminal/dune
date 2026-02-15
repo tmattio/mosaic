@@ -1,8 +1,8 @@
 (library
  (name terminal)
  (public_name matrix.terminal)
- (libraries unix ansi input threads)
- (private_modules caps frame_writer)
+ (libraries unix ansi input)
+ (private_modules caps)
  (foreign_stubs
   (language c)
   (names terminal_stubs)))
