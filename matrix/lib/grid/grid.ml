@@ -555,10 +555,11 @@ let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
     in
 
     (if preserve then (
-       if
-         (* Preserve existing glyph/attrs/link; tint foreground over it *)
-         bg_a >= 0.999
-       then (
+       (* Preserve existing glyph and attrs; tint foreground over it.
+          The overlay link always wins: the overlay is conceptually in front,
+          so its link state (including "no link") takes precedence. *)
+       Buf.set t.links idx link_id;
+       if bg_a >= 0.999 then (
          (* Opaque overlay: replace fg color entirely *)
          Color_plane.set t.fg idx 0 bg_r;
          Color_plane.set t.fg idx 1 bg_g;
