@@ -115,15 +115,13 @@ let encode_bench name method_ text =
 (* Pool-level benchmarks *)
 
 (* Scenario: small hotset of frequently reused graphemes (borders, separators,
-   icons, keywords). *)
+   icons, keywords). Pool created once and cleared each iteration to avoid
+   measuring pool allocation overhead. *)
 let pool_intern_hotset =
-  Ubench.bench_with_setup "pool/intern_hotset"
-    ~setup:(fun () ->
-      let pool = G.Pool.create () in
-      let scratch = Array.make (Array.length hotset_tokens) G.empty in
-      (pool, scratch))
-    ~teardown:(fun _ -> ())
-    ~f:(fun (pool, scratch) ->
+  let pool = G.Pool.create () in
+  let scratch = Array.make (Array.length hotset_tokens) G.empty in
+  Ubench.create "pool/intern_hotset" (fun () ->
+      G.Pool.clear pool;
       for i = 0 to Array.length hotset_tokens - 1 do
         scratch.(i) <- G.Pool.intern pool hotset_tokens.(i);
         G.Pool.incref pool scratch.(i)
@@ -132,15 +130,13 @@ let pool_intern_hotset =
         G.Pool.decref pool scratch.(i)
       done)
 
-(* Scenario: lots of one-off strings (e.g. unique IDs in logs). *)
+(* Scenario: lots of one-off strings (e.g. unique IDs in logs). Pool created
+   once and cleared each iteration. *)
 let pool_intern_unique =
-  Ubench.bench_with_setup "pool/intern_unique_256"
-    ~setup:(fun () ->
-      let pool = G.Pool.create () in
-      let scratch = Array.make 256 G.empty in
-      (pool, scratch))
-    ~teardown:(fun _ -> ())
-    ~f:(fun (pool, scratch) ->
+  let pool = G.Pool.create () in
+  let scratch = Array.make 256 G.empty in
+  Ubench.create "pool/intern_unique_256" (fun () ->
+      G.Pool.clear pool;
       for i = 0 to 255 do
         scratch.(i) <- G.Pool.intern pool unique_tokens.(i);
         G.Pool.incref pool scratch.(i)
@@ -149,23 +145,19 @@ let pool_intern_unique =
         G.Pool.decref pool scratch.(i)
       done)
 
-(* Scenario: repeatedly querying existing glyphs (snapshotting / rendering). *)
+(* Scenario: repeatedly querying existing glyphs (snapshotting / rendering).
+   Pool and ids created once at init; measurement only runs the length loop. *)
 let pool_get_existing =
-  Ubench.bench_with_setup "pool/get_existing"
-    ~setup:(fun () ->
-      let pool = G.Pool.create () in
-      let ids =
-        Array.init (Array.length hotset_tokens) (fun i ->
-            let id = G.Pool.intern pool hotset_tokens.(i) in
-            G.Pool.incref pool id;
-            id)
-      in
-      (pool, ids))
-    ~teardown:(fun (pool, ids) -> Array.iter (G.Pool.decref pool) ids)
-    ~f:(fun (pool, ids) ->
+  let pool = G.Pool.create () in
+  let ids =
+    Array.init (Array.length hotset_tokens) (fun i ->
+        let id = G.Pool.intern pool hotset_tokens.(i) in
+        G.Pool.incref pool id;
+        id)
+  in
+  Ubench.create "pool/get_existing" (fun () ->
       let total = ref 0 in
       for i = 0 to Array.length ids - 1 do
-        (* Byte length query for existing interned glyphs. *)
         total := !total + G.Pool.length pool ids.(i)
       done;
       ignore (Sys.opaque_identity !total))
