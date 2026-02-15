@@ -1,33 +1,22 @@
 open Windtrap
 module T = Terminal
 
-(* Helper to create pipes for non-TTY testing *)
-let with_pipes f =
-  let input_read, input_write = Unix.pipe () in
-  let output_read, output_write = Unix.pipe () in
-  Fun.protect
-    (fun () -> f input_read output_write output_read)
-    ~finally:(fun () ->
-      Unix.close input_read;
-      Unix.close input_write;
-      Unix.close output_read;
-      Unix.close output_write)
+(* Helper to create a non-TTY terminal with a buffer-backed output *)
+let with_terminal ?initial_caps f =
+  let buf = Buffer.create 4096 in
+  let output s = Buffer.add_string buf s in
+  let term = T.make ~output ~tty:false ?initial_caps () in
+  f term buf
 
-(* Helper to read from output pipe *)
-let read_output fd =
-  let buffer = Bytes.create 4096 in
-  Unix.set_nonblock fd;
-  try
-    let n = Unix.read fd buffer 0 4096 in
-    Bytes.sub_string buffer 0 n
-  with Unix.Unix_error (Unix.EAGAIN, _, _) -> ""
+let with_tty_terminal ?initial_caps f =
+  let buf = Buffer.create 4096 in
+  let output s = Buffer.add_string buf s in
+  let term = T.make ~output ~tty:true ?initial_caps () in
+  f term buf
 
 (* Test: Non-TTY terminal doesn't send escape sequences *)
 let test_non_tty_no_escape_sequences () =
-  with_pipes @@ fun input output output_read ->
-  let term = T.open_terminal ~input ~output () in
-
-  (* These operations should not send escape sequences on non-TTY *)
+  with_terminal @@ fun term buf ->
   T.set_cursor_visible term false;
   T.set_mouse_mode term `Sgr_any;
   T.enable_bracketed_paste term true;
@@ -35,16 +24,14 @@ let test_non_tty_no_escape_sequences () =
   T.enter_alternate_screen term;
   T.set_title term "Test";
 
-  let output_data = read_output output_read in
-  is_true ~msg:"no escape sequences on non-TTY" (output_data = "");
+  is_true ~msg:"no escape sequences on non-TTY"
+    (Buffer.length buf = 0);
 
   T.close term
 
 (* Test: Non-TTY terminal still tracks state *)
 let test_non_tty_state_tracking () =
-  with_pipes @@ fun input output _output_read ->
-  let term = T.open_terminal ~input ~output () in
-
+  with_terminal @@ fun term _buf ->
   T.set_cursor_visible term false;
   is_false ~msg:"cursor visible state" (T.cursor_visible term);
 
@@ -113,7 +100,6 @@ let test_contains_substring () =
 
 (* Test: Capability normalization *)
 let test_capability_normalization () =
-  with_pipes @@ fun input output _output_read ->
   let caps =
     {
       T.term = "test";
@@ -133,14 +119,10 @@ let test_capability_normalization () =
       hyperlinks = false;
     }
   in
-
-  let term = T.open_terminal ~input ~output ~initial_caps:caps () in
+  with_terminal ~initial_caps:caps @@ fun term _buf ->
   let normalized = T.capabilities term in
-
   is_true ~msg:"rgb preserved" normalized.rgb;
   is_true ~msg:"focus_tracking preserved" normalized.focus_tracking;
-
-  (* no mouse_reporting field anymore *)
   T.close term
 
 (* Test: TERM_PROGRAM fallback populates terminal info when XTVersion missing *)
@@ -152,8 +134,7 @@ let test_terminal_info_from_env () =
     (fun () ->
       Unix.putenv "TERM_PROGRAM" "Alacritty";
       Unix.putenv "TERM_PROGRAM_VERSION" "1.99";
-      with_pipes @@ fun input output _output_read ->
-      let term = T.open_terminal ~input ~output () in
+      with_terminal @@ fun term _buf ->
       let info = T.terminal_info term in
       equal ~msg:"env terminal name" string "Alacritty" info.name;
       equal ~msg:"env terminal version" string "1.99" info.version;
@@ -169,9 +150,7 @@ let test_terminal_info_from_env () =
 
 (* Test: Cursor position clamping *)
 let test_cursor_position_clamping () =
-  with_pipes @@ fun input output _output_read ->
-  let term = T.open_terminal ~input ~output () in
-
+  with_terminal @@ fun term _buf ->
   (* Negative values should be clamped to 1 *)
   T.move_cursor term ~row:(-10) ~col:(-5);
   let pos = T.cursor_position term in
@@ -189,104 +168,29 @@ let test_cursor_position_clamping () =
 
 (* Test: Color component clamping *)
 let test_color_clamping () =
-  with_pipes @@ fun input output _output_read ->
-  let term = T.open_terminal ~input ~output () in
-
+  with_terminal @@ fun term _buf ->
   (* Out of range values *)
   T.set_cursor_color term ~r:2.5 ~g:(-1.0) ~b:0.5 ~a:1.5;
   let r, g, b, a = T.cursor_color term in
-
-  (* Values are stored as-is, clamping happens during rendering *)
   equal ~msg:"r stored" (float 0.01) 2.5 r;
   equal ~msg:"g stored" (float 0.01) (-1.0) g;
   equal ~msg:"b stored" (float 0.01) 0.5 b;
   equal ~msg:"a stored" (float 0.01) 1.5 a;
-
-  T.close term
-
-(* Test: Mode switching *)
-let test_mode_switching () =
-  with_pipes @@ fun input output _output_read ->
-  let term = T.open_terminal ~input ~output () in
-
-  (* Initial mode is Cooked *)
-  let mode_str =
-    match T.mode term with
-    | `Cooked -> "Cooked"
-    | `Raw -> "Raw"
-    | `Custom _ -> "Custom"
-  in
-  equal ~msg:"initial mode" string "Cooked" mode_str;
-
-  (* Switch to Raw (no-op on non-TTY) *)
-  T.switch_mode term `Raw;
-  let mode_str =
-    match T.mode term with
-    | `Cooked -> "Cooked"
-    | `Raw -> "Raw"
-    | `Custom _ -> "Custom"
-  in
-  equal ~msg:"switched to raw" string "Raw" mode_str;
-
-  (* Switch back to Cooked *)
-  T.switch_mode term `Cooked;
-  let mode_str =
-    match T.mode term with
-    | `Cooked -> "Cooked"
-    | `Raw -> "Raw"
-    | `Custom _ -> "Custom"
-  in
-  equal ~msg:"switched to cooked" string "Cooked" mode_str;
-
-  T.close term
-
-(* Test: with_mode restores previous mode *)
-let test_with_mode_restore () =
-  with_pipes @@ fun input output _output_read ->
-  let term = T.open_terminal ~input ~output () in
-
-  T.switch_mode term `Cooked;
-  let result =
-    T.with_mode term `Raw (fun () ->
-        let mode_str =
-          match T.mode term with
-          | `Cooked -> "Cooked"
-          | `Raw -> "Raw"
-          | `Custom _ -> "Custom"
-        in
-        equal ~msg:"mode inside with_mode" string "Raw" mode_str;
-        42)
-  in
-
-  equal ~msg:"with_mode returns value" int 42 result;
-  let mode_str =
-    match T.mode term with
-    | `Cooked -> "Cooked"
-    | `Raw -> "Raw"
-    | `Custom _ -> "Custom"
-  in
-  equal ~msg:"mode restored" string "Cooked" mode_str;
-
   T.close term
 
 (* Test: Environment variable capability overrides *)
 let test_env_overrides () =
-  (* Save original env *)
   let save_env key = Sys.getenv_opt key in
   let kitty_id = save_env "KITTY_WINDOW_ID" in
   let term_prog = save_env "TERM_PROGRAM" in
   let colorterm = save_env "COLORTERM" in
-
   Fun.protect
     (fun () ->
-      with_pipes @@ fun input output _output_read ->
-      (* Test KITTY_WINDOW_ID override *)
       Unix.putenv "KITTY_WINDOW_ID" "1";
       (match term_prog with
       | Some v -> Unix.putenv "TERM_PROGRAM" v
       | None -> ());
       (match colorterm with Some v -> Unix.putenv "COLORTERM" v | None -> ());
-
       let caps =
         {
           T.term = "xterm";
@@ -306,16 +210,12 @@ let test_env_overrides () =
           hyperlinks = false;
         }
       in
-
-      let term = T.open_terminal ~input ~output ~initial_caps:caps () in
-
+      with_terminal ~initial_caps:caps @@ fun term _buf ->
       (* KITTY_WINDOW_ID should not override initial_caps when provided *)
       let current_caps = T.capabilities term in
       is_false ~msg:"explicit caps not overridden" current_caps.kitty_keyboard;
-
       T.close term)
     ~finally:(fun () ->
-      (* Restore env *)
       (match kitty_id with
       | Some v -> Unix.putenv "KITTY_WINDOW_ID" v
       | None -> Unix.putenv "KITTY_WINDOW_ID" "");
@@ -326,42 +226,45 @@ let test_env_overrides () =
       | Some v -> Unix.putenv "COLORTERM" v
       | None -> Unix.putenv "COLORTERM" "")
 
-(* Test: Size returns default for non-TTY *)
-let test_size_default () =
-  with_pipes @@ fun input output _output_read ->
-  let term = T.open_terminal ~input ~output () in
-  let cols, rows = T.size term in
-  equal ~msg:"default cols" int 80 cols;
-  equal ~msg:"default rows" int 24 rows;
+(* Test: TTY terminal emits escape sequences via send *)
+let test_tty_send () =
+  with_tty_terminal @@ fun term buf ->
+  T.send term "Hello";
+  T.send term " World";
+  let output_data = Buffer.contents buf in
+  equal ~msg:"send output" string "Hello World" output_data;
   T.close term
 
-(* Test: Write functions *)
-let test_write_functions () =
-  with_pipes @@ fun input output output_read ->
-  let term = T.open_terminal ~input ~output () in
-
-  T.write term "Hello";
-  T.write_bytes term (Bytes.of_string " World");
-  T.flush term;
-
-  let output_data = read_output output_read in
-  equal ~msg:"write output" string "Hello World" output_data;
-
-  T.close term
-
-(* Test: open_terminal with probing *)
-let test_open_with_probe () =
-  with_pipes @@ fun input output _output_read ->
-  (* This is non-TTY, so it won't actually probe, but should still work *)
-  let term =
-    T.open_terminal ~input ~output ~probe:true ~probe_timeout:0.05 ()
+(* Test: make with initial_caps *)
+let test_make_with_caps () =
+  let caps =
+    {
+      T.term = "test";
+      rgb = true;
+      kitty_keyboard = true;
+      kitty_graphics = false;
+      bracketed_paste = true;
+      focus_tracking = true;
+      unicode_width = `Unicode;
+      sgr_pixels = false;
+      color_scheme_updates = false;
+      explicit_width = false;
+      explicit_cursor_positioning = false;
+      scaled_text = false;
+      sixel = false;
+      sync = true;
+      hyperlinks = false;
+    }
   in
-  is_true ~msg:"terminal opened" (T.capabilities term |> fun _ -> true);
+  with_terminal ~initial_caps:caps @@ fun term _buf ->
+  let c = T.capabilities term in
+  is_true ~msg:"rgb" c.rgb;
+  is_true ~msg:"kitty_keyboard" c.kitty_keyboard;
+  is_true ~msg:"sync" c.sync;
   T.close term
 
-(* Test: Mouse mode validation - only validates on TTY *)
+(* Test: Mouse mode validation on non-TTY *)
 let test_mouse_validation () =
-  with_pipes @@ fun input output _output_read ->
   let caps =
     {
       T.term = "test";
@@ -381,10 +284,7 @@ let test_mouse_validation () =
       hyperlinks = false;
     }
   in
-
-  let term = T.open_terminal ~input ~output ~initial_caps:caps () in
-
-  (* On non-TTY, validation doesn't happen, so this won't raise *)
+  with_terminal ~initial_caps:caps @@ fun term _buf ->
   T.set_mouse_mode term `Sgr_any;
   equal ~msg:"mouse mode set on non-TTY" string "Sgr_any"
     (match T.mouse_mode term with
@@ -396,36 +296,11 @@ let test_mouse_validation () =
     | `Sgr_normal -> "Sgr_normal"
     | `Sgr_button -> "Sgr_button"
     | `Sgr_any -> "Sgr_any");
-
-  T.close term
-
-(* Test: poll drains available events *)
-let test_poll () =
-  with_pipes @@ fun input _output _output_read ->
-  let term = T.open_terminal ~input () in
-
-  (* No events available *)
-  let count = ref 0 in
-  let had_events = T.poll term (fun _ -> incr count) in
-  is_false ~msg:"no events returned false" had_events;
-  equal ~msg:"no events" int 0 !count;
-
   T.close term
 
 (* Test: set_unicode_width *)
 let test_set_unicode_width () =
-  with_pipes @@ fun input output _output_read ->
-  let term = T.open_terminal ~input ~output () in
-
-  (* Default is Wcwidth *)
-  let caps = T.capabilities term in
-  let _initial_width =
-    match caps.unicode_width with
-    | `Unicode -> "Unicode"
-    | `Wcwidth -> "Wcwidth"
-  in
-
-  (* Override to Unicode *)
+  with_terminal @@ fun term _buf ->
   T.set_unicode_width term `Unicode;
   let caps = T.capabilities term in
   let new_width =
@@ -435,7 +310,6 @@ let test_set_unicode_width () =
   in
   equal ~msg:"unicode width changed" string "Unicode" new_width;
 
-  (* Override to Wcwidth *)
   T.set_unicode_width term `Wcwidth;
   let caps = T.capabilities term in
   let final_width =
@@ -444,25 +318,64 @@ let test_set_unicode_width () =
     | `Wcwidth -> "Wcwidth"
   in
   equal ~msg:"unicode width changed again" string "Wcwidth" final_width;
-
   T.close term
 
 (* Test: modifyOtherKeys toggling on non-TTY updates state *)
 let test_modify_other_keys_toggle () =
-  with_pipes @@ fun input output _output_read ->
-  let term = T.open_terminal ~input ~output () in
-
-  (* Initially disabled *)
+  with_terminal @@ fun term _buf ->
   is_false ~msg:"initial MOK disabled" (T.modify_other_keys_enabled term);
-
-  (* Enable *)
   T.enable_modify_other_keys term true;
   is_true ~msg:"MOK enabled" (T.modify_other_keys_enabled term);
-
-  (* Disable *)
   T.enable_modify_other_keys term false;
   is_false ~msg:"MOK disabled" (T.modify_other_keys_enabled term);
+  T.close term
 
+(* Test: Protocol state is idempotent *)
+let test_idempotent_protocols () =
+  with_terminal @@ fun term _buf ->
+  T.enable_bracketed_paste term true;
+  is_true ~msg:"paste on" (T.bracketed_paste_enabled term);
+  T.enable_bracketed_paste term true;
+  is_true ~msg:"paste still on" (T.bracketed_paste_enabled term);
+  T.enable_bracketed_paste term false;
+  is_false ~msg:"paste off" (T.bracketed_paste_enabled term);
+
+  T.enable_focus_reporting term true;
+  is_true ~msg:"focus on" (T.focus_reporting_enabled term);
+  T.enable_focus_reporting term false;
+  is_false ~msg:"focus off" (T.focus_reporting_enabled term);
+
+  T.enable_kitty_keyboard term true;
+  is_true ~msg:"kitty on" (T.kitty_keyboard_enabled term);
+  T.enable_kitty_keyboard term false;
+  is_false ~msg:"kitty off" (T.kitty_keyboard_enabled term);
+
+  T.enter_alternate_screen term;
+  is_true ~msg:"alt on" (T.alt_screen term);
+  T.enter_alternate_screen term;
+  is_true ~msg:"alt still on" (T.alt_screen term);
+  T.leave_alternate_screen term;
+  is_false ~msg:"alt off" (T.alt_screen term);
+
+  T.close term
+
+(* Test: reset_state unwinds all protocols *)
+let test_reset_state () =
+  with_terminal @@ fun term _buf ->
+  T.enable_bracketed_paste term true;
+  T.enable_focus_reporting term true;
+  T.enable_kitty_keyboard term true;
+  T.enable_modify_other_keys term true;
+  T.set_mouse_mode term `Sgr_any;
+  T.enter_alternate_screen term;
+  T.set_unicode_width term `Unicode;
+
+  T.reset_state term;
+
+  is_true ~msg:"cursor visible after reset" (T.cursor_visible term);
+  is_false ~msg:"alt screen off after reset" (T.alt_screen term);
+  equal ~msg:"mouse off after reset" string "Off"
+    (match T.mouse_mode term with `Off -> "Off" | _ -> "Other");
   T.close term
 
 let () =
@@ -472,8 +385,7 @@ let () =
         [
           test "no escape sequences on non-TTY" test_non_tty_no_escape_sequences;
           test "state tracking on non-TTY" test_non_tty_state_tracking;
-          test "size returns default" test_size_default;
-          test "write functions" test_write_functions;
+          test "tty send" test_tty_send;
         ];
       group "helpers" [ test "contains_substring" test_contains_substring ];
       group "capabilities"
@@ -481,21 +393,20 @@ let () =
           test "normalization" test_capability_normalization;
           test "environment overrides" test_env_overrides;
           test "terminal info env" test_terminal_info_from_env;
-          test "open_terminal_probe" test_open_with_probe;
+          test "make with caps" test_make_with_caps;
         ];
       group "cursor"
         [
           test "position clamping" test_cursor_position_clamping;
           test "color clamping" test_color_clamping;
         ];
-      group "modes"
-        [
-          test "mode switching" test_mode_switching;
-          test "with_mode restore" test_with_mode_restore;
-        ];
       group "mouse" [ test "mouse mode on non-TTY" test_mouse_validation ];
-      group "input" [ test "poll" test_poll ];
       group "unicode" [ test "set_unicode_width" test_set_unicode_width ];
       group "keyboard"
         [ test "modifyOtherKeys toggle" test_modify_other_keys_toggle ];
+      group "protocols"
+        [
+          test "idempotent protocols" test_idempotent_protocols;
+          test "reset state" test_reset_state;
+        ];
     ]
