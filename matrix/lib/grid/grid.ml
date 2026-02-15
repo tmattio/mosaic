@@ -155,7 +155,7 @@ end
 
 module Border = Border
 
-type clip_rect = Rect.t = { x : int; y : int; width : int; height : int }
+type region = Rect.t = { x : int; y : int; width : int; height : int }
 
 type t = {
   mutable width : int;

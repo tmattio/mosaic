@@ -8,7 +8,7 @@ let render_boxed ~width ~height draw =
   (* Draw outer border *)
   Grid.draw_box grid ~x:0 ~y:0 ~width:outer_width ~height:outer_height ();
   (* Draw inner content with scissor clipping *)
-  let rect : Grid.clip_rect = { x = 1; y = 1; width; height } in
+  let rect : Grid.region = { x = 1; y = 1; width; height } in
   Grid.with_scissor grid rect (fun () ->
       let inner = Grid.create ~width ~height () in
       draw inner ~width ~height;

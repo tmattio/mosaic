@@ -504,8 +504,8 @@ let finish_selection t =
         (fun cb -> cb ~anchor_x:ax ~anchor_y:ay ~focus_x:fx ~focus_y:fy)
         t.selection_listeners
 
-let intersect_rect (a : Grid.clip_rect) (b : Grid.clip_rect) :
-    Grid.clip_rect option =
+let intersect_rect (a : Grid.region) (b : Grid.region) :
+    Grid.region option =
   let x0 = max a.x b.x in
   let y0 = max a.y b.y in
   let x1 = min (a.x + a.width) (b.x + b.width) in
@@ -515,7 +515,7 @@ let intersect_rect (a : Grid.clip_rect) (b : Grid.clip_rect) :
   else Some Grid.{ x = x0; y = y0; width = w; height = h }
 
 let overflow_scissor (node : Renderable.t) ~(target_is_buffered : bool) :
-    Grid.clip_rect option =
+    Grid.region option =
   let open Toffee in
   let st = Renderable.style node in
   let ov = Style.overflow st in

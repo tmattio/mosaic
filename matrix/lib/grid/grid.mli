@@ -47,10 +47,10 @@
 type t
 (** Mutable grid of terminal cells. *)
 
-type clip_rect = { x : int; y : int; width : int; height : int }
-(** Rectangle in cell coordinates. Covers cells satisfying
+type region = { x : int; y : int; width : int; height : int }
+(** Rectangular area in cell coordinates. Covers cells satisfying
     [x <= col < x + width] and [y <= row < y + height]. Non-positive [width] or
-    [height] yields an empty rectangle. *)
+    [height] yields an empty region. *)
 
 (** {1 Creation} *)
 
@@ -328,7 +328,7 @@ val set_cell :
 
 (** {1 Scissor Clipping} *)
 
-val push_scissor : t -> clip_rect -> unit
+val push_scissor : t -> region -> unit
 (** Pushes a clipping rectangle. Subsequent draws are clipped to this
     rectangle, completely replacing any previous scissor. *)
 
@@ -338,8 +338,8 @@ val pop_scissor : t -> unit
 val clear_scissor : t -> unit
 (** Removes all scissor rectangles. *)
 
-val with_scissor : t -> clip_rect -> (unit -> 'a) -> 'a
-(** [with_scissor t rect f] runs [f ()] with [rect] as the active scissor,
+val with_scissor : t -> region -> (unit -> 'a) -> 'a
+(** [with_scissor t region f] runs [f ()] with [region] as the active scissor,
     popping it on return (even on exception). *)
 
 (** {1 Opacity Stack}

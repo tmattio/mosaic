@@ -395,7 +395,7 @@ val height : t -> int
 
     Returns [max 1 (floor cached_height)] if layout is cached, else [0]. *)
 
-val bounds : t -> Grid.clip_rect
+val bounds : t -> Grid.region
 (** [bounds t] returns [t]'s bounding rectangle.
 
     Equivalent to [{ x = x t; y = y t; width = width t; height = height t }]. *)
@@ -410,7 +410,7 @@ val set_render_offset : t -> x:int -> y:int -> unit
 val render_offset : t -> int * int
 (** [render_offset t] returns [t]'s current render offset as [(x, y)]. *)
 
-val set_child_clip : t -> (t -> Grid.clip_rect option) option -> unit
+val set_child_clip : t -> (t -> Grid.region option) option -> unit
 (** [set_child_clip t fn] overrides child clipping for [t].
 
     [fn] receives [t] and returns a clipping rectangle (or [None] for no clip).
@@ -773,7 +773,7 @@ module Internal : sig
       array. *)
 
   val children_in_viewport :
-    parent:t -> viewport:Grid.clip_rect -> padding:int -> t list
+    parent:t -> viewport:Grid.region -> padding:int -> t list
   (** [children_in_viewport ~parent ~viewport ~padding] returns visible
       children.
 
@@ -781,7 +781,7 @@ module Internal : sig
       [padding] in all directions). Uses binary search for large child lists (>=
       16). Returns children sorted by z-index. *)
 
-  val child_clip_rect : t -> Grid.clip_rect option
+  val child_clip_rect : t -> Grid.region option
   (** [child_clip_rect t] computes the clip rectangle for [t]'s children.
 
       Calls the function set by {!set_child_clip}, or returns [None] if unset.

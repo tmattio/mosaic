@@ -13,7 +13,7 @@ type primitive =
       width : int;
       height : int;
       color : Color.t;
-      clip : Grid.clip_rect option;
+      clip : Grid.region option;
     }
   | P_text of {
       x : int;
@@ -21,7 +21,7 @@ type primitive =
       lines : string array;
       style : Style.t;
       width_method : Glyph.width_method;
-      clip : Grid.clip_rect option;
+      clip : Grid.region option;
     }
   | P_box of {
       x : int;
@@ -32,7 +32,7 @@ type primitive =
       border_sides : Grid.Border.side list;
       border_style : Style.t;
       fill : Color.t option;
-      clip : Grid.clip_rect option;
+      clip : Grid.region option;
     }
   | P_hit of {
       x : int;
@@ -40,20 +40,20 @@ type primitive =
       width : int;
       height : int;
       id : hit_id;
-      clip : Grid.clip_rect option;
+      clip : Grid.region option;
     }
   | P_custom of {
       x : int;
       y : int;
       draw : Grid.t -> Screen.Hit_grid.t option -> x:int -> y:int -> unit;
-      clip : Grid.clip_rect option;
+      clip : Grid.region option;
     }
 
 type t = {
   width : int;
   height : int;
   ops : primitive array;
-  clip : Grid.clip_rect option;
+  clip : Grid.region option;
 }
 
 let clamp_nonneg n = if n <= 0 then 0 else n
@@ -69,9 +69,9 @@ let height { height; _ } = height
 let size t = (t.width, t.height)
 let default_width_method = `Unicode
 
-type clip_rect = Grid.clip_rect
+type region = Grid.region
 
-let intersect_rect (a : clip_rect) (b : clip_rect) : clip_rect option =
+let intersect_rect (a : region) (b : region) : region option =
   let open Grid in
   let x = max a.x b.x in
   let y = max a.y b.y in
@@ -81,7 +81,7 @@ let intersect_rect (a : clip_rect) (b : clip_rect) : clip_rect option =
   let height = y2 - y in
   if width <= 0 || height <= 0 then None else Some { x; y; width; height }
 
-let merge_clip (a : clip_rect option) (b : clip_rect option) =
+let merge_clip (a : region option) (b : region option) =
   match (a, b) with
   | None, clip | clip, None -> clip
   | Some a, Some b -> intersect_rect a b

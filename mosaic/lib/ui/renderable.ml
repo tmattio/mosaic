@@ -107,7 +107,7 @@ type node = {
   mutable selection : Select.capability option;
   mutable self_live : int;
   mutable live_count : int;
-  mutable child_clip : (node -> Grid.clip_rect option) option;
+  mutable child_clip : (node -> Grid.region option) option;
   mutable visible_children : (node -> int list) option;
   mutable render_offset_x : int;
   mutable render_offset_y : int;
@@ -612,7 +612,7 @@ let height t =
     max 1 (int_of_float (Float.round t.cached_layout.height))
   else 0
 
-let bounds (t : t) : Grid.clip_rect =
+let bounds (t : t) : Grid.region =
   { x = x t; y = y t; width = width t; height = height t }
 
 let children_sorted_by_primary (t : t) : t array =
@@ -662,7 +662,7 @@ let children_sorted_by_primary (t : t) : t array =
     t.primary_sorted_children_cache)
   else t.primary_sorted_children_cache
 
-let children_in_viewport ~(parent : t) ~(viewport : Grid.clip_rect)
+let children_in_viewport ~(parent : t) ~(viewport : Grid.region)
     ~(padding : int) : t list =
   let module FD = Toffee.Style.Flex_direction in
   let min_trigger_size = 16 in
