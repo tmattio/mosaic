@@ -210,6 +210,13 @@ type t = {
   link_registry : Links.t;
   grapheme_tracker : Grapheme_tracker.t;
   scissor_stack : Scissor_stack.t;
+  (* Opacity stack: inherited opacity for hierarchical rendering.
+     opacity_stack stores individual pushed values, opacity_depth tracks the
+     stack pointer, and opacity_product caches the cumulative product for O(1)
+     access in the hot path. *)
+  opacity_stack : float array;
+  mutable opacity_depth : int;
+  mutable opacity_product : float;
 }
 
 (* ---- Constants ---- *)
@@ -255,6 +262,9 @@ let create ~width ~height ?glyph_pool ?width_method ?(respect_alpha = false) ()
       link_registry = Links.create ();
       grapheme_tracker = Grapheme_tracker.create pool;
       scissor_stack = Scissor_stack.create_scissor_stack ();
+      opacity_stack = Array.make 32 1.0;
+      opacity_depth = 0;
+      opacity_product = 1.0;
     }
   in
   fill_defaults t;
@@ -491,6 +501,27 @@ let with_scissor t rect f =
   push_scissor t rect;
   Fun.protect ~finally:(fun () -> pop_scissor t) f
 
+(* ---- Opacity Stack ---- *)
+
+let push_opacity t opacity =
+  let clamped = Float.max 0.0 (Float.min 1.0 opacity) in
+  if t.opacity_depth < Array.length t.opacity_stack then (
+    t.opacity_stack.(t.opacity_depth) <- clamped;
+    t.opacity_depth <- t.opacity_depth + 1;
+    t.opacity_product <- t.opacity_product *. clamped)
+
+let pop_opacity t =
+  if t.opacity_depth > 0 then (
+    t.opacity_depth <- t.opacity_depth - 1;
+    (* Recompute product from scratch to avoid floating-point drift *)
+    let p = ref 1.0 in
+    for i = 0 to t.opacity_depth - 1 do
+      p := !p *. t.opacity_stack.(i)
+    done;
+    t.opacity_product <- !p)
+
+let current_opacity t = t.opacity_product
+
 let[@inline] is_clipped t x y =
   let scissor = Scissor_stack.current t.scissor_stack in
   not (Scissor_stack.is_contained scissor ~x ~y)
@@ -501,6 +532,13 @@ let[@inline] is_clipped t x y =
    in hot loops. *)
 let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
     ~bg_a ~attrs ~link_id ~blending =
+  (* Apply opacity stack: multiply alpha by the cumulative opacity product.
+     When opacity_product is 1.0 (the common case), skip the multiply. *)
+  let fg_a, bg_a, blending =
+    if t.opacity_product < 1.0 then
+      (fg_a *. t.opacity_product, bg_a *. t.opacity_product, true)
+    else (fg_a, bg_a, blending)
+  in
   if blending && (bg_a < 0.999 || fg_a < 0.999) then (
     (* Blending Path *)
     (* Flattened read of destination colors *)
