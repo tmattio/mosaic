@@ -674,6 +674,78 @@ let line_breaks_consecutive_lf () =
   equal ~msg:"third" line_break_testable { pos = 3; kind = `LF }
     (List.nth breaks 2)
 
+(* 7. Emoji Presentation Width Audit *)
+
+(* Verify that common emoji and symbols are measured as width 2. Terminal
+   emulators generally render these in two columns. This catches any gaps in
+   the tty_width_hint table. *)
+let emoji_presentation_widths () =
+  let check label cp expected_w =
+    let s = uchar_to_utf8 cp in
+    let w = measure ~width_method:`Unicode ~tab_width:2 s in
+    check_width label expected_w w
+  in
+  (* CJK Unified Ideographs *)
+  check "CJK U+4E2D" 0x4E2D 2;
+  check "CJK U+3000 ideographic space" 0x3000 2;
+  (* Misc symbols commonly rendered wide *)
+  check "watch U+231A" 0x231A 2;
+  check "hourglass U+231B" 0x231B 2;
+  (* Dingbats *)
+  check "check mark U+2705" 0x2705 2;
+  check "raised fist U+270A" 0x270A 2;
+  check "sparkles U+2728" 0x2728 2;
+  check "cross mark U+274C" 0x274C 2;
+  check "question marks U+2753" 0x2753 2;
+  check "exclamation U+2757" 0x2757 2;
+  check "plus U+2795" 0x2795 2;
+  (* Emoticons *)
+  check "rainbow U+1F308" 0x1F308 2;
+  check "rocket U+1F680" 0x1F680 2;
+  check "wave U+1F44B" 0x1F44B 2;
+  check "thumbs up U+1F44D" 0x1F44D 2;
+  check "face with tears U+1F602" 0x1F602 2;
+  check "red heart U+2764" 0x2764 1;
+  (* U+2764 is Neutral EAW, width 1 without VS16 *)
+  check "red heart + VS16" 0x2764 1;
+  (* VS16 promotion to width 2 happens at grapheme level *)
+  let heart_vs16 = uchar_to_utf8 0x2764 ^ uchar_to_utf8 0xFE0F in
+  let w_heart = measure ~width_method:`Unicode ~tab_width:2 heart_vs16 in
+  check_width "heart with VS16 = width 2" 2 w_heart;
+  (* Regional indicator pairs *)
+  let flag = uchar_to_utf8 0x1F1FA ^ uchar_to_utf8 0x1F1F8 in
+  let w_flag = measure ~width_method:`Unicode ~tab_width:2 flag in
+  check_width "flag pair = width 2" 2 w_flag;
+  (* Transport/map symbols *)
+  check "umbrella U+2614" 0x2614 2;
+  check "hot beverage U+2615" 0x2615 2;
+  (* Geometric shapes *)
+  check "white medium square U+25FD" 0x25FD 2;
+  (* Mahjong tile *)
+  check "mahjong U+1F004" 0x1F004 2;
+  (* Playing card *)
+  check "playing card U+1F0CF" 0x1F0CF 2;
+  (* Skin tone modifier - zero width when standalone *)
+  check "skin tone U+1F3FD" 0x1F3FD 2;
+  (* Food & drink *)
+  check "pizza U+1F355" 0x1F355 2;
+  (* Animals *)
+  check "dog face U+1F436" 0x1F436 2;
+  (* Recent emoji *)
+  check "melting face U+1FAE0" 0x1FAE0 2
+
+(* C1 control characters (U+0080-U+009F) must have width 0 (they are control
+   codes, not printable). *)
+let c1_control_widths () =
+  let check_zero label cp =
+    let s = uchar_to_utf8 cp in
+    let w = measure ~width_method:`Unicode ~tab_width:2 s in
+    check_width label 0 w
+  in
+  check_zero "C1 U+0080" 0x0080;
+  check_zero "C1 U+008A" 0x008A;
+  check_zero "C1 U+009F" 0x009F
+
 let () =
   run "matrix.glyph"
     [
@@ -729,5 +801,10 @@ let () =
           test "tab cache offsets" tab_cache_offsets;
           test "max width clamping" max_width_clamping;
           test "continuation width encoding" continuation_width_encoding;
+        ];
+      group "Width Tables"
+        [
+          test "emoji presentation widths" emoji_presentation_widths;
+          test "C1 control widths" c1_control_widths;
         ];
     ]
