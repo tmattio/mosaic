@@ -372,16 +372,53 @@ let kitty_graphics_query = Ansi.(to_string (query Kitty_graphics))
 let primary_device_attrs = Ansi.(to_string (query Device_attributes))
 let iterm2_proprietary_query = "\027]1337;ReportCellSize\007"
 
+let is_tmux ~term =
+  Option.is_some (Sys.getenv_opt "TMUX")
+  ||
+  let lower = String.lowercase_ascii term in
+  String.starts_with ~prefix:"tmux" lower
+  || String.starts_with ~prefix:"screen" lower
+
+(* Wrap an escape sequence for tmux DCS passthrough. All ESC bytes (0x1b) in
+   the payload are doubled so tmux forwards them to the outer terminal. *)
+let wrap_for_tmux seq =
+  let buf = Buffer.create (String.length seq + 16) in
+  Buffer.add_string buf "\027Ptmux;";
+  String.iter
+    (fun c ->
+      if c = '\027' then Buffer.add_string buf "\027\027"
+      else Buffer.add_char buf c)
+    seq;
+  Buffer.add_string buf "\027\\";
+  Buffer.contents buf
+
 let build_probe_payload term =
+  let tmux = is_tmux ~term in
+  (* DECRQM queries probe whether the terminal supports specific private modes.
+     Inside tmux, these must be DCS-wrapped to reach the outer terminal, since
+     tmux intercepts DECRQM and may not know about newer modes (sync, unicode
+     width, etc.). *)
+  let decrqm_block =
+    let raw =
+      String.concat ""
+        [
+          decrqm_sgr_pixels;
+          decrqm_unicode;
+          decrqm_color_scheme;
+          decrqm_focus;
+          decrqm_bracketed_paste;
+          decrqm_sync;
+        ]
+    in
+    if tmux then wrap_for_tmux raw else raw
+  in
+  let graphics =
+    if tmux then wrap_for_tmux kitty_graphics_query else kitty_graphics_query
+  in
   let base_queries =
     [
       cursor_save;
-      decrqm_sgr_pixels;
-      decrqm_unicode;
-      decrqm_color_scheme;
-      decrqm_focus;
-      decrqm_bracketed_paste;
-      decrqm_sync;
+      decrqm_block;
       primary_device_attrs;
       home;
       explicit_width_query;
@@ -391,7 +428,7 @@ let build_probe_payload term =
       cursor_position_request;
       xtversion_query;
       csi_u_query;
-      kitty_graphics_query;
+      graphics;
     ]
   in
   let queries =
