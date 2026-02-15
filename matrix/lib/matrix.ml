@@ -191,11 +191,17 @@ let set_loop_active t active =
 
 let crlf = "\r\n"
 let erase_entire_line = Ansi.(to_string (erase_line ~mode:`All))
+let sgr_reset = Ansi.(to_string reset)
 
-let ensure_trailing_newline s =
+let strip_trailing_crlf s =
   let len = String.length s in
-  if len > 0 && Char.equal (String.unsafe_get s (len - 1)) '\n' then s
-  else s ^ crlf
+  if len >= 2
+     && Char.equal (String.unsafe_get s (len - 2)) '\r'
+     && Char.equal (String.unsafe_get s (len - 1)) '\n'
+  then String.sub s 0 (len - 2)
+  else if len >= 1 && Char.equal (String.unsafe_get s (len - 1)) '\n' then
+    String.sub s 0 (len - 1)
+  else s
 
 let starts_with_newline s =
   let len = String.length s in
@@ -260,16 +266,18 @@ let static_write_raw_immediate t text =
     let needs_leading_newline =
       t.static_needs_newline && not (starts_with_newline text)
     in
+    let payload =
+      if needs_leading_newline then sgr_reset ^ crlf ^ text
+      else sgr_reset ^ text
+    in
     if t.render_offset > 0 then (
       Terminal.move_cursor terminal ~row:t.render_offset ~col:1
         ~visible:(Terminal.cursor_visible terminal);
-      if needs_leading_newline then Terminal.send terminal crlf;
-      Terminal.send terminal text)
+      Terminal.send terminal payload)
     else (
       Terminal.move_cursor terminal ~row:t.height ~col:1
         ~visible:(Terminal.cursor_visible terminal);
-      if needs_leading_newline then Terminal.send terminal crlf;
-      Terminal.send terminal text;
+      Terminal.send terminal payload;
       Screen.invalidate_presented t.screen;
       invalidate_inline_state t);
     t.static_needs_newline <- not (ends_with_newline text);
@@ -293,7 +301,7 @@ let static_write_raw t text =
   else static_write_raw_immediate t text
 
 let static_write t text = static_write_raw t text
-let static_print t text = static_write_raw t (ensure_trailing_newline text)
+let static_print t text = static_write_raw t (strip_trailing_crlf text)
 
 let static_clear t =
   if t.config.mode = `Alt then ()
@@ -737,7 +745,10 @@ let close t =
     if t.config.mode = `Primary && is_tty then (
       let height = max 1 t.height in
       let render_offset = clamp 0 (height - 1) t.render_offset in
-      let start_row = render_offset + 1 in
+      let start_row =
+        if t.static_needs_newline then render_offset + 1
+        else max 1 render_offset
+      in
       Terminal.clear_scroll_region t.terminal;
       for row = start_row to height do
         Terminal.move_cursor t.terminal ~row ~col:1

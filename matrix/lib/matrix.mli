@@ -297,8 +297,9 @@ val static_write : app -> string -> unit
     renderer. Ignored in [`Alt] mode. *)
 
 val static_print : app -> string -> unit
-(** [static_print app text] behaves like {!static_write} but ensures [text] ends
-    with a newline. *)
+(** [static_print app text] writes [text] as a complete line to the static area.
+    Any trailing newline in [text] is stripped; line separation between
+    consecutive calls is handled automatically. Ignored in [`Alt] mode. *)
 
 val static_clear : app -> unit
 (** [static_clear app] clears previously written static content and resets the
@@ -366,5 +367,6 @@ val attach :
 val render_offset_of_cursor :
   terminal:Terminal.t -> height:int -> int -> int -> int * bool
 (** [render_offset_of_cursor ~terminal ~height row col] interprets a CPR
-    response as [(render_offset, static_needs_newline)]. Used by runtimes during
-    primary mode initialization. *)
+    response as [(render_offset, static_needs_newline)]. Emits a CRLF to scroll
+    if the cursor is at the bottom row. Used by runtimes during primary mode
+    initialization and resume. *)
