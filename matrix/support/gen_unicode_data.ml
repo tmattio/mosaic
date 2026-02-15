@@ -1,227 +1,130 @@
-(* Generate minimal Unicode data for matrix.glyph.
+(* Generate pre-computed Unicode property table for matrix.glyph.
+
+   Packs all Unicode properties needed for grapheme segmentation and width
+   calculation into a two-level page table with block deduplication. Each
+   codepoint maps to a 16-bit entry, giving O(1) lookups at runtime with zero
+   initialization cost.
+
+   Structure:
+   - prop_index: maps block numbers to deduplicated block IDs (1 byte each)
+   - prop_data: concatenated deduplicated blocks (512 bytes each)
+
+   The codepoint space is divided into 256-entry blocks. Blocks with identical
+   content share the same data, dramatically reducing size for the large
+   unassigned/CJK/etc. ranges that share properties.
+
+   Layout per 16-bit entry:
+   - bits 0-4: grapheme_cluster_break (0-17)
+   - bits 5-6: indic_conjunct_break (0-3)
+   - bit 7: extended_pictographic (boolean)
+   - bits 8-9: width (encoded: 0=-1, 1=0, 2=1, 3=2)
+
+   Surrogates (U+D800-U+DFFF) are excluded from the table.
 
    Adapted from notty's generator (Copyright (c) 2020 David Kaloper Meršinjak).
 
    Usage: dune exec matrix/support/gen_unicode_data.exe *)
 
-let filter p seq i = seq (fun x -> if p x then i x)
-let map f seq i = seq (fun x -> i (f x))
+let unicode_packed_size = 0x110000 - 0x800
+let block_size = 256
+let block_bytes = block_size * 2
 
-let uchars it =
-  let rec go it u =
-    it u;
-    go it (Uchar.succ u)
-  in
-  try go it Uchar.min with Invalid_argument _ -> ()
-
-let to_list seq =
-  let xs = ref [] in
-  seq (fun x -> xs := x :: !xs);
-  List.rev !xs
-
-let intervals_kv seq i =
-  let s = ref None in
-  let f (x, v) =
-    match !s with
-    | None -> s := Some (x, x, v)
-    | Some (a, b, v0) when v = v0 && x = Uchar.succ b -> s := Some (a, x, v0)
-    | Some e ->
-        i e;
-        s := Some (x, x, v)
-  in
-  seq f;
-  match !s with Some e -> i e | _ -> ()
-
-(* Condenses code points into continuous range. *)
-let pack_u u =
-  let i = Uchar.to_int u in
-  if i > 0xd7ff then i - 0x800 else i
-
-let unpack_u i = Uchar.of_int (if i < 0xd800 then i else i + 0x800)
-
-(* 12-6-6-bit (0xfff-0x3f-0x3f) trie, 3 levels, array-array-string. *)
-let trie ~default f =
-  let xs =
-    List.init ((pack_u Uchar.max lsr 12) + 1) @@ fun b0 ->
-    let mask = b0 lsl 12 in
-    let arr =
-      Array.init 0x40 @@ fun b1 ->
-      let mask = mask lor (b1 lsl 6) in
-      let v b2 =
-        match unpack_u (mask lor b2) with
-        | x -> f x
-        | exception Invalid_argument _ -> default
-      in
-      match
-        for b2 = 0 to 0x3f do
-          if v b2 <> default then raise Exit
-        done
-      with
-      | exception Exit -> String.init 0x40 (fun b2 -> Char.chr (v b2))
-      | () -> ""
+let compute_prop_table () =
+  let buf = Bytes.create (unicode_packed_size * 2) in
+  for packed = 0 to unicode_packed_size - 1 do
+    let u =
+      Uchar.of_int (if packed < 0xD800 then packed else packed + 0x800)
     in
-    if Array.for_all (( = ) "") arr then [||] else arr
-  in
-  let rec trim = function [||] :: xs -> trim xs | xs -> xs in
-  List.rev (trim (List.rev xs)) |> Array.of_list
-
-(* Boolean trie - pack 8 bools per byte *)
-let trie_bool ~default f =
-  let xs =
-    List.init ((pack_u Uchar.max lsr 12) + 1) @@ fun b0 ->
-    let mask = b0 lsl 12 in
-    let arr =
-      Array.init 0x40 @@ fun b1 ->
-      let mask = mask lor (b1 lsl 6) in
-      let v b2 =
-        match unpack_u (mask lor b2) with
-        | x -> f x
-        | exception Invalid_argument _ -> default
-      in
-      (* Check if all values are default *)
-      match
-        for b2 = 0 to 0x3f do
-          if v b2 <> default then raise Exit
-        done
-      with
-      | exception Exit ->
-          (* Pack 8 bools per byte *)
-          String.init 8 (fun byte_idx ->
-              let byte = ref 0 in
-              for bit = 0 to 7 do
-                let b2 = (byte_idx * 8) + bit in
-                if v b2 then byte := !byte lor (1 lsl bit)
-              done;
-              Char.chr !byte)
-      | () -> ""
+    let gcb = Uucp.Break.Low.grapheme_cluster u in
+    let incb = Uucp.Break.Low.indic_conjunct_break u in
+    let extpic = Uucp.Emoji.is_extended_pictographic u in
+    let width_raw = Uucp.Break.tty_width_hint u in
+    let width_enc = width_raw + 1 in
+    let v =
+      gcb land 0x1F
+      lor ((incb land 0x03) lsl 5)
+      lor (if extpic then 0x80 else 0)
+      lor ((width_enc land 0x03) lsl 8)
     in
-    if Array.for_all (( = ) "") arr then [||] else arr
-  in
-  let rec trim = function [||] :: xs -> trim xs | xs -> xs in
-  List.rev (trim (List.rev xs)) |> Array.of_list
+    Bytes.set_uint16_le buf (packed * 2) v
+  done;
+  Bytes.unsafe_to_string buf
 
-let pf = Format.fprintf
-let strf = Format.sprintf
+let compress_prop_table flat =
+  let num_blocks = unicode_packed_size / block_size in
+  (* Extract and deduplicate blocks *)
+  let block_map = Hashtbl.create 128 in
+  let unique_blocks = Buffer.create (64 * block_bytes) in
+  let next_id = ref 0 in
+  let index = Bytes.create num_blocks in
+  for i = 0 to num_blocks - 1 do
+    let block = String.sub flat (i * block_bytes) block_bytes in
+    let id =
+      match Hashtbl.find_opt block_map block with
+      | Some id -> id
+      | None ->
+          let id = !next_id in
+          Hashtbl.add block_map block id;
+          Buffer.add_string unique_blocks block;
+          incr next_id;
+          id
+    in
+    Bytes.set index i (Char.chr id)
+  done;
+  let num_unique = !next_id in
+  assert (num_unique <= 256);
+  (Bytes.unsafe_to_string index, Buffer.contents unique_blocks, num_unique)
 
-let pp_iter ?(sep = fun _ _ -> ()) iter pp ppf x =
-  let fst = ref true in
-  let f x =
-    if !fst then fst := false else sep ppf ();
-    pp ppf x
-  in
-  iter f x
-
-let pp_u ppf u = pf ppf "0x%04x" (Uchar.to_int u)
-
-let pp_as_array iter pp ppf x =
-  let sep ppf () = pf ppf ";@ " in
-  pf ppf "@[<2>[|%a|]@]" (pp_iter ~sep iter pp) x
-
-let intern ppf_ml iter =
-  let t = Hashtbl.create 16 in
-  let n = ref 0 in
-  iter (fun s ->
-      if not (Hashtbl.mem t s) then begin
-        let name = strf "s%03d" !n in
-        Hashtbl.add t s name;
-        incr n;
-        pf ppf_ml "let %s = %S@." name s
-      end);
-  pf ppf_ml "@.";
-  fun ppf s ->
-    match Hashtbl.find_opt t s with
-    | Some name -> pf ppf "%s" name
-    | None -> pf ppf "%S" s
-
-let dump_interval_map (ppf_mli, ppf_ml) ~name ~desc seq =
-  pf ppf_mli "(** %s *)@.val %s: int array * int array * int array@.@." desc
-    name;
-  let xs = to_list (intervals_kv seq) in
-  let aa = List.map (fun (a, _, _) -> a) xs
-  and bb = List.map (fun (_, b, _) -> b) xs
-  and cc = List.map (fun (_, _, c) -> c) xs in
-  let pp_arr pp = pp_as_array List.iter pp in
-  let pp_arr_u = pp_arr pp_u and pp_arr_i = pp_arr Format.pp_print_int in
-  pf ppf_ml "@[<2>let %s =@ @[<1>(%a,@ %a,@ %a)@]@]@.@." name pp_arr_u aa
-    pp_arr_u bb pp_arr_i cc
-
-let dump_trie_map (ppf_mli, ppf_ml) ~name ~desc ~default f =
-  pf ppf_mli "(** %s *)@.val %s: string array array@.@." desc name;
-  let xs = trie ~default f in
-  let pp_s =
-    intern ppf_ml
-      Array.(
-        fun i ->
-          i "";
-          iter (iter i) xs)
-  in
-  pf ppf_ml "@[<2>let %s =@ %a@]@.@." name
-    Array.(pp_as_array iter (pp_as_array iter pp_s))
-    xs
-
-let dump_trie_bool_map (ppf_mli, ppf_ml) ~name ~desc ~default f =
-  pf ppf_mli "(** %s *)@.val %s: string array array@.@." desc name;
-  let xs = trie_bool ~default f in
-  let pp_s =
-    intern ppf_ml
-      Array.(
-        fun i ->
-          i "";
-          iter (iter i) xs)
-  in
-  pf ppf_ml "@[<2>let %s =@ %a@]@.@." name
-    Array.(pp_as_array iter (pp_as_array iter pp_s))
-    xs
-
-let pp_header ppf =
-  Format.fprintf ppf
+let header =
+  Printf.sprintf
     "(* WARNING: Do not edit. This file was automatically generated.\n\n\
     \   Unicode version %s.\n\
     \   Generated using matrix/support/gen_unicode_data.ml\n\
      *)\n\n\
-     [@@@@@@ocamlformat \"disable\"]\n\n"
+     [@@@ocamlformat \"disable\"]\n\n"
     Uucp.unicode_version
 
-let extract ((ppmli, ppml) as ppfs) =
-  pp_header ppmli;
-  pp_header ppml;
+let write_string_literal oc name data =
+  Printf.fprintf oc "let %s = \"\\\n  " name;
+  let bytes_per_line = 40 in
+  for i = 0 to String.length data - 1 do
+    Printf.fprintf oc "\\x%02x" (Char.code (String.get data i));
+    if (i + 1) mod bytes_per_line = 0 && i + 1 < String.length data then
+      output_string oc "\\\n  "
+  done;
+  output_string oc "\"\n\n"
 
-  (* tty_width_hint: interval map since most values are 1 *)
-  dump_interval_map ppfs ~name:"tty_width_hint"
-    ~desc:
-      "TTY width hint. Returns (starts, ends, values). Default is 1, -1 for \
-       controls."
-    (uchars
-    |> map (fun u -> (u, Uucp.Break.tty_width_hint u))
-    |> filter (fun (_, w) -> w <> -1 && w <> 1));
+let write_mli oc =
+  output_string oc header;
+  output_string oc
+    "(** Block index: maps block numbers (codepoint lsr 8) to deduplicated\n\
+    \    block IDs. Each entry is 1 byte. *)\n\
+     val prop_index : string\n\n\
+     (** Deduplicated block data: concatenated 512-byte blocks, each containing\n\
+    \    256 packed 16-bit entries. Lookup: prop_data.[block_id * 512 + (cp land 0xFF) * 2]. *)\n\
+     val prop_data : string\n"
 
-  (* grapheme_cluster_break: trie map, default is XX (16) *)
-  dump_trie_map ppfs ~name:"grapheme_cluster_break"
-    ~desc:"Grapheme cluster break property (UAX #29). Default is 16 (XX)."
-    ~default:16 Uucp.Break.Low.grapheme_cluster;
-
-  (* indic_conjunct_break: trie map, default is None (3) *)
-  dump_trie_map ppfs ~name:"indic_conjunct_break"
-    ~desc:"Indic conjunct break property (UAX #29 GB9c). Default is 3 (None)."
-    ~default:3 Uucp.Break.Low.indic_conjunct_break;
-
-  (* extended_pictographic: boolean trie, default is false *)
-  dump_trie_bool_map ppfs ~name:"extended_pictographic"
-    ~desc:"Extended_Pictographic property (UAX #29 GB11). Default is false."
-    ~default:false Uucp.Emoji.is_extended_pictographic;
-
-  ()
+let write_ml oc =
+  let flat = compute_prop_table () in
+  let index, data, num_unique = compress_prop_table flat in
+  output_string oc header;
+  Printf.fprintf oc "(* %d unique blocks out of %d total (%.1f%% dedup, %d bytes data) *)\n\n"
+    num_unique (unicode_packed_size / block_size)
+    (100. *. (1. -. float_of_int num_unique /. float_of_int (unicode_packed_size / block_size)))
+    (String.length data);
+  write_string_literal oc "prop_index" index;
+  write_string_literal oc "prop_data" data
 
 let file = "matrix/lib/glyph/unicode_data"
 
-let with_new name f =
-  let o = open_out_gen [ Open_trunc; Open_creat; Open_wronly ] 0o664 name in
-  let ppf = Format.formatter_of_out_channel o in
-  f ppf;
-  Format.pp_print_flush ppf ();
-  close_out o
-
 let () =
   Format.printf "Dumping Unicode v%s data to %s.@." Uucp.unicode_version file;
-  with_new (file ^ ".mli") @@ fun ppmli ->
-  with_new (file ^ ".ml") @@ fun ppml -> extract (ppmli, ppml)
+  let write name f =
+    let oc =
+      open_out_gen [ Open_trunc; Open_creat; Open_wronly ] 0o664 name
+    in
+    f oc;
+    close_out oc
+  in
+  write (file ^ ".mli") write_mli;
+  write (file ^ ".ml") write_ml
