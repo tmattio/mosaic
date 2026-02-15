@@ -79,7 +79,7 @@ let hit_grid_text (screen : Screen.t) : string =
 let snapshot ?dir ?pattern ?(hits = false) (screen : Screen.t) =
   let idx = next_index () in
   let grid = Screen.grid screen in
-  let ansi = Grid.snapshot grid in
+  let ansi = Grid.to_ansi grid in
   let base = make_path ?dir ?pattern idx in
   write_file base ansi;
   let stem =

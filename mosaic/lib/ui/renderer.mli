@@ -223,7 +223,7 @@ val snapshot_frame : t -> delta:float -> string
 (** [snapshot_frame t ~delta] renders a snapshot without differential output.
 
     Identical to {!render_frame} except it returns a full frame snapshot via
-    {!Grid.snapshot} instead of differential ANSI sequences. This is useful for
+    {!Grid.to_ansi} instead of differential ANSI sequences. This is useful for
     capturing the complete rendered state for testing or debugging.
 
     The returned string contains all cell data, not just changes from the

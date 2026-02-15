@@ -1314,9 +1314,9 @@ let diff_cells prev curr =
   done;
   Dynarray.to_array diffs
 
-(* {1 Snapshotting} *)
+(* {1 Serialization} *)
 
-let snapshot ?(reset = true) t =
+let to_ansi ?(reset = true) t =
   let width = t.width and height = t.height in
   if width <= 0 || height <= 0 then ""
   else

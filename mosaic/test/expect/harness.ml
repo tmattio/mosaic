@@ -141,11 +141,11 @@ let render t ~delta =
   Grid.clear t.grid;
   Screen.Hit_grid.clear t.hits;
   let _cursor = Renderer.render_into t.renderer t.grid t.hits ~delta in
-  let ansi = Grid.snapshot ~reset:true t.grid in
+  let ansi = Grid.to_ansi ~reset:true t.grid in
   Vte.feed_string t.vte ansi
 
 let snapshot t = Vte.to_string t.vte
-let snapshot_ansi ?(reset = true) t = Grid.snapshot ~reset t.grid
+let snapshot_ansi ?(reset = true) t = Grid.to_ansi ~reset t.grid
 
 let step t ~delta =
   render t ~delta;

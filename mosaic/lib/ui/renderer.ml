@@ -686,7 +686,7 @@ let snapshot_frame t ~delta =
       let frame = build () in
       t.last_hits <- Some (Screen.hit_grid frame);
       t.last_frame <- Some frame;
-      Grid.snapshot (Screen.grid frame))
+      Grid.to_ansi (Screen.grid frame))
 
 let render_into t grid hits ~delta =
   with_rendering t (fun () ->

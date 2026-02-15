@@ -15,7 +15,7 @@ let render_boxed ~width ~height draw =
       Grid.blit_region ~src:inner ~dst:grid ~src_x:0 ~src_y:0 ~width ~height
         ~dst_x:1 ~dst_y:1);
   print_newline ();
-  print_string (Grid.snapshot ~reset:false grid)
+  print_string (Grid.to_ansi ~reset:false grid)
 
 let render_chart ~width ~height draw =
   render_boxed ~width ~height (fun grid ~width ~height ->
@@ -474,7 +474,7 @@ let%expect_test "sparkline bars" =
   Sparkline.draw_values ~kind:`Bars ~x:1 ~y:2
     [ 1.0; 3.0; 2.0; 5.0; 4.0; 3.0; 2.0; 4.0 ] grid ~width:15 ~height:1;
   print_newline ();
-  print_string (Grid.snapshot ~reset:false grid);
+  print_string (Grid.to_ansi ~reset:false grid);
   [%expect_exact {|
 [0;38;2;255;255;255;48;2;0;0;0m┌────────────────────┐[0m
 [0;38;2;255;255;255;48;2;0;0;0m│CPU Usage:          │[0m

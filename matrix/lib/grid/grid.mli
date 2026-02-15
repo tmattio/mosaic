@@ -374,7 +374,7 @@ val diff_cells : t -> t -> (int * int) array
 
 (** {1 Serialization} *)
 
-val snapshot : ?reset:bool -> t -> string
-(** [snapshot ?reset grid] renders the grid to a string with full ANSI escape
+val to_ansi : ?reset:bool -> t -> string
+(** [to_ansi ?reset grid] renders the grid to a string with full ANSI escape
     sequences. Appends a reset sequence when [reset] is [true] (default).
     Useful for debugging, tests, and static ANSI output. *)
