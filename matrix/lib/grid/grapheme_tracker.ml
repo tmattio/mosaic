@@ -3,7 +3,7 @@ type entry = { sample : Glyph.t; mutable count : int }
 type t = {
   (* Map from Grapheme payload (ID + generation) -> local reference count *)
   counts : (int, entry) Hashtbl.t;
-  pool : Glyph.pool;
+  pool : Glyph.Pool.t;
   mutable unique : int;
 }
 
@@ -26,7 +26,7 @@ let add t id =
       | None ->
           (* First sighting of this grapheme in the grid: grab a pool ref
              once *)
-          Glyph.incref t.pool id;
+          Glyph.Pool.incref t.pool id;
           Hashtbl.add t.counts key { sample = id; count = 1 };
           t.unique <- t.unique + 1)
 
@@ -36,7 +36,7 @@ let remove t id =
   | Some key -> (
       match Hashtbl.find_opt t.counts key with
       | Some entry when entry.count = 1 ->
-          Glyph.decref t.pool entry.sample;
+          Glyph.Pool.decref t.pool entry.sample;
           Hashtbl.remove t.counts key;
           t.unique <- t.unique - 1
       | Some entry -> entry.count <- entry.count - 1
@@ -48,7 +48,7 @@ let replace t ~old_id ~new_id =
     remove t old_id)
 
 let clear t =
-  Hashtbl.iter (fun _ entry -> Glyph.decref t.pool entry.sample) t.counts;
+  Hashtbl.iter (fun _ entry -> Glyph.Pool.decref t.pool entry.sample) t.counts;
   Hashtbl.clear t.counts;
   t.unique <- 0
 

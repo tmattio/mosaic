@@ -244,7 +244,7 @@ type virtual_lines_snapshot = {
 (** {1:lifecycle Lifecycle} *)
 
 val create :
-  ?glyph_pool:Glyph.pool ->
+  ?glyph_pool:Glyph.Pool.t ->
   capacity:int ->
   width_method:Glyph.width_method ->
   unit ->
@@ -560,5 +560,5 @@ val get_text_range : t -> start:int -> stop:int -> string
     [start] and [stop] are clamped to [[0, length t]]. Returns empty string if
     [start >= stop]. *)
 
-val grapheme_pool : t -> Glyph.pool
+val grapheme_pool : t -> Glyph.Pool.t
 (** [grapheme_pool t] returns the glyph pool used by the buffer. *)

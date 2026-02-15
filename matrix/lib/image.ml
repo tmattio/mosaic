@@ -127,7 +127,7 @@ let make_text ~style ~width_method lines =
   | _ ->
       let widths =
         List.map
-          (fun line -> Glyph.measure ~width_method ~tab_width:2 line)
+          (fun line -> Glyph.String.measure ~width_method ~tab_width:2 line)
           lines
       in
       let width = List.fold_left max 0 widths in

@@ -84,18 +84,18 @@ let segment_callback ~offset:_ ~len:_ = incr segment_counter
 let segment_bench name text =
   Ubench.create name (fun () ->
       segment_counter := 0;
-      G.iter_graphemes segment_callback text;
+      G.String.iter_graphemes segment_callback text;
       ignore (Sys.opaque_identity !segment_counter))
 
 let width_bench name method_ text =
   Ubench.create name (fun () ->
-      let w = G.measure ~width_method:method_ ~tab_width:2 text in
+      let w = G.String.measure ~width_method:method_ ~tab_width:2 text in
       ignore (Sys.opaque_identity w))
 
 (* For encode benchmarks, use setup to create pool and reusable callback
    state *)
 let encode_bench name method_ text =
-  let pool = G.create_pool () in
+  let pool = G.Pool.create () in
   let cols = ref 0 in
   (* Reusable callback - captures pool and cols at definition time *)
   let callback g =
@@ -104,12 +104,12 @@ let encode_bench name method_ text =
       let w = G.width g in
       cols := !cols + w;
       if not (G.is_simple g) then (
-        G.incref pool g;
-        G.decref pool g)
+        G.Pool.incref pool g;
+        G.Pool.decref pool g)
   in
   Ubench.create name (fun () ->
       cols := 0;
-      G.encode pool ~width_method:method_ ~tab_width:2 callback text;
+      G.Pool.encode pool ~width_method:method_ ~tab_width:2 callback text;
       ignore (Sys.opaque_identity !cols))
 
 (* Pool-level benchmarks *)
@@ -119,54 +119,54 @@ let encode_bench name method_ text =
 let pool_intern_hotset =
   Ubench.bench_with_setup "pool/intern_hotset"
     ~setup:(fun () ->
-      let pool = G.create_pool () in
+      let pool = G.Pool.create () in
       let scratch = Array.make (Array.length hotset_tokens) G.empty in
       (pool, scratch))
     ~teardown:(fun _ -> ())
     ~f:(fun (pool, scratch) ->
       for i = 0 to Array.length hotset_tokens - 1 do
-        scratch.(i) <- G.intern pool hotset_tokens.(i);
-        G.incref pool scratch.(i)
+        scratch.(i) <- G.Pool.intern pool hotset_tokens.(i);
+        G.Pool.incref pool scratch.(i)
       done;
       for i = Array.length hotset_tokens - 1 downto 0 do
-        G.decref pool scratch.(i)
+        G.Pool.decref pool scratch.(i)
       done)
 
 (* Scenario: lots of one-off strings (e.g. unique IDs in logs). *)
 let pool_intern_unique =
   Ubench.bench_with_setup "pool/intern_unique_256"
     ~setup:(fun () ->
-      let pool = G.create_pool () in
+      let pool = G.Pool.create () in
       let scratch = Array.make 256 G.empty in
       (pool, scratch))
     ~teardown:(fun _ -> ())
     ~f:(fun (pool, scratch) ->
       for i = 0 to 255 do
-        scratch.(i) <- G.intern pool unique_tokens.(i);
-        G.incref pool scratch.(i)
+        scratch.(i) <- G.Pool.intern pool unique_tokens.(i);
+        G.Pool.incref pool scratch.(i)
       done;
       for i = 255 downto 0 do
-        G.decref pool scratch.(i)
+        G.Pool.decref pool scratch.(i)
       done)
 
 (* Scenario: repeatedly querying existing glyphs (snapshotting / rendering). *)
 let pool_get_existing =
   Ubench.bench_with_setup "pool/get_existing"
     ~setup:(fun () ->
-      let pool = G.create_pool () in
+      let pool = G.Pool.create () in
       let ids =
         Array.init (Array.length hotset_tokens) (fun i ->
-            let id = G.intern pool hotset_tokens.(i) in
-            G.incref pool id;
+            let id = G.Pool.intern pool hotset_tokens.(i) in
+            G.Pool.incref pool id;
             id)
       in
       (pool, ids))
-    ~teardown:(fun (pool, ids) -> Array.iter (G.decref pool) ids)
+    ~teardown:(fun (pool, ids) -> Array.iter (G.Pool.decref pool) ids)
     ~f:(fun (pool, ids) ->
       let total = ref 0 in
       for i = 0 to Array.length ids - 1 do
         (* Byte length query for existing interned glyphs. *)
-        total := !total + G.length pool ids.(i)
+        total := !total + G.Pool.length pool ids.(i)
       done;
       ignore (Sys.opaque_identity !total))
 

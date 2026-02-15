@@ -13,9 +13,9 @@
     Create a pool, encode a string, and process glyphs via callback:
 
     {[
-      let pool = create_pool () in
-      encode pool ~width_method:`Unicode ~tab_width:2
-        (fun glyph -> Printf.printf "%s " (to_string pool glyph))
+      let pool = Pool.create () in
+      Pool.encode pool ~width_method:`Unicode ~tab_width:2
+        (fun glyph -> Printf.printf "%s " (Pool.to_string pool glyph))
         "Hello 👋 World"
       (* Output: H e l l o 👋 W o r l d *)
     ]}
@@ -39,26 +39,20 @@
     - Variation Selectors
     - Skin tone modifiers *)
 
-type pool
-(** Storage context for interned grapheme clusters.
-
-    NOT thread-safe. Use separate pools per thread or external synchronization.
-*)
-
 type t = private int
 (** A packed integer representing a visual glyph.
 
     Always unboxed (immediate value) with zero allocation overhead. The type is
     [private] to prevent construction of invalid glyph values — use {!of_uchar},
-    {!intern}, {!encode}, {!empty}, or {!space} to create glyphs. Reading the
-    integer representation (e.g., for storage in Bigarray) is permitted; use
-    {!unsafe_of_int} when loading from external storage.
+    {!Pool.intern}, {!Pool.encode}, {!empty}, or {!space} to create glyphs.
+    Reading the integer representation (e.g., for storage in Bigarray) is
+    permitted; use {!unsafe_of_int} when loading from external storage.
 
     {b Encoding.} Currently uses a 63-bit layout: type flags (2 bits),
-    left/right extent (4 bits), generation counter (7 bits), and pool index
-    (18 bits). Single Unicode scalars (U+0000 - U+10FFFF) are stored directly
-    as Simple glyphs; multi-codepoint clusters are interned in the pool as
-    Complex glyphs. *)
+    left/right extent (4 bits), generation counter (7 bits), and pool index (18
+    bits). Single Unicode scalars (U+0000 - U+10FFFF) are stored directly as
+    Simple glyphs; multi-codepoint clusters are interned in the pool as Complex
+    glyphs. *)
 
 type width_method = [ `Unicode | `Wcwidth | `No_zwj ]
 (** Width calculation method for grapheme clusters.
@@ -74,6 +68,8 @@ type width_method = [ `Unicode | `Wcwidth | `No_zwj ]
 type line_break_kind = [ `LF | `CR | `CRLF ]
 (** Kind of line terminator. *)
 
+(** {1 Constants} *)
+
 val empty : t
 (** The empty glyph ([0]). Represents control characters, zero-width sequences,
     and U+0000. This is the only glyph for which {!is_empty} returns [true]. *)
@@ -82,111 +78,13 @@ val space : t
 (** The space glyph (U+0020, width 1). Used as the default "blank cell" content
     in terminal grids. *)
 
-(** {1 Pool} *)
-
-val create_pool : unit -> pool
-(** [create_pool ()] creates a new empty pool with initial capacity for 4096
-    glyphs.
-
-    @raise Failure if the pool exceeds 262K interned graphemes. *)
-
-val clear : pool -> unit
-(** [clear pool] resets the pool, invalidating ALL existing glyph references.
-
-    {b Important.} Glyphs must not be used after [clear]; behavior is undefined
-    because IDs may be recycled with the same generation. Does not free memory,
-    only resets internal cursors for reuse. *)
-
-val incref : pool -> t -> unit
-(** [incref pool glyph] increments the reference count for [glyph].
-
-    No-op for Simple glyphs or stale Complex glyphs with mismatched generations.
-*)
-
-val decref : pool -> t -> unit
-(** [decref pool glyph] decrements the reference count for [glyph].
-
-    When count reaches 0, the slot is recycled and its generation is
-    incremented. No-op for Simple glyphs or stale Complex glyphs. *)
-
-(** {1 Creation} *)
-
-val intern :
-  pool ->
-  ?width_method:width_method ->
-  ?tab_width:int ->
-  ?width:int ->
-  ?pos:int ->
-  ?len:int ->
-  string ->
-  t
-(** [intern pool ?width_method ?tab_width ?width ?pos ?len str] creates a single
-    glyph from [str].
-
-    Returns {!empty} for control characters or zero-width sequences. Tab
-    characters use [tab_width] (default 2) for display width. Providing [width]
-    skips width calculation for performance.
-
-    Defaults: [width_method = `Unicode], [tab_width = 2].
-
-    {b Note.} Multi-byte strings are stored as a single glyph with cumulative
-    width. For example, [intern pool "ab"] creates one glyph with width 2. Use
-    {!encode} when you need per-character segmentation.
-
-    {b UTF-8 handling.} Invalid byte sequences are replaced with U+FFFD
-    (replacement character).
-
-    @raise Failure if the pool exceeds 262K interned graphemes. *)
+(** {1 Creation (pool-free)} *)
 
 val of_uchar : Uchar.t -> t
 (** [of_uchar u] creates a glyph from a single Unicode codepoint.
 
-    Returns {!empty} for control or zero-width codepoints. Single codepoints
-    are stored directly in the packed integer with no pool allocation. *)
-
-val encode :
-  pool ->
-  ?width_method:width_method ->
-  ?tab_width:int ->
-  (t -> unit) ->
-  string ->
-  unit
-(** [encode pool ?width_method ?tab_width f str] streams glyphs from [str] via
-    callback [f].
-
-    Defaults: [width_method = `Unicode], [tab_width = 2].
-
-    The callback [(fun glyph -> ...)] is invoked inline for each glyph in string
-    order. Multi-column characters emit one Start glyph followed by
-    [(width - 1)] Continuation glyphs. Control characters and zero-width
-    sequences are skipped.
-
-    Single codepoints become Simple glyphs immediately. Multi-codepoint
-    grapheme clusters are interned and become Complex glyphs.
-
-    {b UTF-8 handling.} Invalid byte sequences are replaced with U+FFFD
-    (replacement character) per Unicode best practices. Each invalid byte
-    consumes exactly one byte and produces one replacement glyph.
-
-    @raise Failure if the pool exceeds 262K interned graphemes. *)
-
-val iter_grapheme_info :
-  ?width_method:width_method ->
-  ?tab_width:int ->
-  (offset:int -> len:int -> width:int -> unit) ->
-  string ->
-  unit
-(** [iter_grapheme_info ?width_method ?tab_width f str] walks grapheme clusters
-    in [str] and calls [f] with their byte [offset], byte [len], and display
-    [width].
-
-    Defaults: [width_method = `Unicode], [tab_width = 2].
-
-    Uses the same width calculation and ZWJ handling as {!encode}. Graphemes
-    whose width resolves to 0 (control / zero-width sequences) are skipped.
-
-    {b UTF-8 handling.} Invalid byte sequences are treated as individual
-    replacement characters (U+FFFD). *)
+    Returns {!empty} for control or zero-width codepoints. Single codepoints are
+    stored directly in the packed integer with no pool allocation. *)
 
 (** {1 Predicates} *)
 
@@ -234,8 +132,8 @@ val cell_width : t -> int
 
 val left_extent : t -> int
 (** [left_extent glyph] returns the left extent of a continuation glyph
-    (distance to the start cell). Returns 0 for Simple and Complex Start
-    glyphs. *)
+    (distance to the start cell). Returns 0 for Simple and Complex Start glyphs.
+*)
 
 val right_extent : t -> int
 (** [right_extent glyph] returns the right extent of a glyph (distance to the
@@ -259,21 +157,14 @@ val pool_index : t -> int
     Returns 0 for Simple glyphs and for continuation cells of Simple wide
     characters. *)
 
-val length : pool -> t -> int
-(** [length pool glyph] returns the byte length of the UTF-8 sequence for
-    [glyph].
-
-    Returns 1 for Simple glyphs (including {!empty}, which encodes as U+0000),
-    the actual byte length for Complex glyphs, and 0 for stale Complex IDs. *)
-
 (** {1 Construction} *)
 
 val make_continuation : code:t -> left:int -> right:int -> t
 (** [make_continuation ~code ~left ~right] creates a continuation cell that
     references the same pool entry as [code] with the given left/right extents.
 
-    [left] and [right] are clamped to \[0..3\]. If [code] is a Simple glyph,
-    the continuation carries no pool reference (index 0). *)
+    [left] and [right] are clamped to \[0..3\]. If [code] is a Simple glyph, the
+    continuation carries no pool reference (index 0). *)
 
 (** {1 Converting} *)
 
@@ -289,114 +180,237 @@ val unsafe_of_int : int -> t
     produced by {!to_int} or read from a Bigarray that stores glyphs). Using an
     invalid integer may cause incorrect behavior in pool operations. *)
 
-val blit : pool -> t -> bytes -> pos:int -> int
-(** [blit pool glyph buf ~pos] copies UTF-8 bytes of [glyph] to [buf] at [pos].
+(** {1 Pool}
 
-    Returns the number of bytes written. {!empty} is treated as U+0000 and
-    writes 1 byte. Returns 0 for stale Complex IDs or insufficient buffer space.
+    Storage context for interned grapheme clusters. Pools manage the lifecycle
+    of complex glyphs (multi-codepoint grapheme clusters) through manual
+    reference counting with generation-based use-after-free protection.
+
+    NOT thread-safe. Use separate pools per thread or external synchronization.
 *)
 
-val copy : src:pool -> t -> dst:pool -> t
-(** [copy ~src glyph ~dst] copies [glyph] from [src] pool to [dst] pool.
+module Pool : sig
+  type glyph := t
 
-    Returns [glyph] unchanged if it is a Simple glyph (single codepoint), or a
-    new Complex glyph interned in [dst]. Returns {!empty} for stale IDs.
+  type t
+  (** A pool for interning complex grapheme clusters. *)
 
-    {b Important.} Glyphs obtained from one pool must not be used with a
-    different pool. Use [copy] to transfer glyphs between pools. *)
+  val create : unit -> t
+  (** [create ()] creates a new empty pool with initial capacity for 4096
+      glyphs.
 
-val to_string : pool -> t -> string
-(** [to_string pool glyph] allocates a new string containing the UTF-8 sequence
-    for [glyph].
+      @raise Failure if the pool exceeds 262K interned graphemes. *)
 
-    Returns a single-character string for Simple glyphs (including ["\000"] for
-    {!empty}), the full sequence for Complex glyphs, and an empty string for
-    stale Complex IDs. *)
+  val clear : t -> unit
+  (** [clear pool] resets the pool, invalidating ALL existing glyph references.
 
-(** {1 Text measurement} *)
+      {b Important.} Glyphs must not be used after [clear]; behavior is
+      undefined because IDs may be recycled with the same generation. Does not
+      free memory, only resets internal cursors for reuse. *)
 
-val measure : ?width_method:width_method -> ?tab_width:int -> string -> int
-(** [measure ?width_method ?tab_width str] calculates the total display width of
-    [str].
+  val incref : t -> glyph -> unit
+  (** [incref pool glyph] increments the reference count for [glyph].
 
-    Defaults: [width_method = `Unicode], [tab_width = 2].
+      No-op for Simple glyphs or stale Complex glyphs with mismatched
+      generations. *)
 
-    Control characters contribute 0 to the total width.
+  val decref : t -> glyph -> unit
+  (** [decref pool glyph] decrements the reference count for [glyph].
 
-    {b UTF-8 handling.} Invalid byte sequences are replaced with U+FFFD
-    (replacement character), each contributing width 1. *)
+      When count reaches 0, the slot is recycled and its generation is
+      incremented. No-op for Simple glyphs or stale Complex glyphs. *)
 
-val grapheme_count : string -> int
-(** [grapheme_count str] returns the number of user-perceived characters
-    (grapheme clusters) in [str].
+  val intern :
+    t ->
+    ?width_method:width_method ->
+    ?tab_width:int ->
+    ?width:int ->
+    ?pos:int ->
+    ?len:int ->
+    string ->
+    glyph
+  (** [intern pool ?width_method ?tab_width ?width ?pos ?len str] creates a
+      single glyph from [str].
 
-    Uses full UAX #29 segmentation. *)
+      Returns {!empty} for control characters or zero-width sequences. Tab
+      characters use [tab_width] (default 2) for display width. Providing
+      [width] skips width calculation for performance.
 
-(** {1 Text iteration} *)
+      Defaults: [width_method = `Unicode], [tab_width = 2].
 
-val iter_graphemes : (offset:int -> len:int -> unit) -> string -> unit
-(** [iter_graphemes f str] calls [f ~offset ~len] for each grapheme cluster in
-    [str].
+      {b Note.} Multi-byte strings are stored as a single glyph with cumulative
+      width. For example, [intern pool "ab"] creates one glyph with width 2. Use
+      {!encode} when you need per-character segmentation.
 
-    Uses full UAX #29 segmentation (same as [width_method:`Unicode]). Useful for
-    counting or indexing user-perceived characters without allocating.
+      {b UTF-8 handling.} Invalid byte sequences are replaced with U+FFFD
+      (replacement character).
 
-    {b UTF-8 handling.} Invalid byte sequences are treated as individual
-    replacement characters (U+FFFD). *)
+      @raise Failure if the pool exceeds 262K interned graphemes. *)
 
-val iter_wrap_breaks :
-  ?width_method:width_method ->
-  (byte_offset:int -> grapheme_offset:int -> unit) ->
-  string ->
-  unit
-(** [iter_wrap_breaks ?width_method f s] computes word-wrap break opportunities
-    in [s] and calls [f ~byte_offset ~grapheme_offset] for each break, in order
-    from start to end.
+  val encode :
+    t ->
+    ?width_method:width_method ->
+    ?tab_width:int ->
+    (glyph -> unit) ->
+    string ->
+    unit
+  (** [encode pool ?width_method ?tab_width f str] streams glyphs from [str] via
+      callback [f].
 
-    - [byte_offset]: 0-indexed UTF-8 byte position pointing to the start of the
-      next grapheme after the break.
-    - [grapheme_offset]: 0-indexed count of grapheme clusters preceding this
-      break.
+      Defaults: [width_method = `Unicode], [tab_width = 2].
 
-    Breaks occur after graphemes containing:
-    - ASCII: space, tab, hyphen, path separators, punctuation, and brackets
-    - Unicode: NBSP, ZWSP, soft hyphen, typographic spaces, and other space-like
-      codepoints
+      The callback [(fun glyph -> ...)] is invoked inline for each glyph in
+      string order. Multi-column characters emit one Start glyph followed by
+      [(width - 1)] Continuation glyphs. Control characters and zero-width
+      sequences are skipped.
 
-    The optional [width_method] argument controls grapheme boundary detection:
-    [`Unicode] treats ZWJ sequences as single graphemes, [`No_zwj] breaks them
-    apart.
+      Single codepoints become Simple glyphs immediately. Multi-codepoint
+      grapheme clusters are interned and become Complex glyphs.
 
-    Example:
-    {[
-      iter_wrap_breaks
-        (fun ~byte_offset ~grapheme_offset ->
-          Printf.printf "break at byte %d, grapheme %d\n" byte_offset
-            grapheme_offset)
-        "hi 👋!"
-    ]} *)
+      {b UTF-8 handling.} Invalid byte sequences are replaced with U+FFFD
+      (replacement character) per Unicode best practices. Each invalid byte
+      consumes exactly one byte and produces one replacement glyph.
 
-val iter_line_breaks :
-  (pos:int -> kind:line_break_kind -> unit) -> string -> unit
-(** [iter_line_breaks f s] detects line terminators (LF U+000A, CR U+000D, and
-    CRLF sequences) in [s] and calls [f ~pos ~kind] for each, in order from
-    start to end.
+      @raise Failure if the pool exceeds 262K interned graphemes. *)
 
-    - [pos]: 0-indexed byte position of the line terminator. For [`CRLF], this
-      is the index of the LF byte; for [`LF] and [`CR], the respective byte.
-    - [kind]: The type of line terminator.
+  val iter_grapheme_info :
+    ?width_method:width_method ->
+    ?tab_width:int ->
+    (offset:int -> len:int -> width:int -> unit) ->
+    string ->
+    unit
+  (** [iter_grapheme_info ?width_method ?tab_width f str] walks grapheme
+      clusters in [str] and calls [f] with their byte [offset], byte [len], and
+      display [width].
 
-    CRLF sequences are reported once as [`CRLF] at the LF position, not as
-    separate CR and LF breaks.
+      Defaults: [width_method = `Unicode], [tab_width = 2].
 
-    {[
-      iter_line_breaks
-        (fun ~pos ~kind ->
-          let s =
-            match kind with `LF -> "LF" | `CR -> "CR" | `CRLF -> "CRLF"
-          in
-          Printf.printf "%s at %d\n" s pos)
-        "a\r\nb\n"
-      (* Output: CRLF at 2 *)
-      (* Output: LF at 4 *)
-    ]} *)
+      Uses the same width calculation and ZWJ handling as {!encode}. Graphemes
+      whose width resolves to 0 (control / zero-width sequences) are skipped.
+
+      {b UTF-8 handling.} Invalid byte sequences are treated as individual
+      replacement characters (U+FFFD). *)
+
+  val length : t -> glyph -> int
+  (** [length pool glyph] returns the byte length of the UTF-8 sequence for
+      [glyph].
+
+      Returns 1 for Simple glyphs (including {!empty}, which encodes as U+0000),
+      the actual byte length for Complex glyphs, and 0 for stale Complex IDs. *)
+
+  val blit : t -> glyph -> bytes -> pos:int -> int
+  (** [blit pool glyph buf ~pos] copies UTF-8 bytes of [glyph] to [buf] at
+      [pos].
+
+      Returns the number of bytes written. {!empty} is treated as U+0000 and
+      writes 1 byte. Returns 0 for stale Complex IDs or insufficient buffer
+      space. *)
+
+  val copy : src:t -> glyph -> dst:t -> glyph
+  (** [copy ~src glyph ~dst] copies [glyph] from [src] pool to [dst] pool.
+
+      Returns [glyph] unchanged if it is a Simple glyph (single codepoint), or a
+      new Complex glyph interned in [dst]. Returns {!empty} for stale IDs.
+
+      {b Important.} Glyphs obtained from one pool must not be used with a
+      different pool. Use [copy] to transfer glyphs between pools. *)
+
+  val to_string : t -> glyph -> string
+  (** [to_string pool glyph] allocates a new string containing the UTF-8
+      sequence for [glyph].
+
+      Returns a single-character string for Simple glyphs (including ["\000"]
+      for {!empty}), the full sequence for Complex glyphs, and an empty string
+      for stale Complex IDs. *)
+end
+
+(** {1 String utilities}
+
+    Pool-free string measurement and iteration functions. These work on raw
+    strings and do not require a glyph pool. *)
+
+module String : sig
+  val measure : ?width_method:width_method -> ?tab_width:int -> string -> int
+  (** [measure ?width_method ?tab_width str] calculates the total display width
+      of [str].
+
+      Defaults: [width_method = `Unicode], [tab_width = 2].
+
+      Control characters contribute 0 to the total width.
+
+      {b UTF-8 handling.} Invalid byte sequences are replaced with U+FFFD
+      (replacement character), each contributing width 1. *)
+
+  val grapheme_count : string -> int
+  (** [grapheme_count str] returns the number of user-perceived characters
+      (grapheme clusters) in [str].
+
+      Uses full UAX #29 segmentation. *)
+
+  val iter_graphemes : (offset:int -> len:int -> unit) -> string -> unit
+  (** [iter_graphemes f str] calls [f ~offset ~len] for each grapheme cluster in
+      [str].
+
+      Uses full UAX #29 segmentation (same as [width_method:`Unicode]). Useful
+      for counting or indexing user-perceived characters without allocating.
+
+      {b UTF-8 handling.} Invalid byte sequences are treated as individual
+      replacement characters (U+FFFD). *)
+
+  val iter_wrap_breaks :
+    ?width_method:width_method ->
+    (byte_offset:int -> grapheme_offset:int -> unit) ->
+    string ->
+    unit
+  (** [iter_wrap_breaks ?width_method f s] computes word-wrap break
+      opportunities in [s] and calls [f ~byte_offset ~grapheme_offset] for each
+      break, in order from start to end.
+
+      - [byte_offset]: 0-indexed UTF-8 byte position pointing to the start of
+        the next grapheme after the break.
+      - [grapheme_offset]: 0-indexed count of grapheme clusters preceding this
+        break.
+
+      Breaks occur after graphemes containing:
+      - ASCII: space, tab, hyphen, path separators, punctuation, and brackets
+      - Unicode: NBSP, ZWSP, soft hyphen, typographic spaces, and other
+        space-like codepoints
+
+      The optional [width_method] argument controls grapheme boundary detection:
+      [`Unicode] treats ZWJ sequences as single graphemes, [`No_zwj] breaks them
+      apart.
+
+      Example:
+      {[
+        iter_wrap_breaks
+          (fun ~byte_offset ~grapheme_offset ->
+            Printf.printf "break at byte %d, grapheme %d\n" byte_offset
+              grapheme_offset)
+          "hi 👋!"
+      ]} *)
+
+  val iter_line_breaks :
+    (pos:int -> kind:line_break_kind -> unit) -> string -> unit
+  (** [iter_line_breaks f s] detects line terminators (LF U+000A, CR U+000D, and
+      CRLF sequences) in [s] and calls [f ~pos ~kind] for each, in order from
+      start to end.
+
+      - [pos]: 0-indexed byte position of the line terminator. For [`CRLF], this
+        is the index of the LF byte; for [`LF] and [`CR], the respective byte.
+      - [kind]: The type of line terminator.
+
+      CRLF sequences are reported once as [`CRLF] at the LF position, not as
+      separate CR and LF breaks.
+
+      {[
+        iter_line_breaks
+          (fun ~pos ~kind ->
+            let s =
+              match kind with `LF -> "LF" | `CR -> "CR" | `CRLF -> "CRLF"
+            in
+            Printf.printf "%s at %d\n" s pos)
+          "a\r\nb\n"
+        (* Output: CRLF at 2 *)
+        (* Output: LF at 4 *)
+      ]} *)
+end

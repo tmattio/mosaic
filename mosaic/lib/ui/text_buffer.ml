@@ -128,7 +128,7 @@ type chunk_group = { mutable cg_start : int; mutable cg_length : int }
 let empty_chunk_group () = { cg_start = 0; cg_length = 0 }
 
 type t = {
-  pool : Glyph.pool;
+  pool : Glyph.Pool.t;
   mutable width_method : width_method;
   (* Tab handling *)
   mutable tab_width : int;
@@ -325,13 +325,13 @@ let create_internal ~capacity ~width_method pool =
 
 let create ?glyph_pool ~capacity ~width_method () =
   let pool =
-    match glyph_pool with Some p -> p | None -> Glyph.create_pool ()
+    match glyph_pool with Some p -> p | None -> Glyph.Pool.create ()
   in
   create_internal ~capacity ~width_method pool
 
 let release_cell pool cell =
   let g = Glyph.unsafe_of_int cell.code in
-  if is_grapheme_id g then Glyph.decref pool g
+  if is_grapheme_id g then Glyph.Pool.decref pool g
 
 let clear_cell cell =
   cell.code <- 0;
@@ -404,18 +404,18 @@ let encode_chunk t chunk =
   in
   let text = Bytes.to_string chunk.Chunk.text in
   let encode_segment segment =
-    Glyph.encode t.pool ~width_method:t.width_method ~tab_width:t.tab_width
+    Glyph.Pool.encode t.pool ~width_method:t.width_method ~tab_width:t.tab_width
       (fun code ->
         let width = Glyph.width code in
         (* Keep continuations with width 0 so indices stay aligned. *)
         if width > 0 || Glyph.is_continuation code then (
-          if Glyph.is_start code then Glyph.incref t.pool code;
+          if Glyph.is_start code then Glyph.Pool.incref t.pool code;
           push (Glyph.to_int code) width style))
       segment
   in
   (* Track Windows CRLF and old Mac CR line breaks: normalize to a single LF. *)
   let prev_was_cr = ref false in
-  Glyph.iter_graphemes
+  Glyph.String.iter_graphemes
     (fun ~offset:off ~len ->
       let segment = String.sub text off len in
       let seg_len = String.length segment in
@@ -575,7 +575,7 @@ let compute_wrap_break_flags t : (int, int8_unsigned_elt, c_layout) Array1.t =
       for i = 0 to t.length - 1 do
         Array1.unsafe_set flags i 0
       done;
-      (* Use Glyph.iter_wrap_breaks semantics: mark break opportunities after
+      (* Use Glyph.String.iter_wrap_breaks semantics: mark break opportunities after
          graphemes containing wrap-break characters (spaces, punctuation, etc.).
          For each grapheme, check if it contains any wrap-break codepoints. *)
       for i = 0 to t.length - 1 do
@@ -594,7 +594,7 @@ let compute_wrap_break_flags t : (int, int8_unsigned_elt, c_layout) Array1.t =
           else
             (* Check if this grapheme contains wrap-break characters *)
             let segment =
-              if is_grapheme_id g then Glyph.to_string t.pool g
+              if is_grapheme_id g then Glyph.Pool.to_string t.pool g
               else if code >= 0 && code < 128 then String.make 1 (Char.chr code)
               else if code <= 0x10FFFF then (
                 let buf = Buffer.create 4 in
@@ -603,7 +603,7 @@ let compute_wrap_break_flags t : (int, int8_unsigned_elt, c_layout) Array1.t =
               else ""
             in
             let has_break = ref false in
-            Glyph.iter_wrap_breaks
+            Glyph.String.iter_wrap_breaks
               (fun ~byte_offset:_ ~grapheme_offset:_ -> has_break := true)
               segment;
             if !has_break then Array1.unsafe_set flags i 1)
@@ -1080,7 +1080,7 @@ let append_code t buf code =
   let g = Glyph.unsafe_of_int code in
   if is_continuation g then ()
   else if code = 10 then Buffer.add_char buf '\n'
-  else if is_grapheme_id g then Buffer.add_string buf (Glyph.to_string t.pool g)
+  else if is_grapheme_id g then Buffer.add_string buf (Glyph.Pool.to_string t.pool g)
   else if Uchar.is_valid code then
     Buffer.add_utf_8_uchar buf (Uchar.of_int code)
 

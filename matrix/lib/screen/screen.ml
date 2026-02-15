@@ -5,7 +5,7 @@
 
 open StdLabels
 module Hit_grid = Hit_grid
-module Pool = Glyph
+module Glyph_pool = Glyph.Pool
 
 (* --- Types & Metrics --- *)
 
@@ -47,7 +47,7 @@ type input_state = { mutable mouse_enabled : bool }
 (* screen state - mutable internal state for maximum performance *)
 type t = {
   (* Configuration *)
-  glyph_pool : Pool.pool;
+  glyph_pool : Glyph_pool.t;
   stats : stats_state;
   mutable last_metrics : frame_metrics;
   (* Buffers (Double Buffering) *)
@@ -92,7 +92,7 @@ let[@inline] add_code_to_writer ~explicit_width ~explicit_cursor_positioning
   if Glyph.is_empty glyph || Grid.is_continuation grid idx then
     Ansi.emit (Ansi.char ' ') w
   else
-    let len = Pool.length pool glyph in
+    let len = Glyph_pool.length pool glyph in
     if len <= 0 then Ansi.emit (Ansi.char ' ') w
     else if len = 1 && (glyph :> int) < 128 then
       Ansi.emit (Ansi.char (Char.chr (glyph :> int))) w
@@ -100,7 +100,7 @@ let[@inline] add_code_to_writer ~explicit_width ~explicit_cursor_positioning
       if len > Bytes.length !scratch then
         scratch := Bytes.create (max (Bytes.length !scratch * 2) len);
 
-      let written = Pool.blit pool glyph !scratch ~pos:0 in
+      let written = Glyph_pool.blit pool glyph !scratch ~pos:0 in
 
       if written <= 0 then Ansi.emit (Ansi.char ' ') w
       else if explicit_width && cell_width >= 2 then
@@ -382,7 +382,7 @@ let glyph_pool t = t.glyph_pool
 let create ?glyph_pool ?width_method ?respect_alpha ?(mouse_enabled = true)
     ?(cursor_visible = true) ?(explicit_width = false) () =
   let glyph_pool =
-    match glyph_pool with Some p -> p | None -> Pool.create_pool ()
+    match glyph_pool with Some p -> p | None -> Glyph_pool.create ()
   in
   let w_method = match width_method with Some m -> m | None -> `Unicode in
   let r_alpha = match respect_alpha with Some r -> r | None -> false in

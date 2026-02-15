@@ -79,7 +79,7 @@ type handler_id
 (** {1 Construction} *)
 
 val create :
-  ?glyph_pool:Glyph.pool ->
+  ?glyph_pool:Glyph.Pool.t ->
   ?width_method:Glyph.width_method ->
   ?respect_alpha:bool ->
   ?mouse_enabled:bool ->

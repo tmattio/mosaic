@@ -622,7 +622,7 @@ module Internal : sig
     ?render:render ->
     ?render_before:render ->
     ?render_after:render ->
-    ?glyph_pool:Glyph.pool ->
+    ?glyph_pool:Glyph.Pool.t ->
     num:int ->
     unit ->
     (t, error) result
@@ -801,10 +801,10 @@ module Internal : sig
   val measure_of : t -> measure option
   (** [measure_of t] returns [t]'s measure function. *)
 
-  val set_glyph_pool : t -> Glyph.pool -> unit
+  val set_glyph_pool : t -> Glyph.Pool.t -> unit
   (** [set_glyph_pool t pool] assigns a glyph pool for text rendering. *)
 
-  val glyph_pool : t -> Glyph.pool option
+  val glyph_pool : t -> Glyph.Pool.t option
   (** [glyph_pool t] returns [t]'s glyph pool. *)
 
   val emit_mouse_event : t -> Event.mouse -> unit

@@ -167,7 +167,7 @@ let decompress_line line grid row _cols =
                   |> Ansi.Style.with_attrs run.attrs
                 in
                 Grid.draw_text grid ~x:!col ~y:row ~style ~text:segment;
-                let w = Glyph.measure ~width_method ~tab_width:2 segment in
+                let w = Glyph.String.measure ~width_method ~tab_width:2 segment in
                 col := min max_cols (!col + w))
             with Invalid_argument _ ->
               (* Skip problematic segments *)
@@ -480,7 +480,7 @@ let scroll_down t n =
 
 (* Write printable text using new Glyph/Grid API. We manually segment the input
    string into pieces that fit in the current line, using an ASCII fast path and
-   falling back to Grapheme_cluster + Glyph.measure for complex text. *)
+   falling back to Grapheme_cluster + Glyph.String.measure for complex text. *)
 let put_text t text =
   let fg = Option.value t.style.Ansi.Style.fg ~default:Ansi.Color.default in
   let bg = Option.value t.style.Ansi.Style.bg ~default:Ansi.Color.default in
@@ -524,7 +524,7 @@ let put_text t text =
         ~bg:bg_color ~attrs:(Ansi.Attr.unpack attrs) ?link:link_url ()
     in
 
-    Glyph.iter_graphemes
+    Glyph.String.iter_graphemes
       (fun ~offset:off ~len:l ->
         if t.cursor.col >= line_width && t.auto_wrap_mode then (
           if t.cursor.row >= t.scroll_region.bottom then scroll_up t 1;
@@ -534,7 +534,7 @@ let put_text t text =
 
         if row < t.rows && t.cursor.col < line_width then
           let cluster = String.sub text off l in
-          let w = Glyph.measure ~width_method ~tab_width:2 cluster in
+          let w = Glyph.String.measure ~width_method ~tab_width:2 cluster in
           let insert_w = min w (line_width - t.cursor.col) in
 
           if insert_w > 0 then (
@@ -585,7 +585,7 @@ let put_text t text =
 
           (* Fast path: if the whole string fits in remaining columns, draw
              once. *)
-          let total_w = Glyph.measure ~width_method ~tab_width:2 s in
+          let total_w = Glyph.String.measure ~width_method ~tab_width:2 s in
           if total_w <= available then (
             Grid.draw_text t.active_grid ~x:t.cursor.col ~y:t.cursor.row ~text:s
               ~style;
@@ -598,11 +598,11 @@ let put_text t text =
             let width_consumed = ref 0 in
             let stop = ref false in
 
-            Glyph.iter_graphemes
+            Glyph.String.iter_graphemes
               (fun ~offset:off ~len:l ->
                 if not !stop then
                   let cluster = String.sub s off l in
-                  let w = Glyph.measure ~width_method ~tab_width:2 cluster in
+                  let w = Glyph.String.measure ~width_method ~tab_width:2 cluster in
                   if !width_consumed + w <= available then (
                     width_consumed := !width_consumed + w;
                     bytes_consumed := off + l)

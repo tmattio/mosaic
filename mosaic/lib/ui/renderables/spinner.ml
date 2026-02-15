@@ -76,7 +76,7 @@ let node t = t.node
 let compute_max_width frames =
   Array.fold_left
     (fun acc frame ->
-      max acc (Glyph.measure ~width_method:`Unicode ~tab_width:2 frame))
+      max acc (Glyph.String.measure ~width_method:`Unicode ~tab_width:2 frame))
     0 frames
 
 let request_render t = Renderable.request_render t.node

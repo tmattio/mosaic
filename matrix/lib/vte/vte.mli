@@ -177,7 +177,7 @@ type t
 
 val create :
   ?scrollback:int ->
-  ?glyph_pool:Glyph.pool ->
+  ?glyph_pool:Glyph.Pool.t ->
   ?width_method:Glyph.width_method ->
   ?respect_alpha:bool ->
   rows:int ->

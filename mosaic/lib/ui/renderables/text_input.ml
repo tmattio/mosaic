@@ -78,7 +78,7 @@ let clamp v ~min ~max = if v < min then min else if v > max then max else v
 
 let grapheme_count s =
   let count = ref 0 in
-  Glyph.iter_graphemes (fun ~offset:_ ~len:_ -> incr count) s;
+  Glyph.String.iter_graphemes (fun ~offset:_ ~len:_ -> incr count) s;
   !count
 
 let byte_offset_of_index s index =
@@ -88,7 +88,7 @@ let byte_offset_of_index s index =
     let result = ref len in
     let count = ref 0 in
     try
-      Glyph.iter_graphemes
+      Glyph.String.iter_graphemes
         (fun ~offset ~len:_ ->
           if !count = index then (
             result := offset;
@@ -256,11 +256,11 @@ let compute_placeholder t maxw =
     let acc = ref 0 in
     let end_offset = ref 0 in
     (try
-       Glyph.iter_graphemes
+       Glyph.String.iter_graphemes
          (fun ~offset ~len ->
            let grapheme = String.sub placeholder offset len in
            let w =
-             Glyph.measure ~width_method:`Unicode ~tab_width:2 grapheme |> max 1
+             Glyph.String.measure ~width_method:`Unicode ~tab_width:2 grapheme |> max 1
            in
            if !acc + w <= maxw then (
              acc := !acc + w;

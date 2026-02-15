@@ -147,7 +147,7 @@ type frame_metrics = {
 (** {1 Screen Creation} *)
 
 val create :
-  ?glyph_pool:Glyph.pool ->
+  ?glyph_pool:Glyph.Pool.t ->
   ?width_method:Glyph.width_method ->
   ?respect_alpha:bool ->
   ?mouse_enabled:bool ->
@@ -214,7 +214,7 @@ val build : t -> width:int -> height:int -> (Grid.t -> Hit_grid.t -> unit) -> t
 
 (** {1 Shared Resources} *)
 
-val glyph_pool : t -> Glyph.pool
+val glyph_pool : t -> Glyph.Pool.t
 (** [glyph_pool t] returns the glyph pool shared by the screen's grids. *)
 
 (** {1 Frame Transformation} *)

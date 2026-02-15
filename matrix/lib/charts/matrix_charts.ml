@@ -233,8 +233,8 @@ let safe_view_range (a : float) (b : float) =
 let safe_range = safe_domain_range
 
 let text_width (s : string) : int =
-  (* matrix.glyph provides Glyph.measure; preserve Unicode correctness. *)
-  Glyph.measure ~width_method:`Unicode ~tab_width:2 s
+  (* matrix.glyph provides Glyph.String.measure; preserve Unicode correctness. *)
+  Glyph.String.measure ~width_method:`Unicode ~tab_width:2 s
 
 let utf8_of_uchar (u : Uchar.t) : string =
   let b = Buffer.create 4 in
@@ -3998,7 +3998,7 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
       let title_style = Option.value ~default:default_st style in
       (* Use Unicode-aware iteration for proper grapheme cluster handling *)
       let graphemes = ref [] in
-      Glyph.iter_graphemes
+      Glyph.String.iter_graphemes
         (fun ~offset ~len ->
           graphemes := String.sub text offset len :: !graphemes)
         text;

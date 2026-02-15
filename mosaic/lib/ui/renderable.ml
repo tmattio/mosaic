@@ -81,7 +81,7 @@ type node = {
   mutable child_count : int;
   mutable render : render;
   mutable layout_dirty : bool;
-  mutable glyph_pool : Glyph.pool option;
+  mutable glyph_pool : Glyph.Pool.t option;
   mutable mouse_handlers : Event.mouse event_handler list;
   mutable key_handlers : Event.key event_handler list;
   mutable default_key_handler : (Event.key -> unit) option;

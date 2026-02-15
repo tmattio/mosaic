@@ -149,7 +149,7 @@ let measure_arrow t dir ~known_dimensions:_ ~available_space:_ ~style:_ =
   let text = arrow_char t dir in
   let width =
     float_of_int
-      (max 1 (Glyph.measure ~width_method:`Unicode ~tab_width:2 text))
+      (max 1 (Glyph.String.measure ~width_method:`Unicode ~tab_width:2 text))
   in
   let height = 1. in
   { Toffee.Geometry.Size.width; height }

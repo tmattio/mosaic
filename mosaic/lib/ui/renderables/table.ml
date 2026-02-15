@@ -111,7 +111,7 @@ type t = {
 let node t = Text_surface.node t.surface
 
 let width_of_string text =
-  Glyph.measure ~width_method:`Unicode ~tab_width:2 text
+  Glyph.String.measure ~width_method:`Unicode ~tab_width:2 text
 
 let merge_style base overlay =
   match overlay with
@@ -504,10 +504,10 @@ type grapheme = { text : string; width : int }
 
 let graphemes text =
   let acc = ref [] in
-  Glyph.iter_graphemes
+  Glyph.String.iter_graphemes
     (fun ~offset:off ~len ->
       let text = String.sub text off len in
-      let width = Glyph.measure ~width_method:`Unicode ~tab_width:2 text in
+      let width = Glyph.String.measure ~width_method:`Unicode ~tab_width:2 text in
       let width = if width < 0 then 0 else width in
       acc := { text; width } :: !acc)
     text;

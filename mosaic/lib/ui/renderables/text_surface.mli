@@ -11,7 +11,7 @@
     automatic size measurement based on buffer content and configured wrapping
     behavior. Wrap width is determined by Toffee layout computation during the
     measure phase, considering known dimensions and available space. Grapheme
-    pooling shares a single {!Glyph.pool} across renderables for memory
+    pooling shares a single {!Glyph.Pool.t} across renderables for memory
     efficiency.
 
     {1 Wrapping Behavior}

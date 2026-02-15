@@ -153,7 +153,7 @@ type t = {
   mutable width : int;
   mutable height : int;
   (* Configuration *)
-  glyph_pool : Glyph.pool;
+  glyph_pool : Glyph.Pool.t;
   mutable width_method : Glyph.width_method;
   mutable respect_alpha : bool;
   (* Storage *)
@@ -209,7 +209,7 @@ let create ~width ~height ?glyph_pool ?width_method ?(respect_alpha = false) ()
     invalid_arg "Grid.create: width and height must be > 0";
 
   let size = width * height in
-  let pool = Option.value glyph_pool ~default:(Glyph.create_pool ()) in
+  let pool = Option.value glyph_pool ~default:(Glyph.Pool.create ()) in
   let w_method = Option.value width_method ~default:`Unicode in
 
   let t =
@@ -294,9 +294,9 @@ let get_background t idx =
 
 let get_text t idx =
   (* Cell codes are aligned with Glyph.t, so they can be passed directly to
-     Glyph.to_string *)
+     Glyph.Pool.to_string *)
   let c = Buf.get_glyph t.chars idx in
-  if Glyph.is_continuation c then "" else Glyph.to_string t.glyph_pool c
+  if Glyph.is_continuation c then "" else Glyph.Pool.to_string t.glyph_pool c
 
 let is_empty t idx = Buf.get_glyph t.chars idx = Glyph.empty
 let is_continuation t idx = Glyph.is_continuation (Buf.get_glyph t.chars idx)
@@ -790,7 +790,7 @@ let blit ~src ~dst =
     else (
       (* Cross-pool blit: need to copy grapheme data between pools. Cell codes
          are aligned with Glyph.t, so cell codes can be passed directly to
-         Glyph.copy and results stored directly. *)
+         Glyph.Pool.copy and results stored directly. *)
       Grapheme_tracker.clear dst.grapheme_tracker;
       Links.clear dst.link_registry;
       let cache = Hashtbl.create 64 in
@@ -815,7 +815,7 @@ let blit ~src ~dst =
             | None ->
                 (* Copy glyph to destination pool - src_c is a valid Glyph.t *)
                 let dst_glyph =
-                  Glyph.copy ~src:src.glyph_pool src_c ~dst:dst.glyph_pool
+                  Glyph.Pool.copy ~src:src.glyph_pool src_c ~dst:dst.glyph_pool
                 in
                 Hashtbl.add cache src_payload dst_glyph;
                 if Glyph.is_start src_c then dst_glyph
@@ -967,7 +967,7 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
             | None ->
                 (* code is a valid Glyph.t due to aligned formats *)
                 let dst_glyph =
-                  Glyph.copy ~src:src.glyph_pool code ~dst:dst.glyph_pool
+                  Glyph.Pool.copy ~src:src.glyph_pool code ~dst:dst.glyph_pool
                 in
                 Hashtbl.add grapheme_map payload dst_glyph;
                 if Glyph.is_start code then dst_glyph
@@ -1202,7 +1202,8 @@ let draw_text ?style ?(tab_width = 2) t ~x ~y ~text =
       in
       let stop = ref false in
       try
-        Glyph.iter_grapheme_info ~width_method:t.width_method ~tab_width:tabw
+        Glyph.Pool.iter_grapheme_info ~width_method:t.width_method
+          ~tab_width:tabw
           (fun ~offset ~len ~width:w ->
             if !stop || w <= 0 then ()
             else
@@ -1219,7 +1220,7 @@ let draw_text ?style ?(tab_width = 2) t ~x ~y ~text =
               then cur_x := end_x
               else
                 let g =
-                  Glyph.intern t.glyph_pool ~width_method:t.width_method
+                  Glyph.Pool.intern t.glyph_pool ~width_method:t.width_method
                     ~tab_width:tabw ~width:w ~pos:offset ~len text
                 in
                 if Glyph.is_continuation g then () else writer g)
@@ -1349,7 +1350,9 @@ let draw_box t ~x ~y ~width ~height ~border_chars ~border_sides ~border_style
 
       match title with
       | Some txt when has `Top && width >= 4 ->
-          let w = Glyph.measure ~width_method:t.width_method ~tab_width:2 txt in
+          let w =
+            Glyph.String.measure ~width_method:t.width_method ~tab_width:2 txt
+          in
           if w <= width - 4 then
             let pad =
               match title_alignment with
@@ -1408,7 +1411,7 @@ let decode_braille_bits t ~x ~y =
       if cp >= braille_base && cp <= braille_max then cp - braille_base else 0
     else if Glyph.is_start code then
       (* Complex cell: decode from glyph pool. Braille is 3-byte UTF-8. *)
-      let s = Glyph.to_string t.glyph_pool code in
+      let s = Glyph.Pool.to_string t.glyph_pool code in
       if String.length s = 3 then
         (* Decode 3-byte UTF-8: 1110xxxx 10xxxxxx 10xxxxxx *)
         let b0 = Char.code (String.unsafe_get s 0) in
@@ -1615,13 +1618,13 @@ let snapshot ?(reset = true) t : string =
               if Glyph.is_continuation code || Glyph.is_empty code then
                 Ansi.emit (Ansi.char ' ') w
               else
-                let len = Glyph.length pool code in
+                let len = Glyph.Pool.length pool code in
                 if len <= 0 then Ansi.emit (Ansi.char ' ') w
                 else (
                   if len > Bytes.length !scratch then
                     scratch :=
                       Bytes.create (max (Bytes.length !scratch * 2) len);
-                  let written = Glyph.blit pool code !scratch ~pos:0 in
+                  let written = Glyph.Pool.blit pool code !scratch ~pos:0 in
                   Ansi.emit (Ansi.bytes !scratch ~off:0 ~len:written) w));
 
             x := !x + cell_w

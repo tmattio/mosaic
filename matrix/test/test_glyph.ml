@@ -5,7 +5,7 @@ open Glyph
 
 let encode_to_list pool ~width_method ~tab_width str =
   let lst = ref [] in
-  encode pool ~width_method ~tab_width (fun cell -> lst := cell :: !lst) str;
+  Pool.encode pool ~width_method ~tab_width (fun cell -> lst := cell :: !lst) str;
   List.rev !lst
 
 let check_width msg expected actual = equal ~msg int expected actual
@@ -44,13 +44,13 @@ let run_grapheme_conformance () =
       try
         let line = input_line ic in
         let rule =
-          match String.index_opt line '#' with
-          | Some i -> String.sub line 0 i |> String.trim
-          | None -> String.trim line
+          match Stdlib.String.index_opt line '#' with
+          | Some i -> Stdlib.String.sub line 0 i |> Stdlib.String.trim
+          | None -> Stdlib.String.trim line
         in
         if rule <> "" then (
           let parts =
-            String.split_on_char ' ' rule |> List.filter (( <> ) "")
+            Stdlib.String.split_on_char ' ' rule |> List.filter (( <> ) "")
           in
           (* Reconstruct full text and expected segments *)
           let full_text = Buffer.create 32 in
@@ -82,9 +82,9 @@ let run_grapheme_conformance () =
           let expected = List.rev !expected_segments in
 
           let actual = ref [] in
-          iter_graphemes
+          String.iter_graphemes
             (fun ~offset:off ~len ->
-              actual := String.sub text off len :: !actual)
+              actual := Stdlib.String.sub text off len :: !actual)
             text;
           let actual = List.rev !actual in
 
@@ -92,8 +92,8 @@ let run_grapheme_conformance () =
             Printf.printf
               "Line %d failure:\nInput: %s\nExpected: %s\nActual:   %s\n" lineno
               rule
-              (String.concat "|" expected)
-              (String.concat "|" actual);
+              (Stdlib.String.concat "|" expected)
+              (Stdlib.String.concat "|" actual);
             fail "Grapheme break mismatch"));
         loop (lineno + 1)
       with End_of_file -> ()
@@ -217,15 +217,15 @@ let measurement_semantics () =
 
   List.iter
     (fun c ->
-      let w = measure ~width_method:c.method_ ~tab_width:c.tab_width c.input in
+      let w = String.measure ~width_method:c.method_ ~tab_width:c.tab_width c.input in
       check_width c.name c.expected w)
     cases
 
 let ascii_fast_path_consistency () =
   let s = "hello\tworld" in
-  let unicode_w = measure ~width_method:`Unicode ~tab_width:4 s in
-  let no_zwj_w = measure ~width_method:`No_zwj ~tab_width:4 s in
-  let wcwidth_w = measure ~width_method:`Wcwidth ~tab_width:4 s in
+  let unicode_w = String.measure ~width_method:`Unicode ~tab_width:4 s in
+  let no_zwj_w = String.measure ~width_method:`No_zwj ~tab_width:4 s in
+  let wcwidth_w = String.measure ~width_method:`Wcwidth ~tab_width:4 s in
   check_width "unicode vs no_zwj" unicode_w no_zwj_w;
   check_width "unicode vs wcwidth" unicode_w wcwidth_w
 
@@ -236,26 +236,26 @@ let ascii_fast_path_consistency () =
 let measure_multi_grapheme_regression () =
   (* ASCII + wide characters: "Hello 世界" should be 6 + 2 + 2 = 10 *)
   let s = "Hello 世界" in
-  let w = measure ~width_method:`Unicode ~tab_width:2 s in
+  let w = String.measure ~width_method:`Unicode ~tab_width:2 s in
   check_width "ascii + wide chars" 10 w;
 
   (* Multiple wide characters *)
   let s2 = "日本語" in
-  let w2 = measure ~width_method:`Unicode ~tab_width:2 s2 in
+  let w2 = String.measure ~width_method:`Unicode ~tab_width:2 s2 in
   check_width "three wide chars" 6 w2;
 
   (* Mixed: emoji + ascii + wide *)
   let s3 = "🚀Hi世" in
-  let w3 = measure ~width_method:`Unicode ~tab_width:2 s3 in
+  let w3 = String.measure ~width_method:`Unicode ~tab_width:2 s3 in
   (* 🚀=2, H=1, i=1, 世=2 = 6 *)
   check_width "emoji + ascii + wide" 6 w3;
 
   (* Verify consistency with Wcwidth mode *)
-  let w_wcwidth = measure ~width_method:`Wcwidth ~tab_width:2 s in
+  let w_wcwidth = String.measure ~width_method:`Wcwidth ~tab_width:2 s in
   check_width "unicode matches wcwidth for simple case" w w_wcwidth
 
 let no_zwj_segmentation () =
-  let pool = create_pool () in
+  let pool = Pool.create () in
   let text = "👩\u{200D}🚀" in
   let cells = encode_to_list pool ~width_method:`No_zwj ~tab_width:2 text in
   let starts = List.filter is_start cells in
@@ -271,7 +271,7 @@ let no_zwj_segmentation () =
 (* 3. Encoding & Storage *)
 
 let simple_vs_complex_optimization () =
-  let pool = create_pool () in
+  let pool = Pool.create () in
   let check_type str expect_simple =
     let lst = encode_to_list pool ~width_method:`Unicode ~tab_width:2 str in
     match lst with
@@ -295,16 +295,16 @@ let simple_vs_complex_optimization () =
   check_type "中" true
 
 let zero_length_intern () =
-  let pool = create_pool () in
-  let g = intern pool "" in
+  let pool = Pool.create () in
+  let g = Pool.intern pool "" in
   is_true ~msg:"empty glyph" (is_empty g);
   equal ~msg:"empty width" int 0 (width g);
   (* Empty maps to a NUL sentinel: zero width, single-byte payload *)
-  equal ~msg:"empty len" int 1 (length pool g);
-  equal ~msg:"empty string" string "\000" (to_string pool g)
+  equal ~msg:"empty len" int 1 (Pool.length pool g);
+  equal ~msg:"empty string" string "\000" (Pool.to_string pool g)
 
 let complex_clustering_behavior () =
-  let pool = create_pool () in
+  let pool = Pool.create () in
   (* Devanagari: "Namaste" *)
   (* 'Na'(1) + 'Ma'(1) + 'S'(1)+Virama(0)+'Ta'(1)+Matra(0) -> fused cluster 'Ste'(2) *)
   let text = "नमस्ते" in
@@ -323,13 +323,13 @@ let complex_clustering_behavior () =
 
       (* Verify visual re-assembly *)
       let buf = Bytes.create 32 in
-      let len = blit pool ste_start buf ~pos:0 in
+      let len = Pool.blit pool ste_start buf ~pos:0 in
       let s_out = Bytes.sub_string buf 0 len in
       equal ~msg:"Ste content" string "स्ते" s_out
   | _ -> fail "Unexpected clustering result for Devanagari"
 
 let malformed_utf8_resilience () =
-  let pool = create_pool () in
+  let pool = Pool.create () in
   (* Truncated sequence: C3 (start of 2-byte seq) without second byte *)
   let invalid = "\xC3" in
   try
@@ -343,25 +343,25 @@ let malformed_utf8_resilience () =
 (* 4. Lifecycle & Pool *)
 
 let lifecycle_generation_safety () =
-  let pool = create_pool () in
+  let pool = Pool.create () in
   (* Use multi-codepoint clusters to exercise pool allocation *)
-  let g1 = intern pool "e\u{0301}" in
+  let g1 = Pool.intern pool "e\u{0301}" in
   is_false ~msg:"is complex" (is_simple g1);
 
-  equal ~msg:"content exists" string "e\u{0301}" (to_string pool g1);
+  equal ~msg:"content exists" string "e\u{0301}" (Pool.to_string pool g1);
 
-  decref pool g1;
+  Pool.decref pool g1;
 
-  let g2 = intern pool "a\u{0302}" in
-  equal ~msg:"new content correct" string "a\u{0302}" (to_string pool g2);
+  let g2 = Pool.intern pool "a\u{0302}" in
+  equal ~msg:"new content correct" string "a\u{0302}" (Pool.to_string pool g2);
 
   (* Stale reference should return safe defaults *)
-  equal ~msg:"stale string empty" string "" (to_string pool g1);
+  equal ~msg:"stale string empty" string "" (Pool.to_string pool g1);
   let buf = Bytes.create 8 in
-  equal ~msg:"stale blit is empty" int 0 (blit pool g1 buf ~pos:0)
+  equal ~msg:"stale blit is empty" int 0 (Pool.blit pool g1 buf ~pos:0)
 
 let pool_resize_stress () =
-  let pool = create_pool () in
+  let pool = Pool.create () in
   let n = 5000 in
   (* Exceeds default 4096 *)
   let handles = Array.make n empty in
@@ -370,56 +370,56 @@ let pool_resize_stress () =
   for i = 0 to n - 1 do
     (* Use unique strings to force separate allocations *)
     let s = "x" ^ string_of_int i in
-    handles.(i) <- intern pool s
+    handles.(i) <- Pool.intern pool s
   done;
 
   (* Verify random access after resize *)
   let g_first = handles.(0) in
-  equal ~msg:"first element intact" string "x0" (to_string pool g_first);
+  equal ~msg:"first element intact" string "x0" (Pool.to_string pool g_first);
 
   let g_last = handles.(n - 1) in
   equal ~msg:"last element intact" string
     ("x" ^ string_of_int (n - 1))
-    (to_string pool g_last)
+    (Pool.to_string pool g_last)
 
 let copy_safety () =
-  let p1 = create_pool () in
-  let p2 = create_pool () in
+  let p1 = Pool.create () in
+  let p2 = Pool.create () in
 
-  let g = intern p1 "abc" in
+  let g = Pool.intern p1 "abc" in
   (* Simple *)
-  let g_copy = copy ~src:p1 g ~dst:p2 in
+  let g_copy = Pool.copy ~src:p1 g ~dst:p2 in
   equal ~msg:"simple copy identity" int (to_int g) (to_int g_copy);
 
   (* Use multi-codepoint cluster to exercise pool copy *)
-  let complex = intern p1 "e\u{0301}" in
-  decref p1 complex;
+  let complex = Pool.intern p1 "e\u{0301}" in
+  Pool.decref p1 complex;
 
-  let _reused = intern p1 "reused" in
-  let stale_copy = copy ~src:p1 complex ~dst:p2 in
+  let _reused = Pool.intern p1 "reused" in
+  let stale_copy = Pool.copy ~src:p1 complex ~dst:p2 in
   is_true ~msg:"copied stale is empty" (is_empty stale_copy)
 
 let decref_deduplicates_free_list () =
   (* Test that multiple decrements don't corrupt the pool *)
-  let pool = create_pool () in
-  let g = intern pool "wide" in
-  incref pool g;
-  incref pool g;
-  decref pool g;
-  decref pool g;
-  decref pool g;
+  let pool = Pool.create () in
+  let g = Pool.intern pool "wide" in
+  Pool.incref pool g;
+  Pool.incref pool g;
+  Pool.decref pool g;
+  Pool.decref pool g;
+  Pool.decref pool g;
   (* Should be able to allocate new glyphs without issues *)
-  let g2 = intern pool "next" in
-  let g3 = intern pool "another" in
-  equal ~msg:"g2 content" string "next" (to_string pool g2);
-  equal ~msg:"g3 content" string "another" (to_string pool g3);
+  let g2 = Pool.intern pool "next" in
+  let g3 = Pool.intern pool "another" in
+  equal ~msg:"g2 content" string "next" (Pool.to_string pool g2);
+  equal ~msg:"g3 content" string "another" (Pool.to_string pool g3);
   (* Stale reference should return empty *)
-  equal ~msg:"stale g empty" string "" (to_string pool g)
+  equal ~msg:"stale g empty" string "" (Pool.to_string pool g)
 
 (* 5. API Surface *)
 
 let tab_expansion_mechanics () =
-  let pool = create_pool () in
+  let pool = Pool.create () in
   (* Test mixing tabs with content *)
   let cells_2 =
     encode_to_list pool ~width_method:`Unicode ~tab_width:2 "a\tb"
@@ -444,7 +444,7 @@ let tab_expansion_mechanics () =
     (width ~tab_width:8 tab_glyph)
 
 let tab_cache_offsets () =
-  let pool = create_pool () in
+  let pool = Pool.create () in
   let cells =
     encode_to_list pool ~width_method:`Unicode ~tab_width:4 "a\tb\tc"
   in
@@ -457,13 +457,13 @@ let tab_cache_offsets () =
   | _ -> fail "Expected five glyphs with tabs at positions 1 and 3"
 
 let max_width_clamping () =
-  let pool = create_pool () in
+  let pool = Pool.create () in
   (* Force a width > 4 on a multi-byte grapheme; bit layout clamps to max 4. *)
-  let g = intern pool ~width:10 "ab" in
+  let g = Pool.intern pool ~width:10 "ab" in
   equal ~msg:"clamps large width" int 4 (width g)
 
 let continuation_width_encoding () =
-  let pool = create_pool () in
+  let pool = Pool.create () in
   let cells = encode_to_list pool ~width_method:`Unicode ~tab_width:2 "界" in
   (* CJK wide character -> width 2 and a continuation cell *)
   match cells with
@@ -483,7 +483,7 @@ type line_break = { pos : int; kind : line_break_kind }
 (* Local helper: convert iter_wrap_breaks to array for tests *)
 let wrap_breaks ?(width_method = `Unicode) s =
   let acc = ref [] in
-  iter_wrap_breaks ~width_method
+  String.iter_wrap_breaks ~width_method
     (fun ~byte_offset ~grapheme_offset ->
       acc := { byte_offset; grapheme_offset } :: !acc)
     s;
@@ -492,7 +492,7 @@ let wrap_breaks ?(width_method = `Unicode) s =
 (* Local helper: convert iter_line_breaks to list for tests *)
 let line_breaks_to_list s =
   let acc = ref [] in
-  iter_line_breaks (fun ~pos ~kind -> acc := { pos; kind } :: !acc) s;
+  String.iter_line_breaks (fun ~pos ~kind -> acc := { pos; kind } :: !acc) s;
   List.rev !acc
 
 let wrap_break_testable =
@@ -677,7 +677,7 @@ let line_breaks_consecutive_lf () =
 let emoji_presentation_widths () =
   let check label cp expected_w =
     let s = uchar_to_utf8 cp in
-    let w = measure ~width_method:`Unicode ~tab_width:2 s in
+    let w = String.measure ~width_method:`Unicode ~tab_width:2 s in
     check_width label expected_w w
   in
   (* CJK Unified Ideographs *)
@@ -705,11 +705,11 @@ let emoji_presentation_widths () =
   check "red heart + VS16" 0x2764 1;
   (* VS16 promotion to width 2 happens at grapheme level *)
   let heart_vs16 = uchar_to_utf8 0x2764 ^ uchar_to_utf8 0xFE0F in
-  let w_heart = measure ~width_method:`Unicode ~tab_width:2 heart_vs16 in
+  let w_heart = String.measure ~width_method:`Unicode ~tab_width:2 heart_vs16 in
   check_width "heart with VS16 = width 2" 2 w_heart;
   (* Regional indicator pairs *)
   let flag = uchar_to_utf8 0x1F1FA ^ uchar_to_utf8 0x1F1F8 in
-  let w_flag = measure ~width_method:`Unicode ~tab_width:2 flag in
+  let w_flag = String.measure ~width_method:`Unicode ~tab_width:2 flag in
   check_width "flag pair = width 2" 2 w_flag;
   (* Transport/map symbols *)
   check "umbrella U+2614" 0x2614 2;
@@ -734,7 +734,7 @@ let emoji_presentation_widths () =
 let c1_control_widths () =
   let check_zero label cp =
     let s = uchar_to_utf8 cp in
-    let w = measure ~width_method:`Unicode ~tab_width:2 s in
+    let w = String.measure ~width_method:`Unicode ~tab_width:2 s in
     check_width label 0 w
   in
   check_zero "C1 U+0080" 0x0080;

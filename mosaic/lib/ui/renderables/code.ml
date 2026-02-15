@@ -822,7 +822,7 @@ let mount ?(props = Props.default) (node : Renderable.t) =
   let pool =
     match Renderable.Internal.glyph_pool node with
     | Some p -> p
-    | None -> Glyph.create_pool ()
+    | None -> Glyph.Pool.create ()
   in
   let buffer =
     Text_buffer.create ~glyph_pool:pool ~capacity:default_capacity

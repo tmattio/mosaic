@@ -133,7 +133,7 @@ type clip_rect = { x : int; y : int; width : int; height : int }
 val create :
   width:int ->
   height:int ->
-  ?glyph_pool:Glyph.pool ->
+  ?glyph_pool:Glyph.Pool.t ->
   ?width_method:Glyph.width_method ->
   ?respect_alpha:bool ->
   unit ->
@@ -162,7 +162,7 @@ val create :
 
 (** {1 Grid Properties} *)
 
-val glyph_pool : t -> Glyph.pool
+val glyph_pool : t -> Glyph.Pool.t
 (** [glyph_pool t] returns the glyph pool used by [t]. Sharing pools across
     grids enables efficient {!blit} operations. *)
 
@@ -222,8 +222,8 @@ val get_code : t -> int -> int
 val get_glyph : t -> int -> Glyph.t
 (** [get_glyph t idx] returns the glyph value at linear index [idx].
 
-    For use with glyph pool operations like {!Glyph.blit}, {!Glyph.length}, and
-    {!Glyph.to_string}. Zero-allocation. *)
+    For use with glyph pool operations like {!Glyph.Pool.blit},
+    {!Glyph.Pool.length}, and {!Glyph.Pool.to_string}. Zero-allocation. *)
 
 val get_attrs : t -> int -> int
 (** [get_attrs t idx] returns the packed attribute integer at [idx]. *)

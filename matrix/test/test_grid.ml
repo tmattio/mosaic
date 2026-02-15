@@ -111,7 +111,7 @@ let alpha_blit_orphan_continuation_draws_space () =
 let cross_pool_blit_remaps_graphemes () =
   let src = Grid.create ~width:2 ~height:1 () in
   Grid.draw_text src ~x:0 ~y:0 ~text:"😊";
-  let other_pool = Glyph.create_pool () in
+  let other_pool = Glyph.Pool.create () in
   let dst = Grid.create ~width:2 ~height:1 ~glyph_pool:other_pool () in
   Grid.blit_region ~src ~dst ~src_x:0 ~src_y:0 ~width:2 ~height:1 ~dst_x:0
     ~dst_y:0;
@@ -128,7 +128,7 @@ let blit_preserves_respect_alpha () =
   is_true ~msg:"respect alpha copied" (Grid.respect_alpha dst)
 
 let blit_bulk_tracks_graphemes () =
-  let pool = Glyph.create_pool () in
+  let pool = Glyph.Pool.create () in
   let src = Grid.create ~width:4 ~height:1 ~glyph_pool:pool () in
   let dst = Grid.create ~width:4 ~height:1 ~glyph_pool:pool () in
   Grid.draw_text src ~x:0 ~y:0 ~text:"a😊a";
@@ -240,7 +240,7 @@ let create_defaults () =
   is_true ~msg:"width method" (Grid.width_method grid = `Unicode)
 
 let create_with_configuration () =
-  let pool = Glyph.create_pool () in
+  let pool = Glyph.Pool.create () in
   let grid =
     Grid.create ~width:1 ~height:1 ~glyph_pool:pool ~width_method:`Wcwidth
       ~respect_alpha:true ()
@@ -607,7 +607,7 @@ let draw_text_overflow_does_nothing () =
 
 let ambiguous_width_defaults_to_one () =
   let check_width label s =
-    let width = Glyph.measure ~width_method:`Unicode ~tab_width:2 s in
+    let width = Glyph.String.measure ~width_method:`Unicode ~tab_width:2 s in
     equal ~msg:label int 1 width
   in
   check_width "┌ width" "┌";
@@ -631,7 +631,7 @@ let canvas_like_resizing () =
   let grid = Grid.create ~width:1 ~height:1 () in
   let write_text text ~x ~y =
     let width =
-      Glyph.measure ~width_method:(Grid.width_method grid) ~tab_width:2 text
+      Glyph.String.measure ~width_method:(Grid.width_method grid) ~tab_width:2 text
     in
     let width = if width <= 0 then 1 else width in
     if x + width > Grid.width grid then

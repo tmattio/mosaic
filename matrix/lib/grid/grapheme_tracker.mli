@@ -1,7 +1,7 @@
 (** Buffer-local reference counting for grapheme clusters.
 
     This module implements a "write-combining" strategy for reference counting.
-    Instead of touching the shared [Glyph.pool] for every cell assignment in a
+    Instead of touching the shared [Glyph.Pool.t] for every cell assignment in a
     grid, this tracker maintains a local count of usage within a specific grid
     buffer.
 
@@ -13,7 +13,7 @@
 type t
 (** The abstract state of a tracker. *)
 
-val create : Glyph.pool -> t
+val create : Glyph.Pool.t -> t
 (** [create pool] initializes a new tracker associated with the given global
     glyph pool. *)
 
