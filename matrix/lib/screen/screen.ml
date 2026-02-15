@@ -214,7 +214,21 @@ let render_generic ~pool ~row_offset ~use_explicit_width
       let idx = (y * width) + x in
       let curr_width = Grid.cell_width curr idx in
 
-      if curr_width <= 0 then process_cols y (x + 1) row_cells
+      if curr_width <= 0 then (
+        (* Continuation cell: defensively clear if it differs from the previous
+           frame. When a wide character is replaced by narrow ones, the stale
+           continuation marker would otherwise leave the old right-half visible
+           on terminals that don't implicitly clear it. *)
+        (if mode = `Diff && y < prev_height && x < prev_width then
+           match prev with
+           | None -> ()
+           | Some p ->
+               let prev_idx = (y * prev_width) + x in
+               if not (Grid.cells_equal p prev_idx curr idx) then (
+                 Ansi.cursor_position ~row:(row_offset + y + 1) ~col:(x + 1)
+                   writer;
+                 Ansi.emit (Ansi.char ' ') writer));
+        process_cols y (x + 1) row_cells)
       else if is_cell_changed y x idx curr_width then (
         (* Move cursor to start of changed run *)
         let target_row = row_offset + y + 1 in
