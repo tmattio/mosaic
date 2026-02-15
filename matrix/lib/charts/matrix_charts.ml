@@ -5770,8 +5770,8 @@ let draw ?view ?(x = 0) ?(y = 0) (t : t) (grid : G.t) ~width ~height : Layout.t
   let layout = compute_layout ?view ~x ~y t ~width ~height in
   (* Always clear the entire chart area to prevent stale axis labels/ticks from
      persisting between frames. Use background color if set, otherwise
-     Color.Default clears cells to blank (space with alpha=0). *)
-  let bg = Option.value t.theme.background ~default:Color.Default in
+     Color.default clears cells to blank (space with alpha=0). *)
+  let bg = Option.value t.theme.background ~default:Color.default in
   G.fill_rect grid ~x ~y ~width ~height ~color:bg;
 
   draw_grid layout grid;

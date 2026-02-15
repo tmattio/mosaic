@@ -71,9 +71,8 @@
     {1 Contracts}
 
     - Constructors clamp components to their valid ranges instead of raising.
-    - [{!Default}] represents "use terminal default" and is encoded as RGBA
-      (0,0,0,0); any function returning RGBA values documents how to interpret
-      that sentinel.
+    - The {!default} color is [Rgba \{r=0; g=0; b=0; a=0\}] (fully transparent).
+      Renderers treat alpha = 0 as "use terminal default."
     - Palette indices are coerced into their supported range \[0,255\] to match
       terminal behaviour.
     - All conversion helpers preserve semantic equality: converting to packed
@@ -81,7 +80,6 @@
       alpha and [{!Default}]'s sentinel value. *)
 
 type t =
-  | Default  (** Terminal default color (foreground or background). *)
   | Black
   | Red
   | Green
@@ -124,7 +122,10 @@ type t =
 (** {1 Basic Color Constructors} *)
 
 val default : t
-(** Terminal's default color (depends on user's terminal configuration). *)
+(** Fully transparent color representing the terminal default.
+
+    Equivalent to [Rgba \{r=0; g=0; b=0; a=0\}]. When used as foreground or
+    background, renderers emit SGR 39/49 (reset to terminal default). *)
 
 val black : t
 val red : t
@@ -230,15 +231,14 @@ val alpha : t -> float
     {b Zero-allocation}: uses direct pattern matching.
 
     Non-RGBA colors (basic, extended and RGB variants) return 1.0 (fully
-    opaque). {!Default} returns 0.0 to preserve the "use terminal default"
-    sentinel; check [alpha c = 0.0] before interpreting the corresponding RGB
-    components. *)
+    opaque). RGBA colors return their alpha component. The {!default} color
+    returns 0.0 (fully transparent). *)
 
 val to_rgba_f : t -> float * float * float * float
 (** [to_rgba_f color] converts to normalized RGBA floats in \[0.0, 1.0\].
 
-    {b Allocates} a 4-tuple. For {!Default}, returns [(0.0, 0.0, 0.0, 0.0)]; the
-    zero alpha plays the same sentinel role as in {!to_rgba}. *)
+    {b Allocates} a 4-tuple. Fully transparent colors (such as {!default})
+    return [(0.0, 0.0, 0.0, 0.0)]. *)
 
 val with_rgba_f : t -> (float -> float -> float -> float -> 'a) -> 'a
 (** [with_rgba_f color f] calls [f r g b a] with normalized RGBA floats in
@@ -251,17 +251,16 @@ val with_rgba_f : t -> (float -> float -> float -> float -> 'a) -> 'a
 val to_rgba : t -> int * int * int * int
 (** [to_rgba color] converts to RGBA integers in \[0, 255\].
 
-    {b Allocates} a 4-tuple. Non-RGBA colors return alpha = 255. {!Default}
-    returns [(0, 0, 0, 0)] with alpha = 0 as a sentinel to indicate terminal
-    default. When alpha = 0, renderers must detect and substitute configured
-    defaults; compare alpha before using RGB components. *)
+    {b Allocates} a 4-tuple. Non-RGBA colors return alpha = 255. Colors with
+    alpha = 0 (such as {!default}) are fully transparent; renderers typically
+    treat these as "use terminal default." *)
 
 val to_rgb : t -> int * int * int
 (** [to_rgb color] converts to RGB integers in \[0, 255\], discarding alpha.
 
-    {b Allocates} a 3-tuple. [{!Default}] is mapped to [(0, 0, 0)] here; use
-    {!alpha} or {!to_rgba} if you need to distinguish it from an explicit black.
-*)
+    {b Allocates} a 3-tuple. Fully transparent colors (such as {!default}) map
+    to [(0, 0, 0)]; use {!alpha} or {!to_rgba} to distinguish them from an
+    explicit black. *)
 
 val to_hsl : t -> float * float * float * float
 (** [to_hsl color] converts to HSL color space.
@@ -349,7 +348,10 @@ val pack : t -> int64
     - RGB: tag 3 + 24-bit RGB value
     - RGBA: tag 4 + 32-bit RGBA value
 
-    Invariant: [equal color (unpack (pack color))]. *)
+    Invariant: [equal color (unpack (pack color))].
+
+    The legacy tag 0 (previously used for [Default]) is decoded as
+    [Rgba \{r=0; g=0; b=0; a=0\}] for backward compatibility. *)
 
 val unpack : int64 -> t
 (** [unpack bits] decodes a packed color.

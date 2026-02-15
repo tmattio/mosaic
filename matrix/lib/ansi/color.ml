@@ -1,5 +1,4 @@
 type t =
-  | Default
   | Black
   | Red
   | Green
@@ -92,7 +91,6 @@ let palette_flat =
   arr
 
 let palette_index = function
-  | Default -> -1
   | Black -> 0
   | Red -> 1
   | Green -> 2
@@ -127,7 +125,6 @@ let palette_rgb_int idx =
 
 let to_rgb color =
   match color with
-  | Default -> (0, 0, 0)
   | Rgb { r; g; b } -> (r, g, b)
   | Rgba { r; g; b; _ } -> (r, g, b)
   | _ ->
@@ -135,23 +132,15 @@ let to_rgb color =
       if idx >= 0 then palette_rgb_int idx else (0, 0, 0)
 
 let to_rgba color =
-  match color with
-  | Default ->
-      (* Use alpha=0 as a sentinel to indicate "use terminal default color".
-         This allows Default to be distinguished from explicit Black
-         (0,0,0,255). Renderers should detect alpha=0 and substitute their
-         configured default colors. *)
-      (0, 0, 0, 0)
-  | _ ->
-      let r, g, b = to_rgb color in
-      let a = match color with Rgba { a; _ } -> a | _ -> 255 in
-      (r, g, b, a)
+  let r, g, b = to_rgb color in
+  let a = match color with Rgba { a; _ } -> a | _ -> 255 in
+  (r, g, b, a)
 
 let to_rgba_f color =
   let r, g, b, a = to_rgba color in
   (float_of_byte r, float_of_byte g, float_of_byte b, float_of_byte a)
 
-let default = Default
+let default = Rgba { r = 0; g = 0; b = 0; a = 0 }
 let black = Black
 let red = Red
 let green = Green
@@ -257,7 +246,6 @@ let to_hsl color =
    | (b << 8) | a *)
 let[@inline] rgba_packed color =
   match color with
-  | Default -> 0 (* r=0, g=0, b=0, a=0 *)
   | Rgb { r; g; b } -> (r lsl 24) lor (g lsl 16) lor (b lsl 8) lor 255
   | Rgba { r; g; b; a } -> (r lsl 24) lor (g lsl 16) lor (b lsl 8) lor a
   | _ ->
@@ -276,7 +264,7 @@ let hash color =
   h lxor (h lsr 16) land max_int
 
 let alpha color =
-  match color with Default -> 0. | Rgba { a; _ } -> float_of_byte a | _ -> 1.
+  match color with Rgba { a; _ } -> float_of_byte a | _ -> 1.
 
 let[@inline] with_rgba_f color f =
   let packed = rgba_packed color in
@@ -348,9 +336,10 @@ let detected_level =
 let detect_level () = Lazy.force detected_level
 
 let downgrade ?level color =
-  (* Default is a sentinel meaning "use terminal default" - preserve it *)
+  (* Transparent colors (alpha=0) represent "use terminal default" — preserve
+     them through downgrading since they carry no meaningful RGB to quantize. *)
   match color with
-  | Default -> Default
+  | Rgba { a = 0; _ } -> color
   | _ -> (
       let effective_level = Option.value level ~default:(detect_level ()) in
       match effective_level with
@@ -378,7 +367,7 @@ let downgrade ?level color =
 (* Emit SGR codes via push callback. Zero-allocation. *)
 let emit_sgr_codes ~bg push color =
   match color with
-  | Default -> push (if bg then 49 else 39)
+  | Rgba { a = 0; _ } -> push (if bg then 49 else 39)
   | Black -> push (if bg then 40 else 30)
   | Red -> push (if bg then 41 else 31)
   | Green -> push (if bg then 42 else 32)
@@ -405,7 +394,6 @@ let emit_sgr_codes ~bg push color =
       push r;
       push g;
       push b
-  | Rgba { a; _ } when bg && a = 0 -> push 49
   | Rgba { r; g; b; _ } ->
       push (if bg then 48 else 38);
       push 2;
@@ -423,7 +411,6 @@ let invert color =
   of_rgb (255 - r) (255 - g) (255 - b)
 
 module Packed = struct
-  let tag_default = 0L
   let tag_basic = Int64.shift_left 1L 61
   let tag_extended = Int64.shift_left 2L 61
   let tag_rgb = Int64.shift_left 3L 61
@@ -433,7 +420,6 @@ module Packed = struct
 
   let encode color =
     match color with
-    | Default -> tag_default
     | Black | Red | Green | Yellow | Blue | Magenta | Cyan | White
     | Bright_black | Bright_red | Bright_green | Bright_yellow | Bright_blue
     | Bright_magenta | Bright_cyan | Bright_white ->
@@ -451,7 +437,7 @@ module Packed = struct
     let tag = Int64.logand packed tag_mask in
     let data = Int64.logand packed data_mask |> Int64.to_int in
     match Int64.to_int (Int64.shift_right_logical tag 61) with
-    | 0 -> Default
+    | 0 -> Rgba { r = 0; g = 0; b = 0; a = 0 }
     | 1 -> of_palette_index data (* Basics map to 0-15 *)
     | 2 -> Extended data
     | 3 ->
@@ -465,14 +451,13 @@ module Packed = struct
         let b = (data lsr 8) land 0xFF in
         let a = data land 0xFF in
         Rgba { r; g; b; a }
-    | _ -> Default
+    | _ -> Rgba { r = 0; g = 0; b = 0; a = 0 }
 end
 
 let pack = Packed.encode
 let unpack = Packed.decode
 
 let string_of_color = function
-  | Default -> "Default"
   | Black -> "Black"
   | Red -> "Red"
   | Green -> "Green"
