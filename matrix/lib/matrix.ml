@@ -100,8 +100,6 @@ type app = {
 
 let clamp lo hi v = max lo (min hi v)
 
-let min_static_rows ~is_tty ~mode ~height =
-  if mode = `Primary && is_tty && height > 1 then 1 else 0
 
 (* Config accessors *)
 
@@ -115,15 +113,14 @@ let render_offset_of_cursor ~terminal ~height row col =
   if row >= height then (
     Terminal.send terminal "\r\n";
     (height - 1, false))
-  else (row, col <> 1)
+  else if col = 1 then (max 0 (row - 1), true)
+  else (row, true)
 
 (* Layout *)
 
 let apply_primary_region t ~render_offset ~resize =
   let height = max 1 t.height in
-  let is_tty = Terminal.tty (t.terminal) in
-  let min_static = min_static_rows ~is_tty ~mode:t.config.mode ~height in
-  let render_offset = clamp min_static (height - 1) render_offset in
+  let render_offset = clamp 0 (height - 1) render_offset in
   let tui_height = max 1 (height - render_offset) in
   t.render_offset <- render_offset;
   t.tui_height <- tui_height;
@@ -256,7 +253,11 @@ let static_write_raw_immediate t text =
   else begin
     let prev_render_offset = t.render_offset in
     let prev_tui_height = t.tui_height in
-    apply_primary_region t ~render_offset:t.render_offset ~resize:false;
+    let render_offset =
+      if t.config.mode = `Primary && t.render_offset = 0 then 1
+      else t.render_offset
+    in
+    apply_primary_region t ~render_offset ~resize:false;
     if t.render_offset <> prev_render_offset || t.tui_height <> prev_tui_height
     then (
       t.needs_region_clear <- true;
@@ -310,10 +311,8 @@ let static_clear t =
     let cols, rows = t.io.terminal_size () in
     t.width <- max 1 cols;
     t.height <- max 1 rows;
-    let is_tty = Terminal.tty (t.terminal) in
-    let min_static = min_static_rows ~is_tty ~mode:t.config.mode ~height:t.height in
-    t.render_offset <- min_static;
-    t.tui_height <- max 1 (t.height - t.render_offset);
+    t.render_offset <- 0;
+    t.tui_height <- t.height;
     t.static_queue <- [];
     t.static_needs_newline <- false;
     invalidate_inline_state t;
@@ -401,14 +400,13 @@ let submit t =
 
         (match t.config.mode with
         | `Primary ->
-            let min_static = min_static_rows ~is_tty ~mode:t.config.mode ~height in
-            let max_ui_rows = max 1 (height - min_static) in
+            let max_ui_rows = max 1 height in
             let target_rows = min required_rows max_ui_rows in
             if required_rows > max_ui_rows then (
               clipped := true;
               render_height_limit := Some max_ui_rows);
             let render_offset =
-              clamp min_static (height - 1) t.render_offset
+              clamp 0 (height - 1) t.render_offset
             in
             if render_offset <> t.render_offset then (
               t.render_offset <- render_offset;
