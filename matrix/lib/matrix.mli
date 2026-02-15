@@ -1,20 +1,16 @@
 (** Immediate-mode runtime for terminal user interfaces.
 
-    Matrix owns the terminal while an application runs: it switches the TTY into
-    raw mode, negotiates mouse/keyboard protocols, builds frames against a
-    double-buffered grid, and diffs the grid to emit minimal ANSI output. The
-    module re-exports the lower-level subsystems (ANSI generation, grids,
-    terminal protocol, input parsing, images) and exposes an immediate-mode
-    runtime entry point via {!create}.
+    Matrix owns the terminal while an application runs: it negotiates
+    mouse/keyboard protocols, builds frames against a double-buffered grid, and
+    diffs the grid to emit minimal ANSI output. The module re-exports the
+    lower-level subsystems (ANSI generation, grids, terminal protocol, input
+    parsing, images) and exposes an immediate-mode application via {!create}.
 
     {1 Overview}
 
-    Immediate mode: create a runtime, then either use the high-level {!run}
-    loop, or drive the loop manually.
-
-    If driving manually: 1. Call {!prepare} to start a frame (clears buffers,
-    updates layout). 2. Poll events via the runtime. 3. Render into {!grid} and
-    {!hits}. 4. Call {!submit} to flush the frame to the terminal. *)
+    {!create} returns an inert application handle with configuration only.
+    A platform-specific runtime (e.g., {!Matrix_unix}) attaches I/O via
+    {!attach}, then calls {!run} to drive the event loop. *)
 
 (** {1 Sub-Libraries} *)
 
@@ -71,7 +67,8 @@ type debug_overlay_corner =
 (** Corner to anchor the debug overlay when enabled. *)
 
 type app
-(** Opaque application runtime handle returned by {!create}. *)
+(** Opaque application handle. Created by {!create}, run by a platform-specific
+    runtime such as Matrix_unix. *)
 
 (** {1 Lifecycle} *)
 
@@ -97,16 +94,12 @@ val create :
   ?explicit_width:bool ->
   ?input_timeout:float option ->
   ?resize_debounce:float option ->
-  ?initial_caps:Terminal.capabilities ->
-  ?output:[ `Fd of Unix.file_descr | `Stdout ] ->
-  ?signal_handlers:bool ->
   unit ->
   app
-(** [create ()] starts an immediate-mode runtime and returns its handle.
+(** [create ()] builds an application with the given configuration.
 
-    The runtime owns the terminal until {!close} is called, managing raw mode,
-    alternate screen, input protocols, and frame rendering. All configuration is
-    specified via optional parameters organized below by category.
+    The app is inert until passed to a runtime (e.g., [Matrix_unix.run]).
+    No I/O is performed and no terminal state is modified.
 
     {4 Display Mode}
 
@@ -114,62 +107,45 @@ val create :
       Presentation mode for the renderer. Defaults to [`Alt] (alternate screen).
       See {!mode} for full description of [`Alt] and [`Primary] modes.
     @param raw_mode
-      Whether to switch the TTY into raw mode (disables line buffering and
-      echo). Defaults to [true]. Set to [false] for cooked mode if the
-      application manages terminal configuration externally.
+      Whether the runtime should switch the TTY into raw mode (disables line
+      buffering and echo). Defaults to [true].
 
     {4 Rendering Configuration}
 
     @param respect_alpha
       Whether to honor alpha blending when rendering cells. Defaults to [false].
-      Enable for semi-transparent overlays.
     @param cursor_visible
       Initial cursor visibility. Defaults to [true] in [`Alt] mode and [false]
-      in [`Primary] mode. The cursor is hidden automatically in [`Alt] mode.
+      in [`Primary] mode.
     @param explicit_width
       Whether to use explicit wcwidth values instead of querying the terminal.
-      Defaults to the terminal's reported capability. Override when the
-      terminal's width computation is known to be incompatible.
-    @param initial_caps
-      Optional seed capabilities passed directly to {!Terminal.make} (useful for
-      tests or environments that want to bypass probing).
-    @param output
-      Output target. Defaults to [`Stdout]. Use [`Fd fd] to write to a specific
-      file descriptor (e.g., for splitting output from logs).
+      Defaults to [false].
 
     {4 Frame Timing}
 
     @param target_fps
-      Optional FPS cap in Hz. Defaults to [Some 30.]. Limits the maximum frame
-      rate to prevent excessive CPU usage. Set to [None] for uncapped rendering.
+      Optional FPS cap in Hz. Defaults to [Some 30.]. Set to [None] for
+      uncapped rendering.
     @param resize_debounce
-      Debounce window in seconds for resize events. Defaults to [Some 0.1]. Set
-      to [None] to apply resizes immediately.
+      Debounce window in seconds for resize events. Defaults to [Some 0.1].
 
     {4 Input Configuration}
 
     @param mouse_enabled Whether to enable mouse tracking. Defaults to [true].
     @param mouse
       Explicit mouse tracking mode. Defaults to [None], which selects [`Sgr_any]
-      when [mouse_enabled] is [true]. See [Terminal.mouse_mode] for available
-      modes.
+      when [mouse_enabled] is [true].
     @param bracketed_paste
-      Whether to enable bracketed paste mode. Defaults to [true] (enabled if the
-      terminal supports it). Prevents accidental command execution when pasting
-      text.
+      Whether to enable bracketed paste mode. Defaults to [true].
     @param focus_reporting
-      Whether to enable focus-in/focus-out events. Defaults to [true] (enabled
-      if the terminal supports it).
+      Whether to enable focus-in/focus-out events. Defaults to [true].
     @param kitty_keyboard
-      Kitty keyboard protocol configuration. Defaults to [`Auto] (auto-detect
-      support). See {!kitty_keyboard} for full description.
+      Kitty keyboard protocol configuration. Defaults to [`Auto].
     @param exit_on_ctrl_c
-      Whether to treat Ctrl+C as an exit signal. Defaults to [true]. Set to
-      [false] to handle Ctrl+C as a normal input event.
+      Whether to treat Ctrl+C as an exit signal. Defaults to [true].
     @param input_timeout
       Timeout in seconds for input polling when no cadence is active. Defaults
-      to [None] (block indefinitely). Useful for implementing application-level
-      timeouts.
+      to [None] (block indefinitely).
 
     {4 Debug and Diagnostics}
 
@@ -178,33 +154,15 @@ val create :
     @param debug_overlay_corner
       Corner to anchor the debug overlay. Defaults to [`Bottom_right].
     @param debug_overlay_capacity
-      Maximum number of metrics samples retained by the debug overlay. Defaults
-      to [120].
+      Maximum number of metrics samples retained by the debug overlay.
     @param frame_dump_every
-      Dump every Nth frame to disk. Defaults to [0] (disabled). Set to a
-      positive integer to enable periodic frame dumps for debugging.
+      Dump every Nth frame to disk. Defaults to [0] (disabled).
     @param frame_dump_dir
-      Directory for frame dumps. Defaults to [None] (uses current working
-      directory).
+      Directory for frame dumps.
     @param frame_dump_pattern
-      Filename pattern for frame dumps. Defaults to [None] (uses default
-      pattern).
+      Filename pattern for frame dumps.
     @param frame_dump_hits
-      Whether to include hit grid in frame dumps. Defaults to [false].
-
-    {4 Signal Handling}
-
-    @param signal_handlers
-      Whether to install signal handlers for graceful shutdown on SIGTERM,
-      SIGINT, SIGQUIT, and SIGABRT. Defaults to [true]. Set to [false] if your
-      application manages its own signal handling. When enabled, these signals
-      will trigger terminal cleanup before exiting. You can also call
-      {!install_signal_handlers} manually if you create with
-      [~signal_handlers:false] but later decide you want them.
-
-    The runtime starts immediately with the terminal in the configured state.
-    Call {!run} for automatic event loop management, or drive the loop manually
-    with {!prepare} and {!submit}. *)
+      Whether to include hit grid in frame dumps. Defaults to [false]. *)
 
 val run :
   ?on_frame:(app -> dt:float -> unit) ->
@@ -216,10 +174,10 @@ val run :
 (** [run ?on_frame ?on_input ?on_resize ~on_render app] drives an immediate-mode
     loop.
 
-    Matrix manages the lifecycle automatically: 1. Polls for events and invokes
-    [on_input] / [on_resize]. 2. Calls {!prepare} to clear buffers. 3. Invokes
-    [on_render] (users should draw to {!grid} here). 4. Calls {!submit} to flush
-    output.
+    Requires {!attach} to have been called. Matrix manages the lifecycle
+    automatically: 1. Polls for events and invokes [on_input] / [on_resize].
+    2. Calls {!prepare} to clear buffers. 3. Invokes [on_render] (users should
+    draw to {!grid} here). 4. Calls {!submit} to flush output.
 
     [on_frame] runs before [prepare] with the elapsed seconds since the last
     render. The loop exits when {!running} becomes [false] and closes the
@@ -235,16 +193,10 @@ val prepare : app -> unit
     {b Note:} If you use {!run}, this is called automatically. *)
 
 val grid : app -> Grid.t
-(** [grid app] returns the mutable grid for the current frame.
-
-    This accessor is side-effect free. To clear the grid for a new frame, call
-    {!prepare}. *)
+(** [grid app] returns the mutable grid for the current frame. *)
 
 val hits : app -> Screen.Hit_grid.t
-(** [hits app] returns the hit grid for the current frame.
-
-    This accessor is side-effect free. To clear the grid for a new frame, call
-    {!prepare}. *)
+(** [hits app] returns the hit grid for the current frame. *)
 
 val submit : app -> unit
 (** [submit app] diffs the current frame against the previous one and flushes
@@ -252,22 +204,8 @@ val submit : app -> unit
     {!grid}. *)
 
 val close : app -> unit
-(** [close app] tears down the runtime and restores the terminal. Safe to call
+(** [close app] tears down protocols and calls [io.cleanup]. Safe to call
     multiple times. *)
-
-val install_signal_handlers : unit -> unit
-(** [install_signal_handlers ()] installs signal handlers for graceful shutdown
-    on SIGTERM, SIGINT, SIGQUIT, and SIGABRT. This is called automatically by
-    {!create} unless [~signal_handlers:false] is passed. Calling this function
-    multiple times is safe; handlers are only installed once.
-
-    When a signal is received, all registered shutdown handlers are run (which
-    includes closing any active Matrix runtimes to restore terminal state), then
-    the process exits with code [128 + signal_number].
-
-    If you need custom signal handling, pass [~signal_handlers:false] to
-    {!create} and manage signals yourself, ensuring you call {!close} before
-    exiting. *)
 
 val stop : app -> unit
 (** [stop app] marks the runtime as stopped. The run loop will exit on the next
@@ -305,30 +243,22 @@ val running : app -> bool
 (** [running app] reports if the event loop is active. *)
 
 val request_redraw : app -> unit
-(** [request_redraw app] marks the frame dirty for the next loop iteration.
-
-    When no cadence is active (no [target_fps]), Matrix also marks frames dirty
-    whenever it reads new input. With a cadence, the request ensures the next
-    scheduled frame redraws immediately, but the cadence still bounds the
-    maximum frame rate. *)
+(** [request_redraw app] marks the frame dirty for the next loop iteration. *)
 
 (** {1 Diagnostics} *)
 
 val set_debug_overlay :
   ?corner:debug_overlay_corner -> app -> enabled:bool -> unit
-(** [set_debug_overlay ?corner app ~enabled] toggles the built-in debug overlay.
-
-    When [corner] is provided the overlay is re-anchored; enabling requests a
-    redraw. *)
+(** [set_debug_overlay ?corner app ~enabled] toggles the built-in debug
+    overlay. *)
 
 val toggle_debug_overlay : ?corner:debug_overlay_corner -> app -> unit
-(** [toggle_debug_overlay ?corner app] flips overlay visibility and optionally
-    re-anchors it. *)
+(** [toggle_debug_overlay ?corner app] flips overlay visibility. *)
 
 val configure_frame_dump :
   ?every:int -> ?dir:string -> ?pattern:string -> ?hits:bool -> app -> unit
 (** [configure_frame_dump ?every ?dir ?pattern ?hits app] updates the periodic
-    frame-dump schedule. [every <= 0] disables periodic dumps. *)
+    frame-dump schedule. *)
 
 val dump_frame : ?hits:bool -> ?dir:string -> ?pattern:string -> app -> unit
 (** [dump_frame ?hits ?dir ?pattern app] writes the current frame to disk
@@ -336,14 +266,16 @@ val dump_frame : ?hits:bool -> ?dir:string -> ?pattern:string -> app -> unit
 
 (** {1 Terminal Information} *)
 
+val mode : app -> mode
+(** [mode app] returns the presentation mode configured at creation time. *)
+
 val size : app -> int * int
 (** [size app] returns the current dynamic-region dimensions as [(cols, rows)].
 *)
 
 val pixel_resolution : app -> (int * int) option
 (** [pixel_resolution app] returns the last known pixel resolution reported by
-    the terminal as [(width, height)], or [None] if unknown or not yet queried.
-    Matrix queries at startup and on every resize; not all terminals answer. *)
+    the terminal as [(width, height)], or [None] if unknown. *)
 
 val terminal : app -> Terminal.t
 (** [terminal app] returns the underlying terminal handle. *)
@@ -355,11 +287,7 @@ val capabilities : app -> Terminal.capabilities
 
 val static_write : app -> string -> unit
 (** [static_write app text] writes [text] to the primary screen above the
-    renderer.
-
-    Static output is ignored in [`Alt] mode. In [`Primary] mode it writes into
-    the scroll region above the UI when available; if no static region exists,
-    the output scrolls the full screen and the UI is fully repainted. *)
+    renderer. Ignored in [`Alt] mode. *)
 
 val static_print : app -> string -> unit
 (** [static_print app text] behaves like {!static_write} but ensures [text] ends
@@ -367,7 +295,7 @@ val static_print : app -> string -> unit
 
 val static_clear : app -> unit
 (** [static_clear app] clears previously written static content and resets the
-    primary scroll region (leaving one static row when possible). *)
+    primary scroll region. *)
 
 (** {1 Cursor Control} *)
 
@@ -385,3 +313,57 @@ val set_cursor_position : app -> row:int -> col:int -> unit
 
 val set_cursor_color : app -> r:float -> g:float -> b:float -> a:float -> unit
 (** [set_cursor_color app ~r ~g ~b ~a] sets the terminal cursor color. *)
+
+(** {1 Runtime Integration}
+
+    Used by platform-specific runtimes to initialize and drive the application.
+    Not intended for direct use by application code. *)
+
+type io = {
+  write_output : bytes -> int -> int -> unit;
+      (** Write rendered frame bytes to terminal output. *)
+  now : unit -> float;
+      (** Current wall-clock time in seconds. *)
+  wake : unit -> unit;
+      (** Wake the event loop (cross-thread/signal safe). *)
+  terminal_size : unit -> int * int;
+      (** Query terminal dimensions as [(cols, rows)]. *)
+  enter_raw_mode : unit -> unit;
+      (** Enter raw mode (idempotent). *)
+  leave_raw_mode : unit -> unit;
+      (** Leave raw mode (idempotent). *)
+  flush_input : unit -> unit;
+      (** Discard unread input bytes. *)
+  read_events : timeout:float option -> on_event:(Input.t -> unit) -> unit;
+      (** Block up to [timeout] seconds, calling [on_event] for each input
+          event. Handles signal-generated events (e.g. SIGWINCH) internally. *)
+  query_cursor_position : timeout:float -> (int * int) option;
+      (** Send CPR query and block for response. *)
+  cleanup : unit -> unit;
+      (** Release runtime resources (close fds, deregister signals). *)
+}
+(** I/O callback record that platform-specific runtimes provide. *)
+
+val attach :
+  app ->
+  io:io ->
+  terminal:Terminal.t ->
+  width:int ->
+  height:int ->
+  ?render_offset:int ->
+  ?static_needs_newline:bool ->
+  unit ->
+  unit
+(** [attach app ~io ~terminal ~width ~height ()] wires I/O callbacks and a
+    terminal into the app. Must be called before {!run}. *)
+
+val apply_config : app -> unit
+(** [apply_config app] applies terminal protocol configuration (raw mode, mouse,
+    keyboard, etc.) based on the app's settings. Called by runtimes after
+    {!attach}. *)
+
+val render_offset_of_cursor :
+  terminal:Terminal.t -> height:int -> int -> int -> int * bool
+(** [render_offset_of_cursor ~terminal ~height row col] interprets a CPR
+    response as [(render_offset, static_needs_newline)]. Used by runtimes during
+    primary mode initialization. *)

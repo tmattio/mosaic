@@ -1,16 +1,14 @@
 let ensure_dir dir =
-  try
-    let st = Unix.stat dir in
-    if st.Unix.st_kind = Unix.S_DIR then ()
-    else raise (Unix.Unix_error (Unix.ENOTDIR, dir, ""))
-  with Unix.Unix_error (Unix.ENOENT, _, _) -> (
-    try Unix.mkdir dir 0o755
-    with Unix.Unix_error (Unix.EEXIST, _, _) ->
-      (* Race condition: another thread/process created the directory between
-         our stat and mkdir. Verify it's actually a directory. *)
-      let st = Unix.stat dir in
-      if st.Unix.st_kind <> Unix.S_DIR then
-        raise (Unix.Unix_error (Unix.ENOTDIR, dir, "")))
+  if Sys.file_exists dir then (
+    if not (Sys.is_directory dir) then
+      failwith (Printf.sprintf "Frame_dump: %s exists but is not a directory" dir))
+  else
+    try Sys.mkdir dir 0o755
+    with Sys_error _ ->
+      if Sys.file_exists dir && Sys.is_directory dir then ()
+      else
+        failwith
+          (Printf.sprintf "Frame_dump: cannot create directory %s" dir)
 
 let write_file path contents =
   let oc = open_out_bin path in

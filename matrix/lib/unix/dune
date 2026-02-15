@@ -1,0 +1,4 @@
+(library
+ (name matrix_unix)
+ (public_name matrix.unix)
+ (libraries matrix matrix.terminal matrix.input unix))
