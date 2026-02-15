@@ -95,7 +95,7 @@
     Clipping is applied hierarchically:
     - {!crop} sets a clip rectangle on the resulting image
     - Composition merges parent and child clips via intersection
-    - {!render} translates clips to {!Grid.push_scissor} calls
+    - {!render} translates clips to {!Grid.push_clip} calls
 
     Primitives store their local clip (from {!crop} ancestors) separately from
     position. During rendering, the image's base clip is merged with each
@@ -114,8 +114,8 @@
     ones). Use {!overlay} to control z-order explicitly: the last image in the
     list appears on top.
 
-    Rendering respects grid scissors set via {!Grid.push_scissor}. Clips are
-    applied by wrapping primitive execution in {!Grid.with_scissor}, which
+    Rendering respects grid clips set via {!Grid.push_clip}. Clips are
+    applied by wrapping primitive execution in {!Grid.clip}, which
     ensures balanced push/pop pairs even when primitives are skipped.
 
     {2 Hit Regions}

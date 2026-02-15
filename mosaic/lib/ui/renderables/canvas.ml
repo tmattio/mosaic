@@ -54,7 +54,7 @@ let run_draw t ~width ~height =
       let w = width and h = height in
       Grid.clear t.surface;
       let rect = Grid.{ x = 0; y = 0; width = w; height = h } in
-      Grid.with_scissor t.surface rect (fun () ->
+      Grid.clip t.surface rect (fun () ->
           draw t.surface ~width:w ~height:h)
   | _ -> ()
 
@@ -116,7 +116,7 @@ let render_canvas t renderable grid ~delta:_ =
     let blit_h = min lh (Grid.height src) in
     if blit_w > 0 && blit_h > 0 then
       let rect = Grid.{ x = lx; y = ly; width = blit_w; height = blit_h } in
-      Grid.with_scissor grid rect (fun () ->
+      Grid.clip grid rect (fun () ->
           Grid.blit_region ~src ~dst:grid ~src_x:0 ~src_y:0 ~width:blit_w
             ~height:blit_h ~dst_x:lx ~dst_y:ly))
 

@@ -94,9 +94,9 @@ let unicode_inherit_bg_on_unwritten_cell () =
 
 let overflow_respects_scissor_for_wide_grapheme () =
   let grid = Grid.create ~width:4 ~height:1 () in
-  Grid.push_scissor grid { x = 0; y = 0; width = 3; height = 1 };
+  Grid.push_clip grid { x = 0; y = 0; width = 3; height = 1 };
   Grid.draw_text grid ~x:2 ~y:0 ~text:"中";
-  Grid.pop_scissor grid;
+  Grid.pop_clip grid;
   equal ~msg:"x=3 untouched" int 32 (read_char grid 3 0)
 
 let alpha_blit_orphan_continuation_draws_space () =
@@ -274,16 +274,16 @@ let set_cell_writes_all_planes () =
 
 let set_cell_outside_scissor_ignored () =
   let grid = Grid.create ~width:2 ~height:2 () in
-  Grid.push_scissor grid { x = 1; y = 1; width = 1; height = 1 };
+  Grid.push_clip grid { x = 1; y = 1; width = 1; height = 1 };
   Grid.set_cell ~blend:true grid ~x:0 ~y:0 ~glyph:(Glyph.of_uchar (Uchar.of_char 'X')) ~fg:Ansi.Color.white
     ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
-  Grid.pop_scissor grid;
+  Grid.pop_clip grid;
   equal ~msg:"char remains empty" int 32 (read_char grid 0 0)
 
 let with_scissor_restores_stack () =
   let grid = Grid.create ~width:2 ~height:2 () in
   let result =
-    Grid.with_scissor grid { x = 0; y = 0; width = 1; height = 1 } (fun () ->
+    Grid.clip grid { x = 0; y = 0; width = 1; height = 1 } (fun () ->
         Grid.set_cell ~blend:true grid ~x:0 ~y:0 ~glyph:(Glyph.of_uchar (Uchar.of_char 'Y'))
           ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
         42)
@@ -476,17 +476,17 @@ let blit_region_blends_without_respect_alpha () =
 let scissor_push_intersects_parent () =
   let grid = Grid.create ~width:4 ~height:1 () in
   (* Parent scissor clips to first cell *)
-  Grid.push_scissor grid { x = 0; y = 0; width = 1; height = 1 };
+  Grid.push_clip grid { x = 0; y = 0; width = 1; height = 1 };
   (* Child scissor outside parent should intersect to empty, so writes are
      clipped *)
-  Grid.push_scissor grid { x = 2; y = 0; width = 1; height = 1 };
+  Grid.push_clip grid { x = 2; y = 0; width = 1; height = 1 };
   Grid.set_cell ~blend:true grid ~x:2 ~y:0 ~glyph:(Glyph.of_uchar (Uchar.of_char 'B')) ~fg:Ansi.Color.white
     ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   (* Pop child, write inside parent *)
-  Grid.pop_scissor grid;
+  Grid.pop_clip grid;
   Grid.set_cell ~blend:true grid ~x:0 ~y:0 ~glyph:(Glyph.of_uchar (Uchar.of_char 'A')) ~fg:Ansi.Color.white
     ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
-  Grid.pop_scissor grid;
+  Grid.pop_clip grid;
   equal ~msg:"child write clipped by parent" int (Char.code ' ')
     (read_char grid 2 0);
   equal ~msg:"parent restored after pop" int (Char.code 'A')
@@ -494,8 +494,8 @@ let scissor_push_intersects_parent () =
 
 let clear_scissor_allows_future_writes () =
   let grid = Grid.create ~width:2 ~height:2 () in
-  Grid.push_scissor grid { x = 0; y = 0; width = 1; height = 1 };
-  Grid.clear_scissor grid;
+  Grid.push_clip grid { x = 0; y = 0; width = 1; height = 1 };
+  Grid.clear_clip grid;
   Grid.set_cell ~blend:true grid ~x:1 ~y:1 ~glyph:(Glyph.of_uchar (Uchar.of_char 'W')) ~fg:Ansi.Color.white
     ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   equal ~msg:"write succeeded" int (Char.code 'W') (read_char grid 1 1)
@@ -666,10 +666,10 @@ let canvas_blit_into_box () =
     Grid.draw_text dest ~x:0 ~y ~text:"│";
     Grid.draw_text dest ~x:9 ~y ~text:"│"
   done;
-  Grid.push_scissor dest { x = 1; y = 1; width = 8; height = 4 };
+  Grid.push_clip dest { x = 1; y = 1; width = 8; height = 4 };
   Grid.blit_region ~src:canvas ~dst:dest ~src_x:0 ~src_y:0 ~width:8 ~height:4
     ~dst_x:1 ~dst_y:1;
-  Grid.pop_scissor dest;
+  Grid.pop_clip dest;
   equal ~msg:"blit row 0" string "┌────────┐" (row_trimmed dest 0);
   equal ~msg:"blit row 1" string "││───────│" (row_trimmed dest 1);
   equal ~msg:"blit row 2" string "││       │" (row_trimmed dest 2);
@@ -810,9 +810,9 @@ let box_drawing_characters_render () =
 let draw_text_ascii_respects_scissor () =
   let grid = Grid.create ~width:5 ~height:1 () in
   (* Only columns 2..4 are writable *)
-  Grid.push_scissor grid { x = 2; y = 0; width = 3; height = 1 };
+  Grid.push_clip grid { x = 2; y = 0; width = 3; height = 1 };
   Grid.draw_text grid ~x:0 ~y:0 ~text:"Hello";
-  Grid.pop_scissor grid;
+  Grid.pop_clip grid;
   (* Outside scissor should be untouched *)
   equal ~msg:"x=0 untouched" int 32 (read_char grid 0 0);
   equal ~msg:"x=1 untouched" int 32 (read_char grid 1 0);
@@ -823,10 +823,10 @@ let draw_text_ascii_respects_scissor () =
 
 let fill_rect_respects_scissor () =
   let grid = Grid.create ~width:4 ~height:2 () in
-  Grid.push_scissor grid { x = 1; y = 0; width = 2; height = 2 };
+  Grid.push_clip grid { x = 1; y = 0; width = 2; height = 2 };
   let color = Ansi.Color.green in
   Grid.fill_rect grid ~x:0 ~y:0 ~width:4 ~height:2 ~color;
-  Grid.pop_scissor grid;
+  Grid.pop_clip grid;
   (* Only x=1 and x=2 columns should be filled with spaces and color *)
   let er, eg, eb, _ = Ansi.Color.to_rgba color in
   for y = 0 to 1 do
@@ -856,20 +856,20 @@ let blit_region_respects_scissor () =
   let src = Grid.create ~width:3 ~height:1 () in
   Grid.draw_text src ~x:0 ~y:0 ~text:"ABC";
   let dst = Grid.create ~width:3 ~height:1 () in
-  Grid.push_scissor dst { x = 1; y = 0; width = 2; height = 1 };
+  Grid.push_clip dst { x = 1; y = 0; width = 2; height = 1 };
   Grid.blit_region ~src ~dst ~src_x:0 ~src_y:0 ~width:3 ~height:1 ~dst_x:0
     ~dst_y:0;
-  Grid.pop_scissor dst;
+  Grid.pop_clip dst;
   equal ~msg:"dst(0) untouched" int 32 (read_char dst 0 0);
   equal ~msg:"dst(1)=B" int (Char.code 'B') (read_char dst 1 0);
   equal ~msg:"dst(2)=C" int (Char.code 'C') (read_char dst 2 0)
 
 let clear_preserves_scissor_state () =
   let grid = Grid.create ~width:3 ~height:1 () in
-  Grid.push_scissor grid { x = 1; y = 0; width = 1; height = 1 };
+  Grid.push_clip grid { x = 1; y = 0; width = 1; height = 1 };
   Grid.clear grid;
   Grid.draw_text grid ~x:0 ~y:0 ~text:"A";
-  Grid.pop_scissor grid;
+  Grid.pop_clip grid;
   equal ~msg:"write outside preserved scissor ignored" int 32
     (read_char grid 0 0)
 

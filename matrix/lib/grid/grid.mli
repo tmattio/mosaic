@@ -31,9 +31,9 @@
 
     {1 Scissor Clipping}
 
-    A stack of clipping rectangles constrains drawing operations. Cells outside
-    the active scissor are silently skipped. Use {!with_scissor} for scoped
-    clipping or {!push_scissor}/{!pop_scissor} for manual control.
+    A stack of clipping regions constrains drawing operations. Cells outside
+    the active clip are silently skipped. Use {!clip} for scoped clipping or
+    {!push_clip}/{!pop_clip} for manual control.
 
     {1 Performance}
 
@@ -326,20 +326,20 @@ val set_cell :
     spanning this cell are cleaned up. The caller is responsible for writing
     continuation cells for multi-column graphemes. *)
 
-(** {1 Scissor Clipping} *)
+(** {1 Clipping} *)
 
-val push_scissor : t -> region -> unit
-(** Pushes a clipping rectangle. Subsequent draws are clipped to this
-    rectangle, completely replacing any previous scissor. *)
+val push_clip : t -> region -> unit
+(** Pushes a clipping region. Subsequent draws are clipped to this
+    region, completely replacing any previous clip. *)
 
-val pop_scissor : t -> unit
-(** Pops the most recent scissor. No-op if the stack is empty. *)
+val pop_clip : t -> unit
+(** Pops the most recent clip. No-op if the stack is empty. *)
 
-val clear_scissor : t -> unit
-(** Removes all scissor rectangles. *)
+val clear_clip : t -> unit
+(** Removes all clipping regions. *)
 
-val with_scissor : t -> region -> (unit -> 'a) -> 'a
-(** [with_scissor t region f] runs [f ()] with [region] as the active scissor,
+val clip : t -> region -> (unit -> 'a) -> 'a
+(** [clip t region f] runs [f ()] with [region] as the active clip,
     popping it on return (even on exception). *)
 
 (** {1 Opacity Stack}

@@ -601,7 +601,7 @@ let rec render_node_shared (captured_num : int option) (node : Renderable.t)
       in
       match clip with
       | None -> render_children ()
-      | Some rect -> Grid.with_scissor grid rect render_children))
+      | Some rect -> Grid.clip grid rect render_children))
 
 let clamp v ~min ~max = if v < min then min else if v > max then max else v
 

@@ -476,15 +476,15 @@ let resize t ~width ~height =
     t.fg <- new_fg;
     t.bg <- new_bg
 
-(* {1 Scissor clipping} *)
+(* {1 Clipping} *)
 
-let push_scissor t rect = Scissor_stack.push t.scissor_stack rect
-let pop_scissor t = Scissor_stack.pop t.scissor_stack
-let clear_scissor t = Scissor_stack.clear t.scissor_stack
+let push_clip t rect = Scissor_stack.push t.scissor_stack rect
+let pop_clip t = Scissor_stack.pop t.scissor_stack
+let clear_clip t = Scissor_stack.clear t.scissor_stack
 
-let with_scissor t rect f =
-  push_scissor t rect;
-  Fun.protect ~finally:(fun () -> pop_scissor t) f
+let clip t rect f =
+  push_clip t rect;
+  Fun.protect ~finally:(fun () -> pop_clip t) f
 
 (* {1 Opacity stack} *)
 

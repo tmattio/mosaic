@@ -508,7 +508,7 @@ let render ?hits ?(x = 0) ?(y = 0) grid t =
             in
             match clip with
             | None -> draw ()
-            | Some rect -> Grid.with_scissor grid rect draw)
+            | Some rect -> Grid.clip grid rect draw)
         | P_text r -> (
             let clip =
               merge_clip base_clip (shift_clip_opt r.clip ~dx:x ~dy:y)
@@ -524,7 +524,7 @@ let render ?hits ?(x = 0) ?(y = 0) grid t =
             in
             match clip with
             | None -> draw ()
-            | Some rect -> Grid.with_scissor grid rect draw)
+            | Some rect -> Grid.clip grid rect draw)
         | P_box r -> (
             let clip =
               merge_clip base_clip (shift_clip_opt r.clip ~dx:x ~dy:y)
@@ -542,7 +542,7 @@ let render ?hits ?(x = 0) ?(y = 0) grid t =
             in
             match clip with
             | None -> draw ()
-            | Some rect -> Grid.with_scissor grid rect draw)
+            | Some rect -> Grid.clip grid rect draw)
         | P_hit r ->
             let clip =
               merge_clip base_clip (shift_clip_opt r.clip ~dx:x ~dy:y)
@@ -556,7 +556,7 @@ let render ?hits ?(x = 0) ?(y = 0) grid t =
             let draw () = r.draw grid hits ~x:(x + r.x) ~y:(y + r.y) in
             match clip with
             | None -> draw ()
-            | Some rect -> Grid.with_scissor grid rect draw))
+            | Some rect -> Grid.clip grid rect draw))
       t.ops
 
 let draw t grid hits = render ~hits grid t

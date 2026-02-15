@@ -141,7 +141,7 @@ type render = t -> Grid.t -> delta:float -> unit
 
     Rendering operates within the node's computed layout bounds ({!val-x},
     {!val-y}, {!width}, {!height}) but may draw outside if not clipped. Use
-    {!Grid.with_scissor} or {!set_child_clip} for constrained rendering. *)
+    {!Grid.clip} or {!set_child_clip} for constrained rendering. *)
 
 type measure =
   known_dimensions:float option Toffee.Geometry.Size.t ->
