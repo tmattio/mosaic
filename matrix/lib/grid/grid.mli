@@ -63,7 +63,7 @@ val create :
   unit ->
   t
 (** [create ~width ~height ()] creates a grid with all cells initialized to
-    spaces (white foreground, black background).
+    spaces (white foreground, transparent background).
 
     @param glyph_pool Shared pool for grapheme storage. A fresh pool is
       allocated if omitted.
@@ -178,7 +178,7 @@ val resize : t -> width:int -> height:int -> unit
 
 val clear : ?color:Ansi.Color.t -> t -> unit
 (** [clear ?color t] resets all cells to spaces with white foreground and
-    [color] background (default: opaque black). Releases all glyph pool
+    [color] background (default: transparent). Releases all glyph pool
     references. The scissor stack is preserved. *)
 
 val blit : src:t -> dst:t -> unit

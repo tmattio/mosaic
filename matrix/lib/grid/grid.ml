@@ -280,10 +280,7 @@ let fill_defaults t =
   Buf.fill t.attrs 0;
   Buf.fill t.links no_link;
   Buf.fill t.fg 1.0;
-  let len = t.width * t.height in
-  for i = 0 to len - 1 do
-    Color_plane.write_rgba t.bg i 0.0 0.0 0.0 1.0
-  done
+  Buf.fill t.bg 0.0
 
 let create ~width ~height ?glyph_pool ?width_method ?(respect_alpha = false) ()
     =
@@ -390,7 +387,7 @@ let clear ?color t =
   Buf.fill t.links no_link;
   Buf.fill t.fg 1.0;
   let br, bg, bb, ba =
-    match color with None -> (0., 0., 0., 1.) | Some c -> Ansi.Color.to_rgba_f c
+    match color with None -> (0., 0., 0., 0.) | Some c -> Ansi.Color.to_rgba_f c
   in
   let len = t.width * t.height in
   for i = 0 to len - 1 do
@@ -431,7 +428,7 @@ let resize t ~width ~height =
             Buf.set old_attrs idx 0;
             Buf.set old_links idx no_link;
             Color_plane.write_rgba old_fg idx 1.0 1.0 1.0 1.0;
-            Color_plane.write_rgba old_bg idx 0.0 0.0 0.0 1.0)
+            Color_plane.write_rgba old_bg idx 0.0 0.0 0.0 0.0)
         done
       done
     end;
@@ -449,9 +446,6 @@ let resize t ~width ~height =
     Buf.fill new_links no_link;
     Buf.fill new_fg 1.0;
     Buf.fill new_bg 0.0;
-    for i = 0 to new_size - 1 do
-      Color_plane.set new_bg i 3 1.0
-    done;
 
     (* Copy surviving content *)
     let copy_w = min old_w width in
