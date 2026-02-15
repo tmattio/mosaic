@@ -176,7 +176,6 @@ val run :
   ?frame_dump_hits:bool ->
   ?cursor_visible:bool ->
   ?explicit_width:bool ->
-  ?render_thread:bool ->
   ?input_timeout:float option ->
   ?resize_debounce:float option ->
   ?initial_caps:Matrix.Terminal.capabilities ->
@@ -187,7 +186,7 @@ val run :
      ?bracketed_paste ?focus_reporting ?kitty_keyboard ?exit_on_ctrl_c
      ?debug_overlay ?debug_overlay_corner ?debug_overlay_capacity
      ?frame_dump_every ?frame_dump_dir ?frame_dump_pattern ?frame_dump_hits
-     ?cursor_visible ?explicit_width ?render_thread ?input_timeout
+     ?cursor_visible ?explicit_width ?input_timeout
      ?resize_debounce ?initial_caps ?output app] starts the application and
     blocks until it exits.
 

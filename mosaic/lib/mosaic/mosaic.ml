@@ -390,7 +390,7 @@ let run ?mode ?raw_mode ?target_fps ?respect_alpha ?mouse_enabled ?mouse
     ?bracketed_paste ?focus_reporting ?kitty_keyboard ?exit_on_ctrl_c
     ?debug_overlay ?debug_overlay_corner ?debug_overlay_capacity
     ?frame_dump_every ?frame_dump_dir ?frame_dump_pattern ?frame_dump_hits
-    ?cursor_visible ?explicit_width ?render_thread ?input_timeout
+    ?cursor_visible ?explicit_width ?input_timeout
     ?resize_debounce ?initial_caps ?output app =
   let model, init_cmd = app.init () in
   let matrix_app =
@@ -400,7 +400,7 @@ let run ?mode ?raw_mode ?target_fps ?respect_alpha ?mouse_enabled ?mouse
       ?mouse ?bracketed_paste ?focus_reporting ?kitty_keyboard ~exit_on_ctrl_c
       ?debug_overlay ?debug_overlay_corner ?debug_overlay_capacity
       ?frame_dump_every ?frame_dump_dir ?frame_dump_pattern ?frame_dump_hits
-      ?cursor_visible ?explicit_width ?render_thread ?input_timeout
+      ?cursor_visible ?explicit_width ?input_timeout
       ?resize_debounce ?initial_caps ?output ()
   in
   let width, height = Matrix.size matrix_app in

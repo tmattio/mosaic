@@ -8,5 +8,4 @@
   matrix.input
   matrix.terminal
   matrix.glyph
-  unix
-  threads))
+  unix))

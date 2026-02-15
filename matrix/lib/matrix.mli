@@ -4,8 +4,8 @@
     raw mode, negotiates mouse/keyboard protocols, builds frames against a
     double-buffered grid, and diffs the grid to emit minimal ANSI output. The
     module re-exports the lower-level subsystems (ANSI generation, grids,
-    terminal I/O, input parsing, images) and exposes an immediate-mode runtime
-    entry point via {!create}.
+    terminal protocol, input parsing, images) and exposes an immediate-mode
+    runtime entry point via {!create}.
 
     {1 Overview}
 
@@ -13,8 +13,8 @@
     loop, or drive the loop manually.
 
     If driving manually: 1. Call {!prepare} to start a frame (clears buffers,
-    updates layout). 2. Read events via {!Terminal.read}. 3. Render into {!grid}
-    and {!hits}. 4. Call {!submit} to flush the frame to the terminal. *)
+    updates layout). 2. Poll events via the runtime. 3. Render into {!grid} and
+    {!hits}. 4. Call {!submit} to flush the frame to the terminal. *)
 
 (** {1 Sub-Libraries} *)
 
@@ -34,7 +34,7 @@ module Screen = Screen
 (** Zero-allocation frame rendering. *)
 
 module Terminal = Terminal
-(** Low-level terminal control. *)
+(** Terminal protocol state machine. *)
 
 (** {1 Declarative Image API} *)
 
@@ -95,7 +95,6 @@ val create :
   ?frame_dump_hits:bool ->
   ?cursor_visible:bool ->
   ?explicit_width:bool ->
-  ?render_thread:bool ->
   ?input_timeout:float option ->
   ?resize_debounce:float option ->
   ?initial_caps:Terminal.capabilities ->
@@ -131,13 +130,9 @@ val create :
       Whether to use explicit wcwidth values instead of querying the terminal.
       Defaults to the terminal's reported capability. Override when the
       terminal's width computation is known to be incompatible.
-    @param render_thread
-      Whether to use a dedicated thread for output. Defaults to [true] on macOS
-      and [false] on Linux. Enable to prevent blocking the main loop on slow
-      terminals, but adds threading overhead.
     @param initial_caps
-      Optional seed capabilities passed directly to [Terminal.open_terminal]
-      (useful for tests or environments that want to bypass probing).
+      Optional seed capabilities passed directly to {!Terminal.make} (useful for
+      tests or environments that want to bypass probing).
     @param output
       Output target. Defaults to [`Stdout]. Use [`Fd fd] to write to a specific
       file descriptor (e.g., for splitting output from logs).
@@ -209,7 +204,7 @@ val create :
 
     The runtime starts immediately with the terminal in the configured state.
     Call {!run} for automatic event loop management, or drive the loop manually
-    with {!prepare}, {!Terminal.read}, and {!submit}. *)
+    with {!prepare} and {!submit}. *)
 
 val run :
   ?on_frame:(app -> dt:float -> unit) ->
