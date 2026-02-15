@@ -577,11 +577,10 @@ let draw_loss_plot (m : model) (r : run) grid ~width ~height =
          ~x:(fun p -> p.x)
          ~y:(fun p -> p.y)
          vloss
-    |> Charts.add
-         (Charts.Mark.rule_y
-            ~style:
-              (Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:6) ~dim:true ())
-            1.0)
+    |> Charts.rule
+         ~style:
+           (Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:6) ~dim:true ())
+         1.0
   in
   ignore (Charts.draw chart grid ~width ~height)
 

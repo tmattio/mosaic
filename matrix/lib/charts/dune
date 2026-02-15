@@ -1,4 +1,5 @@
 (library
  (name matrix_charts)
  (public_name matrix.charts)
- (libraries ansi glyph grid))
+ (libraries ansi glyph grid)
+ (private_modules render))

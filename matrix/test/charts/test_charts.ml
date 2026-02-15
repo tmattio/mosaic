@@ -173,7 +173,7 @@ let%expect_test "line with gaps skips missing points" =
     let chart =
       empty ()
       |> with_axes ~x:Axis.default ~y:Axis.default
-      |> add (Mark.line_opt ~x:fst ~y:(fun (_, y) -> y) gapped_series)
+      |> line_gaps ~x:fst ~y:(fun (_, y) -> y) gapped_series
     in
     draw chart grid ~width ~height
   in
@@ -243,10 +243,9 @@ let%expect_test "circle (line)" =
       |> with_axes ~x:Axis.hidden ~y:Axis.hidden
       |> with_x_scale (Scale.numeric ~domain:(`Domain (0., 11.)) ())
       |> with_y_scale (Scale.numeric ~domain:(`Domain (0., 7.)) ())
-      |> add
-           (Mark.circle ~resolution:`Cell ~cx:fst ~cy:snd
-              ~r:(fun _ -> 3.)
-              [| (6., 4.) |])
+      |> circle ~resolution:`Cell ~cx:fst ~cy:snd
+           ~r:(fun _ -> 3.)
+           [| (6., 4.) |]
     in
     draw chart grid ~width ~height
   in
@@ -271,10 +270,9 @@ let%expect_test "circle braille" =
       |> with_axes ~x:Axis.hidden ~y:Axis.hidden
       |> with_x_scale (Scale.numeric ~domain:(`Domain (0., 11.)) ())
       |> with_y_scale (Scale.numeric ~domain:(`Domain (0., 7.)) ())
-      |> add
-           (Mark.circle ~resolution:`Braille2x4 ~cx:fst ~cy:snd
-              ~r:(fun _ -> 3.)
-              [| (6., 4.) |])
+      |> circle ~resolution:`Braille2x4 ~cx:fst ~cy:snd
+           ~r:(fun _ -> 3.)
+           [| (6., 4.) |]
     in
     draw chart grid ~width ~height
   in
@@ -299,7 +297,7 @@ let%expect_test "vertical bar chart renders columns" =
       |> with_frame (manual_frame ~margins:(0, 1, 2, 0) ())
       |> with_x_scale (Scale.band ())
       |> with_axes ~x:Axis.default ~y:Axis.hidden
-      |> bars_y ~x:fst ~y:snd bar_simple
+      |> bar ~category:fst ~value:snd bar_simple
     in
     draw chart grid ~width ~height
   in
@@ -325,7 +323,7 @@ let%expect_test "horizontal bar chart" =
       |> with_frame (manual_frame ~margins:(0, 2, 0, 0) ())
       |> with_y_scale (Scale.band ())
       |> with_axes ~x:Axis.hidden ~y:Axis.default
-      |> add (Mark.bars_x ~y:fst ~x:snd horizontal_bars)
+      |> bar ~direction:`Horizontal ~category:fst ~value:snd horizontal_bars
     in
     draw chart grid ~width ~height
   in
@@ -350,7 +348,7 @@ let%expect_test "vertical bars (no axis)" =
       empty ()
       |> with_axes ~x:Axis.hidden ~y:Axis.hidden
       |> with_x_scale (Scale.band ())
-      |> bars_y ~x:fst ~y:snd simple_bars
+      |> bar ~category:fst ~value:snd simple_bars
     in
     draw chart grid ~width ~height
   in
@@ -375,7 +373,7 @@ let%expect_test "horizontal bars (no axis)" =
       empty ()
       |> with_axes ~x:Axis.hidden ~y:Axis.hidden
       |> with_y_scale (Scale.band ())
-      |> add (Mark.bars_x ~y:fst ~x:snd horizontal_bars_2)
+      |> bar ~direction:`Horizontal ~category:fst ~value:snd horizontal_bars_2
     in
     draw chart grid ~width ~height
   in
@@ -428,7 +426,7 @@ let%expect_test "stacked bars vertical (no axis)" =
       empty ()
       |> with_axes ~x:Axis.hidden ~y:Axis.hidden
       |> with_x_scale (Scale.band ())
-      |> add (Mark.stacked_bars_y stacked_bars_data)
+      |> stacked_bar stacked_bars_data
     in
     draw chart grid ~width ~height
   in
@@ -451,7 +449,7 @@ let%expect_test "stacked bars horizontal (no axis)" =
       empty ()
       |> with_axes ~x:Axis.hidden ~y:Axis.hidden
       |> with_y_scale (Scale.band ())
-      |> add (Mark.stacked_bars_x stacked_bars_data)
+      |> stacked_bar ~direction:`Horizontal stacked_bars_data
     in
     draw chart grid ~width ~height
   in

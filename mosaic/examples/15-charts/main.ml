@@ -428,8 +428,8 @@ let spec_for (m : model) (ct : chart_type) : Matrix_charts.t =
       let chart =
         if m.show_line_points then
           chart
-          |> scatter ~id:"points" ~label:"Samples" ~glyph:"∙" ~mode:`Cell ~x:fst
-               ~y:snd line_data
+          |> scatter ~id:"points" ~label:"Samples" ~glyph:"∙" ~mode:`Cell
+               ~x:fst ~y:snd line_data
         else chart
       in
       chart
@@ -441,8 +441,8 @@ let spec_for (m : model) (ct : chart_type) : Matrix_charts.t =
            ~x:(Axis.default |> Axis.with_ticks 6 |> Axis.with_title "X Position")
            ~y:(Axis.default |> Axis.with_ticks 6 |> Axis.with_title "Y Position")
       |> with_grid (grid_of_model m)
-      |> scatter ~id:"scatter" ~label:"Points" ~mode:m.scatter_mode ~glyph:"·"
-           ~x:fst ~y:snd scatter_data
+      |> scatter ~id:"scatter" ~label:"Points" ~mode:m.scatter_mode
+           ~glyph:"·" ~x:fst ~y:snd scatter_data
   | Bar ->
       let categories = Array.to_list (Array.map fst bar_data) in
       empty ~theme ()
@@ -453,8 +453,8 @@ let spec_for (m : model) (ct : chart_type) : Matrix_charts.t =
            ~x:(Axis.default |> Axis.with_ticks 0 |> Axis.with_title "Day")
            ~y:(Axis.default |> Axis.with_ticks 6 |> Axis.with_title "Count")
       |> with_grid (grid_of_model m)
-      |> bars_y ~id:"bars" ~label:"Activity" ~x:fst ~y:snd bar_data
-      |> rule_y 0.0
+      |> bar ~id:"bars" ~label:"Activity" ~category:fst ~value:snd bar_data
+      |> rule 0.0
   | Stacked_bar ->
       let categories =
         Array.to_list (Array.map (fun b -> b.Mark.category) stacked_bar_data)
@@ -467,8 +467,8 @@ let spec_for (m : model) (ct : chart_type) : Matrix_charts.t =
            ~x:(Axis.default |> Axis.with_ticks 0 |> Axis.with_title "Quarter")
            ~y:(Axis.default |> Axis.with_ticks 6 |> Axis.with_title "Revenue")
       |> with_grid (grid_of_model m)
-      |> stacked_bars_y ~id:"stacked" stacked_bar_data
-      |> rule_y 0.0
+      |> stacked_bar ~id:"stacked" stacked_bar_data
+      |> rule 0.0
   | Heatmap ->
       empty ~theme () |> with_title "Intensity Map"
       |> with_frame (manual_frame ~margins:(2, 2, 3, 7) ())
@@ -509,8 +509,8 @@ let spec_for (m : model) (ct : chart_type) : Matrix_charts.t =
       |> with_grid (grid_of_model m)
       |> area ~id:"cpu" ~label:"CPU" ~style:area_style ~baseline:`Zero
            ~resolution:`Cell ~x:fst ~y:snd area_data
-      |> line ~id:"cpu-line" ~style:line_style ~resolution:`Braille2x4 ~x:fst
-           ~y:snd area_data
+      |> line ~id:"cpu-line" ~style:line_style ~resolution:`Braille2x4
+           ~x:fst ~y:snd area_data
   | Histogram ->
       let hist_style = Ansi.Style.make ~fg:(Ansi.Color.of_rgb 150 200 100) () in
       empty ~theme ()
@@ -541,7 +541,8 @@ let spec_for (m : model) (ct : chart_type) : Matrix_charts.t =
       |> with_grid (grid_of_model m)
       (* Volume as area on Y2 axis (drawn first, behind price line) *)
       |> area ~id:"volume" ~label:"Volume" ~style:volume_style ~y_axis:`Y2
-           ~baseline:`Zero ~resolution:`Cell ~x:fst ~y:snd dual_axis_volume_data
+           ~baseline:`Zero ~resolution:`Cell ~x:fst ~y:snd
+           dual_axis_volume_data
       (* Price line on Y1 axis *)
       |> line ~id:"price" ~label:"Price" ~style:price_style
            ~resolution:`Braille2x4 ~x:fst ~y:snd dual_axis_price_data
