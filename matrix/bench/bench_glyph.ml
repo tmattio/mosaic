@@ -103,7 +103,7 @@ let encode_bench name method_ text =
     else
       let w = G.width g in
       cols := !cols + w;
-      if not (G.is_simple g) then (
+      if not (G.is_inline g) then (
         G.Pool.incref pool g;
         G.Pool.decref pool g)
   in

@@ -276,7 +276,7 @@ let simple_vs_complex_optimization () =
     let lst = encode_to_list pool ~width_method:`Unicode ~tab_width:2 str in
     match lst with
     | g :: _ ->
-        if is_simple g <> expect_simple then
+        if is_inline g <> expect_simple then
           fail
             (Printf.sprintf "Expected %s to be %s" str
                (if expect_simple then "Simple" else "Complex"))
@@ -313,7 +313,7 @@ let complex_clustering_behavior () =
   match cells with
   | [ na; _ma; ste_start; ste_cont ] ->
       check_width "Na width" 1 (width na);
-      is_true ~msg:"Na simple (single codepoint)" (is_simple na);
+      is_true ~msg:"Na simple (single codepoint)" (is_inline na);
 
       check_width "Ste width" 2 (width ste_start);
       is_true ~msg:"Ste start" (is_start ste_start);
@@ -346,7 +346,7 @@ let lifecycle_generation_safety () =
   let pool = Pool.create () in
   (* Use multi-codepoint clusters to exercise pool allocation *)
   let g1 = Pool.intern pool "e\u{0301}" in
-  is_false ~msg:"is complex" (is_simple g1);
+  is_false ~msg:"is complex" (is_inline g1);
 
   equal ~msg:"content exists" string "e\u{0301}" (Pool.to_string pool g1);
 
@@ -450,8 +450,8 @@ let tab_cache_offsets () =
   in
   match cells with
   | [ _a; tab1; _b; tab2; _c ] ->
-      is_true ~msg:"tab1 simple" (is_simple tab1);
-      is_true ~msg:"tab2 simple" (is_simple tab2);
+      is_true ~msg:"tab1 simple" (is_inline tab1);
+      is_true ~msg:"tab2 simple" (is_inline tab2);
       equal ~msg:"tab1 width" int 4 (width ~tab_width:4 tab1);
       equal ~msg:"tab2 width" int 4 (width ~tab_width:4 tab2)
   | _ -> fail "Expected five glyphs with tabs at positions 1 and 3"

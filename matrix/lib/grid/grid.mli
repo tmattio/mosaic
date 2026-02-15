@@ -283,8 +283,8 @@ val is_continuation : t -> int -> bool
 (** [is_continuation t idx] returns true if the cell is the trailing part of a
     wide character. *)
 
-val is_simple : t -> int -> bool
-(** [is_simple t idx] returns true if the cell contains a simple character
+val is_inline : t -> int -> bool
+(** [is_inline t idx] returns true if the cell contains a simple character
     (ASCII or single Unicode scalar) that doesn't require glyph pool lookup. *)
 
 val cell_width : t -> int -> int

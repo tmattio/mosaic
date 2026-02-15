@@ -94,9 +94,9 @@ val is_empty : t -> bool
     The empty glyph represents control characters, zero-width sequences, and
     U+0000. *)
 
-val is_simple : t -> bool
-(** [is_simple glyph] returns [true] if [glyph] is a single Unicode scalar
-    stored directly (no pool lookup), [false] otherwise. *)
+val is_inline : t -> bool
+(** [is_inline glyph] returns [true] if [glyph] needs no pool lookup.
+    Performance hint for skipping reference counting on inline glyphs. *)
 
 val is_start : t -> bool
 (** [is_start glyph] returns [true] if [glyph] is the start of a character

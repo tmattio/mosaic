@@ -211,12 +211,12 @@ let[@inline] pack_continuation ~idx ~gen ~left ~right =
   lor (gen lsl shift_generation) lor (idx land mask_index)
 
 let[@inline] pack_simple cp w = (w lsl shift_width) lor cp
-let[@inline] is_simple c = c land flag_grapheme = 0
+let[@inline] is_inline c = c land flag_grapheme = 0
 let[@inline] is_complex c = c land flag_grapheme <> 0
-let[@inline] is_start c = is_simple c || c land flag_continuation = 0
+let[@inline] is_start c = is_inline c || c land flag_continuation = 0
 
 let[@inline] is_continuation c =
-  (not (is_simple c)) && c land flag_continuation <> 0
+  (not (is_inline c)) && c land flag_continuation <> 0
 
 let[@inline] is_empty c = c = 0
 let[@inline] right_extent c = (c lsr shift_right_extent) land 3
@@ -242,7 +242,7 @@ let space = pack_simple 0x20 1
 let[@inline] width ?(tab_width = default_tab_width) c =
   let tab_width = normalize_tab_width tab_width in
   if is_empty c then 0
-  else if is_simple c then
+  else if is_inline c then
     let cp = c land mask_codepoint in
     if cp = 0x09 then tab_width else (c lsr shift_width) land 3
   else
@@ -252,14 +252,14 @@ let[@inline] width ?(tab_width = default_tab_width) c =
 
 let[@inline] cell_width c =
   if c = 0 then 0
-  else if is_simple c then
+  else if is_inline c then
     let w = (c lsr shift_width) land 3 in
     if w = 0 then 1 else w
   else if is_continuation c then 0
   else right_extent c + 1
 
 let make_continuation ~code ~left ~right =
-  let payload = if is_simple code then 0 else pool_payload code in
+  let payload = if is_inline code then 0 else pool_payload code in
   let l_enc = clamp_extent left in
   let r_enc = clamp_extent right in
   flag_grapheme lor flag_continuation lor payload
@@ -370,7 +370,7 @@ module Pool = struct
   (* Reference Counting *)
 
   let incref pool c =
-    if is_simple c then ()
+    if is_inline c then ()
     else
       let idx = validate_complex pool c in
       if idx >= 0 then
@@ -378,7 +378,7 @@ module Pool = struct
           (Array.unsafe_get pool.refcounts idx + 1)
 
   let decref pool c =
-    if is_simple c then ()
+    if is_inline c then ()
     else
       let idx = validate_complex pool c in
       if idx < 0 then ()
@@ -600,14 +600,14 @@ module Pool = struct
   (* Data Retrieval *)
 
   let length pool c =
-    if is_simple c then
+    if is_inline c then
       Uchar.utf_8_byte_length (Uchar.unsafe_of_int (c land mask_codepoint))
     else
       let idx = validate_complex pool c in
       if idx < 0 then 0 else Array.unsafe_get pool.lengths idx
 
   let blit pool c buf ~pos =
-    if is_simple c then
+    if is_inline c then
       let u = Uchar.unsafe_of_int (c land mask_codepoint) in
       let len = Uchar.utf_8_byte_length u in
       if len > Bytes.length buf - pos then 0
@@ -625,7 +625,7 @@ module Pool = struct
           len
 
   let copy ~src c ~dst =
-    if is_simple c then c
+    if is_inline c then c
     else
       let idx = validate_complex src c in
       if idx < 0 then 0
@@ -657,7 +657,7 @@ module Pool = struct
           else pack_start dst_id dst_gen (width c))
 
   let to_string pool c =
-    if is_simple c then (
+    if is_inline c then (
       let u = Uchar.unsafe_of_int (c land mask_codepoint) in
       let len = Uchar.utf_8_byte_length u in
       let buf = Bytes.create len in

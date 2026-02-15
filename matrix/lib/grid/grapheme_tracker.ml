@@ -8,7 +8,7 @@ type t = {
 }
 
 let[@inline] payload_key id =
-  if Glyph.is_simple id then None
+  if Glyph.is_inline id then None
   else
     let key = Glyph.pool_payload id in
     (* Pool index 0 is never allocated (slots start at 1). A complex cell with

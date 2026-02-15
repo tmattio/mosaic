@@ -300,7 +300,7 @@ let get_text t idx =
 
 let is_empty t idx = Buf.get_glyph t.chars idx = Glyph.empty
 let is_continuation t idx = Glyph.is_continuation (Buf.get_glyph t.chars idx)
-let is_simple t idx = Glyph.is_simple (Buf.get_glyph t.chars idx)
+let is_inline t idx = Glyph.is_inline (Buf.get_glyph t.chars idx)
 let cell_width t idx = Glyph.cell_width (Buf.get_glyph t.chars idx)
 
 let[@inline] cells_equal t1 idx1 t2 idx2 =
@@ -315,7 +315,7 @@ let[@inline] cells_equal t1 idx1 t2 idx2 =
 let cleanup_grapheme_at t idx =
   let code = Buf.get_glyph t.chars idx in
 
-  if Glyph.is_simple code then (
+  if Glyph.is_inline code then (
     (* Simple wide glyphs (e.g. CJK) have continuation cells to the right *)
     let w = Glyph.cell_width code in
     if w > 1 then
@@ -564,8 +564,8 @@ let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
        (* Normal blended overwrite of glyph & style *)
        let old_code = dest_code in
        if old_code <> code then (
-         let old_simple = Glyph.is_simple old_code in
-         let new_simple = Glyph.is_simple code in
+         let old_simple = Glyph.is_inline old_code in
+         let new_simple = Glyph.is_inline code in
          if (not old_simple) || Glyph.cell_width old_code > 1 then
            cleanup_grapheme_at t idx;
          (* Update grapheme tracker only when complex graphemes are involved *)
@@ -613,8 +613,8 @@ let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
     (* Fast Path: Opaque Overwrite *)
     let old_code = Buf.get_glyph t.chars idx in
     if old_code <> code then (
-      let old_simple = Glyph.is_simple old_code in
-      let new_simple = Glyph.is_simple code in
+      let old_simple = Glyph.is_inline old_code in
+      let new_simple = Glyph.is_inline code in
       if (not old_simple) || Glyph.cell_width old_code > 1 then
         cleanup_grapheme_at t idx;
       (* Only touch grapheme tracker when complex graphemes are involved. Simple
@@ -739,7 +739,7 @@ let fill_rect t ~x ~y ~width ~height ~color =
           if has_complex then
             for i = start_idx to end_idx do
               let old = Buf.get_glyph t.chars i in
-              if old <> code && not (Glyph.is_simple old) then (
+              if old <> code && not (Glyph.is_inline old) then (
                 cleanup_grapheme_at t i;
                 Grapheme_tracker.remove t.grapheme_tracker old)
             done;
@@ -799,7 +799,7 @@ let blit ~src ~dst =
       for i = 0 to len - 1 do
         let src_c = Buf.get_glyph src.chars i in
         let dst_c =
-          if Glyph.is_simple src_c then src_c
+          if Glyph.is_inline src_c then src_c
           else
             (* Cache by payload to avoid re-copying identical graphemes *)
             let src_payload = Glyph.pool_payload src_c in
@@ -851,13 +851,13 @@ let bulk_update_graphemes t ~src_idx ~dst_idx ~len =
     (* 1. Decrement counts for the region being overwritten (dst) *)
     for i = 0 to len - 1 do
       let code = Buf.get_glyph t.chars (dst_idx + i) in
-      if not (Glyph.is_simple code) then
+      if not (Glyph.is_inline code) then
         Grapheme_tracker.remove t.grapheme_tracker code
     done;
     (* 2. Increment counts for the region being copied (src) *)
     for i = 0 to len - 1 do
       let code = Buf.get_glyph t.chars (src_idx + i) in
-      if not (Glyph.is_simple code) then
+      if not (Glyph.is_inline code) then
         Grapheme_tracker.add t.grapheme_tracker code
     done)
 
@@ -1012,7 +1012,7 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
 
               let final_code_mapped =
                 if is_orphan then space_cell
-                else if src.glyph_pool == dst.glyph_pool || Glyph.is_simple code
+                else if src.glyph_pool == dst.glyph_pool || Glyph.is_inline code
                 then code
                 else copy_glyph code
               in
@@ -1125,7 +1125,7 @@ let draw_text ?style ?(tab_width = 2) t ~x ~y ~text =
       in
 
       let writer code =
-        if Glyph.is_simple code && Glyph.codepoint code = 9 then
+        if Glyph.is_inline code && Glyph.codepoint code = 9 then
           let spaces = tabw in
           let start_visible = cell_visible !cur_x in
           for _ = 1 to spaces do
@@ -1406,7 +1406,7 @@ let decode_braille_bits t ~x ~y =
   else
     let idx = (y * t.width) + x in
     let code = Buf.get_glyph t.chars idx in
-    if Glyph.is_simple code then
+    if Glyph.is_inline code then
       (* Simple cell: extract codepoint *)
       let cp = Glyph.codepoint code in
       if cp >= braille_base && cp <= braille_max then cp - braille_base else 0
