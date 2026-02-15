@@ -333,8 +333,8 @@ val set_cell :
 (** {1 Clipping} *)
 
 val push_clip : t -> region -> unit
-(** Pushes a clipping region. Subsequent draws are clipped to this
-    region, completely replacing any previous clip. *)
+(** Pushes a clipping region. The effective clip is the intersection of the
+    new region with the current clip (hierarchical narrowing). *)
 
 val pop_clip : t -> unit
 (** Pops the most recent clip. No-op if the stack is empty. *)

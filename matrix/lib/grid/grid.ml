@@ -1301,7 +1301,7 @@ let diff_cells prev curr =
       let in_curr = x < curr.width && y < curr.height in
       match (in_prev, in_curr) with
       | false, false -> ()
-      | true, false | false, true -> Dynarray.add_last diffs (y, x)
+      | true, false | false, true -> Dynarray.add_last diffs (x, y)
       | true, true ->
           let p_idx = (y * prev.width) + x in
           let c_idx = (y * curr.width) + x in
@@ -1310,7 +1310,7 @@ let diff_cells prev curr =
              || not (Color_plane.equal_eps prev.fg p_idx curr.fg c_idx)
              || not (Color_plane.equal_eps prev.bg p_idx curr.bg c_idx)
              || Buf.get prev.links p_idx <> Buf.get curr.links c_idx
-          then Dynarray.add_last diffs (y, x)
+          then Dynarray.add_last diffs (x, y)
     done
   done;
   Dynarray.to_array diffs
