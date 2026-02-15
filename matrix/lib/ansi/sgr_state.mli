@@ -25,7 +25,7 @@
 
     {[
       let buf = Bytes.create 65536 in
-      let writer = Ansi.make buf in
+      let writer = Ansi.Writer.make buf in
       let state = Sgr_state.create () in
 
       (* In your render loop - zero allocations per cell: *)

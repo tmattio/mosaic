@@ -135,18 +135,18 @@ let style_emit_function () =
   (* Test that emit produces the same output as sgr_sequence *)
   let style = Style.make ~fg:Color.red ~bold:true () in
   let buf = Bytes.create 64 in
-  let w = make buf in
+  let w = Writer.make buf in
   Style.emit style w;
-  let emitted = Bytes.sub_string buf 0 (len w) in
+  let emitted = Bytes.sub_string buf 0 (Writer.len w) in
   let seq = Style.sgr_sequence style in
   check_seq "emit matches sgr_sequence" seq emitted;
 
   (* Test emit with prev style *)
   let buf2 = Bytes.create 64 in
-  let w2 = make buf2 in
+  let w2 = Writer.make buf2 in
   let style2 = Style.make ~fg:Color.red ~italic:true () in
   Style.emit ~prev:style style2 w2;
-  let emitted2 = Bytes.sub_string buf2 0 (len w2) in
+  let emitted2 = Bytes.sub_string buf2 0 (Writer.len w2) in
   (* Should only disable bold (22) and enable italic (3) - not emit fg again *)
   let codes2 = Style.to_sgr_codes ~prev:style style2 in
   is_true ~msg:"emit delta non-empty" (String.length emitted2 > 0);
@@ -192,7 +192,7 @@ let style_compare_and_hash () =
 
 let sgr_state_transitions () =
   let buf = Bytes.create 128 in
-  let w = make buf in
+  let w = Writer.make buf in
   let state = Sgr_state.create () in
 
   (* 1. Initial: emits reset(0) + attributes *)
@@ -200,19 +200,19 @@ let sgr_state_transitions () =
     ~bg_r:0.0 ~bg_g:0.0 ~bg_b:0.0 ~bg_a:0.0 (* Black (transparent) *)
     ~attrs:(Attr.pack Attr.bold) ~link:"";
 
-  let out1 = slice w in
+  let out1 = Writer.slice w in
   (* Expect: Reset(0); FG(Red); Bold(1) *)
   (* Sequence: \x1b[0;38;2;255;0;0;1m *)
   check_seq "initial transition" "\x1b[0;38;2;255;0;0;1m" (Bytes.to_string out1);
 
   (* 2. No-op: update with exact same values *)
-  let w2 = make buf in
+  let w2 = Writer.make buf in
   Sgr_state.update state w2 ~fg_r:1.0 ~fg_g:0.0 ~fg_b:0.0 ~fg_a:1.0 ~bg_r:0.0
     ~bg_g:0.0 ~bg_b:0.0 ~bg_a:0.0 ~attrs:(Attr.pack Attr.bold) ~link:"";
-  equal ~msg:"noop update empty" int 0 (len w2);
+  equal ~msg:"noop update empty" int 0 (Writer.len w2);
 
   (* 3. Delta: Remove Bold, keep color *)
-  let w3 = make buf in
+  let w3 = Writer.make buf in
   Sgr_state.update state w3 ~fg_r:1.0 ~fg_g:0.0 ~fg_b:0.0 ~fg_a:1.0 ~bg_r:0.0
     ~bg_g:0.0 ~bg_b:0.0 ~bg_a:0.0 ~attrs:0 ~link:"";
 
@@ -220,22 +220,22 @@ let sgr_state_transitions () =
 
   (* Expect: Reset(0); FG(Red) -- Bold is implicitly removed by Reset, need to
      restore Color *)
-  let out3 = Bytes.to_string (slice w3) in
+  let out3 = Bytes.to_string (Writer.slice w3) in
   check_seq "delta transition" "\x1b[0;38;2;255;0;0m" out3
 
 let sgr_transparent_bg_resets () =
   let buf = Bytes.create 128 in
   let state = Sgr_state.create () in
-  let w1 = make buf in
+  let w1 = Writer.make buf in
   Sgr_state.update state w1 ~fg_r:1.0 ~fg_g:0.0 ~fg_b:0.0 ~fg_a:1.0 ~bg_r:0.0
     ~bg_g:0.0 ~bg_b:1.0 ~bg_a:1.0 ~attrs:0 ~link:"";
   check_seq "bg applied" "\x1b[0;38;2;255;0;0;48;2;0;0;255m"
-    (Bytes.to_string (slice w1));
-  let w2 = make buf in
+    (Bytes.to_string (Writer.slice w1));
+  let w2 = Writer.make buf in
   Sgr_state.update state w2 ~fg_r:1.0 ~fg_g:0.0 ~fg_b:0.0 ~fg_a:1.0 ~bg_r:0.0
     ~bg_g:0.0 ~bg_b:1.0 ~bg_a:0.0 ~attrs:0 ~link:"";
   check_seq "bg cleared to default" "\x1b[0;38;2;255;0;0m"
-    (Bytes.to_string (slice w2))
+    (Bytes.to_string (Writer.slice w2))
 
 (* --- 4. Parser Resilience --- *)
 
@@ -347,7 +347,7 @@ let parser_osc8_bel_terminated () =
 
 let writer_utf8_encoding () =
   let buf = Bytes.create 16 in
-  let w = make buf in
+  let w = Writer.make buf in
 
   (* 1 byte: A *)
   utf8 (Char.code 'A') w;
@@ -356,24 +356,24 @@ let writer_utf8_encoding () =
   (* 4 byte: 🚀 (Rocket 0x1F680) *)
   utf8 0x1F680 w;
 
-  let out = Bytes.to_string (slice w) in
+  let out = Bytes.to_string (Writer.slice w) in
   equal ~msg:"utf8 encoding" string "A€🚀" out
 
 let writer_hyperlink_params () =
   let buf = Bytes.create 64 in
-  let w = make buf in
+  let w = Writer.make buf in
   hyperlink_start ~params:"id=123" ~url:"http://foo" w;
-  let out = Bytes.to_string (slice w) in
+  let out = Bytes.to_string (Writer.slice w) in
   (* OSC 8 ; params ; url ST (\x1b\\) *)
   check_seq "hyperlink with params" "\x1b]8;id=123;http://foo\x1b\\" out
 
 let writer_invalid_scalar_replacement () =
   let buf = Bytes.create 8 in
-  let w = make buf in
+  let w = Writer.make buf in
   (* Surrogate code point should be clamped to U+FFFD *)
   utf8 0xD800 w;
   check_seq "invalid scalar -> replacement" "\xef\xbf\xbd"
-    (Bytes.to_string (slice w))
+    (Bytes.to_string (Writer.slice w))
 
 (* --- 6. High Level API --- *)
 
@@ -398,7 +398,7 @@ let parameter_clamping () =
 let explicit_error_handling () =
   try
     let buf = Bytes.create 16 in
-    let w = make buf in
+    let w = Writer.make buf in
     (set_scrolling_region ~top:10 ~bottom:5) w;
     fail "scrolling region validation failed"
   with Invalid_argument _ -> ()
@@ -519,7 +519,9 @@ let roundtrip_strip_removes_all () =
     (s (cursor_position ~row:10 ~col:20) ^ "text")
     "text";
   (* SGR sequences *)
-  test_strip "strip sgr" (Ansi.styled ~fg:Color.red ~bold:true "text") "text";
+  test_strip "strip sgr"
+    (Style.styled (Style.make ~fg:Color.red ~bold:true ()) "text")
+    "text";
   test_strip "strip reset" (s reset ^ "text") "text";
   (* Screen control *)
   test_strip "strip clear" (s clear ^ "text") "text";
