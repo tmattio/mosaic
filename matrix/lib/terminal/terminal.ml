@@ -164,7 +164,7 @@ let make ~output ?(tty = true) ?initial_caps ?parser () =
     bracketed_paste_enabled = false;
     focus_enabled = false;
     kitty_keyboard_enabled = false;
-    kitty_keyboard_flags = 0b00001;
+    kitty_keyboard_flags = 0b00101;
     modify_other_keys_enabled = false;
     unicode_mode_enabled = false;
     cursor =
@@ -256,7 +256,7 @@ let focus_reporting_enabled t = t.focus_enabled
 
 (* Kitty keyboard *)
 
-let enable_kitty_keyboard ?(flags = 0b00001) t enable =
+let enable_kitty_keyboard ?(flags = 0b00101) t enable =
   if enable then (
     if (not t.kitty_keyboard_enabled) || t.kitty_keyboard_flags <> flags then (
       send t (kitty_kb_push flags);

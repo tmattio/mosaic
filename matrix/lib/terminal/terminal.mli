@@ -222,11 +222,12 @@ val enable_kitty_keyboard : ?flags:int -> t -> bool -> unit
 (** Toggles the Kitty keyboard protocol.
 
     @param flags
-      bitmask controlling reported features (default [0b00001]):
-      - bit 0: report event types (press/repeat/release)
-      - bit 1: report alternate keys
-      - bit 2: report all keys as escape sequences
-      - bit 3: report associated text
+      bitmask controlling reported features (default [0b00101]):
+      - bit 0: disambiguate escape codes
+      - bit 1: report event types (press/repeat/release)
+      - bit 2: report alternate keys
+      - bit 3: report all keys as escape sequences
+      - bit 4: report associated text
 
     Enabling pushes flags; disabling pops. Changing flags while enabled pushes
     new flags. *)
