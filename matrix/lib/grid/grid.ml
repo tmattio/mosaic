@@ -360,7 +360,21 @@ let[@inline] cells_equal t1 idx1 t2 idx2 =
 let cleanup_grapheme_at t idx =
   let code = Buf.get t.chars idx in
 
-  if Cell_code.is_simple code then ()
+  if Cell_code.is_simple code then (
+    (* Simple wide glyphs (e.g. CJK) have continuation cells to the right *)
+    let w = Cell_code.width code in
+    if w > 1 then
+      let limit = Buf.dim t.chars in
+      for i = 1 to w - 1 do
+        let ni = idx + i in
+        if ni < limit then
+          let nc = Buf.get t.chars ni in
+          if nc <> space_cell then (
+            Grapheme_tracker.remove t.grapheme_tracker nc;
+            Buf.set t.chars ni space_cell;
+            Buf.set t.attrs ni 0;
+            Buf.set t.links ni no_link)
+      done)
   else
     let left = Cell_code.left_extent code in
     let right = Cell_code.right_extent code in
@@ -597,7 +611,8 @@ let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
        if old_code <> code then (
          let old_simple = Cell_code.is_simple old_code in
          let new_simple = Cell_code.is_simple code in
-         if not old_simple then cleanup_grapheme_at t idx;
+         (if not old_simple || Cell_code.width old_code > 1 then
+            cleanup_grapheme_at t idx);
          (* Update grapheme tracker only when complex graphemes are involved *)
          (match (old_simple, new_simple) with
          | true, true -> ()
@@ -645,7 +660,8 @@ let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
     if old_code <> code then (
       let old_simple = Cell_code.is_simple old_code in
       let new_simple = Cell_code.is_simple code in
-      if not old_simple then cleanup_grapheme_at t idx;
+      (if not old_simple || Cell_code.width old_code > 1 then
+         cleanup_grapheme_at t idx);
       (* Only touch grapheme tracker when complex graphemes are involved. Simple
          -> simple (ASCII etc.) is now tracker-free. *)
       (match (old_simple, new_simple) with
