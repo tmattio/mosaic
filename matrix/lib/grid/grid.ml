@@ -587,25 +587,16 @@ let set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
 
 (* Public wrappers *)
 
-let[@inline] set_cell_with_blending t ~x ~y ~code ~fg ~bg ~attrs ~link ~blending
-    =
+let set_cell t ~x ~y ~glyph ~fg ~bg ~attrs ?link ?(blend = t.respect_alpha) () =
   if x >= 0 && y >= 0 && x < t.width && y < t.height && not (is_clipped t x y)
   then
     let idx = (y * t.width) + x in
-    let code = Glyph.unsafe_of_int code in
     let fg_r, fg_g, fg_b, fg_a = Ansi.Color.to_rgba_f fg in
     let bg_r, bg_g, bg_b, bg_a = Ansi.Color.to_rgba_f bg in
     let link_id = Links.intern t.link_registry link in
     let attrs_packed = Ansi.Attr.pack attrs in
-    set_cell_internal t ~idx ~code ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g ~bg_b
-      ~bg_a ~attrs:attrs_packed ~link_id ~blending
-
-let set_cell t ~x ~y ~code ~fg ~bg ~attrs ?link () =
-  set_cell_with_blending t ~x ~y ~code ~fg ~bg ~attrs ~link
-    ~blending:t.respect_alpha
-
-let set_cell_alpha t ~x ~y ~code ~fg ~bg ~attrs ?link () =
-  set_cell_with_blending t ~x ~y ~code ~fg ~bg ~attrs ~link ~blending:true
+    set_cell_internal t ~idx ~code:glyph ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g
+      ~bg_b ~bg_a ~attrs:attrs_packed ~link_id ~blending:blend
 
 (* {1 Bulk operations} *)
 

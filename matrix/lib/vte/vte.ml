@@ -494,7 +494,7 @@ let put_text t text =
     let line_width = t.cols in
     let row = t.cursor.row in
     let copy_cell src_idx dst_x =
-      let code = Grid.get_code t.active_grid src_idx in
+      let glyph = Grid.get_glyph t.active_grid src_idx in
       let attrs = Grid.get_attrs t.active_grid src_idx in
       let link = Grid.get_link t.active_grid src_idx in
       let fg_r = Grid.get_fg_r t.active_grid src_idx in
@@ -520,7 +520,7 @@ let put_text t text =
           (int_of_float (bg_a *. 255.))
       in
       let link_url = Grid.hyperlink_url t.active_grid link in
-      Grid.set_cell t.active_grid ~x:dst_x ~y:row ~code ~fg:fg_color
+      Grid.set_cell t.active_grid ~x:dst_x ~y:row ~glyph ~fg:fg_color
         ~bg:bg_color ~attrs:(Ansi.Attr.unpack attrs) ?link:link_url ()
     in
 

@@ -504,8 +504,9 @@ let render_input t renderable grid ~delta:_ =
                 if focused then t.props.focused_text_color
                 else t.props.text_color
               in
-              Grid.set_cell_alpha grid ~x:dest_x ~y:dest_y ~code ~fg ~bg
-                ~attrs:Ansi.Attr.empty ();
+              Grid.set_cell grid ~x:dest_x ~y:dest_y
+                ~glyph:(Glyph.unsafe_of_int code) ~fg ~bg
+                ~attrs:Ansi.Attr.empty ~blend:true ();
               loop (i + 1) (column + max 1 width))
         in
         loop t.view_offset 0)

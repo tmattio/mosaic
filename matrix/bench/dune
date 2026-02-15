@@ -13,9 +13,9 @@
 (executable
  (name bench_grid)
  (modules bench_grid)
- (libraries ubench matrix.grid matrix.ansi))
+ (libraries ubench matrix.grid matrix.glyph matrix.ansi))
 
 (executable
  (name bench_screen)
  (modules bench_screen)
- (libraries ubench matrix.screen matrix.grid matrix.ansi))
+ (libraries ubench matrix.screen matrix.grid matrix.glyph matrix.ansi))

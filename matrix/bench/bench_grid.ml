@@ -171,8 +171,8 @@ let partial_update_sparse_cells =
          chrome. *)
       for i = 0 to Array.length update_positions - 1 do
         let x, y = update_positions.(i) in
-        Grid.set_cell_alpha grid ~x ~y
-          ~code:(Char.code 'A' + i)
+        Grid.set_cell grid ~x ~y ~blend:true
+          ~glyph:(Glyph.of_uchar (Uchar.of_int (Char.code 'A' + i)))
           ~fg:(C.of_rgb 255 255 0) ~bg:(C.of_rgb 0 0 0) ~attrs:Ansi.Attr.empty
           ()
       done)

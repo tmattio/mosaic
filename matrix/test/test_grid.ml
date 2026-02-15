@@ -181,7 +181,7 @@ let diff_detects_single_rgb_step () =
      difference. 1/255 is approx 0.0039, which is > the internal epsilon
      (0.00001). *)
   let minimal_diff_color = Ansi.Color.of_rgba 1 1 1 1 in
-  Grid.set_cell b ~x:0 ~y:0 ~code:(Grid.get_code a 0) ~fg:Ansi.Color.white
+  Grid.set_cell b ~x:0 ~y:0 ~glyph:(Grid.get_glyph a 0) ~fg:Ansi.Color.white
     ~bg:minimal_diff_color ~attrs:Ansi.Attr.empty ();
   let diffs = Grid.diff_cells a b in
   equal ~msg:"diffs include cell when RGB changes by 1 step"
@@ -260,7 +260,7 @@ let set_respect_alpha_updates () =
 let set_cell_writes_all_planes () =
   let grid = Grid.create ~width:2 ~height:2 () in
   let attrs = Ansi.Attr.bold in
-  Grid.set_cell_alpha grid ~x:1 ~y:0 ~code:(Char.code 'A') ~fg:Ansi.Color.red
+  Grid.set_cell ~blend:true grid ~x:1 ~y:0 ~glyph:(Glyph.of_uchar (Uchar.of_char 'A')) ~fg:Ansi.Color.red
     ~bg:Ansi.Color.blue ~attrs ();
   equal ~msg:"char" int (Char.code 'A') (read_char grid 1 0);
   equal ~msg:"width" int 1 (read_width grid 1 0);
@@ -275,7 +275,7 @@ let set_cell_writes_all_planes () =
 let set_cell_outside_scissor_ignored () =
   let grid = Grid.create ~width:2 ~height:2 () in
   Grid.push_scissor grid { x = 1; y = 1; width = 1; height = 1 };
-  Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'X') ~fg:Ansi.Color.white
+  Grid.set_cell ~blend:true grid ~x:0 ~y:0 ~glyph:(Glyph.of_uchar (Uchar.of_char 'X')) ~fg:Ansi.Color.white
     ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   Grid.pop_scissor grid;
   equal ~msg:"char remains empty" int 32 (read_char grid 0 0)
@@ -284,20 +284,20 @@ let with_scissor_restores_stack () =
   let grid = Grid.create ~width:2 ~height:2 () in
   let result =
     Grid.with_scissor grid { x = 0; y = 0; width = 1; height = 1 } (fun () ->
-        Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'Y')
+        Grid.set_cell ~blend:true grid ~x:0 ~y:0 ~glyph:(Glyph.of_uchar (Uchar.of_char 'Y'))
           ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
         42)
   in
   equal ~msg:"scoped result" int 42 result;
   equal ~msg:"inside write" int (Char.code 'Y') (read_char grid 0 0);
   (* After scope, writing outside should succeed. *)
-  Grid.set_cell_alpha grid ~x:1 ~y:1 ~code:(Char.code 'Z') ~fg:Ansi.Color.white
+  Grid.set_cell ~blend:true grid ~x:1 ~y:1 ~glyph:(Glyph.of_uchar (Uchar.of_char 'Z')) ~fg:Ansi.Color.white
     ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   equal ~msg:"char set" int (Char.code 'Z') (read_char grid 1 1)
 
 let set_cell_records_hyperlink () =
   let grid = Grid.create ~width:1 ~height:1 () in
-  Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'L') ~fg:Ansi.Color.white
+  Grid.set_cell ~blend:true grid ~x:0 ~y:0 ~glyph:(Glyph.of_uchar (Uchar.of_char 'L')) ~fg:Ansi.Color.white
     ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ~link:"https://example.com" ();
   (* Use the new zero-alloc accessor to get the ID *)
   let id = Grid.get_link grid 0 in
@@ -389,11 +389,11 @@ let draw_box_left_border_spans_full_height () =
 
 let set_cell_alpha_honours_blending () =
   let grid = Grid.create ~width:1 ~height:1 ~respect_alpha:true () in
-  Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'B') ~fg:Ansi.Color.blue
+  Grid.set_cell ~blend:true grid ~x:0 ~y:0 ~glyph:(Glyph.of_uchar (Uchar.of_char 'B')) ~fg:Ansi.Color.blue
     ~bg:Ansi.Color.blue ~attrs:Ansi.Attr.empty ();
   let semi_red = Ansi.Color.of_rgba 255 0 0 128 in
   let semi_green = Ansi.Color.of_rgba 0 255 0 128 in
-  Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'C') ~fg:semi_red
+  Grid.set_cell ~blend:true grid ~x:0 ~y:0 ~glyph:(Glyph.of_uchar (Uchar.of_char 'C')) ~fg:semi_red
     ~bg:semi_green ~attrs:Ansi.Attr.empty ();
   let expected_fg = Ansi.Color.blend ~src:semi_red ~dst:Ansi.Color.blue () in
   (* Background alpha is replaced by the overlay alpha instead of being blended,
@@ -428,11 +428,11 @@ let set_cell_alpha_honours_blending () =
 let set_cell_alpha_without_respect_skips_blend () =
   let grid = Grid.create ~width:1 ~height:1 () in
   let semi_red = Ansi.Color.of_rgba 255 0 0 128 in
-  Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'C') ~fg:semi_red
+  Grid.set_cell ~blend:true grid ~x:0 ~y:0 ~glyph:(Glyph.of_uchar (Uchar.of_char 'C')) ~fg:semi_red
     ~bg:semi_red ~attrs:Ansi.Attr.empty ();
   equal ~msg:"char" int (Char.code 'C') (read_char grid 0 0);
   equal ~msg:"width" int 1 (read_width grid 0 0);
-  (* {!Grid.set_cell_alpha} always blends. The default background is now opaque
+  (* {!Grid.set_cell ~blend:true} always blends. The default background is now opaque
      black, so the fg alpha blends against that. *)
   let expected =
     let blended = Ansi.Color.blend ~src:semi_red ~dst:Ansi.Color.default () in
@@ -461,7 +461,7 @@ let draw_text_blends_fg_alpha_over_opaque_bg () =
 let blit_region_blends_without_respect_alpha () =
   let src = Grid.create ~width:1 ~height:1 () in
   let semi_red = Ansi.Color.of_rgba 255 0 0 128 in
-  Grid.set_cell_alpha src ~x:0 ~y:0 ~code:(Char.code 'R') ~fg:Ansi.Color.white
+  Grid.set_cell ~blend:true src ~x:0 ~y:0 ~glyph:(Glyph.of_uchar (Uchar.of_char 'R')) ~fg:Ansi.Color.white
     ~bg:semi_red ~attrs:Ansi.Attr.empty ();
   let dst = Grid.create ~width:1 ~height:1 () in
   let opaque_blue = Ansi.Color.of_rgba 0 0 255 255 in
@@ -480,11 +480,11 @@ let scissor_push_intersects_parent () =
   (* Child scissor outside parent should intersect to empty, so writes are
      clipped *)
   Grid.push_scissor grid { x = 2; y = 0; width = 1; height = 1 };
-  Grid.set_cell_alpha grid ~x:2 ~y:0 ~code:(Char.code 'B') ~fg:Ansi.Color.white
+  Grid.set_cell ~blend:true grid ~x:2 ~y:0 ~glyph:(Glyph.of_uchar (Uchar.of_char 'B')) ~fg:Ansi.Color.white
     ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   (* Pop child, write inside parent *)
   Grid.pop_scissor grid;
-  Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'A') ~fg:Ansi.Color.white
+  Grid.set_cell ~blend:true grid ~x:0 ~y:0 ~glyph:(Glyph.of_uchar (Uchar.of_char 'A')) ~fg:Ansi.Color.white
     ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   Grid.pop_scissor grid;
   equal ~msg:"child write clipped by parent" int (Char.code ' ')
@@ -496,7 +496,7 @@ let clear_scissor_allows_future_writes () =
   let grid = Grid.create ~width:2 ~height:2 () in
   Grid.push_scissor grid { x = 0; y = 0; width = 1; height = 1 };
   Grid.clear_scissor grid;
-  Grid.set_cell_alpha grid ~x:1 ~y:1 ~code:(Char.code 'W') ~fg:Ansi.Color.white
+  Grid.set_cell ~blend:true grid ~x:1 ~y:1 ~glyph:(Glyph.of_uchar (Uchar.of_char 'W')) ~fg:Ansi.Color.white
     ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   equal ~msg:"write succeeded" int (Char.code 'W') (read_char grid 1 1)
 
@@ -519,14 +519,14 @@ let fill_rect_fills_region () =
 let replace_wide_grapheme_clears_continuations () =
   let grid = Grid.create ~width:3 ~height:1 () in
   Grid.draw_text grid ~x:0 ~y:0 ~text:"😊";
-  Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'A') ~fg:Ansi.Color.white
+  Grid.set_cell ~blend:true grid ~x:0 ~y:0 ~glyph:(Glyph.of_uchar (Uchar.of_char 'A')) ~fg:Ansi.Color.white
     ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   equal ~msg:"continuation cleared to space" int 32 (read_char grid 1 0);
   equal ~msg:"continuation width reset" int 1 (read_width grid 1 0)
 
 let fill_rect_alpha_preserves_glyph () =
   let grid = Grid.create ~width:1 ~height:1 ~respect_alpha:true () in
-  Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'X') ~fg:Ansi.Color.white
+  Grid.set_cell ~blend:true grid ~x:0 ~y:0 ~glyph:(Glyph.of_uchar (Uchar.of_char 'X')) ~fg:Ansi.Color.white
     ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   let overlay = Ansi.Color.of_rgba 0 255 0 128 in
   Grid.fill_rect grid ~x:0 ~y:0 ~width:1 ~height:1 ~color:overlay;
@@ -679,7 +679,7 @@ let canvas_blit_into_box () =
 
 let clear_resets_grid () =
   let grid = Grid.create ~width:2 ~height:2 () in
-  Grid.set_cell_alpha grid ~x:0 ~y:0 ~code:(Char.code 'Q') ~fg:Ansi.Color.white
+  Grid.set_cell ~blend:true grid ~x:0 ~y:0 ~glyph:(Glyph.of_uchar (Uchar.of_char 'Q')) ~fg:Ansi.Color.white
     ~bg:Ansi.Color.white ~attrs:Ansi.Attr.bold ();
   let color = Ansi.Color.of_rgb 10 20 30 in
   Grid.clear ~color grid;
@@ -703,7 +703,7 @@ let resize_updates_dimensions () =
 
 let blit_copies_full_buffer () =
   let src = Grid.create ~width:2 ~height:2 () in
-  Grid.set_cell_alpha src ~x:0 ~y:0 ~code:(Char.code 'A') ~fg:Ansi.Color.cyan
+  Grid.set_cell ~blend:true src ~x:0 ~y:0 ~glyph:(Glyph.of_uchar (Uchar.of_char 'A')) ~fg:Ansi.Color.cyan
     ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   let dst = Grid.create ~width:1 ~height:1 () in
   Grid.blit ~src ~dst;
@@ -715,8 +715,9 @@ let blit_region_copies_subrect () =
   let src = Grid.create ~width:3 ~height:3 () in
   for y = 0 to 2 do
     for x = 0 to 2 do
-      let char = Char.code 'a' + idx src x y in
-      Grid.set_cell_alpha src ~x ~y ~code:char ~fg:Ansi.Color.white
+      let code = Char.code 'a' + idx src x y in
+      Grid.set_cell ~blend:true src ~x ~y
+        ~glyph:(Glyph.of_uchar (Uchar.of_int code)) ~fg:Ansi.Color.white
         ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ()
     done
   done;
@@ -1055,7 +1056,7 @@ let tests =
     test "diff detects single char change" (fun () ->
         let a = Grid.create ~width:2 ~height:2 () in
         let b = Grid.copy a in
-        Grid.set_cell_alpha b ~x:1 ~y:1 ~code:(Char.code 'X')
+        Grid.set_cell ~blend:true b ~x:1 ~y:1 ~glyph:(Glyph.of_uchar (Uchar.of_char 'X'))
           ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
         let diffs = Grid.diff_cells a b in
         equal ~msg:"single diff at changed cell"
@@ -1074,7 +1075,7 @@ let tests =
     test "diff detects hyperlink change" (fun () ->
         let a = Grid.create ~width:2 ~height:2 () in
         let b = Grid.copy a in
-        Grid.set_cell_alpha b ~x:0 ~y:0 ~code:(Char.code 'A')
+        Grid.set_cell ~blend:true b ~x:0 ~y:0 ~glyph:(Glyph.of_uchar (Uchar.of_char 'A'))
           ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty
           ~link:"http://example.com" ();
         let diffs = Grid.diff_cells a b in

@@ -26,8 +26,8 @@
 
     When {!respect_alpha} is enabled, colors with alpha < 1.0 are blended with
     existing cell colors using a perceptual curve that preserves visual contrast
-    better than linear compositing. Use {!set_cell_alpha} to blend regardless of
-    the {!respect_alpha} setting.
+    better than linear compositing. Use [~blend:true] on {!set_cell} to blend
+    regardless of the {!respect_alpha} setting.
 
     {1 Scissor Clipping}
 
@@ -308,31 +308,23 @@ val set_cell :
   t ->
   x:int ->
   y:int ->
-  code:int ->
+  glyph:Glyph.t ->
   fg:Ansi.Color.t ->
   bg:Ansi.Color.t ->
   attrs:Ansi.Attr.t ->
   ?link:string ->
+  ?blend:bool ->
   unit ->
   unit
-(** [set_cell t ~x ~y ~code ~fg ~bg ~attrs ()] writes a single cell.
+(** [set_cell t ~x ~y ~glyph ~fg ~bg ~attrs ()] writes a single cell.
+
+    @param blend Override alpha blending. Defaults to the grid's
+      {!respect_alpha} setting. Pass [~blend:true] to force blending
+      regardless.
 
     Cells outside the grid or scissor are skipped. Existing wide graphemes
     spanning this cell are cleaned up. The caller is responsible for writing
     continuation cells for multi-column graphemes. *)
-
-val set_cell_alpha :
-  t ->
-  x:int ->
-  y:int ->
-  code:int ->
-  fg:Ansi.Color.t ->
-  bg:Ansi.Color.t ->
-  attrs:Ansi.Attr.t ->
-  ?link:string ->
-  unit ->
-  unit
-(** Like {!set_cell} but always alpha-blends, regardless of {!respect_alpha}. *)
 
 (** {1 Scissor Clipping} *)
 

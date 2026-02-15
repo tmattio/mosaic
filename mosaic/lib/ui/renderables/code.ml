@@ -685,7 +685,10 @@ let render t (_rn : Renderable.t) (grid : Grid.t) ~delta:_ =
 
     let buffer_width = Grid.width grid in
     let buffer_height = Grid.height grid in
-    let write_cell = Grid.set_cell_alpha in
+    let write_cell grid ~x ~y ~code ~fg ~bg ~attrs ?link () =
+      Grid.set_cell grid ~x ~y ~glyph:(Glyph.unsafe_of_int code) ~fg ~bg ~attrs
+        ?link ~blend:true ()
+    in
     let vp = t.viewport in
     let start_line = match vp with Some v -> max 0 v.y | None -> 0 in
     let max_lines =

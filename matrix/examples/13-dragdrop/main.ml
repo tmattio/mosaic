@@ -91,8 +91,8 @@ let color_with_alpha color alpha =
 
 let draw_cell_alpha grid ~x ~y ~bg ~alpha =
   let bg_with_alpha = color_with_alpha bg alpha in
-  Grid.set_cell_alpha grid ~x ~y ~code:32 ~fg:Ansi.Color.white ~bg:bg_with_alpha
-    ~attrs:Ansi.Attr.empty ()
+  Grid.set_cell grid ~x ~y ~glyph:Glyph.space ~fg:Ansi.Color.white
+    ~bg:bg_with_alpha ~attrs:Ansi.Attr.empty ~blend:true ()
 
 let draw_box grid ~x ~y ~w ~h ~bg ~border_color ~title ~subtitle ~alpha =
   let border_style = Style.make ~fg:border_color () in

@@ -248,8 +248,9 @@ let draw_horizontal slider grid ~x ~y ~width ~height =
           in
           if is_left_half then 0x258C else 0x2590
       in
+      let glyph = Glyph.of_uchar (Uchar.of_int code) in
       for y0 = 0 to render_height - 1 do
-        Grid.set_cell_alpha grid ~x:(x + real_x) ~y:(y + y0) ~code
+        Grid.set_cell grid ~x:(x + real_x) ~y:(y + y0) ~glyph ~blend:true
           ~fg:slider.props.thumb_color ~bg:slider.props.track_color
           ~attrs:Ansi.Attr.empty ()
       done
@@ -289,8 +290,9 @@ let draw_vertical slider grid ~x ~y ~width ~height =
           in
           if is_upper_half then 0x2580 else 0x2584
       in
+      let glyph = Glyph.of_uchar (Uchar.of_int code) in
       for x0 = 0 to render_width - 1 do
-        Grid.set_cell_alpha grid ~x:(x + x0) ~y:(y + real_y) ~code
+        Grid.set_cell grid ~x:(x + x0) ~y:(y + real_y) ~glyph ~blend:true
           ~fg:slider.props.thumb_color ~bg:slider.props.track_color
           ~attrs:Ansi.Attr.empty ()
       done
