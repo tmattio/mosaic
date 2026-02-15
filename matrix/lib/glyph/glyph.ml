@@ -348,7 +348,7 @@ module Pool = struct
     Array.unsafe_set pool.free_stack pool.free_count idx;
     pool.free_count <- pool.free_count + 1
 
-  let[@inline] alloc_slot pool len =
+  let alloc_string pool str off len =
     ensure_id_capacity pool;
     let id = next_free_id pool in
     let cap = Array.unsafe_get pool.lengths id in
@@ -360,15 +360,11 @@ module Pool = struct
         pool.storage_cursor <- cur + len;
         cur)
     in
+    Bytes.blit_string ~src:str ~src_pos:off ~dst:pool.storage ~dst_pos:cursor
+      ~len;
     Array.unsafe_set pool.offsets id cursor;
     Array.unsafe_set pool.lengths id len;
     Array.unsafe_set pool.refcounts id 0;
-    (id, cursor)
-
-  let alloc_string pool str off len =
-    let id, cursor = alloc_slot pool len in
-    Bytes.blit_string ~src:str ~src_pos:off ~dst:pool.storage ~dst_pos:cursor
-      ~len;
     id
 
   (* Reference Counting *)
@@ -633,15 +629,28 @@ module Pool = struct
         let len = Array.unsafe_get src.lengths idx in
         let src_off = Array.unsafe_get src.offsets idx in
         if src_off + len > Bytes.length src.storage then 0
-        else
-          let dst_id, cursor = alloc_slot dst len in
-          let dst_gen = Array.unsafe_get dst.generations dst_id in
+        else (
+          ensure_id_capacity dst;
+          let dst_id = next_free_id dst in
+          let cap = Array.unsafe_get dst.lengths dst_id in
+          let cursor =
+            if cap >= len then Array.unsafe_get dst.offsets dst_id
+            else (
+              ensure_storage_capacity dst len;
+              let cur = dst.storage_cursor in
+              dst.storage_cursor <- cur + len;
+              cur)
+          in
           Bytes.blit ~src:src.storage ~src_pos:src_off ~dst:dst.storage
             ~dst_pos:cursor ~len;
+          Array.unsafe_set dst.offsets dst_id cursor;
+          Array.unsafe_set dst.lengths dst_id len;
+          Array.unsafe_set dst.refcounts dst_id 0;
+          let dst_gen = Array.unsafe_get dst.generations dst_id in
           if is_continuation c then
             pack_continuation ~idx:dst_id ~gen:dst_gen ~left:(left_extent c)
               ~right:(right_extent c)
-          else pack_start dst_id dst_gen (width c)
+          else pack_start dst_id dst_gen (width c))
 
   let to_string pool c =
     if is_simple c then (
