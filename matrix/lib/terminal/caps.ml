@@ -11,6 +11,7 @@ type t = {
   sgr_pixels : bool;
   color_scheme_updates : bool;
   explicit_width : bool;
+  explicit_cursor_positioning : bool;
   scaled_text : bool;
   sixel : bool;
   sync : bool;
@@ -67,6 +68,7 @@ let make_initial_capabilities ~term =
     sgr_pixels = false;
     color_scheme_updates = false;
     explicit_width = false;
+    explicit_cursor_positioning = false;
     scaled_text = false;
     sixel = false;
     sync = false;

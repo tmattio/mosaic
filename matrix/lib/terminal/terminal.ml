@@ -19,6 +19,7 @@ type capabilities = Caps.t = {
   sgr_pixels : bool;
   color_scheme_updates : bool;
   explicit_width : bool;
+  explicit_cursor_positioning : bool;
   scaled_text : bool;
   sixel : bool;
   sync : bool;

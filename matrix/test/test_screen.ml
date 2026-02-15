@@ -626,7 +626,8 @@ let test_hyperlink_capability_gating () =
 
   (* Now test with capability disabled *)
   let r2 = Screen.create () in
-  Screen.apply_capabilities r2 ~explicit_width:false ~hyperlinks:false;
+  Screen.apply_capabilities r2 ~explicit_width:false
+    ~explicit_cursor_positioning:false ~hyperlinks:false;
   let f2 =
     Screen.build r2 ~width:10 ~height:1 (fun grid _hits ->
         let style =

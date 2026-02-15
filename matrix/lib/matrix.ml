@@ -221,6 +221,7 @@ let refresh_capabilities t =
   let caps = Terminal.capabilities t.terminal in
   t.caps <- caps;
   Screen.apply_capabilities t.screen ~explicit_width:caps.explicit_width
+    ~explicit_cursor_positioning:caps.explicit_cursor_positioning
     ~hyperlinks:caps.hyperlinks
 
 let refresh_render_region t =
@@ -889,6 +890,7 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
       ()
   in
   Screen.apply_capabilities screen ~explicit_width:caps.explicit_width
+    ~explicit_cursor_positioning:caps.explicit_cursor_positioning
     ~hyperlinks:caps.hyperlinks;
   Screen.resize screen ~width ~height;
   let focus_reporting = focus_reporting && caps.focus_tracking in

@@ -67,6 +67,7 @@ type t = {
   mutable prefer_explicit_width : bool;
   mutable explicit_width_capable : bool;
   mutable use_explicit_width : bool;
+  mutable use_explicit_cursor_positioning : bool;
   mutable hyperlinks_capable : bool;
   (* Post-processing *)
   mutable post_process_fns : (Grid.t -> delta:float -> unit) list;
@@ -80,25 +81,25 @@ let[@inline] width_step w = if w <= 0 then 1 else w
 
 (* --- Writer Logic --- *)
 
-(* Writes a grid cell's content to the output buffer. *)
-let[@inline] add_code_to_writer ~explicit_width ~cell_width pool
-    (scratch : bytes ref) (w : Esc.writer) grid idx =
+(* Writes a grid cell's content to the output buffer. For wide graphemes,
+   uses explicit_width (OSC 66) when available, otherwise falls back to cursor
+   repositioning to prevent column drift in terminals that miscalculate
+   grapheme widths. *)
+let[@inline] add_code_to_writer ~explicit_width ~explicit_cursor_positioning
+    ~row_offset ~y ~x ~grid_width ~cell_width pool (scratch : bytes ref)
+    (w : Esc.writer) grid idx =
   let glyph = Grid.get_glyph grid idx in
 
   if glyph = 0 || Grid.is_continuation grid idx then Esc.emit (Esc.char ' ') w
   else
-    (* glyph is a valid Glyph.t - handles both simple and complex cases *)
     let len = Pool.length pool glyph in
     if len <= 0 then Esc.emit (Esc.char ' ') w
     else if len = 1 && glyph < 128 then
-      (* Fast path: single ASCII byte *)
       Esc.emit (Esc.char (Char.chr glyph)) w
     else (
-      (* Resize scratch buffer if needed *)
       if len > Bytes.length !scratch then
         scratch := Bytes.create (max (Bytes.length !scratch * 2) len);
 
-      (* Zero-alloc copy from Pool -> Scratch *)
       let written = Pool.blit pool glyph !scratch ~pos:0 in
 
       if written <= 0 then Esc.emit (Esc.char ' ') w
@@ -107,7 +108,14 @@ let[@inline] add_code_to_writer ~explicit_width ~cell_width pool
           (Esc.explicit_width_bytes ~width:cell_width ~bytes:!scratch ~off:0
              ~len:written)
           w
-      else Esc.emit (Esc.bytes !scratch ~off:0 ~len:written) w)
+      else (
+        Esc.emit (Esc.bytes !scratch ~off:0 ~len:written) w;
+        (* Fallback: reposition cursor after wide graphemes to prevent drift
+           in terminals that support cursor addressing but not OSC 66. *)
+        if explicit_cursor_positioning && cell_width >= 2 then
+          let next_x = x + cell_width in
+          if next_x < grid_width then
+            Esc.cursor_position ~row:(row_offset + y + 1) ~col:(next_x + 1) w))
 
 (* --- Core Rendering Logic --- *)
 
@@ -116,8 +124,9 @@ type render_mode = [ `Diff | `Full ]
 (* The hot loop. Scans grid, checks dirty flags, diffs against previous frame,
    emits sequences. Zero-allocation implementation using tail-recursive loops
    with accumulators. *)
-let render_generic ~pool ~row_offset ~use_explicit_width ~use_hyperlinks ~mode
-    ~height_limit ~writer ~scratch ~sgr_state ~prev ~curr =
+let render_generic ~pool ~row_offset ~use_explicit_width
+    ~use_explicit_cursor_positioning ~use_hyperlinks ~mode ~height_limit ~writer
+    ~scratch ~sgr_state ~prev ~curr =
   let width = Grid.width curr in
   let curr_height = Grid.height curr in
   let height =
@@ -191,7 +200,9 @@ let render_generic ~pool ~row_offset ~use_explicit_width ~use_hyperlinks ~mode
 
         (* Emit Content *)
         add_code_to_writer ~explicit_width:use_explicit_width
-          ~cell_width:curr_width pool scratch writer curr idx;
+          ~explicit_cursor_positioning:use_explicit_cursor_positioning
+          ~row_offset ~y ~x ~grid_width:width ~cell_width:curr_width pool
+          scratch writer curr idx;
 
         write_run y (x + step)
   in
@@ -342,6 +353,7 @@ let submit ~(mode : render_mode) ?height_limit ~(writer : Esc.writer) r =
       cells :=
         render_generic ~pool:r.glyph_pool ~row_offset:r.row_offset
           ~use_explicit_width:r.use_explicit_width
+          ~use_explicit_cursor_positioning:r.use_explicit_cursor_positioning
           ~use_hyperlinks:r.hyperlinks_capable ~mode ~height_limit ~writer
           ~scratch ~sgr_state:r.sgr_state ~prev ~curr:r.next;
 
@@ -412,6 +424,7 @@ let create ?glyph_pool ?width_method ?respect_alpha ?(mouse_enabled = true)
       prefer_explicit_width = explicit_width;
       explicit_width_capable = true;
       use_explicit_width = explicit_width;
+      use_explicit_cursor_positioning = false;
       hyperlinks_capable = true;
       scratch_bytes = Bytes.create 1024;
       (* Large enough for any grapheme *)
@@ -503,9 +516,12 @@ let set_cursor_color t ~r ~g ~b =
 let reset_cursor_color t = Cursor_state.set_color t.cursor None
 let cursor_info t = Cursor_state.snapshot t.cursor
 
-let apply_capabilities r ~explicit_width ~hyperlinks =
+let apply_capabilities r ~explicit_width ~explicit_cursor_positioning ~hyperlinks
+    =
   r.explicit_width_capable <- explicit_width;
   r.use_explicit_width <- r.prefer_explicit_width && explicit_width;
+  r.use_explicit_cursor_positioning <-
+    (not r.use_explicit_width) && explicit_cursor_positioning;
   r.hyperlinks_capable <- hyperlinks
 
 let set_explicit_width t flag =

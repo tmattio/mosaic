@@ -403,18 +403,24 @@ type cursor_info = {
 val cursor_info : t -> cursor_info
 (** [cursor_info screen] returns the current desired cursor state. *)
 
-val apply_capabilities : t -> explicit_width:bool -> hyperlinks:bool -> unit
-(** [apply_capabilities screen ~explicit_width ~hyperlinks] applies terminal
-    capability flags for screens that manage their own capability detection.
-
-    Use this after querying terminal capabilities (e.g., via terminfo or runtime
-    queries) to configure width and hyperlink support based on terminal
-    responses. For screens embedded in higher-level runtimes, the runtime
-    typically handles capability detection automatically.
+val apply_capabilities :
+  t ->
+  explicit_width:bool ->
+  explicit_cursor_positioning:bool ->
+  hyperlinks:bool ->
+  unit
+(** [apply_capabilities screen ~explicit_width ~explicit_cursor_positioning
+      ~hyperlinks]
+    applies terminal capability flags.
 
     @param explicit_width
       Whether the terminal supports explicit-width OSC sequences. When [true]
       and {!set_explicit_width} is enabled, OSC sequences are emitted.
+    @param explicit_cursor_positioning
+      Whether to reposition the cursor after wide graphemes as a fallback when
+      [explicit_width] is unavailable. Prevents column drift in terminals that
+      miscalculate grapheme display widths. Only effective when [explicit_width]
+      is [false].
     @param hyperlinks
       Whether the terminal supports OSC 8 hyperlinks. When [true], hyperlink
       attributes are rendered as clickable links. *)

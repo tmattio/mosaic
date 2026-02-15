@@ -154,6 +154,7 @@ type capabilities = {
   sgr_pixels : bool;
   color_scheme_updates : bool;
   explicit_width : bool;
+  explicit_cursor_positioning : bool;
   scaled_text : bool;
   sixel : bool;
   sync : bool;
@@ -187,6 +188,8 @@ type capabilities = {
     - [sgr_pixels]: SGR pixel-position mouse support.
     - [explicit_width], [scaled_text]: explicit cell width/scaled text support,
       derived from proprietary cursor-position probes.
+    - [explicit_cursor_positioning]: cursor repositioning fallback for wide
+      graphemes when [explicit_width] is unavailable.
     - [sixel]: SIXEL graphics support.
     - [hyperlinks]: OSC 8 hyperlink support.
 

@@ -99,6 +99,12 @@ type t = {
   explicit_width : bool;
       (** [true] if the terminal has reported explicit cell-width information
           via proprietary cursor-position queries (iTerm2/Foot). *)
+  explicit_cursor_positioning : bool;
+      (** [true] if the terminal may miscalculate grapheme widths but supports
+          reliable cursor positioning. When set, the renderer repositions the
+          cursor after each wide grapheme to prevent column drift. Terminals
+          like tmux, alacritty, and screen benefit from this. Only used when
+          {!explicit_width} is [false]. *)
   scaled_text : bool;
       (** [true] if the terminal reports support for scaled text sizing (Foot,
           WezTerm and similar, via proprietary queries). *)
