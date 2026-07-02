@@ -875,9 +875,7 @@ let commit_placement (parent_node : Renderable.t) ~(old_children : child list)
       let already_correct =
         match List.nth_opt current i with Some n -> n == node | None -> false
       in
-      if not already_correct then (
-        Renderable.detach node;
-        Renderable.attach ~parent ~index:i node))
+      if not already_correct then Renderable.attach ~parent ~index:i node)
     new_children
 
 (* ───── Reconciliation ───── *)

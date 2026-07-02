@@ -150,6 +150,32 @@ let keyed_addition () =
   equal ~msg:"two children" int 2 (child_count renderer);
   is_true ~msg:"a survives" (List.nth (children_of renderer) 0 == node_a)
 
+let keyed_reorder_preserves_focus () =
+  let renderer, reconciler = make () in
+  Reconciler.render reconciler
+    (Vnode.fragment
+       [
+         Vnode.box ~key:"a" ~focusable:true [];
+         Vnode.box ~key:"b" ~focusable:true [];
+       ]);
+  do_frame renderer;
+  let node_a = List.nth (children_of renderer) 0 in
+  let node_b = List.nth (children_of renderer) 1 in
+  ignore (Renderer.focus renderer node_b : bool);
+  Reconciler.render reconciler
+    (Vnode.fragment
+       [
+         Vnode.box ~key:"b" ~focusable:true [];
+         Vnode.box ~key:"a" ~focusable:true [];
+       ]);
+  do_frame renderer;
+  is_true ~msg:"b remains focused" (Renderable.focused node_b);
+  is_true ~msg:"renderer still points at b"
+    (match Renderer.focused renderer with
+    | Some node -> node == node_b
+    | None -> false);
+  is_false ~msg:"a remains unfocused" (Renderable.focused node_a)
+
 let unkeyed_positional () =
   let renderer, reconciler = make () in
   Reconciler.render reconciler (Vnode.fragment [ Vnode.box []; Vnode.text "x" ]);
@@ -388,6 +414,7 @@ let () =
           test "reorder" keyed_reorder;
           test "removal" keyed_removal;
           test "addition" keyed_addition;
+          test "reorder preserves focus" keyed_reorder_preserves_focus;
           test "unkeyed positional" unkeyed_positional;
         ];
       group "Kind mismatch"
