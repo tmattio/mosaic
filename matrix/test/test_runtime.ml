@@ -385,6 +385,20 @@ let test_cursor_only_submit_emits_output () =
   is_true ~msg:"cursor-only frame moves the cursor"
     (contains_substring "\027[1;3H" output)
 
+let test_first_submit_emits_cursor_style () =
+  let app, state =
+    make_app ~mode:`Primary ~target_fps:None ~input_timeout:(Some 0.) ()
+  in
+  Matrix.prepare app;
+  Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"stable";
+  Matrix.set_cursor_style app ~style:`Block ~blinking:true;
+  Matrix.set_cursor_position app ~row:1 ~col:1;
+  Matrix.submit app;
+  (* The terminal's cursor style at startup is unknown: the first frame must
+     emit DECSCUSR even when the requested shape matches our own default. *)
+  is_true ~msg:"first frame emits the cursor style"
+    (contains_substring "\027[1 q" (output state))
+
 let test_initial_resize_fires_before_first_render () =
   let app, _state =
     make_app ~target_fps:None ~input_timeout:(Some 0.) ~stop_after_reads:5000 ()
@@ -976,6 +990,8 @@ let () =
             test_unchanged_submit_emits_no_bytes;
           test "cursor-only submit emits output"
             test_cursor_only_submit_emits_output;
+          test "first submit emits cursor style"
+            test_first_submit_emits_cursor_style;
         ];
       group "Resize"
         [

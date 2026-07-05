@@ -64,10 +64,12 @@ type app = {
   mutable primary : Primary.t;
   (* Scroll optimisation *)
   mutable scroll_hint : Screen.scroll_hint option;
-  (* Cursor state tracking — only emit style/color when changed. *)
+  (* Cursor state tracking — only emit style/color when changed. [None] means
+     the terminal state is unknown (startup, or after a suspend handed the
+     terminal to another program), so the next frame must emit. *)
   mutable last_cursor_position : (int * int) option;
   mutable last_cursor_visible : bool option;
-  mutable last_cursor_shape : Ansi.cursor_shape;
+  mutable last_cursor_shape : Ansi.cursor_shape option;
   mutable last_cursor_color : (int * int * int) option;
   (* Resize and frame timing *)
   mutable last_resize_apply_time : float;
@@ -567,7 +569,7 @@ let cursor_dirty t ~(cursor : Screen.cursor) ~cursor_max_row =
   let position = cursor_output_position t ~cursor ~cursor_max_row in
   position <> t.last_cursor_position
   || Some cursor.visible <> t.last_cursor_visible
-  || cursor_shape cursor <> t.last_cursor_shape
+  || Some (cursor_shape cursor) <> t.last_cursor_shape
   || cursor.color <> t.last_cursor_color
 
 let apply_cursor_state t ~buf ~(cursor : Screen.cursor) ~cursor_max_row =
@@ -579,9 +581,9 @@ let apply_cursor_state t ~buf ~(cursor : Screen.cursor) ~cursor_max_row =
         Buffer.add_string buf Ansi.(to_string (enable Cursor_visible))
   | None -> ());
   let shape = cursor_shape cursor in
-  if shape <> t.last_cursor_shape then begin
+  if Some shape <> t.last_cursor_shape then begin
     Buffer.add_string buf Ansi.(to_string (cursor_style ~shape));
-    t.last_cursor_shape <- shape
+    t.last_cursor_shape <- Some shape
   end;
   if cursor.color <> t.last_cursor_color then begin
     (match cursor.color with
@@ -754,6 +756,12 @@ let suspend t =
   update_loop_active t;
   t.redraw_requested <- false;
   force_full_redraw t;
+  (* The suspended program owns the terminal; whatever cursor state it leaves
+     behind is unknown, so the first frame after resume must re-emit. *)
+  t.last_cursor_position <- None;
+  t.last_cursor_visible <- None;
+  t.last_cursor_shape <- None;
+  t.last_cursor_color <- None;
   (try Terminal.set_mouse_mode t.terminal `Off with _ -> ());
   (try Terminal.enable_bracketed_paste t.terminal false with _ -> ());
   (try Terminal.enable_focus_reporting t.terminal false with _ -> ());
@@ -1033,7 +1041,7 @@ let init_app (c : config) ~write_output ~now ~wake ~terminal_size ~set_raw_mode
       scroll_hint = None;
       last_cursor_position = None;
       last_cursor_visible = None;
-      last_cursor_shape = `Blinking_block;
+      last_cursor_shape = None;
       last_cursor_color = None;
       last_resize_apply_time = 0.;
       pending_resize = None;
