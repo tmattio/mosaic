@@ -328,6 +328,43 @@ let right_click_does_not_auto_focus () =
   Renderer.dispatch_mouse t (mouse_press ~button:Right ~x:7 ~y:7 ());
   is_none ~msg:"no focus from right click" (Renderer.focused t)
 
+let shift_left_click_preserves_existing_focus () =
+  let t = make_renderer () in
+  let composer =
+    make_child ~parent:(Renderer.root t) ~x:0 ~y:0 ~w:10 ~h:5 ~focusable:true ()
+  in
+  let _target =
+    make_child ~parent:(Renderer.root t) ~x:20 ~y:0 ~w:10 ~h:5 ~focusable:true
+      ()
+  in
+  do_frame t;
+  ignore (Renderer.focus t composer : bool);
+  let modifiers = { Input.Modifier.none with shift = true } in
+  Renderer.dispatch_mouse t (mouse_press ~modifiers ~x:25 ~y:2 ());
+  match Renderer.focused t with
+  | Some n -> is_true ~msg:"composer remains focused" (n == composer)
+  | None -> fail "expected focus to be preserved"
+
+let prevent_default_mouse_down_blocks_auto_focus () =
+  let t = make_renderer () in
+  let composer =
+    make_child ~parent:(Renderer.root t) ~x:0 ~y:0 ~w:10 ~h:5 ~focusable:true ()
+  in
+  let target =
+    make_child ~parent:(Renderer.root t) ~x:20 ~y:0 ~w:10 ~h:5 ~focusable:true
+      ()
+  in
+  Renderable.on_mouse target (fun ev ->
+      match Event.Mouse.kind ev with
+      | Event.Mouse.Down { button = Left } -> Event.Mouse.prevent_default ev
+      | _ -> ());
+  do_frame t;
+  ignore (Renderer.focus t composer : bool);
+  Renderer.dispatch_mouse t (mouse_press ~x:25 ~y:2 ());
+  match Renderer.focused t with
+  | Some n -> is_true ~msg:"composer remains focused" (n == composer)
+  | None -> fail "expected focus to be preserved"
+
 let focus_fires_on_node () =
   let t = make_renderer () in
   let child =
@@ -985,6 +1022,10 @@ let () =
           test "click walks up to focusable parent"
             click_walks_up_to_focusable_parent;
           test "right click does not auto-focus" right_click_does_not_auto_focus;
+          test "shift left click preserves existing focus"
+            shift_left_click_preserves_existing_focus;
+          test "prevent default mouse down blocks auto-focus"
+            prevent_default_mouse_down_blocks_auto_focus;
           test "focus fires on node" focus_fires_on_node;
           test "blur fires on previous" blur_fires_on_previous;
           test "refocus fires blur then focus" refocus_fires_blur_then_focus;

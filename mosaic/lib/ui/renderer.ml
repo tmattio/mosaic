@@ -446,9 +446,12 @@ let dispatch_mouse_internal t ~x ~y ~modifiers kind =
       (match target_node with
       | Some node -> Renderable.Private.emit_mouse node ev
       | None -> ());
-      (* Auto-focus on left click *)
+      (* Auto-focus on ordinary left click. Native terminal Shift-selection may
+         still arrive as mouse input, but it should not steal application focus. *)
       (match kind with
-      | Event.Mouse.Down { button = Left } -> (
+      | Event.Mouse.Down { button = Left }
+        when (not modifiers.shift) && not (Event.Mouse.default_prevented ev)
+        -> (
           match target_node with
           | Some node -> (
               match find_focusable node with
