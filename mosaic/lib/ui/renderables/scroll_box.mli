@@ -71,6 +71,7 @@ module Props : sig
     ?sticky_scroll:bool ->
     ?sticky_start:[ `Top | `Bottom | `Left | `Right ] ->
     ?background:Ansi.Color.t ->
+    ?show_scrollbars:bool ->
     ?scrollbar_props:Scroll_bar.Props.t ->
     ?vertical_bar_props:Scroll_bar.Props.t ->
     ?horizontal_bar_props:Scroll_bar.Props.t ->
@@ -83,6 +84,8 @@ module Props : sig
       - [sticky_scroll] sticks to an edge as content grows. Defaults to [false].
       - [sticky_start] selects the sticky edge. Defaults to [`Bottom].
       - [background] fills the container background with a color.
+      - [show_scrollbars] displays the scroll bars when content overflows;
+        [false] never shows them (scrolling still works). Defaults to [true].
       - [scrollbar_props] is applied to both scroll bars.
       - [vertical_bar_props] overrides [scrollbar_props] for the vertical bar.
       - [horizontal_bar_props] overrides [scrollbar_props] for the horizontal
@@ -119,6 +122,7 @@ val create :
   ?sticky_start:[ `Top | `Bottom | `Left | `Right ] ->
   ?background:Ansi.Color.t ->
   ?scroll_accel:Scroll_accel.t ->
+  ?show_scrollbars:bool ->
   ?scrollbar_props:Scroll_bar.Props.t ->
   ?vertical_bar_props:Scroll_bar.Props.t ->
   ?horizontal_bar_props:Scroll_bar.Props.t ->
@@ -139,6 +143,8 @@ val create :
     - [sticky_start] selects the sticky edge. Defaults to [`Bottom].
     - [background] fills the container background.
     - [scroll_accel] acceleration strategy. Defaults to {!Scroll_accel.linear}.
+    - [show_scrollbars] displays the scroll bars when content overflows; [false]
+      never shows them (scrolling still works). Defaults to [true].
     - [scrollbar_props] visual properties applied to both scroll bars.
     - [vertical_bar_props] overrides [scrollbar_props] for the vertical bar.
     - [horizontal_bar_props] overrides [scrollbar_props] for the horizontal bar.

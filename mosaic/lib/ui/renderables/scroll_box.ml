@@ -92,6 +92,7 @@ module Props = struct
     sticky_scroll : bool;
     sticky_start : [ `Top | `Bottom | `Left | `Right ] option;
     background : Ansi.Color.t option;
+    show_scrollbars : bool;
     scrollbar_props : Scroll_bar.Props.t option;
     vertical_bar_props : Scroll_bar.Props.t option;
     horizontal_bar_props : Scroll_bar.Props.t option;
@@ -99,14 +100,15 @@ module Props = struct
   }
 
   let make ?(scroll_x = false) ?(scroll_y = true) ?(sticky_scroll = false)
-      ?sticky_start ?background ?scrollbar_props ?vertical_bar_props
-      ?horizontal_bar_props ?reveal () =
+      ?sticky_start ?background ?(show_scrollbars = true) ?scrollbar_props
+      ?vertical_bar_props ?horizontal_bar_props ?reveal () =
     {
       scroll_x;
       scroll_y;
       sticky_scroll;
       sticky_start;
       background;
+      show_scrollbars;
       scrollbar_props;
       vertical_bar_props;
       horizontal_bar_props;
@@ -120,6 +122,7 @@ module Props = struct
     && a.sticky_scroll = b.sticky_scroll
     && a.sticky_start = b.sticky_start
     && Option.equal Ansi.Color.equal a.background b.background
+    && a.show_scrollbars = b.show_scrollbars
     && Option.equal Scroll_bar.Props.equal a.scrollbar_props b.scrollbar_props
     && Option.equal Scroll_bar.Props.equal a.vertical_bar_props
          b.vertical_bar_props
@@ -588,11 +591,27 @@ let resolve_bar_props shared specific =
   | None, Some p -> Some p
   | Some _, Some specific -> Some specific
 
+(* Hidden bars use the manual-visibility override so overflow recalculation
+   does not bring them back; showing again restores automatic visibility. *)
+let set_show_scrollbars t v =
+  if t.props.show_scrollbars <> v then begin
+    t.props <- { t.props with show_scrollbars = v };
+    if v then begin
+      Scroll_bar.reset_visibility_control t.vertical_bar;
+      Scroll_bar.reset_visibility_control t.horizontal_bar
+    end
+    else begin
+      Scroll_bar.set_visible_override t.vertical_bar false;
+      Scroll_bar.set_visible_override t.horizontal_bar false
+    end
+  end
+
 let apply_props t (props : Props.t) =
   set_background t props.background;
   set_sticky_scroll t props.sticky_scroll;
   set_sticky_start t props.sticky_start;
   set_reveal t props.reveal;
+  set_show_scrollbars t props.show_scrollbars;
   (match resolve_bar_props props.scrollbar_props props.vertical_bar_props with
   | Some p -> Scroll_bar.apply_props t.vertical_bar p
   | None -> ());
@@ -605,8 +624,8 @@ let apply_props t (props : Props.t) =
 let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
     ?(scroll_x = false) ?(scroll_y = true) ?(sticky_scroll = false)
     ?sticky_start ?background ?(scroll_accel = Scroll_accel.linear ())
-    ?scrollbar_props ?vertical_bar_props ?horizontal_bar_props ?reveal
-    ?on_scroll () =
+    ?(show_scrollbars = true) ?scrollbar_props ?vertical_bar_props
+    ?horizontal_bar_props ?reveal ?on_scroll () =
   let node =
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
@@ -680,6 +699,10 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
     | None -> ());
     bar
   in
+  if not show_scrollbars then begin
+    Scroll_bar.set_visible_override vertical_bar false;
+    Scroll_bar.set_visible_override horizontal_bar false
+  end;
   (* Route user children to content after internal structure is built. *)
   Renderable.set_child_target node (Some content_node);
   let props =
@@ -689,6 +712,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
       sticky_scroll;
       sticky_start;
       background;
+      show_scrollbars;
       scrollbar_props;
       vertical_bar_props;
       horizontal_bar_props;

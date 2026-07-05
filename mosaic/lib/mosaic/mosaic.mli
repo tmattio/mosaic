@@ -2034,6 +2034,7 @@ val scroll_box :
   ?sticky_scroll:bool ->
   ?sticky_start:[ `Top | `Bottom | `Left | `Right ] ->
   ?background:Ansi.Color.t ->
+  ?show_scrollbars:bool ->
   ?reveal:Scroll_box.reveal ->
   ?on_scroll:(x:int -> y:int -> 'msg option) ->
   'msg t list ->
@@ -2050,6 +2051,8 @@ val scroll_box :
     - [sticky_start] -- the edge to which sticky scrolling anchors. Defaults to
       [`Bottom].
     - [background] -- background fill color of the scroll area.
+    - [show_scrollbars] -- when [false] the scroll bars never render (scrolling
+      still works). Defaults to [true], showing them on overflow.
     - [reveal] -- one-shot scroll request to a content coordinate.
     - [on_scroll] -- fired after a scroll event; receives the new scroll
       position [~x] and [~y] in cells. *)
