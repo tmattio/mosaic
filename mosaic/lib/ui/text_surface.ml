@@ -693,9 +693,19 @@ let measure t ~known_dimensions ~available_space ~style:_ =
     | Some (wm, cw, cv, cl, cmw) when wm = t.wrap && cw = w_int && cv = ver ->
         (cl, cmw)
     | _ ->
-        let info = compute_display_info t ?wrap_width () in
-        let nl = Array.length info.lines in
-        let mw = info.max_line_width in
+        let nl, mw =
+          match t.wrap with
+          | `None ->
+              (* No wrapping: one display line per logical line, at the
+                 buffer's untruncated widths. Truncation is a render concern;
+                 measuring truncated lines would clamp the intrinsic width to
+                 whatever width the node was last laid out at. *)
+              ( Text_buffer.line_count t.buffer,
+                Text_buffer.max_line_width t.buffer )
+          | `Char | `Word ->
+              let info = compute_display_info t ?wrap_width () in
+              (Array.length info.lines, info.max_line_width)
+        in
         t.measure_cache <- Some (t.wrap, w_int, ver, nl, mw);
         (nl, mw)
   in

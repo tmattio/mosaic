@@ -353,6 +353,26 @@ let measure_definite_no_wrap_uncapped () =
   equal ~msg:"width" int 11 (int_of_float result.width);
   equal ~msg:"height" int 1 (int_of_float result.height)
 
+let measure_truncate_ignores_previous_layout_width () =
+  let s = make_surface ~content:"dune" () in
+  Text_surface.set_truncate s true;
+  (* A previous render laid the node out at its then-content's width. *)
+  Text_surface.set_wrap_width s (Some 4);
+  let result =
+    call_measure s ~available_width:Toffee.Available_space.Max_content
+      ~available_height:Toffee.Available_space.Max_content
+  in
+  equal ~msg:"width before growth" int 4 (int_of_float result.width);
+  (* The reconciler reuses the node for longer content: the intrinsic width
+     must be the new content's, not the stale layout width. *)
+  Text_buffer.set_text (Text_surface.buffer s) "review_compose.ml";
+  Text_surface.invalidate s;
+  let result =
+    call_measure s ~available_width:Toffee.Available_space.Max_content
+      ~available_height:Toffee.Available_space.Max_content
+  in
+  equal ~msg:"width after growth" int 17 (int_of_float result.width)
+
 let measure_known_width_overrides () =
   let s = make_surface ~content:"hello world" () in
   let result =
@@ -542,6 +562,8 @@ let () =
           test "min_content word wrap" measure_min_content_word_wrap;
           test "definite caps with wrap" measure_definite_caps_with_wrap;
           test "definite no wrap uncapped" measure_definite_no_wrap_uncapped;
+          test "truncate ignores previous layout width"
+            measure_truncate_ignores_previous_layout_width;
           test "known width overrides" measure_known_width_overrides;
           test "known height overrides" measure_known_height_overrides;
           test "empty buffer" measure_empty_buffer;
