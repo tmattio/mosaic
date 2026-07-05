@@ -411,6 +411,16 @@ let dispatch_mouse_internal t ~x ~y ~modifiers kind =
   t.pointer.modifiers <- modifiers;
   let hit_num = Screen.query_hit t.screen ~x ~y in
   let target_node = if hit_num > 0 then find_node t hit_num else None in
+  (* A scroll over dead space still means "scroll": fall back to the focused
+     renderable, whose ancestor chain reaches the nearest scrollable. *)
+  let target_node =
+    match (kind, target_node) with
+    | Event.Mouse.Scroll _, None -> (
+        match !(t.focused) with
+        | Some node when Renderable.focused node -> Some node
+        | _ -> None)
+    | _ -> target_node
+  in
   let target_num =
     Option.fold ~none:0 ~some:Renderable.Private.num target_node
   in
