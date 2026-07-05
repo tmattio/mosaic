@@ -360,3 +360,124 @@ let%expect_test "fill false does not fill interior" =
 [0;38;2;255;255;255m          [0m
 [0;38;2;255;255;255m          [0m
 [0;38;2;255;255;255m          [0m|}]
+
+(* ── Absolute positioning ── *)
+
+let abs_box ~styles children =
+  Vnode.box ~border:true
+    ~style:
+      (List.fold_left
+         (fun s f -> f s)
+         (Toffee.Style.default
+         |> Toffee.Style.set_position Toffee.Style.Position.Absolute
+         |> Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Column)
+         styles)
+    children
+
+let rows n = List.init n (fun i -> Vnode.text (Printf.sprintf "row%d" i))
+
+let auto_margins =
+  {
+    Toffee.Geometry.Rect.left = Toffee.Style.Length_percentage_auto.auto;
+    right = Toffee.Style.Length_percentage_auto.auto;
+    top = Toffee.Style.Length_percentage_auto.auto;
+    bottom = Toffee.Style.Length_percentage_auto.auto;
+  }
+
+let%expect_test "absolute child without inset keeps its content size" =
+  render ~width:20 ~height:10
+    (Vnode.box [ Vnode.text "flow"; abs_box ~styles:[] (rows 5) ]);
+  [%expect_exact {|
+┌────┐
+│row0│
+│row1│
+│row2│
+│row3│
+│row4│
+└────┘
+
+
+|}]
+
+let%expect_test "absolute child with inset 0 and auto margins centers" =
+  render ~width:20 ~height:11
+    (Vnode.box
+       [
+         abs_box
+           ~styles:
+             [
+               Toffee.Style.set_inset (Vnode.inset 0);
+               Toffee.Style.set_margin auto_margins;
+               Toffee.Style.set_size (Vnode.size ~width:10 ~height:5);
+             ]
+           (rows 3);
+       ]);
+  [%expect_exact
+    {|
+
+
+
+     ┌────────┐
+     │row0    │
+     │row1    │
+     │row2    │
+     └────────┘
+
+
+|}]
+
+let%expect_test "absolute child centers via parent justify and align" =
+  render ~width:20 ~height:11
+    (Vnode.box
+       ~style:
+         (Toffee.Style.default
+         |> Toffee.Style.set_justify_content
+              (Some Toffee.Style.Align_content.Center)
+         |> Toffee.Style.set_align_items (Some Toffee.Style.Align_items.Center)
+         )
+       [ abs_box ~styles:[] (rows 3) ]);
+  [%expect_exact
+    {|
+
+
+
+       ┌────┐
+       │row0│
+       │row1│
+       │row2│
+       └────┘
+
+
+|}]
+
+let%expect_test "overflow hidden parent clips its absolute child" =
+  render ~width:20 ~height:10
+    (Vnode.box
+       ~style:
+         (Toffee.Style.default
+         |> Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Column)
+       [
+         Vnode.text "above";
+         Vnode.box
+           ~style:
+             (Toffee.Style.default
+             |> Toffee.Style.set_size (Vnode.size ~width:20 ~height:3)
+             |> Toffee.Style.set_overflow
+                  {
+                    Toffee.Geometry.Point.x = Toffee.Style.Overflow.Hidden;
+                    y = Toffee.Style.Overflow.Hidden;
+                  })
+           [ abs_box ~styles:[] (rows 5) ];
+         Vnode.text "below";
+       ]);
+  [%expect_exact {|
+above
+┌────┐
+│row0│
+│row1│
+below
+
+
+
+
+|}]
