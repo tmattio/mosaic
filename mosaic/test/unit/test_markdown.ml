@@ -4,12 +4,13 @@ open Test_harness
 
 (* ── Helpers ── *)
 
-let make_md ?content ?conceal ?streaming ?render_node ?render_code () =
+let make_md ?content ?conceal ?streaming ?render_node ?render_code ?code_syntax
+    () =
   let t = make_ctx () in
   let root = make_root t in
   let md =
     Markdown.create ~parent:root ?content ?conceal ?streaming ?render_node
-      ?render_code ()
+      ?render_code ?code_syntax ()
   in
   (t, md)
 
@@ -86,6 +87,18 @@ let set_style_custom () =
   in
   Markdown.set_style md custom_style
 
+let set_code_syntax_rerenders_existing_block () =
+  (* The code block is first rendered with the default renderer, then
+     [set_code_syntax] must re-render it through the highlighting hook. *)
+  let _t, md = make_md ~content:"```ocaml\ncode\n```" () in
+  let used = ref false in
+  Markdown.set_code_syntax md
+    (Some
+       (fun ~language:_ ~content:_ ->
+         used := true;
+         None));
+  is_true ~msg:"code_syntax called on re-render" !used
+
 let selection_callback_reports_rendered_text () =
   let renderer = Renderer.create () in
   let selected = ref None in
@@ -156,6 +169,35 @@ let create_custom_render_code () =
   in
   is_true ~msg:"render_code called" !used
 
+let create_custom_code_syntax () =
+  let seen_language = ref None in
+  let _t, _md =
+    make_md ~content:"```ocaml\ncode\n```"
+      ~code_syntax:(fun ~language ~content:_ ->
+        seen_language := language;
+        None)
+      ()
+  in
+  equal ~msg:"code_syntax receives language" (option string) (Some "ocaml")
+    !seen_language
+
+let render_code_takes_precedence_over_code_syntax () =
+  (* When both hooks are set, [render_code] wins for code blocks. *)
+  let render_code_used = ref false in
+  let code_syntax_used = ref false in
+  let _t, _md =
+    make_md ~content:"```ocaml\ncode\n```"
+      ~render_code:(fun ~parent ~language:_ ~content:_ ->
+        render_code_used := true;
+        Renderable.create ~parent ())
+      ~code_syntax:(fun ~language:_ ~content:_ ->
+        code_syntax_used := true;
+        None)
+      ()
+  in
+  is_true ~msg:"render_code used" !render_code_used;
+  is_false ~msg:"code_syntax not used" !code_syntax_used
+
 let pp_does_not_crash () =
   let _t, md = make_md ~content:"# Hello\n\nWorld" () in
   let buf = Buffer.create 64 in
@@ -190,6 +232,8 @@ let () =
           test "set_streaming toggles" set_streaming_toggles;
           test "set_streaming same no-op" set_streaming_same_is_noop;
           test "set_style custom" set_style_custom;
+          test "set_code_syntax re-renders existing block"
+            set_code_syntax_rerenders_existing_block;
           test "selection callback reports rendered text"
             selection_callback_reports_rendered_text;
           test "selection disabled suppresses callback"
@@ -202,6 +246,9 @@ let () =
           test "custom render_node returning None"
             create_custom_render_node_none;
           test "custom render_code" create_custom_render_code;
+          test "custom code_syntax" create_custom_code_syntax;
+          test "render_code takes precedence over code_syntax"
+            render_code_takes_precedence_over_code_syntax;
           test "pp does not crash" pp_does_not_crash;
         ];
     ]

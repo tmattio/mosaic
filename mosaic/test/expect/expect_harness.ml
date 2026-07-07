@@ -172,12 +172,12 @@ let print_canvas_ansi ?(width = 20) ?(height = 6) draw () =
 type markdown_app = { md_renderer : Renderer.t; md : Markdown.t }
 
 let render_markdown ?(width = 60) ?(height = 20) ?style ?conceal ?streaming
-    ?render_node ?render_code content =
+    ?render_node ?render_code ?code_syntax content =
   let renderer = Renderer.create () in
   set_viewport renderer ~width ~height;
   let md =
     Markdown.create ~parent:(Renderer.root renderer) ?style ?conceal ?streaming
-      ?render_node ?render_code ~content ()
+      ?render_node ?render_code ?code_syntax ~content ()
   in
   fill_node (Markdown.node md);
   Renderer.render_frame renderer ~width ~height ~delta:0.;
@@ -186,12 +186,12 @@ let render_markdown ?(width = 60) ?(height = 20) ?style ?conceal ?streaming
   print_string (grid_to_text grid)
 
 let make_markdown_app ?(width = 60) ?(height = 20) ?style ?conceal ?streaming
-    ?render_node ?render_code content =
+    ?render_node ?render_code ?code_syntax content =
   let renderer = Renderer.create () in
   set_viewport renderer ~width ~height;
   let md =
     Markdown.create ~parent:(Renderer.root renderer) ?style ?conceal ?streaming
-      ?render_node ?render_code ~content ()
+      ?render_node ?render_code ?code_syntax ~content ()
   in
   fill_node (Markdown.node md);
   { md_renderer = renderer; md }

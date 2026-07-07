@@ -58,11 +58,13 @@ module Props = struct
     selectable : bool;
     selection_bg : Ansi.Color.t option;
     selection_fg : Ansi.Color.t option;
+    code_syntax :
+      (language:string option -> content:string -> Code.syntax option) option;
   }
 
   let make ?(content = "") ?(conceal = true) ?(streaming = false)
       ?(style = default_style) ?(selectable = true) ?selection_bg ?selection_fg
-      () =
+      ?code_syntax () =
     {
       content;
       conceal;
@@ -71,6 +73,7 @@ module Props = struct
       selectable;
       selection_bg;
       selection_fg;
+      code_syntax;
     }
 
   let default = make ()
@@ -81,6 +84,7 @@ module Props = struct
     && a.selectable = b.selectable
     && Option.equal Ansi.Color.equal a.selection_bg b.selection_bg
     && Option.equal Ansi.Color.equal a.selection_fg b.selection_fg
+    && Option.equal ( == ) a.code_syntax b.code_syntax
 end
 
 (* ───── Hooks ───── *)
@@ -128,6 +132,8 @@ type render_env = {
     content:string ->
     Renderable.t)
     option;
+  code_syntax :
+    (language:string option -> content:string -> Code.syntax option) option;
 }
 
 (* ───── Types ───── *)
@@ -157,6 +163,8 @@ type t = {
     content:string ->
     Renderable.t)
     option;
+  mutable code_syntax :
+    (language:string option -> content:string -> Code.syntax option) option;
 }
 
 let node t = t.node
@@ -456,6 +464,18 @@ let render_code_block_default ~(env : render_env) ~parent ?index ~is_last
   in
   { tag = Code_tag; widget = Box_widget (box, [ Text_widget text ]) }
 
+(* Render a fenced code block as a borderless {!Code} view, using the syntax
+   configuration returned by the [code_syntax] hook. *)
+let render_code_highlighted ~parent ?index ~is_last code_syntax
+    (cb : Cmarkit.Block.Code_block.t) =
+  let content = code_block_text cb in
+  let language = code_block_language cb in
+  let syntax = code_syntax ~language ~content in
+  let code =
+    Code.create ~parent ?index ~content ?syntax ~style:(block_style ~is_last) ()
+  in
+  { tag = Code_tag; widget = Container_widget (Code.node code, []) }
+
 let render_thematic_break ~(env : render_env) ~parent ?index ~is_last
     (_tb : Cmarkit.Block.Thematic_break.t) =
   let hr_style = env.style Thematic_break in
@@ -746,7 +766,7 @@ and render_table ~(env : render_env) ~parent ?index ~is_last
 (* Dispatch a single block to the appropriate renderer, checking hooks first *)
 and render_block ~(env : render_env) ~parent ?index ~is_last
     (block : Cmarkit.Block.t) : tagged_block option =
-  (* 1. Code block hook *)
+  (* 1. Full code block override *)
   match (env.render_code, block) with
   | Some render_code, Cmarkit.Block.Code_block (cb, _meta) ->
       let language = code_block_language cb in
@@ -754,25 +774,30 @@ and render_block ~(env : render_env) ~parent ?index ~is_last
       let custom_node = render_code ~parent ~language ~content in
       Some { tag = Code_tag; widget = Container_widget (custom_node, []) }
   | _ -> (
-      (* 2. General render hook *)
-      let custom =
-        match env.render_node with
-        | Some hook -> (
-            match hook block ~parent ~is_last with
-            | Some custom_node ->
-                Some
-                  {
-                    tag = Custom_tag;
-                    widget = Container_widget (custom_node, []);
-                  }
-            | None -> None)
-        | None -> None
-      in
-      match custom with
-      | Some tb -> Some tb
-      | None ->
-          (* 3. Default rendering *)
-          render_block_default ~env ~parent ?index ~is_last block)
+      (* 2. Highlighted code block *)
+      match (env.code_syntax, block) with
+      | Some code_syntax, Cmarkit.Block.Code_block (cb, _meta) ->
+          Some (render_code_highlighted ~parent ?index ~is_last code_syntax cb)
+      | _ ->
+          (* 3. General render hook *)
+          general_render ~env ~parent ?index ~is_last block)
+
+and general_render ~(env : render_env) ~parent ?index ~is_last block =
+  let custom =
+    match env.render_node with
+    | Some hook -> (
+        match hook block ~parent ~is_last with
+        | Some custom_node ->
+            Some
+              { tag = Custom_tag; widget = Container_widget (custom_node, []) }
+        | None -> None)
+    | None -> None
+  in
+  match custom with
+  | Some tb -> Some tb
+  | None ->
+      (* Default rendering *)
+      render_block_default ~env ~parent ?index ~is_last block
 
 and render_block_default ~(env : render_env) ~parent ?index ~is_last
     (block : Cmarkit.Block.t) : tagged_block option =
@@ -877,7 +902,7 @@ let update_leaf_in_place ~(env : render_env) ~is_last (tb : tagged_block)
   | ( Code_tag,
       Cmarkit.Block.Code_block (cb, _),
       Box_widget (box, [ Text_widget text ]) )
-    when env.render_code = None ->
+    when Option.is_none env.render_code && Option.is_none env.code_syntax ->
       let code_text = code_block_text cb in
       let title = code_block_language cb in
       Text.set_content text code_text;
@@ -957,6 +982,7 @@ let render_env t defs =
        else None);
     render_node = t.render_node;
     render_code = t.render_code;
+    code_syntax = t.code_syntax;
   }
 
 (* ───── Reconciliation ───── *)
@@ -1049,7 +1075,7 @@ let rerender_blocks t =
 let create ~parent ?index ?id ?(layout_style = column_style) ?visible ?z_index
     ?opacity ?(content = "") ?(style = default_style) ?(conceal = true)
     ?(streaming = false) ?(selectable = true) ?selection_bg ?selection_fg
-    ?on_selection ?render_node ?render_code () =
+    ?on_selection ?render_node ?render_code ?code_syntax () =
   let node =
     Renderable.create ~parent ?index ?id ~style:layout_style ?visible ?z_index
       ?opacity ()
@@ -1078,6 +1104,7 @@ let create ~parent ?index ?id ?(layout_style = column_style) ?visible ?z_index
       last_ast_blocks = [];
       render_node;
       render_code;
+      code_syntax;
     }
   in
   if content <> "" then update_blocks t;
@@ -1103,6 +1130,10 @@ let set_content t s =
 
 let set_style t f =
   t.style <- f;
+  if t.blocks <> [] then rerender_blocks t else update_blocks t
+
+let set_code_syntax t f =
+  t.code_syntax <- f;
   if t.blocks <> [] then rerender_blocks t else update_blocks t
 
 let set_conceal t v =
@@ -1152,6 +1183,7 @@ let set_on_selection t f =
 
 let apply_props t (props : Props.t) =
   set_style t props.style;
+  set_code_syntax t props.code_syntax;
   set_conceal t props.conceal;
   set_streaming t props.streaming;
   set_selectable t props.selectable;

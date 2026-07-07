@@ -206,6 +206,41 @@ hello
 ```|};
   [%expect {|CUSTOM: hello|}]
 
+let%expect_test "code_syntax renders a borderless code view" =
+  (* Returning [None] still routes the block through the [Code] view, so it is
+     drawn without the default left border. *)
+  render_markdown
+    ~code_syntax:(fun ~language:_ ~content:_ -> None)
+    {|```ocaml
+let x = 1
+```|};
+  [%expect {|let x = 1|}]
+
+let%expect_test "code_syntax threads through the declarative element" =
+  render ~width:40 ~height:4
+    (Vnode.markdown
+       ~code_syntax:(fun ~language:_ ~content:_ -> None)
+       {|```ocaml
+let x = 1
+```|});
+  [%expect {|let x = 1|}]
+
+let%expect_test "code_syntax highlighting is applied" =
+  (* A returned [Code.syntax] must reach the [Code] view: the highlighted span
+     carries the resolved ANSI style. *)
+  render_ansi ~width:10 ~height:3
+    (Vnode.markdown
+       ~code_syntax:(fun ~language:_ ~content:_ ->
+         let highlights = Syntax_highlight.of_triples [ (0, 3, "keyword") ] in
+         Some (Code.syntax ~style:Syntax_style.default highlights))
+       {|```
+let x
+```|});
+  [%expect
+    {|[0;38;2;255;151;0;1mlet[38;2;255;255;255;22m x     [0m
+[0;38;2;255;255;255m          [0m
+[0;38;2;255;255;255m          [0m|}]
+
 (* ── Thematic breaks ── *)
 
 let%expect_test "horizontal rule" =

@@ -1185,7 +1185,7 @@ let markdown ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
     ?visible ?z_index ?opacity ?focusable ?autofocus ?buffered ?live ?ref
     ?on_mouse ?on_key ?on_paste ?md_style ?conceal ?streaming ?selectable
-    ?selection_bg ?selection_fg ?on_selection content =
+    ?selection_bg ?selection_fg ?code_syntax ?on_selection content =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1198,8 +1198,8 @@ let markdown ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
   in
   Vnode.markdown ?key ?id ~style ?visible ?z_index ?opacity ?focusable
     ?autofocus ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?md_style
-    ?conceal ?streaming ?selectable ?selection_bg ?selection_fg ?on_selection
-    content
+    ?conceal ?streaming ?selectable ?selection_bg ?selection_fg ?code_syntax
+    ?on_selection content
 
 let table ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items

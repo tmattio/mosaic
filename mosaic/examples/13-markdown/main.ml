@@ -136,6 +136,18 @@ end
 let init () = ((), Cmd.none)
 let update msg () = match msg with Quit -> ((), Cmd.quit)
 
+(* Syntax-highlight OCaml fenced code blocks with Tree-sitter. Markdown renders
+   the block as a borderless [Code] view using the returned syntax config. *)
+let code_syntax ~language ~content =
+  match language with
+  | Some "ocaml" ->
+      let highlights =
+        Tree_sitter_ocaml.highlight_ocaml content |> Syntax_highlight.of_triples
+      in
+      Some
+        (Code.syntax ~language:"ocaml" ~style:Syntax_style.default highlights)
+  | _ -> None
+
 (* Palette *)
 let header_bg = Ansi.Color.of_rgb 30 80 100
 let footer_bg = Ansi.Color.grayscale ~level:3
@@ -162,7 +174,7 @@ let view () =
         [
           scroll_box ~scroll_y:true ~scroll_x:false
             ~size:{ width = pct 100; height = pct 100 }
-            [ markdown markdown_content ];
+            [ markdown ~code_syntax markdown_content ];
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg

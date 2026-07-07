@@ -63,6 +63,8 @@ module Props : sig
     ?selectable:bool ->
     ?selection_bg:Ansi.Color.t ->
     ?selection_fg:Ansi.Color.t ->
+    ?code_syntax:
+      (language:string option -> content:string -> Code.syntax option) ->
     unit ->
     t
   (** [make ()] is a props value. With:
@@ -74,7 +76,9 @@ module Props : sig
       - [selectable]: whether rendered markdown text can be selected. Defaults
         to [true].
       - [selection_bg]: background color for selected text.
-      - [selection_fg]: foreground color for selected text. *)
+      - [selection_fg]: foreground color for selected text.
+      - [code_syntax]: a syntax-highlighting hook for fenced code blocks,
+        matching the [code_syntax] argument of {!create}. Defaults to [None]. *)
 
   val default : t
   (** [default] is the default props value, equivalent to [make ()]. *)
@@ -111,6 +115,7 @@ val create :
     language:string option ->
     content:string ->
     Renderable.t) ->
+  ?code_syntax:(language:string option -> content:string -> Code.syntax option) ->
   unit ->
   t
 (** [create ~parent ()] is a markdown display widget attached to [parent]. With:
@@ -133,8 +138,14 @@ val create :
       returned renderable must be attached to [parent].
     - [render_code]: a custom code block renderer called for code blocks before
       [render_node]. Receives the optional language tag and the code content.
-      The returned renderable must be attached to [parent]. Use this to
-      integrate syntax highlighting. *)
+      The returned renderable must be attached to [parent]. Use this for full
+      control over code block rendering.
+    - [code_syntax]: a syntax-highlighting hook called for fenced code blocks
+      when [render_code] is not set. Receives the optional language tag and the
+      code content, and returns the {!Code.syntax} configuration to highlight
+      the block with, or [None] for no highlighting. The block is rendered as a
+      borderless {!Code} view. Use this to integrate syntax highlighting without
+      taking over layout. *)
 
 val node : t -> Renderable.t
 (** [node t] is the underlying {!Renderable.t} for [t]. *)
@@ -164,6 +175,15 @@ val set_style : t -> style -> unit
 (** [set_style t f] changes the style resolver of [t] to [f] and re-renders.
     Re-parsing is skipped when blocks already exist; leaf blocks are updated in
     place without destroying their renderables. *)
+
+val set_code_syntax :
+  t ->
+  (language:string option -> content:string -> Code.syntax option) option ->
+  unit
+(** [set_code_syntax t f] changes the syntax-highlighting hook of [t] to [f]
+    (see the [code_syntax] argument of {!create}) and re-renders. [None] falls
+    back to the default bordered code block. Re-parsing is skipped when blocks
+    already exist. *)
 
 val set_conceal : t -> bool -> unit
 (** [set_conceal t v] sets whether [t] hides markdown syntax characters.
