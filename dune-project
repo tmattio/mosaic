@@ -74,7 +74,8 @@
   dune
   matrix
   (eio
-   (>= 1.2)))
+   (>= 1.2))
+  (windtrap :with-test))
  (tags
   (terminal eio "structured-concurrency")))
 

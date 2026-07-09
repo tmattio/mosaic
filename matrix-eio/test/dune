@@ -1,0 +1,4 @@
+(test
+ (name test_driver)
+ (package matrix-eio)
+ (libraries windtrap eio eio.mock matrix matrix.test))
