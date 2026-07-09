@@ -371,7 +371,11 @@ val dump_frame : ?hits:bool -> ?dir:string -> ?pattern:string -> app -> unit
 
 val install_signal_handlers : unit -> unit
 (** [install_signal_handlers ()] installs shutdown handlers for SIGTERM, SIGINT,
-    SIGQUIT, and SIGABRT. Idempotent. *)
+    SIGQUIT, and SIGABRT, and an uncaught-exception handler that restores the
+    terminal before reporting the exception and its recorded backtrace. Whether
+    a backtrace is recorded is the application's policy
+    ([Printexc.record_backtrace] or [OCAMLRUNPARAM=b]); when recording is off,
+    the report says how to enable it. Idempotent. *)
 
 (** {1:custom Custom backends}
 
