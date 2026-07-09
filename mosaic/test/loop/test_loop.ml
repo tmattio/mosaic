@@ -224,3 +224,35 @@ let%expect_test "replaying the output stream through a VTE matches the grid" =
 replayed:
 |keys:[a,b] ticks:0 size:- note:-
 ||}]
+
+let%expect_test "an every-timer stepped exactly onto its deadline keeps firing" =
+  (* Advancing by exactly the interval makes the frame delta [now -. last_time]
+     the subtraction of two accumulated floats, which can fall an ULP short of
+     the interval (0.1 +. 0.1 +. ... never lands on a clean multiple). A strict
+     deadline test would then skip the fire while the wakeup re-arms as
+     immediately due — a busy loop. The tick count must keep climbing one per
+     step, never stalling and never doubling. *)
+  let steps = ref [] in
+  for _ = 1 to 8 do
+    steps := `Snap :: `Advance 0.1 :: !steps
+  done;
+  drive
+    (app ~subs:(fun _ -> Mosaic.Sub.every 0.1 (fun () -> Tick)) ())
+    (List.rev !steps);
+  [%expect
+    {||keys:[] ticks:1 size:- note:-
+|
+|keys:[] ticks:2 size:- note:-
+|
+|keys:[] ticks:3 size:- note:-
+|
+|keys:[] ticks:4 size:- note:-
+|
+|keys:[] ticks:5 size:- note:-
+|
+|keys:[] ticks:6 size:- note:-
+|
+|keys:[] ticks:7 size:- note:-
+|
+|keys:[] ticks:8 size:- note:-
+||}]

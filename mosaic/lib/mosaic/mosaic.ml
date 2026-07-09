@@ -575,15 +575,29 @@ let handle_tick runtime ~dt =
       Matrix.request_redraw runtime.matrix_app
   | None -> ()
 
+(* A frame can land exactly on a timer deadline: [arm_every_wakeup] schedules a
+   wakeup at [now +. (interval -. elapsed)], and when it fires the frame delta
+   is [now' -. last_time]. Under a virtual clock that advances to precisely that
+   deadline, the delta is the subtraction of two accumulated floats and can fall
+   an ULP short of the interval, so a strict [>=] would skip the fire — while
+   [arm_every_wakeup] still reports [interval -. elapsed ≈ 0], re-arming an
+   immediately-due wakeup that never progresses (a busy loop). Two adjustments
+   keep the cadence exact: fire when the deadline is reached within a slack far
+   below any sane interval and far above float noise, and clamp the carried
+   residual to non-negative — an ULP-short fire counts as on time rather than
+   nudging the next deadline a hair past the following step. A genuine overshoot
+   (a late frame with [dt] well over the interval) still carries forward. *)
+let every_fire_slack = 1e-6
+
 let handle_every_subs runtime ~dt =
   runtime.every_subs <-
     List.map
       (fun (interval, elapsed, f) ->
         let new_elapsed = elapsed +. dt in
-        if new_elapsed >= interval then begin
+        if new_elapsed >= interval -. every_fire_slack then begin
           runtime.pending_msgs <- f () :: runtime.pending_msgs;
           Matrix.request_redraw runtime.matrix_app;
-          (interval, new_elapsed -. interval, f)
+          (interval, Float.max 0. (new_elapsed -. interval), f)
         end
         else (interval, new_elapsed, f))
       runtime.every_subs
