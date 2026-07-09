@@ -1472,6 +1472,40 @@ let diff_cells prev curr =
 
 (* {1 Serialization} *)
 
+let to_text ?(trim = true) t =
+  let width = t.width and height = t.height in
+  if width <= 0 || height <= 0 then ""
+  else begin
+    let line = Buffer.create width in
+    let buf = Buffer.create ((width + 1) * height) in
+    for y = 0 to height - 1 do
+      Buffer.clear line;
+      for x = 0 to width - 1 do
+        let idx = (y * width) + x in
+        if not (is_continuation t idx) then begin
+          let text = get_text t idx in
+          if String.length text = 0 then Buffer.add_char line ' '
+          else Buffer.add_string line text
+        end
+      done;
+      let row = Buffer.contents line in
+      let row =
+        if trim then begin
+          let last = ref (String.length row - 1) in
+          while !last >= 0 && row.[!last] = ' ' do
+            decr last
+          done;
+          if !last = String.length row - 1 then row
+          else String.sub row 0 (!last + 1)
+        end
+        else row
+      in
+      Buffer.add_string buf row;
+      if y < height - 1 then Buffer.add_char buf '\n'
+    done;
+    Buffer.contents buf
+  end
+
 let to_ansi ?(reset = true) t =
   let width = t.width and height = t.height in
   if width <= 0 || height <= 0 then ""

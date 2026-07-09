@@ -308,8 +308,8 @@ let post_processes r =
     r.post_process_dirty <- false);
   r.post_process_cache
 
-let prepare_frame r =
-  let now = Unix.gettimeofday () in
+let prepare_frame ?now r =
+  let now = match now with Some now -> now | None -> Unix.gettimeofday () in
   let delta_seconds =
     match r.last_render_time with
     | None -> 0.
@@ -447,19 +447,19 @@ let commit_frame r emitted =
     ~elapsed_ms:emitted.elapsed_ms ~cells:emitted.cells
     ~output_len:emitted.output_len
 
-let render_to_bytes ?(full = false) ?scroll_hint ?viewport frame bytes =
+let render_to_bytes ?(full = false) ?scroll_hint ?viewport ?now frame bytes =
   let writer = Ansi.Writer.make bytes in
   let mode = if full then `Full else `Diff in
-  let prepared = prepare_frame frame in
+  let prepared = prepare_frame ?now frame in
   let emitted =
     emit_frame frame prepared ~mode ~scroll_hint ~viewport ~writer
   in
   commit_frame frame emitted;
   emitted.output_len
 
-let render ?(full = false) ?scroll_hint ?viewport frame =
+let render ?(full = false) ?scroll_hint ?viewport ?now frame =
   let mode = if full then `Full else `Diff in
-  let prepared = prepare_frame frame in
+  let prepared = prepare_frame ?now frame in
   let emit_to_string bytes =
     let writer = Ansi.Writer.make bytes in
     let emitted =
@@ -567,6 +567,7 @@ let build t ~width ~height f =
   ignore (internal_build t ~width ~height (fun grid hits -> f grid hits) : t)
 
 let next_grid frame = frame.next
+let current_grid frame = frame.current
 let next_hit_grid frame = frame.hit_next
 let query_hit frame ~x ~y = Hit_grid.get frame.hit_current ~x ~y
 let row_offset t = t.row_offset

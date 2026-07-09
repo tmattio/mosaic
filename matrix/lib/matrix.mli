@@ -182,6 +182,10 @@ val prepare : app -> unit
 val grid : app -> Grid.t
 (** [grid app] is the mutable grid for the current frame. *)
 
+val current_grid : app -> Grid.t
+(** [current_grid app] is the presented grid: the committed terminal state as of
+    the most recent frame. Blank before the first frame. Do not mutate. *)
+
 val hits : app -> Screen.Hit_grid.t
 (** [hits app] is the hit grid for the current frame. *)
 
@@ -232,8 +236,18 @@ val drop_live : app -> unit
 val running : app -> bool
 (** [running app] is [true] iff the event loop is active. *)
 
+val now : app -> float
+(** [now app] is the current time in seconds as reported by [app]'s clock — wall
+    clock for the Unix backend, the injected [now] for custom backends
+    ({!attach}). *)
+
 val request_redraw : app -> unit
 (** [request_redraw app] marks the frame dirty for the next iteration. *)
+
+val redraw_requested : app -> bool
+(** [redraw_requested app] is [true] iff a redraw is pending. Lets an alternate
+    backend distinguish a frame gated on the render cadence from a loop with no
+    pending work. *)
 
 (** {1:queries Terminal queries} *)
 

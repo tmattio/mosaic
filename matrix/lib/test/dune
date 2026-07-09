@@ -1,0 +1,4 @@
+(library
+ (name matrix_test)
+ (public_name matrix.test)
+ (libraries matrix))

@@ -155,9 +155,14 @@ type viewport = {
     grid rows at terminal row offset [v.y]. *)
 
 val render :
-  ?full:bool -> ?scroll_hint:scroll_hint -> ?viewport:viewport -> t -> string
-(** [render ~full ~scroll_hint ~viewport t] is the ANSI output for the current
-    frame.
+  ?full:bool ->
+  ?scroll_hint:scroll_hint ->
+  ?viewport:viewport ->
+  ?now:float ->
+  t ->
+  string
+(** [render ~full ~scroll_hint ~viewport ~now t] is the ANSI output for the
+    current frame.
 
     Applies post-processors, diffs next against current (or renders all cells
     when [full] is [true]), then swaps buffers. Hit regions registered during
@@ -169,6 +174,10 @@ val render :
       current terminal transaction.
     - [viewport] renders into an explicit terminal surface. Rows outside the
       viewport are not presented and do not become active hit regions.
+    - [now] is the frame timestamp in seconds, used for post-processor deltas
+      and frame metrics. Defaults to [Unix.gettimeofday ()]; runtimes with an
+      injected clock pass their own time so virtual-time runs stay
+      deterministic.
 
     See also {!render_to_bytes}. *)
 
@@ -176,12 +185,13 @@ val render_to_bytes :
   ?full:bool ->
   ?scroll_hint:scroll_hint ->
   ?viewport:viewport ->
+  ?now:float ->
   t ->
   Bytes.t ->
   int
-(** [render_to_bytes ~full ~scroll_hint ~viewport t buf] is like {!render} but
-    writes into [buf] and is the number of bytes written. [buf] must be large
-    enough for the output. *)
+(** [render_to_bytes ~full ~scroll_hint ~viewport ~now t buf] is like {!render}
+    but writes into [buf] and is the number of bytes written. [buf] must be
+    large enough for the output. *)
 
 (** {1:screen_state Screen state} *)
 
@@ -275,6 +285,12 @@ val next_grid : t -> Grid.t
 
     {b Warning.} Do not mutate the returned grid after the next {!render} -- it
     becomes the diff baseline. *)
+
+val current_grid : t -> Grid.t
+(** [current_grid t] is [t]'s presented grid: the committed terminal state as of
+    the most recent {!render}. Blank before the first render.
+
+    {b Warning.} Do not mutate the returned grid -- it is the diff baseline. *)
 
 val next_hit_grid : t -> Hit_grid.t
 (** [next_hit_grid t] is [t]'s next hit grid.

@@ -427,6 +427,12 @@ val diff_cells : t -> t -> (int * int) array
 
 (** {1:converting Converting} *)
 
+val to_text : ?trim:bool -> t -> string
+(** [to_text ~trim g] renders [g]'s visible text: one line per row, one grapheme
+    per cell, continuation cells of wide graphemes skipped, empty cells as
+    spaces. Trailing spaces on each row are dropped when [trim] is [true]
+    (default). Styling is discarded; see {!to_ansi} for styled output. *)
+
 val to_ansi : ?reset:bool -> t -> string
 (** [to_ansi ~reset g] renders [g] to a string with full ANSI escape sequences.
     Appends a reset sequence when [reset] is [true] (default). *)

@@ -286,12 +286,15 @@ let pixel_resolution t = Terminal.pixel_resolution t.terminal
 let terminal t = t.terminal
 let capabilities t = Terminal.capabilities t.terminal
 let running t = t.running
+let now t = t.now ()
 
 let request_redraw t =
   if t.closed then ()
   else if t.control_state <> `Explicit_suspended then (
     t.redraw_requested <- true;
     t.wake ())
+
+let redraw_requested t = t.redraw_requested
 
 let refresh_capabilities t =
   let caps = Terminal.capabilities t.terminal in
@@ -516,6 +519,7 @@ let prepare t =
   Screen.Hit_grid.clear (Screen.next_hit_grid t.screen)
 
 let grid t = Screen.next_grid t.screen
+let current_grid t = Screen.current_grid t.screen
 let hits t = Screen.next_hit_grid t.screen
 
 (* Ensure primary layout stays consistent. Grows the dynamic region when
@@ -664,8 +668,8 @@ let submit ?primary_required_rows t =
           Some { Screen.y = Primary.render_offset t.primary; height }
     in
     let len =
-      Screen.render_to_bytes ~full:forced_full ?scroll_hint ?viewport t.screen
-        t.render_buffer
+      Screen.render_to_bytes ~full:forced_full ?scroll_hint ?viewport
+        ~now:(t.now ()) t.screen t.render_buffer
     in
     if len > 0 then Buffer.add_subbytes buf t.render_buffer 0 len;
     (match active_h with
