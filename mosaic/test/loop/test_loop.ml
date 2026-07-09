@@ -115,6 +115,44 @@ let%expect_test "virtual time drives every-subscriptions deterministically" =
 |keys:[] ticks:3 size:- note:-
 ||}]
 
+let%expect_test "a pending every-timer renders only when it fires" =
+  (* A timer is not an animation: while it is merely pending, the loop stays
+     idle — no view pass, no reconcile, no paint. The view-call count is the
+     witness: it must not move as virtual time approaches the deadline, and
+     must move exactly once when the timer fires. *)
+  let views = ref 0 in
+  let base = app ~subs:(fun _ -> Mosaic.Sub.every 1.0 (fun () -> Tick)) () in
+  let application =
+    {
+      base with
+      Mosaic.view =
+        (fun model ->
+          incr views;
+          base.Mosaic.view model);
+    }
+  in
+  let baseline = ref 0 in
+  drive application
+    [
+      `Run (fun _ -> baseline := !views);
+      `Advance 0.4;
+      `Advance 0.4;
+      `Run
+        (fun _ ->
+          Printf.printf "renders while pending: %d\n" (!views - !baseline));
+      `Advance 0.4;
+      `Run
+        (fun _ -> Printf.printf "renders after fire: %d\n" (!views - !baseline));
+      `Snap;
+    ];
+  [%expect
+    {|
+    renders while pending: 0
+    renders after fire: 1
+    |keys:[] ticks:1 size:- note:-
+    |
+    |}]
+
 let%expect_test "resize reaches the application and the grid" =
   drive
     (app

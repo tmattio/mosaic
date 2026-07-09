@@ -470,6 +470,22 @@ let rec collect_subs runtime (sub : _ Sub.t) =
   | Sub.On_focus msg -> runtime.focus_sub <- Some msg
   | Sub.On_blur msg -> runtime.blur_sub <- Some msg
 
+(* Arm the loop's one-shot wakeup at the earliest every-sub deadline, or clear
+   it when no timer is pending. Runs after every subscription recollection and
+   after every frame callback — both move a timer's remaining time. *)
+let arm_every_wakeup runtime =
+  let remaining =
+    List.fold_left
+      (fun acc (interval, elapsed, _) ->
+        let remaining = Float.max 0. (interval -. elapsed) in
+        match acc with
+        | None -> Some remaining
+        | Some acc -> Some (Float.min acc remaining))
+      None runtime.every_subs
+  in
+  Matrix.schedule_wakeup runtime.matrix_app
+    (Option.map (fun r -> Matrix.now runtime.matrix_app +. r) remaining)
+
 let update_subscriptions runtime =
   let prev_every = runtime.every_subs in
   runtime.key_subs <- [];
@@ -495,15 +511,20 @@ let update_subscriptions runtime =
         in
         (interval, prev_elapsed, f))
       runtime.every_subs;
-  (* Track subscription-driven liveness: tick and every subscriptions
-     require the render cadence to be running. *)
-  let has_live_subs = runtime.tick_sub <> None || runtime.every_subs <> [] in
+  (* Track subscription-driven liveness: only tick subscriptions require the
+     render cadence — a tick's [dt] is frame time by definition. Every-subs
+     are timers, not animations: they wake the loop at their deadline
+     ([arm_every_wakeup]) and the messages they dispatch request their own
+     redraws, so a pending timer costs one wakeup, not a full render pipeline
+     per frame over the whole mounted tree. *)
+  let has_live_subs = runtime.tick_sub <> None in
   if has_live_subs && not runtime.sub_live_active then (
     runtime.sub_live_active <- true;
     Matrix.request_live runtime.matrix_app)
   else if (not has_live_subs) && runtime.sub_live_active then (
     runtime.sub_live_active <- false;
-    Matrix.drop_live runtime.matrix_app)
+    Matrix.drop_live runtime.matrix_app);
+  arm_every_wakeup runtime
 
 let dispatch runtime msg =
   let model', cmd = runtime.app.update msg runtime.model in
@@ -753,6 +774,9 @@ let run ?matrix
       handle_tick runtime ~dt;
       handle_every_subs runtime ~dt;
       process_pending_msgs runtime;
+      (* Timers advanced by [dt] even when nothing fired and no message
+         re-collected subscriptions, so the wakeup re-arms here. *)
+      arm_every_wakeup runtime;
       frame_delta := dt)
     ~on_input:(fun _app input -> handle_input runtime input)
     ~on_resize:(fun _app ~cols ~rows ->

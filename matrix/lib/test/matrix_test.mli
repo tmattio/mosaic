@@ -49,8 +49,11 @@ val create :
       synchronous script can omit it.
     - [on_idle t ~timeout] runs when the loop has no queued input and no due
       frame. [timeout] is the loop's requested wait: [None] when only new input
-      can change the screen, [Some s] when a virtual deadline — render cadence,
-      resize debounce, or a parser flush — is [s] seconds away. *)
+      can change the screen, [Some s] when a virtual deadline — a timer wakeup,
+      resize debounce, or a parser flush — is [s] seconds away. A dirty frame
+      gated only on the render cadence never reaches [on_idle]: the backend
+      advances virtual time to the pacing deadline itself, so [on_idle] always
+      observes a fully presented frame. *)
 
 val app : t -> Matrix.app
 (** [app t] is the backend to hand to the runtime, e.g.

@@ -242,7 +242,19 @@ val now : app -> float
     ({!attach}). *)
 
 val request_redraw : app -> unit
-(** [request_redraw app] marks the frame dirty for the next iteration. *)
+(** [request_redraw app] marks the frame dirty for the next iteration. Outside
+    live mode, dirty frames render as soon as the target-fps pacing allows, so a
+    burst of requests coalesces instead of rendering back-to-back. *)
+
+val schedule_wakeup : app -> float option -> unit
+(** [schedule_wakeup app deadline] arms (or, with [None], clears) the loop's
+    one-shot wakeup. When the loop reaches [deadline] (a {!now} time), it runs
+    the [on_frame] callback without rendering — the mechanism time-based work
+    (timers) uses to advance off the clock while the loop is otherwise idle. One
+    slot: a new call replaces the previous deadline, and a due deadline clears
+    itself before the callback runs, so the callback re-arms if it still needs
+    waking. Whatever the callback dispatches must {!request_redraw} to be
+    presented. *)
 
 val redraw_requested : app -> bool
 (** [redraw_requested app] is [true] iff a redraw is pending. Lets an alternate

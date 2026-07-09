@@ -16,6 +16,7 @@ Terminal UI framework for OCaml built on Matrix and Toffee. Implements The Elm A
 - **Markdown rendering** – CommonMark rendering with the `markdown` widget
 - **Dirty tracking and viewport culling** – Only re-layouts dirty subtrees; scroll containers cull off-screen children
 - **Runtime probe** – `Mosaic.run ~probe` hands test harnesses a quiescence probe (`Probe.is_settled`: pending messages, in-flight performs, renderer settlement) for deterministic settling in headless tests
+- **Idle-cheap timers** – `Sub.every` no longer holds the render cadence live: a pending timer arms a one-shot loop wakeup and renders only when it fires, so a timer-bearing app stops paying a full view/reconcile/layout/paint pass per frame while nothing changes. Only `Sub.on_tick` keeps the cadence running
 
 ### Matrix
 
@@ -33,6 +34,7 @@ Terminal toolkit for OCaml providing rendering, input, and terminal management.
 - **Hit testing** – O(1) spatial indexing maps mouse coordinates to UI element IDs for clickable widgets
 - **Built-in devtools** – Debug overlay for frame timing/FPS, frame dumps to disk for diagnostics
 - **Headless test backend (`matrix.test`)** – Drive any Matrix or Mosaic application in-process with a virtual clock, byte-level input through the real parser, and plain-text frame snapshots; supported by new core eliminators `Grid.to_text`, `Matrix.current_grid` (the presented frame), `Matrix.redraw_requested`, and `Matrix.now`. `Screen.render`/`Renderer.render` accept `?now` so post-processor deltas follow the runtime clock instead of the wall clock
+- **Timer wakeups and paced one-shot redraws** – `Matrix.schedule_wakeup` arms a one-shot `on_frame` wakeup so time-based work advances off the clock without rendering; outside live mode `request_redraw` bursts coalesce to `target_fps` instead of rendering back-to-back
 
 ### Toffee
 

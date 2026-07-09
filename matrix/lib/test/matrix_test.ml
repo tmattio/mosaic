@@ -97,7 +97,13 @@ let create ?(mode = `Alt) ?(target_fps = 60.) ?(exit_on_ctrl_c = false)
     if not (deliver ~on_event) then
       match timeout with
       | Some s when s <= 0. -> ()
-      | _ ->
+      | Some s when Matrix.redraw_requested (app t) ->
+          (* A dirty frame gated on the render cadence: release it by moving
+             virtual time to its deadline rather than parking in [on_idle].
+             The cadence is runtime pacing, not something tests script, so
+             [on_idle] only ever observes a genuinely quiescent frame. *)
+          t.now <- t.now +. s
+      | timeout ->
           t.on_idle t ~timeout;
           ignore (deliver ~on_event : bool)
   in

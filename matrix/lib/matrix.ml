@@ -76,6 +76,8 @@ type app = {
   mutable pending_resize : (int * int) option;
   mutable force_full_next_frame : bool;
   mutable next_frame_deadline : float option;
+  mutable wakeup_deadline : float option;
+  mutable last_render_time : float;
   (* Diagnostics *)
   mutable debug_overlay_enabled : bool;
   mutable debug_overlay_cb : Screen.t -> unit;
@@ -292,6 +294,11 @@ let request_redraw t =
   if t.closed then ()
   else if t.control_state <> `Explicit_suspended then (
     t.redraw_requested <- true;
+    t.wake ())
+
+let schedule_wakeup t deadline =
+  if not t.closed then (
+    t.wakeup_deadline <- deadline;
     t.wake ())
 
 let redraw_requested t = t.redraw_requested
@@ -1051,6 +1058,8 @@ let init_app (c : config) ~write_output ~now ~wake ~terminal_size ~set_raw_mode
       pending_resize = None;
       force_full_next_frame = true;
       next_frame_deadline = None;
+      wakeup_deadline = None;
+      last_render_time = Float.neg_infinity;
       debug_overlay_enabled = debug_overlay;
       debug_overlay_cb =
         Debug_overlay.on_frame ~corner:c.debug_overlay_corner
@@ -1227,7 +1236,16 @@ let min_timeout a b =
   | None, x | x, None -> x
   | Some x, Some y -> Some (Float.min x y)
 
-let should_honor_immediate_redraw t = t.redraw_requested && not t.loop_active
+(* A one-shot redraw renders as soon as the frame pacing allows. Outside live
+   mode there is no frame deadline, so pacing hangs off the last render time:
+   an event storm (streaming deltas, rapid dispatches) coalesces to the target
+   fps instead of rendering back-to-back. *)
+let one_shot_render_due t ~now =
+  t.redraw_requested && (not t.loop_active)
+  &&
+  match compute_loop_interval t with
+  | None -> true
+  | Some interval -> now -. t.last_render_time >= interval
 
 let compute_timeout t ~now =
   let pending_timeout =
@@ -1244,6 +1262,13 @@ let compute_timeout t ~now =
         if dt <= 0. then Some 0. else Some dt
     | None -> None
   in
+  let wakeup_timeout =
+    match t.wakeup_deadline with
+    | Some dl ->
+        let dt = dl -. now in
+        if dt <= 0. then Some 0. else Some dt
+    | None -> None
+  in
   let parser_timeout =
     match Input.Parser.deadline t.parser with
     | Some dl ->
@@ -1251,14 +1276,22 @@ let compute_timeout t ~now =
         if dt <= 0. then Some 0. else Some dt
     | None -> None
   in
-  let immediate = if should_honor_immediate_redraw t then Some 0. else None in
-  min_timeout immediate
-    (min_timeout
-       (min_timeout deadline_timeout t.config.input_timeout)
-       (min_timeout pending_timeout parser_timeout))
+  let redraw_timeout =
+    if t.redraw_requested && not t.loop_active then
+      match compute_loop_interval t with
+      | None -> Some 0.
+      | Some interval ->
+          Some (Float.max 0. (t.last_render_time +. interval -. now))
+    else None
+  in
+  min_timeout redraw_timeout
+    (min_timeout wakeup_timeout
+       (min_timeout
+          (min_timeout deadline_timeout t.config.input_timeout)
+          (min_timeout pending_timeout parser_timeout)))
 
 let should_render_now t ~now =
-  should_honor_immediate_redraw t
+  one_shot_render_due t ~now
   || t.loop_active
      && match t.next_frame_deadline with Some dl -> now >= dl | None -> false
 
@@ -1323,19 +1356,37 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
     else (
       maybe_apply_pending_resize t;
       let now = t.now () in
+      (* A due one-shot wakeup runs the frame callback without a render: it
+         exists so time-based work (timers) can advance off the clock while
+         the loop is otherwise idle. Whatever the callback dispatches requests
+         its own redraw, which the pacing below then honors. *)
+      let last_time =
+        match t.wakeup_deadline with
+        | Some dl when now >= dl ->
+            t.wakeup_deadline <- None;
+            Option.iter (fun f -> f t ~dt:(now -. last_time)) on_frame;
+            now
+        | Some _ | None -> last_time
+      in
       if should_render_now t ~now then (
         let frame_interval = compute_loop_interval t in
         let last_time = render_cycle ~now ~last_time in
         (* Schedule next frame deadline after rendering: delay =
-           target_frame_time - frame_elapsed. *)
+           target_frame_time - frame_elapsed. The deadline drives only the
+           live cadence — left armed while idle it would read as perpetually
+           due and spin the loop; one-shot pacing hangs off
+           [last_render_time] instead. *)
         let render_end = t.now () in
+        t.last_render_time <- render_end;
         t.next_frame_deadline <-
-          (match frame_interval with
-          | Some iv ->
-              let elapsed = render_end -. now in
-              let delay = Float.max 0. (iv -. elapsed) in
-              Some (render_end +. delay)
-          | None -> None);
+          (if t.loop_active then
+             match frame_interval with
+             | Some iv ->
+                 let elapsed = render_end -. now in
+                 let delay = Float.max 0. (iv -. elapsed) in
+                 Some (render_end +. delay)
+             | None -> None
+           else None);
         let timeout = compute_timeout t ~now:render_end in
         read_events ~now:render_end ~timeout;
         loop last_time)
