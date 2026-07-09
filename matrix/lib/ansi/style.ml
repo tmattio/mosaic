@@ -90,15 +90,19 @@ let resolve styles =
 
 (* Comparison *)
 
+(* Field-wise monomorphic comparisons: [attrs] and [link] under polymorphic
+   [=] go through the generic runtime compare, and [equal] is one of the
+   hottest calls of a render pass (per-cell style diffing). *)
 let equal a b =
-  a.attrs = b.attrs && a.link = b.link
+  Attr.equal a.attrs b.attrs
   && Option.equal Color.equal a.fg b.fg
   && Option.equal Color.equal a.bg b.bg
+  && Option.equal String.equal a.link b.link
 
 (* Check if visual properties (colors, attrs) are equal, ignoring link. Used by
    emit to avoid emitting empty SGR sequences when only link differs. *)
 let visual_equal a b =
-  a.attrs = b.attrs
+  Attr.equal a.attrs b.attrs
   && Option.equal Color.equal a.fg b.fg
   && Option.equal Color.equal a.bg b.bg
 
