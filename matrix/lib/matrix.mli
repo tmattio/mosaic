@@ -90,6 +90,7 @@ val create :
   ?initial_caps:Terminal.capabilities ->
   ?min_tui_height:int ->
   ?start_idle:bool ->
+  ?pace_redraws:bool ->
   unit ->
   app
 (** [create ()] is a live application with Unix I/O wired in.
@@ -111,6 +112,12 @@ val create :
     {b Frame timing:}
     - [target_fps] optional FPS cap in Hz. Defaults to [Some 30.]. [None] for
       uncapped.
+    - [pace_redraws] whether one-shot {!request_redraw}s coalesce to
+      [target_fps]. Defaults to [true]: an event storm renders at most once per
+      frame interval. Set [false] under a virtual clock, where coalescing buys
+      nothing and advancing time to the next frame boundary would move the very
+      clock timers read; one-shot redraws then render immediately. Live
+      animation still paces off [target_fps] either way.
     - [resize_debounce] debounce window in seconds for resize events. Defaults
       to [Some 0.1].
 
@@ -396,6 +403,7 @@ val attach :
   ?resize_debounce:float option ->
   ?min_tui_height:int ->
   ?start_idle:bool ->
+  ?pace_redraws:bool ->
   write_output:(bytes -> int -> int -> unit) ->
   now:(unit -> float) ->
   wake:(unit -> unit) ->

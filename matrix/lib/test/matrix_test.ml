@@ -98,10 +98,13 @@ let create ?(mode = `Alt) ?(target_fps = 60.) ?(exit_on_ctrl_c = false)
       match timeout with
       | Some s when s <= 0. -> ()
       | Some s when Matrix.redraw_requested (app t) ->
-          (* A dirty frame gated on the render cadence: release it by moving
-             virtual time to its deadline rather than parking in [on_idle].
-             The cadence is runtime pacing, not something tests script, so
-             [on_idle] only ever observes a genuinely quiescent frame. *)
+          (* A live-animation frame gated on the render cadence: release it by
+             moving virtual time to its deadline rather than parking in
+             [on_idle]. One-shot redraws never reach here — [pace_redraws:false]
+             renders them at the current instant (their timeout is [0.]), so a
+             redraw cannot silently advance the clock that timers read. The
+             cadence is runtime pacing, not something tests script, so [on_idle]
+             only ever observes a genuinely quiescent frame. *)
           t.now <- t.now +. s
       | timeout ->
           t.on_idle t ~timeout;
@@ -110,6 +113,7 @@ let create ?(mode = `Alt) ?(target_fps = 60.) ?(exit_on_ctrl_c = false)
   let app =
     Matrix.attach ~mode ~target_fps:(Some target_fps) ~exit_on_ctrl_c
       ~input_timeout:None ~resize_debounce:(Some 0.) ~start_idle:true
+      ~pace_redraws:false
       ~write_output:(fun buf off len -> Buffer.add_subbytes output buf off len)
       ~now:(fun () -> t.now)
       ~wake:on_wake

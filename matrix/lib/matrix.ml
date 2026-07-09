@@ -38,6 +38,7 @@ type config = {
   debug_overlay_capacity : int;
   min_tui_height : int;
   start_idle : bool;
+  pace_redraws : bool;
 }
 
 type app = {
@@ -970,7 +971,7 @@ let make_config ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     ?(debug_overlay_corner = `Bottom_right) ?(debug_overlay_capacity = 120)
     ?(cursor_visible = mode = `Alt) ?(explicit_width = false)
     ?(input_timeout = None) ?(resize_debounce = Some 0.1) ?(min_tui_height = 1)
-    ?(start_idle = false) () =
+    ?(start_idle = false) ?(pace_redraws = true) () =
   let effective_mouse_mode =
     if mouse_enabled then Some (Option.value ~default:`Sgr_any mouse) else None
   in
@@ -992,6 +993,7 @@ let make_config ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     debug_overlay_capacity;
     min_tui_height;
     start_idle;
+    pace_redraws;
   }
 
 (* Initialize a live app (internal) *)
@@ -1097,13 +1099,14 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     ?(frame_dump_hits = false) ?(cursor_visible = mode = `Alt)
     ?(explicit_width = false) ?(input_timeout = None)
     ?(resize_debounce = Some 0.1) ?(output = `Stdout) ?(signal_handlers = true)
-    ?initial_caps ?(min_tui_height = 1) ?(start_idle = false) () =
+    ?initial_caps ?(min_tui_height = 1) ?(start_idle = false)
+    ?(pace_redraws = true) () =
   let config =
     make_config ~mode ~raw_mode ~target_fps ~respect_alpha ~mouse_enabled ~mouse
       ~bracketed_paste ~focus_reporting ~kitty_keyboard ~exit_on_ctrl_c
       ~debug_overlay_corner ~debug_overlay_capacity ~cursor_visible
       ~explicit_width ~input_timeout ~resize_debounce ~min_tui_height
-      ~start_idle ()
+      ~start_idle ~pace_redraws ()
   in
   let output_fd = match output with `Stdout -> Unix.stdout | `Fd fd -> fd in
   let input_fd = Unix.stdin in
@@ -1214,15 +1217,15 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     ?(frame_dump_hits = false) ?(cursor_visible = mode = `Alt)
     ?(explicit_width = false) ?(input_timeout = None)
     ?(resize_debounce = Some 0.1) ?(min_tui_height = 1) ?(start_idle = false)
-    ~write_output ~now ~wake ~terminal_size ~set_raw_mode ~flush_input
-    ~read_events ~query_cursor_position ~cleanup ~parser ~terminal ~width
-    ~height ?(render_offset = 0) ?(static_needs_newline = false) () =
+    ?(pace_redraws = true) ~write_output ~now ~wake ~terminal_size ~set_raw_mode
+    ~flush_input ~read_events ~query_cursor_position ~cleanup ~parser ~terminal
+    ~width ~height ?(render_offset = 0) ?(static_needs_newline = false) () =
   let config =
     make_config ~mode ~raw_mode ~target_fps ~respect_alpha ~mouse_enabled ~mouse
       ~bracketed_paste ~focus_reporting ~kitty_keyboard ~exit_on_ctrl_c
       ~debug_overlay_corner ~debug_overlay_capacity ~cursor_visible
       ~explicit_width ~input_timeout ~resize_debounce ~min_tui_height
-      ~start_idle ()
+      ~start_idle ~pace_redraws ()
   in
   init_app config ~write_output ~now ~wake ~terminal_size ~set_raw_mode
     ~flush_input ~read_events ~query_cursor_position ~cleanup ~debug_overlay
@@ -1239,13 +1242,18 @@ let min_timeout a b =
 (* A one-shot redraw renders as soon as the frame pacing allows. Outside live
    mode there is no frame deadline, so pacing hangs off the last render time:
    an event storm (streaming deltas, rapid dispatches) coalesces to the target
-   fps instead of rendering back-to-back. *)
+   fps instead of rendering back-to-back. With [pace_redraws] off — a virtual
+   clock where coalescing buys nothing and "waiting for the frame" would move
+   time that timers read — a one-shot renders immediately at the current
+   instant. Live animation still paces off [target_fps] via the frame
+   deadline; only one-shots skip the wait. *)
 let one_shot_render_due t ~now =
   t.redraw_requested && (not t.loop_active)
-  &&
-  match compute_loop_interval t with
-  | None -> true
-  | Some interval -> now -. t.last_render_time >= interval
+  && ((not t.config.pace_redraws)
+     ||
+     match compute_loop_interval t with
+     | None -> true
+     | Some interval -> now -. t.last_render_time >= interval)
 
 let compute_timeout t ~now =
   let pending_timeout =
@@ -1278,10 +1286,12 @@ let compute_timeout t ~now =
   in
   let redraw_timeout =
     if t.redraw_requested && not t.loop_active then
-      match compute_loop_interval t with
-      | None -> Some 0.
-      | Some interval ->
-          Some (Float.max 0. (t.last_render_time +. interval -. now))
+      if not t.config.pace_redraws then Some 0.
+      else
+        match compute_loop_interval t with
+        | None -> Some 0.
+        | Some interval ->
+            Some (Float.max 0. (t.last_render_time +. interval -. now))
     else None
   in
   min_timeout redraw_timeout
