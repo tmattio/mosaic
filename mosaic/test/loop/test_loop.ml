@@ -256,3 +256,18 @@ let%expect_test "an every-timer stepped exactly onto its deadline keeps firing" 
 |
 |keys:[] ticks:8 size:- note:-
 ||}]
+
+let%expect_test "a lone ESC resolves to Escape once the clock passes the timeout" =
+  (* A bare ESC is ambiguous (Escape vs. the start of an Alt/CSI sequence), so
+     the parser holds it on a ~50 ms deadline. With no further bytes it must
+     still resolve to Escape once virtual time passes that deadline — the
+     backend drains at the current instant on every read, not only when a chunk
+     arrives. The key must not appear before the step, and must appear after. *)
+  drive
+    (app ~subs:(fun _ -> Mosaic.Sub.on_key (fun key -> Some (Pressed (key_name key)))) ())
+    [ `Feed "\027"; `Snap; `Advance 0.06; `Snap ];
+  [%expect
+    {||keys:[] ticks:0 size:- note:-
+|
+|keys:[<esc>] ticks:0 size:- note:-
+||}]

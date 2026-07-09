@@ -94,21 +94,29 @@ let create ?(mode = `Alt) ?(target_fps = 60.) ?(exit_on_ctrl_c = false)
     !delivered
   in
   let read_events ~timeout ~on_event =
-    if not (deliver ~on_event) then
-      match timeout with
-      | Some s when s <= 0. -> ()
-      | Some s when Matrix.redraw_requested (app t) ->
-          (* A live-animation frame gated on the render cadence: release it by
-             moving virtual time to its deadline rather than parking in
-             [on_idle]. One-shot redraws never reach here — [pace_redraws:false]
-             renders them at the current instant (their timeout is [0.]), so a
-             redraw cannot silently advance the clock that timers read. The
-             cadence is runtime pacing, not something tests script, so [on_idle]
-             only ever observes a genuinely quiescent frame. *)
-          t.now <- t.now +. s
-      | timeout ->
-          t.on_idle t ~timeout;
-          ignore (deliver ~on_event : bool)
+    (if not (deliver ~on_event) then
+       match timeout with
+       | Some s when s <= 0. -> ()
+       | Some s when Matrix.redraw_requested (app t) ->
+           (* A live-animation frame gated on the render cadence: release it by
+              moving virtual time to its deadline rather than parking in
+              [on_idle]. One-shot redraws never reach here — [pace_redraws:false]
+              renders them at the current instant (their timeout is [0.]), so a
+              redraw cannot silently advance the clock that timers read. The
+              cadence is runtime pacing, not something tests script, so [on_idle]
+              only ever observes a genuinely quiescent frame. *)
+           t.now <- t.now +. s
+       | timeout ->
+           t.on_idle t ~timeout;
+           ignore (deliver ~on_event : bool));
+    (* Drain at the current instant, as the Unix backend does after every wait.
+       A lone ESC (and any incomplete sequence) sits on an ambiguity deadline;
+       once the driver has stepped the clock past it, the drain emits the
+       decoded key even though no new bytes arrived. Forcing this by feeding an
+       empty chunk cannot work — [Parser.feed] re-scans the buffered ESC and
+       re-arms its deadline into the future — so the flush must be a clock step,
+       not a feed. *)
+    Matrix.Input.Parser.drain t.parser ~now:t.now ~on_event ~on_response
   in
   let app =
     Matrix.attach ~mode ~target_fps:(Some target_fps) ~exit_on_ctrl_c
