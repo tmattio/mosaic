@@ -1,0 +1,13 @@
+(executables
+ (names test_loop)
+ (libraries windtrap mosaic matrix matrix.test matrix.input matrix.vte)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(rule
+ (alias runtest)
+ (package mosaic)
+ (action
+  (progn
+   (run ./test_loop.exe)
+   (diff? test_loop.ml test_loop.ml.corrected))))

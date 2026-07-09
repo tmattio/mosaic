@@ -1013,14 +1013,47 @@ type ('model, 'msg) app = {
 (** The type for a Mosaic application. Provide a value of this type to
     {!val-run}. *)
 
+(** {1:probe Runtime probe} *)
+
+module Probe : sig
+  (** Runtime quiescence introspection for test harnesses.
+
+      A probe reports whether the runtime has outstanding work: undispatched
+      messages, in-flight {!Cmd.val-perform} callbacks, or asynchronous render
+      work. A settled application's frame is stable until new input arrives or
+      the backend clock advances — live timers ({!Sub.val-every},
+      {!Sub.val-on_tick}) do not prevent settlement, they only fire as time
+      moves. Obtain one through {!val-run}'s [probe] argument. *)
+
+  type t
+  (** The type for runtime probes. *)
+
+  val is_settled : t -> bool
+  (** [is_settled t] is [true] iff no messages are pending, no perform is in
+      flight, and the renderer reports no pending work. *)
+
+  val messages_pending : t -> bool
+  (** [messages_pending t] is [true] iff dispatched messages await processing.
+  *)
+
+  val performs_pending : t -> bool
+  (** [performs_pending t] is [true] iff a {!Cmd.val-perform} callback has
+      started and not yet returned. *)
+
+  val render_pending : t -> bool
+  (** [render_pending t] is [true] iff the renderer reports pending asynchronous
+      render work. *)
+end
+
 (** {1:running Running} *)
 
 val run :
   ?matrix:Matrix.app ->
   ?process_perform:((unit -> unit) -> unit) ->
+  ?probe:(Probe.t -> unit) ->
   ('model, 'msg) app ->
   unit
-(** [run ?matrix ?process_perform app] starts [app] and blocks until the
+(** [run ?matrix ?process_perform ?probe app] starts [app] and blocks until the
     application exits (via {!Cmd.val-quit} or an OS signal).
 
     - [matrix] -- the low-level terminal backend. Defaults to a backend with
@@ -1029,6 +1062,10 @@ val run :
       Receives a thunk that wraps the user callback with the dispatch function
       already wired in. The default spawns a native [Thread] per callback so
       that long-running operations (e.g. HTTP requests) never block the UI loop.
+    - [probe] -- receives a {!Probe.t} for this runtime before the loop starts.
+      Test harnesses use it to settle deterministically (see the [matrix.test]
+      library). When a probe is requested, every perform completion additionally
+      requests a redraw so a blocked loop re-evaluates its quiescence.
 
     {b Eio integration.} Pass a [matrix] and [process_perform] built with the
     [matrix_eio] library:

@@ -749,8 +749,8 @@ let render_frame (t : t) ~width ~height ~delta =
       Screen.set_cursor t.screen { cursor with position = None });
   t.dirty := false
 
-let render ?full t =
-  let output = Screen.render ?full t.screen in
+let render ?full ?now t =
+  let output = Screen.render ?full ?now t.screen in
   recheck_hover t;
   output
 

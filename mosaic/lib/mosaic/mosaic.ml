@@ -633,15 +633,44 @@ let render runtime =
   let vnode = compile ~dispatch view in
   Reconciler.render runtime.reconciler vnode
 
+module Probe = struct
+  type t = {
+    messages_pending : unit -> bool;
+    performs_pending : unit -> bool;
+    render_pending : unit -> bool;
+  }
+
+  let messages_pending t = t.messages_pending ()
+  let performs_pending t = t.performs_pending ()
+  let render_pending t = t.render_pending ()
+
+  let is_settled t =
+    not (messages_pending t || performs_pending t || render_pending t)
+end
+
 let run ?matrix
     ?(process_perform = fun thunk -> ignore (Thread.create thunk () : Thread.t))
-    app =
+    ?probe app =
   let matrix_app =
     match matrix with
     | Some matrix -> matrix
     | None ->
         Matrix.create ~target_fps:(Some 60.) ~cursor_visible:false
           ~start_idle:true ()
+  in
+  (* When a probe is requested, count in-flight performs and nudge the loop on
+     completion so a driver blocked on quiescence re-evaluates. *)
+  let in_flight_performs = Atomic.make 0 in
+  let process_perform =
+    match probe with
+    | None -> process_perform
+    | Some _ ->
+        fun thunk ->
+          Atomic.incr in_flight_performs;
+          process_perform (fun () ->
+              Fun.protect thunk ~finally:(fun () ->
+                  Atomic.decr in_flight_performs;
+                  Matrix.request_redraw matrix_app))
   in
   let model, init_cmd = app.init () in
   let base_grid = Matrix.grid matrix_app in
@@ -682,6 +711,15 @@ let run ?matrix
       sub_live_active = false;
     }
   in
+  (match probe with
+  | None -> ()
+  | Some receive ->
+      receive
+        {
+          Probe.messages_pending = (fun () -> runtime.pending_msgs <> []);
+          performs_pending = (fun () -> Atomic.get in_flight_performs > 0);
+          render_pending = (fun () -> not (Renderer.is_settled renderer));
+        });
   process_cmd runtime init_cmd;
   update_subscriptions runtime;
 
@@ -757,7 +795,9 @@ let run ?matrix
             ~g:(Float.of_int g /. 255.)
             ~b:(Float.of_int b /. 255.)
       | None -> ());
-      ignore (Renderer.render runtime.renderer : string);
+      ignore
+        (Renderer.render ~now:(Matrix.now runtime.matrix_app) runtime.renderer
+          : string);
       process_pending_focus runtime)
 
 let empty = Vnode.empty

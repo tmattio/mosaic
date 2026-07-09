@@ -77,12 +77,13 @@ val render_frame : t -> width:int -> height:int -> delta:float -> unit
     [width] and [height] are the frame dimensions in terminal cells. [delta] is
     elapsed milliseconds since the last frame. *)
 
-val render : ?full:bool -> t -> string
+val render : ?full:bool -> ?now:float -> t -> string
 (** [render t] diffs the current frame against the previous one and returns the
     minimal ANSI output string. Call after {!render_frame}.
 
     When [full] is [true], all cells are emitted regardless of changes. [full]
-    defaults to [false]. *)
+    defaults to [false]. [now] is the frame timestamp in seconds forwarded to
+    {!Screen.render} for post-processor deltas; defaults to the wall clock. *)
 
 val needs_render : t -> bool
 (** [needs_render t] is [true] iff a renderable has requested a re-render or
