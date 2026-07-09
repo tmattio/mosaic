@@ -165,14 +165,19 @@ let try_set_signal sig_num handler =
 let install_signal_handlers () =
   if not !signal_handlers_installed then (
     signal_handlers_installed := true;
+    (* An interactive app that crashes wants a trace, and the report below is
+       only as good as what was recorded. *)
+    Printexc.record_backtrace true;
     try_set_signal Sys.sigterm (Sys.Signal_handle shutdown_signal_handler);
     try_set_signal Sys.sigint (Sys.Signal_handle shutdown_signal_handler);
     try_set_signal Sys.sigquit (Sys.Signal_handle shutdown_signal_handler);
     try_set_signal Sys.sigabrt (Sys.Signal_handle shutdown_signal_handler);
-    Printexc.set_uncaught_exception_handler (fun exn ->
-        prerr_endline (Printexc.to_string exn);
+    (* Restore the terminal, then report the exception with its backtrace. The
+       previous handler discarded the backtrace it was handed and printed only
+       the exception string, so a crash left nothing to diagnose from. *)
+    Printexc.set_uncaught_exception_handler (fun exn raw_backtrace ->
         run_shutdown_handlers ();
-        exit 1))
+        Printexc.default_uncaught_exception_handler exn raw_backtrace))
 
 let () = at_exit run_shutdown_handlers
 
