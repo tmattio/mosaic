@@ -15,6 +15,7 @@ Terminal UI framework for OCaml built on Matrix and Toffee. Implements The Elm A
 - **Canvas drawing** – Procedural drawing API with shapes, lines, and braille patterns for charts and visualizations
 - **Markdown rendering** – CommonMark rendering with the `markdown` widget
 - **Dirty tracking and viewport culling** – Only re-layouts dirty subtrees; scroll containers cull off-screen children
+- **Runtime probe** – `Mosaic.run ~probe` hands test harnesses a quiescence probe (`Probe.is_settled`: pending messages, in-flight performs, renderer settlement) for deterministic settling in headless tests
 
 ### Matrix
 
@@ -31,6 +32,7 @@ Terminal toolkit for OCaml providing rendering, input, and terminal management.
 - **Automatic capability detection** – Two-stage probing (environment heuristics + active queries) detects RGB, Kitty keyboard, sixel, hyperlinks, and Unicode width support without manual configuration
 - **Hit testing** – O(1) spatial indexing maps mouse coordinates to UI element IDs for clickable widgets
 - **Built-in devtools** – Debug overlay for frame timing/FPS, frame dumps to disk for diagnostics
+- **Headless test backend (`matrix.test`)** – Drive any Matrix or Mosaic application in-process with a virtual clock, byte-level input through the real parser, and plain-text frame snapshots; supported by new core eliminators `Grid.to_text`, `Matrix.current_grid` (the presented frame), `Matrix.redraw_requested`, and `Matrix.now`. `Screen.render`/`Renderer.render` accept `?now` so post-processor deltas follow the runtime clock instead of the wall clock
 
 ### Toffee
 
