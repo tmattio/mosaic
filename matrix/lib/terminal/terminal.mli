@@ -381,12 +381,13 @@ val reset_state : t -> unit
 
 val set_raw : Unix.file_descr -> Unix.terminal_io
 (** [set_raw fd] puts [fd] into raw mode (no echo, no canonical processing, no
-    signals, non-blocking) and returns the original termios for later
-    restoration with {!restore}. *)
+    terminal-generated signals) and returns the original termios for later
+    restoration with {!restore}. File status flags such as [O_NONBLOCK] are
+    owned by the I/O backend and are left unchanged. *)
 
 val restore : Unix.file_descr -> Unix.terminal_io -> unit
-(** [restore fd termios] restores [fd] to the given [termios] settings and
-    clears non-blocking mode. *)
+(** [restore fd termios] restores [fd] to the given termios settings without
+    changing its file status flags. *)
 
 val size : Unix.file_descr -> int * int
 (** [size fd] is the terminal dimensions as [(cols, rows)]. Falls back to

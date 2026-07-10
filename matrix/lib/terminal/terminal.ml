@@ -470,13 +470,9 @@ let set_raw fd =
     }
   in
   Unix.tcsetattr fd Unix.TCSANOW raw;
-  (try Unix.set_nonblock fd with Unix.Unix_error _ -> ());
   original
 
-let restore fd termios =
-  Unix.tcsetattr fd Unix.TCSANOW termios;
-  try Unix.clear_nonblock fd with Unix.Unix_error _ -> ()
-
+let restore fd termios = Unix.tcsetattr fd Unix.TCSANOW termios
 let size fd = try get_size fd with _ -> (80, 24)
 let flush_input fd = try Unix.tcflush fd Unix.TCIFLUSH with _ -> ()
 let enable_vt fd = try enable_vt_raw fd with _ -> ()

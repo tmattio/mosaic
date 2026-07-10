@@ -97,6 +97,13 @@ type app = {
   mutable capability_window_until : float option;
 }
 
+let with_rollback ~rollback fn =
+  try fn ()
+  with exn ->
+    let backtrace = Printexc.get_raw_backtrace () in
+    (try rollback () with _ -> ());
+    Printexc.raise_with_backtrace exn backtrace
+
 (* Unix I/O helpers *)
 
 let write_all fd buf off len =
@@ -1096,8 +1103,11 @@ let init_app (c : config) ~write_output ~now ~wake ~terminal_size ~set_raw_mode
       capability_window_until;
     }
   in
-  apply_config t;
-  t
+  with_rollback
+    ~rollback:(fun () -> close t)
+    (fun () ->
+      apply_config t;
+      t)
 
 (* Constructor: create a live app with Unix I/O *)
 
@@ -1124,99 +1134,119 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
   let output_is_tty = Terminal.is_tty output_fd in
   let input_is_tty = Terminal.is_tty input_fd in
   let wakeup_r, wakeup_w = Unix.pipe ~cloexec:true () in
-  Unix.set_nonblock wakeup_r;
-  Unix.set_nonblock wakeup_w;
-  let output_fn = write_string output_fd in
-  let terminal =
-    Terminal.make ~output:output_fn ~tty:output_is_tty ?initial_caps ()
-  in
-  let parser = Input.Parser.create () in
-  let original_termios = ref None in
-  if input_is_tty && raw_mode then
-    original_termios := Some (Terminal.set_raw input_fd);
-  let input_buffer = Bytes.create 4096 in
-  let startup_events = ref [] in
-  let queue_startup_event event = startup_events := event :: !startup_events in
-  if input_is_tty && raw_mode then
-    Terminal.probe ~timeout:0.5 ~on_event:queue_startup_event
-      ~read_into:(fun buf off len ->
-        try Unix.read input_fd buf off len with Unix.Unix_error _ -> 0)
-      ~wait_readable:(fun ~timeout ->
-        let readable, _, _ =
-          try Unix.select [ input_fd ] [] [] timeout
-          with Unix.Unix_error (Unix.EINTR, _, _) -> ([], [], [])
-        in
-        readable <> [])
-      ~parser terminal;
-  let cols, rows = Terminal.size output_fd in
-  let width = max 1 cols in
-  let height = max 1 rows in
-  let render_offset, static_needs_newline =
-    if mode = `Primary && input_is_tty && raw_mode then
-      match
-        query_cursor_position_unix ~terminal ~parser ~input_fd ~wakeup_r
-          ~input_buffer ~timeout:0.1 ~on_event:queue_startup_event
-      with
-      | Some (row, col) ->
-          let anchor =
-            Primary.anchor_of_cursor ~terminal_height:height ~row ~col
-          in
-          if anchor.scroll_bottom then Terminal.send terminal "\r\n";
-          (anchor.render_offset, anchor.static_needs_newline)
-      | None -> (0, false)
-    else if mode = `Primary then (0, false)
-    else (0, false)
-  in
-  let pending_startup_events = ref (List.rev !startup_events) in
   let shutdown_fn_ref = ref None in
-  let app =
-    init_app config ~write_output:(write_all output_fd) ~now:Unix.gettimeofday
-      ~wake:(fun () -> wake_fd wakeup_w)
-      ~terminal_size:(fun () -> Terminal.size output_fd)
-      ~set_raw_mode:(fun enabled ->
-        if enabled then (
-          match !original_termios with
-          | Some _ -> ()
-          | None ->
-              if input_is_tty then
-                original_termios := Some (Terminal.set_raw input_fd))
-        else
-          match !original_termios with
-          | Some saved ->
-              Terminal.restore input_fd saved;
-              original_termios := None
-          | None -> ())
-      ~flush_input:(fun () ->
-        if input_is_tty then Terminal.flush_input input_fd)
-      ~read_events:(fun ~timeout ~on_event ->
-        match !pending_startup_events with
-        | [] ->
-            read_events_unix ~terminal ~parser ~input_fd ~wakeup_r ~output_fd
-              ~input_buffer ~timeout ~on_event
-        | events ->
-            pending_startup_events := [];
-            List.iter on_event events;
-            `Continue)
-      ~query_cursor_position:(fun ~timeout ->
-        query_cursor_position_unix ~terminal ~parser ~input_fd ~wakeup_r
-          ~input_buffer ~timeout ~on_event:(fun _ -> ()))
-      ~cleanup:(fun () ->
-        (match !shutdown_fn_ref with
-        | Some fn -> deregister_shutdown_handler fn
-        | None -> ());
-        (try Unix.close wakeup_r with _ -> ());
-        try Unix.close wakeup_w with _ -> ())
-      ~debug_overlay ~frame_dump_every ~frame_dump_dir ~frame_dump_pattern
-      ~frame_dump_hits ~parser ~terminal ~width ~height ~render_offset
-      ~static_needs_newline
+  let backend_cleaned = ref false in
+  let cleanup_backend () =
+    if not !backend_cleaned then (
+      backend_cleaned := true;
+      (match !shutdown_fn_ref with
+      | Some fn -> deregister_shutdown_handler fn
+      | None -> ());
+      (try Unix.close wakeup_r with _ -> ());
+      try Unix.close wakeup_w with _ -> ())
   in
-  let shutdown_fn () = close app in
-  shutdown_fn_ref := Some shutdown_fn;
-  if signal_handlers then install_signal_handlers ();
-  register_shutdown_handler shutdown_fn;
-  install_winch_handler wakeup_w;
-  Terminal.query_pixel_resolution terminal;
-  app
+  let original_termios = ref None in
+  let set_raw_mode enabled =
+    if enabled then (
+      match !original_termios with
+      | Some _ -> ()
+      | None ->
+          if input_is_tty then
+            original_termios := Some (Terminal.set_raw input_fd))
+    else
+      match !original_termios with
+      | Some saved ->
+          Terminal.restore input_fd saved;
+          original_termios := None
+      | None -> ()
+  in
+  let app_ref = ref None in
+  (* Before [init_app] returns, the constructor owns raw mode and the wakeup
+     pipe directly. Afterwards the app's idempotent close path owns both. *)
+  let rollback () =
+    match !app_ref with
+    | Some app -> close app
+    | None ->
+        (try set_raw_mode false with _ -> ());
+        cleanup_backend ()
+  in
+  with_rollback ~rollback (fun () ->
+      Unix.set_nonblock wakeup_r;
+      Unix.set_nonblock wakeup_w;
+      let output_fn = write_string output_fd in
+      let terminal =
+        Terminal.make ~output:output_fn ~tty:output_is_tty ?initial_caps ()
+      in
+      let parser = Input.Parser.create () in
+      if input_is_tty && raw_mode then set_raw_mode true;
+      let input_buffer = Bytes.create 4096 in
+      let startup_events = ref [] in
+      let queue_startup_event event =
+        startup_events := event :: !startup_events
+      in
+      if input_is_tty && raw_mode then
+        Terminal.probe ~timeout:0.5 ~on_event:queue_startup_event
+          ~read_into:(fun buf off len ->
+            try Unix.read input_fd buf off len with Unix.Unix_error _ -> 0)
+          ~wait_readable:(fun ~timeout ->
+            let readable, _, _ =
+              try Unix.select [ input_fd ] [] [] timeout
+              with Unix.Unix_error (Unix.EINTR, _, _) -> ([], [], [])
+            in
+            readable <> [])
+          ~parser terminal;
+      let cols, rows = Terminal.size output_fd in
+      let width = max 1 cols in
+      let height = max 1 rows in
+      let render_offset, static_needs_newline =
+        if mode = `Primary && input_is_tty && raw_mode then
+          match
+            query_cursor_position_unix ~terminal ~parser ~input_fd ~wakeup_r
+              ~input_buffer ~timeout:0.1 ~on_event:queue_startup_event
+          with
+          | Some (row, col) ->
+              let anchor =
+                Primary.anchor_of_cursor ~terminal_height:height ~row ~col
+              in
+              if anchor.scroll_bottom then Terminal.send terminal "\r\n";
+              (anchor.render_offset, anchor.static_needs_newline)
+          | None -> (0, false)
+        else if mode = `Primary then (0, false)
+        else (0, false)
+      in
+      let pending_startup_events = ref (List.rev !startup_events) in
+      let app =
+        init_app config ~write_output:(write_all output_fd)
+          ~now:Unix.gettimeofday
+          ~wake:(fun () -> wake_fd wakeup_w)
+          ~terminal_size:(fun () -> Terminal.size output_fd)
+          ~set_raw_mode
+          ~flush_input:(fun () ->
+            if input_is_tty then Terminal.flush_input input_fd)
+          ~read_events:(fun ~timeout ~on_event ->
+            match !pending_startup_events with
+            | [] ->
+                read_events_unix ~terminal ~parser ~input_fd ~wakeup_r
+                  ~output_fd ~input_buffer ~timeout ~on_event
+            | events ->
+                pending_startup_events := [];
+                List.iter on_event events;
+                `Continue)
+          ~query_cursor_position:(fun ~timeout ->
+            query_cursor_position_unix ~terminal ~parser ~input_fd ~wakeup_r
+              ~input_buffer ~timeout ~on_event:(fun _ -> ()))
+          ~cleanup:cleanup_backend ~debug_overlay ~frame_dump_every
+          ~frame_dump_dir ~frame_dump_pattern ~frame_dump_hits ~parser ~terminal
+          ~width ~height ~render_offset ~static_needs_newline
+      in
+      app_ref := Some app;
+      Terminal.query_pixel_resolution terminal;
+      let shutdown_fn () = close app in
+      shutdown_fn_ref := Some shutdown_fn;
+      register_shutdown_handler shutdown_fn;
+      if signal_handlers then install_signal_handlers ();
+      install_winch_handler wakeup_w;
+      app)
 
 (* Attach: wire custom I/O for testing *)
 

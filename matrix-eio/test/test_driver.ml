@@ -1,5 +1,37 @@
 open Windtrap
 
+exception Injected_probe_failure
+
+type failing_tty = { fd : Eio_unix.Fd.t; mutable writes : int }
+
+module Failing_tty = struct
+  type t = failing_tty
+
+  let read_methods = []
+  let single_read _ _ = raise End_of_file
+
+  let single_write t _ =
+    t.writes <- t.writes + 1;
+    raise Injected_probe_failure
+
+  let copy t ~src = Eio.Flow.Pi.simple_copy ~single_write t ~src
+end
+
+let failing_tty ~sw fd =
+  let state =
+    { fd = Eio_unix.Fd.of_unix ~sw ~close_unix:false fd; writes = 0 }
+  in
+  let handler =
+    Eio.Resource.handler
+      [
+        Eio.Resource.H (Eio.Flow.Pi.Source, (module Failing_tty));
+        Eio.Resource.H (Eio.Flow.Pi.Sink, (module Failing_tty));
+        Eio.Resource.H (Eio.Resource.Close, fun _ -> ());
+        Eio.Resource.H (Eio_unix.Resource.T, fun t -> t.fd);
+      ]
+  in
+  (Eio.Resource.T (state, handler), state)
+
 type counting_source = {
   source : Eio_unix.source_ty Eio.Resource.t;
   fd : Eio_unix.Fd.t;
@@ -27,6 +59,31 @@ let counting_source source =
       ]
   in
   (Eio.Resource.T (state, handler), state)
+
+let nonblocking_read_returns_without_input ~master fd =
+  let outcome = Atomic.make `Pending in
+  let byte = Bytes.create 1 in
+  let reader =
+    Thread.create
+      (fun () ->
+        let result =
+          match Unix.read fd byte 0 1 with
+          | _ -> `Read
+          | exception Unix.Unix_error ((Unix.EAGAIN | Unix.EWOULDBLOCK), _, _)
+            ->
+              `Nonblocking
+        in
+        Atomic.set outcome result)
+      ()
+  in
+  let deadline = Unix.gettimeofday () +. 0.1 in
+  while Atomic.get outcome = `Pending && Unix.gettimeofday () < deadline do
+    Thread.delay 0.001
+  done;
+  if Atomic.get outcome = `Pending then
+    ignore (Pty.write_string master "x" 0 1 : int);
+  Thread.join reader;
+  Atomic.get outcome = `Nonblocking
 
 (* Proves the concurrent driver pattern a deterministic Eio test harness
    builds on matrix.test: the Matrix loop runs in one fiber, blocked inside
@@ -215,8 +272,6 @@ let measure_successful_read_allocations iterations =
   (allocated_after -. allocated_before) /. float_of_int (Sys.word_size / 8)
 
 let test_successful_reads_do_not_allocate_a_result () =
-  (* Subtracting otherwise identical workload sizes removes fixed setup cost.
-     The old payload result added exactly three words per successful read. *)
   ignore (measure_successful_read_allocations 1 : float);
   let short = measure_successful_read_allocations 100 in
   let long = measure_successful_read_allocations 200 in
@@ -229,6 +284,42 @@ let test_successful_reads_do_not_allocate_a_result () =
          words_per_read)
     (words_per_read <= 1575.)
 
+let test_probe_failure_restores_pty_termios () =
+  Pty.with_pty ~winsize:Pty.{ rows = 24; cols = 80; xpixel = 0; ypixel = 0 }
+  @@ fun master slave ->
+  let slave_fd = Pty.file_descr slave in
+  Unix.set_nonblock slave_fd;
+  let before = Unix.tcgetattr slave_fd in
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let tty, state = failing_tty ~sw slave_fd in
+  let failure =
+    try
+      ignore
+        (Matrix_eio.create ~sw ~clock:(Eio.Stdenv.clock env) ~stdin:tty
+           ~stdout:tty ~signal_handlers:false ());
+      None
+    with exn -> Some exn
+  in
+  (match failure with
+  | Some Injected_probe_failure -> ()
+  | Some exn -> failf "unexpected probe exception: %s" (Printexc.to_string exn)
+  | None -> fail "probe failure did not escape Matrix_eio.create");
+  equal ~msg:"probe output failed on its first write" int 1 state.writes;
+  let after = Unix.tcgetattr slave_fd in
+  is_true ~msg:"echo restored after failed construction"
+    (before.c_echo = after.c_echo);
+  is_true ~msg:"canonical input restored after failed construction"
+    (before.c_icanon = after.c_icanon);
+  is_true ~msg:"terminal signal processing restored after failed construction"
+    (before.c_isig = after.c_isig);
+  equal ~msg:"minimum input bytes restored after failed construction" int
+    before.c_vmin after.c_vmin;
+  equal ~msg:"input timeout restored after failed construction" int
+    before.c_vtime after.c_vtime;
+  is_true ~msg:"failed construction preserves the backend's nonblocking flag"
+    (nonblocking_read_returns_without_input ~master slave_fd)
+
 let () =
   run "matrix-eio.driver"
     [
@@ -240,5 +331,7 @@ let () =
           test "stdin EOF stops the runtime" test_stdin_eof_stops_the_runtime;
           test "successful reads avoid adapter result allocations"
             test_successful_reads_do_not_allocate_a_result;
+          test "probe failure restores PTY termios"
+            test_probe_failure_restores_pty_termios;
         ];
     ]

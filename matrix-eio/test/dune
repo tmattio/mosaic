@@ -10,4 +10,7 @@
   eio_main
   matrix
   matrix-eio
-  matrix.test))
+  matrix.test
+  pty
+  threads
+  unix))

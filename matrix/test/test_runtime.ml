@@ -1,5 +1,10 @@
 open Windtrap
 
+exception Injected_startup_failure
+
+let[@inline never] raise_injected_startup_failure () =
+  raise Injected_startup_failure
+
 type fake_state = {
   mutable now_s : float;
   mutable read_calls : int;
@@ -269,6 +274,70 @@ let test_close_restores_raw_mode_if_terminal_close_raises () =
   Matrix.close app;
   equal ~msg:"raw mode restored" int 1 !raw_restore_calls;
   equal ~msg:"cleanup called" int 1 !cleanup_calls
+
+let test_attach_rolls_back_partially_applied_terminal_modes () =
+  let writes = ref 0 in
+  let terminal_output = Buffer.create 256 in
+  let lifecycle_trace = Buffer.create 256 in
+  let terminal =
+    Matrix.Terminal.make ~tty:true
+      ~output:(fun output ->
+        incr writes;
+        Buffer.add_string lifecycle_trace output;
+        if !writes = 2 then raise_injected_startup_failure ();
+        Buffer.add_string terminal_output output)
+      ()
+  in
+  let parser = Matrix.Input.Parser.create () in
+  let raw_changes = ref [] in
+  let cleanup_calls = ref 0 in
+  let recording_backtraces = Printexc.backtrace_status () in
+  Printexc.record_backtrace true;
+  let failure =
+    Fun.protect
+      ~finally:(fun () -> Printexc.record_backtrace recording_backtraces)
+      (fun () ->
+        try
+          ignore
+            (Matrix.attach ~mode:`Alt ~raw_mode:true ~target_fps:None
+               ~write_output:(fun _ _ _ -> ())
+               ~now:(fun () -> 0.)
+               ~wake:(fun () -> ())
+               ~terminal_size:(fun () -> (80, 24))
+               ~set_raw_mode:(fun enabled ->
+                 Buffer.add_string lifecycle_trace
+                   (if enabled then "<raw:on>" else "<raw:off>");
+                 raw_changes := enabled :: !raw_changes)
+               ~flush_input:(fun () -> ())
+               ~read_events:(fun ~timeout:_ ~on_event:_ -> `Continue)
+               ~query_cursor_position:(fun ~timeout:_ -> None)
+               ~cleanup:(fun () ->
+                 Buffer.add_string lifecycle_trace "<cleanup>";
+                 incr cleanup_calls)
+               ~parser ~terminal ~width:80 ~height:24 ());
+          None
+        with exn -> Some (exn, Printexc.get_raw_backtrace ()))
+  in
+  (match failure with
+  | Some (Injected_startup_failure, backtrace) ->
+      is_true ~msg:"rollback preserves the startup failure backtrace"
+        (contains_substring "raise_injected_startup_failure"
+           (Printexc.raw_backtrace_to_string backtrace))
+  | Some (exn, _) ->
+      failf "unexpected startup exception: %s" (Printexc.to_string exn)
+  | None -> fail "startup failure did not escape Matrix.attach");
+  equal ~msg:"raw mode acquired then restored" (list bool) [ true; false ]
+    (List.rev !raw_changes);
+  equal ~msg:"backend cleanup runs once" int 1 !cleanup_calls;
+  is_true ~msg:"partially entered alternate screen is left during rollback"
+    (contains_substring "\027[?1049l" (Buffer.contents terminal_output));
+  let lifecycle_trace = Buffer.contents lifecycle_trace in
+  is_true ~msg:"raw mode is acquired before terminal protocols"
+    (is_before ~first:"<raw:on>" ~second:"\027[?1049h" lifecycle_trace);
+  is_true ~msg:"terminal protocols roll back before raw mode"
+    (is_before ~first:"\027[?1049l" ~second:"<raw:off>" lifecycle_trace);
+  is_true ~msg:"raw mode rolls back before backend cleanup"
+    (is_before ~first:"<raw:off>" ~second:"<cleanup>" lifecycle_trace)
 
 let test_focus_restore_runs_only_after_blur_once () =
   let app, state =
@@ -1084,6 +1153,8 @@ let () =
             test_end_of_input_finalizes_parser_and_closes_once;
           test "close restores raw mode if terminal close raises"
             test_close_restores_raw_mode_if_terminal_close_raises;
+          test "attach rolls back partially applied terminal modes"
+            test_attach_rolls_back_partially_applied_terminal_modes;
           test "focus restore runs only after blur once"
             test_focus_restore_runs_only_after_blur_once;
           test "late capability response requests redraw"

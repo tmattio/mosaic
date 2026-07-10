@@ -61,7 +61,9 @@ val create :
     event loop yields to other Eio fibers while waiting for terminal input. The
     application is automatically closed when [sw] is released. Permanent EOF
     from [stdin] finalizes pending parser state and closes the application
-    without polling the source again.
+    without polling the source again. Construction is transactional: a probe,
+    cursor query, attachment, or initial output failure restores raw mode and
+    closes any partial application before propagating the original exception.
 
     The mandatory parameters are:
     - [sw] — Eio switch controlling the application lifetime. The app is closed

@@ -102,7 +102,9 @@ val create :
 (** [create ()] is a live application with Unix I/O wired in.
 
     Sets up the terminal, enables raw mode, installs signal handlers, and
-    returns a ready-to-run handle.
+    returns a ready-to-run handle. Construction is transactional: if setup
+    raises, every terminal mode and backend resource acquired so far is released
+    before the original exception is propagated.
 
     {b Display:}
     - [mode] presentation mode. Defaults to [`Alt].
@@ -217,8 +219,8 @@ val submit : ?primary_required_rows:int -> app -> unit
 (** {1:control Control} *)
 
 val close : app -> unit
-(** [close app] tears down protocols and releases resources. Safe to call
-    multiple times. *)
+(** [close app] idempotently tears down terminal protocols and raw mode, then
+    releases backend resources. *)
 
 val stop : app -> unit
 (** [stop app] marks the runtime as stopped. The {!run} loop exits on the next
@@ -451,6 +453,10 @@ val attach :
 
     [parser] is the input parser, [terminal] the protocol handle, and
     [width]/[height] the initial dimensions.
+
+    If setup raises after calling [set_raw_mode true] or applying a terminal
+    protocol, [attach] closes the partial application, invokes [cleanup], and
+    propagates the original exception and backtrace.
 
     [render_offset] defaults to [0]. [static_needs_newline] defaults to [false].
 *)
