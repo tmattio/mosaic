@@ -1018,31 +1018,38 @@ type ('model, 'msg) app = {
 module Probe : sig
   (** Runtime quiescence introspection for test harnesses.
 
-      A probe reports whether the runtime has outstanding work: undispatched
-      messages, in-flight {!Cmd.val-perform} callbacks, or asynchronous render
-      work. A settled application's frame is stable until new input arrives or
-      the backend clock advances — live timers ({!Sub.val-every},
-      {!Sub.val-on_tick}) do not prevent settlement, they only fire as time
-      moves. Obtain one through {!val-run}'s [probe] argument. *)
+      A probe collects named checks for outstanding work. {!val-run} supplies
+      checks for undispatched messages, in-flight {!Cmd.val-perform} callbacks,
+      and asynchronous rendering. Applications may add checks for work they own
+      outside Mosaic with {!with_pending}.
+
+      A settled application's frame is stable until new input arrives, the
+      backend clock advances, or an external producer adds work. Live timers
+      ({!Sub.val-every}, {!Sub.val-on_tick}) do not prevent settlement; they
+      only fire as time moves. Obtain a probe through {!val-run}'s [probe]
+      argument. *)
 
   type t
   (** The type for runtime probes. *)
 
   val is_settled : t -> bool
-  (** [is_settled t] is [true] iff no messages are pending, no perform is in
-      flight, and the renderer reports no pending work. *)
+  (** [is_settled t] is [true] iff every pending-work check in [t] returns
+      [false]. *)
 
-  val messages_pending : t -> bool
-  (** [messages_pending t] is [true] iff dispatched messages await processing.
-  *)
+  val pending : t -> string list
+  (** [pending t] is the names of the checks in [t] that currently return
+      [true], in the order they were added. This allocates a list and is
+      intended for diagnostics. *)
 
-  val performs_pending : t -> bool
-  (** [performs_pending t] is [true] iff a {!Cmd.val-perform} callback has
-      started and not yet returned. *)
+  val with_pending : name:string -> (unit -> bool) -> t -> t
+  (** [with_pending ~name is_pending t] is [t] extended with the named
+      [is_pending] check. The check must be fast, non-blocking, and free of side
+      effects.
 
-  val render_pending : t -> bool
-  (** [render_pending t] is [true] iff the renderer reports pending asynchronous
-      render work. *)
+      Adding a check does not arrange a runtime wake. When external work
+      completes, its owner must dispatch a message or call
+      {!Matrix.val-request_redraw} so a driver blocked on backend idleness can
+      re-evaluate the probe. *)
 end
 
 (** {1:running Running} *)

@@ -669,18 +669,18 @@ let render runtime =
   Reconciler.render runtime.reconciler vnode
 
 module Probe = struct
-  type t = {
-    messages_pending : unit -> bool;
-    performs_pending : unit -> bool;
-    render_pending : unit -> bool;
-  }
+  type check = { name : string; is_pending : unit -> bool }
+  type t = check list
 
-  let messages_pending t = t.messages_pending ()
-  let performs_pending t = t.performs_pending ()
-  let render_pending t = t.render_pending ()
+  let empty = []
+  let with_pending ~name is_pending t = t @ [ { name; is_pending } ]
 
-  let is_settled t =
-    not (messages_pending t || performs_pending t || render_pending t)
+  let pending t =
+    List.filter_map
+      (fun check -> if check.is_pending () then Some check.name else None)
+      t
+
+  let is_settled t = not (List.exists (fun check -> check.is_pending ()) t)
 end
 
 let run ?matrix
@@ -750,11 +750,13 @@ let run ?matrix
   | None -> ()
   | Some receive ->
       receive
-        {
-          Probe.messages_pending = (fun () -> runtime.pending_msgs <> []);
-          performs_pending = (fun () -> Atomic.get in_flight_performs > 0);
-          render_pending = (fun () -> not (Renderer.is_settled renderer));
-        });
+        (Probe.empty
+        |> Probe.with_pending ~name:"messages" (fun () ->
+            runtime.pending_msgs <> [])
+        |> Probe.with_pending ~name:"performs" (fun () ->
+            Atomic.get in_flight_performs > 0)
+        |> Probe.with_pending ~name:"render" (fun () ->
+            not (Renderer.is_settled renderer))));
   process_cmd runtime init_cmd;
   update_subscriptions runtime;
 

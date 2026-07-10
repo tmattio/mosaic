@@ -182,8 +182,8 @@ let%expect_test "probe reports perform and message quiescence" =
       `Snap;
       `Run
         (fun _ ->
-          fact "performs pending while queued"
-            (Mosaic.Probe.performs_pending (probed ()));
+          Printf.printf "pending while queued: %s\n"
+            (String.concat "," (Mosaic.Probe.pending (probed ())));
           fact "settled while perform queued"
             (Mosaic.Probe.is_settled (probed ())));
       `Run (fun _ -> Queue.pop pending ());
@@ -195,11 +195,42 @@ let%expect_test "probe reports perform and message quiescence" =
   [%expect
     {||keys:[] ticks:0 size:- note:-
 |
-performs pending while queued: true
+pending while queued: performs
 settled while perform queued: false
 |keys:[] ticks:0 size:- note:loaded
 |
 settled after perform ran: true|}]
+
+let%expect_test "probe composes application-owned pending work" =
+  let external_pending = ref true in
+  let probe = ref None in
+  let probed () = Option.get !probe in
+  drive
+    ~probe:(fun runtime_probe ->
+      probe :=
+        Some
+          (Mosaic.Probe.with_pending ~name:"external"
+             (fun () -> !external_pending)
+             runtime_probe))
+    (app ())
+    [
+      `Run
+        (fun _ ->
+          Printf.printf "pending: %s\n"
+            (String.concat "," (Mosaic.Probe.pending (probed ())));
+          Printf.printf "settled: %b\n" (Mosaic.Probe.is_settled (probed ())));
+      `Run
+        (fun _ ->
+          external_pending := false;
+          Printf.printf "settled after external completion: %b\n"
+            (Mosaic.Probe.is_settled (probed ())));
+    ];
+  [%expect
+    {|
+    pending: external
+    settled: false
+    settled after external completion: true
+    |}]
 
 let%expect_test "replaying the output stream through a VTE matches the grid" =
   let result = ref None in
@@ -225,7 +256,8 @@ replayed:
 |keys:[a,b] ticks:0 size:- note:-
 ||}]
 
-let%expect_test "an every-timer stepped exactly onto its deadline keeps firing" =
+let%expect_test "an every-timer stepped exactly onto its deadline keeps firing"
+    =
   (* Advancing by exactly the interval makes the frame delta [now -. last_time]
      the subtraction of two accumulated floats, which can fall an ULP short of
      the interval (0.1 +. 0.1 +. ... never lands on a clean multiple). A strict
@@ -257,14 +289,18 @@ let%expect_test "an every-timer stepped exactly onto its deadline keeps firing" 
 |keys:[] ticks:8 size:- note:-
 ||}]
 
-let%expect_test "a lone ESC resolves to Escape once the clock passes the timeout" =
+let%expect_test
+    "a lone ESC resolves to Escape once the clock passes the timeout" =
   (* A bare ESC is ambiguous (Escape vs. the start of an Alt/CSI sequence), so
      the parser holds it on a ~50 ms deadline. With no further bytes it must
      still resolve to Escape once virtual time passes that deadline — the
      backend drains at the current instant on every read, not only when a chunk
      arrives. The key must not appear before the step, and must appear after. *)
   drive
-    (app ~subs:(fun _ -> Mosaic.Sub.on_key (fun key -> Some (Pressed (key_name key)))) ())
+    (app
+       ~subs:(fun _ ->
+         Mosaic.Sub.on_key (fun key -> Some (Pressed (key_name key))))
+       ())
     [ `Feed "\027"; `Snap; `Advance 0.06; `Snap ];
   [%expect
     {||keys:[] ticks:0 size:- note:-
