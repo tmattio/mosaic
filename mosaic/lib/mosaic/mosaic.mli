@@ -1020,8 +1020,9 @@ module Probe : sig
 
       A probe collects named checks for outstanding work. {!val-run} supplies
       checks for undispatched messages, in-flight {!Cmd.val-perform} callbacks,
-      and asynchronous rendering. Applications may add checks for work they own
-      outside Mosaic with {!with_pending}.
+      and asynchronous rendering, named [messages], [performs], and [render]
+      respectively. Applications may add checks for work they own outside Mosaic
+      with {!with_pending}.
 
       A settled application's frame is stable until new input arrives, the
       backend clock advances, or an external producer adds work. Live timers
