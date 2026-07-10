@@ -152,8 +152,11 @@ val create :
 
     {b Unix:}
     - [output] output target. Defaults to [`Stdout].
-    - [signal_handlers] whether to install SIGTERM/SIGINT/SIGQUIT handlers.
-      Defaults to [true].
+    - [signal_handlers] whether the application owns SIGTERM, SIGINT, SIGQUIT,
+      SIGABRT, and SIGHUP until {!close}. The previous dispositions are restored
+      on close. Defaults to [true]. Signal dispositions are process-global, so
+      simultaneously live applications must be closed in reverse construction
+      order.
     - [initial_caps] seed capabilities passed to {!Terminal.make}.
 
     {b Diagnostics:}
@@ -376,16 +379,6 @@ val configure_frame_dump :
 val dump_frame : ?hits:bool -> ?dir:string -> ?pattern:string -> app -> unit
 (** [dump_frame app] writes the current frame to disk immediately. *)
 
-(** {1:unix Unix utilities} *)
-
-val install_signal_handlers : unit -> unit
-(** [install_signal_handlers ()] installs shutdown handlers for SIGTERM, SIGINT,
-    SIGQUIT, and SIGABRT, and an uncaught-exception handler that restores the
-    terminal before reporting the exception and its recorded backtrace. Whether
-    a backtrace is recorded is the application's policy
-    ([Printexc.record_backtrace] or [OCAMLRUNPARAM=b]); when recording is off,
-    the report says how to enable it. Idempotent. *)
-
 (** {1:custom Custom backends}
 
     {!attach} creates an application wired to caller-provided I/O callbacks
@@ -417,6 +410,7 @@ val attach :
   ?min_tui_height:int ->
   ?start_idle:bool ->
   ?pace_redraws:bool ->
+  ?signal_handlers:bool ->
   write_output:(bytes -> int -> int -> unit) ->
   now:(unit -> float) ->
   wake:(unit -> unit) ->
@@ -451,6 +445,10 @@ val attach :
     - [query_cursor_position] queries cursor position with the given timeout.
     - [cleanup] releases resources on {!close}.
 
+    [signal_handlers] defaults to [true] and has the same owned lifetime as in
+    {!create}. Set it to [false] when the embedding runtime owns termination
+    signal policy; process-exit cleanup remains tied to the application.
+
     [parser] is the input parser, [terminal] the protocol handle, and
     [width]/[height] the initial dimensions.
 
@@ -459,4 +457,6 @@ val attach :
     propagates the original exception and backtrace.
 
     [render_offset] defaults to [0]. [static_needs_newline] defaults to [false].
-*)
+    Signal dispositions are installed only after all fallible application setup
+    has completed, so failed construction leaves the caller's dispositions
+    unchanged. *)

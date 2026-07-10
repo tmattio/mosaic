@@ -12,13 +12,21 @@ let with_rollback ~rollback fn =
 let sigwinch_poll_interval = 0.05
 let winch_flag = Atomic.make false
 
-(* CR: I think it would be fine to have this handler in the loop throwing the
-   on_event directly without going through an atomic *)
 let install_winch_handler () =
   try
-    Sys.set_signal Sys.sigwinch
-      (Sys.Signal_handle (fun _ -> Atomic.set winch_flag true))
-  with Invalid_argument _ -> ()
+    Atomic.set winch_flag false;
+    let previous =
+      Sys.signal Sys.sigwinch
+        (Sys.Signal_handle (fun _ -> Atomic.set winch_flag true))
+    in
+    let active = ref true in
+    fun () ->
+      if !active then (
+        active := false;
+        (try ignore (Sys.signal Sys.sigwinch previous : Sys.signal_behavior)
+         with _ -> ());
+        Atomic.set winch_flag false)
+  with Invalid_argument _ -> ignore
 
 (* ───── Application Setup ───── *)
 
@@ -48,6 +56,7 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
   in
   let parser = Matrix.Input.Parser.create () in
   let original_termios = ref None in
+  let restore_winch = ref ignore in
   let set_raw_mode enabled =
     match (enabled, !original_termios) with
     | true, Some _ | false, None -> ()
@@ -253,13 +262,13 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
           ~debug_overlay_capacity ~frame_dump_every ?frame_dump_dir
           ?frame_dump_pattern ~frame_dump_hits ~cursor_visible ~explicit_width
           ~input_timeout ~resize_debounce ~min_tui_height ~start_idle
-          ~write_output ~now ~wake ~terminal_size ~set_raw_mode ~flush_input
-          ~read_events ~query_cursor_position ~cleanup:ignore ~parser ~terminal
-          ~width ~height ~render_offset ~static_needs_newline ()
+          ~signal_handlers ~write_output ~now ~wake ~terminal_size ~set_raw_mode
+          ~flush_input ~read_events ~query_cursor_position
+          ~cleanup:(fun () -> !restore_winch ())
+          ~parser ~terminal ~width ~height ~render_offset ~static_needs_newline
+          ()
       in
       app_ref := Some app;
       Matrix.Terminal.query_pixel_resolution terminal;
-      if signal_handlers then Matrix.install_signal_handlers ();
-      at_exit close_owned;
-      install_winch_handler ();
+      restore_winch := install_winch_handler ();
       app)

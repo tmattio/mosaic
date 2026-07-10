@@ -52,7 +52,7 @@
  (name test_runtime)
  (package matrix)
  (modules test_runtime)
- (libraries windtrap matrix))
+ (libraries windtrap matrix unix))
 
 (test
  (name test_image)

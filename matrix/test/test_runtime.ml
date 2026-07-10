@@ -91,6 +91,49 @@ let is_before ~first ~second s =
   | Some i, Some j -> i < j
   | _ -> false
 
+type watched_signal = { name : string; number : int }
+
+let watched_signals =
+  [
+    { name = "SIGTERM"; number = Sys.sigterm };
+    { name = "SIGINT"; number = Sys.sigint };
+    { name = "SIGQUIT"; number = Sys.sigquit };
+    { name = "SIGABRT"; number = Sys.sigabrt };
+    { name = "SIGHUP"; number = Sys.sighup };
+    { name = "SIGWINCH"; number = Sys.sigwinch };
+  ]
+
+let peek_signal number =
+  let behavior = Sys.signal number Sys.Signal_ignore in
+  ignore (Sys.signal number behavior : Sys.signal_behavior);
+  behavior
+
+let with_distinct_signal_handlers fn =
+  let installed = ref [] in
+  let restore () =
+    List.iter
+      (fun (signal, previous, _) ->
+        ignore (Sys.signal signal.number previous : Sys.signal_behavior))
+      !installed
+  in
+  Fun.protect ~finally:restore (fun () ->
+      List.iter
+        (fun signal ->
+          let handler _ = () in
+          match Sys.signal signal.number (Sys.Signal_handle handler) with
+          | previous -> installed := (signal, previous, handler) :: !installed
+          | exception Invalid_argument _ -> ())
+        watched_signals;
+      fn (List.rev !installed))
+
+let assert_distinct_handlers entries =
+  List.iter
+    (fun (signal, _, expected) ->
+      match peek_signal signal.number with
+      | Sys.Signal_handle actual when actual == expected -> ()
+      | _ -> failf "%s prior disposition was not restored" signal.name)
+    entries
+
 let make_app ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     ?(input_timeout = Some 0.) ?(terminal_tty = false) ?(advance_now = true)
     ?(sleep_until_timeout = false) ?(read_quantum_s = 0.0001)
@@ -156,7 +199,8 @@ let make_app ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
   in
   let app =
     Matrix.attach ~mode ~raw_mode ~target_fps ~input_timeout ~min_tui_height
-      ~resize_debounce ?render_offset ?static_needs_newline
+      ~resize_debounce ~signal_handlers:false ?render_offset
+      ?static_needs_newline
       ~write_output:(fun buf off len ->
         Buffer.add_string state.output (Bytes.sub_string buf off len))
       ~now
@@ -258,7 +302,7 @@ let test_close_restores_raw_mode_if_terminal_close_raises () =
   let app =
     Matrix.attach ~mode:`Primary ~raw_mode:true ~mouse_enabled:false
       ~bracketed_paste:false ~focus_reporting:false ~kitty_keyboard:`Disabled
-      ~target_fps:None ~input_timeout:(Some 0.)
+      ~target_fps:None ~input_timeout:(Some 0.) ~signal_handlers:false
       ~write_output:(fun _buf _off _len -> ())
       ~now:(fun () -> 0.)
       ~wake:(fun () -> ())
@@ -274,6 +318,92 @@ let test_close_restores_raw_mode_if_terminal_close_raises () =
   Matrix.close app;
   equal ~msg:"raw mode restored" int 1 !raw_restore_calls;
   equal ~msg:"cleanup called" int 1 !cleanup_calls
+
+let test_close_restores_owned_signal_dispositions_once () =
+  with_distinct_signal_handlers @@ fun entries ->
+  let read_fd, write_fd = Unix.pipe ~cloexec:true () in
+  Fun.protect
+    ~finally:(fun () ->
+      Unix.close read_fd;
+      Unix.close write_fd)
+    (fun () ->
+      let app =
+        Matrix.create ~raw_mode:false ~target_fps:None ~mouse_enabled:false
+          ~bracketed_paste:false ~focus_reporting:false
+          ~kitty_keyboard:`Disabled ~output:(`Fd write_fd) ()
+      in
+      (match
+         List.find_opt
+           (fun (signal, _, _) -> signal.number = Sys.sighup)
+           entries
+       with
+      | Some (signal, _, prior_handler) -> (
+          match peek_signal signal.number with
+          | Sys.Signal_handle current ->
+              is_false ~msg:"live app owns SIGHUP" (current == prior_handler)
+          | _ -> ())
+      | None -> ());
+      Matrix.close app;
+      assert_distinct_handlers entries;
+      Matrix.close app;
+      assert_distinct_handlers entries)
+
+let test_attach_failure_preserves_signal_dispositions () =
+  with_distinct_signal_handlers @@ fun entries ->
+  let terminal =
+    Matrix.Terminal.make ~tty:true
+      ~output:(fun _ -> raise_injected_startup_failure ())
+      ()
+  in
+  let parser = Matrix.Input.Parser.create () in
+  let failure =
+    try
+      ignore
+        (Matrix.attach ~mode:`Alt ~raw_mode:true ~target_fps:None
+           ~signal_handlers:true
+           ~write_output:(fun _ _ _ -> ())
+           ~now:(fun () -> 0.)
+           ~wake:(fun () -> ())
+           ~terminal_size:(fun () -> (80, 24))
+           ~set_raw_mode:(fun _ -> ())
+           ~flush_input:(fun () -> ())
+           ~read_events:(fun ~timeout:_ ~on_event:_ -> `Continue)
+           ~query_cursor_position:(fun ~timeout:_ -> None)
+           ~cleanup:(fun () -> ())
+           ~parser ~terminal ~width:80 ~height:24 ());
+      None
+    with exn -> Some exn
+  in
+  (match failure with
+  | Some Injected_startup_failure -> ()
+  | Some exn ->
+      failf "unexpected startup exception: %s" (Printexc.to_string exn)
+  | None -> fail "startup failure did not escape Matrix.attach");
+  assert_distinct_handlers entries
+
+let test_nested_apps_restore_signal_dispositions_in_reverse () =
+  with_distinct_signal_handlers @@ fun entries ->
+  let read_fd, write_fd = Unix.pipe ~cloexec:true () in
+  Fun.protect
+    ~finally:(fun () ->
+      Unix.close read_fd;
+      Unix.close write_fd)
+    (fun () ->
+      let create () =
+        Matrix.create ~raw_mode:false ~target_fps:None ~mouse_enabled:false
+          ~bracketed_paste:false ~focus_reporting:false
+          ~kitty_keyboard:`Disabled ~output:(`Fd write_fd) ()
+      in
+      let outer = create () in
+      let outer_winch = peek_signal Sys.sigwinch in
+      let inner = create () in
+      Matrix.close inner;
+      (match (outer_winch, peek_signal Sys.sigwinch) with
+      | Sys.Signal_handle expected, Sys.Signal_handle actual ->
+          is_true ~msg:"inner close restores outer SIGWINCH" (actual == expected)
+      | _ -> fail "nested Matrix apps did not own SIGWINCH handlers");
+      Matrix.close outer;
+      assert_distinct_handlers entries)
 
 let test_attach_rolls_back_partially_applied_terminal_modes () =
   let writes = ref 0 in
@@ -1153,6 +1283,12 @@ let () =
             test_end_of_input_finalizes_parser_and_closes_once;
           test "close restores raw mode if terminal close raises"
             test_close_restores_raw_mode_if_terminal_close_raises;
+          test "close restores owned signal dispositions once"
+            test_close_restores_owned_signal_dispositions_once;
+          test "attach failure preserves signal dispositions"
+            test_attach_failure_preserves_signal_dispositions;
+          test "nested apps restore signal dispositions in reverse"
+            test_nested_apps_restore_signal_dispositions_in_reverse;
           test "attach rolls back partially applied terminal modes"
             test_attach_rolls_back_partially_applied_terminal_modes;
           test "focus restore runs only after blur once"

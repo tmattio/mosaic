@@ -60,6 +60,24 @@ let counting_source source =
   in
   (Eio.Resource.T (state, handler), state)
 
+let peek_signal number =
+  let behavior = Sys.signal number Sys.Signal_ignore in
+  ignore (Sys.signal number behavior : Sys.signal_behavior);
+  behavior
+
+let with_distinct_signal_handler number fn =
+  let handler _ = () in
+  let previous = Sys.signal number (Sys.Signal_handle handler) in
+  Fun.protect
+    ~finally:(fun () ->
+      ignore (Sys.signal number previous : Sys.signal_behavior))
+    (fun () -> fn handler)
+
+let assert_signal_handler ~msg number expected =
+  match peek_signal number with
+  | Sys.Signal_handle actual -> is_true ~msg (actual == expected)
+  | Sys.Signal_default | Sys.Signal_ignore -> fail msg
+
 let nonblocking_read_returns_without_input ~master fd =
   let outcome = Atomic.make `Pending in
   let byte = Bytes.create 1 in
@@ -285,6 +303,8 @@ let test_successful_reads_do_not_allocate_a_result () =
     (words_per_read <= 1575.)
 
 let test_probe_failure_restores_pty_termios () =
+  with_distinct_signal_handler Sys.sighup @@ fun sighup_handler ->
+  with_distinct_signal_handler Sys.sigwinch @@ fun winch_handler ->
   Pty.with_pty ~winsize:Pty.{ rows = 24; cols = 80; xpixel = 0; ypixel = 0 }
   @@ fun master slave ->
   let slave_fd = Pty.file_descr slave in
@@ -297,7 +317,7 @@ let test_probe_failure_restores_pty_termios () =
     try
       ignore
         (Matrix_eio.create ~sw ~clock:(Eio.Stdenv.clock env) ~stdin:tty
-           ~stdout:tty ~signal_handlers:false ());
+           ~stdout:tty ~signal_handlers:true ());
       None
     with exn -> Some exn
   in
@@ -318,7 +338,68 @@ let test_probe_failure_restores_pty_termios () =
   equal ~msg:"input timeout restored after failed construction" int
     before.c_vtime after.c_vtime;
   is_true ~msg:"failed construction preserves the backend's nonblocking flag"
-    (nonblocking_read_returns_without_input ~master slave_fd)
+    (nonblocking_read_returns_without_input ~master slave_fd);
+  assert_signal_handler ~msg:"failed construction preserves SIGHUP disposition"
+    Sys.sighup sighup_handler;
+  assert_signal_handler
+    ~msg:"failed construction preserves SIGWINCH disposition" Sys.sigwinch
+    winch_handler
+
+let test_close_restores_eio_winch_disposition_once () =
+  with_distinct_signal_handler Sys.sigwinch @@ fun prior_handler ->
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let stdin, stdin_writer = Eio_unix.pipe sw in
+  let stdout_reader, stdout = Eio_unix.pipe sw in
+  let app =
+    Matrix_eio.create ~sw ~clock:(Eio.Stdenv.clock env) ~stdin ~stdout
+      ~raw_mode:false ~target_fps:None ~mouse_enabled:false
+      ~signal_handlers:false ~start_idle:true ()
+  in
+  (match peek_signal Sys.sigwinch with
+  | Sys.Signal_handle current ->
+      is_false ~msg:"live Eio app owns SIGWINCH" (current == prior_handler)
+  | Sys.Signal_default | Sys.Signal_ignore -> ());
+  Matrix.close app;
+  assert_signal_handler ~msg:"Eio close restores SIGWINCH" Sys.sigwinch
+    prior_handler;
+  Matrix.close app;
+  assert_signal_handler ~msg:"repeated Eio close preserves SIGWINCH"
+    Sys.sigwinch prior_handler;
+  Eio.Flow.close stdin_writer;
+  Eio.Flow.close stdout_reader
+
+let test_sigwinch_wakes_eio_runtime () =
+  with_distinct_signal_handler Sys.sigwinch @@ fun prior_handler ->
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let stdin, stdin_writer = Eio_unix.pipe sw in
+  let stdout_reader, stdout = Eio_unix.pipe sw in
+  let app =
+    Matrix_eio.create ~sw ~clock:(Eio.Stdenv.clock env) ~stdin ~stdout
+      ~raw_mode:false ~target_fps:None ~mouse_enabled:false
+      ~signal_handlers:false ~start_idle:true ()
+  in
+  Unix.kill (Unix.getpid ()) Sys.sigwinch;
+  let resized = ref false in
+  let result =
+    Eio.Time.with_timeout (Eio.Stdenv.clock env) 0.5 (fun () ->
+        Matrix.run app
+          ~on_input:(fun app -> function
+            | Matrix.Input.Resize _ ->
+                resized := true;
+                Matrix.stop app
+            | _ -> ())
+          ~on_render:(fun _ -> ());
+        Ok ())
+  in
+  (match result with
+  | Ok () -> is_true ~msg:"SIGWINCH wakes the Eio runtime" !resized
+  | Error `Timeout -> fail "SIGWINCH did not wake the Eio runtime");
+  assert_signal_handler ~msg:"SIGWINCH wake restores the prior disposition"
+    Sys.sigwinch prior_handler;
+  Eio.Flow.close stdin_writer;
+  Eio.Flow.close stdout_reader
 
 let () =
   run "matrix-eio.driver"
@@ -333,5 +414,8 @@ let () =
             test_successful_reads_do_not_allocate_a_result;
           test "probe failure restores PTY termios"
             test_probe_failure_restores_pty_termios;
+          test "close restores Eio SIGWINCH disposition once"
+            test_close_restores_eio_winch_disposition_once;
+          test "SIGWINCH wakes Eio runtime" test_sigwinch_wakes_eio_runtime;
         ];
     ]

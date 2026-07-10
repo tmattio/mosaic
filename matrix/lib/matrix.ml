@@ -145,16 +145,12 @@ let drain_wakeup_fd fd =
   in
   go ()
 
-(* Shutdown handler registry *)
+(* Process lifecycle *)
 
 let shutdown_handlers : (unit -> unit) list ref = ref []
-let shutdown_triggered = ref false
 
 let run_shutdown_handlers () =
-  if !shutdown_triggered then ()
-  else (
-    shutdown_triggered := true;
-    List.iter (fun f -> try f () with _ -> ()) !shutdown_handlers)
+  List.iter (fun f -> try f () with _ -> ()) !shutdown_handlers
 
 let register_shutdown_handler fn = shutdown_handlers := fn :: !shutdown_handlers
 
@@ -165,42 +161,61 @@ let shutdown_signal_handler signum =
   run_shutdown_handlers ();
   exit (128 + signum)
 
-let signal_handlers_installed = ref false
+let acquire_signal_dispositions handlers =
+  let acquired = ref [] in
+  let restore () =
+    List.iter
+      (fun (signal, previous) ->
+        try ignore (Sys.signal signal previous : Sys.signal_behavior)
+        with _ -> ())
+      !acquired
+  in
+  try
+    List.iter
+      (fun (signal, behavior) ->
+        match Sys.signal signal behavior with
+        | previous -> acquired := (signal, previous) :: !acquired
+        | exception Invalid_argument _ -> ())
+      handlers;
+    let active = ref true in
+    fun () ->
+      if !active then (
+        active := false;
+        restore ())
+  with exn ->
+    let backtrace = Printexc.get_raw_backtrace () in
+    restore ();
+    Printexc.raise_with_backtrace exn backtrace
 
-let try_set_signal sig_num handler =
-  try Sys.set_signal sig_num handler with Invalid_argument _ -> ()
-
-let install_signal_handlers () =
-  if not !signal_handlers_installed then (
-    signal_handlers_installed := true;
-    try_set_signal Sys.sigterm (Sys.Signal_handle shutdown_signal_handler);
-    try_set_signal Sys.sigint (Sys.Signal_handle shutdown_signal_handler);
-    try_set_signal Sys.sigquit (Sys.Signal_handle shutdown_signal_handler);
-    try_set_signal Sys.sigabrt (Sys.Signal_handle shutdown_signal_handler);
-    (* Restore the terminal, then report the exception with whatever backtrace
-       was recorded. Whether recording is on is the application's policy
-       (Printexc.record_backtrace or OCAMLRUNPARAM=b), never this library's;
-       when it is off, the report says how to enable it rather than printing
-       nothing. *)
-    Printexc.set_uncaught_exception_handler (fun exn raw_backtrace ->
-        run_shutdown_handlers ();
-        Printexc.default_uncaught_exception_handler exn raw_backtrace;
-        if not (Printexc.backtrace_status ()) then
-          prerr_endline
-            "(backtrace not recorded; run with OCAMLRUNPARAM=b to enable)"))
+let own_process_lifecycle ~signal_handlers ~additional_signals shutdown_fn =
+  register_shutdown_handler shutdown_fn;
+  try
+    let termination_signals =
+      if signal_handlers then
+        List.map
+          (fun signal -> (signal, Sys.Signal_handle shutdown_signal_handler))
+          [ Sys.sigterm; Sys.sigint; Sys.sigquit; Sys.sigabrt; Sys.sighup ]
+      else []
+    in
+    let restore_signals =
+      acquire_signal_dispositions (termination_signals @ additional_signals)
+    in
+    let active = ref true in
+    fun () ->
+      if !active then (
+        active := false;
+        restore_signals ();
+        deregister_shutdown_handler shutdown_fn)
+  with exn ->
+    let backtrace = Printexc.get_raw_backtrace () in
+    deregister_shutdown_handler shutdown_fn;
+    Printexc.raise_with_backtrace exn backtrace
 
 let () = at_exit run_shutdown_handlers
 
-(* SIGWINCH: global flag + wakeup pipe fd *)
+(* SIGWINCH: the active Unix app's flag + wakeup pipe fd *)
 
 let winch_received = ref false
-
-let install_winch_handler wakeup_w =
-  let handler _ =
-    winch_received := true;
-    wake_fd wakeup_w
-  in
-  try_set_signal Sys.sigwinch (Sys.Signal_handle handler)
 
 (* Unix low-level I/O *)
 
@@ -1134,14 +1149,13 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
   let output_is_tty = Terminal.is_tty output_fd in
   let input_is_tty = Terminal.is_tty input_fd in
   let wakeup_r, wakeup_w = Unix.pipe ~cloexec:true () in
-  let shutdown_fn_ref = ref None in
+  let release_lifecycle = ref ignore in
   let backend_cleaned = ref false in
   let cleanup_backend () =
     if not !backend_cleaned then (
       backend_cleaned := true;
-      (match !shutdown_fn_ref with
-      | Some fn -> deregister_shutdown_handler fn
-      | None -> ());
+      !release_lifecycle ();
+      winch_received := false;
       (try Unix.close wakeup_r with _ -> ());
       try Unix.close wakeup_w with _ -> ())
   in
@@ -1242,10 +1256,16 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
       app_ref := Some app;
       Terminal.query_pixel_resolution terminal;
       let shutdown_fn () = close app in
-      shutdown_fn_ref := Some shutdown_fn;
-      register_shutdown_handler shutdown_fn;
-      if signal_handlers then install_signal_handlers ();
-      install_winch_handler wakeup_w;
+      let winch_handler _ =
+        winch_received := true;
+        wake_fd wakeup_w
+      in
+      winch_received := false;
+      release_lifecycle :=
+        own_process_lifecycle ~signal_handlers
+          ~additional_signals:
+            [ (Sys.sigwinch, Sys.Signal_handle winch_handler) ]
+          shutdown_fn;
       app)
 
 (* Attach: wire custom I/O for testing *)
@@ -1259,9 +1279,10 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     ?(frame_dump_hits = false) ?(cursor_visible = mode = `Alt)
     ?(explicit_width = false) ?(input_timeout = None)
     ?(resize_debounce = Some 0.1) ?(min_tui_height = 1) ?(start_idle = false)
-    ?(pace_redraws = true) ~write_output ~now ~wake ~terminal_size ~set_raw_mode
-    ~flush_input ~read_events ~query_cursor_position ~cleanup ~parser ~terminal
-    ~width ~height ?(render_offset = 0) ?(static_needs_newline = false) () =
+    ?(pace_redraws = true) ?(signal_handlers = true) ~write_output ~now ~wake
+    ~terminal_size ~set_raw_mode ~flush_input ~read_events
+    ~query_cursor_position ~cleanup ~parser ~terminal ~width ~height
+    ?(render_offset = 0) ?(static_needs_newline = false) () =
   let config =
     make_config ~mode ~raw_mode ~target_fps ~respect_alpha ~mouse_enabled ~mouse
       ~bracketed_paste ~focus_reporting ~kitty_keyboard ~exit_on_ctrl_c
@@ -1269,10 +1290,31 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
       ~explicit_width ~input_timeout ~resize_debounce ~min_tui_height
       ~start_idle ~pace_redraws ()
   in
-  init_app config ~write_output ~now ~wake ~terminal_size ~set_raw_mode
-    ~flush_input ~read_events ~query_cursor_position ~cleanup ~debug_overlay
-    ~frame_dump_every ~frame_dump_dir ~frame_dump_pattern ~frame_dump_hits
-    ~parser ~terminal ~width ~height ~render_offset ~static_needs_newline
+  let app_ref = ref None in
+  let release_lifecycle = ref ignore in
+  let backend_cleaned = ref false in
+  let cleanup_owned () =
+    if not !backend_cleaned then (
+      backend_cleaned := true;
+      !release_lifecycle ();
+      cleanup ())
+  in
+  let rollback () =
+    match !app_ref with Some app -> close app | None -> cleanup_owned ()
+  in
+  with_rollback ~rollback (fun () ->
+      let app =
+        init_app config ~write_output ~now ~wake ~terminal_size ~set_raw_mode
+          ~flush_input ~read_events ~query_cursor_position
+          ~cleanup:cleanup_owned ~debug_overlay ~frame_dump_every
+          ~frame_dump_dir ~frame_dump_pattern ~frame_dump_hits ~parser ~terminal
+          ~width ~height ~render_offset ~static_needs_newline
+      in
+      app_ref := Some app;
+      release_lifecycle :=
+        own_process_lifecycle ~signal_handlers ~additional_signals:[] (fun () ->
+            close app);
+      app)
 
 (* Event loop helpers *)
 

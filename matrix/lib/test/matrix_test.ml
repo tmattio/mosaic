@@ -121,8 +121,8 @@ let create ?(mode = `Alt) ?(target_fps = 60.) ?(exit_on_ctrl_c = false)
   in
   let app =
     Matrix.attach ~mode ~target_fps:(Some target_fps) ~exit_on_ctrl_c
-      ~input_timeout:None ~resize_debounce:(Some 0.) ~start_idle:true
-      ~pace_redraws:false
+      ~signal_handlers:false ~input_timeout:None ~resize_debounce:(Some 0.)
+      ~start_idle:true ~pace_redraws:false
       ~write_output:(fun buf off len -> Buffer.add_subbytes output buf off len)
       ~now:(fun () -> t.now)
       ~wake:on_wake
