@@ -125,9 +125,9 @@ val spawn :
     [args] are the command-line arguments {e excluding} [argv[0]] which is set
     to [prog]. If [prog] is relative it is searched in [PATH].
 
-    Raises [Unix.Unix_error] if PTY creation or [fork] fails. Exec failures in
-    the child are not reported as exceptions; the child exits with the errno
-    value as its exit code. Monitor via [Unix.waitpid] on {!pid}.
+    Raises [Unix.Unix_error] if PTY creation or [fork] fails. Child setup and
+    exec failures are not reported as exceptions; the child exits with status
+    [127]. Monitor via [Unix.waitpid] on {!pid}.
 
     {b Note.} The child receives [SIGHUP] when the master is closed. *)
 

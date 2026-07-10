@@ -191,6 +191,35 @@ let test_spawn_with_cwd () =
     (output = "/tmp" || output = "/private/tmp");
   Pty.close pty
 
+let test_failed_spawn_does_not_run_parent_at_exit () =
+  let parent_pid = Unix.getpid () in
+  let marker_read, marker_write = Unix.pipe () in
+  let marker = Bytes.of_string "child-at-exit" in
+  at_exit (fun () ->
+      if Unix.getpid () <> parent_pid then
+        try
+          ignore (Unix.write marker_write marker 0 (Bytes.length marker) : int)
+        with Unix.Unix_error _ -> ());
+  let pty = Pty.spawn ~prog:"/definitely/not/a/matrix-program" ~args:[] () in
+  let child =
+    match Pty.pid pty with
+    | Some child -> child
+    | None -> fail "spawned PTY has no child pid"
+  in
+  let _, status = Unix.waitpid [] child in
+  Pty.close ~wait:false pty;
+  Unix.close marker_write;
+  let received = Bytes.create (Bytes.length marker) in
+  let received_len = Unix.read marker_read received 0 (Bytes.length received) in
+  Unix.close marker_read;
+  (match status with
+  | Unix.WEXITED code -> equal ~msg:"failed PTY child exit status" int 127 code
+  | Unix.WSIGNALED signal ->
+      failf "failed PTY child was killed by signal %d" signal
+  | Unix.WSTOPPED signal -> failf "failed PTY child stopped on signal %d" signal);
+  equal ~msg:"failed child skips inherited parent at_exit handlers" int 0
+    received_len
+
 (* Non-blocking I/O *)
 
 let test_nonblocking_io () =
@@ -298,6 +327,8 @@ let tests =
       test "spawn sh" test_spawn_sh;
       test "spawn with env" test_spawn_with_env;
       test "spawn with cwd" test_spawn_with_cwd;
+      test "failed spawn skips parent at_exit"
+        test_failed_spawn_does_not_run_parent_at_exit;
       (* Non-blocking I/O *)
       test "nonblocking io" test_nonblocking_io;
       test "multiple writes" test_multiple_writes;

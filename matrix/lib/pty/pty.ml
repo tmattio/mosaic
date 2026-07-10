@@ -91,40 +91,24 @@ let spawn ?env ?cwd ?winsize ~prog ~args () =
       close pty_slave;
       raise_fork_error ()
   | 0 -> (
-      (* Child process *)
-      Unix.close pty_master.fd;
-
-      (* Create new session and set controlling TTY *)
-      (try setsid_and_setctty pty_slave.fd
-       with Unix.Unix_error _ ->
-         Unix.close pty_slave.fd;
-         exit 127);
-
-      (* Redirect stdin, stdout, stderr to the slave pty *)
-      Unix.dup2 pty_slave.fd Unix.stdin;
-      Unix.dup2 pty_slave.fd Unix.stdout;
-      Unix.dup2 pty_slave.fd Unix.stderr;
-
-      (* Close original slave fd if not stdin/stdout/stderr *)
-      if
-        pty_slave.fd <> Unix.stdin
-        && pty_slave.fd <> Unix.stdout
-        && pty_slave.fd <> Unix.stderr
-      then Unix.close pty_slave.fd;
-
-      (* Change directory if requested *)
-      (match cwd with
-      | Some dir -> (
-          try Unix.chdir dir
-          with Unix.Unix_error (e, _, _) -> exit (Obj.magic e : int))
-      | None -> ());
-
-      (* Execute the program *)
+      (* Child process. No exception may escape this branch: ordinary OCaml
+         termination would run the parent's inherited [at_exit] handlers. *)
       try
+        Unix.close pty_master.fd;
+        setsid_and_setctty pty_slave.fd;
+        Unix.dup2 pty_slave.fd Unix.stdin;
+        Unix.dup2 pty_slave.fd Unix.stdout;
+        Unix.dup2 pty_slave.fd Unix.stderr;
+        if
+          pty_slave.fd <> Unix.stdin
+          && pty_slave.fd <> Unix.stdout
+          && pty_slave.fd <> Unix.stderr
+        then Unix.close pty_slave.fd;
+        (match cwd with Some dir -> Unix.chdir dir | None -> ());
         match env with
         | None -> Unix.execvp prog argv
         | Some env_array -> Unix.execvpe prog argv env_array
-      with Unix.Unix_error (e, _, _) -> exit (Obj.magic e : int))
+      with _ -> Unix._exit 127)
   | pid ->
       (* Parent process *)
       close pty_slave;
