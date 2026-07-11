@@ -95,6 +95,7 @@
   cmarkit
   tree-sitter
   (windtrap :with-test)
-  (ppx_windtrap :with-test))
+  (ppx_windtrap :with-test)
+  (thumper :with-test))
  (tags
   (tui terminal tea elm "user-interface")))

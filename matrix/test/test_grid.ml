@@ -577,6 +577,27 @@ let clear_scissor_allows_future_writes () =
     ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   equal ~msg:"write succeeded" int (Char.code 'W') (read_char grid 1 1)
 
+let intersects_clip_includes_grid_bounds () =
+  let grid = Grid.create ~width:4 ~height:3 () in
+  is_true ~msg:"inside grid"
+    (Grid.intersects_clip grid { x = 3; y = 2; width = 2; height = 2 });
+  is_false ~msg:"right of grid"
+    (Grid.intersects_clip grid { x = 4; y = 0; width = 1; height = 1 });
+  is_false ~msg:"empty region"
+    (Grid.intersects_clip grid { x = 0; y = 0; width = 0; height = 1 })
+
+let intersects_clip_observes_nested_scissors () =
+  let grid = Grid.create ~width:6 ~height:2 () in
+  Grid.push_clip grid { x = 1; y = 0; width = 4; height = 2 };
+  Grid.push_clip grid { x = 3; y = 0; width = 2; height = 1 };
+  is_true ~msg:"inside effective clip"
+    (Grid.intersects_clip grid { x = 4; y = 0; width = 2; height = 2 });
+  is_false ~msg:"outside effective clip"
+    (Grid.intersects_clip grid { x = 1; y = 0; width = 2; height = 2 });
+  Grid.pop_clip grid;
+  is_true ~msg:"parent clip restored"
+    (Grid.intersects_clip grid { x = 1; y = 0; width = 2; height = 2 })
+
 let fill_rect_fills_region () =
   let grid = Grid.create ~width:3 ~height:3 () in
   Grid.fill_rect grid ~x:1 ~y:1 ~width:2 ~height:2 ~color:Ansi.Color.green;
@@ -1233,6 +1254,10 @@ let tests =
       draw_text_tab_partially_visible_respects_scissor;
     test "fill_rect respects scissor" fill_rect_respects_scissor;
     test "blit_region respects scissor" blit_region_respects_scissor;
+    test "intersects_clip includes grid bounds"
+      intersects_clip_includes_grid_bounds;
+    test "intersects_clip observes nested scissors"
+      intersects_clip_observes_nested_scissors;
     test "opacity stack grows beyond initial capacity"
       opacity_stack_grows_beyond_initial_capacity;
     test "inherit bg on unwritten ascii" inherit_bg_on_unwritten_ascii;

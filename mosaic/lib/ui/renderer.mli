@@ -70,7 +70,8 @@ val render_frame : t -> width:int -> height:int -> delta:float -> unit
     - Runs lifecycle passes ([on_frame] and resize hooks).
     - Runs frame callbacks (see {!add_frame_callback}).
     - Computes layout via Toffee.
-    - Walks the tree: extracts layout and builds the render command list.
+    - Walks the tree: extracts layout and builds the render command list,
+      omitting subtrees whose ancestor clip does not intersect the frame.
     - Executes render commands: draws to the grid and populates the hit grid.
     - Rechecks hover state against the updated hit grid.
 

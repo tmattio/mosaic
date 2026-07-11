@@ -520,6 +520,23 @@ let push_clip t rect = Scissor_stack.push t.scissor_stack rect
 let pop_clip t = Scissor_stack.pop t.scissor_stack
 let clear_clip t = Scissor_stack.clear t.scissor_stack
 
+let intersects_clip t (r : region) =
+  if r.width <= 0 || r.height <= 0 then false
+  else
+    let x0 = max 0 r.x in
+    let y0 = max 0 r.y in
+    let x1 = min t.width (r.x + r.width) in
+    let y1 = min t.height (r.y + r.height) in
+    if x0 >= x1 || y0 >= y1 then false
+    else
+      match Scissor_stack.current t.scissor_stack with
+      | None -> true
+      | Some clip ->
+          x0 < clip.x + clip.width
+          && x1 > clip.x
+          && y0 < clip.y + clip.height
+          && y1 > clip.y
+
 let clip t rect f =
   push_clip t rect;
   Fun.protect ~finally:(fun () -> pop_clip t) f

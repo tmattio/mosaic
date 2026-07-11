@@ -572,15 +572,19 @@ let grapheme_style ~highlights ~sel_active ~sel_start ~sel_end ~sel_bg ~sel_fg
 let render t _self grid ~delta:_ =
   let w = Renderable.width t.node in
   let h = Renderable.height t.node in
-  if (not t.render_enabled) || w <= 0 || h <= 0 then ()
+  let ox = Renderable.x t.node in
+  let oy = Renderable.y t.node in
+  let fully_clipped =
+    t.render_enabled && w > 0 && h > 0
+    && not (Grid.intersects_clip grid { x = ox; y = oy; width = w; height = h })
+  in
+  if (not t.render_enabled) || w <= 0 || h <= 0 || fully_clipped then ()
   else begin
     let info = display_info t in
     let lines = info.lines in
     let nlines = Array.length lines in
     let tab_width = Text_buffer.tab_width t.buffer in
     let width_method = Text_buffer.width_method t.buffer in
-    let ox = Renderable.x t.node in
-    let oy = Renderable.y t.node in
     (* Determine selection range for overlay (grapheme offsets) *)
     let sel_active = t.selection.active in
     let sel_start, sel_end =

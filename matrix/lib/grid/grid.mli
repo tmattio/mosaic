@@ -391,6 +391,10 @@ val pop_clip : t -> unit
 val clear_clip : t -> unit
 (** [clear_clip g] removes all clipping regions. *)
 
+val intersects_clip : t -> region -> bool
+(** [intersects_clip g r] is [true] iff the positive-area region [r] intersects
+    both [g]'s bounds and its effective clipping region. *)
+
 val clip : t -> region -> (unit -> 'a) -> 'a
 (** [clip g r f] runs [f ()] with [r] as the active clip, popping it on return
     (even on exception). *)

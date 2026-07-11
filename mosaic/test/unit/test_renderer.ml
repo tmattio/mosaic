@@ -241,6 +241,43 @@ let remove_post_process () =
   do_frame t;
   equal ~msg:"not called again" int 1 !count
 
+(* ── Viewport culling ── *)
+
+let overflow_visible_descendant_reaching_viewport_renders () =
+  let t = make_renderer () in
+  let parent = make_child ~parent:(Renderer.root t) ~x:80 ~y:0 ~w:10 ~h:5 () in
+  let child = make_child ~parent ~x:(-80) ~y:0 ~w:10 ~h:5 () in
+  let renders = ref 0 in
+  Renderable.set_render child (fun _ _ ~delta:_ -> incr renders);
+  do_frame ~width:20 ~height:10 t;
+  equal ~msg:"overflow-visible descendant callback" int 1 !renders
+
+let clipped_offscreen_subtree_is_not_traversed_for_rendering () =
+  let t = make_renderer () in
+  let hidden = Toffee.Style.Overflow.Hidden in
+  let parent_style =
+    Toffee.Style.default
+    |> Toffee.Style.set_position Absolute
+    |> Toffee.Style.set_inset
+         {
+           left = Toffee.Style.Length_percentage_auto.length 80.;
+           top = Toffee.Style.Length_percentage_auto.length 0.;
+           right = Toffee.Style.Length_percentage_auto.auto;
+           bottom = Toffee.Style.Length_percentage_auto.auto;
+         }
+    |> Toffee.Style.set_width (Toffee.Style.Dimension.length 10.)
+    |> Toffee.Style.set_height (Toffee.Style.Dimension.length 5.)
+    |> Toffee.Style.set_overflow { x = hidden; y = hidden }
+  in
+  let parent =
+    Renderable.create ~parent:(Renderer.root t) ~style:parent_style ()
+  in
+  let child = make_child ~parent ~x:(-80) ~y:0 ~w:10 ~h:5 () in
+  let renders = ref 0 in
+  Renderable.set_render child (fun _ _ ~delta:_ -> incr renders);
+  do_frame ~width:20 ~height:10 t;
+  equal ~msg:"clipped descendant callback" int 0 !renders
+
 (* ── Focus ── *)
 
 let focus_returns_true_for_focusable () =
@@ -996,6 +1033,13 @@ let () =
           test "clear removes all callbacks" clear_removes_all_callbacks;
           test "post-process runs" post_process_runs;
           test "remove post-process" remove_post_process;
+        ];
+      group "Viewport culling"
+        [
+          test "overflow-visible descendant reaching viewport renders"
+            overflow_visible_descendant_reaching_viewport_renders;
+          test "clipped offscreen subtree is not traversed for rendering"
+            clipped_offscreen_subtree_is_not_traversed_for_rendering;
         ];
       group "Settlement"
         [

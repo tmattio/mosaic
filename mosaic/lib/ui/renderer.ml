@@ -625,7 +625,7 @@ let measure_fn (t : t) (known_dimensions : float option Toffee.Geometry.Size.t)
    render commands. [parent_x] and [parent_y] are the absolute position of the
    parent's content box origin. *)
 let rec build_commands (t : t) (node : Renderable.t) ~parent_x ~parent_y
-    ~(delta : float) : unit =
+    ~(clip : Grid.region) ~(delta : float) : unit =
   if not (Renderable.visible node) then ()
   else
     let toffee_node = Renderable.Private.toffee_node node in
@@ -655,17 +655,24 @@ let rec build_commands (t : t) (node : Renderable.t) ~parent_x ~parent_y
     let child_clip =
       if should_clip then Renderable.Private.child_clip node else None
     in
-    let has_clip = Option.is_some child_clip in
+    let render_children child_clip =
+      (* Recurse into children in z-index order. Toffee's layout.location
+         already positions children relative to the parent's border box (i.e.
+         it includes border+padding offsets), so we pass abs_x/abs_y directly —
+         no additional inset is needed. *)
+      Renderable.Private.iter_children_z node (fun child ->
+          build_commands t child ~parent_x:abs_x ~parent_y:abs_y
+            ~clip:child_clip ~delta)
+    in
     (match child_clip with
-    | Some clip -> emit_cmd t (Push_scissor clip)
-    | None -> ());
-    (* Recurse into children in z-index order. Toffee's layout.location already
-       positions children relative to the parent's border box (i.e. it includes
-       border+padding offsets), so we pass abs_x/abs_y directly — no additional
-       inset needed. *)
-    Renderable.Private.iter_children_z node (fun child ->
-        build_commands t child ~parent_x:abs_x ~parent_y:abs_y ~delta);
-    if has_clip then emit_cmd t Pop_scissor;
+    | None -> render_children clip
+    | Some child_scissor ->
+        let child_clip = clip_rect_intersect clip child_scissor in
+        if child_clip.width > 0 && child_clip.height > 0 then begin
+          emit_cmd t (Push_scissor child_scissor);
+          render_children child_clip;
+          emit_cmd t Pop_scissor
+        end);
     if has_opacity then emit_cmd t Pop_opacity
 
 (* ───── Pass 3: Execute Commands ───── *)
@@ -706,6 +713,7 @@ let render_frame (t : t) ~width ~height ~delta =
     t.lifecycle_set;
   (* Frame callbacks *)
   List.iter (fun f -> f delta) t.frame_callbacks;
+  let frame_clip : Grid.region = { x = 0; y = 0; width; height } in
   (* Build the frame via Screen.build *)
   Screen.build t.screen ~width ~height (fun grid hits ->
       (* Pass 1: Layout computation *)
@@ -723,7 +731,7 @@ let render_frame (t : t) ~width ~height ~delta =
       (* Pass 2: Build render command list *)
       t.cmd_len <- 0;
       t.hit_scissors <- [];
-      build_commands t t.root ~parent_x:0. ~parent_y:0. ~delta;
+      build_commands t t.root ~parent_x:0. ~parent_y:0. ~clip:frame_clip ~delta;
       (* Pass 3: Execute render commands *)
       execute_commands t ~grid ~hits ~delta);
   (* Update cursor from focused node *)
