@@ -373,6 +373,32 @@ let measure_truncate_ignores_previous_layout_width () =
   in
   equal ~msg:"width after growth" int 17 (int_of_float result.width)
 
+let measure_word_max_content_ignores_layout_width () =
+  (* The node was last laid out narrower than the content. Max-content never
+     wraps, so the intrinsic width is the longest unwrapped line, not a wrap
+     at the stale laid-out width — otherwise a container that shrinks and
+     grows back leaves the text clamped at the narrow width forever. *)
+  let s = make_surface ~width:5 ~content:"hello world" ~wrap:`Word () in
+  let result =
+    call_measure s ~available_width:Toffee.Available_space.Max_content
+      ~available_height:Toffee.Available_space.Max_content
+  in
+  equal ~msg:"width" int 11 (int_of_float result.width);
+  equal ~msg:"height" int 1 (int_of_float result.height)
+
+let measure_word_max_content_unbreakable_run () =
+  (* A single unbreakable run (a rule built from repeated glyphs) after a
+     narrower layout; exercises the char-fallback path inside word wrap. *)
+  let s =
+    make_surface ~width:5 ~content:(String.make 11 '-') ~wrap:`Word ()
+  in
+  let result =
+    call_measure s ~available_width:Toffee.Available_space.Max_content
+      ~available_height:Toffee.Available_space.Max_content
+  in
+  equal ~msg:"width" int 11 (int_of_float result.width);
+  equal ~msg:"height" int 1 (int_of_float result.height)
+
 let measure_known_width_overrides () =
   let s = make_surface ~content:"hello world" () in
   let result =
@@ -564,6 +590,10 @@ let () =
           test "definite no wrap uncapped" measure_definite_no_wrap_uncapped;
           test "truncate ignores previous layout width"
             measure_truncate_ignores_previous_layout_width;
+          test "word max_content ignores layout width"
+            measure_word_max_content_ignores_layout_width;
+          test "word max_content unbreakable run"
+            measure_word_max_content_unbreakable_run;
           test "known width overrides" measure_known_width_overrides;
           test "known height overrides" measure_known_height_overrides;
           test "empty buffer" measure_empty_buffer;

@@ -694,15 +694,18 @@ let measure t ~known_dimensions ~available_space ~style:_ =
         (cl, cmw)
     | _ ->
         let nl, mw =
-          match t.wrap with
-          | `None ->
-              (* No wrapping: one display line per logical line, at the
-                 buffer's untruncated widths. Truncation is a render concern;
-                 measuring truncated lines would clamp the intrinsic width to
-                 whatever width the node was last laid out at. *)
+          match (t.wrap, wrap_width) with
+          | `None, _ | (`Char | `Word), None ->
+              (* One display line per logical line, at the buffer's
+                 untruncated widths. For [`None] truncation is a render
+                 concern; for [`Char]/[`Word] at max-content, wrapping only
+                 ever narrows a line, so the intrinsic width is the longest
+                 unwrapped line. Measuring either through the node's last
+                 laid-out width would clamp the intrinsic width to a stale
+                 value that never recovers when the container grows. *)
               ( Text_buffer.line_count t.buffer,
                 Text_buffer.max_line_width t.buffer )
-          | `Char | `Word ->
+          | (`Char | `Word), Some _ ->
               let info = compute_display_info t ?wrap_width () in
               (Array.length info.lines, info.max_line_width)
         in
