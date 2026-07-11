@@ -455,11 +455,17 @@ let close t = reset_state t
 
 let is_tty fd = try Unix.isatty fd with Unix.Unix_error _ -> false
 
+external get_iexten : Unix.file_descr -> bool = "terminal_get_iexten"
+external set_iexten : Unix.file_descr -> bool -> unit = "terminal_set_iexten"
+
+type raw_saved = { termios : Unix.terminal_io; iexten : bool }
+
 let set_raw fd =
-  let original = Unix.tcgetattr fd in
+  let termios = Unix.tcgetattr fd in
+  let iexten = get_iexten fd in
   let raw =
     {
-      original with
+      termios with
       c_echo = false;
       c_icanon = false;
       c_isig = false;
@@ -470,9 +476,15 @@ let set_raw fd =
     }
   in
   Unix.tcsetattr fd Unix.TCSANOW raw;
-  original
+  (* IEXTEN is not part of [Unix.terminal_io], so the record write above
+     leaves it set — and with icanon off the line discipline still processes
+     VDISCARD (^O) and VLNEXT (^V), eating those bytes before any read. *)
+  set_iexten fd false;
+  { termios; iexten }
 
-let restore fd termios = Unix.tcsetattr fd Unix.TCSANOW termios
+let restore fd saved =
+  Unix.tcsetattr fd Unix.TCSANOW saved.termios;
+  set_iexten fd saved.iexten
 let size fd = try get_size fd with _ -> (80, 24)
 let flush_input fd = try Unix.tcflush fd Unix.TCIFLUSH with _ -> ()
 let enable_vt fd = try enable_vt_raw fd with _ -> ()

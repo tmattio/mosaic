@@ -764,6 +764,28 @@ let test_reset_state_resets_cursor_metadata () =
      r);
   T.close term
 
+(* The stub is the only observer of IEXTEN — [Unix.terminal_io] cannot
+   express it, which is exactly why [set_raw] must go through C. *)
+external get_iexten : Unix.file_descr -> bool = "terminal_get_iexten"
+
+let test_set_raw_clears_iexten () =
+  let master, slave = Pty.open_pty () in
+  Fun.protect
+    ~finally:(fun () ->
+      Pty.close master;
+      Pty.close slave)
+  @@ fun () ->
+  let fd = Pty.file_descr slave in
+  (* A fresh pty line discipline has IEXTEN set: the kernel then intercepts
+     VDISCARD (^O) and VLNEXT (^V) even with icanon off, so those bytes never
+     reach a raw-mode application. *)
+  is_true ~msg:"pty starts with iexten set" (get_iexten fd);
+  let saved = T.set_raw fd in
+  is_true ~msg:"raw mode clears iexten" (not (get_iexten fd));
+  is_true ~msg:"saved state remembers iexten" saved.T.iexten;
+  T.restore fd saved;
+  is_true ~msg:"restore re-enables iexten" (get_iexten fd)
+
 let () =
   run "Terminal"
     [
@@ -812,6 +834,8 @@ let () =
       group "unicode" [ test "set_unicode_width" test_set_unicode_width ];
       group "keyboard"
         [ test "modifyOtherKeys toggle" test_modify_other_keys_toggle ];
+      group "raw mode"
+        [ test "set_raw clears iexten" test_set_raw_clears_iexten ];
       group "protocols"
         [
           test "idempotent protocols" test_idempotent_protocols;

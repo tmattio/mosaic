@@ -40,7 +40,7 @@
  (name test_terminal)
  (package matrix)
  (modules test_terminal)
- (libraries windtrap terminal unix ansi input))
+ (libraries windtrap terminal unix ansi input pty))
 
 (test
  (name test_screen)

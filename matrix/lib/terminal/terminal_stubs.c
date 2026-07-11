@@ -7,7 +7,9 @@
 #include <io.h>  // For _get_osfhandle
 #include <windows.h>
 #else
+#include <caml/unixsupport.h>
 #include <sys/ioctl.h>
+#include <termios.h>
 #include <unistd.h>
 #endif
 
@@ -64,4 +66,45 @@ CAMLprim value terminal_enable_vt(value fd_val) {
   SetConsoleOutputCP(CP_UTF8);
 #endif
   CAMLreturn(Val_unit);
+}
+
+// IEXTEN is not representable in OCaml's Unix.terminal_io, so raw-mode setup
+// reaches it through these stubs. With IEXTEN set, the line discipline
+// processes VDISCARD (^O) and VLNEXT (^V) even in non-canonical mode and
+// those bytes never reach the application.
+
+CAMLprim value terminal_get_iexten(value fd_val) {
+  CAMLparam1(fd_val);
+#ifdef _WIN32
+  CAMLreturn(Val_bool(0));
+#else
+  struct termios tio;
+  if (tcgetattr(Int_val(fd_val), &tio) != 0) {
+    uerror("tcgetattr", Nothing);
+  }
+  CAMLreturn(Val_bool((tio.c_lflag & IEXTEN) != 0));
+#endif
+}
+
+CAMLprim value terminal_set_iexten(value fd_val, value on_val) {
+  CAMLparam2(fd_val, on_val);
+#ifdef _WIN32
+  (void)on_val;
+  CAMLreturn(Val_unit);
+#else
+  int fd = Int_val(fd_val);
+  struct termios tio;
+  if (tcgetattr(fd, &tio) != 0) {
+    uerror("tcgetattr", Nothing);
+  }
+  if (Bool_val(on_val)) {
+    tio.c_lflag |= IEXTEN;
+  } else {
+    tio.c_lflag &= ~(tcflag_t)IEXTEN;
+  }
+  if (tcsetattr(fd, TCSANOW, &tio) != 0) {
+    uerror("tcsetattr", Nothing);
+  }
+  CAMLreturn(Val_unit);
+#endif
 }
