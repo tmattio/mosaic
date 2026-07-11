@@ -358,4 +358,10 @@ let benchmarks =
   ]
   |> Thumper.group "render"
 
-let () = Thumper.run "screen" [ benchmarks ]
+let () =
+  Thumper.run "screen"
+    ~budgets:
+      [
+        Thumper.Budget.no_slower_than 0.05; Thumper.Budget.no_more_alloc_than 0.;
+      ]
+    [ benchmarks ]

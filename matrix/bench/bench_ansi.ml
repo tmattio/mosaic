@@ -323,4 +323,10 @@ let benchmarks =
         ];
     ]
 
-let () = Thumper.run "ansi" benchmarks
+let () =
+  Thumper.run "ansi"
+    ~budgets:
+      [
+        Thumper.Budget.no_slower_than 0.05; Thumper.Budget.no_more_alloc_than 0.;
+      ]
+    benchmarks

@@ -39,8 +39,20 @@ let make_grid ?(respect_alpha = false) () =
 
 (* Bulk fills: opaque & translucent overlays *)
 
+(* Five bulk Bigarray fills complete in about 4 us on this host. Their
+   throughput follows the current memory-frequency state closely enough to
+   vary by more than 60% across otherwise isolated CI runs. Keep allocations
+   exact, and retain a timing guard wide enough to reject the old per-cell path
+   without turning normal frequency scaling into a flaky gate. *)
+let opaque_fill_budgets =
+  [
+    Thumper.Budget.no_slower_than ~metric:Thumper.Metric.cpu_time 1.;
+    Thumper.Budget.no_slower_than ~metric:Thumper.Metric.wall_time 1.;
+    Thumper.Budget.no_more_alloc_than 0.;
+  ]
+
 let fill_rect_opaque_full =
-  Thumper.bench_with_setup
+  Thumper.bench_with_setup ~budgets:opaque_fill_budgets
     ~setup:(fun () -> make_grid ())
     ~teardown:(fun _ -> ())
     "grid.fill_rect/opaque-full"
@@ -202,4 +214,10 @@ let benchmarks =
   ]
   |> Thumper.group "grid"
 
-let () = Thumper.run "grid" [ benchmarks ]
+let () =
+  Thumper.run "grid"
+    ~budgets:
+      [
+        Thumper.Budget.no_slower_than 0.05; Thumper.Budget.no_more_alloc_than 0.;
+      ]
+    [ benchmarks ]

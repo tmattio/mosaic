@@ -15,3 +15,17 @@ render/submit_no-changes	wall_time	6.194699e-04	5.897619e-04	6.457715e-04	4.5207
 render/submit_single-cell	alloc_words	4.684800e+04	4.684800e+04	4.684800e+04	0.000000e+00	55	4
 render/submit_single-cell	cpu_time	5.904452e-04	5.895394e-04	5.913654e-04	1.546314e-03	55	9
 render/submit_single-cell	wall_time	5.945998e-04	5.914491e-04	5.980358e-04	5.538742e-03	55	9
+
+# machine: 3bc8b9d932f88bc7
+# cpu: Apple M1 Max
+# ocaml: 5.5.0
+# git: 7aca6632
+# dirty: true
+# command: ./bench_runtime.exe --ci -q
+
+render/submit_no-changes	alloc_words	4.680300e+04	4.680300e+04	4.680300e+04	0.000000e+00	49	3
+render/submit_no-changes	cpu_time	5.880154e-04	5.862822e-04	5.895436e-04	2.773172e-03	49	6
+render/submit_no-changes	wall_time	5.891629e-04	5.865348e-04	5.919982e-04	4.636573e-03	49	4
+render/submit_single-cell	alloc_words	4.685500e+04	4.685500e+04	4.685500e+04	0.000000e+00	30	0
+render/submit_single-cell	cpu_time	5.861899e-04	5.853308e-04	5.887057e-04	2.878734e-03	30	4
+render/submit_single-cell	wall_time	5.862411e-04	5.853593e-04	5.889490e-04	3.061604e-03	30	4

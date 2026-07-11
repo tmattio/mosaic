@@ -256,6 +256,10 @@ let mixed_dashboard_benchmark =
 
 let () =
   Thumper.run "toffee"
+    ~budgets:
+      [
+        Thumper.Budget.no_slower_than 0.05; Thumper.Budget.no_more_alloc_than 0.;
+      ]
     [
       deep_flex_benchmark;
       wide_flex_benchmark;

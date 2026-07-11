@@ -1,7 +1,28 @@
 # thumper baseline
-# version: 1
+# version: 2
 # suite_name: toffee
-# host: 3fdff906040e1980
+
+# machine: 3bc8b9d932f88bc7
+# cpu: Apple M1 Max
+# ocaml: 5.5.0
+# git: 7aca6632
+# dirty: true
+# command: ./bench_toffee.exe --ci
+
+flex_deep-hierarchy	alloc_words	5.832080e+05	5.832080e+05	5.832080e+05	0.000000e+00	62	6
+flex_deep-hierarchy	cpu_time	2.955750e-03	2.937153e-03	2.982162e-03	7.613812e-03	62	5
+flex_deep-hierarchy	wall_time	2.860884e-03	2.848227e-03	2.877776e-03	5.164211e-03	62	3
+flex_wide-dashboard	alloc_words	4.714400e+04	4.714400e+04	4.714400e+04	0.000000e+00	30	0
+flex_wide-dashboard	cpu_time	6.753157e-05	6.715251e-05	6.831641e-05	8.617451e-03	30	2
+flex_wide-dashboard	wall_time	6.818870e-05	6.769829e-05	6.917116e-05	1.080000e-02	30	2
+grid_auto-placement-gallery	alloc_words	2.380370e+05	2.380370e+05	2.380370e+05	0.000000e+00	59	4
+grid_auto-placement-gallery	cpu_time	4.154465e-04	4.134466e-04	4.174607e-04	4.831072e-03	59	3
+grid_auto-placement-gallery	wall_time	4.033666e-04	4.013476e-04	4.050754e-04	4.620860e-03	30	1
+mixed_dashboard	alloc_words	1.502300e+04	1.502300e+04	1.502300e+04	0.000000e+00	43	2
+mixed_dashboard	cpu_time	1.572309e-05	1.563838e-05	1.579014e-05	4.825946e-03	43	1
+mixed_dashboard	wall_time	1.584173e-05	1.574368e-05	1.599507e-05	7.934354e-03	43	2
+
+# machine: 3fdff906040e1980
 # cpu: Apple M1 Max
 # ocaml: 5.4.1
 # git: 751ab800

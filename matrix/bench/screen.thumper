@@ -1,7 +1,8 @@
 # thumper baseline
-# version: 1
+# version: 2
 # suite_name: screen
-# host: 3b8ae6dbe74c4269
+
+# machine: 3b8ae6dbe74c4269
 # cpu: Apple M1 Max
 # ocaml: 5.4.1
 # git: 5f4dc340
@@ -29,3 +30,32 @@ render/render_scenario_ci-log-view	wall_time	9.370720e-04	9.304630e-04	9.430943e
 render/render_scenario_text-editor	alloc_words	3.282550e+05	3.282540e+05	3.282550e+05	1.523206e-06	30	0
 render/render_scenario_text-editor	cpu_time	1.082399e-03	1.078472e-03	1.089959e-03	5.306106e-03	30	0
 render/render_scenario_text-editor	wall_time	1.085338e-03	1.080264e-03	1.095587e-03	7.058918e-03	30	1
+
+# machine: 3bc8b9d932f88bc7
+# cpu: Apple M1 Max
+# ocaml: 5.5.0
+# git: 7aca6632
+# dirty: true
+# command: ./bench_screen.exe --ci -q
+
+render/render_diff_full-screen	alloc_words	6.594100e+04	6.594100e+04	6.594100e+04	0.000000e+00	36	0
+render/render_diff_full-screen	cpu_time	9.970323e-04	9.855721e-04	1.006264e-03	1.037666e-02	36	1
+render/render_diff_full-screen	wall_time	1.004591e-03	9.884003e-04	1.016075e-03	1.377431e-02	36	1
+render/render_diff_no-changes	alloc_words	6.594600e+04	6.594600e+04	6.594600e+04	0.000000e+00	30	0
+render/render_diff_no-changes	cpu_time	9.846103e-04	9.819421e-04	9.880588e-04	3.106151e-03	30	2
+render/render_diff_no-changes	wall_time	9.846564e-04	9.819835e-04	9.882534e-04	3.183842e-03	30	2
+render/render_diff_single-line	alloc_words	6.565600e+04	6.565600e+04	6.565600e+04	0.000000e+00	53	2
+render/render_diff_single-line	cpu_time	1.002633e-03	9.911852e-04	1.020108e-03	1.442339e-02	53	0
+render/render_diff_single-line	wall_time	1.008423e-03	9.947331e-04	1.032348e-03	1.865013e-02	53	1
+render/render_diff_sparse-cells	alloc_words	6.609100e+04	6.609100e+04	6.609100e+04	0.000000e+00	30	0
+render/render_diff_sparse-cells	cpu_time	9.852743e-04	9.817584e-04	9.897858e-04	4.073676e-03	30	2
+render/render_diff_sparse-cells	wall_time	9.852962e-04	9.818379e-04	9.897282e-04	4.004014e-03	30	2
+render/render_emoji_full-screen	alloc_words	8.212700e+04	8.210300e+04	8.214700e+04	2.678778e-04	30	11
+render/render_emoji_full-screen	cpu_time	1.039145e-03	1.034821e-03	1.043395e-03	4.125131e-03	30	4
+render/render_emoji_full-screen	wall_time	1.038607e-03	1.033353e-03	1.043211e-03	4.746065e-03	30	4
+render/render_scenario_ci-log-view	alloc_words	8.872500e+04	8.872500e+04	8.872500e+04	0.000000e+00	30	0
+render/render_scenario_ci-log-view	cpu_time	8.409602e-04	8.360896e-04	8.520005e-04	9.459918e-03	30	1
+render/render_scenario_ci-log-view	wall_time	8.409403e-04	8.351961e-04	8.540407e-04	1.120443e-02	30	3
+render/render_scenario_text-editor	alloc_words	6.600200e+04	6.600200e+04	6.600300e+04	7.575528e-06	30	0
+render/render_scenario_text-editor	cpu_time	9.921736e-04	9.790959e-04	1.007411e-03	1.426933e-02	30	4
+render/render_scenario_text-editor	wall_time	1.042708e-03	1.040001e-03	1.044304e-03	2.063517e-03	30	1
