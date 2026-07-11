@@ -1,25 +1,31 @@
 (test
  (name bench_ansi)
+ (modules bench_ansi)
  (libraries thumper matrix.ansi))
 
 (test
  (name bench_text)
+ (modules bench_text)
  (libraries thumper matrix.text))
 
 (test
  (name bench_input)
+ (modules bench_input)
  (libraries thumper matrix.input))
 
 (test
  (name bench_grid)
+ (modules bench_grid)
  (libraries thumper matrix.grid matrix.ansi))
 
 (test
  (name bench_screen)
+ (modules bench_screen)
  (libraries thumper matrix.screen matrix.grid matrix.ansi))
 
 (executable
  (name bench_runtime)
+ (modules bench_runtime)
  (libraries thumper matrix))
 
 (rule
