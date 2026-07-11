@@ -199,6 +199,44 @@ let reset_sticky_clears_manual () =
   Scroll_box.reset_sticky sb;
   equal ~msg:"scroll_top reset" int 0 (Scroll_box.scroll_top sb)
 
+(* Lay the box out at the given viewport/content heights and render once, so
+   the render path (recalc → reengage → sticky) runs against the new sizes. *)
+let render_sticky_box sb ~vh ~ch =
+  layout_node (Scroll_box.node sb) ~x:0 ~y:0 ~width:20 ~height:vh;
+  layout_node (Scroll_box.viewport sb) ~x:0 ~y:0 ~width:19 ~height:vh;
+  layout_node (Scroll_box.content sb) ~x:0 ~y:0 ~width:19 ~height:ch;
+  Renderable.Private.render (Scroll_box.node sb)
+    (make_grid ~width:20 ~height:vh ())
+    ~delta:0.
+
+let reflow_reengages_within_one_row () =
+  let _t, sb = make_scroll_box ~sticky_scroll:true ~sticky_start:`Bottom () in
+  render_sticky_box sb ~vh:8 ~ch:20;
+  equal ~msg:"following at bottom" int 12 (Scroll_box.scroll_top sb);
+  (* A one-row scroll up latches the manual flag and parks the box. *)
+  Scroll_box.set_scroll_top sb 11;
+  render_sticky_box sb ~vh:8 ~ch:20;
+  equal ~msg:"steady-state frame keeps the park" int 11
+    (Scroll_box.scroll_top sb);
+  (* A reflow that moves the edge to within one row re-engages following. *)
+  render_sticky_box sb ~vh:10 ~ch:20;
+  equal ~msg:"re-pinned to the new edge" int 10 (Scroll_box.scroll_top sb);
+  render_sticky_box sb ~vh:10 ~ch:30;
+  equal ~msg:"follows appended content again" int 20
+    (Scroll_box.scroll_top sb)
+
+let reflow_keeps_deep_park () =
+  let _t, sb = make_scroll_box ~sticky_scroll:true ~sticky_start:`Bottom () in
+  render_sticky_box sb ~vh:8 ~ch:20;
+  Scroll_box.set_scroll_top sb 5;
+  (* Parked well above the edge: neither the reflow nor later appends may
+     steal the reading position. *)
+  render_sticky_box sb ~vh:10 ~ch:20;
+  equal ~msg:"reflow keeps the park" int 5 (Scroll_box.scroll_top sb);
+  render_sticky_box sb ~vh:10 ~ch:30;
+  equal ~msg:"appended content keeps the park" int 5
+    (Scroll_box.scroll_top sb)
+
 (* ── Setters ── *)
 
 let set_background_updates () =
@@ -295,6 +333,8 @@ let () =
         [
           test "set_sticky_scroll updates" set_sticky_scroll_updates;
           test "reset_sticky clears manual" reset_sticky_clears_manual;
+          test "reflow reengages within one row" reflow_reengages_within_one_row;
+          test "reflow keeps deep park" reflow_keeps_deep_park;
         ];
       group "Setters"
         [

@@ -441,6 +441,32 @@ let recalc_metrics t =
   Scroll_bar.set_scroll_size t.horizontal_bar t.content_w;
   Scroll_bar.set_viewport_size t.horizontal_bar vw
 
+(* Reflow reengage (opentui ScrollBox.recalculateBarProps): when a reflow
+   moves an edge, a latched box sitting within one row/column of that edge is
+   following in every way that matters — clear the latch so [apply_sticky]
+   re-pins it to the live edge. The one-row tolerance absorbs reflow rounding
+   without capturing a reader parked further up, and the changed-max gate
+   keeps steady-state manual scrolls parked: a one-row wheel-up with no
+   reflow stays where the user put it. *)
+let reengage_on_reflow t ~old_max_x ~old_max_y =
+  if t.props.sticky_scroll && t.has_manual_scroll then
+    match t.props.sticky_start with
+    | Some `Bottom
+      when t.max_scroll_y <> old_max_y
+           && t.max_scroll_y > 0
+           && t.scroll_y >= t.max_scroll_y - 1 ->
+        t.has_manual_scroll <- false
+    | Some `Top when t.max_scroll_y <> old_max_y && t.scroll_y <= 1 ->
+        t.has_manual_scroll <- false
+    | Some `Right
+      when t.max_scroll_x <> old_max_x
+           && t.max_scroll_x > 0
+           && t.scroll_x >= t.max_scroll_x - 1 ->
+        t.has_manual_scroll <- false
+    | Some `Left when t.max_scroll_x <> old_max_x && t.scroll_x <= 1 ->
+        t.has_manual_scroll <- false
+    | _ -> ()
+
 let apply_sticky t =
   if (not t.props.sticky_scroll) || t.has_manual_scroll then ()
   else
@@ -480,7 +506,9 @@ let render_scroll_box t _self grid ~delta =
     | Some c -> Grid.fill_rect grid ~x:lx ~y:ly ~width:lw ~height:lh ~color:c);
     let was_applying = t.is_applying_sticky in
     t.is_applying_sticky <- true;
+    let old_max_x = t.max_scroll_x and old_max_y = t.max_scroll_y in
     recalc_metrics t;
+    reengage_on_reflow t ~old_max_x ~old_max_y;
     apply_sticky t;
     apply_pending_reveal t;
     t.is_applying_sticky <- was_applying;
