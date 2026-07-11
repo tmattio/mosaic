@@ -17,7 +17,7 @@
 
 (pin
  (url
-  "git+https://github.com/invariant-hq/thumper.git#1ef2228609fc322157bbcc53dbc3469f25a6af80")
+  "git+https://github.com/invariant-hq/thumper.git")
  (package
   (name thumper)))
 
