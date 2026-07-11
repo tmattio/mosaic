@@ -1,9 +1,10 @@
 # Toffee Benchmarks
 
-The `toffee/bench/` directory contains thumper suites for realistic layout workloads. Run them with:
+The `toffee/bench/` directory contains thumper suites for realistic layout
+workloads. Run the performance gate with:
 
 ```bash
-dune exec toffee/bench/bench_toffee.exe
+dune build @toffee/bench
 ```
 
 Current groups:
@@ -12,7 +13,11 @@ Current groups:
 - `grid/auto-placement-gallery` — dense grid auto-placement with fixed rows and fr columns.
 - `mixed/dashboard` — mixed flex and grid sections (header, toolbar, card grid, activity feed).
 
-The suite checks against `toffee.thumper` as part of `dune runtest`. Use `--bless` to refresh the baseline, `--explore` to print results without baseline interaction, `-l` / `--list` to list cases, `-f PATTERN` to filter, and `--csv FILE` to dump CSV. Example:
+The suite checks against `toffee.thumper` independently of functional
+`runtest`, and exposes improvements or a new machine section through
+`dune promote`. Use `--bless` to replace the current machine baseline,
+`--explore` to print results without baseline interaction, `-l` / `--list` to
+list cases, `-f PATTERN` to filter, or `--csv FILE` to write CSV. Example:
 
 ```
 dune exec toffee/bench/bench_toffee.exe -- --explore

@@ -1,9 +1,18 @@
 # Matrix Benchmarks
 
-The `matrix/bench` directory contains thumper microbenchmarks that stress specific subsystems. Run them with:
+The `matrix/bench` directory contains thumper microbenchmarks that stress
+specific subsystems. Run the complete performance gate with:
 
 ```bash
-dune exec matrix/bench/<bench>.exe
+dune build @matrix/bench
 ```
 
-Each suite checks against `<suite>.thumper` (e.g. `ansi.thumper`, `grid.thumper`) as part of `dune runtest`. Use `--bless` to refresh the baseline, `--explore` to print results without baseline interaction, `-l` / `--list` to list cases, `-f PATTERN` to filter, and `--csv FILE` to dump CSV.
+The gate runs the six suites sequentially so their samples never compete. Each
+suite checks against `<suite>.thumper` (for example `ansi.thumper` or
+`grid.thumper`) and exposes improvements or a new machine section through
+`dune promote`. Functional `runtest` does not run performance measurements.
+
+For one suite, use `dune exec matrix/bench/<bench>.exe`. Pass `--bless` to
+replace the current machine baseline, `--explore` to print results without
+baseline interaction, `-l` / `--list` to list cases, `-f PATTERN` to filter,
+or `--csv FILE` to write CSV.
