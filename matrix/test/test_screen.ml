@@ -35,15 +35,11 @@ let contains_substring needle haystack =
     true
   with Not_found -> false
 
-let is_writer_overflow = function
-  | Invalid_argument msg -> contains_substring "Writer: buffer overflow" msg
-  | _ -> false
-
 let expect_writer_overflow f =
   try
     f ();
     fail "expected writer overflow"
-  with exn -> if not (is_writer_overflow exn) then raise exn
+  with Ansi.Writer.Buffer_full -> ()
 
 let viewport height = { Screen.y = 0; height }
 
@@ -224,7 +220,7 @@ let test_render_to_bytes_overflow_does_not_activate_hit_grid () =
         Screen.Hit_grid.add hits ~x:1 ~y:0 ~width:1 ~height:1 ~id:42)
   in
   expect_writer_overflow (fun () ->
-      ignore (Screen.render_to_bytes frame (Bytes.create 1) : int));
+      ignore (Screen.render_to_bytes frame Bytes.empty : int));
   equal ~msg:"overflow leaves hit grid inactive" int 0
     (Screen.query_hit frame ~x:1 ~y:0);
   let _ = Screen.render frame in

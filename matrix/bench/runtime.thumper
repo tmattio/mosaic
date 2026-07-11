@@ -1,0 +1,17 @@
+# thumper baseline
+# version: 2
+# suite_name: runtime
+
+# machine: 3b8ae6dbe74c4269
+# cpu: Apple M1 Max
+# ocaml: 5.5.0
+# git: 02ee9180
+# dirty: true
+# command: _build/default/matrix/bench/bench_runtime.exe --ci --bless --baseline matrix/bench/runtime.thumper -q
+
+render/submit_no-changes	alloc_words	4.679600e+04	4.679600e+04	4.679600e+04	0.000000e+00	55	4
+render/submit_no-changes	cpu_time	5.893479e-04	5.848541e-04	5.927356e-04	6.686606e-03	55	4
+render/submit_no-changes	wall_time	6.194699e-04	5.897619e-04	6.457715e-04	4.520767e-02	55	6
+render/submit_single-cell	alloc_words	4.684800e+04	4.684800e+04	4.684800e+04	0.000000e+00	55	4
+render/submit_single-cell	cpu_time	5.904452e-04	5.895394e-04	5.913654e-04	1.546314e-03	55	9
+render/submit_single-cell	wall_time	5.945998e-04	5.914491e-04	5.980358e-04	5.538742e-03	55	9

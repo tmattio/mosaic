@@ -8,11 +8,15 @@
 type t
 (** The type for byte buffer writers. *)
 
+exception Buffer_full
+(** Raised when a write exceeds the destination buffer's capacity or a counting
+    writer exceeds the maximum OCaml byte-sequence length. *)
+
 val make : bytes -> t
 (** [make buf] is a writer targeting [buf]. The buffer must be large enough to
     contain all generated output.
 
-    Write operations raise [Invalid_argument] if they would exceed [buf]. *)
+    Write operations raise {!Buffer_full} if they would exceed [buf]. *)
 
 val make_counting : unit -> t
 (** [make_counting ()] is a writer that tracks output length without writing any
@@ -47,5 +51,5 @@ val write_subbytes : t -> bytes -> int -> int -> unit
 (** [write_subbytes w buf off len] appends [len] bytes from [buf] starting at
     offset [off].
 
-    Raises [Invalid_argument] if the source slice is out of bounds or the
-    destination writer has insufficient remaining capacity. *)
+    Raises [Invalid_argument] if the source slice is out of bounds and
+    {!Buffer_full} if the destination has insufficient remaining capacity. *)

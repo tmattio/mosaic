@@ -56,7 +56,6 @@ type app = {
   query_cursor_position : timeout:float -> (int * int) option;
   cleanup : unit -> unit;
   screen : Screen.t;
-  render_buffer : bytes;
   mutable running : bool;
   mutable redraw_requested : bool;
   mutable width : int;
@@ -682,11 +681,8 @@ let submit ?primary_required_rows t =
       | Some height ->
           Some { Screen.y = Primary.render_offset t.primary; height }
     in
-    let len =
-      Screen.render_to_bytes ~full:forced_full ?scroll_hint ?viewport
-        ~now:(t.now ()) t.screen t.render_buffer
-    in
-    if len > 0 then Buffer.add_subbytes buf t.render_buffer 0 len;
+    Screen.render_to_buffer ~full:forced_full ?scroll_hint ?viewport
+      ~now:(t.now ()) t.screen buf;
     (match active_h with
     | Some active ->
         let offset = Primary.render_offset t.primary in
@@ -1020,7 +1016,6 @@ let init_app (c : config) ~write_output ~now ~wake ~terminal_size ~set_raw_mode
     Screen.create ~width_method:`Wcwidth ~respect_alpha:c.respect_alpha
       ~cursor_visible:c.cursor_visible ~explicit_width:c.explicit_width ()
   in
-  let render_buffer = Bytes.create (1024 * 1024 * 2) in
   let caps = Terminal.capabilities terminal in
   let width_method : Text.width_method =
     match caps.unicode_width with `Unicode -> `Unicode | `Wcwidth -> `Wcwidth
@@ -1052,7 +1047,6 @@ let init_app (c : config) ~write_output ~now ~wake ~terminal_size ~set_raw_mode
       query_cursor_position;
       cleanup;
       screen;
-      render_buffer;
       running = true;
       redraw_requested = false;
       width;

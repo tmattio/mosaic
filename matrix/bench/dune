@@ -18,6 +18,10 @@
  (name bench_screen)
  (libraries thumper matrix.screen matrix.grid matrix.ansi))
 
+(executable
+ (name bench_runtime)
+ (libraries thumper matrix))
+
 (rule
  (alias bench)
  (action
@@ -52,3 +56,10 @@
   (progn
    (run %{exe:bench_screen.exe} --ci)
    (diff? screen.thumper screen.thumper.corrected))))
+
+(rule
+ (alias bench)
+ (action
+  (progn
+   (run %{exe:bench_runtime.exe} --ci)
+   (diff? runtime.thumper runtime.thumper.corrected))))

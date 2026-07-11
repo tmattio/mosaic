@@ -150,9 +150,9 @@ type viewport = {
 }
 (** A terminal viewport rendered by the screen.
 
-    [None] in {!render} and {!render_to_bytes} means render the full next grid
-    at the screen's current {!row_offset}. [Some v] renders the first [v.height]
-    grid rows at terminal row offset [v.y]. *)
+    [None] in {!render}, {!render_to_buffer}, and {!render_to_bytes} means
+    render the full next grid at the screen's current {!row_offset}. [Some v]
+    renders the first [v.height] grid rows at terminal row offset [v.y]. *)
 
 val render :
   ?full:bool ->
@@ -179,7 +179,20 @@ val render :
       injected clock pass their own time so virtual-time runs stay
       deterministic.
 
-    See also {!render_to_bytes}. *)
+    See also {!render_to_buffer} and {!render_to_bytes}. *)
+
+val render_to_buffer :
+  ?full:bool ->
+  ?scroll_hint:scroll_hint ->
+  ?viewport:viewport ->
+  ?now:float ->
+  t ->
+  Buffer.t ->
+  unit
+(** [render_to_buffer ~full ~scroll_hint ~viewport ~now t buf] is like
+    {!render}, but appends the ANSI output to [buf]. Output storage is retained
+    by [t], so frames within the prior high-water mark allocate no output
+    scratch. *)
 
 val render_to_bytes :
   ?full:bool ->
@@ -191,7 +204,8 @@ val render_to_bytes :
   int
 (** [render_to_bytes ~full ~scroll_hint ~viewport ~now t buf] is like {!render}
     but writes into [buf] and is the number of bytes written. [buf] must be
-    large enough for the output. *)
+    large enough for the output. Raises {!Ansi.Writer.Buffer_full} without
+    committing the frame when capacity is insufficient. *)
 
 (** {1:screen_state Screen state} *)
 

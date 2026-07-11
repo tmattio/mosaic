@@ -91,7 +91,7 @@ let make_app ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     ?(sleep_until_timeout = false) ?(read_quantum_s = 0.0001)
     ?(emit_event_each_read = None) ?(events = []) ?(input_chunks = [])
     ?stop_after_reads ?render_offset ?static_needs_newline ?(min_tui_height = 1)
-    ?(resize_debounce = Some 0.)
+    ?(resize_debounce = Some 0.) ?(width = 80) ?(height = 24) ?hyperlinks
     ?(query_cursor_position = fun ~timeout:_ -> None) () =
   let state = make_state events input_chunks in
   let terminal =
@@ -99,6 +99,11 @@ let make_app ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
       ~output:(fun s -> Buffer.add_string state.terminal_output s)
       ~tty:terminal_tty ()
   in
+  Option.iter
+    (fun hyperlinks ->
+      let caps = Matrix.Terminal.capabilities terminal in
+      Matrix.Terminal.set_capabilities terminal { caps with hyperlinks })
+    hyperlinks;
   let parser = Matrix.Input.Parser.create () in
   let app_ref = ref None in
   let now () =
@@ -146,7 +151,7 @@ let make_app ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
         Buffer.add_string state.output (Bytes.sub_string buf off len))
       ~now
       ~wake:(fun () -> state.wake_calls <- state.wake_calls + 1)
-      ~terminal_size:(fun () -> (80, 24))
+      ~terminal_size:(fun () -> (width, height))
       ~set_raw_mode:(fun enabled ->
         if not enabled then
           state.raw_restore_calls <- state.raw_restore_calls + 1)
@@ -154,7 +159,7 @@ let make_app ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
         state.flush_input_calls <- state.flush_input_calls + 1)
       ~read_events ~query_cursor_position
       ~cleanup:(fun () -> state.cleanup_calls <- state.cleanup_calls + 1)
-      ~parser ~terminal ~width:80 ~height:24 ()
+      ~parser ~terminal ~width ~height ()
   in
   app_ref := Some app;
   (app, state)
@@ -367,6 +372,48 @@ let test_unchanged_submit_emits_no_bytes () =
   equal ~msg:"unchanged frame skips terminal write" int 0
     (String.length (output state))
 
+let major_words_allocated f =
+  Gc.full_major ();
+  let before = Gc.quick_stat () in
+  f ();
+  let after = Gc.quick_stat () in
+  after.major_words -. before.major_words
+
+let test_submit_reuses_render_capacity () =
+  let app, _state =
+    make_app ~target_fps:None ~input_timeout:(Some 0.) ~raw_mode:false ()
+  in
+  Matrix.prepare app;
+  Matrix.submit app;
+  Matrix.prepare app;
+  Matrix.submit app;
+  let unchanged_major_words =
+    major_words_allocated (fun () ->
+        Matrix.prepare app;
+        Matrix.submit app)
+  in
+  let changed_major_words =
+    major_words_allocated (fun () ->
+        Matrix.prepare app;
+        Matrix.Grid.set_cell (Matrix.grid app) ~x:0 ~y:0
+          ~cell:(Matrix.Grid.Cell.of_uchar (Uchar.of_char 'X'))
+          ~fg:Matrix.Ansi.Color.white ~bg:Matrix.Ansi.Color.black
+          ~attrs:Matrix.Ansi.Attr.empty ();
+        Matrix.submit app)
+  in
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "unchanged submit allocated %.0f major words after warm-up"
+         unchanged_major_words)
+    (unchanged_major_words <= 1024.);
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "changed submit allocated %.0f major words after warm-up"
+         changed_major_words)
+    (changed_major_words <= 1024.)
+
 let test_cursor_only_submit_emits_output () =
   let app, state =
     make_app ~mode:`Primary ~target_fps:None ~input_timeout:(Some 0.) ()
@@ -398,6 +445,49 @@ let test_first_submit_emits_cursor_style () =
      emit DECSCUSR even when the requested shape matches our own default. *)
   is_true ~msg:"first frame emits the cursor style"
     (contains_substring "\027[1 q" (output state))
+
+let test_submit_emits_frame_above_default_capacity () =
+  let width = 96 in
+  let height = 96 in
+  let app, state =
+    make_app ~mode:`Primary ~target_fps:None ~input_timeout:(Some 0.) ~width
+      ~height ~hyperlinks:true ()
+  in
+  let payload = String.make 240 'x' in
+  let draw () =
+    let grid = Matrix.grid app in
+    for y = 0 to height - 1 do
+      for x = 0 to width - 1 do
+        let style =
+          Matrix.Ansi.Style.hyperlink
+            (Printf.sprintf "https://example.com/%d/%s"
+               ((y * width) + x)
+               payload)
+            Matrix.Ansi.Style.default
+        in
+        Matrix.Grid.draw_text grid ~x ~y ~text:"X" ~style
+      done
+    done
+  in
+  Matrix.prepare app;
+  draw ();
+  Matrix.submit app;
+  is_true ~msg:"submit emits the complete frame above the default buffer size"
+    (String.length (output state) > 2 * 1024 * 1024);
+  Buffer.clear state.output;
+  Matrix.prepare app;
+  draw ();
+  let retained_major_words =
+    major_words_allocated (fun () -> Matrix.submit app)
+  in
+  equal ~msg:"successful retry commits the frame atomically" int 0
+    (String.length (output state));
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "submit allocated %.0f major words below its previous high-water mark"
+         retained_major_words)
+    (retained_major_words <= 1024.)
 
 let test_initial_resize_fires_before_first_render () =
   let app, _state =
@@ -988,10 +1078,14 @@ let () =
         [
           test "unchanged submit emits no bytes"
             test_unchanged_submit_emits_no_bytes;
+          test "submit reuses render capacity"
+            test_submit_reuses_render_capacity;
           test "cursor-only submit emits output"
             test_cursor_only_submit_emits_output;
           test "first submit emits cursor style"
             test_first_submit_emits_cursor_style;
+          test "submit emits frame above default capacity"
+            test_submit_emits_frame_above_default_capacity;
         ];
       group "Resize"
         [

@@ -577,7 +577,7 @@ let writer_checked_bounds () =
   (try
      Writer.write_char w 'b';
      fail "expected write_char overflow"
-   with Invalid_argument _ -> ());
+   with Writer.Buffer_full -> ());
   let w = Writer.make (Bytes.create 4) in
   try
     Writer.write_subbytes w (Bytes.of_string "abc") 2 2;
