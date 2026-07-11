@@ -406,6 +406,28 @@ module Response : sig
   (** [pp] formats responses for debugging. *)
 end
 
+(** Structured parser recovery events. *)
+module Error : sig
+  type t =
+    | Paste_too_large of { limit : int }
+        (** A bracketed-paste payload exceeded the configured byte limit. Bytes
+            are discarded through the end marker or the idle deadline. *)
+    | Paste_timed_out of { received : int }
+        (** An open bracketed paste made no progress before its idle deadline.
+            [received] is the number of bytes consumed after the start marker.
+        *)
+    | Unterminated_paste of { received : int }
+        (** Input ended before a bracketed-paste end marker was received.
+            [received] is the number of bytes consumed after the start marker.
+        *)
+
+  val equal : t -> t -> bool
+  (** [equal a b] is [true] iff [a] and [b] describe the same recovery. *)
+
+  val pp : Format.formatter -> t -> unit
+  (** [pp] formats parser recovery events for diagnostics. *)
+end
+
 (** {1:events Events} *)
 
 (** The type for terminal input events. *)
@@ -420,6 +442,9 @@ type t =
   | Paste of string
       (** [Paste text] is bracketed paste content preserved exactly, including
           empty payloads and embedded escape bytes. *)
+  | Error of Error.t
+      (** [Error error] reports that malformed or incomplete input was dropped
+          so parsing could resume at a lifecycle boundary. *)
 
 (** {1:preds Predicates and comparisons} *)
 

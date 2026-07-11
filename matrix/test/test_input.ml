@@ -61,6 +61,11 @@ let drain_responses ?now parser = drain_to_lists ?now parser |> snd
 let drain_capabilities ?now parser = drain_responses ?now parser |> capabilities
 let unknown_response s = Input.Response.Unknown s
 
+let finish_user parser =
+  let events = ref [] in
+  Input.Parser.finish parser ~on_event:(fun event -> events := event :: !events);
+  List.rev !events
+
 let test_parse_regular_chars () =
   let events = parse_user "a" in
   equal ~msg:"single char 'a'" (list event_testable) [ char_event 'a' ] events;
@@ -933,6 +938,136 @@ let test_reset_aborts_paste () =
       equal ~msg:"third char after reset" char 'z' (Uchar.to_char uz)
   | _ -> fail "expected only text after reset"
 
+let test_unterminated_paste_releases_input_after_idle_timeout () =
+  let parser = Input.Parser.create () in
+  let partial = Bytes.of_string "\x1b[200~captured" in
+  equal ~msg:"unterminated paste emits nothing immediately"
+    (list event_testable) []
+    (feed_user parser partial 0 (Bytes.length partial));
+  equal ~msg:"open paste owns an idle deadline"
+    (option (float 0.0))
+    (Some 5.0)
+    (Input.Parser.deadline parser);
+  equal ~msg:"idle timeout reports discarded byte count" (list event_testable)
+    [ Input.Error (Input.Error.Paste_timed_out { received = 8 }) ]
+    (drain_user ~now:5.0 parser);
+  equal ~msg:"input resumes after paste idle timeout" (list event_testable)
+    [ char_event 'x' ]
+    (feed_to_lists ~now:5.0 parser (Bytes.of_string "x") 0 1 |> fst)
+
+let test_paste_idle_deadline_refreshes_on_progress () =
+  let parser = Input.Parser.create ~paste_idle_timeout:5.0 () in
+  let start = Bytes.of_string "\x1b[200~one" in
+  ignore (feed_to_lists ~now:0.0 parser start 0 (Bytes.length start));
+  ignore (feed_to_lists ~now:4.0 parser (Bytes.of_string "two") 0 3);
+  equal ~msg:"paste progress refreshes deadline"
+    (option (float 0.0))
+    (Some 9.0)
+    (Input.Parser.deadline parser);
+  equal ~msg:"original deadline no longer expires paste" (list event_testable)
+    []
+    (drain_user ~now:5.0 parser);
+  equal ~msg:"refreshed deadline expires paste" (list event_testable)
+    [ Input.Error (Input.Error.Paste_timed_out { received = 6 }) ]
+    (drain_user ~now:9.0 parser)
+
+let test_paste_size_bound_preserves_boundary_and_trailing_input () =
+  let parser = Input.Parser.create ~max_paste_bytes:8 () in
+  let through_end_prefix = Bytes.of_string "\x1b[200~12345678\x1b[20" in
+  equal ~msg:"end-marker prefix at byte limit remains pending"
+    (list event_testable) []
+    (feed_user parser through_end_prefix 0 (Bytes.length through_end_prefix));
+  equal ~msg:"payload at byte limit remains exact across split end marker"
+    (list event_testable)
+    [ Input.Paste "12345678"; char_event 'x' ]
+    (feed_user parser (Bytes.of_string "1~x") 0 3);
+  let reject_above_limit input =
+    let parser = Input.Parser.create ~max_paste_bytes:8 () in
+    feed_to_lists parser (Bytes.of_string input) 0 (String.length input) |> fst
+  in
+  equal ~msg:"payload above byte limit is rejected atomically"
+    (list event_testable)
+    [ Input.Error (Input.Error.Paste_too_large { limit = 8 }); char_event 'x' ]
+    (reject_above_limit "\x1b[200~123456789\x1b[201~x")
+
+let test_paste_overflow_discards_until_split_end_marker () =
+  let parser = Input.Parser.create ~max_paste_bytes:4 () in
+  let overflow = Bytes.of_string "\x1b[200~abcde" in
+  equal ~msg:"overflow reports once" (list event_testable)
+    [ Input.Error (Input.Error.Paste_too_large { limit = 4 }) ]
+    (feed_user parser overflow 0 (Bytes.length overflow));
+  equal ~msg:"overflow recovery does not reinterpret captured bytes as keys"
+    (list event_testable) []
+    (feed_user parser (Bytes.of_string "more\x1b[20") 0 8);
+  equal ~msg:"split end marker releases only trailing input"
+    (list event_testable)
+    [ char_event 'x' ]
+    (feed_user parser (Bytes.of_string "1~x") 0 3)
+
+let test_paste_overflow_releases_input_after_idle_timeout () =
+  let parser =
+    Input.Parser.create ~max_paste_bytes:4 ~paste_idle_timeout:5.0 ()
+  in
+  let overflow = Bytes.of_string "\x1b[200~abcde" in
+  ignore (feed_to_lists ~now:0.0 parser overflow 0 (Bytes.length overflow));
+  equal ~msg:"bytes after overflow remain captured" (list event_testable) []
+    (feed_to_lists ~now:1.0 parser (Bytes.of_string "k") 0 1 |> fst);
+  equal ~msg:"overflow recovery emits no duplicate timeout error"
+    (list event_testable) []
+    (drain_user ~now:6.0 parser);
+  equal ~msg:"input resumes after overflow recovery timeout"
+    (list event_testable)
+    [ char_event 'x' ]
+    (feed_to_lists ~now:6.0 parser (Bytes.of_string "x") 0 1 |> fst)
+
+let test_paste_overflow_retains_only_bounded_capacity () =
+  let max_paste_bytes = 64 * 1024 in
+  let parser = Input.Parser.create ~max_paste_bytes () in
+  let input =
+    Bytes.of_string ("\x1b[200~" ^ String.make (1024 * 1024) 'x' ^ "\x1b[201~")
+  in
+  Gc.full_major ();
+  let before = (Gc.stat ()).live_words in
+  Input.Parser.feed parser input 0 (Bytes.length input) ~now:0.0
+    ~on_event:ignore ~on_response:ignore;
+  Gc.full_major ();
+  let retained_words = (Gc.stat ()).live_words - before in
+  let capacity_words = max_paste_bytes / (Sys.word_size / 8) in
+  is_true
+    ~msg:
+      (Printf.sprintf "overflow retained %d words for a %d-word paste capacity"
+         retained_words capacity_words)
+    (retained_words <= capacity_words + 1024);
+  Input.Parser.reset parser;
+  ignore (Sys.opaque_identity (parser, Bytes.length input))
+
+let test_finish_reports_unterminated_paste_and_resets () =
+  let parser = Input.Parser.create () in
+  let partial = Bytes.of_string "\x1b[200~abc" in
+  ignore (feed_user parser partial 0 (Bytes.length partial));
+  equal ~msg:"EOF reports unterminated paste" (list event_testable)
+    [ Input.Error (Input.Error.Unterminated_paste { received = 3 }) ]
+    (finish_user parser);
+  equal ~msg:"input resumes after EOF finalization" (list event_testable)
+    [ char_event 'x' ]
+    (feed_user parser (Bytes.of_string "x") 0 1)
+
+let test_paste_bounds_reject_invalid_configuration () =
+  let expect_invalid label make =
+    try
+      ignore (make () : Input.Parser.t);
+      fail (label ^ " should raise Invalid_argument")
+    with Invalid_argument _ -> ()
+  in
+  expect_invalid "zero paste limit" (fun () ->
+      Input.Parser.create ~max_paste_bytes:0 ());
+  expect_invalid "unrepresentable paste limit" (fun () ->
+      Input.Parser.create ~max_paste_bytes:Sys.max_string_length ());
+  expect_invalid "NaN paste idle timeout" (fun () ->
+      Input.Parser.create ~paste_idle_timeout:Float.nan ());
+  expect_invalid "infinite paste idle timeout" (fun () ->
+      Input.Parser.create ~paste_idle_timeout:Float.infinity ())
+
 let test_csi_param_overflow () =
   let huge_param = String.make 20 '9' in
   let seq = Printf.sprintf "\x1b[%s;1A" huge_param in
@@ -1318,6 +1453,22 @@ let tests =
     test "paste mode collection" test_paste_mode_collection;
     test "paste empty and large payloads" test_paste_empty_and_large_payloads;
     test "reset aborts paste" test_reset_aborts_paste;
+    test "unterminated paste releases input after idle timeout"
+      test_unterminated_paste_releases_input_after_idle_timeout;
+    test "paste idle deadline refreshes on progress"
+      test_paste_idle_deadline_refreshes_on_progress;
+    test "paste size bound preserves boundary and trailing input"
+      test_paste_size_bound_preserves_boundary_and_trailing_input;
+    test "paste overflow discards until split end marker"
+      test_paste_overflow_discards_until_split_end_marker;
+    test "paste overflow releases input after idle timeout"
+      test_paste_overflow_releases_input_after_idle_timeout;
+    test "paste overflow retains only bounded capacity"
+      test_paste_overflow_retains_only_bounded_capacity;
+    test "finish reports unterminated paste and resets"
+      test_finish_reports_unterminated_paste_and_resets;
+    test "paste bounds reject invalid configuration"
+      test_paste_bounds_reject_invalid_configuration;
     test "CSI param overflow" test_csi_param_overflow;
     test "cursor position report" test_cursor_position_report;
     test "device attributes" test_device_attributes;

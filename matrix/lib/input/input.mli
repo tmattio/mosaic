@@ -25,8 +25,11 @@
     - invalid legacy high bytes are interpreted as Meta/Alt bytes when they time
       out or fail UTF-8 continuation.
 
-    Bracketed paste is emitted as {!Paste} with the exact payload between the
-    markers, including empty payloads and embedded escape bytes.
+    A valid bracketed paste is emitted as {!Paste} with the exact payload
+    between the markers, including empty payloads and embedded escape bytes.
+    Oversized, idle, or unterminated pastes are dropped atomically and reported
+    as structured {!Error} events; captured bytes are never reinterpreted as
+    keyboard input.
 
     {1:parsing Parsing}
 
@@ -40,8 +43,10 @@
     Escape sequences and UTF-8 byte sequences may arrive fragmented across
     reads; the parser buffers partial sequences until they complete or time out.
     Ambiguous sequences (lone Escape vs. Alt+key) use a 50ms timeout; clearly
-    incomplete sequences (CSI, OSC, UTF-8) use 100ms. Call {!Parser.drain} after
-    {!Parser.deadline} to emit pending events.
+    incomplete sequences (CSI, OSC, UTF-8) use 100ms. Open bracketed pastes have
+    a finite byte limit and idle deadline. Call {!Parser.drain} after
+    {!Parser.deadline} to emit pending events, and {!Parser.finish} when the
+    input source reaches end-of-input.
 
     {b Warning.} The parser is not thread-safe; use one instance per input
     source. *)

@@ -272,6 +272,15 @@ let ci_log_payload = repeat (ci_log_line_plain ^ ci_log_line_err) 64
 (* Bracketed paste payload: ESC[200~ <payload> ESC[201~ *)
 let bracketed_paste_stream = "\x1b[200~" ^ ci_log_payload ^ "\x1b[201~"
 
+let rec feed_chunks parser bytes chunk_size offset ~on_event ~on_response =
+  let len = Bytes.length bytes in
+  if offset < len then begin
+    let chunk = min chunk_size (len - offset) in
+    I.Parser.feed parser bytes offset chunk ~now:0.0 ~on_event ~on_response;
+    ignore (I.Parser.deadline parser);
+    feed_chunks parser bytes chunk_size (offset + chunk) ~on_event ~on_response
+  end
+
 let paste_ci_log =
   let parser = I.Parser.create () in
   let bytes = Bytes.of_string bracketed_paste_stream in
@@ -289,10 +298,68 @@ let paste_ci_log =
           I.Parser.feed parser bytes offset chunk ~now:0.0
             ~on_event:(fun _ -> incr count)
             ~on_response:(fun _ -> incr count);
+          ignore (I.Parser.deadline parser);
           loop (offset + chunk)
         end
       in
       loop 0;
+      ignore (Sys.opaque_identity !count))
+
+let paste_stream payload = Bytes.of_string ("\x1b[200~" ^ payload ^ "\x1b[201~")
+
+let valid_paste name size =
+  let parser = I.Parser.create () in
+  let bytes = paste_stream (String.make size 'x') in
+  let count = ref 0 in
+  let on_event _ = incr count in
+  let on_response _ = incr count in
+  bench name (fun () ->
+      I.Parser.reset parser;
+      count := 0;
+      feed_chunks parser bytes 4096 0 ~on_event ~on_response;
+      ignore (Sys.opaque_identity !count))
+
+let paste_valid_64k = valid_paste "paste/valid-64KiB" (64 * 1024)
+let paste_valid_1m = valid_paste "paste/valid-1MiB" (1024 * 1024)
+
+let paste_split_end_marker =
+  let parser = I.Parser.create () in
+  let prefix = Bytes.of_string ("\x1b[200~" ^ String.make (64 * 1024) 'x') in
+  let suffix = "\x1b[201~" in
+  let count = ref 0 in
+  let on_event _ = incr count in
+  let on_response _ = incr count in
+  bench "paste/split-end-marker" (fun () ->
+      count := 0;
+      for split = 1 to String.length suffix - 1 do
+        I.Parser.reset parser;
+        feed_chunks parser prefix 4096 0 ~on_event ~on_response;
+        I.Parser.feed parser
+          (Bytes.unsafe_of_string suffix)
+          0 split ~now:0.0 ~on_event ~on_response;
+        ignore (I.Parser.deadline parser);
+        I.Parser.feed parser
+          (Bytes.unsafe_of_string suffix)
+          split
+          (String.length suffix - split)
+          ~now:0.0 ~on_event ~on_response;
+        ignore (I.Parser.deadline parser)
+      done;
+      ignore (Sys.opaque_identity !count))
+
+let paste_overflow_recovery =
+  let max_paste_bytes = 64 * 1024 in
+  let parser = I.Parser.create ~max_paste_bytes () in
+  let bytes =
+    Bytes.of_string ("\x1b[200~" ^ String.make (1024 * 1024) 'x' ^ "\x1b[201~z")
+  in
+  let count = ref 0 in
+  let on_event _ = incr count in
+  let on_response _ = incr count in
+  bench "paste/overflow-recovery" (fun () ->
+      I.Parser.reset parser;
+      count := 0;
+      feed_chunks parser bytes 4096 0 ~on_event ~on_response;
       ignore (Sys.opaque_identity !count))
 
 (* Benchmark tree *)
@@ -311,7 +378,14 @@ let benchmarks =
         mouse_mixed_hot;
         (* CI logs pasted into a TUI, with ANSI stripping *)
         paste_ci_log;
+        paste_valid_64k;
+        paste_valid_1m;
+        paste_split_end_marker;
+        paste_overflow_recovery;
       ];
   ]
 
-let () = run "input" benchmarks
+let () =
+  run "input"
+    ~budgets:[ Budget.no_slower_than 0.05; Budget.no_more_alloc_than 0. ]
+    benchmarks

@@ -410,6 +410,23 @@ module Response = struct
     | Unknown s -> Format.fprintf fmt "Unknown(%S)" s
 end
 
+module Error = struct
+  type t =
+    | Paste_too_large of { limit : int }
+    | Paste_timed_out of { received : int }
+    | Unterminated_paste of { received : int }
+
+  let equal (a : t) (b : t) = a = b
+
+  let pp fmt = function
+    | Paste_too_large { limit } ->
+        Format.fprintf fmt "Paste_too_large(limit=%d)" limit
+    | Paste_timed_out { received } ->
+        Format.fprintf fmt "Paste_timed_out(received=%d)" received
+    | Unterminated_paste { received } ->
+        Format.fprintf fmt "Unterminated_paste(received=%d)" received
+end
+
 type t =
   | Key of Key.event
   | Mouse of Mouse.event
@@ -417,6 +434,7 @@ type t =
   | Focus
   | Blur
   | Paste of string
+  | Error of Error.t
 
 let equal (e1 : t) (e2 : t) =
   match (e1, e2) with
@@ -426,7 +444,8 @@ let equal (e1 : t) (e2 : t) =
   | Focus, Focus -> true
   | Blur, Blur -> true
   | Paste s1, Paste s2 -> s1 = s2
-  | (Key _ | Mouse _ | Resize _ | Focus | Blur | Paste _), _ -> false
+  | Error e1, Error e2 -> Error.equal e1 e2
+  | (Key _ | Mouse _ | Resize _ | Focus | Blur | Paste _ | Error _), _ -> false
 
 let pp fmt = function
   | Key k -> Format.fprintf fmt "Key(%a)" Key.pp_event k
@@ -435,6 +454,7 @@ let pp fmt = function
   | Focus -> Format.pp_print_string fmt "Focus"
   | Blur -> Format.pp_print_string fmt "Blur"
   | Paste s -> Format.fprintf fmt "Paste(%S)" s
+  | Error error -> Format.fprintf fmt "Error(%a)" Error.pp error
 
 (* Convenience constructors *)
 

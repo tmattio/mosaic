@@ -38,8 +38,23 @@ val default_protocol_context : protocol_context
 (** [default_protocol_context] has all protocol context fields set to [false].
 *)
 
-val create : unit -> t
-(** [create ()] is a fresh parser with empty buffers. *)
+val create : ?max_paste_bytes:int -> ?paste_idle_timeout:float -> unit -> t
+(** [create ~max_paste_bytes ~paste_idle_timeout ()] is a fresh parser with
+    empty buffers.
+
+    [max_paste_bytes] is the largest bracketed-paste payload accepted as an
+    {!Event.Paste}; it defaults to 16 MiB. A larger payload emits
+    {!Event.Error.Paste_too_large} and is discarded through its end marker or
+    idle deadline.
+
+    [paste_idle_timeout] is the maximum number of seconds an open paste may
+    receive no bytes; it defaults to 5 seconds. The deadline is refreshed by
+    progress. Expiry emits {!Event.Error.Paste_timed_out} and drops the captured
+    bytes without interpreting them as keys.
+
+    Raises [Invalid_argument] if [max_paste_bytes] is not strictly positive or
+    cannot fit in an OCaml byte sequence, or if [paste_idle_timeout] is not
+    finite and strictly positive. *)
 
 val set_protocol_context : t -> protocol_context -> unit
 (** [set_protocol_context p ctx] sets the protocol context for [p].
@@ -93,6 +108,13 @@ val deadline : t -> float option
     the next {!drain} should fire, or [None] when no drain is scheduled. *)
 
 (** {1:state State} *)
+
+val finish : t -> on_event:(Event.t -> unit) -> unit
+(** [finish p ~on_event] finalizes an input source that reached end-of-input. An
+    open paste emits {!Event.Error.Unterminated_paste}; an oversized paste
+    already reported by {!Event.Error.Paste_too_large} emits no second error.
+    All partial bytes are then dropped and [p] is reset. Captured paste bytes
+    are never interpreted as keys. *)
 
 val pending : t -> bytes
 (** [pending p] is a copy of the incomplete escape/protocol data buffered so

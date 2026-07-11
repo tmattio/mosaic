@@ -34,6 +34,8 @@ let br_paste_end = "\x1b[201~"
 let br_paste_start_len = String.length br_paste_start
 let br_paste_end_len = String.length br_paste_end
 let max_sequence_len = 4_096
+let default_max_paste_bytes = 16 * 1024 * 1024
+let default_paste_idle_timeout = 5.0
 
 let br_paste_end_failure =
   let len = br_paste_end_len in
@@ -63,9 +65,13 @@ type t = {
   mutable paste_buffer : bytes;
   mutable paste_len : int;
   mutable paste_match : int;
+  max_paste_bytes : int;
+  paste_idle_timeout : float;
+  (* Packed mutable cell: paste progress must not allocate a boxed deadline. *)
+  paste_expiry : Float.Array.t;
   mutable flush_deadline : float option;
   mutable deferred_timeout : bool;
-  mutable scanner_mode : [ `Normal | `Paste ];
+  mutable scanner_mode : [ `Normal | `Paste | `Discard_paste ];
   scratch_buffer : Buffer.t; (* Reusable buffer for various operations *)
   (* UTF-8 incomplete sequence buffer for streaming decode *)
   utf8_buf : bytes;
@@ -174,12 +180,24 @@ let modifier_of_mouse_value value : modifier =
 
 (* Parser state *)
 
-let create () =
+let create ?(max_paste_bytes = default_max_paste_bytes)
+    ?(paste_idle_timeout = default_paste_idle_timeout) () =
+  if
+    max_paste_bytes <= 0
+    || max_paste_bytes > Sys.max_string_length - br_paste_end_len
+  then invalid_arg "Input.Parser.create: invalid max_paste_bytes";
+  if paste_idle_timeout <= 0.0 || not (Float.is_finite paste_idle_timeout) then
+    invalid_arg
+      "Input.Parser.create: paste_idle_timeout must be finite and positive";
+  let max_paste_buffer = max_paste_bytes + br_paste_end_len in
   {
     input_buffer = Buffer.create 128;
-    paste_buffer = Bytes.create 128;
+    paste_buffer = Bytes.create (min 128 max_paste_buffer);
     paste_len = 0;
     paste_match = 0;
+    max_paste_bytes;
+    paste_idle_timeout;
+    paste_expiry = Float.Array.make 1 0.0;
     flush_deadline = None;
     deferred_timeout = false;
     scanner_mode = `Normal;
@@ -1623,8 +1641,8 @@ let process_sequence_token parser seq ~on_event ~on_response =
 
 let schedule_flush parser now =
   parser.deferred_timeout <- false;
-  if parser.scanner_mode = `Paste || Buffer.length parser.input_buffer = 0 then
-    parser.flush_deadline <- None
+  if parser.scanner_mode <> `Normal || Buffer.length parser.input_buffer = 0
+  then parser.flush_deadline <- None
   else
     let len = Buffer.length parser.input_buffer in
     let delay =
@@ -1647,10 +1665,23 @@ let has_subbytes_at bytes ~sub ~pos ~stop =
     in
     loop 0
 
+let schedule_paste_deadline parser now =
+  let expiry = now +. parser.paste_idle_timeout in
+  match parser.flush_deadline with
+  | Some cached when Float.equal cached expiry -> ()
+  | None | Some _ ->
+      Float.Array.unsafe_set parser.paste_expiry 0 expiry;
+      parser.flush_deadline <- None
+
 let ensure_paste_capacity parser needed =
   let required = parser.paste_len + needed in
   if required > Bytes.length parser.paste_buffer then (
-    let new_cap = max required (Bytes.length parser.paste_buffer * 2) in
+    let max_capacity = parser.max_paste_bytes + br_paste_end_len in
+    let current = Bytes.length parser.paste_buffer in
+    let doubled =
+      if current > max_capacity / 2 then max_capacity else current * 2
+    in
+    let new_cap = min max_capacity (max required doubled) in
     let buf = Bytes.create new_cap in
     Bytes.blit parser.paste_buffer 0 buf 0 parser.paste_len;
     parser.paste_buffer <- buf)
@@ -1681,18 +1712,73 @@ let add_paste_char parser c =
   parser.paste_match <- advance_paste_match parser.paste_match c;
   parser.paste_match = br_paste_end_len
 
-let consume_paste_bytes parser bytes start stop on_event =
-  let rec loop i =
-    if i >= stop then None
-    else
-      let matched = add_paste_char parser (Bytes.unsafe_get bytes i) in
-      if matched then (
+let add_bounded_paste_char parser c =
+  let next_len = parser.paste_len + 1 in
+  let next_match = advance_paste_match parser.paste_match c in
+  if
+    next_len > parser.max_paste_bytes
+    && next_match <> br_paste_end_len
+    && next_len - next_match > parser.max_paste_bytes
+  then (
+    (* Preserve the end-marker prefix in the recovery scanner, but do not grow
+       or write the payload buffer after the byte limit is known to be crossed. *)
+    parser.paste_match <- next_match;
+    `Overflow)
+  else (
+    (* The unmatched payload is within the configured limit. At most one full
+       end marker is buffered beyond it, so [ensure_paste_capacity] is bounded
+       by [max_paste_bytes + br_paste_end_len]. *)
+    ensure_paste_capacity parser 1;
+    Bytes.unsafe_set parser.paste_buffer parser.paste_len c;
+    parser.paste_len <- next_len;
+    parser.paste_match <- next_match;
+    if next_match = br_paste_end_len then `Complete else `Continue)
+
+let add_discarded_paste_char parser c =
+  parser.paste_match <- advance_paste_match parser.paste_match c;
+  parser.paste_match = br_paste_end_len
+
+let rec discard_paste_bytes parser bytes pos stop =
+  if pos >= stop then None
+  else if add_discarded_paste_char parser (Bytes.unsafe_get bytes pos) then (
+    reset_paste_state parser;
+    parser.scanner_mode <- `Normal;
+    Some (pos + 1))
+  else discard_paste_bytes parser bytes (pos + 1) stop
+
+let rec collect_paste_bytes parser bytes pos stop on_event =
+  if pos >= stop then None
+  else if add_paste_char parser (Bytes.unsafe_get bytes pos) then (
+    let payload = complete_paste parser in
+    on_event (Paste payload);
+    Some (pos + 1))
+  else collect_paste_bytes parser bytes (pos + 1) stop on_event
+
+let rec collect_bounded_paste_bytes parser bytes pos stop on_event =
+  if pos >= stop then None
+  else
+    match add_bounded_paste_char parser (Bytes.unsafe_get bytes pos) with
+    | `Complete ->
         let payload = complete_paste parser in
         on_event (Paste payload);
-        Some (i + 1))
-      else loop (i + 1)
-  in
-  loop start
+        Some (pos + 1)
+    | `Overflow ->
+        parser.paste_len <- 0;
+        parser.scanner_mode <- `Discard_paste;
+        on_event
+          (Error (Error.Paste_too_large { limit = parser.max_paste_bytes }));
+        discard_paste_bytes parser bytes (pos + 1) stop
+    | `Continue ->
+        collect_bounded_paste_bytes parser bytes (pos + 1) stop on_event
+
+let consume_paste_bytes parser bytes start stop on_event =
+  match parser.scanner_mode with
+  | `Discard_paste -> discard_paste_bytes parser bytes start stop
+  | `Paste ->
+      if parser.paste_len + (stop - start) <= parser.max_paste_bytes then
+        collect_paste_bytes parser bytes start stop on_event
+      else collect_bounded_paste_bytes parser bytes start stop on_event
+  | `Normal -> assert false
 
 type sequence_end = End of int | Restart of int | Incomplete
 
@@ -1791,8 +1877,8 @@ let rec scan_normal_bytes parser bytes pos stop now ~on_event ~on_response =
       if has_subbytes_at bytes ~sub:br_paste_start ~pos ~stop then (
         reset_paste_state parser;
         parser.scanner_mode <- `Paste;
-        parser.flush_deadline <- None;
         let after_start = pos + br_paste_start_len in
+        if after_start = stop then schedule_paste_deadline parser now;
         scan_paste_bytes parser bytes after_start stop now ~on_event
           ~on_response)
       else
@@ -1824,6 +1910,7 @@ let rec scan_normal_bytes parser bytes pos stop now ~on_event ~on_response =
       scan_normal_bytes parser bytes next stop now ~on_event ~on_response
 
 and scan_paste_bytes parser bytes pos stop now ~on_event ~on_response =
+  if pos < stop then schedule_paste_deadline parser now;
   match consume_paste_bytes parser bytes pos stop on_event with
   | None -> ()
   | Some next ->
@@ -1837,7 +1924,7 @@ let feed parser bytes offset length ~now ~on_event ~on_response =
     invalid_arg "Input.Parser.feed: out of bounds";
   parser.deferred_timeout <- false;
   let stop = offset + length in
-  if parser.scanner_mode = `Paste then
+  if parser.scanner_mode <> `Normal then
     scan_paste_bytes parser bytes offset stop now ~on_event ~on_response
   else if Buffer.length parser.input_buffer = 0 then
     scan_normal_bytes parser bytes offset stop now ~on_event ~on_response
@@ -1850,6 +1937,18 @@ let feed parser bytes offset length ~now ~on_event ~on_response =
       ~on_event ~on_response)
 
 let drain parser ~now ~on_event ~on_response =
+  (match parser.scanner_mode with
+  | `Paste when now >= Float.Array.unsafe_get parser.paste_expiry 0 ->
+      let received = parser.paste_len in
+      reset_paste_state parser;
+      parser.scanner_mode <- `Normal;
+      parser.flush_deadline <- None;
+      on_event (Error (Error.Paste_timed_out { received }))
+  | `Discard_paste when now >= Float.Array.unsafe_get parser.paste_expiry 0 ->
+      reset_paste_state parser;
+      parser.scanner_mode <- `Normal;
+      parser.flush_deadline <- None
+  | `Normal | `Paste | `Discard_paste -> ());
   if
     parser.utf8_len > 0
     &&
@@ -1884,7 +1983,17 @@ let drain parser ~now ~on_event ~on_response =
           process_sequence_token parser pending ~on_event ~on_response)
   | _ -> ()
 
-let deadline parser = parser.flush_deadline
+let deadline parser =
+  match parser.scanner_mode with
+  | `Normal -> parser.flush_deadline
+  | `Paste | `Discard_paste -> (
+      match parser.flush_deadline with
+      | Some _ as deadline -> deadline
+      | None ->
+          let deadline = Some (Float.Array.unsafe_get parser.paste_expiry 0) in
+          parser.flush_deadline <- deadline;
+          deadline)
+
 let pending parser = Bytes.of_string (pending_string parser)
 
 let reset parser =
@@ -1897,3 +2006,13 @@ let reset parser =
   Buffer.clear parser.scratch_buffer;
   parser.utf8_len <- 0;
   clear_mouse_pressed parser
+
+let finish parser ~on_event =
+  let error =
+    match parser.scanner_mode with
+    | `Paste ->
+        Some (Error (Error.Unterminated_paste { received = parser.paste_len }))
+    | `Normal | `Discard_paste -> None
+  in
+  reset parser;
+  Option.iter on_event error
