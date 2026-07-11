@@ -59,7 +59,9 @@ val create :
 
     Equivalent to {!Matrix.create} but integrates with the Eio scheduler: the
     event loop yields to other Eio fibers while waiting for terminal input. The
-    application is automatically closed when [sw] is released.
+    application is automatically closed when [sw] is released. Permanent EOF
+    from [stdin] finalizes pending parser state and closes the application
+    without polling the source again.
 
     The mandatory parameters are:
     - [sw] — Eio switch controlling the application lifetime. The app is closed

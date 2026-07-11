@@ -194,7 +194,8 @@ val probe :
     buffer via [read_into], feeds bytes into [parser], collects capability
     events, and applies them with {!apply_events}. User input events (keys,
     mouse, etc.) are forwarded to [on_event] so they are not lost during
-    probing.
+    probing. A [read_into] result of [0] stops probing because it denotes
+    permanent end-of-input.
 
     Using the caller's [parser] (rather than an internal one) ensures that
     partial escape sequences spanning the probe boundary are not lost.

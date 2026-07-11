@@ -90,9 +90,10 @@ let make_app ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     ?(input_timeout = Some 0.) ?(terminal_tty = false) ?(advance_now = true)
     ?(sleep_until_timeout = false) ?(read_quantum_s = 0.0001)
     ?(emit_event_each_read = None) ?(events = []) ?(input_chunks = [])
-    ?stop_after_reads ?render_offset ?static_needs_newline ?(min_tui_height = 1)
-    ?(resize_debounce = Some 0.) ?(width = 80) ?(height = 24) ?hyperlinks
-    ?(query_cursor_position = fun ~timeout:_ -> None) () =
+    ?stop_after_reads ?end_after_reads ?render_offset ?static_needs_newline
+    ?(min_tui_height = 1) ?(resize_debounce = Some 0.) ?(width = 80)
+    ?(height = 24) ?hyperlinks ?(query_cursor_position = fun ~timeout:_ -> None)
+    () =
   let state = make_state events input_chunks in
   let terminal =
     Matrix.Terminal.make
@@ -141,8 +142,12 @@ let make_app ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
         Matrix.Input.Parser.drain parser ~now:state.now_s ~on_event ~on_response);
     match (stop_after_reads, !app_ref) with
     | Some max_reads, Some app when state.read_calls >= max_reads ->
-        Matrix.stop app
-    | _ -> ()
+        Matrix.stop app;
+        `Continue
+    | _ -> (
+        match end_after_reads with
+        | Some max_reads when state.read_calls >= max_reads -> `End
+        | Some _ | None -> `Continue)
   in
   let app =
     Matrix.attach ~mode ~raw_mode ~target_fps ~input_timeout ~min_tui_height
@@ -216,6 +221,25 @@ let test_run_closes_on_exception () =
   is_true ~msg:"exception propagated" raised;
   equal ~msg:"cleanup called on exception" int 1 state.cleanup_calls
 
+let test_end_of_input_finalizes_parser_and_closes_once () =
+  let app, state =
+    make_app ~input_chunks:[ "\x1b[200~partial" ] ~end_after_reads:1 ()
+  in
+  let events = ref [] in
+  Matrix.run app
+    ~on_input:(fun _app event -> events := event :: !events)
+    ~on_render:(fun _app -> ());
+  equal ~msg:"end-of-input is read once" int 1 state.read_calls;
+  equal ~msg:"end-of-input closes backend once" int 1 state.cleanup_calls;
+  equal ~msg:"end-of-input restores raw mode once" int 1 state.raw_restore_calls;
+  is_false ~msg:"application is no longer running" (Matrix.running app);
+  match List.rev !events with
+  | [ Matrix.Input.Error (Matrix.Input.Error.Unterminated_paste { received }) ]
+    ->
+      equal ~msg:"EOF finalizes the open paste" int 7 received
+  | events ->
+      failf "expected one unterminated-paste event, got %d" (List.length events)
+
 let test_close_restores_raw_mode_if_terminal_close_raises () =
   let fail_output = ref false in
   let terminal =
@@ -236,7 +260,7 @@ let test_close_restores_raw_mode_if_terminal_close_raises () =
       ~terminal_size:(fun () -> (80, 24))
       ~set_raw_mode:(fun enabled -> if not enabled then incr raw_restore_calls)
       ~flush_input:(fun () -> ())
-      ~read_events:(fun ~timeout:_ ~on_event:_ -> ())
+      ~read_events:(fun ~timeout:_ ~on_event:_ -> `Continue)
       ~query_cursor_position:(fun ~timeout:_ -> None)
       ~cleanup:(fun () -> incr cleanup_calls)
       ~parser ~terminal ~width:80 ~height:24 ()
@@ -1056,6 +1080,8 @@ let () =
       group "Lifecycle"
         [
           test "run closes on exception" test_run_closes_on_exception;
+          test "end-of-input finalizes parser and closes once"
+            test_end_of_input_finalizes_parser_and_closes_once;
           test "close restores raw mode if terminal close raises"
             test_close_restores_raw_mode_if_terminal_close_raises;
           test "focus restore runs only after blur once"

@@ -116,7 +116,8 @@ let create ?(mode = `Alt) ?(target_fps = 60.) ?(exit_on_ctrl_c = false)
        empty chunk cannot work — [Parser.feed] re-scans the buffered ESC and
        re-arms its deadline into the future — so the flush must be a clock step,
        not a feed. *)
-    Matrix.Input.Parser.drain t.parser ~now:t.now ~on_event ~on_response
+    Matrix.Input.Parser.drain t.parser ~now:t.now ~on_event ~on_response;
+    `Continue
   in
   let app =
     Matrix.attach ~mode ~target_fps:(Some target_fps) ~exit_on_ctrl_c

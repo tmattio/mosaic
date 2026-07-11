@@ -1,5 +1,33 @@
 open Windtrap
 
+type counting_source = {
+  source : Eio_unix.source_ty Eio.Resource.t;
+  fd : Eio_unix.Fd.t;
+  mutable reads : int;
+}
+
+module Counting_source = struct
+  type t = counting_source
+
+  let read_methods = []
+
+  let single_read t buffer =
+    t.reads <- t.reads + 1;
+    Eio.Flow.single_read t.source buffer
+end
+
+let counting_source source =
+  let state = { source; fd = Eio_unix.Resource.fd source; reads = 0 } in
+  let handler =
+    Eio.Resource.handler
+      [
+        Eio.Resource.H (Eio.Flow.Pi.Source, (module Counting_source));
+        Eio.Resource.H (Eio.Resource.Close, fun _ -> ());
+        Eio.Resource.H (Eio_unix.Resource.T, fun t -> t.fd);
+      ]
+  in
+  (Eio.Resource.T (state, handler), state)
+
 (* Proves the concurrent driver pattern a deterministic Eio test harness
    builds on matrix.test: the Matrix loop runs in one fiber, blocked inside
    [on_idle] on an [Eio.Condition]; the test script drives it from another
@@ -116,6 +144,91 @@ let test_async_wake_reaches_quiescent_loop () =
         (settled_frames + 1) !frames;
       stop driver)
 
+let test_stdin_eof_stops_the_runtime () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let stdin_pipe, stdin_writer = Eio_unix.pipe sw in
+  let stdin, state = counting_source stdin_pipe in
+  let stdout_reader, stdout = Eio_unix.pipe sw in
+  Eio.Flow.close stdin_writer;
+  let app =
+    Matrix_eio.create ~sw ~clock:(Eio.Stdenv.clock env) ~stdin ~stdout
+      ~raw_mode:false ~target_fps:None ~mouse_enabled:false
+      ~signal_handlers:false ~start_idle:true ()
+  in
+  let result =
+    Eio.Time.with_timeout (Eio.Stdenv.clock env) 0.5 (fun () ->
+        Matrix.run app ~on_render:(fun _app -> ());
+        Ok ())
+  in
+  Eio.Flow.close stdout_reader;
+  (match result with
+  | Ok () -> ()
+  | Error `Timeout -> fail "Matrix.run did not return after stdin EOF");
+  equal ~msg:"EOF is read exactly once" int 1 state.reads;
+  is_false ~msg:"EOF closes the application" (Matrix.running app);
+  Matrix.close app;
+  equal ~msg:"repeated close does not poll EOF again" int 1 state.reads
+
+let measure_successful_read_allocations iterations =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let stdin, stdin_writer = Eio_unix.pipe sw in
+  let stdout_reader, stdout = Eio_unix.pipe sw in
+  let seen = ref 0 in
+  let consumed = Eio.Condition.create () in
+  let app =
+    Matrix_eio.create ~sw ~clock:(Eio.Stdenv.clock env) ~stdin ~stdout
+      ~raw_mode:false ~target_fps:(Some 1.) ~mouse_enabled:false
+      ~signal_handlers:false ~start_idle:true ()
+  in
+  let payload = [ Cstruct.of_string "a" ] in
+  Gc.full_major ();
+  let allocated_before = Gc.allocated_bytes () in
+  Eio.Fiber.both
+    (fun () ->
+      Eio.Fiber.both
+        (fun () ->
+          Matrix.run app
+            ~on_input:(fun _app _event ->
+              incr seen;
+              Eio.Condition.broadcast consumed)
+            ~on_render:(fun _app -> ());
+          Eio.Flow.close stdout)
+        (fun () ->
+          for expected = 1 to iterations do
+            Eio.Flow.write stdin_writer payload;
+            while !seen < expected do
+              Eio.Condition.await_no_mutex consumed
+            done
+          done;
+          Eio.Flow.close stdin_writer))
+    (fun () ->
+      let buffer = Cstruct.create 4096 in
+      try
+        while true do
+          ignore (Eio.Flow.single_read stdout_reader buffer : int)
+        done
+      with End_of_file -> ());
+  let allocated_after = Gc.allocated_bytes () in
+  equal ~msg:"successful reads observed" int iterations !seen;
+  (allocated_after -. allocated_before) /. float_of_int (Sys.word_size / 8)
+
+let test_successful_reads_do_not_allocate_a_result () =
+  (* Subtracting otherwise identical workload sizes removes fixed setup cost.
+     The old payload result added exactly three words per successful read. *)
+  ignore (measure_successful_read_allocations 1 : float);
+  let short = measure_successful_read_allocations 100 in
+  let long = measure_successful_read_allocations 200 in
+  let words_per_read = (long -. short) /. 100. in
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "successful Matrix-Eio reads allocate %.3f words each; expected at \
+          most 1575"
+         words_per_read)
+    (words_per_read <= 1575.)
+
 let () =
   run "matrix-eio.driver"
     [
@@ -124,5 +237,8 @@ let () =
           test "input crosses fibers" test_input_crosses_fibers;
           test "async wake reaches a quiescent loop"
             test_async_wake_reaches_quiescent_loop;
+          test "stdin EOF stops the runtime" test_stdin_eof_stops_the_runtime;
+          test "successful reads avoid adapter result allocations"
+            test_successful_reads_do_not_allocate_a_result;
         ];
     ]

@@ -75,6 +75,7 @@
   matrix
   (eio
    (>= 1.2))
+  (eio_main :with-test)
   (windtrap :with-test))
  (tags
   (terminal eio "structured-concurrency")))

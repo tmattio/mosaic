@@ -59,9 +59,13 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     | Error `Timeout -> false
   in
   let read_stdin () =
-    let n = Eio.Flow.single_read stdin input_cs in
-    Cstruct.blit_to_bytes input_cs 0 input_buffer 0 n;
-    n
+    (* [single_read] returns a positive length or raises [End_of_file]. Keep
+       EOF as an immediate sentinel so successful reads do not allocate. *)
+    match Eio.Flow.single_read stdin input_cs with
+    | n ->
+        Cstruct.blit_to_bytes input_cs 0 input_buffer 0 n;
+        n
+    | exception End_of_file -> 0
   in
   if input_is_tty && raw_mode then
     Matrix.Terminal.probe ~timeout:0.5 ~on_event:queue_startup_event
@@ -70,11 +74,11 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
           if len <= Cstruct.length input_cs then Cstruct.sub input_cs 0 len
           else Cstruct.create len
         in
-        try
-          let n = Eio.Flow.single_read stdin cs in
-          Cstruct.blit_to_bytes cs 0 buf off n;
-          n
-        with End_of_file -> 0)
+        match Eio.Flow.single_read stdin cs with
+        | n ->
+            Cstruct.blit_to_bytes cs 0 buf off n;
+            n
+        | exception End_of_file -> 0)
       ~wait_readable:await_readable ~parser terminal;
   let terminal_size () =
     Eio_unix.Fd.use_exn "size" output_eio_fd Matrix.Terminal.size
@@ -103,14 +107,14 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
       else
         let remaining = deadline -. Eio.Time.now clock in
         if remaining <= 0. then ()
-        else if await_readable ~timeout:remaining then (
-          (try
-             let n = read_stdin () in
-             let now = Eio.Time.now clock in
-             Matrix.Input.Parser.feed parser input_buffer 0 n ~now ~on_event
-               ~on_response
-           with End_of_file -> ());
-          loop ())
+        else if await_readable ~timeout:remaining then
+          match read_stdin () with
+          | 0 -> ()
+          | n ->
+              let now = Eio.Time.now clock in
+              Matrix.Input.Parser.feed parser input_buffer 0 n ~now ~on_event
+                ~on_response;
+              loop ()
     in
     loop ();
     !result
@@ -200,20 +204,28 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
           Atomic.set winch_flag false;
           let cols, rows = terminal_size () in
           on_event (Matrix.Input.Resize (cols, rows)));
-        (match got with
-        | `Input -> (
-            try
-              let n = read_stdin () in
-              let now = Eio.Time.now clock in
-              Matrix.Input.Parser.feed parser input_buffer 0 n ~now ~on_event
-                ~on_response
-            with End_of_file -> ())
-        | `Wakeup | `Timeout -> ());
-        let now = Eio.Time.now clock in
-        Matrix.Input.Parser.drain parser ~now ~on_event ~on_response
+        let result =
+          match got with
+          | `Input -> (
+              match read_stdin () with
+              | 0 -> `End
+              | n ->
+                  let now = Eio.Time.now clock in
+                  Matrix.Input.Parser.feed parser input_buffer 0 n ~now
+                    ~on_event ~on_response;
+                  `Continue)
+          | `Wakeup | `Timeout -> `Continue
+        in
+        (match result with
+        | `Continue ->
+            let now = Eio.Time.now clock in
+            Matrix.Input.Parser.drain parser ~now ~on_event ~on_response
+        | `End -> ());
+        result
     | events ->
         pending_startup_events := [];
-        List.iter on_event events
+        List.iter on_event events;
+        `Continue
   in
   let app =
     Matrix.attach ~mode ~raw_mode ~target_fps ~respect_alpha ~mouse_enabled

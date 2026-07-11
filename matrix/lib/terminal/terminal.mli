@@ -193,7 +193,8 @@ val probe :
 
     Using the caller's [parser] ensures that partial escape sequences spanning
     the probe boundary are preserved. User input events received during probing
-    are forwarded to [on_event].
+    are forwarded to [on_event]. A [read_into] result of [0] stops probing
+    because it denotes permanent end-of-input.
 
     [timeout] is the maximum probe duration in seconds. Defaults to [0.2]. *)
 

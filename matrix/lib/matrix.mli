@@ -53,6 +53,12 @@ type mode = [ `Alt | `Primary ]
       above the viewport are static transcript rows and enter native scrollback.
 *)
 
+type read_result = [ `Continue | `End ]
+(** The result of one custom-backend input wait. [`Continue] means the source
+    remains live after delivering input, a wakeup, or a timeout. [`End] means
+    the source reached permanent end-of-input; {!run} finalizes parser state and
+    closes the application without reading again. *)
+
 type debug_overlay_corner =
   [ `Top_left | `Top_right | `Bottom_left | `Bottom_right ]
 (** The type for debug overlay anchor corners. *)
@@ -175,8 +181,9 @@ val run :
     - Optionally samples [primary_required_rows] for [`Primary] mode sizing.
     - Calls {!submit} to diff and flush output.
 
-    The loop exits when {!running} becomes [false]. Exceptions close the runtime
-    before propagating. *)
+    The loop exits when {!running} becomes [false]. A custom backend
+    {!read_result} of [`End] finalizes the input parser and closes the runtime.
+    Exceptions close the runtime before propagating. *)
 
 (** {1:frame Frame building} *)
 
@@ -414,7 +421,8 @@ val attach :
   terminal_size:(unit -> int * int) ->
   set_raw_mode:(bool -> unit) ->
   flush_input:(unit -> unit) ->
-  read_events:(timeout:float option -> on_event:(Input.t -> unit) -> unit) ->
+  read_events:
+    (timeout:float option -> on_event:(Input.t -> unit) -> read_result) ->
   query_cursor_position:(timeout:float -> (int * int) option) ->
   cleanup:(unit -> unit) ->
   parser:Input.Parser.t ->
@@ -435,8 +443,9 @@ val attach :
     - [terminal_size] returns [(cols, rows)].
     - [set_raw_mode] toggles raw mode.
     - [flush_input] discards pending input.
-    - [read_events] blocks for events up to [timeout], invoking [on_event] for
-      each.
+    - [read_events] blocks for events up to [timeout], invokes [on_event] for
+      each, and returns [`Continue] while the source is live or [`End] at
+      permanent end-of-input.
     - [query_cursor_position] queries cursor position with the given timeout.
     - [cleanup] releases resources on {!close}.
 

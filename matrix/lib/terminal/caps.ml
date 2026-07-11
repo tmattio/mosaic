@@ -564,8 +564,7 @@ let probe ?(timeout = 0.2) ?(apply_env_overrides = false) ~on_event ~read_into
         if not ready then loop caps info got_explicit got_scaled got_da da_time
         else
           let read = read_into buffer 0 (Bytes.length buffer) in
-          if read <= 0 then
-            loop caps info got_explicit got_scaled got_da da_time
+          if read = 0 then (caps, info)
           else
             let caps_ref = ref caps in
             let info_ref = ref info in

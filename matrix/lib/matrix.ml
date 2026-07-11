@@ -11,6 +11,7 @@ module Image = Image
 type kitty_keyboard = [ `Auto | `Disabled | `Enabled of int ]
 type mode = [ `Alt | `Primary ]
 type debug_overlay_corner = Debug_overlay.corner
+type read_result = [ `Continue | `End ]
 
 type control_state =
   [ `Idle
@@ -52,7 +53,8 @@ type app = {
   terminal_size : unit -> int * int;
   set_raw_mode : bool -> unit;
   flush_input : unit -> unit;
-  read_events : timeout:float option -> on_event:(Input.t -> unit) -> unit;
+  read_events :
+    timeout:float option -> on_event:(Input.t -> unit) -> read_result;
   query_cursor_position : timeout:float -> (int * int) option;
   cleanup : unit -> unit;
   screen : Screen.t;
@@ -214,20 +216,29 @@ let read_events_unix ~terminal ~parser ~input_fd ~wakeup_r ~output_fd
         ()
   in
   let has_input = wait_readable_fds ~input_fd ~wakeup_r ~timeout in
-  if has_input then (
-    drain_wakeup_fd wakeup_r;
-    if !winch_received then (
-      winch_received := false;
-      let cols, rows = Terminal.size output_fd in
-      on_event (Input.Resize (cols, rows)));
-    match Unix.read input_fd input_buffer 0 (Bytes.length input_buffer) with
-    | n when n > 0 ->
-        let now = Unix.gettimeofday () in
-        Input.Parser.feed parser input_buffer 0 n ~now ~on_event ~on_response
-    | _ -> ()
-    | exception Unix.Unix_error _ -> ());
-  let now = Unix.gettimeofday () in
-  Input.Parser.drain parser ~now ~on_event ~on_response
+  let result =
+    if has_input then (
+      drain_wakeup_fd wakeup_r;
+      if !winch_received then (
+        winch_received := false;
+        let cols, rows = Terminal.size output_fd in
+        on_event (Input.Resize (cols, rows)));
+      match Unix.read input_fd input_buffer 0 (Bytes.length input_buffer) with
+      | n when n > 0 ->
+          let now = Unix.gettimeofday () in
+          Input.Parser.feed parser input_buffer 0 n ~now ~on_event ~on_response;
+          `Continue
+      | 0 -> `End
+      | _ -> `Continue
+      | exception Unix.Unix_error _ -> `Continue)
+    else `Continue
+  in
+  (match result with
+  | `Continue ->
+      let now = Unix.gettimeofday () in
+      Input.Parser.drain parser ~now ~on_event ~on_response
+  | `End -> ());
+  result
 
 let query_cursor_position_unix ~terminal ~parser ~input_fd ~wakeup_r
     ~input_buffer ~timeout ~on_event =
@@ -251,16 +262,15 @@ let query_cursor_position_unix ~terminal ~parser ~input_fd ~wakeup_r
       else if wait_readable_fds ~input_fd ~wakeup_r ~timeout:(Some remaining)
       then (
         drain_wakeup_fd wakeup_r;
-        (match
-           Unix.read input_fd input_buffer 0 (Bytes.length input_buffer)
-         with
+        match Unix.read input_fd input_buffer 0 (Bytes.length input_buffer) with
         | n when n > 0 ->
             let now = Unix.gettimeofday () in
             Input.Parser.feed parser input_buffer 0 n ~now ~on_event
-              ~on_response
-        | _ -> ()
-        | exception Unix.Unix_error _ -> ());
-        loop ())
+              ~on_response;
+            loop ()
+        | 0 -> ()
+        | _ -> loop ()
+        | exception Unix.Unix_error _ -> loop ())
   in
   loop ();
   !result
@@ -1185,7 +1195,8 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
               ~input_buffer ~timeout ~on_event
         | events ->
             pending_startup_events := [];
-            List.iter on_event events)
+            List.iter on_event events;
+            `Continue)
       ~query_cursor_position:(fun ~timeout ->
         query_cursor_position_unix ~terminal ~parser ~input_fd ~wakeup_r
           ~input_buffer ~timeout ~on_event:(fun _ -> ()))
@@ -1358,8 +1369,13 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
   let read_events ~now ~timeout =
     update_capability_parser_context t ~now;
     let caps_before = Terminal.capabilities t.terminal in
-    t.read_events ~timeout ~on_event:handle_event;
-    refresh_after_capability_change t caps_before
+    let result = t.read_events ~timeout ~on_event:handle_event in
+    refresh_after_capability_change t caps_before;
+    match result with
+    | `Continue -> ()
+    | `End ->
+        Input.Parser.finish t.parser ~on_event:handle_event;
+        close t
   in
 
   let rec loop last_time =

@@ -544,6 +544,20 @@ let test_probe_preserves_user_input_and_capabilities () =
     (T.capabilities term).kitty_keyboard;
   T.close term
 
+let test_probe_stops_reading_at_end_of_input () =
+  with_tty_terminal @@ fun term _buf ->
+  let parser = Input.Parser.create () in
+  let reads = ref 0 in
+  T.probe ~timeout:0.02
+    ~on_event:(fun _event -> ())
+    ~read_into:(fun _buf _off _len ->
+      incr reads;
+      0)
+    ~wait_readable:(fun ~timeout:_ -> true)
+    ~parser term;
+  equal ~msg:"probe reads EOF exactly once" int 1 !reads;
+  T.close term
+
 (* Regression: X10 mouse tracking must be disabled on teardown. *)
 let test_x10_mouse_disable () =
   with_tty_terminal @@ fun term buf ->
@@ -780,6 +794,8 @@ let () =
             test_probe_xtversion_non_tmux_does_not_resend_wrapped;
           test "probe preserves user input and capabilities"
             test_probe_preserves_user_input_and_capabilities;
+          test "probe stops reading at end-of-input"
+            test_probe_stops_reading_at_end_of_input;
           test "explicit cursor positioning env"
             test_explicit_cursor_positioning_env_overrides;
         ];
