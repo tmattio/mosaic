@@ -66,13 +66,14 @@ type app = {
   mutable primary : Primary.t;
   (* Scroll optimisation *)
   mutable scroll_hint : Screen.scroll_hint option;
-  (* Cursor state tracking — only emit style/color when changed. [None] means
-     the terminal state is unknown (startup, or after a suspend handed the
-     terminal to another program), so the next frame must emit. *)
+  (* Cursor state tracking — visual caches are valid only while the cursor is
+     visible. [None] means the terminal state is unknown (startup, hidden, or
+     after a suspend handed the terminal to another program), so the next
+     visible frame must emit. *)
   mutable last_cursor_position : (int * int) option;
   mutable last_cursor_visible : bool option;
   mutable last_cursor_shape : Ansi.cursor_shape option;
-  mutable last_cursor_color : (int * int * int) option;
+  mutable last_cursor_color : (int * int * int) option option;
   (* Resize and frame timing *)
   mutable last_resize_apply_time : float;
   mutable pending_resize : (int * int) option;
@@ -619,8 +620,9 @@ let cursor_dirty t ~(cursor : Screen.cursor) ~cursor_max_row =
   let position = cursor_output_position t ~cursor ~cursor_max_row in
   position <> t.last_cursor_position
   || Some cursor.visible <> t.last_cursor_visible
-  || Some (cursor_shape cursor) <> t.last_cursor_shape
-  || cursor.color <> t.last_cursor_color
+  || cursor.visible
+     && (Some (cursor_shape cursor) <> t.last_cursor_shape
+        || Some cursor.color <> t.last_cursor_color)
 
 let apply_cursor_state t ~buf ~(cursor : Screen.cursor) ~cursor_max_row =
   let position = cursor_output_position t ~cursor ~cursor_max_row in
@@ -630,17 +632,23 @@ let apply_cursor_state t ~buf ~(cursor : Screen.cursor) ~cursor_max_row =
       if cursor.visible then
         Buffer.add_string buf Ansi.(to_string (enable Cursor_visible))
   | None -> ());
-  let shape = cursor_shape cursor in
-  if Some shape <> t.last_cursor_shape then begin
-    Buffer.add_string buf Ansi.(to_string (cursor_style ~shape));
-    t.last_cursor_shape <- Some shape
-  end;
-  if cursor.color <> t.last_cursor_color then begin
-    (match cursor.color with
-    | Some (r, g, b) ->
-        Buffer.add_string buf Ansi.(to_string (cursor_color ~r ~g ~b))
-    | None -> Buffer.add_string buf Ansi.(to_string reset_cursor_color));
-    t.last_cursor_color <- cursor.color
+  if cursor.visible then begin
+    let shape = cursor_shape cursor in
+    if Some shape <> t.last_cursor_shape then begin
+      Buffer.add_string buf Ansi.(to_string (cursor_style ~shape));
+      t.last_cursor_shape <- Some shape
+    end;
+    if Some cursor.color <> t.last_cursor_color then begin
+      (match cursor.color with
+      | Some (r, g, b) ->
+          Buffer.add_string buf Ansi.(to_string (cursor_color ~r ~g ~b))
+      | None -> Buffer.add_string buf Ansi.(to_string reset_cursor_color));
+      t.last_cursor_color <- Some cursor.color
+    end
+  end
+  else begin
+    t.last_cursor_shape <- None;
+    t.last_cursor_color <- None
   end;
   t.last_cursor_position <- position;
   t.last_cursor_visible <- Some cursor.visible

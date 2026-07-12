@@ -661,6 +661,7 @@ let test_first_submit_emits_cursor_style () =
   in
   Matrix.prepare app;
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"stable";
+  Matrix.set_cursor ~visible:true app;
   Matrix.set_cursor_style app ~style:`Block ~blinking:true;
   Matrix.set_cursor_position app ~row:1 ~col:1;
   Matrix.submit app;
@@ -668,6 +669,33 @@ let test_first_submit_emits_cursor_style () =
      emit DECSCUSR even when the requested shape matches our own default. *)
   is_true ~msg:"first frame emits the cursor style"
     (contains_substring "\027[1 q" (output state))
+
+let test_visible_cursor_reemits_hidden_visual_state () =
+  let app, state =
+    make_app ~mode:`Primary ~target_fps:None ~input_timeout:(Some 0.) ()
+  in
+  let draw ~visible =
+    Matrix.prepare app;
+    Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"stable";
+    Matrix.set_cursor ~visible app;
+    Matrix.set_cursor_style app ~style:`Block ~blinking:true;
+    Matrix.set_cursor_color app ~r:1. ~g:0. ~b:0.;
+    Matrix.set_cursor_position app ~row:1 ~col:1;
+    Matrix.submit app
+  in
+  draw ~visible:false;
+  let hidden_output = output state in
+  is_false ~msg:"hidden frame does not emit cursor style"
+    (contains_substring "\027[1 q" hidden_output);
+  is_false ~msg:"hidden frame does not emit cursor color"
+    (contains_substring "\027]12;#ff0000\007" hidden_output);
+  Buffer.clear state.output;
+  draw ~visible:true;
+  let visible_output = output state in
+  is_true ~msg:"visible frame emits cursor style"
+    (contains_substring "\027[1 q" visible_output);
+  is_true ~msg:"visible frame emits cursor color"
+    (contains_substring "\027]12;#ff0000\007" visible_output)
 
 let test_submit_emits_frame_above_default_capacity () =
   let width = 96 in
@@ -1317,6 +1345,8 @@ let () =
             test_cursor_only_submit_emits_output;
           test "first submit emits cursor style"
             test_first_submit_emits_cursor_style;
+          test "visible cursor re-emits hidden visual state"
+            test_visible_cursor_reemits_hidden_visual_state;
           test "submit emits frame above default capacity"
             test_submit_emits_frame_above_default_capacity;
         ];

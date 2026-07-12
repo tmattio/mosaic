@@ -53,6 +53,29 @@ let snap t =
   Matrix_test.screen t |> String.split_on_char '\n'
   |> List.iter (fun row -> print_endline ("|" ^ row))
 
+let substring_index needle haystack =
+  let needle_len = String.length needle in
+  let haystack_len = String.length haystack in
+  let rec matches_at i j =
+    j = needle_len
+    || i + j < haystack_len
+       && Char.equal
+            (String.unsafe_get haystack (i + j))
+            (String.unsafe_get needle j)
+       && matches_at i (j + 1)
+  in
+  let rec loop i =
+    if i + needle_len > haystack_len then None
+    else if matches_at i 0 then Some i
+    else loop (i + 1)
+  in
+  if needle_len = 0 then Some 0 else loop 0
+
+let is_before ~first ~second s =
+  match (substring_index first s, substring_index second s) with
+  | Some i, Some j -> i < j
+  | _ -> false
+
 let drive ?(width = 48) ?(height = 2) ?probe ?process_perform application steps
     =
   let steps = ref steps in
@@ -255,6 +278,28 @@ let%expect_test "replaying the output stream through a VTE matches the grid" =
 replayed:
 |keys:[a,b] ticks:0 size:- note:-
 ||}]
+
+let%expect_test
+    "startup focus emits blinking cursor style when it becomes visible" =
+  let base = app ~init_cmd:(Mosaic.Cmd.focus "editor") () in
+  let application =
+    {
+      base with
+      Mosaic.view =
+        (fun _ ->
+          Mosaic.input ~id:"editor" ~cursor_style:`Block ~cursor_blinking:true
+            ~cursor_color:Matrix.Ansi.Color.red ());
+    }
+  in
+  drive application
+    [
+      `Run
+        (fun t ->
+          let output = Matrix_test.output t in
+          Printf.printf "blinking style follows cursor visibility: %b\n"
+            (is_before ~first:"\027[?25h" ~second:"\027[1 q" output));
+    ];
+  [%expect {|blinking style follows cursor visibility: true|}]
 
 let%expect_test "an every-timer stepped exactly onto its deadline keeps firing"
     =
