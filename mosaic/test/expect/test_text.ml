@@ -136,6 +136,39 @@ a b
 c d e
 |}]
 
+let%expect_test "word wrap keeps executable suffix together" =
+  List.iter
+    (fun width ->
+      Printf.printf "width %d\n" width;
+      render ~width ~height:2 (Vnode.text ~wrap:`Word "./bin/main.exe");
+      print_newline ())
+    [ 11; 12; 13 ];
+  [%expect_exact
+    {|width 11
+
+./bin/
+main.exe
+width 12
+
+./bin/
+main.exe
+width 13
+
+./bin/
+main.exe
+|}]
+
+let%expect_test "word wrap keeps URL hosts and decimals together" =
+  render ~width:19 ~height:2 (Vnode.text ~wrap:`Word "https://example.com/path");
+  print_newline ();
+  render ~width:12 ~height:2 (Vnode.text ~wrap:`Word "value 123.45 units");
+  [%expect_exact {|
+https://
+example.com/path
+
+value
+123.45 units|}]
+
 let%expect_test "char wrap with CJK" =
   render ~width:6 ~height:2
     (Vnode.text ~wrap:`Char "\xe4\xbd\xa0\xe5\xa5\xbd\xe4\xb8\x96\xe7\x95\x8c");

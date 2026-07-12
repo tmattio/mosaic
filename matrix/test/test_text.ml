@@ -236,10 +236,28 @@ let wrap_breaks_ascii_spaces () =
 
 let wrap_breaks_ascii_punctuation () =
   let breaks = wrap_breaks "a-b/c.d,e;f:g!h?i" in
-  equal ~msg:"8 breaks for 8 punctuation marks" int 8 (Array.length breaks);
+  equal ~msg:"period excluded from seven ASCII breaks" int 7
+    (Array.length breaks);
   equal ~msg:"break after hyphen" wrap_break_testable
     { byte_offset = 2; grapheme_offset = 1 }
     breaks.(0)
+
+let wrap_breaks_keep_periods_inside_tokens () =
+  equal ~msg:"executable suffix is not a boundary"
+    (array wrap_break_testable)
+    [|
+      { byte_offset = 1; grapheme_offset = 1 };
+      { byte_offset = 5; grapheme_offset = 5 };
+    |]
+    (wrap_break_points "./bin/main.exe");
+  equal ~msg:"dotted filename has no boundary"
+    (array wrap_break_testable)
+    [||]
+    (wrap_break_points "release.tar.gz");
+  equal ~msg:"decimal has no boundary"
+    (array wrap_break_testable)
+    [||]
+    (wrap_break_points "3.1415")
 
 let wrap_breaks_ascii_brackets () =
   let breaks = wrap_breaks "(a)[b]{c}" in
@@ -573,6 +591,8 @@ let () =
         [
           test "ASCII spaces" wrap_breaks_ascii_spaces;
           test "ASCII punctuation" wrap_breaks_ascii_punctuation;
+          test "periods stay inside tokens"
+            wrap_breaks_keep_periods_inside_tokens;
           test "ASCII brackets" wrap_breaks_ascii_brackets;
           test "tabs" wrap_breaks_tabs;
           test "Unicode spaces" wrap_breaks_unicode_spaces;
