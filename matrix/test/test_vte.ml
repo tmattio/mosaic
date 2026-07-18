@@ -365,6 +365,16 @@ let scrollback_accumulates () =
   let lines = Vte.scrollback_lines vte in
   equal ~msg:"scrollback list length" int 2 (List.length lines)
 
+let erase_scrollback_sequence () =
+  let vte = Vte.create ~scrollback:100 ~rows:3 ~cols:10 () in
+  Vte.feed_string vte "L1\nL2\nL3\nL4\nL5";
+  is_true ~msg:"fixture has scrollback" (Vte.scrollback_size vte > 0);
+  let visible = get_line (Vte.grid vte) 0 in
+  Vte.feed_string vte "\x1b[3J";
+  equal ~msg:"ED 3 clears native scrollback" int 0 (Vte.scrollback_size vte);
+  equal ~msg:"ED 3 preserves the visible screen" string visible
+    (get_line (Vte.grid vte) 0)
+
 let scrollback_ring_buffer () =
   let vte = Vte.create ~scrollback:2 ~rows:2 ~cols:5 () in
   Vte.feed_string vte "L1\nL2\nL3\nL4\nL5";
@@ -612,6 +622,7 @@ let tests =
     test "reverse index moves cursor up" reverse_index_moves_cursor_up;
     test "reverse index scrolls region down" reverse_index_scrolls_region_down;
     test "scrollback accumulates" scrollback_accumulates;
+    test "erase scrollback sequence" erase_scrollback_sequence;
     test "scrollback ring buffer" scrollback_ring_buffer;
     test "scrollback disabled" scrollback_disabled;
     test "auto wrap mode" auto_wrap_mode;
