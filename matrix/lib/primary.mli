@@ -52,11 +52,12 @@ type region = { row_offset : int; height : int }
 
     [row_offset] is zero-based. [height] is the number of live viewport rows. *)
 
-type static_write = { text : string; rows : int }
+type static_write = { text : string; rows : int; preserve_live_region : bool }
 (** A pending static write.
 
     [rows] is the exact number of terminal rows consumed by [text]. The caller
-    is responsible for computing it. *)
+    is responsible for computing it. When [preserve_live_region] is [true], the
+    write scrolls directly into history without shrinking the live region. *)
 
 type cursor_anchor = {
   render_offset : int;

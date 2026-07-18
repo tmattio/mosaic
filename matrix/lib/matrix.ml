@@ -518,18 +518,20 @@ let effective_size t =
   | `Alt -> (t.width, t.height)
   | `Primary -> Primary.effective_size t.primary ~width:t.width
 
-let static_write t ~rows text =
+let static_write ?(preserve_live_region = false) t ~rows text =
   if t.config.mode = `Alt || String.length text = 0 then ()
   else
     let text = if t.config.raw_mode then normalize_newlines text else text in
-    t.primary <- Primary.enqueue_static t.primary { text; rows };
+    t.primary <-
+      Primary.enqueue_static t.primary { text; rows; preserve_live_region };
     request_redraw t
 
-let static_replace t ~rows text =
+let static_replace ?(preserve_live_region = false) t ~rows text =
   if t.config.mode = `Alt then ()
   else
     let text = if t.config.raw_mode then normalize_newlines text else text in
-    t.primary <- Primary.replace_static t.primary { text; rows };
+    t.primary <-
+      Primary.replace_static t.primary { text; rows; preserve_live_region };
     request_redraw t
 
 (* Immediate action, not part of the frame pipeline — the direct
