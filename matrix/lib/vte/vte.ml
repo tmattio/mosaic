@@ -849,6 +849,8 @@ let handle_control t ctrl =
         t.scroll_region.top <- top - 1;
         t.scroll_region.bottom <- bottom - 1;
         set_cursor_pos t ~row:0 ~col:0)
+  | Ansi.Parser.SU n -> scroll_up t n
+  | Ansi.Parser.SD n -> scroll_down t n
   | Ansi.Parser.OSC (0, title) | Ansi.Parser.OSC (2, title) -> t.title <- title
   | Ansi.Parser.OSC _ -> () (* Ignore other OSC *)
   | Ansi.Parser.DCS _ | Ansi.Parser.APC _ | Ansi.Parser.PM _ | Ansi.Parser.SOS _

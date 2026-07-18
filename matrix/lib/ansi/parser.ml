@@ -18,6 +18,8 @@ type control =
   | DCH of int
   | ICH of int
   | DECSTBM of int * int
+  | SU of int
+  | SD of int
   | OSC of int * string
   | DCS of string
   | APC of string
@@ -179,6 +181,8 @@ let parse_csi ~params body final : token option =
   | 'P' -> Some (Control (DCH (get 0 1)))
   | '@' -> Some (Control (ICH (get 0 1)))
   | 'r' -> Some (Control (DECSTBM (get 0 1, get 1 0)))
+  | 'S' -> Some (Control (SU (get 0 1)))
+  | 'T' -> Some (Control (SD (get 0 1)))
   | 'm' ->
       let attrs =
         if param_count = 0 then [ `Reset ]

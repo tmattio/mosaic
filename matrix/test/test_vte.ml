@@ -321,6 +321,17 @@ let scroll_down_basic () =
   equal ~msg:"top cleared" string "" (get_line (Vte.grid vte) 0);
   equal ~msg:"line moved down" string "L1" (get_line (Vte.grid vte) 1)
 
+let csi_scroll_sequences () =
+  let vte = Vte.create ~scrollback:100 ~rows:5 ~cols:20 () in
+  Vte.feed_string vte "L1\nL2\nL3\nL4\nL5";
+  Vte.feed_string vte "\x1b[2S";
+  equal ~msg:"CSI S moves rows up" string "L3" (get_line (Vte.grid vte) 0);
+  equal ~msg:"CSI S records native scrollback" int 2 (Vte.scrollback_size vte);
+  Vte.feed_string vte "\x1b[1T";
+  equal ~msg:"CSI T inserts a blank top row" string ""
+    (get_line (Vte.grid vte) 0);
+  equal ~msg:"CSI T moves content down" string "L3" (get_line (Vte.grid vte) 1)
+
 let scroll_on_bottom_line () =
   let vte = Vte.create ~rows:3 ~cols:10 () in
   Vte.feed_string vte "L1\nL2\nL3\nL4";
@@ -596,6 +607,7 @@ let tests =
     test "cursor save/restore" cursor_save_restore;
     test "scroll up basic" scroll_up_basic;
     test "scroll down basic" scroll_down_basic;
+    test "CSI scroll sequences" csi_scroll_sequences;
     test "scroll on bottom line" scroll_on_bottom_line;
     test "reverse index moves cursor up" reverse_index_moves_cursor_up;
     test "reverse index scrolls region down" reverse_index_scrolls_region_down;
