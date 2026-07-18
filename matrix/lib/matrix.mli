@@ -287,6 +287,11 @@ val redraw_requested : app -> bool
     backend distinguish a frame gated on the render cadence from a loop with no
     pending work. *)
 
+val request_immediate_redraw : app -> unit
+(** [request_immediate_redraw app] requests a one-shot frame without waiting for
+    the configured frame cadence. Subsequent frames continue at the configured
+    cadence. *)
+
 (** {1:queries Terminal queries} *)
 
 val mode : app -> mode
@@ -340,9 +345,9 @@ val static_write :
 val static_replace :
   ?preserve_live_region:bool -> app -> rows:int -> string -> unit
 (** [static_replace ?preserve_live_region app ~rows s] queues an atomic
-    replacement of all primary static content. The replacement and the next
-    live frame are emitted in one frame transaction; terminal scrollback is
-    cleared before [s] is written. This function is ignored in [`Alt] mode.
+    replacement of all primary static content. The replacement and the next live
+    frame are emitted in one frame transaction; terminal scrollback is cleared
+    before [s] is written. This function is ignored in [`Alt] mode.
     [preserve_live_region] has the same meaning as for {!static_write}. *)
 
 val static_clear : app -> unit
