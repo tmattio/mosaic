@@ -5,6 +5,7 @@ type terminal_op =
   | Erase_line
   | Erase_below
   | Clear_and_home
+  | Clear_scrollback
   | Scroll_up of int
   | Set_scroll_region of { top : int; bottom : int }
   | Reset_scroll_region
@@ -31,6 +32,7 @@ type t = {
   render_offset : int;
   static_needs_newline : bool;
   static_queue : static_write list;
+  replace_pending : bool;
 }
 
 let empty_plan =
@@ -45,7 +47,7 @@ let clamp lo hi v = max lo (min hi v)
 let live_height t = t.terminal_height - t.render_offset
 
 let make ~terminal_height ~min_live_height ~render_offset ~static_needs_newline
-    ~static_queue =
+    ~static_queue ~replace_pending =
   let terminal_height = max 1 terminal_height in
   let min_live_height = min terminal_height (max 1 min_live_height) in
   let render_offset =
@@ -57,12 +59,13 @@ let make ~terminal_height ~min_live_height ~render_offset ~static_needs_newline
     render_offset;
     static_needs_newline;
     static_queue;
+    replace_pending;
   }
 
 let create ~terminal_height ~min_live_height ~render_offset
     ~static_needs_newline =
   make ~terminal_height ~min_live_height ~render_offset ~static_needs_newline
-    ~static_queue:[]
+    ~static_queue:[] ~replace_pending:false
 
 let anchor_of_cursor ~terminal_height ~row ~col =
   let terminal_height = max 1 terminal_height in
@@ -123,16 +126,19 @@ let static_step t ~offset ~static_needs_newline { text; rows } =
   }
 
 let projected_after_static t =
+  let initial =
+    if t.replace_pending then (0, false)
+    else (t.render_offset, t.static_needs_newline)
+  in
   List.fold_left
     (fun (offset, static_needs_newline) write ->
       let step = static_step t ~offset ~static_needs_newline write in
       (step.next_offset, step.next_static_needs_newline))
-    (t.render_offset, t.static_needs_newline)
-    (List.rev t.static_queue)
+    initial (List.rev t.static_queue)
 
 let effective_region t =
-  match t.static_queue with
-  | [] -> live_region t
+  match (t.replace_pending, t.static_queue) with
+  | false, [] -> live_region t
   | _ ->
       let offset, _ = projected_after_static t in
       {
@@ -149,6 +155,7 @@ let resize t ~terminal_height =
     make ~terminal_height ~min_live_height:t.min_live_height
       ~render_offset:t.render_offset
       ~static_needs_newline:t.static_needs_newline ~static_queue:t.static_queue
+      ~replace_pending:t.replace_pending
   in
   let region_changed = live_region next <> live_region t in
   (next, { empty_plan with region_changed; force_full_redraw = region_changed })
@@ -156,13 +163,19 @@ let resize t ~terminal_height =
 let reanchor t ~render_offset ~static_needs_newline =
   make ~terminal_height:t.terminal_height ~min_live_height:t.min_live_height
     ~render_offset ~static_needs_newline ~static_queue:t.static_queue
+    ~replace_pending:t.replace_pending
 
 let enqueue_static t ({ text; rows } as write) =
   if rows < 0 then invalid_arg "Primary.enqueue_static: rows must be >= 0";
   if String.length text = 0 then t
   else { t with static_queue = write :: t.static_queue }
 
-let has_pending_static t = t.static_queue <> []
+let replace_static t ({ text; rows } as write) =
+  if rows < 0 then invalid_arg "Primary.replace_static: rows must be >= 0";
+  let static_queue = if String.length text = 0 then [] else [ write ] in
+  { t with static_queue; replace_pending = true }
+
+let has_pending_static t = t.replace_pending || t.static_queue <> []
 
 let static_ops step text =
   let move = Move_cursor { row = step.base; col = 1 } in
@@ -240,7 +253,7 @@ let flush_full_height_static t queue =
       force_full_redraw = true;
     } )
 
-let flush_static t =
+let flush_static_append t =
   match t.static_queue with
   | [] -> (t, empty_plan)
   | rev_queue ->
@@ -281,10 +294,31 @@ let flush_static t =
         in
         (next, { start_plan with terminal_ops; region_changed })
 
+let flush_static t =
+  if not t.replace_pending then flush_static_append t
+  else
+    let reset =
+      {
+        t with
+        render_offset = 0;
+        static_needs_newline = false;
+        replace_pending = false;
+      }
+    in
+    let next, plan = flush_static_append reset in
+    ( next,
+      {
+        terminal_ops = Clear_and_home :: Clear_scrollback :: plan.terminal_ops;
+        region_changed = live_region next <> live_region t;
+        invalidate_presented = true;
+        force_full_redraw = true;
+      } )
+
 let clear_static t =
   let next =
     make ~terminal_height:t.terminal_height ~min_live_height:t.min_live_height
       ~render_offset:0 ~static_needs_newline:false ~static_queue:[]
+      ~replace_pending:false
   in
   ( next,
     {

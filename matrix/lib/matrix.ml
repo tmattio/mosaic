@@ -469,6 +469,8 @@ let apply_primary_op buf = function
       Buffer.add_string buf Ansi.(to_string erase_below_cursor)
   | Primary.Clear_and_home ->
       Buffer.add_string buf Ansi.(to_string clear_and_home)
+  | Primary.Clear_scrollback ->
+      Buffer.add_string buf Ansi.(to_string (erase_display ~mode:`Scrollback))
   | Primary.Scroll_up n -> Buffer.add_string buf Ansi.(to_string (scroll_up ~n))
   | Primary.Set_scroll_region { top; bottom } ->
       Buffer.add_string buf Ansi.(to_string (set_scrolling_region ~top ~bottom))
@@ -504,6 +506,13 @@ let static_write t ~rows text =
   else
     let text = if t.config.raw_mode then normalize_newlines text else text in
     t.primary <- Primary.enqueue_static t.primary { text; rows };
+    request_redraw t
+
+let static_replace t ~rows text =
+  if t.config.mode = `Alt then ()
+  else
+    let text = if t.config.raw_mode then normalize_newlines text else text in
+    t.primary <- Primary.replace_static t.primary { text; rows };
     request_redraw t
 
 (* Immediate action, not part of the frame pipeline — the direct

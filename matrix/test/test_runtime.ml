@@ -1146,6 +1146,30 @@ let test_static_clear_resets_primary_layout () =
   is_false ~msg:"static clear discards pending static output"
     (contains_substring "pending" output)
 
+let test_static_replace_replays_inside_next_frame () =
+  let app, state =
+    make_app ~mode:`Primary ~terminal_tty:true ~render_offset:10
+      ~target_fps:None ~input_timeout:(Some 0.) ()
+  in
+  set_sync_capable app;
+  Matrix.submit app;
+  Buffer.clear state.output;
+  Buffer.clear state.terminal_output;
+  Matrix.static_replace app ~rows:2 "replacement-a\nreplacement-b\n";
+  equal ~msg:"static replacement is deferred until the next frame" string ""
+    (Buffer.contents state.terminal_output);
+  Matrix.prepare app;
+  Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live-after";
+  Matrix.submit app;
+  let output = output state in
+  is_true ~msg:"replacement clears terminal scrollback"
+    (contains_substring "\027[3J" output);
+  is_true ~msg:"replacement content precedes the live repaint"
+    (is_before ~first:"replacement-b" ~second:"live-after" output);
+  is_true ~msg:"replacement and live repaint share synchronized output"
+    (is_before ~first:"\027[?2026h" ~second:"replacement-a" output
+    && is_before ~first:"live-after" ~second:"\027[?2026l" output)
+
 let test_primary_full_redraw_does_not_erase_past_terminal_bottom () =
   let app, state =
     make_app ~mode:`Primary ~render_offset:10 ~target_fps:None
@@ -1343,6 +1367,8 @@ let () =
             test_prepare_uses_pending_static_effective_region;
           test "static_clear resets primary layout"
             test_static_clear_resets_primary_layout;
+          test "static_replace replays inside next frame"
+            test_static_replace_replays_inside_next_frame;
           test "primary full redraw does not erase past terminal bottom"
             test_primary_full_redraw_does_not_erase_past_terminal_bottom;
           test "primary full redraw erases stale rows below content"
