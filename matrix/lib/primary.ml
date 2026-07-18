@@ -18,7 +18,7 @@ type plan = {
 }
 
 type region = { row_offset : int; height : int }
-type static_write = { text : string; rows : int }
+type static_write = { text : string; rows : int; preserve_live_region : bool }
 
 type cursor_anchor = {
   render_offset : int;
@@ -111,17 +111,22 @@ type static_step = {
   next_static_needs_newline : bool;
 }
 
-let static_step t ~offset ~static_needs_newline { text; rows } =
+let static_step t ~offset ~static_needs_newline
+    { text; rows; preserve_live_region } =
   let max_offset = max 0 (t.terminal_height - t.min_live_height) in
   let base = if offset = 0 then 1 else offset in
   let needs_newline = static_needs_newline && not (starts_with_newline text) in
   let payload_rows = rows + if needs_newline then 1 else 0 in
-  let grow_by = min payload_rows (max 0 (max_offset - base)) in
+  let grow_by =
+    if preserve_live_region then 0
+    else min payload_rows (max 0 (max_offset - base))
+  in
   {
     base;
     needs_newline;
     payload_rows;
-    next_offset = (if max_offset = 0 then 0 else base + grow_by);
+    next_offset =
+      (if preserve_live_region || max_offset = 0 then offset else base + grow_by);
     next_static_needs_newline = not (ends_with_newline text);
   }
 
@@ -165,12 +170,12 @@ let reanchor t ~render_offset ~static_needs_newline =
     ~render_offset ~static_needs_newline ~static_queue:t.static_queue
     ~replace_pending:t.replace_pending
 
-let enqueue_static t ({ text; rows } as write) =
+let enqueue_static t ({ text; rows; _ } as write) =
   if rows < 0 then invalid_arg "Primary.enqueue_static: rows must be >= 0";
   if String.length text = 0 then t
   else { t with static_queue = write :: t.static_queue }
 
-let replace_static t ({ text; rows } as write) =
+let replace_static t ({ text; rows; _ } as write) =
   if rows < 0 then invalid_arg "Primary.replace_static: rows must be >= 0";
   let static_queue = if String.length text = 0 then [] else [ write ] in
   { t with static_queue; replace_pending = true }
@@ -232,7 +237,7 @@ let full_height_static_ops step text =
 let flush_full_height_static t queue =
   let ops_rev, static_needs_newline =
     List.fold_left
-      (fun (ops_rev, static_needs_newline) ({ text; rows } as write) ->
+      (fun (ops_rev, static_needs_newline) ({ text; rows; _ } as write) ->
         let step = static_step t ~offset:0 ~static_needs_newline write in
         let step = { step with payload_rows = rows } in
         let ops_rev =
@@ -259,7 +264,11 @@ let flush_static_append t =
   | rev_queue ->
       let queue = List.rev rev_queue in
       let max_offset = max 0 (t.terminal_height - t.min_live_height) in
-      if max_offset = 0 then flush_full_height_static t queue
+      let preserves_live_region =
+        List.for_all (fun write -> write.preserve_live_region) queue
+      in
+      if max_offset = 0 || (t.render_offset = 0 && preserves_live_region) then
+        flush_full_height_static t queue
       else if t.render_offset = max_offset then flush_pinned_static t queue
       else
         let projected_offset, _ = projected_after_static t in

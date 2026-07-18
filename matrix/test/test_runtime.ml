@@ -1091,6 +1091,25 @@ let test_primary_column_one_anchor_preserves_current_row () =
   is_true ~msg:"column-one anchor preserves the shell-owned row"
     (contains_substring "\r\nHEADER" output)
 
+let test_preserved_static_write_keeps_live_region () =
+  let app, state =
+    make_app ~mode:`Primary ~min_tui_height:1 ~target_fps:None
+      ~input_timeout:(Some 0.) ()
+  in
+  let before = Matrix.size app in
+  Matrix.submit app;
+  Buffer.clear state.output;
+  Matrix.static_write ~preserve_live_region:true app ~rows:2
+    "PRESERVED00\nPRESERVED01\n";
+  equal ~msg:"pending preserved write keeps effective live size" (pair int int)
+    before (Matrix.effective_size app);
+  Matrix.submit app;
+  let output = output state in
+  is_true ~msg:"preserved rows scroll directly into terminal history"
+    (contains_substring "\027[2S" output);
+  equal ~msg:"preserved write keeps live region" (pair int int) before
+    (Matrix.size app)
+
 let test_full_height_consecutive_static_writes_scroll_once_per_row () =
   let app, state =
     make_app ~mode:`Primary ~min_tui_height:24 ~target_fps:None
@@ -1408,6 +1427,8 @@ let () =
             test_primary_required_rows_apply_before_static_flush;
           test "full-height static write scrolls into scrollback"
             test_full_height_static_write_scrolls_into_scrollback;
+          test "preserved static write keeps live region"
+            test_preserved_static_write_keeps_live_region;
           test "full-height consecutive static writes scroll once per row"
             test_full_height_consecutive_static_writes_scroll_once_per_row;
           test "static_write is ignored in alt mode"

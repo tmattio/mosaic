@@ -318,20 +318,25 @@ val capabilities : app -> Terminal.capabilities
     viewport and leave the live viewport intact. These functions are ignored in
     [`Alt] mode. *)
 
-val static_write : app -> rows:int -> string -> unit
-(** [static_write app ~rows s] queues [s] for insertion before the live
-    viewport, using [rows] as the exact number of terminal rows consumed by [s].
-    The caller is responsible for computing [rows] accurately, for example from
-    {!Grid.active_height} after rendering to a grid.
+val static_write :
+  ?preserve_live_region:bool -> app -> rows:int -> string -> unit
+(** [static_write ?preserve_live_region app ~rows s] queues [s] for insertion
+    before the live viewport, using [rows] as the exact number of terminal rows
+    consumed by [s]. The caller is responsible for computing [rows] accurately,
+    for example from {!Grid.active_height} after rendering to a grid.
 
     In raw mode, lone LF bytes in [s] are normalized to CRLF before queuing so
-    terminal row accounting matches the provided [rows]. *)
+    terminal row accounting matches the provided [rows]. When
+    [preserve_live_region] is [true], the rows scroll directly into terminal
+    history and the live region keeps its current height. *)
 
-val static_replace : app -> rows:int -> string -> unit
-(** [static_replace app ~rows s] queues an atomic replacement of all primary
-    static content. The replacement and the next live frame are emitted in one
-    frame transaction; terminal scrollback is cleared before [s] is written.
-    This function is ignored in [`Alt] mode. *)
+val static_replace :
+  ?preserve_live_region:bool -> app -> rows:int -> string -> unit
+(** [static_replace ?preserve_live_region app ~rows s] queues an atomic
+    replacement of all primary static content. The replacement and the next
+    live frame are emitted in one frame transaction; terminal scrollback is
+    cleared before [s] is written. This function is ignored in [`Alt] mode.
+    [preserve_live_region] has the same meaning as for {!static_write}. *)
 
 val static_clear : app -> unit
 (** [static_clear app] clears the primary screen immediately, discards pending
