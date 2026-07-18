@@ -29,6 +29,7 @@ type terminal_op =
   | Erase_line  (** Erase the current terminal row. *)
   | Erase_below  (** Erase from cursor to the end of the screen. *)
   | Clear_and_home  (** Clear the screen and move the cursor home. *)
+  | Clear_scrollback  (** Clear the terminal's native scrollback. *)
   | Scroll_up of int  (** Scroll the current terminal viewport up by rows. *)
   | Set_scroll_region of { top : int; bottom : int }
       (** Set DECSTBM to one-based inclusive rows. *)
@@ -134,6 +135,11 @@ val reanchor : t -> render_offset:int -> static_needs_newline:bool -> t
 val enqueue_static : t -> static_write -> t
 (** [enqueue_static t write] queues [write] for the next static flush. Empty
     text is ignored. Raises [Invalid_argument] if [write.rows < 0]. *)
+
+val replace_static : t -> static_write -> t
+(** [replace_static t write] queues an atomic replacement of all static
+    primary-screen content for the next flush. The replacement may be empty.
+    Raises [Invalid_argument] if [write.rows < 0]. *)
 
 val has_pending_static : t -> bool
 (** [has_pending_static t] is [true] iff [t] has queued static writes. *)

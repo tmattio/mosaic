@@ -334,6 +334,12 @@ val static_write : app -> rows:int -> string -> unit
     In raw mode, lone LF bytes in [s] are normalized to CRLF before queuing so
     terminal row accounting matches the provided [rows]. *)
 
+val static_replace : app -> rows:int -> string -> unit
+(** [static_replace app ~rows s] queues an atomic replacement of all primary
+    static content. The replacement and the next live frame are emitted in one
+    frame transaction; terminal scrollback is cleared before [s] is written.
+    This function is ignored in [`Alt] mode. *)
+
 val static_clear : app -> unit
 (** [static_clear app] clears the primary screen immediately, discards pending
     static output, and resets the live viewport to the full terminal height. It
