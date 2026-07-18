@@ -450,6 +450,13 @@ let push_to_scrollback t row =
       sb.head <- (sb.head + 1) mod sb.capacity;
       if sb.count < sb.capacity then sb.count <- sb.count + 1
 
+let clear_scrollback t =
+  match t.scrollback with
+  | None -> ()
+  | Some sb ->
+      sb.head <- 0;
+      sb.count <- 0
+
 let scroll_up t n =
   if n <= 0 then ()
   else
@@ -742,10 +749,11 @@ let handle_control t ctrl =
           erase_region t ~x:0 ~y:t.cursor.row ~width:(t.cursor.col + 1)
             ~height:1;
           mark_rows_dirty t 0 t.cursor.row
-      | 2 | 3 ->
+      | 2 ->
           (* Clear entire screen *)
           erase_region t ~x:0 ~y:0 ~width:t.cols ~height:t.rows;
           mark_rows_dirty t 0 (t.rows - 1)
+      | 3 -> clear_scrollback t
       | _ -> ())
   | Ansi.Parser.EL n ->
       (match n with
@@ -932,11 +940,7 @@ let reset t =
   t.title <- "";
 
   (* Clear scrollback *)
-  (match t.scrollback with
-  | Some sb ->
-      sb.head <- 0;
-      sb.count <- 0
-  | None -> ());
+  clear_scrollback t;
 
   t.scroll_region.top <- 0;
   t.scroll_region.bottom <- t.rows - 1;
