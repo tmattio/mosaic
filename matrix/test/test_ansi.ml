@@ -679,7 +679,9 @@ let roundtrip_screen_sequences () =
   test_screen "erase line 0" (erase_line ~mode:`Right) (Parser.EL 0);
   test_screen "erase line 2" (erase_line ~mode:`All) (Parser.EL 2);
   test_screen "insert lines" (insert_lines ~n:5) (Parser.IL 5);
-  test_screen "delete lines" (delete_lines ~n:3) (Parser.DL 3)
+  test_screen "delete lines" (delete_lines ~n:3) (Parser.DL 3);
+  test_screen "scroll up" (scroll_up ~n:4) (Parser.SU 4);
+  test_screen "scroll down" (scroll_down ~n:2) (Parser.SD 2)
 
 let roundtrip_sgr_sequences () =
   (* Test that SGR sequences round-trip through parser *)

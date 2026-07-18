@@ -31,6 +31,8 @@ type control =
   | ICH of int  (** Insert [n] blank Characters. *)
   | DECSTBM of int * int
       (** Set top and bottom scrolling margins ([CSI top ; bottom r]). *)
+  | SU of int  (** Scroll Up by [n] lines. *)
+  | SD of int  (** Scroll Down by [n] lines. *)
   | OSC of int * string  (** Generic OSC with code and payload. *)
   | DCS of string  (** Device Control String payload. *)
   | APC of string  (** Application Program Command payload. *)
