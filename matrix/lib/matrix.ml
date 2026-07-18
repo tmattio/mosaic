@@ -342,6 +342,14 @@ let schedule_wakeup t deadline =
 
 let redraw_requested t = t.redraw_requested
 
+let request_immediate_redraw t =
+  if t.closed then ()
+  else if t.control_state <> `Explicit_suspended then (
+    t.redraw_requested <- true;
+    if t.loop_active then t.next_frame_deadline <- Some (t.now ())
+    else t.last_render_time <- Float.neg_infinity;
+    t.wake ())
+
 let refresh_capabilities t =
   let caps = Terminal.capabilities t.terminal in
   let color_depth = if caps.rgb then `Truecolor else `Ansi256 in

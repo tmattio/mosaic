@@ -249,6 +249,33 @@ let test_request_redraw_while_paused () =
       | _ -> Matrix.stop app);
   equal ~msg:"redraw triggers one-shot frame while paused" int 2 !frames
 
+let test_immediate_redraw_bypasses_live_cadence_once () =
+  let app, state =
+    make_app ~target_fps:(Some 1.) ~input_timeout:None ~sleep_until_timeout:true
+      ~emit_event_each_read:(Some Matrix.Input.Focus) ~stop_after_reads:5000 ()
+  in
+  let frames = ref 0 in
+  let request_at = ref None in
+  let second_frame_at = ref 0. in
+  Matrix.run app
+    ~on_input:(fun app _event ->
+      match !request_at with
+      | None ->
+          request_at := Some state.now_s;
+          Matrix.request_immediate_redraw app
+      | Some _ -> ())
+    ~on_render:(fun app ->
+      incr frames;
+      if !frames = 2 then (
+        second_frame_at := state.now_s;
+        Matrix.stop app));
+  equal ~msg:"one immediate follow-up frame" int 2 !frames;
+  match !request_at with
+  | Some requested ->
+      is_true ~msg:"follow-up bypasses one-second cadence"
+        (!second_frame_at -. requested < 0.1)
+  | None -> fail "missing redraw request"
+
 let test_idle_does_not_force_live_loop () =
   let app, _state =
     make_app ~target_fps:None ~input_timeout:(Some 0.) ~stop_after_reads:1 ()
@@ -1102,7 +1129,8 @@ let test_preserved_static_write_keeps_live_region () =
   Matrix.static_write ~preserve_live_region:true app ~rows:2
     "PRESERVED00\nPRESERVED01\n";
   equal ~msg:"pending preserved write keeps effective live size" (pair int int)
-    before (Matrix.effective_size app);
+    before
+    (Matrix.effective_size app);
   Matrix.submit app;
   let output = output state in
   is_true ~msg:"preserved rows scroll directly into terminal history"
@@ -1316,6 +1344,8 @@ let () =
       group "Control"
         [
           test "request_redraw while paused" test_request_redraw_while_paused;
+          test "immediate redraw bypasses live cadence once"
+            test_immediate_redraw_bypasses_live_cadence_once;
           test "idle does not force live loop"
             test_idle_does_not_force_live_loop;
         ];
