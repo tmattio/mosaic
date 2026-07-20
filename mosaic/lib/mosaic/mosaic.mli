@@ -638,6 +638,19 @@ module Scroll_box : sig
       not scroll again. [x] and [y] are content coordinates. [align_x] and
       [align_y] select the placement when the target is outside the viewport.
       [margin] keeps that many cells around the target when possible. *)
+
+  type scroll_by = Mosaic_ui.Scroll_box.scroll_by = {
+    key : string;
+    x : float option;
+    y : float option;
+    unit : Mosaic_ui.Scroll_bar.scroll_unit;
+  }
+  (** The type for one-shot relative scroll requests.
+
+      Reusing the currently applied [key] does not scroll again; change it to
+      request another scroll. [x] and [y] are signed deltas expressed in [unit].
+      At least one delta must be present, and every present delta must be
+      finite. *)
 end
 
 (** Companion types for the {!val-text} and {!val-code} widgets. *)
@@ -1219,6 +1232,22 @@ val embed : Mosaic_ui.Renderable.t -> 'msg t
 (** [embed r] wraps a pre-rendered {!Mosaic_ui.Renderable.t} as a view node. Use
     this to integrate non-TEA rendering into the view tree. *)
 
+val viewport_switch :
+  at_least_width:int -> wide:'msg t -> narrow:'msg t -> 'msg t
+(** [viewport_switch ~at_least_width ~wide ~narrow] selects [wide] when the
+    current terminal viewport is at least [at_least_width] cells wide and
+    [narrow] otherwise.
+
+    Mosaic resolves the condition before reconciliation and layout. Only the
+    selected branch is mounted, so the other branch cannot take space, receive
+    focus, install handlers, or keep live rendering active. Crossing the
+    threshold reconciles the new branch normally against the old one; compatible
+    keyed elements retain their widget state and unmatched elements are
+    unmounted.
+
+    This is a viewport query, not a query on the containing element's allocated
+    width. Raises [Invalid_argument] if [at_least_width] is not positive. *)
+
 val box :
   ?key:string ->
   ?id:string ->
@@ -1532,7 +1561,8 @@ val input :
     See {!val-textarea} for the multi-line variant.
 
     Input-specific optional arguments:
-    - [value] -- current content of the field. Defaults to [""].
+    - [value] -- controlled content of the field. Every reconciliation restores
+      it if the live edit buffer has diverged. Defaults to [""].
     - [cursor] -- optional controlled cursor grapheme offset.
     - [selection] -- optional controlled selection range.
     - [placeholder] -- hint text shown when the field is empty. Defaults to
@@ -2081,11 +2111,15 @@ val scroll_box :
   ?background:Ansi.Color.t ->
   ?show_scrollbars:bool ->
   ?reveal:Scroll_box.reveal ->
+  ?scroll_by:Scroll_box.scroll_by ->
   ?on_scroll:(x:int -> y:int -> 'msg option) ->
+  ?on_scroll_by_applied:(key:string -> 'msg option) ->
   'msg t list ->
   'msg t
 (** [scroll_box children] is a scrollable container. It clips its [children] to
-    the allocated area and manages scroll state internally.
+    the allocated area and manages scroll state internally. A wheel event is
+    consumed only when it changes the scroll position on an enabled axis;
+    otherwise it bubbles to enclosing scroll boxes.
 
     Scroll-box-specific optional arguments:
     - [scroll_x] -- when [true] enables horizontal scrolling. Defaults to
@@ -2099,8 +2133,18 @@ val scroll_box :
     - [show_scrollbars] -- when [false] the scroll bars never render (scrolling
       still works). Defaults to [true], showing them on overflow.
     - [reveal] -- one-shot scroll request to a content coordinate.
+    - [scroll_by] -- keyed one-shot relative scroll request applied after
+      layout. [`Viewport] deltas use this scroll box's measured allocation, and
+      keeping the currently applied key cannot replay it during unrelated
+      reconciles.
     - [on_scroll] -- fired after a scroll event; receives the new scroll
-      position [~x] and [~y] in cells. *)
+      position [~x] and [~y] in cells.
+    - [on_scroll_by_applied] -- fired with [~key] after a [scroll_by] request is
+      consumed, even when clamping leaves the position unchanged. Use it to
+      retire the request from declarative state.
+
+    Raises [Invalid_argument] if [scroll_by] has no axis or contains a
+    non-finite delta. *)
 
 val textarea :
   ?key:string ->
@@ -2182,6 +2226,9 @@ val textarea :
   'msg t
 (** [textarea ()] is a multi-line text editing area. It shares its optional
     argument set with {!val-input}; see that entry for argument descriptions.
+
+    Its inherited [value] argument is controlled: every reconciliation restores
+    it if the live edit buffer has diverged.
 
     Textarea-specific optional arguments not present on {!val-input}:
     - [cursor] -- optional controlled cursor grapheme offset.
@@ -2584,11 +2631,16 @@ val table :
   ?selected_background:Ansi.Color.t ->
   ?focused_selected_text_color:Ansi.Color.t ->
   ?focused_selected_background:Ansi.Color.t ->
+  ?selection_visible:bool ->
+  ?show_scroll_indicator:bool ->
+  ?activate_on_click:bool ->
+  ?wheel_navigation:bool ->
   ?row_styles:Ansi.Style.t list ->
   ?wrap_selection:bool ->
   ?fast_scroll_step:int ->
   ?on_change:(int -> 'msg option) ->
   ?on_activate:(int -> 'msg option) ->
+  ?on_hover:(int option -> 'msg option) ->
   unit ->
   'msg t
 (** [table ()] is a scrollable data table.
@@ -2620,6 +2672,16 @@ val table :
       table has focus.
     - [focused_selected_background] -- background of the selected row when the
       table has focus.
+    - [selection_visible] -- when [false], keeps the current row for navigation
+      and automatic scrolling but does not draw selected-row colors. Defaults to
+      [true].
+    - [show_scroll_indicator] -- when [true], reserves one trailing column and
+      shows directional marks while data rows do not fit. Defaults to [false].
+    - [activate_on_click] -- when [true], a left click activates the exact row
+      after selecting it. Defaults to [false].
+    - [wheel_navigation] -- when [true], wheel events move selection and are
+      consumed. Disable it to let enclosing scroll surfaces handle the wheel.
+      Defaults to [true].
     - [row_styles] -- repeating list of styles applied to body rows, useful for
       alternating row colors.
     - [wrap_selection] -- when [true] wraps selection past the last or first
@@ -2628,7 +2690,12 @@ val table :
       [5].
     - [on_change] -- fired when the selected row index changes.
     - [on_activate] -- fired when the user confirms the selected row (e.g. by
-      pressing Enter). *)
+      pressing Enter).
+    - [on_hover] -- fired with the complete-data index under the pointer, or
+      [None] when no data row is under it.
+
+    PageUp/PageDown move by the measured number of visible data rows and clamp
+    at the table boundaries even when [wrap_selection] is [true]. *)
 
 val tree :
   ?key:string ->

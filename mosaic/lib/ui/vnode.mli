@@ -68,7 +68,10 @@ type 'msg widget_callbacks =
     }
   | Canvas_callbacks of { on_draw : (Canvas.t -> delta:float -> unit) option }
   | Scroll_bar_callbacks of { on_change : (int -> 'msg) option }
-  | Scroll_box_callbacks of { on_scroll : (x:int -> y:int -> 'msg) option }
+  | Scroll_box_callbacks of {
+      on_scroll : (x:int -> y:int -> 'msg) option;
+      on_scroll_by_applied : (key:string -> 'msg) option;
+    }
   | Textarea_callbacks of {
       on_input : (string -> 'msg) option;
       on_change : (string -> 'msg) option;
@@ -81,6 +84,7 @@ type 'msg widget_callbacks =
   | Table_callbacks of {
       on_change : (int -> 'msg) option;
       on_activate : (int -> 'msg) option;
+      on_hover : (int option -> 'msg) option;
     }
   | Tree_callbacks of {
       on_change : (int -> 'msg) option;
@@ -115,12 +119,15 @@ type attrs = {
 type 'msg t =
   | Element of 'msg element
   | Fragment of 'msg t list
+  | Viewport_switch of 'msg viewport_switch
   | Embed of Renderable.t
   | Empty
       (** The type for a virtual node in the UI tree.
 
           - [Element] is a widget with kind, attributes, handlers, and children.
           - [Fragment] groups multiple vnodes without a wrapper element.
+          - [Viewport_switch] selects one branch from the current terminal
+            viewport width before reconciliation and layout.
           - [Embed] wraps an existing {!Renderable.t} node. The node is attached
             but not managed by the reconciler. Use this as an escape hatch for
             imperative code.
@@ -138,6 +145,15 @@ and 'msg element = {
     reconciliation key, {!type-attrs}, generic {!type-handlers}, widget-specific
     {!type-widget_callbacks}, and children. *)
 
+and 'msg viewport_switch = {
+  at_least_width : int;
+      (** Inclusive viewport-width threshold, in terminal cells. *)
+  wide : 'msg t;  (** Branch selected at or above [at_least_width]. *)
+  narrow : 'msg t;  (** Branch selected below [at_least_width]. *)
+}
+(** The type for a viewport-conditioned branch. Exactly one branch is reconciled
+    at a time. *)
+
 (** {1:constructors Constructors} *)
 
 val empty : 'msg t
@@ -150,6 +166,22 @@ val fragment : 'msg t list -> 'msg t
 val embed : Renderable.t -> 'msg t
 (** [embed node] is an {!Embed} vnode wrapping [node]. The renderable is
     attached by the reconciler but not otherwise managed. *)
+
+val viewport_switch :
+  at_least_width:int -> wide:'msg t -> narrow:'msg t -> 'msg t
+(** [viewport_switch ~at_least_width ~wide ~narrow] is [wide] when the current
+    terminal viewport is at least [at_least_width] cells wide and [narrow]
+    otherwise.
+
+    Selection happens before child reconciliation and layout. The unselected
+    branch is not mounted and cannot receive focus or events. When selection
+    changes, the newly selected tree is reconciled normally against the old
+    tree: compatible keyed elements retain their widget state, while unmatched
+    elements are unmounted.
+
+    This condition always refers to the terminal viewport, not an element's
+    allocated width. Raises [Invalid_argument] if [at_least_width] is not
+    positive. *)
 
 val box :
   ?key:string ->
@@ -332,7 +364,8 @@ val input :
     Input-specific attributes:
     - [focusable] controls whether the node can receive focus. Defaults to
       [true].
-    - [value] is the initial text content. Defaults to [""].
+    - [value] is the controlled text content. Every reconciliation restores it
+      if the live edit buffer has diverged. Defaults to [""].
     - [cursor] is an optional controlled cursor grapheme offset.
     - [selection] is an optional controlled selection range.
     - [placeholder] is the text shown when the input is empty, regardless of
@@ -655,11 +688,15 @@ val scroll_box :
   ?background:Ansi.Color.t ->
   ?show_scrollbars:bool ->
   ?reveal:Scroll_box.reveal ->
+  ?scroll_by:Scroll_box.scroll_by ->
   ?on_scroll:(x:int -> y:int -> 'msg) ->
+  ?on_scroll_by_applied:(key:string -> 'msg) ->
   'msg t list ->
   'msg t
 (** [scroll_box children] is a scrollable container element. Children are
-    attached to an internal content node.
+    attached to an internal content node. A wheel event is consumed only when it
+    changes the scroll position on an enabled axis; otherwise it bubbles to
+    enclosing scroll boxes.
 
     Scroll_box-specific attributes:
     - [scroll_x] enables horizontal scrolling. Defaults to [false].
@@ -672,8 +709,16 @@ val scroll_box :
     - [show_scrollbars] displays the scroll bars when content overflows; [false]
       never shows them (scrolling still works). Defaults to [true].
     - [reveal] requests a one-shot scroll to a content coordinate.
+    - [scroll_by] requests one keyed relative scroll after layout. Viewport-unit
+      deltas use the scroll box's measured allocation; keeping the currently
+      applied key cannot replay it during unrelated reconciles.
     - [on_scroll] is called when the scroll position changes, receiving the new
-      offsets as [~x] and [~y]. *)
+      offsets as [~x] and [~y].
+    - [on_scroll_by_applied] is called with [~key] after a [scroll_by] request
+      is consumed, even if clamping leaves the offsets unchanged.
+
+    Raises [Invalid_argument] if [scroll_by] has no axis or contains a
+    non-finite delta. *)
 
 val textarea :
   ?key:string ->
@@ -724,7 +769,8 @@ val textarea :
     Textarea-specific attributes:
     - [focusable] controls whether the node can receive focus. Defaults to
       [true].
-    - [value] is the initial text content. Defaults to [""].
+    - [value] is the controlled text content. Every reconciliation restores it
+      if the live edit buffer has diverged. Defaults to [""].
     - [cursor] is an optional controlled cursor grapheme offset.
     - [selection] is an optional controlled selection range.
     - [spans] is optional styled spans used for syntax highlighting. When
@@ -792,11 +838,16 @@ val table :
   ?selected_background:Ansi.Color.t ->
   ?focused_selected_text_color:Ansi.Color.t ->
   ?focused_selected_background:Ansi.Color.t ->
+  ?selection_visible:bool ->
+  ?show_scroll_indicator:bool ->
+  ?activate_on_click:bool ->
+  ?wheel_navigation:bool ->
   ?row_styles:Ansi.Style.t list ->
   ?wrap_selection:bool ->
   ?fast_scroll_step:int ->
   ?on_change:(int -> 'msg) ->
   ?on_activate:(int -> 'msg) ->
+  ?on_hover:(int option -> 'msg) ->
   unit ->
   'msg t
 (** [table ()] is a data table leaf element. Table does not accept children.
@@ -828,6 +879,15 @@ val table :
     - [focused_selected_text_color] is the selected row text color when focused.
     - [focused_selected_background] is the selected row background color when
       focused.
+    - [selection_visible] controls whether selected-row colors are drawn while
+      retaining the current row for navigation and scrolling. Defaults to
+      [true].
+    - [show_scroll_indicator] shows a trailing directional overflow indicator
+      when rows do not fit. Defaults to [false].
+    - [activate_on_click] activates a data row on left click after selecting it.
+      Defaults to [false].
+    - [wheel_navigation] controls whether wheel events change selection and are
+      consumed. Defaults to [true].
     - [row_styles] is a list of styles cycled by modulo across rows for
       alternating row styling. Defaults to [[]] (no alternation).
     - [wrap_selection] controls whether selection wraps at row boundaries.
@@ -835,7 +895,12 @@ val table :
     - [fast_scroll_step] is the number of rows skipped with Shift+Up/Down.
       Defaults to [5].
     - [on_change] is called when the selected row changes.
-    - [on_activate] is called when the current row is activated via Enter. *)
+    - [on_activate] is called when the current row is activated via Enter.
+    - [on_hover] is called with the complete-data index under the pointer, or
+      [None] when no data row is under it.
+
+    PageUp/PageDown move by the measured number of visible data rows and clamp
+    at the table boundaries even when [wrap_selection] is [true]. *)
 
 val code :
   ?key:string ->

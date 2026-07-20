@@ -72,18 +72,43 @@ type reveal = {
   margin : int;
 }
 
+type scroll_by = {
+  key : string;
+  x : float option;
+  y : float option;
+  unit : Scroll_bar.scroll_unit;
+}
+
+let validate_scroll_by (request : scroll_by option) =
+  match request with
+  | None -> ()
+  | Some { x = None; y = None; _ } ->
+      invalid_arg "Scroll_box: scroll_by requires an x or y delta"
+  | Some request ->
+      if
+        not
+          (Option.for_all Float.is_finite request.x
+          && Option.for_all Float.is_finite request.y)
+      then invalid_arg "Scroll_box: scroll_by deltas must be finite"
+
 let equal_reveal_align a b =
   match (a, b) with
   | `Start, `Start | `Center, `Center | `End, `End | `Nearest, `Nearest -> true
   | _ -> false
 
-let equal_reveal a b =
+let equal_reveal (a : reveal) (b : reveal) =
   String.equal a.key b.key
   && Option.equal Int.equal a.x b.x
   && Option.equal Int.equal a.y b.y
   && equal_reveal_align a.align_x b.align_x
   && equal_reveal_align a.align_y b.align_y
   && Int.equal a.margin b.margin
+
+let equal_scroll_by (a : scroll_by) (b : scroll_by) =
+  String.equal a.key b.key
+  && Option.equal Float.equal a.x b.x
+  && Option.equal Float.equal a.y b.y
+  && a.unit = b.unit
 
 module Props = struct
   type t = {
@@ -97,11 +122,13 @@ module Props = struct
     vertical_bar_props : Scroll_bar.Props.t option;
     horizontal_bar_props : Scroll_bar.Props.t option;
     reveal : reveal option;
+    scroll_by : scroll_by option;
   }
 
   let make ?(scroll_x = false) ?(scroll_y = true) ?(sticky_scroll = false)
       ?sticky_start ?background ?(show_scrollbars = true) ?scrollbar_props
-      ?vertical_bar_props ?horizontal_bar_props ?reveal () =
+      ?vertical_bar_props ?horizontal_bar_props ?reveal ?scroll_by () =
+    validate_scroll_by scroll_by;
     {
       scroll_x;
       scroll_y;
@@ -113,6 +140,7 @@ module Props = struct
       vertical_bar_props;
       horizontal_bar_props;
       reveal;
+      scroll_by;
     }
 
   let default = make ()
@@ -129,6 +157,7 @@ module Props = struct
     && Option.equal Scroll_bar.Props.equal a.horizontal_bar_props
          b.horizontal_bar_props
     && Option.equal equal_reveal a.reveal b.reveal
+    && Option.equal equal_scroll_by a.scroll_by b.scroll_by
 end
 
 (* ───── Scroll Box ───── *)
@@ -147,6 +176,7 @@ type t = {
   mutable content_w : int;
   mutable content_h : int;
   mutable on_scroll : (x:int -> y:int -> unit) option;
+  mutable on_scroll_by_applied : (key:string -> unit) option;
   mutable scroll_accel : Scroll_accel.t;
   mutable frame_clock : float;
   mutable has_manual_scroll : bool;
@@ -165,6 +195,8 @@ type t = {
   mutable is_applying_sticky : bool;
   mutable pending_reveal : reveal option;
   mutable applied_reveal_key : string option;
+  mutable pending_scroll_by : scroll_by option;
+  mutable applied_scroll_by_key : string option;
 }
 
 let node t = t.node
@@ -330,6 +362,23 @@ let apply_pending_reveal t =
       t.pending_reveal <- None;
       if not (Option.equal String.equal t.applied_reveal_key (Some reveal.key))
       then apply_reveal t reveal
+
+let apply_scroll_by t (request : scroll_by) =
+  scroll_by_unit t ?x:request.x ?y:request.y ~unit:request.unit ();
+  t.applied_scroll_by_key <- Some request.key
+
+let apply_pending_scroll_by t =
+  match t.pending_scroll_by with
+  | None -> ()
+  | Some request ->
+      t.pending_scroll_by <- None;
+      if
+        not
+          (Option.equal String.equal t.applied_scroll_by_key (Some request.key))
+      then apply_scroll_by t request;
+      Option.iter
+        (fun callback -> callback ~key:request.key)
+        t.on_scroll_by_applied
 
 (* ───── Selection Auto-scroll ───── *)
 
@@ -512,6 +561,7 @@ let render_scroll_box t _self grid ~delta =
     apply_sticky t;
     apply_pending_reveal t;
     t.is_applying_sticky <- was_applying;
+    apply_pending_scroll_by t;
     set_child_offsets t)
 
 (* ───── Mouse Wheel ───── *)
@@ -540,17 +590,26 @@ let on_mouse t (event : Event.mouse) =
       in
       let dx = if t.props.scroll_x then dx else 0 in
       let dy = if t.props.scroll_y then dy else 0 in
-      let mult = Scroll_accel.tick t.scroll_accel ~now:t.frame_clock in
-      let fx = float_of_int dx *. mult in
-      let fy = float_of_int dy *. mult in
-      t.wheel_acc_x <- t.wheel_acc_x +. fx;
-      t.wheel_acc_y <- t.wheel_acc_y +. fy;
-      let stepx = int_of_float t.wheel_acc_x in
-      let stepy = int_of_float t.wheel_acc_y in
-      if stepx <> 0 then t.wheel_acc_x <- t.wheel_acc_x -. float_of_int stepx;
-      if stepy <> 0 then t.wheel_acc_y <- t.wheel_acc_y -. float_of_int stepy;
-      if stepx <> 0 || stepy <> 0 then
-        scroll_to_internal t ~x:(t.scroll_x + stepx) ~y:(t.scroll_y + stepy) ()
+      if dx <> 0 || dy <> 0 then begin
+        let mult = Scroll_accel.tick t.scroll_accel ~now:t.frame_clock in
+        let fx = float_of_int dx *. mult in
+        let fy = float_of_int dy *. mult in
+        t.wheel_acc_x <- t.wheel_acc_x +. fx;
+        t.wheel_acc_y <- t.wheel_acc_y +. fy;
+        let stepx = int_of_float t.wheel_acc_x in
+        let stepy = int_of_float t.wheel_acc_y in
+        if stepx <> 0 then
+          t.wheel_acc_x <- t.wheel_acc_x -. float_of_int stepx;
+        if stepy <> 0 then
+          t.wheel_acc_y <- t.wheel_acc_y -. float_of_int stepy;
+        if stepx <> 0 || stepy <> 0 then begin
+          let previous_x = t.scroll_x and previous_y = t.scroll_y in
+          scroll_to_internal t ~x:(t.scroll_x + stepx)
+            ~y:(t.scroll_y + stepy) ();
+          if t.scroll_x <> previous_x || t.scroll_y <> previous_y then
+            Event.Mouse.stop_propagation event
+        end
+      end
   | Drag { button = Left; is_dragging = true } ->
       update_auto_scroll t (Event.Mouse.x event) (Event.Mouse.y event)
   | Up { button = Left; _ } -> stop_auto_scroll t
@@ -607,7 +666,15 @@ let set_reveal t reveal =
     if Option.is_none reveal then t.applied_reveal_key <- None;
     Renderable.request_render t.node)
 
+let set_scroll_by t scroll_by =
+  validate_scroll_by scroll_by;
+  if not (Option.equal equal_scroll_by t.props.scroll_by scroll_by) then (
+    t.props <- { t.props with scroll_by };
+    t.pending_scroll_by <- scroll_by;
+    Renderable.request_render t.node)
+
 let set_on_scroll t cb = t.on_scroll <- cb
+let set_on_scroll_by_applied t cb = t.on_scroll_by_applied <- cb
 let set_scroll_accel t accel = t.scroll_accel <- accel
 
 (* ───── Apply Props ───── *)
@@ -639,6 +706,7 @@ let apply_props t (props : Props.t) =
   set_sticky_scroll t props.sticky_scroll;
   set_sticky_start t props.sticky_start;
   set_reveal t props.reveal;
+  set_scroll_by t props.scroll_by;
   set_show_scrollbars t props.show_scrollbars;
   (match resolve_bar_props props.scrollbar_props props.vertical_bar_props with
   | Some p -> Scroll_bar.apply_props t.vertical_bar p
@@ -653,7 +721,9 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
     ?(scroll_x = false) ?(scroll_y = true) ?(sticky_scroll = false)
     ?sticky_start ?background ?(scroll_accel = Scroll_accel.linear ())
     ?(show_scrollbars = true) ?scrollbar_props ?vertical_bar_props
-    ?horizontal_bar_props ?reveal ?on_scroll () =
+    ?horizontal_bar_props ?reveal ?scroll_by ?on_scroll ?on_scroll_by_applied ()
+    =
+  validate_scroll_by scroll_by;
   let node =
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
@@ -745,6 +815,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
       vertical_bar_props;
       horizontal_bar_props;
       reveal;
+      scroll_by;
     }
   in
   let t =
@@ -762,6 +833,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
       content_w = 0;
       content_h = 0;
       on_scroll;
+      on_scroll_by_applied;
       scroll_accel;
       frame_clock = 0.;
       has_manual_scroll = false;
@@ -780,6 +852,8 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
       is_applying_sticky = false;
       pending_reveal = reveal;
       applied_reveal_key = None;
+      pending_scroll_by = scroll_by;
+      applied_scroll_by_key = None;
     }
   in
   (* Wire scroll bar change → scroll position *)

@@ -380,7 +380,7 @@ let render_static_view runtime (view : _ t) =
     let reconciler = Reconciler.create ~container:(Renderer.root renderer) in
     let vnode = compile ~dispatch:(fun _ -> ()) view in
     set_renderer_viewport renderer ~width ~height;
-    Reconciler.render reconciler vnode;
+    Reconciler.render reconciler ~viewport_width:width vnode;
     Renderer.render_frame renderer ~width ~height ~delta:0.;
     let grid = Matrix.Screen.next_grid (Renderer.screen renderer) in
     let used_rows = Matrix.Grid.active_height grid in
@@ -660,13 +660,15 @@ let handle_input runtime (input : Matrix.Input.t) =
 
 let render runtime =
   process_pending_msgs runtime;
+  let viewport_width, _ = Matrix.effective_size runtime.matrix_app in
+  let viewport_width = max 1 viewport_width in
   let view = runtime.app.view runtime.model in
   let dispatch msg =
     runtime.pending_msgs <- msg :: runtime.pending_msgs;
     Matrix.request_redraw runtime.matrix_app
   in
   let vnode = compile ~dispatch view in
-  Reconciler.render runtime.reconciler vnode
+  Reconciler.render runtime.reconciler ~viewport_width vnode
 
 module Probe = struct
   type check = { name : string; is_pending : unit -> bool }
@@ -843,6 +845,7 @@ let run ?matrix
 let empty = Vnode.empty
 let fragment = Vnode.fragment
 let embed = Vnode.embed
+let viewport_switch = Vnode.viewport_switch
 
 let layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin ?padding
@@ -1131,8 +1134,8 @@ let scroll_box ?key ?id ?display ?box_sizing ?position ?overflow
     ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
     ?grid_row ?grid_column ?visible ?z_index ?opacity ?focusable ?autofocus
     ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?scroll_x ?scroll_y
-    ?sticky_scroll ?sticky_start ?background ?show_scrollbars ?reveal ?on_scroll
-    children =
+    ?sticky_scroll ?sticky_start ?background ?show_scrollbars ?reveal ?scroll_by
+    ?on_scroll ?on_scroll_by_applied children =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1146,7 +1149,7 @@ let scroll_box ?key ?id ?display ?box_sizing ?position ?overflow
   Vnode.scroll_box ?key ?id ~style ?visible ?z_index ?opacity ?focusable
     ?autofocus ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?scroll_x
     ?scroll_y ?sticky_scroll ?sticky_start ?background ?show_scrollbars ?reveal
-    ?on_scroll children
+    ?scroll_by ?on_scroll ?on_scroll_by_applied children
 
 let textarea ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
@@ -1293,8 +1296,9 @@ let table ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?border_style ?show_header ?show_column_separator ?show_row_separator
     ?cell_padding ?header_color ?header_background ?text_color ?background
     ?selected_text_color ?selected_background ?focused_selected_text_color
-    ?focused_selected_background ?row_styles ?wrap_selection ?fast_scroll_step
-    ?on_change ?on_activate () =
+    ?focused_selected_background ?selection_visible ?show_scroll_indicator
+    ?activate_on_click ?wheel_navigation ?row_styles ?wrap_selection
+    ?fast_scroll_step ?on_change ?on_activate ?on_hover () =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1310,8 +1314,9 @@ let table ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?selected_row ?border ?border_style ?show_header ?show_column_separator
     ?show_row_separator ?cell_padding ?header_color ?header_background
     ?text_color ?background ?selected_text_color ?selected_background
-    ?focused_selected_text_color ?focused_selected_background ?row_styles
-    ?wrap_selection ?fast_scroll_step ?on_change ?on_activate ()
+    ?focused_selected_text_color ?focused_selected_background ?selection_visible
+    ?show_scroll_indicator ?activate_on_click ?wheel_navigation ?row_styles
+    ?wrap_selection ?fast_scroll_step ?on_change ?on_activate ?on_hover ()
 
 let tree ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items

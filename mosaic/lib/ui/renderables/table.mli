@@ -9,13 +9,22 @@
     Keyboard bindings:
     - Up/Down arrows move the selection by one row. Shift+Up/Down skips by
       {!Props.t}'s [fast_scroll_step] rows.
+    - PageUp/PageDown move by the number of data rows in the measured viewport
+      and clamp at the first or last row, independently of selection wrapping.
     - [j]/[k] move the selection by one row.
     - Enter or KP_enter activates the current row, firing the {!set_on_activate}
       callback.
 
     Mouse bindings:
     - Left click selects a row.
+    - Pointer movement reports row transitions through {!set_on_hover}.
     - Scroll wheel navigates rows.
+
+    Selection presentation can be hidden independently of the current row. This
+    supports an unfocused glance that acquires a visible selection only after
+    interaction. An opt-in vertical overflow indicator is derived from the
+    table's actual viewport; it reserves one terminal column and shows [↑], [↓],
+    or [↕] wherever undisplayed rows remain.
 
     {2:column_sizing Column sizing}
 
@@ -127,6 +136,10 @@ val create :
   ?selected_background:Ansi.Color.t ->
   ?focused_selected_text_color:Ansi.Color.t ->
   ?focused_selected_background:Ansi.Color.t ->
+  ?selection_visible:bool ->
+  ?show_scroll_indicator:bool ->
+  ?activate_on_click:bool ->
+  ?wheel_navigation:bool ->
   ?row_styles:Ansi.Style.t list ->
   ?wrap_selection:bool ->
   ?fast_scroll_step:int ->
@@ -167,6 +180,10 @@ module Props : sig
     ?selected_background:Ansi.Color.t ->
     ?focused_selected_text_color:Ansi.Color.t ->
     ?focused_selected_background:Ansi.Color.t ->
+    ?selection_visible:bool ->
+    ?show_scroll_indicator:bool ->
+    ?activate_on_click:bool ->
+    ?wheel_navigation:bool ->
     ?row_styles:Ansi.Style.t list ->
     ?wrap_selection:bool ->
     ?fast_scroll_step:int ->
@@ -199,6 +216,18 @@ module Props : sig
         When [None], [selected_text_color] is used instead.
       - [focused_selected_background] the focused-and-selected row background.
         When [None], [selected_background] is used instead.
+      - [selection_visible] controls whether the selected row receives its
+        selected foreground and background. It defaults to [true]; navigation,
+        activation, and automatic scrolling still use [selected_row] when it is
+        [false].
+      - [show_scroll_indicator] reserves one trailing column when the data rows
+        exceed the current viewport and draws directional overflow marks from
+        the actual scroll offset. It defaults to [false].
+      - [activate_on_click] invokes the activation callback after a left click
+        selects a data row. It defaults to [false].
+      - [wheel_navigation] lets the mouse wheel move table selection and consume
+        the event. It defaults to [true]; when [false], wheel events bubble to
+        an enclosing scroll surface.
       - [row_styles] the list of alternating row styles, applied by modulo
         index. Defaults to [[]] (no alternation).
       - [wrap_selection] wraps selection at row boundaries. Defaults to [false].
@@ -300,6 +329,23 @@ val set_selected_background : t -> Ansi.Color.t -> unit
 (** [set_selected_background t c] sets the selected row background color of [t]
     to [c]. *)
 
+val set_selection_visible : t -> bool -> unit
+(** [set_selection_visible t visible] controls whether the current row is drawn
+    with the selected-row colors. It does not change selection, scrolling, or
+    interaction behavior. *)
+
+val set_show_scroll_indicator : t -> bool -> unit
+(** [set_show_scroll_indicator t show] enables or disables the trailing viewport
+    indicator. The indicator appears only while some rows do not fit. *)
+
+val set_activate_on_click : t -> bool -> unit
+(** [set_activate_on_click t activate] controls whether a left click activates
+    the exact clicked row after selecting it. *)
+
+val set_wheel_navigation : t -> bool -> unit
+(** [set_wheel_navigation t enabled] controls whether wheel events navigate
+    table selection. Disabled wheel events are left unconsumed for ancestors. *)
+
 (** {1:behavior Behavior} *)
 
 val set_wrap_selection : t -> bool -> unit
@@ -322,6 +368,13 @@ val set_on_activate : t -> (int -> unit) option -> unit
 (** [set_on_activate t cb] registers [cb] as the callback to invoke when the
     current row is activated via Enter or KP_enter. [cb] receives the activated
     0-based row index. Pass [None] to remove the callback. *)
+
+val set_on_hover : t -> (int option -> unit) option -> unit
+(** [set_on_hover t cb] registers [cb] for pointer row transitions. [Some i]
+    identifies the row under the pointer in the complete data set, after
+    applying the current scroll offset. [None] reports table chrome, blank table
+    space, or the pointer leaving the table. Repeated movement within the same
+    row does not invoke [cb]. Pass [None] to remove the callback. *)
 
 (** {1:layout Layout} *)
 

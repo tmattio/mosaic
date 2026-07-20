@@ -74,7 +74,7 @@ let render ~width ~height vnode =
   let renderer = Renderer.create () in
   set_viewport renderer ~width ~height;
   let reconciler = Reconciler.create ~container:(Renderer.root renderer) in
-  Reconciler.render reconciler (fill vnode);
+  Reconciler.render reconciler ~viewport_width:width (fill vnode);
   Renderer.render_frame renderer ~width ~height ~delta:0.;
   let grid = Screen.next_grid (Renderer.screen renderer) in
   print_newline ();
@@ -84,7 +84,7 @@ let render_ansi ~width ~height vnode =
   let renderer = Renderer.create () in
   set_viewport renderer ~width ~height;
   let reconciler = Reconciler.create ~container:(Renderer.root renderer) in
-  Reconciler.render reconciler (fill vnode);
+  Reconciler.render reconciler ~viewport_width:width (fill vnode);
   Renderer.render_frame renderer ~width ~height ~delta:0.;
   let grid = Screen.next_grid (Renderer.screen renderer) in
   print_newline ();
@@ -92,16 +92,26 @@ let render_ansi ~width ~height vnode =
 
 (* ── Interactive Rendering ── *)
 
-type app = { renderer : Renderer.t; reconciler : Reconciler.t }
+type app = {
+  renderer : Renderer.t;
+  reconciler : Reconciler.t;
+  mutable viewport_width : int;
+}
 
 let make_app () =
   let renderer = Renderer.create () in
   let reconciler = Reconciler.create ~container:(Renderer.root renderer) in
-  { renderer; reconciler }
+  { renderer; reconciler; viewport_width = 80 }
 
-let reconcile app vnode = Reconciler.render app.reconciler (fill vnode)
+let reconcile ?viewport_width app vnode =
+  let viewport_width =
+    Option.value viewport_width ~default:app.viewport_width
+  in
+  app.viewport_width <- viewport_width;
+  Reconciler.render app.reconciler ~viewport_width (fill vnode)
 
 let frame app ~width ~height =
+  app.viewport_width <- width;
   set_viewport app.renderer ~width ~height;
   Renderer.render_frame app.renderer ~width ~height ~delta:0.;
   let grid = Screen.next_grid (Renderer.screen app.renderer) in
@@ -109,6 +119,7 @@ let frame app ~width ~height =
   print_string (grid_to_text grid)
 
 let frame_ansi app ~width ~height =
+  app.viewport_width <- width;
   set_viewport app.renderer ~width ~height;
   Renderer.render_frame app.renderer ~width ~height ~delta:0.;
   let grid = Screen.next_grid (Renderer.screen app.renderer) in

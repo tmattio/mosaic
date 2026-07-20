@@ -277,6 +277,16 @@ let sanitize_text t s =
   | `Multiline -> s
   | `Single_line -> Edit_buffer.strip_newlines s
 
+let controlled_value_matches t desired =
+  let current = Edit_buffer.text t.buf in
+  String.equal current desired
+  ||
+  (* [Edit_buffer.set_text] truncates to [max_length]. A full buffer that is a
+     prefix of the requested value is therefore already authoritative. *)
+  let max_length = Edit_buffer.max_length t.buf in
+  Edit_buffer.length t.buf = max_length
+  && String.starts_with ~prefix:current desired
+
 (* Line info *)
 
 let register_line_info t =
@@ -456,7 +466,10 @@ let offset_at_col t target_line target_col =
 
 let clamp_scroll_offsets t =
   Text_surface.set_scroll_y t.surface (Text_surface.scroll_y t.surface);
-  Text_surface.set_scroll_x t.surface (Text_surface.scroll_x t.surface)
+  if Renderable.focused t.node && Text_surface.wrap t.surface = `None then
+    Text_surface.set_scroll_x_for_cursor t.surface
+      (Text_surface.scroll_x t.surface)
+  else Text_surface.set_scroll_x t.surface (Text_surface.scroll_x t.surface)
 
 let ensure_cursor_visible t =
   clamp_scroll_offsets t;
@@ -496,7 +509,9 @@ let handle_scroll t direction delta =
         (Text_surface.scroll_x t.surface + delta)
   | Scroll_left | Scroll_right -> ()
 
-let handle_resize t _node = ensure_cursor_visible t
+let handle_resize t _node =
+  if Renderable.focused t.node then ensure_cursor_visible t
+  else clamp_scroll_offsets t
 
 let measure_single_line t ~known_dimensions ~available_space:_ ~style:_ =
   let content_width = Edit_buffer.display_width t.buf in
@@ -1043,11 +1058,9 @@ let apply_props t (props : Props.t) =
             props.focused_background_color)
   in
   let value_replaced = ref false in
-  if
-    (not (String.equal t.props.value props.value))
-    && not (String.equal (Edit_buffer.text t.buf) (sanitize_text t props.value))
-  then begin
-    Edit_buffer.set_text t.buf (sanitize_text t props.value);
+  let desired_value = sanitize_text t props.value in
+  if not (controlled_value_matches t desired_value) then begin
+    Edit_buffer.set_text t.buf desired_value;
     value_replaced := true;
     t.preferred_col <- None
   end;

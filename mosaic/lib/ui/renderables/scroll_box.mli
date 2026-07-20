@@ -9,7 +9,12 @@
     - {e content} -- translated node holding user children.
 
     Children are routed to the content node via {!Renderable.set_child_target}.
-    Scrolling translates content without triggering relayout. *)
+    Scrolling translates content without triggering relayout.
+
+    A wheel event is consumed only when it changes the scroll position on an
+    enabled axis. It bubbles when movement clamps at an edge, the axis is
+    disabled, or the content does not overflow, allowing an enclosing scroll box
+    to continue scrolling at nested boundaries. *)
 
 (** {1:scroll_accel Scroll acceleration} *)
 
@@ -59,6 +64,21 @@ type reveal = {
     in cells. [margin] is clamped to a non-negative value and used by [`Nearest]
     to keep a small distance from the viewport edge. *)
 
+type scroll_by = {
+  key : string;
+  x : float option;
+  y : float option;
+  unit : Scroll_bar.scroll_unit;
+}
+(** The type for one-shot relative scroll requests.
+
+    [key] identifies the request. Reusing the currently applied key does not
+    reapply it, so unrelated reconciles cannot replay the request; change the
+    key to request another scroll. [x] and [y] are signed deltas expressed in
+    [unit]. A [`Viewport] delta therefore uses the viewport measured by the
+    scroll box rather than a caller-supplied terminal size. At least one delta
+    must be present, and every present delta must be finite. *)
+
 (** {1:props Props} *)
 
 module Props : sig
@@ -76,6 +96,7 @@ module Props : sig
     ?vertical_bar_props:Scroll_bar.Props.t ->
     ?horizontal_bar_props:Scroll_bar.Props.t ->
     ?reveal:reveal ->
+    ?scroll_by:scroll_by ->
     unit ->
     t
   (** [make ()] is a scroll box property bundle with:
@@ -91,8 +112,12 @@ module Props : sig
       - [horizontal_bar_props] overrides [scrollbar_props] for the horizontal
         bar.
       - [reveal] requests a one-shot scroll to a content coordinate.
+      - [scroll_by] requests one keyed relative scroll after layout.
 
-      See also {!val-default}. *)
+      See also {!val-default}.
+
+      Raises [Invalid_argument] if [scroll_by] has no axis or contains a
+      non-finite delta. *)
 
   val default : t
   (** [default] is [make ()]. *)
@@ -127,7 +152,9 @@ val create :
   ?vertical_bar_props:Scroll_bar.Props.t ->
   ?horizontal_bar_props:Scroll_bar.Props.t ->
   ?reveal:reveal ->
+  ?scroll_by:scroll_by ->
   ?on_scroll:(x:int -> y:int -> unit) ->
+  ?on_scroll_by_applied:(key:string -> unit) ->
   unit ->
   t
 (** [create ~parent ()] is a new scroll box attached to [parent] with:
@@ -149,8 +176,16 @@ val create :
     - [vertical_bar_props] overrides [scrollbar_props] for the vertical bar.
     - [horizontal_bar_props] overrides [scrollbar_props] for the horizontal bar.
     - [reveal] requests a one-shot scroll to a content coordinate.
+    - [scroll_by] requests one keyed relative scroll after layout. Reusing an
+      applied key does not scroll again.
     - [on_scroll] callback invoked with the new scroll position whenever it
-      changes. *)
+      changes.
+    - [on_scroll_by_applied] callback invoked with [~key] after a [scroll_by]
+      request is consumed. It fires even if the requested movement clamps to the
+      current position, so declarative callers can always retire a request.
+
+    Raises [Invalid_argument] if [scroll_by] has no axis or contains a
+    non-finite delta. *)
 
 (** {1:accessors Accessors} *)
 
@@ -255,11 +290,25 @@ val set_reveal : t -> reveal option -> unit
 (** [set_reveal t reveal] sets the pending one-shot reveal request. Reusing a
     previously applied reveal key does not reapply the reveal. *)
 
+val set_scroll_by : t -> scroll_by option -> unit
+(** [set_scroll_by t request] sets the pending one-shot relative scroll request.
+    Reusing the currently applied key does not scroll again. [None] cancels a
+    request that has not yet been applied without forgetting the applied key.
+
+    Raises [Invalid_argument] if [request] has no axis or contains a non-finite
+    delta. *)
+
 (** {1:callbacks Callbacks} *)
 
 val set_on_scroll : t -> (x:int -> y:int -> unit) option -> unit
 (** [set_on_scroll t f] replaces the scroll callback of [t] with [f]. [None]
     removes the callback. *)
+
+val set_on_scroll_by_applied : t -> (key:string -> unit) option -> unit
+(** [set_on_scroll_by_applied t f] replaces the request acknowledgement callback
+    of [t] with [f]. [f ~key] runs after the request named [key] is consumed,
+    including when clamping leaves both offsets unchanged. [None] removes the
+    callback. *)
 
 val set_scroll_accel : t -> Scroll_accel.t -> unit
 (** [set_scroll_accel t accel] replaces the scroll acceleration strategy of [t]

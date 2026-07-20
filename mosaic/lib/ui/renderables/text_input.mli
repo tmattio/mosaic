@@ -184,8 +184,12 @@ module Props : sig
 end
 
 val apply_props : t -> Props.t -> unit
-(** [apply_props t props] updates [t] to match [props]. When [value] differs,
-    the buffer content is replaced (newlines stripped). Requests a render. *)
+(** [apply_props t props] updates [t] to match [props]. [value] is authoritative
+    over the live edit buffer on every call, even when [props] equals the last
+    applied bundle. When the normalized value already matches, value
+    synchronization leaves cursor, selection, and undo state untouched;
+    separately controlled [cursor] and [selection] still apply. Requests a
+    render. *)
 
 (** {1:value Value} *)
 

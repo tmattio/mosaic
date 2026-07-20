@@ -2,10 +2,11 @@
 
     The reconciler bridges the declarative {!Vnode.t} tree produced by a [view]
     function and the imperative {!Renderable.t} tree. On each {!val-render} call
-    it flattens the vnode tree, matches fibers by key (preferred) then by
-    position, reuses or creates {!Box} and {!Text} nodes, destroys unmatched
-    fibers, and commits child placement. {!Vnode.Embed} nodes are attached but
-    bypass the reconciler lifecycle.
+    it first resolves {!Vnode.Viewport_switch} nodes from the explicit current
+    viewport width, then flattens the selected tree, matches fibers by key
+    (preferred) then by position, reuses or creates renderable nodes, destroys
+    unmatched fibers, and commits child placement. {!Vnode.Embed} nodes are
+    attached but bypass the reconciler lifecycle.
 
     Fiber tracking and instance management are internal; this module exposes
     only the container, render, and unmount operations. *)
@@ -32,12 +33,18 @@ val container : t -> Renderable.t
 
 (** {1:reconciliation Reconciliation} *)
 
-val render : t -> unit Vnode.t -> unit
-(** [render r vnode] reconciles [vnode] against the previous fiber tree,
-    applying minimal mutations to the renderable tree rooted at [container r].
+val render : t -> viewport_width:int -> unit Vnode.t -> unit
+(** [render r ~viewport_width vnode] reconciles [vnode] against the previous
+    fiber tree, applying minimal mutations to the renderable tree rooted at
+    [container r]. [viewport_width] is the current terminal width in cells and
+    resolves {!Vnode.Viewport_switch} nodes before their selected branch is
+    reconciled or laid out.
+
     Fibers unmatched in the new tree are destroyed and their renderable nodes
     removed. Ref callbacks ({!Vnode.attrs.ref}) fire for newly created elements.
-    Requests a render on [container r] after reconciliation completes. *)
+    Requests a render on [container r] after reconciliation completes.
+
+    Raises [Invalid_argument] if [viewport_width] is not positive. *)
 
 val unmount : t -> unit
 (** [unmount r] destroys all fibers and detaches all embedded nodes, leaving

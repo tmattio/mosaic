@@ -96,6 +96,10 @@ module Props = struct
     selected_background : Ansi.Color.t;
     focused_selected_text_color : Ansi.Color.t;
     focused_selected_background : Ansi.Color.t;
+    selection_visible : bool;
+    show_scroll_indicator : bool;
+    activate_on_click : bool;
+    wheel_navigation : bool;
     row_styles : Ansi.Style.t list;
     wrap_selection : bool;
     fast_scroll_step : int;
@@ -111,7 +115,9 @@ module Props = struct
       ?(selected_text_color = Ansi.Color.of_rgb 255 255 0)
       ?(selected_background = Ansi.Color.of_rgb 51 68 85)
       ?focused_selected_text_color ?focused_selected_background
-      ?(row_styles = []) ?(wrap_selection = false) ?(fast_scroll_step = 5) () =
+      ?(selection_visible = true) ?(show_scroll_indicator = false)
+      ?(activate_on_click = false) ?(wheel_navigation = true) ?(row_styles = [])
+      ?(wrap_selection = false) ?(fast_scroll_step = 5) () =
     let focused_selected_text_color =
       match focused_selected_text_color with
       | Some c -> c
@@ -140,6 +146,10 @@ module Props = struct
       selected_background;
       focused_selected_text_color;
       focused_selected_background;
+      selection_visible;
+      show_scroll_indicator;
+      activate_on_click;
+      wheel_navigation;
       row_styles;
       wrap_selection;
       fast_scroll_step = max 1 fast_scroll_step;
@@ -173,6 +183,10 @@ module Props = struct
          b.focused_selected_text_color
     && Ansi.Color.equal a.focused_selected_background
          b.focused_selected_background
+    && Bool.equal a.selection_visible b.selection_visible
+    && Bool.equal a.show_scroll_indicator b.show_scroll_indicator
+    && Bool.equal a.activate_on_click b.activate_on_click
+    && Bool.equal a.wheel_navigation b.wheel_navigation
     && styles_equal a.row_styles b.row_styles
     && Bool.equal a.wrap_selection b.wrap_selection
     && Int.equal a.fast_scroll_step b.fast_scroll_step
@@ -188,8 +202,10 @@ type t = {
   mutable selected_row : int;
   mutable scroll_offset : int;
   mutable max_visible_rows : int;
+  mutable hovered_row : int option;
   mutable on_change : (int -> unit) option;
   mutable on_activate : (int -> unit) option;
+  mutable on_hover : (int option -> unit) option;
 }
 
 let node t = t.node
@@ -198,6 +214,9 @@ let node t = t.node
 
 let request t = Renderable.request_render t.node
 let row_count t = Array.length t.data_rows
+
+let scroll_indicator_visible t =
+  t.props.show_scroll_indicator && row_count t > t.max_visible_rows
 
 let clamp_index t idx =
   let len = row_count t in
@@ -282,14 +301,22 @@ let recalc_max_visible t ~content_height =
   let row_height = if t.props.show_row_separator then 2 else 1 in
   t.max_visible_rows <- max 1 ((content_height + row_height - 1) / row_height)
 
+let set_hovered_row_internal t row =
+  if not (Option.equal Int.equal row t.hovered_row) then (
+    t.hovered_row <- row;
+    (match t.on_hover with None -> () | Some f -> f row);
+    request t)
+
 let update_scroll_offset t =
+  let previous = t.scroll_offset in
   let len = row_count t in
-  if len = 0 then t.scroll_offset <- 0
-  else
-    let half = max 0 (t.max_visible_rows / 2) in
-    let max_off = max 0 (len - t.max_visible_rows) in
-    let desired = t.selected_row - half in
-    t.scroll_offset <- max 0 (min desired max_off)
+  (if len = 0 then t.scroll_offset <- 0
+   else
+     let half = max 0 (t.max_visible_rows / 2) in
+     let max_off = max 0 (len - t.max_visible_rows) in
+     let desired = t.selected_row - half in
+     t.scroll_offset <- max 0 (min desired max_off));
+  if t.scroll_offset <> previous then set_hovered_row_internal t None
 
 let set_selected_row_internal t idx =
   let len = row_count t in
@@ -301,6 +328,27 @@ let set_selected_row_internal t idx =
       update_scroll_offset t;
       (match t.on_change with None -> () | Some f -> f t.selected_row);
       request t)
+
+let data_row_at t ~x ~y =
+  let width = Renderable.width t.node in
+  let height = Renderable.height t.node in
+  if x < 0 || x >= width || y < 0 || y >= height then None
+  else if t.props.border && (x = 0 || x = width - 1 || y = 0 || y = height - 1)
+  then None
+  else
+    let border_top = if t.props.border then 1 else 0 in
+    let header_rows =
+      if t.props.show_header then 1 + if t.props.border then 1 else 0 else 0
+    in
+    let row_y = y - border_top - header_rows in
+    let indicator_x = width - if t.props.border then 2 else 1 in
+    if row_y < 0 || (scroll_indicator_visible t && x = indicator_x) then None
+    else
+      let row_height = if t.props.show_row_separator then 2 else 1 in
+      if row_y mod row_height <> 0 then None
+      else
+        let index = t.scroll_offset + (row_y / row_height) in
+        if index < row_count t then Some index else None
 
 (* ───── Public Accessors ───── *)
 
@@ -318,6 +366,9 @@ let set_columns t cols =
 let set_rows t data =
   t.data_rows <- Array.of_list data;
   t.selected_row <- clamp_index t t.selected_row;
+  (match t.hovered_row with
+  | Some index when index >= row_count t -> set_hovered_row_internal t None
+  | None | Some _ -> ());
   update_scroll_offset t;
   Renderable.mark_dirty t.node;
   request t
@@ -343,6 +394,14 @@ let move_down ?(steps = 1) t =
     if new_index < len then set_selected_row_internal t new_index
     else if t.props.wrap_selection then set_selected_row_internal t 0
     else set_selected_row_internal t (len - 1)
+
+let page_up t =
+  set_selected_row_internal t (max 0 (t.selected_row - t.max_visible_rows))
+
+let page_down t =
+  let last_row = row_count t - 1 in
+  set_selected_row_internal t
+    (min last_row (t.selected_row + t.max_visible_rows))
 
 (* ───── Display Setters ───── *)
 
@@ -406,6 +465,27 @@ let set_selected_background t c =
     t.props <- { t.props with selected_background = c };
     request t)
 
+let set_selection_visible t visible =
+  if t.props.selection_visible <> visible then (
+    t.props <- { t.props with selection_visible = visible };
+    request t)
+
+let set_show_scroll_indicator t show =
+  if t.props.show_scroll_indicator <> show then (
+    t.props <- { t.props with show_scroll_indicator = show };
+    Renderable.mark_dirty t.node;
+    request t)
+
+let set_activate_on_click t activate =
+  if t.props.activate_on_click <> activate then (
+    t.props <- { t.props with activate_on_click = activate };
+    request t)
+
+let set_wheel_navigation t enabled =
+  if t.props.wheel_navigation <> enabled then (
+    t.props <- { t.props with wheel_navigation = enabled };
+    request t)
+
 (* ───── Padding & Row Styles Setters ───── *)
 
 let set_cell_padding t n =
@@ -437,6 +517,7 @@ let set_fast_scroll_step t n =
 
 let set_on_change t cb = t.on_change <- cb
 let set_on_activate t cb = t.on_activate <- cb
+let set_on_hover t cb = t.on_hover <- cb
 
 (* ───── Key Handling ───── *)
 
@@ -450,6 +531,12 @@ let handle_key t (event : Event.key) =
         true
     | Down ->
         move_down ~steps:(if shift then t.props.fast_scroll_step else 1) t;
+        true
+    | Page_up ->
+        page_up t;
+        true
+    | Page_down ->
+        page_down t;
         true
     | Char c when Uchar.equal c (Uchar.of_char 'k') ->
         move_up t;
@@ -468,27 +555,22 @@ let handle_key t (event : Event.key) =
 (* ───── Mouse Handling ───── *)
 
 let handle_mouse t (event : Event.mouse) =
-  let width = Renderable.width t.node in
-  let height = Renderable.height t.node in
   let x = Event.Mouse.x event - Renderable.x t.node in
   let y = Event.Mouse.y event - Renderable.y t.node in
   match Event.Mouse.kind event with
-  | Down { button = Left } ->
-      if x >= 0 && x < width && y >= 0 && y < height then
-        (* Compute the y offset where data rows start *)
-        let border_top = if t.props.border then 1 else 0 in
-        let header_rows =
-          if t.props.show_header then 1 + if t.props.border then 1 else 0 else 0
-        in
-        let data_start = border_top + header_rows in
-        let row_y = y - data_start in
-        if row_y >= 0 then
-          let row_height = if t.props.show_row_separator then 2 else 1 in
-          let index = t.scroll_offset + (row_y / row_height) in
-          if index < row_count t then (
-            set_selected_row_internal t index;
-            Event.Mouse.stop_propagation event)
-  | Scroll { direction; delta } -> (
+  | Down { button = Left } -> (
+      let row = data_row_at t ~x ~y in
+      set_hovered_row_internal t row;
+      match row with
+      | None -> ()
+      | Some index ->
+          set_selected_row_internal t index;
+          (if t.props.activate_on_click then
+             match t.on_activate with None -> () | Some f -> f index);
+          Event.Mouse.stop_propagation event)
+  | Move | Over _ -> set_hovered_row_internal t (data_row_at t ~x ~y)
+  | Out -> set_hovered_row_internal t None
+  | Scroll { direction; delta } when t.props.wheel_navigation -> (
       match direction with
       | Input.Mouse.Scroll_up when delta > 0 ->
           move_up t;
@@ -497,7 +579,7 @@ let handle_mouse t (event : Event.mouse) =
           move_down t;
           Event.Mouse.stop_propagation event
       | _ -> ())
-  | _ -> ()
+  | Down _ | Scroll _ | Up _ | Drag _ | Drag_end _ | Drop _ -> ()
 
 (* ───── Rendering Helpers ───── *)
 
@@ -635,7 +717,6 @@ let render t _self grid ~delta:_ =
     let show_col_sep = t.props.show_column_separator in
     let show_row_sep = t.props.show_row_separator in
     let ncols = Array.length t.col_specs in
-    let col_widths = compute_column_widths t ~available_width:width in
     let border_fg = Ansi.Color.of_rgb 229 229 229 in
     let border_bg = t.props.background in
 
@@ -652,6 +733,9 @@ let render t _self grid ~delta:_ =
     let content_height = height - header_total - border_v in
     recalc_max_visible t ~content_height;
     update_scroll_offset t;
+    let show_scroll_indicator = scroll_indicator_visible t in
+    let table_width = width - if show_scroll_indicator then 1 else 0 in
+    let col_widths = compute_column_widths t ~available_width:table_width in
 
     (* Top border *)
     if border then (
@@ -701,6 +785,7 @@ let render t _self grid ~delta:_ =
         incr cur_y));
 
     (* Data rows *)
+    let data_y = !cur_y in
     let start_index = t.scroll_offset in
     let end_index = min (row_count t) (start_index + t.max_visible_rows) in
     let default_text_style = Ansi.Style.make ~fg:t.props.text_color () in
@@ -708,7 +793,7 @@ let render t _self grid ~delta:_ =
     let n_row_styles = List.length row_styles in
     for i = start_index to end_index - 1 do
       if !cur_y < height - if border then 1 else 0 then (
-        let is_selected = i = t.selected_row in
+        let is_selected = t.props.selection_visible && i = t.selected_row in
         let sel_bg =
           if focused then t.props.focused_selected_background
           else t.props.selected_background
@@ -787,6 +872,29 @@ let render t _self grid ~delta:_ =
               ~fg:border_fg ~bg:border_bg;
             incr cur_y))
     done;
+
+    (* The indicator is derived from the table's actual viewport. It therefore
+       stays honest when row separators, borders, headers, or layout height
+       change, without callers predicting how many rows fit. *)
+    (if show_scroll_indicator then
+       let visible_rows = end_index - start_index in
+       let indicator_x = width - if border then 2 else 1 in
+       if indicator_x >= border_left then
+         let row_height = if show_row_sep then 2 else 1 in
+         let hidden_above = start_index > 0 in
+         let hidden_below = end_index < row_count t in
+         let style = Ansi.Style.make ~fg:t.props.text_color () in
+         for offset = 0 to visible_rows - 1 do
+           let text =
+             if visible_rows = 1 && hidden_above && hidden_below then "↕"
+             else if offset = 0 && hidden_above then "↑"
+             else if offset = visible_rows - 1 && hidden_below then "↓"
+             else "│"
+           in
+           Grid.draw_text ~style grid ~x:indicator_x
+             ~y:(data_y + (offset * row_height))
+             ~text
+         done);
 
     (* Bottom border *)
     if border then
@@ -884,7 +992,8 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?columns ?rows
     ?selected_row ?border ?border_style ?show_header ?show_column_separator
     ?show_row_separator ?cell_padding ?header_color ?header_background
     ?text_color ?background ?selected_text_color ?selected_background
-    ?focused_selected_text_color ?focused_selected_background ?row_styles
+    ?focused_selected_text_color ?focused_selected_background ?selection_visible
+    ?show_scroll_indicator ?activate_on_click ?wheel_navigation ?row_styles
     ?wrap_selection ?fast_scroll_step () =
   let node =
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
@@ -894,8 +1003,9 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?columns ?rows
       ?show_column_separator ?show_row_separator ?cell_padding ?header_color
       ?header_background ?text_color ?background ?selected_text_color
       ?selected_background ?focused_selected_text_color
-      ?focused_selected_background ?row_styles ?wrap_selection ?fast_scroll_step
-      ()
+      ?focused_selected_background ?selection_visible ?show_scroll_indicator
+      ?activate_on_click ?wheel_navigation ?row_styles ?wrap_selection
+      ?fast_scroll_step ()
   in
   let col_specs = Array.of_list props.columns in
   let data_rows = Array.of_list props.rows in
@@ -912,8 +1022,10 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?columns ?rows
       selected_row = initial_selected;
       scroll_offset = 0;
       max_visible_rows = 1;
+      hovered_row = None;
       on_change = None;
       on_activate = None;
+      on_hover = None;
     }
   in
   Renderable.set_render node (render t);
@@ -951,6 +1063,10 @@ let apply_props t (props : Props.t) =
   set_background t props.background;
   set_selected_text_color t props.selected_text_color;
   set_selected_background t props.selected_background;
+  set_selection_visible t props.selection_visible;
+  set_show_scroll_indicator t props.show_scroll_indicator;
+  set_activate_on_click t props.activate_on_click;
+  set_wheel_navigation t props.wheel_navigation;
   set_row_styles t props.row_styles;
   set_wrap_selection t props.wrap_selection;
   set_fast_scroll_step t props.fast_scroll_step

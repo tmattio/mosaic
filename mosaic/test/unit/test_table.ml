@@ -20,15 +20,20 @@ let sample_rows =
     [| Table.cell "Eve"; Table.cell "42"; Table.cell "Berlin" |];
   ]
 
+let paging_rows =
+  List.init 12 (fun index -> [| Table.cell ("row " ^ string_of_int index) |])
+
 let make_table ?columns ?rows ?selected_row ?border ?border_style ?show_header
-    ?show_column_separator ?show_row_separator ?wrap_selection ?fast_scroll_step
-    () =
+    ?show_column_separator ?show_row_separator ?selection_visible
+    ?show_scroll_indicator ?activate_on_click ?wheel_navigation ?wrap_selection
+    ?fast_scroll_step ?background ?selected_background () =
   let t = make_ctx () in
   let root = make_root t in
   let tbl =
     Table.create ~parent:root ?columns ?rows ?selected_row ?border ?border_style
       ?show_header ?show_column_separator ?show_row_separator ?wrap_selection
-      ?fast_scroll_step ()
+      ?selection_visible ?show_scroll_indicator ?activate_on_click
+      ?wheel_navigation ?fast_scroll_step ?background ?selected_background ()
   in
   (t, tbl)
 
@@ -61,6 +66,9 @@ let no_mod = Event.Mouse.no_modifier
 let mouse_down ~x ~y =
   Event.Mouse.make ~x ~y ~modifiers:no_mod (Down { button = Left })
 
+let mouse_move ~x ~y = Event.Mouse.make ~x ~y ~modifiers:no_mod Move
+let mouse_out ~x ~y = Event.Mouse.make ~x ~y ~modifiers:no_mod Out
+
 let mouse_scroll_down ~x ~y =
   Event.Mouse.make ~x ~y ~modifiers:no_mod
     (Scroll { direction = Scroll_down; delta = 1 })
@@ -73,6 +81,12 @@ let emit_mouse tbl ev = Renderable.Private.emit_mouse (Table.node tbl) ev
 
 let with_layout tbl ~width ~height =
   layout_node (Table.node tbl) ~x:0 ~y:0 ~width ~height
+
+let render_with_layout tbl ~width ~height =
+  let node = Table.node tbl in
+  with_layout tbl ~width ~height;
+  let grid = make_grid ~width ~height () in
+  Renderable.Private.render_full node ~grid ~delta:0.
 
 (* ── Props ── *)
 
@@ -114,6 +128,18 @@ let props_detects_color_diff () =
   let a = Table.Props.make ~selected_background:Ansi.Color.red () in
   let b = Table.Props.make () in
   is_false ~msg:"different" (Table.Props.equal a b)
+
+let props_detects_presentation_diff () =
+  let defaults = Table.Props.make () in
+  is_false ~msg:"selection visibility"
+    (Table.Props.equal defaults (Table.Props.make ~selection_visible:false ()));
+  is_false ~msg:"scroll indicator"
+    (Table.Props.equal defaults
+       (Table.Props.make ~show_scroll_indicator:true ()));
+  is_false ~msg:"click activation"
+    (Table.Props.equal defaults (Table.Props.make ~activate_on_click:true ()));
+  is_false ~msg:"wheel navigation"
+    (Table.Props.equal defaults (Table.Props.make ~wheel_navigation:false ()))
 
 (* ── Construction ── *)
 
@@ -244,6 +270,51 @@ let fast_scroll_up () =
   emit_key tbl (make_key ~shift:true Up);
   equal ~msg:"jumped" int 1 (Table.selected_row tbl)
 
+let page_down_uses_bordered_body_height () =
+  let _t, tbl =
+    make_table ~columns:[ Table.column "Name" ] ~rows:paging_rows
+      ~selected_row:2 ~border:true ~show_header:true ()
+  in
+  render_with_layout tbl ~width:20 ~height:8;
+  let changes = ref [] in
+  Table.set_on_change tbl (Some (fun index -> changes := index :: !changes));
+  emit_key tbl (make_key Page_down);
+  equal ~msg:"moves by four measured data rows" int 6 (Table.selected_row tbl);
+  equal ~msg:"reports the new selection" (list int) [ 6 ] !changes
+
+let page_up_accounts_for_row_separators () =
+  let _t, tbl =
+    make_table ~columns:[ Table.column "Name" ] ~rows:paging_rows
+      ~selected_row:7 ~border:false ~show_header:false
+      ~show_row_separator:true ()
+  in
+  render_with_layout tbl ~width:20 ~height:5;
+  let changes = ref [] in
+  Table.set_on_change tbl (Some (fun index -> changes := index :: !changes));
+  emit_key tbl (make_key Page_up);
+  equal ~msg:"moves by three measured data rows" int 4 (Table.selected_row tbl);
+  equal ~msg:"reports the new selection" (list int) [ 4 ] !changes
+
+let page_navigation_clamps_when_selection_wraps () =
+  let _t, tbl =
+    make_table ~columns:[ Table.column "Name" ] ~rows:paging_rows
+      ~selected_row:1 ~border:false ~show_header:false ~wrap_selection:true ()
+  in
+  render_with_layout tbl ~width:20 ~height:4;
+  let changes = ref [] in
+  Table.set_on_change tbl (Some (fun index -> changes := index :: !changes));
+  emit_key tbl (make_key Page_up);
+  emit_key tbl (make_key Page_up);
+  equal ~msg:"page up clamps at the first row" int 0 (Table.selected_row tbl);
+  equal ~msg:"only the changed selection is reported" (list int) [ 0 ] !changes;
+  Table.set_selected_row tbl 10;
+  changes := [];
+  emit_key tbl (make_key Page_down);
+  emit_key tbl (make_key Page_down);
+  equal ~msg:"page down clamps at the last row" int 11 (Table.selected_row tbl);
+  equal ~msg:"only the changed selection is reported" (list int) [ 11 ]
+    !changes
+
 let enter_fires_on_activate () =
   let _t, tbl =
     make_table ~columns:sample_columns ~rows:sample_rows ~selected_row:2 ()
@@ -344,6 +415,76 @@ let mouse_click_fires_on_change () =
   emit_mouse tbl (mouse_down ~x:5 ~y:5);
   equal ~msg:"fired" (list int) [ 2 ] !log
 
+let mouse_click_can_activate_exact_row () =
+  let _t, tbl =
+    make_table ~columns:sample_columns ~rows:sample_rows ~border:true
+      ~activate_on_click:true ()
+  in
+  with_layout tbl ~width:40 ~height:20;
+  let log = ref [] in
+  Table.set_on_activate tbl (Some (fun i -> log := i :: !log));
+  emit_mouse tbl (mouse_down ~x:5 ~y:5);
+  equal ~msg:"activated" (list int) [ 2 ] !log
+
+let mouse_hover_reports_exact_rows () =
+  let _t, tbl =
+    make_table ~columns:sample_columns ~rows:sample_rows ~border:true ()
+  in
+  with_layout tbl ~width:40 ~height:20;
+  let log = ref [] in
+  Table.set_on_hover tbl (Some (fun row -> log := row :: !log));
+  emit_mouse tbl (mouse_move ~x:5 ~y:4);
+  emit_mouse tbl (mouse_move ~x:8 ~y:4);
+  emit_mouse tbl (mouse_move ~x:5 ~y:5);
+  emit_mouse tbl (mouse_out ~x:5 ~y:5);
+  equal ~msg:"transitions" (list (option int)) [ None; Some 2; Some 1 ] !log
+
+let mouse_hover_excludes_row_separators () =
+  let _t, tbl =
+    make_table ~columns:sample_columns ~rows:sample_rows ~border:true
+      ~show_row_separator:true ()
+  in
+  with_layout tbl ~width:40 ~height:20;
+  let log = ref [] in
+  Table.set_on_hover tbl (Some (fun row -> log := row :: !log));
+  emit_mouse tbl (mouse_move ~x:5 ~y:3);
+  emit_mouse tbl (mouse_move ~x:5 ~y:4);
+  equal ~msg:"separator clears hover" (list (option int)) [ None; Some 0 ] !log
+
+let mouse_hover_and_click_exclude_table_chrome () =
+  let _t, tbl =
+    make_table ~columns:sample_columns ~rows:sample_rows ~border:true
+      ~show_scroll_indicator:true ~activate_on_click:true ()
+  in
+  with_layout tbl ~width:12 ~height:5;
+  let hover_log = ref [] in
+  let activate_log = ref [] in
+  Table.set_on_hover tbl (Some (fun row -> hover_log := row :: !hover_log));
+  Table.set_on_activate tbl
+    (Some (fun row -> activate_log := row :: !activate_log));
+  emit_mouse tbl (mouse_move ~x:1 ~y:3);
+  emit_mouse tbl (mouse_move ~x:0 ~y:3);
+  emit_mouse tbl (mouse_move ~x:10 ~y:3);
+  emit_mouse tbl (mouse_down ~x:10 ~y:3);
+  equal ~msg:"border and indicator clear hover"
+    (list (option int))
+    [ None; Some 0 ] !hover_log;
+  equal ~msg:"chrome does not activate" (list int) [] !activate_log
+
+let scrolling_clears_stale_hover () =
+  let _t, tbl =
+    make_table ~columns:sample_columns ~rows:sample_rows ~border:false
+      ~show_header:false ()
+  in
+  with_layout tbl ~width:40 ~height:2;
+  let log = ref [] in
+  Table.set_on_hover tbl (Some (fun row -> log := row :: !log));
+  emit_mouse tbl (mouse_move ~x:5 ~y:0);
+  Table.set_selected_row tbl 4;
+  equal ~msg:"viewport movement clears hover"
+    (list (option int))
+    [ None; Some 0 ] !log
+
 let mouse_scroll_down_moves () =
   let _t, tbl = make_table ~columns:sample_columns ~rows:sample_rows () in
   with_layout tbl ~width:40 ~height:20;
@@ -357,6 +498,49 @@ let mouse_scroll_up_moves () =
   with_layout tbl ~width:40 ~height:20;
   emit_mouse tbl (mouse_scroll_up ~x:5 ~y:5);
   equal ~msg:"moved up" int 2 (Table.selected_row tbl)
+
+let mouse_scroll_can_bubble () =
+  let _t, tbl =
+    make_table ~columns:sample_columns ~rows:sample_rows ~wheel_navigation:false
+      ()
+  in
+  with_layout tbl ~width:40 ~height:20;
+  let event = mouse_scroll_down ~x:5 ~y:5 in
+  emit_mouse tbl event;
+  equal ~msg:"selection unchanged" int 0 (Table.selected_row tbl);
+  is_false ~msg:"event not consumed" (Event.Mouse.propagation_stopped event)
+
+let selection_can_be_visually_hidden () =
+  let _t, tbl =
+    make_table
+      ~columns:[ Table.column "Name" ]
+      ~rows:[ [| Table.cell "Alice" |] ]
+      ~border:false ~show_header:false ~selection_visible:false
+      ~background:Ansi.Color.blue ~selected_background:Ansi.Color.red ()
+  in
+  let node = Table.node tbl in
+  with_layout tbl ~width:10 ~height:1;
+  let grid = make_grid ~width:10 ~height:1 () in
+  Renderable.Private.render_full node ~grid ~delta:0.;
+  let background = Grid.get_background grid (Grid.idx grid ~x:0 ~y:0) in
+  is_true ~msg:"base background retained"
+    (Ansi.Color.equal Ansi.Color.blue background)
+
+let scroll_indicator_handles_tiny_layouts () =
+  let _t, tbl =
+    make_table
+      ~columns:[ Table.column "Name" ]
+      ~rows:sample_rows ~border:false ~show_header:false
+      ~show_scroll_indicator:true ()
+  in
+  let node = Table.node tbl in
+  let grid = make_grid ~width:1 ~height:1 () in
+  with_layout tbl ~width:0 ~height:0;
+  Renderable.Private.render_full node ~grid ~delta:0.;
+  with_layout tbl ~width:1 ~height:1;
+  Renderable.Private.render_full node ~grid ~delta:0.;
+  equal ~msg:"one-column indicator" string "↓"
+    (Grid.get_text grid (Grid.idx grid ~x:0 ~y:0))
 
 (* ── Data ── *)
 
@@ -518,6 +702,8 @@ let () =
           test "detects border difference" props_detects_border_diff;
           test "detects wrap difference" props_detects_wrap_diff;
           test "detects color difference" props_detects_color_diff;
+          test "detects presentation differences"
+            props_detects_presentation_diff;
         ];
       group "Construction"
         [
@@ -547,6 +733,12 @@ let () =
           test "wrap at start" move_up_wrap;
           test "fast scroll down" fast_scroll_down;
           test "fast scroll up" fast_scroll_up;
+          test "page down uses bordered body height"
+            page_down_uses_bordered_body_height;
+          test "page up accounts for row separators"
+            page_up_accounts_for_row_separators;
+          test "page navigation clamps when selection wraps"
+            page_navigation_clamps_when_selection_wraps;
           test "enter fires on_activate" enter_fires_on_activate;
           test "KP_enter fires on_activate" kp_enter_fires_on_activate;
           test "on_change fires on key navigation"
@@ -562,8 +754,19 @@ let () =
         [
           test "click selects row" mouse_click_selects_row;
           test "click fires on_change" mouse_click_fires_on_change;
+          test "click can activate exact row" mouse_click_can_activate_exact_row;
+          test "hover reports exact rows" mouse_hover_reports_exact_rows;
+          test "hover excludes separators" mouse_hover_excludes_row_separators;
+          test "hover and click exclude table chrome"
+            mouse_hover_and_click_exclude_table_chrome;
+          test "scrolling clears stale hover" scrolling_clears_stale_hover;
           test "scroll down moves" mouse_scroll_down_moves;
           test "scroll up moves" mouse_scroll_up_moves;
+          test "scroll can bubble" mouse_scroll_can_bubble;
+          test "selection can be visually hidden"
+            selection_can_be_visually_hidden;
+          test "scroll indicator handles tiny layouts"
+            scroll_indicator_handles_tiny_layouts;
         ];
       group "Data"
         [

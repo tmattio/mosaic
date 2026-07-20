@@ -148,6 +148,38 @@ let map_embed_identity () =
   | Vnode.Embed n -> is_true ~msg:"same node" (n == child)
   | _ -> fail "expected Embed"
 
+let viewport_switch_maps_both_branches () =
+  let view : int Vnode.t =
+    Vnode.viewport_switch ~at_least_width:80
+      ~wide:(Vnode.box ~on_key:(fun _ -> 1) [])
+      ~narrow:(Vnode.box ~on_key:(fun _ -> 2) [])
+  in
+  let received = ref [] in
+  let mapped =
+    Vnode.map (fun message -> received := message :: !received) view
+  in
+  let run_handler = function
+    | Vnode.Element { handlers = { on_key = Some handler; _ }; _ } ->
+        handler (Event.Key.of_input (Input.Key.of_char 'a'))
+    | _ -> fail "expected branch key handler"
+  in
+  match mapped with
+  | Vnode.Viewport_switch { at_least_width; wide; narrow } ->
+      equal ~msg:"threshold" int 80 at_least_width;
+      run_handler wide;
+      run_handler narrow;
+      equal ~msg:"both branch handlers mapped" (list int) [ 2; 1 ] !received
+  | _ -> fail "expected Viewport_switch"
+
+let viewport_switch_rejects_nonpositive_threshold () =
+  raises_match ~msg:"positive threshold"
+    (function Invalid_argument _ -> true | _ -> false)
+    (fun () ->
+      ignore
+        (Vnode.viewport_switch ~at_least_width:0 ~wide:Vnode.empty
+           ~narrow:Vnode.empty
+          : unit Vnode.t))
+
 let spinner_not_focusable_by_default () =
   match Vnode.spinner () with
   | Vnode.Element { attrs; _ } -> is_false ~msg:"focusable" attrs.focusable
@@ -222,5 +254,12 @@ let () =
           test "transforms markdown on_selection callback"
             map_transforms_markdown_on_selection_callback;
           test "embed unchanged" map_embed_identity;
+          test "viewport switch maps both branches"
+            viewport_switch_maps_both_branches;
+        ];
+      group "Viewport switch"
+        [
+          test "rejects nonpositive threshold"
+            viewport_switch_rejects_nonpositive_threshold;
         ];
     ]

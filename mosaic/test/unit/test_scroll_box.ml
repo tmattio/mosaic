@@ -5,12 +5,13 @@ open Test_harness
 (* ── Helpers ── *)
 
 let make_scroll_box ?scroll_x ?scroll_y ?sticky_scroll ?sticky_start ?background
-    ?scroll_accel ?on_scroll () =
+    ?scroll_accel ?on_scroll ?on_scroll_by_applied () =
   let t = make_ctx () in
   let root = make_root t in
   let sb =
     Scroll_box.create ~parent:root ?scroll_x ?scroll_y ?sticky_scroll
-      ?sticky_start ?background ?scroll_accel ?on_scroll ()
+      ?sticky_start ?background ?scroll_accel ?on_scroll ?on_scroll_by_applied
+      ()
   in
   (t, sb)
 
@@ -101,6 +102,41 @@ let props_detects_background_diff () =
   let b = Scroll_box.Props.make ~background:Ansi.Color.blue () in
   is_false ~msg:"different" (Scroll_box.Props.equal a b)
 
+let scroll_request key y : Scroll_box.scroll_by =
+  { key; x = None; y = Some y; unit = `Viewport }
+
+let props_detects_scroll_by_diff () =
+  let request = scroll_request "page-1" (-1.) in
+  let without = Scroll_box.Props.make () in
+  let with_request = Scroll_box.Props.make ~scroll_by:request () in
+  let changed_key =
+    Scroll_box.Props.make ~scroll_by:(scroll_request "page-2" (-1.)) ()
+  in
+  let changed_delta =
+    Scroll_box.Props.make ~scroll_by:(scroll_request "page-1" 1.) ()
+  in
+  is_false ~msg:"presence differs" (Scroll_box.Props.equal without with_request);
+  is_false ~msg:"key differs" (Scroll_box.Props.equal with_request changed_key);
+  is_false ~msg:"delta differs"
+    (Scroll_box.Props.equal with_request changed_delta)
+
+let props_rejects_invalid_scroll_by () =
+  raises_match ~msg:"an axis is required"
+    (function Invalid_argument _ -> true | _ -> false)
+    (fun () ->
+      ignore
+        (Scroll_box.Props.make
+           ~scroll_by:{ key = "empty"; x = None; y = None; unit = `Viewport }
+           ()));
+  raises_match ~msg:"deltas are finite"
+    (function Invalid_argument _ -> true | _ -> false)
+    (fun () ->
+      ignore
+        (Scroll_box.Props.make
+           ~scroll_by:
+             { key = "nan"; x = None; y = Some Float.nan; unit = `Viewport }
+           ()))
+
 (* ── Construction ── *)
 
 let create_attaches () =
@@ -185,6 +221,173 @@ let on_scroll_fires () =
   Scroll_box.set_scroll_top sb 0;
   equal ~msg:"no spurious fire" int 0 (List.length !log)
 
+let render_scroll_box sb ~vh ~ch =
+  layout_node (Scroll_box.node sb) ~x:0 ~y:0 ~width:20 ~height:vh;
+  layout_node (Scroll_box.viewport sb) ~x:0 ~y:0 ~width:19 ~height:vh;
+  layout_node (Scroll_box.content sb) ~x:0 ~y:0 ~width:19 ~height:ch;
+  Renderable.Private.render (Scroll_box.node sb)
+    (make_grid ~width:20 ~height:vh ())
+    ~delta:0.
+
+let wheel ?(shift = false) direction =
+  let modifiers = { Event.Mouse.no_modifier with shift } in
+  Event.Mouse.make ~x:0 ~y:0 ~modifiers (Scroll { direction; delta = 1 })
+
+let emit_wheel sb event =
+  Renderable.Private.emit_mouse (Scroll_box.content sb) event
+
+let parent_node sb =
+  match Renderable.parent (Scroll_box.node sb) with
+  | Some parent -> parent
+  | None -> fail "expected scroll box parent"
+
+let wheel_consumes_only_when_scroll_position_changes () =
+  let _test_context, sb = make_scroll_box () in
+  let bubbled = ref 0 in
+  Renderable.on_mouse (parent_node sb) (fun _event -> incr bubbled);
+  render_scroll_box sb ~vh:4 ~ch:12;
+  let down = wheel Scroll_down in
+  emit_wheel sb down;
+  equal ~msg:"wheel advances scroll position" int 1 (Scroll_box.scroll_top sb);
+  is_true ~msg:"movement consumes wheel event"
+    (Event.Mouse.propagation_stopped down);
+  equal ~msg:"consumed event does not reach parent" int 0 !bubbled;
+  Scroll_box.set_scroll_top sb 8;
+  let clamped_down = wheel Scroll_down in
+  emit_wheel sb clamped_down;
+  equal ~msg:"boundary does not change position" int 8
+    (Scroll_box.scroll_top sb);
+  is_false ~msg:"clamped event remains available to parent"
+    (Event.Mouse.propagation_stopped clamped_down);
+  equal ~msg:"clamped event bubbles" int 1 !bubbled
+
+let wheel_without_usable_axis_bubbles () =
+  let _test_context, sb = make_scroll_box ~scroll_x:false ~scroll_y:true () in
+  let bubbled = ref 0 in
+  Renderable.on_mouse (parent_node sb) (fun _event -> incr bubbled);
+  render_scroll_box sb ~vh:4 ~ch:12;
+  let horizontal = wheel Scroll_right in
+  emit_wheel sb horizontal;
+  equal ~msg:"horizontal wheel leaves vertical position unchanged" int 0
+    (Scroll_box.scroll_top sb);
+  is_false ~msg:"disabled horizontal axis does not consume"
+    (Event.Mouse.propagation_stopped horizontal);
+  let shifted_vertical = wheel ~shift:true Scroll_down in
+  emit_wheel sb shifted_vertical;
+  equal ~msg:"shift-remapped wheel leaves vertical position unchanged" int 0
+    (Scroll_box.scroll_top sb);
+  is_false ~msg:"shift-remapped disabled axis does not consume"
+    (Event.Mouse.propagation_stopped shifted_vertical);
+  equal ~msg:"both unusable wheel events bubble" int 2 !bubbled
+
+let wheel_without_overflow_bubbles () =
+  let _test_context, sb = make_scroll_box () in
+  let bubbled = ref 0 in
+  Renderable.on_mouse (parent_node sb) (fun _event -> incr bubbled);
+  render_scroll_box sb ~vh:4 ~ch:4;
+  let down = wheel Scroll_down in
+  emit_wheel sb down;
+  equal ~msg:"content without overflow stays at origin" int 0
+    (Scroll_box.scroll_top sb);
+  is_false ~msg:"non-scrollable box does not consume"
+    (Event.Mouse.propagation_stopped down);
+  equal ~msg:"event bubbles past non-scrollable box" int 1 !bubbled
+
+let nested_wheel_bubbles_at_inner_boundary () =
+  let test_context = make_ctx () in
+  let root = make_root test_context in
+  let outer = Scroll_box.create ~parent:root () in
+  let inner = Scroll_box.create ~parent:(Scroll_box.content outer) () in
+  let escaped = ref 0 in
+  Renderable.on_mouse root (fun _event -> incr escaped);
+  render_scroll_box outer ~vh:8 ~ch:24;
+  render_scroll_box inner ~vh:4 ~ch:12;
+  let handled_by_inner = wheel Scroll_down in
+  emit_wheel inner handled_by_inner;
+  equal ~msg:"inner scrolls first" int 1 (Scroll_box.scroll_top inner);
+  equal ~msg:"outer remains parked while inner can scroll" int 0
+    (Scroll_box.scroll_top outer);
+  equal ~msg:"handled event does not escape nested scroll boxes" int 0 !escaped;
+  Scroll_box.set_scroll_top inner 8;
+  let handled_by_outer = wheel Scroll_down in
+  emit_wheel inner handled_by_outer;
+  equal ~msg:"inner stays at its boundary" int 8 (Scroll_box.scroll_top inner);
+  equal ~msg:"outer takes over at inner boundary" int 1
+    (Scroll_box.scroll_top outer);
+  is_true ~msg:"outer movement consumes bubbled event"
+    (Event.Mouse.propagation_stopped handled_by_outer);
+  equal ~msg:"outer consumption prevents escape" int 0 !escaped;
+  Scroll_box.set_scroll_top outer 16;
+  let both_clamped = wheel Scroll_down in
+  emit_wheel inner both_clamped;
+  equal ~msg:"inner remains clamped" int 8 (Scroll_box.scroll_top inner);
+  equal ~msg:"outer remains clamped" int 16 (Scroll_box.scroll_top outer);
+  is_false ~msg:"event remains unconsumed when no scroll box moves"
+    (Event.Mouse.propagation_stopped both_clamped);
+  equal ~msg:"event escapes after every scroll box declines it" int 1 !escaped
+
+let scroll_by_viewport_uses_measured_height () =
+  let test_context, sb = make_scroll_box () in
+  render_scroll_box sb ~vh:8 ~ch:40;
+  Scroll_box.set_scroll_top sb 24;
+  let scheduled_before = !(test_context.schedule_count) in
+  Scroll_box.set_scroll_by sb (Some (scroll_request "page-up" (-1.)));
+  is_true ~msg:"request schedules a render"
+    (!(test_context.schedule_count) > scheduled_before);
+  render_scroll_box sb ~vh:8 ~ch:40;
+  equal ~msg:"one measured viewport up" int 16 (Scroll_box.scroll_top sb);
+  Scroll_box.set_scroll_by sb (Some (scroll_request "page-down" 0.5));
+  render_scroll_box sb ~vh:8 ~ch:40;
+  equal ~msg:"half a measured viewport down" int 20 (Scroll_box.scroll_top sb)
+
+let scroll_by_key_applies_at_most_once () =
+  let test_context, sb = make_scroll_box () in
+  render_scroll_box sb ~vh:8 ~ch:40;
+  Scroll_box.set_scroll_top sb 24;
+  let first = scroll_request "page" (-1.) in
+  let scheduled_before = !(test_context.schedule_count) in
+  Scroll_box.apply_props sb (Scroll_box.Props.make ~scroll_by:first ());
+  is_true ~msg:"new key schedules a render"
+    (!(test_context.schedule_count) > scheduled_before);
+  render_scroll_box sb ~vh:8 ~ch:40;
+  equal ~msg:"first application" int 16 (Scroll_box.scroll_top sb);
+  Scroll_box.set_scroll_top sb 20;
+  Scroll_box.apply_props sb
+    (Scroll_box.Props.make ~background:Ansi.Color.blue ~scroll_by:first ());
+  render_scroll_box sb ~vh:8 ~ch:40;
+  equal ~msg:"unrelated property update does not replay" int 20
+    (Scroll_box.scroll_top sb);
+  Scroll_box.apply_props sb
+    (Scroll_box.Props.make ~scroll_by:(scroll_request "page" 1.) ());
+  render_scroll_box sb ~vh:8 ~ch:40;
+  equal ~msg:"changed payload cannot reuse a key" int 20
+    (Scroll_box.scroll_top sb);
+  Scroll_box.apply_props sb
+    (Scroll_box.Props.make ~scroll_by:(scroll_request "page-next" 0.5) ());
+  render_scroll_box sb ~vh:8 ~ch:40;
+  equal ~msg:"new key applies" int 24 (Scroll_box.scroll_top sb)
+
+let scroll_by_acknowledges_consumption_at_boundary () =
+  let acknowledgements = ref [] in
+  let scrolls = ref [] in
+  let _test_context, sb =
+    make_scroll_box
+      ~on_scroll:(fun ~x ~y -> scrolls := (x, y) :: !scrolls)
+      ~on_scroll_by_applied:(fun ~key ->
+        acknowledgements := key :: !acknowledgements)
+      ()
+  in
+  render_scroll_box sb ~vh:8 ~ch:40;
+  Scroll_box.set_scroll_by sb (Some (scroll_request "at-top" (-1.)));
+  render_scroll_box sb ~vh:8 ~ch:40;
+  equal ~msg:"clamped request does not report a position change" int 0
+    (List.length !scrolls);
+  equal ~msg:"clamped request is acknowledged" (list string) [ "at-top" ]
+    (List.rev !acknowledgements);
+  render_scroll_box sb ~vh:8 ~ch:40;
+  equal ~msg:"consumed request is acknowledged once" (list string) [ "at-top" ]
+    (List.rev !acknowledgements)
+
 (* ── Sticky Scroll ── *)
 
 let set_sticky_scroll_updates () =
@@ -201,13 +404,26 @@ let reset_sticky_clears_manual () =
 
 (* Lay the box out at the given viewport/content heights and render once, so
    the render path (recalc → reengage → sticky) runs against the new sizes. *)
-let render_sticky_box sb ~vh ~ch =
-  layout_node (Scroll_box.node sb) ~x:0 ~y:0 ~width:20 ~height:vh;
-  layout_node (Scroll_box.viewport sb) ~x:0 ~y:0 ~width:19 ~height:vh;
-  layout_node (Scroll_box.content sb) ~x:0 ~y:0 ~width:19 ~height:ch;
-  Renderable.Private.render (Scroll_box.node sb)
-    (make_grid ~width:20 ~height:vh ())
-    ~delta:0.
+let render_sticky_box sb ~vh ~ch = render_scroll_box sb ~vh ~ch
+
+let scroll_by_viewport_parks_sticky_content () =
+  let test_context, sb =
+    make_scroll_box ~sticky_scroll:true ~sticky_start:`Bottom ()
+  in
+  render_sticky_box sb ~vh:8 ~ch:40;
+  equal ~msg:"initially follows bottom" int 32 (Scroll_box.scroll_top sb);
+  let scheduled_before = !(test_context.schedule_count) in
+  Scroll_box.apply_props sb
+    (Scroll_box.Props.make ~sticky_scroll:true ~sticky_start:`Bottom
+       ~scroll_by:(scroll_request "page-up" (-1.))
+       ());
+  is_true ~msg:"page request schedules a render"
+    (!(test_context.schedule_count) > scheduled_before);
+  render_sticky_box sb ~vh:8 ~ch:40;
+  equal ~msg:"page request uses viewport" int 24 (Scroll_box.scroll_top sb);
+  render_sticky_box sb ~vh:8 ~ch:48;
+  equal ~msg:"manual page request disengages sticky following" int 24
+    (Scroll_box.scroll_top sb)
 
 let reflow_reengages_within_one_row () =
   let _t, sb = make_scroll_box ~sticky_scroll:true ~sticky_start:`Bottom () in
@@ -222,8 +438,7 @@ let reflow_reengages_within_one_row () =
   render_sticky_box sb ~vh:10 ~ch:20;
   equal ~msg:"re-pinned to the new edge" int 10 (Scroll_box.scroll_top sb);
   render_sticky_box sb ~vh:10 ~ch:30;
-  equal ~msg:"follows appended content again" int 20
-    (Scroll_box.scroll_top sb)
+  equal ~msg:"follows appended content again" int 20 (Scroll_box.scroll_top sb)
 
 let reflow_keeps_deep_park () =
   let _t, sb = make_scroll_box ~sticky_scroll:true ~sticky_start:`Bottom () in
@@ -234,8 +449,7 @@ let reflow_keeps_deep_park () =
   render_sticky_box sb ~vh:10 ~ch:20;
   equal ~msg:"reflow keeps the park" int 5 (Scroll_box.scroll_top sb);
   render_sticky_box sb ~vh:10 ~ch:30;
-  equal ~msg:"appended content keeps the park" int 5
-    (Scroll_box.scroll_top sb)
+  equal ~msg:"appended content keeps the park" int 5 (Scroll_box.scroll_top sb)
 
 (* ── Setters ── *)
 
@@ -309,6 +523,8 @@ let () =
           test "detects sticky_scroll diff" props_detects_sticky_scroll_diff;
           test "detects sticky_start diff" props_detects_sticky_start_diff;
           test "detects background diff" props_detects_background_diff;
+          test "detects scroll_by diff" props_detects_scroll_by_diff;
+          test "rejects invalid scroll_by" props_rejects_invalid_scroll_by;
         ];
       group "Construction"
         [
@@ -327,12 +543,29 @@ let () =
           test "set_scroll_top clamps" set_scroll_top_clamps;
           test "scroll_to sets both" scroll_to_sets_both;
           test "scroll_by adjusts relative" scroll_by_adjusts_relative;
+          test "scroll_by viewport uses measured height"
+            scroll_by_viewport_uses_measured_height;
+          test "scroll_by key applies at most once"
+            scroll_by_key_applies_at_most_once;
+          test "scroll_by acknowledges consumption at boundary"
+            scroll_by_acknowledges_consumption_at_boundary;
           test "on_scroll fires" on_scroll_fires;
+        ];
+      group "Mouse wheel"
+        [
+          test "consumes only when position changes"
+            wheel_consumes_only_when_scroll_position_changes;
+          test "bubbles without a usable axis" wheel_without_usable_axis_bubbles;
+          test "bubbles without overflow" wheel_without_overflow_bubbles;
+          test "nested boxes bubble at inner boundary"
+            nested_wheel_bubbles_at_inner_boundary;
         ];
       group "Sticky scroll"
         [
           test "set_sticky_scroll updates" set_sticky_scroll_updates;
           test "reset_sticky clears manual" reset_sticky_clears_manual;
+          test "scroll_by viewport parks sticky content"
+            scroll_by_viewport_parks_sticky_content;
           test "reflow reengages within one row" reflow_reengages_within_one_row;
           test "reflow keeps deep park" reflow_keeps_deep_park;
         ];

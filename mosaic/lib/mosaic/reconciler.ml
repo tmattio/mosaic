@@ -192,7 +192,7 @@ let create_instance ~(parent : Renderable.t) (kind : Vnode.kind)
         Tree_instance tree
   in
   let node = node_of inst in
-  if attrs.focusable then Renderable.set_focusable node true;
+  Renderable.set_focusable node attrs.focusable;
   (* Autofocus is deferred to after commit_placement in reconcile_flattened, so
      the node is fully attached to the render tree when focus is applied. *)
   if attrs.buffered then Renderable.set_buffered node true;
@@ -231,11 +231,21 @@ let set_instance_style (inst : instance) (style : Toffee.Style.t) : unit =
   | _ -> Renderable.set_style (node_of inst) style
 
 (* Physical equality check (==) on attrs and kind is the fast path: Vnode.map
-   shares both records by reference, so unchanged subtrees skip all diffing. *)
+   shares both records by reference, so unchanged subtrees skip all diffing.
+   Controlled editors are the exception: their live buffer can diverge from
+   the vnode between reconciliations. *)
 let update_instance (inst : instance) ~(old_attrs : Vnode.attrs)
     ~(new_attrs : Vnode.attrs) ~(old_kind : Vnode.kind) ~(new_kind : Vnode.kind)
     : bool =
-  if old_attrs == new_attrs && old_kind == new_kind then false
+  let has_live_controlled_value =
+    match inst with
+    | Text_input_instance _ | Textarea_instance _ -> true
+    | _ -> false
+  in
+  if
+    old_attrs == new_attrs && old_kind == new_kind
+    && not has_live_controlled_value
+  then false
   else
     let common_changed =
       if old_attrs == new_attrs then false
@@ -249,9 +259,24 @@ let update_instance (inst : instance) ~(old_attrs : Vnode.attrs)
       else false
     in
     let kind_changed =
-      if old_kind == new_kind then false
-      else
-        match (inst, old_kind, new_kind) with
+      match (inst, old_kind, new_kind) with
+      | ( Text_input_instance input,
+          Vnode.Text_input old_spec,
+          Vnode.Text_input new_spec ) ->
+          let old_value = Text_input.value input in
+          Text_input.apply_props input new_spec;
+          (not (Text_input.Props.equal old_spec new_spec))
+          || not (String.equal old_value (Text_input.value input))
+      | ( Textarea_instance textarea,
+          Vnode.Textarea old_spec,
+          Vnode.Textarea new_spec ) ->
+          let old_value = Textarea.value textarea in
+          Textarea.apply_props textarea new_spec;
+          (not (Textarea.Props.equal old_spec new_spec))
+          || not (String.equal old_value (Textarea.value textarea))
+      | _ when old_kind == new_kind -> false
+      | _ ->
+          match (inst, old_kind, new_kind) with
         | Box_instance box, Vnode.Box old_spec, Vnode.Box new_spec ->
             if Box.Props.equal old_spec new_spec then false
             else (
@@ -267,13 +292,6 @@ let update_instance (inst : instance) ~(old_attrs : Vnode.attrs)
             if Slider.Props.equal old_spec new_spec then false
             else (
               Slider.apply_props slider new_spec;
-              true)
-        | ( Text_input_instance input,
-            Vnode.Text_input old_spec,
-            Vnode.Text_input new_spec ) ->
-            if Text_input.Props.equal old_spec new_spec then false
-            else (
-              Text_input.apply_props input new_spec;
               true)
         | Select_instance select, Vnode.Select old_spec, Vnode.Select new_spec
           ->
@@ -321,13 +339,6 @@ let update_instance (inst : instance) ~(old_attrs : Vnode.attrs)
             if Scroll_box.Props.equal old_spec new_spec then false
             else (
               Scroll_box.apply_props scroll_box new_spec;
-              true)
-        | ( Textarea_instance textarea,
-            Vnode.Textarea old_spec,
-            Vnode.Textarea new_spec ) ->
-            if Textarea.Props.equal old_spec new_spec then false
-            else (
-              Textarea.apply_props textarea new_spec;
               true)
         | Table_instance table, Vnode.Table old_spec, Vnode.Table new_spec ->
             if Table.Props.equal old_spec new_spec then false
@@ -398,6 +409,7 @@ type callback_refs =
     }
   | Scroll_box_callback_refs of {
       scroll_ref : (x:int -> y:int -> unit) option ref;
+      scroll_by_applied_ref : (key:string -> unit) option ref;
     }
   | Textarea_callback_refs of {
       textarea_input_ref : (string -> unit) option ref;
@@ -418,6 +430,7 @@ type callback_refs =
   | Table_callback_refs of {
       table_change_ref : (int -> unit) option ref;
       table_activate_ref : (int -> unit) option ref;
+      table_hover_ref : (int option -> unit) option ref;
     }
   | Tree_callback_refs of {
       tree_change_ref : (int -> unit) option ref;
@@ -557,16 +570,23 @@ let create_callback_refs (instance : instance)
                  match !scroll_bar_change_ref with Some h -> h i | None -> ()))
       | _ -> ());
       Scroll_bar_callback_refs { scroll_bar_change_ref }
-  | Vnode.Scroll_box_callbacks { on_scroll } ->
+  | Vnode.Scroll_box_callbacks { on_scroll; on_scroll_by_applied } ->
       let scroll_ref = ref on_scroll in
+      let scroll_by_applied_ref = ref on_scroll_by_applied in
       (match instance with
       | Scroll_box_instance scroll_box ->
           Scroll_box.set_on_scroll scroll_box
             (Some
                (fun ~x ~y ->
-                 match !scroll_ref with Some h -> h ~x ~y | None -> ()))
+                 match !scroll_ref with Some h -> h ~x ~y | None -> ()));
+          Scroll_box.set_on_scroll_by_applied scroll_box
+            (Some
+               (fun ~key ->
+                 match !scroll_by_applied_ref with
+                 | Some handler -> handler ~key
+                 | None -> ()))
       | _ -> ());
-      Scroll_box_callback_refs { scroll_ref }
+      Scroll_box_callback_refs { scroll_ref; scroll_by_applied_ref }
   | Vnode.Textarea_callbacks { on_input; on_change; on_submit; on_cursor } ->
       let textarea_input_ref = ref on_input in
       let textarea_change_ref = ref on_change in
@@ -639,9 +659,10 @@ let create_callback_refs (instance : instance)
       in
       set_diff_line_click on_line_click;
       Diff_callback_refs { set_diff_line_click }
-  | Vnode.Table_callbacks { on_change; on_activate } ->
+  | Vnode.Table_callbacks { on_change; on_activate; on_hover } ->
       let table_change_ref = ref on_change in
       let table_activate_ref = ref on_activate in
+      let table_hover_ref = ref on_hover in
       (match instance with
       | Table_instance table ->
           Table.set_on_change table
@@ -651,9 +672,14 @@ let create_callback_refs (instance : instance)
           Table.set_on_activate table
             (Some
                (fun i ->
-                 match !table_activate_ref with Some h -> h i | None -> ()))
+                 match !table_activate_ref with Some h -> h i | None -> ()));
+          Table.set_on_hover table
+            (Some
+               (fun i ->
+                 match !table_hover_ref with Some h -> h i | None -> ()))
       | _ -> ());
-      Table_callback_refs { table_change_ref; table_activate_ref }
+      Table_callback_refs
+        { table_change_ref; table_activate_ref; table_hover_ref }
   | Vnode.Tree_callbacks { on_change; on_activate; on_expand } ->
       let tree_change_ref = ref on_change in
       let tree_activate_ref = ref on_activate in
@@ -726,8 +752,10 @@ let update_callback_refs (callback_refs : callback_refs)
   | ( Scroll_bar_callback_refs { scroll_bar_change_ref },
       Vnode.Scroll_bar_callbacks e ) ->
       scroll_bar_change_ref := e.on_change
-  | Scroll_box_callback_refs { scroll_ref }, Vnode.Scroll_box_callbacks e ->
-      scroll_ref := e.on_scroll
+  | ( Scroll_box_callback_refs { scroll_ref; scroll_by_applied_ref },
+      Vnode.Scroll_box_callbacks e ) ->
+      scroll_ref := e.on_scroll;
+      scroll_by_applied_ref := e.on_scroll_by_applied
   | ( Textarea_callback_refs
         {
           textarea_input_ref;
@@ -747,10 +775,12 @@ let update_callback_refs (callback_refs : callback_refs)
       markdown_selection_ref := e.on_selection
   | Diff_callback_refs { set_diff_line_click }, Vnode.Diff_callbacks e ->
       set_diff_line_click e.on_line_click
-  | ( Table_callback_refs { table_change_ref; table_activate_ref },
+  | ( Table_callback_refs
+        { table_change_ref; table_activate_ref; table_hover_ref },
       Vnode.Table_callbacks e ) ->
       table_change_ref := e.on_change;
-      table_activate_ref := e.on_activate
+      table_activate_ref := e.on_activate;
+      table_hover_ref := e.on_hover
   | ( Tree_callback_refs { tree_change_ref; tree_activate_ref; tree_expand_ref },
       Vnode.Tree_callbacks e ) ->
       tree_change_ref := e.on_change;
@@ -789,16 +819,24 @@ type flattened =
   | Flat_element of unit Vnode.element
   | Flat_embed of Renderable.t
 
-let rec flatten_vnode (vnode : unit Vnode.t) (acc : flattened list) :
-    flattened list =
+let rec flatten_vnode ~viewport_width (vnode : unit Vnode.t)
+    (acc : flattened list) : flattened list =
   match vnode with
   | Vnode.Empty -> acc
   | Vnode.Embed node -> Flat_embed node :: acc
   | Vnode.Element elem -> Flat_element elem :: acc
   | Vnode.Fragment children ->
-      List.fold_right (fun child acc -> flatten_vnode child acc) children acc
+      List.fold_right
+        (fun child acc -> flatten_vnode ~viewport_width child acc)
+        children acc
+  | Vnode.Viewport_switch { at_least_width; wide; narrow } ->
+      let selected =
+        if viewport_width >= at_least_width then wide else narrow
+      in
+      flatten_vnode ~viewport_width selected acc
 
-let flatten (vnode : unit Vnode.t) : flattened list = flatten_vnode vnode []
+let flatten ~viewport_width (vnode : unit Vnode.t) : flattened list =
+  flatten_vnode ~viewport_width vnode []
 
 (* ───── Fiber Maps ───── *)
 
@@ -899,14 +937,16 @@ let apply_pending_autofocus t =
       t.pending_autofocus <- []
 
 let rec reconcile_element (t : t) ~(parent_node : Renderable.t)
-    (maps : fiber_maps) (pos : int) (elem : unit Vnode.element) : fiber =
+    (maps : fiber_maps) (pos : int) ~viewport_width (elem : unit Vnode.element)
+    : fiber =
   match find_match maps pos elem with
   | Some f ->
       ignore (update_fiber f elem : bool);
       let old_children = f.children in
-      let flattened = flatten_children elem.children in
+      let flattened = flatten_children ~viewport_width elem.children in
       let new_children =
-        reconcile_flattened t ~parent_node:(fiber_node f) old_children flattened
+        reconcile_flattened t ~parent_node:(fiber_node f) ~viewport_width
+          old_children flattened
       in
       f.children <- new_children;
       f
@@ -917,17 +957,19 @@ let rec reconcile_element (t : t) ~(parent_node : Renderable.t)
       | None -> ());
       if elem.attrs.autofocus && elem.attrs.focusable then
         t.pending_autofocus <- fiber_node f :: t.pending_autofocus;
-      let flattened = flatten_children elem.children in
+      let flattened = flatten_children ~viewport_width elem.children in
       let new_children =
-        reconcile_flattened t ~parent_node:(fiber_node f) [] flattened
+        reconcile_flattened t ~parent_node:(fiber_node f) ~viewport_width []
+          flattened
       in
       f.children <- new_children;
       f
 
-and flatten_children (vnodes : unit Vnode.t list) : flattened list =
-  List.fold_right (fun v acc -> flatten_vnode v acc) vnodes []
+and flatten_children ~viewport_width (vnodes : unit Vnode.t list) :
+    flattened list =
+  List.fold_right (fun v acc -> flatten_vnode ~viewport_width v acc) vnodes []
 
-and reconcile_flattened (t : t) ~(parent_node : Renderable.t)
+and reconcile_flattened (t : t) ~(parent_node : Renderable.t) ~viewport_width
     (old_children : child list) (flattened : flattened list) : child list =
   let old_fibers = fibers_of_children old_children in
   let maps = build_maps old_fibers in
@@ -942,7 +984,8 @@ and reconcile_flattened (t : t) ~(parent_node : Renderable.t)
         | Flat_element elem ->
             let idx = !elem_idx in
             incr elem_idx;
-            Fiber (reconcile_element t ~parent_node maps idx elem)
+            Fiber
+              (reconcile_element t ~parent_node maps idx ~viewport_width elem)
         | Flat_embed n -> Embedded n)
       flattened
   in
@@ -958,10 +1001,13 @@ and reconcile_flattened (t : t) ~(parent_node : Renderable.t)
 
 (* ───── Root Reconciliation ───── *)
 
-let render (t : t) (vnode : unit Vnode.t) : unit =
-  let flattened = flatten vnode in
+let render (t : t) ~viewport_width (vnode : unit Vnode.t) : unit =
+  if viewport_width < 1 then
+    invalid_arg "Reconciler.render: viewport_width must be positive";
+  let flattened = flatten ~viewport_width vnode in
   let new_children =
-    reconcile_flattened t ~parent_node:t.container t.root_children flattened
+    reconcile_flattened t ~parent_node:t.container ~viewport_width
+      t.root_children flattened
   in
   t.root_children <- new_children;
   Renderable.request_render t.container

@@ -808,6 +808,16 @@ let apply_props_max_length_change_updates_buffer () =
   let buf = Text_input.buffer input in
   equal ~msg:"max_length updated" int 5 (Edit_buffer.max_length buf)
 
+let apply_props_truncated_value_preserves_cursor () =
+  let _t, input = make_input ~value:"abc" ~max_length:3 () in
+  let buf = Text_input.buffer input in
+  Edit_buffer.set_cursor buf 1;
+  Text_input.apply_props input
+    (Text_input.Props.make ~value:"abcdef" ~max_length:3 ());
+  equal ~msg:"value remains normalized" string "abc" (Text_input.value input);
+  equal ~msg:"matching truncated value preserves cursor" int 1
+    (Text_input.cursor input)
+
 let apply_props_cursor_change_updates_buffer () =
   let _t, input = make_input ~value:"hello" () in
   let props = Text_input.Props.make ~value:"hello" ~cursor:2 () in
@@ -1069,6 +1079,8 @@ let () =
             apply_props_value_change_updates_buffer;
           test "max_length change updates buffer"
             apply_props_max_length_change_updates_buffer;
+          test "truncated value preserves cursor"
+            apply_props_truncated_value_preserves_cursor;
           test "cursor change updates buffer"
             apply_props_cursor_change_updates_buffer;
           test "selection change updates buffer"

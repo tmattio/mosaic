@@ -51,7 +51,10 @@ type 'msg widget_callbacks =
     }
   | Canvas_callbacks of { on_draw : (Canvas.t -> delta:float -> unit) option }
   | Scroll_bar_callbacks of { on_change : (int -> 'msg) option }
-  | Scroll_box_callbacks of { on_scroll : (x:int -> y:int -> 'msg) option }
+  | Scroll_box_callbacks of {
+      on_scroll : (x:int -> y:int -> 'msg) option;
+      on_scroll_by_applied : (key:string -> 'msg) option;
+    }
   | Textarea_callbacks of {
       on_input : (string -> 'msg) option;
       on_change : (string -> 'msg) option;
@@ -64,6 +67,7 @@ type 'msg widget_callbacks =
   | Table_callbacks of {
       on_change : (int -> 'msg) option;
       on_activate : (int -> 'msg) option;
+      on_hover : (int option -> 'msg) option;
     }
   | Tree_callbacks of {
       on_change : (int -> 'msg) option;
@@ -91,6 +95,7 @@ type attrs = {
 type 'msg t =
   | Element of 'msg element
   | Fragment of 'msg t list
+  | Viewport_switch of 'msg viewport_switch
   | Embed of Renderable.t
   | Empty
 
@@ -103,11 +108,22 @@ and 'msg element = {
   children : 'msg t list;
 }
 
+and 'msg viewport_switch = {
+  at_least_width : int;
+  wide : 'msg t;
+  narrow : 'msg t;
+}
+
 (* ───── Constructors ───── *)
 
 let empty = Empty
 let fragment children = Fragment children
 let embed node = Embed node
+
+let viewport_switch ~at_least_width ~wide ~narrow =
+  if at_least_width < 1 then
+    invalid_arg "Vnode.viewport_switch: at_least_width must be positive";
+  Viewport_switch { at_least_width; wide; narrow }
 
 let box ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(autofocus = false)
@@ -401,11 +417,12 @@ let scroll_box ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = true) ?(autofocus = false)
     ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
     ?scroll_x ?scroll_y ?sticky_scroll ?sticky_start ?background
-    ?show_scrollbars ?reveal ?on_scroll children =
+    ?show_scrollbars ?reveal ?scroll_by ?on_scroll ?on_scroll_by_applied
+    children =
   let kind =
     Scroll_box
       (Scroll_box.Props.make ?scroll_x ?scroll_y ?sticky_scroll ?sticky_start
-         ?background ?show_scrollbars ?reveal ())
+         ?background ?show_scrollbars ?reveal ?scroll_by ())
   in
   let attrs =
     {
@@ -422,7 +439,7 @@ let scroll_box ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     }
   in
   let handlers = { on_mouse; on_key; on_paste } in
-  let callbacks = Scroll_box_callbacks { on_scroll } in
+  let callbacks = Scroll_box_callbacks { on_scroll; on_scroll_by_applied } in
   Element { kind; key; attrs; handlers; callbacks; children }
 
 let textarea ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
@@ -468,15 +485,17 @@ let table ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?show_column_separator ?show_row_separator ?cell_padding ?header_color
     ?header_background ?text_color ?background ?selected_text_color
     ?selected_background ?focused_selected_text_color
-    ?focused_selected_background ?row_styles ?wrap_selection ?fast_scroll_step
-    ?on_change ?on_activate () =
+    ?focused_selected_background ?selection_visible ?show_scroll_indicator
+    ?activate_on_click ?wheel_navigation ?row_styles ?wrap_selection
+    ?fast_scroll_step ?on_change ?on_activate ?on_hover () =
   let kind =
     Table
       (Table.Props.make ?columns ?rows ?selected_row ?border ?border_style
          ?show_header ?show_column_separator ?show_row_separator ?cell_padding
          ?header_color ?header_background ?text_color ?background
          ?selected_text_color ?selected_background ?focused_selected_text_color
-         ?focused_selected_background ?row_styles ?wrap_selection
+         ?focused_selected_background ?selection_visible ?show_scroll_indicator
+         ?activate_on_click ?wheel_navigation ?row_styles ?wrap_selection
          ?fast_scroll_step ())
   in
   let attrs =
@@ -494,7 +513,7 @@ let table ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     }
   in
   let handlers = { on_mouse; on_key; on_paste } in
-  let callbacks = Table_callbacks { on_change; on_activate } in
+  let callbacks = Table_callbacks { on_change; on_activate; on_hover } in
   Element { kind; key; attrs; handlers; callbacks; children = [] }
 
 let code ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
@@ -693,9 +712,13 @@ let map_callbacks (f : 'a -> 'b) : 'a widget_callbacks -> 'b widget_callbacks =
   | Scroll_bar_callbacks { on_change } ->
       Scroll_bar_callbacks
         { on_change = Option.map (fun g i -> f (g i)) on_change }
-  | Scroll_box_callbacks { on_scroll } ->
+  | Scroll_box_callbacks { on_scroll; on_scroll_by_applied } ->
       Scroll_box_callbacks
-        { on_scroll = Option.map (fun g ~x ~y -> f (g ~x ~y)) on_scroll }
+        {
+          on_scroll = Option.map (fun g ~x ~y -> f (g ~x ~y)) on_scroll;
+          on_scroll_by_applied =
+            Option.map (fun g ~key -> f (g ~key)) on_scroll_by_applied;
+        }
   | Textarea_callbacks { on_input; on_change; on_submit; on_cursor } ->
       Textarea_callbacks
         {
@@ -716,11 +739,12 @@ let map_callbacks (f : 'a -> 'b) : 'a widget_callbacks -> 'b widget_callbacks =
   | Diff_callbacks { on_line_click } ->
       Diff_callbacks
         { on_line_click = Option.map (fun g hit -> f (g hit)) on_line_click }
-  | Table_callbacks { on_change; on_activate } ->
+  | Table_callbacks { on_change; on_activate; on_hover } ->
       Table_callbacks
         {
           on_change = Option.map (fun g i -> f (g i)) on_change;
           on_activate = Option.map (fun g i -> f (g i)) on_activate;
+          on_hover = Option.map (fun g i -> f (g i)) on_hover;
         }
   | Tree_callbacks { on_change; on_activate; on_expand } ->
       Tree_callbacks
@@ -736,6 +760,9 @@ let rec map (f : 'a -> 'b) (vnode : 'a t) : 'b t =
   | Empty -> Empty
   | Embed node -> Embed node
   | Fragment children -> Fragment (List.map (map f) children)
+  | Viewport_switch { at_least_width; wide; narrow } ->
+      Viewport_switch
+        { at_least_width; wide = map f wide; narrow = map f narrow }
   | Element e ->
       Element
         {

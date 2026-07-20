@@ -15,6 +15,15 @@ let rows =
     [| Table.cell "Charlie"; Table.cell "35"; Table.cell "Paris" |];
   ]
 
+let paging_rows count =
+  List.init count (fun index -> [| Table.cell ("row " ^ string_of_int index) |])
+
+let dispatch_mouse app = function
+  | Input.Mouse event -> Renderer.dispatch_mouse app.renderer event
+  | Input.Key _ | Input.Paste _ | Input.Resize _ | Input.Focus | Input.Blur
+  | Input.Error _ ->
+      invalid_arg "expected mouse input"
+
 (* ── Basic Rendering ── *)
 
 let%expect_test "basic table with border" =
@@ -153,6 +162,103 @@ Name      Age City
 Alice      30 NYC
 Bob        25 London
 Charlie    35 Paris|}]
+
+let%expect_test "page down uses the measured bordered table body" =
+  let app = make_app () in
+  let node = ref None in
+  let changes = ref [] in
+  reconcile app
+    (Vnode.table
+       ~ref:(fun renderable -> node := Some renderable)
+       ~columns:[ Table.column ~width:(`Flex 1.) "Name" ]
+       ~rows:(paging_rows 12) ~selected_row:1 ~border:true ~show_header:true
+       ~show_scroll_indicator:true
+       ~on_change:(fun index -> changes := index :: !changes)
+       ());
+  focus app (Option.get !node);
+  frame app ~width:14 ~height:8;
+  send_key app Input.Key.Page_down;
+  frame app ~width:14 ~height:8;
+  Format.printf "\nchanges=%s\n"
+    (String.concat "," (List.rev_map string_of_int !changes));
+  [%expect_exact
+    {|
+┌────────────┐
+│Name        │
+├────────────┤
+│row 0      ││
+│row 1      ││
+│row 2      ││
+│row 3      ↓│
+└────────────┘
+┌────────────┐
+│Name        │
+├────────────┤
+│row 3      ↑│
+│row 4      ││
+│row 5      ││
+│row 6      ↓│
+└────────────┘
+changes=5
+|}]
+
+let%expect_test "page up accounts for measured row separators" =
+  let app = make_app () in
+  let node = ref None in
+  let changes = ref [] in
+  reconcile app
+    (Vnode.table
+       ~ref:(fun renderable -> node := Some renderable)
+       ~columns:[ Table.column ~width:(`Flex 1.) "" ]
+       ~rows:(paging_rows 12) ~selected_row:8 ~border:false ~show_header:false
+       ~show_row_separator:true ~show_scroll_indicator:true
+       ~on_change:(fun index -> changes := index :: !changes)
+       ());
+  focus app (Option.get !node);
+  frame app ~width:12 ~height:5;
+  send_key app Input.Key.Page_up;
+  frame app ~width:12 ~height:5;
+  Format.printf "\nchanges=%s\n"
+    (String.concat "," (List.rev_map string_of_int !changes));
+  [%expect_exact
+    {|
+row 7      ↑
+────────────
+row 8      │
+────────────
+row 9      ↓
+row 4      ↑
+────────────
+row 5      │
+────────────
+row 6      ↓
+changes=5
+|}]
+
+let%expect_test "declarative hover and click callbacks report exact rows" =
+  let app = make_app () in
+  let hovered = ref [] in
+  let activated = ref [] in
+  reconcile app
+    (Vnode.table ~columns:cols ~rows ~border:false ~show_header:false
+       ~activate_on_click:true
+       ~on_hover:(fun row -> hovered := row :: !hovered)
+       ~on_activate:(fun row -> activated := row :: !activated)
+       ());
+  frame app ~width:25 ~height:3;
+  ignore (Renderer.render app.renderer : string);
+  dispatch_mouse app (Input.mouse_move 2 1);
+  dispatch_mouse app (Input.mouse_press 2 2 Input.Mouse.Left);
+  Format.printf "hover=%s activate=%s\n"
+    (String.concat ","
+       (List.rev_map (Option.fold ~none:"none" ~some:string_of_int) !hovered))
+    (String.concat "," (List.rev_map string_of_int !activated));
+  [%expect_exact
+    {|
+Alice      30 NYC
+Bob        25 London
+Charlie    35 Parishover=1,2 activate=2
+|}]
 
 (* ── Reconciliation ── *)
 
@@ -332,6 +438,48 @@ let%expect_test "headers only no data" =
 │A B               │
 ├──────────────────┤
 └──────────────────┘|}]
+
+(* ── Viewport Discoverability ── *)
+
+let%expect_test "scroll indicator follows the actual viewport" =
+  let rows =
+    List.init 6 (fun index -> [| Table.cell ("row " ^ string_of_int index) |])
+  in
+  render ~width:12 ~height:3
+    (Vnode.table
+       ~columns:[ Table.column ~width:(`Flex 1.) "" ]
+       ~rows ~selected_row:0 ~border:false ~show_header:false
+       ~show_scroll_indicator:true ());
+  [%expect_exact {|
+row 0      │
+row 1      │
+row 2      ↓|}]
+
+let%expect_test "scroll indicator reports rows above the viewport" =
+  let rows =
+    List.init 6 (fun index -> [| Table.cell ("row " ^ string_of_int index) |])
+  in
+  render ~width:12 ~height:3
+    (Vnode.table
+       ~columns:[ Table.column ~width:(`Flex 1.) "" ]
+       ~rows ~selected_row:5 ~border:false ~show_header:false
+       ~show_scroll_indicator:true ());
+  [%expect_exact {|
+row 3      ↑
+row 4      │
+row 5      │|}]
+
+let%expect_test "one-row viewport reports overflow in both directions" =
+  let rows =
+    List.init 6 (fun index -> [| Table.cell ("row " ^ string_of_int index) |])
+  in
+  render ~width:12 ~height:1
+    (Vnode.table
+       ~columns:[ Table.column ~width:(`Flex 1.) "" ]
+       ~rows ~selected_row:3 ~border:false ~show_header:false
+       ~show_scroll_indicator:true ());
+  [%expect_exact {|
+row 3      ↕|}]
 
 (* ── Row Separators with Border ── *)
 
