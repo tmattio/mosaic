@@ -803,6 +803,21 @@ let blit_region_skips_transparent_source_with_respect_alpha () =
   equal ~msg:"transparent source skipped" int (Char.code 'D')
     (read_char dst 0 0)
 
+let blit_region_preserves_default_foreground_glyph () =
+  let src = Grid.create ~width:1 ~height:1 ~respect_alpha:true () in
+  let style = Ansi.Style.make ~fg:Ansi.Color.default () in
+  Grid.draw_text ~style src ~x:0 ~y:0 ~text:"T";
+  equal ~msg:"source retains default foreground intent" bool true
+    (Ansi.Color.equal (Grid.get_fg src 0) Ansi.Color.default);
+  let dst = Grid.create ~width:1 ~height:1 () in
+  Grid.draw_text dst ~x:0 ~y:0 ~text:"D";
+  Grid.blit_region ~src ~dst ~src_x:0 ~src_y:0 ~width:1 ~height:1 ~dst_x:0
+    ~dst_y:0;
+  equal ~msg:"default foreground glyph copied" int (Char.code 'T')
+    (read_char dst 0 0);
+  equal ~msg:"default foreground intent retained" bool true
+    (Ansi.Color.equal (Grid.get_fg dst 0) Ansi.Color.default)
+
 let to_ansi_handles_empty_glyph () =
   let grid = Grid.create ~width:1 ~height:1 () in
   Grid.set_cell grid ~x:0 ~y:0 ~cell:Grid.Cell.empty ~fg:Ansi.Color.white
@@ -1219,6 +1234,8 @@ let tests =
       blit_region_copies_transparent_source_without_respect_alpha;
     test "blit_region skips transparent source with respect_alpha"
       blit_region_skips_transparent_source_with_respect_alpha;
+    test "blit_region preserves terminal-default foreground glyph"
+      blit_region_preserves_default_foreground_glyph;
     test "to_ansi handles empty glyph" to_ansi_handles_empty_glyph;
     test "to_ansi handles orphan continuation"
       to_ansi_handles_orphan_continuation;

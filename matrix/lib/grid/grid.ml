@@ -189,6 +189,18 @@ let default_bg = Ansi.Color.default
 let default_fg_packed = Color_packed.encode default_fg
 let default_bg_packed = Color_packed.encode default_bg
 
+(** Terminal-default foreground has zero color alpha because it names a
+    terminal palette entry rather than an RGBA value. A glyph drawn with that
+    intent nevertheless has opaque coverage. Keep blanks transparent, but
+    make glyph coverage explicit while compositing. *)
+let foreground_composition_alpha ~code ~color ~alpha =
+  if
+    code <> null_cell
+    && code <> space_cell
+    && Color_packed.intent color = Ansi.Color.Default
+  then 1.
+  else alpha
+
 (* {1 Helpers} *)
 
 let[@inline] is_clipped t x y =
@@ -569,6 +581,9 @@ let current_opacity t = t.opacity_product
     hot callers can avoid tuple allocation. *)
 let set_cell_internal t ~idx ~code ~fg_color ~bg_color ~fg_r ~fg_g ~fg_b ~fg_a
     ~bg_r ~bg_g ~bg_b ~bg_a ~attrs ~link_id ~blending =
+  let fg_a =
+    foreground_composition_alpha ~code ~color:fg_color ~alpha:fg_a
+  in
   (* Apply opacity stack *)
   let fg_a, bg_a, blending, fg_color, bg_color =
     if t.opacity_product < 1.0 then
@@ -979,17 +994,23 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
               in
               let fg_color = if is_reset then default_fg_packed else fg_color in
 
+              let composite_fg_a =
+                foreground_composition_alpha ~code:mapped_code ~color:fg_color
+                  ~alpha:fg_a
+              in
+
               (* A source framebuffer opts into composition with
                  [respect_alpha]. Plain framebuffers copy stored alpha values;
                  alpha-respecting framebuffers composite and fully transparent
                  cells become holes. *)
               let compose = (not same_grid) && src.respect_alpha in
-              if compose && fg_a <= 0.001 && bg_a <= 0.001 then ()
+              if compose && composite_fg_a <= 0.001 && bg_a <= 0.001 then ()
               else
                 set_cell_internal dst
                   ~idx:((dy * dst.width) + dx)
-                  ~code:mapped_code ~fg_color ~bg_color ~fg_r ~fg_g ~fg_b ~fg_a
-                  ~bg_r ~bg_g ~bg_b ~bg_a ~attrs ~link_id ~blending:compose;
+                  ~code:mapped_code ~fg_color ~bg_color ~fg_r ~fg_g ~fg_b
+                  ~fg_a:composite_fg_a ~bg_r ~bg_g ~bg_b ~bg_a ~attrs ~link_id
+                  ~blending:compose;
 
               k := !k + x_step
             done;
