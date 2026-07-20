@@ -59,7 +59,8 @@ val pending_work : t -> Pending.t list
     nodes in [t]'s tree. *)
 
 val is_settled : t -> bool
-(** [is_settled t] is [true] iff [pending_work t] is empty. *)
+(** [is_settled t] is [true] iff [pending_work t] is empty and no renderable has
+    requested another render pass. *)
 
 (** {1:rendering Rendering} *)
 
@@ -98,11 +99,13 @@ val render_frame_until_settled :
   delta:float ->
   settle_result
 (** [render_frame_until_settled t ~width ~height ~delta] renders bounded frame
-    passes until visible nodes report no pending render work.
+    passes until visible nodes report no pending render work and no renderable
+    requests a follow-up pass.
 
     [max_passes] defaults to [4]. The function does not block for external
     asynchronous work; if work remains after the pass budget, it returns
-    [`Pending pending]. *)
+    [`Pending pending]. [pending] may be empty when the remaining work is an
+    undescribed render request rather than a pending-work provider. *)
 
 (** {1:events Event dispatch} *)
 

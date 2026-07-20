@@ -136,9 +136,6 @@ line 7|}]
 
 (* ── Scroll bar visibility ── *)
 
-(* Bar visibility follows overflow metrics computed during the first frame, so
-   these render a second frame to see the settled state. *)
-
 let ten_lines = List.init 10 (fun i -> Vnode.text (Printf.sprintf "Line %d" i))
 
 let scrollbar_app ?show_scrollbars () =
@@ -153,13 +150,7 @@ let scrollbar_app ?show_scrollbars () =
 
 let%expect_test "overflowing scroll box shows the vertical bar" =
   let app = scrollbar_app () in
-  frame app ~width:20 ~height:4;
-  [%expect_exact {|
-Line 0
-Line 1
-Line 2
-Line 3|}];
-  frame app ~width:20 ~height:4;
+  settled_frame app ~width:20 ~height:4;
   [%expect_exact {|
 Line 0             █
 Line 1             ▀
@@ -168,13 +159,7 @@ Line 3|}]
 
 let%expect_test "show_scrollbars false hides the bars despite overflow" =
   let app = scrollbar_app ~show_scrollbars:false () in
-  frame app ~width:20 ~height:4;
-  [%expect_exact {|
-Line 0
-Line 1
-Line 2
-Line 3|}];
-  frame app ~width:20 ~height:4;
+  settled_frame app ~width:20 ~height:4;
   [%expect_exact {|
 Line 0
 Line 1

@@ -812,6 +812,11 @@ let run ?matrix
           if required > height then
             Renderer.render_frame runtime.renderer ~width ~height:required
               ~delta:!frame_delta);
+      (* A widget can discover geometry while rendering and request a pass that
+         includes a newly visible child. Matrix consumed the current redraw
+         before invoking us, so explicitly retain that follow-up request. *)
+      if Renderer.needs_render runtime.renderer then
+        Matrix.request_redraw runtime.matrix_app;
       let renderer_screen = Renderer.screen runtime.renderer in
       let renderer_grid = Matrix.Screen.next_grid renderer_screen in
       let renderer_hits = Matrix.Screen.next_hit_grid renderer_screen in

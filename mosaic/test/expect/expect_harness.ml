@@ -118,6 +118,18 @@ let frame app ~width ~height =
   print_newline ();
   print_string (grid_to_text grid)
 
+let settled_frame app ~width ~height =
+  app.viewport_width <- width;
+  set_viewport app.renderer ~width ~height;
+  (match
+     Renderer.render_frame_until_settled app.renderer ~width ~height ~delta:0.
+   with
+  | `Settled -> ()
+  | `Pending _ -> failwith "renderer did not settle within its pass budget");
+  let grid = Screen.next_grid (Renderer.screen app.renderer) in
+  print_newline ();
+  print_string (grid_to_text grid)
+
 let frame_ansi app ~width ~height =
   app.viewport_width <- width;
   set_viewport app.renderer ~width ~height;

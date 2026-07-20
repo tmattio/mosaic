@@ -106,6 +106,24 @@ let%expect_test "boots, renders, and reacts to byte-decoded input" =
 |keys:[a,b] ticks:0 size:- note:-
 ||}]
 
+let%expect_test "in-frame geometry changes settle without input" =
+  let base = app () in
+  let application =
+    {
+      base with
+      Mosaic.view =
+        (fun _model ->
+          Mosaic.scroll_box ~size:(Mosaic.size ~width:20 ~height:4)
+            (List.init 10 (fun i -> Mosaic.text (Printf.sprintf "Line %d" i))));
+    }
+  in
+  drive ~width:20 ~height:4 application [ `Snap ];
+  [%expect_exact {||Line 0             █
+|Line 1             ▀
+|Line 2
+|Line 3
+|}]
+
 let%expect_test "escape sequences decode as single keys" =
   (* "\027[A" is three bytes but one Up key: the real parser runs. *)
   drive (app ~subs:on_keys ()) [ `Feed "\027[A"; `Snap ];

@@ -603,7 +603,8 @@ let pending_work t =
   in
   List.rev (collect [] t.root)
 
-let is_settled t = match pending_work t with [] -> true | _ :: _ -> false
+let is_settled t =
+  (not !(t.dirty)) && match pending_work t with [] -> true | _ :: _ -> false
 
 (* ───── Measure Function ───── *)
 
@@ -707,6 +708,11 @@ let execute_commands (t : t) ~(grid : Grid.t) ~(hits : Screen.Hit_grid.t)
 (* ───── Render Frame ───── *)
 
 let render_frame (t : t) ~width ~height ~delta =
+  (* Consume the request that led to this pass before running any code that can
+     schedule its successor. In particular, widgets may discover geometry in
+     their render function and change a sibling's visibility after the command
+     list has already been built. That change must survive for another pass. *)
+  t.dirty := false;
   (* Pass 0: Lifecycle passes *)
   Hashtbl.iter
     (fun _num node -> Renderable.Private.run_lifecycle_pass node)
@@ -735,7 +741,7 @@ let render_frame (t : t) ~width ~height ~delta =
       (* Pass 3: Execute render commands *)
       execute_commands t ~grid ~hits ~delta);
   (* Update cursor from focused node *)
-  (match !(t.focused) with
+  match !(t.focused) with
   | Some node when Renderable.focused node -> (
       match Renderable.cursor node with
       | Some c ->
@@ -754,8 +760,7 @@ let render_frame (t : t) ~width ~height ~delta =
           Screen.set_cursor t.screen { cursor with position = None })
   | _ ->
       let cursor = Screen.cursor t.screen in
-      Screen.set_cursor t.screen { cursor with position = None });
-  t.dirty := false
+      Screen.set_cursor t.screen { cursor with position = None }
 
 let render ?full ?now t =
   let output = Screen.render ?full ?now t.screen in
@@ -766,17 +771,13 @@ let needs_render t = !(t.dirty) || Renderable.Private.live_count t.root > 0
 
 let render_frame_until_settled ?(max_passes = 4) t ~width ~height ~delta =
   let max_passes = max 1 max_passes in
-  let rec loop pass last_pending =
-    if pass >= max_passes then `Pending last_pending
-    else begin
-      render_frame t ~width ~height ~delta;
-      match pending_work t with
-      | [] -> `Settled
-      | pending -> loop (pass + 1) pending
-    end
+  let rec loop remaining =
+    render_frame t ~width ~height ~delta;
+    if is_settled t then `Settled
+    else if remaining = 1 then `Pending (pending_work t)
+    else loop (remaining - 1)
   in
-  render_frame t ~width ~height ~delta;
-  match pending_work t with [] -> `Settled | pending -> loop 1 pending
+  loop max_passes
 
 (* ───── Event Dispatch ───── *)
 

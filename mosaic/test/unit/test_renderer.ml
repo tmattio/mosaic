@@ -94,6 +94,22 @@ let dirty_after_schedule () =
   Renderable.request_render child;
   is_true ~msg:"dirty after schedule" (Renderer.needs_render t)
 
+let render_request_during_frame_survives () =
+  let t = make_renderer () in
+  let child = make_child ~parent:(Renderer.root t) ~x:0 ~y:0 ~w:10 ~h:5 () in
+  let requested = ref false in
+  Renderer.add_frame_callback t (fun _delta ->
+      if not !requested then begin
+        requested := true;
+        Renderable.request_render child
+      end);
+  do_frame t;
+  is_true ~msg:"follow-up frame requested" (Renderer.needs_render t);
+  is_false ~msg:"renderer remains unsettled" (Renderer.is_settled t);
+  do_frame t;
+  is_false ~msg:"follow-up frame consumed" (Renderer.needs_render t);
+  is_true ~msg:"renderer settled" (Renderer.is_settled t)
+
 let callback_runs_each_frame () =
   let t = make_renderer () in
   let count = ref 0 in
@@ -1027,6 +1043,8 @@ let () =
           test "starts dirty" starts_dirty;
           test "clean after render" clean_after_render;
           test "dirty after schedule" dirty_after_schedule;
+          test "render request during frame survives"
+            render_request_during_frame_survives;
           test "callback runs each frame" callback_runs_each_frame;
           test "callback receives delta" callback_receives_delta;
           test "remove callback stops it" remove_callback_stops_it;
