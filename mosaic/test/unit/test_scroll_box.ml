@@ -5,13 +5,13 @@ open Test_harness
 (* ── Helpers ── *)
 
 let make_scroll_box ?scroll_x ?scroll_y ?sticky_scroll ?sticky_start ?background
-    ?scroll_accel ?on_scroll ?on_scroll_by_applied () =
+    ?scroll_accel ?on_scroll ?on_scroll_by_applied ?on_reset_sticky_applied () =
   let t = make_ctx () in
   let root = make_root t in
   let sb =
     Scroll_box.create ~parent:root ?scroll_x ?scroll_y ?sticky_scroll
       ?sticky_start ?background ?scroll_accel ?on_scroll ?on_scroll_by_applied
-      ()
+      ?on_reset_sticky_applied ()
   in
   (t, sb)
 
@@ -119,6 +119,13 @@ let props_detects_scroll_by_diff () =
   is_false ~msg:"key differs" (Scroll_box.Props.equal with_request changed_key);
   is_false ~msg:"delta differs"
     (Scroll_box.Props.equal with_request changed_delta)
+
+let props_detects_reset_sticky_diff () =
+  let without = Scroll_box.Props.make () in
+  let first = Scroll_box.Props.make ~reset_sticky:"turn-1" () in
+  let second = Scroll_box.Props.make ~reset_sticky:"turn-2" () in
+  is_false ~msg:"presence differs" (Scroll_box.Props.equal without first);
+  is_false ~msg:"key differs" (Scroll_box.Props.equal first second)
 
 let props_rejects_invalid_scroll_by () =
   raises_match ~msg:"an axis is required"
@@ -425,6 +432,53 @@ let scroll_by_viewport_parks_sticky_content () =
   equal ~msg:"manual page request disengages sticky following" int 24
     (Scroll_box.scroll_top sb)
 
+let reset_sticky_request_reengages_once_per_key () =
+  let acknowledgements = ref [] in
+  let _test_context, sb =
+    make_scroll_box ~sticky_scroll:true ~sticky_start:`Bottom
+      ~on_reset_sticky_applied:(fun ~key ->
+        acknowledgements := key :: !acknowledgements)
+      ()
+  in
+  render_sticky_box sb ~vh:8 ~ch:40;
+  equal ~msg:"initially follows bottom" int 32 (Scroll_box.scroll_top sb);
+  Scroll_box.apply_props sb
+    (Scroll_box.Props.make ~sticky_scroll:true ~sticky_start:`Bottom
+       ~scroll_by:(scroll_request "page-up" (-1.))
+       ());
+  render_sticky_box sb ~vh:8 ~ch:40;
+  equal ~msg:"page up parks one viewport from the tail" int 24
+    (Scroll_box.scroll_top sb);
+  render_sticky_box sb ~vh:8 ~ch:48;
+  equal ~msg:"append preserves manual reading position" int 24
+    (Scroll_box.scroll_top sb);
+  Scroll_box.apply_props sb
+    (Scroll_box.Props.make ~sticky_scroll:true ~sticky_start:`Bottom
+       ~reset_sticky:"turn-2" ());
+  render_sticky_box sb ~vh:8 ~ch:48;
+  equal ~msg:"new reset key returns to tail" int 40 (Scroll_box.scroll_top sb);
+  equal ~msg:"new reset key is acknowledged once" (list string) [ "turn-2" ]
+    (List.rev !acknowledgements);
+  Scroll_box.set_scroll_top sb 32;
+  Scroll_box.apply_props sb
+    (Scroll_box.Props.make ~sticky_scroll:true ~sticky_start:`Bottom
+       ~background:Ansi.Color.blue ~reset_sticky:"turn-2" ());
+  render_sticky_box sb ~vh:8 ~ch:56;
+  equal ~msg:"stable reset key preserves later manual scroll" int 32
+    (Scroll_box.scroll_top sb);
+  equal ~msg:"stable reset key emits no second acknowledgement" (list string)
+    [ "turn-2" ]
+    (List.rev !acknowledgements);
+  Scroll_box.apply_props sb
+    (Scroll_box.Props.make ~sticky_scroll:true ~sticky_start:`Bottom
+       ~reset_sticky:"turn-3" ());
+  render_sticky_box sb ~vh:8 ~ch:56;
+  equal ~msg:"changed reset key returns to the new tail" int 48
+    (Scroll_box.scroll_top sb);
+  equal ~msg:"changed reset key is acknowledged" (list string)
+    [ "turn-2"; "turn-3" ]
+    (List.rev !acknowledgements)
+
 let reflow_reengages_within_one_row () =
   let _t, sb = make_scroll_box ~sticky_scroll:true ~sticky_start:`Bottom () in
   render_sticky_box sb ~vh:8 ~ch:20;
@@ -524,6 +578,7 @@ let () =
           test "detects sticky_start diff" props_detects_sticky_start_diff;
           test "detects background diff" props_detects_background_diff;
           test "detects scroll_by diff" props_detects_scroll_by_diff;
+          test "detects reset_sticky diff" props_detects_reset_sticky_diff;
           test "rejects invalid scroll_by" props_rejects_invalid_scroll_by;
         ];
       group "Construction"
@@ -566,6 +621,8 @@ let () =
           test "reset_sticky clears manual" reset_sticky_clears_manual;
           test "scroll_by viewport parks sticky content"
             scroll_by_viewport_parks_sticky_content;
+          test "reset_sticky request reengages once per key"
+            reset_sticky_request_reengages_once_per_key;
           test "reflow reengages within one row" reflow_reengages_within_one_row;
           test "reflow keeps deep park" reflow_keeps_deep_park;
         ];

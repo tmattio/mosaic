@@ -410,6 +410,7 @@ type callback_refs =
   | Scroll_box_callback_refs of {
       scroll_ref : (x:int -> y:int -> unit) option ref;
       scroll_by_applied_ref : (key:string -> unit) option ref;
+      reset_sticky_applied_ref : (key:string -> unit) option ref;
     }
   | Textarea_callback_refs of {
       textarea_input_ref : (string -> unit) option ref;
@@ -570,9 +571,11 @@ let create_callback_refs (instance : instance)
                  match !scroll_bar_change_ref with Some h -> h i | None -> ()))
       | _ -> ());
       Scroll_bar_callback_refs { scroll_bar_change_ref }
-  | Vnode.Scroll_box_callbacks { on_scroll; on_scroll_by_applied } ->
+  | Vnode.Scroll_box_callbacks
+      { on_scroll; on_scroll_by_applied; on_reset_sticky_applied } ->
       let scroll_ref = ref on_scroll in
       let scroll_by_applied_ref = ref on_scroll_by_applied in
+      let reset_sticky_applied_ref = ref on_reset_sticky_applied in
       (match instance with
       | Scroll_box_instance scroll_box ->
           Scroll_box.set_on_scroll scroll_box
@@ -584,9 +587,16 @@ let create_callback_refs (instance : instance)
                (fun ~key ->
                  match !scroll_by_applied_ref with
                  | Some handler -> handler ~key
+                 | None -> ()));
+          Scroll_box.set_on_reset_sticky_applied scroll_box
+            (Some
+               (fun ~key ->
+                 match !reset_sticky_applied_ref with
+                 | Some handler -> handler ~key
                  | None -> ()))
       | _ -> ());
-      Scroll_box_callback_refs { scroll_ref; scroll_by_applied_ref }
+      Scroll_box_callback_refs
+        { scroll_ref; scroll_by_applied_ref; reset_sticky_applied_ref }
   | Vnode.Textarea_callbacks { on_input; on_change; on_submit; on_cursor } ->
       let textarea_input_ref = ref on_input in
       let textarea_change_ref = ref on_change in
@@ -752,10 +762,12 @@ let update_callback_refs (callback_refs : callback_refs)
   | ( Scroll_bar_callback_refs { scroll_bar_change_ref },
       Vnode.Scroll_bar_callbacks e ) ->
       scroll_bar_change_ref := e.on_change
-  | ( Scroll_box_callback_refs { scroll_ref; scroll_by_applied_ref },
+  | ( Scroll_box_callback_refs
+        { scroll_ref; scroll_by_applied_ref; reset_sticky_applied_ref },
       Vnode.Scroll_box_callbacks e ) ->
       scroll_ref := e.on_scroll;
-      scroll_by_applied_ref := e.on_scroll_by_applied
+      scroll_by_applied_ref := e.on_scroll_by_applied;
+      reset_sticky_applied_ref := e.on_reset_sticky_applied
   | ( Textarea_callback_refs
         {
           textarea_input_ref;

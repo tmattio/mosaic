@@ -123,11 +123,13 @@ module Props = struct
     horizontal_bar_props : Scroll_bar.Props.t option;
     reveal : reveal option;
     scroll_by : scroll_by option;
+    reset_sticky : string option;
   }
 
   let make ?(scroll_x = false) ?(scroll_y = true) ?(sticky_scroll = false)
       ?sticky_start ?background ?(show_scrollbars = true) ?scrollbar_props
-      ?vertical_bar_props ?horizontal_bar_props ?reveal ?scroll_by () =
+      ?vertical_bar_props ?horizontal_bar_props ?reveal ?scroll_by ?reset_sticky
+      () =
     validate_scroll_by scroll_by;
     {
       scroll_x;
@@ -141,6 +143,7 @@ module Props = struct
       horizontal_bar_props;
       reveal;
       scroll_by;
+      reset_sticky;
     }
 
   let default = make ()
@@ -158,6 +161,7 @@ module Props = struct
          b.horizontal_bar_props
     && Option.equal equal_reveal a.reveal b.reveal
     && Option.equal equal_scroll_by a.scroll_by b.scroll_by
+    && Option.equal String.equal a.reset_sticky b.reset_sticky
 end
 
 (* ───── Scroll Box ───── *)
@@ -177,6 +181,7 @@ type t = {
   mutable content_h : int;
   mutable on_scroll : (x:int -> y:int -> unit) option;
   mutable on_scroll_by_applied : (key:string -> unit) option;
+  mutable on_reset_sticky_applied : (key:string -> unit) option;
   mutable scroll_accel : Scroll_accel.t;
   mutable frame_clock : float;
   mutable has_manual_scroll : bool;
@@ -197,6 +202,8 @@ type t = {
   mutable applied_reveal_key : string option;
   mutable pending_scroll_by : scroll_by option;
   mutable applied_scroll_by_key : string option;
+  mutable pending_reset_sticky : string option;
+  mutable applied_reset_sticky_key : string option;
 }
 
 let node t = t.node
@@ -380,6 +387,34 @@ let apply_pending_scroll_by t =
         (fun callback -> callback ~key:request.key)
         t.on_scroll_by_applied
 
+let reset_sticky t =
+  t.has_manual_scroll <- false;
+  let prev = t.is_applying_sticky in
+  t.is_applying_sticky <- true;
+  (match t.props.sticky_start with
+  | Some `Top when t.props.sticky_scroll ->
+      scroll_to_internal t ~manual:false ~y:0 ()
+  | Some `Bottom when t.props.sticky_scroll ->
+      scroll_to_internal t ~manual:false ~y:t.max_scroll_y ()
+  | Some `Left when t.props.sticky_scroll ->
+      scroll_to_internal t ~manual:false ~x:0 ()
+  | Some `Right when t.props.sticky_scroll ->
+      scroll_to_internal t ~manual:false ~x:t.max_scroll_x ()
+  | None | Some _ -> ());
+  t.is_applying_sticky <- prev;
+  Renderable.request_render t.node
+
+let apply_pending_reset_sticky t =
+  match t.pending_reset_sticky with
+  | None -> ()
+  | Some key ->
+      t.pending_reset_sticky <- None;
+      if not (Option.equal String.equal t.applied_reset_sticky_key (Some key))
+      then (
+        reset_sticky t;
+        t.applied_reset_sticky_key <- Some key);
+      Option.iter (fun callback -> callback ~key) t.on_reset_sticky_applied
+
 (* ───── Selection Auto-scroll ───── *)
 
 let auto_scroll_direction_x t mouse_x =
@@ -560,6 +595,7 @@ let render_scroll_box t _self grid ~delta =
     reengage_on_reflow t ~old_max_x ~old_max_y;
     apply_sticky t;
     apply_pending_reveal t;
+    apply_pending_reset_sticky t;
     t.is_applying_sticky <- was_applying;
     apply_pending_scroll_by t;
     set_child_offsets t)
@@ -642,18 +678,6 @@ let set_sticky_start t edge =
     update_sticky_state t;
     Renderable.request_render t.node)
 
-let reset_sticky t =
-  t.has_manual_scroll <- false;
-  if t.props.sticky_scroll then (
-    (match t.props.sticky_start with
-    | Some `Top -> t.scroll_y <- 0
-    | Some `Bottom -> t.scroll_y <- t.max_scroll_y
-    | Some `Left -> t.scroll_x <- 0
-    | Some `Right -> t.scroll_x <- t.max_scroll_x
-    | None -> ());
-    set_child_offsets t;
-    Renderable.request_render t.node)
-
 let set_background t color =
   if not (Option.equal Ansi.Color.equal t.props.background color) then (
     t.props <- { t.props with background = color };
@@ -673,8 +697,15 @@ let set_scroll_by t scroll_by =
     t.pending_scroll_by <- scroll_by;
     Renderable.request_render t.node)
 
+let set_reset_sticky t reset_sticky =
+  if not (Option.equal String.equal t.props.reset_sticky reset_sticky) then (
+    t.props <- { t.props with reset_sticky };
+    t.pending_reset_sticky <- reset_sticky;
+    Renderable.request_render t.node)
+
 let set_on_scroll t cb = t.on_scroll <- cb
 let set_on_scroll_by_applied t cb = t.on_scroll_by_applied <- cb
+let set_on_reset_sticky_applied t cb = t.on_reset_sticky_applied <- cb
 let set_scroll_accel t accel = t.scroll_accel <- accel
 
 (* ───── Apply Props ───── *)
@@ -707,6 +738,7 @@ let apply_props t (props : Props.t) =
   set_sticky_start t props.sticky_start;
   set_reveal t props.reveal;
   set_scroll_by t props.scroll_by;
+  set_reset_sticky t props.reset_sticky;
   set_show_scrollbars t props.show_scrollbars;
   (match resolve_bar_props props.scrollbar_props props.vertical_bar_props with
   | Some p -> Scroll_bar.apply_props t.vertical_bar p
@@ -721,8 +753,8 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
     ?(scroll_x = false) ?(scroll_y = true) ?(sticky_scroll = false)
     ?sticky_start ?background ?(scroll_accel = Scroll_accel.linear ())
     ?(show_scrollbars = true) ?scrollbar_props ?vertical_bar_props
-    ?horizontal_bar_props ?reveal ?scroll_by ?on_scroll ?on_scroll_by_applied ()
-    =
+    ?horizontal_bar_props ?reveal ?scroll_by ?reset_sticky ?on_scroll
+    ?on_scroll_by_applied ?on_reset_sticky_applied () =
   validate_scroll_by scroll_by;
   let node =
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
@@ -816,6 +848,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
       horizontal_bar_props;
       reveal;
       scroll_by;
+      reset_sticky;
     }
   in
   let t =
@@ -834,6 +867,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
       content_h = 0;
       on_scroll;
       on_scroll_by_applied;
+      on_reset_sticky_applied;
       scroll_accel;
       frame_clock = 0.;
       has_manual_scroll = false;
@@ -854,6 +888,8 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
       applied_reveal_key = None;
       pending_scroll_by = scroll_by;
       applied_scroll_by_key = None;
+      pending_reset_sticky = reset_sticky;
+      applied_reset_sticky_key = None;
     }
   in
   (* Wire scroll bar change → scroll position *)

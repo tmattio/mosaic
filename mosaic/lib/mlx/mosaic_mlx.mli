@@ -207,7 +207,9 @@ val scroll_box :
   ?sticky_start:[ `Top | `Bottom | `Left | `Right ] ->
   ?background:Ansi.Color.t ->
   ?reveal:Scroll_box.reveal ->
+  ?reset_sticky:string ->
   ?on_scroll:(x:int -> y:int -> 'msg option) ->
+  ?on_reset_sticky_applied:(key:string -> 'msg option) ->
   ?children:'msg t list ->
   unit ->
   'msg t

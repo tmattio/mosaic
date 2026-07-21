@@ -1140,7 +1140,8 @@ let scroll_box ?key ?id ?display ?box_sizing ?position ?overflow
     ?grid_row ?grid_column ?visible ?z_index ?opacity ?focusable ?autofocus
     ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?scroll_x ?scroll_y
     ?sticky_scroll ?sticky_start ?background ?show_scrollbars ?reveal ?scroll_by
-    ?on_scroll ?on_scroll_by_applied children =
+    ?reset_sticky ?on_scroll ?on_scroll_by_applied ?on_reset_sticky_applied
+    children =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1154,7 +1155,8 @@ let scroll_box ?key ?id ?display ?box_sizing ?position ?overflow
   Vnode.scroll_box ?key ?id ~style ?visible ?z_index ?opacity ?focusable
     ?autofocus ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?scroll_x
     ?scroll_y ?sticky_scroll ?sticky_start ?background ?show_scrollbars ?reveal
-    ?scroll_by ?on_scroll ?on_scroll_by_applied children
+    ?scroll_by ?reset_sticky ?on_scroll ?on_scroll_by_applied
+    ?on_reset_sticky_applied children
 
 let textarea ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items

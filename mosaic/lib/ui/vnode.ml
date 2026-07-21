@@ -54,6 +54,7 @@ type 'msg widget_callbacks =
   | Scroll_box_callbacks of {
       on_scroll : (x:int -> y:int -> 'msg) option;
       on_scroll_by_applied : (key:string -> 'msg) option;
+      on_reset_sticky_applied : (key:string -> 'msg) option;
     }
   | Textarea_callbacks of {
       on_input : (string -> 'msg) option;
@@ -417,12 +418,12 @@ let scroll_box ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = true) ?(autofocus = false)
     ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
     ?scroll_x ?scroll_y ?sticky_scroll ?sticky_start ?background
-    ?show_scrollbars ?reveal ?scroll_by ?on_scroll ?on_scroll_by_applied
-    children =
+    ?show_scrollbars ?reveal ?scroll_by ?reset_sticky ?on_scroll
+    ?on_scroll_by_applied ?on_reset_sticky_applied children =
   let kind =
     Scroll_box
       (Scroll_box.Props.make ?scroll_x ?scroll_y ?sticky_scroll ?sticky_start
-         ?background ?show_scrollbars ?reveal ?scroll_by ())
+         ?background ?show_scrollbars ?reveal ?scroll_by ?reset_sticky ())
   in
   let attrs =
     {
@@ -439,7 +440,10 @@ let scroll_box ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     }
   in
   let handlers = { on_mouse; on_key; on_paste } in
-  let callbacks = Scroll_box_callbacks { on_scroll; on_scroll_by_applied } in
+  let callbacks =
+    Scroll_box_callbacks
+      { on_scroll; on_scroll_by_applied; on_reset_sticky_applied }
+  in
   Element { kind; key; attrs; handlers; callbacks; children }
 
 let textarea ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
@@ -712,12 +716,15 @@ let map_callbacks (f : 'a -> 'b) : 'a widget_callbacks -> 'b widget_callbacks =
   | Scroll_bar_callbacks { on_change } ->
       Scroll_bar_callbacks
         { on_change = Option.map (fun g i -> f (g i)) on_change }
-  | Scroll_box_callbacks { on_scroll; on_scroll_by_applied } ->
+  | Scroll_box_callbacks
+      { on_scroll; on_scroll_by_applied; on_reset_sticky_applied } ->
       Scroll_box_callbacks
         {
           on_scroll = Option.map (fun g ~x ~y -> f (g ~x ~y)) on_scroll;
           on_scroll_by_applied =
             Option.map (fun g ~key -> f (g ~key)) on_scroll_by_applied;
+          on_reset_sticky_applied =
+            Option.map (fun g ~key -> f (g ~key)) on_reset_sticky_applied;
         }
   | Textarea_callbacks { on_input; on_change; on_submit; on_cursor } ->
       Textarea_callbacks

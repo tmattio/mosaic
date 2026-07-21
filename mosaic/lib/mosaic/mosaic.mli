@@ -2112,8 +2112,10 @@ val scroll_box :
   ?show_scrollbars:bool ->
   ?reveal:Scroll_box.reveal ->
   ?scroll_by:Scroll_box.scroll_by ->
+  ?reset_sticky:string ->
   ?on_scroll:(x:int -> y:int -> 'msg option) ->
   ?on_scroll_by_applied:(key:string -> 'msg option) ->
+  ?on_reset_sticky_applied:(key:string -> 'msg option) ->
   'msg t list ->
   'msg t
 (** [scroll_box children] is a scrollable container. It clips its [children] to
@@ -2137,10 +2139,16 @@ val scroll_box :
       layout. [`Viewport] deltas use this scroll box's measured allocation, and
       keeping the currently applied key cannot replay it during unrelated
       reconciles.
+    - [reset_sticky] -- keyed one-shot request that clears manual scrolling,
+      reapplies [sticky_start], and resumes following appended content. Keeping
+      the currently applied key cannot reset later manual scrolling.
     - [on_scroll] -- fired after a scroll event; receives the new scroll
       position [~x] and [~y] in cells.
     - [on_scroll_by_applied] -- fired with [~key] after a [scroll_by] request is
       consumed, even when clamping leaves the position unchanged. Use it to
+      retire the request from declarative state.
+    - [on_reset_sticky_applied] -- fired with [~key] after a [reset_sticky]
+      request is consumed, even when the viewport does not move. Use it to
       retire the request from declarative state.
 
     Raises [Invalid_argument] if [scroll_by] has no axis or contains a

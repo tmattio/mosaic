@@ -71,6 +71,7 @@ type 'msg widget_callbacks =
   | Scroll_box_callbacks of {
       on_scroll : (x:int -> y:int -> 'msg) option;
       on_scroll_by_applied : (key:string -> 'msg) option;
+      on_reset_sticky_applied : (key:string -> 'msg) option;
     }
   | Textarea_callbacks of {
       on_input : (string -> 'msg) option;
@@ -689,8 +690,10 @@ val scroll_box :
   ?show_scrollbars:bool ->
   ?reveal:Scroll_box.reveal ->
   ?scroll_by:Scroll_box.scroll_by ->
+  ?reset_sticky:string ->
   ?on_scroll:(x:int -> y:int -> 'msg) ->
   ?on_scroll_by_applied:(key:string -> 'msg) ->
+  ?on_reset_sticky_applied:(key:string -> 'msg) ->
   'msg t list ->
   'msg t
 (** [scroll_box children] is a scrollable container element. Children are
@@ -712,10 +715,15 @@ val scroll_box :
     - [scroll_by] requests one keyed relative scroll after layout. Viewport-unit
       deltas use the scroll box's measured allocation; keeping the currently
       applied key cannot replay it during unrelated reconciles.
+    - [reset_sticky] requests one keyed reset of manual scrolling after layout.
+      A new key reapplies [sticky_start] and resumes following appended content;
+      a stable key does not override later manual scrolling.
     - [on_scroll] is called when the scroll position changes, receiving the new
       offsets as [~x] and [~y].
     - [on_scroll_by_applied] is called with [~key] after a [scroll_by] request
       is consumed, even if clamping leaves the offsets unchanged.
+    - [on_reset_sticky_applied] is called with [~key] after a [reset_sticky]
+      request is consumed, even if the viewport does not move.
 
     Raises [Invalid_argument] if [scroll_by] has no axis or contains a
     non-finite delta. *)

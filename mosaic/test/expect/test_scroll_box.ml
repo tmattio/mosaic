@@ -134,6 +134,80 @@ line 5             █
 line 6
 line 7|}]
 
+let%expect_test "reset_sticky returns a parked viewport to its live edge once" =
+  let app = make_app () in
+  let node = ref None in
+  let view ?reset_sticky count =
+    Vnode.scroll_box ~key:"transcript" ~sticky_scroll:true ~sticky_start:`Bottom
+      ~show_scrollbars:false ?reset_sticky
+      ~ref:(fun renderable -> node := Some renderable)
+      ~on_reset_sticky_applied:(fun ~key -> print_endline ("applied " ^ key))
+      (numbered_lines count)
+  in
+  let show label vnode =
+    print_endline label;
+    reconcile app vnode;
+    Grid.clear (Screen.next_grid (Renderer.screen app.renderer));
+    settled_frame app ~width:12 ~height:4;
+    print_newline ()
+  in
+  show "initial tail" (view 12);
+  focus app (Option.get !node);
+  send_key app Input.Key.Page_up;
+  show "page up" (view 12);
+  show "append stays parked" (view 16);
+  show "new reset key follows" (view ~reset_sticky:"turn-2" 16);
+  send_key app Input.Key.Page_up;
+  show "manual page after reset" (view ~reset_sticky:"turn-2" 16);
+  show "stable reset key stays parked"
+    (view ~reset_sticky:"turn-2" 20);
+  show "changed reset key follows again"
+    (view ~reset_sticky:"turn-3" 20);
+  [%expect {|initial tail
+
+line 9
+line 10
+line 11
+line 12
+page up
+
+line 7
+line 8
+line 9
+line 10
+append stays parked
+
+line 7
+line 8
+line 9
+line 10
+new reset key follows
+applied turn-2
+
+line 13
+line 14
+line 15
+line 16
+manual page after reset
+
+line 11
+line 12
+line 13
+line 14
+stable reset key stays parked
+
+line 11
+line 12
+line 13
+line 14
+changed reset key follows again
+applied turn-3
+
+line 17
+line 18
+line 19
+line 20|}]
+
 (* ── Scroll bar visibility ── *)
 
 let ten_lines = List.init 10 (fun i -> Vnode.text (Printf.sprintf "Line %d" i))

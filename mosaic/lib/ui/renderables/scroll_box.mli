@@ -97,6 +97,7 @@ module Props : sig
     ?horizontal_bar_props:Scroll_bar.Props.t ->
     ?reveal:reveal ->
     ?scroll_by:scroll_by ->
+    ?reset_sticky:string ->
     unit ->
     t
   (** [make ()] is a scroll box property bundle with:
@@ -113,6 +114,9 @@ module Props : sig
         bar.
       - [reveal] requests a one-shot scroll to a content coordinate.
       - [scroll_by] requests one keyed relative scroll after layout.
+      - [reset_sticky] requests that manual scrolling be cleared and the
+        configured sticky edge be reapplied after layout. Reusing the currently
+        applied key does not reset scrolling again.
 
       See also {!val-default}.
 
@@ -153,8 +157,10 @@ val create :
   ?horizontal_bar_props:Scroll_bar.Props.t ->
   ?reveal:reveal ->
   ?scroll_by:scroll_by ->
+  ?reset_sticky:string ->
   ?on_scroll:(x:int -> y:int -> unit) ->
   ?on_scroll_by_applied:(key:string -> unit) ->
+  ?on_reset_sticky_applied:(key:string -> unit) ->
   unit ->
   t
 (** [create ~parent ()] is a new scroll box attached to [parent] with:
@@ -178,11 +184,17 @@ val create :
     - [reveal] requests a one-shot scroll to a content coordinate.
     - [scroll_by] requests one keyed relative scroll after layout. Reusing an
       applied key does not scroll again.
+    - [reset_sticky] requests one keyed reset of manual sticky state after
+      layout. A new key reapplies [sticky_start] and resumes following appended
+      content; a stable key does not override later manual scrolling.
     - [on_scroll] callback invoked with the new scroll position whenever it
       changes.
     - [on_scroll_by_applied] callback invoked with [~key] after a [scroll_by]
       request is consumed. It fires even if the requested movement clamps to the
       current position, so declarative callers can always retire a request.
+    - [on_reset_sticky_applied] callback invoked with [~key] after a
+      [reset_sticky] request is consumed, including when sticky scrolling is
+      disabled or the viewport is already at its sticky edge.
 
     Raises [Invalid_argument] if [scroll_by] has no axis or contains a
     non-finite delta. *)
@@ -298,6 +310,12 @@ val set_scroll_by : t -> scroll_by option -> unit
     Raises [Invalid_argument] if [request] has no axis or contains a non-finite
     delta. *)
 
+val set_reset_sticky : t -> string option -> unit
+(** [set_reset_sticky t request] sets the pending keyed reset of manual sticky
+    state. A key different from the last applied key reapplies the configured
+    sticky edge after layout. [None] cancels a pending request without
+    forgetting the last applied key. *)
+
 (** {1:callbacks Callbacks} *)
 
 val set_on_scroll : t -> (x:int -> y:int -> unit) option -> unit
@@ -309,6 +327,12 @@ val set_on_scroll_by_applied : t -> (key:string -> unit) option -> unit
     of [t] with [f]. [f ~key] runs after the request named [key] is consumed,
     including when clamping leaves both offsets unchanged. [None] removes the
     callback. *)
+
+val set_on_reset_sticky_applied : t -> (key:string -> unit) option -> unit
+(** [set_on_reset_sticky_applied t f] replaces the sticky-reset acknowledgement
+    callback. [f ~key] runs after the request named [key] is consumed, including
+    when resetting leaves the viewport unchanged. [None] removes the callback.
+*)
 
 val set_scroll_accel : t -> Scroll_accel.t -> unit
 (** [set_scroll_accel t accel] replaces the scroll acceleration strategy of [t]
