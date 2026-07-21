@@ -208,6 +208,62 @@ let%expect_test "resize reaches the application and the grid" =
 |
 ||}]
 
+let%expect_test "a transparent table realigns every row when it widens" =
+  let columns =
+    [
+      Mosaic.Table.column ~width:(`Fixed 2) "";
+      Mosaic.Table.column ~width:(`Flex 4.) "session";
+      Mosaic.Table.column ~width:`Auto "lifecycle";
+      Mosaic.Table.column ~width:`Auto "phase";
+      Mosaic.Table.column ~width:`Auto ~alignment:`Right "turns";
+      Mosaic.Table.column ~width:`Auto "updated";
+      Mosaic.Table.column ~width:`Auto "recency";
+    ]
+  in
+  let rows =
+    [
+      [|
+        Mosaic.Table.cell "❯";
+        Mosaic.Table.cell "Retained parser investigation";
+        Mosaic.Table.cell "active";
+        Mosaic.Table.cell "idle";
+        Mosaic.Table.cell "1 turn";
+        Mosaic.Table.cell "just now";
+        Mosaic.Table.cell "today";
+      |];
+      [|
+        Mosaic.Table.cell "";
+        Mosaic.Table.cell "session-visual-2";
+        Mosaic.Table.cell "active";
+        Mosaic.Table.cell "idle";
+        Mosaic.Table.cell "1 turn";
+        Mosaic.Table.cell "just now";
+        Mosaic.Table.cell "today";
+      |];
+    ]
+  in
+  let base = app ~subs:on_keys () in
+  let application =
+    {
+      base with
+      Mosaic.view =
+        (fun model ->
+          let width = if model.keys = [] then 76 else 80 in
+          Mosaic.table ~columns ~rows ~selected_row:0 ~border:false
+            ~show_header:true ~cell_padding:0
+            ~selected_background:(Matrix.Ansi.Color.grayscale ~level:3)
+            ~size:(Mosaic.size ~width ~height:3) ());
+    }
+  in
+  drive ~width:80 ~height:3 application [ `Snap; `Feed "w"; `Snap ];
+  [%expect
+    {||   session                           lifecycle phase  turns updated  recency
+|❯  Retained parser investigation     active    idle  1 turn just now today
+|   session-visual-2                  active    idle  1 turn just now today
+|   session                               lifecycle phase  turns updated  recency
+|❯  Retained parser investigation         active    idle  1 turn just now today
+|   session-visual-2                      active    idle  1 turn just now today|}]
+
 let%expect_test "probe reports perform and message quiescence" =
   let pending : (unit -> unit) Queue.t = Queue.create () in
   let probe = ref None in
