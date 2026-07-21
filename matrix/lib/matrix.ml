@@ -219,6 +219,8 @@ let winch_received = ref false
 
 (* Unix low-level I/O *)
 
+type fd_readiness = { input_ready : bool; wakeup_ready : bool }
+
 let wait_readable_fds ~input_fd ~wakeup_r ~timeout =
   let fds = [ input_fd; wakeup_r ] in
   let timeout_f = Option.value ~default:(-1.) timeout in
@@ -226,7 +228,10 @@ let wait_readable_fds ~input_fd ~wakeup_r ~timeout =
     try Unix.select fds [] [] timeout_f
     with Unix.Unix_error (Unix.EINTR, _, _) -> ([], [], [])
   in
-  readable <> []
+  {
+    input_ready = List.mem input_fd readable;
+    wakeup_ready = List.mem wakeup_r readable;
+  }
 
 let read_events_unix ~terminal ~parser ~input_fd ~wakeup_r ~output_fd
     ~input_buffer ~timeout ~on_event =
@@ -237,14 +242,16 @@ let read_events_unix ~terminal ~parser ~input_fd ~wakeup_r ~output_fd
     | Input.Response.Unknown _ ->
         ()
   in
-  let has_input = wait_readable_fds ~input_fd ~wakeup_r ~timeout in
+  let { input_ready; wakeup_ready } =
+    wait_readable_fds ~input_fd ~wakeup_r ~timeout
+  in
   let result =
-    if has_input then (
-      drain_wakeup_fd wakeup_r;
-      if !winch_received then (
-        winch_received := false;
-        let cols, rows = Terminal.size output_fd in
-        on_event (Input.Resize (cols, rows)));
+    if wakeup_ready then drain_wakeup_fd wakeup_r;
+    if (input_ready || wakeup_ready) && !winch_received then (
+      winch_received := false;
+      let cols, rows = Terminal.size output_fd in
+      on_event (Input.Resize (cols, rows)));
+    if input_ready then
       match Unix.read input_fd input_buffer 0 (Bytes.length input_buffer) with
       | n when n > 0 ->
           let now = Unix.gettimeofday () in
@@ -252,7 +259,7 @@ let read_events_unix ~terminal ~parser ~input_fd ~wakeup_r ~output_fd
           `Continue
       | 0 -> `End
       | _ -> `Continue
-      | exception Unix.Unix_error _ -> `Continue)
+      | exception Unix.Unix_error _ -> `Continue
     else `Continue
   in
   (match result with
@@ -281,18 +288,24 @@ let query_cursor_position_unix ~terminal ~parser ~input_fd ~wakeup_r
     else
       let remaining = deadline -. Unix.gettimeofday () in
       if remaining <= 0. then ()
-      else if wait_readable_fds ~input_fd ~wakeup_r ~timeout:(Some remaining)
-      then (
-        drain_wakeup_fd wakeup_r;
-        match Unix.read input_fd input_buffer 0 (Bytes.length input_buffer) with
-        | n when n > 0 ->
-            let now = Unix.gettimeofday () in
-            Input.Parser.feed parser input_buffer 0 n ~now ~on_event
-              ~on_response;
-            loop ()
-        | 0 -> ()
-        | _ -> loop ()
-        | exception Unix.Unix_error _ -> loop ())
+      else
+        let { input_ready; wakeup_ready } =
+          wait_readable_fds ~input_fd ~wakeup_r ~timeout:(Some remaining)
+        in
+        if wakeup_ready then drain_wakeup_fd wakeup_r;
+        if input_ready then
+          match
+            Unix.read input_fd input_buffer 0 (Bytes.length input_buffer)
+          with
+          | n when n > 0 ->
+              let now = Unix.gettimeofday () in
+              Input.Parser.feed parser input_buffer 0 n ~now ~on_event
+                ~on_response;
+              loop ()
+          | 0 -> ()
+          | _ -> loop ()
+          | exception Unix.Unix_error _ -> loop ()
+        else loop ()
   in
   loop ();
   !result
