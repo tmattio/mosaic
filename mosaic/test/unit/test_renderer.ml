@@ -239,6 +239,26 @@ let render_frame_until_settled_completes_code () =
       is_false ~msg:"not highlighting" (Code.is_highlighting code);
       equal ~msg:"pending work" int 0 (List.length (Renderer.pending_work t))
 
+let settlement_replaces_superseded_frame_cells () =
+  let t = make_renderer () in
+  let child = make_child ~parent:(Renderer.root t) ~x:0 ~y:0 ~w:1 ~h:1 () in
+  let passes = ref 0 in
+  Renderable.set_render child (fun self grid ~delta:_ ->
+      incr passes;
+      if !passes = 1 then begin
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"X";
+        Renderable.request_render self
+      end);
+  (match Renderer.render_frame_until_settled t ~width:1 ~height:1 ~delta:0. with
+  | `Settled -> ()
+  | `Pending pending ->
+      fail
+        (Printf.sprintf "expected settlement, got %d pending item(s)"
+           (List.length pending)));
+  equal ~msg:"render passes" int 2 !passes;
+  let grid = Screen.next_grid (Renderer.screen t) in
+  equal ~msg:"superseded glyph cleared" string " " (Grid.get_text grid 0)
+
 let post_process_runs () =
   let t = make_renderer () in
   let ran = ref false in
@@ -1066,6 +1086,8 @@ let () =
             render_frame_until_settled_reports_pending_code;
           test "render_frame_until_settled completes code"
             render_frame_until_settled_completes_code;
+          test "settlement replaces superseded frame cells"
+            settlement_replaces_superseded_frame_cells;
         ];
       group "Focus"
         [

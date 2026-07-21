@@ -181,3 +181,28 @@ let%expect_test "truncation with ellipsis" =
     (Vnode.text ~wrap:`None ~truncate:true "hello world");
   [%expect_exact {|
 hello w…|}]
+
+let%expect_test "a following text node clears its allocated leading blank" =
+  let row left_width =
+    let left_style =
+      Toffee.Style.default
+      |> Toffee.Style.set_width
+           (Toffee.Style.Dimension.length (Float.of_int left_width))
+      |> Toffee.Style.set_flex_shrink 0.
+    in
+    Vnode.box
+      [
+        Vnode.text ~key:"left" ~style:left_style ~truncate:true "abcdefgh";
+        Vnode.text ~key:"right" " · next";
+      ]
+  in
+  let app = make_app () in
+  reconcile app (row 5);
+  (* A bounded settlement pass can rerender before the first pass is presented.
+     Move the following sibling's blank over the old ellipsis to exercise that
+     exact complete-frame ownership boundary. *)
+  Renderer.render_frame app.renderer ~width:12 ~height:1 ~delta:0.;
+  reconcile app (row 4);
+  frame app ~width:12 ~height:1;
+  [%expect_exact {|
+abc… · next|}]

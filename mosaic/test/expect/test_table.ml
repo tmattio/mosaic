@@ -282,8 +282,8 @@ Bob        25 London
 Charlie    35 Paris
 Name   Age City
 Xena    99 Mars
-Yuki    88 Moonondon
-Charlie    35 Paris|}]
+Yuki    88 Moon
+|}]
 
 (* ── Text Overflow ── *)
 

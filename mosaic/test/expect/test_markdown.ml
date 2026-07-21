@@ -389,7 +389,7 @@ let%expect_test "set_conceal toggles punctuation visibility" =
   [%expect {|This has bold text.|}];
   Markdown.set_conceal app.md false;
   markdown_frame app ~width:60 ~height:5;
-  [%expect {|This has **bold**ttext.|}]
+  [%expect {|This has **bold** text.|}]
 
 (* ── Streaming ── *)
 

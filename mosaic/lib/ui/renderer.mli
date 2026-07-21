@@ -67,6 +67,11 @@ val is_settled : t -> bool
 val render_frame : t -> width:int -> height:int -> delta:float -> unit
 (** [render_frame t ~width ~height ~delta] builds the next frame.
 
+    Each call replaces the complete unpresented frame. Blank cells therefore
+    belong to the new pass rather than compositing over glyphs from an earlier
+    pass, including when {!render_frame_until_settled} renders multiple passes
+    before presentation.
+
     The pipeline runs in order:
     - Runs lifecycle passes ([on_frame] and resize hooks).
     - Runs frame callbacks (see {!add_frame_callback}).
