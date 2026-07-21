@@ -513,21 +513,26 @@ let translate_acc t =
   in
   loop t 0 0
 
+let terminal_edge value = int_of_float (Float.round value)
+
+(* Quantize both ends of a Toffee interval. Rounding its length independently
+   can overlap an adjacent interval whose shared edge rounds down. *)
+let terminal_span start length =
+  max 0 (terminal_edge (start +. length) - terminal_edge start)
+
 let x t =
   let ox, _ = translate_acc t in
-  if t.layout_valid then int_of_float (Float.round t.abs_x) + ox else ox
+  if t.layout_valid then terminal_edge t.abs_x + ox else ox
 
 let y t =
   let _, oy = translate_acc t in
-  if t.layout_valid then int_of_float (Float.round t.abs_y) + oy else oy
+  if t.layout_valid then terminal_edge t.abs_y + oy else oy
 
 let width t =
-  if t.layout_valid && t.visible then max 1 (int_of_float (Float.round t.abs_w))
-  else 0
+  if t.layout_valid && t.visible then terminal_span t.abs_x t.abs_w else 0
 
 let height t =
-  if t.layout_valid && t.visible then max 1 (int_of_float (Float.round t.abs_h))
-  else 0
+  if t.layout_valid && t.visible then terminal_span t.abs_y t.abs_h else 0
 
 let bounds t : Grid.region =
   { x = x t; y = y t; width = width t; height = height t }

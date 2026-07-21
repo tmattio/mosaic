@@ -153,18 +153,26 @@ val mark_dirty : t -> unit
 (** [mark_dirty t] flags [t] for re-layout on the next frame. *)
 
 val x : t -> int
-(** [x t] is [t]'s absolute horizontal position in terminal cells. *)
+(** [x t] is [t]'s rounded absolute left edge in terminal cells, plus any
+    translation inherited from [t] or its ancestors. *)
 
 val y : t -> int
-(** [y t] is [t]'s absolute vertical position in terminal cells. *)
+(** [y t] is [t]'s rounded absolute top edge in terminal cells, plus any
+    translation inherited from [t] or its ancestors. *)
 
 val width : t -> int
-(** [width t] is [t]'s layout width in terminal cells. Returns [0] when [t] is
-    hidden or layout has not yet been computed. *)
+(** [width t] is the distance between [t]'s rounded absolute horizontal edges
+    in terminal cells. Adjacent Toffee edges therefore quantize to the same
+    cell boundary, and a zero-width allocation remains zero. Translation does
+    not affect the result. Returns [0] when [t] is hidden or layout has not yet
+    been computed. *)
 
 val height : t -> int
-(** [height t] is [t]'s layout height in terminal cells. Returns [0] when [t] is
-    hidden or layout has not yet been computed. *)
+(** [height t] is the distance between [t]'s rounded absolute vertical edges
+    in terminal cells. Adjacent Toffee edges therefore quantize to the same
+    cell boundary, and a zero-height allocation remains zero. Translation does
+    not affect the result. Returns [0] when [t] is hidden or layout has not yet
+    been computed. *)
 
 val bounds : t -> Grid.region
 (** [bounds t] is [{ x = x t; y = y t; width = width t; height = height t }]. *)

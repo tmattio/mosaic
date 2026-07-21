@@ -792,6 +792,28 @@ let layout_update () =
   equal ~msg:"width" int 30 (Renderable.width child);
   equal ~msg:"height" int 40 (Renderable.height child)
 
+let zero_layout_keeps_zero_extent () =
+  let t = make_ctx () in
+  let root = make_root t in
+  let child = Renderable.create ~parent:root () in
+  Renderable.Private.update_layout child ~x:10.4 ~y:20.4 ~width:0. ~height:0.;
+  equal ~msg:"width" int 0 (Renderable.width child);
+  equal ~msg:"height" int 0 (Renderable.height child)
+
+let adjacent_fractional_edges_share_cell_boundary () =
+  let t = make_ctx () in
+  let root = make_root t in
+  let left = Renderable.create ~parent:root () in
+  let right = Renderable.create ~parent:root () in
+  let below = Renderable.create ~parent:root () in
+  Renderable.Private.update_layout left ~x:0.6 ~y:0.6 ~width:3.6 ~height:3.6;
+  Renderable.Private.update_layout right ~x:4.2 ~y:0.6 ~width:2.6 ~height:3.6;
+  Renderable.Private.update_layout below ~x:0.6 ~y:4.2 ~width:3.6 ~height:2.6;
+  equal ~msg:"horizontal shared edge" int (Renderable.x right)
+    (Renderable.x left + Renderable.width left);
+  equal ~msg:"vertical shared edge" int (Renderable.y below)
+    (Renderable.y left + Renderable.height left)
+
 let bounds_returns_clip_rect () =
   let t = make_ctx () in
   let root = make_root t in
@@ -810,7 +832,9 @@ let translate_offsets () =
   layout_node child ~x:10 ~y:20 ~width:30 ~height:40;
   Renderable.set_translate child ~x:5 ~y:3;
   equal ~msg:"x" int 15 (Renderable.x child);
-  equal ~msg:"y" int 23 (Renderable.y child)
+  equal ~msg:"y" int 23 (Renderable.y child);
+  equal ~msg:"translation preserves width" int 30 (Renderable.width child);
+  equal ~msg:"translation preserves height" int 40 (Renderable.height child)
 
 let mark_dirty () =
   let t = make_ctx () in
@@ -1131,6 +1155,9 @@ let () =
         [
           test "defaults to 0,0,0,0" layout_defaults;
           test "update_layout sets position and size" layout_update;
+          test "zero layout keeps zero extent" zero_layout_keeps_zero_extent;
+          test "adjacent fractional edges share a cell boundary"
+            adjacent_fractional_edges_share_cell_boundary;
           test "bounds returns clip_rect" bounds_returns_clip_rect;
           test "set_translate offsets position" translate_offsets;
           test "mark_dirty sets layout_dirty" mark_dirty;

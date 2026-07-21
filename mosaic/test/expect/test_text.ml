@@ -206,3 +206,26 @@ let%expect_test "a following text node clears its allocated leading blank" =
   frame app ~width:12 ~height:1;
   [%expect_exact {|
 abc… · next|}]
+
+let%expect_test "a fully yielded text node occupies no terminal cell" =
+  let fixed width =
+    Toffee.Style.default
+    |> Toffee.Style.set_width
+         (Toffee.Style.Dimension.length (Float.of_int width))
+    |> Toffee.Style.set_flex_shrink 0.
+  in
+  let zero = Toffee.Style.Dimension.length 0. in
+  let yielding =
+    Toffee.Style.default
+    |> Toffee.Style.set_min_size (Toffee.Geometry.Size.square zero)
+    |> Toffee.Style.set_flex_shrink 100.
+  in
+  render ~width:11 ~height:1
+    (Vnode.box
+       [
+         Vnode.text ~style:(fixed 4) "left";
+         Vnode.text ~style:yielding ~truncate:true "hidden";
+         Vnode.text ~style:(fixed 7) " · next";
+       ]);
+  [%expect_exact {|
+left · next|}]
