@@ -49,6 +49,11 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     Eio_unix.Fd.use_exn "is_tty" input_eio_fd Matrix.Terminal.is_tty
   in
   let wakeup = Eio.Condition.create () in
+  (* Level-triggered wake: [wake] sets [wake_pending] before broadcasting, and
+     the wait's fast path takes a pending wake without awaiting, so a wake that
+     lands while the loop is out of its wait (mid-render, or descheduled by
+     another fiber) is never lost to an edge-triggered broadcast. *)
+  let wake_pending = ref false in
   let terminal =
     Matrix.Terminal.make
       ~output:(fun s -> Eio.Flow.copy_string s stdout)
@@ -185,7 +190,10 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
       in
       (* ───── IO Callbacks ───── *)
       let now () = Eio.Time.now clock in
-      let wake () = Eio.Condition.broadcast wakeup in
+      let wake () =
+        wake_pending := true;
+        Eio.Condition.broadcast wakeup
+      in
       let flush_input () =
         if input_is_tty then
           Eio_unix.Fd.use_exn "flush_input" input_eio_fd
@@ -195,6 +203,25 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
         Eio.Flow.write stdout [ Cstruct.of_bytes ~off ~len buf ]
       in
       let pending_startup_events = ref (List.rev !startup_events) in
+      (* The three peer branches of the wait, allocated once so a successful
+         read stays on the no-allocation path; the deadline is read from a cell
+         each call rather than re-closed over. *)
+      let wait_deadline = ref sigwinch_poll_interval in
+      let await_input () =
+        Eio_unix.Fd.use_exn "await" input_eio_fd (fun fd ->
+            Eio_unix.await_readable fd);
+        `Input
+      in
+      let await_wake () =
+        Eio.Condition.await_no_mutex wakeup;
+        wake_pending := false;
+        `Wakeup
+      in
+      let await_deadline () =
+        Eio.Time.sleep clock !wait_deadline;
+        `Timeout
+      in
+      let wait_branches = [ await_input; await_wake; await_deadline ] in
       let read_events ~timeout ~on_event =
         let on_response = function
           | Matrix.Input.Response.Capability event ->
@@ -210,23 +237,21 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
               | None -> sigwinch_poll_interval
               | Some t -> Float.min t sigwinch_poll_interval
             in
+            (* Input, wake, and deadline race as three peers. The deadline is a
+               plain [sleep] re-armed every call — not a [with_timeout] wrapping
+               the wait, whose nested [Fiber.first] can leave the loop parked in
+               the wake branch after the timer fired — so it always resolves and
+               no cancellation race can strand the loop. [wake] is
+               level-triggered: it sets [wake_pending] before its broadcast, so a
+               wake that lands while the loop is out of this wait is taken by the
+               fast path without awaiting, never lost to the edge-triggered
+               broadcast nor to a cancelled wake branch. *)
+            wait_deadline := effective_timeout;
             let got =
-              let wait () =
-                Eio.Fiber.first
-                  (fun () ->
-                    Eio_unix.Fd.use_exn "await" input_eio_fd (fun fd ->
-                        Eio_unix.await_readable fd);
-                    `Input)
-                  (fun () ->
-                    Eio.Condition.await_no_mutex wakeup;
-                    `Wakeup)
-              in
-              match
-                Eio.Time.with_timeout clock effective_timeout (fun () ->
-                    Ok (wait ()))
-              with
-              | Ok v -> v
-              | Error `Timeout -> `Timeout
+              if !wake_pending then (
+                wake_pending := false;
+                `Wakeup)
+              else Eio.Fiber.any wait_branches
             in
             if Atomic.get winch_flag then (
               Atomic.set winch_flag false;

@@ -401,6 +401,96 @@ let test_sigwinch_wakes_eio_runtime () =
   Eio.Flow.close stdin_writer;
   Eio.Flow.close stdout_reader
 
+(* A wake that lands while the loop is momentarily out of its wait — busy in a
+   render, or descheduled by another fiber's work — must still reach the loop.
+   A real app is never purely between-draining-and-awaiting: the render write
+   yields, and a subprocess tool's spawn/reap raises SIGCHLD across the domain.
+   This test reproduces that gap deterministically ([on_render] yields, exactly
+   as a loop with pending IO would) while a subprocess storm perturbs the Eio
+   scheduler as a shell or search tool does. It then repaints from another fiber
+   during the gap and times the result.
+
+   With a level-triggered wake the paint lands on the next turn (~microseconds);
+   a backend that drops the edge-triggered [broadcast] recovers only through the
+   50ms sigwinch poll, so each of 150 wakes costs ~50ms (~7.5s) — and if the
+   [with_timeout] fails to re-arm across the cancellation, it hangs outright. *)
+let test_wake_survives_subprocess_storm () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let clock = Eio.Stdenv.clock env in
+  let proc_mgr = Eio.Stdenv.process_mgr env in
+  let stdin, stdin_writer = Eio_unix.pipe sw in
+  let stdout_reader, stdout = Eio_unix.pipe sw in
+  let renders = Atomic.make 0 in
+  let bumped = Eio.Condition.create () in
+  let app =
+    Matrix_eio.create ~sw ~clock ~stdin ~stdout ~raw_mode:false
+      ~target_fps:None ~mouse_enabled:false ~signal_handlers:false
+      ~start_idle:true ()
+  in
+  (* Drain the frame stream so the loop's writes never block. *)
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      let buffer = Cstruct.create 4096 in
+      (try
+         while true do
+           ignore (Eio.Flow.single_read stdout_reader buffer : int)
+         done
+       with End_of_file | Eio.Cancel.Cancelled _ -> ());
+      `Stop_daemon);
+  (* A continuous subprocess spawn/reap storm on the same domain. *)
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      (try
+         while true do
+           Eio.Process.run proc_mgr [ "true" ]
+         done
+       with Eio.Cancel.Cancelled _ | End_of_file -> ());
+      `Stop_daemon);
+  let iterations = 400 in
+  let stalled = ref 0 in
+  let elapsed = ref 0. in
+  Eio.Fiber.both
+    (fun () ->
+      Matrix.run app ~on_render:(fun _ ->
+          Atomic.incr renders;
+          Eio.Condition.broadcast bumped;
+          (* The loop is not purely between draining and awaiting: yield so a
+             wake from another fiber lands while we are out of the wait. *)
+          Eio.Fiber.yield ());
+      Eio.Flow.close stdout)
+    (fun () ->
+      let await_render ~before =
+        Eio.Time.with_timeout clock 3.0 (fun () ->
+            while Atomic.get renders <= before do
+              Eio.Condition.await_no_mutex bumped
+            done;
+            Ok ())
+      in
+      (* Reach the first quiescent frame, then ping-pong: each request_redraw
+         fires while the loop is parked in [on_render]'s yield. *)
+      (match await_render ~before:0 with Ok () | Error `Timeout -> ());
+      let start = Eio.Time.now clock in
+      let index = ref 0 in
+      while !index < iterations && !stalled = 0 do
+        incr index;
+        let before = Atomic.get renders in
+        Matrix.request_redraw app;
+        match await_render ~before with
+        | Ok () -> ()
+        | Error `Timeout -> stalled := !index
+      done;
+      elapsed := Eio.Time.now clock -. start;
+      Matrix.stop app);
+  Eio.Flow.close stdin_writer;
+  Eio.Flow.close stdout_reader;
+  if !stalled > 0 then
+    failf "render loop stranded after wake %d/%d (no frame within 3s)" !stalled
+      iterations;
+  is_true
+    ~msg:
+      (Printf.sprintf "%d gap wakes painted %d frames in %.2fs, none stranded"
+         iterations (Atomic.get renders) !elapsed)
+    (Atomic.get renders >= iterations)
+
 let () =
   run "matrix-eio.driver"
     [
@@ -409,6 +499,8 @@ let () =
           test "input crosses fibers" test_input_crosses_fibers;
           test "async wake reaches a quiescent loop"
             test_async_wake_reaches_quiescent_loop;
+          test "wake survives a subprocess storm"
+            test_wake_survives_subprocess_storm;
           test "stdin EOF stops the runtime" test_stdin_eof_stops_the_runtime;
           test "successful reads avoid adapter result allocations"
             test_successful_reads_do_not_allocate_a_result;
