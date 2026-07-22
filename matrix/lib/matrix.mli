@@ -237,12 +237,19 @@ val pause : app -> unit
 (** [pause app] stops the render cadence but leaves the terminal configured.
     {!start} resumes. *)
 
-val suspend : app -> unit
-(** [suspend app] pauses rendering and restores the terminal to cooked mode.
-    {!resume} reapplies configuration. *)
+val suspend : ?leave_alt:bool -> app -> unit
+(** [suspend app] pauses rendering and restores the terminal to cooked mode
+    (mouse, bracketed paste, focus reporting, kitty keyboard, and
+    modify-other-keys off; raw mode off; pending input flushed). When
+    [leave_alt] is [true] (default [false], preserving existing callers) it also
+    exits the alternate-screen buffer, so a full-screen foreground child owns the
+    primary screen and its scrollback. {!resume} reapplies configuration. *)
 
 val resume : app -> unit
-(** [resume app] reapplies terminal configuration after {!suspend}. *)
+(** [resume app] reapplies terminal configuration after {!suspend}: it re-enters
+    the alternate-screen buffer iff the matching {!suspend} left it, discards any
+    input received while suspended (stale keystrokes never reach the app), and
+    forces a full repaint on the next frame. *)
 
 val request_live : app -> unit
 (** [request_live app] signals pending live work. Restarts the render cadence

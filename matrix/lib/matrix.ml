@@ -96,6 +96,9 @@ type app = {
   mutable live_requests : int;
   mutable restore_modes_on_next_focus : bool;
   mutable capability_window_until : float option;
+  (* Whether the current suspend left the alternate-screen buffer, so [resume]
+     re-enters it. [false] outside a [~leave_alt:true] suspend. *)
+  mutable suspend_left_alt : bool;
 }
 
 let with_rollback ~rollback fn =
@@ -805,7 +808,7 @@ let pause t =
   t.control_state <- `Explicit_paused;
   update_loop_active t
 
-let suspend t =
+let suspend ?(leave_alt = false) t =
   t.previous_control_state <- t.control_state;
   t.control_state <- `Explicit_suspended;
   update_loop_active t;
@@ -823,6 +826,9 @@ let suspend t =
   (try Terminal.enable_kitty_keyboard t.terminal false with _ -> ());
   (try Terminal.enable_modify_other_keys t.terminal false with _ -> ());
   (try t.set_raw_mode false with _ -> ());
+  t.suspend_left_alt <- leave_alt;
+  if leave_alt then
+    (try Terminal.leave_alternate_screen t.terminal with _ -> ());
   try t.flush_input () with _ -> ()
 
 let resume t =
@@ -830,6 +836,9 @@ let resume t =
   else (
     (if t.config.raw_mode then try t.set_raw_mode true with _ -> ());
     (try t.flush_input () with _ -> ());
+    (if t.suspend_left_alt then (
+       t.suspend_left_alt <- false;
+       try Terminal.enter_alternate_screen t.terminal with _ -> ()));
     (if t.config.mode = `Primary then
        let height = max 1 t.height in
        match t.query_cursor_position ~timeout:0.1 with
@@ -1129,6 +1138,7 @@ let init_app (c : config) ~write_output ~now ~wake ~terminal_size ~set_raw_mode
       live_requests = 0;
       restore_modes_on_next_focus = false;
       capability_window_until;
+      suspend_left_alt = false;
     }
   in
   with_rollback

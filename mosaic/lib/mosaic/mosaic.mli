@@ -845,6 +845,12 @@ module Cmd : sig
         (** Set the terminal window title to the given string. *)
     | Copy_to_clipboard of string
         (** Copy text to the terminal clipboard when supported. *)
+    | Bell
+        (** Ring the terminal bell (BEL), a best-effort attention cue. *)
+    | Notify of { title : string; body : string }
+        (** Post a desktop notification via OSC 9 (iTerm2, kitty) and OSC 777
+            (urxvt and others); a terminal ignores the sequence it does not
+            understand. Wrapped for tmux passthrough when inside tmux. *)
     | Clear_selection  (** Clear the active text selection, if any. *)
     | Focus of string
         (** Move keyboard focus to the element identified by the given [id]. Has
@@ -881,6 +887,12 @@ module Cmd : sig
   val copy_to_clipboard : string -> 'msg t
   (** [copy_to_clipboard s] copies [s] to the terminal clipboard when supported.
   *)
+
+  val bell : 'msg t
+  (** [bell] rings the terminal bell (BEL). *)
+
+  val notify : title:string -> body:string -> 'msg t
+  (** [notify ~title ~body] posts a desktop notification through the terminal. *)
 
   val clear_selection : 'msg t
   (** [clear_selection] clears the active text selection, if any. *)

@@ -189,6 +189,8 @@ module Cmd = struct
     | Quit
     | Set_title of string
     | Copy_to_clipboard of string
+    | Bell
+    | Notify of { title : string; body : string }
     | Clear_selection
     | Focus of string
     | Static_commit of 'msg option Vnode.t
@@ -200,6 +202,8 @@ module Cmd = struct
   let quit = Quit
   let set_title title = Set_title title
   let copy_to_clipboard text = Copy_to_clipboard text
+  let bell = Bell
+  let notify ~title ~body = Notify { title; body }
   let clear_selection = Clear_selection
   let focus id = Focus id
   let static_commit view = Static_commit view
@@ -213,6 +217,8 @@ module Cmd = struct
     | Quit -> Quit
     | Set_title title -> Set_title title
     | Copy_to_clipboard text -> Copy_to_clipboard text
+    | Bell -> Bell
+    | Notify { title; body } -> Notify { title; body }
     | Clear_selection -> Clear_selection
     | Focus id -> Focus id
     | Static_commit view -> Static_commit (Vnode.map (Option.map f) view)
@@ -426,6 +432,27 @@ let base64_encode input =
 
 let clipboard_sequence text = "\027]52;c;" ^ base64_encode text ^ "\007"
 
+(* A desktop-notification escape: OSC 9 (iTerm2, kitty) followed by OSC 777
+   (urxvt and others). A terminal ignores the sequence it does not understand.
+   Inside tmux the whole payload is wrapped for DCS passthrough, doubling every
+   ESC byte so the outer terminal receives it. *)
+let notify_sequence ~title ~body =
+  let osc9 = "\027]9;" ^ title ^ ": " ^ body ^ "\007" in
+  let osc777 = "\027]777;notify;" ^ title ^ ";" ^ body ^ "\007" in
+  let seq = osc9 ^ osc777 in
+  match Sys.getenv_opt "TMUX" with
+  | None | Some "" -> seq
+  | Some _ ->
+      let buf = Buffer.create (String.length seq + 16) in
+      Buffer.add_string buf "\027Ptmux;";
+      String.iter
+        (fun c ->
+          if c = '\027' then Buffer.add_string buf "\027\027"
+          else Buffer.add_char buf c)
+        seq;
+      Buffer.add_string buf "\027\\";
+      Buffer.contents buf
+
 let rec process_cmd runtime (cmd : _ Cmd.t) =
   match cmd with
   | Cmd.None -> ()
@@ -443,6 +470,12 @@ let rec process_cmd runtime (cmd : _ Cmd.t) =
   | Cmd.Copy_to_clipboard text ->
       let term = Matrix.terminal runtime.matrix_app in
       Matrix.Terminal.send term (clipboard_sequence text)
+  | Cmd.Bell ->
+      let term = Matrix.terminal runtime.matrix_app in
+      Matrix.Terminal.send term "\007"
+  | Cmd.Notify { title; body } ->
+      let term = Matrix.terminal runtime.matrix_app in
+      Matrix.Terminal.send term (notify_sequence ~title ~body)
   | Cmd.Clear_selection -> Renderer.clear_selection runtime.renderer
   | Cmd.Focus id ->
       if not (try_focus runtime id) then (
