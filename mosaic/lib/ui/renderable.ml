@@ -520,6 +520,16 @@ let terminal_edge value = int_of_float (Float.round value)
 let terminal_span start length =
   max 0 (terminal_edge (start +. length) - terminal_edge start)
 
+(* A node clips its children when either axis is not [Visible]. Such a node owns
+   the scissor that bounds everything it contains, so it must never quantize to
+   an empty box: at zero extent the scissor collapses, the clip is dropped, and
+   overflowing children paint straight over the following siblings. Non-clipping
+   nodes stay free to yield to zero. *)
+let clips t =
+  let o = Toffee.Style.overflow t.style in
+  o.Toffee.Geometry.Point.x <> Toffee.Style.Overflow.Visible
+  || o.Toffee.Geometry.Point.y <> Toffee.Style.Overflow.Visible
+
 let x t =
   let ox, _ = translate_acc t in
   if t.layout_valid then terminal_edge t.abs_x + ox else ox
@@ -529,10 +539,16 @@ let y t =
   if t.layout_valid then terminal_edge t.abs_y + oy else oy
 
 let width t =
-  if t.layout_valid && t.visible then terminal_span t.abs_x t.abs_w else 0
+  if t.layout_valid && t.visible then
+    let span = terminal_span t.abs_x t.abs_w in
+    if span = 0 && clips t then 1 else span
+  else 0
 
 let height t =
-  if t.layout_valid && t.visible then terminal_span t.abs_y t.abs_h else 0
+  if t.layout_valid && t.visible then
+    let span = terminal_span t.abs_y t.abs_h in
+    if span = 0 && clips t then 1 else span
+  else 0
 
 let bounds t : Grid.region =
   { x = x t; y = y t; width = width t; height = height t }
