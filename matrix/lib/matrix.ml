@@ -896,6 +896,12 @@ let set_cursor_color t ~r ~g ~b =
 (* Resize *)
 
 let apply_resize t cols rows now =
+  (* Reaching a resize decision consumes any pending debounced resize in every
+     branch, including the no-ops for an unchanged or degenerate size. A
+     pending entry left behind keeps its debounce window elapsed, which pins
+     [compute_timeout] at zero and spins the loop — starving input — until a
+     differently-sized resize clears it. *)
+  t.pending_resize <- None;
   if cols <= 0 || rows <= 0 then ()
   else if t.width = cols && t.height = rows then ()
   else (
@@ -905,7 +911,6 @@ let apply_resize t cols rows now =
     force_full_redraw t;
     refresh_render_region t;
     t.last_resize_apply_time <- now;
-    t.pending_resize <- None;
     request_redraw t)
 
 let handle_resize t cols rows =

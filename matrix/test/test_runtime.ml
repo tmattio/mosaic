@@ -14,6 +14,7 @@ type fake_state = {
   mutable wake_calls : int;
   mutable pending_events : Matrix.Input.t list;
   mutable pending_input_chunks : string list;
+  mutable read_timeouts : float option list;
   output : Buffer.t;
   terminal_output : Buffer.t;
 }
@@ -28,6 +29,7 @@ let make_state events input_chunks =
     wake_calls = 0;
     pending_events = events;
     pending_input_chunks = input_chunks;
+    read_timeouts = [];
     output = Buffer.create 256;
     terminal_output = Buffer.create 256;
   }
@@ -161,6 +163,7 @@ let make_app ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
   in
   let read_events ~timeout ~on_event =
     state.read_calls <- state.read_calls + 1;
+    state.read_timeouts <- timeout :: state.read_timeouts;
     let dt =
       if sleep_until_timeout then
         match timeout with
@@ -799,6 +802,35 @@ let test_resize_debounce_applies_latest_pending_resize () =
   equal ~msg:"debounced resize applies latest pending dimensions" (pair int int)
     (120, 40) (Matrix.full_size app)
 
+let test_same_size_debounced_resize_settles () =
+  (* A settling resize whose dimensions equal the size already applied is a
+     no-op to draw, but it must still be consumed from [pending_resize].
+     Otherwise the pending entry lingers with an elapsed debounce window, which
+     pins the loop's requested timeout at zero and spins it — starving input —
+     until a differently-sized resize clears the entry. *)
+  let app, state =
+    make_app ~resize_debounce:(Some 0.1) ~advance_now:false
+      ~sleep_until_timeout:true ~target_fps:None ~input_timeout:None
+      ~events:[ Matrix.Input.Resize (100, 30); Matrix.Input.Resize (100, 30) ]
+      ~stop_after_reads:40 ()
+  in
+  Matrix.run app ~on_render:(fun _ -> ());
+  let classify = function
+    | None -> "idle"
+    | Some t when t <= 0. -> "spin"
+    | Some _ -> "wait"
+  in
+  let recent =
+    List.filteri (fun i _ -> i < 5) state.read_timeouts |> List.map classify
+  in
+  equal
+    ~msg:
+      "a resize debounced to the applied size settles the loop into an idle \
+       wait rather than a zero-timeout spin"
+    (list string)
+    [ "idle"; "idle"; "idle"; "idle"; "idle" ]
+    recent
+
 let test_primary_required_rows_expands_primary_region () =
   let app, _state =
     make_app ~mode:`Primary ~render_offset:22 ~target_fps:(Some 30.)
@@ -1360,6 +1392,8 @@ let () =
             test_resize_clamps_primary_render_offset;
           test "debounce applies latest pending resize"
             test_resize_debounce_applies_latest_pending_resize;
+          test "same-size debounced resize settles the loop"
+            test_same_size_debounced_resize_settles;
         ];
       group "Primary sizing"
         [
