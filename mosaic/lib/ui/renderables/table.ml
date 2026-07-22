@@ -465,6 +465,16 @@ let set_selected_background t c =
     t.props <- { t.props with selected_background = c };
     request t)
 
+let set_focused_selected_text_color t c =
+  if not (Ansi.Color.equal t.props.focused_selected_text_color c) then (
+    t.props <- { t.props with focused_selected_text_color = c };
+    request t)
+
+let set_focused_selected_background t c =
+  if not (Ansi.Color.equal t.props.focused_selected_background c) then (
+    t.props <- { t.props with focused_selected_background = c };
+    request t)
+
 let set_selection_visible t visible =
   if t.props.selection_visible <> visible then (
     t.props <- { t.props with selection_visible = visible };
@@ -1063,6 +1073,8 @@ let apply_props t (props : Props.t) =
   set_background t props.background;
   set_selected_text_color t props.selected_text_color;
   set_selected_background t props.selected_background;
+  set_focused_selected_text_color t props.focused_selected_text_color;
+  set_focused_selected_background t props.focused_selected_background;
   set_selection_visible t props.selection_visible;
   set_show_scroll_indicator t props.show_scroll_indicator;
   set_activate_on_click t props.activate_on_click;

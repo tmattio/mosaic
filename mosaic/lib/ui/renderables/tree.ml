@@ -424,6 +424,16 @@ let set_selected_text_color t c =
     t.props <- { t.props with selected_text_color = c };
     request t)
 
+let set_focused_selected_background t c =
+  if not (Ansi.Color.equal t.props.focused_selected_background c) then (
+    t.props <- { t.props with focused_selected_background = c };
+    request t)
+
+let set_focused_selected_text_color t c =
+  if not (Ansi.Color.equal t.props.focused_selected_text_color c) then (
+    t.props <- { t.props with focused_selected_text_color = c };
+    request t)
+
 let set_guide_color t c =
   if not (Ansi.Color.equal t.props.guide_color c) then (
     t.props <- { t.props with guide_color = c };
@@ -721,6 +731,8 @@ let apply_props t (props : Props.t) =
   set_text_color t props.text_color;
   set_selected_background t props.selected_background;
   set_selected_text_color t props.selected_text_color;
+  set_focused_selected_background t props.focused_selected_background;
+  set_focused_selected_text_color t props.focused_selected_text_color;
   set_guide_color t props.guide_color;
   set_icon_color t props.icon_color;
   set_wrap_selection t props.wrap_selection;
