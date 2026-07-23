@@ -475,6 +475,107 @@ let test_measure_count_flexbox () =
   | None -> fail "Missing node context after layout"
   | Some data -> equal ~msg:"Measure function call count" int 4 data.count
 
+(* A percent-width item clamped by its own max-width must be measured at the
+   clamped width when deriving content-based sizes, so wrapping content
+   reports the height the final layout paints. Regression: the flex base size
+   and container content size measured the child at the unclamped style
+   width, positioning the following sibling over the child's painted rows. *)
+let test_max_width_clamps_measured_wrap () =
+  let tree = new_tree () in
+  let auto_size =
+    Size.{ width = Style.Dimension.auto; height = Style.Dimension.auto }
+  in
+  (* 120 columns of wrapping content: height is the line count at the width
+     the layout offers. *)
+  let text =
+    new_leaf_with_context tree (Style.default |> Style.set_size auto_size) "text"
+    |> or_fail "Failed to create text leaf"
+  in
+  let inset_style =
+    Style.default
+    |> Style.set_size
+         Size.
+           { width = Style.Dimension.percent 1.0; height = Style.Dimension.auto }
+    |> Style.set_max_size
+         Size.
+           { width = Style.Dimension.length 60.0; height = Style.Dimension.auto }
+  in
+  let inset =
+    new_with_children tree inset_style [| text |]
+    |> or_fail "Failed to create inset"
+  in
+  let hint =
+    new_leaf_with_context tree
+      (Style.default
+      |> Style.set_size
+           Size.
+             {
+               width = Style.Dimension.percent 1.0;
+               height = Style.Dimension.length 1.0;
+             })
+      "hint"
+    |> or_fail "Failed to create hint leaf"
+  in
+  let root_style =
+    Style.default
+    |> Style.set_flex_direction Style.Flex_direction.Column
+    |> Style.set_size
+         Size.
+           { width = Style.Dimension.length 140.0; height = Style.Dimension.auto }
+  in
+  let root =
+    new_with_children tree root_style [| inset; hint |]
+    |> or_fail "Failed to create root"
+  in
+  let measure_function known available _node context _style =
+    match context with
+    | Some "text" ->
+        (* Word-wrapping text: 120 columns of content in 10-column words, so
+           min-content is one word and max-content the unwrapped line. *)
+        let wrap_width =
+          match known.Size.width with
+          | Some w -> w
+          | None -> (
+              match available.Size.width with
+              | Available_space.Definite w -> w
+              | Available_space.Min_content -> 10.0
+              | Available_space.Max_content -> 120.0)
+        in
+        let width = Float.min 120.0 (Float.max 10.0 wrap_width) in
+        let height =
+          match known.Size.height with
+          | Some h -> h
+          | None -> ceil (120.0 /. width)
+        in
+        Size.{ width; height }
+    | _ ->
+        Size.
+          {
+            width = Option.value known.Size.width ~default:0.0;
+            height = Option.value known.Size.height ~default:0.0;
+          }
+  in
+  let available =
+    Size.
+      {
+        width = Available_space.of_float 140.0;
+        height = Available_space.max_content;
+      }
+  in
+  (match compute_layout_with_measure tree root available measure_function with
+  | Ok () -> ()
+  | Error e ->
+      failf "Failed to compute layout with measure: %s" (Error.to_string e));
+  let inset_layout = Result.get_ok (layout tree inset) in
+  let hint_layout = Result.get_ok (layout tree hint) in
+  let float_eq, _ = test_helpers in
+  is_true ~msg:"Inset width clamps to max-width 60"
+    (float_eq (Layout.size inset_layout).width 60.0);
+  is_true ~msg:"Inset height is the wrap count at the clamped width"
+    (float_eq (Layout.size inset_layout).height 2.0);
+  is_true ~msg:"Hint sits below the wrapped inset"
+    (float_eq (Layout.location hint_layout).y 2.0)
+
 let make_size width height =
   Size.
     {
@@ -925,6 +1026,8 @@ let () =
           test "Min overrides max" test_min_overrides_max;
           test "Max overrides size" test_max_overrides_size;
           test "Min overrides size" test_min_overrides_size;
+          test "Max width clamps measured wrap"
+            test_max_width_clamps_measured_wrap;
         ];
       group "root_constraints"
         [

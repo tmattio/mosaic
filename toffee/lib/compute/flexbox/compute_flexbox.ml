@@ -463,6 +463,31 @@ let determine_available_space (known_dimensions : float option size)
   Size.{ width; height }
 
 (* Determine flex base size *)
+(* The used cross size of an item is its style size clamped by the item's own
+   min/max constraints. A known cross size taken from the unclamped style size
+   would measure content (e.g. wrapping text) at a width the final layout never
+   gives the item, so content-based main sizes would disagree with the painted
+   layout. *)
+let clamp_known_cross_size (item : flex_item) ~(is_row : bool)
+    (known : float option size) : float option size =
+  let clamp value lo hi =
+    Option.map
+      (fun v ->
+        let v = match hi with Some hi -> Float.min v hi | None -> v in
+        match lo with Some lo -> Float.max v lo | None -> v)
+      value
+  in
+  if is_row then
+    {
+      known with
+      height = clamp known.height item.min_size.height item.max_size.height;
+    }
+  else
+    {
+      known with
+      width = clamp known.width item.min_size.width item.max_size.width;
+    }
+
 let determine_flex_base_size (type t)
     (module Tree : Tree.LAYOUT_PARTIAL_TREE with type t = t) (tree : t)
     (constants : algo_constants) (available_space : Available_space.t size)
@@ -539,14 +564,15 @@ let determine_flex_base_size (type t)
         let cross_dim =
           if constants.is_row then base_size.height else base_size.width
         in
-        if child.align_self = Stretch && cross_dim = None then
-          let cross_size =
-            Available_space.to_option cross_axis_available_space
-            |> Option.map (fun v -> v -. cross_axis_margin_sum)
-          in
-          if constants.is_row then { base_size with height = cross_size }
-          else { base_size with width = cross_size }
-        else base_size
+        (if child.align_self = Stretch && cross_dim = None then
+           let cross_size =
+             Available_space.to_option cross_axis_available_space
+             |> Option.map (fun v -> v -. cross_axis_margin_sum)
+           in
+           if constants.is_row then { base_size with height = cross_size }
+           else { base_size with width = cross_size }
+         else base_size)
+        |> clamp_known_cross_size child ~is_row:constants.is_row
       in
 
       (* Get container width for resolving flex basis *)
@@ -1176,26 +1202,29 @@ let determine_container_main_size (type t)
                               if constants.is_row then base_size.height
                               else base_size.width
                             in
-                            if
-                              flex_item.align_self = Stretch && cross_dim = None
-                            then
-                              let cross_size =
-                                Available_space.to_option
-                                  cross_axis_available_space
-                                |> Option.map (fun v ->
-                                    v
-                                    -.
-                                    if constants.is_row then
-                                      flex_item.margin.top
-                                      +. flex_item.margin.bottom
-                                    else
-                                      flex_item.margin.left
-                                      +. flex_item.margin.right)
-                              in
-                              if constants.is_row then
-                                { base_size with height = cross_size }
-                              else { base_size with width = cross_size }
-                            else base_size
+                            (if
+                               flex_item.align_self = Stretch
+                               && cross_dim = None
+                             then
+                               let cross_size =
+                                 Available_space.to_option
+                                   cross_axis_available_space
+                                 |> Option.map (fun v ->
+                                     v
+                                     -.
+                                     if constants.is_row then
+                                       flex_item.margin.top
+                                       +. flex_item.margin.bottom
+                                     else
+                                       flex_item.margin.left
+                                       +. flex_item.margin.right)
+                               in
+                               if constants.is_row then
+                                 { base_size with height = cross_size }
+                               else { base_size with width = cross_size }
+                             else base_size)
+                            |> clamp_known_cross_size flex_item
+                                 ~is_row:constants.is_row
                           in
 
                           let layout_output =
