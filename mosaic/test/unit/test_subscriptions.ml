@@ -180,7 +180,7 @@ let cmd_copy_to_clipboard_maps_without_changing_payload () =
       failf "unexpected clipboard payload: %S" other
   | Cmd.None | Cmd.Batch _ | Cmd.Perform _ | Cmd.Quit | Cmd.Set_title _
   | Cmd.Clear_selection | Cmd.Focus _ | Cmd.Static_commit _ | Cmd.Static_clear
-    ->
+  | Cmd.Bell | Cmd.Notify _ ->
       fail "expected Copy_to_clipboard"
 
 let cmd_clear_selection_maps_to_itself () =
@@ -188,7 +188,7 @@ let cmd_clear_selection_maps_to_itself () =
   | Cmd.Clear_selection -> ()
   | Cmd.None | Cmd.Batch _ | Cmd.Perform _ | Cmd.Quit | Cmd.Set_title _
   | Cmd.Copy_to_clipboard _ | Cmd.Focus _ | Cmd.Static_commit _
-  | Cmd.Static_clear ->
+  | Cmd.Static_clear | Cmd.Bell | Cmd.Notify _ ->
       fail "expected Clear_selection"
 
 let () =
