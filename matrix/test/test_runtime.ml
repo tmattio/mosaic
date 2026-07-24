@@ -1436,6 +1436,71 @@ let test_primary_adjusts_all_mouse_like_events () =
       | None -> failf "missing adjusted %s event" name)
     cases
 
+(* The Unix backend must render a frame requested from another thread while no
+   input arrives: readiness of the wakeup pipe alone must never lead to a
+   blocking read of the input fd. Runs against real fds — stdin is temporarily
+   a pipe that stays empty, so a regressed loop parks in [Unix.read] and only
+   the watchdog byte (well past the asserted deadline) unblocks it. *)
+let test_wakeup_renders_without_input () =
+  let input_r, input_w = Unix.pipe ~cloexec:false () in
+  let devnull = Unix.openfile "/dev/null" [ Unix.O_WRONLY ] 0 in
+  let saved_stdin = Unix.dup Unix.stdin in
+  Unix.dup2 input_r Unix.stdin;
+  Fun.protect
+    ~finally:(fun () ->
+      Unix.dup2 saved_stdin Unix.stdin;
+      List.iter
+        (fun fd -> try Unix.close fd with Unix.Unix_error _ -> ())
+        [ saved_stdin; input_r; input_w; devnull ])
+    (fun () ->
+      let app =
+        Matrix.create ~raw_mode:false ~target_fps:None ~input_timeout:None
+          ~signal_handlers:false ~output:(`Fd devnull) ()
+      in
+      let frames = ref 0 in
+      let second_frame_elapsed = ref infinity in
+      let started = Unix.gettimeofday () in
+      let finished = Atomic.make false in
+      let requester =
+        Thread.create
+          (fun () ->
+            Thread.delay 0.05;
+            Matrix.request_redraw app)
+          ()
+      in
+      let watchdog =
+        Thread.create
+          (fun () ->
+            let rec wait n =
+              if n > 0 && not (Atomic.get finished) then (
+                Thread.delay 0.05;
+                wait (n - 1))
+            in
+            wait 50;
+            (* A regressed loop re-enters the blocking read after every
+               unblocked byte, so keep feeding input until the run returns. *)
+            let rec unblock n =
+              if n > 0 && not (Atomic.get finished) then (
+                (try ignore (Unix.write input_w (Bytes.of_string "q") 0 1 : int)
+                 with Unix.Unix_error _ -> ());
+                Thread.delay 0.1;
+                unblock (n - 1))
+            in
+            unblock 100)
+          ()
+      in
+      Matrix.run app ~on_render:(fun app ->
+          incr frames;
+          if !frames = 2 then (
+            second_frame_elapsed := Unix.gettimeofday () -. started;
+            Matrix.stop app));
+      Atomic.set finished true;
+      Thread.join requester;
+      Thread.join watchdog;
+      equal ~msg:"wakeup produces the requested frame" int 2 !frames;
+      is_true ~msg:"frame renders without waiting for input"
+        (!second_frame_elapsed < 1.))
+
 let () =
   run "matrix.runtime"
     [
@@ -1578,5 +1643,9 @@ let () =
             test_primary_mouse_event_above_live_region_maps_to_minus_one;
           test "adjusts all mouse-like events"
             test_primary_adjusts_all_mouse_like_events;
+        ];
+      group "Unix backend"
+        [
+          test "wakeup renders without input" test_wakeup_renders_without_input;
         ];
     ]
