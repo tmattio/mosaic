@@ -351,8 +351,15 @@ val static_replace :
 (** [static_replace ?preserve_live_region app ~rows s] queues an atomic
     replacement of all primary static content. The replacement and the next live
     frame are emitted in one frame transaction; terminal scrollback is cleared
-    before [s] is written. This function is ignored in [`Alt] mode.
-    [preserve_live_region] has the same meaning as for {!static_write}. *)
+    before [s] is written.
+
+    {b Warning.} Clearing erases the terminal's {e entire} scrollback, including
+    content that predates the application, such as earlier shell output. Reserve
+    this for applications that own the whole session transcript. Support for the
+    underlying control sequence ([CSI 3 J]) varies across terminals.
+
+    This function is ignored in [`Alt] mode. [preserve_live_region] has the same
+    meaning as for {!static_write}. *)
 
 val static_clear : app -> unit
 (** [static_clear app] clears the primary screen immediately, discards pending
