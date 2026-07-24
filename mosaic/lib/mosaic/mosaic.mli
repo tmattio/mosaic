@@ -2500,6 +2500,7 @@ val diff :
   ?theme:Diff.theme ->
   ?highlight:Diff.highlight ->
   ?line_highlights:Diff.line_highlight list ->
+  ?line_spans:Diff.line_span list ->
   ?line_signs:Diff.line_sign list ->
   ?show_line_numbers:bool ->
   ?wrap:Text_surface.wrap ->
@@ -2518,6 +2519,8 @@ val diff :
     - [line_highlights] -- source-line background highlights, using inclusive
       1-based old/new source line numbers. Earlier entries win when ranges
       overlap.
+    - [line_spans] -- source-line sub-range highlights: a byte range within one
+      1-based old/new source line, drawn as a background over the covered cells.
     - [line_signs] -- source-line gutter signs, using inclusive 1-based old/new
       source line numbers. Earlier entries win when ranges overlap.
     - [show_line_numbers] -- controls whether line-number gutters are shown.
