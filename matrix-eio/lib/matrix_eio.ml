@@ -224,8 +224,13 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
       let wait_branches = [ await_input; await_wake; await_deadline ] in
       let read_events ~timeout ~on_event =
         let on_response = function
-          | Matrix.Input.Response.Capability event ->
-              Matrix.Terminal.apply_capability_event terminal event
+          | Matrix.Input.Response.Capability event -> (
+              Matrix.Terminal.apply_capability_event terminal event;
+              match event with
+              | Matrix.Input.Response.Color_scheme ((`Dark | `Light) as scheme)
+                ->
+                  on_event (Matrix.Input.Color_scheme scheme)
+              | _ -> ())
           | Matrix.Input.Response.Clipboard _ | Matrix.Input.Response.Osc _
           | Matrix.Input.Response.Unknown _ ->
               ()

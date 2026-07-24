@@ -845,6 +845,13 @@ module Cmd : sig
         (** Set the terminal window title to the given string. *)
     | Copy_to_clipboard of string
         (** Copy text to the terminal clipboard when supported. *)
+    | Copy_selection
+        (** Copy the renderer's current text selection to the clipboard via OSC
+            52. No-op when there is no active selection. *)
+    | Query_color_scheme
+        (** Ask the terminal for its light/dark colour scheme by emitting
+            [CSI ? 996 n]. The reply, when supported, arrives through
+            {!Sub.on_color_scheme}. *)
     | Bell
         (** Ring the terminal bell (BEL), a best-effort attention cue. *)
     | Notify of { title : string; body : string }
@@ -887,6 +894,15 @@ module Cmd : sig
   val copy_to_clipboard : string -> 'msg t
   (** [copy_to_clipboard s] copies [s] to the terminal clipboard when supported.
   *)
+
+  val copy_selection : 'msg t
+  (** [copy_selection] copies the renderer's current text selection to the
+      clipboard via OSC 52. Does nothing when no selection is active. *)
+
+  val query_color_scheme : 'msg t
+  (** [query_color_scheme] asks the terminal whether it is using a light or dark
+      colour scheme by emitting [CSI ? 996 n]. Terminals that support the query
+      reply, and the reply is delivered through {!Sub.on_color_scheme}. *)
 
   val bell : 'msg t
   (** [bell] rings the terminal bell (BEL). *)
@@ -957,6 +973,10 @@ module Sub : sig
     | On_blur of 'msg
         (** [On_blur msg] dispatches [msg] when the terminal window loses focus.
         *)
+    | On_color_scheme of ([ `Dark | `Light ] -> 'msg option)
+        (** [On_color_scheme f] delivers the terminal's light/dark colour scheme,
+            both as the reply to {!Cmd.query_color_scheme} and as unsolicited DEC
+            2031 notifications. [f] returns [None] to ignore a report. *)
 
   val none : 'msg t
   (** [none] is the empty subscription. Produces no events. *)
@@ -1013,6 +1033,11 @@ module Sub : sig
 
   val on_blur : 'msg -> 'msg t
   (** [on_blur msg] dispatches [msg] when the terminal window loses focus. *)
+
+  val on_color_scheme : ([ `Dark | `Light ] -> 'msg option) -> 'msg t
+  (** [on_color_scheme f] delivers the terminal's light/dark colour scheme to
+      [f], both as the reply to {!Cmd.query_color_scheme} and as unsolicited DEC
+      2031 notifications. [f] returns [None] to ignore a report. *)
 
   val map : ('a -> 'b) -> 'a t -> 'b t
   (** [map f sub] is [sub] with every produced message transformed by [f]. Use

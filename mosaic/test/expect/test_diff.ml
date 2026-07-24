@@ -80,6 +80,11 @@ let selected_line_color =
 let line_highlight side first last : Diff.line_highlight =
   { side; first; last; color = selected_line_color }
 
+let emphasis_color = Ansi.Color.of_rgb 210 130 40
+
+let line_span side line start_byte end_byte : Diff.line_span =
+  { side; line; start_byte; end_byte; color = emphasis_color }
+
 let print_source_line_row patch ~layout source =
   match Diff.source_line_row patch ~layout source with
   | None -> Format.printf "none\n"
@@ -313,6 +318,65 @@ let%expect_test "set source line highlights rebuilds colors" =
   let highlighted = Screen.next_grid (Renderer.screen renderer) in
   assert_background ~msg:"updated selected content" highlighted ~x:8 ~y:2
     selected;
+  [%expect_exact {||}]
+
+let%expect_test "line spans emphasize a byte range in unified layout" =
+  let line_spans =
+    [
+      line_span Diff.New 2 22 27 (* "World" on the added line *);
+      line_span Diff.Old 2 15 20 (* "Hello" on the removed line *);
+      line_span Diff.New 2 100 200 (* clamps to empty: ignored *);
+      line_span Diff.New 99 0 4 (* line absent from patch: ignored *);
+    ]
+  in
+  let grid =
+    grid_of_vnode ~width:60 ~height:5
+      (Vnode.diff ~layout:Diff.Unified ~line_spans (parse simple_diff))
+  in
+  (* Added line at y=2, content column 5; "World" spans grid x 27..31. *)
+  assert_background ~msg:"added emphasis start" grid ~x:27 ~y:2 emphasis_color;
+  assert_background ~msg:"added emphasis end" grid ~x:31 ~y:2 emphasis_color;
+  assert_not_background ~msg:"before span keeps diff bg" grid ~x:26 ~y:2
+    emphasis_color;
+  assert_not_background ~msg:"after span keeps diff bg" grid ~x:32 ~y:2
+    emphasis_color;
+  (* Removed line at y=1; "Hello" spans grid x 20..24. *)
+  assert_background ~msg:"removed emphasis start" grid ~x:20 ~y:1 emphasis_color;
+  assert_background ~msg:"removed emphasis end" grid ~x:24 ~y:1 emphasis_color;
+  [%expect_exact {||}]
+
+let%expect_test "line spans emphasize a byte range in split layout" =
+  let line_spans = [ line_span Diff.New 2 22 27 ] in
+  let grid =
+    grid_of_vnode ~width:80 ~height:5
+      (Vnode.diff ~layout:Diff.Split ~line_spans (parse simple_diff))
+  in
+  (* Added line on the right at y=1, content column 45; "World" x 67..71. *)
+  assert_background ~msg:"split emphasis start" grid ~x:67 ~y:1 emphasis_color;
+  assert_background ~msg:"split emphasis end" grid ~x:71 ~y:1 emphasis_color;
+  assert_not_background ~msg:"split before span" grid ~x:66 ~y:1 emphasis_color;
+  [%expect_exact {||}]
+
+let%expect_test "line spans follow wrapped rows and clamp byte ranges" =
+  let renderer = Renderer.create () in
+  set_viewport renderer ~width:44 ~height:7;
+  let line_spans = [ line_span Diff.New 2 0 100 ] in
+  let diff =
+    Diff.create ~parent:(Renderer.root renderer) ~layout:Diff.Split ~wrap:`Char
+      ~line_spans
+      (parse asymmetric_wrap_diff)
+  in
+  fill_node (Diff.node diff);
+  Renderer.render_frame renderer ~width:44 ~height:7 ~delta:0.;
+  ignore (Renderer.render renderer : string);
+  Renderer.render_frame renderer ~width:44 ~height:7 ~delta:0.;
+  let grid = Screen.next_grid (Renderer.screen renderer) in
+  (* The 36-byte added content wraps into three rows on the right (content
+     column 27); the end byte clamps to the line length. Emphasis lands on the
+     first byte of each wrapped row. *)
+  assert_background ~msg:"wrap row 1" grid ~x:27 ~y:1 emphasis_color;
+  assert_background ~msg:"wrap row 2" grid ~x:27 ~y:2 emphasis_color;
+  assert_background ~msg:"wrap row 3" grid ~x:27 ~y:3 emphasis_color;
   [%expect_exact {||}]
 
 let%expect_test "source line rows" =

@@ -240,8 +240,12 @@ let wait_readable_fds ~input_fd ~wakeup_r ~timeout =
 let read_events_unix ~terminal ~parser ~input_fd ~wakeup_r ~output_fd
     ~input_buffer ~timeout ~on_event =
   let on_response = function
-    | Input.Response.Capability event ->
-        Terminal.apply_capability_event terminal event
+    | Input.Response.Capability event -> (
+        Terminal.apply_capability_event terminal event;
+        match event with
+        | Input.Response.Color_scheme ((`Dark | `Light) as scheme) ->
+            on_event (Input.Color_scheme scheme)
+        | _ -> ())
     | Input.Response.Clipboard _ | Input.Response.Osc _
     | Input.Response.Unknown _ ->
         ()

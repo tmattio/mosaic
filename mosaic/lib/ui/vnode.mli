@@ -1071,6 +1071,7 @@ val diff :
   ?theme:Diff.theme ->
   ?highlight:Diff.highlight ->
   ?line_highlights:Diff.line_highlight list ->
+  ?line_spans:Diff.line_span list ->
   ?line_signs:Diff.line_sign list ->
   ?show_line_numbers:bool ->
   ?wrap:Text_surface.wrap ->
@@ -1088,6 +1089,9 @@ val diff :
     - [line_highlights] are source-line background highlights, using inclusive
       1-based old/new source line numbers. Earlier entries win when ranges
       overlap. Defaults to [[]].
+    - [line_spans] are source-line sub-range highlights: a byte range within one
+      1-based old/new source line, drawn as a background over its cells. Defaults
+      to [[]]. See {!Diff.line_span}.
     - [line_signs] are source-line gutter signs, using inclusive 1-based old/new
       source line numbers. Earlier entries win when ranges overlap. Defaults to
       [[]].

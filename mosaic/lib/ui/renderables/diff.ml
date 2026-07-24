@@ -17,6 +17,14 @@ type line_sign = {
   sign : Line_number.line_sign;
 }
 
+type line_span = {
+  side : side;
+  line : int;
+  start_byte : int;
+  end_byte : int;
+  color : Ansi.Color.t;
+}
+
 type source_line = { side : side; line : int }
 type line_kind = Context | Added | Removed | Blank
 type hit_region = Gutter | Sign | Content | Padding
@@ -50,6 +58,11 @@ let equal_line_sign_value (a : Line_number.line_sign)
 let equal_line_sign (a : line_sign) (b : line_sign) =
   equal_side a.side b.side && a.first = b.first && a.last = b.last
   && equal_line_sign_value a.sign b.sign
+
+let equal_line_span (a : line_span) (b : line_span) =
+  equal_side a.side b.side && a.line = b.line && a.start_byte = b.start_byte
+  && a.end_byte = b.end_byte
+  && Ansi.Color.equal a.color b.color
 
 type theme = {
   added_bg : Ansi.Color.t;
@@ -137,6 +150,7 @@ module Props = struct
     theme : theme;
     highlight : highlight option;
     line_highlights : line_highlight list;
+    line_spans : line_span list;
     line_signs : line_sign list;
     show_line_numbers : bool;
     wrap : Text_surface.wrap;
@@ -147,7 +161,7 @@ module Props = struct
   let empty_patch = Patch.empty
 
   let make ?(patch = empty_patch) ?(layout = Unified) ?(theme = default_theme)
-      ?highlight ?(line_highlights = []) ?(line_signs = [])
+      ?highlight ?(line_highlights = []) ?(line_spans = []) ?(line_signs = [])
       ?(show_line_numbers = true) ?(wrap = `None) ?(selectable = true)
       ?(text_style = Ansi.Style.default) () =
     {
@@ -156,6 +170,7 @@ module Props = struct
       theme;
       highlight;
       line_highlights;
+      line_spans;
       line_signs;
       show_line_numbers;
       wrap;
@@ -171,6 +186,7 @@ module Props = struct
     && theme_equal a.theme b.theme
     && Option.equal highlight_equal a.highlight b.highlight
     && List.equal equal_line_highlight a.line_highlights b.line_highlights
+    && List.equal equal_line_span a.line_spans b.line_spans
     && List.equal equal_line_sign a.line_signs b.line_signs
     && a.show_line_numbers = b.show_line_numbers
     && a.wrap = b.wrap
@@ -309,18 +325,61 @@ module View = struct
   let line_sign_of_sources ~line_signs ~builtin sources =
     merge_sign (find_sign sources line_signs) builtin
 
+  (* Grapheme index — counted as the text surface counts for highlight
+     placement — of the grapheme starting at or after byte [b] in [content].
+     Tab width is irrelevant here: a tab is one grapheme cluster at any width. *)
+  let grapheme_of_byte content b =
+    if b <= 0 then 0
+    else begin
+      let gi = ref 0 in
+      Matrix.Text.iter_grapheme_info ~width_method:`Unicode ~tab_width:1
+        (fun ~offset ~len:_ ~width:_ -> if offset < b then incr gi)
+        content;
+      !gi
+    end
+
+  (* Lower each [line_span] matching one of [sources] to a buffer grapheme range
+     [(start, stop, color)], with byte offsets clamped to [content] and empty
+     ranges dropped. [line_start] is the grapheme offset of the line's first
+     display row, so the ranges land in the same coordinate space as the
+     surface's highlight overlays. *)
+  let span_ranges ~line_start ~content sources line_spans acc =
+    List.fold_left
+      (fun acc (span : line_span) ->
+        if
+          List.exists
+            (fun (s : source_line) -> s.side = span.side && s.number = span.line)
+            sources
+        then begin
+          let len = String.length content in
+          let start_byte = max 0 (min span.start_byte len) in
+          let end_byte = max 0 (min span.end_byte len) in
+          if end_byte <= start_byte then acc
+          else
+            let start = line_start + grapheme_of_byte content start_byte in
+            let stop = line_start + grapheme_of_byte content end_byte in
+            if stop <= start then acc else (start, stop, span.color) :: acc
+        end
+        else acc)
+      acc line_spans
+
+  type emphasis = (int * int * Ansi.Color.t) list
+
   type unified = {
     content : string;
     line_colors : (int * Line_number.line_color) list;
     line_signs : (int * Line_number.line_sign) list;
     line_numbers : (int * int) list;
+    emphasis : emphasis;
   }
 
-  let unified ~theme ~line_highlights ~line_signs (patch : Patch.t) =
+  let unified ~theme ~line_highlights ~line_spans ~line_signs (patch : Patch.t) =
     let buf = Buffer.create 256 in
     let line_colors = ref [] in
     let line_sign_rows = ref [] in
     let line_numbers = ref [] in
+    let emphasis = ref [] in
+    let grapheme_offset = ref 0 in
     let line_index = ref 0 in
     let push_line tag line_no sources (line : Patch.line) =
       let index = !line_index in
@@ -330,6 +389,11 @@ module View = struct
         (index, line_color_of_sources ~theme ~line_highlights tag sources)
         :: !line_colors;
       line_numbers := (index, line_no) :: !line_numbers;
+      emphasis :=
+        span_ranges ~line_start:!grapheme_offset ~content:line.content sources
+          line_spans !emphasis;
+      grapheme_offset :=
+        !grapheme_offset + Matrix.Text.grapheme_count line.content + 1;
       let builtin =
         match tag with
         | Patch.Added -> Some (added_sign theme)
@@ -374,6 +438,7 @@ module View = struct
       line_colors = List.rev !line_colors;
       line_signs = List.rev !line_sign_rows;
       line_numbers = List.rev !line_numbers;
+      emphasis = List.rev !emphasis;
     }
 
   type split_kind = Context | Added | Removed | Blank
@@ -478,6 +543,27 @@ module View = struct
   let content lines =
     String.concat "\n"
       (List.map (fun (line : split_line) -> line.content) lines)
+
+  (* Emphasis ranges for one side's rendered lines. The content joins these
+     lines with newlines, so the running grapheme offset matches the surface
+     buffer, blank alignment rows included. *)
+  let split_emphasis ~line_spans lines =
+    let emphasis = ref [] in
+    let grapheme_offset = ref 0 in
+    List.iter
+      (fun (line : split_line) ->
+        let sources =
+          match (line.side, line.line_num) with
+          | Some side, Some number -> [ { side; number } ]
+          | Some _, None | None, Some _ | None, None -> []
+        in
+        emphasis :=
+          span_ranges ~line_start:!grapheme_offset ~content:line.content sources
+            line_spans !emphasis;
+        grapheme_offset :=
+          !grapheme_offset + Matrix.Text.grapheme_count line.content + 1)
+      lines;
+    List.rev !emphasis
 
   let line_number_props ~theme ~line_highlights ~line_signs ~show_line_numbers
       lines =
@@ -879,6 +965,23 @@ let destroy_children t =
   t.pending_rebuild <- false;
   t.waiting_for_highlight <- false
 
+(* Intra-line emphasis rides the code buffer's highlight overlays: they are
+   rendered by the text surface itself, so placement is wrap-correct and syntax
+   foregrounds survive (the overlay carries only a background). Split reuses its
+   code buffers across rebuilds, so stale ranges are dropped by ref first. *)
+let emphasis_ref_id = 1
+
+let set_code_emphasis code (ranges : View.emphasis) =
+  let buffer = Code.buffer code in
+  Text_buffer.remove_highlights_by_ref buffer emphasis_ref_id;
+  List.iter
+    (fun (start_offset, end_offset, color) ->
+      Text_buffer.add_highlight buffer
+        (Text_buffer.Highlight.make ~start_offset ~end_offset
+           ~style:(Ansi.Style.make ~bg:color ())
+           ~ref_id:emphasis_ref_id ()))
+    ranges
+
 let code_props (props : Props.t) ~content ?syntax () =
   Code.Props.make ~content ?syntax ~text_style:props.text_style ~wrap:props.wrap
     ~selectable:props.selectable ()
@@ -965,7 +1068,7 @@ let build_unified_view t (props : Props.t) =
   set_flex_direction t Toffee.Style.Flex_direction.Column;
   let unified =
     View.unified ~theme:props.theme ~line_highlights:props.line_highlights
-      ~line_signs:props.line_signs props.patch
+      ~line_spans:props.line_spans ~line_signs:props.line_signs props.patch
   in
   let side =
     Line_number.create ~parent:t.node ~style:full_style
@@ -980,6 +1083,7 @@ let build_unified_view t (props : Props.t) =
       ?syntax:(unified_code_syntax props.highlight)
       ~wrap:props.wrap ~selectable:props.selectable ()
   in
+  set_code_emphasis code unified.View.emphasis;
   t.left_side <- Some side;
   t.left_code <- Some code;
   t.left_lines <- [];
@@ -1068,6 +1172,10 @@ let build_split_view t (props : Props.t) =
        ~content:(View.content split.View.right)
        ?syntax:(new_code_syntax props props.highlight)
        ());
+  set_code_emphasis left_code
+    (View.split_emphasis ~line_spans:props.line_spans split.View.left);
+  set_code_emphasis right_code
+    (View.split_emphasis ~line_spans:props.line_spans split.View.right);
   update_waiting_for_highlight t props left_code right_code;
   t.left_side <- Some left_side;
   t.right_side <- Some right_side;
@@ -1090,14 +1198,14 @@ let rebuild t =
     | Split -> build_split_view t t.props
 
 let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?layout ?theme
-    ?highlight ?line_highlights ?line_signs ?show_line_numbers ?wrap ?selectable
-    ?text_style patch =
+    ?highlight ?line_highlights ?line_spans ?line_signs ?show_line_numbers ?wrap
+    ?selectable ?text_style patch =
   let node =
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
   let props =
-    Props.make ~patch ?layout ?theme ?highlight ?line_highlights ?line_signs
-      ?show_line_numbers ?wrap ?selectable ?text_style ()
+    Props.make ~patch ?layout ?theme ?highlight ?line_highlights ?line_spans
+      ?line_signs ?show_line_numbers ?wrap ?selectable ?text_style ()
   in
   let t =
     {
@@ -1145,6 +1253,8 @@ let set_highlight t highlight = update t { t.props with highlight }
 
 let set_line_highlights t line_highlights =
   update t { t.props with line_highlights }
+
+let set_line_spans t line_spans = update t { t.props with line_spans }
 
 let set_line_signs t line_signs = update t { t.props with line_signs }
 let apply_props = update

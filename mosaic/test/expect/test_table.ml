@@ -21,7 +21,7 @@ let paging_rows count =
 let dispatch_mouse app = function
   | Input.Mouse event -> Renderer.dispatch_mouse app.renderer event
   | Input.Key _ | Input.Paste _ | Input.Resize _ | Input.Focus | Input.Blur
-  | Input.Error _ ->
+  | Input.Color_scheme _ | Input.Error _ ->
       invalid_arg "expected mouse input"
 
 (* ── Basic Rendering ── *)

@@ -180,7 +180,7 @@ let cmd_copy_to_clipboard_maps_without_changing_payload () =
       failf "unexpected clipboard payload: %S" other
   | Cmd.None | Cmd.Batch _ | Cmd.Perform _ | Cmd.Quit | Cmd.Set_title _
   | Cmd.Clear_selection | Cmd.Focus _ | Cmd.Static_commit _ | Cmd.Static_clear
-  | Cmd.Bell | Cmd.Notify _ ->
+  | Cmd.Copy_selection | Cmd.Query_color_scheme | Cmd.Bell | Cmd.Notify _ ->
       fail "expected Copy_to_clipboard"
 
 let cmd_clear_selection_maps_to_itself () =
@@ -188,8 +188,48 @@ let cmd_clear_selection_maps_to_itself () =
   | Cmd.Clear_selection -> ()
   | Cmd.None | Cmd.Batch _ | Cmd.Perform _ | Cmd.Quit | Cmd.Set_title _
   | Cmd.Copy_to_clipboard _ | Cmd.Focus _ | Cmd.Static_commit _
-  | Cmd.Static_clear | Cmd.Bell | Cmd.Notify _ ->
+  | Cmd.Static_clear | Cmd.Copy_selection | Cmd.Query_color_scheme | Cmd.Bell
+  | Cmd.Notify _ ->
       fail "expected Clear_selection"
+
+let cmd_copy_selection_maps_to_itself () =
+  match Cmd.map (fun msg -> msg) Cmd.copy_selection with
+  | Cmd.Copy_selection -> ()
+  | Cmd.None | Cmd.Batch _ | Cmd.Perform _ | Cmd.Quit | Cmd.Set_title _
+  | Cmd.Copy_to_clipboard _ | Cmd.Clear_selection | Cmd.Focus _
+  | Cmd.Static_commit _ | Cmd.Static_clear | Cmd.Query_color_scheme | Cmd.Bell
+  | Cmd.Notify _ ->
+      fail "expected Copy_selection"
+
+let cmd_query_color_scheme_maps_to_itself () =
+  match Cmd.map (fun msg -> msg) Cmd.query_color_scheme with
+  | Cmd.Query_color_scheme -> ()
+  | Cmd.None | Cmd.Batch _ | Cmd.Perform _ | Cmd.Quit | Cmd.Set_title _
+  | Cmd.Copy_to_clipboard _ | Cmd.Clear_selection | Cmd.Focus _
+  | Cmd.Static_commit _ | Cmd.Static_clear | Cmd.Copy_selection | Cmd.Bell
+  | Cmd.Notify _ ->
+      fail "expected Query_color_scheme"
+
+let sub_on_color_scheme_delivers_reports () =
+  let sub =
+    Sub.on_color_scheme (function `Dark -> Some Quit | `Light -> None)
+  in
+  match sub with
+  | Sub.On_color_scheme f ->
+      (match f `Dark with
+      | Some Quit -> ()
+      | Some _ -> fail "expected Quit for dark"
+      | None -> fail "expected a message for dark");
+      is_true ~msg:"light ignored" (f `Light = None)
+  | _ -> fail "expected On_color_scheme sub"
+
+let sub_on_color_scheme_maps_messages () =
+  let sub = Sub.on_color_scheme (fun _ -> Some Quit) in
+  let mapped : msg Sub.t = Sub.map (fun msg -> msg) sub in
+  match mapped with
+  | Sub.On_color_scheme f -> (
+      match f `Dark with Some Quit -> () | _ -> fail "expected mapped Quit")
+  | _ -> fail "expected On_color_scheme"
 
 let () =
   Windtrap.run "subscriptions"
@@ -212,4 +252,11 @@ let () =
         cmd_copy_to_clipboard_maps_without_changing_payload;
       test "Cmd.clear_selection maps to itself"
         cmd_clear_selection_maps_to_itself;
+      test "Cmd.copy_selection maps to itself" cmd_copy_selection_maps_to_itself;
+      test "Cmd.query_color_scheme maps to itself"
+        cmd_query_color_scheme_maps_to_itself;
+      test "Sub.on_color_scheme delivers reports"
+        sub_on_color_scheme_delivers_reports;
+      test "Sub.on_color_scheme maps messages"
+        sub_on_color_scheme_maps_messages;
     ]

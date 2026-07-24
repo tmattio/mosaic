@@ -91,6 +91,25 @@ type line_sign = {
     diff signs so that callers can use {!Line_number.line_sign.before} while the
     diff keeps its [+] and [-] signs in {!Line_number.line_sign.after}. *)
 
+type line_span = {
+  side : side;
+  line : int;
+  start_byte : int;
+  end_byte : int;
+  color : Ansi.Color.t;
+}
+(** The type for a source-line sub-range highlight.
+
+    [line] is a 1-based source line number on [side]; [start_byte] and [end_byte]
+    are byte offsets into that line's content, half-open on [\[start_byte,
+    end_byte)]. Out-of-range bytes are clamped to the line and an empty range is
+    ignored, as is a span whose [(side, line)] is absent from the patch. The
+    span's [color] is drawn as a background over the covered cells, on whichever
+    wrapped rows they fall, alpha-blended over the line's existing background;
+    opaque colours replace it. Unlike {!line_highlight}, which colours a whole
+    line, a span colours a byte range within one line. In unified layout,
+    context lines can match either {!Old} or {!New}. *)
+
 type source_line = { side : side; line : int }
 (** The type for a 1-based source line on one side of a diff. *)
 
@@ -192,6 +211,7 @@ module Props : sig
     ?theme:theme ->
     ?highlight:highlight ->
     ?line_highlights:line_highlight list ->
+    ?line_spans:line_span list ->
     ?line_signs:line_sign list ->
     ?show_line_numbers:bool ->
     ?wrap:Text_surface.wrap ->
@@ -201,8 +221,8 @@ module Props : sig
     t
   (** [make ()] is a diff props value. [patch] defaults to an empty patch,
       [layout] to [Unified], [theme] to {!default_theme}, [show_line_numbers] to
-      [true], [line_highlights] to [[]], [wrap] to [`None], [selectable] to
-      [true], and [text_style] to {!Ansi.Style.default}. *)
+      [true], [line_highlights] and [line_spans] to [[]], [wrap] to [`None],
+      [selectable] to [true], and [text_style] to {!Ansi.Style.default}. *)
 
   val default : t
   (** [default] is [make ()]. *)
@@ -223,6 +243,7 @@ val create :
   ?theme:theme ->
   ?highlight:highlight ->
   ?line_highlights:line_highlight list ->
+  ?line_spans:line_span list ->
   ?line_signs:line_sign list ->
   ?show_line_numbers:bool ->
   ?wrap:Text_surface.wrap ->
@@ -254,6 +275,10 @@ val set_highlight : t -> highlight option -> unit
 val set_line_highlights : t -> line_highlight list -> unit
 (** [set_line_highlights t highlights] sets source-line background highlights
     and rebuilds the view. *)
+
+val set_line_spans : t -> line_span list -> unit
+(** [set_line_spans t spans] sets source-line sub-range highlights and rebuilds
+    the view. *)
 
 val set_line_signs : t -> line_sign list -> unit
 (** [set_line_signs t signs] sets source-line gutter signs and rebuilds the

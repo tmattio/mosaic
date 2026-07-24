@@ -154,6 +154,11 @@ val blur : t -> unit
 val selection : t -> Selection.t option
 (** [selection t] is the active text selection, if any. *)
 
+val selection_text : t -> string option
+(** [selection_text t] is the text of the active selection, gathered in document
+    order from the selectables under its container, or [None] when no selection
+    is active or the selection is empty. *)
+
 val clear_selection : t -> unit
 (** [clear_selection t] clears the active text selection, notifying all
     selectable renderables under the selection container. *)

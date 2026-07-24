@@ -189,6 +189,8 @@ module Cmd = struct
     | Quit
     | Set_title of string
     | Copy_to_clipboard of string
+    | Copy_selection
+    | Query_color_scheme
     | Bell
     | Notify of { title : string; body : string }
     | Clear_selection
@@ -202,6 +204,8 @@ module Cmd = struct
   let quit = Quit
   let set_title title = Set_title title
   let copy_to_clipboard text = Copy_to_clipboard text
+  let copy_selection = Copy_selection
+  let query_color_scheme = Query_color_scheme
   let bell = Bell
   let notify ~title ~body = Notify { title; body }
   let clear_selection = Clear_selection
@@ -217,6 +221,8 @@ module Cmd = struct
     | Quit -> Quit
     | Set_title title -> Set_title title
     | Copy_to_clipboard text -> Copy_to_clipboard text
+    | Copy_selection -> Copy_selection
+    | Query_color_scheme -> Query_color_scheme
     | Bell -> Bell
     | Notify { title; body } -> Notify { title; body }
     | Clear_selection -> Clear_selection
@@ -240,6 +246,7 @@ module Sub = struct
     | On_resize of (width:int -> height:int -> 'msg)
     | On_focus of 'msg
     | On_blur of 'msg
+    | On_color_scheme of ([ `Dark | `Light ] -> 'msg option)
 
   let none = None
   let batch subs = Batch subs
@@ -265,6 +272,7 @@ module Sub = struct
   let on_resize f = On_resize f
   let on_focus msg = On_focus msg
   let on_blur msg = On_blur msg
+  let on_color_scheme f = On_color_scheme f
 
   let rec map (f : 'a -> 'b) (sub : 'a t) : 'b t =
     match sub with
@@ -281,6 +289,7 @@ module Sub = struct
     | On_resize g -> On_resize (fun ~width ~height -> f (g ~width ~height))
     | On_focus msg -> On_focus (f msg)
     | On_blur msg -> On_blur (f msg)
+    | On_color_scheme g -> On_color_scheme (fun scheme -> Option.map f (g scheme))
 end
 
 type ('model, 'msg) app = {
@@ -307,6 +316,7 @@ type ('model, 'msg) runtime = {
   mutable every_subs : (float * float * (unit -> 'msg)) list;
   mutable focus_sub : 'msg option;
   mutable blur_sub : 'msg option;
+  mutable color_scheme_sub : ([ `Dark | `Light ] -> 'msg option) option;
   mutable sub_live_active : bool;
 }
 
@@ -432,6 +442,10 @@ let base64_encode input =
 
 let clipboard_sequence text = "\027]52;c;" ^ base64_encode text ^ "\007"
 
+(* DSR colour-scheme query [CSI ? 996 n]; the terminal answers with
+   [CSI ? 997 ; value n], parsed by matrix into a colour-scheme event. *)
+let color_scheme_query = "\027[?996n"
+
 (* A desktop-notification escape: OSC 9 (iTerm2, kitty) followed by OSC 777
    (urxvt and others). A terminal ignores the sequence it does not understand.
    Inside tmux the whole payload is wrapped for DCS passthrough, doubling every
@@ -470,6 +484,15 @@ let rec process_cmd runtime (cmd : _ Cmd.t) =
   | Cmd.Copy_to_clipboard text ->
       let term = Matrix.terminal runtime.matrix_app in
       Matrix.Terminal.send term (clipboard_sequence text)
+  | Cmd.Copy_selection -> (
+      match Renderer.selection_text runtime.renderer with
+      | Some text when text <> "" ->
+          let term = Matrix.terminal runtime.matrix_app in
+          Matrix.Terminal.send term (clipboard_sequence text)
+      | Some _ | None -> ())
+  | Cmd.Query_color_scheme ->
+      let term = Matrix.terminal runtime.matrix_app in
+      Matrix.Terminal.send term color_scheme_query
   | Cmd.Bell ->
       let term = Matrix.terminal runtime.matrix_app in
       Matrix.Terminal.send term "\007"
@@ -502,6 +525,7 @@ let rec collect_subs runtime (sub : _ Sub.t) =
   | Sub.On_resize f -> runtime.resize_sub <- Some f
   | Sub.On_focus msg -> runtime.focus_sub <- Some msg
   | Sub.On_blur msg -> runtime.blur_sub <- Some msg
+  | Sub.On_color_scheme f -> runtime.color_scheme_sub <- Some f
 
 (* Arm the loop's one-shot wakeup at the earliest every-sub deadline, or clear
    it when no timer is pending. Runs after every subscription recollection and
@@ -529,6 +553,7 @@ let update_subscriptions runtime =
   runtime.every_subs <- [];
   runtime.focus_sub <- None;
   runtime.blur_sub <- None;
+  runtime.color_scheme_sub <- None;
   collect_subs runtime (runtime.app.subscriptions runtime.model);
   (* Preserve accumulated elapsed time for every_subs that were recollected with
      matching intervals. This prevents time resets when subscriptions are
@@ -644,6 +669,10 @@ let handle_input runtime (input : Matrix.Input.t) =
   | Matrix.Input.Blur -> (
       match runtime.blur_sub with
       | Some msg -> dispatch runtime msg
+      | None -> ())
+  | Matrix.Input.Color_scheme scheme -> (
+      match runtime.color_scheme_sub with
+      | Some f -> ( match f scheme with Some msg -> dispatch runtime msg | None -> ())
       | None -> ())
   | Matrix.Input.Key key_event ->
       let ev = Renderer.dispatch_key runtime.renderer key_event in
@@ -778,6 +807,7 @@ let run ?matrix
       every_subs = [];
       focus_sub = None;
       blur_sub = None;
+      color_scheme_sub = None;
       sub_live_active = false;
     }
   in

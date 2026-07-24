@@ -585,6 +585,21 @@ let focused t = !(t.focused)
 let blur t = blur_current t
 let focus t node = focus_node t node
 let selection t = t.selection_state.current
+
+let selection_text t =
+  match t.selection_state.current with
+  | None -> None
+  | Some _ -> (
+      match t.selection_state.containers with
+      | [] -> None
+      | container :: _ ->
+          let buf = Buffer.create 256 in
+          iter_selectables container (fun node ->
+              let text = Renderable.Private.get_selected_text node in
+              if text <> "" then Buffer.add_string buf text);
+          let text = Buffer.contents buf in
+          if text = "" then None else Some text)
+
 let captured t = t.captured
 let hover t = t.hover_node
 

@@ -434,6 +434,7 @@ type t =
   | Focus
   | Blur
   | Paste of string
+  | Color_scheme of [ `Dark | `Light ]
   | Error of Error.t
 
 let equal (e1 : t) (e2 : t) =
@@ -444,8 +445,12 @@ let equal (e1 : t) (e2 : t) =
   | Focus, Focus -> true
   | Blur, Blur -> true
   | Paste s1, Paste s2 -> s1 = s2
+  | Color_scheme s1, Color_scheme s2 -> s1 = s2
   | Error e1, Error e2 -> Error.equal e1 e2
-  | (Key _ | Mouse _ | Resize _ | Focus | Blur | Paste _ | Error _), _ -> false
+  | ( ( Key _ | Mouse _ | Resize _ | Focus | Blur | Paste _ | Color_scheme _
+      | Error _ ),
+      _ ) ->
+      false
 
 let pp fmt = function
   | Key k -> Format.fprintf fmt "Key(%a)" Key.pp_event k
@@ -454,6 +459,8 @@ let pp fmt = function
   | Focus -> Format.pp_print_string fmt "Focus"
   | Blur -> Format.pp_print_string fmt "Blur"
   | Paste s -> Format.fprintf fmt "Paste(%S)" s
+  | Color_scheme `Dark -> Format.pp_print_string fmt "Color_scheme(Dark)"
+  | Color_scheme `Light -> Format.pp_print_string fmt "Color_scheme(Light)"
   | Error error -> Format.fprintf fmt "Error(%a)" Error.pp error
 
 (* Convenience constructors *)
