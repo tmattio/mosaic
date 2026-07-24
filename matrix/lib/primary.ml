@@ -111,33 +111,47 @@ type static_step = {
   next_static_needs_newline : bool;
 }
 
-let static_step t ~offset ~static_needs_newline
-    { text; rows; preserve_live_region } =
+let static_step t ~offset ~static_needs_newline ~full_height { text; rows; _ } =
   let max_offset = max 0 (t.terminal_height - t.min_live_height) in
   let base = if offset = 0 then 1 else offset in
   let needs_newline = static_needs_newline && not (starts_with_newline text) in
   let payload_rows = rows + if needs_newline then 1 else 0 in
   let grow_by =
-    if preserve_live_region then 0
-    else min payload_rows (max 0 (max_offset - base))
+    if full_height then 0 else min payload_rows (max 0 (max_offset - base))
   in
   {
     base;
     needs_newline;
     payload_rows;
-    next_offset =
-      (if preserve_live_region || max_offset = 0 then offset else base + grow_by);
+    next_offset = (if full_height then offset else base + grow_by);
     next_static_needs_newline = not (ends_with_newline text);
   }
+
+(* Preservation only has a terminal-level encoding on the full-height path:
+   the payload is written at the top of the screen and scrolled straight into
+   history. The pinned and growing paths cannot express it — static content is
+   never retained, so nothing above the live region can be repainted after a
+   scroll. A flush therefore scrolls into history only when every queued write
+   preserves and no static rows sit above the live region; any other layout
+   grows the static area as usual so content is never dropped. *)
+let takes_full_height_path t =
+  let max_offset = max 0 (t.terminal_height - t.min_live_height) in
+  let start_offset = if t.replace_pending then 0 else t.render_offset in
+  max_offset = 0
+  || start_offset = 0
+     && List.for_all (fun write -> write.preserve_live_region) t.static_queue
 
 let projected_after_static t =
   let initial =
     if t.replace_pending then (0, false)
     else (t.render_offset, t.static_needs_newline)
   in
+  let full_height = takes_full_height_path t in
   List.fold_left
     (fun (offset, static_needs_newline) write ->
-      let step = static_step t ~offset ~static_needs_newline write in
+      let step =
+        static_step t ~offset ~static_needs_newline ~full_height write
+      in
       (step.next_offset, step.next_static_needs_newline))
     initial (List.rev t.static_queue)
 
@@ -190,7 +204,7 @@ let static_ops step text =
 let flush_one t ({ text; _ } as write) =
   let step =
     static_step t ~offset:t.render_offset
-      ~static_needs_newline:t.static_needs_newline write
+      ~static_needs_newline:t.static_needs_newline ~full_height:false write
   in
   let ops = static_ops step text in
   let next =
@@ -207,7 +221,9 @@ let flush_pinned_static t queue =
   let ops_rev, offset, static_needs_newline =
     List.fold_left
       (fun (ops_rev, offset, static_needs_newline) ({ text; _ } as write) ->
-        let step = static_step t ~offset ~static_needs_newline write in
+        let step =
+          static_step t ~offset ~static_needs_newline ~full_height:false write
+        in
         let ops_rev = List.rev_append (static_ops step text) ops_rev in
         (ops_rev, step.next_offset, step.next_static_needs_newline))
       ([], t.render_offset, t.static_needs_newline)
@@ -238,7 +254,9 @@ let flush_full_height_static t queue =
   let ops_rev, static_needs_newline =
     List.fold_left
       (fun (ops_rev, static_needs_newline) ({ text; rows; _ } as write) ->
-        let step = static_step t ~offset:0 ~static_needs_newline write in
+        let step =
+          static_step t ~offset:0 ~static_needs_newline ~full_height:true write
+        in
         let step = { step with payload_rows = rows } in
         let ops_rev =
           List.rev_append (full_height_static_ops step text) ops_rev
@@ -264,11 +282,7 @@ let flush_static_append t =
   | rev_queue ->
       let queue = List.rev rev_queue in
       let max_offset = max 0 (t.terminal_height - t.min_live_height) in
-      let preserves_live_region =
-        List.for_all (fun write -> write.preserve_live_region) queue
-      in
-      if max_offset = 0 || (t.render_offset = 0 && preserves_live_region) then
-        flush_full_height_static t queue
+      if takes_full_height_path t then flush_full_height_static t queue
       else if t.render_offset = max_offset then flush_pinned_static t queue
       else
         let projected_offset, _ = projected_after_static t in

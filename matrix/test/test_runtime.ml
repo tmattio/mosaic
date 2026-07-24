@@ -1198,6 +1198,44 @@ let test_preserved_static_write_keeps_live_region () =
   equal ~msg:"preserved write keeps live region" (pair int int) before
     (Matrix.size app)
 
+let test_preserved_static_write_grows_after_static_rows () =
+  let app, state =
+    make_app ~mode:`Primary ~render_offset:3 ~min_tui_height:5 ~target_fps:None
+      ~input_timeout:(Some 0.) ()
+  in
+  Matrix.submit app;
+  Buffer.clear state.output;
+  Matrix.static_write ~preserve_live_region:true app ~rows:2 "AAAA\nBBBB\n";
+  equal ~msg:"pending preserved write projects the grown live size"
+    (pair int int) (80, 19)
+    (Matrix.effective_size app);
+  Matrix.submit app;
+  let output = output state in
+  is_true ~msg:"content is written, not dropped"
+    (contains_substring "AAAA\r\nBBBB" output);
+  is_false ~msg:"partial layout does not scroll into history"
+    (contains_substring "\027[2S" output);
+  equal ~msg:"write grows the static area instead" (pair int int) (80, 19)
+    (Matrix.size app)
+
+let test_mixed_static_writes_fall_back_to_growth () =
+  let app, state =
+    make_app ~mode:`Primary ~min_tui_height:5 ~target_fps:None
+      ~input_timeout:(Some 0.) ()
+  in
+  Matrix.submit app;
+  Buffer.clear state.output;
+  Matrix.static_write ~preserve_live_region:true app ~rows:1 "KEEP\n";
+  Matrix.static_write app ~rows:1 "GROW\n";
+  Matrix.submit app;
+  let output = output state in
+  is_true ~msg:"first write is not overwritten"
+    (is_before ~first:"KEEP" ~second:"GROW" output);
+  is_true ~msg:"second write lands on the next row"
+    (contains_substring "\027[2;1H" output);
+  is_false ~msg:"mixed queue does not scroll into history"
+    (contains_substring "\027[1S" output)
+
 let test_full_height_consecutive_static_writes_scroll_once_per_row () =
   let app, state =
     make_app ~mode:`Primary ~min_tui_height:24 ~target_fps:None
@@ -1523,6 +1561,10 @@ let () =
             test_full_height_static_write_scrolls_into_scrollback;
           test "preserved static write keeps live region"
             test_preserved_static_write_keeps_live_region;
+          test "preserved static write grows after static rows"
+            test_preserved_static_write_grows_after_static_rows;
+          test "mixed static writes fall back to growth"
+            test_mixed_static_writes_fall_back_to_growth;
           test "full-height consecutive static writes scroll once per row"
             test_full_height_consecutive_static_writes_scroll_once_per_row;
           test "static_write is ignored in alt mode"

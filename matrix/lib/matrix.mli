@@ -340,7 +340,11 @@ val static_write :
     In raw mode, lone LF bytes in [s] are normalized to CRLF before queuing so
     terminal row accounting matches the provided [rows]. When
     [preserve_live_region] is [true], the rows scroll directly into terminal
-    history and the live region keeps its current height. *)
+    history and the live region keeps its current height. Preservation requires
+    a live region that starts at the top of the terminal — for example after
+    {!static_replace} or {!static_clear} — and that every write queued in the
+    same frame preserves; in any other layout the write falls back to growing
+    the static area, so content is never dropped. *)
 
 val static_replace :
   ?preserve_live_region:bool -> app -> rows:int -> string -> unit

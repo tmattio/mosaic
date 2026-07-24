@@ -57,7 +57,10 @@ type static_write = { text : string; rows : int; preserve_live_region : bool }
 
     [rows] is the exact number of terminal rows consumed by [text]. The caller
     is responsible for computing it. When [preserve_live_region] is [true], the
-    write scrolls directly into history without shrinking the live region. *)
+    write scrolls directly into history without shrinking the live region.
+    Preservation is honored only when no static rows sit above the live region
+    and every write queued in the same flush preserves; any other layout grows
+    the static area as usual so content is never dropped. *)
 
 type cursor_anchor = {
   render_offset : int;
