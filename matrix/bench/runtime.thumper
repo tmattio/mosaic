@@ -1,31 +1,11 @@
-# thumper baseline
-# version: 2
-# suite_name: runtime
+# thumper baseline v1
+# suite: runtime
 
-# machine: 3b8ae6dbe74c4269
-# cpu: Apple M1 Max
-# ocaml: 5.5.0
-# git: 02ee9180
-# dirty: true
-# command: _build/default/matrix/bench/bench_runtime.exe --ci --bless --baseline matrix/bench/runtime.thumper -q
+# machine: 73bfb753d0739958
+# host: MacBookPro.Home · Apple M1 Max · arm64 · macos
+# ocaml: 5.4.1+relocatable · 64-bit · release
 
-render/submit_no-changes	alloc_words	4.679600e+04	4.679600e+04	4.679600e+04	0.000000e+00	55	4
-render/submit_no-changes	cpu_time	5.893479e-04	5.848541e-04	5.927356e-04	6.686606e-03	55	4
-render/submit_no-changes	wall_time	6.194699e-04	5.897619e-04	6.457715e-04	4.520767e-02	55	6
-render/submit_single-cell	alloc_words	4.684800e+04	4.684800e+04	4.684800e+04	0.000000e+00	55	4
-render/submit_single-cell	cpu_time	5.904452e-04	5.895394e-04	5.913654e-04	1.546314e-03	55	9
-render/submit_single-cell	wall_time	5.945998e-04	5.914491e-04	5.980358e-04	5.538742e-03	55	9
-
-# machine: 3bc8b9d932f88bc7
-# cpu: Apple M1 Max
-# ocaml: 5.5.0
-# git: 7aca6632
-# dirty: true
-# command: ./bench_runtime.exe --ci -q
-
-render/submit_no-changes	alloc_words	4.680300e+04	4.680300e+04	4.680300e+04	0.000000e+00	49	3
-render/submit_no-changes	cpu_time	5.880154e-04	5.862822e-04	5.895436e-04	2.773172e-03	49	6
-render/submit_no-changes	wall_time	5.891629e-04	5.865348e-04	5.919982e-04	4.636573e-03	49	4
-render/submit_single-cell	alloc_words	4.685500e+04	4.685500e+04	4.685500e+04	0.000000e+00	30	0
-render/submit_single-cell	cpu_time	5.861899e-04	5.853308e-04	5.887057e-04	2.878734e-03	30	4
-render/submit_single-cell	wall_time	5.862411e-04	5.853593e-04	5.889490e-04	3.061604e-03	30	4
+render/submit-no-changes	alloc_words	exact	46801
+render/submit-no-changes	wall_time	batch=16	n=20	5.968e-04	5.825e-04 5.856e-04 5.890e-04 5.894e-04 5.902e-04 5.903e-04 5.917e-04 5.955e-04 5.962e-04 5.968e-04 5.968e-04 5.968e-04 5.984e-04 5.993e-04 6.017e-04 6.031e-04 6.049e-04 6.063e-04 6.071e-04 6.077e-04
+render/submit-single-cell	alloc_words	exact	46858
+render/submit-single-cell	wall_time	batch=16	n=20	6.010e-04	5.925e-04 5.936e-04 5.947e-04 5.949e-04 5.955e-04 5.971e-04 5.976e-04 5.987e-04 6.003e-04 6.009e-04 6.010e-04 6.017e-04 6.025e-04 6.037e-04 6.053e-04 6.061e-04 6.062e-04 6.125e-04 6.211e-04 6.369e-04

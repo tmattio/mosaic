@@ -4,7 +4,8 @@
 
 (rule
  (alias bench)
+ (locks bench)
  (action
   (progn
-   (run %{exe:bench_toffee.exe} --ci -q)
+   (run %{exe:bench_toffee.exe})
    (diff? toffee.thumper toffee.thumper.corrected))))

@@ -46,7 +46,6 @@ let make_grid ?(respect_alpha = false) () =
    without turning normal frequency scaling into a flaky gate. *)
 let opaque_fill_budgets =
   [
-    Thumper.Budget.no_slower_than ~metric:Thumper.Metric.cpu_time 1.;
     Thumper.Budget.no_slower_than ~metric:Thumper.Metric.wall_time 1.;
     Thumper.Budget.no_more_alloc_than 0.;
   ]

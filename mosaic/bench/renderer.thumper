@@ -1,14 +1,9 @@
-# thumper baseline
-# version: 2
-# suite_name: renderer
+# thumper baseline v1
+# suite: renderer
 
-# machine: 3bc8b9d932f88bc7
-# cpu: Apple M1 Max
-# ocaml: 5.5.0
-# git: 2f6f773d
-# dirty: true
-# command: _build/default/mosaic/bench/bench_renderer.exe --ci --bless --baseline mosaic/bench/renderer.thumper -q
+# machine: 73bfb753d0739958
+# host: MacBookPro.Home · Apple M1 Max · arm64 · macos
+# ocaml: 5.4.1+relocatable · 64-bit · release
 
-viewport/frame_scrolled-transcript-1000	alloc_words	3.188780e+05	3.188780e+05	3.188780e+05	0.000000e+00	62	3
-viewport/frame_scrolled-transcript-1000	cpu_time	1.498731e-03	1.448567e-03	1.567618e-03	3.971719e-02	62	2
-viewport/frame_scrolled-transcript-1000	wall_time	1.663119e-03	1.465594e-03	1.958401e-03	1.481572e-01	62	4
+viewport/frame-scrolled-transcript-1000	alloc_words	exact	334104
+viewport/frame-scrolled-transcript-1000	wall_time	batch=4	n=20	1.323e-03	1.171e-03 1.229e-03 1.232e-03 1.251e-03 1.251e-03 1.259e-03 1.275e-03 1.298e-03 1.301e-03 1.317e-03 1.329e-03 1.370e-03 1.393e-03 1.393e-03 1.437e-03 1.447e-03 1.484e-03 1.488e-03 1.500e-03 1.533e-03

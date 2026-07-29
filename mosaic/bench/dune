@@ -4,7 +4,8 @@
 
 (rule
  (alias bench)
+ (locks bench)
  (action
   (progn
-   (run %{exe:bench_renderer.exe} --ci -q)
+   (run %{exe:bench_renderer.exe})
    (diff? renderer.thumper renderer.thumper.corrected))))

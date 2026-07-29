@@ -30,17 +30,48 @@
 
 (rule
  (alias bench)
+ (locks bench)
  (action
   (progn
-   (run %{exe:bench_ansi.exe} --ci -q)
-   (diff? ansi.thumper ansi.thumper.corrected)
-   (run %{exe:bench_text.exe} --ci -q)
-   (diff? text.thumper text.thumper.corrected)
-   (run %{exe:bench_input.exe} --ci -q)
-   (diff? input.thumper input.thumper.corrected)
-   (run %{exe:bench_grid.exe} --ci -q)
-   (diff? grid.thumper grid.thumper.corrected)
-   (run %{exe:bench_screen.exe} --ci -q)
-   (diff? screen.thumper screen.thumper.corrected)
-   (run %{exe:bench_runtime.exe} --ci -q)
+   (run %{exe:bench_ansi.exe})
+   (diff? ansi.thumper ansi.thumper.corrected))))
+
+(rule
+ (alias bench)
+ (locks bench)
+ (action
+  (progn
+   (run %{exe:bench_text.exe})
+   (diff? text.thumper text.thumper.corrected))))
+
+(rule
+ (alias bench)
+ (locks bench)
+ (action
+  (progn
+   (run %{exe:bench_input.exe})
+   (diff? input.thumper input.thumper.corrected))))
+
+(rule
+ (alias bench)
+ (locks bench)
+ (action
+  (progn
+   (run %{exe:bench_grid.exe})
+   (diff? grid.thumper grid.thumper.corrected))))
+
+(rule
+ (alias bench)
+ (locks bench)
+ (action
+  (progn
+   (run %{exe:bench_screen.exe})
+   (diff? screen.thumper screen.thumper.corrected))))
+
+(rule
+ (alias bench)
+ (locks bench)
+ (action
+  (progn
+   (run %{exe:bench_runtime.exe})
    (diff? runtime.thumper runtime.thumper.corrected))))
