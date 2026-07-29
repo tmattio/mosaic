@@ -47,7 +47,17 @@ let steady_scrolled_transcript =
     "frame/scrolled-transcript-1000" render_frame
 
 let () =
+  (* Frame loops care about retention as much as speed: promotions are
+     objects escaping the minor heap mid-frame, and minor collections count
+     GC pressure per frame. Both are counters, so thumper can prove them
+     exact and gate them even on a busy machine. *)
   Thumper.run "renderer"
+    ~config:
+      Thumper.Config.(
+        default
+        |> metrics
+             Thumper.Metric.
+               [ wall_time; alloc_words; promoted_words; minor_collections ])
     ~budgets:
       [
         Thumper.Budget.no_slower_than 0.05; Thumper.Budget.no_more_alloc_than 0.;
