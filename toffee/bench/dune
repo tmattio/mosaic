@@ -4,7 +4,7 @@
 
 (rule
  (alias bench)
- (locks bench)
+ (locks /bench)
  (action
   (progn
    (run %{exe:bench_toffee.exe})

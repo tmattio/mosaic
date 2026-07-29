@@ -30,7 +30,7 @@
 
 (rule
  (alias bench)
- (locks bench)
+ (locks /bench)
  (action
   (progn
    (run %{exe:bench_ansi.exe})
@@ -38,7 +38,7 @@
 
 (rule
  (alias bench)
- (locks bench)
+ (locks /bench)
  (action
   (progn
    (run %{exe:bench_text.exe})
@@ -46,7 +46,7 @@
 
 (rule
  (alias bench)
- (locks bench)
+ (locks /bench)
  (action
   (progn
    (run %{exe:bench_input.exe})
@@ -54,7 +54,7 @@
 
 (rule
  (alias bench)
- (locks bench)
+ (locks /bench)
  (action
   (progn
    (run %{exe:bench_grid.exe})
@@ -62,7 +62,7 @@
 
 (rule
  (alias bench)
- (locks bench)
+ (locks /bench)
  (action
   (progn
    (run %{exe:bench_screen.exe})
@@ -70,7 +70,7 @@
 
 (rule
  (alias bench)
- (locks bench)
+ (locks /bench)
  (action
   (progn
    (run %{exe:bench_runtime.exe})
