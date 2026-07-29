@@ -85,11 +85,9 @@ let validate_scroll_by (request : scroll_by option) =
   | Some { x = None; y = None; _ } ->
       invalid_arg "Scroll_box: scroll_by requires an x or y delta"
   | Some request ->
-      if
-        not
-          (Option.for_all Float.is_finite request.x
-          && Option.for_all Float.is_finite request.y)
-      then invalid_arg "Scroll_box: scroll_by deltas must be finite"
+      let finite = function None -> true | Some v -> Float.is_finite v in
+      if not (finite request.x && finite request.y) then
+        invalid_arg "Scroll_box: scroll_by deltas must be finite"
 
 let equal_reveal_align a b =
   match (a, b) with
