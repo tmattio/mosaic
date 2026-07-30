@@ -6,16 +6,16 @@
 # ocaml: 5.4.1+relocatable · 64-bit · release
 
 render/render.diff-full-screen	alloc_words	exact	65941
-render/render.diff-full-screen	wall_time	batch=1	n=20	1.041e-03	9.970e-04 1.002e-03 1.011e-03 1.021e-03 1.021e-03 1.026e-03 1.031e-03 1.036e-03 1.038e-03 1.041e-03 1.041e-03 1.043e-03 1.043e-03 1.058e-03 1.062e-03 1.082e-03 1.099e-03 1.104e-03 1.106e-03 1.114e-03
+render/render.diff-full-screen	wall_time	batch=8	n=20	1.012e-03	1.000e-03 1.002e-03 1.004e-03 1.004e-03 1.005e-03 1.006e-03 1.007e-03 1.008e-03 1.009e-03 1.011e-03 1.013e-03 1.016e-03 1.018e-03 1.018e-03 1.020e-03 1.020e-03 1.022e-03 1.024e-03 1.028e-03 1.036e-03
 render/render.diff-no-changes	alloc_words	exact	65946
-render/render.diff-no-changes	wall_time	batch=8	n=20	1.059e-03	1.031e-03 1.031e-03 1.033e-03 1.036e-03 1.039e-03 1.046e-03 1.048e-03 1.050e-03 1.050e-03 1.056e-03 1.062e-03 1.064e-03 1.065e-03 1.067e-03 1.079e-03 1.084e-03 1.088e-03 1.094e-03 1.101e-03 1.127e-03
+render/render.diff-no-changes	wall_time	batch=8	n=20	1.024e-03	9.997e-04 1.009e-03 1.013e-03 1.013e-03 1.015e-03 1.018e-03 1.018e-03 1.020e-03 1.020e-03 1.022e-03 1.027e-03 1.028e-03 1.029e-03 1.031e-03 1.037e-03 1.038e-03 1.038e-03 1.039e-03 1.040e-03 1.057e-03
 render/render.diff-single-line	alloc_words	exact	65656
-render/render.diff-single-line	wall_time	batch=8	n=20	1.022e-03	1.008e-03 1.010e-03 1.010e-03 1.012e-03 1.012e-03 1.017e-03 1.018e-03 1.019e-03 1.019e-03 1.020e-03 1.023e-03 1.025e-03 1.029e-03 1.030e-03 1.031e-03 1.033e-03 1.034e-03 1.041e-03 1.045e-03 1.046e-03
+render/render.diff-single-line	wall_time	batch=8	n=20	1.007e-03	9.822e-04 9.857e-04 9.924e-04 9.932e-04 9.995e-04 1.003e-03 1.005e-03 1.006e-03 1.006e-03 1.007e-03 1.007e-03 1.009e-03 1.011e-03 1.012e-03 1.016e-03 1.017e-03 1.017e-03 1.017e-03 1.026e-03 1.030e-03
 render/render.diff-sparse-cells	alloc_words	exact	66091
-render/render.diff-sparse-cells	wall_time	batch=8	n=20	1.040e-03	1.023e-03 1.024e-03 1.025e-03 1.026e-03 1.028e-03 1.029e-03 1.029e-03 1.035e-03 1.037e-03 1.038e-03 1.041e-03 1.041e-03 1.047e-03 1.050e-03 1.053e-03 1.054e-03 1.054e-03 1.057e-03 1.064e-03 1.089e-03
+render/render.diff-sparse-cells	wall_time	batch=8	n=20	1.021e-03	9.925e-04 9.984e-04 1.008e-03 1.009e-03 1.010e-03 1.012e-03 1.013e-03 1.014e-03 1.016e-03 1.016e-03 1.025e-03 1.026e-03 1.027e-03 1.028e-03 1.028e-03 1.028e-03 1.034e-03 1.037e-03 1.045e-03 1.049e-03
 render/render.emoji-full-screen	alloc_words	exact	82124
-render/render.emoji-full-screen	wall_time	batch=8	n=20	1.087e-03	1.058e-03 1.064e-03 1.079e-03 1.079e-03 1.079e-03 1.081e-03 1.082e-03 1.083e-03 1.083e-03 1.087e-03 1.088e-03 1.089e-03 1.091e-03 1.095e-03 1.095e-03 1.096e-03 1.097e-03 1.103e-03 1.108e-03 1.118e-03
+render/render.emoji-full-screen	wall_time	batch=8	n=20	1.060e-03	1.042e-03 1.045e-03 1.046e-03 1.053e-03 1.054e-03 1.055e-03 1.055e-03 1.057e-03 1.058e-03 1.058e-03 1.061e-03 1.062e-03 1.065e-03 1.065e-03 1.069e-03 1.070e-03 1.073e-03 1.074e-03 1.077e-03 1.081e-03
 render/render.scenario-ci-log-view	alloc_words	exact	88725
-render/render.scenario-ci-log-view	wall_time	batch=8	n=20	8.839e-04	8.628e-04 8.655e-04 8.718e-04 8.741e-04 8.753e-04 8.788e-04 8.788e-04 8.795e-04 8.804e-04 8.834e-04 8.843e-04 8.867e-04 8.869e-04 8.885e-04 8.901e-04 8.925e-04 8.951e-04 9.030e-04 9.102e-04 9.129e-04
+render/render.scenario-ci-log-view	wall_time	batch=8	n=20	8.627e-04	8.419e-04 8.493e-04 8.497e-04 8.547e-04 8.548e-04 8.563e-04 8.603e-04 8.616e-04 8.618e-04 8.619e-04 8.635e-04 8.648e-04 8.650e-04 8.659e-04 8.692e-04 8.709e-04 8.744e-04 8.774e-04 8.949e-04 9.045e-04
 render/render.scenario-text-editor	alloc_words	batch=8	n=20	6.601e+04	6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04
-render/render.scenario-text-editor	wall_time	batch=8	n=20	1.045e-03	1.015e-03 1.025e-03 1.028e-03 1.032e-03 1.033e-03 1.033e-03 1.040e-03 1.041e-03 1.043e-03 1.043e-03 1.046e-03 1.046e-03 1.049e-03 1.051e-03 1.052e-03 1.053e-03 1.057e-03 1.059e-03 1.060e-03 1.062e-03
+render/render.scenario-text-editor	wall_time	batch=8	n=20	1.014e-03	9.954e-04 9.984e-04 1.004e-03 1.005e-03 1.007e-03 1.007e-03 1.008e-03 1.010e-03 1.010e-03 1.012e-03 1.016e-03 1.017e-03 1.020e-03 1.022e-03 1.023e-03 1.023e-03 1.024e-03 1.025e-03 1.032e-03 1.055e-03

@@ -6,36 +6,36 @@
 # ocaml: 5.4.1+relocatable · 64-bit · release
 
 position/position-find_pos-ascii	alloc_words	exact	13
-position/position-find_pos-ascii	wall_time	batch=8192	n=20	1.099e-06	1.084e-06 1.084e-06 1.084e-06 1.088e-06 1.088e-06 1.091e-06 1.094e-06 1.095e-06 1.096e-06 1.098e-06 1.100e-06 1.101e-06 1.102e-06 1.110e-06 1.114e-06 1.119e-06 1.121e-06 1.123e-06 1.123e-06 1.126e-06
+position/position-find_pos-ascii	wall_time	batch=8192	n=20	1.100e-06	1.079e-06 1.080e-06 1.084e-06 1.086e-06 1.088e-06 1.091e-06 1.093e-06 1.099e-06 1.099e-06 1.100e-06 1.100e-06 1.103e-06 1.103e-06 1.106e-06 1.106e-06 1.107e-06 1.108e-06 1.109e-06 1.111e-06 1.117e-06
 position/position-find_pos-mixed	alloc_words	exact	22
-position/position-find_pos-mixed	wall_time	batch=512	n=20	1.010e-05	9.927e-06 9.936e-06 9.941e-06 9.962e-06 9.962e-06 9.999e-06 1.001e-05 1.003e-05 1.006e-05 1.010e-05 1.011e-05 1.017e-05 1.018e-05 1.021e-05 1.022e-05 1.022e-05 1.027e-05 1.036e-05 1.038e-05 1.044e-05
+position/position-find_pos-mixed	wall_time	batch=512	n=20	1.007e-05	9.914e-06 9.943e-06 9.951e-06 9.955e-06 9.969e-06 9.997e-06 1.001e-05 1.001e-05 1.001e-05 1.004e-05 1.010e-05 1.014e-05 1.017e-05 1.017e-05 1.022e-05 1.024e-05 1.031e-05 1.035e-05 1.040e-05 1.041e-05
 position/position-find_pos-wcwidth	alloc_words	exact	895
-position/position-find_pos-wcwidth	wall_time	batch=4096	n=20	1.318e-06	1.293e-06 1.297e-06 1.302e-06 1.309e-06 1.311e-06 1.311e-06 1.312e-06 1.312e-06 1.315e-06 1.317e-06 1.319e-06 1.322e-06 1.327e-06 1.329e-06 1.331e-06 1.341e-06 1.345e-06 1.415e-06 1.445e-06 1.451e-06
+position/position-find_pos-wcwidth	wall_time	batch=4096	n=20	1.331e-06	1.304e-06 1.314e-06 1.314e-06 1.316e-06 1.318e-06 1.319e-06 1.320e-06 1.324e-06 1.325e-06 1.326e-06 1.336e-06 1.337e-06 1.340e-06 1.355e-06 1.372e-06 1.395e-06 1.411e-06 1.412e-06 1.434e-06 1.442e-06
 position/position-find_wrap_pos-ascii	alloc_words	exact	12
-position/position-find_wrap_pos-ascii	wall_time	batch=8192	n=20	1.118e-06	1.102e-06 1.106e-06 1.109e-06 1.110e-06 1.110e-06 1.111e-06 1.112e-06 1.115e-06 1.116e-06 1.118e-06 1.119e-06 1.119e-06 1.127e-06 1.128e-06 1.133e-06 1.135e-06 1.135e-06 1.138e-06 1.142e-06 1.156e-06
+position/position-find_wrap_pos-ascii	wall_time	batch=8192	n=20	1.115e-06	1.098e-06 1.103e-06 1.106e-06 1.107e-06 1.107e-06 1.108e-06 1.108e-06 1.112e-06 1.112e-06 1.115e-06 1.116e-06 1.117e-06 1.118e-06 1.118e-06 1.123e-06 1.128e-06 1.128e-06 1.141e-06 1.143e-06 1.144e-06
 position/position-find_wrap_pos-mixed	alloc_words	exact	21
-position/position-find_wrap_pos-mixed	wall_time	batch=512	n=20	1.008e-05	9.919e-06 9.932e-06 9.943e-06 9.945e-06 9.978e-06 9.978e-06 9.990e-06 1.001e-05 1.003e-05 1.007e-05 1.010e-05 1.012e-05 1.013e-05 1.013e-05 1.020e-05 1.023e-05 1.023e-05 1.031e-05 1.041e-05 1.050e-05
+position/position-find_wrap_pos-mixed	wall_time	batch=512	n=20	1.016e-05	9.893e-06 9.965e-06 9.980e-06 9.994e-06 9.997e-06 1.003e-05 1.005e-05 1.012e-05 1.015e-05 1.015e-05 1.016e-05 1.017e-05 1.020e-05 1.024e-05 1.025e-05 1.026e-05 1.030e-05 1.036e-05 1.040e-05 1.042e-05
 position/position-find_wrap_pos-wcwidth	alloc_words	exact	894
-position/position-find_wrap_pos-wcwidth	wall_time	batch=4096	n=20	1.369e-06	1.287e-06 1.296e-06 1.296e-06 1.326e-06 1.338e-06 1.339e-06 1.341e-06 1.351e-06 1.351e-06 1.360e-06 1.379e-06 1.387e-06 1.393e-06 1.396e-06 1.407e-06 1.420e-06 1.420e-06 1.424e-06 1.427e-06 1.487e-06
+position/position-find_wrap_pos-wcwidth	wall_time	batch=4096	n=20	1.370e-06	1.285e-06 1.292e-06 1.305e-06 1.314e-06 1.323e-06 1.325e-06 1.349e-06 1.357e-06 1.362e-06 1.366e-06 1.374e-06 1.385e-06 1.391e-06 1.394e-06 1.405e-06 1.416e-06 1.418e-06 1.433e-06 1.439e-06 1.458e-06
 position/position-prev-ascii	alloc_words	exact	11
-position/position-prev-ascii	wall_time	batch=16384	n=20	5.001e-07	4.909e-07 4.930e-07 4.933e-07 4.981e-07 4.988e-07 4.990e-07 4.994e-07 4.996e-07 4.999e-07 5.000e-07 5.002e-07 5.007e-07 5.031e-07 5.034e-07 5.039e-07 5.048e-07 5.067e-07 5.101e-07 5.107e-07 5.125e-07
+position/position-prev-ascii	wall_time	batch=16384	n=20	5.014e-07	4.906e-07 4.908e-07 4.919e-07 4.928e-07 4.949e-07 4.952e-07 4.954e-07 4.966e-07 4.982e-07 5.009e-07 5.019e-07 5.029e-07 5.046e-07 5.051e-07 5.070e-07 5.090e-07 5.102e-07 5.121e-07 5.127e-07 5.131e-07
 position/position-prev-mixed	alloc_words	exact	26
-position/position-prev-mixed	wall_time	batch=128	n=20	6.842e-05	6.660e-05 6.722e-05 6.723e-05 6.736e-05 6.739e-05 6.797e-05 6.827e-05 6.837e-05 6.837e-05 6.837e-05 6.848e-05 6.855e-05 6.856e-05 6.867e-05 6.872e-05 6.894e-05 6.897e-05 6.931e-05 6.972e-05 7.009e-05
+position/position-prev-mixed	wall_time	batch=128	n=20	6.825e-05	6.686e-05 6.688e-05 6.754e-05 6.778e-05 6.779e-05 6.782e-05 6.789e-05 6.808e-05 6.814e-05 6.815e-05 6.834e-05 6.843e-05 6.862e-05 6.865e-05 6.911e-05 6.911e-05 6.929e-05 6.961e-05 6.964e-05 7.085e-05
 position/position-prev-wcwidth	alloc_words	exact	8461
-position/position-prev-wcwidth	wall_time	batch=512	n=20	1.284e-05	1.232e-05 1.252e-05 1.262e-05 1.263e-05 1.263e-05 1.265e-05 1.268e-05 1.278e-05 1.279e-05 1.283e-05 1.284e-05 1.290e-05 1.291e-05 1.292e-05 1.295e-05 1.299e-05 1.303e-05 1.309e-05 1.310e-05 1.343e-05
+position/position-prev-wcwidth	wall_time	batch=512	n=20	1.282e-05	1.244e-05 1.249e-05 1.249e-05 1.251e-05 1.254e-05 1.258e-05 1.261e-05 1.267e-05 1.273e-05 1.276e-05 1.287e-05 1.289e-05 1.290e-05 1.296e-05 1.299e-05 1.301e-05 1.307e-05 1.311e-05 1.317e-05 1.327e-05
 position/position-width_at-ascii	alloc_words	exact	0
-position/position-width_at-ascii	wall_time	batch=2097152	n=20	3.332e-09	3.276e-09 3.281e-09 3.283e-09 3.284e-09 3.288e-09 3.297e-09 3.311e-09 3.313e-09 3.325e-09 3.326e-09 3.338e-09 3.342e-09 3.346e-09 3.350e-09 3.351e-09 3.356e-09 3.360e-09 3.388e-09 3.395e-09 3.399e-09
+position/position-width_at-ascii	wall_time	batch=2097152	n=20	3.296e-09	3.258e-09 3.267e-09 3.269e-09 3.271e-09 3.274e-09 3.277e-09 3.278e-09 3.280e-09 3.280e-09 3.294e-09 3.297e-09 3.297e-09 3.305e-09 3.306e-09 3.312e-09 3.318e-09 3.331e-09 3.341e-09 3.357e-09 3.429e-09
 position/position-width_at-mixed	alloc_words	exact	7
-position/position-width_at-mixed	wall_time	batch=262144	n=20	3.430e-08	3.341e-08 3.374e-08 3.382e-08 3.388e-08 3.392e-08 3.413e-08 3.413e-08 3.415e-08 3.420e-08 3.428e-08 3.432e-08 3.443e-08 3.445e-08 3.449e-08 3.453e-08 3.466e-08 3.470e-08 3.481e-08 3.492e-08 3.495e-08
+position/position-width_at-mixed	wall_time	batch=262144	n=20	3.416e-08	3.376e-08 3.376e-08 3.380e-08 3.384e-08 3.390e-08 3.392e-08 3.393e-08 3.398e-08 3.407e-08 3.413e-08 3.418e-08 3.423e-08 3.425e-08 3.444e-08 3.447e-08 3.457e-08 3.457e-08 3.458e-08 3.465e-08 3.525e-08
 position/position-width_at-wcwidth	alloc_words	exact	0
-position/position-width_at-wcwidth	wall_time	batch=1048576	n=20	6.080e-09	5.911e-09 5.918e-09 5.924e-09 5.941e-09 5.957e-09 6.005e-09 6.011e-09 6.040e-09 6.071e-09 6.080e-09 6.081e-09 6.084e-09 6.089e-09 6.102e-09 6.110e-09 6.125e-09 6.126e-09 6.131e-09 6.148e-09 6.200e-09
+position/position-width_at-wcwidth	wall_time	batch=1048576	n=20	5.974e-09	5.899e-09 5.921e-09 5.928e-09 5.929e-09 5.952e-09 5.952e-09 5.953e-09 5.961e-09 5.965e-09 5.971e-09 5.976e-09 5.977e-09 5.996e-09 5.997e-09 5.999e-09 6.016e-09 6.036e-09 6.045e-09 6.064e-09 6.161e-09
 segment/segment-ascii_line	alloc_words	exact	0
-segment/segment-ascii_line	wall_time	batch=1024	n=20	7.606e-06	7.496e-06 7.517e-06 7.520e-06 7.523e-06 7.535e-06 7.554e-06 7.574e-06 7.586e-06 7.594e-06 7.603e-06 7.609e-06 7.618e-06 7.635e-06 7.701e-06 7.712e-06 7.735e-06 7.761e-06 7.782e-06 7.790e-06 7.997e-06
+segment/segment-ascii_line	wall_time	batch=1024	n=20	7.558e-06	7.464e-06 7.477e-06 7.479e-06 7.480e-06 7.485e-06 7.495e-06 7.510e-06 7.511e-06 7.545e-06 7.547e-06 7.568e-06 7.568e-06 7.573e-06 7.588e-06 7.590e-06 7.604e-06 7.617e-06 7.625e-06 7.660e-06 7.720e-06
 segment/segment-complex_line	alloc_words	exact	7
-segment/segment-complex_line	wall_time	batch=512	n=20	1.088e-05	1.055e-05 1.057e-05 1.063e-05 1.069e-05 1.074e-05 1.074e-05 1.076e-05 1.083e-05 1.085e-05 1.086e-05 1.090e-05 1.093e-05 1.094e-05 1.096e-05 1.099e-05 1.103e-05 1.103e-05 1.107e-05 1.111e-05 1.114e-05
+segment/segment-complex_line	wall_time	batch=512	n=20	1.083e-05	1.057e-05 1.062e-05 1.070e-05 1.074e-05 1.075e-05 1.075e-05 1.078e-05 1.078e-05 1.079e-05 1.082e-05 1.084e-05 1.085e-05 1.092e-05 1.093e-05 1.096e-05 1.104e-05 1.105e-05 1.110e-05 1.123e-05 1.125e-05
 width/width-ascii-unicode	alloc_words	exact	0
-width/width-ascii-unicode	wall_time	batch=4096	n=20	1.769e-06	1.729e-06 1.733e-06 1.744e-06 1.748e-06 1.752e-06 1.752e-06 1.753e-06 1.757e-06 1.764e-06 1.768e-06 1.769e-06 1.771e-06 1.772e-06 1.773e-06 1.779e-06 1.781e-06 1.788e-06 1.789e-06 1.816e-06 1.822e-06
+width/width-ascii-unicode	wall_time	batch=4096	n=20	1.752e-06	1.732e-06 1.738e-06 1.742e-06 1.743e-06 1.744e-06 1.745e-06 1.747e-06 1.750e-06 1.750e-06 1.751e-06 1.752e-06 1.753e-06 1.753e-06 1.762e-06 1.766e-06 1.770e-06 1.775e-06 1.776e-06 1.788e-06 1.791e-06
 width/width-complex-unicode	alloc_words	exact	7
-width/width-complex-unicode	wall_time	batch=512	n=20	1.228e-05	1.194e-05 1.202e-05 1.203e-05 1.205e-05 1.207e-05 1.212e-05 1.213e-05 1.214e-05 1.216e-05 1.228e-05 1.228e-05 1.228e-05 1.229e-05 1.234e-05 1.235e-05 1.241e-05 1.249e-05 1.249e-05 1.261e-05 1.265e-05
+width/width-complex-unicode	wall_time	batch=512	n=20	1.215e-05	1.190e-05 1.191e-05 1.191e-05 1.194e-05 1.198e-05 1.203e-05 1.209e-05 1.210e-05 1.211e-05 1.212e-05 1.219e-05 1.220e-05 1.221e-05 1.227e-05 1.227e-05 1.230e-05 1.238e-05 1.239e-05 1.245e-05 1.251e-05
 width/width-complex-wcwidth	alloc_words	exact	0
-width/width-complex-wcwidth	wall_time	batch=1024	n=20	7.523e-06	7.330e-06 7.399e-06 7.410e-06 7.424e-06 7.425e-06 7.455e-06 7.476e-06 7.491e-06 7.521e-06 7.523e-06 7.523e-06 7.531e-06 7.550e-06 7.554e-06 7.567e-06 7.597e-06 7.607e-06 7.662e-06 7.664e-06 7.700e-06
+width/width-complex-wcwidth	wall_time	batch=1024	n=20	7.412e-06	7.198e-06 7.255e-06 7.258e-06 7.301e-06 7.335e-06 7.358e-06 7.360e-06 7.367e-06 7.408e-06 7.409e-06 7.414e-06 7.414e-06 7.433e-06 7.447e-06 7.479e-06 7.509e-06 7.510e-06 7.526e-06 7.529e-06 7.658e-06
