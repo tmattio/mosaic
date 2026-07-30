@@ -7,5 +7,5 @@
  (locks /bench)
  (action
   (progn
-   (run %{exe:bench_renderer.exe})
+   (run %{exe:bench_renderer.exe} --wait-quiet 60)
    (diff? renderer.thumper renderer.thumper.corrected))))

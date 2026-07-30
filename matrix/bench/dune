@@ -33,7 +33,7 @@
  (locks /bench)
  (action
   (progn
-   (run %{exe:bench_ansi.exe})
+   (run %{exe:bench_ansi.exe} --wait-quiet 60)
    (diff? ansi.thumper ansi.thumper.corrected))))
 
 (rule
@@ -41,7 +41,7 @@
  (locks /bench)
  (action
   (progn
-   (run %{exe:bench_text.exe})
+   (run %{exe:bench_text.exe} --wait-quiet 60)
    (diff? text.thumper text.thumper.corrected))))
 
 (rule
@@ -49,7 +49,7 @@
  (locks /bench)
  (action
   (progn
-   (run %{exe:bench_input.exe})
+   (run %{exe:bench_input.exe} --wait-quiet 60)
    (diff? input.thumper input.thumper.corrected))))
 
 (rule
@@ -57,7 +57,7 @@
  (locks /bench)
  (action
   (progn
-   (run %{exe:bench_grid.exe})
+   (run %{exe:bench_grid.exe} --wait-quiet 60)
    (diff? grid.thumper grid.thumper.corrected))))
 
 (rule
@@ -65,7 +65,7 @@
  (locks /bench)
  (action
   (progn
-   (run %{exe:bench_screen.exe})
+   (run %{exe:bench_screen.exe} --wait-quiet 60)
    (diff? screen.thumper screen.thumper.corrected))))
 
 (rule
@@ -73,5 +73,5 @@
  (locks /bench)
  (action
   (progn
-   (run %{exe:bench_runtime.exe})
+   (run %{exe:bench_runtime.exe} --wait-quiet 60)
    (diff? runtime.thumper runtime.thumper.corrected))))

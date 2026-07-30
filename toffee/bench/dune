@@ -7,5 +7,5 @@
  (locks /bench)
  (action
   (progn
-   (run %{exe:bench_toffee.exe})
+   (run %{exe:bench_toffee.exe} --wait-quiet 60)
    (diff? toffee.thumper toffee.thumper.corrected))))
