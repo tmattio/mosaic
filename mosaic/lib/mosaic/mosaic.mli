@@ -1434,10 +1434,11 @@ val text :
 (** [text s] is a text element that renders the string [s].
 
     Text-specific optional arguments:
-    - [style] -- ANSI style applied to the whole element. Defaults to
+    - [style] -- shorthand for [text_style]; both set the single ANSI style
+      applied to the text content. When both are given, [text_style] wins and
+      [style] is ignored — they do not compose.
+    - [text_style] -- ANSI style applied to the text content. Defaults to
       {!Ansi.Style.default}.
-    - [text_style] -- ANSI style applied to the text content only, composing
-      with [style]. Defaults to {!Ansi.Style.default}.
     - [wrap] -- line-wrapping mode. Defaults to [`None].
     - [selectable] -- when [true] the user can select text with the mouse.
       Defaults to [true].
