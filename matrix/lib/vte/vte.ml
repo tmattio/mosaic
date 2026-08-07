@@ -514,8 +514,7 @@ let put_text t text =
   let width_method = Grid.width_method t.active_grid in
   if t.insert_mode then
     let line_width = t.cols in
-    let row = t.cursor.row in
-    let copy_cell src_idx dst_x =
+    let copy_cell row src_idx dst_x =
       let cell = Grid.get_cell t.active_grid src_idx in
       let attrs = Grid.get_attrs t.active_grid src_idx in
       let link = Grid.get_link t.active_grid src_idx in
@@ -534,6 +533,8 @@ let put_text t text =
             ~row:(min (t.cursor.row + 1) t.scroll_region.bottom)
             ~col:0);
 
+        (* Read the row after wrap handling: a wrap moves the cursor. *)
+        let row = t.cursor.row in
         if row < t.rows && t.cursor.col < line_width then
           let w =
             Text.width_at ~width_method ~tab_width:2 text ~byte_offset:off
@@ -554,7 +555,7 @@ let put_text t text =
                   (if dest_start < line_width then
                      let copy_span = min gw (line_width - dest_start) in
                      for k = copy_span - 1 downto 0 do
-                       copy_cell (idx + k) (dest_start + k)
+                       copy_cell row (idx + k) (dest_start + k)
                      done);
                   shift (x - gw)
             in

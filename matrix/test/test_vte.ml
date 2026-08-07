@@ -429,6 +429,16 @@ let insert_mode () =
   Vte.feed_string vte "\x1b[4l";
   is_false ~msg:"insert mode disabled" (Vte.insert_mode vte)
 
+let insert_mode_wrap_targets_new_row () =
+  (* After an insert-mode wrap, clusters must land on the row the cursor
+     wrapped to, not back on the previous row at column 0. *)
+  let vte = Vte.create ~rows:2 ~cols:3 () in
+  Vte.feed_string vte "\x1b[4h";
+  Vte.feed_string vte "abcde";
+  equal ~msg:"first row keeps pre-wrap text" string "abc\nde "
+    (Vte.to_string vte);
+  equal ~msg:"cursor on wrapped row" (pair int int) (1, 2) (Vte.cursor_pos vte)
+
 let cursor_key_mode () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
   is_false ~msg:"cursor key mode off by default" (Vte.cursor_key_mode vte);
@@ -679,6 +689,7 @@ let tests =
       render_with_scrollback_wrapped_ring;
     test "auto wrap mode" auto_wrap_mode;
     test "insert mode" insert_mode;
+    test "insert mode wrap targets new row" insert_mode_wrap_targets_new_row;
     test "cursor key mode" cursor_key_mode;
     test "bracketed paste mode" bracketed_paste_mode;
     test "combined mode sequence" combined_mode_sequence;
