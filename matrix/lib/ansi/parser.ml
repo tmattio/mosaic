@@ -332,6 +332,7 @@ type string_control = Dcs | Apc | Pm | Sos
 type state =
   | Normal
   | Escape
+  | Escape_charset
   | Csi
   | Osc
   | Osc_escape
@@ -592,19 +593,20 @@ let feed p src ~off ~len emit =
               emit (Control RI);
               loop (pos + 1)
           | '%' | '(' | ')' | '*' | '+' ->
-              (* Character set selection - skip next byte *)
-              if pos + 1 < input_len then (
-                p.state <- Normal;
-                loop (pos + 2))
-              else (
-                (* Need more data, back up to ESC and reset state *)
-                p.state <- Normal;
-                pos - 1)
+              (* Character set selection: the next byte picks the charset. A
+                 dedicated state survives feed boundaries — rewinding to the
+                 ESC is unsound once it lives in a previous chunk. *)
+              p.state <- Escape_charset;
+              loop (pos + 1)
           | _ ->
               (* Unknown escape, emit ESC as text and reprocess current char *)
               Buffer.add_char p.text_buf '\x1b';
               p.state <- Normal;
               loop pos)
+      | Escape_charset ->
+          (* Consume and ignore the charset designation byte. *)
+          p.state <- Normal;
+          loop (pos + 1)
       | Csi ->
           let c = Bytes.get input (input_off + pos) in
           if Buffer.length p.csi_buf >= max_escape_length then (

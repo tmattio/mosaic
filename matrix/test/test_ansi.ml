@@ -626,6 +626,47 @@ let parser_utf8_split_invariance () =
   check_all_cuts "truncated at eof" "X\xF0\x9F\x9A";
   check_all_cuts "csi then pending lead" "\x1b[100;100A\xC3\nX"
 
+let parser_charset_selection_split () =
+  (* ESC %()*+ charset designations are consumed silently under any chunking.
+     A lone designation byte arriving after a chunk that ended on the ESC used
+     to rewind past the start of the current input and crash on Bytes.blit
+     (found by the matrix.vte split-invariance property fuzzing). *)
+  let decode feeds =
+    let p = Parser.create () in
+    let acc = ref [] in
+    let collect tok = acc := tok :: !acc in
+    List.iter
+      (fun s ->
+        Parser.feed p (Bytes.unsafe_of_string s) ~off:0 ~len:(String.length s)
+          collect)
+      feeds;
+    Parser.feed p Bytes.empty ~off:0 ~len:0 collect;
+    List.rev !acc
+    |> List.concat_map (function Parser.Text s -> [ s ] | _ -> [])
+    |> String.concat ""
+  in
+  (* The crash repro: ESC-final chunk, then a lone designation byte. *)
+  equal ~msg:"lone designation byte after an ESC-final chunk" string
+    "\xF0\x9F\x98\x80"
+    (decode [ "\xF0\x9F\x98\x80\x1b"; "%" ]);
+  let check_all_cuts name input expected =
+    for cut = 0 to String.length input do
+      let split =
+        decode
+          [
+            String.sub input 0 cut;
+            String.sub input cut (String.length input - cut);
+          ]
+      in
+      equal ~msg:(Printf.sprintf "%s cut at %d" name cut) string expected split
+    done
+  in
+  check_all_cuts "charset G0" "a\x1b(Bok" "aok";
+  check_all_cuts "utf8 charset select" "a\x1b%Gok" "aok";
+  check_all_cuts "emoji then dangling designation" "\xF0\x9F\x98\x80\x1b%"
+    "\xF0\x9F\x98\x80";
+  check_all_cuts "designation followed by spaces" "\x1b(   " "  "
+
 let parser_sgr_colon_subparameters () =
   (* Underline style sub-parameters (emitted by neovim/kitty for undercurl):
      curly degrades to plain underline, 4:0 disables, 4:2 is double. *)
@@ -990,6 +1031,7 @@ let tests =
           parser_protocol_string_controls_chunked;
         test "csi empty parameter defaults" parser_csi_empty_parameter_defaults;
         test "utf8 split invariance" parser_utf8_split_invariance;
+        test "charset selection split" parser_charset_selection_split;
         test "sgr colon subparameters" parser_sgr_colon_subparameters;
         test "mode sequences" parser_mode_sequences;
       ];
