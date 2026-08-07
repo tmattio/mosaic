@@ -28,6 +28,48 @@ let install_winch_handler () =
         Atomic.set winch_flag false)
   with Invalid_argument _ -> ignore
 
+(* ───── Termination Signals ───── *)
+
+(* Termination signals must not run [Matrix.close] from the signal handler:
+   for this backend close performs Eio effects (terminal output writes go
+   through [Eio.Flow], flush_input through [Eio_unix.Fd.use_exn]), and
+   performing an effect inside an OCaml signal handler is unsound. When the
+   domain is parked in the Eio scheduler — the normal state for an idle TUI —
+   the interrupted stack has no effect handler, so the perform raises
+   [Effect.Unhandled]; the terminal is then left raw exactly in the
+   clean-shutdown case the handler exists for. When a fiber is running, the
+   effect would instead suspend that fiber mid-handler, corrupting scheduler
+   state. The handler therefore only records the signal; the event loop polls
+   the flag at the same <=50ms cadence as SIGWINCH and shuts down from the
+   loop fiber, where Eio operations are legal. *)
+let termination_signal = Atomic.make 0
+
+let install_termination_handlers () =
+  Atomic.set termination_signal 0;
+  let installed = ref [] in
+  let restore () =
+    List.iter
+      (fun (signal, previous) ->
+        try ignore (Sys.signal signal previous : Sys.signal_behavior)
+        with _ -> ())
+      !installed;
+    Atomic.set termination_signal 0
+  in
+  let handler =
+    Sys.Signal_handle (fun signum -> Atomic.set termination_signal signum)
+  in
+  List.iter
+    (fun signal ->
+      match Sys.signal signal handler with
+      | previous -> installed := (signal, previous) :: !installed
+      | exception Invalid_argument _ -> ())
+    [ Sys.sigterm; Sys.sigint; Sys.sigquit; Sys.sigabrt; Sys.sighup ];
+  let active = ref true in
+  fun () ->
+    if !active then (
+      active := false;
+      restore ())
+
 (* ───── Application Setup ───── *)
 
 let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
@@ -62,6 +104,7 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
   let parser = Matrix.Input.Parser.create () in
   let original_termios = ref None in
   let restore_winch = ref ignore in
+  let restore_termination = ref ignore in
   let set_raw_mode enabled =
     match (enabled, !original_termios) with
     | true, Some _ | false, None -> ()
@@ -77,6 +120,18 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
         original_termios := None
   in
   let app_ref = ref None in
+  (* Shut down from the loop fiber when a termination signal was recorded:
+     close the app (legal here, unlike in the signal handler) and exit with
+     the conventional status, matching the Unix backend's semantics. *)
+  let check_termination () =
+    match Atomic.get termination_signal with
+    | 0 -> ()
+    | signum ->
+        (match !app_ref with
+        | Some app -> ( try Matrix.close app with _ -> ())
+        | None -> ());
+        exit (128 + signum)
+  in
   (* Register before acquiring raw mode. Once attachment succeeds this same
      callback transfers from construction rollback to [Matrix.close]. *)
   let close_owned () =
@@ -177,6 +232,7 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
             `Wakeup)
           else Eio.Fiber.any wait_branches
         in
+        check_termination ();
         if Atomic.get winch_flag then (
           Atomic.set winch_flag false;
           let cols, rows = terminal_size () in
@@ -211,7 +267,10 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
           terminal_size;
           set_raw_mode;
           flush_input;
-          cleanup = (fun () -> !restore_winch ());
+          cleanup =
+            (fun () ->
+              !restore_termination ();
+              !restore_winch ());
         }
       in
       let session =
@@ -219,13 +278,17 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
           backend
       in
       let app =
+        (* [signal_handlers:false]: Matrix.attach would install handlers that
+           call Matrix.close from signal context, which performs Eio effects —
+           see [install_termination_handlers]. Termination signals are handled
+           Eio-natively below instead. *)
         Matrix.attach ~mode ~raw_mode ~target_fps ~respect_alpha ~mouse_enabled
           ~mouse ~bracketed_paste ~focus_reporting ~kitty_keyboard
           ~exit_on_ctrl_c ~debug_overlay ~debug_overlay_corner
           ~debug_overlay_capacity ~frame_dump_every ?frame_dump_dir
           ?frame_dump_pattern ~frame_dump_hits ~cursor_visible ~explicit_width
           ~input_timeout ~resize_debounce ~min_tui_height ~start_idle
-          ~signal_handlers ~startup_events:session.startup_events ~backend
+          ~signal_handlers:false ~startup_events:session.startup_events ~backend
           ~parser ~terminal ~width:session.width ~height:session.height
           ~render_offset:session.render_offset
           ~static_needs_newline:session.static_needs_newline ()
@@ -233,4 +296,6 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
       app_ref := Some app;
       Matrix.Terminal.query_pixel_resolution terminal;
       restore_winch := install_winch_handler ();
+      if signal_handlers then
+        restore_termination := install_termination_handlers ();
       app)

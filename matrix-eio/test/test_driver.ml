@@ -369,6 +369,38 @@ let test_close_restores_eio_winch_disposition_once () =
   Eio.Flow.close stdin_writer;
   Eio.Flow.close stdout_reader
 
+(* Regression: the Eio backend used to forward signal_handlers to
+   Matrix.attach, whose handler runs Matrix.close — Eio effects — inside the
+   OCaml signal handler and then exits the process. The handler must only
+   record the signal; teardown happens on the loop fiber. Pre-fix this test
+   kills the whole test binary. *)
+let test_termination_signal_defers_shutdown_to_the_loop () =
+  with_distinct_signal_handler Sys.sigterm @@ fun prior_handler ->
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let stdin, stdin_writer = Eio_unix.pipe sw in
+  let stdout_reader, stdout = Eio_unix.pipe sw in
+  let app =
+    Matrix_eio.create ~sw ~clock:(Eio.Stdenv.clock env) ~stdin ~stdout
+      ~raw_mode:false ~target_fps:None ~mouse_enabled:false
+      ~signal_handlers:true ~start_idle:true ()
+  in
+  (match peek_signal Sys.sigterm with
+  | Sys.Signal_handle current ->
+      is_false ~msg:"live Eio app owns SIGTERM" (current == prior_handler)
+  | Sys.Signal_default | Sys.Signal_ignore ->
+      fail "expected an installed SIGTERM handler");
+  (* Deliver SIGTERM while the loop is not running: the handler must only
+     record it, not tear the app down (let alone exit the process). *)
+  Unix.kill (Unix.getpid ()) Sys.sigterm;
+  is_true ~msg:"signal handler defers shutdown to the loop"
+    (Matrix.running app);
+  Matrix.close app;
+  assert_signal_handler ~msg:"close restores the prior SIGTERM disposition"
+    Sys.sigterm prior_handler;
+  Eio.Flow.close stdin_writer;
+  Eio.Flow.close stdout_reader
+
 let test_sigwinch_wakes_eio_runtime () =
   with_distinct_signal_handler Sys.sigwinch @@ fun prior_handler ->
   Eio_main.run @@ fun env ->
@@ -507,6 +539,8 @@ let () =
             test_probe_failure_restores_pty_termios;
           test "close restores Eio SIGWINCH disposition once"
             test_close_restores_eio_winch_disposition_once;
+          test "termination signal defers shutdown to the loop"
+            test_termination_signal_defers_shutdown_to_the_loop;
           test "SIGWINCH wakes Eio runtime" test_sigwinch_wakes_eio_runtime;
         ];
     ]

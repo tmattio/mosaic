@@ -76,4 +76,12 @@ val create :
     - [stdout] — Eio sink for terminal output (typically [env#stdout]).
 
     All optional parameters match {!Matrix.create}; see its documentation for
-    details. *)
+    details.
+
+    [signal_handlers] keeps {!Matrix.create}'s meaning — the app owns
+    SIGTERM/SIGINT/SIGQUIT/SIGABRT/SIGHUP until close and prior dispositions
+    are restored — but termination is handled Eio-natively: the signal handler
+    only records the signal, and the event loop closes the application from a
+    fiber (within its regular 50ms poll) before exiting with [128 + signum].
+    Running the teardown inside the signal handler would perform Eio effects
+    without an effect handler on the stack. *)
