@@ -2,12 +2,14 @@
 #include <caml/fail.h>
 #include <caml/memory.h>
 #include <caml/mlvalues.h>
+// On the Windows ports Unix.file_descr is a custom block wrapping a HANDLE,
+// accessed with Handle_val; on Unix it is an immediate int. Both ports ship
+// caml/unixsupport.h.
+#include <caml/unixsupport.h>
 
 #ifdef _WIN32
-#include <io.h>  // For _get_osfhandle
 #include <windows.h>
 #else
-#include <caml/unixsupport.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
@@ -16,17 +18,17 @@
 CAMLprim value terminal_get_size(value fd_val) {
   CAMLparam1(fd_val);
   CAMLlocal1(result);
-  int fd = Int_val(fd_val);
   int width = 80, height = 24;
 
 #ifdef _WIN32
   CONSOLE_SCREEN_BUFFER_INFO csbi;
-  HANDLE h = (HANDLE)_get_osfhandle(fd);
+  HANDLE h = Handle_val(fd_val);
   if (h != INVALID_HANDLE_VALUE && GetConsoleScreenBufferInfo(h, &csbi)) {
     width = csbi.srWindow.Right - csbi.srWindow.Left + 1;
     height = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
   }
 #else
+  int fd = Int_val(fd_val);
   struct winsize ws;
   if (ioctl(fd, TIOCGWINSZ, &ws) == 0) {
     width = ws.ws_col;
@@ -48,8 +50,7 @@ CAMLprim value terminal_get_size(value fd_val) {
 CAMLprim value terminal_enable_vt(value fd_val) {
   CAMLparam1(fd_val);
 #ifdef _WIN32
-  int fd = Int_val(fd_val);
-  HANDLE h = (HANDLE)_get_osfhandle(fd);
+  HANDLE h = Handle_val(fd_val);
   if (h == INVALID_HANDLE_VALUE) {
     caml_failwith("Invalid handle");
   }
