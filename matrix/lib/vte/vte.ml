@@ -39,26 +39,26 @@ let compress_row grid row cols =
   let buf = Buffer.create (cols * 2) in
   let styles_rev = ref [] in
 
-  (* key = fg_r, fg_g, fg_b, fg_a, bg_r, bg_g, bg_b, bg_a, attrs_packed *)
-  let current_key :
-      (int * int * int * int * int * int * int * int * int) option ref =
-    ref None
-  in
+  (* Track the current run with immediates (Color.t and packed attrs are
+     ints): no per-cell key tuples, rgba decoding or polymorphic compares in
+     this hot path — it runs for every line entering scrollback. *)
+  let have_run = ref false in
   let current_fg = ref Ansi.Color.default in
   let current_bg = ref Ansi.Color.default in
-  let current_attrs = ref Ansi.Attr.empty in
+  let current_attrs = ref 0 in
   let style_start_byte = ref 0 in
 
   let flush_style_run end_byte =
-    match !current_key with
-    | None -> ()
-    | Some _ ->
-        let fg = !current_fg in
-        let bg = !current_bg in
-        let attrs = !current_attrs in
-        styles_rev :=
-          { start_byte = !style_start_byte; end_byte; fg; bg; attrs }
-          :: !styles_rev
+    if !have_run then
+      styles_rev :=
+        {
+          start_byte = !style_start_byte;
+          end_byte;
+          fg = !current_fg;
+          bg = !current_bg;
+          attrs = Ansi.Attr.unpack !current_attrs;
+        }
+        :: !styles_rev
   in
 
   for col = 0 to cols - 1 do
@@ -71,39 +71,29 @@ let compress_row grid row cols =
         if Grid.is_empty grid idx then " " else Grid.get_text grid idx
       in
 
-      if text <> "" then (
-        (* Extract raw style from cell. *)
+      if text <> "" then begin
         let fg = Grid.get_fg grid idx in
         let bg = Grid.get_bg grid idx in
-        let fg_r, fg_g, fg_b, fg_a = Ansi.Color.to_rgba fg in
-        let bg_r, bg_g, bg_b, bg_a = Ansi.Color.to_rgba bg in
-        let attrs_packed = Grid.get_attrs grid idx in
-
-        let key =
-          (fg_r, fg_g, fg_b, fg_a, bg_r, bg_g, bg_b, bg_a, attrs_packed)
-        in
+        let attrs = Grid.get_attrs grid idx in
 
         (* Style run change detection. *)
-        (match !current_key with
-        | None ->
-            current_key := Some key;
-            current_fg := fg;
-            current_bg := bg;
-            current_attrs := Ansi.Attr.unpack attrs_packed;
-            style_start_byte := Buffer.length buf
-        | Some prev when prev <> key ->
-            (* Close previous run. *)
-            let end_byte = Buffer.length buf in
-            flush_style_run end_byte;
-            current_key := Some key;
-            current_fg := fg;
-            current_bg := bg;
-            current_attrs := Ansi.Attr.unpack attrs_packed;
-            style_start_byte := end_byte
-        | Some _ -> ());
+        if
+          (not !have_run)
+          || (not (Ansi.Color.equal fg !current_fg))
+          || (not (Ansi.Color.equal bg !current_bg))
+          || attrs <> !current_attrs
+        then begin
+          flush_style_run (Buffer.length buf);
+          have_run := true;
+          current_fg := fg;
+          current_bg := bg;
+          current_attrs := attrs;
+          style_start_byte := Buffer.length buf
+        end;
 
         (* Append grapheme text. *)
-        Buffer.add_string buf text)
+        Buffer.add_string buf text
+      end
   done;
 
   (* Finalize text and style runs. *)
