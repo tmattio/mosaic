@@ -5,20 +5,6 @@
     {!Matrix.configure_frame_dump} and {!Matrix.dump_frame}, not exported as a
     standalone module. *)
 
-val on_frame :
-  ?dir:string ->
-  ?pattern:string ->
-  ?hits:bool ->
-  every:int ->
-  unit ->
-  Screen.t ->
-  unit
-(** [on_frame ~every ()] is a callback that dumps every [every]th frame. The
-    callback keeps its own index counter and may be reused across frames. [hits]
-    includes the hit grid when [true] (defaults to [false]).
-
-    Raises [Invalid_argument] if [every <= 0]. *)
-
 val snapshot : ?dir:string -> ?pattern:string -> ?hits:bool -> Screen.t -> unit
-(** [snapshot screen] writes a single dump immediately. Shares the global frame
-    index with {!on_frame} callbacks so filenames remain monotonic. *)
+(** [snapshot screen] writes a single dump immediately. Successive snapshots
+    share a global frame index so filenames remain monotonic. *)

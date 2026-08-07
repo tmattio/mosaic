@@ -86,10 +86,3 @@ let snapshot ?dir ?pattern ?(hits = false) (screen : Screen.t) =
   if hits then
     let path = stem ^ ".hits.txt" in
     write_file path (hit_grid_text screen)
-
-let on_frame ?dir ?pattern ?(hits = false) ~every () : Screen.t -> unit =
-  if every <= 0 then invalid_arg "Frame_dump.on_frame: every must be > 0";
-  let frame_counter = ref 0 in
-  fun (screen : Screen.t) ->
-    incr frame_counter;
-    if !frame_counter mod every = 0 then snapshot ?dir ?pattern ~hits screen
