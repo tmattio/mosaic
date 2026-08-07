@@ -161,8 +161,9 @@ val close : ?wait:bool -> t -> unit
 (** [close pty] closes the file descriptor and, for {!spawn} PTYs, terminates
     and reaps the child process:
     - Sends [SIGTERM].
-    - If [wait] is [true] (the default), sleeps 100ms, checks [waitpid WNOHANG],
-      and escalates to [SIGKILL] if the child is still running.
+    - If [wait] is [true] (the default), reaps immediately when the child has
+      already exited; otherwise polls briefly (up to ~100ms) before escalating
+      to [SIGKILL].
     - Reaps with [waitpid] to prevent zombies.
 
     [wait] defaults to [true]. Set to [false] for non-blocking close; you must

@@ -286,6 +286,28 @@ let test_close_idempotent () =
   (* Should not crash *)
   Pty.close slave
 
+(* Regression: close used to sleep 100ms before its first waitpid even when
+   the child had already exited — several dropped frames per closed pane. *)
+let test_close_reaps_exited_child_without_delay () =
+  let pty = Pty.spawn ~prog:"sh" ~args:[ "-c"; "exit 0" ] () in
+  (* EOF (or EIO) on the master means the child exited and is reapable. *)
+  let buf = Bytes.create 64 in
+  let rec drain () =
+    match Pty.read pty buf 0 64 with
+    | 0 -> ()
+    | _ -> drain ()
+    | exception Unix.Unix_error (Unix.EIO, _, _) -> ()
+  in
+  drain ();
+  let start = Unix.gettimeofday () in
+  Pty.close pty;
+  let elapsed = Unix.gettimeofday () -. start in
+  is_true
+    ~msg:
+      (Printf.sprintf "close reaped an exited child in %.0fms"
+         (elapsed *. 1000.))
+    (elapsed < 0.05)
+
 (* Regression: a second close used to call Unix.close on the stored fd number
    again. The kernel reallocates freed numbers to the next opened descriptor,
    so the second close destroyed an unrelated fd. *)
@@ -355,6 +377,8 @@ let tests =
       test "multiple writes" test_multiple_writes;
       (* Edge Cases *)
       test "close idempotent" test_close_idempotent;
+      test "close reaps exited child without delay"
+        test_close_reaps_exited_child_without_delay;
       test "double close does not touch reused fd"
         test_double_close_does_not_touch_reused_fd;
       test "eof on close" test_eof_on_close;

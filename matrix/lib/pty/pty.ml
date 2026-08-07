@@ -42,6 +42,27 @@ let kill t =
   | Some pid -> ( try Unix.kill pid Sys.sigkill with Unix.Unix_error _ -> ())
   | None -> invalid_arg "Pty.kill: no child process"
 
+(* Reap after SIGTERM. An immediate waitpid catches the common case — the
+   child exited long ago and close must not stall the caller — then a short
+   poll grants the SIGTERM grace before escalating to SIGKILL. *)
+let reap pid =
+  let reaped () =
+    match Unix.waitpid [ WNOHANG ] pid with
+    | 0, _ -> false
+    | _ -> true
+    | exception Unix.Unix_error _ -> true
+  in
+  let rec poll attempts =
+    if reaped () then ()
+    else if attempts <= 0 then (
+      (try Unix.kill pid Sys.sigkill with Unix.Unix_error _ -> ());
+      try ignore (Unix.waitpid [] pid) with Unix.Unix_error _ -> ())
+    else (
+      Unix.sleepf 0.01;
+      poll (attempts - 1))
+  in
+  poll 10
+
 let close ?(wait = true) t =
   if t.closed then ()
   else (
@@ -51,19 +72,7 @@ let close ?(wait = true) t =
     | Some pid ->
         (* Try SIGTERM first for graceful shutdown *)
         (try Unix.kill pid Sys.sigterm with Unix.Unix_error _ -> ());
-        if wait then (
-          (* Give process time to exit cleanly *)
-          Unix.sleepf 0.1;
-          (* Try to reap - if still running, force kill *)
-          match Unix.waitpid [ WNOHANG ] pid with
-          | 0, _ -> (
-              (* Still running - send SIGKILL and wait *)
-              (try Unix.kill pid Sys.sigkill with Unix.Unix_error _ -> ());
-              try ignore (Unix.waitpid [] pid) with Unix.Unix_error _ -> ())
-          | _, _ ->
-              (* Already exited *)
-              ()
-          | exception Unix.Unix_error _ -> ())
+        if wait then reap pid
     | None -> ());
     t.pid <- None;
     (* Close file descriptor *)
