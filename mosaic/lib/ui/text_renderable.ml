@@ -153,7 +153,11 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?text_style
   let wrap = Option.value wrap ~default:`None in
   let truncate = Option.value truncate ~default:false in
   let selectable = Option.value selectable ~default:true in
-  let buffer = Text_buffer.create ~default_style:text_style ~tab_width () in
+  let buffer =
+    Text_buffer.create ~default_style:text_style ~tab_width
+      ~width_method:(Renderable.Private.width_method node)
+      ()
+  in
   let surface = Text_surface.create node buffer in
   let t =
     { node; buffer; surface; selectable; on_selection; last_selection = None }

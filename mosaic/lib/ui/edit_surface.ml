@@ -516,7 +516,10 @@ let handle_resize t _node =
 let measure_single_line t ~known_dimensions ~available_space:_ ~style:_ =
   let content_width = Edit_buffer.display_width t.buf in
   let placeholder_width =
-    Matrix.Text.measure ~width_method:`Unicode ~tab_width:2 t.props.placeholder
+    Matrix.Text.measure
+      ~width_method:(Text_buffer.width_method t.text_buf)
+      ~tab_width:(Text_buffer.tab_width t.text_buf)
+      t.props.placeholder
   in
   (* Reserve one cell for the caret: the cursor sits after the last grapheme,
      so an intrinsically-sized input must be one cell wider than its content
@@ -938,7 +941,8 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?value ?cursor
     | `Multiline -> props.value
     | `Single_line -> Edit_buffer.strip_newlines props.value
   in
-  let buf = Edit_buffer.create ~max_length initial_value in
+  let width_method = Renderable.Private.width_method node in
+  let buf = Edit_buffer.create ~max_length ~width_method initial_value in
   Option.iter (Edit_buffer.set_cursor buf) props.cursor;
   (match props.selection with
   | None | Some None -> ()
@@ -951,7 +955,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?value ?cursor
         Edit_buffer.set_cursor buf lo;
         Edit_buffer.set_cursor_offset ~select:true buf hi
       end);
-  let text_buf = Text_buffer.create () in
+  let text_buf = Text_buffer.create ~width_method () in
   let surface = Text_surface.create node text_buf in
   Text_surface.set_wrap surface props.wrap;
   let initial_value = Edit_buffer.text buf in

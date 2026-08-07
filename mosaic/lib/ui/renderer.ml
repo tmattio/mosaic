@@ -567,6 +567,7 @@ let create ?width_method ?clock ?screen ?style () =
             Toffee.Node_id.index (Renderable.Private.toffee_node node)
           in
           Hashtbl.remove toffee_map toffee_idx);
+      width_method = (fun () -> Grid.width_method (Screen.next_grid screen));
     }
   in
   let root_style =

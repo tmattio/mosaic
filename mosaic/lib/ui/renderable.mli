@@ -407,6 +407,10 @@ module Private : sig
     alloc_num : unit -> int;
     register : t -> unit;
     unregister : t -> unit;
+    width_method : unit -> Matrix.Text.width_method;
+        (** The width computation method of the screen the tree renders into.
+            Widgets read it (see {!val-width_method}) when creating text buffers
+            so measurement matches how cells are laid down. *)
   }
   (** The type for renderer callbacks inherited by all nodes in a tree. *)
 
@@ -426,6 +430,12 @@ module Private : sig
 
   val toffee_node : t -> Toffee.Node_id.t
   (** [toffee_node t] is [t]'s layout node identifier. *)
+
+  val width_method : t -> Matrix.Text.width_method
+  (** [width_method t] is the width computation method of the screen [t]'s tree
+      renders into. Widgets pass it to the text buffers they create so wrap
+      points, intrinsic widths, and cursor columns agree with how the screen
+      lays down cells. *)
 
   val set_is_root : t -> bool -> unit
   (** [set_is_root t v] marks or unmarks [t] as a root node. *)

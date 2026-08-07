@@ -77,6 +77,17 @@ let creates_with_custom_style () =
   let _root = Renderer.root t in
   ()
 
+let width_method_reaches_widgets () =
+  (* Text machinery follows the screen's width method: widgets read it through
+     the renderable context when creating text buffers. *)
+  let t = Renderer.create ~width_method:`Wcwidth () in
+  is_true ~msg:"owned screen's method"
+    (Renderable.Private.width_method (Renderer.root t) = `Wcwidth);
+  let host = Screen.create ~width_method:`Wcwidth () in
+  let adopted = Renderer.create ~screen:host () in
+  is_true ~msg:"adopted screen's method"
+    (Renderable.Private.width_method (Renderer.root adopted) = `Wcwidth)
+
 let starts_dirty () =
   let t = make_renderer () in
   is_true ~msg:"needs_render" (Renderer.needs_render t)
@@ -1100,6 +1111,7 @@ let () =
         [
           test "creates with default style" creates_with_default_style;
           test "creates with custom style" creates_with_custom_style;
+          test "width method reaches widgets" width_method_reaches_widgets;
           test "starts dirty" starts_dirty;
           test "clean after render" clean_after_render;
           test "dirty after schedule" dirty_after_schedule;

@@ -42,6 +42,7 @@ let make_ctx () =
       register = (fun _ -> ());
       unregister =
         (fun n -> unregister_log := Renderable.id n :: !unregister_log);
+      width_method = (fun () -> `Unicode);
     }
   in
   { ctx; schedule_count; focus_log; blur_log; unregister_log }

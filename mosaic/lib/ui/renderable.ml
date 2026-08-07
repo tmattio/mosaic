@@ -62,6 +62,7 @@ type context = {
   alloc_num : unit -> int;
   register : node -> unit;
   unregister : node -> unit;
+  width_method : unit -> Matrix.Text.width_method;
 }
 
 and node = {
@@ -1095,6 +1096,7 @@ module Private = struct
     alloc_num : unit -> int;
     register : t -> unit;
     unregister : t -> unit;
+    width_method : unit -> Matrix.Text.width_method;
   }
 
   let create_root ctx ?id ?style () =
@@ -1108,6 +1110,7 @@ module Private = struct
 
   let num t = t.num
   let toffee_node t = t.toffee_node
+  let width_method t = t.ctx.width_method ()
 
   let set_is_root t v =
     if t.is_root <> v then (
