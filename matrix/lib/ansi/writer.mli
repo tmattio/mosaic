@@ -28,9 +28,6 @@ val make_counting : unit -> t
 val len : t -> int
 (** [len w] is the number of bytes written so far. *)
 
-val pos : t -> int
-(** [pos w] is the current write position. Same as {!len}. *)
-
 val reset_pos : t -> unit
 (** [reset_pos w] resets the write position to zero. The underlying buffer is
     not cleared. *)

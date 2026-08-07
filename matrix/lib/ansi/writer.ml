@@ -5,7 +5,6 @@ exception Buffer_full
 let make bytes = { bytes; cap = Bytes.length bytes; pos = 0 }
 let make_counting () = { bytes = Bytes.create 0; cap = -1; pos = 0 }
 let[@inline] len w = w.pos
-let[@inline] pos w = w.pos
 let[@inline] reset_pos w = w.pos <- 0
 let slice w = Bytes.sub w.bytes 0 w.pos
 

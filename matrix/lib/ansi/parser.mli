@@ -114,15 +114,3 @@ val feed : t -> bytes -> off:int -> len:int -> (token -> unit) -> unit
 val parse : string -> token list
 (** [parse s] parses a complete string into tokens. Creates a temporary parser.
     Not suitable for streaming; use {!feed}. *)
-
-(** {1:inspection Inspection} *)
-
-val has_pending : t -> bool
-(** [has_pending p] is [true] iff [p] has buffered data (incomplete escape
-    sequences or pending UTF-8 bytes). *)
-
-val pending : t -> bytes
-(** [pending p] is a copy of raw input bytes not yet consumed. Escape sequence
-    bodies being accumulated (CSI parameters, OSC payloads, DCS/APC/PM/SOS
-    payloads) are stored in separate internal buffers and are not included. Use
-    {!has_pending} to avoid allocation when only checking for pending data. *)

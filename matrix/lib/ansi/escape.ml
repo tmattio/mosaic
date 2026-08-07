@@ -179,9 +179,9 @@ let sgr codes w =
    allocation *)
 let sgr_direct write_codes w =
   write_string w "\027[";
-  let start_pos = Writer.pos w in
+  let start_pos = Writer.len w in
   write_codes (fun code ->
-      if Writer.pos w > start_pos then write_char w ';';
+      if Writer.len w > start_pos then write_char w ';';
       add_int w code);
   write_char w 'm'
 

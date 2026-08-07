@@ -388,9 +388,6 @@ let reset p =
   Buffer.clear p.text_buf;
   p.utf8_len <- 0
 
-let has_pending p = p.pending_len > 0 || p.state <> Normal || p.utf8_len > 0
-let pending p = Bytes.sub p.pending_buf 0 p.pending_len
-
 let[@inline] utf8_sequence_len b =
   if b < 0x80 then 1
   else if b >= 0xC2 && b <= 0xDF then 2
