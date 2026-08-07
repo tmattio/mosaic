@@ -4,7 +4,7 @@ A fast, full-featured, modern terminal UI library for OCaml.
 
 ## Why Matrix?
 
-- **Minimal dependencies** – Only depends on `uutf` for UTF-8 decoding. No transitive dependency bloat.
+- **Zero dependencies** – No runtime library dependencies at all; Unicode data tables and UTF-8 handling are built in. No transitive dependency bloat.
 - **High performance** – Double-buffered rendering diffs cell changes to emit minimal ANSI output. Grid-owned grapheme storage minimises allocations on the hot path.
 - **Modular architecture** – Small, focused libraries (`matrix.ansi`, `matrix.grid`, `matrix.pty`, `matrix.vte`, etc.) that you can use independently or combine as needed.
 - **Immediate-mode API** – A simple render loop with `on_render`, `on_input`, and `on_resize` callbacks. No framework overhead—just draw your UI each frame.
@@ -70,7 +70,7 @@ Use `Primary` for CLI tools that should leave output in terminal history:
 
 ```ocaml
 let app = Matrix.create ~mode:`Primary () in
-(* Use Matrix.static_print to write persistent output above the TUI *)
+(* Use Matrix.static_write to write persistent output above the TUI *)
 ```
 
 ## API Overview
@@ -87,7 +87,8 @@ Matrix is organized into focused libraries that can be used together or independ
 | `matrix.terminal` | `Terminal` | TTY control and capability detection                  |
 | `matrix.ansi`     | `Ansi`     | Low-level ANSI escape sequence generation             |
 | `matrix.text`     | `Text`     | Unicode text measurement and segmentation             |
-| `matrix.pty`      | `Pty`      | Pseudo-terminal spawning (POSIX + Windows ConPTY)     |
+| `matrix.charts`   | `Matrix_charts` | Declarative terminal charts rendered into grids  |
+| `matrix.pty`      | `Pty`      | POSIX pseudo-terminal spawning                        |
 | `matrix.vte`      | `Vte`      | Virtual terminal emulator for embedding output        |
 
 API documentation is available in the corresponding `.mli` files under `lib/`.
@@ -98,11 +99,11 @@ API documentation is available in the corresponding `.mli` files under `lib/`.
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | Rendering model     | Immediate-mode, double-buffered grid with ANSI diffing; only changed cells emit bytes; built for high FPS.                                    | Declarative images; redraws full image on refresh; simpler, not diff-based.                           |
 | Performance tactics | Double-buffered cell diffing, grid-owned grapheme storage, explicit-width output for graphemes.                                                | Allocates per render; no diffing or explicit-width negotiation.                                       |
-| Features            | RGBA with alpha blending, OSC8 hyperlinks, hit regions, inline/alt/split display modes, debug overlay, frame dumps.                           | Core fg/bg + styles; compact feature set; no alpha/hyperlinks or built-in diagnostics.                |
+| Features            | RGBA with alpha blending, OSC8 hyperlinks, hit regions, inline/alt display modes, debug overlay, frame dumps.                                 | Core fg/bg + styles; compact feature set; no alpha/hyperlinks or built-in diagnostics.                |
 | Protocols and input | Auto-negotiates Kitty keyboard, SGR/URXVT/X10 mouse, bracketed paste, focus, explicit width; separates capability responses from user events. | Minimal, broadly compatible protocols by design; no capability probing; basic key/mouse/paste events. |
 | Unicode handling    | Unicode width tables plus explicit-width negotiation to stay aligned with modern emoji/wide symbols.                                          | Width hints only; no explicit-width negotiation.                                                      |
 | API surface         | Mutable `Grid` for hot paths + Notty-inspired `Image` DSL; choose imperative or declarative.                                                  | Compositional image API; no mutable grid for rendering.                                               |
-| Runtime and cleanup | Manages raw mode, alt/inline/split modes, cursor/mouse/paste/focus state, and restores the terminal on exit.                                  | Alt-screen runtime; inline helpers but no managed mode negotiation or runtime loop.                   |
+| Runtime and cleanup | Manages raw mode, alt/inline modes, cursor/mouse/paste/focus state, and restores the terminal on exit.                                        | Alt-screen runtime; inline helpers but no managed mode negotiation or runtime loop.                   |
 
 ## Acknowledgements
 

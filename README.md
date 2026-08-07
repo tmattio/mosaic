@@ -11,7 +11,7 @@ independently:
 | [Matrix](matrix/README.md)   | Terminal toolkit: rendering, input, PTY, VTE               |
 | [Toffee](toffee/README.md)   | CSS layout engine (Flexbox, Grid, Block) ported from Taffy |
 
-**Mosaic** provides a TEA runtime (model / update / view), 16 built-in
+**Mosaic** provides a TEA runtime (model / update / view), 18 built-in
 widgets, and CSS layout via Toffee. Write your UI as a pure function of
 state.
 
@@ -89,7 +89,7 @@ let () = run { init; update; view; subscriptions }
 
 ## Examples
 
-Mosaic ships with 24 examples and 3 showcase apps covering forms, tables,
+Mosaic ships with 25 examples and 4 showcase apps covering forms, tables,
 markdown, syntax highlighting, charts, async commands, tree widgets, CSS
 Grid layouts, and more. See [mosaic/examples/](mosaic/examples/README.md).
 
