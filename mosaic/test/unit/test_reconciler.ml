@@ -498,6 +498,26 @@ let keyed_reorder_preserves_focus () =
     | None -> false);
   is_false ~msg:"a remains unfocused" (Renderable.focused node_a)
 
+let duplicate_keys_first_occurrence_stays_stable () =
+  (* Duplicate-keyed siblings are a view bug, but the failure mode is pinned:
+     the first occurrence keeps its identity across renders; later duplicates
+     cannot match a consumed fiber and remount. *)
+  let renderer, reconciler = make () in
+  let dup () =
+    Vnode.fragment [ Vnode.box ~key:"dup" []; Vnode.box ~key:"dup" [] ]
+  in
+  render_view reconciler (dup ());
+  do_frame renderer;
+  let first = List.nth (children_of renderer) 0 in
+  let second = List.nth (children_of renderer) 1 in
+  render_view reconciler (dup ());
+  do_frame renderer;
+  equal ~msg:"still two children" int 2 (child_count renderer);
+  is_true ~msg:"first occurrence keeps its node"
+    (List.nth (children_of renderer) 0 == first);
+  is_false ~msg:"later duplicate remounts"
+    (List.nth (children_of renderer) 1 == second)
+
 let unkeyed_positional () =
   let renderer, reconciler = make () in
   render_view reconciler (Vnode.fragment [ Vnode.box []; Vnode.text "x" ]);
@@ -786,6 +806,8 @@ let () =
           test "addition" keyed_addition;
           test "reorder preserves focus" keyed_reorder_preserves_focus;
           test "unkeyed positional" unkeyed_positional;
+          test "duplicate keys keep the first occurrence stable"
+            duplicate_keys_first_occurrence_stays_stable;
         ];
       group "Kind mismatch"
         [

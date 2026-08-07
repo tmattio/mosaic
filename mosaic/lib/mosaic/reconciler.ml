@@ -879,7 +879,13 @@ let build_maps (fibers : fiber list) : fiber_maps =
   let by_key = Hashtbl.create len in
   Array.iteri
     (fun i f ->
-      match f.key with Some k -> Hashtbl.replace by_key k (f, i) | None -> ())
+      match f.key with
+      | Some k ->
+          (* First occurrence wins on duplicate keys, so when a view
+             accidentally emits duplicate-keyed siblings the first keeps its
+             identity across renders and only the later duplicates remount. *)
+          if not (Hashtbl.mem by_key k) then Hashtbl.add by_key k (f, i)
+      | None -> ())
     arr;
   { by_key; by_index = arr; used = Array.make len false }
 
