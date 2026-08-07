@@ -57,6 +57,27 @@ type cursor = {
    observation so a frame pays for exactly one clear no matter how many
    layers (runtime prepare, renderer build, swap) take part in it. *)
 type next_state = Stale | Pristine | Touched
+type render_mode = [ `Diff | `Full ]
+
+(* All state the diff loop threads through its recursion, retained on the
+   screen so a render allocates nothing. The emit path re-points the mutable
+   fields at each frame's inputs before running the loop. *)
+type diff_ctx = {
+  mutable mode : render_mode;
+  mutable prev : Grid.t; (* Diff baseline; never consulted in [`Full]. *)
+  mutable curr : Grid.t;
+  mutable out : Ansi.writer;
+  sgr : Ansi.Sgr_state.t;
+  mutable scratch : bytes; (* Grapheme byte scratch; high-water growth. *)
+  mutable row_offset : int;
+  mutable width : int;
+  mutable height : int;
+  mutable prev_width : int;
+  mutable prev_height : int;
+  mutable explicit_width : bool;
+  mutable explicit_cursor_positioning : bool;
+  mutable hyperlinks : bool;
+}
 
 (* screen state - mutable internal state for maximum performance *)
 type t = {
@@ -87,9 +108,11 @@ type t = {
   cursor : Cursor_state.t;
   sgr_state : Ansi.Sgr_state.t;
   mutable row_offset : int;
-  mutable scratch_bytes : bytes;
-  (* Retained ANSI output capacity; grows only past its high-water mark. *)
+  diff : diff_ctx;
+  (* Retained ANSI output capacity; grows only past its high-water mark.
+     [render_writer] wraps [render_bytes] and is rebuilt only when it grows. *)
   mutable render_bytes : bytes;
+  mutable render_writer : Ansi.writer;
   (* Clock time of the last committed frame; nan before the first frame. *)
   mutable last_render_time : float;
   (* Capabilities *)
@@ -114,169 +137,127 @@ let[@inline] clamp_height grid height = max 0 (min (Grid.height grid) height)
    2 MiB reservation on every standalone or offscreen Screen. *)
 let initial_render_buffer_size = 16 * 1024
 
-(* --- Writer Logic --- *)
+(* --- Core Rendering Logic --- *)
+
+let[@inline] cell_changed (c : diff_ctx) y x idx curr_width =
+  if curr_width <= 0 then false
+  else
+    match c.mode with
+    | `Full -> true
+    | `Diff ->
+        if y >= c.prev_height || x >= c.prev_width then true
+        else not (Grid.cells_equal c.prev ((y * c.prev_width) + x) c.curr idx)
+
+let[@inline] cell_link (c : diff_ctx) idx =
+  if c.hyperlinks then
+    Grid.hyperlink_url_direct c.curr (Grid.get_link c.curr idx)
+  else ""
 
 (* Writes a grid cell's content to the output buffer. For wide graphemes, uses
    explicit_width (OSC 66) when available, otherwise falls back to cursor
-   repositioning to prevent column drift in terminals that miscalculate grapheme
-   widths. *)
-let[@inline] add_code_to_writer ~explicit_width ~explicit_cursor_positioning
-    ~row_offset ~y ~x ~grid_width ~cell_width (scratch : bytes ref)
-    (w : Ansi.writer) grid idx =
-  let cell = Grid.get_cell grid idx in
-
+   repositioning to prevent column drift in terminals that miscalculate
+   grapheme widths. Emitters are called saturated so no closures are built. *)
+let write_cell (c : diff_ctx) ~y ~x ~cell_width idx =
+  let w = c.out in
+  let cell = Grid.get_cell c.curr idx in
   if Grid.Cell.is_empty cell || Grid.Cell.is_continuation cell then
-    Ansi.emit (Ansi.char ' ') w
+    Ansi.Writer.write_char w ' '
   else if Grid.Cell.is_inline cell && Grid.Cell.codepoint cell < 128 then
-    Ansi.emit (Ansi.char (Char.chr (Grid.Cell.codepoint cell))) w
+    Ansi.Writer.write_char w (Char.chr (Grid.Cell.codepoint cell))
   else
-    let len = Grid.cell_text_length grid idx in
-    if len <= 0 then Ansi.emit (Ansi.char ' ') w
-    else (
-      if len > Bytes.length !scratch then
-        scratch := Bytes.create (max (Bytes.length !scratch * 2) len);
-
-      let written = Grid.blit_cell_text grid idx !scratch ~pos:0 in
-
-      if written <= 0 then Ansi.emit (Ansi.char ' ') w
-      else if explicit_width && cell_width >= 2 then
-        Ansi.emit
-          (Ansi.explicit_width_bytes ~width:cell_width ~bytes:!scratch ~off:0
-             ~len:written)
-          w
-      else (
-        Ansi.emit (Ansi.bytes !scratch ~off:0 ~len:written) w;
-        (* Fallback: reposition cursor after wide graphemes to prevent drift in
-           terminals that support cursor addressing but not OSC 66. *)
-        if explicit_cursor_positioning && cell_width >= 2 then
+    let len = Grid.cell_text_length c.curr idx in
+    if len <= 0 then Ansi.Writer.write_char w ' '
+    else begin
+      if len > Bytes.length c.scratch then
+        c.scratch <- Bytes.create (max (Bytes.length c.scratch * 2) len);
+      let written = Grid.blit_cell_text c.curr idx c.scratch ~pos:0 in
+      if written <= 0 then Ansi.Writer.write_char w ' '
+      else if c.explicit_width && cell_width >= 2 then
+        Ansi.explicit_width_bytes ~width:cell_width ~bytes:c.scratch ~off:0
+          ~len:written w
+      else begin
+        Ansi.Writer.write_subbytes w c.scratch 0 written;
+        (* Fallback: reposition cursor after wide graphemes to prevent drift
+           in terminals that support cursor addressing but not OSC 66. *)
+        if c.explicit_cursor_positioning && cell_width >= 2 then
           let next_x = x + cell_width in
-          if next_x < grid_width then
-            Ansi.cursor_position ~row:(row_offset + y + 1) ~col:(next_x + 1) w))
+          if next_x < c.width then
+            Ansi.cursor_position ~row:(c.row_offset + y + 1) ~col:(next_x + 1) w
+      end
+    end
 
-(* --- Core Rendering Logic --- *)
+(* Write consecutive changed cells, return the new x position. Cells written =
+   new_x - start_x. *)
+let rec write_run (c : diff_ctx) y x =
+  if x >= c.width then x
+  else
+    let idx = (y * c.width) + x in
+    let cell_width = Grid.cell_width c.curr idx in
+    let step = width_step cell_width in
+    if cell_width <= 0 then x
+    else if not (cell_changed c y x idx cell_width) then x
+    else begin
+      (* Emit style/color through zero-alloc accessors. *)
+      Ansi.Sgr_state.update c.sgr c.out ~fg:(Grid.get_fg c.curr idx)
+        ~bg:(Grid.get_bg c.curr idx)
+        ~attrs:(Grid.get_attrs c.curr idx)
+        ~link:(cell_link c idx);
+      write_cell c ~y ~x ~cell_width idx;
+      write_run c y (x + step)
+    end
 
-type render_mode = [ `Diff | `Full ]
+(* Zero-width cell: the run writer never visits it, so defensively clear it in
+   the cell's own colors when it differs from the previous frame. In a
+   well-formed grid the scan steps over the continuation cells of wide spans,
+   so this only fires for null cells (and malformed orphan continuations). *)
+let clear_stale_zero_width (c : diff_ctx) y x idx =
+  if c.mode = `Diff && y < c.prev_height && x < c.prev_width then
+    let prev_idx = (y * c.prev_width) + x in
+    if not (Grid.cells_equal c.prev prev_idx c.curr idx) then begin
+      Ansi.cursor_position ~row:(c.row_offset + y + 1) ~col:(x + 1) c.out;
+      Ansi.Sgr_state.update c.sgr c.out ~fg:(Grid.get_fg c.curr idx)
+        ~bg:(Grid.get_bg c.curr idx)
+        ~attrs:(Grid.get_attrs c.curr idx)
+        ~link:(cell_link c idx);
+      Ansi.Writer.write_char c.out ' ';
+      Ansi.Sgr_state.close_link c.sgr c.out
+    end
 
-(* The hot loop. Scans grid, checks dirty flags, diffs against previous frame,
-   and emits sequences while reusing renderer state and scratch buffers. *)
-let render_generic ~row_offset ~use_explicit_width
-    ~use_explicit_cursor_positioning ~use_hyperlinks ~mode ~height ~writer
-    ~scratch ~sgr_state ~prev ~curr =
-  let width = Grid.width curr in
-  let height = clamp_height curr height in
-  let row_offset = max 0 row_offset in
+(* Process columns in a row, return total cells updated in this row. *)
+let rec process_cols (c : diff_ctx) y x row_cells =
+  if x >= c.width then row_cells
+  else
+    let idx = (y * c.width) + x in
+    let cell_width = Grid.cell_width c.curr idx in
+    if cell_width <= 0 then begin
+      clear_stale_zero_width c y x idx;
+      process_cols c y (x + 1) row_cells
+    end
+    else if cell_changed c y x idx cell_width then begin
+      (* Move cursor to start of changed run, then write it. *)
+      Ansi.cursor_position ~row:(c.row_offset + y + 1) ~col:(x + 1) c.out;
+      let start_x = x in
+      let new_x = write_run c y x in
+      (* Close active hyperlink. SGR state is preserved across the gap so the
+         next run on this row skips re-emission when unchanged. *)
+      Ansi.Sgr_state.close_link c.sgr c.out;
+      process_cols c y new_x (row_cells + (new_x - start_x))
+    end
+    else process_cols c y (x + width_step cell_width) row_cells
 
-  (* Extract prev grid dimensions once - no tuple allocation. [prev] is only
-     consulted in [`Diff] mode; [`Full] ignores it. *)
-  let prev_width = Grid.width prev in
-  let prev_height = min (Grid.height prev) height in
+(* Process all rows, accumulate total cells updated. *)
+let rec process_rows (c : diff_ctx) y total_cells =
+  if y >= c.height then total_cells
+  else process_rows c (y + 1) (total_cells + process_cols c y 0 0)
 
-  (* Inline cell change detection - no closure allocation *)
-  let[@inline] is_cell_changed y x idx curr_width =
-    if curr_width <= 0 then false
-    else
-      match mode with
-      | `Full -> true
-      | `Diff ->
-          if y >= prev_height || x >= prev_width then true
-          else
-            let prev_idx = (y * prev_width) + x in
-            not (Grid.cells_equal prev prev_idx curr idx)
-  in
-
-  (* SGR State Tracking - use pre-allocated state *)
-  Ansi.Sgr_state.reset sgr_state;
-
-  (* Inner loop: Write consecutive changed cells, return new x position. Cells
-     written = new_x - start_x (no tuple allocation needed). *)
-  let rec write_run y x =
-    if x >= width then x
-    else
-      let idx = (y * width) + x in
-      let curr_width = Grid.cell_width curr idx in
-      let step = width_step curr_width in
-
-      if curr_width <= 0 then x
-      else if not (is_cell_changed y x idx curr_width) then x
-      else
-        (* Emit Style/Color using zero-alloc accessors *)
-        let attrs = Grid.get_attrs curr idx in
-        let link =
-          if use_hyperlinks then
-            Grid.hyperlink_url_direct curr (Grid.get_link curr idx)
-          else ""
-        in
-
-        Ansi.Sgr_state.update sgr_state writer ~fg:(Grid.get_fg curr idx)
-          ~bg:(Grid.get_bg curr idx) ~attrs ~link;
-
-        (* Emit Content *)
-        add_code_to_writer ~explicit_width:use_explicit_width
-          ~explicit_cursor_positioning:use_explicit_cursor_positioning
-          ~row_offset ~y ~x ~grid_width:width ~cell_width:curr_width scratch
-          writer curr idx;
-
-        write_run y (x + step)
-  in
-
-  (* Process columns in a row, return total cells updated in this row *)
-  let rec process_cols y x row_cells =
-    if x >= width then row_cells
-    else
-      let idx = (y * width) + x in
-      let curr_width = Grid.cell_width curr idx in
-
-      if curr_width <= 0 then (
-        (* Zero-width cell: the run writer never visits it, so defensively
-           clear it in the cell's own colors when it differs from the
-           previous frame. In a well-formed grid the scan steps over the
-           continuation cells of wide spans, so this only fires for null
-           cells (and malformed orphan continuations). *)
-        (if mode = `Diff && y < prev_height && x < prev_width then
-           let prev_idx = (y * prev_width) + x in
-           if not (Grid.cells_equal prev prev_idx curr idx) then (
-             Ansi.cursor_position ~row:(row_offset + y + 1) ~col:(x + 1) writer;
-             let link =
-               if use_hyperlinks then
-                 Grid.hyperlink_url_direct curr (Grid.get_link curr idx)
-               else ""
-             in
-             Ansi.Sgr_state.update sgr_state writer ~fg:(Grid.get_fg curr idx)
-               ~bg:(Grid.get_bg curr idx) ~attrs:(Grid.get_attrs curr idx) ~link;
-             Ansi.emit (Ansi.char ' ') writer;
-             Ansi.Sgr_state.close_link sgr_state writer));
-        process_cols y (x + 1) row_cells)
-      else if is_cell_changed y x idx curr_width then (
-        (* Move cursor to start of changed run *)
-        let target_row = row_offset + y + 1 in
-        Ansi.cursor_position ~row:target_row ~col:(x + 1) writer;
-
-        (* Write consecutive changed cells *)
-        let start_x = x in
-        let new_x = write_run y x in
-        let cells_in_run = new_x - start_x in
-
-        (* Close active hyperlink. SGR state is preserved across the gap
-           so the next run on this row skips re-emission when unchanged. *)
-        Ansi.Sgr_state.close_link sgr_state writer;
-
-        process_cols y new_x (row_cells + cells_in_run))
-      else process_cols y (x + width_step curr_width) row_cells
-  in
-
-  (* Process all rows, accumulate total cells *)
-  let rec process_rows y total_cells =
-    if y >= height then total_cells
-    else
-      let row_cells = process_cols y 0 0 in
-      process_rows (y + 1) (total_cells + row_cells)
-  in
-
-  let total = process_rows 0 0 in
-
-  Ansi.Sgr_state.close_link sgr_state writer;
-  if total > 0 then Ansi.emit Ansi.reset writer;
-  Ansi.Sgr_state.reset sgr_state;
+(* The hot loop. Scans the grid, diffs against the previous frame, and emits
+   sequences while reusing the retained context and scratch buffers. *)
+let run_diff (c : diff_ctx) =
+  Ansi.Sgr_state.reset c.sgr;
+  let total = process_rows c 0 0 in
+  Ansi.Sgr_state.close_link c.sgr c.out;
+  if total > 0 then Ansi.emit Ansi.reset c.out;
+  Ansi.Sgr_state.reset c.sgr;
   total
 
 (* --- Frame Lifecycle --- *)
@@ -360,10 +341,6 @@ let presented_height r height = clamp_height r.next height
 type scroll_hint = { top : int; bottom : int; delta : int }
 type viewport = { y : int; height : int }
 
-let effective_viewport r = function
-  | None -> (max 0 r.row_offset, Grid.height r.next)
-  | Some { y; height } -> (max 0 y, clamp_height r.next height)
-
 let normalize_scroll_hint ~row_offset ~height ~current hint =
   let { top; bottom; delta } = hint in
   let current_height = Grid.height current in
@@ -414,18 +391,33 @@ let prepare_diff_baseline (r : t) ~mode ~scroll_hint ~row_offset ~height
 
 let emit_frame (r : t) ~(mode : render_mode) ~scroll_hint ~viewport
     ~(writer : Ansi.writer) =
-  let row_offset, height = effective_viewport r viewport in
-  let scratch = ref r.scratch_bytes in
+  let row_offset =
+    match viewport with None -> max 0 r.row_offset | Some v -> max 0 v.y
+  in
+  let height =
+    match viewport with
+    | None -> Grid.height r.next
+    | Some v -> clamp_height r.next v.height
+  in
   let render_start = r.clock () in
+  let c = r.diff in
+  c.mode <- mode;
+  c.curr <- r.next;
+  c.out <- writer;
+  c.row_offset <- row_offset;
+  c.width <- Grid.width r.next;
+  c.height <- clamp_height r.next height;
+  c.explicit_width <- r.use_explicit_width;
+  c.explicit_cursor_positioning <- r.use_explicit_cursor_positioning;
+  c.hyperlinks <- r.hyperlinks_capable;
+  let prev =
+    prepare_diff_baseline r ~mode ~scroll_hint ~row_offset ~height ~writer
+  in
+  c.prev <- prev;
+  c.prev_width <- Grid.width prev;
+  c.prev_height <- min (Grid.height prev) c.height;
   let cells =
-    try
-      let prev =
-        prepare_diff_baseline r ~mode ~scroll_hint ~row_offset ~height ~writer
-      in
-      render_generic ~row_offset ~use_explicit_width:r.use_explicit_width
-        ~use_explicit_cursor_positioning:r.use_explicit_cursor_positioning
-        ~use_hyperlinks:r.hyperlinks_capable ~mode ~height ~writer ~scratch
-        ~sgr_state:r.sgr_state ~prev ~curr:r.next
+    try run_diff c
     with exn ->
       let bt = Printexc.get_raw_backtrace () in
       Ansi.Sgr_state.reset r.sgr_state;
@@ -434,8 +426,7 @@ let emit_frame (r : t) ~(mode : render_mode) ~scroll_hint ~viewport
   r.emit_f.e_elapsed_ms <- (r.clock () -. render_start) *. 1000.;
   r.e_cells <- cells;
   r.e_output_len <- Ansi.Writer.len writer;
-  r.e_presented_height <- presented_height r height;
-  r.scratch_bytes <- !scratch
+  r.e_presented_height <- presented_height r height
 
 let commit_frame r =
   r.last_render_time <- r.emit_f.e_now;
@@ -457,7 +448,9 @@ let grow_capacity current required =
   capacity
 
 let emit_to_render_bytes frame ~mode ~scroll_hint ~viewport =
-  try emit_to_bytes frame ~mode ~scroll_hint ~viewport frame.render_bytes
+  let writer = frame.render_writer in
+  Ansi.Writer.reset_pos writer;
+  try emit_frame frame ~mode ~scroll_hint ~viewport ~writer
   with Ansi.Writer.Buffer_full ->
     let counter = Ansi.Writer.make_counting () in
     emit_frame frame ~mode ~scroll_hint ~viewport ~writer:counter;
@@ -465,7 +458,8 @@ let emit_to_render_bytes frame ~mode ~scroll_hint ~viewport =
       grow_capacity (Bytes.length frame.render_bytes) frame.e_output_len
     in
     frame.render_bytes <- Bytes.create capacity;
-    emit_to_bytes frame ~mode ~scroll_hint ~viewport frame.render_bytes
+    frame.render_writer <- Ansi.Writer.make frame.render_bytes;
+    emit_frame frame ~mode ~scroll_hint ~viewport ~writer:frame.render_writer
 
 let render_to_bytes ?(full = false) ?scroll_hint ?viewport frame bytes =
   let mode = if full then `Full else `Diff in
@@ -501,6 +495,9 @@ let create ?width_method ?respect_alpha ?(cursor_visible = true)
     Grid.create ~width:1 ~height:1 ~width_method:w_method ~respect_alpha:r_alpha
       ()
   in
+  let sgr_state = Ansi.Sgr_state.create () in
+  let render_bytes = Bytes.create initial_render_buffer_size in
+  let render_writer = Ansi.Writer.make render_bytes in
   let t =
     {
       clock;
@@ -534,7 +531,7 @@ let create ?width_method ?respect_alpha ?(cursor_visible = true)
       hit_current = Hit_grid.create ~width:0 ~height:0;
       hit_next = Hit_grid.create ~width:0 ~height:0;
       cursor = Cursor_state.create ();
-      sgr_state = Ansi.Sgr_state.create ();
+      sgr_state;
       row_offset = 0;
       post_process_fns = [];
       post_process_cache = [];
@@ -545,9 +542,26 @@ let create ?width_method ?respect_alpha ?(cursor_visible = true)
       use_explicit_width = explicit_width;
       use_explicit_cursor_positioning = false;
       hyperlinks_capable = true;
-      scratch_bytes = Bytes.create 1024;
-      (* Large enough for any grapheme *)
-      render_bytes = Bytes.create initial_render_buffer_size;
+      diff =
+        {
+          mode = `Diff;
+          prev = current;
+          curr = current;
+          out = render_writer;
+          sgr = sgr_state;
+          (* Large enough for any grapheme. *)
+          scratch = Bytes.create 1024;
+          row_offset = 0;
+          width = 0;
+          height = 0;
+          prev_width = 0;
+          prev_height = 0;
+          explicit_width = false;
+          explicit_cursor_positioning = false;
+          hyperlinks = true;
+        };
+      render_bytes;
+      render_writer;
       last_render_time = Float.nan;
     }
   in
