@@ -158,6 +158,34 @@ let%expect_test "virtual time drives every-subscriptions deterministically" =
 |keys:[] ticks:3 size:- note:-
 ||}]
 
+let%expect_test "live animation frames deliver a millisecond delta" =
+  (* Matrix reports elapsed seconds; the runtime converts once at the boundary
+     so the whole render pipeline (renderable.mli) runs on milliseconds. While
+     a live widget (the spinner) animates, the virtual clock advances at the
+     60 fps render cadence, so widgets must observe 1000/60 = 16.7 ms frames
+     (a runtime that forgot to convert would deliver 0.0). A canvas records
+     the delta it is drawn with; once the timer fires the spinner leaves the
+     view, the loop goes idle, and the recording is checked. *)
+  let last_delta = ref Float.nan in
+  let application =
+    {
+      (app ~subs:(fun _ -> Mosaic.Sub.every 0.2 (fun () -> Tick)) ()) with
+      Mosaic.view =
+        (fun model ->
+          if model.ticks = 0 then
+            Mosaic.box
+              [
+                Mosaic.spinner ();
+                Mosaic.canvas ~size:(Mosaic.size ~width:2 ~height:1)
+                  (fun _ ~delta -> last_delta := delta);
+              ]
+          else Mosaic.text "done");
+    }
+  in
+  drive application
+    [ `Run (fun _ -> Printf.printf "live frame delta: %.1f ms\n" !last_delta) ];
+  [%expect {|live frame delta: 16.7 ms|}]
+
 let%expect_test "a pending every-timer renders only when it fires" =
   (* A timer is not an animation: while it is merely pending, the loop stays
      idle — no view pass, no reconcile, no paint. The view-call count is the

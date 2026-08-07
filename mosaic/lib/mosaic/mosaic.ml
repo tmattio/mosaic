@@ -857,7 +857,9 @@ let run ?matrix
       (* Timers advanced by [dt] even when nothing fired and no message
          re-collected subscriptions, so the wakeup re-arms here. *)
       arm_every_wakeup runtime;
-      frame_delta := dt)
+      (* Matrix reports [dt] in seconds; the render pipeline runs on
+         milliseconds. Convert once at the boundary. *)
+      frame_delta := dt *. 1000.)
     ~on_input:(fun _app input -> handle_input runtime input)
     ~on_resize:(fun _app ~cols ~rows ->
       handle_resize runtime ~width:cols ~height:rows)

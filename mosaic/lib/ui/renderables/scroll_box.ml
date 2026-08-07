@@ -181,6 +181,7 @@ type t = {
   mutable on_scroll_by_applied : (key:string -> unit) option;
   mutable on_reset_sticky_applied : (key:string -> unit) option;
   mutable scroll_accel : Scroll_accel.t;
+  (* Milliseconds accumulated from frame deltas; feeds Scroll_accel.tick. *)
   mutable frame_clock : float;
   mutable has_manual_scroll : bool;
   mutable sticky_top : bool;
@@ -218,6 +219,8 @@ let viewport_height t = Renderable.height t.viewport
 let clamp v ~lo ~hi = max lo (min hi v)
 let auto_scroll_threshold_vertical = 3
 let auto_scroll_threshold_horizontal = 3
+
+(* Selection auto-scroll speeds, in cells per second. *)
 let auto_scroll_speed_slow = 6.
 let auto_scroll_speed_medium = 36.
 let auto_scroll_speed_fast = 72.
@@ -489,7 +492,10 @@ let handle_auto_scroll t delta =
     | Some sel when Selection.is_dragging sel ->
         let scroll_x = auto_scroll_direction_x t t.auto_scroll_mouse_x in
         let scroll_y = auto_scroll_direction_y t t.auto_scroll_mouse_y in
-        let scroll_amount = t.cached_auto_scroll_speed *. Float.max 0. delta in
+        (* Speeds are cells per second; [delta] is milliseconds. *)
+        let scroll_amount =
+          t.cached_auto_scroll_speed *. (Float.max 0. delta /. 1000.)
+        in
         let acc_x, scrolled_x =
           apply_auto_scroll_axis ~acc:t.auto_scroll_acc_x ~direction:scroll_x
             ~amount:scroll_amount ~scroll:(fun cells ->

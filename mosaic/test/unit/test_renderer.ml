@@ -978,7 +978,7 @@ let selection_drag_auto_scrolls_scroll_box () =
   do_frame ~width:20 ~height:8 t;
   Renderer.dispatch_mouse t (mouse_press ~x:1 ~y:1 ());
   Renderer.dispatch_mouse t (mouse_motion ~left:true ~x:1 ~y:7 ());
-  do_frame ~width:20 ~height:8 ~delta:1. t;
+  do_frame ~width:20 ~height:8 ~delta:1000. t;
   is_true ~msg:"scroll box moved down" (Scroll_box.scroll_top sb > 0);
   is_true ~msg:"selection was refreshed" (!changes > 2)
 
@@ -1006,7 +1006,7 @@ let selection_drag_auto_scrolls_scroll_box_when_pointer_leaves_it () =
   do_frame ~width:20 ~height:12 t;
   Renderer.dispatch_mouse t (mouse_press ~x:1 ~y:1 ());
   Renderer.dispatch_mouse t (mouse_motion ~left:true ~x:1 ~y:10 ());
-  do_frame ~width:20 ~height:12 ~delta:1. t;
+  do_frame ~width:20 ~height:12 ~delta:1000. t;
   is_true ~msg:"scroll box moved down" (Scroll_box.scroll_top sb > 0)
 
 let selection_release_after_leaving_scroll_box_goes_to_anchor_ancestors () =

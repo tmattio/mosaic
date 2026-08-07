@@ -93,8 +93,7 @@ let render t _self grid ~delta:_ =
 let on_frame t _node ~delta =
   let interval = t.props.frame_set.interval in
   if interval > 0. then (
-    let delta_ms = delta *. 1000. in
-    t.elapsed <- t.elapsed +. delta_ms;
+    t.elapsed <- t.elapsed +. delta;
     if t.elapsed >= interval then
       let n = Array.length t.props.frame_set.frames in
       if n > 0 then (
