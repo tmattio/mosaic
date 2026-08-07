@@ -304,8 +304,7 @@ let test_close_reaps_exited_child_without_delay () =
   let elapsed = Unix.gettimeofday () -. start in
   is_true
     ~msg:
-      (Printf.sprintf "close reaped an exited child in %.0fms"
-         (elapsed *. 1000.))
+      (Printf.sprintf "close reaped an exited child in %.0fms" (elapsed *. 1000.))
     (elapsed < 0.05)
 
 (* Regression: a second close used to call Unix.close on the stored fd number

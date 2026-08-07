@@ -415,6 +415,7 @@ let note_appearance_reset t = function
   | `Cursor_style -> t.cursor_style_sent <- false
   | `Cursor_color -> t.cursor_color_sent <- false
   | `Title -> t.title_sent <- false
+
 let query_pixel_resolution t = send t Ansi.(to_string (query Pixel_size))
 
 (* Mode restoration *)

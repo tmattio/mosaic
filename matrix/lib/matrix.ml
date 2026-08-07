@@ -1509,7 +1509,7 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
   let notify_resize ~initial =
     Option.iter
       (fun f ->
-        let (cols, rows) as reported = size t in
+        let ((cols, rows) as reported) = size t in
         if initial || !last_reported_size <> Some reported then (
           last_reported_size := Some reported;
           f t ~cols ~rows))

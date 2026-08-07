@@ -276,12 +276,12 @@ val run :
     - Optionally samples [primary_required_rows] for [`Primary] mode sizing.
     - Calls {!submit} to diff and flush output.
 
-    [on_resize] reports the usable surface as [(cols, rows)] — {!size}, the
-    live viewport in [`Primary] mode and the full terminal in [`Alt] mode. It
-    fires once before the first render and then whenever the applied size
-    changes, including debounced resizes applied after their event; resize
-    reports that do not change the applied size produce no callback.
-    [on_input] still receives raw {!Input.Resize} terminal dimensions.
+    [on_resize] reports the usable surface as [(cols, rows)] — {!size}, the live
+    viewport in [`Primary] mode and the full terminal in [`Alt] mode. It fires
+    once before the first render and then whenever the applied size changes,
+    including debounced resizes applied after their event; resize reports that
+    do not change the applied size produce no callback. [on_input] still
+    receives raw {!Input.Resize} terminal dimensions.
 
     The loop exits when {!running} becomes [false]. A custom backend
     {!read_result} of [`End] finalizes the input parser and closes the runtime.
@@ -349,8 +349,8 @@ val suspend : ?leave_alt:bool -> app -> unit
     exits the alternate-screen buffer, so a full-screen foreground child owns
     the primary screen and its scrollback. {!resume} reapplies configuration.
 
-    Idempotent: calling [suspend] while already suspended (or after {!close})
-    is a no-op, so the control state restored by {!resume} is always the one
+    Idempotent: calling [suspend] while already suspended (or after {!close}) is
+    a no-op, so the control state restored by {!resume} is always the one
     captured by the first suspend. *)
 
 val resume : app -> unit

@@ -54,8 +54,8 @@
 
     Not supported: every operation raises [Unix.Unix_error (ENOSYS, _, _)].
     Windows ConPTY handles cannot be represented as [Unix.file_descr], so a
-    sound implementation needs its own handle type; until one exists the
-    module fails loudly rather than pretending.
+    sound implementation needs its own handle type; until one exists the module
+    fails loudly rather than pretending.
 
     {1:thread_safety Thread safety}
 

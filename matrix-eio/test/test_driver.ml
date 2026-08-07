@@ -392,8 +392,7 @@ let test_termination_signal_defers_shutdown_to_the_loop () =
   (* Deliver SIGTERM while the loop is not running: the handler must only
      record it, not tear the app down (let alone exit the process). *)
   Unix.kill (Unix.getpid ()) Sys.sigterm;
-  is_true ~msg:"signal handler defers shutdown to the loop"
-    (Matrix.running app);
+  is_true ~msg:"signal handler defers shutdown to the loop" (Matrix.running app);
   Matrix.close app;
   assert_signal_handler ~msg:"close restores the prior SIGTERM disposition"
     Sys.sigterm prior_handler;

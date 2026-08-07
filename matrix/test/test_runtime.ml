@@ -690,9 +690,7 @@ let test_unchanged_alt_submit_emits_no_bytes () =
    with the suspended state, so resume could never leave it — redraws stayed
    disabled forever while the terminal was left raw. *)
 let test_suspend_is_idempotent () =
-  let app, _state =
-    make_app ~target_fps:None ~input_timeout:(Some 0.) ()
-  in
+  let app, _state = make_app ~target_fps:None ~input_timeout:(Some 0.) () in
   Matrix.suspend app;
   Matrix.suspend app;
   Matrix.resume app;
@@ -710,7 +708,8 @@ let test_close_leaves_untouched_appearance_alone () =
   Matrix.submit app;
   Matrix.close app;
   let out = Buffer.contents state.terminal_output in
-  is_false ~msg:"close does not clear the title" (contains_substring "\027]0;" out);
+  is_false ~msg:"close does not clear the title"
+    (contains_substring "\027]0;" out);
   is_false ~msg:"close does not reset cursor color"
     (contains_substring "\027]112" out);
   is_false ~msg:"close does not reset cursor style"
