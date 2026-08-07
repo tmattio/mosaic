@@ -113,7 +113,13 @@ type attrs = {
   ref : (Renderable.t -> unit) option;
 }
 (** The type for non-handler element attributes. Grouped for zero-copy sharing
-    across {!val-map} and physical-equality fast paths in the reconciler. *)
+    across {!val-map} and physical-equality fast paths in the reconciler.
+
+    [ref] fires exactly once, when the element's renderable is created; it does
+    not re-fire when the element is reused with a different closure, and there
+    is no unmount notification. A stored renderable can therefore outlive its
+    element — check {!Renderable.destroyed} before operating on a handle kept
+    across renders. *)
 
 (** {1:vnodes Virtual nodes} *)
 

@@ -1256,8 +1256,10 @@ val inset_lrtb : int -> int -> int -> int -> length_percentage_auto rect
       [false].
     - [live] -- when [true] the element re-renders every frame even when the
       model has not changed. Defaults to [false].
-    - [ref] -- callback invoked with the rendered {!Mosaic_ui.Renderable.t}
-      after each frame.
+    - [ref] -- callback invoked once with the element's
+      {!Mosaic_ui.Renderable.t} when it is created (not on reuse, and never on
+      unmount). A stored handle can outlive its element; check
+      {!Mosaic_ui.Renderable.destroyed} before using one kept across renders.
     - [on_mouse] -- mouse event handler for this element.
     - [on_key] -- key event handler for this element.
     - [on_paste] -- paste event handler for this element. *)
