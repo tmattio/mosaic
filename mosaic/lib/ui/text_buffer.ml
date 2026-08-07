@@ -45,6 +45,7 @@ type t = {
   mutable width_method : Matrix.Text.width_method;
   mutable cached_plain_text : string option;
   mutable cached_lines : line_cache option;
+  mutable cached_line_spans : span list array option;
   mutable cached_grapheme_count : int option;
   mutable cached_grapheme_offsets : int array option;
   mutable version : int;
@@ -61,6 +62,7 @@ let create ?(default_style = Ansi.Style.default) ?(width_method = `Unicode)
     width_method;
     cached_plain_text = None;
     cached_lines = None;
+    cached_line_spans = None;
     cached_grapheme_count = None;
     cached_grapheme_offsets = None;
     version = 0;
@@ -71,6 +73,7 @@ let create ?(default_style = Ansi.Style.default) ?(width_method = `Unicode)
 let invalidate t =
   t.cached_plain_text <- None;
   t.cached_lines <- None;
+  t.cached_line_spans <- None;
   t.cached_grapheme_count <- None;
   t.cached_grapheme_offsets <- None;
   t.version <- t.version + 1
@@ -161,7 +164,11 @@ let grapheme_count t =
 (* ───── Default Style ───── *)
 
 let default_style t = t.default_style
-let set_default_style t s = t.default_style <- s
+
+let set_default_style t s =
+  t.default_style <- s;
+  (* Cached slices carry the default style on empty lines. *)
+  t.cached_line_spans <- None
 
 (* ───── Line Info ───── *)
 
@@ -235,41 +242,67 @@ let max_line_width t =
 
 (* ───── Line Spans ───── *)
 
-(* Return styled spans for a specific logical line using cached byte-range
-   bounds, then mapping that range back to the original spans. *)
-let line_spans t line_idx =
+(* Build every per-line span slice in one O(spans + lines) sweep: spans and
+   line bounds are both ordered by byte offset, so a single walk splits each
+   span across the lines it intersects. Rescanning the whole span list per
+   line would make display rebuilds O(lines × spans) — quadratic on
+   span-heavy content such as syntax highlighting, which emits one span per
+   token. *)
+let compute_line_spans t =
   ensure_span_order t;
-  let full_text = plain_text t in
-  let text_len = String.length full_text in
-  if text_len = 0 then
-    if line_idx = 0 then [ { text = ""; style = t.default_style } ] else []
-  else begin
-    ensure_line_cache t;
-    let cache = Option.get t.cached_lines in
-    if line_idx < 0 || line_idx >= cache.line_count then []
-    else begin
-      let start_byte, end_byte = cache.bounds.(line_idx) in
-      if start_byte >= end_byte then [ { text = ""; style = t.default_style } ]
-      else begin
-        let result = ref [] in
-        let offset = ref 0 in
-        List.iter
-          (fun (s : span) ->
-            let slen = String.length s.text in
-            let s_start = !offset in
-            let s_end = s_start + slen in
-            offset := s_end;
-            let lo = max s_start start_byte in
-            let hi = min s_end end_byte in
-            if lo < hi then begin
-              let sub = String.sub s.text (lo - s_start) (hi - lo) in
-              result := { text = sub; style = s.style } :: !result
-            end)
-          t.spans;
-        List.rev !result
-      end
-    end
-  end
+  ensure_line_cache t;
+  let cache = Option.get t.cached_lines in
+  let n = cache.line_count in
+  let result = Array.make n [] in
+  (* First line a span can still intersect; only moves forward. *)
+  let first = ref 0 in
+  let offset = ref 0 in
+  List.iter
+    (fun (s : span) ->
+      let slen = String.length s.text in
+      let s_start = !offset in
+      let s_end = s_start + slen in
+      offset := s_end;
+      if slen > 0 then begin
+        while !first < n && snd cache.bounds.(!first) <= s_start do
+          incr first
+        done;
+        let i = ref !first in
+        while !i < n && fst cache.bounds.(!i) < s_end do
+          let line_start, line_end = cache.bounds.(!i) in
+          let lo = max s_start line_start in
+          let hi = min s_end line_end in
+          if lo < hi then begin
+            let sub = String.sub s.text (lo - s_start) (hi - lo) in
+            result.(!i) <- { text = sub; style = s.style } :: result.(!i)
+          end;
+          incr i
+        done
+      end)
+    t.spans;
+  Array.mapi
+    (fun i slices ->
+      match slices with
+      | [] ->
+          (* Empty logical line (or empty document): a single empty span keeps
+             the line addressable for styling. *)
+          if i = 0 || fst cache.bounds.(i) >= snd cache.bounds.(i) then
+            [ { text = ""; style = t.default_style } ]
+          else []
+      | slices -> List.rev slices)
+    result
+
+let ensure_line_spans t =
+  match t.cached_line_spans with
+  | Some arr -> arr
+  | None ->
+      let arr = compute_line_spans t in
+      t.cached_line_spans <- Some arr;
+      arr
+
+let line_spans t line_idx =
+  let arr = ensure_line_spans t in
+  if line_idx < 0 || line_idx >= Array.length arr then [] else arr.(line_idx)
 
 (* ───── Text In Range ───── *)
 
