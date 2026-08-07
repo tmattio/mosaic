@@ -1343,11 +1343,16 @@ let hit_test ?(radius = 3) ?(policy = (`Nearest_px : Hit.policy)) t ~px ~py =
             for i = 0 to Array.length cdata - 1 do
               let o = cdata.(i) in
               match
-                map_xy_unclamped ~y_axis:m.y_axis o.Mark.time t.y_view.min
+                ( map_xy_unclamped ~y_axis:m.y_axis o.Mark.time o.Mark.high,
+                  map_xy_unclamped ~y_axis:m.y_axis o.Mark.time o.Mark.low )
               with
-              | None -> ()
-              | Some (cx, _) ->
-                  let d = hit_distance ~policy ~px ~py ~x:cx ~y:py in
+              | Some (cx, y_high), Some (_, y_low) ->
+                  (* Measure against the candle's high..low pixel span,
+                     rect-style: clamping the query keeps `Nearest_y from
+                     scoring every candle at distance zero. *)
+                  let y_min = min y_high y_low and y_max = max y_high y_low in
+                  let cy = clamp_int y_min y_max py in
+                  let d = hit_distance ~policy ~px ~py ~x:cx ~y:cy in
                   if within_radius ~radius d then
                     consider
                       {
@@ -1355,7 +1360,7 @@ let hit_test ?(radius = 3) ?(policy = (`Nearest_px : Hit.policy)) t ~px ~py =
                         kind = `Candles;
                         index = i;
                         px = cx;
-                        py;
+                        py = cy;
                         distance_px = d;
                         payload =
                           Hit.OHLC
@@ -1367,6 +1372,7 @@ let hit_test ?(radius = 3) ?(policy = (`Nearest_px : Hit.policy)) t ~px ~py =
                               close = o.close;
                             };
                       }
+              | _ -> ()
             done
         | Circle { cx = cxa; cy = cya; _ } ->
             check_points ~y_axis:m.y_axis ~mark_id:m.id ~kind:`Circle

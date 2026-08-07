@@ -622,6 +622,43 @@ let%expect_test "candlestick draws bodies and wicks" =
 [0;38;2;255;255;255m│                    │[0m
 [0;38;2;255;255;255m└────────────────────┘[0m|}] [@@ocamlformat "disable"]
 
+let%expect_test "hit test candles clamp to the wick span" =
+  let draw grid ~width ~height =
+    let chart =
+      empty () |> with_axes ~x:Axis.hidden ~y:Axis.hidden |> candles candle_data
+    in
+    let layout = draw chart grid ~width ~height in
+    let report policy name px py =
+      match Layout.hit_test ~policy layout ~px ~py with
+      | None -> Printf.printf "%s: none\n" name
+      | Some h ->
+          Printf.printf "%s: index %d distance %.0f\n" name h.Hit.index
+            h.Hit.distance_px
+    in
+    (* Candle 2 tops out at row 4: a top-row query directly above it is four
+       cells away vertically, not a distance-0 hit. *)
+    report `Nearest_px "px above candle 2" 19 0;
+    (* Only candle 1 spans the top row; the last candle in the list must not
+       win with a bogus zero distance. *)
+    report `Nearest_y "y top row" 0 0
+  in
+  render_chart ~width:20 ~height:10 draw;
+  [%expect_exact {|px above candle 2: none
+y top row: index 1 distance 0
+
+[0;38;2;255;255;255m┌────────────────────┐[0m
+[0;38;2;255;255;255m│          [38;5;1m│[38;2;255;255;255m         │[0m
+[0;38;2;255;255;255m│          [38;5;1m│[38;2;255;255;255m         │[0m
+[0;38;2;255;255;255m│[38;5;2m│[38;2;255;255;255m         [38;5;1m│[38;2;255;255;255m         │[0m
+[0;38;2;255;255;255m│[38;5;2m│[38;2;255;255;255m         [38;5;1m│[38;2;255;255;255m         │[0m
+[0;38;2;255;255;255m│[38;5;2m┃[38;2;255;255;255m         [38;5;1m┃[38;2;255;255;255m        [38;5;2m│[38;2;255;255;255m│[0m
+[0;38;2;255;255;255m│[38;5;2m┃[38;2;255;255;255m         [38;5;1m┃[38;2;255;255;255m        [38;5;2m┃[38;2;255;255;255m│[0m
+[0;38;2;255;255;255m│[38;5;2m│[38;2;255;255;255m         [38;5;1m│[38;2;255;255;255m        [38;5;2m┃[38;2;255;255;255m│[0m
+[0;38;2;255;255;255m│[38;5;2m│[38;2;255;255;255m         [38;5;1m│[38;2;255;255;255m        [38;5;2m│[38;2;255;255;255m│[0m
+[0;38;2;255;255;255m│[38;5;2m│[38;2;255;255;255m                  [38;5;2m│[38;2;255;255;255m│[0m
+[0;38;2;255;255;255m│                   [38;5;2m│[38;2;255;255;255m│[0m
+[0;38;2;255;255;255m└────────────────────┘[0m|}]
+
 let%expect_test "legend arranges entries horizontally" =
   let draw grid ~width ~height =
     Legend.draw ~direction:`Horizontal
