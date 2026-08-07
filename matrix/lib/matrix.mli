@@ -298,6 +298,13 @@ val current_grid : app -> Grid.t
 val hits : app -> Screen.Hit_grid.t
 (** [hits app] is the hit grid for the current frame. *)
 
+val screen : app -> Screen.t
+(** [screen app] is the runtime's screen. The runtime owns its sizing and
+    presentation: {!prepare} clears and resizes it, {!submit} diffs and swaps
+    it. Embedding renderers build frames into it (via {!Screen.build} or the
+    frame accessors above) during [on_render] so the runtime presents their
+    output with a single diff. Do not call {!Screen.render} on it yourself. *)
+
 val submit : ?primary_required_rows:int -> app -> unit
 (** [submit ?primary_required_rows app] diffs the current frame against the
     previous one and flushes ANSI output. Call after drawing into {!grid}.

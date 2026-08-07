@@ -674,6 +674,7 @@ let prepare t =
 let grid t = Screen.next_grid t.screen
 let current_grid t = Screen.current_grid t.screen
 let hits t = Screen.next_hit_grid t.screen
+let screen t = t.screen
 
 (* Ensure primary layout stays consistent. Grows the dynamic region when
    content or hints require more rows than the live viewport. Returns a render
