@@ -88,6 +88,18 @@ let width_method_reaches_widgets () =
   is_true ~msg:"adopted screen's method"
     (Renderable.Private.width_method (Renderer.root adopted) = `Wcwidth)
 
+let adopted_screen_render_is_guarded () =
+  let host = Screen.create () in
+  let t = Renderer.create ~screen:host () in
+  let _child = make_child ~parent:(Renderer.root t) ~x:0 ~y:0 ~w:4 ~h:2 () in
+  Renderer.render_frame t ~width:10 ~height:4 ~delta:0.;
+  is_true ~msg:"renderer adopted the host screen" (Renderer.screen t == host);
+  is_true ~msg:"frame built into the host's hit grid"
+    (Screen.Hit_grid.get (Screen.next_hit_grid host) ~x:1 ~y:1 > 0);
+  raises_match ~msg:"presentation belongs to the host"
+    (function Invalid_argument _ -> true | _ -> false)
+    (fun () -> ignore (Renderer.render t : string))
+
 let starts_dirty () =
   let t = make_renderer () in
   is_true ~msg:"needs_render" (Renderer.needs_render t)
@@ -1112,6 +1124,8 @@ let () =
           test "creates with default style" creates_with_default_style;
           test "creates with custom style" creates_with_custom_style;
           test "width method reaches widgets" width_method_reaches_widgets;
+          test "adopted screen render is guarded"
+            adopted_screen_render_is_guarded;
           test "starts dirty" starts_dirty;
           test "clean after render" clean_after_render;
           test "dirty after schedule" dirty_after_schedule;

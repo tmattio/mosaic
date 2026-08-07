@@ -111,8 +111,9 @@ val render : ?full:bool -> t -> string
     defaults to [false]. Frame timestamps come from the [clock] given to
     {!create}.
 
-    Do not call this on a renderer that adopted a host screen — presentation
-    belongs to the host runtime there. *)
+    Raises [Invalid_argument] when the renderer adopted a host screen —
+    presenting there would corrupt the host runtime's diff baseline, so
+    presentation belongs to the host. *)
 
 val needs_render : t -> bool
 (** [needs_render t] is [true] iff a renderable has requested a re-render or

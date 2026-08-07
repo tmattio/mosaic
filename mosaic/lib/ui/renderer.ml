@@ -26,6 +26,9 @@ type selection_state = {
 
 type t = {
   screen : Screen.t;
+  (* [true] when the screen was adopted from a host runtime; presentation
+     then belongs to the host, and [render] refuses to run. *)
+  adopted : bool;
   root : Renderable.t;
   tree : unit Toffee.tree;
   (* Node registry: maps numeric IDs to renderables for hit testing. *)
@@ -491,6 +494,7 @@ let dispatch_mouse_internal t ~x ~y ~modifiers kind =
 
 let create ?width_method ?clock ?screen ?style () =
   let tree = Toffee.new_tree () in
+  let adopted = Option.is_some screen in
   let screen =
     match screen with
     | Some screen ->
@@ -588,6 +592,7 @@ let create ?width_method ?clock ?screen ?style () =
     root;
   {
     screen;
+    adopted;
     root;
     tree;
     node_map;
@@ -818,7 +823,13 @@ let render_frame ?layout_height (t : t) ~width ~height ~delta =
         { cursor with position = None; visible = false });
   recheck_hover t
 
-let render ?full t = Screen.render ?full t.screen
+let render ?full t =
+  if t.adopted then
+    invalid_arg
+      "Renderer.render: this renderer adopted a host screen; presentation \
+       belongs to the host runtime";
+  Screen.render ?full t.screen
+
 let needs_render t = !(t.dirty) || Renderable.Private.live_count t.root > 0
 
 let render_frame_until_settled ?(max_passes = 4) t ~width ~height ~delta =
