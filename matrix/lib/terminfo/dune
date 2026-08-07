@@ -1,4 +1,0 @@
-(library
- (name terminfo)
- (public_name matrix.terminfo)
- (libraries unix))

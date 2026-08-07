@@ -87,7 +87,6 @@ Matrix is organized into focused libraries that can be used together or independ
 | `matrix.terminal` | `Terminal` | TTY control and capability detection                  |
 | `matrix.ansi`     | `Ansi`     | Low-level ANSI escape sequence generation             |
 | `matrix.text`     | `Text`     | Unicode text measurement and segmentation             |
-| `matrix.terminfo` | `Terminfo` | Terminal capability database                          |
 | `matrix.pty`      | `Pty`      | Pseudo-terminal spawning (POSIX + Windows ConPTY)     |
 | `matrix.vte`      | `Vte`      | Virtual terminal emulator for embedding output        |
 
