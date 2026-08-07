@@ -161,7 +161,7 @@ let make_app ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     if advance_now then state.now_s <- state.now_s +. 0.001;
     state.now_s
   in
-  let read_events ~timeout ~on_event =
+  let read_events ~timeout ~on_event ~on_response =
     state.read_calls <- state.read_calls + 1;
     state.read_timeouts <- timeout :: state.read_timeouts;
     let dt =
@@ -181,13 +181,6 @@ let make_app ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     | chunk :: rest ->
         state.pending_input_chunks <- rest;
         let input = Bytes.of_string chunk in
-        let on_response = function
-          | Matrix.Input.Response.Capability event ->
-              Matrix.Terminal.apply_capability_event terminal event
-          | Matrix.Input.Response.Clipboard _ | Matrix.Input.Response.Osc _
-          | Matrix.Input.Response.Unknown _ ->
-              ()
-        in
         Matrix.Input.Parser.feed parser input 0 (Bytes.length input)
           ~now:state.now_s ~on_event ~on_response;
         Matrix.Input.Parser.drain parser ~now:state.now_s ~on_event ~on_response);
@@ -200,23 +193,44 @@ let make_app ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
         | Some max_reads when state.read_calls >= max_reads -> `End
         | Some _ | None -> `Continue)
   in
+  (* Serve the fake cursor-position reply through the byte-level primitives:
+     the runtime's shared query pumps [wait_readable]/[read_input] and parses
+     the CPR reply like any other terminal response. *)
+  let read_input buf off _len =
+    match query_cursor_position ~timeout:0. with
+    | None -> 0
+    | Some (row, col) ->
+        let s = Printf.sprintf "\027[%d;%dR" row col in
+        Bytes.blit_string s 0 buf off (String.length s);
+        String.length s
+  in
+  let wait_readable ~timeout =
+    Option.is_some (query_cursor_position ~timeout)
+  in
+  let backend : Matrix.Backend.t =
+    {
+      now;
+      wake = (fun () -> state.wake_calls <- state.wake_calls + 1);
+      write_output =
+        (fun buf off len ->
+          Buffer.add_string state.output (Bytes.sub_string buf off len));
+      read_input;
+      wait_readable;
+      read_events;
+      terminal_size = (fun () -> (width, height));
+      set_raw_mode =
+        (fun enabled ->
+          if not enabled then
+            state.raw_restore_calls <- state.raw_restore_calls + 1);
+      flush_input =
+        (fun () -> state.flush_input_calls <- state.flush_input_calls + 1);
+      cleanup = (fun () -> state.cleanup_calls <- state.cleanup_calls + 1);
+    }
+  in
   let app =
     Matrix.attach ~mode ~raw_mode ~target_fps ~input_timeout ~min_tui_height
       ~resize_debounce ~signal_handlers:false ?render_offset
-      ?static_needs_newline
-      ~write_output:(fun buf off len ->
-        Buffer.add_string state.output (Bytes.sub_string buf off len))
-      ~now
-      ~wake:(fun () -> state.wake_calls <- state.wake_calls + 1)
-      ~terminal_size:(fun () -> (width, height))
-      ~set_raw_mode:(fun enabled ->
-        if not enabled then
-          state.raw_restore_calls <- state.raw_restore_calls + 1)
-      ~flush_input:(fun () ->
-        state.flush_input_calls <- state.flush_input_calls + 1)
-      ~read_events ~query_cursor_position
-      ~cleanup:(fun () -> state.cleanup_calls <- state.cleanup_calls + 1)
-      ~parser ~terminal ~width ~height ()
+      ?static_needs_newline ~backend ~parser ~terminal ~width ~height ()
   in
   app_ref := Some app;
   (app, state)
@@ -333,15 +347,20 @@ let test_close_restores_raw_mode_if_terminal_close_raises () =
     Matrix.attach ~mode:`Primary ~raw_mode:true ~mouse_enabled:false
       ~bracketed_paste:false ~focus_reporting:false ~kitty_keyboard:`Disabled
       ~target_fps:None ~input_timeout:(Some 0.) ~signal_handlers:false
-      ~write_output:(fun _buf _off _len -> ())
-      ~now:(fun () -> 0.)
-      ~wake:(fun () -> ())
-      ~terminal_size:(fun () -> (80, 24))
-      ~set_raw_mode:(fun enabled -> if not enabled then incr raw_restore_calls)
-      ~flush_input:(fun () -> ())
-      ~read_events:(fun ~timeout:_ ~on_event:_ -> `Continue)
-      ~query_cursor_position:(fun ~timeout:_ -> None)
-      ~cleanup:(fun () -> incr cleanup_calls)
+      ~backend:
+        {
+          now = (fun () -> 0.);
+          wake = (fun () -> ());
+          write_output = (fun _buf _off _len -> ());
+          read_input = (fun _ _ _ -> 0);
+          wait_readable = (fun ~timeout:_ -> false);
+          read_events = (fun ~timeout:_ ~on_event:_ ~on_response:_ -> `Continue);
+          terminal_size = (fun () -> (80, 24));
+          set_raw_mode =
+            (fun enabled -> if not enabled then incr raw_restore_calls);
+          flush_input = (fun () -> ());
+          cleanup = (fun () -> incr cleanup_calls);
+        }
       ~parser ~terminal ~width:80 ~height:24 ()
   in
   fail_output := true;
@@ -391,15 +410,20 @@ let test_attach_failure_preserves_signal_dispositions () =
       ignore
         (Matrix.attach ~mode:`Alt ~raw_mode:true ~target_fps:None
            ~signal_handlers:true
-           ~write_output:(fun _ _ _ -> ())
-           ~now:(fun () -> 0.)
-           ~wake:(fun () -> ())
-           ~terminal_size:(fun () -> (80, 24))
-           ~set_raw_mode:(fun _ -> ())
-           ~flush_input:(fun () -> ())
-           ~read_events:(fun ~timeout:_ ~on_event:_ -> `Continue)
-           ~query_cursor_position:(fun ~timeout:_ -> None)
-           ~cleanup:(fun () -> ())
+           ~backend:
+             {
+               now = (fun () -> 0.);
+               wake = (fun () -> ());
+               write_output = (fun _ _ _ -> ());
+               read_input = (fun _ _ _ -> 0);
+               wait_readable = (fun ~timeout:_ -> false);
+               read_events =
+                 (fun ~timeout:_ ~on_event:_ ~on_response:_ -> `Continue);
+               terminal_size = (fun () -> (80, 24));
+               set_raw_mode = (fun _ -> ());
+               flush_input = (fun () -> ());
+               cleanup = (fun () -> ());
+             }
            ~parser ~terminal ~width:80 ~height:24 ());
       None
     with exn -> Some exn
@@ -460,20 +484,27 @@ let test_attach_rolls_back_partially_applied_terminal_modes () =
         try
           ignore
             (Matrix.attach ~mode:`Alt ~raw_mode:true ~target_fps:None
-               ~write_output:(fun _ _ _ -> ())
-               ~now:(fun () -> 0.)
-               ~wake:(fun () -> ())
-               ~terminal_size:(fun () -> (80, 24))
-               ~set_raw_mode:(fun enabled ->
-                 Buffer.add_string lifecycle_trace
-                   (if enabled then "<raw:on>" else "<raw:off>");
-                 raw_changes := enabled :: !raw_changes)
-               ~flush_input:(fun () -> ())
-               ~read_events:(fun ~timeout:_ ~on_event:_ -> `Continue)
-               ~query_cursor_position:(fun ~timeout:_ -> None)
-               ~cleanup:(fun () ->
-                 Buffer.add_string lifecycle_trace "<cleanup>";
-                 incr cleanup_calls)
+               ~backend:
+                 {
+                   now = (fun () -> 0.);
+                   wake = (fun () -> ());
+                   write_output = (fun _ _ _ -> ());
+                   read_input = (fun _ _ _ -> 0);
+                   wait_readable = (fun ~timeout:_ -> false);
+                   read_events =
+                     (fun ~timeout:_ ~on_event:_ ~on_response:_ -> `Continue);
+                   terminal_size = (fun () -> (80, 24));
+                   set_raw_mode =
+                     (fun enabled ->
+                       Buffer.add_string lifecycle_trace
+                         (if enabled then "<raw:on>" else "<raw:off>");
+                       raw_changes := enabled :: !raw_changes);
+                   flush_input = (fun () -> ());
+                   cleanup =
+                     (fun () ->
+                       Buffer.add_string lifecycle_trace "<cleanup>";
+                       incr cleanup_calls);
+                 }
                ~parser ~terminal ~width:80 ~height:24 ());
           None
         with exn -> Some (exn, Printexc.get_raw_backtrace ()))

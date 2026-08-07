@@ -72,14 +72,7 @@ let create ?(mode = `Alt) ?(target_fps = 60.) ?(exit_on_ctrl_c = false)
       app = None;
     }
   in
-  let on_response = function
-    | Matrix.Input.Response.Capability event ->
-        Matrix.Terminal.apply_capability_event terminal event
-    | Matrix.Input.Response.Clipboard _ | Matrix.Input.Response.Osc _
-    | Matrix.Input.Response.Unknown _ ->
-        ()
-  in
-  let deliver ~on_event =
+  let deliver ~on_event ~on_response =
     let delivered = ref false in
     while not (Queue.is_empty t.queue) do
       delivered := true;
@@ -93,8 +86,8 @@ let create ?(mode = `Alt) ?(target_fps = 60.) ?(exit_on_ctrl_c = false)
     done;
     !delivered
   in
-  let read_events ~timeout ~on_event =
-    (if not (deliver ~on_event) then
+  let read_events ~timeout ~on_event ~on_response =
+    (if not (deliver ~on_event ~on_response) then
        match timeout with
        | Some s when s <= 0. -> ()
        | Some s when Matrix.redraw_requested (app t) ->
@@ -108,7 +101,7 @@ let create ?(mode = `Alt) ?(target_fps = 60.) ?(exit_on_ctrl_c = false)
            t.now <- t.now +. s
        | timeout ->
            t.on_idle t ~timeout;
-           ignore (deliver ~on_event : bool));
+           ignore (deliver ~on_event ~on_response : bool));
     (* Drain at the current instant, as the Unix backend does after every wait.
        A lone ESC (and any incomplete sequence) sits on an ambiguity deadline;
        once the driver has stepped the clock past it, the drain emits the
@@ -119,20 +112,25 @@ let create ?(mode = `Alt) ?(target_fps = 60.) ?(exit_on_ctrl_c = false)
     Matrix.Input.Parser.drain t.parser ~now:t.now ~on_event ~on_response;
     `Continue
   in
+  let backend : Matrix.Backend.t =
+    {
+      now = (fun () -> t.now);
+      wake = on_wake;
+      write_output = (fun buf off len -> Buffer.add_subbytes output buf off len);
+      read_input = (fun _ _ _ -> 0);
+      wait_readable = (fun ~timeout:_ -> false);
+      read_events;
+      terminal_size = (fun () -> (t.width, t.height));
+      set_raw_mode = (fun _ -> ());
+      flush_input = (fun () -> Queue.clear t.queue);
+      cleanup = (fun () -> ());
+    }
+  in
   let app =
     Matrix.attach ~mode ~target_fps:(Some target_fps) ~exit_on_ctrl_c
       ~signal_handlers:false ~input_timeout:None ~resize_debounce:(Some 0.)
-      ~start_idle:true ~pace_redraws:false
-      ~write_output:(fun buf off len -> Buffer.add_subbytes output buf off len)
-      ~now:(fun () -> t.now)
-      ~wake:on_wake
-      ~terminal_size:(fun () -> (t.width, t.height))
-      ~set_raw_mode:(fun _ -> ())
-      ~flush_input:(fun () -> Queue.clear t.queue)
-      ~read_events
-      ~query_cursor_position:(fun ~timeout:_ -> None)
-      ~cleanup:(fun () -> ())
-      ~parser:t.parser ~terminal ~width ~height ()
+      ~start_idle:true ~pace_redraws:false ~backend ~parser:t.parser ~terminal
+      ~width ~height ()
   in
   t.app <- Some app;
   t

@@ -87,13 +87,8 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
   let close_owned_protected () = Eio.Cancel.protect close_owned in
   Eio.Switch.on_release sw close_owned_protected;
   with_rollback ~rollback:close_owned_protected (fun () ->
-      if input_is_tty && raw_mode then set_raw_mode true;
       let input_buffer = Bytes.create 4096 in
       let input_cs = Cstruct.create 4096 in
-      let startup_events = ref [] in
-      let queue_startup_event event =
-        startup_events := event :: !startup_events
-      in
       let await_readable ~timeout =
         match
           Eio.Time.with_timeout clock timeout (fun () ->
@@ -113,80 +108,19 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
             n
         | exception End_of_file -> 0
       in
-      if input_is_tty && raw_mode then
-        Matrix.Terminal.probe ~timeout:0.5 ~on_event:queue_startup_event
-          ~read_into:(fun buf off len ->
-            let cs =
-              if len <= Cstruct.length input_cs then Cstruct.sub input_cs 0 len
-              else Cstruct.create len
-            in
-            match Eio.Flow.single_read stdin cs with
-            | n ->
-                Cstruct.blit_to_bytes cs 0 buf off n;
-                n
-            | exception End_of_file -> 0)
-          ~wait_readable:await_readable ~parser terminal;
+      let read_input buf off len =
+        let cs =
+          if len <= Cstruct.length input_cs then Cstruct.sub input_cs 0 len
+          else Cstruct.create len
+        in
+        match Eio.Flow.single_read stdin cs with
+        | n ->
+            Cstruct.blit_to_bytes cs 0 buf off n;
+            n
+        | exception End_of_file -> 0
+      in
       let terminal_size () =
         Eio_unix.Fd.use_exn "size" output_eio_fd Matrix.Terminal.size
-      in
-      let width, height =
-        let cols, rows = terminal_size () in
-        (max 1 cols, max 1 rows)
-      in
-      let query_cursor_position_with_events ~timeout ~on_event =
-        (* CR: don't hardcode ansi sequences. use Ansi *)
-        Matrix.Terminal.send terminal "\027[6n";
-        let result = ref None in
-        let on_response = function
-          | Matrix.Input.Response.Capability
-              (Matrix.Input.Response.Cursor_position (row, col)) ->
-              result := Some (row, col)
-          | Matrix.Input.Response.Capability event ->
-              Matrix.Terminal.apply_capability_event terminal event
-          | Matrix.Input.Response.Clipboard _ | Matrix.Input.Response.Osc _
-          | Matrix.Input.Response.Unknown _ ->
-              ()
-        in
-        let deadline = Eio.Time.now clock +. timeout in
-        let rec loop () =
-          if Option.is_some !result then ()
-          else
-            let remaining = deadline -. Eio.Time.now clock in
-            if remaining <= 0. then ()
-            else if await_readable ~timeout:remaining then
-              match read_stdin () with
-              | 0 -> ()
-              | n ->
-                  let now = Eio.Time.now clock in
-                  Matrix.Input.Parser.feed parser input_buffer 0 n ~now
-                    ~on_event ~on_response;
-                  loop ()
-        in
-        loop ();
-        !result
-      in
-      let render_offset_of_cursor ~height row col =
-        let row = max 1 (min height row) in
-        let col = max 1 col in
-        if row >= height then (
-          Matrix.Terminal.send terminal "\r\n";
-          (height - 1, false))
-        else if col = 1 then (max 0 (row - 1), true)
-        else (row, true)
-      in
-      let query_cursor_position ~timeout =
-        query_cursor_position_with_events ~timeout ~on_event:(fun _ -> ())
-      in
-      let render_offset, static_needs_newline =
-        if mode = `Primary && input_is_tty && raw_mode then
-          match
-            query_cursor_position_with_events ~timeout:0.1
-              ~on_event:queue_startup_event
-          with
-          | Some (row, col) -> render_offset_of_cursor ~height row col
-          | None -> (0, true)
-        else if mode = `Primary then (0, true)
-        else (0, false)
       in
       (* ───── IO Callbacks ───── *)
       let now () = Eio.Time.now clock in
@@ -202,7 +136,6 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
       let write_output buf off len =
         Eio.Flow.write stdout [ Cstruct.of_bytes ~off ~len buf ]
       in
-      let pending_startup_events = ref (List.rev !startup_events) in
       (* The three peer branches of the wait, allocated once so a successful
          read stays on the no-allocation path; the deadline is read from a cell
          each call rather than re-closed over. *)
@@ -222,68 +155,68 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
         `Timeout
       in
       let wait_branches = [ await_input; await_wake; await_deadline ] in
-      let read_events ~timeout ~on_event =
-        let on_response = function
-          | Matrix.Input.Response.Capability event -> (
-              Matrix.Terminal.apply_capability_event terminal event;
-              match event with
-              | Matrix.Input.Response.Color_scheme ((`Dark | `Light) as scheme)
-                ->
-                  on_event (Matrix.Input.Color_scheme scheme)
-              | _ -> ())
-          | Matrix.Input.Response.Clipboard _ | Matrix.Input.Response.Osc _
-          | Matrix.Input.Response.Unknown _ ->
-              ()
+      let read_events ~timeout ~on_event ~on_response =
+        let effective_timeout =
+          match timeout with
+          | None -> sigwinch_poll_interval
+          | Some t -> Float.min t sigwinch_poll_interval
         in
-        match !pending_startup_events with
-        | [] ->
-            let effective_timeout =
-              match timeout with
-              | None -> sigwinch_poll_interval
-              | Some t -> Float.min t sigwinch_poll_interval
-            in
-            (* Input, wake, and deadline race as three peers. The deadline is a
-               plain [sleep] re-armed every call — not a [with_timeout] wrapping
-               the wait, whose nested [Fiber.first] can leave the loop parked in
-               the wake branch after the timer fired — so it always resolves and
-               no cancellation race can strand the loop. [wake] is
-               level-triggered: it sets [wake_pending] before its broadcast, so a
-               wake that lands while the loop is out of this wait is taken by the
-               fast path without awaiting, never lost to the edge-triggered
-               broadcast nor to a cancelled wake branch. *)
-            wait_deadline := effective_timeout;
-            let got =
-              if !wake_pending then (
-                wake_pending := false;
-                `Wakeup)
-              else Eio.Fiber.any wait_branches
-            in
-            if Atomic.get winch_flag then (
-              Atomic.set winch_flag false;
-              let cols, rows = terminal_size () in
-              on_event (Matrix.Input.Resize (cols, rows)));
-            let result =
-              match got with
-              | `Input -> (
-                  match read_stdin () with
-                  | 0 -> `End
-                  | n ->
-                      let now = Eio.Time.now clock in
-                      Matrix.Input.Parser.feed parser input_buffer 0 n ~now
-                        ~on_event ~on_response;
-                      `Continue)
-              | `Wakeup | `Timeout -> `Continue
-            in
-            (match result with
-            | `Continue ->
-                let now = Eio.Time.now clock in
-                Matrix.Input.Parser.drain parser ~now ~on_event ~on_response
-            | `End -> ());
-            result
-        | events ->
-            pending_startup_events := [];
-            List.iter on_event events;
-            `Continue
+        (* Input, wake, and deadline race as three peers. The deadline is a
+           plain [sleep] re-armed every call — not a [with_timeout] wrapping
+           the wait, whose nested [Fiber.first] can leave the loop parked in
+           the wake branch after the timer fired — so it always resolves and
+           no cancellation race can strand the loop. [wake] is
+           level-triggered: it sets [wake_pending] before its broadcast, so a
+           wake that lands while the loop is out of this wait is taken by the
+           fast path without awaiting, never lost to the edge-triggered
+           broadcast nor to a cancelled wake branch. *)
+        wait_deadline := effective_timeout;
+        let got =
+          if !wake_pending then (
+            wake_pending := false;
+            `Wakeup)
+          else Eio.Fiber.any wait_branches
+        in
+        if Atomic.get winch_flag then (
+          Atomic.set winch_flag false;
+          let cols, rows = terminal_size () in
+          on_event (Matrix.Input.Resize (cols, rows)));
+        let result =
+          match got with
+          | `Input -> (
+              match read_stdin () with
+              | 0 -> `End
+              | n ->
+                  let now = Eio.Time.now clock in
+                  Matrix.Input.Parser.feed parser input_buffer 0 n ~now
+                    ~on_event ~on_response;
+                  `Continue)
+          | `Wakeup | `Timeout -> `Continue
+        in
+        (match result with
+        | `Continue ->
+            let now = Eio.Time.now clock in
+            Matrix.Input.Parser.drain parser ~now ~on_event ~on_response
+        | `End -> ());
+        result
+      in
+      let backend : Matrix.Backend.t =
+        {
+          now;
+          wake;
+          write_output;
+          read_input;
+          wait_readable = await_readable;
+          read_events;
+          terminal_size;
+          set_raw_mode;
+          flush_input;
+          cleanup = (fun () -> !restore_winch ());
+        }
+      in
+      let session =
+        Matrix.Backend.bootstrap ~mode ~raw_mode ~input_is_tty ~terminal ~parser
+          backend
       in
       let app =
         Matrix.attach ~mode ~raw_mode ~target_fps ~respect_alpha ~mouse_enabled
@@ -292,11 +225,10 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
           ~debug_overlay_capacity ~frame_dump_every ?frame_dump_dir
           ?frame_dump_pattern ~frame_dump_hits ~cursor_visible ~explicit_width
           ~input_timeout ~resize_debounce ~min_tui_height ~start_idle
-          ~signal_handlers ~write_output ~now ~wake ~terminal_size ~set_raw_mode
-          ~flush_input ~read_events ~query_cursor_position
-          ~cleanup:(fun () -> !restore_winch ())
-          ~parser ~terminal ~width ~height ~render_offset ~static_needs_newline
-          ()
+          ~signal_handlers ~startup_events:session.startup_events ~backend
+          ~parser ~terminal ~width:session.width ~height:session.height
+          ~render_offset:session.render_offset
+          ~static_needs_newline:session.static_needs_newline ()
       in
       app_ref := Some app;
       Matrix.Terminal.query_pixel_resolution terminal;

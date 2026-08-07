@@ -12,6 +12,110 @@ type mode = [ `Alt | `Primary ]
 type debug_overlay_corner = Debug_overlay.corner
 type read_result = [ `Continue | `End ]
 
+module Backend = struct
+  type t = {
+    now : unit -> float;
+    wake : unit -> unit;
+    write_output : bytes -> int -> int -> unit;
+    read_input : bytes -> int -> int -> int;
+    wait_readable : timeout:float -> bool;
+    read_events :
+      timeout:float option ->
+      on_event:(Input.t -> unit) ->
+      on_response:(Input.Response.t -> unit) ->
+      read_result;
+    terminal_size : unit -> int * int;
+    set_raw_mode : bool -> unit;
+    flush_input : unit -> unit;
+    cleanup : unit -> unit;
+  }
+
+  (* The runtime's protocol policy for terminal replies, handed to
+     [read_events] so every backend routes responses identically. *)
+  let dispatch_response ~terminal ~on_event = function
+    | Input.Response.Capability event -> (
+        Terminal.apply_capability_event terminal event;
+        match event with
+        | Input.Response.Color_scheme ((`Dark | `Light) as scheme) ->
+            on_event (Input.Color_scheme scheme)
+        | _ -> ())
+    | Input.Response.Clipboard _ | Input.Response.Osc _
+    | Input.Response.Unknown _ ->
+        ()
+
+  let query_cursor_position ~terminal ~parser ~timeout ~on_event t =
+    Terminal.send terminal Ansi.(to_string (query Cursor_position));
+    let result = ref None in
+    let on_response = function
+      | Input.Response.Capability (Input.Response.Cursor_position (row, col)) ->
+          result := Some (row, col)
+      | Input.Response.Capability event ->
+          Terminal.apply_capability_event terminal event
+      | Input.Response.Clipboard _ | Input.Response.Osc _
+      | Input.Response.Unknown _ ->
+          ()
+    in
+    let buf = Bytes.create 512 in
+    let deadline = t.now () +. timeout in
+    let rec loop () =
+      if Option.is_some !result then ()
+      else
+        let remaining = deadline -. t.now () in
+        if remaining > 0. && t.wait_readable ~timeout:remaining then
+          match t.read_input buf 0 (Bytes.length buf) with
+          | 0 -> ()
+          | n ->
+              Input.Parser.feed parser buf 0 n ~now:(t.now ()) ~on_event
+                ~on_response;
+              loop ()
+    in
+    loop ();
+    !result
+
+  type session = {
+    width : int;
+    height : int;
+    render_offset : int;
+    static_needs_newline : bool;
+    startup_events : Input.t list;
+  }
+
+  let bootstrap ~mode ~raw_mode ~input_is_tty ~terminal ~parser t =
+    if input_is_tty && raw_mode then t.set_raw_mode true;
+    let startup_events = ref [] in
+    let queue_startup_event event =
+      startup_events := event :: !startup_events
+    in
+    if input_is_tty && raw_mode then
+      Terminal.probe ~timeout:0.5 ~on_event:queue_startup_event
+        ~read_into:t.read_input ~wait_readable:t.wait_readable ~parser terminal;
+    let cols, rows = t.terminal_size () in
+    let width = max 1 cols in
+    let height = max 1 rows in
+    let render_offset, static_needs_newline =
+      if mode = `Primary && input_is_tty && raw_mode then
+        match
+          query_cursor_position ~terminal ~parser ~timeout:0.1
+            ~on_event:queue_startup_event t
+        with
+        | Some (row, col) ->
+            let anchor =
+              Primary.anchor_of_cursor ~terminal_height:height ~row ~col
+            in
+            if anchor.scroll_bottom then Terminal.send terminal "\r\n";
+            (anchor.render_offset, anchor.static_needs_newline)
+        | None -> (0, false)
+      else (0, false)
+    in
+    {
+      width;
+      height;
+      render_offset;
+      static_needs_newline;
+      startup_events = List.rev !startup_events;
+    }
+end
+
 type control_state =
   [ `Idle
   | `Auto_started
@@ -45,18 +149,11 @@ type app = {
   terminal : Terminal.t;
   parser : Input.Parser.t;
   config : config;
-  (* IO callbacks *)
-  write_output : bytes -> int -> int -> unit;
-  now : unit -> float;
-  wake : unit -> unit;
-  terminal_size : unit -> int * int;
-  set_raw_mode : bool -> unit;
-  flush_input : unit -> unit;
-  read_events :
-    timeout:float option -> on_event:(Input.t -> unit) -> read_result;
-  query_cursor_position : timeout:float -> (int * int) option;
-  cleanup : unit -> unit;
+  backend : Backend.t;
   screen : Screen.t;
+  (* Input events captured during startup (probe, primary anchor), replayed
+     before the first backend read. *)
+  mutable pending_startup_events : Input.t list;
   mutable running : bool;
   mutable redraw_requested : bool;
   mutable width : int;
@@ -236,19 +333,8 @@ let wait_readable_fds ~input_fd ~wakeup_r ~timeout =
     wakeup_ready = List.mem wakeup_r readable;
   }
 
-let read_events_unix ~terminal ~parser ~input_fd ~wakeup_r ~output_fd
-    ~input_buffer ~timeout ~on_event =
-  let on_response = function
-    | Input.Response.Capability event -> (
-        Terminal.apply_capability_event terminal event;
-        match event with
-        | Input.Response.Color_scheme ((`Dark | `Light) as scheme) ->
-            on_event (Input.Color_scheme scheme)
-        | _ -> ())
-    | Input.Response.Clipboard _ | Input.Response.Osc _
-    | Input.Response.Unknown _ ->
-        ()
-  in
+let read_events_unix ~parser ~input_fd ~wakeup_r ~output_fd ~input_buffer
+    ~timeout ~on_event ~on_response =
   let { input_ready; wakeup_ready } =
     wait_readable_fds ~input_fd ~wakeup_r ~timeout
   in
@@ -276,46 +362,28 @@ let read_events_unix ~terminal ~parser ~input_fd ~wakeup_r ~output_fd
   | `End -> ());
   result
 
-let query_cursor_position_unix ~terminal ~parser ~input_fd ~wakeup_r
-    ~input_buffer ~timeout ~on_event =
-  Terminal.send terminal "\027[6n";
-  let result = ref None in
-  let on_response = function
-    | Input.Response.Capability (Input.Response.Cursor_position (row, col)) ->
-        result := Some (row, col)
-    | Input.Response.Capability event ->
-        Terminal.apply_capability_event terminal event
-    | Input.Response.Clipboard _ | Input.Response.Osc _
-    | Input.Response.Unknown _ ->
-        ()
-  in
+(* Block until input bytes are readable or [timeout] expires. Wakeup-pipe
+   traffic is drained and retried internally so callers see only "readable" or
+   "timed out". *)
+let wait_readable_unix ~input_fd ~wakeup_r ~timeout =
   let deadline = Unix.gettimeofday () +. timeout in
-  let rec loop () =
-    if Option.is_some !result then ()
+  let rec loop remaining =
+    if remaining <= 0. then false
     else
-      let remaining = deadline -. Unix.gettimeofday () in
-      if remaining <= 0. then ()
-      else
-        let { input_ready; wakeup_ready } =
-          wait_readable_fds ~input_fd ~wakeup_r ~timeout:(Some remaining)
-        in
-        if wakeup_ready then drain_wakeup_fd wakeup_r;
-        if input_ready then
-          match
-            Unix.read input_fd input_buffer 0 (Bytes.length input_buffer)
-          with
-          | n when n > 0 ->
-              let now = Unix.gettimeofday () in
-              Input.Parser.feed parser input_buffer 0 n ~now ~on_event
-                ~on_response;
-              loop ()
-          | 0 -> ()
-          | _ -> loop ()
-          | exception Unix.Unix_error _ -> loop ()
-        else loop ()
+      let { input_ready; wakeup_ready } =
+        wait_readable_fds ~input_fd ~wakeup_r ~timeout:(Some remaining)
+      in
+      if wakeup_ready then drain_wakeup_fd wakeup_r;
+      if input_ready then true else loop (deadline -. Unix.gettimeofday ())
   in
-  loop ();
-  !result
+  loop timeout
+
+let rec read_input_unix ~input_fd buf off len =
+  match Unix.read input_fd buf off len with
+  | n -> n
+  | exception Unix.Unix_error (Unix.EINTR, _, _) ->
+      read_input_unix ~input_fd buf off len
+  | exception Unix.Unix_error _ -> 0
 
 (* Small helpers *)
 
@@ -347,18 +415,18 @@ let pixel_resolution t = Terminal.pixel_resolution t.terminal
 let terminal t = t.terminal
 let capabilities t = Terminal.capabilities t.terminal
 let running t = t.running
-let now t = t.now ()
+let now t = t.backend.now ()
 
 let request_redraw t =
   if t.closed then ()
   else if t.control_state <> `Explicit_suspended then (
     t.redraw_requested <- true;
-    t.wake ())
+    t.backend.wake ())
 
 let schedule_wakeup t deadline =
   if not t.closed then (
     t.wakeup_deadline <- deadline;
-    t.wake ())
+    t.backend.wake ())
 
 let redraw_requested t = t.redraw_requested
 
@@ -366,9 +434,9 @@ let request_immediate_redraw t =
   if t.closed then ()
   else if t.control_state <> `Explicit_suspended then (
     t.redraw_requested <- true;
-    if t.loop_active then t.next_frame_deadline <- Some (t.now ())
+    if t.loop_active then t.next_frame_deadline <- Some (t.backend.now ())
     else t.last_render_time <- Float.neg_infinity;
-    t.wake ())
+    t.backend.wake ())
 
 let refresh_capabilities t =
   let caps = Terminal.capabilities t.terminal in
@@ -437,7 +505,7 @@ let update_loop_active t =
   in
   if t.loop_active <> active then (
     t.loop_active <- active;
-    if active then t.next_frame_deadline <- Some (t.now ())
+    if active then t.next_frame_deadline <- Some (t.backend.now ())
     else t.next_frame_deadline <- None)
 
 (* Static output (primary mode only) *)
@@ -551,7 +619,7 @@ let static_clear t =
   if t.config.mode = `Alt then ()
   else (
     Terminal.send t.terminal Ansi.(to_string clear_and_home);
-    let cols, rows = t.terminal_size () in
+    let cols, rows = t.backend.terminal_size () in
     t.width <- max 1 cols;
     t.height <- max 1 rows;
     let primary, _plan = Primary.clear_static t.primary in
@@ -569,7 +637,7 @@ let apply_config t =
   refresh_capabilities t;
   let terminal = t.terminal in
   let caps = Terminal.capabilities terminal in
-  t.set_raw_mode t.config.raw_mode;
+  t.backend.set_raw_mode t.config.raw_mode;
   if t.config.mode = `Alt then (
     Terminal.enter_alternate_screen terminal;
     let cursor = Screen.cursor t.screen in
@@ -783,13 +851,13 @@ let submit ?primary_required_rows t =
       if use_sync then
         Buffer.add_string buf Ansi.(to_string (disable Sync_output));
 
-      let write_start = t.now () in
+      let write_start = t.backend.now () in
       let frame_bytes = Buffer.contents buf in
-      t.write_output
+      t.backend.write_output
         (Bytes.unsafe_of_string frame_bytes)
         0
         (String.length frame_bytes);
-      ignore (Float.max 0. ((t.now () -. write_start) *. 1000.) : float)
+      ignore (Float.max 0. ((t.backend.now () -. write_start) *. 1000.) : float)
     end;
 
     if t.frame_dump_every > 0 then (
@@ -807,7 +875,7 @@ let stop t =
     t.control_state <- `Explicit_stopped;
     update_loop_active t;
     t.redraw_requested <- false;
-    t.wake ())
+    t.backend.wake ())
 
 let request_live t =
   if t.closed then ()
@@ -817,7 +885,7 @@ let request_live t =
       t.control_state <- `Auto_started;
       update_loop_active t;
       t.redraw_requested <- true;
-      t.wake ()))
+      t.backend.wake ()))
 
 let drop_live t =
   t.live_requests <- max 0 (t.live_requests - 1);
@@ -831,7 +899,7 @@ let start t =
     update_loop_active t;
     if not t.running then t.running <- true;
     t.redraw_requested <- true;
-    t.wake ())
+    t.backend.wake ())
 
 let pause t =
   t.control_state <- `Explicit_paused;
@@ -854,23 +922,28 @@ let suspend ?(leave_alt = false) t =
   (try Terminal.enable_focus_reporting t.terminal false with _ -> ());
   (try Terminal.enable_kitty_keyboard t.terminal false with _ -> ());
   (try Terminal.enable_modify_other_keys t.terminal false with _ -> ());
-  (try t.set_raw_mode false with _ -> ());
+  (try t.backend.set_raw_mode false with _ -> ());
   t.suspend_left_alt <- leave_alt;
   (if leave_alt then
      try Terminal.leave_alternate_screen t.terminal with _ -> ());
-  try t.flush_input () with _ -> ()
+  try t.backend.flush_input () with _ -> ()
 
 let resume t =
   if t.control_state <> `Explicit_suspended then ()
   else (
-    (if t.config.raw_mode then try t.set_raw_mode true with _ -> ());
-    (try t.flush_input () with _ -> ());
+    (if t.config.raw_mode then try t.backend.set_raw_mode true with _ -> ());
+    (try t.backend.flush_input () with _ -> ());
     if t.suspend_left_alt then (
       t.suspend_left_alt <- false;
       try Terminal.enter_alternate_screen t.terminal with _ -> ());
     (if t.config.mode = `Primary then
        let height = max 1 t.height in
-       match t.query_cursor_position ~timeout:0.1 with
+       match
+         Backend.query_cursor_position ~terminal:t.terminal ~parser:t.parser
+           ~timeout:0.1
+           ~on_event:(fun _ -> ())
+           t.backend
+       with
        | Some (row, col) ->
            let anchor =
              Primary.anchor_of_cursor ~terminal_height:height ~row ~col
@@ -890,7 +963,7 @@ let resume t =
     update_loop_active t;
     if t.loop_active then (
       t.redraw_requested <- true;
-      t.wake ())
+      t.backend.wake ())
     else request_redraw t)
 
 (* Cursor *)
@@ -952,7 +1025,7 @@ let apply_resize t cols rows now =
     request_redraw t)
 
 let handle_resize t cols rows =
-  let now = t.now () in
+  let now = t.backend.now () in
   match t.config.resize_debounce with
   | None -> apply_resize t cols rows now
   | Some window_s ->
@@ -965,7 +1038,7 @@ let handle_resize t cols rows =
 let maybe_apply_pending_resize t =
   match (t.pending_resize, t.config.resize_debounce) with
   | Some (cols, rows), Some window_s ->
-      let now = t.now () in
+      let now = t.backend.now () in
       if now -. t.last_resize_apply_time >= window_s then
         apply_resize t cols rows now
   | _ -> ()
@@ -1040,13 +1113,13 @@ let close t =
          Terminal.move_cursor t.terminal ~row:start_row ~col:1 ~visible:true);
        (* Flush pending mouse/input bytes both before and after mode teardown.
           This avoids leaking trailing SGR mouse payloads back to the shell. *)
-       (try t.flush_input () with _ -> ());
+       (try t.backend.flush_input () with _ -> ());
        Terminal.close t.terminal
      with _ -> ());
-    (try t.flush_input () with _ -> ());
-    (try t.set_raw_mode false with _ -> ());
-    (try t.flush_input () with _ -> ());
-    try t.cleanup () with _ -> ())
+    (try t.backend.flush_input () with _ -> ());
+    (try t.backend.set_raw_mode false with _ -> ());
+    (try t.backend.flush_input () with _ -> ());
+    try t.backend.cleanup () with _ -> ())
 
 (* Internal config builder *)
 
@@ -1084,8 +1157,7 @@ let make_config ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
 
 (* Initialize a live app (internal) *)
 
-let init_app (c : config) ~write_output ~now ~wake ~terminal_size ~set_raw_mode
-    ~flush_input ~read_events ~query_cursor_position ~cleanup ~debug_overlay
+let init_app (c : config) ~(backend : Backend.t) ~startup_events ~debug_overlay
     ~frame_dump_every ~frame_dump_dir ~frame_dump_pattern ~frame_dump_hits
     ~parser ~terminal ~width ~height ~render_offset ~static_needs_newline =
   let width = max 1 width in
@@ -1098,7 +1170,7 @@ let init_app (c : config) ~write_output ~now ~wake ~terminal_size ~set_raw_mode
   let screen =
     Screen.create ~width_method:`Wcwidth ~respect_alpha:c.respect_alpha
       ~cursor_visible:c.cursor_visible ~explicit_width:c.explicit_width
-      ~clock:now ()
+      ~clock:backend.now ()
   in
   let caps = Terminal.capabilities terminal in
   Screen.set_width_method screen caps.unicode_width;
@@ -1110,7 +1182,7 @@ let init_app (c : config) ~write_output ~now ~wake ~terminal_size ~set_raw_mode
   Screen.resize screen ~width ~height:live_region.height;
   let capability_window_until =
     if c.raw_mode && Terminal.tty terminal then
-      Some (now () +. startup_capability_window_s)
+      Some (backend.now () +. startup_capability_window_s)
     else None
   in
   let t =
@@ -1118,16 +1190,9 @@ let init_app (c : config) ~write_output ~now ~wake ~terminal_size ~set_raw_mode
       terminal;
       parser;
       config = c;
-      write_output;
-      now;
-      wake;
-      terminal_size;
-      set_raw_mode;
-      flush_input;
-      read_events;
-      query_cursor_position;
-      cleanup;
+      backend;
       screen;
+      pending_startup_events = startup_events;
       running = true;
       redraw_requested = false;
       width;
@@ -1242,66 +1307,36 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
         Terminal.make ~output:output_fn ~tty:output_is_tty ?initial_caps ()
       in
       let parser = Input.Parser.create () in
-      if input_is_tty && raw_mode then set_raw_mode true;
       let input_buffer = Bytes.create 4096 in
-      let startup_events = ref [] in
-      let queue_startup_event event =
-        startup_events := event :: !startup_events
+      let backend : Backend.t =
+        {
+          now = Unix.gettimeofday;
+          wake = (fun () -> wake_fd wakeup_w);
+          write_output = write_all output_fd;
+          read_input = read_input_unix ~input_fd;
+          wait_readable =
+            (fun ~timeout -> wait_readable_unix ~input_fd ~wakeup_r ~timeout);
+          read_events =
+            (fun ~timeout ~on_event ~on_response ->
+              read_events_unix ~parser ~input_fd ~wakeup_r ~output_fd
+                ~input_buffer ~timeout ~on_event ~on_response);
+          terminal_size = (fun () -> Terminal.size output_fd);
+          set_raw_mode;
+          flush_input =
+            (fun () -> if input_is_tty then Terminal.flush_input input_fd);
+          cleanup = cleanup_backend;
+        }
       in
-      if input_is_tty && raw_mode then
-        Terminal.probe ~timeout:0.5 ~on_event:queue_startup_event
-          ~read_into:(fun buf off len ->
-            try Unix.read input_fd buf off len with Unix.Unix_error _ -> 0)
-          ~wait_readable:(fun ~timeout ->
-            let readable, _, _ =
-              try Unix.select [ input_fd ] [] [] timeout
-              with Unix.Unix_error (Unix.EINTR, _, _) -> ([], [], [])
-            in
-            readable <> [])
-          ~parser terminal;
-      let cols, rows = Terminal.size output_fd in
-      let width = max 1 cols in
-      let height = max 1 rows in
-      let render_offset, static_needs_newline =
-        if mode = `Primary && input_is_tty && raw_mode then
-          match
-            query_cursor_position_unix ~terminal ~parser ~input_fd ~wakeup_r
-              ~input_buffer ~timeout:0.1 ~on_event:queue_startup_event
-          with
-          | Some (row, col) ->
-              let anchor =
-                Primary.anchor_of_cursor ~terminal_height:height ~row ~col
-              in
-              if anchor.scroll_bottom then Terminal.send terminal "\r\n";
-              (anchor.render_offset, anchor.static_needs_newline)
-          | None -> (0, false)
-        else if mode = `Primary then (0, false)
-        else (0, false)
+      let session =
+        Backend.bootstrap ~mode ~raw_mode ~input_is_tty ~terminal ~parser
+          backend
       in
-      let pending_startup_events = ref (List.rev !startup_events) in
       let app =
-        init_app config ~write_output:(write_all output_fd)
-          ~now:Unix.gettimeofday
-          ~wake:(fun () -> wake_fd wakeup_w)
-          ~terminal_size:(fun () -> Terminal.size output_fd)
-          ~set_raw_mode
-          ~flush_input:(fun () ->
-            if input_is_tty then Terminal.flush_input input_fd)
-          ~read_events:(fun ~timeout ~on_event ->
-            match !pending_startup_events with
-            | [] ->
-                read_events_unix ~terminal ~parser ~input_fd ~wakeup_r
-                  ~output_fd ~input_buffer ~timeout ~on_event
-            | events ->
-                pending_startup_events := [];
-                List.iter on_event events;
-                `Continue)
-          ~query_cursor_position:(fun ~timeout ->
-            query_cursor_position_unix ~terminal ~parser ~input_fd ~wakeup_r
-              ~input_buffer ~timeout ~on_event:(fun _ -> ()))
-          ~cleanup:cleanup_backend ~debug_overlay ~frame_dump_every
-          ~frame_dump_dir ~frame_dump_pattern ~frame_dump_hits ~parser ~terminal
-          ~width ~height ~render_offset ~static_needs_newline
+        init_app config ~backend ~startup_events:session.startup_events
+          ~debug_overlay ~frame_dump_every ~frame_dump_dir ~frame_dump_pattern
+          ~frame_dump_hits ~parser ~terminal ~width:session.width
+          ~height:session.height ~render_offset:session.render_offset
+          ~static_needs_newline:session.static_needs_newline
       in
       app_ref := Some app;
       Terminal.query_pixel_resolution terminal;
@@ -1329,10 +1364,9 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     ?(frame_dump_hits = false) ?(cursor_visible = mode = `Alt)
     ?(explicit_width = false) ?(input_timeout = None)
     ?(resize_debounce = Some 0.1) ?(min_tui_height = 1) ?(start_idle = false)
-    ?(pace_redraws = true) ?(signal_handlers = true) ~write_output ~now ~wake
-    ~terminal_size ~set_raw_mode ~flush_input ~read_events
-    ~query_cursor_position ~cleanup ~parser ~terminal ~width ~height
-    ?(render_offset = 0) ?(static_needs_newline = false) () =
+    ?(pace_redraws = true) ?(signal_handlers = true) ?(startup_events = [])
+    ~(backend : Backend.t) ~parser ~terminal ~width ~height ?(render_offset = 0)
+    ?(static_needs_newline = false) () =
   let config =
     make_config ~mode ~raw_mode ~target_fps ~respect_alpha ~mouse_enabled ~mouse
       ~bracketed_paste ~focus_reporting ~kitty_keyboard ~exit_on_ctrl_c
@@ -1347,18 +1381,17 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     if not !backend_cleaned then (
       backend_cleaned := true;
       !release_lifecycle ();
-      cleanup ())
+      backend.cleanup ())
   in
+  let backend = { backend with cleanup = cleanup_owned } in
   let rollback () =
     match !app_ref with Some app -> close app | None -> cleanup_owned ()
   in
   with_rollback ~rollback (fun () ->
       let app =
-        init_app config ~write_output ~now ~wake ~terminal_size ~set_raw_mode
-          ~flush_input ~read_events ~query_cursor_position
-          ~cleanup:cleanup_owned ~debug_overlay ~frame_dump_every
-          ~frame_dump_dir ~frame_dump_pattern ~frame_dump_hits ~parser ~terminal
-          ~width ~height ~render_offset ~static_needs_newline
+        init_app config ~backend ~startup_events ~debug_overlay
+          ~frame_dump_every ~frame_dump_dir ~frame_dump_pattern ~frame_dump_hits
+          ~parser ~terminal ~width ~height ~render_offset ~static_needs_newline
       in
       app_ref := Some app;
       release_lifecycle :=
@@ -1453,7 +1486,7 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
     && t.control_state <> `Explicit_stopped
   then (
     t.redraw_requested <- true;
-    t.wake ());
+    t.backend.wake ());
   Option.iter
     (fun f ->
       let cols, rows = size t in
@@ -1464,7 +1497,7 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
     Option.iter (fun f -> f t ~dt:(now -. last_time)) on_frame;
     prepare t;
     on_render t;
-    let user_end = t.now () in
+    let user_end = t.backend.now () in
     let required_rows_hint =
       match primary_required_rows with
       | Some f -> (
@@ -1491,7 +1524,18 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
   let read_events ~now ~timeout =
     update_capability_parser_context t ~now;
     let caps_before = Terminal.capabilities t.terminal in
-    let result = t.read_events ~timeout ~on_event:handle_event in
+    let result =
+      match t.pending_startup_events with
+      | [] ->
+          t.backend.read_events ~timeout ~on_event:handle_event
+            ~on_response:
+              (Backend.dispatch_response ~terminal:t.terminal
+                 ~on_event:handle_event)
+      | events ->
+          t.pending_startup_events <- [];
+          List.iter handle_event events;
+          `Continue
+    in
     refresh_after_capability_change t caps_before;
     match result with
     | `Continue -> ()
@@ -1504,7 +1548,7 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
     if not (running t) then ()
     else (
       maybe_apply_pending_resize t;
-      let now = t.now () in
+      let now = t.backend.now () in
       (* A due one-shot wakeup runs the frame callback without a render: it
          exists so time-based work (timers) can advance off the clock while
          the loop is otherwise idle. Whatever the callback dispatches requests
@@ -1525,7 +1569,7 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
            live cadence — left armed while idle it would read as perpetually
            due and spin the loop; one-shot pacing hangs off
            [last_render_time] instead. *)
-        let render_end = t.now () in
+        let render_end = t.backend.now () in
         t.last_render_time <- render_end;
         t.next_frame_deadline <-
           (if t.loop_active then
@@ -1544,7 +1588,7 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
         read_events ~now ~timeout;
         loop last_time)
   in
-  let start_time = t.now () in
+  let start_time = t.backend.now () in
   Fun.protect
     (fun () -> loop start_time)
     ~finally:(fun () -> if not t.closed then close t)

@@ -5,15 +5,19 @@ let make_app () =
     Matrix.attach ~mode:`Alt ~raw_mode:false ~target_fps:None
       ~mouse_enabled:false ~bracketed_paste:false ~focus_reporting:false
       ~kitty_keyboard:`Disabled ~cursor_visible:false ~signal_handlers:false
-      ~write_output:(fun _bytes _off _len -> ())
-      ~now:(fun () -> 0.)
-      ~wake:(fun () -> ())
-      ~terminal_size:(fun () -> (160, 48))
-      ~set_raw_mode:(fun _ -> ())
-      ~flush_input:(fun () -> ())
-      ~read_events:(fun ~timeout:_ ~on_event:_ -> `Continue)
-      ~query_cursor_position:(fun ~timeout:_ -> None)
-      ~cleanup:(fun () -> ())
+      ~backend:
+        {
+          now = (fun () -> 0.);
+          wake = (fun () -> ());
+          write_output = (fun _bytes _off _len -> ());
+          read_input = (fun _ _ _ -> 0);
+          wait_readable = (fun ~timeout:_ -> false);
+          read_events = (fun ~timeout:_ ~on_event:_ ~on_response:_ -> `Continue);
+          terminal_size = (fun () -> (160, 48));
+          set_raw_mode = (fun _ -> ());
+          flush_input = (fun () -> ());
+          cleanup = (fun () -> ());
+        }
       ~parser ~terminal ~width:160 ~height:48 ()
   in
   Matrix.prepare app;

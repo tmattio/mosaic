@@ -56,6 +56,99 @@ type read_result = [ `Continue | `End ]
     the source reached permanent end-of-input; {!run} finalizes parser state and
     closes the application without reading again. *)
 
+(** I/O backends.
+
+    A backend is the set of I/O primitives an application runs on: a clock, a
+    wakeup signal, byte-level terminal reads and writes, and device control.
+    Protocol logic — input parsing policy, terminal-response routing, cursor
+    queries — lives in the runtime and is written once over these primitives.
+
+    {!create} builds the Unix backend internally; alternative runtimes (tests,
+    Eio) construct a value of {!Backend.t} and pass it to {!attach}. *)
+module Backend : sig
+  type t = {
+    now : unit -> float;
+        (** [now ()] is the current monotonic time in seconds. *)
+    wake : unit -> unit;
+        (** [wake ()] signals the event loop to re-check state. *)
+    write_output : bytes -> int -> int -> unit;
+        (** [write_output buf off len] writes [len] bytes from [buf] at [off] to
+            the terminal. *)
+    read_input : bytes -> int -> int -> int;
+        (** [read_input buf off len] reads up to [len] input bytes into [buf] at
+            [off] and returns the number of bytes read. [0] denotes permanent
+            end-of-input. *)
+    wait_readable : timeout:float -> bool;
+        (** [wait_readable ~timeout] blocks until input bytes are readable and
+            is [true], or [false] once [timeout] seconds elapsed without input.
+            Used for bounded protocol exchanges (capability probes, cursor
+            queries). *)
+    read_events :
+      timeout:float option ->
+      on_event:(Input.t -> unit) ->
+      on_response:(Input.Response.t -> unit) ->
+      read_result;
+        (** [read_events ~timeout ~on_event ~on_response] blocks for events up
+            to [timeout], invokes [on_event] for each, and returns [`Continue]
+            while the source is live or [`End] at permanent end-of-input.
+
+            [on_response] is the runtime's terminal-reply policy; pass it
+            through to {!Input.Parser.feed} and {!Input.Parser.drain} verbatim
+            so responses are routed identically on every backend. *)
+    terminal_size : unit -> int * int;
+        (** [terminal_size ()] is the terminal dimensions as [(cols, rows)]. *)
+    set_raw_mode : bool -> unit;
+        (** [set_raw_mode b] toggles raw mode on the backend's input device.
+            Backends without a terminal device make this a no-op. *)
+    flush_input : unit -> unit;  (** [flush_input ()] discards pending input. *)
+    cleanup : unit -> unit;
+        (** [cleanup ()] releases backend resources on {!close}. *)
+  }
+  (** The type for I/O backends. *)
+
+  val query_cursor_position :
+    terminal:Terminal.t ->
+    parser:Input.Parser.t ->
+    timeout:float ->
+    on_event:(Input.t -> unit) ->
+    t ->
+    (int * int) option
+  (** [query_cursor_position ~terminal ~parser ~timeout ~on_event t] sends a
+      cursor-position query through [terminal] and pumps [t]'s input primitives
+      until the reply arrives or [timeout] elapses. Non-reply capability
+      responses received while waiting are folded into [terminal]; user input
+      events are forwarded to [on_event]. *)
+
+  type session = {
+    width : int;  (** Terminal width in columns, clamped to at least 1. *)
+    height : int;  (** Terminal height in rows, clamped to at least 1. *)
+    render_offset : int;  (** Primary-mode live viewport row offset. *)
+    static_needs_newline : bool;
+        (** Primary-mode flag: whether static output must open with a newline.
+        *)
+    startup_events : Input.t list;
+        (** User input received during the handshake, to be replayed by the
+            event loop. Pass to {!attach} as [startup_events]. *)
+  }
+  (** The result of {!bootstrap}: the session geometry and the input captured
+      while probing. *)
+
+  val bootstrap :
+    mode:[ `Alt | `Primary ] ->
+    raw_mode:bool ->
+    input_is_tty:bool ->
+    terminal:Terminal.t ->
+    parser:Input.Parser.t ->
+    t ->
+    session
+  (** [bootstrap ~mode ~raw_mode ~input_is_tty ~terminal ~parser t] performs the
+      standard terminal handshake over [t]'s primitives: enables raw mode (when
+      [input_is_tty] and [raw_mode]), probes capabilities into [terminal], reads
+      the terminal size, and in [`Primary] mode anchors the live viewport at the
+      current cursor position. {!create} runs this internally; custom backends
+      call it before {!attach}. *)
+end
+
 type debug_overlay_corner =
   [ `Top_left | `Top_right | `Bottom_left | `Bottom_right ]
 (** The type for debug overlay anchor corners. *)
@@ -441,16 +534,8 @@ val attach :
   ?start_idle:bool ->
   ?pace_redraws:bool ->
   ?signal_handlers:bool ->
-  write_output:(bytes -> int -> int -> unit) ->
-  now:(unit -> float) ->
-  wake:(unit -> unit) ->
-  terminal_size:(unit -> int * int) ->
-  set_raw_mode:(bool -> unit) ->
-  flush_input:(unit -> unit) ->
-  read_events:
-    (timeout:float option -> on_event:(Input.t -> unit) -> read_result) ->
-  query_cursor_position:(timeout:float -> (int * int) option) ->
-  cleanup:(unit -> unit) ->
+  ?startup_events:Input.t list ->
+  backend:Backend.t ->
   parser:Input.Parser.t ->
   terminal:Terminal.t ->
   width:int ->
@@ -459,21 +544,12 @@ val attach :
   ?static_needs_newline:bool ->
   unit ->
   app
-(** [attach ... ()] is like {!create} but wired to caller-provided I/O
-    callbacks.
+(** [attach ~backend ~parser ~terminal ~width ~height ()] is like {!create} but
+    wired to the I/O primitives in [backend].
 
-    The optional parameters mirror {!create}. The required callbacks are:
-    - [write_output] writes [len] bytes from [buf] at [off].
-    - [now] returns the current monotonic time in seconds.
-    - [wake] signals the event loop to re-check state.
-    - [terminal_size] returns [(cols, rows)].
-    - [set_raw_mode] toggles raw mode.
-    - [flush_input] discards pending input.
-    - [read_events] blocks for events up to [timeout], invokes [on_event] for
-      each, and returns [`Continue] while the source is live or [`End] at
-      permanent end-of-input.
-    - [query_cursor_position] queries cursor position with the given timeout.
-    - [cleanup] releases resources on {!close}.
+    The optional parameters mirror {!create}. [startup_events] (default [[]])
+    are events captured during {!Backend.bootstrap}, replayed before the first
+    backend read.
 
     [signal_handlers] defaults to [true] and has the same owned lifetime as in
     {!create}. Set it to [false] when the embedding runtime owns termination
