@@ -1550,16 +1550,17 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
           Option.iter (fun f -> f t event) on_input;
           request_redraw t
   in
+  (* Built once: [handle_event] is stable for the whole run, so allocating the
+     response dispatcher per read would be pure per-iteration churn. *)
+  let on_response =
+    Backend.dispatch_response ~terminal:t.terminal ~on_event:handle_event
+  in
   let read_events ~now ~timeout =
     update_capability_parser_context t ~now;
     let caps_before = Terminal.capabilities t.terminal in
     let result =
       match t.pending_startup_events with
-      | [] ->
-          t.backend.read_events ~timeout ~on_event:handle_event
-            ~on_response:
-              (Backend.dispatch_response ~terminal:t.terminal
-                 ~on_event:handle_event)
+      | [] -> t.backend.read_events ~timeout ~on_event:handle_event ~on_response
       | events ->
           t.pending_startup_events <- [];
           List.iter handle_event events;
