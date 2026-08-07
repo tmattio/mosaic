@@ -254,6 +254,11 @@ let focus_reporting_enabled t = t.focus_enabled
 let enable_kitty_keyboard ?(flags = 0b00101) t enable =
   if enable then (
     if (not t.kitty_keyboard_enabled) || t.kitty_keyboard_flags <> flags then (
+      (* Pop the previous entry before pushing replacement flags so the
+         terminal's keyboard stack never holds more than one entry from this
+         handle; the single pop in disable and [reset_state] then fully
+         unwinds it (the same dance as [restore_modes]). *)
+      if t.kitty_keyboard_enabled then send t kitty_kb_pop;
       t.kitty_keyboard_armed <- true;
       send t (kitty_kb_push flags);
       t.kitty_keyboard_enabled <- true;

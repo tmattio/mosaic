@@ -757,6 +757,33 @@ let test_idempotent_protocols () =
 
   T.close term
 
+(* Regression: changing kitty keyboard flags while enabled must pop the
+   previous stack entry before pushing the new one, so close leaves the
+   terminal's keyboard stack balanced. *)
+let test_kitty_flag_change_keeps_stack_balanced () =
+  let count needle haystack =
+    let n = String.length needle in
+    let rec loop i acc =
+      if i + n > String.length haystack then acc
+      else if String.sub haystack i n = needle then loop (i + n) (acc + 1)
+      else loop (i + 1) acc
+    in
+    if n = 0 then 0 else loop 0 0
+  in
+  with_tty_terminal @@ fun term buf ->
+  T.enable_kitty_keyboard ~flags:1 term true;
+  T.enable_kitty_keyboard ~flags:5 term true;
+  T.enable_kitty_keyboard term false;
+  T.close term;
+  let out = Buffer.contents buf in
+  equal ~msg:"first flags pushed once" int 1 (count "\027[>1u" out);
+  equal ~msg:"second flags pushed once" int 1 (count "\027[>5u" out);
+  equal ~msg:"pops balance pushes" int
+    (count "\027[>1u" out + count "\027[>5u" out)
+    (count "\027[<u" out);
+  is_true ~msg:"flag change pops before re-pushing"
+    (contains_substring out "\027[>1u\027[<u\027[>5u")
+
 (* Test: reset_state unwinds all protocols *)
 let test_reset_state () =
   with_terminal @@ fun term _buf ->
@@ -898,6 +925,8 @@ let () =
       group "protocols"
         [
           test "idempotent protocols" test_idempotent_protocols;
+          test "kitty flag change keeps stack balanced"
+            test_kitty_flag_change_keeps_stack_balanced;
           test "reset state" test_reset_state;
           test "reset state disables partial paste"
             test_reset_state_disables_partially_enabled_paste;

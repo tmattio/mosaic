@@ -256,7 +256,10 @@ val enable_kitty_keyboard : ?flags:int -> t -> bool -> unit
     }
 
     Enabling pushes [flags] onto the terminal's keyboard stack; disabling pops.
-    Changing [flags] while enabled pushes the new value. *)
+    Changing [flags] while enabled pops the previous entry before pushing the
+    new value, so the handle contributes at most one stack entry and a single
+    pop ({!enable_kitty_keyboard} with [false], {!close}, or {!reset_state})
+    fully unwinds it. *)
 
 val kitty_keyboard_enabled : t -> bool
 (** [kitty_keyboard_enabled t] is [true] iff the Kitty keyboard protocol is
