@@ -455,12 +455,12 @@ let culled_child_is_not_hit_testable () =
   let hits_visible = record_mouse rows.(2) in
   let hits_hidden = record_mouse rows.(22) in
   do_frame ~width:20 ~height:5 t;
-  Renderer.dispatch_mouse t (mouse_press ~x:3 ~y:2 ());
+  dispatch_mouse t (mouse_press ~x:3 ~y:2 ());
   equal ~msg:"visible row hit" int 1 (count_downs hits_visible);
   equal ~msg:"hidden row not hit" int 0 (count_downs hits_hidden);
   Scroll_box.scroll_to sb ~y:20 ();
   do_frame ~width:20 ~height:5 t;
-  Renderer.dispatch_mouse t (mouse_press ~x:3 ~y:2 ());
+  dispatch_mouse t (mouse_press ~x:3 ~y:2 ());
   equal ~msg:"revealed row hit after scroll" int 1 (count_downs hits_hidden)
 
 let culled_live_child_does_not_tick () =
@@ -477,6 +477,140 @@ let culled_live_child_does_not_tick () =
   Scroll_box.scroll_to sb ~y:30 ();
   do_frame ~width:20 ~height:5 t;
   equal ~msg:"revealed live row ticks" int 1 !hidden_ticks
+
+(* ── Scroll hints ── *)
+
+(* A full-width scroll box of [rows] one-cell text rows in a [vw]x[vh]
+   frame, presented once so the diff baseline and scroll metrics are
+   established. *)
+let make_hint_transcript ?(rows = 20) ?(vw = 20) ?(vh = 6) t =
+  let box_style =
+    Toffee.Style.default
+    |> Toffee.Style.set_width (Toffee.Style.Dimension.length (Float.of_int vw))
+    |> Toffee.Style.set_height (Toffee.Style.Dimension.length (Float.of_int vh))
+  in
+  let sb =
+    Scroll_box.create ~parent:(Renderer.root t) ~style:box_style
+      ~show_scrollbars:false ()
+  in
+  let row_style =
+    Toffee.Style.default
+    |> Toffee.Style.set_width (Toffee.Style.Dimension.length (Float.of_int vw))
+    |> Toffee.Style.set_height (Toffee.Style.Dimension.length 1.)
+  in
+  for i = 0 to rows - 1 do
+    ignore
+      (Text.create ~parent:(Scroll_box.node sb) ~style:row_style
+         ~content:(Printf.sprintf "row %d" i)
+         ~selectable:false ()
+        : Text.t)
+  done;
+  Renderer.render_frame t ~width:vw ~height:vh ~delta:0.;
+  ignore (Renderer.render t : string);
+  sb
+
+let scroll_produces_hint () =
+  let t = make_renderer () in
+  let sb = make_hint_transcript t in
+  Scroll_box.scroll_by sb ~y:1 ();
+  Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
+  (match Renderer.take_scroll_hint t with
+  | Some { Screen.top; bottom; delta } ->
+      equal ~msg:"top" int 0 top;
+      equal ~msg:"bottom" int 5 bottom;
+      equal ~msg:"delta" int 1 delta
+  | None -> fail "expected a scroll hint");
+  is_none ~msg:"take consumes the hint" (Renderer.take_scroll_hint t)
+
+let opposing_scrolls_cancel () =
+  let t = make_renderer () in
+  let sb = make_hint_transcript t in
+  Scroll_box.scroll_by sb ~y:2 ();
+  Scroll_box.scroll_by sb ~y:(-2) ();
+  Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
+  is_none ~msg:"net-zero scroll has no hint" (Renderer.take_scroll_hint t)
+
+let two_scrollers_disqualify () =
+  (* Column root so both boxes are onscreen, stacked. *)
+  let root_style =
+    Toffee.Style.default
+    |> Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Column
+    |> Toffee.Style.set_size (Toffee.Style.Size_dim.pct ~w:100. ~h:100.)
+  in
+  let t = Renderer.create ~style:root_style () in
+  let sb1 = make_hint_transcript ~vh:3 t in
+  let sb2 = make_hint_transcript ~vh:3 t in
+  Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
+  ignore (Renderer.render t : string);
+  ignore (Renderer.take_scroll_hint t : Screen.scroll_hint option);
+  Scroll_box.scroll_by sb1 ~y:1 ();
+  Scroll_box.scroll_by sb2 ~y:1 ();
+  Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
+  is_none ~msg:"two movers disqualify" (Renderer.take_scroll_hint t)
+
+let horizontal_scroll_disqualifies () =
+  let t = make_renderer () in
+  let box_style =
+    Toffee.Style.default
+    |> Toffee.Style.set_width (Toffee.Style.Dimension.length 20.)
+    |> Toffee.Style.set_height (Toffee.Style.Dimension.length 6.)
+  in
+  let sb =
+    Scroll_box.create ~parent:(Renderer.root t) ~style:box_style ~scroll_x:true
+      ~show_scrollbars:false ()
+  in
+  let content_style =
+    Toffee.Style.default
+    |> Toffee.Style.set_width (Toffee.Style.Dimension.length 60.)
+    |> Toffee.Style.set_height (Toffee.Style.Dimension.length 30.)
+  in
+  ignore
+    (Renderable.create ~parent:(Scroll_box.node sb) ~style:content_style ()
+      : Renderable.t);
+  Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
+  ignore (Renderer.render t : string);
+  Scroll_box.scroll_by sb ~x:1 ();
+  Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
+  is_none ~msg:"horizontal scroll has no hint" (Renderer.take_scroll_hint t)
+
+let narrow_box_disqualifies () =
+  let t = make_renderer () in
+  let sb = make_hint_transcript ~vw:10 t in
+  Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
+  ignore (Renderer.render t : string);
+  Scroll_box.scroll_by sb ~y:1 ();
+  Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
+  is_none ~msg:"narrow box has no hint" (Renderer.take_scroll_hint t)
+
+let contains_substring haystack needle =
+  let hl = String.length haystack and nl = String.length needle in
+  let rec go i =
+    if i + nl > hl then false
+    else if String.sub haystack i nl = needle then true
+    else go (i + 1)
+  in
+  go 0
+
+let hinted_scroll_emits_decstbm_and_correct_rows () =
+  let t = make_renderer () in
+  let sb = make_hint_transcript t in
+  let vte = Vte.create ~rows:6 ~cols:20 () in
+  Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
+  Vte.feed_string vte (Renderer.render ~full:true t);
+  Scroll_box.scroll_by sb ~y:1 ();
+  Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
+  let out = Renderer.render t in
+  is_true ~msg:"output contains DECSTBM" (contains_substring out "\x1b[1;6r");
+  Vte.feed_string vte out;
+  let lines = String.split_on_char '\n' (Vte.to_string vte) in
+  List.iteri
+    (fun i line ->
+      equal
+        ~msg:(Printf.sprintf "revealed row %d" i)
+        string
+        (Printf.sprintf "row %d" (i + 1))
+        (String.trim line))
+    lines
 
 (* ── Layout dirtiness ──
 
@@ -1373,6 +1507,16 @@ let () =
           test "culled child is not hit-testable"
             culled_child_is_not_hit_testable;
           test "culled live child does not tick" culled_live_child_does_not_tick;
+        ];
+      group "Scroll hints"
+        [
+          test "scroll produces hint" scroll_produces_hint;
+          test "opposing scrolls cancel" opposing_scrolls_cancel;
+          test "two scrollers disqualify" two_scrollers_disqualify;
+          test "horizontal scroll disqualifies" horizontal_scroll_disqualifies;
+          test "narrow box disqualifies" narrow_box_disqualifies;
+          test "hinted scroll emits DECSTBM and correct rows"
+            hinted_scroll_emits_decstbm_and_correct_rows;
         ];
       group "Layout dirtiness"
         [

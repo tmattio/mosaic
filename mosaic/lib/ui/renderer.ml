@@ -22,6 +22,15 @@ type selection_state = {
   mutable touched_selectables : Renderable.t list;
 }
 
+(* Scroll movements reported since the last presentation. A hardware scroll
+   hint is only safe when exactly one scroll container moved, purely
+   vertically, within one stable row region — anything else disqualifies the
+   whole cycle and presentation falls back to the ordinary cell diff. *)
+type scroll_hint_state =
+  | Hint_none
+  | Hint_one of { num : int; region : Grid.region; mutable delta : int }
+  | Hint_disqualified
+
 (* ───── Types ───── *)
 
 type t = {
@@ -62,6 +71,9 @@ type t = {
   mutable captured : Renderable.t option;
   (* Selection *)
   selection_state : selection_state;
+  (* Scroll hint accumulation — shared ref with the context closure, reset
+     when a presentation consumes it. *)
+  scroll_hint : scroll_hint_state ref;
   (* Frame callbacks *)
   mutable frame_callbacks : (float -> unit) list;
 }
@@ -537,6 +549,19 @@ let create ?width_method ?clock ?screen ?style () =
       touched_selectables = [];
     }
   in
+  let scroll_hint = ref Hint_none in
+  let report_scroll node ~(region : Grid.region) ~dx ~dy =
+    (* Horizontal movement and degenerate regions cannot be expressed as a
+       row shift; either disqualifies the cycle outright. *)
+    if dx <> 0 || region.height <= 1 then scroll_hint := Hint_disqualified
+    else
+      let num = Renderable.Private.num node in
+      match !scroll_hint with
+      | Hint_none -> scroll_hint := Hint_one { num; region; delta = dy }
+      | Hint_one one when one.num = num && one.region = region ->
+          one.delta <- one.delta + dy
+      | Hint_one _ | Hint_disqualified -> scroll_hint := Hint_disqualified
+  in
   let ctx : Renderable.Private.context =
     {
       tree;
@@ -589,6 +614,7 @@ let create ?width_method ?clock ?screen ?style () =
           in
           Hashtbl.remove toffee_map toffee_idx);
       width_method = (fun () -> Grid.width_method (Screen.next_grid screen));
+      report_scroll;
     }
   in
   let root_style =
@@ -626,6 +652,7 @@ let create ?width_method ?clock ?screen ?style () =
     pointer;
     captured = None;
     selection_state;
+    scroll_hint;
     frame_callbacks = [];
   }
 
@@ -865,12 +892,31 @@ let render_frame ?layout_height (t : t) ~width ~height ~delta =
         { cursor with position = None; visible = false });
   recheck_hover t
 
+(* A hint is only forwarded when the scrolled region owns the full grid
+   width: DECSTBM shifts entire terminal rows, so a narrower container would
+   drag unrelated side-by-side content and the diff would rewrite it anyway.
+   A shift of the whole region height reveals every row, which the plain diff
+   handles just as well. *)
+let take_scroll_hint t =
+  let hint = !(t.scroll_hint) in
+  t.scroll_hint := Hint_none;
+  match hint with
+  | Hint_one { region; delta; _ }
+    when delta <> 0
+         && abs delta < region.height
+         && region.x <= 0
+         && region.x + region.width >= Grid.width (Screen.next_grid t.screen) ->
+      Some
+        { Screen.top = region.y; bottom = region.y + region.height - 1; delta }
+  | Hint_none | Hint_one _ | Hint_disqualified -> None
+
 let render ?full t =
   if t.adopted then
     invalid_arg
       "Renderer.render: this renderer adopted a host screen; presentation \
        belongs to the host runtime";
-  Screen.render ?full t.screen
+  let scroll_hint = take_scroll_hint t in
+  Screen.render ?full ?scroll_hint t.screen
 
 let needs_render t = !(t.dirty) || Renderable.Private.live_count t.root > 0
 

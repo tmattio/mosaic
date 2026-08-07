@@ -428,6 +428,12 @@ module Private : sig
         (** The width computation method of the screen the tree renders into.
             Widgets read it (see {!val-width_method}) when creating text buffers
             so measurement matches how cells are laid down. *)
+    report_scroll : t -> region:Grid.region -> dx:int -> dy:int -> unit;
+        (** Reports that a scroll container shifted its content by [(dx, dy)]
+            cells. [region]'s rows are the viewport rows that visually shift;
+            its [x]/[width] are the container's horizontal footprint. The
+            renderer may turn a lone vertical shift into a hardware scroll hint
+            for presentation (see {!Renderer.take_scroll_hint}). *)
   }
   (** The type for renderer callbacks inherited by all nodes in a tree. *)
 
@@ -610,6 +616,10 @@ module Private : sig
   val request_selection_update : t -> unit
   (** [request_selection_update t] asks the renderer to re-evaluate the active
       selection against the current pointer position. *)
+
+  val report_scroll : t -> region:Grid.region -> dx:int -> dy:int -> unit
+  (** [report_scroll t ~region ~dx ~dy] forwards a scroll movement to the
+      renderer's [report_scroll] context callback. See {!type-context}. *)
 
   (** {2:clipping Child clipping} *)
 

@@ -43,6 +43,7 @@ let make_ctx ?(width_method = `Unicode) () =
       unregister =
         (fun n -> unregister_log := Renderable.id n :: !unregister_log);
       width_method = (fun () -> width_method);
+      report_scroll = (fun _ ~region:_ ~dx:_ ~dy:_ -> ());
     }
   in
   { ctx; schedule_count; focus_log; blur_log; unregister_log }

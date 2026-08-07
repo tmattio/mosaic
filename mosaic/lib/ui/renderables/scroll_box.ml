@@ -308,6 +308,20 @@ let notify t =
 
 (* ───── Scroll Position ───── *)
 
+(* Report the movement so presentation can turn a lone vertical scroll into
+   a DECSTBM hardware scroll instead of re-diffing the whole viewport. The
+   region's rows are the viewport rows that shift; its x/width are the box's
+   horizontal footprint (the renderer requires full-width ownership, since a
+   hardware scroll moves entire terminal rows). *)
+let report_scroll t ~dx ~dy =
+  let vp = Renderable.bounds t.viewport in
+  let box = Renderable.bounds t.node in
+  if vp.height > 0 && box.width > 0 then
+    Renderable.Private.report_scroll t.node
+      ~region:
+        { Grid.x = box.x; y = vp.y; width = box.width; height = vp.height }
+      ~dx ~dy
+
 let scroll_to_internal t ?(manual = true) ?x ?y () =
   let prev_x = t.scroll_x and prev_y = t.scroll_y in
   let tx = Option.value ~default:t.scroll_x x in
@@ -315,12 +329,14 @@ let scroll_to_internal t ?(manual = true) ?x ?y () =
   let nx = clamp tx ~lo:0 ~hi:t.max_scroll_x in
   let ny = clamp ty ~lo:0 ~hi:t.max_scroll_y in
   if nx <> t.scroll_x || ny <> t.scroll_y then (
+    let dx = nx - t.scroll_x and dy = ny - t.scroll_y in
     t.scroll_x <- nx;
     t.scroll_y <- ny;
     update_sticky_state t;
     set_child_offsets t;
     Scroll_bar.set_scroll_position t.vertical_bar ny;
     Scroll_bar.set_scroll_position t.horizontal_bar nx;
+    report_scroll t ~dx ~dy;
     notify t;
     Renderable.request_render t.node);
   if manual && not t.is_applying_sticky then (

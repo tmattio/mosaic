@@ -63,6 +63,7 @@ type context = {
   register : node -> unit;
   unregister : node -> unit;
   width_method : unit -> Matrix.Text.width_method;
+  report_scroll : node -> region:Grid.region -> dx:int -> dy:int -> unit;
 }
 
 and node = {
@@ -1121,6 +1122,7 @@ module Private = struct
     register : t -> unit;
     unregister : t -> unit;
     width_method : unit -> Matrix.Text.width_method;
+    report_scroll : t -> region:Grid.region -> dx:int -> dy:int -> unit;
   }
 
   let create_root ctx ?id ?style () =
@@ -1179,6 +1181,7 @@ module Private = struct
   let get_selected_text = get_selected_text
   let get_selection t = t.ctx.get_selection ()
   let request_selection_update t = t.ctx.request_selection_update ()
+  let report_scroll t ~region ~dx ~dy = t.ctx.report_scroll t ~region ~dx ~dy
 
   (* A clipping node always yields a region — possibly empty — so the
      renderer can skip its children entirely instead of painting them

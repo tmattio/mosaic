@@ -162,7 +162,8 @@
   matrix.text
   matrix.ansi
   matrix.input
-  matrix.screen))
+  matrix.screen
+  matrix.vte))
 
 (test
  (name test_reconciler)

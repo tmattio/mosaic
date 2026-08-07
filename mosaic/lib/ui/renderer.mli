@@ -110,11 +110,23 @@ val render : ?full:bool -> t -> string
 
     When [full] is [true], all cells are emitted regardless of changes. [full]
     defaults to [false]. Frame timestamps come from the [clock] given to
-    {!create}.
+    {!create}. Consumes the pending scroll hint (see {!take_scroll_hint}), so a
+    lone vertical scroll in a full-width scroll container presents as a DECSTBM
+    hardware scroll plus a diff of the revealed rows.
 
     Raises [Invalid_argument] when the renderer adopted a host screen —
     presenting there would corrupt the host runtime's diff baseline, so
     presentation belongs to the host. *)
+
+val take_scroll_hint : t -> Matrix.Screen.scroll_hint option
+(** [take_scroll_hint t] is the hardware scroll hint accumulated since the last
+    take, and resets it. [Some hint] is returned only when exactly one scroll
+    container moved, purely vertically, over a stable full-grid-width row
+    region, by less than the region height — the conditions under which a
+    DECSTBM row shift beats a cell diff. {!render} consumes the hint
+    automatically; a host runtime presenting an adopted screen calls this before
+    submitting and forwards the hint (for example via {!Matrix.set_scroll_hint},
+    which applies it in [`Alt] mode only). *)
 
 val needs_render : t -> bool
 (** [needs_render t] is [true] iff a renderable has requested a re-render or

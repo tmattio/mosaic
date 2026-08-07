@@ -27,7 +27,7 @@ let render_frame renderer =
     ~delta:16.;
   ignore (Renderer.render renderer : string)
 
-let make_transcript () =
+let make_transcript_pair () =
   let renderer = Renderer.create () in
   let scroll =
     Scroll_box.create ~parent:(Renderer.root renderer) ~style:viewport_style
@@ -40,11 +40,65 @@ let make_transcript () =
         : Text.t)
   done;
   render_frame renderer;
-  renderer
+  (renderer, scroll)
+
+let make_transcript () = fst (make_transcript_pair ())
 
 let steady_scrolled_transcript =
   Thumper.bench_with_setup ~setup:make_transcript
     "frame/scrolled-transcript-1000" render_frame
+
+(* One-row wheel tick in a full-screen transcript. With the DECSTBM scroll
+   hint the presentation shifts the region in hardware and rewrites only the
+   revealed row; without it the scrolled content changes every viewport row.
+   Rows carry distinct content — a transcript of identical rows diffs to
+   nothing when shifted and would measure an empty present. Direction
+   alternates so the position stays put across samples. *)
+type scroll_state = {
+  scroll_renderer : Renderer.t;
+  scroll_box : Scroll_box.t;
+  mutable scroll_dir : int;
+}
+
+let scroll_phrases =
+  Thumper.black_box
+    [|
+      "the daemon reported a checkpoint and forty-one workers resumed cleanly";
+      "compaction finished in the background while queries kept their latency";
+      "a replica lagged behind the quorum until the log shipped its segment";
+      "the scheduler rebalanced shards across nodes without dropping a frame";
+      "cache pressure stayed flat as the resident set crossed the threshold";
+    |]
+
+let make_scroll_by_one () =
+  let renderer = Renderer.create () in
+  let scroll =
+    Scroll_box.create ~parent:(Renderer.root renderer) ~style:viewport_style
+      ~show_scrollbars:false ()
+  in
+  for i = 1 to transcript_rows do
+    let content =
+      Printf.sprintf "%04d %s" i
+        scroll_phrases.(i mod Array.length scroll_phrases)
+    in
+    ignore
+      (Text.create ~parent:(Scroll_box.node scroll) ~style:row_style ~content
+         ~selectable:false ()
+        : Text.t)
+  done;
+  render_frame renderer;
+  Scroll_box.scroll_to scroll ~y:(transcript_rows / 2) ();
+  render_frame renderer;
+  { scroll_renderer = renderer; scroll_box = scroll; scroll_dir = 1 }
+
+let scroll_by_one_frame st =
+  Scroll_box.scroll_by st.scroll_box ~y:st.scroll_dir ();
+  st.scroll_dir <- -st.scroll_dir;
+  render_frame st.scroll_renderer
+
+let scroll_by_one =
+  Thumper.bench_with_setup ~setup:make_scroll_by_one "frame/scroll-by-one-row"
+    scroll_by_one_frame
 
 (* Steady full-frame scenario at 200x50: no scrolling, no layout changes.
    Exercises the per-frame fixed costs — buffer clears, command build, text
@@ -151,7 +205,7 @@ let () =
         Thumper.Budget.no_slower_than 0.05; Thumper.Budget.no_more_alloc_than 0.;
       ]
     [
-      Thumper.group "viewport" [ steady_scrolled_transcript ];
+      Thumper.group "viewport" [ steady_scrolled_transcript; scroll_by_one ];
       Thumper.group "idle" [ idle_full_frame ];
       Thumper.group "editor" [ editor_typing ];
     ]
