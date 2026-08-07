@@ -1,4 +1,3 @@
-type rect = { x : int; y : int; width : int; height : int }
 type id = int
 
 type t = {
@@ -6,7 +5,7 @@ type t = {
   mutable height : int;
   mutable capacity : int;
   mutable data : (int, Bigarray.int_elt, Bigarray.c_layout) Bigarray.Array1.t;
-  clip_stack : rect Dynarray.t;
+  clip_stack : Grid.region Dynarray.t;
 }
 
 let empty_id = 0
@@ -56,12 +55,12 @@ let create ~width ~height =
 
 (* Scissor stack *)
 
-let rect_intersection a b =
+let rect_intersection (a : Grid.region) (b : Grid.region) =
   let x = max a.x b.x in
   let y = max a.y b.y in
   let w = min (a.x + a.width) (b.x + b.width) - x in
   let h = min (a.y + a.height) (b.y + b.height) - y in
-  if w > 0 && h > 0 then Some { x; y; width = w; height = h } else None
+  if w > 0 && h > 0 then Some { Grid.x; y; width = w; height = h } else None
 
 let current_clip s = if Dynarray.is_empty s then None else Dynarray.find_last s
 
@@ -72,7 +71,7 @@ let push_clip t rect =
     | Some c -> (
         match rect_intersection c rect with
         | Some i -> i
-        | None -> { x = 0; y = 0; width = 0; height = 0 })
+        | None -> { Grid.x = 0; y = 0; width = 0; height = 0 })
   in
   Dynarray.add_last t.clip_stack r
 
