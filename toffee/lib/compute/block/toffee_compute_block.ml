@@ -465,7 +465,7 @@ let perform_final_layout_on_in_flow_children (type t)
         (* Update inflow_content_size *)
         inflow_content_size :=
           Size.max !inflow_content_size
-            (Compute_helpers.compute_content_size_contribution ~location
+            (Toffee_compute_helpers.compute_content_size_contribution ~location
                ~size:final_size
                ~content_size:(Layout_output.content_size item_layout)
                ~overflow:item.overflow);
@@ -906,8 +906,8 @@ let perform_absolute_layout_on_absolute_children (type t)
           (* Update absolute_content_size *)
           absolute_content_size :=
             Size.max !absolute_content_size
-              (Compute_helpers.compute_content_size_contribution ~location
-                 ~size:final_size
+              (Toffee_compute_helpers.compute_content_size_contribution
+                 ~location ~size:final_size
                  ~content_size:(Layout_output.content_size layout_output)
                  ~overflow:item.overflow)))
     items;

@@ -36,8 +36,8 @@ let align_tracks ~grid_container_content_box_size ~padding ~border ~tracks
   let is_safe = false in
   (* TODO: Implement safe alignment *)
   let track_alignment =
-    Compute_helpers.apply_alignment_fallback ~free_space ~num_items:num_tracks
-      ~alignment_mode:track_alignment_style ~is_safe
+    Toffee_compute_helpers.apply_alignment_fallback ~free_space
+      ~num_items:num_tracks ~alignment_mode:track_alignment_style ~is_safe
   in
 
   (* Compute offsets *)
@@ -54,7 +54,7 @@ let align_tracks ~grid_container_content_box_size ~padding ~border ~tracks
       let offset =
         if is_gutter then 0.0
         else
-          Compute_helpers.compute_alignment_offset ~free_space
+          Toffee_compute_helpers.compute_alignment_offset ~free_space
             ~num_items:num_tracks ~gap ~alignment_mode:track_alignment
             ~layout_is_flex_reversed:layout_is_reversed ~is_first
       in
@@ -477,7 +477,7 @@ let align_and_position_item (type t)
 
   (* Return contribution, y position, and height for baseline alignment *)
   let contribution =
-    Compute_helpers.compute_content_size_contribution
+    Toffee_compute_helpers.compute_content_size_contribution
       ~location:Point.{ x; y }
       ~size:final_size
       ~content_size:(Layout_output.content_size layout_output)

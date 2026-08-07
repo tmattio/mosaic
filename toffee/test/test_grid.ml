@@ -35,21 +35,22 @@ let test_compute_grid_size_estimate_explicit_children () =
     ]
   in
   let cols, rows =
-    Compute_grid.Implicit_grid.compute_grid_size_estimate ~explicit_col_count:6
-      ~explicit_row_count:8 ~child_styles_iter:(List.to_seq child_styles)
+    Toffee_compute_grid.Implicit_grid.compute_grid_size_estimate
+      ~explicit_col_count:6 ~explicit_row_count:8
+      ~child_styles_iter:(List.to_seq child_styles)
   in
   equal ~msg:"Inline negative implicit" int 0
-    (Compute_grid.Grid_track_counts.negative_implicit cols);
+    (Toffee_compute_grid.Grid_track_counts.negative_implicit cols);
   equal ~msg:"Inline explicit" int 6
-    (Compute_grid.Grid_track_counts.explicit cols);
+    (Toffee_compute_grid.Grid_track_counts.explicit cols);
   equal ~msg:"Inline positive implicit" int 0
-    (Compute_grid.Grid_track_counts.positive_implicit cols);
+    (Toffee_compute_grid.Grid_track_counts.positive_implicit cols);
   equal ~msg:"Block negative implicit" int 0
-    (Compute_grid.Grid_track_counts.negative_implicit rows);
+    (Toffee_compute_grid.Grid_track_counts.negative_implicit rows);
   equal ~msg:"Block explicit" int 8
-    (Compute_grid.Grid_track_counts.explicit rows);
+    (Toffee_compute_grid.Grid_track_counts.explicit rows);
   equal ~msg:"Block positive implicit" int 0
-    (Compute_grid.Grid_track_counts.positive_implicit rows)
+    (Toffee_compute_grid.Grid_track_counts.positive_implicit rows)
 
 let test_compute_grid_size_estimate_negative_implicit () =
   let child_styles =
@@ -61,21 +62,22 @@ let test_compute_grid_size_estimate_negative_implicit () =
     ]
   in
   let cols, rows =
-    Compute_grid.Implicit_grid.compute_grid_size_estimate ~explicit_col_count:4
-      ~explicit_row_count:4 ~child_styles_iter:(List.to_seq child_styles)
+    Toffee_compute_grid.Implicit_grid.compute_grid_size_estimate
+      ~explicit_col_count:4 ~explicit_row_count:4
+      ~child_styles_iter:(List.to_seq child_styles)
   in
   equal ~msg:"Inline negative implicit" int 1
-    (Compute_grid.Grid_track_counts.negative_implicit cols);
+    (Toffee_compute_grid.Grid_track_counts.negative_implicit cols);
   equal ~msg:"Inline explicit" int 4
-    (Compute_grid.Grid_track_counts.explicit cols);
+    (Toffee_compute_grid.Grid_track_counts.explicit cols);
   equal ~msg:"Inline positive implicit" int 0
-    (Compute_grid.Grid_track_counts.positive_implicit cols);
+    (Toffee_compute_grid.Grid_track_counts.positive_implicit cols);
   equal ~msg:"Block negative implicit" int 3
-    (Compute_grid.Grid_track_counts.negative_implicit rows);
+    (Toffee_compute_grid.Grid_track_counts.negative_implicit rows);
   equal ~msg:"Block explicit" int 4
-    (Compute_grid.Grid_track_counts.explicit rows);
+    (Toffee_compute_grid.Grid_track_counts.explicit rows);
   equal ~msg:"Block positive implicit" int 0
-    (Compute_grid.Grid_track_counts.positive_implicit rows)
+    (Toffee_compute_grid.Grid_track_counts.positive_implicit rows)
 
 let test_explicit_grid_sizing_auto_fill_exact_fit () =
   let grid_style =
@@ -101,17 +103,17 @@ let test_explicit_grid_sizing_auto_fill_exact_fit () =
     Style.size grid_style |> Size.map Style.Dimension.to_option
   in
   let auto_cols, col_count =
-    Compute_grid.Explicit_grid.compute_explicit_grid_size_in_axis
+    Toffee_compute_grid.Explicit_grid.compute_explicit_grid_size_in_axis
       ~style:grid_style ~auto_fit_container_size:preferred_size.width
       ~auto_fit_strategy:
-        Compute_grid.Explicit_grid.Max_repetitions_that_do_not_overflow
+        Toffee_compute_grid.Explicit_grid.Max_repetitions_that_do_not_overflow
       ~resolve_calc_value:resolve_calc ~axis:Absolute_axis.Horizontal
   in
   let auto_rows, row_count =
-    Compute_grid.Explicit_grid.compute_explicit_grid_size_in_axis
+    Toffee_compute_grid.Explicit_grid.compute_explicit_grid_size_in_axis
       ~style:grid_style ~auto_fit_container_size:preferred_size.height
       ~auto_fit_strategy:
-        Compute_grid.Explicit_grid.Max_repetitions_that_do_not_overflow
+        Toffee_compute_grid.Explicit_grid.Max_repetitions_that_do_not_overflow
       ~resolve_calc_value:resolve_calc ~axis:Absolute_axis.Vertical
   in
   equal ~msg:"Column count" int 3 col_count;
@@ -148,17 +150,17 @@ let test_explicit_grid_sizing_auto_fill_with_gaps () =
     Style.size grid_style |> Size.map Style.Dimension.to_option
   in
   let auto_cols, col_count =
-    Compute_grid.Explicit_grid.compute_explicit_grid_size_in_axis
+    Toffee_compute_grid.Explicit_grid.compute_explicit_grid_size_in_axis
       ~style:grid_style ~auto_fit_container_size:preferred_size.width
       ~auto_fit_strategy:
-        Compute_grid.Explicit_grid.Max_repetitions_that_do_not_overflow
+        Toffee_compute_grid.Explicit_grid.Max_repetitions_that_do_not_overflow
       ~resolve_calc_value:resolve_calc ~axis:Absolute_axis.Horizontal
   in
   let auto_rows, row_count =
-    Compute_grid.Explicit_grid.compute_explicit_grid_size_in_axis
+    Toffee_compute_grid.Explicit_grid.compute_explicit_grid_size_in_axis
       ~style:grid_style ~auto_fit_container_size:preferred_size.height
       ~auto_fit_strategy:
-        Compute_grid.Explicit_grid.Max_repetitions_that_do_not_overflow
+        Toffee_compute_grid.Explicit_grid.Max_repetitions_that_do_not_overflow
       ~resolve_calc_value:resolve_calc ~axis:Absolute_axis.Vertical
   in
   equal ~msg:"Column count with gap" int 2 col_count;
@@ -169,7 +171,7 @@ let test_explicit_grid_sizing_auto_fill_with_gaps () =
 (* Placement algorithm tests *)
 
 let make_counts ~neg ~explicit ~pos =
-  Compute_grid.Grid_track_counts.make ~negative_implicit:neg ~explicit
+  Toffee_compute_grid.Grid_track_counts.make ~negative_implicit:neg ~explicit
     ~positive_implicit:pos
 
 let make_grid_style
@@ -191,17 +193,19 @@ let placement_test_runner ~flow ~explicit_cols ~explicit_rows children
     List.to_seq children |> Seq.map (fun (_, style, _) -> style)
   in
   let estimated_cols, estimated_rows =
-    Compute_grid.Implicit_grid.compute_grid_size_estimate
+    Toffee_compute_grid.Implicit_grid.compute_grid_size_estimate
       ~explicit_col_count:explicit_cols ~explicit_row_count:explicit_rows
       ~child_styles_iter
   in
   let cell_occupancy =
-    Compute_grid.Cell_occupancy.with_track_counts estimated_cols estimated_rows
+    Toffee_compute_grid.Cell_occupancy.with_track_counts estimated_cols
+      estimated_rows
   in
   let items = ref [] in
-  let name_resolver = Compute_grid.Named.create Style.default 0 0 in
-  Compute_grid.Named.set_explicit_column_count name_resolver explicit_cols;
-  Compute_grid.Named.set_explicit_row_count name_resolver explicit_rows;
+  let name_resolver = Toffee_compute_grid.Named.create Style.default 0 0 in
+  Toffee_compute_grid.Named.set_explicit_column_count name_resolver
+    explicit_cols;
+  Toffee_compute_grid.Named.set_explicit_row_count name_resolver explicit_rows;
 
   let child_ids_styles =
     List.map (fun (id, style, _) -> (Tree.Node_id.make id, style)) children
@@ -228,7 +232,7 @@ let placement_test_runner ~flow ~explicit_cols ~explicit_rows children
       with type t = unit)
   in
 
-  Compute_grid.Placement.place_grid_items tree
+  Toffee_compute_grid.Placement.place_grid_items tree
     ~cell_occupancy_matrix:cell_occupancy ~items ~tree:() ~parent_node
     ~grid_auto_flow:flow ~align_items:Style.Align_items.Start
     ~justify_items:Style.Align_items.Start ~named_line_resolver:name_resolver;
@@ -238,8 +242,8 @@ let placement_test_runner ~flow ~explicit_cols ~explicit_rows children
     List.sort
       (fun a b ->
         Int.compare
-          (Tree.Node_id.index a.Compute_grid.Grid_item.node)
-          (Tree.Node_id.index b.Compute_grid.Grid_item.node))
+          (Tree.Node_id.index a.Toffee_compute_grid.Grid_item.node)
+          (Tree.Node_id.index b.Toffee_compute_grid.Grid_item.node))
       !items
   in
   let sorted_children =
@@ -250,38 +254,38 @@ let placement_test_runner ~flow ~explicit_cols ~explicit_rows children
        ->
       equal ~msg:"Column placement" (pair int int)
         (exp_col_start, exp_col_end)
-        (expected_to_tuple item.Compute_grid.Grid_item.column);
+        (expected_to_tuple item.Toffee_compute_grid.Grid_item.column);
       equal ~msg:"Row placement" (pair int int)
         (exp_row_start, exp_row_end)
-        (expected_to_tuple item.Compute_grid.Grid_item.row))
+        (expected_to_tuple item.Toffee_compute_grid.Grid_item.row))
     sorted_children sorted_items;
 
   let actual_rows =
-    Compute_grid.Cell_occupancy.track_counts cell_occupancy
+    Toffee_compute_grid.Cell_occupancy.track_counts cell_occupancy
       Geometry.Absolute_axis.Vertical
   in
   let actual_cols =
-    Compute_grid.Cell_occupancy.track_counts cell_occupancy
+    Toffee_compute_grid.Cell_occupancy.track_counts cell_occupancy
       Geometry.Absolute_axis.Horizontal
   in
   equal ~msg:"Row negative implicit" int
-    (Compute_grid.Grid_track_counts.negative_implicit expected_row_counts)
-    (Compute_grid.Grid_track_counts.negative_implicit actual_rows);
+    (Toffee_compute_grid.Grid_track_counts.negative_implicit expected_row_counts)
+    (Toffee_compute_grid.Grid_track_counts.negative_implicit actual_rows);
   equal ~msg:"Row explicit" int
-    (Compute_grid.Grid_track_counts.explicit expected_row_counts)
-    (Compute_grid.Grid_track_counts.explicit actual_rows);
+    (Toffee_compute_grid.Grid_track_counts.explicit expected_row_counts)
+    (Toffee_compute_grid.Grid_track_counts.explicit actual_rows);
   equal ~msg:"Row positive implicit" int
-    (Compute_grid.Grid_track_counts.positive_implicit expected_row_counts)
-    (Compute_grid.Grid_track_counts.positive_implicit actual_rows);
+    (Toffee_compute_grid.Grid_track_counts.positive_implicit expected_row_counts)
+    (Toffee_compute_grid.Grid_track_counts.positive_implicit actual_rows);
   equal ~msg:"Col negative implicit" int
-    (Compute_grid.Grid_track_counts.negative_implicit expected_col_counts)
-    (Compute_grid.Grid_track_counts.negative_implicit actual_cols);
+    (Toffee_compute_grid.Grid_track_counts.negative_implicit expected_col_counts)
+    (Toffee_compute_grid.Grid_track_counts.negative_implicit actual_cols);
   equal ~msg:"Col explicit" int
-    (Compute_grid.Grid_track_counts.explicit expected_col_counts)
-    (Compute_grid.Grid_track_counts.explicit actual_cols);
+    (Toffee_compute_grid.Grid_track_counts.explicit expected_col_counts)
+    (Toffee_compute_grid.Grid_track_counts.explicit actual_cols);
   equal ~msg:"Col positive implicit" int
-    (Compute_grid.Grid_track_counts.positive_implicit expected_col_counts)
-    (Compute_grid.Grid_track_counts.positive_implicit actual_cols)
+    (Toffee_compute_grid.Grid_track_counts.positive_implicit expected_col_counts)
+    (Toffee_compute_grid.Grid_track_counts.positive_implicit actual_cols)
 
 let placement_tests =
   let flow_row = Style.Grid_auto_flow.Row in

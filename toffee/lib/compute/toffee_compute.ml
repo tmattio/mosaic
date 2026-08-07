@@ -5,9 +5,9 @@ open Style
 open Tree
 
 let compute_leaf_layout = Leaf.compute_leaf_layout
-let compute_block_layout = Compute_block.compute_block_layout
-let compute_flexbox_layout = Compute_flexbox.compute_flexbox_layout
-let compute_grid_layout = Compute_grid.compute_grid_layout
+let compute_block_layout = Toffee_compute_block.compute_block_layout
+let compute_flexbox_layout = Toffee_compute_flexbox.compute_flexbox_layout
+let compute_grid_layout = Toffee_compute_grid.compute_grid_layout
 
 (** Compute layout for the root node in the tree *)
 let compute_root_layout (type t)
