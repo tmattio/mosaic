@@ -518,7 +518,12 @@ let measure_single_line t ~known_dimensions ~available_space:_ ~style:_ =
   let placeholder_width =
     Matrix.Text.measure ~width_method:`Unicode ~tab_width:2 t.props.placeholder
   in
-  let intrinsic_width = Float.of_int (max content_width placeholder_width) in
+  (* Reserve one cell for the caret: the cursor sits after the last grapheme,
+     so an intrinsically-sized input must be one cell wider than its content
+     for the caret to remain inside the node's bounds. *)
+  let intrinsic_width =
+    Float.of_int (max (content_width + 1) placeholder_width)
+  in
   let width =
     match known_dimensions.Toffee.Geometry.Size.width with
     | Some w -> w
