@@ -318,6 +318,8 @@ type ('model, 'msg) runtime = {
   mutable paste_subs : (bool * (Event.paste -> 'msg option)) list;
   mutable resize_sub : (width:int -> height:int -> 'msg) option;
   mutable tick_sub : (dt:float -> 'msg) option;
+  (* Every-timer state: (interval, next_due, callback), where next_due is an
+     absolute [Matrix.now] deadline. *)
   mutable every_subs : (float * float * (unit -> 'msg)) list;
   mutable focus_sub : 'msg option;
   mutable blur_sub : 'msg option;
@@ -463,7 +465,9 @@ let rec collect_subs runtime (sub : _ Sub.t) =
   | Sub.None -> ()
   | Sub.Batch subs -> List.iter (collect_subs runtime) subs
   | Sub.Every (interval, f) ->
-      runtime.every_subs <- (interval, 0., f) :: runtime.every_subs
+      (* The deadline is assigned in [update_subscriptions], where the current
+         time and the previous timer generation are both at hand. *)
+      runtime.every_subs <- (interval, Float.nan, f) :: runtime.every_subs
   | Sub.On_tick f -> runtime.tick_sub <- Some f
   | Sub.On_key f -> runtime.key_subs <- (false, f) :: runtime.key_subs
   | Sub.On_key_all f -> runtime.key_subs <- (true, f) :: runtime.key_subs
@@ -478,19 +482,15 @@ let rec collect_subs runtime (sub : _ Sub.t) =
 
 (* Arm the loop's one-shot wakeup at the earliest every-sub deadline, or clear
    it when no timer is pending. Runs after every subscription recollection and
-   after every frame callback — both move a timer's remaining time. *)
+   after every frame callback — both can move the earliest deadline. *)
 let arm_every_wakeup runtime =
-  let remaining =
+  let deadline =
     List.fold_left
-      (fun acc (interval, elapsed, _) ->
-        let remaining = Float.max 0. (interval -. elapsed) in
-        match acc with
-        | None -> Some remaining
-        | Some acc -> Some (Float.min acc remaining))
+      (fun acc (_, due, _) ->
+        match acc with None -> Some due | Some acc -> Some (Float.min acc due))
       None runtime.every_subs
   in
-  Matrix.schedule_wakeup runtime.matrix_app
-    (Option.map (fun r -> Matrix.now runtime.matrix_app +. r) remaining)
+  Matrix.schedule_wakeup runtime.matrix_app deadline
 
 let update_subscriptions runtime =
   let prev_every = runtime.every_subs in
@@ -504,20 +504,29 @@ let update_subscriptions runtime =
   runtime.blur_sub <- None;
   runtime.color_scheme_sub <- None;
   collect_subs runtime (runtime.app.subscriptions runtime.model);
-  (* Preserve accumulated elapsed time for every_subs that were recollected with
-     matching intervals. This prevents time resets when subscriptions are
-     re-evaluated (e.g. after dispatch from handle_tick). *)
+  (* Assign each recollected timer its deadline: a timer matching a previous
+     entry's interval keeps that entry's deadline — re-evaluating
+     subscriptions must not reset time in flight — and a new timer is due one
+     interval from now. Each previous entry is consumed at most once and the
+     pairing walks declaration order on both sides (collection prepends,
+     hence the reverse; the stored list stays in declaration order), so two
+     timers with the same interval keep independent phases and a timer added
+     later cannot steal an earlier timer's deadline. *)
+  let now = Matrix.now runtime.matrix_app in
+  let remaining_prev = ref prev_every in
   runtime.every_subs <-
     List.map
-      (fun (interval, _new_elapsed, f) ->
-        let prev_elapsed =
-          List.fold_left
-            (fun acc (prev_iv, prev_el, _) ->
-              if acc = 0. && Float.equal prev_iv interval then prev_el else acc)
-            0. prev_every
+      (fun (interval, _, f) ->
+        let rec take acc = function
+          | [] -> (now +. interval, List.rev acc)
+          | (prev_iv, prev_due, _) :: rest when Float.equal prev_iv interval ->
+              (prev_due, List.rev_append acc rest)
+          | entry :: rest -> take (entry :: acc) rest
         in
-        (interval, prev_elapsed, f))
-      runtime.every_subs;
+        let due, rest = take [] !remaining_prev in
+        remaining_prev := rest;
+        (interval, due, f))
+      (List.rev runtime.every_subs);
   (* Track subscription-driven liveness: only tick subscriptions require the
      render cadence — a tick's [dt] is frame time by definition. Every-subs
      are timers, not animations: they wake the loop at their deadline
@@ -581,30 +590,21 @@ let handle_resize runtime ~width ~height =
 let handle_tick runtime ~dt =
   match runtime.tick_sub with Some f -> push_msg runtime (f ~dt) | None -> ()
 
-(* A frame can land exactly on a timer deadline: [arm_every_wakeup] schedules a
-   wakeup at [now +. (interval -. elapsed)], and when it fires the frame delta
-   is [now' -. last_time]. Under a virtual clock that advances to precisely that
-   deadline, the delta is the subtraction of two accumulated floats and can fall
-   an ULP short of the interval, so a strict [>=] would skip the fire — while
-   [arm_every_wakeup] still reports [interval -. elapsed ≈ 0], re-arming an
-   immediately-due wakeup that never progresses (a busy loop). Two adjustments
-   keep the cadence exact: fire when the deadline is reached within a slack far
-   below any sane interval and far above float noise, and clamp the carried
-   residual to non-negative — an ULP-short fire counts as on time rather than
-   nudging the next deadline a hair past the following step. A genuine overshoot
-   (a late frame with [dt] well over the interval) still carries forward. *)
-let every_fire_slack = 1e-6
-
-let handle_every_subs runtime ~dt =
+(* Timers hold absolute deadlines, so a frame landing exactly on the armed
+   wakeup compares the very float [arm_every_wakeup] scheduled — no
+   re-accumulated delta, no epsilon. Re-arming at [due +. interval] keeps the
+   cadence fixed-rate: a late frame fires once and leaves the next deadline in
+   the past, catching up one fire per frame. *)
+let handle_every_subs runtime =
+  let now = Matrix.now runtime.matrix_app in
   runtime.every_subs <-
     List.map
-      (fun (interval, elapsed, f) ->
-        let new_elapsed = elapsed +. dt in
-        if new_elapsed >= interval -. every_fire_slack then begin
+      (fun (interval, due, f) ->
+        if now >= due then begin
           push_msg runtime (f ());
-          (interval, Float.max 0. (new_elapsed -. interval), f)
+          (interval, due +. interval, f)
         end
-        else (interval, new_elapsed, f))
+        else (interval, due, f))
       runtime.every_subs
 
 let handle_input runtime (input : Matrix.Input.t) =
@@ -759,10 +759,10 @@ let run ?matrix
   Matrix.run runtime.matrix_app ~primary_required_rows
     ~on_frame:(fun _app ~dt ->
       handle_tick runtime ~dt;
-      handle_every_subs runtime ~dt;
+      handle_every_subs runtime;
       process_pending_msgs runtime;
-      (* Timers advanced by [dt] even when nothing fired and no message
-         re-collected subscriptions, so the wakeup re-arms here. *)
+      (* A fired timer moved its deadline even when no message re-collected
+         subscriptions, so the wakeup re-arms here. *)
       arm_every_wakeup runtime;
       (* Matrix reports [dt] in seconds; the render pipeline runs on
          milliseconds. Convert once at the boundary. *)

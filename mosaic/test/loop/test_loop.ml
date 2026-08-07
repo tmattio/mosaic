@@ -603,3 +603,34 @@ let%expect_test "Cmd.focus lands on a reused element whose id changed" =
                (substring_index "\027[?25h" (Matrix_test.output t))));
     ];
   [%expect {|cursor shown after focus: true|}]
+
+let%expect_test "same-interval timers keep independent phases" =
+  (* Two Sub.every timers with the same interval must not share deadline
+     state: a timer added mid-flight (here at t=1.6 via a key) is due one
+     interval later, at t=2.6 — not at the first timer's t=2.0 deadline.
+     Elapsed-time bookkeeping matched previous timers by interval alone, so
+     the newcomer inherited the first timer's phase and fired early. *)
+  let subs model =
+    Mosaic.Sub.batch
+      (Mosaic.Sub.on_key (fun _ -> Some (Note "on"))
+      :: Mosaic.Sub.every 1.0 (fun () -> Pressed "a")
+      ::
+      (if String.equal model.note "on" then
+         [ Mosaic.Sub.every 1.0 (fun () -> Pressed "b") ]
+       else []))
+  in
+  drive (app ~subs ())
+    [
+      `Advance 1.0 (* t=1.0: a fires *);
+      `Advance 0.6 (* t=1.6 *);
+      `Feed "x" (* adds the second timer mid-interval *);
+      `Advance 0.4 (* t=2.0: a fires; b must NOT *);
+      `Snap;
+      `Advance 0.6 (* t=2.6: b fires *);
+      `Snap;
+    ];
+  [%expect
+    {||keys:[a,a] ticks:0 size:- note:on
+|
+|keys:[a,a,b] ticks:0 size:- note:on
+||}]
