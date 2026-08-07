@@ -37,6 +37,12 @@
  (libraries windtrap vte grid ansi))
 
 (test
+ (name test_vte_props)
+ (package matrix)
+ (modules test_vte_props)
+ (libraries windtrap windtrap.prop vte grid))
+
+(test
  (name test_pty)
  (package matrix)
  (modules test_pty)
