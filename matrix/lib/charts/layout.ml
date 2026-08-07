@@ -1629,11 +1629,13 @@ let compute ?(view = View.empty) ?(x = 0) ?(y = 0) (cfg : config) ~width ~height
   let y_axis_width =
     if not cfg.y_axis.show then 0
     else
+      (* Size the gutter from the resolved view: the tick labels actually
+         drawn come from the view, and zoomed-in views can need wider labels
+         than the full domain (e.g. "0.0012" inside a 0..1000 domain). *)
       let label_w =
         match y_scale_res with
-        | Numeric { domain; _ } -> axis_label_width_numeric cfg.y_axis domain
-        | Log { base; domain; _ } ->
-            axis_label_width_log cfg.y_axis ~base domain
+        | Numeric { view; _ } -> axis_label_width_numeric cfg.y_axis view
+        | Log { base; view; _ } -> axis_label_width_log cfg.y_axis ~base view
         | Band { categories; _ } -> axis_label_width_band cfg.y_axis categories
       in
       label_w + cfg.y_axis.label_padding + cfg.y_axis.tick_length + 1
@@ -1653,8 +1655,8 @@ let compute ?(view = View.empty) ?(x = 0) ?(y = 0) (cfg : config) ~width ~height
     | Some y2_ax, Some y2_sc when y2_ax.Axis.show ->
         let label_w =
           match y2_sc with
-          | Numeric { domain; _ } -> axis_label_width_numeric y2_ax domain
-          | Log { base; domain; _ } -> axis_label_width_log y2_ax ~base domain
+          | Numeric { view; _ } -> axis_label_width_numeric y2_ax view
+          | Log { base; view; _ } -> axis_label_width_log y2_ax ~base view
           | Band { categories; _ } -> axis_label_width_band y2_ax categories
         in
         label_w + y2_ax.label_padding + y2_ax.tick_length + 1

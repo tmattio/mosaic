@@ -622,6 +622,32 @@ let%expect_test "candlestick draws bodies and wicks" =
 [0;38;2;255;255;255m│                    │[0m
 [0;38;2;255;255;255m└────────────────────┘[0m|}] [@@ocamlformat "disable"]
 
+let%expect_test "zoomed y view keeps its axis labels" =
+  (* The y gutter must be sized from the resolved view's ticks: zooming into
+     a narrow range inside a wide domain needs wider labels than the domain. *)
+  let draw grid ~width ~height =
+    let chart =
+      empty ()
+      |> with_axes ~x:Axis.hidden ~y:Axis.default
+      |> with_y_scale (Scale.numeric ~domain:(`Domain (0., 1000.)) ())
+      |> line ~x:fst ~y:snd [| (0., 0.); (1., 1000.) |]
+    in
+    let view = View.(empty |> set_y (Some (window ~min:0.0011 ~max:0.0019))) in
+    draw ~view chart grid ~width ~height
+  in
+  render_chart ~width:20 ~height:8 draw;
+  [%expect_exact {|
+[0;38;2;255;255;255m┌────────────────────┐[0m
+[0;38;2;255;255;255m│        [38;5;245m│[38;5;6m│[38;2;255;255;255m          │[0m
+[0;38;2;255;255;255m│[38;5;246m0.0018[38;2;255;255;255m [38;5;245m─│[38;5;6m│[38;2;255;255;255m          │[0m
+[0;38;2;255;255;255m│        [38;5;245m│[38;5;6m│[38;2;255;255;255m          │[0m
+[0;38;2;255;255;255m│[38;5;246m0.0016[38;2;255;255;255m [38;5;245m─│[38;5;6m│[38;2;255;255;255m          │[0m
+[0;38;2;255;255;255m│[38;5;246m0.0014[38;2;255;255;255m [38;5;245m─│[38;5;6m│[38;2;255;255;255m          │[0m
+[0;38;2;255;255;255m│        [38;5;245m│[38;5;6m│[38;2;255;255;255m          │[0m
+[0;38;2;255;255;255m│[38;5;246m0.0012[38;2;255;255;255m [38;5;245m─│[38;5;6m│[38;2;255;255;255m          │[0m
+[0;38;2;255;255;255m│ [38;5;246m0.001[38;2;255;255;255m [38;5;245m─│[38;5;6m│[38;2;255;255;255m          │[0m
+[0;38;2;255;255;255m└────────────────────┘[0m|}]
+
 let%expect_test "hit test candles clamp to the wick span" =
   let draw grid ~width ~height =
     let chart =
