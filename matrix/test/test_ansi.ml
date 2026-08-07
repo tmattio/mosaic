@@ -577,6 +577,45 @@ let parser_csi_empty_parameter_defaults () =
       equal ~msg:"SGR empty param fg" check_color Color.red c
   | _ -> fail "SGR empty param should remain reset then fg"
 
+let parser_sgr_colon_subparameters () =
+  (* Underline style sub-parameters (emitted by neovim/kitty for undercurl):
+     curly degrades to plain underline, 4:0 disables, 4:2 is double. *)
+  (match Parser.parse "\x1b[4:3m" with
+  | [ Parser.SGR [ `Underline ] ] -> ()
+  | _ -> fail "4:3 (curly) should degrade to underline");
+  (match Parser.parse "\x1b[4:0m" with
+  | [ Parser.SGR [ `No_underline ] ] -> ()
+  | _ -> fail "4:0 should disable underline");
+  (match Parser.parse "\x1b[4:2m" with
+  | [ Parser.SGR [ `Double_underline ] ] -> ()
+  | _ -> fail "4:2 should parse as double underline");
+  (* Colon-form truecolor, with and without the ISO 8613-6 colorspace id. *)
+  let check_rgb name input =
+    match Parser.parse input with
+    | [ Parser.SGR [ `Fg c ] ] ->
+        let r, g, b = Color.to_rgb c in
+        equal ~msg:(name ^ " r") int 255 r;
+        equal ~msg:(name ^ " g") int 0 g;
+        equal ~msg:(name ^ " b") int 100 b
+    | _ -> fail (name ^ ": expected a single fg color")
+  in
+  check_rgb "colon rgb" "\x1b[38:2:255:0:100m";
+  check_rgb "colon rgb with colorspace" "\x1b[38:2::255:0:100m";
+  (match Parser.parse "\x1b[48:5:196m" with
+  | [ Parser.SGR [ `Bg c ] ] ->
+      equal ~msg:"colon palette bg" check_color (Color.indexed 196) c
+  | _ -> fail "48:5:196 should parse as indexed bg");
+  (* Underline color (58) is not representable: its sub-parameters must be
+     skipped, not misread as free-standing SGR parameters. *)
+  (match Parser.parse "\x1b[58:2::2:2:2m" with
+  | [ Parser.SGR [] ] -> ()
+  | _ -> fail "58:2::2:2:2 should be skipped whole");
+  (* Sub-parameterized params mixed with plain ones. *)
+  match Parser.parse "\x1b[1;4:3;31m" with
+  | [ Parser.SGR [ `Bold; `Underline; `Fg c ] ] ->
+      equal ~msg:"mixed colon fg" check_color Color.red c
+  | _ -> fail "1;4:3;31 should parse each parameter"
+
 (* --- 5. Writer & Low-Level Escape --- *)
 
 let writer_utf8_encoding () =
@@ -861,6 +900,7 @@ let tests =
         test "chunked protocol string controls"
           parser_protocol_string_controls_chunked;
         test "csi empty parameter defaults" parser_csi_empty_parameter_defaults;
+        test "sgr colon subparameters" parser_sgr_colon_subparameters;
       ];
     group "Writer & Seq"
       [

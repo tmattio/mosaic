@@ -66,45 +66,77 @@ let is_final_byte c =
   let code = Char.code c in
   code >= 0x40 && code <= 0x7e
 
-(* Parse SGR parameters - tail-recursive, no refs *)
-let parse_sgr_params params len =
+(* Parse SGR parameters - tail-recursive, no refs. Bit [i] of [colon_mask]
+   marks parameter [i] as a colon sub-parameter of the parameter before it. *)
+let parse_sgr_params params colon_mask len =
+  let is_sub i = i < len && (colon_mask lsr i) land 1 <> 0 in
+  let rec skip_subs i = if is_sub i then skip_subs (i + 1) else i in
   let rec loop i acc =
     if i >= len then List.rev acc
     else
+      (* [next] skips this parameter's colon sub-parameters so unrecognized
+         sub-parameterized forms degrade instead of being misread. *)
+      let next = skip_subs (i + 1) in
       let param = params.(i) in
       match param with
-      | 0 -> loop (i + 1) (`Reset :: acc)
-      | 1 -> loop (i + 1) (`Bold :: acc)
-      | 2 -> loop (i + 1) (`Dim :: acc)
-      | 3 -> loop (i + 1) (`Italic :: acc)
-      | 4 -> loop (i + 1) (`Underline :: acc)
-      | 21 -> loop (i + 1) (`Double_underline :: acc)
-      | 5 -> loop (i + 1) (`Blink :: acc)
-      | 7 -> loop (i + 1) (`Inverse :: acc)
-      | 8 -> loop (i + 1) (`Hidden :: acc)
-      | 9 -> loop (i + 1) (`Strikethrough :: acc)
-      | 53 -> loop (i + 1) (`Overline :: acc)
-      | 51 -> loop (i + 1) (`Framed :: acc)
-      | 52 -> loop (i + 1) (`Encircled :: acc)
-      | 22 -> loop (i + 1) (`No_dim :: `No_bold :: acc)
-      | 23 -> loop (i + 1) (`No_italic :: acc)
-      | 24 -> loop (i + 1) (`No_underline :: acc)
-      | 25 -> loop (i + 1) (`No_blink :: acc)
-      | 27 -> loop (i + 1) (`No_inverse :: acc)
-      | 28 -> loop (i + 1) (`No_hidden :: acc)
-      | 29 -> loop (i + 1) (`No_strikethrough :: acc)
-      | 54 -> loop (i + 1) (`No_encircled :: `No_framed :: acc)
-      | 55 -> loop (i + 1) (`No_overline :: acc)
-      | 39 -> loop (i + 1) (`Fg Color.default :: acc)
-      | 49 -> loop (i + 1) (`Bg Color.default :: acc)
+      | 0 -> loop next (`Reset :: acc)
+      | 1 -> loop next (`Bold :: acc)
+      | 2 -> loop next (`Dim :: acc)
+      | 3 -> loop next (`Italic :: acc)
+      | 4 when is_sub (i + 1) ->
+          (* Underline style sub-parameter: 4:0 none, 4:2 double; curly,
+             dotted and dashed degrade to plain underline. *)
+          let attr =
+            match params.(i + 1) with
+            | 0 -> `No_underline
+            | 2 -> `Double_underline
+            | _ -> `Underline
+          in
+          loop next (attr :: acc)
+      | 4 -> loop next (`Underline :: acc)
+      | 21 -> loop next (`Double_underline :: acc)
+      | 5 -> loop next (`Blink :: acc)
+      | 7 -> loop next (`Inverse :: acc)
+      | 8 -> loop next (`Hidden :: acc)
+      | 9 -> loop next (`Strikethrough :: acc)
+      | 53 -> loop next (`Overline :: acc)
+      | 51 -> loop next (`Framed :: acc)
+      | 52 -> loop next (`Encircled :: acc)
+      | 22 -> loop next (`No_dim :: `No_bold :: acc)
+      | 23 -> loop next (`No_italic :: acc)
+      | 24 -> loop next (`No_underline :: acc)
+      | 25 -> loop next (`No_blink :: acc)
+      | 27 -> loop next (`No_inverse :: acc)
+      | 28 -> loop next (`No_hidden :: acc)
+      | 29 -> loop next (`No_strikethrough :: acc)
+      | 54 -> loop next (`No_encircled :: `No_framed :: acc)
+      | 55 -> loop next (`No_overline :: acc)
+      | 39 -> loop next (`Fg Color.default :: acc)
+      | 49 -> loop next (`Bg Color.default :: acc)
       | n when 30 <= n && n <= 37 ->
-          loop (i + 1) (`Fg (Color.of_palette_index (n - 30)) :: acc)
+          loop next (`Fg (Color.of_palette_index (n - 30)) :: acc)
       | n when 90 <= n && n <= 97 ->
-          loop (i + 1) (`Fg (Color.of_palette_index (n - 90 + 8)) :: acc)
+          loop next (`Fg (Color.of_palette_index (n - 90 + 8)) :: acc)
       | n when 40 <= n && n <= 47 ->
-          loop (i + 1) (`Bg (Color.of_palette_index (n - 40)) :: acc)
+          loop next (`Bg (Color.of_palette_index (n - 40)) :: acc)
       | n when 100 <= n && n <= 107 ->
-          loop (i + 1) (`Bg (Color.of_palette_index (n - 100 + 8)) :: acc)
+          loop next (`Bg (Color.of_palette_index (n - 100 + 8)) :: acc)
+      | (38 | 48) when is_sub (i + 1) -> (
+          (* Colon color forms: 38:5:idx, 38:2:r:g:b and the ISO 8613-6
+             colorspace-id form 38:2::r:g:b (likewise for 48). *)
+          let nsubs = next - (i + 1) in
+          let color =
+            match params.(i + 1) with
+            | 5 when nsubs >= 2 -> Some (Color.of_palette_index params.(i + 2))
+            | 2 when nsubs = 4 ->
+                Some (Color.of_rgb params.(i + 2) params.(i + 3) params.(i + 4))
+            | 2 when nsubs >= 5 ->
+                Some (Color.of_rgb params.(i + 3) params.(i + 4) params.(i + 5))
+            | _ -> None
+          in
+          match color with
+          | Some c -> loop next ((if param = 38 then `Fg c else `Bg c) :: acc)
+          | None -> loop next acc)
       | 38 when i + 2 < len && params.(i + 1) = 5 ->
           let idx = params.(i + 2) in
           loop (i + 3) (`Fg (Color.of_palette_index idx) :: acc)
@@ -121,7 +153,7 @@ let parse_sgr_params params len =
           let g = params.(i + 3) in
           let b = params.(i + 4) in
           loop (i + 5) (`Bg (Color.of_rgb r g b) :: acc)
-      | _ -> loop (i + 1) acc
+      | _ -> loop next acc
   in
   loop 0 []
 
@@ -129,29 +161,42 @@ let parse_sgr_params params len =
 let max_csi_params = 32
 let csi_param_missing = -1
 
-(* Parse CSI body into parameters - returns param count *)
+(* Parse CSI body into parameters. Returns [(count, colon_mask)] where bit [i]
+   of [colon_mask] is set iff parameter [i] followed a ':' separator, i.e. it
+   is a sub-parameter of the parameter before it (ECMA-48 5.4.2). *)
 let parse_csi_params body body_len params max_params =
-  let rec parse i current saw_digit count =
+  let rec parse i current saw_digit count colon_mask =
     if i >= body_len then (
       if count < max_params then
         params.(count) <- (if saw_digit then current else csi_param_missing);
-      min (count + 1) max_params)
+      (min (count + 1) max_params, colon_mask))
     else
       match body.[i] with
       | ';' ->
           if count < max_params then
             params.(count) <- (if saw_digit then current else csi_param_missing);
-          parse (i + 1) 0 false (count + 1)
+          parse (i + 1) 0 false (count + 1) colon_mask
+      | ':' ->
+          if count < max_params then
+            params.(count) <- (if saw_digit then current else csi_param_missing);
+          let colon_mask =
+            if count + 1 < max_params then colon_mask lor (1 lsl (count + 1))
+            else colon_mask
+          in
+          parse (i + 1) 0 false (count + 1) colon_mask
       | '0' .. '9' as c ->
-          parse (i + 1) ((current * 10) + Char.code c - 48) true count
-      | _ -> parse (i + 1) current saw_digit count
+          parse (i + 1)
+            ((current * 10) + Char.code c - 48)
+            true count colon_mask
+      | _ -> parse (i + 1) current saw_digit count colon_mask
   in
-  if body_len > 0 then parse 0 0 false 0 else 0
+  if body_len > 0 then parse 0 0 false 0 0 else (0, 0)
 
 let parse_csi ~params body final : token option =
   let body_len = String.length body in
-  (* Zero out params for reuse - only need to clear used portion *)
-  let param_count = parse_csi_params body body_len params max_csi_params in
+  let param_count, colon_mask =
+    parse_csi_params body body_len params max_csi_params
+  in
   let get n default =
     if n < param_count then
       let value = params.(n) in
@@ -190,7 +235,7 @@ let parse_csi ~params body final : token option =
           for i = 0 to param_count - 1 do
             params.(i) <- sgr_param i
           done;
-          parse_sgr_params params param_count
+          parse_sgr_params params colon_mask param_count
         end
       in
       Some (SGR attrs)
