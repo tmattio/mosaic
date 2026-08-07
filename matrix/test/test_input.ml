@@ -923,6 +923,65 @@ let test_invalid_split_utf8_regression () =
          events"
         (List.length events)
 
+let test_invalid_utf8_split_equivalence_regression () =
+  (* Shrunk from a split-equivalence property counterexample:
+     "\x1b[A\x01aa\xC3\xA9a\xC2\xC3\xA9" cut at 10. An invalid UTF-8
+     sequence must decode through the legacy Meta path identically whether
+     or not a read boundary falls inside it. *)
+  let meta_shift_b =
+    key_event
+      ~modifier:
+        { Input.Modifier.none with alt = true; meta = true; shift = true }
+      (Input.Key.Char (Uchar.of_char 'B'))
+  in
+  let e_acute =
+    key_event ~associated_text:"\xC3\xA9" (Input.Key.Char (Uchar.of_int 0xE9))
+  in
+  let expected = [ meta_shift_b; e_acute ] in
+  equal ~msg:"whole feed emits legacy Meta for the invalid lead"
+    (list event_testable) expected
+    (parse_user "\xC2\xC3\xA9");
+  let parser = Input.Parser.create () in
+  equal ~msg:"split lead is buffered" (list event_testable) []
+    (feed_user parser (Bytes.of_string "\xC2") 0 1);
+  equal ~msg:"split feed emits the same stream" (list event_testable) expected
+    (feed_user parser (Bytes.of_string "\xC3\xA9") 0 2);
+
+  (* Buffered continuation bytes must not vanish when the sequence is
+     invalidated by a non-continuation byte. *)
+  let meta_p =
+    key_event
+      ~modifier:{ Input.Modifier.none with alt = true; meta = true }
+      (Input.Key.Char (Uchar.of_char 'p'))
+  in
+  let alt_ctrl_underscore =
+    key_event
+      ~modifier:
+        { Input.Modifier.none with alt = true; meta = true; ctrl = true }
+      (Input.Key.Char (Uchar.of_char '_'))
+  in
+  let expected = [ meta_p; alt_ctrl_underscore; char_event 'a' ] in
+  equal ~msg:"whole feed of truncated 4-byte sequence" (list event_testable)
+    expected (parse_user "\xF0\x9Fa");
+  let parser = Input.Parser.create () in
+  equal ~msg:"partial 4-byte sequence is buffered" (list event_testable) []
+    (feed_user parser (Bytes.of_string "\xF0\x9F") 0 2);
+  equal ~msg:"split feed of truncated 4-byte sequence" (list event_testable)
+    expected
+    (feed_user parser (Bytes.of_string "a") 0 1);
+
+  (* A buffered sequence that completes to an invalid scalar value must also
+     flush every byte through the legacy path, matching the whole feed. *)
+  let expected = parse_user "\xE0\x80\x80" in
+  is_true ~msg:"whole overlong sequence emits legacy bytes"
+    (List.length expected = 3);
+  let parser = Input.Parser.create () in
+  equal ~msg:"partial overlong sequence is buffered" (list event_testable) []
+    (feed_user parser (Bytes.of_string "\xE0\x80") 0 2);
+  equal ~msg:"split overlong sequence emits the same stream"
+    (list event_testable) expected
+    (feed_user parser (Bytes.of_string "\x80") 0 1)
+
 let test_legacy_high_byte_regressions () =
   let parser = Input.Parser.create () in
   let bytes = Bytes.of_string "\xE9" in
@@ -1545,6 +1604,8 @@ let tests =
     test "alt and alt+ctrl" test_alt_and_alt_ctrl;
     test "split UTF-8" test_split_utf8;
     test "invalid split UTF-8 regression" test_invalid_split_utf8_regression;
+    test "invalid UTF-8 split equivalence"
+      test_invalid_utf8_split_equivalence_regression;
     test "legacy high byte regressions" test_legacy_high_byte_regressions;
     test "buffer overflow" test_buffer_overflow;
     test "paste mode collection" test_paste_mode_collection;

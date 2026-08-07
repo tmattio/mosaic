@@ -1502,6 +1502,16 @@ let emit_legacy_high_byte parser byte emit =
     | Some (`User event), _ -> emit event
     | Some (`Response _), _ | None, _ -> ())
 
+(* Flush every buffered UTF-8 byte through the legacy Meta path. Used when a
+   buffered sequence is invalidated, completes to an invalid scalar value, or
+   times out. Continuation bytes can never start a new sequence, so this is
+   identical to rescanning them byte by byte. *)
+let emit_legacy_utf8_buffer parser emit =
+  for k = 0 to parser.utf8_len - 1 do
+    emit_legacy_high_byte parser (Bytes.get_uint8 parser.utf8_buf k) emit
+  done;
+  parser.utf8_len <- 0
+
 (* Callback-based text event processing - zero list allocation *)
 let text_events_iter parser bytes off len now emit =
   let end_pos = off + len in
@@ -1525,17 +1535,26 @@ let text_events_iter parser bytes off len now emit =
     if !valid && parser.utf8_len = need then begin
       let d = Bytes.get_utf_8_uchar parser.utf8_buf 0 in
       if Uchar.utf_decode_is_valid d then begin
-        let code = Uchar.to_int (Uchar.utf_decode_uchar d) in
-        match key_event_of_code parser code with Some e -> emit e | None -> ()
-      end;
-      parser.utf8_len <- 0;
+        (match
+           key_event_of_code parser (Uchar.to_int (Uchar.utf_decode_uchar d))
+         with
+        | Some e -> emit e
+        | None -> ());
+        parser.utf8_len <- 0
+      end
+      else
+        (* Completed to an invalid scalar value (overlong or out of range):
+           every buffered byte decodes through the legacy Meta path, exactly
+           as a whole-chunk scan would decode them. *)
+        emit_legacy_utf8_buffer parser emit;
       parser.flush_deadline <- None;
       i := !j
     end
     else if !valid then i := end_pos
     else begin
-      emit_legacy_high_byte parser lead emit;
-      parser.utf8_len <- 0;
+      (* The next byte is not a continuation: flush all buffered bytes, not
+         just the lead, so nothing received is dropped. *)
+      emit_legacy_utf8_buffer parser emit;
       i := !j
     end
   end;
@@ -1558,14 +1577,20 @@ let text_events_iter parser bytes off len now emit =
         (* Complete sequence available *)
         let d = Bytes.get_utf_8_uchar bytes !i in
         if Uchar.utf_decode_is_valid d then begin
-          let code = Uchar.to_int (Uchar.utf_decode_uchar d) in
-          match key_event_of_code parser code with
+          (match
+             key_event_of_code parser (Uchar.to_int (Uchar.utf_decode_uchar d))
+           with
           | Some e -> emit e
-          | None -> ()
-        end;
-        i :=
-          !i
-          + if Uchar.utf_decode_is_valid d then Uchar.utf_decode_length d else 1
+          | None -> ());
+          i := !i + Uchar.utf_decode_length d
+        end
+        else begin
+          (* Invalid decode: the lead byte goes through the legacy Meta path
+             and scanning resumes at the next byte, matching the split-feed
+             recovery. *)
+          emit_legacy_high_byte parser b emit;
+          incr i
+        end
       end
       else begin
         let valid_prefix = ref true in
@@ -1940,10 +1965,8 @@ let drain parser ~now ~on_event ~on_response =
     | Some expiry -> now >= expiry
     | None -> false
   then (
-    let lead = Bytes.get_uint8 parser.utf8_buf 0 in
-    parser.utf8_len <- 0;
     parser.flush_deadline <- None;
-    emit_legacy_high_byte parser lead on_event);
+    emit_legacy_utf8_buffer parser on_event);
   match
     ( parser.scanner_mode = `Normal,
       parser.deferred_timeout,
