@@ -267,6 +267,9 @@ let intern t str ~off ~len =
     Array.unsafe_set t.live_hashes idx hash;
     idx
 
+let live_count t = t.live_count
+let slot_count t = t.next_id - 1
+
 let valid t ~idx ~gen =
   idx > 0 && idx < t.next_id
   && Array.unsafe_get t.generations idx = gen

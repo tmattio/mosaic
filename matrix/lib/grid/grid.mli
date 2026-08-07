@@ -443,6 +443,15 @@ val diff_cells : t -> t -> (int * int) array
     Iterates over the union of both grids' dimensions. Uses epsilon comparison
     for RGBA. Sorted by row then column. *)
 
+(** {1:diagnostics Diagnostics} *)
+
+val grapheme_stats : t -> int * int
+(** [grapheme_stats g] is [(live, slots)] for [g]'s grapheme store: the number
+    of live interned payloads and the number of store slots ever allocated
+    (including freed slots awaiting reuse). The store is shared between grids
+    created with {!create_like}. Intended for tests and devtools; [slots]
+    staying bounded under churn indicates slots are reclaimed and reused. *)
+
 (** {1:converting Converting} *)
 
 val to_text : ?trim:bool -> t -> string

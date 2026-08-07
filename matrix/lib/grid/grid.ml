@@ -1094,91 +1094,99 @@ let draw_text ?style ?(tab_width = 2) t ~x ~y ~text =
             let x_min = r.x and x_max = r.x + r.width in
             fun x -> x >= x_min && x < x_max
       in
-      let writer code =
-        if !cur_x < t.width then
-          let w = Packed_cell.cell_width code in
-          if w > 0 then begin
-            let bounds_ok = !cur_x + w <= t.width && !cur_x >= 0 in
-            let start_visible = cell_visible !cur_x in
+      (* Interning is deferred until the start cell is known to be written:
+         clipped or overflowing graphemes must not allocate store slots, or
+         each distinct one would leak a refcount-0 entry. *)
+      let writer ~offset ~len ~w =
+        let bounds_ok = !cur_x + w <= t.width && !cur_x >= 0 in
+        let start_visible = cell_visible !cur_x in
 
-            if bounds_ok && start_visible then begin
-              let idx = (y * t.width) + !cur_x in
-              let br, bg, bb, ba =
+        if bounds_ok && start_visible then begin
+          let code =
+            Packed_cell.intern_sub t.grapheme_store ~width_method:t.width_method
+              ~tab_width:tabw text ~pos:offset ~len ~width:w
+          in
+          let w = Packed_cell.cell_width code in
+          begin
+            let idx = (y * t.width) + !cur_x in
+            let br, bg, bb, ba =
+              match explicit_bg with
+              | Some (_, (r, g, b, a)) -> (r, g, b, a)
+              | None ->
+                  let bg = Buf.get t.bg_color idx in
+                  ( Color_packed.red_f bg,
+                    Color_packed.green_f bg,
+                    Color_packed.blue_f bg,
+                    Color_packed.alpha_f bg )
+            in
+            let bg_color =
+              match explicit_bg with
+              | Some (color, _) -> color
+              | None -> Buf.get t.bg_color idx
+            in
+            let blending = fg_a < 0.999 || ba < 0.999 || t.respect_alpha in
+            set_cell_internal t ~idx ~code ~fg_color ~bg_color ~fg_r ~fg_g ~fg_b
+              ~fg_a ~bg_r:br ~bg_g:bg ~bg_b:bb ~bg_a:ba ~attrs ~link_id
+              ~blending;
+            for i = 1 to w - 1 do
+              let c_x = !cur_x + i in
+              let c_idx = (y * t.width) + c_x in
+              let br_c, bg_c, bb_c, ba_c =
                 match explicit_bg with
                 | Some (_, (r, g, b, a)) -> (r, g, b, a)
                 | None ->
-                    let bg = Buf.get t.bg_color idx in
+                    let bg = Buf.get t.bg_color c_idx in
                     ( Color_packed.red_f bg,
                       Color_packed.green_f bg,
                       Color_packed.blue_f bg,
                       Color_packed.alpha_f bg )
               in
-              let bg_color =
+              let bg_color_c =
                 match explicit_bg with
                 | Some (color, _) -> color
-                | None -> Buf.get t.bg_color idx
+                | None -> Buf.get t.bg_color c_idx
               in
-              let blending = fg_a < 0.999 || ba < 0.999 || t.respect_alpha in
-              set_cell_internal t ~idx ~code ~fg_color ~bg_color ~fg_r ~fg_g
-                ~fg_b ~fg_a ~bg_r:br ~bg_g:bg ~bg_b:bb ~bg_a:ba ~attrs ~link_id
-                ~blending;
-              for i = 1 to w - 1 do
-                let c_x = !cur_x + i in
-                let c_idx = (y * t.width) + c_x in
-                let br_c, bg_c, bb_c, ba_c =
+              let cont =
+                Packed_cell.make_continuation ~code ~left:i ~right:(w - 1 - i)
+              in
+              let blending_c =
+                fg_a < 0.999 || ba_c < 0.999 || t.respect_alpha
+              in
+              set_cell_internal t ~idx:c_idx ~code:cont ~fg_color
+                ~bg_color:bg_color_c ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r:br_c
+                ~bg_g:bg_c ~bg_b:bb_c ~bg_a:ba_c ~attrs ~link_id
+                ~blending:blending_c
+            done
+          end;
+          cur_x := !cur_x + w
+        end
+        else begin
+          if (not bounds_ok) && !cur_x >= 0 && !cur_x < t.width then
+            (* Wide cell overflows: fill remainder with styled spaces *)
+            for x_fill = !cur_x to t.width - 1 do
+              if cell_visible x_fill then
+                let idx = (y * t.width) + x_fill in
+                let br, bg, bb, ba =
                   match explicit_bg with
                   | Some (_, (r, g, b, a)) -> (r, g, b, a)
                   | None ->
-                      let bg = Buf.get t.bg_color c_idx in
+                      let bg = Buf.get t.bg_color idx in
                       ( Color_packed.red_f bg,
                         Color_packed.green_f bg,
                         Color_packed.blue_f bg,
                         Color_packed.alpha_f bg )
                 in
-                let bg_color_c =
+                let bg_color =
                   match explicit_bg with
                   | Some (color, _) -> color
-                  | None -> Buf.get t.bg_color c_idx
+                  | None -> Buf.get t.bg_color idx
                 in
-                let cont =
-                  Packed_cell.make_continuation ~code ~left:i ~right:(w - 1 - i)
-                in
-                let blending_c =
-                  fg_a < 0.999 || ba_c < 0.999 || t.respect_alpha
-                in
-                set_cell_internal t ~idx:c_idx ~code:cont ~fg_color
-                  ~bg_color:bg_color_c ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r:br_c
-                  ~bg_g:bg_c ~bg_b:bb_c ~bg_a:ba_c ~attrs ~link_id
-                  ~blending:blending_c
-              done
-            end
-            else if (not bounds_ok) && !cur_x >= 0 && !cur_x < t.width then
-              (* Wide cell overflows: fill remainder with styled spaces *)
-              for x_fill = !cur_x to t.width - 1 do
-                if cell_visible x_fill then
-                  let idx = (y * t.width) + x_fill in
-                  let br, bg, bb, ba =
-                    match explicit_bg with
-                    | Some (_, (r, g, b, a)) -> (r, g, b, a)
-                    | None ->
-                        let bg = Buf.get t.bg_color idx in
-                        ( Color_packed.red_f bg,
-                          Color_packed.green_f bg,
-                          Color_packed.blue_f bg,
-                          Color_packed.alpha_f bg )
-                  in
-                  let bg_color =
-                    match explicit_bg with
-                    | Some (color, _) -> color
-                    | None -> Buf.get t.bg_color idx
-                  in
-                  set_cell_internal t ~idx ~code:space_cell ~fg_color ~bg_color
-                    ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r:br ~bg_g:bg ~bg_b:bb ~bg_a:ba
-                    ~attrs ~link_id ~blending:false
-              done;
-
-            cur_x := !cur_x + w
-          end
+                set_cell_internal t ~idx ~code:space_cell ~fg_color ~bg_color
+                  ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r:br ~bg_g:bg ~bg_b:bb ~bg_a:ba
+                  ~attrs ~link_id ~blending:false
+            done;
+          cur_x := !cur_x + w
+        end
       in
 
       let stop = ref false in
@@ -1193,13 +1201,7 @@ let draw_text ?style ?(tab_width = 2) t ~x ~y ~text =
               else if start_x >= t.width then (
                 stop := true;
                 raise Exit)
-              else
-                let g =
-                  Packed_cell.intern_sub t.grapheme_store
-                    ~width_method:t.width_method ~tab_width:tabw text
-                    ~pos:offset ~len ~width:w
-                in
-                if not (Packed_cell.is_continuation g) then writer g)
+              else writer ~offset ~len ~w)
           text
       with Exit -> ()
 
@@ -1482,6 +1484,10 @@ let active_height t =
       if has_content 0 then y + 1 else find_row (y - 1)
   in
   find_row (t.height - 1)
+
+let grapheme_stats t =
+  ( Grapheme_store.live_count t.grapheme_store,
+    Grapheme_store.slot_count t.grapheme_store )
 
 let diff_cells prev curr =
   let max_w = max prev.width curr.width in

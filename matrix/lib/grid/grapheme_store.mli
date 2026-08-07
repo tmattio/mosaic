@@ -31,6 +31,15 @@ val intern : t -> string -> off:int -> len:int -> int
 
     The caller must ensure [off] and [len] designate a valid slice of [s]. *)
 
+val live_count : t -> int
+(** [live_count t] is the number of payloads currently visible to {!intern},
+    i.e. slots with a positive reference count. *)
+
+val slot_count : t -> int
+(** [slot_count t] is the number of slots ever allocated, including freed slots
+    awaiting reuse. Bounded slot growth under churn indicates the free list is
+    reusing slots. *)
+
 val valid : t -> idx:int -> gen:int -> bool
 (** [valid t ~idx ~gen] is [true] iff [(idx, gen)] currently names an allocated
     slot in [t]. *)

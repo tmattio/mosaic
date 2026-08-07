@@ -153,6 +153,41 @@ let cross_store_blit_remaps_graphemes () =
   equal ~msg:"width preserved" int 2 (Grid.cell_width dst start_idx);
   is_true ~msg:"continuation copied" (Grid.is_continuation dst cont_idx)
 
+(* Regression: draw_text used to intern graphemes before scissor and bounds
+   checks, leaking one refcount-0 store slot per distinct clipped grapheme
+   until the store's id space was exhausted. *)
+let scissored_graphemes_do_not_leak_store () =
+  let grid = Grid.create ~width:4 ~height:1 () in
+  let _, slots0 = Grid.grapheme_stats grid in
+  Grid.push_clip grid { x = 0; y = 0; width = 1; height = 1 };
+  let buf = Buffer.create 8 in
+  for i = 0 to 199 do
+    Buffer.clear buf;
+    (* Distinct flag emoji per iteration, fully outside the scissor *)
+    Buffer.add_utf_8_uchar buf (Uchar.of_int (0x1F1E6 + (i mod 26)));
+    Buffer.add_utf_8_uchar buf (Uchar.of_int (0x1F1E6 + (i / 26)));
+    Grid.draw_text grid ~x:2 ~y:0 ~text:(Buffer.contents buf)
+  done;
+  Grid.pop_clip grid;
+  let live, slots = Grid.grapheme_stats grid in
+  equal ~msg:"no live payloads" int 0 live;
+  equal ~msg:"no leaked slots" int slots0 slots
+
+let overflowing_wide_graphemes_do_not_leak_store () =
+  let grid = Grid.create ~width:4 ~height:1 () in
+  let _, slots0 = Grid.grapheme_stats grid in
+  let buf = Buffer.create 8 in
+  for i = 0 to 199 do
+    Buffer.clear buf;
+    (* Distinct flag emoji per iteration, overflowing the right edge *)
+    Buffer.add_utf_8_uchar buf (Uchar.of_int (0x1F1E6 + (i mod 26)));
+    Buffer.add_utf_8_uchar buf (Uchar.of_int (0x1F1E6 + (i / 26)));
+    Grid.draw_text grid ~x:3 ~y:0 ~text:(Buffer.contents buf)
+  done;
+  let live, slots = Grid.grapheme_stats grid in
+  equal ~msg:"no live payloads" int 0 live;
+  equal ~msg:"no leaked slots" int slots0 slots
+
 let shared_storage_cells_equal () =
   let fr =
     "\xF0\x9F\x87\xAB\xF0\x9F\x87\xB7"
@@ -1317,6 +1352,10 @@ let tests =
     test "alpha blit orphan continuation draws space"
       alpha_blit_orphan_continuation_draws_space;
     test "cross-store blit remaps graphemes" cross_store_blit_remaps_graphemes;
+    test "scissored graphemes do not leak store"
+      scissored_graphemes_do_not_leak_store;
+    test "overflowing wide graphemes do not leak store"
+      overflowing_wide_graphemes_do_not_leak_store;
     test "shared storage cells equal" shared_storage_cells_equal;
     test "shared storage links equal" shared_storage_links_equal;
     test "blit preserves respect alpha" blit_preserves_respect_alpha;
