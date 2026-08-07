@@ -1258,12 +1258,21 @@ let draw_box t ~x ~y ~width ~height ?(border = Border.single)
       let b_bg_r, b_bg_g, b_bg_b, b_bg_a = Ansi.Color.to_rgba_f bg_color in
       let b_attrs = Ansi.Attr.pack style.attrs in
 
-      let draw_b bx by uch =
+      (* Pack the border character set once: of_uchar allocates a string and
+         measures grapheme width for non-ASCII codepoints, and a full-screen
+         box redraws ~2*(w+h) border cells per frame. *)
+      let cell_top_left = Packed_cell.of_uchar border_chars.top_left in
+      let cell_top_right = Packed_cell.of_uchar border_chars.top_right in
+      let cell_bottom_left = Packed_cell.of_uchar border_chars.bottom_left in
+      let cell_bottom_right = Packed_cell.of_uchar border_chars.bottom_right in
+      let cell_horizontal = Packed_cell.of_uchar border_chars.horizontal in
+      let cell_vertical = Packed_cell.of_uchar border_chars.vertical in
+
+      let draw_b bx by cell =
         if
           bx >= 0 && by >= 0 && bx < t.width && by < t.height
           && not (is_clipped t bx by)
         then
-          let cell = Packed_cell.of_uchar uch in
           set_cell_internal t
             ~idx:((by * t.width) + bx)
             ~code:cell ~fg_color:b_fg_color ~bg_color:bg_color_packed
@@ -1281,15 +1290,13 @@ let draw_box t ~x ~y ~width ~height ?(border = Border.single)
                 let ch =
                   if c = x then
                     if has `Left then
-                      if top then border_chars.top_left
-                      else border_chars.bottom_left
-                    else border_chars.horizontal
+                      if top then cell_top_left else cell_bottom_left
+                    else cell_horizontal
                   else if c = x + width - 1 then
                     if has `Right then
-                      if top then border_chars.top_right
-                      else border_chars.bottom_right
-                    else border_chars.horizontal
-                  else border_chars.horizontal
+                      if top then cell_top_right else cell_bottom_right
+                    else cell_horizontal
+                  else cell_horizontal
                 in
                 draw_b c y_pos ch
             done
@@ -1318,13 +1325,13 @@ let draw_box t ~x ~y ~width ~height ?(border = Border.single)
       if vy_start <= vy_end then begin
         if has `Left && x >= 0 && x < t.width then
           for r = vy_start to vy_end do
-            draw_b x r border_chars.vertical
+            draw_b x r cell_vertical
           done;
         if has `Right then
           let rx = x + width - 1 in
           if rx >= 0 && rx < t.width then
             for r = vy_start to vy_end do
-              draw_b rx r border_chars.vertical
+              draw_b rx r cell_vertical
             done
       end;
 
