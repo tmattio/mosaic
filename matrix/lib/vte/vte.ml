@@ -596,20 +596,29 @@ let put_text t text =
               Text.find_wrap_pos ~width_method ~tab_width:2 s
                 ~max_columns:available
             in
-            if fit.byte_offset = 0 && len > 0 then
+            if fit.byte_offset = 0 && len > 0 then (
               if t.auto_wrap_mode && t.cursor.col > 0 then
                 (* First grapheme is wider than the space left at the margin
                    (e.g. a CJK character at the last column). Mark the line
                    full so the pending-wrap path above moves to the next row
                    and retries the same grapheme. *)
                 set_cursor_pos t ~row:t.cursor.row ~col:t.cols
-              else (
+              else
                 (* Auto-wrap off, or a grapheme wider than the whole line:
-                   defer to Grid.draw_text's truncation semantics and stop. *)
+                   draw just this grapheme with Grid.draw_text's truncation
+                   semantics and continue with the rest of the run, exactly
+                   as if the remainder had arrived in a later chunk. *)
+                let first =
+                  Text.find_pos ~width_method ~tab_width:2
+                    ~include_start_before:true s ~columns:available
+                in
+                let stop =
+                  if first.byte_offset > 0 then first.byte_offset else len
+                in
                 Grid.draw_text t.active_grid ~x:t.cursor.col ~y:t.cursor.row
-                  ~text:s ~style;
+                  ~text:(String.sub s 0 stop) ~style;
                 mark_row_dirty t t.cursor.row;
-                remaining := "")
+                remaining := String.sub s stop (len - stop))
             else
               let segment = String.sub s 0 fit.byte_offset in
               Grid.draw_text t.active_grid ~x:t.cursor.col ~y:t.cursor.row

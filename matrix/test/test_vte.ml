@@ -665,11 +665,29 @@ let unicode_wide_char_wraps_at_margin () =
     (Vte.to_string vte);
   equal ~msg:"cursor after wrapped tail" (pair int int) (1, 4)
     (Vte.cursor_pos vte);
-  (* With auto-wrap off the tail is clipped at the margin instead. *)
+  (* With auto-wrap off the unfittable wide grapheme is skipped, the next
+     character fills the margin column, and the remainder is clipped. *)
   let vte = Vte.create ~rows:2 ~cols:4 () in
   Vte.feed_string vte "\x1b[?7l";
   Vte.feed_string vte "abc全xy";
-  equal ~msg:"no wrap when DECAWM off" string "abc \n    " (Vte.to_string vte)
+  equal ~msg:"no wrap when DECAWM off" string "abcx\n    " (Vte.to_string vte)
+
+let unicode_wide_char_wider_than_line () =
+  (* Shrunk from a split-invariance property counterexample: on a 1x1 grid,
+     "你x" fed whole dropped the "x" while "你" then "x" printed it. A
+     grapheme wider than the whole line is skipped; the rest of the run must
+     still be processed. *)
+  let vte = Vte.create ~rows:1 ~cols:1 () in
+  Vte.feed_string vte "\xE4\xBD\xA0x";
+  equal ~msg:"text after unfittable wide grapheme survives" string "x"
+    (Vte.to_string vte);
+  equal ~msg:"cursor after drawn text" (pair int int) (0, 1)
+    (Vte.cursor_pos vte);
+  let split = Vte.create ~rows:1 ~cols:1 () in
+  Vte.feed_string split "\xE4\xBD\xA0";
+  Vte.feed_string split "x";
+  equal ~msg:"split feed matches whole feed" string (Vte.to_string vte)
+    (Vte.to_string split)
 
 let unicode_malformed_utf8 () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
@@ -770,6 +788,7 @@ let tests =
     test "unicode multiline" unicode_multiline;
     test "unicode wide char cursor" unicode_wide_char_cursor;
     test "unicode wide char wraps at margin" unicode_wide_char_wraps_at_margin;
+    test "unicode wide char wider than line" unicode_wide_char_wider_than_line;
     test "unicode malformed utf8" unicode_malformed_utf8;
   ]
 
