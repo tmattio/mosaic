@@ -1,5 +1,4 @@
 open Matrix
-module Image = Matrix.Image
 module Color = Image.Color
 module Style = Image.Style
 

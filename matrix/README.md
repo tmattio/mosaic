@@ -80,7 +80,7 @@ Matrix is organized into focused libraries that can be used together or independ
 | Library           | Module     | Purpose                                               |
 | ----------------- | ---------- | ----------------------------------------------------- |
 | `matrix`          | `Matrix`   | Immediate-mode runtime with render loop and callbacks |
-| `matrix`          | `Image`    | Declarative Notty-inspired composition DSL            |
+| `matrix.image`    | `Image`    | Declarative Notty-inspired composition DSL            |
 | `matrix.grid`     | `Grid`     | Mutable framebuffer with colors and styles            |
 | `matrix.screen`   | `Screen`   | Double-buffered rendering with ANSI diffing           |
 | `matrix.input`    | `Input`    | Keyboard, mouse, paste, focus event parsing           |

@@ -9,7 +9,7 @@
 
     {1:sub_libraries Sub-libraries}
 
-    {!modules:Ansi Grid Input Screen Terminal Text Image} *)
+    {!modules:Ansi Grid Input Screen Terminal Text} *)
 
 (** {1:sub Sub-libraries} *)
 
@@ -30,9 +30,6 @@ module Terminal = Terminal
 
 module Text = Text
 (** Terminal text measurement and segmentation. *)
-
-module Image = Image
-(** Declarative image composition and rendering. *)
 
 (** {1:types Types} *)
 
