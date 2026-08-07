@@ -102,7 +102,8 @@ let digits n =
   else if n < 1000000 then 6
   else 7
 
-let display_width s = Matrix.Text.measure ~width_method:`Unicode ~tab_width:2 s
+let display_width ~width_method s =
+  Matrix.Text.measure ~width_method ~tab_width:2 s
 
 let darken_color (c : Ansi.Color.t) : Ansi.Color.t =
   let r, g, b = Ansi.Color.to_rgb c in
@@ -130,22 +131,26 @@ let find_line_info_child (content_node : Renderable.t) :
 
 (* ───── Gutter Width Calculation ───── *)
 
-let max_before_width props =
+let max_before_width ~width_method props =
   List.fold_left
     (fun acc (_, (sign : line_sign)) ->
-      match sign.before with None -> acc | Some s -> max acc (display_width s))
+      match sign.before with
+      | None -> acc
+      | Some s -> max acc (display_width ~width_method s))
     0 props.Props.line_signs
 
-let max_after_width props =
+let max_after_width ~width_method props =
   List.fold_left
     (fun acc (_, (sign : line_sign)) ->
-      match sign.after with None -> acc | Some s -> max acc (display_width s))
+      match sign.after with
+      | None -> acc
+      | Some s -> max acc (display_width ~width_method s))
     0 props.Props.line_signs
 
-let compute_gutter_width props line_count =
+let compute_gutter_width ~width_method props line_count =
   if not props.Props.show_line_numbers then
-    let bw = max_before_width props in
-    let aw = max_after_width props in
+    let bw = max_before_width ~width_method props in
+    let aw = max_after_width ~width_method props in
     max props.min_width (bw + aw + props.padding_right)
   else
     let max_line = line_count + props.line_number_offset in
@@ -155,8 +160,8 @@ let compute_gutter_width props line_count =
         max_line props.line_numbers
     in
     let num_digits = digits (max 1 max_line) in
-    let bw = max_before_width props in
-    let aw = max_after_width props in
+    let bw = max_before_width ~width_method props in
+    let aw = max_after_width ~width_method props in
     (* +1 for left padding *)
     max props.min_width (bw + num_digits + aw + props.padding_right + 1)
 
@@ -190,7 +195,8 @@ let render_gutter t _self grid ~delta:_ =
         Grid.fill_rect grid ~x:gx ~y:gy ~width:gutter_w ~height:gutter_h
           ~color:bg
     | None -> ());
-    let bw = max_before_width t.props in
+    let width_method = Renderable.Private.width_method t.gutter in
+    let bw = max_before_width ~width_method t.props in
     let num_width =
       if t.props.show_line_numbers then
         let max_line = line_count + t.props.line_number_offset in
@@ -222,7 +228,7 @@ let render_gutter t _self grid ~delta:_ =
           | Some sign -> (
               match sign.before with
               | Some s ->
-                  let sw = display_width s in
+                  let sw = display_width ~width_method s in
                   let padding = bw - sw in
                   col := !col + padding;
                   let fg = Option.value ~default:t.props.fg sign.before_color in
@@ -298,7 +304,8 @@ let render_content_colors t _self grid ~delta:_ =
 let gutter_measure t ~known_dimensions ~available_space:_ ~style:_ =
   let info = find_line_info_child t.content in
   let line_count = match info with None -> 0 | Some i -> i.line_count in
-  let w = compute_gutter_width t.props line_count in
+  let width_method = Renderable.Private.width_method t.gutter in
+  let w = compute_gutter_width ~width_method t.props line_count in
   let width =
     match known_dimensions.Toffee.Geometry.Size.width with
     | Some w -> w

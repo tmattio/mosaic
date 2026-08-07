@@ -74,9 +74,13 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?respect_alpha
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
   let respect_alpha = Option.value ~default:false respect_alpha in
-  (* 1×1 placeholder; resized to match layout on the first render pass. *)
+  (* 1×1 placeholder; resized to match layout on the first render pass. The
+     grid follows the screen's width method so drawing lays cells down the
+     same way the parent grid does. *)
   let grid =
-    Grid.create ~width:1 ~height:1 ~width_method:`Unicode ~respect_alpha ()
+    Grid.create ~width:1 ~height:1
+      ~width_method:(Renderable.Private.width_method node)
+      ~respect_alpha ()
   in
   let props = Props.make ~respect_alpha () in
   let t = { node; grid; props; on_draw = None; on_resize = None } in

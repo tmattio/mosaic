@@ -33,7 +33,8 @@ val create :
 (** [create ~parent ()] is a canvas node attached to [parent].
 
     The internal grid starts at 1x1 and is resized to match the node's layout
-    dimensions on the first render pass and uses [`Unicode] width computation.
+    dimensions on the first render pass. It uses the width computation method of
+    the screen the canvas renders into.
 
     Optional parameters:
     - [index] is the child index within [parent]. Defaults to appending at the

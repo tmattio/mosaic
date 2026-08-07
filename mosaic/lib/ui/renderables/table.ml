@@ -224,9 +224,12 @@ let clamp_index t idx =
 
 (* ───── Column Width Computation ───── *)
 
-let text_width s = Matrix.Text.measure ~width_method:`Unicode ~tab_width:2 s
+(* Measure with the width method of the screen the table renders into, so
+   column sizing agrees with how Grid.draw_text lays cells down. *)
+let text_width ~width_method s =
+  Matrix.Text.measure ~width_method ~tab_width:2 s
 
-let compute_column_widths t ~available_width =
+let compute_column_widths t ~width_method ~available_width =
   let ncols = Array.length t.col_specs in
   if ncols = 0 then [||]
   else
@@ -247,12 +250,12 @@ let compute_column_widths t ~available_width =
             widths.(i) <- max 1 (n + pad2);
             fixed_total := !fixed_total + widths.(i)
         | `Auto ->
-            let header_w = text_width col.header in
+            let header_w = text_width ~width_method col.header in
             let max_cell_w =
               Array.fold_left
                 (fun acc row ->
                   if i < Array.length row then
-                    max acc (text_width (cell_plain_text row.(i)))
+                    max acc (text_width ~width_method (cell_plain_text row.(i)))
                   else acc)
                 0 t.data_rows
             in
@@ -623,7 +626,7 @@ let draw_hline grid ~border ~x ~y ~width ~left_cap ~right_cap ~cross
 
 (* ───── Grapheme-Aware Text Truncation ───── *)
 
-let crop_to_width text target_width =
+let crop_to_width ~width_method text target_width =
   if target_width <= 0 then ""
   else
     let result = Buffer.create (String.length text) in
@@ -633,7 +636,7 @@ let crop_to_width text target_width =
       (fun ~offset ~len ->
         if not !stop then
           let g = String.sub text offset len in
-          let gw = Matrix.Text.measure ~width_method:`Unicode ~tab_width:2 g in
+          let gw = Matrix.Text.measure ~width_method ~tab_width:2 g in
           if !current_width + gw <= target_width then (
             Buffer.add_string result g;
             current_width := !current_width + gw)
@@ -641,27 +644,28 @@ let crop_to_width text target_width =
       text;
     Buffer.contents result
 
-let truncate_with_ellipsis text target_width =
-  let tw = text_width text in
+let truncate_with_ellipsis ~width_method text target_width =
+  let tw = text_width ~width_method text in
   if tw <= target_width then text
-  else if target_width <= 3 then crop_to_width text target_width
+  else if target_width <= 3 then crop_to_width ~width_method text target_width
   else
-    let prefix = crop_to_width text (target_width - 3) in
+    let prefix = crop_to_width ~width_method text (target_width - 3) in
     prefix ^ "..."
 
-let apply_overflow ~overflow text target_width =
-  let tw = text_width text in
+let apply_overflow ~width_method ~overflow text target_width =
+  let tw = text_width ~width_method text in
   if tw <= target_width then text
   else
     match overflow with
-    | `Ellipsis -> truncate_with_ellipsis text target_width
-    | `Crop -> crop_to_width text target_width
+    | `Ellipsis -> truncate_with_ellipsis ~width_method text target_width
+    | `Crop -> crop_to_width ~width_method text target_width
 
 (* ───── Text Drawing ───── *)
 
-let draw_text_aligned grid ~x ~y ~width ~alignment ~overflow ~style ~text =
-  let clipped = apply_overflow ~overflow text width in
-  let tw = text_width clipped in
+let draw_text_aligned ~width_method grid ~x ~y ~width ~alignment ~overflow
+    ~style ~text =
+  let clipped = apply_overflow ~width_method ~overflow text width in
+  let tw = text_width ~width_method clipped in
   let offset =
     match alignment with
     | `Left -> 0
@@ -670,18 +674,18 @@ let draw_text_aligned grid ~x ~y ~width ~alignment ~overflow ~style ~text =
   in
   Grid.draw_text ~style grid ~x:(x + offset) ~y ~text:clipped
 
-let draw_cell_content grid ~x ~y ~col_width ~padding ~alignment ~overflow
-    ~default_style cell =
+let draw_cell_content ~width_method grid ~x ~y ~col_width ~padding ~alignment
+    ~overflow ~default_style cell =
   let content_width = max 0 (col_width - (2 * padding)) in
   let content_x = x + padding in
   match cell with
   | Plain { text; style } ->
       let st = Option.value style ~default:default_style in
-      draw_text_aligned grid ~x:content_x ~y ~width:content_width ~alignment
-        ~overflow ~style:st ~text
+      draw_text_aligned ~width_method grid ~x:content_x ~y ~width:content_width
+        ~alignment ~overflow ~style:st ~text
   | Rich fragments ->
       let plain = cell_plain_text (Rich fragments) in
-      let tw = text_width plain in
+      let tw = text_width ~width_method plain in
       let base_x =
         match alignment with
         | `Left -> content_x
@@ -702,14 +706,14 @@ let draw_cell_content grid ~x ~y ~col_width ~padding ~alignment ~overflow
             match frag with
             | Text.Text { text; style } ->
                 let st = merge_style base style in
-                let w = text_width text in
+                let w = text_width ~width_method text in
                 if !cx + w <= right_bound then (
                   Grid.draw_text ~style:st grid ~x:!cx ~y ~text;
                   cx := !cx + w)
                 else
                   let avail = right_bound - !cx in
                   if avail > 0 then (
-                    let truncated = crop_to_width text avail in
+                    let truncated = crop_to_width ~width_method text avail in
                     Grid.draw_text ~style:st grid ~x:!cx ~y ~text:truncated;
                     cx := right_bound)
             | Text.Span { children; style } ->
@@ -725,6 +729,7 @@ let render t _self grid ~delta:_ =
   let height = Renderable.height t.node in
   if width <= 0 || height <= 0 then ()
   else
+    let width_method = Renderable.Private.width_method t.node in
     let focused = Renderable.focused t.node in
     let border = t.props.border in
     let border_style = t.props.border_style in
@@ -750,7 +755,9 @@ let render t _self grid ~delta:_ =
     update_scroll_offset t;
     let show_scroll_indicator = scroll_indicator_visible t in
     let table_width = width - if show_scroll_indicator then 1 else 0 in
-    let col_widths = compute_column_widths t ~available_width:table_width in
+    let col_widths =
+      compute_column_widths t ~width_method ~available_width:table_width
+    in
 
     (* Top border *)
     if border then (
@@ -774,7 +781,7 @@ let render t _self grid ~delta:_ =
       for c = 0 to ncols - 1 do
         if c < Array.length col_widths then (
           let cw = col_widths.(c) in
-          draw_text_aligned grid ~x:(!cx + pad) ~y:!cur_y
+          draw_text_aligned ~width_method grid ~x:(!cx + pad) ~y:!cur_y
             ~width:(max 0 (cw - (2 * pad)))
             ~alignment:t.col_specs.(c).alignment
             ~overflow:t.col_specs.(c).overflow
@@ -857,8 +864,8 @@ let render t _self grid ~delta:_ =
                 | Some s -> Ansi.Style.merge ~base:default_text_style ~overlay:s
                 | None -> default_text_style
             in
-            draw_cell_content grid ~x:!cx ~y:!cur_y ~col_width:cw ~padding:pad
-              ~alignment:t.col_specs.(c).alignment
+            draw_cell_content ~width_method grid ~x:!cx ~y:!cur_y ~col_width:cw
+              ~padding:pad ~alignment:t.col_specs.(c).alignment
               ~overflow:t.col_specs.(c).overflow ~default_style:row_style
               cell_content;
             cx := !cx + cw;
@@ -938,6 +945,7 @@ let intrinsic_width t =
   let ncols = Array.length t.col_specs in
   if ncols = 0 then 0
   else
+    let width_method = Renderable.Private.width_method t.node in
     let pad = t.props.cell_padding in
     let pad2 = 2 * pad in
     let gap_width = if ncols > 1 then ncols - 1 else 0 in
@@ -949,12 +957,13 @@ let intrinsic_width t =
           match col.width with
           | `Fixed n -> max 1 (n + pad2)
           | `Auto ->
-              let header_w = text_width col.header in
+              let header_w = text_width ~width_method col.header in
               let max_cell_w =
                 Array.fold_left
                   (fun best row ->
                     if i < Array.length row then
-                      max best (text_width (cell_plain_text row.(i)))
+                      max best
+                        (text_width ~width_method (cell_plain_text row.(i)))
                     else best)
                   0 t.data_rows
               in

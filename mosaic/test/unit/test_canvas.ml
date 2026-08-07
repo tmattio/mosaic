@@ -50,6 +50,13 @@ let create_respect_alpha_true () =
   is_true ~msg:"set true" (Canvas.respect_alpha canvas);
   is_true ~msg:"grid respect_alpha" (Grid.respect_alpha (Canvas.grid canvas))
 
+let create_grid_follows_screen_width_method () =
+  let t = make_ctx ~width_method:`Wcwidth () in
+  let root = make_root t in
+  let canvas = Canvas.create ~parent:root () in
+  is_true ~msg:"grid uses the screen's width method"
+    (Grid.width_method (Canvas.grid canvas) = `Wcwidth)
+
 (* ── Auto-resize ── *)
 
 let auto_resize_on_render () =
@@ -385,6 +392,8 @@ let () =
           test "respect_alpha defaults to false"
             create_respect_alpha_default_false;
           test "respect_alpha true propagates" create_respect_alpha_true;
+          test "grid follows the screen width method"
+            create_grid_follows_screen_width_method;
         ];
       group "Auto-resize"
         [

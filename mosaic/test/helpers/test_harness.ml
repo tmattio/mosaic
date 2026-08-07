@@ -12,7 +12,7 @@ type ctx = {
 
 let next_num = ref 0
 
-let make_ctx () =
+let make_ctx ?(width_method = `Unicode) () =
   let tree = Toffee.new_tree () in
   let schedule_count = ref 0 in
   let focus_log = ref [] in
@@ -42,7 +42,7 @@ let make_ctx () =
       register = (fun _ -> ());
       unregister =
         (fun n -> unregister_log := Renderable.id n :: !unregister_log);
-      width_method = (fun () -> `Unicode);
+      width_method = (fun () -> width_method);
     }
   in
   { ctx; schedule_count; focus_log; blur_log; unregister_log }
@@ -67,5 +67,5 @@ let border_of node = Toffee.Style.border (Renderable.style node)
 
 (* ── Grid ── *)
 
-let make_grid ?(width = 80) ?(height = 24) () =
-  Grid.create ~width ~height ~width_method:`Unicode ~respect_alpha:false ()
+let make_grid ?(width = 80) ?(height = 24) ?(width_method = `Unicode) () =
+  Grid.create ~width ~height ~width_method ~respect_alpha:false ()

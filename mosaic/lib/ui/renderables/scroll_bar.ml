@@ -45,9 +45,9 @@ module Arrow = struct
 
   let measure t ~known_dimensions:_ ~available_space:_ ~style:_ =
     let text = arrow_char t.direction in
+    let width_method = Renderable.Private.width_method t.node in
     let width =
-      float_of_int
-        (max 1 (Matrix.Text.measure ~width_method:`Unicode ~tab_width:2 text))
+      float_of_int (max 1 (Matrix.Text.measure ~width_method ~tab_width:2 text))
     in
     Toffee.Geometry.Size.make width 1.
 

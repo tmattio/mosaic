@@ -622,6 +622,32 @@ let rich_cell_span_styles_apply () =
   let style = Grid.get_style grid idx in
   is_true ~msg:"span bold applies" (Ansi.Attr.mem Bold style.Ansi.Style.attrs)
 
+let auto_widths_follow_screen_width_method () =
+  (* The ZWJ family emoji measures 2 columns under [`Unicode] but 6 under
+     [`Wcwidth]; column sizing must agree with the grid the table renders
+     into, so the second column lands after 6 cells plus the 1-cell gap. *)
+  let t = make_ctx ~width_method:`Wcwidth () in
+  let root = make_root t in
+  let tbl =
+    Table.create ~parent:root
+      ~columns:[ Table.column "A"; Table.column "B" ]
+      ~rows:
+        [
+          [|
+            Table.cell
+              "\xF0\x9F\x91\xA9\xE2\x80\x8D\xF0\x9F\x91\xA9\xE2\x80\x8D\xF0\x9F\x91\xA6";
+            Table.cell "X";
+          |];
+        ]
+      ~border:false ~show_header:false ()
+  in
+  let node = Table.node tbl in
+  layout_node node ~x:0 ~y:0 ~width:12 ~height:1;
+  let grid = make_grid ~width:12 ~height:1 ~width_method:`Wcwidth () in
+  Renderable.Private.render_full node ~grid ~delta:0.;
+  equal ~msg:"second column follows wcwidth measurement" string "X"
+    (Grid.get_text grid (Grid.idx grid ~x:7 ~y:0))
+
 (* ── Setter no-ops ── *)
 
 let set_border_noop () =
@@ -805,7 +831,11 @@ let () =
           test "rich vs plain" cell_equal_rich_vs_plain;
         ];
       group "Rendering"
-        [ test "rich span styles apply" rich_cell_span_styles_apply ];
+        [
+          test "rich span styles apply" rich_cell_span_styles_apply;
+          test "auto widths follow the screen width method"
+            auto_widths_follow_screen_width_method;
+        ];
       group "Setter no-ops"
         [
           test "set_border no-op" set_border_noop;

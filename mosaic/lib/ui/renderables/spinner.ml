@@ -56,11 +56,10 @@ let node t = t.node
 
 (* ───── Display Width ───── *)
 
-let compute_max_width frames =
+let compute_max_width ~width_method frames =
   Array.fold_left
     (fun acc frame ->
-      Int.max acc
-        (Matrix.Text.measure ~width_method:`Unicode ~tab_width:2 frame))
+      Int.max acc (Matrix.Text.measure ~width_method ~tab_width:2 frame))
     0 frames
 
 (* ───── Measure ───── *)
@@ -110,7 +109,8 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
   let props = Props.make ~frame_set ~color () in
-  let max_width = compute_max_width frame_set.frames in
+  let width_method = Renderable.Private.width_method node in
+  let max_width = compute_max_width ~width_method frame_set.frames in
   let t = { node; props; frame_index = 0; elapsed = 0.; max_width } in
   Renderable.set_render node (render t);
   Renderable.set_measure node (Some (measure t));
@@ -129,7 +129,10 @@ let set_frame_set t fs =
   let n = Array.length fs.frames in
   t.frame_index <- (if n > 0 then t.frame_index mod n else 0);
   t.elapsed <- 0.;
-  t.max_width <- compute_max_width fs.frames;
+  t.max_width <-
+    compute_max_width
+      ~width_method:(Renderable.Private.width_method t.node)
+      fs.frames;
   Renderable.set_measure t.node (Some (measure t));
   Renderable.request_render t.node
 
@@ -150,7 +153,10 @@ let apply_props t (props : Props.t) =
     let n = Array.length props.frame_set.frames in
     t.frame_index <- (if n > 0 then t.frame_index mod n else 0);
     t.elapsed <- 0.);
-  t.max_width <- compute_max_width props.frame_set.frames;
+  t.max_width <-
+    compute_max_width
+      ~width_method:(Renderable.Private.width_method t.node)
+      props.frame_set.frames;
   Renderable.set_measure t.node (Some (measure t));
   Renderable.request_render t.node
 
