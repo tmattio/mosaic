@@ -19,3 +19,22 @@ render/render.scenario-ci-log-view	alloc_words	exact	88725
 render/render.scenario-ci-log-view	wall_time	batch=8	n=20	8.627e-04	8.419e-04 8.493e-04 8.497e-04 8.547e-04 8.548e-04 8.563e-04 8.603e-04 8.616e-04 8.618e-04 8.619e-04 8.635e-04 8.648e-04 8.650e-04 8.659e-04 8.692e-04 8.709e-04 8.744e-04 8.774e-04 8.949e-04 9.045e-04
 render/render.scenario-text-editor	alloc_words	batch=8	n=20	6.601e+04	6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04 6.601e+04
 render/render.scenario-text-editor	wall_time	batch=8	n=20	1.014e-03	9.954e-04 9.984e-04 1.004e-03 1.005e-03 1.007e-03 1.007e-03 1.008e-03 1.010e-03 1.010e-03 1.012e-03 1.016e-03 1.017e-03 1.020e-03 1.022e-03 1.023e-03 1.023e-03 1.024e-03 1.025e-03 1.032e-03 1.055e-03
+
+# machine: ca352e279bc47cb1
+# host: Thibauts-MacBook-2.local · Apple M1 Max · arm64 · macos
+# ocaml: 5.4.1+relocatable · 64-bit · release
+
+render/render.diff-full-screen	alloc_words	exact	20020
+render/render.diff-full-screen	wall_time	batch=8	n=20	1.011e-03	9.370e-04 9.519e-04 9.666e-04 9.685e-04 9.741e-04 9.772e-04 9.778e-04 9.786e-04 9.939e-04 1.003e-03 1.019e-03 1.019e-03 1.103e-03 1.119e-03 1.159e-03 1.170e-03 1.199e-03 1.253e-03 1.260e-03 1.331e-03
+render/render.diff-no-changes	alloc_words	exact	20025
+render/render.diff-no-changes	wall_time	batch=8	n=20	1.028e-03	9.445e-04 9.671e-04 9.727e-04 9.775e-04 9.793e-04 9.803e-04 9.914e-04 1.007e-03 1.016e-03 1.026e-03 1.031e-03 1.039e-03 1.049e-03 1.050e-03 1.055e-03 1.063e-03 1.076e-03 1.077e-03 1.170e-03 1.487e-03
+render/render.diff-single-line	alloc_words	exact	19735
+render/render.diff-single-line	wall_time	batch=8	n=20	1.061e-03	9.356e-04 9.548e-04 9.608e-04 9.631e-04 9.842e-04 9.970e-04 9.983e-04 1.008e-03 1.043e-03 1.047e-03 1.076e-03 1.111e-03 1.128e-03 1.131e-03 1.134e-03 1.152e-03 1.177e-03 1.287e-03 1.419e-03 2.966e-03
+render/render.diff-sparse-cells	alloc_words	exact	20170
+render/render.diff-sparse-cells	wall_time	batch=8	n=20	1.032e-03	9.391e-04 9.394e-04 9.475e-04 9.624e-04 9.816e-04 9.843e-04 1.002e-03 1.012e-03 1.013e-03 1.027e-03 1.038e-03 1.039e-03 1.049e-03 1.080e-03 1.090e-03 1.110e-03 1.135e-03 1.187e-03 1.379e-03 1.438e-03
+render/render.emoji-full-screen	alloc_words	exact	18088
+render/render.emoji-full-screen	wall_time	batch=8	n=20	9.697e-04	9.355e-04 9.385e-04 9.396e-04 9.420e-04 9.545e-04 9.563e-04 9.603e-04 9.668e-04 9.680e-04 9.696e-04 9.697e-04 9.705e-04 9.751e-04 9.769e-04 9.775e-04 1.005e-03 1.007e-03 1.008e-03 1.009e-03 1.023e-03
+render/render.scenario-ci-log-view	alloc_words	exact	43394
+render/render.scenario-ci-log-view	wall_time	batch=8	n=20	7.759e-04	7.488e-04 7.562e-04 7.563e-04 7.640e-04 7.645e-04 7.661e-04 7.699e-04 7.742e-04 7.747e-04 7.752e-04 7.766e-04 7.798e-04 7.834e-04 7.908e-04 7.958e-04 7.967e-04 8.001e-04 8.004e-04 8.014e-04 8.108e-04
+render/render.scenario-text-editor	alloc_words	batch=8	n=20	2.003e+04	2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04
+render/render.scenario-text-editor	wall_time	batch=8	n=20	1.007e-03	9.444e-04 9.472e-04 9.522e-04 9.706e-04 9.768e-04 9.810e-04 9.860e-04 9.956e-04 9.973e-04 9.981e-04 1.015e-03 1.021e-03 1.028e-03 1.039e-03 1.039e-03 1.042e-03 1.046e-03 1.066e-03 1.099e-03 1.191e-03

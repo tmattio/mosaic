@@ -9,3 +9,24 @@ viewport/frame-scrolled-transcript-1000	alloc_words	exact	334104
 viewport/frame-scrolled-transcript-1000	minor_collections	batch=4	n=20	1.250e+00	1.250e+00 1.250e+00 1.250e+00 1.250e+00 1.250e+00 1.250e+00 1.250e+00 1.250e+00 1.250e+00 1.250e+00 1.250e+00 1.250e+00 1.250e+00 1.500e+00 1.500e+00 1.500e+00 1.500e+00 1.500e+00 1.500e+00 1.500e+00
 viewport/frame-scrolled-transcript-1000	promoted_words	batch=4	n=20	7.608e+04	6.428e+04 6.446e+04 6.991e+04 7.184e+04 7.203e+04 7.225e+04 7.355e+04 7.355e+04 7.580e+04 7.607e+04 7.608e+04 7.609e+04 7.610e+04 7.634e+04 8.014e+04 8.034e+04 8.245e+04 8.457e+04 8.769e+04 8.789e+04
 viewport/frame-scrolled-transcript-1000	wall_time	batch=4	n=20	1.298e-03	1.137e-03 1.164e-03 1.180e-03 1.181e-03 1.186e-03 1.197e-03 1.226e-03 1.232e-03 1.274e-03 1.290e-03 1.305e-03 1.328e-03 1.340e-03 1.350e-03 1.353e-03 1.356e-03 1.359e-03 1.360e-03 1.386e-03 1.437e-03
+
+# machine: ca352e279bc47cb1
+# host: Thibauts-MacBook-2.local · Apple M1 Max · arm64 · macos
+# ocaml: 5.4.1+relocatable · 64-bit · release
+
+editor/typing-wrapped-150-lines	alloc_words	exact	244748
+editor/typing-wrapped-150-lines	minor_collections	exact	1
+editor/typing-wrapped-150-lines	promoted_words	batch=4	n=20	1.366e+04	1.355e+04 1.355e+04 1.356e+04 1.362e+04 1.362e+04 1.362e+04 1.362e+04 1.362e+04 1.365e+04 1.365e+04 1.368e+04 1.368e+04 1.368e+04 1.368e+04 1.368e+04 1.368e+04 1.368e+04 1.368e+04 1.372e+04 1.372e+04
+editor/typing-wrapped-150-lines	wall_time	batch=4	n=20	1.817e-03	1.723e-03 1.771e-03 1.776e-03 1.780e-03 1.795e-03 1.801e-03 1.803e-03 1.806e-03 1.806e-03 1.816e-03 1.818e-03 1.823e-03 1.824e-03 1.837e-03 1.839e-03 1.845e-03 1.845e-03 1.850e-03 1.881e-03 1.890e-03
+idle/frame-full-200x50	alloc_words	exact	113825
+idle/frame-full-200x50	minor_collections	batch=8	n=20	3.750e-01	3.750e-01 3.750e-01 3.750e-01 3.750e-01 3.750e-01 3.750e-01 3.750e-01 3.750e-01 3.750e-01 3.750e-01 3.750e-01 5.000e-01 5.000e-01 5.000e-01 5.000e-01 5.000e-01 5.000e-01 5.000e-01 5.000e-01 5.000e-01
+idle/frame-full-200x50	promoted_words	batch=8	n=20	1.658e+02	1.486e+02 1.581e+02 1.595e+02 1.598e+02 1.610e+02 1.614e+02 1.626e+02 1.626e+02 1.628e+02 1.629e+02 1.686e+02 1.911e+02 2.009e+02 2.060e+02 2.095e+02 2.124e+02 2.152e+02 2.164e+02 2.169e+02 2.171e+02
+idle/frame-full-200x50	wall_time	batch=8	n=20	1.209e-03	1.176e-03 1.184e-03 1.184e-03 1.200e-03 1.200e-03 1.203e-03 1.205e-03 1.207e-03 1.208e-03 1.209e-03 1.209e-03 1.210e-03 1.211e-03 1.213e-03 1.219e-03 1.220e-03 1.222e-03 1.223e-03 1.230e-03 1.273e-03
+viewport/frame-scroll-by-one-row	alloc_words	exact	60368
+viewport/frame-scroll-by-one-row	minor_collections	batch=16	n=20	2.500e-01	1.875e-01 1.875e-01 1.875e-01 1.875e-01 1.875e-01 1.875e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01
+viewport/frame-scroll-by-one-row	promoted_words	batch=16	n=20	1.051e+03	7.867e+02 7.885e+02 7.908e+02 7.911e+02 7.921e+02 7.934e+02 1.047e+03 1.048e+03 1.048e+03 1.051e+03 1.051e+03 1.053e+03 1.053e+03 1.055e+03 1.055e+03 1.056e+03 1.056e+03 1.057e+03 1.057e+03 1.058e+03
+viewport/frame-scroll-by-one-row	wall_time	batch=16	n=20	4.614e-04	4.483e-04 4.498e-04 4.506e-04 4.518e-04 4.520e-04 4.565e-04 4.574e-04 4.576e-04 4.594e-04 4.606e-04 4.623e-04 4.641e-04 4.661e-04 4.686e-04 4.708e-04 4.731e-04 4.750e-04 4.756e-04 4.941e-04 5.012e-04
+viewport/frame-scrolled-transcript-1000	alloc_words	exact	61836
+viewport/frame-scrolled-transcript-1000	minor_collections	batch=16	n=20	2.500e-01	1.875e-01 1.875e-01 1.875e-01 1.875e-01 1.875e-01 1.875e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01 2.500e-01 3.125e-01
+viewport/frame-scrolled-transcript-1000	promoted_words	batch=16	n=20	1.050e+03	7.782e+02 7.791e+02 7.896e+02 7.896e+02 7.906e+02 7.939e+02 1.044e+03 1.046e+03 1.046e+03 1.049e+03 1.052e+03 1.052e+03 1.052e+03 1.052e+03 1.052e+03 1.052e+03 1.053e+03 1.054e+03 1.055e+03 1.315e+03
+viewport/frame-scrolled-transcript-1000	wall_time	batch=16	n=20	4.527e-04	4.245e-04 4.302e-04 4.306e-04 4.342e-04 4.353e-04 4.441e-04 4.445e-04 4.500e-04 4.504e-04 4.518e-04 4.536e-04 4.592e-04 4.593e-04 4.599e-04 4.626e-04 4.647e-04 4.651e-04 4.657e-04 4.726e-04 4.731e-04

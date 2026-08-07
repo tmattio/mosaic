@@ -33,3 +33,36 @@ styled/inline_styled	alloc_words	exact	114
 styled/inline_styled	wall_time	batch=16384	n=20	3.449e-07	3.374e-07 3.377e-07 3.406e-07 3.412e-07 3.419e-07 3.426e-07 3.430e-07 3.446e-07 3.448e-07 3.449e-07 3.450e-07 3.460e-07 3.462e-07 3.480e-07 3.488e-07 3.493e-07 3.508e-07 3.517e-07 3.521e-07 3.559e-07
 styled/render_log_segments	alloc_words	exact	306
 styled/render_log_segments	wall_time	batch=4096	n=20	1.308e-06	1.275e-06 1.277e-06 1.282e-06 1.286e-06 1.289e-06 1.291e-06 1.294e-06 1.297e-06 1.303e-06 1.306e-06 1.310e-06 1.313e-06 1.313e-06 1.317e-06 1.323e-06 1.324e-06 1.335e-06 1.338e-06 1.370e-06 1.391e-06
+
+# machine: ca352e279bc47cb1
+# host: Thibauts-MacBook-2.local · Apple M1 Max · arm64 · macos
+# ocaml: 5.4.1+relocatable · 64-bit · release
+
+control/cursor_script_80x24	alloc_words	exact	49234
+control/cursor_script_80x24	wall_time	batch=32	n=20	3.091e-04	2.740e-04 2.795e-04 2.806e-04 2.814e-04 2.845e-04 2.867e-04 2.953e-04 2.959e-04 2.961e-04 3.042e-04 3.139e-04 3.165e-04 3.307e-04 3.608e-04 3.890e-04 3.932e-04 4.075e-04 4.233e-04 4.376e-04 4.928e-04
+sgr_state/sgr_alternating_styles_1920	alloc_words	exact	0
+sgr_state/sgr_alternating_styles_1920	wall_time	batch=16	n=20	3.653e-04	3.561e-04 3.563e-04 3.581e-04 3.593e-04 3.594e-04 3.598e-04 3.599e-04 3.611e-04 3.633e-04 3.639e-04 3.667e-04 3.739e-04 3.858e-04 3.876e-04 3.887e-04 4.235e-04 4.399e-04 4.544e-04 5.086e-04 5.163e-04
+sgr_state/sgr_hyperlink_transitions	alloc_words	exact	0
+sgr_state/sgr_hyperlink_transitions	wall_time	batch=512	n=20	1.046e-05	9.555e-06 9.670e-06 9.778e-06 1.035e-05 1.036e-05 1.037e-05 1.037e-05 1.041e-05 1.041e-05 1.043e-05 1.050e-05 1.059e-05 1.157e-05 1.212e-05 1.270e-05 1.286e-05 1.315e-05 1.468e-05 1.555e-05 1.770e-05
+sgr_state/sgr_partial_changes	alloc_words	exact	0
+sgr_state/sgr_partial_changes	wall_time	batch=64	n=20	1.356e-04	1.125e-04 1.131e-04 1.134e-04 1.136e-04 1.150e-04 1.183e-04 1.190e-04 1.234e-04 1.250e-04 1.339e-04 1.372e-04 1.434e-04 1.489e-04 1.844e-04 2.046e-04 2.245e-04 2.541e-04 2.568e-04 2.703e-04 2.940e-04
+sgr_state/sgr_same_style_1920	alloc_words	exact	0
+sgr_state/sgr_same_style_1920	wall_time	batch=512	n=20	1.382e-05	1.272e-05 1.272e-05 1.273e-05 1.289e-05 1.298e-05 1.327e-05 1.333e-05 1.346e-05 1.353e-05 1.381e-05 1.383e-05 1.383e-05 1.384e-05 1.385e-05 1.476e-05 1.625e-05 1.661e-05 1.686e-05 1.785e-05 1.881e-05
+sgr_state/sgr_tui_frame_80x24	alloc_words	exact	0
+sgr_state/sgr_tui_frame_80x24	wall_time	batch=256	n=20	3.816e-05	3.472e-05 3.492e-05 3.527e-05 3.544e-05 3.745e-05 3.756e-05 3.759e-05 3.761e-05 3.774e-05 3.799e-05 3.833e-05 3.842e-05 3.887e-05 4.064e-05 4.275e-05 4.401e-05 4.491e-05 4.793e-05 5.265e-05 5.373e-05
+strip_parse/parse_ansi_block	alloc_words	exact	59064
+strip_parse/parse_ansi_block	wall_time	batch=32	n=20	2.926e-04	2.694e-04 2.697e-04 2.735e-04 2.769e-04 2.779e-04 2.788e-04 2.843e-04 2.871e-04 2.887e-04 2.906e-04 2.945e-04 2.950e-04 2.956e-04 2.979e-04 2.994e-04 3.126e-04 3.130e-04 3.306e-04 4.235e-04 4.823e-04
+strip_parse/parse_ansi_block_iter	alloc_words	exact	49688
+strip_parse/parse_ansi_block_iter	wall_time	batch=32	n=20	2.566e-04	2.275e-04 2.277e-04 2.283e-04 2.335e-04 2.371e-04 2.379e-04 2.395e-04 2.483e-04 2.508e-04 2.548e-04 2.584e-04 2.593e-04 2.604e-04 2.604e-04 2.608e-04 2.640e-04 2.665e-04 2.738e-04 3.460e-04 6.768e-04
+strip_parse/parse_tui_frame	alloc_words	exact	5268
+strip_parse/parse_tui_frame	wall_time	batch=128	n=20	4.272e-05	3.920e-05 3.920e-05 3.925e-05 3.950e-05 3.968e-05 4.059e-05 4.063e-05 4.084e-05 4.214e-05 4.269e-05 4.276e-05 4.290e-05 4.293e-05 4.295e-05 4.348e-05 4.758e-05 5.096e-05 5.400e-05 5.974e-05 6.623e-05
+strip_parse/parse_tui_frame_iter	alloc_words	exact	4364
+strip_parse/parse_tui_frame_iter	wall_time	batch=128	n=20	4.211e-05	3.868e-05 3.878e-05 3.883e-05 3.908e-05 3.975e-05 3.989e-05 3.989e-05 3.993e-05 4.192e-05 4.207e-05 4.216e-05 4.235e-05 4.754e-05 4.764e-05 4.983e-05 5.060e-05 5.410e-05 5.892e-05 1.177e-04 1.664e-04
+strip_parse/strip_ansi_block	alloc_words	exact	3917
+strip_parse/strip_ansi_block	wall_time	batch=256	n=20	2.670e-05	2.478e-05 2.479e-05 2.482e-05 2.505e-05 2.516e-05 2.531e-05 2.542e-05 2.548e-05 2.611e-05 2.666e-05 2.673e-05 2.706e-05 2.748e-05 2.775e-05 2.846e-05 2.947e-05 3.178e-05 3.393e-05 3.661e-05 4.082e-05
+strip_parse/strip_plain_block	alloc_words	exact	0
+strip_parse/strip_plain_block	wall_time	batch=512	n=20	1.360e-05	1.297e-05 1.298e-05 1.299e-05 1.301e-05 1.304e-05 1.327e-05 1.328e-05 1.329e-05 1.348e-05 1.352e-05 1.369e-05 1.375e-05 1.381e-05 1.406e-05 1.408e-05 1.414e-05 1.423e-05 1.486e-05 1.554e-05 2.538e-05
+styled/inline_styled	alloc_words	exact	114
+styled/inline_styled	wall_time	batch=16384	n=20	4.053e-07	3.730e-07 3.733e-07 3.759e-07 3.795e-07 3.934e-07 3.987e-07 4.025e-07 4.043e-07 4.049e-07 4.051e-07 4.054e-07 4.075e-07 4.078e-07 4.080e-07 4.093e-07 4.184e-07 4.190e-07 4.198e-07 4.217e-07 4.541e-07
+styled/render_log_segments	alloc_words	exact	306
+styled/render_log_segments	wall_time	batch=4096	n=20	1.546e-06	1.427e-06 1.434e-06 1.434e-06 1.436e-06 1.440e-06 1.522e-06 1.545e-06 1.545e-06 1.546e-06 1.546e-06 1.547e-06 1.547e-06 1.548e-06 1.548e-06 1.549e-06 1.564e-06 1.565e-06 1.567e-06 1.611e-06 1.664e-06

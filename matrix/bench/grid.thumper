@@ -19,3 +19,22 @@ grid/grid.partial_update-status-line	alloc_words	exact	251
 grid/grid.partial_update-status-line	wall_time	batch=2048	n=20	3.800e-06	3.748e-06 3.763e-06 3.763e-06 3.768e-06 3.773e-06 3.778e-06 3.783e-06 3.783e-06 3.789e-06 3.792e-06 3.809e-06 3.810e-06 3.813e-06 3.816e-06 3.839e-06 3.850e-06 3.858e-06 3.868e-06 3.872e-06 3.930e-06
 grid/grid.scroll-terminal-region	alloc_words	exact	10080
 grid/grid.scroll-terminal-region	wall_time	batch=16	n=20	3.826e-04	3.743e-04 3.748e-04 3.776e-04 3.781e-04 3.782e-04 3.782e-04 3.805e-04 3.814e-04 3.816e-04 3.824e-04 3.828e-04 3.854e-04 3.881e-04 3.935e-04 3.979e-04 3.996e-04 4.029e-04 4.062e-04 4.095e-04 4.124e-04
+
+# machine: ca352e279bc47cb1
+# host: Thibauts-MacBook-2.local · Apple M1 Max · arm64 · macos
+# ocaml: 5.4.1+relocatable · 64-bit · release
+
+grid/grid.draw_text-ascii-full-screen	alloc_words	exact	19968
+grid/grid.draw_text-ascii-full-screen	wall_time	batch=16	n=20	3.825e-04	3.760e-04 3.765e-04 3.776e-04 3.779e-04 3.780e-04 3.790e-04 3.809e-04 3.820e-04 3.822e-04 3.824e-04 3.826e-04 3.829e-04 3.835e-04 3.835e-04 3.839e-04 3.843e-04 3.845e-04 3.869e-04 3.930e-04 3.991e-04
+grid/grid.draw_text-emoji-full-screen	alloc_words	exact	10752
+grid/grid.draw_text-emoji-full-screen	wall_time	batch=32	n=20	2.761e-04	2.686e-04 2.688e-04 2.689e-04 2.696e-04 2.707e-04 2.709e-04 2.725e-04 2.728e-04 2.730e-04 2.737e-04 2.784e-04 2.808e-04 2.833e-04 2.843e-04 2.905e-04 2.955e-04 3.106e-04 7.945e-04 1.103e-03 2.527e-03
+grid/grid.fill_rect-opaque-full	alloc_words	exact	39
+grid/grid.fill_rect-opaque-full	wall_time	batch=2048	n=20	4.838e-06	4.598e-06 4.600e-06 4.625e-06 4.653e-06 4.671e-06 4.684e-06 4.691e-06 4.753e-06 4.769e-06 4.802e-06 4.875e-06 4.906e-06 4.906e-06 4.915e-06 4.949e-06 4.975e-06 4.990e-06 4.993e-06 5.168e-06 5.300e-06
+grid/grid.fill_rect-translucent-overlay	alloc_words	exact	107550
+grid/grid.fill_rect-translucent-overlay	wall_time	batch=8	n=20	8.150e-04	7.933e-04 7.978e-04 7.980e-04 8.027e-04 8.030e-04 8.053e-04 8.063e-04 8.083e-04 8.144e-04 8.146e-04 8.155e-04 8.187e-04 8.207e-04 8.224e-04 8.246e-04 8.251e-04 8.267e-04 8.287e-04 8.335e-04 8.356e-04
+grid/grid.partial_update-sparse-cells	alloc_words	exact	144
+grid/grid.partial_update-sparse-cells	wall_time	batch=16384	n=20	5.327e-07	5.225e-07 5.226e-07 5.238e-07 5.247e-07 5.260e-07 5.307e-07 5.307e-07 5.319e-07 5.323e-07 5.325e-07 5.329e-07 5.339e-07 5.348e-07 5.357e-07 5.369e-07 5.372e-07 5.386e-07 5.416e-07 5.428e-07 5.491e-07
+grid/grid.partial_update-status-line	alloc_words	exact	256
+grid/grid.partial_update-status-line	wall_time	batch=2048	n=20	3.685e-06	3.609e-06 3.638e-06 3.640e-06 3.662e-06 3.665e-06 3.667e-06 3.669e-06 3.672e-06 3.675e-06 3.681e-06 3.690e-06 3.693e-06 3.703e-06 3.708e-06 3.724e-06 3.737e-06 3.743e-06 3.768e-06 3.787e-06 3.807e-06
+grid/grid.scroll-terminal-region	alloc_words	exact	10180
+grid/grid.scroll-terminal-region	wall_time	batch=16	n=20	4.133e-04	4.003e-04 4.024e-04 4.031e-04 4.044e-04 4.062e-04 4.065e-04 4.065e-04 4.081e-04 4.131e-04 4.133e-04 4.133e-04 4.149e-04 4.176e-04 4.177e-04 4.182e-04 4.185e-04 4.219e-04 4.267e-04 4.276e-04 4.305e-04

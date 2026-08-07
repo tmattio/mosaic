@@ -25,3 +25,28 @@ input/typing-ascii-burst	alloc_words	exact	502
 input/typing-ascii-burst	wall_time	batch=1024	n=20	8.107e-06	7.968e-06 7.985e-06 8.017e-06 8.029e-06 8.031e-06 8.064e-06 8.064e-06 8.090e-06 8.099e-06 8.107e-06 8.108e-06 8.122e-06 8.136e-06 8.158e-06 8.162e-06 8.163e-06 8.188e-06 8.210e-06 8.238e-06 8.448e-06
 input/typing-unicode-burst	alloc_words	exact	14174
 input/typing-unicode-burst	wall_time	batch=256	n=20	3.074e-05	2.994e-05 3.028e-05 3.048e-05 3.049e-05 3.051e-05 3.055e-05 3.062e-05 3.067e-05 3.071e-05 3.074e-05 3.074e-05 3.083e-05 3.088e-05 3.101e-05 3.102e-05 3.102e-05 3.106e-05 3.167e-05 3.176e-05 3.188e-05
+
+# machine: ca352e279bc47cb1
+# host: Thibauts-MacBook-2.local · Apple M1 Max · arm64 · macos
+# ocaml: 5.4.1+relocatable · 64-bit · release
+
+input/keyboard-kitty-hot	alloc_words	exact	256008
+input/keyboard-kitty-hot	wall_time	batch=32	n=20	2.830e-04	2.740e-04 2.775e-04 2.787e-04 2.799e-04 2.803e-04 2.816e-04 2.817e-04 2.820e-04 2.828e-04 2.830e-04 2.831e-04 2.843e-04 2.846e-04 2.848e-04 2.849e-04 2.851e-04 2.861e-04 2.873e-04 2.886e-04 2.951e-04
+input/keyboard-legacy-hot	alloc_words	exact	142458
+input/keyboard-legacy-hot	wall_time	batch=32	n=20	1.513e-04	1.464e-04 1.474e-04 1.477e-04 1.482e-04 1.485e-04 1.492e-04 1.497e-04 1.502e-04 1.505e-04 1.513e-04 1.513e-04 1.513e-04 1.515e-04 1.522e-04 1.524e-04 1.534e-04 1.540e-04 1.547e-04 1.770e-04 1.891e-04
+input/mouse-mixed	alloc_words	exact	20232
+input/mouse-mixed	wall_time	batch=256	n=20	2.239e-05	2.157e-05 2.171e-05 2.173e-05 2.197e-05 2.204e-05 2.204e-05 2.233e-05 2.235e-05 2.236e-05 2.236e-05 2.242e-05 2.243e-05 2.255e-05 2.259e-05 2.259e-05 2.267e-05 2.270e-05 2.283e-05 2.297e-05 2.313e-05
+input/paste-ci-log	alloc_words	exact	1337
+input/paste-ci-log	wall_time	batch=64	n=20	9.063e-05	8.790e-05 8.903e-05 8.941e-05 8.953e-05 8.965e-05 8.998e-05 9.019e-05 9.045e-05 9.051e-05 9.061e-05 9.065e-05 9.091e-05 9.099e-05 9.128e-05 9.145e-05 9.160e-05 9.163e-05 9.184e-05 9.243e-05 9.682e-05
+input/paste-overflow-recovery	alloc_words	exact	22
+input/paste-overflow-recovery	wall_time	batch=1	n=20	1.016e-02	9.169e-03 9.179e-03 9.201e-03 9.213e-03 9.223e-03 9.242e-03 9.259e-03 9.321e-03 9.461e-03 1.012e-02 1.019e-02 1.021e-02 1.099e-02 1.179e-02 1.183e-02 1.197e-02 1.286e-02 1.321e-02 1.433e-02 1.640e-02
+input/paste-split-end-marker	alloc_words	exact	41045
+input/paste-split-end-marker	wall_time	batch=2	n=20	2.992e-03	2.902e-03 2.910e-03 2.923e-03 2.947e-03 2.958e-03 2.967e-03 2.969e-03 2.976e-03 2.982e-03 2.992e-03 2.993e-03 3.000e-03 3.001e-03 3.003e-03 3.015e-03 3.023e-03 3.078e-03 3.919e-03 4.393e-03 4.491e-03
+input/paste-valid-1MiB	alloc_words	exact	131089
+input/paste-valid-1MiB	wall_time	batch=1	n=20	1.067e-02	9.284e-03 9.434e-03 9.525e-03 9.606e-03 9.639e-03 9.697e-03 9.706e-03 9.896e-03 1.030e-02 1.059e-02 1.074e-02 1.106e-02 1.108e-02 1.158e-02 1.192e-02 1.194e-02 1.209e-02 1.210e-02 1.245e-02 1.644e-02
+input/paste-valid-64KiB	alloc_words	exact	8209
+input/paste-valid-64KiB	wall_time	batch=16	n=20	5.919e-04	5.781e-04 5.815e-04 5.823e-04 5.859e-04 5.883e-04 5.896e-04 5.899e-04 5.913e-04 5.916e-04 5.918e-04 5.920e-04 5.925e-04 5.927e-04 5.933e-04 5.939e-04 5.943e-04 5.953e-04 5.980e-04 6.052e-04 6.098e-04
+input/typing-ascii-burst	alloc_words	exact	502
+input/typing-ascii-burst	wall_time	batch=1024	n=20	8.291e-06	8.171e-06 8.215e-06 8.223e-06 8.231e-06 8.249e-06 8.251e-06 8.252e-06 8.266e-06 8.280e-06 8.284e-06 8.297e-06 8.300e-06 8.305e-06 8.306e-06 8.313e-06 8.316e-06 8.334e-06 8.356e-06 8.377e-06 8.401e-06
+input/typing-unicode-burst	alloc_words	exact	14174
+input/typing-unicode-burst	wall_time	batch=256	n=20	2.834e-05	2.748e-05 2.750e-05 2.761e-05 2.775e-05 2.784e-05 2.806e-05 2.825e-05 2.826e-05 2.828e-05 2.834e-05 2.834e-05 2.836e-05 2.836e-05 2.837e-05 2.840e-05 2.850e-05 2.865e-05 2.882e-05 2.914e-05 2.917e-05

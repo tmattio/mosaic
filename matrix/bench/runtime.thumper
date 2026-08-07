@@ -9,3 +9,12 @@ render/submit-no-changes	alloc_words	exact	46801
 render/submit-no-changes	wall_time	batch=16	n=20	5.815e-04	5.721e-04 5.733e-04 5.749e-04 5.751e-04 5.754e-04 5.759e-04 5.760e-04 5.780e-04 5.801e-04 5.812e-04 5.817e-04 5.830e-04 5.841e-04 5.859e-04 5.863e-04 5.892e-04 5.894e-04 5.902e-04 5.916e-04 5.947e-04
 render/submit-single-cell	alloc_words	exact	46858
 render/submit-single-cell	wall_time	batch=16	n=20	5.850e-04	5.740e-04 5.753e-04 5.777e-04 5.793e-04 5.827e-04 5.831e-04 5.835e-04 5.836e-04 5.841e-04 5.848e-04 5.853e-04 5.856e-04 5.858e-04 5.859e-04 5.865e-04 5.868e-04 5.879e-04 5.902e-04 5.916e-04 5.921e-04
+
+# machine: ca352e279bc47cb1
+# host: Thibauts-MacBook-2.local · Apple M1 Max · arm64 · macos
+# ocaml: 5.4.1+relocatable · 64-bit · release
+
+render/submit-no-changes	alloc_words	exact	11
+render/submit-no-changes	wall_time	batch=16	n=20	5.070e-04	4.938e-04 4.939e-04 4.956e-04 4.957e-04 4.961e-04 4.981e-04 4.985e-04 4.986e-04 4.990e-04 5.008e-04 5.132e-04 5.189e-04 5.209e-04 5.242e-04 5.299e-04 5.335e-04 5.349e-04 5.371e-04 5.384e-04 5.486e-03
+render/submit-single-cell	alloc_words	exact	97
+render/submit-single-cell	wall_time	batch=8	n=20	5.439e-04	5.329e-04 5.419e-04 5.420e-04 5.423e-04 5.426e-04 5.429e-04 5.431e-04 5.432e-04 5.433e-04 5.436e-04 5.441e-04 5.483e-04 5.495e-04 5.549e-04 5.764e-04 5.976e-04 6.017e-04 6.568e-04 7.849e-04 1.835e-03

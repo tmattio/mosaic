@@ -39,3 +39,42 @@ width/width-complex-unicode	alloc_words	exact	7
 width/width-complex-unicode	wall_time	batch=512	n=20	1.215e-05	1.190e-05 1.191e-05 1.191e-05 1.194e-05 1.198e-05 1.203e-05 1.209e-05 1.210e-05 1.211e-05 1.212e-05 1.219e-05 1.220e-05 1.221e-05 1.227e-05 1.227e-05 1.230e-05 1.238e-05 1.239e-05 1.245e-05 1.251e-05
 width/width-complex-wcwidth	alloc_words	exact	0
 width/width-complex-wcwidth	wall_time	batch=1024	n=20	7.412e-06	7.198e-06 7.255e-06 7.258e-06 7.301e-06 7.335e-06 7.358e-06 7.360e-06 7.367e-06 7.408e-06 7.409e-06 7.414e-06 7.414e-06 7.433e-06 7.447e-06 7.479e-06 7.509e-06 7.510e-06 7.526e-06 7.529e-06 7.658e-06
+
+# machine: ca352e279bc47cb1
+# host: Thibauts-MacBook-2.local · Apple M1 Max · arm64 · macos
+# ocaml: 5.4.1+relocatable · 64-bit · release
+
+position/position-find_pos-ascii	alloc_words	exact	13
+position/position-find_pos-ascii	wall_time	batch=8192	n=20	1.138e-06	1.125e-06 1.127e-06 1.127e-06 1.128e-06 1.129e-06 1.129e-06 1.130e-06 1.130e-06 1.130e-06 1.135e-06 1.140e-06 1.141e-06 1.142e-06 1.145e-06 1.147e-06 1.150e-06 1.163e-06 1.167e-06 1.174e-06 1.183e-06
+position/position-find_pos-mixed	alloc_words	exact	20
+position/position-find_pos-mixed	wall_time	batch=512	n=20	1.103e-05	1.054e-05 1.055e-05 1.059e-05 1.066e-05 1.068e-05 1.071e-05 1.075e-05 1.077e-05 1.090e-05 1.101e-05 1.104e-05 1.127e-05 1.148e-05 1.175e-05 1.175e-05 1.346e-05 1.351e-05 1.489e-05 2.118e-05 8.352e-05
+position/position-find_pos-wcwidth	alloc_words	exact	895
+position/position-find_pos-wcwidth	wall_time	batch=4096	n=20	1.465e-06	1.347e-06 1.356e-06 1.363e-06 1.411e-06 1.417e-06 1.420e-06 1.422e-06 1.425e-06 1.456e-06 1.465e-06 1.465e-06 1.472e-06 1.497e-06 1.507e-06 1.512e-06 1.518e-06 1.532e-06 1.546e-06 1.569e-06 1.843e-06
+position/position-find_wrap_pos-ascii	alloc_words	exact	12
+position/position-find_wrap_pos-ascii	wall_time	batch=8192	n=20	1.138e-06	1.125e-06 1.127e-06 1.128e-06 1.129e-06 1.131e-06 1.133e-06 1.133e-06 1.136e-06 1.136e-06 1.136e-06 1.141e-06 1.141e-06 1.143e-06 1.143e-06 1.146e-06 1.147e-06 1.147e-06 1.148e-06 1.151e-06 1.152e-06
+position/position-find_wrap_pos-mixed	alloc_words	exact	19
+position/position-find_wrap_pos-mixed	wall_time	batch=512	n=20	1.046e-05	1.010e-05 1.023e-05 1.028e-05 1.030e-05 1.031e-05 1.039e-05 1.041e-05 1.041e-05 1.042e-05 1.042e-05 1.049e-05 1.049e-05 1.049e-05 1.052e-05 1.056e-05 1.057e-05 1.060e-05 1.062e-05 1.065e-05 1.073e-05
+position/position-find_wrap_pos-wcwidth	alloc_words	exact	894
+position/position-find_wrap_pos-wcwidth	wall_time	batch=4096	n=20	1.422e-06	1.320e-06 1.369e-06 1.378e-06 1.387e-06 1.387e-06 1.389e-06 1.401e-06 1.404e-06 1.417e-06 1.420e-06 1.424e-06 1.431e-06 1.432e-06 1.441e-06 1.447e-06 1.459e-06 1.469e-06 1.481e-06 1.497e-06 1.522e-06
+position/position-prev-ascii	alloc_words	exact	11
+position/position-prev-ascii	wall_time	batch=16384	n=20	5.280e-07	5.174e-07 5.198e-07 5.221e-07 5.233e-07 5.250e-07 5.254e-07 5.254e-07 5.271e-07 5.274e-07 5.279e-07 5.282e-07 5.407e-07 5.412e-07 5.440e-07 5.591e-07 5.628e-07 5.714e-07 5.912e-07 5.957e-07 7.433e-07
+position/position-prev-mixed	alloc_words	exact	24
+position/position-prev-mixed	wall_time	batch=128	n=20	7.045e-05	6.871e-05 6.936e-05 6.973e-05 6.981e-05 6.986e-05 6.989e-05 7.001e-05 7.024e-05 7.038e-05 7.043e-05 7.047e-05 7.054e-05 7.056e-05 7.069e-05 7.077e-05 7.103e-05 7.109e-05 7.114e-05 7.151e-05 7.214e-05
+position/position-prev-wcwidth	alloc_words	exact	8461
+position/position-prev-wcwidth	wall_time	batch=512	n=20	1.339e-05	1.294e-05 1.312e-05 1.317e-05 1.317e-05 1.319e-05 1.324e-05 1.327e-05 1.328e-05 1.336e-05 1.338e-05 1.341e-05 1.341e-05 1.342e-05 1.343e-05 1.353e-05 1.358e-05 1.362e-05 1.471e-05 3.661e-05 9.457e-05
+position/position-width_at-ascii	alloc_words	exact	0
+position/position-width_at-ascii	wall_time	batch=2097152	n=20	3.402e-09	3.360e-09 3.373e-09 3.373e-09 3.381e-09 3.383e-09 3.383e-09 3.389e-09 3.390e-09 3.400e-09 3.402e-09 3.402e-09 3.404e-09 3.406e-09 3.407e-09 3.408e-09 3.422e-09 3.423e-09 3.437e-09 3.451e-09 3.455e-09
+position/position-width_at-mixed	alloc_words	exact	5
+position/position-width_at-mixed	wall_time	batch=262144	n=20	3.488e-08	3.400e-08 3.435e-08 3.438e-08 3.440e-08 3.446e-08 3.461e-08 3.475e-08 3.476e-08 3.477e-08 3.485e-08 3.491e-08 3.492e-08 3.500e-08 3.508e-08 3.511e-08 3.520e-08 3.520e-08 3.523e-08 3.523e-08 3.621e-08
+position/position-width_at-wcwidth	alloc_words	exact	0
+position/position-width_at-wcwidth	wall_time	batch=1048576	n=20	6.156e-09	6.068e-09 6.084e-09 6.107e-09 6.108e-09 6.114e-09 6.118e-09 6.124e-09 6.134e-09 6.136e-09 6.148e-09 6.165e-09 6.172e-09 6.183e-09 6.194e-09 6.212e-09 6.239e-09 6.266e-09 6.289e-09 6.323e-09 6.335e-09
+segment/segment-ascii_line	alloc_words	exact	0
+segment/segment-ascii_line	wall_time	batch=1024	n=20	7.781e-06	7.721e-06 7.744e-06 7.746e-06 7.752e-06 7.755e-06 7.762e-06 7.766e-06 7.771e-06 7.780e-06 7.780e-06 7.781e-06 7.791e-06 7.794e-06 7.800e-06 7.807e-06 7.814e-06 7.819e-06 7.877e-06 7.910e-06 7.939e-06
+segment/segment-complex_line	alloc_words	exact	5
+segment/segment-complex_line	wall_time	batch=512	n=20	1.143e-05	1.112e-05 1.126e-05 1.129e-05 1.132e-05 1.134e-05 1.134e-05 1.134e-05 1.139e-05 1.140e-05 1.143e-05 1.143e-05 1.143e-05 1.145e-05 1.145e-05 1.148e-05 1.149e-05 1.153e-05 1.155e-05 1.168e-05 1.168e-05
+width/width-ascii-unicode	alloc_words	exact	0
+width/width-ascii-unicode	wall_time	batch=4096	n=20	1.820e-06	1.768e-06 1.778e-06 1.782e-06 1.785e-06 1.790e-06 1.791e-06 1.792e-06 1.808e-06 1.811e-06 1.820e-06 1.821e-06 1.824e-06 1.825e-06 1.826e-06 1.834e-06 1.839e-06 1.840e-06 1.847e-06 1.869e-06 1.870e-06
+width/width-complex-unicode	alloc_words	exact	5
+width/width-complex-unicode	wall_time	batch=512	n=20	1.385e-05	1.283e-05 1.287e-05 1.297e-05 1.310e-05 1.325e-05 1.326e-05 1.328e-05 1.338e-05 1.374e-05 1.385e-05 1.386e-05 1.394e-05 1.396e-05 1.398e-05 1.404e-05 1.434e-05 1.467e-05 1.501e-05 1.577e-05 1.930e-05
+width/width-complex-wcwidth	alloc_words	exact	0
+width/width-complex-wcwidth	wall_time	batch=1024	n=20	7.769e-06	7.564e-06 7.587e-06 7.657e-06 7.661e-06 7.677e-06 7.678e-06 7.679e-06 7.694e-06 7.710e-06 7.736e-06 7.802e-06 7.820e-06 7.855e-06 7.873e-06 7.884e-06 7.907e-06 7.929e-06 8.094e-06 8.135e-06 8.360e-06
