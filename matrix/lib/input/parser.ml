@@ -338,23 +338,6 @@ let has_suffix s suffix =
   in
   loop 0
 
-let contains_substring s sub =
-  let len_s = String.length s and len_sub = String.length sub in
-  if len_sub = 0 then true
-  else
-    let limit = len_s - len_sub in
-    let rec outer i =
-      if i > limit then false
-      else
-        let rec inner j =
-          if j = len_sub then true
-          else if s.[i + j] <> sub.[j] then false
-          else inner (j + 1)
-        in
-        if inner 0 then true else outer (i + 1)
-    in
-    outer 0
-
 let is_all_digits s start stop =
   start < stop
   &&
@@ -456,13 +439,11 @@ let capability_event_of_sequence seq =
       if payload_len > 0 then String.sub seq 4 payload_len else ""
     in
     Event (Response.Xtversion payload)
-  else if
-    len >= 4 && has_prefix seq "\x1bP" && has_suffix seq "\x1b\\"
-    && contains_substring (String.lowercase_ascii seq) "kitty"
-  then
-    (* Some terminals respond with a plain DCS payload containing "kitty"
-       without the XTVersion prefix; treat as Kitty identification. *)
-    Event (Response.Xtversion "kitty")
+  else if len >= 4 && has_prefix seq "\x1bP" && has_suffix seq "\x1b\\" then
+    (* Any other complete DCS is a terminal reply. Hand the payload to the
+       capability pipeline uninterpreted; identification policy (e.g. Kitty
+       detection) lives in Caps, not in the tokenizer. *)
+    Event (Response.Dcs (String.sub seq 2 (len - 4)))
   else if len >= 5 && has_prefix seq "\x1b_G" && has_suffix seq "\x1b\\" then
     let payload_len = len - 5 in
     let payload =
@@ -470,22 +451,16 @@ let capability_event_of_sequence seq =
     in
     Event (Response.Kitty_graphics_reply payload)
   else if len >= 4 && has_prefix seq "\x1b[?" && has_suffix seq "u" then
-    let body_len = len - 4 in
-    if body_len <= 0 then Drop
-    else
-      let body = String.sub seq 3 body_len in
-      let parts = String.split_on_char ';' body in
-      let to_int_opt s = try Some (int_of_string s) with _ -> None in
-      match parts with
-      | level_str :: rest -> (
-          match to_int_opt level_str with
-          | None -> Drop
-          | Some level ->
-              let flags =
-                match rest with [] -> None | h :: _ -> to_int_opt h
-              in
-              Event (Response.Kitty_keyboard { level; flags }))
-      | _ -> Drop
+    (* CSI ? flags u is the reply to the Kitty keyboard query CSI ? u; its
+       single parameter is the currently active flag set. *)
+    let stop =
+      match String.index_from_opt seq 3 ';' with
+      | Some semi when semi < len - 1 -> semi
+      | Some _ | None -> len - 1
+    in
+    match parse_int_range_limit_opt seq 3 stop 0xffff with
+    | Some flags -> Event (Response.Kitty_keyboard { flags })
+    | None -> Drop
   else No_match
 
 (* OSC helpers *)

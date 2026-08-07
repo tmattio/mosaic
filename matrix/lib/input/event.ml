@@ -364,8 +364,9 @@ module Response = struct
     | Pixel_resolution of int * int
     | Cursor_position of int * int
     | Xtversion of string
+    | Dcs of string
     | Kitty_graphics_reply of string
-    | Kitty_keyboard of { level : int; flags : int option }
+    | Kitty_keyboard of { flags : int }
     | Color_scheme of [ `Dark | `Light | `Unknown of int ]
 
   let equal_capability (a : capability) (b : capability) = a = b
@@ -380,12 +381,10 @@ module Response = struct
     | Cursor_position (row, col) ->
         Format.fprintf fmt "Cursor_position(%d,%d)" row col
     | Xtversion s -> Format.fprintf fmt "Xtversion(%S)" s
+    | Dcs s -> Format.fprintf fmt "Dcs(%S)" s
     | Kitty_graphics_reply s -> Format.fprintf fmt "Kitty_graphics_reply(%S)" s
-    | Kitty_keyboard { level; flags } -> (
-        match flags with
-        | None -> Format.fprintf fmt "Kitty_keyboard(level=%d)" level
-        | Some f ->
-            Format.fprintf fmt "Kitty_keyboard(level=%d,flags=%d)" level f)
+    | Kitty_keyboard { flags } ->
+        Format.fprintf fmt "Kitty_keyboard(flags=%d)" flags
     | Color_scheme scheme ->
         let s =
           match scheme with

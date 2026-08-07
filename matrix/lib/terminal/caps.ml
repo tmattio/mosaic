@@ -378,6 +378,16 @@ let apply_event_internal (caps, info) (event : Input.Response.capability) =
           apply_terminal_name_policy caps info.name
       in
       (caps, info)
+  | Input.Response.Dcs payload ->
+      (* A DCS reply whose payload mentions Kitty identifies the terminal as
+         Kitty even without the XTVersion prefix; other DCS payloads carry no
+         capability information. *)
+      let caps =
+        if contains_substring (String.lowercase_ascii payload) "kitty" then
+          mark_kitty_terminal caps
+        else caps
+      in
+      (caps, info)
   | Input.Response.Kitty_graphics_reply payload ->
       (* Kitty graphics reply only confirms graphics support, nothing else *)
       let caps =
@@ -386,14 +396,13 @@ let apply_event_internal (caps, info) (event : Input.Response.capability) =
         else caps
       in
       (caps, info)
-  | Input.Response.Kitty_keyboard { level; _ } ->
-      (* Kitty keyboard reply only confirms keyboard protocol support. Other
-         terminals (e.g., foot, WezTerm) may support the Kitty keyboard protocol
-         without supporting Kitty graphics or other Kitty features. *)
-      let caps =
-        if level >= 0 then { caps with kitty_keyboard = true } else caps
-      in
-      (caps, info)
+  | Input.Response.Kitty_keyboard _ ->
+      (* Any reply to the CSI ? u query confirms keyboard protocol support;
+         the flags only report which enhancements are currently active. Other
+         terminals (e.g., foot, WezTerm) may support the Kitty keyboard
+         protocol without supporting Kitty graphics or other Kitty
+         features. *)
+      ({ caps with kitty_keyboard = true }, info)
   | Input.Response.Color_scheme _ ->
       (* Color scheme DSR response. The scheme value (Dark/Light) could be
          stored if needed, but for now we just acknowledge the capability. *)

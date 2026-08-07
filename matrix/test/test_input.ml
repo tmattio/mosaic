@@ -1432,17 +1432,24 @@ let test_string_terminator_split_regression () =
   done
 
 let test_dcs_split_boundaries () =
-  (* DCS sequence (used by some terminal protocols) *)
-  (* DCS = ESC P ... ST where ST = ESC \ *)
+  (* DCS = ESC P ... ST is a terminal reply and never user key events. *)
   let dcs = "\x1bP+q5465\x1b\\" in
   let len = String.length dcs in
   for split_at = 1 to len - 1 do
     let parser = Input.Parser.create () in
     let bytes = Bytes.of_string dcs in
-    let _ = feed_user parser bytes 0 split_at in
-    let _ = feed_user parser bytes split_at (len - split_at) in
-    (* DCS sequences may not produce user events, but shouldn't crash *)
-    ()
+    let events1, responses1 = feed_to_lists parser bytes 0 split_at in
+    let events2, responses2 =
+      feed_to_lists parser bytes split_at (len - split_at)
+    in
+    equal
+      ~msg:(Printf.sprintf "DCS split at %d is not user input" split_at)
+      (list event_testable) [] (events1 @ events2);
+    equal
+      ~msg:(Printf.sprintf "DCS split at %d payload" split_at)
+      (list capability_testable)
+      [ Input.Response.Dcs "+q5465" ]
+      (capabilities (responses1 @ responses2))
   done
 
 let test_mixed_split_boundaries () =
@@ -1476,14 +1483,14 @@ let test_kitty_keyboard_queries () =
   equal ~msg:"kitty query 1;2" (list event_testable) []
     (parse_user "\x1b[?1;2u");
   equal ~msg:"kitty query 0" (list event_testable) [] (parse_user "\x1b[?0u");
-  equal ~msg:"caps kitty query" (list capability_testable)
-    [ Input.Response.Kitty_keyboard { level = 1; flags = None } ]
+  equal ~msg:"caps kitty reply carries flags" (list capability_testable)
+    [ Input.Response.Kitty_keyboard { flags = 1 } ]
     (parse_capabilities "\x1b[?1u");
-  equal ~msg:"caps kitty query with flags" (list capability_testable)
-    [ Input.Response.Kitty_keyboard { level = 1; flags = Some 2 } ]
+  equal ~msg:"caps kitty reply ignores extra params" (list capability_testable)
+    [ Input.Response.Kitty_keyboard { flags = 1 } ]
     (parse_capabilities "\x1b[?1;2u");
-  equal ~msg:"caps kitty query unsupported" (list capability_testable)
-    [ Input.Response.Kitty_keyboard { level = 0; flags = None } ]
+  equal ~msg:"caps kitty reply with no active flags" (list capability_testable)
+    [ Input.Response.Kitty_keyboard { flags = 0 } ]
     (parse_capabilities "\x1b[?0u")
 
 let tests =

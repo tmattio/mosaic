@@ -366,12 +366,17 @@ module Response : sig
         (** Cursor position [(row, col)], 1-based. Row 1 is the top line, column
             1 is the leftmost column. *)
     | Xtversion of string  (** XTerm [XTVERSION] response (DCS > | ... ST). *)
+    | Dcs of string
+        (** [Dcs payload] is any other complete DCS reply (DCS ... ST).
+            [payload] is the raw bytes between introducer and terminator with no
+            interpretation. *)
     | Kitty_graphics_reply of string
         (** Kitty graphics response (APC G ... ST). *)
-    | Kitty_keyboard of { level : int; flags : int option }
-        (** Kitty keyboard protocol query response [CSI ? level [; flags] u].
-            [level] is non-zero when the protocol is active. [flags] is the
-            optional terminal-reported bitfield. *)
+    | Kitty_keyboard of { flags : int }
+        (** Kitty keyboard protocol query response [CSI ? flags u], the reply to
+            the [CSI ? u] query. [flags] is the currently active
+            progressive-enhancement bitfield; [0] means the protocol is
+            supported with no enhancements active. *)
     | Color_scheme of [ `Dark | `Light | `Unknown of int ]
         (** Color scheme DSR response [CSI ? 997 ; value n], the reply to the
             [CSI ? 996 n] query. Value 1 is dark, 2 is light. *)

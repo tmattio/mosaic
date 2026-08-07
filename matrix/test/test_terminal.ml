@@ -304,7 +304,7 @@ let test_make_with_caps () =
   T.close term
 
 (* Regression: OpenTUI treats CSI ?0u as Kitty keyboard support. *)
-let test_kitty_keyboard_level_zero_capability () =
+let test_kitty_keyboard_zero_flags_capability () =
   let caps =
     {
       T.term = "xterm";
@@ -326,9 +326,45 @@ let test_kitty_keyboard_level_zero_capability () =
   in
   with_terminal ~initial_caps:caps @@ fun term _buf ->
   is_false ~msg:"kitty initially off" (T.capabilities term).kitty_keyboard;
-  T.apply_capability_event term
-    (Input.Response.Kitty_keyboard { level = 0; flags = None });
-  is_true ~msg:"kitty enabled by level zero response"
+  T.apply_capability_event term (Input.Response.Kitty_keyboard { flags = 0 });
+  is_true ~msg:"kitty enabled by zero-flags reply"
+    (T.capabilities term).kitty_keyboard;
+  is_false ~msg:"kitty keyboard reply does not imply graphics"
+    (T.capabilities term).kitty_graphics;
+  T.close term
+
+(* A DCS reply mentioning Kitty identifies the terminal as Kitty; the
+   identification policy lives here rather than in the input tokenizer. *)
+let test_dcs_kitty_identification () =
+  let plain_caps =
+    {
+      T.term = "xterm";
+      rgb = false;
+      kitty_keyboard = false;
+      kitty_graphics = false;
+      bracketed_paste = false;
+      focus_tracking = false;
+      unicode_width = `Wcwidth;
+      sgr_pixels = false;
+      color_scheme_updates = false;
+      explicit_width = false;
+      explicit_cursor_positioning = false;
+      scaled_text = false;
+      sixel = false;
+      sync = false;
+      hyperlinks = false;
+    }
+  in
+  with_terminal ~initial_caps:plain_caps @@ fun term _buf ->
+  is_false ~msg:"kitty initially off" (T.capabilities term).kitty_keyboard;
+  T.apply_capability_event term (Input.Response.Dcs ">|Kitty(0.32.1)");
+  let c = T.capabilities term in
+  is_true ~msg:"kitty keyboard marked" c.kitty_keyboard;
+  is_true ~msg:"kitty graphics marked" c.kitty_graphics;
+  T.close term;
+  with_terminal ~initial_caps:plain_caps @@ fun term _buf ->
+  T.apply_capability_event term (Input.Response.Dcs "+q5465");
+  is_false ~msg:"unrelated DCS payload marks nothing"
     (T.capabilities term).kitty_keyboard;
   T.close term
 
@@ -915,8 +951,9 @@ let () =
           test "modern terminal env enables sync"
             test_modern_terminal_env_enables_sync;
           test "make with caps" test_make_with_caps;
-          test "kitty keyboard level zero"
-            test_kitty_keyboard_level_zero_capability;
+          test "kitty keyboard zero flags"
+            test_kitty_keyboard_zero_flags_capability;
+          test "DCS kitty identification" test_dcs_kitty_identification;
           test "CPR outside probe does not flip capabilities"
             test_cpr_outside_probe_does_not_flip_capabilities;
           test "probe CPR sets width capabilities"
