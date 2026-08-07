@@ -48,16 +48,6 @@
 
     {1:types Types} *)
 
-type unicode_width = [ `Wcwidth | `Unicode ]
-(** The type for Unicode display width computation methods.
-    - [`Wcwidth] uses legacy [wcwidth()] behaviour (traditional Unix). Matches
-      older terminals but misclassifies some emoji and combining characters.
-    - [`Unicode] uses modern Unicode width tables (currently 15.0), giving
-      correct widths for emoji and combining sequences.
-
-    Terminals such as Kitty, WezTerm, recent iTerm2, and Foot report Unicode
-    width support via DECRQM 2027. *)
-
 type t = {
   term : string;  (** Raw [$TERM] value used for heuristics. *)
   rgb : bool;
@@ -73,9 +63,11 @@ type t = {
   focus_tracking : bool;
       (** [true] if focus tracking (DECSET/DECRST 1004) is supported or enabled.
       *)
-  unicode_width : unicode_width;
+  unicode_width : Text.width_method;
       (** Current Unicode width mode. Reflects both heuristics and any DECRQM
-          2027 responses processed so far. *)
+          2027 responses processed so far. Terminals such as Kitty, WezTerm,
+          recent iTerm2, and Foot report Unicode width support via DECRQM 2027.
+      *)
   sgr_pixels : bool;
       (** [true] if SGR pixel-position mouse reports (DECRQM 1016) are
           supported. *)

@@ -1,5 +1,3 @@
-type unicode_width = [ `Wcwidth | `Unicode ]
-
 type t = {
   term : string;
   rgb : bool;
@@ -7,7 +5,7 @@ type t = {
   kitty_graphics : bool;
   bracketed_paste : bool;
   focus_tracking : bool;
-  unicode_width : unicode_width;
+  unicode_width : Text.width_method;
   sgr_pixels : bool;
   color_scheme_updates : bool;
   explicit_width : bool;

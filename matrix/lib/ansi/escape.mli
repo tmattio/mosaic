@@ -71,6 +71,10 @@ val cursor_position : row:int -> col:int -> t
 val cursor_save : t
 val cursor_restore : t
 val cursor_style : shape:cursor_shape -> t
+
+type cursor_style = [ `Block | `Line | `Underline ]
+
+val cursor_shape_of_style : style:cursor_style -> blinking:bool -> cursor_shape
 val cursor_color : r:int -> g:int -> b:int -> t
 val reset_cursor_color : t
 val reset_cursor_color_fallback : t

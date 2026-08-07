@@ -26,11 +26,9 @@ type frame_metrics = {
   timestamp_s : float;
 }
 
-type cursor_style = [ `Block | `Line | `Underline ]
-
 type cursor = {
   position : (int * int) option;
-  style : cursor_style;
+  style : Ansi.cursor_style;
   blinking : bool;
   color : (int * int * int) option;
   visible : bool;

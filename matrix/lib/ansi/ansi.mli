@@ -149,6 +149,15 @@ type cursor_shape =
 val cursor_style : shape:cursor_shape -> t
 (** [cursor_style ~shape] sets the cursor shape. *)
 
+type cursor_style = [ `Block | `Line | `Underline ]
+(** The type for cursor shapes without a blink flag. This is the vocabulary
+    shared by {!Terminal} and {!Screen}; pair with a blinking flag to select a
+    {!cursor_shape} via {!cursor_shape_of_style}. *)
+
+val cursor_shape_of_style : style:cursor_style -> blinking:bool -> cursor_shape
+(** [cursor_shape_of_style ~style ~blinking] is the DECSCUSR {!cursor_shape}
+    selecting [style] with blink [blinking]. *)
+
 val cursor_color : r:int -> g:int -> b:int -> t
 (** [cursor_color ~r ~g ~b] sets the cursor color (OSC 12). Pair with
     {!reset_cursor_color} or {!reset_cursor_color_fallback} during teardown. *)

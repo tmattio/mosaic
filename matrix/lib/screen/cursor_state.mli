@@ -16,7 +16,7 @@ type snapshot = {
   col : int;  (** One-based column. *)
   has_position : bool;
       (** [true] iff a position has been set via {!set_position}. *)
-  style : [ `Block | `Line | `Underline ];  (** Cursor shape. *)
+  style : Ansi.cursor_style;  (** Cursor shape. *)
   blinking : bool;  (** [true] iff the cursor blinks. *)
   color : (int * int * int) option;
       (** [Some (r, g, b)] or [None] for the terminal default. *)
@@ -40,8 +40,7 @@ val clear_position : t -> unit
 (** [clear_position t] clears the desired position so the cursor remains
     wherever the last rendering operation left it. *)
 
-val set_style :
-  t -> style:[ `Block | `Line | `Underline ] -> blinking:bool -> unit
+val set_style : t -> style:Ansi.cursor_style -> blinking:bool -> unit
 (** [set_style t ~style ~blinking] sets the desired cursor shape and blinking
     behaviour. *)
 

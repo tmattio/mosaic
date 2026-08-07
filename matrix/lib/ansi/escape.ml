@@ -270,6 +270,17 @@ let cursor_style ~shape w =
   add_int w (cursor_shape_to_int shape);
   write_string w " q"
 
+type cursor_style = [ `Block | `Line | `Underline ]
+
+let cursor_shape_of_style ~style ~blinking : cursor_shape =
+  match (style, blinking) with
+  | `Block, true -> `Blinking_block
+  | `Block, false -> `Block
+  | `Line, true -> `Blinking_bar
+  | `Line, false -> `Bar
+  | `Underline, true -> `Blinking_underline
+  | `Underline, false -> `Underline
+
 let cursor_color ~r ~g ~b w =
   write_string w "\027]12;#";
   add_hex2 w (clamp_byte r);

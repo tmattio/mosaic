@@ -1,7 +1,7 @@
 (library
  (name terminal)
  (public_name matrix.terminal)
- (libraries unix ansi input)
+ (libraries unix ansi input text)
  (private_modules caps)
  (foreign_stubs
   (language c)

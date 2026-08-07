@@ -82,13 +82,7 @@ let clamp_to_bounds (t : t) ~max_row ~max_col =
     t.col <- max 1 (min max_col t.col))
 
 let cursor_style_seq style blinking =
-  match (style, blinking) with
-  | `Block, true -> Ansi.cursor_style ~shape:`Blinking_block
-  | `Block, false -> Ansi.cursor_style ~shape:`Block
-  | `Line, true -> Ansi.cursor_style ~shape:`Blinking_bar
-  | `Line, false -> Ansi.cursor_style ~shape:`Bar
-  | `Underline, true -> Ansi.cursor_style ~shape:`Blinking_underline
-  | `Underline, false -> Ansi.cursor_style ~shape:`Underline
+  Ansi.cursor_style ~shape:(Ansi.cursor_shape_of_style ~style ~blinking)
 
 let hide_temporarily (t : t) w =
   (* Hide cursor if it's visible or in unknown state. When state is unknown, we

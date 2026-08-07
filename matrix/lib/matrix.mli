@@ -380,11 +380,10 @@ val set_scroll_hint : app -> Screen.scroll_hint -> unit
 
 (** {1:cursor Cursor control} *)
 
-val set_cursor : ?visible:bool -> ?style:Terminal.cursor_style -> app -> unit
+val set_cursor : ?visible:bool -> ?style:Ansi.cursor_style -> app -> unit
 (** [set_cursor ?visible ?style app] updates cursor visibility and/or style. *)
 
-val set_cursor_style :
-  app -> style:Terminal.cursor_style -> blinking:bool -> unit
+val set_cursor_style : app -> style:Ansi.cursor_style -> blinking:bool -> unit
 (** [set_cursor_style app ~style ~blinking] sets cursor shape and blink. *)
 
 val set_cursor_position : app -> row:int -> col:int -> unit

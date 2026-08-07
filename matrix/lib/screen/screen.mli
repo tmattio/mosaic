@@ -215,14 +215,11 @@ val set_explicit_width : t -> bool -> unit
     specifying the exact width of multi-width characters are emitted to prevent
     terminal-side width mismatch. *)
 
-type cursor_style = [ `Block | `Line | `Underline ]
-(** The type for hardware cursor shapes. *)
-
 type cursor = {
   position : (int * int) option;
       (** Zero-based [(x, y)] cell position, or [None] to leave the cursor at
           the renderer/runtime default position. *)
-  style : cursor_style;  (** Cursor shape. *)
+  style : Ansi.cursor_style;  (** Cursor shape. *)
   blinking : bool;  (** [true] iff the cursor blinks. *)
   color : (int * int * int) option;
       (** [Some (r, g, b)] or [None] for the terminal default. *)

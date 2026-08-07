@@ -629,13 +629,7 @@ let adjust_primary_layout t ~buf ~required_rows_hint =
 (* Apply cursor position, style, and color into the frame buffer.
    Style and color are only emitted when they differ from the last frame. *)
 let cursor_shape (cursor : Screen.cursor) : Ansi.cursor_shape =
-  match (cursor.style, cursor.blinking) with
-  | `Block, true -> `Blinking_block
-  | `Block, false -> `Block
-  | `Line, true -> `Blinking_bar
-  | `Line, false -> `Bar
-  | `Underline, true -> `Blinking_underline
-  | `Underline, false -> `Underline
+  Ansi.cursor_shape_of_style ~style:cursor.style ~blinking:cursor.blinking
 
 let cursor_output_position t ~(cursor : Screen.cursor) ~cursor_max_row =
   match cursor.position with
@@ -1107,10 +1101,7 @@ let init_app (c : config) ~write_output ~now ~wake ~terminal_size ~set_raw_mode
       ~cursor_visible:c.cursor_visible ~explicit_width:c.explicit_width ()
   in
   let caps = Terminal.capabilities terminal in
-  let width_method : Text.width_method =
-    match caps.unicode_width with `Unicode -> `Unicode | `Wcwidth -> `Wcwidth
-  in
-  Screen.set_width_method screen width_method;
+  Screen.set_width_method screen caps.unicode_width;
   let color_depth = if caps.rgb then `Truecolor else `Ansi256 in
   Screen.apply_capabilities screen ~explicit_width:caps.explicit_width
     ~explicit_cursor_positioning:caps.explicit_cursor_positioning

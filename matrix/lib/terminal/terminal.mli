@@ -44,16 +44,6 @@ type mouse_mode =
     - [`Sgr_any] is SGR-extended with all motion (modes 1006 + 1000 + 1002 +
       1003). *)
 
-type unicode_width = [ `Wcwidth | `Unicode ]
-(** The type for Unicode width calculation methods.
-    - [`Wcwidth] uses platform [wcwidth()]-like behaviour. Compatible with older
-      setups but inaccurate for some emoji and combining characters.
-    - [`Unicode] uses modern Unicode width tables. *)
-
-type cursor_style = [ `Block | `Line | `Underline ]
-(** The type for cursor visual styles. Corresponds to standard DECSCUSR shapes.
-*)
-
 type cursor_position = { x : int; y : int; visible : bool }
 (** The type for tracked cursor positions. [x] and [y] are one-based
     coordinates; [(1, 1)] is the top-left corner. [visible] reflects the last
@@ -72,7 +62,7 @@ type capabilities = {
       (** [true] if bracketed paste (mode 2004) is supported. *)
   focus_tracking : bool;
       (** [true] if focus tracking (mode 1004) is supported. *)
-  unicode_width : unicode_width;  (** Current Unicode width mode. *)
+  unicode_width : Text.width_method;  (** Current Unicode width mode. *)
   sgr_pixels : bool;
       (** [true] if SGR pixel-position mouse reports (mode 1016) are supported.
       *)
@@ -284,7 +274,7 @@ val modify_other_keys_enabled : t -> bool
 
 (** {2:unicode_w Unicode width} *)
 
-val set_unicode_width : t -> unicode_width -> unit
+val set_unicode_width : t -> Text.width_method -> unit
 (** [set_unicode_width t w] sets the Unicode width mode to [w] and updates
     {!capabilities} accordingly. Idempotent. *)
 
@@ -331,11 +321,11 @@ val cursor_visible : t -> bool
 val cursor_position : t -> cursor_position
 (** [cursor_position t] is [t]'s tracked cursor position and visibility. *)
 
-val set_cursor_style : t -> cursor_style -> blinking:bool -> unit
+val set_cursor_style : t -> Ansi.cursor_style -> blinking:bool -> unit
 (** [set_cursor_style t style ~blinking] sets the cursor shape and blinking
     behaviour (DECSCUSR). *)
 
-val cursor_style_state : t -> cursor_style * bool
+val cursor_style_state : t -> Ansi.cursor_style * bool
 (** [cursor_style_state t] is the current cursor style and blinking flag as
     [(style, blinking)]. *)
 

@@ -15,8 +15,6 @@ type mouse_mode =
   | `Sgr_button
   | `Sgr_any ]
 
-type unicode_width = [ `Wcwidth | `Unicode ]
-type cursor_style = [ `Block | `Line | `Underline ]
 type cursor_position = { x : int; y : int; visible : bool }
 
 type capabilities = Caps.t = {
@@ -26,7 +24,7 @@ type capabilities = Caps.t = {
   kitty_graphics : bool;
   bracketed_paste : bool;
   focus_tracking : bool;
-  unicode_width : unicode_width;
+  unicode_width : Text.width_method;
   sgr_pixels : bool;
   color_scheme_updates : bool;
   explicit_width : bool;
@@ -47,7 +45,7 @@ type cursor_state = {
   mutable x : int;
   mutable y : int;
   mutable visible : bool;
-  mutable style : cursor_style;
+  mutable style : Ansi.cursor_style;
   mutable blinking : bool;
   mutable color : float * float * float * float;
 }
@@ -97,12 +95,6 @@ let erase_below = "\027[J"
 let cursor_default = "\027[0 q"
 let reset_cursor_color_fallback_seq = "\027]12;default\007"
 let reset_cursor_color_seq = "\027]112\007"
-let cursor_block = "\027[2 q"
-let cursor_block_blink = "\027[1 q"
-let cursor_line = "\027[6 q"
-let cursor_line_blink = "\027[5 q"
-let cursor_underline = "\027[4 q"
-let cursor_underline_blink = "\027[3 q"
 let mouse_x10 = "\027[?9h"
 let mouse_tracking = "\027[?1000h"
 let mouse_button = "\027[?1002h"
@@ -357,13 +349,8 @@ let cursor_color_osc r g b =
   make_osc (Printf.sprintf "12;#%02X%02X%02X" r g b)
 
 let cursor_style_seq style blinking =
-  match (style, blinking) with
-  | `Block, true -> cursor_block_blink
-  | `Block, false -> cursor_block
-  | `Line, true -> cursor_line_blink
-  | `Line, false -> cursor_line
-  | `Underline, true -> cursor_underline_blink
-  | `Underline, false -> cursor_underline
+  Ansi.(
+    to_string (cursor_style ~shape:(cursor_shape_of_style ~style ~blinking)))
 
 let set_cursor_visuals t =
   if not t.tty then ()
