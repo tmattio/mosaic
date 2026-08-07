@@ -1500,11 +1500,22 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
   then (
     t.redraw_requested <- true;
     t.backend.wake ());
-  Option.iter
-    (fun f ->
-      let cols, rows = size t in
-      f t ~cols ~rows)
-    on_resize;
+  (* [on_resize] always reports the usable surface — {!size}, the live
+     viewport in [`Primary] mode — never the raw terminal dimensions of the
+     resize event, so the first callback and later ones agree. It fires once
+     before the first render and then whenever the applied size changes,
+     including debounced resizes applied after their event. *)
+  let last_reported_size = ref None in
+  let notify_resize ~initial =
+    Option.iter
+      (fun f ->
+        let (cols, rows) as reported = size t in
+        if initial || !last_reported_size <> Some reported then (
+          last_reported_size := Some reported;
+          f t ~cols ~rows))
+      on_resize
+  in
+  notify_resize ~initial:true;
 
   let render_cycle ~now ~last_time =
     Option.iter (fun f -> f t ~dt:(now -. last_time)) on_frame;
@@ -1527,7 +1538,7 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
       match classify_event t evt with
       | None -> close t
       | Some (`Resize (cols, rows)) ->
-          Option.iter (fun f -> f t ~cols ~rows) on_resize;
+          notify_resize ~initial:false;
           Option.iter (fun f -> f t (Input.Resize (cols, rows))) on_input;
           request_redraw t
       | Some (`Input event) ->
@@ -1560,7 +1571,9 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
   let rec loop last_time =
     if not (running t) then ()
     else (
-      maybe_apply_pending_resize t;
+      if t.pending_resize <> None then (
+        maybe_apply_pending_resize t;
+        if t.pending_resize = None then notify_resize ~initial:false);
       let now = t.backend.now () in
       (* A due one-shot wakeup runs the frame callback without a render: it
          exists so time-based work (timers) can advance off the clock while

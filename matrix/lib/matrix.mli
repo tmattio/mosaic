@@ -276,6 +276,13 @@ val run :
     - Optionally samples [primary_required_rows] for [`Primary] mode sizing.
     - Calls {!submit} to diff and flush output.
 
+    [on_resize] reports the usable surface as [(cols, rows)] — {!size}, the
+    live viewport in [`Primary] mode and the full terminal in [`Alt] mode. It
+    fires once before the first render and then whenever the applied size
+    changes, including debounced resizes applied after their event; resize
+    reports that do not change the applied size produce no callback.
+    [on_input] still receives raw {!Input.Resize} terminal dimensions.
+
     The loop exits when {!running} becomes [false]. A custom backend
     {!read_result} of [`End] finalizes the input parser and closes the runtime.
     Exceptions close the runtime before propagating. *)

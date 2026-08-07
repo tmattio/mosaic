@@ -907,9 +907,36 @@ let test_resize_zero_dimensions_are_ignored () =
     ~on_resize:(fun app ~cols ~rows ->
       events := (cols, rows, Matrix.full_size app, Matrix.size app) :: !events)
     ~on_render:(fun _app -> ());
+  (* The degenerate report is dropped: the applied size never changes, so only
+     the initial callback fires. *)
   match List.rev !events with
-  | [ (80, 24, (80, 24), (80, 24)); (0, 0, (80, 24), (80, 24)) ] -> ()
+  | [ (80, 24, (80, 24), (80, 24)) ] -> ()
   | got -> failf "unexpected resize trace: %d event(s)" (List.length got)
+
+(* Regression: the initial on_resize reported the live-viewport size while the
+   event path forwarded raw terminal dimensions — a Primary-mode subscriber
+   saw two different row semantics. Both now report {!Matrix.size}. *)
+let test_on_resize_reports_usable_size () =
+  let app, _state =
+    make_app ~mode:`Primary ~render_offset:14 ~resize_debounce:None
+      ~target_fps:None ~input_timeout:(Some 0.)
+      ~events:[ Matrix.Input.Resize (100, 30) ]
+      ~stop_after_reads:1 ()
+  in
+  let events = ref [] in
+  Matrix.run app
+    ~on_resize:(fun app ~cols ~rows ->
+      events := ((cols, rows), Matrix.size app) :: !events)
+    ~on_render:(fun _app -> ());
+  match List.rev !events with
+  | [ (initial, initial_size); (resized, resized_size) ] ->
+      equal ~msg:"initial callback reports the usable size" (pair int int)
+        initial_size initial;
+      equal ~msg:"resize callback reports the usable size" (pair int int)
+        resized_size resized;
+      is_true ~msg:"primary viewport differs from raw terminal rows"
+        (snd resized <> 30)
+  | got -> failf "expected two resize callbacks, got %d" (List.length got)
 
 let test_resize_clamps_primary_render_offset () =
   let app, _state =
@@ -1682,6 +1709,8 @@ let () =
             test_initial_resize_fires_before_first_render;
           test "zero dimensions are ignored"
             test_resize_zero_dimensions_are_ignored;
+          test "on_resize reports usable size"
+            test_on_resize_reports_usable_size;
           test "primary render offset clamps after resize"
             test_resize_clamps_primary_render_offset;
           test "debounce applies latest pending resize"
