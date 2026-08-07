@@ -598,7 +598,9 @@ let render t _self grid ~delta:_ =
   let oy = Renderable.y t.node in
   let fully_clipped =
     t.render_enabled && w > 0 && h > 0
-    && not (Grid.intersects_clip grid { x = ox; y = oy; width = w; height = h })
+    && not
+         (Matrix_grid.intersects_clip grid
+            { x = ox; y = oy; width = w; height = h })
   in
   if (not t.render_enabled) || w <= 0 || h <= 0 || fully_clipped then ()
   else begin
@@ -655,7 +657,7 @@ let render t _self grid ~delta:_ =
               String.sub !batch_text !batch_start_byte
                 (!batch_end_byte - !batch_start_byte)
             in
-            Grid.draw_text ~style:!batch_style ~tab_width grid
+            Matrix_grid.draw_text ~style:!batch_style ~tab_width grid
               ~x:(ox + !batch_start_col) ~y:(oy + row) ~text:sub
           end;
           batch_active := false

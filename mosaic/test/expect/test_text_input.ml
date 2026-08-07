@@ -49,8 +49,8 @@ let%expect_test "cursor in middle of text" =
   reconcile app (Vnode.input ~ref:(fun n -> node := Some n) ~value:"hello" ());
   focus app (Option.get !node);
   frame app ~width:20 ~height:1;
-  send_key app Input.Key.Left;
-  send_key app Input.Key.Left;
+  send_key app Matrix_input.Key.Left;
+  send_key app Matrix_input.Key.Left;
   frame app ~width:20 ~height:1;
   [%expect_exact {|
 hello
@@ -62,8 +62,9 @@ let%expect_test "selection highlight" =
   reconcile app (Vnode.input ~ref:(fun n -> node := Some n) ~value:"hello" ());
   focus app (Option.get !node);
   frame app ~width:20 ~height:1;
-  let ctrl_mod = { no_mod with Input.Modifier.ctrl = true } in
-  send_key_with_mod app ~modifier:ctrl_mod (Input.Key.Char (Uchar.of_char 'a'));
+  let ctrl_mod = { no_mod with Matrix_input.Modifier.ctrl = true } in
+  send_key_with_mod app ~modifier:ctrl_mod
+    (Matrix_input.Key.Char (Uchar.of_char 'a'));
   frame_ansi app ~width:20 ~height:1;
   [%expect_exact
     {|
@@ -93,7 +94,7 @@ let%expect_test "after backspace" =
   reconcile app (Vnode.input ~ref:(fun n -> node := Some n) ~value:"abc" ());
   focus app (Option.get !node);
   frame app ~width:20 ~height:1;
-  send_key app Input.Key.Backspace;
+  send_key app Matrix_input.Key.Backspace;
   frame app ~width:20 ~height:1;
   [%expect_exact {|
 abc
@@ -106,8 +107,9 @@ let%expect_test "after ctrl u clear to start" =
     (Vnode.input ~ref:(fun n -> node := Some n) ~value:"hello world" ());
   focus app (Option.get !node);
   frame app ~width:20 ~height:1;
-  let ctrl_mod = { no_mod with Input.Modifier.ctrl = true } in
-  send_key_with_mod app ~modifier:ctrl_mod (Input.Key.Char (Uchar.of_char 'u'));
+  let ctrl_mod = { no_mod with Matrix_input.Modifier.ctrl = true } in
+  send_key_with_mod app ~modifier:ctrl_mod
+    (Matrix_input.Key.Char (Uchar.of_char 'u'));
   frame app ~width:20 ~height:1;
   [%expect_exact {|
 hello world

@@ -24,7 +24,7 @@ module Props = struct
     expand_depth : int;
     indent_size : int;
     show_guides : bool;
-    guide_style : Grid.Border.t;
+    guide_style : Matrix_grid.Border.t;
     expand_icon : string;
     collapse_icon : string;
     leaf_icon : string;
@@ -41,7 +41,7 @@ module Props = struct
   }
 
   let make ?(items = []) ?selected_index ?(expand_depth = 0) ?(indent_size = 2)
-      ?(show_guides = false) ?(guide_style = Grid.Border.single)
+      ?(show_guides = false) ?(guide_style = Matrix_grid.Border.single)
       ?(expand_icon = "\xe2\x96\xb6") ?(collapse_icon = "\xe2\x96\xbc")
       ?(leaf_icon = " ") ?(background = Ansi.Color.of_rgba 0 0 0 0)
       ?(text_color = Ansi.Color.of_rgb 255 255 255)
@@ -465,8 +465,8 @@ let set_on_expand t cb = t.on_expand <- cb
 (* ───── Rendering Helpers ───── *)
 
 let draw_cell grid ~x ~y ~fg ~bg uch =
-  let cell = Grid.Cell.of_uchar uch in
-  Grid.set_cell grid ~x ~y ~cell ~fg ~bg ~attrs:Ansi.Attr.empty ()
+  let cell = Matrix_grid.Cell.of_uchar uch in
+  Matrix_grid.set_cell grid ~x ~y ~cell ~fg ~bg ~attrs:Ansi.Attr.empty ()
 
 (* ───── Key Handling ───── *)
 
@@ -539,10 +539,10 @@ let handle_mouse t (event : Event.mouse) =
           Event.Mouse.stop_propagation event)
   | Scroll { direction; delta } -> (
       match direction with
-      | Input.Mouse.Scroll_up when delta > 0 ->
+      | Matrix_input.Mouse.Scroll_up when delta > 0 ->
           move_up t;
           Event.Mouse.stop_propagation event
-      | Input.Mouse.Scroll_down when delta > 0 ->
+      | Matrix_input.Mouse.Scroll_down when delta > 0 ->
           move_down t;
           Event.Mouse.stop_propagation event
       | _ -> ())
@@ -563,9 +563,10 @@ let render t _self grid ~delta:_ =
 
     (* Clear to opaque base so compositing fully replaces the screen grid, then
        apply the user's background on top. *)
-    Grid.fill_rect grid ~x:0 ~y:0 ~width ~height
+    Matrix_grid.fill_rect grid ~x:0 ~y:0 ~width ~height
       ~color:(Ansi.Color.of_rgb 0 0 0);
-    Grid.fill_rect grid ~x:0 ~y:0 ~width ~height ~color:t.props.background;
+    Matrix_grid.fill_rect grid ~x:0 ~y:0 ~width ~height
+      ~color:t.props.background;
 
     let start_index = t.scroll_offset in
     let end_index = min (visible_count t) (start_index + t.max_visible) in
@@ -587,7 +588,7 @@ let render t _self grid ~delta:_ =
 
         (* Selection highlight *)
         if is_selected then
-          Grid.fill_rect grid ~x:0 ~y:row ~width ~height:1 ~color:sel_bg;
+          Matrix_grid.fill_rect grid ~x:0 ~y:row ~width ~height:1 ~color:sel_bg;
 
         let indent = entry.depth * t.props.indent_size in
 
@@ -637,14 +638,15 @@ let render t _self grid ~delta:_ =
                ~fg:(if is_selected then sel_fg else t.props.icon_color)
                ()
            in
-           Grid.draw_text ~style:icon_style grid ~x:icon_x ~y:row ~text:icon);
+           Matrix_grid.draw_text ~style:icon_style grid ~x:icon_x ~y:row
+             ~text:icon);
 
         (* Label *)
         let label_x = indent + 2 in
         if label_x < width then
           let label_fg = if is_selected then sel_fg else t.props.text_color in
           let label_style = Ansi.Style.make ~fg:label_fg () in
-          Grid.draw_text ~style:label_style grid ~x:label_x ~y:row
+          Matrix_grid.draw_text ~style:label_style grid ~x:label_x ~y:row
             ~text:entry.item.label)
     done
 

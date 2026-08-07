@@ -81,7 +81,7 @@ type region = { x : int; y : int; width : int; height : int }
 val create :
   width:int ->
   height:int ->
-  ?width_method:Text.width_method ->
+  ?width_method:Matrix_text.width_method ->
   ?respect_alpha:bool ->
   unit ->
   t
@@ -111,10 +111,10 @@ val width : t -> int
 val height : t -> int
 (** [height g] is the grid height in cells. *)
 
-val width_method : t -> Text.width_method
+val width_method : t -> Matrix_text.width_method
 (** [width_method g] is the current width computation method. *)
 
-val set_width_method : t -> Text.width_method -> unit
+val set_width_method : t -> Matrix_text.width_method -> unit
 (** [set_width_method g m] changes the width method for subsequent {!draw_text}
     calls. Existing cell widths are not updated. *)
 

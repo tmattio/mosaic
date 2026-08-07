@@ -319,7 +319,12 @@ let report_scroll t ~dx ~dy =
   if vp.height > 0 && box.width > 0 then
     Renderable.Private.report_scroll t.node
       ~region:
-        { Grid.x = box.x; y = vp.y; width = box.width; height = vp.height }
+        {
+          Matrix_grid.x = box.x;
+          y = vp.y;
+          width = box.width;
+          height = vp.height;
+        }
       ~dx ~dy
 
 let scroll_to_internal t ?(manual = true) ?x ?y () =
@@ -633,7 +638,7 @@ let render_scroll_box t _self grid ~delta:_ =
       let lw = Renderable.width t.node in
       let lh = Renderable.height t.node in
       if lw > 0 && lh > 0 then
-        Grid.fill_rect grid ~x:lx ~y:ly ~width:lw ~height:lh ~color:c
+        Matrix_grid.fill_rect grid ~x:lx ~y:ly ~width:lw ~height:lh ~color:c
 
 (* ───── Mouse Wheel ───── *)
 

@@ -120,7 +120,7 @@ let%expect_test "navigation Down moves selection" =
     (Vnode.tree ~ref:(fun n -> node := Some n) ~items ~expand_depth:1 ());
   focus app (Option.get !node);
   frame app ~width:30 ~height:10;
-  send_key app Input.Key.Down;
+  send_key app Matrix_input.Key.Down;
   frame app ~width:30 ~height:10;
   [%expect_exact
     {|
@@ -151,7 +151,7 @@ let%expect_test "Right expands collapsed node" =
   reconcile app (Vnode.tree ~ref:(fun n -> node := Some n) ~items ());
   focus app (Option.get !node);
   frame app ~width:30 ~height:10;
-  send_key app Input.Key.Right;
+  send_key app Matrix_input.Key.Right;
   frame app ~width:30 ~height:10;
   [%expect_exact
     {|
@@ -183,7 +183,7 @@ let%expect_test "Left collapses expanded node" =
     (Vnode.tree ~ref:(fun n -> node := Some n) ~items ~expand_depth:1 ());
   focus app (Option.get !node);
   frame app ~width:30 ~height:10;
-  send_key app Input.Key.Left;
+  send_key app Matrix_input.Key.Left;
   frame app ~width:30 ~height:10;
   [%expect_exact
     {|

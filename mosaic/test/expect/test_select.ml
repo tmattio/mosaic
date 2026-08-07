@@ -62,7 +62,7 @@ let%expect_test "navigation changes selection" =
   reconcile app (Vnode.select ~ref:(fun n -> node := Some n) ~options:items ());
   focus app (Option.get !node);
   frame app ~width:30 ~height:10;
-  send_key app Input.Key.Down;
+  send_key app Matrix_input.Key.Down;
   frame app ~width:30 ~height:10;
   [%expect_exact
     {|

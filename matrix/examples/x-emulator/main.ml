@@ -1,3 +1,4 @@
+module Grid = Matrix_grid
 open Tsdl
 open Tsdl_ttf
 

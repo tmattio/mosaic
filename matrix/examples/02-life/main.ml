@@ -75,19 +75,19 @@ type state = { dim : int * int; generation : int; life : CSet.t; paused : bool }
 let max_gray_level = 23
 
 let background_styles =
-  let open Image in
+  let open Matrix_image in
   Array.init (max_gray_level + 1) (fun level ->
       let color = Color.grayscale ~level in
       Style.make ~fg:color ())
 
 let dot_image =
-  let open Image in
+  let open Matrix_image in
   let color = Color.bright_magenta in
   let style = Style.make ~fg:color () in
   text ~style "●"
 
 let background_cell ~step x y =
-  let open Image in
+  let open Matrix_image in
   let angle = float_of_int (step + x + y) /. 10.0 in
   let s = sin angle in
   let level_float = float_of_int max_gray_level *. s in
@@ -98,7 +98,7 @@ let background_cell ~step x y =
   text ~style "."
 
 let render st ctx =
-  let open Image in
+  let open Matrix_image in
   let cols = ctx.cols in
   let rows = ctx.rows in
   let grid_rows = if rows > 0 then rows - 1 else 0 in

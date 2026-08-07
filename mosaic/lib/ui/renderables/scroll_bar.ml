@@ -41,7 +41,7 @@ module Arrow = struct
     let y = Renderable.y t.node in
     let text = arrow_char t.direction in
     let style = Ansi.Style.make ~fg:t.fg ~bg:t.bg () in
-    Grid.draw_text grid ~x ~y ~text ~style
+    Matrix_grid.draw_text grid ~x ~y ~text ~style
 
   let measure t ~known_dimensions:_ ~available_space:_ ~style:_ =
     let text = arrow_char t.direction in

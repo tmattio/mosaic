@@ -1,3 +1,4 @@
+module Input = Matrix_input
 open Windtrap
 open Mosaic_ui
 

@@ -1,3 +1,4 @@
+module Grid = Matrix_grid
 open Mosaic_ui
 open Expect_harness
 
@@ -128,7 +129,7 @@ let%expect_test "blit to correct parent position" =
   Renderer.render_frame renderer ~width:20 ~height:10 ~delta:0.;
   Grid.draw_text (Canvas.grid canvas) ~x:0 ~y:0 ~text:"X";
   Renderer.render_frame renderer ~width:20 ~height:10 ~delta:0.;
-  let grid = Screen.next_grid (Renderer.screen renderer) in
+  let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
   print_newline ();
   print_string (grid_to_text grid);
   [%expect_exact {|

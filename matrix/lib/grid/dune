@@ -1,5 +1,5 @@
 (library
- (name grid)
+ (name matrix_grid)
  (public_name matrix.grid)
- (libraries ansi matrix.text)
+ (libraries matrix.ansi matrix.text)
  (private_modules grapheme_tracker grapheme_store grid_data packed_cell))

@@ -126,8 +126,8 @@ let viewport_switch_reconciles_selected_branch_on_resize () =
   let first_transcript = List.hd (Renderable.children first_root) in
   let first_narrow = List.nth (Renderable.children first_root) 1 in
   let mouse =
-    match Input.mouse_scroll 1 1 Input.Mouse.Scroll_down with
-    | Input.Mouse mouse -> mouse
+    match Matrix_input.mouse_scroll 1 1 Matrix_input.Mouse.Scroll_down with
+    | Matrix_input.Mouse mouse -> mouse
     | _ -> assert false
   in
   ignore (Renderer.dispatch_mouse renderer mouse : Event.mouse);
@@ -197,8 +197,8 @@ let non_focusable_scroll_box_still_scrolls_with_wheel () =
   let node = List.hd (children_of renderer) in
   is_false ~msg:"scroll box is not focusable" (Renderable.focusable node);
   let mouse =
-    match Input.mouse_scroll 1 1 Input.Mouse.Scroll_down with
-    | Input.Mouse mouse -> mouse
+    match Matrix_input.mouse_scroll 1 1 Matrix_input.Mouse.Scroll_down with
+    | Matrix_input.Mouse mouse -> mouse
     | _ -> assert false
   in
   ignore (Renderer.dispatch_mouse renderer mouse : Event.mouse);
@@ -375,12 +375,14 @@ let controlled_input_reapplies_equal_value () =
       ()
   in
   render_view reconciler (view ());
-  ignore (Renderer.dispatch_key renderer (Input.Key.of_char 'x') : Event.key);
+  ignore
+    (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'x') : Event.key);
   equal ~msg:"live input accepted the edit" (list string) [ "x" ]
     (List.rev !inputs);
   render_view reconciler (view ());
   ignore
-    (Renderer.dispatch_key renderer (Input.Key.make Input.Key.Enter)
+    (Renderer.dispatch_key renderer
+       (Matrix_input.Key.make Matrix_input.Key.Enter)
       : Event.key);
   equal ~msg:"equal controlled value replaced live input state" (list string)
     [ "" ] (List.rev !submissions)
@@ -398,7 +400,8 @@ let controlled_textarea_reapplies_equal_value () =
       ()
   in
   render_view reconciler (view ());
-  ignore (Renderer.dispatch_key renderer (Input.Key.of_char 'x') : Event.key);
+  ignore
+    (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'x') : Event.key);
   equal ~msg:"live textarea accepted the edit" (list string) [ "x" ]
     (List.rev !inputs);
   do_frame renderer;
@@ -408,9 +411,10 @@ let controlled_textarea_reapplies_equal_value () =
       is_true ~msg:"controlled replacement invalidates intrinsic layout"
         (Renderable.Private.layout_dirty renderable)
   | None -> fail "expected textarea ref");
-  let modifier = { Input.Modifier.none with ctrl = true } in
+  let modifier = { Matrix_input.Modifier.none with ctrl = true } in
   ignore
-    (Renderer.dispatch_key renderer (Input.Key.make ~modifier Input.Key.Enter)
+    (Renderer.dispatch_key renderer
+       (Matrix_input.Key.make ~modifier Matrix_input.Key.Enter)
       : Event.key);
   equal ~msg:"equal controlled value replaced live textarea state" (list string)
     [ "" ] (List.rev !submissions)
@@ -425,9 +429,12 @@ let converged_controlled_value_preserves_cursor () =
   in
   render_view reconciler view;
   ignore
-    (Renderer.dispatch_key renderer (Input.Key.make Input.Key.Left) : Event.key);
+    (Renderer.dispatch_key renderer
+       (Matrix_input.Key.make Matrix_input.Key.Left)
+      : Event.key);
   render_view reconciler view;
-  ignore (Renderer.dispatch_key renderer (Input.Key.of_char 'x') : Event.key);
+  ignore
+    (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'x') : Event.key);
   equal ~msg:"same vnode preserves the live cursor when value has converged"
     (list string) [ "axb" ] (List.rev !inputs)
 
@@ -699,7 +706,8 @@ let on_key_handler_fires () =
   do_frame renderer;
   let node = List.hd (children_of renderer) in
   ignore (Renderer.focus renderer node : bool);
-  ignore (Renderer.dispatch_key renderer (Input.Key.of_char 'a') : Event.key);
+  ignore
+    (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'a') : Event.key);
   is_true ~msg:"handler fired" !received
 
 let on_key_handler_updates_on_rerender () =
@@ -710,11 +718,13 @@ let on_key_handler_updates_on_rerender () =
   do_frame renderer;
   let node = List.hd (children_of renderer) in
   ignore (Renderer.focus renderer node : bool);
-  ignore (Renderer.dispatch_key renderer (Input.Key.of_char 'a') : Event.key);
+  ignore
+    (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'a') : Event.key);
   equal ~msg:"first handler" (list string) [ "first" ] !log;
   render_view reconciler
     (Vnode.box ~focusable:true ~on_key:(fun _ -> log := "second" :: !log) []);
-  ignore (Renderer.dispatch_key renderer (Input.Key.of_char 'b') : Event.key);
+  ignore
+    (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'b') : Event.key);
   equal ~msg:"second handler" (list string) [ "second"; "first" ] !log
 
 (* ── Unmount ── *)

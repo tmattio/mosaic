@@ -62,6 +62,7 @@
 
 #### Changed
 
+- **Prefixed module names** – the sublibraries install `Matrix_grid`, `Matrix_screen`, `Matrix_input`, `Matrix_text`, `Matrix_terminal`, and `Matrix_image` (Toffee likewise `Toffee_style`, `Toffee_tree`, `Toffee_geometry`, `Toffee_compute`) so they cannot collide with other packages' top-level modules; `Matrix.Grid` and friends are unchanged via the umbrella. `Ansi`, `Vte`, and `Pty` deliberately keep their bare names
 - **Input responses are separate from events** – `Input.Response` carries clipboard, OSC, capability, and unknown protocol replies out of the user event stream, and the parser defers only the replies a probe currently expects
 - Mouse input is one `Input.Mouse` record of coordinates, modifiers, and a kind (scroll included), replacing tuple events and wheel pseudo-buttons; modifiers live in a shared `Input.Modifier` instead of nested under keys
 - Colors are emitted at the terminal's negotiated depth: RGB downgrades to ANSI256 or ANSI16 when truecolor is unavailable, and indexed colors are preserved verbatim

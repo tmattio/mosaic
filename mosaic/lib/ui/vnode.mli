@@ -206,8 +206,8 @@ val box :
   ?on_key:(Event.key -> 'msg) ->
   ?on_paste:(Event.paste -> 'msg) ->
   ?border:bool ->
-  ?border_style:Grid.Border.t ->
-  ?border_sides:Grid.Border.side list ->
+  ?border_style:Matrix_grid.Border.t ->
+  ?border_sides:Matrix_grid.Border.side list ->
   ?border_color:Ansi.Color.t ->
   ?focused_border_color:Ansi.Color.t ->
   ?background:Ansi.Color.t ->
@@ -236,7 +236,7 @@ val box :
     - [border] enables border rendering. Defaults to [false]; also enabled
       automatically when any border option is set.
     - [border_style] is the border character set. Defaults to
-      {!Grid.Border.single}.
+      {!Matrix_grid.Border.single}.
     - [border_sides] is the set of sides on which the border is drawn. Defaults
       to all four sides.
     - [border_color] is the border color when unfocused.
@@ -839,7 +839,7 @@ val table :
   ?rows:Table.cell array list ->
   ?selected_row:int ->
   ?border:bool ->
-  ?border_style:Grid.Border.t ->
+  ?border_style:Matrix_grid.Border.t ->
   ?show_header:bool ->
   ?show_column_separator:bool ->
   ?show_row_separator:bool ->
@@ -875,7 +875,7 @@ val table :
     - [border] enables the outer border and header separator. Defaults to
       [true].
     - [border_style] is the border character set. Defaults to
-      {!Grid.Border.single}.
+      {!Matrix_grid.Border.single}.
     - [show_header] controls whether the header row is shown. Defaults to
       [true].
     - [show_column_separator] controls whether vertical lines between columns
@@ -1131,7 +1131,7 @@ val tree :
   ?expand_depth:int ->
   ?indent_size:int ->
   ?show_guides:bool ->
-  ?guide_style:Grid.Border.t ->
+  ?guide_style:Matrix_grid.Border.t ->
   ?expand_icon:string ->
   ?collapse_icon:string ->
   ?leaf_icon:string ->
@@ -1164,7 +1164,7 @@ val tree :
     - [show_guides] controls whether box-drawing guide lines are drawn. Defaults
       to [false].
     - [guide_style] is the guide character set. Defaults to
-      {!Grid.Border.single}.
+      {!Matrix_grid.Border.single}.
     - [expand_icon] is the icon string for expandable nodes.
     - [collapse_icon] is the icon string for collapsible nodes.
     - [leaf_icon] is the icon string for leaf nodes.

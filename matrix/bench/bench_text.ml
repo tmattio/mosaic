@@ -1,6 +1,6 @@
 (* bench_text.ml *)
 
-module T = Text
+module T = Matrix_text
 
 let repeat chunk count =
   let buffer = Buffer.create (String.length chunk * count) in

@@ -37,7 +37,7 @@ let make_table ?columns ?rows ?selected_row ?border ?border_style ?show_header
   in
   (t, tbl)
 
-let make_key ?(shift = false) key : Input.Key.event =
+let make_key ?(shift = false) key : Matrix_input.Key.event =
   {
     key;
     modifier =
@@ -525,7 +525,9 @@ let selection_can_be_visually_hidden () =
   with_layout tbl ~width:10 ~height:1;
   let grid = make_grid ~width:10 ~height:1 () in
   Renderable.Private.render_full node ~grid ~delta:0.;
-  let background = Grid.get_background grid (Grid.idx grid ~x:0 ~y:0) in
+  let background =
+    Matrix_grid.get_background grid (Matrix_grid.idx grid ~x:0 ~y:0)
+  in
   is_true ~msg:"base background retained"
     (Ansi.Color.equal Ansi.Color.blue background)
 
@@ -543,7 +545,7 @@ let scroll_indicator_handles_tiny_layouts () =
   with_layout tbl ~width:1 ~height:1;
   Renderable.Private.render_full node ~grid ~delta:0.;
   equal ~msg:"one-column indicator" string "↓"
-    (Grid.get_text grid (Grid.idx grid ~x:0 ~y:0))
+    (Matrix_grid.get_text grid (Matrix_grid.idx grid ~x:0 ~y:0))
 
 (* ── Data ── *)
 
@@ -617,9 +619,9 @@ let rich_cell_span_styles_apply () =
   with_layout tbl ~width:5 ~height:1;
   let grid = make_grid ~width:5 ~height:1 () in
   Renderable.Private.render_full node ~grid ~delta:0.;
-  let idx = Grid.idx grid ~x:0 ~y:0 in
-  equal ~msg:"cell text" string "B" (Grid.get_text grid idx);
-  let style = Grid.get_style grid idx in
+  let idx = Matrix_grid.idx grid ~x:0 ~y:0 in
+  equal ~msg:"cell text" string "B" (Matrix_grid.get_text grid idx);
+  let style = Matrix_grid.get_style grid idx in
   is_true ~msg:"span bold applies" (Ansi.Attr.mem Bold style.Ansi.Style.attrs)
 
 let auto_widths_follow_screen_width_method () =
@@ -646,7 +648,7 @@ let auto_widths_follow_screen_width_method () =
   let grid = make_grid ~width:12 ~height:1 ~width_method:`Wcwidth () in
   Renderable.Private.render_full node ~grid ~delta:0.;
   equal ~msg:"second column follows wcwidth measurement" string "X"
-    (Grid.get_text grid (Grid.idx grid ~x:7 ~y:0))
+    (Matrix_grid.get_text grid (Matrix_grid.idx grid ~x:7 ~y:0))
 
 let auto_widths_recompute_after_set_rows () =
   (* Auto measurements are cached across renders; replacing the data must
@@ -664,12 +666,12 @@ let auto_widths_recompute_after_set_rows () =
   let grid = make_grid ~width:12 ~height:1 () in
   Renderable.Private.render_full node ~grid ~delta:0.;
   equal ~msg:"initial column width" string "X"
-    (Grid.get_text grid (Grid.idx grid ~x:3 ~y:0));
+    (Matrix_grid.get_text grid (Matrix_grid.idx grid ~x:3 ~y:0));
   Table.set_rows tbl [ [| Table.cell "aaaa"; Table.cell "X" |] ];
   let grid = make_grid ~width:12 ~height:1 () in
   Renderable.Private.render_full node ~grid ~delta:0.;
   equal ~msg:"width follows the new data" string "X"
-    (Grid.get_text grid (Grid.idx grid ~x:5 ~y:0))
+    (Matrix_grid.get_text grid (Matrix_grid.idx grid ~x:5 ~y:0))
 
 (* ── Setter no-ops ── *)
 

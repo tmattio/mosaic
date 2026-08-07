@@ -85,7 +85,7 @@ module Props = struct
         (* [Some i] makes the selection controlled by props; [None] leaves the
            widget's own selection untouched across prop updates. *)
     border : bool;
-    border_style : Grid.Border.t;
+    border_style : Matrix_grid.Border.t;
     show_header : bool;
     show_column_separator : bool;
     show_row_separator : bool;
@@ -108,7 +108,7 @@ module Props = struct
   }
 
   let make ?(columns = []) ?(rows = []) ?selected_row ?(border = true)
-      ?(border_style = Grid.Border.single) ?(show_header = true)
+      ?(border_style = Matrix_grid.Border.single) ?(show_header = true)
       ?(show_column_separator = false) ?(show_row_separator = false)
       ?(cell_padding = 0) ?(header_color = Ansi.Color.of_rgb 255 255 255)
       ?(header_background = Ansi.Color.of_rgb 51 51 51)
@@ -231,7 +231,7 @@ let clamp_index t idx =
 (* ───── Column Width Computation ───── *)
 
 (* Measure with the width method of the screen the table renders into, so
-   column sizing agrees with how Grid.draw_text lays cells down. *)
+   column sizing agrees with how Matrix_grid.draw_text lays cells down. *)
 let text_width ~width_method s =
   Matrix.Text.measure ~width_method ~tab_width:2 s
 
@@ -617,10 +617,10 @@ let handle_mouse t (event : Event.mouse) =
   | Out -> set_hovered_row_internal t None
   | Scroll { direction; delta } when t.props.wheel_navigation -> (
       match direction with
-      | Input.Mouse.Scroll_up when delta > 0 ->
+      | Matrix_input.Mouse.Scroll_up when delta > 0 ->
           move_up t;
           Event.Mouse.stop_propagation event
-      | Input.Mouse.Scroll_down when delta > 0 ->
+      | Matrix_input.Mouse.Scroll_down when delta > 0 ->
           move_down t;
           Event.Mouse.stop_propagation event
       | _ -> ())
@@ -629,13 +629,13 @@ let handle_mouse t (event : Event.mouse) =
 (* ───── Rendering Helpers ───── *)
 
 let draw_cell grid ~x ~y ~fg ~bg uch =
-  let cell = Grid.Cell.of_uchar uch in
-  Grid.set_cell grid ~x ~y ~cell ~fg ~bg ~attrs:Ansi.Attr.empty ()
+  let cell = Matrix_grid.Cell.of_uchar uch in
+  Matrix_grid.set_cell grid ~x ~y ~cell ~fg ~bg ~attrs:Ansi.Attr.empty ()
 
 let draw_hline grid ~border ~x ~y ~width ~left_cap ~right_cap ~cross
     ~show_col_sep ~col_widths ~fg ~bg =
   let right_edge = x + width - 1 in
-  let horiz = border.Grid.Border.horizontal in
+  let horiz = border.Matrix_grid.Border.horizontal in
   draw_cell grid ~x ~y ~fg ~bg left_cap;
   let cx = ref (x + 1) in
   let ncols = Array.length col_widths in
@@ -679,7 +679,7 @@ let draw_text_aligned ~width_method grid ~x ~y ~width ~alignment ~overflow
     | `Center -> max 0 ((width - tw) / 2)
     | `Right -> max 0 (width - tw)
   in
-  Grid.draw_text ~style grid ~x:(x + offset) ~y ~text:clipped
+  Matrix_grid.draw_text ~style grid ~x:(x + offset) ~y ~text:clipped
 
 let draw_cell_content ~width_method grid ~x ~y ~col_width ~padding ~alignment
     ~overflow ~default_style cell =
@@ -715,7 +715,7 @@ let draw_cell_content ~width_method grid ~x ~y ~col_width ~padding ~alignment
                 let st = merge_style base style in
                 let w = text_width ~width_method text in
                 if !cx + w <= right_bound then (
-                  Grid.draw_text ~style:st grid ~x:!cx ~y ~text;
+                  Matrix_grid.draw_text ~style:st grid ~x:!cx ~y ~text;
                   cx := !cx + w)
                 else
                   let avail = right_bound - !cx in
@@ -723,7 +723,8 @@ let draw_cell_content ~width_method grid ~x ~y ~col_width ~padding ~alignment
                     let truncated =
                       Text_crop.crop_to_width ~width_method text avail
                     in
-                    Grid.draw_text ~style:st grid ~x:!cx ~y ~text:truncated;
+                    Matrix_grid.draw_text ~style:st grid ~x:!cx ~y
+                      ~text:truncated;
                     cx := right_bound)
             | Text.Span { children; style } ->
                 draw_fragments ~base:(merge_style base style) children)
@@ -750,7 +751,8 @@ let render t _self grid ~delta:_ =
     let border_bg = t.props.background in
 
     (* Background fill *)
-    Grid.clear_rect ~color:t.props.background grid ~x:0 ~y:0 ~width ~height;
+    Matrix_grid.clear_rect ~color:t.props.background grid ~x:0 ~y:0 ~width
+      ~height;
 
     (* Compute layout positions *)
     let border_left = if border then 1 else 0 in
@@ -780,7 +782,7 @@ let render t _self grid ~delta:_ =
 
     (* Header row *)
     if show_header && ncols > 0 then (
-      Grid.fill_rect grid ~x:border_left ~y:!cur_y
+      Matrix_grid.fill_rect grid ~x:border_left ~y:!cur_y
         ~width:(width - (2 * border_left))
         ~height:1 ~color:t.props.header_background;
       if border then
@@ -841,13 +843,13 @@ let render t _self grid ~delta:_ =
         in
         (* Row background: selection takes priority, then alternating style *)
         (if is_selected then
-           Grid.fill_rect grid ~x:border_left ~y:!cur_y
+           Matrix_grid.fill_rect grid ~x:border_left ~y:!cur_y
              ~width:(width - (2 * border_left))
              ~height:1 ~color:sel_bg
          else
            match alt_style with
            | Some s when Option.is_some s.Ansi.Style.bg ->
-               Grid.fill_rect grid ~x:border_left ~y:!cur_y
+               Matrix_grid.fill_rect grid ~x:border_left ~y:!cur_y
                  ~width:(width - (2 * border_left))
                  ~height:1
                  ~color:(Option.get s.Ansi.Style.bg)
@@ -922,7 +924,7 @@ let render t _self grid ~delta:_ =
              else if offset = visible_rows - 1 && hidden_below then "↓"
              else "│"
            in
-           Grid.draw_text ~style grid ~x:indicator_x
+           Matrix_grid.draw_text ~style grid ~x:indicator_x
              ~y:(data_y + (offset * row_height))
              ~text
          done);

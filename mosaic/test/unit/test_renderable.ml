@@ -2,7 +2,7 @@ open Windtrap
 open Mosaic_ui
 open Test_harness
 
-let key_ev_a = Input.Key.of_char 'a'
+let key_ev_a = Matrix_input.Key.of_char 'a'
 
 (* ── Construction ── *)
 

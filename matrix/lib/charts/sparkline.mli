@@ -60,7 +60,7 @@ val draw :
   ?columns_only:bool ->
   ?x:int ->
   ?y:int ->
-  Grid.t ->
+  Matrix_grid.t ->
   width:int ->
   height:int ->
   unit
@@ -77,7 +77,7 @@ val draw_values :
   ?x:int ->
   ?y:int ->
   float list ->
-  Grid.t ->
+  Matrix_grid.t ->
   width:int ->
   height:int ->
   unit

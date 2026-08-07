@@ -14,14 +14,14 @@ module Key : sig
   type t
   (** The type for keyboard events.
 
-      Wraps an {!Input.Key.event} with a default-prevention flag consulted while
-      dispatching to the focused renderable. *)
+      Wraps an {!Matrix_input.Key.event} with a default-prevention flag
+      consulted while dispatching to the focused renderable. *)
 
-  val of_input : Input.Key.event -> t
+  val of_input : Matrix_input.Key.event -> t
   (** [of_input ev] is a keyboard event wrapping [ev]. The default-prevention
       flag starts as [false]. *)
 
-  val data : t -> Input.Key.event
+  val data : t -> Matrix_input.Key.event
   (** [data t] is the underlying terminal key event. *)
 
   val prevent_default : t -> unit
@@ -101,7 +101,7 @@ module Mouse : sig
   val pp_button : Format.formatter -> button -> unit
   (** [pp_button] formats a {!button} value. *)
 
-  type modifier = Input.Modifier.t = {
+  type modifier = Matrix_input.Modifier.t = {
     ctrl : bool;  (** Control key held. *)
     alt : bool;  (** Alt / Option key held. *)
     shift : bool;  (** Shift key held. *)
@@ -111,7 +111,8 @@ module Mouse : sig
     caps_lock : bool;  (** Caps Lock active. *)
     num_lock : bool;  (** Num Lock active. *)
   }
-  (** The type for modifier key state. Re-exported from {!Input.Modifier.t}. *)
+  (** The type for modifier key state. Re-exported from
+      {!Matrix_input.Modifier.t}. *)
 
   val no_modifier : modifier
   (** [no_modifier] is the modifier state with every field set to [false]. *)
@@ -124,8 +125,8 @@ module Mouse : sig
   (** [pp_modifier] formats a {!modifier} value. *)
 
   (** The type for scroll-wheel directions. Re-exported from
-      {!Input.Mouse.scroll_direction}. *)
-  type scroll_direction = Input.Mouse.scroll_direction =
+      {!Matrix_input.Mouse.scroll_direction}. *)
+  type scroll_direction = Matrix_input.Mouse.scroll_direction =
     | Scroll_up  (** Scroll towards the top of the content. *)
     | Scroll_down  (** Scroll towards the bottom of the content. *)
     | Scroll_left  (** Scroll towards the left of the content. *)

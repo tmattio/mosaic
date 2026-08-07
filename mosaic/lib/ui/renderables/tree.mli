@@ -25,7 +25,7 @@
 
     When [show_guides] is [true], Unicode box-drawing characters render the tree
     structure. The character set is controlled by [guide_style], which accepts
-    any {!Grid.Border.t} preset (single, rounded, heavy, etc.). When
+    any {!Matrix_grid.Border.t} preset (single, rounded, heavy, etc.). When
     [show_guides] is [false] (the default), only indentation is used. *)
 
 type t
@@ -57,7 +57,7 @@ val create :
   ?expand_depth:int ->
   ?indent_size:int ->
   ?show_guides:bool ->
-  ?guide_style:Grid.Border.t ->
+  ?guide_style:Matrix_grid.Border.t ->
   ?expand_icon:string ->
   ?collapse_icon:string ->
   ?leaf_icon:string ->
@@ -94,7 +94,7 @@ module Props : sig
     ?expand_depth:int ->
     ?indent_size:int ->
     ?show_guides:bool ->
-    ?guide_style:Grid.Border.t ->
+    ?guide_style:Matrix_grid.Border.t ->
     ?expand_icon:string ->
     ?collapse_icon:string ->
     ?leaf_icon:string ->
@@ -123,7 +123,7 @@ module Props : sig
       - [indent_size]: columns per depth level; defaults to [2].
       - [show_guides]: draw box-drawing guide lines; defaults to [false].
       - [guide_style]: border character set for guide lines; defaults to
-        {!Grid.Border.single}.
+        {!Matrix_grid.Border.single}.
       - [expand_icon]: icon for collapsed expandable nodes; defaults to
         ["\xe2\x96\xb6"] (U+25B6 BLACK RIGHT-POINTING TRIANGLE).
       - [collapse_icon]: icon for expanded nodes; defaults to ["\xe2\x96\xbc"]
@@ -222,7 +222,7 @@ val set_show_guides : t -> bool -> unit
 (** [set_show_guides t v] shows guide lines when [v] is [true] and hides them
     when [v] is [false]. *)
 
-val set_guide_style : t -> Grid.Border.t -> unit
+val set_guide_style : t -> Matrix_grid.Border.t -> unit
 (** [set_guide_style t style] sets the guide line character set to [style]. *)
 
 val set_expand_icon : t -> string -> unit

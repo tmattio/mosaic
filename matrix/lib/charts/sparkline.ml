@@ -1,3 +1,4 @@
+module Grid = Matrix_grid
 module Style = Ansi.Style
 module Color = Ansi.Color
 

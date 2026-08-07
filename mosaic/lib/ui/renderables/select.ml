@@ -333,10 +333,10 @@ let handle_mouse t (event : Event.mouse) =
           Event.Mouse.stop_propagation event)
   | Scroll { direction; delta } -> (
       match direction with
-      | Input.Mouse.Scroll_up when delta > 0 ->
+      | Matrix_input.Mouse.Scroll_up when delta > 0 ->
           move_up t;
           Event.Mouse.stop_propagation event
-      | Input.Mouse.Scroll_down when delta > 0 ->
+      | Matrix_input.Mouse.Scroll_down when delta > 0 ->
           move_down t;
           Event.Mouse.stop_propagation event
       | _ -> ())
@@ -354,7 +354,7 @@ let render t _self grid ~delta:_ =
 
     (* Clear the entire area first so spacing rows and empty regions below the
        last item don't show stale content. *)
-    Grid.clear_rect ~color:base_bg grid ~x:0 ~y:0 ~width ~height;
+    Matrix_grid.clear_rect ~color:base_bg grid ~x:0 ~y:0 ~width ~height;
 
     (* Recompute layout metrics from current props and viewport size. Done each
        frame because the viewport may have resized between renders without
@@ -380,8 +380,8 @@ let render t _self grid ~delta:_ =
              the inter-item spacing rows. *)
           let content_height = if t.props.show_description then 2 else 1 in
           if is_selected then
-            Grid.fill_rect grid ~x:0 ~y:item_y ~width ~height:content_height
-              ~color:t.props.selected_background;
+            Matrix_grid.fill_rect grid ~x:0 ~y:item_y ~width
+              ~height:content_height ~color:t.props.selected_background;
           let indicator =
             if is_selected then indicator_selected else indicator_blank
           in
@@ -389,7 +389,7 @@ let render t _self grid ~delta:_ =
             if is_selected then t.props.selected_text_color else base_text
           in
           let label_text = indicator ^ it.label in
-          Grid.draw_text
+          Matrix_grid.draw_text
             ~style:(Ansi.Style.make ~fg:label_color ())
             grid ~x:1 ~y:item_y ~text:label_text;
           if t.props.show_description then
@@ -402,7 +402,7 @@ let render t _self grid ~delta:_ =
                     else t.props.description_color
                   in
                   (* Description indented past the indicator column *)
-                  Grid.draw_text
+                  Matrix_grid.draw_text
                     ~style:(Ansi.Style.make ~fg:desc_color ())
                     grid ~x:3 ~y:(item_y + 1) ~text:desc)
     done;
@@ -419,7 +419,7 @@ let render t _self grid ~delta:_ =
         1 + int_of_float (floor (scroll_percent *. float indicator_height))
       in
       let indicator_x = width - 1 in
-      Grid.draw_text
+      Matrix_grid.draw_text
         ~style:(Ansi.Style.make ~fg:(Ansi.Color.of_rgb 102 102 102) ())
         grid ~x:indicator_x ~y:indicator_y ~text:scroll_block
 

@@ -1,3 +1,4 @@
+module Image = Matrix_image
 open Windtrap
 open Matrix
 

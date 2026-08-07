@@ -1,3 +1,6 @@
+module Grid = Matrix_grid
+module Text = Matrix_text
+
 type cursor = { mutable row : int; mutable col : int; mutable visible : bool }
 (* Internal cursor state *)
 

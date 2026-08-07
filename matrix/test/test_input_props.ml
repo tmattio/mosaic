@@ -10,6 +10,7 @@
       buffered data, or require unbounded draining; bracketed paste payloads are
       preserved exactly. *)
 
+module Input = Matrix_input
 open Windtrap
 module Gen = Windtrap_prop.Gen
 

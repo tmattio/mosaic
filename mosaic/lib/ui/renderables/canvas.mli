@@ -1,9 +1,9 @@
 (** Mutable cell-level drawing surface.
 
-    A canvas is a {!Renderable.t} backed by a {!Grid.t} that the caller draws
-    into directly. The grid is resized to match the node's layout dimensions at
-    the start of each render pass. On render the canvas blits its grid to the
-    parent at the node's position.
+    A canvas is a {!Renderable.t} backed by a {!Matrix_grid.t} that the caller
+    draws into directly. The grid is resized to match the node's layout
+    dimensions at the start of each render pass. On render the canvas blits its
+    grid to the parent at the node's position.
 
     Use {!draw_text}, {!fill_rect}, {!draw_box}, {!draw_line}, or {!set_cell} to
     draw into the canvas. Drawing changes persist between frames. To draw at
@@ -87,15 +87,15 @@ val draw_text :
 (** [draw_text t ~x ~y ~text] draws [text] as a single line into the canvas grid
     at column [x], row [y].
 
-    See {!Grid.draw_text} for full semantics and parameter defaults; [style] and
-    [tab_width] are passed through unchanged. *)
+    See {!Matrix_grid.draw_text} for full semantics and parameter defaults;
+    [style] and [tab_width] are passed through unchanged. *)
 
 val fill_rect :
   t -> x:int -> y:int -> width:int -> height:int -> color:Ansi.Color.t -> unit
 (** [fill_rect t ~x ~y ~width ~height ~color] fills the rectangle at column [x],
     row [y] with the given [width], [height], and background [color].
 
-    See {!Grid.fill_rect} for full semantics. *)
+    See {!Matrix_grid.fill_rect} for full semantics. *)
 
 val draw_box :
   t ->
@@ -103,8 +103,8 @@ val draw_box :
   y:int ->
   width:int ->
   height:int ->
-  ?border:Grid.Border.t ->
-  ?sides:Grid.Border.side list ->
+  ?border:Matrix_grid.Border.t ->
+  ?sides:Matrix_grid.Border.side list ->
   ?style:Ansi.Style.t ->
   ?fill:Ansi.Color.t ->
   ?title:string ->
@@ -115,8 +115,8 @@ val draw_box :
 (** [draw_box t ~x ~y ~width ~height ()] draws a Unicode box at column [x], row
     [y] with the given [width] and [height].
 
-    See {!Grid.draw_box} for full semantics and parameter defaults; all optional
-    parameters are passed through unchanged. *)
+    See {!Matrix_grid.draw_box} for full semantics and parameter defaults; all
+    optional parameters are passed through unchanged. *)
 
 val draw_line :
   t ->
@@ -125,13 +125,13 @@ val draw_line :
   x2:int ->
   y2:int ->
   ?style:Ansi.Style.t ->
-  ?symbols:Grid.line_symbols ->
+  ?symbols:Matrix_grid.line_symbols ->
   ?kind:[ `Line | `Braille ] ->
   unit ->
   unit
 (** [draw_line t ~x1 ~y1 ~x2 ~y2 ()] draws a line from [(x1, y1)] to [(x2, y2)].
 
-    See {!Grid.draw_line} for full semantics.
+    See {!Matrix_grid.draw_line} for full semantics.
 
     Optional parameters:
     - [style] is the line style. Defaults to the empty style.
@@ -144,7 +144,7 @@ val set_cell :
   t ->
   x:int ->
   y:int ->
-  cell:Grid.Cell.t ->
+  cell:Matrix_grid.Cell.t ->
   fg:Ansi.Color.t ->
   bg:Ansi.Color.t ->
   attrs:Ansi.Attr.t ->
@@ -155,7 +155,7 @@ val set_cell :
 (** [set_cell t ~x ~y ~cell ~fg ~bg ~attrs ()] writes a single cell at column
     [x], row [y].
 
-    See {!Grid.set_cell} for full semantics.
+    See {!Matrix_grid.set_cell} for full semantics.
 
     Optional parameters:
     - [link] is a hyperlink URI attached to the cell. Defaults to no link.
@@ -168,15 +168,16 @@ val clear : ?color:Ansi.Color.t -> t -> unit
     [color] is the background color used to fill the cleared grid. Defaults to
     the default background color.
 
-    See {!Grid.clear} for full semantics. *)
+    See {!Matrix_grid.clear} for full semantics. *)
 
 (** {1:grid Low-level grid access} *)
 
-val grid : t -> Grid.t
-(** [grid t] is the underlying {!Grid.t} for [t].
+val grid : t -> Matrix_grid.t
+(** [grid t] is the underlying {!Matrix_grid.t} for [t].
 
     Use this for operations not covered by the canvas drawing functions: scissor
-    clipping, cell queries, scrolling, {!Grid.blit_region}, and similar. *)
+    clipping, cell queries, scrolling, {!Matrix_grid.blit_region}, and similar.
+*)
 
 (** {1:props Props} *)
 

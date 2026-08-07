@@ -1,3 +1,4 @@
+module Grid = Matrix_grid
 open Matrix_charts
 module Style = Ansi.Style
 

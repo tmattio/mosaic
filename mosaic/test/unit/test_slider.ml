@@ -47,8 +47,8 @@ let count_thumb_cells_h grid ~y ~width =
   let n = ref 0 in
   for x = 0 to width - 1 do
     let idx = (y * width) + x in
-    if not (Grid.is_continuation grid idx) then
-      let text = Grid.get_text grid idx in
+    if not (Matrix_grid.is_continuation grid idx) then
+      let text = Matrix_grid.get_text grid idx in
       if String.length text > 0 then
         let d = String.get_utf_8_uchar text 0 in
         let code = Uchar.to_int (Uchar.utf_decode_uchar d) in
@@ -62,8 +62,8 @@ let count_thumb_cells_v grid ~x ~width ~height =
   let n = ref 0 in
   for y = 0 to height - 1 do
     let idx = (y * width) + x in
-    if not (Grid.is_continuation grid idx) then
-      let text = Grid.get_text grid idx in
+    if not (Matrix_grid.is_continuation grid idx) then
+      let text = Matrix_grid.get_text grid idx in
       if String.length text > 0 then
         let d = String.get_utf_8_uchar text 0 in
         let code = Uchar.to_int (Uchar.utf_decode_uchar d) in

@@ -3,8 +3,8 @@
 module Props = struct
   type t = {
     border : bool;
-    border_style : Grid.Border.t;
-    border_sides : Grid.Border.side list;
+    border_style : Matrix_grid.Border.t;
+    border_sides : Matrix_grid.Border.side list;
     border_color : Ansi.Color.t;
     focused_border_color : Ansi.Color.t option;
     background : Ansi.Color.t option;
@@ -15,13 +15,13 @@ module Props = struct
 
   let default_focused_border_color = Ansi.Color.bright_cyan
 
-  let make ?(border = false) ?(border_style = Grid.Border.single)
-      ?(border_sides = Grid.Border.all) ?(border_color = Ansi.Color.white)
-      ?focused_border_color ?background ?(fill = true) ?title
-      ?(title_alignment = `Left) () =
+  let make ?(border = false) ?(border_style = Matrix_grid.Border.single)
+      ?(border_sides = Matrix_grid.Border.all)
+      ?(border_color = Ansi.Color.white) ?focused_border_color ?background
+      ?(fill = true) ?title ?(title_alignment = `Left) () =
     let has_border_opts =
       Option.is_some focused_border_color
-      || border_style <> Grid.Border.single
+      || border_style <> Matrix_grid.Border.single
       || border_color <> Ansi.Color.white
     in
     let border = border || has_border_opts in
@@ -82,7 +82,7 @@ let child_clip t _node =
   let top, right, bottom, left = calculate_insets t in
   Some
     {
-      Grid.x = x + left;
+      Matrix_grid.x = x + left;
       y = y + top;
       width = max 0 (w - left - right);
       height = max 0 (h - top - bottom);
@@ -125,7 +125,7 @@ let render t _self grid ~delta:_ =
     let border_style =
       Ansi.Style.make ~fg:(resolve_border_color t) ~bg:transparent ()
     in
-    Grid.draw_box grid ~x:(Renderable.x t.node) ~y:(Renderable.y t.node)
+    Matrix_grid.draw_box grid ~x:(Renderable.x t.node) ~y:(Renderable.y t.node)
       ~width:w ~height:h ~border:t.props.border_style ~sides:(effective_sides t)
       ~style:border_style ?fill ?title:t.props.title
       ~title_alignment:t.props.title_alignment ()

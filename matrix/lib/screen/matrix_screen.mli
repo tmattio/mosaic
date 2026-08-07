@@ -28,10 +28,10 @@
     across frames until removed.
 
     {2:invariants Invariants}
-    - The {!Grid.t} passed to {!build} is the next buffer. After {!render} the
-      buffers swap and the now-next buffer is observably cleared: the clear is
-      applied lazily by the next {!build}, {!next_grid}, {!next_hit_grid},
-      {!add_hit_region}, or {!active_height}.
+    - The {!Matrix_grid.t} passed to {!build} is the next buffer. After
+      {!render} the buffers swap and the now-next buffer is observably cleared:
+      the clear is applied lazily by the next {!build}, {!next_grid},
+      {!next_hit_grid}, {!add_hit_region}, or {!active_height}.
     - Visual and hit buffers swap on {!render}: regions registered via
       {!Hit_grid.add} become queryable only after the following render.
     - Post-processors always run, even when no cells changed. Their [~delta]
@@ -71,7 +71,7 @@ type frame_metrics = {
 (** {1:constructors Constructors} *)
 
 val create :
-  ?width_method:Text.width_method ->
+  ?width_method:Matrix_text.width_method ->
   ?respect_alpha:bool ->
   ?cursor_visible:bool ->
   ?explicit_width:bool ->
@@ -96,7 +96,7 @@ val create :
 (** {1:building Frame building} *)
 
 val build :
-  t -> width:int -> height:int -> (Grid.t -> Hit_grid.t -> unit) -> unit
+  t -> width:int -> height:int -> (Matrix_grid.t -> Hit_grid.t -> unit) -> unit
 (** [build t ~width ~height f] builds a frame.
 
     Resizes buffers to [width] x [height] when both are positive, guarantees the
@@ -108,15 +108,15 @@ val build :
     When [width <= 0] or [height <= 0], [f] is not called; the buffers are only
     cleared.
 
-    {b Warning.} The {!Grid.t} and {!Hit_grid.t} passed to [f] must not be
-    mutated after the next {!render} -- they become the diff baseline. *)
+    {b Warning.} The {!Matrix_grid.t} and {!Hit_grid.t} passed to [f] must not
+    be mutated after the next {!render} -- they become the diff baseline. *)
 
 (** {1:effects Post-processing} *)
 
 type effect_id = int
 (** The type for post-processing effect identifiers. *)
 
-val post_process : (Grid.t -> delta:float -> unit) -> t -> effect_id
+val post_process : (Matrix_grid.t -> delta:float -> unit) -> t -> effect_id
 (** [post_process f t] registers [f] as a persistent post-processing transform
     and is its {!effect_id}.
 
@@ -242,7 +242,7 @@ val apply_capabilities :
     - [hyperlinks]: whether the terminal supports OSC 8 hyperlinks.
     - [color_depth]: terminal color emission depth. *)
 
-val set_width_method : t -> Text.width_method -> unit
+val set_width_method : t -> Matrix_text.width_method -> unit
 (** [set_width_method t m] sets the grapheme width computation method on both
     the current and next buffers. Use this after capability changes that affect
     width calculation to keep buffers consistent across swaps. *)
@@ -280,7 +280,7 @@ val last_metrics : t -> frame_metrics
     Direct access to internal buffers for advanced use cases. These functions
     bypass the builder API. *)
 
-val next_grid : t -> Grid.t
+val next_grid : t -> Matrix_grid.t
 (** [next_grid t] is [t]'s next buffer grid. On the first access after a
     {!render}, any content left from the presented frame is cleared before the
     grid is returned.
@@ -288,7 +288,7 @@ val next_grid : t -> Grid.t
     {b Warning.} Do not mutate the returned grid after the next {!render} -- it
     becomes the diff baseline. *)
 
-val current_grid : t -> Grid.t
+val current_grid : t -> Matrix_grid.t
 (** [current_grid t] is [t]'s presented grid: the committed terminal state as of
     the most recent {!render}. Blank before the first render.
 

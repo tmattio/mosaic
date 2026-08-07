@@ -1,4 +1,4 @@
 (library
- (name image)
+ (name matrix_image)
  (public_name matrix.image)
- (libraries ansi grid screen text))
+ (libraries matrix.ansi matrix.grid matrix.screen matrix.text))

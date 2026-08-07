@@ -1,3 +1,5 @@
+module Input = Matrix_input
+
 type t = {
   term : string;
   rgb : bool;
@@ -5,7 +7,7 @@ type t = {
   kitty_graphics : bool;
   bracketed_paste : bool;
   focus_tracking : bool;
-  unicode_width : Text.width_method;
+  unicode_width : Matrix_text.width_method;
   sgr_pixels : bool;
   color_scheme_updates : bool;
   explicit_width : bool;

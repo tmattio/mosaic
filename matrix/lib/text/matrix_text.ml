@@ -601,7 +601,7 @@ let measure_sub ~width_method ~tab_width str ~pos ~len:sub_len =
   let tab_width = normalize_tab_width tab_width in
   if sub_len <= 0 then 0
   else (
-    check_sub "Text.measure_sub" str ~pos ~len:sub_len;
+    check_sub "Matrix_text.measure_sub" str ~pos ~len:sub_len;
     let end_pos = pos + sub_len in
     if is_ascii_only str end_pos pos then
       measure_ascii str end_pos tab_width pos 0

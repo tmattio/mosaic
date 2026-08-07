@@ -1,4 +1,4 @@
-module G = Grid
+module G = Matrix_grid
 module Style = Ansi.Style
 module Color = Ansi.Color
 
@@ -771,7 +771,7 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
       let default_st = Option.get layout.y_axis.label_style in
       let title_style = Option.value ~default:default_st style in
       let graphemes = ref [] in
-      Text.iter_graphemes
+      Matrix_text.iter_graphemes
         (fun ~offset ~len ->
           graphemes := String.sub text offset len :: !graphemes)
         text;
@@ -942,7 +942,7 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
     if Array.length s = 0 then charset.bar_fill else s.(Array.length s / 2)
   in
 
-  (* Grid.line_symbols for theme-aware line rendering *)
+  (* Matrix_grid.line_symbols for theme-aware line rendering *)
   let line_symbols : G.line_symbols =
     {
       G.h = charset.frame.h;

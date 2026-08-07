@@ -29,7 +29,7 @@ let make_tree ?items ?selected_index ?expand_depth ?indent_size ?show_guides
   in
   (t, tree)
 
-let make_key ?(shift = false) key : Input.Key.event =
+let make_key ?(shift = false) key : Matrix_input.Key.event =
   {
     key;
     modifier =

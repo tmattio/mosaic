@@ -1,4 +1,4 @@
-(** Terminal charts rendered to a {!Grid.t}.
+(** Terminal charts rendered to a {!Matrix_grid.t}.
 
     [Matrix_charts] renders line, scatter, bar, heatmap, candlestick, and other
     chart types into a terminal grid. Charts are immutable specifications built
@@ -10,7 +10,8 @@
     + Build an immutable {!t} by layering marks (lines, bars, scatter, etc.).
     + Keep viewport state in a separate {!View.t} (zoom and pan belong in your
       model, not the chart).
-    + Call {!draw} which compiles a {!Layout.t} and renders to a {!Grid.t}.
+    + Call {!draw} which compiles a {!Layout.t} and renders to a
+      {!Matrix_grid.t}.
     + Use {!Layout} + {!Hit} + {!Overlay} for hover tooltips, crosshairs,
       snapping, and zoom-to-cursor.
 
@@ -895,15 +896,15 @@ end
 module Overlay : sig
   (** Interactive overlays drawn on top of the chart.
 
-      Overlays mutate the {!Grid.t} directly. They require a {!Layout.t} to
-      convert between data and cell coordinates. All position parameters ([~x],
-      [~y]) are in data coordinates. *)
+      Overlays mutate the {!Matrix_grid.t} directly. They require a {!Layout.t}
+      to convert between data and cell coordinates. All position parameters
+      ([~x], [~y]) are in data coordinates. *)
 
   val crosshair :
     ?style:Ansi.Style.t ->
     ?pattern:Charset.line_pattern ->
     Layout.t ->
-    Grid.t ->
+    Matrix_grid.t ->
     x:float ->
     y:float ->
     unit
@@ -915,7 +916,7 @@ module Overlay : sig
     ?style:Ansi.Style.t ->
     ?glyph:string ->
     Layout.t ->
-    Grid.t ->
+    Matrix_grid.t ->
     x:float ->
     y:float ->
     unit
@@ -940,7 +941,7 @@ module Overlay : sig
     ?padding:int ->
     ?anchor:tooltip_anchor ->
     Layout.t ->
-    Grid.t ->
+    Matrix_grid.t ->
     x:float ->
     y:float ->
     string list ->
@@ -961,7 +962,7 @@ module Overlay : sig
     ?style:Ansi.Style.t ->
     ?anchor:h_anchor ->
     Layout.t ->
-    Grid.t ->
+    Matrix_grid.t ->
     x:float ->
     y:float ->
     string ->
@@ -979,7 +980,7 @@ module Overlay : sig
     ?style:Ansi.Style.t ->
     ?head:arrow_head ->
     Layout.t ->
-    Grid.t ->
+    Matrix_grid.t ->
     x1:float ->
     y1:float ->
     x2:float ->
@@ -1003,7 +1004,7 @@ module Legend : sig
     ?direction:[ `Horizontal | `Vertical ] ->
     ?gap:int ->
     item list ->
-    Grid.t ->
+    Matrix_grid.t ->
     width:int ->
     height:int ->
     unit
@@ -1291,7 +1292,7 @@ val draw :
   ?x:int ->
   ?y:int ->
   t ->
-  Grid.t ->
+  Matrix_grid.t ->
   width:int ->
   height:int ->
   Layout.t

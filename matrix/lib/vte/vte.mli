@@ -2,8 +2,8 @@
 
     A virtual terminal emulator (VTE) processes raw byte streams containing
     ANSI/VT100 escape sequences and maintains the resulting terminal state: a
-    visible {!Grid.t}, cursor position, style, scrollback history, and mode
-    flags.
+    visible {!Matrix_grid.t}, cursor position, style, scrollback history, and
+    mode flags.
 
     The emulator maintains two screen buffers. The {e primary screen} has
     optional scrollback history; the {e alternate screen} is a temporary buffer
@@ -34,7 +34,7 @@ type t
 
 val create :
   ?scrollback:int ->
-  ?width_method:Text.width_method ->
+  ?width_method:Matrix_text.width_method ->
   ?respect_alpha:bool ->
   ?default_fg:Ansi.Color.t ->
   ?default_bg:Ansi.Color.t ->
@@ -97,7 +97,7 @@ val feed_string : t -> string -> unit
 
 (** {1:state Terminal state} *)
 
-val grid : t -> Grid.t
+val grid : t -> Matrix_grid.t
 (** [grid t] is the active visible grid (primary or alternate).
 
     {b Warning.} The grid is mutable and shared with [t]. External modifications
@@ -171,7 +171,7 @@ val scrollback_lines : t -> string list
     trimmed during compression. Empty if scrollback is disabled, empty, or the
     alternate screen is active. O({!scrollback_size}). *)
 
-val render_with_scrollback : t -> offset:int -> Grid.t -> unit
+val render_with_scrollback : t -> offset:int -> Matrix_grid.t -> unit
 (** [render_with_scrollback t ~offset dst] renders a snapshot combining
     scrollback history and the live screen into [dst].
 
@@ -182,9 +182,9 @@ val render_with_scrollback : t -> offset:int -> Grid.t -> unit
 
     [dst] should have the same width as [t] for correct glyph placement; smaller
     widths clip decompressed graphemes. On the alternate screen (no scrollback)
-    this is equivalent to [Grid.blit ~src:(grid t) ~dst].
+    this is equivalent to [Matrix_grid.blit ~src:(grid t) ~dst].
 
-    O(Grid.height dst × {!cols}). *)
+    O(Matrix_grid.height dst × {!cols}). *)
 
 (** {1:modes Terminal modes} *)
 

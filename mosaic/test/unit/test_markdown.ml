@@ -112,11 +112,11 @@ let selection_callback_reports_rendered_text () =
   Renderer.render_frame renderer ~width:40 ~height:5 ~delta:0.;
   ignore (Renderer.render ~full:true renderer : string);
   let mouse kind =
-    Input.Mouse.make ~x:0 ~y:0 ~modifiers:Input.Modifier.none kind
+    Matrix_input.Mouse.make ~x:0 ~y:0 ~modifiers:Matrix_input.Modifier.none kind
   in
   dispatch_mouse renderer (mouse (Down { button = Left }));
   dispatch_mouse renderer
-    (Input.Mouse.make ~x:5 ~y:0 ~modifiers:Input.Modifier.none
+    (Matrix_input.Mouse.make ~x:5 ~y:0 ~modifiers:Matrix_input.Modifier.none
        (Drag { button = Left }));
   some ~msg:"selected markdown text" string "Hello" !selected
 
@@ -134,11 +134,11 @@ let selection_callback_clears () =
   Markdown.set_on_selection md (Some (fun text -> selected := text));
   Markdown.set_selectable md false;
   let mouse kind =
-    Input.Mouse.make ~x:0 ~y:0 ~modifiers:Input.Modifier.none kind
+    Matrix_input.Mouse.make ~x:0 ~y:0 ~modifiers:Matrix_input.Modifier.none kind
   in
   dispatch_mouse renderer (mouse (Down { button = Left }));
   dispatch_mouse renderer
-    (Input.Mouse.make ~x:5 ~y:0 ~modifiers:Input.Modifier.none
+    (Matrix_input.Mouse.make ~x:5 ~y:0 ~modifiers:Matrix_input.Modifier.none
        (Drag { button = Left }));
   some ~msg:"selection did not change while disabled" string "stale" !selected
 

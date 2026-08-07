@@ -2,7 +2,7 @@
 
     [Primary] models Matrix's primary-screen layout as an inline live viewport
     with static transcript rows above it. It is a pure state machine: it never
-    writes to a terminal, mutates a {!Screen.t}, or owns I/O resources.
+    writes to a terminal, mutates a {!Matrix_screen.t}, or owns I/O resources.
 
     The runtime interprets returned plans inside a frame transaction. *)
 

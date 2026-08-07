@@ -19,10 +19,11 @@ let paging_rows count =
   List.init count (fun index -> [| Table.cell ("row " ^ string_of_int index) |])
 
 let dispatch_mouse app = function
-  | Input.Mouse event ->
+  | Matrix_input.Mouse event ->
       ignore (Renderer.dispatch_mouse app.renderer event : Event.mouse)
-  | Input.Key _ | Input.Paste _ | Input.Resize _ | Input.Focus | Input.Blur
-  | Input.Color_scheme _ | Input.Error _ ->
+  | Matrix_input.Key _ | Matrix_input.Paste _ | Matrix_input.Resize _
+  | Matrix_input.Focus | Matrix_input.Blur | Matrix_input.Color_scheme _
+  | Matrix_input.Error _ ->
       invalid_arg "expected mouse input"
 
 (* ── Basic Rendering ── *)
@@ -151,7 +152,7 @@ let%expect_test "keyboard navigation changes selection" =
        ~columns:cols ~rows ~border:false ());
   focus app (Option.get !node);
   frame app ~width:25 ~height:4;
-  send_key app Input.Key.Down;
+  send_key app Matrix_input.Key.Down;
   frame app ~width:25 ~height:4;
   [%expect_exact
     {|
@@ -178,7 +179,7 @@ let%expect_test "page down uses the measured bordered table body" =
        ());
   focus app (Option.get !node);
   frame app ~width:14 ~height:8;
-  send_key app Input.Key.Page_down;
+  send_key app Matrix_input.Key.Page_down;
   frame app ~width:14 ~height:8;
   Format.printf "\nchanges=%s\n"
     (String.concat "," (List.rev_map string_of_int !changes));
@@ -217,7 +218,7 @@ let%expect_test "page up accounts for measured row separators" =
        ());
   focus app (Option.get !node);
   frame app ~width:12 ~height:5;
-  send_key app Input.Key.Page_up;
+  send_key app Matrix_input.Key.Page_up;
   frame app ~width:12 ~height:5;
   Format.printf "\nchanges=%s\n"
     (String.concat "," (List.rev_map string_of_int !changes));
@@ -248,8 +249,8 @@ let%expect_test "declarative hover and click callbacks report exact rows" =
        ());
   frame app ~width:25 ~height:3;
   ignore (Renderer.render app.renderer : string);
-  dispatch_mouse app (Input.mouse_move 2 1);
-  dispatch_mouse app (Input.mouse_press 2 2 Input.Mouse.Left);
+  dispatch_mouse app (Matrix_input.mouse_move 2 1);
+  dispatch_mouse app (Matrix_input.mouse_press 2 2 Matrix_input.Mouse.Left);
   Format.printf "hover=%s activate=%s\n"
     (String.concat ","
        (List.rev_map (Option.fold ~none:"none" ~some:string_of_int) !hovered))

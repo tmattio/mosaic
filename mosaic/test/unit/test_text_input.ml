@@ -27,14 +27,14 @@ let render_input input ~width ~height =
   Renderable.Private.render_full node ~grid ~delta:0.;
   grid
 
-let no_mod = Input.Modifier.none
+let no_mod = Matrix_input.Modifier.none
 
 let send_key input key =
-  let ev = Event.Key.of_input (Input.Key.make key) in
+  let ev = Event.Key.of_input (Matrix_input.Key.make key) in
   Renderable.Private.emit_default_key (Text_input.node input) ev
 
 let send_key_with_mod input ~modifier key =
-  let ev = Event.Key.of_input (Input.Key.make ~modifier key) in
+  let ev = Event.Key.of_input (Matrix_input.Key.make ~modifier key) in
   Renderable.Private.emit_default_key (Text_input.node input) ev
 
 let send_input_event input data =
@@ -43,15 +43,17 @@ let send_input_event input data =
 
 let send_char input c =
   let text = String.make 1 c in
-  let ev = Event.Key.of_input (Input.Key.of_char ~associated_text:text c) in
+  let ev =
+    Event.Key.of_input (Matrix_input.Key.of_char ~associated_text:text c)
+  in
   Renderable.Private.emit_default_key (Text_input.node input) ev
 
 let send_char_with_mod input ~modifier c =
-  let ev = Event.Key.of_input (Input.Key.of_char ~modifier c) in
+  let ev = Event.Key.of_input (Matrix_input.Key.of_char ~modifier c) in
   Renderable.Private.emit_default_key (Text_input.node input) ev
 
 let send_release_key input key =
-  let ev = Event.Key.of_input (Input.Key.make ~event_type:Release key) in
+  let ev = Event.Key.of_input (Matrix_input.Key.make ~event_type:Release key) in
   Renderable.Private.emit_default_key (Text_input.node input) ev
 
 let focus_input t input =
@@ -73,12 +75,16 @@ let string_contains haystack needle =
     done;
     !found
 
-let ctrl_mod = { no_mod with Input.Modifier.ctrl = true }
-let shift_mod = { no_mod with Input.Modifier.shift = true }
-let alt_mod = { no_mod with Input.Modifier.alt = true }
-let super_mod = { no_mod with Input.Modifier.super = true }
-let ctrl_shift_mod = { no_mod with Input.Modifier.ctrl = true; shift = true }
-let super_shift_mod = { no_mod with Input.Modifier.super = true; shift = true }
+let ctrl_mod = { no_mod with Matrix_input.Modifier.ctrl = true }
+let shift_mod = { no_mod with Matrix_input.Modifier.shift = true }
+let alt_mod = { no_mod with Matrix_input.Modifier.alt = true }
+let super_mod = { no_mod with Matrix_input.Modifier.super = true }
+
+let ctrl_shift_mod =
+  { no_mod with Matrix_input.Modifier.ctrl = true; shift = true }
+
+let super_shift_mod =
+  { no_mod with Matrix_input.Modifier.super = true; shift = true }
 
 (* ── Props ── *)
 
@@ -209,7 +215,7 @@ let on_input_does_not_fire_on_cursor_movement () =
   let count = ref 0 in
   let t, input = make_input ~value:"abc" ~on_input:(fun _ -> incr count) () in
   focus_input t input;
-  send_key input Input.Key.Left;
+  send_key input Matrix_input.Key.Left;
   equal ~msg:"not fired" int 0 !count
 
 let set_on_input_none_disables () =
@@ -231,7 +237,7 @@ let on_cursor_fires_on_cursor_movement () =
       ()
   in
   focus_input t input;
-  send_key input Input.Key.Left;
+  send_key input Matrix_input.Key.Left;
   is_true ~msg:"cursor callback fired" (List.length !fired >= 1)
 
 let on_cursor_fires_on_selection_change () =
@@ -243,7 +249,7 @@ let on_cursor_fires_on_selection_change () =
       ()
   in
   focus_input t input;
-  send_key_with_mod input ~modifier:shift_mod Input.Key.Left;
+  send_key_with_mod input ~modifier:shift_mod Matrix_input.Key.Left;
   let has_selection =
     List.exists (fun (_cursor, selection) -> Option.is_some selection) !fired
   in
@@ -258,7 +264,7 @@ let set_on_cursor_none_disables () =
   in
   focus_input t input;
   Text_input.set_on_cursor input None;
-  send_key input Input.Key.Left;
+  send_key input Matrix_input.Key.Left;
   equal ~msg:"disabled" int 0 !count
 
 (* ── Callbacks — on_change ── *)
@@ -268,44 +274,44 @@ let on_change_fires_on_blur_when_changed () =
   let t, input = make_input ~on_change:(fun s -> fired := s :: !fired) () in
   focus_input t input;
   (* Render to set was_focused and snapshot last_committed_value *)
-  ignore (render_input input ~width:20 ~height:1 : Grid.t);
+  ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
   (* Edit text *)
   send_char input 'h';
   send_char input 'i';
   (* Blur *)
   blur_input input;
   (* Render again to detect focus loss *)
-  ignore (render_input input ~width:20 ~height:1 : Grid.t);
+  ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
   equal ~msg:"on_change fired" int 1 (List.length !fired)
 
 let on_change_does_not_fire_on_blur_when_unchanged () =
   let count = ref 0 in
   let t, input = make_input ~on_change:(fun _ -> incr count) () in
   focus_input t input;
-  ignore (render_input input ~width:20 ~height:1 : Grid.t);
+  ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
   (* No edits *)
   blur_input input;
-  ignore (render_input input ~width:20 ~height:1 : Grid.t);
+  ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
   equal ~msg:"not fired" int 0 !count
 
 let on_change_fires_on_submit_when_changed () =
   let fired = ref [] in
   let t, input = make_input ~on_change:(fun s -> fired := s :: !fired) () in
   focus_input t input;
-  ignore (render_input input ~width:20 ~height:1 : Grid.t);
+  ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
   send_char input 'a';
-  send_key input Input.Key.Enter;
+  send_key input Matrix_input.Key.Enter;
   is_true ~msg:"on_change fired on submit" (List.length !fired >= 1)
 
 let set_on_change_none_disables () =
   let count = ref 0 in
   let t, input = make_input ~on_change:(fun _ -> incr count) () in
   focus_input t input;
-  ignore (render_input input ~width:20 ~height:1 : Grid.t);
+  ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
   Text_input.set_on_change input None;
   send_char input 'z';
   blur_input input;
-  ignore (render_input input ~width:20 ~height:1 : Grid.t);
+  ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
   equal ~msg:"disabled" int 0 !count
 
 (* ── Callbacks — on_submit ── *)
@@ -314,7 +320,7 @@ let on_submit_fires_on_enter () =
   let count = ref 0 in
   let t, input = make_input ~on_submit:(fun _ -> incr count) () in
   focus_input t input;
-  send_key input Input.Key.Enter;
+  send_key input Matrix_input.Key.Enter;
   equal ~msg:"fired" int 1 !count
 
 let on_submit_receives_current_value () =
@@ -323,7 +329,7 @@ let on_submit_receives_current_value () =
     make_input ~value:"hello" ~on_submit:(fun s -> fired := s :: !fired) ()
   in
   focus_input t input;
-  send_key input Input.Key.Enter;
+  send_key input Matrix_input.Key.Enter;
   match !fired with
   | v :: _ -> equal ~msg:"received value" string "hello" v
   | [] -> fail "on_submit not fired"
@@ -333,7 +339,7 @@ let set_on_submit_none_disables () =
   let t, input = make_input ~on_submit:(fun _ -> incr count) () in
   focus_input t input;
   Text_input.set_on_submit input None;
-  send_key input Input.Key.Enter;
+  send_key input Matrix_input.Key.Enter;
   equal ~msg:"disabled" int 0 !count
 
 (* ── Key Handling ── *)
@@ -352,24 +358,24 @@ let key_left_right_moves_cursor () =
   let buf = Text_input.buffer input in
   (* Cursor starts at end (position 2) *)
   equal ~msg:"cursor at end" int 2 (Edit_buffer.cursor buf);
-  send_key input Input.Key.Left;
+  send_key input Matrix_input.Key.Left;
   equal ~msg:"cursor moved left" int 1 (Edit_buffer.cursor buf);
-  send_key input Input.Key.Right;
+  send_key input Matrix_input.Key.Right;
   equal ~msg:"cursor moved right" int 2 (Edit_buffer.cursor buf)
 
 let key_home_end_moves_cursor () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
   let buf = Text_input.buffer input in
-  send_key input Input.Key.Home;
+  send_key input Matrix_input.Key.Home;
   equal ~msg:"cursor at home" int 0 (Edit_buffer.cursor buf);
-  send_key input Input.Key.End;
+  send_key input Matrix_input.Key.End;
   equal ~msg:"cursor at end" int 5 (Edit_buffer.cursor buf)
 
 let key_backspace_deletes_backward () =
   let t, input = make_input ~value:"abc" () in
   focus_input t input;
-  send_key input Input.Key.Backspace;
+  send_key input Matrix_input.Key.Backspace;
   equal ~msg:"deleted" string "ab" (Text_input.value input)
 
 let key_delete_deletes_forward () =
@@ -377,7 +383,7 @@ let key_delete_deletes_forward () =
   focus_input t input;
   let buf = Text_input.buffer input in
   ignore (Edit_buffer.move_home buf : bool);
-  send_key input Input.Key.Delete;
+  send_key input Matrix_input.Key.Delete;
   equal ~msg:"deleted forward" string "bc" (Text_input.value input)
 
 let key_ctrl_w_deletes_word_backward () =
@@ -407,27 +413,27 @@ let key_enter_fires_submit () =
   let count = ref 0 in
   let t, input = make_input ~on_submit:(fun _ -> incr count) () in
   focus_input t input;
-  send_key input Input.Key.Enter;
+  send_key input Matrix_input.Key.Enter;
   equal ~msg:"submitted" int 1 !count
 
 let key_kp_enter_fires_submit () =
   let count = ref 0 in
   let t, input = make_input ~on_submit:(fun _ -> incr count) () in
   focus_input t input;
-  send_key input Input.Key.KP_enter;
+  send_key input Matrix_input.Key.KP_enter;
   equal ~msg:"submitted" int 1 !count
 
 let key_kp_left_moves_cursor () =
   let t, input = make_input ~value:"abc" () in
   focus_input t input;
-  send_key input Input.Key.KP_left;
+  send_key input Matrix_input.Key.KP_left;
   equal ~msg:"cursor moved left" int 2 (Text_input.cursor input)
 
 let key_release_is_ignored () =
   let count = ref 0 in
   let t, input = make_input ~on_input:(fun _ -> incr count) () in
   focus_input t input;
-  send_release_key input (Input.Key.Char (Uchar.of_char 'a'));
+  send_release_key input (Matrix_input.Key.Char (Uchar.of_char 'a'));
   equal ~msg:"release ignored" int 0 !count
 
 let key_max_length_rejects_excess_typing () =
@@ -463,8 +469,8 @@ let ctrl_a_base_key_moves_to_start () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
   let data =
-    Input.Key.make ~modifier:ctrl_mod ~base_key:(Uchar.of_char 'a')
-      (Input.Key.Char (Uchar.of_int 0x314a))
+    Matrix_input.Key.make ~modifier:ctrl_mod ~base_key:(Uchar.of_char 'a')
+      (Matrix_input.Key.Char (Uchar.of_int 0x314a))
   in
   send_input_event input data;
   equal ~msg:"cursor at start" int 0 (Text_input.cursor input)
@@ -518,7 +524,7 @@ let alt_b_moves_word_backward () =
 let meta_b_moves_word_backward () =
   let t, input = make_input ~value:"hello world" () in
   focus_input t input;
-  let meta_mod = { no_mod with Input.Modifier.meta = true } in
+  let meta_mod = { no_mod with Matrix_input.Modifier.meta = true } in
   send_char_with_mod input ~modifier:meta_mod 'b';
   equal ~msg:"moved to word boundary" int 6 (Text_input.cursor input)
 
@@ -541,7 +547,7 @@ let alt_d_deletes_word_forward () =
 let alt_backspace_deletes_word_backward () =
   let t, input = make_input ~value:"hello world" () in
   focus_input t input;
-  send_key_with_mod input ~modifier:alt_mod Input.Key.Backspace;
+  send_key_with_mod input ~modifier:alt_mod Matrix_input.Key.Backspace;
   equal ~msg:"word deleted backward" string "hello " (Text_input.value input)
 
 (* ── Ctrl/Alt+Arrow Word Movement ── *)
@@ -550,7 +556,7 @@ let ctrl_left_moves_word_backward () =
   let t, input = make_input ~value:"hello world" () in
   focus_input t input;
   let buf = Text_input.buffer input in
-  send_key_with_mod input ~modifier:ctrl_mod Input.Key.Left;
+  send_key_with_mod input ~modifier:ctrl_mod Matrix_input.Key.Left;
   equal ~msg:"moved to word boundary" int 6 (Edit_buffer.cursor buf)
 
 let ctrl_right_moves_word_forward () =
@@ -558,7 +564,7 @@ let ctrl_right_moves_word_forward () =
   focus_input t input;
   let buf = Text_input.buffer input in
   ignore (Edit_buffer.move_home buf : bool);
-  send_key_with_mod input ~modifier:ctrl_mod Input.Key.Right;
+  send_key_with_mod input ~modifier:ctrl_mod Matrix_input.Key.Right;
   equal ~msg:"moved to word end" int 6 (Edit_buffer.cursor buf)
 
 (* ── Super+Arrow Keybindings ── *)
@@ -567,7 +573,7 @@ let super_left_moves_to_start () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
   let buf = Text_input.buffer input in
-  send_key_with_mod input ~modifier:super_mod Input.Key.Left;
+  send_key_with_mod input ~modifier:super_mod Matrix_input.Key.Left;
   equal ~msg:"cursor at start" int 0 (Edit_buffer.cursor buf)
 
 let super_right_moves_to_end () =
@@ -575,14 +581,14 @@ let super_right_moves_to_end () =
   focus_input t input;
   let buf = Text_input.buffer input in
   ignore (Edit_buffer.move_home buf : bool);
-  send_key_with_mod input ~modifier:super_mod Input.Key.Right;
+  send_key_with_mod input ~modifier:super_mod Matrix_input.Key.Right;
   equal ~msg:"cursor at end" int 5 (Edit_buffer.cursor buf)
 
 let super_up_moves_to_start () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
   let buf = Text_input.buffer input in
-  send_key_with_mod input ~modifier:super_mod Input.Key.Up;
+  send_key_with_mod input ~modifier:super_mod Matrix_input.Key.Up;
   equal ~msg:"cursor at start" int 0 (Edit_buffer.cursor buf)
 
 let super_down_moves_to_end () =
@@ -590,14 +596,14 @@ let super_down_moves_to_end () =
   focus_input t input;
   let buf = Text_input.buffer input in
   ignore (Edit_buffer.move_home buf : bool);
-  send_key_with_mod input ~modifier:super_mod Input.Key.Down;
+  send_key_with_mod input ~modifier:super_mod Matrix_input.Key.Down;
   equal ~msg:"cursor at end" int 5 (Edit_buffer.cursor buf)
 
 let super_shift_left_selects_to_start () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
   let buf = Text_input.buffer input in
-  send_key_with_mod input ~modifier:super_shift_mod Input.Key.Left;
+  send_key_with_mod input ~modifier:super_shift_mod Matrix_input.Key.Left;
   is_true ~msg:"has selection" (Edit_buffer.has_selection buf);
   equal ~msg:"selected all" string "hello" (Edit_buffer.selected_text buf)
 
@@ -606,7 +612,7 @@ let super_shift_right_selects_to_end () =
   focus_input t input;
   let buf = Text_input.buffer input in
   ignore (Edit_buffer.move_home buf : bool);
-  send_key_with_mod input ~modifier:super_shift_mod Input.Key.Right;
+  send_key_with_mod input ~modifier:super_shift_mod Matrix_input.Key.Right;
   is_true ~msg:"has selection" (Edit_buffer.has_selection buf);
   equal ~msg:"selected all" string "hello" (Edit_buffer.selected_text buf)
 
@@ -636,21 +642,21 @@ let shift_right_creates_selection () =
   focus_input t input;
   let buf = Text_input.buffer input in
   ignore (Edit_buffer.move_home buf : bool);
-  send_key_with_mod input ~modifier:shift_mod Input.Key.Right;
+  send_key_with_mod input ~modifier:shift_mod Matrix_input.Key.Right;
   is_true ~msg:"has selection" (Edit_buffer.has_selection buf)
 
 let shift_left_creates_selection () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
   let buf = Text_input.buffer input in
-  send_key_with_mod input ~modifier:shift_mod Input.Key.Left;
+  send_key_with_mod input ~modifier:shift_mod Matrix_input.Key.Left;
   is_true ~msg:"has selection" (Edit_buffer.has_selection buf)
 
 let shift_home_selects_to_start () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
   let buf = Text_input.buffer input in
-  send_key_with_mod input ~modifier:shift_mod Input.Key.Home;
+  send_key_with_mod input ~modifier:shift_mod Matrix_input.Key.Home;
   is_true ~msg:"has selection" (Edit_buffer.has_selection buf);
   equal ~msg:"selected all" string "hello" (Edit_buffer.selected_text buf)
 
@@ -659,7 +665,7 @@ let shift_end_selects_to_end () =
   focus_input t input;
   let buf = Text_input.buffer input in
   ignore (Edit_buffer.move_home buf : bool);
-  send_key_with_mod input ~modifier:shift_mod Input.Key.End;
+  send_key_with_mod input ~modifier:shift_mod Matrix_input.Key.End;
   is_true ~msg:"has selection" (Edit_buffer.has_selection buf);
   equal ~msg:"selected all" string "hello" (Edit_buffer.selected_text buf)
 
@@ -745,7 +751,7 @@ let render_zero_size_no_crash () =
 
 let cursor_returns_none_when_unfocused () =
   let _t, input = make_input ~value:"hi" () in
-  ignore (render_input input ~width:20 ~height:1 : Grid.t);
+  ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
   let node = Text_input.node input in
   let cursor = Renderable.cursor node in
   is_none ~msg:"no cursor when unfocused" cursor
@@ -753,7 +759,7 @@ let cursor_returns_none_when_unfocused () =
 let cursor_returns_some_when_focused () =
   let t, input = make_input ~value:"hi" () in
   focus_input t input;
-  ignore (render_input input ~width:20 ~height:1 : Grid.t);
+  ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
   let node = Text_input.node input in
   let cursor = Renderable.cursor node in
   is_some ~msg:"cursor when focused" cursor
@@ -761,13 +767,13 @@ let cursor_returns_some_when_focused () =
 let cursor_returns_none_when_hidden () =
   let t, input = make_input ~value:"hi" ~show_cursor:false () in
   focus_input t input;
-  ignore (render_input input ~width:20 ~height:1 : Grid.t);
+  ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
   is_none ~msg:"cursor hidden" (Renderable.cursor (Text_input.node input))
 
 let cursor_style_is_block_by_default () =
   let t, input = make_input ~value:"hi" () in
   focus_input t input;
-  ignore (render_input input ~width:20 ~height:1 : Grid.t);
+  ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
   let node = Text_input.node input in
   match Renderable.cursor node with
   | Some c -> is_true ~msg:"block style" (c.style = `Block)
@@ -776,7 +782,7 @@ let cursor_style_is_block_by_default () =
 let cursor_has_correct_color () =
   let t, input = make_input ~value:"hi" ~cursor_color:Ansi.Color.red () in
   focus_input t input;
-  ignore (render_input input ~width:20 ~height:1 : Grid.t);
+  ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
   let node = Text_input.node input in
   match Renderable.cursor node with
   | Some c ->
@@ -787,7 +793,7 @@ let cursor_has_correct_color () =
 let cursor_has_correct_blinking () =
   let t, input = make_input ~value:"hi" ~cursor_blinking:false () in
   focus_input t input;
-  ignore (render_input input ~width:20 ~height:1 : Grid.t);
+  ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
   let node = Text_input.node input in
   match Renderable.cursor node with
   | Some c -> is_false ~msg:"not blinking" c.blinking
@@ -853,7 +859,7 @@ let cursor_left_at_start_is_noop () =
   let buf = Text_input.buffer input in
   ignore (Edit_buffer.move_home buf : bool);
   equal ~msg:"at start" int 0 (Edit_buffer.cursor buf);
-  send_key input Input.Key.Left;
+  send_key input Matrix_input.Key.Left;
   equal ~msg:"still at start" int 0 (Edit_buffer.cursor buf)
 
 let cursor_right_at_end_is_noop () =
@@ -861,7 +867,7 @@ let cursor_right_at_end_is_noop () =
   focus_input t input;
   let buf = Text_input.buffer input in
   equal ~msg:"at end" int 5 (Edit_buffer.cursor buf);
-  send_key input Input.Key.Right;
+  send_key input Matrix_input.Key.Right;
   equal ~msg:"still at end" int 5 (Edit_buffer.cursor buf)
 
 let backspace_at_start_is_noop () =
@@ -869,24 +875,24 @@ let backspace_at_start_is_noop () =
   focus_input t input;
   let buf = Text_input.buffer input in
   ignore (Edit_buffer.move_home buf : bool);
-  send_key input Input.Key.Backspace;
+  send_key input Matrix_input.Key.Backspace;
   equal ~msg:"unchanged" string "hello" (Text_input.value input)
 
 let delete_at_end_is_noop () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  send_key input Input.Key.Delete;
+  send_key input Matrix_input.Key.Delete;
   equal ~msg:"unchanged" string "hello" (Text_input.value input)
 
 let operations_on_empty_input_are_safe () =
   let t, input = make_input () in
   focus_input t input;
-  send_key input Input.Key.Backspace;
-  send_key input Input.Key.Delete;
-  send_key input Input.Key.Left;
-  send_key input Input.Key.Right;
-  send_key input Input.Key.Home;
-  send_key input Input.Key.End;
+  send_key input Matrix_input.Key.Backspace;
+  send_key input Matrix_input.Key.Delete;
+  send_key input Matrix_input.Key.Left;
+  send_key input Matrix_input.Key.Right;
+  send_key input Matrix_input.Key.Home;
+  send_key input Matrix_input.Key.End;
   send_char_with_mod input ~modifier:ctrl_mod 'w';
   send_char_with_mod input ~modifier:ctrl_mod 'k';
   send_char_with_mod input ~modifier:ctrl_mod 'u';
@@ -899,7 +905,9 @@ let prevent_default_blocks_input () =
   let t, input = make_input () in
   focus_input t input;
   let text = String.make 1 'a' in
-  let ev = Event.Key.of_input (Input.Key.of_char ~associated_text:text 'a') in
+  let ev =
+    Event.Key.of_input (Matrix_input.Key.of_char ~associated_text:text 'a')
+  in
   Event.Key.prevent_default ev;
   Renderable.Private.emit_default_key (Text_input.node input) ev;
   equal ~msg:"value unchanged" string "" (Text_input.value input)

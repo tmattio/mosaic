@@ -1,5 +1,6 @@
 (** Tests for the Input module *)
 
+module Input = Matrix_input
 open Windtrap
 
 let event_testable = Testable.make ~pp:Input.pp ~equal:Input.equal ()

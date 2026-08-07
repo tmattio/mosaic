@@ -62,7 +62,7 @@ type capabilities = {
       (** [true] if bracketed paste (mode 2004) is supported. *)
   focus_tracking : bool;
       (** [true] if focus tracking (mode 1004) is supported. *)
-  unicode_width : Text.width_method;  (** Current Unicode width mode. *)
+  unicode_width : Matrix_text.width_method;  (** Current Unicode width mode. *)
   sgr_pixels : bool;
       (** [true] if SGR pixel-position mouse reports (mode 1016) are supported.
       *)
@@ -159,21 +159,22 @@ val pixel_resolution : t -> (int * int) option
 val set_pixel_resolution : t -> (int * int) option -> unit
 (** [set_pixel_resolution t res] updates [t]'s cached pixel resolution. *)
 
-val apply_capability_event : t -> Input.Response.capability -> unit
+val apply_capability_event : t -> Matrix_input.Response.capability -> unit
 (** [apply_capability_event t event] folds a single capability response into
     [t]'s state. Updates {!capabilities}, {!terminal_info}, and
     {!pixel_resolution} as appropriate.
 
-    Called by the runtime as {!Input.Parser} produces capability events. *)
+    Called by the runtime as {!Matrix_input.Parser} produces capability events.
+*)
 
 (** {1:probing Probing} *)
 
 val probe :
   ?timeout:float ->
-  on_event:(Input.t -> unit) ->
+  on_event:(Matrix_input.t -> unit) ->
   read_into:(bytes -> int -> int -> int) ->
   wait_readable:(timeout:float -> bool) ->
-  parser:Input.Parser.t ->
+  parser:Matrix_input.Parser.t ->
   t ->
   unit
 (** [probe ~timeout ~on_event ~read_into ~wait_readable ~parser t] actively
@@ -279,7 +280,7 @@ val modify_other_keys_enabled : t -> bool
 
 (** {2:unicode_w Unicode width} *)
 
-val set_unicode_width : t -> Text.width_method -> unit
+val set_unicode_width : t -> Matrix_text.width_method -> unit
 (** [set_unicode_width t w] sets the Unicode width mode to [w] and updates
     {!capabilities} accordingly. Idempotent. *)
 
@@ -364,7 +365,7 @@ val bell : t -> unit
 val query_color_scheme : t -> unit
 (** [query_color_scheme t] asks whether the terminal uses a light or dark colour
     scheme ([CSI ? 996 n]). Supporting terminals reply [CSI ? 997 ; value n];
-    the reply arrives asynchronously as an {!Input.Response.Color_scheme}
+    the reply arrives asynchronously as an {!Matrix_input.Response.Color_scheme}
     capability event. *)
 
 val note_appearance_emitted :

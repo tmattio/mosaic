@@ -1,3 +1,4 @@
+module Text = Matrix_text
 open StdLabels
 
 type t = int
@@ -19,7 +20,7 @@ let default_tab_width = 2
 
 let () =
   if Sys.word_size <> 64 then
-    failwith "Grid.Cell: 64-bit OCaml required for packed cells"
+    failwith "Matrix_grid.Cell: 64-bit OCaml required for packed cells"
 
 let[@inline] normalize_tab_width w = if w <= 0 then default_tab_width else w
 
@@ -182,8 +183,9 @@ let intern store ?(width_method = `Unicode) ?(tab_width = default_tab_width) str
     None str 0 (String.length str)
 
 let intern_sub store ~width_method ~tab_width str ~pos ~len ~width =
-  check_sub "Grid.Packed_cell.intern_sub" str ~pos ~len;
-  if width < 0 then invalid_arg "Grid.Packed_cell.intern_sub: negative width";
+  check_sub "Matrix_grid.Packed_cell.intern_sub" str ~pos ~len;
+  if width < 0 then
+    invalid_arg "Matrix_grid.Packed_cell.intern_sub: negative width";
   intern_core store width_method
     (normalize_tab_width tab_width)
     (Some width) str pos len
@@ -195,7 +197,7 @@ let length store cell =
 
 let blit store cell buf ~pos =
   if pos < 0 || pos > Bytes.length buf then
-    invalid_arg "Grid.Packed_cell.blit: position out of bounds";
+    invalid_arg "Matrix_grid.Packed_cell.blit: position out of bounds";
   if is_inline cell then
     let uchar = Uchar.unsafe_of_int (cell land mask_codepoint) in
     let len = Uchar.utf_8_byte_length uchar in

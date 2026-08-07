@@ -1,7 +1,8 @@
-(* matrix/lib/screen.ml *)
+(* matrix/lib/screen/matrix_screen.ml *)
 
 (* Allocation-conscious terminal screen with direct buffer mutation. *)
 
+module Grid = Matrix_grid
 open StdLabels
 module Hit_grid = Hit_grid
 
@@ -572,7 +573,7 @@ let reset t =
 
 let resize t ~width ~height =
   if width <= 0 || height <= 0 then
-    invalid_arg "Screen.resize: width and height must be > 0";
+    invalid_arg "Matrix_screen.resize: width and height must be > 0";
   if width <> Grid.width t.current || height <> Grid.height t.current then (
     Grid.resize_clear t.current ~width ~height;
     Grid.resize_clear t.next ~width ~height;
@@ -696,7 +697,7 @@ let set_explicit_width t flag =
   t.prefer_explicit_width <- flag;
   t.use_explicit_width <- flag && t.explicit_width_capable
 
-let set_width_method (t : t) (method_ : Text.width_method) =
+let set_width_method (t : t) (method_ : Matrix_text.width_method) =
   Grid.set_width_method t.current method_;
   Grid.set_width_method t.scroll_baseline method_;
   Grid.set_width_method t.next method_

@@ -29,14 +29,14 @@ let render_textarea ta ~width ~height =
   Renderable.Private.render_full node ~grid ~delta:0.;
   grid
 
-let no_mod = Input.Modifier.none
+let no_mod = Matrix_input.Modifier.none
 
 let send_key ta key =
-  let ev = Event.Key.of_input (Input.Key.make key) in
+  let ev = Event.Key.of_input (Matrix_input.Key.make key) in
   Renderable.Private.emit_default_key (Textarea.node ta) ev
 
 let send_key_with_mod ta ~modifier key =
-  let ev = Event.Key.of_input (Input.Key.make ~modifier key) in
+  let ev = Event.Key.of_input (Matrix_input.Key.make ~modifier key) in
   Renderable.Private.emit_default_key (Textarea.node ta) ev
 
 let send_input_event ta data =
@@ -45,11 +45,13 @@ let send_input_event ta data =
 
 let send_char ta c =
   let text = String.make 1 c in
-  let ev = Event.Key.of_input (Input.Key.of_char ~associated_text:text c) in
+  let ev =
+    Event.Key.of_input (Matrix_input.Key.of_char ~associated_text:text c)
+  in
   Renderable.Private.emit_default_key (Textarea.node ta) ev
 
 let send_char_with_mod ta ~modifier c =
-  let ev = Event.Key.of_input (Input.Key.of_char ~modifier c) in
+  let ev = Event.Key.of_input (Matrix_input.Key.of_char ~modifier c) in
   Renderable.Private.emit_default_key (Textarea.node ta) ev
 
 let focus_textarea t ta =
@@ -71,20 +73,24 @@ let render_frame r ~width ~height =
   ignore (Renderer.render ~full:true r : string)
 
 let mouse_down ~x ~y =
-  Input.Mouse.make ~x ~y ~modifiers:Input.Modifier.none (Down { button = Left })
+  Matrix_input.Mouse.make ~x ~y ~modifiers:Matrix_input.Modifier.none
+    (Down { button = Left })
 
 let mouse_drag ~x ~y =
-  Input.Mouse.make ~x ~y ~modifiers:Input.Modifier.none (Drag { button = Left })
+  Matrix_input.Mouse.make ~x ~y ~modifiers:Matrix_input.Modifier.none
+    (Drag { button = Left })
 
 let mouse_up ~x ~y =
-  Input.Mouse.make ~x ~y ~modifiers:Input.Modifier.none
+  Matrix_input.Mouse.make ~x ~y ~modifiers:Matrix_input.Modifier.none
     (Up { button = Some Left })
 
-let ctrl_mod = { no_mod with Input.Modifier.ctrl = true }
-let shift_mod = { no_mod with Input.Modifier.shift = true }
-let alt_mod = { no_mod with Input.Modifier.alt = true }
-let super_mod = { no_mod with Input.Modifier.super = true }
-let ctrl_shift_mod = { no_mod with Input.Modifier.ctrl = true; shift = true }
+let ctrl_mod = { no_mod with Matrix_input.Modifier.ctrl = true }
+let shift_mod = { no_mod with Matrix_input.Modifier.shift = true }
+let alt_mod = { no_mod with Matrix_input.Modifier.alt = true }
+let super_mod = { no_mod with Matrix_input.Modifier.super = true }
+
+let ctrl_shift_mod =
+  { no_mod with Matrix_input.Modifier.ctrl = true; shift = true }
 
 (* ── Props ── *)
 
@@ -207,14 +213,14 @@ let on_input_fires_on_newline_insert () =
   let t, ta = make_textarea ~on_input:(fun s -> fired := s :: !fired) () in
   focus_textarea t ta;
   send_char ta 'a';
-  send_key ta Input.Key.Enter;
+  send_key ta Matrix_input.Key.Enter;
   equal ~msg:"fired twice" int 2 (List.length !fired)
 
 let on_input_does_not_fire_on_cursor_movement () =
   let count = ref 0 in
   let t, ta = make_textarea ~value:"abc" ~on_input:(fun _ -> incr count) () in
   focus_textarea t ta;
-  send_key ta Input.Key.Left;
+  send_key ta Matrix_input.Key.Left;
   equal ~msg:"not fired" int 0 !count
 
 let set_on_input_none_disables () =
@@ -231,31 +237,31 @@ let on_change_fires_on_blur_when_changed () =
   let fired = ref [] in
   let t, ta = make_textarea ~on_change:(fun s -> fired := s :: !fired) () in
   focus_textarea t ta;
-  ignore (render_textarea ta ~width:20 ~height:5 : Grid.t);
+  ignore (render_textarea ta ~width:20 ~height:5 : Matrix_grid.t);
   send_char ta 'h';
   send_char ta 'i';
   blur_textarea ta;
-  ignore (render_textarea ta ~width:20 ~height:5 : Grid.t);
+  ignore (render_textarea ta ~width:20 ~height:5 : Matrix_grid.t);
   equal ~msg:"on_change fired" int 1 (List.length !fired)
 
 let on_change_does_not_fire_when_unchanged () =
   let count = ref 0 in
   let t, ta = make_textarea ~on_change:(fun _ -> incr count) () in
   focus_textarea t ta;
-  ignore (render_textarea ta ~width:20 ~height:5 : Grid.t);
+  ignore (render_textarea ta ~width:20 ~height:5 : Matrix_grid.t);
   blur_textarea ta;
-  ignore (render_textarea ta ~width:20 ~height:5 : Grid.t);
+  ignore (render_textarea ta ~width:20 ~height:5 : Matrix_grid.t);
   equal ~msg:"not fired" int 0 !count
 
 let set_on_change_none_disables () =
   let count = ref 0 in
   let t, ta = make_textarea ~on_change:(fun _ -> incr count) () in
   focus_textarea t ta;
-  ignore (render_textarea ta ~width:20 ~height:5 : Grid.t);
+  ignore (render_textarea ta ~width:20 ~height:5 : Matrix_grid.t);
   Textarea.set_on_change ta None;
   send_char ta 'z';
   blur_textarea ta;
-  ignore (render_textarea ta ~width:20 ~height:5 : Grid.t);
+  ignore (render_textarea ta ~width:20 ~height:5 : Matrix_grid.t);
   equal ~msg:"disabled" int 0 !count
 
 (* ── Callbacks — on_cursor ── *)
@@ -269,7 +275,7 @@ let on_cursor_fires_on_cursor_movement () =
       ()
   in
   focus_textarea t ta;
-  send_key ta Input.Key.Left;
+  send_key ta Matrix_input.Key.Left;
   is_true ~msg:"cursor callback fired" (List.length !fired >= 1)
 
 let on_cursor_fires_on_selection_change () =
@@ -281,7 +287,7 @@ let on_cursor_fires_on_selection_change () =
       ()
   in
   focus_textarea t ta;
-  send_key_with_mod ta ~modifier:shift_mod Input.Key.Left;
+  send_key_with_mod ta ~modifier:shift_mod Matrix_input.Key.Left;
   let has_selection =
     List.exists (fun (_cursor, selection) -> Option.is_some selection) !fired
   in
@@ -296,7 +302,7 @@ let set_on_cursor_none_disables () =
   in
   focus_textarea t ta;
   Textarea.set_on_cursor ta None;
-  send_key ta Input.Key.Left;
+  send_key ta Matrix_input.Key.Left;
   equal ~msg:"disabled" int 0 !count
 
 (* ── Callbacks — on_submit ── *)
@@ -305,7 +311,7 @@ let on_submit_fires_on_meta_enter () =
   let count = ref 0 in
   let t, ta = make_textarea ~on_submit:(fun _ -> incr count) () in
   focus_textarea t ta;
-  send_key_with_mod ta ~modifier:ctrl_mod Input.Key.Enter;
+  send_key_with_mod ta ~modifier:ctrl_mod Matrix_input.Key.Enter;
   equal ~msg:"fired" int 1 !count
 
 let on_submit_receives_current_value () =
@@ -314,7 +320,7 @@ let on_submit_receives_current_value () =
     make_textarea ~value:"hello" ~on_submit:(fun s -> fired := s :: !fired) ()
   in
   focus_textarea t ta;
-  send_key_with_mod ta ~modifier:ctrl_mod Input.Key.Enter;
+  send_key_with_mod ta ~modifier:ctrl_mod Matrix_input.Key.Enter;
   match !fired with
   | v :: _ -> equal ~msg:"received value" string "hello" v
   | [] -> fail "on_submit not fired"
@@ -324,14 +330,14 @@ let set_on_submit_none_disables () =
   let t, ta = make_textarea ~on_submit:(fun _ -> incr count) () in
   focus_textarea t ta;
   Textarea.set_on_submit ta None;
-  send_key_with_mod ta ~modifier:ctrl_mod Input.Key.Enter;
+  send_key_with_mod ta ~modifier:ctrl_mod Matrix_input.Key.Enter;
   equal ~msg:"disabled" int 0 !count
 
 let enter_does_not_fire_submit () =
   let count = ref 0 in
   let t, ta = make_textarea ~on_submit:(fun _ -> incr count) () in
   focus_textarea t ta;
-  send_key ta Input.Key.Enter;
+  send_key ta Matrix_input.Key.Enter;
   equal ~msg:"submit not fired" int 0 !count
 
 (* ── Key Handling ── *)
@@ -348,7 +354,7 @@ let key_enter_inserts_newline () =
   let t, ta = make_textarea () in
   focus_textarea t ta;
   send_char ta 'a';
-  send_key ta Input.Key.Enter;
+  send_key ta Matrix_input.Key.Enter;
   send_char ta 'b';
   equal ~msg:"newline" string "a\nb" (Textarea.value ta)
 
@@ -356,7 +362,7 @@ let key_kp_enter_inserts_newline () =
   let t, ta = make_textarea () in
   focus_textarea t ta;
   send_char ta 'a';
-  send_key ta Input.Key.KP_enter;
+  send_key ta Matrix_input.Key.KP_enter;
   send_char ta 'b';
   equal ~msg:"newline" string "a\nb" (Textarea.value ta)
 
@@ -365,30 +371,30 @@ let key_left_right_moves_cursor () =
   focus_textarea t ta;
   let buf = Textarea.buffer ta in
   equal ~msg:"cursor at end" int 2 (Edit_buffer.cursor buf);
-  send_key ta Input.Key.Left;
+  send_key ta Matrix_input.Key.Left;
   equal ~msg:"cursor moved left" int 1 (Edit_buffer.cursor buf);
-  send_key ta Input.Key.Right;
+  send_key ta Matrix_input.Key.Right;
   equal ~msg:"cursor moved right" int 2 (Edit_buffer.cursor buf)
 
 let key_up_moves_to_previous_line () =
   let t, ta = make_textarea ~value:"one\ntwo" () in
   focus_textarea t ta;
-  ignore (render_textarea ta ~width:20 ~height:2 : Grid.t);
-  send_key ta Input.Key.Up;
+  ignore (render_textarea ta ~width:20 ~height:2 : Matrix_grid.t);
+  send_key ta Matrix_input.Key.Up;
   equal ~msg:"cursor" int 3 (Textarea.cursor ta)
 
 let key_down_moves_to_next_line () =
   let t, ta = make_textarea ~value:"one\ntwo" () in
   focus_textarea t ta;
-  ignore (render_textarea ta ~width:20 ~height:2 : Grid.t);
+  ignore (render_textarea ta ~width:20 ~height:2 : Matrix_grid.t);
   Edit_buffer.set_cursor (Textarea.buffer ta) 0;
-  send_key ta Input.Key.Down;
+  send_key ta Matrix_input.Key.Down;
   equal ~msg:"cursor" int 4 (Textarea.cursor ta)
 
 let key_backspace_deletes_backward () =
   let t, ta = make_textarea ~value:"abc" () in
   focus_textarea t ta;
-  send_key ta Input.Key.Backspace;
+  send_key ta Matrix_input.Key.Backspace;
   equal ~msg:"deleted" string "ab" (Textarea.value ta)
 
 let key_backspace_at_line_start_joins () =
@@ -396,7 +402,7 @@ let key_backspace_at_line_start_joins () =
   focus_textarea t ta;
   let buf = Textarea.buffer ta in
   Edit_buffer.set_cursor buf 4;
-  send_key ta Input.Key.Backspace;
+  send_key ta Matrix_input.Key.Backspace;
   equal ~msg:"joined" string "abcdef" (Textarea.value ta)
 
 let key_delete_deletes_forward () =
@@ -404,7 +410,7 @@ let key_delete_deletes_forward () =
   focus_textarea t ta;
   let buf = Textarea.buffer ta in
   ignore (Edit_buffer.move_home buf : bool);
-  send_key ta Input.Key.Delete;
+  send_key ta Matrix_input.Key.Delete;
   equal ~msg:"deleted forward" string "bc" (Textarea.value ta)
 
 (* ── Emacs Keybindings ── *)
@@ -432,8 +438,8 @@ let ctrl_a_base_key_moves_to_line_start () =
   let buf = Textarea.buffer ta in
   Edit_buffer.set_cursor buf 6;
   let data =
-    Input.Key.make ~modifier:ctrl_mod ~base_key:(Uchar.of_char 'a')
-      (Input.Key.Char (Uchar.of_int 0x314a))
+    Matrix_input.Key.make ~modifier:ctrl_mod ~base_key:(Uchar.of_char 'a')
+      (Matrix_input.Key.Char (Uchar.of_int 0x314a))
   in
   send_input_event ta data;
   equal ~msg:"cursor at line start" int 4 (Edit_buffer.cursor buf)
@@ -512,7 +518,7 @@ let alt_b_moves_word_backward () =
 let meta_b_moves_word_backward () =
   let t, ta = make_textarea ~value:"hello world" () in
   focus_textarea t ta;
-  let meta_mod = { no_mod with Input.Modifier.meta = true } in
+  let meta_mod = { no_mod with Matrix_input.Modifier.meta = true } in
   send_char_with_mod ta ~modifier:meta_mod 'b';
   equal ~msg:"moved to word boundary" int 6 (Textarea.cursor ta)
 
@@ -538,25 +544,25 @@ let super_left_moves_to_visual_line_start () =
   let t, ta = make_textarea ~value:"abc\ndef" () in
   focus_textarea t ta;
   let buf = Textarea.buffer ta in
-  ignore (render_textarea ta ~width:40 ~height:10 : Grid.t);
+  ignore (render_textarea ta ~width:40 ~height:10 : Matrix_grid.t);
   Edit_buffer.set_cursor buf 6;
-  send_key_with_mod ta ~modifier:super_mod Input.Key.Left;
+  send_key_with_mod ta ~modifier:super_mod Matrix_input.Key.Left;
   equal ~msg:"cursor at visual line start" int 4 (Edit_buffer.cursor buf)
 
 let super_right_moves_to_visual_line_end () =
   let t, ta = make_textarea ~value:"abc\ndef" () in
   focus_textarea t ta;
   let buf = Textarea.buffer ta in
-  ignore (render_textarea ta ~width:40 ~height:10 : Grid.t);
+  ignore (render_textarea ta ~width:40 ~height:10 : Matrix_grid.t);
   Edit_buffer.set_cursor buf 4;
-  send_key_with_mod ta ~modifier:super_mod Input.Key.Right;
+  send_key_with_mod ta ~modifier:super_mod Matrix_input.Key.Right;
   equal ~msg:"cursor at visual line end" int 7 (Edit_buffer.cursor buf)
 
 let super_up_moves_to_buffer_start () =
   let t, ta = make_textarea ~value:"abc\ndef" () in
   focus_textarea t ta;
   let buf = Textarea.buffer ta in
-  send_key_with_mod ta ~modifier:super_mod Input.Key.Up;
+  send_key_with_mod ta ~modifier:super_mod Matrix_input.Key.Up;
   equal ~msg:"cursor at start" int 0 (Edit_buffer.cursor buf)
 
 let super_down_moves_to_buffer_end () =
@@ -564,7 +570,7 @@ let super_down_moves_to_buffer_end () =
   focus_textarea t ta;
   let buf = Textarea.buffer ta in
   ignore (Edit_buffer.move_home buf : bool);
-  send_key_with_mod ta ~modifier:super_mod Input.Key.Down;
+  send_key_with_mod ta ~modifier:super_mod Matrix_input.Key.Down;
   equal ~msg:"cursor at end" int 7 (Edit_buffer.cursor buf)
 
 (* ── Selection Keybindings ── *)
@@ -574,7 +580,7 @@ let shift_right_creates_selection () =
   focus_textarea t ta;
   let buf = Textarea.buffer ta in
   ignore (Edit_buffer.move_home buf : bool);
-  send_key_with_mod ta ~modifier:shift_mod Input.Key.Right;
+  send_key_with_mod ta ~modifier:shift_mod Matrix_input.Key.Right;
   is_true ~msg:"has selection" (Edit_buffer.has_selection buf)
 
 let super_a_selects_all () =
@@ -619,7 +625,7 @@ let alt_a_moves_to_visual_line_start () =
   let t, ta = make_textarea ~value:"abc\ndef" () in
   focus_textarea t ta;
   let buf = Textarea.buffer ta in
-  ignore (render_textarea ta ~width:40 ~height:10 : Grid.t);
+  ignore (render_textarea ta ~width:40 ~height:10 : Matrix_grid.t);
   Edit_buffer.set_cursor buf 6;
   send_char_with_mod ta ~modifier:alt_mod 'a';
   equal ~msg:"cursor at visual line start" int 4 (Edit_buffer.cursor buf)
@@ -628,7 +634,7 @@ let alt_e_moves_to_visual_line_end () =
   let t, ta = make_textarea ~value:"abc\ndef" () in
   focus_textarea t ta;
   let buf = Textarea.buffer ta in
-  ignore (render_textarea ta ~width:40 ~height:10 : Grid.t);
+  ignore (render_textarea ta ~width:40 ~height:10 : Matrix_grid.t);
   Edit_buffer.set_cursor buf 4;
   send_char_with_mod ta ~modifier:alt_mod 'e';
   equal ~msg:"cursor at visual line end" int 7 (Edit_buffer.cursor buf)
@@ -676,8 +682,8 @@ let alt_enter_fires_submit () =
   let on_submit v = received := v in
   let t, ta = make_textarea ~value:"hello" ~on_submit () in
   focus_textarea t ta;
-  let alt_mod = { no_mod with Input.Modifier.alt = true } in
-  send_key_with_mod ta ~modifier:alt_mod Input.Key.Enter;
+  let alt_mod = { no_mod with Matrix_input.Modifier.alt = true } in
+  send_key_with_mod ta ~modifier:alt_mod Matrix_input.Key.Enter;
   equal ~msg:"submit fired" string "hello" !received
 
 (* ── Ctrl+K at Line End ── *)
@@ -750,7 +756,7 @@ let mouse_selection_disabled_when_not_selectable () =
 let mouse_wheel_scrolls_surface () =
   let lines = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten" in
   let _t, ta = make_textarea ~value:lines () in
-  ignore (render_textarea ta ~width:20 ~height:3 : Grid.t);
+  ignore (render_textarea ta ~width:20 ~height:3 : Matrix_grid.t);
   let ev =
     Event.Mouse.make ~x:0 ~y:0 ~modifiers:Event.Mouse.no_modifier
       (Scroll { direction = Scroll_down; delta = 2 })
@@ -762,15 +768,15 @@ let mouse_wheel_scrolls_surface () =
 let resize_after_newline_clamps_scroll_y () =
   let t, ta = make_textarea () in
   focus_textarea t ta;
-  ignore (render_textarea ta ~width:20 ~height:1 : Grid.t);
+  ignore (render_textarea ta ~width:20 ~height:1 : Matrix_grid.t);
   send_char ta 't';
   send_char ta 'e';
   send_char ta 's';
   send_char ta 't';
-  send_key ta Input.Key.Enter;
+  send_key ta Matrix_input.Key.Enter;
   equal ~msg:"scroll_y before growth" int 1
     (Text_surface.scroll_y (Textarea.surface ta));
-  ignore (render_textarea ta ~width:20 ~height:2 : Grid.t);
+  ignore (render_textarea ta ~width:20 ~height:2 : Matrix_grid.t);
   equal ~msg:"scroll_y after growth" int 0
     (Text_surface.scroll_y (Textarea.surface ta))
 
@@ -778,7 +784,7 @@ let resize_after_newline_clamps_scroll_y () =
 
 let cursor_returns_none_when_unfocused () =
   let _t, ta = make_textarea ~value:"hi" () in
-  ignore (render_textarea ta ~width:20 ~height:5 : Grid.t);
+  ignore (render_textarea ta ~width:20 ~height:5 : Matrix_grid.t);
   let node = Textarea.node ta in
   let cursor = Renderable.cursor node in
   is_none ~msg:"no cursor when unfocused" cursor
@@ -786,7 +792,7 @@ let cursor_returns_none_when_unfocused () =
 let cursor_returns_some_when_focused () =
   let t, ta = make_textarea ~value:"hi" () in
   focus_textarea t ta;
-  ignore (render_textarea ta ~width:20 ~height:5 : Grid.t);
+  ignore (render_textarea ta ~width:20 ~height:5 : Matrix_grid.t);
   let node = Textarea.node ta in
   let cursor = Renderable.cursor node in
   is_some ~msg:"cursor when focused" cursor
@@ -794,13 +800,13 @@ let cursor_returns_some_when_focused () =
 let cursor_returns_none_when_hidden () =
   let t, ta = make_textarea ~value:"hi" ~show_cursor:false () in
   focus_textarea t ta;
-  ignore (render_textarea ta ~width:20 ~height:5 : Grid.t);
+  ignore (render_textarea ta ~width:20 ~height:5 : Matrix_grid.t);
   is_none ~msg:"cursor hidden" (Renderable.cursor (Textarea.node ta))
 
 let cursor_style_is_block_by_default () =
   let t, ta = make_textarea ~value:"hi" () in
   focus_textarea t ta;
-  ignore (render_textarea ta ~width:20 ~height:5 : Grid.t);
+  ignore (render_textarea ta ~width:20 ~height:5 : Matrix_grid.t);
   let node = Textarea.node ta in
   match Renderable.cursor node with
   | Some c -> is_true ~msg:"block style" (c.style = `Block)
@@ -809,7 +815,7 @@ let cursor_style_is_block_by_default () =
 let cursor_has_correct_color () =
   let t, ta = make_textarea ~value:"hi" ~cursor_color:Ansi.Color.red () in
   focus_textarea t ta;
-  ignore (render_textarea ta ~width:20 ~height:5 : Grid.t);
+  ignore (render_textarea ta ~width:20 ~height:5 : Matrix_grid.t);
   let node = Textarea.node ta in
   match Renderable.cursor node with
   | Some c ->
@@ -880,14 +886,14 @@ let render_zero_size_no_crash () =
 let operations_on_empty_textarea_are_safe () =
   let t, ta = make_textarea () in
   focus_textarea t ta;
-  send_key ta Input.Key.Backspace;
-  send_key ta Input.Key.Delete;
-  send_key ta Input.Key.Left;
-  send_key ta Input.Key.Right;
-  send_key ta Input.Key.Up;
-  send_key ta Input.Key.Down;
-  send_key ta Input.Key.Home;
-  send_key ta Input.Key.End;
+  send_key ta Matrix_input.Key.Backspace;
+  send_key ta Matrix_input.Key.Delete;
+  send_key ta Matrix_input.Key.Left;
+  send_key ta Matrix_input.Key.Right;
+  send_key ta Matrix_input.Key.Up;
+  send_key ta Matrix_input.Key.Down;
+  send_key ta Matrix_input.Key.Home;
+  send_key ta Matrix_input.Key.End;
   send_char_with_mod ta ~modifier:ctrl_mod 'w';
   send_char_with_mod ta ~modifier:ctrl_mod 'k';
   send_char_with_mod ta ~modifier:ctrl_mod 'u';

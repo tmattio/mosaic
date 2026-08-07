@@ -78,7 +78,7 @@ let map_transforms_on_key () =
   let mapped : unit Vnode.t = Vnode.map (fun n -> log := n :: !log) v in
   match mapped with
   | Vnode.Element { handlers = { on_key = Some handler; _ }; _ } ->
-      let fake_ev = Event.Key.of_input (Input.Key.of_char 'a') in
+      let fake_ev = Event.Key.of_input (Matrix_input.Key.of_char 'a') in
       handler fake_ev;
       equal ~msg:"handler ran" (list int) [ 42 ] !log
   | _ -> fail "expected on_key handler"
@@ -160,7 +160,7 @@ let viewport_switch_maps_both_branches () =
   in
   let run_handler = function
     | Vnode.Element { handlers = { on_key = Some handler; _ }; _ } ->
-        handler (Event.Key.of_input (Input.Key.of_char 'a'))
+        handler (Event.Key.of_input (Matrix_input.Key.of_char 'a'))
     | _ -> fail "expected branch key handler"
   in
   match mapped with

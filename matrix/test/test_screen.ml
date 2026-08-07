@@ -1,3 +1,5 @@
+module Grid = Matrix_grid
+module Screen = Matrix_screen
 open Windtrap
 
 (* Test Helpers *)

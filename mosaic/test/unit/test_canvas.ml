@@ -34,8 +34,8 @@ let create_grid_starts_at_1x1 () =
   let root = make_root t in
   let canvas = Canvas.create ~parent:root () in
   let g = Canvas.grid canvas in
-  equal ~msg:"width" int 1 (Grid.width g);
-  equal ~msg:"height" int 1 (Grid.height g)
+  equal ~msg:"width" int 1 (Matrix_grid.width g);
+  equal ~msg:"height" int 1 (Matrix_grid.height g)
 
 let create_respect_alpha_default_false () =
   let t = make_ctx () in
@@ -48,14 +48,15 @@ let create_respect_alpha_true () =
   let root = make_root t in
   let canvas = Canvas.create ~parent:root ~respect_alpha:true () in
   is_true ~msg:"set true" (Canvas.respect_alpha canvas);
-  is_true ~msg:"grid respect_alpha" (Grid.respect_alpha (Canvas.grid canvas))
+  is_true ~msg:"grid respect_alpha"
+    (Matrix_grid.respect_alpha (Canvas.grid canvas))
 
 let create_grid_follows_screen_width_method () =
   let t = make_ctx ~width_method:`Wcwidth () in
   let root = make_root t in
   let canvas = Canvas.create ~parent:root () in
   is_true ~msg:"grid uses the screen's width method"
-    (Grid.width_method (Canvas.grid canvas) = `Wcwidth)
+    (Matrix_grid.width_method (Canvas.grid canvas) = `Wcwidth)
 
 (* ── Auto-resize ── *)
 
@@ -69,13 +70,13 @@ let auto_resize_on_render () =
   layout_node node ~x:0 ~y:0 ~width:10 ~height:5;
   Renderable.Private.render node parent_grid ~delta:0.;
   let g = Canvas.grid canvas in
-  equal ~msg:"w1" int 10 (Grid.width g);
-  equal ~msg:"h1" int 5 (Grid.height g);
+  equal ~msg:"w1" int 10 (Matrix_grid.width g);
+  equal ~msg:"h1" int 5 (Matrix_grid.height g);
   (* Resize layout *)
   layout_node node ~x:0 ~y:0 ~width:20 ~height:10;
   Renderable.Private.render node parent_grid ~delta:0.;
-  equal ~msg:"w2" int 20 (Grid.width g);
-  equal ~msg:"h2" int 10 (Grid.height g)
+  equal ~msg:"w2" int 20 (Matrix_grid.width g);
+  equal ~msg:"h2" int 10 (Matrix_grid.height g)
 
 let auto_resize_fires_callback () =
   let t = make_ctx () in
@@ -106,8 +107,8 @@ let no_render_for_zero_dimensions () =
   layout_node node ~x:0 ~y:0 ~width:0 ~height:0;
   Renderable.Private.render node parent_grid ~delta:0.;
   (* Grid should remain 1x1 — no resize for zero dims *)
-  equal ~msg:"w" int 1 (Grid.width (Canvas.grid canvas));
-  equal ~msg:"h" int 1 (Grid.height (Canvas.grid canvas))
+  equal ~msg:"w" int 1 (Matrix_grid.width (Canvas.grid canvas));
+  equal ~msg:"h" int 1 (Matrix_grid.height (Canvas.grid canvas))
 
 (* ── Clear ── *)
 
@@ -125,9 +126,10 @@ let set_respect_alpha_updates_grid () =
   let t = make_ctx () in
   let root = make_root t in
   let canvas = Canvas.create ~parent:root () in
-  is_false ~msg:"initially false" (Grid.respect_alpha (Canvas.grid canvas));
+  is_false ~msg:"initially false"
+    (Matrix_grid.respect_alpha (Canvas.grid canvas));
   Canvas.set_respect_alpha canvas true;
-  is_true ~msg:"set true" (Grid.respect_alpha (Canvas.grid canvas));
+  is_true ~msg:"set true" (Matrix_grid.respect_alpha (Canvas.grid canvas));
   is_true ~msg:"prop true" (Canvas.respect_alpha canvas)
 
 let set_respect_alpha_noop_same_value () =
@@ -155,7 +157,7 @@ let apply_props_updates_respect_alpha () =
   let props = Canvas.Props.make ~respect_alpha:true () in
   Canvas.apply_props canvas props;
   is_true ~msg:"updated" (Canvas.respect_alpha canvas);
-  is_true ~msg:"grid updated" (Grid.respect_alpha (Canvas.grid canvas))
+  is_true ~msg:"grid updated" (Matrix_grid.respect_alpha (Canvas.grid canvas))
 
 let apply_props_noop_same () =
   let t = make_ctx () in
@@ -187,7 +189,7 @@ let draw_text_writes_to_grid () =
   Renderable.Private.render node parent_grid ~delta:0.;
   Canvas.draw_text canvas ~x:0 ~y:0 ~text:"Hi";
   let g = Canvas.grid canvas in
-  let text = Grid.get_text g (Grid.idx g ~x:0 ~y:0) in
+  let text = Matrix_grid.get_text g (Matrix_grid.idx g ~x:0 ~y:0) in
   equal ~msg:"first char" string "H" text
 
 let fill_rect_fills_cells () =
@@ -200,7 +202,7 @@ let fill_rect_fills_cells () =
   Renderable.Private.render node parent_grid ~delta:0.;
   Canvas.fill_rect canvas ~x:0 ~y:0 ~width:2 ~height:2 ~color:Ansi.Color.red;
   let g = Canvas.grid canvas in
-  let bg = Grid.get_background g (Grid.idx g ~x:0 ~y:0) in
+  let bg = Matrix_grid.get_background g (Matrix_grid.idx g ~x:0 ~y:0) in
   is_true ~msg:"has fill color" (Ansi.Color.equal Ansi.Color.red bg)
 
 let width_height_accessors () =
@@ -274,7 +276,8 @@ let on_draw_can_draw () =
   layout_node node ~x:0 ~y:0 ~width:10 ~height:5;
   Renderable.Private.render node parent_grid ~delta:0.;
   let g = Canvas.grid canvas in
-  equal ~msg:"drawn" string "X" (Grid.get_text g (Grid.idx g ~x:0 ~y:0))
+  equal ~msg:"drawn" string "X"
+    (Matrix_grid.get_text g (Matrix_grid.idx g ~x:0 ~y:0))
 
 let on_draw_forwards_delta () =
   let t = make_ctx () in
@@ -313,14 +316,14 @@ let set_cell_writes_glyph () =
   let parent_grid = make_grid ~width:80 ~height:24 () in
   layout_node node ~x:0 ~y:0 ~width:10 ~height:5;
   Renderable.Private.render node parent_grid ~delta:0.;
-  let cell = Grid.Cell.of_uchar (Uchar.of_char 'Z') in
+  let cell = Matrix_grid.Cell.of_uchar (Uchar.of_char 'Z') in
   Canvas.set_cell canvas ~x:1 ~y:2 ~cell ~fg:Ansi.Color.red ~bg:Ansi.Color.blue
     ~attrs:Ansi.Attr.empty ();
   let g = Canvas.grid canvas in
-  let idx = Grid.idx g ~x:1 ~y:2 in
-  equal ~msg:"text" string "Z" (Grid.get_text g idx);
+  let idx = Matrix_grid.idx g ~x:1 ~y:2 in
+  equal ~msg:"text" string "Z" (Matrix_grid.get_text g idx);
   is_true ~msg:"bg"
-    (Ansi.Color.equal Ansi.Color.blue (Grid.get_background g idx))
+    (Ansi.Color.equal Ansi.Color.blue (Matrix_grid.get_background g idx))
 
 (* ── on_resize dimensions ── *)
 
@@ -356,11 +359,13 @@ let content_persists_across_frames () =
   (* Re-render without clearing — content should persist *)
   Renderable.Private.render node parent_grid ~delta:0.;
   let g = Canvas.grid canvas in
-  equal ~msg:"first char" string "A" (Grid.get_text g (Grid.idx g ~x:0 ~y:0));
-  equal ~msg:"second char" string "B" (Grid.get_text g (Grid.idx g ~x:1 ~y:0));
+  equal ~msg:"first char" string "A"
+    (Matrix_grid.get_text g (Matrix_grid.idx g ~x:0 ~y:0));
+  equal ~msg:"second char" string "B"
+    (Matrix_grid.get_text g (Matrix_grid.idx g ~x:1 ~y:0));
   (* Also verify it was blitted to the parent grid *)
   equal ~msg:"parent first" string "A"
-    (Grid.get_text parent_grid (Grid.idx parent_grid ~x:0 ~y:0))
+    (Matrix_grid.get_text parent_grid (Matrix_grid.idx parent_grid ~x:0 ~y:0))
 
 (* ── pp ── *)
 

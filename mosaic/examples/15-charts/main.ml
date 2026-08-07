@@ -1,7 +1,7 @@
 (** Interactive charts demo: zoom, pan, hover tooltips for multiple chart types.
 *)
 
-module Cell_grid = Grid
+module Cell_grid = Matrix_grid
 open Mosaic
 open Matrix_charts
 

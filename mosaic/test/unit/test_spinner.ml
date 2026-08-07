@@ -151,7 +151,7 @@ let apply_props_replaces_props () =
   Spinner.apply_props spinner props;
   (* Verify by checking that the new props are in effect *)
   let grid = render_spinner spinner ~width:2 ~height:1 in
-  let text = Grid.get_text grid 0 in
+  let text = Matrix_grid.get_text grid 0 in
   (* line frame set starts with "-" *)
   is_true ~msg:"first frame is -" (String.equal text "-")
 
@@ -179,7 +179,7 @@ let measure_width_is_max_frame_width () =
   let grid = make_grid ~width:10 ~height:1 () in
   Renderable.Private.render node grid ~delta:0.;
   (* The spinner should have an intrinsic width of 1 for braille chars *)
-  let text = Grid.get_text grid 0 in
+  let text = Matrix_grid.get_text grid 0 in
   is_true ~msg:"renders something" (String.length text > 0)
 
 (* ── Pretty-printing ── *)

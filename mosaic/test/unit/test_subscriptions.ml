@@ -4,6 +4,7 @@
     correct messages when driven by a simulated TEA runtime. The runtime is not
     real -- we manually call the same logic that the on_frame callback uses. *)
 
+module Input = Matrix_input
 open Windtrap
 open Mosaic
 

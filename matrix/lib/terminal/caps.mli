@@ -21,9 +21,9 @@
     (Kitty keyboard), and Kitty graphics queries. iTerm2 proprietary queries are
     appended when [$TERM] contains ["iterm"].
 
-    Responses are parsed through a {!Input.Parser.t} and converted into
-    {!Input.Response.capability} values. {!apply_events} folds those into the
-    capability record and {!terminal_info}.
+    Responses are parsed through a {!Matrix_input.Parser.t} and converted into
+    {!Matrix_input.Response.capability} values. {!apply_events} folds those into
+    the capability record and {!terminal_info}.
 
     Kitty detection (via XTVersion containing ["kitty"] or [$KITTY_WINDOW_ID])
     immediately promotes all Kitty capabilities. Detection of the Kitty keyboard
@@ -63,7 +63,7 @@ type t = {
   focus_tracking : bool;
       (** [true] if focus tracking (DECSET/DECRST 1004) is supported or enabled.
       *)
-  unicode_width : Text.width_method;
+  unicode_width : Matrix_text.width_method;
       (** Current Unicode width mode. Reflects both heuristics and any DECRQM
           2027 responses processed so far. Terminals such as Kitty, WezTerm,
           recent iTerm2, and Foot report Unicode width support via DECRQM 2027.
@@ -141,7 +141,7 @@ val apply_event :
   ?apply_env_overrides:bool ->
   caps:t ->
   info:terminal_info ->
-  Input.Response.capability ->
+  Matrix_input.Response.capability ->
   t * terminal_info
 (** [apply_event ~apply_env_overrides ~caps ~info event] processes a single
     capability [event] and is [(caps', info')] with the updated records.
@@ -155,7 +155,7 @@ val apply_events :
   ?apply_env_overrides:bool ->
   caps:t ->
   info:terminal_info ->
-  Input.Response.capability list ->
+  Matrix_input.Response.capability list ->
   t * terminal_info
 (** [apply_events ~apply_env_overrides ~caps ~info events] folds capability
     [events] into the records and is [(caps', info')].
@@ -174,11 +174,11 @@ val apply_events :
 val probe :
   ?timeout:float ->
   ?apply_env_overrides:bool ->
-  on_event:(Input.t -> unit) ->
+  on_event:(Matrix_input.t -> unit) ->
   read_into:(bytes -> int -> int -> int) ->
   wait_readable:(timeout:float -> bool) ->
   send:(string -> unit) ->
-  parser:Input.Parser.t ->
+  parser:Matrix_input.Parser.t ->
   caps:t ->
   info:terminal_info ->
   unit ->

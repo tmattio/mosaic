@@ -13,7 +13,7 @@
 type t
 (** The type for mutable nodes in the UI tree. *)
 
-type render = t -> Grid.t -> delta:float -> unit
+type render = t -> Matrix_grid.t -> delta:float -> unit
 (** The type for render callbacks. [render self grid ~delta] draws [self] into
     [grid]. [delta] is the elapsed time in milliseconds since the last frame. *)
 
@@ -178,7 +178,7 @@ val height : t -> int
     affect the result. Returns [0] when [t] is hidden or layout has not yet been
     computed. *)
 
-val bounds : t -> Grid.region
+val bounds : t -> Matrix_grid.region
 (** [bounds t] is [{ x = x t; y = y t; width = width t; height = height t }]. *)
 
 val set_translate : t -> x:int -> y:int -> unit
@@ -205,7 +205,7 @@ val set_render_after : t -> render option -> unit
 (** [set_render_after t hook] assigns an optional post-render hook. [None]
     clears it. *)
 
-val set_child_clip : t -> (t -> Grid.region option) option -> unit
+val set_child_clip : t -> (t -> Matrix_grid.region option) option -> unit
 (** [set_child_clip t fn] overrides the clipping rectangle applied to [t]'s
     children. When set, the renderer calls [fn t] to obtain a scissor rectangle
     before rendering children. Useful for scroll containers and bordered boxes.
@@ -428,7 +428,7 @@ module Private : sig
         (** The width computation method of the screen the tree renders into.
             Widgets read it (see {!val-width_method}) when creating text buffers
             so measurement matches how cells are laid down. *)
-    report_scroll : t -> region:Grid.region -> dx:int -> dy:int -> unit;
+    report_scroll : t -> region:Matrix_grid.region -> dx:int -> dy:int -> unit;
         (** Reports that a scroll container shifted its content by [(dx, dy)]
             cells. [region]'s rows are the viewport rows that visually shift;
             its [x]/[width] are the container's horizontal footprint. The
@@ -490,7 +490,7 @@ module Private : sig
   val pre_render_update : t -> delta:float -> unit
   (** [pre_render_update t ~delta] runs [t]'s on-frame and resize hooks. *)
 
-  val render : t -> Grid.t -> delta:float -> unit
+  val render : t -> Matrix_grid.t -> delta:float -> unit
   (** [render t grid ~delta] invokes [t]'s render callback. *)
 
   val render_before : t -> render option
@@ -499,14 +499,14 @@ module Private : sig
   val render_after : t -> render option
   (** [render_after t] is [t]'s post-render hook, if any. *)
 
-  val ensure_frame_buffer : t -> parent:Grid.t -> Grid.t option
+  val ensure_frame_buffer : t -> parent:Matrix_grid.t -> Matrix_grid.t option
   (** [ensure_frame_buffer t ~parent] is [Some buf] if [t] uses buffered
       rendering and has positive dimensions, [None] otherwise. *)
 
-  val blit_frame_buffer : t -> dst:Grid.t -> unit
+  val blit_frame_buffer : t -> dst:Matrix_grid.t -> unit
   (** [blit_frame_buffer t ~dst] copies [t]'s frame buffer into [dst]. *)
 
-  val render_full : t -> grid:Grid.t -> delta:float -> unit
+  val render_full : t -> grid:Matrix_grid.t -> delta:float -> unit
   (** [render_full t ~grid ~delta] runs the complete render sequence for [t]:
       frame buffer selection, pre-render hook, render callback, post-render
       hook, and frame buffer blit. *)
@@ -525,13 +525,17 @@ module Private : sig
   *)
 
   val children_in_viewport :
-    parent:t -> viewport:Grid.region -> padding:int -> t list
+    parent:t -> viewport:Matrix_grid.region -> padding:int -> t list
   (** [children_in_viewport ~parent ~viewport ~padding] is the children of
       [parent] whose bounds intersect [viewport] expanded by [padding] cells,
       sorted by z-index. *)
 
   val iter_children_in_viewport :
-    parent:t -> viewport:Grid.region -> padding:int -> (t -> unit) -> unit
+    parent:t ->
+    viewport:Matrix_grid.region ->
+    padding:int ->
+    (t -> unit) ->
+    unit
   (** [iter_children_in_viewport ~parent ~viewport ~padding f] applies [f] to
       each child of [parent] whose bounds intersect [viewport] expanded by
       [padding] cells, in z-index order. Children's cached layouts are refreshed
@@ -617,13 +621,13 @@ module Private : sig
   (** [request_selection_update t] asks the renderer to re-evaluate the active
       selection against the current pointer position. *)
 
-  val report_scroll : t -> region:Grid.region -> dx:int -> dy:int -> unit
+  val report_scroll : t -> region:Matrix_grid.region -> dx:int -> dy:int -> unit
   (** [report_scroll t ~region ~dx ~dy] forwards a scroll movement to the
       renderer's [report_scroll] context callback. See {!type-context}. *)
 
   (** {2:clipping Child clipping} *)
 
-  val child_clip : t -> Grid.region option
+  val child_clip : t -> Matrix_grid.region option
   (** [child_clip t] is the clipping region for [t]'s children: the clip
       override's result when one is set, otherwise [t]'s bounds. The region may
       be empty; the renderer then skips [t]'s children entirely rather than

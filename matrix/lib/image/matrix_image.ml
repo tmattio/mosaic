@@ -1,3 +1,4 @@
+module Grid = Matrix_grid
 module Color = Ansi.Color
 module Style = Ansi.Style
 
@@ -20,7 +21,7 @@ type primitive =
       y : int;
       lines : string array;
       style : Style.t;
-      width_method : Text.width_method;
+      width_method : Matrix_text.width_method;
       clip : Grid.region option;
     }
   | P_box of {
@@ -45,7 +46,8 @@ type primitive =
   | P_custom of {
       x : int;
       y : int;
-      draw : Grid.t -> Screen.Hit_grid.t option -> x:int -> y:int -> unit;
+      draw :
+        Grid.t -> Matrix_screen.Hit_grid.t option -> x:int -> y:int -> unit;
       clip : Grid.region option;
     }
 
@@ -127,7 +129,7 @@ let make_text ~style ~width_method lines =
   | _ ->
       let widths =
         List.map
-          (fun line -> Text.measure ~width_method ~tab_width:2 line)
+          (fun line -> Matrix_text.measure ~width_method ~tab_width:2 line)
           lines
       in
       let width = List.fold_left max 0 widths in
@@ -485,7 +487,7 @@ let add_hit ?clip hits ~x ~y ~width ~height ~id =
       match clipped with
       | None -> ()
       | Some rect ->
-          Screen.Hit_grid.add hits ~x:rect.x ~y:rect.y ~width:rect.width
+          Matrix_screen.Hit_grid.add hits ~x:rect.x ~y:rect.y ~width:rect.width
             ~height:rect.height ~id)
 
 let draw ?hits ?(x = 0) ?(y = 0) t grid =

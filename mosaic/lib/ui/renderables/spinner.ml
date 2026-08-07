@@ -84,7 +84,7 @@ let render t _self grid ~delta:_ =
     if n > 0 then
       let frame = t.props.frame_set.frames.(t.frame_index) in
       let style = Ansi.Style.make ~fg:t.props.color () in
-      Grid.draw_text ~style grid ~x:(Renderable.x t.node)
+      Matrix_grid.draw_text ~style grid ~x:(Renderable.x t.node)
         ~y:(Renderable.y t.node) ~text:frame
 
 (* ───── Animation ───── *)

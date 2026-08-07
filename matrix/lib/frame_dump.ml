@@ -1,3 +1,6 @@
+module Grid = Matrix_grid
+module Screen = Matrix_screen
+
 let ensure_dir dir =
   if Sys.file_exists dir then (
     if not (Sys.is_directory dir) then

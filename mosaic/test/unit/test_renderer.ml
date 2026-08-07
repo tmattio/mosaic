@@ -30,21 +30,22 @@ let make_child ~parent ~x ~y ~w ~h ?focusable () =
   | None -> ());
   child
 
-let mouse_press ?(button = Input.Mouse.Left) ?(modifiers = Input.Modifier.none)
-    ~x ~y () =
-  Input.Mouse.make ~x ~y ~modifiers (Down { button })
+let mouse_press ?(button = Matrix_input.Mouse.Left)
+    ?(modifiers = Matrix_input.Modifier.none) ~x ~y () =
+  Matrix_input.Mouse.make ~x ~y ~modifiers (Down { button })
 
-let mouse_release ?(button = Input.Mouse.Left)
-    ?(modifiers = Input.Modifier.none) ~x ~y () =
-  Input.Mouse.make ~x ~y ~modifiers (Up { button = Some button })
+let mouse_release ?(button = Matrix_input.Mouse.Left)
+    ?(modifiers = Matrix_input.Modifier.none) ~x ~y () =
+  Matrix_input.Mouse.make ~x ~y ~modifiers (Up { button = Some button })
 
-let mouse_motion ?(left = false) ?(modifiers = Input.Modifier.none) ~x ~y () =
-  let kind = if left then Input.Mouse.Drag { button = Left } else Move in
-  Input.Mouse.make ~x ~y ~modifiers kind
+let mouse_motion ?(left = false) ?(modifiers = Matrix_input.Modifier.none) ~x ~y
+    () =
+  let kind = if left then Matrix_input.Mouse.Drag { button = Left } else Move in
+  Matrix_input.Mouse.make ~x ~y ~modifiers kind
 
 let mouse_scroll ?modifiers ~x ~y direction =
-  match Input.mouse_scroll ?modifiers x y direction with
-  | Input.Mouse mouse -> mouse
+  match Matrix_input.mouse_scroll ?modifiers x y direction with
+  | Matrix_input.Mouse mouse -> mouse
   | _ -> assert false
 
 (* Unit-returning dispatch wrappers: these tests assert via tree state, not
@@ -64,7 +65,7 @@ let record_keys node =
   Renderable.on_key node (fun ev -> log := ev :: !log);
   log
 
-let key_a = Input.Key.of_char 'a'
+let key_a = Matrix_input.Key.of_char 'a'
 
 (* ── Lifecycle ── *)
 
@@ -90,19 +91,19 @@ let width_method_reaches_widgets () =
   let t = Renderer.create ~width_method:`Wcwidth () in
   is_true ~msg:"owned screen's method"
     (Renderable.Private.width_method (Renderer.root t) = `Wcwidth);
-  let host = Screen.create ~width_method:`Wcwidth () in
+  let host = Matrix_screen.create ~width_method:`Wcwidth () in
   let adopted = Renderer.create ~screen:host () in
   is_true ~msg:"adopted screen's method"
     (Renderable.Private.width_method (Renderer.root adopted) = `Wcwidth)
 
 let adopted_screen_render_is_guarded () =
-  let host = Screen.create () in
+  let host = Matrix_screen.create () in
   let t = Renderer.create ~screen:host () in
   let _child = make_child ~parent:(Renderer.root t) ~x:0 ~y:0 ~w:4 ~h:2 () in
   Renderer.render_frame t ~width:10 ~height:4 ~delta:0.;
   is_true ~msg:"renderer adopted the host screen" (Renderer.screen t == host);
   is_true ~msg:"frame built into the host's hit grid"
-    (Screen.Hit_grid.get (Screen.next_hit_grid host) ~x:1 ~y:1 > 0);
+    (Matrix_screen.Hit_grid.get (Matrix_screen.next_hit_grid host) ~x:1 ~y:1 > 0);
   raises_match ~msg:"presentation belongs to the host"
     (function Invalid_argument _ -> true | _ -> false)
     (fun () -> ignore (Renderer.render t : string))
@@ -131,7 +132,7 @@ let zero_sized_clipping_node_hides_children () =
   let child_num = Renderable.Private.num child in
   do_frame t;
   equal ~msg:"honest zero width" int 0 (Renderable.width container);
-  let hit = Screen.query_hit (Renderer.screen t) ~x:0 ~y:0 in
+  let hit = Matrix_screen.query_hit (Renderer.screen t) ~x:0 ~y:0 in
   is_false ~msg:"child not hit-testable through the empty clip" (hit = child_num)
 
 let starts_dirty () =
@@ -303,7 +304,7 @@ let settlement_replaces_superseded_frame_cells () =
   Renderable.set_render child (fun self grid ~delta:_ ->
       incr passes;
       if !passes = 1 then begin
-        Grid.draw_text grid ~x:0 ~y:0 ~text:"X";
+        Matrix_grid.draw_text grid ~x:0 ~y:0 ~text:"X";
         Renderable.request_render self
       end);
   (match Renderer.render_frame_until_settled t ~width:1 ~height:1 ~delta:0. with
@@ -313,8 +314,8 @@ let settlement_replaces_superseded_frame_cells () =
         (Printf.sprintf "expected settlement, got %d pending item(s)"
            (List.length pending)));
   equal ~msg:"render passes" int 2 !passes;
-  let grid = Screen.next_grid (Renderer.screen t) in
-  equal ~msg:"superseded glyph cleared" string " " (Grid.get_text grid 0)
+  let grid = Matrix_screen.next_grid (Renderer.screen t) in
+  equal ~msg:"superseded glyph cleared" string " " (Matrix_grid.get_text grid 0)
 
 let presented_cells_cleared_before_next_frame () =
   (* The post-present clear of the next buffer is deferred by Screen; a
@@ -324,16 +325,16 @@ let presented_cells_cleared_before_next_frame () =
   let child = make_child ~parent:(Renderer.root t) ~x:0 ~y:0 ~w:1 ~h:1 () in
   let draw = ref true in
   Renderable.set_render child (fun _ grid ~delta:_ ->
-      if !draw then Grid.draw_text grid ~x:0 ~y:0 ~text:"X");
+      if !draw then Matrix_grid.draw_text grid ~x:0 ~y:0 ~text:"X");
   Renderer.render_frame t ~width:1 ~height:1 ~delta:0.;
-  let grid = Screen.next_grid (Renderer.screen t) in
-  equal ~msg:"first frame drew" string "X" (Grid.get_text grid 0);
+  let grid = Matrix_screen.next_grid (Renderer.screen t) in
+  equal ~msg:"first frame drew" string "X" (Matrix_grid.get_text grid 0);
   ignore (Renderer.render ~full:true t : string);
   draw := false;
   Renderable.request_render child;
   Renderer.render_frame t ~width:1 ~height:1 ~delta:0.;
-  let grid = Screen.next_grid (Renderer.screen t) in
-  equal ~msg:"stale glyph cleared" string " " (Grid.get_text grid 0)
+  let grid = Matrix_screen.next_grid (Renderer.screen t) in
+  equal ~msg:"stale glyph cleared" string " " (Matrix_grid.get_text grid 0)
 
 let post_process_runs () =
   let t = make_renderer () in
@@ -515,7 +516,7 @@ let scroll_produces_hint () =
   Scroll_box.scroll_by sb ~y:1 ();
   Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
   (match Renderer.take_scroll_hint t with
-  | Some { Screen.top; bottom; delta } ->
+  | Some { Matrix_screen.top; bottom; delta } ->
       equal ~msg:"top" int 0 top;
       equal ~msg:"bottom" int 5 bottom;
       equal ~msg:"delta" int 1 delta
@@ -542,7 +543,7 @@ let two_scrollers_disqualify () =
   let sb2 = make_hint_transcript ~vh:3 t in
   Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
   ignore (Renderer.render t : string);
-  ignore (Renderer.take_scroll_hint t : Screen.scroll_hint option);
+  ignore (Renderer.take_scroll_hint t : Matrix_screen.scroll_hint option);
   Scroll_box.scroll_by sb1 ~y:1 ();
   Scroll_box.scroll_by sb2 ~y:1 ();
   Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
@@ -808,7 +809,7 @@ let shift_left_click_preserves_existing_focus () =
   in
   do_frame t;
   ignore (Renderer.focus t composer : bool);
-  let modifiers = { Input.Modifier.none with shift = true } in
+  let modifiers = { Matrix_input.Modifier.none with shift = true } in
   dispatch_mouse t (mouse_press ~modifiers ~x:25 ~y:2 ());
   match Renderer.focused t with
   | Some n -> is_true ~msg:"composer remains focused" (n == composer)
@@ -1018,7 +1019,7 @@ let mouse_event_has_correct_modifiers () =
   let t = make_renderer () in
   let child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   let log = record_mouse child in
-  let mods = { Input.Modifier.none with shift = true } in
+  let mods = { Matrix_input.Modifier.none with shift = true } in
   do_frame t;
   dispatch_mouse t (mouse_press ~modifiers:mods ~x:7 ~y:7 ());
   is_true ~msg:"received" (List.length !log > 0);
@@ -1112,7 +1113,7 @@ let scroll_dispatches_to_hit_target () =
   let child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   let log = record_mouse child in
   do_frame t;
-  dispatch_mouse t (mouse_scroll ~x:7 ~y:7 Input.Mouse.Scroll_up);
+  dispatch_mouse t (mouse_scroll ~x:7 ~y:7 Matrix_input.Mouse.Scroll_up);
   let found_scroll =
     List.exists
       (fun ev -> match Event.Mouse.kind ev with Scroll _ -> true | _ -> false)
@@ -1124,10 +1125,10 @@ let scroll_with_modifiers () =
   let t = make_renderer () in
   let child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   let log = record_mouse child in
-  let mods = { Input.Modifier.none with shift = true } in
+  let mods = { Matrix_input.Modifier.none with shift = true } in
   do_frame t;
   dispatch_mouse t
-    (mouse_scroll ~modifiers:mods ~x:7 ~y:7 Input.Mouse.Scroll_down);
+    (mouse_scroll ~modifiers:mods ~x:7 ~y:7 Matrix_input.Mouse.Scroll_down);
   is_true ~msg:"received" (List.length !log > 0);
   let ev = List.hd !log in
   is_true ~msg:"shift" (Event.Mouse.modifiers ev).shift
@@ -1137,7 +1138,7 @@ let scroll_on_empty_area () =
   let _child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   do_frame t;
   (* Should not crash *)
-  dispatch_mouse t (mouse_scroll ~x:0 ~y:0 Input.Mouse.Scroll_up)
+  dispatch_mouse t (mouse_scroll ~x:0 ~y:0 Matrix_input.Mouse.Scroll_up)
 
 (* ── Drag ── *)
 
@@ -1236,7 +1237,7 @@ let right_button_does_not_capture () =
   do_frame t;
   (* Right button motion *)
   dispatch_mouse t
-    (Input.Mouse.make ~x:7 ~y:7 ~modifiers:Input.Modifier.none
+    (Matrix_input.Mouse.make ~x:7 ~y:7 ~modifiers:Matrix_input.Modifier.none
        (Drag { button = Right }));
   is_none ~msg:"no capture from right" (Renderer.captured t)
 
@@ -1325,7 +1326,7 @@ let scroll_on_dead_space_reaches_focused_scrollable () =
   in
   do_frame t;
   ignore (Renderer.focus t (Scroll_box.node sb) : bool);
-  dispatch_mouse t (mouse_scroll ~x:30 ~y:8 Input.Mouse.Scroll_down);
+  dispatch_mouse t (mouse_scroll ~x:30 ~y:8 Matrix_input.Mouse.Scroll_down);
   is_true ~msg:"focused scroll box scrolled" (Scroll_box.scroll_top sb > 0)
 
 let selection_drag_auto_scrolls_scroll_box () =

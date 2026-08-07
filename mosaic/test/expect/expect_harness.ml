@@ -76,7 +76,7 @@ let render ~width ~height vnode =
   let reconciler = Reconciler.create ~container:(Renderer.root renderer) in
   Reconciler.render reconciler ~viewport_width:width (fill vnode);
   Renderer.render_frame renderer ~width ~height ~delta:0.;
-  let grid = Screen.next_grid (Renderer.screen renderer) in
+  let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
   print_newline ();
   print_string (grid_to_text grid)
 
@@ -86,7 +86,7 @@ let render_ansi ~width ~height vnode =
   let reconciler = Reconciler.create ~container:(Renderer.root renderer) in
   Reconciler.render reconciler ~viewport_width:width (fill vnode);
   Renderer.render_frame renderer ~width ~height ~delta:0.;
-  let grid = Screen.next_grid (Renderer.screen renderer) in
+  let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
   print_newline ();
   print_string (grid_to_ansi grid)
 
@@ -114,7 +114,7 @@ let frame app ~width ~height =
   app.viewport_width <- width;
   set_viewport app.renderer ~width ~height;
   Renderer.render_frame app.renderer ~width ~height ~delta:0.;
-  let grid = Screen.next_grid (Renderer.screen app.renderer) in
+  let grid = Matrix_screen.next_grid (Renderer.screen app.renderer) in
   print_newline ();
   print_string (grid_to_text grid)
 
@@ -126,7 +126,7 @@ let settled_frame app ~width ~height =
    with
   | `Settled -> ()
   | `Pending _ -> failwith "renderer did not settle within its pass budget");
-  let grid = Screen.next_grid (Renderer.screen app.renderer) in
+  let grid = Matrix_screen.next_grid (Renderer.screen app.renderer) in
   print_newline ();
   print_string (grid_to_text grid)
 
@@ -134,26 +134,27 @@ let frame_ansi app ~width ~height =
   app.viewport_width <- width;
   set_viewport app.renderer ~width ~height;
   Renderer.render_frame app.renderer ~width ~height ~delta:0.;
-  let grid = Screen.next_grid (Renderer.screen app.renderer) in
+  let grid = Matrix_screen.next_grid (Renderer.screen app.renderer) in
   print_newline ();
   print_string (grid_to_ansi grid)
 
 let focus app node = ignore (Renderer.focus app.renderer node : bool)
-let no_mod = Input.Modifier.none
+let no_mod = Matrix_input.Modifier.none
 
 let send_char app c =
   let text = String.make 1 c in
   ignore
     (Renderer.dispatch_key app.renderer
-       (Input.Key.of_char ~associated_text:text c)
+       (Matrix_input.Key.of_char ~associated_text:text c)
       : Event.key)
 
 let send_key app key =
-  ignore (Renderer.dispatch_key app.renderer (Input.Key.make key) : Event.key)
+  ignore
+    (Renderer.dispatch_key app.renderer (Matrix_input.Key.make key) : Event.key)
 
 let send_key_with_mod app ~modifier key =
   ignore
-    (Renderer.dispatch_key app.renderer (Input.Key.make ~modifier key)
+    (Renderer.dispatch_key app.renderer (Matrix_input.Key.make ~modifier key)
       : Event.key)
 
 (* ── Canvas Helpers ── *)
@@ -204,7 +205,7 @@ let render_markdown ?(width = 60) ?(height = 20) ?style ?conceal ?streaming
   in
   fill_node (Markdown.node md);
   Renderer.render_frame renderer ~width ~height ~delta:0.;
-  let grid = Screen.next_grid (Renderer.screen renderer) in
+  let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
   print_newline ();
   print_string (grid_to_text grid)
 
@@ -222,6 +223,6 @@ let make_markdown_app ?(width = 60) ?(height = 20) ?style ?conceal ?streaming
 let markdown_frame app ~width ~height =
   set_viewport app.md_renderer ~width ~height;
   Renderer.render_frame app.md_renderer ~width ~height ~delta:0.;
-  let grid = Screen.next_grid (Renderer.screen app.md_renderer) in
+  let grid = Matrix_screen.next_grid (Renderer.screen app.md_renderer) in
   print_newline ();
   print_string (grid_to_text grid)

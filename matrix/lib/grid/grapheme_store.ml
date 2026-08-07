@@ -50,7 +50,7 @@ let ensure_id_capacity t =
   if t.next_id >= cap then (
     let new_cap = cap * 2 in
     if new_cap > mask_index + 1 then
-      failwith "Grid.Grapheme_store: ID exhaustion";
+      failwith "Matrix_grid.Grapheme_store: ID exhaustion";
     let resize arr def =
       let next = Array.make new_cap def in
       Array.blit ~src:arr ~src_pos:0 ~dst:next ~dst_pos:0 ~len:cap;
@@ -277,7 +277,7 @@ let length t ~idx ~gen =
 
 let blit t ~idx ~gen buf ~pos =
   if pos < 0 || pos > Bytes.length buf then
-    invalid_arg "Grid.Packed_cell.blit: position out of bounds";
+    invalid_arg "Matrix_grid.Packed_cell.blit: position out of bounds";
   if not (valid t ~idx ~gen) then 0
   else
     let len = Array.unsafe_get t.lengths idx in

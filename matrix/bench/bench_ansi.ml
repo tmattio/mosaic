@@ -206,7 +206,7 @@ let sgr_tui_frame_80x24 =
           let fg, bg, attrs = palette.(idx) in
           Sgr.update sgr_state_tui sgr_writer_tui ~fg ~bg ~attrs ~link:""
         done;
-        (* Reset at end of row like Screen.render does *)
+        (* Reset at end of row like Matrix_screen.render does *)
         Sgr.reset sgr_state_tui
       done;
       ignore (Sys.opaque_identity (Ansi.Writer.len sgr_writer_tui)))

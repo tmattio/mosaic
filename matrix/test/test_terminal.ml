@@ -1,5 +1,6 @@
+module Input = Matrix_input
 open Windtrap
-module T = Terminal
+module T = Matrix_terminal
 
 let contains s needle =
   let n = String.length needle in

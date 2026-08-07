@@ -1,9 +1,9 @@
 module Ansi = Ansi
-module Grid = Grid
-module Input = Input
-module Screen = Screen
-module Terminal = Terminal
-module Text = Text
+module Grid = Matrix_grid
+module Input = Matrix_input
+module Screen = Matrix_screen
+module Terminal = Matrix_terminal
+module Text = Matrix_text
 
 (* Types *)
 

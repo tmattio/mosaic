@@ -1,3 +1,4 @@
+module Grid = Matrix_grid
 open Windtrap
 
 (* Helper to calculate linear index *)
@@ -1064,7 +1065,7 @@ let draw_text_overflow_does_nothing () =
 
 let ambiguous_width_defaults_to_one () =
   let check_width label s =
-    let width = Text.measure ~width_method:`Unicode ~tab_width:2 s in
+    let width = Matrix_text.measure ~width_method:`Unicode ~tab_width:2 s in
     equal ~msg:label int 1 width
   in
   check_width "┌ width" "┌";
@@ -1088,7 +1089,8 @@ let canvas_like_resizing () =
   let grid = Grid.create ~width:1 ~height:1 () in
   let write_text text ~x ~y =
     let width =
-      Text.measure ~width_method:(Grid.width_method grid) ~tab_width:2 text
+      Matrix_text.measure ~width_method:(Grid.width_method grid) ~tab_width:2
+        text
     in
     let width = if width <= 0 then 1 else width in
     if x + width > Grid.width grid then

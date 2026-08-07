@@ -2,6 +2,8 @@
 
 (* Propagation/default-prevention state used by Mouse. Key and Paste target
    the focused node only, so they carry just a default-prevention flag. *)
+module Input = Matrix_input
+
 module Dispatch_control = struct
   type t = {
     mutable propagation_stopped : bool;

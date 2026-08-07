@@ -35,8 +35,8 @@
 
     Create a {!Parser} and feed it raw terminal bytes:
     {[
-    let p = Input.Parser.create () in
-    Input.Parser.feed p buf 0 len ~now ~on_event:handle_event
+    let p = Matrix_input.Parser.create () in
+    Matrix_input.Parser.feed p buf 0 len ~now ~on_event:handle_event
       ~on_response:handle_response
     ]}
 

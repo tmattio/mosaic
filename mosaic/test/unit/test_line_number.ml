@@ -21,7 +21,7 @@ let make_line_number ?line_colors ?line_signs ?line_numbers ?hidden_line_numbers
 let render renderer =
   Renderer.render_frame renderer ~width:20 ~height:3 ~delta:0.;
   ignore (Renderer.render ~full:true renderer : string);
-  Screen.current_grid (Renderer.screen renderer)
+  Matrix_screen.current_grid (Renderer.screen renderer)
 
 (* ── Props ── *)
 
@@ -50,7 +50,9 @@ let line_colors_render_in_gutter () =
       ()
   in
   let grid = render renderer in
-  let bg_of y = Grid.get_background grid (Grid.idx grid ~x:0 ~y) in
+  let bg_of y =
+    Matrix_grid.get_background grid (Matrix_grid.idx grid ~x:0 ~y)
+  in
   is_false ~msg:"row 0 uncolored" (Ansi.Color.equal red (bg_of 0));
   is_true ~msg:"row 1 colored" (Ansi.Color.equal red (bg_of 1))
 
@@ -61,13 +63,15 @@ let apply_props_refreshes_line_colors () =
       ~line_colors:[ (1, { Line_number.gutter = red; content = None }) ]
       ()
   in
-  let (_ : Grid.t) = render renderer in
+  let (_ : Matrix_grid.t) = render renderer in
   Line_number.apply_props ln
     (Line_number.Props.make
        ~line_colors:[ (2, { Line_number.gutter = blue; content = None }) ]
        ());
   let grid = render renderer in
-  let bg_of y = Grid.get_background grid (Grid.idx grid ~x:0 ~y) in
+  let bg_of y =
+    Matrix_grid.get_background grid (Matrix_grid.idx grid ~x:0 ~y)
+  in
   is_false ~msg:"old row no longer colored" (Ansi.Color.equal red (bg_of 1));
   is_true ~msg:"new row colored" (Ansi.Color.equal blue (bg_of 2))
 
@@ -90,9 +94,9 @@ let signs_reserve_measured_width () =
   in
   let grid = render renderer in
   equal ~msg:"before sign rendered" string "+"
-    (Grid.get_text grid (Grid.idx grid ~x:0 ~y:0));
+    (Matrix_grid.get_text grid (Matrix_grid.idx grid ~x:0 ~y:0));
   equal ~msg:"line number shifted past the sign column" string "1"
-    (Grid.get_text grid (Grid.idx grid ~x:3 ~y:0))
+    (Matrix_grid.get_text grid (Matrix_grid.idx grid ~x:3 ~y:0))
 
 (* ── Runner ── *)
 

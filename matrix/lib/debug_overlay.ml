@@ -1,3 +1,5 @@
+module Grid = Matrix_grid
+module Screen = Matrix_screen
 module Style = Ansi.Style
 
 let is_blank s = String.length (String.trim s) = 0
@@ -87,10 +89,11 @@ let layout t =
             match line.style with
             | `Spacer -> acc
             | _ ->
-                (* Use Text.measure for correct Unicode width
+                (* Use Matrix_text.measure for correct Unicode width
                    calculation *)
                 let w =
-                  Text.measure ~width_method:`Unicode ~tab_width:2 line.text
+                  Matrix_text.measure ~width_method:`Unicode ~tab_width:2
+                    line.text
                 in
                 max acc w)
           0 lines

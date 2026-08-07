@@ -24,7 +24,7 @@ type capabilities = Caps.t = {
   kitty_graphics : bool;
   bracketed_paste : bool;
   focus_tracking : bool;
-  unicode_width : Text.width_method;
+  unicode_width : Matrix_text.width_method;
   sgr_pixels : bool;
   color_scheme_updates : bool;
   explicit_width : bool;
@@ -189,7 +189,7 @@ let set_terminal_info t info = t.terminal_info <- info
 let pixel_resolution t = t.pixel_resolution
 let set_pixel_resolution t res = t.pixel_resolution <- res
 
-let apply_capability_event t (event : Input.Response.capability) =
+let apply_capability_event t (event : Matrix_input.Response.capability) =
   let caps, info =
     Caps.apply_event ~apply_env_overrides:t.env_overrides ~caps:t.caps
       ~info:t.terminal_info event
@@ -197,7 +197,8 @@ let apply_capability_event t (event : Input.Response.capability) =
   t.caps <- caps;
   t.terminal_info <- info;
   match event with
-  | Input.Response.Pixel_resolution (w, h) -> t.pixel_resolution <- Some (w, h)
+  | Matrix_input.Response.Pixel_resolution (w, h) ->
+      t.pixel_resolution <- Some (w, h)
   | _ -> ()
 
 (* Probing *)

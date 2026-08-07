@@ -12,7 +12,7 @@ let%expect_test "default border renders single-line chars" =
 
 let%expect_test "double border style" =
   render ~width:10 ~height:5
-    (Vnode.box ~border:true ~border_style:Grid.Border.double []);
+    (Vnode.box ~border:true ~border_style:Matrix_grid.Border.double []);
   [%expect_exact {|
 ╔════════╗
 ║        ║
@@ -22,7 +22,7 @@ let%expect_test "double border style" =
 
 let%expect_test "rounded border style" =
   render ~width:10 ~height:5
-    (Vnode.box ~border:true ~border_style:Grid.Border.rounded []);
+    (Vnode.box ~border:true ~border_style:Matrix_grid.Border.rounded []);
   [%expect_exact {|
 ╭────────╮
 │        │
@@ -32,7 +32,7 @@ let%expect_test "rounded border style" =
 
 let%expect_test "heavy border style" =
   render ~width:10 ~height:5
-    (Vnode.box ~border:true ~border_style:Grid.Border.heavy []);
+    (Vnode.box ~border:true ~border_style:Matrix_grid.Border.heavy []);
   [%expect_exact {|
 ┏━━━━━━━━┓
 ┃        ┃
@@ -42,7 +42,7 @@ let%expect_test "heavy border style" =
 
 let%expect_test "ascii border style" =
   render ~width:10 ~height:5
-    (Vnode.box ~border:true ~border_style:Grid.Border.ascii []);
+    (Vnode.box ~border:true ~border_style:Matrix_grid.Border.ascii []);
   [%expect_exact {|
 +--------+
 |        |
@@ -54,7 +54,7 @@ let%expect_test "custom border characters" =
   let c = Uchar.of_char in
   let custom =
     {
-      Grid.Border.top_left = c '/';
+      Matrix_grid.Border.top_left = c '/';
       top_right = c '\\';
       bottom_left = c '\\';
       bottom_right = c '/';

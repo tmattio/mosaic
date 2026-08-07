@@ -380,10 +380,10 @@ let column_style =
 (* Border style for non-first table columns: T-joins connect with previous
    column *)
 let inner_column_border =
-  Grid.Border.modify
+  Matrix_grid.Border.modify
     ~top_left:(Uchar.of_int 0x252C) (* ┬ *)
     ~bottom_left:(Uchar.of_int 0x2534) (* ┴ *)
-    Grid.Border.single
+    Matrix_grid.Border.single
 
 let block_style ~is_last =
   let margin = if is_last then margin_bottom 0 else margin_bottom 1 in
@@ -694,10 +694,12 @@ and render_table ~(env : render_env) ~parent ?index ~is_last
           let is_first_col = col_idx = 0 in
           let is_last_col = col_idx = col_count - 1 in
           let border_chars =
-            if is_first_col then Grid.Border.single else inner_column_border
+            if is_first_col then Matrix_grid.Border.single
+            else inner_column_border
           in
           let border_sides =
-            if is_last_col then Grid.Border.all else [ `Top; `Bottom; `Left ]
+            if is_last_col then Matrix_grid.Border.all
+            else [ `Top; `Bottom; `Left ]
           in
           let col_box =
             Box.create ~parent:table_box ~border:true ~border_style:border_chars

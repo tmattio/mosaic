@@ -69,4 +69,4 @@ let border_of node = Toffee.Style.border (Renderable.style node)
 (* ── Grid ── *)
 
 let make_grid ?(width = 80) ?(height = 24) ?(width_method = `Unicode) () =
-  Grid.create ~width ~height ~width_method ~respect_alpha:false ()
+  Matrix_grid.create ~width ~height ~width_method ~respect_alpha:false ()

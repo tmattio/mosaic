@@ -3,6 +3,10 @@
 (* A flat array of commands built by depth-first tree traversal, executed
    sequentially. This separates layout extraction (pass 2) from drawing (pass
    3), so traversal and drawing stay decoupled. *)
+module Grid = Matrix_grid
+module Input = Matrix_input
+module Screen = Matrix_screen
+
 type render_command =
   | Render of Renderable.t
   | Push_scissor of Grid.region

@@ -1,5 +1,7 @@
 (* ───── Types ───── *)
 
+module Grid = Matrix_grid
+
 type line_info = {
   line_count : int;
   display_line_count : int;

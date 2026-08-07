@@ -117,7 +117,7 @@ let char_name u =
     Buffer.contents b
 
 let name_of_key key =
-  let open Input.Key in
+  let open Matrix_input.Key in
   match key with
   | Char u -> Some (char_name u)
   | Enter -> Some "return"
@@ -180,7 +180,7 @@ let base_name = function
       if code < 32 || code = 127 then None else Some (char_name u)
 
 let lookup t ev name =
-  let m = ev.Input.Key.modifier in
+  let m = ev.Matrix_input.Key.modifier in
   let key =
     {
       name;
@@ -206,12 +206,12 @@ let lookup t ev name =
   | None -> find_alias [] name
 
 let lookup_base_key t ev =
-  match base_name ev.Input.Key.base_key with
+  match base_name ev.Matrix_input.Key.base_key with
   | None -> None
   | Some name -> lookup t ev name
 
 let action t ev =
-  match name_of_key ev.Input.Key.key with
+  match name_of_key ev.Matrix_input.Key.key with
   | None -> lookup_base_key t ev
   | Some name -> (
       match lookup t ev name with

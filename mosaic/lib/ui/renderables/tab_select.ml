@@ -185,7 +185,7 @@ let rec render t _self grid ~delta:_ =
     let width_method = Renderable.Private.width_method t.node in
     let focused = Renderable.focused t.node in
     let bg = if focused then props.focused_background else props.background in
-    Grid.clear_rect ~color:bg grid ~x:0 ~y:0 ~width:w ~height:h;
+    Matrix_grid.clear_rect ~color:bg grid ~x:0 ~y:0 ~width:w ~height:h;
     let tw = props.tab_width in
     let n = List.length props.options in
     let max_visible = max 1 (w / tw) in
@@ -213,15 +213,15 @@ and render_tabs t grid ~width_method ~props ~w ~h ~tw ~max_visible ~scroll
           let actual_tw = min tw (w - tab_x) in
           if actual_tw > 0 then (
             if is_sel then
-              Grid.fill_rect grid ~x:tab_x ~y:0 ~width:actual_tw ~height:1
-                ~color:props.selected_background;
+              Matrix_grid.fill_rect grid ~x:tab_x ~y:0 ~width:actual_tw
+                ~height:1 ~color:props.selected_background;
             let text_color =
               if is_sel then props.selected_text_color else base_text_color
             in
             let label =
               truncate_text ~width_method item.label (actual_tw - 2)
             in
-            Grid.draw_text
+            Matrix_grid.draw_text
               ~style:(Ansi.Style.make ~fg:text_color ())
               grid ~x:(tab_x + 1) ~y:0 ~text:label;
             if props.show_underline && is_sel && h >= 2 then
@@ -231,7 +231,8 @@ and render_tabs t grid ~width_method ~props ~w ~h ~tw ~max_visible ~scroll
               let ul_text =
                 String.concat "" (List.init actual_tw (fun _ -> underline_char))
               in
-              Grid.draw_text ~style:ul_style grid ~x:tab_x ~y:1 ~text:ul_text);
+              Matrix_grid.draw_text ~style:ul_style grid ~x:tab_x ~y:1
+                ~text:ul_text);
           loop rest (col + 1)
   in
   loop visible_opts 0
@@ -240,9 +241,10 @@ and render_scroll_arrows grid ~props ~w ~n ~max_visible ~scroll =
   if props.Props.show_scroll_arrows then (
     let arrow_style = Ansi.Style.make ~fg:(Ansi.Color.of_rgb 170 170 170) () in
     if scroll > 0 then
-      Grid.draw_text ~style:arrow_style grid ~x:0 ~y:0 ~text:"\xe2\x80\xb9";
+      Matrix_grid.draw_text ~style:arrow_style grid ~x:0 ~y:0
+        ~text:"\xe2\x80\xb9";
     if scroll + max_visible < n then
-      Grid.draw_text ~style:arrow_style grid ~x:(w - 1) ~y:0
+      Matrix_grid.draw_text ~style:arrow_style grid ~x:(w - 1) ~y:0
         ~text:"\xe2\x80\xba")
 
 and render_description grid ~width_method ~props ~w ~h ~selected_index =
@@ -252,7 +254,7 @@ and render_description grid ~width_method ~props ~w ~h ~selected_index =
       match List.nth_opt props.options selected_index with
       | Some item when item.description <> "" ->
           let desc = truncate_text ~width_method item.description (w - 1) in
-          Grid.draw_text
+          Matrix_grid.draw_text
             ~style:(Ansi.Style.make ~fg:props.selected_description_color ())
             grid ~x:0 ~y:desc_y ~text:desc
       | _ -> ()
@@ -293,16 +295,16 @@ let select_current t =
 
 let handle_key t (ev : Event.key) =
   let data = Event.Key.data ev in
-  let key = data.Input.Key.key in
+  let key = data.Matrix_input.Key.key in
   let n = List.length t.props.options in
   if n = 0 then ()
   else
     let action =
       match key with
-      | Input.Key.Left -> Some `Move_left
-      | Input.Key.Right -> Some `Move_right
-      | Input.Key.Enter | Input.Key.Line_feed -> Some `Activate
-      | Input.Key.Char u ->
+      | Matrix_input.Key.Left -> Some `Move_left
+      | Matrix_input.Key.Right -> Some `Move_right
+      | Matrix_input.Key.Enter | Matrix_input.Key.Line_feed -> Some `Activate
+      | Matrix_input.Key.Char u ->
           let c = Uchar.to_int u in
           if c = Char.code '[' then Some `Move_left
           else if c = Char.code ']' then Some `Move_right

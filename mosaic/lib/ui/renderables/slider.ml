@@ -152,7 +152,7 @@ let thumb_cell ~orientation ~vthumb_start ~vthumb_end real_pos =
             if ts - vcell_start = 0 then 0x2580 (* ▀ *) else 0x2584 (* ▄ *)
           else 0x20 (* space — unreachable within thumb range *)
   in
-  Grid.Cell.of_uchar (Uchar.of_int code)
+  Matrix_grid.Cell.of_uchar (Uchar.of_int code)
 
 let render t _self grid ~delta:_ =
   let w = Renderable.width t.node in
@@ -163,7 +163,7 @@ let render t _self grid ~delta:_ =
     let y = Renderable.y t.node in
     let track_color = t.props.track_color in
     let thumb_color = t.props.thumb_color in
-    Grid.fill_rect grid ~x ~y ~width:w ~height:h ~color:track_color;
+    Matrix_grid.fill_rect grid ~x ~y ~width:w ~height:h ~color:track_color;
     let vthumb_start = virtual_thumb_start t in
     let vthumb_end = vthumb_start + virtual_thumb_size t in
     let orientation = t.props.orientation in
@@ -174,8 +174,8 @@ let render t _self grid ~delta:_ =
         for real_x = real_start to real_end do
           let cell = thumb_cell ~orientation ~vthumb_start ~vthumb_end real_x in
           for row = 0 to h - 1 do
-            Grid.set_cell ~blend:true grid ~x:(x + real_x) ~y:(y + row) ~cell
-              ~fg:thumb_color ~bg:track_color ~attrs:Ansi.Attr.empty ()
+            Matrix_grid.set_cell ~blend:true grid ~x:(x + real_x) ~y:(y + row)
+              ~cell ~fg:thumb_color ~bg:track_color ~attrs:Ansi.Attr.empty ()
           done
         done
     | `Vertical ->
@@ -184,8 +184,8 @@ let render t _self grid ~delta:_ =
         for real_y = real_start to real_end do
           let cell = thumb_cell ~orientation ~vthumb_start ~vthumb_end real_y in
           for col = 0 to w - 1 do
-            Grid.set_cell ~blend:true grid ~x:(x + col) ~y:(y + real_y) ~cell
-              ~fg:thumb_color ~bg:track_color ~attrs:Ansi.Attr.empty ()
+            Matrix_grid.set_cell ~blend:true grid ~x:(x + col) ~y:(y + real_y)
+              ~cell ~fg:thumb_color ~bg:track_color ~attrs:Ansi.Attr.empty ()
           done
         done
 

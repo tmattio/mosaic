@@ -186,10 +186,11 @@ let create ?(max_paste_bytes = default_max_paste_bytes)
   if
     max_paste_bytes <= 0
     || max_paste_bytes > Sys.max_string_length - br_paste_end_len
-  then invalid_arg "Input.Parser.create: invalid max_paste_bytes";
+  then invalid_arg "Matrix_input.Parser.create: invalid max_paste_bytes";
   if paste_idle_timeout <= 0.0 || not (Float.is_finite paste_idle_timeout) then
     invalid_arg
-      "Input.Parser.create: paste_idle_timeout must be finite and positive";
+      "Matrix_input.Parser.create: paste_idle_timeout must be finite and \
+       positive";
   let max_paste_buffer = max_paste_bytes + br_paste_end_len in
   {
     input_buffer = Buffer.create 128;
@@ -1944,7 +1945,7 @@ and scan_paste_bytes parser bytes pos stop now ~on_event ~on_response =
 
 let feed parser bytes offset length ~now ~on_event ~on_response =
   if offset < 0 || length < 0 || offset + length > Bytes.length bytes then
-    invalid_arg "Input.Parser.feed: out of bounds";
+    invalid_arg "Matrix_input.Parser.feed: out of bounds";
   parser.deferred_timeout <- false;
   let stop = offset + length in
   if parser.scanner_mode <> `Normal then

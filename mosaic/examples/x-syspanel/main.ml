@@ -1,6 +1,6 @@
 (** System metrics panel UI. Uses Sysstat library for data collection. *)
 
-module Cell_grid = Grid
+module Cell_grid = Matrix_grid
 open Mosaic
 module Charts = Matrix_charts
 

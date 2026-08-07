@@ -62,7 +62,7 @@ let%expect_test "left arrow at start stays" =
        ~ref:(fun n -> node := Some n)
        ());
   focus app (Option.get !node);
-  send_key app Input.Key.Left;
+  send_key app Matrix_input.Key.Left;
   frame app ~width:60 ~height:3;
   [%expect {| Home        Files       Settings    Help
 ▬▬▬▬▬▬▬▬▬▬▬▬|}]
@@ -75,7 +75,7 @@ let%expect_test "wrap_selection wraps right to first" =
        ~ref:(fun n -> node := Some n)
        ());
   focus app (Option.get !node);
-  send_key app Input.Key.Right;
+  send_key app Matrix_input.Key.Right;
   frame app ~width:60 ~height:3;
   [%expect {| Home        Files       Settings    Help
 ▬▬▬▬▬▬▬▬▬▬▬▬|}]
@@ -88,7 +88,7 @@ let%expect_test "wrap_selection wraps left to last" =
        ~ref:(fun n -> node := Some n)
        ());
   focus app (Option.get !node);
-  send_key app Input.Key.Left;
+  send_key app Matrix_input.Key.Left;
   frame app ~width:60 ~height:3;
   [%expect
     {|Home        Files       Settings    Help

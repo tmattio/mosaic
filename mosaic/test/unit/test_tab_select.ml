@@ -25,7 +25,7 @@ let make_tab_select ?options ?selected ?tab_width ?wrap_selection
   in
   (t, ts)
 
-let make_key key : Input.Key.event =
+let make_key key : Matrix_input.Key.event =
   {
     key;
     modifier =
@@ -324,9 +324,9 @@ let truncation_keeps_cjk_graphemes_intact () =
   in
   let grid = render_tab_select ts ~width:10 ~height:1 in
   equal ~msg:"first glyph intact" string "你"
-    (Grid.get_text grid (Grid.idx grid ~x:1 ~y:0));
+    (Matrix_grid.get_text grid (Matrix_grid.idx grid ~x:1 ~y:0));
   equal ~msg:"ellipsis after the glyph" string "\xe2\x80\xa6"
-    (Grid.get_text grid (Grid.idx grid ~x:3 ~y:0))
+    (Matrix_grid.get_text grid (Matrix_grid.idx grid ~x:3 ~y:0))
 
 let truncation_never_splits_emoji () =
   (* Budget of 2 columns cannot fit a 2-column emoji plus the ellipsis, so
@@ -339,7 +339,7 @@ let truncation_never_splits_emoji () =
   in
   let grid = render_tab_select ts ~width:8 ~height:1 in
   equal ~msg:"only the ellipsis renders" string "\xe2\x80\xa6"
-    (Grid.get_text grid (Grid.idx grid ~x:1 ~y:0))
+    (Matrix_grid.get_text grid (Matrix_grid.idx grid ~x:1 ~y:0))
 
 (* ── Runner ── *)
 

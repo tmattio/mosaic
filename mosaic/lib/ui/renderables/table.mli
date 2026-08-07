@@ -123,7 +123,7 @@ val create :
   ?rows:cell array list ->
   ?selected_row:int ->
   ?border:bool ->
-  ?border_style:Grid.Border.t ->
+  ?border_style:Matrix_grid.Border.t ->
   ?show_header:bool ->
   ?show_column_separator:bool ->
   ?show_row_separator:bool ->
@@ -167,7 +167,7 @@ module Props : sig
     ?rows:cell array list ->
     ?selected_row:int ->
     ?border:bool ->
-    ?border_style:Grid.Border.t ->
+    ?border_style:Matrix_grid.Border.t ->
     ?show_header:bool ->
     ?show_column_separator:bool ->
     ?show_row_separator:bool ->
@@ -200,7 +200,7 @@ module Props : sig
       - [border] enables the outer border and header separator. Defaults to
         [true].
       - [border_style] the border character set. Defaults to
-        {!Grid.Border.single}.
+        {!Matrix_grid.Border.single}.
       - [show_header] shows the header row. Defaults to [true].
       - [show_column_separator] shows vertical lines between columns. Defaults
         to [false].
@@ -286,7 +286,7 @@ val set_border : t -> bool -> unit
 (** [set_border t v] enables ([true]) or disables ([false]) the outer border and
     header separator of [t]. *)
 
-val set_border_style : t -> Grid.Border.t -> unit
+val set_border_style : t -> Matrix_grid.Border.t -> unit
 (** [set_border_style t style] sets the border character set of [t] to [style].
 *)
 

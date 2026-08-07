@@ -15,9 +15,9 @@ type id = int
 (** {1:types Types} *)
 
 (* Rectangle types: this module used to define its own rect and now shares
-   Grid.region. Matrix_charts.Layout.rect and Mosaic_ui.Selection.bounds are
+   Matrix_grid.region. Matrix_charts.Layout.rect and Mosaic_ui.Selection.bounds are
    still structurally identical {x; y; width; height} records in cell
-   coordinates; future unification should migrate those to Grid.region as
+   coordinates; future unification should migrate those to Matrix_grid.region as
    well rather than introduce another copy. *)
 
 type t
@@ -59,7 +59,7 @@ val get : t -> x:int -> y:int -> id
 
     Push/pop pairs must be balanced. *)
 
-val push_clip : t -> Grid.region -> unit
+val push_clip : t -> Matrix_grid.region -> unit
 (** [push_clip t r] pushes a clipping rectangle. The effective clip is the
     intersection of [r] with the current clip (hierarchical narrowing). *)
 
@@ -69,6 +69,6 @@ val pop_clip : t -> unit
 val clear_clip : t -> unit
 (** [clear_clip t] removes all clipping regions. *)
 
-val with_clip : t -> Grid.region -> (unit -> 'a) -> 'a
+val with_clip : t -> Matrix_grid.region -> (unit -> 'a) -> 'a
 (** [with_clip t r f] runs [f ()] with [r] as the active clip and pops it on
     return (even on exception). *)

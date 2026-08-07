@@ -4,61 +4,75 @@
  (name test_ansi)
  (package matrix)
  (modules test_ansi)
- (libraries windtrap ansi))
+ (libraries windtrap matrix.ansi))
 
 (test
  (name test_text)
  (package matrix)
  (modules test_text)
- (libraries windtrap text))
+ (libraries windtrap matrix.text))
 
 (test
  (name test_grid)
  (package matrix)
  (modules test_grid)
- (libraries windtrap grid text ansi))
+ (libraries windtrap matrix.grid matrix.text matrix.ansi))
 
 (test
  (name test_input)
  (package matrix)
  (modules test_input)
- (libraries windtrap unix input))
+ (libraries windtrap unix matrix.input))
 
 (test
  (name test_input_props)
  (package matrix)
  (modules test_input_props)
- (libraries windtrap windtrap.prop input))
+ (libraries windtrap windtrap.prop matrix.input))
 
 (test
  (name test_vte)
  (package matrix)
  (modules test_vte)
- (libraries windtrap vte grid ansi))
+ (libraries windtrap matrix.vte matrix.grid matrix.ansi))
 
 (test
  (name test_vte_props)
  (package matrix)
  (modules test_vte_props)
- (libraries windtrap windtrap.prop vte grid))
+ (libraries windtrap windtrap.prop matrix.vte matrix.grid))
 
 (test
  (name test_pty)
  (package matrix)
  (modules test_pty)
- (libraries windtrap unix pty))
+ (libraries windtrap unix matrix.pty))
 
 (test
  (name test_terminal)
  (package matrix)
  (modules test_terminal)
- (libraries windtrap terminal unix ansi input pty))
+ (libraries
+  windtrap
+  matrix.terminal
+  unix
+  matrix.ansi
+  matrix.input
+  matrix.pty))
 
 (test
  (name test_screen)
  (package matrix)
  (modules test_screen)
- (libraries windtrap str screen grid ansi terminal unix input))
+ (libraries
+  windtrap
+  str
+  matrix.screen
+  matrix.grid
+  matrix.ansi
+  matrix.terminal
+  unix
+  matrix.input))
 
 (test
  (name test_runtime)

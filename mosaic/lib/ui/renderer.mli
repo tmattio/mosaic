@@ -10,7 +10,7 @@
     After the pipeline, {!render} diffs the grid against the previous frame and
     returns minimal ANSI output.
 
-    The renderer owns the root {!Renderable.t}, the {!Screen.t}, and all
+    The renderer owns the root {!Renderable.t}, the {!Matrix_screen.t}, and all
     pipeline state. Widget code builds the tree under {!root}; the event loop
     calls {!render_frame} and {!render}, then dispatches input events. *)
 
@@ -47,7 +47,7 @@ val create :
 val root : t -> Renderable.t
 (** [root t] is the root renderable. Build the UI tree under this node. *)
 
-val screen : t -> Screen.t
+val screen : t -> Matrix_screen.t
 (** [screen t] is the underlying screen. *)
 
 (** {1:pending_work Pending render work} *)
@@ -150,7 +150,7 @@ val render_frame_until_settled :
 
 (** {1:events Event dispatch} *)
 
-val dispatch_key : t -> Input.Key.event -> Event.key
+val dispatch_key : t -> Matrix_input.Key.event -> Event.key
 (** [dispatch_key t key] sends [key] to the focused renderable and returns the
     resulting event.
 
@@ -159,7 +159,7 @@ val dispatch_key : t -> Input.Key.event -> Event.key
     node's handler; callers can inspect it to determine whether the key was
     consumed. *)
 
-val dispatch_mouse : t -> Input.Mouse.event -> Event.mouse
+val dispatch_mouse : t -> Matrix_input.Mouse.event -> Event.mouse
 (** [dispatch_mouse t mouse] runs the full mouse dispatch pipeline:
     - Updates pointer state.
     - Hit-tests the mouse position. Wheel events that hit nothing are retargeted
@@ -241,15 +241,17 @@ val clear_frame_callbacks : t -> unit
 
 (** {1:post_process Post-processing} *)
 
-val add_post_process : t -> (Grid.t -> delta:float -> unit) -> Screen.effect_id
+val add_post_process :
+  t -> (Matrix_grid.t -> delta:float -> unit) -> Matrix_screen.effect_id
 (** [add_post_process t f] registers [f] as a persistent post-processing
-    transform on the underlying screen. [f] receives the rendered {!Grid.t} and
-    the frame delta in milliseconds; it runs after frame building and before
-    diffing. Returns a {!Screen.effect_id} for later removal.
+    transform on the underlying screen. [f] receives the rendered
+    {!Matrix_grid.t} and the frame delta in milliseconds; it runs after frame
+    building and before diffing. Returns a {!Matrix_screen.effect_id} for later
+    removal.
 
     See also {!remove_post_process} and {!clear_post_processes}. *)
 
-val remove_post_process : t -> Screen.effect_id -> unit
+val remove_post_process : t -> Matrix_screen.effect_id -> unit
 (** [remove_post_process t id] unregisters the post-processor identified by
     [id].
 

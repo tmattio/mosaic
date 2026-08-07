@@ -16,19 +16,19 @@
 module Ansi = Ansi
 (** ANSI escape sequence generation. *)
 
-module Grid = Grid
+module Grid = Matrix_grid
 (** Cell-based drawing grid. *)
 
-module Input = Input
+module Input = Matrix_input
 (** Terminal input event parsing. *)
 
-module Screen = Screen
+module Screen = Matrix_screen
 (** Double-buffered frame rendering. *)
 
-module Terminal = Terminal
+module Terminal = Matrix_terminal
 (** Terminal protocol state machine. *)
 
-module Text = Text
+module Text = Matrix_text
 (** Terminal text measurement and segmentation. *)
 
 (** {1:types Types} *)

@@ -1,3 +1,4 @@
+module Grid = Matrix_grid
 open Windtrap
 
 (** Test utilities *)

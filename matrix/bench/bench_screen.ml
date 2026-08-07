@@ -1,3 +1,5 @@
+module Grid = Matrix_grid
+module Screen = Matrix_screen
 module C = Ansi.Color
 module S = Ansi.Style
 

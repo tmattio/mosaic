@@ -233,7 +233,7 @@ let render_gutter t _self grid ~delta:_ =
     (* Draw gutter background *)
     (match t.props.bg with
     | Some bg ->
-        Grid.fill_rect grid ~x:gx ~y:gy ~width:gutter_w ~height:gutter_h
+        Matrix_grid.fill_rect grid ~x:gx ~y:gy ~width:gutter_w ~height:gutter_h
           ~color:bg
     | None -> ());
     let width_method = Renderable.Private.width_method t.gutter in
@@ -253,8 +253,8 @@ let render_gutter t _self grid ~delta:_ =
         (* Line color: apply gutter background for this row *)
         (match find_line_color lk logical_line with
         | Some lc ->
-            Grid.fill_rect grid ~x:gx ~y:(gy + row) ~width:gutter_w ~height:1
-              ~color:lc.gutter
+            Matrix_grid.fill_rect grid ~x:gx ~y:(gy + row) ~width:gutter_w
+              ~height:1 ~color:lc.gutter
         | None -> ());
         (* Only render number/signs on the first visual line of a logical
            line *)
@@ -270,7 +270,7 @@ let render_gutter t _self grid ~delta:_ =
                   col := !col + padding;
                   let fg = Option.value ~default:t.props.fg sign.before_color in
                   let style = Ansi.Style.make ~fg () in
-                  Grid.draw_text ~style grid ~x:(gx + !col) ~y:(gy + row)
+                  Matrix_grid.draw_text ~style grid ~x:(gx + !col) ~y:(gy + row)
                     ~text:s;
                   col := !col + sw
               | None -> col := !col + bw)
@@ -287,7 +287,7 @@ let render_gutter t _self grid ~delta:_ =
             let pad = num_width - String.length num_str in
             col := !col + pad;
             let style = Ansi.Style.make ~fg:t.props.fg () in
-            Grid.draw_text ~style grid ~x:(gx + !col) ~y:(gy + row)
+            Matrix_grid.draw_text ~style grid ~x:(gx + !col) ~y:(gy + row)
               ~text:num_str;
             col := !col + String.length num_str
           end;
@@ -298,7 +298,7 @@ let render_gutter t _self grid ~delta:_ =
               | Some s ->
                   let fg = Option.value ~default:t.props.fg sign.after_color in
                   let style = Ansi.Style.make ~fg () in
-                  Grid.draw_text ~style grid ~x:(gx + !col) ~y:(gy + row)
+                  Matrix_grid.draw_text ~style grid ~x:(gx + !col) ~y:(gy + row)
                     ~text:s
               | None -> ())
           | None -> ()
@@ -333,8 +333,8 @@ let render_content_colors t _self grid ~delta:_ =
                   | Some c -> c
                   | None -> darken_color lc.gutter
                 in
-                Grid.fill_rect grid ~x:cx ~y:(cy + row) ~width:cw ~height:1
-                  ~color:bg
+                Matrix_grid.fill_rect grid ~x:cx ~y:(cy + row) ~width:cw
+                  ~height:1 ~color:bg
             | None -> ()
           end
         done

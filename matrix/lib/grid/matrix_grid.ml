@@ -1,5 +1,6 @@
 (* grid.ml *)
 
+module Text = Matrix_text
 module Cell = Packed_cell
 module Color_packed = Ansi.Color.Packed
 
@@ -323,7 +324,7 @@ let fill_defaults t =
 let create_with_store ~width ~height ~grapheme_store ~link_registry
     ~width_method ~respect_alpha =
   if width <= 0 || height <= 0 then
-    invalid_arg "Grid.create: width and height must be > 0";
+    invalid_arg "Matrix_grid.create: width and height must be > 0";
   let size = width * height in
   let t =
     {
@@ -472,7 +473,7 @@ let clear ?color t =
 
 let resize t ~width ~height =
   if width <= 0 || height <= 0 then
-    invalid_arg "Grid.resize: width and height must be > 0";
+    invalid_arg "Matrix_grid.resize: width and height must be > 0";
   if width = t.width && height = t.height then ()
   else
     let old_w = t.width and old_h = t.height in
@@ -523,7 +524,7 @@ let resize t ~width ~height =
 
 let resize_clear ?color t ~width ~height =
   if width <= 0 || height <= 0 then
-    invalid_arg "Grid.resize_clear: width and height must be > 0";
+    invalid_arg "Matrix_grid.resize_clear: width and height must be > 0";
   if width <> t.width || height <> t.height then (
     resize t ~width ~height;
     clear ?color t)

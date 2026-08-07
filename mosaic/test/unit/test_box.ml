@@ -24,9 +24,9 @@ let props_detects_title_diff () =
   is_false ~msg:"different title" (Box.Props.equal a b)
 
 let props_border_style_auto_enables () =
-  let p = Box.Props.make ~border_style:Grid.Border.double () in
+  let p = Box.Props.make ~border_style:Matrix_grid.Border.double () in
   let p_default =
-    Box.Props.make ~border:true ~border_style:Grid.Border.double ()
+    Box.Props.make ~border:true ~border_style:Matrix_grid.Border.double ()
   in
   is_true ~msg:"auto-enabled" (Box.Props.equal p p_default)
 
@@ -109,7 +109,7 @@ let set_border_style_auto_enables () =
   let t = make_ctx () in
   let root = make_root t in
   let box = Box.create ~parent:root () in
-  Box.set_border_style box Grid.Border.double;
+  Box.set_border_style box Matrix_grid.Border.double;
   let b = border_of (Box.node box) in
   is_true ~msg:"auto-enabled" (lp one b.top)
 
@@ -312,7 +312,7 @@ let set_border_style_noop_same_value () =
   let root = make_root t in
   let box = Box.create ~parent:root ~border:true () in
   let before = !(t.schedule_count) in
-  Box.set_border_style box Grid.Border.single;
+  Box.set_border_style box Matrix_grid.Border.single;
   equal ~msg:"no schedule" int before !(t.schedule_count)
 
 let set_border_color_noop_same_value () =
@@ -328,7 +328,7 @@ let set_border_sides_noop_same_value () =
   let root = make_root t in
   let box = Box.create ~parent:root ~border:true () in
   let before = !(t.schedule_count) in
-  Box.set_border_sides box Grid.Border.all;
+  Box.set_border_sides box Matrix_grid.Border.all;
   equal ~msg:"no schedule" int before !(t.schedule_count)
 
 let set_background_noop_same_value () =

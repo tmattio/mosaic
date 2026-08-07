@@ -21,8 +21,8 @@ val create :
   ?z_index:int ->
   ?opacity:float ->
   ?border:bool ->
-  ?border_style:Grid.Border.t ->
-  ?border_sides:Grid.Border.side list ->
+  ?border_style:Matrix_grid.Border.t ->
+  ?border_sides:Matrix_grid.Border.side list ->
   ?border_color:Ansi.Color.t ->
   ?focused_border_color:Ansi.Color.t ->
   ?background:Ansi.Color.t ->
@@ -34,8 +34,8 @@ val create :
 (** [create ~parent ()] is a box node attached to [parent] with:
     - [border] defaults to [false]. Providing any of [border_style],
       [border_color], or [focused_border_color] implicitly enables it.
-    - [border_style] defaults to {!Grid.Border.single}.
-    - [border_sides] defaults to {!Grid.Border.all} (all four sides).
+    - [border_style] defaults to {!Matrix_grid.Border.single}.
+    - [border_sides] defaults to {!Matrix_grid.Border.all} (all four sides).
     - [border_color] defaults to {!Ansi.Color.white}.
     - [focused_border_color] defaults to {!Ansi.Color.bright_cyan}.
     - [background] defaults to [None] (transparent).
@@ -54,8 +54,8 @@ module Props : sig
 
   val make :
     ?border:bool ->
-    ?border_style:Grid.Border.t ->
-    ?border_sides:Grid.Border.side list ->
+    ?border_style:Matrix_grid.Border.t ->
+    ?border_sides:Matrix_grid.Border.side list ->
     ?border_color:Ansi.Color.t ->
     ?focused_border_color:Ansi.Color.t ->
     ?background:Ansi.Color.t ->
@@ -85,11 +85,11 @@ val set_border : t -> bool -> unit
 (** [set_border t v] enables or disables border rendering. Adjusts layout to
     reserve or release space for active border sides. *)
 
-val set_border_style : t -> Grid.Border.t -> unit
+val set_border_style : t -> Matrix_grid.Border.t -> unit
 (** [set_border_style t chars] sets the border character set to [chars].
     Auto-enables borders. *)
 
-val set_border_sides : t -> Grid.Border.side list -> unit
+val set_border_sides : t -> Matrix_grid.Border.side list -> unit
 (** [set_border_sides t sides] selects which sides to draw. Adjusts layout for
     changed insets. *)
 

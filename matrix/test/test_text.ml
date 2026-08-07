@@ -1,5 +1,5 @@
 open Windtrap
-open Text
+open Matrix_text
 
 let check_width msg expected actual = equal ~msg int expected actual
 

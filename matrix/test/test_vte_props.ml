@@ -11,6 +11,7 @@
     - {b Split invariance}: feeding a byte string whole or in arbitrary chunks
       produces the same terminal state. *)
 
+module Grid = Matrix_grid
 open Windtrap
 module Gen = Windtrap_prop.Gen
 

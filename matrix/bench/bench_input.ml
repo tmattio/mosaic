@@ -1,6 +1,6 @@
 (* bench_input.ml *)
 
-module I = Input
+module I = Matrix_input
 open Thumper
 
 (* Helpers shared with text benchmarks for consistency. *)

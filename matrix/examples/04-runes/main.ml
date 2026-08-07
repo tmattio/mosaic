@@ -1,6 +1,6 @@
 open Matrix
-module Color = Image.Color
-module Style = Image.Style
+module Color = Matrix_image.Color
+module Style = Matrix_image.Style
 
 type draw_context = {
   grid : Grid.t;
@@ -10,7 +10,7 @@ type draw_context = {
 }
 
 let centered_text ~style lines =
-  let open Image in
+  let open Matrix_image in
   let images = List.map (fun s -> text ~style s) lines in
   let max_width =
     List.fold_left (fun acc img -> max acc (width img)) 0 images
@@ -18,7 +18,7 @@ let centered_text ~style lines =
   images |> List.map (fun img -> hsnap ~align:`Center max_width img) |> vcat
 
 let outline_box ~style inner =
-  let open Image in
+  let open Matrix_image in
   let w = width inner and h = height inner in
   if w <= 0 || h <= 0 then inner
   else
@@ -32,7 +32,7 @@ let outline_box ~style inner =
     vcat [ top; middle; bottom ]
 
 let note_block lines =
-  let open Image in
+  let open Matrix_image in
   let label_style = Style.make ~fg:Color.bright_white ~bold:true () in
   let text_style = Style.default in
   let label = text ~style:label_style "Note:" in
@@ -167,7 +167,7 @@ let text_lines =
   ]
 
 let draw _app ctx () =
-  let open Image in
+  let open Matrix_image in
   let cols = ctx.cols in
   let rows = ctx.rows in
   let main_style = Style.make ~fg:Color.bright_magenta () in

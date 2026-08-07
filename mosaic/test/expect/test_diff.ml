@@ -121,14 +121,16 @@ let print_hit = function
 let dispatch_mouse r ev = ignore (Renderer.dispatch_mouse r ev : Event.mouse)
 
 let mouse_down ~x ~y =
-  Input.Mouse.make ~x ~y ~modifiers:Input.Modifier.none (Down { button = Left })
+  Matrix_input.Mouse.make ~x ~y ~modifiers:Matrix_input.Modifier.none
+    (Down { button = Left })
 
 let mouse_up ~x ~y =
-  Input.Mouse.make ~x ~y ~modifiers:Input.Modifier.none
+  Matrix_input.Mouse.make ~x ~y ~modifiers:Matrix_input.Modifier.none
     (Up { button = Some Left })
 
 let mouse_drag ~x ~y =
-  Input.Mouse.make ~x ~y ~modifiers:Input.Modifier.none (Drag { button = Left })
+  Matrix_input.Mouse.make ~x ~y ~modifiers:Matrix_input.Modifier.none
+    (Drag { button = Left })
 
 let full_style =
   Toffee.Style.make
@@ -143,7 +145,7 @@ let grid_of_vnode ~width ~height vnode =
   reconcile app vnode;
   set_viewport app.renderer ~width ~height;
   Renderer.render_frame app.renderer ~width ~height ~delta:0.;
-  Screen.next_grid (Renderer.screen app.renderer)
+  Matrix_screen.next_grid (Renderer.screen app.renderer)
 
 let color_to_string color = Format.asprintf "%a" Ansi.Color.pp color
 
@@ -312,12 +314,12 @@ let%expect_test "set source line highlights rebuilds colors" =
   in
   fill_node (Diff.node diff);
   Renderer.render_frame renderer ~width:60 ~height:5 ~delta:0.;
-  let initial = Screen.next_grid (Renderer.screen renderer) in
+  let initial = Matrix_screen.next_grid (Renderer.screen renderer) in
   assert_not_background ~msg:"initial line is not selected" initial ~x:8 ~y:2
     selected;
   Diff.set_line_highlights diff [ line_highlight Diff.New 2 2 ];
   Renderer.render_frame renderer ~width:60 ~height:5 ~delta:0.;
-  let highlighted = Screen.next_grid (Renderer.screen renderer) in
+  let highlighted = Matrix_screen.next_grid (Renderer.screen renderer) in
   assert_background ~msg:"updated selected content" highlighted ~x:8 ~y:2
     selected;
   [%expect_exact {||}]
@@ -372,7 +374,7 @@ let%expect_test "line spans follow wrapped rows and clamp byte ranges" =
   Renderer.render_frame renderer ~width:44 ~height:7 ~delta:0.;
   ignore (Renderer.render renderer : string);
   Renderer.render_frame renderer ~width:44 ~height:7 ~delta:0.;
-  let grid = Screen.next_grid (Renderer.screen renderer) in
+  let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
   (* The 36-byte added content wraps into three rows on the right (content
      column 27); the end byte clamps to the line length. Emphasis lands on the
      first byte of each wrapped row. *)

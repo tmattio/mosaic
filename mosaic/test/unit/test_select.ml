@@ -25,7 +25,7 @@ let make_select ?options ?selected_index ?wrap_selection ?show_description
   in
   (t, sel)
 
-let make_key ?(shift = false) key : Input.Key.event =
+let make_key ?(shift = false) key : Matrix_input.Key.event =
   {
     key;
     modifier =

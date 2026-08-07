@@ -59,18 +59,18 @@ let render_horizontal t grid =
   let virtual_filled =
     int_of_float (Float.round (ratio *. Float.of_int virtual_track))
   in
-  Grid.fill_rect grid ~x ~y ~width:w ~height:h ~color:t.props.empty_color;
+  Matrix_grid.fill_rect grid ~x ~y ~width:w ~height:h ~color:t.props.empty_color;
   let full_cells = virtual_filled / 2 in
   let has_half = virtual_filled mod 2 = 1 in
   if full_cells > 0 then
-    Grid.fill_rect grid ~x ~y ~width:full_cells ~height:h
+    Matrix_grid.fill_rect grid ~x ~y ~width:full_cells ~height:h
       ~color:t.props.filled_color;
   if has_half && full_cells < w then
-    let cell = Grid.Cell.of_uchar (Uchar.of_int 0x258C) in
+    let cell = Matrix_grid.Cell.of_uchar (Uchar.of_int 0x258C) in
     for row = 0 to h - 1 do
-      Grid.set_cell ~blend:true grid ~x:(x + full_cells) ~y:(y + row) ~cell
-        ~fg:t.props.filled_color ~bg:t.props.empty_color ~attrs:Ansi.Attr.empty
-        ()
+      Matrix_grid.set_cell ~blend:true grid ~x:(x + full_cells) ~y:(y + row)
+        ~cell ~fg:t.props.filled_color ~bg:t.props.empty_color
+        ~attrs:Ansi.Attr.empty ()
     done
 
 let render_vertical t grid =
@@ -83,18 +83,18 @@ let render_vertical t grid =
   let virtual_filled =
     int_of_float (Float.round (ratio *. Float.of_int virtual_track))
   in
-  Grid.fill_rect grid ~x ~y ~width:w ~height:h ~color:t.props.empty_color;
+  Matrix_grid.fill_rect grid ~x ~y ~width:w ~height:h ~color:t.props.empty_color;
   let full_cells = virtual_filled / 2 in
   let has_half = virtual_filled mod 2 = 1 in
   if full_cells > 0 then
-    Grid.fill_rect grid ~x
+    Matrix_grid.fill_rect grid ~x
       ~y:(y + h - full_cells)
       ~width:w ~height:full_cells ~color:t.props.filled_color;
   if has_half && full_cells < h then
     let boundary_y = y + h - full_cells - 1 in
-    let cell = Grid.Cell.of_uchar (Uchar.of_int 0x2584) in
+    let cell = Matrix_grid.Cell.of_uchar (Uchar.of_int 0x2584) in
     for col = 0 to w - 1 do
-      Grid.set_cell ~blend:true grid ~x:(x + col) ~y:boundary_y ~cell
+      Matrix_grid.set_cell ~blend:true grid ~x:(x + col) ~y:boundary_y ~cell
         ~fg:t.props.filled_color ~bg:t.props.empty_color ~attrs:Ansi.Attr.empty
         ()
     done

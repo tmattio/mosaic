@@ -36,5 +36,5 @@ val make :
 (** [make ~defaults ?custom ()] builds a keymap. Custom bindings override
     defaults with the same key shape. *)
 
-val action : 'a t -> Input.Key.event -> 'a option
+val action : 'a t -> Matrix_input.Key.event -> 'a option
 (** [action t ev] is the action bound to [ev], if any. *)

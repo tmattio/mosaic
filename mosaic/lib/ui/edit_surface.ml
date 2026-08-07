@@ -495,7 +495,7 @@ let ensure_cursor_visible t =
 let handle_scroll t direction delta =
   let delta = Int.max 0 delta in
   match direction with
-  | Input.Mouse.Scroll_up ->
+  | Matrix_input.Mouse.Scroll_up ->
       Text_surface.set_scroll_y t.surface
         (Text_surface.scroll_y t.surface - delta)
   | Scroll_down ->
@@ -554,11 +554,12 @@ let render_before t _self grid ~delta:_ =
       if focused then t.props.focused_background_color
       else t.props.background_color
     in
-    Grid.clear_rect ~color:bg grid ~x:x0 ~y:y0 ~width:w ~height:h;
+    Matrix_grid.clear_rect ~color:bg grid ~x:x0 ~y:y0 ~width:w ~height:h;
     if Edit_buffer.is_empty t.buf && String.length t.props.placeholder > 0 then begin
       let style = Ansi.Style.make ~fg:t.props.placeholder_color ~bg () in
-      Grid.clip grid { x = x0; y = y0; width = w; height = h } (fun () ->
-          Grid.draw_text ~style grid ~x:x0 ~y:y0 ~text:t.props.placeholder)
+      Matrix_grid.clip grid { x = x0; y = y0; width = w; height = h } (fun () ->
+          Matrix_grid.draw_text ~style grid ~x:x0 ~y:y0
+            ~text:t.props.placeholder)
     end;
     match Edit_buffer.selection t.buf with
     | Some (lo, hi) ->
@@ -595,8 +596,10 @@ let render_after t _self grid ~delta:_ =
           let style =
             Ansi.Style.make ~fg:t.props.ghost_text_color ~bg ~italic:true ()
           in
-          Grid.clip grid { x = x0; y = y0; width = w; height = h } (fun () ->
-              Grid.draw_text ~style grid ~x:(x0 + col) ~y:(y0 + row) ~text:ghost)
+          Matrix_grid.clip grid { x = x0; y = y0; width = w; height = h }
+            (fun () ->
+              Matrix_grid.draw_text ~style grid ~x:(x0 + col) ~y:(y0 + row)
+                ~text:ghost)
 
 (* Cursor *)
 
@@ -766,7 +769,7 @@ let select_all_changed t =
   old_cursor <> cursor t || old_selection <> selection t
 
 let regular_text data c =
-  let m = data.Input.Key.modifier in
+  let m = data.Matrix_input.Key.modifier in
   if m.ctrl || m.alt || m.super || m.meta || m.hyper then None
   else
     let text =
@@ -858,8 +861,8 @@ let key_result_of_event t data =
   match Keymap.action t.keymap data with
   | Some action -> run_action t action
   | None -> (
-      match data.Input.Key.key with
-      | Input.Key.Char c -> (
+      match data.Matrix_input.Key.key with
+      | Matrix_input.Key.Char c -> (
           match regular_text data c with
           | Some text ->
               key_result
@@ -882,7 +885,7 @@ let apply_key_result t ev result =
 
 let handle_key t (ev : Event.key) =
   let data = Event.Key.data ev in
-  let open Input.Key in
+  let open Matrix_input.Key in
   match data.event_type with
   | Release -> ()
   | _ when Event.Key.default_prevented ev -> ()

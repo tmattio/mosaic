@@ -1,3 +1,5 @@
+module Grid = Matrix_grid
+
 type id = int
 
 type t = {

@@ -147,17 +147,17 @@ let%expect_test "reset_sticky returns a parked viewport to its live edge once" =
   let show label vnode =
     print_endline label;
     reconcile app vnode;
-    Grid.clear (Screen.next_grid (Renderer.screen app.renderer));
+    Matrix_grid.clear (Matrix_screen.next_grid (Renderer.screen app.renderer));
     settled_frame app ~width:12 ~height:4;
     print_newline ()
   in
   show "initial tail" (view 12);
   focus app (Option.get !node);
-  send_key app Input.Key.Page_up;
+  send_key app Matrix_input.Key.Page_up;
   show "page up" (view 12);
   show "append stays parked" (view 16);
   show "new reset key follows" (view ~reset_sticky:"turn-2" 16);
-  send_key app Input.Key.Page_up;
+  send_key app Matrix_input.Key.Page_up;
   show "manual page after reset" (view ~reset_sticky:"turn-2" 16);
   show "stable reset key stays parked" (view ~reset_sticky:"turn-2" 20);
   show "changed reset key follows again" (view ~reset_sticky:"turn-3" 20);

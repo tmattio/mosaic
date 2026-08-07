@@ -4,24 +4,30 @@
     (text, fills, boxes, hit regions). Images are pure values: composition
     functions like {!hcat} and {!overlay} rearrange flat primitive arrays
     without side effects. Only {!draw} performs actual drawing by walking the
-    array and executing each primitive into a {!Grid.t}.
+    array and executing each primitive into a {!Matrix_grid.t}.
 
     {1:quick_start Quick start}
 
     {[
     let header =
-      Image.hcat
+      Matrix_image.hcat
         [
-          Image.text "Status: ";
-          Image.text ~style:(Ansi.Style.make ~fg:Ansi.Color.green ()) "OK";
+          Matrix_image.text "Status: ";
+          Matrix_image.text
+            ~style:(Ansi.Style.make ~fg:Ansi.Color.green ())
+            "OK";
         ]
     in
     let panel =
-      Image.vcat
-        [ header; Image.rule_h ~width:20 (); Image.text "System ready" ]
+      Matrix_image.vcat
+        [
+          header;
+          Matrix_image.rule_h ~width:20 ();
+          Matrix_image.text "System ready";
+        ]
     in
-    let grid = Grid.create ~width:80 ~height:24 () in
-    Image.draw panel grid
+    let grid = Matrix_grid.create ~width:80 ~height:24 () in
+    Matrix_image.draw panel grid
     ]}
 
     {1:coords Coordinate system}
@@ -44,14 +50,14 @@
 
     {!crop} sets a scissor rectangle on the resulting image. Composition merges
     parent and child clips via intersection. During {!draw}, clips translate to
-    {!Grid.push_clip} / {!Grid.pop_clip} pairs.
+    {!Matrix_grid.push_clip} / {!Matrix_grid.pop_clip} pairs.
 
     {1:hits Hit regions}
 
     Hit regions map screen coordinates to application-defined identifiers for
     mouse interaction. Use {!with_hit} for a whole-image region or
     {!with_hit_rect} for a sub-rectangle. Hit primitives write to the optional
-    {!Screen.Hit_grid.t} passed to {!draw}.
+    {!Matrix_screen.Hit_grid.t} passed to {!draw}.
 
     {b Note.} Hit IDs must be strictly positive; zero and negative values are
     ignored. *)
@@ -104,21 +110,23 @@ val fill : ?color:Color.t -> width:int -> height:int -> unit -> t
     to black. Note that filling with {!Color.default} is a no-op: the
     terminal-default color has alpha [0] and leaves cells unchanged. *)
 
-val text : ?style:Style.t -> ?width_method:Text.width_method -> string -> t
+val text :
+  ?style:Style.t -> ?width_method:Matrix_text.width_method -> string -> t
 (** [text s] is a multi-line text image. Lines are split on ['\n']. Width is
     computed from the widest line using [width_method] (defaults to the global
     setting). *)
 
 val box :
-  ?border:Grid.Border.t ->
-  ?border_sides:Grid.Border.side list ->
+  ?border:Matrix_grid.Border.t ->
+  ?border_sides:Matrix_grid.Border.side list ->
   ?border_style:Style.t ->
   ?fill:Color.t ->
   width:int ->
   height:int ->
   unit ->
   t
-(** [box ~width ~height ()] is a box primitive rendered via {!Grid.draw_box}. *)
+(** [box ~width ~height ()] is a box primitive rendered via
+    {!Matrix_grid.draw_box}. *)
 
 val rule_h : ?style:Style.t -> width:int -> unit -> t
 (** [rule_h ~width ()] is a horizontal rule of [width] cells. *)
@@ -181,7 +189,13 @@ val with_hit_rect :
 
 (** {1:drawing Drawing} *)
 
-val draw : ?hits:Screen.Hit_grid.t -> ?x:int -> ?y:int -> t -> Grid.t -> unit
+val draw :
+  ?hits:Matrix_screen.Hit_grid.t ->
+  ?x:int ->
+  ?y:int ->
+  t ->
+  Matrix_grid.t ->
+  unit
 (** [draw img grid] draws [img] at [(x, y)] into [grid]. When [hits] is
     provided, hit primitives are registered there. [x] and [y] default to [0].
 *)
@@ -191,7 +205,7 @@ val draw : ?hits:Screen.Hit_grid.t -> ?x:int -> ?y:int -> t -> Grid.t -> unit
 val custom :
   width:int ->
   height:int ->
-  (Grid.t -> Screen.Hit_grid.t option -> x:int -> y:int -> unit) ->
+  (Matrix_grid.t -> Matrix_screen.Hit_grid.t option -> x:int -> y:int -> unit) ->
   t
 (** [custom ~width ~height f] is an image that invokes [f] during {!draw}. [f]
     receives the grid, the optional hit grid, and the draw offset. *)
