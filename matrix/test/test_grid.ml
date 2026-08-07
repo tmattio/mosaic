@@ -125,6 +125,19 @@ let assert_valid_spans grid =
 
 (* --- Tests --- *)
 
+(* Combining marks after ASCII bases must stay in the base's cluster all the
+   way through the drawing path (regression: the segmentation fast path once
+   dropped them, so "e" ^ U+0301 rendered as a bare "e"). *)
+let combining_mark_stays_with_ascii_base () =
+  let grid = Grid.create ~width:4 ~height:1 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"e\u{0301}x";
+  equal ~msg:"cell 0 holds the full cluster" string "e\u{0301}"
+    (Grid.get_text grid (Grid.idx grid ~x:0 ~y:0));
+  equal ~msg:"cell 1 holds the following char" string "x"
+    (Grid.get_text grid (Grid.idx grid ~x:1 ~y:0));
+  equal ~msg:"cluster occupies one column" int 1
+    (Grid.cell_width grid (Grid.idx grid ~x:0 ~y:0))
+
 let inherit_bg_on_unwritten_ascii () =
   let grid = Grid.create ~width:2 ~height:1 () in
   Grid.draw_text grid ~x:0 ~y:0 ~text:"A";
@@ -1383,6 +1396,8 @@ let draw_text_overflow_clears_row_tail () =
 
 let tests =
   [
+    test "combining mark stays with ascii base"
+      combining_mark_stays_with_ascii_base;
     test "create defaults" create_defaults;
     test "create with configuration" create_with_configuration;
     test "set width method" set_width_method_updates;
