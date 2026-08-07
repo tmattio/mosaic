@@ -690,12 +690,18 @@ let draw_cell_content grid ~x ~y ~col_width ~padding ~alignment ~overflow
       in
       let right_bound = content_x + content_width in
       let cx = ref base_x in
-      let rec draw_fragments frags =
+      (* Mirror Text's collect_flat_spans: span styles merge into their
+         children, and leaf styles overlay the inherited style. *)
+      let merge_style base = function
+        | None -> base
+        | Some overlay -> Ansi.Style.merge ~base ~overlay
+      in
+      let rec draw_fragments ~base frags =
         List.iter
           (fun frag ->
             match frag with
             | Text.Text { text; style } ->
-                let st = Option.value style ~default:default_style in
+                let st = merge_style base style in
                 let w = text_width text in
                 if !cx + w <= right_bound then (
                   Grid.draw_text ~style:st grid ~x:!cx ~y ~text;
@@ -707,11 +713,10 @@ let draw_cell_content grid ~x ~y ~col_width ~padding ~alignment ~overflow
                     Grid.draw_text ~style:st grid ~x:!cx ~y ~text:truncated;
                     cx := right_bound)
             | Text.Span { children; style } ->
-                let _parent_style = style in
-                draw_fragments children)
+                draw_fragments ~base:(merge_style base style) children)
           frags
       in
-      draw_fragments fragments
+      draw_fragments ~base:default_style fragments
 
 (* ───── Rendering ───── *)
 

@@ -603,6 +603,25 @@ let cell_equal_rich_vs_plain () =
        (Table.rich [ Text.Text { text = "a"; style = None } ])
        (Table.cell "a"))
 
+(* ── Rendering ── *)
+
+let rich_cell_span_styles_apply () =
+  let _t, tbl =
+    make_table
+      ~columns:[ Table.column "C" ]
+      ~rows:
+        [ [| Table.rich [ Text.Fragment.bold [ Text.Fragment.text "B" ] ] |] ]
+      ~border:false ~show_header:false ()
+  in
+  let node = Table.node tbl in
+  with_layout tbl ~width:5 ~height:1;
+  let grid = make_grid ~width:5 ~height:1 () in
+  Renderable.Private.render_full node ~grid ~delta:0.;
+  let idx = Grid.idx grid ~x:0 ~y:0 in
+  equal ~msg:"cell text" string "B" (Grid.get_text grid idx);
+  let style = Grid.get_style grid idx in
+  is_true ~msg:"span bold applies" (Ansi.Attr.mem Bold style.Ansi.Style.attrs)
+
 (* ── Setter no-ops ── *)
 
 let set_border_noop () =
@@ -785,6 +804,8 @@ let () =
           test "plain different" cell_equal_plain_diff;
           test "rich vs plain" cell_equal_rich_vs_plain;
         ];
+      group "Rendering"
+        [ test "rich span styles apply" rich_cell_span_styles_apply ];
       group "Setter no-ops"
         [
           test "set_border no-op" set_border_noop;
