@@ -1,8 +1,9 @@
 (** Frame dumping to disk.
 
     Serializes {!Screen.t} grids to ANSI files and optionally dumps the hit
-    grid. Used by the Matrix runtime when periodic dumps are configured (see
-    {!Matrix.configure_frame_dump}) but callable directly for custom tooling. *)
+    grid. Internal to the Matrix runtime: reachable through
+    {!Matrix.configure_frame_dump} and {!Matrix.dump_frame}, not exported as a
+    standalone module. *)
 
 val on_frame :
   ?dir:string ->

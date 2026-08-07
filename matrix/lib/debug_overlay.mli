@@ -4,8 +4,9 @@
     {!Screen.last_metrics}, rolling averages for frame time and interval, and
     per-frame GC statistics from {!Gc.quick_stat}.
 
-    Wired into the Matrix runtime via {!Matrix.set_debug_overlay} but usable
-    standalone in custom render pipelines.
+    Internal to the Matrix runtime: reachable through
+    {!Matrix.set_debug_overlay} and {!Matrix.toggle_debug_overlay}, not exported
+    as a standalone module.
 
     {b Note.} The default theme uses alpha=200 backgrounds. Set
     [respect_alpha=true] in {!Matrix.create} for correct transparency; otherwise
