@@ -497,6 +497,20 @@ let insert_mode_wrap_targets_new_row () =
     (Vte.to_string vte);
   equal ~msg:"cursor on wrapped row" (pair int int) (1, 2) (Vte.cursor_pos vte)
 
+let insert_mode_clips_wide_grapheme_at_margin () =
+  (* Shrunk from a grid-invariants property counterexample: inserting into a
+     line whose wide grapheme would be pushed across the right margin copied
+     only its start cell, leaving a wide start with no continuation in the
+     last column. The clipped grapheme must be blanked instead. *)
+  let vte = Vte.create ~rows:1 ~cols:3 () in
+  Vte.feed_string vte "a\xE4\xBD\xA0";
+  Vte.feed_string vte "\x1b[1;2H\x1b[4h";
+  Vte.feed_string vte "x";
+  let grid = Vte.grid vte in
+  is_false ~msg:"no wide start in the last column" (Grid.cell_width grid 2 > 1);
+  is_false ~msg:"no orphan continuation" (Grid.is_continuation grid 2);
+  equal ~msg:"clipped wide grapheme is blanked" string "ax " (Vte.to_string vte)
+
 let cursor_key_mode () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
   is_false ~msg:"cursor key mode off by default" (Vte.cursor_key_mode vte);
@@ -797,6 +811,8 @@ let tests =
     test "auto wrap mode" auto_wrap_mode;
     test "insert mode" insert_mode;
     test "insert mode wrap targets new row" insert_mode_wrap_targets_new_row;
+    test "insert mode clips wide grapheme at margin"
+      insert_mode_clips_wide_grapheme_at_margin;
     test "cursor key mode" cursor_key_mode;
     test "bracketed paste mode" bracketed_paste_mode;
     test "combined mode sequence" combined_mode_sequence;

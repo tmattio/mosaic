@@ -591,9 +591,17 @@ let put_text t text =
                   let dest_start = x + insert_w in
                   (if dest_start < line_width then
                      let copy_span = min gw (line_width - dest_start) in
-                     for k = copy_span - 1 downto 0 do
-                       copy_cell row (idx + k) (dest_start + k)
-                     done);
+                     if copy_span = gw then
+                       for k = copy_span - 1 downto 0 do
+                         copy_cell row (idx + k) (dest_start + k)
+                       done
+                     else
+                       (* The wide grapheme is pushed across the right
+                          margin: a partial copy would leave a start cell
+                          with no continuation, so blank the surviving
+                          cells instead. *)
+                       erase_region t ~x:dest_start ~y:row ~width:copy_span
+                         ~height:1);
                   shift (x - gw)
             in
             shift (line_width - 1);
