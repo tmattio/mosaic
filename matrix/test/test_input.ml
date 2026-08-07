@@ -1001,6 +1001,29 @@ let test_invalid_utf8_split_equivalence_regression () =
     (list event_testable) expected
     (feed_user parser (Bytes.of_string "\x80") 0 1)
 
+let test_utf8_prefix_flushed_before_escape_regression () =
+  (* Shrunk from a split-equivalence property counterexample: a buffered
+     UTF-8 prefix followed by a bracketed paste lost its flush deadline to
+     the paste scheduling, so the byte was silently dropped in the whole
+     feed but emitted after a split feed re-armed the deadline. An escape
+     byte can never continue a UTF-8 sequence, so the buffered prefix must
+     flush through the legacy path as soon as a sequence starts. *)
+  let meta_shift_b =
+    key_event
+      ~modifier:
+        { Input.Modifier.none with alt = true; meta = true; shift = true }
+      (Input.Key.Char (Uchar.of_char 'B'))
+  in
+  equal ~msg:"UTF-8 prefix flushes before a paste" (list event_testable)
+    [ meta_shift_b; Input.Paste "x" ]
+    (parse_user "\xC2\x1b[200~x\x1b[201~");
+  let parser = Input.Parser.create () in
+  equal ~msg:"split UTF-8 prefix is buffered" (list event_testable) []
+    (feed_user parser (Bytes.of_string "\xC2") 0 1);
+  equal ~msg:"split UTF-8 prefix flushes before a CSI key" (list event_testable)
+    [ meta_shift_b; key_event Input.Key.Up ]
+    (feed_user parser (Bytes.of_string "\x1b[A") 0 3)
+
 let test_legacy_high_byte_regressions () =
   let parser = Input.Parser.create () in
   let bytes = Bytes.of_string "\xE9" in
@@ -1626,6 +1649,8 @@ let tests =
     test "invalid split UTF-8 regression" test_invalid_split_utf8_regression;
     test "invalid UTF-8 split equivalence"
       test_invalid_utf8_split_equivalence_regression;
+    test "UTF-8 prefix flushed before escape"
+      test_utf8_prefix_flushed_before_escape_regression;
     test "legacy high byte regressions" test_legacy_high_byte_regressions;
     test "buffer overflow" test_buffer_overflow;
     test "paste mode collection" test_paste_mode_collection;

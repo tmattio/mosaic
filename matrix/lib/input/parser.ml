@@ -1889,6 +1889,14 @@ let rec scan_normal_bytes parser bytes pos stop now ~on_event ~on_response =
   else
     let c = Bytes.unsafe_get bytes pos in
     if c = esc then (
+      if parser.utf8_len > 0 then (
+        (* An escape byte can never continue a UTF-8 sequence. Flush the
+           buffered prefix through the legacy path now, both to keep the
+           events in arrival order and so the prefix cannot outlive its
+           flush deadline when the sequence re-schedules it (e.g. a paste
+           replacing the deadline would otherwise strand the bytes). *)
+        emit_legacy_utf8_buffer parser on_event;
+        parser.flush_deadline <- None);
       if has_subbytes_at bytes ~sub:br_paste_start ~pos ~stop then (
         reset_paste_state parser;
         parser.scanner_mode <- `Paste;
