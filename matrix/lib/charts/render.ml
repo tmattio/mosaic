@@ -207,6 +207,98 @@ let heatmap_color_idx ~len ~vmin ~vmax v =
     let raw = int_of_float (t *. float len) in
     Layout.clamp_int 0 (len - 1) raw
 
+(* Fold one heatmap sample into the per-cell accumulator. *)
+let heatmap_accumulate ~agg values counts ii v =
+  match agg with
+  | `Last ->
+      values.(ii) <- v;
+      counts.(ii) <- 1
+  | `Max ->
+      if counts.(ii) = 0 then (
+        values.(ii) <- v;
+        counts.(ii) <- 1)
+      else values.(ii) <- Float.max values.(ii) v
+  | `Avg ->
+      values.(ii) <- values.(ii) +. v;
+      counts.(ii) <- counts.(ii) + 1
+
+(* Resolve an accumulated cell to its aggregated value. *)
+let heatmap_resolve ~agg values counts ii =
+  match agg with
+  | `Avg ->
+      let cnt = counts.(ii) in
+      if cnt <= 0 then 0. else values.(ii) /. float cnt
+  | `Last | `Max -> values.(ii)
+
+(* Largest index [i] with [arr.(i) <= v]; 0 when all entries are greater. *)
+let heatmap_index_floor arr v =
+  let len = Array.length arr in
+  if len = 1 then 0
+  else
+    let rec bsearch lo hi =
+      if lo >= hi then lo
+      else
+        let mid = lo + ((hi - lo + 1) / 2) in
+        if Float.compare arr.(mid) v <= 0 then bsearch mid hi
+        else bsearch lo (mid - 1)
+    in
+    bsearch 0 (len - 1)
+
+(* The lattice interval [(i, i+1, arr.(i), arr.(i+1))] bracketing [v]. *)
+let heatmap_interval arr v =
+  let len = Array.length arr in
+  if len = 1 then (0, 0, arr.(0), arr.(0))
+  else
+    let i = min (heatmap_index_floor arr v) (len - 2) in
+    (i, i + 1, arr.(i), arr.(i + 1))
+
+(* Distinct sorted axis positions of a scattered heatmap. *)
+let heatmap_axes xa ya n =
+  let xs_tbl = Hashtbl.create 64 and ys_tbl = Hashtbl.create 64 in
+  for i = 0 to n - 1 do
+    Hashtbl.replace xs_tbl xa.(i) ();
+    Hashtbl.replace ys_tbl ya.(i) ()
+  done;
+  let xs =
+    Hashtbl.to_seq_keys xs_tbl |> List.of_seq |> List.sort Float.compare
+  in
+  let ys =
+    Hashtbl.to_seq_keys ys_tbl |> List.of_seq |> List.sort Float.compare
+  in
+  (xs, ys)
+
+(* Aggregate scattered samples onto the (xs, ys) lattice and return a
+   bilinear sampler over data coordinates. *)
+let heatmap_bilinear_sampler ~agg ~xs ~ys ~xa ~ya ~va n =
+  let nx = Array.length xs and ny = Array.length ys in
+  let idx ix iy = ix + (iy * nx) in
+  let values = Array.make (nx * ny) 0. in
+  let counts = Array.make (nx * ny) 0 in
+  for k = 0 to n - 1 do
+    let xi = heatmap_index_floor xs xa.(k) in
+    let yi = heatmap_index_floor ys ya.(k) in
+    heatmap_accumulate ~agg values counts (idx xi yi) va.(k)
+  done;
+  let lookup ix iy = heatmap_resolve ~agg values counts (idx ix iy) in
+  fun xq yq ->
+    let ix0, ix1, x0, x1 = heatmap_interval xs xq in
+    let iy0, iy1, y0, y1 = heatmap_interval ys yq in
+    let tx =
+      if Float.equal x0 x1 then 0.
+      else (xq -. x0) /. Float.max 1e-12 (x1 -. x0)
+    in
+    let ty =
+      if Float.equal y0 y1 then 0.
+      else (yq -. y0) /. Float.max 1e-12 (y1 -. y0)
+    in
+    let v00 = lookup ix0 iy0 in
+    let v10 = lookup ix1 iy0 in
+    let v01 = lookup ix0 iy1 in
+    let v11 = lookup ix1 iy1 in
+    let v0 = v00 +. ((v10 -. v00) *. tx) in
+    let v1 = v01 +. ((v11 -. v01) *. tx) in
+    v0 +. ((v1 -. v0) *. ty)
+
 (* {1 Draw Text Helper} *)
 
 let draw_text ?style ?tab_width grid ~x ~y text =
@@ -1921,88 +2013,49 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
       if Layout.rect_contains r ~x:px ~y:py then
         draw_text grid ~x:px ~y:py ~style:bg_styles.(color_idx v) " "
     in
+    let draw_shaded_cell px py v =
+      let shade_chars = charset.shade_levels in
+      let num_levels = Array.length shade_chars in
+      let shade_idx =
+        let t = (v -. vmin) /. Float.max 1e-12 (vmax -. vmin) in
+        let t = Layout.clamp01 t in
+        max 0
+          (min (num_levels - 1) (int_of_float (t *. float (num_levels - 1))))
+      in
+      if Layout.rect_contains r ~x:px ~y:py then
+        draw_text grid ~x:px ~y:py
+          ~style:fg_styles.(color_idx v)
+          shade_chars.(shade_idx)
+    in
+
+    (* Aggregate samples onto the plot cells, then paint each hit cell. *)
+    let draw_cells paint =
+      let size = r.width * r.height in
+      let idx px py = px - r.x + ((py - r.y) * r.width) in
+      let values = Array.make size 0. in
+      let counts = Array.make size 0 in
+      for i = 0 to n - 1 do
+        let px = x_to_px_cell xa.(i) in
+        let py = y_to_px_cell ya.(i) in
+        if Layout.rect_contains r ~x:px ~y:py then
+          heatmap_accumulate ~agg values counts (idx px py) va.(i)
+      done;
+      for py = r.y to r.y + r.height - 1 do
+        for px = r.x to r.x + r.width - 1 do
+          let ii = idx px py in
+          if counts.(ii) > 0 then
+            paint px py (heatmap_resolve ~agg values counts ii)
+        done
+      done
+    in
 
     match render with
-    | Mark.Cells_bg ->
-        let size = r.width * r.height in
-        let idx px py = px - r.x + ((py - r.y) * r.width) in
-        let values_arr = Array.make size 0. in
-        let counts_arr = Array.make size 0 in
-        for i = 0 to n - 1 do
-          let px = x_to_px_cell xa.(i) in
-          let py = y_to_px_cell ya.(i) in
-          let v = va.(i) in
-          if Layout.rect_contains r ~x:px ~y:py then
-            let ii = idx px py in
-            match agg with
-            | `Last ->
-                values_arr.(ii) <- v;
-                counts_arr.(ii) <- 1
-            | `Max ->
-                if counts_arr.(ii) = 0 then (
-                  values_arr.(ii) <- v;
-                  counts_arr.(ii) <- 1)
-                else values_arr.(ii) <- Float.max values_arr.(ii) v
-            | `Avg ->
-                values_arr.(ii) <- values_arr.(ii) +. v;
-                counts_arr.(ii) <- counts_arr.(ii) + 1
-        done;
-        for py = r.y to r.y + r.height - 1 do
-          for px = r.x to r.x + r.width - 1 do
-            let ii = idx px py in
-            let cnt = counts_arr.(ii) in
-            if cnt > 0 then
-              let v =
-                match agg with
-                | `Avg -> values_arr.(ii) /. float cnt
-                | _ -> values_arr.(ii)
-              in
-              draw_cell px py v
-          done
-        done
+    | Mark.Cells_bg -> draw_cells draw_cell
     | Mark.Cells_fg ->
-        let draw_cell_fg px py v =
-          if Layout.rect_contains r ~x:px ~y:py then
+        draw_cells (fun px py v ->
             draw_text grid ~x:px ~y:py
               ~style:fg_styles.(color_idx v)
-              charset.bar_fill
-        in
-        let size = r.width * r.height in
-        let idx px py = px - r.x + ((py - r.y) * r.width) in
-        let values_arr = Array.make size 0. in
-        let counts_arr = Array.make size 0 in
-        for i = 0 to n - 1 do
-          let px = x_to_px_cell xa.(i) in
-          let py = y_to_px_cell ya.(i) in
-          let v = va.(i) in
-          if Layout.rect_contains r ~x:px ~y:py then
-            let ii = idx px py in
-            match agg with
-            | `Last ->
-                values_arr.(ii) <- v;
-                counts_arr.(ii) <- 1
-            | `Max ->
-                if counts_arr.(ii) = 0 then (
-                  values_arr.(ii) <- v;
-                  counts_arr.(ii) <- 1)
-                else values_arr.(ii) <- Float.max values_arr.(ii) v
-            | `Avg ->
-                values_arr.(ii) <- values_arr.(ii) +. v;
-                counts_arr.(ii) <- counts_arr.(ii) + 1
-        done;
-        for py = r.y to r.y + r.height - 1 do
-          for px = r.x to r.x + r.width - 1 do
-            let ii = idx px py in
-            let cnt = counts_arr.(ii) in
-            if cnt > 0 then
-              let v =
-                match agg with
-                | `Avg -> values_arr.(ii) /. float cnt
-                | _ -> values_arr.(ii)
-              in
-              draw_cell_fg px py v
-          done
-        done
+              charset.bar_fill)
     | Mark.Halfblock_fg_bg ->
         let half_height = r.height * 2 in
         let size = r.width * half_height in
@@ -2022,31 +2075,14 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
           in
           let py_half = int_of_float (Float.round py_float) in
           let py_half = max 0 (min (half_height - 1) py_half) in
-          let v = va.(i) in
           if px >= r.x && px < r.x + r.width then
-            let ii = idx px py_half in
-            match agg with
-            | `Last ->
-                values_arr.(ii) <- v;
-                counts_arr.(ii) <- 1
-            | `Max ->
-                if counts_arr.(ii) = 0 then (
-                  values_arr.(ii) <- v;
-                  counts_arr.(ii) <- 1)
-                else values_arr.(ii) <- Float.max values_arr.(ii) v
-            | `Avg ->
-                values_arr.(ii) <- values_arr.(ii) +. v;
-                counts_arr.(ii) <- counts_arr.(ii) + 1
+            heatmap_accumulate ~agg values_arr counts_arr (idx px py_half)
+              va.(i)
         done;
         let get_value px py_half =
           let ii = idx px py_half in
-          let cnt = counts_arr.(ii) in
-          if cnt = 0 then None
-          else
-            Some
-              (match agg with
-              | `Avg -> values_arr.(ii) /. float cnt
-              | _ -> values_arr.(ii))
+          if counts_arr.(ii) = 0 then None
+          else Some (heatmap_resolve ~agg values_arr counts_arr ii)
         in
         for py = r.y to r.y + r.height - 1 do
           for px = r.x to r.x + r.width - 1 do
@@ -2066,245 +2102,39 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                 draw_text grid ~x:px ~y:py ~style:st "▀"
           done
         done
-    | Mark.Dense_bilinear ->
-        let xs_tbl = Hashtbl.create 64 and ys_tbl = Hashtbl.create 64 in
-        for i = 0 to n - 1 do
-          Hashtbl.replace xs_tbl xa.(i) ();
-          Hashtbl.replace ys_tbl ya.(i) ()
-        done;
-        let xs =
-          Hashtbl.to_seq_keys xs_tbl |> List.of_seq |> List.sort Float.compare
-        in
-        let ys =
-          Hashtbl.to_seq_keys ys_tbl |> List.of_seq |> List.sort Float.compare
-        in
-        let nx = List.length xs and ny = List.length ys in
-        if nx <= 1 || ny <= 1 then
+    | Mark.Dense_bilinear -> (
+        let xs, ys = heatmap_axes xa ya n in
+        if List.length xs <= 1 || List.length ys <= 1 then
           draw_heatmap ~color_scale ~value_range ~auto_value_range ~agg
             ~render:Mark.Cells_bg ~xa ~ya ~va
         else
-          let xs = Array.of_list xs and ys = Array.of_list ys in
-          let grid_size = nx * ny in
-          let idx ix iy = ix + (iy * nx) in
-          let values_arr = Array.make grid_size 0. in
-          let counts_arr = Array.make grid_size 0 in
-          let find_interval arr v =
-            let len = Array.length arr in
-            if len = 1 then (0, 0, arr.(0), arr.(0))
-            else if len = 2 then (0, 1, arr.(0), arr.(1))
-            else
-              let rec bsearch lo hi =
-                if lo >= hi then lo
-                else
-                  let mid = lo + ((hi - lo + 1) / 2) in
-                  if Float.compare arr.(mid) v <= 0 then bsearch mid hi
-                  else bsearch lo (mid - 1)
-              in
-              let i = bsearch 0 (len - 2) in
-              (i, i + 1, arr.(i), arr.(i + 1))
-          in
-          let find_index_floor arr v =
-            let len = Array.length arr in
-            if len = 1 then 0
-            else
-              let rec bsearch lo hi =
-                if lo >= hi then lo
-                else
-                  let mid = lo + ((hi - lo + 1) / 2) in
-                  if Float.compare arr.(mid) v <= 0 then bsearch mid hi
-                  else bsearch lo (mid - 1)
-              in
-              bsearch 0 (len - 1)
-          in
-          for k = 0 to n - 1 do
-            let xi = find_index_floor xs xa.(k) in
-            let yi = find_index_floor ys ya.(k) in
-            let ii = idx xi yi in
-            let v = va.(k) in
-            match agg with
-            | `Last ->
-                values_arr.(ii) <- v;
-                counts_arr.(ii) <- 1
-            | `Max ->
-                if counts_arr.(ii) = 0 then (
-                  values_arr.(ii) <- v;
-                  counts_arr.(ii) <- 1)
-                else values_arr.(ii) <- Float.max values_arr.(ii) v
-            | `Avg ->
-                values_arr.(ii) <- values_arr.(ii) +. v;
-                counts_arr.(ii) <- counts_arr.(ii) + 1
-          done;
-          let lookup ix iy =
-            let ii = idx ix iy in
-            match agg with
-            | `Avg ->
-                let cnt = counts_arr.(ii) in
-                if cnt <= 0 then 0. else values_arr.(ii) /. float cnt
-            | `Last | `Max -> values_arr.(ii)
-          in
-          let sample xq yq =
-            let ix0, ix1, x0, x1 = find_interval xs xq in
-            let iy0, iy1, y0, y1 = find_interval ys yq in
-            let tx =
-              if Float.equal x0 x1 then 0.
-              else (xq -. x0) /. Float.max 1e-12 (x1 -. x0)
-            in
-            let ty =
-              if Float.equal y0 y1 then 0.
-              else (yq -. y0) /. Float.max 1e-12 (y1 -. y0)
-            in
-            let v00 = lookup ix0 iy0 in
-            let v10 = lookup ix1 iy0 in
-            let v01 = lookup ix0 iy1 in
-            let v11 = lookup ix1 iy1 in
-            let v0 = v00 +. ((v10 -. v00) *. tx) in
-            let v1 = v01 +. ((v11 -. v01) *. tx) in
-            v0 +. ((v1 -. v0) *. ty)
+          let sample =
+            heatmap_bilinear_sampler ~agg ~xs:(Array.of_list xs)
+              ~ys:(Array.of_list ys) ~xa ~ya ~va n
           in
           for py = r.y to r.y + r.height - 1 do
             for px = r.x to r.x + r.width - 1 do
               match Layout.data_of_px layout ~px ~py with
               | None -> ()
-              | Some (dx, dy) ->
-                  let v = sample dx dy in
-                  draw_cell px py v
-            done
-          done
-    | Mark.Shaded ->
-        let shade_chars = charset.shade_levels in
-        let num_levels = Array.length shade_chars in
-        let shade_idx v =
-          let t = (v -. vmin) /. Float.max 1e-12 (vmax -. vmin) in
-          let t = Layout.clamp01 t in
-          max 0
-            (min (num_levels - 1) (int_of_float (t *. float (num_levels - 1))))
-        in
-        let draw_shaded_cell px py v =
-          if Layout.rect_contains r ~x:px ~y:py then
-            draw_text grid ~x:px ~y:py
-              ~style:fg_styles.(color_idx v)
-              shade_chars.(shade_idx v)
-        in
-        let xs_tbl = Hashtbl.create 64 and ys_tbl = Hashtbl.create 64 in
-        for i = 0 to n - 1 do
-          Hashtbl.replace xs_tbl xa.(i) ();
-          Hashtbl.replace ys_tbl ya.(i) ()
-        done;
-        let xs =
-          Hashtbl.to_seq_keys xs_tbl |> List.of_seq |> List.sort Float.compare
-        in
-        let ys =
-          Hashtbl.to_seq_keys ys_tbl |> List.of_seq |> List.sort Float.compare
-        in
-        let nx = List.length xs and ny = List.length ys in
-        if nx <= 1 || ny <= 1 then (
-          let size = r.width * r.height in
-          let idx px py = px - r.x + ((py - r.y) * r.width) in
-          let values_arr = Array.make size 0. in
-          let has_value = Array.make size false in
-          for i = 0 to n - 1 do
-            let px = x_to_px_cell xa.(i) in
-            let py = y_to_px_cell ya.(i) in
-            let v = va.(i) in
-            if Layout.rect_contains r ~x:px ~y:py then (
-              let ii = idx px py in
-              values_arr.(ii) <- v;
-              has_value.(ii) <- true)
-          done;
-          for py = r.y to r.y + r.height - 1 do
-            for px = r.x to r.x + r.width - 1 do
-              let ii = idx px py in
-              if has_value.(ii) then draw_shaded_cell px py values_arr.(ii)
+              | Some (dx, dy) -> draw_cell px py (sample dx dy)
             done
           done)
+    | Mark.Shaded -> (
+        let xs, ys = heatmap_axes xa ya n in
+        if List.length xs <= 1 || List.length ys <= 1 then
+          draw_cells draw_shaded_cell
         else
-          let xs = Array.of_list xs and ys = Array.of_list ys in
-          let grid_size = nx * ny in
-          let idx ix iy = ix + (iy * nx) in
-          let values_arr = Array.make grid_size 0. in
-          let counts_arr = Array.make grid_size 0 in
-          let find_interval arr v =
-            let len = Array.length arr in
-            if len = 1 then (0, 0, arr.(0), arr.(0))
-            else if len = 2 then (0, 1, arr.(0), arr.(1))
-            else
-              let rec bsearch lo hi =
-                if lo >= hi then lo
-                else
-                  let mid = lo + ((hi - lo + 1) / 2) in
-                  if Float.compare arr.(mid) v <= 0 then bsearch mid hi
-                  else bsearch lo (mid - 1)
-              in
-              let i = bsearch 0 (len - 2) in
-              (i, i + 1, arr.(i), arr.(i + 1))
-          in
-          let find_index_floor arr v =
-            let len = Array.length arr in
-            if len = 1 then 0
-            else
-              let rec bsearch lo hi =
-                if lo >= hi then lo
-                else
-                  let mid = lo + ((hi - lo + 1) / 2) in
-                  if Float.compare arr.(mid) v <= 0 then bsearch mid hi
-                  else bsearch lo (mid - 1)
-              in
-              bsearch 0 (len - 1)
-          in
-          for k = 0 to n - 1 do
-            let xi = find_index_floor xs xa.(k) in
-            let yi = find_index_floor ys ya.(k) in
-            let ii = idx xi yi in
-            let v = va.(k) in
-            match agg with
-            | `Last ->
-                values_arr.(ii) <- v;
-                counts_arr.(ii) <- 1
-            | `Max ->
-                if counts_arr.(ii) = 0 then (
-                  values_arr.(ii) <- v;
-                  counts_arr.(ii) <- 1)
-                else values_arr.(ii) <- Float.max values_arr.(ii) v
-            | `Avg ->
-                values_arr.(ii) <- values_arr.(ii) +. v;
-                counts_arr.(ii) <- counts_arr.(ii) + 1
-          done;
-          let lookup ix iy =
-            let ii = idx ix iy in
-            match agg with
-            | `Avg ->
-                let cnt = counts_arr.(ii) in
-                if cnt <= 0 then 0. else values_arr.(ii) /. float cnt
-            | `Last | `Max -> values_arr.(ii)
-          in
-          let sample xq yq =
-            let ix0, ix1, x0, x1 = find_interval xs xq in
-            let iy0, iy1, y0, y1 = find_interval ys yq in
-            let tx =
-              if Float.equal x0 x1 then 0.
-              else (xq -. x0) /. Float.max 1e-12 (x1 -. x0)
-            in
-            let ty =
-              if Float.equal y0 y1 then 0.
-              else (yq -. y0) /. Float.max 1e-12 (y1 -. y0)
-            in
-            let v00 = lookup ix0 iy0 in
-            let v10 = lookup ix1 iy0 in
-            let v01 = lookup ix0 iy1 in
-            let v11 = lookup ix1 iy1 in
-            let v0 = v00 +. ((v10 -. v00) *. tx) in
-            let v1 = v01 +. ((v11 -. v01) *. tx) in
-            v0 +. ((v1 -. v0) *. ty)
+          let sample =
+            heatmap_bilinear_sampler ~agg ~xs:(Array.of_list xs)
+              ~ys:(Array.of_list ys) ~xa ~ya ~va n
           in
           for py = r.y to r.y + r.height - 1 do
             for px = r.x to r.x + r.width - 1 do
               match Layout.data_of_px layout ~px ~py with
               | None -> ()
-              | Some (dx, dy) ->
-                  let v = sample dx dy in
-                  draw_shaded_cell px py v
+              | Some (dx, dy) -> draw_shaded_cell px py (sample dx dy)
             done
-          done
+          done)
   in
 
   (* Dispatch: iterate marks in order (layering) *)
