@@ -318,6 +318,29 @@ let%expect_test "circle sub-integer radius stays visible" =
 [0;38;2;255;255;255m│    [38;5;6m█████[38;2;255;255;255m   │[0m
 [0;38;2;255;255;255m└────────────┘[0m|}]
 
+let%expect_test "overlay text anchors" =
+  let draw grid ~width ~height =
+    let chart =
+      empty ()
+      |> with_axes ~x:Axis.hidden ~y:Axis.hidden
+      |> with_x_scale (Scale.numeric ~domain:(`Domain (0., 9.)) ())
+      |> with_y_scale (Scale.numeric ~domain:(`Domain (0., 4.)) ())
+    in
+    let layout = draw chart grid ~width ~height in
+    Overlay.text layout grid ~x:4.5 ~y:3. "beg";
+    Overlay.text ~anchor:`Center layout grid ~x:4.5 ~y:2. "mid";
+    Overlay.text ~anchor:`Right layout grid ~x:4.5 ~y:1. "end"
+  in
+  render_chart ~width:10 ~height:5 draw;
+  [%expect_exact {|
+[0;38;2;255;255;255m┌──────────┐[0m
+[0;38;2;255;255;255m│          │[0m
+[0;38;2;255;255;255m│     [38;5;246mbeg[38;2;255;255;255m  │[0m
+[0;38;2;255;255;255m│    [38;5;246mmid[38;2;255;255;255m   │[0m
+[0;38;2;255;255;255m│  [38;5;246mend[38;2;255;255;255m     │[0m
+[0;38;2;255;255;255m│          │[0m
+[0;38;2;255;255;255m└──────────┘[0m|}]
+
 let%expect_test "vertical bar chart renders columns" =
   let draw grid ~width ~height =
     let chart =

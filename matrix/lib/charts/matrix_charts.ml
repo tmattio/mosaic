@@ -157,7 +157,6 @@ module Overlay = struct
   type tooltip_anchor = [ `Auto | `Left | `Right | `Top | `Bottom ]
   type tooltip_border = [ `Theme | `None | `Style of Style.t ]
   type h_anchor = [ `Left | `Center | `Right ]
-  type v_anchor = [ `Top | `Middle | `Bottom ]
   type arrow_head = [ `None | `Arrow | `Dot ]
 
   let crosshair ?style ?(pattern = `Solid) (layout : Layout.t) (grid : G.t) ~x
@@ -310,8 +309,8 @@ module Overlay = struct
               Render.draw_text grid ~x:(x0 + inner_offset) ~y ~style line)
           lines
 
-  let text ?style ?(anchor = `Left) ?(v_anchor = `Middle) (layout : Layout.t)
-      (grid : G.t) ~x ~y label =
+  let text ?style ?(anchor = `Left) (layout : Layout.t) (grid : G.t) ~x ~y
+      label =
     let style = Option.value style ~default:layout.theme.labels in
     let px, py = Layout.px_of_data layout ~x ~y in
     let rect = Layout.plot_rect layout in
@@ -322,7 +321,6 @@ module Overlay = struct
       | `Center -> px - (w / 2)
       | `Right -> px - w
     in
-    let py = match v_anchor with `Top -> py | `Middle -> py | `Bottom -> py in
     if py >= rect.y && py < rect.y + rect.height then
       Render.draw_text grid ~x:px ~y:py ~style label
 

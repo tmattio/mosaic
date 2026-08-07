@@ -956,13 +956,9 @@ module Overlay : sig
   type h_anchor = [ `Left | `Center | `Right ]
   (** The type for horizontal text alignment. *)
 
-  type v_anchor = [ `Top | `Middle | `Bottom ]
-  (** The type for vertical text alignment. *)
-
   val text :
     ?style:Ansi.Style.t ->
     ?anchor:h_anchor ->
-    ?v_anchor:v_anchor ->
     Layout.t ->
     Grid.t ->
     x:float ->
