@@ -53,7 +53,7 @@ let feed_simple_text () =
 
 let feed_multiline_text () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Line1\nLine2\nLine3";
+  Vte.feed_string vte "Line1\r\nLine2\r\nLine3";
   equal ~msg:"first line" string "Line1" (get_line (Vte.grid vte) 0);
   equal ~msg:"second line" string "Line2" (get_line (Vte.grid vte) 1);
   equal ~msg:"third line" string "Line3" (get_line (Vte.grid vte) 2);
@@ -81,7 +81,7 @@ let feed_backspace () =
 
 let cursor_up () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Line1\nLine2";
+  Vte.feed_string vte "Line1\r\nLine2";
   Vte.feed_string vte "\x1b[A";
   Vte.feed_string vte "X";
   equal ~msg:"cursor up modifies previous line" string "Line1X"
@@ -121,7 +121,7 @@ let cursor_next_line () =
 
 let cursor_previous_line () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "\nHello\x1b[FX";
+  Vte.feed_string vte "\r\nHello\x1b[FX";
   equal ~msg:"previous line moves up and to column 0" (pair int int) (0, 1)
     (Vte.cursor_pos vte)
 
@@ -129,14 +129,14 @@ let cursor_previous_line () =
 
 let erase_display_to_end () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Line1\nLine2\nLine3\x1b[2;5H\x1b[J";
+  Vte.feed_string vte "Line1\r\nLine2\r\nLine3\x1b[2;5H\x1b[J";
   equal ~msg:"first line unchanged" string "Line1" (get_line (Vte.grid vte) 0);
   equal ~msg:"second line partial" string "Line" (get_line (Vte.grid vte) 1);
   equal ~msg:"third line cleared" string "" (get_line (Vte.grid vte) 2)
 
 let erase_display_to_beginning () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Line1\nLine2\nLine3\x1b[2;3H\x1b[1J";
+  Vte.feed_string vte "Line1\r\nLine2\r\nLine3\x1b[2;3H\x1b[1J";
   equal ~msg:"first line cleared" string "" (get_line (Vte.grid vte) 0);
   let line2 = get_line (Vte.grid vte) 1 in
   is_true ~msg:"second line partially cleared" (String.length line2 >= 2);
@@ -144,7 +144,7 @@ let erase_display_to_beginning () =
 
 let erase_display_all () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Line1\nLine2\nLine3\x1b[2J";
+  Vte.feed_string vte "Line1\r\nLine2\r\nLine3\x1b[2J";
   equal ~msg:"line 0 cleared" string "" (get_line (Vte.grid vte) 0);
   equal ~msg:"line 1 cleared" string "" (get_line (Vte.grid vte) 1);
   equal ~msg:"line 2 cleared" string "" (get_line (Vte.grid vte) 2)
@@ -178,7 +178,7 @@ let default_background_spaces_overwrite_text () =
 
 let insert_lines () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Line1\nLine2\nLine3\x1b[2;1H\x1b[LNew";
+  Vte.feed_string vte "Line1\r\nLine2\r\nLine3\x1b[2;1H\x1b[LNew";
   equal ~msg:"first line unchanged" string "Line1" (get_line (Vte.grid vte) 0);
   equal ~msg:"new line inserted" string "New" (get_line (Vte.grid vte) 1);
   equal ~msg:"second line pushed down" string "Line2"
@@ -186,7 +186,7 @@ let insert_lines () =
 
 let delete_lines () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Line1\nLine2\nLine3\x1b[2;1H\x1b[M";
+  Vte.feed_string vte "Line1\r\nLine2\r\nLine3\x1b[2;1H\x1b[M";
   equal ~msg:"first line unchanged" string "Line1" (get_line (Vte.grid vte) 0);
   equal ~msg:"third line moved up" string "Line3" (get_line (Vte.grid vte) 1);
   equal ~msg:"bottom line empty" string "" (get_line (Vte.grid vte) 2)
@@ -203,15 +203,43 @@ let delete_characters () =
   Vte.feed_string vte "Hello World\r\x1b[7C\x1b[5P";
   equal ~msg:"characters deleted" string "Hello W" (get_line (Vte.grid vte) 0)
 
-let backspace_clears_character () =
+let backspace_moves_without_erasing () =
   let vte = Vte.create ~rows:1 ~cols:5 () in
   Vte.feed_string vte "ABC";
   Vte.feed_string vte "\b";
   let grid = Vte.grid vte in
   equal ~msg:"A kept" char 'A' (get_char_at grid 0 0);
   equal ~msg:"B kept" char 'B' (get_char_at grid 0 1);
-  equal ~msg:"backspaced cell cleared" char ' ' (get_char_at grid 0 2);
-  equal ~msg:"cursor moved left" (pair int int) (0, 2) (Vte.cursor_pos vte)
+  equal ~msg:"cell under cursor kept" char 'C' (get_char_at grid 0 2);
+  equal ~msg:"cursor moved left" (pair int int) (0, 2) (Vte.cursor_pos vte);
+  (* Overstrike (nroff bold "C\bX"): the redraw lands on the same cell. *)
+  Vte.feed_string vte "X";
+  equal ~msg:"overstrike hits same cell" char 'X' (get_char_at grid 0 2)
+
+let line_feed_preserves_column () =
+  let vte = Vte.create ~rows:5 ~cols:20 () in
+  Vte.feed_string vte "abc\ndef";
+  equal ~msg:"first line" string "abc" (get_line (Vte.grid vte) 0);
+  equal ~msg:"LF moved straight down" string "   def" (get_line (Vte.grid vte) 1);
+  equal ~msg:"cursor position" (pair int int) (1, 6) (Vte.cursor_pos vte)
+
+let line_feed_scroll_region () =
+  let vte = Vte.create ~rows:5 ~cols:10 () in
+  Vte.feed_string vte "A\r\nB\r\nC\r\nD\r\nE";
+  (* Region rows 2..3 (1-based). *)
+  Vte.feed_string vte "\x1b[2;3r";
+  (* Below the region (classic status-line setup): LF must not scroll. *)
+  Vte.feed_string vte "\x1b[5;1H\n";
+  equal ~msg:"region untouched below" string "B" (get_line (Vte.grid vte) 1);
+  equal ~msg:"cursor stays at screen bottom" (pair int int) (4, 0)
+    (Vte.cursor_pos vte);
+  (* At the region bottom: LF scrolls the region only. *)
+  Vte.feed_string vte "\x1b[3;1H\n";
+  equal ~msg:"region scrolled" string "C" (get_line (Vte.grid vte) 1);
+  equal ~msg:"region bottom blank" string "" (get_line (Vte.grid vte) 2);
+  equal ~msg:"row above region untouched" string "A" (get_line (Vte.grid vte) 0);
+  equal ~msg:"row below region untouched" string "D"
+    (get_line (Vte.grid vte) 3)
 
 let delete_characters_wide () =
   let vte = Vte.create ~rows:1 ~cols:5 () in
@@ -325,21 +353,21 @@ let alternate_screen_restores_style () =
 
 let scroll_up_basic () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "L1\nL2\nL3\nL4\nL5";
+  Vte.feed_string vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
   Vte.scroll_up vte 2;
   equal ~msg:"line moved up" string "L3" (get_line (Vte.grid vte) 0);
   equal ~msg:"bottom cleared" string "" (get_line (Vte.grid vte) 3)
 
 let scroll_down_basic () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "L1\nL2\nL3";
+  Vte.feed_string vte "L1\r\nL2\r\nL3";
   Vte.scroll_down vte 1;
   equal ~msg:"top cleared" string "" (get_line (Vte.grid vte) 0);
   equal ~msg:"line moved down" string "L1" (get_line (Vte.grid vte) 1)
 
 let csi_scroll_sequences () =
   let vte = Vte.create ~scrollback:100 ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "L1\nL2\nL3\nL4\nL5";
+  Vte.feed_string vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
   Vte.feed_string vte "\x1b[2S";
   equal ~msg:"CSI S moves rows up" string "L3" (get_line (Vte.grid vte) 0);
   equal ~msg:"CSI S records native scrollback" int 2 (Vte.scrollback_size vte);
@@ -350,7 +378,7 @@ let csi_scroll_sequences () =
 
 let scroll_on_bottom_line () =
   let vte = Vte.create ~rows:3 ~cols:10 () in
-  Vte.feed_string vte "L1\nL2\nL3\nL4";
+  Vte.feed_string vte "L1\r\nL2\r\nL3\r\nL4";
   equal ~msg:"first line scrolled off" string "L2" (get_line (Vte.grid vte) 0);
   equal ~msg:"new line at bottom" string "L4" (get_line (Vte.grid vte) 2)
 
@@ -376,14 +404,14 @@ let reverse_index_scrolls_region_down () =
 
 let scrollback_accumulates () =
   let vte = Vte.create ~scrollback:100 ~rows:3 ~cols:10 () in
-  Vte.feed_string vte "L1\nL2\nL3\nL4\nL5";
+  Vte.feed_string vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
   equal ~msg:"scrollback has lines" int 2 (Vte.scrollback_size vte);
   let lines = Vte.scrollback_lines vte in
   equal ~msg:"scrollback list length" int 2 (List.length lines)
 
 let erase_scrollback_sequence () =
   let vte = Vte.create ~scrollback:100 ~rows:3 ~cols:10 () in
-  Vte.feed_string vte "L1\nL2\nL3\nL4\nL5";
+  Vte.feed_string vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
   is_true ~msg:"fixture has scrollback" (Vte.scrollback_size vte > 0);
   let visible = get_line (Vte.grid vte) 0 in
   Vte.feed_string vte "\x1b[3J";
@@ -393,7 +421,7 @@ let erase_scrollback_sequence () =
 
 let scrollback_ring_buffer () =
   let vte = Vte.create ~scrollback:2 ~rows:2 ~cols:5 () in
-  Vte.feed_string vte "L1\nL2\nL3\nL4\nL5";
+  Vte.feed_string vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
   equal ~msg:"scrollback at capacity" int 2 (Vte.scrollback_size vte);
   let lines = Vte.scrollback_lines vte in
   equal ~msg:"oldest in ring" string "L2" (List.nth lines 0);
@@ -401,7 +429,7 @@ let scrollback_ring_buffer () =
 
 let render_with_scrollback_order () =
   let vte = Vte.create ~scrollback:100 ~rows:3 ~cols:10 () in
-  Vte.feed_string vte "L1\nL2\nL3\nL4\nL5";
+  Vte.feed_string vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
   equal ~msg:"two lines in scrollback" int 2 (Vte.scrollback_size vte);
   let dst = Grid.create ~width:10 ~height:3 () in
   Vte.render_with_scrollback vte ~offset:2 dst;
@@ -415,7 +443,7 @@ let render_with_scrollback_order () =
 
 let render_with_scrollback_wrapped_ring () =
   let vte = Vte.create ~scrollback:2 ~rows:2 ~cols:5 () in
-  Vte.feed_string vte "L1\nL2\nL3\nL4\nL5";
+  Vte.feed_string vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
   (* Ring holds L2 (oldest) and L3 (newest); L1 was evicted. *)
   let dst = Grid.create ~width:5 ~height:3 () in
   Vte.render_with_scrollback vte ~offset:2 dst;
@@ -425,7 +453,7 @@ let render_with_scrollback_wrapped_ring () =
 
 let scrollback_disabled () =
   let vte = Vte.create ~scrollback:0 ~rows:3 ~cols:10 () in
-  Vte.feed_string vte "L1\nL2\nL3\nL4";
+  Vte.feed_string vte "L1\r\nL2\r\nL3\r\nL4";
   equal ~msg:"no scrollback" int 0 (Vte.scrollback_size vte);
   equal ~msg:"empty scrollback" (list string) [] (Vte.scrollback_lines vte)
 
@@ -495,7 +523,7 @@ let osc_set_title () =
 
 let resize_preserves_content () =
   let vte = Vte.create ~rows:5 ~cols:10 () in
-  Vte.feed_string vte "Hello\nWorld";
+  Vte.feed_string vte "Hello\r\nWorld";
   Vte.resize vte ~rows:10 ~cols:20;
   equal ~msg:"rows resized" int 10 (Vte.rows vte);
   equal ~msg:"cols resized" int 20 (Vte.cols vte);
@@ -515,7 +543,7 @@ let resize_clamps_cursor () =
 
 let reset_clears_state () =
   let vte = Vte.create ~scrollback:100 ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Hello\nWorld";
+  Vte.feed_string vte "Hello\r\nWorld";
   Vte.feed_string vte "\x1b[1;31m";
   Vte.feed_string vte "\x1b]0;Title\x07";
   Vte.scroll_up vte 1;
@@ -602,7 +630,7 @@ let unicode_with_escapes () =
 
 let unicode_multiline () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Line1\nΓειά σου\n日本語";
+  Vte.feed_string vte "Line1\r\nΓειά σου\r\n日本語";
   let output = Vte.to_string vte in
   equal ~msg:"multiline unicode" string
     "Line1               \nΓειά σου            \n日本語" (String.trim output)
@@ -678,7 +706,9 @@ let tests =
     test "delete lines" delete_lines;
     test "insert characters" insert_characters;
     test "delete characters" delete_characters;
-    test "backspace clears character" backspace_clears_character;
+    test "backspace moves without erasing" backspace_moves_without_erasing;
+    test "line feed preserves column" line_feed_preserves_column;
+    test "line feed scroll region" line_feed_scroll_region;
     test "delete characters wide grapheme" delete_characters_wide;
     test "insert characters wide boundary" insert_characters_wide_boundary;
     test "SGR bold" sgr_bold;

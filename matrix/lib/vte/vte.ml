@@ -489,6 +489,14 @@ let scroll_down t n =
 
     mark_rows_dirty t t.scroll_region.top t.scroll_region.bottom
 
+(* Move down one row for LF/auto-wrap: scroll only when the cursor sits on the
+   region bottom; below the region (legal via CUP after DECSTBM) advance toward
+   the screen bottom without touching the region. Preserves the column. *)
+let advance_row t =
+  if t.cursor.row = t.scroll_region.bottom then scroll_up t 1
+  else if t.cursor.row < t.rows - 1 then
+    set_cursor_pos t ~row:(t.cursor.row + 1) ~col:t.cursor.col
+
 (* Write printable text using Grid and Text APIs. We manually segment the input
    string into pieces that fit in the current line, using an ASCII fast path and
    falling back to grapheme segmentation for complex text. *)
@@ -631,25 +639,19 @@ let handle_control_char t code =
   match code with
   | 0x07 -> () (* BEL *)
   | 0x08 ->
-      (* BS: move left and clear the grapheme at the new cursor position. *)
-      let row = t.cursor.row in
-      let target_col = t.cursor.col - 1 in
-      if row >= 0 && row < t.rows && target_col >= 0 then (
-        let start_col, w =
-          grapheme_start_and_width t.active_grid row target_col
-        in
-        erase_region t ~x:start_col ~y:row ~width:w ~height:1;
-        set_cursor_pos t ~row ~col:start_col;
-        mark_row_dirty t row)
+      (* BS: pure cursor movement, one column left. Never erases — overstrike
+         sequences (nroff bold "c\bc") rely on the cell surviving. *)
+      if t.cursor.col > 0 then
+        set_cursor_pos t ~row:t.cursor.row ~col:(t.cursor.col - 1)
   | 0x09 ->
       (* HT *)
       let next_tab = ((t.cursor.col / 8) + 1) * 8 in
       set_cursor_pos t ~row:t.cursor.row ~col:(min next_tab (t.cols - 1))
   | 0x0A | 0x0B | 0x0C ->
-      (* LF, VT, FF *)
-      if t.cursor.row >= t.scroll_region.bottom then scroll_up t 1
-      else set_cursor_pos t ~row:(t.cursor.row + 1) ~col:t.cursor.col;
-      set_cursor_pos t ~row:t.cursor.row ~col:0
+      (* LF, VT, FF: down one row, same column (VT100). ONLCR translation is
+         the tty driver's job; curses cursor-motion optimizations depend on
+         bare LF not implying CR. *)
+      advance_row t
   | 0x0D -> (* CR *) set_cursor_pos t ~row:t.cursor.row ~col:0
   | 0x0E | 0x0F -> () (* SO, SI *)
   | _ -> ()
