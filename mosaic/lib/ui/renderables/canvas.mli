@@ -87,11 +87,8 @@ val draw_text :
 (** [draw_text t ~x ~y ~text] draws [text] as a single line into the canvas grid
     at column [x], row [y].
 
-    See {!Grid.draw_text} for full semantics.
-
-    Optional parameters:
-    - [style] is the text style. Defaults to the empty style.
-    - [tab_width] is the number of cells per tab stop. Defaults to [8]. *)
+    See {!Grid.draw_text} for full semantics and parameter defaults; [style] and
+    [tab_width] are passed through unchanged. *)
 
 val fill_rect :
   t -> x:int -> y:int -> width:int -> height:int -> color:Ansi.Color.t -> unit
@@ -118,20 +115,8 @@ val draw_box :
 (** [draw_box t ~x ~y ~width ~height ()] draws a Unicode box at column [x], row
     [y] with the given [width] and [height].
 
-    See {!Grid.draw_box} for full semantics.
-
-    Optional parameters:
-    - [border] is the border character set. Defaults to the rounded Unicode box
-      style.
-    - [sides] is the list of sides to draw. Defaults to all four sides.
-    - [style] is the border style. Defaults to the empty style.
-    - [fill] is the background fill color. Defaults to no fill.
-    - [title] is a title string rendered on the top border. Defaults to no
-      title.
-    - [title_alignment] is the horizontal alignment of [title]. Defaults to
-      [`Left].
-    - [title_style] is the style applied to [title]. Defaults to the empty
-      style. *)
+    See {!Grid.draw_box} for full semantics and parameter defaults; all optional
+    parameters are passed through unchanged. *)
 
 val draw_line :
   t ->
