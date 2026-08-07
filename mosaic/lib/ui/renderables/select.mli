@@ -97,8 +97,11 @@ module Props : sig
     t
   (** [make ()] is a property set with the same defaults as {!val-create}, with:
       - [options] items to display. Defaults to [[]].
-      - [selected_index] initial selection, clamped to \[[0];[length - 1]\].
-        Defaults to [0].
+      - [selected_index] the app-controlled selection, clamped to
+        \[[0];[length - 1]\]. When provided, {!apply_props} moves the selection
+        to it without firing the change callback; when omitted, the widget's own
+        selection survives prop updates. {!val-create} uses it as the initial
+        selection, defaulting to [0].
       - [background] unfocused background color. Defaults to transparent.
       - [text_color] unfocused text color. Defaults to white.
       - [focused_background] focused background color. Defaults to [background]
@@ -129,7 +132,8 @@ end
 
 val apply_props : t -> Props.t -> unit
 (** [apply_props t props] applies [props] to [t]. Only properties that differ
-    from the current state trigger layout recomputation and re-render. *)
+    from the current state trigger layout recomputation and re-render. Never
+    fires the change callback; callbacks are reserved for user gestures. *)
 
 (** {1:options Options} *)
 

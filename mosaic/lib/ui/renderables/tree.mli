@@ -112,7 +112,11 @@ module Props : sig
     t
   (** [make ()] is a property bundle with defaults:
       - [items]: [[]].
-      - [selected_index]: 0-based index in the visible list; defaults to [0].
+      - [selected_index]: app-controlled 0-based index in the visible list,
+        clamped to the valid range. When provided, {!apply_props} moves the
+        selection to it without firing the change callback; when omitted, the
+        widget's own selection survives prop updates. {!val-create} uses it as
+        the initial selection, defaulting to [0].
       - [expand_depth]: initial expansion depth. [0] means all nodes collapsed
         (default); [1] means the first level expanded; [-1] means all nodes
         expanded.
@@ -151,7 +155,8 @@ end
 
 val apply_props : t -> Props.t -> unit
 (** [apply_props t props] applies [props] to [t], triggering the minimum
-    necessary layout and render updates. *)
+    necessary layout and render updates. Never fires the change callback;
+    callbacks are reserved for user gestures. *)
 
 (** {1:data Data} *)
 

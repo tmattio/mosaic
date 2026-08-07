@@ -758,6 +758,28 @@ let apply_props_same_no_extra_render () =
   Table.apply_props tbl props;
   equal ~msg:"no extra schedule" int before !(t.schedule_count)
 
+let apply_props_preserves_uncontrolled_selection () =
+  let _t, tbl = make_table ~columns:sample_columns ~rows:sample_rows () in
+  Table.set_selected_row tbl 3;
+  let log = ref [] in
+  Table.set_on_change tbl (Some (fun i -> log := i :: !log));
+  Table.apply_props tbl
+    (Table.Props.make ~columns:sample_columns ~rows:sample_rows
+       ~wrap_selection:true ());
+  equal ~msg:"selection survives unrelated prop change" int 3
+    (Table.selected_row tbl);
+  equal ~msg:"no callback echo" (list int) [] !log
+
+let apply_props_controlled_selection_is_silent () =
+  let _t, tbl = make_table ~columns:sample_columns ~rows:sample_rows () in
+  let log = ref [] in
+  Table.set_on_change tbl (Some (fun i -> log := i :: !log));
+  Table.apply_props tbl
+    (Table.Props.make ~columns:sample_columns ~rows:sample_rows ~selected_row:2
+       ());
+  equal ~msg:"controlled selection applied" int 2 (Table.selected_row tbl);
+  equal ~msg:"no callback echo" (list int) [] !log
+
 (* ── Runner ── *)
 
 let () =
@@ -883,5 +905,9 @@ let () =
         [
           test "updates all properties" apply_props_updates;
           test "same data no extra render" apply_props_same_no_extra_render;
+          test "preserves uncontrolled selection"
+            apply_props_preserves_uncontrolled_selection;
+          test "controlled selection is silent"
+            apply_props_controlled_selection_is_silent;
         ];
     ]

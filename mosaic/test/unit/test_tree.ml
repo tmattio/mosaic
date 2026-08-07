@@ -562,6 +562,26 @@ let apply_props_same_no_extra_render () =
   Tree.apply_props tree props;
   equal ~msg:"no extra schedule" int before !(t.schedule_count)
 
+let apply_props_preserves_uncontrolled_selection () =
+  let _t, tree = make_tree ~items:sample_items () in
+  Tree.set_selected_index tree 2;
+  let log = ref [] in
+  Tree.set_on_change tree (Some (fun i -> log := i :: !log));
+  Tree.apply_props tree
+    (Tree.Props.make ~items:sample_items ~wrap_selection:true ());
+  equal ~msg:"selection survives unrelated prop change" int 2
+    (Tree.selected_index tree);
+  equal ~msg:"no callback echo" (list int) [] !log
+
+let apply_props_controlled_selection_is_silent () =
+  let _t, tree = make_tree ~items:sample_items () in
+  let log = ref [] in
+  Tree.set_on_change tree (Some (fun i -> log := i :: !log));
+  Tree.apply_props tree
+    (Tree.Props.make ~items:sample_items ~selected_index:1 ());
+  equal ~msg:"controlled selection applied" int 1 (Tree.selected_index tree);
+  equal ~msg:"no callback echo" (list int) [] !log
+
 (* ── Runner ── *)
 
 let () =
@@ -681,5 +701,9 @@ let () =
         [
           test "updates all properties" apply_props_updates;
           test "same props no extra render" apply_props_same_no_extra_render;
+          test "preserves uncontrolled selection"
+            apply_props_preserves_uncontrolled_selection;
+          test "controlled selection is silent"
+            apply_props_controlled_selection_is_silent;
         ];
     ]

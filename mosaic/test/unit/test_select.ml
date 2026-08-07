@@ -498,6 +498,26 @@ let apply_props_same_options_no_extra_render () =
   Select.apply_props sel props;
   equal ~msg:"no extra schedule" int before !(t.schedule_count)
 
+let apply_props_preserves_uncontrolled_selection () =
+  let _t, sel = make_select ~options:sample_items () in
+  Select.set_selected_index sel 3;
+  let log = ref [] in
+  Select.set_on_change sel (Some (fun i -> log := i :: !log));
+  Select.apply_props sel
+    (Select.Props.make ~options:sample_items ~wrap_selection:true ());
+  equal ~msg:"selection survives unrelated prop change" int 3
+    (Select.selected_index sel);
+  equal ~msg:"no callback echo" (list int) [] !log
+
+let apply_props_controlled_selection_is_silent () =
+  let _t, sel = make_select ~options:sample_items () in
+  let log = ref [] in
+  Select.set_on_change sel (Some (fun i -> log := i :: !log));
+  Select.apply_props sel
+    (Select.Props.make ~options:sample_items ~selected_index:2 ());
+  equal ~msg:"controlled selection applied" int 2 (Select.selected_index sel);
+  equal ~msg:"no callback echo" (list int) [] !log
+
 (* ── Runner ── *)
 
 let () =
@@ -599,5 +619,9 @@ let () =
           test "updates all properties" apply_props_updates;
           test "same options no extra render"
             apply_props_same_options_no_extra_render;
+          test "preserves uncontrolled selection"
+            apply_props_preserves_uncontrolled_selection;
+          test "controlled selection is silent"
+            apply_props_controlled_selection_is_silent;
         ];
     ]

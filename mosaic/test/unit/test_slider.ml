@@ -336,6 +336,20 @@ let apply_props_does_not_fire_on_change () =
   is_true ~msg:"value changed" (float_eq (Slider.value slider) 50.);
   is_false ~msg:"on_change not fired" !fired
 
+let apply_props_preserves_uncontrolled_value () =
+  let _t, slider = make_slider () in
+  Slider.set_value slider 42.;
+  Slider.apply_props slider (Slider.Props.make ~thumb_color:Ansi.Color.red ());
+  is_true ~msg:"value survives unrelated prop change"
+    (float_eq (Slider.value slider) 42.)
+
+let apply_props_reclamps_uncontrolled_value () =
+  let _t, slider = make_slider () in
+  Slider.set_value slider 90.;
+  Slider.apply_props slider (Slider.Props.make ~min:0. ~max:50. ());
+  is_true ~msg:"kept value reclamped to the new range"
+    (float_eq (Slider.value slider) 50.)
+
 (* ── Virtual Thumb Sizing ── *)
 
 let minimum_thumb_with_extreme_range () =
@@ -569,6 +583,10 @@ let () =
           test "clamps value to new range" apply_props_clamps_value;
           test "schedules render" apply_props_schedules_render;
           test "does not fire on_change" apply_props_does_not_fire_on_change;
+          test "preserves uncontrolled value"
+            apply_props_preserves_uncontrolled_value;
+          test "reclamps uncontrolled value"
+            apply_props_reclamps_uncontrolled_value;
         ];
       group "Virtual thumb sizing"
         [

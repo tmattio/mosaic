@@ -13,7 +13,9 @@ let items_equal = List.equal item_equal
 module Props = struct
   type t = {
     options : item list;
-    selected_index : int;
+    selected_index : int option;
+        (* [Some i] makes the selection controlled by props; [None] leaves the
+           widget's own selection untouched across prop updates. *)
     background : Ansi.Color.t;
     text_color : Ansi.Color.t;
     focused_background : Ansi.Color.t;
@@ -29,7 +31,7 @@ module Props = struct
     fast_scroll_step : int;
   }
 
-  let make ?(options = []) ?(selected_index = 0) ?background ?text_color
+  let make ?(options = []) ?selected_index ?background ?text_color
       ?focused_background ?focused_text_color
       ?(selected_background = Ansi.Color.of_rgb 51 68 85)
       ?(selected_text_color = Ansi.Color.of_rgb 255 255 0)
@@ -58,7 +60,7 @@ module Props = struct
     in
     {
       options;
-      selected_index = max 0 selected_index;
+      selected_index = Option.map (max 0) selected_index;
       background;
       text_color;
       focused_background;
@@ -78,7 +80,7 @@ module Props = struct
 
   let equal a b =
     items_equal a.options b.options
-    && Int.equal a.selected_index b.selected_index
+    && Option.equal Int.equal a.selected_index b.selected_index
     && Ansi.Color.equal a.background b.background
     && Ansi.Color.equal a.text_color b.text_color
     && Ansi.Color.equal a.focused_background b.focused_background
@@ -460,7 +462,8 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?options
       on_activate = None;
     }
   in
-  t.selected_index <- clamp_index t props.selected_index;
+  t.selected_index <-
+    clamp_index t (Option.value props.selected_index ~default:0);
   recalc_lines_per_item t;
   recalc_max_visible t (Renderable.height node);
   update_scroll_offset t;
@@ -481,11 +484,24 @@ let set_style t style = Renderable.set_style t.node style
 
 (* ───── Apply Props ───── *)
 
+(* Controlled application: move the selection without echoing [on_change] —
+   the value came from the app, not from a user gesture. *)
+let apply_selected_index t idx =
+  let len = option_count t in
+  if len > 0 then
+    let idx = clamp_index t idx in
+    if idx <> t.selected_index then begin
+      t.selected_index <- idx;
+      update_scroll_offset t;
+      request t
+    end
+
 let apply_props t (props : Props.t) =
   if not (items_equal (Array.to_list t.items) props.options) then
     set_options t props.options;
-  if props.selected_index <> t.selected_index then
-    set_selected_index t props.selected_index;
+  (match props.selected_index with
+  | Some idx -> apply_selected_index t idx
+  | None -> ());
   set_wrap_selection t props.wrap_selection;
   set_show_description t props.show_description;
   set_show_scroll_indicator t props.show_scroll_indicator;

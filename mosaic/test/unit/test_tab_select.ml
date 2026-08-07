@@ -284,6 +284,26 @@ let apply_props_updates () =
   is_true ~msg:"scheduled" (!(t.schedule_count) > before);
   equal ~msg:"index applied" int 3 (Tab_select.selected_index ts)
 
+let apply_props_preserves_uncontrolled_selection () =
+  let _t, ts = make_tab_select () in
+  Tab_select.set_selected ts 3;
+  let log = ref [] in
+  Tab_select.set_on_change ts (Some (fun i -> log := i :: !log));
+  Tab_select.apply_props ts
+    (Tab_select.Props.make ~options:sample_items ~wrap_selection:true ());
+  equal ~msg:"selection survives unrelated prop change" int 3
+    (Tab_select.selected_index ts);
+  equal ~msg:"no callback echo" (list int) [] !log
+
+let apply_props_controlled_selection_is_silent () =
+  let _t, ts = make_tab_select () in
+  let log = ref [] in
+  Tab_select.set_on_change ts (Some (fun i -> log := i :: !log));
+  Tab_select.apply_props ts
+    (Tab_select.Props.make ~options:sample_items ~selected:2 ());
+  equal ~msg:"controlled selection applied" int 2 (Tab_select.selected_index ts);
+  equal ~msg:"no callback echo" (list int) [] !log
+
 (* ── Rendering ── *)
 
 let render_tab_select ts ~width ~height =
@@ -380,7 +400,14 @@ let () =
           test "set_show_underline no-op" set_show_underline_noop;
           test "set_show_description no-op" set_show_description_noop;
         ];
-      group "apply_props" [ test "updates all properties" apply_props_updates ];
+      group "apply_props"
+        [
+          test "updates all properties" apply_props_updates;
+          test "preserves uncontrolled selection"
+            apply_props_preserves_uncontrolled_selection;
+          test "controlled selection is silent"
+            apply_props_controlled_selection_is_silent;
+        ];
       group "Rendering"
         [
           test "truncation keeps CJK graphemes intact"

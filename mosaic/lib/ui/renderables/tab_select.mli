@@ -109,7 +109,9 @@ module Props : sig
     unit ->
     t
   (** [make ~options ()] is a property set with the same defaults as
-      {!val-create}. *)
+      {!val-create}, except [selected]: when omitted, {!apply_props} preserves
+      the widget's own selection across prop updates; when provided, the
+      selection is controlled by props. *)
 
   val default : t
   (** [default] is [make ~options:[] ()]. *)
@@ -121,8 +123,8 @@ end
 
 val apply_props : t -> Props.t -> unit
 (** [apply_props t props] applies [props] to [t]. Individual property changes
-    trigger the minimum necessary layout and render updates. Fires
-    {!set_on_change} if the selected index changes. *)
+    trigger the minimum necessary layout and render updates. Never fires the
+    change callback; callbacks are reserved for user gestures. *)
 
 (** {1:options Options} *)
 

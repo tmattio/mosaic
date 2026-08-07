@@ -10,7 +10,9 @@ type orientation = [ `Horizontal | `Vertical ]
 module Props = struct
   type t = {
     orientation : orientation;
-    value : float;
+    value : float option;
+        (* [Some v] makes the value controlled by props; [None] leaves the
+           widget's own value untouched across prop updates. *)
     min : float;
     max : float;
     viewport_size : float;
@@ -21,7 +23,6 @@ module Props = struct
   let make ?(orientation = `Horizontal) ?value ?(min = 0.) ?(max = 100.)
       ?viewport_size ?(track_color = default_track_color)
       ?(thumb_color = default_thumb_color) () =
-    let value = match value with Some v -> v | None -> min in
     let viewport_size =
       match viewport_size with
       | Some v -> v
@@ -33,7 +34,7 @@ module Props = struct
 
   let equal a b =
     a.orientation = b.orientation
-    && Float.equal a.value b.value
+    && Option.equal Float.equal a.value b.value
     && Float.equal a.min b.min && Float.equal a.max b.max
     && Float.equal a.viewport_size b.viewport_size
     && Ansi.Color.equal a.track_color b.track_color
@@ -295,7 +296,9 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
     Props.make ~orientation ?value ~min ~max ?viewport_size ~track_color
       ~thumb_color ()
   in
-  let initial_value = clamp_value ~min ~max props.Props.value in
+  let initial_value =
+    clamp_value ~min ~max (Option.value props.Props.value ~default:min)
+  in
   let t =
     {
       node;
@@ -355,10 +358,15 @@ let set_on_change t f = t.on_change <- f
 
 (* Apply props *)
 
-let apply_props t props =
+let apply_props t (props : Props.t) =
   t.props <- props;
-  let clamped = clamp_value ~min:props.min ~max:props.max props.value in
-  t.value <- clamped;
+  (* Controlled when the value prop is provided; otherwise the widget's own
+     value survives unrelated prop updates, re-clamped to the new range.
+     Either way [on_change] stays silent: the value came from the app, not
+     from a user gesture. *)
+  (match props.value with
+  | Some v -> t.value <- clamp_value ~min:props.min ~max:props.max v
+  | None -> t.value <- clamp_value ~min:props.min ~max:props.max t.value);
   Renderable.request_render t.node
 
 (* Pretty-printing *)

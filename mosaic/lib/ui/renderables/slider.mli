@@ -67,7 +67,10 @@ module Props : sig
     ?thumb_color:Ansi.Color.t ->
     unit ->
     t
-  (** [make ()] is a property set. Defaults match {!create}. *)
+  (** [make ()] is a property set. Defaults match {!create}, except [value]:
+      when omitted, {!apply_props} preserves the widget's own value across prop
+      updates (re-clamped to the new range) instead of resetting it to [min];
+      when provided, the value is controlled by props. *)
 
   val default : t
   (** [default] is [make ()]. *)
@@ -78,9 +81,10 @@ module Props : sig
 end
 
 val apply_props : t -> Props.t -> unit
-(** [apply_props t props] replaces all properties at once and clamps the value
-    to the new range. Always triggers a re-render. Does {e not} fire
-    [on_change]. *)
+(** [apply_props t props] replaces all properties at once. When [props] carries
+    a value it becomes the new value; otherwise the current value is kept.
+    Either way the value is clamped to the new range. Always triggers a
+    re-render. Does {e not} fire [on_change]. *)
 
 (** {1:value Value} *)
 

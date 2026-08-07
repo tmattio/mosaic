@@ -81,7 +81,9 @@ module Props = struct
   type t = {
     columns : column list;
     rows : cell array list;
-    selected_row : int;
+    selected_row : int option;
+        (* [Some i] makes the selection controlled by props; [None] leaves the
+           widget's own selection untouched across prop updates. *)
     border : bool;
     border_style : Grid.Border.t;
     show_header : bool;
@@ -105,7 +107,7 @@ module Props = struct
     fast_scroll_step : int;
   }
 
-  let make ?(columns = []) ?(rows = []) ?(selected_row = 0) ?(border = true)
+  let make ?(columns = []) ?(rows = []) ?selected_row ?(border = true)
       ?(border_style = Grid.Border.single) ?(show_header = true)
       ?(show_column_separator = false) ?(show_row_separator = false)
       ?(cell_padding = 0) ?(header_color = Ansi.Color.of_rgb 255 255 255)
@@ -131,7 +133,7 @@ module Props = struct
     {
       columns;
       rows;
-      selected_row = max 0 selected_row;
+      selected_row = Option.map (max 0) selected_row;
       border;
       border_style;
       show_header;
@@ -166,7 +168,7 @@ module Props = struct
   let equal a b =
     columns_equal a.columns b.columns
     && rows_equal a.rows b.rows
-    && Int.equal a.selected_row b.selected_row
+    && Option.equal Int.equal a.selected_row b.selected_row
     && Bool.equal a.border b.border
     && a.border_style = b.border_style
     && Bool.equal a.show_header b.show_header
@@ -1033,7 +1035,8 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?columns ?rows
   let data_rows = Array.of_list props.rows in
   let initial_selected =
     let len = Array.length data_rows in
-    if len = 0 then 0 else max 0 (min (len - 1) props.selected_row)
+    if len = 0 then 0
+    else max 0 (min (len - 1) (Option.value props.selected_row ~default:0))
   in
   let t =
     {
@@ -1067,13 +1070,26 @@ let set_style t style = Renderable.set_style t.node style
 
 (* ───── Apply Props ───── *)
 
+(* Controlled application: move the selection without echoing [on_change] —
+   the value came from the app, not from a user gesture. *)
+let apply_selected_row t idx =
+  let len = row_count t in
+  if len > 0 then
+    let idx = clamp_index t idx in
+    if idx <> t.selected_row then begin
+      t.selected_row <- idx;
+      update_scroll_offset t;
+      request t
+    end
+
 let apply_props t (props : Props.t) =
   if not (columns_equal (Array.to_list t.col_specs) props.columns) then
     set_columns t props.columns;
   if not (rows_equal (Array.to_list t.data_rows) props.rows) then
     set_rows t props.rows;
-  if props.selected_row <> t.selected_row then
-    set_selected_row t props.selected_row;
+  (match props.selected_row with
+  | Some idx -> apply_selected_row t idx
+  | None -> ());
   set_border t props.border;
   set_border_style t props.border_style;
   set_show_header t props.show_header;

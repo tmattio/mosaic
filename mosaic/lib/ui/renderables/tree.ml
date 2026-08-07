@@ -18,7 +18,9 @@ and items_equal xs ys =
 module Props = struct
   type t = {
     items : item list;
-    selected_index : int;
+    selected_index : int option;
+        (* [Some i] makes the selection controlled by props; [None] leaves the
+           widget's own selection untouched across prop updates. *)
     expand_depth : int;
     indent_size : int;
     show_guides : bool;
@@ -38,11 +40,10 @@ module Props = struct
     fast_scroll_step : int;
   }
 
-  let make ?(items = []) ?(selected_index = 0) ?(expand_depth = 0)
-      ?(indent_size = 2) ?(show_guides = false)
-      ?(guide_style = Grid.Border.single) ?(expand_icon = "\xe2\x96\xb6")
-      ?(collapse_icon = "\xe2\x96\xbc") ?(leaf_icon = " ")
-      ?(background = Ansi.Color.of_rgba 0 0 0 0)
+  let make ?(items = []) ?selected_index ?(expand_depth = 0) ?(indent_size = 2)
+      ?(show_guides = false) ?(guide_style = Grid.Border.single)
+      ?(expand_icon = "\xe2\x96\xb6") ?(collapse_icon = "\xe2\x96\xbc")
+      ?(leaf_icon = " ") ?(background = Ansi.Color.of_rgba 0 0 0 0)
       ?(text_color = Ansi.Color.of_rgb 255 255 255)
       ?(selected_background = Ansi.Color.of_rgb 51 68 85)
       ?(selected_text_color = Ansi.Color.of_rgb 255 255 0)
@@ -62,7 +63,7 @@ module Props = struct
     in
     {
       items;
-      selected_index = max 0 selected_index;
+      selected_index = Option.map (max 0) selected_index;
       expand_depth;
       indent_size = max 1 indent_size;
       show_guides;
@@ -86,7 +87,7 @@ module Props = struct
 
   let equal a b =
     items_equal a.items b.items
-    && Int.equal a.selected_index b.selected_index
+    && Option.equal Int.equal a.selected_index b.selected_index
     && Int.equal a.expand_depth b.expand_depth
     && Int.equal a.indent_size b.indent_size
     && Bool.equal a.show_guides b.show_guides
@@ -690,7 +691,8 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?items
   in
   init_expansion t ~expand_depth:props.expand_depth;
   recompute_visible t;
-  t.selected_index <- clamp_index t props.selected_index;
+  t.selected_index <-
+    clamp_index t (Option.value props.selected_index ~default:0);
   recalc_max_visible t (Renderable.height rnode);
   update_scroll_offset t;
   Renderable.set_render rnode (render t);
@@ -708,10 +710,23 @@ let set_style t style = Renderable.set_style t.node style
 
 (* ───── Apply Props ───── *)
 
+(* Controlled application: move the selection without echoing [on_change] —
+   the value came from the app, not from a user gesture. *)
+let apply_selected_index t idx =
+  let len = visible_count t in
+  if len > 0 then
+    let idx = clamp_index t idx in
+    if idx <> t.selected_index then begin
+      t.selected_index <- idx;
+      update_scroll_offset t;
+      request t
+    end
+
 let apply_props t (props : Props.t) =
   if not (items_equal t.tree_items props.items) then set_items t props.items;
-  if props.selected_index <> t.selected_index then
-    set_selected_index t props.selected_index;
+  (match props.selected_index with
+  | Some idx -> apply_selected_index t idx
+  | None -> ());
   if props.expand_depth <> t.props.expand_depth then (
     t.props <- { t.props with expand_depth = props.expand_depth };
     init_expansion t ~expand_depth:props.expand_depth;

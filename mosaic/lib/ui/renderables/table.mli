@@ -192,8 +192,11 @@ module Props : sig
   (** [make ()] is a property set with:
       - [columns] the column specification list. Defaults to [[]].
       - [rows] the data rows, each a [cell array]. Defaults to [[]].
-      - [selected_row] the initial selection index, clamped to the valid range.
-        Defaults to [0].
+      - [selected_row] the app-controlled selection index, clamped to the valid
+        range. When provided, {!apply_props} moves the selection to it without
+        firing the change callback; when omitted, the widget's own selection
+        survives prop updates. {!val-create} uses it as the initial selection,
+        defaulting to [0].
       - [border] enables the outer border and header separator. Defaults to
         [true].
       - [border_style] the border character set. Defaults to
@@ -243,7 +246,8 @@ end
 
 val apply_props : t -> Props.t -> unit
 (** [apply_props t props] applies [props] to [t], triggering the minimum
-    necessary layout and render updates. *)
+    necessary layout and render updates. Never fires the change callback;
+    callbacks are reserved for user gestures. *)
 
 (** {1:data Data} *)
 
