@@ -68,7 +68,7 @@ type context = {
 and node = {
   ctx : context;
   toffee_node : Toffee.Node_id.t;
-  id : string;
+  mutable id : string;
   num : int;
   mutable destroyed : bool;
   (* Layout *)
@@ -358,6 +358,7 @@ let apply_initial_visibility t =
 (* ───── Identity ───── *)
 
 let id t = t.id
+let set_id t id = t.id <- id
 let parent t = t.parent
 
 let children t =

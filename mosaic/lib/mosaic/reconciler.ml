@@ -202,6 +202,15 @@ let create_instance ~(parent : Renderable.t) (kind : Vnode.kind)
 let update_common (node : Renderable.t) ~(old_attrs : Vnode.attrs)
     ~(new_attrs : Vnode.attrs) : bool =
   let changed = ref false in
+  (* Ids address nodes (Cmd.focus resolves by Renderable.id), so a reused
+     fiber must track them: a stale id would make focus targeting miss an
+     element that visibly renders the new id. Dropping the id reverts to the
+     creation default. No render is needed — ids are not visual. *)
+  if old_attrs.id <> new_attrs.id then
+    Renderable.set_id node
+      (match new_attrs.id with
+      | Some id -> id
+      | None -> Printf.sprintf "node-%d" (Renderable.Private.num node));
   if old_attrs.visible <> new_attrs.visible then (
     Renderable.set_visible node new_attrs.visible;
     changed := true);

@@ -564,3 +564,42 @@ let%expect_test "a mouse press consumed by a widget skips on_mouse" =
 |
 |keys:[M,m] ticks:0 size:- note:-
 ||}]
+
+let%expect_test "Cmd.focus lands on a reused element whose id changed" =
+  (* A fiber reused across renders must track its id attr: with the stale id,
+     focus addressed at the new id never lands even though the element
+     visibly renders it. The focused input's cursor becoming visible is the
+     witness that focus landed. *)
+  let base =
+    app ~subs:(fun _ -> Mosaic.Sub.on_key (fun _ -> Some (Note "x"))) ()
+  in
+  let application =
+    {
+      base with
+      Mosaic.update =
+        (fun msg model ->
+          match msg with
+          | Note note ->
+              ({ model with note }, Mosaic.Cmd.focus ("field-" ^ note))
+          | msg -> update msg model);
+      Mosaic.view =
+        (fun model ->
+          Mosaic.box
+            [
+              Mosaic.input ~id:("field-" ^ model.note)
+                ~size:(Mosaic.size ~width:10 ~height:1)
+                ();
+              base.Mosaic.view model;
+            ]);
+    }
+  in
+  drive ~height:3 application
+    [
+      `Feed "x";
+      `Run
+        (fun t ->
+          Printf.printf "cursor shown after focus: %b\n"
+            (Option.is_some
+               (substring_index "\027[?25h" (Matrix_test.output t))));
+    ];
+  [%expect {|cursor shown after focus: true|}]

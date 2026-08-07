@@ -346,6 +346,24 @@ let rerender_updates_opacity () =
   do_frame renderer;
   is_true ~msg:"opacity" (Float.equal (Renderable.opacity node) 0.5)
 
+let rerender_updates_id () =
+  (* Ids are how Cmd.focus addresses nodes: a reused fiber must track a
+     changed id attr rather than keep the one it was created with. *)
+  let renderer, reconciler = make () in
+  render_view reconciler (Vnode.box ~id:"first" []);
+  do_frame renderer;
+  let node = List.hd (children_of renderer) in
+  equal ~msg:"initial id" string "first" (Renderable.id node);
+  render_view reconciler (Vnode.box ~id:"second" []);
+  do_frame renderer;
+  is_true ~msg:"node reused" (List.hd (children_of renderer) == node);
+  equal ~msg:"updated id" string "second" (Renderable.id node);
+  render_view reconciler (Vnode.box []);
+  do_frame renderer;
+  equal ~msg:"dropped id reverts to the default" string
+    (Printf.sprintf "node-%d" (Renderable.Private.num node))
+    (Renderable.id node)
+
 let controlled_input_reapplies_equal_value () =
   let renderer, reconciler = make () in
   let inputs = ref [] in
@@ -753,6 +771,7 @@ let () =
           test "updates visibility" rerender_updates_visibility;
           test "updates z_index" rerender_updates_z_index;
           test "updates opacity" rerender_updates_opacity;
+          test "updates id" rerender_updates_id;
           test "controlled input reapplies equal value"
             controlled_input_reapplies_equal_value;
           test "controlled textarea reapplies equal value"

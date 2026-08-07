@@ -115,6 +115,10 @@ val destroyed : t -> bool
 val id : t -> string
 (** [id t] is [t]'s string identifier. *)
 
+val set_id : t -> string -> unit
+(** [set_id t id] replaces [t]'s string identifier. Hosts that address nodes by
+    id (e.g. focus targeting) observe the new value immediately. *)
+
 val parent : t -> t option
 (** [parent t] is [t]'s parent, or [None] if [t] is detached or a root. *)
 
