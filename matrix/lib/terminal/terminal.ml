@@ -62,6 +62,12 @@ type t = {
   mutable kitty_keyboard_flags : int;
   mutable modify_other_keys_enabled : bool;
   mutable unicode_mode_enabled : bool;
+  (* [*_armed] is not a duplicate of [*_enabled]: armed is set {e before} the
+     enable sequence is written, enabled only after. When the output callback
+     raises mid-enable the sequence may have reached the terminal even though
+     the enable never completed — [reset_state] keys its disable sequences off
+     armed so a partially-enabled protocol is still unwound, while the
+     [*_enabled] accessors keep reporting the confirmed steady state. *)
   mutable mouse_armed : bool;
   mutable bracketed_paste_armed : bool;
   mutable focus_armed : bool;
