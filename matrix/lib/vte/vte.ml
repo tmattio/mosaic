@@ -716,17 +716,15 @@ let switch_to_alternate t save_cursor =
 let switch_to_primary t restore_cursor =
   if t.active_grid == t.alternate then (
     t.active_grid <- t.primary;
-    (if restore_cursor then
-       match t.saved_cursor with
-       | Some (row, col, visible) ->
-           t.cursor.row <- row;
-           t.cursor.col <- col;
-           t.cursor.visible <- visible;
-           mark_cursor_dirty t
-       | None -> (
-           match t.saved_style with
-           | Some style -> t.style <- style
-           | None -> ()));
+    if restore_cursor then (
+      (match t.saved_cursor with
+      | Some (row, col, visible) ->
+          t.cursor.row <- row;
+          t.cursor.col <- col;
+          t.cursor.visible <- visible;
+          mark_cursor_dirty t
+      | None -> ());
+      match t.saved_style with Some style -> t.style <- style | None -> ());
     mark_rows_dirty t 0 (t.rows - 1))
 
 (* ANSI modes ([CSI Pm h/l]). *)
@@ -898,12 +896,13 @@ let handle_control t ctrl =
       t.saved_cursor <- Some (t.cursor.row, t.cursor.col, t.cursor.visible);
       t.saved_style <- Some t.style
   | Ansi.Parser.DECRC -> (
-      match t.saved_cursor with
+      (* DECRC restores the cursor AND the SGR state saved by DECSC. *)
+      (match t.saved_cursor with
       | Some (row, col, visible) ->
           set_cursor_pos t ~row ~col;
           set_cursor_visible t visible
-      | None -> (
-          match t.saved_style with Some style -> t.style <- style | None -> ()))
+      | None -> ());
+      match t.saved_style with Some style -> t.style <- style | None -> ())
   | Ansi.Parser.RI ->
       if t.cursor.row = t.scroll_region.top then scroll_down t 1
       else set_cursor_pos t ~row:(t.cursor.row - 1) ~col:t.cursor.col

@@ -305,6 +305,22 @@ let cursor_save_restore () =
   let pos2 = Vte.cursor_pos vte in
   equal ~msg:"cursor restored" (pair int int) pos1 pos2
 
+let cursor_save_restore_style () =
+  (* DECRC restores the SGR state saved by DECSC, not just the cursor. *)
+  let vte = Vte.create ~rows:3 ~cols:20 () in
+  Vte.feed_string vte "\x1b[31m\x1b7\x1b[0m\x1b8X";
+  let r, _, _ = Grid.get_fg (Vte.grid vte) 0 |> Ansi.Color.to_rgb in
+  equal ~msg:"DECRC restores saved SGR" int 128 r
+
+let alternate_screen_restores_style () =
+  (* Leaving the alternate screen (DECRST 1049) restores the SGR state saved
+     on entry, so a full-screen app can't leak its last style. *)
+  let vte = Vte.create ~rows:3 ~cols:20 () in
+  Vte.feed_string vte "\x1b[31m\x1b[?1049h\x1b[0m\x1b[?1049lX";
+  is_false ~msg:"back on primary screen" (Vte.is_alternate_screen vte);
+  let r, _, _ = Grid.get_fg (Vte.grid vte) 0 |> Ansi.Color.to_rgb in
+  equal ~msg:"1049 exit restores saved SGR" int 128 r
+
 (** {1 Scrolling} *)
 
 let scroll_up_basic () =
@@ -674,6 +690,8 @@ let tests =
     test "cursor hide/show" cursor_hide_show;
     test "set cursor visible" set_cursor_visible_programmatic;
     test "cursor save/restore" cursor_save_restore;
+    test "cursor save/restore style" cursor_save_restore_style;
+    test "alternate screen restores style" alternate_screen_restores_style;
     test "scroll up basic" scroll_up_basic;
     test "scroll down basic" scroll_down_basic;
     test "CSI scroll sequences" csi_scroll_sequences;
