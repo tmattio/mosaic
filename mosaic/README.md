@@ -142,7 +142,7 @@ text ~fragments:[
 
 ## Examples
 
-24 examples and 3 showcase applications. Run any example from the repo root:
+25 examples and 4 showcase applications. Run any example from the repo root:
 
 ```bash
 dune exec ./mosaic/examples/<name>/main.exe
