@@ -200,6 +200,40 @@ let render_code_takes_precedence_over_code_syntax () =
   is_true ~msg:"render_code used" !render_code_used;
   is_false ~msg:"code_syntax not used" !code_syntax_used
 
+(* ── Incremental updates ── *)
+
+let apply_props_same_content_no_rerender () =
+  let t, md = make_md ~content:"# Hello\n\nWorld" () in
+  let props = Markdown.Props.make ~content:"# Hello\n\nWorld" () in
+  let before = !(t.schedule_count) in
+  Markdown.apply_props md props;
+  equal ~msg:"no schedule for an unchanged update" int before
+    !(t.schedule_count)
+
+let streaming_append_reuses_prefix_blocks () =
+  (* Quote, list, and highlighted code blocks in the unchanged prefix must
+     keep their widgets across a streaming append; only the tail may change. *)
+  let hook ~language:_ ~content:_ = None in
+  let base =
+    "> quoted\n\n- item one\n- item two\n\n```ocaml\nlet x = 1\n```\n\ntail"
+  in
+  let _t, md = make_md ~content:base ~streaming:true ~code_syntax:hook () in
+  let before = Renderable.children (Markdown.node md) in
+  Markdown.apply_props md
+    (Markdown.Props.make
+       ~content:(base ^ " more\n\nanother paragraph")
+       ~streaming:true ~code_syntax:hook ());
+  let after = Renderable.children (Markdown.node md) in
+  equal ~msg:"one block appended" int
+    (List.length before + 1)
+    (List.length after);
+  match (before, after) with
+  | b0 :: b1 :: b2 :: _, a0 :: a1 :: a2 :: _ ->
+      is_true ~msg:"quote widget reused" (b0 == a0);
+      is_true ~msg:"list widget reused" (b1 == a1);
+      is_true ~msg:"code widget reused" (b2 == a2)
+  | _ -> fail "expected at least three blocks"
+
 let pp_does_not_crash () =
   let _t, md = make_md ~content:"# Hello\n\nWorld" () in
   let buf = Buffer.create 64 in
@@ -252,5 +286,12 @@ let () =
           test "render_code takes precedence over code_syntax"
             render_code_takes_precedence_over_code_syntax;
           test "pp does not crash" pp_does_not_crash;
+        ];
+      group "Incremental updates"
+        [
+          test "unchanged apply_props does not re-render"
+            apply_props_same_content_no_rerender;
+          test "streaming append reuses prefix blocks"
+            streaming_append_reuses_prefix_blocks;
         ];
     ]

@@ -106,8 +106,20 @@ type widget =
   | Text_widget of Text.t
   | Box_widget of Box.t * widget list
   | Container_widget of Renderable.t * widget list
+  | Code_widget of Code.t
 
-type tagged_block = { mutable tag : block_tag; mutable widget : widget }
+type tagged_block = {
+  mutable tag : block_tag;
+  mutable widget : widget;
+  mutable ast : Cmarkit.Block.t;
+      (* The block this widget was rendered from. Its textloc identifies the
+         source bytes so unchanged prefix blocks can be reused verbatim on
+         streaming appends. *)
+}
+
+(* Placeholder for tagged blocks not backed by a parsed block (the raw-text
+   fallback). Compared physically to skip them in re-render passes. *)
+let empty_ast : Cmarkit.Block.t = Cmarkit.Block.empty
 
 (* ───── Render Environment ───── *)
 
@@ -150,7 +162,6 @@ type t = {
   mutable on_selection : (string option -> unit) option;
   mutable blocks : tagged_block list;
   mutable last_defs : Cmarkit.Label.defs;
-  mutable last_ast_blocks : Cmarkit.Block.t list;
   render_node :
     (Cmarkit.Block.t ->
     parent:Renderable.t ->
@@ -174,6 +185,7 @@ let rec selected_text_of_widget acc = function
   | Text_widget text ->
       let selected = String.trim (Text.selected_text text) in
       if String.equal selected "" then acc else selected :: acc
+  | Code_widget _ -> acc
   | Box_widget (_, children) | Container_widget (_, children) ->
       List.fold_left selected_text_of_widget acc children
 
@@ -415,7 +427,7 @@ let render_paragraph ~(env : render_env) ~parent ?index ~is_last
     create_text ~env ~parent ?index ~style:(block_style ~is_last) ~wrap:`Word ()
   in
   Text.set_styled_text text spans;
-  { tag = Para_tag; widget = Text_widget text }
+  { tag = Para_tag; widget = Text_widget text; ast = empty_ast }
 
 let render_heading ~(env : render_env) ~parent ?index ~is_last
     (h : Cmarkit.Block.Heading.t) =
@@ -439,7 +451,7 @@ let render_heading ~(env : render_env) ~parent ?index ~is_last
     create_text ~env ~parent ?index ~style:(block_style ~is_last) ~wrap:`Word ()
   in
   Text.set_styled_text text spans;
-  { tag = Head_tag; widget = Text_widget text }
+  { tag = Head_tag; widget = Text_widget text; ast = empty_ast }
 
 let render_code_block_default ~(env : render_env) ~parent ?index ~is_last
     (cb : Cmarkit.Block.Code_block.t) =
@@ -462,7 +474,11 @@ let render_code_block_default ~(env : render_env) ~parent ?index ~is_last
            ())
       ()
   in
-  { tag = Code_tag; widget = Box_widget (box, [ Text_widget text ]) }
+  {
+    tag = Code_tag;
+    widget = Box_widget (box, [ Text_widget text ]);
+    ast = empty_ast;
+  }
 
 (* Render a fenced code block as a borderless {!Code} view, using the syntax
    configuration returned by the [code_syntax] hook. *)
@@ -474,7 +490,7 @@ let render_code_highlighted ~parent ?index ~is_last code_syntax
   let code =
     Code.create ~parent ?index ~content ?syntax ~style:(block_style ~is_last) ()
   in
-  { tag = Code_tag; widget = Container_widget (Code.node code, []) }
+  { tag = Code_tag; widget = Code_widget code; ast = empty_ast }
 
 let render_thematic_break ~(env : render_env) ~parent ?index ~is_last
     (_tb : Cmarkit.Block.Thematic_break.t) =
@@ -484,7 +500,7 @@ let render_thematic_break ~(env : render_env) ~parent ?index ~is_last
       ~content:"───────────────────────────────────────" ~text_style:hr_style
       ~style:(block_style ~is_last) ~truncate:true ()
   in
-  { tag = Hr_tag; widget = Text_widget text }
+  { tag = Hr_tag; widget = Text_widget text; ast = empty_ast }
 
 let render_html_block ~(env : render_env) ~parent ?index ~is_last
     (lines : Cmarkit.Block.Html_block.t) =
@@ -495,7 +511,7 @@ let render_html_block ~(env : render_env) ~parent ?index ~is_last
     create_text ~env ~parent ?index ~content:text_content
       ~text_style:(env.style Default) ~style:(block_style ~is_last) ()
   in
-  { tag = Html_tag; widget = Text_widget text }
+  { tag = Html_tag; widget = Text_widget text; ast = empty_ast }
 
 let rec render_list ~(env : render_env) ~parent ?index ~is_last
     (lst : Cmarkit.Block.List'.t) =
@@ -521,7 +537,11 @@ let rec render_list ~(env : render_env) ~parent ?index ~is_last
           ~list_type ~index:i item)
       items
   in
-  { tag = List_tag; widget = Container_widget (container, item_widgets) }
+  {
+    tag = List_tag;
+    widget = Container_widget (container, item_widgets);
+    ast = empty_ast;
+  }
 
 and render_list_item ~(env : render_env) ~parent ~is_last ~tight ~list_type
     ~index (item : Cmarkit.Block.List_item.t) =
@@ -612,6 +632,7 @@ and render_blockquote ~(env : render_env) ~parent ?index ~is_last
   {
     tag = Quote_tag;
     widget = Box_widget (box, List.map (fun tb -> tb.widget) children);
+    ast = empty_ast;
   }
 
 and render_table ~(env : render_env) ~parent ?index ~is_last
@@ -641,7 +662,7 @@ and render_table ~(env : render_env) ~parent ?index ~is_last
       create_text ~env ~parent ?index ~content:"" ~style:(block_style ~is_last)
         ()
     in
-    { tag = Table_tag; widget = Text_widget text }
+    { tag = Table_tag; widget = Text_widget text; ast = empty_ast }
   end
   else
     let border_style = env.style Table_border in
@@ -761,10 +782,20 @@ and render_table ~(env : render_env) ~parent ?index ~is_last
           in
           Box_widget (col_box, header_widget @ row_widgets))
     in
-    { tag = Table_tag; widget = Container_widget (table_box, col_widgets) }
+    {
+      tag = Table_tag;
+      widget = Container_widget (table_box, col_widgets);
+      ast = empty_ast;
+    }
 
 (* Dispatch a single block to the appropriate renderer, checking hooks first *)
 and render_block ~(env : render_env) ~parent ?index ~is_last
+    (block : Cmarkit.Block.t) : tagged_block option =
+  let tb = render_block_dispatch ~env ~parent ?index ~is_last block in
+  Option.iter (fun tb -> tb.ast <- block) tb;
+  tb
+
+and render_block_dispatch ~(env : render_env) ~parent ?index ~is_last
     (block : Cmarkit.Block.t) : tagged_block option =
   (* 1. Full code block override *)
   match (env.render_code, block) with
@@ -772,7 +803,12 @@ and render_block ~(env : render_env) ~parent ?index ~is_last
       let language = code_block_language cb in
       let content = code_block_text cb in
       let custom_node = render_code ~parent ~language ~content in
-      Some { tag = Code_tag; widget = Container_widget (custom_node, []) }
+      Some
+        {
+          tag = Code_tag;
+          widget = Container_widget (custom_node, []);
+          ast = empty_ast;
+        }
   | _ -> (
       (* 2. Highlighted code block *)
       match (env.code_syntax, block) with
@@ -789,7 +825,11 @@ and general_render ~(env : render_env) ~parent ?index ~is_last block =
         match hook block ~parent ~is_last with
         | Some custom_node ->
             Some
-              { tag = Custom_tag; widget = Container_widget (custom_node, []) }
+              {
+                tag = Custom_tag;
+                widget = Container_widget (custom_node, []);
+                ast = empty_ast;
+              }
         | None -> None)
     | None -> None
   in
@@ -832,6 +872,7 @@ and render_block_default ~(env : render_env) ~parent ?index ~is_last
             widget =
               Container_widget
                 (container, List.map (fun tb -> tb.widget) children);
+            ast = empty_ast;
           }
   | Cmarkit.Block.Blank_line _ | Cmarkit.Block.Link_reference_definition _
   | Cmarkit.Block.Ext_footnote_definition _ ->
@@ -911,6 +952,19 @@ let update_leaf_in_place ~(env : render_env) ~is_last (tb : tagged_block)
       Box.set_border_color box Ansi.Color.white;
       Renderable.set_style (Box.node box) (block_style ~is_last);
       true
+  | Code_tag, Cmarkit.Block.Code_block (cb, _), Code_widget code
+    when Option.is_none env.render_code -> (
+      match env.code_syntax with
+      | Some code_syntax ->
+          let content = code_block_text cb in
+          let language = code_block_language cb in
+          let syntax = code_syntax ~language ~content in
+          (* Code.apply_props reconciles content and syntax in place, so the
+             widget's streaming anti-flash state survives the update. *)
+          Code.apply_props code (Code.Props.make ~content ?syntax ());
+          Renderable.set_style (Code.node code) (block_style ~is_last);
+          true
+      | None -> false)
   | Hr_tag, Cmarkit.Block.Thematic_break _, Text_widget text ->
       Text.set_text_style text (env.style Thematic_break);
       Renderable.set_style (Text.node text) (block_style ~is_last);
@@ -929,6 +983,7 @@ let update_leaf_in_place ~(env : render_env) ~is_last (tb : tagged_block)
 
 let rec destroy_widget = function
   | Text_widget text -> Renderable.destroy_recursively (Text.node text)
+  | Code_widget code -> Renderable.destroy_recursively (Code.node code)
   | Box_widget (box, children) ->
       List.iter destroy_widget children;
       Renderable.destroy_recursively (Box.node box)
@@ -987,7 +1042,51 @@ let render_env t defs =
 
 (* ───── Reconciliation ───── *)
 
-let reconcile_blocks ~(env : render_env) ~parent old_blocks new_ast_blocks =
+let block_textloc block =
+  match Cmarkit.Block.meta block with
+  | meta -> Cmarkit.Meta.textloc meta
+  | exception Invalid_argument _ -> Cmarkit.Textloc.none
+
+(* [same_source_block ~unchanged_prefix old new_block] is [true] when
+   [new_block] denotes exactly the byte range [old] was rendered from and that
+   range lies entirely within the prefix of the content that did not change.
+   Such a block cannot render differently, so its widget is reused verbatim. *)
+let same_source_block ~unchanged_prefix old_block new_block =
+  let otl = block_textloc old_block in
+  let ntl = block_textloc new_block in
+  (not (Cmarkit.Textloc.is_none otl))
+  && (not (Cmarkit.Textloc.is_none ntl))
+  && Cmarkit.Textloc.first_byte otl = Cmarkit.Textloc.first_byte ntl
+  && Cmarkit.Textloc.last_byte otl = Cmarkit.Textloc.last_byte ntl
+  && Cmarkit.Textloc.last_byte ntl < unchanged_prefix
+
+(* Link reference definitions are resolved document-wide, so prefix blocks may
+   only be reused when the definitions their links resolve against are
+   unchanged. Rendering uses a definition's destination only. *)
+let defs_compatible a b =
+  let dest = function
+    | Cmarkit.Link_definition.Def (ld, _) ->
+        Some (Option.map fst (Cmarkit.Link_definition.dest ld))
+    | _ -> None
+  in
+  Cmarkit.Label.Map.equal
+    (fun da db ->
+      match (dest da, dest db) with
+      | Some da, Some db -> Option.equal String.equal da db
+      | _ -> false)
+    a b
+
+let common_prefix_length a b =
+  let n = Stdlib.min (String.length a) (String.length b) in
+  let i = ref 0 in
+  while !i < n && String.unsafe_get a !i = String.unsafe_get b !i do
+    incr i
+  done;
+  !i
+
+let reconcile_blocks ~(env : render_env) ~reusable ~parent old_blocks
+    new_ast_blocks =
+  let total_old = List.length old_blocks in
   let total_new = List.length new_ast_blocks in
   let rec go i child_idx olds news =
     match (olds, news) with
@@ -1005,8 +1104,19 @@ let reconcile_blocks ~(env : render_env) ~parent old_blocks new_ast_blocks =
     | old :: olds_rest, new_block :: news_rest ->
         let new_tag = tag_of_block new_block in
         let is_last = i = total_new - 1 in
-        if old.tag = new_tag && update_leaf_in_place ~env ~is_last old new_block
-        then old :: go (i + 1) (child_idx + 1) olds_rest news_rest
+        let was_last = i = total_old - 1 in
+        if is_last = was_last && reusable old new_block then begin
+          (* Unchanged source, unchanged margin: keep the widget untouched.
+             Refresh the stored ast so the next parse's textlocs compare. *)
+          old.ast <- new_block;
+          old :: go (i + 1) (child_idx + 1) olds_rest news_rest
+        end
+        else if
+          old.tag = new_tag && update_leaf_in_place ~env ~is_last old new_block
+        then begin
+          old.ast <- new_block;
+          old :: go (i + 1) (child_idx + 1) olds_rest news_rest
+        end
         else begin
           destroy_widget old.widget;
           let tb =
@@ -1020,17 +1130,29 @@ let reconcile_blocks ~(env : render_env) ~parent old_blocks new_ast_blocks =
 
 (* ───── Content Update ───── *)
 
-let update_blocks t =
-  let doc = Cmarkit.Doc.of_string ~strict:false t.content in
+(* [update_blocks ?old_content t] reparses [t.content] and reconciles the
+   widget list. [old_content] is the previous content when only the content
+   changed (presentation props untouched): blocks whose source bytes lie in
+   the unchanged prefix are then reused without touching their widgets, so a
+   streaming append re-renders only the tail. *)
+let update_blocks ?old_content t =
+  let doc = Cmarkit.Doc.of_string ~locs:true ~strict:false t.content in
   let defs = Cmarkit.Doc.defs doc in
   let block = Cmarkit.Doc.block doc in
   let block = Cmarkit.Block.normalize block in
   let new_ast_blocks = renderable_blocks block in
+  let reusable =
+    match old_content with
+    | Some old_content when defs_compatible t.last_defs defs ->
+        let unchanged_prefix = common_prefix_length old_content t.content in
+        fun old_tb new_block ->
+          same_source_block ~unchanged_prefix old_tb.ast new_block
+    | Some _ | None -> fun _ _ -> false
+  in
   t.last_defs <- defs;
-  t.last_ast_blocks <- new_ast_blocks;
   let env = render_env t defs in
   let new_blocks =
-    reconcile_blocks ~env ~parent:t.node t.blocks new_ast_blocks
+    reconcile_blocks ~env ~reusable ~parent:t.node t.blocks new_ast_blocks
   in
   t.blocks <- new_blocks;
   (* Fallback: if parse produced no blocks but content is non-empty, render
@@ -1041,33 +1163,30 @@ let update_blocks t =
         ~style:(block_style ~is_last:true)
         ~wrap:`Word ()
     in
-    t.blocks <- [ { tag = Para_tag; widget = Text_widget text } ]
+    t.blocks <-
+      [ { tag = Para_tag; widget = Text_widget text; ast = empty_ast } ]
   end;
   Renderable.request_render t.node
 
-(* Re-render existing blocks with new style/conceal without re-parsing. *)
+(* Re-render existing blocks with new style/conceal without re-parsing. The
+   raw-text fallback block carries no parsed ast and is left as is. *)
 let rerender_blocks t =
   let env = render_env t t.last_defs in
   let total = List.length t.blocks in
-  let ast_blocks = t.last_ast_blocks in
-  let rec go i blocks ast =
-    match (blocks, ast) with
-    | [], _ | _, [] -> ()
-    | tb :: blocks_rest, ast_block :: ast_rest ->
+  List.iteri
+    (fun i tb ->
+      if tb.ast != empty_ast then begin
         let is_last = i = total - 1 in
-        if not (update_leaf_in_place ~env ~is_last tb ast_block) then begin
+        if not (update_leaf_in_place ~env ~is_last tb tb.ast) then begin
           destroy_widget tb.widget;
-          match
-            render_block ~env ~parent:t.node ~index:i ~is_last ast_block
-          with
+          match render_block ~env ~parent:t.node ~index:i ~is_last tb.ast with
           | Some new_tb ->
               tb.tag <- new_tb.tag;
               tb.widget <- new_tb.widget
           | None -> ()
-        end;
-        go (i + 1) blocks_rest ast_rest
-  in
-  go 0 t.blocks ast_blocks;
+        end
+      end)
+    t.blocks;
   Renderable.request_render t.node
 
 (* ───── Construction ───── *)
@@ -1101,7 +1220,6 @@ let create ~parent ?index ?id ?(layout_style = column_style) ?visible ?z_index
       on_selection;
       blocks = [];
       last_defs = Cmarkit.Label.Map.empty;
-      last_ast_blocks = [];
       render_node;
       render_code;
       code_syntax;
@@ -1124,17 +1242,22 @@ let set_layout_style t style =
 
 let set_content t s =
   if not (String.equal t.content s) then begin
+    let old_content = t.content in
     t.content <- s;
-    update_blocks t
+    update_blocks ~old_content t
   end
 
 let set_style t f =
-  t.style <- f;
-  if t.blocks <> [] then rerender_blocks t else update_blocks t
+  if t.style != f then begin
+    t.style <- f;
+    if t.blocks <> [] then rerender_blocks t else update_blocks t
+  end
 
 let set_code_syntax t f =
-  t.code_syntax <- f;
-  if t.blocks <> [] then rerender_blocks t else update_blocks t
+  if not (Option.equal ( == ) t.code_syntax f) then begin
+    t.code_syntax <- f;
+    if t.blocks <> [] then rerender_blocks t else update_blocks t
+  end
 
 let set_conceal t v =
   if t.conceal <> v then begin
@@ -1150,6 +1273,7 @@ let set_streaming t v =
 
 let rec apply_selection_to_widget env = function
   | Text_widget text -> configure_text env text
+  | Code_widget _ -> ()
   | Box_widget (_, children) | Container_widget (_, children) ->
       List.iter (apply_selection_to_widget env) children
 
@@ -1182,14 +1306,30 @@ let set_on_selection t f =
 (* ───── Props Application ───── *)
 
 let apply_props t (props : Props.t) =
-  set_style t props.style;
-  set_code_syntax t props.code_syntax;
-  set_conceal t props.conceal;
-  set_streaming t props.streaming;
+  (* Collapse every change into at most one pass over the blocks: a content
+     append must not pay for unconditional style re-renders, and a combined
+     change must not re-render twice. *)
+  let presentation_changed =
+    t.style != props.style
+    || (not (Option.equal ( == ) t.code_syntax props.code_syntax))
+    || t.conceal <> props.conceal
+    || t.streaming <> props.streaming
+  in
+  let content_changed = not (String.equal t.content props.content) in
+  let old_content = t.content in
+  t.style <- props.style;
+  t.code_syntax <- props.code_syntax;
+  t.conceal <- props.conceal;
+  t.streaming <- props.streaming;
+  t.content <- props.content;
   set_selectable t props.selectable;
   set_selection_bg t props.selection_bg;
   set_selection_fg t props.selection_fg;
-  set_content t props.content
+  if content_changed then
+    if presentation_changed then update_blocks t
+    else update_blocks ~old_content t
+  else if presentation_changed then
+    if t.blocks <> [] then rerender_blocks t else update_blocks t
 
 (* ───── Pretty-printing ───── *)
 
