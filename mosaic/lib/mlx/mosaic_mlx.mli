@@ -551,7 +551,7 @@ val line_number :
   ?children:'msg t list ->
   unit ->
   'msg t
-(** Like {!Mosaic.line_number}. Pass the wrapped element (e.g. a {!val-code})
-    as a single-item list.
+(** Like {!Mosaic.line_number}. Pass the wrapped element (e.g. a {!val-code}) as
+    a single-item list.
 
     Raises [Invalid_argument] unless [children] holds exactly one element. *)

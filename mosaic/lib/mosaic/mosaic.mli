@@ -144,9 +144,7 @@ module Canvas : sig
     text:string ->
     unit
   (** [draw_text t ~x ~y ~text] draws [text] as a single line at column [x], row
-      [y].
-
-      [style] defaults to {!Ansi.Style.default}. [tab_width] defaults to [8]. *)
+      [y]. Defaults are those of {!Matrix.Grid.draw_text}. *)
 
   val fill_rect :
     t -> x:int -> y:int -> width:int -> height:int -> color:Ansi.Color.t -> unit
@@ -169,14 +167,7 @@ module Canvas : sig
     unit ->
     unit
   (** [draw_box t ~x ~y ~width ~height ()] draws a Unicode box at column [x],
-      row [y].
-      - [border] defaults to {!Border.rounded}.
-      - [sides] defaults to all four sides.
-      - [style] defaults to {!Ansi.Style.default}.
-      - [fill] defaults to no fill.
-      - [title] defaults to no title.
-      - [title_alignment] defaults to [`Left].
-      - [title_style] defaults to {!Ansi.Style.default}. *)
+      row [y]. Defaults are those of {!Matrix.Grid.draw_box}. *)
 
   val draw_line :
     t ->

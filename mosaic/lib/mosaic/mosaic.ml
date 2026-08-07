@@ -791,7 +791,11 @@ let run ?matrix
       if Renderer.needs_render runtime.renderer then
         Matrix.request_redraw runtime.matrix_app;
       (* The renderer built directly into the runtime's screen; Matrix.submit
-         presents it with a single diff. Only cursor intent is forwarded. *)
+         presents it with a single diff. Forward the frame's hardware scroll
+         hint so a scrolled viewport diffs only its revealed rows. *)
+      (match Renderer.take_scroll_hint runtime.renderer with
+      | Some hint -> Matrix.set_scroll_hint runtime.matrix_app hint
+      | None -> ());
       let cursor = Matrix.Screen.cursor (Renderer.screen runtime.renderer) in
       (* Keep the terminal cursor hidden unless the focused renderable exposes
          an explicit cursor position. *)
