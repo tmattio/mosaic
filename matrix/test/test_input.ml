@@ -1409,6 +1409,28 @@ let test_paste_split_boundaries () =
         fail (Printf.sprintf "paste split at %d: expected Paste event" split_at)
   done
 
+let test_string_terminator_split_regression () =
+  (* An ST terminator (ESC \) split across reads must not abort the string
+     sequence: the trailing ESC is part of the terminator, not a restart. *)
+  let osc = "\x1b]0;hi\x1b\\" in
+  let len = String.length osc in
+  for split_at = 1 to len - 1 do
+    let parser = Input.Parser.create () in
+    let bytes = Bytes.of_string osc in
+    let events1, responses1 = feed_to_lists parser bytes 0 split_at in
+    let events2, responses2 =
+      feed_to_lists parser bytes split_at (len - split_at)
+    in
+    equal
+      ~msg:(Printf.sprintf "OSC split at %d is not user input" split_at)
+      (list event_testable) [] (events1 @ events2);
+    equal
+      ~msg:(Printf.sprintf "OSC split at %d payload" split_at)
+      (list response_testable)
+      [ Input.Response.Osc (0, "hi") ]
+      (responses1 @ responses2)
+  done
+
 let test_dcs_split_boundaries () =
   (* DCS sequence (used by some terminal protocols) *)
   (* DCS = ESC P ... ST where ST = ESC \ *)
@@ -1547,6 +1569,7 @@ let tests =
     slow "parsing efficiency" test_parsing_efficiency;
     test "CSI split boundaries" test_csi_split_boundaries;
     test "OSC split boundaries" test_osc_split_boundaries;
+    test "string terminator split" test_string_terminator_split_regression;
     test "UTF-8 split boundaries" test_utf8_split_boundaries;
     test "paste split boundaries" test_paste_split_boundaries;
     test "DCS split boundaries" test_dcs_split_boundaries;

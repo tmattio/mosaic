@@ -1831,15 +1831,18 @@ let find_sequence_end_bytes bytes start stop =
           in
           loop (start + 2) false
     | ']' ->
+        (* An ESC as the last available byte may be the start of an ST
+           terminator (ESC \): wait for the next byte instead of aborting
+           the sequence. *)
         let rec loop i =
           if i >= stop then Incomplete
           else
             let c = Bytes.unsafe_get bytes i in
             if c = '\x07' then End (i + 1)
-            else if
-              c = esc && i + 1 < stop && Bytes.unsafe_get bytes (i + 1) = '\\'
-            then End (i + 2)
-            else if c = esc then Restart i
+            else if c = esc then
+              if i + 1 >= stop then Incomplete
+              else if Bytes.unsafe_get bytes (i + 1) = '\\' then End (i + 2)
+              else Restart i
             else loop (i + 1)
         in
         loop (start + 2)
@@ -1848,9 +1851,10 @@ let find_sequence_end_bytes bytes start stop =
           if i >= stop then Incomplete
           else
             let c = Bytes.unsafe_get bytes i in
-            if c = esc && i + 1 < stop && Bytes.unsafe_get bytes (i + 1) = '\\'
-            then End (i + 2)
-            else if c = esc then Restart i
+            if c = esc then
+              if i + 1 >= stop then Incomplete
+              else if Bytes.unsafe_get bytes (i + 1) = '\\' then End (i + 2)
+              else Restart i
             else loop (i + 1)
         in
         loop (start + 2)
