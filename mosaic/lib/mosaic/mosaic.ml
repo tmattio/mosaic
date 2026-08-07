@@ -423,67 +423,6 @@ let render_static_view runtime (view : _ t) =
   in
   render_with_height (max 1 full_height)
 
-let base64_encode input =
-  let alphabet =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-  in
-  let len = String.length input in
-  if len = 0 then ""
-  else
-    let out = Bytes.create ((len + 2) / 3 * 4) in
-    let rec loop i j =
-      if i >= len then ()
-      else
-        let b0 = Char.code (String.unsafe_get input i) in
-        let rem = len - i in
-        let b1 =
-          if rem > 1 then Char.code (String.unsafe_get input (i + 1)) else 0
-        in
-        let b2 =
-          if rem > 2 then Char.code (String.unsafe_get input (i + 2)) else 0
-        in
-        let n = (b0 lsl 16) lor (b1 lsl 8) lor b2 in
-        Bytes.unsafe_set out j
-          (String.unsafe_get alphabet ((n lsr 18) land 0x3f));
-        Bytes.unsafe_set out (j + 1)
-          (String.unsafe_get alphabet ((n lsr 12) land 0x3f));
-        Bytes.unsafe_set out (j + 2)
-          (if rem > 1 then String.unsafe_get alphabet ((n lsr 6) land 0x3f)
-           else '=');
-        Bytes.unsafe_set out (j + 3)
-          (if rem > 2 then String.unsafe_get alphabet (n land 0x3f) else '=');
-        loop (i + 3) (j + 4)
-    in
-    loop 0 0;
-    Bytes.unsafe_to_string out
-
-let clipboard_sequence text = "\027]52;c;" ^ base64_encode text ^ "\007"
-
-(* DSR colour-scheme query [CSI ? 996 n]; the terminal answers with
-   [CSI ? 997 ; value n], parsed by matrix into a colour-scheme event. *)
-let color_scheme_query = "\027[?996n"
-
-(* A desktop-notification escape: OSC 9 (iTerm2, kitty) followed by OSC 777
-   (urxvt and others). A terminal ignores the sequence it does not understand.
-   Inside tmux the whole payload is wrapped for DCS passthrough, doubling every
-   ESC byte so the outer terminal receives it. *)
-let notify_sequence ~title ~body =
-  let osc9 = "\027]9;" ^ title ^ ": " ^ body ^ "\007" in
-  let osc777 = "\027]777;notify;" ^ title ^ ";" ^ body ^ "\007" in
-  let seq = osc9 ^ osc777 in
-  match Sys.getenv_opt "TMUX" with
-  | None | Some "" -> seq
-  | Some _ ->
-      let buf = Buffer.create (String.length seq + 16) in
-      Buffer.add_string buf "\027Ptmux;";
-      String.iter
-        (fun c ->
-          if c = '\027' then Buffer.add_string buf "\027\027"
-          else Buffer.add_char buf c)
-        seq;
-      Buffer.add_string buf "\027\\";
-      Buffer.contents buf
-
 let rec process_cmd runtime (cmd : _ Cmd.t) =
   match cmd with
   | Cmd.None -> ()
@@ -494,23 +433,21 @@ let rec process_cmd runtime (cmd : _ Cmd.t) =
       let term = Matrix.terminal runtime.matrix_app in
       Matrix.Terminal.set_title term title
   | Cmd.Copy_to_clipboard text ->
-      let term = Matrix.terminal runtime.matrix_app in
-      Matrix.Terminal.send term (clipboard_sequence text)
+      Matrix.Terminal.copy_to_clipboard
+        (Matrix.terminal runtime.matrix_app)
+        text
   | Cmd.Copy_selection -> (
       match Renderer.selection_text runtime.renderer with
       | Some text when text <> "" ->
-          let term = Matrix.terminal runtime.matrix_app in
-          Matrix.Terminal.send term (clipboard_sequence text)
+          Matrix.Terminal.copy_to_clipboard
+            (Matrix.terminal runtime.matrix_app)
+            text
       | Some _ | None -> ())
   | Cmd.Query_color_scheme ->
-      let term = Matrix.terminal runtime.matrix_app in
-      Matrix.Terminal.send term color_scheme_query
-  | Cmd.Bell ->
-      let term = Matrix.terminal runtime.matrix_app in
-      Matrix.Terminal.send term "\007"
+      Matrix.Terminal.query_color_scheme (Matrix.terminal runtime.matrix_app)
+  | Cmd.Bell -> Matrix.Terminal.bell (Matrix.terminal runtime.matrix_app)
   | Cmd.Notify { title; body } ->
-      let term = Matrix.terminal runtime.matrix_app in
-      Matrix.Terminal.send term (notify_sequence ~title ~body)
+      Matrix.Terminal.notify (Matrix.terminal runtime.matrix_app) ~title ~body
   | Cmd.Clear_selection -> Renderer.clear_selection runtime.renderer
   | Cmd.Focus id ->
       if not (try_focus runtime id) then (

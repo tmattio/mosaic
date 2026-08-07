@@ -402,6 +402,18 @@ let set_title t title =
   t.title_sent <- true;
   send t Ansi.(to_string (set_title ~title))
 
+let copy_to_clipboard t text = send t Ansi.(to_string (set_clipboard ~text))
+
+let notify t ~title ~body =
+  let seq = Ansi.notify ~title ~body in
+  let seq =
+    if Caps.is_tmux ~term:t.caps.term then Ansi.tmux_passthrough seq else seq
+  in
+  send t (Ansi.to_string seq)
+
+let bell t = send t Ansi.(to_string bell)
+let query_color_scheme t = send t Ansi.(to_string (query Color_scheme_report))
+
 (* Out-of-band appearance tracking: runtimes batch DECSCUSR / OSC 12 / title
    writes into frame buffers that bypass [send]; these calls keep the handle
    the single authority over what [reset_state] must restore. *)

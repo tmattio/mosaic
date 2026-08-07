@@ -111,6 +111,12 @@ type terminal_info = { name : string; version : string; from_xtversion : bool }
     - [from_xtversion] is [true] iff [name] and [version] came from an XTVersion
       response. *)
 
+(** {1:environment Environment} *)
+
+val is_tmux : term:string -> bool
+(** [is_tmux ~term] is [true] when running inside tmux: [$TMUX] is set and
+    non-empty, or [term] starts with ["tmux"]. *)
+
 (** {1:constructors Constructors} *)
 
 val initial : ?provided:t -> term:string -> unit -> t * terminal_info

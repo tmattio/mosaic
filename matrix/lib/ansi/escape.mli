@@ -124,6 +124,22 @@ val hyperlink : ?params:string -> url:string -> text:string -> t
 val hyperlink_open : writer -> string -> unit
 val hyperlink_close : writer -> unit
 
+(** {2:clipboard Clipboard} *)
+
+val set_clipboard : text:string -> t
+
+(** {2:notifications Notifications} *)
+
+val notify : title:string -> body:string -> t
+
+(** {2:passthrough Multiplexer passthrough} *)
+
+val tmux_passthrough : t -> t
+
+(** {2:bell Bell} *)
+
+val bell : t
+
 (** {1:modes Modes} *)
 
 type mode =
@@ -169,5 +185,6 @@ type query =
   | Sync_mode
   | Unicode_mode
   | Color_scheme_mode
+  | Color_scheme_report
 
 val query : query -> t

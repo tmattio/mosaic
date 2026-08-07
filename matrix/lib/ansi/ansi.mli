@@ -266,6 +266,31 @@ val hyperlink_end : t
 val hyperlink : ?params:string -> url:string -> text:string -> t
 (** [hyperlink ~params ~url ~text] emits a complete linked text segment. *)
 
+(** {2:clipboard Clipboard (OSC 52)} *)
+
+val set_clipboard : text:string -> t
+(** [set_clipboard ~text] sets the system clipboard to [text] (OSC 52, [c]
+    selection). The payload is base64-encoded per the protocol. *)
+
+(** {2:notifications Notifications (OSC 9 / OSC 777)} *)
+
+val notify : title:string -> body:string -> t
+(** [notify ~title ~body] posts a desktop notification: OSC 9 (iTerm2, Kitty)
+    followed by OSC 777 (urxvt and others). A terminal ignores the sequence it
+    does not understand. Inside tmux, wrap with {!tmux_passthrough}. *)
+
+(** {2:passthrough Multiplexer passthrough} *)
+
+val tmux_passthrough : t -> t
+(** [tmux_passthrough seq] wraps [seq] for tmux DCS passthrough, doubling every
+    ESC byte in the payload so tmux forwards the sequence to the outer terminal.
+*)
+
+(** {2:bell Bell} *)
+
+val bell : t
+(** [bell] rings the terminal bell (BEL). *)
+
 (** {1:modes Terminal modes} *)
 
 (** The type for DEC private modes. *)
@@ -327,6 +352,9 @@ type query =
   | Sync_mode  (** DECRQM 2026. *)
   | Unicode_mode  (** DECRQM 2027. *)
   | Color_scheme_mode  (** DECRQM 2031. *)
+  | Color_scheme_report
+      (** DSR [CSI ? 996 n] — asks for the current light/dark colour scheme; the
+          terminal replies [CSI ? 997 ; value n]. *)
 
 val query : query -> t
 (** [query q] emits the query sequence for [q]. *)

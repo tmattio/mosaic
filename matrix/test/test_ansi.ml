@@ -656,6 +656,30 @@ let writer_hyperlink_params () =
   (* OSC 8 ; params ; url ST (\x1b\\) *)
   check_seq "hyperlink with params" "\x1b]8;id=123;http://foo\x1b\\" out
 
+let clipboard_base64_payload () =
+  check_seq "OSC 52 with base64 payload" "\x1b]52;c;aGVsbG8=\x07"
+    (Ansi.to_string (Ansi.set_clipboard ~text:"hello"));
+  check_seq "empty clipboard payload" "\x1b]52;c;\x07"
+    (Ansi.to_string (Ansi.set_clipboard ~text:""));
+  (* Padding cases: one and two trailing bytes. *)
+  check_seq "one-byte payload" "\x1b]52;c;YQ==\x07"
+    (Ansi.to_string (Ansi.set_clipboard ~text:"a"));
+  check_seq "two-byte payload" "\x1b]52;c;YWI=\x07"
+    (Ansi.to_string (Ansi.set_clipboard ~text:"ab"))
+
+let notify_osc9_and_osc777 () =
+  check_seq "OSC 9 then OSC 777"
+    "\x1b]9;Title: Body\x07\x1b]777;notify;Title;Body\x07"
+    (Ansi.to_string (Ansi.notify ~title:"Title" ~body:"Body"))
+
+let tmux_passthrough_doubles_esc () =
+  check_seq "DCS wrap with doubled ESC" "\x1bPtmux;\x1b\x1b]0;t\x1b\x1b\\\x1b\\"
+    (Ansi.to_string (Ansi.tmux_passthrough (Ansi.set_title ~title:"t")))
+
+let color_scheme_report_query () =
+  check_seq "DSR 996" "\x1b[?996n"
+    (Ansi.to_string (Ansi.query Ansi.Color_scheme_report))
+
 let writer_invalid_scalar_replacement () =
   let buf = Bytes.create 8 in
   let w = Writer.make buf in
@@ -923,6 +947,10 @@ let tests =
       [
         test "utf8 encoding" writer_utf8_encoding;
         test "hyperlink params" writer_hyperlink_params;
+        test "clipboard base64 payload" clipboard_base64_payload;
+        test "notify emits OSC 9 then OSC 777" notify_osc9_and_osc777;
+        test "tmux passthrough doubles ESC" tmux_passthrough_doubles_esc;
+        test "color scheme report query" color_scheme_report_query;
         test "invalid scalar replacement" writer_invalid_scalar_replacement;
         test "checked bounds" writer_checked_bounds;
       ];

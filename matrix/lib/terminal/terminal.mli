@@ -348,6 +348,25 @@ val reset_cursor_color : t -> unit
 val set_title : t -> string -> unit
 (** [set_title t s] sets the terminal window title to [s] (OSC 0). *)
 
+val copy_to_clipboard : t -> string -> unit
+(** [copy_to_clipboard t s] sets the system clipboard to [s] (OSC 52) when the
+    terminal supports it. *)
+
+val notify : t -> title:string -> body:string -> unit
+(** [notify t ~title ~body] posts a desktop notification (OSC 9 followed by OSC
+    777; a terminal ignores the sequence it does not understand). Inside tmux
+    the payload is wrapped for DCS passthrough so the outer terminal receives
+    it. *)
+
+val bell : t -> unit
+(** [bell t] rings the terminal bell (BEL). *)
+
+val query_color_scheme : t -> unit
+(** [query_color_scheme t] asks whether the terminal uses a light or dark colour
+    scheme ([CSI ? 996 n]). Supporting terminals reply [CSI ? 997 ; value n];
+    the reply arrives asynchronously as an {!Input.Response.Color_scheme}
+    capability event. *)
+
 val note_appearance_emitted :
   t -> [ `Cursor_color | `Cursor_style | `Title ] -> unit
 (** [note_appearance_emitted t what] records that an appearance sequence for

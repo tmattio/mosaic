@@ -398,6 +398,72 @@ let[@inline] hyperlink_close w =
   write_string w "\027]8;;";
   write_terminator w `St
 
+(* Bell *)
+
+let bell : t = literal "\007"
+
+(* Clipboard (OSC 52) — the payload is base64 per the protocol. *)
+
+let base64_alphabet =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+let write_base64 w input =
+  let len = String.length input in
+  let rec loop i =
+    if i < len then begin
+      let b0 = Char.code (String.unsafe_get input i) in
+      let rem = len - i in
+      let b1 =
+        if rem > 1 then Char.code (String.unsafe_get input (i + 1)) else 0
+      in
+      let b2 =
+        if rem > 2 then Char.code (String.unsafe_get input (i + 2)) else 0
+      in
+      let n = (b0 lsl 16) lor (b1 lsl 8) lor b2 in
+      write_char w (String.unsafe_get base64_alphabet ((n lsr 18) land 0x3f));
+      write_char w (String.unsafe_get base64_alphabet ((n lsr 12) land 0x3f));
+      write_char w
+        (if rem > 1 then String.unsafe_get base64_alphabet ((n lsr 6) land 0x3f)
+         else '=');
+      write_char w
+        (if rem > 2 then String.unsafe_get base64_alphabet (n land 0x3f)
+         else '=');
+      loop (i + 3)
+    end
+  in
+  loop 0
+
+let set_clipboard ~text w =
+  write_string w "\027]52;c;";
+  write_base64 w text;
+  write_terminator w `Bel
+
+(* Desktop notification — OSC 9 (iTerm2, kitty) followed by OSC 777 (urxvt
+   and others). A terminal ignores the sequence it does not understand. *)
+
+let notify ~title ~body w =
+  write_string w "\027]9;";
+  write_string w title;
+  write_string w ": ";
+  write_string w body;
+  write_terminator w `Bel;
+  write_string w "\027]777;notify;";
+  write_string w title;
+  write_char w ';';
+  write_string w body;
+  write_terminator w `Bel
+
+(* Wrap a sequence for tmux DCS passthrough: every ESC byte in the payload is
+   doubled so tmux forwards the sequence to the outer terminal. *)
+
+let tmux_passthrough inner w =
+  let seq = to_string inner in
+  write_string w "\027Ptmux;";
+  String.iter
+    (fun c -> if c = '\027' then write_string w "\027\027" else write_char w c)
+    seq;
+  write_string w "\027\\"
+
 (* Terminal Modes *)
 
 type mode =
@@ -471,6 +537,7 @@ type query =
   | Sync_mode
   | Unicode_mode
   | Color_scheme_mode
+  | Color_scheme_report
 
 let query = function
   | Cursor_position -> literal "\027[6n"
@@ -491,3 +558,4 @@ let query = function
   | Sync_mode -> literal "\027[?2026$p"
   | Unicode_mode -> literal "\027[?2027$p"
   | Color_scheme_mode -> literal "\027[?2031$p"
+  | Color_scheme_report -> literal "\027[?996n"
