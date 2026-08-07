@@ -148,10 +148,13 @@ val dispatch_key : t -> Input.Key.event -> Event.key
 val dispatch_mouse : t -> Input.Mouse.event -> unit
 (** [dispatch_mouse t mouse] runs the full mouse dispatch pipeline:
     - Updates pointer state.
-    - Hit-tests the mouse position.
+    - Hit-tests the mouse position. Wheel events that hit nothing are retargeted
+      at the focused renderable, so a scroll over dead space still reaches the
+      nearest scrollable ancestor.
     - Advances the selection state machine (start, update, or finish).
     - Tracks hover state and fires [Over]/[Out] events on target change.
-    - Redirects events to the drag-captured node when active.
+    - Redirects events other than wheel events to the drag-captured node when
+      active.
     - Dispatches with bubbling to the hit-tested node.
     - Auto-focuses on left click.
     - Clears stale selection if not prevented. *)

@@ -930,6 +930,27 @@ let clear_selection_resets () =
   Renderer.clear_selection t;
   is_none ~msg:"cleared" (Renderer.selection t)
 
+let scroll_on_dead_space_reaches_focused_scrollable () =
+  let t = make_renderer () in
+  let style =
+    Toffee.Style.default
+    |> Toffee.Style.set_width (Toffee.Style.Dimension.length 10.)
+    |> Toffee.Style.set_height (Toffee.Style.Dimension.length 3.)
+  in
+  let sb = Scroll_box.create ~parent:(Renderer.root t) ~style () in
+  let content_style =
+    Toffee.Style.default
+    |> Toffee.Style.set_width (Toffee.Style.Dimension.length 8.)
+    |> Toffee.Style.set_height (Toffee.Style.Dimension.length 30.)
+  in
+  let _content =
+    Renderable.create ~parent:(Scroll_box.node sb) ~style:content_style ()
+  in
+  do_frame t;
+  ignore (Renderer.focus t (Scroll_box.node sb) : bool);
+  Renderer.dispatch_mouse t (mouse_scroll ~x:30 ~y:8 Input.Mouse.Scroll_down);
+  is_true ~msg:"focused scroll box scrolled" (Scroll_box.scroll_top sb > 0)
+
 let selection_drag_auto_scrolls_scroll_box () =
   let t = make_renderer () in
   let style =
@@ -1169,6 +1190,8 @@ let () =
           test "scroll dispatches to hit target" scroll_dispatches_to_hit_target;
           test "scroll with modifiers" scroll_with_modifiers;
           test "scroll on empty area" scroll_on_empty_area;
+          test "scroll on dead space reaches focused scrollable"
+            scroll_on_dead_space_reaches_focused_scrollable;
         ];
       group "Drag"
         [

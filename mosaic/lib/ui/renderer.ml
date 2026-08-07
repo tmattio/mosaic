@@ -391,6 +391,11 @@ let handle_drag_capture t ~x ~y ~modifiers ~target_node ~target_id kind =
   | Some captured_node -> (
       let captured_id = Some (Renderable.Private.num captured_node) in
       match kind with
+      | Event.Mouse.Scroll _ ->
+          (* Wheel events keep targeting the hit node (or the focused
+             fallback) during a capture drag; OpenTUI handles scroll before
+             capture redirection. *)
+          false
       | Event.Mouse.Up { button; _ } ->
           let drag_end_ev =
             Event.Mouse.make ~x ~y ~modifiers ?target:captured_id
@@ -856,17 +861,9 @@ let dispatch_mouse t (mouse : Input.Mouse.event) =
   | Input.Mouse.Drag { button } ->
       dispatch_mouse_internal t ~x ~y ~modifiers
         (Event.Mouse.Drag { button = map_button button; is_dragging = true })
-  | Input.Mouse.Scroll { direction; delta } -> (
-      let hit_num = Screen.query_hit t.screen ~x ~y in
-      let target_node = if hit_num > 0 then find_node t hit_num else None in
-      let target_id = Option.map Renderable.Private.num target_node in
-      let ev =
-        Event.Mouse.make ~x ~y ~modifiers ?target:target_id
-          (Event.Mouse.Scroll { direction; delta })
-      in
-      match target_node with
-      | Some node -> Renderable.Private.emit_mouse node ev
-      | None -> ())
+  | Input.Mouse.Scroll { direction; delta } ->
+      dispatch_mouse_internal t ~x ~y ~modifiers
+        (Event.Mouse.Scroll { direction; delta })
 
 let dispatch_paste t text =
   match !(t.focused) with
