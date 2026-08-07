@@ -730,13 +730,26 @@ let test_invalid_sequences () =
     responses;
 
   let long_seq = "\x1b[" ^ String.make 100 '9' ^ "m" in
-  let events = parse_user long_seq in
-  is_true ~msg:"long sequence handled"
-    (List.length events = 0 || List.length events > 0);
+  let events, responses = parse_single long_seq in
+  equal ~msg:"long unhandled CSI is not user input" (list event_testable) []
+    events;
+  equal ~msg:"long unhandled CSI is an unknown response"
+    (list response_testable)
+    [ unknown_response long_seq ]
+    responses;
 
+  (* 0xFF and 0xFE can never start a UTF-8 sequence; each is decoded through
+     the legacy Meta path as ESC + (byte - 0x80). *)
+  let alt =
+    { Input.Modifier.none with Input.Modifier.alt = true; meta = true }
+  in
   let invalid_utf8 = Bytes.of_string "\xff\xfe" in
-  let events = feed_user parser invalid_utf8 0 2 in
-  is_true ~msg:"invalid UTF-8 handled" (List.length events >= 0);
+  equal ~msg:"invalid UTF-8 decodes as legacy Meta bytes" (list event_testable)
+    [
+      key_event ~modifier:alt Input.Key.Backspace;
+      key_event ~modifier:alt (Input.Key.Char (Uchar.of_char '~'));
+    ]
+    (feed_user parser invalid_utf8 0 2);
 
   match parse_user "a\x1b[999999999999mbc" with
   | Input.Key { key = Char c; _ } :: _ ->
@@ -1121,8 +1134,10 @@ let test_paste_bounds_reject_invalid_configuration () =
 let test_csi_param_overflow () =
   let huge_param = String.make 20 '9' in
   let seq = Printf.sprintf "\x1b[%s;1A" huge_param in
-  let events = parse_user seq in
-  is_true ~msg:"got some events" (List.length events >= 0)
+  equal ~msg:"overflowing CSI param still dispatches the final byte"
+    (list event_testable)
+    [ key_event Input.Key.Up ]
+    (parse_user seq)
 
 let test_cursor_position_report () =
   equal ~msg:"cursor position report" (list capability_testable)
