@@ -407,8 +407,9 @@ let emit_frame (r : t) ({ now; delta_seconds } : prepared_frame)
         ~use_hyperlinks:r.hyperlinks_capable ~mode ~height ~writer ~scratch
         ~sgr_state:r.sgr_state ~prev ~curr:r.next
     with exn ->
+      let bt = Printexc.get_raw_backtrace () in
       Ansi.Sgr_state.reset r.sgr_state;
-      raise_notrace exn
+      Printexc.raise_with_backtrace exn bt
   in
   let elapsed_ms = (r.clock () -. render_start) *. 1000. in
   {
