@@ -37,6 +37,7 @@ module Charset = struct
     bar_fill : string;
     shade_levels : string array;
     tooltip_frame : frame;
+    wave_frame : frame;
     diag_up : string;
     diag_down : string;
   }
@@ -119,6 +120,7 @@ module Charset = struct
       bar_fill = "#";
       shade_levels = [| " "; "."; "o"; "O"; "#" |];
       tooltip_frame = ascii_frame;
+      wave_frame = ascii_frame;
       diag_up = "/";
       diag_down = "\\";
     }
@@ -141,6 +143,7 @@ module Charset = struct
       bar_fill = "█";
       shade_levels = [| " "; "░"; "▒"; "▓"; "█" |];
       tooltip_frame = rounded_frame;
+      wave_frame = rounded_frame;
       diag_up = "╱";
       diag_down = "╲";
     }
@@ -163,6 +166,7 @@ module Charset = struct
       bar_fill = "█";
       shade_levels = [| " "; "░"; "▒"; "▓"; "█" |];
       tooltip_frame = heavy_frame;
+      wave_frame = rounded_frame;
       diag_up = "╱";
       diag_down = "╲";
     }
@@ -185,6 +189,7 @@ module Charset = struct
       bar_fill = "█";
       shade_levels = [| " "; "░"; "▒"; "▓"; "█" |];
       tooltip_frame = rounded_frame;
+      wave_frame = rounded_frame;
       diag_up = "╱";
       diag_down = "╲";
     }

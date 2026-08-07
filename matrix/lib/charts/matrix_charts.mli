@@ -71,6 +71,7 @@ module Charset : sig
     shade_levels : string array;
         (** Shade density levels, lightest to heaviest. *)
     tooltip_frame : frame;  (** Tooltip border characters. *)
+    wave_frame : frame;  (** Line-bend characters for [`Wave] resolution. *)
     diag_up : string;  (** Upward diagonal. *)
     diag_down : string;  (** Downward diagonal. *)
   }

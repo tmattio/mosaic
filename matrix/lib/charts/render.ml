@@ -845,9 +845,15 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
     | _ -> None
   in
 
+  let charset = layout.theme.charset in
+  (* Mid-density shade used for translucent-looking fills. *)
+  let shade_mid =
+    let s = charset.shade_levels in
+    if Array.length s = 0 then charset.bar_fill else s.(Array.length s / 2)
+  in
+
   (* Grid.line_symbols for theme-aware line rendering *)
   let line_symbols : G.line_symbols =
-    let charset = layout.theme.charset in
     {
       G.h = charset.frame.h;
       v = charset.frame.v;
@@ -967,7 +973,11 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
     let sy = if y1 < y2 then 1 else -1 in
     let err = ref (dx - dy) in
     let px = ref x1 and py = ref y1 in
-    let glyph = if dx > dy then "─" else if dy > dx then "│" else "·" in
+    let glyph =
+      if dx > dy then charset.frame.h
+      else if dy > dx then charset.frame.v
+      else charset.point_default
+    in
     while not (!px = x2 && !py = y2) do
       if stipple_should_draw ~pattern ~step:!step_counter then
         if Layout.rect_contains r ~x:!px ~y:!py then
@@ -1034,6 +1044,7 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
             prev := Some (px, py)
           end
         done;
+        let wf = charset.wave_frame in
         let prev_y = ref None in
         for i = 0 to r.width - 1 do
           let yval = seq_y.(i) in
@@ -1041,26 +1052,26 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
           else if yval >= r.y && yval < r.y + r.height then
             match !prev_y with
             | None ->
-                draw_text grid ~x:(r.x + i) ~y:yval ~style "─";
+                draw_text grid ~x:(r.x + i) ~y:yval ~style wf.h;
                 prev_y := Some yval
             | Some py ->
                 let xc = r.x + i in
-                if py = yval then draw_text grid ~x:xc ~y:yval ~style "─"
+                if py = yval then draw_text grid ~x:xc ~y:yval ~style wf.h
                 else if py > yval then (
-                  draw_text grid ~x:xc ~y:yval ~style "╭";
+                  draw_text grid ~x:xc ~y:yval ~style wf.tl;
                   if py >= r.y && py < r.y + r.height then
-                    draw_text grid ~x:xc ~y:py ~style "╯";
+                    draw_text grid ~x:xc ~y:py ~style wf.br;
                   for yy = yval + 1 to py - 1 do
                     if yy >= r.y && yy < r.y + r.height then
-                      draw_text grid ~x:xc ~y:yy ~style "│"
+                      draw_text grid ~x:xc ~y:yy ~style wf.v
                   done)
                 else (
-                  draw_text grid ~x:xc ~y:yval ~style "╰";
+                  draw_text grid ~x:xc ~y:yval ~style wf.bl;
                   if py >= r.y && py < r.y + r.height then
-                    draw_text grid ~x:xc ~y:py ~style "╮";
+                    draw_text grid ~x:xc ~y:py ~style wf.tr;
                   for yy = py + 1 to yval - 1 do
                     if yy >= r.y && yy < r.y + r.height then
-                      draw_text grid ~x:xc ~y:yy ~style "│"
+                      draw_text grid ~x:xc ~y:yy ~style wf.v
                   done);
                 prev_y := Some yval
         done
@@ -1266,7 +1277,7 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
               let py_bot = max py_data py_base in
               for py = py_top to py_bot do
                 if py >= r.y && py < r.y + r.height then
-                  draw_text grid ~x:px ~y:py ~style "█"
+                  draw_text grid ~x:px ~y:py ~style charset.bar_fill
               done
           done
       | `Braille2x4 ->
@@ -1323,7 +1334,7 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
               let py_bot = max py_low py_high in
               for py = py_top to py_bot do
                 if py >= r.y && py < r.y + r.height then
-                  draw_text grid ~x:px ~y:py ~style "▒"
+                  draw_text grid ~x:px ~y:py ~style shade_mid
               done
           done
       | `Braille2x4 ->
@@ -1392,7 +1403,7 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                       for xx = 0 to band_w - 1 do
                         let px = x0 + xx in
                         if px >= r.x && px < r.x + r.width then
-                          draw_text grid ~x:px ~y:yy ~style "█"
+                          draw_text grid ~x:px ~y:yy ~style charset.bar_fill
                       done
                   done
               | `Half_block -> (
@@ -1424,7 +1435,7 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                       for xx = 0 to band_w - 1 do
                         let px = x0 + xx in
                         if px >= r.x && px < r.x + r.width then
-                          draw_text grid ~x:px ~y:yy ~style "█"
+                          draw_text grid ~x:px ~y:yy ~style charset.bar_fill
                       done
                   done;
                   match top_glyph with
@@ -1470,7 +1481,7 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                       for yy = 0 to band_h - 1 do
                         let py = y0 + yy in
                         if py >= r.y && py < r.y + r.height then
-                          draw_text grid ~x:xx ~y:py ~style "█"
+                          draw_text grid ~x:xx ~y:py ~style charset.bar_fill
                       done
                   done
               | `Half_block -> (
@@ -1502,7 +1513,7 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                       for yy = 0 to band_h - 1 do
                         let py = y0 + yy in
                         if py >= r.y && py < r.y + r.height then
-                          draw_text grid ~x:xx ~y:py ~style "█"
+                          draw_text grid ~x:xx ~y:py ~style charset.bar_fill
                       done
                   done;
                   match right_glyph with
@@ -1664,7 +1675,6 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
           data
   in
 
-  let charset = layout.theme.charset in
 
   let draw_rule_v ~style ~pattern x =
     let px = x_to_px_cell x in
@@ -1801,7 +1811,7 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
           List.iter
             (fun (px, py) ->
               if Layout.rect_contains r ~x:px ~y:py then
-                draw_text grid ~x:px ~y:py ~style "█")
+                draw_text grid ~x:px ~y:py ~style charset.bar_fill)
             (get_ellipse_points ~cx ~cy ~rx ~ry)
         done
     | `Braille ->
@@ -1868,7 +1878,7 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
         for px = max r.x px0 to min (r.x + r.width - 1) (px1 - 1) do
           for py = py_min to py_max do
             if Layout.rect_contains r ~x:px ~y:py then
-              draw_text grid ~x:px ~y:py ~style "█"
+              draw_text grid ~x:px ~y:py ~style charset.bar_fill
           done
         done
       done

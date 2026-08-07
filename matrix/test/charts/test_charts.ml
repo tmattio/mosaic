@@ -343,6 +343,33 @@ let%expect_test "overlay text anchors" =
 [0;38;2;255;255;255m│          │[0m
 [0;38;2;255;255;255m└──────────┘[0m|}]
 
+let%expect_test "ascii charset covers wave and area glyphs" =
+  (* Charset.ascii must reach every glyph a chart emits: wave bends, area
+     fills and stippled rules must not fall back to Unicode literals. *)
+  let draw grid ~width ~height =
+    let chart =
+      empty ()
+      |> with_theme (Theme.with_charset Charset.ascii Theme.dark)
+      |> with_axes ~x:Axis.hidden ~y:Axis.hidden
+      |> line ~resolution:`Wave ~x:fst ~y:snd [| (0., 0.); (9., 4.) |]
+      |> add
+           (Mark.area ~y_axis:`Y1
+              ~x:(fun (x, _) -> x)
+              ~y:(fun (_, y) -> y)
+              [| (0., 1.); (9., 1.) |])
+    in
+    draw chart grid ~width ~height
+  in
+  render_chart ~width:10 ~height:5 draw;
+  [%expect_exact {|
+[0;38;2;255;255;255m┌──────────┐[0m
+[0;38;2;255;255;255m│        [38;5;6m+-[38;2;255;255;255m│[0m
+[0;38;2;255;255;255m│      [38;5;6m+-+[38;2;255;255;255m │[0m
+[0;38;2;255;255;255m│    [38;5;6m+-+[38;2;255;255;255m   │[0m
+[0;38;2;255;255;255m│[38;5;5m#[38;2;255;255;255m [38;5;6m+-+[38;2;255;255;255m    [38;5;5m#[38;2;255;255;255m│[0m
+[0;38;2;255;255;255m│[38;5;5m#[38;5;6m-+[38;2;255;255;255m      [38;5;5m#[38;2;255;255;255m│[0m
+[0;38;2;255;255;255m└──────────┘[0m|}]
+
 let%expect_test "vertical bar chart renders columns" =
   let draw grid ~width ~height =
     let chart =
@@ -696,7 +723,7 @@ let%expect_test "legend arranges entries horizontally" =
   render_chart ~width:40 ~height:3 draw;
   [%expect_exact {|
 [0;38;2;255;255;255m┌────────────────────────────────────────┐[0m
-[0;38;2;255;255;255m│[38;5;2m● [38;2;255;255;255mRevenue  [38;5;1m● [38;2;255;255;255mCosts  [38;5;4m● [38;2;255;255;255mProfit            │[0m
+[0;38;2;255;255;255m│[38;5;2m● Revenue[38;2;255;255;255m  [38;5;1m● Costs[38;2;255;255;255m  [38;5;4m● Profit[38;2;255;255;255m            │[0m
 [0;38;2;255;255;255m│                                        │[0m
 [0;38;2;255;255;255m│                                        │[0m
 [0;38;2;255;255;255m└────────────────────────────────────────┘[0m|}] [@@ocamlformat "disable"]
@@ -712,9 +739,9 @@ let%expect_test "stacked legend renders vertical list" =
   render_chart ~width:18 ~height:5 draw;
   [%expect_exact {|
 [0;38;2;255;255;255m┌──────────────────┐[0m
-[0;38;2;255;255;255m│[38;5;3m●[38;2;255;255;255m Alpha           │[0m
-[0;38;2;255;255;255m│[38;5;6m●[38;2;255;255;255m Beta            │[0m
-[0;38;2;255;255;255m│[38;5;5m●[38;2;255;255;255m Gamma           │[0m
+[0;38;2;255;255;255m│[38;5;3m●[38;2;255;255;255m [38;5;3mAlpha[38;2;255;255;255m           │[0m
+[0;38;2;255;255;255m│[38;5;6m●[38;2;255;255;255m [38;5;6mBeta[38;2;255;255;255m            │[0m
+[0;38;2;255;255;255m│[38;5;5m●[38;2;255;255;255m [38;5;5mGamma[38;2;255;255;255m           │[0m
 [0;38;2;255;255;255m│                  │[0m
 [0;38;2;255;255;255m│                  │[0m
 [0;38;2;255;255;255m└──────────────────┘[0m|}] [@@ocamlformat "disable"]

@@ -180,7 +180,10 @@ module Overlay = struct
         Render.draw_text grid ~x:xx ~y:py ~style glyph_h
       done
 
-  let marker ?style ?(glyph = "●") (layout : Layout.t) (grid : G.t) ~x ~y =
+  let marker ?style ?glyph (layout : Layout.t) (grid : G.t) ~x ~y =
+    let glyph =
+      Option.value glyph ~default:layout.theme.charset.Charset.point_heavy
+    in
     let style = Option.value style ~default:layout.theme.marker in
     let px, py = Layout.px_of_data layout ~x ~y in
     let r = Layout.plot_rect layout in
@@ -344,7 +347,7 @@ module Overlay = struct
     if Layout.rect_contains rect ~x:px2 ~y:py2 then
       match head with
       | `None -> ()
-      | `Dot -> Render.draw_text grid ~x:px2 ~y:py2 ~style "●"
+      | `Dot -> Render.draw_text grid ~x:px2 ~y:py2 ~style ch.point_heavy
       | `Arrow ->
           let dx = px2 - px1 in
           let dy = py2 - py1 in
@@ -376,7 +379,7 @@ module Legend = struct
             if !x < width then (
               Render.draw_text grid ~x:!x ~y ~style block;
               let x' = !x + w_block in
-              if x' < width then Render.draw_text grid ~x:x' ~y label;
+              if x' < width then Render.draw_text grid ~x:x' ~y ~style label;
               x := x' + w_label + gap))
           items
     | `Vertical ->
@@ -385,7 +388,9 @@ module Legend = struct
         List.iter
           (fun { label; style; marker } ->
             Render.draw_text grid ~x:0 ~y:!y ~style marker;
-            Render.draw_text grid ~x:(Layout.text_width marker + 1) ~y:!y label;
+            Render.draw_text grid
+              ~x:(Layout.text_width marker + 1)
+              ~y:!y ~style label;
             y := !y + 1 + gap)
           items
 
@@ -408,8 +413,13 @@ module Legend = struct
             extract_item ~label:m.label ~style ~marker
         | Mark.Bar _ ->
             extract_item ~label:m.label ~style ~marker:charset.bar_fill
-        | Mark.Area _ -> extract_item ~label:m.label ~style ~marker:"▒"
-        | Mark.Fill_between _ -> extract_item ~label:m.label ~style ~marker:"▒"
+        | Mark.Area _ | Mark.Fill_between _ ->
+            let shades = charset.shade_levels in
+            let marker =
+              if Array.length shades = 0 then charset.bar_fill
+              else shades.(Array.length shades / 2)
+            in
+            extract_item ~label:m.label ~style ~marker
         | Mark.Histogram _ ->
             extract_item ~label:m.label ~style ~marker:charset.bar_fill
         | _ -> None)
