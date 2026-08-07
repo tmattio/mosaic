@@ -7,6 +7,8 @@
    - Added [reset] function for segmenter reuse (zero allocation)
    - Added [check_boundary] for zero-allocation direct boundary checks
    - Changed [break] and [update_left] to take pre-computed [is_extpic] flag
+   - Removed the uuseg streaming API ([add]/[copy]/[equal] and the
+     [state]/[buf] fields): Matrix only uses the direct boundary checks
 *)
 
 (* These are the rules as found in [1], with property values aliases [2]
@@ -57,40 +59,22 @@ let byte_to_gcb =
   [| CN; CR; EX; EB; EBG; EM; GAZ; L; LF; LV; LVT; PP; RI;
      SM; T; V; XX; ZWJ; |]
 
-let gcb u = byte_to_gcb.(Unicode.grapheme_cluster_break u)
-
 let byte_to_incb = [| Consonant; Extend; Linker; None' |]
-let incb u = byte_to_incb.(Unicode.indic_conjunct_break u)
 
 type left_gb9c_state = (* Ad-hoc state for matching GB9c *)
 | Reset | Has_consonant | Has_linker
 
-type state =
-| Fill  (* get next uchar to decide boundary. *)
-| Flush (* an uchar is buffered, client needs to get it out with `Await. *)
-| End   (* `End was added. *)
-
 type t =
-  { mutable state : state;                                 (* current state. *)
-    mutable left_gb9c : left_gb9c_state;         (* state for matching gb9c. *)
+  { mutable left_gb9c : left_gb9c_state;         (* state for matching gb9c. *)
     mutable left : gcb;            (* break property value left of boundary. *)
     mutable left_odd_ri : bool;             (* odd number of RI on the left. *)
-    mutable left_emoji_seq : bool;                 (* emoji seq on the left. *)
-    mutable buf : [ `Uchar of Uchar.t ] }                 (* bufferized add. *)
-
-let nul_buf = `Uchar (Uchar.unsafe_of_int 0x0000)
+    mutable left_emoji_seq : bool }                (* emoji seq on the left. *)
 
 let create () =
-  { state = Fill;
-    left_gb9c = Reset;
-    left = Sot; left_odd_ri = false; left_emoji_seq = false;
-    buf = nul_buf (* overwritten *) }
-
-let copy s = { s with state = s.state; }
-let equal = ( = )
+  { left_gb9c = Reset;
+    left = Sot; left_odd_ri = false; left_emoji_seq = false }
 
 let reset s =
-  s.state <- Fill;
   s.left_gb9c <- Reset;
   s.left <- Sot;
   s.left_odd_ri <- false;
@@ -167,30 +151,3 @@ let[@inline] check_boundary_with_width s u =
   update_left s right right_incb ~is_extpic;
   let width_enc = (packed lsr 8) land 0x03 in
   if is_break then width_enc lor 4 else width_enc
-
-let add s = function
-| `Uchar u as add ->
-    begin match s.state with
-    | Fill ->
-        let right = gcb u in
-        let right_incb = incb u in
-        let is_extpic = Unicode.is_extended_pictographic u in
-        let is_break = break s right right_incb ~is_extpic in
-        update_left s right right_incb ~is_extpic;
-        if not is_break then add else
-        (s.state <- Flush; s.buf <- add; `Boundary)
-    | Flush -> Uuseg_base.err_exp_await add
-    | End -> Uuseg_base.err_ended add
-    end
-| `Await ->
-    begin match s.state with
-    | Flush -> s.state <- Fill; (s.buf :> Uuseg_base.ret)
-    | End -> `End
-    | Fill -> `Await
-    end
-| `End ->
-    begin match s.state with
-    | Fill -> s.state <- End; if s.left = Sot then `End else `Boundary
-    | Flush -> Uuseg_base.err_exp_await `End
-    | End -> Uuseg_base.err_ended `End
-    end
