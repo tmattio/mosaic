@@ -520,6 +520,15 @@ let update_loop_active t =
 
 let erase_entire_line = Ansi.(to_string (erase_line ~mode:`All))
 let sgr_reset = Ansi.(to_string reset)
+let sync_output_on = Ansi.(to_string (enable Sync_output))
+let sync_output_off = Ansi.(to_string (disable Sync_output))
+let cursor_hide_seq = Ansi.(to_string (disable Cursor_visible))
+let cursor_show_seq = Ansi.(to_string (enable Cursor_visible))
+let erase_below_seq = Ansi.(to_string erase_below_cursor)
+let clear_and_home_seq = Ansi.(to_string clear_and_home)
+let clear_scrollback_seq = Ansi.(to_string (erase_display ~mode:`Scrollback))
+let reset_scroll_region_seq = Ansi.(to_string reset_scrolling_region)
+let reset_cursor_color_seq = Ansi.(to_string reset_cursor_color)
 
 let normalize_newlines s =
   let len = String.length s in
@@ -569,17 +578,13 @@ let apply_primary_op buf = function
   | Primary.Reset_sgr -> Buffer.add_string buf sgr_reset
   | Primary.Write s -> Buffer.add_string buf s
   | Primary.Erase_line -> buf_erase_line buf
-  | Primary.Erase_below ->
-      Buffer.add_string buf Ansi.(to_string erase_below_cursor)
-  | Primary.Clear_and_home ->
-      Buffer.add_string buf Ansi.(to_string clear_and_home)
-  | Primary.Clear_scrollback ->
-      Buffer.add_string buf Ansi.(to_string (erase_display ~mode:`Scrollback))
+  | Primary.Erase_below -> Buffer.add_string buf erase_below_seq
+  | Primary.Clear_and_home -> Buffer.add_string buf clear_and_home_seq
+  | Primary.Clear_scrollback -> Buffer.add_string buf clear_scrollback_seq
   | Primary.Scroll_up n -> Buffer.add_string buf Ansi.(to_string (scroll_up ~n))
   | Primary.Set_scroll_region { top; bottom } ->
       Buffer.add_string buf Ansi.(to_string (set_scrolling_region ~top ~bottom))
-  | Primary.Reset_scroll_region ->
-      Buffer.add_string buf Ansi.(to_string reset_scrolling_region)
+  | Primary.Reset_scroll_region -> Buffer.add_string buf reset_scroll_region_seq
 
 let apply_primary_plan ?(resize_screen = true) t ~buf (plan : Primary.plan) =
   List.iter (apply_primary_op buf) plan.terminal_ops;
@@ -626,7 +631,7 @@ let static_replace ?(preserve_live_region = false) t ~rows text =
 let static_clear t =
   if t.config.mode = `Alt then ()
   else (
-    Terminal.send t.terminal Ansi.(to_string clear_and_home);
+    Terminal.send t.terminal clear_and_home_seq;
     let cols, rows = t.backend.terminal_size () in
     t.width <- max 1 cols;
     t.height <- max 1 rows;
@@ -741,8 +746,7 @@ let apply_cursor_state t ~buf ~(cursor : Screen.cursor) ~cursor_max_row =
   (match position with
   | Some (row, col) ->
       buf_cursor_position buf ~row ~col;
-      if cursor.visible then
-        Buffer.add_string buf Ansi.(to_string (enable Cursor_visible))
+      if cursor.visible then Buffer.add_string buf cursor_show_seq
   | None -> ());
   if cursor.visible then begin
     let shape = cursor_shape cursor in
@@ -757,7 +761,7 @@ let apply_cursor_state t ~buf ~(cursor : Screen.cursor) ~cursor_max_row =
           Buffer.add_string buf Ansi.(to_string (cursor_color ~r ~g ~b));
           Terminal.note_appearance_emitted t.terminal `Cursor_color
       | None ->
-          Buffer.add_string buf Ansi.(to_string reset_cursor_color);
+          Buffer.add_string buf reset_cursor_color_seq;
           Terminal.note_appearance_reset t.terminal `Cursor_color);
       t.last_cursor_color <- Some cursor.color
     end
@@ -782,8 +786,8 @@ let submit ?primary_required_rows t =
     Buffer.clear buf;
 
     (* Preamble: BSU + cursor hide. *)
-    if use_sync then Buffer.add_string buf Ansi.(to_string (enable Sync_output));
-    Buffer.add_string buf Ansi.(to_string (disable Cursor_visible));
+    if use_sync then Buffer.add_string buf sync_output_on;
+    Buffer.add_string buf cursor_hide_seq;
     let preamble_len = Buffer.length buf in
 
     (* No cursor homing here: the diff renderer emits an absolute
@@ -847,7 +851,7 @@ let submit ?primary_required_rows t =
         let offset = Primary.render_offset t.primary in
         if offset + active < t.height then (
           buf_cursor_position buf ~row:(offset + active + 1) ~col:1;
-          Buffer.add_string buf Ansi.(to_string erase_below_cursor))
+          Buffer.add_string buf erase_below_seq)
     | None -> ());
 
     (* Skip the write when nothing beyond the preamble was produced and cursor
@@ -867,8 +871,7 @@ let submit ?primary_required_rows t =
         Buffer.add_string buf
           Ansi.(to_string (cursor_position ~row:t.height ~col:1));
       apply_cursor_state t ~buf ~cursor ~cursor_max_row;
-      if use_sync then
-        Buffer.add_string buf Ansi.(to_string (disable Sync_output));
+      if use_sync then Buffer.add_string buf sync_output_off;
 
       let len = Buffer.length buf in
       if len > Bytes.length t.submit_scratch then
