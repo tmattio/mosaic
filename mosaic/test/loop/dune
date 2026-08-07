@@ -1,6 +1,13 @@
 (executables
  (names test_loop)
- (libraries windtrap mosaic matrix matrix.test matrix.input matrix.vte)
+ (libraries
+  windtrap
+  mosaic
+  matrix
+  matrix.test
+  matrix.input
+  matrix.vte
+  threads.posix)
  (preprocess
   (pps ppx_windtrap)))
 

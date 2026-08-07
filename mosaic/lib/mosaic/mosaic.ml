@@ -302,7 +302,11 @@ type ('model, 'msg) app = {
 
 type ('model, 'msg) runtime = {
   mutable model : 'model;
-  mutable pending_msgs : 'msg list;
+  (* [Cmd.perform] may dispatch from any thread (see mosaic.mli), so the
+     pending-message queue is a lock-free stack: pushes are CAS loops and the
+     loop thread drains with a single [Atomic.exchange]. A plain mutable list
+     would lose messages pushed between the drain's read and its clear. *)
+  pending_msgs : 'msg list Atomic.t;
   mutable pending_focus : string list;
   app : ('model, 'msg) app;
   matrix_app : Matrix.app;
@@ -320,6 +324,18 @@ type ('model, 'msg) runtime = {
   mutable color_scheme_sub : ([ `Dark | `Light ] -> 'msg option) option;
   mutable sub_live_active : bool;
 }
+
+(* Push [msg] and wake the loop. Safe from any thread: the CAS retries until
+   the stack is extended atomically, and [Matrix.request_redraw] is a benign
+   flag write plus a backend wake. *)
+let push_msg runtime msg =
+  let rec push () =
+    let cur = Atomic.get runtime.pending_msgs in
+    if not (Atomic.compare_and_set runtime.pending_msgs cur (msg :: cur)) then
+      push ()
+  in
+  push ();
+  Matrix.request_redraw runtime.matrix_app
 
 let rec find_by_id_in (node : Renderable.t) (id : string) : Renderable.t option
     =
@@ -472,12 +488,7 @@ let rec process_cmd runtime (cmd : _ Cmd.t) =
   match cmd with
   | Cmd.None -> ()
   | Cmd.Batch cmds -> List.iter (process_cmd runtime) cmds
-  | Cmd.Perform f ->
-      let dispatch msg =
-        runtime.pending_msgs <- msg :: runtime.pending_msgs;
-        Matrix.request_redraw runtime.matrix_app
-      in
-      runtime.process_perform (fun () -> f dispatch)
+  | Cmd.Perform f -> runtime.process_perform (fun () -> f (push_msg runtime))
   | Cmd.Quit -> Matrix.stop runtime.matrix_app
   | Cmd.Set_title title ->
       let term = Matrix.terminal runtime.matrix_app in
@@ -592,11 +603,14 @@ let dispatch runtime msg =
   update_subscriptions runtime
 
 let process_pending_msgs runtime =
-  while runtime.pending_msgs <> [] do
-    let msgs = List.rev runtime.pending_msgs in
-    runtime.pending_msgs <- [];
-    List.iter (dispatch runtime) msgs
-  done
+  let rec drain () =
+    match Atomic.exchange runtime.pending_msgs [] with
+    | [] -> ()
+    | msgs ->
+        List.iter (dispatch runtime) (List.rev msgs);
+        drain ()
+  in
+  drain ()
 
 let handle_key runtime (event : Event.key) =
   let consumed = Event.Key.default_prevented event in
@@ -628,11 +642,7 @@ let handle_resize runtime ~width ~height =
   | None -> ()
 
 let handle_tick runtime ~dt =
-  match runtime.tick_sub with
-  | Some f ->
-      runtime.pending_msgs <- f ~dt :: runtime.pending_msgs;
-      Matrix.request_redraw runtime.matrix_app
-  | None -> ()
+  match runtime.tick_sub with Some f -> push_msg runtime (f ~dt) | None -> ()
 
 (* A frame can land exactly on a timer deadline: [arm_every_wakeup] schedules a
    wakeup at [now +. (interval -. elapsed)], and when it fires the frame delta
@@ -654,8 +664,7 @@ let handle_every_subs runtime ~dt =
       (fun (interval, elapsed, f) ->
         let new_elapsed = elapsed +. dt in
         if new_elapsed >= interval -. every_fire_slack then begin
-          runtime.pending_msgs <- f () :: runtime.pending_msgs;
-          Matrix.request_redraw runtime.matrix_app;
+          push_msg runtime (f ());
           (interval, Float.max 0. (new_elapsed -. interval), f)
         end
         else (interval, new_elapsed, f))
@@ -727,11 +736,7 @@ let render runtime =
   let viewport_width, _ = Matrix.effective_size runtime.matrix_app in
   let viewport_width = max 1 viewport_width in
   let view = runtime.app.view runtime.model in
-  let dispatch msg =
-    runtime.pending_msgs <- msg :: runtime.pending_msgs;
-    Matrix.request_redraw runtime.matrix_app
-  in
-  let vnode = compile ~dispatch view in
+  let vnode = compile ~dispatch:(push_msg runtime) view in
   Reconciler.render runtime.reconciler ~viewport_width vnode
 
 module Probe = struct
@@ -791,7 +796,7 @@ let run ?matrix
   let runtime =
     {
       model;
-      pending_msgs = [];
+      pending_msgs = Atomic.make [];
       pending_focus = [];
       app;
       matrix_app;
@@ -816,7 +821,7 @@ let run ?matrix
       receive
         (Probe.empty
         |> Probe.with_pending ~name:"messages" (fun () ->
-            runtime.pending_msgs <> [])
+            Atomic.get runtime.pending_msgs <> [])
         |> Probe.with_pending ~name:"performs" (fun () ->
             Atomic.get in_flight_performs > 0)
         |> Probe.with_pending ~name:"render" (fun () ->

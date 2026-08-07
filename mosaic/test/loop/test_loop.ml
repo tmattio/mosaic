@@ -457,3 +457,37 @@ let%expect_test
 |
 |keys:[<esc>] ticks:0 size:- note:-
 ||}]
+
+let%expect_test "perform dispatches from concurrent threads are all delivered" =
+  (* Cmd.perform runs its callback on a fresh thread (the default
+     [process_perform]), and mosaic.mli promises dispatch may be called from
+     any thread. Several threads hammer dispatch while the loop drains
+     concurrently; systhread preemption lands inside queue operations, so a
+     non-atomic pending queue loses (or resurrects) messages. The final tick
+     count must be exact. *)
+  (* Each burst must outlast the ~50 ms systhread tick so preemption lands
+     mid-push with other threads still active — a shorter burst completes
+     within one scheduler slice and never races. *)
+  let thread_count = 3 in
+  let per_thread = 2_000_000 in
+  let hammer =
+    Mosaic.Cmd.batch
+      (List.init thread_count (fun _ ->
+           Mosaic.Cmd.perform (fun dispatch ->
+               for _ = 1 to per_thread do
+                 dispatch Tick
+               done)))
+  in
+  let probe = ref None in
+  let on_idle t ~timeout:_ =
+    match !probe with
+    | Some p when Mosaic.Probe.is_settled p -> Matrix_test.stop t
+    | _ -> Thread.yield ()
+  in
+  let t = Matrix_test.create ~on_idle ~width:48 ~height:2 () in
+  Mosaic.run ~matrix:(Matrix_test.app t)
+    ~probe:(fun p -> probe := Some p)
+    (app ~init_cmd:hammer ());
+  snap t;
+  [%expect {||keys:[] ticks:6000000 size:- note:-
+||}]
