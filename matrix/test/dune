@@ -25,6 +25,12 @@
  (libraries windtrap unix input))
 
 (test
+ (name test_input_props)
+ (package matrix)
+ (modules test_input_props)
+ (libraries windtrap windtrap.prop input))
+
+(test
  (name test_vte)
  (package matrix)
  (modules test_vte)
