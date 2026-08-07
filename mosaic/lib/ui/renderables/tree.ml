@@ -184,7 +184,6 @@ let init_expansion t ~expand_depth =
 (* ───── Visible List Computation ───── *)
 
 let recompute_visible t =
-  let entries = Buffer.create 64 in
   let buf = ref [||] in
   let count = ref 0 in
   let add entry =
@@ -198,7 +197,6 @@ let recompute_visible t =
     !buf.(!count) <- entry;
     incr count
   in
-  ignore entries;
   let rec walk items depth parent_guides path_prefix =
     let n = List.length items in
     List.iteri
