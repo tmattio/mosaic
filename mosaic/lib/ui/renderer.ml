@@ -270,13 +270,18 @@ let update_hover t ~x ~y ~modifiers ~target_node ~target_num kind =
         Renderable.Private.emit_mouse node ev
     | None -> ())
 
+(* Recheck hover against the hit grid of the frame just built (the next hit
+   grid), so it runs before the host presents the frame. The data is identical
+   to what [Screen.query_hit] returns after the swap. *)
 let recheck_hover t =
   if Option.is_some t.captured then ()
   else
     match t.pointer.position with
     | None -> ()
     | Some (x, y) ->
-        let hit_num = Screen.query_hit t.screen ~x ~y in
+        let hit_num =
+          Screen.Hit_grid.get (Screen.next_hit_grid t.screen) ~x ~y
+        in
         let target_node = if hit_num > 0 then find_node t hit_num else None in
         let target_num =
           match target_node with
@@ -470,9 +475,18 @@ let dispatch_mouse_internal t ~x ~y ~modifiers kind =
 
 (* ───── Creation ───── *)
 
-let create ?width_method ?clock ?style () =
+let create ?width_method ?clock ?screen ?style () =
   let tree = Toffee.new_tree () in
-  let screen = Screen.create ?width_method ?clock ~respect_alpha:true () in
+  let screen =
+    match screen with
+    | Some screen ->
+        (* Adopted screens come from a host runtime; the renderer requires
+           alpha blending on the grids it paints. *)
+        Grid.set_respect_alpha (Screen.next_grid screen) true;
+        Grid.set_respect_alpha (Screen.current_grid screen) true;
+        screen
+    | None -> Screen.create ?width_method ?clock ~respect_alpha:true ()
+  in
   let node_map = Hashtbl.create 256 in
   let toffee_map = Hashtbl.create 256 in
   let lifecycle_set = Hashtbl.create 16 in
@@ -722,7 +736,8 @@ let execute_commands (t : t) ~(grid : Grid.t) ~(hits : Screen.Hit_grid.t)
 
 (* ───── Render Frame ───── *)
 
-let render_frame (t : t) ~width ~height ~delta =
+let render_frame ?layout_height (t : t) ~width ~height ~delta =
+  let layout_height = Option.value layout_height ~default:height in
   (* Consume the request that led to this pass before running any code that can
      schedule its successor. In particular, widgets may discover geometry in
      their render function and change a sibling's visibility after the command
@@ -747,7 +762,8 @@ let render_frame (t : t) ~width ~height ~delta =
         Toffee.Geometry.Size.
           {
             width = Toffee.Available_space.Definite (Float.of_int width);
-            height = Toffee.Available_space.Definite (Float.of_int height);
+            height =
+              Toffee.Available_space.Definite (Float.of_int layout_height);
           }
       in
       let root_toffee = Renderable.Private.toffee_node t.root in
@@ -760,33 +776,34 @@ let render_frame (t : t) ~width ~height ~delta =
       build_commands t t.root ~parent_x:0. ~parent_y:0. ~clip:frame_clip ~delta;
       (* Pass 3: Execute render commands *)
       execute_commands t ~grid ~hits ~delta);
-  (* Update cursor from focused node *)
-  match !(t.focused) with
+  (* Update cursor from focused node. Visibility is derived from renderable
+     intent — a cursor is visible iff a focused renderable exposes one — so
+     the state is authoritative regardless of the screen's previous policy
+     (a host runtime's screen starts hidden). *)
+  (match !(t.focused) with
   | Some node when Renderable.focused node -> (
       match Renderable.cursor node with
       | Some c ->
           let r, g, b = Ansi.Color.to_rgb c.color in
-          let cursor = Screen.cursor t.screen in
           Screen.set_cursor t.screen
             {
-              cursor with
               position = Some (c.x, c.y);
               style = c.style;
               blinking = c.blinking;
               color = Some (r, g, b);
+              visible = true;
             }
       | None ->
           let cursor = Screen.cursor t.screen in
-          Screen.set_cursor t.screen { cursor with position = None })
+          Screen.set_cursor t.screen
+            { cursor with position = None; visible = false })
   | _ ->
       let cursor = Screen.cursor t.screen in
-      Screen.set_cursor t.screen { cursor with position = None }
+      Screen.set_cursor t.screen
+        { cursor with position = None; visible = false });
+  recheck_hover t
 
-let render ?full t =
-  let output = Screen.render ?full t.screen in
-  recheck_hover t;
-  output
-
+let render ?full t = Screen.render ?full t.screen
 let needs_render t = !(t.dirty) || Renderable.Private.live_count t.root > 0
 
 let render_frame_until_settled ?(max_passes = 4) t ~width ~height ~delta =

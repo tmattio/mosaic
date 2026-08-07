@@ -774,7 +774,6 @@ let run ?matrix
                   Matrix.request_redraw matrix_app))
   in
   let model, init_cmd = app.init () in
-  let base_grid = Matrix.grid matrix_app in
   let renderer_style =
     match Matrix.mode matrix_app with
     | `Primary ->
@@ -785,10 +784,7 @@ let run ?matrix
     | `Alt -> None
   in
   let renderer =
-    Renderer.create ?style:renderer_style
-      ~width_method:(Matrix.Grid.width_method base_grid)
-      ~clock:(fun () -> Matrix.now matrix_app)
-      ()
+    Renderer.create ?style:renderer_style ~screen:(Matrix.screen matrix_app) ()
   in
   let container = Renderer.root renderer in
   let reconciler = Reconciler.create ~container in
@@ -876,20 +872,16 @@ let run ?matrix
             max 1 (Renderable.height (Renderer.root runtime.renderer))
           in
           if required > height then
-            Renderer.render_frame runtime.renderer ~width ~height:required
-              ~delta:!frame_delta);
+            Renderer.render_frame runtime.renderer ~layout_height:required
+              ~width ~height ~delta:!frame_delta);
       (* A widget can discover geometry while rendering and request a pass that
          includes a newly visible child. Matrix consumed the current redraw
          before invoking us, so explicitly retain that follow-up request. *)
       if Renderer.needs_render runtime.renderer then
         Matrix.request_redraw runtime.matrix_app;
-      let renderer_screen = Renderer.screen runtime.renderer in
-      let renderer_grid = Matrix.Screen.next_grid renderer_screen in
-      let renderer_hits = Matrix.Screen.next_hit_grid renderer_screen in
-      Matrix.Grid.blit ~src:renderer_grid ~dst:(Matrix.grid runtime.matrix_app);
-      Matrix.Screen.Hit_grid.blit ~src:renderer_hits
-        ~dst:(Matrix.hits runtime.matrix_app);
-      let cursor = Matrix.Screen.cursor renderer_screen in
+      (* The renderer built directly into the runtime's screen; Matrix.submit
+         presents it with a single diff. Only cursor intent is forwarded. *)
+      let cursor = Matrix.Screen.cursor (Renderer.screen runtime.renderer) in
       (* Keep the terminal cursor hidden unless the focused renderable exposes
          an explicit cursor position. *)
       Matrix.set_cursor
@@ -908,7 +900,6 @@ let run ?matrix
             ~g:(Float.of_int g /. 255.)
             ~b:(Float.of_int b /. 255.)
       | None -> ());
-      ignore (Renderer.render runtime.renderer : string);
       process_pending_focus runtime)
 
 let empty = Vnode.empty

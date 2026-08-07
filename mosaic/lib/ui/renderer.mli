@@ -25,6 +25,7 @@ type t
 val create :
   ?width_method:Matrix.Text.width_method ->
   ?clock:(unit -> float) ->
+  ?screen:Matrix.Screen.t ->
   ?style:Toffee.Style.t ->
   unit ->
   t
@@ -33,6 +34,11 @@ val create :
     - [width_method]: the text width computation method. Defaults to [`Unicode].
     - [clock]: the time source for the underlying {!Matrix.Screen.t}; see
       {!Matrix.Screen.create}.
+    - [screen]: an existing screen to adopt instead of creating one — pass the
+      host runtime's {!Matrix.screen} so {!render_frame} builds directly into it
+      and the host presents frames with a single diff. Alpha blending is enabled
+      on the adopted screen's grids. [width_method] and [clock] are ignored when
+      [screen] is given.
     - [style]: the root node's initial style. Defaults to
       {!Toffee.Style.default}. *)
 
@@ -70,7 +76,8 @@ val is_settled : t -> bool
 
 (** {1:rendering Rendering} *)
 
-val render_frame : t -> width:int -> height:int -> delta:float -> unit
+val render_frame :
+  ?layout_height:int -> t -> width:int -> height:int -> delta:float -> unit
 (** [render_frame t ~width ~height ~delta] builds the next frame.
 
     Each call replaces the complete unpresented frame. Blank cells therefore
@@ -85,10 +92,16 @@ val render_frame : t -> width:int -> height:int -> delta:float -> unit
     - Walks the tree: extracts layout and builds the render command list,
       omitting subtrees whose ancestor clip does not intersect the frame.
     - Executes render commands: draws to the grid and populates the hit grid.
-    - Rechecks hover state against the updated hit grid.
+    - Rechecks hover state against the frame's hit grid.
 
     [width] and [height] are the frame dimensions in terminal cells. [delta] is
-    elapsed milliseconds since the last frame. *)
+    elapsed milliseconds since the last frame.
+
+    [layout_height] (default [height]) is the height given to layout. Pass a
+    larger value when content exceeds the presented viewport — for example a
+    primary-mode host growing its live region — so layout computes against the
+    content height while the screen keeps the viewport size; rows below [height]
+    are clipped. *)
 
 val render : ?full:bool -> t -> string
 (** [render t] diffs the current frame against the previous one and returns the
@@ -96,7 +109,10 @@ val render : ?full:bool -> t -> string
 
     When [full] is [true], all cells are emitted regardless of changes. [full]
     defaults to [false]. Frame timestamps come from the [clock] given to
-    {!create}. *)
+    {!create}.
+
+    Do not call this on a renderer that adopted a host screen — presentation
+    belongs to the host runtime there. *)
 
 val needs_render : t -> bool
 (** [needs_render t] is [true] iff a renderable has requested a re-render or
