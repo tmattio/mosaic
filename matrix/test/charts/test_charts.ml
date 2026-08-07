@@ -306,7 +306,8 @@ let%expect_test "circle sub-integer radius stays visible" =
     draw chart grid ~width ~height
   in
   render_chart ~width:12 ~height:8 draw;
-  [%expect_exact {|
+  [%expect_exact
+    {|
 [0;38;2;255;255;255m┌────────────┐[0m
 [0;38;2;255;255;255m│            │[0m
 [0;38;2;255;255;255m│    [38;5;6m█████[38;2;255;255;255m   │[0m
@@ -332,7 +333,8 @@ let%expect_test "overlay text anchors" =
     Overlay.text ~anchor:`Right layout grid ~x:4.5 ~y:1. "end"
   in
   render_chart ~width:10 ~height:5 draw;
-  [%expect_exact {|
+  [%expect_exact
+    {|
 [0;38;2;255;255;255m┌──────────┐[0m
 [0;38;2;255;255;255m│          │[0m
 [0;38;2;255;255;255m│     [38;5;246mbeg[38;2;255;255;255m  │[0m
