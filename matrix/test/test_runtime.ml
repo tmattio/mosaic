@@ -686,6 +686,20 @@ let test_unchanged_alt_submit_emits_no_bytes () =
   equal ~msg:"unchanged alt frame skips terminal write" int 0
     (String.length (output state))
 
+(* Regression: a second suspend used to overwrite [previous_control_state]
+   with the suspended state, so resume could never leave it — redraws stayed
+   disabled forever while the terminal was left raw. *)
+let test_suspend_is_idempotent () =
+  let app, _state =
+    make_app ~target_fps:None ~input_timeout:(Some 0.) ()
+  in
+  Matrix.suspend app;
+  Matrix.suspend app;
+  Matrix.resume app;
+  Matrix.request_redraw app;
+  is_true ~msg:"double suspend then resume leaves the app resumable"
+    (Matrix.redraw_requested app)
+
 (* Regression: close must not clobber terminal appearance the app never
    touched (window title, cursor colour, cursor style). *)
 let test_close_leaves_untouched_appearance_alone () =
@@ -1632,6 +1646,7 @@ let () =
             test_startup_capability_window_defers_split_response;
           test "resume reanchors primary from bottom cursor"
             test_resume_reanchors_primary_from_bottom_cursor;
+          test "suspend is idempotent" test_suspend_is_idempotent;
           test "close leaves untouched appearance alone"
             test_close_leaves_untouched_appearance_alone;
           test "close restores touched cursor appearance"

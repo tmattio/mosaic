@@ -340,7 +340,11 @@ val suspend : ?leave_alt:bool -> app -> unit
     modify-other-keys off; raw mode off; pending input flushed). When
     [leave_alt] is [true] (default [false], preserving existing callers) it also
     exits the alternate-screen buffer, so a full-screen foreground child owns
-    the primary screen and its scrollback. {!resume} reapplies configuration. *)
+    the primary screen and its scrollback. {!resume} reapplies configuration.
+
+    Idempotent: calling [suspend] while already suspended (or after {!close})
+    is a no-op, so the control state restored by {!resume} is always the one
+    captured by the first suspend. *)
 
 val resume : app -> unit
 (** [resume app] reapplies terminal configuration after {!suspend}: it re-enters

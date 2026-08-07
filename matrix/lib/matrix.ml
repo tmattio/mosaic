@@ -913,27 +913,33 @@ let pause t =
   update_loop_active t
 
 let suspend ?(leave_alt = false) t =
-  t.previous_control_state <- t.control_state;
-  t.control_state <- `Explicit_suspended;
-  update_loop_active t;
-  t.redraw_requested <- false;
-  force_full_redraw t;
-  (* The suspended program owns the terminal; whatever cursor state it leaves
-     behind is unknown, so the first frame after resume must re-emit. *)
-  t.last_cursor_position <- None;
-  t.last_cursor_visible <- None;
-  t.last_cursor_shape <- None;
-  t.last_cursor_color <- None;
-  (try Terminal.set_mouse_mode t.terminal `Off with _ -> ());
-  (try Terminal.enable_bracketed_paste t.terminal false with _ -> ());
-  (try Terminal.enable_focus_reporting t.terminal false with _ -> ());
-  (try Terminal.enable_kitty_keyboard t.terminal false with _ -> ());
-  (try Terminal.enable_modify_other_keys t.terminal false with _ -> ());
-  (try t.backend.set_raw_mode false with _ -> ());
-  t.suspend_left_alt <- leave_alt;
-  (if leave_alt then
-     try Terminal.leave_alternate_screen t.terminal with _ -> ());
-  try t.backend.flush_input () with _ -> ()
+  (* A second suspend must be a no-op: it would overwrite
+     [previous_control_state] with [`Explicit_suspended], after which every
+     resume restores the suspended state and the app can never render again.
+     It would also drop a pending [~leave_alt:true] re-enter obligation. *)
+  if t.closed || t.control_state = `Explicit_suspended then ()
+  else (
+    t.previous_control_state <- t.control_state;
+    t.control_state <- `Explicit_suspended;
+    update_loop_active t;
+    t.redraw_requested <- false;
+    force_full_redraw t;
+    (* The suspended program owns the terminal; whatever cursor state it leaves
+       behind is unknown, so the first frame after resume must re-emit. *)
+    t.last_cursor_position <- None;
+    t.last_cursor_visible <- None;
+    t.last_cursor_shape <- None;
+    t.last_cursor_color <- None;
+    (try Terminal.set_mouse_mode t.terminal `Off with _ -> ());
+    (try Terminal.enable_bracketed_paste t.terminal false with _ -> ());
+    (try Terminal.enable_focus_reporting t.terminal false with _ -> ());
+    (try Terminal.enable_kitty_keyboard t.terminal false with _ -> ());
+    (try Terminal.enable_modify_other_keys t.terminal false with _ -> ());
+    (try t.backend.set_raw_mode false with _ -> ());
+    t.suspend_left_alt <- leave_alt;
+    (if leave_alt then
+       try Terminal.leave_alternate_screen t.terminal with _ -> ());
+    try t.backend.flush_input () with _ -> ())
 
 let resume t =
   if t.control_state <> `Explicit_suspended then ()
