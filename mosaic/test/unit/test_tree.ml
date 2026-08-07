@@ -453,6 +453,22 @@ let mouse_scroll_up_moves () =
   emit_mouse tree (mouse_scroll_up ~x:5 ~y:5);
   equal ~msg:"moved up" int 1 (Tree.selected_index tree)
 
+let mouse_click_selects_away_from_origin () =
+  (* Mouse events carry absolute screen coordinates; the tree must translate
+     them to widget-local space before mapping rows and icon columns. *)
+  let _t, tree = make_tree ~items:sample_items () in
+  layout_node (Tree.node tree) ~x:20 ~y:5 ~width:40 ~height:10;
+  (* Click on the tree's second visible row: "test" (all collapsed). *)
+  emit_mouse tree (mouse_down ~x:30 ~y:6);
+  equal ~msg:"selected" int 1 (Tree.selected_index tree)
+
+let mouse_click_icon_toggles_away_from_origin () =
+  let _t, tree = make_tree ~items:sample_items () in
+  layout_node (Tree.node tree) ~x:20 ~y:5 ~width:40 ~height:10;
+  (* Click on the icon area of "src": local (0, 0). *)
+  emit_mouse tree (mouse_down ~x:20 ~y:5);
+  is_true ~msg:"expanded" (Tree.is_expanded tree 0)
+
 let mouse_click_beyond_items_ignored () =
   let _t, tree = make_tree ~items:sample_items () in
   with_layout tree ~width:40 ~height:10;
@@ -635,6 +651,10 @@ let () =
         [
           test "click selects" mouse_click_selects;
           test "click icon toggles" mouse_click_icon_toggles;
+          test "click selects away from origin"
+            mouse_click_selects_away_from_origin;
+          test "click icon toggles away from origin"
+            mouse_click_icon_toggles_away_from_origin;
           test "scroll down moves" mouse_scroll_down_moves;
           test "scroll up moves" mouse_scroll_up_moves;
           test "click beyond items ignored" mouse_click_beyond_items_ignored;
