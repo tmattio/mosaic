@@ -1,5 +1,6 @@
 (executable
  (name bench_renderer)
+ (modules bench_renderer)
  (libraries thumper mosaic.ui toffee))
 
 (rule
@@ -9,3 +10,16 @@
   (progn
    (run %{exe:bench_renderer.exe} --wait-quiet 60)
    (diff? renderer.thumper renderer.thumper.corrected))))
+
+(executable
+ (name bench_reconciler)
+ (modules bench_reconciler)
+ (libraries thumper mosaic mosaic.ui))
+
+(rule
+ (alias bench)
+ (locks /bench)
+ (action
+  (progn
+   (run %{exe:bench_reconciler.exe} --wait-quiet 60)
+   (diff? reconciler.thumper reconciler.thumper.corrected))))
