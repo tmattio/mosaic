@@ -1731,53 +1731,78 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
       data
   in
 
-  let get_circle_points ~cx ~cy ~radius =
-    if radius <= 0 then []
-    else
+  (* Midpoint ellipse outline in integer pixel space. Zero radii degenerate
+     to a segment or a single point so small marks stay visible. *)
+  let get_ellipse_points ~cx ~cy ~rx ~ry =
+    if rx <= 0 && ry <= 0 then [ (cx, cy) ]
+    else if rx <= 0 then List.init ((2 * ry) + 1) (fun i -> (cx, cy - ry + i))
+    else if ry <= 0 then List.init ((2 * rx) + 1) (fun i -> (cx - rx + i, cy))
+    else begin
       let points = ref [] in
-      let t1 = ref (radius / 16) in
-      let t2 = ref 0 in
-      let x = ref radius in
-      let y = ref 0 in
-      let add dx dy = points := (cx + dx, cy + dy) :: !points in
-      while !x >= !y do
+      let add x y =
+        points :=
+          (cx + x, cy + y) :: (cx - x, cy + y) :: (cx + x, cy - y)
+          :: (cx - x, cy - y) :: !points
+      in
+      let rx2 = float (rx * rx) and ry2 = float (ry * ry) in
+      let x = ref 0 and y = ref ry in
+      let dx = ref 0. and dy = ref (2. *. rx2 *. float ry) in
+      (* Region 1: |slope| < 1. *)
+      let d1 = ref (ry2 -. (rx2 *. float ry) +. (0.25 *. rx2)) in
+      while !dx < !dy do
         add !x !y;
-        add !x (- !y);
-        add (- !x) !y;
-        add (- !x) (- !y);
-        add !y !x;
-        add !y (- !x);
-        add (- !y) !x;
-        add (- !y) (- !x);
-        incr y;
-        t1 := !t1 + !y;
-        t2 := !t1 - !x;
-        if !t2 >= 0 then (
-          t1 := !t2;
-          decr x)
+        incr x;
+        dx := !dx +. (2. *. ry2);
+        if !d1 < 0. then d1 := !d1 +. !dx +. ry2
+        else begin
+          decr y;
+          dy := !dy -. (2. *. rx2);
+          d1 := !d1 +. !dx -. !dy +. ry2
+        end
+      done;
+      (* Region 2: |slope| >= 1. *)
+      let fx = float !x and fy = float !y in
+      let d2 =
+        ref
+          ((ry2 *. (fx +. 0.5) *. (fx +. 0.5))
+          +. (rx2 *. (fy -. 1.) *. (fy -. 1.))
+          -. (rx2 *. ry2))
+      in
+      while !y >= 0 do
+        add !x !y;
+        decr y;
+        dy := !dy -. (2. *. rx2);
+        if !d2 > 0. then d2 := !d2 +. rx2 -. !dy
+        else begin
+          incr x;
+          dx := !dx +. (2. *. ry2);
+          d2 := !d2 +. !dx -. !dy +. rx2
+        end
       done;
       !points
+    end
   in
 
+  (* Circles are specified in data units but rasterized in pixel space: the
+     center and radii go through the axis transforms first, so sub-integer
+     data radii stay visible and non-1:1 x/y mappings yield an ellipse of
+     cells rather than a sparse scatter of mapped data-space points. *)
   let draw_circle ~y_axis ~style ~kind ~cxa ~cya ~ra =
-    let y_to_px_cell' = select_y_to_px_cell y_axis in
+    let y_to_px' = select_y_to_px_unclamped y_axis in
     let y_view = select_y_view y_axis in
     let n = Array.length cxa in
     match kind with
     | `Line ->
         for i = 0 to n - 1 do
-          let cxv = cxa.(i) and cyv = cya.(i) and rv = ra.(i) in
-          let cx_i = int_of_float (Float.round cxv) in
-          let cy_i = int_of_float (Float.round cyv) in
-          let radius = int_of_float (Float.round (max 0. rv)) in
-          let pts = get_circle_points ~cx:cx_i ~cy:cy_i ~radius in
+          let cxv = cxa.(i) and cyv = cya.(i) and rv = max 0. ra.(i) in
+          let cx = x_to_px_unclamped cxv and cy = y_to_px' cyv in
+          let rx = abs (x_to_px_unclamped (cxv +. rv) - cx) in
+          let ry = abs (y_to_px' (cyv +. rv) - cy) in
           List.iter
-            (fun (xd, yd) ->
-              let px = x_to_px_cell (float xd) in
-              let py = y_to_px_cell' (float yd) in
+            (fun (px, py) ->
               if Layout.rect_contains r ~x:px ~y:py then
                 draw_text grid ~x:px ~y:py ~style "█")
-            pts
+            (get_ellipse_points ~cx ~cy ~rx ~ry)
         done
     | `Braille ->
         let gx = r.width * 2 in
@@ -1785,28 +1810,25 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
         let xmin = layout.x_view.min and xmax = layout.x_view.max in
         let ymin = y_view.min and ymax = y_view.max in
         let dx = xmax -. xmin and dy = ymax -. ymin in
+        let sub_of_x v =
+          if dx <= 0. then 0
+          else int_of_float (Float.round ((v -. xmin) *. float (gx - 1) /. dx))
+        in
+        let sub_of_y v =
+          if dy <= 0. then 0
+          else int_of_float (Float.round ((v -. ymin) *. float (gy - 1) /. dy))
+        in
         braille_clear ();
         for i = 0 to n - 1 do
-          let cxv = cxa.(i) and cyv = cya.(i) and rv = ra.(i) in
-          let cx_i = int_of_float (Float.round cxv) in
-          let cy_i = int_of_float (Float.round cyv) in
-          let radius = int_of_float (Float.round (max 0. rv)) in
-          let pts = get_circle_points ~cx:cx_i ~cy:cy_i ~radius in
+          let cxv = cxa.(i) and cyv = cya.(i) and rv = max 0. ra.(i) in
+          let cx = sub_of_x cxv and cy = sub_of_y cyv in
+          let rx = abs (sub_of_x (cxv +. rv) - cx) in
+          let ry = abs (sub_of_y (cyv +. rv) - cy) in
           List.iter
-            (fun (xd, yd) ->
-              let x' = float xd and y' = float yd in
-              let sx =
-                if dx <= 0. then 0. else (x' -. xmin) *. float (gx - 1) /. dx
-              in
-              let sy =
-                if dy <= 0. then 0. else (y' -. ymin) *. float (gy - 1) /. dy
-              in
-              let xg = int_of_float (Float.round sx) in
-              let yg = int_of_float (Float.round sy) in
-              let x_sub = (r.x * 2) + xg in
-              let y_sub = (r.y * 4) + (gy - 1 - yg) in
-              braille_set_dot x_sub y_sub)
-            pts
+            (fun (xg, yg) ->
+              if xg >= 0 && xg < gx && yg >= 0 && yg < gy then
+                braille_set_dot ((r.x * 2) + xg) ((r.y * 4) + (gy - 1 - yg)))
+            (get_ellipse_points ~cx ~cy ~rx ~ry)
         done;
         render_braille style
   in
