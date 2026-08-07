@@ -949,21 +949,21 @@ module Sub : sig
         (** [On_tick f] fires [f ~dt] on every render frame, where [dt] is the
             elapsed time in seconds since the previous frame. *)
     | On_key of (Event.key -> 'msg option)
-        (** [On_key f] delivers key events only to the currently focused
-            element. [f] returns [None] to ignore an event. *)
+        (** [On_key f] delivers key events the UI tree did not consume (no
+            handler called prevent-default). [f] returns [None] to ignore an
+            event. *)
     | On_key_all of (Event.key -> 'msg option)
-        (** [On_key_all f] delivers all key events regardless of focus. [f]
-            returns [None] to ignore an event. *)
+        (** [On_key_all f] delivers all key events, consumed or not. [f] returns
+            [None] to ignore an event. *)
     | On_mouse of (Event.mouse -> 'msg option)
-        (** [On_mouse f] delivers mouse events only to the currently focused
-            element. *)
+        (** [On_mouse f] delivers mouse events the UI tree did not consume. *)
     | On_mouse_all of (Event.mouse -> 'msg option)
-        (** [On_mouse_all f] delivers all mouse events regardless of focus. *)
+        (** [On_mouse_all f] delivers all mouse events, consumed or not. *)
     | On_paste of (Event.paste -> 'msg option)
-        (** [On_paste f] delivers paste events only to the currently focused
-            element. *)
+        (** [On_paste f] delivers paste events the UI tree did not consume (e.g.
+            a focused editor inserting the paste counts as consuming it). *)
     | On_paste_all of (Event.paste -> 'msg option)
-        (** [On_paste_all f] delivers all paste events regardless of focus. *)
+        (** [On_paste_all f] delivers all paste events, consumed or not. *)
     | On_resize of (width:int -> height:int -> 'msg)
         (** [On_resize f] fires [f ~width ~height] whenever the terminal is
             resized. *)
@@ -996,9 +996,10 @@ module Sub : sig
       must advance at the display frame rate. *)
 
   val on_key : (Event.key -> 'msg option) -> 'msg t
-  (** [on_key f] delivers key events to [f] for the currently focused element.
-      [f] returns [None] to ignore an event without dispatching. See also
-      {!val-on_key_all}. *)
+  (** [on_key f] delivers key events the UI tree did not consume: an event a
+      focused widget handled (its handler called prevent-default) is not
+      delivered. [f] returns [None] to ignore an event without dispatching. See
+      also {!val-on_key_all}. *)
 
   val on_keys : (Shortcut.t * 'msg) list -> 'msg t
   (** [on_keys bindings] delivers key events to the first matching shortcut in
@@ -1010,20 +1011,21 @@ module Sub : sig
       regardless of which element has focus. *)
 
   val on_mouse : (Event.mouse -> 'msg option) -> 'msg t
-  (** [on_mouse f] delivers mouse events to [f] for the currently focused
-      element. See also {!val-on_mouse_all}. *)
+  (** [on_mouse f] delivers mouse events the UI tree did not consume: an event a
+      widget handled (its handler called prevent-default) is not delivered. See
+      also {!val-on_mouse_all}. *)
 
   val on_mouse_all : (Event.mouse -> 'msg option) -> 'msg t
-  (** [on_mouse_all f] is like {!val-on_mouse} but delivers all mouse events
-      regardless of focus. *)
+  (** [on_mouse_all f] is like {!val-on_mouse} but delivers all mouse events,
+      consumed or not. *)
 
   val on_paste : (Event.paste -> 'msg option) -> 'msg t
-  (** [on_paste f] delivers paste events to [f] for the currently focused
-      element. See also {!val-on_paste_all}. *)
+  (** [on_paste f] delivers paste events the UI tree did not consume: a paste a
+      focused editor inserted is not delivered. See also {!val-on_paste_all}. *)
 
   val on_paste_all : (Event.paste -> 'msg option) -> 'msg t
-  (** [on_paste_all f] is like {!val-on_paste} but delivers all paste events
-      regardless of focus. *)
+  (** [on_paste_all f] is like {!val-on_paste} but delivers all paste events,
+      consumed or not. *)
 
   val on_resize : (width:int -> height:int -> 'msg) -> 'msg t
   (** [on_resize f] fires [f ~width ~height] whenever the terminal is resized,

@@ -243,11 +243,11 @@ let emit_selection_mouse t ~x ~y ~modifiers ~target_node ~target_id kind =
         (Some anchor, Some (Renderable.Private.num anchor))
     | _ -> (target_node, target_id)
   in
-  match node with
-  | Some node ->
-      let ev = Event.Mouse.make ~x ~y ~modifiers ?target kind in
-      Renderable.Private.emit_mouse node ev
-  | None -> ()
+  let ev = Event.Mouse.make ~x ~y ~modifiers ?target kind in
+  (match node with
+  | Some node -> Renderable.Private.emit_mouse node ev
+  | None -> ());
+  ev
 
 (* ───── Hover Tracking ───── *)
 
@@ -325,7 +325,8 @@ let auto_focus_on_click t ~(modifiers : Input.Modifier.t) ~target_node ev =
 
 (* ───── Selection Event Handling ───── *)
 
-(* Returns [true] if the selection state machine consumed the event. *)
+(* When the selection state machine consumes the event, returns [Some ev]
+   where [ev] is the event the tree saw; [None] means not consumed. *)
 let handle_selection t ~x ~y ~(modifiers : Input.Modifier.t) ~target_node
     ~target_id kind =
   match kind with
@@ -363,34 +364,37 @@ let handle_selection t ~x ~y ~(modifiers : Input.Modifier.t) ~target_node
              OpenTUI's dispatchMouseEvent, which pairs event emission with
              auto-focus. *)
           auto_focus_on_click t ~modifiers ~target_node:(Some node) ev;
-          true
-      | _ -> false)
+          Some ev
+      | _ -> None)
   | Event.Mouse.Drag { button = Left; _ } -> (
       match t.selection_state.current with
       | Some sel when Selection.is_dragging sel ->
           ignore
             (update_selection_state t.selection_state ~x ~y ~target_node : bool);
-          emit_selection_mouse t ~x ~y ~modifiers ~target_node ~target_id
-            (Event.Mouse.Drag { button = Left; is_dragging = true });
-          true
-      | _ -> false)
+          Some
+            (emit_selection_mouse t ~x ~y ~modifiers ~target_node ~target_id
+               (Event.Mouse.Drag { button = Left; is_dragging = true }))
+      | _ -> None)
   | Event.Mouse.Up { button = Left; _ } -> (
       match t.selection_state.current with
       | Some sel when Selection.is_dragging sel ->
-          emit_selection_mouse t ~x ~y ~modifiers ~target_node ~target_id
-            (Event.Mouse.Up { button = Left; is_dragging = true });
+          let ev =
+            emit_selection_mouse t ~x ~y ~modifiers ~target_node ~target_id
+              (Event.Mouse.Up { button = Left; is_dragging = true })
+          in
           Selection.set_is_dragging sel false;
           notify_selectables t.selection_state (Some sel);
-          true
-      | _ -> false)
-  | _ -> false
+          Some ev
+      | _ -> None)
+  | _ -> None
 
 (* ───── Drag Capture Handling ───── *)
 
-(* Returns [true] if drag capture consumed the event. *)
+(* When drag capture consumes the event, returns [Some ev] where [ev] is the
+   event the captured node saw; [None] means not consumed. *)
 let handle_drag_capture t ~x ~y ~modifiers ~target_node ~target_id kind =
   match t.captured with
-  | None -> false
+  | None -> None
   | Some captured_node -> (
       let captured_id = Some (Renderable.Private.num captured_node) in
       match kind with
@@ -398,7 +402,7 @@ let handle_drag_capture t ~x ~y ~modifiers ~target_node ~target_id kind =
           (* Wheel events keep targeting the hit node (or the focused
              fallback) during a capture drag; OpenTUI handles scroll before
              capture redirection. *)
-          false
+          None
       | Event.Mouse.Up { button; _ } ->
           let drag_end_ev =
             Event.Mouse.make ~x ~y ~modifiers ?target:captured_id
@@ -420,11 +424,11 @@ let handle_drag_capture t ~x ~y ~modifiers ~target_node ~target_id kind =
           | None -> ());
           t.captured <- None;
           t.dirty := true;
-          true
+          Some up_ev
       | _ ->
           let ev = Event.Mouse.make ~x ~y ~modifiers ?target:captured_id kind in
           Renderable.Private.emit_mouse captured_node ev;
-          true)
+          Some ev)
 
 (* ───── Mouse Dispatch Pipeline ───── *)
 
@@ -436,7 +440,11 @@ let map_button = function
 
 (* Full mouse dispatch pipeline in a fixed order: 1. Update pointer →
    2. Hit test → 3. Selection → 4. Hover → 5. Drag capture → 6. Normal dispatch
-   → 7. Selection clear *)
+   → 7. Selection clear.
+
+   Returns the event the tree saw (mirroring [dispatch_key]), so a host can
+   inspect [Event.Mouse.default_prevented] to tell whether a widget consumed
+   the input. *)
 let dispatch_mouse_internal t ~x ~y ~modifiers kind =
   t.pointer.position <- Some (x, y);
   t.pointer.modifiers <- modifiers;
@@ -457,38 +465,41 @@ let dispatch_mouse_internal t ~x ~y ~modifiers kind =
   in
   let target_id = if target_num > 0 then Some target_num else None in
   (* Selection state machine *)
-  if handle_selection t ~x ~y ~modifiers ~target_node ~target_id kind then ()
-  else (
-    (* Hover tracking *)
-    update_hover t ~x ~y ~modifiers ~target_node ~target_num kind;
-    (* Drag capture *)
-    if handle_drag_capture t ~x ~y ~modifiers ~target_node ~target_id kind then
-      ()
-    else begin
-      (* Set up new capture on left drag *)
-      (match kind with
-      | Event.Mouse.Drag { button = Left; _ } -> (
-          match target_node with
-          | Some node -> t.captured <- Some node
-          | None -> ())
-      | _ -> ());
-      (* Normal dispatch *)
-      let ev = Event.Mouse.make ~x ~y ~modifiers ?target:target_id kind in
-      (match target_node with
-      | Some node -> Renderable.Private.emit_mouse node ev
-      | None -> ());
-      (match kind with
-      | Event.Mouse.Down { button = Left } ->
-          auto_focus_on_click t ~modifiers ~target_node ev
-      | _ -> ());
-      (* Clear selection on left click if not prevented *)
-      match kind with
-      | Event.Mouse.Down { button = Left }
-        when Option.is_some t.selection_state.current ->
-          if not (Event.Mouse.default_prevented ev) then
-            clear_active_selection t
-      | _ -> ()
-    end)
+  match handle_selection t ~x ~y ~modifiers ~target_node ~target_id kind with
+  | Some ev -> ev
+  | None -> (
+      (* Hover tracking *)
+      update_hover t ~x ~y ~modifiers ~target_node ~target_num kind;
+      (* Drag capture *)
+      match
+        handle_drag_capture t ~x ~y ~modifiers ~target_node ~target_id kind
+      with
+      | Some ev -> ev
+      | None ->
+          (* Set up new capture on left drag *)
+          (match kind with
+          | Event.Mouse.Drag { button = Left; _ } -> (
+              match target_node with
+              | Some node -> t.captured <- Some node
+              | None -> ())
+          | _ -> ());
+          (* Normal dispatch *)
+          let ev = Event.Mouse.make ~x ~y ~modifiers ?target:target_id kind in
+          (match target_node with
+          | Some node -> Renderable.Private.emit_mouse node ev
+          | None -> ());
+          (match kind with
+          | Event.Mouse.Down { button = Left } ->
+              auto_focus_on_click t ~modifiers ~target_node ev
+          | _ -> ());
+          (* Clear selection on left click if not prevented *)
+          (match kind with
+          | Event.Mouse.Down { button = Left }
+            when Option.is_some t.selection_state.current ->
+              if not (Event.Mouse.default_prevented ev) then
+                clear_active_selection t
+          | _ -> ());
+          ev)
 
 (* ───── Creation ───── *)
 
@@ -878,11 +889,11 @@ let dispatch_mouse t (mouse : Input.Mouse.event) =
         (Event.Mouse.Scroll { direction; delta })
 
 let dispatch_paste t text =
-  match !(t.focused) with
+  let ev = Event.Paste.of_text text in
+  (match !(t.focused) with
   | None -> ()
-  | Some node ->
-      let ev = Event.Paste.of_text text in
-      Renderable.Private.emit_paste node ev
+  | Some node -> Renderable.Private.emit_paste node ev);
+  ev
 
 (* ───── Selection ───── *)
 

@@ -4,6 +4,8 @@ open Test_harness
 
 (* ── Helpers ── *)
 
+let dispatch_mouse r ev = ignore (Renderer.dispatch_mouse r ev : Event.mouse)
+
 let make_md ?content ?conceal ?streaming ?render_node ?render_code ?code_syntax
     () =
   let t = make_ctx () in
@@ -112,8 +114,8 @@ let selection_callback_reports_rendered_text () =
   let mouse kind =
     Input.Mouse.make ~x:0 ~y:0 ~modifiers:Input.Modifier.none kind
   in
-  Renderer.dispatch_mouse renderer (mouse (Down { button = Left }));
-  Renderer.dispatch_mouse renderer
+  dispatch_mouse renderer (mouse (Down { button = Left }));
+  dispatch_mouse renderer
     (Input.Mouse.make ~x:5 ~y:0 ~modifiers:Input.Modifier.none
        (Drag { button = Left }));
   some ~msg:"selected markdown text" string "Hello" !selected
@@ -134,8 +136,8 @@ let selection_callback_clears () =
   let mouse kind =
     Input.Mouse.make ~x:0 ~y:0 ~modifiers:Input.Modifier.none kind
   in
-  Renderer.dispatch_mouse renderer (mouse (Down { button = Left }));
-  Renderer.dispatch_mouse renderer
+  dispatch_mouse renderer (mouse (Down { button = Left }));
+  dispatch_mouse renderer
     (Input.Mouse.make ~x:5 ~y:0 ~modifiers:Input.Modifier.none
        (Drag { button = Left }));
   some ~msg:"selection did not change while disabled" string "stale" !selected

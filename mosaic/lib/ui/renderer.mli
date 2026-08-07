@@ -146,7 +146,7 @@ val dispatch_key : t -> Input.Key.event -> Event.key
     node's handler; callers can inspect it to determine whether the key was
     consumed. *)
 
-val dispatch_mouse : t -> Input.Mouse.event -> unit
+val dispatch_mouse : t -> Input.Mouse.event -> Event.mouse
 (** [dispatch_mouse t mouse] runs the full mouse dispatch pipeline:
     - Updates pointer state.
     - Hit-tests the mouse position. Wheel events that hit nothing are retargeted
@@ -158,11 +158,18 @@ val dispatch_mouse : t -> Input.Mouse.event -> unit
       active.
     - Dispatches with bubbling to the hit-tested node.
     - Auto-focuses on left click.
-    - Clears stale selection if not prevented. *)
+    - Clears stale selection if not prevented.
 
-val dispatch_paste : t -> string -> unit
+    Returns the event the tree saw, mirroring {!dispatch_key}: the drag-capture
+    and selection paths may adjust the kind (e.g. [is_dragging] on a release),
+    and the [default_prevented] flag reflects whether a handler consumed the
+    event. *)
+
+val dispatch_paste : t -> string -> Event.paste
 (** [dispatch_paste t text] sends [text] as a paste event to the focused
-    renderable. *)
+    renderable and returns the event. Its [default_prevented] flag reflects
+    whether the focused node (including a widget's default paste behavior)
+    consumed the paste. *)
 
 (** {1:focus Focus} *)
 

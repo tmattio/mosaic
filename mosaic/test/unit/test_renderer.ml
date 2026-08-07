@@ -47,6 +47,13 @@ let mouse_scroll ?modifiers ~x ~y direction =
   | Input.Mouse mouse -> mouse
   | _ -> assert false
 
+(* Unit-returning dispatch wrappers: these tests assert via tree state, not
+   the event [Renderer.dispatch_mouse]/[dispatch_paste] return. *)
+let dispatch_mouse t ev = ignore (Renderer.dispatch_mouse t ev : Event.mouse)
+
+let dispatch_paste t text =
+  ignore (Renderer.dispatch_paste t text : Event.paste)
+
 let record_mouse node =
   let log = ref [] in
   Renderable.on_mouse node (fun ev -> log := ev :: !log);
@@ -417,7 +424,7 @@ let left_click_focuses_focusable_node () =
     make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 ~focusable:true ()
   in
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
   match Renderer.focused t with
   | Some n -> is_true ~msg:"child focused" (n == child)
   | None -> fail "expected focus after click"
@@ -426,7 +433,7 @@ let left_click_on_non_focusable_does_not_focus () =
   let t = make_renderer () in
   let _child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
   is_none ~msg:"no focus" (Renderer.focused t)
 
 let click_walks_up_to_focusable_parent () =
@@ -437,7 +444,7 @@ let click_walks_up_to_focusable_parent () =
   in
   let _child = make_child ~parent ~x:2 ~y:2 ~w:5 ~h:5 () in
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_press ~x:3 ~y:3 ());
+  dispatch_mouse t (mouse_press ~x:3 ~y:3 ());
   match Renderer.focused t with
   | Some n -> is_true ~msg:"parent focused" (n == parent)
   | None -> fail "expected parent to be focused"
@@ -455,7 +462,7 @@ let left_click_focuses_selectable_node () =
     ~clear:(fun () -> ())
     ~get_text:(fun () -> "");
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
   is_some ~msg:"selection started" (Renderer.selection t);
   match Renderer.focused t with
   | Some n -> is_true ~msg:"selectable child focused" (n == child)
@@ -467,7 +474,7 @@ let right_click_does_not_auto_focus () =
     make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 ~focusable:true ()
   in
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_press ~button:Right ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_press ~button:Right ~x:7 ~y:7 ());
   is_none ~msg:"no focus from right click" (Renderer.focused t)
 
 let shift_left_click_preserves_existing_focus () =
@@ -482,7 +489,7 @@ let shift_left_click_preserves_existing_focus () =
   do_frame t;
   ignore (Renderer.focus t composer : bool);
   let modifiers = { Input.Modifier.none with shift = true } in
-  Renderer.dispatch_mouse t (mouse_press ~modifiers ~x:25 ~y:2 ());
+  dispatch_mouse t (mouse_press ~modifiers ~x:25 ~y:2 ());
   match Renderer.focused t with
   | Some n -> is_true ~msg:"composer remains focused" (n == composer)
   | None -> fail "expected focus to be preserved"
@@ -502,7 +509,7 @@ let prevent_default_mouse_down_blocks_auto_focus () =
       | _ -> ());
   do_frame t;
   ignore (Renderer.focus t composer : bool);
-  Renderer.dispatch_mouse t (mouse_press ~x:25 ~y:2 ());
+  dispatch_mouse t (mouse_press ~x:25 ~y:2 ());
   match Renderer.focused t with
   | Some n -> is_true ~msg:"composer remains focused" (n == composer)
   | None -> fail "expected focus to be preserved"
@@ -591,14 +598,14 @@ let paste_dispatches_to_focused () =
   Renderable.set_paste_handler child
     (Some (fun ev -> received := Some (Event.Paste.text ev)));
   ignore (Renderer.focus t child : bool);
-  Renderer.dispatch_paste t "hello";
+  dispatch_paste t "hello";
   match !received with
   | Some s -> equal ~msg:"text" string "hello" s
   | None -> fail "expected paste event"
 
 let paste_does_nothing_when_no_focus () =
   let t = make_renderer () in
-  Renderer.dispatch_paste t "hello"
+  dispatch_paste t "hello"
 
 let paste_contains_correct_text () =
   let t = make_renderer () in
@@ -609,7 +616,7 @@ let paste_contains_correct_text () =
   Renderable.set_paste_handler child
     (Some (fun ev -> received := Event.Paste.text ev));
   ignore (Renderer.focus t child : bool);
-  Renderer.dispatch_paste t "world\n123";
+  dispatch_paste t "world\n123";
   equal ~msg:"text" string "world\n123" !received
 
 (* ── Mouse ── *)
@@ -619,7 +626,7 @@ let click_dispatches_to_positioned_child () =
   let child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   let log = record_mouse child in
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
   is_true ~msg:"received event" (List.length !log > 0);
   let ev = List.hd (List.rev !log) in
   match Event.Mouse.kind ev with
@@ -631,7 +638,7 @@ let click_on_empty_area_does_not_crash () =
   let _child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   do_frame t;
   (* Click outside all children — should not crash *)
-  Renderer.dispatch_mouse t (mouse_press ~x:0 ~y:0 ())
+  dispatch_mouse t (mouse_press ~x:0 ~y:0 ())
 
 let overlapping_children_last_child_wins () =
   let t = make_renderer () in
@@ -640,7 +647,7 @@ let overlapping_children_last_child_wins () =
   let log_a = record_mouse a in
   let log_b = record_mouse b in
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_press ~x:5 ~y:5 ());
+  dispatch_mouse t (mouse_press ~x:5 ~y:5 ());
   is_true ~msg:"b received" (List.length !log_b > 0);
   (* a should not receive the event directly — it may get it via bubbling from
      b's event dispatch, but the target hit should be b *)
@@ -652,7 +659,7 @@ let click_coordinates_are_absolute () =
   let child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   let log = record_mouse child in
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_press ~x:7 ~y:8 ());
+  dispatch_mouse t (mouse_press ~x:7 ~y:8 ());
   is_true ~msg:"has events" (List.length !log > 0);
   let ev = List.hd (List.rev !log) in
   equal ~msg:"x" int 7 (Event.Mouse.x ev);
@@ -663,8 +670,8 @@ let press_and_release_sequence () =
   let child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   let log = record_mouse child in
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
-  Renderer.dispatch_mouse t (mouse_release ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_release ~x:7 ~y:7 ());
   equal ~msg:"two events" int 2 (List.length !log);
   let events = List.rev !log in
   (match Event.Mouse.kind (List.nth events 0) with
@@ -679,7 +686,7 @@ let move_fires_move_event () =
   let child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   let log = record_mouse child in
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_motion ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_motion ~x:7 ~y:7 ());
   let found_move =
     List.exists
       (fun ev -> match Event.Mouse.kind ev with Move -> true | _ -> false)
@@ -693,12 +700,12 @@ let mouse_event_has_correct_modifiers () =
   let log = record_mouse child in
   let mods = { Input.Modifier.none with shift = true } in
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_press ~modifiers:mods ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_press ~modifiers:mods ~x:7 ~y:7 ());
   is_true ~msg:"received" (List.length !log > 0);
   let ev = List.hd !log in
   is_true ~msg:"shift" (Event.Mouse.modifiers ev).shift;
   log := [];
-  Renderer.dispatch_mouse t (mouse_motion ~modifiers:mods ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_motion ~modifiers:mods ~x:7 ~y:7 ());
   is_true ~msg:"motion received" (List.length !log > 0);
   let ev = List.hd !log in
   is_true ~msg:"motion shift" (Event.Mouse.modifiers ev).shift
@@ -708,7 +715,7 @@ let move_over_child_fires_over () =
   let child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   let log = record_mouse child in
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_motion ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_motion ~x:7 ~y:7 ());
   let found_over =
     List.exists
       (fun ev -> match Event.Mouse.kind ev with Over _ -> true | _ -> false)
@@ -724,9 +731,9 @@ let move_away_fires_out_then_over () =
   let log_b = record_mouse b in
   do_frame t;
   (* Move to a *)
-  Renderer.dispatch_mouse t (mouse_motion ~x:5 ~y:5 ());
+  dispatch_mouse t (mouse_motion ~x:5 ~y:5 ());
   (* Move to b *)
-  Renderer.dispatch_mouse t (mouse_motion ~x:25 ~y:5 ());
+  dispatch_mouse t (mouse_motion ~x:25 ~y:5 ());
   let a_got_out =
     List.exists
       (fun ev -> match Event.Mouse.kind ev with Out -> true | _ -> false)
@@ -744,9 +751,9 @@ let move_within_same_child_no_over_out () =
   let t = make_renderer () in
   let child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_motion ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_motion ~x:7 ~y:7 ());
   let log = record_mouse child in
-  Renderer.dispatch_mouse t (mouse_motion ~x:8 ~y:8 ());
+  dispatch_mouse t (mouse_motion ~x:8 ~y:8 ());
   let got_over_or_out =
     List.exists
       (fun ev ->
@@ -759,7 +766,7 @@ let hover_returns_hovered_node () =
   let t = make_renderer () in
   let child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_motion ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_motion ~x:7 ~y:7 ());
   match Renderer.hover t with
   | Some n -> is_true ~msg:"hover is child" (n == child)
   | None -> fail "expected hover node"
@@ -768,13 +775,13 @@ let hover_none_when_pointer_leaves () =
   let t = make_renderer () in
   let _child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_motion ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_motion ~x:7 ~y:7 ());
   is_some ~msg:"hovering" (Renderer.hover t);
   (* Move outside all children — root hover is technically not None since root
      covers everything, but hover tracks specific children. The hover node will
      be whatever the hit grid returns. Let's just move to a corner that the
      child doesn't cover. *)
-  Renderer.dispatch_mouse t (mouse_motion ~x:0 ~y:0 ());
+  dispatch_mouse t (mouse_motion ~x:0 ~y:0 ());
   (* Hover should change from the child *)
   match Renderer.hover t with
   | Some n -> is_true ~msg:"not the child" (not (n == _child))
@@ -785,7 +792,7 @@ let scroll_dispatches_to_hit_target () =
   let child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   let log = record_mouse child in
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_scroll ~x:7 ~y:7 Input.Mouse.Scroll_up);
+  dispatch_mouse t (mouse_scroll ~x:7 ~y:7 Input.Mouse.Scroll_up);
   let found_scroll =
     List.exists
       (fun ev -> match Event.Mouse.kind ev with Scroll _ -> true | _ -> false)
@@ -799,7 +806,7 @@ let scroll_with_modifiers () =
   let log = record_mouse child in
   let mods = { Input.Modifier.none with shift = true } in
   do_frame t;
-  Renderer.dispatch_mouse t
+  dispatch_mouse t
     (mouse_scroll ~modifiers:mods ~x:7 ~y:7 Input.Mouse.Scroll_down);
   is_true ~msg:"received" (List.length !log > 0);
   let ev = List.hd !log in
@@ -810,7 +817,7 @@ let scroll_on_empty_area () =
   let _child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   do_frame t;
   (* Should not crash *)
-  Renderer.dispatch_mouse t (mouse_scroll ~x:0 ~y:0 Input.Mouse.Scroll_up)
+  dispatch_mouse t (mouse_scroll ~x:0 ~y:0 Input.Mouse.Scroll_up)
 
 (* ── Drag ── *)
 
@@ -819,7 +826,7 @@ let drag_sets_captured () =
   let child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   do_frame t;
   (* Drag = motion with left button pressed *)
-  Renderer.dispatch_mouse t (mouse_motion ~left:true ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_motion ~left:true ~x:7 ~y:7 ());
   match Renderer.captured t with
   | Some n -> is_true ~msg:"captured child" (n == child)
   | None -> fail "expected drag capture"
@@ -831,11 +838,11 @@ let captured_receives_all_mouse_events () =
   let log_a = record_mouse a in
   do_frame t;
   (* Start drag on a *)
-  Renderer.dispatch_mouse t (mouse_motion ~left:true ~x:5 ~y:5 ());
+  dispatch_mouse t (mouse_motion ~left:true ~x:5 ~y:5 ());
   is_some ~msg:"captured" (Renderer.captured t);
   let count_before = List.length !log_a in
   (* Move to b's area — a should still receive *)
-  Renderer.dispatch_mouse t (mouse_motion ~left:true ~x:25 ~y:5 ());
+  dispatch_mouse t (mouse_motion ~left:true ~x:25 ~y:5 ());
   is_true ~msg:"a received more" (List.length !log_a > count_before);
   ignore b
 
@@ -843,9 +850,9 @@ let release_clears_capture () =
   let t = make_renderer () in
   let _child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_motion ~left:true ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_motion ~left:true ~x:7 ~y:7 ());
   is_some ~msg:"captured" (Renderer.captured t);
-  Renderer.dispatch_mouse t (mouse_release ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_release ~x:7 ~y:7 ());
   is_none ~msg:"released" (Renderer.captured t)
 
 let drag_end_fires_on_release () =
@@ -853,8 +860,8 @@ let drag_end_fires_on_release () =
   let child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   let log = record_mouse child in
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_motion ~left:true ~x:7 ~y:7 ());
-  Renderer.dispatch_mouse t (mouse_release ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_motion ~left:true ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_release ~x:7 ~y:7 ());
   let found_drag_end =
     List.exists
       (fun ev ->
@@ -870,11 +877,11 @@ let drop_fires_on_target () =
   let log_b = record_mouse b in
   do_frame t;
   (* Start drag on a *)
-  Renderer.dispatch_mouse t (mouse_motion ~left:true ~x:5 ~y:5 ());
+  dispatch_mouse t (mouse_motion ~left:true ~x:5 ~y:5 ());
   is_some ~msg:"captured a" (Renderer.captured t);
   ignore a;
   (* Release over b *)
-  Renderer.dispatch_mouse t (mouse_release ~x:25 ~y:5 ());
+  dispatch_mouse t (mouse_release ~x:25 ~y:5 ());
   let found_drop =
     List.exists
       (fun ev -> match Event.Mouse.kind ev with Drop _ -> true | _ -> false)
@@ -888,9 +895,9 @@ let drop_source_identifies_origin () =
   let b = make_child ~parent:(Renderer.root t) ~x:20 ~y:0 ~w:10 ~h:10 () in
   let log_b = record_mouse b in
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_motion ~left:true ~x:5 ~y:5 ());
+  dispatch_mouse t (mouse_motion ~left:true ~x:5 ~y:5 ());
   let a_num = Renderable.Private.num a in
-  Renderer.dispatch_mouse t (mouse_release ~x:25 ~y:5 ());
+  dispatch_mouse t (mouse_release ~x:25 ~y:5 ());
   let drop_source =
     List.find_map
       (fun ev ->
@@ -908,7 +915,7 @@ let right_button_does_not_capture () =
   let _child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   do_frame t;
   (* Right button motion *)
-  Renderer.dispatch_mouse t
+  dispatch_mouse t
     (Input.Mouse.make ~x:7 ~y:7 ~modifiers:Input.Modifier.none
        (Drag { button = Right }));
   is_none ~msg:"no capture from right" (Renderer.captured t)
@@ -928,7 +935,7 @@ let click_on_selectable_starts_selection () =
     ~clear:(fun () -> ())
     ~get_text:(fun () -> "");
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
   is_some ~msg:"selection started" (Renderer.selection t)
 
 let drag_updates_selection_focus () =
@@ -940,9 +947,9 @@ let drag_updates_selection_focus () =
     ~clear:(fun () -> ())
     ~get_text:(fun () -> "");
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
   is_some ~msg:"selection active" (Renderer.selection t);
-  Renderer.dispatch_mouse t (mouse_motion ~left:true ~x:12 ~y:8 ());
+  dispatch_mouse t (mouse_motion ~left:true ~x:12 ~y:8 ());
   match Renderer.selection t with
   | Some sel ->
       let f = Selection.focus sel in
@@ -959,9 +966,9 @@ let release_finishes_selection () =
     ~clear:(fun () -> ())
     ~get_text:(fun () -> "");
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
-  Renderer.dispatch_mouse t (mouse_motion ~left:true ~x:12 ~y:8 ());
-  Renderer.dispatch_mouse t (mouse_release ~x:12 ~y:8 ());
+  dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_motion ~left:true ~x:12 ~y:8 ());
+  dispatch_mouse t (mouse_release ~x:12 ~y:8 ());
   match Renderer.selection t with
   | Some sel -> is_false ~msg:"not dragging" (Selection.is_dragging sel)
   | None -> fail "expected selection"
@@ -975,7 +982,7 @@ let clear_selection_resets () =
     ~clear:(fun () -> ())
     ~get_text:(fun () -> "");
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
   is_some ~msg:"selection exists" (Renderer.selection t);
   Renderer.clear_selection t;
   is_none ~msg:"cleared" (Renderer.selection t)
@@ -998,7 +1005,7 @@ let scroll_on_dead_space_reaches_focused_scrollable () =
   in
   do_frame t;
   ignore (Renderer.focus t (Scroll_box.node sb) : bool);
-  Renderer.dispatch_mouse t (mouse_scroll ~x:30 ~y:8 Input.Mouse.Scroll_down);
+  dispatch_mouse t (mouse_scroll ~x:30 ~y:8 Input.Mouse.Scroll_down);
   is_true ~msg:"focused scroll box scrolled" (Scroll_box.scroll_top sb > 0)
 
 let selection_drag_auto_scrolls_scroll_box () =
@@ -1026,8 +1033,8 @@ let selection_drag_auto_scrolls_scroll_box () =
     ~clear:(fun () -> ())
     ~get_text:(fun () -> "");
   do_frame ~width:20 ~height:8 t;
-  Renderer.dispatch_mouse t (mouse_press ~x:1 ~y:1 ());
-  Renderer.dispatch_mouse t (mouse_motion ~left:true ~x:1 ~y:7 ());
+  dispatch_mouse t (mouse_press ~x:1 ~y:1 ());
+  dispatch_mouse t (mouse_motion ~left:true ~x:1 ~y:7 ());
   do_frame ~width:20 ~height:8 ~delta:1000. t;
   is_true ~msg:"scroll box moved down" (Scroll_box.scroll_top sb > 0);
   is_true ~msg:"selection was refreshed" (!changes > 2)
@@ -1054,8 +1061,8 @@ let selection_drag_auto_scrolls_scroll_box_when_pointer_leaves_it () =
     ~clear:(fun () -> ())
     ~get_text:(fun () -> "");
   do_frame ~width:20 ~height:12 t;
-  Renderer.dispatch_mouse t (mouse_press ~x:1 ~y:1 ());
-  Renderer.dispatch_mouse t (mouse_motion ~left:true ~x:1 ~y:10 ());
+  dispatch_mouse t (mouse_press ~x:1 ~y:1 ());
+  dispatch_mouse t (mouse_motion ~left:true ~x:1 ~y:10 ());
   do_frame ~width:20 ~height:12 ~delta:1000. t;
   is_true ~msg:"scroll box moved down" (Scroll_box.scroll_top sb > 0)
 
@@ -1086,9 +1093,9 @@ let selection_release_after_leaving_scroll_box_goes_to_anchor_ancestors () =
     ~clear:(fun () -> ())
     ~get_text:(fun () -> "");
   do_frame ~width:20 ~height:12 t;
-  Renderer.dispatch_mouse t (mouse_press ~x:1 ~y:1 ());
-  Renderer.dispatch_mouse t (mouse_motion ~left:true ~x:1 ~y:10 ());
-  Renderer.dispatch_mouse t (mouse_release ~x:1 ~y:10 ());
+  dispatch_mouse t (mouse_press ~x:1 ~y:1 ());
+  dispatch_mouse t (mouse_motion ~left:true ~x:1 ~y:10 ());
+  dispatch_mouse t (mouse_release ~x:1 ~y:10 ());
   is_true ~msg:"release bubbled through scroll box" !released
 
 let selectable_child_receives_changed () =
@@ -1103,7 +1110,7 @@ let selectable_child_receives_changed () =
     ~clear:(fun () -> ())
     ~get_text:(fun () -> "");
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
   is_true ~msg:"on_change called" !changed
 
 let clear_notifies_selectables () =
@@ -1116,7 +1123,7 @@ let clear_notifies_selectables () =
     ~clear:(fun () -> clear_called := true)
     ~get_text:(fun () -> "");
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
   Renderer.clear_selection t;
   is_true ~msg:"clear called" !clear_called
 
@@ -1134,11 +1141,11 @@ let click_on_non_selectable_clears_selection () =
     ~clear:(fun () -> ())
     ~get_text:(fun () -> "");
   do_frame t;
-  Renderer.dispatch_mouse t (mouse_press ~x:5 ~y:5 ());
+  dispatch_mouse t (mouse_press ~x:5 ~y:5 ());
   is_some ~msg:"selection active" (Renderer.selection t);
   ignore non_selectable;
   (* Click on non-selectable area *)
-  Renderer.dispatch_mouse t (mouse_press ~x:25 ~y:5 ());
+  dispatch_mouse t (mouse_press ~x:25 ~y:5 ());
   is_none ~msg:"selection cleared" (Renderer.selection t)
 
 (* ── Run ── *)

@@ -118,6 +118,8 @@ let print_hit = function
         (string_of_hit_region hit.region)
         hit.logical_row hit.visual_row
 
+let dispatch_mouse r ev = ignore (Renderer.dispatch_mouse r ev : Event.mouse)
+
 let mouse_down ~x ~y =
   Input.Mouse.make ~x ~y ~modifiers:Input.Modifier.none (Down { button = Left })
 
@@ -450,8 +452,8 @@ let%expect_test "diff line click callback reports hit" =
   set_viewport app.renderer ~width:60 ~height:5;
   Renderer.render_frame app.renderer ~width:60 ~height:5 ~delta:0.;
   ignore (Renderer.render app.renderer : string);
-  Renderer.dispatch_mouse app.renderer (mouse_down ~x:8 ~y:2);
-  Renderer.dispatch_mouse app.renderer (mouse_up ~x:8 ~y:2);
+  dispatch_mouse app.renderer (mouse_down ~x:8 ~y:2);
+  dispatch_mouse app.renderer (mouse_up ~x:8 ~y:2);
   print_hit !clicked;
   [%expect_exact {|source=new:2 kind=added region=content logical=2 visual=2
 |}]
@@ -466,9 +468,9 @@ let%expect_test "diff line click callback ignores drags" =
   set_viewport app.renderer ~width:60 ~height:5;
   Renderer.render_frame app.renderer ~width:60 ~height:5 ~delta:0.;
   ignore (Renderer.render app.renderer : string);
-  Renderer.dispatch_mouse app.renderer (mouse_down ~x:8 ~y:2);
-  Renderer.dispatch_mouse app.renderer (mouse_drag ~x:20 ~y:2);
-  Renderer.dispatch_mouse app.renderer (mouse_up ~x:20 ~y:2);
+  dispatch_mouse app.renderer (mouse_down ~x:8 ~y:2);
+  dispatch_mouse app.renderer (mouse_drag ~x:20 ~y:2);
+  dispatch_mouse app.renderer (mouse_up ~x:20 ~y:2);
   Format.printf "clicked=%b\n" !clicked;
   [%expect_exact {|clicked=false
 |}]
@@ -488,8 +490,8 @@ let%expect_test "diff without line click callback lets mouse up bubble" =
   set_viewport app.renderer ~width:60 ~height:5;
   Renderer.render_frame app.renderer ~width:60 ~height:5 ~delta:0.;
   ignore (Renderer.render app.renderer : string);
-  Renderer.dispatch_mouse app.renderer (mouse_down ~x:8 ~y:2);
-  Renderer.dispatch_mouse app.renderer (mouse_up ~x:8 ~y:2);
+  dispatch_mouse app.renderer (mouse_down ~x:8 ~y:2);
+  dispatch_mouse app.renderer (mouse_up ~x:8 ~y:2);
   Format.printf "parent_ups=%d\n" !parent_ups;
   [%expect_exact {|parent_ups=1
 |}]
@@ -516,15 +518,15 @@ let%expect_test "diff line click callback can be removed" =
   set_viewport app.renderer ~width:60 ~height:5;
   Renderer.render_frame app.renderer ~width:60 ~height:5 ~delta:0.;
   ignore (Renderer.render app.renderer : string);
-  Renderer.dispatch_mouse app.renderer (mouse_down ~x:8 ~y:2);
-  Renderer.dispatch_mouse app.renderer (mouse_up ~x:8 ~y:2);
+  dispatch_mouse app.renderer (mouse_down ~x:8 ~y:2);
+  dispatch_mouse app.renderer (mouse_up ~x:8 ~y:2);
   reconcile app
     (parent
        (Vnode.diff ~style:full_style ~layout:Diff.Unified (parse simple_diff)));
   Renderer.render_frame app.renderer ~width:60 ~height:5 ~delta:0.;
   ignore (Renderer.render app.renderer : string);
-  Renderer.dispatch_mouse app.renderer (mouse_down ~x:8 ~y:2);
-  Renderer.dispatch_mouse app.renderer (mouse_up ~x:8 ~y:2);
+  dispatch_mouse app.renderer (mouse_down ~x:8 ~y:2);
+  dispatch_mouse app.renderer (mouse_up ~x:8 ~y:2);
   Format.printf "clicked=%d parent_ups=%d\n" !clicked !parent_ups;
   [%expect_exact {|clicked=1 parent_ups=1
 |}]

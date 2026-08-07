@@ -130,7 +130,7 @@ let viewport_switch_reconciles_selected_branch_on_resize () =
     | Input.Mouse mouse -> mouse
     | _ -> assert false
   in
-  Renderer.dispatch_mouse renderer mouse;
+  ignore (Renderer.dispatch_mouse renderer mouse : Event.mouse);
   let first_scroll =
     match !last_scroll with
     | Some y when y > 0 -> y
@@ -149,7 +149,7 @@ let viewport_switch_reconciles_selected_branch_on_resize () =
   is_none ~msg:"focus cleared with narrow branch" (Renderer.focused renderer);
   equal ~msg:"only wide live branch active" int 1
     (Renderable.Private.live_count (Renderer.root renderer));
-  Renderer.dispatch_mouse renderer mouse;
+  ignore (Renderer.dispatch_mouse renderer mouse : Event.mouse);
   (match !last_scroll with
   | Some y ->
       is_true ~msg:"retained transcript continues from its scroll position"
@@ -201,7 +201,7 @@ let non_focusable_scroll_box_still_scrolls_with_wheel () =
     | Input.Mouse mouse -> mouse
     | _ -> assert false
   in
-  Renderer.dispatch_mouse renderer mouse;
+  ignore (Renderer.dispatch_mouse renderer mouse : Event.mouse);
   is_none ~msg:"wheel does not take focus" (Renderer.focused renderer);
   match !last_scroll with
   | Some y -> is_true ~msg:"wheel advances scroll position" (y > 0)

@@ -4,6 +4,8 @@ open Test_harness
 
 (* ── Helpers ── *)
 
+let dispatch_mouse t ev = ignore (Renderer.dispatch_mouse t ev : Event.mouse)
+
 let make_textarea ?value ?placeholder ?wrap ?text_color ?background_color
     ?focused_text_color ?focused_background_color ?placeholder_color
     ?selection_color ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking
@@ -725,9 +727,9 @@ let mouse_selection_syncs_to_buffer () =
       ~value:"hello world" ()
   in
   render_frame r ~width:20 ~height:3;
-  Renderer.dispatch_mouse r (mouse_down ~x:0 ~y:0);
-  Renderer.dispatch_mouse r (mouse_drag ~x:5 ~y:0);
-  Renderer.dispatch_mouse r (mouse_up ~x:5 ~y:0);
+  dispatch_mouse r (mouse_down ~x:0 ~y:0);
+  dispatch_mouse r (mouse_drag ~x:5 ~y:0);
+  dispatch_mouse r (mouse_up ~x:5 ~y:0);
   some ~msg:"selection" (pair int int) (0, 5) (Textarea.selection ta);
   equal ~msg:"selected text" string "hello"
     (Edit_buffer.selected_text (Textarea.buffer ta))
@@ -740,9 +742,9 @@ let mouse_selection_disabled_when_not_selectable () =
       ~value:"hello world" ~selectable:false ()
   in
   render_frame r ~width:20 ~height:3;
-  Renderer.dispatch_mouse r (mouse_down ~x:0 ~y:0);
-  Renderer.dispatch_mouse r (mouse_drag ~x:5 ~y:0);
-  Renderer.dispatch_mouse r (mouse_up ~x:5 ~y:0);
+  dispatch_mouse r (mouse_down ~x:0 ~y:0);
+  dispatch_mouse r (mouse_drag ~x:5 ~y:0);
+  dispatch_mouse r (mouse_up ~x:5 ~y:0);
   is_none ~msg:"selection disabled" (Textarea.selection ta)
 
 let mouse_wheel_scrolls_surface () =

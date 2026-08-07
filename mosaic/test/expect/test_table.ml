@@ -19,7 +19,8 @@ let paging_rows count =
   List.init count (fun index -> [| Table.cell ("row " ^ string_of_int index) |])
 
 let dispatch_mouse app = function
-  | Input.Mouse event -> Renderer.dispatch_mouse app.renderer event
+  | Input.Mouse event ->
+      ignore (Renderer.dispatch_mouse app.renderer event : Event.mouse)
   | Input.Key _ | Input.Paste _ | Input.Resize _ | Input.Focus | Input.Blur
   | Input.Color_scheme _ | Input.Error _ ->
       invalid_arg "expected mouse input"

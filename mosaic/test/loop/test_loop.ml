@@ -491,3 +491,76 @@ let%expect_test "perform dispatches from concurrent threads are all delivered" =
   snap t;
   [%expect {||keys:[] ticks:6000000 size:- note:-
 ||}]
+
+let%expect_test "a paste consumed by a focused editor skips on_paste" =
+  (* Sub.on_paste must only see pastes the UI tree left unconsumed; a focused
+     editor inserting the paste consumes it. Sub.on_paste_all sees both. *)
+  let subs _ =
+    Mosaic.Sub.batch
+      [
+        Mosaic.Sub.on_paste (fun ev ->
+            Some (Pressed ("p:" ^ Mosaic.Event.Paste.text ev)));
+        Mosaic.Sub.on_paste_all (fun ev ->
+            Some (Pressed ("P:" ^ Mosaic.Event.Paste.text ev)));
+      ]
+  in
+  let base = app ~subs () in
+  let with_editor =
+    {
+      base with
+      Mosaic.view =
+        (fun model ->
+          Mosaic.box
+            [
+              Mosaic.textarea ~autofocus:true
+                ~size:(Mosaic.size ~width:10 ~height:1)
+                ();
+              base.Mosaic.view model;
+            ]);
+    }
+  in
+  drive ~height:3 with_editor [ `Feed "\027[200~hi\027[201~"; `Snap ];
+  drive base [ `Feed "\027[200~hi\027[201~"; `Snap ];
+  [%expect
+    {||          keys:[P:hi] ticks:0 size:- note:-
+|
+|
+|keys:[P:hi,p:hi] ticks:0 size:- note:-
+||}]
+
+let%expect_test "a mouse press consumed by a widget skips on_mouse" =
+  (* A widget handler that calls prevent_default consumes the event for
+     Sub.on_mouse, while Sub.on_mouse_all still observes it. *)
+  let log_downs tag ev =
+    match Mosaic.Event.Mouse.kind ev with
+    | Mosaic.Event.Mouse.Down _ -> Some (Pressed tag)
+    | _ -> None
+  in
+  let subs _ =
+    Mosaic.Sub.batch
+      [
+        Mosaic.Sub.on_mouse (log_downs "m");
+        Mosaic.Sub.on_mouse_all (log_downs "M");
+      ]
+  in
+  let base = app ~subs () in
+  let consume_down ev =
+    (match Mosaic.Event.Mouse.kind ev with
+    | Mosaic.Event.Mouse.Down _ -> Mosaic.Event.Mouse.prevent_default ev
+    | _ -> ());
+    None
+  in
+  let view consuming model =
+    Mosaic.box
+      ?on_mouse:(if consuming then Some consume_down else None)
+      ~size:(Mosaic.size ~width:48 ~height:2)
+      [ base.Mosaic.view model ]
+  in
+  let press = "\027[<0;41;2M\027[<0;41;2m" in
+  drive { base with Mosaic.view = view true } [ `Feed press; `Snap ];
+  drive { base with Mosaic.view = view false } [ `Feed press; `Snap ];
+  [%expect
+    {||keys:[M] ticks:0 size:- note:-
+|
+|keys:[M,m] ticks:0 size:- note:-
+||}]

@@ -991,8 +991,12 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?value ?cursor
   Renderable.set_paste_handler node
     (Some
        (fun ev ->
-         if not (Event.Paste.default_prevented ev) then
-           handle_paste t (Event.Paste.text ev)));
+         if not (Event.Paste.default_prevented ev) then begin
+           (* The editor is the paste's default consumer: mark the event so
+              hosts can tell it was handled, mirroring [apply_key_result]. *)
+           Event.Paste.prevent_default ev;
+           handle_paste t (Event.Paste.text ev)
+         end));
   (match mode with
   | `Multiline -> ()
   | `Single_line -> Renderable.set_measure node (Some (measure_single_line t)));

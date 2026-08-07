@@ -689,45 +689,10 @@ let handle_input runtime (input : Matrix.Input.t) =
       let ev = Renderer.dispatch_key runtime.renderer key_event in
       handle_key runtime ev
   | Matrix.Input.Mouse mouse_event ->
-      Renderer.dispatch_mouse runtime.renderer mouse_event;
-      let map_button = function
-        | Matrix.Input.Mouse.Left -> Event.Mouse.Left
-        | Matrix.Input.Mouse.Right -> Event.Mouse.Right
-        | Matrix.Input.Mouse.Middle -> Event.Mouse.Middle
-        | Matrix.Input.Mouse.Button n -> Event.Mouse.Button n
-      in
-      let ev =
-        match mouse_event.kind with
-        | Matrix.Input.Mouse.Down { button } ->
-            Event.Mouse.make ~x:mouse_event.x ~y:mouse_event.y
-              ~modifiers:mouse_event.modifiers
-              (Event.Mouse.Down { button = map_button button })
-        | Matrix.Input.Mouse.Up { button } ->
-            let button =
-              match button with
-              | Some button -> map_button button
-              | None -> Event.Mouse.Button 0
-            in
-            Event.Mouse.make ~x:mouse_event.x ~y:mouse_event.y
-              ~modifiers:mouse_event.modifiers
-              (Event.Mouse.Up { button; is_dragging = false })
-        | Matrix.Input.Mouse.Move ->
-            Event.Mouse.make ~x:mouse_event.x ~y:mouse_event.y
-              ~modifiers:mouse_event.modifiers Event.Mouse.Move
-        | Matrix.Input.Mouse.Drag { button } ->
-            Event.Mouse.make ~x:mouse_event.x ~y:mouse_event.y
-              ~modifiers:mouse_event.modifiers
-              (Event.Mouse.Drag
-                 { button = map_button button; is_dragging = true })
-        | Matrix.Input.Mouse.Scroll { direction; delta } ->
-            Event.Mouse.make ~x:mouse_event.x ~y:mouse_event.y
-              ~modifiers:mouse_event.modifiers
-              (Event.Mouse.Scroll { direction; delta })
-      in
+      let ev = Renderer.dispatch_mouse runtime.renderer mouse_event in
       handle_mouse runtime ev
   | Matrix.Input.Paste text ->
-      Renderer.dispatch_paste runtime.renderer text;
-      let ev = Event.Paste.of_text text in
+      let ev = Renderer.dispatch_paste runtime.renderer text in
       handle_paste runtime ev
   | _ -> ()
 
