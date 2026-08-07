@@ -1809,22 +1809,24 @@ let find_sequence_end_bytes bytes start stop =
           && Bytes.unsafe_get bytes (start + 3) <= 'E'
         then End (start + 4)
         else
-          let rec loop i =
+          (* '$' is both the final byte of rxvt shifted keys (CSI Ps $) and
+             the DECRPM intermediate in mode reports (CSI ? … $ y and
+             CSI Pa ; Ps $ y). Reports always carry '?' or ';' in the body
+             while rxvt keys never do, so classify on the body seen so far.
+             This keeps tokenization independent of chunk boundaries. *)
+          let rec loop i has_semi =
             if i >= stop then Incomplete
             else
               let c = Bytes.unsafe_get bytes i in
               if c = esc then Restart i
-              else if is_csi_final c then
-                if
-                  c = '$'
-                  && Bytes.unsafe_get bytes (start + 2) = '?'
-                  && i + 1 >= stop
-                then Incomplete
-                else if (c = '$' || c = '^') && i + 1 < stop then loop (i + 1)
+              else if c = '$' then
+                if Bytes.unsafe_get bytes (start + 2) = '?' || has_semi then
+                  if i + 1 >= stop then Incomplete else loop (i + 1) has_semi
                 else End (i + 1)
-              else loop (i + 1)
+              else if is_csi_final c then End (i + 1)
+              else loop (i + 1) (has_semi || c = ';')
           in
-          loop (start + 2)
+          loop (start + 2) false
     | ']' ->
         let rec loop i =
           if i >= stop then Incomplete

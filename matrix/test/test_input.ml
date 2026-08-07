@@ -638,6 +638,35 @@ let test_more_key_variants () =
         (parse_user seq))
     ss3_ctrl
 
+let test_rxvt_terminators_mid_chunk () =
+  let shift = { Input.Modifier.none with Input.Modifier.shift = true } in
+  let ctrl = { Input.Modifier.none with Input.Modifier.ctrl = true } in
+  equal ~msg:"rxvt shift key followed by text" (list event_testable)
+    [ key_event ~modifier:shift Input.Key.Delete; char_event 'a' ]
+    (parse_user "\x1b[3$a");
+  equal ~msg:"rxvt ctrl key followed by text" (list event_testable)
+    [ key_event ~modifier:ctrl Input.Key.Page_up; char_event 'b' ]
+    (parse_user "\x1b[5^b");
+  equal ~msg:"rxvt shift key followed by CSI" (list event_testable)
+    [ key_event ~modifier:shift Input.Key.End; key_event Input.Key.Up ]
+    (parse_user "\x1b[8$\x1b[A");
+  equal ~msg:"rxvt ctrl key followed by rxvt shift key" (list event_testable)
+    [
+      key_event ~modifier:ctrl Input.Key.Insert;
+      key_event ~modifier:shift Input.Key.Home;
+    ]
+    (parse_user "\x1b[2^\x1b[7$");
+  (* ANSI-mode DECRPM replies keep '$' as an intermediate byte. *)
+  equal ~msg:"ANSI DECRPM reply is not an rxvt key" (list capability_testable)
+    [
+      Input.Response.Mode_report
+        { Input.Response.is_private = false; modes = [ (2, 1) ] };
+    ]
+    (parse_capabilities "\x1b[2;1$y");
+  equal ~msg:"ANSI DECRPM followed by text" (list event_testable)
+    [ char_event 'x' ]
+    (parse_user "\x1b[2;1$yx")
+
 let test_escape_drain () =
   let parser = Input.Parser.create () in
   (* Feed at time 0.0 - deadline will be set to 0.0 + timeout *)
@@ -1422,6 +1451,7 @@ let tests =
     test "ctrl normalization regressions" test_ctrl_normalization_regressions;
     test "alt/meta regressions" test_alt_meta_regressions;
     test "parse special keys" test_parse_special_keys;
+    test "rxvt terminators mid-chunk" test_rxvt_terminators_mid_chunk;
     test "parse arrow keys" test_parse_arrow_keys;
     test "parse function keys" test_parse_function_keys;
     test "Cygwin function key regressions" test_cygwin_function_key_regressions;
