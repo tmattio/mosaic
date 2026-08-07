@@ -137,13 +137,13 @@ let list_drop n l =
   in
   loop n l
 
-let truncate_text text max_width =
+(* Truncate by grapheme and display column, never by byte: byte-based cuts
+   split UTF-8 sequences and treat wide glyphs as one column. *)
+let truncate_text ~width_method text max_width =
   if max_width <= 0 then ""
   else
-    let len = String.length text in
-    if len <= max_width then text
-    else if max_width <= 1 then "\xe2\x80\xa6"
-    else String.sub text 0 (max_width - 1) ^ "\xe2\x80\xa6"
+    Text_crop.truncate_with_ellipsis ~width_method ~ellipsis:"\xe2\x80\xa6" text
+      max_width
 
 (* ───── Measure ───── *)
 
@@ -179,6 +179,7 @@ let rec render t _self grid ~delta:_ =
   if w <= 0 || h <= 0 then ()
   else
     let props = t.props in
+    let width_method = Renderable.Private.width_method t.node in
     let focused = Renderable.focused t.node in
     let bg = if focused then props.focused_background else props.background in
     Grid.clear_rect ~color:bg grid ~x:0 ~y:0 ~width:w ~height:h;
@@ -189,11 +190,14 @@ let rec render t _self grid ~delta:_ =
     let base_text_color =
       if focused then props.focused_text_color else props.text_color
     in
-    render_tabs t grid ~props ~w ~h ~tw ~max_visible ~scroll ~base_text_color;
+    render_tabs t grid ~width_method ~props ~w ~h ~tw ~max_visible ~scroll
+      ~base_text_color;
     render_scroll_arrows grid ~props ~w ~n ~max_visible ~scroll;
-    render_description grid ~props ~w ~h ~selected_index:t.selected_index
+    render_description grid ~width_method ~props ~w ~h
+      ~selected_index:t.selected_index
 
-and render_tabs t grid ~props ~w ~h ~tw ~max_visible ~scroll ~base_text_color =
+and render_tabs t grid ~width_method ~props ~w ~h ~tw ~max_visible ~scroll
+    ~base_text_color =
   let visible_opts = list_drop scroll props.Props.options in
   let rec loop lst col =
     if col >= max_visible then ()
@@ -211,7 +215,9 @@ and render_tabs t grid ~props ~w ~h ~tw ~max_visible ~scroll ~base_text_color =
             let text_color =
               if is_sel then props.selected_text_color else base_text_color
             in
-            let label = truncate_text item.label (actual_tw - 2) in
+            let label =
+              truncate_text ~width_method item.label (actual_tw - 2)
+            in
             Grid.draw_text
               ~style:(Ansi.Style.make ~fg:text_color ())
               grid ~x:(tab_x + 1) ~y:0 ~text:label;
@@ -236,13 +242,13 @@ and render_scroll_arrows grid ~props ~w ~n ~max_visible ~scroll =
       Grid.draw_text ~style:arrow_style grid ~x:(w - 1) ~y:0
         ~text:"\xe2\x80\xba")
 
-and render_description grid ~props ~w ~h ~selected_index =
+and render_description grid ~width_method ~props ~w ~h ~selected_index =
   if props.Props.show_description then
     let desc_y = 1 + if props.show_underline then 1 else 0 in
     if desc_y < h then
       match List.nth_opt props.options selected_index with
       | Some item when item.description <> "" ->
-          let desc = truncate_text item.description (w - 1) in
+          let desc = truncate_text ~width_method item.description (w - 1) in
           Grid.draw_text
             ~style:(Ansi.Style.make ~fg:props.selected_description_color ())
             grid ~x:0 ~y:desc_y ~text:desc

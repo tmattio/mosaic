@@ -656,39 +656,14 @@ let draw_hline grid ~border ~x ~y ~width ~left_cap ~right_cap ~cross
 
 (* ───── Grapheme-Aware Text Truncation ───── *)
 
-let crop_to_width ~width_method text target_width =
-  if target_width <= 0 then ""
-  else
-    let result = Buffer.create (String.length text) in
-    let current_width = ref 0 in
-    let stop = ref false in
-    Matrix.Text.iter_graphemes
-      (fun ~offset ~len ->
-        if not !stop then
-          let g = String.sub text offset len in
-          let gw = Matrix.Text.measure ~width_method ~tab_width:2 g in
-          if !current_width + gw <= target_width then (
-            Buffer.add_string result g;
-            current_width := !current_width + gw)
-          else stop := true)
-      text;
-    Buffer.contents result
-
-let truncate_with_ellipsis ~width_method text target_width =
-  let tw = text_width ~width_method text in
-  if tw <= target_width then text
-  else if target_width <= 3 then crop_to_width ~width_method text target_width
-  else
-    let prefix = crop_to_width ~width_method text (target_width - 3) in
-    prefix ^ "..."
-
 let apply_overflow ~width_method ~overflow text target_width =
   let tw = text_width ~width_method text in
   if tw <= target_width then text
   else
     match overflow with
-    | `Ellipsis -> truncate_with_ellipsis ~width_method text target_width
-    | `Crop -> crop_to_width ~width_method text target_width
+    | `Ellipsis ->
+        Text_crop.truncate_with_ellipsis ~width_method text target_width
+    | `Crop -> Text_crop.crop_to_width ~width_method text target_width
 
 (* ───── Text Drawing ───── *)
 
@@ -743,7 +718,9 @@ let draw_cell_content ~width_method grid ~x ~y ~col_width ~padding ~alignment
                 else
                   let avail = right_bound - !cx in
                   if avail > 0 then (
-                    let truncated = crop_to_width ~width_method text avail in
+                    let truncated =
+                      Text_crop.crop_to_width ~width_method text avail
+                    in
                     Grid.draw_text ~style:st grid ~x:!cx ~y ~text:truncated;
                     cx := right_bound)
             | Text.Span { children; style } ->

@@ -284,6 +284,43 @@ let apply_props_updates () =
   is_true ~msg:"scheduled" (!(t.schedule_count) > before);
   equal ~msg:"index applied" int 3 (Tab_select.selected_index ts)
 
+(* ── Rendering ── *)
+
+let render_tab_select ts ~width ~height =
+  let node = Tab_select.node ts in
+  layout_node node ~x:0 ~y:0 ~width ~height;
+  let grid = make_grid ~width ~height () in
+  Renderable.Private.render_full node ~grid ~delta:0.;
+  grid
+
+let truncation_keeps_cjk_graphemes_intact () =
+  (* "你好世界" is four 2-column glyphs; with tab_width 5 the label budget is
+     3 columns: one intact glyph plus a 1-column ellipsis. A byte-based cut
+     would split the first character's UTF-8 sequence. *)
+  let _t, ts =
+    make_tab_select
+      ~options:[ Tab_select.{ label = "你好世界"; description = "" } ]
+      ~tab_width:5 ~show_underline:false ()
+  in
+  let grid = render_tab_select ts ~width:10 ~height:1 in
+  equal ~msg:"first glyph intact" string "你"
+    (Grid.get_text grid (Grid.idx grid ~x:1 ~y:0));
+  equal ~msg:"ellipsis after the glyph" string "\xe2\x80\xa6"
+    (Grid.get_text grid (Grid.idx grid ~x:3 ~y:0))
+
+let truncation_never_splits_emoji () =
+  (* Budget of 2 columns cannot fit a 2-column emoji plus the ellipsis, so
+     only the ellipsis renders; byte-based truncation used to emit a partial
+     UTF-8 sequence instead. *)
+  let _t, ts =
+    make_tab_select
+      ~options:[ Tab_select.{ label = "👍👍👍"; description = "" } ]
+      ~tab_width:4 ~show_underline:false ()
+  in
+  let grid = render_tab_select ts ~width:8 ~height:1 in
+  equal ~msg:"only the ellipsis renders" string "\xe2\x80\xa6"
+    (Grid.get_text grid (Grid.idx grid ~x:1 ~y:0))
+
 (* ── Runner ── *)
 
 let () =
@@ -344,4 +381,10 @@ let () =
           test "set_show_description no-op" set_show_description_noop;
         ];
       group "apply_props" [ test "updates all properties" apply_props_updates ];
+      group "Rendering"
+        [
+          test "truncation keeps CJK graphemes intact"
+            truncation_keeps_cjk_graphemes_intact;
+          test "truncation never splits emoji" truncation_never_splits_emoji;
+        ];
     ]
