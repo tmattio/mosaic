@@ -3,14 +3,13 @@
  (package matrix-eio)
  (libraries
   windtrap
-  cstruct
   eio
   eio.mock
   eio.unix
   eio_main
   matrix
   matrix-eio
+  matrix.pty
   matrix.test
-  pty
   threads
   unix))

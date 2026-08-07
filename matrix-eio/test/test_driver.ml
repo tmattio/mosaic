@@ -257,7 +257,6 @@ let measure_successful_read_allocations iterations =
       ~raw_mode:false ~target_fps:(Some 1.) ~mouse_enabled:false
       ~signal_handlers:false ~start_idle:true ()
   in
-  let payload = [ Cstruct.of_string "a" ] in
   Gc.full_major ();
   let allocated_before = Gc.allocated_bytes () in
   Eio.Fiber.both
@@ -272,17 +271,17 @@ let measure_successful_read_allocations iterations =
           Eio.Flow.close stdout)
         (fun () ->
           for expected = 1 to iterations do
-            Eio.Flow.write stdin_writer payload;
+            Eio.Flow.copy_string "a" stdin_writer;
             while !seen < expected do
               Eio.Condition.await_no_mutex consumed
             done
           done;
           Eio.Flow.close stdin_writer))
     (fun () ->
-      let buffer = Cstruct.create 4096 in
+      let reader = Eio.Buf_read.of_flow stdout_reader ~max_size:max_int in
       try
         while true do
-          ignore (Eio.Flow.single_read stdout_reader buffer : int)
+          ignore (Eio.Buf_read.any_char reader : char)
         done
       with End_of_file -> ());
   let allocated_after = Gc.allocated_bytes () in
@@ -461,10 +460,10 @@ let test_wake_survives_subprocess_storm () =
   in
   (* Drain the frame stream so the loop's writes never block. *)
   Eio.Fiber.fork_daemon ~sw (fun () ->
-      let buffer = Cstruct.create 4096 in
+      let reader = Eio.Buf_read.of_flow stdout_reader ~max_size:max_int in
       (try
          while true do
-           ignore (Eio.Flow.single_read stdout_reader buffer : int)
+           ignore (Eio.Buf_read.any_char reader : char)
          done
        with End_of_file | Eio.Cancel.Cancelled _ -> ());
       `Stop_daemon);
