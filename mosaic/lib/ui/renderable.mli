@@ -574,6 +574,8 @@ module Private : sig
   (** {2:clipping Child clipping} *)
 
   val child_clip : t -> Grid.region option
-  (** [child_clip t] is the clipping rectangle for [t]'s children as returned by
-      [t]'s clip override, or [None] if no override is set. *)
+  (** [child_clip t] is the clipping region for [t]'s children: the clip
+      override's result when one is set, otherwise [t]'s bounds. The region may
+      be empty; the renderer then skips [t]'s children entirely rather than
+      painting them unclipped. *)
 end

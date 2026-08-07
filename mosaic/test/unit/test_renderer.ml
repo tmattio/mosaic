@@ -100,6 +100,33 @@ let adopted_screen_render_is_guarded () =
     (function Invalid_argument _ -> true | _ -> false)
     (fun () -> ignore (Renderer.render t : string))
 
+let zero_sized_clipping_node_hides_children () =
+  (* A zero-width overflow-hidden container must report honest bounds and skip
+     its children rather than fabricating a phantom 1-cell scissor. *)
+  let t = make_renderer () in
+  let hidden =
+    Toffee.Geometry.Point.
+      { x = Toffee.Style.Overflow.Hidden; y = Toffee.Style.Overflow.Hidden }
+  in
+  let style =
+    Toffee.Style.default
+    |> Toffee.Style.set_overflow hidden
+    |> Toffee.Style.set_width (Toffee.Style.Dimension.length 0.)
+    |> Toffee.Style.set_height (Toffee.Style.Dimension.length 3.)
+  in
+  let container = Renderable.create ~parent:(Renderer.root t) ~style () in
+  let child_style =
+    Toffee.Style.default
+    |> Toffee.Style.set_width (Toffee.Style.Dimension.length 5.)
+    |> Toffee.Style.set_height (Toffee.Style.Dimension.length 1.)
+  in
+  let child = Renderable.create ~parent:container ~style:child_style () in
+  let child_num = Renderable.Private.num child in
+  do_frame t;
+  equal ~msg:"honest zero width" int 0 (Renderable.width container);
+  let hit = Screen.query_hit (Renderer.screen t) ~x:0 ~y:0 in
+  is_false ~msg:"child not hit-testable through the empty clip" (hit = child_num)
+
 let starts_dirty () =
   let t = make_renderer () in
   is_true ~msg:"needs_render" (Renderer.needs_render t)
@@ -1126,6 +1153,8 @@ let () =
           test "width method reaches widgets" width_method_reaches_widgets;
           test "adopted screen render is guarded"
             adopted_screen_render_is_guarded;
+          test "zero-sized clipping node hides children"
+            zero_sized_clipping_node_hides_children;
           test "starts dirty" starts_dirty;
           test "clean after render" clean_after_render;
           test "dirty after schedule" dirty_after_schedule;
