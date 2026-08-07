@@ -533,6 +533,21 @@ let undo_no_history () =
   let undone = Edit_buffer.undo buf in
   is_false ~msg:"nothing to undo" undone
 
+let undo_history_is_bounded () =
+  (* Every undo point snapshots the full content, so the history keeps only
+     the newest 200 entries and drops the oldest. *)
+  let buf = Edit_buffer.create ~max_length:1000 "" in
+  for _ = 1 to 250 do
+    ignore (Edit_buffer.insert buf "a" : bool)
+  done;
+  let undos = ref 0 in
+  while Edit_buffer.undo buf do
+    incr undos
+  done;
+  equal ~msg:"kept the newest 200 undo points" int 200 !undos;
+  equal ~msg:"oldest restorable state is the 50th edit" int 50
+    (Edit_buffer.length buf)
+
 let insert_then_undo () =
   let buf = Edit_buffer.create "hello" in
   let _ = Edit_buffer.insert buf " world" in
@@ -1081,6 +1096,7 @@ let () =
       group "Undo / Redo"
         [
           test "undo with no history" undo_no_history;
+          test "undo history is bounded" undo_history_is_bounded;
           test "insert then undo" insert_then_undo;
           test "undo restores cursor" undo_restores_cursor;
           test "undo restores no selection" undo_restores_no_selection;

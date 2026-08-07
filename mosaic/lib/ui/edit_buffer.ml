@@ -237,14 +237,34 @@ let select_all t =
 
 (* ───── Undo / Redo ───── *)
 
+(* Each undo point snapshots the full content — O(document) retained per
+   entry — so the history must be bounded: keep the newest entries and drop
+   the oldest, as OpenTUI's rope trims its history (rope.zig max_undo_depth).
+   Editing a large buffer in a long-lived widget stays bounded at
+   O(max_undo_depth × document). *)
+let max_undo_depth = 200
+
+let take n lst =
+  let rec go acc n = function
+    | [] -> List.rev acc
+    | _ when n <= 0 -> List.rev acc
+    | x :: rest -> go (x :: acc) (n - 1) rest
+  in
+  go [] n lst
+
 let save_undo t =
+  let stack =
+    if List.length t.undo_stack >= max_undo_depth then
+      take (max_undo_depth - 1) t.undo_stack
+    else t.undo_stack
+  in
   t.undo_stack <-
     {
       content = t.content;
       cursor_pos = t.cursor_pos;
       selection_anchor = t.selection_anchor;
     }
-    :: t.undo_stack;
+    :: stack;
   t.redo_stack <- []
 
 let undo t =
@@ -349,28 +369,26 @@ let truncate_to_fit t s =
 
 (* ───── Editing ───── *)
 
+let splice_at_cursor t s =
+  let c = ensure_cache t in
+  let byte_pos = byte_offset_of_grapheme_in_content t c t.cursor_pos in
+  let total_len = String.length t.content in
+  t.content <-
+    String.sub t.content 0 byte_pos
+    ^ s
+    ^ String.sub t.content byte_pos (total_len - byte_pos);
+  t.cursor_pos <- t.cursor_pos + Matrix.Text.grapheme_count s;
+  invalidate_cache t
+
 let insert t s =
   match selection t with
   | Some (lo, hi) ->
       save_undo t;
       delete_grapheme_range t lo hi;
-      if String.length s = 0 then true
-      else
-        let s = truncate_to_fit t s in
-        if String.length s = 0 then true
-        else begin
-          let c = ensure_cache t in
-          let byte_pos = byte_offset_of_grapheme_in_content t c t.cursor_pos in
-          let total_len = String.length t.content in
-          t.content <-
-            String.sub t.content 0 byte_pos
-            ^ s
-            ^ String.sub t.content byte_pos (total_len - byte_pos);
-          let inserted_count = Matrix.Text.grapheme_count s in
-          t.cursor_pos <- t.cursor_pos + inserted_count;
-          invalidate_cache t;
-          true
-        end
+      (if String.length s > 0 then
+         let s = truncate_to_fit t s in
+         if String.length s > 0 then splice_at_cursor t s);
+      true
   | None ->
       if String.length s = 0 then false
       else
@@ -378,16 +396,7 @@ let insert t s =
         if String.length s = 0 then false
         else begin
           save_undo t;
-          let c = ensure_cache t in
-          let byte_pos = byte_offset_of_grapheme_in_content t c t.cursor_pos in
-          let total_len = String.length t.content in
-          t.content <-
-            String.sub t.content 0 byte_pos
-            ^ s
-            ^ String.sub t.content byte_pos (total_len - byte_pos);
-          let inserted_count = Matrix.Text.grapheme_count s in
-          t.cursor_pos <- t.cursor_pos + inserted_count;
-          invalidate_cache t;
+          splice_at_cursor t s;
           true
         end
 

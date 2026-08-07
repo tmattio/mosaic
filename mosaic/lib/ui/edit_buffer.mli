@@ -241,8 +241,9 @@ val move_line_end : ?select:bool -> t -> bool
 val undo : t -> bool
 (** [undo t] is [true] iff undoing restored a previous state.
 
-    Restores the most recent undo point. Returns [false] when no undo history is
-    available. *)
+    Restores the most recent undo point. The history is bounded: once it is
+    full, saving a new undo point drops the oldest one. Returns [false] when no
+    undo history is available. *)
 
 val redo : t -> bool
 (** [redo t] is [true] iff redoing re-applied a change.
