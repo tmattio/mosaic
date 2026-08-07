@@ -333,6 +333,18 @@ let test_end_of_input_finalizes_parser_and_closes_once () =
   | events ->
       failf "expected one unterminated-paste event, got %d" (List.length events)
 
+(* Regression: a stray CPR arriving through the normal event loop (xterm's
+   Shift+F3, leftover shell-integration reports) must not flip the width
+   capabilities for the rest of the session. *)
+let test_stray_cpr_does_not_flip_capabilities () =
+  let app, _state =
+    make_app ~input_chunks:[ "\x1b[1;2R"; "\x1b[1;3R" ] ~stop_after_reads:3 ()
+  in
+  Matrix.run app ~on_render:(fun _app -> ());
+  let caps = Matrix.capabilities app in
+  is_false ~msg:"stray CPR does not enable explicit width" caps.explicit_width;
+  is_false ~msg:"stray CPR does not enable scaled text" caps.scaled_text
+
 let test_close_restores_raw_mode_if_terminal_close_raises () =
   let fail_output = ref false in
   let terminal =
@@ -1561,6 +1573,8 @@ let () =
             test_focus_restore_runs_only_after_blur_once;
           test "late capability response requests redraw"
             test_late_capability_response_requests_redraw;
+          test "stray CPR does not flip capabilities"
+            test_stray_cpr_does_not_flip_capabilities;
           test "startup capability window defers split response"
             test_startup_capability_window_defers_split_response;
           test "resume reanchors primary from bottom cursor"

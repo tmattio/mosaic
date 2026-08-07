@@ -357,15 +357,12 @@ let apply_event_internal (caps, info) (event : Input.Response.capability) =
       let caps = apply_mode_report caps r in
       (caps, info)
   | Input.Response.Pixel_resolution _ -> (caps, info)
-  | Input.Response.Cursor_position (row, col) ->
-      let caps =
-        let caps =
-          if row = 1 && col >= 2 then { caps with explicit_width = true }
-          else caps
-        in
-        if row = 1 && col >= 3 then { caps with scaled_text = true } else caps
-      in
-      (caps, info)
+  (* Cursor-position reports carry capability information only while a width
+     probe is in flight; [probe] classifies them itself. Outside the probe a
+     CPR is ambient input (xterm encodes modified F3 as [CSI 1;mR], and shell
+     prompt integration can leave stray reports), so folding it here would let
+     any such byte sequence permanently flip explicit_width/scaled_text. *)
+  | Input.Response.Cursor_position _ -> (caps, info)
   | Input.Response.Xtversion payload ->
       let info = parse_xtversion_payload info payload in
       let caps =
@@ -514,6 +511,18 @@ let build_tmux_pending_probe_payload term =
   in
   String.concat "" [ wrap_for_tmux decrqm_queries; graphics ]
 
+(* The probe payload writes a test glyph at the home position before each of
+   its two cursor-position requests: a report on row 1 with the cursor
+   advanced past column 1 is the answer to the explicit-width query (col >= 2)
+   or the scaled-text query (col >= 3). This inference is only valid for CPRs
+   received while the probe is in flight, so it lives here rather than in
+   [apply_event]. *)
+let apply_probe_cpr caps ~row ~col =
+  let caps =
+    if row = 1 && col >= 2 then { caps with explicit_width = true } else caps
+  in
+  if row = 1 && col >= 3 then { caps with scaled_text = true } else caps
+
 let probe ?(timeout = 0.2) ?(apply_env_overrides = false) ~on_event ~read_into
     ~wait_readable ~send ~parser ~caps ~info () =
   let payload = build_probe_payload caps.term in
@@ -573,6 +582,9 @@ let probe ?(timeout = 0.2) ?(apply_env_overrides = false) ~on_event ~read_into
                 | Input.Response.Clipboard _ | Input.Response.Osc _
                 | Input.Response.Unknown _ ->
                     ()
+                | Input.Response.Capability
+                    (Input.Response.Cursor_position (row, col)) ->
+                    caps_ref := apply_probe_cpr !caps_ref ~row ~col
                 | Input.Response.Capability c -> (
                     let caps', info' =
                       apply_event ~caps:!caps_ref ~info:!info_ref c
@@ -605,6 +617,9 @@ let probe ?(timeout = 0.2) ?(apply_env_overrides = false) ~on_event ~read_into
         | Input.Response.Clipboard _ | Input.Response.Osc _
         | Input.Response.Unknown _ ->
             ()
+        | Input.Response.Capability (Input.Response.Cursor_position (row, col))
+          ->
+            caps_ref := apply_probe_cpr !caps_ref ~row ~col
         | Input.Response.Capability c ->
             let caps', info' = apply_event ~caps:!caps_ref ~info:!info_ref c in
             caps_ref := caps';

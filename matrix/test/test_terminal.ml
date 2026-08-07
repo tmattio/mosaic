@@ -332,6 +332,62 @@ let test_kitty_keyboard_level_zero_capability () =
     (T.capabilities term).kitty_keyboard;
   T.close term
 
+(* Regression: a CPR outside the probe must not flip width capabilities.
+   xterm encodes Shift+F3 as CSI 1;2R, and shell prompt integration can leave
+   stray cursor reports in the input stream. *)
+let test_cpr_outside_probe_does_not_flip_capabilities () =
+  with_terminal @@ fun term _buf ->
+  is_false ~msg:"explicit width initially off"
+    (T.capabilities term).explicit_width;
+  T.apply_capability_event term (Input.Response.Cursor_position (1, 2));
+  T.apply_capability_event term (Input.Response.Cursor_position (1, 3));
+  is_false ~msg:"stray CPR does not enable explicit width"
+    (T.capabilities term).explicit_width;
+  is_false ~msg:"stray CPR does not enable scaled text"
+    (T.capabilities term).scaled_text;
+  T.close term
+
+(* The probe still interprets CPR replies as width-query answers. *)
+let test_probe_cpr_sets_width_capabilities () =
+  let caps =
+    {
+      T.term = "xterm";
+      rgb = false;
+      kitty_keyboard = false;
+      kitty_graphics = false;
+      bracketed_paste = false;
+      focus_tracking = false;
+      unicode_width = `Wcwidth;
+      sgr_pixels = false;
+      color_scheme_updates = false;
+      explicit_width = false;
+      explicit_cursor_positioning = false;
+      scaled_text = false;
+      sixel = false;
+      sync = false;
+      hyperlinks = false;
+    }
+  in
+  with_tty_terminal ~initial_caps:caps @@ fun term _buf ->
+  let parser = Input.Parser.create () in
+  let input = Bytes.of_string "\027[1;3R\027[?62;4c" in
+  let consumed = ref false in
+  T.probe ~timeout:0.1
+    ~on_event:(fun _ -> ())
+    ~read_into:(fun buf off len ->
+      if !consumed then 0
+      else (
+        consumed := true;
+        let n = min len (Bytes.length input) in
+        Bytes.blit input 0 buf off n;
+        n))
+    ~wait_readable:(fun ~timeout:_ -> not !consumed)
+    ~parser term;
+  is_true ~msg:"probe CPR enables explicit width"
+    (T.capabilities term).explicit_width;
+  is_true ~msg:"probe CPR enables scaled text" (T.capabilities term).scaled_text;
+  T.close term
+
 (* Regression: startup probe uses DECRQM 2031 and avoids CSI ?996n. *)
 let test_probe_payload_color_scheme_mode () =
   with_tty_terminal @@ fun term buf ->
@@ -805,6 +861,10 @@ let () =
           test "make with caps" test_make_with_caps;
           test "kitty keyboard level zero"
             test_kitty_keyboard_level_zero_capability;
+          test "CPR outside probe does not flip capabilities"
+            test_cpr_outside_probe_does_not_flip_capabilities;
+          test "probe CPR sets width capabilities"
+            test_probe_cpr_sets_width_capabilities;
           test "probe color scheme mode" test_probe_payload_color_scheme_mode;
           test "screen probe not tmux wrapped"
             test_probe_payload_screen_is_not_tmux_wrapped;
