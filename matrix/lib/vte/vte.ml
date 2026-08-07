@@ -510,6 +510,47 @@ let put_text t text =
     |> Ansi.Style.with_attrs attrs
   in
   let width_method = Grid.width_method t.active_grid in
+  (* A run beginning with zero-width graphemes continues the grapheme drawn
+     by an earlier write (its base sits in the preceding cell): merge the
+     marks into that cell, as real terminals do, so a grapheme cluster split
+     across writes renders exactly like one delivered whole. *)
+  let text =
+    if String.length text = 0 || t.cursor.col = 0 || t.cursor.row >= t.rows then
+      text
+    else begin
+      let zero_width_stop = ref 0 in
+      (try
+         Text.iter_graphemes
+           (fun ~offset ~len ->
+             if
+               Text.width_at ~width_method ~tab_width:2 text ~byte_offset:offset
+               = 0
+             then zero_width_stop := offset + len
+             else raise Exit)
+           text
+       with Exit -> ());
+      let stop = !zero_width_stop in
+      if stop = 0 then text
+      else begin
+        let row = t.cursor.row in
+        let x = ref (t.cursor.col - 1) in
+        let idx = ref ((row * t.cols) + !x) in
+        while !x > 0 && Grid.is_continuation t.active_grid !idx do
+          decr x;
+          decr idx
+        done;
+        let prev = Grid.get_text t.active_grid !idx in
+        if prev = "" || Grid.is_continuation t.active_grid !idx then text
+        else begin
+          Grid.draw_text t.active_grid ~x:!x ~y:row
+            ~text:(prev ^ String.sub text 0 stop)
+            ~style:(Grid.get_style t.active_grid !idx);
+          mark_row_dirty t row;
+          String.sub text stop (String.length text - stop)
+        end
+      end
+    end
+  in
   if t.insert_mode then
     let line_width = t.cols in
     let copy_cell row src_idx dst_x =

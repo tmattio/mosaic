@@ -689,6 +689,32 @@ let unicode_wide_char_wider_than_line () =
   equal ~msg:"split feed matches whole feed" string (Vte.to_string vte)
     (Vte.to_string split)
 
+let unicode_combining_mark_across_writes () =
+  (* Shrunk from a split-invariance property counterexample: a combining
+     mark that arrives in a later write must attach to the grapheme in the
+     preceding cell, as real terminals do, instead of drawing an orphan
+     cluster at the cursor. *)
+  let whole = Vte.create ~rows:1 ~cols:4 () in
+  Vte.feed_string whole "e\xCC\x81x";
+  let split = Vte.create ~rows:1 ~cols:4 () in
+  Vte.feed_string split "e";
+  Vte.feed_string split "\xCC\x81x";
+  equal ~msg:"split combining mark matches whole feed" string
+    (Vte.to_string whole) (Vte.to_string split);
+  equal ~msg:"cursor matches" (pair int int) (Vte.cursor_pos whole)
+    (Vte.cursor_pos split);
+  (* A mark after a wide grapheme attaches through the continuation cell and
+     the cluster ends up merged in the start cell. *)
+  let whole = Vte.create ~rows:1 ~cols:4 () in
+  Vte.feed_string whole "\xE4\xBD\xA0\xCC\x81";
+  let split = Vte.create ~rows:1 ~cols:4 () in
+  Vte.feed_string split "\xE4\xBD\xA0";
+  Vte.feed_string split "\xCC\x81";
+  equal ~msg:"wide grapheme keeps its mark across writes" string
+    (Vte.to_string whole) (Vte.to_string split);
+  equal ~msg:"cluster merged into the start cell" string "\xE4\xBD\xA0\xCC\x81"
+    (Grid.get_text (Vte.grid split) 0)
+
 let unicode_malformed_utf8 () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
   let malformed = Bytes.create 5 in
@@ -789,6 +815,8 @@ let tests =
     test "unicode wide char cursor" unicode_wide_char_cursor;
     test "unicode wide char wraps at margin" unicode_wide_char_wraps_at_margin;
     test "unicode wide char wider than line" unicode_wide_char_wider_than_line;
+    test "unicode combining mark across writes"
+      unicode_combining_mark_across_writes;
     test "unicode malformed utf8" unicode_malformed_utf8;
   ]
 
