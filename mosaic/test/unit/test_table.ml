@@ -648,6 +648,29 @@ let auto_widths_follow_screen_width_method () =
   equal ~msg:"second column follows wcwidth measurement" string "X"
     (Grid.get_text grid (Grid.idx grid ~x:7 ~y:0))
 
+let auto_widths_recompute_after_set_rows () =
+  (* Auto measurements are cached across renders; replacing the data must
+     invalidate the cache so column sizing tracks the new cells. *)
+  let t = make_ctx () in
+  let root = make_root t in
+  let tbl =
+    Table.create ~parent:root
+      ~columns:[ Table.column "A"; Table.column "B" ]
+      ~rows:[ [| Table.cell "aa"; Table.cell "X" |] ]
+      ~border:false ~show_header:false ()
+  in
+  let node = Table.node tbl in
+  layout_node node ~x:0 ~y:0 ~width:12 ~height:1;
+  let grid = make_grid ~width:12 ~height:1 () in
+  Renderable.Private.render_full node ~grid ~delta:0.;
+  equal ~msg:"initial column width" string "X"
+    (Grid.get_text grid (Grid.idx grid ~x:3 ~y:0));
+  Table.set_rows tbl [ [| Table.cell "aaaa"; Table.cell "X" |] ];
+  let grid = make_grid ~width:12 ~height:1 () in
+  Renderable.Private.render_full node ~grid ~delta:0.;
+  equal ~msg:"width follows the new data" string "X"
+    (Grid.get_text grid (Grid.idx grid ~x:5 ~y:0))
+
 (* ── Setter no-ops ── *)
 
 let set_border_noop () =
@@ -835,6 +858,8 @@ let () =
           test "rich span styles apply" rich_cell_span_styles_apply;
           test "auto widths follow the screen width method"
             auto_widths_follow_screen_width_method;
+          test "auto widths recompute after set_rows"
+            auto_widths_recompute_after_set_rows;
         ];
       group "Setter no-ops"
         [

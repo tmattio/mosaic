@@ -203,6 +203,10 @@ type t = {
   mutable scroll_offset : int;
   mutable max_visible_rows : int;
   mutable hovered_row : int option;
+  mutable auto_widths : (Matrix.Text.width_method * int array) option;
+      (* Cached per-column content widths for [`Auto] columns, excluding
+         padding, tagged with the width method used to measure them. Reset to
+         [None] whenever columns or rows change. *)
   mutable on_change : (int -> unit) option;
   mutable on_activate : (int -> unit) option;
   mutable on_hover : (int option -> unit) option;
@@ -229,10 +233,43 @@ let clamp_index t idx =
 let text_width ~width_method s =
   Matrix.Text.measure ~width_method ~tab_width:2 s
 
+(* Content width (max of header and every cell) per [`Auto] column, excluding
+   padding. Measuring every cell of every row is the expensive part of column
+   sizing and only depends on the data, so it is cached on [t] and invalidated
+   by [set_rows]/[set_columns]; hover- and selection-driven renders then reuse
+   the measurements. *)
+let auto_content_widths t ~width_method =
+  let ncols = Array.length t.col_specs in
+  match t.auto_widths with
+  | Some (m, widths) when m = width_method && Array.length widths = ncols ->
+      widths
+  | _ ->
+      let widths = Array.make ncols 0 in
+      Array.iteri
+        (fun i col ->
+          match col.width with
+          | `Auto ->
+              let header_w = text_width ~width_method col.header in
+              let max_cell_w =
+                Array.fold_left
+                  (fun acc row ->
+                    if i < Array.length row then
+                      max acc
+                        (text_width ~width_method (cell_plain_text row.(i)))
+                    else acc)
+                  0 t.data_rows
+              in
+              widths.(i) <- max header_w max_cell_w
+          | `Fixed _ | `Flex _ -> ())
+        t.col_specs;
+      t.auto_widths <- Some (width_method, widths);
+      widths
+
 let compute_column_widths t ~width_method ~available_width =
   let ncols = Array.length t.col_specs in
   if ncols = 0 then [||]
   else
+    let auto_widths = auto_content_widths t ~width_method in
     let widths = Array.make ncols 0 in
     let pad = t.props.cell_padding in
     let pad2 = 2 * pad in
@@ -250,16 +287,7 @@ let compute_column_widths t ~width_method ~available_width =
             widths.(i) <- max 1 (n + pad2);
             fixed_total := !fixed_total + widths.(i)
         | `Auto ->
-            let header_w = text_width ~width_method col.header in
-            let max_cell_w =
-              Array.fold_left
-                (fun acc row ->
-                  if i < Array.length row then
-                    max acc (text_width ~width_method (cell_plain_text row.(i)))
-                  else acc)
-                0 t.data_rows
-            in
-            let content_w = max header_w max_cell_w in
+            let content_w = auto_widths.(i) in
             let w = max 1 (content_w + pad2) in
             (* Apply min/max constraints *)
             let w =
@@ -363,11 +391,13 @@ let selected_row t = t.selected_row
 
 let set_columns t cols =
   t.col_specs <- Array.of_list cols;
+  t.auto_widths <- None;
   Renderable.mark_dirty t.node;
   request t
 
 let set_rows t data =
   t.data_rows <- Array.of_list data;
+  t.auto_widths <- None;
   t.selected_row <- clamp_index t t.selected_row;
   (match t.hovered_row with
   | Some index when index >= row_count t -> set_hovered_row_internal t None
@@ -946,6 +976,7 @@ let intrinsic_width t =
   if ncols = 0 then 0
   else
     let width_method = Renderable.Private.width_method t.node in
+    let auto_widths = auto_content_widths t ~width_method in
     let pad = t.props.cell_padding in
     let pad2 = 2 * pad in
     let gap_width = if ncols > 1 then ncols - 1 else 0 in
@@ -957,17 +988,7 @@ let intrinsic_width t =
           match col.width with
           | `Fixed n -> max 1 (n + pad2)
           | `Auto ->
-              let header_w = text_width ~width_method col.header in
-              let max_cell_w =
-                Array.fold_left
-                  (fun best row ->
-                    if i < Array.length row then
-                      max best
-                        (text_width ~width_method (cell_plain_text row.(i)))
-                    else best)
-                  0 t.data_rows
-              in
-              let content_w = max header_w max_cell_w in
+              let content_w = auto_widths.(i) in
               let w = max 1 (content_w + pad2) in
               let w =
                 match col.min_width with
@@ -1047,6 +1068,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?columns ?rows
       scroll_offset = 0;
       max_visible_rows = 1;
       hovered_row = None;
+      auto_widths = None;
       on_change = None;
       on_activate = None;
       on_hover = None;

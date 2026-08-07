@@ -23,3 +23,16 @@
   (progn
    (run %{exe:bench_reconciler.exe} --wait-quiet 60)
    (diff? reconciler.thumper reconciler.thumper.corrected))))
+
+(executable
+ (name bench_table)
+ (modules bench_table)
+ (libraries thumper mosaic.ui toffee))
+
+(rule
+ (alias bench)
+ (locks /bench)
+ (action
+  (progn
+   (run %{exe:bench_table.exe} --wait-quiet 60)
+   (diff? table.thumper table.thumper.corrected))))
