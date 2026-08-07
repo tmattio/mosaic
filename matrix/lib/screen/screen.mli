@@ -60,7 +60,7 @@ type frame_metrics = {
   interval_ms : float;  (** Time since previous render. *)
   reset_ms : float;  (** Buffer swap/reset duration. *)
   cursor_visible : bool;  (** Cursor state at render time. *)
-  timestamp_s : float;  (** {!Unix.gettimeofday} when rendering finished. *)
+  timestamp_s : float;  (** Screen-clock time when rendering finished. *)
 }
 (** The type for per-frame metrics. All durations are in milliseconds unless
     noted otherwise. *)
@@ -72,10 +72,11 @@ val create :
   ?respect_alpha:bool ->
   ?cursor_visible:bool ->
   ?explicit_width:bool ->
+  ?clock:(unit -> float) ->
   unit ->
   t
-(** [create ~width_method ~respect_alpha ~cursor_visible ~explicit_width ()] is
-    a screen with:
+(** [create ~width_method ~respect_alpha ~cursor_visible ~explicit_width ~clock
+     ()] is a screen with:
     - [width_method] is the character width computation method. Defaults to
       [`Unicode].
     - [respect_alpha] enables alpha blending when drawing cells. Defaults to
@@ -83,6 +84,9 @@ val create :
     - [cursor_visible] is the initial cursor visibility. Defaults to [true].
     - [explicit_width] enables explicit-width OSC sequences for graphemes.
       Defaults to [false].
+    - [clock] is the time source in seconds used for post-processor deltas and
+      frame metrics. Defaults to [Unix.gettimeofday]. Runtimes with their own
+      clock inject it here so virtual-time runs stay deterministic.
 
     Grids start at 1x1 and are resized automatically on the first {!build}. *)
 
@@ -155,18 +159,14 @@ type viewport = {
     renders the first [v.height] grid rows at terminal row offset [v.y]. *)
 
 val render :
-  ?full:bool ->
-  ?scroll_hint:scroll_hint ->
-  ?viewport:viewport ->
-  ?now:float ->
-  t ->
-  string
-(** [render ~full ~scroll_hint ~viewport ~now t] is the ANSI output for the
-    current frame.
+  ?full:bool -> ?scroll_hint:scroll_hint -> ?viewport:viewport -> t -> string
+(** [render ~full ~scroll_hint ~viewport t] is the ANSI output for the current
+    frame.
 
     Applies post-processors, diffs next against current (or renders all cells
     when [full] is [true]), then swaps buffers. Hit regions registered during
-    this frame become queryable via {!query_hit}.
+    this frame become queryable via {!query_hit}. Frame timestamps are read from
+    the [clock] given to {!create}.
     - [full] renders all cells regardless of changes. Defaults to [false].
     - [scroll_hint] when provided, emits DECSTBM hardware scroll before diffing.
       The hint is a rectangular diff optimization; the caller is responsible for
@@ -174,10 +174,6 @@ val render :
       current terminal transaction.
     - [viewport] renders into an explicit terminal surface. Rows outside the
       viewport are not presented and do not become active hit regions.
-    - [now] is the frame timestamp in seconds, used for post-processor deltas
-      and frame metrics. Defaults to [Unix.gettimeofday ()]; runtimes with an
-      injected clock pass their own time so virtual-time runs stay
-      deterministic.
 
     See also {!render_to_buffer} and {!render_to_bytes}. *)
 
@@ -185,27 +181,24 @@ val render_to_buffer :
   ?full:bool ->
   ?scroll_hint:scroll_hint ->
   ?viewport:viewport ->
-  ?now:float ->
   t ->
   Buffer.t ->
   unit
-(** [render_to_buffer ~full ~scroll_hint ~viewport ~now t buf] is like
-    {!render}, but appends the ANSI output to [buf]. Output storage is retained
-    by [t], so frames within the prior high-water mark allocate no output
-    scratch. *)
+(** [render_to_buffer ~full ~scroll_hint ~viewport t buf] is like {!render}, but
+    appends the ANSI output to [buf]. Output storage is retained by [t], so
+    frames within the prior high-water mark allocate no output scratch. *)
 
 val render_to_bytes :
   ?full:bool ->
   ?scroll_hint:scroll_hint ->
   ?viewport:viewport ->
-  ?now:float ->
   t ->
   Bytes.t ->
   int
-(** [render_to_bytes ~full ~scroll_hint ~viewport ~now t buf] is like {!render}
-    but writes into [buf] and is the number of bytes written. [buf] must be
-    large enough for the output. Raises {!Ansi.Writer.Buffer_full} without
-    committing the frame when capacity is insufficient. *)
+(** [render_to_bytes ~full ~scroll_hint ~viewport t buf] is like {!render} but
+    writes into [buf] and is the number of bytes written. [buf] must be large
+    enough for the output. Raises {!Ansi.Writer.Buffer_full} without committing
+    the frame when capacity is insufficient. *)
 
 (** {1:screen_state Screen state} *)
 

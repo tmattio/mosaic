@@ -470,9 +470,9 @@ let dispatch_mouse_internal t ~x ~y ~modifiers kind =
 
 (* ───── Creation ───── *)
 
-let create ?width_method ?style () =
+let create ?width_method ?clock ?style () =
   let tree = Toffee.new_tree () in
-  let screen = Screen.create ?width_method ~respect_alpha:true () in
+  let screen = Screen.create ?width_method ?clock ~respect_alpha:true () in
   let node_map = Hashtbl.create 256 in
   let toffee_map = Hashtbl.create 256 in
   let lifecycle_set = Hashtbl.create 16 in
@@ -782,8 +782,8 @@ let render_frame (t : t) ~width ~height ~delta =
       let cursor = Screen.cursor t.screen in
       Screen.set_cursor t.screen { cursor with position = None }
 
-let render ?full ?now t =
-  let output = Screen.render ?full ?now t.screen in
+let render ?full t =
+  let output = Screen.render ?full t.screen in
   recheck_hover t;
   output
 

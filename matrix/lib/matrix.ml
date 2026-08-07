@@ -754,8 +754,8 @@ let submit ?primary_required_rows t =
       | Some height ->
           Some { Screen.y = Primary.render_offset t.primary; height }
     in
-    Screen.render_to_buffer ~full:forced_full ?scroll_hint ?viewport
-      ~now:(t.now ()) t.screen buf;
+    Screen.render_to_buffer ~full:forced_full ?scroll_hint ?viewport t.screen
+      buf;
     (match active_h with
     | Some active ->
         let offset = Primary.render_offset t.primary in
@@ -1098,7 +1098,8 @@ let init_app (c : config) ~write_output ~now ~wake ~terminal_size ~set_raw_mode
   let live_region = Primary.live_region primary in
   let screen =
     Screen.create ~width_method:`Wcwidth ~respect_alpha:c.respect_alpha
-      ~cursor_visible:c.cursor_visible ~explicit_width:c.explicit_width ()
+      ~cursor_visible:c.cursor_visible ~explicit_width:c.explicit_width
+      ~clock:now ()
   in
   let caps = Terminal.capabilities terminal in
   Screen.set_width_method screen caps.unicode_width;

@@ -787,6 +787,7 @@ let run ?matrix
   let renderer =
     Renderer.create ?style:renderer_style
       ~width_method:(Matrix.Grid.width_method base_grid)
+      ~clock:(fun () -> Matrix.now matrix_app)
       ()
   in
   let container = Renderer.root renderer in
@@ -907,9 +908,7 @@ let run ?matrix
             ~g:(Float.of_int g /. 255.)
             ~b:(Float.of_int b /. 255.)
       | None -> ());
-      ignore
-        (Renderer.render ~now:(Matrix.now runtime.matrix_app) runtime.renderer
-          : string);
+      ignore (Renderer.render runtime.renderer : string);
       process_pending_focus runtime)
 
 let empty = Vnode.empty

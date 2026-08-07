@@ -37,6 +37,7 @@ type cursor = {
 (* screen state - mutable internal state for maximum performance *)
 type t = {
   (* Configuration *)
+  clock : unit -> float;
   stats : stats_state;
   mutable last_metrics : frame_metrics;
   (* Buffers. [current] is the last committed terminal state. [next] is the
@@ -296,8 +297,8 @@ let post_processes r =
     r.post_process_dirty <- false);
   r.post_process_cache
 
-let prepare_frame ?now r =
-  let now = match now with Some now -> now | None -> Unix.gettimeofday () in
+let prepare_frame r =
+  let now = r.clock () in
   let delta_seconds =
     match r.last_render_time with
     | None -> 0.
@@ -310,13 +311,13 @@ let prepare_frame ?now r =
   { now; delta_seconds }
 
 let finalize_frame r ~now ~delta_seconds ~elapsed_ms ~cells ~output_len =
-  let t_reset_start = Unix.gettimeofday () in
+  let t_reset_start = r.clock () in
 
   (* Swap buffers; [next] is cleared to provide a fresh canvas for the
      builder. *)
   swap_buffers r;
 
-  let t_reset_end = Unix.gettimeofday () in
+  let t_reset_end = r.clock () in
   let reset_ms = (t_reset_end -. t_reset_start) *. 1000. in
 
   (* Update Stats *)
@@ -402,7 +403,7 @@ let emit_frame (r : t) ({ now; delta_seconds } : prepared_frame)
     ~(mode : render_mode) ~scroll_hint ~viewport ~(writer : Ansi.writer) =
   let row_offset, height = effective_viewport r viewport in
   let scratch = ref r.scratch_bytes in
-  let render_start = Unix.gettimeofday () in
+  let render_start = r.clock () in
   let cells =
     try
       let prev =
@@ -416,7 +417,7 @@ let emit_frame (r : t) ({ now; delta_seconds } : prepared_frame)
       Ansi.Sgr_state.reset r.sgr_state;
       raise_notrace exn
   in
-  let elapsed_ms = (Unix.gettimeofday () -. render_start) *. 1000. in
+  let elapsed_ms = (r.clock () -. render_start) *. 1000. in
   {
     now;
     delta_seconds;
@@ -463,27 +464,27 @@ let emit_to_render_bytes frame prepared ~mode ~scroll_hint ~viewport =
     frame.render_bytes <- Bytes.create capacity;
     emit_to_bytes frame prepared ~mode ~scroll_hint ~viewport frame.render_bytes
 
-let render_to_bytes ?(full = false) ?scroll_hint ?viewport ?now frame bytes =
+let render_to_bytes ?(full = false) ?scroll_hint ?viewport frame bytes =
   let mode = if full then `Full else `Diff in
-  let prepared = prepare_frame ?now frame in
+  let prepared = prepare_frame frame in
   let emitted =
     emit_to_bytes frame prepared ~mode ~scroll_hint ~viewport bytes
   in
   commit_frame frame emitted;
   emitted.output_len
 
-let render ?(full = false) ?scroll_hint ?viewport ?now frame =
+let render ?(full = false) ?scroll_hint ?viewport frame =
   let mode = if full then `Full else `Diff in
-  let prepared = prepare_frame ?now frame in
+  let prepared = prepare_frame frame in
   let emitted =
     emit_to_render_bytes frame prepared ~mode ~scroll_hint ~viewport
   in
   commit_frame frame emitted;
   Bytes.sub_string frame.render_bytes ~pos:0 ~len:emitted.output_len
 
-let render_to_buffer ?(full = false) ?scroll_hint ?viewport ?now frame buffer =
+let render_to_buffer ?(full = false) ?scroll_hint ?viewport frame buffer =
   let mode = if full then `Full else `Diff in
-  let prepared = prepare_frame ?now frame in
+  let prepared = prepare_frame frame in
   let emitted =
     emit_to_render_bytes frame prepared ~mode ~scroll_hint ~viewport
   in
@@ -493,12 +494,13 @@ let render_to_buffer ?(full = false) ?scroll_hint ?viewport ?now frame buffer =
 (* Creation & Management *)
 
 let create ?width_method ?respect_alpha ?(cursor_visible = true)
-    ?(explicit_width = false) () =
+    ?(explicit_width = false) ?(clock = Unix.gettimeofday) () =
   let w_method = match width_method with Some m -> m | None -> `Unicode in
   let r_alpha = match respect_alpha with Some r -> r | None -> false in
 
   let t =
     {
+      clock;
       stats = { frame_count = 0; total_cells = 0; total_bytes = 0 };
       last_metrics =
         {
