@@ -774,13 +774,15 @@ let submit ?primary_required_rows t =
     Buffer.add_string buf Ansi.(to_string (disable Cursor_visible));
     let preamble_len = Buffer.length buf in
 
+    (* No cursor homing here: the diff renderer emits an absolute
+       cursor_position for every run it touches, so anything written between
+       the preamble capture and the skip check would defeat the
+       unchanged-frame write skip. *)
     let render_height =
       match t.config.mode with
       | `Primary ->
           adjust_primary_layout t ~buf ~required_rows_hint:primary_required_rows
-      | `Alt ->
-          Buffer.add_string buf Ansi.(to_string home);
-          None
+      | `Alt -> None
     in
     if t.config.mode = `Primary then
       flush_static_queue ~resize_screen:false t ~buf;

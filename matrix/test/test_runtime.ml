@@ -668,6 +668,24 @@ let test_unchanged_submit_emits_no_bytes () =
   equal ~msg:"unchanged frame skips terminal write" int 0
     (String.length (output state))
 
+(* Regression: the Alt-mode preamble used to append a cursor-home after
+   [preamble_len] was captured, so the skip check never fired and an idle
+   Alt app wrote sync/cursor traffic every frame forever. *)
+let test_unchanged_alt_submit_emits_no_bytes () =
+  let app, state =
+    make_app ~mode:`Alt ~target_fps:None ~input_timeout:(Some 0.) ()
+  in
+  Matrix.prepare app;
+  Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"stable";
+  Matrix.submit app;
+  is_true ~msg:"first alt frame writes" (String.length (output state) > 0);
+  Buffer.clear state.output;
+  Matrix.prepare app;
+  Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"stable";
+  Matrix.submit app;
+  equal ~msg:"unchanged alt frame skips terminal write" int 0
+    (String.length (output state))
+
 (* Regression: close must not clobber terminal appearance the app never
    touched (window title, cursor colour, cursor style). *)
 let test_close_leaves_untouched_appearance_alone () =
@@ -1630,6 +1648,8 @@ let () =
         [
           test "unchanged submit emits no bytes"
             test_unchanged_submit_emits_no_bytes;
+          test "unchanged alt submit emits no bytes"
+            test_unchanged_alt_submit_emits_no_bytes;
           test "submit reuses render capacity"
             test_submit_reuses_render_capacity;
           test "cursor-only submit emits output"
