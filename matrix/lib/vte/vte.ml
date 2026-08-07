@@ -536,10 +536,8 @@ let put_text t text =
     Text.iter_graphemes
       (fun ~offset:off ~len:l ->
         if t.cursor.col >= line_width && t.auto_wrap_mode then (
-          if t.cursor.row >= t.scroll_region.bottom then scroll_up t 1;
-          set_cursor_pos t
-            ~row:(min (t.cursor.row + 1) t.scroll_region.bottom)
-            ~col:0);
+          advance_row t;
+          set_cursor_pos t ~row:t.cursor.row ~col:0);
 
         (* Read the row after wrap handling: a wrap moves the cursor. *)
         let row = t.cursor.row in
@@ -583,10 +581,8 @@ let put_text t text =
     while String.length !remaining > 0 do
       (* Handle pending wrap *)
       if t.cursor.col >= t.cols && t.auto_wrap_mode then (
-        if t.cursor.row >= t.scroll_region.bottom then scroll_up t 1;
-        set_cursor_pos t
-          ~row:(min (t.cursor.row + 1) t.scroll_region.bottom)
-          ~col:0);
+        advance_row t;
+        set_cursor_pos t ~row:t.cursor.row ~col:0);
 
       if t.cursor.row >= t.rows then remaining := ""
       else

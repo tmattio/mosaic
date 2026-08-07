@@ -259,6 +259,20 @@ let insert_characters_wide_boundary () =
   is_false ~msg:"last cell not continuation"
     (Grid.is_continuation grid last_idx)
 
+let wrap_below_scroll_region () =
+  let vte = Vte.create ~rows:5 ~cols:3 () in
+  Vte.feed_string vte "A\r\nB\r\nC\r\nD\r\nE";
+  (* Region rows 2..3 (1-based); write below it at the screen bottom. *)
+  Vte.feed_string vte "\x1b[2;3r";
+  Vte.feed_string vte "\x1b[5;1Habcd";
+  (* Auto-wrap at the screen bottom outside the region must neither scroll
+     the region nor yank the cursor up into it: the cursor wraps in place. *)
+  equal ~msg:"region row untouched" string "B" (get_line (Vte.grid vte) 1);
+  equal ~msg:"region row untouched 2" string "C" (get_line (Vte.grid vte) 2);
+  equal ~msg:"bottom row wrapped in place" string "dbc"
+    (get_line (Vte.grid vte) 4);
+  equal ~msg:"cursor on bottom row" (pair int int) (4, 1) (Vte.cursor_pos vte)
+
 (** {1 SGR (Styling)} *)
 
 let sgr_bold () =
@@ -709,6 +723,7 @@ let tests =
     test "backspace moves without erasing" backspace_moves_without_erasing;
     test "line feed preserves column" line_feed_preserves_column;
     test "line feed scroll region" line_feed_scroll_region;
+    test "wrap below scroll region" wrap_below_scroll_region;
     test "delete characters wide grapheme" delete_characters_wide;
     test "insert characters wide boundary" insert_characters_wide_boundary;
     test "SGR bold" sgr_bold;
