@@ -317,6 +317,27 @@ let test_sgr_mouse_partial_timeout_regression () =
     [ Input.mouse_move 19 4 ]
     (feed_user parser (Bytes.of_string ";5m") 0 3)
 
+let test_sgr_mouse_partial_deferral_is_bounded () =
+  let parser = Input.Parser.create () in
+  equal ~msg:"stray SGR prefix pending" (list event_testable) []
+    (feed_user parser (Bytes.of_string "\x1b[<0;1") 0 6);
+  (* The first expiry grants one grace period and re-arms the deadline. *)
+  equal ~msg:"first timeout defers"
+    (pair (list event_testable) (list response_testable))
+    ([], [])
+    (drain_to_lists ~now:1.0 parser);
+  is_true ~msg:"grace deadline armed"
+    (Option.is_some (Input.Parser.deadline parser));
+  (* The second expiry flushes the stray prefix as an unknown response. *)
+  equal ~msg:"second timeout flushes" (list response_testable)
+    [ unknown_response "\x1b[<0;1" ]
+    (drain_responses ~now:2.0 parser);
+  (* The following keypress is then parsed normally instead of being fused
+     into the stray prefix. *)
+  equal ~msg:"keypress after stray prefix" (list event_testable)
+    [ char_event 'a' ]
+    (feed_user parser (Bytes.of_string "a") 0 1)
+
 let test_protocol_context_timeout_regressions () =
   let kitty_context =
     { Input.Parser.default_protocol_context with kitty_keyboard = true }
@@ -1461,6 +1482,8 @@ let tests =
     test "SGR mouse state regressions" test_sgr_mouse_state_regressions;
     test "SGR mouse partial timeout regression"
       test_sgr_mouse_partial_timeout_regression;
+    test "SGR mouse partial deferral is bounded"
+      test_sgr_mouse_partial_deferral_is_bounded;
     test "protocol context timeout regressions"
       test_protocol_context_timeout_regressions;
     test "parse paste mode" test_parse_paste_mode;

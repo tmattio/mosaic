@@ -71,6 +71,7 @@ type t = {
   paste_expiry : Float.Array.t;
   mutable flush_deadline : float option;
   mutable deferred_timeout : bool;
+  mutable sgr_grace_used : bool;
   mutable scanner_mode : [ `Normal | `Paste | `Discard_paste ];
   scratch_buffer : Buffer.t; (* Reusable buffer for various operations *)
   (* UTF-8 incomplete sequence buffer for streaming decode *)
@@ -200,6 +201,7 @@ let create ?(max_paste_bytes = default_max_paste_bytes)
     paste_expiry = Float.Array.make 1 0.0;
     flush_deadline = None;
     deferred_timeout = false;
+    sgr_grace_used = false;
     scanner_mode = `Normal;
     scratch_buffer = Buffer.create 32;
     utf8_buf = Bytes.create 4;
@@ -1641,6 +1643,7 @@ let process_sequence_token parser seq ~on_event ~on_response =
 
 let schedule_flush parser now =
   parser.deferred_timeout <- false;
+  parser.sgr_grace_used <- false;
   if parser.scanner_mode <> `Normal || Buffer.length parser.input_buffer = 0
   then parser.flush_deadline <- None
   else
@@ -1974,10 +1977,16 @@ let drain parser ~now ~on_event ~on_response =
         parser.deferred_timeout <- false
       else
         let pending = Buffer.contents parser.input_buffer in
-        if is_partial_sgr_mouse pending || should_defer_pending parser pending
-        then (
+        if should_defer_pending parser pending then (
           parser.flush_deadline <- None;
           parser.deferred_timeout <- true)
+        else if is_partial_sgr_mouse pending && not parser.sgr_grace_used then (
+          (* A partial SGR mouse report gets one bounded grace period:
+             motion streams split across reads often, but a stray prefix
+             must not defer forever and swallow the next keypress. *)
+          parser.sgr_grace_used <- true;
+          parser.deferred_timeout <- false;
+          parser.flush_deadline <- Some (now +. incomplete_seq_timeout))
         else (
           Buffer.clear parser.input_buffer;
           parser.flush_deadline <- None;
@@ -2004,6 +2013,7 @@ let reset parser =
   parser.paste_match <- 0;
   parser.flush_deadline <- None;
   parser.deferred_timeout <- false;
+  parser.sgr_grace_used <- false;
   parser.scanner_mode <- `Normal;
   Buffer.clear parser.scratch_buffer;
   parser.utf8_len <- 0;
