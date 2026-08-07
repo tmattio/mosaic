@@ -46,6 +46,10 @@ type control =
   | DECSC  (** Save cursor position ([ESC 7]). *)
   | DECRC  (** Restore cursor position ([ESC 8]). *)
   | RI  (** Reverse index ([ESC M]). *)
+  | SM of int list  (** Set Mode ([CSI Pm h]). *)
+  | RM of int list  (** Reset Mode ([CSI Pm l]). *)
+  | DECSET of int list  (** DEC private mode set ([CSI ? Pm h]). *)
+  | DECRST of int list  (** DEC private mode reset ([CSI ? Pm l]). *)
   | Unknown of string  (** Unrecognized sequence, preserved as raw bytes. *)
 
 type sgr_attr =

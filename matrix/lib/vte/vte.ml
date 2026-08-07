@@ -691,7 +691,7 @@ let apply_sgr_attr style attr =
   | `Fg color -> Ansi.Style.fg color style
   | `Bg color -> Ansi.Style.bg color style
 
-let _switch_to_alternate t save_cursor =
+let switch_to_alternate t save_cursor =
   if t.active_grid != t.alternate then (
     if save_cursor then (
       t.saved_cursor <- Some (t.cursor.row, t.cursor.col, t.cursor.visible);
@@ -718,6 +718,22 @@ let switch_to_primary t restore_cursor =
            | Some style -> t.style <- style
            | None -> ()));
     mark_rows_dirty t 0 (t.rows - 1))
+
+(* ANSI modes ([CSI Pm h/l]). *)
+let set_ansi_mode t mode set =
+  match mode with 4 -> t.insert_mode <- set | _ -> ()
+
+(* DEC private modes ([CSI ? Pm h/l]). *)
+let set_dec_mode t mode set =
+  match mode with
+  | 1 -> t.cursor_key_mode <- set
+  | 7 -> t.auto_wrap_mode <- set
+  | 25 -> set_cursor_visible t set
+  | 47 | 1047 | 1049 ->
+      if set then switch_to_alternate t (mode = 1049)
+      else switch_to_primary t (mode = 1049)
+  | 2004 -> t.bracketed_paste <- set
+  | _ -> ()
 
 let handle_control t ctrl =
   match ctrl with
@@ -886,30 +902,12 @@ let handle_control t ctrl =
       Grid.clear ~color:t.default_bg t.active_grid;
       set_cursor_pos t ~row:0 ~col:0;
       mark_rows_dirty t 0 (t.rows - 1)
-  | Ansi.Parser.Unknown seq -> (
-      if
-        (* Parse mode set/reset sequences - parser includes "CSI[" prefix *)
-        String.length seq > 5 && String.sub seq 0 4 = "CSI["
-      then
-        let params = String.sub seq 4 (String.length seq - 4) in
-        if String.length params >= 3 && params.[0] = '?' then
-          (* DECSET/DECRST: CSI ? Pm h/l *)
-          let mode_num = String.sub params 1 (String.length params - 2) in
-          let set = params.[String.length params - 1] = 'h' in
-          match mode_num with
-          | "1" -> t.cursor_key_mode <- set
-          | "7" -> t.auto_wrap_mode <- set
-          | "25" -> set_cursor_visible t set
-          | "47" | "1047" | "1049" ->
-              if set then _switch_to_alternate t (mode_num = "1049")
-              else switch_to_primary t (mode_num = "1049")
-          | "2004" -> t.bracketed_paste <- set
-          | _ -> ()
-        else if String.length params >= 2 then
-          (* SM/RM: CSI Pm h/l *)
-          let mode_num = String.sub params 0 (String.length params - 1) in
-          let set = params.[String.length params - 1] = 'h' in
-          match mode_num with "4" -> t.insert_mode <- set | _ -> ())
+  | Ansi.Parser.SM modes -> List.iter (fun m -> set_ansi_mode t m true) modes
+  | Ansi.Parser.RM modes -> List.iter (fun m -> set_ansi_mode t m false) modes
+  | Ansi.Parser.DECSET modes -> List.iter (fun m -> set_dec_mode t m true) modes
+  | Ansi.Parser.DECRST modes ->
+      List.iter (fun m -> set_dec_mode t m false) modes
+  | Ansi.Parser.Unknown _ -> ()
 
 let handle_token t token =
   match token with

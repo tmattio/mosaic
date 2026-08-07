@@ -30,6 +30,10 @@ type control =
   | DECSC
   | DECRC
   | RI
+  | SM of int list
+  | RM of int list
+  | DECSET of int list
+  | DECRST of int list
   | Unknown of string
 
 type sgr_attr =
@@ -241,6 +245,23 @@ let parse_csi ~params body final : token option =
       Some (SGR attrs)
   | 's' -> Some (Control DECSC) (* CSI s - save cursor position *)
   | 'u' -> Some (Control DECRC) (* CSI u - restore cursor position *)
+  | ('h' | 'l') when body_len > 0 -> (
+      (* SM/RM ([CSI Pm h/l]) and DECSET/DECRST ([CSI ? Pm h/l]). *)
+      let rec collect i acc =
+        if i < 0 then acc
+        else
+          let v = params.(i) in
+          let acc = if v = csi_param_missing then acc else v :: acc in
+          collect (i - 1) acc
+      in
+      let modes () = collect (param_count - 1) [] in
+      let set = final = 'h' in
+      match body.[0] with
+      | '?' ->
+          Some (Control (if set then DECSET (modes ()) else DECRST (modes ())))
+      | '0' .. '9' | ';' ->
+          Some (Control (if set then SM (modes ()) else RM (modes ())))
+      | _ -> Some (Control (Unknown (Printf.sprintf "CSI[%s%c" body final))))
   | _ -> Some (Control (Unknown (Printf.sprintf "CSI[%s%c" body final)))
 
 (* Parse OSC 8 hyperlink parameters and URL *)

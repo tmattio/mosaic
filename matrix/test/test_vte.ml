@@ -413,6 +413,16 @@ let cursor_key_mode () =
   Vte.feed_string vte "\x1b[?1l";
   is_false ~msg:"cursor key mode disabled" (Vte.cursor_key_mode vte)
 
+let combined_mode_sequence () =
+  (* ECMA-48 allows several modes in one CSI; none may be dropped. *)
+  let vte = Vte.create ~rows:5 ~cols:20 () in
+  Vte.feed_string vte "\x1b[?1049;2004h";
+  is_true ~msg:"alternate screen enabled" (Vte.is_alternate_screen vte);
+  is_true ~msg:"bracketed paste enabled" (Vte.bracketed_paste_mode vte);
+  Vte.feed_string vte "\x1b[?1049;2004l";
+  is_false ~msg:"alternate screen disabled" (Vte.is_alternate_screen vte);
+  is_false ~msg:"bracketed paste disabled" (Vte.bracketed_paste_mode vte)
+
 let bracketed_paste_mode () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
   is_false ~msg:"bracketed paste off by default" (Vte.bracketed_paste_mode vte);
@@ -629,6 +639,7 @@ let tests =
     test "insert mode" insert_mode;
     test "cursor key mode" cursor_key_mode;
     test "bracketed paste mode" bracketed_paste_mode;
+    test "combined mode sequence" combined_mode_sequence;
     test "OSC set title" osc_set_title;
     test "resize preserves content" resize_preserves_content;
     test "resize clamps cursor" resize_clamps_cursor;

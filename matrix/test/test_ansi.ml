@@ -616,6 +616,22 @@ let parser_sgr_colon_subparameters () =
       equal ~msg:"mixed colon fg" check_color Color.red c
   | _ -> fail "1;4:3;31 should parse each parameter"
 
+let parser_mode_sequences () =
+  (* Mode set/reset are first-class tokens carrying every parameter, so
+     batched sequences like [CSI ? 1049 ; 2004 h] keep all modes. *)
+  (match Parser.parse "\x1b[?1049;2004h" with
+  | [ Parser.Control (Parser.DECSET [ 1049; 2004 ]) ] -> ()
+  | _ -> fail "expected DECSET [1049; 2004]");
+  (match Parser.parse "\x1b[?25l" with
+  | [ Parser.Control (Parser.DECRST [ 25 ]) ] -> ()
+  | _ -> fail "expected DECRST [25]");
+  (match Parser.parse "\x1b[4h" with
+  | [ Parser.Control (Parser.SM [ 4 ]) ] -> ()
+  | _ -> fail "expected SM [4]");
+  match Parser.parse "\x1b[20l" with
+  | [ Parser.Control (Parser.RM [ 20 ]) ] -> ()
+  | _ -> fail "expected RM [20]"
+
 (* --- 5. Writer & Low-Level Escape --- *)
 
 let writer_utf8_encoding () =
@@ -901,6 +917,7 @@ let tests =
           parser_protocol_string_controls_chunked;
         test "csi empty parameter defaults" parser_csi_empty_parameter_defaults;
         test "sgr colon subparameters" parser_sgr_colon_subparameters;
+        test "mode sequences" parser_mode_sequences;
       ];
     group "Writer & Seq"
       [
