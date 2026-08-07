@@ -1115,6 +1115,27 @@ let test_static_write_tracks_mid_line_continuation () =
   is_false ~msg:"line-ended static output does not add an extra leading CRLF"
     (contains_substring "\r\nsecond" (output state))
 
+let test_static_clear_is_immediate_and_forces_full_repaint () =
+  let app, state =
+    make_app ~mode:`Primary ~terminal_tty:true ~target_fps:None
+      ~input_timeout:(Some 0.) ()
+  in
+  Matrix.prepare app;
+  Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
+  Matrix.submit app;
+  Buffer.clear state.output;
+  Buffer.clear state.terminal_output;
+  Matrix.static_clear app;
+  is_true ~msg:"static_clear sends clear-and-home immediately"
+    (contains_substring "\027[H\027[2J" (Buffer.contents state.terminal_output));
+  equal ~msg:"static_clear queues nothing into the frame stream" string ""
+    (output state);
+  Matrix.prepare app;
+  Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
+  Matrix.submit app;
+  is_true ~msg:"next submit repaints unchanged content in full"
+    (contains_substring "live" (output state))
+
 let test_pinned_static_write_uses_bounded_scroll_region () =
   let app, state =
     make_app ~mode:`Primary ~render_offset:23 ~min_tui_height:1 ~target_fps:None
@@ -1752,6 +1773,8 @@ let () =
             test_primary_column_one_anchor_preserves_current_row;
           test "static write tracks mid-line continuation"
             test_static_write_tracks_mid_line_continuation;
+          test "static_clear is immediate and forces a full repaint"
+            test_static_clear_is_immediate_and_forces_full_repaint;
           test "pinned static write uses bounded scroll region"
             test_pinned_static_write_uses_bounded_scroll_region;
           test "pinned static write resets scroll region before live render"

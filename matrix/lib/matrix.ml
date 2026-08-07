@@ -487,10 +487,15 @@ let refresh_render_region ?(effective = false) t =
       Screen.set_row_offset t.screen 0;
       Screen.resize t.screen ~width:t.width ~height:t.height
   | `Primary ->
-      let primary, _plan =
+      (* Resize plans carry no terminal ops (see Primary.resize); the layout
+         sync below covers [region_changed], so only the redraw flags need
+         routing. *)
+      let primary, plan =
         Primary.resize t.primary ~terminal_height:(max 1 t.height)
       in
       t.primary <- primary;
+      if plan.invalidate_presented then Screen.invalidate_presented t.screen;
+      if plan.force_full_redraw then force_full_redraw t;
       if effective then (
         let region = Primary.effective_region t.primary in
         Screen.set_row_offset t.screen region.row_offset;
@@ -626,21 +631,26 @@ let static_replace ?(preserve_live_region = false) t ~rows text =
       Primary.replace_static t.primary { text; rows; preserve_live_region };
     request_redraw t
 
-(* Immediate action, not part of the frame pipeline — the direct
-   Terminal.send is intentional (clears the screen before the next frame). *)
+(* Immediate action, not part of the frame pipeline: the plan's terminal ops
+   are encoded and sent directly, not queued into the frame buffer, so the
+   primary screen clears before the next frame renders. The plan's flags are
+   still routed like any other plan; [region_changed] is covered by
+   [refresh_render_region], which also folds in the terminal resize. *)
 let static_clear t =
   if t.config.mode = `Alt then ()
-  else (
-    Terminal.send t.terminal clear_and_home_seq;
+  else
+    let primary, plan = Primary.clear_static t.primary in
+    t.primary <- primary;
+    let buf = Buffer.create 16 in
+    List.iter (apply_primary_op buf) plan.terminal_ops;
+    Terminal.send t.terminal (Buffer.contents buf);
+    if plan.invalidate_presented then Screen.invalidate_presented t.screen;
+    if plan.force_full_redraw then force_full_redraw t;
     let cols, rows = t.backend.terminal_size () in
     t.width <- max 1 cols;
     t.height <- max 1 rows;
-    let primary, _plan = Primary.clear_static t.primary in
-    let primary = Primary.resize primary ~terminal_height:t.height |> fst in
-    t.primary <- primary;
-    force_full_redraw t;
     refresh_render_region t;
-    request_redraw t)
+    request_redraw t
 
 let set_scroll_hint t hint = t.scroll_hint <- Some hint
 

@@ -130,7 +130,8 @@ val effective_size : t -> width:int -> int * int
 
 val resize : t -> terminal_height:int -> t * plan
 (** [resize t ~terminal_height] updates terminal height and clamps the live
-    viewport if needed. *)
+    viewport if needed. The returned plan never carries terminal operations; it
+    only flags redraw effects. *)
 
 val reanchor : t -> render_offset:int -> static_needs_newline:bool -> t
 (** [reanchor t ~render_offset ~static_needs_newline] updates the live viewport
