@@ -8,7 +8,7 @@
 val compute_grid_size_estimate :
   explicit_col_count:int ->
   explicit_row_count:int ->
-  child_styles_iter:Style.t Seq.t ->
+  child_styles_iter:Toffee_style.t Seq.t ->
   Grid_track_counts.t * Grid_track_counts.t
 (** [compute_grid_size_estimate ~explicit_col_count ~explicit_row_count
      ~child_styles_iter] estimates grid size before auto-placement.

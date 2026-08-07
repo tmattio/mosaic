@@ -1,5 +1,5 @@
 (library
- (name compute)
+ (name toffee_compute)
  (public_name toffee.compute)
  (libraries
   toffee.geometry

@@ -30,9 +30,9 @@
     - Percentage tracks resolve to min-content when container size is indefinite
 *)
 
-open Geometry
-open Style
-open Tree
+open Toffee_geometry
+open Toffee_style
+open Toffee_tree
 
 (** Whether space distribution is for minimum or maximum contributions.
 
@@ -43,8 +43,8 @@ type intrinsic_contribution_type = Minimum | Maximum
 
 val resolve_item_track_indexes :
   Grid_item.t array ->
-  Style.Grid.track_counts ->
-  Style.Grid.track_counts ->
+  Toffee_style.Grid.track_counts ->
+  Toffee_style.Grid.track_counts ->
   unit
 (** [resolve_item_track_indexes items column_counts row_counts] converts
     origin-zero line coordinates to track vector indices.

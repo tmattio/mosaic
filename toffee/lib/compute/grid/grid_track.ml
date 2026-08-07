@@ -1,6 +1,7 @@
 (* Contains GridTrack used to represent a single grid track (row/column) during
    layout *)
 
+module Style = Toffee_style
 open Style
 open Style.Grid
 

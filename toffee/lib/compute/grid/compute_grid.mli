@@ -79,11 +79,11 @@
     - [Grid_track]: Track representation and utilities *)
 
 val compute_grid_layout :
-  (module Tree.LAYOUT_PARTIAL_TREE with type t = 't) ->
+  (module Toffee_tree.LAYOUT_PARTIAL_TREE with type t = 't) ->
   tree:'t ->
-  node:Tree.Node_id.t ->
-  inputs:Tree.Layout_input.t ->
-  Tree.Layout_output.t
+  node:Toffee_tree.Node_id.t ->
+  inputs:Toffee_tree.Layout_input.t ->
+  Toffee_tree.Layout_output.t
 (** [compute_grid_layout (module Tree) ~tree ~node ~inputs] computes CSS Grid
     layout for [node].
 
@@ -135,9 +135,9 @@ val compute_grid_layout :
 
     Postconditions:
     - All children (in-flow, absolutely positioned, hidden) have layouts
-      computed and stored via [Tree.set_unrounded_layout].
-    - Returned {!Tree.Layout_output} includes container size, content size
-      contribution from children, and first baseline from the first row. *)
+      computed and stored via [Toffee_tree.set_unrounded_layout].
+    - Returned {!Toffee_tree.Layout_output} includes container size, content
+      size contribution from children, and first baseline from the first row. *)
 
 (** {1 Submodules} *)
 

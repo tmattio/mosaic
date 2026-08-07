@@ -1,3 +1,5 @@
+module Geometry = Toffee_geometry
+
 type t = {
   run_mode : Run_mode.t;
   sizing_mode : Sizing_mode.t;

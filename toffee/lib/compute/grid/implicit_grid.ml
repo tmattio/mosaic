@@ -2,7 +2,8 @@
    optimisation to reduce the number of allocations required when creating a
    grid. *)
 
-open Geometry
+module Style = Toffee_style
+open Toffee_geometry
 open Style
 open Style.Grid
 

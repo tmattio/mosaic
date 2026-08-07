@@ -28,9 +28,9 @@
     available space changes, all caches must be cleared by setting
     [available_space_cache] to [None]. *)
 
-open Geometry
-open Style
-open Tree
+open Toffee_geometry
+open Toffee_style
+open Toffee_tree
 
 type origin_zero_line = int
 (** Origin-zero line coordinate type. *)
@@ -73,7 +73,7 @@ val new_with_placement_style_and_order :
   node:Node_id.t ->
   col_span:origin_zero_line line ->
   row_span:origin_zero_line line ->
-  style:Style.t ->
+  style:Toffee_style.t ->
   parent_align_items:align_items ->
   parent_justify_items:justify_items ->
   source_order:int ->
@@ -131,7 +131,7 @@ val spanned_track_limit :
     specification. *)
 
 val known_dimensions :
-  (module Tree.LAYOUT_PARTIAL_TREE with type t = 'tree) ->
+  (module Toffee_tree.LAYOUT_PARTIAL_TREE with type t = 'tree) ->
   t ->
   'tree ->
   float option size ->
@@ -168,7 +168,7 @@ val spanned_fixed_track_limit :
     functions (excluding fit-content). *)
 
 val min_content_contribution :
-  (module Tree.LAYOUT_PARTIAL_TREE with type t = 'tree) ->
+  (module Toffee_tree.LAYOUT_PARTIAL_TREE with type t = 'tree) ->
   t ->
   abstract_axis ->
   'tree ->
@@ -183,7 +183,7 @@ val min_content_contribution :
 val min_content_contribution_cached :
   t ->
   abstract_axis ->
-  (module Tree.LAYOUT_PARTIAL_TREE with type t = 'tree) ->
+  (module Toffee_tree.LAYOUT_PARTIAL_TREE with type t = 'tree) ->
   'tree ->
   float option size ->
   float option size ->
@@ -195,7 +195,7 @@ val min_content_contribution_cached :
     Cache is invalidated when [available_space_cache] changes. *)
 
 val max_content_contribution :
-  (module Tree.LAYOUT_PARTIAL_TREE with type t = 'tree) ->
+  (module Toffee_tree.LAYOUT_PARTIAL_TREE with type t = 'tree) ->
   t ->
   abstract_axis ->
   'tree ->
@@ -210,7 +210,7 @@ val max_content_contribution :
 val max_content_contribution_cached :
   t ->
   abstract_axis ->
-  (module Tree.LAYOUT_PARTIAL_TREE with type t = 'tree) ->
+  (module Toffee_tree.LAYOUT_PARTIAL_TREE with type t = 'tree) ->
   'tree ->
   float option size ->
   float option size ->

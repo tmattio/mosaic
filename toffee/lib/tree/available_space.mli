@@ -194,10 +194,10 @@ val sub_or_zero : t -> float option -> t
 type size = { width : t; height : t }
 (** A size with width and height constraints. *)
 
-val size_to_options : size -> float option Geometry.size
+val size_to_options : size -> float option Toffee_geometry.size
 (** [size_to_options t] converts to a size with optional components. [Definite]
     values become [Some]; constraints become [None]. *)
 
-val size_maybe_set : size -> float option Geometry.size -> size
+val size_maybe_set : size -> float option Toffee_geometry.size -> size
 (** [size_maybe_set t value] updates dimensions where [value] has [Some]. [None]
     values leave the corresponding dimension unchanged. *)

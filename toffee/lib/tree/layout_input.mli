@@ -22,25 +22,25 @@ type t = {
           constraints, aspect ratio) or measure content size only. *)
   axis : Requested_axis.t;
       (** Requested axis dimensions. [Horizontal], [Vertical], or [Both]. *)
-  known_dimensions : float option Geometry.size;
+  known_dimensions : float option Toffee_geometry.size;
       (** Fixed dimensions acting as hard constraints during layout.
 
           When [width] is [Some w], layout treats the width as fixed at [w] and
           computes the height accordingly. When both are [Some], this represents
           final layout with exact dimensions, and the node performs positioning
           without further size computation. *)
-  parent_size : float option Geometry.size;
+  parent_size : float option Toffee_geometry.size;
       (** Parent container dimensions for resolving percentage-based sizes.
 
           When a style specifies [width: 50%], this value provides the reference
           for computing the absolute pixel width. *)
-  available_space : Available_space.t Geometry.size;
+  available_space : Available_space.t Toffee_geometry.size;
       (** Available space for layout, acting as a soft constraint.
 
           Used primarily for wrapping decisions in Flexbox and intrinsic sizing
           in Grid. Can be [Definite pixel_count], [Min_content], or
           [Max_content]. *)
-  vertical_margins_are_collapsible : bool Geometry.line;
+  vertical_margins_are_collapsible : bool Toffee_geometry.line;
       (** Margin collapsibility for top and bottom margins.
 
           Specific to CSS Block layout's margin collapsing algorithm. Both
@@ -51,10 +51,10 @@ val make :
   run_mode:Run_mode.t ->
   sizing_mode:Sizing_mode.t ->
   axis:Requested_axis.t ->
-  known_dimensions:float option Geometry.size ->
-  parent_size:float option Geometry.size ->
-  available_space:Available_space.t Geometry.size ->
-  vertical_margins_are_collapsible:bool Geometry.line ->
+  known_dimensions:float option Toffee_geometry.size ->
+  parent_size:float option Toffee_geometry.size ->
+  available_space:Available_space.t Toffee_geometry.size ->
+  vertical_margins_are_collapsible:bool Toffee_geometry.line ->
   t
 (** [make ~run_mode ~sizing_mode ~axis ~known_dimensions ~parent_size
      ~available_space ~vertical_margins_are_collapsible] creates a layout input.
@@ -69,16 +69,16 @@ val sizing_mode : t -> Sizing_mode.t
 val axis : t -> Requested_axis.t
 (** [axis t] returns the requested axis. *)
 
-val known_dimensions : t -> float option Geometry.size
+val known_dimensions : t -> float option Toffee_geometry.size
 (** [known_dimensions t] returns the known dimensions. *)
 
-val parent_size : t -> float option Geometry.size
+val parent_size : t -> float option Toffee_geometry.size
 (** [parent_size t] returns the parent size. *)
 
-val available_space : t -> Available_space.t Geometry.size
+val available_space : t -> Available_space.t Toffee_geometry.size
 (** [available_space t] returns the available space. *)
 
-val vertical_margins_are_collapsible : t -> bool Geometry.line
+val vertical_margins_are_collapsible : t -> bool Toffee_geometry.line
 (** [vertical_margins_are_collapsible t] returns margin collapsibility flags. *)
 
 val hidden : t

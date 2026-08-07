@@ -135,42 +135,43 @@ type grid_template_area = Grid_template_area.t
 (** {1 Convenience constructors} *)
 
 module Rect_dim : sig
-  val all_px : float -> length_percentage Geometry.rect
+  val all_px : float -> length_percentage Toffee_geometry.rect
   (** [all_px v] creates a rectangle with all edges set to [v] pixels, using
       {!Length_percentage.length}. *)
 
-  val all_px_auto : float -> length_percentage_auto Geometry.rect
+  val all_px_auto : float -> length_percentage_auto Toffee_geometry.rect
   (** [all_px_auto v] creates a rectangle with all edges set to [v] pixels, for
       use with auto-capable properties like margin and inset. *)
 
-  val xy_px : x:float -> y:float -> length_percentage Geometry.rect
+  val xy_px : x:float -> y:float -> length_percentage Toffee_geometry.rect
   (** [xy_px ~x ~y] creates a rectangle with horizontal edges set to [x] pixels
       and vertical edges set to [y] pixels. *)
 
-  val xy_px_auto : x:float -> y:float -> length_percentage_auto Geometry.rect
+  val xy_px_auto :
+    x:float -> y:float -> length_percentage_auto Toffee_geometry.rect
   (** [xy_px_auto ~x ~y] is the auto-capable variant of {!xy_px}, suitable for
       margin and inset. *)
 
-  val horizontal_px : float -> length_percentage Geometry.rect
+  val horizontal_px : float -> length_percentage Toffee_geometry.rect
   (** [horizontal_px v] creates a rectangle with left and right set to [v]
       pixels and top/bottom set to zero. *)
 
-  val horizontal_px_auto : float -> length_percentage_auto Geometry.rect
+  val horizontal_px_auto : float -> length_percentage_auto Toffee_geometry.rect
   (** [horizontal_px_auto v] is the auto-capable variant of {!horizontal_px}. *)
 
-  val vertical_px : float -> length_percentage Geometry.rect
+  val vertical_px : float -> length_percentage Toffee_geometry.rect
   (** [vertical_px v] creates a rectangle with top and bottom set to [v] pixels
       and left/right set to zero. *)
 
-  val vertical_px_auto : float -> length_percentage_auto Geometry.rect
+  val vertical_px_auto : float -> length_percentage_auto Toffee_geometry.rect
   (** [vertical_px_auto v] is the auto-capable variant of {!vertical_px}. *)
 end
 
 module Size_dim : sig
-  val px : w:float -> h:float -> dimension Geometry.size
+  val px : w:float -> h:float -> dimension Toffee_geometry.size
   (** [px ~w ~h] constructs a size in pixels using {!Dimension.length}. *)
 
-  val pct : w:float -> h:float -> dimension Geometry.size
+  val pct : w:float -> h:float -> dimension Toffee_geometry.size
   (** [pct ~w ~h] constructs a percentage size from 0–100 inputs using
       {!Dimension.pct}.
 
@@ -192,18 +193,18 @@ val make :
   ?display:display ->
   ?box_sizing:box_sizing ->
   ?position:position ->
-  ?overflow:overflow Geometry.point ->
+  ?overflow:overflow Toffee_geometry.point ->
   ?scrollbar_width:float ->
   ?text_align:text_align ->
-  ?inset:length_percentage_auto Geometry.rect ->
-  ?size:dimension Geometry.size ->
-  ?min_size:dimension Geometry.size ->
-  ?max_size:dimension Geometry.size ->
+  ?inset:length_percentage_auto Toffee_geometry.rect ->
+  ?size:dimension Toffee_geometry.size ->
+  ?min_size:dimension Toffee_geometry.size ->
+  ?max_size:dimension Toffee_geometry.size ->
   ?aspect_ratio:float ->
-  ?margin:length_percentage_auto Geometry.rect ->
-  ?padding:length_percentage Geometry.rect ->
-  ?border:length_percentage Geometry.rect ->
-  ?gap:length_percentage Geometry.size ->
+  ?margin:length_percentage_auto Toffee_geometry.rect ->
+  ?padding:length_percentage Toffee_geometry.rect ->
+  ?border:length_percentage Toffee_geometry.rect ->
+  ?gap:length_percentage Toffee_geometry.size ->
   ?align_items:align_items ->
   ?align_self:align_self ->
   ?align_content:align_content ->
@@ -223,8 +224,8 @@ val make :
   ?grid_template_areas:grid_template_area list ->
   ?grid_template_column_names:string list list ->
   ?grid_template_row_names:string list list ->
-  ?grid_row:grid_placement Geometry.line ->
-  ?grid_column:grid_placement Geometry.line ->
+  ?grid_row:grid_placement Toffee_geometry.line ->
+  ?grid_column:grid_placement Toffee_geometry.line ->
   unit ->
   t
 (** [make ...] creates a style with optional parameters, defaulting to
@@ -262,7 +263,7 @@ val item_is_replaced : t -> bool
 val box_sizing : t -> box_sizing
 (** [box_sizing t] returns the box sizing mode. See {!Box_sizing}. *)
 
-val overflow : t -> overflow Geometry.point
+val overflow : t -> overflow Toffee_geometry.point
 (** [overflow t] returns the overflow behavior for both axes. See {!Overflow}.
 *)
 
@@ -272,31 +273,31 @@ val scrollbar_width : t -> float
 val position : t -> position
 (** [position t] returns the positioning mode. See {!Position}. *)
 
-val inset : t -> length_percentage_auto Geometry.rect
+val inset : t -> length_percentage_auto Toffee_geometry.rect
 (** [inset t] returns the inset values (top, right, bottom, left). *)
 
-val size : t -> dimension Geometry.size
+val size : t -> dimension Toffee_geometry.size
 (** [size t] returns the explicit size (width, height). See {!Dimension}. *)
 
-val min_size : t -> dimension Geometry.size
+val min_size : t -> dimension Toffee_geometry.size
 (** [min_size t] returns the minimum size constraints. *)
 
-val max_size : t -> dimension Geometry.size
+val max_size : t -> dimension Toffee_geometry.size
 (** [max_size t] returns the maximum size constraints. *)
 
 val aspect_ratio : t -> float option
 (** [aspect_ratio t] returns the aspect ratio constraint, if any. *)
 
-val margin : t -> length_percentage_auto Geometry.rect
+val margin : t -> length_percentage_auto Toffee_geometry.rect
 (** [margin t] returns the margin values. See {!Length_percentage_auto}. *)
 
-val padding : t -> length_percentage Geometry.rect
+val padding : t -> length_percentage Toffee_geometry.rect
 (** [padding t] returns the padding values. See {!Length_percentage}. *)
 
-val border : t -> length_percentage Geometry.rect
+val border : t -> length_percentage Toffee_geometry.rect
 (** [border t] returns the border widths. *)
 
-val gap : t -> length_percentage Geometry.size
+val gap : t -> length_percentage Toffee_geometry.size
 (** [gap t] returns the gap between items (row_gap, column_gap). *)
 
 val align_items : t -> align_items option
@@ -367,11 +368,11 @@ val grid_template_column_names : t -> string list list
 val grid_template_row_names : t -> string list list
 (** [grid_template_row_names t] returns the named row lines. *)
 
-val grid_row : t -> grid_placement Geometry.line
+val grid_row : t -> grid_placement Toffee_geometry.line
 (** [grid_row t] returns the row placement (start, end). See {!Grid_placement}.
 *)
 
-val grid_column : t -> grid_placement Geometry.line
+val grid_column : t -> grid_placement Toffee_geometry.line
 (** [grid_column t] returns the column placement (start, end). *)
 
 (** {2 Functional updates}
@@ -385,7 +386,7 @@ val set_display : display -> t -> t
 val set_position : position -> t -> t
 (** [set_position v t] returns a style with updated positioning mode. *)
 
-val set_overflow : overflow Geometry.point -> t -> t
+val set_overflow : overflow Toffee_geometry.point -> t -> t
 (** [set_overflow v t] returns a style with updated overflow behavior. *)
 
 val set_scrollbar_width : float -> t -> t
@@ -394,10 +395,10 @@ val set_scrollbar_width : float -> t -> t
 val set_text_align : text_align -> t -> t
 (** [set_text_align v t] returns a style with updated text alignment. *)
 
-val set_inset : length_percentage_auto Geometry.rect -> t -> t
+val set_inset : length_percentage_auto Toffee_geometry.rect -> t -> t
 (** [set_inset v t] returns a style with updated inset values. *)
 
-val set_size : dimension Geometry.size -> t -> t
+val set_size : dimension Toffee_geometry.size -> t -> t
 (** [set_size v t] returns a style with updated explicit size. *)
 
 val set_width : dimension -> t -> t
@@ -406,7 +407,7 @@ val set_width : dimension -> t -> t
 val set_height : dimension -> t -> t
 (** [set_height v t] returns a style with [size.height] updated to [v]. *)
 
-val set_min_size : dimension Geometry.size -> t -> t
+val set_min_size : dimension Toffee_geometry.size -> t -> t
 (** [set_min_size v t] returns a style with updated minimum size. *)
 
 val set_min_width : dimension -> t -> t
@@ -416,7 +417,7 @@ val set_min_height : dimension -> t -> t
 (** [set_min_height v t] returns a style with [min_size.height] updated to [v].
 *)
 
-val set_max_size : dimension Geometry.size -> t -> t
+val set_max_size : dimension Toffee_geometry.size -> t -> t
 (** [set_max_size v t] returns a style with updated maximum size. *)
 
 val set_max_width : dimension -> t -> t
@@ -429,7 +430,7 @@ val set_max_height : dimension -> t -> t
 val set_aspect_ratio : float option -> t -> t
 (** [set_aspect_ratio v t] returns a style with updated aspect ratio. *)
 
-val set_margin : length_percentage_auto Geometry.rect -> t -> t
+val set_margin : length_percentage_auto Toffee_geometry.rect -> t -> t
 (** [set_margin v t] returns a style with updated margin values. *)
 
 val set_margin_left : length_percentage_auto -> t -> t
@@ -454,7 +455,7 @@ val set_margin_y : length_percentage_auto -> t -> t
 (** [set_margin_y v t] returns a style with both [margin.top] and
     [margin.bottom] updated to [v]. *)
 
-val set_padding : length_percentage Geometry.rect -> t -> t
+val set_padding : length_percentage Toffee_geometry.rect -> t -> t
 (** [set_padding v t] returns a style with updated padding values. *)
 
 val set_padding_left : length_percentage -> t -> t
@@ -480,10 +481,10 @@ val set_padding_y : length_percentage -> t -> t
 (** [set_padding_y v t] returns a style with both [padding.top] and
     [padding.bottom] updated to [v]. *)
 
-val set_border : length_percentage Geometry.rect -> t -> t
+val set_border : length_percentage Toffee_geometry.rect -> t -> t
 (** [set_border v t] returns a style with updated border widths. *)
 
-val set_gap : length_percentage Geometry.size -> t -> t
+val set_gap : length_percentage Toffee_geometry.size -> t -> t
 (** [set_gap v t] returns a style with updated gap between items. *)
 
 val set_align_items : align_items option -> t -> t
@@ -548,10 +549,10 @@ val set_grid_template_row_names : string list list -> t -> t
 (** [set_grid_template_row_names v t] returns a style with updated row line
     names. *)
 
-val set_grid_row : grid_placement Geometry.line -> t -> t
+val set_grid_row : grid_placement Toffee_geometry.line -> t -> t
 (** [set_grid_row v t] returns a style with updated row placement. *)
 
-val set_grid_column : grid_placement Geometry.line -> t -> t
+val set_grid_column : grid_placement Toffee_geometry.line -> t -> t
 (** [set_grid_column v t] returns a style with updated column placement. *)
 
 (** {2 Common style patterns} *)

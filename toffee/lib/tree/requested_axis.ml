@@ -1,3 +1,5 @@
+module Geometry = Toffee_geometry
+
 type t = Horizontal | Vertical | Both
 
 let of_absolute_axis = function

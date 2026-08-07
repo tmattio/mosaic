@@ -1,7 +1,9 @@
 (* Grid layout algorithm implementation This module implements the CSS Grid
    Level 1 specification https://www.w3.org/TR/css-grid-1/ *)
 
-open Geometry
+module Style = Toffee_style
+module Tree = Toffee_tree
+open Toffee_geometry
 open Style
 open Tree
 module Implicit_grid = Implicit_grid

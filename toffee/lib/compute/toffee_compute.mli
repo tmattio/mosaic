@@ -8,10 +8,10 @@
     {1 Layout Functions}
 
     Layout functions operate on trees implementing the
-    {!Tree.LAYOUT_PARTIAL_TREE} signature, which provides access to a container
-    node and its immediate children. Each function computes layout for a single
-    node and returns a {!Tree.Layout_output} describing the node's computed size
-    and margins.
+    {!Toffee_tree.LAYOUT_PARTIAL_TREE} signature, which provides access to a
+    container node and its immediate children. Each function computes layout for
+    a single node and returns a {!Toffee_tree.Layout_output} describing the
+    node's computed size and margins.
 
     - {!compute_flexbox_layout}: Layout a Flexbox container
     - {!compute_grid_layout}: Layout a CSS Grid container
@@ -29,21 +29,21 @@
 
     Layout proceeds top-down. Call {!compute_root_layout} on the root node with
     available space constraints. It recursively computes child layouts by
-    calling [Tree.compute_child_layout], which dispatches to the appropriate
-    algorithm based on each node's [display] style.
+    calling [Toffee_tree.compute_child_layout], which dispatches to the
+    appropriate algorithm based on each node's [display] style.
 
     After layout completes, call {!round_layout} to snap float coordinates to
     exact pixels, eliminating sub-pixel gaps. *)
 
 val compute_leaf_layout :
-  inputs:Tree.Layout_input.t ->
-  style:Style.t ->
-  resolve_calc_value:Style.calc_resolver ->
+  inputs:Toffee_tree.Layout_input.t ->
+  style:Toffee_style.t ->
+  resolve_calc_value:Toffee_style.calc_resolver ->
   measure_function:
-    (float option Geometry.size ->
-    Tree.Available_space.t Geometry.size ->
-    float Geometry.size) ->
-  Tree.Layout_output.t
+    (float option Toffee_geometry.size ->
+    Toffee_tree.Available_space.t Toffee_geometry.size ->
+    float Toffee_geometry.size) ->
+  Toffee_tree.Layout_output.t
 (** [compute_leaf_layout ~inputs ~style ~resolve_calc_value ~measure_function]
     computes layout for a leaf node.
 
@@ -78,11 +78,11 @@ val compute_leaf_layout :
     styles. *)
 
 val compute_block_layout :
-  (module Tree.LAYOUT_PARTIAL_TREE with type t = 'a) ->
+  (module Toffee_tree.LAYOUT_PARTIAL_TREE with type t = 'a) ->
   'a ->
-  Tree.Node_id.t ->
-  Tree.Layout_input.t ->
-  Tree.Layout_output.t
+  Toffee_tree.Node_id.t ->
+  Toffee_tree.Layout_input.t ->
+  Toffee_tree.Layout_output.t
 (** [compute_block_layout (module Tree) tree node inputs] computes CSS Block
     layout for [node] and its children.
 
@@ -97,15 +97,16 @@ val compute_block_layout :
     - Auto-stretching width to fill definite available space
     - Handling of floats and clearance (if supported)
 
-    Returns a {!Tree.Layout_output} with the container's size, content size, and
-    collapsible margin sets for further margin collapsing with siblings. *)
+    Returns a {!Toffee_tree.Layout_output} with the container's size, content
+    size, and collapsible margin sets for further margin collapsing with
+    siblings. *)
 
 val compute_flexbox_layout :
-  (module Tree.LAYOUT_PARTIAL_TREE with type t = 'a) ->
+  (module Toffee_tree.LAYOUT_PARTIAL_TREE with type t = 'a) ->
   'a ->
-  Tree.Node_id.t ->
-  Tree.Layout_input.t ->
-  Tree.Layout_output.t
+  Toffee_tree.Node_id.t ->
+  Toffee_tree.Layout_input.t ->
+  Toffee_tree.Layout_output.t
 (** [compute_flexbox_layout (module Tree) tree node inputs] computes CSS Flexbox
     layout for [node] and its children.
 
@@ -118,15 +119,15 @@ val compute_flexbox_layout :
     - Wrapping and multi-line layout
     - Gap spacing between items
 
-    Returns a {!Tree.Layout_output} with the container's size and content size.
-    Margins do not collapse in Flexbox. *)
+    Returns a {!Toffee_tree.Layout_output} with the container's size and content
+    size. Margins do not collapse in Flexbox. *)
 
 val compute_grid_layout :
-  (module Tree.LAYOUT_PARTIAL_TREE with type t = 'a) ->
+  (module Toffee_tree.LAYOUT_PARTIAL_TREE with type t = 'a) ->
   tree:'a ->
-  node:Tree.Node_id.t ->
-  inputs:Tree.Layout_input.t ->
-  Tree.Layout_output.t
+  node:Toffee_tree.Node_id.t ->
+  inputs:Toffee_tree.Layout_input.t ->
+  Toffee_tree.Layout_output.t
 (** [compute_grid_layout (module Tree) ~tree ~node ~inputs] computes CSS Grid
     layout for [node] and its children.
 
@@ -140,14 +141,14 @@ val compute_grid_layout :
     - Gap spacing between tracks
     - Alignment within grid areas
 
-    Returns a {!Tree.Layout_output} with the container's size and content size.
-    Margins do not collapse in Grid. *)
+    Returns a {!Toffee_tree.Layout_output} with the container's size and content
+    size. Margins do not collapse in Grid. *)
 
 val compute_root_layout :
-  (module Tree.LAYOUT_PARTIAL_TREE with type t = 't) ->
+  (module Toffee_tree.LAYOUT_PARTIAL_TREE with type t = 't) ->
   't ->
-  Tree.Node_id.t ->
-  Tree.Available_space.t Geometry.size ->
+  Toffee_tree.Node_id.t ->
+  Toffee_tree.Available_space.t Toffee_geometry.size ->
   unit
 (** [compute_root_layout (module Tree) tree root available_space] computes
     layout for the root node of a tree.
@@ -155,7 +156,7 @@ val compute_root_layout :
     This is the entry point for layout computation. It resolves root node styles
     against available space, performs recursive child layout, and stores the
     final layout (including padding, border, margin, scrollbar size) via
-    [Tree.set_unrounded_layout].
+    [Toffee_tree.set_unrounded_layout].
 
     For Block display, the root node automatically stretches its width to fill
     definite available space after accounting for margins.
@@ -166,20 +167,23 @@ val compute_root_layout :
 *)
 
 val compute_cached_layout :
-  (module Tree.CACHE_TREE with type t = 't) ->
+  (module Toffee_tree.CACHE_TREE with type t = 't) ->
   't ->
-  Tree.Node_id.t ->
-  Tree.Layout_input.t ->
-  ('t -> Tree.Node_id.t -> Tree.Layout_input.t -> Tree.Layout_output.t) ->
-  Tree.Layout_output.t
+  Toffee_tree.Node_id.t ->
+  Toffee_tree.Layout_input.t ->
+  ('t ->
+  Toffee_tree.Node_id.t ->
+  Toffee_tree.Layout_input.t ->
+  Toffee_tree.Layout_output.t) ->
+  Toffee_tree.Layout_output.t
 (** [compute_cached_layout (module Tree) tree node inputs compute_uncached]
     retrieves cached layout or computes and caches it.
 
     This function checks the layout cache for a result matching [inputs]'s
     [known_dimensions], [available_space], and [run_mode]. If found, it returns
-    the cached {!Tree.Layout_output}. Otherwise, it invokes [compute_uncached]
-    to compute layout, stores the result in the cache via [Tree.cache_store],
-    and returns it.
+    the cached {!Toffee_tree.Layout_output}. Otherwise, it invokes
+    [compute_uncached] to compute layout, stores the result in the cache via
+    [Toffee_tree.cache_store], and returns it.
 
     Caching eliminates redundant layout computation when a node is measured
     multiple times with identical constraints, which occurs during:
@@ -190,13 +194,16 @@ val compute_cached_layout :
 
     The cache key includes [known_dimensions], [available_space], and
     [run_mode]. Changes to node style or structure require calling
-    [Tree.cache_clear] to invalidate stale entries.
+    [Toffee_tree.cache_clear] to invalidate stale entries.
 
-    This function is typically called by [Tree.compute_child_layout]
+    This function is typically called by [Toffee_tree.compute_child_layout]
     implementations to wrap algorithm-specific layout functions. *)
 
 val round_layout :
-  (module Tree.ROUND_TREE with type t = 't) -> 't -> Tree.Node_id.t -> unit
+  (module Toffee_tree.ROUND_TREE with type t = 't) ->
+  't ->
+  Toffee_tree.Node_id.t ->
+  unit
 (** [round_layout (module Tree) tree node] rounds float layouts to integer
     pixels recursively.
 
@@ -213,8 +220,8 @@ val round_layout :
       taking the difference, rather than rounding width/height directly. This
       prevents accumulated rounding errors from creating gaps.
 
-    The function reads from [Tree.get_unrounded_layout] and writes to
-    [Tree.set_final_layout] to avoid re-rounding already-rounded values.
+    The function reads from [Toffee_tree.get_unrounded_layout] and writes to
+    [Toffee_tree.set_final_layout] to avoid re-rounding already-rounded values.
 
     See
     {{:https://github.com/facebook/yoga/commit/aa5b296ac78f7a22e1aeaf4891243c6bb76488e2}
@@ -228,27 +235,27 @@ val round_layout :
     Required by {!compute_hidden_layout}, which clears cache and performs
     layout. *)
 module type CACHE_LAYOUT_PARTIAL_TREE = sig
-  include Tree.LAYOUT_PARTIAL_TREE
-  include Tree.CACHE_TREE with type t := t
+  include Toffee_tree.LAYOUT_PARTIAL_TREE
+  include Toffee_tree.CACHE_TREE with type t := t
 end
 
 val compute_hidden_layout :
   (module CACHE_LAYOUT_PARTIAL_TREE with type t = 't) ->
   't ->
-  Tree.Node_id.t ->
-  Tree.Layout_output.t
+  Toffee_tree.Node_id.t ->
+  Toffee_tree.Layout_output.t
 (** [compute_hidden_layout (module Tree) tree node] marks [node] and its
     descendants as hidden recursively.
 
     Nodes with [Display.None] receive zero-sized layouts at the origin and do
     not participate in layout. This function:
 
-    - Clears the layout cache for [node] via [Tree.cache_clear]
+    - Clears the layout cache for [node] via [Toffee_tree.cache_clear]
     - Sets [node]'s layout to zero size at the origin with [order = 0]
-    - Recursively processes all children with {!Tree.Layout_input.hidden}
+    - Recursively processes all children with {!Toffee_tree.Layout_input.hidden}
 
-    Returns {!Tree.Layout_output.hidden}, a zero-sized output with no baselines
-    or collapsible margins.
+    Returns {!Toffee_tree.Layout_output.hidden}, a zero-sized output with no
+    baselines or collapsible margins.
 
     Call this when a node's [display] style is [Display.None]. The function
     propagates hidden state to all descendants regardless of their [display]

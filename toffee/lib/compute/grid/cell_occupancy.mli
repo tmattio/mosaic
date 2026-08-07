@@ -35,7 +35,7 @@ val col_count : t -> int
 (** [col_count t] returns the number of columns in the matrix. *)
 
 val is_area_in_range :
-  t -> Geometry.Absolute_axis.t -> int * int -> int * int -> bool
+  t -> Toffee_geometry.Absolute_axis.t -> int * int -> int * int -> bool
 (** [is_area_in_range t primary_axis primary_range secondary_range] checks if
     the specified area fits within current matrix bounds.
 
@@ -56,9 +56,9 @@ val expand_to_fit_range : t -> int * int -> int * int -> unit
 
 val mark_area_as :
   t ->
-  Geometry.Absolute_axis.t ->
-  int Geometry.Line.t ->
-  int Geometry.Line.t ->
+  Toffee_geometry.Absolute_axis.t ->
+  int Toffee_geometry.Line.t ->
+  int Toffee_geometry.Line.t ->
   cell_occupancy_state ->
   unit
 (** [mark_area_as t primary_axis primary_span secondary_span value] marks the
@@ -69,7 +69,7 @@ val mark_area_as :
     Re-resolves coordinates after expansion since track indices may shift. *)
 
 val track_area_is_unoccupied :
-  t -> Geometry.Absolute_axis.t -> int * int -> int * int -> bool
+  t -> Toffee_geometry.Absolute_axis.t -> int * int -> int * int -> bool
 (** [track_area_is_unoccupied t primary_axis primary_range secondary_range]
     checks if all cells in the area are unoccupied.
 
@@ -78,9 +78,9 @@ val track_area_is_unoccupied :
 
 val line_area_is_unoccupied :
   t ->
-  Geometry.Absolute_axis.t ->
-  int Geometry.Line.t ->
-  int Geometry.Line.t ->
+  Toffee_geometry.Absolute_axis.t ->
+  int Toffee_geometry.Line.t ->
+  int Toffee_geometry.Line.t ->
   bool
 (** [line_area_is_unoccupied t primary_axis primary_span secondary_span] checks
     if all cells in the area are unoccupied.
@@ -100,12 +100,16 @@ val column_is_occupied : t -> int -> bool
 
     Returns [false] if [column_index] is out of bounds. *)
 
-val track_counts : t -> Geometry.Absolute_axis.t -> Grid_track_counts.t
+val track_counts : t -> Toffee_geometry.Absolute_axis.t -> Grid_track_counts.t
 (** [track_counts t track_type] returns the track counts for the specified axis.
 *)
 
 val last_of_type :
-  t -> Geometry.Absolute_axis.t -> int -> cell_occupancy_state -> int option
+  t ->
+  Toffee_geometry.Absolute_axis.t ->
+  int ->
+  cell_occupancy_state ->
+  int option
 (** [last_of_type t track_type start_at kind] searches backwards from the end of
     the specified track to find the last cell matching [kind].
 

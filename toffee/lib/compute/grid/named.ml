@@ -1,7 +1,7 @@
 (* Code for resolving name grid lines and areas *)
 
-open Style
-open Geometry
+open Toffee_style
+open Toffee_geometry
 
 (* Resolver that takes grid lines names and area names as input and can then be
    used to resolve line names of grid placement properties into line numbers *)
@@ -222,8 +222,8 @@ let resolve_line_names t line axis =
     | _ -> placement
   in
   {
-    Geometry.Line.start = resolve_single line.Geometry.Line.start;
-    end_ = resolve_single line.Geometry.Line.end_;
+    Toffee_geometry.Line.start = resolve_single line.Toffee_geometry.Line.start;
+    end_ = resolve_single line.Toffee_geometry.Line.end_;
   }
 
 (* Resolve named lines for row axis *)

@@ -1,7 +1,8 @@
 (* Helper functions for initialising GridTrack's from styles This mainly
    consists of evaluating GridAutoTracks *)
 
-open Geometry
+module Style = Toffee_style
+open Toffee_geometry
 open Style
 open Style.Grid
 

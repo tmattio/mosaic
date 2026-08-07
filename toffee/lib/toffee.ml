@@ -1,10 +1,10 @@
 (* Toffee: An OCaml port of Taffy's tree module *)
 
-open Tree
-open Geometry
-open Compute
-module Geometry = Geometry
-module Style = Style
+open Toffee_tree
+open Toffee_geometry
+open Toffee_compute
+module Geometry = Toffee_geometry
+module Style = Toffee_style
 
 (* Tree submodule exports *)
 module Node_id = Node_id
@@ -830,7 +830,7 @@ end
 
 (* Print tree for debugging *)
 let print_tree (type ctx) (tree : ctx tree) root_id =
-  Tree.print_tree
+  Toffee_tree.print_tree
     (module struct
       type t = ctx tree
 
@@ -839,6 +839,6 @@ let print_tree (type ctx) (tree : ctx tree) root_id =
       let get_child_id = Print_tree.get_child_id
       let get_debug_label = Print_tree.get_debug_label
       let get_final_layout = Print_tree.get_final_layout
-    end : Tree.PRINT_TREE
+    end : Toffee_tree.PRINT_TREE
       with type t = ctx tree)
     tree root_id

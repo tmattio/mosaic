@@ -1,6 +1,8 @@
 (* Alignment of tracks and final positioning of items *)
 
-open Geometry
+module Style = Toffee_style
+module Tree = Toffee_tree
+open Toffee_geometry
 open Style
 open Tree
 

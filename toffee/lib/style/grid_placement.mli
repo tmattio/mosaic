@@ -108,12 +108,14 @@ val pp : Format.formatter -> t -> unit
 
 (** {1 Line operations}
 
-    Operations on [Geometry.Line.t] containing grid placements. These work on
-    pairs of start and end placements along a single axis. *)
+    Operations on [Toffee_geometry.Line.t] containing grid placements. These
+    work on pairs of start and end placements along a single axis. *)
 
 module Line : sig
   val into_origin_zero_ignoring_named :
-    t Geometry.Line.t -> int -> Grid.Origin_zero_placement.t Geometry.Line.t
+    t Toffee_geometry.Line.t ->
+    int ->
+    Grid.Origin_zero_placement.t Toffee_geometry.Line.t
   (** [into_origin_zero_ignoring_named line explicit_track_count] converts both
       start and end placements to origin-zero coordinates, ignoring named lines.
 
@@ -121,7 +123,9 @@ module Line : sig
       end placements. *)
 
   val into_origin_zero :
-    t Geometry.Line.t -> int -> Grid.Origin_zero_placement.t Geometry.Line.t
+    t Toffee_geometry.Line.t ->
+    int ->
+    Grid.Origin_zero_placement.t Toffee_geometry.Line.t
   (** [into_origin_zero line explicit_track_count] converts both start and end
       placements to origin-zero coordinates.
 
@@ -131,7 +135,7 @@ module Line : sig
       Raises [Failure] if either placement is [Named_line] or [Named_span].
       Named lines must be resolved before calling this function. *)
 
-  val is_definite : t Geometry.Line.t -> bool
+  val is_definite : t Toffee_geometry.Line.t -> bool
   (** [is_definite line] returns [true] if the line placement is definite.
 
       A line placement is definite if at least one of the start or end positions

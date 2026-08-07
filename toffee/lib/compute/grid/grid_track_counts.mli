@@ -17,8 +17,8 @@
     The module also handles conversion to GridTrackVec indices, where even
     indices represent lines and odd indices represent tracks. *)
 
-open Geometry
-open Style
+open Toffee_geometry
+open Toffee_style
 
 type t = Grid.track_counts
 

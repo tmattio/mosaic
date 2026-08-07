@@ -4,9 +4,9 @@
     tracks within the grid container and positioning items within their assigned
     grid areas. *)
 
-open Geometry
-open Style
-open Tree
+open Toffee_geometry
+open Toffee_style
+open Toffee_tree
 
 val align_tracks :
   grid_container_content_box_size:float ->
@@ -124,5 +124,5 @@ val align_and_position_item :
       and must not have auto margins in the alignment axis.
 
     Integration:
-    - Calls [Tree.compute_child_layout] for sizing and layout passes.
-    - Mutates layout tree via [Tree.set_unrounded_layout]. *)
+    - Calls [Toffee_tree.compute_child_layout] for sizing and layout passes.
+    - Mutates layout tree via [Toffee_tree.set_unrounded_layout]. *)

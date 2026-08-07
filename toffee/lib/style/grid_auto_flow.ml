@@ -36,5 +36,5 @@ let is_dense = function
   | Row_dense | Column_dense -> true
 
 let primary_axis = function
-  | Row | Row_dense -> Geometry.Abstract_axis.Inline
-  | Column | Column_dense -> Geometry.Abstract_axis.Block
+  | Row | Row_dense -> Toffee_geometry.Abstract_axis.Inline
+  | Column | Column_dense -> Toffee_geometry.Abstract_axis.Block

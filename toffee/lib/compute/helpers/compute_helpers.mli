@@ -5,11 +5,11 @@
     [compute/common] module. *)
 
 val compute_content_size_contribution :
-  location:float Geometry.Point.t ->
-  size:float Geometry.Size.t ->
-  content_size:float Geometry.Size.t ->
-  overflow:Style.Overflow.t Geometry.Point.t ->
-  float Geometry.Size.t
+  location:float Toffee_geometry.Point.t ->
+  size:float Toffee_geometry.Size.t ->
+  content_size:float Toffee_geometry.Size.t ->
+  overflow:Toffee_style.Overflow.t Toffee_geometry.Point.t ->
+  float Toffee_geometry.Size.t
 (** [compute_content_size_contribution ~location ~size ~content_size ~overflow]
     computes how much a child contributes to its parent's intrinsic content
     size.
@@ -27,9 +27,9 @@ val compute_content_size_contribution :
 val apply_alignment_fallback :
   free_space:float ->
   num_items:int ->
-  alignment_mode:Style.Align_content.t ->
+  alignment_mode:Toffee_style.Align_content.t ->
   is_safe:bool ->
-  Style.Align_content.t
+  Toffee_style.Align_content.t
 (** [apply_alignment_fallback ~free_space ~num_items ~alignment_mode ~is_safe]
     resolves alignment mode fallbacks per CSS Box Alignment spec and CSSWG issue
     10154.
@@ -48,7 +48,7 @@ val compute_alignment_offset :
   free_space:float ->
   num_items:int ->
   gap:float ->
-  alignment_mode:Style.Align_content.t ->
+  alignment_mode:Toffee_style.Align_content.t ->
   layout_is_flex_reversed:bool ->
   is_first:bool ->
   float

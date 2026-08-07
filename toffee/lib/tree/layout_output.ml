@@ -1,3 +1,5 @@
+module Geometry = Toffee_geometry
+
 type t = {
   size : float Geometry.size;
   content_size : float Geometry.size;

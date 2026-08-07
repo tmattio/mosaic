@@ -26,8 +26,8 @@
     Conversion functions map OriginZero lines to track vector indices accounting
     for this structure. *)
 
-open Geometry
-open Style
+open Toffee_geometry
+open Toffee_style
 
 type grid_line = int
 (** [grid_line] is a CSS Grid Line coordinate (1-indexed, negative allowed).

@@ -1,3 +1,5 @@
+module Geometry = Toffee_geometry
+
 type t = Row | Column | Row_reverse | Column_reverse
 
 let default = Row

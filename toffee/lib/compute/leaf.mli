@@ -28,14 +28,14 @@
       constraints. *)
 
 val compute_leaf_layout :
-  inputs:Tree.Layout_input.t ->
-  style:Style.t ->
-  resolve_calc_value:Style.calc_resolver ->
+  inputs:Toffee_tree.Layout_input.t ->
+  style:Toffee_style.t ->
+  resolve_calc_value:Toffee_style.calc_resolver ->
   measure_function:
-    (float option Geometry.size ->
-    Tree.Available_space.t Geometry.size ->
-    float Geometry.size) ->
-  Tree.Layout_output.t
+    (float option Toffee_geometry.size ->
+    Toffee_tree.Available_space.t Toffee_geometry.size ->
+    float Toffee_geometry.size) ->
+  Toffee_tree.Layout_output.t
 (** [compute_leaf_layout ~inputs ~style ~resolve_calc_value ~measure_function]
     computes the size of a leaf node.
 

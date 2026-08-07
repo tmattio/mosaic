@@ -1,3 +1,5 @@
+module Geometry = Toffee_geometry
+
 type calc_resolver = Compact_length.calc_resolver
 
 module Compact_length = Compact_length

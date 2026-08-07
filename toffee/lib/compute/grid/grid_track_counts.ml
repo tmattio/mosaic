@@ -17,8 +17,8 @@
    leftmost track, etc. - Index 0 is the leftmost grid line. Index 2 is the
    second leftmost line, etc. *)
 
-open Geometry
-open Style
+open Toffee_geometry
+open Toffee_style
 
 type t = Grid.track_counts
 

@@ -1,7 +1,9 @@
 (* Implements placing items in the grid and resolving the implicit grid.
    https://www.w3.org/TR/css-grid-1/#placement *)
 
-open Geometry
+module Style = Toffee_style
+module Tree = Toffee_tree
+open Toffee_geometry
 open Style
 open Tree
 

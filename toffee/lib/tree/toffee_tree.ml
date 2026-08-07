@@ -1,5 +1,6 @@
 (** Core Types *)
 
+module Geometry = Toffee_geometry
 module Node_id = Node_id
 module Run_mode = Run_mode
 module Sizing_mode = Sizing_mode
@@ -28,7 +29,7 @@ end
 module type LAYOUT_PARTIAL_TREE = sig
   include TRAVERSE_PARTIAL_TREE
 
-  val get_core_container_style : t -> Node_id.t -> Style.t
+  val get_core_container_style : t -> Node_id.t -> Toffee_style.t
   val set_unrounded_layout : t -> Node_id.t -> Layout.t -> unit
   val compute_child_layout : t -> Node_id.t -> Layout_input.t -> Layout_output.t
   val resolve_calc_value : t -> int -> float -> float

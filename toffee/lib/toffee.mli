@@ -167,13 +167,13 @@
     Prefer bulk operations like {!new_with_children} and {!set_children} over
     incremental {!add_child} when constructing large subtrees. *)
 
-module Geometry = Geometry
+module Geometry = Toffee_geometry
 (** Geometric primitives for dimensions, positions, and constraints.
 
     Provides {!Geometry.Size}, {!Geometry.Point}, {!Geometry.Rect}, and axis
     types used throughout the API. *)
 
-module Style = Style
+module Style = Toffee_style
 (** CSS style properties for layout computation.
 
     Defines types for [display], [position], flexbox properties ([flex_grow],
@@ -181,7 +181,7 @@ module Style = Style
     ([grid_template_columns], etc.), and dimensions ([width], [height],
     [padding], [margin], etc.). *)
 
-open Tree
+open Toffee_tree
 open Geometry
 
 (** {1 Core Types} *)

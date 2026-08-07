@@ -55,8 +55,8 @@ val cache_size : int
 (** [cache_size] is the number of measure cache slots (9). *)
 
 type 'a cache_entry = {
-  known_dimensions : float option Geometry.size;
-  available_space : Available_space.t Geometry.size;
+  known_dimensions : float option Toffee_geometry.size;
+  available_space : Available_space.t Toffee_geometry.size;
   content : 'a;
 }
 (** Cached layout result paired with its input constraints.
@@ -66,7 +66,7 @@ type 'a cache_entry = {
 
 type t = {
   mutable final_layout_entry : Layout_output.t cache_entry option;
-  mutable measure_entries : float Geometry.size cache_entry option array;
+  mutable measure_entries : float Toffee_geometry.size cache_entry option array;
   mutable is_empty : bool;
 }
 (** Cache for layout computation results.
@@ -85,7 +85,9 @@ type clear_state =
   | Already_empty  (** Cache was already empty. *)
 
 val compute_cache_slot :
-  float option Geometry.size -> Available_space.t Geometry.size -> int
+  float option Toffee_geometry.size ->
+  Available_space.t Toffee_geometry.size ->
+  int
 (** [compute_cache_slot known_dimensions available_space] returns the measure
     cache slot index for the given constraints.
 
@@ -103,8 +105,8 @@ val is_roughly_equal : Available_space.t -> Available_space.t -> bool
 
 val get :
   t ->
-  known_dimensions:float option Geometry.size ->
-  available_space:Available_space.t Geometry.size ->
+  known_dimensions:float option Toffee_geometry.size ->
+  available_space:Available_space.t Toffee_geometry.size ->
   run_mode:Run_mode.t ->
   Layout_output.t option
 (** [get t ~known_dimensions ~available_space ~run_mode] retrieves a cached
@@ -123,8 +125,8 @@ val get :
 
 val store :
   t ->
-  known_dimensions:float option Geometry.size ->
-  available_space:Available_space.t Geometry.size ->
+  known_dimensions:float option Toffee_geometry.size ->
+  available_space:Available_space.t Toffee_geometry.size ->
   run_mode:Run_mode.t ->
   Layout_output.t ->
   unit

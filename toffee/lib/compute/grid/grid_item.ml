@@ -1,6 +1,8 @@
 (* Contains GridItem used to represent a single grid item during layout *)
 
-open Geometry
+module Style = Toffee_style
+module Tree = Toffee_tree
+open Toffee_geometry
 open Style
 open Style.Grid
 open Tree

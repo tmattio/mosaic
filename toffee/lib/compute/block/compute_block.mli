@@ -47,7 +47,7 @@
     reserves horizontal space). Tables receive special treatment and do not
     participate in stretch-sizing. *)
 
-open Tree
+open Toffee_tree
 
 val compute_block_layout :
   (module LAYOUT_PARTIAL_TREE with type t = 't) ->

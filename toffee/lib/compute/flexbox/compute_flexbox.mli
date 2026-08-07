@@ -46,7 +46,7 @@
     - Short-circuits in [compute_flexbox_layout] when size is fully determined
       and run mode is ComputeSize. *)
 
-open Tree
+open Toffee_tree
 
 val compute_flexbox_layout :
   (module LAYOUT_PARTIAL_TREE with type t = 't) ->

@@ -38,14 +38,14 @@
 (** {1 Main Entry Point} *)
 
 val place_grid_items :
-  (module Tree.LAYOUT_PARTIAL_TREE with type t = 'tree) ->
+  (module Toffee_tree.LAYOUT_PARTIAL_TREE with type t = 'tree) ->
   cell_occupancy_matrix:Cell_occupancy.t ->
   items:Grid_item.t list ref ->
   tree:'tree ->
-  parent_node:Tree.Node_id.t ->
-  grid_auto_flow:Style.grid_auto_flow ->
-  align_items:Style.align_items ->
-  justify_items:Style.align_items ->
+  parent_node:Toffee_tree.Node_id.t ->
+  grid_auto_flow:Toffee_style.grid_auto_flow ->
+  align_items:Toffee_style.align_items ->
+  justify_items:Toffee_style.align_items ->
   named_line_resolver:Named.t ->
   unit
 (** [place_grid_items (module Tree) ~cell_occupancy_matrix ~items ~tree

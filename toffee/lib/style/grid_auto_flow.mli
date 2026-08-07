@@ -49,7 +49,7 @@ val is_dense : t -> bool
 
     Returns [true] for [Row_dense] and [Column_dense], [false] otherwise. *)
 
-val primary_axis : t -> Geometry.Abstract_axis.t
+val primary_axis : t -> Toffee_geometry.Abstract_axis.t
 (** [primary_axis flow] returns the axis along which items are placed first.
 
     Returns [Inline] for row-based flows ([Row] and [Row_dense]), and [Block]

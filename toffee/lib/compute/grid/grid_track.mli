@@ -12,7 +12,7 @@
     - Collapsed tracks have [is_collapsed = true] and zero-sized functions
     - Gutters between collapsed tracks are also collapsed *)
 
-open Style
+open Toffee_style
 
 type grid_track_kind =
   | Track  (** Actual grid track. *)

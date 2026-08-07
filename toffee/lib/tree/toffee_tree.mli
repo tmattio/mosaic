@@ -81,7 +81,7 @@ end
 module type LAYOUT_PARTIAL_TREE = sig
   include TRAVERSE_PARTIAL_TREE
 
-  val get_core_container_style : t -> Node_id.t -> Style.t
+  val get_core_container_style : t -> Node_id.t -> Toffee_style.t
   (** [get_core_container_style tree node] returns the style for [node].
 
       Layout algorithms read properties such as [display], [flex_direction],
@@ -122,8 +122,8 @@ module type CACHE_TREE = sig
   val cache_get :
     t ->
     Node_id.t ->
-    known_dimensions:float option Geometry.size ->
-    available_space:Available_space.t Geometry.size ->
+    known_dimensions:float option Toffee_geometry.size ->
+    available_space:Available_space.t Toffee_geometry.size ->
     run_mode:Run_mode.t ->
     Layout_output.t option
   (** [cache_get tree node ~known_dimensions ~available_space ~run_mode]
@@ -134,8 +134,8 @@ module type CACHE_TREE = sig
   val cache_store :
     t ->
     Node_id.t ->
-    known_dimensions:float option Geometry.size ->
-    available_space:Available_space.t Geometry.size ->
+    known_dimensions:float option Toffee_geometry.size ->
+    available_space:Available_space.t Toffee_geometry.size ->
     run_mode:Run_mode.t ->
     Layout_output.t ->
     unit

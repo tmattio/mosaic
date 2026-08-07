@@ -27,13 +27,13 @@
     - Explicit counts (explicit_column_count, explicit_row_count) are set
       externally after grid sizing and used for fallback line resolution. *)
 
-open Style
-open Geometry
+open Toffee_style
+open Toffee_geometry
 
 type t
 (** Resolver mapping grid line names and area names to line numbers. *)
 
-val create : Style.t -> int -> int -> t
+val create : Toffee_style.t -> int -> int -> t
 (** [create style column_auto_repetitions row_auto_repetitions] initializes a
     resolver from grid style properties.
 

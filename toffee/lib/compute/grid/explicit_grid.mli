@@ -18,11 +18,11 @@ type auto_repeat_strategy =
           that satisfies the minimum. *)
 
 val compute_explicit_grid_size_in_axis :
-  style:Style.t ->
+  style:Toffee_style.t ->
   auto_fit_container_size:float option ->
   auto_fit_strategy:auto_repeat_strategy ->
-  resolve_calc_value:Style.calc_resolver ->
-  axis:Geometry.absolute_axis ->
+  resolve_calc_value:Toffee_style.calc_resolver ->
+  axis:Toffee_geometry.absolute_axis ->
   int * int
 (** [compute_explicit_grid_size_in_axis style auto_fit_container_size
      auto_fit_strategy resolve_calc_value axis] computes explicit grid track
@@ -49,8 +49,8 @@ val compute_explicit_grid_size_in_axis :
 val initialize_grid_tracks :
   tracks:Grid_track.t list ref ->
   counts:Grid_track_counts.t ->
-  style:Style.t ->
-  axis:Geometry.absolute_axis ->
+  style:Toffee_style.t ->
+  axis:Toffee_geometry.absolute_axis ->
   track_has_items:(int -> bool) ->
   unit
 (** [initialize_grid_tracks tracks counts style axis track_has_items] populates

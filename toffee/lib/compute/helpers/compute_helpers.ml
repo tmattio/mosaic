@@ -1,7 +1,7 @@
 (* Compute helpers - Helper functions used by layout algorithms *)
 
-open Geometry
-open Style
+open Toffee_geometry
+open Toffee_style
 
 (* Compute how much width/height a child contributes to its parent's intrinsic
    content size. Respects overflow settings - visible overflow contributes to

@@ -1,7 +1,7 @@
 (* Contains CellOccupancyMatrix used to track occupied cells during grid
    placement *)
 
-open Geometry
+open Toffee_geometry
 
 (* The occupancy state of a single grid cell *)
 type cell_occupancy_state =

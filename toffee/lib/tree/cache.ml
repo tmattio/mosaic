@@ -1,3 +1,5 @@
+module Geometry = Toffee_geometry
+
 let cache_size = 9
 
 type 'a cache_entry = {

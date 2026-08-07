@@ -99,7 +99,7 @@ let into_origin_zero_placement t explicit_track_count =
 (* Module for operations on Line<GridPlacement> *)
 module Line = struct
   let into_origin_zero_ignoring_named line explicit_track_count =
-    let open Geometry.Line in
+    let open Toffee_geometry.Line in
     {
       start =
         into_origin_zero_placement_ignoring_named line.start
@@ -109,14 +109,14 @@ module Line = struct
     }
 
   let into_origin_zero line explicit_track_count =
-    let open Geometry.Line in
+    let open Toffee_geometry.Line in
     {
       start = into_origin_zero_placement line.start explicit_track_count;
       end_ = into_origin_zero_placement line.end_ explicit_track_count;
     }
 
   let is_definite line =
-    match (line.Geometry.Line.start, line.Geometry.Line.end_) with
+    match (line.Toffee_geometry.Line.start, line.Toffee_geometry.Line.end_) with
     | Line n, _ when n <> 0 -> true
     | _, Line n when n <> 0 -> true
     | Named_line _, _ -> true

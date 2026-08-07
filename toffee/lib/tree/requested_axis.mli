@@ -1,9 +1,9 @@
 (** Axis that layout algorithms can be requested to compute a size for.
 
     [Requested_axis] specifies which dimensions a layout algorithm should
-    compute. Unlike {!Geometry.Absolute_axis}, which represents only horizontal
-    or vertical axes, [Requested_axis] includes a [Both] variant to indicate
-    that both dimensions should be computed simultaneously.
+    compute. Unlike {!Toffee_geometry.Absolute_axis}, which represents only
+    horizontal or vertical axes, [Requested_axis] includes a [Both] variant to
+    indicate that both dimensions should be computed simultaneously.
 
     This type is used in {!Layout_input.t} to control which axis or axes a node
     should compute during layout. Single-axis requests are used when querying
@@ -17,12 +17,12 @@ type t =
 
 (** {1 Conversion Functions} *)
 
-val of_absolute_axis : Geometry.Absolute_axis.t -> t
+val of_absolute_axis : Toffee_geometry.Absolute_axis.t -> t
 (** [of_absolute_axis axis] converts an absolute axis to a requested axis.
 
     Maps [Horizontal] to [Horizontal] and [Vertical] to [Vertical]. *)
 
-val to_absolute_axis : t -> Geometry.Absolute_axis.t option
+val to_absolute_axis : t -> Toffee_geometry.Absolute_axis.t option
 (** [to_absolute_axis t] converts a requested axis to an absolute axis.
 
     Returns [Some Horizontal] or [Some Vertical] for single-axis requests, and

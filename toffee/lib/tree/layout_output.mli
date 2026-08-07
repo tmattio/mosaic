@@ -22,7 +22,7 @@
     Baselines indicate the line on which text sits, used for aligning inline
     content and flex items. Text nodes and nodes containing text descendants
     typically have baselines. For nodes without baselines, use
-    [Geometry.(Point.none)] for the [first_baselines] field.
+    [Toffee_geometry.(Point.none)] for the [first_baselines] field.
 
     {2 Margin Collapsing}
 
@@ -36,16 +36,17 @@
     [margins_can_collapse_through] to [false]. *)
 
 type t = {
-  size : float Geometry.size;  (** The computed outer size of the node's box. *)
-  content_size : float Geometry.size;
+  size : float Toffee_geometry.size;
+      (** The computed outer size of the node's box. *)
+  content_size : float Toffee_geometry.size;
       (** The size of the content within the node.
 
           This may exceed [size] when content overflows, enabling computation of
           scroll dimensions for scrollable containers. *)
-  first_baselines : float option Geometry.point;
+  first_baselines : float option Toffee_geometry.point;
       (** The first baseline in each dimension, if any.
 
-          Use [Geometry.(Point.none ())] for nodes without baselines. *)
+          Use [Toffee_geometry.(Point.none ())] for nodes without baselines. *)
   top_margin : Collapsible_margin_set.t;
       (** Top margin available for collapsing in CSS block layout.
 
@@ -61,9 +62,9 @@ type t = {
 }
 
 val make :
-  size:float Geometry.size ->
-  content_size:float Geometry.size ->
-  first_baselines:float option Geometry.point ->
+  size:float Toffee_geometry.size ->
+  content_size:float Toffee_geometry.size ->
+  first_baselines:float option Toffee_geometry.point ->
   top_margin:Collapsible_margin_set.t ->
   bottom_margin:Collapsible_margin_set.t ->
   margins_can_collapse_through:bool ->
@@ -76,13 +77,13 @@ val make :
     relevant. For flexbox and grid layouts, prefer {!from_sizes_and_baselines}
     which sets margins to zero automatically. *)
 
-val size : t -> float Geometry.size
+val size : t -> float Toffee_geometry.size
 (** [size t] returns the outer size of [t]. *)
 
-val content_size : t -> float Geometry.size
+val content_size : t -> float Toffee_geometry.size
 (** [content_size t] returns the content size of [t]. *)
 
-val first_baselines : t -> float option Geometry.point
+val first_baselines : t -> float option Toffee_geometry.point
 (** [first_baselines t] returns the first baselines of [t]. *)
 
 val top_margin : t -> Collapsible_margin_set.t
@@ -107,7 +108,7 @@ val default : t
 
     Identical to {!hidden}. Provided as a convenient default value. *)
 
-val from_outer_size : float Geometry.size -> t
+val from_outer_size : float Toffee_geometry.size -> t
 (** [from_outer_size size] creates a layout output from just the outer size.
 
     Sets [size] to the provided value and [content_size] to zero. Use this when
@@ -116,7 +117,10 @@ val from_outer_size : float Geometry.size -> t
     margins are zero, and margins cannot collapse through. *)
 
 val from_sizes_and_baselines :
-  float Geometry.size -> float Geometry.size -> float option Geometry.point -> t
+  float Toffee_geometry.size ->
+  float Toffee_geometry.size ->
+  float option Toffee_geometry.point ->
+  t
 (** [from_sizes_and_baselines size content_size first_baselines] creates a
     layout output from sizes and baselines.
 

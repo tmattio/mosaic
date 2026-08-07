@@ -1,8 +1,8 @@
 (* Taffy uses two coordinate systems to refer to grid lines (the gaps/gutters
    between rows/columns) *)
 
-open Geometry
-open Style
+open Toffee_geometry
+open Toffee_style
 
 type grid_line = int
 (* Represents a grid line position in "CSS Grid Line" coordinates *)

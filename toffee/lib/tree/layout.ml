@@ -1,3 +1,5 @@
+module Geometry = Toffee_geometry
+
 type t = {
   order : int;
   location : float Geometry.point;

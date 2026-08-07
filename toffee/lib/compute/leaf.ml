@@ -1,7 +1,8 @@
 (** Computes size using styles and measure functions *)
 
-open Geometry
-open Tree
+module Style = Toffee_style
+open Toffee_geometry
+open Toffee_tree
 
 (** Compute the size of a leaf node (node with no children) *)
 let compute_leaf_layout ~(inputs : Layout_input.t) ~(style : Style.t)

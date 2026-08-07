@@ -59,10 +59,11 @@ let of_option option =
 
 type size = { width : t; height : t }
 
-let size_to_options (t : size) : float option Geometry.size =
+let size_to_options (t : size) : float option Toffee_geometry.size =
   { width = to_option t.width; height = to_option t.height }
 
-let size_maybe_set (t : size) (value : float option Geometry.size) : size =
+let size_maybe_set (t : size) (value : float option Toffee_geometry.size) : size
+    =
   {
     width = set_or_self t.width value.width;
     height = set_or_self t.height value.height;

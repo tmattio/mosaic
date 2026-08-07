@@ -1,5 +1,6 @@
 (* Additional grid-focused unit tests ported from taffy's non-generated suite *)
 
+module Tree = Toffee_tree
 open Toffee
 open Geometry
 open Tree

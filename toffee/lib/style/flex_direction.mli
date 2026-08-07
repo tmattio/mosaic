@@ -36,13 +36,13 @@ val is_reverse : t -> bool
 (** [is_reverse t] returns [true] if [t] is [Row_reverse] or [Column_reverse].
 *)
 
-val main_axis : t -> Geometry.Absolute_axis.t
+val main_axis : t -> Toffee_geometry.Absolute_axis.t
 (** [main_axis t] returns the absolute axis corresponding to the main axis.
 
     - [Row] and [Row_reverse] return [Horizontal]
     - [Column] and [Column_reverse] return [Vertical] *)
 
-val cross_axis : t -> Geometry.Absolute_axis.t
+val cross_axis : t -> Toffee_geometry.Absolute_axis.t
 (** [cross_axis t] returns the absolute axis corresponding to the cross axis.
 
     The cross axis is always perpendicular to the main axis.
