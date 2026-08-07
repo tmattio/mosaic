@@ -375,7 +375,8 @@ val set_pending_provider : t -> (unit -> Pending.t option) option -> unit
 val set_on_frame : t -> (t -> delta:float -> unit) option -> unit
 (** [set_on_frame t callback] registers a per-frame update hook.
     [callback t ~delta] is called every frame with [delta] as the elapsed
-    milliseconds. [None] clears the hook. *)
+    milliseconds, but only while [t] is live: pair the hook with {!set_live} to
+    start and stop the animation it drives. [None] clears the hook. *)
 
 val set_on_resize : t -> (t -> unit) option -> unit
 (** [set_on_resize t callback] registers a size-change hook. The callback is
