@@ -577,6 +577,55 @@ let parser_csi_empty_parameter_defaults () =
       equal ~msg:"SGR empty param fg" check_color Color.red c
   | _ -> fail "SGR empty param should remain reset then fg"
 
+let parser_utf8_split_invariance () =
+  (* Feeding a byte stream whole or split at any boundary must decode to the
+     same text (found by the matrix.vte split-invariance property fuzzing). *)
+  let decode feeds =
+    let p = Parser.create () in
+    let acc = ref [] in
+    let collect tok = acc := tok :: !acc in
+    List.iter
+      (fun s ->
+        Parser.feed p (Bytes.unsafe_of_string s) ~off:0 ~len:(String.length s)
+          collect)
+      feeds;
+    Parser.feed p Bytes.empty ~off:0 ~len:0 collect;
+    List.rev !acc
+    |> List.concat_map (function Parser.Text s -> [ s ] | _ -> [])
+    |> String.concat ""
+  in
+  (* Exact decodes for the three chunk-boundary defects. *)
+  equal ~msg:"non-continuation after pending lead is not swallowed" string
+    "\xEF\xBF\xBD\n"
+    (decode [ "\xC3"; "\n" ]);
+  equal ~msg:"overlong completes to one replacement per byte" string
+    "\xEF\xBF\xBD\xEF\xBF\xBD\xEF\xBF\xBD"
+    (decode [ "\xE0\x80"; "\x80" ]);
+  equal ~msg:"invalid tail is not buffered over a following scalar" string
+    "\xEF\xBF\xBD\xE2\x82\xAC"
+    (decode [ "\xE0\xE2"; "\x82\xAC" ]);
+  (* Split invariance at every cut point. *)
+  let check_all_cuts name input =
+    let whole = decode [ input ] in
+    for cut = 0 to String.length input do
+      let split =
+        decode
+          [
+            String.sub input 0 cut;
+            String.sub input cut (String.length input - cut);
+          ]
+      in
+      equal ~msg:(Printf.sprintf "%s cut at %d" name cut) string whole split
+    done
+  in
+  check_all_cuts "pending lead then newline" "\xC3\nX";
+  check_all_cuts "overlong" "\xE0\x80\x80X";
+  check_all_cuts "invalid tail then euro" "\xE0\xE2\x82\xACX";
+  check_all_cuts "surrogate" "\xED\xA0\x80X";
+  check_all_cuts "valid euro" "\xE2\x82\xACX";
+  check_all_cuts "truncated at eof" "X\xF0\x9F\x9A";
+  check_all_cuts "csi then pending lead" "\x1b[100;100A\xC3\nX"
+
 let parser_sgr_colon_subparameters () =
   (* Underline style sub-parameters (emitted by neovim/kitty for undercurl):
      curly degrades to plain underline, 4:0 disables, 4:2 is double. *)
@@ -940,6 +989,7 @@ let tests =
         test "chunked protocol string controls"
           parser_protocol_string_controls_chunked;
         test "csi empty parameter defaults" parser_csi_empty_parameter_defaults;
+        test "utf8 split invariance" parser_utf8_split_invariance;
         test "sgr colon subparameters" parser_sgr_colon_subparameters;
         test "mode sequences" parser_mode_sequences;
       ];

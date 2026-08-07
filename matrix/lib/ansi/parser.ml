@@ -395,6 +395,8 @@ let[@inline] utf8_sequence_len b =
   else if b >= 0xF0 && b <= 0xF4 then 4
   else 0
 
+let[@inline] is_utf8_continuation b = b land 0xC0 = 0x80
+
 let[@inline] emit_utf8_decode buf bytes off =
   let d = Bytes.get_utf_8_uchar bytes off in
   if Uchar.utf_decode_is_valid d then (
@@ -405,30 +407,54 @@ let[@inline] emit_utf8_decode buf bytes off =
     false)
 
 (* Decode UTF-8 bytes to text_buf. Handles chunk boundaries for streaming
-   input. *)
+   input: feeding a stream whole or split at any byte boundary must produce
+   identical output. The whole-chunk scan is the reference behavior — an
+   invalid lead advances one byte and every orphan byte gets its own U+FFFD —
+   so the buffered paths below reproduce exactly that. *)
 let decode_utf8 p src off len =
   if len <= 0 then ()
   else begin
     let buf = p.text_buf in
     let end_pos = off + len in
     let i = ref off in
-    (* Complete any pending incomplete sequence from previous chunk *)
+    (* Complete any pending incomplete sequence from the previous chunk. Only
+       continuation bytes may extend it; anything else invalidates it. *)
     if p.utf8_len > 0 then begin
       let lead = Bytes.get_uint8 p.utf8_buf 0 in
       let expected = utf8_sequence_len lead in
-      if expected = 0 then begin
-        Buffer.add_utf_8_uchar buf Uchar.rep;
-        p.utf8_len <- 0
-      end;
-      while p.utf8_len > 0 && p.utf8_len < expected && !i < end_pos do
+      let valid = ref true in
+      while
+        !valid && p.utf8_len < expected && !i < end_pos
+        && is_utf8_continuation (Bytes.get_uint8 src !i)
+      do
         Bytes.set p.utf8_buf p.utf8_len (Bytes.get src !i);
         p.utf8_len <- p.utf8_len + 1;
         incr i
       done;
-      if p.utf8_len = expected then begin
-        ignore (emit_utf8_decode buf p.utf8_buf 0 : bool);
+      if p.utf8_len < expected && !i < end_pos then valid := false;
+      if !valid && p.utf8_len = expected then begin
+        let d = Bytes.get_utf_8_uchar p.utf8_buf 0 in
+        if Uchar.utf_decode_is_valid d then
+          Buffer.add_utf_8_uchar buf (Uchar.utf_decode_uchar d)
+        else
+          (* Completed to an invalid scalar (overlong, surrogate): a
+             whole-chunk scan replaces the lead and then each orphan
+             continuation individually — one U+FFFD per byte. *)
+          for _k = 1 to p.utf8_len do
+            Buffer.add_utf_8_uchar buf Uchar.rep
+          done;
         p.utf8_len <- 0
       end
+      else if not !valid then begin
+        (* Invalidated by a non-continuation byte: replace every buffered
+           byte (continuations can never start a new sequence) and rescan
+           from the current byte. *)
+        for _k = 1 to p.utf8_len do
+          Buffer.add_utf_8_uchar buf Uchar.rep
+        done;
+        p.utf8_len <- 0
+      end
+      (* else: still incomplete and the chunk is exhausted; keep buffering. *)
     end;
     (* Process remaining bytes. Only decode after proving the complete
        sequence is inside the caller's logical slice. *)
@@ -440,10 +466,26 @@ let decode_utf8 p src off len =
         incr i
       end
       else if !i + expected > end_pos then begin
-        let available = end_pos - !i in
-        Bytes.blit src !i p.utf8_buf 0 available;
-        p.utf8_len <- available;
-        i := end_pos
+        (* The sequence would cross the slice end. Buffer it only when every
+           byte after the lead is a continuation; otherwise it is already
+           invalid — replace the lead and resume at the next byte, exactly as
+           the whole-chunk scan would. *)
+        let valid_prefix = ref true in
+        let j = ref (!i + 1) in
+        while !valid_prefix && !j < end_pos do
+          if is_utf8_continuation (Bytes.get_uint8 src !j) then incr j
+          else valid_prefix := false
+        done;
+        if !valid_prefix then begin
+          let available = end_pos - !i in
+          Bytes.blit src !i p.utf8_buf 0 available;
+          p.utf8_len <- available;
+          i := end_pos
+        end
+        else begin
+          Buffer.add_utf_8_uchar buf Uchar.rep;
+          incr i
+        end
       end
       else
         begin if emit_utf8_decode buf src !i then i := !i + expected else incr i
