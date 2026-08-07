@@ -83,8 +83,6 @@ let anchor_of_cursor ~terminal_height ~row ~col =
     in
     { render_offset; static_needs_newline; scroll_bottom = false }
 
-let terminal_height t = t.terminal_height
-let min_live_height t = t.min_live_height
 let render_offset t = t.render_offset
 let static_needs_newline t = t.static_needs_newline
 let live_region t = { row_offset = t.render_offset; height = live_height t }
@@ -193,8 +191,6 @@ let replace_static t ({ text; rows; _ } as write) =
   if rows < 0 then invalid_arg "Primary.replace_static: rows must be >= 0";
   let static_queue = if String.length text = 0 then [] else [ write ] in
   { t with static_queue; replace_pending = true }
-
-let has_pending_static t = t.replace_pending || t.static_queue <> []
 
 let static_ops step text =
   let move = Move_cursor { row = step.base; col = 1 } in

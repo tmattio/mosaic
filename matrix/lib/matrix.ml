@@ -415,10 +415,6 @@ let size t =
 
 let full_size t = (t.width, t.height)
 let mode t = t.config.mode
-
-let mouse_offset t =
-  if t.config.mode = `Primary then Primary.render_offset t.primary else 0
-
 let pixel_resolution t = Terminal.pixel_resolution t.terminal
 let terminal t = t.terminal
 let capabilities t = Terminal.capabilities t.terminal
@@ -1092,8 +1088,7 @@ let maybe_apply_pending_resize t =
 let adjust_event_for_offset t =
   if t.config.mode = `Alt then Fun.id
   else
-    let offset = mouse_offset t in
-    let map_y y = if y <= offset then -1 else y - offset in
+    let map_y = Primary.map_mouse_y t.primary in
     fun event ->
       match event with
       | Input.Mouse mouse ->

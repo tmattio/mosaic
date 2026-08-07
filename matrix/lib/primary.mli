@@ -72,9 +72,6 @@ type cursor_anchor = {
     [scroll_bottom] is [true] iff the cursor was on the bottom terminal row and
     the runtime must first write a newline to move that row into scrollback. *)
 
-val empty_plan : plan
-(** [empty_plan] performs no terminal operations and has no runtime effects. *)
-
 val create :
   terminal_height:int ->
   min_live_height:int ->
@@ -96,12 +93,6 @@ val anchor_of_cursor :
 
     [row] and [col] are one-based terminal coordinates. The runtime owns the
     terminal write described by [scroll_bottom]. *)
-
-val terminal_height : t -> int
-(** [terminal_height t] is the current terminal height in rows. *)
-
-val min_live_height : t -> int
-(** [min_live_height t] is the minimum live viewport height in rows. *)
 
 val render_offset : t -> int
 (** [render_offset t] is the number of terminal rows above the live viewport. *)
@@ -145,9 +136,6 @@ val replace_static : t -> static_write -> t
 (** [replace_static t write] queues an atomic replacement of all static
     primary-screen content for the next flush. The replacement may be empty.
     Raises [Invalid_argument] if [write.rows < 0]. *)
-
-val has_pending_static : t -> bool
-(** [has_pending_static t] is [true] iff [t] has queued static writes. *)
 
 val flush_static : t -> t * plan
 (** [flush_static t] plans all pending static writes and returns the updated
