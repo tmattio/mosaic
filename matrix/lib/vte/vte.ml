@@ -572,7 +572,15 @@ let put_text t text =
 
         (* Read the row after wrap handling: a wrap moves the cursor. *)
         let row = t.cursor.row in
-        if row < t.rows && t.cursor.col < line_width then
+        if row < t.rows && t.cursor.col >= line_width then (
+          (* DECAWM off at the right margin: overwrite the last column and
+             stay pinned, as in the non-insert path. Inserting at the margin
+             would shift every surviving cell off the row anyway. *)
+          let cluster = String.sub text off l in
+          Grid.draw_text t.active_grid ~x:(line_width - 1) ~y:row ~text:cluster
+            ~style;
+          mark_row_dirty t row)
+        else if row < t.rows && t.cursor.col < line_width then
           let w =
             Text.width_at ~width_method ~tab_width:2 text ~byte_offset:off
           in
@@ -626,7 +634,22 @@ let put_text t text =
       if t.cursor.row >= t.rows then remaining := ""
       else
         let available = t.cols - t.cursor.col in
-        if available <= 0 then remaining := ""
+        if available <= 0 then (
+          (* DECAWM off at the right margin: each grapheme overwrites the
+             last column and the cursor stays pinned, as on a real
+             terminal. Dropping the run instead would also break split
+             invariance: a later chunk's combining mark attaches to the
+             margin cell, whose base must therefore have been drawn. *)
+          let x = t.cols - 1 in
+          let run = !remaining in
+          Text.iter_graphemes
+            (fun ~offset ~len ->
+              Grid.draw_text t.active_grid ~x ~y:t.cursor.row
+                ~text:(String.sub run offset len)
+                ~style)
+            run;
+          mark_row_dirty t t.cursor.row;
+          remaining := "")
         else
           let s = !remaining in
           let len = String.length s in

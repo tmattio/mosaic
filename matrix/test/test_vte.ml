@@ -259,6 +259,24 @@ let insert_characters_wide_boundary () =
   is_false ~msg:"last cell not continuation"
     (Grid.is_continuation grid last_idx)
 
+(* DECAWM off: printing at the right margin overwrites the last column and
+   the cursor stays pinned; the run must not be dropped. Found by the split
+   invariance property (seed 496960259): a dropped base made a later chunk's
+   combining mark attach to the wrong cell. *)
+let margin_overwrite_with_wrap_off () =
+  let vte = Vte.create ~rows:1 ~cols:3 () in
+  Vte.feed_string vte "\x1b[?7labcdef";
+  equal ~msg:"last column holds the run's final char" string "abf"
+    (get_line (Vte.grid vte) 0);
+  let whole = Vte.create ~rows:1 ~cols:1 () in
+  Vte.feed_string whole "\r\n \x1b[?7le\xCC\x81     ";
+  let split = Vte.create ~rows:1 ~cols:1 () in
+  Vte.feed_string split "\r\n \x1b[?7le";
+  Vte.feed_string split "\xCC\x81     ";
+  equal ~msg:"whole and split feeds converge" string (Vte.to_string whole)
+    (Vte.to_string split);
+  equal ~msg:"final overwrite is a space" string " " (Vte.to_string whole)
+
 let wrap_below_scroll_region () =
   let vte = Vte.create ~rows:5 ~cols:3 () in
   Vte.feed_string vte "A\r\nB\r\nC\r\nD\r\nE";
@@ -679,12 +697,13 @@ let unicode_wide_char_wraps_at_margin () =
     (Vte.to_string vte);
   equal ~msg:"cursor after wrapped tail" (pair int int) (1, 4)
     (Vte.cursor_pos vte);
-  (* With auto-wrap off the unfittable wide grapheme is skipped, the next
-     character fills the margin column, and the remainder is clipped. *)
+  (* With auto-wrap off the unfittable wide grapheme is skipped and every
+     following character overwrites the margin column in turn — the run's
+     last character wins, as on a real terminal. *)
   let vte = Vte.create ~rows:2 ~cols:4 () in
   Vte.feed_string vte "\x1b[?7l";
   Vte.feed_string vte "abc全xy";
-  equal ~msg:"no wrap when DECAWM off" string "abcx\n    " (Vte.to_string vte)
+  equal ~msg:"no wrap when DECAWM off" string "abcy\n    " (Vte.to_string vte)
 
 let unicode_wide_char_wider_than_line () =
   (* Shrunk from a split-invariance property counterexample: on a 1x1 grid,
@@ -750,6 +769,7 @@ let unicode_malformed_utf8 () =
 
 let tests =
   [
+    test "margin overwrite with wrap off" margin_overwrite_with_wrap_off;
     test "create with defaults" create_with_defaults;
     test "create with no scrollback" create_with_no_scrollback;
     test "create with custom scrollback" create_with_custom_scrollback;
