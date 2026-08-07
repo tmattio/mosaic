@@ -1,9 +1,17 @@
-// This file only compiles on Unix platforms.
-// Windows PTY support is in pty_win32.c
-#ifndef _WIN32
+// POSIX PTY stubs. On platforms without POSIX PTYs — including Windows —
+// every entry point raises Unix_error(ENOSYS, ...). A previous ConPTY
+// backend stored a custom block where the OCaml side expects a
+// Unix.file_descr, which made every I/O call reinterpret unrelated memory
+// as a handle; failing loudly is the honest scope until a sound Windows
+// implementation exists.
 
+#if defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || \
+    defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#define MATRIX_HAS_POSIX_PTY 1
+#endif
+
+#ifdef MATRIX_HAS_POSIX_PTY
 #define _GNU_SOURCE  // For ptsname on Linux
-#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +24,9 @@
 #ifdef __GLIBC__
 #include <limits.h>
 #endif
+#endif  // MATRIX_HAS_POSIX_PTY
+
+#include <errno.h>
 
 // OCaml C FFI headers
 #include <caml/alloc.h>
@@ -24,9 +35,7 @@
 #include <caml/mlvalues.h>
 #include <caml/unixsupport.h>
 
-// POSIX PTY implementation for Unix targets with posix_openpt/grantpt/unlockpt.
-#if defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || \
-    defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#ifdef MATRIX_HAS_POSIX_PTY
 
 // A C struct to hold the file descriptor pair.
 struct pty_fds {
@@ -37,10 +46,10 @@ struct pty_fds {
 // This is the modern, portable way to open a PTY.
 struct pty_fds c_open_pty_posix() {
   struct pty_fds fds = {-1, -1};
-  
+
   // Enter blocking section for potentially blocking syscalls
   caml_enter_blocking_section();
-  
+
   // O_CLOEXEC prevents the file descriptor from being inherited by child
   // processes created by exec functions. This is a good security practice.
   int master_fd = posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC);
@@ -62,7 +71,7 @@ struct pty_fds c_open_pty_posix() {
     caml_leave_blocking_section();
     return fds;
   }
-  
+
   caml_leave_blocking_section();
 
   // Get slave name - use thread-safe ptsname_r where available
@@ -85,7 +94,7 @@ struct pty_fds c_open_pty_posix() {
   caml_enter_blocking_section();
   fds.slave_fd = open(slave_name, O_RDWR | O_NOCTTY);
   caml_leave_blocking_section();
-  
+
   if (fds.slave_fd == -1) {
     close(master_fd);
     // CRITICAL FIX: Reset master_fd to indicate failure
@@ -122,7 +131,7 @@ CAMLprim value ocaml_pty_get_winsize(value fd) {
   caml_enter_blocking_section();
   int ret = ioctl(Int_val(fd), TIOCGWINSZ, &ws);
   caml_leave_blocking_section();
-  
+
   if (ret == -1) {
     uerror("ioctl(TIOCGWINSZ)", Nothing);
   }
@@ -147,7 +156,7 @@ CAMLprim value ocaml_pty_set_winsize_byte(value fd, value ws_val) {
   caml_enter_blocking_section();
   int ret = ioctl(Int_val(fd), TIOCSWINSZ, &ws);
   caml_leave_blocking_section();
-  
+
   if (ret == -1) {
     uerror("ioctl(TIOCSWINSZ)", Nothing);
   }
@@ -177,32 +186,37 @@ CAMLprim value ocaml_raise_fork_error(value unit) {
   CAMLreturn(Val_unit);     // Unreachable
 }
 
-#elif !defined(_WIN32)  // For other unsupported platforms (not Windows)
+#else  // Unsupported platforms, including Windows: fail loudly.
 
-CAMLprim value ocaml_pty_open(value unit) {
-  uerror("open_pty", caml_copy_string("unsupported platform"));
+static value pty_unsupported(const char *cmd) {
+  errno = ENOSYS;
+  uerror(cmd, caml_copy_string("PTYs are not supported on this platform"));
   return Val_unit;  // Unreachable
 }
+
+CAMLprim value ocaml_pty_open(value unit) {
+  (void)unit;
+  return pty_unsupported("open_pty");
+}
 CAMLprim value ocaml_pty_get_winsize(value fd) {
-  uerror("get_winsize", caml_copy_string("unsupported platform"));
-  return Val_unit;
+  (void)fd;
+  return pty_unsupported("get_winsize");
 }
 CAMLprim value ocaml_pty_set_winsize_byte(value fd, value ws_val) {
-  uerror("set_winsize", caml_copy_string("unsupported platform"));
-  return Val_unit;
+  (void)fd;
+  (void)ws_val;
+  return pty_unsupported("set_winsize");
 }
 CAMLprim value ocaml_pty_set_winsize(value fd, value ws_val) {
   return ocaml_pty_set_winsize_byte(fd, ws_val);
 }
 CAMLprim value ocaml_pty_setsid_and_setctty(value slave_fd) {
-  uerror("setsid_and_setctty", caml_copy_string("unsupported platform"));
-  return Val_unit;
+  (void)slave_fd;
+  return pty_unsupported("setsid_and_setctty");
 }
 CAMLprim value ocaml_raise_fork_error(value unit) {
-  uerror("fork", caml_copy_string("unsupported platform"));
-  return Val_unit;
+  (void)unit;
+  return pty_unsupported("fork");
 }
 
-#endif  // supported Unix PTY targets
-
-#endif  // _WIN32 - Windows implementations are in pty_win32.c
+#endif  // MATRIX_HAS_POSIX_PTY

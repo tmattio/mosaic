@@ -5,9 +5,9 @@
     the terminal emulator to send input and receive output) and a {e slave} side
     (connected to a child process as its controlling terminal).
 
-    {b Warning.} {!spawn} and {!with_spawn} use [Unix.fork] and are only
-    available on POSIX systems (Linux, macOS, BSD). {!open_pty} works on Windows
-    10 1809+ via ConPTY with {{!platform}limitations}.
+    {b Warning.} This module is POSIX-only (Linux, macOS, BSD). On other
+    platforms — including Windows — every operation raises
+    [Unix.Unix_error (ENOSYS, _, _)]; see {{!platform}platform notes}.
 
     {1:creating Creating}
 
@@ -50,13 +50,12 @@
     real Unix file descriptors; [Unix.select] and [Unix.poll] work as expected.
     [SIGWINCH] is delivered to child processes on resize.
 
-    {2 Windows (ConPTY)}
+    {2 Windows and other platforms}
 
-    Supported on Windows 10 version 1809 and later. Current limitations:
-    - {!spawn} is not available (requires [CreateProcess] integration).
-    - {!get_winsize} returns the last size set via {!set_winsize} or the initial
-      default, as ConPTY has no query API.
-    - I/O uses Windows named pipes wrapped as Unix file descriptors.
+    Not supported: every operation raises [Unix.Unix_error (ENOSYS, _, _)].
+    Windows ConPTY handles cannot be represented as [Unix.file_descr], so a
+    sound implementation needs its own handle type; until one exists the
+    module fails loudly rather than pretending.
 
     {1:thread_safety Thread safety}
 
@@ -202,9 +201,6 @@ val out_fd : t -> Unix.file_descr
 
 val get_winsize : t -> winsize
 (** [get_winsize pty] is the current terminal size.
-
-    On Windows (ConPTY) returns the last size set via {!set_winsize} or the
-    initial default, as ConPTY has no query API.
 
     Raises [Unix.Unix_error] on failure. *)
 

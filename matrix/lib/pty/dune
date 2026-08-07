@@ -4,4 +4,4 @@
  (libraries unix)
  (foreign_stubs
   (language c)
-  (names pty_stubs pty_win32)))
+  (names pty_stubs)))
