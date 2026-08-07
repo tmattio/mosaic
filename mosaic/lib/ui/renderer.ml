@@ -43,6 +43,12 @@ type t = {
   lifecycle_set : (int, Renderable.t) Hashtbl.t;
   (* Dirty tracking — shared ref, same as focused. *)
   dirty : bool ref;
+  (* Available space of the last layout compute, as (width, layout_height).
+     Layout is recomputed only when this changes or the Toffee root is dirty
+     (any set_style/measure/mark_dirty/attach/detach marks ancestors up to
+     the root), skipping the full sizing and rounding passes on clean
+     frames. *)
+  mutable last_layout : (int * int) option;
   (* Render command buffer — reused across frames. *)
   mutable commands : render_command array;
   mutable cmd_len : int;
@@ -609,6 +615,7 @@ let create ?width_method ?clock ?screen ?style () =
     node_map;
     toffee_map;
     dirty;
+    last_layout = None;
     focused;
     lifecycle_set;
     commands = Array.make 64 Pop_scissor;
@@ -796,19 +803,35 @@ let render_frame ?layout_height (t : t) ~width ~height ~delta =
   let frame_clip : Grid.region = { x = 0; y = 0; width; height } in
   (* Build the frame via Screen.build *)
   Screen.build t.screen ~width ~height (fun grid hits ->
-      (* Pass 1: Layout computation *)
-      let available_space =
-        Toffee.Geometry.Size.
-          {
-            width = Toffee.Available_space.Definite (Float.of_int width);
-            height =
-              Toffee.Available_space.Definite (Float.of_int layout_height);
-          }
-      in
+      (* Pass 1: Layout computation — skipped when the tree is layout-clean
+         and the available space is unchanged (OpenTUI gates calculateLayout
+         on yogaNode.isDirty the same way). Every layout mutation marks the
+         Toffee root dirty, so the root check covers style, measure, content,
+         and tree-shape changes. *)
       let root_toffee = Renderable.Private.toffee_node t.root in
-      toffee_exn
-        (Toffee.compute_layout_with_measure t.tree root_toffee available_space
-           (measure_fn t));
+      let needs_layout =
+        (match t.last_layout with
+          | Some (w, h) -> w <> width || h <> layout_height
+          | None -> true)
+        ||
+        match Toffee.dirty t.tree root_toffee with
+        | Ok dirty -> dirty
+        | Error _ -> true
+      in
+      if needs_layout then begin
+        let available_space =
+          Toffee.Geometry.Size.
+            {
+              width = Toffee.Available_space.Definite (Float.of_int width);
+              height =
+                Toffee.Available_space.Definite (Float.of_int layout_height);
+            }
+        in
+        toffee_exn
+          (Toffee.compute_layout_with_measure t.tree root_toffee available_space
+             (measure_fn t));
+        t.last_layout <- Some (width, layout_height)
+      end;
       (* Pass 2: Build render command list *)
       t.cmd_len <- 0;
       t.hit_scissors <- [];

@@ -88,7 +88,8 @@ val render_frame :
     The pipeline runs in order:
     - Runs lifecycle passes ([on_frame] and resize hooks).
     - Runs frame callbacks (see {!add_frame_callback}).
-    - Computes layout via Toffee.
+    - Computes layout via Toffee — skipped when no layout-affecting mutation
+      occurred since the last pass and the frame dimensions are unchanged.
     - Walks the tree: extracts layout and builds the render command list,
       omitting subtrees whose ancestor clip does not intersect the frame.
     - Executes render commands: draws to the grid and populates the hit grid.

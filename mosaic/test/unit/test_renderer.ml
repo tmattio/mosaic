@@ -459,6 +459,85 @@ let culled_live_child_does_not_tick () =
   do_frame ~width:20 ~height:5 t;
   equal ~msg:"revealed live row ticks" int 1 !hidden_ticks
 
+(* ── Layout dirtiness ──
+
+   Layout computation is skipped on clean frames; each mutation kind must
+   re-enable it. Every test renders two frames first so the skip is armed
+   before the mutation. *)
+
+let sized_child ~parent w h =
+  let style =
+    Toffee.Style.default
+    |> Toffee.Style.set_width (Toffee.Style.Dimension.length (Float.of_int w))
+    |> Toffee.Style.set_height (Toffee.Style.Dimension.length (Float.of_int h))
+  in
+  Renderable.create ~parent ~style ()
+
+let style_change_relayouts_after_clean_frame () =
+  let t = make_renderer () in
+  let a = sized_child ~parent:(Renderer.root t) 10 2 in
+  let b = sized_child ~parent:(Renderer.root t) 5 2 in
+  do_frame t;
+  do_frame t;
+  equal ~msg:"b after a" int 10 (Renderable.x b);
+  let style =
+    Renderable.style a
+    |> Toffee.Style.set_width (Toffee.Style.Dimension.length 15.)
+  in
+  Renderable.set_style a style;
+  do_frame t;
+  equal ~msg:"a resized" int 15 (Renderable.width a);
+  equal ~msg:"b moved" int 15 (Renderable.x b)
+
+let measure_change_relayouts_after_clean_frame () =
+  let t = make_renderer () in
+  let child = Renderable.create ~parent:(Renderer.root t) () in
+  let w = ref 10. in
+  Renderable.set_measure child
+    (Some
+       (fun ~known_dimensions:_ ~available_space:_ ~style:_ ->
+         Toffee.Geometry.Size.{ width = !w; height = 1. }));
+  do_frame t;
+  do_frame t;
+  equal ~msg:"measured width" int 10 (Renderable.width child);
+  w := 14.;
+  (* Content-driven size changes invalidate via mark_dirty, as
+     text surfaces do. *)
+  Renderable.mark_dirty child;
+  do_frame t;
+  equal ~msg:"remeasured width" int 14 (Renderable.width child)
+
+let add_remove_child_relayouts_after_clean_frame () =
+  let t = make_renderer () in
+  let a = sized_child ~parent:(Renderer.root t) 10 2 in
+  do_frame t;
+  do_frame t;
+  let b = sized_child ~parent:(Renderer.root t) 5 2 in
+  do_frame t;
+  equal ~msg:"new child laid out" int 10 (Renderable.x b);
+  Renderable.detach a;
+  do_frame t;
+  equal ~msg:"sibling reflows on removal" int 0 (Renderable.x b)
+
+let resize_relayouts_after_clean_frame () =
+  let t = make_renderer () in
+  do_frame ~width:80 ~height:24 t;
+  do_frame ~width:80 ~height:24 t;
+  equal ~msg:"root at 80" int 80 (Renderable.width (Renderer.root t));
+  do_frame ~width:100 ~height:30 t;
+  equal ~msg:"root at 100" int 100 (Renderable.width (Renderer.root t))
+
+let visibility_toggle_relayouts_after_clean_frame () =
+  let t = make_renderer () in
+  let a = sized_child ~parent:(Renderer.root t) 10 2 in
+  let b = sized_child ~parent:(Renderer.root t) 5 2 in
+  do_frame t;
+  do_frame t;
+  equal ~msg:"b after a" int 10 (Renderable.x b);
+  Renderable.set_visible a false;
+  do_frame t;
+  equal ~msg:"b moves to front" int 0 (Renderable.x b)
+
 (* ── Focus ── *)
 
 let focus_returns_true_for_focusable () =
@@ -1275,6 +1354,19 @@ let () =
           test "culled child is not hit-testable"
             culled_child_is_not_hit_testable;
           test "culled live child does not tick" culled_live_child_does_not_tick;
+        ];
+      group "Layout dirtiness"
+        [
+          test "style change relayouts after clean frame"
+            style_change_relayouts_after_clean_frame;
+          test "measure change relayouts after clean frame"
+            measure_change_relayouts_after_clean_frame;
+          test "add/remove child relayouts after clean frame"
+            add_remove_child_relayouts_after_clean_frame;
+          test "resize relayouts after clean frame"
+            resize_relayouts_after_clean_frame;
+          test "visibility toggle relayouts after clean frame"
+            visibility_toggle_relayouts_after_clean_frame;
         ];
       group "Settlement"
         [
