@@ -298,6 +298,27 @@ let test_wide_char_diff () =
 
   is_true ~msg:"wide char output" (String.length output2 > 0)
 
+(* Regression: the defensive clear for changed zero-width (null) cells used
+   to emit its space with whatever SGR state was left over from the previous
+   run, painting the cell with stale colors. *)
+let test_null_cell_clear_uses_cell_colors () =
+  let r = create_renderer ~width:2 ~height:1 () in
+  let f1 =
+    build_screen r ~width:2 ~height:1 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"A")
+  in
+  let _output1 = Screen.render f1 in
+  let green = Ansi.Color.of_rgb 0 200 0 in
+  let f2 =
+    build_screen r ~width:2 ~height:1 (fun grid _hits ->
+        Grid.set_cell grid ~x:0 ~y:0 ~cell:Grid.Cell.empty ~fg:Ansi.Color.white
+          ~bg:green ~attrs:Ansi.Attr.empty ())
+  in
+  let output2 = Screen.render f2 in
+  is_true ~msg:"null cell clear emitted" (String.length output2 > 0);
+  is_true ~msg:"clear uses the cell's background"
+    (contains_substring "48;2;0;200;0" output2)
+
 (* Regression: complex graphemes must be diffed by content. With buffers
    backed by independent grapheme stores, the first grapheme interned each
    frame received the same store id in both stores, so a changed grapheme
@@ -1117,6 +1138,8 @@ let () =
           test "Wide character diff" test_wide_char_diff;
           test "Changed grapheme diff" test_changed_grapheme_diff;
           test "Changed hyperlink diff" test_changed_hyperlink_diff;
+          test "Null cell clear uses cell colors"
+            test_null_cell_clear_uses_cell_colors;
           test "All cells changed" test_all_cells_changed;
           test "Partial row update" test_partial_row_update;
           test "Color only change" test_color_only_change;

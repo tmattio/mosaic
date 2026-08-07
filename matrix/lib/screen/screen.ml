@@ -205,10 +205,11 @@ let render_generic ~row_offset ~use_explicit_width
       let curr_width = Grid.cell_width curr idx in
 
       if curr_width <= 0 then (
-        (* Continuation cell: defensively clear if it differs from the previous
-           frame. When a wide character is replaced by narrow ones, the stale
-           continuation marker would otherwise leave the old right-half visible
-           on terminals that don't implicitly clear it. *)
+        (* Zero-width cell: the run writer never visits it, so defensively
+           clear it in the cell's own colors when it differs from the
+           previous frame. In a well-formed grid the scan steps over the
+           continuation cells of wide spans, so this only fires for null
+           cells (and malformed orphan continuations). *)
         (if mode = `Diff && y < prev_height && x < prev_width then
            match prev with
            | None -> ()
@@ -218,7 +219,16 @@ let render_generic ~row_offset ~use_explicit_width
                  Ansi.cursor_position
                    ~row:(row_offset + y + 1)
                    ~col:(x + 1) writer;
-                 Ansi.emit (Ansi.char ' ') writer));
+                 let link =
+                   if use_hyperlinks then
+                     Grid.hyperlink_url_direct curr (Grid.get_link curr idx)
+                   else ""
+                 in
+                 Ansi.Sgr_state.update sgr_state writer
+                   ~fg:(Grid.get_fg curr idx) ~bg:(Grid.get_bg curr idx)
+                   ~attrs:(Grid.get_attrs curr idx) ~link;
+                 Ansi.emit (Ansi.char ' ') writer;
+                 Ansi.Sgr_state.close_link sgr_state writer));
         process_cols y (x + 1) row_cells)
       else if is_cell_changed y x idx curr_width then (
         (* Move cursor to start of changed run *)
