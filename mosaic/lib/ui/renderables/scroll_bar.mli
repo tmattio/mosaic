@@ -174,8 +174,10 @@ val set_on_change : t -> (int -> unit) option -> unit
 (** {1:applying Applying props} *)
 
 val apply_props : t -> Props.t -> unit
-(** [apply_props t props] replaces the visual properties of [t] with [props].
-    Creation-time fields such as orientation remain unchanged. Does not fire the
+(** [apply_props t props] replaces the visual properties of [t] with [props],
+    including orientation and arrow colors. An orientation change reorients the
+    slider and arrows and swaps the dimensions the widget owns (those left
+    [auto] at creation); user-set dimensions are preserved. Does not fire the
     [on_change] callback.
 
     See also {!Props.make}. *)

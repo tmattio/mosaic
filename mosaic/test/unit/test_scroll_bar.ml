@@ -248,6 +248,24 @@ let apply_props_updates_appearance () =
   in
   equal ~msg:"arrows visible" int 3 visible_count
 
+let flex_direction_of bar =
+  Toffee.Style.flex_direction (Renderable.style (Scroll_bar.node bar))
+
+let apply_props_updates_orientation () =
+  let _t, bar = make_scroll_bar () in
+  is_true ~msg:"vertical by default"
+    (flex_direction_of bar = Toffee.Style.Flex_direction.Column);
+  Scroll_bar.apply_props bar (Scroll_bar.Props.make ~orientation:`Horizontal ());
+  is_true ~msg:"row after apply"
+    (flex_direction_of bar = Toffee.Style.Flex_direction.Row);
+  let size = Toffee.Style.size (Renderable.style (Scroll_bar.node bar)) in
+  is_true ~msg:"height becomes the thickness"
+    (Toffee.Style.Dimension.equal size.height
+       (Toffee.Style.Dimension.length 1.));
+  is_true ~msg:"width becomes the length"
+    (Toffee.Style.Dimension.equal size.width
+       (Toffee.Style.Dimension.percent 1.0))
+
 (* ── set_on_change ── *)
 
 let set_on_change_replaces_callback () =
@@ -330,7 +348,10 @@ let () =
           test "toggle" set_show_arrows_toggles;
         ];
       group "apply_props"
-        [ test "updates appearance" apply_props_updates_appearance ];
+        [
+          test "updates appearance" apply_props_updates_appearance;
+          test "updates orientation" apply_props_updates_orientation;
+        ];
       group "set_on_change"
         [ test "replaces callback" set_on_change_replaces_callback ];
       group "Pretty-printing"

@@ -527,6 +527,30 @@ let render_single_progress_bar () =
   do_frame renderer;
   equal ~msg:"one child" int 1 (child_count renderer)
 
+let flex_direction_of node = Toffee.Style.flex_direction (Renderable.style node)
+
+let scroll_bar_orientation_applies_at_mount () =
+  (* The reconciler creates the widget with defaults and applies the vnode
+     props afterwards, so apply_props must honor orientation. *)
+  let renderer, reconciler = make () in
+  render_view reconciler (Vnode.scroll_bar ~orientation:`Horizontal ());
+  do_frame renderer;
+  let node = List.hd (children_of renderer) in
+  is_true ~msg:"lays out as a row"
+    (flex_direction_of node = Toffee.Style.Flex_direction.Row)
+
+let scroll_bar_orientation_updates_on_rerender () =
+  let renderer, reconciler = make () in
+  render_view reconciler (Vnode.scroll_bar ~orientation:`Horizontal ());
+  do_frame renderer;
+  let node_before = List.hd (children_of renderer) in
+  render_view reconciler (Vnode.scroll_bar ~orientation:`Vertical ());
+  do_frame renderer;
+  let node_after = List.hd (children_of renderer) in
+  is_true ~msg:"same node" (node_before == node_after);
+  is_true ~msg:"lays out as a column"
+    (flex_direction_of node_after = Toffee.Style.Flex_direction.Column)
+
 let rerender_reuses_spinner () =
   let renderer, reconciler = make () in
   render_view reconciler (Vnode.spinner ());
@@ -715,6 +739,10 @@ let () =
             acknowledged_scroll_by_does_not_replay_after_remount;
           test "single spinner" render_single_spinner;
           test "single progress_bar" render_single_progress_bar;
+          test "scroll_bar orientation applies at mount"
+            scroll_bar_orientation_applies_at_mount;
+          test "scroll_bar orientation updates on rerender"
+            scroll_bar_orientation_updates_on_rerender;
         ];
       group "Re-rendering"
         [

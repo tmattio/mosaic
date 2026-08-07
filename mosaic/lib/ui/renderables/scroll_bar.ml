@@ -16,12 +16,25 @@ module Arrow = struct
 
   type t = {
     node : Renderable.t;
-    direction : direction;
-    fg : Ansi.Color.t;
-    bg : Ansi.Color.t;
+    mutable direction : direction;
+    mutable fg : Ansi.Color.t;
+    mutable bg : Ansi.Color.t;
   }
 
   let node t = t.node
+
+  let set_direction t d =
+    if t.direction <> d then begin
+      t.direction <- d;
+      Renderable.request_render t.node
+    end
+
+  let set_colors t ~fg ~bg =
+    if not (Ansi.Color.equal t.fg fg && Ansi.Color.equal t.bg bg) then begin
+      t.fg <- fg;
+      t.bg <- bg;
+      Renderable.request_render t.node
+    end
 
   let render t _self grid ~delta:_ =
     let x = Renderable.x t.node in
@@ -102,6 +115,11 @@ type t = {
   slider : Slider.t;
   start_arrow : Arrow.t;
   end_arrow : Arrow.t;
+  (* Dimensions the widget owns: the user left them [auto] at creation, so
+     they default to the orientation's natural size and are swapped when the
+     orientation changes. *)
+  auto_width : bool;
+  auto_height : bool;
   mutable props : Props.t;
   mutable scroll_position : int;
   mutable scroll_size : int;
@@ -241,6 +259,34 @@ let arrow_direction orientation ~is_end =
   | `Horizontal, false -> Arrow.Left
   | `Horizontal, true -> Arrow.Right
 
+(* Flex direction and natural size for [orientation]. Only the dimensions the
+   widget owns ([auto_width]/[auto_height]) take the orientation's defaults;
+   user-set dimensions are preserved. *)
+let orientation_style style orientation ~auto_width ~auto_height =
+  let style =
+    match orientation with
+    | `Vertical ->
+        Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Column style
+    | `Horizontal ->
+        Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Row style
+  in
+  let default_width, default_height =
+    match orientation with
+    | `Vertical ->
+        (Toffee.Style.Dimension.length 1., Toffee.Style.Dimension.percent 1.0)
+    | `Horizontal ->
+        (Toffee.Style.Dimension.percent 1.0, Toffee.Style.Dimension.length 1.)
+  in
+  let size = Toffee.Style.size style in
+  let size =
+    Toffee.Geometry.Size.
+      {
+        width = (if auto_width then default_width else size.width);
+        height = (if auto_height then default_height else size.height);
+      }
+  in
+  Toffee.Style.set_size size style
+
 let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
     ?(orientation = `Vertical) ?(show_arrows = false)
     ?(track_color = default_track_color) ?(thumb_color = default_thumb_color)
@@ -250,15 +296,15 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
   (* Configure root layout as a flex container *)
+  let auto_width, auto_height =
+    let size = Toffee.Style.size (Renderable.style node) in
+    let is_auto d =
+      Toffee.Style.Dimension.equal d Toffee.Style.Dimension.auto
+    in
+    (is_auto size.width, is_auto size.height)
+  in
   let root_style =
     let s = Renderable.style node in
-    let s =
-      match orientation with
-      | `Vertical ->
-          Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Column s
-      | `Horizontal ->
-          Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Row s
-    in
     let s =
       Toffee.Style.set_align_items (Some Toffee.Style.Align_items.Stretch) s
     in
@@ -266,34 +312,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
       Toffee.Style.set_align_self (Some Toffee.Style.Align_items.Stretch) s
     in
     let s = Toffee.Style.set_flex_shrink 0. s in
-    let size = Toffee.Style.size s in
-    let is_auto d =
-      Toffee.Style.Dimension.equal d Toffee.Style.Dimension.auto
-    in
-    let size =
-      match orientation with
-      | `Vertical ->
-          Toffee.Geometry.Size.
-            {
-              width =
-                (if is_auto size.width then Toffee.Style.Dimension.length 1.
-                 else size.width);
-              height =
-                (if is_auto size.height then Toffee.Style.Dimension.percent 1.0
-                 else size.height);
-            }
-      | `Horizontal ->
-          Toffee.Geometry.Size.
-            {
-              width =
-                (if is_auto size.width then Toffee.Style.Dimension.percent 1.0
-                 else size.width);
-              height =
-                (if is_auto size.height then Toffee.Style.Dimension.length 1.
-                 else size.height);
-            }
-    in
-    Toffee.Style.set_size size s
+    orientation_style s orientation ~auto_width ~auto_height
   in
   Renderable.set_style node root_style;
   Renderable.set_focusable node true;
@@ -314,12 +333,9 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
   in
   Renderable.set_visible (Arrow.node start_arrow) show_arrows;
   (* Create slider *)
-  let slider_orientation : Slider.orientation =
-    match orientation with `Vertical -> `Vertical | `Horizontal -> `Horizontal
-  in
   let slider =
-    Slider.create ~parent:node ~orientation:slider_orientation ~min:0. ~max:0.
-      ~value:0. ~viewport_size:1. ~track_color ~thumb_color ()
+    Slider.create ~parent:node ~orientation ~min:0. ~max:0. ~value:0.
+      ~viewport_size:1. ~track_color ~thumb_color ()
   in
   let slider_style =
     let s = Renderable.style (Slider.node slider) in
@@ -356,6 +372,8 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
       slider;
       start_arrow;
       end_arrow;
+      auto_width;
+      auto_height;
       props;
       scroll_position = 0;
       scroll_size = 0;
@@ -452,6 +470,30 @@ let set_thumb_color t c =
     t.props <- { t.props with thumb_color = c };
     Slider.set_thumb_color t.slider c)
 
+let set_orientation t orientation =
+  if t.props.orientation <> orientation then begin
+    t.props <- { t.props with orientation };
+    Renderable.set_style t.node
+      (orientation_style (Renderable.style t.node) orientation
+         ~auto_width:t.auto_width ~auto_height:t.auto_height);
+    Slider.set_orientation t.slider orientation;
+    Arrow.set_direction t.start_arrow
+      (arrow_direction orientation ~is_end:false);
+    Arrow.set_direction t.end_arrow (arrow_direction orientation ~is_end:true);
+    Renderable.request_render t.node
+  end
+
+let set_arrow_colors t ~fg ~bg =
+  if
+    not
+      (Ansi.Color.equal t.props.arrow_fg fg
+      && Ansi.Color.equal t.props.arrow_bg bg)
+  then begin
+    t.props <- { t.props with arrow_fg = fg; arrow_bg = bg };
+    Arrow.set_colors t.start_arrow ~fg ~bg;
+    Arrow.set_colors t.end_arrow ~fg ~bg
+  end
+
 let set_visible_override t vis =
   t.manual_visibility <- true;
   Renderable.set_visible t.node vis
@@ -464,18 +506,11 @@ let reset_visibility_control t =
 
 let apply_props t (props : Props.t) =
   if not (Props.equal t.props props) then (
+    set_orientation t props.orientation;
     set_show_arrows t props.show_arrows;
     set_track_color t props.track_color;
     set_thumb_color t props.thumb_color;
-    t.props <-
-      {
-        t.props with
-        show_arrows = props.show_arrows;
-        track_color = props.track_color;
-        thumb_color = props.thumb_color;
-        arrow_fg = props.arrow_fg;
-        arrow_bg = props.arrow_bg;
-      };
+    set_arrow_colors t ~fg:props.arrow_fg ~bg:props.arrow_bg;
     Renderable.request_render t.node)
 
 (* ───── Pretty-printing ───── *)
