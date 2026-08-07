@@ -1,4 +1,12 @@
-type t = { fd : Unix.file_descr; mutable pid : int option }
+type t = {
+  fd : Unix.file_descr;
+  mutable pid : int option;
+  (* [close] must be a true no-op the second time: the kernel can reallocate
+     the fd number to anything else in the process, and a second [Unix.close]
+     would then close that unrelated descriptor. *)
+  mutable closed : bool;
+}
+
 type winsize = { rows : int; cols : int; xpixel : int; ypixel : int }
 
 (* External C functions *)
@@ -18,6 +26,12 @@ let in_fd t = t.fd
 let out_fd t = t.fd
 let pid t = t.pid
 
+(* Every fd-consuming operation goes through this guard so a closed handle
+   raises EBADF instead of touching a possibly-reused fd number. *)
+let live_fd t op =
+  if t.closed then raise (Unix.Unix_error (Unix.EBADF, op, ""));
+  t.fd
+
 let terminate t =
   match t.pid with
   | Some pid -> ( try Unix.kill pid Sys.sigterm with Unix.Unix_error _ -> ())
@@ -29,31 +43,34 @@ let kill t =
   | None -> invalid_arg "Pty.kill: no child process"
 
 let close ?(wait = true) t =
-  (* Terminate and reap child process if spawned *)
-  (match t.pid with
-  | Some pid ->
-      (* Try SIGTERM first for graceful shutdown *)
-      (try Unix.kill pid Sys.sigterm with Unix.Unix_error _ -> ());
-      if wait then (
-        (* Give process time to exit cleanly *)
-        Unix.sleepf 0.1;
-        (* Try to reap - if still running, force kill *)
-        match Unix.waitpid [ WNOHANG ] pid with
-        | 0, _ -> (
-            (* Still running - send SIGKILL and wait *)
-            (try Unix.kill pid Sys.sigkill with Unix.Unix_error _ -> ());
-            try ignore (Unix.waitpid [] pid) with Unix.Unix_error _ -> ())
-        | _, _ ->
-            (* Already exited *)
-            ())
-  | None -> ());
-  (* Mark as closed to prevent duplicate cleanup *)
-  t.pid <- None;
-  (* Close file descriptor *)
-  try Unix.close t.fd with Unix.Unix_error _ -> ()
+  if t.closed then ()
+  else (
+    t.closed <- true;
+    (* Terminate and reap child process if spawned *)
+    (match t.pid with
+    | Some pid ->
+        (* Try SIGTERM first for graceful shutdown *)
+        (try Unix.kill pid Sys.sigterm with Unix.Unix_error _ -> ());
+        if wait then (
+          (* Give process time to exit cleanly *)
+          Unix.sleepf 0.1;
+          (* Try to reap - if still running, force kill *)
+          match Unix.waitpid [ WNOHANG ] pid with
+          | 0, _ -> (
+              (* Still running - send SIGKILL and wait *)
+              (try Unix.kill pid Sys.sigkill with Unix.Unix_error _ -> ());
+              try ignore (Unix.waitpid [] pid) with Unix.Unix_error _ -> ())
+          | _, _ ->
+              (* Already exited *)
+              ()
+          | exception Unix.Unix_error _ -> ())
+    | None -> ());
+    t.pid <- None;
+    (* Close file descriptor *)
+    try Unix.close t.fd with Unix.Unix_error _ -> ())
 
-let get_winsize t = get_winsize_raw t.fd
-let set_winsize t ws = set_winsize_raw t.fd ws
+let get_winsize t = get_winsize_raw (live_fd t "get_winsize")
+let set_winsize t ws = set_winsize_raw (live_fd t "set_winsize") ws
 
 let resize t ~rows ~cols =
   let ws = { rows; cols; xpixel = 0; ypixel = 0 } in
@@ -65,8 +82,8 @@ let inherit_size ~src ~dst =
 
 let open_pty ?winsize () =
   let master_fd, slave_fd = open_pty_raw () in
-  let master = { fd = master_fd; pid = None } in
-  let slave = { fd = slave_fd; pid = None } in
+  let master = { fd = master_fd; pid = None; closed = false } in
+  let slave = { fd = slave_fd; pid = None; closed = false } in
   (* Set initial window size if provided *)
   (match winsize with
   | Some ws -> (
@@ -132,10 +149,12 @@ let with_spawn ?env ?cwd ?winsize ~prog ~args f =
     (fun () -> f pty)
 
 (* I/O operations *)
-let read t buf ofs len = Unix.read t.fd buf ofs len
-let write t buf ofs len = Unix.write t.fd buf ofs len
-let write_string t str ofs len = Unix.write_substring t.fd str ofs len
+let read t buf ofs len = Unix.read (live_fd t "read") buf ofs len
+let write t buf ofs len = Unix.write (live_fd t "write") buf ofs len
+
+let write_string t str ofs len =
+  Unix.write_substring (live_fd t "write") str ofs len
 
 (* Non-blocking mode *)
-let set_nonblock t = Unix.set_nonblock t.fd
-let clear_nonblock t = Unix.clear_nonblock t.fd
+let set_nonblock t = Unix.set_nonblock (live_fd t "set_nonblock")
+let clear_nonblock t = Unix.clear_nonblock (live_fd t "clear_nonblock")

@@ -286,6 +286,27 @@ let test_close_idempotent () =
   (* Should not crash *)
   Pty.close slave
 
+(* Regression: a second close used to call Unix.close on the stored fd number
+   again. The kernel reallocates freed numbers to the next opened descriptor,
+   so the second close destroyed an unrelated fd. *)
+let test_double_close_does_not_touch_reused_fd () =
+  let master, slave = Pty.open_pty () in
+  Pty.close master;
+  Pty.close slave;
+  (* The freed fd numbers are the lowest available, so the pipe reuses them. *)
+  let probe_r, probe_w = Unix.pipe () in
+  Pty.close master;
+  Pty.close slave;
+  let alive =
+    try
+      ignore (Unix.write probe_w (Bytes.of_string "x") 0 1 : int);
+      true
+    with Unix.Unix_error (Unix.EBADF, _, _) -> false
+  in
+  (try Unix.close probe_r with Unix.Unix_error _ -> ());
+  (try Unix.close probe_w with Unix.Unix_error _ -> ());
+  is_true ~msg:"second close does not close unrelated fds" alive
+
 let test_eof_on_close () =
   let master, slave = Pty.open_pty () in
   Pty.close master;
@@ -334,6 +355,8 @@ let tests =
       test "multiple writes" test_multiple_writes;
       (* Edge Cases *)
       test "close idempotent" test_close_idempotent;
+      test "double close does not touch reused fd"
+        test_double_close_does_not_touch_reused_fd;
       test "eof on close" test_eof_on_close;
       test "pty close" test_pty_close;
     ]
