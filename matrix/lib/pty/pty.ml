@@ -13,8 +13,6 @@ external set_winsize_raw : Unix.file_descr -> winsize -> unit
 external setsid_and_setctty : Unix.file_descr -> unit
   = "ocaml_pty_setsid_and_setctty"
 
-external raise_fork_error : unit -> 'a = "ocaml_raise_fork_error"
-
 let file_descr t = t.fd
 let in_fd t = t.fd
 let out_fd t = t.fd
@@ -83,13 +81,16 @@ let open_pty ?winsize () =
 let spawn ?env ?cwd ?winsize ~prog ~args () =
   let pty_master, pty_slave = open_pty ?winsize () in
   let argv = Array.of_list (prog :: args) in
-
-  match Unix.fork () with
-  | -1 ->
-      (* Fork failed *)
+  (* [Unix.fork] never returns -1: on failure it raises [Unix_error]. Close
+     both PTY ends before propagating so a failed fork does not leak them. *)
+  let pid =
+    try Unix.fork ()
+    with exn ->
       close pty_master;
       close pty_slave;
-      raise_fork_error ()
+      raise exn
+  in
+  match pid with
   | 0 -> (
       (* Child process. No exception may escape this branch: ordinary OCaml
          termination would run the parent's inherited [at_exit] handlers. *)

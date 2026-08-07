@@ -179,13 +179,6 @@ CAMLprim value ocaml_pty_setsid_and_setctty(value slave_fd) {
   CAMLreturn(Val_unit);
 }
 
-// Helper to raise Unix error with current errno after fork failure
-CAMLprim value ocaml_raise_fork_error(value unit) {
-  CAMLparam1(unit);
-  uerror("fork", Nothing);  // uerror automatically uses errno
-  CAMLreturn(Val_unit);     // Unreachable
-}
-
 #else  // Unsupported platforms, including Windows: fail loudly.
 
 static value pty_unsupported(const char *cmd) {
@@ -213,10 +206,6 @@ CAMLprim value ocaml_pty_set_winsize(value fd, value ws_val) {
 CAMLprim value ocaml_pty_setsid_and_setctty(value slave_fd) {
   (void)slave_fd;
   return pty_unsupported("setsid_and_setctty");
-}
-CAMLprim value ocaml_raise_fork_error(value unit) {
-  (void)unit;
-  return pty_unsupported("fork");
 }
 
 #endif  // MATRIX_HAS_POSIX_PTY
