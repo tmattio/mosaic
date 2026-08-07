@@ -789,11 +789,11 @@ let render_frame ?layout_height (t : t) ~width ~height ~delta =
      their render function and change a sibling's visibility after the command
      list has already been built. That change must survive for another pass. *)
   t.dirty := false;
-  (* A render pass owns the complete next frame, including blank cells. This is
-     essential when settlement performs another pass before presenting the
-     first one: transparent text blanks must not preserve glyphs drawn by that
-     superseded pass. *)
-  Grid.clear (Screen.next_grid t.screen);
+  (* A render pass owns the complete next frame, including blank cells:
+     Screen.build guarantees cleared buffers before drawing, so when
+     settlement performs another pass before presenting the first one,
+     transparent text blanks do not preserve glyphs drawn by that superseded
+     pass. *)
   (* Pass 0: Lifecycle passes *)
   Hashtbl.iter
     (fun _num node -> Renderable.Private.run_lifecycle_pass node)

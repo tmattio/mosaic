@@ -34,6 +34,14 @@ type cursor = {
   visible : bool;
 }
 
+(* Lifecycle of the next buffer between presents. [Stale] holds previously
+   presented cells after a swap and must be cleared before the buffer is
+   observed or mutated; [Pristine] is cleared and untouched; [Touched] has
+   been handed out or drawn into. The swap defers its clear to the next
+   observation so a frame pays for exactly one clear no matter how many
+   layers (runtime prepare, renderer build, swap) take part in it. *)
+type next_state = Stale | Pristine | Touched
+
 (* screen state - mutable internal state for maximum performance *)
 type t = {
   (* Configuration *)
@@ -45,6 +53,7 @@ type t = {
      scroll-adjusted previous state used while emitting a scroll-hinted diff. *)
   mutable current : Grid.t;
   mutable next : Grid.t;
+  mutable next_state : next_state;
   scroll_baseline : Grid.t;
   mutable hit_current : Hit_grid.t;
   mutable hit_next : Hit_grid.t;
@@ -272,8 +281,15 @@ let[@inline] swap_buffers r =
   let old_hit_current = r.hit_current in
   r.hit_current <- r.hit_next;
   r.hit_next <- old_hit_current;
+  (* Defer the clear of the swapped-in buffers to their next observation. *)
+  r.next_state <- Stale
+
+let refresh_next r =
+  Grid.clear r.next;
   Hit_grid.clear r.hit_next;
-  Grid.clear r.next
+  r.next_state <- Pristine
+
+let[@inline] ensure_next_fresh r = if r.next_state = Stale then refresh_next r
 
 let clear_unpresented_rows r presented_height =
   let height = Grid.height r.next in
@@ -515,6 +531,7 @@ let create ?width_method ?respect_alpha ?(cursor_visible = true)
         };
       current;
       next = Grid.create_like current ~width:1 ~height:1;
+      next_state = Pristine;
       scroll_baseline = Grid.create_like current ~width:1 ~height:1;
       hit_current = Hit_grid.create ~width:0 ~height:0;
       hit_next = Hit_grid.create ~width:0 ~height:0;
@@ -544,6 +561,7 @@ let reset t =
   Grid.clear t.scroll_baseline;
   Hit_grid.clear t.hit_current;
   Hit_grid.clear t.hit_next;
+  t.next_state <- Pristine;
   t.last_render_time <- None;
   t.stats.frame_count <- 0;
   t.stats.total_cells <- 0;
@@ -561,25 +579,43 @@ let resize t ~width ~height =
     (* Hit_grid.resize already clears unconditionally, no need to clear again *)
     Hit_grid.resize t.hit_current ~width ~height;
     Hit_grid.resize t.hit_next ~width ~height;
+    t.next_state <- Pristine;
     Cursor_state.clamp_to_bounds t.cursor ~max_row:height ~max_col:width)
 
+(* Each build owns the complete frame: the next grid and hit grid are
+   guaranteed cleared (or freshly resized) before [f] runs, so a second
+   build before a present replaces the superseded pass rather than
+   compositing over it. A [Pristine] buffer skips the redundant clear. *)
 let internal_build t ~width ~height f =
   if width <= 0 || height <= 0 then (
-    Hit_grid.clear t.hit_next;
+    if t.next_state <> Pristine then refresh_next t;
     t)
   else (
     if width <> Grid.width t.next || height <> Grid.height t.next then
-      resize t ~width ~height;
-    Hit_grid.clear t.hit_next;
+      resize t ~width ~height
+    else if t.next_state <> Pristine then refresh_next t;
+    t.next_state <- Touched;
     f t.next t.hit_next;
     t)
 
 let build t ~width ~height f =
   ignore (internal_build t ~width ~height (fun grid hits -> f grid hits) : t)
 
-let next_grid frame = frame.next
+(* Handing out the next buffers applies any pending post-present clear and
+   marks them mutated, so the observable contract — the next buffer is clear
+   after a render — holds without an eager clear in the swap. *)
+let next_grid frame =
+  ensure_next_fresh frame;
+  frame.next_state <- Touched;
+  frame.next
+
 let current_grid frame = frame.current
-let next_hit_grid frame = frame.hit_next
+
+let next_hit_grid frame =
+  ensure_next_fresh frame;
+  frame.next_state <- Touched;
+  frame.hit_next
+
 let query_hit frame ~x ~y = Hit_grid.get frame.hit_current ~x ~y
 let row_offset t = t.row_offset
 let set_row_offset t offset = t.row_offset <- max 0 offset
@@ -590,7 +626,9 @@ let invalidate_presented t =
      region, the terminal is "blank", so current should also be blank. *)
   Grid.clear t.current
 
-let active_height (t : t) = Grid.active_height t.next
+let active_height (t : t) =
+  ensure_next_fresh t;
+  Grid.active_height t.next
 
 let stats t =
   {
@@ -667,4 +705,6 @@ let clear_post_processes frame =
   frame.post_process_dirty <- false
 
 let add_hit_region frame ~x ~y ~width ~height ~id =
+  ensure_next_fresh frame;
+  frame.next_state <- Touched;
   Hit_grid.add frame.hit_next ~x ~y ~width ~height ~id

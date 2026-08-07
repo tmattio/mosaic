@@ -669,12 +669,15 @@ let apply_config t =
 
 (* Lifecycle: Prepare / Grid / Submit *)
 
+(* No eager buffer clear here: Screen defers the post-present clear of the
+   next grid and hit grid to their first observation ([Screen.next_grid],
+   [Screen.build], ...), so both direct-draw apps reading {!grid} and
+   renderer hosts building through [Screen.build] pay for exactly one clear
+   per frame instead of clearing here and again downstream. *)
 let prepare t =
   refresh_capabilities t;
   t.redraw_requested <- false;
-  refresh_render_region ~effective:true t;
-  Grid.clear (Screen.next_grid t.screen);
-  Screen.Hit_grid.clear (Screen.next_hit_grid t.screen)
+  refresh_render_region ~effective:true t
 
 let grid t = Screen.next_grid t.screen
 let current_grid t = Screen.current_grid t.screen

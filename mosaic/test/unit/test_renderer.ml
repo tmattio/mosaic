@@ -316,6 +316,25 @@ let settlement_replaces_superseded_frame_cells () =
   let grid = Screen.next_grid (Renderer.screen t) in
   equal ~msg:"superseded glyph cleared" string " " (Grid.get_text grid 0)
 
+let presented_cells_cleared_before_next_frame () =
+  (* The post-present clear of the next buffer is deferred by Screen; a
+     glyph drawn in a presented frame must not leak into the following
+     frame's canvas. *)
+  let t = make_renderer () in
+  let child = make_child ~parent:(Renderer.root t) ~x:0 ~y:0 ~w:1 ~h:1 () in
+  let draw = ref true in
+  Renderable.set_render child (fun _ grid ~delta:_ ->
+      if !draw then Grid.draw_text grid ~x:0 ~y:0 ~text:"X");
+  Renderer.render_frame t ~width:1 ~height:1 ~delta:0.;
+  let grid = Screen.next_grid (Renderer.screen t) in
+  equal ~msg:"first frame drew" string "X" (Grid.get_text grid 0);
+  ignore (Renderer.render ~full:true t : string);
+  draw := false;
+  Renderable.request_render child;
+  Renderer.render_frame t ~width:1 ~height:1 ~delta:0.;
+  let grid = Screen.next_grid (Renderer.screen t) in
+  equal ~msg:"stale glyph cleared" string " " (Grid.get_text grid 0)
+
 let post_process_runs () =
   let t = make_renderer () in
   let ran = ref false in
@@ -1377,6 +1396,8 @@ let () =
             render_frame_until_settled_completes_code;
           test "settlement replaces superseded frame cells"
             settlement_replaces_superseded_frame_cells;
+          test "presented cells cleared before next frame"
+            presented_cells_cleared_before_next_frame;
         ];
       group "Focus"
         [

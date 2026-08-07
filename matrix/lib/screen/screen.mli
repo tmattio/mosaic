@@ -9,8 +9,9 @@
 
     The screen maintains two grid buffers. During {!build} the caller populates
     the next buffer. During {!render} the next buffer is diffed against current
-    to produce ANSI output, then the buffers swap and the (now-next) buffer is
-    cleared. Content must be redrawn every frame.
+    to produce ANSI output, then the buffers swap; the swapped-in next buffer is
+    cleared before it is next observed or mutated, so a frame pays for exactly
+    one clear. Content must be redrawn every frame.
 
     {2:hit_test Hit testing}
 
@@ -28,7 +29,9 @@
 
     {2:invariants Invariants}
     - The {!Grid.t} passed to {!build} is the next buffer. After {!render} the
-      buffers swap and the now-next buffer is cleared.
+      buffers swap and the now-next buffer is observably cleared: the clear is
+      applied lazily by the next {!build}, {!next_grid}, {!next_hit_grid},
+      {!add_hit_region}, or {!active_height}.
     - Visual and hit buffers swap on {!render}: regions registered via
       {!Hit_grid.add} become queryable only after the following render.
     - Post-processors always run, even when no cells changed. Their [~delta]
@@ -96,10 +99,13 @@ val build :
   t -> width:int -> height:int -> (Grid.t -> Hit_grid.t -> unit) -> unit
 (** [build t ~width ~height f] builds a frame.
 
-    Resizes buffers to [width] x [height] when both are positive, clears the hit
-    grid, then calls [f] with the next grid and hit grid for in-place mutation.
+    Resizes buffers to [width] x [height] when both are positive, guarantees the
+    next grid and hit grid are cleared — each build owns the complete frame, so
+    a second build before a present replaces the superseded pass — then calls
+    [f] with them for in-place mutation. Already-clear buffers are not cleared
+    again.
 
-    When [width <= 0] or [height <= 0], [f] is not called; only the hit grid is
+    When [width <= 0] or [height <= 0], [f] is not called; the buffers are only
     cleared.
 
     {b Warning.} The {!Grid.t} and {!Hit_grid.t} passed to [f] must not be
@@ -285,7 +291,9 @@ val last_metrics : t -> frame_metrics
     bypass the builder API. *)
 
 val next_grid : t -> Grid.t
-(** [next_grid t] is [t]'s next buffer grid.
+(** [next_grid t] is [t]'s next buffer grid. On the first access after a
+    {!render}, any content left from the presented frame is cleared before the
+    grid is returned.
 
     {b Warning.} Do not mutate the returned grid after the next {!render} -- it
     becomes the diff baseline. *)
