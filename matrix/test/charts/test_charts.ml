@@ -361,7 +361,8 @@ let%expect_test "ascii charset covers wave and area glyphs" =
     draw chart grid ~width ~height
   in
   render_chart ~width:10 ~height:5 draw;
-  [%expect_exact {|
+  [%expect_exact
+    {|
 [0;38;2;255;255;255m┌──────────┐[0m
 [0;38;2;255;255;255m│        [38;5;6m+-[38;2;255;255;255m│[0m
 [0;38;2;255;255;255m│      [38;5;6m+-+[38;2;255;255;255m │[0m
@@ -663,7 +664,8 @@ let%expect_test "zoomed y view keeps its axis labels" =
     draw ~view chart grid ~width ~height
   in
   render_chart ~width:20 ~height:8 draw;
-  [%expect_exact {|
+  [%expect_exact
+    {|
 [0;38;2;255;255;255m┌────────────────────┐[0m
 [0;38;2;255;255;255m│        [38;5;245m│[38;5;6m│[38;2;255;255;255m          │[0m
 [0;38;2;255;255;255m│[38;5;246m0.0018[38;2;255;255;255m [38;5;245m─│[38;5;6m│[38;2;255;255;255m          │[0m
@@ -696,7 +698,8 @@ let%expect_test "hit test candles clamp to the wick span" =
     report `Nearest_y "y top row" 0 0
   in
   render_chart ~width:20 ~height:10 draw;
-  [%expect_exact {|px above candle 2: none
+  [%expect_exact
+    {|px above candle 2: none
 y top row: index 1 distance 0
 
 [0;38;2;255;255;255m┌────────────────────┐[0m

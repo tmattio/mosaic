@@ -284,12 +284,10 @@ let heatmap_bilinear_sampler ~agg ~xs ~ys ~xa ~ya ~va n =
     let ix0, ix1, x0, x1 = heatmap_interval xs xq in
     let iy0, iy1, y0, y1 = heatmap_interval ys yq in
     let tx =
-      if Float.equal x0 x1 then 0.
-      else (xq -. x0) /. Float.max 1e-12 (x1 -. x0)
+      if Float.equal x0 x1 then 0. else (xq -. x0) /. Float.max 1e-12 (x1 -. x0)
     in
     let ty =
-      if Float.equal y0 y1 then 0.
-      else (yq -. y0) /. Float.max 1e-12 (y1 -. y0)
+      if Float.equal y0 y1 then 0. else (yq -. y0) /. Float.max 1e-12 (y1 -. y0)
     in
     let v00 = lookup ix0 iy0 in
     let v10 = lookup ix1 iy0 in
@@ -1767,7 +1765,6 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
           data
   in
 
-
   let draw_rule_v ~style ~pattern x =
     let px = x_to_px_cell x in
     if px >= r.x && px < r.x + r.width then
@@ -1843,8 +1840,11 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
       let points = ref [] in
       let add x y =
         points :=
-          (cx + x, cy + y) :: (cx - x, cy + y) :: (cx + x, cy - y)
-          :: (cx - x, cy - y) :: !points
+          (cx + x, cy + y)
+          :: (cx - x, cy + y)
+          :: (cx + x, cy - y)
+          :: (cx - x, cy - y)
+          :: !points
       in
       let rx2 = float (rx * rx) and ry2 = float (ry * ry) in
       let x = ref 0 and y = ref ry in
@@ -2102,7 +2102,7 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                 draw_text grid ~x:px ~y:py ~style:st "▀"
           done
         done
-    | Mark.Dense_bilinear -> (
+    | Mark.Dense_bilinear ->
         let xs, ys = heatmap_axes xa ya n in
         if List.length xs <= 1 || List.length ys <= 1 then
           draw_heatmap ~color_scale ~value_range ~auto_value_range ~agg
@@ -2118,8 +2118,8 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
               | None -> ()
               | Some (dx, dy) -> draw_cell px py (sample dx dy)
             done
-          done)
-    | Mark.Shaded -> (
+          done
+    | Mark.Shaded ->
         let xs, ys = heatmap_axes xa ya n in
         if List.length xs <= 1 || List.length ys <= 1 then
           draw_cells draw_shaded_cell
@@ -2134,7 +2134,7 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
               | None -> ()
               | Some (dx, dy) -> draw_shaded_cell px py (sample dx dy)
             done
-          done)
+          done
   in
 
   (* Dispatch: iterate marks in order (layering) *)

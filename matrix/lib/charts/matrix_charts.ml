@@ -312,8 +312,8 @@ module Overlay = struct
               Render.draw_text grid ~x:(x0 + inner_offset) ~y ~style line)
           lines
 
-  let text ?style ?(anchor = `Left) (layout : Layout.t) (grid : G.t) ~x ~y
-      label =
+  let text ?style ?(anchor = `Left) (layout : Layout.t) (grid : G.t) ~x ~y label
+      =
     let style = Option.value style ~default:layout.theme.labels in
     let px, py = Layout.px_of_data layout ~x ~y in
     let rect = Layout.plot_rect layout in

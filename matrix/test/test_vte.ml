@@ -220,7 +220,8 @@ let line_feed_preserves_column () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
   Vte.feed_string vte "abc\ndef";
   equal ~msg:"first line" string "abc" (get_line (Vte.grid vte) 0);
-  equal ~msg:"LF moved straight down" string "   def" (get_line (Vte.grid vte) 1);
+  equal ~msg:"LF moved straight down" string "   def"
+    (get_line (Vte.grid vte) 1);
   equal ~msg:"cursor position" (pair int int) (1, 6) (Vte.cursor_pos vte)
 
 let line_feed_scroll_region () =
@@ -238,8 +239,7 @@ let line_feed_scroll_region () =
   equal ~msg:"region scrolled" string "C" (get_line (Vte.grid vte) 1);
   equal ~msg:"region bottom blank" string "" (get_line (Vte.grid vte) 2);
   equal ~msg:"row above region untouched" string "A" (get_line (Vte.grid vte) 0);
-  equal ~msg:"row below region untouched" string "D"
-    (get_line (Vte.grid vte) 3)
+  equal ~msg:"row below region untouched" string "D" (get_line (Vte.grid vte) 3)
 
 let delete_characters_wide () =
   let vte = Vte.create ~rows:1 ~cols:5 () in
