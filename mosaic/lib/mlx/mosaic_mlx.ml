@@ -193,4 +193,8 @@ let line_number ?key ?id ?display ?box_sizing ?position ?overflow
         ?live ?ref ?on_mouse ?on_key ?on_paste ?fg ?bg ?min_width ?padding_right
         ?show_line_numbers ?line_number_offset ?line_colors ?line_signs
         ?hidden_line_numbers child
-  | _ -> Mosaic.empty
+  | children ->
+      invalid_arg
+        (Printf.sprintf
+           "Mosaic_mlx.line_number: expected exactly one child, got %d"
+           (List.length children))
