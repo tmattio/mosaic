@@ -214,6 +214,100 @@ let overflowing_wide_graphemes_do_not_leak_store () =
   equal ~msg:"no live payloads" int 0 live;
   equal ~msg:"no leaked slots" int slots0 slots
 
+(* Grapheme store lifecycle: refcount balance and slot reuse under churn.
+   Slot usage must track the set of distinct graphemes, not the number of
+   frames; live count must return to zero once every reference is released. *)
+let grapheme_store_churn_stays_balanced () =
+  let width = 20 and height = 6 in
+  let grid = Grid.create ~width ~height () in
+  let rng = Random.State.make [| 0x5eed |] in
+  let flag i =
+    let buf = Buffer.create 8 in
+    Buffer.add_utf_8_uchar buf (Uchar.of_int (0x1F1E6 + (i mod 26)));
+    Buffer.add_utf_8_uchar buf (Uchar.of_int (0x1F1E6 + (i / 26 mod 26)));
+    Buffer.contents buf
+  in
+  let max_slots = ref 0 in
+  for frame = 0 to 99 do
+    for _ = 0 to 14 do
+      let x = Random.State.int rng width in
+      let y = Random.State.int rng height in
+      Grid.draw_text grid ~x ~y ~text:(flag (Random.State.int rng 120))
+    done;
+    (match frame mod 7 with
+    | 0 -> Grid.scroll grid ~top:0 ~bottom:(height - 1) 1
+    | 1 -> Grid.scroll grid ~top:0 ~bottom:(height - 1) (-2)
+    | 2 ->
+        Grid.resize grid ~width:(width - 4) ~height;
+        Grid.resize grid ~width ~height
+    | 3 -> Grid.clear grid
+    | _ -> ());
+    let live, slots = Grid.grapheme_stats grid in
+    max_slots := max !max_slots slots;
+    is_true ~msg:"live bounded by cells" (live <= width * height)
+  done;
+  Grid.clear grid;
+  let live, _slots = Grid.grapheme_stats grid in
+  equal ~msg:"clear releases every payload" int 0 live;
+  (* At most 120 distinct flags are ever drawn, so slot usage must stay in
+     that order instead of growing with the frame count. *)
+  is_true
+    ~msg:(Printf.sprintf "slots stay bounded (max %d)" !max_slots)
+    (!max_slots <= 120)
+
+(* A (idx, gen) handle from before a clear must be rejected even after its
+   slot has been reused for new content. *)
+let stale_cell_handles_are_rejected () =
+  let fr =
+    "\xF0\x9F\x87\xAB\xF0\x9F\x87\xB7"
+    (* FR flag *)
+  in
+  let de =
+    "\xF0\x9F\x87\xA9\xF0\x9F\x87\xAA"
+    (* DE flag *)
+  in
+  let grid = Grid.create ~width:4 ~height:1 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:fr;
+  let stale = Grid.get_cell grid 0 in
+  equal ~msg:"live handle resolves" string fr (Grid.get_text grid 0);
+  Grid.clear grid;
+  Grid.draw_text grid ~x:0 ~y:0 ~text:de;
+  Grid.set_cell grid ~x:2 ~y:0 ~cell:stale ~fg:Ansi.Color.white
+    ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
+  equal ~msg:"stale handle reads as empty" string ""
+    (Grid.get_text grid (idx grid 2 0));
+  (* Several reuse cycles bump the slot generation further; the original
+     handle must stay rejected. *)
+  for _ = 1 to 5 do
+    Grid.clear grid;
+    Grid.draw_text grid ~x:0 ~y:0 ~text:de
+  done;
+  Grid.set_cell grid ~x:2 ~y:0 ~cell:stale ~fg:Ansi.Color.white
+    ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
+  equal ~msg:"stale handle still rejected" string ""
+    (Grid.get_text grid (idx grid 2 0))
+
+(* Clearing one grid of a sharing group must not release payloads still
+   referenced by a sibling. *)
+let shared_store_clear_keeps_sibling_payloads () =
+  let fr =
+    "\xF0\x9F\x87\xAB\xF0\x9F\x87\xB7"
+    (* FR flag *)
+  in
+  let a = Grid.create ~width:4 ~height:1 () in
+  let b = Grid.create_like a ~width:4 ~height:1 in
+  Grid.draw_text a ~x:0 ~y:0 ~text:fr;
+  Grid.draw_text b ~x:0 ~y:0 ~text:fr;
+  let live, _ = Grid.grapheme_stats a in
+  equal ~msg:"one shared payload" int 1 live;
+  Grid.clear b;
+  equal ~msg:"payload survives sibling clear" string fr (Grid.get_text a 0);
+  let live, _ = Grid.grapheme_stats a in
+  equal ~msg:"payload still live" int 1 live;
+  Grid.clear a;
+  let live, _ = Grid.grapheme_stats a in
+  equal ~msg:"all payloads released" int 0 live
+
 let shared_storage_cells_equal () =
   let fr =
     "\xF0\x9F\x87\xAB\xF0\x9F\x87\xB7"
@@ -1383,6 +1477,11 @@ let tests =
       overflowing_wide_graphemes_do_not_leak_store;
     test "shared storage cells equal" shared_storage_cells_equal;
     test "shared storage links equal" shared_storage_links_equal;
+    test "grapheme store churn stays balanced"
+      grapheme_store_churn_stays_balanced;
+    test "stale cell handles are rejected" stale_cell_handles_are_rejected;
+    test "shared store clear keeps sibling payloads"
+      shared_store_clear_keeps_sibling_payloads;
     test "blit preserves respect alpha" blit_preserves_respect_alpha;
     test "same-store bulk blit tracks graphemes" blit_bulk_tracks_graphemes;
     test "overlap blit direction correctness" overlap_blit_direction_correctness;
