@@ -89,6 +89,14 @@ let render t _self grid ~delta:_ =
 
 (* ───── Animation ───── *)
 
+(* The animation invariant belongs to the widget: the node is live exactly
+   while the frame set animates, so on_frame ticks without callers wiring
+   liveness themselves. A single frame or non-positive interval renders a
+   static glyph and needs no per-frame work. *)
+let update_live t =
+  let fs = t.props.frame_set in
+  Renderable.set_live t.node (fs.interval > 0. && Array.length fs.frames > 1)
+
 let on_frame t _node ~delta =
   let interval = t.props.frame_set.interval in
   if interval > 0. then (
@@ -115,6 +123,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
   Renderable.set_render node (render t);
   Renderable.set_measure node (Some (measure t));
   Renderable.set_on_frame node (Some (on_frame t));
+  update_live t;
   t
 
 (* ───── Accessors ───── *)
@@ -134,6 +143,7 @@ let set_frame_set t fs =
       ~width_method:(Renderable.Private.width_method t.node)
       fs.frames;
   Renderable.set_measure t.node (Some (measure t));
+  update_live t;
   Renderable.request_render t.node
 
 let set_color t c =
@@ -158,6 +168,7 @@ let apply_props t (props : Props.t) =
       ~width_method:(Renderable.Private.width_method t.node)
       props.frame_set.frames;
   Renderable.set_measure t.node (Some (measure t));
+  update_live t;
   Renderable.request_render t.node
 
 (* ───── Pretty-printing ───── *)

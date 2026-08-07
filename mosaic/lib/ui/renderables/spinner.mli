@@ -61,7 +61,12 @@ val create :
 (** [create ~parent ()] is a spinner attached to [parent], with:
     - [frame_set] is the animation sequence. Defaults to {!default_frame_set}.
     - [color] is the foreground color for the spinner glyphs. Defaults to
-      {!Ansi.Color.white}. *)
+      {!Ansi.Color.white}.
+
+    The spinner manages its own liveness: the node is made live while the frame
+    set animates (more than one frame and a positive interval), so the animation
+    runs without further wiring, and is taken out of the live set when a static
+    frame set makes per-frame ticks pointless. *)
 
 val node : t -> Renderable.t
 (** [node t] is the underlying {!Renderable.t} of [t]. *)

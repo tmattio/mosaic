@@ -8,7 +8,6 @@ let make_spinner ?frame_set ?color () =
   let t = make_ctx () in
   let root = make_root t in
   let spinner = Spinner.create ~parent:root ?frame_set ?color () in
-  Renderable.set_live (Spinner.node spinner) true;
   (t, spinner)
 
 let render_spinner spinner ~width ~height =
@@ -58,6 +57,21 @@ let create_initial_frame_index () =
 let create_initial_elapsed () =
   let _t, spinner = make_spinner () in
   is_true ~msg:"elapsed = 0" (Float.equal (Spinner.elapsed spinner) 0.)
+
+let create_is_live () =
+  (* The widget owns the animation invariant: no external set_live needed. *)
+  let _t, spinner = make_spinner () in
+  is_true ~msg:"live on creation" (Renderable.live (Spinner.node spinner))
+
+let static_frame_set_is_not_live () =
+  let _t, spinner =
+    make_spinner ~frame_set:{ Spinner.frames = [| "x" |]; interval = 80. } ()
+  in
+  is_false ~msg:"single frame needs no ticks"
+    (Renderable.live (Spinner.node spinner));
+  Spinner.set_frame_set spinner Spinner.dots;
+  is_true ~msg:"animating set restores liveness"
+    (Renderable.live (Spinner.node spinner))
 
 (* ── Frame Advancement ── *)
 
@@ -198,6 +212,8 @@ let () =
           test "attaches to parent" create_attaches;
           test "initial frame_index = 0" create_initial_frame_index;
           test "initial elapsed = 0" create_initial_elapsed;
+          test "live on creation" create_is_live;
+          test "static frame set is not live" static_frame_set_is_not_live;
         ];
       group "Frame advancement"
         [
