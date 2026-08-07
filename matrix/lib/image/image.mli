@@ -101,7 +101,8 @@ val size : t -> int * int
 
 val fill : ?color:Color.t -> width:int -> height:int -> unit -> t
 (** [fill ~width ~height ()] is a solid rectangle of [color]. [color] defaults
-    to the terminal default. *)
+    to black. Note that filling with {!Color.default} is a no-op: the
+    terminal-default color has alpha [0] and leaves cells unchanged. *)
 
 val text : ?style:Style.t -> ?width_method:Text.width_method -> string -> t
 (** [text s] is a multi-line text image. Lines are split on ['\n']. Width is
@@ -166,11 +167,11 @@ val vcrop : int -> int -> t -> t
 
 val hsnap : ?align:h_align -> int -> t -> t
 (** [hsnap w img] resizes [img] to exactly [w] columns, padding or cropping
-    according to [align] (defaults to [`Left]). *)
+    according to [align] (defaults to [`Center], as in Notty). *)
 
 val vsnap : ?align:v_align -> int -> t -> t
 (** [vsnap h img] resizes [img] to exactly [h] rows, padding or cropping
-    according to [align] (defaults to [`Top]). *)
+    according to [align] (defaults to [`Middle], as in Notty). *)
 
 (** {1:hit_regions Hit regions} *)
 

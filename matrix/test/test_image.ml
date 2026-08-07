@@ -34,6 +34,34 @@ let box_without_fill_preserves_background () =
     (let r, g, b, a = read_bg grid 0 0 in
      (r, (g, (b, a))))
 
+let cell_written grid x y =
+  Grid.get_cell grid (Grid.idx grid ~x ~y) <> Grid.Cell.space
+
+let hsnap_defaults_to_center () =
+  let grid = Grid.create ~width:3 ~height:1 () in
+  let img = Image.hsnap 3 (Image.text "x") in
+  Image.render grid img;
+  is_false ~msg:"left cell is padding" (cell_written grid 0 0);
+  is_true ~msg:"content centered at x=1" (cell_written grid 1 0);
+  is_false ~msg:"right cell is padding" (cell_written grid 2 0)
+
+let vsnap_defaults_to_middle () =
+  let grid = Grid.create ~width:1 ~height:3 () in
+  let img = Image.vsnap 3 (Image.text "x") in
+  Image.render grid img;
+  is_false ~msg:"top cell is padding" (cell_written grid 0 0);
+  is_true ~msg:"content centered at y=1" (cell_written grid 0 1);
+  is_false ~msg:"bottom cell is padding" (cell_written grid 0 2)
+
+let fill_defaults_to_black () =
+  let grid = Grid.create ~width:2 ~height:1 () in
+  let img = Image.fill ~width:1 ~height:1 () in
+  Image.render grid img;
+  let _, _, _, alpha = read_bg grid 0 0 in
+  is_true ~msg:"filled cell has an opaque background" (alpha > 0);
+  let _, _, _, untouched_alpha = read_bg grid 1 0 in
+  equal ~msg:"unfilled cell keeps the terminal default" int 0 untouched_alpha
+
 let () =
   Windtrap.run "matrix.image"
     [
@@ -43,5 +71,11 @@ let () =
             text_width_method_is_applied_during_render;
           test "box without fill preserves background"
             box_without_fill_preserves_background;
+        ];
+      group "defaults"
+        [
+          test "hsnap defaults to `Center" hsnap_defaults_to_center;
+          test "vsnap defaults to `Middle" vsnap_defaults_to_middle;
+          test "fill defaults to black" fill_defaults_to_black;
         ];
     ]
