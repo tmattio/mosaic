@@ -376,11 +376,23 @@ val set_pending_provider : t -> (unit -> Pending.t option) option -> unit
 
 (** {1:lifecycle Lifecycle} *)
 
+val set_on_update : t -> (t -> delta:float -> unit) option -> unit
+(** [set_on_update t callback] registers a per-frame state-update hook.
+    [callback t ~delta] runs during frame traversal, after [t]'s layout is
+    refreshed and before its children are traversed, culled, or rendered. Unlike
+    {!set_on_frame} it is not gated on {!set_live}. Use it for state that must
+    settle before descendants are processed — for example a scroll container
+    maintaining its scroll offset — and keep drawing in the render callback.
+    [None] clears the hook. *)
+
 val set_on_frame : t -> (t -> delta:float -> unit) option -> unit
 (** [set_on_frame t callback] registers a per-frame update hook.
     [callback t ~delta] is called every frame with [delta] as the elapsed
     milliseconds, but only while [t] is live: pair the hook with {!set_live} to
-    start and stop the animation it drives. [None] clears the hook. *)
+    start and stop the animation it drives. The hook runs only when [t] is part
+    of the frame: a child culled by a scroll container's viewport (see
+    {!Private.set_viewport_cull}) receives no ticks until it scrolls back into
+    view. [None] clears the hook. *)
 
 val set_on_resize : t -> (t -> unit) option -> unit
 (** [set_on_resize t callback] registers a size-change hook. The callback is
@@ -511,6 +523,25 @@ module Private : sig
   (** [children_in_viewport ~parent ~viewport ~padding] is the children of
       [parent] whose bounds intersect [viewport] expanded by [padding] cells,
       sorted by z-index. *)
+
+  val iter_children_in_viewport :
+    parent:t -> viewport:Grid.region -> padding:int -> (t -> unit) -> unit
+  (** [iter_children_in_viewport ~parent ~viewport ~padding f] applies [f] to
+      each child of [parent] whose bounds intersect [viewport] expanded by
+      [padding] cells, in z-index order. Children's cached layouts are refreshed
+      from the layout tree first so intersection tests read current positions.
+  *)
+
+  val set_viewport_cull : t -> bool -> unit
+  (** [set_viewport_cull t v] enables or disables viewport culling of [t]'s
+      children. When enabled, the renderer traverses only the children whose
+      bounds intersect the effective ancestor clip (via
+      {!iter_children_in_viewport}); offscreen children are neither updated
+      ([on_frame], resize hooks) nor rendered nor hit-testable until they scroll
+      back into view. Scroll containers enable this on their content node. *)
+
+  val viewport_cull : t -> bool
+  (** [viewport_cull t] is [true] iff viewport culling is enabled on [t]. *)
 
   (** {2:focus Focus} *)
 

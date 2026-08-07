@@ -579,19 +579,21 @@ let apply_sticky t =
         scroll_to_internal t ~manual:false ?x ?y ());
     t.is_applying_sticky <- prev
 
-(* ───── Render ───── *)
+(* ───── Update ───── *)
 
-let render_scroll_box t _self grid ~delta =
+(* Scroll maintenance runs in the frame traversal (opentui ScrollBox's
+   onUpdate/recalculateBarProps phase), before the content's children are
+   culled and rendered: sticky, reveal, and scroll_by must settle the content
+   offset first so viewport culling selects the children the final offset
+   makes visible. The hook lives on the content node — the traversal reaches
+   it after refreshing the node/wrapper/viewport/content layouts, so metrics
+   read current extents, and immediately before culling its children. *)
+let update_scroll_box t ~delta =
   let d = if Float.is_nan delta then 0. else Float.max 0. delta in
   t.frame_clock <- t.frame_clock +. d;
-  let lx = Renderable.x t.node in
-  let ly = Renderable.y t.node in
   let lw = Renderable.width t.node in
   let lh = Renderable.height t.node in
   if lw > 0 && lh > 0 then (
-    (match t.props.background with
-    | None -> ()
-    | Some c -> Grid.fill_rect grid ~x:lx ~y:ly ~width:lw ~height:lh ~color:c);
     let was_applying = t.is_applying_sticky in
     t.is_applying_sticky <- true;
     let old_max_x = t.max_scroll_x and old_max_y = t.max_scroll_y in
@@ -603,6 +605,19 @@ let render_scroll_box t _self grid ~delta =
     t.is_applying_sticky <- was_applying;
     apply_pending_scroll_by t;
     set_child_offsets t)
+
+(* ───── Render ───── *)
+
+let render_scroll_box t _self grid ~delta:_ =
+  match t.props.background with
+  | None -> ()
+  | Some c ->
+      let lx = Renderable.x t.node in
+      let ly = Renderable.y t.node in
+      let lw = Renderable.width t.node in
+      let lh = Renderable.height t.node in
+      if lw > 0 && lh > 0 then
+        Grid.fill_rect grid ~x:lx ~y:ly ~width:lw ~height:lh ~color:c
 
 (* ───── Mouse Wheel ───── *)
 
@@ -815,6 +830,11 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
     Toffee.Style.set_max_size max_sz s
   in
   Renderable.set_style content_node content_style;
+  (* Viewport culling (opentui ScrollBox viewportCulling, default on): only
+     the children intersecting the viewport are laid out, updated, and
+     rendered each frame, so a long transcript pays O(viewport) rather than
+     O(content) per frame. *)
+  Renderable.Private.set_viewport_cull content_node true;
   (* Horizontal scroll bar: inside wrapper, below viewport *)
   let horizontal_bar =
     let bar = Scroll_bar.create ~parent:wrapper ~orientation:`Horizontal () in
@@ -909,7 +929,10 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
   Renderable.set_default_key_handler node
     (Some (fun ev -> if handle_key t ev then Event.Key.prevent_default ev));
   Renderable.set_focusable node true;
-  (* Wire render callback *)
+  (* Wire update and render callbacks. The update hook lives on the content
+     node so the offset settles right before its children are culled. *)
+  Renderable.set_on_update content_node
+    (Some (fun _ ~delta -> update_scroll_box t ~delta));
   Renderable.set_render node (render_scroll_box t);
   Renderable.set_on_frame node
     (Some (fun _ ~delta -> handle_auto_scroll t delta));

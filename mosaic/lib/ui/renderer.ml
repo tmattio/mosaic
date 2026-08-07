@@ -720,10 +720,18 @@ let rec build_commands (t : t) (node : Renderable.t) ~parent_x ~parent_y
       (* Recurse into children in z-index order. Toffee's layout.location
          already positions children relative to the parent's border box (i.e.
          it includes border+padding offsets), so we pass abs_x/abs_y directly —
-         no additional inset is needed. *)
-      Renderable.Private.iter_children_z node (fun child ->
-          build_commands t child ~parent_x:abs_x ~parent_y:abs_y
-            ~clip:child_clip ~delta)
+         no additional inset is needed. Viewport-culling nodes (scroll-box
+         content) restrict the walk to children intersecting the effective
+         clip, so offscreen children skip layout extraction, frame hooks,
+         rendering, and hit registration entirely. *)
+      let recurse child =
+        build_commands t child ~parent_x:abs_x ~parent_y:abs_y ~clip:child_clip
+          ~delta
+      in
+      if Renderable.Private.viewport_cull node then
+        Renderable.Private.iter_children_in_viewport ~parent:node
+          ~viewport:child_clip ~padding:0 recurse
+      else Renderable.Private.iter_children_z node recurse
     in
     (match child_clip with
     | None -> render_children clip

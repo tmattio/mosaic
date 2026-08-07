@@ -189,9 +189,7 @@ let vertical_bar_visible_when_content_overflows () =
   layout_node (Scroll_box.node sb) ~x:0 ~y:0 ~width:20 ~height:8;
   layout_node (Scroll_box.viewport sb) ~x:0 ~y:0 ~width:19 ~height:8;
   layout_node (Scroll_box.content sb) ~x:0 ~y:0 ~width:19 ~height:20;
-  Renderable.Private.render (Scroll_box.node sb)
-    (make_grid ~width:20 ~height:8 ())
-    ~delta:0.;
+  Renderable.Private.pre_render_update (Scroll_box.content sb) ~delta:0.;
   is_true ~msg:"vertical bar visible on overflow"
     (Renderable.visible (Scroll_bar.node (Scroll_box.vertical_bar sb)))
 
@@ -232,9 +230,7 @@ let render_scroll_box sb ~vh ~ch =
   layout_node (Scroll_box.node sb) ~x:0 ~y:0 ~width:20 ~height:vh;
   layout_node (Scroll_box.viewport sb) ~x:0 ~y:0 ~width:19 ~height:vh;
   layout_node (Scroll_box.content sb) ~x:0 ~y:0 ~width:19 ~height:ch;
-  Renderable.Private.render (Scroll_box.node sb)
-    (make_grid ~width:20 ~height:vh ())
-    ~delta:0.
+  Renderable.Private.pre_render_update (Scroll_box.content sb) ~delta:0.
 
 let wheel ?(shift = false) direction =
   let modifiers = { Event.Mouse.no_modifier with shift } in

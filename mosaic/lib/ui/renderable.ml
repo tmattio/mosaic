@@ -94,6 +94,11 @@ and node = {
   mutable primary_sorted : node array;
   mutable primary_len : int;
   mutable primary_dirty : bool;
+  (* Viewport culling: when [true], the renderer restricts this node's child
+     traversal to children intersecting the effective clip. [cull_marked] is
+     transient renderer state used to filter the z-ordered walk. *)
+  mutable viewport_cull : bool;
+  mutable cull_marked : bool;
   (* Rendering *)
   mutable render : render;
   mutable render_before : render option;
@@ -128,6 +133,7 @@ and node = {
   (* Pending render work *)
   mutable pending_provider : (unit -> Pending.t option) option;
   (* Lifecycle *)
+  mutable on_update : (node -> delta:float -> unit) option;
   mutable on_frame : (node -> delta:float -> unit) option;
   mutable on_resize : (node -> unit) option;
   mutable on_lifecycle_pass : (node -> unit) option;
@@ -313,6 +319,8 @@ let make_node ctx ~toffee_node ~id ~num ?(style = Toffee.Style.default)
     primary_sorted = [||];
     primary_len = 0;
     primary_dirty = false;
+    viewport_cull = false;
+    cull_marked = false;
     render;
     render_before = None;
     render_after = None;
@@ -338,6 +346,7 @@ let make_node ctx ~toffee_node ~id ~num ?(style = Toffee.Style.default)
     child_clip = None;
     line_info_provider = None;
     pending_provider = None;
+    on_update = None;
     on_frame = None;
     on_resize = None;
     on_lifecycle_pass = None;
@@ -666,6 +675,7 @@ let destroy t =
     t.child_clip <- None;
     t.line_info_provider <- None;
     t.pending_provider <- None;
+    t.on_update <- None;
     t.on_frame <- None;
     t.on_resize <- None;
     t.on_lifecycle_pass <- None;
@@ -973,6 +983,7 @@ let pending_work t =
 
 (* ───── Lifecycle ───── *)
 
+let set_on_update t cb = t.on_update <- cb
 let set_on_frame t cb = t.on_frame <- cb
 let set_on_resize t cb = t.on_resize <- cb
 
@@ -999,7 +1010,35 @@ let update_layout t ~x ~y ~width ~height =
   in
   if pos_changed then Option.iter (fun p -> p.primary_dirty <- true) t.parent
 
+(* Refresh direct children's cached layout from the layout tree so viewport
+   culling reads current positions, mirroring OpenTUI's updateFromLayout pass
+   before [_getVisibleChildren]. [t.abs_x]/[t.abs_y] are current because the
+   renderer updates a node's layout before descending into its children. *)
+let update_children_layout t =
+  for i = 0 to t.child_count - 1 do
+    match t.children.(i) with
+    | Some child when child.visible -> (
+        match Toffee.layout t.ctx.tree child.toffee_node with
+        | Ok (l : Toffee.Layout.t) ->
+            update_layout child ~x:(t.abs_x +. l.location.x)
+              ~y:(t.abs_y +. l.location.y) ~width:l.size.width
+              ~height:l.size.height
+        | Error _ -> ())
+    | Some _ | None -> ()
+  done
+
+let iter_children_in_viewport ~(parent : t) ~(viewport : Grid.region)
+    ~(padding : int) (f : t -> unit) : unit =
+  update_children_layout parent;
+  let visible = children_in_viewport ~parent ~viewport ~padding in
+  List.iter (fun child -> child.cull_marked <- true) visible;
+  iter_children_z parent (fun child ->
+      if child.cull_marked then (
+        child.cull_marked <- false;
+        f child))
+
 let pre_render_update t ~delta =
+  Option.iter (fun f -> f t ~delta) t.on_update;
   if t.live then Option.iter (fun f -> f t ~delta) t.on_frame;
   let lw = width t and lh = height t in
   if lw <> t.last_width || lh <> t.last_height then (
@@ -1121,6 +1160,9 @@ module Private = struct
   let children_z = children_z
   let iter_children_z = iter_children_z
   let children_in_viewport = children_in_viewport
+  let iter_children_in_viewport = iter_children_in_viewport
+  let set_viewport_cull t v = t.viewport_cull <- v
+  let viewport_cull t = t.viewport_cull
   let focus_direct = focus_direct
   let blur_direct = blur_direct
   let live_count t = t.live_count

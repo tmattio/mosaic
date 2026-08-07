@@ -371,6 +371,94 @@ let clipped_offscreen_subtree_is_not_traversed_for_rendering () =
   do_frame ~width:20 ~height:10 t;
   equal ~msg:"clipped descendant callback" int 0 !renders
 
+(* A scroll box whose rows report render invocations. Rows are 1 cell tall,
+   the viewport is [vh] rows, scrollbars are hidden so rows span the full
+   width. *)
+let make_culled_transcript ?(rows = 40) ?(vw = 20) ?(vh = 5) t =
+  let box_style =
+    Toffee.Style.default
+    |> Toffee.Style.set_width (Toffee.Style.Dimension.length (Float.of_int vw))
+    |> Toffee.Style.set_height (Toffee.Style.Dimension.length (Float.of_int vh))
+  in
+  let sb =
+    Scroll_box.create ~parent:(Renderer.root t) ~style:box_style
+      ~show_scrollbars:false ()
+  in
+  let row_style =
+    Toffee.Style.default
+    |> Toffee.Style.set_width (Toffee.Style.Dimension.length (Float.of_int vw))
+    |> Toffee.Style.set_height (Toffee.Style.Dimension.length 1.)
+  in
+  let renders = Array.make rows 0 in
+  let row_nodes =
+    Array.init rows (fun i ->
+        let row =
+          Renderable.create ~parent:(Scroll_box.node sb) ~style:row_style ()
+        in
+        Renderable.set_render row (fun _ _ ~delta:_ ->
+            renders.(i) <- renders.(i) + 1);
+        row)
+  in
+  (sb, renders, row_nodes)
+
+let scroll_box_culls_offscreen_children () =
+  let t = make_renderer () in
+  let _sb, renders, _rows = make_culled_transcript t in
+  do_frame ~width:20 ~height:5 t;
+  equal ~msg:"first visible row rendered" int 1 renders.(0);
+  equal ~msg:"last visible row rendered" int 1 renders.(4);
+  equal ~msg:"offscreen row not rendered" int 0 renders.(20);
+  equal ~msg:"final row not rendered" int 0 renders.(39)
+
+let scrolling_paints_revealed_children () =
+  let t = make_renderer () in
+  let sb, renders, _rows = make_culled_transcript t in
+  do_frame ~width:20 ~height:5 t;
+  equal ~msg:"row 20 culled before scroll" int 0 renders.(20);
+  Scroll_box.scroll_to sb ~y:20 ();
+  do_frame ~width:20 ~height:5 t;
+  equal ~msg:"row 20 painted after scroll" int 1 renders.(20);
+  equal ~msg:"row 24 painted after scroll" int 1 renders.(24);
+  equal ~msg:"row 0 culled after scroll" int 1 renders.(0)
+
+let culled_child_is_not_hit_testable () =
+  let t = make_renderer () in
+  let sb, _renders, rows = make_culled_transcript t in
+  let count_downs log =
+    List.length
+      (List.filter
+         (fun ev ->
+           match Event.Mouse.kind ev with
+           | Event.Mouse.Down _ -> true
+           | _ -> false)
+         !log)
+  in
+  let hits_visible = record_mouse rows.(2) in
+  let hits_hidden = record_mouse rows.(22) in
+  do_frame ~width:20 ~height:5 t;
+  Renderer.dispatch_mouse t (mouse_press ~x:3 ~y:2 ());
+  equal ~msg:"visible row hit" int 1 (count_downs hits_visible);
+  equal ~msg:"hidden row not hit" int 0 (count_downs hits_hidden);
+  Scroll_box.scroll_to sb ~y:20 ();
+  do_frame ~width:20 ~height:5 t;
+  Renderer.dispatch_mouse t (mouse_press ~x:3 ~y:2 ());
+  equal ~msg:"revealed row hit after scroll" int 1 (count_downs hits_hidden)
+
+let culled_live_child_does_not_tick () =
+  let t = make_renderer () in
+  let sb, _renders, rows = make_culled_transcript t in
+  let visible_ticks = ref 0 and hidden_ticks = ref 0 in
+  Renderable.set_live rows.(1) true;
+  Renderable.set_on_frame rows.(1) (Some (fun _ ~delta:_ -> incr visible_ticks));
+  Renderable.set_live rows.(30) true;
+  Renderable.set_on_frame rows.(30) (Some (fun _ ~delta:_ -> incr hidden_ticks));
+  do_frame ~width:20 ~height:5 t;
+  equal ~msg:"visible live row ticked" int 1 !visible_ticks;
+  equal ~msg:"culled live row did not tick" int 0 !hidden_ticks;
+  Scroll_box.scroll_to sb ~y:30 ();
+  do_frame ~width:20 ~height:5 t;
+  equal ~msg:"revealed live row ticks" int 1 !hidden_ticks
+
 (* ── Focus ── *)
 
 let focus_returns_true_for_focusable () =
@@ -1180,6 +1268,13 @@ let () =
             overflow_visible_descendant_reaching_viewport_renders;
           test "clipped offscreen subtree is not traversed for rendering"
             clipped_offscreen_subtree_is_not_traversed_for_rendering;
+          test "scroll box culls offscreen children"
+            scroll_box_culls_offscreen_children;
+          test "scrolling paints revealed children"
+            scrolling_paints_revealed_children;
+          test "culled child is not hit-testable"
+            culled_child_is_not_hit_testable;
+          test "culled live child does not tick" culled_live_child_does_not_tick;
         ];
       group "Settlement"
         [
