@@ -9,4 +9,5 @@
  (package matrix)
  (action
   (progn
+   (run ./test_charts.exe)
    (diff? test_charts.ml test_charts.ml.corrected))))
