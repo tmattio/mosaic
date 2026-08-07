@@ -171,6 +171,24 @@ let grapheme_info_skips_zero_width () =
     [ (0, 1, 1); (4, 3, 2) ]
     (List.rev !seen)
 
+let grapheme_info_ascii_base_with_combining_mark () =
+  let seen = ref [] in
+  iter_grapheme_info ~width_method:`Unicode ~tab_width:2
+    (fun ~offset ~len ~width -> seen := (offset, len, width) :: !seen)
+    "e\u{0301}x";
+  equal ~msg:"e + U+0301 is one 3-byte cluster"
+    (list (triple int int int))
+    [ (0, 3, 1); (3, 1, 1) ]
+    (List.rev !seen);
+  let seen = ref [] in
+  iter_grapheme_info ~width_method:`Unicode ~tab_width:2
+    (fun ~offset ~len ~width -> seen := (offset, len, width) :: !seen)
+    "abce\u{0301}";
+  equal ~msg:"mark extends the last byte of an ASCII run"
+    (list (triple int int int))
+    [ (0, 1, 1); (1, 1, 1); (2, 1, 1); (3, 3, 1) ]
+    (List.rev !seen)
+
 type wrap_break = { byte_offset : int; grapheme_offset : int }
 type line_break = { pos : int; kind : line_break_kind }
 
@@ -586,6 +604,8 @@ let () =
         [
           test "iteration" grapheme_iteration;
           test "info skips zero-width" grapheme_info_skips_zero_width;
+          test "info keeps combining marks with ASCII base"
+            grapheme_info_ascii_base_with_combining_mark;
         ];
       group "Wrap Breaks"
         [

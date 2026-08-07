@@ -199,9 +199,16 @@ let iter_grapheme_info ~width_method ~tab_width f str =
       if w > 0 then f ~offset:i ~len:1 ~width:w
     in
 
+    (* An ASCII byte is a complete cluster only when the next codepoint is
+       also ASCII (or the string ends): a following non-ASCII codepoint can
+       extend the cluster (combining marks, ZWJ, variation selectors). *)
+    let ascii_cluster_at i =
+      i + 1 >= len || Char.code (Stdlib.String.unsafe_get str (i + 1)) < 128
+    in
+
     let rec loop i =
       if i >= len then ()
-      else if i + 4 <= len && is_ascii_4 str i then (
+      else if i + 4 <= len && is_ascii_4 str i && ascii_cluster_at (i + 3) then (
         emit_ascii i;
         emit_ascii (i + 1);
         emit_ascii (i + 2);
@@ -209,7 +216,7 @@ let iter_grapheme_info ~width_method ~tab_width f str =
         loop (i + 4))
       else
         let c = Stdlib.String.unsafe_get str i in
-        if Char.code c < 128 then (
+        if Char.code c < 128 && ascii_cluster_at i then (
           emit_ascii i;
           loop (i + 1))
         else
