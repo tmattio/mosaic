@@ -245,3 +245,9 @@
  (modules test_line_number)
  (package mosaic)
  (libraries windtrap mosaic.ui toffee matrix.grid matrix.screen matrix.ansi))
+
+(test
+ (name test_diff)
+ (modules test_diff)
+ (package mosaic)
+ (libraries windtrap mosaic.ui toffee matrix.grid matrix.ansi))

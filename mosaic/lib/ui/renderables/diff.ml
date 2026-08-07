@@ -1067,24 +1067,31 @@ let pending_work t =
   else None
 
 let build_unified_view t (props : Props.t) =
-  destroy_children t;
+  (* Coming from Split: drop the split children so exactly one side remains.
+     A unified rebuild otherwise reconciles its Line_number and Code in place,
+     which keeps Code's streaming anti-flash state and running highlight jobs
+     alive across streaming patch updates. *)
+  if t.right_side <> None || t.right_code <> None then destroy_children t;
   set_flex_direction t Toffee.Style.Flex_direction.Column;
   let unified =
     View.unified ~theme:props.theme ~line_highlights:props.line_highlights
       ~line_spans:props.line_spans ~line_signs:props.line_signs props.patch
   in
-  let side =
-    Line_number.create ~parent:t.node ~style:full_style
-      ~fg:props.theme.line_number_fg ?bg:props.theme.line_number_bg
-      ~show_line_numbers:props.show_line_numbers
+  let side_props =
+    Line_number.Props.make ~fg:props.theme.line_number_fg
+      ?bg:props.theme.line_number_bg ~show_line_numbers:props.show_line_numbers
       ~line_colors:unified.View.line_colors ~line_signs:unified.View.line_signs
       ~line_numbers:unified.View.line_numbers ()
   in
+  let side =
+    make_or_update_side t.left_side ~parent:t.node ~style:full_style
+      ~theme:props.theme ~props:side_props
+  in
   let code =
-    Code.create ~parent:(Line_number.node side) ~style:full_style
-      ~content:unified.View.content ~text_style:props.text_style
+    make_or_update_code t.left_code ~parent:(Line_number.node side) props
+      ~content:unified.View.content
       ?syntax:(unified_code_syntax props.highlight)
-      ~wrap:props.wrap ~selectable:props.selectable ()
+      ()
   in
   set_code_emphasis code unified.View.emphasis;
   t.left_side <- Some side;
