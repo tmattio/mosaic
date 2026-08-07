@@ -392,6 +392,25 @@ let click_walks_up_to_focusable_parent () =
   | Some n -> is_true ~msg:"parent focused" (n == parent)
   | None -> fail "expected parent to be focused"
 
+let left_click_focuses_selectable_node () =
+  (* Starting a text selection consumes the Down event; auto-focus must still
+     run, mirroring OpenTUI's dispatchMouseEvent. *)
+  let t = make_renderer () in
+  let child =
+    make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 ~focusable:true ()
+  in
+  Renderable.set_selection child
+    ~should_start:(fun ~x:_ ~y:_ -> true)
+    ~on_change:(fun _ -> true)
+    ~clear:(fun () -> ())
+    ~get_text:(fun () -> "");
+  do_frame t;
+  Renderer.dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
+  is_some ~msg:"selection started" (Renderer.selection t);
+  match Renderer.focused t with
+  | Some n -> is_true ~msg:"selectable child focused" (n == child)
+  | None -> fail "expected focus after click on selectable node"
+
 let right_click_does_not_auto_focus () =
   let t = make_renderer () in
   let _child =
@@ -1105,6 +1124,8 @@ let () =
             left_click_on_non_focusable_does_not_focus;
           test "click walks up to focusable parent"
             click_walks_up_to_focusable_parent;
+          test "left click focuses selectable node"
+            left_click_focuses_selectable_node;
           test "right click does not auto-focus" right_click_does_not_auto_focus;
           test "shift left click preserves existing focus"
             shift_left_click_preserves_existing_focus;

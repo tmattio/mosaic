@@ -306,6 +306,20 @@ let recheck_hover t =
               Renderable.Private.emit_mouse node ev
           | None -> ())
 
+(* ───── Auto-Focus ───── *)
+
+(* Auto-focus on ordinary left click, walking up to the nearest focusable
+   ancestor. Native terminal Shift-selection may still arrive as mouse input,
+   but it should not steal application focus. *)
+let auto_focus_on_click t ~(modifiers : Input.Modifier.t) ~target_node ev =
+  if (not modifiers.shift) && not (Event.Mouse.default_prevented ev) then
+    match target_node with
+    | Some node -> (
+        match find_focusable node with
+        | Some focusable -> ignore (focus_node t focusable : bool)
+        | None -> ())
+    | None -> ()
+
 (* ───── Selection Event Handling ───── *)
 
 (* Returns [true] if the selection state machine consumed the event. *)
@@ -342,6 +356,10 @@ let handle_selection t ~x ~y ~(modifiers : Input.Modifier.t) ~target_node
               (Event.Mouse.Down { button = Left })
           in
           Renderable.Private.emit_mouse node ev;
+          (* Starting a selection must not swallow click-to-focus: mirror
+             OpenTUI's dispatchMouseEvent, which pairs event emission with
+             auto-focus. *)
+          auto_focus_on_click t ~modifiers ~target_node:(Some node) ev;
           true
       | _ -> false)
   | Event.Mouse.Drag { button = Left; _ } -> (
@@ -451,18 +469,9 @@ let dispatch_mouse_internal t ~x ~y ~modifiers kind =
       (match target_node with
       | Some node -> Renderable.Private.emit_mouse node ev
       | None -> ());
-      (* Auto-focus on ordinary left click. Native terminal Shift-selection may
-         still arrive as mouse input, but it should not steal application focus. *)
       (match kind with
-      | Event.Mouse.Down { button = Left }
-        when (not modifiers.shift) && not (Event.Mouse.default_prevented ev)
-        -> (
-          match target_node with
-          | Some node -> (
-              match find_focusable node with
-              | Some focusable -> ignore (focus_node t focusable : bool)
-              | None -> ())
-          | None -> ())
+      | Event.Mouse.Down { button = Left } ->
+          auto_focus_on_click t ~modifiers ~target_node ev
       | _ -> ());
       (* Clear selection on left click if not prevented *)
       match kind with
