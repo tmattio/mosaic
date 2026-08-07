@@ -362,21 +362,25 @@ let enqueue_focus runtime id =
          runtime.pending_focus)
   then runtime.pending_focus <- runtime.pending_focus @ [ id ]
 
+(* Each Cmd.focus gets one immediate attempt (process_cmd) and, when that
+   misses, one deferred attempt after the next completed render — covering an
+   element the update's own view is about to create. Requests that still miss
+   are dropped: retrying forever would scan the whole tree every frame and
+   retain the id, for a target that may never exist. *)
 let process_pending_focus runtime =
-  let focused = ref false in
-  let remaining =
-    List.filter
-      (fun id ->
-        match find_by_id runtime id with
-        | Some node ->
-            let did_focus = Renderer.focus runtime.renderer node in
-            if did_focus then focused := true;
-            not did_focus
-        | None -> true)
-      runtime.pending_focus
-  in
-  runtime.pending_focus <- remaining;
-  if !focused then Matrix.request_redraw runtime.matrix_app
+  match runtime.pending_focus with
+  | [] -> ()
+  | pending ->
+      runtime.pending_focus <- [];
+      let focused = ref false in
+      List.iter
+        (fun id ->
+          match find_by_id runtime id with
+          | Some node ->
+              if Renderer.focus runtime.renderer node then focused := true
+          | None -> ())
+        pending;
+      if !focused then Matrix.request_redraw runtime.matrix_app
 
 let set_renderer_viewport (renderer : Renderer.t) ~width ~height =
   let root = Renderer.root renderer in

@@ -634,3 +634,40 @@ let%expect_test "same-interval timers keep independent phases" =
 |
 |keys:[a,a,b] ticks:0 size:- note:on
 ||}]
+
+let%expect_test "an unmatched Cmd.focus expires after one deferred attempt" =
+  (* Cmd.focus retries once after the next completed render (covering an
+     element the same update's view creates), then drops. An element whose id
+     only appears two updates later must not be focused — and the runtime
+     must not keep scanning the tree for the id forever. *)
+  let base =
+    app ~subs:(fun _ -> Mosaic.Sub.on_key (fun _ -> Some (Note "shown"))) ()
+  in
+  let application =
+    {
+      base with
+      Mosaic.init =
+        (fun () -> ({ initial with note = "hidden" }, Mosaic.Cmd.focus "late"));
+      Mosaic.view =
+        (fun model ->
+          Mosaic.box
+            [
+              (if String.equal model.note "shown" then
+                 Mosaic.input ~id:"late"
+                   ~size:(Mosaic.size ~width:10 ~height:1)
+                   ()
+               else Mosaic.empty);
+              base.Mosaic.view model;
+            ]);
+    }
+  in
+  drive ~height:3 application
+    [
+      `Feed "x" (* creates input#late, well after the focus request *);
+      `Run
+        (fun t ->
+          Printf.printf "late element stole focus: %b\n"
+            (Option.is_some
+               (substring_index "\027[?25h" (Matrix_test.output t))));
+    ];
+  [%expect {|late element stole focus: false|}]

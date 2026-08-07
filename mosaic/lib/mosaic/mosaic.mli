@@ -859,8 +859,8 @@ module Cmd : sig
             understand. Wrapped for tmux passthrough when inside tmux. *)
     | Clear_selection  (** Clear the active text selection, if any. *)
     | Focus of string
-        (** Move keyboard focus to the element identified by the given [id]. Has
-            no effect if no element carries that [id]. *)
+        (** Move keyboard focus to the element identified by the given [id],
+            retrying once after the next completed render. See {!val-focus}. *)
     | Static_commit of 'msg option Vnode.t
         (** Render a vnode snapshot and write it to the static area with ANSI
             styling preserved. The row count is computed automatically from the
@@ -915,7 +915,10 @@ module Cmd : sig
 
   val focus : string -> 'msg t
   (** [focus id] moves keyboard focus to the element whose [id] attribute equals
-      [id]. Has no effect when no matching element exists. *)
+      [id]. When no focusable element matches yet, one more attempt is made
+      after the next completed render — so focusing an element the current
+      update's view is about to create works. A request that still has no match
+      is then dropped. *)
 
   val static_commit : 'msg option Vnode.t -> 'msg t
   (** [static_commit view] renders [view] offscreen at the current terminal
