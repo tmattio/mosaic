@@ -1,9 +1,12 @@
 (** Keyboard, paste, and mouse UI events.
 
-    Each event type wraps terminal input from {!Input} with propagation control
-    and default-prevention flags used by the two-tier dispatch pipeline (global
-    handlers first, then focused-node handlers). Mouse events additionally carry
-    hit-testing metadata. *)
+    Each event type wraps terminal input from {!Input} with the dispatch control
+    the renderer consults. Key and paste events target the focused renderable
+    only: its handlers run newest-first until one calls [prevent_default], which
+    also suppresses the widget's default behaviour and marks the event as
+    consumed for the host runtime. Mouse events bubble from the hit-tested node
+    to its ancestors — {!Mouse.stop_propagation} stops the bubbling — and
+    additionally carry hit-testing metadata. *)
 
 (** {1:keyboard Keyboard events} *)
 
@@ -11,30 +14,20 @@ module Key : sig
   type t
   (** The type for keyboard events.
 
-      Wraps an {!Input.Key.event} with propagation and default-prevention flags
-      that the renderer inspects during two-tier dispatch (global handlers
-      first, then focused-node handlers). *)
+      Wraps an {!Input.Key.event} with a default-prevention flag consulted while
+      dispatching to the focused renderable. *)
 
   val of_input : Input.Key.event -> t
-  (** [of_input ev] is a keyboard event wrapping [ev]. Propagation and
-      default-prevention flags start as [false]. *)
+  (** [of_input ev] is a keyboard event wrapping [ev]. The default-prevention
+      flag starts as [false]. *)
 
   val data : t -> Input.Key.event
   (** [data t] is the underlying terminal key event. *)
 
-  val stop_propagation : t -> unit
-  (** [stop_propagation t] prevents [t] from reaching the focused-node handler
-      tier. When called in a global handler, the event is not dispatched to
-      focused-node handlers. *)
-
-  val propagation_stopped : t -> bool
-  (** [propagation_stopped t] is [true] iff {!stop_propagation} has been called
-      on [t]. *)
-
   val prevent_default : t -> unit
-  (** [prevent_default t] marks renderer-level default behaviour as prevented.
-      After all handlers run, the renderer skips its default key behaviour for
-      the focused node. *)
+  (** [prevent_default t] marks [t] as consumed: remaining handlers on the
+      focused renderable and its default key behaviour are skipped, and the host
+      runtime treats the key as handled. *)
 
   val default_prevented : t -> bool
   (** [default_prevented t] is [true] iff {!prevent_default} has been called on
@@ -54,29 +47,19 @@ module Paste : sig
   type t
   (** The type for text paste events.
 
-      Wraps pasted text with propagation and default-prevention flags. See
-      {!Key.t} for a description of the dispatch model. *)
+      Wraps pasted text with a default-prevention flag. See {!Key.t} for a
+      description of the dispatch model. *)
 
   val of_text : string -> t
-  (** [of_text s] is a paste event containing [s]. Propagation and
-      default-prevention flags start as [false]. *)
+  (** [of_text s] is a paste event containing [s]. The default-prevention flag
+      starts as [false]. *)
 
   val text : t -> string
   (** [text t] is the pasted text carried by [t]. *)
 
-  val stop_propagation : t -> unit
-  (** [stop_propagation t] prevents [t] from reaching the focused-node handler
-      tier. When called in a global handler, the event is not dispatched to
-      focused-node handlers. *)
-
-  val propagation_stopped : t -> bool
-  (** [propagation_stopped t] is [true] iff {!stop_propagation} has been called
-      on [t]. *)
-
   val prevent_default : t -> unit
-  (** [prevent_default t] marks renderer-level default behaviour as prevented.
-      After global paste handlers run, delivery to the focused node is
-      suppressed. *)
+  (** [prevent_default t] marks [t] as consumed: remaining handlers on the
+      focused renderable and its default paste behaviour are skipped. *)
 
   val default_prevented : t -> bool
   (** [default_prevented t] is [true] iff {!prevent_default} has been called on

@@ -17,34 +17,24 @@ let key_of_input_roundtrip () =
   is_true ~msg:"data roundtrip"
     (Input.Key.equal_event (Event.Key.data ev) key_ev_a)
 
-let key_fresh_propagation () =
-  let ev = Event.Key.of_input key_ev_a in
-  is_false ~msg:"propagation not stopped" (Event.Key.propagation_stopped ev)
-
 let key_fresh_default () =
   let ev = Event.Key.of_input key_ev_a in
   is_false ~msg:"default not prevented" (Event.Key.default_prevented ev)
-
-let key_stop_propagation () =
-  let ev = Event.Key.of_input key_ev_a in
-  Event.Key.stop_propagation ev;
-  is_true ~msg:"propagation stopped" (Event.Key.propagation_stopped ev)
 
 let key_prevent_default () =
   let ev = Event.Key.of_input key_ev_a in
   Event.Key.prevent_default ev;
   is_true ~msg:"default prevented" (Event.Key.default_prevented ev)
 
-let key_stop_propagation_sticky () =
+let key_prevent_default_sticky () =
   let ev = Event.Key.of_input key_ev_a in
-  Event.Key.stop_propagation ev;
-  Event.Key.stop_propagation ev;
-  is_true ~msg:"still stopped" (Event.Key.propagation_stopped ev)
+  Event.Key.prevent_default ev;
+  Event.Key.prevent_default ev;
+  is_true ~msg:"still prevented" (Event.Key.default_prevented ev)
 
 let key_equal_ignores_dispatch () =
   let a = Event.Key.of_input key_ev_a in
   let b = Event.Key.of_input key_ev_a in
-  Event.Key.stop_propagation a;
   Event.Key.prevent_default a;
   is_true ~msg:"equal despite dispatch" (Event.Key.equal a b)
 
@@ -61,20 +51,17 @@ let paste_roundtrip () =
 
 let paste_fresh_dispatch () =
   let ev = Event.Paste.of_text "x" in
-  is_false ~msg:"propagation" (Event.Paste.propagation_stopped ev);
   is_false ~msg:"default" (Event.Paste.default_prevented ev)
 
-let paste_flags_independent () =
+let paste_prevent_default () =
   let ev = Event.Paste.of_text "x" in
-  Event.Paste.stop_propagation ev;
   Event.Paste.prevent_default ev;
-  is_true ~msg:"propagation" (Event.Paste.propagation_stopped ev);
   is_true ~msg:"default" (Event.Paste.default_prevented ev)
 
 let paste_equal_text_only () =
   let a = Event.Paste.of_text "same" in
   let b = Event.Paste.of_text "same" in
-  Event.Paste.stop_propagation a;
+  Event.Paste.prevent_default a;
   is_true ~msg:"equal" (Event.Paste.equal a b)
 
 let paste_equal_different () =
@@ -284,11 +271,9 @@ let () =
       group "Key"
         [
           test "of_input roundtrip" key_of_input_roundtrip;
-          test "fresh propagation not stopped" key_fresh_propagation;
           test "fresh default not prevented" key_fresh_default;
-          test "stop_propagation sets flag" key_stop_propagation;
           test "prevent_default sets flag" key_prevent_default;
-          test "stop_propagation is sticky" key_stop_propagation_sticky;
+          test "prevent_default is sticky" key_prevent_default_sticky;
           test "equal ignores dispatch control" key_equal_ignores_dispatch;
           test "equal detects different keys" key_equal_different_keys;
         ];
@@ -296,7 +281,7 @@ let () =
         [
           test "of_text roundtrip" paste_roundtrip;
           test "fresh dispatch state" paste_fresh_dispatch;
-          test "flags are independent" paste_flags_independent;
+          test "prevent_default sets flag" paste_prevent_default;
           test "equal compares text only" paste_equal_text_only;
           test "equal detects different text" paste_equal_different;
           test "empty paste" paste_empty;

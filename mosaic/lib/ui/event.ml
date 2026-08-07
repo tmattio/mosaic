@@ -1,6 +1,7 @@
 (* {1 Dispatch control} *)
 
-(* Shared propagation/default-prevention state used by Key, Paste, and Mouse. *)
+(* Propagation/default-prevention state used by Mouse. Key and Paste target
+   the focused node only, so they carry just a default-prevention flag. *)
 module Dispatch_control = struct
   type t = {
     mutable propagation_stopped : bool;
@@ -17,14 +18,12 @@ end
 (* {1 Keyboard events} *)
 
 module Key = struct
-  type t = { data : Input.Key.event; ctl : Dispatch_control.t }
+  type t = { data : Input.Key.event; mutable default_prevented : bool }
 
-  let of_input data = { data; ctl = Dispatch_control.create () }
+  let of_input data = { data; default_prevented = false }
   let data t = t.data
-  let stop_propagation t = Dispatch_control.stop_propagation t.ctl
-  let propagation_stopped t = Dispatch_control.propagation_stopped t.ctl
-  let prevent_default t = Dispatch_control.prevent_default t.ctl
-  let default_prevented t = Dispatch_control.default_prevented t.ctl
+  let prevent_default t = t.default_prevented <- true
+  let default_prevented t = t.default_prevented
   let equal a b = Input.Key.equal_event a.data b.data
   let pp ppf t = Input.Key.pp_event ppf t.data
 end
@@ -32,14 +31,12 @@ end
 (* {1 Paste events} *)
 
 module Paste = struct
-  type t = { text : string; ctl : Dispatch_control.t }
+  type t = { text : string; mutable default_prevented : bool }
 
-  let of_text text = { text; ctl = Dispatch_control.create () }
+  let of_text text = { text; default_prevented = false }
   let text t = t.text
-  let stop_propagation t = Dispatch_control.stop_propagation t.ctl
-  let propagation_stopped t = Dispatch_control.propagation_stopped t.ctl
-  let prevent_default t = Dispatch_control.prevent_default t.ctl
-  let default_prevented t = Dispatch_control.default_prevented t.ctl
+  let prevent_default t = t.default_prevented <- true
+  let default_prevented t = t.default_prevented
   let equal a b = String.equal a.text b.text
   let pp ppf t = Format.fprintf ppf "Paste(%S)" t.text
 end
