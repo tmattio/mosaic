@@ -304,6 +304,44 @@ let sgr_shared_attr_disable_reenables_survivor () =
   check_seq "bold disabled and dim restored" "\x1b[22;2m"
     (Bytes.to_string (Writer.slice w2))
 
+let sgr_enclosure_disable_group () =
+  (* SGR 54 clears both Framed and Encircled; the diff must treat the pair as
+     one group when disabling and re-enabling survivors. *)
+  let buf = Bytes.create 128 in
+  (* Encircled -> none must emit the shared disable code, not an empty CSI m
+     (which terminals treat as a full SGR reset). *)
+  let state = Sgr_state.create () in
+  let w1 = Writer.make buf in
+  Sgr_state.update state w1 ~fg:Color.default ~bg:Color.default
+    ~attrs:(Attr.pack Attr.encircled) ~link:"";
+  let w2 = Writer.make buf in
+  Sgr_state.update state w2 ~fg:Color.default ~bg:Color.default ~attrs:0
+    ~link:"";
+  check_seq "encircled disabled via 54" "\x1b[54m"
+    (Bytes.to_string (Writer.slice w2));
+  (* Overline+Encircled -> Encircled: dropping overline must not emit 54. *)
+  let state = Sgr_state.create () in
+  let w1 = Writer.make buf in
+  Sgr_state.update state w1 ~fg:Color.default ~bg:Color.default
+    ~attrs:(Attr.pack (Attr.union Attr.overline Attr.encircled))
+    ~link:"";
+  let w2 = Writer.make buf in
+  Sgr_state.update state w2 ~fg:Color.default ~bg:Color.default
+    ~attrs:(Attr.pack Attr.encircled) ~link:"";
+  check_seq "overline drop keeps encircled" "\x1b[55m"
+    (Bytes.to_string (Writer.slice w2));
+  (* Framed+Encircled -> Framed: disable via 54, then re-enable framed. *)
+  let state = Sgr_state.create () in
+  let w1 = Writer.make buf in
+  Sgr_state.update state w1 ~fg:Color.default ~bg:Color.default
+    ~attrs:(Attr.pack (Attr.union Attr.framed Attr.encircled))
+    ~link:"";
+  let w2 = Writer.make buf in
+  Sgr_state.update state w2 ~fg:Color.default ~bg:Color.default
+    ~attrs:(Attr.pack Attr.framed) ~link:"";
+  check_seq "encircled disabled and framed restored" "\x1b[54;51m"
+    (Bytes.to_string (Writer.slice w2))
+
 let sgr_same_rgba_different_intent_emits_color_delta () =
   let buf = Bytes.create 128 in
   let state = Sgr_state.create () in
@@ -798,6 +836,7 @@ let tests =
           sgr_background_only_change_does_not_reset;
         test "shared attr disable reenables survivor"
           sgr_shared_attr_disable_reenables_survivor;
+        test "enclosure shared disable group" sgr_enclosure_disable_group;
         test "same rgba different intent emits color delta"
           sgr_same_rgba_different_intent_emits_color_delta;
         test "transparent bg reset" sgr_transparent_bg_resets;

@@ -178,26 +178,45 @@ let emit_attrs w attrs =
       Escape.sgr_sep w;
       Escape.sgr_code w 52))
 
+(* SGR disable codes 22, 24 and 54 each clear a pair of attributes (Bold/Dim,
+   Underline/Double_underline, Framed/Encircled). The diff must treat each pair
+   as one group: disabling one member re-enables the survivor. Masks are
+   derived from Attr so they cannot drift from the bit layout. *)
+let intensity_group = Attr.pack (Attr.union Attr.bold Attr.dim)
+
+let underline_group =
+  Attr.pack (Attr.union Attr.underline Attr.double_underline)
+
+let enclosure_group = Attr.pack (Attr.union Attr.framed Attr.encircled)
+
 let emit_attrs_diff w first prev attrs =
   let removed = prev land lnot attrs in
   let added = attrs land lnot prev in
   let added =
-    if removed land 0x003 <> 0 then added lor (attrs land 0x003) else added
+    if removed land intensity_group <> 0 then
+      added lor (attrs land intensity_group)
+    else added
   in
   let added =
-    if removed land 0x108 <> 0 then added lor (attrs land 0x108) else added
+    if removed land underline_group <> 0 then
+      added lor (attrs land underline_group)
+    else added
   in
   let added =
-    if removed land 0x600 <> 0 then added lor (attrs land 0x600) else added
+    if removed land enclosure_group <> 0 then
+      added lor (attrs land enclosure_group)
+    else added
   in
   let first =
-    if removed land 0x003 <> 0 then emit_sgr_code w first 22 else first
+    if removed land intensity_group <> 0 then emit_sgr_code w first 22
+    else first
   in
   let first =
     if removed land 0x004 <> 0 then emit_sgr_code w first 23 else first
   in
   let first =
-    if removed land 0x108 <> 0 then emit_sgr_code w first 24 else first
+    if removed land underline_group <> 0 then emit_sgr_code w first 24
+    else first
   in
   let first =
     if removed land 0x010 <> 0 then emit_sgr_code w first 25 else first
@@ -212,7 +231,8 @@ let emit_attrs_diff w first prev attrs =
     if removed land 0x080 <> 0 then emit_sgr_code w first 29 else first
   in
   let first =
-    if removed land 0x600 <> 0 then emit_sgr_code w first 54 else first
+    if removed land enclosure_group <> 0 then emit_sgr_code w first 54
+    else first
   in
   let first =
     if removed land 0x200 <> 0 then emit_sgr_code w first 55 else first
