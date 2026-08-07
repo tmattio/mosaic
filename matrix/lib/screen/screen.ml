@@ -433,10 +433,6 @@ let commit_frame r =
   clear_unpresented_rows r r.e_presented_height;
   finalize_frame r
 
-let emit_to_bytes frame ~mode ~scroll_hint ~viewport bytes =
-  let writer = Ansi.Writer.make bytes in
-  emit_frame frame ~mode ~scroll_hint ~viewport ~writer
-
 let grow_capacity current required =
   if required > Sys.max_string_length then raise_notrace Ansi.Writer.Buffer_full;
   let doubled =
@@ -460,13 +456,6 @@ let emit_to_render_bytes frame ~mode ~scroll_hint ~viewport =
     frame.render_bytes <- Bytes.create capacity;
     frame.render_writer <- Ansi.Writer.make frame.render_bytes;
     emit_frame frame ~mode ~scroll_hint ~viewport ~writer:frame.render_writer
-
-let render_to_bytes ?(full = false) ?scroll_hint ?viewport frame bytes =
-  let mode = if full then `Full else `Diff in
-  prepare_frame frame;
-  emit_to_bytes frame ~mode ~scroll_hint ~viewport bytes;
-  commit_frame frame;
-  frame.e_output_len
 
 let render ?(full = false) ?scroll_hint ?viewport frame =
   let mode = if full then `Full else `Diff in

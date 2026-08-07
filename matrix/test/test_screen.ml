@@ -35,12 +35,6 @@ let contains_substring needle haystack =
     true
   with Not_found -> false
 
-let expect_writer_overflow f =
-  try
-    f ();
-    fail "expected writer overflow"
-  with Ansi.Writer.Buffer_full -> ()
-
 let viewport height = { Screen.y = 0; height }
 
 (* 1. Core Rendering Tests *)
@@ -183,49 +177,6 @@ let test_color_depth_reaches_sgr_emission () =
     (contains_substring "\027[0;38;5;9m" output);
   is_false ~msg:"screen did not emit truecolor"
     (contains_substring "38;2;255;0;0" output)
-
-let test_render_to_bytes_overflow_does_not_commit_scrolled_baseline () =
-  let r = Screen.create () in
-  let f1 =
-    build_screen r ~width:1 ~height:3 (fun grid _hits ->
-        Grid.draw_text grid ~x:0 ~y:0 ~text:"A";
-        Grid.draw_text grid ~x:0 ~y:1 ~text:"B";
-        Grid.draw_text grid ~x:0 ~y:2 ~text:"C")
-  in
-  let _ = Screen.render f1 in
-  let f2 =
-    build_screen r ~width:1 ~height:3 (fun grid _hits ->
-        Grid.draw_text grid ~x:0 ~y:0 ~text:"B";
-        Grid.draw_text grid ~x:0 ~y:1 ~text:"C";
-        Grid.draw_text grid ~x:0 ~y:2 ~text:"D")
-  in
-  expect_writer_overflow (fun () ->
-      ignore
-        (Screen.render_to_bytes
-           ~scroll_hint:{ Screen.top = 0; bottom = 2; delta = 1 }
-           f2 (Bytes.create 4)
-          : int));
-  let output = Screen.render f2 in
-  is_true ~msg:"retry without scroll hint still emits B"
-    (String.contains output 'B');
-  is_true ~msg:"retry without scroll hint still emits C"
-    (String.contains output 'C');
-  is_true ~msg:"retry without scroll hint emits D" (String.contains output 'D')
-
-let test_render_to_bytes_overflow_does_not_activate_hit_grid () =
-  let r = Screen.create () in
-  let frame =
-    build_screen r ~width:3 ~height:1 (fun grid hits ->
-        Grid.draw_text grid ~x:0 ~y:0 ~text:"abc";
-        Screen.Hit_grid.add hits ~x:1 ~y:0 ~width:1 ~height:1 ~id:42)
-  in
-  expect_writer_overflow (fun () ->
-      ignore (Screen.render_to_bytes frame Bytes.empty : int));
-  equal ~msg:"overflow leaves hit grid inactive" int 0
-    (Screen.query_hit frame ~x:1 ~y:0);
-  let _ = Screen.render frame in
-  equal ~msg:"successful render activates hit grid" int 42
-    (Screen.query_hit frame ~x:1 ~y:0)
 
 (* 2. Diff Algorithm Tests *)
 
@@ -1126,10 +1077,6 @@ let () =
           test "Styled frame resets SGR" test_styled_frame_resets_sgr;
           test "Color depth reaches SGR emission"
             test_color_depth_reaches_sgr_emission;
-          test "Overflow does not commit scrolled baseline"
-            test_render_to_bytes_overflow_does_not_commit_scrolled_baseline;
-          test "Overflow does not activate hit grid"
-            test_render_to_bytes_overflow_does_not_activate_hit_grid;
         ];
       group "Diff Algorithm"
         [

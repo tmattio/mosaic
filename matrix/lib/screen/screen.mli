@@ -160,9 +160,9 @@ type viewport = {
 }
 (** A terminal viewport rendered by the screen.
 
-    [None] in {!render}, {!render_to_buffer}, and {!render_to_bytes} means
-    render the full next grid at the screen's current {!row_offset}. [Some v]
-    renders the first [v.height] grid rows at terminal row offset [v.y]. *)
+    [None] in {!render} and {!render_to_buffer} means render the full next grid
+    at the screen's current {!row_offset}. [Some v] renders the first [v.height]
+    grid rows at terminal row offset [v.y]. *)
 
 val render :
   ?full:bool -> ?scroll_hint:scroll_hint -> ?viewport:viewport -> t -> string
@@ -181,7 +181,8 @@ val render :
     - [viewport] renders into an explicit terminal surface. Rows outside the
       viewport are not presented and do not become active hit regions.
 
-    See also {!render_to_buffer} and {!render_to_bytes}. *)
+    [render] copies the retained output into a fresh string every call; hot
+    paths should prefer {!render_to_buffer}. *)
 
 val render_to_buffer :
   ?full:bool ->
@@ -191,20 +192,9 @@ val render_to_buffer :
   Buffer.t ->
   unit
 (** [render_to_buffer ~full ~scroll_hint ~viewport t buf] is like {!render}, but
-    appends the ANSI output to [buf]. Output storage is retained by [t], so
-    frames within the prior high-water mark allocate no output scratch. *)
-
-val render_to_bytes :
-  ?full:bool ->
-  ?scroll_hint:scroll_hint ->
-  ?viewport:viewport ->
-  t ->
-  Bytes.t ->
-  int
-(** [render_to_bytes ~full ~scroll_hint ~viewport t buf] is like {!render} but
-    writes into [buf] and is the number of bytes written. [buf] must be large
-    enough for the output. Raises {!Ansi.Writer.Buffer_full} without committing
-    the frame when capacity is insufficient. *)
+    appends the ANSI output to [buf]. This is the intended per-frame eliminator:
+    output storage is retained by [t], so frames within the prior high-water
+    mark allocate no output scratch. *)
 
 (** {1:screen_state Screen state} *)
 
