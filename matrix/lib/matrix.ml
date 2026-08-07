@@ -733,16 +733,24 @@ let cursor_output_position t ~(cursor : Screen.cursor) ~cursor_max_row =
           1 )
   | None -> None
 
-let cursor_dirty t ~(cursor : Screen.cursor) ~cursor_max_row =
-  let position = cursor_output_position t ~cursor ~cursor_max_row in
-  position <> t.last_cursor_position
-  || Some cursor.visible <> t.last_cursor_visible
-  || cursor.visible
-     && (Some (cursor_shape cursor) <> t.last_cursor_shape
-        || Some cursor.color <> t.last_cursor_color)
+(* Allocation-free "changed since last frame" checks: comparing through the
+   stored options directly avoids wrapping the current value in [Some]. *)
+let[@inline] visible_dirty t visible =
+  match t.last_cursor_visible with Some v -> v <> visible | None -> true
 
-let apply_cursor_state t ~buf ~(cursor : Screen.cursor) ~cursor_max_row =
-  let position = cursor_output_position t ~cursor ~cursor_max_row in
+let[@inline] shape_dirty t shape =
+  match t.last_cursor_shape with Some s -> s <> shape | None -> true
+
+let[@inline] color_dirty t color =
+  match t.last_cursor_color with Some c -> c <> color | None -> true
+
+let cursor_dirty t ~(cursor : Screen.cursor) ~position =
+  position <> t.last_cursor_position
+  || visible_dirty t cursor.visible
+  || cursor.visible
+     && (shape_dirty t (cursor_shape cursor) || color_dirty t cursor.color)
+
+let apply_cursor_state t ~buf ~(cursor : Screen.cursor) ~position =
   (match position with
   | Some (row, col) ->
       buf_cursor_position buf ~row ~col;
@@ -750,12 +758,12 @@ let apply_cursor_state t ~buf ~(cursor : Screen.cursor) ~cursor_max_row =
   | None -> ());
   if cursor.visible then begin
     let shape = cursor_shape cursor in
-    if Some shape <> t.last_cursor_shape then begin
+    if shape_dirty t shape then begin
       Buffer.add_string buf Ansi.(to_string (cursor_style ~shape));
       Terminal.note_appearance_emitted t.terminal `Cursor_style;
       t.last_cursor_shape <- Some shape
     end;
-    if Some cursor.color <> t.last_cursor_color then begin
+    if color_dirty t cursor.color then begin
       (match cursor.color with
       | Some (r, g, b) ->
           Buffer.add_string buf Ansi.(to_string (cursor_color ~r ~g ~b));
@@ -864,13 +872,12 @@ let submit ?primary_required_rows t =
           | None -> (Primary.live_region t.primary).height)
       | `Alt -> t.height
     in
-    if
-      Buffer.length buf > preamble_len || cursor_dirty t ~cursor ~cursor_max_row
-    then begin
+    let position = cursor_output_position t ~cursor ~cursor_max_row in
+    if Buffer.length buf > preamble_len || cursor_dirty t ~cursor ~position then begin
       if t.config.mode = `Alt then
         Buffer.add_string buf
           Ansi.(to_string (cursor_position ~row:t.height ~col:1));
-      apply_cursor_state t ~buf ~cursor ~cursor_max_row;
+      apply_cursor_state t ~buf ~cursor ~position;
       if use_sync then Buffer.add_string buf sync_output_off;
 
       let len = Buffer.length buf in

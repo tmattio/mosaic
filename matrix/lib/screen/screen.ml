@@ -26,6 +26,22 @@ type frame_metrics = {
   timestamp_s : float;
 }
 
+(* Mutable mirrors of the public [frame_metrics] and of the per-frame emit
+   results. Floats live in all-float records so per-frame stores stay unboxed;
+   the public records are materialized only on demand. *)
+type metrics_floats = {
+  mutable m_frame_time_ms : float;
+  mutable m_interval_ms : float;
+  mutable m_reset_ms : float;
+  mutable m_timestamp_s : float;
+}
+
+type emit_floats = {
+  mutable e_now : float;
+  mutable e_delta_seconds : float;
+  mutable e_elapsed_ms : float;
+}
+
 type cursor = {
   position : (int * int) option;
   style : Ansi.cursor_style;
@@ -47,7 +63,17 @@ type t = {
   (* Configuration *)
   clock : unit -> float;
   stats : stats_state;
-  mutable last_metrics : frame_metrics;
+  metrics_f : metrics_floats;
+  mutable m_cells : int;
+  mutable m_bytes : int;
+  mutable m_cursor_visible : bool;
+  emit_f : emit_floats;
+  mutable e_cells : int;
+  mutable e_output_len : int;
+  mutable e_presented_height : int;
+  (* The last cursor state given to [set_cursor], pre-normalized, so reads
+     allocate nothing. *)
+  mutable cursor_snapshot : cursor;
   (* Buffers. [current] is the last committed terminal state. [next] is the
      frame being built. [scroll_baseline] is scratch space for the
      scroll-adjusted previous state used while emitting a scroll-hinted diff. *)
@@ -64,7 +90,8 @@ type t = {
   mutable scratch_bytes : bytes;
   (* Retained ANSI output capacity; grows only past its high-water mark. *)
   mutable render_bytes : bytes;
-  mutable last_render_time : float option;
+  (* Clock time of the last committed frame; nan before the first frame. *)
+  mutable last_render_time : float;
   (* Capabilities *)
   mutable prefer_explicit_width : bool;
   mutable explicit_width_capable : bool;
@@ -129,17 +156,6 @@ let[@inline] add_code_to_writer ~explicit_width ~explicit_cursor_positioning
 (* --- Core Rendering Logic --- *)
 
 type render_mode = [ `Diff | `Full ]
-type prepared_frame = { now : float; delta_seconds : float }
-
-type emitted_frame = {
-  now : float;
-  delta_seconds : float;
-  elapsed_ms : float;
-  cells : int;
-  output_len : int;
-  presented_height : int;
-  scratch_bytes : bytes;
-}
 
 (* The hot loop. Scans grid, checks dirty flags, diffs against previous frame,
    and emits sequences while reusing renderer state and scratch buffers. *)
@@ -150,10 +166,10 @@ let render_generic ~row_offset ~use_explicit_width
   let height = clamp_height curr height in
   let row_offset = max 0 row_offset in
 
-  (* Extract prev grid dimensions once - no tuple allocation *)
-  let prev_width = match prev with None -> 0 | Some p -> Grid.width p in
-  let prev_height_raw = match prev with None -> 0 | Some p -> Grid.height p in
-  let prev_height = min prev_height_raw height in
+  (* Extract prev grid dimensions once - no tuple allocation. [prev] is only
+     consulted in [`Diff] mode; [`Full] ignores it. *)
+  let prev_width = Grid.width prev in
+  let prev_height = min (Grid.height prev) height in
 
   (* Inline cell change detection - no closure allocation *)
   let[@inline] is_cell_changed y x idx curr_width =
@@ -161,14 +177,11 @@ let render_generic ~row_offset ~use_explicit_width
     else
       match mode with
       | `Full -> true
-      | `Diff -> (
+      | `Diff ->
           if y >= prev_height || x >= prev_width then true
           else
-            match prev with
-            | None -> true
-            | Some p ->
-                let prev_idx = (y * prev_width) + x in
-                not (Grid.cells_equal p prev_idx curr idx))
+            let prev_idx = (y * prev_width) + x in
+            not (Grid.cells_equal prev prev_idx curr idx)
   in
 
   (* SGR State Tracking - use pre-allocated state *)
@@ -220,24 +233,18 @@ let render_generic ~row_offset ~use_explicit_width
            continuation cells of wide spans, so this only fires for null
            cells (and malformed orphan continuations). *)
         (if mode = `Diff && y < prev_height && x < prev_width then
-           match prev with
-           | None -> ()
-           | Some p ->
-               let prev_idx = (y * prev_width) + x in
-               if not (Grid.cells_equal p prev_idx curr idx) then (
-                 Ansi.cursor_position
-                   ~row:(row_offset + y + 1)
-                   ~col:(x + 1) writer;
-                 let link =
-                   if use_hyperlinks then
-                     Grid.hyperlink_url_direct curr (Grid.get_link curr idx)
-                   else ""
-                 in
-                 Ansi.Sgr_state.update sgr_state writer
-                   ~fg:(Grid.get_fg curr idx) ~bg:(Grid.get_bg curr idx)
-                   ~attrs:(Grid.get_attrs curr idx) ~link;
-                 Ansi.emit (Ansi.char ' ') writer;
-                 Ansi.Sgr_state.close_link sgr_state writer));
+           let prev_idx = (y * prev_width) + x in
+           if not (Grid.cells_equal prev prev_idx curr idx) then (
+             Ansi.cursor_position ~row:(row_offset + y + 1) ~col:(x + 1) writer;
+             let link =
+               if use_hyperlinks then
+                 Grid.hyperlink_url_direct curr (Grid.get_link curr idx)
+               else ""
+             in
+             Ansi.Sgr_state.update sgr_state writer ~fg:(Grid.get_fg curr idx)
+               ~bg:(Grid.get_bg curr idx) ~attrs:(Grid.get_attrs curr idx) ~link;
+             Ansi.emit (Ansi.char ' ') writer;
+             Ansi.Sgr_state.close_link sgr_state writer));
         process_cols y (x + 1) row_cells)
       else if is_cell_changed y x idx curr_width then (
         (* Move cursor to start of changed run *)
@@ -308,18 +315,19 @@ let post_processes r =
 
 let prepare_frame r =
   let now = r.clock () in
+  let prev = r.last_render_time in
   let delta_seconds =
-    match r.last_render_time with
-    | None -> 0.
-    | Some prev ->
-        let delta = now -. prev in
-        if delta <= 0. then 0. else delta
+    if Float.is_nan prev then 0.
+    else
+      let delta = now -. prev in
+      if delta <= 0. then 0. else delta
   in
   let delta_ms = delta_seconds *. 1000. in
   List.iter ~f:(fun fn -> fn r.next ~delta:delta_ms) (post_processes r);
-  { now; delta_seconds }
+  r.emit_f.e_now <- now;
+  r.emit_f.e_delta_seconds <- delta_seconds
 
-let finalize_frame r ~now ~delta_seconds ~elapsed_ms ~cells ~output_len =
+let finalize_frame r =
   let t_reset_start = r.clock () in
 
   (* Swap buffers; [next] is cleared to provide a fresh canvas for the
@@ -331,23 +339,17 @@ let finalize_frame r ~now ~delta_seconds ~elapsed_ms ~cells ~output_len =
 
   (* Update Stats *)
   r.stats.frame_count <- r.stats.frame_count + 1;
-  r.stats.total_cells <- r.stats.total_cells + cells;
-  r.stats.total_bytes <- r.stats.total_bytes + output_len;
+  r.stats.total_cells <- r.stats.total_cells + r.e_cells;
+  r.stats.total_bytes <- r.stats.total_bytes + r.e_output_len;
 
   (* Snapshot Metrics *)
-  let next_m =
-    {
-      frame_count = r.stats.frame_count;
-      cells;
-      bytes = output_len;
-      frame_time_ms = elapsed_ms;
-      interval_ms = delta_seconds *. 1000.;
-      reset_ms;
-      cursor_visible = Cursor_state.is_visible r.cursor;
-      timestamp_s = now;
-    }
-  in
-  r.last_metrics <- next_m
+  r.metrics_f.m_frame_time_ms <- r.emit_f.e_elapsed_ms;
+  r.metrics_f.m_interval_ms <- r.emit_f.e_delta_seconds *. 1000.;
+  r.metrics_f.m_reset_ms <- reset_ms;
+  r.metrics_f.m_timestamp_s <- r.emit_f.e_now;
+  r.m_cells <- r.e_cells;
+  r.m_bytes <- r.e_output_len;
+  r.m_cursor_visible <- Cursor_state.is_visible r.cursor
 
 let presented_height r height = clamp_height r.next height
 
@@ -395,21 +397,23 @@ let apply_scroll_hint ~(writer : Ansi.writer) ~row_offset ~height ~current hint
       Ansi.emit Ansi.reset_scrolling_region writer;
       Ansi.cursor_position ~row:(row_offset + 1) ~col:1 writer
 
+(* In [`Full] mode the returned grid is never consulted; [r.current] stands
+   in so the caller needs no option. *)
 let prepare_diff_baseline (r : t) ~mode ~scroll_hint ~row_offset ~height
     ~(writer : Ansi.writer) =
   match (mode, scroll_hint) with
-  | `Full, _ -> None
-  | `Diff, None -> Some r.current
+  | `Full, _ -> r.current
+  | `Diff, None -> r.current
   | `Diff, Some hint ->
       (* Scroll hints describe terminal-side movement. Apply them to a
          temporary baseline so output failures cannot corrupt [current]. *)
       Grid.blit ~src:r.current ~dst:r.scroll_baseline;
       apply_scroll_hint ~writer ~row_offset ~height ~current:r.scroll_baseline
         hint;
-      Some r.scroll_baseline
+      r.scroll_baseline
 
-let emit_frame (r : t) ({ now; delta_seconds } : prepared_frame)
-    ~(mode : render_mode) ~scroll_hint ~viewport ~(writer : Ansi.writer) =
+let emit_frame (r : t) ~(mode : render_mode) ~scroll_hint ~viewport
+    ~(writer : Ansi.writer) =
   let row_offset, height = effective_viewport r viewport in
   let scratch = ref r.scratch_bytes in
   let render_start = r.clock () in
@@ -427,28 +431,20 @@ let emit_frame (r : t) ({ now; delta_seconds } : prepared_frame)
       Ansi.Sgr_state.reset r.sgr_state;
       Printexc.raise_with_backtrace exn bt
   in
-  let elapsed_ms = (r.clock () -. render_start) *. 1000. in
-  {
-    now;
-    delta_seconds;
-    elapsed_ms;
-    cells;
-    output_len = Ansi.Writer.len writer;
-    presented_height = presented_height r height;
-    scratch_bytes = !scratch;
-  }
+  r.emit_f.e_elapsed_ms <- (r.clock () -. render_start) *. 1000.;
+  r.e_cells <- cells;
+  r.e_output_len <- Ansi.Writer.len writer;
+  r.e_presented_height <- presented_height r height;
+  r.scratch_bytes <- !scratch
 
-let commit_frame r emitted =
-  r.last_render_time <- Some emitted.now;
-  r.scratch_bytes <- emitted.scratch_bytes;
-  clear_unpresented_rows r emitted.presented_height;
-  finalize_frame r ~now:emitted.now ~delta_seconds:emitted.delta_seconds
-    ~elapsed_ms:emitted.elapsed_ms ~cells:emitted.cells
-    ~output_len:emitted.output_len
+let commit_frame r =
+  r.last_render_time <- r.emit_f.e_now;
+  clear_unpresented_rows r r.e_presented_height;
+  finalize_frame r
 
-let emit_to_bytes frame prepared ~mode ~scroll_hint ~viewport bytes =
+let emit_to_bytes frame ~mode ~scroll_hint ~viewport bytes =
   let writer = Ansi.Writer.make bytes in
-  emit_frame frame prepared ~mode ~scroll_hint ~viewport ~writer
+  emit_frame frame ~mode ~scroll_hint ~viewport ~writer
 
 let grow_capacity current required =
   if required > Sys.max_string_length then raise_notrace Ansi.Writer.Buffer_full;
@@ -460,46 +456,37 @@ let grow_capacity current required =
   if capacity <= current then raise_notrace Ansi.Writer.Buffer_full;
   capacity
 
-let emit_to_render_bytes frame prepared ~mode ~scroll_hint ~viewport =
-  try
-    emit_to_bytes frame prepared ~mode ~scroll_hint ~viewport frame.render_bytes
+let emit_to_render_bytes frame ~mode ~scroll_hint ~viewport =
+  try emit_to_bytes frame ~mode ~scroll_hint ~viewport frame.render_bytes
   with Ansi.Writer.Buffer_full ->
     let counter = Ansi.Writer.make_counting () in
-    let counted =
-      emit_frame frame prepared ~mode ~scroll_hint ~viewport ~writer:counter
-    in
+    emit_frame frame ~mode ~scroll_hint ~viewport ~writer:counter;
     let capacity =
-      grow_capacity (Bytes.length frame.render_bytes) counted.output_len
+      grow_capacity (Bytes.length frame.render_bytes) frame.e_output_len
     in
     frame.render_bytes <- Bytes.create capacity;
-    emit_to_bytes frame prepared ~mode ~scroll_hint ~viewport frame.render_bytes
+    emit_to_bytes frame ~mode ~scroll_hint ~viewport frame.render_bytes
 
 let render_to_bytes ?(full = false) ?scroll_hint ?viewport frame bytes =
   let mode = if full then `Full else `Diff in
-  let prepared = prepare_frame frame in
-  let emitted =
-    emit_to_bytes frame prepared ~mode ~scroll_hint ~viewport bytes
-  in
-  commit_frame frame emitted;
-  emitted.output_len
+  prepare_frame frame;
+  emit_to_bytes frame ~mode ~scroll_hint ~viewport bytes;
+  commit_frame frame;
+  frame.e_output_len
 
 let render ?(full = false) ?scroll_hint ?viewport frame =
   let mode = if full then `Full else `Diff in
-  let prepared = prepare_frame frame in
-  let emitted =
-    emit_to_render_bytes frame prepared ~mode ~scroll_hint ~viewport
-  in
-  commit_frame frame emitted;
-  Bytes.sub_string frame.render_bytes ~pos:0 ~len:emitted.output_len
+  prepare_frame frame;
+  emit_to_render_bytes frame ~mode ~scroll_hint ~viewport;
+  commit_frame frame;
+  Bytes.sub_string frame.render_bytes ~pos:0 ~len:frame.e_output_len
 
 let render_to_buffer ?(full = false) ?scroll_hint ?viewport frame buffer =
   let mode = if full then `Full else `Diff in
-  let prepared = prepare_frame frame in
-  let emitted =
-    emit_to_render_bytes frame prepared ~mode ~scroll_hint ~viewport
-  in
-  commit_frame frame emitted;
-  Buffer.add_subbytes buffer frame.render_bytes 0 emitted.output_len
+  prepare_frame frame;
+  emit_to_render_bytes frame ~mode ~scroll_hint ~viewport;
+  commit_frame frame;
+  Buffer.add_subbytes buffer frame.render_bytes 0 frame.e_output_len
 
 (* Creation & Management *)
 
@@ -518,16 +505,27 @@ let create ?width_method ?respect_alpha ?(cursor_visible = true)
     {
       clock;
       stats = { frame_count = 0; total_cells = 0; total_bytes = 0 };
-      last_metrics =
+      metrics_f =
         {
-          frame_count = 0;
-          cells = 0;
-          bytes = 0;
-          frame_time_ms = 0.;
-          interval_ms = 0.;
-          reset_ms = 0.;
-          cursor_visible;
-          timestamp_s = 0.;
+          m_frame_time_ms = 0.;
+          m_interval_ms = 0.;
+          m_reset_ms = 0.;
+          m_timestamp_s = 0.;
+        };
+      m_cells = 0;
+      m_bytes = 0;
+      m_cursor_visible = cursor_visible;
+      emit_f = { e_now = 0.; e_delta_seconds = 0.; e_elapsed_ms = 0. };
+      e_cells = 0;
+      e_output_len = 0;
+      e_presented_height = 0;
+      cursor_snapshot =
+        {
+          position = None;
+          style = `Block;
+          blinking = false;
+          color = None;
+          visible = cursor_visible;
         };
       current;
       next = Grid.create_like current ~width:1 ~height:1;
@@ -550,7 +548,7 @@ let create ?width_method ?respect_alpha ?(cursor_visible = true)
       scratch_bytes = Bytes.create 1024;
       (* Large enough for any grapheme *)
       render_bytes = Bytes.create initial_render_buffer_size;
-      last_render_time = None;
+      last_render_time = Float.nan;
     }
   in
   Cursor_state.set_visible t.cursor cursor_visible;
@@ -562,7 +560,7 @@ let reset t =
   Hit_grid.clear t.hit_current;
   Hit_grid.clear t.hit_next;
   t.next_state <- Pristine;
-  t.last_render_time <- None;
+  t.last_render_time <- Float.nan;
   t.stats.frame_count <- 0;
   t.stats.total_cells <- 0;
   t.stats.total_bytes <- 0;
@@ -580,7 +578,15 @@ let resize t ~width ~height =
     Hit_grid.resize t.hit_current ~width ~height;
     Hit_grid.resize t.hit_next ~width ~height;
     t.next_state <- Pristine;
-    Cursor_state.clamp_to_bounds t.cursor ~max_row:height ~max_col:width)
+    Cursor_state.clamp_to_bounds t.cursor ~max_row:height ~max_col:width;
+    let s = Cursor_state.snapshot t.cursor in
+    t.cursor_snapshot <-
+      {
+        t.cursor_snapshot with
+        position =
+          (if s.has_position then Some (max 0 (s.col - 1), max 0 (s.row - 1))
+           else None);
+      })
 
 (* Each build owns the complete frame: the next grid and hit grid are
    guaranteed cleared (or freshly resized) before [f] runs, so a second
@@ -637,7 +643,18 @@ let stats t =
     total_bytes = t.stats.total_bytes;
   }
 
-let last_metrics t = t.last_metrics
+let last_metrics t =
+  {
+    frame_count = t.stats.frame_count;
+    cells = t.m_cells;
+    bytes = t.m_bytes;
+    frame_time_ms = t.metrics_f.m_frame_time_ms;
+    interval_ms = t.metrics_f.m_interval_ms;
+    reset_ms = t.metrics_f.m_reset_ms;
+    cursor_visible = t.m_cursor_visible;
+    timestamp_s = t.metrics_f.m_timestamp_s;
+  }
+
 let clamp_byte v = max 0 (min 255 v)
 
 let set_cursor t cursor =
@@ -647,25 +664,21 @@ let set_cursor t cursor =
       Cursor_state.set_position t.cursor ~row:(max 0 y + 1) ~col:(max 0 x + 1));
   Cursor_state.set_visible t.cursor cursor.visible;
   Cursor_state.set_style t.cursor ~style:cursor.style ~blinking:cursor.blinking;
-  Cursor_state.set_color t.cursor
-    (Option.map
-       (fun (r, g, b) -> (clamp_byte r, clamp_byte g, clamp_byte b))
-       cursor.color)
+  let color =
+    Option.map
+      (fun (r, g, b) -> (clamp_byte r, clamp_byte g, clamp_byte b))
+      cursor.color
+  in
+  Cursor_state.set_color t.cursor color;
+  (* Store the normalized state so [cursor] reads allocate nothing. *)
+  let position =
+    match cursor.position with
+    | Some (x, y) when x < 0 || y < 0 -> Some (max 0 x, max 0 y)
+    | p -> p
+  in
+  t.cursor_snapshot <- { cursor with position; color }
 
-let cursor t =
-  let s = Cursor_state.snapshot t.cursor in
-  {
-    position =
-      (if s.has_position then Some (max 0 (s.col - 1), max 0 (s.row - 1))
-       else None);
-    style = s.style;
-    blinking = s.blinking;
-    color =
-      Option.map
-        (fun (r, g, b) -> (clamp_byte r, clamp_byte g, clamp_byte b))
-        s.color;
-    visible = s.visible;
-  }
+let cursor t = t.cursor_snapshot
 
 let apply_capabilities r ~explicit_width ~explicit_cursor_positioning
     ~hyperlinks ~color_depth =
