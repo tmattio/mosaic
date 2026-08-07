@@ -156,6 +156,9 @@ type app = {
      here (a fresh 4 KiB buffer per frame would be a direct major-heap
      allocation every submit). *)
   submit_buf : Buffer.t;
+  (* Retained scratch for handing [submit_buf]'s contents to [write_output]
+     without a per-frame string allocation; grows to the high-water mark. *)
+  mutable submit_scratch : bytes;
   (* Input events captured during startup (probe, primary anchor), replayed
      before the first backend read. *)
   mutable pending_startup_events : Input.t list;
@@ -867,11 +870,12 @@ let submit ?primary_required_rows t =
       if use_sync then
         Buffer.add_string buf Ansi.(to_string (disable Sync_output));
 
-      let frame_bytes = Buffer.contents buf in
-      t.backend.write_output
-        (Bytes.unsafe_of_string frame_bytes)
-        0
-        (String.length frame_bytes)
+      let len = Buffer.length buf in
+      if len > Bytes.length t.submit_scratch then
+        t.submit_scratch <-
+          Bytes.create (max len (2 * Bytes.length t.submit_scratch));
+      Buffer.blit buf 0 t.submit_scratch 0 len;
+      t.backend.write_output t.submit_scratch 0 len
     end;
 
     if t.frame_dump_every > 0 then (
@@ -1213,6 +1217,7 @@ let init_app (c : config) ~(backend : Backend.t) ~startup_events ~debug_overlay
       backend;
       screen;
       submit_buf = Buffer.create 4096;
+      submit_scratch = Bytes.create 4096;
       pending_startup_events = startup_events;
       running = true;
       redraw_requested = false;
