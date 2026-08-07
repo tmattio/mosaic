@@ -99,48 +99,27 @@ let invalid_utf8_fragments =
 let partial_escape_fragments =
   [ "\x1b"; "\x1b["; "\x1b[3"; "\x1b]0;x"; "\x1bP1$r" ]
 
-(* [full] mixes in invalid UTF-8 fragments and pure random bytes. The split
-   invariance property currently runs without them: Ansi.Parser's UTF-8
-   recovery at chunk boundaries diverges from the whole-feed decode (it
-   consumes a non-continuation byte into the pending sequence and collapses
-   per-byte replacement characters); that fix belongs to matrix/lib/ansi.
-   Safety and grid invariants are checked over the full generator. *)
-let fragment_gen ~full =
+(* One generator for every property: Ansi.Parser's UTF-8 recovery and
+   charset-designation handling are split-invariant, so invalid UTF-8 and
+   pure random bytes run through split invariance as well as safety. *)
+let fragment_gen =
   Gen.frequency
-    ([
-       (4, Gen.string_size (Gen.int_range 0 8) (Gen.char_range ' ' '~'));
-       (3, csi_gen);
-       (2, mode_gen);
-       (3, Gen.oneofl structural_fragments);
-       ( 2,
-         Gen.oneofl
-           (if full then valid_utf8_fragments @ invalid_utf8_fragments
-            else valid_utf8_fragments) );
-       (1, Gen.oneofl partial_escape_fragments);
-     ]
-    @ if full then [ (1, Gen.string_size (Gen.int_range 0 6) Gen.char) ] else []
-    )
+    [
+      (4, Gen.string_size (Gen.int_range 0 8) (Gen.char_range ' ' '~'));
+      (3, csi_gen);
+      (2, mode_gen);
+      (3, Gen.oneofl structural_fragments);
+      (2, Gen.oneofl (valid_utf8_fragments @ invalid_utf8_fragments));
+      (1, Gen.oneofl partial_escape_fragments);
+      (1, Gen.string_size (Gen.int_range 0 6) Gen.char);
+    ]
 
-(* An ESC immediately followed by a charset-selection byte crashes
-   Ansi.Parser when a read boundary separates the two bytes (reported
-   against matrix.ansi); keep the shape out of generated inputs until that
-   fix lands. *)
-let sanitize s =
-  let bytes = Bytes.of_string s in
-  for i = 0 to Bytes.length bytes - 2 do
-    if Bytes.get bytes i = '\x1b' then
-      match Bytes.get bytes (i + 1) with
-      | '%' | '(' | ')' | '*' | '+' -> Bytes.set bytes (i + 1) 'B'
-      | _ -> ()
-  done;
-  Bytes.unsafe_to_string bytes
-
-let case_gen ~full =
+let case_gen =
   let open Gen in
   let* rows = int_range 1 6 in
   let* cols = int_range 1 8 in
-  let* frags = list_size (int_range 0 12) (fragment_gen ~full) in
-  let s = sanitize (String.concat "" frags) in
+  let* frags = list_size (int_range 0 12) fragment_gen in
+  let s = String.concat "" frags in
   let+ cuts = list_size (int_range 0 6) (int_range 0 (String.length s)) in
   (rows, cols, s, cuts)
 
@@ -157,8 +136,7 @@ let pp_case fmt (rows, cols, s, cuts) =
   Format.fprintf fmt "%dx%d %S cut at [%s]" rows cols s
     (String.concat ";" (List.map string_of_int cuts))
 
-let full_case = testable ~pp:pp_case ~gen:(case_gen ~full:true) ()
-let clean_case = testable ~pp:pp_case ~gen:(case_gen ~full:false) ()
+let vte_case = testable ~pp:pp_case ~gen:case_gen ()
 
 (* Invariants ------------------------------------------------------------- *)
 
@@ -232,9 +210,9 @@ let props =
     { Windtrap_prop.Prop.default_config with count = 1000; max_gen = 1500 }
   in
   [
-    prop' ~config "feed is total and preserves grid invariants" full_case
+    prop' ~config "feed is total and preserves grid invariants" vte_case
       prop_safety_and_invariants;
-    prop' ~config "split invariance" clean_case prop_split_invariance;
+    prop' ~config "split invariance" vte_case prop_split_invariance;
   ]
 
 let () = run "matrix.vte.props" [ group "vte" props ]
