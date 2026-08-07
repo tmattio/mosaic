@@ -11,7 +11,7 @@ type draw_context = {
 
 let centered_text ~style lines =
   let open Image in
-  let images = List.map (fun s -> string ~style s) lines in
+  let images = List.map (fun s -> text ~style s) lines in
   let max_width =
     List.fold_left (fun acc img -> max acc (width img)) 0 images
   in
@@ -22,21 +22,21 @@ let outline_box ~style inner =
   let w = width inner and h = height inner in
   if w <= 0 || h <= 0 then inner
   else
-    let horizontal = string ~style (String.make w '-') in
-    let top = hcat [ string ~style "+"; horizontal; string ~style "+" ] in
+    let horizontal = text ~style (String.make w '-') in
+    let top = hcat [ text ~style "+"; horizontal; text ~style "+" ] in
     let middle =
-      let side = List.init h (fun _ -> string ~style "|") |> vcat in
+      let side = List.init h (fun _ -> text ~style "|") |> vcat in
       hcat [ side; inner; side ]
     in
-    let bottom = hcat [ string ~style "+"; horizontal; string ~style "+" ] in
+    let bottom = hcat [ text ~style "+"; horizontal; text ~style "+" ] in
     vcat [ top; middle; bottom ]
 
 let note_block lines =
   let open Image in
   let label_style = Style.make ~fg:Color.bright_white ~bold:true () in
   let text_style = Style.default in
-  let label = string ~style:label_style "Note:" in
-  let body = lines |> List.map (fun s -> string ~style:text_style s) |> vcat in
+  let label = text ~style:label_style "Note:" in
+  let body = lines |> List.map (fun s -> text ~style:text_style s) |> vcat in
   hcat [ label; hpad 1 0 body ]
 
 let text_lines =
@@ -191,7 +191,7 @@ let draw _app ctx () =
   in
   let bg = fill ~color:Color.black ~width:cols ~height:rows () in
   let img = overlay [ bg; content ] in
-  draw img ctx.grid ctx.hits
+  draw ~hits:ctx.hits img ctx.grid
 
 let update app event () =
   match event with

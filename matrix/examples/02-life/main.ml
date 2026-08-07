@@ -84,7 +84,7 @@ let dot_image =
   let open Image in
   let color = Color.bright_magenta in
   let style = Style.make ~fg:color () in
-  string ~style "●"
+  text ~style "●"
 
 let background_cell ~step x y =
   let open Image in
@@ -95,7 +95,7 @@ let background_cell ~step x y =
     int_of_float (Float.round level_float) |> max 0 |> min max_gray_level
   in
   let style = background_styles.(level) in
-  string ~style "."
+  text ~style "."
 
 let render st ctx =
   let open Image in
@@ -127,12 +127,12 @@ let render st ctx =
   in
   let status_style = Style.make ~fg:Color.bright_black () in
   let status_line =
-    string ~style:status_style status_text |> hsnap ~align:`Left cols
+    text ~style:status_style status_text |> hsnap ~align:`Left cols
   in
   let bg = fill ~color:Color.black ~width:cols ~height:rows () in
   let stacked = vcat [ world; status_line ] in
   let img = overlay [ bg; stacked ] in
-  draw img ctx.grid ctx.hits
+  draw ~hits:ctx.hits img ctx.grid
 
 let initial_state ~cols ~rows =
   let grid_rows = if rows > 0 then rows - 1 else 0 in

@@ -3,7 +3,7 @@
     An {e image} is an immutable rectangular description of drawing primitives
     (text, fills, boxes, hit regions). Images are pure values: composition
     functions like {!hcat} and {!overlay} rearrange flat primitive arrays
-    without side effects. Only {!render} performs actual drawing by walking the
+    without side effects. Only {!draw} performs actual drawing by walking the
     array and executing each primitive into a {!Grid.t}.
 
     {1:quick_start Quick start}
@@ -21,7 +21,7 @@
         [ header; Image.rule_h ~width:20 (); Image.text "System ready" ]
     in
     let grid = Grid.create ~width:80 ~height:24 () in
-    Image.render grid panel ~x:0 ~y:0
+    Image.draw panel grid
     ]}
 
     {1:coords Coordinate system}
@@ -43,15 +43,15 @@
     {1:clipping Clipping}
 
     {!crop} sets a scissor rectangle on the resulting image. Composition merges
-    parent and child clips via intersection. During {!render}, clips translate
-    to {!Grid.push_clip} / {!Grid.pop_clip} pairs.
+    parent and child clips via intersection. During {!draw}, clips translate to
+    {!Grid.push_clip} / {!Grid.pop_clip} pairs.
 
     {1:hits Hit regions}
 
     Hit regions map screen coordinates to application-defined identifiers for
     mouse interaction. Use {!with_hit} for a whole-image region or
     {!with_hit_rect} for a sub-rectangle. Hit primitives write to the optional
-    {!Screen.Hit_grid.t} passed to {!render}.
+    {!Screen.Hit_grid.t} passed to {!draw}.
 
     {b Note.} Hit IDs must be strictly positive; zero and negative values are
     ignored. *)
@@ -108,12 +108,6 @@ val text : ?style:Style.t -> ?width_method:Text.width_method -> string -> t
 (** [text s] is a multi-line text image. Lines are split on ['\n']. Width is
     computed from the widest line using [width_method] (defaults to the global
     setting). *)
-
-val string : ?style:Style.t -> ?width_method:Text.width_method -> string -> t
-(** [string] is {!text}. *)
-
-val line : ?style:Style.t -> ?width_method:Text.width_method -> string -> t
-(** [line] is {!text} for a single line. *)
 
 val box :
   ?border:Grid.Border.t ->
@@ -185,15 +179,12 @@ val with_hit_rect :
     sub-rectangle at [(x, y)] with dimensions [(width, height)]. Coordinates are
     relative to [img]. *)
 
-(** {1:rendering Rendering} *)
+(** {1:drawing Drawing} *)
 
-val render : ?hits:Screen.Hit_grid.t -> ?x:int -> ?y:int -> Grid.t -> t -> unit
-(** [render grid img] draws [img] at [(x, y)] into [grid]. When [hits] is
+val draw : ?hits:Screen.Hit_grid.t -> ?x:int -> ?y:int -> t -> Grid.t -> unit
+(** [draw img grid] draws [img] at [(x, y)] into [grid]. When [hits] is
     provided, hit primitives are registered there. [x] and [y] default to [0].
 *)
-
-val draw : t -> Grid.t -> Screen.Hit_grid.t -> unit
-(** [draw img grid hits] is [render ~hits ~x:0 ~y:0 grid img]. *)
 
 (** {1:low Low-level} *)
 
@@ -202,5 +193,5 @@ val custom :
   height:int ->
   (Grid.t -> Screen.Hit_grid.t option -> x:int -> y:int -> unit) ->
   t
-(** [custom ~width ~height f] is an image that invokes [f] during {!render}. [f]
-    receives the grid, the optional hit grid, and the render offset. *)
+(** [custom ~width ~height f] is an image that invokes [f] during {!draw}. [f]
+    receives the grid, the optional hit grid, and the draw offset. *)

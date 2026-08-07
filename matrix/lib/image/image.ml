@@ -151,9 +151,6 @@ let text ?(style = Style.default) ?(width_method = default_width_method) s =
     let lines = String.split_on_char '\n' s in
     make_text ~style ~width_method lines
 
-let string ?style ?width_method s = text ?style ?width_method s
-let line ?style ?width_method s = text ?style ?width_method s
-
 let fill ?(color = Color.black) ~width ~height () =
   let width = clamp_nonneg width and height = clamp_nonneg height in
   if width = 0 || height = 0 then empty
@@ -491,7 +488,7 @@ let add_hit ?clip hits ~x ~y ~width ~height ~id =
           Screen.Hit_grid.add hits ~x:rect.x ~y:rect.y ~width:rect.width
             ~height:rect.height ~id)
 
-let render ?hits ?(x = 0) ?(y = 0) grid t =
+let draw ?hits ?(x = 0) ?(y = 0) t grid =
   if t.width <= 0 || t.height <= 0 then ()
   else
     let base_clip = shift_clip_opt t.clip ~dx:x ~dy:y in
@@ -561,5 +558,3 @@ let render ?hits ?(x = 0) ?(y = 0) grid t =
             | None -> draw ()
             | Some rect -> Grid.clip grid rect draw))
       t.ops
-
-let draw t grid hits = render ~hits grid t
