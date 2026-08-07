@@ -76,8 +76,8 @@ let is_before ~first ~second s =
   | Some i, Some j -> i < j
   | _ -> false
 
-let drive ?(width = 48) ?(height = 2) ?probe ?process_perform application steps
-    =
+let drive ?mode ?(width = 48) ?(height = 2) ?probe ?process_perform application
+    steps =
   let steps = ref steps in
   let on_idle t ~timeout:_ =
     match !steps with
@@ -91,7 +91,7 @@ let drive ?(width = 48) ?(height = 2) ?probe ?process_perform application steps
         | `Snap -> snap t
         | `Run f -> f t)
   in
-  let t = Matrix_test.create ~on_idle ~width ~height () in
+  let t = Matrix_test.create ?mode ~on_idle ~width ~height () in
   Mosaic.run ~matrix:(Matrix_test.app t) ?process_perform ?probe application
 
 let on_keys _ = Mosaic.Sub.on_key (fun key -> Some (Pressed (key_name key)))
@@ -671,3 +671,30 @@ let%expect_test "an unmatched Cmd.focus expires after one deferred attempt" =
                (substring_index "\027[?25h" (Matrix_test.output t))));
     ];
   [%expect {|late element stole focus: false|}]
+
+let%expect_test "static commit emits content taller than the viewport" =
+  (* Cmd.static_commit renders offscreen at the content's natural height:
+     every line of a static view taller than the terminal must reach the
+     output stream, exercising the measure-then-grow pass. *)
+  let lines = List.init 5 (fun i -> Printf.sprintf "static line %d" i) in
+  let static_view = Mosaic.fragment (List.map Mosaic.text lines) in
+  drive ~mode:`Primary ~width:40 ~height:3
+    (app ~init_cmd:(Mosaic.Cmd.static_commit static_view) ())
+    [
+      `Run
+        (fun t ->
+          let out = Matrix_test.output t in
+          List.iter
+            (fun line ->
+              Printf.printf "%s emitted: %b\n" line
+                (Option.is_some (substring_index line out)))
+            lines);
+    ];
+  [%expect
+    {|
+    static line 0 emitted: true
+    static line 1 emitted: true
+    static line 2 emitted: true
+    static line 3 emitted: true
+    static line 4 emitted: true
+    |}]

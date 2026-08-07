@@ -382,18 +382,6 @@ let process_pending_focus runtime =
         pending;
       if !focused then Matrix.request_redraw runtime.matrix_app
 
-let set_renderer_viewport (renderer : Renderer.t) ~width ~height =
-  let root = Renderer.root renderer in
-  let style =
-    Renderable.style root
-    |> Toffee.Style.set_display Toffee.Style.Display.Block
-    |> Toffee.Style.set_width
-         (Toffee.Style.Dimension.length (Float.of_int width))
-    |> Toffee.Style.set_height
-         (Toffee.Style.Dimension.length (Float.of_int height))
-  in
-  Renderable.set_style root style
-
 let serialize_grid_rows (grid : Matrix.Grid.t) ~rows =
   if rows <= 0 then ""
   else
@@ -409,25 +397,35 @@ let serialize_grid_rows (grid : Matrix.Grid.t) ~rows =
         ~height:rows ~dst_x:0 ~dst_y:0;
       Matrix.Grid.to_ansi ~reset:false cropped
 
+(* Static output renders offscreen with an auto-height root, mirroring the
+   primary-screen path: one pass at the terminal height measures the content's
+   natural height (layout is independent of the grid), and only when the
+   content is taller does a second pass paint it at that exact height. Width
+   comes from [effective_size], the same source the live view lays out
+   against. *)
 let render_static_view runtime (view : _ t) =
-  let width, _ = Matrix.size runtime.matrix_app in
-  let _, full_height = Matrix.full_size runtime.matrix_app in
+  let width, _ = Matrix.effective_size runtime.matrix_app in
   let width = max 1 width in
-  let max_height = 100_000 in
-  let rec render_with_height height =
-    let renderer = Renderer.create () in
-    let reconciler = Reconciler.create ~container:(Renderer.root renderer) in
-    let vnode = compile ~dispatch:(fun _ -> ()) view in
-    set_renderer_viewport renderer ~width ~height;
-    Reconciler.render reconciler ~viewport_width:width vnode;
-    Renderer.render_frame renderer ~width ~height ~delta:0.;
-    let grid = Matrix.Screen.next_grid (Renderer.screen renderer) in
-    let used_rows = Matrix.Grid.active_height grid in
-    if used_rows >= height && height < max_height then
-      render_with_height (min (height * 2) max_height)
-    else (serialize_grid_rows grid ~rows:used_rows, used_rows)
+  let _, full_height = Matrix.full_size runtime.matrix_app in
+  let style =
+    Toffee.Style.default
+    |> Toffee.Style.set_display Toffee.Style.Display.Block
+    |> Toffee.Style.set_width
+         (Toffee.Style.Dimension.length (Float.of_int width))
+    |> Toffee.Style.set_height Toffee.Style.Dimension.auto
   in
-  render_with_height (max 1 full_height)
+  let renderer = Renderer.create ~style () in
+  let reconciler = Reconciler.create ~container:(Renderer.root renderer) in
+  let vnode = compile ~dispatch:(fun _ -> ()) view in
+  Reconciler.render reconciler ~viewport_width:width vnode;
+  let measure_height = max 1 full_height in
+  Renderer.render_frame renderer ~width ~height:measure_height ~delta:0.;
+  let required = Renderable.height (Renderer.root renderer) in
+  if required > measure_height then
+    Renderer.render_frame renderer ~width ~height:required ~delta:0.;
+  let grid = Matrix.Screen.next_grid (Renderer.screen renderer) in
+  let used_rows = Matrix.Grid.active_height grid in
+  (serialize_grid_rows grid ~rows:used_rows, used_rows)
 
 let rec process_cmd runtime (cmd : _ Cmd.t) =
   match cmd with
