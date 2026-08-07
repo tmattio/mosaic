@@ -55,6 +55,19 @@ module Props = struct
     && Option.equal Ansi.Color.equal a.before_color b.before_color
     && Option.equal Ansi.Color.equal a.after_color b.after_color
 
+  let rec assoc_equal eq a b =
+    match (a, b) with
+    | [], [] -> true
+    | (i1, v1) :: a, (i2, v2) :: b ->
+        Int.equal i1 i2 && eq v1 v2 && assoc_equal eq a b
+    | _ -> false
+
+  let rec int_list_equal a b =
+    match (a, b) with
+    | [], [] -> true
+    | x :: a, y :: b -> Int.equal x y && int_list_equal a b
+    | _ -> false
+
   let equal a b =
     Ansi.Color.equal a.fg b.fg
     && Option.equal Ansi.Color.equal a.bg b.bg
@@ -62,31 +75,34 @@ module Props = struct
     && a.padding_right = b.padding_right
     && a.show_line_numbers = b.show_line_numbers
     && a.line_number_offset = b.line_number_offset
-    && List.compare_length_with a.line_colors (List.length b.line_colors) = 0
-    && List.for_all2
-         (fun (i1, c1) (i2, c2) -> i1 = i2 && equal_line_color c1 c2)
-         a.line_colors b.line_colors
-    && List.compare_length_with a.line_signs (List.length b.line_signs) = 0
-    && List.for_all2
-         (fun (i1, s1) (i2, s2) -> i1 = i2 && equal_line_sign s1 s2)
-         a.line_signs b.line_signs
-    && List.compare_length_with a.line_numbers (List.length b.line_numbers) = 0
-    && List.for_all2
-         (fun (i1, n1) (i2, n2) -> i1 = i2 && n1 = n2)
-         a.line_numbers b.line_numbers
-    && List.compare_length_with a.hidden_line_numbers
-         (List.length b.hidden_line_numbers)
-       = 0
-    && List.for_all2 Int.equal a.hidden_line_numbers b.hidden_line_numbers
+    && assoc_equal equal_line_color a.line_colors b.line_colors
+    && assoc_equal equal_line_sign a.line_signs b.line_signs
+    && assoc_equal Int.equal a.line_numbers b.line_numbers
+    && int_list_equal a.hidden_line_numbers b.hidden_line_numbers
 end
 
 (* ───── Line Number Widget ───── *)
+
+(* Per-line props arrive as index-keyed lists (a diff pushes one entry per
+   patch line); walking them per visible row per frame is O(viewport x total
+   lines). They are folded once into int-keyed tables plus the sign-width
+   maxima, and rebuilt only when the props change. *)
+type lookup = {
+  colors : (int, line_color) Hashtbl.t;
+  signs : (int, line_sign) Hashtbl.t;
+  numbers : (int, int) Hashtbl.t;
+  hidden : (int, unit) Hashtbl.t;
+  max_before : int;
+  max_after : int;
+  max_custom_number : int;
+}
 
 type t = {
   node : Renderable.t;
   gutter : Renderable.t;
   content : Renderable.t;
   mutable props : Props.t;
+  mutable lookup : (Matrix.Text.width_method * lookup) option;
 }
 
 let node t = t.node
@@ -110,10 +126,58 @@ let darken_color (c : Ansi.Color.t) : Ansi.Color.t =
   let scale v = v * 4 / 5 in
   Ansi.Color.of_rgb (scale r) (scale g) (scale b)
 
-let find_line_color props line = List.assoc_opt line props.Props.line_colors
-let find_line_sign props line = List.assoc_opt line props.Props.line_signs
-let find_line_number props line = List.assoc_opt line props.Props.line_numbers
-let is_hidden props line = List.mem line props.Props.hidden_line_numbers
+let build_lookup ~width_method (props : Props.t) =
+  (* First binding wins, matching List.assoc_opt on duplicate indices. *)
+  let of_assoc entries =
+    let tbl = Hashtbl.create (List.length entries) in
+    List.iter
+      (fun (i, v) -> if not (Hashtbl.mem tbl i) then Hashtbl.add tbl i v)
+      entries;
+    tbl
+  in
+  let hidden = Hashtbl.create (List.length props.hidden_line_numbers) in
+  List.iter (fun i -> Hashtbl.replace hidden i ()) props.hidden_line_numbers;
+  let max_before, max_after =
+    List.fold_left
+      (fun (b, a) (_, (sign : line_sign)) ->
+        let b =
+          match sign.before with
+          | None -> b
+          | Some s -> max b (display_width ~width_method s)
+        in
+        let a =
+          match sign.after with
+          | None -> a
+          | Some s -> max a (display_width ~width_method s)
+        in
+        (b, a))
+      (0, 0) props.line_signs
+  in
+  let max_custom_number =
+    List.fold_left (fun acc (_, n) -> max acc n) 0 props.line_numbers
+  in
+  {
+    colors = of_assoc props.line_colors;
+    signs = of_assoc props.line_signs;
+    numbers = of_assoc props.line_numbers;
+    hidden;
+    max_before;
+    max_after;
+    max_custom_number;
+  }
+
+let lookup t ~width_method =
+  match t.lookup with
+  | Some (m, lk) when m = width_method -> lk
+  | Some _ | None ->
+      let lk = build_lookup ~width_method t.props in
+      t.lookup <- Some (width_method, lk);
+      lk
+
+let find_line_color lk line = Hashtbl.find_opt lk.colors line
+let find_line_sign lk line = Hashtbl.find_opt lk.signs line
+let find_line_number lk line = Hashtbl.find_opt lk.numbers line
+let is_hidden lk line = Hashtbl.mem lk.hidden line
 
 (* ───── Target Discovery ───── *)
 
@@ -131,39 +195,16 @@ let find_line_info_child (content_node : Renderable.t) :
 
 (* ───── Gutter Width Calculation ───── *)
 
-let max_before_width ~width_method props =
-  List.fold_left
-    (fun acc (_, (sign : line_sign)) ->
-      match sign.before with
-      | None -> acc
-      | Some s -> max acc (display_width ~width_method s))
-    0 props.Props.line_signs
-
-let max_after_width ~width_method props =
-  List.fold_left
-    (fun acc (_, (sign : line_sign)) ->
-      match sign.after with
-      | None -> acc
-      | Some s -> max acc (display_width ~width_method s))
-    0 props.Props.line_signs
-
-let compute_gutter_width ~width_method props line_count =
-  if not props.Props.show_line_numbers then
-    let bw = max_before_width ~width_method props in
-    let aw = max_after_width ~width_method props in
-    max props.min_width (bw + aw + props.padding_right)
+let compute_gutter_width lk (props : Props.t) line_count =
+  if not props.show_line_numbers then
+    max props.min_width (lk.max_before + lk.max_after + props.padding_right)
   else
     let max_line = line_count + props.line_number_offset in
-    let max_line =
-      List.fold_left
-        (fun acc (_, custom_num) -> max acc custom_num)
-        max_line props.line_numbers
-    in
+    let max_line = max max_line lk.max_custom_number in
     let num_digits = digits (max 1 max_line) in
-    let bw = max_before_width ~width_method props in
-    let aw = max_after_width ~width_method props in
     (* +1 for left padding *)
-    max props.min_width (bw + num_digits + aw + props.padding_right + 1)
+    max props.min_width
+      (lk.max_before + num_digits + lk.max_after + props.padding_right + 1)
 
 (* ───── Gutter Rendering ───── *)
 
@@ -196,16 +237,12 @@ let render_gutter t _self grid ~delta:_ =
           ~color:bg
     | None -> ());
     let width_method = Renderable.Private.width_method t.gutter in
-    let bw = max_before_width ~width_method t.props in
+    let lk = lookup t ~width_method in
+    let bw = lk.max_before in
     let num_width =
       if t.props.show_line_numbers then
         let max_line = line_count + t.props.line_number_offset in
-        let max_line =
-          List.fold_left
-            (fun acc (_, custom_num) -> max acc custom_num)
-            max_line t.props.line_numbers
-        in
-        digits (max 1 max_line)
+        digits (max 1 (max max_line lk.max_custom_number))
       else 0
     in
     for row = 0 to gutter_h - 1 do
@@ -214,17 +251,17 @@ let render_gutter t _self grid ~delta:_ =
         let logical_line = line_sources.(display_line) in
         let wrap_index = line_wrap_indices.(display_line) in
         (* Line color: apply gutter background for this row *)
-        (match find_line_color t.props logical_line with
+        (match find_line_color lk logical_line with
         | Some lc ->
             Grid.fill_rect grid ~x:gx ~y:(gy + row) ~width:gutter_w ~height:1
               ~color:lc.gutter
         | None -> ());
         (* Only render number/signs on the first visual line of a logical
            line *)
-        if wrap_index = 0 && not (is_hidden t.props logical_line) then begin
+        if wrap_index = 0 && not (is_hidden lk logical_line) then begin
           let col = ref 0 in
           (* Before sign — right-aligned within max before width *)
-          (match find_line_sign t.props logical_line with
+          (match find_line_sign lk logical_line with
           | Some sign -> (
               match sign.before with
               | Some s ->
@@ -242,7 +279,7 @@ let render_gutter t _self grid ~delta:_ =
           if t.props.show_line_numbers then begin
             col := !col + 1;
             let line_num =
-              match find_line_number t.props logical_line with
+              match find_line_number lk logical_line with
               | Some custom -> custom
               | None -> logical_line + 1 + t.props.line_number_offset
             in
@@ -255,7 +292,7 @@ let render_gutter t _self grid ~delta:_ =
             col := !col + String.length num_str
           end;
           (* After sign *)
-          match find_line_sign t.props logical_line with
+          match find_line_sign lk logical_line with
           | Some sign -> (
               match sign.after with
               | Some s ->
@@ -282,11 +319,14 @@ let render_content_colors t _self grid ~delta:_ =
       let ch = Renderable.height t.content in
       if cw <= 0 || ch <= 0 then ()
       else
+        let lk =
+          lookup t ~width_method:(Renderable.Private.width_method t.content)
+        in
         for row = 0 to ch - 1 do
           let display_line = info.scroll_y + row in
           if display_line < info.display_line_count then begin
             let logical_line = info.line_sources.(display_line) in
-            match find_line_color t.props logical_line with
+            match find_line_color lk logical_line with
             | Some lc ->
                 let bg =
                   match lc.content with
@@ -305,7 +345,7 @@ let gutter_measure t ~known_dimensions ~available_space:_ ~style:_ =
   let info = find_line_info_child t.content in
   let line_count = match info with None -> 0 | Some i -> i.line_count in
   let width_method = Renderable.Private.width_method t.gutter in
-  let w = compute_gutter_width ~width_method t.props line_count in
+  let w = compute_gutter_width (lookup t ~width_method) t.props line_count in
   let width =
     match known_dimensions.Toffee.Geometry.Size.width with
     | Some w -> w
@@ -356,7 +396,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?fg ?bg
       ?line_number_offset ?line_colors ?line_signs ?line_numbers
       ?hidden_line_numbers ()
   in
-  let t = { node; gutter; content; props } in
+  let t = { node; gutter; content; props; lookup = None } in
   (* Register gutter measure function *)
   Renderable.set_measure gutter (Some (gutter_measure t));
   (* Register gutter render callback *)
@@ -381,6 +421,7 @@ let apply_props t (props : Props.t) =
     t.props.show_line_numbers <> props.show_line_numbers
   in
   t.props <- props;
+  if changed then t.lookup <- None;
   if visibility_changed then
     Renderable.set_visible t.gutter props.show_line_numbers;
   if changed then begin

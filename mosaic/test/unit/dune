@@ -239,3 +239,9 @@
  (modules test_subscriptions)
  (package mosaic)
  (libraries windtrap mosaic matrix.input))
+
+(test
+ (name test_line_number)
+ (modules test_line_number)
+ (package mosaic)
+ (libraries windtrap mosaic.ui toffee matrix.grid matrix.screen matrix.ansi))
