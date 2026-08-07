@@ -3,6 +3,32 @@ open Windtrap
 (* Helper to calculate linear index *)
 let idx grid x y = (y * Grid.width grid) + x
 
+(* Test-only exhaustive diff over the union of both grids' dimensions, sorted
+   by row then column. The production diff is Screen's row-run walk. *)
+let diff_cells prev curr =
+  let diffs = ref [] in
+  let max_w = max (Grid.width prev) (Grid.width curr) in
+  let max_h = max (Grid.height prev) (Grid.height curr) in
+  for y = max_h - 1 downto 0 do
+    for x = max_w - 1 downto 0 do
+      let in_prev = x < Grid.width prev && y < Grid.height prev in
+      let in_curr = x < Grid.width curr && y < Grid.height curr in
+      let differs =
+        match (in_prev, in_curr) with
+        | false, false -> false
+        | true, false | false, true -> true
+        | true, true ->
+            not
+              (Grid.cells_equal prev
+                 ((y * Grid.width prev) + x)
+                 curr
+                 ((y * Grid.width curr) + x))
+      in
+      if differs then diffs := (x, y) :: !diffs
+    done
+  done;
+  Array.of_list !diffs
+
 (* Updated: Use Grid.get_text and predicates instead of Cell matching *)
 let read_char grid x y =
   let i = idx grid x y in
@@ -276,13 +302,12 @@ let box_title_left_aligned () =
 let diff_detects_single_rgb_step () =
   let a = Grid.create ~width:1 ~height:1 () in
   let b = Grid.copy a in
-  (* Instead of hacking raw arrays, we set the cell with a minimal color
-     difference. 1/255 is approx 0.0039, which is > the internal epsilon
-     (0.00001). *)
+  (* Cell comparison is exact on the packed color representation, so a single
+     1/255 RGB step must register as a difference. *)
   let minimal_diff_color = Ansi.Color.of_rgba 1 1 1 1 in
   Grid.set_cell b ~x:0 ~y:0 ~cell:(Grid.get_cell a 0) ~fg:Ansi.Color.white
     ~bg:minimal_diff_color ~attrs:Ansi.Attr.empty ();
-  let diffs = Grid.diff_cells a b in
+  let diffs = diff_cells a b in
   equal ~msg:"diffs include cell when RGB changes by 1 step"
     (list (pair int int))
     [ (0, 0) ]
@@ -1481,7 +1506,7 @@ let tests =
     test "diff identical grids produces no diffs" (fun () ->
         let a = Grid.create ~width:2 ~height:2 () in
         let b = Grid.copy a in
-        let diffs = Grid.diff_cells a b in
+        let diffs = diff_cells a b in
         equal ~msg:"no diffs" int 0 (Array.length diffs));
     test "diff detects single char change" (fun () ->
         let a = Grid.create ~width:2 ~height:2 () in
@@ -1489,7 +1514,7 @@ let tests =
         Grid.set_cell ~blend:true b ~x:1 ~y:1
           ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'X'))
           ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
-        let diffs = Grid.diff_cells a b in
+        let diffs = diff_cells a b in
         equal ~msg:"single diff at changed cell"
           (list (pair int int))
           [ (1, 1) ]
@@ -1498,7 +1523,7 @@ let tests =
         let a = Grid.create ~width:2 ~height:2 () in
         let b = Grid.copy a in
         Grid.fill_rect b ~x:0 ~y:0 ~width:1 ~height:1 ~color:Ansi.Color.red;
-        let diffs = Grid.diff_cells a b in
+        let diffs = diff_cells a b in
         equal ~msg:"single diff at colored cell"
           (list (pair int int))
           [ (0, 0) ]
@@ -1510,7 +1535,7 @@ let tests =
           ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'A'))
           ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty
           ~link:"http://example.com" ();
-        let diffs = Grid.diff_cells a b in
+        let diffs = diff_cells a b in
         equal ~msg:"single diff at linked cell"
           (list (pair int int))
           [ (0, 0) ]

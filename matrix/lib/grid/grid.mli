@@ -62,14 +62,6 @@ module Cell : sig
   val cell_width : t -> int
   (** [cell_width c] is the width contribution of this one grid cell. *)
 
-  val left_extent : t -> int
-  (** [left_extent c] is the number of cells between continuation cell [c] and
-      its span start. It is [0] for non-continuation cells. *)
-
-  val right_extent : t -> int
-  (** [right_extent c] is the number of continuation cells to the right of [c].
-  *)
-
   val codepoint : t -> int
   (** [codepoint c] is the Unicode scalar value of an inline cell.
 
@@ -435,13 +427,6 @@ val scroll : t -> top:int -> bottom:int -> int -> unit
 (** [scroll g ~top ~bottom n] scrolls rows \[[top]..[bottom]\] by [n] lines.
     Positive [n] scrolls content up (new blank lines at bottom). Negative [n]
     scrolls down. Zero is a no-op. *)
-
-(** {1:comparison Comparison} *)
-
-val diff_cells : t -> t -> (int * int) array
-(** [diff_cells prev curr] is the [(x, y)] coordinates of cells that differ.
-    Iterates over the union of both grids' dimensions. Uses epsilon comparison
-    for RGBA. Sorted by row then column. *)
 
 (** {1:diagnostics Diagnostics} *)
 

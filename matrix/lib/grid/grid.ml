@@ -1495,31 +1495,6 @@ let grapheme_stats t =
   ( Grapheme_store.live_count t.grapheme_store,
     Grapheme_store.slot_count t.grapheme_store )
 
-let diff_cells prev curr =
-  let max_w = max prev.width curr.width in
-  let max_h = max prev.height curr.height in
-  let diffs = Dynarray.create () in
-  for y = 0 to max_h - 1 do
-    for x = 0 to max_w - 1 do
-      let in_prev = x < prev.width && y < prev.height in
-      let in_curr = x < curr.width && y < curr.height in
-      match (in_prev, in_curr) with
-      | false, false -> ()
-      | true, false | false, true -> Dynarray.add_last diffs (x, y)
-      | true, true ->
-          let p_idx = (y * prev.width) + x in
-          let c_idx = (y * curr.width) + x in
-          if
-            Buf.get_cell prev.chars p_idx <> Buf.get_cell curr.chars c_idx
-            || Buf.get prev.attrs p_idx <> Buf.get curr.attrs c_idx
-            || Buf.get prev.fg_color p_idx <> Buf.get curr.fg_color c_idx
-            || Buf.get prev.bg_color p_idx <> Buf.get curr.bg_color c_idx
-            || Buf.get prev.links p_idx <> Buf.get curr.links c_idx
-          then Dynarray.add_last diffs (x, y)
-    done
-  done;
-  Dynarray.to_array diffs
-
 (* {1 Serialization} *)
 
 let to_text ?(trim = true) t =
