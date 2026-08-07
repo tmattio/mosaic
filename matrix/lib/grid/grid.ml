@@ -10,7 +10,6 @@ module Buf = struct
 
   let create kind len = Bigarray.Array1.create kind Bigarray.c_layout len
   let make_int16 len = create Bigarray.int16_unsigned len
-  let make_int32 len = create Bigarray.int32 len
   let make_int len = create Bigarray.int len
   let[@inline] get arr i = Bigarray.Array1.unsafe_get arr i
   let[@inline] set arr i v = Bigarray.Array1.unsafe_set arr i v
@@ -116,18 +115,18 @@ end
 
 module Links = struct
   type t = {
-    mutable next_id : int32;
-    forward : (string, int32) Hashtbl.t;
-    reverse : (int32, string) Hashtbl.t;
+    mutable next_id : int;
+    forward : (string, int) Hashtbl.t;
+    reverse : (int, string) Hashtbl.t;
   }
 
-  let no_link = -1l
+  let no_link = -1
 
   let create () =
-    { next_id = 1l; forward = Hashtbl.create 32; reverse = Hashtbl.create 32 }
+    { next_id = 1; forward = Hashtbl.create 32; reverse = Hashtbl.create 32 }
 
   let clear t =
-    t.next_id <- 1l;
+    t.next_id <- 1;
     Hashtbl.clear t.forward;
     Hashtbl.clear t.reverse
 
@@ -144,7 +143,7 @@ module Links = struct
         | Some id -> id
         | None ->
             let id = t.next_id in
-            t.next_id <- Int32.add id 1l;
+            t.next_id <- id + 1;
             Hashtbl.add t.forward url id;
             Hashtbl.add t.reverse id url;
             id)
@@ -171,7 +170,7 @@ type t = {
   mutable fg_color : (int, Bigarray.int_elt) Buf.t;
   mutable bg_color : (int, Bigarray.int_elt) Buf.t;
   mutable attrs : (int, Bigarray.int16_unsigned_elt) Buf.t;
-  mutable links : (int32, Bigarray.int32_elt) Buf.t;
+  mutable links : (int, Bigarray.int_elt) Buf.t;
   link_registry : Links.t;
   grapheme_tracker : Grapheme_tracker.t;
   scissor_stack : Scissor_stack.t;
@@ -337,7 +336,7 @@ let create_with_store ~width ~height ~grapheme_store ~link_registry
       fg_color = Buf.make_int size;
       bg_color = Buf.make_int size;
       attrs = Buf.make_int16 size;
-      links = Buf.make_int32 size;
+      links = Buf.make_int size;
       link_registry;
       grapheme_tracker = Grapheme_tracker.create grapheme_store;
       scissor_stack = Scissor_stack.create ();
@@ -484,7 +483,7 @@ let resize t ~width ~height =
     let new_size = width * height in
     let new_chars = Buf.make_int new_size in
     let new_attrs = Buf.make_int16 new_size in
-    let new_links = Buf.make_int32 new_size in
+    let new_links = Buf.make_int new_size in
     let new_fg_color = Buf.make_int new_size in
     let new_bg_color = Buf.make_int new_size in
 

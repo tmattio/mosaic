@@ -151,7 +151,7 @@ val get_cell : t -> int -> Cell.t
 val get_attrs : t -> int -> int
 (** [get_attrs g idx] is the packed attribute integer at [idx]. *)
 
-val get_link : t -> int -> int32
+val get_link : t -> int -> int
 (** [get_link g idx] is the internal hyperlink ID at [idx]. *)
 
 val get_fg : t -> int -> Ansi.Color.t
@@ -206,11 +206,11 @@ val cells_equal : t -> int -> t -> int -> bool
     meaningful only when [g1] and [g2] are the same grid or share storage (see
     {!create_like}). *)
 
-val hyperlink_url : t -> int32 -> string option
+val hyperlink_url : t -> int -> string option
 (** [hyperlink_url g id] resolves a link ID (from {!get_link}) to a URL. Returns
     [None] for the no-link sentinel or unknown IDs. *)
 
-val hyperlink_url_direct : t -> int32 -> string
+val hyperlink_url_direct : t -> int -> string
 (** [hyperlink_url_direct g id] is like {!hyperlink_url} but returns [""]
     instead of [None]. *)
 
