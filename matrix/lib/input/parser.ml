@@ -1805,12 +1805,18 @@ let find_sequence_end_bytes bytes start stop =
     | '[' ->
         if start + 2 < stop && Bytes.unsafe_get bytes (start + 2) = 'M' then
           find_x10_end_bytes bytes start stop
-        else if
-          start + 3 < stop
-          && Bytes.unsafe_get bytes (start + 2) = '['
-          && Bytes.unsafe_get bytes (start + 3) >= 'A'
-          && Bytes.unsafe_get bytes (start + 3) <= 'E'
-        then End (start + 4)
+        else if start + 2 < stop && Bytes.unsafe_get bytes (start + 2) = '['
+        then
+          (* Cygwin/linux-console F-keys are ESC [ [ A..E, but '[' is also a
+             valid CSI final byte. The byte after the second '[' decides;
+             wait for it when the data ends here so tokenization does not
+             depend on read boundaries. *)
+          if start + 3 >= stop then Incomplete
+          else if
+            Bytes.unsafe_get bytes (start + 3) >= 'A'
+            && Bytes.unsafe_get bytes (start + 3) <= 'E'
+          then End (start + 4)
+          else End (start + 3)
         else
           (* '$' is both the final byte of rxvt shifted keys (CSI Ps $) and
              the DECRPM intermediate in mode reports (CSI ? … $ y and

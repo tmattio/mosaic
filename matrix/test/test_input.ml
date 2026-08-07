@@ -251,6 +251,25 @@ let test_cygwin_function_key_regressions () =
         (parse_user seq))
     cases
 
+let test_cygwin_prefix_split_equivalence () =
+  (* Shrunk from a split-equivalence property counterexample: "\x1b[[A" cut
+     before the final byte was tokenized as Unknown "\x1b[[" plus a plain
+     'A' instead of F1. *)
+  let parser = Input.Parser.create () in
+  equal ~msg:"ESC [ [ at end of read is buffered" (list event_testable) []
+    (feed_user parser (Bytes.of_string "\x1b[[") 0 3);
+  equal ~msg:"split Cygwin F-key matches the whole feed" (list event_testable)
+    (parse_user "\x1b[[A")
+    (feed_user parser (Bytes.of_string "A") 0 1);
+  (* A non-F-key byte after the prefix still resolves to a bare CSI '['
+     token followed by ordinary input, as in the whole feed. *)
+  let parser = Input.Parser.create () in
+  ignore (feed_user parser (Bytes.of_string "\x1b[[") 0 3);
+  equal ~msg:"split non-F-key continuation matches the whole feed"
+    (pair (list event_testable) (list response_testable))
+    (parse_single "\x1b[[x")
+    (feed_to_lists parser (Bytes.of_string "x") 0 1)
+
 let test_parse_modifiers () =
   equal ~msg:"Shift+Tab" (list event_testable)
     [
@@ -1579,6 +1598,7 @@ let tests =
     test "parse arrow keys" test_parse_arrow_keys;
     test "parse function keys" test_parse_function_keys;
     test "Cygwin function key regressions" test_cygwin_function_key_regressions;
+    test "Cygwin prefix split equivalence" test_cygwin_prefix_split_equivalence;
     test "parse modifiers" test_parse_modifiers;
     test "CSI sub params event type" test_csi_sub_params_with_event_type;
     test "parse mouse SGR" test_parse_mouse_sgr;
