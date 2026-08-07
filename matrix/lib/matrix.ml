@@ -151,6 +151,11 @@ type app = {
   config : config;
   backend : Backend.t;
   screen : Screen.t;
+  (* Frame output accumulator, retained across submits. [Buffer.clear] keeps
+     the high-water-mark capacity, so steady-state frames allocate nothing
+     here (a fresh 4 KiB buffer per frame would be a direct major-heap
+     allocation every submit). *)
+  submit_buf : Buffer.t;
   (* Input events captured during startup (probe, primary anchor), replayed
      before the first backend read. *)
   mutable pending_startup_events : Input.t list;
@@ -767,7 +772,8 @@ let submit ?primary_required_rows t =
     let cursor = Screen.cursor t.screen in
     let caps = Terminal.capabilities t.terminal in
     let use_sync = Terminal.tty t.terminal && caps.sync in
-    let buf = Buffer.create 4096 in
+    let buf = t.submit_buf in
+    Buffer.clear buf;
 
     (* Preamble: BSU + cursor hide. *)
     if use_sync then Buffer.add_string buf Ansi.(to_string (enable Sync_output));
@@ -858,13 +864,11 @@ let submit ?primary_required_rows t =
       if use_sync then
         Buffer.add_string buf Ansi.(to_string (disable Sync_output));
 
-      let write_start = t.backend.now () in
       let frame_bytes = Buffer.contents buf in
       t.backend.write_output
         (Bytes.unsafe_of_string frame_bytes)
         0
-        (String.length frame_bytes);
-      ignore (Float.max 0. ((t.backend.now () -. write_start) *. 1000.) : float)
+        (String.length frame_bytes)
     end;
 
     if t.frame_dump_every > 0 then (
@@ -1205,6 +1209,7 @@ let init_app (c : config) ~(backend : Backend.t) ~startup_events ~debug_overlay
       config = c;
       backend;
       screen;
+      submit_buf = Buffer.create 4096;
       pending_startup_events = startup_events;
       running = true;
       redraw_requested = false;
