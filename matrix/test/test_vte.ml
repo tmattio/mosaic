@@ -383,6 +383,30 @@ let scrollback_ring_buffer () =
   equal ~msg:"oldest in ring" string "L2" (List.nth lines 0);
   equal ~msg:"newest in ring" string "L3" (List.nth lines 1)
 
+let render_with_scrollback_order () =
+  let vte = Vte.create ~scrollback:100 ~rows:3 ~cols:10 () in
+  Vte.feed_string vte "L1\nL2\nL3\nL4\nL5";
+  equal ~msg:"two lines in scrollback" int 2 (Vte.scrollback_size vte);
+  let dst = Grid.create ~width:10 ~height:3 () in
+  Vte.render_with_scrollback vte ~offset:2 dst;
+  equal ~msg:"oldest visible line on top" string "L1" (get_line dst 0);
+  equal ~msg:"newer line below" string "L2" (get_line dst 1);
+  equal ~msg:"screen top adjacent to history" string "L3" (get_line dst 2);
+  Vte.render_with_scrollback vte ~offset:1 dst;
+  equal ~msg:"offset 1 shows newest history line" string "L2" (get_line dst 0);
+  equal ~msg:"offset 1 screen row 0" string "L3" (get_line dst 1);
+  equal ~msg:"offset 1 screen row 1" string "L4" (get_line dst 2)
+
+let render_with_scrollback_wrapped_ring () =
+  let vte = Vte.create ~scrollback:2 ~rows:2 ~cols:5 () in
+  Vte.feed_string vte "L1\nL2\nL3\nL4\nL5";
+  (* Ring holds L2 (oldest) and L3 (newest); L1 was evicted. *)
+  let dst = Grid.create ~width:5 ~height:3 () in
+  Vte.render_with_scrollback vte ~offset:2 dst;
+  equal ~msg:"wrapped oldest on top" string "L2" (get_line dst 0);
+  equal ~msg:"wrapped newest below" string "L3" (get_line dst 1);
+  equal ~msg:"wrapped screen top" string "L4" (get_line dst 2)
+
 let scrollback_disabled () =
   let vte = Vte.create ~scrollback:0 ~rows:3 ~cols:10 () in
   Vte.feed_string vte "L1\nL2\nL3\nL4";
@@ -635,6 +659,9 @@ let tests =
     test "erase scrollback sequence" erase_scrollback_sequence;
     test "scrollback ring buffer" scrollback_ring_buffer;
     test "scrollback disabled" scrollback_disabled;
+    test "render with scrollback order" render_with_scrollback_order;
+    test "render with scrollback wrapped ring"
+      render_with_scrollback_wrapped_ring;
     test "auto wrap mode" auto_wrap_mode;
     test "insert mode" insert_mode;
     test "cursor key mode" cursor_key_mode;

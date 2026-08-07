@@ -410,10 +410,13 @@ let render_with_scrollback t ~offset dst =
         let scrollback_lines = min offset dst_height in
         let screen_lines = dst_height - scrollback_lines in
 
-        (* Render scrollback lines by decompressing them *)
+        (* Render scrollback lines by decompressing them. Row [i] shows the
+           line [offset - i] positions above the live screen, so the oldest
+           visible line is at the top and the newest sits adjacent to the
+           screen. *)
         for i = 0 to scrollback_lines - 1 do
-          (* Calculate which scrollback line to read from (newest first) *)
-          let scrollback_offset = offset - scrollback_lines + i in
+          (* Distance above the screen, as a 0-based newest-first index. *)
+          let scrollback_offset = offset - 1 - i in
           let scrollback_idx =
             if sb.count < sb.capacity then
               (* Not wrapped yet - simple offset from head *)
