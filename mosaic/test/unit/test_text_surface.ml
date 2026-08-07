@@ -389,9 +389,7 @@ let measure_word_max_content_ignores_layout_width () =
 let measure_word_max_content_unbreakable_run () =
   (* A single unbreakable run (a rule built from repeated glyphs) after a
      narrower layout; exercises the char-fallback path inside word wrap. *)
-  let s =
-    make_surface ~width:5 ~content:(String.make 11 '-') ~wrap:`Word ()
-  in
+  let s = make_surface ~width:5 ~content:(String.make 11 '-') ~wrap:`Word () in
   let result =
     call_measure s ~available_width:Toffee.Available_space.Max_content
       ~available_height:Toffee.Available_space.Max_content

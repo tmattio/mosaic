@@ -60,7 +60,8 @@ let equal_line_sign (a : line_sign) (b : line_sign) =
   && equal_line_sign_value a.sign b.sign
 
 let equal_line_span (a : line_span) (b : line_span) =
-  equal_side a.side b.side && a.line = b.line && a.start_byte = b.start_byte
+  equal_side a.side b.side && a.line = b.line
+  && a.start_byte = b.start_byte
   && a.end_byte = b.end_byte
   && Ansi.Color.equal a.color b.color
 
@@ -348,7 +349,8 @@ module View = struct
       (fun acc (span : line_span) ->
         if
           List.exists
-            (fun (s : source_line) -> s.side = span.side && s.number = span.line)
+            (fun (s : source_line) ->
+              s.side = span.side && s.number = span.line)
             sources
         then begin
           let len = String.length content in
@@ -373,7 +375,8 @@ module View = struct
     emphasis : emphasis;
   }
 
-  let unified ~theme ~line_highlights ~line_spans ~line_signs (patch : Patch.t) =
+  let unified ~theme ~line_highlights ~line_spans ~line_signs (patch : Patch.t)
+      =
     let buf = Buffer.create 256 in
     let line_colors = ref [] in
     let line_sign_rows = ref [] in
@@ -1255,7 +1258,6 @@ let set_line_highlights t line_highlights =
   update t { t.props with line_highlights }
 
 let set_line_spans t line_spans = update t { t.props with line_spans }
-
 let set_line_signs t line_signs = update t { t.props with line_signs }
 let apply_props = update
 let set_on_line_click t callback = t.on_line_click <- callback

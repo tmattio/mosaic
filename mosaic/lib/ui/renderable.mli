@@ -161,18 +161,18 @@ val y : t -> int
     translation inherited from [t] or its ancestors. *)
 
 val width : t -> int
-(** [width t] is the distance between [t]'s rounded absolute horizontal edges
-    in terminal cells. Adjacent Toffee edges therefore quantize to the same
-    cell boundary, and a zero-width allocation remains zero. Translation does
-    not affect the result. Returns [0] when [t] is hidden or layout has not yet
-    been computed. *)
+(** [width t] is the distance between [t]'s rounded absolute horizontal edges in
+    terminal cells. Adjacent Toffee edges therefore quantize to the same cell
+    boundary, and a zero-width allocation remains zero. Translation does not
+    affect the result. Returns [0] when [t] is hidden or layout has not yet been
+    computed. *)
 
 val height : t -> int
-(** [height t] is the distance between [t]'s rounded absolute vertical edges
-    in terminal cells. Adjacent Toffee edges therefore quantize to the same
-    cell boundary, and a zero-height allocation remains zero. Translation does
-    not affect the result. Returns [0] when [t] is hidden or layout has not yet
-    been computed. *)
+(** [height t] is the distance between [t]'s rounded absolute vertical edges in
+    terminal cells. Adjacent Toffee edges therefore quantize to the same cell
+    boundary, and a zero-height allocation remains zero. Translation does not
+    affect the result. Returns [0] when [t] is hidden or layout has not yet been
+    computed. *)
 
 val bounds : t -> Grid.region
 (** [bounds t] is [{ x = x t; y = y t; width = width t; height = height t }]. *)

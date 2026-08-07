@@ -485,6 +485,7 @@ let set_raw fd =
 let restore fd saved =
   Unix.tcsetattr fd Unix.TCSANOW saved.termios;
   set_iexten fd saved.iexten
+
 let size fd = try get_size fd with _ -> (80, 24)
 let flush_input fd = try Unix.tcflush fd Unix.TCIFLUSH with _ -> ()
 let enable_vt fd = try enable_vt_raw fd with _ -> ()

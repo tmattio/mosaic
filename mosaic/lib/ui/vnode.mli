@@ -1090,8 +1090,8 @@ val diff :
       1-based old/new source line numbers. Earlier entries win when ranges
       overlap. Defaults to [[]].
     - [line_spans] are source-line sub-range highlights: a byte range within one
-      1-based old/new source line, drawn as a background over its cells. Defaults
-      to [[]]. See {!Diff.line_span}.
+      1-based old/new source line, drawn as a background over its cells.
+      Defaults to [[]]. See {!Diff.line_span}.
     - [line_signs] are source-line gutter signs, using inclusive 1-based old/new
       source line numbers. Earlier entries win when ranges overlap. Defaults to
       [[]].

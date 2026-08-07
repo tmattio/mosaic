@@ -443,10 +443,10 @@ type t =
       (** [Paste text] is bracketed paste content preserved exactly, including
           empty payloads and embedded escape bytes. *)
   | Color_scheme of [ `Dark | `Light ]
-      (** The terminal reported its light/dark colour scheme, either as the reply
-          to a [CSI ? 996 n] query or as an unsolicited DEC 2031 notification.
-          Interpreted from {!Response.Color_scheme}; the [`Unknown] value is not
-          surfaced as an event. *)
+      (** The terminal reported its light/dark colour scheme, either as the
+          reply to a [CSI ? 996 n] query or as an unsolicited DEC 2031
+          notification. Interpreted from {!Response.Color_scheme}; the
+          [`Unknown] value is not surfaced as an event. *)
   | Error of Error.t
       (** [Error error] reports that malformed or incomplete input was dropped
           so parsing could resume at a lifecycle boundary. *)

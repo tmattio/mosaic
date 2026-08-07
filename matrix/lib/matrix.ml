@@ -863,8 +863,8 @@ let suspend ?(leave_alt = false) t =
   (try Terminal.enable_modify_other_keys t.terminal false with _ -> ());
   (try t.set_raw_mode false with _ -> ());
   t.suspend_left_alt <- leave_alt;
-  if leave_alt then
-    (try Terminal.leave_alternate_screen t.terminal with _ -> ());
+  (if leave_alt then
+     try Terminal.leave_alternate_screen t.terminal with _ -> ());
   try t.flush_input () with _ -> ()
 
 let resume t =
@@ -872,9 +872,9 @@ let resume t =
   else (
     (if t.config.raw_mode then try t.set_raw_mode true with _ -> ());
     (try t.flush_input () with _ -> ());
-    (if t.suspend_left_alt then (
-       t.suspend_left_alt <- false;
-       try Terminal.enter_alternate_screen t.terminal with _ -> ()));
+    if t.suspend_left_alt then (
+      t.suspend_left_alt <- false;
+      try Terminal.enter_alternate_screen t.terminal with _ -> ());
     (if t.config.mode = `Primary then
        let height = max 1 t.height in
        match t.query_cursor_position ~timeout:0.1 with

@@ -770,8 +770,7 @@ external get_iexten : Unix.file_descr -> bool = "terminal_get_iexten"
 
 let test_set_raw_clears_iexten () =
   let master, slave = Pty.open_pty () in
-  Fun.protect
-    ~finally:(fun () ->
+  Fun.protect ~finally:(fun () ->
       Pty.close master;
       Pty.close slave)
   @@ fun () ->

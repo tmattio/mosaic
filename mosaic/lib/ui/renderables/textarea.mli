@@ -201,10 +201,10 @@ end
 val apply_props : t -> Props.t -> unit
 (** [apply_props t props] applies [props] to [t]. [value] is authoritative over
     the live edit buffer on every call, even when [props] equals the last
-    applied bundle. When the value already matches, value synchronization
-    leaves cursor, selection, and undo state untouched; separately controlled
-    [cursor] and [selection] still apply. Triggers the minimum necessary layout
-    updates and requests a render. *)
+    applied bundle. When the value already matches, value synchronization leaves
+    cursor, selection, and undo state untouched; separately controlled [cursor]
+    and [selection] still apply. Triggers the minimum necessary layout updates
+    and requests a render. *)
 
 (** {1:value Value} *)
 

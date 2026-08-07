@@ -275,106 +275,108 @@ let update_instance (inst : instance) ~(old_attrs : Vnode.attrs)
           (not (Textarea.Props.equal old_spec new_spec))
           || not (String.equal old_value (Textarea.value textarea))
       | _ when old_kind == new_kind -> false
-      | _ ->
+      | _ -> (
           match (inst, old_kind, new_kind) with
-        | Box_instance box, Vnode.Box old_spec, Vnode.Box new_spec ->
-            if Box.Props.equal old_spec new_spec then false
-            else (
-              Box.apply_props box new_spec;
-              true)
-        | Text_instance text, Vnode.Text old_spec, Vnode.Text new_spec ->
-            if Text.Props.equal old_spec new_spec then false
-            else (
-              Text.apply_props text new_spec;
-              true)
-        | Slider_instance slider, Vnode.Slider old_spec, Vnode.Slider new_spec
-          ->
-            if Slider.Props.equal old_spec new_spec then false
-            else (
-              Slider.apply_props slider new_spec;
-              true)
-        | Select_instance select, Vnode.Select old_spec, Vnode.Select new_spec
-          ->
-            if Select.Props.equal old_spec new_spec then false
-            else (
-              Select.apply_props select new_spec;
-              true)
-        | ( Tab_select_instance tab_select,
-            Vnode.Tab_select old_spec,
-            Vnode.Tab_select new_spec ) ->
-            if Tab_select.Props.equal old_spec new_spec then false
-            else (
-              Tab_select.apply_props tab_select new_spec;
-              true)
-        | Canvas_instance canvas, Vnode.Canvas old_spec, Vnode.Canvas new_spec
-          ->
-            if Canvas.Props.equal old_spec new_spec then false
-            else (
-              Canvas.apply_props canvas new_spec;
-              true)
-        | ( Spinner_instance spinner,
-            Vnode.Spinner old_spec,
-            Vnode.Spinner new_spec ) ->
-            if Spinner.Props.equal old_spec new_spec then false
-            else (
-              Spinner.apply_props spinner new_spec;
-              true)
-        | ( Progress_bar_instance pb,
-            Vnode.Progress_bar old_spec,
-            Vnode.Progress_bar new_spec ) ->
-            if Progress_bar.Props.equal old_spec new_spec then false
-            else (
-              Progress_bar.apply_props pb new_spec;
-              true)
-        | ( Scroll_bar_instance scroll_bar,
-            Vnode.Scroll_bar old_spec,
-            Vnode.Scroll_bar new_spec ) ->
-            if Scroll_bar.Props.equal old_spec new_spec then false
-            else (
-              Scroll_bar.apply_props scroll_bar new_spec;
-              true)
-        | ( Scroll_box_instance scroll_box,
-            Vnode.Scroll_box old_spec,
-            Vnode.Scroll_box new_spec ) ->
-            if Scroll_box.Props.equal old_spec new_spec then false
-            else (
-              Scroll_box.apply_props scroll_box new_spec;
-              true)
-        | Table_instance table, Vnode.Table old_spec, Vnode.Table new_spec ->
-            if Table.Props.equal old_spec new_spec then false
-            else (
-              Table.apply_props table new_spec;
-              true)
-        | Code_instance code, Vnode.Code old_spec, Vnode.Code new_spec ->
-            if Code.Props.equal old_spec new_spec then false
-            else (
-              Code.apply_props code new_spec;
-              true)
-        | ( Line_number_instance ln,
-            Vnode.Line_number old_spec,
-            Vnode.Line_number new_spec ) ->
-            if Line_number.Props.equal old_spec new_spec then false
-            else (
-              Line_number.apply_props ln new_spec;
-              true)
-        | Markdown_instance md, Vnode.Markdown old_spec, Vnode.Markdown new_spec
-          ->
-            if Markdown.Props.equal old_spec new_spec then false
-            else (
-              Markdown.apply_props md new_spec;
-              true)
-        | Diff_instance d, Vnode.Diff old_spec, Vnode.Diff new_spec ->
-            if Diff.Props.equal old_spec new_spec then false
-            else (
-              Diff.apply_props d new_spec;
-              true)
-        | Tree_instance tree, Vnode.Tree old_spec, Vnode.Tree new_spec ->
-            if Tree.Props.equal old_spec new_spec then false
-            else (
-              Tree.apply_props tree new_spec;
-              true)
-        | _ ->
-            invalid_arg "Reconciler: instance and kind mismatch during update"
+          | Box_instance box, Vnode.Box old_spec, Vnode.Box new_spec ->
+              if Box.Props.equal old_spec new_spec then false
+              else (
+                Box.apply_props box new_spec;
+                true)
+          | Text_instance text, Vnode.Text old_spec, Vnode.Text new_spec ->
+              if Text.Props.equal old_spec new_spec then false
+              else (
+                Text.apply_props text new_spec;
+                true)
+          | Slider_instance slider, Vnode.Slider old_spec, Vnode.Slider new_spec
+            ->
+              if Slider.Props.equal old_spec new_spec then false
+              else (
+                Slider.apply_props slider new_spec;
+                true)
+          | Select_instance select, Vnode.Select old_spec, Vnode.Select new_spec
+            ->
+              if Select.Props.equal old_spec new_spec then false
+              else (
+                Select.apply_props select new_spec;
+                true)
+          | ( Tab_select_instance tab_select,
+              Vnode.Tab_select old_spec,
+              Vnode.Tab_select new_spec ) ->
+              if Tab_select.Props.equal old_spec new_spec then false
+              else (
+                Tab_select.apply_props tab_select new_spec;
+                true)
+          | Canvas_instance canvas, Vnode.Canvas old_spec, Vnode.Canvas new_spec
+            ->
+              if Canvas.Props.equal old_spec new_spec then false
+              else (
+                Canvas.apply_props canvas new_spec;
+                true)
+          | ( Spinner_instance spinner,
+              Vnode.Spinner old_spec,
+              Vnode.Spinner new_spec ) ->
+              if Spinner.Props.equal old_spec new_spec then false
+              else (
+                Spinner.apply_props spinner new_spec;
+                true)
+          | ( Progress_bar_instance pb,
+              Vnode.Progress_bar old_spec,
+              Vnode.Progress_bar new_spec ) ->
+              if Progress_bar.Props.equal old_spec new_spec then false
+              else (
+                Progress_bar.apply_props pb new_spec;
+                true)
+          | ( Scroll_bar_instance scroll_bar,
+              Vnode.Scroll_bar old_spec,
+              Vnode.Scroll_bar new_spec ) ->
+              if Scroll_bar.Props.equal old_spec new_spec then false
+              else (
+                Scroll_bar.apply_props scroll_bar new_spec;
+                true)
+          | ( Scroll_box_instance scroll_box,
+              Vnode.Scroll_box old_spec,
+              Vnode.Scroll_box new_spec ) ->
+              if Scroll_box.Props.equal old_spec new_spec then false
+              else (
+                Scroll_box.apply_props scroll_box new_spec;
+                true)
+          | Table_instance table, Vnode.Table old_spec, Vnode.Table new_spec ->
+              if Table.Props.equal old_spec new_spec then false
+              else (
+                Table.apply_props table new_spec;
+                true)
+          | Code_instance code, Vnode.Code old_spec, Vnode.Code new_spec ->
+              if Code.Props.equal old_spec new_spec then false
+              else (
+                Code.apply_props code new_spec;
+                true)
+          | ( Line_number_instance ln,
+              Vnode.Line_number old_spec,
+              Vnode.Line_number new_spec ) ->
+              if Line_number.Props.equal old_spec new_spec then false
+              else (
+                Line_number.apply_props ln new_spec;
+                true)
+          | ( Markdown_instance md,
+              Vnode.Markdown old_spec,
+              Vnode.Markdown new_spec ) ->
+              if Markdown.Props.equal old_spec new_spec then false
+              else (
+                Markdown.apply_props md new_spec;
+                true)
+          | Diff_instance d, Vnode.Diff old_spec, Vnode.Diff new_spec ->
+              if Diff.Props.equal old_spec new_spec then false
+              else (
+                Diff.apply_props d new_spec;
+                true)
+          | Tree_instance tree, Vnode.Tree old_spec, Vnode.Tree new_spec ->
+              if Tree.Props.equal old_spec new_spec then false
+              else (
+                Tree.apply_props tree new_spec;
+                true)
+          | _ ->
+              invalid_arg "Reconciler: instance and kind mismatch during update"
+          )
     in
     common_changed || style_changed || kind_changed
 

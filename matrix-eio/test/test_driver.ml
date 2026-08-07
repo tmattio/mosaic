@@ -424,9 +424,8 @@ let test_wake_survives_subprocess_storm () =
   let renders = Atomic.make 0 in
   let bumped = Eio.Condition.create () in
   let app =
-    Matrix_eio.create ~sw ~clock ~stdin ~stdout ~raw_mode:false
-      ~target_fps:None ~mouse_enabled:false ~signal_handlers:false
-      ~start_idle:true ()
+    Matrix_eio.create ~sw ~clock ~stdin ~stdout ~raw_mode:false ~target_fps:None
+      ~mouse_enabled:false ~signal_handlers:false ~start_idle:true ()
   in
   (* Drain the frame stream so the loop's writes never block. *)
   Eio.Fiber.fork_daemon ~sw (fun () ->

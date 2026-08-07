@@ -289,7 +289,8 @@ module Sub = struct
     | On_resize g -> On_resize (fun ~width ~height -> f (g ~width ~height))
     | On_focus msg -> On_focus (f msg)
     | On_blur msg -> On_blur (f msg)
-    | On_color_scheme g -> On_color_scheme (fun scheme -> Option.map f (g scheme))
+    | On_color_scheme g ->
+        On_color_scheme (fun scheme -> Option.map f (g scheme))
 end
 
 type ('model, 'msg) app = {
@@ -672,7 +673,8 @@ let handle_input runtime (input : Matrix.Input.t) =
       | None -> ())
   | Matrix.Input.Color_scheme scheme -> (
       match runtime.color_scheme_sub with
-      | Some f -> ( match f scheme with Some msg -> dispatch runtime msg | None -> ())
+      | Some f -> (
+          match f scheme with Some msg -> dispatch runtime msg | None -> ())
       | None -> ())
   | Matrix.Input.Key key_event ->
       let ev = Renderer.dispatch_key runtime.renderer key_event in
@@ -1326,8 +1328,8 @@ let diff ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
   in
   Vnode.diff ?key ?id ~style ?visible ?z_index ?opacity ?focusable ?autofocus
     ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?layout ?theme ?highlight
-    ?line_highlights ?line_spans ?line_signs ?show_line_numbers ?wrap ?selectable
-    ?text_style ?on_line_click patch
+    ?line_highlights ?line_spans ?line_signs ?show_line_numbers ?wrap
+    ?selectable ?text_style ?on_line_click patch
 
 let markdown ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items

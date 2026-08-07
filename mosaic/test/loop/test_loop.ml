@@ -113,12 +113,14 @@ let%expect_test "in-frame geometry changes settle without input" =
       base with
       Mosaic.view =
         (fun _model ->
-          Mosaic.scroll_box ~size:(Mosaic.size ~width:20 ~height:4)
+          Mosaic.scroll_box
+            ~size:(Mosaic.size ~width:20 ~height:4)
             (List.init 10 (fun i -> Mosaic.text (Printf.sprintf "Line %d" i))));
     }
   in
   drive ~width:20 ~height:4 application [ `Snap ];
-  [%expect_exact {||Line 0             █
+  [%expect_exact
+    {||Line 0             █
 |Line 1             ▀
 |Line 2
 |Line 3
@@ -252,7 +254,8 @@ let%expect_test "a transparent table realigns every row when it widens" =
           Mosaic.table ~columns ~rows ~selected_row:0 ~border:false
             ~show_header:true ~cell_padding:0
             ~selected_background:(Matrix.Ansi.Color.grayscale ~level:3)
-            ~size:(Mosaic.size ~width ~height:3) ());
+            ~size:(Mosaic.size ~width ~height:3)
+            ());
     }
   in
   drive ~width:80 ~height:3 application [ `Snap; `Feed "w"; `Snap ];

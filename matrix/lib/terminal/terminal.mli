@@ -381,22 +381,21 @@ val reset_state : t -> unit
 
 type raw_saved = { termios : Unix.terminal_io; iexten : bool }
 (** The terminal state captured by {!set_raw}: the record [Unix.tcgetattr]
-    models, plus the IEXTEN local flag, which [Unix.terminal_io] cannot
-    express. IEXTEN gates the implementation-defined input specials —
-    VDISCARD (^O) and VLNEXT (^V) — that the line discipline processes even
-    in non-canonical mode. *)
+    models, plus the IEXTEN local flag, which [Unix.terminal_io] cannot express.
+    IEXTEN gates the implementation-defined input specials — VDISCARD (^O) and
+    VLNEXT (^V) — that the line discipline processes even in non-canonical mode.
+*)
 
 val set_raw : Unix.file_descr -> raw_saved
-(** [set_raw fd] puts [fd] into raw mode (no echo, no canonical processing,
-    no terminal-generated signals, no extended input specials — a raw
-    terminal that leaves IEXTEN set never sees ^O, the kernel eats it) and
-    returns the original state for later restoration with {!restore}. File
-    status flags such as [O_NONBLOCK] are owned by the I/O backend and are
-    left unchanged. *)
+(** [set_raw fd] puts [fd] into raw mode (no echo, no canonical processing, no
+    terminal-generated signals, no extended input specials — a raw terminal that
+    leaves IEXTEN set never sees ^O, the kernel eats it) and returns the
+    original state for later restoration with {!restore}. File status flags such
+    as [O_NONBLOCK] are owned by the I/O backend and are left unchanged. *)
 
 val restore : Unix.file_descr -> raw_saved -> unit
-(** [restore fd saved] restores [fd] to the given saved state without
-    changing its file status flags. *)
+(** [restore fd saved] restores [fd] to the given saved state without changing
+    its file status flags. *)
 
 val size : Unix.file_descr -> int * int
 (** [size fd] is the terminal dimensions as [(cols, rows)]. Falls back to

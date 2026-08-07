@@ -488,17 +488,25 @@ let test_max_width_clamps_measured_wrap () =
   (* 120 columns of wrapping content: height is the line count at the width
      the layout offers. *)
   let text =
-    new_leaf_with_context tree (Style.default |> Style.set_size auto_size) "text"
+    new_leaf_with_context tree
+      (Style.default |> Style.set_size auto_size)
+      "text"
     |> or_fail "Failed to create text leaf"
   in
   let inset_style =
     Style.default
     |> Style.set_size
          Size.
-           { width = Style.Dimension.percent 1.0; height = Style.Dimension.auto }
+           {
+             width = Style.Dimension.percent 1.0;
+             height = Style.Dimension.auto;
+           }
     |> Style.set_max_size
          Size.
-           { width = Style.Dimension.length 60.0; height = Style.Dimension.auto }
+           {
+             width = Style.Dimension.length 60.0;
+             height = Style.Dimension.auto;
+           }
   in
   let inset =
     new_with_children tree inset_style [| text |]
@@ -521,7 +529,10 @@ let test_max_width_clamps_measured_wrap () =
     |> Style.set_flex_direction Style.Flex_direction.Column
     |> Style.set_size
          Size.
-           { width = Style.Dimension.length 140.0; height = Style.Dimension.auto }
+           {
+             width = Style.Dimension.length 140.0;
+             height = Style.Dimension.auto;
+           }
   in
   let root =
     new_with_children tree root_style [| inset; hint |]

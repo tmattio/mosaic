@@ -272,8 +272,9 @@ let fast_scroll_up () =
 
 let page_down_uses_bordered_body_height () =
   let _t, tbl =
-    make_table ~columns:[ Table.column "Name" ] ~rows:paging_rows
-      ~selected_row:2 ~border:true ~show_header:true ()
+    make_table
+      ~columns:[ Table.column "Name" ]
+      ~rows:paging_rows ~selected_row:2 ~border:true ~show_header:true ()
   in
   render_with_layout tbl ~width:20 ~height:8;
   let changes = ref [] in
@@ -284,8 +285,9 @@ let page_down_uses_bordered_body_height () =
 
 let page_up_accounts_for_row_separators () =
   let _t, tbl =
-    make_table ~columns:[ Table.column "Name" ] ~rows:paging_rows
-      ~selected_row:7 ~border:false ~show_header:false
+    make_table
+      ~columns:[ Table.column "Name" ]
+      ~rows:paging_rows ~selected_row:7 ~border:false ~show_header:false
       ~show_row_separator:true ()
   in
   render_with_layout tbl ~width:20 ~height:5;
@@ -297,8 +299,10 @@ let page_up_accounts_for_row_separators () =
 
 let page_navigation_clamps_when_selection_wraps () =
   let _t, tbl =
-    make_table ~columns:[ Table.column "Name" ] ~rows:paging_rows
-      ~selected_row:1 ~border:false ~show_header:false ~wrap_selection:true ()
+    make_table
+      ~columns:[ Table.column "Name" ]
+      ~rows:paging_rows ~selected_row:1 ~border:false ~show_header:false
+      ~wrap_selection:true ()
   in
   render_with_layout tbl ~width:20 ~height:4;
   let changes = ref [] in
@@ -312,8 +316,7 @@ let page_navigation_clamps_when_selection_wraps () =
   emit_key tbl (make_key Page_down);
   emit_key tbl (make_key Page_down);
   equal ~msg:"page down clamps at the last row" int 11 (Table.selected_row tbl);
-  equal ~msg:"only the changed selection is reported" (list int) [ 11 ]
-    !changes
+  equal ~msg:"only the changed selection is reported" (list int) [ 11 ] !changes
 
 let enter_fires_on_activate () =
   let _t, tbl =

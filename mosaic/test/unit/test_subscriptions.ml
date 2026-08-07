@@ -257,6 +257,5 @@ let () =
         cmd_query_color_scheme_maps_to_itself;
       test "Sub.on_color_scheme delivers reports"
         sub_on_color_scheme_delivers_reports;
-      test "Sub.on_color_scheme maps messages"
-        sub_on_color_scheme_maps_messages;
+      test "Sub.on_color_scheme maps messages" sub_on_color_scheme_maps_messages;
     ]

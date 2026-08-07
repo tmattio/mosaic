@@ -159,11 +159,10 @@ let%expect_test "reset_sticky returns a parked viewport to its live edge once" =
   show "new reset key follows" (view ~reset_sticky:"turn-2" 16);
   send_key app Input.Key.Page_up;
   show "manual page after reset" (view ~reset_sticky:"turn-2" 16);
-  show "stable reset key stays parked"
-    (view ~reset_sticky:"turn-2" 20);
-  show "changed reset key follows again"
-    (view ~reset_sticky:"turn-3" 20);
-  [%expect {|initial tail
+  show "stable reset key stays parked" (view ~reset_sticky:"turn-2" 20);
+  show "changed reset key follows again" (view ~reset_sticky:"turn-3" 20);
+  [%expect
+    {|initial tail
 
 line 9
 line 10

@@ -100,15 +100,15 @@ type line_span = {
 }
 (** The type for a source-line sub-range highlight.
 
-    [line] is a 1-based source line number on [side]; [start_byte] and [end_byte]
-    are byte offsets into that line's content, half-open on [\[start_byte,
-    end_byte)]. Out-of-range bytes are clamped to the line and an empty range is
-    ignored, as is a span whose [(side, line)] is absent from the patch. The
-    span's [color] is drawn as a background over the covered cells, on whichever
-    wrapped rows they fall, alpha-blended over the line's existing background;
-    opaque colours replace it. Unlike {!line_highlight}, which colours a whole
-    line, a span colours a byte range within one line. In unified layout,
-    context lines can match either {!Old} or {!New}. *)
+    [line] is a 1-based source line number on [side]; [start_byte] and
+    [end_byte] are byte offsets into that line's content, half-open on
+    [\[start_byte, end_byte)]. Out-of-range bytes are clamped to the line and an
+    empty range is ignored, as is a span whose [(side, line)] is absent from the
+    patch. The span's [color] is drawn as a background over the covered cells,
+    on whichever wrapped rows they fall, alpha-blended over the line's existing
+    background; opaque colours replace it. Unlike {!line_highlight}, which
+    colours a whole line, a span colours a byte range within one line. In
+    unified layout, context lines can match either {!Old} or {!New}. *)
 
 type source_line = { side : side; line : int }
 (** The type for a 1-based source line on one side of a diff. *)

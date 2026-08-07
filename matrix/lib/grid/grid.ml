@@ -189,14 +189,13 @@ let default_bg = Ansi.Color.default
 let default_fg_packed = Color_packed.encode default_fg
 let default_bg_packed = Color_packed.encode default_bg
 
-(** Terminal-default foreground has zero color alpha because it names a
-    terminal palette entry rather than an RGBA value. A glyph drawn with that
-    intent nevertheless has opaque coverage. Keep blanks transparent, but
-    make glyph coverage explicit while compositing. *)
+(** Terminal-default foreground has zero color alpha because it names a terminal
+    palette entry rather than an RGBA value. A glyph drawn with that intent
+    nevertheless has opaque coverage. Keep blanks transparent, but make glyph
+    coverage explicit while compositing. *)
 let foreground_composition_alpha ~code ~color ~alpha =
   if
-    code <> null_cell
-    && code <> space_cell
+    code <> null_cell && code <> space_cell
     && Color_packed.intent color = Ansi.Color.Default
   then 1.
   else alpha
@@ -581,9 +580,7 @@ let current_opacity t = t.opacity_product
     hot callers can avoid tuple allocation. *)
 let set_cell_internal t ~idx ~code ~fg_color ~bg_color ~fg_r ~fg_g ~fg_b ~fg_a
     ~bg_r ~bg_g ~bg_b ~bg_a ~attrs ~link_id ~blending =
-  let fg_a =
-    foreground_composition_alpha ~code ~color:fg_color ~alpha:fg_a
-  in
+  let fg_a = foreground_composition_alpha ~code ~color:fg_color ~alpha:fg_a in
   (* Apply opacity stack *)
   let fg_a, bg_a, blending, fg_color, bg_color =
     if t.opacity_product < 1.0 then

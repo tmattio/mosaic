@@ -852,8 +852,7 @@ module Cmd : sig
         (** Ask the terminal for its light/dark colour scheme by emitting
             [CSI ? 996 n]. The reply, when supported, arrives through
             {!Sub.on_color_scheme}. *)
-    | Bell
-        (** Ring the terminal bell (BEL), a best-effort attention cue. *)
+    | Bell  (** Ring the terminal bell (BEL), a best-effort attention cue. *)
     | Notify of { title : string; body : string }
         (** Post a desktop notification via OSC 9 (iTerm2, kitty) and OSC 777
             (urxvt and others); a terminal ignores the sequence it does not
@@ -908,7 +907,8 @@ module Cmd : sig
   (** [bell] rings the terminal bell (BEL). *)
 
   val notify : title:string -> body:string -> 'msg t
-  (** [notify ~title ~body] posts a desktop notification through the terminal. *)
+  (** [notify ~title ~body] posts a desktop notification through the terminal.
+  *)
 
   val clear_selection : 'msg t
   (** [clear_selection] clears the active text selection, if any. *)
@@ -974,9 +974,10 @@ module Sub : sig
         (** [On_blur msg] dispatches [msg] when the terminal window loses focus.
         *)
     | On_color_scheme of ([ `Dark | `Light ] -> 'msg option)
-        (** [On_color_scheme f] delivers the terminal's light/dark colour scheme,
-            both as the reply to {!Cmd.query_color_scheme} and as unsolicited DEC
-            2031 notifications. [f] returns [None] to ignore a report. *)
+        (** [On_color_scheme f] delivers the terminal's light/dark colour
+            scheme, both as the reply to {!Cmd.query_color_scheme} and as
+            unsolicited DEC 2031 notifications. [f] returns [None] to ignore a
+            report. *)
 
   val none : 'msg t
   (** [none] is the empty subscription. Produces no events. *)

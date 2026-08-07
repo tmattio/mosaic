@@ -632,14 +632,12 @@ let on_mouse t (event : Event.mouse) =
         t.wheel_acc_y <- t.wheel_acc_y +. fy;
         let stepx = int_of_float t.wheel_acc_x in
         let stepy = int_of_float t.wheel_acc_y in
-        if stepx <> 0 then
-          t.wheel_acc_x <- t.wheel_acc_x -. float_of_int stepx;
-        if stepy <> 0 then
-          t.wheel_acc_y <- t.wheel_acc_y -. float_of_int stepy;
+        if stepx <> 0 then t.wheel_acc_x <- t.wheel_acc_x -. float_of_int stepx;
+        if stepy <> 0 then t.wheel_acc_y <- t.wheel_acc_y -. float_of_int stepy;
         if stepx <> 0 || stepy <> 0 then begin
           let previous_x = t.scroll_x and previous_y = t.scroll_y in
-          scroll_to_internal t ~x:(t.scroll_x + stepx)
-            ~y:(t.scroll_y + stepy) ();
+          scroll_to_internal t ~x:(t.scroll_x + stepx) ~y:(t.scroll_y + stepy)
+            ();
           if t.scroll_x <> previous_x || t.scroll_y <> previous_y then
             Event.Mouse.stop_propagation event
         end

@@ -392,11 +392,10 @@ let controlled_textarea_reapplies_equal_value () =
   | None -> fail "expected textarea ref");
   let modifier = { Input.Modifier.none with ctrl = true } in
   ignore
-    (Renderer.dispatch_key renderer
-       (Input.Key.make ~modifier Input.Key.Enter)
+    (Renderer.dispatch_key renderer (Input.Key.make ~modifier Input.Key.Enter)
       : Event.key);
-  equal ~msg:"equal controlled value replaced live textarea state"
-    (list string) [ "" ] (List.rev !submissions)
+  equal ~msg:"equal controlled value replaced live textarea state" (list string)
+    [ "" ] (List.rev !submissions)
 
 let converged_controlled_value_preserves_cursor () =
   let renderer, reconciler = make () in

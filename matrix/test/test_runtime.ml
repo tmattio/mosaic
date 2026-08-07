@@ -662,8 +662,7 @@ let test_submit_reuses_render_capacity () =
     (unchanged_major_words <= 1024.);
   is_true
     ~msg:
-      (Printf.sprintf
-         "changed submit allocated %.0f major words after warm-up"
+      (Printf.sprintf "changed submit allocated %.0f major words after warm-up"
          changed_major_words)
     (changed_major_words <= 1024.)
 

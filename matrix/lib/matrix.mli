@@ -242,14 +242,14 @@ val suspend : ?leave_alt:bool -> app -> unit
     (mouse, bracketed paste, focus reporting, kitty keyboard, and
     modify-other-keys off; raw mode off; pending input flushed). When
     [leave_alt] is [true] (default [false], preserving existing callers) it also
-    exits the alternate-screen buffer, so a full-screen foreground child owns the
-    primary screen and its scrollback. {!resume} reapplies configuration. *)
+    exits the alternate-screen buffer, so a full-screen foreground child owns
+    the primary screen and its scrollback. {!resume} reapplies configuration. *)
 
 val resume : app -> unit
 (** [resume app] reapplies terminal configuration after {!suspend}: it re-enters
-    the alternate-screen buffer iff the matching {!suspend} left it, discards any
-    input received while suspended (stale keystrokes never reach the app), and
-    forces a full repaint on the next frame. *)
+    the alternate-screen buffer iff the matching {!suspend} left it, discards
+    any input received while suspended (stale keystrokes never reach the app),
+    and forces a full repaint on the next frame. *)
 
 val request_live : app -> unit
 (** [request_live app] signals pending live work. Restarts the render cadence
