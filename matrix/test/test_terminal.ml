@@ -829,6 +829,35 @@ let test_reset_state_disables_partially_enabled_paste () =
   is_true ~msg:"reset disables bracketed paste after partial enable"
     (contains_substring (Buffer.contents output) "\027[?2004l")
 
+(* Regression: reset_state must not clobber terminal state the app never
+   touched — blanking the title or resetting cursor colour/style clobbers
+   user- or shell-configured state on exit. *)
+let test_reset_state_skips_untouched_appearance () =
+  with_tty_terminal @@ fun term buf ->
+  T.reset_state term;
+  let out = Buffer.contents buf in
+  is_false ~msg:"untouched title is not cleared"
+    (contains_substring out "\027]0;");
+  is_false ~msg:"untouched cursor color is not reset"
+    (contains_substring out "\027]112");
+  is_false ~msg:"untouched cursor color fallback is not sent"
+    (contains_substring out "\027]12;");
+  is_false ~msg:"untouched cursor style is not reset"
+    (contains_substring out "\027[0 q")
+
+let test_reset_state_restores_touched_appearance () =
+  with_tty_terminal @@ fun term buf ->
+  T.set_title term "matrix";
+  T.set_cursor_style term `Line ~blinking:false;
+  Buffer.clear buf;
+  T.reset_state term;
+  let out = Buffer.contents buf in
+  is_true ~msg:"touched title is cleared" (contains_substring out "\027]0;");
+  is_true ~msg:"touched cursor style is reset"
+    (contains_substring out "\027[0 q");
+  is_true ~msg:"touched cursor color is reset"
+    (contains_substring out "\027]112")
+
 let test_reset_state_resets_cursor_metadata () =
   with_terminal @@ fun term _buf ->
   T.set_cursor_visible term false;
@@ -930,6 +959,10 @@ let () =
           test "reset state" test_reset_state;
           test "reset state disables partial paste"
             test_reset_state_disables_partially_enabled_paste;
+          test "reset state skips untouched appearance"
+            test_reset_state_skips_untouched_appearance;
+          test "reset state restores touched appearance"
+            test_reset_state_restores_touched_appearance;
           test "reset state resets cursor metadata"
             test_reset_state_resets_cursor_metadata;
         ];

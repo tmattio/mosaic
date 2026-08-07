@@ -737,13 +737,17 @@ let apply_cursor_state t ~buf ~(cursor : Screen.cursor) ~cursor_max_row =
     let shape = cursor_shape cursor in
     if Some shape <> t.last_cursor_shape then begin
       Buffer.add_string buf Ansi.(to_string (cursor_style ~shape));
+      Terminal.note_appearance_emitted t.terminal `Cursor_style;
       t.last_cursor_shape <- Some shape
     end;
     if Some cursor.color <> t.last_cursor_color then begin
       (match cursor.color with
       | Some (r, g, b) ->
-          Buffer.add_string buf Ansi.(to_string (cursor_color ~r ~g ~b))
-      | None -> Buffer.add_string buf Ansi.(to_string reset_cursor_color));
+          Buffer.add_string buf Ansi.(to_string (cursor_color ~r ~g ~b));
+          Terminal.note_appearance_emitted t.terminal `Cursor_color
+      | None ->
+          Buffer.add_string buf Ansi.(to_string reset_cursor_color);
+          Terminal.note_appearance_reset t.terminal `Cursor_color);
       t.last_cursor_color <- Some cursor.color
     end
   end

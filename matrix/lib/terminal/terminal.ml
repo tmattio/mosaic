@@ -72,6 +72,12 @@ type t = {
   mutable scroll_region : (int * int) option;
   mutable pixel_resolution : (int * int) option;
   env_overrides : bool;
+  (* Appearance the handle actually emitted. [reset_state] restores only what
+     was touched: blanking a title or resetting cursor colour/style the app
+     never set would clobber user- or shell-configured terminal state. *)
+  mutable title_sent : bool;
+  mutable cursor_style_sent : bool;
+  mutable cursor_color_sent : bool;
 }
 
 (* Pre-computed escape sequences *)
@@ -163,6 +169,9 @@ let make ~output ?(tty = true) ?initial_caps () =
     scroll_region = None;
     pixel_resolution = None;
     env_overrides;
+    title_sent = false;
+    cursor_style_sent = false;
+    cursor_color_sent = false;
   }
 
 (* Capability access *)
@@ -361,6 +370,9 @@ let set_cursor_visuals t =
   if not t.tty then ()
   else if t.cursor.visible then (
     let r, g, b, _ = t.cursor.color in
+    (* Marked before sending so a partial write still gets reset. *)
+    t.cursor_color_sent <- true;
+    t.cursor_style_sent <- true;
     send t (cursor_color_osc r g b);
     send t (cursor_style_seq t.cursor.style t.cursor.blinking))
   else send t cursor_hide
@@ -377,9 +389,26 @@ let set_cursor_color t ~r ~g ~b ~a =
 let reset_cursor_color t =
   t.cursor.color <- (1., 1., 1., 1.);
   send t reset_cursor_color_fallback_seq;
-  send t reset_cursor_color_seq
+  send t reset_cursor_color_seq;
+  t.cursor_color_sent <- false
 
-let set_title t title = send t Ansi.(to_string (set_title ~title))
+let set_title t title =
+  t.title_sent <- true;
+  send t Ansi.(to_string (set_title ~title))
+
+(* Out-of-band appearance tracking: runtimes batch DECSCUSR / OSC 12 / title
+   writes into frame buffers that bypass [send]; these calls keep the handle
+   the single authority over what [reset_state] must restore. *)
+
+let note_appearance_emitted t = function
+  | `Cursor_style -> t.cursor_style_sent <- true
+  | `Cursor_color -> t.cursor_color_sent <- true
+  | `Title -> t.title_sent <- true
+
+let note_appearance_reset t = function
+  | `Cursor_style -> t.cursor_style_sent <- false
+  | `Cursor_color -> t.cursor_color_sent <- false
+  | `Title -> t.title_sent <- false
 let query_pixel_resolution t = send t Ansi.(to_string (query Pixel_size))
 
 (* Mode restoration *)
@@ -406,9 +435,13 @@ let restore_modes ?(skip_focus = false) t =
 let reset_state t =
   send t cursor_show;
   send t reset_sgr;
-  send t reset_cursor_color_fallback_seq;
-  send t reset_cursor_color_seq;
-  send t cursor_default;
+  if t.cursor_color_sent then (
+    send t reset_cursor_color_fallback_seq;
+    send t reset_cursor_color_seq;
+    t.cursor_color_sent <- false);
+  if t.cursor_style_sent then (
+    send t cursor_default;
+    t.cursor_style_sent <- false);
   if t.kitty_keyboard_armed then send t kitty_kb_pop;
   t.kitty_keyboard_enabled <- false;
   t.kitty_keyboard_armed <- false;
@@ -434,7 +467,9 @@ let reset_state t =
       send t Ansi.(to_string (cursor_up ~n:1))
     done;
     send t erase_below);
-  set_title t "";
+  if t.title_sent then (
+    set_title t "";
+    t.title_sent <- false);
   send t cursor_show;
   t.cursor.visible <- true;
   t.cursor.style <- `Block;

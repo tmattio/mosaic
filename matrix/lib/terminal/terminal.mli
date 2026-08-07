@@ -131,7 +131,9 @@ val close : t -> unit
 
     Disables mouse tracking, bracketed paste, focus reporting, Kitty keyboard,
     modifyOtherKeys, Unicode mode, and alternate screen. Resets cursor
-    visibility, SGR attributes, cursor colour and style, and window title.
+    visibility and SGR attributes. Cursor colour, cursor style, and the window
+    title are reset only when they were changed through the handle, so
+    terminal state the application never touched is left alone.
 
     {b Note.} Does not restore termios or close file descriptors; that is the
     runtime's responsibility. *)
@@ -346,6 +348,20 @@ val reset_cursor_color : t -> unit
 val set_title : t -> string -> unit
 (** [set_title t s] sets the terminal window title to [s] (OSC 0). *)
 
+val note_appearance_emitted :
+  t -> [ `Cursor_color | `Cursor_style | `Title ] -> unit
+(** [note_appearance_emitted t what] records that an appearance sequence for
+    [what] reached the terminal without going through [t]'s output callback —
+    runtimes batch DECSCUSR, OSC 12, and title writes into frame buffers of
+    their own. {!reset_state} and {!close} then restore [what] exactly as if
+    it had been set through the handle. *)
+
+val note_appearance_reset :
+  t -> [ `Cursor_color | `Cursor_style | `Title ] -> unit
+(** [note_appearance_reset t what] records that [what] was restored to its
+    terminal default without going through [t] (e.g. a frame buffer carried
+    OSC 112). {!reset_state} and {!close} then leave [what] alone. *)
+
 val query_pixel_resolution : t -> unit
 (** [query_pixel_resolution t] sends a pixel resolution query (CSI 14 t) through
     [output]. The response arrives asynchronously and should be processed via
@@ -365,7 +381,8 @@ val reset_state : t -> unit
 
     Disables mouse tracking, bracketed paste, focus events, Kitty keyboard,
     modifyOtherKeys, Unicode mode, scroll region, and alternate screen. Resets
-    SGR attributes, cursor colour and style, and window title. *)
+    SGR attributes. Cursor colour, cursor style, and the window title are
+    reset only when they were changed through the handle. *)
 
 (** {1:tty_helpers TTY helpers}
 

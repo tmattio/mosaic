@@ -668,6 +668,41 @@ let test_unchanged_submit_emits_no_bytes () =
   equal ~msg:"unchanged frame skips terminal write" int 0
     (String.length (output state))
 
+(* Regression: close must not clobber terminal appearance the app never
+   touched (window title, cursor colour, cursor style). *)
+let test_close_leaves_untouched_appearance_alone () =
+  let app, state =
+    make_app ~terminal_tty:true ~target_fps:None ~input_timeout:(Some 0.) ()
+  in
+  Matrix.prepare app;
+  Matrix.submit app;
+  Matrix.close app;
+  let out = Buffer.contents state.terminal_output in
+  is_false ~msg:"close does not clear the title" (contains_substring "\027]0;" out);
+  is_false ~msg:"close does not reset cursor color"
+    (contains_substring "\027]112" out);
+  is_false ~msg:"close does not reset cursor style"
+    (contains_substring "\027[0 q" out)
+
+let test_close_restores_touched_cursor_appearance () =
+  let app, state =
+    make_app ~mode:`Primary ~terminal_tty:true ~target_fps:None
+      ~input_timeout:(Some 0.) ()
+  in
+  Matrix.prepare app;
+  Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"x";
+  Matrix.set_cursor ~visible:true app;
+  Matrix.set_cursor_style app ~style:`Line ~blinking:false;
+  Matrix.set_cursor_color app ~r:1. ~g:0. ~b:0.;
+  Matrix.set_cursor_position app ~row:1 ~col:1;
+  Matrix.submit app;
+  Matrix.close app;
+  let out = Buffer.contents state.terminal_output in
+  is_true ~msg:"close resets the emitted cursor style"
+    (contains_substring "\027[0 q" out);
+  is_true ~msg:"close resets the emitted cursor color"
+    (contains_substring "\027]112" out)
+
 let major_words_allocated f =
   Gc.full_major ();
   let before = Gc.quick_stat () in
@@ -1579,6 +1614,10 @@ let () =
             test_startup_capability_window_defers_split_response;
           test "resume reanchors primary from bottom cursor"
             test_resume_reanchors_primary_from_bottom_cursor;
+          test "close leaves untouched appearance alone"
+            test_close_leaves_untouched_appearance_alone;
+          test "close restores touched cursor appearance"
+            test_close_restores_touched_cursor_appearance;
         ];
       group "Frame pacing"
         [
