@@ -17,10 +17,6 @@ type t
 val create : unit -> t
 (** [create ()] is a new empty grapheme store. *)
 
-val clear : t -> unit
-(** [clear t] removes all payloads from [t] and invalidates all existing
-    handles. *)
-
 val intern : t -> string -> off:int -> len:int -> int
 (** [intern t s ~off ~len] is the store index for the byte slice
     [String.sub s off len].

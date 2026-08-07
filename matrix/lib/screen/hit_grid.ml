@@ -117,12 +117,3 @@ let get t ~x ~y =
   else
     let idx = (y * t.width) + x in
     Bigarray.Array1.unsafe_get t.data idx
-
-let blit ~src ~dst =
-  resize dst ~width:src.width ~height:src.height;
-  let len = src.width * src.height in
-  (* Manual copy to avoid Bigarray.Array1.sub view allocations *)
-  for i = 0 to len - 1 do
-    Bigarray.Array1.unsafe_set dst.data i
-      (Bigarray.Array1.unsafe_get src.data i)
-  done

@@ -45,28 +45,6 @@ let create () =
     live_hashes = Array.make initial_ids 0;
   }
 
-let clear_live_table t =
-  t.live_count <- 0;
-  if t.live_epoch = max_int then (
-    Array.fill t.live_bucket_stamps ~pos:0
-      ~len:(Array.length t.live_bucket_stamps)
-      0;
-    t.live_epoch <- 1)
-  else t.live_epoch <- t.live_epoch + 1
-
-let clear t =
-  let used = t.next_id in
-  t.next_id <- 1;
-  t.storage_cursor <- 0;
-  t.free_count <- 0;
-  Array.fill t.lengths ~pos:0 ~len:used 0;
-  Array.fill t.capacities ~pos:0 ~len:used 0;
-  for i = 1 to used - 1 do
-    Array.unsafe_set t.generations i
-      ((Array.unsafe_get t.generations i + 1) land mask_generation)
-  done;
-  clear_live_table t
-
 let ensure_id_capacity t =
   let cap = Array.length t.offsets in
   if t.next_id >= cap then (

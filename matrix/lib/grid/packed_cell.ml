@@ -33,22 +33,6 @@ let check_sub name str ~pos ~len =
 let[@inline] ascii_width ~tab_width b =
   if b = 0x09 then tab_width else if b >= 0x20 && b <= 0x7E then 1 else 0
 
-let[@inline] is_ascii_4 str i =
-  let c0 = Char.code (String.unsafe_get str i) in
-  let c1 = Char.code (String.unsafe_get str (i + 1)) in
-  let c2 = Char.code (String.unsafe_get str (i + 2)) in
-  let c3 = Char.code (String.unsafe_get str (i + 3)) in
-  c0 lor c1 lor c2 lor c3 < 128
-
-let rec is_ascii_only_tail str len i =
-  i >= len
-  || Char.code (String.unsafe_get str i) < 128
-     && is_ascii_only_tail str len (i + 1)
-
-let rec is_ascii_only str len i =
-  if i + 4 <= len then is_ascii_4 str i && is_ascii_only str len (i + 4)
-  else is_ascii_only_tail str len i
-
 let string_of_uchar uchar =
   let len = Uchar.utf_8_byte_length uchar in
   let buf = Bytes.create len in
@@ -203,32 +187,6 @@ let intern_sub store ~width_method ~tab_width str ~pos ~len ~width =
   intern_core store width_method
     (normalize_tab_width tab_width)
     (Some width) str pos len
-
-let emit_span f cell width =
-  f cell;
-  if width > 1 then
-    let span = min 4 width - 1 in
-    for left = 1 to span do
-      f (make_continuation ~code:cell ~left ~right:(span - left))
-    done
-
-let encode store ~width_method ~tab_width f str =
-  let tab_width = normalize_tab_width tab_width in
-  let len = String.length str in
-  if is_ascii_only str len 0 then
-    for i = 0 to len - 1 do
-      let b = Char.code (String.unsafe_get str i) in
-      if b = 0x09 then f (pack_simple b 0)
-      else if b >= 0x20 && b <= 0x7E then f (pack_simple b 1)
-    done
-  else
-    Text.iter_grapheme_info ~width_method ~tab_width
-      (fun ~offset ~len ~width ->
-        let cell =
-          intern_sub store ~width_method ~tab_width str ~pos:offset ~len ~width
-        in
-        emit_span f cell width)
-      str
 
 let length store cell =
   if is_inline cell then

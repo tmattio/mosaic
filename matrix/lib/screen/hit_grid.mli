@@ -47,10 +47,6 @@ val get : t -> x:int -> y:int -> id
 (** [get t ~x ~y] is the element ID at [(x, y)], or {!empty_id} if the
     coordinates are out of bounds. *)
 
-val blit : src:t -> dst:t -> unit
-(** [blit ~src ~dst] copies the content of [src] into [dst]. [dst] is resized to
-    match [src]. *)
-
 (** {1:clipping Clipping}
 
     Hierarchical clipping for hit regions. When a clip is active, {!add}
