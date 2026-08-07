@@ -5,11 +5,11 @@
 # host: Thibauts-MacBook-2.local · Apple M1 Max · arm64 · macos
 # ocaml: 5.4.1+relocatable · 64-bit · release
 
-reconcile/reorder-keyed-list-500	alloc_words	exact	99204
+reconcile/reorder-keyed-list-500	alloc_words	exact	79665
 reconcile/reorder-keyed-list-500	minor_collections	batch=2	n=20	5.000e-01	0.000e+00 0.000e+00 0.000e+00 0.000e+00 0.000e+00 0.000e+00 0.000e+00 5.000e-01 5.000e-01 5.000e-01 5.000e-01 5.000e-01 5.000e-01 5.000e-01 5.000e-01 5.000e-01 5.000e-01 1.000e+00 1.000e+00 1.000e+00
 reconcile/reorder-keyed-list-500	promoted_words	batch=2	n=20	3.326e+04	0.000e+00 0.000e+00 0.000e+00 0.000e+00 0.000e+00 0.000e+00 0.000e+00 2.973e+04 3.167e+04 3.259e+04 3.394e+04 3.894e+04 4.007e+04 4.048e+04 4.126e+04 4.363e+04 5.285e+04 6.933e+04 7.123e+04 7.342e+04
 reconcile/reorder-keyed-list-500	wall_time	batch=2	n=20	3.068e-03	2.608e-03 2.657e-03 2.685e-03 2.716e-03 2.807e-03 2.858e-03 2.939e-03 2.955e-03 3.013e-03 3.062e-03 3.074e-03 3.092e-03 3.097e-03 3.112e-03 3.140e-03 3.144e-03 3.468e-03 3.622e-03 3.650e-03 3.829e-03
-reconcile/steady-keyed-list-500	alloc_words	exact	81209
+reconcile/steady-keyed-list-500	alloc_words	exact	61670
 reconcile/steady-keyed-list-500	minor_collections	batch=16	n=20	3.125e-01	3.125e-01 3.125e-01 3.125e-01 3.125e-01 3.125e-01 3.125e-01 3.125e-01 3.125e-01 3.125e-01 3.125e-01 3.125e-01 3.125e-01 3.750e-01 3.750e-01 3.750e-01 3.750e-01 3.750e-01 3.750e-01 3.750e-01 3.750e-01
 reconcile/steady-keyed-list-500	promoted_words	batch=16	n=20	2.474e+04	2.195e+04 2.208e+04 2.250e+04 2.286e+04 2.342e+04 2.342e+04 2.374e+04 2.394e+04 2.402e+04 2.420e+04 2.528e+04 2.528e+04 2.717e+04 2.789e+04 2.803e+04 2.879e+04 2.913e+04 2.931e+04 2.952e+04 3.045e+04
-reconcile/steady-keyed-list-500	wall_time	batch=16	n=20	3.829e-04	3.647e-04 3.661e-04 3.745e-04 3.761e-04 3.764e-04 3.779e-04 3.784e-04 3.793e-04 3.801e-04 3.828e-04 3.829e-04 3.861e-04 3.862e-04 3.883e-04 3.923e-04 3.967e-04 3.970e-04 4.053e-04 4.095e-04 4.597e-04
+reconcile/steady-keyed-list-500	wall_time	batch=16	n=40	2.885e-04	2.539e-04 2.567e-04 2.573e-04 2.595e-04 2.603e-04 2.617e-04 2.659e-04 2.661e-04 2.687e-04 2.695e-04 2.714e-04 2.747e-04 2.758e-04 2.759e-04 2.782e-04 2.814e-04 2.853e-04 2.863e-04 2.866e-04 2.868e-04 2.902e-04 2.907e-04 2.910e-04 2.919e-04 2.935e-04 2.937e-04 2.957e-04 2.959e-04 2.968e-04 2.970e-04 3.002e-04 3.030e-04 3.111e-04 3.112e-04 3.114e-04 3.131e-04 3.155e-04 3.172e-04 3.228e-04 3.358e-04

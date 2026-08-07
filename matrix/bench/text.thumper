@@ -57,7 +57,7 @@ position/position-find_wrap_pos-mixed	wall_time	batch=512	n=20	1.046e-05	1.010e-
 position/position-find_wrap_pos-wcwidth	alloc_words	exact	894
 position/position-find_wrap_pos-wcwidth	wall_time	batch=4096	n=20	1.422e-06	1.320e-06 1.369e-06 1.378e-06 1.387e-06 1.387e-06 1.389e-06 1.401e-06 1.404e-06 1.417e-06 1.420e-06 1.424e-06 1.431e-06 1.432e-06 1.441e-06 1.447e-06 1.459e-06 1.469e-06 1.481e-06 1.497e-06 1.522e-06
 position/position-prev-ascii	alloc_words	exact	11
-position/position-prev-ascii	wall_time	batch=16384	n=20	5.280e-07	5.174e-07 5.198e-07 5.221e-07 5.233e-07 5.250e-07 5.254e-07 5.254e-07 5.271e-07 5.274e-07 5.279e-07 5.282e-07 5.407e-07 5.412e-07 5.440e-07 5.591e-07 5.628e-07 5.714e-07 5.912e-07 5.957e-07 7.433e-07
+position/position-prev-ascii	wall_time	batch=16384	n=40	5.112e-07	4.979e-07 5.017e-07 5.026e-07 5.032e-07 5.048e-07 5.055e-07 5.057e-07 5.062e-07 5.062e-07 5.071e-07 5.075e-07 5.076e-07 5.078e-07 5.080e-07 5.089e-07 5.091e-07 5.102e-07 5.103e-07 5.105e-07 5.108e-07 5.116e-07 5.118e-07 5.118e-07 5.119e-07 5.123e-07 5.125e-07 5.131e-07 5.132e-07 5.132e-07 5.136e-07 5.139e-07 5.140e-07 5.153e-07 5.158e-07 5.164e-07 5.169e-07 5.197e-07 5.250e-07 5.264e-07 5.351e-07
 position/position-prev-mixed	alloc_words	exact	24
 position/position-prev-mixed	wall_time	batch=128	n=20	7.045e-05	6.871e-05 6.936e-05 6.973e-05 6.981e-05 6.986e-05 6.989e-05 7.001e-05 7.024e-05 7.038e-05 7.043e-05 7.047e-05 7.054e-05 7.056e-05 7.069e-05 7.077e-05 7.103e-05 7.109e-05 7.114e-05 7.151e-05 7.214e-05
 position/position-prev-wcwidth	alloc_words	exact	8461
@@ -75,6 +75,6 @@ segment/segment-complex_line	wall_time	batch=512	n=20	1.143e-05	1.112e-05 1.126e
 width/width-ascii-unicode	alloc_words	exact	0
 width/width-ascii-unicode	wall_time	batch=4096	n=20	1.820e-06	1.768e-06 1.778e-06 1.782e-06 1.785e-06 1.790e-06 1.791e-06 1.792e-06 1.808e-06 1.811e-06 1.820e-06 1.821e-06 1.824e-06 1.825e-06 1.826e-06 1.834e-06 1.839e-06 1.840e-06 1.847e-06 1.869e-06 1.870e-06
 width/width-complex-unicode	alloc_words	exact	5
-width/width-complex-unicode	wall_time	batch=512	n=20	1.385e-05	1.283e-05 1.287e-05 1.297e-05 1.310e-05 1.325e-05 1.326e-05 1.328e-05 1.338e-05 1.374e-05 1.385e-05 1.386e-05 1.394e-05 1.396e-05 1.398e-05 1.404e-05 1.434e-05 1.467e-05 1.501e-05 1.577e-05 1.930e-05
+width/width-complex-unicode	wall_time	batch=512	n=40	1.271e-05	1.240e-05 1.242e-05 1.242e-05 1.244e-05 1.245e-05 1.245e-05 1.248e-05 1.253e-05 1.254e-05 1.254e-05 1.256e-05 1.257e-05 1.257e-05 1.258e-05 1.264e-05 1.264e-05 1.267e-05 1.267e-05 1.270e-05 1.271e-05 1.271e-05 1.272e-05 1.272e-05 1.274e-05 1.276e-05 1.276e-05 1.276e-05 1.277e-05 1.278e-05 1.279e-05 1.280e-05 1.285e-05 1.287e-05 1.289e-05 1.289e-05 1.290e-05 1.293e-05 1.297e-05 1.299e-05 1.301e-05
 width/width-complex-wcwidth	alloc_words	exact	0
 width/width-complex-wcwidth	wall_time	batch=1024	n=20	7.769e-06	7.564e-06 7.587e-06 7.657e-06 7.661e-06 7.677e-06 7.678e-06 7.679e-06 7.694e-06 7.710e-06 7.736e-06 7.802e-06 7.820e-06 7.855e-06 7.873e-06 7.884e-06 7.907e-06 7.929e-06 8.094e-06 8.135e-06 8.360e-06

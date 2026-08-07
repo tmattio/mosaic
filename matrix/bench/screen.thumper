@@ -25,9 +25,9 @@ render/render.scenario-text-editor	wall_time	batch=8	n=20	1.014e-03	9.954e-04 9.
 # ocaml: 5.4.1+relocatable · 64-bit · release
 
 render/render.diff-full-screen	alloc_words	exact	20020
-render/render.diff-full-screen	wall_time	batch=8	n=20	1.011e-03	9.370e-04 9.519e-04 9.666e-04 9.685e-04 9.741e-04 9.772e-04 9.778e-04 9.786e-04 9.939e-04 1.003e-03 1.019e-03 1.019e-03 1.103e-03 1.119e-03 1.159e-03 1.170e-03 1.199e-03 1.253e-03 1.260e-03 1.331e-03
+render/render.diff-full-screen	wall_time	batch=8	n=40	9.294e-04	8.990e-04 8.996e-04 9.024e-04 9.052e-04 9.099e-04 9.099e-04 9.109e-04 9.115e-04 9.121e-04 9.131e-04 9.152e-04 9.161e-04 9.188e-04 9.213e-04 9.221e-04 9.253e-04 9.274e-04 9.276e-04 9.286e-04 9.290e-04 9.298e-04 9.303e-04 9.314e-04 9.321e-04 9.338e-04 9.361e-04 9.369e-04 9.372e-04 9.385e-04 9.389e-04 9.392e-04 9.393e-04 9.416e-04 9.424e-04 9.445e-04 9.502e-04 9.507e-04 9.585e-04 9.636e-04 9.742e-04
 render/render.diff-no-changes	alloc_words	exact	20025
-render/render.diff-no-changes	wall_time	batch=8	n=20	1.028e-03	9.445e-04 9.671e-04 9.727e-04 9.775e-04 9.793e-04 9.803e-04 9.914e-04 1.007e-03 1.016e-03 1.026e-03 1.031e-03 1.039e-03 1.049e-03 1.050e-03 1.055e-03 1.063e-03 1.076e-03 1.077e-03 1.170e-03 1.487e-03
+render/render.diff-no-changes	wall_time	batch=8	n=40	9.260e-04	8.970e-04 9.011e-04 9.070e-04 9.097e-04 9.103e-04 9.111e-04 9.134e-04 9.144e-04 9.153e-04 9.187e-04 9.203e-04 9.209e-04 9.212e-04 9.216e-04 9.220e-04 9.221e-04 9.244e-04 9.253e-04 9.254e-04 9.255e-04 9.265e-04 9.271e-04 9.272e-04 9.305e-04 9.309e-04 9.319e-04 9.334e-04 9.378e-04 9.402e-04 9.437e-04 9.443e-04 9.501e-04 9.515e-04 9.537e-04 9.606e-04 9.682e-04 9.726e-04 9.854e-04 9.961e-04 1.018e-03
 render/render.diff-single-line	alloc_words	exact	19735
 render/render.diff-single-line	wall_time	batch=8	n=20	1.061e-03	9.356e-04 9.548e-04 9.608e-04 9.631e-04 9.842e-04 9.970e-04 9.983e-04 1.008e-03 1.043e-03 1.047e-03 1.076e-03 1.111e-03 1.128e-03 1.131e-03 1.134e-03 1.152e-03 1.177e-03 1.287e-03 1.419e-03 2.966e-03
 render/render.diff-sparse-cells	alloc_words	exact	20170
