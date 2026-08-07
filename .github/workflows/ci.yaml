@@ -35,6 +35,9 @@ jobs:
           # For matrix's terminal emulator demo
           opam install tsdl tsdl-ttf
 
+      - name: Build install targets
+        run: opam exec -- dune build @install
+
       - name: Build and test matrix
         run: |
           opam exec -- dune build matrix
@@ -44,6 +47,16 @@ jobs:
         run: |
           opam exec -- dune build toffee
           opam exec -- dune build @toffee/runtest
+
+      - name: Build and test tree-sitter
+        run: |
+          opam exec -- dune build tree-sitter
+          opam exec -- dune build @tree-sitter/runtest
+
+      - name: Build and test matrix-eio
+        run: |
+          opam exec -- dune build matrix-eio
+          opam exec -- dune build @matrix-eio/runtest
 
       - name: Build and test mosaic
         run: |
