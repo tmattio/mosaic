@@ -1095,6 +1095,10 @@ module Private = struct
 
   let num t = t.num
   let toffee_node t = t.toffee_node
+
+  let child_at t i =
+    if i < 0 || i >= t.child_count then None else t.children.(i)
+
   let width_method t = t.ctx.width_method ()
 
   let set_is_root t v =

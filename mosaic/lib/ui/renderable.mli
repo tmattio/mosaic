@@ -433,6 +433,11 @@ module Private : sig
   val num : t -> int
   (** [num t] is [t]'s numeric identifier, unique within the renderer. *)
 
+  val child_at : t -> int -> t option
+  (** [child_at t i] is [t]'s [i]th child, or [None] when [i] is out of bounds.
+      O(1) and allocation-free, unlike {!children} which materializes a fresh
+      list. *)
+
   val toffee_node : t -> Toffee.Node_id.t
   (** [toffee_node t] is [t]'s layout node identifier. *)
 

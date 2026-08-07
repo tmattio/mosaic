@@ -915,26 +915,46 @@ let child_node = function Fiber f -> fiber_node f | Embedded n -> n
 (* Two-pass placement: first detach stale managed children, then insert/reorder
    the new managed children. We intentionally avoid scanning all concrete
    Renderable children under [parent], because some widgets (e.g. Markdown)
-   manage internal children outside the reconciler. *)
+   manage internal children outside the reconciler.
+
+   This runs for every element fiber on every reconcile, so the steady state
+   must stay cheap: position probes go through the O(1) [child_at] accessor
+   rather than re-materializing the child list per index, and the stale-child
+   set is keyed by [Renderable.Private.num] — hashing raw nodes would apply
+   polymorphic hash and compare to cyclic records of closures. *)
+let rec same_nodes (a : child list) (b : child list) : bool =
+  match (a, b) with
+  | [], [] -> true
+  | x :: a, y :: b -> child_node x == child_node y && same_nodes a b
+  | _ -> false
+
 let commit_placement (parent_node : Renderable.t) ~(old_children : child list)
     ~(new_children : child list) : unit =
   let parent = Renderable.child_target parent_node in
-  let target_set = Hashtbl.create (List.length new_children) in
-  List.iter (fun c -> Hashtbl.replace target_set (child_node c) ()) new_children;
-  (* Pass 1: detach stale reconciler-managed children *)
-  List.iter
-    (fun c ->
-      let node = child_node c in
-      if not (Hashtbl.mem target_set node) then Renderable.detach node)
-    old_children;
-  (* Pass 2: place each child at its target index. We re-snapshot children after
-     each mutation because attach/detach change the list. *)
+  (* Pass 1: detach stale reconciler-managed children. Skipped when both
+     lists hold the same nodes in order — nothing can be stale. *)
+  if not (same_nodes old_children new_children) then begin
+    let target_set = Hashtbl.create (List.length new_children) in
+    List.iter
+      (fun c ->
+        Hashtbl.replace target_set (Renderable.Private.num (child_node c)) ())
+      new_children;
+    List.iter
+      (fun c ->
+        let node = child_node c in
+        if not (Hashtbl.mem target_set (Renderable.Private.num node)) then
+          Renderable.detach node)
+      old_children
+  end;
+  (* Pass 2: place each child at its target index. The probe reads the live
+     child array, so mutations from attach/detach are always visible. *)
   List.iteri
     (fun i c ->
       let node = child_node c in
-      let current = Renderable.children parent in
       let already_correct =
-        match List.nth_opt current i with Some n -> n == node | None -> false
+        match Renderable.Private.child_at parent i with
+        | Some n -> n == node
+        | None -> false
       in
       if not already_correct then Renderable.attach ~parent ~index:i node)
     new_children
