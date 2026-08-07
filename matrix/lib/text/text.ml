@@ -71,46 +71,58 @@ let[@inline] codepoint_width_unicode ~tab_width cp =
     if cp = 0x09 then tab_width else if cp < 32 || cp = 127 then -1 else 1
   else Unicode.tty_width_hint (Uchar.unsafe_of_int cp)
 
-let width_flag_has_width = 1
-let width_flag_ri_pair = 2
-let width_flag_virama = 4
+(* Unicode-width state machine.
 
-let rec grapheme_width_unicode_loop str limit tab_width i width flags =
-  if i >= limit then width
+   The [`Unicode] width method folds a cluster's codepoints through a small
+   state machine handling VS16 emoji promotion, regional-indicator pairs, and
+   Indic virama conjuncts. The whole state is one immediate int: the
+   accumulated cluster width in the bits above bit 2 and three flags below.
+   Invariant: the width bits are [0] while [ws_has_width] is unset.
+
+   The initial state is [0]; [ws_step] handles the first codepoint of a
+   cluster like any other (from state [0] every branch reduces to the
+   cluster-start behaviour). *)
+
+let ws_has_width = 1 (* cluster has a base width *)
+let ws_ri_pair = 2 (* last codepoint was the first RI of a pair *)
+let ws_virama = 4 (* last codepoint was a virama *)
+let[@inline] ws_make w flags = (w lsl 3) lor flags
+let[@inline] ws_width state = state lsr 3
+
+(* [ws_step cp cp_w state] advances the state machine by the codepoint [cp]
+   whose individual display width is [cp_w]. *)
+let[@inline] ws_step cp cp_w state =
+  let flags = state land 7 in
+  if cp = 0xFE0F then
+    if flags land ws_has_width <> 0 && ws_width state = 1 then ws_make 2 flags
+    else state
+  else if is_virama cp then state lor ws_virama
+  else if is_regional_indicator cp then
+    if flags land ws_ri_pair <> 0 then
+      ws_make (ws_width state + cp_w) ws_has_width
+    else
+      let w = if flags land ws_has_width = 0 then cp_w else ws_width state in
+      ws_make w (flags lor ws_has_width lor ws_ri_pair land lnot ws_virama)
+  else if
+    flags land ws_has_width <> 0
+    && flags land ws_virama <> 0
+    && is_devanagari_base cp
+  then
+    let add = if cp <> 0x0930 && cp_w > 0 then cp_w else 0 in
+    ws_make (ws_width state + add) (flags lor ws_has_width land lnot ws_virama)
+  else if flags land ws_has_width = 0 && cp_w > 0 then
+    ws_make cp_w (flags lor ws_has_width land lnot ws_virama)
+  else state land lnot ws_virama
+
+let rec grapheme_width_unicode_loop str limit tab_width i state =
+  if i >= limit then ws_width state
   else
     let d = String.get_utf_8_uchar str i in
     let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
-    let next = i + Uchar.utf_decode_length d in
-    let cp_width = codepoint_width_unicode ~tab_width cp in
-    let has_width = flags land width_flag_has_width <> 0 in
-    let is_ri_pair = flags land width_flag_ri_pair <> 0 in
-    let has_virama = flags land width_flag_virama <> 0 in
-    if cp = 0xFE0F then
-      let new_width = if has_width && width = 1 then 2 else width in
-      grapheme_width_unicode_loop str limit tab_width next new_width flags
-    else if is_virama cp then
-      grapheme_width_unicode_loop str limit tab_width next width
-        (flags lor width_flag_virama)
-    else if is_regional_indicator cp then
-      if is_ri_pair then
-        grapheme_width_unicode_loop str limit tab_width next (width + cp_width)
-          (flags lor width_flag_has_width land lnot width_flag_ri_pair
-         land lnot width_flag_virama)
-      else
-        let new_w = if not has_width then cp_width else width in
-        grapheme_width_unicode_loop str limit tab_width next new_w
-          (flags lor width_flag_has_width lor width_flag_ri_pair
-         land lnot width_flag_virama)
-    else if has_width && has_virama && is_devanagari_base cp then
-      let add = if cp <> 0x0930 && cp_width > 0 then cp_width else 0 in
-      grapheme_width_unicode_loop str limit tab_width next (width + add)
-        (flags lor width_flag_has_width land lnot width_flag_virama)
-    else if (not has_width) && cp_width > 0 then
-      grapheme_width_unicode_loop str limit tab_width next cp_width
-        (flags lor width_flag_has_width land lnot width_flag_virama)
-    else
-      grapheme_width_unicode_loop str limit tab_width next width
-        (flags land lnot width_flag_virama)
+    let cp_w = codepoint_width_unicode ~tab_width cp in
+    grapheme_width_unicode_loop str limit tab_width
+      (i + Uchar.utf_decode_length d)
+      (ws_step cp cp_w state)
 
 let rec grapheme_width_wcwidth_loop str limit tab_width i acc =
   if i >= limit then acc
@@ -125,7 +137,7 @@ let cluster_width ~method_ ~tab_width str off len =
   let limit = off + len in
   match method_ with
   | `Wcwidth -> grapheme_width_wcwidth_loop str limit tab_width off 0
-  | `Unicode -> grapheme_width_unicode_loop str limit tab_width off 0 0
+  | `Unicode -> grapheme_width_unicode_loop str limit tab_width off 0
 
 (* Grapheme Segmentation *)
 
@@ -235,6 +247,14 @@ let iter_grapheme_info ~width_method ~tab_width f str =
 (* Width-position helpers *)
 
 let zero_position = { byte_offset = 0; grapheme_count = 0; columns_used = 0 }
+
+(* Codepoint decoding for the [`Wcwidth] hot paths. The tuple return looks
+   like an allocation to eliminate, but measurement says otherwise: both an
+   int-packed (cp, len) return and [String.get_utf_8_uchar] benchmarked ~60%
+   slower than this shape on Apple M1 (position/*-wcwidth cases in
+   matrix/bench/bench_text.ml), while the tuples are minor-heap-only and die
+   immediately. Keep the tuple unless a re-measurement says otherwise.
+   Malformed input yields U+FFFD with length [1]. *)
 let[@inline] is_cont_byte b = b land 0xC0 = 0x80
 let replacement = (0xFFFD, 1)
 
@@ -543,17 +563,11 @@ let rec measure_wcwidth str len tab_width i total =
     let w = codepoint_width_wcwidth ~tab_width cp in
     measure_wcwidth str len tab_width (i + Uchar.utf_decode_length d) (total + w)
 
-(* Fused segmentation + width loop for Unicode width.
-
-   State flags packed in [flags]: - bit 0: has_width (grapheme has a base
-   width) - bit 1: ri_pair (last RI was first of a pair) - bit 2: virama (last
-   codepoint was a virama) *)
-let ms_has_width = 1
-let ms_ri_pair = 2
-let ms_virama = 4
-
-let rec measure_segmented seg str len tab_width i total g_w flags =
-  if i >= len then if flags land ms_has_width <> 0 then total + g_w else total
+(* Fused segmentation + width loop for Unicode width. [state] is a
+   [ws_step] state; a boundary flushes the finished cluster's width into
+   [total] and restarts the machine from [0]. *)
+let rec measure_segmented seg str len tab_width i total state =
+  if i >= len then total + ws_width state
   else
     let d = Stdlib.String.get_utf_8_uchar str i in
     let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
@@ -565,47 +579,11 @@ let rec measure_segmented seg str len tab_width i total g_w flags =
     in
     let cp_w = if cp = 0x09 then tab_width else (bw land 3) - 1 in
     if bw land 4 <> 0 then
-      let new_total =
-        if flags land ms_has_width <> 0 then total + g_w else total
-      in
-      if cp = 0xFE0F then
-        measure_segmented seg str len tab_width next new_total 0 0
-      else if is_virama cp then
-        measure_segmented seg str len tab_width next new_total 0 ms_virama
-      else if is_regional_indicator cp then
-        measure_segmented seg str len tab_width next new_total cp_w
-          (ms_has_width lor ms_ri_pair)
-      else if cp_w > 0 then
-        measure_segmented seg str len tab_width next new_total cp_w ms_has_width
-      else measure_segmented seg str len tab_width next new_total 0 0
-    else if cp = 0xFE0F then
-      let new_w = if flags land ms_has_width <> 0 && g_w = 1 then 2 else g_w in
-      measure_segmented seg str len tab_width next total new_w flags
-    else if is_virama cp then
-      measure_segmented seg str len tab_width next total g_w
-        (flags lor ms_virama)
-    else if is_regional_indicator cp then
-      if flags land ms_ri_pair <> 0 then
-        measure_segmented seg str len tab_width next total (g_w + cp_w)
-          (ms_has_width land lnot ms_virama)
-      else
-        let new_w = if flags land ms_has_width = 0 then cp_w else g_w in
-        measure_segmented seg str len tab_width next total new_w
-          (flags lor ms_has_width lor ms_ri_pair land lnot ms_virama)
-    else if
-      flags land ms_has_width <> 0
-      && flags land ms_virama <> 0
-      && is_devanagari_base cp
-    then
-      let add = if cp <> 0x0930 && cp_w > 0 then cp_w else 0 in
-      measure_segmented seg str len tab_width next total (g_w + add)
-        (flags lor ms_has_width land lnot ms_virama)
-    else if flags land ms_has_width = 0 && cp_w > 0 then
-      measure_segmented seg str len tab_width next total cp_w
-        (flags lor ms_has_width land lnot ms_virama)
+      measure_segmented seg str len tab_width next
+        (total + ws_width state)
+        (ws_step cp cp_w 0)
     else
-      measure_segmented seg str len tab_width next total g_w
-        (flags land lnot ms_virama)
+      measure_segmented seg str len tab_width next total (ws_step cp cp_w state)
 
 let measure ~width_method ~tab_width str =
   let tab_width = normalize_tab_width tab_width in
@@ -617,22 +595,7 @@ let measure ~width_method ~tab_width str =
     | `Wcwidth -> measure_wcwidth str len tab_width 0 0
     | `Unicode ->
         let seg = Uuseg_grapheme_cluster.create () in
-        let d = Stdlib.String.get_utf_8_uchar str 0 in
-        let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
-        let bw =
-          Uuseg_grapheme_cluster.check_boundary_with_width seg
-            (Uchar.unsafe_of_int cp)
-        in
-        let w = if cp = 0x09 then tab_width else (bw land 3) - 1 in
-        let init_w = if w > 0 then w else 0 in
-        let init_flags =
-          (if w > 0 then ms_has_width else 0)
-          lor (if is_regional_indicator cp then ms_ri_pair else 0)
-          lor if is_virama cp then ms_virama else 0
-        in
-        measure_segmented seg str len tab_width
-          (Uchar.utf_decode_length d)
-          0 init_w init_flags
+        measure_segmented seg str len tab_width 0 0 0
 
 let measure_sub ~width_method ~tab_width str ~pos ~len:sub_len =
   let tab_width = normalize_tab_width tab_width in
@@ -647,22 +610,7 @@ let measure_sub ~width_method ~tab_width str ~pos ~len:sub_len =
       | `Wcwidth -> measure_wcwidth str end_pos tab_width pos 0
       | `Unicode ->
           let seg = Uuseg_grapheme_cluster.create () in
-          let d = Stdlib.String.get_utf_8_uchar str pos in
-          let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
-          let bw =
-            Uuseg_grapheme_cluster.check_boundary_with_width seg
-              (Uchar.unsafe_of_int cp)
-          in
-          let w = if cp = 0x09 then tab_width else (bw land 3) - 1 in
-          let init_w = if w > 0 then w else 0 in
-          let init_flags =
-            (if w > 0 then ms_has_width else 0)
-            lor (if is_regional_indicator cp then ms_ri_pair else 0)
-            lor if is_virama cp then ms_virama else 0
-          in
-          measure_segmented seg str end_pos tab_width
-            (pos + Uchar.utf_decode_length d)
-            0 init_w init_flags)
+          measure_segmented seg str end_pos tab_width pos 0 0)
 
 let grapheme_count str =
   let n = ref 0 in
@@ -729,7 +677,7 @@ let[@inline] first_codepoint s off =
   let d = Stdlib.String.get_utf_8_uchar s off in
   Uchar.to_int (Uchar.utf_decode_uchar d)
 
-let iter_wrap_breaks_core f s =
+let iter_wrap_breaks f s =
   let len = Stdlib.String.length s in
   let seg = Uuseg_grapheme_cluster.create () in
   let rec has_break i limit =
@@ -743,28 +691,23 @@ let iter_wrap_breaks_core f s =
         is_unicode_wrap_break cp
         || has_break (i + Uchar.utf_decode_length d) limit
   in
+  (* [prev_byte_off < 0] means no previous grapheme; [prev_class] is then a
+     dummy. Plain ints avoid boxing three options per grapheme. *)
   let rec loop byte_off g_off prev_byte_off prev_g_off prev_class =
     if byte_off >= len then ()
     else
       let next = next_boundary seg s byte_off len in
       let curr_class = classify_word (first_codepoint s byte_off) in
-      (match (prev_byte_off, prev_g_off, prev_class) with
-      | Some prev_byte_off, Some prev_g_off, Some prev_class
-        when is_cjk_ascii_transition prev_class curr_class ->
-          f ~byte_off:prev_byte_off ~next_off:byte_off ~grapheme_off:prev_g_off
-      | _ -> ());
+      if prev_byte_off >= 0 && is_cjk_ascii_transition prev_class curr_class
+      then
+        f ~break_byte_offset:prev_byte_off ~next_byte_offset:byte_off
+          ~grapheme_offset:prev_g_off;
       if has_break byte_off next then
-        f ~byte_off ~next_off:next ~grapheme_off:g_off;
-      loop next (g_off + 1) (Some byte_off) (Some g_off) (Some curr_class)
+        f ~break_byte_offset:byte_off ~next_byte_offset:next
+          ~grapheme_offset:g_off;
+      loop next (g_off + 1) byte_off g_off curr_class
   in
-  loop 0 0 None None None
-
-let iter_wrap_breaks f s =
-  iter_wrap_breaks_core
-    (fun ~byte_off ~next_off ~grapheme_off ->
-      f ~break_byte_offset:byte_off ~next_byte_offset:next_off
-        ~grapheme_offset:grapheme_off)
-    s
+  loop 0 0 (-1) (-1) Other
 
 let iter_line_breaks f s =
   let len = Stdlib.String.length s in
