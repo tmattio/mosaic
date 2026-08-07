@@ -588,6 +588,21 @@ let unicode_wide_char_cursor () =
   (* "Hello " = 6 cols, "世界" = 4 cols (2 wide chars × 2 cols each) *)
   equal ~msg:"cursor after wide chars" (pair int int) (0, 10) (row, col)
 
+let unicode_wide_char_wraps_at_margin () =
+  (* A wide grapheme that doesn't fit at the right margin wraps to the next
+     row; the rest of the input must not be dropped. *)
+  let vte = Vte.create ~rows:2 ~cols:4 () in
+  Vte.feed_string vte "abc全xy";
+  equal ~msg:"wide grapheme wraps with following text" string "abc \n全xy"
+    (Vte.to_string vte);
+  equal ~msg:"cursor after wrapped tail" (pair int int) (1, 4)
+    (Vte.cursor_pos vte);
+  (* With auto-wrap off the tail is clipped at the margin instead. *)
+  let vte = Vte.create ~rows:2 ~cols:4 () in
+  Vte.feed_string vte "\x1b[?7l";
+  Vte.feed_string vte "abc全xy";
+  equal ~msg:"no wrap when DECAWM off" string "abc \n    " (Vte.to_string vte)
+
 let unicode_malformed_utf8 () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
   let malformed = Bytes.create 5 in
@@ -680,6 +695,7 @@ let tests =
     test "unicode with escapes" unicode_with_escapes;
     test "unicode multiline" unicode_multiline;
     test "unicode wide char cursor" unicode_wide_char_cursor;
+    test "unicode wide char wraps at margin" unicode_wide_char_wraps_at_margin;
     test "unicode malformed utf8" unicode_malformed_utf8;
   ]
 

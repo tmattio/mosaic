@@ -601,14 +601,20 @@ let put_text t text =
               Text.find_wrap_pos ~width_method ~tab_width:2 s
                 ~max_columns:available
             in
-            if fit.byte_offset = 0 && len > 0 then (
-              (* First grapheme doesn't fit in remaining width. Defer to
-                 Grid.draw_text to handle truncation/clearing semantics for this
-                 line, then stop. *)
-              Grid.draw_text t.active_grid ~x:t.cursor.col ~y:t.cursor.row
-                ~text:s ~style;
-              mark_row_dirty t t.cursor.row;
-              remaining := "")
+            if fit.byte_offset = 0 && len > 0 then
+              if t.auto_wrap_mode && t.cursor.col > 0 then
+                (* First grapheme is wider than the space left at the margin
+                   (e.g. a CJK character at the last column). Mark the line
+                   full so the pending-wrap path above moves to the next row
+                   and retries the same grapheme. *)
+                set_cursor_pos t ~row:t.cursor.row ~col:t.cols
+              else (
+                (* Auto-wrap off, or a grapheme wider than the whole line:
+                   defer to Grid.draw_text's truncation semantics and stop. *)
+                Grid.draw_text t.active_grid ~x:t.cursor.col ~y:t.cursor.row
+                  ~text:s ~style;
+                mark_row_dirty t t.cursor.row;
+                remaining := "")
             else
               let segment = String.sub s 0 fit.byte_offset in
               Grid.draw_text t.active_grid ~x:t.cursor.col ~y:t.cursor.row
