@@ -88,6 +88,52 @@ let idle_full_frame =
   Thumper.bench_with_setup ~setup:make_idle_screen "frame/full-200x50"
     render_idle_frame
 
+(* Editor-typing scenario: a word-wrapped document whose content changes
+   every frame, as a textarea does on every keystroke. Each frame pays the
+   full measure + display rebuild for the new buffer version; the display
+   cache must make measurement and rendering share one rebuild per width. *)
+let typing_width = 80
+let typing_height = 24
+
+let typing_doc suffix =
+  String.concat "\n"
+    (List.init 150 (fun i ->
+         Printf.sprintf
+           "line %03d: the quick brown fox jumps over the lazy dog while the \
+            lazy dog naps under the quick brown fox, wrapping past eighty \
+            columns %s"
+           i suffix))
+
+let typing_a = Thumper.black_box (typing_doc "a")
+let typing_b = Thumper.black_box (typing_doc "ab")
+
+type typing_state = {
+  renderer : Renderer.t;
+  text : Text.t;
+  mutable flip : bool;
+}
+
+let typing_frame st =
+  st.flip <- not st.flip;
+  Text.set_content st.text (if st.flip then typing_b else typing_a);
+  Renderer.render_frame st.renderer ~width:typing_width ~height:typing_height
+    ~delta:16.;
+  ignore (Renderer.render st.renderer : string)
+
+let make_typing () =
+  let renderer = Renderer.create ~style:idle_root_style () in
+  let text =
+    Text.create ~parent:(Renderer.root renderer) ~content:typing_a ~wrap:`Word
+      ~selectable:false ()
+  in
+  let st = { renderer; text; flip = false } in
+  typing_frame st;
+  st
+
+let editor_typing =
+  Thumper.bench_with_setup ~setup:make_typing "typing-wrapped-150-lines"
+    typing_frame
+
 let () =
   (* Frame loops care about retention as much as speed: promotions are
      objects escaping the minor heap mid-frame, and minor collections count
@@ -107,4 +153,5 @@ let () =
     [
       Thumper.group "viewport" [ steady_scrolled_transcript ];
       Thumper.group "idle" [ idle_full_frame ];
+      Thumper.group "editor" [ editor_typing ];
     ]

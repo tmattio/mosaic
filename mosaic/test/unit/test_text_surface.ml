@@ -293,6 +293,44 @@ let call_measure_with_known surface ~known_w ~known_h ~available_width
           }
         ~style:Toffee.Style.default
 
+(* ── Shared display cache ── *)
+
+let measure_probe_does_not_poison_display () =
+  (* Measurement and rendering share the display cache; a probe at another
+     width must not leak its result into the render path. *)
+  let s =
+    make_surface ~width:10 ~content:"abcdefghijklmnopqrst" ~wrap:`Char ()
+  in
+  let _ =
+    call_measure s ~available_width:(Toffee.Available_space.Definite 5.)
+      ~available_height:Toffee.Available_space.Max_content
+  in
+  equal ~msg:"display uses node width" int 2 (Text_surface.display_line_count s)
+
+let alternating_width_probes_stay_consistent () =
+  let s =
+    make_surface ~width:10 ~content:"abcdefghijklmnopqrst" ~wrap:`Char ()
+  in
+  let height_at w =
+    let r =
+      call_measure s ~available_width:(Toffee.Available_space.Definite w)
+        ~available_height:Toffee.Available_space.Max_content
+    in
+    int_of_float r.Toffee.Geometry.Size.height
+  in
+  equal ~msg:"4 lines at width 5" int 4 (height_at 5.);
+  equal ~msg:"2 lines at width 10" int 2 (height_at 10.);
+  equal ~msg:"4 lines at width 5 again" int 4 (height_at 5.)
+
+let truncation_is_keyed_by_width () =
+  let s = make_surface ~width:10 ~content:"abcdefghijklmnopqrst" () in
+  Text_surface.set_truncate s true;
+  let info = Text_surface.display_info s in
+  equal ~msg:"truncated to node width" int 10 info.max_line_width;
+  layout_node (Text_surface.node s) ~x:0 ~y:0 ~width:25 ~height:10;
+  let info = Text_surface.display_info s in
+  equal ~msg:"wider layout sees full line" int 20 info.max_line_width
+
 let measure_max_content_returns_natural_width () =
   let s = make_surface ~content:"hello world" () in
   let result =
@@ -576,6 +614,11 @@ let () =
             buffer_version_triggers_recompute;
           test "buffer tab width triggers recompute"
             buffer_tab_width_triggers_recompute;
+          test "measure probe does not poison display"
+            measure_probe_does_not_poison_display;
+          test "alternating width probes stay consistent"
+            alternating_width_probes_stay_consistent;
+          test "truncation is keyed by width" truncation_is_keyed_by_width;
         ];
       group "Measurement"
         [

@@ -29,13 +29,17 @@ type t = {
   mutable selection_fg : Ansi.Color.t option;
   selection : selection_state;
   mutable render_enabled : bool;
-  mutable cached_display_info : (int * int * display_info) option;
-      (* (buffer_version, effective_wrap_width, info) *)
-  mutable measure_cache :
-    (wrap * int * int * int * int)
-    (* wrap_mode, width, version -> lines, max_w *)
-    option;
+  (* Display info cache, keyed on (buffer version, wrap width) and shared by
+     measurement and rendering — both need the same computation, so a
+     measure-time build is reused by the render pass at the same width. It
+     holds the few entries a layout pass actually probes (min-content w=1,
+     the definite width), which a single-entry cache thrashed. Wrap-mode and
+     truncate changes clear it; content changes rotate out via the version
+     key. *)
+  mutable display_cache : (int * int * display_info) list;
 }
+
+let display_cache_capacity = 4
 
 (* ───── Accessors ───── *)
 
@@ -341,16 +345,37 @@ let compute_display_info t ?wrap_width () =
     max_line_width;
   }
 
-let display_info t =
-  let ew = effective_wrap_width t () in
+(* [`None] without truncation ignores the wrap width entirely; normalise its
+   key so width probes share one entry. *)
+let cache_key_width t width =
+  match t.wrap with `None when not t.truncate -> 0 | _ -> max 0 width
+
+let display_info_for t ~width =
   let version = Text_buffer.version t.buffer in
-  match t.cached_display_info with
-  | Some (v, w, info) when v = version && w = ew -> info
-  | _ ->
-      let info = compute_display_info t () in
-      t.cached_display_info <- Some (version, ew, info);
+  let key_w = cache_key_width t width in
+  let rec find = function
+    | [] -> None
+    | (v, w, info) :: rest ->
+        if v = version && w = key_w then Some info else find rest
+  in
+  match find t.display_cache with
+  | Some info -> info
+  | None ->
+      let info = compute_display_info t ~wrap_width:width () in
+      (* Entries from older buffer versions can never hit again. *)
+      let live = List.filter (fun (v, _, _) -> v = version) t.display_cache in
+      let live =
+        let rec take n = function
+          | [] -> []
+          | _ when n <= 0 -> []
+          | e :: rest -> e :: take (n - 1) rest
+        in
+        take (display_cache_capacity - 1) live
+      in
+      t.display_cache <- (version, key_w, info) :: live;
       info
 
+let display_info t = display_info_for t ~width:(effective_wrap_width t ())
 let display_line_count t = Array.length (display_info t).lines
 
 (* ───── Scroll ───── *)
@@ -389,7 +414,7 @@ let set_scroll_y t y =
 let set_wrap t mode =
   if t.wrap <> mode then begin
     t.wrap <- mode;
-    t.cached_display_info <- None;
+    t.display_cache <- [];
     Renderable.mark_dirty t.node;
     Renderable.request_render t.node
   end
@@ -399,8 +424,7 @@ let wrap_width t = t.wrap_width
 let set_wrap_width t w =
   if t.wrap_width <> w then begin
     t.wrap_width <- w;
-    t.cached_display_info <- None;
-    t.measure_cache <- None;
+    t.display_cache <- [];
     Renderable.mark_dirty t.node;
     Renderable.request_render t.node
   end
@@ -410,8 +434,7 @@ let truncate t = t.truncate
 let set_truncate t v =
   if t.truncate <> v then begin
     t.truncate <- v;
-    t.cached_display_info <- None;
-    t.measure_cache <- None;
+    t.display_cache <- [];
     Renderable.mark_dirty t.node;
     Renderable.request_render t.node
   end
@@ -419,8 +442,7 @@ let set_truncate t v =
 (* ───── Invalidation ───── *)
 
 let invalidate t =
-  t.cached_display_info <- None;
-  t.measure_cache <- None;
+  t.display_cache <- [];
   Renderable.mark_dirty t.node;
   Renderable.request_render t.node
 
@@ -690,31 +712,24 @@ let measure t ~known_dimensions ~available_space ~style:_ =
     | Min_content -> Some 1
     | Max_content -> None
   in
-  let w_int = match wrap_width with Some w -> w | None -> 0 in
-  let ver = Text_buffer.version t.buffer in
   let nlines, max_w =
-    match t.measure_cache with
-    | Some (wm, cw, cv, cl, cmw) when wm = t.wrap && cw = w_int && cv = ver ->
-        (cl, cmw)
-    | _ ->
-        let nl, mw =
-          match (t.wrap, wrap_width) with
-          | `None, _ | (`Char | `Word), None ->
-              (* One display line per logical line, at the buffer's
-                 untruncated widths. For [`None] truncation is a render
-                 concern; for [`Char]/[`Word] at max-content, wrapping only
-                 ever narrows a line, so the intrinsic width is the longest
-                 unwrapped line. Measuring either through the node's last
-                 laid-out width would clamp the intrinsic width to a stale
-                 value that never recovers when the container grows. *)
-              ( Text_buffer.line_count t.buffer,
-                Text_buffer.max_line_width t.buffer )
-          | (`Char | `Word), Some _ ->
-              let info = compute_display_info t ?wrap_width () in
-              (Array.length info.lines, info.max_line_width)
-        in
-        t.measure_cache <- Some (t.wrap, w_int, ver, nl, mw);
-        (nl, mw)
+    match (t.wrap, wrap_width) with
+    | `None, _ | (`Char | `Word), None ->
+        (* One display line per logical line, at the buffer's untruncated
+           widths. For [`None] truncation is a render concern; for
+           [`Char]/[`Word] at max-content, wrapping only ever narrows a
+           line, so the intrinsic width is the longest unwrapped line.
+           Measuring either through the node's last laid-out width would
+           clamp the intrinsic width to a stale value that never recovers
+           when the container grows. Both reads are O(1) on the buffer's
+           line cache. *)
+        (Text_buffer.line_count t.buffer, Text_buffer.max_line_width t.buffer)
+    | (`Char | `Word), Some w ->
+        (* Shares the display cache with the render path: the info built
+           for the definite-width probe here is exactly what the render
+           pass reads back at the same width. *)
+        let info = display_info_for t ~width:w in
+        (Array.length info.lines, info.max_line_width)
   in
   let width =
     match known_dimensions.Toffee.Geometry.Size.width with
@@ -748,8 +763,7 @@ let create node buffer =
       selection_fg = None;
       selection = { anchor_offset = 0; focus_offset = 0; active = false };
       render_enabled = true;
-      cached_display_info = None;
-      measure_cache = None;
+      display_cache = [];
     }
   in
   Renderable.set_render node (render t);
