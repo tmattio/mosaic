@@ -498,6 +498,12 @@ let create ?width_method ?respect_alpha ?(cursor_visible = true)
   let w_method = match width_method with Some m -> m | None -> `Unicode in
   let r_alpha = match respect_alpha with Some r -> r | None -> false in
 
+  (* All buffers share one grapheme store and link registry so the diff can
+     compare complex cells and hyperlinks by handle across frames. *)
+  let current =
+    Grid.create ~width:1 ~height:1 ~width_method:w_method ~respect_alpha:r_alpha
+      ()
+  in
   let t =
     {
       clock;
@@ -513,15 +519,9 @@ let create ?width_method ?respect_alpha ?(cursor_visible = true)
           cursor_visible;
           timestamp_s = 0.;
         };
-      current =
-        Grid.create ~width:1 ~height:1 ~width_method:w_method
-          ~respect_alpha:r_alpha ();
-      next =
-        Grid.create ~width:1 ~height:1 ~width_method:w_method
-          ~respect_alpha:r_alpha ();
-      scroll_baseline =
-        Grid.create ~width:1 ~height:1 ~width_method:w_method
-          ~respect_alpha:r_alpha ();
+      current;
+      next = Grid.create_like current ~width:1 ~height:1;
+      scroll_baseline = Grid.create_like current ~width:1 ~height:1;
       hit_current = Hit_grid.create ~width:0 ~height:0;
       hit_next = Hit_grid.create ~width:0 ~height:0;
       cursor = Cursor_state.create ();

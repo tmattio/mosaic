@@ -314,7 +314,6 @@ let make_cell_copier ~src_store ~dst_store =
 
 let fill_defaults t =
   Grapheme_tracker.clear t.grapheme_tracker;
-  Links.clear t.link_registry;
   Scissor_stack.clear t.scissor_stack;
   Buf.fill_cell t.chars space_cell;
   Buf.fill t.attrs 0;
@@ -322,8 +321,8 @@ let fill_defaults t =
   Buf.fill t.fg_color default_fg_packed;
   Buf.fill t.bg_color default_bg_packed
 
-let create_with_store ~width ~height ~grapheme_store ~width_method
-    ~respect_alpha =
+let create_with_store ~width ~height ~grapheme_store ~link_registry
+    ~width_method ~respect_alpha =
   if width <= 0 || height <= 0 then
     invalid_arg "Grid.create: width and height must be > 0";
   let size = width * height in
@@ -339,7 +338,7 @@ let create_with_store ~width ~height ~grapheme_store ~width_method
       bg_color = Buf.make_int size;
       attrs = Buf.make_int16 size;
       links = Buf.make_int32 size;
-      link_registry = Links.create ();
+      link_registry;
       grapheme_tracker = Grapheme_tracker.create grapheme_store;
       scissor_stack = Scissor_stack.create ();
       opacity_stack = Dynarray.create ();
@@ -351,8 +350,14 @@ let create_with_store ~width ~height ~grapheme_store ~width_method
 
 let create ~width ~height ?width_method ?(respect_alpha = false) () =
   create_with_store ~width ~height ~grapheme_store:(Grapheme_store.create ())
+    ~link_registry:(Links.create ())
     ~width_method:(Option.value width_method ~default:`Unicode)
     ~respect_alpha
+
+let create_like g ~width ~height =
+  create_with_store ~width ~height ~grapheme_store:g.grapheme_store
+    ~link_registry:g.link_registry ~width_method:g.width_method
+    ~respect_alpha:g.respect_alpha
 
 (* {1 Accessors} *)
 
@@ -457,7 +462,6 @@ let sanitize_spans t =
 
 let clear ?color t =
   Grapheme_tracker.clear t.grapheme_tracker;
-  Links.clear t.link_registry;
   Buf.fill_cell t.chars space_cell;
   Buf.fill t.attrs 0;
   Buf.fill t.links no_link;
@@ -682,7 +686,6 @@ let set_cell t ~x ~y ~(cell : Cell.t) ~fg ~bg ~attrs ?link
 let fill_opaque_rect t ~x0 ~y0 ~width ~height ~bg_color =
   if x0 = 0 && y0 = 0 && width = t.width && height = t.height then begin
     Grapheme_tracker.clear t.grapheme_tracker;
-    Links.clear t.link_registry;
     Buf.fill_cell t.chars space_cell;
     Buf.fill t.attrs 0;
     Buf.fill t.links no_link;
@@ -794,7 +797,8 @@ let blit ~src ~dst =
     if src.grapheme_store == dst.grapheme_store then (
       Buf.blit src.chars dst.chars;
       Buf.blit src.links dst.links;
-      Links.copy_state ~src:src.link_registry ~dst:dst.link_registry;
+      if dst.link_registry != src.link_registry then
+        Links.copy_state ~src:src.link_registry ~dst:dst.link_registry;
       Grapheme_tracker.clear dst.grapheme_tracker;
       let len = src.width * src.height in
       for i = 0 to len - 1 do
@@ -808,7 +812,6 @@ let blit ~src ~dst =
           ~dst_store:dst.grapheme_store
       in
       Grapheme_tracker.clear dst.grapheme_tracker;
-      Links.clear dst.link_registry;
       let len = src.width * src.height in
       for i = 0 to len - 1 do
         let src_c = Buf.get_cell src.chars i in

@@ -298,6 +298,51 @@ let test_wide_char_diff () =
 
   is_true ~msg:"wide char output" (String.length output2 > 0)
 
+(* Regression: complex graphemes must be diffed by content. With buffers
+   backed by independent grapheme stores, the first grapheme interned each
+   frame received the same store id in both stores, so a changed grapheme
+   compared equal and the diff emitted nothing. *)
+let test_changed_grapheme_diff () =
+  let fr =
+    "\xF0\x9F\x87\xAB\xF0\x9F\x87\xB7"
+    (* FR flag *)
+  in
+  let de =
+    "\xF0\x9F\x87\xA9\xF0\x9F\x87\xAA"
+    (* DE flag *)
+  in
+  let r = create_renderer ~width:4 ~height:1 () in
+  let f1 =
+    build_screen r ~width:4 ~height:1 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:fr)
+  in
+  let _output1 = Screen.render f1 in
+  let f2 =
+    build_screen r ~width:4 ~height:1 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:de)
+  in
+  let output2 = Screen.render f2 in
+  is_true ~msg:"changed grapheme re-emitted" (contains_substring de output2)
+
+(* Regression: hyperlinks must be diffed by URL, not by per-buffer registry
+   ids that realign across frames. *)
+let test_changed_hyperlink_diff () =
+  let r = create_renderer ~width:8 ~height:1 () in
+  let draw url grid =
+    Grid.draw_text grid ~x:0 ~y:0 ~text:"link"
+      ~style:(Ansi.Style.make ~link:url ())
+  in
+  let f1 =
+    build_screen r ~width:8 ~height:1 (fun grid _hits -> draw "http://a" grid)
+  in
+  let _output1 = Screen.render f1 in
+  let f2 =
+    build_screen r ~width:8 ~height:1 (fun grid _hits -> draw "http://b" grid)
+  in
+  let output2 = Screen.render f2 in
+  is_true ~msg:"changed hyperlink re-emitted"
+    (contains_substring "http://b" output2)
+
 (* 3. Frame Building Tests *)
 
 let test_build_visual () =
@@ -1070,6 +1115,8 @@ let () =
           test "Diff only changed cells" test_diff_only_changed_cells;
           test "No diff when unchanged" test_no_diff_when_unchanged;
           test "Wide character diff" test_wide_char_diff;
+          test "Changed grapheme diff" test_changed_grapheme_diff;
+          test "Changed hyperlink diff" test_changed_hyperlink_diff;
           test "All cells changed" test_all_cells_changed;
           test "Partial row update" test_partial_row_update;
           test "Color only change" test_color_only_change;

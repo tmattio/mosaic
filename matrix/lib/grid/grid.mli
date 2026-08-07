@@ -100,6 +100,17 @@ val create :
 
     Raises [Invalid_argument] if [width <= 0] or [height <= 0]. *)
 
+val create_like : t -> width:int -> height:int -> t
+(** [create_like g ~width ~height] is a fresh empty grid that shares [g]'s
+    grapheme and hyperlink storage, width method, and alpha mode.
+
+    Grids sharing storage address complex graphemes and hyperlinks by the same
+    handles, so {!cells_equal} is sound between them and {!blit} copies cell
+    planes without re-interning content. Use this for double-buffered rendering
+    where frames are diffed against each other.
+
+    Raises [Invalid_argument] if [width <= 0] or [height <= 0]. *)
+
 (** {1:properties Properties} *)
 
 val width : t -> int
@@ -190,7 +201,10 @@ val cell_width : t -> int -> int
 
 val cells_equal : t -> int -> t -> int -> bool
 (** [cells_equal g1 idx1 g2 idx2] is [true] iff both cells have identical
-    content and styling. Uses epsilon comparison for RGBA floats. *)
+    content and styling. Compares packed representations exactly. Complex
+    grapheme cells and hyperlinks are compared by storage handle, which is
+    meaningful only when [g1] and [g2] are the same grid or share storage (see
+    {!create_like}). *)
 
 val hyperlink_url : t -> int32 -> string option
 (** [hyperlink_url g id] resolves a link ID (from {!get_link}) to a URL. Returns

@@ -153,6 +153,38 @@ let cross_store_blit_remaps_graphemes () =
   equal ~msg:"width preserved" int 2 (Grid.cell_width dst start_idx);
   is_true ~msg:"continuation copied" (Grid.is_continuation dst cont_idx)
 
+let shared_storage_cells_equal () =
+  let fr =
+    "\xF0\x9F\x87\xAB\xF0\x9F\x87\xB7"
+    (* FR flag *)
+  in
+  let de =
+    "\xF0\x9F\x87\xA9\xF0\x9F\x87\xAA"
+    (* DE flag *)
+  in
+  let a = Grid.create ~width:2 ~height:1 () in
+  let b = Grid.create_like a ~width:2 ~height:1 in
+  Grid.draw_text a ~x:0 ~y:0 ~text:fr;
+  Grid.draw_text b ~x:0 ~y:0 ~text:de;
+  is_false ~msg:"different graphemes differ" (Grid.cells_equal a 0 b 0);
+  Grid.clear b;
+  Grid.draw_text b ~x:0 ~y:0 ~text:fr;
+  is_true ~msg:"identical graphemes equal" (Grid.cells_equal a 0 b 0)
+
+let shared_storage_links_equal () =
+  let a = Grid.create ~width:4 ~height:1 () in
+  let b = Grid.create_like a ~width:4 ~height:1 in
+  let draw grid url =
+    Grid.draw_text grid ~x:0 ~y:0 ~text:"x"
+      ~style:(Ansi.Style.make ~link:url ())
+  in
+  draw a "http://a";
+  draw b "http://b";
+  is_false ~msg:"different links differ" (Grid.cells_equal a 0 b 0);
+  Grid.clear b;
+  draw b "http://a";
+  is_true ~msg:"identical links equal" (Grid.cells_equal a 0 b 0)
+
 let blit_preserves_respect_alpha () =
   let src = Grid.create ~width:2 ~height:2 ~respect_alpha:true () in
   let dst = Grid.create ~width:2 ~height:2 () in
@@ -1285,6 +1317,8 @@ let tests =
     test "alpha blit orphan continuation draws space"
       alpha_blit_orphan_continuation_draws_space;
     test "cross-store blit remaps graphemes" cross_store_blit_remaps_graphemes;
+    test "shared storage cells equal" shared_storage_cells_equal;
+    test "shared storage links equal" shared_storage_links_equal;
     test "blit preserves respect alpha" blit_preserves_respect_alpha;
     test "same-store bulk blit tracks graphemes" blit_bulk_tracks_graphemes;
     test "overlap blit direction correctness" overlap_blit_direction_correctness;
