@@ -177,7 +177,13 @@ type syntax
 
     Diff syntax is highlighter-backed rather than precomputed because diff
     layouts may synthesize source buffers from patch rows. Split layout may also
-    insert blank alignment rows into the rendered side content. *)
+    insert blank alignment rows into the rendered side content.
+
+    {b Identity matters.} Syntax equality compares the {!Syntax_style.t} and
+    {!Code.Highlighter.t} inside by {e physical} equality. Construct them once
+    and reuse them across renders; rebuilding them inside a view function makes
+    every reconcile look like a syntax change and rebuilds the diff's children
+    each frame, restarting highlight jobs. *)
 
 val syntax :
   language:string ->

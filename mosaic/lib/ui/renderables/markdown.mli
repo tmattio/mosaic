@@ -31,7 +31,13 @@ type style_key =
 
 type style = style_key -> Ansi.Style.t
 (** The type for style resolvers. Maps a {!style_key} to the {!Ansi.Style.t} to
-    apply when rendering that element. *)
+    apply when rendering that element.
+
+    {b Identity matters.} Style resolvers — like the [code_syntax] hook — are
+    compared by {e physical} equality. Define them once (at module level or
+    memoized) and reuse the same closure across renders; a resolver rebuilt
+    inside a view function makes every reconcile look like a style change and
+    re-renders every block each frame. *)
 
 val default_style : style
 (** [default_style] is the built-in terminal style resolver. The mapping is:

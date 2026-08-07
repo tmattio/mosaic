@@ -14,7 +14,15 @@ type t
 (** The type for code display renderables. *)
 
 type syntax
-(** The type for source-code syntax settings. *)
+(** The type for source-code syntax settings.
+
+    {b Identity matters.} Syntax equality compares the {!Syntax_style.t} and
+    {!Highlighter.t} inside by {e physical} equality: two structurally identical
+    values built by separate calls are different syntaxes. Construct the style
+    and highlighter once — at module level or memoized — and reuse them across
+    renders. Rebuilding them inside a view function makes every reconcile look
+    like a syntax change, cancelling and restarting the (possibly asynchronous)
+    highlight job on every frame. *)
 
 module Highlighter : sig
   type request = { content : string; language : string }
