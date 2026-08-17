@@ -26,17 +26,6 @@ let with_tty_terminal ?initial_caps f =
   let term = T.make ~output ~tty:true ?initial_caps () in
   f term buf
 
-let with_env bindings f =
-  let saved = List.map (fun (key, _) -> (key, Sys.getenv_opt key)) bindings in
-  Fun.protect
-    (fun () ->
-      List.iter (fun (key, value) -> Unix.putenv key value) bindings;
-      f ())
-    ~finally:(fun () ->
-      List.iter
-        (fun (key, value) -> Unix.putenv key (Option.value ~default:"" value))
-        saved)
-
 (* Test: Non-TTY terminal doesn't send escape sequences *)
 let test_non_tty_no_escape_sequences () =
   with_terminal @@ fun term buf ->
@@ -126,35 +115,22 @@ let test_capability_normalization () =
 
 (* Test: TERM_PROGRAM fallback populates terminal info when XTVersion missing *)
 let test_terminal_info_from_env () =
-  let save key = Sys.getenv_opt key in
-  let term_prog = save "TERM_PROGRAM" in
-  let term_prog_ver = save "TERM_PROGRAM_VERSION" in
-  Fun.protect
-    (fun () ->
-      Unix.putenv "TERM_PROGRAM" "Alacritty";
-      Unix.putenv "TERM_PROGRAM_VERSION" "1.99";
-      with_terminal @@ fun term _buf ->
-      let info = T.terminal_info term in
-      equal ~msg:"env terminal name" string "Alacritty" info.name;
-      equal ~msg:"env terminal version" string "1.99" info.version;
-      is_false ~msg:"env info not from xtversion" info.from_xtversion;
-      T.close term)
-    ~finally:(fun () ->
-      (match term_prog with
-      | Some v -> Unix.putenv "TERM_PROGRAM" v
-      | None -> Unix.putenv "TERM_PROGRAM" "");
-      match term_prog_ver with
-      | Some v -> Unix.putenv "TERM_PROGRAM_VERSION" v
-      | None -> Unix.putenv "TERM_PROGRAM_VERSION" "")
+  setenv "TERM_PROGRAM" (Some "Alacritty");
+  setenv "TERM_PROGRAM_VERSION" (Some "1.99");
+  with_terminal @@ fun term _buf ->
+  let info = T.terminal_info term in
+  equal ~msg:"env terminal name" string "Alacritty" info.name;
+  equal ~msg:"env terminal version" string "1.99" info.version;
+  is_false ~msg:"env info not from xtversion" info.from_xtversion;
+  T.close term
 
 let test_modern_terminal_env_enables_sync () =
-  with_env
-    [ ("TERM", "xterm-ghostty"); ("TERM_PROGRAM", "ghostty"); ("TMUX", "") ]
-    (fun () ->
-      with_terminal @@ fun term _buf ->
-      is_true ~msg:"ghostty enables synchronized output"
-        (T.capabilities term).sync;
-      T.close term)
+  setenv "TERM" (Some "xterm-ghostty");
+  setenv "TERM_PROGRAM" (Some "ghostty");
+  setenv "TMUX" None;
+  with_terminal @@ fun term _buf ->
+  is_true ~msg:"ghostty enables synchronized output" (T.capabilities term).sync;
+  T.close term
 
 (* Test: Cursor position clamping *)
 let test_cursor_position_clamping () =
@@ -188,51 +164,31 @@ let test_color_clamping () =
 
 (* Test: Environment variable capability overrides *)
 let test_env_overrides () =
-  let save_env key = Sys.getenv_opt key in
-  let kitty_id = save_env "KITTY_WINDOW_ID" in
-  let term_prog = save_env "TERM_PROGRAM" in
-  let colorterm = save_env "COLORTERM" in
-  Fun.protect
-    (fun () ->
-      Unix.putenv "KITTY_WINDOW_ID" "1";
-      (match term_prog with
-      | Some v -> Unix.putenv "TERM_PROGRAM" v
-      | None -> ());
-      (match colorterm with Some v -> Unix.putenv "COLORTERM" v | None -> ());
-      let caps =
-        {
-          T.term = "xterm";
-          rgb = false;
-          kitty_keyboard = false;
-          kitty_graphics = false;
-          bracketed_paste = false;
-          focus_tracking = false;
-          unicode_width = `Wcwidth;
-          sgr_pixels = false;
-          color_scheme_updates = false;
-          explicit_width = false;
-          explicit_cursor_positioning = false;
-          scaled_text = false;
-          sixel = false;
-          sync = false;
-          hyperlinks = false;
-        }
-      in
-      with_terminal ~initial_caps:caps @@ fun term _buf ->
-      (* KITTY_WINDOW_ID should not override initial_caps when provided *)
-      let current_caps = T.capabilities term in
-      is_false ~msg:"explicit caps not overridden" current_caps.kitty_keyboard;
-      T.close term)
-    ~finally:(fun () ->
-      (match kitty_id with
-      | Some v -> Unix.putenv "KITTY_WINDOW_ID" v
-      | None -> Unix.putenv "KITTY_WINDOW_ID" "");
-      (match term_prog with
-      | Some v -> Unix.putenv "TERM_PROGRAM" v
-      | None -> Unix.putenv "TERM_PROGRAM" "");
-      match colorterm with
-      | Some v -> Unix.putenv "COLORTERM" v
-      | None -> Unix.putenv "COLORTERM" "")
+  setenv "KITTY_WINDOW_ID" (Some "1");
+  let caps =
+    {
+      T.term = "xterm";
+      rgb = false;
+      kitty_keyboard = false;
+      kitty_graphics = false;
+      bracketed_paste = false;
+      focus_tracking = false;
+      unicode_width = `Wcwidth;
+      sgr_pixels = false;
+      color_scheme_updates = false;
+      explicit_width = false;
+      explicit_cursor_positioning = false;
+      scaled_text = false;
+      sixel = false;
+      sync = false;
+      hyperlinks = false;
+    }
+  in
+  with_terminal ~initial_caps:caps @@ fun term _buf ->
+  (* KITTY_WINDOW_ID should not override initial_caps when provided *)
+  let current_caps = T.capabilities term in
+  is_false ~msg:"explicit caps not overridden" current_caps.kitty_keyboard;
+  T.close term
 
 (* Test: TTY terminal emits escape sequences via send *)
 let test_tty_send () =
@@ -428,7 +384,7 @@ let test_probe_payload_screen_is_not_tmux_wrapped () =
       hyperlinks = false;
     }
   in
-  with_env [ ("TMUX", "") ] @@ fun () ->
+  setenv "TMUX" None;
   with_tty_terminal ~initial_caps:caps @@ fun term buf ->
   let parser = Input.Parser.create () in
   T.probe ~timeout:0.0
@@ -628,42 +584,30 @@ let test_x10_mouse_disable () =
   contains ~msg:"X10 disabled" ~sub:"\027[?9l" output_data;
   T.close term
 
-let test_explicit_cursor_positioning_env_overrides () =
-  with_env
-    [
-      ("TERM", "tmux-256color");
-      ("TMUX", "/tmp/tmux-1000/default,12345,0");
-      ("TERM_PROGRAM", "");
-    ]
-    (fun () ->
-      with_terminal @@ fun term _buf ->
-      let caps = T.capabilities term in
-      equal ~msg:"tmux width" string "Wcwidth"
-        (match caps.unicode_width with
-        | `Wcwidth -> "Wcwidth"
-        | `Unicode -> "Unicode");
-      is_true ~msg:"tmux explicit cursor positioning"
-        caps.explicit_cursor_positioning;
-      T.close term);
-  with_env
-    [ ("TERM", "screen-256color"); ("TMUX", ""); ("TERM_PROGRAM", "") ]
-    (fun () ->
-      with_terminal @@ fun term _buf ->
-      let caps = T.capabilities term in
-      equal ~msg:"screen width" string "Wcwidth"
-        (match caps.unicode_width with
-        | `Wcwidth -> "Wcwidth"
-        | `Unicode -> "Unicode");
-      is_true ~msg:"screen explicit cursor positioning"
-        caps.explicit_cursor_positioning;
-      T.close term);
-  with_env
-    [ ("TERM", "xterm-256color"); ("TMUX", ""); ("TERM_PROGRAM", "Alacritty") ]
-    (fun () ->
-      with_terminal @@ fun term _buf ->
-      is_true ~msg:"alacritty explicit cursor positioning"
-        (T.capabilities term).explicit_cursor_positioning;
-      T.close term)
+(* Three terminals reach explicit cursor positioning by three different
+   routes; [wcwidth] says whether the same environment also forces the
+   conservative width method. *)
+let explicit_cursor_positioning_envs =
+  [
+    ("tmux", "tmux-256color", Some "/tmp/tmux-1000/default,12345,0", None, true);
+    ("screen", "screen-256color", None, None, true);
+    ("alacritty", "xterm-256color", None, Some "Alacritty", false);
+  ]
+
+let test_explicit_cursor_positioning_env
+    (_, term_var, tmux, term_program, wcwidth) =
+  setenv "TERM" (Some term_var);
+  setenv "TMUX" tmux;
+  setenv "TERM_PROGRAM" term_program;
+  with_terminal @@ fun term _buf ->
+  let caps = T.capabilities term in
+  is_true ~msg:"explicit cursor positioning" caps.explicit_cursor_positioning;
+  if wcwidth then
+    equal ~msg:"width method" string "Wcwidth"
+      (match caps.unicode_width with
+      | `Wcwidth -> "Wcwidth"
+      | `Unicode -> "Unicode");
+  T.close term
 
 (* Test: Mouse mode validation on non-TTY *)
 let test_mouse_validation () =
@@ -932,8 +876,10 @@ let () =
             test_probe_preserves_user_input_and_capabilities;
           test "probe stops reading at end-of-input"
             test_probe_stops_reading_at_end_of_input;
-          test "explicit cursor positioning env"
-            test_explicit_cursor_positioning_env_overrides;
+          cases "explicit cursor positioning env"
+            explicit_cursor_positioning_envs
+            ~name:(fun (name, _, _, _, _) -> name)
+            test_explicit_cursor_positioning_env;
         ];
       group "cursor"
         [
