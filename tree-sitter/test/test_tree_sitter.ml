@@ -22,20 +22,20 @@ let language_name () =
 
 let language_version () =
   let lang = Tree_sitter_json.language () in
-  is_true ~msg:"version >= 14" (Language.version lang >= 14)
+  greater_equal int ~msg:"version >= 14" ~than:14 (Language.version lang)
 
 let language_symbol_count () =
   let lang = Tree_sitter_json.language () in
-  is_true ~msg:"has symbols" (Language.symbol_count lang > 0)
+  greater int ~msg:"has symbols" ~than:0 (Language.symbol_count lang)
 
 let language_field_count () =
   let lang = Tree_sitter_json.language () in
-  is_true ~msg:"has fields" (Language.field_count lang >= 0)
+  greater_equal int ~msg:"has fields" ~than:0 (Language.field_count lang)
 
 let language_field_lookup () =
   let lang = Tree_sitter_ocaml.ocaml () in
   let count = Language.field_count lang in
-  is_true ~msg:"ocaml has fields" (count > 0);
+  greater int ~msg:"ocaml has fields" ~than:0 count;
   match Language.field_name_for_id lang 1 with
   | Some name ->
       let found = Language.field_id_for_name lang name in
@@ -76,7 +76,7 @@ let parse_json_array () =
   let tree = parse_json {|[1, 2, 3]|} in
   let root = Tree.root_node tree in
   equal ~msg:"root kind" string "document" (Node.kind root);
-  is_true ~msg:"has children" (Node.child_count root > 0)
+  greater int ~msg:"has children" ~than:0 (Node.child_count root)
 
 let parse_invalid_json () =
   let tree = parse_json {|{invalid}|} in
@@ -107,7 +107,8 @@ let node_children () =
   match Node.named_child root 0 with
   | Some obj ->
       equal ~msg:"child kind" string "object" (Node.kind obj);
-      is_true ~msg:"object has named children" (Node.named_child_count obj >= 2)
+      greater_equal int ~msg:"object has named children" ~than:2
+        (Node.named_child_count obj)
   | None -> fail "expected object child"
 
 let node_child_by_field () =
@@ -170,7 +171,7 @@ let node_to_sexp () =
   let tree = parse_json {|42|} in
   let root = Tree.root_node tree in
   let sexp = Node.to_sexp root in
-  is_true ~msg:"sexp contains document" (String.length sexp > 0)
+  greater int ~msg:"sexp contains document" ~than:0 (String.length sexp)
 
 let node_flags () =
   let tree = parse_json {|42|} in
@@ -197,12 +198,12 @@ let tree_language () =
 let tree_root_sexp () =
   let tree = parse_json {|null|} in
   let sexp = Tree.root_sexp tree in
-  is_true ~msg:"sexp not empty" (String.length sexp > 0)
+  greater int ~msg:"sexp not empty" ~than:0 (String.length sexp)
 
 let tree_included_ranges () =
   let tree = parse_json {|null|} in
   let ranges = Tree.included_ranges tree in
-  is_true ~msg:"has included range" (Array.length ranges > 0)
+  greater int ~msg:"has included range" ~than:0 (Array.length ranges)
 
 (* Incremental parsing *)
 
@@ -221,14 +222,14 @@ let incremental_parse () =
   let root = Tree.root_node tree2 in
   is_true ~msg:"no errors" (not (Node.has_error root));
   let changed = Tree.changed_ranges ~old tree2 in
-  is_true ~msg:"has changed ranges" (Array.length changed > 0)
+  greater int ~msg:"has changed ranges" ~than:0 (Array.length changed)
 
 (* Query *)
 
 let query_create () =
   let lang = Tree_sitter_json.language () in
   let q = Query.create lang ~source:{|(string) @str|} in
-  is_true ~msg:"has captures" (Query.capture_count q > 0);
+  greater int ~msg:"has captures" ~than:0 (Query.capture_count q);
   equal ~msg:"1 pattern" int 1 (Query.pattern_count q)
 
 let query_capture_names () =
@@ -276,7 +277,7 @@ let cursor_next_capture () =
     | None -> n
   in
   let n = count 0 in
-  is_true ~msg:"captured strings" (n >= 4)
+  greater_equal int ~msg:"captured strings" ~than:4 n
 
 let cursor_next_match () =
   let lang = Tree_sitter_json.language () in
@@ -289,7 +290,8 @@ let cursor_next_match () =
   let rec count n =
     match Query_cursor.next_match cursor with
     | Some m ->
-        is_true ~msg:"match has captures" (Array.length m.captures >= 2);
+        greater_equal int ~msg:"match has captures" ~than:2
+          (Array.length m.captures);
         count (n + 1)
     | None -> n
   in
@@ -319,11 +321,11 @@ let highlight_json () =
   let q = Query.create lang ~source:{|(string) @string (number) @number|} in
   let tree = parse_json {|{"key": 42}|} in
   let ranges = highlight q tree in
-  is_true ~msg:"has highlight ranges" (List.length ranges > 0);
+  greater int ~msg:"has highlight ranges" ~than:0 (List.length ranges);
   List.iter
     (fun (s, e, name) ->
-      is_true ~msg:"valid range" (s < e);
-      is_true ~msg:"has name" (String.length name > 0))
+      less int ~msg:"valid range" ~than:e s;
+      greater int ~msg:"has name" ~than:0 (String.length name))
     ranges
 
 let highlight_sorted () =
@@ -353,7 +355,8 @@ let highlight_range_restricted () =
   let tree = parse_json {|[1, 2, 3]|} in
   let all = highlight q tree in
   let restricted = highlight_range q tree ~start_byte:0 ~end_byte:3 in
-  is_true ~msg:"restricted <= all" (List.length restricted <= List.length all)
+  less_equal int ~msg:"restricted <= all" ~than:(List.length all)
+    (List.length restricted)
 
 (* Language extensions *)
 
@@ -402,7 +405,7 @@ let query_predicates () =
   let lang = Tree_sitter_json.language () in
   let q = Query.create lang ~source:{|((string) @str (#eq? @str "hello"))|} in
   let steps = Query.predicates_for_pattern q 0 in
-  is_true ~msg:"has predicate steps" (Array.length steps > 0);
+  greater int ~msg:"has predicate steps" ~than:0 (Array.length steps);
   let has_done = Array.exists (fun s -> s = Query.Done) steps in
   is_true ~msg:"has Done sentinel" has_done
 
@@ -447,7 +450,7 @@ let tree_cursor_siblings () =
     if Tree_cursor.goto_next_sibling c then count_siblings (n + 1) else n
   in
   let n = count_siblings 0 in
-  is_true ~msg:"has siblings" (n > 0);
+  greater int ~msg:"has siblings" ~than:0 n;
   Tree_cursor.delete c
 
 let tree_cursor_field_name () =
@@ -484,7 +487,7 @@ let tree_cursor_first_child_for_byte () =
   ignore (Tree_cursor.goto_first_child c);
   (* array *)
   let idx = Tree_cursor.goto_first_child_for_byte c 4 in
-  is_true ~msg:"found child for byte" (idx >= 0);
+  greater_equal int ~msg:"found child for byte" ~than:0 idx;
   Tree_cursor.delete c
 
 (* OCaml grammar *)

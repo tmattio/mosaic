@@ -118,7 +118,7 @@ let clear_schedules_render () =
   let canvas = Canvas.create ~parent:root () in
   let before = !(t.schedule_count) in
   Canvas.clear canvas;
-  is_true ~msg:"scheduled" (!(t.schedule_count) > before)
+  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 (* ── Properties ── *)
 
@@ -146,7 +146,7 @@ let set_respect_alpha_schedules () =
   let canvas = Canvas.create ~parent:root () in
   let before = !(t.schedule_count) in
   Canvas.set_respect_alpha canvas true;
-  is_true ~msg:"scheduled" (!(t.schedule_count) > before)
+  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 (* ── apply_props ── *)
 
@@ -175,7 +175,7 @@ let request_render_schedules () =
   let canvas = Canvas.create ~parent:root () in
   let before = !(t.schedule_count) in
   Canvas.request_render canvas;
-  is_true ~msg:"scheduled" (!(t.schedule_count) > before)
+  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 (* ── Drawing ── *)
 
@@ -374,7 +374,7 @@ let pp_output () =
   let root = make_root t in
   let canvas = Canvas.create ~parent:root ~id:"test-canvas" () in
   let s = Format.asprintf "%a" Canvas.pp canvas in
-  is_true ~msg:"contains id" (String.length s > 0);
+  greater int ~msg:"contains id" ~than:0 (String.length s);
   is_true ~msg:"has Canvas prefix"
     (String.length s >= 6 && String.sub s 0 6 = "Canvas")
 

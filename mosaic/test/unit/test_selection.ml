@@ -50,7 +50,7 @@ let set_anchor_replaces_callback () =
   (* Callback should be used before set_anchor *)
   let _ = Selection.anchor sel in
   let count_before = !counter in
-  is_true ~msg:"callback was called" (count_before > 0);
+  greater int ~msg:"callback was called" ~than:0 count_before;
   (* Replace with static *)
   Selection.set_anchor sel (pt 42 42);
   counter := 0;

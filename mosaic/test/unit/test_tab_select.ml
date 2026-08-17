@@ -261,7 +261,7 @@ let apply_props_updates () =
   in
   let before = !(t.schedule_count) in
   Tab_select.apply_props ts props;
-  is_true ~msg:"scheduled" (!(t.schedule_count) > before);
+  greater int ~msg:"scheduled" ~than:before !(t.schedule_count);
   equal ~msg:"index applied" int 3 (Tab_select.selected_index ts)
 
 let apply_props_preserves_uncontrolled_selection () =

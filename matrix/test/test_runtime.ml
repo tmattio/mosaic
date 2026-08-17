@@ -232,8 +232,8 @@ let test_immediate_redraw_bypasses_live_cadence_once () =
   equal ~msg:"one immediate follow-up frame" int 2 !frames;
   match !request_at with
   | Some requested ->
-      is_true ~msg:"follow-up bypasses one-second cadence"
-        (!second_frame_at -. requested < 0.1)
+      less float_exact ~msg:"follow-up bypasses one-second cadence" ~than:0.1
+        (!second_frame_at -. requested)
   | None -> fail "missing redraw request"
 
 let test_idle_does_not_force_live_loop () =
@@ -523,8 +523,8 @@ let test_focus_restore_runs_only_after_blur_once () =
    (Matrix.Input.Focus, after_second_focus);
   ] ->
       equal ~msg:"blur itself does not restore terminal modes" int 0 after_blur;
-      is_true ~msg:"first focus after blur restores terminal modes"
-        (after_first_focus > after_blur);
+      greater int ~msg:"first focus after blur restores terminal modes"
+        ~than:after_blur after_first_focus;
       equal ~msg:"second focus does not restore modes again" int
         after_first_focus after_second_focus
   | _ -> fail "expected blur, focus, focus input trace"
@@ -626,7 +626,8 @@ let test_unchanged_alt_submit_emits_no_bytes () =
   Matrix.prepare app;
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"stable";
   Matrix.submit app;
-  is_true ~msg:"first alt frame writes" (String.length (output state) > 0);
+  greater int ~msg:"first alt frame writes" ~than:0
+    (String.length (output state));
   Buffer.clear state.output;
   Matrix.prepare app;
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"stable";
@@ -731,8 +732,8 @@ let test_cursor_only_submit_emits_output () =
   Matrix.set_cursor_position app ~row:1 ~col:3;
   Matrix.submit app;
   let output = output state in
-  is_true ~msg:"cursor-only frame emits terminal output"
-    (String.length output > 0);
+  greater int ~msg:"cursor-only frame emits terminal output" ~than:0
+    (String.length output);
   contains ~msg:"cursor-only frame moves the cursor" ~sub:"\027[1;3H" output
 
 let test_first_submit_emits_cursor_style () =
@@ -803,8 +804,10 @@ let test_submit_emits_frame_above_default_capacity () =
   Matrix.prepare app;
   draw ();
   Matrix.submit app;
-  is_true ~msg:"submit emits the complete frame above the default buffer size"
-    (String.length (output state) > 2 * 1024 * 1024);
+  greater int
+    ~msg:"submit emits the complete frame above the default buffer size"
+    ~than:(2 * 1024 * 1024)
+    (String.length (output state));
   Buffer.clear state.output;
   Matrix.prepare app;
   draw ();
@@ -1595,8 +1598,8 @@ let test_wakeup_renders_without_input () =
       Thread.join requester;
       Thread.join watchdog;
       equal ~msg:"wakeup produces the requested frame" int 2 !frames;
-      is_true ~msg:"frame renders without waiting for input"
-        (!second_frame_elapsed < 1.))
+      less float_exact ~msg:"frame renders without waiting for input" ~than:1.
+        !second_frame_elapsed)
 
 let () =
   run "matrix.runtime"

@@ -1418,7 +1418,7 @@ let test_parsing_efficiency () =
   let t0 = Unix.gettimeofday () in
   let events, responses = parse_single long_invalid in
   let dt = Unix.gettimeofday () -. t0 in
-  is_true ~msg:"fast on long invalid (<0.1s)" (dt < 0.1);
+  less float_exact ~msg:"fast on long invalid (<0.1s)" ~than:0.1 dt;
   equal ~msg:"long invalid is not user input" int 0 (List.length events);
   equal ~msg:"long invalid is one unknown response" int 1
     (List.length responses);
@@ -1428,7 +1428,7 @@ let test_parsing_efficiency () =
   match parse_user ("\x1b[200~" ^ large_paste ^ "\x1b[201~") with
   | [ Input.Paste s ] ->
       let dt_large = Unix.gettimeofday () -. t1 in
-      is_true ~msg:"fast large paste (<0.1s)" (dt_large < 0.1);
+      less float_exact ~msg:"fast large paste (<0.1s)" ~than:0.1 dt_large;
       equal ~msg:"single paste event" int
         (String.length large_paste)
         (String.length s)

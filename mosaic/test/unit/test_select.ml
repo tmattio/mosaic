@@ -418,13 +418,13 @@ let set_show_description_toggle () =
   let t, sel = make_select () in
   let before = !(t.schedule_count) in
   Select.set_show_description sel false;
-  is_true ~msg:"scheduled" (!(t.schedule_count) > before)
+  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_show_scroll_indicator_toggle () =
   let t, sel = make_select () in
   let before = !(t.schedule_count) in
   Select.set_show_scroll_indicator sel true;
-  is_true ~msg:"scheduled" (!(t.schedule_count) > before)
+  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_wrap_selection_enables_wrapping () =
   let _t, sel = make_select ~options:sample_items ~selected_index:4 () in
@@ -436,7 +436,7 @@ let set_item_spacing_schedules () =
   let t, sel = make_select () in
   let before = !(t.schedule_count) in
   Select.set_item_spacing sel 2;
-  is_true ~msg:"scheduled" (!(t.schedule_count) > before)
+  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_fast_scroll_step_changes_behavior () =
   let _t, sel = make_select ~options:sample_items () in
@@ -454,7 +454,7 @@ let apply_props_updates () =
   in
   let before = !(t.schedule_count) in
   Select.apply_props sel props;
-  is_true ~msg:"scheduled" (!(t.schedule_count) > before);
+  greater int ~msg:"scheduled" ~than:before !(t.schedule_count);
   equal ~msg:"index applied" int 3 (Select.selected_index sel)
 
 let apply_props_same_options_no_extra_render () =

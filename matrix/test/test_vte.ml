@@ -140,7 +140,8 @@ let erase_display_to_beginning () =
   Vte.feed_string vte "Line1\r\nLine2\r\nLine3\x1b[2;3H\x1b[1J";
   equal ~msg:"first line cleared" string "" (get_line (Vte.grid vte) 0);
   let line2 = get_line (Vte.grid vte) 1 in
-  is_true ~msg:"second line partially cleared" (String.length line2 >= 2);
+  greater_equal int ~msg:"second line partially cleared" ~than:2
+    (String.length line2);
   equal ~msg:"third line unchanged" string "Line3" (get_line (Vte.grid vte) 2)
 
 let erase_display_all () =
@@ -196,7 +197,7 @@ let insert_characters () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
   Vte.feed_string vte "Hello\r\x1b[3C\x1b[2@XX";
   let line = get_line (Vte.grid vte) 0 in
-  is_true ~msg:"characters inserted" (String.length line >= 7);
+  greater_equal int ~msg:"characters inserted" ~than:7 (String.length line);
   equal ~msg:"insert at position" string "HelXXlo" (String.sub line 0 7)
 
 let delete_characters () =
@@ -445,7 +446,7 @@ let scrollback_accumulates () =
 let erase_scrollback_sequence () =
   let vte = Vte.create ~scrollback:100 ~rows:3 ~cols:10 () in
   Vte.feed_string vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
-  is_true ~msg:"fixture has scrollback" (Vte.scrollback_size vte > 0);
+  greater int ~msg:"fixture has scrollback" ~than:0 (Vte.scrollback_size vte);
   let visible = get_line (Vte.grid vte) 0 in
   Vte.feed_string vte "\x1b[3J";
   equal ~msg:"ED 3 clears native scrollback" int 0 (Vte.scrollback_size vte);
@@ -526,7 +527,8 @@ let insert_mode_clips_wide_grapheme_at_margin () =
   Vte.feed_string vte "\x1b[1;2H\x1b[4h";
   Vte.feed_string vte "x";
   let grid = Vte.grid vte in
-  is_false ~msg:"no wide start in the last column" (Grid.cell_width grid 2 > 1);
+  less_equal int ~msg:"no wide start in the last column" ~than:1
+    (Grid.cell_width grid 2);
   is_false ~msg:"no orphan continuation" (Grid.is_continuation grid 2);
   equal ~msg:"clipped wide grapheme is blanked" string "ax " (Vte.to_string vte)
 
@@ -583,8 +585,8 @@ let resize_clamps_cursor () =
   Vte.feed_string vte "\x1b[8;15H";
   Vte.resize vte ~rows:5 ~cols:10;
   let row, col = Vte.cursor_pos vte in
-  is_true ~msg:"cursor row clamped" (row < 5);
-  is_true ~msg:"cursor col clamped" (col < 10)
+  less int ~msg:"cursor row clamped" ~than:5 row;
+  less int ~msg:"cursor col clamped" ~than:10 col
 
 (** {1 Reset} *)
 
@@ -643,7 +645,7 @@ let dirty_row_tracking () =
   (* Erase display (affects multiple rows) *)
   Vte.feed_string vte "\x1b[2J";
   let rows = Vte.dirty_rows vte in
-  is_true ~msg:"multiple rows dirty" (List.length rows > 1);
+  greater int ~msg:"multiple rows dirty" ~than:1 (List.length rows);
   is_true ~msg:"includes row 0" (List.mem 0 rows)
 
 let dirty_cursor_tracking () =

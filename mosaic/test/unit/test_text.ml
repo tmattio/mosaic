@@ -170,12 +170,12 @@ let add_and_remove_highlight () =
   in
   let before = !(t.schedule_count) in
   Text.add_highlight txt h;
-  is_true ~msg:"render requested" (!(t.schedule_count) > before);
+  greater int ~msg:"render requested" ~than:before !(t.schedule_count);
   let hl = Text_buffer.highlights_in_range (Text.buffer txt) ~start:0 ~len:5 in
   equal ~msg:"1 highlight" int 1 (List.length hl);
   let before2 = !(t.schedule_count) in
   Text.remove_highlights_by_ref txt 42;
-  is_true ~msg:"render requested again" (!(t.schedule_count) > before2);
+  greater int ~msg:"render requested again" ~than:before2 !(t.schedule_count);
   let hl2 = Text_buffer.highlights_in_range (Text.buffer txt) ~start:0 ~len:5 in
   equal ~msg:"0 highlights" int 0 (List.length hl2)
 

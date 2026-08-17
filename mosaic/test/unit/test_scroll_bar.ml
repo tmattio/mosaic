@@ -286,7 +286,7 @@ let set_on_change_replaces_callback () =
 let pp_produces_output () =
   let _t, bar = make_scroll_bar () in
   let s = Format.asprintf "%a" Scroll_bar.pp bar in
-  is_true ~msg:"non-empty" (String.length s > 0)
+  greater int ~msg:"non-empty" ~than:0 (String.length s)
 
 let pp_contains_scroll_bar () =
   let _t, bar = make_scroll_bar () in

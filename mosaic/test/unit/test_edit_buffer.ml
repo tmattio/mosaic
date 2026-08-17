@@ -175,7 +175,7 @@ let selection_normalized () =
   let _ = Edit_buffer.move_left ~select:true buf in
   let _ = Edit_buffer.move_left ~select:true buf in
   match Edit_buffer.selection buf with
-  | Some (lo, hi) -> is_true ~msg:"start < end" (lo < hi)
+  | Some (lo, hi) -> less int ~msg:"start < end" ~than:hi lo
   | None -> fail "expected selection"
 
 let select_then_move_clears () =
@@ -450,7 +450,7 @@ let move_word_forward_basic () =
   Edit_buffer.set_cursor buf 0;
   let moved = Edit_buffer.move_word_forward buf in
   is_true ~msg:"moved" moved;
-  is_true ~msg:"cursor advanced" (Edit_buffer.cursor buf > 0)
+  greater int ~msg:"cursor advanced" ~than:0 (Edit_buffer.cursor buf)
 
 let move_word_forward_crosses_newline () =
   let buf = Edit_buffer.create "hello\nworld" in
@@ -463,7 +463,7 @@ let move_word_backward_basic () =
   let buf = Edit_buffer.create "hello world" in
   let moved = Edit_buffer.move_word_backward buf in
   is_true ~msg:"moved" moved;
-  is_true ~msg:"cursor moved back" (Edit_buffer.cursor buf < 11)
+  less int ~msg:"cursor moved back" ~than:11 (Edit_buffer.cursor buf)
 
 let move_word_backward_crosses_newline () =
   let buf = Edit_buffer.create "hello\nworld" in
@@ -686,8 +686,8 @@ let set_max_length_adjusts_cursor () =
   let buf = Edit_buffer.create "hello world" in
   (* cursor is at 11 (end) *)
   Edit_buffer.set_max_length buf 3;
-  is_true ~msg:"cursor <= new length"
-    (Edit_buffer.cursor buf <= Edit_buffer.length buf)
+  less_equal int ~msg:"cursor <= new length" ~than:(Edit_buffer.length buf)
+    (Edit_buffer.cursor buf)
 
 let set_max_length_negative_clamped () =
   let buf = Edit_buffer.create "hello" in

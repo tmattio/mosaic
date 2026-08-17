@@ -60,7 +60,7 @@ let set_text_increments_version () =
   let buf = Text_buffer.create () in
   let v0 = Text_buffer.version buf in
   Text_buffer.set_text buf "hello";
-  is_true ~msg:"version increased" (Text_buffer.version buf > v0)
+  greater int ~msg:"version increased" ~than:v0 (Text_buffer.version buf)
 
 (* ── Content — set_styled_text ── *)
 
@@ -151,7 +151,7 @@ let clear_increments_version () =
   Text_buffer.set_text buf "hello";
   let v1 = Text_buffer.version buf in
   Text_buffer.clear buf;
-  is_true ~msg:"version increased" (Text_buffer.version buf > v1)
+  greater int ~msg:"version increased" ~than:v1 (Text_buffer.version buf)
 
 (* ── Grapheme Count ── *)
 
@@ -323,9 +323,9 @@ let highlight_sorts_by_priority () =
   let hl = Text_buffer.highlights_in_range buf ~start:0 ~len:5 in
   equal ~msg:"count" int 2 (List.length hl);
   (* Sorted ascending by priority *)
-  is_true ~msg:"low first"
-    (Text_buffer.Highlight.priority (List.hd hl)
-    <= Text_buffer.Highlight.priority (List.nth hl 1))
+  less_equal int ~msg:"low first"
+    ~than:(Text_buffer.Highlight.priority (List.nth hl 1))
+    (Text_buffer.Highlight.priority (List.hd hl))
 
 let highlight_remove_by_ref () =
   let buf = Text_buffer.create () in
@@ -378,7 +378,7 @@ let set_tab_width_increments_version () =
   Text_buffer.set_text buf "hello";
   let v_before = Text_buffer.version buf in
   Text_buffer.set_tab_width buf 8;
-  is_true ~msg:"version increased" (Text_buffer.version buf > v_before)
+  greater int ~msg:"version increased" ~than:v_before (Text_buffer.version buf)
 
 (* ── Width Method ── *)
 
@@ -396,13 +396,13 @@ let version_increments_on_mutations () =
   let v0 = Text_buffer.version buf in
   Text_buffer.set_text buf "a";
   let v1 = Text_buffer.version buf in
-  is_true ~msg:"set_text" (v1 > v0);
+  greater int ~msg:"set_text" ~than:v0 v1;
   Text_buffer.append buf "b";
   let v2 = Text_buffer.version buf in
-  is_true ~msg:"append" (v2 > v1);
+  greater int ~msg:"append" ~than:v1 v2;
   Text_buffer.clear buf;
   let v3 = Text_buffer.version buf in
-  is_true ~msg:"clear" (v3 > v2)
+  greater int ~msg:"clear" ~than:v2 v3
 
 (* ── Default Style ── *)
 

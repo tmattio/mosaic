@@ -125,19 +125,19 @@ let set_min_schedules_render () =
   let t, bar = make_bar () in
   let before = !(t.schedule_count) in
   Progress_bar.set_min bar 0.1;
-  is_true ~msg:"scheduled" (!(t.schedule_count) > before)
+  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_max_schedules_render () =
   let t, bar = make_bar () in
   let before = !(t.schedule_count) in
   Progress_bar.set_max bar 2.0;
-  is_true ~msg:"scheduled" (!(t.schedule_count) > before)
+  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_orientation_schedules_render () =
   let t, bar = make_bar () in
   let before = !(t.schedule_count) in
   Progress_bar.set_orientation bar `Vertical;
-  is_true ~msg:"scheduled" (!(t.schedule_count) > before)
+  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_orientation_noop_same () =
   let t, bar = make_bar ~orientation:`Horizontal () in
@@ -149,13 +149,13 @@ let set_filled_color_schedules_render () =
   let t, bar = make_bar () in
   let before = !(t.schedule_count) in
   Progress_bar.set_filled_color bar Ansi.Color.red;
-  is_true ~msg:"scheduled" (!(t.schedule_count) > before)
+  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_empty_color_schedules_render () =
   let t, bar = make_bar () in
   let before = !(t.schedule_count) in
   Progress_bar.set_empty_color bar Ansi.Color.blue;
-  is_true ~msg:"scheduled" (!(t.schedule_count) > before)
+  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 (* ── Rendering ── *)
 
@@ -207,14 +207,14 @@ let apply_props_schedules_render () =
   let t, bar = make_bar () in
   let before = !(t.schedule_count) in
   Progress_bar.apply_props bar Progress_bar.Props.default;
-  is_true ~msg:"scheduled" (!(t.schedule_count) > before)
+  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 (* ── Pretty-printing ── *)
 
 let pp_produces_output () =
   let _t, bar = make_bar () in
   let s = Format.asprintf "%a" Progress_bar.pp bar in
-  is_true ~msg:"non-empty" (String.length s > 0)
+  greater int ~msg:"non-empty" ~than:0 (String.length s)
 
 let pp_contains_progress_bar () =
   let _t, bar = make_bar () in

@@ -195,7 +195,7 @@ let style_emit_function () =
   let emitted2 = Bytes.sub_string buf2 0 (Writer.len w2) in
   (* Should only disable bold (22) and enable italic (3) - not emit fg again *)
   let codes2 = Style.to_sgr_codes ~prev:style style2 in
-  is_true ~msg:"emit delta non-empty" (String.length emitted2 > 0);
+  greater int ~msg:"emit delta non-empty" ~than:0 (String.length emitted2);
   is_true ~msg:"delta contains disable bold (22)" (List.mem 22 codes2);
   is_true ~msg:"delta contains enable italic (3)" (List.mem 3 codes2);
   is_false ~msg:"delta does not re-emit fg (31)" (List.mem 31 codes2)

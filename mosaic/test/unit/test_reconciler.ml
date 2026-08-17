@@ -152,8 +152,8 @@ let viewport_switch_reconciles_selected_branch_on_resize () =
   ignore (Renderer.dispatch_mouse renderer mouse : Event.mouse);
   (match !last_scroll with
   | Some y ->
-      is_true ~msg:"retained transcript continues from its scroll position"
-        (y > first_scroll)
+      greater int ~msg:"retained transcript continues from its scroll position"
+        ~than:first_scroll y
   | None -> fail "expected the retained transcript to keep scrolling");
   render_view ~viewport_width:79 reconciler view;
   do_frame ~width:79 renderer;
@@ -204,7 +204,7 @@ let non_focusable_scroll_box_still_scrolls_with_wheel () =
   ignore (Renderer.dispatch_mouse renderer mouse : Event.mouse);
   is_none ~msg:"wheel does not take focus" (Renderer.focused renderer);
   match !last_scroll with
-  | Some y -> is_true ~msg:"wheel advances scroll position" (y > 0)
+  | Some y -> greater int ~msg:"wheel advances scroll position" ~than:0 y
   | None -> fail "expected wheel scroll callback"
 
 let keyed_scroll_by_applies_once_after_layout () =

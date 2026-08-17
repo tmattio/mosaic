@@ -74,7 +74,7 @@ let wrap_word_at_boundary () =
   let s = make_surface ~width:10 ~content:"hello world foo" ~wrap:`Word () in
   let info = Text_surface.display_info s in
   (* "hello " fits in 10, "world foo" doesn't all fit, should wrap *)
-  is_true ~msg:"wraps" (Array.length info.lines >= 2)
+  greater_equal int ~msg:"wraps" ~than:2 (Array.length info.lines)
 
 let wrap_word_preserves_sources () =
   let s =
@@ -376,7 +376,7 @@ let measure_min_content_word_wrap () =
       ~available_height:Toffee.Available_space.Max_content
   in
   (* Min_content with word wrap: wraps at width=1, words break to char level *)
-  is_true ~msg:"width >= 1" (result.width >= 1.)
+  greater_equal float_exact ~msg:"width >= 1" ~than:1. result.width
 
 let measure_definite_caps_with_wrap () =
   let s = make_surface ~content:"hello world" ~wrap:`Word () in
@@ -385,9 +385,9 @@ let measure_definite_caps_with_wrap () =
       ~available_height:Toffee.Available_space.Max_content
   in
   (* With wrapping: width should not exceed available width of 8 *)
-  is_true ~msg:"width <= 8" (result.width <= 8.);
+  less_equal float_exact ~msg:"width <= 8" ~than:8. result.width;
   (* Content wraps: "hello" + "world" -> at least 2 lines *)
-  is_true ~msg:"height >= 2" (result.height >= 2.)
+  greater_equal float_exact ~msg:"height >= 2" ~than:2. result.height
 
 let measure_definite_no_wrap_uncapped () =
   let s = make_surface ~content:"hello world" () in
@@ -469,8 +469,8 @@ let measure_empty_buffer () =
       ~available_height:Toffee.Available_space.Max_content
   in
   (* Empty buffer should return minimum 1x1 *)
-  is_true ~msg:"width >= 1" (result.width >= 1.);
-  is_true ~msg:"height >= 1" (result.height >= 1.)
+  greater_equal float_exact ~msg:"width >= 1" ~than:1. result.width;
+  greater_equal float_exact ~msg:"height >= 1" ~than:1. result.height
 
 let measure_height_grows_for_wrapped () =
   (* 20 chars in 10-wide viewport should produce 2 lines *)
@@ -531,7 +531,7 @@ let wrap_word_long_word_fallback () =
   let s = make_surface ~width:5 ~content:"abcdefghij" ~wrap:`Word () in
   let info = Text_surface.display_info s in
   (* "abcdefghij" (10 chars) can't break at word boundaries, must char-break *)
-  is_true ~msg:"wraps" (Array.length info.lines >= 2)
+  greater_equal int ~msg:"wraps" ~than:2 (Array.length info.lines)
 
 let wrap_word_empty_lines_preserved () =
   let s = make_surface ~width:40 ~content:"a\n\nb" ~wrap:`Word () in
@@ -540,7 +540,7 @@ let wrap_word_empty_lines_preserved () =
 let wrap_word_single_char_words () =
   let s = make_surface ~width:5 ~content:"a b c d e f" ~wrap:`Word () in
   let info = Text_surface.display_info s in
-  is_true ~msg:"wraps" (Array.length info.lines >= 2)
+  greater_equal int ~msg:"wraps" ~than:2 (Array.length info.lines)
 
 (* ── Property Tests ── *)
 

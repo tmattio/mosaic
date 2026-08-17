@@ -59,7 +59,7 @@ let fill_defaults_to_black () =
   let img = Image.fill ~width:1 ~height:1 () in
   Image.draw img grid;
   let _, _, _, alpha = read_bg grid 0 0 in
-  is_true ~msg:"filled cell has an opaque background" (alpha > 0);
+  greater int ~msg:"filled cell has an opaque background" ~than:0 alpha;
   let _, _, _, untouched_alpha = read_bg grid 1 0 in
   equal ~msg:"unfilled cell keeps the terminal default" int 0 untouched_alpha
 

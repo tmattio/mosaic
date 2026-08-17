@@ -155,12 +155,13 @@ let create_attaches_to_parent () =
 let create_node_returns_renderable () =
   let _t, input = make_input () in
   let node = Text_input.node input in
-  is_true ~msg:"node is renderable" (String.length (Renderable.id node) > 0)
+  greater int ~msg:"node is renderable" ~than:0
+    (String.length (Renderable.id node))
 
 let create_buffer_returns_edit_buffer () =
   let _t, input = make_input () in
   let buf = Text_input.buffer input in
-  is_true ~msg:"buffer exists" (Edit_buffer.max_length buf > 0)
+  greater int ~msg:"buffer exists" ~than:0 (Edit_buffer.max_length buf)
 
 let create_initial_value_matches () =
   let _t, input = make_input ~value:"hello" () in
@@ -185,7 +186,7 @@ let set_value_requests_render () =
   let t, input = make_input () in
   let before = !(t.schedule_count) in
   Text_input.set_value input "something";
-  is_true ~msg:"scheduled" (!(t.schedule_count) > before)
+  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_value_updates_buffer () =
   let _t, input = make_input ~value:"original" () in
@@ -238,7 +239,7 @@ let on_cursor_fires_on_cursor_movement () =
   in
   focus_input t input;
   send_key input Matrix_input.Key.Left;
-  is_true ~msg:"cursor callback fired" (List.length !fired >= 1)
+  greater_equal int ~msg:"cursor callback fired" ~than:1 (List.length !fired)
 
 let on_cursor_fires_on_selection_change () =
   let fired = ref [] in
@@ -301,7 +302,8 @@ let on_change_fires_on_submit_when_changed () =
   ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
   send_char input 'a';
   send_key input Matrix_input.Key.Enter;
-  is_true ~msg:"on_change fired on submit" (List.length !fired >= 1)
+  greater_equal int ~msg:"on_change fired on submit" ~than:1
+    (List.length !fired)
 
 let set_on_change_none_disables () =
   let count = ref 0 in
@@ -851,7 +853,7 @@ let apply_props_schedules_render () =
   let t, input = make_input () in
   let before = !(t.schedule_count) in
   Text_input.apply_props input Text_input.Props.default;
-  is_true ~msg:"scheduled" (!(t.schedule_count) > before)
+  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 (* ── Edge Cases ── *)
 
@@ -919,7 +921,7 @@ let prevent_default_blocks_input () =
 let pp_produces_non_empty_output () =
   let _t, input = make_input () in
   let s = Format.asprintf "%a" Text_input.pp input in
-  is_true ~msg:"non-empty" (String.length s > 0)
+  greater int ~msg:"non-empty" ~than:0 (String.length s)
 
 let pp_contains_input_prefix () =
   let _t, input = make_input () in

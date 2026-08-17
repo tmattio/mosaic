@@ -37,7 +37,7 @@ let accel_macos_accelerates_on_rapid_events () =
   let _ = Scroll_box.Scroll_accel.tick a ~now:20. in
   let _ = Scroll_box.Scroll_accel.tick a ~now:40. in
   let m = Scroll_box.Scroll_accel.tick a ~now:60. in
-  is_true ~msg:"multiplier > 1" (m > 1.0)
+  greater float_exact ~msg:"multiplier > 1" ~than:1.0 m
 
 let accel_macos_resets_after_timeout () =
   let a = Scroll_box.Scroll_accel.macos () in
@@ -55,7 +55,7 @@ let accel_macos_respects_cap () =
   for i = 1 to 30 do
     _m := Scroll_box.Scroll_accel.tick a ~now:(float_of_int (i * 10))
   done;
-  is_true ~msg:"capped at 2.0" (!_m <= 2.0)
+  less_equal float_exact ~msg:"capped at 2.0" ~than:2.0 !_m
 
 let accel_reset_clears_history () =
   let a = Scroll_box.Scroll_accel.macos () in
@@ -335,8 +335,8 @@ let scroll_by_viewport_uses_measured_height () =
   Scroll_box.set_scroll_top sb 24;
   let scheduled_before = !(test_context.schedule_count) in
   Scroll_box.set_scroll_by sb (Some (scroll_request "page-up" (-1.)));
-  is_true ~msg:"request schedules a render"
-    (!(test_context.schedule_count) > scheduled_before);
+  greater int ~msg:"request schedules a render" ~than:scheduled_before
+    !(test_context.schedule_count);
   render_scroll_box sb ~vh:8 ~ch:40;
   equal ~msg:"one measured viewport up" int 16 (Scroll_box.scroll_top sb);
   Scroll_box.set_scroll_by sb (Some (scroll_request "page-down" 0.5));
@@ -350,8 +350,8 @@ let scroll_by_key_applies_at_most_once () =
   let first = scroll_request "page" (-1.) in
   let scheduled_before = !(test_context.schedule_count) in
   Scroll_box.apply_props sb (Scroll_box.Props.make ~scroll_by:first ());
-  is_true ~msg:"new key schedules a render"
-    (!(test_context.schedule_count) > scheduled_before);
+  greater int ~msg:"new key schedules a render" ~than:scheduled_before
+    !(test_context.schedule_count);
   render_scroll_box sb ~vh:8 ~ch:40;
   equal ~msg:"first application" int 16 (Scroll_box.scroll_top sb);
   Scroll_box.set_scroll_top sb 20;
@@ -420,8 +420,8 @@ let scroll_by_viewport_parks_sticky_content () =
     (Scroll_box.Props.make ~sticky_scroll:true ~sticky_start:`Bottom
        ~scroll_by:(scroll_request "page-up" (-1.))
        ());
-  is_true ~msg:"page request schedules a render"
-    (!(test_context.schedule_count) > scheduled_before);
+  greater int ~msg:"page request schedules a render" ~than:scheduled_before
+    !(test_context.schedule_count);
   render_sticky_box sb ~vh:8 ~ch:40;
   equal ~msg:"page request uses viewport" int 24 (Scroll_box.scroll_top sb);
   render_sticky_box sb ~vh:8 ~ch:48;
@@ -541,7 +541,7 @@ let apply_props_updates () =
 let pp_produces_output () =
   let _t, sb = make_scroll_box () in
   let s = Format.asprintf "%a" Scroll_box.pp sb in
-  is_true ~msg:"non-empty" (String.length s > 0)
+  greater int ~msg:"non-empty" ~than:0 (String.length s)
 
 let pp_contains_scroll_box () =
   let _t, sb = make_scroll_box () in
