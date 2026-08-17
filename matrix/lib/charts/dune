@@ -1,4 +1,13 @@
 (library
+ (instrumentation
+  (backend ppx_windtrap.coverage))
+ ; No (instrumentation (backend ppx_windtrap.mutate)) here: the mutate
+ ; backend's arithmetic operator breaks OCaml's type-directed record
+ ; disambiguation, so this file stops compiling under it. See
+ ; matrix_charts.ml:217 (`rect.Layout.x - x0 ... rect.height`),
+ ; where `rect.height` resolves only from the annotated field
+ ; earlier in the same expression. Coverage instrumentation is
+ ; unaffected and stays.
  (name matrix_charts)
  (public_name matrix.charts)
  (libraries matrix.ansi matrix.grid matrix.text)

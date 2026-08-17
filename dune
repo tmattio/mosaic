@@ -1,0 +1,78 @@
+; The project verdict aliases. They live at the root rather than in a
+; test/ directory because this repo has no single test tree — every
+; package carries its own (matrix/test, mosaic/test/unit, toffee/test,
+; …) — and these three answer questions about the project as a whole.
+;
+; cover and mutate are asymmetric on purpose. Coverage accumulates as a
+; side effect of any instrumented run, so @cover both runs the suites
+; and merges. A mutation verdict only exists if a run was asked to test
+; mutants, so @mutate merges what previous runs left:
+;
+;   WINDTRAP_MUTATE=1 dune runtest --force \
+;     --instrument-with ppx_windtrap.mutate
+;   dune build @mutate
+;
+; (universe) is load-bearing in both: the .coverage and .mutants files
+; are written by test executables at exit and are not declarable
+; dependencies, so it makes the milliseconds-cheap merge re-run on every
+; build.
+;
+; --min 68 is the measured baseline (70.55% over 30,647 points, merged
+; across every package) minus a little headroom. It ratchets: raise it
+; when the margin is comfortable, never lower it to make a red build
+; green.
+
+(rule
+ (alias cover)
+ (deps
+  (alias_rec runtest)
+  (universe))
+ (action
+  (chdir
+   %{workspace_root}
+   (run %{bin:windtrap} coverage --min 68))))
+
+(rule
+ (alias mutate)
+ (deps (universe))
+ (action
+  (chdir
+   %{workspace_root}
+   (run %{bin:windtrap} mutate))))
+
+; @admit asks "can every test this run executes fail?" and answers with
+; its exit code, so it is only useful while it is green — a red one
+; teaches that red is normal, which is the opposite of what UNJUSTIFIED
+; means. It is scoped for a second reason too: an admission run tries up
+; to 25 faults per test, so aiming it at all ~4,400 tests would take
+; hours and nobody would run it.
+;
+; test_selection audits clean today (24 admitted, 5 no sites, 0
+; unjustified). Add an executable here once its own audit is clean.
+;
+; Three suites are known NOT to be clean yet, and the numbers are worth
+; keeping where someone will find them rather than in a review comment:
+;
+;   WINDTRAP_MUTATE=audit dune exec --instrument-with ppx_windtrap.mutate \
+;     mosaic/test/unit/test_edit_buffer.exe
+;     -> 135 admitted, 5 unjustified of 140
+;   ... test_text_buffer.exe  -> 42 admitted, 9 unjustified, 3 no sites
+;   ... test_event.exe        -> 7 admitted, 1 unjustified, 30 no sites
+;
+; test_edit_buffer's five all reach the same two faults and kill
+; neither, because both are equivalent through the public API:
+; edit_buffer.ml:23 `max_graphemes <= 0` (create clamps the argument
+; with Int.max 0, so the `< 0` mutant can never see a negative and both
+; arms return "") and matrix_text.ml:191 `len = 0` on an empty buffer.
+; Resolving them means `[@mutate off "reason"]` in those two source
+; lines, which is a product-code decision for the maintainer, not
+; something a test migration should do unilaterally.
+
+(rule
+ (alias admit)
+ (deps (universe) mosaic/test/unit/test_selection.exe)
+ (action
+  (setenv
+   WINDTRAP_MUTATE
+   audit
+   (run %{exe:mosaic/test/unit/test_selection.exe}))))

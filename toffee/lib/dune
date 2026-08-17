@@ -1,4 +1,8 @@
 (library
+ (instrumentation
+  (backend ppx_windtrap.coverage))
+ (instrumentation
+  (backend ppx_windtrap.mutate))
  (name toffee)
  (public_name toffee)
  (libraries toffee.geometry toffee.style toffee.tree toffee.compute))

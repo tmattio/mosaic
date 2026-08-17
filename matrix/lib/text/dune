@@ -1,4 +1,8 @@
 (library
+ (instrumentation
+  (backend ppx_windtrap.coverage))
+ (instrumentation
+  (backend ppx_windtrap.mutate))
  (name matrix_text)
  (public_name matrix.text)
  (private_modules unicode unicode_data uuseg_grapheme_cluster))

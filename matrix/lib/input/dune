@@ -1,3 +1,7 @@
 (library
+ (instrumentation
+  (backend ppx_windtrap.coverage))
+ (instrumentation
+  (backend ppx_windtrap.mutate))
  (name matrix_input)
  (public_name matrix.input))

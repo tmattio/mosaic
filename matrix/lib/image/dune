@@ -1,4 +1,8 @@
 (library
+ (instrumentation
+  (backend ppx_windtrap.coverage))
+ (instrumentation
+  (backend ppx_windtrap.mutate))
  (name matrix_image)
  (public_name matrix.image)
  (libraries matrix.ansi matrix.grid matrix.screen matrix.text))

@@ -1,6 +1,10 @@
 (include_subdirs unqualified)
 
 (library
+ (instrumentation
+  (backend ppx_windtrap.coverage))
+ (instrumentation
+  (backend ppx_windtrap.mutate))
  (name mosaic_ui)
  (public_name mosaic.ui)
  (private_modules diff_patch edit_surface keymap text_crop text_renderable)
