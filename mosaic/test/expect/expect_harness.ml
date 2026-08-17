@@ -1,4 +1,4 @@
-module Cell_grid = Grid
+module Cell_grid = Matrix_grid
 open Mosaic_ui
 open Mosaic
 module Canvas = Mosaic_ui.Canvas
