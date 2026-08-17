@@ -55,9 +55,39 @@ let snap t =
   Matrix_test.screen t |> String.split_on_char '\n'
   |> List.iter (fun row -> print_endline ("|" ^ row))
 
+(* The round-trip oracle: whatever bytes the runtime emitted must, when
+   replayed through matrix's own VTE, reconstruct the grid the backend
+   believes it painted. It is a strong invariant and a free one — every
+   frame this file snapshots is already both an ANSI stream and a grid — and
+   it catches the class of bug a golden cannot: a frame that looks right in
+   the backend's own accounting but whose escape sequences do not put it on
+   a real terminal. *)
+(* The two sides represent an all-blank tail differently — Matrix_test.screen
+   right-trims each row, Vte.to_string pads to the full width — so rows are
+   compared without their trailing blanks. Nothing about cell content is
+   relaxed: a space the grid actually holds inside a row still counts. *)
+let rstrip_rows s =
+  String.split_on_char '\n' s
+  |> List.map (fun row ->
+      let n = ref (String.length row) in
+      while !n > 0 && row.[!n - 1] = ' ' do
+        decr n
+      done;
+      String.sub row 0 !n)
+  |> String.concat "\n" |> String.trim
+
+let replay_matches t ~width ~height =
+  let vte = Vte.create ~rows:height ~cols:width () in
+  Vte.feed_string vte (Matrix_test.output t);
+  equal ~msg:"replaying the emitted ANSI reconstructs the grid" text
+    (rstrip_rows (Matrix_test.screen t))
+    (rstrip_rows (Vte.to_string vte))
+
 let drive ?mode ?(width = 48) ?(height = 2) ?probe ?process_perform application
     steps =
   let steps = ref steps in
+  (* Tracked so the replay VTE is always the size the backend currently is. *)
+  let dims = ref (width, height) in
   let on_idle t ~timeout:_ =
     match !steps with
     | [] -> Matrix_test.stop t
@@ -65,9 +95,14 @@ let drive ?mode ?(width = 48) ?(height = 2) ?probe ?process_perform application
         steps := rest;
         match step with
         | `Feed bytes -> Matrix_test.feed t bytes
-        | `Resize (width, height) -> Matrix_test.resize t ~width ~height
+        | `Resize (width, height) ->
+            dims := (width, height);
+            Matrix_test.resize t ~width ~height
         | `Advance dt -> Matrix_test.set_now t (Matrix_test.now t +. dt)
-        | `Snap -> snap t
+        | `Snap ->
+            let width, height = !dims in
+            replay_matches t ~width ~height;
+            snap t
         | `Run f -> f t)
   in
   let t = Matrix_test.create ?mode ~on_idle ~width ~height () in

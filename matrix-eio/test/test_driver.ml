@@ -117,6 +117,31 @@ let nonblocking_read_returns_without_input ~master fd =
    fresh [idles] increment from the script implies the loop is parked and the
    presented frame is stable. *)
 
+(* The round-trip oracle, shared with mosaic/test/loop: the bytes the driver
+   emitted must, replayed through matrix's own VTE, reconstruct the grid the
+   backend believes it painted. Asserting the screen string alone leaves the
+   emission path — the part eio's driver actually owns — unchecked.
+
+   Rows are compared without trailing blanks: Matrix_test.screen right-trims
+   each row and Vte.to_string pads to the full width, so the padding is a
+   representation difference rather than content. *)
+let rstrip_rows s =
+  String.split_on_char '\n' s
+  |> List.map (fun row ->
+      let n = ref (String.length row) in
+      while !n > 0 && row.[!n - 1] = ' ' do
+        decr n
+      done;
+      String.sub row 0 !n)
+  |> String.concat "\n" |> String.trim
+
+let screen_replays t ~width ~height =
+  let vte = Vte.create ~rows:height ~cols:width () in
+  Vte.feed_string vte (Matrix_test.output t);
+  equal ~msg:"replaying the emitted ANSI reconstructs the grid" text
+    (rstrip_rows (Matrix_test.screen t))
+    (rstrip_rows (Vte.to_string vte))
+
 type driver = {
   mutable backend : Matrix_test.t option;
   cond : Eio.Condition.t;
@@ -195,11 +220,13 @@ let test_input_crosses_fibers () =
       await_idle driver ~beyond:0;
       equal ~msg:"initial frame presented" string "typed:"
         (String.trim (Matrix_test.screen (backend driver)));
+      screen_replays (backend driver) ~width:24 ~height:2;
       let before = driver.idles in
       feed driver "hi";
       await_idle driver ~beyond:before;
       equal ~msg:"input crossed fibers and re-rendered" string "typed:hi"
         (String.trim (Matrix_test.screen (backend driver)));
+      screen_replays (backend driver) ~width:24 ~height:2;
       stop driver)
 
 let test_async_wake_reaches_quiescent_loop () =
