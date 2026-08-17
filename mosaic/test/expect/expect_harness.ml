@@ -118,14 +118,35 @@ let frame app ~width ~height =
   print_newline ();
   print_string (grid_to_text grid)
 
+(* One line per pending work item, for [eventually]'s failure report: the
+   renderer already knows which nodes are holding the frame up, and a bare
+   "did not settle" throws that away. *)
+let pending_lines renderer =
+  match Renderer.pending_work renderer with
+  | [] ->
+      [ "no node reports pending work — a renderable requested another pass" ]
+  | pending ->
+      "still pending:"
+      :: List.map
+           (fun p ->
+             let w = Renderer.Pending.work p in
+             match w.Renderable.Pending.label with
+             | Some label -> Printf.sprintf "  %s (%s)" w.kind label
+             | None -> Printf.sprintf "  %s" w.kind)
+           pending
+
+(* The pass budget matches Renderer.render_frame_until_settled's default of 4.
+   The first pass runs before probing: a renderer that has not rendered yet
+   reports nothing pending and would read as settled. *)
 let settled_frame app ~width ~height =
   app.viewport_width <- width;
   set_viewport app.renderer ~width ~height;
-  (match
-     Renderer.render_frame_until_settled app.renderer ~width ~height ~delta:0.
-   with
-  | `Settled -> ()
-  | `Pending _ -> failwith "renderer did not settle within its pass budget");
+  Renderer.render_frame app.renderer ~width ~height ~delta:0.;
+  Windtrap.eventually ~msg:"renderer settles within its pass budget" ~attempts:4
+    ~step:(fun () ->
+      Renderer.render_frame app.renderer ~width ~height ~delta:0.)
+    ~diagnose:(fun () -> pending_lines app.renderer)
+    (fun () -> if Renderer.is_settled app.renderer then Some () else None);
   let grid = Matrix_screen.next_grid (Renderer.screen app.renderer) in
   print_newline ();
   print_string (grid_to_text grid)
