@@ -110,8 +110,7 @@ let%expect_test "in-frame geometry changes settle without input" =
 let%expect_test "escape sequences decode as single keys" =
   (* "\027[A" is three bytes but one Up key: the real parser runs. *)
   drive (app ~subs:on_keys ()) [ `Feed "\027[A"; `Snap ];
-  [%expect
-    {|
+  [%expect {|
     |keys:[<up>] ticks:0 size:- note:-
     |
     |}]
@@ -365,8 +364,7 @@ let%expect_test "replaying the output stream through a VTE matches the grid" =
   print_endline "replayed:";
   String.split_on_char '\n' replayed
   |> List.iter (fun row -> print_endline ("|" ^ row));
-  [%expect
-    {|
+  [%expect {|
     replayed:
     |keys:[a,b] ticks:0 size:- note:-
     |
@@ -482,8 +480,7 @@ let%expect_test "perform dispatches from concurrent threads are all delivered" =
     ~probe:(fun p -> probe := Some p)
     (app ~init_cmd:hammer ());
   snap t;
-  [%expect
-    {|
+  [%expect {|
     |keys:[] ticks:6000000 size:- note:-
     |
     |}]
