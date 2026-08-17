@@ -172,20 +172,26 @@ let selection_set_and_get () =
   let changed = Text_surface.set_selection s ~start:2 ~end_:7 in
   is_true ~msg:"changed" changed;
   is_true ~msg:"has_selection" (Text_surface.has_selection s);
-  equal ~msg:"selection" (option (pair int int)) (Some (2, 7))
+  equal ~msg:"selection"
+    (option (pair int int))
+    (Some (2, 7))
     (Text_surface.selection s)
 
 let selection_clamps_to_bounds () =
   let s = make_surface ~content:"hello" () in
   let _ = Text_surface.set_selection s ~start:(-5) ~end_:100 in
-  equal ~msg:"clamped" (option (pair int int)) (Some (0, 5))
+  equal ~msg:"clamped"
+    (option (pair int int))
+    (Some (0, 5))
     (Text_surface.selection s)
 
 let selection_normalized () =
   let s = make_surface ~content:"hello world" () in
   (* Reversed: end < start *)
   let _ = Text_surface.set_selection s ~start:7 ~end_:2 in
-  equal ~msg:"normalized" (option (pair int int)) (Some (2, 7))
+  equal ~msg:"normalized"
+    (option (pair int int))
+    (Some (2, 7))
     (Text_surface.selection s)
 
 let selection_returns_true_when_changed () =

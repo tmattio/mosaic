@@ -836,7 +836,9 @@ let apply_props_selection_change_updates_buffer () =
     Text_input.Props.make ~value:"hello" ~selection:(Some (1, 4)) ()
   in
   Text_input.apply_props input props;
-  equal ~msg:"selection updated" (option (pair int int)) (Some (1, 4))
+  equal ~msg:"selection updated"
+    (option (pair int int))
+    (Some (1, 4))
     (Text_input.selection input)
 
 let apply_props_selection_none_clears_buffer_selection () =

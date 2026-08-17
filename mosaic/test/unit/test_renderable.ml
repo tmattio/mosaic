@@ -1020,8 +1020,10 @@ let buffered_render_full_uses_local_coordinates () =
       seen := Some (Renderable.x node, Renderable.y node));
   let grid = make_grid ~width:12 ~height:6 () in
   Renderable.Private.render_full child ~grid ~delta:0.;
-  equal ~msg:"buffered render sees local coords" (option (pair int int))
-    (Some (0, 0)) !seen;
+  equal ~msg:"buffered render sees local coords"
+    (option (pair int int))
+    (Some (0, 0))
+    !seen;
   equal ~msg:"x restored after render" int 2 (Renderable.x child);
   equal ~msg:"y restored after render" int 1 (Renderable.y child)
 

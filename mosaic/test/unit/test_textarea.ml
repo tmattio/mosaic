@@ -736,7 +736,9 @@ let mouse_selection_syncs_to_buffer () =
   dispatch_mouse r (mouse_down ~x:0 ~y:0);
   dispatch_mouse r (mouse_drag ~x:5 ~y:0);
   dispatch_mouse r (mouse_up ~x:5 ~y:0);
-  equal ~msg:"selection" (option (pair int int)) (Some (0, 5))
+  equal ~msg:"selection"
+    (option (pair int int))
+    (Some (0, 5))
     (Textarea.selection ta);
   equal ~msg:"selected text" string "hello"
     (Edit_buffer.selected_text (Textarea.buffer ta))
@@ -850,7 +852,9 @@ let apply_props_selection_change_updates_buffer () =
   let _t, ta = make_textarea ~value:"hello\nworld" () in
   Textarea.apply_props ta
     (Textarea.Props.make ~value:"hello\nworld" ~selection:(Some (1, 5)) ());
-  equal ~msg:"selection updated" (option (pair int int)) (Some (1, 5))
+  equal ~msg:"selection updated"
+    (option (pair int int))
+    (Some (1, 5))
     (Textarea.selection ta)
 
 let apply_props_selection_none_clears_buffer_selection () =

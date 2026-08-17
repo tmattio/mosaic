@@ -205,22 +205,19 @@ let () =
           test "horizontal line" bounds_horizontal;
           test "vertical line" bounds_vertical;
           test "after mutation" bounds_after_mutation;
-          prop "width >= 1"
-            (Gen.pair gen_point gen_point)
+          prop "width >= 1" (Gen.pair gen_point gen_point)
             (fun ((ax, ay), (fx, fy)) ->
               let sel =
                 Selection.create ~anchor:(pt ax ay) ~focus:(pt fx fy) ()
               in
               greater_equal int ~than:1 (Selection.bounds sel).width);
-          prop "height >= 1"
-            (Gen.pair gen_point gen_point)
+          prop "height >= 1" (Gen.pair gen_point gen_point)
             (fun ((ax, ay), (fx, fy)) ->
               let sel =
                 Selection.create ~anchor:(pt ax ay) ~focus:(pt fx fy) ()
               in
               greater_equal int ~than:1 (Selection.bounds sel).height);
-          prop "symmetric in anchor and focus"
-            (Gen.pair gen_point gen_point)
+          prop "symmetric in anchor and focus" (Gen.pair gen_point gen_point)
             (fun ((ax, ay), (fx, fy)) ->
               let s1 =
                 Selection.create ~anchor:(pt ax ay) ~focus:(pt fx fy) ()
@@ -229,8 +226,7 @@ let () =
                 Selection.create ~anchor:(pt fx fy) ~focus:(pt ax ay) ()
               in
               equal bounds_t (Selection.bounds s1) (Selection.bounds s2));
-          prop "width = abs(x1-x0)+1"
-            (Gen.pair gen_point gen_point)
+          prop "width = abs(x1-x0)+1" (Gen.pair gen_point gen_point)
             (fun ((ax, _ay), (fx, fy)) ->
               let sel =
                 Selection.create ~anchor:(pt ax 0) ~focus:(pt fx fy) ()
