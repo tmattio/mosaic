@@ -44,6 +44,23 @@ let create_negative_max_length_clamped () =
   equal ~msg:"content truncated" string "" (Edit_buffer.text buf);
   equal ~msg:"cursor at end" int 0 (Edit_buffer.cursor buf)
 
+(* The two boundaries a mutation audit found unguarded: every existing
+   construction test sat on one side of `<= 0` or the other, so the
+   off-by-one mutant of each guard survived. Zero is the value that tells
+   `<= 0` and `< 0` apart. *)
+let create_zero_max_length () =
+  let buf = Edit_buffer.create ~max_length:0 "abc" in
+  equal ~msg:"max_length" int 0 (Edit_buffer.max_length buf);
+  equal ~msg:"nothing fits" string "" (Edit_buffer.text buf);
+  equal ~msg:"length" int 0 (Edit_buffer.length buf)
+
+let create_zero_tab_width_clamps_to_one () =
+  (* The .mli says tab_width "defaults to 2 and is clamped to >= 1", so 0
+     becomes 1 — not the default. display_width is the only observation the
+     interface offers. *)
+  let buf = Edit_buffer.create ~tab_width:0 "\t" in
+  equal ~msg:"tab occupies one column" int 1 (Edit_buffer.display_width buf)
+
 let create_multibyte_unicode () =
   (* "café" — the é is a single grapheme *)
   let buf = Edit_buffer.create "caf\xc3\xa9" in
@@ -550,6 +567,28 @@ let select_all_on_empty_leaves_no_phantom_selection () =
   ignore (Edit_buffer.insert buf "b" : bool);
   equal ~msg:"the second character appends, it does not replace" string "ab"
     (Edit_buffer.text buf)
+
+(* Found by the model-based suite below, shrunk from a six-call program.
+
+   An edit that replaces a selection with identical text still saves an undo
+   point — correctly, since it also has to restore the cursor and the
+   selection. Undoing it restores all three, so a previous state *was*
+   restored, which is exactly what the .mli promises undo returns true for:
+   "[undo t] is [true] iff undoing restored a previous state." It returns
+   false, because the implementation answers a narrower question — whether
+   the text changed.
+
+   redo does the same thing and is not a bug: its .mli says "iff redoing
+   re-applied a change", which the text comparison is a fair reading of.
+   Only undo's documented contract and its behaviour disagree. Either the
+   implementation or that sentence should move; this test says which one the
+   .mli currently promises. *)
+let undo_of_a_no_op_edit_reports_the_restore () =
+  let buf = Edit_buffer.create "f" in
+  Edit_buffer.select_all buf;
+  ignore (Edit_buffer.insert buf "f" : bool);
+  equal ~msg:"text is back where it started" string "f" (Edit_buffer.text buf);
+  is_true ~msg:"undo restored the cursor and selection" (Edit_buffer.undo buf)
 
 (* ── Undo / Redo ── *)
 
@@ -1199,9 +1238,15 @@ let commands =
               undo = rest;
               redo = snapshot_of m :: m.redo;
             })
+      (* Both report whether the *text* changed, not whether a state was
+         restored — which is what redo's .mli says ("re-applied a change")
+         and not what undo's says. See the "undo of a no-op edit" xfail
+         above; modelling the documented rule here would make every case
+         that reaches the divergence fail for the same single reason. *)
       (fun m buf ->
-        equal ~msg:"undo reports whether a previous state was restored" bool
-          (m.undo <> []) (Edit_buffer.undo buf));
+        equal ~msg:"undo reports whether the text changed" bool
+          (match m.undo with [] -> false | snap :: _ -> snap.s_text <> m.text)
+          (Edit_buffer.undo buf));
     call "redo"
       ~next:(fun m ->
         match m.redo with
@@ -1213,8 +1258,9 @@ let commands =
               undo = snapshot_of m :: m.undo;
             })
       (fun m buf ->
-        equal ~msg:"redo reports whether a change was re-applied" bool
-          (m.redo <> []) (Edit_buffer.redo buf));
+        equal ~msg:"redo reports whether the text changed" bool
+          (match m.redo with [] -> false | snap :: _ -> snap.s_text <> m.text)
+          (Edit_buffer.redo buf));
   ]
 
 let model_invariant m buf =
@@ -1255,6 +1301,9 @@ let () =
             create_max_length_truncates_initial;
           test "create negative max_length is clamped"
             create_negative_max_length_clamped;
+          test "create zero max_length" create_zero_max_length;
+          test "create zero tab_width clamps to one"
+            create_zero_tab_width_clamps_to_one;
           test "create multibyte Unicode" create_multibyte_unicode;
         ];
       group "Content"
@@ -1368,6 +1417,13 @@ let () =
       group "Undo / Redo"
         [
           test "undo with no history" undo_no_history;
+          xfail
+            ~reason:
+              "Edit_buffer bug: undo returns false when it restores a state \
+               whose text is unchanged, but its .mli promises true whenever a \
+               previous state was restored"
+            (test "undo of a no-op edit reports the restore"
+               undo_of_a_no_op_edit_reports_the_restore);
           test "undo history is bounded" undo_history_is_bounded;
           test "insert then undo" insert_then_undo;
           test "undo restores cursor" undo_restores_cursor;
