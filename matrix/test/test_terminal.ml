@@ -2,7 +2,9 @@ module Input = Matrix_input
 open Windtrap
 module T = Matrix_terminal
 
-let contains s needle =
+(* A predicate, not an assertion: this one feeds a branch inside a fake
+   terminal's output callback, where windtrap's [contains] cannot go. *)
+let has_substring s needle =
   let n = String.length needle in
   let rec loop i =
     if i + n > String.length s then false
@@ -23,18 +25,6 @@ let with_tty_terminal ?initial_caps f =
   let output s = Buffer.add_string buf s in
   let term = T.make ~output ~tty:true ?initial_caps () in
   f term buf
-
-let contains_substring s sub =
-  let len_s = String.length s and len_sub = String.length sub in
-  if len_sub = 0 then true
-  else if len_sub > len_s then false
-  else
-    let rec loop idx =
-      if idx + len_sub > len_s then false
-      else if String.sub s idx len_sub = sub then true
-      else loop (idx + 1)
-    in
-    loop 0
 
 let with_env bindings f =
   let saved = List.map (fun (key, _) -> (key, Sys.getenv_opt key)) bindings in
@@ -106,29 +96,6 @@ let test_non_tty_state_tracking () =
   equal ~msg:"mouse mode" string "Sgr_button" mouse_mode_str;
 
   T.close term
-
-(* Test: Helper function - contains_substring *)
-let test_contains_substring () =
-  let module Impl = struct
-    let contains_substring s sub =
-      let len_s = String.length s and len_sub = String.length sub in
-      if len_sub = 0 then true
-      else
-        let rec loop idx =
-          if idx + len_sub > len_s then false
-          else if String.sub s idx len_sub = sub then true
-          else loop (idx + 1)
-        in
-        loop 0
-  end in
-  is_true ~msg:"contains empty" (Impl.contains_substring "hello" "");
-  is_true ~msg:"contains at start" (Impl.contains_substring "hello" "hel");
-  is_true ~msg:"contains in middle" (Impl.contains_substring "hello" "ell");
-  is_true ~msg:"contains at end" (Impl.contains_substring "hello" "llo");
-  is_true ~msg:"contains full" (Impl.contains_substring "hello" "hello");
-  is_false ~msg:"not contains" (Impl.contains_substring "hello" "world");
-  is_false ~msg:"not contains substring too long"
-    (Impl.contains_substring "hi" "hello")
 
 (* Test: Capability normalization *)
 let test_capability_normalization () =
@@ -435,10 +402,10 @@ let test_probe_payload_color_scheme_mode () =
     ~wait_readable:(fun ~timeout:_ -> false)
     ~parser term;
   let output_data = Buffer.contents buf in
-  is_true ~msg:"probe queries color scheme update mode"
-    (contains_substring output_data "\027[?2031$p");
-  is_false ~msg:"probe does not send color scheme DSR"
-    (contains_substring output_data "\027[?996n");
+  contains ~msg:"probe queries color scheme update mode" ~sub:"\027[?2031$p"
+    output_data;
+  not_contains ~msg:"probe does not send color scheme DSR" ~sub:"\027[?996n"
+    output_data;
   T.close term
 
 let test_probe_payload_screen_is_not_tmux_wrapped () =
@@ -470,10 +437,10 @@ let test_probe_payload_screen_is_not_tmux_wrapped () =
     ~wait_readable:(fun ~timeout:_ -> false)
     ~parser term;
   let output_data = Buffer.contents buf in
-  is_false ~msg:"screen probe is not tmux wrapped"
-    (contains_substring output_data "\027Ptmux;");
-  is_false ~msg:"screen skips graphics query"
-    (contains_substring output_data "\027_Gi=31337");
+  not_contains ~msg:"screen probe is not tmux wrapped" ~sub:"\027Ptmux;"
+    output_data;
+  not_contains ~msg:"screen skips graphics query" ~sub:"\027_Gi=31337"
+    output_data;
   T.close term
 
 let test_probe_payload_tmux_is_wrapped () =
@@ -504,8 +471,8 @@ let test_probe_payload_tmux_is_wrapped () =
     ~wait_readable:(fun ~timeout:_ -> false)
     ~parser term;
   let output_data = Buffer.contents buf in
-  is_true ~msg:"tmux probe wraps DECRQM block"
-    (contains_substring output_data "\027Ptmux;\027\027[?1016$p");
+  contains ~msg:"tmux probe wraps DECRQM block"
+    ~sub:"\027Ptmux;\027\027[?1016$p" output_data;
   T.close term
 
 let test_probe_xtversion_tmux_resends_pending_queries_wrapped () =
@@ -544,10 +511,10 @@ let test_probe_xtversion_tmux_resends_pending_queries_wrapped () =
     ~wait_readable:(fun ~timeout:_ -> not !consumed)
     ~parser term;
   let output_data = Buffer.contents buf in
-  is_true ~msg:"initial probe sends unwrapped queries"
-    (contains_substring output_data "\027[?1016$p");
-  is_true ~msg:"XTVersion tmux resends pending queries wrapped"
-    (contains_substring output_data "\027Ptmux;\027\027[?1016$p");
+  contains ~msg:"initial probe sends unwrapped queries" ~sub:"\027[?1016$p"
+    output_data;
+  contains ~msg:"XTVersion tmux resends pending queries wrapped"
+    ~sub:"\027Ptmux;\027\027[?1016$p" output_data;
   T.close term
 
 let test_probe_xtversion_non_tmux_does_not_resend_wrapped () =
@@ -586,8 +553,8 @@ let test_probe_xtversion_non_tmux_does_not_resend_wrapped () =
     ~wait_readable:(fun ~timeout:_ -> not !consumed)
     ~parser term;
   let output_data = Buffer.contents buf in
-  is_false ~msg:"non-tmux XTVersion does not wrap pending queries"
-    (contains_substring output_data "\027Ptmux;");
+  not_contains ~msg:"non-tmux XTVersion does not wrap pending queries"
+    ~sub:"\027Ptmux;" output_data;
   T.close term
 
 let test_probe_preserves_user_input_and_capabilities () =
@@ -657,8 +624,8 @@ let test_x10_mouse_disable () =
   T.set_mouse_mode term `X10;
   T.set_mouse_mode term `Off;
   let output_data = Buffer.contents buf in
-  is_true ~msg:"X10 enabled" (contains_substring output_data "\027[?9h");
-  is_true ~msg:"X10 disabled" (contains_substring output_data "\027[?9l");
+  contains ~msg:"X10 enabled" ~sub:"\027[?9h" output_data;
+  contains ~msg:"X10 disabled" ~sub:"\027[?9l" output_data;
   T.close term
 
 let test_explicit_cursor_positioning_env_overrides () =
@@ -818,8 +785,8 @@ let test_kitty_flag_change_keeps_stack_balanced () =
   equal ~msg:"pops balance pushes" int
     (count "\027[>1u" out + count "\027[>5u" out)
     (count "\027[<u" out);
-  is_true ~msg:"flag change pops before re-pushing"
-    (contains_substring out "\027[>1u\027[<u\027[>5u")
+  contains ~msg:"flag change pops before re-pushing"
+    ~sub:"\027[>1u\027[<u\027[>5u" out
 
 (* Test: reset_state unwinds all protocols *)
 let test_reset_state () =
@@ -847,7 +814,7 @@ let test_reset_state_disables_partially_enabled_paste () =
     T.make ~tty:true
       ~output:(fun s ->
         Buffer.add_string output s;
-        if !fail_on_paste_on && contains s "\027[?2004h" then (
+        if !fail_on_paste_on && has_substring s "\027[?2004h" then (
           fail_on_paste_on := false;
           failwith "paste enable failed after write"))
       ()
@@ -863,8 +830,8 @@ let test_reset_state_disables_partially_enabled_paste () =
   is_true ~msg:"enable raised" raised;
   is_false ~msg:"steady state still off" (T.bracketed_paste_enabled term);
   T.reset_state term;
-  is_true ~msg:"reset disables bracketed paste after partial enable"
-    (contains_substring (Buffer.contents output) "\027[?2004l")
+  contains ~msg:"reset disables bracketed paste after partial enable"
+    ~sub:"\027[?2004l" (Buffer.contents output)
 
 (* Regression: reset_state must not clobber terminal state the app never
    touched — blanking the title or resetting cursor colour/style clobbers
@@ -873,14 +840,11 @@ let test_reset_state_skips_untouched_appearance () =
   with_tty_terminal @@ fun term buf ->
   T.reset_state term;
   let out = Buffer.contents buf in
-  is_false ~msg:"untouched title is not cleared"
-    (contains_substring out "\027]0;");
-  is_false ~msg:"untouched cursor color is not reset"
-    (contains_substring out "\027]112");
-  is_false ~msg:"untouched cursor color fallback is not sent"
-    (contains_substring out "\027]12;");
-  is_false ~msg:"untouched cursor style is not reset"
-    (contains_substring out "\027[0 q")
+  not_contains ~msg:"untouched title is not cleared" ~sub:"\027]0;" out;
+  not_contains ~msg:"untouched cursor color is not reset" ~sub:"\027]112" out;
+  not_contains ~msg:"untouched cursor color fallback is not sent"
+    ~sub:"\027]12;" out;
+  not_contains ~msg:"untouched cursor style is not reset" ~sub:"\027[0 q" out
 
 let test_reset_state_restores_touched_appearance () =
   with_tty_terminal @@ fun term buf ->
@@ -889,11 +853,9 @@ let test_reset_state_restores_touched_appearance () =
   Buffer.clear buf;
   T.reset_state term;
   let out = Buffer.contents buf in
-  is_true ~msg:"touched title is cleared" (contains_substring out "\027]0;");
-  is_true ~msg:"touched cursor style is reset"
-    (contains_substring out "\027[0 q");
-  is_true ~msg:"touched cursor color is reset"
-    (contains_substring out "\027]112")
+  contains ~msg:"touched title is cleared" ~sub:"\027]0;" out;
+  contains ~msg:"touched cursor style is reset" ~sub:"\027[0 q" out;
+  contains ~msg:"touched cursor color is reset" ~sub:"\027]112" out
 
 let test_reset_state_resets_cursor_metadata () =
   with_terminal @@ fun term _buf ->
@@ -943,7 +905,6 @@ let () =
           test "state tracking on non-TTY" test_non_tty_state_tracking;
           test "tty send" test_tty_send;
         ];
-      group "helpers" [ test "contains_substring" test_contains_substring ];
       group "capabilities"
         [
           test "normalization" test_capability_normalization;

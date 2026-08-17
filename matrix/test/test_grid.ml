@@ -81,20 +81,6 @@ let trim_right s =
   in
   if len = 0 then s else loop (len - 1)
 
-let contains_substring s sub =
-  let len = String.length s in
-  let sublen = String.length sub in
-  if sublen = 0 then true
-  else if sublen > len then false
-  else
-    let rec matches_at i j =
-      j = sublen
-      || String.unsafe_get s (i + j) = String.unsafe_get sub j
-         && matches_at i (j + 1)
-    in
-    let rec loop i = i <= len - sublen && (matches_at i 0 || loop (i + 1)) in
-    loop 0
-
 let row_trimmed grid y = trim_right (row_to_string grid y)
 
 let assert_valid_spans grid =
@@ -1041,8 +1027,8 @@ let to_ansi_preserves_indexed_foreground () =
   let style = Ansi.Style.make ~fg:(Ansi.Color.indexed 42) () in
   Grid.draw_text grid ~x:0 ~y:0 ~text:"X" ~style;
   let ansi = Grid.to_ansi ~reset:false grid in
-  is_true ~msg:"indexed foreground serialized as palette SGR"
-    (contains_substring ansi "\027[0;38;5;42m")
+  contains ~msg:"indexed foreground serialized as palette SGR"
+    ~sub:"\027[0;38;5;42m" ansi
 
 let blit_preserves_indexed_background_intent () =
   let src = Grid.create ~width:1 ~height:1 () in
@@ -1052,8 +1038,7 @@ let blit_preserves_indexed_background_intent () =
   let dst = Grid.create ~width:1 ~height:1 () in
   Grid.blit ~src ~dst;
   let ansi = Grid.to_ansi ~reset:false dst in
-  is_true ~msg:"indexed background survives blit"
-    (contains_substring ansi "48;5;99")
+  contains ~msg:"indexed background survives blit" ~sub:"48;5;99" ansi
 
 let draw_text_overflow_does_nothing () =
   let grid = Grid.create ~width:2 ~height:1 () in

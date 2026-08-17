@@ -583,15 +583,6 @@ let narrow_box_disqualifies () =
   Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
   is_none ~msg:"narrow box has no hint" (Renderer.take_scroll_hint t)
 
-let contains_substring haystack needle =
-  let hl = String.length haystack and nl = String.length needle in
-  let rec go i =
-    if i + nl > hl then false
-    else if String.sub haystack i nl = needle then true
-    else go (i + 1)
-  in
-  go 0
-
 let hinted_scroll_emits_decstbm_and_correct_rows () =
   let t = make_renderer () in
   let sb = make_hint_transcript t in
@@ -601,7 +592,7 @@ let hinted_scroll_emits_decstbm_and_correct_rows () =
   Scroll_box.scroll_by sb ~y:1 ();
   Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
   let out = Renderer.render t in
-  is_true ~msg:"output contains DECSTBM" (contains_substring out "\x1b[1;6r");
+  contains ~msg:"output contains DECSTBM" ~sub:"\x1b[1;6r" out;
   Vte.feed_string vte out;
   let lines = String.split_on_char '\n' (Vte.to_string vte) in
   List.iteri

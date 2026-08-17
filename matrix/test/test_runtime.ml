@@ -36,63 +36,6 @@ let make_state events input_chunks =
 
 let output state = Buffer.contents state.output
 
-let contains_substring needle haystack =
-  let needle_len = String.length needle in
-  let haystack_len = String.length haystack in
-  let rec matches_at i j =
-    j = needle_len
-    || i + j < haystack_len
-       && Char.equal
-            (String.unsafe_get haystack (i + j))
-            (String.unsafe_get needle j)
-       && matches_at i (j + 1)
-  in
-  let rec loop i =
-    i + needle_len <= haystack_len && (matches_at i 0 || loop (i + 1))
-  in
-  needle_len = 0 || loop 0
-
-let substring_index needle haystack =
-  let needle_len = String.length needle in
-  let haystack_len = String.length haystack in
-  let rec matches_at i j =
-    j = needle_len
-    || i + j < haystack_len
-       && Char.equal
-            (String.unsafe_get haystack (i + j))
-            (String.unsafe_get needle j)
-       && matches_at i (j + 1)
-  in
-  let rec loop i =
-    if i + needle_len > haystack_len then None
-    else if matches_at i 0 then Some i
-    else loop (i + 1)
-  in
-  if needle_len = 0 then Some 0 else loop 0
-
-let count_substring needle haystack =
-  let needle_len = String.length needle in
-  let haystack_len = String.length haystack in
-  let rec matches_at i j =
-    j = needle_len
-    || i + j < haystack_len
-       && Char.equal
-            (String.unsafe_get haystack (i + j))
-            (String.unsafe_get needle j)
-       && matches_at i (j + 1)
-  in
-  let rec loop i count =
-    if needle_len = 0 || i + needle_len > haystack_len then count
-    else if matches_at i 0 then loop (i + needle_len) (count + 1)
-    else loop (i + 1) count
-  in
-  loop 0 0
-
-let is_before ~first ~second s =
-  match (substring_index first s, substring_index second s) with
-  | Some i, Some j -> i < j
-  | _ -> false
-
 type watched_signal = { name : string; number : int }
 
 let watched_signals =
@@ -523,24 +466,28 @@ let test_attach_rolls_back_partially_applied_terminal_modes () =
   in
   (match failure with
   | Some (Injected_startup_failure, backtrace) ->
-      is_true ~msg:"rollback preserves the startup failure backtrace"
-        (contains_substring "raise_injected_startup_failure"
-           (Printexc.raw_backtrace_to_string backtrace))
+      contains ~msg:"rollback preserves the startup failure backtrace"
+        ~sub:"raise_injected_startup_failure"
+        (Printexc.raw_backtrace_to_string backtrace)
   | Some (exn, _) ->
       failf "unexpected startup exception: %s" (Printexc.to_string exn)
   | None -> fail "startup failure did not escape Matrix.attach");
   equal ~msg:"raw mode acquired then restored" (list bool) [ true; false ]
     (List.rev !raw_changes);
   equal ~msg:"backend cleanup runs once" int 1 !cleanup_calls;
-  is_true ~msg:"partially entered alternate screen is left during rollback"
-    (contains_substring "\027[?1049l" (Buffer.contents terminal_output));
+  contains ~msg:"partially entered alternate screen is left during rollback"
+    ~sub:"\027[?1049l"
+    (Buffer.contents terminal_output);
   let lifecycle_trace = Buffer.contents lifecycle_trace in
-  is_true ~msg:"raw mode is acquired before terminal protocols"
-    (is_before ~first:"<raw:on>" ~second:"\027[?1049h" lifecycle_trace);
-  is_true ~msg:"terminal protocols roll back before raw mode"
-    (is_before ~first:"\027[?1049l" ~second:"<raw:off>" lifecycle_trace);
-  is_true ~msg:"raw mode rolls back before backend cleanup"
-    (is_before ~first:"<raw:off>" ~second:"<cleanup>" lifecycle_trace)
+  in_order ~msg:"raw mode is acquired before terminal protocols"
+    ~subs:[ "<raw:on>"; "\027[?1049h" ]
+    lifecycle_trace;
+  in_order ~msg:"terminal protocols roll back before raw mode"
+    ~subs:[ "\027[?1049l"; "<raw:off>" ]
+    lifecycle_trace;
+  in_order ~msg:"raw mode rolls back before backend cleanup"
+    ~subs:[ "<raw:off>"; "<cleanup>" ]
+    lifecycle_trace
 
 let test_focus_restore_runs_only_after_blur_once () =
   let app, state =
@@ -624,8 +571,9 @@ let test_resume_reanchors_primary_from_bottom_cursor () =
   Matrix.suspend app;
   Buffer.clear state.terminal_output;
   Matrix.resume app;
-  is_true ~msg:"bottom-row resume writes newline before reanchoring"
-    (contains_substring "\r\n" (Buffer.contents state.terminal_output));
+  contains ~msg:"bottom-row resume writes newline before reanchoring"
+    ~sub:"\r\n"
+    (Buffer.contents state.terminal_output);
   equal ~msg:"bottom-row cursor anchors one-row live viewport" (pair int int)
     (80, 1) (Matrix.size app)
 
@@ -708,12 +656,9 @@ let test_close_leaves_untouched_appearance_alone () =
   Matrix.submit app;
   Matrix.close app;
   let out = Buffer.contents state.terminal_output in
-  is_false ~msg:"close does not clear the title"
-    (contains_substring "\027]0;" out);
-  is_false ~msg:"close does not reset cursor color"
-    (contains_substring "\027]112" out);
-  is_false ~msg:"close does not reset cursor style"
-    (contains_substring "\027[0 q" out)
+  not_contains ~msg:"close does not clear the title" ~sub:"\027]0;" out;
+  not_contains ~msg:"close does not reset cursor color" ~sub:"\027]112" out;
+  not_contains ~msg:"close does not reset cursor style" ~sub:"\027[0 q" out
 
 let test_close_restores_touched_cursor_appearance () =
   let app, state =
@@ -729,10 +674,8 @@ let test_close_restores_touched_cursor_appearance () =
   Matrix.submit app;
   Matrix.close app;
   let out = Buffer.contents state.terminal_output in
-  is_true ~msg:"close resets the emitted cursor style"
-    (contains_substring "\027[0 q" out);
-  is_true ~msg:"close resets the emitted cursor color"
-    (contains_substring "\027]112" out)
+  contains ~msg:"close resets the emitted cursor style" ~sub:"\027[0 q" out;
+  contains ~msg:"close resets the emitted cursor color" ~sub:"\027]112" out
 
 let major_words_allocated f =
   Gc.full_major ();
@@ -790,8 +733,7 @@ let test_cursor_only_submit_emits_output () =
   let output = output state in
   is_true ~msg:"cursor-only frame emits terminal output"
     (String.length output > 0);
-  is_true ~msg:"cursor-only frame moves the cursor"
-    (contains_substring "\027[1;3H" output)
+  contains ~msg:"cursor-only frame moves the cursor" ~sub:"\027[1;3H" output
 
 let test_first_submit_emits_cursor_style () =
   let app, state =
@@ -805,8 +747,8 @@ let test_first_submit_emits_cursor_style () =
   Matrix.submit app;
   (* The terminal's cursor style at startup is unknown: the first frame must
      emit DECSCUSR even when the requested shape matches our own default. *)
-  is_true ~msg:"first frame emits the cursor style"
-    (contains_substring "\027[1 q" (output state))
+  contains ~msg:"first frame emits the cursor style" ~sub:"\027[1 q"
+    (output state)
 
 let test_visible_cursor_reemits_hidden_visual_state () =
   let app, state =
@@ -823,17 +765,17 @@ let test_visible_cursor_reemits_hidden_visual_state () =
   in
   draw ~visible:false;
   let hidden_output = output state in
-  is_false ~msg:"hidden frame does not emit cursor style"
-    (contains_substring "\027[1 q" hidden_output);
-  is_false ~msg:"hidden frame does not emit cursor color"
-    (contains_substring "\027]12;#ff0000\007" hidden_output);
+  not_contains ~msg:"hidden frame does not emit cursor style" ~sub:"\027[1 q"
+    hidden_output;
+  not_contains ~msg:"hidden frame does not emit cursor color"
+    ~sub:"\027]12;#ff0000\007" hidden_output;
   Buffer.clear state.output;
   draw ~visible:true;
   let visible_output = output state in
-  is_true ~msg:"visible frame emits cursor style"
-    (contains_substring "\027[1 q" visible_output);
-  is_true ~msg:"visible frame emits cursor color"
-    (contains_substring "\027]12;#ff0000\007" visible_output)
+  contains ~msg:"visible frame emits cursor style" ~sub:"\027[1 q"
+    visible_output;
+  contains ~msg:"visible frame emits cursor color" ~sub:"\027]12;#ff0000\007"
+    visible_output
 
 let test_submit_emits_frame_above_default_capacity () =
   let width = 96 in
@@ -1044,9 +986,9 @@ let test_prepare_uses_pending_static_effective_region () =
   Matrix.Grid.draw_text grid ~x:0 ~y:(effective_height - 1) ~text:"live";
   Matrix.submit app;
   let out = output state in
-  is_true ~msg:"static output is emitted" (contains_substring "alpha" out);
-  is_true ~msg:"live output is rendered after static output"
-    (is_before ~first:"alpha" ~second:"live" out)
+  contains ~msg:"static output is emitted" ~sub:"alpha" out;
+  in_order ~msg:"live output is rendered after static output"
+    ~subs:[ "alpha"; "live" ] out
 
 let test_static_writes_are_flushed_fifo () =
   let app, state =
@@ -1056,10 +998,8 @@ let test_static_writes_are_flushed_fifo () =
   Matrix.static_write app ~rows:1 "second\n";
   Matrix.submit app;
   let output = output state in
-  match (substring_index "first" output, substring_index "second" output) with
-  | Some first, Some second ->
-      is_true ~msg:"first static write appears before second" (first < second)
-  | _ -> fail "expected both static writes in frame output"
+  in_order ~msg:"first static write appears before second"
+    ~subs:[ "first"; "second" ] output
 
 let test_static_write_normalizes_lf_in_raw_mode () =
   let app, state =
@@ -1069,10 +1009,8 @@ let test_static_write_normalizes_lf_in_raw_mode () =
   Matrix.static_write app ~rows:1 "raw\n";
   Matrix.submit app;
   let output = output state in
-  is_true ~msg:"raw mode normalizes lone LF to CRLF"
-    (contains_substring "raw\r\n" output);
-  is_false ~msg:"raw mode does not emit lone LF"
-    (contains_substring "raw\n" output)
+  contains ~msg:"raw mode normalizes lone LF to CRLF" ~sub:"raw\r\n" output;
+  not_contains ~msg:"raw mode does not emit lone LF" ~sub:"raw\n" output
 
 let test_static_write_preserves_lf_outside_raw_mode () =
   let app, state =
@@ -1082,9 +1020,9 @@ let test_static_write_preserves_lf_outside_raw_mode () =
   Matrix.static_write app ~rows:1 "plain\n";
   Matrix.submit app;
   let output = output state in
-  is_true ~msg:"non-raw mode preserves LF" (contains_substring "plain\n" output);
-  is_false ~msg:"non-raw mode does not normalize LF to CRLF"
-    (contains_substring "plain\r\n" output)
+  contains ~msg:"non-raw mode preserves LF" ~sub:"plain\n" output;
+  not_contains ~msg:"non-raw mode does not normalize LF to CRLF"
+    ~sub:"plain\r\n" output
 
 let test_static_write_tracks_mid_line_continuation () =
   let app, state =
@@ -1098,8 +1036,8 @@ let test_static_write_tracks_mid_line_continuation () =
   Buffer.clear state.output;
   Matrix.static_write app ~rows:1 "second\n";
   Matrix.submit app;
-  is_true ~msg:"mid-line static output anchors next write on a fresh row"
-    (contains_substring "\r\nsecond" (output state));
+  contains ~msg:"mid-line static output anchors next write on a fresh row"
+    ~sub:"\r\nsecond" (output state);
 
   let app, state =
     make_app ~mode:`Primary ~render_offset:23 ~min_tui_height:1 ~target_fps:None
@@ -1112,8 +1050,9 @@ let test_static_write_tracks_mid_line_continuation () =
   Buffer.clear state.output;
   Matrix.static_write app ~rows:1 "second\n";
   Matrix.submit app;
-  is_false ~msg:"line-ended static output does not add an extra leading CRLF"
-    (contains_substring "\r\nsecond" (output state))
+  not_contains
+    ~msg:"line-ended static output does not add an extra leading CRLF"
+    ~sub:"\r\nsecond" (output state)
 
 let test_static_clear_is_immediate_and_forces_full_repaint () =
   let app, state =
@@ -1126,15 +1065,16 @@ let test_static_clear_is_immediate_and_forces_full_repaint () =
   Buffer.clear state.output;
   Buffer.clear state.terminal_output;
   Matrix.static_clear app;
-  is_true ~msg:"static_clear sends clear-and-home immediately"
-    (contains_substring "\027[H\027[2J" (Buffer.contents state.terminal_output));
+  contains ~msg:"static_clear sends clear-and-home immediately"
+    ~sub:"\027[H\027[2J"
+    (Buffer.contents state.terminal_output);
   equal ~msg:"static_clear queues nothing into the frame stream" string ""
     (output state);
   Matrix.prepare app;
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
   Matrix.submit app;
-  is_true ~msg:"next submit repaints unchanged content in full"
-    (contains_substring "live" (output state))
+  contains ~msg:"next submit repaints unchanged content in full" ~sub:"live"
+    (output state)
 
 let test_pinned_static_write_uses_bounded_scroll_region () =
   let app, state =
@@ -1146,16 +1086,15 @@ let test_pinned_static_write_uses_bounded_scroll_region () =
   Matrix.static_write app ~rows:1 "pinned\n";
   Matrix.submit app;
   let output = output state in
-  is_true ~msg:"pinned append sets upper-pane scroll region"
-    (contains_substring "\027[1;23r" output);
-  is_true ~msg:"pinned append resets scroll region"
-    (contains_substring "\027[r" output);
-  is_true ~msg:"scroll region is set before payload"
-    (is_before ~first:"\027[1;23r" ~second:"pinned" output);
-  is_true ~msg:"scroll region reset follows payload"
-    (is_before ~first:"pinned" ~second:"\027[r" output);
-  is_false ~msg:"pinned append does not use broad erase"
-    (contains_substring "\027[J" output)
+  contains ~msg:"pinned append sets upper-pane scroll region" ~sub:"\027[1;23r"
+    output;
+  contains ~msg:"pinned append resets scroll region" ~sub:"\027[r" output;
+  in_order ~msg:"scroll region is set before payload"
+    ~subs:[ "\027[1;23r"; "pinned" ] output;
+  in_order ~msg:"scroll region reset follows payload"
+    ~subs:[ "pinned"; "\027[r" ] output;
+  not_contains ~msg:"pinned append does not use broad erase" ~sub:"\027[J"
+    output
 
 let test_pinned_static_write_resets_scroll_region_before_live_render () =
   let app, state =
@@ -1169,10 +1108,10 @@ let test_pinned_static_write_resets_scroll_region_before_live_render () =
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
   Matrix.submit app;
   let output = output state in
-  is_true ~msg:"static payload appears before live render"
-    (is_before ~first:"pinned" ~second:"live" output);
-  is_true ~msg:"scroll region resets before live render"
-    (is_before ~first:"\027[r" ~second:"live" output)
+  in_order ~msg:"static payload appears before live render"
+    ~subs:[ "pinned"; "live" ] output;
+  in_order ~msg:"scroll region resets before live render"
+    ~subs:[ "\027[r"; "live" ] output
 
 let test_pinned_static_write_repaints_unchanged_live_view () =
   let app, state =
@@ -1188,10 +1127,10 @@ let test_pinned_static_write_repaints_unchanged_live_view () =
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"prompt";
   Matrix.submit app;
   let output = output state in
-  is_true ~msg:"static payload appears before live repaint"
-    (is_before ~first:"static" ~second:"prompt" output);
-  is_true ~msg:"scroll region resets before unchanged live repaint"
-    (is_before ~first:"\027[r" ~second:"prompt" output)
+  in_order ~msg:"static payload appears before live repaint"
+    ~subs:[ "static"; "prompt" ] output;
+  in_order ~msg:"scroll region resets before unchanged live repaint"
+    ~subs:[ "\027[r"; "prompt" ] output
 
 let test_multiline_static_write_uses_scroll_region_when_it_reaches_pin () =
   let app, state =
@@ -1207,14 +1146,14 @@ let test_multiline_static_write_uses_scroll_region_when_it_reaches_pin () =
   let output = output state in
   equal ~msg:"multiline append reaches pinned live viewport" (pair int int)
     (80, 1) (Matrix.size app);
-  is_true ~msg:"pinning append sets bounded scroll region"
-    (contains_substring "\027[1;23r" output);
-  is_true ~msg:"pinning append resets bounded scroll region"
-    (contains_substring "\027[r" output);
-  is_true ~msg:"bounded scroll region is active before payload"
-    (is_before ~first:"\027[1;23r" ~second:"line-a" output);
-  is_true ~msg:"bounded scroll region resets before live repaint"
-    (is_before ~first:"\027[r" ~second:"live" output)
+  contains ~msg:"pinning append sets bounded scroll region" ~sub:"\027[1;23r"
+    output;
+  contains ~msg:"pinning append resets bounded scroll region" ~sub:"\027[r"
+    output;
+  in_order ~msg:"bounded scroll region is active before payload"
+    ~subs:[ "\027[1;23r"; "line-a" ] output;
+  in_order ~msg:"bounded scroll region resets before live repaint"
+    ~subs:[ "\027[r"; "live" ] output
 
 let test_unpinned_static_write_settles_without_scroll_region () =
   let app, state =
@@ -1230,12 +1169,12 @@ let test_unpinned_static_write_settles_without_scroll_region () =
   let output = output state in
   equal ~msg:"static output moves live region downward" (pair int int) (80, 22)
     (Matrix.size app);
-  is_true ~msg:"static payload appears before live repaint"
-    (is_before ~first:"settle" ~second:"live" output);
-  is_false ~msg:"settling static output avoids pinned DECSTBM"
-    (contains_substring "\027[1;23r" output);
-  is_false ~msg:"settling static output does not reset DECSTBM"
-    (contains_substring "\027[r" output)
+  in_order ~msg:"static payload appears before live repaint"
+    ~subs:[ "settle"; "live" ] output;
+  not_contains ~msg:"settling static output avoids pinned DECSTBM"
+    ~sub:"\027[1;23r" output;
+  not_contains ~msg:"settling static output does not reset DECSTBM"
+    ~sub:"\027[r" output
 
 let test_static_write_and_live_repaint_share_sync_frame () =
   let app, state =
@@ -1250,14 +1189,15 @@ let test_static_write_and_live_repaint_share_sync_frame () =
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
   Matrix.submit app;
   let output = output state in
-  is_true ~msg:"synchronized output begins before static payload"
-    (is_before ~first:"\027[?2026h" ~second:"pinned" output);
-  is_true ~msg:"static payload appears before DECSTBM reset"
-    (is_before ~first:"pinned" ~second:"\027[r" output);
-  is_true ~msg:"DECSTBM resets before live repaint"
-    (is_before ~first:"\027[r" ~second:"live" output);
-  is_true ~msg:"live repaint is inside synchronized output"
-    (is_before ~first:"live" ~second:"\027[?2026l" output)
+  in_order ~msg:"synchronized output begins before static payload"
+    ~subs:[ "\027[?2026h"; "pinned" ]
+    output;
+  in_order ~msg:"static payload appears before DECSTBM reset"
+    ~subs:[ "pinned"; "\027[r" ] output;
+  in_order ~msg:"DECSTBM resets before live repaint" ~subs:[ "\027[r"; "live" ]
+    output;
+  in_order ~msg:"live repaint is inside synchronized output"
+    ~subs:[ "live"; "\027[?2026l" ] output
 
 let test_pinned_static_write_keeps_live_size () =
   let app, _state =
@@ -1288,8 +1228,8 @@ let test_primary_required_rows_apply_before_static_flush () =
   let output = output state in
   equal ~msg:"static output settles against the expanded primary region"
     (pair int int) (80, 19) (Matrix.size app);
-  is_true ~msg:"primary growth happens before static output is flushed"
-    (is_before ~first:"\027[24;1H" ~second:"prompt" output)
+  in_order ~msg:"primary growth happens before static output is flushed"
+    ~subs:[ "\027[24;1H"; "prompt" ] output
 
 let test_full_height_static_write_scrolls_into_scrollback () =
   let app, state =
@@ -1306,18 +1246,18 @@ let test_full_height_static_write_scrolls_into_scrollback () =
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
   Matrix.submit app;
   let output = output state in
-  is_true ~msg:"full-height static payload is emitted"
-    (contains_substring "INSERTED00" output);
-  is_true ~msg:"full-height static rows are scrolled into history"
-    (contains_substring "\027[2S" output);
-  is_true ~msg:"payload is emitted before the hardware scroll"
-    (is_before ~first:"INSERTED01" ~second:"\027[2S" output);
-  is_true ~msg:"live viewport repaints after static rows are scrolled"
-    (is_before ~first:"\027[2S" ~second:"live" output);
-  is_false ~msg:"full-height path does not use bounded DECSTBM"
-    (contains_substring "\027[r" output);
-  is_false ~msg:"full-height path does not use the old broad-erase preflush"
-    (contains_substring "\027[1;1H\027[J" output);
+  contains ~msg:"full-height static payload is emitted" ~sub:"INSERTED00" output;
+  contains ~msg:"full-height static rows are scrolled into history"
+    ~sub:"\027[2S" output;
+  in_order ~msg:"payload is emitted before the hardware scroll"
+    ~subs:[ "INSERTED01"; "\027[2S" ]
+    output;
+  in_order ~msg:"live viewport repaints after static rows are scrolled"
+    ~subs:[ "\027[2S"; "live" ] output;
+  not_contains ~msg:"full-height path does not use bounded DECSTBM"
+    ~sub:"\027[r" output;
+  not_contains ~msg:"full-height path does not use the old broad-erase preflush"
+    ~sub:"\027[1;1H\027[J" output;
   equal ~msg:"full-height static write keeps live size" (pair int int) before
     (Matrix.size app)
 
@@ -1330,9 +1270,9 @@ let test_primary_column_one_anchor_preserves_current_row () =
   Matrix.static_write app ~rows:1 "HEADER\n";
   Matrix.submit app;
   let output = output state in
-  is_true ~msg:"static payload is emitted" (contains_substring "HEADER" output);
-  is_true ~msg:"column-one anchor preserves the shell-owned row"
-    (contains_substring "\r\nHEADER" output)
+  contains ~msg:"static payload is emitted" ~sub:"HEADER" output;
+  contains ~msg:"column-one anchor preserves the shell-owned row"
+    ~sub:"\r\nHEADER" output
 
 let test_preserved_static_write_keeps_live_region () =
   let app, state =
@@ -1349,8 +1289,8 @@ let test_preserved_static_write_keeps_live_region () =
     (Matrix.effective_size app);
   Matrix.submit app;
   let output = output state in
-  is_true ~msg:"preserved rows scroll directly into terminal history"
-    (contains_substring "\027[2S" output);
+  contains ~msg:"preserved rows scroll directly into terminal history"
+    ~sub:"\027[2S" output;
   equal ~msg:"preserved write keeps live region" (pair int int) before
     (Matrix.size app)
 
@@ -1367,10 +1307,9 @@ let test_preserved_static_write_grows_after_static_rows () =
     (Matrix.effective_size app);
   Matrix.submit app;
   let output = output state in
-  is_true ~msg:"content is written, not dropped"
-    (contains_substring "AAAA\r\nBBBB" output);
-  is_false ~msg:"partial layout does not scroll into history"
-    (contains_substring "\027[2S" output);
+  contains ~msg:"content is written, not dropped" ~sub:"AAAA\r\nBBBB" output;
+  not_contains ~msg:"partial layout does not scroll into history" ~sub:"\027[2S"
+    output;
   equal ~msg:"write grows the static area instead" (pair int int) (80, 19)
     (Matrix.size app)
 
@@ -1385,12 +1324,10 @@ let test_mixed_static_writes_fall_back_to_growth () =
   Matrix.static_write app ~rows:1 "GROW\n";
   Matrix.submit app;
   let output = output state in
-  is_true ~msg:"first write is not overwritten"
-    (is_before ~first:"KEEP" ~second:"GROW" output);
-  is_true ~msg:"second write lands on the next row"
-    (contains_substring "\027[2;1H" output);
-  is_false ~msg:"mixed queue does not scroll into history"
-    (contains_substring "\027[1S" output)
+  in_order ~msg:"first write is not overwritten" ~subs:[ "KEEP"; "GROW" ] output;
+  contains ~msg:"second write lands on the next row" ~sub:"\027[2;1H" output;
+  not_contains ~msg:"mixed queue does not scroll into history" ~sub:"\027[1S"
+    output
 
 let test_full_height_consecutive_static_writes_scroll_once_per_row () =
   let app, state =
@@ -1403,10 +1340,10 @@ let test_full_height_consecutive_static_writes_scroll_once_per_row () =
   Matrix.static_write app ~rows:1 "second\n";
   Matrix.submit app;
   let output = output state in
-  is_true ~msg:"consecutive full-height writes stay ordered"
-    (is_before ~first:"first" ~second:"second" output);
-  equal ~msg:"full-height writes scroll once per consumed row" int 2
-    (count_substring "\027[1S" output)
+  in_order ~msg:"consecutive full-height writes stay ordered"
+    ~subs:[ "first"; "second" ] output;
+  contains ~msg:"full-height writes scroll once per consumed row" ~count:2
+    ~sub:"\027[1S" output
 
 let test_static_write_ignored_in_alt_mode () =
   let app, state =
@@ -1416,8 +1353,8 @@ let test_static_write_ignored_in_alt_mode () =
   equal ~msg:"alt effective size unchanged" (pair int int) (80, 24)
     (Matrix.effective_size app);
   Matrix.submit app;
-  is_false ~msg:"alt mode does not emit static text"
-    (contains_substring "ignored" (output state))
+  not_contains ~msg:"alt mode does not emit static text" ~sub:"ignored"
+    (output state)
 
 let test_static_clear_resets_primary_layout () =
   let app, state =
@@ -1431,8 +1368,9 @@ let test_static_clear_resets_primary_layout () =
     (Matrix.effective_size app);
   Buffer.clear state.terminal_output;
   Matrix.static_clear app;
-  is_true ~msg:"static clear is an immediate terminal reset"
-    (contains_substring "\027[H\027[2J" (Buffer.contents state.terminal_output));
+  contains ~msg:"static clear is an immediate terminal reset"
+    ~sub:"\027[H\027[2J"
+    (Buffer.contents state.terminal_output);
   equal ~msg:"static clear restores full primary height" (pair int int) (80, 24)
     (Matrix.size app);
   equal ~msg:"effective size also reset" (pair int int) (80, 24)
@@ -1442,10 +1380,10 @@ let test_static_clear_resets_primary_layout () =
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"after-clear";
   Matrix.submit app;
   let output = output state in
-  is_true ~msg:"next live frame renders after static clear"
-    (contains_substring "after-clear" output);
-  is_false ~msg:"static clear discards pending static output"
-    (contains_substring "pending" output)
+  contains ~msg:"next live frame renders after static clear" ~sub:"after-clear"
+    output;
+  not_contains ~msg:"static clear discards pending static output" ~sub:"pending"
+    output
 
 let test_static_replace_replays_inside_next_frame () =
   let app, state =
@@ -1463,13 +1401,16 @@ let test_static_replace_replays_inside_next_frame () =
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live-after";
   Matrix.submit app;
   let output = output state in
-  is_true ~msg:"replacement clears terminal scrollback"
-    (contains_substring "\027[3J" output);
-  is_true ~msg:"replacement content precedes the live repaint"
-    (is_before ~first:"replacement-b" ~second:"live-after" output);
-  is_true ~msg:"replacement and live repaint share synchronized output"
-    (is_before ~first:"\027[?2026h" ~second:"replacement-a" output
-    && is_before ~first:"live-after" ~second:"\027[?2026l" output)
+  contains ~msg:"replacement clears terminal scrollback" ~sub:"\027[3J" output;
+  in_order ~msg:"replacement content precedes the live repaint"
+    ~subs:[ "replacement-b"; "live-after" ]
+    output;
+  in_order ~msg:"replacement opens inside the synchronized update"
+    ~subs:[ "\027[?2026h"; "replacement-a" ]
+    output;
+  in_order ~msg:"live repaint closes inside the synchronized update"
+    ~subs:[ "live-after"; "\027[?2026l" ]
+    output
 
 let test_primary_full_redraw_does_not_erase_past_terminal_bottom () =
   let app, state =
@@ -1484,10 +1425,10 @@ let test_primary_full_redraw_does_not_erase_past_terminal_bottom () =
   Matrix.Grid.draw_text grid ~x:0 ~y:(live_height - 1) ~text:"Elapsed: 5.5s";
   Matrix.submit app;
   let output = output state in
-  is_true ~msg:"bottom live row is rendered"
-    (contains_substring "Elapsed: 5.5s" output);
-  is_false ~msg:"full redraw must not erase from one row past terminal bottom"
-    (contains_substring "\027[25;1H\027[J" output)
+  contains ~msg:"bottom live row is rendered" ~sub:"Elapsed: 5.5s" output;
+  not_contains
+    ~msg:"full redraw must not erase from one row past terminal bottom"
+    ~sub:"\027[25;1H\027[J" output
 
 let test_primary_full_redraw_erases_stale_rows_below_content () =
   let app, state =
@@ -1500,10 +1441,9 @@ let test_primary_full_redraw_erases_stale_rows_below_content () =
   Matrix.Grid.draw_text grid ~x:0 ~y:12 ~text:"Press Q to quit";
   Matrix.submit app;
   let output = output state in
-  is_true ~msg:"content row is rendered"
-    (contains_substring "Press Q to quit" output);
-  is_true ~msg:"full redraw erases rows below active content"
-    (contains_substring "\027[24;1H\027[J" output)
+  contains ~msg:"content row is rendered" ~sub:"Press Q to quit" output;
+  contains ~msg:"full redraw erases rows below active content"
+    ~sub:"\027[24;1H\027[J" output
 
 let test_primary_required_rows_to_terminal_height_does_not_erase_past_bottom ()
     =
@@ -1519,10 +1459,11 @@ let test_primary_required_rows_to_terminal_height_does_not_erase_past_bottom ()
   let output = output state in
   equal ~msg:"primary required rows can claim the whole terminal" (pair int int)
     (80, 24) (Matrix.size app);
-  is_true ~msg:"bottom row is rendered after primary growth"
-    (contains_substring "bottom" output);
-  is_false ~msg:"primary growth must not erase from row past terminal bottom"
-    (contains_substring "\027[25;1H\027[J" output)
+  contains ~msg:"bottom row is rendered after primary growth" ~sub:"bottom"
+    output;
+  not_contains
+    ~msg:"primary growth must not erase from row past terminal bottom"
+    ~sub:"\027[25;1H\027[J" output
 
 let test_primary_mouse_event_is_offset_into_live_region () =
   let app, _state =

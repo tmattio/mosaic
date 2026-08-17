@@ -31,12 +31,6 @@ let count_cursor_moves output =
 let add_unique_by_phys acc v =
   if List.exists (fun existing -> existing == v) acc then acc else v :: acc
 
-let contains_substring needle haystack =
-  try
-    let _ = Str.search_forward (Str.regexp_string needle) haystack 0 in
-    true
-  with Not_found -> false
-
 let viewport height = { Screen.y = 0; height }
 
 (* 1. Core Rendering Tests *)
@@ -95,14 +89,8 @@ let test_hyperlink_rendering () =
         Grid.draw_text grid ~x:0 ~y:0 ~text:"A" ~style:link_style)
   in
   let output = Screen.render frame2 in
-  let expected = "\027]8;;https://example.com" in
-  let contains_expected =
-    try
-      let _ = Str.search_forward (Str.regexp_string expected) output 0 in
-      true
-    with Not_found -> false
-  in
-  is_true ~msg:"contains hyperlink start" contains_expected
+  contains ~msg:"contains hyperlink start" ~sub:"\027]8;;https://example.com"
+    output
 
 let test_row_offset_applied () =
   let r = create_renderer ~width:2 ~height:2 () in
@@ -112,15 +100,8 @@ let test_row_offset_applied () =
         Grid.draw_text grid ~x:0 ~y:0 ~text:"A")
   in
   let output = Screen.render frame in
-  let expected = "\027[4;1H" in
-  let has_seq =
-    try
-      let _ = Str.search_forward (Str.regexp_string expected) output 0 in
-      true
-    with Not_found -> false
-  in
-  is_true ~msg:"cursor moved with offset" has_seq;
-  is_true ~msg:"character rendered" (String.contains output 'A')
+  contains ~msg:"cursor moved with offset" ~sub:"\027[4;1H" output;
+  contains ~msg:"character rendered" ~sub:"A" output
 
 let test_viewport_expansion_renders_new_rows () =
   let r = Screen.create () in
@@ -163,7 +144,7 @@ let test_styled_frame_resets_sgr () =
         Grid.draw_text grid ~x:0 ~y:0 ~text:"R" ~style)
   in
   let output = Screen.render frame in
-  is_true ~msg:"styled output resets SGR" (contains_substring "\027[0m" output)
+  contains ~msg:"styled output resets SGR" ~sub:"\027[0m" output
 
 let test_color_depth_reaches_sgr_emission () =
   let r = Screen.create () in
@@ -175,10 +156,8 @@ let test_color_depth_reaches_sgr_emission () =
         Grid.draw_text grid ~x:0 ~y:0 ~text:"R" ~style)
   in
   let output = Screen.render frame in
-  is_true ~msg:"screen downgraded rgb to ansi256"
-    (contains_substring "\027[0;38;5;9m" output);
-  is_false ~msg:"screen did not emit truecolor"
-    (contains_substring "38;2;255;0;0" output)
+  contains ~msg:"screen downgraded rgb to ansi256" ~sub:"\027[0;38;5;9m" output;
+  not_contains ~msg:"screen did not emit truecolor" ~sub:"38;2;255;0;0" output
 
 (* 2. Diff Algorithm Tests *)
 
@@ -204,13 +183,7 @@ let test_diff_only_changed_cells () =
 
   (* Should not require additional cursor moves once diff is warmed up *)
   is_true ~msg:"second frame has <= moves" (moves2 <= moves1);
-  let moved_to_changed =
-    try
-      let _ = Str.search_forward (Str.regexp_string "\027[1;5H") output2 0 in
-      true
-    with Not_found -> false
-  in
-  is_true ~msg:"moves cursor to changed cell" moved_to_changed;
+  contains ~msg:"moves cursor to changed cell" ~sub:"\027[1;5H" output2;
   is_true ~msg:"second frame not empty" (String.length output2 > 0)
 
 let test_no_diff_when_unchanged () =
@@ -269,8 +242,7 @@ let test_null_cell_clear_uses_cell_colors () =
   in
   let output2 = Screen.render f2 in
   is_true ~msg:"null cell clear emitted" (String.length output2 > 0);
-  is_true ~msg:"clear uses the cell's background"
-    (contains_substring "48;2;0;200;0" output2)
+  contains ~msg:"clear uses the cell's background" ~sub:"48;2;0;200;0" output2
 
 (* Regression: complex graphemes must be diffed by content. With buffers
    backed by independent grapheme stores, the first grapheme interned each
@@ -296,7 +268,7 @@ let test_changed_grapheme_diff () =
         Grid.draw_text grid ~x:0 ~y:0 ~text:de)
   in
   let output2 = Screen.render f2 in
-  is_true ~msg:"changed grapheme re-emitted" (contains_substring de output2)
+  contains ~msg:"changed grapheme re-emitted" ~sub:de output2
 
 (* Regression: hyperlinks must be diffed by URL, not by per-buffer registry
    ids that realign across frames. *)
@@ -314,8 +286,7 @@ let test_changed_hyperlink_diff () =
     build_screen r ~width:8 ~height:1 (fun grid _hits -> draw "http://b" grid)
   in
   let output2 = Screen.render f2 in
-  is_true ~msg:"changed hyperlink re-emitted"
-    (contains_substring "http://b" output2)
+  contains ~msg:"changed hyperlink re-emitted" ~sub:"http://b" output2
 
 (* 3. Frame Building Tests *)
 
@@ -804,13 +775,7 @@ let test_hyperlink_capability_gating () =
   let output1 = Screen.render f1 in
 
   (* Should contain hyperlink sequences *)
-  let contains_hyperlink =
-    try
-      let _ = Str.search_forward (Str.regexp "\027]8;;") output1 0 in
-      true
-    with Not_found -> false
-  in
-  is_true ~msg:"hyperlink emitted when capable" contains_hyperlink;
+  contains ~msg:"hyperlink emitted when capable" ~sub:"\027]8;;" output1;
 
   (* Now test with capability disabled *)
   let r2 = Screen.create () in
@@ -826,14 +791,8 @@ let test_hyperlink_capability_gating () =
   let output2 = Screen.render f2 in
 
   (* Should NOT contain hyperlink sequences *)
-  let contains_hyperlink_disabled =
-    try
-      let _ = Str.search_forward (Str.regexp "\027]8;;") output2 0 in
-      true
-    with Not_found -> false
-  in
-  is_false ~msg:"hyperlink not emitted when incapable"
-    contains_hyperlink_disabled
+  not_contains ~msg:"hyperlink not emitted when incapable" ~sub:"\027]8;;"
+    output2
 
 let test_scroll_hint_clips_to_viewport () =
   let r = Screen.create () in
@@ -857,10 +816,9 @@ let test_scroll_hint_clips_to_viewport () =
       ~scroll_hint:{ Screen.top = 0; bottom = 3; delta = 1 }
       f2
   in
-  is_true ~msg:"scroll region clipped to rendered rows"
-    (contains_substring "\027[1;2r" output);
-  is_false ~msg:"scroll region does not include clipped rows"
-    (contains_substring "\027[1;4r" output)
+  contains ~msg:"scroll region clipped to rendered rows" ~sub:"\027[1;2r" output;
+  not_contains ~msg:"scroll region does not include clipped rows"
+    ~sub:"\027[1;4r" output
 
 let test_scroll_hint_applies_row_offset () =
   let r = Screen.create () in
@@ -881,10 +839,8 @@ let test_scroll_hint_applies_row_offset () =
   let output =
     Screen.render ~scroll_hint:{ Screen.top = 0; bottom = 2; delta = 1 } f2
   in
-  is_true ~msg:"scroll region includes row offset"
-    (contains_substring "\027[4;6r" output);
-  is_false ~msg:"scroll region is not absolute top"
-    (contains_substring "\027[1;3r" output)
+  contains ~msg:"scroll region includes row offset" ~sub:"\027[4;6r" output;
+  not_contains ~msg:"scroll region is not absolute top" ~sub:"\027[1;3r" output
 
 let test_cursor_style_and_color () =
   (* Test cursor style and color state *)
