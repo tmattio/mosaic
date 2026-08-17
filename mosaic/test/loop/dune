@@ -1,5 +1,9 @@
-(executables
- (names test_loop)
+; MIGRATION NOTE (windtrap 0.2): see mosaic/test/expect/dune — this was
+; an (executables) stanza whose let%expect_test bodies never ran.
+
+(library
+ (name mosaic_loop_expect)
+ (inline_tests)
  (libraries
   windtrap
   mosaic
@@ -10,11 +14,3 @@
   threads.posix)
  (preprocess
   (pps ppx_windtrap)))
-
-(rule
- (alias runtest)
- (package mosaic)
- (action
-  (progn
-   (run ./test_loop.exe)
-   (diff? test_loop.ml test_loop.ml.corrected))))

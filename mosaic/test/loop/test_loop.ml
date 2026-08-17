@@ -3,6 +3,8 @@
    is a scripted [on_idle]: each time the loop goes idle, one step runs, so
    every step observes a fully rendered, quiescent frame. *)
 
+open Windtrap
+
 type model = {
   keys : string list; (* decoded key names, oldest first *)
   ticks : int;
@@ -53,29 +55,6 @@ let snap t =
   Matrix_test.screen t |> String.split_on_char '\n'
   |> List.iter (fun row -> print_endline ("|" ^ row))
 
-let substring_index needle haystack =
-  let needle_len = String.length needle in
-  let haystack_len = String.length haystack in
-  let rec matches_at i j =
-    j = needle_len
-    || i + j < haystack_len
-       && Char.equal
-            (String.unsafe_get haystack (i + j))
-            (String.unsafe_get needle j)
-       && matches_at i (j + 1)
-  in
-  let rec loop i =
-    if i + needle_len > haystack_len then None
-    else if matches_at i 0 then Some i
-    else loop (i + 1)
-  in
-  if needle_len = 0 then Some 0 else loop 0
-
-let is_before ~first ~second s =
-  match (substring_index first s, substring_index second s) with
-  | Some i, Some j -> i < j
-  | _ -> false
-
 let drive ?mode ?(width = 48) ?(height = 2) ?probe ?process_perform application
     steps =
   let steps = ref steps in
@@ -99,12 +78,14 @@ let on_keys _ = Mosaic.Sub.on_key (fun key -> Some (Pressed (key_name key)))
 let%expect_test "boots, renders, and reacts to byte-decoded input" =
   drive (app ~subs:on_keys ()) [ `Snap; `Feed "a"; `Snap; `Feed "b"; `Snap ];
   [%expect
-    {||keys:[] ticks:0 size:- note:-
-|
-|keys:[a] ticks:0 size:- note:-
-|
-|keys:[a,b] ticks:0 size:- note:-
-||}]
+    {|
+    |keys:[] ticks:0 size:- note:-
+    |
+    |keys:[a] ticks:0 size:- note:-
+    |
+    |keys:[a,b] ticks:0 size:- note:-
+    |
+    |}]
 
 let%expect_test "in-frame geometry changes settle without input" =
   let base = app () in
@@ -129,8 +110,11 @@ let%expect_test "in-frame geometry changes settle without input" =
 let%expect_test "escape sequences decode as single keys" =
   (* "\027[A" is three bytes but one Up key: the real parser runs. *)
   drive (app ~subs:on_keys ()) [ `Feed "\027[A"; `Snap ];
-  [%expect {||keys:[<up>] ticks:0 size:- note:-
-||}]
+  [%expect
+    {|
+    |keys:[<up>] ticks:0 size:- note:-
+    |
+    |}]
 
 let%expect_test "virtual time drives every-subscriptions deterministically" =
   drive
@@ -147,16 +131,18 @@ let%expect_test "virtual time drives every-subscriptions deterministically" =
       `Snap;
     ];
   [%expect
-    {||keys:[] ticks:0 size:- note:-
-|
-|keys:[] ticks:1 size:- note:-
-|
-|keys:[] ticks:2 size:- note:-
-|
-|keys:[] ticks:2 size:- note:-
-|
-|keys:[] ticks:3 size:- note:-
-||}]
+    {|
+    |keys:[] ticks:0 size:- note:-
+    |
+    |keys:[] ticks:1 size:- note:-
+    |
+    |keys:[] ticks:2 size:- note:-
+    |
+    |keys:[] ticks:2 size:- note:-
+    |
+    |keys:[] ticks:3 size:- note:-
+    |
+    |}]
 
 let%expect_test "live animation frames deliver a millisecond delta" =
   (* Matrix reports elapsed seconds; the runtime converts once at the boundary
@@ -184,7 +170,7 @@ let%expect_test "live animation frames deliver a millisecond delta" =
   in
   drive application
     [ `Run (fun _ -> Printf.printf "live frame delta: %.1f ms\n" !last_delta) ];
-  [%expect {|live frame delta: 16.7 ms|}]
+  [%expect {| live frame delta: 16.7 ms |}]
 
 let%expect_test "a pending every-timer renders only when it fires" =
   (* A timer is not an animation: while it is merely pending, the loop stays
@@ -232,11 +218,13 @@ let%expect_test "resize reaches the application and the grid" =
        ())
     [ `Snap; `Resize (60, 3); `Snap ];
   [%expect
-    {||keys:[] ticks:0 size:48x2 note:-
-|
-|keys:[] ticks:0 size:60x3 note:-
-|
-||}]
+    {|
+    |keys:[] ticks:0 size:48x2 note:-
+    |
+    |keys:[] ticks:0 size:60x3 note:-
+    |
+    |
+    |}]
 
 let%expect_test "a transparent table realigns every row when it widens" =
   let columns =
@@ -288,17 +276,18 @@ let%expect_test "a transparent table realigns every row when it widens" =
   in
   drive ~width:80 ~height:3 application [ `Snap; `Feed "w"; `Snap ];
   [%expect
-    {||   session                           lifecycle phase  turns updated  recency
-|❯  Retained parser investigation     active    idle  1 turn just now today
-|   session-visual-2                  active    idle  1 turn just now today
-|   session                               lifecycle phase  turns updated  recency
-|❯  Retained parser investigation         active    idle  1 turn just now today
-|   session-visual-2                      active    idle  1 turn just now today|}]
+    {|
+    |   session                           lifecycle phase  turns updated  recency
+    |❯  Retained parser investigation     active    idle  1 turn just now today
+    |   session-visual-2                  active    idle  1 turn just now today
+    |   session                               lifecycle phase  turns updated  recency
+    |❯  Retained parser investigation         active    idle  1 turn just now today
+    |   session-visual-2                      active    idle  1 turn just now today
+    |}]
 
 let%expect_test "probe reports perform and message quiescence" =
   let pending : (unit -> unit) Queue.t = Queue.create () in
   let probe = ref None in
-  let fact name value = Printf.printf "%s: %b\n" name value in
   let probed () = Option.get !probe in
   drive
     ~process_perform:(fun thunk -> Queue.push thunk pending)
@@ -310,24 +299,25 @@ let%expect_test "probe reports perform and message quiescence" =
       `Snap;
       `Run
         (fun _ ->
-          Printf.printf "pending while queued: %s\n"
-            (String.concat "," (Mosaic.Probe.pending (probed ())));
-          fact "settled while perform queued"
+          equal ~msg:"pending while a perform is queued" (list string)
+            [ "performs" ]
+            (Mosaic.Probe.pending (probed ()));
+          is_false ~msg:"not settled while a perform is queued"
             (Mosaic.Probe.is_settled (probed ())));
       `Run (fun _ -> Queue.pop pending ());
       `Snap;
       `Run
         (fun _ ->
-          fact "settled after perform ran" (Mosaic.Probe.is_settled (probed ())));
+          is_true ~msg:"settled after the perform ran"
+            (Mosaic.Probe.is_settled (probed ())));
     ];
   [%expect
-    {||keys:[] ticks:0 size:- note:-
-|
-pending while queued: performs
-settled while perform queued: false
-|keys:[] ticks:0 size:- note:loaded
-|
-settled after perform ran: true|}]
+    {|
+    |keys:[] ticks:0 size:- note:-
+    |
+    |keys:[] ticks:0 size:- note:loaded
+    |
+    |}]
 
 let%expect_test "probe composes application-owned pending work" =
   let external_pending = ref true in
@@ -344,21 +334,18 @@ let%expect_test "probe composes application-owned pending work" =
     [
       `Run
         (fun _ ->
-          Printf.printf "pending: %s\n"
-            (String.concat "," (Mosaic.Probe.pending (probed ())));
-          Printf.printf "settled: %b\n" (Mosaic.Probe.is_settled (probed ())));
+          equal ~msg:"application-owned work shows in pending" (list string)
+            [ "external" ]
+            (Mosaic.Probe.pending (probed ()));
+          is_false ~msg:"not settled while external work is pending"
+            (Mosaic.Probe.is_settled (probed ())));
       `Run
         (fun _ ->
           external_pending := false;
-          Printf.printf "settled after external completion: %b\n"
+          is_true ~msg:"settled after external completion"
             (Mosaic.Probe.is_settled (probed ())));
     ];
-  [%expect
-    {|
-    pending: external
-    settled: false
-    settled after external completion: true
-    |}]
+  [%expect {| |}]
 
 let%expect_test "replaying the output stream through a VTE matches the grid" =
   let result = ref None in
@@ -373,16 +360,17 @@ let%expect_test "replaying the output stream through a VTE matches the grid" =
           result := Some (Vte.to_string vte, Matrix_test.screen t));
     ];
   let replayed, screen = Option.get !result in
-  Printf.printf "replay matches grid: %b\n"
-    (String.equal (String.trim replayed) (String.trim screen));
+  equal ~msg:"replaying the output stream reconstructs the grid" text
+    (String.trim screen) (String.trim replayed);
   print_endline "replayed:";
   String.split_on_char '\n' replayed
   |> List.iter (fun row -> print_endline ("|" ^ row));
   [%expect
-    {|replay matches grid: true
-replayed:
-|keys:[a,b] ticks:0 size:- note:-
-||}]
+    {|
+    replayed:
+    |keys:[a,b] ticks:0 size:- note:-
+    |
+    |}]
 
 let%expect_test
     "startup focus emits blinking cursor style when it becomes visible" =
@@ -401,10 +389,11 @@ let%expect_test
       `Run
         (fun t ->
           let output = Matrix_test.output t in
-          Printf.printf "blinking style follows cursor visibility: %b\n"
-            (is_before ~first:"\027[?25h" ~second:"\027[1 q" output));
+          in_order ~msg:"blinking style follows cursor visibility"
+            ~subs:[ "\027[?25h"; "\027[1 q" ]
+            output);
     ];
-  [%expect {|blinking style follows cursor visibility: true|}]
+  [%expect {| |}]
 
 let%expect_test "an every-timer stepped exactly onto its deadline keeps firing"
     =
@@ -422,22 +411,24 @@ let%expect_test "an every-timer stepped exactly onto its deadline keeps firing"
     (app ~subs:(fun _ -> Mosaic.Sub.every 0.1 (fun () -> Tick)) ())
     (List.rev !steps);
   [%expect
-    {||keys:[] ticks:1 size:- note:-
-|
-|keys:[] ticks:2 size:- note:-
-|
-|keys:[] ticks:3 size:- note:-
-|
-|keys:[] ticks:4 size:- note:-
-|
-|keys:[] ticks:5 size:- note:-
-|
-|keys:[] ticks:6 size:- note:-
-|
-|keys:[] ticks:7 size:- note:-
-|
-|keys:[] ticks:8 size:- note:-
-||}]
+    {|
+    |keys:[] ticks:1 size:- note:-
+    |
+    |keys:[] ticks:2 size:- note:-
+    |
+    |keys:[] ticks:3 size:- note:-
+    |
+    |keys:[] ticks:4 size:- note:-
+    |
+    |keys:[] ticks:5 size:- note:-
+    |
+    |keys:[] ticks:6 size:- note:-
+    |
+    |keys:[] ticks:7 size:- note:-
+    |
+    |keys:[] ticks:8 size:- note:-
+    |
+    |}]
 
 let%expect_test
     "a lone ESC resolves to Escape once the clock passes the timeout" =
@@ -453,10 +444,12 @@ let%expect_test
        ())
     [ `Feed "\027"; `Snap; `Advance 0.06; `Snap ];
   [%expect
-    {||keys:[] ticks:0 size:- note:-
-|
-|keys:[<esc>] ticks:0 size:- note:-
-||}]
+    {|
+    |keys:[] ticks:0 size:- note:-
+    |
+    |keys:[<esc>] ticks:0 size:- note:-
+    |
+    |}]
 
 let%expect_test "perform dispatches from concurrent threads are all delivered" =
   (* Cmd.perform runs its callback on a fresh thread (the default
@@ -489,8 +482,11 @@ let%expect_test "perform dispatches from concurrent threads are all delivered" =
     ~probe:(fun p -> probe := Some p)
     (app ~init_cmd:hammer ());
   snap t;
-  [%expect {||keys:[] ticks:6000000 size:- note:-
-||}]
+  [%expect
+    {|
+    |keys:[] ticks:6000000 size:- note:-
+    |
+    |}]
 
 let%expect_test "a paste consumed by a focused editor skips on_paste" =
   (* Sub.on_paste must only see pastes the UI tree left unconsumed; a focused
@@ -522,11 +518,13 @@ let%expect_test "a paste consumed by a focused editor skips on_paste" =
   drive ~height:3 with_editor [ `Feed "\027[200~hi\027[201~"; `Snap ];
   drive base [ `Feed "\027[200~hi\027[201~"; `Snap ];
   [%expect
-    {||          keys:[P:hi] ticks:0 size:- note:-
-|
-|
-|keys:[P:hi,p:hi] ticks:0 size:- note:-
-||}]
+    {|
+    |          keys:[P:hi] ticks:0 size:- note:-
+    |
+    |
+    |keys:[P:hi,p:hi] ticks:0 size:- note:-
+    |
+    |}]
 
 let%expect_test "a mouse press consumed by a widget skips on_mouse" =
   (* A widget handler that calls prevent_default consumes the event for
@@ -560,10 +558,12 @@ let%expect_test "a mouse press consumed by a widget skips on_mouse" =
   drive { base with Mosaic.view = view true } [ `Feed press; `Snap ];
   drive { base with Mosaic.view = view false } [ `Feed press; `Snap ];
   [%expect
-    {||keys:[M] ticks:0 size:- note:-
-|
-|keys:[M,m] ticks:0 size:- note:-
-||}]
+    {|
+    |keys:[M] ticks:0 size:- note:-
+    |
+    |keys:[M,m] ticks:0 size:- note:-
+    |
+    |}]
 
 let%expect_test "Cmd.focus lands on a reused element whose id changed" =
   (* A fiber reused across renders must track its id attr: with the stale id,
@@ -598,11 +598,10 @@ let%expect_test "Cmd.focus lands on a reused element whose id changed" =
       `Feed "x";
       `Run
         (fun t ->
-          Printf.printf "cursor shown after focus: %b\n"
-            (Option.is_some
-               (substring_index "\027[?25h" (Matrix_test.output t))));
+          contains ~msg:"cursor shown after focus" ~sub:"\027[?25h"
+            (Matrix_test.output t));
     ];
-  [%expect {|cursor shown after focus: true|}]
+  [%expect {| |}]
 
 let%expect_test "same-interval timers keep independent phases" =
   (* Two Sub.every timers with the same interval must not share deadline
@@ -630,10 +629,12 @@ let%expect_test "same-interval timers keep independent phases" =
       `Snap;
     ];
   [%expect
-    {||keys:[a,a] ticks:0 size:- note:on
-|
-|keys:[a,a,b] ticks:0 size:- note:on
-||}]
+    {|
+    |keys:[a,a] ticks:0 size:- note:on
+    |
+    |keys:[a,a,b] ticks:0 size:- note:on
+    |
+    |}]
 
 let%expect_test "an unmatched Cmd.focus expires after one deferred attempt" =
   (* Cmd.focus retries once after the next completed render (covering an
@@ -666,11 +667,10 @@ let%expect_test "an unmatched Cmd.focus expires after one deferred attempt" =
       `Feed "x" (* creates input#late, well after the focus request *);
       `Run
         (fun t ->
-          Printf.printf "late element stole focus: %b\n"
-            (Option.is_some
-               (substring_index "\027[?25h" (Matrix_test.output t))));
+          not_contains ~msg:"late element must not steal focus" ~sub:"\027[?25h"
+            (Matrix_test.output t));
     ];
-  [%expect {|late element stole focus: false|}]
+  [%expect {| |}]
 
 let%expect_test "static commit emits content taller than the viewport" =
   (* Cmd.static_commit renders offscreen at the content's natural height:
@@ -685,16 +685,7 @@ let%expect_test "static commit emits content taller than the viewport" =
         (fun t ->
           let out = Matrix_test.output t in
           List.iter
-            (fun line ->
-              Printf.printf "%s emitted: %b\n" line
-                (Option.is_some (substring_index line out)))
+            (fun line -> contains ~msg:(line ^ " emitted") ~sub:line out)
             lines);
     ];
-  [%expect
-    {|
-    static line 0 emitted: true
-    static line 1 emitted: true
-    static line 2 emitted: true
-    static line 3 emitted: true
-    static line 4 emitted: true
-    |}]
+  [%expect {| |}]

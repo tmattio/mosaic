@@ -1,13 +1,9 @@
-(executable
- (name test_charts)
+; MIGRATION NOTE (windtrap 0.2): see mosaic/test/expect/dune — this was
+; an (executable) stanza whose let%expect_test bodies never ran.
+
+(library
+ (name matrix_charts_expect)
+ (inline_tests)
  (libraries windtrap matrix.ansi matrix.grid matrix.charts)
  (preprocess
   (pps ppx_windtrap)))
-
-(rule
- (alias runtest)
- (package matrix)
- (action
-  (progn
-   (run ./test_charts.exe)
-   (diff? test_charts.ml test_charts.ml.corrected))))
