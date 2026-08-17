@@ -479,6 +479,188 @@ let culled_live_child_does_not_tick () =
   do_frame ~width:20 ~height:5 t;
   equal ~msg:"revealed live row ticks" int 1 !hidden_ticks
 
+(* ── Viewport culling: what the intersection test keeps ──
+
+   [children_in_viewport] decides which children the renderer descends into,
+   so it answers "can anything under this child paint inside the viewport",
+   not "is this child's own box visible". Overflow is visible by default: a
+   child's subtree is free to paint outside the child's box, and a box with
+   zero extent on an axis has no interior at all — every one of its
+   descendants paints outside it. *)
+
+let dim n = Toffee.Style.Dimension.length (Float.of_int n)
+
+(* A column of children with the given (width, height) extents. Culling reads
+   cached layouts, so a frame runs before the predicate is asked. *)
+let culling_column t extents =
+  let parent_style =
+    Toffee.Style.default
+    |> Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Column
+    |> Toffee.Style.set_width (dim 10)
+    |> Toffee.Style.set_height (dim 20)
+  in
+  let parent =
+    Renderable.create ~parent:(Renderer.root t) ~style:parent_style ()
+  in
+  let children =
+    List.map
+      (fun (w, h) ->
+        let style =
+          Toffee.Style.default
+          |> Toffee.Style.set_width (dim w)
+          |> Toffee.Style.set_height (dim h)
+          |> Toffee.Style.set_flex_shrink 0.
+        in
+        Renderable.create ~parent ~style ())
+      extents
+  in
+  do_frame ~width:20 ~height:20 t;
+  (parent, Array.of_list children)
+
+let kept_in ~parent ~x ~y ~width ~height =
+  let viewport : Matrix_grid.region = { x; y; width; height } in
+  Renderable.Private.children_in_viewport ~parent ~viewport ~padding:0
+
+let zero_height_child_on_the_viewport_edge_is_kept () =
+  (* Rows: a zero-height one at y=0, then a one-cell row also at y=0. The
+     first row's leading edge coincides with the viewport's, and its trailing
+     edge does too, so a strict overlap test drops it — along with every
+     descendant that would have painted into the viewport. *)
+  let t = make_renderer () in
+  let parent, kids = culling_column t [ (10, 0); (10, 1) ] in
+  let kept = kept_in ~parent ~x:0 ~y:0 ~width:10 ~height:20 in
+  is_true ~msg:"zero-height child on the viewport's top edge is traversed"
+    (List.memq kids.(0) kept)
+
+let zero_width_child_on_the_viewport_edge_is_kept () =
+  (* Cross axis, same shape: a zero-width child sits flush with the
+     viewport's left edge, which every child of a column does. *)
+  let t = make_renderer () in
+  let parent, kids = culling_column t [ (10, 1); (0, 1) ] in
+  let kept = kept_in ~parent ~x:0 ~y:0 ~width:10 ~height:20 in
+  is_true ~msg:"zero-width child on the viewport's left edge is traversed"
+    (List.memq kids.(1) kept)
+
+let child_straddling_the_viewport_edge_is_kept () =
+  (* Rows 0..2 and 2..5 against a viewport of rows 0..3: the second row is
+     half in. Nonzero extents overlap strictly, so this one is safe. *)
+  let t = make_renderer () in
+  let parent, kids = culling_column t [ (10, 2); (10, 3) ] in
+  let kept = kept_in ~parent ~x:0 ~y:0 ~width:10 ~height:3 in
+  is_true ~msg:"partially visible child is traversed" (List.memq kids.(1) kept)
+
+let child_ending_on_the_viewport_edge_is_culled () =
+  (* Row 0..2 against a viewport starting at y=2: nothing of it, and nothing
+     under it, can reach the viewport. Culling it is the point. *)
+  let t = make_renderer () in
+  let parent, kids = culling_column t [ (10, 2); (10, 3) ] in
+  let kept = kept_in ~parent ~x:0 ~y:2 ~width:10 ~height:3 in
+  is_false ~msg:"child entirely above the viewport is culled"
+    (List.memq kids.(0) kept)
+
+(* ── Viewport culling: frames ── *)
+
+(* One frame's rows. The grid is read before presentation swaps the screen's
+   buffers, so this renders rather than reusing [do_frame]. *)
+let frame_rows t ~width ~height =
+  Renderer.render_frame t ~width ~height ~delta:0.;
+  let grid = Matrix_screen.next_grid (Renderer.screen t) in
+  String.concat "\n"
+    (List.init height (fun y ->
+         String.concat ""
+           (List.init width (fun x ->
+                match Matrix_grid.get_text grid ((y * width) + x) with
+                | "" -> " "
+                | s -> s))))
+
+let label node text =
+  Renderable.set_render node (fun self grid ~delta:_ ->
+      Matrix_grid.draw_text grid ~x:(Renderable.x self) ~y:(Renderable.y self)
+        ~text)
+
+let row ~parent ~width text =
+  let style =
+    Toffee.Style.default
+    |> Toffee.Style.set_width (dim width)
+    |> Toffee.Style.set_height (dim 1)
+    |> Toffee.Style.set_flex_shrink 0.
+  in
+  let node = Renderable.create ~parent ~style () in
+  label node text;
+  node
+
+let zero_width_wrapper_keeps_its_overflowing_row () =
+  (* The spice witness shape: a header, a flex-grown scroll box, a footer, in
+     a frame short enough that the box gets exactly three rows. The box's
+     first child is a wrapper with no width of its own — a gutter, a badge
+     layer, anything whose content sizes itself — holding a row that paints
+     past it. Geometry puts that row on frame row 1; culling blanks it while
+     the rows around it are untouched. *)
+  let t = make_renderer () in
+  Renderable.set_style (Renderer.root t)
+    (Toffee.Style.default
+    |> Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Column
+    |> Toffee.Style.set_width (dim 20)
+    |> Toffee.Style.set_height (dim 5));
+  ignore (row ~parent:(Renderer.root t) ~width:20 "HEADER");
+  let sb =
+    Scroll_box.create ~parent:(Renderer.root t)
+      ~style:
+        (Toffee.Style.default
+        |> Toffee.Style.set_flex_grow 1.
+        |> Toffee.Style.set_width (dim 20)
+        |> Toffee.Style.set_height (dim 0))
+      ~show_scrollbars:false ()
+  in
+  let wrapper =
+    Renderable.create ~parent:(Scroll_box.node sb)
+      ~style:
+        (Toffee.Style.default
+        |> Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Row
+        |> Toffee.Style.set_width (dim 0)
+        |> Toffee.Style.set_flex_shrink 0.)
+      ()
+  in
+  ignore (row ~parent:wrapper ~width:6 "inside");
+  ignore (row ~parent:(Scroll_box.node sb) ~width:20 "body-1");
+  ignore (row ~parent:(Scroll_box.node sb) ~width:20 "body-2");
+  ignore (row ~parent:(Renderer.root t) ~width:20 "FOOTER");
+  equal ~msg:"the wrapper's row occupies frame row 1" string
+    "HEADER              \n\
+     inside              \n\
+     body-1              \n\
+     body-2              \n\
+     FOOTER              "
+    (frame_rows t ~width:20 ~height:5)
+
+let descendant_reaching_the_viewport_survives_its_offscreen_parent () =
+  (* [overflow_visible_descendant_reaching_viewport_renders] states the
+     contract for an ordinary parent. A scroll box's content node must not
+     weaken it: culling gates the subtree on the child's own box, so a
+     descendant positioned back into view is lost with its parent. *)
+  let t = make_renderer () in
+  Renderable.set_style (Renderer.root t)
+    (Toffee.Style.default
+    |> Toffee.Style.set_width (dim 20)
+    |> Toffee.Style.set_height (dim 3));
+  let sb =
+    Scroll_box.create ~parent:(Renderer.root t)
+      ~style:
+        (Toffee.Style.default
+        |> Toffee.Style.set_width (dim 20)
+        |> Toffee.Style.set_height (dim 3))
+      ~show_scrollbars:false ()
+  in
+  let rows =
+    Array.init 8 (fun i ->
+        row ~parent:(Scroll_box.node sb) ~width:20 (Printf.sprintf "row-%d" i))
+  in
+  let escapee = make_child ~parent:rows.(6) ~x:8 ~y:(-5) ~w:6 ~h:1 () in
+  label escapee "HERE";
+  equal ~msg:"the escapee lands on frame row 1" string
+    "row-0               \nrow-1   HERE        \nrow-2               "
+    (frame_rows t ~width:20 ~height:3)
+
 (* ── Scroll hints ── *)
 
 (* A full-width scroll box of [rows] one-cell text rows in a [vw]x[vh]
@@ -1500,6 +1682,38 @@ let () =
           test "culled child is not hit-testable"
             culled_child_is_not_hit_testable;
           test "culled live child does not tick" culled_live_child_does_not_tick;
+          test "child straddling the viewport edge is kept"
+            child_straddling_the_viewport_edge_is_kept;
+          test "child ending on the viewport edge is culled"
+            child_ending_on_the_viewport_edge_is_culled;
+          xfail
+            ~reason:
+              "ff51f8627: children_in_viewport tests overlap strictly, so a \
+               child with zero extent on the primary axis is dropped when its \
+               edge meets the viewport's"
+            (test "zero-height child on the viewport edge is kept"
+               zero_height_child_on_the_viewport_edge_is_kept);
+          xfail
+            ~reason:
+              "ff51f8627: same strict test on the cross axis — a zero-width \
+               child is flush with the viewport's left edge, so every one is \
+               dropped"
+            (test "zero-width child on the viewport edge is kept"
+               zero_width_child_on_the_viewport_edge_is_kept);
+          xfail
+            ~reason:
+              "ff51f8627: the zero-extent cull, at frame level — the wrapper's \
+               row blanks while the rows around it survive"
+            (test "zero-width wrapper keeps its overflowing row"
+               zero_width_wrapper_keeps_its_overflowing_row);
+          xfail
+            ~reason:
+              "ff51f8627: culling gates a subtree on the child's own box, so a \
+               descendant painting back into the viewport is lost with its \
+               offscreen parent"
+            (test
+               "descendant reaching the viewport survives its offscreen parent"
+               descendant_reaching_the_viewport_survives_its_offscreen_parent);
         ];
       group "Scroll hints"
         [

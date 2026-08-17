@@ -238,3 +238,43 @@ Line 0
 Line 1
 Line 2
 Line 3|}]
+
+(* ── A scroll box with no room left ── *)
+
+(* Header, a flex-grown scroll box with a zero base height, footer. The frame
+   height decides how many rows the box gets, down to none: at zero rows its
+   viewport quantizes to an empty region and the children are skipped, rather
+   than the box fabricating a one-cell scissor and painting a transcript row
+   on top of the footer. *)
+let squeezed ~height =
+  let app = make_app () in
+  reconcile app
+    (Vnode.box
+       ~style:
+         (Toffee.Style.default
+         |> Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Column)
+       [
+         Vnode.text "HEADER";
+         Vnode.scroll_box ~show_scrollbars:false
+           ~style:
+             (Toffee.Style.default
+             |> Toffee.Style.set_flex_grow 1.
+             |> Toffee.Style.set_width (Toffee.Style.Dimension.percent 1.)
+             |> Toffee.Style.set_height (Toffee.Style.Dimension.length 0.))
+           [ Vnode.text "BODY" ];
+         Vnode.text "FOOTER";
+       ]);
+  settled_frame app ~width:10 ~height
+
+let%expect_test "squeezed scroll box keeps its one row" =
+  squeezed ~height:3;
+  [%expect_exact {|
+HEADER
+BODY
+FOOTER|}]
+
+let%expect_test "scroll box squeezed to zero rows paints nothing" =
+  squeezed ~height:2;
+  [%expect_exact {|
+HEADER
+FOOTER|}]
