@@ -59,14 +59,25 @@
 ;   ... test_text_buffer.exe  -> 42 admitted, 9 unjustified, 3 no sites
 ;   ... test_event.exe        -> 7 admitted, 1 unjustified, 30 no sites
 ;
-; test_edit_buffer's five all reach the same two faults and kill
-; neither, because both are equivalent through the public API:
-; edit_buffer.ml:23 `max_graphemes <= 0` (create clamps the argument
-; with Int.max 0, so the `< 0` mutant can never see a negative and both
-; arms return "") and matrix_text.ml:191 `len = 0` on an empty buffer.
-; Resolving them means `[@mutate off "reason"]` in those two source
-; lines, which is a product-code decision for the maintainer, not
-; something a test migration should do unilaterally.
+; test_edit_buffer's five were read as two equivalent mutants. Only one
+; was: edit_buffer.ml:23 `max_graphemes <= 0` now carries a dismissal and
+; has left the population. The five still stand, because the four faults
+; they otherwise reach are all real, and arming each says so:
+;
+;   matrix_text.ml:191 `len = 0`    killed by matrix/test/test_text.exe
+;   matrix_text.ml:204 `len = 0`    killed by matrix/test/test_text.exe
+;   edit_buffer.ml:43  `!truncated` killed by test_edit_buffer itself
+;   matrix_text.ml:12  `w <= 0`     survives test_text, 91 evaluations
+;
+; `len <> 0` turns iter_graphemes into a no-op for every non-empty
+; string; it is indistinguishable only against the empty buffers these
+; five tests build, and a fault one test cannot observe is a weak
+; assertion, not an equivalent mutant. The fourth is a genuine gap: at
+; w = 0 the clamp returns default_tab_width and the mutant returns 0, and
+; no test asserts that fallback — it wants a test, not a dismissal.
+;
+; So these five clear by being strengthened. Do not spend another
+; `[@mutate off]` on them.
 
 (rule
  (alias admit)

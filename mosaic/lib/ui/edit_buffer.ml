@@ -20,7 +20,16 @@ let strip_newlines s =
   if Buffer.length buf = len then s else Buffer.contents buf
 
 let truncate_graphemes ~width_method ~tab_width s max_graphemes =
-  if max_graphemes <= 0 then ""
+  if
+    (max_graphemes <= 0)
+    [@mutate
+      off
+        "both call sites pass a value already clamped to Int.max 0, so the \
+         guard never sees a negative and `< 0` can only disagree at 0 — where \
+         the else branch admits no grapheme either, leaving result_end at 0, \
+         so a non-empty s truncates to \"\" and an empty one is returned as \
+         itself"]
+  then ""
   else
     let result_end = ref 0 in
     let idx = ref 0 in
