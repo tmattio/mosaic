@@ -217,7 +217,7 @@ let wrap_break_testable =
   Testable.make
     ~pp:(fun ppf { byte_offset; grapheme_offset } ->
       Format.fprintf ppf "{byte=%d; grapheme=%d}" byte_offset grapheme_offset)
-    ~equal:( = ) ()
+    ~equal:( = )
 
 let line_break_testable =
   Testable.make
@@ -226,21 +226,21 @@ let line_break_testable =
         match kind with `LF -> "LF" | `CR -> "CR" | `CRLF -> "CRLF"
       in
       Format.fprintf ppf "{pos=%d; kind=%s}" pos kind_s)
-    ~equal:( = ) ()
+    ~equal:( = )
 
 let position_testable =
   Testable.make
     ~pp:(fun ppf { byte_offset; grapheme_count; columns_used } ->
       Format.fprintf ppf "{byte_offset=%d; grapheme_count=%d; columns_used=%d}"
         byte_offset grapheme_count columns_used)
-    ~equal:( = ) ()
+    ~equal:( = )
 
 let grapheme_testable =
   Testable.make
     ~pp:(fun ppf { byte_offset; byte_length; width } ->
       Format.fprintf ppf "{byte_offset=%d; byte_length=%d; width=%d}"
         byte_offset byte_length width)
-    ~equal:( = ) ()
+    ~equal:( = )
 
 let wrap_breaks_ascii_spaces () =
   let breaks = wrap_breaks "hello world test" in

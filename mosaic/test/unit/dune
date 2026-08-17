@@ -8,7 +8,7 @@
  (name test_selection)
  (modules test_selection)
  (package mosaic)
- (libraries windtrap windtrap.prop mosaic.ui))
+ (libraries windtrap mosaic.ui))
 
 (test
  (name test_renderable)
@@ -26,7 +26,7 @@
  (name test_text_buffer)
  (modules test_text_buffer)
  (package mosaic)
- (libraries windtrap windtrap.prop mosaic.ui matrix.ansi matrix.text))
+ (libraries windtrap mosaic.ui matrix.ansi matrix.text))
 
 (test
  (name test_text_surface)
@@ -34,7 +34,6 @@
  (package mosaic)
  (libraries
   windtrap
-  windtrap.prop
   mosaic.ui
   toffee
   matrix.ansi

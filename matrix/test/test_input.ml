@@ -3,21 +3,21 @@
 module Input = Matrix_input
 open Windtrap
 
-let event_testable = Testable.make ~pp:Input.pp ~equal:Input.equal ()
+let event_testable = Testable.make ~pp:Input.pp ~equal:Input.equal
 
 let capability_testable =
   Testable.make ~pp:Input.Response.pp_capability
-    ~equal:Input.Response.equal_capability ()
+    ~equal:Input.Response.equal_capability
 
 let response_testable =
-  Testable.make ~pp:Input.Response.pp ~equal:Input.Response.equal ()
+  Testable.make ~pp:Input.Response.pp ~equal:Input.Response.equal
 
 let event_type_pp fmt = function
   | Input.Key.Press -> Format.pp_print_string fmt "Press"
   | Input.Key.Repeat -> Format.pp_print_string fmt "Repeat"
   | Input.Key.Release -> Format.pp_print_string fmt "Release"
 
-let event_type_testable = Testable.make ~pp:event_type_pp ~equal:( = ) ()
+let event_type_testable = Testable.make ~pp:event_type_pp ~equal:( = )
 
 let key_event ?modifier ?event_type ?associated_text ?shifted_key ?base_key key
     =

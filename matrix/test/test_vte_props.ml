@@ -13,16 +13,15 @@
 
 module Grid = Matrix_grid
 open Windtrap
-module Gen = Windtrap_prop.Gen
 
 (* Generators ------------------------------------------------------------- *)
 
 let csi_gen =
   let open Gen in
   let* private_marker = bool in
-  let* params = list_size (int_range 0 3) (int_range 0 200) in
+  let* params = list ~size:(int_range 0 3) (int_range 0 200) in
   let+ final =
-    oneofl
+    of_list
       [
         'A';
         'B';
@@ -61,7 +60,7 @@ let mode_gen =
   let open Gen in
   let* set = bool in
   let* private_mode = bool in
-  let+ mode = oneofl [ 1; 4; 6; 7; 12; 25; 47; 1047; 1048; 1049; 2004 ] in
+  let+ mode = of_list [ 1; 4; 6; 7; 12; 25; 47; 1047; 1048; 1049; 2004 ] in
   Printf.sprintf "\x1b[%s%d%c"
     (if private_mode then "?" else "")
     mode
@@ -106,22 +105,22 @@ let partial_escape_fragments =
 let fragment_gen =
   Gen.frequency
     [
-      (4, Gen.string_size (Gen.int_range 0 8) (Gen.char_range ' ' '~'));
+      (4, Gen.string_of ~size:(Gen.int_range 0 8) (Gen.char_range ' ' '~'));
       (3, csi_gen);
       (2, mode_gen);
-      (3, Gen.oneofl structural_fragments);
-      (2, Gen.oneofl (valid_utf8_fragments @ invalid_utf8_fragments));
-      (1, Gen.oneofl partial_escape_fragments);
-      (1, Gen.string_size (Gen.int_range 0 6) Gen.char);
+      (3, Gen.of_list structural_fragments);
+      (2, Gen.of_list (valid_utf8_fragments @ invalid_utf8_fragments));
+      (1, Gen.of_list partial_escape_fragments);
+      (1, Gen.string_of ~size:(Gen.int_range 0 6) Gen.char);
     ]
 
 let case_gen =
   let open Gen in
   let* rows = int_range 1 6 in
   let* cols = int_range 1 8 in
-  let* frags = list_size (int_range 0 12) fragment_gen in
+  let* frags = list ~size:(int_range 0 12) fragment_gen in
   let s = String.concat "" frags in
-  let+ cuts = list_size (int_range 0 6) (int_range 0 (String.length s)) in
+  let+ cuts = list ~size:(int_range 0 6) (int_range 0 (String.length s)) in
   (rows, cols, s, cuts)
 
 let chunks_of s cuts =
@@ -137,7 +136,7 @@ let pp_case fmt (rows, cols, s, cuts) =
   Format.fprintf fmt "%dx%d %S cut at [%s]" rows cols s
     (String.concat ";" (List.map string_of_int cuts))
 
-let vte_case = testable ~pp:pp_case ~gen:case_gen ()
+let vte_case = Gen.with_pp pp_case case_gen
 
 (* Invariants ------------------------------------------------------------- *)
 
@@ -207,13 +206,10 @@ let prop_split_invariance (rows, cols, s, cuts) =
     (String.concat "\n" (Vte.scrollback_lines split))
 
 let props =
-  let config =
-    { Windtrap_prop.Prop.default_config with count = 1000; max_gen = 1500 }
-  in
   [
-    prop' ~config "feed is total and preserves grid invariants" vte_case
+    prop ~count:1000 "feed is total and preserves grid invariants" vte_case
       prop_safety_and_invariants;
-    prop' ~config "split invariance" vte_case prop_split_invariance;
+    prop ~count:1000 "split invariance" vte_case prop_split_invariance;
   ]
 
 let () = run "matrix.vte.props" [ group "vte" props ]

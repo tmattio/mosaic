@@ -13,7 +13,6 @@ let sel_testable =
       | None, None -> true
       | Some (a1, b1), Some (a2, b2) -> a1 = a2 && b1 = b2
       | _ -> false)
-    ()
 
 (* ── Construction ── *)
 

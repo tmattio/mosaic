@@ -12,7 +12,6 @@
 
 module Input = Matrix_input
 open Windtrap
-module Gen = Windtrap_prop.Gen
 
 (* Generators ------------------------------------------------------------- *)
 
@@ -23,7 +22,7 @@ let fragment_gen =
   Gen.frequency
     [
       ( 5,
-        Gen.oneofl
+        Gen.of_list
           [
             "\x1b[A";
             "\x1b[1;5H";
@@ -60,7 +59,7 @@ let fragment_gen =
             "\x1b";
           ] );
       ( 3,
-        Gen.oneofl
+        Gen.of_list
           [
             "\x1b[";
             "\x1bO";
@@ -80,7 +79,7 @@ let fragment_gen =
             "\x1bP+q\x1b";
           ] );
       ( 3,
-        Gen.oneofl
+        Gen.of_list
           [
             "\xC3\xA9";
             "\xE2\x82\xAC";
@@ -97,21 +96,21 @@ let fragment_gen =
             "\xFF";
             "\xFE";
           ] );
-      (4, Gen.string_size (Gen.int_range 0 5) (Gen.char_range 'a' 'z'));
-      (2, Gen.string_size (Gen.int_range 0 6) Gen.char);
-      (1, Gen.oneofl [ "\x01"; "\x07"; "\x09"; "\x0a"; "\x0d"; "\x7f" ]);
+      (4, Gen.string_of ~size:(Gen.int_range 0 5) (Gen.char_range 'a' 'z'));
+      (2, Gen.string_of ~size:(Gen.int_range 0 6) Gen.char);
+      (1, Gen.of_list [ "\x01"; "\x07"; "\x09"; "\x0a"; "\x0d"; "\x7f" ]);
     ]
 
 let input_gen =
   let open Gen in
-  let+ frags = list_size (int_range 0 12) fragment_gen in
+  let+ frags = list ~size:(int_range 0 12) fragment_gen in
   String.concat "" frags
 
 (* A byte string together with arbitrary cut points. *)
 let case_gen =
   let open Gen in
   let* s = input_gen in
-  let+ cuts = list_size (int_range 0 8) (int_range 0 (String.length s)) in
+  let+ cuts = list ~size:(int_range 0 8) (int_range 0 (String.length s)) in
   (s, cuts)
 
 let chunks_of s cuts =
@@ -127,7 +126,7 @@ let pp_case fmt (s, cuts) =
   Format.fprintf fmt "%S cut at [%s]" s
     (String.concat ";" (List.map string_of_int cuts))
 
-let case = testable ~pp:pp_case ~gen:case_gen ()
+let case = Gen.with_pp pp_case case_gen
 
 (* Harness ---------------------------------------------------------------- *)
 
@@ -143,7 +142,7 @@ let equal_item a b =
   | Response a, Response b -> Input.Response.equal a b
   | (User _ | Response _), _ -> false
 
-let item = testable ~pp:pp_item ~equal:equal_item ()
+let item = Testable.make ~pp:pp_item ~equal:equal_item
 let max_drain_steps = 32
 
 (* Feeds [chunks] at the same instant, then drains every expired deadline and
@@ -215,15 +214,15 @@ let paste_case_gen =
   let open Gen in
   let* payload = input_gen in
   let framed = "\x1b[200~" ^ payload ^ "\x1b[201~" in
-  let+ cuts = list_size (int_range 0 4) (int_range 0 (String.length framed)) in
+  let+ cuts = list ~size:(int_range 0 4) (int_range 0 (String.length framed)) in
   (payload, cuts)
 
 let paste_case =
-  testable
-    ~pp:(fun fmt (payload, cuts) ->
+  Gen.with_pp
+    (fun fmt (payload, cuts) ->
       Format.fprintf fmt "payload %S cut at [%s]" payload
         (String.concat ";" (List.map string_of_int cuts)))
-    ~gen:paste_case_gen ()
+    paste_case_gen
 
 let contains_substring s sub =
   let len_s = String.length s and len_sub = String.length sub in
@@ -242,13 +241,10 @@ let prop_paste_exactness (payload, cuts) =
     (run_stream (chunks_of framed cuts))
 
 let props =
-  let config =
-    { Windtrap_prop.Prop.default_config with count = 1000; max_gen = 1500 }
-  in
   [
-    prop' ~config "split equivalence" case prop_split_equivalence;
-    prop' ~config "total safety" case prop_total_safety;
-    prop' ~config "paste payload exactness" paste_case prop_paste_exactness;
+    prop ~count:1000 "split equivalence" case prop_split_equivalence;
+    prop ~count:1000 "total safety" case prop_total_safety;
+    prop ~count:1000 "paste payload exactness" paste_case prop_paste_exactness;
   ]
 
 let () = run "matrix.input.props" [ group "parser" props ]

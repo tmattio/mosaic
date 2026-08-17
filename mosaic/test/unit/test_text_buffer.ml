@@ -9,10 +9,7 @@ let red_style = Ansi.Style.fg Ansi.Color.red Ansi.Style.default
 let green_style = Ansi.Style.fg Ansi.Color.green Ansi.Style.default
 
 (* Bounded positive int for property tests *)
-let small_nat =
-  Testable.make
-    ~pp:(fun fmt i -> Format.fprintf fmt "%d" i)
-    ~equal:Int.equal ~gen:Windtrap_prop.Gen.nat ()
+let small_nat = Gen.nat
 
 (* ── Construction ── *)
 
@@ -428,12 +425,7 @@ let set_default_style_does_not_restyle () =
 (* ── Property Tests ── *)
 
 (* Printable ASCII string for property tests *)
-let printable_string =
-  Testable.make
-    ~pp:(fun fmt s -> Format.fprintf fmt "%S" s)
-    ~equal:String.equal
-    ~gen:(Windtrap_prop.Gen.string_of (Windtrap_prop.Gen.char_range 'a' 'z'))
-    ()
+let printable_string = Gen.string_of (Gen.char_range 'a' 'z')
 
 (* ── Runner ── *)
 
@@ -533,23 +525,23 @@ let () =
           prop "line_count >= 1" printable_string (fun s ->
               let buf = Text_buffer.create () in
               Text_buffer.set_text buf s;
-              Text_buffer.line_count buf >= 1);
+              greater_equal int ~than:1 (Text_buffer.line_count buf));
           prop "grapheme_count >= 0" printable_string (fun s ->
               let buf = Text_buffer.create () in
               Text_buffer.set_text buf s;
-              Text_buffer.grapheme_count buf >= 0);
+              greater_equal int ~than:0 (Text_buffer.grapheme_count buf));
           prop "plain_text round-trip" printable_string (fun s ->
               let buf = Text_buffer.create () in
               Text_buffer.set_text buf s;
-              String.equal s (Text_buffer.plain_text buf));
-          prop2 "version monotonically increases" printable_string
-            printable_string (fun s1 s2 ->
+              equal text s (Text_buffer.plain_text buf));
+          prop "version monotonically increases"
+            (Gen.pair printable_string printable_string) (fun (s1, s2) ->
               let buf = Text_buffer.create () in
               Text_buffer.set_text buf s1;
               let v1 = Text_buffer.version buf in
               Text_buffer.set_text buf s2;
               let v2 = Text_buffer.version buf in
-              v2 > v1);
+              greater int ~than:v1 v2);
           prop "highlights_in_range subset" small_nat (fun n ->
               let buf = Text_buffer.create () in
               Text_buffer.set_text buf "hello world test";
@@ -564,6 +556,6 @@ let () =
                 Text_buffer.highlights_in_range buf ~start:start_offset
                   ~len:(end_offset - start_offset)
               in
-              List.length hl <= 1);
+              less_equal int ~than:1 (List.length hl));
         ];
     ]

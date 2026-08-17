@@ -172,18 +172,21 @@ let selection_set_and_get () =
   let changed = Text_surface.set_selection s ~start:2 ~end_:7 in
   is_true ~msg:"changed" changed;
   is_true ~msg:"has_selection" (Text_surface.has_selection s);
-  some ~msg:"selection" (pair int int) (2, 7) (Text_surface.selection s)
+  equal ~msg:"selection" (option (pair int int)) (Some (2, 7))
+    (Text_surface.selection s)
 
 let selection_clamps_to_bounds () =
   let s = make_surface ~content:"hello" () in
   let _ = Text_surface.set_selection s ~start:(-5) ~end_:100 in
-  some ~msg:"clamped" (pair int int) (0, 5) (Text_surface.selection s)
+  equal ~msg:"clamped" (option (pair int int)) (Some (0, 5))
+    (Text_surface.selection s)
 
 let selection_normalized () =
   let s = make_surface ~content:"hello world" () in
   (* Reversed: end < start *)
   let _ = Text_surface.set_selection s ~start:7 ~end_:2 in
-  some ~msg:"normalized" (pair int int) (2, 7) (Text_surface.selection s)
+  equal ~msg:"normalized" (option (pair int int)) (Some (2, 7))
+    (Text_surface.selection s)
 
 let selection_returns_true_when_changed () =
   let s = make_surface ~content:"hello" () in
@@ -536,12 +539,7 @@ let wrap_word_single_char_words () =
 (* ── Property Tests ── *)
 
 (* Small printable strings *)
-let small_string =
-  Testable.make
-    ~pp:(fun fmt s -> Format.fprintf fmt "%S" s)
-    ~equal:String.equal
-    ~gen:(Windtrap_prop.Gen.string_of (Windtrap_prop.Gen.char_range 'a' 'z'))
-    ()
+let small_string = Gen.string_of (Gen.char_range 'a' 'z')
 
 (* ── Runner ── *)
 
@@ -664,15 +662,16 @@ let () =
           prop "display_line_count >= line_count" small_string (fun s ->
               let surface = make_surface ~width:5 ~content:s ~wrap:`Char () in
               let buf = Text_surface.buffer surface in
-              Text_surface.display_line_count surface
-              >= Text_buffer.line_count buf);
+              greater_equal int
+                ~than:(Text_buffer.line_count buf)
+                (Text_surface.display_line_count surface));
           prop "scroll_x always >= 0" small_string (fun s ->
               let surface = make_surface ~width:5 ~content:s () in
               Text_surface.set_scroll_x surface (-100);
-              Text_surface.scroll_x surface >= 0);
+              greater_equal int ~than:0 (Text_surface.scroll_x surface));
           prop "scroll_y always >= 0" small_string (fun s ->
               let surface = make_surface ~height:3 ~content:s () in
               Text_surface.set_scroll_y surface (-100);
-              Text_surface.scroll_y surface >= 0);
+              greater_equal int ~than:0 (Text_surface.scroll_y surface));
         ];
     ]

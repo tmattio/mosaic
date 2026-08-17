@@ -9,7 +9,7 @@ let feed_to_list p bytes off len =
   Parser.feed p bytes ~off ~len (fun tok -> acc := tok :: !acc);
   List.rev !acc
 
-let check_color = Testable.make ~pp:Color.pp ~equal:Color.equal ()
+let check_color = Testable.make ~pp:Color.pp ~equal:Color.equal
 
 (* Strict checking for escape sequences *)
 let check_seq msg expected actual = equal ~msg string expected actual

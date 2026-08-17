@@ -118,7 +118,7 @@ let selection_callback_reports_rendered_text () =
   dispatch_mouse renderer
     (Matrix_input.Mouse.make ~x:5 ~y:0 ~modifiers:Matrix_input.Modifier.none
        (Drag { button = Left }));
-  some ~msg:"selected markdown text" string "Hello" !selected
+  equal ~msg:"selected markdown text" (option string) (Some "Hello") !selected
 
 let selection_callback_clears () =
   let renderer = Renderer.create () in
@@ -140,7 +140,8 @@ let selection_callback_clears () =
   dispatch_mouse renderer
     (Matrix_input.Mouse.make ~x:5 ~y:0 ~modifiers:Matrix_input.Modifier.none
        (Drag { button = Left }));
-  some ~msg:"selection did not change while disabled" string "stale" !selected
+  equal ~msg:"selection did not change while disabled" (option string)
+    (Some "stale") !selected
 
 (* ── Lifecycle ── *)
 

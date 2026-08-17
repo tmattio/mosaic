@@ -4,16 +4,14 @@ open Mosaic_ui
 (* ── Helpers ── *)
 
 let pt x y : Selection.point = { x; y }
-let point = Testable.make ~pp:Selection.pp_point ~equal:Selection.equal_point ()
+let point = Testable.make ~pp:Selection.pp_point ~equal:Selection.equal_point
 
-(* Bounded int for property tests — avoids overflow in abs/addition. *)
-let small_int =
-  Testable.make
-    ~pp:(fun fmt i -> Format.fprintf fmt "%d" i)
-    ~equal:Int.equal ~gen:Windtrap_prop.Gen.small_int ()
+(* Bounded coordinates for property tests — avoids overflow in abs/addition. *)
+let coord = Gen.small_int
+let gen_point = Gen.pair coord coord
 
 let bounds_t =
-  Testable.make ~pp:Selection.pp_bounds ~equal:Selection.equal_bounds ()
+  Testable.make ~pp:Selection.pp_bounds ~equal:Selection.equal_bounds
 
 (* ── Creation ── *)
 
@@ -207,33 +205,37 @@ let () =
           test "horizontal line" bounds_horizontal;
           test "vertical line" bounds_vertical;
           test "after mutation" bounds_after_mutation;
-          prop2 "width >= 1" (pair small_int small_int)
-            (pair small_int small_int) (fun (ax, ay) (fx, fy) ->
+          prop "width >= 1"
+            (Gen.pair gen_point gen_point)
+            (fun ((ax, ay), (fx, fy)) ->
               let sel =
                 Selection.create ~anchor:(pt ax ay) ~focus:(pt fx fy) ()
               in
-              (Selection.bounds sel).width >= 1);
-          prop2 "height >= 1" (pair small_int small_int)
-            (pair small_int small_int) (fun (ax, ay) (fx, fy) ->
+              greater_equal int ~than:1 (Selection.bounds sel).width);
+          prop "height >= 1"
+            (Gen.pair gen_point gen_point)
+            (fun ((ax, ay), (fx, fy)) ->
               let sel =
                 Selection.create ~anchor:(pt ax ay) ~focus:(pt fx fy) ()
               in
-              (Selection.bounds sel).height >= 1);
-          prop2 "symmetric in anchor and focus" (pair small_int small_int)
-            (pair small_int small_int) (fun (ax, ay) (fx, fy) ->
+              greater_equal int ~than:1 (Selection.bounds sel).height);
+          prop "symmetric in anchor and focus"
+            (Gen.pair gen_point gen_point)
+            (fun ((ax, ay), (fx, fy)) ->
               let s1 =
                 Selection.create ~anchor:(pt ax ay) ~focus:(pt fx fy) ()
               in
               let s2 =
                 Selection.create ~anchor:(pt fx fy) ~focus:(pt ax ay) ()
               in
-              Selection.equal_bounds (Selection.bounds s1) (Selection.bounds s2));
-          prop2 "width = abs(x1-x0)+1" (pair small_int small_int)
-            (pair small_int small_int) (fun (ax, _ay) (fx, fy) ->
+              equal bounds_t (Selection.bounds s1) (Selection.bounds s2));
+          prop "width = abs(x1-x0)+1"
+            (Gen.pair gen_point gen_point)
+            (fun ((ax, _ay), (fx, fy)) ->
               let sel =
                 Selection.create ~anchor:(pt ax 0) ~focus:(pt fx fy) ()
               in
-              (Selection.bounds sel).width = abs (fx - ax) + 1);
+              equal int (abs (fx - ax) + 1) (Selection.bounds sel).width);
         ];
       group "State flags"
         [
@@ -246,17 +248,15 @@ let () =
           test "subtracts origin" to_local_subtracts_origin;
           test "zero origin is identity" to_local_zero_identity;
           test "can produce negative coordinates" to_local_negative;
-          prop3 "subtracts origin componentwise" (pair small_int small_int)
-            (pair small_int small_int) (pair small_int small_int)
-            (fun (ax, ay) (fx, fy) (ox, oy) ->
+          prop "subtracts origin componentwise"
+            (Gen.triple gen_point gen_point gen_point)
+            (fun ((ax, ay), (fx, fy), (ox, oy)) ->
               let sel =
                 Selection.create ~anchor:(pt ax ay) ~focus:(pt fx fy) ()
               in
               let lb = Selection.to_local sel ~origin:(pt ox oy) in
-              lb.anchor.x = ax - ox
-              && lb.anchor.y = ay - oy
-              && lb.focus.x = fx - ox
-              && lb.focus.y = fy - oy);
+              equal ~msg:"anchor" point (pt (ax - ox) (ay - oy)) lb.anchor;
+              equal ~msg:"focus" point (pt (fx - ox) (fy - oy)) lb.focus);
         ];
       group "Equality"
         [

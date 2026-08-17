@@ -28,7 +28,7 @@
  (name test_input_props)
  (package matrix)
  (modules test_input_props)
- (libraries windtrap windtrap.prop matrix.input))
+ (libraries windtrap matrix.input))
 
 (test
  (name test_vte)
@@ -40,7 +40,7 @@
  (name test_vte_props)
  (package matrix)
  (modules test_vte_props)
- (libraries windtrap windtrap.prop matrix.vte matrix.grid))
+ (libraries windtrap matrix.vte matrix.grid))
 
 (test
  (name test_pty)
