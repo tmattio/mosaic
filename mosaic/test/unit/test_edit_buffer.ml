@@ -525,6 +525,32 @@ let move_end_select () =
   is_true ~msg:"has selection" (Edit_buffer.has_selection buf);
   equal ~msg:"selection" sel_testable (Some (0, 5)) (Edit_buffer.selection buf)
 
+(* Found by the model-based suite below, shrunk to two calls.
+
+   select_all on an EMPTY buffer anchors the selection at 0 and leaves the
+   cursor at 0. selection is None at that point, so nothing looks wrong — but
+   the anchor survives, and the next insert moves the cursor past the text it
+   just typed, which turns the stale anchor into a live selection over that
+   text. The character the user just typed is now selected, so the next
+   character replaces it: typing "ab" into an empty, select-all'd input
+   leaves "b".
+
+   The .mli does not say insert clears the anchor, but "no selection after
+   insert" is asserted for the non-empty case by undo_restores_no_selection
+   above, and no editor selects what you just typed. This is a bug in
+   Edit_buffer, not in the test. *)
+let select_all_on_empty_leaves_no_phantom_selection () =
+  let buf = Edit_buffer.create "" in
+  Edit_buffer.select_all buf;
+  ignore (Edit_buffer.insert buf "a" : bool);
+  equal ~msg:"nothing is selected after typing"
+    (option (pair int int))
+    None
+    (Edit_buffer.selection buf);
+  ignore (Edit_buffer.insert buf "b" : bool);
+  equal ~msg:"the second character appends, it does not replace" string "ab"
+    (Edit_buffer.text buf)
+
 (* ── Undo / Redo ── *)
 
 let undo_no_history () =
@@ -975,6 +1001,246 @@ let set_cursor_offset_clamps () =
   Edit_buffer.set_cursor_offset buf (-5);
   equal ~msg:"clamped neg" int 0 (Edit_buffer.cursor buf)
 
+(* ── Model-based suite ── *)
+
+(* Everything above pins single operations. What no example test reaches is
+   the interaction between them: a selection created by one call, collapsed by
+   the next, deleted by a third, and restored by an undo four steps later.
+   [stateful] checks a model over generated sequences instead.
+
+   The model is a plain string with a cursor and a selection anchor. That is a
+   specification rather than a second implementation only because the generated
+   content is ASCII: there one byte is one grapheme cluster, so the model never
+   segments anything and Edit_buffer's real work is not duplicated. Grapheme
+   clustering, display width and word boundaries stay the job of the example
+   tests above, which feed real multi-codepoint input.
+
+   Only operations whose contract the .mli and the reviewed examples pin
+   exactly are modelled. move_home/move_end and the word-wise moves are left
+   out: the .mli does not say what they return when they collapse a selection
+   without moving the cursor, and guessing would make this model the author of
+   the contract rather than its reader. *)
+
+type snapshot = { s_text : string; s_cursor : int; s_anchor : int option }
+
+type model = {
+  text : string;
+  cursor : int;
+  anchor : int option; (* where a live selection is anchored *)
+  undo : snapshot list; (* newest first *)
+  redo : snapshot list;
+}
+
+(* [selection] is [Some (lo, hi)] only when [lo < hi], so an anchor sitting on
+   the cursor is no selection at all; the model normalises it away. *)
+let anchor_of ~cursor = function Some a when a <> cursor -> Some a | _ -> None
+
+let model_selection m =
+  match m.anchor with
+  | Some a -> Some (min a m.cursor, max a m.cursor)
+  | None -> None
+
+let pp_model ppf m =
+  Format.fprintf ppf "%S cursor=%d sel=%s undo=%d redo=%d" m.text m.cursor
+    (match model_selection m with
+    | None -> "-"
+    | Some (lo, hi) -> Printf.sprintf "%d..%d" lo hi)
+    (List.length m.undo) (List.length m.redo)
+
+let snapshot_of m =
+  { s_text = m.text; s_cursor = m.cursor; s_anchor = m.anchor }
+
+(* Saving an undo point drops the redo history: the branch it would replay no
+   longer exists. *)
+let push_undo m = { m with undo = snapshot_of m :: m.undo; redo = [] }
+
+let drop_range text lo hi =
+  String.sub text 0 lo ^ String.sub text hi (String.length text - hi)
+
+(* Deleting the selection is the shared prefix of insert, delete_backward and
+   delete_forward: save an undo point, drop the range, land the cursor on its
+   low edge. *)
+let delete_selection m =
+  match model_selection m with
+  | None -> None
+  | Some (lo, hi) ->
+      let m = push_undo m in
+      Some { m with text = drop_range m.text lo hi; cursor = lo; anchor = None }
+
+let model_length m = String.length m.text
+let clamp m pos = max 0 (min pos (model_length m))
+
+(* Movement anchors at the cursor it is leaving when selecting, and drops the
+   anchor when not. *)
+let move_to m ~select pos =
+  let anchor =
+    if select then Some (Option.value m.anchor ~default:m.cursor) else None
+  in
+  { m with cursor = pos; anchor = anchor_of ~cursor:pos anchor }
+
+let restore m snap =
+  {
+    m with
+    text = snap.s_text;
+    cursor = snap.s_cursor;
+    anchor = anchor_of ~cursor:snap.s_cursor snap.s_anchor;
+  }
+
+(* Generated text is ASCII and newline-free: multi-line editing has its own
+   examples, and no newlines means one byte is one grapheme in the model. *)
+let gen_insert =
+  Gen.string_of ~size:(Gen.int_range 1 3) (Gen.char_range 'a' 'z')
+
+(* Offsets are drawn beyond the text so the clamping contract is exercised. *)
+let gen_offset = Gen.int_range (-2) 12
+
+let commands =
+  [
+    command "insert" gen_insert
+      ~next:(fun m s ->
+        let m =
+          match delete_selection m with Some m -> m | None -> push_undo m
+        in
+        {
+          m with
+          text =
+            String.sub m.text 0 m.cursor
+            ^ s
+            ^ String.sub m.text m.cursor (String.length m.text - m.cursor);
+          cursor = m.cursor + String.length s;
+          anchor = None;
+        })
+      (fun _ s buf ->
+        is_true ~msg:"insert of a non-empty string changes the text"
+          (Edit_buffer.insert buf s));
+    call "delete_backward"
+      ~next:(fun m ->
+        match delete_selection m with
+        | Some m -> m
+        | None ->
+            if m.cursor = 0 then m
+            else
+              let m = push_undo m in
+              {
+                m with
+                text = drop_range m.text (m.cursor - 1) m.cursor;
+                cursor = m.cursor - 1;
+                anchor = None;
+              })
+      (fun m buf ->
+        equal ~msg:"delete_backward reports whether it changed the text" bool
+          (model_selection m <> None || m.cursor > 0)
+          (Edit_buffer.delete_backward buf));
+    call "delete_forward"
+      ~next:(fun m ->
+        match delete_selection m with
+        | Some m -> m
+        | None ->
+            if m.cursor >= model_length m then m
+            else
+              let m = push_undo m in
+              {
+                m with
+                text = drop_range m.text m.cursor (m.cursor + 1);
+                anchor = None;
+              })
+      (fun m buf ->
+        equal ~msg:"delete_forward reports whether it changed the text" bool
+          (model_selection m <> None || m.cursor < model_length m)
+          (Edit_buffer.delete_forward buf));
+    command "move_left" Gen.bool
+      ~next:(fun m select ->
+        match model_selection m with
+        | Some (lo, _) when not select -> { m with cursor = lo; anchor = None }
+        | _ -> move_to m ~select (max 0 (m.cursor - 1)))
+      (fun m select buf ->
+        equal ~msg:"move_left reports whether the cursor or selection moved"
+          bool
+          ((model_selection m <> None && not select) || m.cursor > 0)
+          (Edit_buffer.move_left ~select buf));
+    command "move_right" Gen.bool
+      ~next:(fun m select ->
+        match model_selection m with
+        | Some (_, hi) when not select -> { m with cursor = hi; anchor = None }
+        | _ -> move_to m ~select (min (model_length m) (m.cursor + 1)))
+      (fun m select buf ->
+        equal ~msg:"move_right reports whether the cursor or selection moved"
+          bool
+          ((model_selection m <> None && not select)
+          || m.cursor < model_length m)
+          (Edit_buffer.move_right ~select buf));
+    command "set_cursor" gen_offset
+      ~next:(fun m pos -> { m with cursor = clamp m pos; anchor = None })
+      (fun _ pos buf -> Edit_buffer.set_cursor buf pos);
+    command "set_cursor_offset"
+      (Gen.pair gen_offset Gen.bool)
+      ~next:(fun m (pos, select) -> move_to m ~select (clamp m pos))
+      (fun _ (pos, select) buf -> Edit_buffer.set_cursor_offset ~select buf pos);
+    (* Empty-buffer select_all is excluded, not because the model cannot
+       express it, but because it is the one state where the buffer is
+       wrong — see the "select_all on an empty buffer" xfail below. Leaving
+       it in would make this suite assert the bug. *)
+    call "select_all"
+      ~pre:(fun m -> m.text <> "")
+      ~next:(fun m ->
+        let cursor = model_length m in
+        { m with cursor; anchor = anchor_of ~cursor (Some 0) })
+      (fun _ buf -> Edit_buffer.select_all buf);
+    call "clear_selection"
+      ~next:(fun m -> { m with anchor = None })
+      (fun _ buf -> Edit_buffer.clear_selection buf);
+    call "undo"
+      ~next:(fun m ->
+        match m.undo with
+        | [] -> m
+        | snap :: rest ->
+            {
+              (restore m snap) with
+              undo = rest;
+              redo = snapshot_of m :: m.redo;
+            })
+      (fun m buf ->
+        equal ~msg:"undo reports whether a previous state was restored" bool
+          (m.undo <> []) (Edit_buffer.undo buf));
+    call "redo"
+      ~next:(fun m ->
+        match m.redo with
+        | [] -> m
+        | snap :: rest ->
+            {
+              (restore m snap) with
+              redo = rest;
+              undo = snapshot_of m :: m.undo;
+            })
+      (fun m buf ->
+        equal ~msg:"redo reports whether a change was re-applied" bool
+          (m.redo <> []) (Edit_buffer.redo buf));
+  ]
+
+let model_invariant m buf =
+  equal ~msg:"text" string m.text (Edit_buffer.text buf);
+  equal ~msg:"length" int (model_length m) (Edit_buffer.length buf);
+  equal ~msg:"is_empty" bool (m.text = "") (Edit_buffer.is_empty buf);
+  equal ~msg:"cursor" int m.cursor (Edit_buffer.cursor buf);
+  equal ~msg:"selection"
+    (option (pair int int))
+    (model_selection m)
+    (Edit_buffer.selection buf);
+  equal ~msg:"has_selection" bool
+    (model_selection m <> None)
+    (Edit_buffer.has_selection buf);
+  equal ~msg:"selected_text" string
+    (match model_selection m with
+    | None -> ""
+    | Some (lo, hi) -> String.sub m.text lo (hi - lo))
+    (Edit_buffer.selected_text buf);
+  (* The interesting states are the ones a shorter program never reaches:
+     without these the suite could pass while only ever seeing an empty
+     buffer with no selection. *)
+  cover ~label:"a selection is live" ~at_least:38. (model_selection m <> None);
+  cover ~label:"undo history is non-empty" ~at_least:70. (m.undo <> []);
+  cover ~label:"redo history is non-empty" ~at_least:35. (m.redo <> [])
+
 (* ── Runner ── *)
 
 let () =
@@ -1024,6 +1290,13 @@ let () =
           test "selection normalized" selection_normalized;
           test "select then move clears" select_then_move_clears;
           test "select_all on empty" select_all_empty;
+          xfail
+            ~reason:
+              "Edit_buffer bug: select_all on an empty buffer leaves an anchor \
+               at 0, so the first character typed afterwards comes back \
+               selected and the second replaces it"
+            (test "select_all on empty leaves no phantom selection"
+               select_all_on_empty_leaves_no_phantom_selection);
         ];
       group "Editing — Insert"
         [
@@ -1195,4 +1468,8 @@ let () =
           test "with select" set_cursor_offset_with_select;
           test "clamps" set_cursor_offset_clamps;
         ];
+      stateful "text, cursor, selection and history stay consistent"
+        ~model:{ text = ""; cursor = 0; anchor = None; undo = []; redo = [] }
+        ~scope:(fun run -> run (Edit_buffer.create ""))
+        ~pp_model ~invariant:model_invariant commands;
     ]
