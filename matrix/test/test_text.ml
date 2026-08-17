@@ -92,28 +92,24 @@ let run_grapheme_conformance () =
     close_in_noerr ic;
     raise exn
 
-let measurement_semantics () =
-  let cases =
-    [
-      ("basic ASCII", "abc", `Unicode, 8, 3);
-      ("ASCII controls", "a\n\r\x00b", `Unicode, 8, 2);
-      ("tab default", "\t", `Unicode, 2, 2);
-      ("tab custom", "\t", `Unicode, 4, 4);
-      ("emoji simple", "👋", `Unicode, 8, 2);
-      ("emoji ZWJ sequence", "👩\u{200D}🚀", `Unicode, 8, 2);
-      ("emoji family", "👨\u{200D}👩\u{200D}👧\u{200D}👦", `Unicode, 8, 2);
-      ("regional indicator pair", "🇺🇸", `Unicode, 8, 2);
-      ("skin tone sequence", "👍🏽", `Unicode, 8, 2);
-      ("wcwidth strategy", "👩\u{200D}🚀", `Wcwidth, 8, 4);
-      ("combining accent", "a\u{0301}", `Unicode, 8, 1);
-      ("zero width space", "\u{200B}", `Unicode, 8, 0);
-      ("C1 control", uchar_to_utf8 0x008A, `Unicode, 8, 0);
-    ]
-  in
-  List.iter
-    (fun (name, input, width_method, tab_width, expected) ->
-      check_width name expected (measure ~width_method ~tab_width input))
-    cases
+(* One test per row: a failure names the row it came from, and a single
+   character class can be selected with -f. *)
+let measurement_rows =
+  [
+    ("basic ASCII", "abc", `Unicode, 8, 3);
+    ("ASCII controls", "a\n\r\x00b", `Unicode, 8, 2);
+    ("tab default", "\t", `Unicode, 2, 2);
+    ("tab custom", "\t", `Unicode, 4, 4);
+    ("emoji simple", "👋", `Unicode, 8, 2);
+    ("emoji ZWJ sequence", "👩\u{200D}🚀", `Unicode, 8, 2);
+    ("emoji family", "👨\u{200D}👩\u{200D}👧\u{200D}👦", `Unicode, 8, 2);
+    ("regional indicator pair", "🇺🇸", `Unicode, 8, 2);
+    ("skin tone sequence", "👍🏽", `Unicode, 8, 2);
+    ("wcwidth strategy", "👩\u{200D}🚀", `Wcwidth, 8, 4);
+    ("combining accent", "a\u{0301}", `Unicode, 8, 1);
+    ("zero width space", "\u{200B}", `Unicode, 8, 0);
+    ("C1 control", uchar_to_utf8 0x008A, `Unicode, 8, 0);
+  ]
 
 let ascii_fast_path_consistency () =
   let s = "hello\tworld" in
@@ -594,7 +590,10 @@ let () =
         [ test "UAX #29 grapheme boundaries" run_grapheme_conformance ];
       group "Measurement"
         [
-          test "semantics" measurement_semantics;
+          cases "semantics" measurement_rows
+            ~name:(fun (name, _, _, _, _) -> name)
+            (fun (name, input, width_method, tab_width, expected) ->
+              check_width name expected (measure ~width_method ~tab_width input));
           test "ASCII fast path" ascii_fast_path_consistency;
           test "multi-grapheme regression" measure_multi_grapheme_regression;
           test "malformed UTF-8" malformed_utf8_measurement;

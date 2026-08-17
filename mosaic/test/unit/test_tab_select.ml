@@ -25,26 +25,6 @@ let make_tab_select ?options ?selected ?tab_width ?wrap_selection
   in
   (t, ts)
 
-let make_key key : Matrix_input.Key.event =
-  {
-    key;
-    modifier =
-      {
-        ctrl = false;
-        alt = false;
-        shift = false;
-        super = false;
-        hyper = false;
-        meta = false;
-        caps_lock = false;
-        num_lock = false;
-      };
-    event_type = Press;
-    associated_text = "";
-    shifted_key = None;
-    base_key = None;
-  }
-
 let emit_key ts key =
   let ev = Event.Key.of_input key in
   Renderable.Private.emit_key (Tab_select.node ts) ev

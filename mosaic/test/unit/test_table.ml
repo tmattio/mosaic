@@ -37,45 +37,9 @@ let make_table ?columns ?rows ?selected_row ?border ?border_style ?show_header
   in
   (t, tbl)
 
-let make_key ?(shift = false) key : Matrix_input.Key.event =
-  {
-    key;
-    modifier =
-      {
-        ctrl = false;
-        alt = false;
-        shift;
-        super = false;
-        hyper = false;
-        meta = false;
-        caps_lock = false;
-        num_lock = false;
-      };
-    event_type = Press;
-    associated_text = "";
-    shifted_key = None;
-    base_key = None;
-  }
-
 let emit_key tbl key =
   let ev = Event.Key.of_input key in
   Renderable.Private.emit_key (Table.node tbl) ev
-
-let no_mod = Event.Mouse.no_modifier
-
-let mouse_down ~x ~y =
-  Event.Mouse.make ~x ~y ~modifiers:no_mod (Down { button = Left })
-
-let mouse_move ~x ~y = Event.Mouse.make ~x ~y ~modifiers:no_mod Move
-let mouse_out ~x ~y = Event.Mouse.make ~x ~y ~modifiers:no_mod Out
-
-let mouse_scroll_down ~x ~y =
-  Event.Mouse.make ~x ~y ~modifiers:no_mod
-    (Scroll { direction = Scroll_down; delta = 1 })
-
-let mouse_scroll_up ~x ~y =
-  Event.Mouse.make ~x ~y ~modifiers:no_mod
-    (Scroll { direction = Scroll_up; delta = 1 })
 
 let emit_mouse tbl ev = Renderable.Private.emit_mouse (Table.node tbl) ev
 

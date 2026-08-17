@@ -14,19 +14,6 @@ let make_slider ?orientation ?value ?min ?max ?viewport_size ?track_color
   in
   (t, slider)
 
-let no_mod = Event.Mouse.no_modifier
-
-let mouse_down ~x ~y =
-  Event.Mouse.make ~x ~y ~modifiers:no_mod (Down { button = Left })
-
-let mouse_drag ~x ~y =
-  Event.Mouse.make ~x ~y ~modifiers:no_mod
-    (Drag { button = Left; is_dragging = true })
-
-let mouse_up ~x ~y =
-  Event.Mouse.make ~x ~y ~modifiers:no_mod
-    (Up { button = Left; is_dragging = false })
-
 let render_slider slider ~width ~height =
   let node = Slider.node slider in
   layout_node node ~x:0 ~y:0 ~width ~height;

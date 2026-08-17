@@ -29,42 +29,9 @@ let make_tree ?items ?selected_index ?expand_depth ?indent_size ?show_guides
   in
   (t, tree)
 
-let make_key ?(shift = false) key : Matrix_input.Key.event =
-  {
-    key;
-    modifier =
-      {
-        ctrl = false;
-        alt = false;
-        shift;
-        super = false;
-        hyper = false;
-        meta = false;
-        caps_lock = false;
-        num_lock = false;
-      };
-    event_type = Press;
-    associated_text = "";
-    shifted_key = None;
-    base_key = None;
-  }
-
 let emit_key tree key =
   let ev = Event.Key.of_input key in
   Renderable.Private.emit_key (Tree.node tree) ev
-
-let no_mod = Event.Mouse.no_modifier
-
-let mouse_down ~x ~y =
-  Event.Mouse.make ~x ~y ~modifiers:no_mod (Down { button = Left })
-
-let mouse_scroll_down ~x ~y =
-  Event.Mouse.make ~x ~y ~modifiers:no_mod
-    (Scroll { direction = Scroll_down; delta = 1 })
-
-let mouse_scroll_up ~x ~y =
-  Event.Mouse.make ~x ~y ~modifiers:no_mod
-    (Scroll { direction = Scroll_up; delta = 1 })
 
 let emit_mouse tree ev = Renderable.Private.emit_mouse (Tree.node tree) ev
 
