@@ -100,6 +100,10 @@ let measurement_rows =
     ("ASCII controls", "a\n\r\x00b", `Unicode, 8, 2);
     ("tab default", "\t", `Unicode, 2, 2);
     ("tab custom", "\t", `Unicode, 4, 4);
+    (* A non-positive tab_width falls back to the default rather than
+       measuring the tab as nothing. Zero is the value that tells the clamp
+       from its off-by-one: `w < 0` would let 0 through as a width. *)
+    ("tab width zero", "\t", `Unicode, 0, 2);
     ("emoji simple", "👋", `Unicode, 8, 2);
     ("emoji ZWJ sequence", "👩\u{200D}🚀", `Unicode, 8, 2);
     ("emoji family", "👨\u{200D}👩\u{200D}👧\u{200D}👦", `Unicode, 8, 2);

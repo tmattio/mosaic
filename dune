@@ -47,43 +47,47 @@
 ; to 25 faults per test, so aiming it at all ~4,400 tests would take
 ; hours and nobody would run it.
 ;
-; test_selection audits clean today (24 admitted, 5 no sites, 0
-; unjustified). Add an executable here once its own audit is clean.
+; test_selection (24 admitted, 5 no sites) and test_edit_buffer (140
+; admitted) both audit clean, so @admit runs both. Add an executable here
+; once its own audit is clean.
 ;
-; Three suites are known NOT to be clean yet, and the numbers are worth
+; Two suites are known NOT to be clean yet, and the numbers are worth
 ; keeping where someone will find them rather than in a review comment:
 ;
 ;   WINDTRAP_MUTATE=audit dune exec --instrument-with ppx_windtrap.mutate \
-;     mosaic/test/unit/test_edit_buffer.exe
-;     -> 135 admitted, 5 unjustified of 140
-;   ... test_text_buffer.exe  -> 42 admitted, 9 unjustified, 3 no sites
-;   ... test_event.exe        -> 7 admitted, 1 unjustified, 30 no sites
+;     mosaic/test/unit/test_text_buffer.exe
+;     -> 42 admitted, 9 unjustified, 3 no sites
+;   ... test_event.exe -> 7 admitted, 1 unjustified, 30 no sites
 ;
-; test_edit_buffer's five were read as two equivalent mutants. Only one
-; was: edit_buffer.ml:23 `max_graphemes <= 0` now carries a dismissal and
-; has left the population. The five still stand, because the four faults
-; they otherwise reach are all real, and arming each says so:
+; test_edit_buffer reached 140/140 from 135/5, and how is worth keeping.
+; Its five UNJUSTIFIED were read as two equivalent mutants; only
+; edit_buffer.ml:23 `max_graphemes <= 0` was one, and it carries a
+; dismissal now. The rest were weak tests, weak in one particular way:
+; each observed nothing but an empty buffer, and every fault the
+; construction path reaches is the identity on empty content. Sharper
+; assertions on the same three numbers could not have helped. Observing
+; more of the object did — four of the five now walk find_line's binary
+; search or a real grapheme run and kill a fault there.
 ;
-;   matrix_text.ml:191 `len = 0`    killed by matrix/test/test_text.exe
-;   matrix_text.ml:204 `len = 0`    killed by matrix/test/test_text.exe
-;   edit_buffer.ml:43  `!truncated` killed by test_edit_buffer itself
-;   matrix_text.ml:12  `w <= 0`     survives test_text, 91 evaluations
-;
-; `len <> 0` turns iter_graphemes into a no-op for every non-empty
-; string; it is indistinguishable only against the empty buffers these
-; five tests build, and a fault one test cannot observe is a weak
-; assertion, not an equivalent mutant. The fourth is a genuine gap: at
-; w = 0 the clamp returns default_tab_width and the mutant returns 0, and
-; no test asserts that fallback — it wants a test, not a dismissal.
-;
-; So these five clear by being strengthened. Do not spend another
-; `[@mutate off]` on them.
+; One finding was not mosaic's at all. matrix_text.ml:12 `w <= 0`
+; survived matrix's own suite over 91 evaluations because nothing
+; asserted that a tab_width of 0 falls back to the default; test_text
+; carries that row now. `len = 0` at matrix_text.ml:191 and :204 was the
+; near-miss — dismissing it would have suppressed a fault that
+; test_text kills outright, since `len <> 0` makes iter_graphemes a
+; no-op for every non-empty string. A fault one test cannot observe is
+; a weak test, not an equivalent mutant.
 
 (rule
  (alias admit)
- (deps (universe) mosaic/test/unit/test_selection.exe)
+ (deps
+  (universe)
+  mosaic/test/unit/test_selection.exe
+  mosaic/test/unit/test_edit_buffer.exe)
  (action
   (setenv
    WINDTRAP_MUTATE
    audit
-   (run %{exe:mosaic/test/unit/test_selection.exe}))))
+   (progn
+    (run %{exe:mosaic/test/unit/test_selection.exe})
+    (run %{exe:mosaic/test/unit/test_edit_buffer.exe})))))

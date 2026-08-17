@@ -18,9 +18,15 @@ let sel_testable =
 
 let create_empty () =
   let buf = Edit_buffer.create "" in
+  equal ~msg:"text" string "" (Edit_buffer.text buf);
   equal ~msg:"cursor" int 0 (Edit_buffer.cursor buf);
   equal ~msg:"length" int 0 (Edit_buffer.length buf);
-  is_true ~msg:"is_empty" (Edit_buffer.is_empty buf)
+  is_true ~msg:"is_empty" (Edit_buffer.is_empty buf);
+  equal ~msg:"display_width" int 0 (Edit_buffer.display_width buf);
+  equal ~msg:"line_count" int 1 (Edit_buffer.line_count buf);
+  equal ~msg:"cursor_line" int 0 (Edit_buffer.cursor_line buf);
+  equal ~msg:"cursor_col" int 0 (Edit_buffer.cursor_col buf);
+  equal ~msg:"selection" sel_testable None (Edit_buffer.selection buf)
 
 let create_hello () =
   let buf = Edit_buffer.create "hello" in
@@ -38,21 +44,31 @@ let create_max_length_truncates_initial () =
   equal ~msg:"length" int 3 (Edit_buffer.length buf);
   equal ~msg:"text" string "abc" (Edit_buffer.text buf)
 
+(* A negative cap is the input most likely to leave a half-built object, so
+   the clamp is proven by the buffer being a well-formed empty one — a line
+   table with a navigable entry in it — and not by the accessor reading 0. *)
 let create_negative_max_length_clamped () =
   let buf = Edit_buffer.create ~max_length:(-3) "abc" in
   equal ~msg:"max_length clamped" int 0 (Edit_buffer.max_length buf);
   equal ~msg:"content truncated" string "" (Edit_buffer.text buf);
-  equal ~msg:"cursor at end" int 0 (Edit_buffer.cursor buf)
+  equal ~msg:"cursor at end" int 0 (Edit_buffer.cursor buf);
+  equal ~msg:"one line" int 1 (Edit_buffer.line_count buf);
+  equal ~msg:"cursor on it" int 0 (Edit_buffer.cursor_line buf)
 
-(* The two boundaries a mutation audit found unguarded: every existing
-   construction test sat on one side of `<= 0` or the other, so the
-   off-by-one mutant of each guard survived. Zero is the value that tells
-   `<= 0` and `< 0` apart. *)
+(* A cap of 0 is a boundary, so this stands on both sides of it: nothing fits
+   at 0, exactly one grapheme fits at 1. The zero side alone was the weakness
+   — it observes an empty buffer, and every fault the truncation path can
+   reach is the identity on empty content. (An earlier note here claimed zero
+   tells the `<= 0` guard from `< 0`; it does not. Both arms of that guard
+   yield "", which is why it now carries a dismissal.) *)
 let create_zero_max_length () =
   let buf = Edit_buffer.create ~max_length:0 "abc" in
   equal ~msg:"max_length" int 0 (Edit_buffer.max_length buf);
   equal ~msg:"nothing fits" string "" (Edit_buffer.text buf);
-  equal ~msg:"length" int 0 (Edit_buffer.length buf)
+  equal ~msg:"length" int 0 (Edit_buffer.length buf);
+  let one = Edit_buffer.create ~max_length:1 "abc" in
+  equal ~msg:"one grapheme fits" string "a" (Edit_buffer.text one);
+  equal ~msg:"length at one" int 1 (Edit_buffer.length one)
 
 let create_zero_tab_width_clamps_to_one () =
   (* The .mli says tab_width "defaults to 2 and is clamped to >= 1", so 0
@@ -705,9 +721,14 @@ let delete_word_backward_then_undo () =
 
 (* ── Max Length ── *)
 
+(* Content, and a cap well clear of it: the accessor has to report the
+   configured cap rather than the buffer's own length, and the length it is
+   distinguished from has to come from a real grapheme walk. Over an empty
+   buffer the two numbers are never both observed. *)
 let max_length_returns_configured () =
-  let buf = Edit_buffer.create ~max_length:42 "" in
-  equal ~msg:"max_length" int 42 (Edit_buffer.max_length buf)
+  let buf = Edit_buffer.create ~max_length:42 "hello" in
+  equal ~msg:"max_length" int 42 (Edit_buffer.max_length buf);
+  equal ~msg:"length" int 5 (Edit_buffer.length buf)
 
 let set_max_length_smaller_truncates () =
   let buf = Edit_buffer.create "hello world" in
@@ -821,9 +842,13 @@ let multiline_line_count_single () =
   let buf = Edit_buffer.create "hello" in
   equal ~msg:"line_count" int 1 (Edit_buffer.line_count buf)
 
+(* An empty document is one empty line, not zero lines — and that line has to
+   be navigable, or the 1 is a number the line table never has to honour. *)
 let multiline_line_count_empty () =
   let buf = Edit_buffer.create "" in
-  equal ~msg:"line_count" int 1 (Edit_buffer.line_count buf)
+  equal ~msg:"line_count" int 1 (Edit_buffer.line_count buf);
+  equal ~msg:"cursor on line 0" int 0 (Edit_buffer.cursor_line buf);
+  equal ~msg:"at column 0" int 0 (Edit_buffer.cursor_col buf)
 
 let multiline_line_count_trailing_newline () =
   let buf = Edit_buffer.create "hello\n" in
