@@ -300,6 +300,37 @@ type ('model, 'msg) app = {
   subscriptions : 'model -> 'msg Sub.t;
 }
 
+(* Every-timer state. A timer's deadlines are the fixed-rate schedule
+   [origin +. n *. interval] for [n = 1, 2, ...], computed from the origin and
+   the fire count each time rather than carried forward by addition. The
+   computed deadline rounds once; [due +. interval] rounds at every re-arm, and
+   on a wall-clock origin near 1.7e9 — where a double's spacing is 2.4e-7 —
+   adding 0.1 lands on 0.0999999046 every time, a fast drift of a microsecond
+   per second. *)
+type 'msg every_timer = {
+  interval : float;
+  origin : float;
+  fired : int;
+  callback : unit -> 'msg;
+}
+
+(* The schedule is computed, but the clock measured against it need not be: a
+   virtual clock stepped by 0.1 eight times and the nominal [8 *. 0.1] differ
+   by an ULP, in either direction. Exact comparison turns that noise into a
+   stalled step (the clock lands short, so neither the wakeup nor the fire
+   test sees the deadline until the next step) or a lost final fire (the
+   clock stops at the nominal instant, the deadline sits beyond it). The
+   slack is far above that noise and far below any sane interval. *)
+let every_slack = 1e-6
+
+(* The instant a timer's wakeup is armed for and its fire test compares
+   against — the same float on both sides, so a frame the wakeup releases
+   always fires the timer. *)
+let every_deadline timer =
+  timer.origin
+  +. (float_of_int (timer.fired + 1) *. timer.interval)
+  -. every_slack
+
 type ('model, 'msg) runtime = {
   mutable model : 'model;
   (* [Cmd.perform] may dispatch from any thread (see mosaic.mli), so the
@@ -318,9 +349,7 @@ type ('model, 'msg) runtime = {
   mutable paste_subs : (bool * (Event.paste -> 'msg option)) list;
   mutable resize_sub : (width:int -> height:int -> 'msg) option;
   mutable tick_sub : (dt:float -> 'msg) option;
-  (* Every-timer state: (interval, next_due, callback), where next_due is an
-     absolute [Matrix.now] deadline. *)
-  mutable every_subs : (float * float * (unit -> 'msg)) list;
+  mutable every_subs : 'msg every_timer list;
   mutable focus_sub : 'msg option;
   mutable blur_sub : 'msg option;
   mutable color_scheme_sub : ([ `Dark | `Light ] -> 'msg option) option;
@@ -466,10 +495,12 @@ let rec collect_subs runtime (sub : _ Sub.t) =
   match sub with
   | Sub.None -> ()
   | Sub.Batch subs -> List.iter (collect_subs runtime) subs
-  | Sub.Every (interval, f) ->
-      (* The deadline is assigned in [update_subscriptions], where the current
+  | Sub.Every (interval, callback) ->
+      (* The schedule is assigned in [update_subscriptions], where the current
          time and the previous timer generation are both at hand. *)
-      runtime.every_subs <- (interval, Float.nan, f) :: runtime.every_subs
+      runtime.every_subs <-
+        { interval; origin = Float.nan; fired = 0; callback }
+        :: runtime.every_subs
   | Sub.On_tick f -> runtime.tick_sub <- Some f
   | Sub.On_key f -> runtime.key_subs <- (false, f) :: runtime.key_subs
   | Sub.On_key_all f -> runtime.key_subs <- (true, f) :: runtime.key_subs
@@ -488,7 +519,8 @@ let rec collect_subs runtime (sub : _ Sub.t) =
 let arm_every_wakeup runtime =
   let deadline =
     List.fold_left
-      (fun acc (_, due, _) ->
+      (fun acc timer ->
+        let due = every_deadline timer in
         match acc with None -> Some due | Some acc -> Some (Float.min acc due))
       None runtime.every_subs
   in
@@ -506,28 +538,30 @@ let update_subscriptions runtime =
   runtime.blur_sub <- None;
   runtime.color_scheme_sub <- None;
   collect_subs runtime (runtime.app.subscriptions runtime.model);
-  (* Assign each recollected timer its deadline: a timer matching a previous
-     entry's interval keeps that entry's deadline — re-evaluating
-     subscriptions must not reset time in flight — and a new timer is due one
-     interval from now. Each previous entry is consumed at most once and the
-     pairing walks declaration order on both sides (collection prepends,
-     hence the reverse; the stored list stays in declaration order), so two
-     timers with the same interval keep independent phases and a timer added
-     later cannot steal an earlier timer's deadline. *)
+  (* Assign each recollected timer its schedule: a timer matching a previous
+     entry's interval keeps that entry's origin and fire count — re-evaluating
+     subscriptions must not reset time in flight — and a new timer starts its
+     schedule now, due one interval later. Each previous entry is consumed at
+     most once and the pairing walks declaration order on both sides
+     (collection prepends, hence the reverse; the stored list stays in
+     declaration order), so two timers with the same interval keep
+     independent phases and a timer added later cannot steal an earlier
+     timer's deadline. *)
   let now = Matrix.now runtime.matrix_app in
   let remaining_prev = ref prev_every in
   runtime.every_subs <-
     List.map
-      (fun (interval, _, f) ->
+      (fun timer ->
         let rec take acc = function
-          | [] -> (now +. interval, List.rev acc)
-          | (prev_iv, prev_due, _) :: rest when Float.equal prev_iv interval ->
-              (prev_due, List.rev_append acc rest)
+          | [] -> ({ timer with origin = now }, List.rev acc)
+          | prev :: rest when Float.equal prev.interval timer.interval ->
+              ( { timer with origin = prev.origin; fired = prev.fired },
+                List.rev_append acc rest )
           | entry :: rest -> take (entry :: acc) rest
         in
-        let due, rest = take [] !remaining_prev in
+        let timer, rest = take [] !remaining_prev in
         remaining_prev := rest;
-        (interval, due, f))
+        timer)
       (List.rev runtime.every_subs);
   (* Track subscription-driven liveness: only tick subscriptions require the
      render cadence — a tick's [dt] is frame time by definition. Every-subs
@@ -592,21 +626,20 @@ let handle_resize runtime ~width ~height =
 let handle_tick runtime ~dt =
   match runtime.tick_sub with Some f -> push_msg runtime (f ~dt) | None -> ()
 
-(* Timers hold absolute deadlines, so a frame landing exactly on the armed
-   wakeup compares the very float [arm_every_wakeup] scheduled — no
-   re-accumulated delta, no epsilon. Re-arming at [due +. interval] keeps the
-   cadence fixed-rate: a late frame fires once and leaves the next deadline in
-   the past, catching up one fire per frame. *)
+(* Counting the fire keeps the cadence fixed-rate on the origin's schedule: a
+   late frame fires once and leaves the next deadline in the past, catching up
+   one fire per frame. A fire within the slack cannot double up — the next
+   deadline is a whole interval away. *)
 let handle_every_subs runtime =
   let now = Matrix.now runtime.matrix_app in
   runtime.every_subs <-
     List.map
-      (fun (interval, due, f) ->
-        if now >= due then begin
-          push_msg runtime (f ());
-          (interval, due +. interval, f)
+      (fun timer ->
+        if now >= every_deadline timer then begin
+          push_msg runtime (timer.callback ());
+          { timer with fired = timer.fired + 1 }
         end
-        else (interval, due, f))
+        else timer)
       runtime.every_subs
 
 let handle_input runtime (input : Matrix.Input.t) =

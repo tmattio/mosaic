@@ -88,10 +88,25 @@ let drive ?mode ?(width = 48) ?(height = 2) ?probe ?process_perform application
   let steps = ref steps in
   (* Tracked so the replay VTE is always the size the backend currently is. *)
   let dims = ref (width, height) in
-  let on_idle t ~timeout:_ =
+  let on_idle t ~timeout =
     match !steps with
     | [] -> Matrix_test.stop t
-    | step :: rest -> (
+    | `Step_to target :: rest ->
+        (* A driver that honours the loop's requested wait: the clock moves to
+           the armed deadline, or to [target] when that comes first, one idle
+           generation at a time. Every timer deadline before [target] is
+           observed as its own quiescent frame, and the step ends with the
+           clock at exactly [target]. *)
+        let now = Matrix_test.now t in
+        if now >= target then steps := rest
+        else
+          let step =
+            match timeout with
+            | Some wait when wait > 0. -> Float.min wait (target -. now)
+            | Some _ | None -> target -. now
+          in
+          Matrix_test.set_now t (now +. step)
+    | ((`Feed _ | `Resize _ | `Advance _ | `Snap | `Run _) as step) :: rest -> (
         steps := rest;
         match step with
         | `Feed bytes -> Matrix_test.feed t bytes
@@ -667,6 +682,22 @@ let%expect_test "same-interval timers keep independent phases" =
     |keys:[a,a,b] ticks:0 size:- note:on
     |
     |}]
+
+let%expect_test "a timer stepped deadline by deadline keeps the nominal grid" =
+  (* A driver that moves the clock to each armed wakeup and stops exactly at
+     t=2.0 must see a 0.1 s timer fire twenty times: the twentieth deadline is
+     [20 * 0.1], the nominal instant. Carrying the deadline forward by
+     repeated addition drifted it past 2.0 by a few ULPs after twenty steps,
+     and an exact comparison then lost the final fire beyond the stop (19,
+     then 29). The accumulating driver above is the mirror image: there the
+     clock is the side that drifts. *)
+  let subs _ = Mosaic.Sub.every 0.1 (fun () -> Tick) in
+  drive (app ~subs ()) [ `Step_to 2.0; `Snap; `Step_to 3.0; `Snap ];
+  [%expect
+    {||keys:[] ticks:20 size:- note:-
+|
+|keys:[] ticks:30 size:- note:-
+||}]
 
 let%expect_test "an unmatched Cmd.focus expires after one deferred attempt" =
   (* Cmd.focus retries once after the next completed render (covering an
