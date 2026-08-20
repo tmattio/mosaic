@@ -230,12 +230,14 @@ let update_common (node : Renderable.t) ~(old_attrs : Vnode.attrs)
     Renderable.set_live node new_attrs.live;
     changed := true);
   (* Style is handled in update_instance for widget-specific behavior.
-     Box.set_style adds border insets; Renderable.set_style does not. *)
+     Box.set_style adds border insets and Scroll_box.set_style its root
+     overrides; Renderable.set_style does not. *)
   !changed
 
 let set_instance_style (inst : instance) (style : Toffee.Style.t) : unit =
   match inst with
   | Box_instance box -> Box.set_style box style
+  | Scroll_box_instance scroll_box -> Scroll_box.set_style scroll_box style
   | Markdown_instance md -> Markdown.set_layout_style md style
   | _ -> Renderable.set_style (node_of inst) style
 

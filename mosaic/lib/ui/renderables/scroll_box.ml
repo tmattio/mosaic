@@ -785,6 +785,28 @@ let apply_props t (props : Props.t) =
   | Some p -> Scroll_bar.apply_props t.horizontal_bar p
   | None -> ()
 
+(* ───── Root Style ───── *)
+
+(* The root is a flex row of the wrapper and the vertical bar, stretched to
+   the box's cross size. Its minimum size is the caller's where the caller
+   gave one; an [auto] minimum would resolve to the content's size and stop
+   the box from shrinking below it, so [auto] becomes zero on each axis
+   independently. *)
+let root_style style =
+  let zero = Toffee.Style.Dimension.length 0. in
+  let explicit_or_zero dim =
+    if Toffee.Style.Dimension.is_auto dim then zero else dim
+  in
+  let min_size =
+    Toffee.Geometry.Size.map explicit_or_zero (Toffee.Style.min_size style)
+  in
+  style
+  |> Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Row
+  |> Toffee.Style.set_align_items (Some Toffee.Style.Align_items.Stretch)
+  |> Toffee.Style.set_min_size min_size
+
+let set_style t style = Renderable.set_style t.node (root_style style)
+
 (* ───── Construction ───── *)
 
 let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
@@ -797,15 +819,8 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
   let node =
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
-  (* Root: flex-row, align-items stretch *)
+  Renderable.set_style node (root_style (Renderable.style node));
   let zero = Toffee.Style.Dimension.length 0. in
-  let root_style =
-    Renderable.style node
-    |> Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Row
-    |> Toffee.Style.set_align_items (Some Toffee.Style.Align_items.Stretch)
-    |> Toffee.Style.set_min_size (Toffee.Geometry.Size.square zero)
-  in
-  Renderable.set_style node root_style;
   (* Wrapper: flex-column, flex-grow 1 *)
   let wrapper = Renderable.create ~parent:node () in
   let wrapper_style =
