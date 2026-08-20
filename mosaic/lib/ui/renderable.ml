@@ -827,7 +827,7 @@ let children_in_viewport ~(parent : t) ~(viewport : Grid.region)
           else
             let cb = bounds arr.(i - 1) in
             let prev_end = primary_pos cb + primary_size cb in
-            if prev_end <= vp_start then
+            if prev_end < vp_start then
               if gaps + 1 >= 50 then i else walk_left (i - 1) (gaps + 1)
             else walk_left (i - 1) 0
         in
@@ -837,22 +837,32 @@ let children_in_viewport ~(parent : t) ~(viewport : Grid.region)
           if i >= total then total
           else
             let start = primary_pos (bounds arr.(i)) in
-            if start >= vp_end then i else walk_right (i + 1)
+            if start > vp_end then i else walk_right (i + 1)
         in
         let right = walk_right (start_index + 1) in
         (left, right)
     in
-    (* Collect children that pass both primary and cross-axis tests. *)
+    (* Collect children that pass both primary and cross-axis tests. A child
+       with interior overlaps strictly. A child with zero extent on an axis
+       has no interior to overlap, but overflow is [Visible] by default, so
+       its subtree is still free to paint: a wrapper sized by its content — a
+       gutter, a badge layer, a row that shrinks to nothing at some width —
+       must survive the cull, and it sits exactly on an edge in the common
+       case (every child of a column starts at the container's left edge).
+       Zero extent therefore keeps the closed interval. *)
+    let overlaps a0 a1 lo hi =
+      if a0 = a1 then a0 >= lo && a0 <= hi else a1 > lo && a0 < hi
+    in
     let result = ref [] in
     for i = left to right - 1 do
       let child = arr.(i) in
       let cb = bounds child in
       let p0 = primary_pos cb in
       let p1 = p0 + primary_size cb in
-      if p1 > vp_start && p0 < vp_end then
+      if overlaps p0 p1 vp_start vp_end then
         let c0 = cross_pos cb in
         let c1 = c0 + cross_size cb in
-        if c1 > cross_start && c0 < cross_end then result := child :: !result
+        if overlaps c0 c1 cross_start cross_end then result := child :: !result
     done;
     List.sort (fun a b -> compare a.z_index b.z_index) !result
 

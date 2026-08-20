@@ -1686,26 +1686,12 @@ let () =
             child_straddling_the_viewport_edge_is_kept;
           test "child ending on the viewport edge is culled"
             child_ending_on_the_viewport_edge_is_culled;
-          xfail
-            ~reason:
-              "ff51f8627: children_in_viewport tests overlap strictly, so a \
-               child with zero extent on the primary axis is dropped when its \
-               edge meets the viewport's"
-            (test "zero-height child on the viewport edge is kept"
-               zero_height_child_on_the_viewport_edge_is_kept);
-          xfail
-            ~reason:
-              "ff51f8627: same strict test on the cross axis — a zero-width \
-               child is flush with the viewport's left edge, so every one is \
-               dropped"
-            (test "zero-width child on the viewport edge is kept"
-               zero_width_child_on_the_viewport_edge_is_kept);
-          xfail
-            ~reason:
-              "ff51f8627: the zero-extent cull, at frame level — the wrapper's \
-               row blanks while the rows around it survive"
-            (test "zero-width wrapper keeps its overflowing row"
-               zero_width_wrapper_keeps_its_overflowing_row);
+          test "zero-height child on the viewport edge is kept"
+            zero_height_child_on_the_viewport_edge_is_kept;
+          test "zero-width child on the viewport edge is kept"
+            zero_width_child_on_the_viewport_edge_is_kept;
+          test "zero-width wrapper keeps its overflowing row"
+            zero_width_wrapper_keeps_its_overflowing_row;
           xfail
             ~reason:
               "ff51f8627: culling gates a subtree on the child's own box, so a \
