@@ -166,11 +166,11 @@ val create :
 (** [create ~parent ()] is a new scroll box attached to [parent] with:
     - [index] insertion index among [parent]'s children.
     - [id] node identifier for debugging.
-    - [style] layout style. Defaults to the {!Toffee.Style.t} default. The
-      box lays its bars out as a row and stretches them, so [style]'s flex
-      direction and item alignment are overridden; an [auto] minimum size
-      becomes zero on that axis so the box can shrink below its content,
-      while an explicit minimum is kept.
+    - [style] layout style. Defaults to the {!Toffee.Style.t} default. The box
+      lays its bars out as a row and stretches them, so [style]'s flex direction
+      and item alignment are overridden; an [auto] minimum size becomes zero on
+      that axis so the box can shrink below its content, while an explicit
+      minimum is kept.
     - [visible] initial visibility. Defaults to [true].
     - [z_index] stacking order. Defaults to [0].
     - [opacity] node opacity. Defaults to [1.0].
