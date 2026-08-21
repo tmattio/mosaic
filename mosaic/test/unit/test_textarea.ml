@@ -180,7 +180,7 @@ let create_registers_line_info_provider () =
   | None -> fail "expected line info provider"
   | Some info ->
       equal ~msg:"line count" int 3 info.Renderable.line_count;
-      greater_equal int ~msg:"has display lines" ~than:3 info.display_line_count
+      ge ~msg:"display lines" ~than:3 info.display_line_count
 
 (* ── Value ── *)
 
@@ -197,7 +197,7 @@ let set_value_requests_render () =
   let t, ta = make_textarea () in
   let before = !(t.schedule_count) in
   Textarea.set_value ta "something";
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 (* ── Callbacks — on_input ── *)
 
@@ -276,7 +276,7 @@ let on_cursor_fires_on_cursor_movement () =
   in
   focus_textarea t ta;
   send_key ta Matrix_input.Key.Left;
-  greater_equal int ~msg:"cursor callback fired" ~than:1 (List.length !fired)
+  ge ~msg:"cursor callback fired" ~than:1 (List.length !fired)
 
 let on_cursor_fires_on_selection_change () =
   let fired = ref [] in
@@ -842,7 +842,7 @@ let apply_props_echoed_value_preserves_cursor () =
   send_char_with_mod ta ~modifier:ctrl_shift_mod 'd';
   let echoed = Textarea.value ta in
   let cursor_before = Edit_buffer.cursor buf in
-  less int ~msg:"cursor not at end before apply_props"
+  lt ~msg:"cursor before the end of the buffer, pre apply_props"
     ~than:(Edit_buffer.length buf) cursor_before;
   Textarea.apply_props ta (Textarea.Props.make ~value:echoed ());
   equal ~msg:"cursor preserved after echoed value reconcile" int cursor_before
@@ -875,7 +875,7 @@ let apply_props_schedules_render () =
   let t, ta = make_textarea () in
   let before = !(t.schedule_count) in
   Textarea.apply_props ta Textarea.Props.default;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 (* ── Rendering ── *)
 
@@ -911,7 +911,7 @@ let operations_on_empty_textarea_are_safe () =
 let pp_produces_non_empty_output () =
   let _t, ta = make_textarea () in
   let s = Format.asprintf "%a" Textarea.pp ta in
-  greater int ~msg:"non-empty" ~than:0 (String.length s)
+  satisfies ~claim:"non-empty" string (fun s -> String.length s > 0) s
 
 let pp_contains_textarea_prefix () =
   let _t, ta = make_textarea () in

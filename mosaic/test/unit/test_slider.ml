@@ -219,7 +219,7 @@ let set_orientation_schedules_render () =
   let t, slider = make_slider () in
   let before = !(t.schedule_count) in
   Slider.set_orientation slider `Vertical;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_orientation_noop_same () =
   let t, slider = make_slider ~orientation:`Horizontal () in
@@ -246,7 +246,7 @@ let set_viewport_size_clamps_high () =
   let grid = render_slider slider ~width:20 ~height:1 in
   let thumb = count_thumb_cells_h grid ~y:0 ~width:20 in
   (* With viewport = range, thumb should be about half the track *)
-  greater_equal int ~msg:"thumb is large" ~than:8 thumb
+  ge ~msg:"thumb is large" ~than:8 thumb
 
 let set_viewport_size_noop_same () =
   let t, slider = make_slider ~viewport_size:10. () in
@@ -258,7 +258,7 @@ let set_track_color_schedules_render () =
   let t, slider = make_slider () in
   let before = !(t.schedule_count) in
   Slider.set_track_color slider Ansi.Color.red;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_track_color_noop_same () =
   let t, slider = make_slider ~track_color:Ansi.Color.red () in
@@ -270,7 +270,7 @@ let set_thumb_color_schedules_render () =
   let t, slider = make_slider () in
   let before = !(t.schedule_count) in
   Slider.set_thumb_color slider Ansi.Color.red;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_thumb_color_noop_same () =
   let t, slider = make_slider ~thumb_color:Ansi.Color.red () in
@@ -311,7 +311,7 @@ let apply_props_schedules_render () =
   let t, slider = make_slider () in
   let before = !(t.schedule_count) in
   Slider.apply_props slider Slider.Props.default;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let apply_props_does_not_fire_on_change () =
   let fired = ref false in
@@ -343,7 +343,7 @@ let minimum_thumb_with_extreme_range () =
   let _t, slider = make_slider ~value:0. ~max:10000. ~viewport_size:1. () in
   let grid = render_slider slider ~width:20 ~height:1 in
   let thumb = count_thumb_cells_h grid ~y:0 ~width:20 in
-  greater_equal int ~msg:"thumb visible (at least 1 cell)" ~than:1 thumb
+  ge ~msg:"thumb visible" ~than:1 thumb
 
 let minimum_thumb_tiny_track_vertical () =
   let _t, slider =
@@ -352,7 +352,7 @@ let minimum_thumb_tiny_track_vertical () =
   in
   let grid = render_slider slider ~width:1 ~height:2 in
   let thumb = count_thumb_cells_v grid ~x:0 ~width:1 ~height:2 in
-  greater_equal int ~msg:"thumb visible (at least 1 cell)" ~than:1 thumb
+  ge ~msg:"thumb visible" ~than:1 thumb
 
 let viewport_equals_range_thumb_is_half () =
   let _t, slider = make_slider ~value:0. ~max:100. ~viewport_size:100. () in
@@ -368,7 +368,7 @@ let very_large_viewport_clamps_thumb () =
   (* viewport is clamped to range via set_viewport_size, but Props.make doesn't
      clamp — it passes through. However the thumb ratio still applies:
      200/(100+200) = 0.67 of track, so roughly 13 cells *)
-  greater_equal int ~msg:"thumb is large" ~than:10 thumb
+  ge ~msg:"thumb is large" ~than:10 thumb
 
 (* ── Mouse Interaction ── *)
 
@@ -417,7 +417,7 @@ let drag_fires_on_change () =
   Renderable.Private.render node grid ~delta:0.;
   Renderable.Private.emit_mouse node (mouse_down ~x:0 ~y:0);
   Renderable.Private.emit_mouse node (mouse_drag ~x:10 ~y:0);
-  greater int ~msg:"on_change fired" ~than:0 (List.length !changes)
+  gt ~msg:"on_change fired" ~than:0 (List.length !changes)
 
 let drag_beyond_bounds_clamps () =
   let _t, slider = make_slider ~value:50. () in
@@ -428,10 +428,14 @@ let drag_beyond_bounds_clamps () =
   (* Drag way past the right edge *)
   Renderable.Private.emit_mouse node (mouse_down ~x:10 ~y:0);
   Renderable.Private.emit_mouse node (mouse_drag ~x:100 ~y:0);
-  less_equal float_exact ~msg:"clamped to max" ~than:100. (Slider.value slider);
+  satisfies ~claim:"clamped to the max of 100" float_exact
+    (fun v -> v <= 100.)
+    (Slider.value slider);
   (* Drag way past the left edge *)
   Renderable.Private.emit_mouse node (mouse_drag ~x:(-50) ~y:0);
-  greater_equal float_exact ~msg:"clamped to min" ~than:0. (Slider.value slider)
+  satisfies ~claim:"clamped to the min of 0" float_exact
+    (fun v -> v >= 0.)
+    (Slider.value slider)
 
 let mouse_up_ends_drag () =
   let _t, slider = make_slider ~value:0. () in
@@ -443,7 +447,9 @@ let mouse_up_ends_drag () =
   Renderable.Private.emit_mouse node (mouse_down ~x:0 ~y:0);
   Renderable.Private.emit_mouse node (mouse_drag ~x:10 ~y:0);
   let v_during = Slider.value slider in
-  greater float_exact ~msg:"value changed during drag" ~than:0. v_during;
+  satisfies ~claim:"value moved above 0 during drag" float_exact
+    (fun v -> v > 0.)
+    v_during;
   (* Release *)
   Renderable.Private.emit_mouse node (mouse_up ~x:10 ~y:0);
   (* Subsequent drag should not update (not dragging anymore) *)
@@ -481,7 +487,7 @@ let mouse_down_stops_propagation () =
 let pp_produces_output () =
   let _t, slider = make_slider () in
   let s = Format.asprintf "%a" Slider.pp slider in
-  greater int ~msg:"non-empty" ~than:0 (String.length s)
+  satisfies ~claim:"non-empty" string (fun s -> String.length s > 0) s
 
 let pp_contains_slider () =
   let _t, slider = make_slider () in

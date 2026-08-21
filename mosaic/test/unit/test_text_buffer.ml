@@ -60,7 +60,9 @@ let set_text_increments_version () =
   let buf = Text_buffer.create () in
   let v0 = Text_buffer.version buf in
   Text_buffer.set_text buf "hello";
-  greater int ~msg:"version increased" ~than:v0 (Text_buffer.version buf)
+  satisfies ~claim:"version increased past the initial" int
+    (fun v -> v > v0)
+    (Text_buffer.version buf)
 
 (* ── Content — set_styled_text ── *)
 
@@ -151,7 +153,9 @@ let clear_increments_version () =
   Text_buffer.set_text buf "hello";
   let v1 = Text_buffer.version buf in
   Text_buffer.clear buf;
-  greater int ~msg:"version increased" ~than:v1 (Text_buffer.version buf)
+  satisfies ~claim:"version increased past the pre-clear value" int
+    (fun v -> v > v1)
+    (Text_buffer.version buf)
 
 (* ── Grapheme Count ── *)
 
@@ -323,8 +327,11 @@ let highlight_sorts_by_priority () =
   let hl = Text_buffer.highlights_in_range buf ~start:0 ~len:5 in
   equal ~msg:"count" int 2 (List.length hl);
   (* Sorted ascending by priority *)
-  less_equal int ~msg:"low first"
-    ~than:(Text_buffer.Highlight.priority (List.nth hl 1))
+  let p1 = Text_buffer.Highlight.priority (List.nth hl 1) in
+  satisfies
+    ~claim:(Printf.sprintf "low priority first (at most %d)" p1)
+    int
+    (fun p -> p <= p1)
     (Text_buffer.Highlight.priority (List.hd hl))
 
 let highlight_remove_by_ref () =
@@ -378,7 +385,9 @@ let set_tab_width_increments_version () =
   Text_buffer.set_text buf "hello";
   let v_before = Text_buffer.version buf in
   Text_buffer.set_tab_width buf 8;
-  greater int ~msg:"version increased" ~than:v_before (Text_buffer.version buf)
+  satisfies ~claim:"version increased past the prior value" int
+    (fun v -> v > v_before)
+    (Text_buffer.version buf)
 
 (* ── Width Method ── *)
 
@@ -396,13 +405,25 @@ let version_increments_on_mutations () =
   let v0 = Text_buffer.version buf in
   Text_buffer.set_text buf "a";
   let v1 = Text_buffer.version buf in
-  greater int ~msg:"set_text" ~than:v0 v1;
+  satisfies
+    ~claim:(Printf.sprintf "set_text bumped the version above %d" v0)
+    int
+    (fun v -> v > v0)
+    v1;
   Text_buffer.append buf "b";
   let v2 = Text_buffer.version buf in
-  greater int ~msg:"append" ~than:v1 v2;
+  satisfies
+    ~claim:(Printf.sprintf "append bumped the version above %d" v1)
+    int
+    (fun v -> v > v1)
+    v2;
   Text_buffer.clear buf;
   let v3 = Text_buffer.version buf in
-  greater int ~msg:"clear" ~than:v2 v3
+  satisfies
+    ~claim:(Printf.sprintf "clear bumped the version above %d" v2)
+    int
+    (fun v -> v > v2)
+    v3
 
 (* ── Default Style ── *)
 
@@ -525,11 +546,15 @@ let () =
           prop "line_count >= 1" printable_string (fun s ->
               let buf = Text_buffer.create () in
               Text_buffer.set_text buf s;
-              greater_equal int ~than:1 (Text_buffer.line_count buf));
+              satisfies ~claim:"at least 1 line" int
+                (fun n -> n >= 1)
+                (Text_buffer.line_count buf));
           prop "grapheme_count >= 0" printable_string (fun s ->
               let buf = Text_buffer.create () in
               Text_buffer.set_text buf s;
-              greater_equal int ~than:0 (Text_buffer.grapheme_count buf));
+              satisfies ~claim:"non-negative" int
+                (fun n -> n >= 0)
+                (Text_buffer.grapheme_count buf));
           prop "plain_text round-trip" printable_string (fun s ->
               let buf = Text_buffer.create () in
               Text_buffer.set_text buf s;
@@ -541,7 +566,11 @@ let () =
               let v1 = Text_buffer.version buf in
               Text_buffer.set_text buf s2;
               let v2 = Text_buffer.version buf in
-              greater int ~than:v1 v2);
+              satisfies
+                ~claim:(Printf.sprintf "above the earlier version %d" v1)
+                int
+                (fun v -> v > v1)
+                v2);
           prop "highlights_in_range subset" small_nat (fun n ->
               let buf = Text_buffer.create () in
               Text_buffer.set_text buf "hello world test";
@@ -556,6 +585,8 @@ let () =
                 Text_buffer.highlights_in_range buf ~start:start_offset
                   ~len:(end_offset - start_offset)
               in
-              less_equal int ~than:1 (List.length hl));
+              satisfies ~claim:"at most 1 highlight" int
+                (fun n -> n <= 1)
+                (List.length hl));
         ];
     ]

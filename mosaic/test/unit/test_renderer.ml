@@ -102,7 +102,8 @@ let adopted_screen_render_is_guarded () =
   let _child = make_child ~parent:(Renderer.root t) ~x:0 ~y:0 ~w:4 ~h:2 () in
   Renderer.render_frame t ~width:10 ~height:4 ~delta:0.;
   is_true ~msg:"renderer adopted the host screen" (Renderer.screen t == host);
-  greater int ~msg:"frame built into the host's hit grid" ~than:0
+  satisfies ~claim:"frame built into the host's hit grid (hit id > 0)" int
+    (fun id -> id > 0)
     (Matrix_screen.Hit_grid.get (Matrix_screen.next_hit_grid host) ~x:1 ~y:1);
   raises_match ~msg:"presentation belongs to the host"
     (function Invalid_argument _ -> true | _ -> false)
@@ -1121,7 +1122,9 @@ let click_dispatches_to_positioned_child () =
   let log = record_mouse child in
   do_frame t;
   dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
-  greater int ~msg:"received event" ~than:0 (List.length !log);
+  satisfies ~claim:"at least one event received" int
+    (fun n -> n > 0)
+    (List.length !log);
   let ev = List.hd (List.rev !log) in
   match Event.Mouse.kind ev with
   | Event.Mouse.Down { button = Left } -> ()
@@ -1142,7 +1145,9 @@ let overlapping_children_last_child_wins () =
   let log_b = record_mouse b in
   do_frame t;
   dispatch_mouse t (mouse_press ~x:5 ~y:5 ());
-  greater int ~msg:"b received" ~than:0 (List.length !log_b);
+  satisfies ~claim:"b received at least one event" int
+    (fun n -> n > 0)
+    (List.length !log_b);
   (* a should not receive the event directly — it may get it via bubbling from
      b's event dispatch, but the target hit should be b *)
   let _ = log_a in
@@ -1154,7 +1159,9 @@ let click_coordinates_are_absolute () =
   let log = record_mouse child in
   do_frame t;
   dispatch_mouse t (mouse_press ~x:7 ~y:8 ());
-  greater int ~msg:"has events" ~than:0 (List.length !log);
+  satisfies ~claim:"at least one event received" int
+    (fun n -> n > 0)
+    (List.length !log);
   let ev = List.hd (List.rev !log) in
   equal ~msg:"x" int 7 (Event.Mouse.x ev);
   equal ~msg:"y" int 8 (Event.Mouse.y ev)
@@ -1195,12 +1202,16 @@ let mouse_event_has_correct_modifiers () =
   let mods = { Matrix_input.Modifier.none with shift = true } in
   do_frame t;
   dispatch_mouse t (mouse_press ~modifiers:mods ~x:7 ~y:7 ());
-  greater int ~msg:"received" ~than:0 (List.length !log);
+  satisfies ~claim:"at least one event received" int
+    (fun n -> n > 0)
+    (List.length !log);
   let ev = List.hd !log in
   is_true ~msg:"shift" (Event.Mouse.modifiers ev).shift;
   log := [];
   dispatch_mouse t (mouse_motion ~modifiers:mods ~x:7 ~y:7 ());
-  greater int ~msg:"motion received" ~than:0 (List.length !log);
+  satisfies ~claim:"at least one motion event received" int
+    (fun n -> n > 0)
+    (List.length !log);
   let ev = List.hd !log in
   is_true ~msg:"motion shift" (Event.Mouse.modifiers ev).shift
 
@@ -1302,7 +1313,9 @@ let scroll_with_modifiers () =
   do_frame t;
   dispatch_mouse t
     (mouse_scroll ~modifiers:mods ~x:7 ~y:7 Matrix_input.Mouse.Scroll_down);
-  greater int ~msg:"received" ~than:0 (List.length !log);
+  satisfies ~claim:"at least one event received" int
+    (fun n -> n > 0)
+    (List.length !log);
   let ev = List.hd !log in
   is_true ~msg:"shift" (Event.Mouse.modifiers ev).shift
 
@@ -1337,7 +1350,12 @@ let captured_receives_all_mouse_events () =
   let count_before = List.length !log_a in
   (* Move to b's area — a should still receive *)
   dispatch_mouse t (mouse_motion ~left:true ~x:25 ~y:5 ());
-  greater int ~msg:"a received more" ~than:count_before (List.length !log_a);
+  satisfies
+    ~claim:
+      (Printf.sprintf "a received more than the %d events before" count_before)
+    int
+    (fun n -> n > count_before)
+    (List.length !log_a);
   ignore b
 
 let release_clears_capture () =
@@ -1500,7 +1518,8 @@ let scroll_on_dead_space_reaches_focused_scrollable () =
   do_frame t;
   ignore (Renderer.focus t (Scroll_box.node sb) : bool);
   dispatch_mouse t (mouse_scroll ~x:30 ~y:8 Matrix_input.Mouse.Scroll_down);
-  greater int ~msg:"focused scroll box scrolled" ~than:0
+  satisfies ~claim:"focused scroll box scrolled (scroll_top > 0)" int
+    (fun top -> top > 0)
     (Scroll_box.scroll_top sb)
 
 let selection_drag_auto_scrolls_scroll_box () =
@@ -1531,8 +1550,12 @@ let selection_drag_auto_scrolls_scroll_box () =
   dispatch_mouse t (mouse_press ~x:1 ~y:1 ());
   dispatch_mouse t (mouse_motion ~left:true ~x:1 ~y:7 ());
   do_frame ~width:20 ~height:8 ~delta:1000. t;
-  greater int ~msg:"scroll box moved down" ~than:0 (Scroll_box.scroll_top sb);
-  greater int ~msg:"selection was refreshed" ~than:2 !changes
+  satisfies ~claim:"scroll box moved down (scroll_top > 0)" int
+    (fun top -> top > 0)
+    (Scroll_box.scroll_top sb);
+  satisfies ~claim:"selection was refreshed (more than 2 changes)" int
+    (fun n -> n > 2)
+    !changes
 
 let selection_drag_auto_scrolls_scroll_box_when_pointer_leaves_it () =
   let t = make_renderer () in
@@ -1559,7 +1582,9 @@ let selection_drag_auto_scrolls_scroll_box_when_pointer_leaves_it () =
   dispatch_mouse t (mouse_press ~x:1 ~y:1 ());
   dispatch_mouse t (mouse_motion ~left:true ~x:1 ~y:10 ());
   do_frame ~width:20 ~height:12 ~delta:1000. t;
-  greater int ~msg:"scroll box moved down" ~than:0 (Scroll_box.scroll_top sb)
+  satisfies ~claim:"scroll box moved down (scroll_top > 0)" int
+    (fun top -> top > 0)
+    (Scroll_box.scroll_top sb)
 
 let selection_release_after_leaving_scroll_box_goes_to_anchor_ancestors () =
   let t = make_renderer () in

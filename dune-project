@@ -21,6 +21,17 @@
  (package
   (name thumper)))
 
+(pin
+ (url
+  "git+https://github.com/invariant-hq/windtrap.git")
+ (package
+  (name windtrap)))
+
+(pin
+ (url "git+ssh://git@github.com/invariant-hq/windtrap.git")
+ (package
+  (name ppx_windtrap)))
+
 (package
  (name matrix)
  (synopsis "Fast, modern terminal toolkit for OCaml")

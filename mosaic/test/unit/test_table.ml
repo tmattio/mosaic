@@ -675,19 +675,19 @@ let set_border_toggle () =
   let t, tbl = make_table () in
   let before = !(t.schedule_count) in
   Table.set_border tbl false;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_show_header_toggle () =
   let t, tbl = make_table () in
   let before = !(t.schedule_count) in
   Table.set_show_header tbl false;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_show_column_separator_toggle () =
   let t, tbl = make_table () in
   let before = !(t.schedule_count) in
   Table.set_show_column_separator tbl true;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_wrap_selection_enables_wrapping () =
   let _t, tbl =
@@ -713,7 +713,7 @@ let apply_props_updates () =
   in
   let before = !(t.schedule_count) in
   Table.apply_props tbl props;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count);
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count);
   equal ~msg:"index applied" int 3 (Table.selected_row tbl)
 
 let apply_props_same_no_extra_render () =

@@ -108,7 +108,7 @@ let create_empty_items_index_zero () =
 let set_selected_index_clamps () =
   let _t, tree = make_tree ~items:sample_items ~expand_depth:(-1) () in
   Tree.set_selected_index tree 100;
-  less int ~msg:"clamped high" ~than:100 (Tree.selected_index tree);
+  lt ~msg:"selected index clamped" ~than:100 (Tree.selected_index tree);
   Tree.set_selected_index tree (-5);
   equal ~msg:"clamped low" int 0 (Tree.selected_index tree)
 
@@ -488,13 +488,13 @@ let set_show_guides_toggle () =
   let t, tree = make_tree () in
   let before = !(t.schedule_count) in
   Tree.set_show_guides tree true;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_indent_size_changes () =
   let t, tree = make_tree () in
   let before = !(t.schedule_count) in
   Tree.set_indent_size tree 4;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_wrap_selection_enables_wrapping () =
   let _t, tree = make_tree ~items:sample_items ~selected_index:2 () in
@@ -518,7 +518,7 @@ let apply_props_updates () =
   in
   let before = !(t.schedule_count) in
   Tree.apply_props tree props;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count);
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count);
   equal ~msg:"index applied" int 1 (Tree.selected_index tree)
 
 let apply_props_same_no_extra_render () =

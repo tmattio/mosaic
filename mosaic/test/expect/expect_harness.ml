@@ -118,6 +118,21 @@ let frame app ~width ~height =
   print_newline ();
   print_string (grid_to_text grid)
 
+(* Windtrap's convergence verb moved to its cookbook (recipe 7): probe first,
+   then step, so a budget of [attempts] probes drives [attempts - 1] steps. *)
+let eventually ~msg ~attempts ~step ~diagnose probe =
+  let rec go n =
+    match probe () with
+    | Some v -> v
+    | None when n >= attempts ->
+        Windtrap.failf "%s: no convergence in %d attempts\n%s" msg attempts
+          (String.concat "\n" (diagnose ()))
+    | None ->
+        step ();
+        go (n + 1)
+  in
+  go 1
+
 (* One line per pending work item, for [eventually]'s failure report: the
    renderer already knows which nodes are holding the frame up, and a bare
    "did not settle" throws that away. *)
@@ -142,7 +157,7 @@ let settled_frame app ~width ~height =
   app.viewport_width <- width;
   set_viewport app.renderer ~width ~height;
   Renderer.render_frame app.renderer ~width ~height ~delta:0.;
-  Windtrap.eventually ~msg:"renderer settles within its pass budget" ~attempts:4
+  eventually ~msg:"renderer settles within its pass budget" ~attempts:4
     ~step:(fun () ->
       Renderer.render_frame app.renderer ~width ~height ~delta:0.)
     ~diagnose:(fun () -> pending_lines app.renderer)

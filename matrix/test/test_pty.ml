@@ -141,7 +141,7 @@ let test_spawn_echo () =
   Pty.set_nonblock pty;
   let buffer = Bytes.create 256 in
   let n = read_with_select pty buffer 0 256 1.0 in
-  greater int ~msg:"read some data" ~than:0 n;
+  satisfies ~claim:"read some data (> 0 bytes)" int (fun bytes -> bytes > 0) n;
   let output = Bytes.sub_string buffer 0 n in
   is_true ~msg:"contains Hello" (String.contains output 'H');
   Pty.close pty
@@ -155,8 +155,13 @@ let test_spawn_cat () =
 
   let buffer = Bytes.create 256 in
   let n = read_with_select pty buffer 0 256 1.0 in
-  greater_equal int ~msg:"read at least the data"
-    ~than:(String.length test_data) n;
+  satisfies
+    ~claim:
+      (Printf.sprintf "read at least the %d bytes written"
+         (String.length test_data))
+    int
+    (fun bytes -> bytes >= String.length test_data)
+    n;
   let output = Bytes.sub_string buffer 0 n in
   is_true ~msg:"contains test data" (String.contains output 'H');
   Pty.close pty
@@ -166,7 +171,7 @@ let test_spawn_sh () =
   Pty.set_nonblock pty;
   let buffer = Bytes.create 256 in
   let n = read_with_select pty buffer 0 256 1.0 in
-  greater int ~msg:"read some data" ~than:0 n;
+  satisfies ~claim:"read some data (> 0 bytes)" int (fun bytes -> bytes > 0) n;
   let output = Bytes.sub_string buffer 0 n in
   is_true ~msg:"contains Shell" (String.contains output 'S');
   Pty.close pty
@@ -251,7 +256,7 @@ let test_nonblocking_io () =
     try Pty.read pty buffer 0 256
     with Unix.Unix_error (Unix.EAGAIN, _, _) -> 0
   in
-  greater int ~msg:"read some data" ~than:0 n;
+  satisfies ~claim:"read some data (> 0 bytes)" int (fun bytes -> bytes > 0) n;
   Pty.close pty
 
 let test_multiple_writes () =
@@ -271,7 +276,11 @@ let test_multiple_writes () =
   in
   let n = read_with_select pty buffer 0 1024 1.0 in
 
-  greater_equal int ~msg:"read at least expected data" ~than:expected_total n;
+  satisfies
+    ~claim:(Printf.sprintf "read at least the %d bytes written" expected_total)
+    int
+    (fun bytes -> bytes >= expected_total)
+    n;
   let output = Bytes.sub_string buffer 0 n in
   is_true ~msg:"contains all lines"
     (String.contains output 'F' && String.contains output 'S'

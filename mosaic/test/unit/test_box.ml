@@ -156,10 +156,10 @@ let set_background () =
   let box = Box.create ~parent:root () in
   let before = !(t.schedule_count) in
   Box.set_background box (Some Ansi.Color.blue);
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count);
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count);
   let before2 = !(t.schedule_count) in
   Box.set_background box None;
-  greater int ~msg:"scheduled again" ~than:before2 !(t.schedule_count)
+  gt ~msg:"scheduled again" ~than:before2 !(t.schedule_count)
 
 let set_fill () =
   let t = make_ctx () in
@@ -167,7 +167,7 @@ let set_fill () =
   let box = Box.create ~parent:root () in
   let before = !(t.schedule_count) in
   Box.set_fill box false;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 (* ── Title ── *)
 
@@ -177,10 +177,10 @@ let set_title () =
   let box = Box.create ~parent:root () in
   let before = !(t.schedule_count) in
   Box.set_title box (Some "Hello");
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count);
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count);
   let before2 = !(t.schedule_count) in
   Box.set_title box None;
-  greater int ~msg:"scheduled again" ~than:before2 !(t.schedule_count)
+  gt ~msg:"scheduled again" ~than:before2 !(t.schedule_count)
 
 let set_title_alignment () =
   let t = make_ctx () in
@@ -188,7 +188,7 @@ let set_title_alignment () =
   let box = Box.create ~parent:root () in
   let before = !(t.schedule_count) in
   Box.set_title_alignment box `Center;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 (* ── apply_props ── *)
 
@@ -199,7 +199,7 @@ let apply_props_updates () =
   let props = Box.Props.make ~border:true ~title:"Test" () in
   let before = !(t.schedule_count) in
   Box.apply_props box props;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count);
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count);
   let b = border_of (Box.node box) in
   is_true ~msg:"border applied" (lp one b.top)
 

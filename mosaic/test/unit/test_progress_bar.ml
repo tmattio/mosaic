@@ -125,19 +125,19 @@ let set_min_schedules_render () =
   let t, bar = make_bar () in
   let before = !(t.schedule_count) in
   Progress_bar.set_min bar 0.1;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_max_schedules_render () =
   let t, bar = make_bar () in
   let before = !(t.schedule_count) in
   Progress_bar.set_max bar 2.0;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_orientation_schedules_render () =
   let t, bar = make_bar () in
   let before = !(t.schedule_count) in
   Progress_bar.set_orientation bar `Vertical;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_orientation_noop_same () =
   let t, bar = make_bar ~orientation:`Horizontal () in
@@ -149,13 +149,13 @@ let set_filled_color_schedules_render () =
   let t, bar = make_bar () in
   let before = !(t.schedule_count) in
   Progress_bar.set_filled_color bar Ansi.Color.red;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_empty_color_schedules_render () =
   let t, bar = make_bar () in
   let before = !(t.schedule_count) in
   Progress_bar.set_empty_color bar Ansi.Color.blue;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 (* ── Rendering ── *)
 
@@ -207,14 +207,14 @@ let apply_props_schedules_render () =
   let t, bar = make_bar () in
   let before = !(t.schedule_count) in
   Progress_bar.apply_props bar Progress_bar.Props.default;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 (* ── Pretty-printing ── *)
 
 let pp_produces_output () =
   let _t, bar = make_bar () in
   let s = Format.asprintf "%a" Progress_bar.pp bar in
-  greater int ~msg:"non-empty" ~than:0 (String.length s)
+  satisfies ~claim:"non-empty" string (fun s -> String.length s > 0) s
 
 let pp_contains_progress_bar () =
   let _t, bar = make_bar () in

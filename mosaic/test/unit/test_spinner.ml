@@ -113,7 +113,9 @@ let on_frame_large_delta_skips_frames () =
 let set_frame_set_resets_elapsed () =
   let _t, spinner = make_spinner () in
   advance_frame spinner ~delta:40.;
-  greater float_exact ~msg:"elapsed > 0" ~than:0. (Spinner.elapsed spinner);
+  satisfies ~claim:"elapsed above 0" float_exact
+    (fun e -> e > 0.)
+    (Spinner.elapsed spinner);
   Spinner.set_frame_set spinner Spinner.line;
   is_true ~msg:"elapsed reset" (Float.equal (Spinner.elapsed spinner) 0.)
 
@@ -126,15 +128,14 @@ let set_frame_set_clamps_index () =
   equal ~msg:"at frame 8" int 8 (Spinner.frame_index spinner);
   (* bounce has only 4 frames, so index should be clamped *)
   Spinner.set_frame_set spinner Spinner.bounce;
-  less int ~msg:"index in range"
-    ~than:(Array.length Spinner.bounce.frames)
-    (Spinner.frame_index spinner)
+  let frames = Array.length Spinner.bounce.frames in
+  lt ~msg:"frame index in range" ~than:frames (Spinner.frame_index spinner)
 
 let set_color_schedules_render () =
   let t, spinner = make_spinner () in
   let before = !(t.schedule_count) in
   Spinner.set_color spinner Ansi.Color.red;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_color_noop_same () =
   let t, spinner = make_spinner ~color:Ansi.Color.white () in
@@ -159,7 +160,9 @@ let apply_props_replaces_props () =
 let apply_props_resets_on_frame_set_change () =
   let _t, spinner = make_spinner () in
   advance_frame spinner ~delta:40.;
-  greater float_exact ~msg:"has elapsed" ~than:0. (Spinner.elapsed spinner);
+  satisfies ~claim:"has elapsed (above 0)" float_exact
+    (fun e -> e > 0.)
+    (Spinner.elapsed spinner);
   let props = Spinner.Props.make ~frame_set:Spinner.line () in
   Spinner.apply_props spinner props;
   is_true ~msg:"elapsed reset" (Float.equal (Spinner.elapsed spinner) 0.)
@@ -168,7 +171,7 @@ let apply_props_schedules_render () =
   let t, spinner = make_spinner () in
   let before = !(t.schedule_count) in
   Spinner.apply_props spinner Spinner.Props.default;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 (* ── Measure ── *)
 
@@ -181,14 +184,16 @@ let measure_width_is_max_frame_width () =
   Renderable.Private.render node grid ~delta:0.;
   (* The spinner should have an intrinsic width of 1 for braille chars *)
   let text = Matrix_grid.get_text grid 0 in
-  greater int ~msg:"renders something" ~than:0 (String.length text)
+  satisfies ~claim:"renders something (non-empty)" string
+    (fun t -> String.length t > 0)
+    text
 
 (* ── Pretty-printing ── *)
 
 let pp_produces_output () =
   let _t, spinner = make_spinner () in
   let s = Format.asprintf "%a" Spinner.pp spinner in
-  greater int ~msg:"non-empty" ~than:0 (String.length s)
+  satisfies ~claim:"non-empty" string (fun s -> String.length s > 0) s
 
 let pp_contains_spinner () =
   let _t, spinner = make_spinner () in

@@ -241,7 +241,7 @@ let pp_does_not_crash () =
   let ppf = Format.formatter_of_buffer buf in
   Markdown.pp ppf md;
   Format.pp_print_flush ppf ();
-  greater int ~msg:"produced output" ~than:0 (Buffer.length buf)
+  gt ~msg:"produced output (bytes)" ~than:0 (Buffer.length buf)
 
 (* ── Runner ── *)
 

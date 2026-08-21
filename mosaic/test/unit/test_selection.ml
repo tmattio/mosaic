@@ -50,7 +50,9 @@ let set_anchor_replaces_callback () =
   (* Callback should be used before set_anchor *)
   let _ = Selection.anchor sel in
   let count_before = !counter in
-  greater int ~msg:"callback was called" ~than:0 count_before;
+  satisfies ~claim:"callback was called at least once" int
+    (fun n -> n > 0)
+    count_before;
   (* Replace with static *)
   Selection.set_anchor sel (pt 42 42);
   counter := 0;
@@ -210,13 +212,17 @@ let () =
               let sel =
                 Selection.create ~anchor:(pt ax ay) ~focus:(pt fx fy) ()
               in
-              greater_equal int ~than:1 (Selection.bounds sel).width);
+              satisfies ~claim:"width at least 1" int
+                (fun w -> w >= 1)
+                (Selection.bounds sel).width);
           prop "height >= 1" (Gen.pair gen_point gen_point)
             (fun ((ax, ay), (fx, fy)) ->
               let sel =
                 Selection.create ~anchor:(pt ax ay) ~focus:(pt fx fy) ()
               in
-              greater_equal int ~than:1 (Selection.bounds sel).height);
+              satisfies ~claim:"height at least 1" int
+                (fun h -> h >= 1)
+                (Selection.bounds sel).height);
           prop "symmetric in anchor and focus" (Gen.pair gen_point gen_point)
             (fun ((ax, ay), (fx, fy)) ->
               let s1 =

@@ -232,7 +232,9 @@ let test_immediate_redraw_bypasses_live_cadence_once () =
   equal ~msg:"one immediate follow-up frame" int 2 !frames;
   match !request_at with
   | Some requested ->
-      less float_exact ~msg:"follow-up bypasses one-second cadence" ~than:0.1
+      satisfies ~claim:"follow-up bypasses the one-second cadence (< 0.1s)"
+        float_exact
+        (fun dt -> dt < 0.1)
         (!second_frame_at -. requested)
   | None -> fail "missing redraw request"
 
@@ -523,8 +525,12 @@ let test_focus_restore_runs_only_after_blur_once () =
    (Matrix.Input.Focus, after_second_focus);
   ] ->
       equal ~msg:"blur itself does not restore terminal modes" int 0 after_blur;
-      greater int ~msg:"first focus after blur restores terminal modes"
-        ~than:after_blur after_first_focus;
+      satisfies ~msg:"first focus after blur restores terminal modes"
+        ~claim:
+          (Printf.sprintf "more than the %d bytes written at blur" after_blur)
+        int
+        (fun n -> n > after_blur)
+        after_first_focus;
       equal ~msg:"second focus does not restore modes again" int
         after_first_focus after_second_focus
   | _ -> fail "expected blur, focus, focus input trace"
@@ -626,8 +632,9 @@ let test_unchanged_alt_submit_emits_no_bytes () =
   Matrix.prepare app;
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"stable";
   Matrix.submit app;
-  greater int ~msg:"first alt frame writes" ~than:0
-    (String.length (output state));
+  satisfies ~claim:"first alt frame writes (non-empty output)" string
+    (fun s -> String.length s > 0)
+    (output state);
   Buffer.clear state.output;
   Matrix.prepare app;
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"stable";
@@ -732,8 +739,9 @@ let test_cursor_only_submit_emits_output () =
   Matrix.set_cursor_position app ~row:1 ~col:3;
   Matrix.submit app;
   let output = output state in
-  greater int ~msg:"cursor-only frame emits terminal output" ~than:0
-    (String.length output);
+  satisfies ~claim:"cursor-only frame emits terminal output (non-empty)" string
+    (fun s -> String.length s > 0)
+    output;
   contains ~msg:"cursor-only frame moves the cursor" ~sub:"\027[1;3H" output
 
 let test_first_submit_emits_cursor_style () =
@@ -804,9 +812,8 @@ let test_submit_emits_frame_above_default_capacity () =
   Matrix.prepare app;
   draw ();
   Matrix.submit app;
-  greater int
-    ~msg:"submit emits the complete frame above the default buffer size"
-    ~than:(2 * 1024 * 1024)
+  satisfies ~claim:"complete frame above the default 2 MiB buffer size" int
+    (fun len -> len > 2 * 1024 * 1024)
     (String.length (output state));
   Buffer.clear state.output;
   Matrix.prepare app;
@@ -1332,6 +1339,16 @@ let test_mixed_static_writes_fall_back_to_growth () =
   not_contains ~msg:"mixed queue does not scroll into history" ~sub:"\027[1S"
     output
 
+(* Leftmost, non-overlapping occurrence count; [contains ~sub] never counts. *)
+let count_occurrences ~sub s =
+  let n = String.length sub in
+  let rec go i acc =
+    if n = 0 || i + n > String.length s then acc
+    else if String.sub s i n = sub then go (i + n) (acc + 1)
+    else go (i + 1) acc
+  in
+  go 0 0
+
 let test_full_height_consecutive_static_writes_scroll_once_per_row () =
   let app, state =
     make_app ~mode:`Primary ~min_tui_height:24 ~target_fps:None
@@ -1345,8 +1362,8 @@ let test_full_height_consecutive_static_writes_scroll_once_per_row () =
   let output = output state in
   in_order ~msg:"consecutive full-height writes stay ordered"
     ~subs:[ "first"; "second" ] output;
-  contains ~msg:"full-height writes scroll once per consumed row" ~count:2
-    ~sub:"\027[1S" output
+  equal ~msg:"full-height writes scroll once per consumed row" int 2
+    (count_occurrences ~sub:"\027[1S" output)
 
 let test_static_write_ignored_in_alt_mode () =
   let app, state =
@@ -1598,7 +1615,9 @@ let test_wakeup_renders_without_input () =
       Thread.join requester;
       Thread.join watchdog;
       equal ~msg:"wakeup produces the requested frame" int 2 !frames;
-      less float_exact ~msg:"frame renders without waiting for input" ~than:1.
+      satisfies ~claim:"frame renders without waiting for input (< 1s)"
+        float_exact
+        (fun dt -> dt < 1.)
         !second_frame_elapsed)
 
 let () =

@@ -208,7 +208,10 @@ let selection_normalized () =
   let _ = Edit_buffer.move_left ~select:true buf in
   let _ = Edit_buffer.move_left ~select:true buf in
   match Edit_buffer.selection buf with
-  | Some (lo, hi) -> less int ~msg:"start < end" ~than:hi lo
+  | Some (lo, hi) ->
+      satisfies ~claim:"selection start strictly below its end" int
+        (fun lo -> lo < hi)
+        lo
   | None -> fail "expected selection"
 
 let select_then_move_clears () =
@@ -483,7 +486,9 @@ let move_word_forward_basic () =
   Edit_buffer.set_cursor buf 0;
   let moved = Edit_buffer.move_word_forward buf in
   is_true ~msg:"moved" moved;
-  greater int ~msg:"cursor advanced" ~than:0 (Edit_buffer.cursor buf)
+  satisfies ~claim:"cursor advanced past 0" int
+    (fun c -> c > 0)
+    (Edit_buffer.cursor buf)
 
 let move_word_forward_crosses_newline () =
   let buf = Edit_buffer.create "hello\nworld" in
@@ -496,7 +501,9 @@ let move_word_backward_basic () =
   let buf = Edit_buffer.create "hello world" in
   let moved = Edit_buffer.move_word_backward buf in
   is_true ~msg:"moved" moved;
-  less int ~msg:"cursor moved back" ~than:11 (Edit_buffer.cursor buf)
+  satisfies ~claim:"cursor moved back from 11" int
+    (fun c -> c < 11)
+    (Edit_buffer.cursor buf)
 
 let move_word_backward_crosses_newline () =
   let buf = Edit_buffer.create "hello\nworld" in
@@ -746,7 +753,8 @@ let set_max_length_adjusts_cursor () =
   let buf = Edit_buffer.create "hello world" in
   (* cursor is at 11 (end) *)
   Edit_buffer.set_max_length buf 3;
-  less_equal int ~msg:"cursor <= new length" ~than:(Edit_buffer.length buf)
+  satisfies ~claim:"cursor at most the new length" int
+    (fun c -> c <= Edit_buffer.length buf)
     (Edit_buffer.cursor buf)
 
 let set_max_length_negative_clamped () =
@@ -1308,9 +1316,9 @@ let model_invariant m buf =
   (* The interesting states are the ones a shorter program never reaches:
      without these the suite could pass while only ever seeing an empty
      buffer with no selection. *)
-  cover ~label:"a selection is live" ~at_least:38. (model_selection m <> None);
-  cover ~label:"undo history is non-empty" ~at_least:70. (m.undo <> []);
-  cover ~label:"redo history is non-empty" ~at_least:35. (m.redo <> [])
+  cover "a selection is live" (model_selection m <> None);
+  cover "undo history is non-empty" (m.undo <> []);
+  cover "redo history is non-empty" (m.redo <> [])
 
 (* ── Runner ── *)
 

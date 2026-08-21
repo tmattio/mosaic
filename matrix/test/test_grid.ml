@@ -244,7 +244,12 @@ let grapheme_store_churn_stays_balanced () =
     | _ -> ());
     let live, slots = Grid.grapheme_stats grid in
     max_slots := max !max_slots slots;
-    less_equal int ~msg:"live bounded by cells" ~than:(width * height) live
+    satisfies
+      ~claim:
+        (Printf.sprintf "live graphemes bounded by the %d cells" (width * height))
+      int
+      (fun n -> n <= width * height)
+      live
   done;
   Grid.clear grid;
   let live, _slots = Grid.grapheme_stats grid in
@@ -422,8 +427,8 @@ let alpha_blit_blends_fg_bg () =
   (* Validate qualitative blend: green increases from 0, blue decreases from
      255. Background alpha should match the overlay value (128) rather than
      compositing with the destination alpha. *)
-  greater int ~msg:"bg green increased" ~than:0 g_bg;
-  less int ~msg:"bg blue decreased" ~than:255 b_bg;
+  satisfies ~claim:"bg green increased (> 0)" int (fun g -> g > 0) g_bg;
+  satisfies ~claim:"bg blue decreased (< 255)" int (fun b -> b < 255) b_bg;
   equal ~msg:"bg red stays 0" int 0 r_bg;
   equal ~msg:"bg alpha is 128" int 128 a_bg;
   let r_fg, _g_fg, _b_fg, a_fg = read_fg dst 0 0 in
@@ -696,8 +701,8 @@ let draw_text_blends_fg_alpha_over_opaque_bg () =
   let r, _g, b, a = read_fg grid 0 0 in
   (* Blended path sets fg alpha to destination bg alpha and retains some blue *)
   equal ~msg:"fg alpha promoted" int 255 a;
-  greater int ~msg:"blue component preserved" ~than:0 b;
-  greater int ~msg:"red component applied" ~than:0 r
+  satisfies ~claim:"blue component preserved (> 0)" int (fun blue -> blue > 0) b;
+  satisfies ~claim:"red component applied (> 0)" int (fun red -> red > 0) r
 
 let blit_region_copies_alpha_when_source_ignores_alpha () =
   let src = Grid.create ~width:1 ~height:1 () in
@@ -1356,13 +1361,13 @@ let opacity_stack_grows_beyond_initial_capacity () =
     Grid.push_opacity grid 0.5
   done;
   let expected = Float.pow 0.5 40. in
-  less float_exact ~msg:"opacity product tracks all pushes" ~than:1e-18
-    (Float.abs (Grid.current_opacity grid -. expected));
+  equal ~msg:"opacity product tracks all pushes" (float 1e-18) expected
+    (Grid.current_opacity grid);
   for _ = 1 to 40 do
     Grid.pop_opacity grid
   done;
-  less float_exact ~msg:"opacity restores to 1 after balanced pops" ~than:1e-18
-    (Float.abs (Grid.current_opacity grid -. 1.0))
+  equal ~msg:"opacity restores to 1 after balanced pops" (float 1e-18) 1.0
+    (Grid.current_opacity grid)
 
 let clear_preserves_scissor_state () =
   let grid = Grid.create ~width:3 ~height:1 () in
@@ -1515,10 +1520,12 @@ let tests =
         equal ~msg:"char preserved" int (Char.code 'X') (read_char grid 0 0);
         (* FG should be tinted (white + red overlay) *)
         let r_fg, g_fg, b_fg, a_fg = read_fg grid 0 0 in
-        greater int ~msg:"fg red increased" ~than:128 r_fg;
+        satisfies ~claim:"fg red increased (> 128)" int (fun r -> r > 128) r_fg;
         (* Should be blended *)
-        less int ~msg:"fg green decreased" ~than:255 g_fg;
-        less int ~msg:"fg blue decreased" ~than:255 b_fg;
+        satisfies ~claim:"fg green decreased (< 255)" int
+          (fun g -> g < 255)
+          g_fg;
+        satisfies ~claim:"fg blue decreased (< 255)" int (fun b -> b < 255) b_fg;
         equal ~msg:"fg alpha preserved" int 255 a_fg;
         (* BG should be blended (red over black) *)
         let r_bg, g_bg, b_bg, a_bg = read_bg grid 0 0 in

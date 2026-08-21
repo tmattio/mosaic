@@ -57,7 +57,9 @@ let test_single_cell_frame () =
         Grid.draw_text grid ~x:0 ~y:0 ~text:"X")
   in
   let output = Screen.render frame in
-  greater int ~msg:"contains text" ~than:0 (String.length output);
+  satisfies ~claim:"non-empty output" string
+    (fun s -> String.length s > 0)
+    output;
   is_true ~msg:"contains X" (String.contains output 'X')
 
 let test_simple_text_rendering () =
@@ -67,7 +69,9 @@ let test_simple_text_rendering () =
         Grid.draw_text grid ~x:0 ~y:0 ~text:"Hello")
   in
   let output = Screen.render frame in
-  greater int ~msg:"output not empty" ~than:0 (String.length output);
+  satisfies ~claim:"non-empty output" string
+    (fun s -> String.length s > 0)
+    output;
   (* Check that all characters from "Hello" appear in output *)
   is_true ~msg:"contains H" (String.contains output 'H');
   is_true ~msg:"contains e" (String.contains output 'e');
@@ -182,9 +186,15 @@ let test_diff_only_changed_cells () =
   let moves2 = count_cursor_moves output2 in
 
   (* Should not require additional cursor moves once diff is warmed up *)
-  less_equal int ~msg:"second frame has <= moves" ~than:moves1 moves2;
+  satisfies
+    ~claim:(Printf.sprintf "at most the first frame's %d cursor moves" moves1)
+    int
+    (fun moves -> moves <= moves1)
+    moves2;
   contains ~msg:"moves cursor to changed cell" ~sub:"\027[1;5H" output2;
-  greater int ~msg:"second frame not empty" ~than:0 (String.length output2)
+  satisfies ~claim:"non-empty second frame" string
+    (fun s -> String.length s > 0)
+    output2
 
 let test_no_diff_when_unchanged () =
   let r = create_renderer ~width:5 ~height:5 () in
@@ -222,7 +232,9 @@ let test_wide_char_diff () =
   (* Chinese chars, 2 cells each *)
   let output2 = Screen.render f2 in
 
-  greater int ~msg:"wide char output" ~than:0 (String.length output2)
+  satisfies ~claim:"non-empty wide-char output" string
+    (fun s -> String.length s > 0)
+    output2
 
 (* Regression: the defensive clear for changed zero-width (null) cells used
    to emit its space with whatever SGR state was left over from the previous
@@ -241,7 +253,9 @@ let test_null_cell_clear_uses_cell_colors () =
           ~bg:green ~attrs:Ansi.Attr.empty ())
   in
   let output2 = Screen.render f2 in
-  greater int ~msg:"null cell clear emitted" ~than:0 (String.length output2);
+  satisfies ~claim:"null cell clear emitted (non-empty output)" string
+    (fun s -> String.length s > 0)
+    output2;
   contains ~msg:"clear uses the cell's background" ~sub:"48;2;0;200;0" output2
 
 (* Regression: complex graphemes must be diffed by content. With buffers
@@ -298,7 +312,9 @@ let test_build_visual () =
         Grid.draw_text grid ~x:0 ~y:0 ~text:"Hi")
   in
   let output = Screen.render frame in
-  greater int ~msg:"visual build works" ~than:0 (String.length output)
+  satisfies ~claim:"visual build produces output" string
+    (fun s -> String.length s > 0)
+    output
 
 let test_resize_preserves_content () =
   let r = create_renderer ~width:5 ~height:5 () in
@@ -318,7 +334,10 @@ let test_resize_preserves_content () =
   let output2 = Screen.render f2 in
 
   (* Should not re-render unchanged cells *)
-  less int ~msg:"resize works" ~than:100 (String.length output2)
+  satisfies ~claim:"fewer than 100 bytes (unchanged cells not re-rendered)"
+    string
+    (fun s -> String.length s < 100)
+    output2
 
 let test_resize_smaller () =
   (* Edge case: shrinking grid *)
@@ -336,7 +355,9 @@ let test_resize_smaller () =
   in
   let output2 = Screen.render f2 in
 
-  greater int ~msg:"shrink works" ~than:0 (String.length output2)
+  satisfies ~claim:"non-empty output after shrink" string
+    (fun s -> String.length s > 0)
+    output2
 
 let test_resize_clears_both_buffers () =
   (* Test that resize clears both current and next buffers, ensuring proper
@@ -364,7 +385,11 @@ let test_resize_clears_both_buffers () =
   (* The output should not contain the old red background content *)
   (* Check that we don't have excessive output (which would indicate stale content).
      A full 10x10 redraw would produce ~1000+ bytes; the 5x5 overlap diff is ~250. *)
-  less int ~msg:"resize clears buffers" ~than:400 (String.length output2);
+  satisfies
+    ~claim:"fewer than 400 bytes (a 5x5 overlap diff, not a stale full redraw)"
+    string
+    (fun s -> String.length s < 400)
+    output2;
 
   (* Verify the new content is rendered *)
   is_true ~msg:"new content rendered" (String.contains output2 'S')
@@ -392,8 +417,10 @@ let test_resize_same_size_preserves_diff_baseline () =
   Screen.resize r ~width:8 ~height:3;
   let f2 = build_screen r ~width:8 ~height:3 (fun _grid _hits -> ()) in
   let output = Screen.render f2 in
-  greater int ~msg:"same-size resize keeps baseline for clears" ~than:0
-    (String.length output)
+  satisfies ~claim:"same-size resize keeps baseline for clears (non-empty)"
+    string
+    (fun s -> String.length s > 0)
+    output
 
 let test_cursor_clamped_on_resize () =
   let r = create_renderer ~width:3 ~height:3 () in
@@ -423,7 +450,7 @@ let test_post_process_receives_delta () =
 
   is_true ~msg:"delta was received" (Option.is_some !delta_received);
   let delta = Option.get !delta_received in
-  greater_equal float_exact ~msg:"delta is non-negative" ~than:0. delta
+  satisfies ~claim:"non-negative delta" float_exact (fun d -> d >= 0.) delta
 
 let test_post_process_chain () =
   (* Multiple post-process functions should be applied in order *)
@@ -572,9 +599,11 @@ let test_stats_tracking () =
   let stats = Screen.stats r in
   let metrics = Screen.last_metrics r in
   equal ~msg:"frame count" int 1 stats.frame_count;
-  greater int ~msg:"cells updated" ~than:0 metrics.cells;
-  greater int ~msg:"output bytes" ~than:0 metrics.bytes;
-  greater_equal float_exact ~msg:"frame time" ~than:0. metrics.frame_time_ms
+  satisfies ~claim:"cells updated (> 0)" int (fun n -> n > 0) metrics.cells;
+  satisfies ~claim:"output bytes (> 0)" int (fun n -> n > 0) metrics.bytes;
+  satisfies ~claim:"non-negative frame time" float_exact
+    (fun t -> t >= 0.)
+    metrics.frame_time_ms
 
 (* 7. Configuration Tests *)
 
@@ -622,7 +651,8 @@ let test_reset_triggers_next_diff () =
   let f2 = build_screen r ~width:1 ~height:1 (fun _ _ -> ()) in
   let output2 = Screen.render f2 in
 
-  greater_equal int ~msg:"cursor moves after reset" ~than:1
+  satisfies ~claim:"at least 1 cursor move after reset" int
+    (fun moves -> moves >= 1)
     (count_cursor_moves output2);
   is_true ~msg:"clears previous glyph" (not (String.contains output2 'X'))
 
@@ -636,7 +666,9 @@ let test_extremely_wide_char () =
         Grid.draw_text grid ~x:0 ~y:0 ~text:"🎨🚀✨")
   in
   let output = Screen.render f in
-  greater int ~msg:"emoji renders" ~than:0 (String.length output)
+  satisfies ~claim:"emoji renders (non-empty output)" string
+    (fun s -> String.length s > 0)
+    output
 
 let test_buffer_overflow_prevention () =
   (* Test with large frame (200x60) and complex content to ensure 2MB buffer
@@ -663,7 +695,9 @@ let test_buffer_overflow_prevention () =
   in
   (* Should not raise buffer overflow *)
   let output = Screen.render f in
-  greater int ~msg:"large frame renders without overflow" ~than:1000
+  satisfies
+    ~claim:"more than 1000 bytes (large frame rendered without overflow)" int
+    (fun len -> len > 1000)
     (String.length output)
 
 let test_render_large_hyperlinked_frame_succeeds () =
@@ -687,8 +721,8 @@ let test_render_large_hyperlinked_frame_succeeds () =
         done)
   in
   let output = Screen.render frame in
-  greater int ~msg:"large hyperlinked frame renders above old fixed buffer"
-    ~than:(2 * 1024 * 1024)
+  satisfies ~claim:"above the old fixed buffer's 2 MiB" int
+    (fun len -> len > 2 * 1024 * 1024)
     (String.length output)
 
 let test_resize_full_redraw () =
@@ -714,7 +748,7 @@ let test_resize_full_redraw () =
 
   (* Should contain some cursor movements for the diff *)
   let moves = count_cursor_moves output2 in
-  greater int ~msg:"contains cursor moves" ~than:0 moves
+  satisfies ~claim:"contains cursor moves (> 0)" int (fun n -> n > 0) moves
 
 let test_resize_hit_grid_cleared () =
   (* Test that hit grids don't leak stale IDs after resize *)
@@ -929,7 +963,9 @@ let test_color_only_change () =
   let output2 = Screen.render f2 in
 
   (* Should detect color change *)
-  greater int ~msg:"color change detected" ~than:10 (String.length output2)
+  satisfies ~claim:"more than 10 bytes (color change detected)" string
+    (fun s -> String.length s > 10)
+    output2
 
 let test_attribute_only_change () =
   (* Test that attribute changes (bold, italic, etc) trigger diff *)
@@ -949,7 +985,9 @@ let test_attribute_only_change () =
   let output2 = Screen.render f2 in
 
   (* Should detect attribute change *)
-  greater int ~msg:"attribute change detected" ~than:10 (String.length output2)
+  satisfies ~claim:"more than 10 bytes (attribute change detected)" string
+    (fun s -> String.length s > 10)
+    output2
 
 (* 9. Performance Characteristics Tests *)
 
@@ -1012,10 +1050,12 @@ let test_pipeline_composition () =
   let f2 = f1 in
   let output = Screen.render f2 in
 
-  greater_equal int ~msg:"pipeline executed" ~than:0 (String.length output);
-  is_true ~msg:"build called" (List.mem "build" !call_order);
-  is_true ~msg:"post1 called" (List.mem "post1" !call_order);
-  is_true ~msg:"post2 called" (List.mem "post2" !call_order)
+  satisfies ~claim:"pipeline executed (render returns, length >= 0)" int
+    (fun len -> len >= 0)
+    (String.length output);
+  mem ~msg:"build called" string "build" !call_order;
+  mem ~msg:"post1 called" string "post1" !call_order;
+  mem ~msg:"post2 called" string "post2" !call_order
 
 (* Test Suite *)
 

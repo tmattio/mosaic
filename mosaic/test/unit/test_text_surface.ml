@@ -74,7 +74,7 @@ let wrap_word_at_boundary () =
   let s = make_surface ~width:10 ~content:"hello world foo" ~wrap:`Word () in
   let info = Text_surface.display_info s in
   (* "hello " fits in 10, "world foo" doesn't all fit, should wrap *)
-  greater_equal int ~msg:"wraps" ~than:2 (Array.length info.lines)
+  ge ~msg:"wraps" ~than:2 (Array.length info.lines)
 
 let wrap_word_preserves_sources () =
   let s =
@@ -376,7 +376,9 @@ let measure_min_content_word_wrap () =
       ~available_height:Toffee.Available_space.Max_content
   in
   (* Min_content with word wrap: wraps at width=1, words break to char level *)
-  greater_equal float_exact ~msg:"width >= 1" ~than:1. result.width
+  satisfies ~claim:"width at least 1" float_exact
+    (fun w -> w >= 1.)
+    result.width
 
 let measure_definite_caps_with_wrap () =
   let s = make_surface ~content:"hello world" ~wrap:`Word () in
@@ -385,9 +387,13 @@ let measure_definite_caps_with_wrap () =
       ~available_height:Toffee.Available_space.Max_content
   in
   (* With wrapping: width should not exceed available width of 8 *)
-  less_equal float_exact ~msg:"width <= 8" ~than:8. result.width;
+  satisfies ~claim:"width at most the available 8" float_exact
+    (fun w -> w <= 8.)
+    result.width;
   (* Content wraps: "hello" + "world" -> at least 2 lines *)
-  greater_equal float_exact ~msg:"height >= 2" ~than:2. result.height
+  satisfies ~claim:"height at least 2" float_exact
+    (fun h -> h >= 2.)
+    result.height
 
 let measure_definite_no_wrap_uncapped () =
   let s = make_surface ~content:"hello world" () in
@@ -469,8 +475,12 @@ let measure_empty_buffer () =
       ~available_height:Toffee.Available_space.Max_content
   in
   (* Empty buffer should return minimum 1x1 *)
-  greater_equal float_exact ~msg:"width >= 1" ~than:1. result.width;
-  greater_equal float_exact ~msg:"height >= 1" ~than:1. result.height
+  satisfies ~claim:"width at least 1" float_exact
+    (fun w -> w >= 1.)
+    result.width;
+  satisfies ~claim:"height at least 1" float_exact
+    (fun h -> h >= 1.)
+    result.height
 
 let measure_height_grows_for_wrapped () =
   (* 20 chars in 10-wide viewport should produce 2 lines *)
@@ -531,7 +541,7 @@ let wrap_word_long_word_fallback () =
   let s = make_surface ~width:5 ~content:"abcdefghij" ~wrap:`Word () in
   let info = Text_surface.display_info s in
   (* "abcdefghij" (10 chars) can't break at word boundaries, must char-break *)
-  greater_equal int ~msg:"wraps" ~than:2 (Array.length info.lines)
+  ge ~msg:"wraps" ~than:2 (Array.length info.lines)
 
 let wrap_word_empty_lines_preserved () =
   let s = make_surface ~width:40 ~content:"a\n\nb" ~wrap:`Word () in
@@ -540,7 +550,7 @@ let wrap_word_empty_lines_preserved () =
 let wrap_word_single_char_words () =
   let s = make_surface ~width:5 ~content:"a b c d e f" ~wrap:`Word () in
   let info = Text_surface.display_info s in
-  greater_equal int ~msg:"wraps" ~than:2 (Array.length info.lines)
+  ge ~msg:"wraps" ~than:2 (Array.length info.lines)
 
 (* ── Property Tests ── *)
 
@@ -668,16 +678,16 @@ let () =
           prop "display_line_count >= line_count" small_string (fun s ->
               let surface = make_surface ~width:5 ~content:s ~wrap:`Char () in
               let buf = Text_surface.buffer surface in
-              greater_equal int
-                ~than:(Text_buffer.line_count buf)
+              let lines = Text_buffer.line_count buf in
+              ge ~msg:"display lines cover the buffer" ~than:lines
                 (Text_surface.display_line_count surface));
           prop "scroll_x always >= 0" small_string (fun s ->
               let surface = make_surface ~width:5 ~content:s () in
               Text_surface.set_scroll_x surface (-100);
-              greater_equal int ~than:0 (Text_surface.scroll_x surface));
+              ge ~than:0 (Text_surface.scroll_x surface));
           prop "scroll_y always >= 0" small_string (fun s ->
               let surface = make_surface ~height:3 ~content:s () in
               Text_surface.set_scroll_y surface (-100);
-              greater_equal int ~than:0 (Text_surface.scroll_y surface));
+              ge ~than:0 (Text_surface.scroll_y surface));
         ];
     ]

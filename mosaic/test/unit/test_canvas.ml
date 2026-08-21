@@ -118,7 +118,7 @@ let clear_schedules_render () =
   let canvas = Canvas.create ~parent:root () in
   let before = !(t.schedule_count) in
   Canvas.clear canvas;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 (* ── Properties ── *)
 
@@ -146,7 +146,7 @@ let set_respect_alpha_schedules () =
   let canvas = Canvas.create ~parent:root () in
   let before = !(t.schedule_count) in
   Canvas.set_respect_alpha canvas true;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 (* ── apply_props ── *)
 
@@ -175,7 +175,7 @@ let request_render_schedules () =
   let canvas = Canvas.create ~parent:root () in
   let before = !(t.schedule_count) in
   Canvas.request_render canvas;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 (* ── Drawing ── *)
 
@@ -289,7 +289,7 @@ let on_draw_forwards_delta () =
   Canvas.set_on_draw canvas (Some (fun _ ~delta -> seen_delta := delta));
   layout_node node ~x:0 ~y:0 ~width:10 ~height:5;
   Renderable.Private.render node parent_grid ~delta:42.0;
-  equal ~msg:"delta" (float 0.) 42.0 !seen_delta
+  equal ~msg:"delta" float_exact 42.0 !seen_delta
 
 let on_draw_none_clears_callback () =
   let t = make_ctx () in
@@ -374,9 +374,8 @@ let pp_output () =
   let root = make_root t in
   let canvas = Canvas.create ~parent:root ~id:"test-canvas" () in
   let s = Format.asprintf "%a" Canvas.pp canvas in
-  greater int ~msg:"contains id" ~than:0 (String.length s);
-  is_true ~msg:"has Canvas prefix"
-    (String.length s >= 6 && String.sub s 0 6 = "Canvas")
+  contains ~msg:"contains id" ~sub:"test-canvas" s;
+  starts_with ~affix:"Canvas" s
 
 (* ── Runner ── *)
 

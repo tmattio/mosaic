@@ -1109,9 +1109,7 @@ let test_unterminated_paste_releases_input_after_idle_timeout () =
   equal ~msg:"unterminated paste emits nothing immediately"
     (list event_testable) []
     (feed_user parser partial 0 (Bytes.length partial));
-  equal ~msg:"open paste owns an idle deadline"
-    (option (float 0.0))
-    (Some 5.0)
+  equal ~msg:"open paste owns an idle deadline" (option float_exact) (Some 5.0)
     (Input.Parser.deadline parser);
   equal ~msg:"idle timeout reports discarded byte count" (list event_testable)
     [ Input.Error (Input.Error.Paste_timed_out { received = 8 }) ]
@@ -1125,9 +1123,7 @@ let test_paste_idle_deadline_refreshes_on_progress () =
   let start = Bytes.of_string "\x1b[200~one" in
   ignore (feed_to_lists ~now:0.0 parser start 0 (Bytes.length start));
   ignore (feed_to_lists ~now:4.0 parser (Bytes.of_string "two") 0 3);
-  equal ~msg:"paste progress refreshes deadline"
-    (option (float 0.0))
-    (Some 9.0)
+  equal ~msg:"paste progress refreshes deadline" (option float_exact) (Some 9.0)
     (Input.Parser.deadline parser);
   equal ~msg:"original deadline no longer expires paste" (list event_testable)
     []
@@ -1418,7 +1414,9 @@ let test_parsing_efficiency () =
   let t0 = Unix.gettimeofday () in
   let events, responses = parse_single long_invalid in
   let dt = Unix.gettimeofday () -. t0 in
-  less float_exact ~msg:"fast on long invalid (<0.1s)" ~than:0.1 dt;
+  satisfies ~claim:"fast on long invalid (< 0.1s)" float_exact
+    (fun t -> t < 0.1)
+    dt;
   equal ~msg:"long invalid is not user input" int 0 (List.length events);
   equal ~msg:"long invalid is one unknown response" int 1
     (List.length responses);
@@ -1428,7 +1426,9 @@ let test_parsing_efficiency () =
   match parse_user ("\x1b[200~" ^ large_paste ^ "\x1b[201~") with
   | [ Input.Paste s ] ->
       let dt_large = Unix.gettimeofday () -. t1 in
-      less float_exact ~msg:"fast large paste (<0.1s)" ~than:0.1 dt_large;
+      satisfies ~claim:"fast large paste (< 0.1s)" float_exact
+        (fun t -> t < 0.1)
+        dt_large;
       equal ~msg:"single paste event" int
         (String.length large_paste)
         (String.length s)

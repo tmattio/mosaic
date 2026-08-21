@@ -10,8 +10,7 @@ let create_default_values () =
   let t = make_ctx () in
   let root = make_root t in
   let child = Renderable.create ~parent:root () in
-  greater int ~msg:"id starts with node-" ~than:0
-    (String.length (Renderable.id child));
+  starts_with ~affix:"node-" (Renderable.id child);
   is_true ~msg:"visible" (Renderable.visible child);
   equal ~msg:"z_index" int 0 (Renderable.z_index child);
   is_true ~msg:"opacity" (Float.equal 1.0 (Renderable.opacity child));
@@ -378,7 +377,7 @@ let set_child_clip_schedules () =
   let child = Renderable.create ~parent:root () in
   let before = !(t.schedule_count) in
   Renderable.set_child_clip child (Some (fun _ -> None));
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 (* ── Focus ── *)
 
@@ -479,7 +478,7 @@ let set_cursor_provider_schedules () =
   let child = Renderable.create ~parent:root () in
   let before = !(t.schedule_count) in
   Renderable.set_cursor_provider child (fun _ -> None);
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let clear_cursor_provider_schedules_when_present () =
   let t = make_ctx () in
@@ -488,7 +487,7 @@ let clear_cursor_provider_schedules_when_present () =
   Renderable.set_cursor_provider child (fun _ -> None);
   let before = !(t.schedule_count) in
   Renderable.clear_cursor_provider child;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 (* ── Key Events ── *)
 
@@ -614,8 +613,7 @@ let live_count_contributes () =
   let t = make_ctx () in
   let root = make_root t in
   let _child = Renderable.create ~parent:root ~live:true () in
-  greater_equal int ~msg:"root live_count >= 1" ~than:1
-    (Renderable.Private.live_count root)
+  ge ~msg:"root live_count" ~than:1 (Renderable.Private.live_count root)
 
 let live_count_hide_reduces () =
   let t = make_ctx () in
@@ -624,16 +622,16 @@ let live_count_hide_reduces () =
   let before = Renderable.Private.live_count root in
   Renderable.set_visible child false;
   let after = Renderable.Private.live_count root in
-  less int ~msg:"reduced" ~than:before after
+  lt ~msg:"live_count reduced" ~than:before after
 
 let live_count_propagates () =
   let t = make_ctx () in
   let root = make_root t in
   let parent = Renderable.create ~parent:root () in
   let _child = Renderable.create ~parent ~live:true () in
-  greater_equal int ~msg:"root sees child" ~than:1
+  ge ~msg:"root sees child (live_count)" ~than:1
     (Renderable.Private.live_count root);
-  greater_equal int ~msg:"parent sees child" ~than:1
+  ge ~msg:"parent sees child (live_count)" ~than:1
     (Renderable.Private.live_count parent)
 
 let live_count_detach_adjusts () =
@@ -643,7 +641,7 @@ let live_count_detach_adjusts () =
   let before = Renderable.Private.live_count root in
   Renderable.detach child;
   let after = Renderable.Private.live_count root in
-  less int ~msg:"decreased" ~than:before after
+  lt ~msg:"live_count decreased" ~than:before after
 
 let live_count_attach_adjusts () =
   let t = make_ctx () in
@@ -653,7 +651,7 @@ let live_count_attach_adjusts () =
   let before = Renderable.Private.live_count root in
   Renderable.attach ~parent:root child;
   let after = Renderable.Private.live_count root in
-  greater int ~msg:"increased" ~than:before after
+  gt ~msg:"live_count increased" ~than:before after
 
 let live_count_change_callback () =
   let t = make_ctx () in
@@ -661,7 +659,7 @@ let live_count_change_callback () =
   let seen = ref 0 in
   Renderable.Private.set_on_live_count_change root (Some (fun _ -> incr seen));
   let _child = Renderable.create ~parent:root ~live:true () in
-  greater int ~msg:"callback fired" ~than:0 !seen
+  gt ~msg:"callback fired" ~than:0 !seen
 
 (* ── Selection ── *)
 
@@ -864,7 +862,7 @@ let set_style_schedules () =
   let child = Renderable.create ~parent:root () in
   let before = !(t.schedule_count) in
   Renderable.set_style child Toffee.Style.default;
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let style_roundtrip () =
   let t = make_ctx () in
@@ -1003,7 +1001,7 @@ let set_render_before_schedules () =
   let child = Renderable.create ~parent:root () in
   let before = !(t.schedule_count) in
   Renderable.set_render_before child (Some (fun _ _ ~delta:_ -> ()));
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_render_after_schedules () =
   let t = make_ctx () in
@@ -1011,7 +1009,7 @@ let set_render_after_schedules () =
   let child = Renderable.create ~parent:root () in
   let before = !(t.schedule_count) in
   Renderable.set_render_after child (Some (fun _ _ ~delta:_ -> ()));
-  greater int ~msg:"scheduled" ~than:before !(t.schedule_count)
+  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let buffered_render_full_uses_local_coordinates () =
   let t = make_ctx () in
