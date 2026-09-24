@@ -589,13 +589,18 @@ on the same Apple M1 Max host.
 
 | Runtime action | Before, allocated words | RFC baseline, allocated words | Change |
 | --- | ---: | ---: | ---: |
-| Insert/backspace through presentation | 5,846,986 | 3,858,924 | −34.0% |
+| Insert/backspace through presentation | 5,846,986 | 3,858,902 | −34.0% |
 | Wheel roundtrip, two eight-event bursts | 4,604,250 | 4,084,260 | −11.3% |
 | Resize between 249×69 and 250×70 | 145,352,687 | 142,546,693 | −1.9% |
 
 The RFC figures are the stored release-profile `runtime.thumper` baseline.
 The subsequent API and focus improvements pass its existing allocation budget;
 the baseline has not been raised to accommodate them.
+
+After cursor emission consolidation, wheel and resize samples allocate
+4,084,548 and 142,546,713 words: 288 and 20 above the retained baselines,
+respectively, within the existing budgets. Batched cursor resets now include
+the OSC 12 fallback used by immediate resets.
 
 The resize cost remains substantial in both versions. Allocation profiling
 points to Toffee flex item construction and whole-tree layout rounding; this
