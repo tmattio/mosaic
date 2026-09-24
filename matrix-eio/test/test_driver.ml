@@ -2,7 +2,11 @@ open Windtrap
 
 exception Injected_probe_failure
 
-type failing_tty = { fd : Eio_unix.Fd.t; mutable writes : int }
+type failing_tty = {
+  fd : Eio_unix.Fd.t;
+  mutable writes : int;
+  on_write : Cstruct.t list -> int;
+}
 
 module Failing_tty = struct
   type t = failing_tty
@@ -10,16 +14,16 @@ module Failing_tty = struct
   let read_methods = []
   let single_read _ _ = raise End_of_file
 
-  let single_write t _ =
+  let single_write t buffers =
     t.writes <- t.writes + 1;
-    raise Injected_probe_failure
+    t.on_write buffers
 
   let copy t ~src = Eio.Flow.Pi.simple_copy ~single_write t ~src
 end
 
-let failing_tty ~sw fd =
+let failing_tty ?(on_write = fun _ -> raise Injected_probe_failure) ~sw fd =
   let state =
-    { fd = Eio_unix.Fd.of_unix ~sw ~close_unix:false fd; writes = 0 }
+    { fd = Eio_unix.Fd.of_unix ~sw ~close_unix:false fd; writes = 0; on_write }
   in
   let handler =
     Eio.Resource.handler
@@ -254,8 +258,9 @@ let test_stdin_eof_stops_the_runtime () =
   let stdout_reader, stdout = Eio_unix.pipe sw in
   Eio.Flow.close stdin_writer;
   let app =
-    Matrix_eio.create ~sw ~clock:(Eio.Stdenv.clock env) ~stdin ~stdout
-      ~raw_mode:false ~target_fps:None ~mouse_enabled:false
+    Matrix_eio.create ~sw
+      ~clock:(Eio.Stdenv.mono_clock env)
+      ~stdin ~stdout ~raw_mode:false ~target_fps:None ~mouse_enabled:false
       ~signal_handlers:false ~start_idle:true ()
   in
   let result =
@@ -280,8 +285,9 @@ let measure_successful_read_allocations iterations =
   let seen = ref 0 in
   let consumed = Eio.Condition.create () in
   let app =
-    Matrix_eio.create ~sw ~clock:(Eio.Stdenv.clock env) ~stdin ~stdout
-      ~raw_mode:false ~target_fps:(Some 1.) ~mouse_enabled:false
+    Matrix_eio.create ~sw
+      ~clock:(Eio.Stdenv.mono_clock env)
+      ~stdin ~stdout ~raw_mode:false ~target_fps:(Some 1.) ~mouse_enabled:false
       ~signal_handlers:false ~start_idle:true ()
   in
   Gc.full_major ();
@@ -342,8 +348,9 @@ let test_probe_failure_restores_pty_termios () =
   let failure =
     try
       ignore
-        (Matrix_eio.create ~sw ~clock:(Eio.Stdenv.clock env) ~stdin:tty
-           ~stdout:tty ~signal_handlers:true ());
+        (Matrix_eio.create ~sw
+           ~clock:(Eio.Stdenv.mono_clock env)
+           ~stdin:tty ~stdout:tty ~signal_handlers:true ());
       None
     with exn -> Some exn
   in
@@ -351,7 +358,7 @@ let test_probe_failure_restores_pty_termios () =
   | Some Injected_probe_failure -> ()
   | Some exn -> failf "unexpected probe exception: %s" (Printexc.to_string exn)
   | None -> fail "probe failure did not escape Matrix_eio.create");
-  equal ~msg:"probe output failed on its first write" int 1 state.writes;
+  equal ~msg:"failed probe attempts terminal teardown" int 2 state.writes;
   let after = Unix.tcgetattr slave_fd in
   is_true ~msg:"echo restored after failed construction"
     (before.c_echo = after.c_echo);
@@ -371,6 +378,58 @@ let test_probe_failure_restores_pty_termios () =
     ~msg:"failed construction preserves SIGWINCH disposition" Sys.sigwinch
     winch_handler
 
+let test_cancelled_attachment_restores_terminal () =
+  Pty.with_pty ~winsize:Pty.{ rows = 24; cols = 80; xpixel = 0; ypixel = 0 }
+  @@ fun master slave ->
+  let fd = Pty.file_descr slave in
+  let before = Unix.tcgetattr fd in
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let output = ref [] in
+  let failure =
+    try
+      Eio.Cancel.sub (fun context ->
+          let on_write buffers =
+            Eio.Fiber.check ();
+            List.fold_left
+              (fun written buffer ->
+                let text = Cstruct.to_string buffer in
+                if !output = [] then
+                  ignore (Pty.write_string master "x" 0 1 : int);
+                if text = "\027[14t" then (
+                  is_false ~msg:"raw mode acquired before cancellation"
+                    (Unix.tcgetattr fd).c_echo;
+                  Eio.Cancel.cancel context Injected_probe_failure;
+                  Eio.Fiber.check ());
+                output := text :: !output;
+                written + String.length text)
+              0 buffers
+          in
+          let tty = fst (failing_tty ~on_write ~sw fd) in
+          ignore
+            (Matrix_eio.create ~sw
+               ~clock:(Eio.Stdenv.mono_clock env)
+               ~stdin:tty ~stdout:tty ~signal_handlers:false ()));
+      None
+    with exn -> Some exn
+  in
+  (match failure with
+  | Some (Eio.Cancel.Cancelled _) -> ()
+  | Some exn ->
+      failf "unexpected attachment exception: %s" (Printexc.to_string exn)
+  | None -> fail "attachment did not propagate cancellation");
+  let after = Unix.tcgetattr fd in
+  is_true ~msg:"raw mode restored before cancellation escapes"
+    (before.c_echo = after.c_echo
+    && before.c_icanon = after.c_icanon
+    && before.c_isig = after.c_isig);
+  List.iter
+    (fun sequence ->
+      is_true
+        ~msg:(Printf.sprintf "terminal setup/teardown emitted %S" sequence)
+        (List.mem sequence !output))
+    [ "\027[?1049h"; "\027[?1049l"; "\027[?2004h"; "\027[?2004l" ]
+
 let test_close_restores_eio_winch_disposition_once () =
   with_distinct_signal_handler Sys.sigwinch @@ fun prior_handler ->
   Eio_main.run @@ fun env ->
@@ -378,8 +437,9 @@ let test_close_restores_eio_winch_disposition_once () =
   let stdin, stdin_writer = Eio_unix.pipe sw in
   let stdout_reader, stdout = Eio_unix.pipe sw in
   let app =
-    Matrix_eio.create ~sw ~clock:(Eio.Stdenv.clock env) ~stdin ~stdout
-      ~raw_mode:false ~target_fps:None ~mouse_enabled:false
+    Matrix_eio.create ~sw
+      ~clock:(Eio.Stdenv.mono_clock env)
+      ~stdin ~stdout ~raw_mode:false ~target_fps:None ~mouse_enabled:false
       ~signal_handlers:false ~start_idle:true ()
   in
   (match peek_signal Sys.sigwinch with
@@ -407,8 +467,9 @@ let test_termination_signal_defers_shutdown_to_the_loop () =
   let stdin, stdin_writer = Eio_unix.pipe sw in
   let stdout_reader, stdout = Eio_unix.pipe sw in
   let app =
-    Matrix_eio.create ~sw ~clock:(Eio.Stdenv.clock env) ~stdin ~stdout
-      ~raw_mode:false ~target_fps:None ~mouse_enabled:false
+    Matrix_eio.create ~sw
+      ~clock:(Eio.Stdenv.mono_clock env)
+      ~stdin ~stdout ~raw_mode:false ~target_fps:None ~mouse_enabled:false
       ~signal_handlers:true ~start_idle:true ()
   in
   (match peek_signal Sys.sigterm with
@@ -433,8 +494,9 @@ let test_sigwinch_wakes_eio_runtime () =
   let stdin, stdin_writer = Eio_unix.pipe sw in
   let stdout_reader, stdout = Eio_unix.pipe sw in
   let app =
-    Matrix_eio.create ~sw ~clock:(Eio.Stdenv.clock env) ~stdin ~stdout
-      ~raw_mode:false ~target_fps:None ~mouse_enabled:false
+    Matrix_eio.create ~sw
+      ~clock:(Eio.Stdenv.mono_clock env)
+      ~stdin ~stdout ~raw_mode:false ~target_fps:None ~mouse_enabled:false
       ~signal_handlers:false ~start_idle:true ()
   in
   Unix.kill (Unix.getpid ()) Sys.sigwinch;
@@ -481,8 +543,10 @@ let test_wake_survives_subprocess_storm () =
   let renders = Atomic.make 0 in
   let bumped = Eio.Condition.create () in
   let app =
-    Matrix_eio.create ~sw ~clock ~stdin ~stdout ~raw_mode:false ~target_fps:None
-      ~mouse_enabled:false ~signal_handlers:false ~start_idle:true ()
+    Matrix_eio.create ~sw
+      ~clock:(Eio.Stdenv.mono_clock env)
+      ~stdin ~stdout ~raw_mode:false ~target_fps:None ~mouse_enabled:false
+      ~signal_handlers:false ~start_idle:true ()
   in
   (* Drain the frame stream so the loop's writes never block. *)
   Eio.Fiber.fork_daemon ~sw (fun () ->
@@ -562,6 +626,8 @@ let () =
             test_successful_reads_do_not_allocate_a_result;
           test "probe failure restores PTY termios"
             test_probe_failure_restores_pty_termios;
+          test "cancelled attachment restores terminal modes"
+            test_cancelled_attachment_restores_terminal;
           test "close restores Eio SIGWINCH disposition once"
             test_close_restores_eio_winch_disposition_once;
           test "termination signal defers shutdown to the loop"

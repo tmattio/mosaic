@@ -23,7 +23,7 @@ let () =
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let app =
-    Matrix_eio.create ~sw ~clock:(Eio.Stdenv.clock env) ~stdin:env#stdin
+    Matrix_eio.create ~sw ~clock:(Eio.Stdenv.mono_clock env) ~stdin:env#stdin
       ~stdout:env#stdout ()
   in
   let frames = ref 0 in

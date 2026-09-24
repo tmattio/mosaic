@@ -11,8 +11,9 @@
     Eio_main.run @@ fun env ->
     Eio.Switch.run @@ fun sw ->
     let app =
-      Matrix_eio.create ~sw ~clock:(Eio.Stdenv.clock env) ~stdin:env#stdin
-        ~stdout:env#stdout ()
+      Matrix_eio.create ~sw
+        ~clock:(Eio.Stdenv.mono_clock env)
+        ~stdin:env#stdin ~stdout:env#stdout ()
     in
     Matrix.run app ~on_render:(fun app ->
         let g = Matrix.grid app in
@@ -49,7 +50,7 @@ val create :
   ?signal_handlers:bool ->
   ?initial_caps:Matrix.Terminal.capabilities ->
   sw:Eio.Switch.t ->
-  clock:_ Eio.Time.clock ->
+  clock:_ Eio.Time.Mono.t ->
   stdin:_ Eio_unix.source ->
   stdout:_ Eio_unix.sink ->
   unit ->
@@ -70,8 +71,8 @@ val create :
     The mandatory parameters are:
     - [sw] — Eio switch controlling the application lifetime. The app is closed
       when [sw] is released.
-    - [clock] — Eio clock for frame timing and input timeouts. Typically
-      [Eio.Stdenv.clock env].
+    - [clock] — monotonic Eio clock for frame timing and input timeouts.
+      Typically [Eio.Stdenv.mono_clock env].
     - [stdin] — Eio source for terminal input (typically [env#stdin]).
     - [stdout] — Eio sink for terminal output (typically [env#stdout]).
 

@@ -13,6 +13,7 @@ depends: [
   "ocaml" {>= "5.4"}
   "dune" {>= "3.19"}
   "matrix"
+  "mtime"
   "eio" {>= "1.2"}
   "eio_main" {with-test}
   "windtrap" {with-test}

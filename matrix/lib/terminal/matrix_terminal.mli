@@ -171,13 +171,14 @@ val apply_capability_event : t -> Matrix_input.Response.capability -> unit
 
 val probe :
   ?timeout:float ->
+  now:(unit -> float) ->
   on_event:(Matrix_input.t -> unit) ->
   read_into:(bytes -> int -> int -> int) ->
   wait_readable:(timeout:float -> bool) ->
   parser:Matrix_input.Parser.t ->
   t ->
   unit
-(** [probe ~timeout ~on_event ~read_into ~wait_readable ~parser t] actively
+(** [probe ~timeout ~now ~on_event ~read_into ~wait_readable ~parser t] actively
     probes terminal capabilities.
 
     Sends a compound query payload through [output] and processes responses
@@ -187,7 +188,10 @@ val probe :
     Using the caller's [parser] ensures that partial escape sequences spanning
     the probe boundary are preserved. User input events received during probing
     are forwarded to [on_event]. A [read_into] result of [0] stops probing
-    because it denotes permanent end-of-input.
+    because it denotes permanent end-of-input; [-1] resumes waiting for input.
+
+    [now ()] is monotonic time in seconds, using the same origin as all other
+    calls to [parser]. It determines probe and parser deadlines.
 
     [timeout] is the maximum probe duration in seconds. Defaults to [0.2]. *)
 

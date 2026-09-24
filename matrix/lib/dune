@@ -13,4 +13,5 @@
   matrix.input
   matrix.terminal
   matrix.text
+  mtime.clock.os
   unix))

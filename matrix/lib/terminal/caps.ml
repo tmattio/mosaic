@@ -534,8 +534,8 @@ let apply_probe_cpr caps ~row ~col =
   in
   if row = 1 && col >= 3 then { caps with scaled_text = true } else caps
 
-let probe ?(timeout = 0.2) ?(apply_env_overrides = false) ~on_event ~read_into
-    ~wait_readable ~send ~parser ~caps ~info () =
+let probe ?(timeout = 0.2) ?(apply_env_overrides = false) ~now ~on_event
+    ~read_into ~wait_readable ~send ~parser ~caps ~info () =
   let payload = build_probe_payload caps.term in
   let previous_context = Input.Parser.protocol_context parser in
   let probe_context =
@@ -556,14 +556,14 @@ let probe ?(timeout = 0.2) ?(apply_env_overrides = false) ~on_event ~read_into
         send (build_tmux_pending_probe_payload caps.term);
         tmux_pending_sent := true)
     in
-    let deadline = Unix.gettimeofday () +. max 0. timeout in
+    let deadline = now () +. max 0. timeout in
     (* Grace period after DA: once we receive Device Attributes, the terminal has
      processed our entire query payload. Any remaining responses (CPR for
      explicit width/scaled text, XTVersion, etc.) should arrive shortly after.
      We use a short grace period instead of waiting the full timeout. *)
     let da_grace = 0.05 in
     let rec loop caps info got_explicit got_scaled got_da da_time =
-      let now = Unix.gettimeofday () in
+      let time = now () in
       let complete =
         (got_explicit || caps.explicit_width)
         && (got_scaled || caps.scaled_text)
@@ -574,16 +574,19 @@ let probe ?(timeout = 0.2) ?(apply_env_overrides = false) ~on_event ~read_into
         | Some t -> Float.min deadline (t +. da_grace)
         | None -> deadline
       in
-      if now >= effective_deadline || complete then (caps, info)
+      if time >= effective_deadline || complete then (caps, info)
       else
-        let remaining = effective_deadline -. now in
+        let remaining = effective_deadline -. time in
         let select_timeout = Float.min remaining 0.05 in
         let ready = wait_readable ~timeout:select_timeout in
         if not ready then loop caps info got_explicit got_scaled got_da da_time
         else
           let read = read_into buffer 0 (Bytes.length buffer) in
           if read = 0 then (caps, info)
+          else if read < 0 then
+            loop caps info got_explicit got_scaled got_da da_time
           else
+            let now = now () in
             let caps_ref = ref caps in
             let info_ref = ref info in
             let found_da = ref false in
@@ -622,7 +625,7 @@ let probe ?(timeout = 0.2) ?(apply_env_overrides = false) ~on_event ~read_into
     in
     let caps_ref = ref caps in
     let info_ref = ref info in
-    let now = Unix.gettimeofday () in
+    let now = now () in
     Input.Parser.drain parser ~now ~on_event ~on_response:(fun response ->
         match response with
         | Input.Response.Clipboard _ | Input.Response.Osc _

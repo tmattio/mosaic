@@ -10,7 +10,6 @@ module Text = Matrix_text
 type kitty_keyboard = [ `Auto | `Disabled | `Enabled of int ]
 type mode = [ `Alt | `Primary ]
 type debug_overlay_corner = Debug_overlay.corner
-type read_result = [ `Continue | `End ]
 
 module Backend = struct
   type t = {
@@ -18,20 +17,18 @@ module Backend = struct
     wake : unit -> unit;
     write_output : bytes -> int -> int -> unit;
     read_input : bytes -> int -> int -> int;
-    wait_readable : timeout:float -> bool;
-    read_events :
-      timeout:float option ->
-      on_event:(Input.t -> unit) ->
-      on_response:(Input.Response.t -> unit) ->
-      read_result;
+    wait : timeout:float option -> on_event:(Input.t -> unit) -> bool;
+    input_is_tty : bool;
+    output_is_tty : bool;
     terminal_size : unit -> int * int;
     set_raw_mode : bool -> unit;
     flush_input : unit -> unit;
+    protect : (unit -> unit) -> unit;
     cleanup : unit -> unit;
   }
 
   (* The runtime's protocol policy for terminal replies, handed to
-     [read_events] so every backend routes responses identically. *)
+     the shared parser so every backend routes responses identically. *)
   let dispatch_response ~terminal ~on_event = function
     | Input.Response.Capability event -> (
         Terminal.apply_capability_event terminal event;
@@ -61,59 +58,19 @@ module Backend = struct
       if Option.is_some !result then ()
       else
         let remaining = deadline -. t.now () in
-        if remaining > 0. && t.wait_readable ~timeout:remaining then
-          match t.read_input buf 0 (Bytes.length buf) with
-          | 0 -> ()
-          | n ->
-              Input.Parser.feed parser buf 0 n ~now:(t.now ()) ~on_event
-                ~on_response;
-              loop ()
+        if remaining > 0. then
+          if t.wait ~timeout:(Some remaining) ~on_event then (
+            match t.read_input buf 0 (Bytes.length buf) with
+            | 0 -> ()
+            | n when n < 0 -> loop ()
+            | n ->
+                Input.Parser.feed parser buf 0 n ~now:(t.now ()) ~on_event
+                  ~on_response;
+                loop ())
+          else loop ()
     in
     loop ();
     !result
-
-  type session = {
-    width : int;
-    height : int;
-    render_offset : int;
-    static_needs_newline : bool;
-    startup_events : Input.t list;
-  }
-
-  let bootstrap ~mode ~raw_mode ~input_is_tty ~terminal ~parser t =
-    if input_is_tty && raw_mode then t.set_raw_mode true;
-    let startup_events = ref [] in
-    let queue_startup_event event =
-      startup_events := event :: !startup_events
-    in
-    if input_is_tty && raw_mode then
-      Terminal.probe ~timeout:0.5 ~on_event:queue_startup_event
-        ~read_into:t.read_input ~wait_readable:t.wait_readable ~parser terminal;
-    let cols, rows = t.terminal_size () in
-    let width = max 1 cols in
-    let height = max 1 rows in
-    let render_offset, static_needs_newline =
-      if mode = `Primary && input_is_tty && raw_mode then
-        match
-          query_cursor_position ~terminal ~parser ~timeout:0.1
-            ~on_event:queue_startup_event t
-        with
-        | Some (row, col) ->
-            let anchor =
-              Primary.anchor_of_cursor ~terminal_height:height ~row ~col
-            in
-            if anchor.scroll_bottom then Terminal.send terminal "\r\n";
-            (anchor.render_offset, anchor.static_needs_newline)
-        | None -> (0, false)
-      else (0, false)
-    in
-    {
-      width;
-      height;
-      render_offset;
-      static_needs_newline;
-      startup_events = List.rev !startup_events;
-    }
 end
 
 type control_state =
@@ -136,18 +93,16 @@ type config = {
   explicit_width : bool;
   input_timeout : float option;
   resize_debounce : float option;
-  respect_alpha : bool;
-  cursor_visible : bool;
-  debug_overlay_corner : debug_overlay_corner;
   debug_overlay_capacity : int;
   min_tui_height : int;
-  start_idle : bool;
   pace_redraws : bool;
 }
 
 type app = {
   terminal : Terminal.t;
   parser : Input.Parser.t;
+  input_buffer : bytes;
+  input_ended : bool;
   config : config;
   backend : Backend.t;
   screen : Screen.t;
@@ -231,9 +186,6 @@ let write_all fd buf off len =
       go (off + n) (remaining - n)
   in
   go off len
-
-let write_string fd s =
-  write_all fd (Bytes.unsafe_of_string s) 0 (String.length s)
 
 let wake_byte = Bytes.of_string "w"
 
@@ -327,71 +279,26 @@ let winch_received = ref false
 
 (* Unix low-level I/O *)
 
-type fd_readiness = { input_ready : bool; wakeup_ready : bool }
-
-let wait_readable_fds ~input_fd ~wakeup_r ~timeout =
+let wait_input_unix ~input_fd ~wakeup_r ~output_fd =
   let fds = [ input_fd; wakeup_r ] in
-  let timeout_f = Option.value ~default:(-1.) timeout in
-  let readable, _, _ =
-    try Unix.select fds [] [] timeout_f
-    with Unix.Unix_error (Unix.EINTR, _, _) -> ([], [], [])
-  in
-  {
-    input_ready = List.mem input_fd readable;
-    wakeup_ready = List.mem wakeup_r readable;
-  }
-
-let read_events_unix ~parser ~input_fd ~wakeup_r ~output_fd ~input_buffer
-    ~timeout ~on_event ~on_response =
-  let { input_ready; wakeup_ready } =
-    wait_readable_fds ~input_fd ~wakeup_r ~timeout
-  in
-  let result =
-    if wakeup_ready then drain_wakeup_fd wakeup_r;
-    if (input_ready || wakeup_ready) && !winch_received then (
+  fun ~timeout ~on_event ->
+    let readable, _, _ =
+      try Unix.select fds [] [] (Option.value ~default:(-1.) timeout)
+      with Unix.Unix_error (Unix.EINTR, _, _) -> ([], [], [])
+    in
+    if List.mem wakeup_r readable then drain_wakeup_fd wakeup_r;
+    if !winch_received then (
       winch_received := false;
       let cols, rows = Terminal.size output_fd in
       on_event (Input.Resize (cols, rows)));
-    if input_ready then
-      match Unix.read input_fd input_buffer 0 (Bytes.length input_buffer) with
-      | n when n > 0 ->
-          let now = Unix.gettimeofday () in
-          Input.Parser.feed parser input_buffer 0 n ~now ~on_event ~on_response;
-          `Continue
-      | 0 -> `End
-      | _ -> `Continue
-      | exception Unix.Unix_error _ -> `Continue
-    else `Continue
-  in
-  (match result with
-  | `Continue ->
-      let now = Unix.gettimeofday () in
-      Input.Parser.drain parser ~now ~on_event ~on_response
-  | `End -> ());
-  result
-
-(* Block until input bytes are readable or [timeout] expires. Wakeup-pipe
-   traffic is drained and retried internally so callers see only "readable" or
-   "timed out". *)
-let wait_readable_unix ~input_fd ~wakeup_r ~timeout =
-  let deadline = Unix.gettimeofday () +. timeout in
-  let rec loop remaining =
-    if remaining <= 0. then false
-    else
-      let { input_ready; wakeup_ready } =
-        wait_readable_fds ~input_fd ~wakeup_r ~timeout:(Some remaining)
-      in
-      if wakeup_ready then drain_wakeup_fd wakeup_r;
-      if input_ready then true else loop (deadline -. Unix.gettimeofday ())
-  in
-  loop timeout
+    List.mem input_fd readable
 
 let rec read_input_unix ~input_fd buf off len =
   match Unix.read input_fd buf off len with
   | n -> n
   | exception Unix.Unix_error (Unix.EINTR, _, _) ->
       read_input_unix ~input_fd buf off len
-  | exception Unix.Unix_error _ -> 0
+  | exception Unix.Unix_error ((Unix.EAGAIN | Unix.EWOULDBLOCK), _, _) -> -1
 
 (* Small helpers *)
 
@@ -981,7 +888,11 @@ let resume t =
        match
          Backend.query_cursor_position ~terminal:t.terminal ~parser:t.parser
            ~timeout:0.1
-           ~on_event:(fun _ -> ())
+           ~on_event:(function
+             | Input.Resize _ as event ->
+                 t.pending_startup_events <-
+                   t.pending_startup_events @ [ event ]
+             | _ -> ())
            t.backend
        with
        | Some (row, col) ->
@@ -1128,157 +1039,205 @@ let classify_event t evt =
 
 let close t =
   if t.closed then ()
-  else (
-    t.closed <- true;
-    t.running <- false;
-    t.control_state <- `Explicit_stopped;
-    update_loop_active t;
-    (try
-       let is_tty = Terminal.tty t.terminal in
-       if t.config.mode = `Primary && is_tty then (
-         let height = max 1 t.height in
-         let render_offset =
-           clamp 0 (height - 1) (Primary.render_offset t.primary)
-         in
-         let start_row =
-           if Primary.static_needs_newline t.primary then render_offset + 1
-           else max 1 render_offset
-         in
-         for row = start_row to height do
-           Terminal.move_cursor t.terminal ~row ~col:1
-             ~visible:(Terminal.cursor_visible t.terminal);
-           Terminal.send t.terminal erase_entire_line
-         done;
-         Terminal.move_cursor t.terminal ~row:start_row ~col:1 ~visible:true);
-       (* Flush pending mouse/input bytes both before and after mode teardown.
+  else
+    t.backend.protect (fun () ->
+        t.closed <- true;
+        t.running <- false;
+        t.control_state <- `Explicit_stopped;
+        update_loop_active t;
+        (try
+           let is_tty = Terminal.tty t.terminal in
+           if t.config.mode = `Primary && is_tty then (
+             let height = max 1 t.height in
+             let render_offset =
+               clamp 0 (height - 1) (Primary.render_offset t.primary)
+             in
+             let start_row =
+               if Primary.static_needs_newline t.primary then render_offset + 1
+               else max 1 render_offset
+             in
+             for row = start_row to height do
+               Terminal.move_cursor t.terminal ~row ~col:1
+                 ~visible:(Terminal.cursor_visible t.terminal);
+               Terminal.send t.terminal erase_entire_line
+             done;
+             Terminal.move_cursor t.terminal ~row:start_row ~col:1 ~visible:true);
+           (* Flush pending mouse/input bytes both before and after mode teardown.
           This avoids leaking trailing SGR mouse payloads back to the shell. *)
-       (try t.backend.flush_input () with _ -> ());
-       Terminal.close t.terminal
-     with _ -> ());
-    (try t.backend.flush_input () with _ -> ());
-    (try t.backend.set_raw_mode false with _ -> ());
-    (try t.backend.flush_input () with _ -> ());
-    try t.backend.cleanup () with _ -> ())
+           (try t.backend.flush_input () with _ -> ());
+           Terminal.close t.terminal
+         with _ -> ());
+        (try t.backend.flush_input () with _ -> ());
+        (try t.backend.set_raw_mode false with _ -> ());
+        (try t.backend.flush_input () with _ -> ());
+        try t.backend.cleanup () with _ -> ())
 
-(* Internal config builder *)
+(* Construct the runtime over backend I/O. *)
 
-let make_config ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
+let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     ?(respect_alpha = false) ?(mouse_enabled = true) ?(mouse = None)
     ?(bracketed_paste = true) ?(focus_reporting = true)
-    ?(kitty_keyboard = `Auto) ?(exit_on_ctrl_c = true)
+    ?(kitty_keyboard = `Auto) ?(exit_on_ctrl_c = true) ?(debug_overlay = false)
     ?(debug_overlay_corner = `Bottom_right) ?(debug_overlay_capacity = 120)
-    ?(cursor_visible = mode = `Alt) ?(explicit_width = false)
-    ?(input_timeout = None) ?(resize_debounce = Some 0.1) ?(min_tui_height = 1)
-    ?(start_idle = false) ?(pace_redraws = true) () =
-  let effective_mouse_mode =
-    if mouse_enabled then Some (Option.value ~default:`Sgr_any mouse) else None
-  in
-  {
-    mode;
-    raw_mode;
-    mouse_mode = effective_mouse_mode;
-    bracketed_paste;
-    focus_reporting;
-    kitty_keyboard;
-    exit_on_ctrl_c;
-    target_fps;
-    explicit_width;
-    input_timeout;
-    resize_debounce;
-    respect_alpha;
-    cursor_visible;
-    debug_overlay_corner;
-    debug_overlay_capacity;
-    min_tui_height;
-    start_idle;
-    pace_redraws;
-  }
-
-(* Initialize a live app (internal) *)
-
-let init_app (c : config) ~(backend : Backend.t) ~startup_events ~debug_overlay
-    ~frame_dump_every ~frame_dump_dir ~frame_dump_pattern ~frame_dump_hits
-    ~parser ~terminal ~width ~height ~render_offset ~static_needs_newline =
-  let width = max 1 width in
-  let height = max 1 height in
-  let primary =
-    Primary.create ~terminal_height:height ~min_live_height:c.min_tui_height
-      ~render_offset ~static_needs_newline
-  in
-  let live_region = Primary.live_region primary in
-  let screen =
-    Screen.create ~width_method:`Wcwidth ~respect_alpha:c.respect_alpha
-      ~cursor_visible:c.cursor_visible ~explicit_width:c.explicit_width
-      ~clock:backend.now ()
-  in
-  let caps = Terminal.capabilities terminal in
-  Screen.set_width_method screen caps.unicode_width;
-  let color_depth = if caps.rgb then `Truecolor else `Ansi256 in
-  Screen.apply_capabilities screen ~explicit_width:caps.explicit_width
-    ~explicit_cursor_positioning:caps.explicit_cursor_positioning
-    ~hyperlinks:caps.hyperlinks ~color_depth;
-  Screen.set_row_offset screen live_region.row_offset;
-  Screen.resize screen ~width ~height:live_region.height;
-  let capability_window_until =
-    if c.raw_mode && Terminal.tty terminal then
-      Some (backend.now () +. startup_capability_window_s)
-    else None
-  in
-  let t =
+    ?(frame_dump_every = 0) ?frame_dump_dir ?frame_dump_pattern
+    ?(frame_dump_hits = false) ?(cursor_visible = mode = `Alt)
+    ?(explicit_width = false) ?(input_timeout = None)
+    ?(resize_debounce = Some 0.1) ?(min_tui_height = 1) ?(start_idle = false)
+    ?(pace_redraws = true) ?initial_caps ~(backend : Backend.t) () =
+  let config =
+    let effective_mouse_mode =
+      if mouse_enabled then Some (Option.value ~default:`Sgr_any mouse)
+      else None
+    in
     {
-      terminal;
-      parser;
-      config = c;
-      backend;
-      screen;
-      submit_buf = Buffer.create 4096;
-      submit_scratch = Bytes.create 4096;
-      pending_startup_events = startup_events;
-      running = true;
-      redraw_requested = false;
-      width;
-      height;
-      primary;
-      scroll_hint = None;
-      last_cursor_position = None;
-      last_cursor_visible = None;
-      last_cursor_shape = None;
-      last_cursor_color = None;
-      last_resize_apply_time = 0.;
-      pending_resize = None;
-      force_full_next_frame = true;
-      next_frame_deadline = None;
-      wakeup_deadline = None;
-      last_render_time = Float.neg_infinity;
-      debug_overlay_enabled = debug_overlay;
-      debug_overlay_cb =
-        Debug_overlay.on_frame ~corner:c.debug_overlay_corner
-          ~capacity:c.debug_overlay_capacity ();
-      frame_dump_every = max 0 frame_dump_every;
-      frame_dump_dir;
-      frame_dump_pattern;
-      frame_dump_hits;
-      frame_dump_counter = 0;
-      closed = false;
-      loop_active = false;
-      control_state =
-        (if c.start_idle then `Idle
-         else
-           match c.target_fps with
-           | Some fps when fps > 0. -> `Explicit_started
-           | _ -> `Idle);
-      previous_control_state = `Idle;
-      live_requests = 0;
-      restore_modes_on_next_focus = false;
-      capability_window_until;
-      suspend_left_alt = false;
+      mode;
+      raw_mode;
+      mouse_mode = effective_mouse_mode;
+      bracketed_paste;
+      focus_reporting;
+      kitty_keyboard;
+      exit_on_ctrl_c;
+      target_fps;
+      explicit_width;
+      input_timeout;
+      resize_debounce;
+      debug_overlay_capacity;
+      min_tui_height;
+      pace_redraws;
     }
   in
-  with_rollback
-    ~rollback:(fun () -> close t)
-    (fun () ->
-      apply_config t;
-      t)
+  let terminal =
+    with_rollback
+      ~rollback:(fun () -> backend.protect backend.cleanup)
+      (fun () ->
+        Terminal.make ~tty:backend.output_is_tty ?initial_caps
+          ~output:(fun s ->
+            backend.write_output (Bytes.unsafe_of_string s) 0 (String.length s))
+          ())
+  in
+  let app_ref = ref None in
+  let rollback () =
+    match !app_ref with
+    | Some app -> close app
+    | None ->
+        backend.protect (fun () ->
+            (try Terminal.close terminal with _ -> ());
+            (try backend.set_raw_mode false with _ -> ());
+            backend.cleanup ())
+  in
+  with_rollback ~rollback (fun () ->
+      let parser = Input.Parser.create () in
+      let input_ended = ref false in
+      let read_input buf off len =
+        let n = if !input_ended then 0 else backend.read_input buf off len in
+        if n = 0 then input_ended := true;
+        n
+      in
+      if backend.input_is_tty && raw_mode then backend.set_raw_mode true;
+      let startup_events = ref [] in
+      let queue_startup_event event =
+        startup_events := event :: !startup_events
+      in
+      if backend.input_is_tty && raw_mode then
+        Terminal.probe ~timeout:0.5 ~now:backend.now
+          ~on_event:queue_startup_event ~read_into:read_input
+          ~wait_readable:(fun ~timeout ->
+            backend.wait ~timeout:(Some timeout) ~on_event:queue_startup_event)
+          ~parser terminal;
+      let cols, rows = backend.terminal_size () in
+      let width = max 1 cols in
+      let height = max 1 rows in
+      let render_offset, static_needs_newline =
+        if
+          mode = `Primary && backend.input_is_tty && raw_mode
+          && not !input_ended
+        then
+          match
+            Backend.query_cursor_position ~terminal ~parser ~timeout:0.1
+              ~on_event:queue_startup_event
+              { backend with read_input }
+          with
+          | Some (row, col) ->
+              let anchor =
+                Primary.anchor_of_cursor ~terminal_height:height ~row ~col
+              in
+              if anchor.scroll_bottom then Terminal.send terminal "\r\n";
+              (anchor.render_offset, anchor.static_needs_newline)
+          | None -> (0, false)
+        else (0, false)
+      in
+      let app =
+        let primary =
+          Primary.create ~terminal_height:height
+            ~min_live_height:config.min_tui_height ~render_offset
+            ~static_needs_newline
+        in
+        let caps = Terminal.capabilities terminal in
+        let screen =
+          Screen.create ~width_method:caps.unicode_width ~respect_alpha
+            ~cursor_visible ~explicit_width:config.explicit_width
+            ~clock:backend.now ()
+        in
+        let capability_window_until =
+          if config.raw_mode && Terminal.tty terminal then
+            Some (backend.now () +. startup_capability_window_s)
+          else None
+        in
+        {
+          terminal;
+          parser;
+          input_buffer = Bytes.create 4096;
+          input_ended = !input_ended;
+          config;
+          backend;
+          screen;
+          submit_buf = Buffer.create 4096;
+          submit_scratch = Bytes.create 4096;
+          pending_startup_events = List.rev !startup_events;
+          running = true;
+          redraw_requested = false;
+          width;
+          height;
+          primary;
+          scroll_hint = None;
+          last_cursor_position = None;
+          last_cursor_visible = None;
+          last_cursor_shape = None;
+          last_cursor_color = None;
+          last_resize_apply_time = 0.;
+          pending_resize = None;
+          force_full_next_frame = true;
+          next_frame_deadline = None;
+          wakeup_deadline = None;
+          last_render_time = Float.neg_infinity;
+          debug_overlay_enabled = debug_overlay;
+          debug_overlay_cb =
+            Debug_overlay.on_frame ~corner:debug_overlay_corner
+              ~capacity:config.debug_overlay_capacity ();
+          frame_dump_every = max 0 frame_dump_every;
+          frame_dump_dir;
+          frame_dump_pattern;
+          frame_dump_hits;
+          frame_dump_counter = 0;
+          closed = false;
+          loop_active = false;
+          control_state =
+            (if start_idle then `Idle
+             else
+               match config.target_fps with
+               | Some fps when fps > 0. -> `Explicit_started
+               | _ -> `Idle);
+          previous_control_state = `Idle;
+          live_requests = 0;
+          restore_modes_on_next_focus = false;
+          capability_window_until;
+          suspend_left_alt = false;
+        }
+      in
+      app_ref := Some app;
+      apply_config app;
+      Terminal.query_pixel_resolution terminal;
+      app)
 
 (* Constructor: create a live app with Unix I/O *)
 
@@ -1293,13 +1252,6 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     ?(resize_debounce = Some 0.1) ?(output = `Stdout) ?(signal_handlers = true)
     ?initial_caps ?(min_tui_height = 1) ?(start_idle = false)
     ?(pace_redraws = true) () =
-  let config =
-    make_config ~mode ~raw_mode ~target_fps ~respect_alpha ~mouse_enabled ~mouse
-      ~bracketed_paste ~focus_reporting ~kitty_keyboard ~exit_on_ctrl_c
-      ~debug_overlay_corner ~debug_overlay_capacity ~cursor_visible
-      ~explicit_width ~input_timeout ~resize_debounce ~min_tui_height
-      ~start_idle ~pace_redraws ()
-  in
   let output_fd = match output with `Stdout -> Unix.stdout | `Fd fd -> fd in
   let input_fd = Unix.stdin in
   let output_is_tty = Terminal.is_tty output_fd in
@@ -1331,7 +1283,7 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
       | None -> ()
   in
   let app_ref = ref None in
-  (* Before [init_app] returns, the constructor owns raw mode and the wakeup
+  (* Before [attach] returns, the constructor owns raw mode and the wakeup
      pipe directly. Afterwards the app's idempotent close path owns both. *)
   let rollback () =
     match !app_ref with
@@ -1343,44 +1295,32 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
   with_rollback ~rollback (fun () ->
       Unix.set_nonblock wakeup_r;
       Unix.set_nonblock wakeup_w;
-      let output_fn = write_string output_fd in
-      let terminal =
-        Terminal.make ~output:output_fn ~tty:output_is_tty ?initial_caps ()
-      in
-      let parser = Input.Parser.create () in
-      let input_buffer = Bytes.create 4096 in
       let backend : Backend.t =
         {
-          now = Unix.gettimeofday;
+          now = (fun () -> Int64.to_float (Mtime_clock.elapsed_ns ()) *. 1e-9);
           wake = (fun () -> wake_fd wakeup_w);
           write_output = write_all output_fd;
           read_input = read_input_unix ~input_fd;
-          wait_readable =
-            (fun ~timeout -> wait_readable_unix ~input_fd ~wakeup_r ~timeout);
-          read_events =
-            (fun ~timeout ~on_event ~on_response ->
-              read_events_unix ~parser ~input_fd ~wakeup_r ~output_fd
-                ~input_buffer ~timeout ~on_event ~on_response);
+          wait = wait_input_unix ~input_fd ~wakeup_r ~output_fd;
+          input_is_tty;
+          output_is_tty;
           terminal_size = (fun () -> Terminal.size output_fd);
           set_raw_mode;
           flush_input =
             (fun () -> if input_is_tty then Terminal.flush_input input_fd);
+          protect = (fun f -> f ());
           cleanup = cleanup_backend;
         }
       in
-      let session =
-        Backend.bootstrap ~mode ~raw_mode ~input_is_tty ~terminal ~parser
-          backend
-      in
       let app =
-        init_app config ~backend ~startup_events:session.startup_events
-          ~debug_overlay ~frame_dump_every ~frame_dump_dir ~frame_dump_pattern
-          ~frame_dump_hits ~parser ~terminal ~width:session.width
-          ~height:session.height ~render_offset:session.render_offset
-          ~static_needs_newline:session.static_needs_newline
+        attach ~mode ~raw_mode ~target_fps ~respect_alpha ~mouse_enabled ~mouse
+          ~bracketed_paste ~focus_reporting ~kitty_keyboard ~exit_on_ctrl_c
+          ~debug_overlay ~debug_overlay_corner ~debug_overlay_capacity
+          ~frame_dump_every ?frame_dump_dir ?frame_dump_pattern ~frame_dump_hits
+          ~cursor_visible ~explicit_width ~input_timeout ~resize_debounce
+          ?initial_caps ~min_tui_height ~start_idle ~pace_redraws ~backend ()
       in
       app_ref := Some app;
-      Terminal.query_pixel_resolution terminal;
       let shutdown_fn () = close app in
       let winch_handler _ =
         winch_received := true;
@@ -1392,52 +1332,6 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
           ~additional_signals:
             [ (Sys.sigwinch, Sys.Signal_handle winch_handler) ]
           shutdown_fn;
-      app)
-
-(* Attach: wire custom I/O for testing *)
-
-let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
-    ?(respect_alpha = false) ?(mouse_enabled = true) ?(mouse = None)
-    ?(bracketed_paste = true) ?(focus_reporting = true)
-    ?(kitty_keyboard = `Auto) ?(exit_on_ctrl_c = true) ?(debug_overlay = false)
-    ?(debug_overlay_corner = `Bottom_right) ?(debug_overlay_capacity = 120)
-    ?(frame_dump_every = 0) ?frame_dump_dir ?frame_dump_pattern
-    ?(frame_dump_hits = false) ?(cursor_visible = mode = `Alt)
-    ?(explicit_width = false) ?(input_timeout = None)
-    ?(resize_debounce = Some 0.1) ?(min_tui_height = 1) ?(start_idle = false)
-    ?(pace_redraws = true) ?(signal_handlers = true) ?(startup_events = [])
-    ~(backend : Backend.t) ~parser ~terminal ~width ~height ?(render_offset = 0)
-    ?(static_needs_newline = false) () =
-  let config =
-    make_config ~mode ~raw_mode ~target_fps ~respect_alpha ~mouse_enabled ~mouse
-      ~bracketed_paste ~focus_reporting ~kitty_keyboard ~exit_on_ctrl_c
-      ~debug_overlay_corner ~debug_overlay_capacity ~cursor_visible
-      ~explicit_width ~input_timeout ~resize_debounce ~min_tui_height
-      ~start_idle ~pace_redraws ()
-  in
-  let app_ref = ref None in
-  let release_lifecycle = ref ignore in
-  let backend_cleaned = ref false in
-  let cleanup_owned () =
-    if not !backend_cleaned then (
-      backend_cleaned := true;
-      !release_lifecycle ();
-      backend.cleanup ())
-  in
-  let backend = { backend with cleanup = cleanup_owned } in
-  let rollback () =
-    match !app_ref with Some app -> close app | None -> cleanup_owned ()
-  in
-  with_rollback ~rollback (fun () ->
-      let app =
-        init_app config ~backend ~startup_events ~debug_overlay
-          ~frame_dump_every ~frame_dump_dir ~frame_dump_pattern ~frame_dump_hits
-          ~parser ~terminal ~width ~height ~render_offset ~static_needs_newline
-      in
-      app_ref := Some app;
-      release_lifecycle :=
-        own_process_lifecycle ~signal_handlers ~additional_signals:[] (fun () ->
-            close app);
       app)
 
 (* Event loop helpers *)
@@ -1583,7 +1477,26 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
     let caps_before = Terminal.capabilities t.terminal in
     let result =
       match t.pending_startup_events with
-      | [] -> t.backend.read_events ~timeout ~on_event:handle_event ~on_response
+      | [] ->
+          if t.input_ended then `End
+          else
+            let ready = t.backend.wait ~timeout ~on_event:handle_event in
+            if t.closed then `Continue
+            else
+              let n =
+                if ready then
+                  t.backend.read_input t.input_buffer 0
+                    (Bytes.length t.input_buffer)
+                else -1
+              in
+              if n = 0 then `End
+              else (
+                if n > 0 then
+                  Input.Parser.feed t.parser t.input_buffer 0 n
+                    ~now:(t.backend.now ()) ~on_event:handle_event ~on_response;
+                Input.Parser.drain t.parser ~now:(t.backend.now ())
+                  ~on_event:handle_event ~on_response;
+                `Continue)
       | events ->
           t.pending_startup_events <- [];
           List.iter handle_event events;

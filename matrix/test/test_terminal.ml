@@ -332,7 +332,7 @@ let test_probe_cpr_sets_width_capabilities () =
   let parser = Input.Parser.create () in
   let input = Bytes.of_string "\027[1;3R\027[?62;4c" in
   let consumed = ref false in
-  T.probe ~timeout:0.1
+  T.probe ~now:Unix.gettimeofday ~timeout:0.1
     ~on_event:(fun _ -> ())
     ~read_into:(fun buf off len ->
       if !consumed then 0
@@ -352,7 +352,7 @@ let test_probe_cpr_sets_width_capabilities () =
 let test_probe_payload_color_scheme_mode () =
   with_tty_terminal @@ fun term buf ->
   let parser = Input.Parser.create () in
-  T.probe ~timeout:0.0
+  T.probe ~now:Unix.gettimeofday ~timeout:0.0
     ~on_event:(fun _ -> ())
     ~read_into:(fun _ _ _ -> 0)
     ~wait_readable:(fun ~timeout:_ -> false)
@@ -387,7 +387,7 @@ let test_probe_payload_screen_is_not_tmux_wrapped () =
   setenv "TMUX" None;
   with_tty_terminal ~initial_caps:caps @@ fun term buf ->
   let parser = Input.Parser.create () in
-  T.probe ~timeout:0.0
+  T.probe ~now:Unix.gettimeofday ~timeout:0.0
     ~on_event:(fun _ -> ())
     ~read_into:(fun _ _ _ -> 0)
     ~wait_readable:(fun ~timeout:_ -> false)
@@ -421,7 +421,7 @@ let test_probe_payload_tmux_is_wrapped () =
   in
   with_tty_terminal ~initial_caps:caps @@ fun term buf ->
   let parser = Input.Parser.create () in
-  T.probe ~timeout:0.0
+  T.probe ~now:Unix.gettimeofday ~timeout:0.0
     ~on_event:(fun _ -> ())
     ~read_into:(fun _ _ _ -> 0)
     ~wait_readable:(fun ~timeout:_ -> false)
@@ -455,7 +455,7 @@ let test_probe_xtversion_tmux_resends_pending_queries_wrapped () =
   let parser = Input.Parser.create () in
   let input = Bytes.of_string "\027P>|tmux 3.5a\027\\" in
   let consumed = ref false in
-  T.probe ~timeout:0.1
+  T.probe ~now:Unix.gettimeofday ~timeout:0.1
     ~on_event:(fun _ -> ())
     ~read_into:(fun buf off len ->
       if !consumed then 0
@@ -497,7 +497,7 @@ let test_probe_xtversion_non_tmux_does_not_resend_wrapped () =
   let parser = Input.Parser.create () in
   let input = Bytes.of_string "\027P>|ghostty 1.2.3\027\\" in
   let consumed = ref false in
-  T.probe ~timeout:0.1
+  T.probe ~now:Unix.gettimeofday ~timeout:0.1
     ~on_event:(fun _ -> ())
     ~read_into:(fun buf off len ->
       if !consumed then 0
@@ -538,7 +538,7 @@ let test_probe_preserves_user_input_and_capabilities () =
   let input = Bytes.of_string "a\027[?0u\027[?62;c" in
   let consumed = ref false in
   let events = ref [] in
-  T.probe ~timeout:0.1
+  T.probe ~now:Unix.gettimeofday ~timeout:0.1
     ~on_event:(fun event -> events := event :: !events)
     ~read_into:(fun buf off len ->
       if !consumed then 0
@@ -564,7 +564,7 @@ let test_probe_stops_reading_at_end_of_input () =
   with_tty_terminal @@ fun term _buf ->
   let parser = Input.Parser.create () in
   let reads = ref 0 in
-  T.probe ~timeout:0.02
+  T.probe ~now:Unix.gettimeofday ~timeout:0.02
     ~on_event:(fun _event -> ())
     ~read_into:(fun _buf _off _len ->
       incr reads;
@@ -572,6 +572,52 @@ let test_probe_stops_reading_at_end_of_input () =
     ~wait_readable:(fun ~timeout:_ -> true)
     ~parser term;
   equal ~msg:"probe reads EOF exactly once" int 1 !reads;
+  T.close term
+
+let test_probe_uses_parser_clock () =
+  with_tty_terminal @@ fun term output ->
+  let parser = Input.Parser.create () in
+  let time = ref 7. in
+  let reads = ref 0 in
+  let waits = ref 0 in
+  let events = ref [] in
+  let on_event event = events := event :: !events in
+  T.probe ~timeout:0.0625
+    ~now:(fun () -> !time)
+    ~on_event
+    ~read_into:(fun buf off len ->
+      incr reads;
+      is_true ~msg:"probe provides room for input" (len > 0);
+      if !reads = 1 then -1
+      else (
+        Bytes.set buf off '\027';
+        time := !time +. 0.015625;
+        1))
+    ~wait_readable:(fun ~timeout ->
+      incr waits;
+      if !waits > 3 then fail "probe exceeded its injected-clock deadline";
+      if !reads = 0 then true
+      else if !reads = 1 then (
+        time := !time +. 0.03125;
+        true)
+      else (
+        time := !time +. timeout;
+        false))
+    ~parser term;
+  is_true ~msg:"probe sends queries" (Buffer.length output > 0);
+  equal ~msg:"probe waits until its deadline" float_exact 7.0625 !time;
+  equal ~msg:"incomplete input survives the probe" int 0 (List.length !events);
+  equal ~msg:"parser deadline starts after reading input"
+    (option (float 1e-9))
+    (Some 7.096875)
+    (Input.Parser.deadline parser);
+  Input.Parser.drain parser ~now:7.125 ~on_event ~on_response:(fun response ->
+      failf "unexpected response: %s"
+        (Format.asprintf "%a" Input.Response.pp response));
+  equal ~msg:"escape expires on the same clock after probing"
+    (list (Testable.make ~pp:Input.pp ~equal:Input.equal))
+    [ Input.key Input.Key.Escape ]
+    !events;
   T.close term
 
 (* Regression: X10 mouse tracking must be disabled on teardown. *)
@@ -876,6 +922,7 @@ let () =
             test_probe_preserves_user_input_and_capabilities;
           test "probe stops reading at end-of-input"
             test_probe_stops_reading_at_end_of_input;
+          test "probe uses the parser clock" test_probe_uses_parser_clock;
           cases "explicit cursor positioning env"
             explicit_cursor_positioning_envs
             ~name:(fun (name, _, _, _, _) -> name)

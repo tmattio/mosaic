@@ -159,7 +159,9 @@ let () =
   Eio.Switch.run @@ fun sw ->
   let clock = Eio.Stdenv.clock env in
   let matrix =
-    Matrix_eio.create ~sw ~clock ~stdin:env#stdin ~stdout:env#stdout ()
+    Matrix_eio.create ~sw
+      ~clock:(Eio.Stdenv.mono_clock env)
+      ~stdin:env#stdin ~stdout:env#stdout ()
   in
   let process_perform thunk =
     Eio.Fiber.fork_daemon ~sw (fun () ->

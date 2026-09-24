@@ -84,10 +84,10 @@ val feed :
     combined with subsequent calls. Bracketed paste content is emitted as one
     {!Event.Paste} event when the end marker is received.
 
-    [now] is the current time in seconds since the epoch, used to schedule flush
-    deadlines for ambiguous sequences, incomplete escape sequences, and
-    incomplete UTF-8 byte sequences. Raises [Invalid_argument] if [off] and
-    [len] describe a range outside [buf]. *)
+    [now] is monotonic time in seconds with an arbitrary origin, used to
+    schedule flush deadlines for ambiguous sequences, incomplete escape
+    sequences, and incomplete UTF-8 byte sequences. Raises [Invalid_argument] if
+    [off] and [len] describe a range outside [buf]. *)
 
 (** {1:draining Draining} *)
 
@@ -104,8 +104,9 @@ val drain :
     {!deadline} has elapsed. *)
 
 val deadline : t -> float option
-(** [deadline p] is the absolute timestamp (seconds since the epoch) at which
-    the next {!drain} should fire, or [None] when no drain is scheduled. *)
+(** [deadline p] is the absolute timestamp (seconds in the same clock as
+    {!feed}) at which the next {!drain} should fire, or [None] when no drain is
+    scheduled. *)
 
 (** {1:state State} *)
 

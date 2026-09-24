@@ -41,6 +41,7 @@
   (ocaml
    (>= 5.4))
   dune
+  mtime
   (windtrap :with-test)
   (thumper :with-test))
  (tags
@@ -85,6 +86,7 @@
    (>= 5.4))
   dune
   matrix
+  mtime
   (eio
    (>= 1.2))
   (eio_main :with-test)

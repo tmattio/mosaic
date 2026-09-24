@@ -50,103 +50,51 @@ type mode = [ `Alt | `Primary ]
       above the viewport are static transcript rows and enter native scrollback.
 *)
 
-type read_result = [ `Continue | `End ]
-(** The result of one custom-backend input wait. [`Continue] means the source
-    remains live after delivering input, a wakeup, or a timeout. [`End] means
-    the source reached permanent end-of-input; {!run} finalizes parser state and
-    closes the application without reading again. *)
-
-(** I/O backends.
-
-    A backend is the set of I/O primitives an application runs on: a clock, a
-    wakeup signal, byte-level terminal reads and writes, and device control.
-    Protocol logic — input parsing policy, terminal-response routing, cursor
-    queries — lives in the runtime and is written once over these primitives.
-
-    {!create} builds the Unix backend internally; alternative runtimes (tests,
-    Eio) construct a value of {!Backend.t} and pass it to {!attach}. *)
+(** Backend I/O. Matrix owns input parsing, protocol negotiation, and frame
+    scheduling. Backends provide device operations and a wait that can also
+    deliver native events such as window resizes. *)
 module Backend : sig
   type t = {
     now : unit -> float;
-        (** [now ()] is the current monotonic time in seconds. *)
+        (** [now ()] is monotonic time in seconds, with an arbitrary origin. *)
     wake : unit -> unit;
-        (** [wake ()] signals the event loop to re-check state. *)
+        (** [wake ()] interrupts the current or next [wait]. Wakeups remain
+            pending until consumed by [wait]. *)
     write_output : bytes -> int -> int -> unit;
-        (** [write_output buf off len] writes [len] bytes from [buf] at [off] to
-            the terminal. *)
+        (** [write_output buf off len] writes the complete slice before
+            returning. The backend must not retain [buf]. *)
     read_input : bytes -> int -> int -> int;
-        (** [read_input buf off len] reads up to [len] input bytes into [buf] at
-            [off] and returns the number of bytes read. [0] denotes permanent
-            end-of-input. *)
-    wait_readable : timeout:float -> bool;
-        (** [wait_readable ~timeout] blocks until input bytes are readable and
-            is [true], or [false] once [timeout] seconds elapsed without input.
-            Used for bounded protocol exchanges (capability probes, cursor
-            queries). *)
-    read_events :
-      timeout:float option ->
-      on_event:(Input.t -> unit) ->
-      on_response:(Input.Response.t -> unit) ->
-      read_result;
-        (** [read_events ~timeout ~on_event ~on_response] blocks for events up
-            to [timeout], invokes [on_event] for each, and returns [`Continue]
-            while the source is live or [`End] at permanent end-of-input.
-
-            [on_response] is the runtime's terminal-reply policy; pass it
-            through to {!Input.Parser.feed} and {!Input.Parser.drain} verbatim
-            so responses are routed identically on every backend. *)
+        (** [read_input buf off len] reads at most [len] bytes into [buf] at
+            [off]. Called only after [wait] reports readable input. [0] denotes
+            permanent end-of-input; [-1] means input is no longer ready.
+            Positive results denote bytes read. *)
+    wait : timeout:float option -> on_event:(Input.t -> unit) -> bool;
+        (** [wait ~timeout ~on_event] waits for readable input, a wakeup, native
+            events, or the timeout in seconds. [None] has no timeout; [Some 0.]
+            polls without blocking. Native events are passed to [on_event].
+            Returns [true] iff [read_input] can proceed without waiting. Matrix
+            parses bytes and drains expired parser deadlines after the wait; the
+            backend never parses terminal input. *)
+    input_is_tty : bool;  (** Whether the input device is a terminal. *)
+    output_is_tty : bool;
+        (** Whether the output device accepts terminal modes. *)
     terminal_size : unit -> int * int;
-        (** [terminal_size ()] is the terminal dimensions as [(cols, rows)]. *)
+        (** [terminal_size ()] is the terminal size as [(cols, rows)]. *)
     set_raw_mode : bool -> unit;
-        (** [set_raw_mode b] toggles raw mode on the backend's input device.
-            Backends without a terminal device make this a no-op. *)
-    flush_input : unit -> unit;  (** [flush_input ()] discards pending input. *)
+        (** [set_raw_mode enabled] switches terminal input into raw mode or
+            restores its original state. Repeated requests are idempotent;
+            non-terminal input is a no-op. *)
+    flush_input : unit -> unit;
+        (** [flush_input ()] discards pending device input. *)
+    protect : (unit -> unit) -> unit;
+        (** [protect f] runs [f ()] with cancellation deferred until it returns
+            or raises. Used only for cleanup; synchronous backends call [f]
+            directly. *)
     cleanup : unit -> unit;
-        (** [cleanup ()] releases backend resources on {!close}. *)
+        (** [cleanup ()] releases resources owned by the backend. Matrix calls
+            it once on failed attachment or close. *)
   }
-  (** The type for I/O backends. *)
-
-  val query_cursor_position :
-    terminal:Terminal.t ->
-    parser:Input.Parser.t ->
-    timeout:float ->
-    on_event:(Input.t -> unit) ->
-    t ->
-    (int * int) option
-  (** [query_cursor_position ~terminal ~parser ~timeout ~on_event t] sends a
-      cursor-position query through [terminal] and pumps [t]'s input primitives
-      until the reply arrives or [timeout] elapses. Non-reply capability
-      responses received while waiting are folded into [terminal]; user input
-      events are forwarded to [on_event]. *)
-
-  type session = {
-    width : int;  (** Terminal width in columns, clamped to at least 1. *)
-    height : int;  (** Terminal height in rows, clamped to at least 1. *)
-    render_offset : int;  (** Primary-mode live viewport row offset. *)
-    static_needs_newline : bool;
-        (** Primary-mode flag: whether static output must open with a newline.
-        *)
-    startup_events : Input.t list;
-        (** User input received during the handshake, to be replayed by the
-            event loop. Pass to {!attach} as [startup_events]. *)
-  }
-  (** The result of {!bootstrap}: the session geometry and the input captured
-      while probing. *)
-
-  val bootstrap :
-    mode:[ `Alt | `Primary ] ->
-    raw_mode:bool ->
-    input_is_tty:bool ->
-    terminal:Terminal.t ->
-    parser:Input.Parser.t ->
-    t ->
-    session
-  (** [bootstrap ~mode ~raw_mode ~input_is_tty ~terminal ~parser t] performs the
-      standard terminal handshake over [t]'s primitives: enables raw mode (when
-      [input_is_tty] and [raw_mode]), probes capabilities into [terminal], reads
-      the terminal size, and in [`Primary] mode anchors the live viewport at the
-      current cursor position. {!create} runs this internally; custom backends
-      call it before {!attach}. *)
+  (** The I/O operations and device properties supplied to {!attach}. *)
 end
 
 type debug_overlay_corner =
@@ -283,9 +231,9 @@ val run :
     do not change the applied size produce no callback. [on_input] still
     receives raw {!Input.Resize} terminal dimensions.
 
-    The loop exits when {!running} becomes [false]. A custom backend
-    {!read_result} of [`End] finalizes the input parser and closes the runtime.
-    Exceptions close the runtime before propagating. *)
+    The loop exits when {!running} becomes [false]. Permanent end-of-input
+    finalizes the input parser and closes the runtime. Exceptions close the
+    runtime before propagating. *)
 
 (** {1:frame Frame building} *)
 
@@ -371,9 +319,9 @@ val running : app -> bool
 (** [running app] is [true] iff the event loop is active. *)
 
 val now : app -> float
-(** [now app] is the current time in seconds as reported by [app]'s clock — wall
-    clock for the Unix backend, the injected [now] for custom backends
-    ({!attach}). *)
+(** [now app] is monotonic time in seconds as reported by [app]'s clock. Its
+    origin is arbitrary; use differences for durations and this same clock for
+    {!schedule_wakeup} deadlines. *)
 
 val request_redraw : app -> unit
 (** [request_redraw app] marks the frame dirty for the next iteration. Outside
@@ -551,36 +499,20 @@ val attach :
   ?min_tui_height:int ->
   ?start_idle:bool ->
   ?pace_redraws:bool ->
-  ?signal_handlers:bool ->
-  ?startup_events:Input.t list ->
+  ?initial_caps:Terminal.capabilities ->
   backend:Backend.t ->
-  parser:Input.Parser.t ->
-  terminal:Terminal.t ->
-  width:int ->
-  height:int ->
-  ?render_offset:int ->
-  ?static_needs_newline:bool ->
   unit ->
   app
-(** [attach ~backend ~parser ~terminal ~width ~height ()] is like {!create} but
-    wired to the I/O primitives in [backend].
+(** [attach ~backend ()] creates an application over [backend]. It owns the
+    parser and terminal protocol state, negotiates capabilities, obtains the
+    initial dimensions, and preserves input received during startup.
 
-    The optional parameters mirror {!create}. [startup_events] (default [[]])
-    are events captured during {!Backend.bootstrap}, replayed before the first
-    backend read.
+    Optional parameters have the same meaning as in {!create}. Raw mode and
+    startup queries require [backend.input_is_tty] and [raw_mode]; terminal mode
+    output requires [backend.output_is_tty].
 
-    [signal_handlers] defaults to [true] and has the same owned lifetime as in
-    {!create}. Set it to [false] when the embedding runtime owns termination
-    signal policy; process-exit cleanup remains tied to the application.
-
-    [parser] is the input parser, [terminal] the protocol handle, and
-    [width]/[height] the initial dimensions.
-
-    If setup raises after calling [set_raw_mode true] or applying a terminal
-    protocol, [attach] closes the partial application, invokes [cleanup], and
-    propagates the original exception and backtrace.
-
-    [render_offset] defaults to [0]. [static_needs_newline] defaults to [false].
-    Signal dispositions are installed only after all fallible application setup
-    has completed, so failed construction leaves the caller's dispositions
-    unchanged. *)
+    [attach] takes ownership of backend cleanup. Failed construction restores
+    acquired terminal modes and raw mode, calls [backend.cleanup] once, and
+    propagates the original exception and backtrace. On success, {!close}
+    releases these resources. The caller owns signal handling and must arrange
+    to close the application when its enclosing scope exits. *)

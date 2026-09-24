@@ -96,12 +96,6 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
      lands while the loop is out of its wait (mid-render, or descheduled by
      another fiber) is never lost to an edge-triggered broadcast. *)
   let wake_pending = ref false in
-  let terminal =
-    Matrix.Terminal.make
-      ~output:(fun s -> Eio.Flow.copy_string s stdout)
-      ~tty:output_is_tty ?initial_caps ()
-  in
-  let parser = Matrix.Input.Parser.create () in
   let original_termios = ref None in
   let restore_winch = ref ignore in
   let restore_termination = ref ignore in
@@ -142,31 +136,11 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
   let close_owned_protected () = Eio.Cancel.protect close_owned in
   Eio.Switch.on_release sw close_owned_protected;
   with_rollback ~rollback:close_owned_protected (fun () ->
-      let input_buffer = Bytes.create 4096 in
       let input_cs = Cstruct.create 4096 in
-      let await_readable ~timeout =
-        match
-          Eio.Time.with_timeout clock timeout (fun () ->
-              Eio_unix.Fd.use_exn "await" input_eio_fd (fun fd ->
-                  Eio_unix.await_readable fd);
-              Ok ())
-        with
-        | Ok () -> true
-        | Error `Timeout -> false
-      in
-      let read_stdin () =
-        (* [single_read] returns a positive length or raises [End_of_file]. Keep
-           EOF as an immediate sentinel so successful reads do not allocate. *)
-        match Eio.Flow.single_read stdin input_cs with
-        | n ->
-            Cstruct.blit_to_bytes input_cs 0 input_buffer 0 n;
-            n
-        | exception End_of_file -> 0
-      in
       let read_input buf off len =
         let cs =
-          if len <= Cstruct.length input_cs then Cstruct.sub input_cs 0 len
-          else Cstruct.create len
+          if len >= Cstruct.length input_cs then input_cs
+          else Cstruct.sub input_cs 0 len
         in
         match Eio.Flow.single_read stdin cs with
         | n ->
@@ -178,7 +152,11 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
         Eio_unix.Fd.use_exn "size" output_eio_fd Matrix.Terminal.size
       in
       (* ───── IO Callbacks ───── *)
-      let now () = Eio.Time.now clock in
+      let now () =
+        Eio.Time.Mono.now clock |> Mtime.to_uint64_ns |> Mtime.Span.of_uint64_ns
+        |> Mtime.Span.to_float_ns
+        |> fun ns -> ns *. 1e-9
+      in
       let wake () =
         wake_pending := true;
         Eio.Condition.broadcast wakeup
@@ -206,11 +184,11 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
         `Wakeup
       in
       let await_deadline () =
-        Eio.Time.sleep clock !wait_deadline;
+        Eio.Time.Mono.sleep clock !wait_deadline;
         `Timeout
       in
       let wait_branches = [ await_input; await_wake; await_deadline ] in
-      let read_events ~timeout ~on_event ~on_response =
+      let wait ~timeout ~on_event =
         let effective_timeout =
           match timeout with
           | None -> sigwinch_poll_interval
@@ -237,33 +215,18 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
           Atomic.set winch_flag false;
           let cols, rows = terminal_size () in
           on_event (Matrix.Input.Resize (cols, rows)));
-        let result =
-          match got with
-          | `Input -> (
-              match read_stdin () with
-              | 0 -> `End
-              | n ->
-                  let now = Eio.Time.now clock in
-                  Matrix.Input.Parser.feed parser input_buffer 0 n ~now
-                    ~on_event ~on_response;
-                  `Continue)
-          | `Wakeup | `Timeout -> `Continue
-        in
-        (match result with
-        | `Continue ->
-            let now = Eio.Time.now clock in
-            Matrix.Input.Parser.drain parser ~now ~on_event ~on_response
-        | `End -> ());
-        result
+        got = `Input
       in
       let backend : Matrix.Backend.t =
         {
           now;
+          protect = Eio.Cancel.protect;
           wake;
           write_output;
           read_input;
-          wait_readable = await_readable;
-          read_events;
+          wait;
+          input_is_tty;
+          output_is_tty;
           terminal_size;
           set_raw_mode;
           flush_input;
@@ -273,28 +236,16 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
               !restore_winch ());
         }
       in
-      let session =
-        Matrix.Backend.bootstrap ~mode ~raw_mode ~input_is_tty ~terminal ~parser
-          backend
-      in
       let app =
-        (* [signal_handlers:false]: Matrix.attach would install handlers that
-           call Matrix.close from signal context, which performs Eio effects —
-           see [install_termination_handlers]. Termination signals are handled
-           Eio-natively below instead. *)
         Matrix.attach ~mode ~raw_mode ~target_fps ~respect_alpha ~mouse_enabled
           ~mouse ~bracketed_paste ~focus_reporting ~kitty_keyboard
           ~exit_on_ctrl_c ~debug_overlay ~debug_overlay_corner
           ~debug_overlay_capacity ~frame_dump_every ?frame_dump_dir
           ?frame_dump_pattern ~frame_dump_hits ~cursor_visible ~explicit_width
           ~input_timeout ~resize_debounce ~min_tui_height ~start_idle
-          ~signal_handlers:false ~startup_events:session.startup_events ~backend
-          ~parser ~terminal ~width:session.width ~height:session.height
-          ~render_offset:session.render_offset
-          ~static_needs_newline:session.static_needs_newline ()
+          ?initial_caps ~backend ()
       in
       app_ref := Some app;
-      Matrix.Terminal.query_pixel_resolution terminal;
       restore_winch := install_winch_handler ();
       if signal_handlers then
         restore_termination := install_termination_handlers ();

@@ -1,24 +1,24 @@
 let make_app () =
-  let terminal = Matrix.Terminal.make ~output:(fun _ -> ()) ~tty:false () in
-  let parser = Matrix.Input.Parser.create () in
   let app =
     Matrix.attach ~mode:`Alt ~raw_mode:false ~target_fps:None
       ~mouse_enabled:false ~bracketed_paste:false ~focus_reporting:false
-      ~kitty_keyboard:`Disabled ~cursor_visible:false ~signal_handlers:false
+      ~kitty_keyboard:`Disabled ~cursor_visible:false
       ~backend:
         {
           now = (fun () -> 0.);
           wake = (fun () -> ());
           write_output = (fun _bytes _off _len -> ());
           read_input = (fun _ _ _ -> 0);
-          wait_readable = (fun ~timeout:_ -> false);
-          read_events = (fun ~timeout:_ ~on_event:_ ~on_response:_ -> `Continue);
+          wait = (fun ~timeout:_ ~on_event:_ -> false);
+          input_is_tty = false;
+          output_is_tty = false;
           terminal_size = (fun () -> (160, 48));
           set_raw_mode = (fun _ -> ());
           flush_input = (fun () -> ());
           cleanup = (fun () -> ());
+          protect = (fun f -> f ());
         }
-      ~parser ~terminal ~width:160 ~height:48 ()
+      ()
   in
   Matrix.prepare app;
   Matrix.submit app;

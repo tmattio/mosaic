@@ -16,7 +16,6 @@ type fake_state = {
   mutable pending_input_chunks : string list;
   mutable read_timeouts : float option list;
   output : Buffer.t;
-  terminal_output : Buffer.t;
 }
 
 let make_state events input_chunks =
@@ -31,7 +30,6 @@ let make_state events input_chunks =
     pending_input_chunks = input_chunks;
     read_timeouts = [];
     output = Buffer.create 256;
-    terminal_output = Buffer.create 256;
   }
 
 let output state = Buffer.contents state.output
@@ -83,83 +81,102 @@ let make_app ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     ?(input_timeout = Some 0.) ?(terminal_tty = false) ?(advance_now = true)
     ?(sleep_until_timeout = false) ?(read_quantum_s = 0.0001)
     ?(emit_event_each_read = None) ?(events = []) ?(input_chunks = [])
-    ?stop_after_reads ?end_after_reads ?render_offset ?static_needs_newline
+    ?(startup_input = []) ?startup_cursor ?stop_after_reads ?end_after_reads
     ?(min_tui_height = 1) ?(resize_debounce = Some 0.) ?(width = 80)
-    ?(height = 24) ?hyperlinks ?(query_cursor_position = fun ~timeout:_ -> None)
-    () =
+    ?(height = 24) ?hyperlinks ?query_cursor_position () =
   let state = make_state events input_chunks in
-  let terminal =
-    Matrix.Terminal.make
-      ~output:(fun s -> Buffer.add_string state.terminal_output s)
-      ~tty:terminal_tty ()
-  in
-  Option.iter
-    (fun hyperlinks ->
-      let caps = Matrix.Terminal.capabilities terminal in
-      Matrix.Terminal.set_capabilities terminal { caps with hyperlinks })
-    hyperlinks;
-  let parser = Matrix.Input.Parser.create () in
   let app_ref = ref None in
+  let startup_chunks = ref startup_input in
+  let cursor_reply = ref None in
+  let output_is_tty =
+    terminal_tty
+    || Option.is_some startup_cursor
+    || Option.is_some query_cursor_position
+  in
+  let input_is_tty =
+    Option.is_some startup_cursor
+    || Option.is_some query_cursor_position
+    || startup_input <> []
+  in
   let now () =
     if advance_now then state.now_s <- state.now_s +. 0.001;
     state.now_s
   in
-  let read_events ~timeout ~on_event ~on_response =
-    state.read_calls <- state.read_calls + 1;
-    state.read_timeouts <- timeout :: state.read_timeouts;
-    let dt =
-      if sleep_until_timeout then
-        match timeout with
-        | Some t when t > read_quantum_s -> t
-        | _ -> read_quantum_s
-      else read_quantum_s
+  let write_output buf off len =
+    Buffer.add_subbytes state.output buf off len;
+    if Bytes.sub_string buf off len = "\027[6n" then
+      cursor_reply :=
+        match !app_ref with
+        | None -> startup_cursor
+        | Some _ ->
+            Option.bind query_cursor_position (fun query -> query ~timeout:0.)
+  in
+  let wait ~timeout ~on_event =
+    if Option.is_some !cursor_reply || !startup_chunks <> [] then true
+    else if Option.is_none !app_ref then (
+      state.now_s <- state.now_s +. Option.value timeout ~default:0.;
+      false)
+    else (
+      state.read_calls <- state.read_calls + 1;
+      state.read_timeouts <- timeout :: state.read_timeouts;
+      let dt =
+        if sleep_until_timeout then
+          match timeout with
+          | Some t when t > read_quantum_s -> t
+          | _ -> read_quantum_s
+        else read_quantum_s
+      in
+      state.now_s <- state.now_s +. dt;
+      Option.iter on_event emit_event_each_read;
+      let events = state.pending_events in
+      state.pending_events <- [];
+      List.iter on_event events;
+      (match (stop_after_reads, !app_ref) with
+      | Some max_reads, Some app when state.read_calls >= max_reads ->
+          Matrix.stop app
+      | _ -> ());
+      match state.pending_input_chunks with
+      | "" :: rest ->
+          state.pending_input_chunks <- rest;
+          false
+      | _ :: _ -> true
+      | [] ->
+          Option.fold ~none:false
+            ~some:(fun max_reads -> state.read_calls >= max_reads)
+            end_after_reads)
+  in
+  let read_input buf off len =
+    let chunk =
+      match !cursor_reply with
+      | Some (row, col) ->
+          cursor_reply := None;
+          Printf.sprintf "\027[%d;%dR" row col
+      | None -> (
+          match !startup_chunks with
+          | chunk :: rest ->
+              startup_chunks := rest;
+              chunk
+          | [] -> (
+              match state.pending_input_chunks with
+              | chunk :: rest ->
+                  state.pending_input_chunks <- rest;
+                  chunk
+              | [] -> ""))
     in
-    state.now_s <- state.now_s +. dt;
-    Option.iter on_event emit_event_each_read;
-    let events = state.pending_events in
-    state.pending_events <- [];
-    List.iter on_event events;
-    (match state.pending_input_chunks with
-    | [] -> ()
-    | chunk :: rest ->
-        state.pending_input_chunks <- rest;
-        let input = Bytes.of_string chunk in
-        Matrix.Input.Parser.feed parser input 0 (Bytes.length input)
-          ~now:state.now_s ~on_event ~on_response;
-        Matrix.Input.Parser.drain parser ~now:state.now_s ~on_event ~on_response);
-    match (stop_after_reads, !app_ref) with
-    | Some max_reads, Some app when state.read_calls >= max_reads ->
-        Matrix.stop app;
-        `Continue
-    | _ -> (
-        match end_after_reads with
-        | Some max_reads when state.read_calls >= max_reads -> `End
-        | Some _ | None -> `Continue)
-  in
-  (* Serve the fake cursor-position reply through the byte-level primitives:
-     the runtime's shared query pumps [wait_readable]/[read_input] and parses
-     the CPR reply like any other terminal response. *)
-  let read_input buf off _len =
-    match query_cursor_position ~timeout:0. with
-    | None -> 0
-    | Some (row, col) ->
-        let s = Printf.sprintf "\027[%d;%dR" row col in
-        Bytes.blit_string s 0 buf off (String.length s);
-        String.length s
-  in
-  let wait_readable ~timeout =
-    Option.is_some (query_cursor_position ~timeout)
+    let n = String.length chunk in
+    if n > len then fail "fake input chunk exceeds runtime read buffer";
+    Bytes.blit_string chunk 0 buf off n;
+    n
   in
   let backend : Matrix.Backend.t =
     {
       now;
       wake = (fun () -> state.wake_calls <- state.wake_calls + 1);
-      write_output =
-        (fun buf off len ->
-          Buffer.add_string state.output (Bytes.sub_string buf off len));
+      write_output;
       read_input;
-      wait_readable;
-      read_events;
+      wait;
+      input_is_tty;
+      output_is_tty;
       terminal_size = (fun () -> (width, height));
       set_raw_mode =
         (fun enabled ->
@@ -168,14 +185,23 @@ let make_app ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
       flush_input =
         (fun () -> state.flush_input_calls <- state.flush_input_calls + 1);
       cleanup = (fun () -> state.cleanup_calls <- state.cleanup_calls + 1);
+      protect = (fun f -> f ());
     }
+  in
+  let initial_caps =
+    Option.map
+      (fun hyperlinks ->
+        let terminal = Matrix.Terminal.make ~output:ignore ~tty:false () in
+        let caps = Matrix.Terminal.capabilities terminal in
+        { caps with hyperlinks })
+      hyperlinks
   in
   let app =
     Matrix.attach ~mode ~raw_mode ~target_fps ~input_timeout ~min_tui_height
-      ~resize_debounce ~signal_handlers:false ?render_offset
-      ?static_needs_newline ~backend ~parser ~terminal ~width ~height ()
+      ~resize_debounce ?initial_caps ~backend ()
   in
   app_ref := Some app;
+  Buffer.clear state.output;
   (app, state)
 
 let mouse_press x y = Matrix.Input.mouse_press x y Matrix.Input.Mouse.Left
@@ -259,6 +285,17 @@ let test_run_closes_on_exception () =
   is_true ~msg:"exception propagated" raised;
   equal ~msg:"cleanup called on exception" int 1 state.cleanup_calls
 
+let test_native_event_close_skips_ready_input () =
+  let app, state =
+    make_app ~target_fps:None
+      ~events:[ Matrix.Input.Resize (100, 30) ]
+      ~input_chunks:[ "unread" ] ()
+  in
+  Matrix.run app ~on_input:(fun app _ -> Matrix.close app) ~on_render:ignore;
+  equal ~msg:"closing during native event delivery leaves ready input unread"
+    (list string) [ "unread" ] state.pending_input_chunks;
+  equal ~msg:"native event closure cleans up once" int 1 state.cleanup_calls
+
 let test_end_of_input_finalizes_parser_and_closes_once () =
   let app, state =
     make_app ~input_chunks:[ "\x1b[200~partial" ] ~end_after_reads:1 ()
@@ -267,7 +304,7 @@ let test_end_of_input_finalizes_parser_and_closes_once () =
   Matrix.run app
     ~on_input:(fun _app event -> events := event :: !events)
     ~on_render:(fun _app -> ());
-  equal ~msg:"end-of-input is read once" int 1 state.read_calls;
+  equal ~msg:"input then EOF are read once each" int 2 state.read_calls;
   equal ~msg:"end-of-input closes backend once" int 1 state.cleanup_calls;
   equal ~msg:"end-of-input restores raw mode once" int 1 state.raw_restore_calls;
   is_false ~msg:"application is no longer running" (Matrix.running app);
@@ -290,35 +327,100 @@ let test_stray_cpr_does_not_flip_capabilities () =
   is_false ~msg:"stray CPR does not enable explicit width" caps.explicit_width;
   is_false ~msg:"stray CPR does not enable scaled text" caps.scaled_text
 
+let input_event = Testable.make ~pp:Matrix.Input.pp ~equal:Matrix.Input.equal
+
+let test_escape_expires_without_more_input () =
+  let app, state =
+    make_app ~target_fps:None ~input_timeout:None ~advance_now:false
+      ~sleep_until_timeout:true ~input_chunks:[ "\027" ] ~stop_after_reads:10 ()
+  in
+  let events = ref [] in
+  Matrix.run app
+    ~on_input:(fun app event ->
+      events := event :: !events;
+      Matrix.stop app)
+    ~on_render:(fun _app -> ());
+  equal ~msg:"timeout delivers the buffered Escape" (list input_event)
+    [ Matrix.Input.key Matrix.Input.Key.Escape ]
+    (List.rev !events);
+  is_true ~msg:"Escape required a wait after the input read"
+    (state.read_calls > 1)
+
+let test_startup_preserves_input_and_partial_paste () =
+  let app, state =
+    make_app ~target_fps:None ~startup_input:[ "a\027[200~par" ]
+      ~input_chunks:[ "tial\027[201~b" ] ~end_after_reads:1 ()
+  in
+  satisfies ~msg:"startup probe respects the injected clock"
+    ~claim:"at most one second of virtual time" float_exact
+    (fun now -> now <= 1.)
+    state.now_s;
+  let events = ref [] in
+  Matrix.run app
+    ~on_input:(fun _app event -> events := event :: !events)
+    ~on_render:(fun _app -> ());
+  equal ~msg:"startup and runtime bytes share one parser in input order"
+    (list input_event)
+    [
+      Matrix.Input.char 'a'; Matrix.Input.Paste "partial"; Matrix.Input.char 'b';
+    ]
+    (List.rev !events);
+  equal ~msg:"EOF closes the backend after replaying startup input" int 1
+    state.cleanup_calls
+
+let test_startup_eof_finalizes_input_without_reading_again () =
+  let app, state =
+    make_app ~mode:`Primary ~target_fps:None
+      ~startup_input:[ "a\027[200~par"; "" ] ()
+  in
+  let events = ref [] in
+  Matrix.run app
+    ~on_input:(fun _app event -> events := event :: !events)
+    ~on_render:(fun _app -> ());
+  equal ~msg:"startup EOF preserves completed input and finalizes partial paste"
+    (list input_event)
+    [
+      Matrix.Input.char 'a';
+      Matrix.Input.Error
+        (Matrix.Input.Error.Unterminated_paste { received = 3 });
+    ]
+    (List.rev !events);
+  equal ~msg:"startup EOF prevents further input waits" int 0 state.read_calls;
+  equal ~msg:"startup EOF closes the backend once" int 1 state.cleanup_calls
+
+let inert_backend () : Matrix.Backend.t =
+  {
+    now = (fun () -> 0.);
+    wake = (fun () -> ());
+    write_output = (fun _ _ _ -> ());
+    read_input = (fun _ _ _ -> 0);
+    wait = (fun ~timeout:_ ~on_event:_ -> false);
+    input_is_tty = false;
+    output_is_tty = true;
+    terminal_size = (fun () -> (80, 24));
+    set_raw_mode = (fun _ -> ());
+    flush_input = (fun () -> ());
+    cleanup = (fun () -> ());
+    protect = (fun f -> f ());
+  }
+
 let test_close_restores_raw_mode_if_terminal_close_raises () =
   let fail_output = ref false in
-  let terminal =
-    Matrix.Terminal.make ~tty:true
-      ~output:(fun _ -> if !fail_output then failwith "closed output")
-      ()
-  in
-  let parser = Matrix.Input.Parser.create () in
   let cleanup_calls = ref 0 in
   let raw_restore_calls = ref 0 in
+  let backend =
+    {
+      (inert_backend ()) with
+      write_output =
+        (fun _ _ _ -> if !fail_output then failwith "closed output");
+      set_raw_mode = (fun enabled -> if not enabled then incr raw_restore_calls);
+      cleanup = (fun () -> incr cleanup_calls);
+    }
+  in
   let app =
     Matrix.attach ~mode:`Primary ~raw_mode:true ~mouse_enabled:false
       ~bracketed_paste:false ~focus_reporting:false ~kitty_keyboard:`Disabled
-      ~target_fps:None ~input_timeout:(Some 0.) ~signal_handlers:false
-      ~backend:
-        {
-          now = (fun () -> 0.);
-          wake = (fun () -> ());
-          write_output = (fun _buf _off _len -> ());
-          read_input = (fun _ _ _ -> 0);
-          wait_readable = (fun ~timeout:_ -> false);
-          read_events = (fun ~timeout:_ ~on_event:_ ~on_response:_ -> `Continue);
-          terminal_size = (fun () -> (80, 24));
-          set_raw_mode =
-            (fun enabled -> if not enabled then incr raw_restore_calls);
-          flush_input = (fun () -> ());
-          cleanup = (fun () -> incr cleanup_calls);
-        }
-      ~parser ~terminal ~width:80 ~height:24 ()
+      ~target_fps:None ~input_timeout:(Some 0.) ~backend ()
   in
   fail_output := true;
   Matrix.close app;
@@ -356,32 +458,16 @@ let test_close_restores_owned_signal_dispositions_once () =
 
 let test_attach_failure_preserves_signal_dispositions () =
   with_distinct_signal_handlers @@ fun entries ->
-  let terminal =
-    Matrix.Terminal.make ~tty:true
-      ~output:(fun _ -> raise_injected_startup_failure ())
-      ()
+  let backend =
+    {
+      (inert_backend ()) with
+      write_output = (fun _ _ _ -> raise_injected_startup_failure ());
+    }
   in
-  let parser = Matrix.Input.Parser.create () in
   let failure =
     try
       ignore
-        (Matrix.attach ~mode:`Alt ~raw_mode:true ~target_fps:None
-           ~signal_handlers:true
-           ~backend:
-             {
-               now = (fun () -> 0.);
-               wake = (fun () -> ());
-               write_output = (fun _ _ _ -> ());
-               read_input = (fun _ _ _ -> 0);
-               wait_readable = (fun ~timeout:_ -> false);
-               read_events =
-                 (fun ~timeout:_ ~on_event:_ ~on_response:_ -> `Continue);
-               terminal_size = (fun () -> (80, 24));
-               set_raw_mode = (fun _ -> ());
-               flush_input = (fun () -> ());
-               cleanup = (fun () -> ());
-             }
-           ~parser ~terminal ~width:80 ~height:24 ());
+        (Matrix.attach ~mode:`Alt ~raw_mode:true ~target_fps:None ~backend ());
       None
     with exn -> Some exn
   in
@@ -420,16 +506,6 @@ let test_attach_rolls_back_partially_applied_terminal_modes () =
   let writes = ref 0 in
   let terminal_output = Buffer.create 256 in
   let lifecycle_trace = Buffer.create 256 in
-  let terminal =
-    Matrix.Terminal.make ~tty:true
-      ~output:(fun output ->
-        incr writes;
-        Buffer.add_string lifecycle_trace output;
-        if !writes = 2 then raise_injected_startup_failure ();
-        Buffer.add_string terminal_output output)
-      ()
-  in
-  let parser = Matrix.Input.Parser.create () in
   let raw_changes = ref [] in
   let cleanup_calls = ref 0 in
   let recording_backtraces = Printexc.backtrace_status () in
@@ -443,26 +519,24 @@ let test_attach_rolls_back_partially_applied_terminal_modes () =
             (Matrix.attach ~mode:`Alt ~raw_mode:true ~target_fps:None
                ~backend:
                  {
-                   now = (fun () -> 0.);
-                   wake = (fun () -> ());
-                   write_output = (fun _ _ _ -> ());
-                   read_input = (fun _ _ _ -> 0);
-                   wait_readable = (fun ~timeout:_ -> false);
-                   read_events =
-                     (fun ~timeout:_ ~on_event:_ ~on_response:_ -> `Continue);
-                   terminal_size = (fun () -> (80, 24));
+                   (inert_backend ()) with
+                   write_output =
+                     (fun buf off len ->
+                       incr writes;
+                       Buffer.add_subbytes lifecycle_trace buf off len;
+                       if !writes = 2 then raise_injected_startup_failure ();
+                       Buffer.add_subbytes terminal_output buf off len);
                    set_raw_mode =
                      (fun enabled ->
                        Buffer.add_string lifecycle_trace
                          (if enabled then "<raw:on>" else "<raw:off>");
                        raw_changes := enabled :: !raw_changes);
-                   flush_input = (fun () -> ());
                    cleanup =
                      (fun () ->
                        Buffer.add_string lifecycle_trace "<cleanup>";
                        incr cleanup_calls);
                  }
-               ~parser ~terminal ~width:80 ~height:24 ());
+               ());
           None
         with exn -> Some (exn, Printexc.get_raw_backtrace ()))
   in
@@ -496,15 +570,16 @@ let test_focus_restore_runs_only_after_blur_once () =
     make_app ~terminal_tty:true ~target_fps:None ~input_timeout:(Some 0.)
       ~events:[ Matrix.Input.Focus ] ()
   in
-  let first_focus_output = ref (-1) in
-  Buffer.clear state.terminal_output;
+  let first_focus_output = ref "" in
   Matrix.run app
     ~on_input:(fun app _event ->
-      first_focus_output := Buffer.length state.terminal_output;
+      first_focus_output := output state;
       Matrix.stop app)
     ~on_render:(fun _app -> ());
-  equal ~msg:"focus without prior blur does not restore terminal modes" int 0
-    !first_focus_output;
+  (* Frames and terminal modes share one output stream. Restoring modes emits
+     the enabled paste protocol; ordinary frame output cannot contain it. *)
+  not_contains ~msg:"focus without prior blur does not restore terminal modes"
+    ~sub:"\027[?2004h" !first_focus_output;
 
   let app, state =
     make_app ~terminal_tty:true ~target_fps:None ~input_timeout:(Some 0.)
@@ -512,10 +587,9 @@ let test_focus_restore_runs_only_after_blur_once () =
       ()
   in
   let seen = ref [] in
-  Buffer.clear state.terminal_output;
   Matrix.run app
     ~on_input:(fun app event ->
-      seen := (event, Buffer.length state.terminal_output) :: !seen;
+      seen := (event, output state) :: !seen;
       match List.length !seen with 3 -> Matrix.stop app | _ -> ())
     ~on_render:(fun _app -> ());
   match List.rev !seen with
@@ -524,14 +598,11 @@ let test_focus_restore_runs_only_after_blur_once () =
    (Matrix.Input.Focus, after_first_focus);
    (Matrix.Input.Focus, after_second_focus);
   ] ->
-      equal ~msg:"blur itself does not restore terminal modes" int 0 after_blur;
-      satisfies ~msg:"first focus after blur restores terminal modes"
-        ~claim:
-          (Printf.sprintf "more than the %d bytes written at blur" after_blur)
-        int
-        (fun n -> n > after_blur)
-        after_first_focus;
-      equal ~msg:"second focus does not restore modes again" int
+      not_contains ~msg:"blur itself does not restore terminal modes"
+        ~sub:"\027[?2004h" after_blur;
+      contains ~msg:"first focus after blur restores terminal modes"
+        ~sub:"\027[?2004h" after_first_focus;
+      equal ~msg:"second focus does not restore modes again" string
         after_first_focus after_second_focus
   | _ -> fail "expected blur, focus, focus input trace"
 
@@ -575,13 +646,34 @@ let test_resume_reanchors_primary_from_bottom_cursor () =
       ()
   in
   Matrix.suspend app;
-  Buffer.clear state.terminal_output;
+  Buffer.clear state.output;
   Matrix.resume app;
   contains ~msg:"bottom-row resume writes newline before reanchoring"
     ~sub:"\r\n"
-    (Buffer.contents state.terminal_output);
+    (Buffer.contents state.output);
   equal ~msg:"bottom-row cursor anchors one-row live viewport" (pair int int)
     (80, 1) (Matrix.size app)
+
+let test_resume_preserves_resize_during_cursor_query () =
+  let app, state =
+    make_app ~mode:`Primary ~target_fps:None ~read_quantum_s:0.1
+      ~stop_after_reads:2
+      ~query_cursor_position:(fun ~timeout:_ -> None)
+      ()
+  in
+  Matrix.suspend app;
+  state.pending_events <- [ Matrix.Input.Resize (100, 30) ];
+  Matrix.resume app;
+  let resized = ref false in
+  Matrix.run app ~on_render:ignore ~on_input:(fun app -> function
+    | Matrix.Input.Resize (100, 30) ->
+        resized := true;
+        Matrix.stop app
+    | _ -> ());
+  is_true ~msg:"resize received during cursor query reaches application"
+    !resized;
+  equal ~msg:"resize received during cursor query updates dimensions"
+    (pair int int) (100, 30) (Matrix.full_size app)
 
 let test_target_fps_respected_without_input_storm () =
   let app, state =
@@ -662,8 +754,9 @@ let test_close_leaves_untouched_appearance_alone () =
   in
   Matrix.prepare app;
   Matrix.submit app;
+  Buffer.clear state.output;
   Matrix.close app;
-  let out = Buffer.contents state.terminal_output in
+  let out = Buffer.contents state.output in
   not_contains ~msg:"close does not clear the title" ~sub:"\027]0;" out;
   not_contains ~msg:"close does not reset cursor color" ~sub:"\027]112" out;
   not_contains ~msg:"close does not reset cursor style" ~sub:"\027[0 q" out
@@ -680,8 +773,9 @@ let test_close_restores_touched_cursor_appearance () =
   Matrix.set_cursor_color app ~r:1. ~g:0. ~b:0.;
   Matrix.set_cursor_position app ~row:1 ~col:1;
   Matrix.submit app;
+  Buffer.clear state.output;
   Matrix.close app;
-  let out = Buffer.contents state.terminal_output in
+  let out = Buffer.contents state.output in
   contains ~msg:"close resets the emitted cursor style" ~sub:"\027[0 q" out;
   contains ~msg:"close resets the emitted cursor color" ~sub:"\027]112" out
 
@@ -869,7 +963,7 @@ let test_resize_zero_dimensions_are_ignored () =
    saw two different row semantics. Both now report {!Matrix.size}. *)
 let test_on_resize_reports_usable_size () =
   let app, _state =
-    make_app ~mode:`Primary ~render_offset:14 ~resize_debounce:None
+    make_app ~mode:`Primary ~startup_cursor:(15, 1) ~resize_debounce:None
       ~target_fps:None ~input_timeout:(Some 0.)
       ~events:[ Matrix.Input.Resize (100, 30) ]
       ~stop_after_reads:1 ()
@@ -891,7 +985,7 @@ let test_on_resize_reports_usable_size () =
 
 let test_resize_clamps_primary_render_offset () =
   let app, _state =
-    make_app ~mode:`Primary ~render_offset:20 ~resize_debounce:None
+    make_app ~mode:`Primary ~startup_cursor:(21, 1) ~resize_debounce:None
       ~target_fps:None ~input_timeout:(Some 0.)
       ~events:[ Matrix.Input.Resize (80, 12) ]
       ~stop_after_reads:1 ()
@@ -947,7 +1041,7 @@ let test_same_size_debounced_resize_settles () =
 
 let test_primary_required_rows_expands_primary_region () =
   let app, _state =
-    make_app ~mode:`Primary ~render_offset:22 ~target_fps:(Some 30.)
+    make_app ~mode:`Primary ~startup_cursor:(23, 1) ~target_fps:(Some 30.)
       ~input_timeout:(Some 0.) ~stop_after_reads:5000 ()
   in
   let frames = ref 0 in
@@ -1036,8 +1130,8 @@ let test_static_write_preserves_lf_outside_raw_mode () =
 
 let test_static_write_tracks_mid_line_continuation () =
   let app, state =
-    make_app ~mode:`Primary ~render_offset:23 ~min_tui_height:1 ~target_fps:None
-      ~input_timeout:(Some 0.) ()
+    make_app ~mode:`Primary ~startup_cursor:(24, 1) ~min_tui_height:1
+      ~target_fps:None ~input_timeout:(Some 0.) ()
   in
   Matrix.submit app;
   Buffer.clear state.output;
@@ -1050,8 +1144,8 @@ let test_static_write_tracks_mid_line_continuation () =
     ~sub:"\r\nsecond" (output state);
 
   let app, state =
-    make_app ~mode:`Primary ~render_offset:23 ~min_tui_height:1 ~target_fps:None
-      ~input_timeout:(Some 0.) ()
+    make_app ~mode:`Primary ~startup_cursor:(24, 1) ~min_tui_height:1
+      ~target_fps:None ~input_timeout:(Some 0.) ()
   in
   Matrix.submit app;
   Buffer.clear state.output;
@@ -1073,23 +1167,22 @@ let test_static_clear_is_immediate_and_forces_full_repaint () =
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
   Matrix.submit app;
   Buffer.clear state.output;
-  Buffer.clear state.terminal_output;
   Matrix.static_clear app;
-  contains ~msg:"static_clear sends clear-and-home immediately"
-    ~sub:"\027[H\027[2J"
-    (Buffer.contents state.terminal_output);
-  equal ~msg:"static_clear queues nothing into the frame stream" string ""
-    (output state);
+  equal ~msg:"static_clear sends clear-and-home immediately" string
+    "\027[H\027[2J" (output state);
+  Buffer.clear state.output;
   Matrix.prepare app;
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
   Matrix.submit app;
   contains ~msg:"next submit repaints unchanged content in full" ~sub:"live"
-    (output state)
+    (output state);
+  not_contains ~msg:"the immediate clear is not queued again into the frame"
+    ~sub:"\027[H\027[2J" (output state)
 
 let test_pinned_static_write_uses_bounded_scroll_region () =
   let app, state =
-    make_app ~mode:`Primary ~render_offset:23 ~min_tui_height:1 ~target_fps:None
-      ~input_timeout:(Some 0.) ()
+    make_app ~mode:`Primary ~startup_cursor:(24, 1) ~min_tui_height:1
+      ~target_fps:None ~input_timeout:(Some 0.) ()
   in
   Matrix.submit app;
   Buffer.clear state.output;
@@ -1108,8 +1201,8 @@ let test_pinned_static_write_uses_bounded_scroll_region () =
 
 let test_pinned_static_write_resets_scroll_region_before_live_render () =
   let app, state =
-    make_app ~mode:`Primary ~render_offset:23 ~min_tui_height:1 ~target_fps:None
-      ~input_timeout:(Some 0.) ()
+    make_app ~mode:`Primary ~startup_cursor:(24, 1) ~min_tui_height:1
+      ~target_fps:None ~input_timeout:(Some 0.) ()
   in
   Matrix.submit app;
   Buffer.clear state.output;
@@ -1125,8 +1218,8 @@ let test_pinned_static_write_resets_scroll_region_before_live_render () =
 
 let test_pinned_static_write_repaints_unchanged_live_view () =
   let app, state =
-    make_app ~mode:`Primary ~render_offset:23 ~min_tui_height:1 ~target_fps:None
-      ~input_timeout:(Some 0.) ()
+    make_app ~mode:`Primary ~startup_cursor:(24, 1) ~min_tui_height:1
+      ~target_fps:None ~input_timeout:(Some 0.) ()
   in
   Matrix.prepare app;
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"prompt";
@@ -1144,8 +1237,8 @@ let test_pinned_static_write_repaints_unchanged_live_view () =
 
 let test_multiline_static_write_uses_scroll_region_when_it_reaches_pin () =
   let app, state =
-    make_app ~mode:`Primary ~render_offset:22 ~min_tui_height:1 ~target_fps:None
-      ~input_timeout:(Some 0.) ()
+    make_app ~mode:`Primary ~startup_cursor:(23, 1) ~min_tui_height:1
+      ~target_fps:None ~input_timeout:(Some 0.) ()
   in
   Matrix.submit app;
   Buffer.clear state.output;
@@ -1167,8 +1260,8 @@ let test_multiline_static_write_uses_scroll_region_when_it_reaches_pin () =
 
 let test_unpinned_static_write_settles_without_scroll_region () =
   let app, state =
-    make_app ~mode:`Primary ~render_offset:1 ~min_tui_height:1 ~target_fps:None
-      ~input_timeout:(Some 0.) ()
+    make_app ~mode:`Primary ~startup_cursor:(2, 1) ~min_tui_height:1
+      ~target_fps:None ~input_timeout:(Some 0.) ()
   in
   Matrix.submit app;
   Buffer.clear state.output;
@@ -1177,7 +1270,11 @@ let test_unpinned_static_write_settles_without_scroll_region () =
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
   Matrix.submit app;
   let output = output state in
-  equal ~msg:"static output moves live region downward" (pair int int) (80, 22)
+  (* The startup cursor row belongs to the shell. Its separating newline and
+     the static line consume two rows before the live viewport. *)
+  contains ~msg:"static output preserves the startup cursor row"
+    ~sub:"\r\nsettle" output;
+  equal ~msg:"static output moves live region downward" (pair int int) (80, 21)
     (Matrix.size app);
   in_order ~msg:"static payload appears before live repaint"
     ~subs:[ "settle"; "live" ] output;
@@ -1188,7 +1285,7 @@ let test_unpinned_static_write_settles_without_scroll_region () =
 
 let test_static_write_and_live_repaint_share_sync_frame () =
   let app, state =
-    make_app ~mode:`Primary ~terminal_tty:true ~render_offset:23
+    make_app ~mode:`Primary ~terminal_tty:true ~startup_cursor:(24, 1)
       ~min_tui_height:1 ~target_fps:None ~input_timeout:(Some 0.) ()
   in
   set_sync_capable app;
@@ -1211,8 +1308,8 @@ let test_static_write_and_live_repaint_share_sync_frame () =
 
 let test_pinned_static_write_keeps_live_size () =
   let app, _state =
-    make_app ~mode:`Primary ~render_offset:23 ~min_tui_height:1 ~target_fps:None
-      ~input_timeout:(Some 0.) ()
+    make_app ~mode:`Primary ~startup_cursor:(24, 1) ~min_tui_height:1
+      ~target_fps:None ~input_timeout:(Some 0.) ()
   in
   Matrix.submit app;
   let before = Matrix.size app in
@@ -1226,8 +1323,8 @@ let test_pinned_static_write_keeps_live_size () =
 
 let test_primary_required_rows_apply_before_static_flush () =
   let app, state =
-    make_app ~mode:`Primary ~render_offset:10 ~min_tui_height:1 ~target_fps:None
-      ~input_timeout:(Some 0.) ()
+    make_app ~mode:`Primary ~startup_cursor:(11, 1) ~min_tui_height:1
+      ~target_fps:None ~input_timeout:(Some 0.) ()
   in
   Matrix.submit app;
   Buffer.clear state.output;
@@ -1236,8 +1333,12 @@ let test_primary_required_rows_apply_before_static_flush () =
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
   Matrix.submit app ~primary_required_rows:20;
   let output = output state in
+  (* Growth reserves twenty rows, then the shell-row separator and prompt
+     consume two of them. *)
+  contains ~msg:"prompt preserves the shell-owned startup row" ~sub:"\r\nprompt"
+    output;
   equal ~msg:"static output settles against the expanded primary region"
-    (pair int int) (80, 19) (Matrix.size app);
+    (pair int int) (80, 18) (Matrix.size app);
   in_order ~msg:"primary growth happens before static output is flushed"
     ~subs:[ "\027[24;1H"; "prompt" ] output
 
@@ -1274,7 +1375,7 @@ let test_full_height_static_write_scrolls_into_scrollback () =
 let test_primary_column_one_anchor_preserves_current_row () =
   let app, state =
     make_app ~mode:`Primary ~terminal_tty:true ~target_fps:None
-      ~input_timeout:(Some 0.) ~static_needs_newline:true ()
+      ~input_timeout:(Some 0.) ~startup_cursor:(1, 1) ()
   in
   Buffer.clear state.output;
   Matrix.static_write app ~rows:1 "HEADER\n";
@@ -1306,21 +1407,23 @@ let test_preserved_static_write_keeps_live_region () =
 
 let test_preserved_static_write_grows_after_static_rows () =
   let app, state =
-    make_app ~mode:`Primary ~render_offset:3 ~min_tui_height:5 ~target_fps:None
-      ~input_timeout:(Some 0.) ()
+    make_app ~mode:`Primary ~startup_cursor:(4, 1) ~min_tui_height:5
+      ~target_fps:None ~input_timeout:(Some 0.) ()
   in
   Matrix.submit app;
   Buffer.clear state.output;
   Matrix.static_write ~preserve_live_region:true app ~rows:2 "AAAA\nBBBB\n";
+  (* Three preceding rows, the shell-row separator, and two static rows
+     leave eighteen rows for the live region. *)
   equal ~msg:"pending preserved write projects the grown live size"
-    (pair int int) (80, 19)
+    (pair int int) (80, 18)
     (Matrix.effective_size app);
   Matrix.submit app;
   let output = output state in
-  contains ~msg:"content is written, not dropped" ~sub:"AAAA\r\nBBBB" output;
+  contains ~msg:"content is written, not dropped" ~sub:"\r\nAAAA\r\nBBBB" output;
   not_contains ~msg:"partial layout does not scroll into history" ~sub:"\027[2S"
     output;
-  equal ~msg:"write grows the static area instead" (pair int int) (80, 19)
+  equal ~msg:"write grows the static area instead" (pair int int) (80, 18)
     (Matrix.size app)
 
 let test_mixed_static_writes_fall_back_to_growth () =
@@ -1378,19 +1481,20 @@ let test_static_write_ignored_in_alt_mode () =
 
 let test_static_clear_resets_primary_layout () =
   let app, state =
-    make_app ~mode:`Primary ~terminal_tty:true ~render_offset:10
+    make_app ~mode:`Primary ~terminal_tty:true ~startup_cursor:(11, 1)
       ~target_fps:None ~input_timeout:(Some 0.) ()
   in
   equal ~msg:"attached primary starts below transcript" (pair int int) (80, 14)
     (Matrix.size app);
   Matrix.static_write app ~rows:1 "pending\n";
-  equal ~msg:"pending output affects effective size" (pair int int) (80, 13)
+  (* Pending output reserves the shell-owned cursor row and its own line. *)
+  equal ~msg:"pending output affects effective size" (pair int int) (80, 12)
     (Matrix.effective_size app);
-  Buffer.clear state.terminal_output;
+  Buffer.clear state.output;
   Matrix.static_clear app;
   contains ~msg:"static clear is an immediate terminal reset"
     ~sub:"\027[H\027[2J"
-    (Buffer.contents state.terminal_output);
+    (Buffer.contents state.output);
   equal ~msg:"static clear restores full primary height" (pair int int) (80, 24)
     (Matrix.size app);
   equal ~msg:"effective size also reset" (pair int int) (80, 24)
@@ -1407,16 +1511,15 @@ let test_static_clear_resets_primary_layout () =
 
 let test_static_replace_replays_inside_next_frame () =
   let app, state =
-    make_app ~mode:`Primary ~terminal_tty:true ~render_offset:10
+    make_app ~mode:`Primary ~terminal_tty:true ~startup_cursor:(11, 1)
       ~target_fps:None ~input_timeout:(Some 0.) ()
   in
   set_sync_capable app;
   Matrix.submit app;
   Buffer.clear state.output;
-  Buffer.clear state.terminal_output;
   Matrix.static_replace app ~rows:2 "replacement-a\nreplacement-b\n";
   equal ~msg:"static replacement is deferred until the next frame" string ""
-    (Buffer.contents state.terminal_output);
+    (Buffer.contents state.output);
   Matrix.prepare app;
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live-after";
   Matrix.submit app;
@@ -1434,7 +1537,7 @@ let test_static_replace_replays_inside_next_frame () =
 
 let test_primary_full_redraw_does_not_erase_past_terminal_bottom () =
   let app, state =
-    make_app ~mode:`Primary ~render_offset:10 ~target_fps:None
+    make_app ~mode:`Primary ~startup_cursor:(11, 1) ~target_fps:None
       ~input_timeout:(Some 0.) ()
   in
   let _w, live_height = Matrix.size app in
@@ -1452,7 +1555,7 @@ let test_primary_full_redraw_does_not_erase_past_terminal_bottom () =
 
 let test_primary_full_redraw_erases_stale_rows_below_content () =
   let app, state =
-    make_app ~mode:`Primary ~render_offset:10 ~target_fps:None
+    make_app ~mode:`Primary ~startup_cursor:(11, 1) ~target_fps:None
       ~input_timeout:(Some 0.) ()
   in
   Matrix.prepare app;
@@ -1468,7 +1571,7 @@ let test_primary_full_redraw_erases_stale_rows_below_content () =
 let test_primary_required_rows_to_terminal_height_does_not_erase_past_bottom ()
     =
   let app, state =
-    make_app ~mode:`Primary ~render_offset:10 ~target_fps:None
+    make_app ~mode:`Primary ~startup_cursor:(11, 1) ~target_fps:None
       ~input_timeout:(Some 0.) ()
   in
   Matrix.prepare app;
@@ -1487,7 +1590,7 @@ let test_primary_required_rows_to_terminal_height_does_not_erase_past_bottom ()
 
 let test_primary_mouse_event_is_offset_into_live_region () =
   let app, _state =
-    make_app ~mode:`Primary ~render_offset:10 ~target_fps:None
+    make_app ~mode:`Primary ~startup_cursor:(11, 1) ~target_fps:None
       ~input_timeout:(Some 0.)
       ~events:[ mouse_press 4 12 ]
       ()
@@ -1505,7 +1608,7 @@ let test_primary_mouse_event_is_offset_into_live_region () =
 
 let test_primary_mouse_event_above_live_region_maps_to_minus_one () =
   let app, _state =
-    make_app ~mode:`Primary ~render_offset:10 ~target_fps:None
+    make_app ~mode:`Primary ~startup_cursor:(11, 1) ~target_fps:None
       ~input_timeout:(Some 0.)
       ~events:[ mouse_press 4 5 ]
       ()
@@ -1538,7 +1641,7 @@ let test_primary_adjusts_all_mouse_like_events () =
   List.iter
     (fun (name, input, expected) ->
       let app, _state =
-        make_app ~mode:`Primary ~render_offset:10 ~target_fps:None
+        make_app ~mode:`Primary ~startup_cursor:(11, 1) ~target_fps:None
           ~input_timeout:(Some 0.) ~events:[ input ] ()
       in
       let got = ref None in
@@ -1636,6 +1739,14 @@ let () =
           test "run closes on exception" test_run_closes_on_exception;
           test "end-of-input finalizes parser and closes once"
             test_end_of_input_finalizes_parser_and_closes_once;
+          test "native event closure skips ready input"
+            test_native_event_close_skips_ready_input;
+          test "Escape expires without more input"
+            test_escape_expires_without_more_input;
+          test "startup preserves input and partial paste"
+            test_startup_preserves_input_and_partial_paste;
+          test "startup EOF finalizes input without reading again"
+            test_startup_eof_finalizes_input_without_reading_again;
           test "close restores raw mode if terminal close raises"
             test_close_restores_raw_mode_if_terminal_close_raises;
           test "close restores owned signal dispositions once"
@@ -1656,6 +1767,8 @@ let () =
             test_startup_capability_window_defers_split_response;
           test "resume reanchors primary from bottom cursor"
             test_resume_reanchors_primary_from_bottom_cursor;
+          test "resume preserves resize during cursor query"
+            test_resume_preserves_resize_during_cursor_query;
           test "suspend is idempotent" test_suspend_is_idempotent;
           test "close leaves untouched appearance alone"
             test_close_leaves_untouched_appearance_alone;

@@ -203,9 +203,9 @@ let apply_capability_event t (event : Matrix_input.Response.capability) =
 
 (* Probing *)
 
-let probe ?(timeout = 0.2) ~on_event ~read_into ~wait_readable ~parser t =
+let probe ?(timeout = 0.2) ~now ~on_event ~read_into ~wait_readable ~parser t =
   let caps, info =
-    Caps.probe ~timeout ~apply_env_overrides:t.env_overrides ~on_event
+    Caps.probe ~timeout ~apply_env_overrides:t.env_overrides ~now ~on_event
       ~read_into ~wait_readable ~send:(send t) ~parser ~caps:t.caps
       ~info:t.terminal_info ()
   in

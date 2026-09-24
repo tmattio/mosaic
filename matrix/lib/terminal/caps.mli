@@ -174,6 +174,7 @@ val apply_events :
 val probe :
   ?timeout:float ->
   ?apply_env_overrides:bool ->
+  now:(unit -> float) ->
   on_event:(Matrix_input.t -> unit) ->
   read_into:(bytes -> int -> int -> int) ->
   wait_readable:(timeout:float -> bool) ->
@@ -183,9 +184,9 @@ val probe :
   info:terminal_info ->
   unit ->
   t * terminal_info
-(** [probe ~timeout ~apply_env_overrides ~on_event ~read_into ~wait_readable
-     ~send ~parser ~caps ~info ()] runs the active probing stage and is
-    [(caps', info')] with the refined records.
+(** [probe ~timeout ~apply_env_overrides ~now ~on_event ~read_into
+     ~wait_readable ~send ~parser ~caps ~info ()] runs the active probing stage
+    and is [(caps', info')] with the refined records.
 
     Emits a compound query payload built from [caps.term] using [send].
     Repeatedly waits for input using [wait_readable], reads into a temporary
@@ -193,10 +194,13 @@ val probe :
     events, and applies them with {!apply_events}. User input events (keys,
     mouse, etc.) are forwarded to [on_event] so they are not lost during
     probing. A [read_into] result of [0] stops probing because it denotes
-    permanent end-of-input.
+    permanent end-of-input; [-1] means no bytes are currently available and
+    resumes waiting within the probe deadline.
 
     Using the caller's [parser] (rather than an internal one) ensures that
-    partial escape sequences spanning the probe boundary are not lost.
+    partial escape sequences spanning the probe boundary are not lost. [now ()]
+    is monotonic time in seconds, using the same origin as all other calls to
+    [parser]. It determines probe and parser deadlines.
 
     Stops when all three conditions are met:
     - explicit-width information is available (either
