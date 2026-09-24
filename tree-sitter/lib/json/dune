@@ -1,8 +1,0 @@
-(library
- (name tree_sitter_json)
- (public_name tree-sitter.json)
- (libraries tree-sitter)
- (foreign_stubs
-  (language c)
-  (names parser tree_sitter_json_stubs)
-  (flags (:standard) -I ../../include)))

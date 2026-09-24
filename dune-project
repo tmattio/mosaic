@@ -63,19 +63,6 @@
   (css layout flexbox grid "css-grid" taffy "layout-engine")))
 
 (package
- (name tree-sitter)
- (synopsis "OCaml bindings for Tree-sitter")
- (description
-  "Minimal, GC-managed OCaml bindings for the Tree-sitter incremental parsing library. Includes a first-class highlight function and grammar packages for JSON and OCaml.")
- (depends
-  (ocaml
-   (>= 5.1))
-  dune
-  (windtrap :with-test))
- (tags
-  (tree-sitter parsing syntax-highlighting incremental)))
-
-(package
  (name matrix-eio)
  (allow_empty)
  (synopsis "Eio-based runtime for the Matrix terminal library")
@@ -106,7 +93,6 @@
   matrix
   toffee
   cmarkit
-  tree-sitter
   (windtrap :with-test)
   (ppx_windtrap :with-test)
   (thumper :with-test))

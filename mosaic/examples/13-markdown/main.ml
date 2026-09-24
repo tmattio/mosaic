@@ -136,14 +136,12 @@ end
 let init () = ((), Cmd.none)
 let update msg () = match msg with Quit -> ((), Cmd.quit)
 
-(* Syntax-highlight OCaml fenced code blocks with Tree-sitter. Markdown renders
+(* Syntax-highlight OCaml fenced code blocks with a small lexical highlighter. Markdown renders
    the block as a borderless [Code] view using the returned syntax config. *)
 let code_syntax ~language ~content =
   match language with
   | Some "ocaml" ->
-      let highlights =
-        Tree_sitter_ocaml.highlight_ocaml content |> Syntax_highlight.of_triples
-      in
+      let highlights = Toy_highlighter.highlight ~language:"ocaml" ~content in
       Some
         (Code.syntax ~language:"ocaml" ~style:Syntax_style.default highlights)
   | _ -> None

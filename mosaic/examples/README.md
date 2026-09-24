@@ -20,7 +20,7 @@ dune exec ./mosaic/examples/<name>/main.exe
 | `07-slider`    | Value sliders with sub-cell precision            |
 | `08-table`     | Data tables with columns and styling             |
 | `09-canvas`    | Procedural drawing with shapes and braille       |
-| `10-code`      | Syntax-highlighted code with tree-sitter         |
+| `10-code`      | Syntax-highlighted code with a toy lexer         |
 | `11-scrollbox` | Scrollable content with scroll bars              |
 | `12-form`      | Multi-component form with focus management       |
 | `13-markdown`  | Markdown rendering with scrollable content       |
@@ -90,7 +90,7 @@ drawing boxes and lines (including braille sub-cell lines), and fills.
 
 ### `10-code` – Syntax highlighting
 
-Code display with tree-sitter grammar-based syntax highlighting. Shows OCaml
+Code display with a small application-owned lexical highlighter. Shows OCaml
 and JSON examples with customizable color themes.
 
 ### `11-scrollbox` – Scrollable content

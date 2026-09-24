@@ -1,0 +1,4 @@
+(library
+ (name toy_highlighter)
+ (modules toy_highlighter)
+ (libraries mosaic.ui))

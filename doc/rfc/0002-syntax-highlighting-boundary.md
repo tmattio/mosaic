@@ -1,10 +1,10 @@
 # RFC 0002: The syntax-highlighting boundary — cookbook glue, and tree-sitter leaves the repository
 
-- Status: Draft. Records the maintainer's 2026-08-21 direction: mosaic stays
-  highlighter-agnostic with cookbook-documented glue (no registry, no bridge
-  package), and tree-sitter moves to its own repository. The API design pass
-  (§4) is open to refinement; the rulings (§3) are settled unless new
-  evidence appears.
+- Status: Implemented locally; publication of the extracted bindings is pending.
+  The standalone repository is
+  [invariant-hq/ocaml-tree-sitter](https://github.com/invariant-hq/ocaml-tree-sitter).
+  The API contracts live in the module interfaces; integration guidance lives
+  in [Syntax highlighting](../highlighting.md).
 - Audience: Mosaic maintainers; tree-sitter bindings maintainers (same
   people, soon two repos); Mentat maintainers (spice pins both).
 - Baselines: mosaic @ `295460c0`, spice/mentat @ `e8506bc9`, OpenTUI
@@ -15,10 +15,11 @@
   both the current API and RFC 0001's single-owner redesign. The widget-side
   prop wiring (`Code.syntax`, physical-equality gating) is deliberately NOT
   polished here — RFC 0001 reshapes it (§3, R6).
-- Compatibility: mosaic's installed libraries change only in documentation
-  and small additive API (§4.2). The `mosaic` opam package loses its
-  `tree-sitter` dependency. The tree-sitter package survives under its own
-  repository with its opam name intact, so downstream is a pin-URL change.
+- Compatibility: `Code.Highlighter.sync` now takes labeled `~language` and
+  `~content` arguments. `Tree_sitter_ocaml.highlight_ocaml` is renamed to
+  `highlight`; `highlight_type` and `Code.Highlighter.threaded` are added.
+  The `mosaic` package loses its `tree-sitter` dependency. The extracted
+  bindings keep their opam package name, `tree-sitter`.
 
 ## Summary
 
@@ -161,7 +162,7 @@ touches them only where §4.2's additive changes require.
 ## 4. The design pass
 
 Goal: both surfaces uniform enough that the cookbook recipe has no
-incidental noise. Everything here is small and additive.
+incidental noise. These are small surface changes; the callback and grammar renames are breaking.
 
 ### 4.1 tree-sitter side: one name per grammar
 
@@ -192,7 +193,7 @@ currency of the boundary: it keeps the grammars ignorant of mosaic, and
 
 ### 4.2 mosaic side: labeled request, and the off-thread one-liner
 
-Two additive changes to `Code.Highlighter`:
+Two changes to `Code.Highlighter`:
 
 ```ocaml
 val sync : (language:string -> content:string -> Syntax_highlight.t) -> t
@@ -314,14 +315,18 @@ consumer.)
    on all remaining trees; a scratch consumer project depending on
    `mosaic` alone must build without any C grammar compilation.
 
-## 7. Open questions
+## 7. Resolved design choices
 
-- **Q1 — The base scope set.** Confirm §3-R4's proposed list against the
-  shipped grammar queries and `Syntax_style.default`; decide whether
-  unknown first segments are dropped, styled as base, or a documented
-  extension point.
-- **Q2 — `threaded` cancellation semantics.** Worker threads cannot be
-  killed; `cancel` abandons the generation but the thread runs to
-  completion. Acceptable for highlight workloads (bounded by content size),
-  but say so in the doc, and decide whether a shared single worker or
-  thread-per-request is the implementation.
+- **Scope vocabulary.** The 14 proposed base scopes plus `tag`, already used
+  by the default theme, are documented in `Syntax_style`. Unknown scopes are
+  retained and resolve to the base style unless an application styles them.
+  JSON keys use `variable.member`; OCaml module names use `module`.
+- **Worker ownership.** `threaded` serializes live requests on at most one
+  on-demand systhread per highlighter. Cancellation removes queued work and
+  discards a running result; idle workers exit. Destroying a code widget
+  cancels its job. Notifications wake the renderer and runtime, coalescing
+  requests through atomic dirty flags. No thread is created per edit while
+  work is outstanding.
+- **Native parsing.** The extracted bindings copy input before releasing
+  OCaml's runtime lock. Grammar helpers protect their cached parser/query
+  pair with a mutex. The low-level parser remains caller-synchronized.

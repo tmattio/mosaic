@@ -159,7 +159,7 @@ dune exec ./mosaic/examples/<name>/main.exe
 | `07-slider`        | Value sliders with sub-cell precision             |
 | `08-table`         | Data tables with columns and styling              |
 | `09-canvas`        | Procedural drawing with shapes and braille        |
-| `10-code`          | Syntax highlighting with tree-sitter              |
+| `10-code`          | Backend-neutral syntax highlighting              |
 | `11-scrollbox`     | Scrollable content with scroll bars               |
 | `12-form`          | Multi-component form with focus management        |
 | `13-markdown`      | CommonMark rendering in a scroll box              |

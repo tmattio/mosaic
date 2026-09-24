@@ -1207,9 +1207,7 @@ let config_tab (r : run) =
     { x = Overflow.Hidden; y = Overflow.Hidden }
   in
   let json = config_json r in
-  let highlights =
-    Tree_sitter_json.highlight json |> Syntax_highlight.of_triples
-  in
+  let highlights = Toy_highlighter.highlight ~language:"json" ~content:json in
   let syntax =
     Code.syntax ~language:"json" ~style:Syntax_style.default highlights
   in

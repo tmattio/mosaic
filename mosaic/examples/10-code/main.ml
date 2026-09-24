@@ -1,4 +1,4 @@
-(** Syntax-highlighted code with Tree-sitter. *)
+(* Syntax-highlighted code with an application-owned lexical highlighter. *)
 
 open Mosaic
 
@@ -52,10 +52,7 @@ let json_sample =
 
 let lang_name = function OCaml -> "OCaml" | JSON -> "JSON"
 let lang_content = function OCaml -> ocaml_sample | JSON -> json_sample
-
-let highlight_fn = function
-  | OCaml -> Tree_sitter_ocaml.highlight_ocaml
-  | JSON -> Tree_sitter_json.highlight
+let highlighter = Code.Highlighter.threaded Toy_highlighter.highlight
 
 (* Palette *)
 let header_bg = Ansi.Color.of_rgb 30 80 100
@@ -66,12 +63,8 @@ let hint = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:14) ()
 
 let view model =
   let content = lang_content model.lang in
-  let highlights =
-    highlight_fn model.lang content |> Syntax_highlight.of_triples
-  in
   let syntax =
-    Code.syntax ~language:(lang_name model.lang) ~style:Syntax_style.default
-      highlights
+    Code.with_highlighter ~language:(lang_name model.lang) highlighter
   in
   box ~flex_direction:Column
     ~size:{ width = pct 100; height = pct 100 }

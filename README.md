@@ -24,12 +24,10 @@ Usable on its own for immediate-mode terminal apps.
 It computes Flexbox, Grid, and Block layout with no C stubs and no
 runtime dependencies.
 
-Two additional packages are included:
+[matrix-eio](matrix-eio/) provides an Eio-based runtime for Matrix.
 
-| Package                            | Description                            |
-| ---------------------------------- | -------------------------------------- |
-| [matrix-eio](matrix-eio/)         | Eio-based runtime for Matrix           |
-| [tree-sitter](tree-sitter/)       | OCaml bindings for Tree-sitter         |
+Syntax highlighting is backend-neutral. See the [highlighting guide](doc/highlighting.md)
+and the independent [Tree-sitter bindings](https://github.com/invariant-hq/ocaml-tree-sitter).
 
 ## Quick start
 

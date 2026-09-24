@@ -1,11 +1,11 @@
 # 10 - Code
 
-Syntax-highlighted code display with tree-sitter.
+Syntax-highlighted code display with a small lexical highlighter.
 
 ## Concepts
 
-- Tree-sitter grammar-based syntax highlighting
-- Custom highlight queries for different languages
+- Backend-neutral highlighting with a shared toy lexer
+- One reusable worker for highlighting requests
 - Default syntax theme with colors
 - OCaml and JSON examples
 
