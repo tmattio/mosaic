@@ -59,13 +59,18 @@ let layout_for t ~width =
           ~tab_width:(Text_buffer.tab_width t.buffer)
           ~width ~wrap:t.wrap ~truncate:t.truncate
       in
-      (* Rows use at most eight machine words each including array slots.
-         Keep at most 32 MiB of inactive geometry, never old source versions. *)
-      let budget = ref (32 * 1024 * 1024) and count = ref 1 in
+      (* Cap all retained rows at 32 MiB. An oversized active layout is kept
+         alone, so changing the active width cannot leave oversized inactive
+         rows behind, even on a cache hit. Eight words include each row slot. *)
+      let row_bytes layout =
+        Layout.row_count layout * 8 * (Sys.word_size / 8)
+      in
+      let budget = ref (max 0 ((32 * 1024 * 1024) - row_bytes layout)) in
+      let count = ref 1 in
       let retained =
         List.filter
           (fun (v, _, old) ->
-            let bytes = Layout.row_count old * 8 * (Sys.word_size / 8) in
+            let bytes = row_bytes old in
             if
               v = version && !count < display_cache_capacity && bytes <= !budget
             then (

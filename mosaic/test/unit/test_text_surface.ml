@@ -53,6 +53,20 @@ let replacement_releases_geometry () =
   is_false (Weak.check old 0);
   ignore (Sys.opaque_identity surface)
 
+let oversized_layout_is_released_on_width_switch () =
+  let length = 40 * 1024 * 1024 / (8 * (Sys.word_size / 8)) in
+  let surface = make_surface ~wrap:`Char ~content:(String.make length 'x') () in
+  Text_surface.set_wrap_width surface (Some 80);
+  ignore (Text_surface.layout surface : Layout.t);
+  let old = Weak.create 1 in
+  Text_surface.set_wrap_width surface (Some 1);
+  Weak.set old 0 (Some (Text_surface.layout surface));
+  Text_surface.set_wrap_width surface (Some 80);
+  equal int (length / 80) (Text_surface.display_line_count surface);
+  Gc.full_major ();
+  is_false ~msg:"oversized inactive rows are collectible" (Weak.check old 0);
+  ignore (Sys.opaque_identity surface)
+
 let defaults () =
   let s = make_surface () in
   equal ~msg:"wrap" int 0
@@ -665,7 +679,12 @@ let () =
           test "ellipsis drag copies hidden source, press stays empty"
             ellipsis_drag_and_press;
         ];
-      group "Construction" [ test "defaults" defaults ];
+      group "Construction"
+        [
+          test "defaults" defaults;
+          test "oversized geometry is released after switching widths"
+            oversized_layout_is_released_on_width_switch;
+        ];
       group "Wrapping — None"
         [
           test "single line" wrap_none_single_line;
