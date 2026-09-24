@@ -139,146 +139,12 @@ let emit_color_sgr t w first ~bg ~initial color =
         | `Ansi16 ->
             emit_ansi16_sgr w first ~bg (nearest_palette_index 16 color))
 
-let emit_attrs w attrs =
-  if attrs <> 0 then (
-    if attrs land 0x001 <> 0 then (
-      Escape.sgr_sep w;
-      Escape.sgr_code w 1);
-    if attrs land 0x002 <> 0 then (
-      Escape.sgr_sep w;
-      Escape.sgr_code w 2);
-    if attrs land 0x004 <> 0 then (
-      Escape.sgr_sep w;
-      Escape.sgr_code w 3);
-    if attrs land 0x008 <> 0 then (
-      Escape.sgr_sep w;
-      Escape.sgr_code w 4);
-    if attrs land 0x010 <> 0 then (
-      Escape.sgr_sep w;
-      Escape.sgr_code w 5);
-    if attrs land 0x020 <> 0 then (
-      Escape.sgr_sep w;
-      Escape.sgr_code w 7);
-    if attrs land 0x040 <> 0 then (
-      Escape.sgr_sep w;
-      Escape.sgr_code w 8);
-    if attrs land 0x080 <> 0 then (
-      Escape.sgr_sep w;
-      Escape.sgr_code w 9);
-    if attrs land 0x100 <> 0 then (
-      Escape.sgr_sep w;
-      Escape.sgr_code w 21);
-    if attrs land 0x200 <> 0 then (
-      Escape.sgr_sep w;
-      Escape.sgr_code w 53);
-    if attrs land 0x400 <> 0 then (
-      Escape.sgr_sep w;
-      Escape.sgr_code w 51);
-    if attrs land 0x800 <> 0 then (
-      Escape.sgr_sep w;
-      Escape.sgr_code w 52))
-
-(* SGR disable codes 22, 24 and 54 each clear a pair of attributes (Bold/Dim,
-   Underline/Double_underline, Framed/Encircled). The diff must treat each pair
-   as one group: disabling one member re-enables the survivor. Masks are
-   derived from Attr so they cannot drift from the bit layout. *)
-let intensity_group = Attr.pack (Attr.union Attr.bold Attr.dim)
-
-let underline_group =
-  Attr.pack (Attr.union Attr.underline Attr.double_underline)
-
-let enclosure_group = Attr.pack (Attr.union Attr.framed Attr.encircled)
-
-let emit_attrs_diff w first prev attrs =
-  let removed = prev land lnot attrs in
-  let added = attrs land lnot prev in
-  let added =
-    if removed land intensity_group <> 0 then
-      added lor (attrs land intensity_group)
-    else added
-  in
-  let added =
-    if removed land underline_group <> 0 then
-      added lor (attrs land underline_group)
-    else added
-  in
-  let added =
-    if removed land enclosure_group <> 0 then
-      added lor (attrs land enclosure_group)
-    else added
-  in
-  let first =
-    if removed land intensity_group <> 0 then emit_sgr_code w first 22
-    else first
-  in
-  let first =
-    if removed land 0x004 <> 0 then emit_sgr_code w first 23 else first
-  in
-  let first =
-    if removed land underline_group <> 0 then emit_sgr_code w first 24
-    else first
-  in
-  let first =
-    if removed land 0x010 <> 0 then emit_sgr_code w first 25 else first
-  in
-  let first =
-    if removed land 0x020 <> 0 then emit_sgr_code w first 27 else first
-  in
-  let first =
-    if removed land 0x040 <> 0 then emit_sgr_code w first 28 else first
-  in
-  let first =
-    if removed land 0x080 <> 0 then emit_sgr_code w first 29 else first
-  in
-  let first =
-    if removed land enclosure_group <> 0 then emit_sgr_code w first 54
-    else first
-  in
-  let first =
-    if removed land 0x200 <> 0 then emit_sgr_code w first 55 else first
-  in
-  let first =
-    if added land 0x001 <> 0 then emit_sgr_code w first 1 else first
-  in
-  let first =
-    if added land 0x002 <> 0 then emit_sgr_code w first 2 else first
-  in
-  let first =
-    if added land 0x004 <> 0 then emit_sgr_code w first 3 else first
-  in
-  let first =
-    if added land 0x008 <> 0 then emit_sgr_code w first 4 else first
-  in
-  let first =
-    if added land 0x010 <> 0 then emit_sgr_code w first 5 else first
-  in
-  let first =
-    if added land 0x020 <> 0 then emit_sgr_code w first 7 else first
-  in
-  let first =
-    if added land 0x040 <> 0 then emit_sgr_code w first 8 else first
-  in
-  let first =
-    if added land 0x080 <> 0 then emit_sgr_code w first 9 else first
-  in
-  let first =
-    if added land 0x100 <> 0 then emit_sgr_code w first 21 else first
-  in
-  let first =
-    if added land 0x200 <> 0 then emit_sgr_code w first 53 else first
-  in
-  let first =
-    if added land 0x400 <> 0 then emit_sgr_code w first 51 else first
-  in
-  if added land 0x800 <> 0 then emit_sgr_code w first 52 else first
-
 let emit_full_update t w ~fg ~bg ~attrs =
   Escape.sgr_open w;
   Escape.sgr_code w 0;
   let first = emit_color_sgr t w false ~bg:false ~initial:true fg in
   let first = emit_color_sgr t w first ~bg:true ~initial:true bg in
-  ignore first;
-  emit_attrs w attrs;
+  ignore (Sgr_attrs.emit_enabled w first attrs);
   Escape.sgr_close w
 
 let emit_diff_update t w ~fg ~bg ~attrs =
@@ -292,7 +158,11 @@ let emit_diff_update t w ~fg ~bg ~attrs =
     else first
   in
   let first =
-    if attrs <> t.attrs then emit_attrs_diff w first t.attrs attrs else first
+    if attrs = t.attrs then first
+    else
+      let removed = t.attrs land lnot attrs in
+      let first = Sgr_attrs.emit_disabled w first removed in
+      Sgr_attrs.emit_enabled w first (Sgr_attrs.added ~prev:t.attrs ~attrs)
   in
   ignore first;
   Escape.sgr_close w

@@ -316,6 +316,72 @@ let sgr_shared_attr_disable_reenables_survivor () =
     ~attrs:(Attr.pack Attr.dim) ~link:"";
   check_seq "bold disabled and dim restored" "\x1b[22;2m" (Writer.contents w2)
 
+let sgr_shared_attribute_transitions () =
+  let paired =
+    [|
+      Attr.Bold;
+      Attr.Dim;
+      Attr.Underline;
+      Attr.Double_underline;
+      Attr.Framed;
+      Attr.Encircled;
+    |]
+  in
+  let attributes bits =
+    let attrs = ref (Attr.union Attr.italic Attr.overline) in
+    Array.iteri
+      (fun i flag ->
+        if bits land (1 lsl i) <> 0 then attrs := Attr.add flag !attrs)
+      paired;
+    !attrs
+  in
+  let apply attrs = function
+    | 0 -> Attr.empty
+    | 22 -> Attr.remove Attr.Bold (Attr.remove Attr.Dim attrs)
+    | 24 -> Attr.remove Attr.Underline (Attr.remove Attr.Double_underline attrs)
+    | 54 -> Attr.remove Attr.Framed (Attr.remove Attr.Encircled attrs)
+    | code -> (
+        match
+          List.find_opt
+            (fun flag -> Attr.flag_to_sgr_code flag = code)
+            (Attr.to_list (Attr.unpack (-1)))
+        with
+        | Some flag -> Attr.add flag attrs
+        | None -> failf "unexpected attribute SGR %d" code)
+  in
+  let codes output =
+    if output = "" then []
+    else
+      String.sub output 2 (String.length output - 3)
+      |> String.split_on_char ';' |> List.map int_of_string
+  in
+  let state = Sgr_state.create () in
+  let writer = Writer.create 128 in
+  for before = 0 to 63 do
+    for after = 0 to 63 do
+      let prev_attrs = attributes before and attrs = attributes after in
+      let prev = Style.with_attrs prev_attrs Style.default in
+      let next = Style.with_attrs attrs Style.default in
+      let style_codes = Style.to_sgr_codes ~prev next in
+      let msg = Printf.sprintf "paired attributes %02x -> %02x" before after in
+      equal ~msg int (Attr.pack attrs)
+        (Attr.pack (List.fold_left apply prev_attrs style_codes));
+      equal ~msg string
+        (Ansi.to_string (Ansi.sgr style_codes))
+        (Ansi.to_string (Style.emit ~prev next));
+      Sgr_state.reset state;
+      Writer.reset_pos writer;
+      Sgr_state.update state writer ~fg:Color.default_fg ~bg:Color.default_bg
+        ~attrs:(Attr.pack prev_attrs) ~link:"";
+      Writer.reset_pos writer;
+      Sgr_state.update state writer ~fg:Color.default_fg ~bg:Color.default_bg
+        ~attrs:(Attr.pack attrs) ~link:"";
+      equal ~msg int (Attr.pack attrs)
+        (Attr.pack
+           (List.fold_left apply prev_attrs (codes (Writer.contents writer))))
+    done
+  done
+
 let sgr_enclosure_disable_group () =
   (* SGR 54 clears both Framed and Encircled; the diff must treat the pair as
      one group when disabling and re-enabling survivors. *)
@@ -1036,6 +1102,7 @@ let tests =
           sgr_background_only_change_does_not_reset;
         test "shared attr disable reenables survivor"
           sgr_shared_attr_disable_reenables_survivor;
+        test "all shared attribute transitions" sgr_shared_attribute_transitions;
         test "enclosure shared disable group" sgr_enclosure_disable_group;
         test "same rgba different intent emits color delta"
           sgr_same_rgba_different_intent_emits_color_delta;

@@ -62,7 +62,7 @@ strip_parse/strip_ansi_block	alloc_words	exact	3917
 strip_parse/strip_ansi_block	wall_time	batch=256	n=20	2.670e-05	2.478e-05 2.479e-05 2.482e-05 2.505e-05 2.516e-05 2.531e-05 2.542e-05 2.548e-05 2.611e-05 2.666e-05 2.673e-05 2.706e-05 2.748e-05 2.775e-05 2.846e-05 2.947e-05 3.178e-05 3.393e-05 3.661e-05 4.082e-05
 strip_parse/strip_plain_block	alloc_words	exact	0
 strip_parse/strip_plain_block	wall_time	batch=512	n=20	1.360e-05	1.297e-05 1.298e-05 1.299e-05 1.301e-05 1.304e-05 1.327e-05 1.328e-05 1.329e-05 1.348e-05 1.352e-05 1.369e-05 1.375e-05 1.381e-05 1.406e-05 1.408e-05 1.414e-05 1.423e-05 1.486e-05 1.554e-05 2.538e-05
-styled/inline_styled	alloc_words	exact	90
+styled/inline_styled	alloc_words	exact	79
 styled/inline_styled	wall_time	batch=16384	n=20	4.053e-07	3.730e-07 3.733e-07 3.759e-07 3.795e-07 3.934e-07 3.987e-07 4.025e-07 4.043e-07 4.049e-07 4.051e-07 4.054e-07 4.075e-07 4.078e-07 4.080e-07 4.093e-07 4.184e-07 4.190e-07 4.198e-07 4.217e-07 4.541e-07
-styled/render_log_segments	alloc_words	exact	238
+styled/render_log_segments	alloc_words	exact	194
 styled/render_log_segments	wall_time	batch=4096	n=40	1.345e-06	1.306e-06 1.319e-06 1.319e-06 1.321e-06 1.324e-06 1.325e-06 1.327e-06 1.328e-06 1.329e-06 1.332e-06 1.332e-06 1.333e-06 1.336e-06 1.336e-06 1.336e-06 1.336e-06 1.339e-06 1.339e-06 1.341e-06 1.343e-06 1.346e-06 1.347e-06 1.348e-06 1.348e-06 1.349e-06 1.351e-06 1.354e-06 1.355e-06 1.357e-06 1.357e-06 1.362e-06 1.363e-06 1.364e-06 1.364e-06 1.369e-06 1.369e-06 1.369e-06 1.371e-06 1.385e-06 1.387e-06

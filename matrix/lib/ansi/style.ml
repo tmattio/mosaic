@@ -133,33 +133,13 @@ let hash t =
 
 (* Emission *)
 
-(* Check if disabling these attributes would also disable attributes we want to
-   keep. Bold/Dim share code 22, Underline/Double_underline share 24,
-   Framed/Encircled share 54. Returns attributes that need to be re-enabled
-   after the disable codes are emitted. *)
-let attrs_to_reenable ~to_disable ~to_keep =
-  let check_shared_pair a b acc =
-    if Attr.mem a to_disable || Attr.mem b to_disable then
-      let acc = if Attr.mem a to_keep then Attr.add a acc else acc in
-      if Attr.mem b to_keep then Attr.add b acc else acc
-    else acc
-  in
-  Attr.empty
-  |> check_shared_pair Attr.Bold Attr.Dim
-  |> check_shared_pair Attr.Underline Attr.Double_underline
-  |> check_shared_pair Attr.Framed Attr.Encircled
-
 (* Common helper for SGR code emission. Emits the minimal set of codes to
    transition from [prev] to [t] by calling [push] for each code. *)
 let emit_sgr_diff ~prev t push =
-  let attrs_to_disable = Attr.diff prev.attrs t.attrs in
-  let attrs_to_enable = Attr.diff t.attrs prev.attrs in
-  let to_reenable =
-    attrs_to_reenable ~to_disable:attrs_to_disable ~to_keep:t.attrs
-  in
-  let attrs_to_enable = Attr.union attrs_to_enable to_reenable in
-  (* Emit disable codes for removed attributes *)
-  Attr.iter_sgr_disable_codes push attrs_to_disable;
+  let prev_attrs = Attr.pack prev.attrs and attrs = Attr.pack t.attrs in
+  let attrs_to_disable = prev_attrs land lnot attrs in
+  let attrs_to_enable = Sgr_attrs.added ~prev:prev_attrs ~attrs in
+  Sgr_attrs.iter_disabled push attrs_to_disable;
   (* Handle foreground color changes *)
   let fg_changed = not (Option.equal Color.equal prev.fg t.fg) in
   (if fg_changed then
@@ -173,7 +153,7 @@ let emit_sgr_diff ~prev t push =
      | None -> push 49
      | Some color -> Color.emit_sgr_codes ~bg:true push color);
   (* Emit enable codes for added attributes *)
-  Attr.iter_sgr_codes push attrs_to_enable
+  Sgr_attrs.iter_enabled push attrs_to_enable
 
 let to_sgr_codes ?prev t =
   let prev = Option.value prev ~default in
