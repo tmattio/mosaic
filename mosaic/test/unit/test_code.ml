@@ -147,7 +147,7 @@ let async_streaming_retains_previous_buffer () =
   equal ~msg:"fresh content after highlight" string "var x"
     (Text_buffer.plain_text (Code.buffer code))
 
-let async_content_change_cancels_previous_job () =
+let async_content_changes_coalesce () =
   let jobs, highlighter = async_highlighter () in
   let syntax =
     Code.with_highlighter ~language:"ocaml" ~style:(syntax_style red)
@@ -156,7 +156,13 @@ let async_content_change_cancels_previous_job () =
   let _ctx, code = make_code ~content:"let x" ~syntax () in
   let first_job = List.hd !jobs in
   Code.set_content code "var x";
-  is_true ~msg:"first job cancelled" first_job.cancelled;
+  for i = 1 to 100 do
+    Code.set_content code (Printf.sprintf "var %d" i)
+  done;
+  Code.set_content code "var x";
+  equal ~msg:"one running job during rapid updates" int 1 (List.length !jobs);
+  is_false ~msg:"obsolete job remains observable until completion"
+    first_job.cancelled;
   complete first_job (Ok highlights);
   render_code code;
   equal ~msg:"current plain text retained" string "var x"
@@ -168,6 +174,41 @@ let async_content_change_cancels_previous_job () =
   | first :: _ ->
       equal ~msg:"highlighted current content" string "var" (span_text first)
   | [] -> fail "expected highlighted span"
+
+let async_configuration_changes_coalesce () =
+  let jobs, highlighter = async_highlighter () in
+  let next_jobs, next_highlighter = async_highlighter () in
+  let syntax = Code.with_highlighter ~language:"ocaml" highlighter in
+  let _ctx, code = make_code ~content:"old" ~syntax () in
+  Code.set_content code "";
+  is_false (Code.is_highlighting code);
+  Code.set_syntax code
+    (Some (Code.with_highlighter ~language:"json" next_highlighter));
+  Code.set_content code "new";
+  equal ~msg:"switching producer cannot overlap jobs" int 0
+    (List.length !next_jobs);
+  complete (List.hd !jobs) (Ok highlights);
+  render_code code;
+  let latest = List.hd !next_jobs in
+  equal string "new" latest.request.content;
+  equal string "json" latest.request.language;
+  complete latest (Ok []);
+  render_code code;
+  equal string "new" (Text_buffer.plain_text (Code.buffer code));
+  is_false (Code.is_highlighting code)
+
+let async_clear_discards_pending_request () =
+  let jobs, highlighter = async_highlighter () in
+  let syntax = Code.with_highlighter ~language:"ocaml" highlighter in
+  let _ctx, code = make_code ~content:"old" ~syntax () in
+  Code.set_content code "pending";
+  Code.set_syntax code None;
+  complete (List.hd !jobs) (Ok highlights);
+  render_code code;
+  equal ~msg:"removed syntax cannot restart pending work" int 1
+    (List.length !jobs);
+  equal string "pending" (Text_buffer.plain_text (Code.buffer code));
+  is_false (Code.is_highlighting code)
 
 let async_line_info_stabilizes_on_completion () =
   let jobs, highlighter = async_highlighter () in
@@ -372,7 +413,7 @@ let threaded_requests_are_bounded_and_cancelled () =
           render_code other;
           not (Code.is_highlighting code || Code.is_highlighting other));
       equal ~msg:"only live FIFO requests execute" (list string)
-        [ "let old"; "let final"; "let other" ]
+        [ "let old"; "let other"; "let final" ]
         (List.rev (Atomic.get calls));
       equal ~msg:"stale result cannot replace current source" string "let final"
         (Text_buffer.plain_text (Code.buffer code));
@@ -425,6 +466,7 @@ let destroy_cancels_job_once () =
   in
   let syntax = Code.with_highlighter ~language:"ocaml" highlighter in
   let ctx, code = make_code ~content:"let x" ~syntax () in
+  Code.set_content code "pending";
   Renderable.destroy (Code.node code);
   Renderable.destroy (Code.node code);
   equal ~msg:"cleanup is idempotent" int 1 !cancellations;
@@ -448,8 +490,11 @@ let () =
             async_draw_unstyled_false_hides_pending_render;
           test "async streaming retains previous buffer"
             async_streaming_retains_previous_buffer;
-          test "async content change cancels previous job"
-            async_content_change_cancels_previous_job;
+          test "async content changes coalesce" async_content_changes_coalesce;
+          test "async configuration changes coalesce"
+            async_configuration_changes_coalesce;
+          test "async clear discards pending request"
+            async_clear_discards_pending_request;
           test "async line info stabilizes on completion"
             async_line_info_stabilizes_on_completion;
           test "async starter exception falls back to plain text"

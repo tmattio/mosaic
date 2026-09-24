@@ -191,6 +191,7 @@ type t = {
   mutable generation : int;
   mutable highlighting : bool;
   mutable job : running_job option;
+  mutable pending : (string * syntax * Highlighter.t) option;
   mutable had_initial_content : bool;
   mutable visible_final : bool;
   mutable on_line_info_change : (unit -> unit) option;
@@ -217,9 +218,10 @@ let notify_line_info_change t =
 let pending_work t =
   if t.highlighting then
     let label =
-      match t.job with
-      | Some { syntax = { language = Some language; _ }; _ } -> Some language
-      | _ -> None
+      match (t.pending, t.job) with
+      | Some (_, syntax, _), _ -> syntax.language
+      | None, Some running -> running.syntax.language
+      | None, None -> None
     in
     Some (Renderable.Pending.make ?label ~kind:"code.highlight" ())
   else None
@@ -228,7 +230,12 @@ let pending_work t =
 
 let request_render t = Renderable.request_render (Text_renderable.node t.text)
 
+let clear_pending t =
+  t.pending <- None;
+  t.highlighting <- false
+
 let cancel_job t =
+  clear_pending t;
   match t.job with
   | None -> ()
   | Some running ->
@@ -257,7 +264,6 @@ let apply_highlights t content syntax highlights =
 
 let finish_job t (running : running_job) outcome =
   if running.generation = t.generation then begin
-    t.job <- None;
     t.highlighting <- false;
     (match outcome with
     | Ok highlights ->
@@ -267,14 +273,6 @@ let finish_job t (running : running_job) outcome =
     notify_line_info_change t;
     request_render t
   end
-
-let poll_job t =
-  match t.job with
-  | None -> ()
-  | Some running -> (
-      match try running.job.poll () with exn -> Some (Error exn) with
-      | None -> ()
-      | Some outcome -> finish_job t running outcome)
 
 let visible_before_highlight t content syntax =
   t.visible_final <- false;
@@ -289,25 +287,44 @@ let visible_before_highlight t content syntax =
     Text_renderable.set_render_enabled t.text false
   end
 
-let start_highlighting t content syntax highlighter =
-  cancel_job t;
+let launch_job t content syntax highlighter =
   let language = Option.value syntax.language ~default:"" in
-  visible_before_highlight t content syntax;
   let generation = t.generation in
   let request = { Highlighter.content; language } in
   let job =
     Highlighter.start highlighter request ~notify:(fun () -> request_render t)
   in
-  t.job <- Some { generation; content; syntax; job };
+  t.job <- Some { generation; content; syntax; job }
+
+let rec poll_job t =
+  match t.job with
+  | None -> ()
+  | Some running -> (
+      match try running.job.poll () with exn -> Some (Error exn) with
+      | None -> ()
+      | Some outcome -> (
+          t.job <- None;
+          finish_job t running outcome;
+          match t.pending with
+          | None -> ()
+          | Some (content, syntax, highlighter) ->
+              t.pending <- None;
+              launch_job t content syntax highlighter;
+              poll_job t))
+
+let start_highlighting t content syntax highlighter =
+  visible_before_highlight t content syntax;
   t.highlighting <- true;
   t.had_initial_content <- true;
+  (match t.job with
+  | None -> launch_job t content syntax highlighter
+  | Some _ -> t.pending <- Some (content, syntax, highlighter));
   poll_job t
 
 let render_syntax t content syntax =
   match syntax.source with
   | Ranges highlights ->
-      cancel_job t;
-      t.highlighting <- false;
+      clear_pending t;
       t.had_initial_content <- not (String.equal content "");
       ignore (apply_highlights t content syntax highlights : bool);
       notify_line_info_change t
@@ -316,7 +333,7 @@ let render_syntax t content syntax =
 let render_content t (props : Props.t) =
   t.generation <- t.generation + 1;
   if String.equal props.content "" then begin
-    cancel_job t;
+    clear_pending t;
     t.had_initial_content <- false;
     apply_empty t;
     notify_line_info_change t
@@ -325,7 +342,7 @@ let render_content t (props : Props.t) =
     match props.syntax with
     | Some syntax -> render_syntax t props.content syntax
     | None ->
-        cancel_job t;
+        clear_pending t;
         t.had_initial_content <- false;
         apply_plain t props.content;
         notify_line_info_change t
@@ -355,6 +372,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?content ?syntax
       generation = 0;
       highlighting = false;
       job = None;
+      pending = None;
       had_initial_content = false;
       visible_final = true;
       on_line_info_change = None;

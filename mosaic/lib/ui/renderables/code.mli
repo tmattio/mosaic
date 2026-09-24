@@ -22,8 +22,7 @@ type syntax
     values built by separate calls are different syntaxes. Construct the style
     and highlighter once — at module level or memoized — and reuse them across
     renders. Rebuilding them inside a view function makes every reconcile look
-    like a syntax change, cancelling and restarting the (possibly asynchronous)
-    highlight job on every frame. *)
+    like a syntax change, invalidating the highlight result on every frame. *)
 
 module Highlighter : sig
   type request = { content : string; language : string }
@@ -41,8 +40,10 @@ module Highlighter : sig
   val job : poll:(unit -> result option) -> cancel:(unit -> unit) -> job
   (** [job ~poll ~cancel] is an asynchronous job. [poll ()] returns [None] while
       the job is pending and [Some outcome] once it has completed. [cancel ()]
-      asks the producer to stop work or discard its result. The consumer calls
-      it when content changes or the code widget is destroyed. *)
+      asks the producer to stop work or discard its result when the widget is
+      destroyed. Content and syntax changes coalesce while a job runs; its
+      result is discarded if obsolete, then the latest request starts. A live
+      job must eventually complete even if its input has become obsolete. *)
 
   val sync : (language:string -> content:string -> Syntax_highlight.t) -> t
   (** [sync f] is a synchronous highlighter. Exceptions raised by [f] are
@@ -67,8 +68,9 @@ module Highlighter : sig
       The job producer should call [notify] when [poll] may return a completed
       result. [notify] is safe to call from a worker thread. Its only effect is
       to schedule rendering; polling and applying results happen on the render
-      thread. Exceptions raised by the starter or job polling are treated as
-      highlighting failures and fall back to plain text. *)
+      thread. Each widget starts at most one job at a time, including across
+      highlighter changes. Exceptions raised by the starter or job polling are
+      treated as highlighting failures and fall back to plain text. *)
 end
 
 val syntax :
