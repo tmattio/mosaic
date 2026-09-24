@@ -78,12 +78,12 @@ let assert_distinct_handlers entries =
     entries
 
 let make_app ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
-    ?(input_timeout = Some 0.) ?(terminal_tty = false) ?(advance_now = true)
-    ?(sleep_until_timeout = false) ?(read_quantum_s = 0.0001)
-    ?(emit_event_each_read = None) ?(events = []) ?(input_chunks = [])
-    ?(startup_input = []) ?startup_cursor ?stop_after_reads ?end_after_reads
-    ?(min_tui_height = 1) ?(resize_debounce = Some 0.) ?(width = 80)
-    ?(height = 24) ?hyperlinks ?query_cursor_position () =
+    ?(start_idle = false) ?(input_timeout = Some 0.) ?(terminal_tty = false)
+    ?(advance_now = true) ?(sleep_until_timeout = false)
+    ?(read_quantum_s = 0.0001) ?(emit_event_each_read = None) ?(events = [])
+    ?(input_chunks = []) ?(startup_input = []) ?startup_cursor ?stop_after_reads
+    ?end_after_reads ?(min_tui_height = 1) ?(resize_debounce = Some 0.)
+    ?(width = 80) ?(height = 24) ?hyperlinks ?query_cursor_position () =
   let state = make_state events input_chunks in
   let app_ref = ref None in
   let startup_chunks = ref startup_input in
@@ -197,8 +197,8 @@ let make_app ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
       hyperlinks
   in
   let app =
-    Matrix.attach ~mode ~raw_mode ~target_fps ~input_timeout ~min_tui_height
-      ~resize_debounce ?initial_caps ~backend ()
+    Matrix.attach ~mode ~raw_mode ~target_fps ~start_idle ~input_timeout
+      ~min_tui_height ~resize_debounce ?initial_caps ~backend ()
   in
   app_ref := Some app;
   Buffer.clear state.output;
@@ -324,6 +324,214 @@ let test_idle_does_not_force_live_loop () =
   let frames = ref 0 in
   Matrix.run app ~on_render:(fun _app -> incr frames);
   equal ~msg:"idle renders only the initial frame" int 1 !frames
+
+let test_live_requested_while_suspended () =
+  let app, state =
+    make_app ~start_idle:true ~input_timeout:None ~advance_now:false
+      ~sleep_until_timeout:true ~read_quantum_s:0.05 ~stop_after_reads:8 ()
+  in
+  Matrix.suspend app;
+  Matrix.request_live app;
+  Matrix.resume app;
+  let frames = ref 0 in
+  Matrix.run app ~on_render:(fun app ->
+      incr frames;
+      if !frames = 3 then Matrix.stop app);
+  equal ~msg:"live demand acquired while suspended resumes cadence" int 3
+    !frames;
+  is_true ~msg:"cadence progresses before the watchdog" (state.read_calls < 8)
+
+let test_uncapped_live_cadence () =
+  List.iter
+    (fun (name, activate) ->
+      let app, state =
+        make_app ~target_fps:None ~input_timeout:None ~advance_now:false
+          ~stop_after_reads:8 ()
+      in
+      activate app;
+      let frames = ref 0 and waits = ref [] in
+      Matrix.run app ~on_render:(fun app ->
+          incr frames;
+          if !frames = 3 then begin
+            waits := state.read_timeouts;
+            Matrix.stop app
+          end);
+      equal ~msg:(name ^ " keeps uncapped cadence active") int 3 !frames;
+      is_true ~msg:"uncapped frames never wait for a deadline"
+        (List.for_all
+           (function Some timeout -> timeout = 0. | None -> false)
+           !waits))
+    [ ("start", Matrix.start); ("request_live", Matrix.request_live) ]
+
+let test_demand_changes_while_suspended () =
+  List.iter
+    (fun (name, change, expected_frames) ->
+      let app, state =
+        make_app ~start_idle:true ~input_timeout:None ~advance_now:false
+          ~sleep_until_timeout:true ~read_quantum_s:0.05 ~stop_after_reads:8 ()
+      in
+      Matrix.suspend app;
+      Buffer.clear state.output;
+      change app;
+      Matrix.request_redraw app;
+      Matrix.submit app;
+      equal
+        ~msg:(name ^ " does not reclaim suspended terminal")
+        string "" (output state);
+      is_false
+        ~msg:(name ^ " leaves redraw disabled while suspended")
+        (Matrix.redraw_requested app);
+      Matrix.resume app;
+      let frames = ref 0 in
+      Matrix.run app ~on_render:(fun app ->
+          incr frames;
+          if !frames = 3 then Matrix.stop app);
+      equal
+        ~msg:(name ^ " determines resumed cadence")
+        int expected_frames !frames)
+    [
+      ("start", Matrix.start, 3);
+      ( "start then pause",
+        (fun app ->
+          Matrix.start app;
+          Matrix.pause app),
+        1 );
+      ( "request then drop",
+        (fun app ->
+          Matrix.request_live app;
+          Matrix.drop_live app),
+        1 );
+      ( "drop while explicitly started",
+        (fun app ->
+          Matrix.start app;
+          Matrix.request_live app;
+          Matrix.drop_live app),
+        3 );
+      ( "request while paused",
+        (fun app ->
+          Matrix.pause app;
+          Matrix.request_live app),
+        1 );
+    ]
+
+let test_stopped_and_closed_frame_eligibility () =
+  let app, state = make_app ~target_fps:None () in
+  Matrix.prepare app;
+  Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"X";
+  Matrix.stop app;
+  Buffer.clear state.output;
+  Matrix.submit app;
+  equal ~msg:"stopped app does not submit" string "" (output state);
+  Matrix.start app;
+  Matrix.submit app;
+  equal ~msg:"start restores manual presentation" string "X"
+    (Matrix.Grid.get_text (Matrix.current_grid app) 0);
+  Matrix.close app;
+  Buffer.clear state.output;
+  Matrix.start app;
+  Matrix.pause app;
+  Matrix.request_live app;
+  Matrix.resume app;
+  Matrix.submit app;
+  Matrix.run app ~on_render:(fun app ->
+      ignore app;
+      fail "closed app rendered");
+  is_false ~msg:"closed app cannot restart" (Matrix.running app);
+  equal ~msg:"closed control operations emit nothing" string "" (output state);
+  equal ~msg:"close is not repeated" int 1 state.cleanup_calls;
+  let stopped, stopped_state = make_app () in
+  Matrix.stop stopped;
+  Matrix.run stopped ~on_render:(fun app ->
+      ignore app;
+      fail "run restarted stopped app");
+  equal ~msg:"run on a stopped app closes without reading" int 0
+    stopped_state.read_calls;
+  equal ~msg:"stopped app cleanup runs once" int 1 stopped_state.cleanup_calls
+
+let test_stop_while_suspended_requires_start_after_resume () =
+  let app, state = make_app () in
+  Matrix.suspend app;
+  Matrix.stop app;
+  Matrix.resume app;
+  is_false ~msg:"resume does not undo stop" (Matrix.running app);
+  Matrix.prepare app;
+  Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"X";
+  Buffer.clear state.output;
+  Matrix.submit app;
+  equal ~msg:"resumed stopped app emits no frame" string "" (output state);
+  Matrix.start app;
+  Matrix.submit app;
+  equal ~msg:"explicit start restores eligibility" string "X"
+    (Matrix.Grid.get_text (Matrix.current_grid app) 0);
+  Matrix.close app
+
+let test_frame_callbacks_respect_lifecycle () =
+  List.iter
+    (fun (name, control, presents) ->
+      List.iter
+        (fun before_render ->
+          let app, state = make_app ~stop_after_reads:8 () in
+          let renders = ref 0 in
+          Matrix.run app
+            ~on_frame:(fun app ~dt ->
+              ignore dt;
+              if before_render then control app)
+            ~on_render:(fun app ->
+              incr renders;
+              Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"X";
+              if not before_render then control app);
+          equal
+            ~msg:(name ^ " controls on_render eligibility")
+            int
+            (if before_render && not presents then 0 else 1)
+            !renders;
+          equal
+            ~msg:(name ^ " controls presentation eligibility")
+            bool presents
+            (Matrix.Grid.get_text (Matrix.current_grid app) 0 = "X");
+          equal ~msg:(name ^ " closes once") int 1 state.cleanup_calls)
+        [ true; false ])
+    [
+      ("stop", Matrix.stop, false);
+      ("close", Matrix.close, false);
+      ("suspend", (fun app -> Matrix.suspend app), false);
+      ("pause", Matrix.pause, true);
+    ]
+
+let test_suspended_events_defer_terminal_operations () =
+  let app, state =
+    make_app ~terminal_tty:true ~target_fps:None ~resize_debounce:None
+      ~input_timeout:None ~stop_after_reads:8
+      ~events:
+        [
+          Matrix.Input.Blur;
+          Matrix.Input.Resize (100, 30);
+          Matrix.Input.Focus;
+          Matrix.Input.Focus;
+        ]
+      ()
+  in
+  Matrix.suspend app;
+  Buffer.clear state.output;
+  let seen = ref 0 and frames = ref 0 in
+  Matrix.run app
+    ~on_input:(fun app event ->
+      ignore event;
+      incr seen;
+      equal ~msg:"suspended resize and focus emit no terminal operations" string
+        "" (output state);
+      is_false ~msg:"paste remains disabled while suspended"
+        (Matrix.Terminal.bracketed_paste_enabled (Matrix.terminal app));
+      equal ~msg:"resize is deferred until resume" (pair int int) (80, 24)
+        (Matrix.full_size app);
+      if !seen = 4 then Matrix.resume app)
+    ~on_render:(fun app ->
+      incr frames;
+      equal ~msg:"deferred resize is applied before resumed frame"
+        (pair int int) (100, 30) (Matrix.full_size app);
+      Matrix.stop app);
+  equal ~msg:"input callbacks can still arrange resume" int 4 !seen;
+  equal ~msg:"resume renders once" int 1 !frames
 
 let test_run_closes_on_exception () =
   let app, state = make_app () in
@@ -1979,6 +2187,19 @@ let () =
       group "Control"
         [
           test "request_redraw while paused" test_request_redraw_while_paused;
+          test "live requested while suspended"
+            test_live_requested_while_suspended;
+          test "uncapped live cadence" test_uncapped_live_cadence;
+          test "demand changes while suspended"
+            test_demand_changes_while_suspended;
+          test "stopped and closed frame eligibility"
+            test_stopped_and_closed_frame_eligibility;
+          test "stop while suspended requires start after resume"
+            test_stop_while_suspended_requires_start_after_resume;
+          test "frame callbacks respect lifecycle"
+            test_frame_callbacks_respect_lifecycle;
+          test "suspended events defer terminal operations"
+            test_suspended_events_defer_terminal_operations;
           test "cross-domain redraw during render"
             test_cross_domain_redraw_during_render;
           test "redraw races lifecycle" test_redraw_races_lifecycle;

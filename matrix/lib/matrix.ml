@@ -73,13 +73,8 @@ module Backend = struct
     !result
 end
 
-type control_state =
-  [ `Idle
-  | `Auto_started
-  | `Explicit_started
-  | `Explicit_paused
-  | `Explicit_suspended
-  | `Explicit_stopped ]
+type demand = [ `Auto | `Continuous | `Paused ]
+type lifecycle = [ `Ready | `Suspended | `Closed ]
 
 type config = {
   mode : mode;
@@ -142,11 +137,9 @@ type app = {
   mutable frame_dump_pattern : string option;
   mutable frame_dump_hits : bool;
   mutable frame_dump_counter : int;
-  mutable closed : bool;
+  mutable lifecycle : lifecycle;
+  mutable demand : demand;
   mutable frame_modes_armed : bool;
-  mutable loop_active : bool;
-  mutable control_state : control_state;
-  mutable previous_control_state : control_state;
   mutable live_requests : int;
   mutable restore_modes_on_next_focus : bool;
   mutable capability_window_until : float option;
@@ -321,6 +314,16 @@ let pixel_resolution t = Terminal.pixel_resolution t.terminal
 let terminal t = t.terminal
 let capabilities t = Terminal.capabilities t.terminal
 let running t = t.running
+let render_eligible t = t.running && t.lifecycle = `Ready
+
+let cadence_active t =
+  render_eligible t
+  &&
+  match t.demand with
+  | `Continuous -> true
+  | `Auto -> t.live_requests > 0
+  | `Paused -> false
+
 let now t = t.backend.now ()
 
 let rec request_redraw t =
@@ -332,17 +335,17 @@ let rec request_redraw t =
       else request_redraw t
 
 let schedule_wakeup t deadline =
-  if not t.closed then (
+  if t.lifecycle <> `Closed then (
     t.wakeup_deadline <- deadline;
     t.backend.wake ())
 
 let redraw_requested t = Atomic.get t.redraw_state = `Dirty
 
 let request_immediate_redraw t =
-  if t.closed then ()
-  else if t.control_state <> `Explicit_suspended then (
+  if t.lifecycle = `Closed then ()
+  else if t.lifecycle <> `Suspended then (
     Atomic.set t.redraw_state `Dirty;
-    if t.loop_active then t.next_frame_deadline <- Some (t.backend.now ())
+    if cadence_active t then t.next_frame_deadline <- Some (t.backend.now ())
     else t.last_render_time <- Float.neg_infinity;
     t.backend.wake ())
 
@@ -409,17 +412,11 @@ let compute_loop_interval t =
   | Some fps when fps > 0. -> Some (1. /. fps)
   | _ -> None
 
-let update_loop_active t =
-  let active =
-    match t.control_state with
-    | `Explicit_started | `Auto_started -> true
-    | `Idle | `Explicit_paused | `Explicit_suspended | `Explicit_stopped ->
-        false
-  in
-  if t.loop_active <> active then (
-    t.loop_active <- active;
-    if active then t.next_frame_deadline <- Some (t.backend.now ())
-    else t.next_frame_deadline <- None)
+let update_cadence t =
+  if cadence_active t then (
+    if t.next_frame_deadline = None then
+      t.next_frame_deadline <- Some (t.backend.now ()))
+  else t.next_frame_deadline <- None
 
 (* Static output (primary mode only) *)
 
@@ -662,7 +659,7 @@ let apply_cursor_state t ~buf ~(cursor : Screen.cursor) ~position =
 (* All frame output is accumulated into a single buffer and flushed as one
    write. Skips the write entirely when nothing changed. *)
 let submit ?primary_required_rows t =
-  if not t.running then ()
+  if not (render_eligible t) then ()
   else begin
     if t.debug_overlay_enabled then t.debug_overlay_cb t.screen;
     let cursor = Screen.cursor t.screen in
@@ -770,42 +767,35 @@ let submit ?primary_required_rows t =
 (* Control state *)
 
 let stop t =
-  if not t.closed then (
+  if t.lifecycle <> `Closed then (
     t.running <- false;
-    t.control_state <- `Explicit_stopped;
-    update_loop_active t;
-    Atomic.set t.redraw_state `Clean;
+    update_cadence t;
+    if t.lifecycle = `Ready then Atomic.set t.redraw_state `Clean;
     t.backend.wake ())
 
 let request_live t =
-  if t.closed then ()
-  else (
+  if t.lifecycle <> `Closed then (
+    let active = cadence_active t in
     t.live_requests <- t.live_requests + 1;
-    if t.control_state = `Idle && t.live_requests > 0 then (
-      t.control_state <- `Auto_started;
-      update_loop_active t;
-      Atomic.set t.redraw_state `Dirty;
-      t.backend.wake ()))
+    update_cadence t;
+    if (not active) && cadence_active t then request_redraw t)
 
 let drop_live t =
-  t.live_requests <- max 0 (t.live_requests - 1);
-  if t.control_state = `Auto_started && t.live_requests = 0 then (
-    t.control_state <- `Idle;
-    update_loop_active t)
+  if t.lifecycle <> `Closed then (
+    t.live_requests <- max 0 (t.live_requests - 1);
+    update_cadence t)
 
 let start t =
-  if not t.closed then (
-    t.control_state <- `Explicit_started;
-    update_loop_active t;
-    if not t.running then t.running <- true;
-    Atomic.set t.redraw_state `Dirty;
-    t.backend.wake ())
+  if t.lifecycle <> `Closed then (
+    t.demand <- `Continuous;
+    t.running <- true;
+    update_cadence t;
+    if t.lifecycle = `Ready then request_redraw t)
 
 let pause t =
-  t.control_state <- `Explicit_paused;
-  update_loop_active t;
-  if not t.closed then
-    ignore (Atomic.compare_and_set t.redraw_state `Disabled `Clean)
+  if t.lifecycle <> `Closed then (
+    t.demand <- `Paused;
+    update_cadence t)
 
 (* Frame writes bypass the terminal handle and may stop between mode changes.
    Attempt every reset independently, before handing the terminal back. *)
@@ -816,16 +806,11 @@ let restore_frame_modes t =
     try Terminal.send t.terminal "\027[?7h" with _ -> ())
 
 let suspend ?(leave_alt = false) t =
-  (* A second suspend must be a no-op: it would overwrite
-     [previous_control_state] with [`Explicit_suspended], after which every
-     resume restores the suspended state and the app can never render again.
-     It would also drop a pending [~leave_alt:true] re-enter obligation. *)
-  if t.closed || t.control_state = `Explicit_suspended then ()
+  if t.lifecycle <> `Ready then ()
   else (
     Atomic.set t.redraw_state `Disabled;
-    t.previous_control_state <- t.control_state;
-    t.control_state <- `Explicit_suspended;
-    update_loop_active t;
+    t.lifecycle <- `Suspended;
+    update_cadence t;
     Input.Parser.reset t.parser;
     force_full_redraw t;
     (* The suspended program owns the terminal; whatever cursor state it leaves
@@ -847,7 +832,7 @@ let suspend ?(leave_alt = false) t =
     try t.backend.flush_input () with _ -> ())
 
 let resume t =
-  if t.control_state <> `Explicit_suspended then ()
+  if t.lifecycle <> `Suspended then ()
   else (
     (if t.config.raw_mode then try t.backend.set_raw_mode true with _ -> ());
     (try t.backend.flush_input () with _ -> ());
@@ -880,11 +865,9 @@ let resume t =
     apply_config t;
     Grid.clear (Screen.next_grid t.screen);
     Screen.Hit_grid.clear (Screen.next_hit_grid t.screen);
-    t.control_state <- t.previous_control_state;
-    if t.control_state = `Auto_started && t.live_requests = 0 then
-      t.control_state <- `Idle;
-    update_loop_active t;
-    Atomic.set t.redraw_state `Dirty;
+    t.lifecycle <- `Ready;
+    update_cadence t;
+    Atomic.set t.redraw_state (if t.running then `Dirty else `Clean);
     t.backend.wake ())
 
 (* Cursor *)
@@ -945,23 +928,27 @@ let apply_resize t cols rows now =
     request_redraw t)
 
 let handle_resize t cols rows =
-  let now = t.backend.now () in
-  match t.config.resize_debounce with
-  | None -> apply_resize t cols rows now
-  | Some window_s ->
-      if
-        t.last_resize_apply_time = 0.
-        || now -. t.last_resize_apply_time >= window_s
-      then apply_resize t cols rows now
-      else t.pending_resize <- Some (cols, rows)
+  if t.lifecycle <> `Ready then t.pending_resize <- Some (cols, rows)
+  else
+    let now = t.backend.now () in
+    match t.config.resize_debounce with
+    | None -> apply_resize t cols rows now
+    | Some window_s ->
+        if
+          t.last_resize_apply_time = 0.
+          || now -. t.last_resize_apply_time >= window_s
+        then apply_resize t cols rows now
+        else t.pending_resize <- Some (cols, rows)
 
 let maybe_apply_pending_resize t =
-  match (t.pending_resize, t.config.resize_debounce) with
-  | Some (cols, rows), Some window_s ->
-      let now = t.backend.now () in
-      if now -. t.last_resize_apply_time >= window_s then
-        apply_resize t cols rows now
-  | _ -> ()
+  if t.lifecycle = `Ready then
+    match t.pending_resize with
+    | Some (cols, rows) ->
+        let now = t.backend.now () in
+        let window_s = Option.value t.config.resize_debounce ~default:0. in
+        if now -. t.last_resize_apply_time >= window_s then
+          apply_resize t cols rows now
+    | None -> ()
 
 (* Event dispatch *)
 
@@ -981,7 +968,7 @@ let classify_event t evt =
       handle_resize t cols rows;
       Some (`Resize (cols, rows))
   | Input.Focus ->
-      if t.restore_modes_on_next_focus then (
+      if t.restore_modes_on_next_focus && t.lifecycle = `Ready then (
         t.restore_modes_on_next_focus <- false;
         Terminal.restore_modes t.terminal);
       let adjusted = adjust_event_for_offset t evt in
@@ -1007,14 +994,13 @@ let classify_event t evt =
 (* Close *)
 
 let close t =
-  if t.closed then ()
+  if t.lifecycle = `Closed then ()
   else
     t.backend.protect (fun () ->
         Atomic.set t.redraw_state `Disabled;
-        t.closed <- true;
+        t.lifecycle <- `Closed;
         t.running <- false;
-        t.control_state <- `Explicit_stopped;
-        update_loop_active t;
+        update_cadence t;
         restore_frame_modes t;
         (try
            let is_tty = Terminal.tty t.terminal in
@@ -1188,16 +1174,14 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
           frame_dump_pattern;
           frame_dump_hits;
           frame_dump_counter = 0;
-          closed = false;
+          lifecycle = `Ready;
           frame_modes_armed = false;
-          loop_active = false;
-          control_state =
-            (if start_idle then `Idle
+          demand =
+            (if start_idle then `Auto
              else
                match config.target_fps with
-               | Some fps when fps > 0. -> `Explicit_started
-               | _ -> `Idle);
-          previous_control_state = `Idle;
+               | Some fps when fps > 0. -> `Continuous
+               | _ -> `Auto);
           live_requests = 0;
           restore_modes_on_next_focus = false;
           capability_window_until;
@@ -1331,7 +1315,8 @@ let min_timeout a b =
    instant. Live animation still paces off [target_fps] via the frame
    deadline; only one-shots skip the wait. *)
 let one_shot_render_due t ~now =
-  redraw_requested t && (not t.loop_active)
+  redraw_requested t
+  && (not (cadence_active t))
   && ((not t.config.pace_redraws)
      ||
      match compute_loop_interval t with
@@ -1341,7 +1326,7 @@ let one_shot_render_due t ~now =
 let compute_timeout t ~now =
   let pending_timeout =
     match (t.pending_resize, t.config.resize_debounce) with
-    | Some _, Some window_s ->
+    | Some _, Some window_s when t.lifecycle = `Ready ->
         let remaining = t.last_resize_apply_time +. window_s -. now in
         if remaining > 0. then Some remaining else Some 0.
     | _ -> None
@@ -1368,7 +1353,7 @@ let compute_timeout t ~now =
     | None -> None
   in
   let redraw_timeout =
-    if redraw_requested t && not t.loop_active then
+    if redraw_requested t && not (cadence_active t) then
       if not t.config.pace_redraws then Some 0.
       else
         match compute_loop_interval t with
@@ -1384,25 +1369,19 @@ let compute_timeout t ~now =
           (min_timeout pending_timeout parser_timeout)))
 
 let should_render_now t ~now =
-  one_shot_render_due t ~now
-  || t.loop_active
-     && match t.next_frame_deadline with Some dl -> now >= dl | None -> false
+  render_eligible t
+  && (one_shot_render_due t ~now
+     || cadence_active t
+        &&
+        match t.next_frame_deadline with
+        | Some dl -> now >= dl
+        | None -> false)
 
 (* Event loop *)
 
 let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
-  if not t.running then t.running <- true;
-  (match t.control_state with
-  | `Auto_started when t.live_requests = 0 ->
-      t.control_state <- `Idle;
-      update_loop_active t
-  | _ -> update_loop_active t);
-  if
-    t.control_state <> `Explicit_suspended
-    && t.control_state <> `Explicit_stopped
-  then (
-    Atomic.set t.redraw_state `Dirty;
-    t.backend.wake ());
+  update_cadence t;
+  if render_eligible t then request_redraw t;
   (* [on_resize] always reports the usable surface — {!size}, the live
      viewport in [`Primary] mode — never the raw terminal dimensions of the
      resize event, so the first callback and later ones agree. It fires once
@@ -1418,20 +1397,22 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
           f t ~cols ~rows))
       on_resize
   in
-  notify_resize ~initial:true;
+  if t.running then notify_resize ~initial:true;
 
   let render_cycle ~now ~last_time =
     Option.iter (fun f -> f t ~dt:(now -. last_time)) on_frame;
-    prepare t;
-    on_render t;
+    if render_eligible t then (
+      prepare t;
+      on_render t);
     let user_end = t.backend.now () in
-    let required_rows_hint =
-      match primary_required_rows with
-      | Some f -> (
-          match f t with Some rows when rows > 0 -> Some rows | _ -> None)
-      | None -> None
-    in
-    submit ?primary_required_rows:required_rows_hint t;
+    (if render_eligible t then
+       let required_rows_hint =
+         match primary_required_rows with
+         | Some f -> (
+             match f t with Some rows when rows > 0 -> Some rows | _ -> None)
+         | None -> None
+       in
+       submit ?primary_required_rows:required_rows_hint t);
     user_end
   in
 
@@ -1462,7 +1443,7 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
           if t.input_ended then `End
           else
             let ready = t.backend.wait ~timeout ~on_event:handle_event in
-            if t.closed then `Continue
+            if t.lifecycle = `Closed then `Continue
             else
               let n =
                 if ready then
@@ -1521,26 +1502,26 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
         let render_end = t.backend.now () in
         t.last_render_time <- render_end;
         t.next_frame_deadline <-
-          (if t.loop_active then
+          (if cadence_active t then
              match frame_interval with
              | Some iv ->
                  let elapsed = render_end -. now in
                  let delay = Float.max 0. (iv -. elapsed) in
                  Some (render_end +. delay)
-             | None -> None
+             | None -> Some render_end
            else None);
         let timeout = compute_timeout t ~now:render_end in
-        read_events ~now:render_end ~timeout;
+        if t.running then read_events ~now:render_end ~timeout;
         loop last_time)
       else
         let timeout = compute_timeout t ~now in
-        read_events ~now ~timeout;
+        if t.running then read_events ~now ~timeout;
         loop last_time)
   in
   let start_time = t.backend.now () in
   Fun.protect
     (fun () -> loop start_time)
-    ~finally:(fun () -> if not t.closed then close t)
+    ~finally:(fun () -> if t.lifecycle <> `Closed then close t)
 
 (* Diagnostics *)
 

@@ -157,7 +157,9 @@ val create :
 
     {b Frame timing:}
     - [target_fps] optional FPS cap in Hz. Defaults to [Some 30.]. [None] for
-      uncapped.
+      uncapped. With [None], construction starts demand-driven: one-shot redraws
+      render immediately, and {!start} or {!request_live} enables continuous
+      uncapped rendering.
     - [pace_redraws] whether one-shot {!request_redraw}s coalesce to
       [target_fps]. Defaults to [true]: an event storm renders at most once per
       frame interval. Set [false] under a virtual clock, where coalescing buys
@@ -231,9 +233,13 @@ val run :
     do not change the applied size produce no callback. [on_input] still
     receives raw {!Input.Resize} terminal dimensions.
 
-    The loop exits when {!running} becomes [false]. Permanent end-of-input
-    finalizes the input parser and closes the runtime. Exceptions close the
-    runtime before propagating. *)
+    The loop exits when {!running} becomes [false]. Calling [run] on an already
+    stopped application closes it without restarting; call {!start} first to
+    restart an open application. Closed applications remain closed. Stopping or
+    suspending in [on_frame] skips [on_render]; doing so in [on_render] skips
+    presentation. Pausing permits the current frame to finish. Permanent
+    end-of-input finalizes the input parser and closes the runtime. Exceptions
+    close the runtime before propagating. *)
 
 (** {1:frame Frame building} *)
 
@@ -263,6 +269,7 @@ val screen : app -> Screen.t
 val submit : ?primary_required_rows:int -> app -> unit
 (** [submit ?primary_required_rows app] diffs the current frame against the
     previous one and flushes ANSI output. Call after drawing into {!grid}.
+    Stopped, suspended and closed applications emit no frame output.
 
     In [`Primary] mode, [primary_required_rows] requests a live viewport height
     for this frame. The request is clamped to the terminal height and never
@@ -282,12 +289,15 @@ val stop : app -> unit
     tick. *)
 
 val start : app -> unit
-(** [start app] resumes the render cadence and marks the control state as
-    explicitly started. *)
+(** [start app] requests continuous rendering and restarts a stopped loop. While
+    suspended it changes demand only; {!resume} must restore terminal ownership
+    before any frame is rendered. Closed applications remain closed. *)
 
 val pause : app -> unit
-(** [pause app] stops the render cadence but leaves the terminal configured.
-    {!start} resumes. *)
+(** [pause app] stops continuous rendering without changing terminal ownership.
+    One-shot redraws remain available while the terminal is active. Calling
+    [pause] while suspended preserves this demand after {!resume}; {!start}
+    requests continuous rendering again. *)
 
 val suspend : ?leave_alt:bool -> app -> unit
 (** [suspend app] pauses rendering and restores the terminal to cooked mode
@@ -298,25 +308,30 @@ val suspend : ?leave_alt:bool -> app -> unit
     the primary screen and its scrollback. {!resume} reapplies configuration.
 
     Idempotent: calling [suspend] while already suspended (or after {!close}) is
-    a no-op, so the control state restored by {!resume} is always the one
-    captured by the first suspend. *)
+    a no-op. Live requests and {!start}/{!pause} can change rendering demand
+    while suspended without reclaiming terminal ownership. *)
 
 val resume : app -> unit
 (** [resume app] reapplies terminal configuration after {!suspend}: it re-enters
     the alternate-screen buffer iff the matching {!suspend} left it, discards
     any input received while suspended (stale keystrokes never reach the app),
-    and forces a full repaint on the next frame. *)
+    and requests a full repaint on the next frame. Cadence follows the latest
+    rendering demand and live count; resuming does not restart a stopped loop.
+*)
 
 val request_live : app -> unit
-(** [request_live app] signals pending live work. Restarts the render cadence
-    when transitioning from idle. *)
+(** [request_live app] increments live demand. In automatic mode, the first
+    request enables continuous rendering. Requests made while suspended take
+    effect on {!resume}; explicit pause and stop remain in effect. *)
 
 val drop_live : app -> unit
 (** [drop_live app] decrements the live counter. When it reaches zero in auto
     mode the cadence idles. *)
 
 val running : app -> bool
-(** [running app] is [true] iff the event loop is active. *)
+(** [running app] is [true] while the app may continue its event loop. It is
+    initially [true] and becomes [false] on {!stop} or {!close}. Suspension and
+    paused rendering do not terminate the loop. *)
 
 val now : app -> float
 (** [now app] is monotonic time in seconds as reported by [app]'s clock. Its
