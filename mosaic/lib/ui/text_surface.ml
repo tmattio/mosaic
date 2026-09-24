@@ -5,6 +5,7 @@ type wrap = Layout.wrap
 type t = {
   node : Renderable.t;
   buffer : Text_buffer.t;
+  mutable notified_version : int;
   mutable wrap : wrap;
   mutable wrap_width : int option;
   mutable truncate : bool;
@@ -179,9 +180,13 @@ let set_truncate t v =
 (* ───── Invalidation ───── *)
 
 let invalidate t =
-  t.display_cache <- [];
-  t.measure_cache <- [];
-  Renderable.mark_dirty t.node;
+  let version = Text_buffer.version t.buffer in
+  if version <> t.notified_version then begin
+    t.notified_version <- version;
+    t.display_cache <- [];
+    t.measure_cache <- [];
+    Renderable.mark_dirty t.node
+  end;
   Renderable.request_render t.node
 
 (* ───── Selection ───── *)
@@ -369,6 +374,7 @@ let create node buffer =
     {
       node;
       buffer;
+      notified_version = Text_buffer.version buffer;
       wrap = `None;
       wrap_width = None;
       truncate = false;

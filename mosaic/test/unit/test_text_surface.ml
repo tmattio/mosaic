@@ -310,6 +310,51 @@ let invalidate_clears_cache () =
   Text_surface.invalidate s;
   equal ~msg:"updated" int 2 (Text_surface.display_line_count s)
 
+let restyling_retains_geometry () =
+  let s = make_surface ~width:4 ~wrap:`Char ~content:"aé\tb\nc" () in
+  let buffer = Text_surface.buffer s in
+  let source = Text_buffer.source buffer in
+  let geometry = Text_surface.layout s in
+  let version = Text_buffer.version buffer in
+  ignore (Text_buffer.style_at buffer 0);
+  let red = Ansi.Style.make ~fg:Ansi.Color.red () in
+  let blue = Ansi.Style.make ~fg:Ansi.Color.blue () in
+  Renderable.Private.clear_layout_dirty (Text_surface.node s);
+  (* Split a UTF-8 sequence across spans: only concatenated bytes define geometry. *)
+  Text_buffer.set_styled_text buffer
+    [ { text = "a\195"; style = red }; { text = "\169\tb\nc"; style = blue } ];
+  Text_surface.invalidate s;
+  equal ~msg:"paint-only version" int version (Text_buffer.version buffer);
+  is_true ~msg:"indexed source retained" (source == Text_buffer.source buffer);
+  is_true ~msg:"geometry retained" (geometry == Text_surface.layout s);
+  is_false ~msg:"layout stays clean"
+    (Renderable.Private.layout_dirty (Text_surface.node s));
+  is_true ~msg:"new style applied"
+    (Ansi.Style.equal red (fst (Text_buffer.style_at buffer 0)));
+  Text_buffer.set_default_style buffer blue;
+  Text_buffer.set_text buffer "aé\tb\nc";
+  Text_surface.invalidate s;
+  is_true ~msg:"plain restyle retains geometry"
+    (geometry == Text_surface.layout s);
+  is_true ~msg:"plain style applied"
+    (Ansi.Style.equal blue (fst (Text_buffer.style_at buffer 0)));
+  Text_buffer.set_styled_text buffer [ { text = "aé\tb\nd"; style = red } ];
+  Text_surface.invalidate s;
+  is_true ~msg:"different bytes invalidate geometry"
+    (geometry != Text_surface.layout s);
+  is_true ~msg:"content marks layout dirty"
+    (Renderable.Private.layout_dirty (Text_surface.node s))
+
+let reading_new_geometry_does_not_skip_layout_invalidation () =
+  let s = make_surface ~content:"hello" () in
+  ignore (Text_surface.layout s);
+  Renderable.Private.clear_layout_dirty (Text_surface.node s);
+  Text_buffer.set_text (Text_surface.buffer s) "hello\nworld";
+  equal int 2 (Text_surface.display_line_count s);
+  Text_surface.invalidate s;
+  is_true ~msg:"reading geometry cannot acknowledge intrinsic-size changes"
+    (Renderable.Private.layout_dirty (Text_surface.node s))
+
 let buffer_version_triggers_recompute () =
   let s = make_surface ~content:"hello" () in
   let _ = Text_surface.layout s in
@@ -789,6 +834,9 @@ let () =
       group "Cache invalidation"
         [
           test "invalidate clears cache" invalidate_clears_cache;
+          test "restyling retains geometry" restyling_retains_geometry;
+          test "reading geometry preserves layout invalidation"
+            reading_new_geometry_does_not_skip_layout_invalidation;
           test "buffer version triggers recompute"
             buffer_version_triggers_recompute;
           test "buffer tab width triggers recompute"

@@ -164,5 +164,6 @@ val selected_text : t -> string
 (** {1:invalidation Invalidation} *)
 
 val invalidate : t -> unit
-(** [invalidate t] clears cached display lines, marks layout dirty, and requests
-    a render. Call after modifying the underlying buffer externally. *)
+(** [invalidate t] requests a render after modifying the underlying buffer.
+    Changes to text or width policy also invalidate geometry and mark layout
+    dirty. Paint changes retain cached geometry. *)

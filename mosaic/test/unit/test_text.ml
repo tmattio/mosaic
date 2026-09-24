@@ -468,13 +468,16 @@ let apply_props_stamps_content_with_text_style () =
    the existing content with the new default style. *)
 let apply_props_restamps_on_style_change () =
   let _t, txt = make_text ~content:"hello" () in
+  let geometry = Text_surface.layout (Text.surface txt) in
   Text.apply_props txt
     (Text.Props.make ~content:"hello" ~text_style:red_style ());
   let buf = Text.buffer txt in
   let spans = Text_buffer.styled_text buf in
   equal ~msg:"span count" int 1 (List.length spans);
   let span = List.hd spans in
-  is_true ~msg:"span carries red style" (Ansi.Style.equal red_style span.style)
+  is_true ~msg:"span carries red style" (Ansi.Style.equal red_style span.style);
+  is_true ~msg:"paint change retains geometry"
+    (geometry == Text_surface.layout (Text.surface txt))
 
 (* ── Runner ── *)
 

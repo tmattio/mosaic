@@ -248,6 +248,7 @@ end
 type t = {
   node : Renderable.t;
   text_buf : Text_buffer.t;
+  mutable styled_content : bool;
   surface : Text_surface.t;
   mutable props : Props.t;
   mutable on_change : Editor.t -> unit;
@@ -304,23 +305,30 @@ let propose t ~base next =
 (* Sync *)
 
 let spans_text_equals spans text =
-  let total =
-    List.fold_left
-      (fun acc (span : Text_buffer.span) -> acc + String.length span.text)
-      0 spans
+  let length = String.length text in
+  let rec matches offset = function
+    | [] -> offset = length
+    | (span : Text_buffer.span) :: rest ->
+        let size = String.length span.text in
+        if size > length - offset then false
+        else
+          let i = ref 0 in
+          while
+            !i < size
+            && String.unsafe_get text (offset + !i)
+               = String.unsafe_get span.text !i
+          do
+            incr i
+          done;
+          !i = size && matches (offset + size) rest
   in
-  if total <> String.length text then false
-  else
-    let buf = Buffer.create total in
-    List.iter
-      (fun (span : Text_buffer.span) -> Buffer.add_string buf span.text)
-      spans;
-    String.equal (Buffer.contents buf) text
+  matches 0 spans
 
 let sync_content t =
   let text = Editor.text t.props.state in
-  if t.props.spans <> [] && spans_text_equals t.props.spans text then
-    Text_buffer.set_styled_text t.text_buf t.props.spans
+  t.styled_content <-
+    t.props.spans <> [] && spans_text_equals t.props.spans text;
+  if t.styled_content then Text_buffer.set_styled_text t.text_buf t.props.spans
   else Text_buffer.set_text t.text_buf text;
   Text_buffer.set_source t.text_buf (Editor.source t.props.state)
 
@@ -335,8 +343,9 @@ let sync_style t ~focused =
     else t.props.background_color
   in
   Text_buffer.set_default_style t.text_buf (Ansi.Style.make ~fg ~bg ());
-  sync_content t;
-  Text_surface.invalidate t.surface
+  if not t.styled_content then
+    Text_buffer.set_text t.text_buf (Editor.text t.props.state);
+  Renderable.request_render t.node
 
 let handle_focus t = sync_style t ~focused:true
 let handle_blur t = sync_style t ~focused:false
@@ -770,6 +779,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state ?spans
     {
       node;
       text_buf;
+      styled_content = false;
       surface;
       props;
       on_change;
@@ -799,6 +809,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state ?spans
   Renderable.on_mouse node (handle_mouse t);
   register_selection t;
   register_line_info t;
+  sync t;
   sync_style t ~focused:false;
   t
 
@@ -831,8 +842,8 @@ let apply_props t (props : Props.t) =
   if keymap_changed then
     t.keymap <- Action.keymap ~custom:props.key_bindings t.mode;
   if selectable_changed then register_selection t;
-  if style_changed then sync_style t ~focused:(Renderable.focused t.node)
-  else if source_changed || spans_changed then sync t;
+  if style_changed then sync_style t ~focused:(Renderable.focused t.node);
+  if source_changed || spans_changed then sync t;
   if state_changed then ensure_cursor_visible t;
   Renderable.request_render t.node
 

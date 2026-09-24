@@ -241,6 +241,72 @@ let create_registers_line_info_provider () =
       equal ~msg:"line count" int 3 info.Renderable.line_count;
       ge ~msg:"display lines" ~than:3 info.display_line_count
 
+let focus_repaints_without_changing_geometry () =
+  let ctx, ta =
+    make_textarea ~value:"hello" ~text_color:Ansi.Color.red
+      ~focused_text_color:Ansi.Color.blue ~show_cursor:false ()
+  in
+  let surface = Textarea.surface ta in
+  let before = render_textarea ta ~width:10 ~height:2 in
+  let geometry = Text_surface.layout surface in
+  is_true ~msg:"unfocused text is red"
+    (Ansi.Color.equal Ansi.Color.red (Matrix_grid.get_fg before 0));
+  Renderable.Private.clear_layout_dirty (Textarea.node ta);
+  focus_textarea ctx ta;
+  is_false ~msg:"focus does not dirty layout"
+    (Renderable.Private.layout_dirty (Textarea.node ta));
+  let focused = render_textarea ta ~width:10 ~height:2 in
+  is_true ~msg:"focused text is blue"
+    (Ansi.Color.equal Ansi.Color.blue (Matrix_grid.get_fg focused 0));
+  is_true ~msg:"focus retains geometry" (geometry == Text_surface.layout surface);
+  blur_textarea ta;
+  let blurred = render_textarea ta ~width:10 ~height:2 in
+  is_true ~msg:"blur restores red"
+    (Ansi.Color.equal Ansi.Color.red (Matrix_grid.get_fg blurred 0));
+  is_true ~msg:"blur retains geometry" (geometry == Text_surface.layout surface)
+
+let focus_preserves_explicit_styles_and_restyles_fallback () =
+  let ctx = make_ctx () in
+  let root = make_root ctx in
+  let state = Editor.of_string "hello" in
+  let green = Ansi.Style.make ~fg:Ansi.Color.green () in
+  let spans = [ Text_buffer.{ text = "hello"; style = green } ] in
+  let ta =
+    Textarea.create ~parent:root ~state ~spans ~on_change:ignore
+      ~text_color:Ansi.Color.red ~focused_text_color:Ansi.Color.blue
+      ~show_cursor:false ()
+  in
+  ignore (render_textarea ta ~width:10 ~height:2);
+  let surface = Textarea.surface ta in
+  let geometry = Text_surface.layout surface in
+  focus_textarea ctx ta;
+  let focused = render_textarea ta ~width:10 ~height:2 in
+  is_true ~msg:"explicit green survives focus"
+    (Ansi.Color.equal Ansi.Color.green (Matrix_grid.get_fg focused 0));
+  is_true ~msg:"explicit style focus retains geometry"
+    (geometry == Text_surface.layout surface);
+  blur_textarea ta;
+  Textarea.apply_props ta
+    (make_props ~state
+       ~spans:[ Text_buffer.{ text = "stale"; style = green } ]
+       ~text_color:Ansi.Color.red ~focused_text_color:Ansi.Color.blue
+       ~show_cursor:false ());
+  focus_textarea ctx ta;
+  let fallback = render_textarea ta ~width:10 ~height:2 in
+  is_true ~msg:"stale spans fall back to focused plain style"
+    (Ansi.Color.equal Ansi.Color.blue (Matrix_grid.get_fg fallback 0));
+  is_true ~msg:"stale styling retains source geometry"
+    (geometry == Text_surface.layout surface);
+  Textarea.apply_props ta
+    (make_props
+       ~state:(Editor.of_string "replacement")
+       ~focused_text_color:Ansi.Color.red ~show_cursor:false ());
+  let changed = render_textarea ta ~width:15 ~height:2 in
+  equal ~msg:"simultaneous source and colour update" string "replacement"
+    (Text_buffer.plain_text (Text_surface.buffer surface));
+  is_true ~msg:"new content gets updated focus colour"
+    (Ansi.Color.equal Ansi.Color.red (Matrix_grid.get_fg changed 0))
+
 (* ── Value ── *)
 
 let value_returns_current_text () =
@@ -1032,6 +1098,13 @@ let () =
           test "surface accessible" create_surface_accessible;
           test "registers line info provider"
             create_registers_line_info_provider;
+        ];
+      group "Paint"
+        [
+          test "focus repaints without changing geometry"
+            focus_repaints_without_changing_geometry;
+          test "focus preserves explicit styles and restyles fallback"
+            focus_preserves_explicit_styles_and_restyles_fallback;
         ];
       group "Value"
         [

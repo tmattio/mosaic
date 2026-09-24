@@ -434,6 +434,27 @@ let set_default_style_does_not_restyle () =
   is_false ~msg:"not restyled"
     (Ansi.Style.equal red_style (span_style (List.hd spans)))
 
+let default_style_preserves_prepared_paint () =
+  List.iter
+    (fun texts ->
+      let buf = Text_buffer.create () in
+      Text_buffer.set_styled_text buf
+        (List.map (fun text -> Text_buffer.{ text; style = green_style }) texts);
+      Text_buffer.add_highlight buf
+        (Text_buffer.Highlight.make ~start_offset:0 ~end_offset:1
+           ~style:(Ansi.Style.make ~bold:true ())
+           ~ref_id:0 ());
+      let before = fst (Text_buffer.style_at buf 0) in
+      Text_buffer.set_default_style buf red_style;
+      is_true ~msg:"default changes preserve prepared explicit paint"
+        (before == fst (Text_buffer.style_at buf 0)))
+    [ [ "hello" ]; [ "é" ]; [ ""; "\195"; "\169"; "" ] ];
+  let empty = Text_buffer.create () in
+  ignore (Text_buffer.style_at empty 0);
+  Text_buffer.set_default_style empty red_style;
+  is_true ~msg:"empty buffer uses current default"
+    (Ansi.Style.equal red_style (fst (Text_buffer.style_at empty 0)))
+
 (* ── Property Tests ── *)
 
 (* Printable ASCII string for property tests *)
@@ -531,6 +552,8 @@ let () =
           test "applied to set_text" default_style_applied_to_set_text;
           test "set_default_style does not restyle"
             set_default_style_does_not_restyle;
+          test "default style preserves prepared paint"
+            default_style_preserves_prepared_paint;
         ];
       group "Properties"
         [
@@ -550,7 +573,7 @@ let () =
               let buf = Text_buffer.create () in
               Text_buffer.set_text buf s;
               equal text s (Text_buffer.plain_text buf));
-          prop "version monotonically increases"
+          prop "version changes with text"
             (Gen.pair printable_string printable_string) (fun (s1, s2) ->
               let buf = Text_buffer.create () in
               Text_buffer.set_text buf s1;
@@ -558,9 +581,9 @@ let () =
               Text_buffer.set_text buf s2;
               let v2 = Text_buffer.version buf in
               satisfies
-                ~claim:(Printf.sprintf "above the earlier version %d" v1)
+                ~claim:"unchanged for equal text, increasing for different text"
                 int
-                (fun v -> v > v1)
+                (fun v -> if String.equal s1 s2 then v = v1 else v > v1)
                 v2);
           prop "highlights_in_range subset" small_nat (fun n ->
               let buf = Text_buffer.create () in

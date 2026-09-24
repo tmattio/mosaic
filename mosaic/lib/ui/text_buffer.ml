@@ -83,18 +83,47 @@ let ensure_spans_rev t =
 (* ───── Content ───── *)
 
 let set_text t s =
+  let unchanged =
+    match t.cached_plain_text with
+    | Some text -> String.equal text s
+    | None -> false
+  in
   t.spans <- [ { text = s; style = t.default_style } ];
   t.spans_rev <- false;
-  invalidate t
+  if unchanged then t.paint <- None else invalidate t;
+  t.cached_plain_text <- Some s
 
 let styled_text t =
   ensure_span_order t;
   t.spans
 
 let set_styled_text t spans =
+  let unchanged =
+    match t.cached_plain_text with
+    | None -> false
+    | Some text ->
+        let length = String.length text in
+        let rec matches offset = function
+          | [] -> offset = length
+          | span :: rest ->
+              let size = String.length span.text in
+              if size > length - offset then false
+              else
+                let i = ref 0 in
+                while
+                  !i < size
+                  && String.unsafe_get text (offset + !i)
+                     = String.unsafe_get span.text !i
+                do
+                  incr i
+                done;
+                !i = size && matches (offset + size) rest
+        in
+        matches 0 spans
+  in
   t.spans <- spans;
   t.spans_rev <- false;
-  invalidate t
+  if unchanged then t.paint <- None else invalidate t
 
 let append t s =
   ensure_spans_rev t;
@@ -151,10 +180,7 @@ let grapheme_count t = Source.length (source t)
 (* ───── Default Style ───── *)
 
 let default_style t = t.default_style
-
-let set_default_style t s =
-  t.default_style <- s;
-  t.paint <- None
+let set_default_style t s = t.default_style <- s
 
 (* ───── Line Info ───── *)
 

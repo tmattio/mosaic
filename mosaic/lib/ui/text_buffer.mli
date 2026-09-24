@@ -75,7 +75,8 @@ val create :
 
 val set_text : t -> string -> unit
 (** [set_text t s] replaces content with plain text [s] styled with
-    {!default_style}. Invalidates cached metrics. *)
+    {!default_style}. Retains the source index and cached metrics when [s]
+    equals the installed text. *)
 
 val styled_text : t -> span list
 (** [styled_text t] is the installed base spans in source order, preserving
@@ -83,8 +84,9 @@ val styled_text : t -> span list
     The returned immutable list remains valid after buffer changes. *)
 
 val set_styled_text : t -> span list -> unit
-(** [set_styled_text t spans] replaces content with pre-styled [spans].
-    Invalidates cached metrics. *)
+(** [set_styled_text t spans] replaces content with pre-styled [spans]. Retains
+    the source index and cached metrics when the concatenated text is unchanged,
+    including when span boundaries differ. *)
 
 val append : t -> string -> unit
 (** [append t s] appends plain text [s] styled with {!default_style}.
@@ -172,9 +174,9 @@ val set_width_method : t -> Matrix.Text.width_method -> unit
 (** {1:versioning Versioning} *)
 
 val version : t -> int
-(** [version t] is a monotonically increasing counter incremented whenever
-    content, tab width, or width method changes. Useful for cache invalidation
-    in consumers (e.g. {!Text_surface}). *)
+(** [version t] is a monotonically increasing geometry revision. Text, source,
+    tab width, or width method changes increment it; style changes do not. Used
+    for cache invalidation by consumers such as {!Text_surface}. *)
 
 val source : t -> Matrix.Text.Layout.Source.t
 (** [source t] is the indexed installed text, shared across width layouts. *)

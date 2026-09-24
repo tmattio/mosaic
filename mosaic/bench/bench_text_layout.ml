@@ -31,7 +31,8 @@ let reflow (renderer, surface) =
   a + Text_surface.display_line_count surface
 
 let cold_reflow ((_, surface) as input) =
-  Text_surface.invalidate surface;
+  Text_surface.set_wrap surface `Char;
+  Text_surface.set_wrap surface `Word;
   reflow input
 
 let editor_text = String.make 1_000_000 'x'
@@ -71,6 +72,48 @@ let overlay_revision buffer =
          ~ref_id:i ())
   done;
   Text_buffer.style_at buffer 200
+
+let focus_surface length =
+  let renderer = Renderer.create () in
+  let area =
+    Textarea.create ~parent:(Renderer.root renderer)
+      ~focused_text_color:Ansi.Color.cyan
+      ~state:(Editor.of_string (String.make length 'x'))
+      ~on_change:ignore ()
+  in
+  let node = Textarea.node area in
+  Renderable.set_focusable node true;
+  Renderable.Private.update_layout node ~x:0. ~y:0. ~width:80. ~height:20.;
+  ignore (Text_surface.layout (Textarea.surface area) : Matrix_text.Layout.t);
+  (renderer, area)
+
+let focus_layout (renderer, area) =
+  ignore (Sys.opaque_identity renderer : Renderer.t);
+  let node = Textarea.node area and surface = Textarea.surface area in
+  ignore (Renderable.focus node : bool);
+  let focused = Text_surface.display_line_count surface in
+  Renderable.blur node;
+  focused + Text_surface.display_line_count surface
+
+let restyle_surface () =
+  let renderer, surface = make_surface styled in
+  Text_surface.set_wrap_width surface (Some 80);
+  ignore (Text_surface.layout surface : Matrix_text.Layout.t);
+  let alternate =
+    List.map
+      (fun (span : Text_buffer.span) ->
+        { span with style = Ansi.Style.make ~italic:true () })
+      styled
+  in
+  (renderer, surface, alternate)
+
+let restyle_layout (renderer, surface, alternate) =
+  ignore (Sys.opaque_identity renderer : Renderer.t);
+  let buffer = Text_surface.buffer surface in
+  Text_buffer.set_styled_text buffer alternate;
+  let first = Text_surface.display_line_count surface in
+  Text_buffer.set_styled_text buffer styled;
+  first + Text_surface.display_line_count surface
 
 let memory_check () =
   let module L = Matrix_text.Layout in
@@ -124,6 +167,14 @@ let () =
               else [ Thumper.Metric.alloc_words ]))
       ~budgets:[ Thumper.Budget.no_more_alloc_than 0.05 ]
       [
+        Thumper.bench_with_setup
+          ~setup:(fun () -> focus_surface 128)
+          "focus/layout-128b" focus_layout;
+        Thumper.bench_with_setup
+          ~setup:(fun () -> focus_surface 1_000_000)
+          "focus/layout-1mb" focus_layout;
+        Thumper.bench_with_setup ~setup:restyle_surface
+          "styles/same-text-layout-100k" restyle_layout;
         Thumper.bench_with_setup
           ~setup:(fun () -> editor_text)
           "index/create-1mb"
