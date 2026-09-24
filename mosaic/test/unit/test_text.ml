@@ -458,7 +458,7 @@ let apply_props_stamps_content_with_text_style () =
   Text.apply_props txt
     (Text.Props.make ~content:"Bold text" ~text_style:bold_style ());
   let buf = Text.buffer txt in
-  let spans = Text_buffer.line_spans buf 0 in
+  let spans = Text_buffer.styled_text buf in
   equal ~msg:"span count" int 1 (List.length spans);
   let span = List.hd spans in
   is_true ~msg:"span carries bold style"
@@ -471,7 +471,7 @@ let apply_props_restamps_on_style_change () =
   Text.apply_props txt
     (Text.Props.make ~content:"hello" ~text_style:red_style ());
   let buf = Text.buffer txt in
-  let spans = Text_buffer.line_spans buf 0 in
+  let spans = Text_buffer.styled_text buf in
   equal ~msg:"span count" int 1 (List.length spans);
   let span = List.hd spans in
   is_true ~msg:"span carries red style" (Ansi.Style.equal red_style span.style)

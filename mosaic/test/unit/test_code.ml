@@ -20,7 +20,7 @@ let render_code code =
   let grid = make_grid ~width:40 ~height:5 () in
   Renderable.Private.render_full (Code.node code) ~grid ~delta:0.
 
-let line_spans code = Text_buffer.line_spans (Code.buffer code) 0
+let styled_text code = Text_buffer.styled_text (Code.buffer code)
 let span_text span = (span : Text_buffer.span).text
 let span_style span = (span : Text_buffer.span).style
 
@@ -56,12 +56,12 @@ let plain_without_syntax () =
   let _ctx, code = make_code ~content:"let x = 1" () in
   equal ~msg:"plain text" string "let x = 1"
     (Text_buffer.plain_text (Code.buffer code));
-  equal ~msg:"span count" int 1 (List.length (line_spans code))
+  equal ~msg:"span count" int 1 (List.length (styled_text code))
 
 let precomputed_highlights_apply_style () =
   let syntax = Code.syntax ~style:(syntax_style red) highlights in
   let _ctx, code = make_code ~content:"let x = 1" ~syntax () in
-  match line_spans code with
+  match styled_text code with
   | first :: _ ->
       equal ~msg:"highlighted text" string "let" (span_text first);
       is_true ~msg:"highlighted style" (Ansi.Style.equal red (span_style first))
@@ -80,7 +80,7 @@ let sync_highlighter_applies_style () =
   in
   let _ctx, code = make_code ~content:"let x" ~syntax () in
   is_false ~msg:"not highlighting" (Code.is_highlighting code);
-  match line_spans code with
+  match styled_text code with
   | first :: _ ->
       equal ~msg:"highlighted text" string "let" (span_text first);
       is_true ~msg:"highlighted style" (Ansi.Style.equal red (span_style first))
@@ -102,7 +102,7 @@ let async_highlighter_applies_completed_result () =
   complete job (Ok highlights);
   render_code code;
   is_false ~msg:"done highlighting" (Code.is_highlighting code);
-  match line_spans code with
+  match styled_text code with
   | first :: _ ->
       is_true ~msg:"highlighted style" (Ansi.Style.equal red (span_style first))
   | [] -> fail "expected highlighted span"
@@ -164,7 +164,7 @@ let async_content_change_cancels_previous_job () =
   let second_job = List.nth !jobs 1 in
   complete second_job (Ok highlights);
   render_code code;
-  match line_spans code with
+  match styled_text code with
   | first :: _ ->
       equal ~msg:"highlighted current content" string "var" (span_text first)
   | [] -> fail "expected highlighted span"
@@ -223,7 +223,7 @@ let invalid_highlights_fall_back_to_plain_text () =
   let _ctx, code = make_code ~content:"let" ~syntax () in
   equal ~msg:"plain text" string "let"
     (Text_buffer.plain_text (Code.buffer code));
-  match line_spans code with
+  match styled_text code with
   | [ span ] ->
       is_true ~msg:"default style"
         (Ansi.Style.equal Ansi.Style.default (span_style span))
@@ -245,7 +245,7 @@ let set_content_reapplies_syntax () =
   let syntax = Code.syntax ~style:(syntax_style red) highlights in
   let _ctx, code = make_code ~content:"let x" ~syntax () in
   Code.set_content code "var x";
-  match line_spans code with
+  match styled_text code with
   | first :: _ ->
       equal ~msg:"highlighted text" string "var" (span_text first);
       is_true ~msg:"highlighted style" (Ansi.Style.equal red (span_style first))
@@ -255,7 +255,7 @@ let set_syntax_none_renders_plain () =
   let syntax = Code.syntax ~style:(syntax_style red) highlights in
   let _ctx, code = make_code ~content:"let x" ~syntax () in
   Code.set_syntax code None;
-  match line_spans code with
+  match styled_text code with
   | [ span ] ->
       equal ~msg:"plain text" string "let x" (span_text span);
       is_true ~msg:"default style"
@@ -267,7 +267,7 @@ let apply_props_updates_syntax_style () =
   let _ctx, code = make_code ~content:"let x" ~syntax () in
   let syntax = Code.syntax ~style:(syntax_style blue) highlights in
   Code.apply_props code (Code.Props.make ~content:"let x" ~syntax ());
-  match line_spans code with
+  match styled_text code with
   | first :: _ ->
       is_true ~msg:"updated style" (Ansi.Style.equal blue (span_style first))
   | [] -> fail "expected highlighted span"
@@ -275,7 +275,7 @@ let apply_props_updates_syntax_style () =
 let text_style_restamps_plain_content () =
   let _ctx, code = make_code ~content:"plain" () in
   Code.apply_props code (Code.Props.make ~content:"plain" ~text_style:red ());
-  match line_spans code with
+  match styled_text code with
   | [ span ] ->
       is_true ~msg:"restamped style" (Ansi.Style.equal red (span_style span))
   | _ -> fail "expected one plain span"
@@ -409,7 +409,7 @@ let threaded_failure_and_idle_restart () =
   is_false ~msg:"idle worker is replaced on demand"
     (Thread.id first = Thread.id second);
   join_worker "restarted worker exits" second;
-  match line_spans code with
+  match styled_text code with
   | first :: _ ->
       is_true ~msg:"worker survives an earlier failure"
         (Ansi.Style.equal red (span_style first))

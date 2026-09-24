@@ -601,12 +601,7 @@ and render_list_item ~(env : render_env) ~parent ~is_last ~tight ~list_type
   (match (task_prefix, children) with
   | Some prefix, { widget = Text_widget text; _ } :: _ ->
       let buf = Text.buffer text in
-      let existing_spans =
-        let lc = Text_buffer.line_count buf in
-        if lc > 0 then
-          List.concat (List.init lc (fun i -> Text_buffer.line_spans buf i))
-        else []
-      in
+      let existing_spans = Text_buffer.styled_text buf in
       let task_span =
         { Text_buffer.text = prefix; style = env.style Task_marker }
       in

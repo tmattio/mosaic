@@ -69,13 +69,18 @@ val create :
     - [default_style]: style applied to plain text set via {!set_text} and
       {!append}. Defaults to {!Ansi.Style.default}.
     - [width_method]: grapheme width computation method. Defaults to [`Unicode].
-    - [tab_width]: tab stop width, clamped to [>= 1]. Defaults to [2]. *)
+    - [tab_width]: constant tab width, clamped to [>= 1]. Defaults to [2]. *)
 
 (** {1:content Content} *)
 
 val set_text : t -> string -> unit
 (** [set_text t s] replaces content with plain text [s] styled with
     {!default_style}. Invalidates cached metrics. *)
+
+val styled_text : t -> span list
+(** [styled_text t] is the installed base spans in source order, preserving
+    their exact text, including line breaks. Highlight overlays are separate.
+    The returned immutable list remains valid after buffer changes. *)
 
 val set_styled_text : t -> span list -> unit
 (** [set_styled_text t spans] replaces content with pre-styled [spans].
@@ -117,15 +122,11 @@ val line_count : t -> int
 
 val line_width : t -> int -> int
 (** [line_width t n] is the display width of logical line [n]. Returns [0] if
-    [n] is out of range. Cached; recomputed on content change. *)
+    [n] is out of range. Derived from the shared source index. *)
 
 val max_line_width : t -> int
 (** [max_line_width t] is the display width of the widest logical line. Cached;
     recomputed on content change. *)
-
-val line_spans : t -> int -> span list
-(** [line_spans t n] is the styled spans for logical line [n]. Uses cached line
-    boundaries to avoid rescanning. Returns [[]] if [n] is out of range. *)
 
 val text_in_range : t -> start:int -> len:int -> string
 (** [text_in_range t ~start ~len] is the plain text for grapheme offsets from
@@ -153,11 +154,11 @@ val highlights_in_range : t -> start:int -> len:int -> Highlight.t list
 (** {1:tab_width Tab width} *)
 
 val tab_width : t -> int
-(** [tab_width t] is the current tab stop width. Defaults to [2]. *)
+(** [tab_width t] is the current constant tab width. Defaults to [2]. *)
 
 val set_tab_width : t -> int -> unit
-(** [set_tab_width t w] changes the tab stop width. [w] is clamped to [>= 1].
-    Invalidates cached line info if the value changes. *)
+(** [set_tab_width t w] changes the constant tab width. [w] is clamped to
+    [>= 1]. Invalidates cached line info if the value changes. *)
 
 (** {1:width_method Width method} *)
 

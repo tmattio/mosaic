@@ -208,43 +208,34 @@ let max_line_width_basic () =
   Text_buffer.set_text buf "hi\nhello world\nbye";
   equal ~msg:"max" int 11 (Text_buffer.max_line_width buf)
 
-(* ── Line Spans ── *)
+(* ── Styled text ── *)
 
-let line_spans_single_line () =
-  let buf = Text_buffer.create () in
-  Text_buffer.set_text buf "hello";
-  let spans = Text_buffer.line_spans buf 0 in
-  equal ~msg:"count" int 1 (List.length spans);
-  equal ~msg:"text" string "hello" (span_text (List.hd spans))
-
-let line_spans_multiline () =
-  let buf = Text_buffer.create () in
-  Text_buffer.set_text buf "aaa\nbbb";
-  let s0 = Text_buffer.line_spans buf 0 in
-  let s1 = Text_buffer.line_spans buf 1 in
-  equal ~msg:"line 0" string "aaa" (span_text (List.hd s0));
-  equal ~msg:"line 1" string "bbb" (span_text (List.hd s1))
-
-let line_spans_out_of_range () =
-  let buf = Text_buffer.create () in
-  Text_buffer.set_text buf "hello";
-  let spans = Text_buffer.line_spans buf 5 in
-  equal ~msg:"empty" int 0 (List.length spans)
-
-let line_spans_styled_across_lines () =
+let styled_text_preserves_lines_and_styles () =
   let buf = Text_buffer.create () in
   Text_buffer.set_styled_text buf
     [
-      { Text_buffer.text = "aa\nbb"; style = red_style };
+      { Text_buffer.text = "aa\r\nbb"; style = red_style };
       { Text_buffer.text = "cc"; style = green_style };
     ];
-  let s0 = Text_buffer.line_spans buf 0 in
-  let s1 = Text_buffer.line_spans buf 1 in
-  equal ~msg:"line 0 text" string "aa" (span_text (List.hd s0));
-  (* line 1 should have "bb" with red_style and "cc" with green_style *)
-  equal ~msg:"line 1 count" int 2 (List.length s1);
-  equal ~msg:"line 1 first" string "bb" (span_text (List.hd s1));
-  equal ~msg:"line 1 second" string "cc" (span_text (List.nth s1 1))
+  let spans = Text_buffer.styled_text buf in
+  equal (list string) [ "aa\r\nbb"; "cc" ] (List.map span_text spans);
+  is_true (Ansi.Style.equal red_style (span_style (List.hd spans)));
+  is_true (Ansi.Style.equal green_style (span_style (List.nth spans 1)))
+
+let styled_text_keeps_append_order_and_snapshot () =
+  let buf = Text_buffer.create () in
+  Text_buffer.set_text buf "one";
+  Text_buffer.append buf "two";
+  Text_buffer.append_styled buf
+    [ { Text_buffer.text = "three"; style = red_style } ];
+  let spans = Text_buffer.styled_text buf in
+  Text_buffer.append buf "four";
+  equal (list string) [ "one"; "two"; "three" ] (List.map span_text spans);
+  equal (list string)
+    [ "one"; "two"; "three"; "four" ]
+    (List.map span_text (Text_buffer.styled_text buf));
+  Text_buffer.clear buf;
+  equal (list string) [] (List.map span_text (Text_buffer.styled_text buf))
 
 (* ── text_in_range ── *)
 
@@ -430,7 +421,7 @@ let version_increments_on_mutations () =
 let default_style_applied_to_set_text () =
   let buf = Text_buffer.create ~default_style:red_style () in
   Text_buffer.set_text buf "hello";
-  let spans = Text_buffer.line_spans buf 0 in
+  let spans = Text_buffer.styled_text buf in
   is_true ~msg:"uses default style"
     (Ansi.Style.equal red_style (span_style (List.hd spans)))
 
@@ -438,7 +429,7 @@ let set_default_style_does_not_restyle () =
   let buf = Text_buffer.create () in
   Text_buffer.set_text buf "hello";
   Text_buffer.set_default_style buf red_style;
-  let spans = Text_buffer.line_spans buf 0 in
+  let spans = Text_buffer.styled_text buf in
   (* Existing content should still have the old default style *)
   is_false ~msg:"not restyled"
     (Ansi.Style.equal red_style (span_style (List.hd spans)))
@@ -501,12 +492,12 @@ let () =
           test "line_width out of range" line_width_out_of_range;
           test "max_line_width" max_line_width_basic;
         ];
-      group "Line spans"
+      group "Styled text"
         [
-          test "single line" line_spans_single_line;
-          test "multiline" line_spans_multiline;
-          test "out of range" line_spans_out_of_range;
-          test "styled across line boundaries" line_spans_styled_across_lines;
+          test "preserves lines and styles"
+            styled_text_preserves_lines_and_styles;
+          test "append order and retained snapshot"
+            styled_text_keeps_append_order_and_snapshot;
         ];
       group "text_in_range"
         [

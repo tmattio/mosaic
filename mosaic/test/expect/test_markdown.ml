@@ -154,6 +154,11 @@ let%expect_test "task list" =
 • [x] Checked task
 • [ ] Another unchecked|}]
 
+let%expect_test "task prefix preserves hard line breaks" =
+  render_markdown "- [ ] first\\\n  second";
+  [%expect {|• [ ] first
+  second|}]
+
 (* ── Blockquotes ── *)
 
 let%expect_test "simple blockquote" =
