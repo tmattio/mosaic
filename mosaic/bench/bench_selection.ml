@@ -38,6 +38,36 @@ let value_rows =
   Thumper.black_box
     (List.init count (fun i -> Mosaic.Table.row labels.(i) rows.(i)))
 
+(* Selection changes share the same hierarchy and expanded IDs. Only the
+   selected ID changes; input construction is outside the measured roundtrip. *)
+let make_tree_selection count =
+  let renderer = Renderer.create () in
+  let children =
+    List.init (count - 1) (fun i ->
+        let id = Printf.sprintf "child-%d" i in
+        Tree.item ~id id)
+  in
+  let items = Thumper.black_box [ Tree.item ~id:"root" ~children "Root" ] in
+  let first = Tree.State.make ~selected:"root" ~expanded:[ "root" ] () in
+  let last =
+    Tree.State.select (Some (Printf.sprintf "child-%d" (count - 2))) first
+  in
+  let first_props =
+    Thumper.black_box (Tree.Props.make ~items ~state:first ())
+  in
+  let last_props = Thumper.black_box (Tree.Props.make ~items ~state:last ()) in
+  let tree =
+    Tree.create ~parent:(Renderer.root renderer) ~items ~state:first ()
+  in
+  (renderer, tree, first_props, last_props)
+
+let tree_selection_roundtrip (renderer, tree, first, last) =
+  ignore (Sys.opaque_identity renderer : Renderer.t);
+  Tree.apply_props tree last;
+  let last_index = Tree.selected_index tree in
+  Tree.apply_props tree first;
+  last_index + Tree.selected_index tree
+
 let () =
   Thumper.run "selection"
     ~config:
@@ -66,4 +96,10 @@ let () =
       Thumper.bench "table/value-5000" (fun () ->
           Mosaic.table ~columns ~rows:value_rows ~equal:String.equal ~selected
             ~on_change:Fun.id ~on_activate:Fun.id ());
+      Thumper.bench_with_setup
+        ~setup:(fun () -> make_tree_selection 1_000)
+        "tree/selection-roundtrip-1000" tree_selection_roundtrip;
+      Thumper.bench_with_setup
+        ~setup:(fun () -> make_tree_selection 10_000)
+        "tree/selection-roundtrip-10000" tree_selection_roundtrip;
     ]

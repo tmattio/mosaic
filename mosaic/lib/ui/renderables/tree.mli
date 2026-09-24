@@ -5,6 +5,10 @@
     to show or hide its children. The widget automatically scrolls to keep the
     selected node visible.
 
+    Input gestures propose a complete {!State.t} through {!set_on_change}.
+    Rejected proposals leave the tree unchanged. Explicit setters and
+    {!apply_props} install accepted state without emitting proposals.
+
     {1:navigation Navigation}
 
     Keyboard bindings:
@@ -194,9 +198,9 @@ val selected_index : t -> int
     (flattened) list of [t], or [-1] when its selected ID is not visible. *)
 
 val set_selected_index : t -> int -> unit
-(** [set_selected_index t i] proposes selecting the visible entry at index [i],
-    clamped to the valid range. The accepted state is unchanged until
-    {!apply_props} receives the proposal. *)
+(** [set_selected_index t i] selects the visible entry at index [i], clamped to
+    the valid range. Does nothing for an empty tree and does not emit a change
+    callback. *)
 
 val selected_item : t -> item option
 (** [selected_item t] is the currently selected item of [t], or [None] if the
@@ -217,7 +221,8 @@ val expand : t -> int -> unit
 
 val collapse : t -> int -> unit
 (** [collapse t i] collapses the visible entry at index [i]. No-op if the entry
-    is already collapsed or is a leaf. *)
+    is already collapsed or is a leaf. If a descendant is selected, selection
+    moves to the collapsed entry. *)
 
 val toggle_expand : t -> int -> unit
 (** [toggle_expand t i] toggles the expansion state of visible entry [i] in [t].
@@ -289,8 +294,9 @@ val set_fast_scroll_step : t -> int -> unit
 (** {1:callbacks Callbacks} *)
 
 val set_on_change : t -> (State.t -> unit) option -> unit
-(** [set_on_change t cb] receives complete proposed states. No proposal is
-    applied until accepted through [apply_props]. *)
+(** [set_on_change t cb] receives complete states proposed by input gestures. No
+    proposal is applied until accepted through {!apply_props}. Explicit setters
+    do not invoke [cb]. *)
 
 val set_on_activate : t -> (item -> unit) option -> unit
 (** [set_on_activate t cb] receives the activated logical item. *)

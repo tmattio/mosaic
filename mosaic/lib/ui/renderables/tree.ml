@@ -10,6 +10,8 @@ let rec item_equal a b =
   && items_equal a.children b.children
 
 and items_equal xs ys =
+  xs == ys
+  ||
   match (xs, ys) with
   | [], [] -> true
   | x :: xs, y :: ys -> item_equal x y && items_equal xs ys
@@ -27,20 +29,23 @@ module State = struct
 
   let selected t = t.selected
   let expanded t = Ids.elements t.expanded
-  let select selected t = { t with selected }
+
+  let select selected t =
+    if Option.equal String.equal selected t.selected then t
+    else { t with selected }
 
   let set_expanded id expanded t =
-    {
-      t with
-      expanded =
-        (if expanded then Ids.add id t.expanded else Ids.remove id t.expanded);
-    }
+    let expanded =
+      if expanded then Ids.add id t.expanded else Ids.remove id t.expanded
+    in
+    if expanded == t.expanded then t else { t with expanded }
 
   let is_expanded id t = Ids.mem id t.expanded
 
   let equal a b =
-    Option.equal String.equal a.selected b.selected
-    && Ids.equal a.expanded b.expanded
+    a == b
+    || Option.equal String.equal a.selected b.selected
+       && (a.expanded == b.expanded || Ids.equal a.expanded b.expanded)
 end
 
 (* ───── Props ───── *)
@@ -188,7 +193,6 @@ type t = {
   node : Renderable.t;
   mutable props : Props.t;
   mutable keymap : action Keymap.t;
-  mutable tree_items : item list;
   mutable visible : visible_entry array;
   mutable selected_index : int;
   mutable scroll_offset : int;
@@ -209,6 +213,17 @@ let clamp_index t idx =
   if len = 0 then 0 else max 0 (min (len - 1) idx)
 
 (* ───── Visible List Computation ───── *)
+
+let update_selected_index t =
+  t.selected_index <- -1;
+  match State.selected t.props.state with
+  | None -> ()
+  | Some id ->
+      let i = ref 0 in
+      while !i < visible_count t && t.selected_index < 0 do
+        if String.equal t.visible.(!i).item.id id then t.selected_index <- !i;
+        incr i
+      done
 
 let recompute_visible t =
   let buf = ref [||] in
@@ -245,16 +260,9 @@ let recompute_visible t =
           walk it.children (depth + 1) (guide_continues :: parent_guides))
       items
   in
-  walk t.tree_items 0 [];
+  walk t.props.items 0 [];
   t.visible <- Array.sub !buf 0 !count;
-  t.selected_index <- -1;
-  Array.iteri
-    (fun i entry ->
-      if
-        Option.equal String.equal (Some entry.item.id)
-          (State.selected t.props.state)
-      then t.selected_index <- i)
-    t.visible
+  update_selected_index t
 
 (* ───── Scrolling ───── *)
 
@@ -269,7 +277,25 @@ let update_scroll_offset t =
     let desired = t.selected_index - half in
     t.scroll_offset <- max 0 (min desired max_off)
 
-let set_selected_index_internal t idx =
+let install_state t items state =
+  let previous = t.props.state in
+  let structure_changed =
+    (not (items_equal t.props.items items))
+    || not
+         (previous.expanded == state.State.expanded
+         || State.Ids.equal previous.expanded state.expanded)
+  in
+  if
+    structure_changed
+    || not (Option.equal String.equal previous.selected state.selected)
+  then begin
+    t.props <- { t.props with items; state };
+    if structure_changed then recompute_visible t else update_selected_index t;
+    update_scroll_offset t;
+    request t
+  end
+
+let propose_selected_index t idx =
   let len = visible_count t in
   if len = 0 then ()
   else
@@ -281,7 +307,7 @@ let set_selected_index_internal t idx =
 
 (* ───── Public Accessors ───── *)
 
-let items t = t.tree_items
+let items t = t.props.items
 let selected_index t = t.selected_index
 
 let selected_item t =
@@ -294,42 +320,48 @@ let depth_of t i =
 
 (* ───── Data ───── *)
 
-let set_items t its =
-  t.tree_items <- its;
-  recompute_visible t;
-  update_scroll_offset t;
-  request t
+let set_items t items = install_state t items t.props.state
 
 (* ───── Selection ───── *)
 
-let set_selected_index t idx = set_selected_index_internal t idx
+let set_selected_index t idx =
+  if visible_count t > 0 then
+    let idx = clamp_index t idx in
+    if idx <> t.selected_index then
+      install_state t t.props.items
+        (State.select (Some t.visible.(idx).item.id) t.props.state)
 
 (* ───── Expansion ───── *)
 
-let propose_expansion t i expanded =
-  if i >= 0 && i < visible_count t then
+let expansion_state t i expanded =
+  let state = t.props.state in
+  if i < 0 || i >= visible_count t then state
+  else
     let entry = t.visible.(i) in
-    if entry.expandable && entry.expanded <> expanded then
-      let state = State.set_expanded entry.item.id expanded t.props.state in
-      let state =
-        if (not expanded) && t.selected_index > i then
-          let rec contains id item =
-            String.equal item.id id || List.exists (contains id) item.children
-          in
-          match State.selected state with
-          | Some id when contains id entry.item ->
-              State.select (Some entry.item.id) state
-          | _ -> state
-        else state
-      in
-      Option.iter (fun f -> f state) t.on_change
+    if (not entry.expandable) || entry.expanded = expanded then state
+    else
+      let state = State.set_expanded entry.item.id expanded state in
+      if (not expanded) && t.selected_index > i then
+        let rec contains id item =
+          String.equal item.id id || List.exists (contains id) item.children
+        in
+        match State.selected state with
+        | Some id when contains id entry.item ->
+            State.select (Some entry.item.id) state
+        | _ -> state
+      else state
 
-let expand t i = propose_expansion t i true
-let collapse t i = propose_expansion t i false
+let propose_expansion t i expanded =
+  let state = expansion_state t i expanded in
+  if state != t.props.state then Option.iter (fun f -> f state) t.on_change
+
+let expand t i = install_state t t.props.items (expansion_state t i true)
+let collapse t i = install_state t t.props.items (expansion_state t i false)
 
 let toggle_expand t i =
   if i >= 0 && i < visible_count t then
-    propose_expansion t i (not t.visible.(i).expanded)
+    install_state t t.props.items
+      (expansion_state t i (not t.visible.(i).expanded))
 
 let expand_all t =
   let rec walk state items =
@@ -339,11 +371,11 @@ let expand_all t =
         else walk (State.set_expanded item.id true state) item.children)
       state items
   in
-  Option.iter (fun f -> f (walk t.props.state t.tree_items)) t.on_change
+  install_state t t.props.items (walk t.props.state t.props.items)
 
 let collapse_all t =
-  let state = State.make ?selected:(State.selected t.props.state) () in
-  Option.iter (fun f -> f state) t.on_change
+  install_state t t.props.items
+    (State.make ?selected:(State.selected t.props.state) ())
 
 let is_expanded t i =
   if i >= 0 && i < visible_count t then t.visible.(i).expanded else false
@@ -355,18 +387,18 @@ let move_up ?(steps = 1) t =
   if len = 0 then ()
   else
     let new_index = t.selected_index - steps in
-    if new_index >= 0 then set_selected_index_internal t new_index
-    else if t.props.wrap_selection then set_selected_index_internal t (len - 1)
-    else set_selected_index_internal t 0
+    if new_index >= 0 then propose_selected_index t new_index
+    else if t.props.wrap_selection then propose_selected_index t (len - 1)
+    else propose_selected_index t 0
 
 let move_down ?(steps = 1) t =
   let len = visible_count t in
   if len = 0 then ()
   else
     let new_index = t.selected_index + steps in
-    if new_index < len then set_selected_index_internal t new_index
-    else if t.props.wrap_selection then set_selected_index_internal t 0
-    else set_selected_index_internal t (len - 1)
+    if new_index < len then propose_selected_index t new_index
+    else if t.props.wrap_selection then propose_selected_index t 0
+    else propose_selected_index t (len - 1)
 
 let find_parent_index t i =
   if i < 0 || i >= visible_count t then None
@@ -496,22 +528,23 @@ let handle_key t (event : Event.key) =
           if t.selected_index >= 0 && visible_count t > 0 then
             let entry = t.visible.(t.selected_index) in
             if entry.expandable && not entry.expanded then
-              expand t t.selected_index
+              propose_expansion t t.selected_index true
             else if entry.expanded then
               let next = t.selected_index + 1 in
-              if next < visible_count t then set_selected_index_internal t next
+              if next < visible_count t then propose_selected_index t next
       | Collapse -> (
           if t.selected_index >= 0 && visible_count t > 0 then
             let entry = t.visible.(t.selected_index) in
             if entry.expandable && entry.expanded then
-              collapse t t.selected_index
+              propose_expansion t t.selected_index false
             else
               match find_parent_index t t.selected_index with
-              | Some index -> set_selected_index_internal t index
+              | Some index -> propose_selected_index t index
               | None -> ())
       | Toggle ->
           if t.selected_index >= 0 && visible_count t > 0 then
-            toggle_expand t t.selected_index
+            propose_expansion t t.selected_index
+              (not t.visible.(t.selected_index).expanded)
       | Activate ->
           if t.selected_index >= 0 && visible_count t > 0 then
             Option.iter
@@ -534,8 +567,8 @@ let handle_mouse t (event : Event.mouse) =
           let indent = entry.depth * t.props.indent_size in
           (* Icon occupies columns [indent, indent+2) *)
           if x >= indent && x < indent + 2 && entry.expandable then
-            toggle_expand t index
-          else set_selected_index_internal t index;
+            propose_expansion t index (not entry.expanded)
+          else propose_selected_index t index;
           Event.Mouse.stop_propagation event)
   | Scroll { direction; delta } -> (
       match direction with
@@ -680,7 +713,6 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?items ?state
       node = rnode;
       props;
       keymap = keymap props.key_bindings;
-      tree_items = props.items;
       visible = [||];
       selected_index = 0;
       scroll_offset = 0;
@@ -717,17 +749,7 @@ let apply_props t (props : Props.t) =
     t.keymap <- keymap props.key_bindings;
     t.props <- { t.props with key_bindings = props.key_bindings }
   end;
-  let changed =
-    not
-      (items_equal t.tree_items props.items
-      && State.equal t.props.state props.state)
-  in
-  t.tree_items <- props.items;
-  t.props <- { t.props with state = props.state };
-  if changed then (
-    recompute_visible t;
-    update_scroll_offset t;
-    request t);
+  install_state t props.items props.state;
   set_indent_size t props.indent_size;
   set_show_guides t props.show_guides;
   set_guide_style t props.guide_style;

@@ -155,13 +155,14 @@ let set_selected_index_clamps () =
   Tree.set_selected_index tree (-5);
   equal ~msg:"clamped low" int 0 (Tree.selected_index tree)
 
-let set_selected_index_fires_on_change () =
+let set_selected_index_is_silent () =
   let _t, tree = make_tree ~items:sample_items ~expand_depth:(-1) () in
   let log = ref [] in
   Tree.set_on_change tree
     (Some (fun state -> log := Tree.State.selected state :: !log));
   Tree.set_selected_index tree 2;
-  equal ~msg:"fired" (list (option string)) [ Some "utils.ml" ] !log
+  equal ~msg:"accepted selection" int 2 (Tree.selected_index tree);
+  equal ~msg:"no callback echo" (list (option string)) [] !log
 
 let set_selected_index_noop_same () =
   let _t, tree = make_tree ~items:sample_items ~expand_depth:(-1) () in
@@ -365,23 +366,25 @@ let toggle_expand_works () =
   Tree.toggle_expand tree 0;
   is_false ~msg:"collapsed" (Tree.is_expanded tree 0)
 
-let expand_fires_on_expand () =
+let expand_is_silent () =
   let _t, tree = make_tree ~items:sample_items () in
   let log = ref [] in
   Tree.set_on_change tree
     (Some
        (fun state -> log := ("src", Tree.State.is_expanded "src" state) :: !log));
   Tree.expand tree 0;
-  equal ~msg:"fired" (list (pair string bool)) [ ("src", true) ] !log
+  is_true ~msg:"accepted expansion" (Tree.is_expanded tree 0);
+  equal ~msg:"no callback echo" (list (pair string bool)) [] !log
 
-let collapse_fires_on_expand () =
+let collapse_is_silent () =
   let _t, tree = make_tree ~items:sample_items ~expand_depth:1 () in
   let log = ref [] in
   Tree.set_on_change tree
     (Some
        (fun state -> log := ("src", Tree.State.is_expanded "src" state) :: !log));
   Tree.collapse tree 0;
-  equal ~msg:"fired" (list (pair string bool)) [ ("src", false) ] !log
+  is_false ~msg:"accepted collapse" (Tree.is_expanded tree 0);
+  equal ~msg:"no callback echo" (list (pair string bool)) [] !log
 
 let expand_leaf_noop () =
   let _t, tree = make_tree ~items:sample_items ~selected_index:2 () in
@@ -625,12 +628,66 @@ let rejected_state_and_reorder () =
     (Option.map (fun item -> item.Tree.id) (Tree.selected_item tree));
   equal ~msg:"expansion survives reorder" int 5 (Tree.visible_count tree)
 
+let setters_work_without_callbacks () =
+  let ctx, tree = make_tree ~items:sample_items () in
+  Tree.set_on_change tree None;
+  Tree.set_selected_index tree 1;
+  equal ~msg:"selection needs no callback" int 1 (Tree.selected_index tree);
+  Tree.expand tree 0;
+  equal ~msg:"expansion needs no callback" int 5 (Tree.visible_count tree);
+  equal ~msg:"selection follows its ID" int 3 (Tree.selected_index tree);
+  Tree.toggle_expand tree 0;
+  equal ~msg:"toggle needs no callback" int 3 (Tree.visible_count tree);
+  Tree.expand_all tree;
+  equal ~msg:"expand all needs no callback" int 6 (Tree.visible_count tree);
+  let before = !(ctx.schedule_count) in
+  Tree.expand_all tree;
+  equal ~msg:"repeated expansion does not render" int before
+    !(ctx.schedule_count);
+  Tree.collapse_all tree;
+  equal ~msg:"collapse all needs no callback" int 3 (Tree.visible_count tree);
+  let before = !(ctx.schedule_count) in
+  Tree.collapse_all tree;
+  Tree.collapse tree 0;
+  Tree.set_selected_index tree 1;
+  equal ~msg:"accepted no-ops do not render" int before !(ctx.schedule_count)
+
+let rejected_expansion_keeps_accepted_state () =
+  let _ctx, tree = make_tree ~items:sample_items () in
+  with_layout tree ~width:40 ~height:10;
+  let proposals = ref [] in
+  Tree.set_on_change tree (Some (fun state -> proposals := state :: !proposals));
+  emit_key tree (make_key Right);
+  emit_key tree (make_key (Char (Uchar.of_char ' ')));
+  emit_mouse tree (mouse_down ~x:0 ~y:0);
+  equal ~msg:"each rejected gesture proposes expansion" (list bool)
+    [ true; true; true ]
+    (List.map (Tree.State.is_expanded "src") !proposals);
+  equal ~msg:"rejected expansion keeps children hidden" int 3
+    (Tree.visible_count tree);
+  Tree.apply_props tree
+    (Tree.Props.make ~items:sample_items
+       ~state:(Tree.State.make ~selected:"src" ~expanded:[ "src" ] ())
+       ());
+  proposals := [];
+  emit_key tree (make_key Left);
+  emit_key tree (make_key (Char (Uchar.of_char ' ')));
+  emit_mouse tree (mouse_down ~x:0 ~y:0);
+  equal ~msg:"each rejected gesture proposes collapse" (list bool)
+    [ false; false; false ]
+    (List.map (Tree.State.is_expanded "src") !proposals);
+  equal ~msg:"rejected collapse keeps children visible" int 5
+    (Tree.visible_count tree)
+
 (* ── Runner ── *)
 
 let () =
   run "mosaic.tree"
     [
       test "accepted state and stable IDs" rejected_state_and_reorder;
+      test "setters work without callbacks" setters_work_without_callbacks;
+      test "rejected expansion preserves state"
+        rejected_expansion_keeps_accepted_state;
       group "Props"
         [
           test "default values" props_defaults;
@@ -653,7 +710,7 @@ let () =
       group "Selection"
         [
           test "set_selected_index clamps" set_selected_index_clamps;
-          test "fires on_change" set_selected_index_fires_on_change;
+          test "set_selected_index is silent" set_selected_index_is_silent;
           test "no-op on same index" set_selected_index_noop_same;
           test "selected_item returns item" selected_item_returns_item;
           test "selected_item empty tree" selected_item_empty_tree;
@@ -692,8 +749,8 @@ let () =
           test "expand_all shows everything" expand_all_shows_everything;
           test "collapse_all shows top level" collapse_all_shows_top_level;
           test "toggle_expand works" toggle_expand_works;
-          test "expand fires on_expand" expand_fires_on_expand;
-          test "collapse fires on_expand" collapse_fires_on_expand;
+          test "expand is silent" expand_is_silent;
+          test "collapse is silent" collapse_is_silent;
           test "expand leaf no-op" expand_leaf_noop;
           test "collapse adjusts selected index" collapse_adjusts_selected_index;
           test "expand_depth -1 expands all" expand_depth_negative_one;
