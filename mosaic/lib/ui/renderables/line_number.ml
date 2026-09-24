@@ -245,7 +245,10 @@ let render_gutter t _self grid ~delta:_ =
         digits (max 1 (max max_line lk.max_custom_number))
       else 0
     in
-    for row = 0 to gutter_h - 1 do
+    let clip = Matrix_grid.clip_region grid in
+    for
+      row = max 0 (clip.y - gy) to min gutter_h (clip.y + clip.height - gy) - 1
+    do
       let display_line = scroll_y + row in
       if display_line < display_line_count then begin
         let logical_line = logical_line_at display_line in
@@ -270,8 +273,8 @@ let render_gutter t _self grid ~delta:_ =
                   col := !col + padding;
                   let fg = Option.value ~default:t.props.fg sign.before_color in
                   let style = Ansi.Style.make ~fg () in
-                  Matrix_grid.draw_text ~style grid ~x:(gx + !col) ~y:(gy + row)
-                    ~text:s;
+                  Matrix_grid.draw_text ~style ~width_method grid ~x:(gx + !col)
+                    ~y:(gy + row) ~text:s;
                   col := !col + sw
               | None -> col := !col + bw)
           | None -> col := !col + bw);
@@ -287,8 +290,8 @@ let render_gutter t _self grid ~delta:_ =
             let pad = num_width - String.length num_str in
             col := !col + pad;
             let style = Ansi.Style.make ~fg:t.props.fg () in
-            Matrix_grid.draw_text ~style grid ~x:(gx + !col) ~y:(gy + row)
-              ~text:num_str;
+            Matrix_grid.draw_text ~style ~width_method grid ~x:(gx + !col)
+              ~y:(gy + row) ~text:num_str;
             col := !col + String.length num_str
           end;
           (* After sign *)
@@ -298,8 +301,8 @@ let render_gutter t _self grid ~delta:_ =
               | Some s ->
                   let fg = Option.value ~default:t.props.fg sign.after_color in
                   let style = Ansi.Style.make ~fg () in
-                  Matrix_grid.draw_text ~style grid ~x:(gx + !col) ~y:(gy + row)
-                    ~text:s
+                  Matrix_grid.draw_text ~style ~width_method grid ~x:(gx + !col)
+                    ~y:(gy + row) ~text:s
               | None -> ())
           | None -> ()
         end
@@ -322,7 +325,10 @@ let render_content_colors t _self grid ~delta:_ =
         let lk =
           lookup t ~width_method:(Renderable.Private.width_method t.content)
         in
-        for row = 0 to ch - 1 do
+        let clip = Matrix_grid.clip_region grid in
+        for
+          row = max 0 (clip.y - cy) to min ch (clip.y + clip.height - cy) - 1
+        do
           let display_line = info.scroll_y + row in
           if display_line < info.display_line_count then begin
             let logical_line = info.logical_line display_line in
