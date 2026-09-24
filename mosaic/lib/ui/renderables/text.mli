@@ -9,18 +9,21 @@
 
     {2:representations Representations}
 
-    Text supports two content representations:
+    Text accepts three forms of content:
     - {e Content}: a plain string set via {!set_content} or the [content]
       parameter of {!create}. Styled with {!Text_buffer.default_style}.
     - {e Fragments/Spans}: structured styled content set via {!set_fragments} or
       {!set_spans}. Fragments support nested style hierarchies; spans are flat
       styled text chunks.
+    - {e Styled text}: concrete {!Text_buffer.span}s set via {!set_styled_text}.
+      These styles remain unchanged when the base style changes.
 
     {2:style_merging Style merging}
 
     Styles merge hierarchically: parent styles provide the base and child
     overrides apply on top, preserving unspecified parent attributes. The
-    [text_style] parameter provides the base style for all content.
+    [text_style] parameter provides the base style for plain text and fragments.
+    Concrete styled text keeps its supplied styles.
 
     See {!Text_input} for single-line editing and {!Textarea} for multi-line
     editing. *)
@@ -167,52 +170,61 @@ module Props : sig
 end
 
 val apply_props : t -> Props.t -> unit
-(** [apply_props t props] applies [props] to [t], triggering the minimum
+(** [apply_props t props] replaces the accepted properties and content of [t],
+    including content installed by imperative setters. It triggers the minimum
     necessary layout and render updates. *)
 
 (** {1:content Content} *)
 
 val set_content : t -> string -> unit
 (** [set_content t s] sets plain text content styled with {!set_text_style}.
-    Invalidates display lines and marks layout dirty. *)
+    Unchanged text retains indexed source and geometry. *)
 
 val set_fragments : t -> fragment list -> unit
 (** [set_fragments t fragments] replaces content with [fragments]. Normalization
     merges adjacent text with identical styles, removes empty fragments, and
-    flattens empty spans. No-op if the normalized result equals the current
+    removes empty spans. No-op if the normalized result equals the accepted
     fragments. *)
 
 val fragments : t -> fragment list
-(** [fragments t] is the current fragment list. *)
+(** [fragments t] represents the accepted content as fragments. Plain content
+    becomes an unstyled text fragment; concrete styled text becomes flat
+    explicitly styled fragments. Structured fragments retain their hierarchy. *)
 
 val fragments_equal : fragment list -> fragment list -> bool
 (** [fragments_equal a b] is [true] iff [a] and [b] are structurally equal. *)
 
 val plain_text : t -> string
-(** [plain_text t] is the concatenation of all fragment texts, without styling.
-*)
+(** [plain_text t] is the accepted text without styling. Its concatenation is
+    cached until the text changes. *)
 
 val spans : t -> span list
-(** [spans t] is the current fragments as a flat {!type-span} list. Cached;
-    recomputed on fragment changes. *)
+(** [spans t] is the accepted content as flat spans. Fragment styles are
+    resolved against the base style; [None] denotes that base style. Concrete
+    styled text retains its supplied styles as [Some] values. The list is cached
+    until content or base style changes. *)
 
 val set_spans : t -> span list -> unit
 (** [set_spans t spans] replaces content with flat [spans]. Converts to
     fragments internally. *)
 
 val append_span : t -> span -> unit
-(** [append_span t s] appends [s] to the end of the text. *)
+(** [append_span t s] appends [s] to the accepted content. Structured content
+    retains its style hierarchy. For concrete styled text, [s]'s inherited
+    components are resolved against the current base style when appended. *)
 
 val clear_spans : t -> unit
 (** [clear_spans t] removes all content. *)
 
 val set_styled_text : t -> Text_buffer.span list -> unit
-(** [set_styled_text t spans] sets pre-styled buffer content directly. After
-    calling this, {!apply_props} will not overwrite content from {!Props}. *)
+(** [set_styled_text t spans] replaces the accepted content with concrete styled
+    [spans], without applying the base style. The supplied list is installed
+    directly in the backing buffer. *)
 
 val set_text_style : t -> Ansi.Style.t -> unit
-(** [set_text_style t s] changes the base text style. Invalidates the span cache
-    if the style differs. *)
+(** [set_text_style t s] changes the base text style. Plain text and fragments
+    repaint with the new inherited style; explicit fragment colours remain.
+    Concrete styled text retains its supplied styles. Geometry is unchanged. *)
 
 (** {1:wrapping Wrapping} *)
 

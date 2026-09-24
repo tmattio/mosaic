@@ -121,13 +121,12 @@ let set_styled_text_sets_content () =
   equal ~msg:"plain_text" string "red green"
     (Text_buffer.plain_text (Text.buffer txt))
 
-let set_styled_text_prevents_props_overwrite () =
+let props_replace_imperative_styled_content () =
   let _t, txt = make_text ~content:"initial" () in
   Text.set_styled_text txt
     [ { Text_buffer.text = "styled"; style = red_style } ];
-  (* apply_props with a different content should not overwrite *)
   Text.apply_props txt (Text.Props.make ~content:"overwritten" ());
-  equal ~msg:"not overwritten" string "styled"
+  equal ~msg:"accepted props replace imperative content" string "overwritten"
     (Text_buffer.plain_text (Text.buffer txt))
 
 (* ── Content — set_text_style ── *)
@@ -479,11 +478,99 @@ let apply_props_restamps_on_style_change () =
   is_true ~msg:"paint change retains geometry"
     (geometry == Text_surface.layout (Text.surface txt))
 
+let content_observers_agree () =
+  let _, txt = make_text ~content:"constructor" () in
+  let check expected =
+    equal ~msg:"plain text" string expected (Text.plain_text txt);
+    equal ~msg:"buffer text" string expected
+      (Text_buffer.plain_text (Text.buffer txt));
+    equal ~msg:"span text" string expected
+      (String.concat ""
+         (List.map (fun (s : Text.span) -> s.text) (Text.spans txt)));
+    let _, copied = make_text () in
+    Text.set_fragments copied (Text.fragments txt);
+    equal ~msg:"fragment text" string expected
+      (Text_buffer.plain_text (Text.buffer copied))
+  in
+  check "constructor";
+  Text.apply_props txt (Text.Props.make ~content:"props" ());
+  check "props";
+  Text.set_styled_text txt
+    [ Text_buffer.{ text = "styled"; style = red_style } ];
+  check "styled";
+  Text.set_fragments txt [];
+  check "";
+  Text.set_content txt "imperative";
+  check "imperative";
+  Text.apply_props txt (Text.Props.make ~content:"props" ());
+  check "props"
+
+let fragment_style_changes_repaint_inherited_components () =
+  let _, txt = make_text ~text_style:red_style () in
+  Text.set_fragments txt
+    [
+      Text.Fragment.bold
+        [ Text.Fragment.text "a"; Text.Fragment.text ~style:green_style "b" ];
+    ];
+  let geometry = Text_surface.layout (Text.surface txt) in
+  let node = Text.node txt in
+  layout_node node ~x:0 ~y:0 ~width:2 ~height:1;
+  let grid = make_grid ~width:2 ~height:1 () in
+  let blue = Ansi.Style.make ~fg:Ansi.Color.blue () in
+  Text.set_text_style txt blue;
+  Renderable.Private.render_full node ~grid ~delta:0.;
+  is_true ~msg:"inherited foreground repaints"
+    (Ansi.Color.equal Ansi.Color.blue (Matrix_grid.get_fg grid 0));
+  is_true ~msg:"explicit foreground remains green"
+    (Ansi.Color.equal Ansi.Color.green (Matrix_grid.get_fg grid 1));
+  is_true ~msg:"nested bold remains"
+    (Ansi.Attr.mem Ansi.Attr.Bold (Matrix_grid.get_style grid 0).attrs);
+  is_true ~msg:"style retains geometry"
+    (geometry == Text_surface.layout (Text.surface txt));
+  Text.apply_props txt
+    (Text.Props.make ~content:"plain" ~text_style:red_style ());
+  equal string "plain" (Text.plain_text txt);
+  is_true ~msg:"props can restore a prior base style"
+    (Ansi.Style.equal red_style
+       (fst (Text_buffer.style_at (Text.buffer txt) 0)))
+
+let styled_content_keeps_concrete_styles_on_base_change () =
+  let _, txt = make_text ~text_style:(Ansi.Style.make ~bold:true ()) () in
+  let installed = [ Text_buffer.{ text = "a"; style = red_style } ] in
+  Text.set_styled_text txt installed;
+  Text.set_text_style txt (Ansi.Style.make ~italic:true ());
+  is_true ~msg:"concrete styled spans reused"
+    (installed == Text_buffer.styled_text (Text.buffer txt));
+  is_true ~msg:"concrete styles do not inherit new base"
+    (Ansi.Style.equal red_style
+       (fst (Text_buffer.style_at (Text.buffer txt) 0)))
+
+let empty_spans_do_not_prevent_adjacent_normalization () =
+  let _, txt = make_text () in
+  Text.set_fragments txt
+    [
+      Text.Fragment.text "a";
+      Text.Fragment.span [ Text.Fragment.text "" ];
+      Text.Fragment.text "b";
+    ];
+  is_true ~msg:"normalization merges across removed empty spans"
+    (Text.fragments_equal [ Text.Fragment.text "ab" ] (Text.fragments txt))
+
 (* ── Runner ── *)
 
 let () =
   run "mosaic.text"
     [
+      group "Content ownership"
+        [
+          test "content observers agree" content_observers_agree;
+          test "fragment style changes repaint inherited components"
+            fragment_style_changes_repaint_inherited_components;
+          test "styled content keeps concrete styles on base changes"
+            styled_content_keeps_concrete_styles_on_base_change;
+          test "empty spans allow adjacent normalization"
+            empty_spans_do_not_prevent_adjacent_normalization;
+        ];
       group "Props"
         [
           test "default equals make()" props_default_equals_make;
@@ -512,8 +599,8 @@ let () =
       group "Content — set_styled_text"
         [
           test "sets content" set_styled_text_sets_content;
-          test "prevents props overwrite"
-            set_styled_text_prevents_props_overwrite;
+          test "props replace imperative styled content"
+            props_replace_imperative_styled_content;
         ];
       group "Content — set_text_style"
         [ test "changes default style" set_text_style_changes_default ];

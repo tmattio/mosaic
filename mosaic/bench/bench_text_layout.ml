@@ -115,6 +115,18 @@ let restyle_layout (renderer, surface, alternate) =
   Text_buffer.set_styled_text buffer styled;
   first + Text_surface.display_line_count surface
 
+let fragment_text count =
+  let renderer = Renderer.create () in
+  let text = Text.create ~parent:(Renderer.root renderer) () in
+  let first = List.init count (fun _ -> Text.Fragment.text "word ") in
+  let second = List.init count (fun _ -> Text.Fragment.text "text ") in
+  (renderer, text, first, second)
+
+let replace_fragments (renderer, text, first, second) =
+  ignore (Sys.opaque_identity renderer : Renderer.t);
+  Text.set_fragments text first;
+  Text.set_fragments text second
+
 let memory_check () =
   let module L = Matrix_text.Layout in
   Gc.full_major ();
@@ -167,6 +179,14 @@ let () =
               else [ Thumper.Metric.alloc_words ]))
       ~budgets:[ Thumper.Budget.no_more_alloc_than 0.05 ]
       [
+        Thumper.bench "text/plain-props" (fun () ->
+            Text.Props.make ~content:(Thumper.black_box "plain label") ());
+        Thumper.bench_with_setup
+          ~setup:(fun () -> fragment_text 1_000)
+          "fragments/normalize-1k" replace_fragments;
+        Thumper.bench_with_setup
+          ~setup:(fun () -> fragment_text 10_000)
+          "fragments/normalize-10k" replace_fragments;
         Thumper.bench_with_setup
           ~setup:(fun () -> focus_surface 128)
           "focus/layout-128b" focus_layout;

@@ -6,6 +6,39 @@ type fragment =
 
 type span = { text : string; style : Ansi.Style.t option }
 
+type content =
+  | Plain of string
+  | Fragments of fragment list
+  | Styled of Text_buffer.span list
+
+let plain_content text = if text = "" then Plain "" else Plain text
+
+let rec fragments_equal a b =
+  match (a, b) with
+  | [], [] -> true
+  | Text left :: rest_left, Text right :: rest_right ->
+      String.equal left.text right.text
+      && Option.equal Ansi.Style.equal left.style right.style
+      && fragments_equal rest_left rest_right
+  | Span left :: rest_left, Span right :: rest_right ->
+      Option.equal Ansi.Style.equal left.style right.style
+      && fragments_equal left.children right.children
+      && fragments_equal rest_left rest_right
+  | _ -> false
+
+let content_equal a b =
+  a == b
+  ||
+  match (a, b) with
+  | Plain a, Plain b -> String.equal a b
+  | Fragments a, Fragments b -> fragments_equal a b
+  | Styled a, Styled b ->
+      List.equal
+        (fun (a : Text_buffer.span) (b : Text_buffer.span) ->
+          String.equal a.text b.text && Ansi.Style.equal a.style b.style)
+        a b
+  | _ -> false
+
 (* Props *)
 
 module Props = struct
@@ -93,10 +126,8 @@ end
 
 type t = {
   text : Text_renderable.t;
-  mutable props : Props.t;
-  mutable fragments : fragment list;
+  mutable content : content;
   mutable flat_cache : span list option;
-  mutable has_styled_text : bool;
 }
 
 (* Accessors *)
@@ -113,42 +144,52 @@ let merge_style base = function
 
 (* Fragment equality and normalization *)
 
-let rec fragments_equal a b =
-  match (a, b) with
-  | [], [] -> true
-  | Text left :: rest_left, Text right :: rest_right ->
-      String.equal left.text right.text
-      && Option.equal Ansi.Style.equal left.style right.style
-      && fragments_equal rest_left rest_right
-  | Span left :: rest_left, Span right :: rest_right ->
-      Option.equal Ansi.Style.equal left.style right.style
-      && fragments_equal left.children right.children
-      && fragments_equal rest_left rest_right
-  | _ -> false
-
-let normalize_fragments fragments =
+let rec normalize_fragments fragments =
   let rec aux acc = function
     | [] -> List.rev acc
     | Text { text = ""; _ } :: rest -> aux acc rest
-    | Text { text; style } :: rest ->
-        let acc =
-          match acc with
-          | Text { text = prev_text; style = prev_style } :: tail
-            when Option.equal Ansi.Style.equal style prev_style ->
-              Text { text = prev_text ^ text; style = prev_style } :: tail
-          | _ -> Text { text; style } :: acc
+    | (Text { text; style } as first) :: rest ->
+        let finish = function
+          | None -> first :: acc
+          | Some buffer -> Text { text = Buffer.contents buffer; style } :: acc
         in
-        aux acc rest
+        let rec run buffer = function
+          | Text { text = ""; _ } :: rest -> run buffer rest
+          | Text next :: rest
+            when Option.equal Ansi.Style.equal style next.style ->
+              let buffer =
+                match buffer with
+                | Some b ->
+                    Buffer.add_string b next.text;
+                    buffer
+                | None ->
+                    let b =
+                      Buffer.create
+                        (String.length text + String.length next.text)
+                    in
+                    Buffer.add_string b text;
+                    Buffer.add_string b next.text;
+                    Some b
+              in
+              run buffer rest
+          | Span { style; children } :: rest ->
+              let children = normalize_fragments children in
+              if children = [] then run buffer rest
+              else aux (Span { style; children } :: finish buffer) rest
+          | rest -> aux (finish buffer) rest
+        in
+        run None rest
     | Span { style; children } :: rest ->
-        let normalized_children = aux [] children in
-        if normalized_children = [] then aux acc rest
-        else aux (Span { style; children = normalized_children } :: acc) rest
+        let children = normalize_fragments children in
+        aux
+          (if children = [] then acc else Span { style; children } :: acc)
+          rest
   in
   aux [] fragments
 
 (* Fragment to buffer conversion *)
 
-let rec collect_flat_spans acc default_style current_style = function
+let rec collect_flat_spans acc current_style = function
   | [] -> acc
   | fragment :: rest ->
       let acc =
@@ -161,65 +202,85 @@ let rec collect_flat_spans acc default_style current_style = function
               buf_span :: acc
         | Span { style; children } ->
             let next_style = merge_style current_style style in
-            collect_flat_spans acc default_style next_style children
+            collect_flat_spans acc next_style children
       in
-      collect_flat_spans acc default_style current_style rest
+      collect_flat_spans acc current_style rest
 
 let rebuild_buffer t =
-  let default_style = Text_buffer.default_style (buffer t) in
-  let buf_spans =
-    List.rev (collect_flat_spans [] default_style default_style t.fragments)
-  in
-  Text_renderable.set_styled_text t.text buf_spans
-
-(* Fragment span cache *)
-
-let flat_style_option ~default_style effective =
-  if Ansi.Style.equal effective default_style then None else Some effective
-
-let rec collect_spans acc default_style current_style = function
-  | [] -> acc
-  | fragment :: rest ->
-      let acc =
-        match fragment with
-        | Text { text; style } ->
-            if text = "" then acc
-            else
-              let effective = merge_style current_style style in
-              let style_opt = flat_style_option ~default_style effective in
-              { text; style = style_opt } :: acc
-        | Span { style; children } ->
-            let next_style = merge_style current_style style in
-            collect_spans acc default_style next_style children
-      in
-      collect_spans acc default_style current_style rest
+  match t.content with
+  | Plain text -> Text_renderable.set_text t.text text
+  | Styled spans -> Text_renderable.set_styled_text t.text spans
+  | Fragments fragments ->
+      Text_renderable.set_styled_text t.text
+        (List.rev
+           (collect_flat_spans []
+              (Text_buffer.default_style (buffer t))
+              fragments))
 
 let spans t =
   match t.flat_cache with
   | Some spans -> spans
   | None ->
-      let default_style = Text_buffer.default_style (buffer t) in
-      let collected =
-        List.rev (collect_spans [] default_style default_style t.fragments)
+      let spans =
+        match t.content with
+        | Plain "" -> []
+        | _ ->
+            List.map
+              (fun (span : Text_buffer.span) ->
+                let style =
+                  match t.content with
+                  | Styled _ -> Some span.style
+                  | Plain _ | Fragments _ ->
+                      if
+                        Ansi.Style.equal span.style
+                          (Text_buffer.default_style (buffer t))
+                      then None
+                      else Some span.style
+                in
+                { text = span.text; style })
+              (Text_buffer.styled_text (buffer t))
       in
-      t.flat_cache <- Some collected;
-      collected
+      t.flat_cache <- Some spans;
+      spans
 
-let fragments t = t.fragments
+let fragments t =
+  match t.content with
+  | Plain "" -> []
+  | Plain text -> [ Fragment.text text ]
+  | Fragments fragments -> fragments
+  | Styled spans ->
+      List.map
+        (fun (span : Text_buffer.span) ->
+          Fragment.text ~style:span.style span.text)
+        spans
 
-let plain_text t =
-  let buf = Buffer.create 32 in
-  let rec append = function
-    | [] -> ()
-    | Text { text; _ } :: rest ->
-        Buffer.add_string buf text;
-        append rest
-    | Span { children; _ } :: rest ->
-        append children;
-        append rest
+let plain_text t = Text_buffer.plain_text (buffer t)
+
+(* Content installation *)
+
+let install_content t ~text_style content =
+  let style_changed =
+    not (Ansi.Style.equal (Text_buffer.default_style (buffer t)) text_style)
   in
-  append t.fragments;
-  Buffer.contents buf
+  let content_changed = not (content_equal t.content content) in
+  if style_changed then Text_renderable.set_text_style t.text text_style;
+  t.content <- content;
+  if
+    content_changed
+    || (style_changed && match content with Styled _ -> false | _ -> true)
+  then begin
+    t.flat_cache <- None;
+    rebuild_buffer t
+  end
+
+let apply_props t (props : Props.t) =
+  Text_renderable.set_wrap t.text props.wrap;
+  Text_renderable.set_tab_width t.text props.tab_width;
+  Text_renderable.set_truncate t.text props.truncate;
+  Text_renderable.set_selection_bg t.text props.selection_bg;
+  Text_renderable.set_selection_fg t.text props.selection_fg;
+  Text_renderable.set_selectable t.text props.selectable;
+  install_content t ~text_style:props.text_style (plain_content props.content)
 
 (* Construction *)
 
@@ -236,84 +297,58 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?content
       ?selection_bg:props.selection_bg ?selection_fg:props.selection_fg
       ~tab_width:props.tab_width ~truncate:props.truncate ?on_selection ()
   in
-  let t =
-    {
-      text;
-      props;
-      fragments = [];
-      flat_cache = Some [];
-      has_styled_text = false;
-    }
-  in
-  if props.content <> "" then Text_renderable.set_text text props.content;
+  let t = { text; content = plain_content props.content; flat_cache = None } in
+  if props.content <> "" then rebuild_buffer t;
   t
 
 (* Content *)
 
-let set_content t s =
-  t.has_styled_text <- false;
-  let frag = if s = "" then [] else [ Fragment.text s ] in
-  t.fragments <- frag;
-  t.flat_cache <-
-    (if s = "" then Some [] else Some [ { text = s; style = None } ]);
-  Text_renderable.set_text t.text s
+let set_content t text =
+  install_content t
+    ~text_style:(Text_buffer.default_style (buffer t))
+    (plain_content text)
 
 let set_fragments t fragments =
-  let normalized = normalize_fragments fragments in
-  if fragments_equal t.fragments normalized then ()
-  else begin
-    t.has_styled_text <- true;
-    t.fragments <- normalized;
-    t.flat_cache <- None;
-    rebuild_buffer t
-  end
+  install_content t
+    ~text_style:(Text_buffer.default_style (buffer t))
+    (Fragments (normalize_fragments fragments))
 
-let fragment_of_span { text; style } =
-  match style with
-  | None -> Fragment.text text
-  | Some style -> Fragment.text ~style text
+let set_spans t spans =
+  set_fragments t
+    (List.map (fun { text; style } -> Fragment.text ?style text) spans)
 
-let set_spans t new_spans =
-  let fragments = List.map fragment_of_span new_spans in
-  set_fragments t fragments;
-  ignore (spans t)
+let set_styled_text t spans =
+  install_content t
+    ~text_style:(Text_buffer.default_style (buffer t))
+    (Styled spans)
 
-let set_styled_text t buf_spans =
-  t.has_styled_text <- true;
-  t.fragments <- [];
-  t.flat_cache <- None;
-  Text_renderable.set_styled_text t.text buf_spans
+let append_span t { text; style } =
+  match t.content with
+  | Styled spans ->
+      set_styled_text t
+        (spans
+        @ [
+            Text_buffer.
+              {
+                text;
+                style = merge_style (Text_buffer.default_style (buffer t)) style;
+              };
+          ])
+  | Plain _ | Fragments _ ->
+      set_fragments t (fragments t @ [ Fragment.text ?style text ])
 
-let append_span t s =
-  let updated = spans t @ [ s ] in
-  set_spans t updated
-
-let clear_spans t =
-  t.fragments <- [];
-  t.flat_cache <- Some [];
-  t.has_styled_text <- false;
-  Text_renderable.set_text t.text ""
-
-let set_text_style t s =
-  let current = Text_buffer.default_style (buffer t) in
-  if Ansi.Style.equal current s then ()
-  else begin
-    Text_renderable.set_text_style t.text s;
-    t.flat_cache <- None
-  end
+let clear_spans t = set_content t ""
+let set_text_style t text_style = install_content t ~text_style t.content
 
 (* Wrapping *)
 
-let set_wrap t mode = Text_renderable.set_wrap t.text mode
-let set_tab_width t w = Text_renderable.set_tab_width t.text w
+let set_wrap t wrap = Text_renderable.set_wrap t.text wrap
+let set_tab_width t tab_width = Text_renderable.set_tab_width t.text tab_width
 
 (* Selection *)
 
-let set_selectable t v =
-  if t.props.selectable <> v then begin
-    t.props <- { t.props with selectable = v };
-    Text_renderable.set_selectable t.text v
-  end
+let set_selectable t selectable =
+  Text_renderable.set_selectable t.text selectable
 
 let set_selection_bg t color = Text_renderable.set_selection_bg t.text color
 let set_selection_fg t color = Text_renderable.set_selection_fg t.text color
@@ -334,47 +369,6 @@ let clear_highlights t = Text_renderable.clear_highlights t.text
 let line_count t = Text_renderable.line_count t.text
 let display_line_count t = Text_renderable.display_line_count t.text
 
-(* Apply Props *)
-
-let apply_props t (props : Props.t) =
-  (* Text style — must be set before content so set_text picks up the new
-     default_style when stamping spans. *)
-  let style_changed =
-    not (Ansi.Style.equal t.props.text_style props.text_style)
-  in
-  if style_changed then Text_renderable.set_text_style t.text props.text_style;
-  (* Content — only update if not using styled text *)
-  let content_changed =
-    (not t.has_styled_text) && not (String.equal t.props.content props.content)
-  in
-  if content_changed then begin
-    Text_renderable.set_text t.text props.content
-  end;
-  (* When the style changed but content didn't, re-stamp the existing content so
-     the spans carry the updated default_style. *)
-  if style_changed && (not content_changed) && not t.has_styled_text then begin
-    Text_renderable.set_text t.text props.content
-  end;
-  (* Wrap mode *)
-  if t.props.wrap <> props.wrap then Text_renderable.set_wrap t.text props.wrap;
-  (* Tab width *)
-  if t.props.tab_width <> props.tab_width then
-    Text_renderable.set_tab_width t.text props.tab_width;
-  (* Truncate *)
-  if t.props.truncate <> props.truncate then
-    Text_renderable.set_truncate t.text props.truncate;
-  (* Selection colors *)
-  if not (Option.equal Ansi.Color.equal t.props.selection_bg props.selection_bg)
-  then Text_renderable.set_selection_bg t.text props.selection_bg;
-  if not (Option.equal Ansi.Color.equal t.props.selection_fg props.selection_fg)
-  then Text_renderable.set_selection_fg t.text props.selection_fg;
-  (* Selectable *)
-  if t.props.selectable <> props.selectable then begin
-    t.props <- { t.props with selectable = props.selectable };
-    Text_renderable.set_selectable t.text props.selectable
-  end;
-  t.props <- props
-
 (* Pretty-printing *)
 
 let pp ppf t =
@@ -387,9 +381,9 @@ let pp ppf t =
     in
     Format.fprintf ppf ", %S" display
   end;
-  if t.props.wrap <> `None then
+  if Text_surface.wrap (surface t) <> `None then
     Format.fprintf ppf ", wrap=%s"
-      (match t.props.wrap with
+      (match Text_surface.wrap (surface t) with
       | `Char -> "char"
       | `Word -> "word"
       | `None -> "none");

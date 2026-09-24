@@ -8,6 +8,8 @@
 edit-1mb-middle-undo	alloc_words	exact	2312603
 focus-layout-128b	alloc_words	exact	60
 focus-layout-1mb	alloc_words	exact	60
+fragments-normalize-10k	alloc_words	exact	53696
+fragments-normalize-1k	alloc_words	exact	4006
 index-create-1mb	alloc_words	exact	1000050
 index-set-text-1mb	alloc_words	exact	1000039
 paint-horizontal-100k	alloc_words	exact	305
@@ -19,3 +21,4 @@ reflow-styled-100k	alloc_words	exact	20
 reflow-styled-100k-cold	alloc_words	exact	27949
 styles-nested-revision-200	alloc_words	exact	291023
 styles-same-text-layout-100k	alloc_words	exact	28
+text-plain-props	alloc_words	exact	9
