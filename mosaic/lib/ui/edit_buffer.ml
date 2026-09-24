@@ -22,10 +22,10 @@ let strip_newlines s =
   done;
   if Buffer.length buf = len then s else Buffer.contents buf
 
-let truncate_graphemes s max_graphemes =
+let indexed_text s max_graphemes =
   let source = Source.of_string s in
-  if Source.length source <= max_graphemes then s
-  else Source.slice source ~first:0 ~last:max_graphemes
+  if Source.length source <= max_graphemes then source
+  else Source.of_string (Source.slice source ~first:0 ~last:max_graphemes)
 
 (* ───── Types ───── *)
 
@@ -70,36 +70,30 @@ let create ?(max_length = 1000) ?(width_method = `Unicode) ?(tab_width = 2)
     initial =
   let max_length = Int.max 0 max_length in
   let tab_width = Int.max 1 tab_width in
-  let content = truncate_graphemes initial max_length in
-  let t =
-    {
-      content;
-      cursor_pos = 0;
-      affinity = Layout.Downstream;
-      selection_anchor = None;
-      max_length;
-      undo_stack = [];
-      redo_stack = [];
-      cache = None;
-      tab_width;
-      width_method;
-    }
-  in
-  let c = ensure_cache t in
-  t.cursor_pos <- Source.length c;
-  t
+  let source = indexed_text initial max_length in
+  {
+    content = Source.text source;
+    cursor_pos = Source.length source;
+    affinity = Layout.Downstream;
+    selection_anchor = None;
+    max_length;
+    undo_stack = [];
+    redo_stack = [];
+    cache = Some source;
+    tab_width;
+    width_method;
+  }
 
 (* ───── Content ───── *)
 
 let text t = t.content
 
 let set_text t s =
+  let source = indexed_text s t.max_length in
   t.affinity <- Layout.Downstream;
-  let content = truncate_graphemes s t.max_length in
-  t.content <- content;
-  invalidate_cache t;
-  let c = ensure_cache t in
-  t.cursor_pos <- Source.length c;
+  t.content <- Source.text source;
+  t.cache <- Some source;
+  t.cursor_pos <- Source.length source;
   t.selection_anchor <- None
 
 let length t =
@@ -309,7 +303,9 @@ let insert t inserted =
       let available =
         max 0 (t.max_length - (Source.length old - (last - first)))
       in
-      let admitted = truncate_graphemes inserted available in
+      let admitted =
+        Source.slice (Source.of_string inserted) ~first:0 ~last:available
+      in
       (Source.of_string (prefix ^ admitted ^ suffix), String.length admitted)
   in
   let content = Source.text candidate in

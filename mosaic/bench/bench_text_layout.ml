@@ -125,6 +125,14 @@ let () =
       ~budgets:[ Thumper.Budget.no_more_alloc_than 0.05 ]
       [
         Thumper.bench_with_setup
+          ~setup:(fun () -> editor_text)
+          "index/create-1mb"
+          (fun text -> Edit_buffer.create ~max_length:2_000_000 text);
+        Thumper.bench_with_setup
+          ~setup:(fun () -> Edit_buffer.create ~max_length:2_000_000 "")
+          "index/set-text-1mb"
+          (fun buffer -> Edit_buffer.set_text buffer editor_text);
+        Thumper.bench_with_setup
           ~setup:(fun () -> make_surface plain)
           "reflow/label" reflow;
         Thumper.bench_with_setup
