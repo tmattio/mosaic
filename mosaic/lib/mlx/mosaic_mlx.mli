@@ -596,7 +596,7 @@ val textarea :
   ?on_focus_request:'msg ->
   ?on_size:(w:int -> h:int -> 'msg option) ->
   ?focused:bool ->
-  ?spans:span list ->
+  ?annotations:Mosaic_ui.Text_buffer.Annotations.t ->
   ?ghost_text:string ->
   ?ghost_text_color:Ansi.Color.t ->
   ?placeholder:string ->

@@ -58,6 +58,10 @@ val set_styled_text : t -> Text_buffer.span list -> unit
 (** [set_styled_text t spans] replaces the buffer content by [spans] and
     invalidates the surface. *)
 
+val set_annotations : t -> Text_buffer.Annotations.t -> unit
+(** [set_annotations t annotations] installs the annotated source and paint,
+    retaining the source index and geometry when the text is unchanged. *)
+
 val set_render_enabled : t -> bool -> unit
 (** [set_render_enabled t enabled] controls whether the backing text buffer is
     drawn. Measurement and line metrics still use the buffer while drawing is

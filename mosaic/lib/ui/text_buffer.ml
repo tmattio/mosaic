@@ -4,6 +4,110 @@ module Source = Matrix.Text.Layout.Source
 
 type span = { text : string; style : Ansi.Style.t }
 
+module Annotations = struct
+  type range = { start_byte : int; end_byte : int; style : Ansi.Style.t }
+  type t = { content : string; runs : range array }
+
+  let content t = t.content
+
+  let make ?(base_style = Ansi.Style.default) ~content ranges =
+    let length = String.length content in
+    let ordered = ref true and previous_end = ref 0 in
+    List.iter
+      (fun range ->
+        if
+          range.start_byte < 0
+          || range.end_byte < range.start_byte
+          || range.end_byte > length
+        then
+          invalid_arg "Text_buffer.Annotations.make: byte range out of bounds";
+        if range.start_byte < range.end_byte then begin
+          if range.start_byte < !previous_end then ordered := false;
+          previous_end := range.end_byte
+        end)
+      ranges;
+    let runs = Dynarray.create () in
+    let emit first last style =
+      if first < last then begin
+        let n = Dynarray.length runs in
+        if n > 0 && Ansi.Style.equal (Dynarray.get runs (n - 1)).style style
+        then
+          Dynarray.set runs (n - 1)
+            { (Dynarray.get runs (n - 1)) with end_byte = last }
+        else
+          Dynarray.add_last runs { start_byte = first; end_byte = last; style }
+      end
+    in
+    if !ordered then begin
+      let current = ref 0 in
+      let default_base = Ansi.Style.equal base_style Ansi.Style.default in
+      List.iter
+        (fun range ->
+          if range.start_byte < range.end_byte then begin
+            emit !current range.start_byte base_style;
+            let style =
+              if default_base then range.style
+              else Ansi.Style.merge ~base:base_style ~overlay:range.style
+            in
+            emit range.start_byte range.end_byte style;
+            current := range.end_byte
+          end)
+        ranges;
+      emit !current length base_style
+    end
+    else begin
+      let events = ref [] in
+      List.iteri
+        (fun id range ->
+          if range.start_byte < range.end_byte then begin
+            events := (range.start_byte, `Start (id, range.style)) :: !events;
+            events := (range.end_byte, `Stop id) :: !events
+          end)
+        ranges;
+      let events = List.sort (fun (a, _) (b, _) -> Int.compare a b) !events in
+      let active = ref [] in
+      let rec sweep pos events =
+        let rec apply = function
+          | (at, event) :: rest when at = pos ->
+              (match event with
+              | `Start entry ->
+                  active :=
+                    List.merge
+                      (fun (a, _) (b, _) -> Int.compare a b)
+                      [ entry ] !active
+              | `Stop id ->
+                  active := List.filter (fun (key, _) -> key <> id) !active);
+              apply rest
+          | rest -> rest
+        in
+        let rest = apply events in
+        let last = match rest with (at, _) :: _ -> at | [] -> length in
+        let style =
+          List.fold_left
+            (fun base (_, overlay) -> Ansi.Style.merge ~base ~overlay)
+            base_style !active
+        in
+        emit pos last style;
+        if last < length then sweep last rest
+      in
+      if length > 0 then sweep 0 events
+    end;
+    { content; runs = Dynarray.to_array runs }
+
+  let to_spans t =
+    let content = t.content in
+    Array.to_list
+      (Array.map
+         (fun range ->
+           {
+             text =
+               String.sub content range.start_byte
+                 (range.end_byte - range.start_byte);
+             style = range.style;
+           })
+         t.runs)
+end
+
 (* ───── Highlights ───── *)
 
 module Highlight = struct
@@ -27,9 +131,11 @@ end
 
 (* ───── Buffer ───── *)
 
+type content_mode = Forward | Reverse | Annotated of Annotations.t
+
 type t = {
   mutable spans : span list;
-  mutable spans_rev : bool;
+  mutable content_mode : content_mode;
   mutable default_style : Ansi.Style.t;
   mutable highlights : Highlight.t list;
   mutable tab_width : int;
@@ -45,7 +151,7 @@ let create ?(default_style = Ansi.Style.default) ?(width_method = `Unicode)
     ?(tab_width = 2) () =
   {
     spans = [];
-    spans_rev = false;
+    content_mode = Forward;
     default_style;
     highlights = [];
     tab_width = max 1 tab_width;
@@ -69,16 +175,21 @@ let invalidate t =
 (* ───── Span Order ───── *)
 
 let ensure_span_order t =
-  if t.spans_rev then begin
-    t.spans <- List.rev t.spans;
-    t.spans_rev <- false
-  end
+  match t.content_mode with
+  | Reverse ->
+      t.spans <- List.rev t.spans;
+      t.content_mode <- Forward
+  | Forward | Annotated _ -> ()
 
 let ensure_spans_rev t =
-  if not t.spans_rev then begin
-    t.spans <- List.rev t.spans;
-    t.spans_rev <- true
-  end
+  match t.content_mode with
+  | Reverse -> ()
+  | Forward ->
+      t.spans <- List.rev t.spans;
+      t.content_mode <- Reverse
+  | Annotated annotations ->
+      t.spans <- List.rev (Annotations.to_spans annotations);
+      t.content_mode <- Reverse
 
 (* ───── Content ───── *)
 
@@ -89,13 +200,16 @@ let set_text t s =
     | None -> false
   in
   t.spans <- [ { text = s; style = t.default_style } ];
-  t.spans_rev <- false;
+  t.content_mode <- Forward;
   if unchanged then t.paint <- None else invalidate t;
   t.cached_plain_text <- Some s
 
 let styled_text t =
-  ensure_span_order t;
-  t.spans
+  match t.content_mode with
+  | Annotated annotations -> Annotations.to_spans annotations
+  | Forward | Reverse ->
+      ensure_span_order t;
+      t.spans
 
 let set_styled_text t spans =
   let unchanged =
@@ -122,7 +236,7 @@ let set_styled_text t spans =
         matches 0 spans
   in
   t.spans <- spans;
-  t.spans_rev <- false;
+  t.content_mode <- Forward;
   if unchanged then t.paint <- None else invalidate t
 
 let append t s =
@@ -137,7 +251,7 @@ let append_styled t new_spans =
 
 let clear t =
   t.spans <- [];
-  t.spans_rev <- false;
+  t.content_mode <- Forward;
   t.highlights <- [];
   invalidate t
 
@@ -174,6 +288,19 @@ let set_source t source =
         set_text t (Source.text source);
       t.source <- Some source;
       t.version <- t.version + 1
+
+let set_annotations t annotations =
+  let content = Annotations.content annotations in
+  let current = plain_text t in
+  if current != content && not (String.equal current content) then
+    invalid_arg "Text_buffer.set_annotations: source does not match buffer";
+  match t.content_mode with
+  | Annotated current when current == annotations -> ()
+  | Forward | Reverse | Annotated _ ->
+      t.content_mode <- Annotated annotations;
+      t.spans <- [];
+      t.cached_plain_text <- Some content;
+      t.paint <- None
 
 let grapheme_count t = Source.length (source t)
 
@@ -261,73 +388,107 @@ let set_width_method t m =
 
 let version t = t.version
 
+let annotation_paint source (annotations : Annotations.t) =
+  let count = Array.length annotations.runs in
+  let runs = Array.make count (0, 0, Ansi.Style.default) in
+  let first = ref 0 and used = ref 0 in
+  for i = 0 to count - 1 do
+    let range = annotations.runs.(i) in
+    let last =
+      Source.grapheme_of_byte source ~affinity:Downstream range.end_byte
+    in
+    if last > !first then begin
+      runs.(!used) <- (!first, last, range.style);
+      incr used
+    end;
+    first := last
+  done;
+  if !used = count then runs else Array.sub runs 0 !used
+
 (* Sorting is O(E log E); partial-style resolution is O(E * A), where A is
    simultaneous overlays. This preparation never repeats on unchanged paint. *)
-let paint_runs t =
-  match t.paint with
-  | Some runs -> runs
-  | None ->
-      ensure_span_order t;
-      let src = source t in
-      let n = Source.length src in
-      let events = ref [] and byte = ref 0 in
+let paint_runs_with_overlays t =
+  ensure_span_order t;
+  let src = source t in
+  let n = Source.length src in
+  let events = ref [] and byte = ref 0 in
+  (match t.content_mode with
+  | Annotated annotations ->
+      Array.iter
+        (fun (range : Annotations.range) ->
+          let g =
+            Source.grapheme_of_byte src ~affinity:Downstream range.start_byte
+          in
+          if g < n then events := (g, `Base range.style) :: !events)
+        annotations.runs
+  | Forward | Reverse ->
       List.iter
         (fun (span : span) ->
           let g = Source.grapheme_of_byte src ~affinity:Downstream !byte in
           if g < n && String.length span.text > 0 then
             events := (g, `Base span.style) :: !events;
           byte := !byte + String.length span.text)
-        t.spans;
-      let highlights =
-        List.stable_sort
-          (fun a b -> compare (Highlight.priority a) (Highlight.priority b))
-          t.highlights
+        t.spans);
+  let highlights =
+    List.stable_sort
+      (fun a b -> compare (Highlight.priority a) (Highlight.priority b))
+      t.highlights
+  in
+  List.iteri
+    (fun id hl ->
+      let first = max 0 hl.Highlight.start_offset in
+      let last = min n hl.Highlight.end_offset in
+      if first < last then begin
+        events := (first, `Start (id, hl.Highlight.style)) :: !events;
+        events := (last, `Stop id) :: !events
+      end)
+    highlights;
+  let events =
+    List.stable_sort (fun (a, _) (b, _) -> compare a b) (List.rev !events)
+  in
+  let active = ref [] and base = ref t.default_style in
+  let runs = Dynarray.create () in
+  let rec sweep pos events =
+    let rec apply = function
+      | (g, event) :: rest when g = pos ->
+          (match event with
+          | `Base style -> base := style
+          | `Start entry ->
+              active :=
+                List.merge (fun (a, _) (b, _) -> compare a b) [ entry ] !active
+          | `Stop id ->
+              active := List.filter (fun (key, _) -> key <> id) !active);
+          apply rest
+      | rest -> rest
+    in
+    let rest = apply events in
+    let last = match rest with (g, _) :: _ -> g | [] -> n in
+    if last > pos then begin
+      let style =
+        List.fold_left
+          (fun base (_, overlay) -> Ansi.Style.merge ~base ~overlay)
+          !base !active
       in
-      List.iteri
-        (fun id hl ->
-          let first = max 0 hl.Highlight.start_offset in
-          let last = min n hl.Highlight.end_offset in
-          if first < last then begin
-            events := (first, `Start (id, hl.Highlight.style)) :: !events;
-            events := (last, `Stop id) :: !events
-          end)
-        highlights;
-      let events =
-        List.stable_sort (fun (a, _) (b, _) -> compare a b) (List.rev !events)
-      in
-      let active = ref [] and base = ref t.default_style in
-      let runs = Dynarray.create () in
-      let rec sweep pos events =
-        let rec apply = function
-          | (g, event) :: rest when g = pos ->
-              (match event with
-              | `Base style -> base := style
-              | `Start entry ->
-                  active :=
-                    List.merge
-                      (fun (a, _) (b, _) -> compare a b)
-                      [ entry ] !active
-              | `Stop id ->
-                  active := List.filter (fun (key, _) -> key <> id) !active);
-              apply rest
-          | rest -> rest
-        in
-        let rest = apply events in
-        let last = match rest with (g, _) :: _ -> g | [] -> n in
-        if last > pos then begin
-          let style =
-            List.fold_left
-              (fun base (_, overlay) -> Ansi.Style.merge ~base ~overlay)
-              !base !active
-          in
-          Dynarray.add_last runs (pos, last, style)
-        end;
-        if last < n then sweep last rest
-      in
-      if n > 0 then sweep 0 events;
-      let runs = Dynarray.to_array runs in
-      t.paint <- Some runs;
-      runs
+      Dynarray.add_last runs (pos, last, style)
+    end;
+    if last < n then sweep last rest
+  in
+  if n > 0 then sweep 0 events;
+  let runs = Dynarray.to_array runs in
+  t.paint <- Some runs;
+  runs
+
+let paint_runs t =
+  match t.paint with
+  | Some runs -> runs
+  | None when t.highlights = [] -> (
+      match t.content_mode with
+      | Annotated annotations ->
+          let runs = annotation_paint (source t) annotations in
+          t.paint <- Some runs;
+          runs
+      | Forward | Reverse -> paint_runs_with_overlays t)
+  | None -> paint_runs_with_overlays t
 
 let style_at t g =
   let runs = paint_runs t in

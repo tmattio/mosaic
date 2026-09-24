@@ -129,7 +129,10 @@ let with_highlighter ~language ?(style = Syntax_style.default) ?(conceal = true)
 
 let source_equal a b =
   match (a, b) with
-  | Ranges a, Ranges b -> a = b
+  | Ranges a, Ranges b ->
+      a == b
+      || String.equal (Syntax_highlight.content a) (Syntax_highlight.content b)
+         && Syntax_highlight.ranges a = Syntax_highlight.ranges b
   | Highlighter a, Highlighter b -> a == b
   | _ -> false
 
@@ -193,16 +196,12 @@ type t = {
   mutable job : running_job option;
   mutable pending : (string * syntax * Highlighter.t) option;
   mutable had_initial_content : bool;
+  mutable last_highlights : Syntax_highlight.t option;
   mutable visible_final : bool;
   mutable on_line_info_change : (unit -> unit) option;
 }
 
-and running_job = {
-  generation : int;
-  content : string;
-  syntax : syntax;
-  job : Highlighter.job;
-}
+and running_job = { generation : int; content : string; job : Highlighter.job }
 
 (* Accessors *)
 
@@ -217,12 +216,7 @@ let notify_line_info_change t =
 
 let pending_work t =
   if t.highlighting then
-    let label =
-      match (t.pending, t.job) with
-      | Some (_, syntax, _), _ -> syntax.language
-      | None, Some running -> running.syntax.language
-      | None, None -> None
-    in
+    let label = Option.bind t.props.syntax (fun syntax -> syntax.language) in
     Some (Renderable.Pending.make ?label ~kind:"code.highlight" ())
   else None
 
@@ -251,11 +245,15 @@ let apply_empty ?(final = true) t = apply_plain ~final t ""
 
 let apply_highlights t content syntax highlights =
   try
-    let spans =
-      Syntax_highlight.to_spans ~conceal:syntax.conceal ~style:syntax.style
-        ~content highlights
+    let captured = Syntax_highlight.content highlights in
+    if content != captured && not (String.equal content captured) then
+      invalid_arg "Code: highlights do not match source";
+    let annotations =
+      Syntax_highlight.to_annotations ~conceal:syntax.conceal
+        ~style:syntax.style highlights
     in
-    Text_renderable.set_styled_text t.text spans;
+    Text_renderable.set_annotations t.text annotations;
+    t.last_highlights <- Some highlights;
     t.visible_final <- true;
     true
   with _ ->
@@ -266,9 +264,11 @@ let finish_job t (running : running_job) outcome =
   if running.generation = t.generation then begin
     t.highlighting <- false;
     (match outcome with
-    | Ok highlights ->
-        ignore
-          (apply_highlights t running.content running.syntax highlights : bool)
+    | Ok highlights -> (
+        match t.props.syntax with
+        | Some syntax ->
+            ignore (apply_highlights t running.content syntax highlights : bool)
+        | None -> apply_plain t running.content)
     | Error _ -> apply_plain t running.content);
     notify_line_info_change t;
     request_render t
@@ -294,7 +294,7 @@ let launch_job t content syntax highlighter =
   let job =
     Highlighter.start highlighter request ~notify:(fun () -> request_render t)
   in
-  t.job <- Some { generation; content; syntax; job }
+  t.job <- Some { generation; content; job }
 
 let rec poll_job t =
   match t.job with
@@ -330,7 +330,8 @@ let render_syntax t content syntax =
       notify_line_info_change t
   | Highlighter highlighter -> start_highlighting t content syntax highlighter
 
-let render_content t (props : Props.t) =
+let render_new_content t (props : Props.t) =
+  t.last_highlights <- None;
   t.generation <- t.generation + 1;
   if String.equal props.content "" then begin
     clear_pending t;
@@ -346,6 +347,25 @@ let render_content t (props : Props.t) =
         t.had_initial_content <- false;
         apply_plain t props.content;
         notify_line_info_change t
+
+let same_producer a b =
+  Option.equal String.equal a.language b.language
+  && source_equal a.source b.source
+
+let render_content t (props : Props.t) =
+  let same_source = String.equal t.props.content props.content in
+  let previous = t.props.syntax in
+  t.props <- props;
+  match (previous, props.syntax) with
+  | Some old, Some syntax when same_source && same_producer old syntax -> (
+      match t.last_highlights with
+      | Some highlights ->
+          ignore (apply_highlights t props.content syntax highlights : bool);
+          notify_line_info_change t
+      | None when t.highlighting ->
+          visible_before_highlight t props.content syntax
+      | None -> render_new_content t props)
+  | _ -> render_new_content t props
 
 let render_before t _node _grid ~delta:_ = poll_job t
 
@@ -374,6 +394,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?content ?syntax
       job = None;
       pending = None;
       had_initial_content = false;
+      last_highlights = None;
       visible_final = true;
       on_line_info_change = None;
     }
@@ -392,13 +413,11 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?content ?syntax
 
 let set_content t s =
   let props = { t.props with content = s } in
-  render_content t props;
-  t.props <- props
+  render_content t props
 
 let set_syntax t syntax =
   let props = { t.props with syntax } in
-  render_content t props;
-  t.props <- props
+  render_content t props
 
 (* Apply Props *)
 
@@ -408,11 +427,12 @@ let apply_props t (props : Props.t) =
   in
   let metrics_changed = ref false in
   if style_changed then Text_renderable.set_text_style t.text props.text_style;
-  if
+  let content_changed =
     (not (String.equal t.props.content props.content))
     || (not (Option.equal syntax_equal t.props.syntax props.syntax))
     || style_changed
-  then render_content t props;
+  in
+
   (* Wrap mode *)
   if t.props.wrap <> props.wrap then begin
     Text_renderable.set_wrap t.text props.wrap;
@@ -436,7 +456,7 @@ let apply_props t (props : Props.t) =
   (* Selectable *)
   if t.props.selectable <> props.selectable then
     Text_renderable.set_selectable t.text props.selectable;
-  t.props <- props;
+  if content_changed then render_content t props else t.props <- props;
   if !metrics_changed then notify_line_info_change t
 
 (* Query *)

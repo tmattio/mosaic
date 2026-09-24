@@ -66,7 +66,7 @@ module Props : sig
 
   val make :
     state:Editor.t ->
-    ?spans:Text_buffer.span list ->
+    ?annotations:Text_buffer.Annotations.t ->
     ?ghost_text:string ->
     ?ghost_text_color:Ansi.Color.t ->
     ?placeholder:string ->
@@ -93,10 +93,6 @@ module Props : sig
 
   val equal : t -> t -> bool
   (** [equal a b] is [true] iff [a] and [b] describe identical properties. *)
-
-  val spans_equal : Text_buffer.span list -> Text_buffer.span list -> bool
-  (** [spans_equal a b] is [true] iff [a] and [b] contain the same styled text.
-  *)
 end
 
 (** {1:construction Construction} *)
@@ -110,7 +106,7 @@ val create :
   ?z_index:int ->
   ?opacity:float ->
   state:Editor.t ->
-  ?spans:Text_buffer.span list ->
+  ?annotations:Text_buffer.Annotations.t ->
   ?ghost_text:string ->
   ?ghost_text_color:Ansi.Color.t ->
   ?placeholder:string ->

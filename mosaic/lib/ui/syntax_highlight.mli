@@ -27,8 +27,8 @@ val default_meta : meta
 type range
 (** A highlighted source byte range. *)
 
-type t = range list
-(** A list of highlighted source byte ranges. *)
+type t
+(** Captures bound to the exact source bytes they describe. *)
 
 val range :
   ?meta:meta -> start_byte:int -> end_byte:int -> scope:string -> unit -> range
@@ -37,9 +37,19 @@ val range :
 
     Raises [Invalid_argument] if [start_byte < 0] or [end_byte < start_byte]. *)
 
-val of_triples : (int * int * string) list -> t
-(** [of_triples ranges] converts [(start_byte, end_byte, scope)] ranges to
-    highlight ranges with {!default_meta}. *)
+val make : content:string -> range list -> t
+(** [make ~content ranges] binds [ranges] to [content]. Raises
+    [Invalid_argument] if a range exceeds the source byte length. *)
+
+val of_triples : content:string -> (int * int * string) list -> t
+(** [of_triples ~content ranges] binds [(start_byte, end_byte, scope)] ranges
+    with {!default_meta} to [content]. Validates bounds as {!make}. *)
+
+val content : t -> string
+(** [content t] is the original source, including concealed bytes. *)
+
+val ranges : t -> range list
+(** [ranges t] is the capture list in declaration order. *)
 
 val start_byte : range -> int
 (** [start_byte r] is the inclusive byte start of [r]. *)
@@ -53,18 +63,21 @@ val scope : range -> string
 val meta : range -> meta
 (** [meta r] is the metadata attached to [r]. *)
 
+val to_annotations :
+  ?conceal:bool -> style:Syntax_style.t -> t -> Text_buffer.Annotations.t
+(** [to_annotations ~style t] resolves captures over their source. Overlaps
+    merge by scope specificity, least-specific first, then declaration order.
+    Uncaptured text receives the syntax base style. Offsets count bytes,
+    including line breaks; grapheme rendering follows
+    {!Text_buffer.Annotations.make}.
+
+    [conceal] defaults to [false], preserving the original source for editable
+    text. When [true], conceal metadata projects a visible source; annotations
+    then belong to that projected source. The source and conceal projection are
+    shared across theme changes without copying the text. *)
+
 val to_spans :
-  ?conceal:bool ->
-  style:Syntax_style.t ->
-  content:string ->
-  t ->
-  Text_buffer.span list
-(** [to_spans ~style ~content ranges] converts [ranges] into styled text spans.
-
-    Overlapping ranges are cascade-merged by scope specificity, least-specific
-    first, then by range order. Text outside ranges receives the syntax style's
-    base style. If [conceal] is [true] (the default), conceal metadata is
-    applied.
-
-    Raises [Invalid_argument] if any byte offset is out of bounds for [content].
-*)
+  ?conceal:bool -> style:Syntax_style.t -> t -> Text_buffer.span list
+(** [to_spans ~style t] materializes the same result as {!to_annotations},
+    copying styled substrings. [conceal] defaults to [true]. Rendering
+    annotations directly avoids these copies. *)

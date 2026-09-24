@@ -39,7 +39,7 @@ module Renderable = Renderable
 (** {1:text Text primitives} *)
 
 module Text_buffer = Text_buffer
-(** Styled text storage with per-character styles and highlight overlays. *)
+(** Styled text storage, source-bound annotations, and highlight overlays. *)
 
 module Text_surface = Text_surface
 (** Text rendering surface with wrapping, viewport, and selection. *)
@@ -48,7 +48,7 @@ module Edit_buffer = Edit_buffer
 (** Grapheme-aware text editing buffer with cursor, selection, and undo. *)
 
 module Syntax_highlight = Syntax_highlight
-(** Source highlight ranges consumed by code renderables. *)
+(** Source-bound captures resolved into text annotations. *)
 
 module Syntax_style = Syntax_style
 (** Syntax styles: maps capture-group names to terminal styles. *)

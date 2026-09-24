@@ -235,8 +235,10 @@ let%expect_test "code_syntax highlighting is applied" =
      carries the resolved ANSI style. *)
   render_ansi ~width:10 ~height:3
     (Vnode.markdown
-       ~code_syntax:(fun ~language:_ ~content:_ ->
-         let highlights = Syntax_highlight.of_triples [ (0, 3, "keyword") ] in
+       ~code_syntax:(fun ~language:_ ~content ->
+         let highlights =
+           Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ]
+         in
          Some (Code.syntax ~style:Syntax_style.default highlights))
        {|```
 let x

@@ -739,42 +739,8 @@ module Syntax_style : sig
       top of the base style. *)
 end
 
-(** Source highlight ranges. *)
-module Syntax_highlight : sig
-  type meta = Mosaic_ui.Syntax_highlight.meta = {
-    is_injection : bool;
-    contains_injection : bool;
-    conceal : string option;
-    conceal_lines : bool;
-  }
-  (** Metadata attached to a highlight range. *)
-
-  val default_meta : meta
-  (** [default_meta] has all flags disabled and no conceal replacement. *)
-
-  type range = Mosaic_ui.Syntax_highlight.range
-  (** A highlighted source byte range. *)
-
-  type t = Mosaic_ui.Syntax_highlight.t
-  (** A list of highlighted source byte ranges. *)
-
-  val range :
-    ?meta:meta ->
-    start_byte:int ->
-    end_byte:int ->
-    scope:string ->
-    unit ->
-    range
-  (** [range ~start_byte ~end_byte ~scope ()] highlights a source byte range. *)
-
-  val of_triples : (int * int * string) list -> t
-  (** [of_triples ranges] converts range triples. *)
-
-  val to_spans :
-    ?conceal:bool -> style:Syntax_style.t -> content:string -> t -> span list
-  (** [to_spans ~style ~content ranges] converts highlight ranges to styled
-      spans. *)
-end
+module Syntax_highlight = Mosaic_ui.Syntax_highlight
+(** Source-bound highlight ranges and their resolved byte annotations. *)
 
 (** {1:views Views} *)
 
@@ -2168,7 +2134,7 @@ val textarea :
   ?on_focus_request:'msg ->
   ?on_size:(w:int -> h:int -> 'msg option) ->
   ?focused:bool ->
-  ?spans:span list ->
+  ?annotations:Mosaic_ui.Text_buffer.Annotations.t ->
   ?ghost_text:string ->
   ?ghost_text_color:Ansi.Color.t ->
   ?placeholder:string ->

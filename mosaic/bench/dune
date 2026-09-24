@@ -78,6 +78,19 @@
  (modules bench_editor)
  (libraries thumper mosaic.ui))
 
+(executable
+ (name bench_highlighting)
+ (modules bench_highlighting)
+ (libraries thumper mosaic.ui matrix.ansi matrix.text))
+
+(rule
+ (alias runtest)
+ (locks /bench)
+ (action
+  (progn
+   (run %{exe:bench_highlighting.exe} --quick)
+   (diff? highlighting.thumper highlighting.thumper.corrected))))
+
 (rule
  (alias runtest)
  (locks /bench)

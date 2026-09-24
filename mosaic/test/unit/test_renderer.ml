@@ -284,7 +284,9 @@ let render_frame_until_settled_reports_pending_code () =
 let render_frame_until_settled_completes_code () =
   let t = make_renderer () in
   let jobs, highlighter = async_highlighter () in
-  let highlights = Syntax_highlight.of_triples [ (0, 3, "keyword") ] in
+  let highlights =
+    Syntax_highlight.of_triples ~content:"let x" [ (0, 3, "keyword") ]
+  in
   let syntax = Code.with_highlighter ~language:"ocaml" highlighter in
   let code =
     Code.create ~parent:(Renderer.root t) ~content:"let x" ~syntax ()

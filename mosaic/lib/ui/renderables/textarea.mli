@@ -60,7 +60,7 @@ val create :
   ?z_index:int ->
   ?opacity:float ->
   state:Editor.t ->
-  ?spans:Text_buffer.span list ->
+  ?annotations:Text_buffer.Annotations.t ->
   ?ghost_text:string ->
   ?ghost_text_color:Ansi.Color.t ->
   ?placeholder:string ->
@@ -106,7 +106,7 @@ module Props : sig
 
   val make :
     state:Editor.t ->
-    ?spans:Text_buffer.span list ->
+    ?annotations:Text_buffer.Annotations.t ->
     ?ghost_text:string ->
     ?ghost_text_color:Ansi.Color.t ->
     ?placeholder:string ->
@@ -126,7 +126,10 @@ module Props : sig
     ?key_bindings:key_binding list ->
     unit ->
     t
-  (** [make ~state ()] describes [state] with the widget's visual defaults. *)
+  (** [make ~state ()] describes [state] with the widget's visual defaults.
+      [annotations] must describe the same bytes as [Editor.text state]. Raises
+      [Invalid_argument] on a mismatch, before applying any properties. Omit
+      annotations while awaiting a result for a changed source. *)
 
   val default : t
   (** [default] is [make ~state:Editor.empty ()]. *)

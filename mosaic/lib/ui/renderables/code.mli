@@ -47,7 +47,9 @@ module Highlighter : sig
 
   val sync : (language:string -> content:string -> Syntax_highlight.t) -> t
   (** [sync f] is a synchronous highlighter. Exceptions raised by [f] are
-      treated as highlighting failures and fall back to plain text. *)
+      treated as highlighting failures and fall back to plain text. Captures
+      must be bound to the requested content; mismatches also fall back to plain
+      text. *)
 
   val threaded : (language:string -> content:string -> Syntax_highlight.t) -> t
   (** [threaded f] runs whole-buffer requests on a worker systhread. Reuse the
@@ -84,8 +86,9 @@ val syntax :
     - [language] names the source language when known.
     - [style] maps highlight scopes to terminal styles. Defaults to
       {!Syntax_style.default}.
-    - [highlights] are source byte ranges for [content]. Omit [syntax] to render
-      plain text.
+    - [highlights] are bound to the exact content they describe. Mismatched
+      content falls back to plain text, even when byte lengths agree. Omit
+      [syntax] to render plain text.
     - [conceal] enables conceal metadata in [highlights]. Defaults to [true]. *)
 
 val with_highlighter :

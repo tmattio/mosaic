@@ -59,4 +59,4 @@ let highlight ~language ~content =
     in
     Option.iter (fun scope -> ranges := (start, !pos, scope) :: !ranges) scope
   done;
-  Mosaic_ui.Syntax_highlight.of_triples (List.rev !ranges)
+  Mosaic_ui.Syntax_highlight.of_triples ~content (List.rev !ranges)

@@ -611,14 +611,14 @@ let scroll_box ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
 let textarea ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = true) ?(focused = false)
     ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?spans ?ghost_text ?ghost_text_color
-    ?placeholder ?wrap ?text_color ?background_color ?focused_text_color
-    ?focused_background_color ?placeholder_color ?selection_color ?selection_fg
-    ?cursor_style ?cursor_color ?cursor_blinking ?selectable ?show_cursor
-    ?key_bindings ~on_change ?on_submit ~state () =
+    ?on_click ?on_focus_request ?on_size ?annotations ?ghost_text
+    ?ghost_text_color ?placeholder ?wrap ?text_color ?background_color
+    ?focused_text_color ?focused_background_color ?placeholder_color
+    ?selection_color ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking
+    ?selectable ?show_cursor ?key_bindings ~on_change ?on_submit ~state () =
   let kind =
     Textarea
-      (Textarea.Props.make ~state ?spans ?ghost_text ?ghost_text_color
+      (Textarea.Props.make ~state ?annotations ?ghost_text ?ghost_text_color
          ?placeholder ?wrap ?text_color ?background_color ?focused_text_color
          ?focused_background_color ?placeholder_color ?selection_color
          ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking ?selectable

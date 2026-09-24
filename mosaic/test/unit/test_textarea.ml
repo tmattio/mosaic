@@ -18,7 +18,7 @@ let editor ?(value = "") ?max_length ?cursor ?selection () =
   | None | Some None -> state
   | Some (Some (anchor, cursor)) -> Editor.select ~anchor ~cursor state
 
-let make_props ?state ?value ?max_length ?cursor ?selection ?wrap ?spans
+let make_props ?state ?value ?max_length ?cursor ?selection ?wrap ?annotations
     ?ghost_text ?ghost_text_color ?placeholder ?text_color ?background_color
     ?focused_text_color ?focused_background_color ?placeholder_color
     ?selection_color ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking
@@ -28,7 +28,7 @@ let make_props ?state ?value ?max_length ?cursor ?selection ?wrap ?spans
     | Some state -> state
     | None -> editor ?value ?max_length ?cursor ?selection ()
   in
-  Textarea.Props.make ~state ?wrap ?spans ?ghost_text ?ghost_text_color
+  Textarea.Props.make ~state ?wrap ?annotations ?ghost_text ?ghost_text_color
     ?placeholder ?text_color ?background_color ?focused_text_color
     ?focused_background_color ?placeholder_color ?selection_color ?selection_fg
     ?cursor_style ?cursor_color ?cursor_blinking ?selectable ?show_cursor ()
@@ -196,10 +196,15 @@ let props_detects_cursor_blinking_diff () =
   let b = make_props ~cursor_blinking:false () in
   is_false ~msg:"different" (Textarea.Props.equal a b)
 
-let props_detects_spans_diff () =
+let props_detects_annotations_diff () =
   let style = Ansi.Style.make ~fg:Ansi.Color.cyan () in
-  let a = make_props ~spans:[ { Text_buffer.text = "let"; style } ] () in
-  let b = make_props ~spans:[] () in
+  let state = Editor.of_string "let" in
+  let annotations =
+    Text_buffer.Annotations.make ~content:(Editor.text state)
+      [ { start_byte = 0; end_byte = 3; style } ]
+  in
+  let a = make_props ~state ~annotations () in
+  let b = make_props ~state () in
   is_false ~msg:"different" (Textarea.Props.equal a b)
 
 let props_detects_selection_diff () =
@@ -270,9 +275,12 @@ let focus_preserves_explicit_styles_and_restyles_fallback () =
   let root = make_root ctx in
   let state = Editor.of_string "hello" in
   let green = Ansi.Style.make ~fg:Ansi.Color.green () in
-  let spans = [ Text_buffer.{ text = "hello"; style = green } ] in
+  let annotations =
+    Text_buffer.Annotations.make ~content:(Editor.text state)
+      [ { start_byte = 0; end_byte = 5; style = green } ]
+  in
   let ta =
-    Textarea.create ~parent:root ~state ~spans ~on_change:ignore
+    Textarea.create ~parent:root ~state ~annotations ~on_change:ignore
       ~text_color:Ansi.Color.red ~focused_text_color:Ansi.Color.blue
       ~show_cursor:false ()
   in
@@ -286,16 +294,23 @@ let focus_preserves_explicit_styles_and_restyles_fallback () =
   is_true ~msg:"explicit style focus retains geometry"
     (geometry == Text_surface.layout surface);
   blur_textarea ta;
+  let stale =
+    Text_buffer.Annotations.make ~content:"stale"
+      [ { start_byte = 0; end_byte = 5; style = green } ]
+  in
+  raises_match ~msg:"stale annotations rejected before declaration changes"
+    (function Invalid_argument _ -> true | _ -> false)
+    (fun () ->
+      Textarea.apply_props ta (make_props ~state ~annotations:stale ()));
+  equal string "hello" (Textarea.value ta);
   Textarea.apply_props ta
-    (make_props ~state
-       ~spans:[ Text_buffer.{ text = "stale"; style = green } ]
-       ~text_color:Ansi.Color.red ~focused_text_color:Ansi.Color.blue
-       ~show_cursor:false ());
+    (make_props ~state ~text_color:Ansi.Color.red
+       ~focused_text_color:Ansi.Color.blue ~show_cursor:false ());
   focus_textarea ctx ta;
   let fallback = render_textarea ta ~width:10 ~height:2 in
-  is_true ~msg:"stale spans fall back to focused plain style"
+  is_true ~msg:"removing annotations restores focused plain style"
     (Ansi.Color.equal Ansi.Color.blue (Matrix_grid.get_fg fallback 0));
-  is_true ~msg:"stale styling retains source geometry"
+  is_true ~msg:"paint changes retain source geometry"
     (geometry == Text_surface.layout surface);
   Textarea.apply_props ta
     (make_props
@@ -1086,7 +1101,7 @@ let () =
           test "detects text_color diff" props_detects_text_color_diff;
           test "detects cursor_style diff" props_detects_cursor_style_diff;
           test "detects cursor_blinking diff" props_detects_cursor_blinking_diff;
-          test "detects spans diff" props_detects_spans_diff;
+          test "detects annotations diff" props_detects_annotations_diff;
           test "detects selection diff" props_detects_selection_diff;
         ];
       group "Construction"

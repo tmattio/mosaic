@@ -1,9 +1,9 @@
-(** Styled text storage with per-character styles and highlight overlays.
+(** Text storage with styled spans, source-bound annotations, and overlays.
 
-    A text buffer stores content as a sequence of styled {!type-span}s. It
-    tracks logical line boundaries and per-line display widths. Highlights (see
-    {!Highlight}) provide priority-based style overlays for selection and syntax
-    highlighting.
+    A text buffer owns the source index and logical-line metrics. Content may be
+    supplied as styled {!type-span}s, or styled separately with {!Annotations}.
+    Highlights (see {!Highlight}) overlay either representation in priority
+    order.
 
     Consumers typically wrap a buffer in a {!Text_surface.t} for rendering. *)
 
@@ -14,6 +14,31 @@ type t
 
 type span = { text : string; style : Ansi.Style.t }
 (** A contiguous run of text with a single visual style. *)
+
+(** {1:annotations Annotations} *)
+
+module Annotations : sig
+  type range = { start_byte : int; end_byte : int; style : Ansi.Style.t }
+  (** Half-open byte ranges, including line-break bytes. *)
+
+  type t
+  (** Immutable styles bound to source bytes. *)
+
+  val make : ?base_style:Ansi.Style.t -> content:string -> range list -> t
+  (** [make ~content ranges] overlays [ranges] in list order over [base_style]
+      (default {!Ansi.Style.default}). Later ranges win conflicting attributes.
+      Empty ranges have no effect. Raises [Invalid_argument] for out-of-bounds
+      or reversed byte ranges. Buffer indexing handles invalid UTF-8 as
+      replacement units. Boundaries inside a grapheme resolve downstream when
+      rendered, as with styled spans. *)
+
+  val content : t -> string
+  (** [content t] is the annotated source. *)
+
+  val to_spans : t -> span list
+  (** [to_spans t] materializes styled fragments, copying source substrings.
+      Rendering annotations directly avoids these copies. *)
+end
 
 (** {1:highlights Highlights} *)
 
@@ -81,12 +106,19 @@ val set_text : t -> string -> unit
 val styled_text : t -> span list
 (** [styled_text t] is the installed base spans in source order, preserving
     their exact text, including line breaks. Highlight overlays are separate.
-    The returned immutable list remains valid after buffer changes. *)
+    Annotations are materialized into spans on request. The returned immutable
+    list remains valid after buffer changes. *)
 
 val set_styled_text : t -> span list -> unit
 (** [set_styled_text t spans] replaces content with pre-styled [spans]. Retains
     the source index and cached metrics when the concatenated text is unchanged,
     including when span boundaries differ. *)
+
+val set_annotations : t -> Annotations.t -> unit
+(** [set_annotations t annotations] replaces base paint without changing text or
+    geometry. Existing highlight overlays remain. Raises [Invalid_argument]
+    before changing the buffer if annotation source bytes differ from its text.
+    Equal source bytes are accepted; the installed index is retained. *)
 
 val append : t -> string -> unit
 (** [append t s] appends plain text [s] styled with {!default_style}.
@@ -103,8 +135,8 @@ val grapheme_count : t -> int
 (** [grapheme_count t] is the total number of grapheme clusters. *)
 
 val plain_text : t -> string
-(** [plain_text t] is the concatenation of all span texts. Cached; recomputed on
-    content change. *)
+(** [plain_text t] is the installed source text. Span concatenation is cached
+    until content changes; annotations reuse their source string. *)
 
 (** {1:default_style Default style} *)
 

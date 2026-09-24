@@ -815,7 +815,7 @@ val textarea :
   ?on_click:(Event.mouse -> 'msg option) ->
   ?on_focus_request:'msg ->
   ?on_size:(w:int -> h:int -> 'msg option) ->
-  ?spans:Text_buffer.span list ->
+  ?annotations:Text_buffer.Annotations.t ->
   ?ghost_text:string ->
   ?ghost_text_color:Ansi.Color.t ->
   ?placeholder:string ->
@@ -838,48 +838,15 @@ val textarea :
   state:Editor.t ->
   unit ->
   'msg t
-(** [textarea ()] is a multi-line text editing leaf element. Textarea does not
-    accept children.
+(** [textarea ~state ~on_change ()] displays the accepted editor state. Editing,
+    cursor movement, and selection propose complete {!Editor.t} values through
+    [on_change]. The application decides which proposals to install. [on_submit]
+    reports the current text on Ctrl+Enter or Cmd+Enter.
 
-    Textarea-specific attributes:
-    - [focusable] controls whether the node can receive focus. Defaults to
-      [true].
-    - [value] is the controlled text content. Every reconciliation restores it
-      if the live edit buffer has diverged. Defaults to [""].
-    - [cursor] is an optional controlled cursor grapheme offset.
-    - [selection] is an optional controlled selection range.
-    - [spans] is optional styled spans used for syntax highlighting. When
-      provided, the span text must match [value].
-    - [ghost_text] is optional inline ghost completion rendered at the cursor.
-    - [ghost_text_color] is the ghost text color.
-    - [placeholder] is the text shown when the textarea is empty, regardless of
-      focus. Defaults to [""].
-    - [wrap] is the line-wrapping mode. Defaults to [`Word].
-    - [text_color] is the text color when unfocused. Defaults to
-      {!Ansi.Color.white}.
-    - [background_color] is the background color when unfocused.
-    - [focused_text_color] is the text color when focused. Defaults to
-      {!Ansi.Color.white}.
-    - [focused_background_color] is the background color when focused.
-    - [placeholder_color] is the placeholder text color. Defaults to
-      {!Ansi.Color.bright_black}.
-    - [selection_color] is the selection background color. Defaults to
-      {!Ansi.Color.blue}.
-    - [selection_fg] is the selection foreground color. When unset, the normal
-      text color is used.
-    - [cursor_style] is the cursor shape when focused. Defaults to [`Block].
-    - [cursor_color] is the cursor color when focused. Defaults to
-      {!Ansi.Color.white}.
-    - [cursor_blinking] controls whether the cursor blinks. Defaults to [true].
-    - [selectable] controls whether mouse selection is enabled. Defaults to
-      [true].
-    - [show_cursor] controls whether the focused cursor is shown. Defaults to
-      [true].
-    - [on_input] is called after every text change at keystroke-level.
-    - [on_change] is called when the committed value changes (on blur or
-      submit).
-    - [on_submit] is called when Cmd+Enter or Ctrl+Enter is pressed.
-    - [on_cursor] is called when cursor position or selection changes. *)
+    [annotations] styles source byte ranges without copying text. Its source
+    bytes must match [state]; stale annotations raise [Invalid_argument] before
+    changing the widget. Omit annotations while awaiting a highlighter result
+    for newly edited content. Other visual options follow {!Textarea}. *)
 
 val table :
   ?key:string ->

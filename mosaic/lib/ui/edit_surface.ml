@@ -158,7 +158,7 @@ type key_binding = Shortcut.t * action
 module Props = struct
   type t = {
     state : Editor.t;
-    spans : Text_buffer.span list;
+    annotations : Text_buffer.Annotations.t option;
     ghost_text : string option;
     ghost_text_color : Ansi.Color.t;
     placeholder : string;
@@ -178,7 +178,7 @@ module Props = struct
     key_bindings : key_binding list;
   }
 
-  let make ~state ?(spans = []) ?ghost_text
+  let make ~state ?annotations ?ghost_text
       ?(ghost_text_color = default_ghost_text_color) ?(placeholder = "")
       ?(wrap = `Word) ?(text_color = default_text_color)
       ?(background_color = default_background_color)
@@ -190,9 +190,17 @@ module Props = struct
       ?(cursor_color = default_cursor_color)
       ?(cursor_blinking = default_cursor_blinking) ?(selectable = true)
       ?(show_cursor = true) ?(key_bindings = []) () =
+    (match annotations with
+    | None -> ()
+    | Some annotations ->
+        let content = Text_buffer.Annotations.content annotations in
+        let accepted = Editor.text state in
+        if content != accepted && not (String.equal content accepted) then
+          invalid_arg
+            "Edit_surface.Props.make: annotations do not match editor source");
     {
       state;
-      spans;
+      annotations;
       ghost_text;
       ghost_text_color;
       placeholder;
@@ -214,16 +222,9 @@ module Props = struct
 
   let default = make ~state:Editor.empty ()
 
-  let spans_equal a b =
-    List.compare_length_with a (List.length b) = 0
-    && List.for_all2
-         (fun (a : Text_buffer.span) (b : Text_buffer.span) ->
-           String.equal a.text b.text && Ansi.Style.equal a.style b.style)
-         a b
-
   let equal a b =
     a.state == b.state
-    && spans_equal a.spans b.spans
+    && Option.equal ( == ) a.annotations b.annotations
     && Option.equal String.equal a.ghost_text b.ghost_text
     && Ansi.Color.equal a.ghost_text_color b.ghost_text_color
     && String.equal a.placeholder b.placeholder
@@ -304,33 +305,12 @@ let propose t ~base next =
 
 (* Sync *)
 
-let spans_text_equals spans text =
-  let length = String.length text in
-  let rec matches offset = function
-    | [] -> offset = length
-    | (span : Text_buffer.span) :: rest ->
-        let size = String.length span.text in
-        if size > length - offset then false
-        else
-          let i = ref 0 in
-          while
-            !i < size
-            && String.unsafe_get text (offset + !i)
-               = String.unsafe_get span.text !i
-          do
-            incr i
-          done;
-          !i = size && matches (offset + size) rest
-  in
-  matches 0 spans
-
 let sync_content t =
-  let text = Editor.text t.props.state in
-  t.styled_content <-
-    t.props.spans <> [] && spans_text_equals t.props.spans text;
-  if t.styled_content then Text_buffer.set_styled_text t.text_buf t.props.spans
-  else Text_buffer.set_text t.text_buf text;
-  Text_buffer.set_source t.text_buf (Editor.source t.props.state)
+  let source = Editor.source t.props.state in
+  t.styled_content <- Option.is_some t.props.annotations;
+  Text_buffer.set_text t.text_buf (Editor.text t.props.state);
+  Text_buffer.set_source t.text_buf source;
+  Option.iter (Text_buffer.set_annotations t.text_buf) t.props.annotations
 
 let sync t =
   sync_content t;
@@ -755,8 +735,8 @@ let handle_paste t text =
 
 (* Construction *)
 
-let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state ?spans
-    ?ghost_text ?ghost_text_color ?placeholder ?wrap ?text_color
+let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state
+    ?annotations ?ghost_text ?ghost_text_color ?placeholder ?wrap ?text_color
     ?background_color ?focused_text_color ?focused_background_color
     ?placeholder_color ?selection_color ?selection_fg ?cursor_style
     ?cursor_color ?cursor_blinking ?selectable ?show_cursor ?(mode = `Multiline)
@@ -765,8 +745,8 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state ?spans
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
   let props =
-    Props.make ~state ?spans ?ghost_text ?ghost_text_color ?placeholder ?wrap
-      ?text_color ?background_color ?focused_text_color
+    Props.make ~state ?annotations ?ghost_text ?ghost_text_color ?placeholder
+      ?wrap ?text_color ?background_color ?focused_text_color
       ?focused_background_color ?placeholder_color ?selection_color
       ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking ?selectable
       ?show_cursor ?key_bindings ()
@@ -816,7 +796,9 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state ?spans
 (* Apply props *)
 
 let apply_props t (props : Props.t) =
-  let spans_changed = not (Props.spans_equal t.props.spans props.spans) in
+  let annotations_changed =
+    not (Option.equal ( == ) t.props.annotations props.annotations)
+  in
   let selectable_changed = t.props.selectable <> props.selectable in
   let keymap_changed =
     not
@@ -843,7 +825,7 @@ let apply_props t (props : Props.t) =
     t.keymap <- Action.keymap ~custom:props.key_bindings t.mode;
   if selectable_changed then register_selection t;
   if style_changed then sync_style t ~focused:(Renderable.focused t.node);
-  if source_changed || spans_changed then sync t;
+  if source_changed || annotations_changed then sync t;
   if state_changed then ensure_cursor_visible t;
   Renderable.request_render t.node
 

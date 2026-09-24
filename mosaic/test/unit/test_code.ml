@@ -8,7 +8,8 @@ let blue = Ansi.Style.fg Ansi.Color.blue Ansi.Style.default
 let syntax_style color =
   Syntax_style.make ~base:Ansi.Style.default [ ("keyword", color) ]
 
-let highlights = Syntax_highlight.of_triples [ (0, 3, "keyword") ]
+let highlights =
+  Syntax_highlight.of_triples ~content:"let x" [ (0, 3, "keyword") ]
 
 let make_code ?content ?syntax ?text_style () =
   let t = make_ctx () in
@@ -60,7 +61,7 @@ let plain_without_syntax () =
 
 let precomputed_highlights_apply_style () =
   let syntax = Code.syntax ~style:(syntax_style red) highlights in
-  let _ctx, code = make_code ~content:"let x = 1" ~syntax () in
+  let _ctx, code = make_code ~content:"let x" ~syntax () in
   match styled_text code with
   | first :: _ ->
       equal ~msg:"highlighted text" string "let" (span_text first);
@@ -72,7 +73,7 @@ let sync_highlighter_applies_style () =
     Code.Highlighter.sync (fun ~language ~content ->
         equal ~msg:"request content" string "let x" content;
         equal ~msg:"request language" string "ocaml" language;
-        highlights)
+        Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ])
   in
   let syntax =
     Code.with_highlighter ~language:"ocaml" ~style:(syntax_style red)
@@ -142,7 +143,10 @@ let async_streaming_retains_previous_buffer () =
   equal ~msg:"previous content retained" string "let x"
     (Text_buffer.plain_text (Code.buffer code));
   let second_job = List.nth !jobs 1 in
-  complete second_job (Ok highlights);
+  complete second_job
+    (Ok
+       (Syntax_highlight.of_triples ~content:second_job.request.content
+          [ (0, 3, "keyword") ]));
   render_code code;
   equal ~msg:"fresh content after highlight" string "var x"
     (Text_buffer.plain_text (Code.buffer code))
@@ -168,7 +172,10 @@ let async_content_changes_coalesce () =
   equal ~msg:"current plain text retained" string "var x"
     (Text_buffer.plain_text (Code.buffer code));
   let second_job = List.nth !jobs 1 in
-  complete second_job (Ok highlights);
+  complete second_job
+    (Ok
+       (Syntax_highlight.of_triples ~content:second_job.request.content
+          [ (0, 3, "keyword") ]));
   render_code code;
   match styled_text code with
   | first :: _ ->
@@ -192,7 +199,8 @@ let async_configuration_changes_coalesce () =
   let latest = List.hd !next_jobs in
   equal string "new" latest.request.content;
   equal string "json" latest.request.language;
-  complete latest (Ok []);
+  complete latest
+    (Ok (Syntax_highlight.make ~content:latest.request.content []));
   render_code code;
   equal string "new" (Text_buffer.plain_text (Code.buffer code));
   is_false (Code.is_highlighting code)
@@ -259,7 +267,9 @@ let async_poll_exception_falls_back_to_plain_text () =
     (Text_buffer.plain_text (Code.buffer code))
 
 let invalid_highlights_fall_back_to_plain_text () =
-  let highlights = Syntax_highlight.of_triples [ (0, 20, "keyword") ] in
+  let highlights =
+    Syntax_highlight.of_triples ~content:"old" [ (0, 3, "keyword") ]
+  in
   let syntax = Code.syntax ~style:(syntax_style red) highlights in
   let _ctx, code = make_code ~content:"let" ~syntax () in
   equal ~msg:"plain text" string "let"
@@ -273,9 +283,11 @@ let invalid_highlights_fall_back_to_plain_text () =
 let conceal_metadata_applies () =
   let meta = { Syntax_highlight.default_meta with conceal = Some "*" } in
   let highlights =
-    [
-      Syntax_highlight.range ~meta ~start_byte:0 ~end_byte:3 ~scope:"keyword" ();
-    ]
+    Syntax_highlight.make ~content:"let x = 1"
+      [
+        Syntax_highlight.range ~meta ~start_byte:0 ~end_byte:3 ~scope:"keyword"
+          ();
+      ]
   in
   let syntax = Code.syntax ~style:(syntax_style red) highlights in
   let _ctx, code = make_code ~content:"let x = 1" ~syntax () in
@@ -284,13 +296,15 @@ let conceal_metadata_applies () =
 
 let set_content_reapplies_syntax () =
   let syntax = Code.syntax ~style:(syntax_style red) highlights in
-  let _ctx, code = make_code ~content:"let x" ~syntax () in
+  let ctx, code = make_code ~content:"let x" ~syntax () in
+  ignore ctx;
   Code.set_content code "var x";
-  match styled_text code with
-  | first :: _ ->
-      equal ~msg:"highlighted text" string "var" (span_text first);
-      is_true ~msg:"highlighted style" (Ansi.Style.equal red (span_style first))
-  | [] -> fail "expected highlighted span"
+  equal ~msg:"stale same-length captures leave current text plain" string
+    "var x"
+    (Text_buffer.plain_text (Code.buffer code));
+  is_true
+    (Ansi.Style.equal Ansi.Style.default
+       (fst (Text_buffer.style_at (Code.buffer code) 0)))
 
 let set_syntax_none_renders_plain () =
   let syntax = Code.syntax ~style:(syntax_style red) highlights in
@@ -369,7 +383,7 @@ let threaded_requests_are_bounded_and_cancelled () =
         if language <> "ocaml" then failwith "wrong request language";
         Atomic.set calls (content :: Atomic.get calls);
         if content = "let old" then wait ();
-        highlights)
+        Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ])
   in
   let renderer = Renderer.create () in
   let syntax =
@@ -425,7 +439,8 @@ let threaded_failure_and_idle_restart () =
   let highlighter =
     Code.Highlighter.threaded (fun ~language:_ ~content ->
         Atomic.set worker (Some (Thread.self ()));
-        if content = "bad" then failwith "highlight failed" else highlights)
+        if content = "bad" then failwith "highlight failed"
+        else Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ])
   in
   let renderer = Renderer.create () in
   let syntax =
@@ -475,11 +490,97 @@ let destroy_cancels_job_once () =
     [ Renderable.id (Code.node code) ]
     !(ctx.unregister_log)
 
+let theme_changes_reuse_highlighter_captures () =
+  let calls = ref 0 in
+  let highlighter =
+    Code.Highlighter.sync (fun ~language:_ ~content ->
+        incr calls;
+        Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ])
+  in
+  let syntax color =
+    Code.with_highlighter ~language:"ocaml" ~style:(syntax_style color)
+      highlighter
+  in
+  let ctx, code = make_code ~content:"let x" ~syntax:(syntax red) () in
+  ignore ctx;
+  let source = Text_buffer.source (Code.buffer code) in
+  let layout = Text_surface.layout (Code.surface code) in
+  Code.apply_props code
+    (Code.Props.make ~content:"let x" ~syntax:(syntax blue) ());
+  equal ~msg:"theme does not invoke parser" int 1 !calls;
+  is_true
+    (Ansi.Style.equal blue (fst (Text_buffer.style_at (Code.buffer code) 0)));
+  is_true ~msg:"theme keeps indexed source"
+    (source == Text_buffer.source (Code.buffer code));
+  is_true ~msg:"theme keeps layout"
+    (layout == Text_surface.layout (Code.surface code));
+  Code.set_content code "let y";
+  equal ~msg:"source change invokes parser" int 2 !calls
+
+let pending_result_uses_latest_theme () =
+  let jobs, highlighter = async_highlighter () in
+  let syntax color =
+    Code.with_highlighter ~language:"ocaml" ~style:(syntax_style color)
+      highlighter
+  in
+  let ctx, code = make_code ~content:"let x" ~syntax:(syntax red) () in
+  ignore ctx;
+  Code.set_syntax code (Some (syntax blue));
+  equal ~msg:"theme creates no second job" int 1 (List.length !jobs);
+  complete (List.hd !jobs) (Ok highlights);
+  render_code code;
+  equal ~msg:"completion creates no deferred second job" int 1
+    (List.length !jobs);
+  is_false (Code.is_highlighting code);
+  is_true ~msg:"completion uses latest accepted theme"
+    (Ansi.Style.equal blue (fst (Text_buffer.style_at (Code.buffer code) 0)))
+
+let stale_async_capture_falls_back () =
+  let jobs, highlighter = async_highlighter () in
+  let ctx, code =
+    make_code ~content:"let x"
+      ~syntax:(Code.with_highlighter ~language:"ocaml" highlighter)
+      ()
+  in
+  ignore ctx;
+  complete (List.hd !jobs)
+    (Ok (Syntax_highlight.of_triples ~content:"var x" [ (0, 3, "keyword") ]));
+  render_code code;
+  equal string "let x" (Text_buffer.plain_text (Code.buffer code));
+  is_true
+    (Ansi.Style.equal Ansi.Style.default
+       (fst (Text_buffer.style_at (Code.buffer code) 0)))
+
+let equivalent_capture_declaration_does_not_repaint () =
+  let style = syntax_style red in
+  let ctx, code =
+    make_code ~content:"let x" ~syntax:(Code.syntax ~style highlights) ()
+  in
+  ignore ctx;
+  let notifications = ref 0 in
+  Code.set_on_line_info_change code (Some (fun () -> incr notifications));
+  let fresh =
+    Syntax_highlight.of_triples
+      ~content:(String.init 5 (String.get "let x"))
+      [ (0, 3, "keyword") ]
+  in
+  Code.apply_props code
+    (Code.Props.make ~content:"let x" ~syntax:(Code.syntax ~style fresh) ());
+  equal ~msg:"equivalent capture declaration does not redo paint" int 0
+    !notifications
+
 let () =
   run "mosaic.code"
     [
       group "Syntax"
         [
+          test "equivalent captures do not repaint"
+            equivalent_capture_declaration_does_not_repaint;
+          test "theme changes reuse captures"
+            theme_changes_reuse_highlighter_captures;
+          test "pending result uses latest theme"
+            pending_result_uses_latest_theme;
+          test "stale async capture falls back" stale_async_capture_falls_back;
           test "plain without syntax" plain_without_syntax;
           test "precomputed highlights apply style"
             precomputed_highlights_apply_style;

@@ -8,8 +8,8 @@ parser dependency. A synchronous backend is simply:
 let highlighter =
   Mosaic.Code.Highlighter.sync (fun ~language:_ ~content ->
       if String.starts_with ~prefix:"let " content then
-        Mosaic.Syntax_highlight.of_triples [ (0, 3, "keyword") ]
-      else [])
+        Mosaic.Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ]
+      else Mosaic.Syntax_highlight.make ~content [])
 ```
 
 For an actual backend, the ranges must describe the supplied whole buffer.
@@ -32,11 +32,13 @@ let highlight ~language ~content =
     | "mli" -> Some Tree_sitter_ocaml.highlight_interface
     | "json" -> Some Tree_sitter_json.highlight
     | _ -> None)
-  |> Option.map (fun f -> Mosaic.Syntax_highlight.of_triples (f content))
+  |> Option.map (fun f -> Mosaic.Syntax_highlight.of_triples ~content (f content))
 
 let highlighter =
   Mosaic.Code.Highlighter.threaded (fun ~language ~content ->
-      Option.value (highlight ~language ~content) ~default:[])
+      match highlight ~language ~content with
+      | Some captures -> captures
+      | None -> Mosaic.Syntax_highlight.make ~content [])
 
 let code_view src =
   Mosaic.code
@@ -77,9 +79,11 @@ concurrency, not CPU parallelism; native code that retains the OCaml runtime
 lock can still block rendering. Use `Highlighter.async` with your own
 poll/cancel jobs for a different scheduler or a worker process.
 
-`Code` compares highlighter and style values by physical identity. Recreating
-them inside a view restarts highlighting on every reconcile; keep them at
-module scope or memoize them.
+`Code` compares highlighter values by physical identity; keep them at module
+scope or memoize them. Theme changes reuse the completed captures and source
+index without restarting the highlighter. Pending results use the latest
+accepted theme. A result bound to different source bytes is rejected and the
+current source renders as plain text.
 
 ## Scope names and styling
 
@@ -106,3 +110,39 @@ Pass the stable `style` value to `Code.syntax` or `Code.with_highlighter`.
 Mosaic's [self-contained examples](../mosaic/examples/common/toy_highlighter.ml)
 use a small lexical highlighter to demonstrate the same boundary without a
 parser package.
+
+## Editable annotations
+
+Captures retain the exact source bytes passed to `Syntax_highlight.make` or
+`of_triples`. They cannot silently recolour an unrelated source of the same
+length. `to_annotations` resolves a theme without splitting or concatenating
+text. Its default keeps concealed text visible, preserving editor positions:
+
+```ocaml
+let editor_view state captures =
+  let annotations =
+    if String.equal (Mosaic.Editor.text state)
+         (Mosaic.Syntax_highlight.content captures) then
+      Some (Mosaic.Syntax_highlight.to_annotations
+              ~style:Mosaic.Syntax_style.default captures)
+    else None
+  in
+  Mosaic.textarea ~state ?annotations ~on_change:(fun state -> Edit state) ()
+```
+
+Keep captures until the source changes; cursor moves need no highlighting.
+Asynchronous applications discard stale results using the content check above.
+Passing mismatched annotations directly raises `Invalid_argument` before
+changing the editor. Equivalent source bytes are accepted after a remount.
+
+For search or diagnostics, construct `Mosaic_ui.Text_buffer.Annotations.make`
+with `~content:(Mosaic.Editor.text state)` and style ranges. Ranges use half-open
+byte offsets, including line breaks, with later ranges overriding conflicting
+style attributes. Bytes inside a grapheme resolve downstream, matching styled
+text rendering; invalid UTF-8 follows the source index's replacement units.
+
+`Code` still applies conceal metadata by default. Its projected visible source
+is reused across themes, while the text buffer retains the indexed source and
+geometry. `Syntax_highlight.to_spans` remains an
+explicit export to styled text fragments; rendering annotations avoids those
+substring copies. Static labels and rich text retain their fragment API.

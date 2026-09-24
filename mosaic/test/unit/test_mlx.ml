@@ -127,9 +127,49 @@ let rich_children_and_high_level_text_share_the_widget () =
   is_true ~msg:"empty rich content retains text node"
     (node == List.hd (Renderable.children (Renderer.root renderer)))
 
+let annotated_textarea_flows_through_mosaic_and_mlx () =
+  let renderer, reconciler = make () in
+  let content = "let x" in
+  let state = Mosaic.Editor.of_string content in
+  let highlights =
+    Mosaic.Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ]
+  in
+  let style =
+    Mosaic.Syntax_style.make ~base:Mosaic.Ansi.Style.default
+      [ ("keyword", Mosaic.Ansi.Style.make ~fg:Mosaic.Ansi.Color.red ()) ]
+  in
+  let annotations = Mosaic.Syntax_highlight.to_annotations ~style highlights in
+  render renderer reconciler
+    (Mosaic.textarea ~state ~annotations ~show_cursor:false ~on_change:ignore ())
+    ignore;
+  let node = List.hd (Renderable.children (Renderer.root renderer)) in
+  render renderer reconciler
+    (Mosaic_mlx.textarea ~state ~annotations ~show_cursor:false
+       ~on_change:ignore ())
+    ignore;
+  let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
+  equal string "l" (Matrix_grid.get_text grid 0);
+  is_true ~msg:"annotations reach the textarea through MLX"
+    (Mosaic.Ansi.Color.equal Mosaic.Ansi.Color.red (Matrix_grid.get_fg grid 0));
+  is_true ~msg:"annotation wrappers reuse the accepted widget"
+    (node == List.hd (Renderable.children (Renderer.root renderer)));
+  raises_match ~msg:"stale annotations rejected before rendering"
+    (function Invalid_argument _ -> true | _ -> false)
+    (fun () ->
+      ignore
+        (Mosaic_mlx.textarea ~annotations
+           ~state:(Mosaic.Editor.of_string "new content")
+           ~on_change:ignore ()));
+  equal ~msg:"rejected declaration leaves rendered content intact" string "l"
+    (Matrix_grid.get_text
+       (Matrix_screen.next_grid (Renderer.screen renderer))
+       0)
+
 let () =
   run "mosaic.mlx"
     [
+      test "annotated textarea through Mosaic and MLX"
+        annotated_textarea_flows_through_mosaic_and_mlx;
       test "rich children and high-level text share the widget"
         rich_children_and_high_level_text_share_the_widget;
       test "children and model-owned editor" children_and_editor_state;
