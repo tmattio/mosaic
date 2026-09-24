@@ -58,7 +58,8 @@ let scroll_box ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
     ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
     ?on_click ?on_focus_request ?on_size ?focused ?scroll_x ?scroll_y
-    ?background ?show_scrollbars ~on_scroll ~scroll ?(children = []) () =
+    ?background ?show_scrollbars ?scrollbar_style ?vertical_bar_style
+    ?horizontal_bar_style ~on_scroll ~scroll ?(children = []) () =
   Mosaic.scroll_box ?key ?display ?box_sizing ?position ?overflow
     ?scrollbar_width ?text_align ?inset ?flex_direction ?flex_wrap
     ?justify_content ?align_items ?size ?min_size ?max_size ?aspect_ratio ?gap
@@ -68,7 +69,8 @@ let scroll_box ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
     ?grid_row ?grid_column ?visible ?z_index ?opacity ?buffered ?live ?on_mouse
     ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?focused ?scroll_x
-    ?scroll_y ?background ?show_scrollbars ~on_scroll ~scroll children
+    ?scroll_y ?background ?show_scrollbars ?scrollbar_style ?vertical_bar_style
+    ?horizontal_bar_style ~on_scroll ~scroll children
 
 let text ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items

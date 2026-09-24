@@ -207,12 +207,17 @@ val scroll_box :
   ?scroll_y:bool ->
   ?background:Ansi.Color.t ->
   ?show_scrollbars:bool ->
+  ?scrollbar_style:Scroll_bar.style ->
+  ?vertical_bar_style:Scroll_bar.style ->
+  ?horizontal_bar_style:Scroll_bar.style ->
   on_scroll:(Scroll.t -> 'msg) ->
   scroll:Scroll.t ->
   ?children:'msg t list ->
   unit ->
   'msg t
-(** Like {!Mosaic.scroll_box}. [children] defaults to [[]]. *)
+(** Like {!Mosaic.scroll_box}. [children] defaults to [[]]. [scrollbar_style]
+    sets shared bar appearance; [vertical_bar_style] and [horizontal_bar_style]
+    replace it for the corresponding axis. *)
 
 val text :
   ?key:string ->

@@ -747,41 +747,22 @@ val scroll_box :
   ?scroll_y:bool ->
   ?background:Ansi.Color.t ->
   ?show_scrollbars:bool ->
+  ?scrollbar_style:Scroll_bar.style ->
+  ?vertical_bar_style:Scroll_bar.style ->
+  ?horizontal_bar_style:Scroll_bar.style ->
   on_scroll:(Scroll.t -> 'msg) ->
   scroll:Scroll.t ->
   'msg t list ->
   'msg t
-(** [scroll_box children] is a scrollable container element. Children are
-    attached to an internal content node. A wheel event is consumed only when it
-    changes the scroll position on an enabled axis; otherwise it bubbles to
-    enclosing scroll boxes.
+(** [scroll_box ~scroll ~on_scroll children] is a scrollable container with
+    application-owned scroll state. A wheel event is consumed only when it
+    changes the position on an enabled axis; otherwise it bubbles to an
+    enclosing scroll box. [scroll_x] defaults to [false], [scroll_y] to [true].
 
-    Scroll_box-specific attributes:
-    - [scroll_x] enables horizontal scrolling. Defaults to [false].
-    - [scroll_y] enables vertical scrolling. Defaults to [true].
-    - [sticky_scroll] makes the viewport stick to [sticky_start] as content
-      grows. Defaults to [false].
-    - [sticky_start] is the edge to stick to when [sticky_scroll] is [true].
-      Defaults to [`Bottom].
-    - [background] is the optional background fill color.
-    - [show_scrollbars] displays the scroll bars when content overflows; [false]
-      never shows them (scrolling still works). Defaults to [true].
-    - [reveal] requests a one-shot scroll to a content coordinate.
-    - [scroll_by] requests one keyed relative scroll after layout. Viewport-unit
-      deltas use the scroll box's measured allocation; keeping the currently
-      applied key cannot replay it during unrelated reconciles.
-    - [reset_sticky] requests one keyed reset of manual scrolling after layout.
-      A new key reapplies [sticky_start] and resumes following appended content;
-      a stable key does not override later manual scrolling.
-    - [on_scroll] is called when the scroll position changes, receiving the new
-      offsets as [~x] and [~y].
-    - [on_scroll_by_applied] is called with [~key] after a [scroll_by] request
-      is consumed, even if clamping leaves the offsets unchanged.
-    - [on_reset_sticky_applied] is called with [~key] after a [reset_sticky]
-      request is consumed, even if the viewport does not move.
-
-    Raises [Invalid_argument] if [scroll_by] has no axis or contains a
-    non-finite delta. *)
+    [show_scrollbars] defaults to [true] and displays bars on overflowing axes.
+    [scrollbar_style] sets their shared appearance. [vertical_bar_style] and
+    [horizontal_bar_style] each replace it for that axis; absent styles use
+    {!Scroll_bar.style}. Appearance does not change the scroll state. *)
 
 val textarea :
   ?key:string ->

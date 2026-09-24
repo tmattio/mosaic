@@ -388,6 +388,90 @@ let orthogonal_follow_is_preserved () =
     (Scroll.resolve state ~width:10 ~height:10 ~content_width:30
        ~content_height:40)
 
+let visible_bar_children bar =
+  List.fold_left
+    (fun count child -> if Renderable.visible child then count + 1 else count)
+    0
+    (Renderable.children (Scroll_bar.node bar))
+
+let scrollbar_appearance_preserves_axes () =
+  let ctx = make_ctx () in
+  let root = make_root ctx in
+  let sb =
+    Scroll_box.create ~parent:root ~scroll_x:true
+      ~scrollbar_style:(Scroll_bar.style ~show_arrows:true ())
+      ()
+  in
+  let direction bar =
+    Toffee.Style.flex_direction (Renderable.style (Scroll_bar.node bar))
+  in
+  is_true ~msg:"horizontal bar stays horizontal"
+    (direction (Scroll_box.horizontal_bar sb) = Toffee.Style.Flex_direction.Row);
+  is_true ~msg:"vertical bar stays vertical"
+    (direction (Scroll_box.vertical_bar sb) = Toffee.Style.Flex_direction.Column)
+
+let scrollbar_appearance_preserves_resolved_position () =
+  let _, sb = make_scroll_box ~scroll:(Scroll.at 5) () in
+  render_scroll_box sb ~vh:4 ~ch:20;
+  let bar = Scroll_box.vertical_bar sb in
+  equal ~msg:"initial accepted offset" int 5 (Scroll_bar.scroll_position bar);
+  Scroll_box.apply_props sb
+    (Scroll_box.Props.make ~scroll:(Scroll.at 5)
+       ~scrollbar_style:(Scroll_bar.style ~thumb_color:Ansi.Color.cyan ())
+       ());
+  equal ~msg:"appearance retains content extent" int 20
+    (Scroll_bar.scroll_size bar);
+  equal ~msg:"appearance retains viewport extent" int 4
+    (Scroll_bar.viewport_size bar);
+  equal ~msg:"appearance retains accepted offset" int 5
+    (Scroll_bar.scroll_position bar)
+
+let removed_scrollbar_appearance_restores_default () =
+  let _, sb = make_scroll_box () in
+  Scroll_box.apply_props sb
+    (Scroll_box.Props.make
+       ~scrollbar_style:(Scroll_bar.style ~show_arrows:true ())
+       ());
+  equal ~msg:"custom arrows visible" int 3
+    (visible_bar_children (Scroll_box.vertical_bar sb));
+  Scroll_box.apply_props sb (Scroll_box.Props.make ());
+  equal ~msg:"removed style restores default arrows" int 1
+    (visible_bar_children (Scroll_box.vertical_bar sb))
+
+let axis_styles_replace_shared_and_restore_it () =
+  let ctx, sb = make_scroll_box () in
+  let shared = Scroll_bar.style ~show_arrows:true () in
+  let vertical = Scroll_bar.style ~thumb_color:Ansi.Color.cyan () in
+  let props =
+    Scroll_box.Props.make ~scrollbar_style:shared ~vertical_bar_style:vertical
+      ()
+  in
+  Scroll_box.apply_props sb props;
+  equal ~msg:"axis style replaces shared arrow setting" int 1
+    (visible_bar_children (Scroll_box.vertical_bar sb));
+  equal ~msg:"other axis inherits shared arrows" int 3
+    (visible_bar_children (Scroll_box.horizontal_bar sb));
+  let before = !(ctx.schedule_count) in
+  Scroll_box.apply_props sb props;
+  equal ~msg:"same appearance schedules nothing" int before
+    !(ctx.schedule_count);
+  Scroll_box.apply_props sb (Scroll_box.Props.make ~scrollbar_style:shared ());
+  equal ~msg:"removing axis override restores shared arrows" int 3
+    (visible_bar_children (Scroll_box.vertical_bar sb))
+
+let appearance_keeps_scrollbars_hidden () =
+  let _, sb = make_scroll_box () in
+  render_scroll_box sb ~vh:4 ~ch:20;
+  let props =
+    Scroll_box.Props.make ~show_scrollbars:false
+      ~scrollbar_style:(Scroll_bar.style ~show_arrows:true ())
+      ()
+  in
+  Scroll_box.apply_props sb props;
+  render_scroll_box sb ~vh:4 ~ch:30;
+  is_false ~msg:"appearance does not release hidden-bar policy"
+    (Renderable.visible (Scroll_bar.node (Scroll_box.vertical_bar sb)))
+
 let () =
   run "mosaic.scroll_box"
     [
@@ -426,6 +510,16 @@ let () =
       test "set on scroll replaces" set_on_scroll_replaces;
       test "set scroll accel replaces" set_scroll_accel_replaces;
       test "apply props updates" apply_props_updates;
+      test "scrollbar appearance preserves axes"
+        scrollbar_appearance_preserves_axes;
+      test "scrollbar appearance preserves resolved position"
+        scrollbar_appearance_preserves_resolved_position;
+      test "removed scrollbar appearance restores defaults"
+        removed_scrollbar_appearance_restores_default;
+      test "axis appearance replaces and restores shared style"
+        axis_styles_replace_shared_and_restore_it;
+      test "appearance keeps scrollbars hidden"
+        appearance_keeps_scrollbars_hidden;
       test "pp produces output" pp_produces_output;
       test "pp contains scroll box" pp_contains_scroll_box;
       test "symbolic follow reflow" symbolic_follow_reflow;

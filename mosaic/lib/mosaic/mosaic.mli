@@ -584,6 +584,20 @@ end
 module Scroll_bar : sig
   type orientation = Mosaic_ui.Scroll_bar.orientation
   (** The type for scroll bar orientation: [`Vertical] or [`Horizontal]. *)
+
+  type style = Mosaic_ui.Scroll_bar.style
+  (** Scroll bar appearance, independent of scroll position and dimensions. *)
+
+  val style :
+    ?show_arrows:bool ->
+    ?track_color:Ansi.Color.t ->
+    ?thumb_color:Ansi.Color.t ->
+    ?arrow_fg:Ansi.Color.t ->
+    ?arrow_bg:Ansi.Color.t ->
+    unit ->
+    style
+  (** [style ()] is the default scroll bar appearance. Optional fields have the
+      same defaults as {!Mosaic_ui.Scroll_bar.style}. *)
 end
 
 (** Companion types for the {!val-text} and {!val-code} widgets. *)
@@ -2017,13 +2031,18 @@ val scroll_box :
   ?scroll_y:bool ->
   ?background:Ansi.Color.t ->
   ?show_scrollbars:bool ->
+  ?scrollbar_style:Scroll_bar.style ->
+  ?vertical_bar_style:Scroll_bar.style ->
+  ?horizontal_bar_style:Scroll_bar.style ->
   on_scroll:(Scroll.t -> 'msg) ->
   scroll:Scroll.t ->
   'msg t list ->
   'msg t
 (** [scroll_box children] is a scrollable container. Widget-specific visual
     options follow {!Mosaic_ui.Scroll_box}; layout and paint use the labelled
-    arguments above. *)
+    arguments above. [scrollbar_style] sets shared bar appearance;
+    [vertical_bar_style] and [horizontal_bar_style] replace it for the
+    corresponding axis. *)
 
 val textarea :
   ?key:string ->

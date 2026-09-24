@@ -1225,7 +1225,8 @@ let scroll_box ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
     ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
     ?on_click ?on_focus_request ?on_size ?focused ?scroll_x ?scroll_y
-    ?background ?show_scrollbars ~on_scroll ~scroll children =
+    ?background ?show_scrollbars ?scrollbar_style ?vertical_bar_style
+    ?horizontal_bar_style ~on_scroll ~scroll children =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1238,8 +1239,8 @@ let scroll_box ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
   in
   Vnode.scroll_box ~scroll ?key ~style ?visible ?z_index ?opacity ?buffered
     ?live ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request ?on_size
-    ?focused ?scroll_x ?scroll_y ?background ?show_scrollbars ~on_scroll
-    children
+    ?focused ?scroll_x ?scroll_y ?background ?show_scrollbars ?scrollbar_style
+    ?vertical_bar_style ?horizontal_bar_style ~on_scroll children
 
 let textarea ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items

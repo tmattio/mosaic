@@ -68,23 +68,23 @@ module Props = struct
     scroll : Scroll.t;
     background : Ansi.Color.t option;
     show_scrollbars : bool;
-    scrollbar_props : Scroll_bar.Props.t option;
-    vertical_bar_props : Scroll_bar.Props.t option;
-    horizontal_bar_props : Scroll_bar.Props.t option;
+    scrollbar_style : Scroll_bar.style option;
+    vertical_bar_style : Scroll_bar.style option;
+    horizontal_bar_style : Scroll_bar.style option;
   }
 
   let make ?(scroll_x = false) ?(scroll_y = true) ?(scroll = Scroll.at 0)
-      ?background ?(show_scrollbars = true) ?scrollbar_props ?vertical_bar_props
-      ?horizontal_bar_props () =
+      ?background ?(show_scrollbars = true) ?scrollbar_style ?vertical_bar_style
+      ?horizontal_bar_style () =
     {
       scroll_x;
       scroll_y;
       scroll;
       background;
       show_scrollbars;
-      scrollbar_props;
-      vertical_bar_props;
-      horizontal_bar_props;
+      scrollbar_style;
+      vertical_bar_style;
+      horizontal_bar_style;
     }
 
   let default = make ()
@@ -94,11 +94,11 @@ module Props = struct
     && Scroll.equal a.scroll b.scroll
     && Option.equal Ansi.Color.equal a.background b.background
     && a.show_scrollbars = b.show_scrollbars
-    && Option.equal Scroll_bar.Props.equal a.scrollbar_props b.scrollbar_props
-    && Option.equal Scroll_bar.Props.equal a.vertical_bar_props
-         b.vertical_bar_props
-    && Option.equal Scroll_bar.Props.equal a.horizontal_bar_props
-         b.horizontal_bar_props
+    && Option.equal Scroll_bar.style_equal a.scrollbar_style b.scrollbar_style
+    && Option.equal Scroll_bar.style_equal a.vertical_bar_style
+         b.vertical_bar_style
+    && Option.equal Scroll_bar.style_equal a.horizontal_bar_style
+         b.horizontal_bar_style
 end
 
 (* ───── Scroll Box ───── *)
@@ -437,12 +437,12 @@ let set_scroll_accel t accel = t.scroll_accel <- accel
 
 (* ───── Apply Props ───── *)
 
-let resolve_bar_props shared specific =
-  match (shared, specific) with
-  | None, None -> None
-  | Some p, None -> Some p
-  | None, Some p -> Some p
-  | Some _, Some specific -> Some specific
+let default_bar_style = Scroll_bar.style ()
+
+let resolve_bar_style shared specific =
+  match specific with
+  | Some style -> style
+  | None -> Option.value ~default:default_bar_style shared
 
 (* Hidden bars use the manual-visibility override so overflow recalculation
    does not bring them back; showing again restores automatic visibility. *)
@@ -460,17 +460,22 @@ let set_show_scrollbars t v =
   end
 
 let apply_props t (props : Props.t) =
+  let scroll_changed =
+    t.props.scroll_x <> props.scroll_x
+    || t.props.scroll_y <> props.scroll_y
+    || not (Scroll.equal t.props.scroll props.scroll)
+  in
   set_background t props.background;
-  t.props <-
-    { t.props with scroll_x = props.scroll_x; scroll_y = props.scroll_y };
-  set_scroll t props.scroll;
   set_show_scrollbars t props.show_scrollbars;
-  (match resolve_bar_props props.scrollbar_props props.vertical_bar_props with
-  | Some p -> Scroll_bar.apply_props t.vertical_bar p
-  | None -> ());
-  match resolve_bar_props props.scrollbar_props props.horizontal_bar_props with
-  | Some p -> Scroll_bar.apply_props t.horizontal_bar p
-  | None -> ()
+  t.props <- props;
+  if scroll_changed then begin
+    resolve_scroll t;
+    Renderable.request_render t.node
+  end;
+  Scroll_bar.apply_style t.vertical_bar
+    (resolve_bar_style props.scrollbar_style props.vertical_bar_style);
+  Scroll_bar.apply_style t.horizontal_bar
+    (resolve_bar_style props.scrollbar_style props.horizontal_bar_style)
 
 (* ───── Root Style ───── *)
 
@@ -499,7 +504,7 @@ let set_style t style = Renderable.set_style t.node (root_style style)
 let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
     ?(scroll_x = false) ?(scroll_y = true) ?(scroll = Scroll.at 0) ?background
     ?(scroll_accel = Scroll_accel.linear ()) ?(show_scrollbars = true)
-    ?scrollbar_props ?vertical_bar_props ?horizontal_bar_props ?on_scroll () =
+    ?scrollbar_style ?vertical_bar_style ?horizontal_bar_style ?on_scroll () =
   let node =
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
@@ -558,17 +563,15 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
   (* Horizontal scroll bar: inside wrapper, below viewport *)
   let horizontal_bar =
     let bar = Scroll_bar.create ~parent:wrapper ~orientation:`Horizontal () in
-    (match resolve_bar_props scrollbar_props horizontal_bar_props with
-    | Some p -> Scroll_bar.apply_props bar p
-    | None -> ());
+    Scroll_bar.apply_style bar
+      (resolve_bar_style scrollbar_style horizontal_bar_style);
     bar
   in
   (* Vertical scroll bar: inside root, right of wrapper *)
   let vertical_bar =
     let bar = Scroll_bar.create ~parent:node ~orientation:`Vertical () in
-    (match resolve_bar_props scrollbar_props vertical_bar_props with
-    | Some p -> Scroll_bar.apply_props bar p
-    | None -> ());
+    Scroll_bar.apply_style bar
+      (resolve_bar_style scrollbar_style vertical_bar_style);
     bar
   in
   if not show_scrollbars then begin
@@ -584,9 +587,9 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
       scroll;
       background;
       show_scrollbars;
-      scrollbar_props;
-      vertical_bar_props;
-      horizontal_bar_props;
+      scrollbar_style;
+      vertical_bar_style;
+      horizontal_bar_style;
     }
   in
   let t =

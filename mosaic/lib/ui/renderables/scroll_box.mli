@@ -29,13 +29,20 @@ module Props : sig
     ?scroll:Scroll.t ->
     ?background:Ansi.Color.t ->
     ?show_scrollbars:bool ->
-    ?scrollbar_props:Scroll_bar.Props.t ->
-    ?vertical_bar_props:Scroll_bar.Props.t ->
-    ?horizontal_bar_props:Scroll_bar.Props.t ->
+    ?scrollbar_style:Scroll_bar.style ->
+    ?vertical_bar_style:Scroll_bar.style ->
+    ?horizontal_bar_style:Scroll_bar.style ->
     unit ->
     t
   (** [make ()] declares position [Scroll.at 0], vertical scrolling only, and
-      visible scrollbars. *)
+      visible scrollbars.
+
+      [scrollbar_style] applies to both bars. A [vertical_bar_style] or
+      [horizontal_bar_style] replaces the shared style for that axis in full.
+      Without either override, the bar uses {!Scroll_bar.style}'s defaults.
+      Removing an axis-specific style restores the shared style; removing all
+      styles restores the defaults. The viewport owns each bar's orientation,
+      position, range and automatic visibility. *)
 
   val default : t
   (** [default] is [make ()]. *)
@@ -60,14 +67,16 @@ val create :
   ?background:Ansi.Color.t ->
   ?scroll_accel:Scroll_accel.t ->
   ?show_scrollbars:bool ->
-  ?scrollbar_props:Scroll_bar.Props.t ->
-  ?vertical_bar_props:Scroll_bar.Props.t ->
-  ?horizontal_bar_props:Scroll_bar.Props.t ->
+  ?scrollbar_style:Scroll_bar.style ->
+  ?vertical_bar_style:Scroll_bar.style ->
+  ?horizontal_bar_style:Scroll_bar.style ->
   ?on_scroll:(Scroll.t -> unit) ->
   unit ->
   t
 (** [create ~parent ()] attaches a viewport. User children are routed to its
-    content node. Missing [on_scroll] rejects interactive scroll proposals. *)
+    content node. Missing [on_scroll] rejects interactive scroll proposals.
+    Scrollbar appearance follows {!Props.make}'s replacement and default rules.
+*)
 
 val node : t -> Renderable.t
 val content : t -> Renderable.t

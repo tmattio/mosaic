@@ -32,6 +32,27 @@ type orientation = [ `Vertical | `Horizontal ]
 type scroll_unit = [ `Absolute | `Viewport | `Content | `Step ]
 (** The type for scroll delta units used by {!scroll_by}. *)
 
+(** {1:style Appearance} *)
+
+type style
+(** Complete scrollbar appearance, independent of orientation, position, range
+    and automatic visibility. *)
+
+val style :
+  ?show_arrows:bool ->
+  ?track_color:Ansi.Color.t ->
+  ?thumb_color:Ansi.Color.t ->
+  ?arrow_fg:Ansi.Color.t ->
+  ?arrow_bg:Ansi.Color.t ->
+  unit ->
+  style
+(** [style ()] is the default appearance: arrows hidden, dark gray track (RGB 37
+    37 39), gray thumb (RGB 154 158 163), white arrow foreground and transparent
+    arrow background. All optional arguments replace their defaults. *)
+
+val style_equal : style -> style -> bool
+(** [style_equal a b] is [true] iff [a] and [b] specify the same appearance. *)
+
 (** {1:props Props} *)
 
 module Props : sig
@@ -153,6 +174,12 @@ val set_scroll_step : t -> int option -> unit
     [`Step] in {!scroll_by}. [None] resets the step to the default of [1]. *)
 
 (** {1:appearance Appearance} *)
+
+val apply_style : t -> style -> unit
+(** [apply_style t style] replaces [t]'s appearance without changing its
+    orientation, accepted position, range or visibility policy. Does not emit
+    [on_change]. Arrow visibility can change the space available to the thumb.
+*)
 
 val set_show_arrows : t -> bool -> unit
 (** [set_show_arrows t v] shows ([true]) or hides ([false]) the arrow buttons of

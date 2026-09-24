@@ -328,6 +328,31 @@ let declared_state_and_rejected_proposals () =
   equal ~msg:"accepting declaration emits no proposal" (list int) [ 30; 30 ]
     !proposals
 
+let apply_style_preserves_scroll_state () =
+  let ctx, bar = make_scroll_bar ~orientation:`Horizontal () in
+  Scroll_bar.set_scroll_size bar 100;
+  Scroll_bar.set_viewport_size bar 20;
+  Scroll_bar.set_scroll_position bar 35;
+  Scroll_bar.set_visible_override bar false;
+  let proposals = ref 0 in
+  Scroll_bar.set_on_change bar (Some (fun _ -> incr proposals));
+  let style =
+    Scroll_bar.style ~show_arrows:true ~thumb_color:Ansi.Color.cyan ()
+  in
+  Scroll_bar.apply_style bar style;
+  equal ~msg:"range retained" int 100 (Scroll_bar.scroll_size bar);
+  equal ~msg:"viewport retained" int 20 (Scroll_bar.viewport_size bar);
+  equal ~msg:"position retained" int 35 (Scroll_bar.scroll_position bar);
+  is_true ~msg:"orientation retained"
+    (flex_direction_of bar = Toffee.Style.Flex_direction.Row);
+  is_false ~msg:"visibility policy retained"
+    (Renderable.visible (Scroll_bar.node bar));
+  equal ~msg:"appearance never proposes scrolling" int 0 !proposals;
+  let before = !(ctx.schedule_count) in
+  Scroll_bar.apply_style bar style;
+  equal ~msg:"same appearance schedules nothing" int before
+    !(ctx.schedule_count)
+
 let () =
   run "mosaic.scroll_bar"
     [
@@ -384,6 +409,8 @@ let () =
       group "apply_props"
         [
           test "updates appearance" apply_props_updates_appearance;
+          test "appearance preserves scroll state"
+            apply_style_preserves_scroll_state;
           test "updates orientation" apply_props_updates_orientation;
         ];
       group "set_on_change"

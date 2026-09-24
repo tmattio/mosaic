@@ -82,6 +82,27 @@ end
 let default_track_color = Ansi.Color.of_rgb 37 37 39
 let default_thumb_color = Ansi.Color.of_rgb 154 158 163
 
+type style = {
+  show_arrows : bool;
+  track_color : Ansi.Color.t;
+  thumb_color : Ansi.Color.t;
+  arrow_fg : Ansi.Color.t;
+  arrow_bg : Ansi.Color.t;
+}
+
+let style ?(show_arrows = false) ?(track_color = default_track_color)
+    ?(thumb_color = default_thumb_color) ?(arrow_fg = Ansi.Color.white)
+    ?(arrow_bg = Ansi.Color.transparent) () =
+  { show_arrows; track_color; thumb_color; arrow_fg; arrow_bg }
+
+let style_equal a b =
+  a == b
+  || a.show_arrows = b.show_arrows
+     && Ansi.Color.equal a.track_color b.track_color
+     && Ansi.Color.equal a.thumb_color b.thumb_color
+     && Ansi.Color.equal a.arrow_fg b.arrow_fg
+     && Ansi.Color.equal a.arrow_bg b.arrow_bg
+
 module Props = struct
   type t = {
     position : int;
@@ -513,6 +534,12 @@ let set_arrow_colors t ~fg ~bg =
     Arrow.set_colors t.start_arrow ~fg ~bg;
     Arrow.set_colors t.end_arrow ~fg ~bg
   end
+
+let apply_style t (style : style) =
+  set_show_arrows t style.show_arrows;
+  set_track_color t style.track_color;
+  set_thumb_color t style.thumb_color;
+  set_arrow_colors t ~fg:style.arrow_fg ~bg:style.arrow_bg
 
 let set_visible_override t vis =
   t.manual_visibility <- true;
