@@ -213,6 +213,52 @@ let independent_storage_equality =
         if not (Grid.cells_equal a i b i) then failwith "unequal grid contents"
       done)
 
+(* Retained URL references: cycling a bounded working set keeps the benchmark
+   stationary while exercising replacement, bulk copy, and GC write barriers. *)
+let hyperlink_styles =
+  Array.init 256 (fun i ->
+      S.make
+        ~link:
+          (Printf.sprintf "https://example.com/items/%d/%s" i
+             (String.make 96 'x'))
+        ())
+
+let ownership_budgets = [ Thumper.Budget.no_more_alloc_than 0. ]
+
+let rotating_hyperlinks =
+  Thumper.bench_with_setup ~budgets:ownership_budgets
+    ~setup:(fun () -> (make_grid (), ref 0))
+    ~teardown:(fun _ -> ())
+    "grid.ownership/rotating-hyperlinks"
+    (fun (grid, tick) ->
+      incr tick;
+      for row = 0 to grid_height - 1 do
+        Grid.draw_text
+          ~style:hyperlink_styles.((!tick + row) land 255)
+          grid ~x:0 ~y:row ~text:ascii_line
+      done)
+
+let linked_region_copy shared =
+  Thumper.bench_with_setup ~budgets:ownership_budgets
+    ~setup:(fun () ->
+      let src = make_grid () in
+      let dst =
+        if shared then
+          Grid.create_like src ~width:grid_width ~height:grid_height
+        else make_grid ()
+      in
+      for row = 0 to grid_height - 1 do
+        Grid.draw_text ~style:hyperlink_styles.(row) src ~x:0 ~y:row
+          ~text:ascii_line
+      done;
+      (src, dst))
+    ~teardown:(fun _ -> ())
+    (if shared then "grid.ownership/linked-copy-shared"
+     else "grid.ownership/linked-copy-independent")
+    (fun (src, dst) ->
+      Grid.blit_region ~src ~dst ~src_x:0 ~src_y:0 ~width:grid_width
+        ~height:grid_height ~dst_x:0 ~dst_y:0)
+
 (* Group + entry point *)
 
 let benchmarks =
@@ -229,6 +275,9 @@ let benchmarks =
     partial_status_line;
     partial_update_sparse_cells;
     independent_storage_equality;
+    rotating_hyperlinks;
+    linked_region_copy true;
+    linked_region_copy false;
   ]
   |> Thumper.group "grid"
 

@@ -34,7 +34,7 @@ render/render.diff-sparse-cells	alloc_words	exact	17955
 render/render.diff-sparse-cells	wall_time	batch=8	n=20	1.032e-03	9.391e-04 9.394e-04 9.475e-04 9.624e-04 9.816e-04 9.843e-04 1.002e-03 1.012e-03 1.013e-03 1.027e-03 1.038e-03 1.039e-03 1.049e-03 1.080e-03 1.090e-03 1.110e-03 1.135e-03 1.187e-03 1.379e-03 1.438e-03
 render/render.emoji-full-screen	alloc_words	exact	16015
 render/render.emoji-full-screen	wall_time	batch=8	n=20	9.697e-04	9.355e-04 9.385e-04 9.396e-04 9.420e-04 9.545e-04 9.563e-04 9.603e-04 9.668e-04 9.680e-04 9.696e-04 9.697e-04 9.705e-04 9.751e-04 9.769e-04 9.775e-04 1.005e-03 1.007e-03 1.008e-03 1.009e-03 1.023e-03
-render/render.scenario-ci-log-view	alloc_words	exact	18814
+render/render.scenario-ci-log-view	alloc_words	exact	18744
 render/render.scenario-ci-log-view	wall_time	batch=8	n=20	7.759e-04	7.488e-04 7.562e-04 7.563e-04 7.640e-04 7.645e-04 7.661e-04 7.699e-04 7.742e-04 7.747e-04 7.752e-04 7.766e-04 7.798e-04 7.834e-04 7.908e-04 7.958e-04 7.967e-04 8.001e-04 8.004e-04 8.014e-04 8.108e-04
 render/render.scenario-text-editor	alloc_words	batch=8	n=20	2.003e+04	2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04 2.003e+04
 render/render.scenario-text-editor	wall_time	batch=8	n=20	1.007e-03	9.444e-04 9.472e-04 9.522e-04 9.706e-04 9.768e-04 9.810e-04 9.860e-04 9.956e-04 9.973e-04 9.981e-04 1.015e-03 1.021e-03 1.028e-03 1.039e-03 1.039e-03 1.042e-03 1.046e-03 1.066e-03 1.099e-03 1.191e-03

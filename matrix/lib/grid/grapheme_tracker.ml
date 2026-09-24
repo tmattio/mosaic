@@ -8,7 +8,6 @@ type t = {
 }
 
 let[@inline] payload_key id = Packed_cell.store_key id
-let create store = { counts = Hashtbl.create 128; store; unique = 0 }
 
 let add t id =
   match payload_key id with
@@ -46,3 +45,12 @@ let clear t =
   t.unique <- 0
 
 let unique_count t = t.unique
+
+let create store =
+  let t = { counts = Hashtbl.create 128; store; unique = 0 } in
+  Gc.finalise
+    (fun tracker ->
+      if tracker.unique > 0 then
+        Grapheme_store.defer_release tracker.store (fun () -> clear tracker))
+    t;
+  t

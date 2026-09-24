@@ -38,10 +38,10 @@ val create :
 
 val create_like : t -> width:int -> height:int -> t
 (** [create_like g ~width ~height] is a fresh empty grid that shares [g]'s
-    grapheme and hyperlink storage and width method.
+    grapheme storage and width method.
 
-    Sharing storage makes {!cells_equal} a direct comparison and lets {!blit}
-    copy cell planes without re-interning content. Use this for double-buffered
+    Sharing storage lets {!cells_equal} compare graphemes without decoding and
+    {!blit} copy them without re-interning. Use this for double-buffered
     rendering where frames are diffed against each other.
 
     Raises [Invalid_argument] if [width <= 0] or [height <= 0]. *)

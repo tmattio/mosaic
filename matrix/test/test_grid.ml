@@ -319,6 +319,65 @@ let shared_store_clear_keeps_sibling_payloads () =
   let live, _ = Grid.grapheme_stats a in
   equal ~msg:"all payloads released" int 0 live
 
+let[@inline never] populate_hyperlink_churn grid =
+  let urls = Weak.create 64 in
+  for i = 0 to 63 do
+    let url =
+      Printf.sprintf "https://example.com/churn/%d/%s" i (String.make 128 'x')
+    in
+    Weak.set urls i (Some url);
+    Grid.draw_text
+      ~style:(Ansi.Style.make ~link:url ())
+      grid ~x:0 ~y:0 ~text:"link"
+  done;
+  urls
+
+let overwritten_hyperlinks_are_collected () =
+  let grid = Grid.create ~width:8 ~height:1 () in
+  let urls = populate_hyperlink_churn grid in
+  let copy = Grid.copy grid in
+  Grid.clear grid;
+  Gc.full_major ();
+  Gc.full_major ();
+  for i = 0 to Weak.length urls - 2 do
+    is_false ~msg:"overwritten URLs are not retained by a live grid"
+      (Weak.check urls i)
+  done;
+  is_true ~msg:"copied cells keep their URL alive" (Weak.check urls 63);
+  Grid.clear copy;
+  Gc.full_major ();
+  Gc.full_major ();
+  is_false ~msg:"clearing the last copy releases its URL" (Weak.check urls 63);
+  equal ~msg:"source remains usable after collection" string ""
+    (Grid.get_link grid 0);
+  equal ~msg:"copy remains usable after collection" string ""
+    (Grid.get_link copy 0)
+
+let[@inline never] abandon_shared_graphemes owner =
+  let grid = Grid.create_like owner ~width:4 ~height:1 in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"🇫🇷👩‍🚀";
+  let weak = Weak.create 1 in
+  Weak.set weak 0 (Some grid);
+  weak
+
+let collected_grid_releases_shared_graphemes () =
+  let owner = Grid.create ~width:4 ~height:1 () in
+  Grid.draw_text owner ~x:0 ~y:0 ~text:"🇫🇷";
+  for _ = 1 to 16 do
+    let abandoned = abandon_shared_graphemes owner in
+    Gc.full_major ();
+    Gc.full_major ();
+    is_false ~msg:"sibling grid is unreachable" (Weak.check abandoned 0);
+    equal ~msg:"collected sibling releases its payload and slots are reused"
+      (pair int int) (1, 2)
+      (Grid.grapheme_stats owner)
+  done;
+  equal ~msg:"shared surviving payload remains valid" string "🇫🇷"
+    (Grid.get_text owner 0);
+  Grid.clear owner;
+  equal ~msg:"last grid clear releases the shared payload" int 0
+    (fst (Grid.grapheme_stats owner))
+
 let shared_storage_cells_equal () =
   let fr =
     "\xF0\x9F\x87\xAB\xF0\x9F\x87\xB7"
@@ -1462,6 +1521,10 @@ let draw_text_overflow_clears_row_tail () =
 
 let tests =
   [
+    test "overwritten hyperlinks are collected"
+      overwritten_hyperlinks_are_collected;
+    test "collected grids release shared graphemes"
+      collected_grid_releases_shared_graphemes;
     test "combining mark stays with ascii base"
       combining_mark_stays_with_ascii_base;
     test "create defaults" create_defaults;

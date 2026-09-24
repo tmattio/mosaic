@@ -17,6 +17,11 @@ type t
 val create : unit -> t
 (** [create ()] is a new empty grapheme store. *)
 
+val defer_release : t -> (unit -> unit) -> unit
+(** [defer_release t release] queues a finalizer's reference release for the
+    next interning, copying, or diagnostic operation, outside handle
+    acquisition. *)
+
 val intern : t -> string -> off:int -> len:int -> int
 (** [intern t s ~off ~len] is the store index for the byte slice
     [String.sub s off len].

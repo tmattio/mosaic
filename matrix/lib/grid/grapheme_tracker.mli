@@ -12,7 +12,8 @@ type t
 (** The abstract state of a tracker. *)
 
 val create : Grapheme_store.t -> t
-(** [create store] initializes a new tracker associated with [store]. *)
+(** [create store] initializes a new tracker associated with [store]. Collection
+    of the tracker schedules release of its remaining references. *)
 
 val add : t -> Packed_cell.t -> unit
 (** [add t id] increments the local reference count for the given encoded
@@ -46,7 +47,8 @@ val clear : t -> unit
 
     Decrements the global refcount for every unique interned grapheme currently
     tracked, then resets the local state. This should be called when clearing a
-    Grid or before destroying the tracker. *)
+    Grid; unreachable trackers release their remaining references automatically.
+*)
 
 val unique_count : t -> int
 (** Returns the number of unique interned graphemes currently tracked.

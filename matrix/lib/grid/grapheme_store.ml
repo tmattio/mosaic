@@ -1,6 +1,7 @@
 open StdLabels
 
 type t = {
+  pending_releases : (unit -> unit) list Atomic.t;
   mutable storage : bytes;
   mutable offsets : int array;
   mutable lengths : int array;
@@ -27,6 +28,7 @@ let initial_live_buckets = 1024
 
 let create () =
   {
+    pending_releases = Atomic.make [];
     storage = Bytes.create initial_bytes;
     offsets = Array.make initial_ids 0;
     lengths = Array.make initial_ids 0;
@@ -44,6 +46,24 @@ let create () =
     live_next = Array.make initial_ids (-1);
     live_hashes = Array.make initial_ids 0;
   }
+
+(* Finalizers only enqueue work: releasing references during an allocation in
+   intern/rehash could invalidate a handle before its grid acquires it. The
+   queue belongs to the store, so abandoning the whole family retains nothing.
+   Only this handoff is atomic: finalizers may run on another OCaml thread. *)
+let rec defer_release t release =
+  let pending = Atomic.get t.pending_releases in
+  if
+    not (Atomic.compare_and_set t.pending_releases pending (release :: pending))
+  then defer_release t release
+
+let release_pending t =
+  match Atomic.get t.pending_releases with
+  | [] -> ()
+  | _ ->
+      List.iter
+        ~f:(fun release -> release ())
+        (Atomic.exchange t.pending_releases [])
 
 let ensure_id_capacity t =
   let cap = Array.length t.offsets in
@@ -237,6 +257,7 @@ let alloc t str off len =
   id
 
 let intern t str ~off ~len =
+  release_pending t;
   let hash = hash_slice str off len in
   let idx = live_lookup t str off len hash in
   if idx <> 0 then idx
@@ -245,8 +266,13 @@ let intern t str ~off ~len =
     Array.unsafe_set t.live_hashes idx hash;
     idx
 
-let live_count t = t.live_count
-let slot_count t = t.next_id - 1
+let live_count t =
+  release_pending t;
+  t.live_count
+
+let slot_count t =
+  release_pending t;
+  t.next_id - 1
 
 let valid t ~idx ~gen =
   idx > 0 && idx < t.next_id
@@ -296,6 +322,7 @@ let to_string t ~idx ~gen =
       ~len:(Array.unsafe_get t.lengths idx)
 
 let copy ~src ~idx ~gen ~dst =
+  release_pending dst;
   if not (valid src ~idx ~gen) then None
   else
     let len = Array.unsafe_get src.lengths idx in

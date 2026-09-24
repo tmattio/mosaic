@@ -103,34 +103,6 @@ module Scissor_stack = struct
         x >= rx && y >= ry && x < rx + rw && y < ry + rh
 end
 
-module Links = struct
-  type t = {
-    mutable next_id : int;
-    forward : (string, int) Hashtbl.t;
-    reverse : (int, string) Hashtbl.t;
-  }
-
-  let no_link = -1
-
-  let create () =
-    { next_id = 1; forward = Hashtbl.create 32; reverse = Hashtbl.create 32 }
-
-  let intern t = function
-    | None | Some "" -> no_link
-    | Some url -> (
-        match Hashtbl.find_opt t.forward url with
-        | Some id -> id
-        | None ->
-            let id = t.next_id in
-            t.next_id <- id + 1;
-            Hashtbl.add t.forward url id;
-            Hashtbl.add t.reverse id url;
-            id)
-
-  let resolve t id = Hashtbl.find_opt t.reverse id
-  let resolve_direct t id = try Hashtbl.find t.reverse id with Not_found -> ""
-end
-
 (* {1 Public types} *)
 
 module Border = Border
@@ -146,8 +118,7 @@ type t = {
   mutable fg_color : (int, Bigarray.int_elt) Buf.t;
   mutable bg_color : (int, Bigarray.int_elt) Buf.t;
   mutable attrs : (int, Bigarray.int16_unsigned_elt) Buf.t;
-  mutable links : (int, Bigarray.int_elt) Buf.t;
-  link_registry : Links.t;
+  mutable links : string array;
   grapheme_tracker : Grapheme_tracker.t;
   scissor_stack : Scissor_stack.t;
   opacity_stack : float Dynarray.t;
@@ -158,13 +129,37 @@ type t = {
 
 let space_cell = Packed_cell.space
 let null_cell = Packed_cell.empty
-let no_link = Links.no_link
+let no_link = ""
 let default_fg = Ansi.Color.default_fg
 let default_bg = Ansi.Color.transparent
 let default_fg_packed = Color_packed.encode default_fg
 let default_bg_packed = Color_packed.encode default_bg
 
 (* {1 Helpers} *)
+
+(* Most grids never contain links. Retain a plane only after the first URL,
+   keeping unlinked clears and scrolls free of GC-scanned array writes. *)
+let[@inline] get_link t idx =
+  if Array.length t.links = 0 then no_link else Array.unsafe_get t.links idx
+
+let ensure_links t =
+  if Array.length t.links = 0 then
+    t.links <- Array.make (t.width * t.height) no_link
+
+let[@inline] set_link t idx link =
+  if Array.length t.links <> 0 then Array.unsafe_set t.links idx link
+  else if link <> no_link then (
+    ensure_links t;
+    Array.unsafe_set t.links idx link)
+
+let clear_links t pos len =
+  if Array.length t.links <> 0 then Array.fill t.links pos len no_link
+
+let blit_links ~src ~dst src_pos dst_pos len =
+  if Array.length src.links = 0 then clear_links dst dst_pos len
+  else (
+    ensure_links dst;
+    Array.blit src.links src_pos dst.links dst_pos len)
 
 let[@inline] is_clipped t x y =
   not (Scissor_stack.contains (Scissor_stack.current t.scissor_stack) ~x ~y)
@@ -189,14 +184,14 @@ let[@inline] clear_cell t idx =
     Grapheme_tracker.remove t.grapheme_tracker code;
     Buf.set_cell t.chars idx space_cell;
     Buf.set t.attrs idx 0;
-    Buf.set t.links idx no_link;
+    set_link t idx no_link;
     Buf.set t.fg_color idx default_fg_packed;
     Buf.set t.bg_color idx default_bg_packed)
 
 let[@inline] reset_cell_no_tracker t idx =
   Buf.set_cell t.chars idx space_cell;
   Buf.set t.attrs idx 0;
-  Buf.set t.links idx no_link;
+  set_link t idx no_link;
   Buf.set t.fg_color idx default_fg_packed;
   Buf.set t.bg_color idx default_bg_packed
 
@@ -281,12 +276,11 @@ let fill_defaults t =
   Scissor_stack.clear t.scissor_stack;
   Buf.fill_cell t.chars space_cell;
   Buf.fill t.attrs 0;
-  Buf.fill t.links no_link;
+  clear_links t 0 (t.width * t.height);
   Buf.fill t.fg_color default_fg_packed;
   Buf.fill t.bg_color default_bg_packed
 
-let create_with_store ~width ~height ~grapheme_store ~link_registry
-    ~width_method =
+let create_with_store ~width ~height ~grapheme_store ~width_method =
   if width <= 0 || height <= 0 then
     invalid_arg "Matrix_grid.create: width and height must be > 0";
   let size = width * height in
@@ -300,8 +294,7 @@ let create_with_store ~width ~height ~grapheme_store ~link_registry
       fg_color = Buf.make_int size;
       bg_color = Buf.make_int size;
       attrs = Buf.make_int16 size;
-      links = Buf.make_int size;
-      link_registry;
+      links = [||];
       grapheme_tracker = Grapheme_tracker.create grapheme_store;
       scissor_stack = Scissor_stack.create ();
       opacity_stack = Dynarray.create ();
@@ -313,12 +306,11 @@ let create_with_store ~width ~height ~grapheme_store ~link_registry
 
 let create ~width ~height ?width_method () =
   create_with_store ~width ~height ~grapheme_store:(Grapheme_store.create ())
-    ~link_registry:(Links.create ())
     ~width_method:(Option.value width_method ~default:`Unicode)
 
 let create_like g ~width ~height =
   create_with_store ~width ~height ~grapheme_store:g.grapheme_store
-    ~link_registry:g.link_registry ~width_method:g.width_method
+    ~width_method:g.width_method
 
 (* {1 Accessors} *)
 
@@ -336,11 +328,11 @@ let[@inline] get_codepoint t idx =
   if Packed_cell.is_inline code then Packed_cell.codepoint code else -1
 
 let[@inline] get_attrs t idx = Buf.get t.attrs idx
-let get_link t idx = Links.resolve_direct t.link_registry (Buf.get t.links idx)
 
 let get_style t idx =
   let attrs = Ansi.Attr.unpack (Buf.get t.attrs idx) in
-  let link = Links.resolve t.link_registry (Buf.get t.links idx) in
+  let url = get_link t idx in
+  let link = if url = no_link then None else Some url in
   Ansi.Style.make ~fg:(get_fg t idx) ~bg:(get_bg t idx) ?link ()
   |> Ansi.Style.with_attrs attrs
 
@@ -364,13 +356,11 @@ let cell_width t idx = Packed_cell.cell_width (Buf.get_cell t.chars idx)
 
 let[@inline] cells_equal t1 idx1 t2 idx2 =
   let same_graphemes = t1.grapheme_store == t2.grapheme_store in
-  let same_links = t1.link_registry == t2.link_registry in
   let c1 = Buf.get_cell t1.chars idx1 and c2 = Buf.get_cell t2.chars idx2 in
   (if same_graphemes then c1 = c2
    else Packed_cell.equal t1.grapheme_store c1 t2.grapheme_store c2)
   && Buf.get t1.attrs idx1 = Buf.get t2.attrs idx2
-  && (if same_links then Buf.get t1.links idx1 = Buf.get t2.links idx2
-      else String.equal (get_link t1 idx1) (get_link t2 idx2))
+  && String.equal (get_link t1 idx1) (get_link t2 idx2)
   && Buf.get t1.fg_color idx1 = Buf.get t2.fg_color idx2
   && Buf.get t1.bg_color idx1 = Buf.get t2.bg_color idx2
 
@@ -423,7 +413,7 @@ let clear ?color t =
   Grapheme_tracker.clear t.grapheme_tracker;
   Buf.fill_cell t.chars space_cell;
   Buf.fill t.attrs 0;
-  Buf.fill t.links no_link;
+  clear_links t 0 (t.width * t.height);
   Buf.fill t.fg_color default_fg_packed;
   let bg_color =
     Option.value color ~default:default_bg |> Color_packed.encode
@@ -443,13 +433,14 @@ let resize t ~width ~height =
     let new_size = width * height in
     let new_chars = Buf.make_int new_size in
     let new_attrs = Buf.make_int16 new_size in
-    let new_links = Buf.make_int new_size in
+    let new_links =
+      if Array.length old_links = 0 then [||] else Array.make new_size no_link
+    in
     let new_fg_color = Buf.make_int new_size in
     let new_bg_color = Buf.make_int new_size in
 
     Buf.fill_cell new_chars space_cell;
     Buf.fill new_attrs 0;
-    Buf.fill new_links no_link;
     Buf.fill new_fg_color default_fg_packed;
     Buf.fill new_bg_color default_bg_packed;
 
@@ -462,8 +453,8 @@ let resize t ~width ~height =
         ~len:copy_w;
       Buf.blit_range old_attrs ~src_pos:src_off new_attrs ~dst_pos:dst_off
         ~len:copy_w;
-      Buf.blit_range old_links ~src_pos:src_off new_links ~dst_pos:dst_off
-        ~len:copy_w;
+      if Array.length old_links <> 0 then
+        Array.blit old_links src_off new_links dst_off copy_w;
       Buf.blit_range old_fg_color ~src_pos:src_off new_fg_color ~dst_pos:dst_off
         ~len:copy_w;
       Buf.blit_range old_bg_color ~src_pos:src_off new_bg_color ~dst_pos:dst_off
@@ -547,8 +538,7 @@ let[@inline] apply_opacity t color =
          (Float.round
             (float_of_int (Color_packed.alpha color) *. t.opacity_product)))
 
-let set_cell_internal t ~idx ~code ~fg_color ~bg_color ~attrs ~link_id ~blending
-    =
+let set_cell_internal t ~idx ~code ~fg_color ~bg_color ~attrs ~link ~blending =
   let fg_alpha = Color_packed.alpha fg_color in
   let bg_alpha = Color_packed.alpha bg_color in
   if blending && fg_alpha = 0 && bg_alpha = 0 then ()
@@ -569,13 +559,13 @@ let set_cell_internal t ~idx ~code ~fg_color ~bg_color ~attrs ~link_id ~blending
       Buf.set t.attrs idx attrs;
       Buf.set t.fg_color idx (Color_packed.blend ~src:fg_color ~dst:blended_bg)
     end;
-    Buf.set t.links idx link_id;
+    set_link t idx link;
     Buf.set t.bg_color idx blended_bg
   end
   else begin
     write_cell t idx code;
     Buf.set t.attrs idx attrs;
-    Buf.set t.links idx link_id;
+    set_link t idx link;
     Buf.set t.fg_color idx fg_color;
     Buf.set t.bg_color idx bg_color
   end
@@ -592,7 +582,7 @@ let set_uchar t ~x ~y ~uchar ~fg ~bg ~attrs ?link ?(blend = false) () =
     and bg_color = Color_packed.encode bg in
     let fg_color = if blend then apply_opacity t fg_color else fg_color in
     let bg_color = if blend then apply_opacity t bg_color else bg_color in
-    let link_id = Links.intern t.link_registry link in
+    let link = Option.value link ~default:no_link in
     let attrs = Ansi.Attr.pack attrs in
     for dx = 0 to min width (t.width - x) - 1 do
       let cell =
@@ -602,7 +592,7 @@ let set_uchar t ~x ~y ~uchar ~fg ~bg ~attrs ?link ?(blend = false) () =
       in
       set_cell_internal t
         ~idx:((y * t.width) + x + dx)
-        ~code:cell ~fg_color ~bg_color ~attrs ~link_id ~blending:blend
+        ~code:cell ~fg_color ~bg_color ~attrs ~link ~blending:blend
     done
   end
 
@@ -613,7 +603,7 @@ let fill_opaque_rect t ~x0 ~y0 ~width ~height ~bg_color =
     Grapheme_tracker.clear t.grapheme_tracker;
     Buf.fill_cell t.chars space_cell;
     Buf.fill t.attrs 0;
-    Buf.fill t.links no_link;
+    clear_links t 0 (t.width * t.height);
     Buf.fill t.fg_color default_fg_packed;
     Buf.fill t.bg_color bg_color
   end
@@ -627,7 +617,7 @@ let fill_opaque_rect t ~x0 ~y0 ~width ~height ~bg_color =
       done;
       Buf.fill_cell_range t.chars ~pos:start_idx ~len:width space_cell;
       Buf.fill_range t.attrs ~pos:start_idx ~len:width 0;
-      Buf.fill_range t.links ~pos:start_idx ~len:width no_link;
+      clear_links t start_idx width;
       Buf.fill_range t.fg_color ~pos:start_idx ~len:width default_fg_packed;
       Buf.fill_range t.bg_color ~pos:start_idx ~len:width bg_color
     done
@@ -657,7 +647,7 @@ let fill_rect t ~x ~y ~width ~height ~color =
           let base = (row * t.width) + r.x in
           for dx = 0 to r.width - 1 do
             set_cell_internal t ~idx:(base + dx) ~code:space_cell
-              ~fg_color:default_fg_packed ~bg_color ~attrs:0 ~link_id:no_link
+              ~fg_color:default_fg_packed ~bg_color ~attrs:0 ~link:no_link
               ~blending:true
           done
         done
@@ -672,10 +662,10 @@ let blit ~src ~dst =
     Buf.blit src.fg_color dst.fg_color;
     Buf.blit src.bg_color dst.bg_color;
     Buf.blit src.attrs dst.attrs;
+    blit_links ~src ~dst 0 0 (src.width * src.height);
 
     if src.grapheme_store == dst.grapheme_store then (
       Buf.blit src.chars dst.chars;
-      Buf.blit src.links dst.links;
       Grapheme_tracker.clear dst.grapheme_tracker;
       let len = src.width * src.height in
       for i = 0 to len - 1 do
@@ -697,15 +687,7 @@ let blit ~src ~dst =
         in
         Buf.set_cell dst.chars i dst_c;
         if Packed_cell.is_complex dst_c then
-          Grapheme_tracker.add dst.grapheme_tracker dst_c;
-
-        let src_l = Buf.get src.links i in
-        let dst_l =
-          match Links.resolve src.link_registry src_l with
-          | None -> no_link
-          | Some url -> Links.intern dst.link_registry (Some url)
-        in
-        Buf.set dst.links i dst_l
+          Grapheme_tracker.add dst.grapheme_tracker dst_c
       done)
 
 let copy t =
@@ -793,9 +775,7 @@ let transfer_region ~blend ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y
           Buf.blit
             (Bigarray.Array1.sub src.attrs si len)
             (Bigarray.Array1.sub dst.attrs di len);
-          Buf.blit
-            (Bigarray.Array1.sub src.links si len)
-            (Bigarray.Array1.sub dst.links di len);
+          blit_links ~src ~dst si di len;
           Buf.blit
             (Bigarray.Array1.sub src.fg_color si len)
             (Bigarray.Array1.sub dst.fg_color di len);
@@ -826,8 +806,7 @@ let transfer_region ~blend ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y
               ~len:width;
             Buf.blit_range src.attrs ~src_pos:si dst.attrs ~dst_pos:di
               ~len:width;
-            Buf.blit_range src.links ~src_pos:si dst.links ~dst_pos:di
-              ~len:width;
+            blit_links ~src ~dst si di width;
             Buf.blit_range src.fg_color ~src_pos:si dst.fg_color ~dst_pos:di
               ~len:width;
             Buf.blit_range src.bg_color ~src_pos:si dst.bg_color ~dst_pos:di
@@ -893,13 +872,7 @@ let transfer_region ~blend ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y
                 || Color_packed.alpha bg_color <> 0
               then begin
                 let attrs = Buf.get src.attrs sidx in
-                let src_link = Buf.get src.links sidx in
-
-                let link_id =
-                  match Links.resolve src.link_registry src_link with
-                  | Some url -> Links.intern dst.link_registry (Some url)
-                  | None -> no_link
-                in
+                let link = get_link src sidx in
 
                 (* Detect orphan continuations whose start cell is outside the
                  copied region *)
@@ -926,7 +899,7 @@ let transfer_region ~blend ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y
 
                 let is_reset = mapped_code = space_cell && code <> space_cell in
                 let attrs = if is_reset then 0 else attrs in
-                let link_id = if is_reset then no_link else link_id in
+                let link = if is_reset then no_link else link in
                 let fg_color =
                   if is_reset then
                     if blend then apply_opacity dst default_fg_packed
@@ -935,7 +908,7 @@ let transfer_region ~blend ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y
                 in
                 set_cell_internal dst
                   ~idx:((dy * dst.width) + dx)
-                  ~code:mapped_code ~fg_color ~bg_color ~attrs ~link_id
+                  ~code:mapped_code ~fg_color ~bg_color ~attrs ~link
                   ~blending:blend
               end;
 
@@ -995,7 +968,7 @@ let draw_text ?style ?(tab_width = 2) ?width_method t ~x ~y ~text =
       ()
     else
       let attrs = Ansi.Attr.pack s.attrs in
-      let link_id = Links.intern t.link_registry s.link in
+      let link = Option.value s.link ~default:no_link in
       let cur_x = ref x in
       let tabw = if tab_width <= 0 then 2 else tab_width in
       let text =
@@ -1044,7 +1017,7 @@ let draw_text ?style ?(tab_width = 2) ?width_method t ~x ~y ~text =
             let w = Packed_cell.cell_width code in
             begin
               let idx = (y * t.width) + !cur_x in
-              set_cell_internal t ~idx ~code ~fg_color ~bg_color ~attrs ~link_id
+              set_cell_internal t ~idx ~code ~fg_color ~bg_color ~attrs ~link
                 ~blending:true;
               for i = 1 to w - 1 do
                 let c_x = !cur_x + i in
@@ -1053,7 +1026,7 @@ let draw_text ?style ?(tab_width = 2) ?width_method t ~x ~y ~text =
                   Packed_cell.make_continuation ~code ~left:i ~right:(w - 1 - i)
                 in
                 set_cell_internal t ~idx:c_idx ~code:cont ~fg_color ~bg_color
-                  ~attrs ~link_id ~blending:true
+                  ~attrs ~link ~blending:true
               done
             end;
             cur_x := !cur_x + w
@@ -1070,7 +1043,7 @@ let draw_text ?style ?(tab_width = 2) ?width_method t ~x ~y ~text =
                     | Some _ -> bg_color
                   in
                   set_cell_internal t ~idx ~code:space_cell ~fg_color ~bg_color
-                    ~attrs ~link_id ~blending:false
+                    ~attrs ~link ~blending:false
               done;
             cur_x := !cur_x + w
           end
@@ -1156,7 +1129,7 @@ let draw_box t ~x ~y ~width ~height ?(border = Border.single)
           set_cell_internal t
             ~idx:((by * t.width) + bx)
             ~code:cell ~fg_color:b_fg_color ~bg_color:bg_color_packed
-            ~attrs:b_attrs ~link_id:no_link ~blending:true
+            ~attrs:b_attrs ~link:no_link ~blending:true
       in
 
       (* Horizontal borders *)
